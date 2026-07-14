@@ -1,1 +1,131 @@
+{
+  "somfy": {
+    "name": "Somfy",
+    "categories": [
+      {
+        "id": "volets",
+        "name": "Volets roulants",
+        "items": []
+      },
+      {
+        "id": "telecommandes",
+        "name": "Télécommandes",
+        "items": []
+      },
+      {
+        "id": "telecommandes-centrales",
+        "name": "Télécommandes centrales",
+        "items": []
+      },
+      {
+        "id": "stores",
+        "name": "Stores",
+        "items": []
+      },
+      {
+        "id": "portails",
+        "name": "Portails",
+        "items": []
+      },
+      {
+        "id": "portes-garage",
+        "name": "Portes de garage",
+        "items": []
+      },
+      {
+        "id": "diagnostic",
+        "name": "Diagnostic",
+        "items": []
+      }
+    ]
+  },
 
+  "faac": {
+    "name": "FAAC",
+    "categories": [
+      {
+        "id": "portails",
+        "name": "Portails",
+        "items": []
+      },
+      {
+        "id": "telecommandes",
+        "name": "Télécommandes",
+        "items": []
+      },
+      {
+        "id": "diagnostic",
+        "name": "Diagnostic",
+        "items": []
+      }
+    ]
+  },
+
+  "bubendorff": {
+    "name": "Bubendorff",
+    "categories": [
+      {
+        "id": "volets",
+        "name": "Volets roulants",
+        "items": []
+      },
+      {
+        "id": "telecommandes",
+        "name": "Télécommandes",
+        "items": []
+      },
+      {
+        "id": "diagnostic",
+        "name": "Diagnostic",
+        "items": []
+      }
+    ]
+  },
+
+  "nice": {
+    "name": "Nice",
+    "categories": [
+      {
+        "id": "portails",
+        "name": "Portails",
+        "items": []
+      },
+      {
+        "id": "volets",
+        "name": "Volets roulants",
+        "items": []
+      },
+      {
+        "id": "telecommandes",
+        "name": "Télécommandes",
+        "items": []
+      },
+      {
+        "id": "diagnostic",
+        "name": "Diagnostic",
+        "items": []
+      }
+    ]
+  },
+
+  "came": {
+    "name": "CAME",
+    "categories": [
+      {
+        "id": "portails",
+        "name": "Portails",
+        "items": []
+      },
+      {
+        "id": "telecommandes",
+        "name": "Télécommandes",
+        "items": []
+      },
+      {
+        "id": "diagnostic",
+        "name": "Diagnostic",
+        "items": []
+      }
+    ]
+  }
+}
