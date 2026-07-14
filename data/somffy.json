@@ -1,0 +1,176 @@
+{
+  "marque": "Somfy",
+
+  "categories": [
+
+    {
+      "nom": "Volets roulants",
+
+      "elements": [
+
+        {
+          "nom": "Oximo RTS",
+          "type": "Moteur"
+        },
+
+        {
+          "nom": "Oximo io",
+          "type": "Moteur"
+        },
+
+        {
+          "nom": "Altus RTS",
+          "type": "Moteur"
+        },
+
+        {
+          "nom": "LT50",
+          "type": "Moteur"
+        },
+
+        {
+          "nom": "RS100 io",
+          "type": "Moteur"
+        }
+
+      ]
+    },
+
+    {
+      "nom": "Télécommandes",
+
+      "elements": [
+
+        {
+          "nom": "Telis 1 RTS",
+          "type": "Télécommande"
+        },
+
+        {
+          "nom": "Telis 4 RTS",
+          "type": "Télécommande"
+        },
+
+        {
+          "nom": "Situo RTS",
+          "type": "Télécommande"
+        },
+
+        {
+          "nom": "Situo io",
+          "type": "Télécommande"
+        },
+
+        {
+          "nom": "Smoove RTS",
+          "type": "Télécommande"
+        },
+
+        {
+          "nom": "Smoove io",
+          "type": "Télécommande"
+        },
+
+        {
+          "nom": "Nina io",
+          "type": "Télécommande"
+        },
+
+        {
+          "nom": "Keygo RTS",
+          "type": "Télécommande"
+        }
+
+      ]
+    },
+
+    {
+      "nom": "Télécommandes centrales",
+
+      "elements": [
+
+        {
+          "nom": "Créer un groupe"
+        },
+
+        {
+          "nom": "Ajouter un moteur"
+        },
+
+        {
+          "nom": "Retirer un moteur"
+        },
+
+        {
+          "nom": "Commande générale"
+        }
+
+      ]
+    },
+
+    {
+      "nom": "Stores",
+
+      "elements": [
+
+        {
+          "nom": "Sunea RTS"
+        },
+
+        {
+          "nom": "Orea RTS"
+        },
+
+        {
+          "nom": "Sunilus RTS"
+        }
+
+      ]
+    },
+
+    {
+      "nom": "Portails",
+
+      "elements": [
+
+        {
+          "nom": "Freevia"
+        },
+
+        {
+          "nom": "Elixo"
+        },
+
+        {
+          "nom": "Ixengo"
+        }
+
+      ]
+    },
+
+    {
+      "nom": "Diagnostic",
+
+      "elements": [
+
+        {
+          "nom": "Le moteur ne répond plus"
+        },
+
+        {
+          "nom": "Le volet monte mais ne descend plus"
+        },
+
+        {
+          "nom": "Le moteur fait un va-et-vient"
+        },
+
+        {
+          "nom": "La télécommande ne fonctionne plus"
+        }
+
+      ]
+    }
+
+  ]
+}
