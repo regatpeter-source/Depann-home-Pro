@@ -2,38 +2,129 @@
 <html lang="fr">
 
 <head>
+
     <meta charset="UTF-8">
+
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
     <title>Depann'Home Pro</title>
 
     <meta name="theme-color" content="#0A5C36">
 
+    <meta name="description"
+        content="Assistant professionnel de dépannage Somfy, FAAC, Nice, Bubendorff, CAME.">
+
     <link rel="manifest" href="manifest.json">
-    <link rel="stylesheet" href="style.css">
+
+    <link rel="icon" href="assets/logo.png.png" type="image/png">
+
+    <link rel="stylesheet" href="css/style.css">
+
 </head>
 
 <body>
 
-<header class="topbar">
+    <header class="topbar">
 
-    <h1>Depann'Home Pro</h1>
+        <div class="header-content">
 
-</header>
+            <img
+                src="assets/logo.png.png"
+                alt="Depann'Home"
+                class="logo">
 
-<main id="app">
+            <div>
 
-    <input
-        id="search"
-        type="search"
-        placeholder="Rechercher une procédure..."
-    >
+                <h1>Depann'Home Pro</h1>
 
-    <section id="brands"></section>
+                <p>Assistant de dépannage professionnel</p>
 
-</main>
+            </div>
 
-<script src="app.js"></script>
+        </div>
+
+    </header>
+
+    <nav id="breadcrumb">
+
+        🏠 Accueil
+
+    </nav>
+
+    <main id="app">
+
+        <section class="search-section">
+
+            <input
+                id="search"
+                type="search"
+                placeholder="Rechercher une procédure, un moteur, une télécommande...">
+
+        </section>
+
+        <section class="quick-actions">
+
+            <button id="clientsBtn">
+                👥 Clients
+            </button>
+
+            <button id="favoritesBtn">
+                ⭐ Favoris
+            </button>
+
+            <button id="historyBtn">
+                🕘 Historique
+            </button>
+
+        </section>
+
+        <section>
+
+            <h2 class="section-title" id="pageTitle">
+
+                Marques
+
+            </h2>
+
+        </section>
+
+        <section id="brands">
+
+        </section>
+
+    </main>
+
+    <footer>
+
+        <button class="nav-button active" data-nav="home">
+            🏠
+            <span>Accueil</span>
+        </button>
+
+        <button class="nav-button" data-nav="search">
+            🔍
+            <span>Recherche</span>
+        </button>
+
+        <button class="nav-button" data-nav="clients">
+            👥
+            <span>Clients</span>
+        </button>
+
+        <button class="nav-button" data-nav="favorites">
+            ⭐
+            <span>Favoris</span>
+        </button>
+
+        <button class="nav-button" data-nav="settings">
+            ⚙️
+            <span>Paramètres</span>
+        </button>
+
+    </footer>
+
+    <script type="module" src="js/app.js"></script>
 
 </body>
+
 </html>

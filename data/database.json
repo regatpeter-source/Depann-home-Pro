@@ -1,29 +1,2048 @@
 {
   "brands": [
     {
+      "id": "somfy",
       "name": "Somfy",
-      "logo": "",
-      "categories": []
+      "categories": [
+      {
+        "id": "bft",
+        "name": "BFT",
+        "categories": [
+          {
+            "name": "Portails",
+            "products": [
+              {
+                "name": "Deimos / Ares coulissant",
+                "procedures": [
+                  {
+                    "title": "Contrôle et apprentissage portail coulissant",
+                    "duration": "12 min",
+                    "difficulty": "Avancée",
+                    "tools": ["Clé de déverrouillage", "Multimètre", "Télécommande BFT"],
+                    "requirements": ["Portail coulissant libre", "Crémaillère alignée", "Sécurités raccordées"],
+                    "steps": ["Déverrouiller le moteur et vérifier le déplacement manuel sur toute la course.", "Contrôler crémaillère, fins de course et accessoires de sécurité.", "Remettre le moteur en prise puis lancer l'apprentissage depuis la centrale adaptée.", "Tester ouverture, fermeture, ralentissements et inversion sur les sécurités."],
+                    "notes": ["Consulter la notice de la centrale BFT installée avant de modifier les paramètres de force ou de logique."],
+                    "photos": [], "documents": ["Ajouter ici le PDF officiel BFT Deimos/Ares si disponible"], "videos": []
+                  }
+                ]
+              },
+              {
+                "name": "Phobos / Kustos battant",
+                "procedures": [
+                  {
+                    "title": "Mise en service vérins portail battant",
+                    "duration": "15 min",
+                    "difficulty": "Avancée",
+                    "tools": ["Multimètre", "Clé de déverrouillage", "Télécommande BFT"],
+                    "requirements": ["Vantaux libres", "Butées mécaniques présentes", "Photocellules fonctionnelles"],
+                    "steps": ["Contrôler la géométrie de pose et la course manuelle des vantaux.", "Vérifier les câbles moteurs, les fins de course et les entrées de sécurité.", "Configurer les paramètres prévus pour la motorisation et lancer l'apprentissage.", "Tester les cycles complets, l'ouverture piétonne et l'arrêt sur obstacle."],
+                    "notes": ["Ne jamais compenser un portail dur par une augmentation excessive de la force."],
+                    "photos": [], "documents": ["Ajouter ici le PDF officiel BFT Phobos/Kustos si disponible"], "videos": []
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "beninca",
+        "name": "Beninca",
+        "categories": [
+          {
+            "name": "Portails",
+            "products": [
+              {
+                "name": "BULL coulissant",
+                "procedures": [
+                  {
+                    "title": "Diagnostic motoréducteur coulissant",
+                    "duration": "12 min",
+                    "difficulty": "Avancée",
+                    "tools": ["Clé de déverrouillage", "Multimètre", "Télécommande Beninca"],
+                    "requirements": ["Portail sécurisé", "Rail et crémaillère propres", "Accès à la centrale"],
+                    "steps": ["Tester le portail déverrouillé pour repérer les points durs.", "Contrôler les fins de course, l'alimentation et les voyants de sécurité.", "Vérifier le raccordement des photocellules et de l'entrée STOP.", "Relancer l'apprentissage seulement après correction des défauts mécaniques."],
+                    "notes": ["Consigner les réglages de la centrale avant toute remise à zéro."],
+                    "photos": [], "documents": ["Ajouter ici le PDF officiel Beninca BULL si disponible"], "videos": []
+                  }
+                ]
+              },
+              {
+                "name": "KBILL / KBOB battant",
+                "procedures": [
+                  {
+                    "title": "Contrôle automatisme portail battant",
+                    "duration": "14 min",
+                    "difficulty": "Avancée",
+                    "tools": ["Multimètre", "Télécommande Beninca", "Clé de déverrouillage"],
+                    "requirements": ["Vantaux équilibrés", "Butées présentes", "Zone de mouvement dégagée"],
+                    "steps": ["Déverrouiller et contrôler chaque vantail manuellement.", "Vérifier fixations, câblage des moteurs et accessoires de sécurité.", "Contrôler les paramètres de la centrale conformément à la notice.", "Effectuer un cycle d'apprentissage puis tester les sécurités."],
+                    "notes": ["Les cotes de pose des vérins ou bras doivent être conformes avant tout réglage électronique."],
+                    "photos": [], "documents": ["Ajouter ici le PDF officiel Beninca KBILL/KBOB si disponible"], "videos": []
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "hormann",
+        "name": "Hörmann",
+        "categories": [
+          {
+            "name": "Portails",
+            "products": [
+              {
+                "name": "Lineamatic coulissant",
+                "procedures": [
+                  {
+                    "title": "Contrôle portail coulissant LineaMatic",
+                    "duration": "12 min",
+                    "difficulty": "Avancée",
+                    "tools": ["Clé de déverrouillage", "Multimètre", "Émetteur Hörmann compatible"],
+                    "requirements": ["Portail libre", "Fins de course contrôlés", "Dispositifs de sécurité opérationnels"],
+                    "steps": ["Vérifier le coulissement manuel, le rail et la crémaillère.", "Contrôler alimentation, cellules et entrées de sécurité.", "Vérifier le mode de fonctionnement et les défauts signalés par la centrale.", "Réaliser l'apprentissage de course selon la notice puis tester les protections."],
+                    "notes": ["Utiliser uniquement un émetteur compatible avec la génération radio BiSecur ou la radio installée."],
+                    "photos": [], "documents": ["Ajouter ici le PDF officiel Hörmann LineaMatic si disponible"], "videos": []
+                  }
+                ]
+              },
+              {
+                "name": "RotaMatic battant",
+                "procedures": [
+                  {
+                    "title": "Apprentissage portail battant RotaMatic",
+                    "duration": "15 min",
+                    "difficulty": "Avancée",
+                    "tools": ["Multimètre", "Émetteur Hörmann compatible", "Clé de déverrouillage"],
+                    "requirements": ["Vantaux libres", "Butées mécaniques installées", "Photocellules testées"],
+                    "steps": ["Contrôler les vantaux et les points de fixation des opérateurs.", "Vérifier le câblage et l'état des sécurités.", "Suivre la séquence d'apprentissage de la centrale installée.", "Tester les cycles, la fonction piétonne et l'inversion sur obstacle."],
+                    "notes": ["La référence exacte de la centrale doit être relevée avant toute programmation."],
+                    "photos": [], "documents": ["Ajouter ici le PDF officiel Hörmann RotaMatic si disponible"], "videos": []
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "avidsen",
+        "name": "Avidsen",
+        "categories": [
+          {
+            "name": "Portails",
+            "products": [
+              {
+                "name": "Orea coulissant",
+                "procedures": [
+                  {
+                    "title": "Réglage portail coulissant Avidsen",
+                    "duration": "10 min",
+                    "difficulty": "Moyenne",
+                    "tools": ["Clé de déverrouillage", "Multimètre", "Télécommande Avidsen"],
+                    "requirements": ["Portail sans point dur", "Crémaillère réglée", "Cellules alignées"],
+                    "steps": ["Tester le coulissement manuel avant de remettre le moteur en prise.", "Contrôler les aimants ou fins de course et le câblage des cellules.", "Lancer l'auto-apprentissage selon le modèle de centrale.", "Tester ouverture, fermeture et arrêt sur détection de sécurité."],
+                    "notes": ["Un rail encrassé ou une crémaillère trop serrée peut faire croire à un défaut moteur."],
+                    "photos": [], "documents": ["Ajouter ici le PDF officiel Avidsen Orea si disponible"], "videos": []
+                  }
+                ]
+              },
+              {
+                "name": "Orane battant",
+                "procedures": [
+                  {
+                    "title": "Diagnostic portail battant Avidsen",
+                    "duration": "12 min",
+                    "difficulty": "Moyenne",
+                    "tools": ["Multimètre", "Télécommande Avidsen", "Tournevis"],
+                    "requirements": ["Butées présentes", "Vantaux libres", "Alimentation contrôlée"],
+                    "steps": ["Vérifier le mouvement manuel et les fixations des bras ou vérins.", "Contrôler les voyants de la centrale et les photocellules.", "Vérifier le câblage des deux moteurs.", "Reprendre l'apprentissage de course puis tester les sécurités."],
+                    "notes": ["Ne pas laisser la fermeture automatique active tant que les cellules ne sont pas validées."],
+                    "photos": [], "documents": ["Ajouter ici le PDF officiel Avidsen Orane si disponible"], "videos": []
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "name": "Volets roulants",
+            "products": [
+              {
+                "name": "Motorisation tubulaire Avidsen",
+                "procedures": [
+                  {
+                    "title": "Contrôle moteur tubulaire et fins de course",
+                    "duration": "8 min",
+                    "difficulty": "Moyenne",
+                    "tools": ["Multimètre", "Commande compatible", "Tournevis isolé"],
+                    "requirements": ["Volet mécaniquement libre", "Alimentation sécurisée", "Accès à la commande"],
+                    "steps": ["Couper le courant avant de contrôler les connexions.", "Mesurer les commandes montée et descente à la sortie de l'inverseur ou du récepteur.", "Contrôler les attaches, coulisses et verrous du tablier.", "Régler les fins de course suivant la notice du moteur puis tester un cycle complet."],
+                    "notes": ["Ne jamais alimenter simultanément les fils montée et descente."],
+                    "photos": [], "documents": ["Ajouter ici le PDF officiel Avidsen moteur tubulaire si disponible"], "videos": []
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+        {
+          "name": "Volets roulants",
+          "products": [
+            {
+              "name": "Oximo RTS",
+              "procedures": [
+                {
+                  "title": "Mise en service rapide",
+                  "duration": "5 min",
+                  "difficulty": "Moyenne",
+                  "tools": ["Télécommande RTS", "Tournevis isolé"],
+                  "requirements": ["Moteur alimenté", "Volet libre mécaniquement", "Une seule motorisation alimentée pendant l'appairage"],
+                  "steps": ["Mettre sous tension uniquement le volet à programmer.", "Appuyer simultanément sur montée et descente jusqu'au va-et-vient.", "Contrôler le sens de rotation.", "Si le sens est inversé, maintenir my/stop jusqu'au va-et-vient.", "Régler les fins de course selon la configuration du tablier.", "Valider avec my/stop jusqu'au va-et-vient, puis appuyer brièvement sur PROG."],
+                  "notes": ["Ne jamais forcer un tablier bloqué : vérifier coulisses, attaches et verrous avant réglage."],
+                  "photos": [],
+                  "documents": ["Ajouter ici le PDF officiel Somfy Oximo RTS si disponible"],
+                  "videos": []
+                },
+                {
+                  "title": "Réinitialisation 2-8-2",
+                  "duration": "3 min",
+                  "difficulty": "Moyenne",
+                  "tools": ["Accès alimentation"],
+                  "requirements": ["Identifier le volet concerné", "Éviter de couper plusieurs moteurs en même temps"],
+                  "steps": ["Couper l'alimentation 2 secondes.", "Remettre l'alimentation 8 secondes.", "Couper de nouveau 2 secondes.", "Remettre l'alimentation.", "Attendre le va-et-vient du moteur.", "Reprogrammer la télécommande puis les fins de course."],
+                  "notes": ["La procédure efface les réglages radio du moteur concerné."],
+                  "photos": [],
+                  "documents": [],
+                  "videos": []
+                }
+              ]
+            },
+            {
+              "name": "Oximo io",
+              "procedures": [
+                {
+                  "title": "Association avec point de commande io",
+                  "duration": "5 min",
+                  "difficulty": "Moyenne",
+                  "tools": ["Télécommande io", "Accès alimentation"],
+                  "requirements": ["Moteur alimenté", "Point de commande compatible io-homecontrol"],
+                  "steps": ["Isoler électriquement le moteur à programmer.", "Réveiller le moteur avec la séquence d'appairage prévue.", "Appuyer sur montée et descente jusqu'au va-et-vient.", "Vérifier le sens de rotation.", "Régler ou confirmer les fins de course.", "Valider puis mémoriser le point de commande."],
+                  "notes": ["Sur installation io existante, vérifier la clé système avant ajout dans TaHoma."],
+                  "photos": [],
+                  "documents": ["Ajouter ici le PDF officiel Somfy Oximo io si disponible"],
+                  "videos": []
+                },
+                {
+                  "title": "Diagnostic moteur qui ne répond plus",
+                  "duration": "8 min",
+                  "difficulty": "Moyenne",
+                  "tools": ["Multimètre", "Télécommande io connue fonctionnelle"],
+                  "requirements": ["Accès sécurisé à l'alimentation", "Pile de télécommande contrôlée"],
+                  "steps": ["Contrôler la présence de tension au moteur.", "Tester avec un autre point de commande io si disponible.", "Vérifier l'absence de blocage mécanique du tablier.", "Effectuer une coupure secteur courte pour réveiller le moteur.", "Si aucune réaction, lancer une réinitialisation contrôlée uniquement sur le moteur concerné."],
+                  "notes": ["Un moteur silencieux malgré tension correcte peut nécessiter un contrôle atelier."],
+                  "photos": [],
+                  "documents": [],
+                  "videos": []
+                }
+              ]
+            },
+            {
+              "name": "Altus RTS",
+              "procedures": [
+                {
+                  "title": "Réglage des fins de course",
+                  "duration": "6 min",
+                  "difficulty": "Moyenne",
+                  "tools": ["Télécommande RTS"],
+                  "requirements": ["Télécommande appairée", "Tablier libre"],
+                  "steps": ["Mettre le moteur en mode réglage.", "Positionner la fin de course haute.", "Valider la position haute.", "Positionner la fin de course basse.", "Valider la position basse.", "Faire un cycle complet pour contrôler l'arrêt."],
+                  "notes": ["Les fins de course doivent être réglées sans contrainte mécanique en butée."],
+                  "photos": [],
+                  "documents": ["Ajouter ici le PDF officiel Somfy Altus RTS si disponible"],
+                  "videos": []
+                },
+                {
+                  "title": "Ajout d'une télécommande RTS",
+                  "duration": "1 min",
+                  "difficulty": "Facile",
+                  "tools": ["Télécommande déjà programmée", "Nouvelle télécommande RTS"],
+                  "requirements": ["Une commande existante fonctionnelle"],
+                  "steps": ["Maintenir PROG sur la commande existante jusqu'au va-et-vient.", "Appuyer brièvement sur PROG de la nouvelle commande.", "Tester montée, stop et descente."],
+                  "notes": ["Ne pas maintenir trop longtemps le bouton PROG de la nouvelle commande."],
+                  "photos": [],
+                  "documents": [],
+                  "videos": []
+                }
+              ]
+            },
+            {
+              "name": "Ilmo WT",
+              "procedures": [
+                {
+                  "title": "Contrôle moteur filaire auto-apprentissage",
+                  "duration": "7 min",
+                  "difficulty": "Moyenne",
+                  "tools": ["Inverseur filaire", "Multimètre"],
+                  "requirements": ["Butées et attaches adaptées", "Câblage conforme"],
+                  "steps": ["Contrôler l'alimentation de l'inverseur.", "Commander la montée puis la descente.", "Vérifier que le moteur s'arrête sans forcer en haut et en bas.", "Si le tablier force, contrôler les verrous, attaches et coulisses.", "Faire deux cycles complets pour stabiliser l'apprentissage."],
+                  "notes": ["Le moteur apprend les efforts : une mécanique dure fausse le comportement."],
+                  "photos": [],
+                  "documents": ["Ajouter ici le PDF officiel Somfy Ilmo WT si disponible"],
+                  "videos": []
+                }
+              ]
+            },
+            {
+              "name": "LT50 / LT60 filaire",
+              "procedures": [
+                {
+                  "title": "Réglage mécanique des fins de course",
+                  "duration": "8 min",
+                  "difficulty": "Moyenne",
+                  "tools": ["Tournevis de réglage", "Inverseur filaire"],
+                  "requirements": ["Accès à la tête moteur", "Sens montée/descente identifié"],
+                  "steps": ["Identifier les vis ou molettes de réglage haute et basse.", "Commander le volet vers la position à régler.", "Tourner progressivement la vis concernée par petits quarts de tour.", "Tester l'arrêt, puis ajuster si nécessaire.", "Répéter pour l'autre fin de course."],
+                  "notes": ["Procéder par petits réglages pour éviter d'envoyer le tablier en contrainte."],
+                  "photos": [],
+                  "documents": ["Ajouter ici le PDF officiel Somfy LT50/LT60 si disponible"],
+                  "videos": []
+                }
+              ]
+            },
+            {
+              "name": "RS100 io",
+              "procedures": [
+                {
+                  "title": "Paramétrage confort et discret",
+                  "duration": "6 min",
+                  "difficulty": "Moyenne",
+                  "tools": ["Télécommande io", "TaHoma si disponible"],
+                  "requirements": ["Moteur RS100 io appairé", "Fins de course réglées"],
+                  "steps": ["Tester le fonctionnement standard.", "Activer ou désactiver le mode discret depuis la commande compatible.", "Régler la position favorite my.", "Contrôler les arrêts haut et bas.", "Ajouter le moteur dans TaHoma si l'installation est connectée."],
+                  "notes": ["Les options avancées dépendent du point de commande utilisé."],
+                  "photos": [],
+                  "documents": ["Ajouter ici le PDF officiel Somfy RS100 io si disponible"],
+                  "videos": []
+                }
+              ]
+            },
+            {
+              "name": "Smoove Origin RTS",
+              "procedures": [
+                {
+                  "title": "Réinitialisation complète",
+                  "duration": "2 min",
+                  "difficulty": "Facile",
+                  "tools": ["Aucun"],
+                  "requirements": ["Volet alimenté", "Télécommande fonctionnelle"],
+                  "steps": ["Couper le courant pendant 2 secondes.", "Remettre le courant pendant 8 secondes.", "Couper le courant pendant 2 secondes.", "Remettre le courant.", "Appuyer sur PROG."],
+                  "notes": ["Le moteur effectue un va-et-vient."],
+                  "photos": [],
+                  "documents": [],
+                  "videos": []
+                },
+                {
+                  "title": "Ajout d'une télécommande",
+                  "duration": "1 min",
+                  "difficulty": "Facile",
+                  "tools": ["Télécommande"],
+                  "requirements": ["Volet alimenté", "Télécommande existante déjà programmée"],
+                  "steps": ["Appuyer sur PROG 2 secondes sur la télécommande déjà programmée.", "Attendre le va-et-vient du volet.", "Appuyer brièvement sur PROG de la nouvelle télécommande."],
+                  "notes": ["Le volet confirme généralement l'ajout par un va-et-vient."],
+                  "photos": [],
+                  "documents": [],
+                  "videos": []
+                }
+              ]
+            },
+            {
+              "name": "Situo RTS",
+              "procedures": [
+                {
+                  "title": "Programmation",
+                  "duration": "1 min",
+                  "difficulty": "Facile",
+                  "tools": ["Télécommande Situo RTS"],
+                  "requirements": ["Moteur RTS alimenté", "Accès au bouton PROG"],
+                  "steps": ["Mettre le moteur en mode programmation.", "Appuyer brièvement sur le bouton PROG de la Situo RTS.", "Contrôler la montée, la descente et l'arrêt."],
+                  "notes": ["Vérifier le sens de rotation après programmation."],
+                  "photos": [],
+                  "documents": [],
+                  "videos": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Stores",
+          "products": [
+            {
+              "name": "Sonesse 40 RTS",
+              "procedures": [
+                {
+                  "title": "Programmation store intérieur",
+                  "duration": "5 min",
+                  "difficulty": "Moyenne",
+                  "tools": ["Télécommande RTS"],
+                  "requirements": ["Store dégagé", "Moteur alimenté"],
+                  "steps": ["Mettre le moteur en mode apprentissage.", "Associer la télécommande RTS.", "Contrôler le sens de rotation.", "Régler les positions haute et basse.", "Programmer la position favorite my si demandée."],
+                  "notes": ["Sur stores silencieux, éviter les cycles répétés sans pause."],
+                  "photos": [],
+                  "documents": ["Ajouter ici le PDF officiel Somfy Sonesse 40 RTS si disponible"],
+                  "videos": []
+                }
+              ]
+            },
+            {
+              "name": "Sonesse 40 io",
+              "procedures": [
+                {
+                  "title": "Association io et contrôle fin de course",
+                  "duration": "6 min",
+                  "difficulty": "Moyenne",
+                  "tools": ["Télécommande io"],
+                  "requirements": ["Moteur io alimenté", "Store libre"],
+                  "steps": ["Réveiller le moteur en mode programmation.", "Associer le point de commande io.", "Vérifier le sens de rotation.", "Régler les fins de course.", "Tester plusieurs positions intermédiaires."],
+                  "notes": ["Prévoir l'ajout TaHoma après validation locale."],
+                  "photos": [],
+                  "documents": ["Ajouter ici le PDF officiel Somfy Sonesse 40 io si disponible"],
+                  "videos": []
+                }
+              ]
+            },
+            {
+              "name": "Sunea io",
+              "procedures": [
+                {
+                  "title": "Mise en service store banne",
+                  "duration": "8 min",
+                  "difficulty": "Moyenne",
+                  "tools": ["Télécommande io"],
+                  "requirements": ["Bras libres", "Capteur vent si présent neutralisé pendant test"],
+                  "steps": ["Associer le point de commande.", "Contrôler le sens d'enroulement.", "Régler la position rentrée.", "Régler la position sortie sans mettre les bras en contrainte.", "Tester l'arrêt et la position favorite."],
+                  "notes": ["Ne pas effectuer les réglages par vent fort."],
+                  "photos": [],
+                  "documents": ["Ajouter ici le PDF officiel Somfy Sunea io si disponible"],
+                  "videos": []
+                }
+              ]
+            },
+            {
+              "name": "J4 WT / J4 io",
+              "procedures": [
+                {
+                  "title": "Contrôle brise-soleil orientable",
+                  "duration": "10 min",
+                  "difficulty": "Avancée",
+                  "tools": ["Commande compatible", "Multimètre"],
+                  "requirements": ["Lames dégagées", "Course mécanique contrôlée"],
+                  "steps": ["Contrôler montée et descente.", "Vérifier l'orientation des lames.", "Régler les fins de course si nécessaire.", "Tester les impulsions courtes pour l'orientation.", "Contrôler l'arrêt en position haute."],
+                  "notes": ["Un BSO demande une mécanique parfaitement alignée avant réglage moteur."],
+                  "photos": [],
+                  "documents": ["Ajouter ici le PDF officiel Somfy J4 si disponible"],
+                  "videos": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Portails",
+          "products": [
+            {
+              "name": "Axovia MultiPro RTS",
+              "procedures": [
+                {
+                  "title": "Apprentissage de course portail battant",
+                  "duration": "12 min",
+                  "difficulty": "Avancée",
+                  "tools": ["Télécommande RTS", "Tournevis", "Multimètre"],
+                  "requirements": ["Portail équilibré", "Butées mécaniques présentes", "Zone de mouvement sécurisée"],
+                  "steps": ["Déverrouiller puis contrôler manuellement les vantaux.", "Vérifier les butées ouverture et fermeture.", "Alimenter la centrale et effacer les défauts.", "Lancer l'auto-apprentissage.", "Laisser le portail effectuer ses cycles sans obstacle.", "Tester télécommandes, photocellules et arrêt sur obstacle."],
+                  "notes": ["Ne jamais valider un automatisme si les sécurités ne répondent pas."],
+                  "photos": [],
+                  "documents": ["Ajouter ici le PDF officiel Somfy Axovia si disponible"],
+                  "videos": []
+                }
+              ]
+            },
+            {
+              "name": "Evolvia 400 / 450",
+              "procedures": [
+                {
+                  "title": "Mémorisation télécommande Keygo RTS",
+                  "duration": "2 min",
+                  "difficulty": "Facile",
+                  "tools": ["Télécommande Keygo RTS"],
+                  "requirements": ["Accès à l'électronique", "Portail à l'arrêt"],
+                  "steps": ["Ouvrir le capot de la centrale.", "Appuyer sur le bouton de mémorisation radio.", "Appuyer sur la touche souhaitée de la télécommande.", "Attendre la confirmation de la centrale.", "Tester l'ouverture et l'arrêt."],
+                  "notes": ["Respecter la limite de télécommandes mémorisables de la centrale."],
+                  "photos": [],
+                  "documents": ["Ajouter ici le PDF officiel Somfy Evolvia si disponible"],
+                  "videos": []
+                }
+              ]
+            },
+            {
+              "name": "Elixo 500 3S io",
+              "procedures": [
+                {
+                  "title": "Auto-apprentissage portail coulissant",
+                  "duration": "10 min",
+                  "difficulty": "Avancée",
+                  "tools": ["Télécommande io", "Clé de déverrouillage"],
+                  "requirements": ["Crémaillère alignée", "Fin de course correctement positionnée", "Sécurités raccordées"],
+                  "steps": ["Contrôler le coulissement manuel du portail.", "Verrouiller le moteur.", "Lancer l'apprentissage depuis la centrale.", "Laisser le portail trouver ouverture et fermeture.", "Tester la détection d'obstacle et les photocellules.", "Associer les commandes io."],
+                  "notes": ["Un point dur sur la crémaillère provoque souvent des défauts de couple."],
+                  "photos": [],
+                  "documents": ["Ajouter ici le PDF officiel Somfy Elixo 500 3S io si disponible"],
+                  "videos": []
+                }
+              ]
+            },
+            {
+              "name": "Freevia 300",
+              "procedures": [
+                {
+                  "title": "Diagnostic portail qui s'arrête en course",
+                  "duration": "10 min",
+                  "difficulty": "Moyenne",
+                  "tools": ["Clé de déverrouillage", "Multimètre"],
+                  "requirements": ["Portail accessible", "Alimentation disponible"],
+                  "steps": ["Déverrouiller et tester le mouvement manuel.", "Contrôler l'alignement de la crémaillère.", "Nettoyer la zone des fins de course.", "Vérifier les cellules et accessoires de sécurité.", "Relancer un apprentissage si la mécanique est correcte."],
+                  "notes": ["La plupart des arrêts intempestifs viennent d'une contrainte mécanique ou d'une sécurité active."],
+                  "photos": [],
+                  "documents": ["Ajouter ici le PDF officiel Somfy Freevia si disponible"],
+                  "videos": []
+                }
+              ]
+            },
+            {
+              "name": "Ixengo L 3S io / RTS",
+              "procedures": [
+                {
+                  "title": "Mise en service vérins portail battant",
+                  "duration": "15 min",
+                  "difficulty": "Avancée",
+                  "tools": ["Télécommande io ou RTS", "Multimètre", "Clé de déverrouillage"],
+                  "requirements": ["Vantaux libres et équilibrés", "Butées mécaniques présentes", "Photocellules raccordées"],
+                  "steps": ["Déverrouiller les vérins et contrôler le mouvement manuel des vantaux.", "Vérifier les fixations, les cotes de pose et les butées.", "Contrôler le câblage moteur 1, moteur 2 et accessoires de sécurité.", "Lancer l'auto-apprentissage depuis l'armoire 3S.", "Tester ouverture totale, ouverture piétonne, fermeture et arrêt obstacle.", "Mémoriser les points de commande radio."],
+                  "notes": ["Une mauvaise géométrie de pose provoque des efforts excessifs et des arrêts intempestifs."],
+                  "photos": [],
+                  "documents": ["Ajouter ici le PDF officiel Somfy Ixengo L 3S si disponible"],
+                  "videos": []
+                }
+              ]
+            },
+            {
+              "name": "Lockyvia Essential / Power",
+              "procedures": [
+                {
+                  "title": "Diagnostic portail battant domestique",
+                  "duration": "10 min",
+                  "difficulty": "Moyenne",
+                  "tools": ["Télécommande RTS", "Multimètre", "Tournevis"],
+                  "requirements": ["Portail déverrouillable", "Alimentation présente", "Butées mécaniques contrôlées"],
+                  "steps": ["Tester chaque vantail en manuel pour détecter les points durs.", "Contrôler les voyants de la centrale.", "Vérifier photocellules, feu clignotant et entrée STOP si présents.", "Relancer l'apprentissage de course après correction mécanique.", "Tester plusieurs cycles avec télécommande et commande filaire."],
+                  "notes": ["Sur portail battant, la panne vient souvent d'une butée déplacée, d'un bras mal serré ou d'une cellule en défaut."],
+                  "photos": [],
+                  "documents": ["Ajouter ici le PDF officiel Somfy Lockyvia si disponible"],
+                  "videos": []
+                }
+              ]
+            },
+            {
+              "name": "Slidymoove 300 / 600",
+              "procedures": [
+                {
+                  "title": "Réglage portail coulissant domestique",
+                  "duration": "10 min",
+                  "difficulty": "Moyenne",
+                  "tools": ["Télécommande RTS", "Clé de déverrouillage", "Niveau"],
+                  "requirements": ["Rail propre", "Crémaillère alignée", "Portail coulissant sans point dur"],
+                  "steps": ["Déverrouiller le moteur et déplacer le portail à la main.", "Nettoyer rail, galets et zone de crémaillère.", "Contrôler la position des aimants ou fins de course.", "Vérifier les sécurités de fermeture.", "Relancer l'apprentissage puis tester ouverture et fermeture complètes."],
+                  "notes": ["Un rail sale ou une crémaillère trop serrée déclenche facilement une détection d'obstacle."],
+                  "photos": [],
+                  "documents": ["Ajouter ici le PDF officiel Somfy Slidymoove si disponible"],
+                  "videos": []
+                }
+              ]
+            },
+            {
+              "name": "Clavier à code RTS / Keypad 2 io",
+              "procedures": [
+                {
+                  "title": "Programmation code portail",
+                  "duration": "5 min",
+                  "difficulty": "Facile",
+                  "tools": ["Clavier à code compatible", "Code maître ou accès programmation"],
+                  "requirements": ["Motorisation compatible RTS ou io", "Accès à la centrale ou à une commande déjà programmée"],
+                  "steps": ["Identifier la technologie du portail : RTS ou io.", "Mettre la motorisation ou le récepteur en mode mémorisation.", "Saisir le code utilisateur souhaité sur le clavier.", "Valider l'association avec la touche de commande.", "Tester ouverture, stop et fermeture depuis le clavier."],
+                  "notes": ["Changer les codes par défaut et noter la procédure de réinitialisation pour le client."],
+                  "photos": [],
+                  "documents": ["Ajouter ici le PDF officiel Somfy clavier à code si disponible"],
+                  "videos": []
+                }
+              ]
+            },
+            {
+              "name": "Récepteur universel RTS / io pour portail",
+              "procedures": [
+                {
+                  "title": "Diagnostic récepteur radio portail",
+                  "duration": "7 min",
+                  "difficulty": "Moyenne",
+                  "tools": ["Multimètre", "Télécommande compatible", "Tournevis isolé"],
+                  "requirements": ["Alimentation du récepteur", "Contact sec correctement raccordé", "Télécommande compatible"],
+                  "steps": ["Contrôler l'alimentation du récepteur.", "Vérifier le câblage du contact sec vers l'entrée pas-à-pas de la centrale.", "Tester la sortie relais à l'appui télécommande.", "Supprimer puis remémoriser une télécommande si nécessaire.", "Contrôler la portée radio et l'emplacement de l'antenne."],
+                  "notes": ["Un récepteur alimenté mais sans sortie relais peut être saturé en mémoire ou défectueux."],
+                  "photos": [],
+                  "documents": ["Ajouter ici le PDF officiel Somfy récepteur universel si disponible"],
+                  "videos": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Portes de garage",
+          "products": [
+            {
+              "name": "Dexxo Pro 800 / 1000 io",
+              "procedures": [
+                {
+                  "title": "Apprentissage porte de garage",
+                  "duration": "10 min",
+                  "difficulty": "Avancée",
+                  "tools": ["Télécommande io", "Escabeau sécurisé"],
+                  "requirements": ["Porte équilibrée", "Rail dégagé", "Sécurité anti-chute opérationnelle"],
+                  "steps": ["Débrayer et tester la porte à la main.", "Réembrayer le chariot.", "Lancer l'apprentissage de course.", "Laisser la porte effectuer ouverture et fermeture.", "Tester l'inversion sur obstacle avec prudence.", "Mémoriser les télécommandes."],
+                  "notes": ["Une porte mal équilibrée fatigue rapidement la motorisation."],
+                  "photos": [],
+                  "documents": ["Ajouter ici le PDF officiel Somfy Dexxo Pro io si disponible"],
+                  "videos": []
+                }
+              ]
+            },
+            {
+              "name": "Rollixo RTS / io",
+              "procedures": [
+                {
+                  "title": "Contrôle armoire Rollixo",
+                  "duration": "8 min",
+                  "difficulty": "Moyenne",
+                  "tools": ["Télécommande compatible", "Multimètre"],
+                  "requirements": ["Barre palpeuse contrôlée", "Moteur tubulaire raccordé"],
+                  "steps": ["Contrôler l'alimentation de l'armoire.", "Vérifier les voyants de sécurité.", "Tester montée, stop et descente.", "Contrôler la barre palpeuse et les cellules si présentes.", "Mémoriser ou tester les commandes radio."],
+                  "notes": ["Une sécurité ouverte empêche souvent la descente."],
+                  "photos": [],
+                  "documents": ["Ajouter ici le PDF officiel Somfy Rollixo si disponible"],
+                  "videos": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Alarmes",
+          "products": [
+            {
+              "name": "Home Alarm Advanced",
+              "procedures": [
+                {
+                  "title": "Ajout d'un détecteur",
+                  "duration": "5 min",
+                  "difficulty": "Facile",
+                  "tools": ["Application Somfy Protect", "Smartphone"],
+                  "requirements": ["Compte administrateur", "Centrale connectée"],
+                  "steps": ["Ouvrir l'application Somfy Protect.", "Choisir ajouter un équipement.", "Sélectionner le type de détecteur.", "Suivre l'appairage affiché.", "Nommer la zone et tester la détection."],
+                  "notes": ["Tester le niveau radio avant fixation définitive."],
+                  "photos": [],
+                  "documents": ["Ajouter ici le PDF officiel Somfy Home Alarm si disponible"],
+                  "videos": []
+                }
+              ]
+            },
+            {
+              "name": "Protexiom / Protexial",
+              "procedures": [
+                {
+                  "title": "Remplacement pile détecteur",
+                  "duration": "4 min",
+                  "difficulty": "Facile",
+                  "tools": ["Pile adaptée", "Tournevis"],
+                  "requirements": ["Alarme désactivée", "Code utilisateur disponible"],
+                  "steps": ["Mettre le système hors surveillance.", "Ouvrir délicatement le détecteur.", "Remplacer la pile en respectant la polarité.", "Refermer le capot.", "Tester la remontée d'information sur la centrale."],
+                  "notes": ["Utiliser le type de pile exact indiqué sur l'équipement."],
+                  "photos": [],
+                  "documents": ["Ajouter ici le PDF officiel Somfy Protexiom/Protexial si disponible"],
+                  "videos": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Domotique",
+          "products": [
+            {
+              "name": "TaHoma Switch",
+              "procedures": [
+                {
+                  "title": "Ajout d'un équipement io ou RTS",
+                  "duration": "5 min",
+                  "difficulty": "Facile",
+                  "tools": ["Application TaHoma", "Smartphone", "Commande existante si RTS"],
+                  "requirements": ["Box connectée", "Compte Somfy actif"],
+                  "steps": ["Ouvrir l'application TaHoma.", "Sélectionner ajouter un équipement.", "Choisir la technologie io ou RTS.", "Suivre l'assistant de détection ou d'appairage.", "Nommer l'équipement et tester la commande."],
+                  "notes": ["Pour RTS, la commande reste unidirectionnelle : pas de retour d'état fiable."],
+                  "photos": [],
+                  "documents": ["Ajouter ici le PDF officiel Somfy TaHoma Switch si disponible"],
+                  "videos": []
+                }
+              ]
+            },
+            {
+              "name": "Connexoon",
+              "procedures": [
+                {
+                  "title": "Diagnostic équipement absent",
+                  "duration": "6 min",
+                  "difficulty": "Facile",
+                  "tools": ["Application Connexoon", "Smartphone"],
+                  "requirements": ["Connexion Internet active", "Identifiants disponibles"],
+                  "steps": ["Vérifier l'état de connexion de la box.", "Redémarrer la box si nécessaire.", "Contrôler que l'équipement fonctionne localement.", "Relancer l'association depuis l'application.", "Placer la box plus près si le signal radio est faible."],
+                  "notes": ["Une box trop éloignée des moteurs peut provoquer des commandes aléatoires."],
+                  "photos": [],
+                  "documents": ["Ajouter ici le PDF officiel Somfy Connexoon si disponible"],
+                  "videos": []
+                }
+              ]
+            },
+            {
+              "name": "Connectivity Kit",
+              "procedures": [
+                {
+                  "title": "Installation initiale",
+                  "duration": "8 min",
+                  "difficulty": "Facile",
+                  "tools": ["Application TaHoma", "Smartphone"],
+                  "requirements": ["Wi-Fi 2,4 GHz", "Prise secteur", "Compte Somfy"],
+                  "steps": ["Brancher le kit au centre de l'habitation.", "Ouvrir l'application et lancer l'installation.", "Connecter le kit au Wi-Fi.", "Ajouter les équipements compatibles.", "Créer des pièces et tester les commandes."],
+                  "notes": ["Éviter de placer le kit dans un coffret métallique."],
+                  "photos": [],
+                  "documents": ["Ajouter ici le PDF officiel Somfy Connectivity Kit si disponible"],
+                  "videos": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Modes d'emploi télécommandes VR",
+          "products": [
+            {
+              "name": "Somfy Situo 5 RTS / Telis RTS centralisée",
+              "procedures": [
+                {
+                  "title": "Associer un moteur RTS à un canal centralisé",
+                  "duration": "3 min",
+                  "difficulty": "Facile",
+                  "tools": ["Télécommande individuelle déjà programmée", "Télécommande centralisée RTS"],
+                  "requirements": ["Moteur RTS fonctionnel", "Canal libre ou identifié", "Volet alimenté"],
+                  "steps": ["Sélectionner le canal souhaité sur la télécommande centralisée.", "Sur la commande individuelle du volet, maintenir PROG jusqu'au va-et-vient.", "Sur la télécommande centralisée, appuyer brièvement sur PROG.", "Tester montée, stop et descente depuis le canal choisi.", "Nommer ou noter le canal pour éviter les confusions."],
+                  "notes": ["Compatible avec les moteurs RTS comme Oximo RTS, Altus RTS et récepteurs RTS. Ne pas appuyer longtemps sur PROG sur la nouvelle commande."],
+                  "photos": [],
+                  "documents": ["Ajouter ici le PDF officiel Somfy Situo/Telis RTS si disponible"],
+                  "videos": []
+                },
+                {
+                  "title": "Créer un canal groupe tous volets RTS",
+                  "duration": "8 min",
+                  "difficulty": "Moyenne",
+                  "tools": ["Télécommande centralisée RTS", "Commandes individuelles"],
+                  "requirements": ["Chaque volet fonctionne individuellement", "Liste des volets à grouper"],
+                  "steps": ["Choisir un canal dédié au groupe général.", "Pour chaque volet, mettre le moteur en mode ajout via sa commande individuelle.", "Valider l'ajout sur le canal groupe de la télécommande centralisée.", "Tester le groupe après chaque ajout pour vérifier que seul le bon volet a été ajouté.", "Faire un test final montée, stop et descente sur tous les volets."],
+                  "notes": ["Procéder volet par volet évite d'ajouter involontairement un moteur au mauvais groupe."],
+                  "photos": [],
+                  "documents": [],
+                  "videos": []
+                }
+              ]
+            },
+            {
+              "name": "Somfy Situo 5 io / Nina io centralisée",
+              "procedures": [
+                {
+                  "title": "Ajouter un moteur io à une commande centralisée",
+                  "duration": "5 min",
+                  "difficulty": "Moyenne",
+                  "tools": ["Télécommande io existante", "Commande centralisée io"],
+                  "requirements": ["Moteur io appairé localement", "Clé système cohérente", "Volet alimenté"],
+                  "steps": ["Vérifier que le volet fonctionne avec sa commande locale io.", "Mettre la commande locale en mode transfert ou ajout de clé selon l'installation.", "Lancer l'ajout depuis la commande centralisée io.", "Sélectionner ou nommer le volet.", "Tester la commande et le retour d'information si disponible."],
+                  "notes": ["En io, les problèmes viennent souvent d'une clé système différente ou d'un équipement déjà rattaché à une autre installation."],
+                  "photos": [],
+                  "documents": ["Ajouter ici le PDF officiel Somfy Situo/Nina io si disponible"],
+                  "videos": []
+                },
+                {
+                  "title": "Créer un groupe pièce ou étage en io",
+                  "duration": "6 min",
+                  "difficulty": "Facile",
+                  "tools": ["Commande centralisée io ou application TaHoma"],
+                  "requirements": ["Tous les volets io déjà ajoutés", "Noms de pièces définis"],
+                  "steps": ["Ouvrir la gestion des groupes ou pièces.", "Créer un groupe par pièce, façade ou étage.", "Ajouter les volets concernés au groupe.", "Tester montée, stop, descente et position favorite.", "Corriger les noms pour faciliter les futures interventions."],
+                  "notes": ["Préférer des groupes simples : Rez-de-chaussée, Étage, Façade sud, Tous volets."],
+                  "photos": [],
+                  "documents": [],
+                  "videos": []
+                }
+              ]
+            }
+          ]
+        }
+      ]
     },
     {
+      "id": "faac",
       "name": "FAAC",
-      "logo": "",
-      "categories": []
+      "categories": [
+        {
+          "name": "Portails",
+          "products": [
+            {
+              "name": "FAAC 740 / 741",
+              "procedures": [
+                {
+                  "title": "Apprentissage portail coulissant",
+                  "duration": "12 min",
+                  "difficulty": "Avancée",
+                  "tools": ["Télécommande FAAC", "Multimètre", "Clé de déverrouillage"],
+                  "requirements": ["Portail libre", "Crémaillère alignée", "Fins de course réglées"],
+                  "steps": ["Déverrouiller et contrôler le coulissement manuel.", "Vérifier fins de course ouverture et fermeture.", "Contrôler les sécurités raccordées.", "Lancer l'apprentissage depuis la carte électronique.", "Tester ouverture totale, fermeture et arrêt sur sécurité."],
+                  "notes": ["Un portail dur ou une crémaillère mal réglée déclenche des défauts moteur."],
+                  "photos": [],
+                  "documents": ["Ajouter ici le PDF officiel FAAC 740/741 si disponible"],
+                  "videos": []
+                },
+                {
+                  "title": "Mémorisation télécommande XT2 / XT4",
+                  "duration": "3 min",
+                  "difficulty": "Facile",
+                  "tools": ["Télécommande FAAC", "Accès récepteur"],
+                  "requirements": ["Récepteur alimenté", "Canal disponible"],
+                  "steps": ["Ouvrir le coffret et localiser le récepteur radio.", "Appuyer sur le bouton du canal à mémoriser.", "Appuyer sur la touche de la télécommande.", "Attendre la confirmation visuelle.", "Tester la commande à distance raisonnable."],
+                  "notes": ["Identifier la fréquence et le codage avant remplacement d'une télécommande."],
+                  "photos": [],
+                  "documents": [],
+                  "videos": []
+                }
+              ]
+            },
+            {
+              "name": "FAAC 391",
+              "procedures": [
+                {
+                  "title": "Mise en service portail battant",
+                  "duration": "15 min",
+                  "difficulty": "Avancée",
+                  "tools": ["Tournevis", "Multimètre", "Télécommande"],
+                  "requirements": ["Vantaux équilibrés", "Butées mécaniques", "Photocellules opérationnelles"],
+                  "steps": ["Contrôler les cotes de pose et la liberté des vantaux.", "Vérifier le câblage moteur 1 et moteur 2.", "Configurer la logique de fonctionnement.", "Lancer l'apprentissage de course.", "Tester ouverture piétonne, automatique et sécurités."],
+                  "notes": ["Toujours tester la force et l'arrêt obstacle après apprentissage."],
+                  "photos": [],
+                  "documents": ["Ajouter ici le PDF officiel FAAC 391 si disponible"],
+                  "videos": []
+                }
+              ]
+            },
+            {
+              "name": "FAAC 414",
+              "procedures": [
+                {
+                  "title": "Contrôle vérins battants",
+                  "duration": "10 min",
+                  "difficulty": "Moyenne",
+                  "tools": ["Multimètre", "Clé de déverrouillage"],
+                  "requirements": ["Accès aux vérins", "Portail sans point dur"],
+                  "steps": ["Déverrouiller chaque vérin et tester les vantaux manuellement.", "Contrôler les condensateurs si moteur 230 V.", "Vérifier les câbles et borniers moteur.", "Tester ouverture et fermeture séparément si la carte le permet.", "Contrôler les ralentissements et butées."],
+                  "notes": ["Un condensateur fatigué provoque souvent un moteur lent ou qui grogne."],
+                  "photos": [],
+                  "documents": ["Ajouter ici le PDF officiel FAAC 414 si disponible"],
+                  "videos": []
+                }
+              ]
+            },
+            {
+              "name": "Cartes E024S / E045S",
+              "procedures": [
+                {
+                  "title": "Diagnostic défaut sécurité",
+                  "duration": "8 min",
+                  "difficulty": "Moyenne",
+                  "tools": ["Multimètre", "Schéma de câblage"],
+                  "requirements": ["Alimentation coupable accessible", "Connaissance des entrées de sécurité"],
+                  "steps": ["Lire les voyants ou codes défaut de la carte.", "Contrôler les photocellules et le STOP.", "Vérifier les ponts uniquement si autorisés par la configuration.", "Tester une commande pas-à-pas.", "Remettre la configuration de sécurité conforme avant livraison."],
+                  "notes": ["Ne jamais laisser une sécurité neutralisée sur une installation en service."],
+                  "photos": [],
+                  "documents": ["Ajouter ici les PDF officiels FAAC E024S/E045S si disponibles"],
+                  "videos": []
+                }
+              ]
+            },
+            {
+              "name": "FAAC C720 / C721",
+              "procedures": [
+                {
+                  "title": "Apprentissage coulissant basse tension",
+                  "duration": "12 min",
+                  "difficulty": "Avancée",
+                  "tools": ["Télécommande FAAC", "Clé de déverrouillage", "Multimètre"],
+                  "requirements": ["Portail libre", "Encodeur et fins de course contrôlés", "Sécurités raccordées"],
+                  "steps": ["Déverrouiller et contrôler le coulissement manuel.", "Vérifier la crémaillère et la position moteur.", "Contrôler les dispositifs de sécurité.", "Lancer l'apprentissage de course sur la carte.", "Tester ralentissements, ouverture piétonne et arrêt obstacle."],
+                  "notes": ["Les versions basse tension sont sensibles aux points durs et à l'état batterie si secours présent."],
+                  "photos": [],
+                  "documents": ["Ajouter ici le PDF officiel FAAC C720/C721 si disponible"],
+                  "videos": []
+                }
+              ]
+            },
+            {
+              "name": "FAAC 746 / 844",
+              "procedures": [
+                {
+                  "title": "Diagnostic motoréducteur coulissant collectif",
+                  "duration": "15 min",
+                  "difficulty": "Avancée",
+                  "tools": ["Multimètre", "Pince ampèremétrique", "Clé de déverrouillage"],
+                  "requirements": ["Portail lourd sécurisé", "Accès armoire", "Fins de course repérés"],
+                  "steps": ["Tester le coulissement manuel sans moteur.", "Contrôler rail, galets, crémaillère et butées.", "Vérifier condensateur, alimentation et sortie moteur selon modèle.", "Contrôler fins de course ouverture/fermeture.", "Tester commande locale, radio et sécurités.", "Mesurer l'intensité si le moteur force ou disjoncte."],
+                  "notes": ["Sur portail collectif, consigner la zone et respecter les sécurités avant essai."],
+                  "photos": [],
+                  "documents": ["Ajouter ici les PDF officiels FAAC 746/844 si disponibles"],
+                  "videos": []
+                }
+              ]
+            },
+            {
+              "name": "FAAC S418 / S450H",
+              "procedures": [
+                {
+                  "title": "Mise en service vérins battants FAAC",
+                  "duration": "15 min",
+                  "difficulty": "Avancée",
+                  "tools": ["Multimètre", "Télécommande", "Clé de déverrouillage"],
+                  "requirements": ["Cotes de pose conformes", "Butées mécaniques", "Vantaux libres"],
+                  "steps": ["Contrôler manuellement chaque vantail.", "Vérifier les fixations avant/arrière des vérins.", "Contrôler le câblage moteur et encodeur si présent.", "Configurer la centrale selon le type moteur.", "Lancer l'apprentissage puis tester ralentissements et force.", "Valider photocellules, STOP et ouverture piétonne."],
+                  "notes": ["Les moteurs battants ne compensent pas une mauvaise géométrie ou un portail voilé."],
+                  "photos": [],
+                  "documents": ["Ajouter ici les PDF officiels FAAC S418/S450H si disponibles"],
+                  "videos": []
+                }
+              ]
+            },
+            {
+              "name": "FAAC 770N / moteurs enterrés",
+              "procedures": [
+                {
+                  "title": "Contrôle moteur enterré battant",
+                  "duration": "15 min",
+                  "difficulty": "Avancée",
+                  "tools": ["Multimètre", "Clés", "Pompe ou chiffon"],
+                  "requirements": ["Caisson accessible", "Vantail sécurisé", "Alimentation coupée avant ouverture"],
+                  "steps": ["Couper l'alimentation puis ouvrir le caisson.", "Vérifier eau, boue, corrosion et état des câbles.", "Contrôler le déverrouillage manuel.", "Tester le vantail sans effort mécanique.", "Remettre sous tension et contrôler la sortie moteur depuis la carte.", "Relancer l'apprentissage uniquement après assainissement mécanique."],
+                  "notes": ["L'eau dans le caisson est une cause récurrente de pannes sur moteurs enterrés."],
+                  "photos": [],
+                  "documents": ["Ajouter ici le PDF officiel FAAC 770N si disponible"],
+                  "videos": []
+                }
+              ]
+            },
+            {
+              "name": "Clavier FAAC XKP W / XK10",
+              "procedures": [
+                {
+                  "title": "Ajout code utilisateur portail",
+                  "duration": "6 min",
+                  "difficulty": "Moyenne",
+                  "tools": ["Code maître", "Notice de programmation", "Télécommande de test"],
+                  "requirements": ["Clavier alimenté ou pile OK", "Récepteur ou centrale compatible", "Code maître connu"],
+                  "steps": ["Identifier si le clavier pilote un récepteur radio ou une entrée filaire.", "Entrer en programmation avec le code maître.", "Créer ou modifier le code utilisateur.", "Associer le canal au portail ou au relais souhaité.", "Tester le code, puis tester l'effacement d'un code si demandé."],
+                  "notes": ["Remplacer les codes simples ou connus et supprimer les anciens utilisateurs lors d'un changement de propriétaire."],
+                  "photos": [],
+                  "documents": ["Ajouter ici le PDF officiel FAAC clavier XKP/XK10 si disponible"],
+                  "videos": []
+                }
+              ]
+            },
+            {
+              "name": "Récepteurs RP / XF / Decoder FAAC",
+              "procedures": [
+                {
+                  "title": "Diagnostic radio et mémoire télécommandes",
+                  "duration": "7 min",
+                  "difficulty": "Moyenne",
+                  "tools": ["Télécommande compatible", "Multimètre", "Accès récepteur"],
+                  "requirements": ["Fréquence identifiée", "Récepteur alimenté", "Antenne raccordée"],
+                  "steps": ["Identifier la famille radio FAAC utilisée.", "Contrôler alimentation et antenne du récepteur.", "Tester une télécommande connue fonctionnelle.", "Effacer ou ajouter un canal selon besoin.", "Contrôler la portée après fermeture du coffret."],
+                  "notes": ["Une portée faible vient souvent d'une antenne coupée, enfermée ou mal positionnée."],
+                  "photos": [],
+                  "documents": ["Ajouter ici les PDF officiels FAAC récepteurs si disponibles"],
+                  "videos": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Volets roulants",
+          "products": [
+            {
+              "name": "FAAC TM45 / TM58 filaire",
+              "procedures": [
+                {
+                  "title": "Diagnostic moteur tubulaire filaire",
+                  "duration": "8 min",
+                  "difficulty": "Moyenne",
+                  "tools": ["Multimètre", "Inverseur filaire", "Tournevis isolé"],
+                  "requirements": ["Volet mécaniquement libre", "Accès à l'inverseur", "Alimentation sécurisée"],
+                  "steps": ["Couper l'alimentation avant ouverture de la commande.", "Contrôler le serrage des conducteurs montée, descente, neutre et terre.", "Remettre sous tension et mesurer la phase en sortie montée puis descente.", "Tester le moteur sans insister si le tablier force.", "Contrôler coulisses, attaches et verrous avant de conclure à un moteur HS."],
+                  "notes": ["Un inverseur défectueux, un neutre coupé ou un tablier bloqué peut donner les mêmes symptômes qu'un moteur en panne."],
+                  "photos": [],
+                  "documents": ["Ajouter ici le PDF officiel FAAC TM45/TM58 si disponible"],
+                  "videos": []
+                },
+                {
+                  "title": "Réglage fins de course mécaniques",
+                  "duration": "8 min",
+                  "difficulty": "Moyenne",
+                  "tools": ["Tige ou tournevis de réglage", "Inverseur filaire"],
+                  "requirements": ["Accès à la tête moteur", "Sens montée/descente identifié", "Tablier libre"],
+                  "steps": ["Identifier les réglages de fin de course haute et basse sur la tête moteur.", "Commander le volet vers la position à corriger.", "Ajuster par petits quarts de tour dans le sens nécessaire.", "Tester l'arrêt après chaque correction.", "Faire un cycle complet pour confirmer que le moteur ne force pas en butée."],
+                  "notes": ["Procéder progressivement : un réglage trop long peut mettre le tablier en contrainte."],
+                  "photos": [],
+                  "documents": [],
+                  "videos": []
+                }
+              ]
+            },
+            {
+              "name": "FAAC TM45 ER / moteur radio",
+              "procedures": [
+                {
+                  "title": "Association télécommande volet roulant",
+                  "duration": "5 min",
+                  "difficulty": "Moyenne",
+                  "tools": ["Télécommande FAAC compatible", "Accès alimentation"],
+                  "requirements": ["Moteur alimenté", "Télécommande compatible", "Un seul volet en apprentissage si possible"],
+                  "steps": ["Isoler le volet concerné pour éviter une mémorisation sur plusieurs moteurs.", "Mettre le moteur en mode apprentissage selon sa génération.", "Appuyer sur la touche de programmation de la télécommande.", "Tester montée, stop et descente.", "Régler ou vérifier les fins de course après association."],
+                  "notes": ["Identifier la fréquence et la famille radio avant de remplacer une télécommande."],
+                  "photos": [],
+                  "documents": ["Ajouter ici le PDF officiel FAAC TM45 ER si disponible"],
+                  "videos": []
+                },
+                {
+                  "title": "Réinitialisation radio contrôlée",
+                  "duration": "6 min",
+                  "difficulty": "Moyenne",
+                  "tools": ["Accès alimentation", "Télécommande compatible"],
+                  "requirements": ["Volet identifié", "Procédure constructeur disponible si possible", "Client informé de la perte des commandes mémorisées"],
+                  "steps": ["Confirmer que la panne n'est pas due à la pile ou à l'alimentation.", "Isoler électriquement le moteur concerné.", "Effectuer la séquence de remise en apprentissage adaptée au moteur.", "Mémoriser la télécommande principale.", "Tester toutes les commandes et reprogrammer les commandes secondaires."],
+                  "notes": ["Éviter les réinitialisations globales quand plusieurs volets partagent la même ligne d'alimentation."],
+                  "photos": [],
+                  "documents": [],
+                  "videos": []
+                }
+              ]
+            },
+            {
+              "name": "Récepteur volet FAAC XR / RP volet",
+              "procedures": [
+                {
+                  "title": "Contrôle récepteur radio pour volet",
+                  "duration": "7 min",
+                  "difficulty": "Moyenne",
+                  "tools": ["Multimètre", "Télécommande FAAC", "Tournevis isolé"],
+                  "requirements": ["Récepteur alimenté", "Moteur filaire raccordé", "Antenne ou portée radio contrôlée"],
+                  "steps": ["Couper l'alimentation avant contrôle du câblage.", "Vérifier l'arrivée secteur et les sorties montée/descente du récepteur.", "Tester une commande locale si présente.", "Mémoriser une télécommande compatible sur un canal libre.", "Tester la portée radio et repositionner l'antenne si nécessaire."],
+                  "notes": ["Un récepteur peut être alimenté mais ne plus commuter une sortie montée ou descente."],
+                  "photos": [],
+                  "documents": ["Ajouter ici le PDF officiel FAAC récepteur volet si disponible"],
+                  "videos": []
+                }
+              ]
+            },
+            {
+              "name": "Commande murale volet FAAC",
+              "procedures": [
+                {
+                  "title": "Remplacement commande murale volet",
+                  "duration": "6 min",
+                  "difficulty": "Facile",
+                  "tools": ["Tournevis isolé", "Multimètre", "Commande compatible"],
+                  "requirements": ["Alimentation coupée", "Repérage des fils avant dépose", "Commande adaptée au moteur"],
+                  "steps": ["Couper l'alimentation au disjoncteur.", "Photographier et repérer les fils de l'ancienne commande.", "Contrôler commun, montée et descente.", "Raccorder la nouvelle commande selon le repérage.", "Remettre sous tension et tester montée, stop et descente."],
+                  "notes": ["Ne jamais alimenter simultanément montée et descente : utiliser une commande prévue pour volet roulant."],
+                  "photos": [],
+                  "documents": ["Ajouter ici le PDF officiel FAAC commande murale volet si disponible"],
+                  "videos": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Barrières",
+          "products": [
+            {
+              "name": "FAAC B614",
+              "procedures": [
+                {
+                  "title": "Apprentissage barrière levante",
+                  "duration": "12 min",
+                  "difficulty": "Avancée",
+                  "tools": ["Télécommande", "Clés capot", "Multimètre"],
+                  "requirements": ["Lisse équilibrée", "Zone sécurisée", "Ressort adapté"],
+                  "steps": ["Contrôler l'équilibrage manuel de la lisse.", "Vérifier fins de course et encodeur.", "Lancer l'apprentissage selon la carte.", "Tester ouverture, fermeture et inversion sur sécurité.", "Contrôler le déverrouillage manuel."],
+                  "notes": ["Une lisse mal équilibrée use prématurément le réducteur."],
+                  "photos": [],
+                  "documents": ["Ajouter ici le PDF officiel FAAC B614 si disponible"],
+                  "videos": []
+                }
+              ]
+            },
+            {
+              "name": "FAAC B680H",
+              "procedures": [
+                {
+                  "title": "Diagnostic hydraulique et sécurité",
+                  "duration": "15 min",
+                  "difficulty": "Avancée",
+                  "tools": ["Multimètre", "Clés", "Télécommande"],
+                  "requirements": ["Accès sécurisé", "Lisse stable"],
+                  "steps": ["Contrôler l'état mécanique de la lisse.", "Vérifier alimentation et voyants de carte.", "Tester les sécurités de fermeture.", "Contrôler le comportement hydraulique en ouverture et fermeture.", "Reprendre les réglages uniquement si l'installation est mécaniquement saine."],
+                  "notes": ["Toute intervention hydraulique doit respecter les prescriptions constructeur."],
+                  "photos": [],
+                  "documents": ["Ajouter ici le PDF officiel FAAC B680H si disponible"],
+                  "videos": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Portes de garage",
+          "products": [
+            {
+              "name": "FAAC D600 / D700HS",
+              "procedures": [
+                {
+                  "title": "Programmation course porte sectionnelle",
+                  "duration": "10 min",
+                  "difficulty": "Moyenne",
+                  "tools": ["Télécommande", "Escabeau sécurisé"],
+                  "requirements": ["Porte équilibrée", "Rail aligné", "Butées contrôlées"],
+                  "steps": ["Déverrouiller et tester la porte manuellement.", "Réembrayer l'entraînement.", "Lancer l'apprentissage de course.", "Contrôler la fermeture complète sans écrasement.", "Mémoriser les télécommandes et tester les sécurités."],
+                  "notes": ["Une porte déséquilibrée provoque des arrêts et efforts excessifs."],
+                  "photos": [],
+                  "documents": ["Ajouter ici le PDF officiel FAAC D600/D700HS si disponible"],
+                  "videos": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Modes d'emploi télécommandes VR",
+          "products": [
+            {
+              "name": "FAAC télécommande multi-canaux volet",
+              "procedures": [
+                {
+                  "title": "Associer un volet FAAC à une télécommande centralisée",
+                  "duration": "5 min",
+                  "difficulty": "Moyenne",
+                  "tools": ["Télécommande FAAC compatible", "Accès récepteur ou moteur radio"],
+                  "requirements": ["Moteur ou récepteur volet alimenté", "Canal libre", "Famille radio compatible"],
+                  "steps": ["Sélectionner le canal à utiliser pour le volet.", "Mettre le moteur radio ou le récepteur volet en mode mémorisation.", "Envoyer l'ordre d'apprentissage depuis la télécommande centralisée.", "Tester montée, stop et descente.", "Répéter sur les autres canaux en notant chaque affectation."],
+                  "notes": ["Identifier la fréquence et le type de codage avant de remplacer ou ajouter une télécommande FAAC."],
+                  "photos": [],
+                  "documents": ["Ajouter ici le PDF officiel FAAC télécommande volet si disponible"],
+                  "videos": []
+                },
+                {
+                  "title": "Créer une commande générale FAAC volets roulants",
+                  "duration": "8 min",
+                  "difficulty": "Moyenne",
+                  "tools": ["Télécommande multi-canaux", "Commandes individuelles ou accès récepteurs"],
+                  "requirements": ["Volets testés individuellement", "Canal général choisi"],
+                  "steps": ["Choisir un canal pour le groupe général.", "Mettre le premier récepteur ou moteur en apprentissage.", "Mémoriser le canal général.", "Tester que le volet répond au groupe.", "Recommencer volet par volet jusqu'au groupe complet."],
+                  "notes": ["Éviter de mettre plusieurs récepteurs en apprentissage en même temps sauf si l'objectif est un groupe global."],
+                  "photos": [],
+                  "documents": [],
+                  "videos": []
+                }
+              ]
+            },
+            {
+              "name": "FAAC récepteur volet + commande centralisée",
+              "procedures": [
+                {
+                  "title": "Remplacer une télécommande centralisée perdue",
+                  "duration": "7 min",
+                  "difficulty": "Moyenne",
+                  "tools": ["Nouvelle télécommande compatible", "Accès récepteurs"],
+                  "requirements": ["Compatibilité validée", "Accès aux volets ou récepteurs", "Client informé de l'effacement éventuel"],
+                  "steps": ["Identifier les canaux utilisés par l'ancienne télécommande.", "Si possible, ajouter la nouvelle télécommande sans effacer la mémoire.", "Sinon effacer puis reprogrammer chaque récepteur volet.", "Tester les commandes individuelles puis les groupes.", "Étiqueter ou noter les canaux pour le client."],
+                  "notes": ["Ne pas effacer une mémoire de récepteur collectif sans connaître toutes les commandes existantes."],
+                  "photos": [],
+                  "documents": ["Ajouter ici le PDF officiel FAAC récepteur volet si disponible"],
+                  "videos": []
+                }
+              ]
+            }
+          ]
+        }
+      ]
     },
     {
+      "id": "nice",
       "name": "Nice",
-      "logo": "",
-      "categories": []
+      "categories": [
+        {
+          "name": "Portails",
+          "products": [
+            {
+              "name": "Robus 400 / 600 / 1000",
+              "procedures": [
+                {
+                  "title": "BlueBUS et apprentissage course",
+                  "duration": "12 min",
+                  "difficulty": "Avancée",
+                  "tools": ["Télécommande Nice", "Multimètre", "Clé de déverrouillage"],
+                  "requirements": ["Portail coulissant libre", "Photocellules raccordées", "Crémaillère alignée"],
+                  "steps": ["Déverrouiller et tester le coulissement.", "Contrôler le raccordement BlueBUS.", "Lancer la reconnaissance des dispositifs.", "Lancer l'apprentissage de course.", "Tester ouverture, fermeture, arrêt et photocellules."],
+                  "notes": ["Si BlueBUS ne reconnaît pas les accessoires, contrôler polarité, câbles et alignement cellules."],
+                  "photos": [],
+                  "documents": ["Ajouter ici le PDF officiel Nice Robus si disponible"],
+                  "videos": []
+                }
+              ]
+            },
+            {
+              "name": "Road 400",
+              "procedures": [
+                {
+                  "title": "Diagnostic portail coulissant domestique",
+                  "duration": "10 min",
+                  "difficulty": "Moyenne",
+                  "tools": ["Télécommande Nice", "Clé de déverrouillage"],
+                  "requirements": ["Portail accessible", "Alimentation présente"],
+                  "steps": ["Tester le portail à la main.", "Vérifier les fins de course magnétiques ou mécaniques.", "Contrôler les photocellules.", "Relancer l'apprentissage si la mécanique est saine.", "Tester plusieurs cycles."],
+                  "notes": ["Nettoyer régulièrement la zone de crémaillère et de fin de course."],
+                  "photos": [],
+                  "documents": ["Ajouter ici le PDF officiel Nice Road si disponible"],
+                  "videos": []
+                }
+              ]
+            },
+            {
+              "name": "Wingo / Toona",
+              "procedures": [
+                {
+                  "title": "Apprentissage portail battant Nice",
+                  "duration": "15 min",
+                  "difficulty": "Avancée",
+                  "tools": ["Télécommande Nice", "Tournevis", "Multimètre"],
+                  "requirements": ["Vantaux libres", "Butées mécaniques", "Sécurités en place"],
+                  "steps": ["Contrôler le mouvement manuel de chaque vantail.", "Vérifier les fixations et cotes des moteurs.", "Configurer la centrale selon deux vantaux ou un vantail.", "Reconnaître les accessoires de sécurité.", "Lancer l'apprentissage de course.", "Tester ouverture piétonne et fermeture automatique si activée."],
+                  "notes": ["Les automatismes battants dépendent fortement de la géométrie de pose."],
+                  "photos": [],
+                  "documents": ["Ajouter ici les PDF officiels Nice Wingo/Toona si disponibles"],
+                  "videos": []
+                }
+              ]
+            },
+            {
+              "name": "Télécommandes FLO / ON / ERA",
+              "procedures": [
+                {
+                  "title": "Mémorisation télécommande Nice",
+                  "duration": "3 min",
+                  "difficulty": "Facile",
+                  "tools": ["Télécommande compatible", "Accès récepteur"],
+                  "requirements": ["Récepteur alimenté", "Modèle compatible avec l'installation"],
+                  "steps": ["Identifier le type de télécommande et le récepteur.", "Mettre le récepteur en mode mémorisation.", "Appuyer sur la touche à associer.", "Attendre la confirmation.", "Tester à proximité puis à distance normale."],
+                  "notes": ["Ne pas mélanger les familles radio incompatibles."],
+                  "photos": [],
+                  "documents": ["Ajouter ici les PDF officiels Nice télécommandes si disponibles"],
+                  "videos": []
+                }
+              ]
+            },
+            {
+              "name": "Run 1500 / 1800 / 2500",
+              "procedures": [
+                {
+                  "title": "Diagnostic coulissant intensif Nice",
+                  "duration": "15 min",
+                  "difficulty": "Avancée",
+                  "tools": ["Multimètre", "Clé de déverrouillage", "Pince ampèremétrique"],
+                  "requirements": ["Portail lourd sécurisé", "Crémaillère et rail contrôlés", "Dispositifs BlueBUS identifiés"],
+                  "steps": ["Déverrouiller le moteur et contrôler tout le déplacement manuel.", "Vérifier rail, galets, crémaillère et butées.", "Contrôler reconnaissance BlueBUS et entrées de sécurité.", "Relancer l'apprentissage de course si nécessaire.", "Tester ouverture, fermeture, ralentissements et inversion obstacle.", "Contrôler la température et l'intensité si le moteur coupe."],
+                  "notes": ["Les motorisations intensives masquent parfois un défaut mécanique jusqu'à échauffement."],
+                  "photos": [],
+                  "documents": ["Ajouter ici le PDF officiel Nice Run si disponible"],
+                  "videos": []
+                }
+              ]
+            },
+            {
+              "name": "Thor / Tub coulissant",
+              "procedures": [
+                {
+                  "title": "Contrôle coulissant ancien Nice",
+                  "duration": "12 min",
+                  "difficulty": "Moyenne",
+                  "tools": ["Multimètre", "Télécommande Nice", "Clé de déverrouillage"],
+                  "requirements": ["Portail libre", "Fins de course accessibles", "Condensateur contrôlable si moteur 230 V"],
+                  "steps": ["Tester le mouvement manuel du portail.", "Contrôler fins de course et câblage moteur.", "Vérifier condensateur si le moteur grogne ou manque de couple.", "Tester une commande locale puis radio.", "Contrôler les cellules et l'entrée STOP."],
+                  "notes": ["Sur anciennes cartes, un condensateur fatigué ressemble souvent à un moteur HS."],
+                  "photos": [],
+                  "documents": ["Ajouter ici les PDF officiels Nice Thor/Tub si disponibles"],
+                  "videos": []
+                }
+              ]
+            },
+            {
+              "name": "Hyke / Hopp battant",
+              "procedures": [
+                {
+                  "title": "Apprentissage bras articulés Nice",
+                  "duration": "14 min",
+                  "difficulty": "Avancée",
+                  "tools": ["Télécommande Nice", "Multimètre", "Tournevis"],
+                  "requirements": ["Vantaux libres", "Butées mécaniques", "Bras correctement assemblés"],
+                  "steps": ["Contrôler la course manuelle de chaque vantail.", "Vérifier l'orientation et la fixation des bras.", "Reconnaître les accessoires de sécurité.", "Lancer l'apprentissage de course.", "Tester ouverture piétonne et fermeture automatique.", "Vérifier que les bras ne travaillent pas en butée mécanique excessive."],
+                  "notes": ["Un bras articulé mal positionné peut pousser en travers et déclencher la sécurité."],
+                  "photos": [],
+                  "documents": ["Ajouter ici les PDF officiels Nice Hyke/Hopp si disponibles"],
+                  "videos": []
+                }
+              ]
+            },
+            {
+              "name": "Metro / X-Metro enterré",
+              "procedures": [
+                {
+                  "title": "Dépannage moteur enterré Nice",
+                  "duration": "15 min",
+                  "difficulty": "Avancée",
+                  "tools": ["Multimètre", "Clés", "Pompe ou chiffon"],
+                  "requirements": ["Alimentation coupée avant ouverture", "Caisson accessible", "Vantail sécurisé"],
+                  "steps": ["Couper l'alimentation et ouvrir le caisson.", "Contrôler eau, graviers, corrosion et état du levier.", "Tester le déverrouillage manuel.", "Contrôler câble moteur et fins de course si présents.", "Tester la sortie carte puis relancer l'apprentissage si la mécanique est saine."],
+                  "notes": ["Assurer le drainage du caisson avant de remplacer un moteur enterré."],
+                  "photos": [],
+                  "documents": ["Ajouter ici les PDF officiels Nice Metro/X-Metro si disponibles"],
+                  "videos": []
+                }
+              ]
+            },
+            {
+              "name": "PopKit / Aria battant domestique",
+              "procedures": [
+                {
+                  "title": "Mise en service kit portail battant",
+                  "duration": "12 min",
+                  "difficulty": "Moyenne",
+                  "tools": ["Télécommande Nice", "Tournevis", "Multimètre"],
+                  "requirements": ["Portail léger et libre", "Butées présentes", "Photocellules alignées"],
+                  "steps": ["Contrôler les vantaux en manuel.", "Vérifier le câblage des moteurs et des cellules.", "Lancer la reconnaissance accessoires.", "Effectuer l'apprentissage de course.", "Tester ouverture complète, piétonne et sécurité fermeture."],
+                  "notes": ["Ces kits domestiques exigent un portail très souple mécaniquement."],
+                  "photos": [],
+                  "documents": ["Ajouter ici les PDF officiels Nice PopKit/Aria si disponibles"],
+                  "videos": []
+                }
+              ]
+            },
+            {
+              "name": "Clavier Nice EDS / EDSWG / ERA Keypad",
+              "procedures": [
+                {
+                  "title": "Programmation code clavier Nice",
+                  "duration": "6 min",
+                  "difficulty": "Moyenne",
+                  "tools": ["Code maître", "Clavier Nice", "Accès récepteur ou centrale"],
+                  "requirements": ["Pile ou alimentation OK", "Récepteur compatible", "Code maître connu"],
+                  "steps": ["Identifier si le clavier fonctionne en radio ou filaire.", "Entrer en mode programmation.", "Créer ou modifier le code utilisateur.", "Associer le canal au récepteur ou à la centrale.", "Tester l'ouverture, l'arrêt et l'éventuelle commande piétonne."],
+                  "notes": ["Supprimer les anciens codes lorsqu'un client change ou perd un badge/télécommande."],
+                  "photos": [],
+                  "documents": ["Ajouter ici les PDF officiels Nice claviers EDS/ERA si disponibles"],
+                  "videos": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Volets roulants",
+          "products": [
+            {
+              "name": "Era Mat A / Era Fit",
+              "procedures": [
+                {
+                  "title": "Réglage moteur volet Nice",
+                  "duration": "7 min",
+                  "difficulty": "Moyenne",
+                  "tools": ["Émetteur Nice", "Accès alimentation"],
+                  "requirements": ["Volet libre", "Moteur alimenté"],
+                  "steps": ["Mettre le moteur en mode programmation.", "Associer l'émetteur compatible.", "Contrôler le sens de rotation.", "Régler les fins de course haute et basse.", "Tester un cycle complet."],
+                  "notes": ["Vérifier les attaches tablier avant de modifier les fins de course."],
+                  "photos": [],
+                  "documents": ["Ajouter ici le PDF officiel Nice Era Mat/Fit si disponible"],
+                  "videos": []
+                }
+              ]
+            },
+            {
+              "name": "TT2N / TT1N récepteur volet",
+              "procedures": [
+                {
+                  "title": "Association émetteur mural ou portable",
+                  "duration": "4 min",
+                  "difficulty": "Facile",
+                  "tools": ["Émetteur Nice compatible"],
+                  "requirements": ["Récepteur alimenté", "Moteur raccordé"],
+                  "steps": ["Ouvrir l'accès au récepteur si nécessaire.", "Activer la mémorisation radio.", "Appuyer sur la touche de l'émetteur.", "Tester montée, stop et descente.", "Refermer le coffret."],
+                  "notes": ["Respecter les charges moteur admissibles du récepteur."],
+                  "photos": [],
+                  "documents": ["Ajouter ici le PDF officiel Nice TT2N/TT1N si disponible"],
+                  "videos": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Domotique",
+          "products": [
+            {
+              "name": "Yubii Home",
+              "procedures": [
+                {
+                  "title": "Ajout d'un automatisme Nice",
+                  "duration": "6 min",
+                  "difficulty": "Facile",
+                  "tools": ["Application Yubii", "Smartphone"],
+                  "requirements": ["Box connectée", "Automatisme compatible"],
+                  "steps": ["Ouvrir l'application Yubii.", "Lancer l'ajout d'équipement.", "Choisir le protocole ou l'intégration adaptée.", "Mettre l'équipement en mode association.", "Nommer l'équipement et tester la commande."],
+                  "notes": ["Vérifier la portée radio avant fixation définitive de la box."],
+                  "photos": [],
+                  "documents": ["Ajouter ici le PDF officiel Nice Yubii Home si disponible"],
+                  "videos": []
+                }
+              ]
+            },
+            {
+              "name": "BiDi-WiFi / BiDi-Shutter",
+              "procedures": [
+                {
+                  "title": "Configuration module connecté",
+                  "duration": "8 min",
+                  "difficulty": "Moyenne",
+                  "tools": ["Application Nice", "Smartphone", "Tournevis isolé"],
+                  "requirements": ["Wi-Fi disponible", "Câblage vérifié hors tension"],
+                  "steps": ["Couper l'alimentation avant intervention câblage.", "Vérifier le raccordement du module.", "Remettre sous tension.", "Lancer l'association dans l'application.", "Tester les commandes locales et à distance."],
+                  "notes": ["Le câblage secteur doit être réalisé conformément aux règles électriques."],
+                  "photos": [],
+                  "documents": ["Ajouter ici le PDF officiel Nice BiDi si disponible"],
+                  "videos": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Modes d'emploi télécommandes VR",
+          "products": [
+            {
+              "name": "Nice Era P / Era W multi-canaux",
+              "procedures": [
+                {
+                  "title": "Programmer un moteur Nice sur un canal",
+                  "duration": "5 min",
+                  "difficulty": "Moyenne",
+                  "tools": ["Émetteur Nice multi-canaux", "Commande déjà mémorisée ou accès récepteur"],
+                  "requirements": ["Moteur Nice ou récepteur TT compatible", "Canal sélectionné", "Volet alimenté"],
+                  "steps": ["Sélectionner le canal souhaité sur l'émetteur multi-canaux.", "Mettre le moteur ou récepteur en mémorisation.", "Envoyer l'ordre d'association depuis l'émetteur.", "Tester montée, stop et descente.", "Noter le volet affecté au canal."],
+                  "notes": ["Les familles Nice ne sont pas toutes compatibles entre elles : vérifier Era, Flor, NiceWay ou TT avant ajout."],
+                  "photos": [],
+                  "documents": ["Ajouter ici le PDF officiel Nice Era P/Era W si disponible"],
+                  "videos": []
+                },
+                {
+                  "title": "Créer un groupe centralisé Nice",
+                  "duration": "8 min",
+                  "difficulty": "Moyenne",
+                  "tools": ["Émetteur multi-canaux Nice", "Accès aux commandes individuelles"],
+                  "requirements": ["Chaque volet fonctionne seul", "Canal groupe choisi"],
+                  "steps": ["Choisir le canal groupe sur l'émetteur Nice.", "Ajouter successivement chaque moteur ou récepteur au canal groupe.", "Tester le groupe après chaque ajout.", "Vérifier que les canaux individuels restent fonctionnels.", "Faire un essai complet de tous les volets."],
+                  "notes": ["En dépannage, tester d'abord l'individuel : un groupe en panne peut cacher un seul volet défaillant."],
+                  "photos": [],
+                  "documents": [],
+                  "videos": []
+                }
+              ]
+            },
+            {
+              "name": "NiceWay / TT2N centralisation volet",
+              "procedures": [
+                {
+                  "title": "Associer un récepteur TT2N à une commande centralisée",
+                  "duration": "6 min",
+                  "difficulty": "Moyenne",
+                  "tools": ["Commande NiceWay ou émetteur compatible", "Accès récepteur TT2N"],
+                  "requirements": ["Récepteur alimenté", "Moteur raccordé", "Émetteur compatible"],
+                  "steps": ["Contrôler que le récepteur commande bien le moteur localement.", "Activer la mémorisation radio du récepteur.", "Sélectionner le canal ou groupe sur la commande centralisée.", "Valider l'association.", "Tester montée, stop et descente depuis la commande centralisée."],
+                  "notes": ["Un mauvais câblage montée/descente au TT2N inversera le sens de commande."],
+                  "photos": [],
+                  "documents": ["Ajouter ici le PDF officiel Nice TT2N/NiceWay si disponible"],
+                  "videos": []
+                }
+              ]
+            }
+          ]
+        }
+      ]
     },
     {
+      "id": "bubendorff",
       "name": "Bubendorff",
-      "logo": "",
-      "categories": []
+      "categories": [
+        {
+          "name": "Volets roulants",
+          "products": [
+            {
+              "name": "Moteur radio RG / R",
+              "procedures": [
+                {
+                  "title": "Appairage télécommande Bubendorff",
+                  "duration": "4 min",
+                  "difficulty": "Moyenne",
+                  "tools": ["Télécommande Bubendorff", "Accès alimentation"],
+                  "requirements": ["Référence moteur identifiée", "Volet alimenté"],
+                  "steps": ["Identifier la génération du moteur et de la télécommande.", "Isoler le volet concerné si plusieurs volets sont sur la ligne.", "Mettre le moteur en mode association selon sa génération.", "Valider la télécommande.", "Tester montée, stop et descente."],
+                  "notes": ["Les compatibilités Bubendorff varient selon année, protocole et numéro de série."],
+                  "photos": [],
+                  "documents": ["Ajouter ici le PDF officiel Bubendorff correspondant si disponible"],
+                  "videos": []
+                }
+              ]
+            },
+            {
+              "name": "Moteur ID / ID2",
+              "procedures": [
+                {
+                  "title": "Diagnostic volet qui ne démarre plus",
+                  "duration": "8 min",
+                  "difficulty": "Moyenne",
+                  "tools": ["Multimètre", "Télécommande connue fonctionnelle"],
+                  "requirements": ["Accès alimentation", "Volet non bloqué mécaniquement"],
+                  "steps": ["Contrôler la pile de la télécommande.", "Vérifier l'alimentation du volet.", "Tester la commande à proximité du volet.", "Contrôler les coulisses et le tablier.", "Si le moteur réagit par à-coups, noter les symptômes avant remplacement ou SAV."],
+                  "notes": ["Relever le numéro de série avant commande de pièces ou assistance fabricant."],
+                  "photos": [],
+                  "documents": ["Ajouter ici le PDF officiel Bubendorff ID/ID2 si disponible"],
+                  "videos": []
+                }
+              ]
+            },
+            {
+              "name": "Moteur solaire Bubendorff",
+              "procedures": [
+                {
+                  "title": "Contrôle alimentation solaire",
+                  "duration": "10 min",
+                  "difficulty": "Moyenne",
+                  "tools": ["Multimètre", "Chiffon doux"],
+                  "requirements": ["Accès sécurisé au panneau", "Luminosité suffisante"],
+                  "steps": ["Nettoyer le panneau solaire sans produit agressif.", "Contrôler l'état visuel du câble panneau/batterie.", "Tester la commande du volet.", "Vérifier la charge si un point de contrôle est accessible.", "Laisser recharger avant diagnostic moteur si batterie faible."],
+                  "notes": ["Une batterie faible peut simuler une panne moteur."],
+                  "photos": [],
+                  "documents": ["Ajouter ici le PDF officiel Bubendorff solaire si disponible"],
+                  "videos": []
+                }
+              ]
+            },
+            {
+              "name": "iDiamant with Netatmo",
+              "procedures": [
+                {
+                  "title": "Association volet connecté",
+                  "duration": "8 min",
+                  "difficulty": "Facile",
+                  "tools": ["Application iDiamant/Legrand", "Smartphone"],
+                  "requirements": ["Passerelle connectée", "Volet compatible"],
+                  "steps": ["Brancher la passerelle et vérifier la connexion.", "Ouvrir l'application compatible.", "Lancer l'ajout d'un volet Bubendorff.", "Suivre l'assistant d'association.", "Nommer le volet et tester les commandes."],
+                  "notes": ["Placer la passerelle dans une zone radio centrale."],
+                  "photos": [],
+                  "documents": ["Ajouter ici le PDF officiel iDiamant si disponible"],
+                  "videos": []
+                }
+              ]
+            },
+            {
+              "name": "Télécommande 3 boutons Bubendorff",
+              "procedures": [
+                {
+                  "title": "Remplacement et test télécommande",
+                  "duration": "5 min",
+                  "difficulty": "Facile",
+                  "tools": ["Télécommande compatible", "Pile neuve"],
+                  "requirements": ["Compatibilité vérifiée", "Volet alimenté"],
+                  "steps": ["Relever les références de l'ancienne télécommande.", "Installer une pile neuve.", "Associer la télécommande au volet selon génération.", "Tester montée, stop et descente.", "Conserver l'ancienne commande si elle contient des informations de référence."],
+                  "notes": ["Ne pas commander une télécommande sans vérifier la génération radio."],
+                  "photos": [],
+                  "documents": ["Ajouter ici le PDF officiel Bubendorff télécommande si disponible"],
+                  "videos": []
+                }
+              ]
+            },
+            {
+              "name": "Moteur filaire Bubendorff",
+              "procedures": [
+                {
+                  "title": "Diagnostic volet filaire",
+                  "duration": "8 min",
+                  "difficulty": "Moyenne",
+                  "tools": ["Multimètre", "Inverseur filaire", "Tournevis isolé"],
+                  "requirements": ["Accès à l'inverseur", "Volet mécaniquement libre", "Alimentation sécurisée"],
+                  "steps": ["Couper l'alimentation avant ouverture de l'inverseur.", "Contrôler le serrage et l'état des conducteurs.", "Remettre sous tension et mesurer la présence de phase montée/descente à la commande.", "Tester le volet en montée puis descente sans insister en cas de blocage.", "Contrôler coulisses, attaches et tablier si le moteur bourdonne."],
+                  "notes": ["Un inverseur défectueux ou un fil coupé peut être confondu avec une panne moteur."],
+                  "photos": [],
+                  "documents": ["Ajouter ici le PDF officiel Bubendorff filaire si disponible"],
+                  "videos": []
+                }
+              ]
+            },
+            {
+              "name": "Moteur radio hybride Bubendorff",
+              "procedures": [
+                {
+                  "title": "Contrôle commande radio et alimentation",
+                  "duration": "8 min",
+                  "difficulty": "Moyenne",
+                  "tools": ["Télécommande compatible", "Multimètre", "Pile neuve"],
+                  "requirements": ["Référence moteur relevée", "Volet alimenté", "Télécommande compatible"],
+                  "steps": ["Relever la référence et la génération du moteur.", "Remplacer ou contrôler la pile de la télécommande.", "Tester la commande à proximité du volet.", "Contrôler l'alimentation secteur du volet.", "Relancer l'association uniquement si la compatibilité est confirmée."],
+                  "notes": ["Chez Bubendorff, la compatibilité dépend fortement du numéro de série et de la génération radio."],
+                  "photos": [],
+                  "documents": ["Ajouter ici le PDF officiel Bubendorff radio hybride si disponible"],
+                  "videos": []
+                }
+              ]
+            },
+            {
+              "name": "Centralisation Bubendorff",
+              "procedures": [
+                {
+                  "title": "Dépannage commande groupée",
+                  "duration": "10 min",
+                  "difficulty": "Moyenne",
+                  "tools": ["Télécommande générale", "Télécommande individuelle", "Multimètre"],
+                  "requirements": ["Commandes individuelles disponibles", "Volets alimentés", "Groupes identifiés"],
+                  "steps": ["Tester chaque volet avec sa commande individuelle.", "Identifier les volets absents de la commande groupée.", "Contrôler l'alimentation des volets non répondants.", "Relancer l'association de groupe selon la génération compatible.", "Tester le groupe complet puis chaque volet séparément."],
+                  "notes": ["Ne pas réinitialiser tout un groupe avant d'avoir identifié le volet réellement en défaut."],
+                  "photos": [],
+                  "documents": ["Ajouter ici le PDF officiel Bubendorff centralisation si disponible"],
+                  "videos": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Modes d'emploi télécommandes VR",
+          "products": [
+            {
+              "name": "Bubendorff télécommande générale / multi-volets",
+              "procedures": [
+                {
+                  "title": "Associer un volet à une commande générale",
+                  "duration": "6 min",
+                  "difficulty": "Moyenne",
+                  "tools": ["Télécommande générale Bubendorff", "Télécommande individuelle", "Références moteur"],
+                  "requirements": ["Compatibilité génération vérifiée", "Volet alimenté", "Commande individuelle fonctionnelle"],
+                  "steps": ["Identifier la génération du moteur et de la télécommande.", "Tester le volet avec sa commande individuelle.", "Mettre le volet en mode association selon sa génération.", "Valider l'ajout sur la télécommande générale.", "Tester le volet seul puis dans le groupe."],
+                  "notes": ["Chez Bubendorff, toujours relever numéro de série et génération avant ajout : toutes les télécommandes ne sont pas compatibles."],
+                  "photos": [],
+                  "documents": ["Ajouter ici le PDF officiel Bubendorff télécommande générale si disponible"],
+                  "videos": []
+                },
+                {
+                  "title": "Dépanner un volet absent du groupe général",
+                  "duration": "8 min",
+                  "difficulty": "Moyenne",
+                  "tools": ["Télécommande générale", "Télécommande individuelle", "Multimètre"],
+                  "requirements": ["Groupe existant", "Volet identifié", "Accès alimentation"],
+                  "steps": ["Tester le volet avec sa commande individuelle.", "Si le volet ne répond pas individuellement, diagnostiquer pile, alimentation et tablier.", "Si l'individuel fonctionne, relancer l'association au groupe.", "Tester le groupe complet.", "Noter le résultat et la référence du moteur."],
+                  "notes": ["Ne pas réinitialiser tous les volets si un seul volet est absent du groupe."],
+                  "photos": [],
+                  "documents": [],
+                  "videos": []
+                }
+              ]
+            },
+            {
+              "name": "Bubendorff iDiamant / centralisation connectée",
+              "procedures": [
+                {
+                  "title": "Créer un groupe volets dans iDiamant",
+                  "duration": "7 min",
+                  "difficulty": "Facile",
+                  "tools": ["Application compatible iDiamant", "Smartphone"],
+                  "requirements": ["Passerelle connectée", "Volets compatibles déjà ajoutés"],
+                  "steps": ["Ouvrir l'application de pilotage.", "Vérifier que chaque volet répond individuellement.", "Créer un groupe par pièce, étage ou façade.", "Ajouter les volets concernés.", "Tester ouverture, stop et fermeture du groupe."],
+                  "notes": ["Placer la passerelle au centre de l'installation améliore la stabilité radio."],
+                  "photos": [],
+                  "documents": ["Ajouter ici le PDF officiel Bubendorff iDiamant si disponible"],
+                  "videos": []
+                }
+              ]
+            }
+          ]
+        }
+      ]
     },
     {
+      "id": "came",
       "name": "CAME",
-      "logo": "",
-      "categories": []
+      "categories": [
+        {
+          "name": "Portails",
+          "products": [
+            {
+              "name": "BX / BXV coulissant",
+              "procedures": [
+                {
+                  "title": "Mise en service portail coulissant CAME",
+                  "duration": "12 min",
+                  "difficulty": "Avancée",
+                  "tools": ["Télécommande CAME", "Clé de déverrouillage", "Multimètre"],
+                  "requirements": ["Portail libre", "Crémaillère alignée", "Fins de course réglées"],
+                  "steps": ["Déverrouiller et tester le portail manuellement.", "Contrôler les fins de course.", "Vérifier les accessoires de sécurité.", "Configurer la logique de la carte.", "Lancer ou vérifier l'apprentissage de course.", "Tester plusieurs cycles complets."],
+                  "notes": ["Un voyant sécurité actif bloque souvent la fermeture."],
+                  "photos": [],
+                  "documents": ["Ajouter ici le PDF officiel CAME BX/BXV si disponible"],
+                  "videos": []
+                }
+              ]
+            },
+            {
+              "name": "FROG enterré",
+              "procedures": [
+                {
+                  "title": "Contrôle moteur enterré",
+                  "duration": "15 min",
+                  "difficulty": "Avancée",
+                  "tools": ["Clés", "Multimètre", "Pompe ou chiffon si présence d'eau"],
+                  "requirements": ["Caisson accessible", "Vantail sécurisé"],
+                  "steps": ["Couper l'alimentation avant ouverture du caisson.", "Contrôler l'absence d'eau stagnante ou de corrosion excessive.", "Vérifier le déverrouillage manuel.", "Contrôler les câbles moteur.", "Tester les mouvements après remise sous tension et sécurisation."],
+                  "notes": ["Les caissons enterrés doivent rester drainés pour éviter les pannes répétées."],
+                  "photos": [],
+                  "documents": ["Ajouter ici le PDF officiel CAME FROG si disponible"],
+                  "videos": []
+                }
+              ]
+            },
+            {
+              "name": "KRONO / ATI battant",
+              "procedures": [
+                {
+                  "title": "Réglage portail battant CAME",
+                  "duration": "12 min",
+                  "difficulty": "Moyenne",
+                  "tools": ["Tournevis", "Télécommande", "Multimètre"],
+                  "requirements": ["Butées mécaniques", "Vantaux libres"],
+                  "steps": ["Tester les vantaux en manuel.", "Contrôler les fixations moteur.", "Vérifier le câblage moteur et condensateurs si présents.", "Régler temps de travail et ralentissements selon carte.", "Tester sécurités et fermeture automatique."],
+                  "notes": ["Des temps de travail trop longs font forcer les vérins en butée."],
+                  "photos": [],
+                  "documents": ["Ajouter ici les PDF officiels CAME KRONO/ATI si disponibles"],
+                  "videos": []
+                }
+              ]
+            },
+            {
+              "name": "Cartes ZBX7 / ZLJ24",
+              "procedures": [
+                {
+                  "title": "Lecture défauts et accessoires",
+                  "duration": "8 min",
+                  "difficulty": "Moyenne",
+                  "tools": ["Multimètre", "Schéma de câblage"],
+                  "requirements": ["Accès carte", "Installation sécurisée"],
+                  "steps": ["Observer les voyants de commande et sécurité.", "Contrôler les entrées STOP, photocellules et fins de course.", "Tester une commande locale.", "Contrôler la sortie moteur selon demande.", "Remettre les accessoires de sécurité en fonctionnement avant livraison."],
+                  "notes": ["Ne pas shunter durablement une sécurité pour contourner une panne."],
+                  "photos": [],
+                  "documents": ["Ajouter ici les PDF officiels CAME ZBX7/ZLJ24 si disponibles"],
+                  "videos": []
+                }
+              ]
+            },
+            {
+              "name": "Télécommandes TOP / TAM / Twin",
+              "procedures": [
+                {
+                  "title": "Mémorisation télécommande CAME",
+                  "duration": "3 min",
+                  "difficulty": "Facile",
+                  "tools": ["Télécommande compatible", "Accès récepteur"],
+                  "requirements": ["Fréquence compatible", "Récepteur alimenté"],
+                  "steps": ["Identifier la famille radio de l'installation.", "Mettre le récepteur ou la carte en apprentissage radio.", "Appuyer sur la touche de la télécommande.", "Attendre la confirmation.", "Tester la portée et la fonction associée."],
+                  "notes": ["Certaines télécommandes CAME nécessitent une copie depuis une télécommande maître ou un récepteur compatible."],
+                  "photos": [],
+                  "documents": ["Ajouter ici les PDF officiels CAME télécommandes si disponibles"],
+                  "videos": []
+                }
+              ]
+            },
+            {
+              "name": "BKV / BK coulissant collectif",
+              "procedures": [
+                {
+                  "title": "Diagnostic portail coulissant intensif CAME",
+                  "duration": "15 min",
+                  "difficulty": "Avancée",
+                  "tools": ["Multimètre", "Pince ampèremétrique", "Clé de déverrouillage"],
+                  "requirements": ["Portail sécurisé", "Rail et crémaillère contrôlés", "Sécurités identifiées"],
+                  "steps": ["Déverrouiller et tester le déplacement complet du portail.", "Contrôler rail, galets, crémaillère et fins de course.", "Lire les voyants ou codes défaut de la carte.", "Tester les entrées STOP, photocellules et bords sensibles.", "Contrôler la sortie moteur et l'intensité en mouvement.", "Relancer l'apprentissage ou reprendre les paramètres après correction mécanique."],
+                  "notes": ["Sur portail collectif, consigner la zone et tester toutes les sécurités avant remise en service."],
+                  "photos": [],
+                  "documents": ["Ajouter ici les PDF officiels CAME BKV/BK si disponibles"],
+                  "videos": []
+                }
+              ]
+            },
+            {
+              "name": "FAST / FERNI bras articulés",
+              "procedures": [
+                {
+                  "title": "Réglage moteur battant à bras CAME",
+                  "duration": "12 min",
+                  "difficulty": "Moyenne",
+                  "tools": ["Multimètre", "Tournevis", "Télécommande CAME"],
+                  "requirements": ["Vantaux libres", "Bras correctement positionnés", "Butées présentes"],
+                  "steps": ["Tester chaque vantail en manuel.", "Contrôler fixation pilier, bras et patte portail.", "Vérifier condensateur et câblage moteur si version 230 V.", "Régler temps de travail, ralentissements et force sur la carte.", "Tester photocellules, STOP et fermeture automatique."],
+                  "notes": ["Un bras mal aligné force en fin de course et fatigue le moteur."],
+                  "photos": [],
+                  "documents": ["Ajouter ici les PDF officiels CAME FAST/FERNI si disponibles"],
+                  "videos": []
+                }
+              ]
+            },
+            {
+              "name": "AXI / ATS vérins battants",
+              "procedures": [
+                {
+                  "title": "Mise en service vérins battants CAME",
+                  "duration": "15 min",
+                  "difficulty": "Avancée",
+                  "tools": ["Multimètre", "Télécommande CAME", "Clé de déverrouillage"],
+                  "requirements": ["Cotes de pose conformes", "Butées ouverture/fermeture", "Sécurités raccordées"],
+                  "steps": ["Déverrouiller les vérins et contrôler les vantaux.", "Vérifier câblage moteur, encodeur ou fins de course selon modèle.", "Configurer la carte pour le type de moteur.", "Lancer l'apprentissage de course.", "Tester ouverture totale, piétonne et sécurités.", "Ajuster ralentissements et force sans dépasser les limites de sécurité."],
+                  "notes": ["Les vérins longs nécessitent des cotes de pose précises pour ne pas travailler en contrainte."],
+                  "photos": [],
+                  "documents": ["Ajouter ici les PDF officiels CAME AXI/ATS si disponibles"],
+                  "videos": []
+                }
+              ]
+            },
+            {
+              "name": "Amico / Stylo battant domestique",
+              "procedures": [
+                {
+                  "title": "Diagnostic kit battant résidentiel",
+                  "duration": "10 min",
+                  "difficulty": "Moyenne",
+                  "tools": ["Télécommande CAME", "Multimètre", "Tournevis"],
+                  "requirements": ["Portail léger", "Butées présentes", "Photocellules alignées"],
+                  "steps": ["Contrôler les vantaux en manuel.", "Vérifier les fixations moteur et bras/vérins.", "Contrôler les voyants sécurité de la carte.", "Tester la commande pas-à-pas.", "Reprendre l'apprentissage ou les temps de travail si la mécanique est correcte."],
+                  "notes": ["Sur les kits résidentiels, une cellule légèrement désalignée bloque souvent la fermeture."],
+                  "photos": [],
+                  "documents": ["Ajouter ici les PDF officiels CAME Amico/Stylo si disponibles"],
+                  "videos": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Interphones",
+          "products": [
+            {
+              "name": "BPT X1 / XIP",
+              "procedures": [
+                {
+                  "title": "Diagnostic poste intérieur muet",
+                  "duration": "8 min",
+                  "difficulty": "Moyenne",
+                  "tools": ["Multimètre", "Tournevis"],
+                  "requirements": ["Accès alimentation", "Schéma ou repérage du bus"],
+                  "steps": ["Contrôler l'alimentation du système.", "Vérifier le câblage bus au poste intérieur.", "Tester l'appel depuis la platine de rue.", "Contrôler le volume et la fonction silence.", "Comparer avec un autre poste si disponible."],
+                  "notes": ["Noter la topologie du bus avant toute déconnexion."],
+                  "photos": [],
+                  "documents": ["Ajouter ici le PDF officiel CAME/BPT X1-XIP si disponible"],
+                  "videos": []
+                }
+              ]
+            },
+            {
+              "name": "Platine vidéo CAME",
+              "procedures": [
+                {
+                  "title": "Contrôle ouverture gâche depuis platine",
+                  "duration": "7 min",
+                  "difficulty": "Moyenne",
+                  "tools": ["Multimètre", "Tournevis"],
+                  "requirements": ["Accès platine", "Gâche ou ventouse accessible"],
+                  "steps": ["Tester l'appel et l'audio/vidéo.", "Commander l'ouverture depuis le poste.", "Mesurer la tension sur la sortie gâche.", "Contrôler le câblage et l'alimentation de verrouillage.", "Tester la gâche séparément si nécessaire."],
+                  "notes": ["Une gâche bloquée mécaniquement peut sembler être une panne électronique."],
+                  "photos": [],
+                  "documents": ["Ajouter ici le PDF officiel CAME platine vidéo si disponible"],
+                  "videos": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Contrôle d'accès",
+          "products": [
+            {
+              "name": "Clavier S5000 / SEL",
+              "procedures": [
+                {
+                  "title": "Ajout ou modification code utilisateur",
+                  "duration": "5 min",
+                  "difficulty": "Moyenne",
+                  "tools": ["Code maître", "Notice de programmation"],
+                  "requirements": ["Code maître connu", "Accès clavier"],
+                  "steps": ["Entrer en mode programmation avec le code maître.", "Choisir l'emplacement utilisateur.", "Saisir le nouveau code.", "Valider et sortir de programmation.", "Tester le code avec l'accès sécurisé."],
+                  "notes": ["Ne jamais laisser un code maître par défaut sur site."],
+                  "photos": [],
+                  "documents": ["Ajouter ici le PDF officiel CAME clavier si disponible"],
+                  "videos": []
+                }
+              ]
+            },
+            {
+              "name": "Lecteur badge CAME",
+              "procedures": [
+                {
+                  "title": "Enrôlement badge utilisateur",
+                  "duration": "4 min",
+                  "difficulty": "Facile",
+                  "tools": ["Badge compatible", "Accès gestion"],
+                  "requirements": ["Mode administrateur disponible", "Lecteur alimenté"],
+                  "steps": ["Entrer en mode ajout badge.", "Présenter le badge au lecteur.", "Attendre la confirmation sonore ou visuelle.", "Nommer ou noter l'utilisateur si gestion externe.", "Tester l'ouverture avec le badge."],
+                  "notes": ["Supprimer les badges perdus pour garder l'installation sécurisée."],
+                  "photos": [],
+                  "documents": ["Ajouter ici le PDF officiel CAME lecteur badge si disponible"],
+                  "videos": []
+                }
+              ]
+            },
+            {
+              "name": "Clavier radio CAME SELT / S5000",
+              "procedures": [
+                {
+                  "title": "Programmation clavier radio portail",
+                  "duration": "6 min",
+                  "difficulty": "Moyenne",
+                  "tools": ["Code maître", "Accès récepteur", "Télécommande de test"],
+                  "requirements": ["Pile ou alimentation OK", "Récepteur compatible", "Code maître connu"],
+                  "steps": ["Identifier la famille radio et le canal utilisé.", "Entrer en programmation clavier.", "Créer le code utilisateur.", "Mettre le récepteur ou la carte CAME en apprentissage.", "Valider le canal du clavier puis tester l'ouverture."],
+                  "notes": ["Distinguer clavier radio et clavier filaire avant dépannage : les défauts ne se cherchent pas au même endroit."],
+                  "photos": [],
+                  "documents": ["Ajouter ici le PDF officiel CAME clavier radio si disponible"],
+                  "videos": []
+                }
+              ]
+            },
+            {
+              "name": "Récepteurs AF43S / AF868 / RBE",
+              "procedures": [
+                {
+                  "title": "Diagnostic réception radio CAME",
+                  "duration": "7 min",
+                  "difficulty": "Moyenne",
+                  "tools": ["Télécommande compatible", "Multimètre", "Antenne de test"],
+                  "requirements": ["Fréquence identifiée", "Récepteur alimenté", "Antenne raccordée"],
+                  "steps": ["Identifier le récepteur et la fréquence.", "Contrôler alimentation, embrochage et antenne.", "Tester une télécommande connue fonctionnelle.", "Mémoriser un canal libre si nécessaire.", "Vérifier la portée portail fermé et coffret refermé."],
+                  "notes": ["Les pannes radio sont souvent liées à une antenne absente, oxydée ou enfermée dans le coffret."],
+                  "photos": [],
+                  "documents": ["Ajouter ici les PDF officiels CAME récepteurs si disponibles"],
+                  "videos": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Modes d'emploi télécommandes VR",
+          "products": [
+            {
+              "name": "CAME télécommande centralisée volets/stores",
+              "procedures": [
+                {
+                  "title": "Associer un volet à une commande CAME centralisée",
+                  "duration": "6 min",
+                  "difficulty": "Moyenne",
+                  "tools": ["Télécommande CAME compatible", "Accès récepteur ou module volet"],
+                  "requirements": ["Installation volet équipée d'un récepteur compatible", "Canal libre", "Alimentation vérifiée"],
+                  "steps": ["Identifier le récepteur ou module qui pilote le volet.", "Sélectionner le canal souhaité sur la télécommande centralisée.", "Mettre le récepteur en mémorisation radio.", "Valider l'association depuis la télécommande.", "Tester montée, stop et descente."],
+                  "notes": ["Si l'installation CAME ne comporte pas de module volet dédié, la télécommande portail ne pilotera pas directement le moteur tubulaire."],
+                  "photos": [],
+                  "documents": ["Ajouter ici le PDF officiel CAME volet/store si disponible"],
+                  "videos": []
+                },
+                {
+                  "title": "Créer une commande groupée volets CAME",
+                  "duration": "8 min",
+                  "difficulty": "Moyenne",
+                  "tools": ["Télécommande multi-canaux CAME", "Accès aux récepteurs"],
+                  "requirements": ["Chaque volet fonctionne individuellement", "Récepteurs compatibles", "Canal groupe choisi"],
+                  "steps": ["Choisir le canal réservé au groupe.", "Mettre le premier récepteur volet en apprentissage.", "Mémoriser le canal groupe.", "Répéter l'opération volet par volet.", "Tester le groupe puis les commandes individuelles."],
+                  "notes": ["Documenter les canaux : volet cuisine, volet salon, tous volets, façade, etc."],
+                  "photos": [],
+                  "documents": [],
+                  "videos": []
+                }
+              ]
+            },
+            {
+              "name": "CAME récepteur radio volet",
+              "procedures": [
+                {
+                  "title": "Diagnostic commande centralisée qui ne répond plus",
+                  "duration": "7 min",
+                  "difficulty": "Moyenne",
+                  "tools": ["Multimètre", "Télécommande compatible", "Antenne de test"],
+                  "requirements": ["Récepteur accessible", "Alimentation présente", "Moteur volet fonctionnel localement"],
+                  "steps": ["Tester le volet depuis sa commande locale si elle existe.", "Contrôler l'alimentation du récepteur radio.", "Vérifier l'antenne et la portée.", "Tester une télécommande connue fonctionnelle.", "Reprogrammer le canal si la mémoire a été perdue."],
+                  "notes": ["Une perte de portée peut venir d'une antenne enfermée dans le coffre ou d'une pile faible."],
+                  "photos": [],
+                  "documents": ["Ajouter ici le PDF officiel CAME récepteur volet si disponible"],
+                  "videos": []
+                }
+              ]
+            }
+          ]
+        }
+      ]
     }
   ]
 }

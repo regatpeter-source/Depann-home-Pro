@@ -1,0 +1,638 @@
+/* ==========================
+   Depann'Home Pro v1.0 Foundation
+========================== */
+
+:root{
+    --primary:#003B73;
+    --secondary:#0A5C36;
+    --danger:#b42318;
+    --bg:#edf2f7;
+    --surface:#ffffff;
+    --text:#1f2937;
+    --muted:#64748b;
+    --border:#e5e7eb;
+    --shadow:0 8px 18px rgba(0,0,0,.08);
+    --shadow-hover:0 14px 30px rgba(0,0,0,.12);
+    --radius:18px;
+}
+
+*{
+    margin:0;
+    padding:0;
+    box-sizing:border-box;
+}
+
+body{
+    font-family:Segoe UI,Arial,sans-serif;
+    background:linear-gradient(180deg,#f7fafc 0%,var(--bg) 45%,#e7edf5 100%);
+    color:var(--text);
+    min-height:100vh;
+    line-height:1.5;
+}
+
+button,
+input,
+select,
+textarea{
+    font:inherit;
+}
+
+textarea{
+    resize:vertical;
+}
+
+/* ==========================
+   HEADER
+========================== */
+
+.topbar{
+    background:var(--surface);
+    padding:18px 25px;
+    box-shadow:0 3px 10px rgba(0,0,0,.08);
+}
+
+.header-content{
+    max-width:1200px;
+    margin:auto;
+    display:flex;
+    align-items:center;
+    gap:22px;
+}
+
+.logo{
+    width:min(360px,52vw);
+    height:120px;
+    object-fit:contain;
+}
+
+.topbar h1{
+    color:var(--primary);
+    font-size:30px;
+    font-weight:700;
+}
+
+.topbar p{
+    color:#666;
+    margin-top:4px;
+}
+
+/* ==========================
+   FIL D'ARIANE
+========================== */
+
+#breadcrumb{
+    max-width:1200px;
+    margin:auto;
+    padding:15px 25px;
+    color:#666;
+    font-size:15px;
+}
+
+/* ==========================
+   CONTENU
+========================== */
+
+#app{
+    max-width:1200px;
+    margin:auto;
+    padding:25px;
+    padding-bottom:110px;
+}
+
+#search{
+    width:100%;
+    padding:18px;
+    border:none;
+    border-radius:16px;
+    font-size:17px;
+    box-shadow:0 3px 10px rgba(0,0,0,.08);
+    outline:none;
+}
+
+#search:focus{
+    box-shadow:0 0 0 3px rgba(10,92,54,.18),0 3px 10px rgba(0,0,0,.08);
+}
+
+.quick-actions{
+    display:flex;
+    gap:15px;
+    margin:25px 0;
+}
+
+.quick-actions button{
+    flex:1;
+    background:var(--primary);
+    color:white;
+    border:none;
+    border-radius:14px;
+    padding:16px;
+    cursor:pointer;
+    font-size:16px;
+    font-weight:600;
+    transition:.2s;
+}
+
+.quick-actions button:hover{
+    background:var(--secondary);
+}
+
+.section-title{
+    color:var(--primary);
+    margin-bottom:20px;
+}
+
+/* ==========================
+   CARTES
+========================== */
+
+.cards-grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fill,minmax(220px,1fr));
+    gap:20px;
+}
+
+.detail-layout{
+    display:grid;
+    grid-template-columns:1fr;
+    gap:20px;
+}
+
+.brand-card{
+    background:var(--surface);
+    border-radius:var(--radius);
+    padding:30px;
+    text-align:center;
+    cursor:pointer;
+    box-shadow:var(--shadow);
+    transition:.25s;
+    border:1px solid rgba(0,59,115,.06);
+    min-height:165px;
+    display:flex;
+    flex-direction:column;
+    justify-content:center;
+}
+
+.brand-card:hover,
+.brand-card:focus{
+    transform:translateY(-5px);
+    box-shadow:var(--shadow-hover);
+    outline:none;
+}
+
+.card-icon{
+    font-size:48px;
+    line-height:1;
+}
+
+.brand-card h2{
+    margin-top:15px;
+    color:var(--primary);
+    font-size:22px;
+}
+
+.card-subtitle{
+    color:var(--muted);
+    margin-top:8px;
+}
+
+.full-card{
+    min-height:0;
+    text-align:left;
+    cursor:default;
+    align-items:stretch;
+}
+
+.full-card:hover,
+.full-card:focus{
+    transform:none;
+}
+
+.empty-state{
+    grid-column:1/-1;
+    background:var(--surface);
+    border:1px dashed #9fb4ca;
+    border-radius:var(--radius);
+    padding:28px;
+    color:var(--muted);
+    text-align:center;
+}
+
+/* ==========================
+   FICHES PROCEDURE
+========================== */
+
+.procedure-card{
+    gap:18px;
+}
+
+.procedure-header{
+    display:flex;
+    justify-content:space-between;
+    gap:18px;
+    align-items:flex-start;
+}
+
+.eyebrow{
+    color:var(--secondary);
+    font-size:13px;
+    font-weight:700;
+    letter-spacing:.04em;
+    text-transform:uppercase;
+}
+
+.procedure-meta{
+    display:flex;
+    flex-wrap:wrap;
+    gap:10px;
+    margin-top:18px;
+}
+
+.procedure-meta span{
+    background:#eef6ff;
+    color:var(--primary);
+    border-radius:999px;
+    padding:9px 13px;
+    font-weight:600;
+}
+
+.procedure-section{
+    border-top:1px solid var(--border);
+    padding-top:18px;
+    margin-top:18px;
+}
+
+.procedure-section h3{
+    color:var(--primary);
+}
+
+.brand-card ol,
+.brand-card ul{
+    margin-top:15px;
+    padding-left:22px;
+    text-align:left;
+}
+
+.brand-card p{
+    margin-top:10px;
+}
+
+.muted{
+    color:var(--muted);
+}
+
+.secondary-button{
+    background:var(--secondary);
+    color:white;
+    border:none;
+    border-radius:12px;
+    padding:12px 16px;
+    cursor:pointer;
+    font-size:15px;
+    font-weight:700;
+    box-shadow:0 6px 14px rgba(10,92,54,.18);
+}
+
+.secondary-button:hover{
+    background:#084c2d;
+}
+
+.danger-button{
+    background:var(--danger);
+    justify-self:start;
+}
+
+.danger-button:hover{
+    background:#8f1d14;
+}
+
+/* ==========================
+   CLIENTS
+========================== */
+
+.client-panel{
+    background:var(--surface);
+    border:1px solid rgba(0,59,115,.08);
+    border-radius:var(--radius);
+    padding:24px;
+    box-shadow:var(--shadow);
+}
+
+.client-toolbar-actions{
+    display:flex;
+    gap:12px;
+    margin-top:18px;
+    align-items:center;
+}
+
+.client-search{
+    flex:1;
+    border:1px solid var(--border);
+    border-radius:12px;
+    padding:13px 14px;
+    outline:none;
+}
+
+.client-search:focus{
+    border-color:var(--secondary);
+    box-shadow:0 0 0 3px rgba(10,92,54,.12);
+}
+
+.client-form{
+    display:grid;
+    gap:18px;
+}
+
+.form-heading{
+    display:flex;
+    align-items:flex-start;
+    justify-content:space-between;
+    gap:16px;
+}
+
+.form-grid{
+    display:grid;
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:16px;
+}
+
+.form-grid label{
+    display:grid;
+    gap:7px;
+    color:var(--primary);
+    font-weight:700;
+}
+
+.form-grid input,
+.form-grid select,
+.form-grid textarea{
+    width:100%;
+    border:1px solid var(--border);
+    border-radius:12px;
+    padding:12px 13px;
+    color:var(--text);
+    outline:none;
+    font-weight:400;
+}
+
+.form-grid input:focus,
+.form-grid select:focus,
+.form-grid textarea:focus{
+    border-color:var(--secondary);
+    box-shadow:0 0 0 3px rgba(10,92,54,.12);
+}
+
+.form-wide{
+    grid-column:1/-1;
+}
+
+.form-actions{
+    display:flex;
+    justify-content:flex-end;
+}
+
+.client-list{
+    display:grid;
+    grid-template-columns:repeat(auto-fill,minmax(280px,1fr));
+    gap:18px;
+}
+
+.client-card{
+    background:var(--surface);
+    border:1px solid rgba(0,59,115,.08);
+    border-radius:var(--radius);
+    padding:22px;
+    box-shadow:var(--shadow);
+    display:grid;
+    gap:18px;
+}
+
+.client-card h3{
+    color:var(--primary);
+    font-size:21px;
+    margin-top:4px;
+}
+
+.client-card-actions{
+    display:flex;
+    flex-wrap:wrap;
+    gap:10px;
+}
+
+.client-card-actions .secondary-button{
+    padding:10px 12px;
+    font-size:14px;
+}
+
+.client-files-zone{
+    border:1px dashed #b8c7d8;
+    border-radius:16px;
+    padding:18px;
+    background:#f8fbff;
+    display:grid;
+    gap:16px;
+}
+
+.file-count-badge{
+    align-self:flex-start;
+    background:#eef6ff;
+    color:var(--primary);
+    border-radius:999px;
+    padding:8px 12px;
+    font-weight:700;
+}
+
+.file-input-grid{
+    display:grid;
+    grid-template-columns:repeat(3,minmax(0,1fr));
+    gap:14px;
+}
+
+.file-input-grid label{
+    display:grid;
+    gap:7px;
+    color:var(--primary);
+    font-weight:700;
+}
+
+.file-input-grid input,
+.file-input-grid select{
+    width:100%;
+    border:1px solid var(--border);
+    border-radius:12px;
+    padding:12px 13px;
+    color:var(--text);
+    outline:none;
+    background:white;
+    font-weight:400;
+}
+
+.photo-capture-label{
+    background:#effaf3;
+    border-radius:14px;
+    padding:12px;
+    border:1px solid rgba(10,92,54,.18);
+}
+
+.small-note{
+    font-size:13px;
+}
+
+.attachment-list{
+    display:grid;
+    gap:12px;
+}
+
+.attachment-card{
+    background:white;
+    border:1px solid var(--border);
+    border-radius:14px;
+    padding:14px;
+    display:grid;
+    grid-template-columns:auto 1fr auto;
+    justify-content:space-between;
+    gap:14px;
+    align-items:flex-start;
+}
+
+.attachment-preview{
+    width:82px;
+    height:82px;
+    border-radius:12px;
+    object-fit:cover;
+    border:1px solid var(--border);
+    background:#eef6ff;
+}
+
+.attachment-card h4{
+    color:var(--primary);
+    word-break:break-word;
+}
+
+.attachment-actions{
+    display:flex;
+    gap:8px;
+    flex-wrap:wrap;
+    justify-content:flex-end;
+}
+
+.attachment-actions a{
+    text-decoration:none;
+    display:inline-flex;
+    align-items:center;
+}
+
+/* ==========================
+   FOOTER
+========================== */
+
+footer{
+    position:fixed;
+    bottom:0;
+    left:0;
+    right:0;
+    height:75px;
+    background:var(--surface);
+    display:flex;
+    justify-content:space-around;
+    align-items:center;
+    box-shadow:0 -3px 12px rgba(0,0,0,.08);
+    z-index:10;
+}
+
+.nav-button{
+    background:none;
+    border:none;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    cursor:pointer;
+    color:#666;
+    font-size:22px;
+    padding:8px 10px;
+    border-radius:12px;
+}
+
+.nav-button:hover{
+    color:var(--primary);
+    background:#eef6ff;
+}
+
+.nav-button span{
+    font-size:12px;
+    margin-top:4px;
+}
+
+.active{
+    color:var(--secondary);
+}
+
+/* ==========================
+   RESPONSIVE
+========================== */
+
+@media(max-width:700px){
+    .header-content{
+        flex-direction:column;
+        text-align:center;
+    }
+
+    .logo{
+        width:min(320px,86vw);
+        height:120px;
+    }
+
+    .quick-actions{
+        flex-direction:column;
+    }
+
+    .client-toolbar-actions,
+    .form-heading{
+        flex-direction:column;
+        align-items:stretch;
+    }
+
+    .form-grid,
+    .file-input-grid{
+        grid-template-columns:1fr;
+    }
+
+    .attachment-card{
+        grid-template-columns:1fr;
+    }
+
+    .attachment-actions{
+        justify-content:stretch;
+        width:100%;
+    }
+
+    .attachment-actions .secondary-button{
+        flex:1;
+        justify-content:center;
+    }
+
+    .form-actions{
+        justify-content:stretch;
+    }
+
+    .form-actions .secondary-button,
+    .client-toolbar-actions .secondary-button{
+        width:100%;
+    }
+
+    .nav-button{
+        font-size:20px;
+        padding:6px 7px;
+    }
+
+    .nav-button span{
+        font-size:11px;
+    }
+
+    .cards-grid{
+        grid-template-columns:1fr;
+    }
+
+    .procedure-header{
+        flex-direction:column;
+    }
+}
