@@ -1,8 +1,8 @@
-import { loadDatabase } from "./data.js";
-import { initializeNavigation } from "./navigation.js";
-import { renderError } from "./ui.js";
-import { getSettings } from "./storage.js";
-import { FONT_OPTIONS } from "./config.js";
+import { loadDatabase } from "./data.js?v=44";
+import { initializeNavigation } from "./navigation.js?v=44";
+import { renderError } from "./ui.js?v=44";
+import { getSettings } from "./storage.js?v=44";
+import { FONT_OPTIONS } from "./config.js?v=44";
 
 window.addEventListener("DOMContentLoaded", init);
 
@@ -60,8 +60,8 @@ function applyLanguage() {
 
         document.querySelectorAll('footer .nav-button span').forEach((span, idx) => {
             const texts = lang === 'en'
-                ? ['Home','Search','Clients','Favorites','Settings']
-                : ['Accueil','Recherche','Clients','Favoris','Paramètres'];
+                ? ['Home','Search','Photo','Clients','Favorites','Settings']
+                : ['Accueil','Recherche','Photo','Clients','Favoris','Paramètres'];
             span.textContent = texts[idx] || span.textContent;
         });
     } catch {

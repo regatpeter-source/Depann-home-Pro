@@ -1,5 +1,5 @@
-import { DATA_VERSION } from "./config.js";
-import { slugify } from "./utils.js";
+import { DATA_VERSION } from "./config.js?v=44";
+import { slugify } from "./utils.js?v=44";
 
 export async function loadDatabase() {
     const response = await fetch(`data/database.json?v=${DATA_VERSION}`, { cache: "no-store" });
@@ -17,12 +17,24 @@ export function normalizeDatabase(rawDatabase) {
         (brand.categories || []).filter(category => category.id && Array.isArray(category.categories))
     );
 
+    const prioritizedBrands = [...sourceBrands, ...embeddedBrands].map((brand, brandIndex) => ({
+        __order: brandIndex,
+        id: brand.id || slugify(brand.name || `marque-${brandIndex + 1}`),
+        name: brand.name || `Marque ${brandIndex + 1}`,
+        categories: normalizeCategories((brand.categories || []).filter(category => !category.id || !Array.isArray(category.categories)))
+    }));
+
+    prioritizedBrands.sort((a, b) => {
+        const aIsServistores = a.id === "servistores";
+        const bIsServistores = b.id === "servistores";
+
+        if (aIsServistores && !bIsServistores) return -1;
+        if (!aIsServistores && bIsServistores) return 1;
+        return a.__order - b.__order;
+    });
+
     return {
-        brands: [...sourceBrands, ...embeddedBrands].map((brand, brandIndex) => ({
-            id: brand.id || slugify(brand.name || `marque-${brandIndex + 1}`),
-            name: brand.name || `Marque ${brandIndex + 1}`,
-            categories: normalizeCategories((brand.categories || []).filter(category => !category.id || !Array.isArray(category.categories)))
-        }))
+        brands: prioritizedBrands.map(({ __order, ...brand }) => brand)
     };
 }
 

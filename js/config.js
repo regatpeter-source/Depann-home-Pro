@@ -1,5 +1,5 @@
 export const APP_VERSION = "1.0 Foundation";
-export const DATA_VERSION = "2026-07-15-06";
+export const DATA_VERSION = "2026-07-15-30";
 
 export const STORAGE_KEYS = {
     favorites: "depannHomePro:favorites",
@@ -37,6 +37,7 @@ export const SETTINGS_KEY = "depannHomePro:settings";
 export const ROUTES = {
     home: "home",
     search: "search",
+    photo: "photo",
     clients: "clients",
     favorites: "favorites",
     history: "history",

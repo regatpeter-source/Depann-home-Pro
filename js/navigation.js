@@ -1,8 +1,9 @@
-import { ROUTES, STORAGE_KEYS, APP_VERSION, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js";
-import { renderClients } from "./clients.js";
-import { countProcedures } from "./data.js";
-import { getSearchResults } from "./search.js";
-import { state, resetSelection } from "./state.js";
+import { ROUTES, STORAGE_KEYS, APP_VERSION, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=44";
+import { renderClients } from "./clients.js?v=44";
+import { renderPhotoRecognition } from "./photo-recognition.js?v=44";
+import { countProcedures } from "./data.js?v=44";
+import { getSearchResults } from "./search.js?v=44";
+import { state, resetSelection } from "./state.js?v=44";
 import {
     addToHistory,
     clearHistory,
@@ -11,10 +12,12 @@ import {
     toggleFavorite,
     getSettings,
     saveSettings
-} from "./storage.js";
-import { escapeHtml, formatList } from "./utils.js";
+} from "./storage.js?v=44";
+import { escapeHtml, formatList } from "./utils.js?v=44";
 import {
     appendListSection,
+    appendTechnicalNotice,
+    appendWebPhotoGuides,
     appendResources,
     clearSearch,
     createBackCard,
@@ -25,7 +28,7 @@ import {
     getContainer,
     renderError,
     setPage
-} from "./ui.js";
+} from "./ui.js?v=44";
 
 let database = { brands: [] };
 
@@ -38,6 +41,7 @@ export function initializeNavigation(loadedDatabase) {
 function bindEvents() {
     const search = document.getElementById("search");
     const clientsBtn = document.getElementById("clientsBtn");
+    const photoBtn = document.getElementById("photoBtn");
     const favoritesBtn = document.getElementById("favoritesBtn");
     const historyBtn = document.getElementById("historyBtn");
 
@@ -52,7 +56,8 @@ function bindEvents() {
         renderSearchResults(value);
     });
 
-    clientsBtn.addEventListener("click", renderClients);
+    clientsBtn.addEventListener("click", () => renderClients({ database, navigateToRef }));
+    photoBtn?.addEventListener("click", () => renderPhotoRecognition(database, navigateToRef));
     favoritesBtn.addEventListener("click", renderFavorites);
     historyBtn.addEventListener("click", renderHistory);
 
@@ -62,7 +67,8 @@ function bindEvents() {
 
             if (nav === ROUTES.home) renderBrands();
             if (nav === ROUTES.search) focusSearch();
-            if (nav === ROUTES.clients) renderClients();
+            if (nav === ROUTES.photo) renderPhotoRecognition(database, navigateToRef);
+            if (nav === ROUTES.clients) renderClients({ database, navigateToRef });
             if (nav === ROUTES.favorites) renderFavorites();
             if (nav === ROUTES.settings) renderSettings();
         });
@@ -208,9 +214,11 @@ function renderProcedure() {
         </div>
     `;
 
+    appendTechnicalNotice(card, state.brand, state.category, state.product, state.procedure);
     appendListSection(card, "⚠️ Prérequis", state.procedure.requirements, "ul", "Aucun prérequis renseigné.");
     appendListSection(card, "📋 Étapes", state.procedure.steps, "ol", "Aucune étape renseignée.");
     appendListSection(card, "💡 Remarques", state.procedure.notes, "ul");
+    appendWebPhotoGuides(card, state.brand, state.category, state.product, state.procedure);
     appendResources(card, state.procedure);
 
     container.appendChild(card);

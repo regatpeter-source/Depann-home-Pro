@@ -1,4 +1,4 @@
-import { normalizeText } from "./utils.js";
+import { normalizeText } from "./utils.js?v=44";
 
 export function getSearchResults(database, query) {
     const results = [];

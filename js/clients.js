@@ -1,13 +1,14 @@
-import { ROUTES, STORAGE_KEYS } from "./config.js";
-import { resetSelection } from "./state.js";
-import { escapeHtml, normalizeText } from "./utils.js";
+import { ROUTES, STORAGE_KEYS } from "./config.js?v=44";
+import { resetSelection } from "./state.js?v=44";
+import { escapeHtml, normalizeText } from "./utils.js?v=44";
+import { analyzeEquipmentPhoto, isPhotoRecognitionConfident } from "./photo-recognition.js?v=44";
 import {
     clearSearch,
     createButton,
     createInfo,
     getContainer,
     setPage
-} from "./ui.js";
+} from "./ui.js?v=44";
 
 const EMPTY_CLIENT = {
     id: null,
@@ -24,8 +25,10 @@ const EMPTY_CLIENT = {
 
 const ATTACHMENT_TYPES = ["Devis", "Facture", "Photo", "Autre"];
 const MAX_ATTACHMENT_SIZE = 4 * 1024 * 1024;
+let clientScreenOptions = {};
 
 export function renderClients(options = {}) {
+    clientScreenOptions = { ...clientScreenOptions, ...options };
     clearSearch();
     resetSelection("all");
     setPage("Clients", ROUTES.clients, "detail");
@@ -36,7 +39,7 @@ export function renderClients(options = {}) {
     const selectedClient = options.selectedId ? getClientById(options.selectedId) : null;
 
     container.appendChild(renderClientToolbar(clients));
-    container.appendChild(renderClientForm(editingClient || EMPTY_CLIENT));
+    container.appendChild(renderClientForm(editingClient || EMPTY_CLIENT, clientScreenOptions));
 
     if (selectedClient) {
         container.appendChild(renderClientDetail(selectedClient));
@@ -69,7 +72,7 @@ function renderClientToolbar(clients) {
     return panel;
 }
 
-function renderClientForm(client) {
+function renderClientForm(client, options = {}) {
     const isEdit = Boolean(client.id);
     const panel = document.createElement("section");
     panel.className = "client-panel";
@@ -162,6 +165,12 @@ function renderClientForm(client) {
                     </label>
                 </div>
 
+                <section class="procedure-section photo-recognition-inline">
+                    <h3>📷 Détection visuelle</h3>
+                    <div name="photoRecognitionStatus" class="muted">Prenez une photo pour détecter automatiquement la marque ou le dossier probable.</div>
+                    <div name="photoRecognitionResult"></div>
+                </section>
+
                 <p class="muted small-note">Les fichiers sont stockés localement sur cet appareil. Taille conseillée : moins de 4 Mo par fichier.</p>
             </section>
 
@@ -176,13 +185,68 @@ function renderClientForm(client) {
         const nextClient = await readClientForm(event.currentTarget, client);
 
         if (saveClient(nextClient)) {
-            renderClients({ selectedId: nextClient.id });
+            renderClients({ selectedId: nextClient.id, ...clientScreenOptions });
         }
     });
 
-    panel.querySelector("#cancelEditBtn")?.addEventListener("click", () => renderClients());
+    panel.querySelector("#cancelEditBtn")?.addEventListener("click", () => renderClients(clientScreenOptions));
+
+    const cameraInput = panel.querySelector('input[name="cameraPhoto"]');
+    const recognitionStatus = panel.querySelector('[name="photoRecognitionStatus"]');
+    const recognitionResult = panel.querySelector('[name="photoRecognitionResult"]');
+
+    cameraInput?.addEventListener("change", async event => {
+        const file = event.target.files?.[0] || null;
+
+        if (!file) {
+            recognitionStatus.textContent = "Aucune photo sélectionnée.";
+            recognitionResult.innerHTML = "";
+            return;
+        }
+
+        recognitionStatus.textContent = `Analyse de ${file.name}...`;
+        recognitionResult.innerHTML = "";
+
+        try {
+            const analysis = await analyzeEquipmentPhoto(file, options.database || { brands: [] });
+            renderClientPhotoRecognition(analysis, recognitionStatus, recognitionResult, options.navigateToRef);
+        } catch (error) {
+            recognitionStatus.textContent = error.message || "Reconnaissance indisponible.";
+        }
+    });
 
     return panel;
+}
+
+function renderClientPhotoRecognition(analysis, statusNode, resultNode, navigateToRef) {
+    const { predictions, query, results } = analysis;
+    const predictionsText = predictions.length
+        ? predictions.map(item => `${item.label} (${Math.round(item.score * 100)}%)`).join(" · ")
+        : "Aucune détection IA disponible";
+
+    statusNode.innerHTML = `
+        <strong>Requête :</strong> ${escapeHtml(query)}<br>
+        <strong>Indices :</strong> ${escapeHtml(predictionsText)}
+    `;
+
+    if (!results.length) {
+        resultNode.innerHTML = "<p class=\"muted\">Aucun dossier n’a été trouvé pour cette photo.</p>";
+        return;
+    }
+
+    const best = results[0];
+    resultNode.innerHTML = `
+        <div class="photo-recognition-best">
+            <p class="eyebrow">Meilleure correspondance</p>
+            <h4>${escapeHtml(best.title)}</h4>
+            <p class="muted">${escapeHtml(best.subtitle)}</p>
+        </div>
+    `;
+
+    if (isPhotoRecognitionConfident(predictions, best) && typeof navigateToRef === "function") {
+        statusNode.textContent = "Bonne correspondance trouvée, ouverture du dossier...";
+        window.setTimeout(() => navigateToRef(best.ref), 650);
+    }
 }
 
 function renderClientList(clients) {
