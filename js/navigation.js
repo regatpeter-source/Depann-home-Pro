@@ -1,24 +1,16 @@
 import { ROUTES, STORAGE_KEYS, APP_VERSION, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=44";
 import { renderClients } from "./clients.js?v=44";
 import { renderPhotoRecognition } from "./photo-recognition.js?v=44";
-import { countProcedures } from "./data.js?v=44";
 import { getSearchResults } from "./search.js?v=44";
 import { state, resetSelection } from "./state.js?v=44";
 import {
-    addToHistory,
     clearHistory,
     getStoredRefs,
-    isFavorite,
-    toggleFavorite,
     getSettings,
     saveSettings
 } from "./storage.js?v=44";
-import { escapeHtml, formatList } from "./utils.js?v=44";
+import { escapeHtml } from "./utils.js?v=44";
 import {
-    appendListSection,
-    appendTechnicalNotice,
-    appendWebPhotoGuides,
-    appendResources,
     clearSearch,
     createBackCard,
     createButton,
@@ -78,155 +70,115 @@ function bindEvents() {
 export function renderBrands() {
     clearSearch();
     resetSelection("all");
-    setPage("Marques", ROUTES.home);
+    setPage("Gammes", ROUTES.home);
 
     const container = getContainer();
 
     if (!database.brands.length) {
-        container.appendChild(createInfo("Aucune marque disponible pour le moment."));
+        container.appendChild(createInfo("Aucune gamme disponible pour le moment."));
         return;
     }
 
     database.brands.forEach(brand => {
         container.appendChild(
             createCard(
-                "🏷️",
+                "",
                 brand.name,
-                `${brand.categories.length} catégorie(s)`,
+                `${Array.isArray(brand.categories) ? brand.categories.length : 0} gamme(s)`,
                 () => {
                     state.brand = brand;
-                    renderCategories();
+                    renderBrandCategories();
                 }
             )
         );
     });
 }
 
-function renderCategories() {
+function renderBrandCategories() {
     resetSelection("brand");
     setPage(state.brand.name, ROUTES.home);
 
     const container = getContainer();
-    container.appendChild(createBackCard("Retour aux marques", renderBrands));
+    container.appendChild(createBackCard("Retour aux gammes", renderBrands));
+    const categories = Array.isArray(state.brand?.categories) ? state.brand.categories : [];
 
-    if (!state.brand.categories.length) {
-        container.appendChild(createInfo("Aucune catégorie disponible pour cette marque."));
+    if (!categories.length) {
+        container.appendChild(createInfo("Aucune marque disponible pour le moment. Le catalogue est prêt à être enrichi."));
         return;
     }
 
-    state.brand.categories.forEach(category => {
+    categories.forEach(category => {
         container.appendChild(
             createCard(
-                "📂",
+                "",
                 category.name,
-                `${category.products.length} produit(s)`,
+                "Gamme",
                 () => {
                     state.category = category;
-                    renderProducts();
+                    renderCategoryOverview();
                 }
             )
         );
     });
 }
 
-function renderProducts() {
+function renderCategoryOverview() {
     resetSelection("category");
     setPage(state.category.name, ROUTES.home);
 
     const container = getContainer();
-    container.appendChild(createBackCard("Retour aux catégories", renderCategories));
+    container.appendChild(createBackCard("Retour aux marques", renderBrandCategories));
 
-    if (!state.category.products.length) {
-        container.appendChild(createInfo("Aucun produit disponible dans cette catégorie."));
+    const products = Array.isArray(state.category.products) ? state.category.products : [];
+    if (!products.length) {
+        container.appendChild(createInfo(`${state.category.name} est prêt à être enrichi avec les références produits.`));
         return;
     }
 
-    state.category.products.forEach(product => {
-        container.appendChild(
-            createCard(
-                "🔧",
-                product.name,
-                `${product.procedures.length} procédure(s)`,
-                () => {
-                    state.product = product;
-                    renderProcedures();
-                }
-            )
-        );
+    products.forEach(product => {
+        container.appendChild(createCard(
+            "",
+            product.name,
+            product.reference || "Référence à préciser",
+            () => {
+                state.product = product;
+                renderProductOverview();
+            }
+        ));
     });
 }
 
-function renderProcedures() {
+function renderProductOverview() {
     resetSelection("product");
     setPage(state.product.name, ROUTES.home);
 
     const container = getContainer();
-    container.appendChild(createBackCard("Retour aux produits", renderProducts));
+    container.appendChild(createBackCard("Retour à la marque", renderCategoryOverview));
+    container.appendChild(createInfo(`${state.product.name} est prêt à être enrichi. Notices disponibles ci-dessous si présentes.`));
 
-    if (!state.product.procedures.length) {
-        container.appendChild(createInfo("Aucune procédure disponible pour ce produit."));
-        return;
+    if (Array.isArray(state.product.documents) && state.product.documents.length) {
+        const section = document.createElement("section");
+        section.className = "procedure-section";
+
+        const heading = document.createElement("h3");
+        heading.textContent = "Notices et documents";
+        section.appendChild(heading);
+
+        const list = document.createElement("ul");
+        state.product.documents.forEach(documentPath => {
+            const item = document.createElement("li");
+            const link = document.createElement("a");
+            link.href = documentPath;
+            link.target = "_blank";
+            link.rel = "noopener noreferrer";
+            link.textContent = documentPath.split("/").pop() || documentPath;
+            item.appendChild(link);
+            list.appendChild(item);
+        });
+
+        section.appendChild(list);
+        container.appendChild(section);
     }
-
-    state.product.procedures.forEach(procedure => {
-        container.appendChild(
-            createCard(
-                "📄",
-                procedure.title,
-                `${procedure.duration} · ${procedure.difficulty}`,
-                () => {
-                    state.procedure = procedure;
-                    renderProcedure();
-                }
-            )
-        );
-    });
-}
-
-function renderProcedure() {
-    setPage(state.procedure.title, ROUTES.home, "detail");
-    addToHistory(getCurrentRef());
-
-    const container = getContainer();
-    container.appendChild(createBackCard("Retour aux procédures", renderProcedures));
-
-    const card = document.createElement("article");
-    card.className = "brand-card full-card procedure-card";
-
-    const currentRef = getCurrentRef();
-    const favorite = isFavorite(currentRef);
-
-    card.innerHTML = `
-        <div class="procedure-header">
-            <div>
-                <p class="eyebrow">${escapeHtml(state.brand.name)} · ${escapeHtml(state.category.name)} · ${escapeHtml(state.product.name)}</p>
-                <h2>${escapeHtml(state.procedure.title)}</h2>
-            </div>
-            <button type="button" class="secondary-button" id="toggleFavorite">
-                ${favorite ? "★ Retirer" : "☆ Favori"}
-            </button>
-        </div>
-
-        <div class="procedure-meta">
-            <span>⏱ ${escapeHtml(state.procedure.duration)}</span>
-            <span>📈 ${escapeHtml(state.procedure.difficulty)}</span>
-            <span>🧰 ${escapeHtml(formatList(state.procedure.tools, "Aucun outil"))}</span>
-        </div>
-    `;
-
-    appendTechnicalNotice(card, state.brand, state.category, state.product, state.procedure);
-    appendListSection(card, "⚠️ Prérequis", state.procedure.requirements, "ul", "Aucun prérequis renseigné.");
-    appendListSection(card, "📋 Étapes", state.procedure.steps, "ol", "Aucune étape renseignée.");
-    appendListSection(card, "💡 Remarques", state.procedure.notes, "ul");
-    appendWebPhotoGuides(card, state.brand, state.category, state.product, state.procedure);
-    appendResources(card, state.procedure);
-
-    container.appendChild(card);
-
-    document.getElementById("toggleFavorite").addEventListener("click", () => {
-        toggleFavorite(currentRef);
-        renderProcedure();
-    });
 }
 
 function renderSearchResults(query) {
@@ -244,7 +196,7 @@ function renderSearchResults(query) {
     results.forEach(result => {
         container.appendChild(
             createCard(
-                result.icon,
+                "",
                 result.title,
                 result.subtitle,
                 () => navigateToRef(result.ref)
@@ -266,7 +218,7 @@ function renderFavorites() {
         return;
     }
 
-    renderRefList(favorites, container, "⭐");
+    renderRefList(favorites, container, "");
 }
 
 function renderHistory() {
@@ -287,19 +239,19 @@ function renderHistory() {
         renderHistory();
     }));
 
-    renderRefList(history, container, "🕘");
+    renderRefList(history, container, "");
 }
 
 function renderRefList(refs, container, icon) {
     refs.forEach(ref => {
         const target = resolveRef(ref);
-        if (!target?.procedure) return;
+        if (!target?.product) return;
 
         container.appendChild(
             createCard(
-                icon,
-                target.procedure.title,
-                `${target.brand.name} · ${target.product.name}`,
+                "",
+                target.product.name,
+                `${target.brand.name} · ${target.category.name}`,
                 () => navigateToRef(ref)
             )
         );
@@ -317,12 +269,11 @@ function renderSettings() {
 
     // header info
     const infoHtml = `
-        <h2>⚙️ Paramètres</h2>
+        <h2>Paramètres</h2>
         <div class="procedure-meta">
-            <span>🏷️ ${database.brands.length} marque(s)</span>
-            <span>📄 ${countProcedures(database)} procédure(s)</span>
-            <span>👥 ${getStoredRefs(STORAGE_KEYS.clients).length} client(s)</span>
-            <span>🚀 ${APP_VERSION}</span>
+            <span>${database.brands.length} gamme(s)</span>
+            <span>${getStoredRefs(STORAGE_KEYS.clients).length} client(s)</span>
+            <span>${APP_VERSION}</span>
         </div>
     `;
 
@@ -399,7 +350,7 @@ function renderSettings() {
     const actions = document.createElement("div");
     actions.style.marginTop = "12px";
 
-    const saveBtn = createButton("Enregistrer", "primary-button", () => {
+    const saveBtn = createButton("Enregistrer", "secondary-button", () => {
         const newSettings = {
             maxHistory: Math.max(1, parseInt(maxInput.value || DEFAULT_SETTINGS.maxHistory, 10)),
             theme: themeSelect.value === "dark" ? "dark" : "light",
@@ -417,7 +368,7 @@ function renderSettings() {
         document.documentElement.lang = newSettings.lang || 'fr';
         const lang = newSettings.lang || 'fr';
         const subtitle = lang === 'en' ? "Professional troubleshooting assistant" : "Assistant de dépannage professionnel";
-        const searchPlaceholder = lang === 'en' ? "Search a procedure, motor, remote..." : "Rechercher une procédure, un moteur, une télécommande...";
+        const searchPlaceholder = lang === 'en' ? "Search a brand, range or product..." : "Rechercher une marque, une gamme ou un produit...";
         const headerP = document.querySelector('header .header-content p');
         if (headerP) headerP.textContent = subtitle;
         const search = document.getElementById('search'); if (search) search.placeholder = searchPlaceholder;
@@ -457,11 +408,11 @@ function renderSettings() {
 
 function getCurrentRef() {
     return {
-        type: "procedure",
+        type: "product",
         brandIndex: database.brands.indexOf(state.brand),
         categoryIndex: state.brand.categories.indexOf(state.category),
         productIndex: state.category.products.indexOf(state.product),
-        procedureIndex: state.product.procedures.indexOf(state.procedure)
+        productIndex: state.category.products.indexOf(state.product)
     };
 }
 
@@ -469,9 +420,7 @@ function resolveRef(ref) {
     const brand = database.brands[ref.brandIndex];
     const category = brand?.categories[ref.categoryIndex];
     const product = category?.products[ref.productIndex];
-    const procedure = product?.procedures[ref.procedureIndex];
-
-    return { brand, category, product, procedure };
+    return { brand, category, product };
 }
 
 function navigateToRef(ref) {
@@ -484,9 +433,8 @@ function navigateToRef(ref) {
 
     clearSearch();
 
-    if (ref.type === "brand" && state.brand) renderCategories();
-    else if (ref.type === "category" && state.category) renderProducts();
-    else if (ref.type === "product" && state.product) renderProcedures();
-    else if (ref.type === "procedure" && state.procedure) renderProcedure();
+    if (ref.type === "brand" && state.brand) renderBrandCategories();
+    else if (ref.type === "category" && state.category) renderCategoryOverview();
+    else if (ref.type === "product" && state.product) renderProductOverview();
     else renderError("Élément introuvable", "La donnée demandée n'existe plus dans la base.");
 }

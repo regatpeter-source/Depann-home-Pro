@@ -1,0 +1,9 @@
+{
+  "name": "depann-home-pro",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "generate-notice-manifest": "node scripts/generate-notice-manifest.js",
+    "watch-notice-manifest": "node scripts/watch-notice-manifest.js"
+  }
+}

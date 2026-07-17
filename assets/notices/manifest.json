@@ -1,0 +1,67 @@
+[
+  {
+    "path": "assets/notices/manifest.json",
+    "reference": "manifest",
+    "product": "manifest"
+  },
+  {
+    "path": "assets/notices/somfy/1032392_oximorts.pdf",
+    "reference": "1032392 oximorts",
+    "product": "1032392 oximorts"
+  },
+  {
+    "path": "assets/notices/somfy/5130145b001leaf_altus_rs_50_60_io.pdf",
+    "reference": "5130145b001leaf altus rs 50 60 io",
+    "product": "5130145b001leaf altus rs 50 60 io"
+  },
+  {
+    "path": "assets/notices/somfy/5145740aroll_up_28_wirefree_rts_li-ion.pdf",
+    "reference": "5145740aroll up 28 wirefree rts li ion",
+    "product": "5145740aroll up 28 wirefree rts li ion"
+  },
+  {
+    "path": "assets/notices/somfy/5155639asg_oximo_io-fr.pdf",
+    "reference": "5155639asg oximo io fr",
+    "product": "5155639asg oximo io fr"
+  },
+  {
+    "path": "assets/notices/somfy/altus40_rts.pdf",
+    "reference": "altus40 rts",
+    "product": "altus40 rts"
+  },
+  {
+    "path": "assets/notices/somfy/altus50.pdf",
+    "reference": "altus50",
+    "product": "altus50"
+  },
+  {
+    "path": "assets/notices/somfy/kitoximo_40_wirefree_rts.pdf",
+    "reference": "kitoximo 40 wirefree rts",
+    "product": "kitoximo 40 wirefree rts"
+  },
+  {
+    "path": "assets/notices/somfy/Notice SUNEA Io.pdf",
+    "reference": "notice sunea io",
+    "product": "notice sunea io"
+  },
+  {
+    "path": "assets/notices/somfy/noticed-installation-ilmo_50_wt-042016.pdf",
+    "reference": "noticed installation ilmo 50 wt 042016",
+    "product": "noticed installation ilmo 50 wt 042016"
+  },
+  {
+    "path": "assets/notices/somfy/sonesse 40 pa.pdf",
+    "reference": "sonesse 40 pa",
+    "product": "sonesse 40 pa"
+  },
+  {
+    "path": "assets/notices/somfy/sonesse-__40_io_installation_guide.pdf",
+    "reference": "sonesse 40 io installation guide",
+    "product": "sonesse 40 io installation guide"
+  },
+  {
+    "path": "assets/notices/somfy/sonesse40_rts_guide.pdf",
+    "reference": "sonesse40 rts guide",
+    "product": "sonesse40 rts guide"
+  }
+]

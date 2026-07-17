@@ -42,7 +42,7 @@ export function renderPhotoRecognition(database, navigateToRef) {
         <div class="procedure-header">
             <div>
                 <p class="eyebrow">Photo d’équipement</p>
-                <h2>📷 Reconnaissance visuelle</h2>
+                <h2> Reconnaissance visuelle</h2>
             </div>
         </div>
         <p class="muted">Prenez ou importez une photo d’un moteur, d’une télécommande, d’un portail ou d’un volet roulant pour ouvrir automatiquement le dossier le plus probable.</p>
@@ -79,6 +79,17 @@ export function renderPhotoRecognition(database, navigateToRef) {
     const resultsContainer = panel.querySelector("#photoRecognitionResults");
 
     let selectedFile = null;
+
+    const openCamera = () => {
+        if (!input) return;
+        try {
+            input.click();
+        } catch {
+            // fallback silently if browser blocks the automatic click
+        }
+    };
+
+    window.setTimeout(openCamera, 150);
 
     input.addEventListener("change", event => {
         selectedFile = event.target.files?.[0] || null;
@@ -122,51 +133,35 @@ async function analyzePhoto(file, database) {
 
 function getImageBankResults(database, file, predictions, query) {
     const fileTokens = tokenize([file.name, query, ...predictions.map(item => item.label)].join(" "));
-    const queryText = normalizeText([file.name, query, ...predictions.map(item => item.label)].join(" "));
     const results = [];
 
     database.brands.forEach((brand, brandIndex) => {
         brand.categories.forEach((category, categoryIndex) => {
             category.products.forEach((product, productIndex) => {
-                product.procedures.forEach((procedure, procedureIndex) => {
-                    const photoBank = Array.isArray(procedure.photos) ? procedure.photos : [];
-                    if (!photoBank.length) return;
+                const searchable = normalizeText([
+                    brand.name,
+                    category.name,
+                    product.name,
+                    product.reference || "",
+                    ...(Array.isArray(product.keywords) ? product.keywords : [])
+                ].join(" "));
 
-                    const searchable = normalizeText([
-                        brand.name,
-                        category.name,
-                        product.name,
-                        procedure.title,
-                        ...photoBank
-                    ].join(" "));
+                let score = 0;
+                fileTokens.forEach(token => {
+                    if (token.length < 2) return;
+                    if (searchable.includes(token)) score += 1;
+                    if (normalizeText(product.reference || "").replace(/\s+/g, "").includes(token.replace(/\s+/g, ""))) score += 2;
+                });
 
-                    let score = 0;
-                    let overlaps = 0;
+                if (score <= 0) return;
 
-                    fileTokens.forEach(token => {
-                        if (token.length < 3) return;
-                        if (searchable.includes(token)) {
-                            overlaps += 1;
-                        }
-                    });
-
-                    score += overlaps;
-
-                    if (brand.id === "servistores") score += 2;
-                    if (/télécommande|telecommande|commande radio|radio|récepteur|recepteur/i.test(`${category.name} ${product.name} ${procedure.title}`)) score += 2;
-                    if (/bouton|commande|emetteur|transmetteur|receiver|receiver|centralis|telis|bisecur|bluesecur/i.test(queryText)) score += 1;
-                    if (/photo|image|visuel/i.test(queryText)) score += 1;
-
-                    if (score <= 0) return;
-
-                    results.push({
-                        icon: "🖼️",
-                        title: procedure.title,
-                        subtitle: `${brand.name} · ${product.name} · banque d'images`,
-                        ref: { type: "procedure", brandIndex, categoryIndex, productIndex, procedureIndex },
-                        score,
-                        source: "image-bank"
-                    });
+                results.push({
+                    icon: "",
+                    title: product.name,
+                    subtitle: `${brand.name} · ${category.name} · catalogue`,
+                    ref: { type: "product", brandIndex, categoryIndex, productIndex },
+                    score,
+                    source: "catalogue"
                 });
             });
         });
@@ -254,6 +249,14 @@ function renderAnalysisResults(analysis, resultsContainer, navigateToRef, status
 function buildSearchQuery(fileName, predictions) {
     const source = normalizeText([fileName, ...predictions.map(pred => pred.label)].join(" "));
     const keywords = new Set();
+
+    const refMatch = source.match(/([a-z0-9]+(?:[-_ ](?:io|rts|wt|s|m|xl))?)/gi);
+    if (refMatch) {
+        refMatch.forEach(token => {
+            const cleaned = token.replace(/[^a-z0-9]+/g, " ").trim();
+            if (cleaned.length) keywords.add(cleaned);
+        });
+    }
 
     if (/(remote control|clicker|transmitter|keypad|keyless|telecommande|commande)/.test(source)) {
         keywords.add("télécommande");

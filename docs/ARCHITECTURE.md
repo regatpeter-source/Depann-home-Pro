@@ -34,7 +34,7 @@ Depann-home-Pro/
 
 Le moteur JavaScript doit rester stable. Les futures évolutions métier doivent en priorité passer par :
 
-- `data/database.json` pour ajouter marques, catégories, produits, procédures, modes d'emploi, documents, photos et vidéos ;
+- `data/database.json` pour ajouter familles, marques, gammes et produits ; les fiches techniques pourront être ajoutées progressivement ;
 - `css/style.css` pour améliorer le design ;
 - `assets/` pour ajouter logo, photos, PDF ou autres médias.
 
@@ -44,8 +44,8 @@ Le moteur JavaScript doit rester stable. Les futures évolutions métier doivent
 - `clients.js` : base clients locale, formulaire, liste, détail, modification, suppression et pièces jointes.
 - `config.js` : version, clés de stockage, constantes.
 - `data.js` : chargement et normalisation de `database.json`.
-- `navigation.js` : affichage marques, catégories, produits, procédures, favoris, historique et paramètres.
-- `search.js` : recherche globale.
+- `navigation.js` : affichage familles, marques, gammes, produits, favoris, historique et paramètres.
+- `search.js` : recherche globale dans les familles, marques, gammes et produits.
 - `state.js` : état de navigation courant.
 - `storage.js` : favoris et historique en localStorage.
 - `ui.js` : composants d'interface réutilisables.

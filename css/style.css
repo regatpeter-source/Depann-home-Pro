@@ -121,19 +121,29 @@ textarea{
 
 .quick-actions button{
     flex:1;
-    background:var(--primary);
+    background:linear-gradient(180deg, var(--primary), #024a8a);
     color:white;
     border:none;
-    border-radius:14px;
-    padding:16px;
+    border-radius:16px;
+    padding:16px 18px;
     cursor:pointer;
     font-size:16px;
     font-weight:600;
-    transition:.2s;
+    transition:transform .18s ease, box-shadow .18s ease, background .18s ease;
+    box-shadow:0 8px 16px rgba(0,59,115,.16);
 }
 
 .quick-actions button:hover{
-    background:var(--secondary);
+    background:linear-gradient(180deg, var(--secondary), #084c2d);
+    transform:translateY(-1px);
+    box-shadow:0 12px 20px rgba(0,59,115,.18);
+}
+
+.quick-actions button:focus-visible,
+.secondary-button:focus-visible,
+.nav-button:focus-visible{
+    outline:3px solid rgba(10,92,54,.22);
+    outline-offset:2px;
 }
 
 .photo-recognition-actions{
@@ -448,7 +458,7 @@ textarea{
         margin-bottom:4px;
     }
 
-    .combination-table tbody td:first-child::before{content:"Marque / modèle";}
+    .combination-table tbody td:first-child::before{content:"Gamme / modèle";}
     .combination-table tbody td:nth-child(2)::before{content:"Séquence / action";}
     .combination-table tbody td:nth-child(3)::before{content:"Contrôle après";}
 }
@@ -484,6 +494,60 @@ textarea{
     background:var(--secondary);
 }
 
+.commerce-section{
+    background:#f8fbff;
+    border:1px solid rgba(0,59,115,.08);
+}
+
+.commerce-buy-link{
+    display:inline-flex;
+    align-self:flex-start;
+    margin-top:8px;
+    text-decoration:none;
+}
+
+.commerce-offers{
+    display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
+    gap:12px;
+    margin-top:16px;
+}
+
+.commerce-offer{
+    display:grid;
+    gap:6px;
+    padding:14px 15px;
+    border:1px solid rgba(0,59,115,.12);
+    border-radius:16px;
+    background:var(--surface);
+    box-shadow:0 4px 12px rgba(0,0,0,.05);
+    color:inherit;
+    text-decoration:none;
+    transition:transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+}
+
+.commerce-offer:hover,
+.commerce-offer:focus{
+    transform:translateY(-2px);
+    box-shadow:0 10px 20px rgba(0,0,0,.08);
+    border-color:rgba(0,59,115,.18);
+    outline:none;
+}
+
+.commerce-price{
+    color:var(--primary);
+    font-weight:700;
+}
+
+.commerce-offer small{
+    color:var(--muted);
+}
+
+.commerce-offer-link{
+    color:var(--secondary);
+    font-weight:700;
+}
+
 
 .brand-card ol,
 .brand-card ul{
@@ -501,19 +565,29 @@ textarea{
 }
 
 .secondary-button{
-    background:var(--secondary);
+    background:linear-gradient(180deg, var(--secondary), #096341);
     color:white;
     border:none;
-    border-radius:12px;
+    border-radius:14px;
     padding:12px 16px;
     cursor:pointer;
     font-size:15px;
     font-weight:700;
-    box-shadow:0 6px 14px rgba(10,92,54,.18);
+    box-shadow:0 7px 16px rgba(10,92,54,.18);
+    transition:transform .18s ease, box-shadow .18s ease, background .18s ease, filter .18s ease;
 }
 
 .secondary-button:hover{
-    background:#084c2d;
+    background:linear-gradient(180deg, #096341, #084c2d);
+    transform:translateY(-1px);
+    box-shadow:0 10px 20px rgba(10,92,54,.22);
+}
+
+.secondary-button:active,
+.quick-actions button:active,
+.nav-button:active{
+    transform:translateY(0);
+    box-shadow:0 4px 10px rgba(0,0,0,.12);
 }
 
 .danger-button{
@@ -624,6 +698,14 @@ textarea{
     box-shadow:var(--shadow);
     display:grid;
     gap:18px;
+    transition:transform .25s ease, box-shadow .25s ease, border-color .25s ease;
+}
+
+.client-card:hover,
+.client-card:focus-within{
+    transform:translateY(-5px);
+    box-shadow:var(--shadow-hover);
+    border-color:rgba(0,59,115,.14);
 }
 
 .client-card h3{
@@ -768,13 +850,15 @@ footer{
     cursor:pointer;
     color:#666;
     font-size:22px;
-    padding:8px 10px;
-    border-radius:12px;
+    padding:8px 12px;
+    border-radius:14px;
+    transition:background .18s ease, color .18s ease, transform .18s ease;
 }
 
 .nav-button:hover{
     color:var(--primary);
     background:#eef6ff;
+    transform:translateY(-1px);
 }
 
 .nav-button span{

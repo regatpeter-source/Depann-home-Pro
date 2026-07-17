@@ -55,7 +55,7 @@ function renderClientToolbar(clients) {
     panel.innerHTML = `
         <div>
             <p class="eyebrow">Base locale</p>
-            <h2>👥 ${clients.length} client(s)</h2>
+            <h2> ${clients.length} client(s)</h2>
             <p class="muted">Les clients sont enregistrés sur cet appareil. Aucune donnée n'est envoyée en ligne.</p>
         </div>
         <div class="client-toolbar-actions">
@@ -139,7 +139,7 @@ function renderClientForm(client, options = {}) {
                 <div class="form-heading">
                     <div>
                         <p class="eyebrow">Dossier client</p>
-                        <h3>📎 Devis, factures, photos et documents</h3>
+                        <h3> Devis, factures, photos et documents</h3>
                     </div>
                     <span class="file-count-badge">${client.attachments.length} fichier(s)</span>
                 </div>
@@ -166,8 +166,8 @@ function renderClientForm(client, options = {}) {
                 </div>
 
                 <section class="procedure-section photo-recognition-inline">
-                    <h3>📷 Détection visuelle</h3>
-                    <div name="photoRecognitionStatus" class="muted">Prenez une photo pour détecter automatiquement la marque ou le dossier probable.</div>
+                    <h3> Détection visuelle</h3>
+                    <div name="photoRecognitionStatus" class="muted">Prenez une photo pour détecter automatiquement la gamme ou le dossier probable.</div>
                     <div name="photoRecognitionResult"></div>
                 </section>
 
@@ -289,7 +289,7 @@ function renderClientCard(client) {
             <h3>${escapeHtml(client.name)}</h3>
             <p>${escapeHtml(formatClientLocation(client))}</p>
             <p class="muted">${escapeHtml(client.phone || "Téléphone non renseigné")}</p>
-            <p class="muted">📎 ${client.attachments.length} fichier(s)</p>
+            <p class="muted"> ${client.attachments.length} fichier(s)</p>
         </div>
         <div class="client-card-actions">
             <button type="button" class="secondary-button" data-action="view">Voir</button>
@@ -323,21 +323,21 @@ function renderClientDetail(client) {
             <button type="button" class="secondary-button" id="editSelectedClient">Modifier</button>
         </div>
         <div class="procedure-meta">
-            <span>👤 ${escapeHtml(client.type)}</span>
-            <span>📞 ${escapeHtml(client.phone || "Non renseigné")}</span>
-            <span>✉️ ${escapeHtml(client.email || "Non renseigné")}</span>
-            <span>📍 ${escapeHtml(formatClientLocation(client))}</span>
+            <span> ${escapeHtml(client.type)}</span>
+            <span> ${escapeHtml(client.phone || "Non renseigné")}</span>
+            <span> ${escapeHtml(client.email || "Non renseigné")}</span>
+            <span> ${escapeHtml(formatClientLocation(client))}</span>
         </div>
         <section class="procedure-section">
-            <h3>🔧 Équipements</h3>
+            <h3> Équipements</h3>
             <p>${escapeHtml(client.equipment || "Aucun équipement renseigné.")}</p>
         </section>
         <section class="procedure-section">
-            <h3>📝 Notes</h3>
+            <h3> Notes</h3>
             <p>${escapeHtml(client.notes || "Aucune note renseignée.")}</p>
         </section>
         <section class="procedure-section">
-            <h3>📎 Fichiers du client</h3>
+            <h3> Fichiers du client</h3>
             ${client.attachments.length ? renderAttachmentsHtml(client.attachments, true) : "<p>Aucun fichier enregistré.</p>"}
         </section>
     `;
@@ -540,11 +540,11 @@ function deleteClientAttachment(clientId, attachmentId) {
 }
 
 function getAttachmentIcon(attachment) {
-    if (attachment.type === "Photo" || attachment.mime.startsWith("image/")) return "📷";
-    if (attachment.type === "Devis") return "🧾";
-    if (attachment.type === "Facture") return "💶";
-    if (attachment.mime.includes("pdf")) return "📄";
-    return "📎";
+    if (attachment.type === "Photo" || attachment.mime.startsWith("image/")) return "";
+    if (attachment.type === "Devis") return "";
+    if (attachment.type === "Facture") return "";
+    if (attachment.mime.includes("pdf")) return "";
+    return "";
 }
 
 function renderAttachmentPreview(attachment) {

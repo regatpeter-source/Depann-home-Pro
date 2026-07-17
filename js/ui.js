@@ -21,7 +21,7 @@ export function setPage(title, route, mode = "home") {
     const breadcrumb = document.getElementById("breadcrumb");
 
     if (pageTitle) pageTitle.textContent = title;
-    if (breadcrumb) breadcrumb.textContent = `🏠 ${title}`;
+    if (breadcrumb) breadcrumb.textContent = title;
 
     document.querySelectorAll(".nav-button").forEach(button => {
         button.classList.toggle("active", button.dataset.nav === route);
@@ -34,8 +34,9 @@ export function createCard(icon, title, subtitle, onClick, options = {}) {
     const card = document.createElement("button");
     card.type = "button";
     card.className = `brand-card${options.full ? " full-card" : ""}`;
+    const iconHtml = icon && String(icon).trim() ? `<div class="brand-card-icon">${escapeHtml(icon)}</div>` : "";
     card.innerHTML = `
-        <div class="brand-card-icon">${escapeHtml(icon)}</div>
+        ${iconHtml}
         <div class="brand-card-content">
             <h3>${escapeHtml(title)}</h3>
             <p>${escapeHtml(subtitle || "")}</p>
@@ -123,7 +124,7 @@ export function appendSequenceTableSection(parent, title, items, emptyMessage = 
     const thead = document.createElement("thead");
     thead.innerHTML = `
         <tr>
-            <th>Marque / modèle</th>
+            <th>Gamme / modèle</th>
             <th>Séquence / action</th>
             <th>Contrôle après</th>
         </tr>
@@ -613,11 +614,15 @@ function getManufacturerGuideUrl(brandId, categoryName = "", productName = "") {
 }
 
 export function appendTechnicalNotice(parent, brand, category, product, procedure) {
+    if (brand?.id !== "somfy") {
+        return;
+    }
+
     const section = document.createElement("section");
     section.className = "procedure-section technical-notice-section";
 
     const heading = document.createElement("h3");
-    heading.textContent = "📘 Notice technique détaillée";
+    heading.textContent = "Notice technique détaillée";
     section.appendChild(heading);
 
     const context = `${brand?.name || ""} ${category?.name || ""} ${product?.name || ""} ${procedure?.title || ""}`.toLowerCase();
@@ -633,26 +638,26 @@ export function appendTechnicalNotice(parent, brand, category, product, procedur
     diagram.textContent = getNoticeDiagram(family, brand?.name || "", product?.name || "");
     section.appendChild(diagram);
 
-    appendListSection(section, "🧭 Diagnostic rapide", getNoticeDiagnosticBullets(family, brand?.name || "", product?.name || "", procedure?.title || ""));
-    appendListSection(section, "⚙️ Fonctionnement", getNoticeOperationBullets(family, brand?.name || "", product?.name || "", procedure?.title || ""));
+    appendListSection(section, "Diagnostic rapide", getNoticeDiagnosticBullets(family, brand?.name || "", product?.name || "", procedure?.title || ""));
+    appendListSection(section, "Fonctionnement", getNoticeOperationBullets(family, brand?.name || "", product?.name || "", procedure?.title || ""));
     if (Array.isArray(procedure?.combinations) && procedure.combinations.length) {
-        appendSequenceTableSection(section, "🗃️ Combinaisons du catalogue", procedure.combinations);
+        appendSequenceTableSection(section, "Combinaisons du catalogue", procedure.combinations);
     }
     const modelSequenceBullets = getNoticeModelSequenceBullets(family, brand?.name || "", product?.name || "", procedure?.title || "");
     if (!Array.isArray(procedure?.combinations) && modelSequenceBullets.length) {
-        appendSequenceTableSection(section, "📋 Séquences connues par marque / modèle", modelSequenceBullets);
+        appendSequenceTableSection(section, " Séquences connues par marque / modèle", modelSequenceBullets);
     }
     const quickCombinationBullets = getNoticeQuickCombinationBullets(family, brand?.name || "", product?.name || "", procedure?.title || "");
     if (quickCombinationBullets.length) {
-        appendListSection(section, "🎚️ Combinaisons utiles", quickCombinationBullets, "ul");
+        appendListSection(section, "Combinaisons utiles", quickCombinationBullets, "ul");
     }
-    appendListSection(section, "🔌 Câblage / connexions", getNoticeConnectionBullets(family, brand?.name || "", product?.name || "", procedure?.title || ""));
-    appendListSection(section, "💡 Voyants / indicateurs", getNoticeIndicatorBullets(family, brand?.name || "", product?.name || "", procedure?.title || ""));
-    appendListSection(section, "🎛️ Réglages et paramétrage", getNoticeSettingsBullets(family, brand?.name || "", product?.name || "", procedure?.title || ""));
-    appendListSection(section, "🛠️ Manips en cas de panne", getNoticeTroubleshootingBullets(family, brand?.name || "", product?.name || "", procedure?.title || ""), "ol");
-    appendListSection(section, "🧪 Contrôles et essais", getNoticeTestBullets(family, brand?.name || "", product?.name || "", procedure?.title || ""));
-    appendListSection(section, "🚨 Pannes fréquentes", getNoticeFailureBullets(family, brand?.name || "", product?.name || "", procedure?.title || ""));
-    appendListSection(section, "🧰 Remise en service", getNoticeRecoveryBullets(family, brand?.name || "", product?.name || "", procedure?.title || ""));
+    appendListSection(section, "Câblage / connexions", getNoticeConnectionBullets(family, brand?.name || "", product?.name || "", procedure?.title || ""));
+    appendListSection(section, "Voyants / indicateurs", getNoticeIndicatorBullets(family, brand?.name || "", product?.name || "", procedure?.title || ""));
+    appendListSection(section, "Réglages et paramétrage", getNoticeSettingsBullets(family, brand?.name || "", product?.name || "", procedure?.title || ""));
+    appendListSection(section, "Manips en cas de panne", getNoticeTroubleshootingBullets(family, brand?.name || "", product?.name || "", procedure?.title || ""), "ol");
+    appendListSection(section, "Contrôles et essais", getNoticeTestBullets(family, brand?.name || "", product?.name || "", procedure?.title || ""));
+    appendListSection(section, "Pannes fréquentes", getNoticeFailureBullets(family, brand?.name || "", product?.name || "", procedure?.title || ""));
+    appendListSection(section, "Remise en service", getNoticeRecoveryBullets(family, brand?.name || "", product?.name || "", procedure?.title || ""));
 
     parent.appendChild(section);
 }
@@ -1150,18 +1155,14 @@ export function appendWebPhotoGuides(parent, brand, category, product, procedure
     section.className = "procedure-section";
 
     const heading = document.createElement("h3");
-    heading.textContent = "🌐 Liens fabricants";
+    heading.textContent = " Liens fabricants";
     section.appendChild(heading);
 
     const list = document.createElement("ul");
-    const visualLinks = getManufacturerVisualLinks(brand.id, category.name, product.name, procedure?.title || "");
+    const commerce = procedure?.commerce || {};
     const items = [
-        { label: "Notice", url: getManufacturerNoticeUrl(brand.id, category.name, product.name) },
-        ...visualLinks.map((link, index) => ({
-            label: index === 0 ? "Page illustrée" : `Visuel complémentaire ${index + 1}`,
-            url: link.url
-        })),
-        { label: "Doc / tutoriels", url: getManufacturerGuideUrl(brand.id, category.name, product.name) }
+        { label: "Notice", url: commerce.noticeUrl || getManufacturerNoticeUrl(brand.id, category.name, product.name) },
+        { label: "Tuto", url: commerce.tutoUrl || getManufacturerGuideUrl(brand.id, category.name, product.name) }
     ];
 
     items.forEach(item => {
@@ -1178,7 +1179,7 @@ export function appendWebPhotoGuides(parent, brand, category, product, procedure
 
     if (procedure?.videos?.length) {
         const li = document.createElement("li");
-        li.textContent = `🎬 ${procedure.videos[0]}`;
+        li.textContent = ` ${procedure.videos[0]}`;
         list.appendChild(li);
     }
 
@@ -1186,11 +1187,66 @@ export function appendWebPhotoGuides(parent, brand, category, product, procedure
     parent.appendChild(section);
 }
 
+export function appendCommerceSection(parent, procedure) {
+    const commerce = procedure?.commerce;
+    const offers = Array.isArray(commerce?.offers) ? commerce.offers : [];
+
+    if (!commerce?.buyUrl && !offers.length) return;
+
+    const section = document.createElement("section");
+    section.className = "procedure-section commerce-section";
+
+    const heading = document.createElement("h3");
+    heading.textContent = " Achat et prix";
+    section.appendChild(heading);
+
+    if (commerce?.purchaseLabel || commerce?.buyUrl) {
+        const lead = document.createElement("p");
+        lead.className = "muted";
+        lead.textContent = commerce.purchaseLabel || "Consulter la sélection Servistores correspondante.";
+        section.appendChild(lead);
+
+        const buyLink = document.createElement("a");
+        buyLink.href = commerce.buyUrl;
+        buyLink.target = "_blank";
+        buyLink.rel = "noopener noreferrer";
+        buyLink.className = "secondary-button commerce-buy-link";
+        buyLink.textContent = "Ouvrir la sélection";
+        section.appendChild(buyLink);
+    }
+
+    if (offers.length) {
+        const offersGrid = document.createElement("div");
+        offersGrid.className = "commerce-offers";
+
+        offers.forEach(offer => {
+            const card = document.createElement("a");
+            card.href = offer.url;
+            card.target = "_blank";
+            card.rel = "noopener noreferrer";
+            card.className = "commerce-offer";
+
+            card.innerHTML = `
+                <strong>${escapeHtml(offer.label || "Produit")}</strong>
+                <span class="commerce-price">${escapeHtml(offer.priceText || "Prix non renseigné")}</span>
+                <small>${escapeHtml(offer.availability || "")}</small>
+                <span class="commerce-offer-link">Voir la fiche</span>
+            `;
+
+            offersGrid.appendChild(card);
+        });
+
+        section.appendChild(offersGrid);
+    }
+
+    parent.appendChild(section);
+}
+
 export function appendResources(parent, procedure) {
     const resources = [
-        ...procedure.documents.map(item => ({ label: item, icon: "📎" })),
-        ...procedure.photos.map(item => ({ label: item, icon: "🖼️" })),
-        ...procedure.videos.map(item => ({ label: item, icon: "🎬" }))
+        ...procedure.documents.map(item => ({ label: item, icon: "" })),
+        ...procedure.photos.map(item => ({ label: item, icon: "" })),
+        ...procedure.videos.map(item => ({ label: item, icon: "" }))
     ];
 
     if (!resources.length) return;
@@ -1199,7 +1255,7 @@ export function appendResources(parent, procedure) {
     section.className = "procedure-section";
 
     const heading = document.createElement("h3");
-    heading.textContent = "📚 Ressources";
+    heading.textContent = " Ressources";
     section.appendChild(heading);
 
     const list = document.createElement("ul");
@@ -1207,7 +1263,7 @@ export function appendResources(parent, procedure) {
     resources.forEach(resource => {
         const item = document.createElement("li");
 
-        if (resource.icon === "🖼️" && /^https?:\/\//i.test(resource.label)) {
+        if (resource.icon === "" && /^https?:\/\//i.test(resource.label)) {
             const wrapper = document.createElement("a");
             wrapper.href = resource.label;
             wrapper.target = "_blank";
