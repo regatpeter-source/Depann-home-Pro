@@ -135,7 +135,14 @@ function renderCategoryOverview() {
         return;
     }
 
-    products.forEach(product => {
+    products.forEach((product, productIndex) => {
+        const ref = {
+            type: "product",
+            brandIndex: database.brands.indexOf(state.brand),
+            categoryIndex: state.brand.categories.indexOf(state.category),
+            productIndex
+        };
+
         container.appendChild(createCard(
             "",
             product.name,
@@ -143,7 +150,8 @@ function renderCategoryOverview() {
             () => {
                 state.product = product;
                 renderProductOverview();
-            }
+            },
+            { image: getRefPhoto(ref) }
         ));
     });
 }
@@ -156,7 +164,48 @@ function renderProductOverview() {
     container.appendChild(createBackCard("Retour à la marque", renderCategoryOverview));
     container.appendChild(createInfo(`${state.product.name} est prêt à être enrichi. Notices disponibles ci-dessous si présentes.`));
 
-    if (Array.isArray(state.product.documents) && state.product.documents.length) {
+    const documents = Array.isArray(state.product.documents) ? state.product.documents : [];
+
+    if (state.product.displayAsVisualGallery && documents.length) {
+        const section = document.createElement("section");
+        section.className = "procedure-section";
+
+        const heading = document.createElement("h3");
+        heading.textContent = "Astuces en image";
+        section.appendChild(heading);
+
+        const gallery = document.createElement("div");
+        gallery.className = "document-preview-gallery";
+
+        documents.forEach(documentPath => {
+            const fileName = documentPath.split("/").pop() || documentPath;
+            const previewName = fileName.replace(/\.pdf$/i, ".png");
+            const previewPath = `${state.product.previewDirectory}/${previewName}`;
+
+            const link = document.createElement("a");
+            link.className = "document-preview-card";
+            link.href = documentPath;
+            link.target = "_blank";
+            link.rel = "noopener noreferrer";
+            link.title = "Ouvrir le guide PDF";
+
+            const image = document.createElement("img");
+            image.src = previewPath;
+            image.alt = fileName.replace(/[_-]+/g, " ").replace(/\.pdf$/i, "");
+            image.loading = "lazy";
+
+            const label = document.createElement("span");
+            label.textContent = image.alt;
+
+            link.append(image, label);
+            gallery.appendChild(link);
+        });
+
+        section.appendChild(gallery);
+        container.appendChild(section);
+    }
+
+    if (!state.product.displayAsVisualGallery && documents.length) {
         const section = document.createElement("section");
         section.className = "procedure-section";
 
@@ -165,7 +214,7 @@ function renderProductOverview() {
         section.appendChild(heading);
 
         const list = document.createElement("ul");
-        state.product.documents.forEach(documentPath => {
+        documents.forEach(documentPath => {
             const item = document.createElement("li");
             const link = document.createElement("a");
             link.href = documentPath;
@@ -177,6 +226,42 @@ function renderProductOverview() {
         });
 
         section.appendChild(list);
+        container.appendChild(section);
+    }
+
+    if (Array.isArray(state.product.photos) && state.product.photos.length) {
+        const section = document.createElement("section");
+        section.className = "procedure-section";
+
+        const heading = document.createElement("h3");
+        heading.textContent = "Photos et visuels";
+        section.appendChild(heading);
+
+        const gallery = document.createElement("div");
+        gallery.className = "photo-gallery";
+
+        state.product.photos.forEach(photoPath => {
+            const item = document.createElement("div");
+            item.className = "photo-gallery-item";
+
+            const link = document.createElement("a");
+            link.href = photoPath;
+            link.target = "_blank";
+            link.rel = "noopener noreferrer";
+            link.title = photoPath.split("/").pop() || photoPath;
+
+            const image = document.createElement("img");
+            image.src = photoPath;
+            image.alt = photoPath.split("/").pop() || "Photo";
+            image.loading = "lazy";
+            image.className = "product-photo";
+
+            link.appendChild(image);
+            item.appendChild(link);
+            gallery.appendChild(item);
+        });
+
+        section.appendChild(gallery);
         container.appendChild(section);
     }
 }
@@ -199,10 +284,17 @@ function renderSearchResults(query) {
                 "",
                 result.title,
                 result.subtitle,
-                () => navigateToRef(result.ref)
+                () => navigateToRef(result.ref),
+                { image: getRefPhoto(result.ref) }
             )
         );
     });
+}
+
+function getRefPhoto(ref) {
+    if (ref?.type !== "product") return "";
+    const product = resolveRef(ref).product;
+    return Array.isArray(product?.photos) && product.photos.length ? product.photos[0] : "";
 }
 
 function renderFavorites() {
@@ -252,7 +344,8 @@ function renderRefList(refs, container, icon) {
                 "",
                 target.product.name,
                 `${target.brand.name} · ${target.category.name}`,
-                () => navigateToRef(ref)
+                () => navigateToRef(ref),
+                { image: getRefPhoto(ref) }
             )
         );
     });

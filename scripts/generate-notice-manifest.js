@@ -9,9 +9,24 @@ function normalize(value) {
         .toLowerCase()
         .normalize("NFD")
         .replace(/[\u0300-\u036f]/g, "")
+        .replace(/([a-z])([0-9])/gi, "$1 $2")
+        .replace(/([0-9])([a-z])/gi, "$1 $2")
         .replace(/[^a-z0-9]+/g, " ")
         .trim();
 }
+
+function cleanName(name) {
+    let cleaned = name.replace(/\.[^/.]+$/, "");
+    cleaned = cleaned.replace(/_/g, " ");
+    cleaned = cleaned.replace(/-+/g, " ");
+    cleaned = cleaned.replace(/^\d+[a-z]?/i, "");
+    cleaned = cleaned.replace(/^[0-9]+/g, "");
+    cleaned = cleaned.replace(/\b(fr|web|pdf|notice|notices|utilisation|installation|moteur|coulissant|portail|utilisati)\b/g, "");
+    cleaned = cleaned.replace(/\s+/g, " ").trim();
+    return cleaned;
+}
+
+const supportedFilePattern = /\.(pdf|txt|html?|json|png|jpe?g|webp|svg)$/i;
 
 function scanDir(dir) {
     const entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -22,7 +37,8 @@ function scanDir(dir) {
         }
 
         if (!entry.isFile()) return [];
-        if (!/\.(pdf|txt|html?|json)$/i.test(entry.name)) return [];
+        if (entry.name.toLowerCase() === "manifest.json") return [];
+        if (!supportedFilePattern.test(entry.name)) return [];
 
         const relativePath = path.relative(noticesDir, fullPath).replace(/\\/g, "/");
         return [{ path: `assets/notices/${relativePath}`, name: entry.name }];
@@ -31,7 +47,7 @@ function scanDir(dir) {
 
 function buildManifest(items) {
     return items.map(item => {
-        const name = item.name.replace(/\.[^/.]+$/, "");
+        const name = cleanName(item.name);
         return {
             path: item.path,
             reference: normalize(name),

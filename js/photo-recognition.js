@@ -13,6 +13,7 @@ import {
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
 
 let classifierPromise = null;
+let currentDatabase = { brands: [] };
 
 export async function analyzeEquipmentPhoto(file, database) {
     const predictions = await classifyImage(file).catch(() => []);
@@ -128,6 +129,7 @@ export function renderPhotoRecognition(database, navigateToRef) {
 }
 
 async function analyzePhoto(file, database) {
+    currentDatabase = database;
     return analyzeEquipmentPhoto(file, database);
 }
 
@@ -183,7 +185,11 @@ function mergeResults(primaryResults, fallbackResults) {
 
     return merged.slice(0, 40);
 }
-
+function getRefPhoto(ref) {
+    if (ref?.type !== "product") return "";
+    const product = currentDatabase?.brands?.[ref.brandIndex]?.categories?.[ref.categoryIndex]?.products?.[ref.productIndex];
+    return Array.isArray(product?.photos) && product.photos.length ? product.photos[0] : "";
+}
 function tokenize(value) {
     return normalizeText(value)
         .split(/\s+/)
@@ -232,7 +238,7 @@ function renderAnalysisResults(analysis, resultsContainer, navigateToRef, status
                 result.title,
                 result.subtitle,
                 () => navigateToRef(result.ref),
-                { full: true }
+                { full: true, image: getRefPhoto(result.ref) }
             )
         );
     });

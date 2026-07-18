@@ -2,7 +2,9 @@ export function normalizeText(value) {
     return String(value || "")
         .toLowerCase()
         .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "");
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/([a-z])([0-9])/gi, "$1 $2")
+        .replace(/([0-9])([a-z])/gi, "$1 $2");
 }
 
 export function slugify(value) {

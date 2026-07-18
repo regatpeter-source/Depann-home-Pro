@@ -1,38 +1,38 @@
 [
   {
-    "path": "assets/notices/manifest.json",
-    "reference": "manifest",
-    "product": "manifest"
-  },
-  {
     "path": "assets/notices/somfy/1032392_oximorts.pdf",
-    "reference": "1032392 oximorts",
-    "product": "1032392 oximorts"
+    "reference": "oximorts",
+    "product": "oximorts"
   },
   {
     "path": "assets/notices/somfy/5130145b001leaf_altus_rs_50_60_io.pdf",
-    "reference": "5130145b001leaf altus rs 50 60 io",
-    "product": "5130145b001leaf altus rs 50 60 io"
+    "reference": "leaf altus rs 50 60 io",
+    "product": "leaf altus rs 50 60 io"
   },
   {
     "path": "assets/notices/somfy/5145740aroll_up_28_wirefree_rts_li-ion.pdf",
-    "reference": "5145740aroll up 28 wirefree rts li ion",
-    "product": "5145740aroll up 28 wirefree rts li ion"
+    "reference": "roll up 28 wirefree rts li ion",
+    "product": "roll up 28 wirefree rts li ion"
   },
   {
     "path": "assets/notices/somfy/5155639asg_oximo_io-fr.pdf",
-    "reference": "5155639asg oximo io fr",
-    "product": "5155639asg oximo io fr"
+    "reference": "sg oximo io",
+    "product": "sg oximo io"
   },
   {
     "path": "assets/notices/somfy/altus40_rts.pdf",
-    "reference": "altus40 rts",
-    "product": "altus40 rts"
+    "reference": "altus 40 rts",
+    "product": "altus 40 rts"
   },
   {
     "path": "assets/notices/somfy/altus50.pdf",
-    "reference": "altus50",
-    "product": "altus50"
+    "reference": "altus 50",
+    "product": "altus 50"
+  },
+  {
+    "path": "assets/notices/somfy/keypad 2 somfy io.jpg",
+    "reference": "keypad 2 somfy io",
+    "product": "keypad 2 somfy io"
   },
   {
     "path": "assets/notices/somfy/kitoximo_40_wirefree_rts.pdf",
@@ -46,8 +46,168 @@
   },
   {
     "path": "assets/notices/somfy/noticed-installation-ilmo_50_wt-042016.pdf",
-    "reference": "noticed installation ilmo 50 wt 042016",
-    "product": "noticed installation ilmo 50 wt 042016"
+    "reference": "noticed ilmo 50 wt 042016",
+    "product": "noticed ilmo 50 wt 042016"
+  },
+  {
+    "path": "assets/notices/somfy/portail/5129017cslidymoove_300.pdf",
+    "reference": "slidymoove 300",
+    "product": "slidymoove 300"
+  },
+  {
+    "path": "assets/notices/somfy/portail/5129041bfreevia_390-fr.pdf",
+    "reference": "freevia 390",
+    "product": "freevia 390"
+  },
+  {
+    "path": "assets/notices/somfy/portail/5129045a000freevia_400-fr-web-.pdf",
+    "reference": "freevia 400",
+    "product": "freevia 400"
+  },
+  {
+    "path": "assets/notices/somfy/portail/5129115cslidymoove_600.pdf",
+    "reference": "slidymoove 600",
+    "product": "slidymoove 600"
+  },
+  {
+    "path": "assets/notices/somfy/portail/5139499a001elixo_smart_io_utilisation.pdf",
+    "reference": "elixo smart io",
+    "product": "elixo smart io"
+  },
+  {
+    "path": "assets/notices/somfy/portail/5149576cfreevia 600.pdf",
+    "reference": "freevia 600",
+    "product": "freevia 600"
+  },
+  {
+    "path": "assets/notices/somfy/portail/5149576cfreevia.pdf",
+    "reference": "freevia",
+    "product": "freevia"
+  },
+  {
+    "path": "assets/notices/somfy/portail/axovia400c.pdf",
+    "reference": "axovia 400 c",
+    "product": "axovia 400 c"
+  },
+  {
+    "path": "assets/notices/somfy/portail/c400.pdf",
+    "reference": "c 400",
+    "product": "c 400"
+  },
+  {
+    "path": "assets/notices/somfy/portail/c500.pdf",
+    "reference": "c 500",
+    "product": "c 500"
+  },
+  {
+    "path": "assets/notices/somfy/portail/cl1300-1500.pdf",
+    "reference": "cl 1300 1500",
+    "product": "cl 1300 1500"
+  },
+  {
+    "path": "assets/notices/somfy/portail/dpc0070.pdf",
+    "reference": "dpc 0070",
+    "product": "dpc 0070"
+  },
+  {
+    "path": "assets/notices/somfy/portail/elixo500_3s_io_installation_12-10-2012_-embase_carre-.pdf",
+    "reference": "elixo 500 3 s io 12 10 2012 embase carre",
+    "product": "elixo 500 3 s io 12 10 2012 embase carre"
+  },
+  {
+    "path": "assets/notices/somfy/portail/elixo500_3s_io_utilisation.pdf",
+    "reference": "elixo 500 3 s io",
+    "product": "elixo 500 3 s io"
+  },
+  {
+    "path": "assets/notices/somfy/portail/elixo500_3s_rts_installation_12-10-2012_-embase_carre-.pdf",
+    "reference": "elixo 500 3 s rts 12 10 2012 embase carre",
+    "product": "elixo 500 3 s rts 12 10 2012 embase carre"
+  },
+  {
+    "path": "assets/notices/somfy/portail/elixo500_rts_24v_-_230v_utilisation.pdf",
+    "reference": "elixo 500 rts 24 v 230 v",
+    "product": "elixo 500 rts 24 v 230 v"
+  },
+  {
+    "path": "assets/notices/somfy/portail/elixooptimo_rts_utilisation.pdf",
+    "reference": "elixooptimo rts",
+    "product": "elixooptimo rts"
+  },
+  {
+    "path": "assets/notices/somfy/portail/freevia290.pdf",
+    "reference": "freevia 290",
+    "product": "freevia 290"
+  },
+  {
+    "path": "assets/notices/somfy/portail/freevialine_fr.pdf",
+    "reference": "freevialine",
+    "product": "freevialine"
+  },
+  {
+    "path": "assets/notices/somfy/portail/go_slg7.pdf",
+    "reference": "go slg 7",
+    "product": "go slg 7"
+  },
+  {
+    "path": "assets/notices/somfy/portail/ls400.pdf",
+    "reference": "ls 400",
+    "product": "ls 400"
+  },
+  {
+    "path": "assets/notices/somfy/portail/ls420.pdf",
+    "reference": "ls 420",
+    "product": "ls 420"
+  },
+  {
+    "path": "assets/notices/somfy/portail/ls430.pdf",
+    "reference": "ls 430",
+    "product": "ls 430"
+  },
+  {
+    "path": "assets/notices/somfy/portail/noticemoteur_coulissant_ls_440.pdf",
+    "reference": "noticemoteur ls 440",
+    "product": "noticemoteur ls 440"
+  },
+  {
+    "path": "assets/notices/somfy/portail/noticemoteur_coulissant_ls_650.pdf",
+    "reference": "noticemoteur ls 650",
+    "product": "noticemoteur ls 650"
+  },
+  {
+    "path": "assets/notices/somfy/portail/noticesld3000 3100.pdf",
+    "reference": "noticesld 3000 3100",
+    "product": "noticesld 3000 3100"
+  },
+  {
+    "path": "assets/notices/somfy/portail/passeo400.pdf",
+    "reference": "passeo 400",
+    "product": "passeo 400"
+  },
+  {
+    "path": "assets/notices/somfy/portail/s400.pdf",
+    "reference": "s 400",
+    "product": "s 400"
+  },
+  {
+    "path": "assets/notices/somfy/portail/sl71.pdf",
+    "reference": "sl 71",
+    "product": "sl 71"
+  },
+  {
+    "path": "assets/notices/somfy/portail/sl71m.pdf",
+    "reference": "sl 71 m",
+    "product": "sl 71 m"
+  },
+  {
+    "path": "assets/notices/somfy/situo 1 rts pure.webp",
+    "reference": "situo 1 rts pure",
+    "product": "situo 1 rts pure"
+  },
+  {
+    "path": "assets/notices/somfy/smoove-io-1-canal-blanc.jpg",
+    "reference": "smoove io 1 canal blanc",
+    "product": "smoove io 1 canal blanc"
   },
   {
     "path": "assets/notices/somfy/sonesse 40 pa.pdf",
@@ -56,12 +216,77 @@
   },
   {
     "path": "assets/notices/somfy/sonesse-__40_io_installation_guide.pdf",
-    "reference": "sonesse 40 io installation guide",
-    "product": "sonesse 40 io installation guide"
+    "reference": "sonesse 40 io guide",
+    "product": "sonesse 40 io guide"
   },
   {
     "path": "assets/notices/somfy/sonesse40_rts_guide.pdf",
-    "reference": "sonesse40 rts guide",
-    "product": "sonesse40 rts guide"
+    "reference": "sonesse 40 rts guide",
+    "product": "sonesse 40 rts guide"
+  },
+  {
+    "path": "assets/notices/somfy/volet-roulant/astuces rapide somfy/astuces en image moteur vr oximo, altus et orea/ajouterune_position_my_vr.pdf",
+    "reference": "ajouterune position my vr",
+    "product": "ajouterune position my vr"
+  },
+  {
+    "path": "assets/notices/somfy/volet-roulant/astuces rapide somfy/astuces en image moteur vr oximo, altus et orea/ajouterune_telecommande_vr.pdf",
+    "reference": "ajouterune telecommande vr",
+    "product": "ajouterune telecommande vr"
+  },
+  {
+    "path": "assets/notices/somfy/volet-roulant/astuces rapide somfy/astuces en image moteur vr oximo, altus et orea/ajustementdes_butees_vr.pdf",
+    "reference": "ajustementdes butees vr",
+    "product": "ajustementdes butees vr"
+  },
+  {
+    "path": "assets/notices/somfy/volet-roulant/astuces rapide somfy/astuces en image moteur vr oximo, altus et orea/file.pdf",
+    "reference": "file",
+    "product": "file"
+  },
+  {
+    "path": "assets/notices/somfy/volet-roulant/astuces rapide somfy/astuces en image moteur vr oximo, altus et orea/inversiondu_sens_de_rotation_vr.pdf",
+    "reference": "inversiondu sens de rotation vr",
+    "product": "inversiondu sens de rotation vr"
+  },
+  {
+    "path": "assets/notices/somfy/volet-roulant/astuces rapide somfy/astuces en image moteur vr oximo, altus et orea/programmationdes_fins_de_courses_vr.pdf",
+    "reference": "programmationdes fins de courses vr",
+    "product": "programmationdes fins de courses vr"
+  },
+  {
+    "path": "assets/notices/somfy/volet-roulant/astuces rapide somfy/astuces en image moteur vr oximo, altus et orea/programmerun_oximo_io_avec_une_easy_sun.pdf",
+    "reference": "programmerun oximo io avec une easy sun",
+    "product": "programmerun oximo io avec une easy sun"
+  },
+  {
+    "path": "assets/notices/somfy/volet-roulant/astuces rapide somfy/astuces en image moteur vr oximo, altus et orea/reglagemoteur_vr_boutons.pdf",
+    "reference": "reglagemoteur vr boutons",
+    "product": "reglagemoteur vr boutons"
+  },
+  {
+    "path": "assets/notices/somfy/volet-roulant/astuces rapide somfy/astuces en image moteur vr oximo, altus et orea/reglagemoteur_vr_molette.pdf",
+    "reference": "reglagemoteur vr molette",
+    "product": "reglagemoteur vr molette"
+  },
+  {
+    "path": "assets/notices/somfy/volet-roulant/astuces rapide somfy/astuces en image moteur vr oximo, altus et orea/remisea_zero_vr.pdf",
+    "reference": "remisea zero vr",
+    "product": "remisea zero vr"
+  },
+  {
+    "path": "assets/notices/somfy/volet-roulant/astuces rapide somfy/astuces en image moteur vr oximo, altus et orea/remplacerune_telecommande_cassee_ou_perdue_vr.pdf",
+    "reference": "remplacerune telecommande cassee ou perdue vr",
+    "product": "remplacerune telecommande cassee ou perdue vr"
+  },
+  {
+    "path": "assets/notices/somfy/volet-roulant/astuces rapide somfy/astuces en image moteur vr oximo, altus et orea/supprimerune_telecommande_qui_pilote_2_volets_roulans_au_lieu_d-_un_vr.pdf",
+    "reference": "supprimerune telecommande qui pilote 2 volets roulans au lieu d un vr",
+    "product": "supprimerune telecommande qui pilote 2 volets roulans au lieu d un vr"
+  },
+  {
+    "path": "assets/notices/somfy/volet-roulant/astuces rapide somfy/astuces en image moteur vr oximo, altus et orea/supprimerune_telecommande_vr.pdf",
+    "reference": "supprimerune telecommande vr",
+    "product": "supprimerune telecommande vr"
   }
 ]

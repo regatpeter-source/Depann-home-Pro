@@ -33,9 +33,16 @@ export function setPage(title, route, mode = "home") {
 export function createCard(icon, title, subtitle, onClick, options = {}) {
     const card = document.createElement("button");
     card.type = "button";
-    card.className = `brand-card${options.full ? " full-card" : ""}`;
-    const iconHtml = icon && String(icon).trim() ? `<div class="brand-card-icon">${escapeHtml(icon)}</div>` : "";
+    card.className = `brand-card${options.full ? " full-card" : ""}${options.image ? " has-image" : ""}`;
+    const imageHtml = options.image
+        ? `<div class="brand-card-image"><img src="${escapeHtml(options.image)}" alt="${escapeHtml(title)}"></div>`
+        : "";
+    const iconHtml = !options.image && icon && String(icon).trim()
+        ? `<div class="brand-card-icon">${escapeHtml(icon)}</div>`
+        : "";
+
     card.innerHTML = `
+        ${imageHtml}
         ${iconHtml}
         <div class="brand-card-content">
             <h3>${escapeHtml(title)}</h3>
