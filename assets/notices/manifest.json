@@ -1,5 +1,275 @@
 [
   {
+    "path": "assets/notices/bubendorff/volet-roulant/guide-utilisation-bubendorff-fev-2018 id 2.pdf",
+    "reference": "guide bubendorff fev 2018 id 2",
+    "product": "guide bubendorff fev 2018 id 2"
+  },
+  {
+    "path": "assets/notices/bubendorff/volet-roulant/GuideUtilisationEmetteurSupplementaireID2.pdf",
+    "reference": "guideutilisationemetteursupplementaireid 2",
+    "product": "guideutilisationemetteursupplementaireid 2"
+  },
+  {
+    "path": "assets/notices/bubendorff/volet-roulant/id 3.pdf",
+    "reference": "id 3",
+    "product": "id 3"
+  },
+  {
+    "path": "assets/notices/bubendorff/volet-roulant/id 4.pdf",
+    "reference": "id 4",
+    "product": "id 4"
+  },
+  {
+    "path": "assets/notices/bubendorff/volet-roulant/inversion sens de rotation id , rg et ri.pdf",
+    "reference": "inversion sens de rotation id rg et ri",
+    "product": "inversion sens de rotation id rg et ri"
+  },
+  {
+    "path": "assets/notices/bubendorff/volet-roulant/notice-moteur-Bubendorff-X3D.pdf",
+    "reference": "bubendorff x 3 d",
+    "product": "bubendorff x 3 d"
+  },
+  {
+    "path": "assets/notices/came/portail/CAME- ati.pdf",
+    "reference": "came ati",
+    "product": "came ati"
+  },
+  {
+    "path": "assets/notices/came/portail/CAME-axi.pdf",
+    "reference": "came axi",
+    "product": "came axi"
+  },
+  {
+    "path": "assets/notices/came/portail/CAME-bx.pdf",
+    "reference": "came bx",
+    "product": "came bx"
+  },
+  {
+    "path": "assets/notices/came/portail/CAME-bxv.pdf",
+    "reference": "came bxv",
+    "product": "came bxv"
+  },
+  {
+    "path": "assets/notices/came/portail/CAME-fa01295m04 bk.pdf",
+    "reference": "came fa 01295 m 04 bk",
+    "product": "came fa 01295 m 04 bk"
+  },
+  {
+    "path": "assets/notices/came/portail/CAME-fa02077m04 bkv.pdf",
+    "reference": "came fa 02077 m 04 bkv",
+    "product": "came fa 02077 m 04 bkv"
+  },
+  {
+    "path": "assets/notices/came/portail/CAME-fa02103m04 ats.pdf",
+    "reference": "came fa 02103 m 04 ats",
+    "product": "came fa 02103 m 04 ats"
+  },
+  {
+    "path": "assets/notices/came/portail/CAME-fast.pdf",
+    "reference": "came fast",
+    "product": "came fast"
+  },
+  {
+    "path": "assets/notices/came/portail/CAME-frog enterré.pdf",
+    "reference": "came frog enterre",
+    "product": "came frog enterre"
+  },
+  {
+    "path": "assets/notices/came/portail/CAME-stylo.pdf",
+    "reference": "came stylo",
+    "product": "came stylo"
+  },
+  {
+    "path": "assets/notices/came/portail/notice-CAME-TOP432EE.pdf",
+    "reference": "came top 432 ee",
+    "product": "came top 432 ee"
+  },
+  {
+    "path": "assets/notices/faac/portail/391.pdf",
+    "reference": "",
+    "product": ""
+  },
+  {
+    "path": "assets/notices/faac/portail/746C844C.pdf",
+    "reference": "c",
+    "product": "c"
+  },
+  {
+    "path": "assets/notices/faac/portail/770N_732615_RevB_FR.pdf",
+    "reference": "732615 revb fr",
+    "product": "732615 revb fr"
+  },
+  {
+    "path": "assets/notices/faac/portail/emetteur et recepteur XT2_XT4_ FDS_ 532402web_RevA_FR (1).pdf",
+    "reference": "emetteur et recepteur xt 2 xt 4 fds 532402 web reva fr 1",
+    "product": "emetteur et recepteur xt 2 xt 4 fds 532402 web reva fr 1"
+  },
+  {
+    "path": "assets/notices/faac/portail/emmetteur  rp xf.pdf",
+    "reference": "emmetteur rp xf",
+    "product": "emmetteur rp xf"
+  },
+  {
+    "path": "assets/notices/faac/portail/faac-c-carte-740-741.pdf",
+    "reference": "faac c carte 740 741",
+    "product": "faac c carte 740 741"
+  },
+  {
+    "path": "assets/notices/faac/portail/FAACC720C721.pdf",
+    "reference": "faacc 720 c 721",
+    "product": "faacc 720 c 721"
+  },
+  {
+    "path": "assets/notices/faac/portail/S418_00058I0806_Rev3_FR.pdf",
+    "reference": "s 418 00058 i 0806 rev 3 fr",
+    "product": "s 418 00058 i 0806 rev 3 fr"
+  },
+  {
+    "path": "assets/notices/faac/volet-roulant/tm2 45 erx.pdf",
+    "reference": "tm 2 45 erx",
+    "product": "tm 2 45 erx"
+  },
+  {
+    "path": "assets/notices/faac/volet-roulant/tm2 45 r.pdf",
+    "reference": "tm 2 45 r",
+    "product": "tm 2 45 r"
+  },
+  {
+    "path": "assets/notices/faac/volet-roulant/tm2 58.pdf",
+    "reference": "tm 2 58",
+    "product": "tm 2 58"
+  },
+  {
+    "path": "assets/notices/hormann/portail1/lineaMatic coulissant.pdf",
+    "reference": "lineamatic",
+    "product": "lineamatic"
+  },
+  {
+    "path": "assets/notices/hormann/portail1/RottaMatic battant.pdf",
+    "reference": "rottamatic battant",
+    "product": "rottamatic battant"
+  },
+  {
+    "path": "assets/notices/nice/portail/aria.pdf",
+    "reference": "aria",
+    "product": "aria"
+  },
+  {
+    "path": "assets/notices/nice/portail/clavier eds.pdf",
+    "reference": "clavier eds",
+    "product": "clavier eds"
+  },
+  {
+    "path": "assets/notices/nice/portail/edswg.pdf",
+    "reference": "edswg",
+    "product": "edswg"
+  },
+  {
+    "path": "assets/notices/nice/portail/flo.pdf",
+    "reference": "flo",
+    "product": "flo"
+  },
+  {
+    "path": "assets/notices/nice/portail/hopp.pdf",
+    "reference": "hopp",
+    "product": "hopp"
+  },
+  {
+    "path": "assets/notices/nice/portail/hyke.pdf",
+    "reference": "hyke",
+    "product": "hyke"
+  },
+  {
+    "path": "assets/notices/nice/portail/one.pdf",
+    "reference": "one",
+    "product": "one"
+  },
+  {
+    "path": "assets/notices/nice/portail/road 400.pdf",
+    "reference": "road 400",
+    "product": "road 400"
+  },
+  {
+    "path": "assets/notices/nice/portail/robus 400 600 1000.pdf",
+    "reference": "robus 400 600 1000",
+    "product": "robus 400 600 1000"
+  },
+  {
+    "path": "assets/notices/nice/portail/run 1800 2500.pdf",
+    "reference": "run 1800 2500",
+    "product": "run 1800 2500"
+  },
+  {
+    "path": "assets/notices/nice/portail/thor 1500.pdf",
+    "reference": "thor 1500",
+    "product": "thor 1500"
+  },
+  {
+    "path": "assets/notices/nice/portail/tub 4000.pdf",
+    "reference": "tub 4000",
+    "product": "tub 4000"
+  },
+  {
+    "path": "assets/notices/nice/portail/WINGO.pdf",
+    "reference": "wingo",
+    "product": "wingo"
+  },
+  {
+    "path": "assets/notices/nice/portail/x metro.pdf",
+    "reference": "x metro",
+    "product": "x metro"
+  },
+  {
+    "path": "assets/notices/nice/volet-roulant/era.pdf",
+    "reference": "era",
+    "product": "era"
+  },
+  {
+    "path": "assets/notices/nice/volet-roulant/neo m.pdf",
+    "reference": "neo m",
+    "product": "neo m"
+  },
+  {
+    "path": "assets/notices/nice/volet-roulant/Neo XL.pdf",
+    "reference": "neo xl",
+    "product": "neo xl"
+  },
+  {
+    "path": "assets/notices/nice/volet-roulant/Next Fit M.pdf",
+    "reference": "next fit m",
+    "product": "next fit m"
+  },
+  {
+    "path": "assets/notices/nice/volet-roulant/Notice- Moteur-Nice-Era-Mat-MT.pdf",
+    "reference": "notice moteur nice era mat mt",
+    "product": "notice moteur nice era mat mt"
+  },
+  {
+    "path": "assets/notices/nice/volet-roulant/notice-moteur-era-fit-m-bd (1).pdf",
+    "reference": "era fit m bd 1",
+    "product": "era fit m bd 1"
+  },
+  {
+    "path": "assets/notices/nice/volet-roulant/notice-moteur-era-fit-m-bd.pdf",
+    "reference": "era fit m bd",
+    "product": "era fit m bd"
+  },
+  {
+    "path": "assets/notices/nice/volet-roulant/notice-moteur-nice-era-star-mp.pdf",
+    "reference": "nice era star mp",
+    "product": "nice era star mp"
+  },
+  {
+    "path": "assets/notices/nice/volet-roulant/one max.pdf",
+    "reference": "one max",
+    "product": "one max"
+  },
+  {
+    "path": "assets/notices/servistores/volet-roulant/Notice-moteur-asa-marconi-50-st (1).pdf",
+    "reference": "notice asa marconi 50 st 1",
+    "product": "notice asa marconi 50 st 1"
+  },
+  {
     "path": "assets/notices/somfy/1032392_oximorts.pdf",
     "reference": "oximorts",
     "product": "oximorts"

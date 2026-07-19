@@ -114,15 +114,15 @@
           "name": "Nice",
           "categories": [],
           "products": [
-            { "name": "Era M", "reference": "Era M" },
-            { "name": "Era Mat", "reference": "Era Mat" },
+            { "name": "Era M", "reference": "Era M", "documents": ["assets/notices/nice/volet-roulant/era.pdf"] },
+            { "name": "Era Mat", "reference": "Era Mat", "documents": ["assets/notices/nice/volet-roulant/Notice- Moteur-Nice-Era-Mat-MT.pdf"] },
             { "name": "Era Inn", "reference": "Era Inn" },
-            { "name": "Neo M", "reference": "Neo M" },
-            { "name": "Max", "reference": "Max" },
-            { "name": "Next Fit M", "reference": "Next Fit M" },
-            { "name": "Era Star M", "reference": "Era Star M" },
-            { "name": "Era Fit M", "reference": "Era Fit M" },
-            { "name": "Neo XL", "reference": "Neo XL" }
+            { "name": "Neo M", "reference": "Neo M", "documents": ["assets/notices/nice/volet-roulant/neo m.pdf"] },
+            { "name": "Max", "reference": "Max", "documents": ["assets/notices/nice/volet-roulant/one max.pdf"] },
+            { "name": "Next Fit M", "reference": "Next Fit M", "documents": ["assets/notices/nice/volet-roulant/Next Fit M.pdf"] },
+            { "name": "Era Star M", "reference": "Era Star M", "documents": ["assets/notices/nice/volet-roulant/notice-moteur-nice-era-star-mp.pdf"] },
+            { "name": "Era Fit M", "reference": "Era Fit M", "documents": ["assets/notices/nice/volet-roulant/notice-moteur-era-fit-m-bd.pdf"] },
+            { "name": "Neo XL", "reference": "Neo XL", "documents": ["assets/notices/nice/volet-roulant/Neo XL.pdf"] }
           ]
         },
         {
@@ -130,11 +130,12 @@
           "name": "Bubendorff",
           "categories": [],
           "products": [
-            { "name": "Moteur iD 2", "reference": "iD 2" },
-            { "name": "Moteur iD 3", "reference": "iD 3" },
-            { "name": "Moteur iD+", "reference": "iD+" },
-            { "name": "Moteur iD4", "reference": "iD4" },
-            { "name": "Moteur Tradi iD", "reference": "Tradi iD" },
+            { "name": "Moteur iD 2", "reference": "iD 2", "documents": ["assets/notices/bubendorff/volet-roulant/guide-utilisation-bubendorff-fev-2018 id 2.pdf", "assets/notices/bubendorff/volet-roulant/GuideUtilisationEmetteurSupplementaireID2.pdf", "assets/notices/bubendorff/volet-roulant/inversion sens de rotation id , rg et ri.pdf"] },
+            { "name": "Moteur iD 3", "reference": "iD 3", "documents": ["assets/notices/bubendorff/volet-roulant/id 3.pdf", "assets/notices/bubendorff/volet-roulant/inversion sens de rotation id , rg et ri.pdf"] },
+            { "name": "Moteur iD+", "reference": "iD+", "documents": ["assets/notices/bubendorff/volet-roulant/inversion sens de rotation id , rg et ri.pdf"] },
+            { "name": "Moteur iD4", "reference": "iD4", "documents": ["assets/notices/bubendorff/volet-roulant/id 4.pdf", "assets/notices/bubendorff/volet-roulant/inversion sens de rotation id , rg et ri.pdf"] },
+            { "name": "Moteur Tradi iD", "reference": "Tradi iD", "documents": ["assets/notices/bubendorff/volet-roulant/inversion sens de rotation id , rg et ri.pdf"] },
+            { "name": "Moteur X3D Bubendorff", "reference": "X3D", "documents": ["assets/notices/bubendorff/volet-roulant/notice-moteur-Bubendorff-X3D.pdf"] },
             { "name": "Moteur solaire Bubendorff", "reference": "Solaire" }
           ]
         },
@@ -143,6 +144,15 @@
           "name": "Servistores",
           "categories": [],
           "products": [
+            {
+              "name": "Notice moteur ASA Marconi 50 ST",
+              "reference": "Servistores",
+              "displayAsVisualGallery": true,
+              "previewDirectory": "assets/previews/servistores/volet-roulant",
+              "documents": [
+                "assets/notices/servistores/volet-roulant/Notice-moteur-asa-marconi-50-st (1).pdf"
+              ]
+            },
             { "name": "Moteur tubulaire radio RTS", "reference": "Moteur VR radio RTS" },
             { "name": "Moteur tubulaire radio io", "reference": "Moteur VR radio io" },
             { "name": "Moteur volet roulant solaire", "reference": "Moteur VR solaire" }
@@ -154,8 +164,9 @@
           "categories": [],
           "products": [
             { "name": "FAAC TM 45", "reference": "TM 45" },
-            { "name": "FAAC TM 58", "reference": "TM 58" },
-            { "name": "FAAC TM 45 R", "reference": "TM 45 R" }
+            { "name": "FAAC TM 58", "reference": "TM 58", "documents": ["assets/notices/faac/volet-roulant/tm2 58.pdf"] },
+            { "name": "FAAC TM 45 R", "reference": "TM 45 R", "documents": ["assets/notices/faac/volet-roulant/tm2 45 r.pdf"] },
+            { "name": "FAAC TM 45 ERX", "reference": "TM 45 ERX", "documents": ["assets/notices/faac/volet-roulant/tm2 45 erx.pdf"] }
           ]
         }
       ]
@@ -197,6 +208,67 @@
             { "name": "SLD 3000 3100", "reference": "SLD 3000 3100" },
             { "name": "Slidymoove 300", "reference": "Slidymoove 300" },
             { "name": "Slidymoove 600", "reference": "Slidymoove 600" }
+          ]
+        },
+        {
+          "id": "hormann",
+          "name": "Hörmann",
+          "categories": [],
+          "products": [
+            { "name": "LineaMatic coulissant", "reference": "LineaMatic", "documents": ["assets/notices/hormann/portail1/lineaMatic coulissant.pdf"] },
+            { "name": "RotaMatic battant", "reference": "RotaMatic", "documents": ["assets/notices/hormann/portail1/RottaMatic battant.pdf"] }
+          ]
+        },
+        {
+          "id": "nice",
+          "name": "Nice",
+          "categories": [],
+          "products": [
+            { "name": "Robus 400 / 600 / 1000", "reference": "Robus", "documents": ["assets/notices/nice/portail/robus 400 600 1000.pdf"] },
+            { "name": "Road 400", "reference": "Road 400", "documents": ["assets/notices/nice/portail/road 400.pdf"] },
+            { "name": "Wingo / Toona", "reference": "Wingo Toona", "documents": ["assets/notices/nice/portail/WINGO.pdf"] },
+            { "name": "Télécommandes FLO / ON / ERA / ONE", "reference": "FLO ON ERA ONE", "documents": ["assets/notices/nice/portail/flo.pdf", "assets/notices/nice/portail/one.pdf"] },
+            { "name": "Run 1500 / 1800 / 2500", "reference": "Run", "documents": ["assets/notices/nice/portail/run 1800 2500.pdf"] },
+            { "name": "Thor 1500 coulissant", "reference": "Thor 1500", "documents": ["assets/notices/nice/portail/thor 1500.pdf"] },
+            { "name": "Tub 4000 coulissant", "reference": "Tub 4000", "documents": ["assets/notices/nice/portail/tub 4000.pdf"] },
+            { "name": "Hyke / Hopp battant", "reference": "Hyke Hopp", "documents": ["assets/notices/nice/portail/hyke.pdf", "assets/notices/nice/portail/hopp.pdf"] },
+            { "name": "Metro / X-Metro enterré", "reference": "Metro X-Metro", "documents": ["assets/notices/nice/portail/x metro.pdf"] },
+            { "name": "PopKit / Aria battant domestique", "reference": "PopKit Aria", "documents": ["assets/notices/nice/portail/aria.pdf"] },
+            { "name": "Clavier Nice EDS / EDSWG / ERA Keypad", "reference": "EDS EDSWG ERA Keypad", "documents": ["assets/notices/nice/portail/clavier eds.pdf", "assets/notices/nice/portail/edswg.pdf"] }
+          ]
+        },
+        {
+          "id": "came",
+          "name": "CAME",
+          "categories": [],
+          "products": [
+            { "name": "BX / BXV coulissant", "reference": "BX BXV", "documents": ["assets/notices/came/portail/CAME-bx.pdf", "assets/notices/came/portail/CAME-bxv.pdf"] },
+            { "name": "FROG enterré", "reference": "FROG", "documents": ["assets/notices/came/portail/CAME-frog enterré.pdf"] },
+            { "name": "KRONO / ATI battant", "reference": "KRONO ATI", "documents": ["assets/notices/came/portail/CAME- ati.pdf"] },
+            { "name": "Cartes ZBX7 / ZLJ24", "reference": "ZBX7 ZLJ24" },
+            { "name": "Télécommandes TOP / TAM / Twin", "reference": "TOP TAM Twin", "documents": ["assets/notices/came/portail/notice-CAME-TOP432EE.pdf"] },
+            { "name": "BKV / BK coulissant collectif", "reference": "BKV BK", "documents": ["assets/notices/came/portail/CAME-fa02077m04 bkv.pdf", "assets/notices/came/portail/CAME-fa01295m04 bk.pdf"] },
+            { "name": "FAST / FERNI bras articulés", "reference": "FAST FERNI", "documents": ["assets/notices/came/portail/CAME-fast.pdf"] },
+            { "name": "AXI / ATS vérins battants", "reference": "AXI ATS", "documents": ["assets/notices/came/portail/CAME-axi.pdf", "assets/notices/came/portail/CAME-fa02103m04 ats.pdf"] },
+            { "name": "Amico / Stylo battant domestique", "reference": "Amico Stylo", "documents": ["assets/notices/came/portail/CAME-stylo.pdf"] }
+          ]
+        },
+        {
+          "id": "faac",
+          "name": "FAAC",
+          "categories": [],
+          "products": [
+            { "name": "FAAC 740 / 741", "reference": "740 741", "documents": ["assets/notices/faac/portail/faac-c-carte-740-741.pdf"] },
+            { "name": "FAAC 391", "reference": "391", "documents": ["assets/notices/faac/portail/391.pdf"] },
+            { "name": "FAAC 414", "reference": "414" },
+            { "name": "Cartes E024S / E045S", "reference": "E024S E045S" },
+            { "name": "FAAC C720 / C721", "reference": "C720 C721", "documents": ["assets/notices/faac/portail/FAACC720C721.pdf"] },
+            { "name": "FAAC 746 / 844", "reference": "746 844", "documents": ["assets/notices/faac/portail/746C844C.pdf"] },
+            { "name": "FAAC S418 / S450H", "reference": "S418 S450H", "documents": ["assets/notices/faac/portail/S418_00058I0806_Rev3_FR.pdf"] },
+            { "name": "FAAC 770N / moteurs enterrés", "reference": "770N", "documents": ["assets/notices/faac/portail/770N_732615_RevB_FR.pdf"] },
+            { "name": "Clavier FAAC XKP W / XK10", "reference": "XKP W XK10" },
+            { "name": "Récepteurs RP / XF / Decoder FAAC", "reference": "RP XF Decoder", "documents": ["assets/notices/faac/portail/emmetteur  rp xf.pdf"] },
+            { "name": "Télécommandes FAAC XT2 / XT4", "reference": "XT2 XT4", "documents": ["assets/notices/faac/portail/emetteur et recepteur XT2_XT4_ FDS_ 532402web_RevA_FR (1).pdf"] }
           ]
         }
       ]

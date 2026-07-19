@@ -167,11 +167,25 @@ function attachDocumentsFromManifest(database, manifest = []) {
     database.brands.forEach(brand => {
         brand.categories.forEach(category => {
             category.products.forEach(product => {
-                const normalizedProduct = normalizeText(`${brand.name} ${category.name} ${product.name} ${product.reference || ""}`);
+                const normalizedProduct = normalizeText(`${product.name} ${product.reference || ""}`);
+                const normalizedContext = normalizeText(`${brand.name} ${category.name} ${product.name} ${product.reference || ""}`);
                 const compactProduct = compactText(normalizedProduct);
                 const canMatchRemoteControlImages = brand.id === "volets-roulants" && category.id === "somfy";
+                const manufacturerPath = `assets/notices/${category.id}/`;
+                const familyPath = category.id === "nice"
+                    ? `${manufacturerPath}${brand.id === "portails" ? "portail" : "volet-roulant"}/`
+                    : manufacturerPath;
+                const hasExplicitNiceDocuments = category.id === "nice" && product.documents.length > 0;
 
                 const matchedEntries = items.filter(entry => {
+                    if (hasExplicitNiceDocuments) {
+                        return false;
+                    }
+
+                    if (!entry.path.startsWith(familyPath)) {
+                        return false;
+                    }
+
                     const normalizedEntry = normalizeEntryText(entry);
                     if (!normalizedEntry) return false;
 
@@ -180,21 +194,23 @@ function attachDocumentsFromManifest(database, manifest = []) {
                     }
 
                     const compactEntry = compactText(normalizedEntry);
+                    const entryTokens = tokenizeText(normalizedEntry);
+                    const hasMultipleTokens = entryTokens.length > 1;
 
-                    if (normalizedProduct.includes(normalizedEntry) || normalizedEntry.includes(normalizedProduct)) {
+                    if (hasMultipleTokens && normalizedProduct.includes(normalizedEntry)) {
                         return true;
                     }
 
-                    if (compactProduct.includes(compactEntry) || compactEntry.includes(compactProduct)) {
+                    if (hasMultipleTokens && compactProduct.includes(compactEntry)) {
                         return true;
                     }
 
-                    if (hasTokenMatch(normalizedEntry, normalizedProduct)) {
+                    if (hasMultipleTokens && hasTokenMatch(normalizedEntry, normalizedProduct)) {
                         return true;
                     }
 
                     if (canMatchRemoteControlImages && isImagePath(entry.path)) {
-                        return imageEntryMatchesProduct(normalizedEntry, normalizedProduct);
+                        return imageEntryMatchesProduct(normalizedEntry, normalizedContext);
                     }
 
                     return false;
