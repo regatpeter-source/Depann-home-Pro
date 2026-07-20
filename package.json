@@ -1,9 +1,23 @@
 {
   "name": "depann-home-pro",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
+  "type": "module",
   "scripts": {
+    "start": "node app.js",
+    "dev": "node --watch app.js",
+    "check": "node --check app.js && node --check server/auth.js && node --check server/database.js && node --check js/auth.js && node --check js/app.js",
     "generate-notice-manifest": "node scripts/generate-notice-manifest.js",
     "watch-notice-manifest": "node scripts/watch-notice-manifest.js"
+  },
+  "dependencies": {
+    "bcrypt": "^6.0.0",
+    "cookie-parser": "^1.4.7",
+    "dotenv": "^16.6.1",
+    "express": "^5.1.0",
+    "express-rate-limit": "^7.5.0",
+    "helmet": "^8.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "pg": "^8.16.3"
   }
 }

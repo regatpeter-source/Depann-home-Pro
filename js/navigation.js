@@ -1,7 +1,7 @@
-import { ROUTES, STORAGE_KEYS, APP_VERSION, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=44";
-import { renderClients } from "./clients.js?v=44";
-import { renderPhotoRecognition } from "./photo-recognition.js?v=44";
-import { getSearchResults } from "./search.js?v=44";
+import { ROUTES, STORAGE_KEYS, APP_VERSION, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=53";
+import { renderClients } from "./clients.js?v=53";
+import { renderPhotoRecognition } from "./photo-recognition.js?v=53";
+import { getSearchResults } from "./search.js?v=53";
 import { state, resetSelection } from "./state.js?v=44";
 import {
     clearHistory,
@@ -9,7 +9,7 @@ import {
     getSettings,
     saveSettings
 } from "./storage.js?v=44";
-import { escapeHtml } from "./utils.js?v=44";
+import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import {
     clearSearch,
     createBackCard,
@@ -59,12 +59,213 @@ function bindEvents() {
 
             if (nav === ROUTES.home) renderBrands();
             if (nav === ROUTES.search) focusSearch();
+            if (nav === ROUTES.store) renderStore();
             if (nav === ROUTES.photo) renderPhotoRecognition(database, navigateToRef);
             if (nav === ROUTES.clients) renderClients({ database, navigateToRef });
             if (nav === ROUTES.favorites) renderFavorites();
             if (nav === ROUTES.settings) renderSettings();
         });
     });
+}
+
+function renderStore() {
+    clearSearch();
+    resetSelection("all");
+    setPage("Magasin", ROUTES.store, "detail");
+
+    const container = getContainer();
+    const panel = document.createElement("article");
+    panel.className = "brand-card full-card procedure-card store-panel";
+    panel.innerHTML = `
+        <div class="procedure-header">
+            <div>
+                <p class="eyebrow">Pièces détachées</p>
+                <h2>Trouver une pièce</h2>
+            </div>
+        </div>
+        <p class="muted">Saisissez une référence connue ou inconnue. Le catalogue identifie la marque quand il le peut, puis vous dirige vers Servistores ou le fabricant.</p>
+    `;
+
+    const form = document.createElement("form");
+    form.className = "store-form";
+
+    const referenceLabel = document.createElement("label");
+    referenceLabel.htmlFor = "storeReference";
+    referenceLabel.textContent = "Référence de la pièce ou du produit";
+    const referenceInput = document.createElement("input");
+    referenceInput.id = "storeReference";
+    referenceInput.type = "search";
+    referenceInput.placeholder = "Ex. Oximo 50 RTS, CAME BX, 1841036";
+    referenceInput.autocomplete = "off";
+    referenceLabel.appendChild(referenceInput);
+
+    const manufacturerLabel = document.createElement("label");
+    manufacturerLabel.htmlFor = "storeManufacturer";
+    manufacturerLabel.textContent = "Fabricant (facultatif)";
+    const manufacturerSelect = document.createElement("select");
+    manufacturerSelect.id = "storeManufacturer";
+    manufacturerSelect.appendChild(new Option("Détection automatique", ""));
+    getStoreManufacturers().forEach(manufacturer => {
+        manufacturerSelect.appendChild(new Option(manufacturer.name, manufacturer.id));
+    });
+    manufacturerLabel.appendChild(manufacturerSelect);
+
+    const submit = createButton("Rechercher la pièce", "secondary-button", () => {});
+    submit.type = "submit";
+    form.append(referenceLabel, manufacturerLabel, submit);
+    panel.appendChild(form);
+
+    const results = document.createElement("div");
+    results.className = "store-results";
+    panel.appendChild(results);
+    container.appendChild(panel);
+
+    form.addEventListener("submit", event => {
+        event.preventDefault();
+        renderStoreResults(results, referenceInput.value, manufacturerSelect.value);
+    });
+
+    referenceInput.focus();
+}
+
+function renderStoreResults(container, rawReference, selectedManufacturerId) {
+    container.innerHTML = "";
+    const reference = rawReference.trim();
+
+    if (!reference) {
+        container.appendChild(createInfo("Saisissez une référence avant de lancer la recherche."));
+        return;
+    }
+
+    const matches = findStoreMatches(reference);
+    const detectedManufacturer = matches[0]?.category;
+    const selectedManufacturer = getStoreManufacturers().find(item => item.id === selectedManufacturerId);
+    const manufacturer = selectedManufacturer || detectedManufacturer || null;
+    const family = matches[0]?.brand || null;
+
+    if (matches.length) {
+        const heading = document.createElement("h3");
+        heading.textContent = "Correspondances dans le catalogue";
+        container.appendChild(heading);
+
+        const list = document.createElement("div");
+        list.className = "store-match-list";
+        matches.forEach(match => {
+            const card = document.createElement("button");
+            card.type = "button";
+            card.className = "store-match";
+            card.innerHTML = `<strong>${escapeHtml(match.product.name)}</strong><span>${escapeHtml(match.category.name)} · ${escapeHtml(match.brand.name)} · ${escapeHtml(match.product.reference || "Référence non renseignée")}</span>`;
+            card.addEventListener("click", () => navigateToRef(match.ref));
+            list.appendChild(card);
+        });
+        container.appendChild(list);
+    } else {
+        container.appendChild(createInfo("Référence non trouvée dans le catalogue. Vous pouvez tout de même poursuivre vers un fournisseur."));
+    }
+
+    const actions = document.createElement("section");
+    actions.className = "procedure-section store-actions";
+    const heading = document.createElement("h3");
+    heading.textContent = "Où chercher cette pièce ?";
+    const description = document.createElement("p");
+    description.className = "muted";
+    description.textContent = manufacturer
+        ? `Référence recherchée : ${reference}. Fabricant ${manufacturer.name}${family ? ` · ${family.name}` : ""}.`
+        : `Référence recherchée : ${reference}. Sélectionnez un fabricant ci-dessus pour accéder directement à son assistance.`;
+    actions.append(heading, description);
+
+    const links = document.createElement("div");
+    links.className = "store-links";
+    links.appendChild(createExternalLink(
+        `Chercher « ${reference} » sur Servistores`,
+        getServistoresSearchUrl(reference),
+        `Recherche Servistores pour la référence ${reference}`
+    ));
+
+    if (manufacturer) {
+        links.appendChild(createExternalLink(
+            `Chercher « ${reference} » chez ${manufacturer.name}`,
+            getManufacturerSupportUrl(manufacturer.id, reference),
+            `Recherche de la référence ${reference} sur le site officiel ${manufacturer.name}`
+        ));
+    }
+
+    actions.appendChild(links);
+    container.appendChild(actions);
+}
+
+function findStoreMatches(reference) {
+    const query = compactReference(reference);
+    if (!query) return [];
+
+    const matches = [];
+    database.brands.forEach((brand, brandIndex) => {
+        brand.categories.forEach((category, categoryIndex) => {
+            category.products.forEach((product, productIndex) => {
+                const productReference = compactReference(product.reference);
+                const productName = compactReference(product.name);
+                const isExactReference = productReference === query;
+                const isPartialMatch = query.length >= 3 && (productReference.includes(query) || query.includes(productReference) || productName.includes(query));
+
+                if (!isExactReference && !isPartialMatch) return;
+                matches.push({
+                    brand,
+                    category,
+                    product,
+                    ref: { type: "product", brandIndex, categoryIndex, productIndex },
+                    score: isExactReference ? 2 : 1
+                });
+            });
+        });
+    });
+
+    return matches.sort((first, second) => second.score - first.score).slice(0, 8);
+}
+
+function compactReference(value) {
+    return normalizeText(value).replace(/[^a-z0-9]+/g, "");
+}
+
+function getStoreManufacturers() {
+    const manufacturers = new Map();
+    database.brands.forEach(brand => {
+        brand.categories.forEach(category => {
+            if (!manufacturers.has(category.id)) manufacturers.set(category.id, { id: category.id, name: category.name });
+        });
+    });
+    return [...manufacturers.values()].sort((first, second) => first.name.localeCompare(second.name, "fr"));
+}
+
+function getServistoresSearchUrl(reference) {
+    return `https://www.servistores.com/html/recherche.html?q=${encodeURIComponent(reference)}`;
+}
+
+function getManufacturerSupportUrl(manufacturerId, reference) {
+    if (manufacturerId === "servistores") return getServistoresSearchUrl(reference);
+
+    const domains = {
+        somfy: "somfy.fr",
+        nice: "niceforyou.com",
+        bubendorff: "bubendorff.com",
+        faac: "faac.it",
+        came: "came.com",
+        hormann: "hormann.fr"
+    };
+    const domain = domains[manufacturerId];
+    if (!domain) return getServistoresSearchUrl(reference);
+
+    return `https://www.google.com/search?q=${encodeURIComponent(`site:${domain} ${reference}`)}`;
+}
+
+function createExternalLink(label, href, title) {
+    const link = document.createElement("a");
+    link.className = "secondary-button store-external-link";
+    link.href = href;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    link.title = title;
+    link.textContent = label;
+    return link;
 }
 
 export function renderBrands() {
@@ -283,8 +484,15 @@ function renderSearchResults(query) {
             createCard(
                 "",
                 result.title,
-                result.subtitle,
-                () => navigateToRef(result.ref),
+                result.type === "document" ? `${result.subtitle} · Document PDF` : result.subtitle,
+                () => {
+                    if (result.type === "document") {
+                        window.open(result.documentPath, "_blank", "noopener,noreferrer");
+                        return;
+                    }
+
+                    navigateToRef(result.ref);
+                },
                 { image: getRefPhoto(result.ref) }
             )
         );

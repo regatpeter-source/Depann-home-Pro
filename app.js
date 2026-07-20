@@ -1,2 +1,72 @@
-// Compatibilité anciens caches : le vrai point d'entrée V1.0 est js/app.js.
-import("./js/app.js");
+import "dotenv/config";
+import cookieParser from "cookie-parser";
+import express from "express";
+import helmet from "helmet";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import rateLimit from "express-rate-limit";
+import {
+	authenticateRequest,
+	createInitialAdministrator,
+	registerAuthRoutes,
+	requireAuthentication,
+	validateAuthenticationConfiguration
+} from "./server/auth.js";
+import { initializeDatabase } from "./server/database.js";
+
+const rootDirectory = path.dirname(fileURLToPath(import.meta.url));
+const app = express();
+const port = Number(process.env.PORT || 3000);
+
+app.set("trust proxy", 1);
+app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false }));
+app.use(express.json({ limit: "16kb" }));
+app.use(cookieParser());
+app.use(authenticateRequest);
+
+app.use("/api/auth", rateLimit({
+	windowMs: 15 * 60 * 1000,
+	limit: 20,
+	standardHeaders: "draft-7",
+	legacyHeaders: false,
+	message: { message: "Trop de tentatives. Réessayez dans quelques minutes." }
+}));
+registerAuthRoutes(app);
+
+// Seul le logo est nécessaire avant connexion. Le catalogue et les notices sont servis
+// uniquement après validation du cookie de session HTTP-only.
+app.get("/assets/logo.png.png", (request, response) => {
+	response.sendFile(path.join(rootDirectory, "assets", "logo.png.png"));
+});
+app.use("/data", requireAuthentication, express.static(path.join(rootDirectory, "data"), { index: false }));
+app.use("/assets", requireAuthentication, express.static(path.join(rootDirectory, "assets"), { index: false }));
+
+app.get(["/", "/index.html"], (request, response) => {
+	response.sendFile(path.join(rootDirectory, "index.html"), { headers: { "Cache-Control": "no-store" } });
+});
+app.use("/css", express.static(path.join(rootDirectory, "css"), { index: false }));
+app.use("/js", express.static(path.join(rootDirectory, "js"), { index: false }));
+app.get("/manifest.json", (request, response) => {
+	response.sendFile(path.join(rootDirectory, "manifest.json"));
+});
+app.get("/service-worker.js", (request, response) => {
+	response.sendFile(path.join(rootDirectory, "service-worker.js"), { headers: { "Cache-Control": "no-cache" } });
+});
+
+app.use((error, request, response, next) => {
+	console.error(error);
+	if (response.headersSent) return next(error);
+	return response.status(500).json({ message: "Erreur interne du serveur." });
+});
+
+async function start() {
+	validateAuthenticationConfiguration();
+	await initializeDatabase();
+	await createInitialAdministrator();
+	app.listen(port, () => console.log(`Depann'Home Pro écoute sur le port ${port}.`));
+}
+
+start().catch(error => {
+	console.error("Impossible de démarrer l’application :", error.message);
+	process.exit(1);
+});

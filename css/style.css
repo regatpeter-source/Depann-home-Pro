@@ -30,6 +30,10 @@ body{
     line-height:1.5;
 }
 
+.auth-pending #authRoot{
+    visibility:hidden;
+}
+
 button,
 input,
 select,
@@ -57,6 +61,148 @@ textarea{
     display:flex;
     align-items:center;
     gap:22px;
+}
+
+.user-session{
+    margin-left:auto;
+    display:flex;
+    flex-wrap:wrap;
+    align-items:center;
+    justify-content:flex-end;
+    gap:10px;
+    color:var(--muted);
+    font-size:14px;
+}
+
+.logout-button{
+    border:1px solid var(--border);
+    border-radius:10px;
+    padding:9px 11px;
+    background:var(--surface);
+    color:var(--primary);
+    cursor:pointer;
+    font-weight:700;
+}
+
+.logout-button:hover{
+    border-color:var(--secondary);
+    color:var(--secondary);
+}
+
+/* ==========================
+   AUTHENTIFICATION
+========================== */
+
+.auth-page{
+    min-height:100vh;
+    display:grid;
+    place-items:center;
+    padding:28px;
+}
+
+.auth-card{
+    width:min(100%, 460px);
+    padding:30px;
+    border-radius:var(--radius);
+    background:var(--surface);
+    box-shadow:var(--shadow-hover);
+    display:grid;
+    gap:18px;
+}
+
+.auth-brand{
+    display:flex;
+    align-items:center;
+    gap:16px;
+}
+
+.auth-brand h1{
+    color:var(--primary);
+    font-size:24px;
+}
+
+.auth-brand p{
+    color:var(--muted);
+}
+
+.auth-logo{
+    width:84px;
+    height:64px;
+    object-fit:contain;
+}
+
+.auth-form{
+    display:grid;
+    gap:14px;
+}
+
+.auth-form label{
+    display:grid;
+    gap:7px;
+    color:var(--primary);
+    font-weight:700;
+}
+
+.auth-form input{
+    width:100%;
+    border:1px solid var(--border);
+    border-radius:12px;
+    padding:12px 13px;
+    color:var(--text);
+    outline:none;
+    font-weight:400;
+}
+
+.auth-form input:focus{
+    border-color:var(--secondary);
+    box-shadow:0 0 0 3px rgba(10,92,54,.12);
+}
+
+.auth-outline-button{
+    background:var(--surface);
+    border:1px solid var(--secondary);
+    color:var(--secondary);
+    box-shadow:none;
+}
+
+.auth-outline-button:hover{
+    color:white;
+}
+
+.auth-separator{
+    display:flex;
+    align-items:center;
+    gap:12px;
+    color:var(--muted);
+    font-size:14px;
+}
+
+.auth-separator::before,
+.auth-separator::after{
+    content:"";
+    flex:1;
+    height:1px;
+    background:var(--border);
+}
+
+.auth-message{
+    min-height:1.5em;
+    color:var(--secondary);
+    font-size:14px;
+}
+
+.auth-message.error{
+    color:var(--danger);
+}
+
+.auth-link-button{
+    justify-self:start;
+    border:none;
+    padding:0;
+    background:transparent;
+    color:var(--primary);
+    cursor:pointer;
+    font-weight:700;
 }
 
 .logo{
@@ -717,6 +863,109 @@ textarea{
 }
 
 /* ==========================
+   MAGASIN
+========================== */
+
+.store-panel{
+    max-width:820px;
+    margin:auto;
+}
+
+.store-form{
+    display:grid;
+    grid-template-columns:minmax(0,2fr) minmax(180px,1fr) auto;
+    gap:14px;
+    align-items:end;
+}
+
+.store-form label{
+    display:grid;
+    gap:7px;
+    color:var(--primary);
+    font-weight:700;
+}
+
+.store-form input,
+.store-form select{
+    width:100%;
+    min-height:48px;
+    padding:11px 13px;
+    border:1px solid var(--border);
+    border-radius:12px;
+    background:var(--surface);
+    color:var(--text);
+    outline:none;
+    font-weight:400;
+}
+
+.store-form input:focus,
+.store-form select:focus{
+    border-color:var(--secondary);
+    box-shadow:0 0 0 3px rgba(10,92,54,.12);
+}
+
+.store-results{
+    display:grid;
+    gap:14px;
+}
+
+.store-results > h3{
+    color:var(--primary);
+    margin-top:4px;
+}
+
+.store-match-list{
+    display:grid;
+    gap:10px;
+}
+
+.store-match{
+    display:grid;
+    gap:4px;
+    padding:14px 16px;
+    border:1px solid var(--border);
+    border-radius:14px;
+    background:#f8fbff;
+    color:var(--text);
+    text-align:left;
+    cursor:pointer;
+}
+
+.store-match:hover,
+.store-match:focus-visible{
+    border-color:var(--secondary);
+    box-shadow:0 0 0 3px rgba(10,92,54,.12);
+    outline:none;
+}
+
+.store-match strong{
+    color:var(--primary);
+}
+
+.store-match span{
+    color:var(--muted);
+    font-size:14px;
+}
+
+.store-actions{
+    display:grid;
+    gap:12px;
+}
+
+.store-links{
+    display:flex;
+    flex-wrap:wrap;
+    gap:10px;
+}
+
+.store-external-link{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    text-decoration:none;
+}
+
+/* ==========================
    CLIENTS
 ========================== */
 
@@ -997,6 +1246,11 @@ footer{
         text-align:center;
     }
 
+    .user-session{
+        margin-left:0;
+        justify-content:center;
+    }
+
     .logo{
         width:min(320px,86vw);
         height:120px;
@@ -1004,6 +1258,14 @@ footer{
 
     .quick-actions{
         flex-direction:column;
+    }
+
+    .store-form{
+        grid-template-columns:1fr;
+    }
+
+    .store-form .secondary-button{
+        width:100%;
     }
 
     .client-toolbar-actions,

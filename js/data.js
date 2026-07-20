@@ -1,4 +1,4 @@
-import { DATA_VERSION } from "./config.js?v=44";
+import { DATA_VERSION } from "./config.js?v=53";
 import { slugify, normalizeText } from "./utils.js?v=44";
 
 export async function loadDatabase() {
@@ -99,10 +99,6 @@ function isImagePath(filePath) {
     return /\.(png|jpe?g|webp|svg)$/i.test(filePath);
 }
 
-function isRemoteControlImage(entry) {
-    return isImagePath(entry.path) && /\b(keypad|smoove|situo|telis|telecommande)\b/i.test(entry.product || entry.reference || entry.path);
-}
-
 function compactText(value) {
     return normalizeText(value).replace(/\s+/g, "");
 }
@@ -134,26 +130,6 @@ function hasTokenMatch(entryText, normalizedProduct) {
     return matched.length >= Math.min(2, entryTokens.length);
 }
 
-function imageEntryMatchesProduct(entryText, normalizedProduct) {
-    if (!entryText) return false;
-
-    const brandMatch = normalizedProduct.includes("somfy") && entryText.includes("somfy");
-    const ioMatch = normalizedProduct.includes("io") && entryText.includes("io");
-    const rtsMatch = normalizedProduct.includes("rts") && entryText.includes("rts");
-    const keypadMatch = normalizedProduct.includes("io") && entryText.includes("keypad");
-    const smooveMatch = normalizedProduct.includes("io") && entryText.includes("smoove");
-    const situoMatch = normalizedProduct.includes("rts") && entryText.includes("situo");
-
-    if (brandMatch && (ioMatch || rtsMatch || keypadMatch || smooveMatch || situoMatch)) {
-        return true;
-    }
-
-    if (ioMatch && entryText.includes("io")) return true;
-    if (rtsMatch && entryText.includes("rts")) return true;
-
-    return false;
-}
-
 function getNoticeKeywords(entry) {
     const entryText = normalizeEntryText(entry);
     return entryText
@@ -168,9 +144,7 @@ function attachDocumentsFromManifest(database, manifest = []) {
         brand.categories.forEach(category => {
             category.products.forEach(product => {
                 const normalizedProduct = normalizeText(`${product.name} ${product.reference || ""}`);
-                const normalizedContext = normalizeText(`${brand.name} ${category.name} ${product.name} ${product.reference || ""}`);
                 const compactProduct = compactText(normalizedProduct);
-                const canMatchRemoteControlImages = brand.id === "volets-roulants" && category.id === "somfy";
                 const manufacturerPath = `assets/notices/${category.id}/`;
                 const familyPath = category.id === "nice"
                     ? `${manufacturerPath}${brand.id === "portails" ? "portail" : "volet-roulant"}/`
@@ -189,7 +163,7 @@ function attachDocumentsFromManifest(database, manifest = []) {
                     const normalizedEntry = normalizeEntryText(entry);
                     if (!normalizedEntry) return false;
 
-                    if (!canMatchRemoteControlImages && isRemoteControlImage(entry)) {
+                    if (isImagePath(entry.path)) {
                         return false;
                     }
 
@@ -207,10 +181,6 @@ function attachDocumentsFromManifest(database, manifest = []) {
 
                     if (hasMultipleTokens && hasTokenMatch(normalizedEntry, normalizedProduct)) {
                         return true;
-                    }
-
-                    if (canMatchRemoteControlImages && isImagePath(entry.path)) {
-                        return imageEntryMatchesProduct(normalizedEntry, normalizedContext);
                     }
 
                     return false;

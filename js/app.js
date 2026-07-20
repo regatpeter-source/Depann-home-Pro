@@ -1,12 +1,32 @@
-import { loadDatabase } from "./data.js?v=44";
-import { initializeNavigation } from "./navigation.js?v=44";
+import { initializeAuthentication, signOut } from "./auth.js?v=53";
+import { loadDatabase } from "./data.js?v=53";
+import { initializeNavigation } from "./navigation.js?v=53";
 import { renderError } from "./ui.js?v=44";
 import { getSettings } from "./storage.js?v=44";
-import { FONT_OPTIONS } from "./config.js?v=44";
+import { FONT_OPTIONS } from "./config.js?v=53";
 
-window.addEventListener("DOMContentLoaded", init);
+let applicationStarted = false;
 
-async function init() {
+window.addEventListener("DOMContentLoaded", initializeApp);
+
+async function initializeApp() {
+    await initializeAuthentication({
+        onAuthenticated: user => {
+            if (!document.getElementById("app")) {
+                window.location.reload();
+                return;
+            }
+
+            showAuthenticatedUser(user);
+            startApplication();
+        }
+    });
+}
+
+async function startApplication() {
+    if (applicationStarted) return;
+    applicationStarted = true;
+
     try {
         applyTheme();
         applyFont();
@@ -15,8 +35,23 @@ async function init() {
         initializeNavigation(database);
         registerServiceWorker();
     } catch (error) {
+        applicationStarted = false;
         renderError("Impossible de charger la base de données.", error.message);
     }
+}
+
+function showAuthenticatedUser(user) {
+    const session = document.getElementById("userSession");
+    const email = document.getElementById("userEmail");
+    const logoutButton = document.getElementById("logoutBtn");
+
+    if (session) session.hidden = false;
+    if (email) email.textContent = user.username || "Utilisateur connecté";
+    document.body.classList.remove("auth-pending");
+    logoutButton?.addEventListener("click", async () => {
+        logoutButton.disabled = true;
+        await signOut();
+    }, { once: true });
 }
 
 function applyTheme() {
@@ -60,8 +95,8 @@ function applyLanguage() {
 
         document.querySelectorAll('footer .nav-button span').forEach((span, idx) => {
             const texts = lang === 'en'
-                ? ['Home','Search','Photo','Clients','Favorites','Settings']
-                : ['Accueil','Recherche','Photo','Clients','Favoris','Paramètres'];
+                ? ['Home','Search','Store','Photo','Clients','Favorites','Settings']
+                : ['Accueil','Recherche','Magasin','Photo','Clients','Favoris','Paramètres'];
             span.textContent = texts[idx] || span.textContent;
         });
     } catch {

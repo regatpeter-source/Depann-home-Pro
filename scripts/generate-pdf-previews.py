@@ -13,6 +13,18 @@ GALLERIES = [
     (
         ROOT / "assets" / "notices" / "servistores" / "volet-roulant",
         ROOT / "assets" / "previews" / "servistores" / "volet-roulant"
+    ),
+    (
+        ROOT / "assets" / "notices" / "nice" / "portail",
+        ROOT / "assets" / "previews" / "nice" / "portail"
+    ),
+    (
+        ROOT / "assets" / "notices" / "came" / "portail",
+        ROOT / "assets" / "previews" / "came" / "portail"
+    ),
+    (
+        ROOT / "assets" / "notices" / "faac" / "portail",
+        ROOT / "assets" / "previews" / "faac" / "portail"
     )
 ]
 ZOOM = 1.5

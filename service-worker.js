@@ -1,11 +1,10 @@
-const CACHE_NAME = "depann-home-pro-v44";
+const CACHE_NAME = "depann-home-pro-v53";
 const ASSETS = [
     "./",
     "./index.html",
-    "./app.js",
-    "./style.css",
     "./css/style.css",
     "./js/app.js",
+    "./js/auth.js",
     "./js/clients.js",
     "./js/config.js",
     "./js/data.js",
@@ -17,7 +16,6 @@ const ASSETS = [
     "./js/ui.js",
     "./js/utils.js",
     "./manifest.json",
-    "./data/database.json",
     "./assets/logo.png.png"
 ];
 
@@ -43,6 +41,14 @@ self.addEventListener("activate", event => {
 
 self.addEventListener("fetch", event => {
     if (event.request.method !== "GET") return;
+
+    const url = new URL(event.request.url);
+    const isPublicAsset = url.origin === self.location.origin
+        && !url.pathname.startsWith("/api/")
+        && !url.pathname.startsWith("/data/")
+        && !url.pathname.startsWith("/assets/");
+
+    if (!isPublicAsset) return;
 
     event.respondWith(
         fetch(event.request)

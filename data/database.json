@@ -31,6 +31,34 @@
               ]
             },
             {
+              "name": "Télécommande Situo 1 RTS Pure",
+              "reference": "Situo 1 RTS Pure",
+              "keywords": ["télécommande", "commande radio", "RTS", "Somfy"],
+              "photos": ["assets/notices/somfy/situo 1 rts pure.webp"],
+              "documents": [
+                "assets/notices/somfy/volet-roulant/astuces rapide somfy/astuces en image moteur vr oximo, altus et orea/ajouterune_telecommande_vr.pdf",
+                "assets/notices/somfy/volet-roulant/astuces rapide somfy/astuces en image moteur vr oximo, altus et orea/remplacerune_telecommande_cassee_ou_perdue_vr.pdf",
+                "assets/notices/somfy/volet-roulant/astuces rapide somfy/astuces en image moteur vr oximo, altus et orea/supprimerune_telecommande_qui_pilote_2_volets_roulans_au_lieu_d-_un_vr.pdf",
+                "assets/notices/somfy/volet-roulant/astuces rapide somfy/astuces en image moteur vr oximo, altus et orea/supprimerune_telecommande_vr.pdf"
+              ]
+            },
+            {
+              "name": "Télécommande Keypad 2 io",
+              "reference": "Keypad 2 io",
+              "keywords": ["télécommande", "clavier", "commande radio", "io", "Somfy"],
+              "photos": ["assets/notices/somfy/keypad 2 somfy io.jpg"]
+            },
+            {
+              "name": "Commande murale Smoove io 1 canal",
+              "reference": "Smoove io 1 canal",
+              "keywords": ["télécommande", "commande murale", "interrupteur", "io", "Somfy"],
+              "photos": ["assets/notices/somfy/smoove-io-1-canal-blanc.jpg"],
+              "documents": [
+                "assets/notices/somfy/volet-roulant/astuces rapide somfy/astuces en image moteur vr oximo, altus et orea/ajouterune_telecommande_vr.pdf",
+                "assets/notices/somfy/volet-roulant/astuces rapide somfy/astuces en image moteur vr oximo, altus et orea/supprimerune_telecommande_vr.pdf"
+              ]
+            },
+            {
               "name": "Oximo 50 RTS",
               "reference": "Oximo 50 RTS",
               "documents": [
@@ -227,14 +255,32 @@
             { "name": "Robus 400 / 600 / 1000", "reference": "Robus", "documents": ["assets/notices/nice/portail/robus 400 600 1000.pdf"] },
             { "name": "Road 400", "reference": "Road 400", "documents": ["assets/notices/nice/portail/road 400.pdf"] },
             { "name": "Wingo / Toona", "reference": "Wingo Toona", "documents": ["assets/notices/nice/portail/WINGO.pdf"] },
-            { "name": "Télécommandes FLO / ON / ERA / ONE", "reference": "FLO ON ERA ONE", "documents": ["assets/notices/nice/portail/flo.pdf", "assets/notices/nice/portail/one.pdf"] },
+            {
+              "name": "Télécommandes FLO / ON / ERA / ONE",
+              "reference": "FLO ON ERA ONE",
+              "keywords": ["télécommande", "émetteur", "FLO", "ERA", "ONE", "Nice"],
+              "photos": [
+                "assets/previews/nice/portail/flo.png",
+                "assets/previews/nice/portail/one.png"
+              ],
+              "documents": ["assets/notices/nice/portail/flo.pdf", "assets/notices/nice/portail/one.pdf"]
+            },
             { "name": "Run 1500 / 1800 / 2500", "reference": "Run", "documents": ["assets/notices/nice/portail/run 1800 2500.pdf"] },
             { "name": "Thor 1500 coulissant", "reference": "Thor 1500", "documents": ["assets/notices/nice/portail/thor 1500.pdf"] },
             { "name": "Tub 4000 coulissant", "reference": "Tub 4000", "documents": ["assets/notices/nice/portail/tub 4000.pdf"] },
             { "name": "Hyke / Hopp battant", "reference": "Hyke Hopp", "documents": ["assets/notices/nice/portail/hyke.pdf", "assets/notices/nice/portail/hopp.pdf"] },
             { "name": "Metro / X-Metro enterré", "reference": "Metro X-Metro", "documents": ["assets/notices/nice/portail/x metro.pdf"] },
             { "name": "PopKit / Aria battant domestique", "reference": "PopKit Aria", "documents": ["assets/notices/nice/portail/aria.pdf"] },
-            { "name": "Clavier Nice EDS / EDSWG / ERA Keypad", "reference": "EDS EDSWG ERA Keypad", "documents": ["assets/notices/nice/portail/clavier eds.pdf", "assets/notices/nice/portail/edswg.pdf"] }
+            {
+              "name": "Clavier Nice EDS / EDSWG / ERA Keypad",
+              "reference": "EDS EDSWG ERA Keypad",
+              "keywords": ["clavier", "keypad", "EDS", "EDSWG", "Nice"],
+              "photos": [
+                "assets/previews/nice/portail/clavier eds.png",
+                "assets/previews/nice/portail/edswg.png"
+              ],
+              "documents": ["assets/notices/nice/portail/clavier eds.pdf", "assets/notices/nice/portail/edswg.pdf"]
+            }
           ]
         },
         {
@@ -246,7 +292,13 @@
             { "name": "FROG enterré", "reference": "FROG", "documents": ["assets/notices/came/portail/CAME-frog enterré.pdf"] },
             { "name": "KRONO / ATI battant", "reference": "KRONO ATI", "documents": ["assets/notices/came/portail/CAME- ati.pdf"] },
             { "name": "Cartes ZBX7 / ZLJ24", "reference": "ZBX7 ZLJ24" },
-            { "name": "Télécommandes TOP / TAM / Twin", "reference": "TOP TAM Twin", "documents": ["assets/notices/came/portail/notice-CAME-TOP432EE.pdf"] },
+            {
+              "name": "Télécommandes TOP / TAM / Twin",
+              "reference": "TOP TAM Twin",
+              "keywords": ["télécommande", "émetteur", "TOP", "TAM", "Twin", "CAME"],
+              "photos": ["assets/previews/came/portail/notice-CAME-TOP432EE.png"],
+              "documents": ["assets/notices/came/portail/notice-CAME-TOP432EE.pdf"]
+            },
             { "name": "BKV / BK coulissant collectif", "reference": "BKV BK", "documents": ["assets/notices/came/portail/CAME-fa02077m04 bkv.pdf", "assets/notices/came/portail/CAME-fa01295m04 bk.pdf"] },
             { "name": "FAST / FERNI bras articulés", "reference": "FAST FERNI", "documents": ["assets/notices/came/portail/CAME-fast.pdf"] },
             { "name": "AXI / ATS vérins battants", "reference": "AXI ATS", "documents": ["assets/notices/came/portail/CAME-axi.pdf", "assets/notices/came/portail/CAME-fa02103m04 ats.pdf"] },
@@ -268,7 +320,13 @@
             { "name": "FAAC 770N / moteurs enterrés", "reference": "770N", "documents": ["assets/notices/faac/portail/770N_732615_RevB_FR.pdf"] },
             { "name": "Clavier FAAC XKP W / XK10", "reference": "XKP W XK10" },
             { "name": "Récepteurs RP / XF / Decoder FAAC", "reference": "RP XF Decoder", "documents": ["assets/notices/faac/portail/emmetteur  rp xf.pdf"] },
-            { "name": "Télécommandes FAAC XT2 / XT4", "reference": "XT2 XT4", "documents": ["assets/notices/faac/portail/emetteur et recepteur XT2_XT4_ FDS_ 532402web_RevA_FR (1).pdf"] }
+            {
+              "name": "Télécommandes FAAC XT2 / XT4",
+              "reference": "XT2 XT4",
+              "keywords": ["télécommande", "émetteur", "XT2", "XT4", "FAAC"],
+              "photos": ["assets/previews/faac/portail/emetteur et recepteur XT2_XT4_ FDS_ 532402web_RevA_FR (1).png"],
+              "documents": ["assets/notices/faac/portail/emetteur et recepteur XT2_XT4_ FDS_ 532402web_RevA_FR (1).pdf"]
+            }
           ]
         }
       ]

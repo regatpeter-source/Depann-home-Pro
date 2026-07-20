@@ -1,5 +1,5 @@
-import { ROUTES } from "./config.js?v=44";
-import { getSearchResults } from "./search.js?v=44";
+import { ROUTES } from "./config.js?v=53";
+import { getSearchResults } from "./search.js?v=53";
 import { resetSelection } from "./state.js?v=44";
 import {
     createButton,
@@ -145,7 +145,8 @@ function getImageBankResults(database, file, predictions, query) {
                     category.name,
                     product.name,
                     product.reference || "",
-                    ...(Array.isArray(product.keywords) ? product.keywords : [])
+                    ...(Array.isArray(product.keywords) ? product.keywords : []),
+                    ...(Array.isArray(product.photos) ? product.photos.map(getFileName) : [])
                 ].join(" "));
 
                 let score = 0;
@@ -195,6 +196,10 @@ function tokenize(value) {
         .split(/\s+/)
         .map(token => token.trim())
         .filter(Boolean);
+}
+
+function getFileName(filePath) {
+    return String(filePath || "").split("/").pop() || "";
 }
 
 function renderAnalysisResults(analysis, resultsContainer, navigateToRef, status) {

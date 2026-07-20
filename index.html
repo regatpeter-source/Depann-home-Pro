@@ -18,11 +18,13 @@
 
     <link rel="icon" href="assets/logo.png.png" type="image/png">
 
-    <link rel="stylesheet" href="css/style.css?v=44">
+    <link rel="stylesheet" href="css/style.css?v=53">
 
 </head>
 
-<body>
+<body class="auth-pending">
+
+    <div id="authRoot">
 
     <header class="topbar">
 
@@ -39,6 +41,11 @@
 
                 <p>Assistant de dépannage professionnel</p>
 
+            </div>
+
+            <div class="user-session" id="userSession" hidden>
+                <span id="userEmail"></span>
+                <button type="button" id="logoutBtn" class="logout-button">Déconnexion</button>
             </div>
 
         </div>
@@ -106,6 +113,10 @@
             <span>Recherche</span>
         </button>
 
+        <button class="nav-button" data-nav="store">
+            <span>Magasin</span>
+        </button>
+
         <button class="nav-button" data-nav="photo">
             <span>Photo</span>
         </button>
@@ -124,7 +135,9 @@
 
     </footer>
 
-    <script type="module" src="js/app.js?v=44"></script>
+    </div>
+
+    <script type="module" src="js/app.js?v=53"></script>
 
 </body>
 
