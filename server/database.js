@@ -23,26 +23,26 @@ export async function initializeDatabase() {
     const database = getPool();
 
     await database.query(`
-        CREATE TABLE IF NOT EXISTS users (
+        CREATE TABLE IF NOT EXISTS depannhome_users (
             id BIGSERIAL PRIMARY KEY,
             username VARCHAR(32) NOT NULL,
             password_hash TEXT NOT NULL,
             role VARCHAR(20) NOT NULL DEFAULT 'user',
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            CONSTRAINT users_username_lowercase_unique UNIQUE (username)
+            CONSTRAINT depannhome_users_username_unique UNIQUE (username)
         )
     `);
 
     await database.query(`
-        CREATE INDEX IF NOT EXISTS users_username_lookup_idx
-        ON users (username)
+        CREATE INDEX IF NOT EXISTS depannhome_users_username_lookup_idx
+        ON depannhome_users (username)
     `);
 }
 
 export async function findUserByUsername(username) {
     const { rows } = await getPool().query(
-        "SELECT id, username, password_hash, role FROM users WHERE username = $1",
+        "SELECT id, username, password_hash, role FROM depannhome_users WHERE username = $1",
         [username]
     );
 
@@ -51,7 +51,7 @@ export async function findUserByUsername(username) {
 
 export async function createUser({ username, passwordHash, role = "user" }) {
     const { rows } = await getPool().query(
-        `INSERT INTO users (username, password_hash, role)
+        `INSERT INTO depannhome_users (username, password_hash, role)
          VALUES ($1, $2, $3)
          RETURNING id, username, role`,
         [username, passwordHash, role]

@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS users (
+CREATE TABLE IF NOT EXISTS depannhome_users (
     id BIGSERIAL PRIMARY KEY,
     username VARCHAR(32) NOT NULL UNIQUE,
     password_hash TEXT NOT NULL,
@@ -7,4 +7,4 @@ CREATE TABLE IF NOT EXISTS users (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS users_username_lookup_idx ON users (username);
+CREATE INDEX IF NOT EXISTS depannhome_users_username_lookup_idx ON depannhome_users (username);
