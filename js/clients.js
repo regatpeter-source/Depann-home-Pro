@@ -1,4 +1,4 @@
-import { ROUTES } from "./config.js?v=70";
+import { ROUTES } from "./config.js?v=71";
 import { deleteLocalClient, getLocalClients, saveLocalClient, synchronizeClients } from "./client-sync.js?v=59";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
@@ -348,6 +348,7 @@ function renderClientDetail(client) {
                 <h2>${escapeHtml(client.name)}</h2>
             </div>
             <div class="client-card-actions">
+                <button type="button" class="secondary-button" id="createClientAppointment">+ Créer un rendez-vous</button>
                 <button type="button" class="secondary-button" id="createClientQuote">+ Créer un devis</button>
                 <button type="button" class="secondary-button" id="createClientInvoice">+ Créer une facture</button>
                 <button type="button" class="secondary-button" id="editSelectedClient">Modifier</button>
@@ -374,6 +375,7 @@ function renderClientDetail(client) {
     `;
 
     panel.querySelector("#editSelectedClient").addEventListener("click", () => renderClients({ editId: client.id }));
+    panel.querySelector("#createClientAppointment").addEventListener("click", () => openClientAppointment(client));
     panel.querySelector("#createClientQuote").addEventListener("click", () => openClientBillingDocument("quote", client));
     panel.querySelector("#createClientInvoice").addEventListener("click", () => openClientBillingDocument("invoice", client));
     panel.querySelectorAll("[data-delete-attachment]").forEach(button => {
@@ -390,6 +392,12 @@ function renderClientDetail(client) {
     const detail = document.createDocumentFragment();
     detail.append(panel, renderClientBillingDocuments(client));
     return detail;
+}
+
+function openClientAppointment(client) {
+    if (typeof clientScreenOptions.createCalendarEvent === "function") {
+        clientScreenOptions.createCalendarEvent(client);
+    }
 }
 
 function openClientBillingDocument(type, client) {

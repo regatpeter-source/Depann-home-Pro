@@ -1,5 +1,5 @@
-import { ROUTES } from "./config.js?v=70";
-import { getSearchableClients } from "./clients.js?v=70";
+import { ROUTES } from "./config.js?v=71";
+import { getSearchableClients } from "./clients.js?v=71";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { clearSearch, createInfo, getContainer, setPage } from "./ui.js?v=44";
@@ -49,6 +49,17 @@ export async function renderCalendar(options = {}) {
     renderHeader(header);
     renderEventForm(formPanel);
     renderCalendarGrid(gridPanel);
+}
+
+export function createCalendarEventForClient(client) {
+    if (!client) return;
+    const date = new Date();
+    selectedEvent = {
+        ...newEventForDate(toDateString(date)),
+        clientName: client.name || "",
+        location: formatClientAddress(client)
+    };
+    renderCalendar({ date });
 }
 
 function renderHeader(panel) {
