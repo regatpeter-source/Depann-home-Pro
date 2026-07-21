@@ -1498,12 +1498,15 @@ footer{
     bottom:0;
     left:0;
     right:0;
-    height:75px;
+    min-height:78px;
     background:var(--surface);
     display:flex;
-    justify-content:space-around;
+    justify-content:center;
     align-items:center;
-    box-shadow:0 -3px 12px rgba(0,0,0,.08);
+    gap:4px;
+    padding:6px max(10px, env(safe-area-inset-right)) calc(6px + env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
+    border-top:2px solid rgba(10,92,54,.18);
+    box-shadow:0 -5px 18px rgba(0,59,115,.14);
     z-index:10;
 }
 
@@ -1513,27 +1516,36 @@ footer{
     display:flex;
     flex-direction:column;
     align-items:center;
+    justify-content:center;
+    min-width:74px;
+    min-height:60px;
     cursor:pointer;
-    color:#666;
+    color:#475569;
     font-size:22px;
     padding:8px 12px;
     border-radius:14px;
-    transition:background .18s ease, color .18s ease, transform .18s ease;
+    transition:background .18s ease, color .18s ease, transform .18s ease, box-shadow .18s ease;
 }
 
-.nav-button:hover{
-    color:var(--primary);
-    background:#eef6ff;
+.nav-button:hover,
+.nav-button:focus-visible{
+    color:#fff;
+    background:var(--secondary);
+    box-shadow:0 4px 10px rgba(10,92,54,.24);
     transform:translateY(-1px);
+    outline:none;
 }
 
 .nav-button span{
     font-size:12px;
     margin-top:4px;
+    font-weight:700;
 }
 
-.active{
-    color:var(--secondary);
+.nav-button.active{
+    color:#fff;
+    background:linear-gradient(180deg, var(--secondary), #084c2d);
+    box-shadow:0 4px 10px rgba(10,92,54,.22);
 }
 
 /* ==========================
@@ -1653,12 +1665,28 @@ footer{
     }
 
     .nav-button{
-        font-size:20px;
-        padding:6px 7px;
+        flex:0 0 78px;
+        min-width:78px;
+        min-height:64px;
+        font-size:21px;
+        padding:6px 5px;
     }
 
     .nav-button span{
-        font-size:10px;
+        font-size:11px;
+        white-space:nowrap;
+    }
+
+    footer{
+        justify-content:flex-start;
+        overflow-x:auto;
+        overscroll-behavior-x:contain;
+        scrollbar-width:thin;
+        scroll-snap-type:x proximity;
+    }
+
+    .nav-button{
+        scroll-snap-align:center;
     }
 
     .cards-grid{
