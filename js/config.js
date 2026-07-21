@@ -1,4 +1,4 @@
-export const APP_VERSION = "1.5.1 Client Sync Migration";
+export const APP_VERSION = "1.6 Professional Planning";
 export const DATA_VERSION = "2026-07-20-35";
 
 export const STORAGE_KEYS = {
@@ -40,6 +40,7 @@ export const ROUTES = {
     store: "store",
     photo: "photo",
     clients: "clients",
+    calendar: "calendar",
     library: "library",
     favorites: "favorites",
     history: "history",

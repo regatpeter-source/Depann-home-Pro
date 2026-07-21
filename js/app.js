@@ -1,10 +1,10 @@
-import { initializeAuthentication, signOut } from "./auth.js?v=58";
-import { initializeClientSynchronization } from "./client-sync.js?v=58";
-import { loadDatabase } from "./data.js?v=58";
-import { initializeNavigation } from "./navigation.js?v=58";
+import { initializeAuthentication, signOut } from "./auth.js?v=59";
+import { initializeClientSynchronization } from "./client-sync.js?v=59";
+import { loadDatabase } from "./data.js?v=59";
+import { initializeNavigation } from "./navigation.js?v=59";
 import { renderError } from "./ui.js?v=44";
 import { getSettings } from "./storage.js?v=44";
-import { FONT_OPTIONS } from "./config.js?v=58";
+import { FONT_OPTIONS } from "./config.js?v=59";
 
 let applicationStarted = false;
 
@@ -98,8 +98,8 @@ function applyLanguage() {
 
         document.querySelectorAll('footer .nav-button span').forEach((span, idx) => {
             const texts = lang === 'en'
-                ? ['Home','Search','Store','Photo','Clients','Documents','Favorites','Settings']
-                : ['Accueil','Recherche','Magasin','Photo','Clients','Documents','Favoris','Paramètres'];
+                ? ['Home','Search','Store','Photo','Clients','Planning','Documents','Favorites','Settings']
+                : ['Accueil','Recherche','Magasin','Photo','Clients','Planning','Documents','Favoris','Paramètres'];
             span.textContent = texts[idx] || span.textContent;
         });
     } catch {

@@ -13,6 +13,7 @@ import {
 	validateAuthenticationConfiguration
 } from "./server/auth.js";
 import { initializeDatabase } from "./server/database.js";
+import { initializeCalendar, registerCalendarRoutes } from "./server/calendar.js";
 import { initializeClients, registerClientRoutes } from "./server/clients.js";
 import {
 	libraryUploadErrorHandler,
@@ -38,6 +39,7 @@ app.use("/api/auth", rateLimit({
 	message: { message: "Trop de tentatives. Réessayez dans quelques minutes." }
 }));
 registerAuthRoutes(app);
+registerCalendarRoutes(app, requireAuthentication);
 registerClientRoutes(app, requireAuthentication);
 registerLibraryRoutes(app, requireAuthentication);
 
@@ -71,6 +73,7 @@ app.use((error, request, response, next) => {
 async function start() {
 	validateAuthenticationConfiguration();
 	await initializeDatabase();
+	await initializeCalendar();
 	await initializeClients();
 	await initializeLibrary();
 	await createInitialAdministrator();

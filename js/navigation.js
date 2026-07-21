@@ -1,8 +1,9 @@
-import { ROUTES, STORAGE_KEYS, APP_VERSION, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=58";
-import { getSearchableClients, renderClients } from "./clients.js?v=58";
-import { openLibrarySection, renderLibrary, searchPersonalLibrary } from "./library.js?v=58";
-import { renderPhotoRecognition } from "./photo-recognition.js?v=58";
-import { getSearchResults } from "./search.js?v=58";
+import { ROUTES, STORAGE_KEYS, APP_VERSION, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=59";
+import { renderCalendar } from "./calendar.js?v=59";
+import { getSearchableClients, renderClients } from "./clients.js?v=59";
+import { openLibrarySection, renderLibrary, searchPersonalLibrary } from "./library.js?v=59";
+import { renderPhotoRecognition } from "./photo-recognition.js?v=59";
+import { getSearchResults } from "./search.js?v=59";
 import { state, resetSelection } from "./state.js?v=44";
 import {
     clearHistory,
@@ -35,6 +36,7 @@ export function initializeNavigation(loadedDatabase) {
 function bindEvents() {
     const search = document.getElementById("search");
     const clientsBtn = document.getElementById("clientsBtn");
+    const calendarBtn = document.getElementById("calendarBtn");
     const libraryBtn = document.getElementById("libraryBtn");
     const photoBtn = document.getElementById("photoBtn");
     const favoritesBtn = document.getElementById("favoritesBtn");
@@ -53,6 +55,7 @@ function bindEvents() {
     });
 
     clientsBtn.addEventListener("click", () => renderClients({ database, navigateToRef }));
+    calendarBtn?.addEventListener("click", renderCalendar);
     libraryBtn?.addEventListener("click", renderLibrary);
     photoBtn?.addEventListener("click", () => renderPhotoRecognition(database, navigateToRef));
     favoritesBtn.addEventListener("click", renderFavorites);
@@ -67,6 +70,7 @@ function bindEvents() {
             if (nav === ROUTES.store) renderStore();
             if (nav === ROUTES.photo) renderPhotoRecognition(database, navigateToRef);
             if (nav === ROUTES.clients) renderClients({ database, navigateToRef });
+            if (nav === ROUTES.calendar) renderCalendar();
             if (nav === ROUTES.library) renderLibrary();
             if (nav === ROUTES.favorites) renderFavorites();
             if (nav === ROUTES.settings) renderSettings();
@@ -723,8 +727,8 @@ function renderSettings() {
         const search = document.getElementById('search'); if (search) search.placeholder = searchPlaceholder;
         document.querySelectorAll('footer .nav-button span').forEach((span, idx) => {
             const texts = lang === 'en'
-                ? ['Home','Search','Clients','Favorites','Settings']
-                : ['Accueil','Recherche','Clients','Favoris','Paramètres'];
+                ? ['Home','Search','Store','Photo','Clients','Planning','Documents','Favorites','Settings']
+                : ['Accueil','Recherche','Magasin','Photo','Clients','Planning','Documents','Favoris','Paramètres'];
             span.textContent = texts[idx] || span.textContent;
         });
         renderSettings();

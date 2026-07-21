@@ -21,6 +21,28 @@ CREATE TABLE IF NOT EXISTS depannhome_clients (
 CREATE INDEX IF NOT EXISTS depannhome_clients_owner_updated_idx
     ON depannhome_clients (owner_id, updated_at DESC);
 
+CREATE TABLE IF NOT EXISTS depannhome_calendar_events (
+    id BIGSERIAL PRIMARY KEY,
+    owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    title VARCHAR(160) NOT NULL,
+    client_name VARCHAR(160) NOT NULL DEFAULT '',
+    location VARCHAR(255) NOT NULL DEFAULT '',
+    event_date DATE NOT NULL,
+    start_time TIME,
+    end_time TIME,
+    color VARCHAR(20) NOT NULL DEFAULT 'blue',
+    notes VARCHAR(2000) NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT depannhome_calendar_events_color_check
+        CHECK (color IN ('blue', 'green', 'orange', 'red', 'purple', 'gray')),
+    CONSTRAINT depannhome_calendar_events_time_check
+        CHECK (end_time IS NULL OR start_time IS NULL OR end_time >= start_time)
+);
+
+CREATE INDEX IF NOT EXISTS depannhome_calendar_events_owner_date_idx
+    ON depannhome_calendar_events (owner_id, event_date, start_time);
+
 CREATE TABLE IF NOT EXISTS depannhome_library_sections (
     id BIGSERIAL PRIMARY KEY,
     name VARCHAR(80) NOT NULL,
