@@ -1,7 +1,7 @@
-import { ROUTES, STORAGE_KEYS, APP_VERSION, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=68";
-import { renderCalendar } from "./calendar.js?v=68";
-import { renderBilling } from "./billing.js?v=68";
-import { refreshMessageAlert, renderMessages } from "./messages.js?v=68";
+import { ROUTES, STORAGE_KEYS, APP_VERSION, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=69";
+import { renderCalendar } from "./calendar.js?v=69";
+import { renderBilling } from "./billing.js?v=69";
+import { refreshMessageAlert, renderMessages } from "./messages.js?v=69";
 import { getSearchableClients, renderClients } from "./clients.js?v=63";
 import { openLibrarySection, renderLibrary, searchPersonalLibrary } from "./library.js?v=59";
 import { renderPhotoRecognition } from "./photo-recognition.js?v=59";
