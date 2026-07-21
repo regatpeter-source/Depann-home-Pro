@@ -1,4 +1,4 @@
-import { ROUTES } from "./config.js?v=69";
+import { ROUTES } from "./config.js?v=70";
 import { deleteLocalClient, getLocalClients, saveLocalClient, synchronizeClients } from "./client-sync.js?v=59";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
@@ -347,7 +347,11 @@ function renderClientDetail(client) {
                 <p class="eyebrow">Fiche client</p>
                 <h2>${escapeHtml(client.name)}</h2>
             </div>
-            <button type="button" class="secondary-button" id="editSelectedClient">Modifier</button>
+            <div class="client-card-actions">
+                <button type="button" class="secondary-button" id="createClientQuote">+ Créer un devis</button>
+                <button type="button" class="secondary-button" id="createClientInvoice">+ Créer une facture</button>
+                <button type="button" class="secondary-button" id="editSelectedClient">Modifier</button>
+            </div>
         </div>
         <div class="procedure-meta">
             <span> ${escapeHtml(client.type)}</span>
@@ -370,6 +374,8 @@ function renderClientDetail(client) {
     `;
 
     panel.querySelector("#editSelectedClient").addEventListener("click", () => renderClients({ editId: client.id }));
+    panel.querySelector("#createClientQuote").addEventListener("click", () => openClientBillingDocument("quote", client));
+    panel.querySelector("#createClientInvoice").addEventListener("click", () => openClientBillingDocument("invoice", client));
     panel.querySelectorAll("[data-delete-attachment]").forEach(button => {
         button.addEventListener("click", () => {
             const attachmentId = button.dataset.deleteAttachment;
@@ -384,6 +390,12 @@ function renderClientDetail(client) {
     const detail = document.createDocumentFragment();
     detail.append(panel, renderClientBillingDocuments(client));
     return detail;
+}
+
+function openClientBillingDocument(type, client) {
+    if (typeof clientScreenOptions.createBillingDocument === "function") {
+        clientScreenOptions.createBillingDocument(type, client);
+    }
 }
 
 function renderClientBillingDocuments(client) {

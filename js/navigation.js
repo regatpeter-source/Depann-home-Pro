@@ -1,8 +1,8 @@
-import { ROUTES, STORAGE_KEYS, APP_VERSION, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=69";
-import { renderCalendar } from "./calendar.js?v=69";
-import { renderBilling } from "./billing.js?v=69";
-import { refreshMessageAlert, renderMessages } from "./messages.js?v=69";
-import { getSearchableClients, renderClients } from "./clients.js?v=63";
+import { ROUTES, STORAGE_KEYS, APP_VERSION, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=70";
+import { renderCalendar } from "./calendar.js?v=70";
+import { createBillingDocumentForClient, renderBilling } from "./billing.js?v=70";
+import { refreshMessageAlert, renderMessages } from "./messages.js?v=70";
+import { getSearchableClients, renderClients } from "./clients.js?v=70";
 import { openLibrarySection, renderLibrary, searchPersonalLibrary } from "./library.js?v=59";
 import { renderPhotoRecognition } from "./photo-recognition.js?v=59";
 import { getSearchResults } from "./search.js?v=63";
@@ -63,7 +63,7 @@ function bindEvents() {
         renderSearchResults(value);
     });
 
-    clientsBtn.addEventListener("click", () => renderClients({ database, navigateToRef }));
+    clientsBtn.addEventListener("click", () => renderClients({ database, navigateToRef, createBillingDocument: createBillingDocumentForClient }));
     billingBtn?.addEventListener("click", renderBilling);
         messagesBtn?.addEventListener("click", renderMessages);
     calendarBtn?.addEventListener("click", renderCalendar);
@@ -80,7 +80,7 @@ function bindEvents() {
             if (nav === ROUTES.search) focusSearch();
             if (nav === ROUTES.store) renderStore();
             if (nav === ROUTES.photo) renderPhotoRecognition(database, navigateToRef);
-            if (nav === ROUTES.clients) renderClients({ database, navigateToRef });
+            if (nav === ROUTES.clients) renderClients({ database, navigateToRef, createBillingDocument: createBillingDocumentForClient });
             if (nav === ROUTES.billing) renderBilling();
                 if (nav === ROUTES.messages) renderMessages();
             if (nav === ROUTES.calendar) renderCalendar();
@@ -552,7 +552,7 @@ async function renderSearchResults(query) {
                     }
 
                     if (result.type === "client" || result.type === "clientAttachment") {
-                        renderClients({ selectedId: result.clientId, database, navigateToRef });
+                        renderClients({ selectedId: result.clientId, database, navigateToRef, createBillingDocument: createBillingDocumentForClient });
                         return;
                     }
 

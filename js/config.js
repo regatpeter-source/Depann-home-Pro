@@ -1,4 +1,4 @@
-export const APP_VERSION = "1.9.3 Unread Internal Note Alerts";
+export const APP_VERSION = "1.9.4 Client Quote and Invoice Actions";
 export const DATA_VERSION = "2026-07-20-35";
 
 export const STORAGE_KEYS = {

@@ -1,4 +1,4 @@
-import { DATA_VERSION } from "./config.js?v=69";
+import { DATA_VERSION } from "./config.js?v=70";
 import { slugify, normalizeText } from "./utils.js?v=44";
 
 export async function loadDatabase() {

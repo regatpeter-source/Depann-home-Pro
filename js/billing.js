@@ -1,5 +1,5 @@
-import { ROUTES } from "./config.js?v=69";
-import { getSearchableClients } from "./clients.js?v=63";
+import { ROUTES } from "./config.js?v=70";
+import { getSearchableClients } from "./clients.js?v=70";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { clearSearch, createInfo, getContainer, setPage } from "./ui.js?v=44";
@@ -32,11 +32,17 @@ export async function renderBilling(options = {}) {
     }
 
     billingData = result.data;
+    if (options.newDocument) activeDocument = createNewDocument(options.newDocument.type, options.newDocument.client);
     renderOverview(overviewPanel);
     renderProfile(profilePanel);
     renderTemplates(templatePanel);
     renderDocumentEditor(editorPanel);
     renderDocumentList(listPanel);
+}
+
+export function createBillingDocumentForClient(type, client) {
+    if (!DOCUMENT_TYPES[type] || !client) return;
+    renderBilling({ newDocument: { type, client } });
 }
 
 function createPanel(className) {
@@ -278,23 +284,28 @@ function renderDocumentList(panel) {
 }
 
 function openNewDocument(type) {
+    activeDocument = createNewDocument(type);
+    renderBilling();
+}
+
+function createNewDocument(type, client = null) {
     const baseQuote = type === "quote" ? normalizeQuoteTemplate(billingData.profile.defaultQuote) : null;
-    activeDocument = {
+    return {
         id: null,
         documentType: type,
         documentNumber: suggestNumber(type),
-        customerType: baseQuote?.customerType || "Particulier",
-        customerName: "",
-        customerAddress: "",
+        customerType: client ? getBillingCustomerType(client.type) : baseQuote?.customerType || "Particulier",
+        customerName: client?.name || "",
+        customerAddress: client ? [client.address, client.city].filter(Boolean).join(", ") : "",
         issueDate: today(),
         dueDate: "",
         status: baseQuote?.status || "draft",
         lines: baseQuote?.lines || [emptyLine()],
         notes: baseQuote?.notes || billingData.profile.paymentTerms || ""
     };
-    renderBilling();
 }
 
+function getBillingCustomerType(type) { return CUSTOMER_TYPES.includes(type) ? type : "Autre"; }
 function fillCustomerAddress(input, form, clients) {
     const client = clients.find(item => normalizeText(item.name) === normalizeText(input.value));
     if (client) form.querySelector("[name=customerAddress]").value = [client.address, client.city].filter(Boolean).join(", ");
