@@ -21,6 +21,60 @@ CREATE TABLE IF NOT EXISTS depannhome_clients (
 CREATE INDEX IF NOT EXISTS depannhome_clients_owner_updated_idx
     ON depannhome_clients (owner_id, updated_at DESC);
 
+CREATE TABLE IF NOT EXISTS depannhome_billing_profiles (
+    owner_id BIGINT PRIMARY KEY REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    company_name VARCHAR(160) NOT NULL DEFAULT '',
+    legal_form VARCHAR(100) NOT NULL DEFAULT '',
+    address VARCHAR(255) NOT NULL DEFAULT '',
+    postal_code VARCHAR(20) NOT NULL DEFAULT '',
+    city VARCHAR(100) NOT NULL DEFAULT '',
+    phone VARCHAR(50) NOT NULL DEFAULT '',
+    email VARCHAR(160) NOT NULL DEFAULT '',
+    registration_number VARCHAR(100) NOT NULL DEFAULT '',
+    tax_number VARCHAR(100) NOT NULL DEFAULT '',
+    payment_terms VARCHAR(500) NOT NULL DEFAULT '',
+    footer_note VARCHAR(1000) NOT NULL DEFAULT '',
+    logo_data BYTEA,
+    logo_mime_type VARCHAR(50) NOT NULL DEFAULT '',
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS depannhome_billing_templates (
+    id BIGSERIAL PRIMARY KEY,
+    owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    label VARCHAR(160) NOT NULL,
+    description VARCHAR(500) NOT NULL DEFAULT '',
+    unit VARCHAR(40) NOT NULL DEFAULT 'unité',
+    unit_price NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK (unit_price >= 0),
+    vat_rate NUMERIC(5,2) NOT NULL DEFAULT 20 CHECK (vat_rate >= 0 AND vat_rate <= 100),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS depannhome_billing_templates_owner_idx
+    ON depannhome_billing_templates (owner_id, LOWER(label));
+
+CREATE TABLE IF NOT EXISTS depannhome_billing_documents (
+    id BIGSERIAL PRIMARY KEY,
+    owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    document_type VARCHAR(10) NOT NULL CHECK (document_type IN ('quote', 'invoice')),
+    document_number VARCHAR(80) NOT NULL,
+    customer_type VARCHAR(30) NOT NULL DEFAULT 'Particulier',
+    customer_name VARCHAR(160) NOT NULL DEFAULT '',
+    customer_address VARCHAR(500) NOT NULL DEFAULT '',
+    issue_date DATE NOT NULL,
+    due_date DATE,
+    status VARCHAR(30) NOT NULL DEFAULT 'draft',
+    lines JSONB NOT NULL DEFAULT '[]'::jsonb,
+    notes VARCHAR(2000) NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT depannhome_billing_documents_owner_number_unique UNIQUE (owner_id, document_number)
+);
+
+CREATE INDEX IF NOT EXISTS depannhome_billing_documents_owner_date_idx
+    ON depannhome_billing_documents (owner_id, issue_date DESC, created_at DESC);
+
 CREATE TABLE IF NOT EXISTS depannhome_calendar_events (
     id BIGSERIAL PRIMARY KEY,
     owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,

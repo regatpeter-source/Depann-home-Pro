@@ -20,7 +20,13 @@ L’application est désormais un **Render Web Service** Node.js. Le serveur gè
 | `ALLOW_PUBLIC_REGISTRATION` | `false` recommandé. Passez à `true` seulement si chaque utilisateur doit pouvoir créer son propre compte. |
 | `NODE_ENV` | `production` |
 
-Le serveur crée automatiquement les tables `depannhome_users`, `depannhome_clients`, `depannhome_calendar_events`, `depannhome_library_sections` et `depannhome_library_documents` au démarrage. Elles sont dédiées à Depann’Home et évitent tout conflit avec les tables de votre service VHR. Le fichier `database/schema.sql` est fourni à titre de référence ; il n’est donc pas nécessaire de l’exécuter manuellement.
+Le serveur crée automatiquement les tables `depannhome_users`, `depannhome_clients`, `depannhome_calendar_events`, `depannhome_billing_profiles`, `depannhome_billing_templates`, `depannhome_billing_documents`, `depannhome_library_sections` et `depannhome_library_documents` au démarrage. Elles sont dédiées à Depann’Home et évitent tout conflit avec les tables de votre service VHR. Le fichier `database/schema.sql` est fourni à titre de référence ; il n’est donc pas nécessaire de l’exécuter manuellement.
+
+## Devis et factures personnels
+
+L’onglet **Devis & factures** est privé à chaque compte. Chaque utilisateur peut y enregistrer le nom, les coordonnées, les identifiants légaux, les conditions de règlement et un logo de sa propre structure. Le logo accepte les formats PNG, JPEG ou WebP jusqu’à 2 Mo et reste stocké de façon privée dans PostgreSQL.
+
+L’utilisateur peut créer des lignes préenregistrées (prestation, fourniture, unité, prix HT et TVA), puis les insérer dans ses devis et factures. Les documents sont classés par destinataire : **Particulier**, **Professionnel**, **Magasin** ou **Autre**. Les montants HT, TVA et TTC sont calculés dans l’application. Tous les profils, lignes modèles, logos et documents sont filtrés côté serveur par compte : un autre utilisateur ne peut pas les lire ou les modifier, même en appelant l’API directement.
 
 ## Planning professionnel
 

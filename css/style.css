@@ -1568,6 +1568,220 @@ textarea{
 .calendar-event.color-gray{background:#e2e8f0;color:#334155;}
 
 /* ==========================
+   DEVIS ET FACTURES
+========================== */
+
+.billing-overview-panel,
+.billing-profile-panel,
+.billing-template-panel,
+.billing-editor-panel,
+.billing-list-panel{
+    margin-top:20px;
+}
+
+.billing-overview,
+.billing-branding,
+.billing-overview-actions,
+.billing-metrics,
+.billing-document-item{
+    display:flex;
+    align-items:center;
+    gap:16px;
+}
+
+.billing-overview{
+    justify-content:space-between;
+}
+
+.billing-branding{
+    min-width:0;
+}
+
+.billing-branding h2,
+.billing-document-item h3{
+    color:var(--primary);
+}
+
+.billing-logo-preview,
+.billing-logo-placeholder{
+    width:88px;
+    height:68px;
+    flex:0 0 auto;
+    border:1px solid var(--border);
+    border-radius:12px;
+    background:#fff;
+    object-fit:contain;
+}
+
+.billing-logo-placeholder{
+    display:grid;
+    place-items:center;
+    padding:7px;
+    color:var(--muted);
+    font-size:12px;
+    font-weight:700;
+    text-align:center;
+}
+
+.billing-overview-actions{
+    flex-wrap:wrap;
+    justify-content:flex-end;
+}
+
+.billing-metrics{
+    flex-wrap:wrap;
+    margin-top:18px;
+}
+
+.billing-metrics span{
+    padding:9px 12px;
+    border-radius:999px;
+    background:#eef6ff;
+    color:var(--primary);
+    font-size:14px;
+}
+
+.billing-metrics strong{
+    color:var(--secondary);
+    font-size:17px;
+}
+
+.billing-template-form{
+    margin-top:18px;
+}
+
+.billing-template-form .form-actions{
+    align-items:end;
+}
+
+.billing-template-list,
+.billing-document-list{
+    display:grid;
+    gap:10px;
+    margin-top:16px;
+}
+
+.billing-template-item,
+.billing-document-item{
+    justify-content:space-between;
+    padding:14px 16px;
+    border:1px solid var(--border);
+    border-radius:14px;
+    background:#f8fbff;
+}
+
+.billing-template-item strong{
+    color:var(--primary);
+}
+
+.billing-template-item p{
+    margin-top:3px;
+}
+
+.billing-template-item small,
+.billing-document-item small{
+    color:var(--muted);
+}
+
+.billing-template-item .danger-button{
+    border:none;
+    border-radius:10px;
+    padding:8px 10px;
+    cursor:pointer;
+}
+
+.billing-lines-section{
+    display:grid;
+    gap:14px;
+    padding:18px;
+    border:1px solid var(--border);
+    border-radius:16px;
+    background:#f8fbff;
+}
+
+.billing-lines{
+    display:grid;
+    gap:10px;
+}
+
+.billing-line{
+    display:grid;
+    grid-template-columns:1.2fr 2fr .65fr .8fr 1fr .75fr 1fr auto;
+    gap:8px;
+    align-items:center;
+    padding:10px;
+    border:1px solid rgba(0,59,115,.1);
+    border-radius:12px;
+    background:#fff;
+}
+
+.billing-line input,
+.billing-line select{
+    width:100%;
+    min-width:0;
+    padding:9px 10px;
+    border:1px solid var(--border);
+    border-radius:9px;
+    background:#fff;
+}
+
+.billing-line-total{
+    color:var(--primary);
+    text-align:right;
+    white-space:nowrap;
+}
+
+.billing-line .danger-button{
+    border:none;
+    border-radius:9px;
+    padding:7px 10px;
+    cursor:pointer;
+    font-size:18px;
+}
+
+.billing-totals{
+    display:flex;
+    flex-wrap:wrap;
+    justify-content:flex-end;
+    gap:14px;
+    padding-top:5px;
+}
+
+.billing-totals span{
+    display:grid;
+    gap:2px;
+    color:var(--muted);
+    font-size:13px;
+}
+
+.billing-totals strong{
+    color:var(--primary);
+    font-size:17px;
+}
+
+.billing-document-item{
+    align-items:center;
+}
+
+.billing-document-item > div:first-child{
+    flex:1;
+}
+
+.billing-document-amount{
+    display:grid;
+    text-align:right;
+}
+
+.billing-document-amount strong{
+    color:var(--secondary);
+    font-size:18px;
+}
+
+.billing-document-item .secondary-button{
+    padding:9px 12px;
+}
+
+/* ==========================
    FOOTER
 ========================== */
 
@@ -1778,6 +1992,52 @@ footer{
 
     .calendar-event small{
         display:none;
+    }
+
+    .billing-overview,
+    .billing-branding,
+    .billing-document-item{
+        align-items:stretch;
+        flex-direction:column;
+    }
+
+    .billing-overview-actions{
+        justify-content:stretch;
+    }
+
+    .billing-overview-actions .secondary-button{
+        flex:1;
+    }
+
+    .billing-template-item{
+        display:grid;
+        gap:10px;
+    }
+
+    .billing-template-item .danger-button{
+        width:100%;
+    }
+
+    .billing-line{
+        grid-template-columns:1fr 1fr;
+    }
+
+    .billing-line select,
+    .billing-line input[data-field="description"]{
+        grid-column:1/-1;
+    }
+
+    .billing-line-total{
+        text-align:left;
+        padding:7px 0;
+    }
+
+    .billing-totals{
+        justify-content:space-between;
+    }
+
+    .billing-document-item .secondary-button{
+        width:100%;
     }
 
     .library-document-actions{

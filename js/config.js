@@ -1,4 +1,4 @@
-export const APP_VERSION = "1.7.0 Responsive Client Directory";
+export const APP_VERSION = "1.8.0 Quotes And Invoices";
 export const DATA_VERSION = "2026-07-20-35";
 
 export const STORAGE_KEYS = {
@@ -40,6 +40,7 @@ export const ROUTES = {
     store: "store",
     photo: "photo",
     clients: "clients",
+    billing: "billing",
     calendar: "calendar",
     library: "library",
     favorites: "favorites",

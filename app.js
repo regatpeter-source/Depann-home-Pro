@@ -13,6 +13,7 @@ import {
 	validateAuthenticationConfiguration
 } from "./server/auth.js";
 import { initializeDatabase } from "./server/database.js";
+import { billingUploadErrorHandler, initializeBilling, registerBillingRoutes } from "./server/billing.js";
 import { initializeCalendar, registerCalendarRoutes } from "./server/calendar.js";
 import { initializeClients, registerClientRoutes } from "./server/clients.js";
 import {
@@ -39,6 +40,7 @@ app.use("/api/auth", rateLimit({
 	message: { message: "Trop de tentatives. Réessayez dans quelques minutes." }
 }));
 registerAuthRoutes(app);
+registerBillingRoutes(app, requireAuthentication);
 registerCalendarRoutes(app, requireAuthentication);
 registerClientRoutes(app, requireAuthentication);
 registerLibraryRoutes(app, requireAuthentication);
@@ -63,6 +65,7 @@ app.get("/service-worker.js", (request, response) => {
 	response.sendFile(path.join(rootDirectory, "service-worker.js"), { headers: { "Cache-Control": "no-cache" } });
 });
 
+app.use(billingUploadErrorHandler);
 app.use(libraryUploadErrorHandler);
 app.use((error, request, response, next) => {
 	console.error(error);
@@ -73,6 +76,7 @@ app.use((error, request, response, next) => {
 async function start() {
 	validateAuthenticationConfiguration();
 	await initializeDatabase();
+	await initializeBilling();
 	await initializeCalendar();
 	await initializeClients();
 	await initializeLibrary();
