@@ -1,4 +1,4 @@
-export const APP_VERSION = "1.8.1 Default Quote Template";
+export const APP_VERSION = "1.9.0 Client Documents And Messaging";
 export const DATA_VERSION = "2026-07-20-35";
 
 export const STORAGE_KEYS = {
@@ -41,6 +41,7 @@ export const ROUTES = {
     photo: "photo",
     clients: "clients",
     billing: "billing",
+        messages: "messages",
     calendar: "calendar",
     library: "library",
     favorites: "favorites",

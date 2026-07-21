@@ -138,6 +138,28 @@ export function registerBillingRoutes(app, requireAuthentication) {
         response.send(rows[0].logo_data);
     }));
 
+    app.get("/api/billing/documents/:documentId", requireAuthentication, asyncHandler(async (request, response) => {
+        const id = positiveId(request.params.documentId);
+        if (!id) return response.status(400).json({ message: "Document invalide." });
+        const database = getPool();
+        const [documentResult, profileResult] = await Promise.all([
+            database.query(`
+                SELECT id, document_type AS "documentType", document_number AS "documentNumber", customer_type AS "customerType",
+                    customer_name AS "customerName", customer_address AS "customerAddress", TO_CHAR(issue_date, 'YYYY-MM-DD') AS "issueDate",
+                    TO_CHAR(due_date, 'YYYY-MM-DD') AS "dueDate", status, lines, notes
+                FROM depannhome_billing_documents WHERE id = $1 AND owner_id = $2
+            `, [id, request.user.sub]),
+            database.query(`
+                SELECT company_name AS "companyName", legal_form AS "legalForm", address, postal_code AS "postalCode", city, phone, email,
+                    registration_number AS "registrationNumber", tax_number AS "taxNumber", payment_terms AS "paymentTerms",
+                    footer_note AS "footerNote", (logo_data IS NOT NULL) AS "hasLogo"
+                FROM depannhome_billing_profiles WHERE owner_id = $1
+            `, [request.user.sub])
+        ]);
+        if (!documentResult.rows[0]) return response.status(404).json({ message: "Document introuvable." });
+        response.json({ document: documentResult.rows[0], profile: profileResult.rows[0] || emptyProfile() });
+    }));
+
     app.put("/api/billing/default-quote", requireAuthentication, asyncHandler(async (request, response) => {
         const quote = sanitizeQuoteTemplate(request.body);
         if (!quote.ok) return response.status(400).json({ message: quote.message });

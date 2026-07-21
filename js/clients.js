@@ -1,4 +1,4 @@
-import { ROUTES } from "./config.js?v=65";
+import { ROUTES } from "./config.js?v=66";
 import { deleteLocalClient, getLocalClients, saveLocalClient, synchronizeClients } from "./client-sync.js?v=59";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
@@ -381,8 +381,82 @@ function renderClientDetail(client) {
         });
     });
 
+    const detail = document.createDocumentFragment();
+    detail.append(panel, renderClientBillingDocuments(client));
+    return detail;
+}
+
+function renderClientBillingDocuments(client) {
+    const panel = document.createElement("section");
+    panel.className = "client-panel client-billing-panel";
+    panel.innerHTML = "<p class=\"muted\">Chargement des devis et factures du client…</p>";
+    loadClientBillingDocuments(panel, client);
     return panel;
 }
+
+async function loadClientBillingDocuments(panel, client) {
+    try {
+        const response = await fetch("/api/billing", { credentials: "same-origin" });
+        const data = await response.json().catch(() => null);
+        if (!response.ok) throw new Error(data?.message);
+        const documents = (data?.documents || []).filter(document => normalizeText(document.customerName) === normalizeText(client.name));
+        panel.innerHTML = `
+            <div class="form-heading"><div><p class="eyebrow">Devis, factures et envois</p><h2>${documents.length} document(s) pour ${escapeHtml(client.name)}</h2><p class="muted">Les documents associés à ce client peuvent être imprimés ou préparés pour un envoi e-mail.</p></div></div>
+            <div class="client-billing-list" id="clientBillingList"></div>
+        `;
+        const list = panel.querySelector("#clientBillingList");
+        if (!documents.length) {
+            list.innerHTML = "<p class=\"muted\">Aucun devis ou aucune facture associé(e) à ce client pour le moment.</p>";
+            return;
+        }
+        documents.forEach(document => {
+            const article = document.createElement("article");
+            article.className = "client-billing-item";
+            article.innerHTML = `<div><p class="eyebrow">${document.documentType === "invoice" ? "Facture" : "Devis"} · ${escapeHtml(document.status || "brouillon")}</p><h3>${escapeHtml(document.documentNumber)}</h3><p>${escapeHtml(formatBillingDate(document.issueDate))}</p></div><div class="client-card-actions"><button type="button" class="secondary-button" data-action="email">E-mail</button><button type="button" class="secondary-button" data-action="print">Imprimer / PDF</button></div>`;
+            article.querySelector('[data-action="email"]').addEventListener("click", () => emailBillingDocument(document, client));
+            article.querySelector('[data-action="print"]').addEventListener("click", () => printBillingDocument(document.id));
+            list.appendChild(article);
+        });
+    } catch (error) {
+        panel.innerHTML = `<p class="auth-message error">${escapeHtml(error.message || "Impossible de charger les documents du client.")}</p>`;
+    }
+}
+
+function emailBillingDocument(document, client) {
+    const type = document.documentType === "invoice" ? "facture" : "devis";
+    const subject = `${type.charAt(0).toUpperCase()}${type.slice(1)} ${document.documentNumber}`;
+    const body = `Bonjour ${client.name},%0D%0A%0D%0AVeuillez trouver ci-joint votre ${type} ${document.documentNumber}.%0D%0A%0D%Cordialement,`;
+    window.location.href = `mailto:${encodeURIComponent(client.email || "")}?subject=${encodeURIComponent(subject)}&body=${body}`;
+}
+
+async function printBillingDocument(documentId) {
+    const popup = window.open("", "_blank");
+    if (!popup) { alert("Autorisez les fenêtres pop-up pour imprimer le document."); return; }
+    popup.document.write("<p>Préparation du document…</p>");
+    try {
+        const response = await fetch(`/api/billing/documents/${encodeURIComponent(documentId)}`, { credentials: "same-origin" });
+        const data = await response.json().catch(() => null);
+        if (!response.ok) throw new Error(data?.message);
+        popup.document.open();
+        popup.document.write(buildPrintableBillingHtml(data.document, data.profile));
+        popup.document.close();
+        popup.focus();
+        popup.print();
+    } catch (error) {
+        popup.document.body.innerHTML = `<p>Erreur : ${escapeHtml(error.message || "document indisponible")}</p>`;
+    }
+}
+
+function buildPrintableBillingHtml(document, profile) {
+    const lines = Array.isArray(document.lines) ? document.lines : [];
+    const totalHt = lines.reduce((sum, line) => sum + Number(line.quantity || 0) * Number(line.unitPrice || 0), 0);
+    const totalVat = lines.reduce((sum, line) => sum + Number(line.quantity || 0) * Number(line.unitPrice || 0) * Number(line.vatRate || 0) / 100, 0);
+    const title = document.documentType === "invoice" ? "FACTURE" : "DEVIS";
+    return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>${escapeHtml(title)} ${escapeHtml(document.documentNumber)}</title><style>body{font-family:Arial,sans-serif;color:#172033;margin:42px;line-height:1.45}.top{display:flex;justify-content:space-between;gap:30px;border-bottom:3px solid #0a5c36;padding-bottom:22px}.company{max-width:52%}.logo{max-width:160px;max-height:80px;object-fit:contain}.title{font-size:29px;color:#003b73;font-weight:800}.meta{margin:28px 0;display:flex;justify-content:space-between;gap:30px}table{width:100%;border-collapse:collapse;margin-top:24px}th{background:#003b73;color:#fff;text-align:left}th,td{padding:10px;border:1px solid #dbe3ea}td.num{text-align:right}.totals{margin:24px 0 0 auto;width:300px}.totals p{display:flex;justify-content:space-between;margin:5px 0}.total{border-top:2px solid #0a5c36;padding-top:8px;font-size:19px;font-weight:800;color:#003b73}.notes{margin-top:35px;border-top:1px solid #dbe3ea;padding-top:15px;white-space:pre-wrap}@media print{body{margin:18mm}}</style></head><body><div class="top"><div class="company">${profile.hasLogo ? '<img class="logo" src="/api/billing/logo" alt="Logo">' : ""}<h2>${escapeHtml(profile.companyName || "Votre structure")}</h2><p>${escapeHtml([profile.legalForm, profile.address, [profile.postalCode, profile.city].filter(Boolean).join(" "), profile.phone, profile.email, profile.registrationNumber, profile.taxNumber].filter(Boolean).join(" · "))}</p></div><div><div class="title">${title}</div><p><strong>N° ${escapeHtml(document.documentNumber)}</strong><br>Date : ${escapeHtml(formatBillingDate(document.issueDate))}${document.dueDate ? `<br>Échéance : ${escapeHtml(formatBillingDate(document.dueDate))}` : ""}</p></div></div><div class="meta"><div><strong>Destinataire</strong><br>${escapeHtml(document.customerName)}<br>${escapeHtml(document.customerAddress || "")}</div><div><strong>Catégorie</strong><br>${escapeHtml(document.customerType)}</div></div><table><thead><tr><th>Description</th><th>Qté</th><th>Unité</th><th>PU HT</th><th>TVA</th><th>Total HT</th></tr></thead><tbody>${lines.map(line => `<tr><td>${escapeHtml(line.description)}</td><td class="num">${escapeHtml(line.quantity)}</td><td>${escapeHtml(line.unit)}</td><td class="num">${formatBillingMoney(line.unitPrice)}</td><td class="num">${escapeHtml(line.vatRate)} %</td><td class="num">${formatBillingMoney(Number(line.quantity || 0) * Number(line.unitPrice || 0))}</td></tr>`).join("")}</tbody></table><div class="totals"><p><span>Total HT</span><strong>${formatBillingMoney(totalHt)}</strong></p><p><span>TVA</span><strong>${formatBillingMoney(totalVat)}</strong></p><p class="total"><span>Total TTC</span><span>${formatBillingMoney(totalHt + totalVat)}</span></p></div>${document.notes ? `<div class="notes"><strong>Notes / conditions</strong><br>${escapeHtml(document.notes)}</div>` : ""}${profile.footerNote ? `<div class="notes">${escapeHtml(profile.footerNote)}</div>` : ""}</body></html>`;
+}
+
+function formatBillingDate(value) { return value ? new Intl.DateTimeFormat("fr-FR").format(new Date(`${value}T12:00:00`)) : "Date non renseignée"; }
+function formatBillingMoney(value) { return new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" }).format(Number(value) || 0); }
 
 async function readClientForm(form, previousClient = EMPTY_CLIENT) {
     const formData = new FormData(form);

@@ -79,6 +79,22 @@ CREATE TABLE IF NOT EXISTS depannhome_billing_documents (
 CREATE INDEX IF NOT EXISTS depannhome_billing_documents_owner_date_idx
     ON depannhome_billing_documents (owner_id, issue_date DESC, created_at DESC);
 
+CREATE TABLE IF NOT EXISTS depannhome_messages (
+    id BIGSERIAL PRIMARY KEY,
+    sender_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    recipient_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    body VARCHAR(2000) NOT NULL,
+    read_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT depannhome_messages_distinct_accounts CHECK (sender_id <> recipient_id)
+);
+
+CREATE INDEX IF NOT EXISTS depannhome_messages_recipient_idx
+    ON depannhome_messages (recipient_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS depannhome_messages_sender_idx
+    ON depannhome_messages (sender_id, created_at DESC);
+
 CREATE TABLE IF NOT EXISTS depannhome_calendar_events (
     id BIGSERIAL PRIMARY KEY,
     owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
