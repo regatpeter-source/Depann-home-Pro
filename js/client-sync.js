@@ -74,6 +74,7 @@ async function synchronize() {
 
     const remoteClients = Array.isArray(remoteResult.data?.clients) ? remoteResult.data.clients.map(normalizeClient) : [];
     const localClients = getLocalClients();
+    enqueueUnsyncedLocalClients(localClients, remoteClients);
     const merged = mergeClients(localClients, remoteClients);
     writeClients(merged);
 
@@ -109,6 +110,16 @@ function enqueue(operation) {
     const nextQueue = queue.filter(item => (item.type === "delete" ? item.clientId : item.client.id) !== key);
     nextQueue.push({ ...operation, id: `sync-${Date.now()}-${Math.random().toString(16).slice(2)}` });
     localStorage.setItem(getQueueKey(), JSON.stringify(nextQueue));
+}
+
+function enqueueUnsyncedLocalClients(localClients, remoteClients) {
+    const remoteById = new Map(remoteClients.map(client => [client.id, client]));
+    localClients.forEach(client => {
+        const remoteClient = remoteById.get(client.id);
+        if (!remoteClient || getTimestamp(client.updatedAt) > getTimestamp(remoteClient.updatedAt)) {
+            enqueue({ type: "upsert", client });
+        }
+    });
 }
 
 function getQueue() {

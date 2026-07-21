@@ -1,4 +1,4 @@
-export const APP_VERSION = "1.5 Cross-device Client Sync";
+export const APP_VERSION = "1.5.1 Client Sync Migration";
 export const DATA_VERSION = "2026-07-20-35";
 
 export const STORAGE_KEYS = {
