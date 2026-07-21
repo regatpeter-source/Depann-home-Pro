@@ -1,4 +1,4 @@
-import { ROUTES } from "./config.js?v=55";
+import { ROUTES } from "./config.js?v=56";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml } from "./utils.js?v=44";
 import { clearSearch, createInfo, getContainer, setPage } from "./ui.js?v=44";
@@ -42,6 +42,16 @@ export async function renderLibrary() {
     renderSectionPanel(sectionPanel, sections, () => renderLibrary());
     renderUploadPanel(uploadPanel, sections, () => renderLibrary());
     await renderDocumentPanel(listPanel, sections);
+}
+
+export async function openLibrarySection(sectionId) {
+    selectedSectionId = sectionId;
+    await renderLibrary();
+}
+
+export async function searchPersonalLibrary(query) {
+    const result = await apiRequest(`/api/library/search?q=${encodeURIComponent(query)}`);
+    return result.ok ? result.data : { sections: [], documents: [] };
 }
 
 function renderSectionPanel(panel, sections, refresh) {

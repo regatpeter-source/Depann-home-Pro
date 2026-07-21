@@ -1,8 +1,8 @@
-import { ROUTES, STORAGE_KEYS, APP_VERSION, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=55";
-import { renderClients } from "./clients.js?v=55";
-import { renderLibrary } from "./library.js?v=55";
-import { renderPhotoRecognition } from "./photo-recognition.js?v=55";
-import { getSearchResults } from "./search.js?v=55";
+import { ROUTES, STORAGE_KEYS, APP_VERSION, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=56";
+import { getSearchableClients, renderClients } from "./clients.js?v=56";
+import { openLibrarySection, renderLibrary, searchPersonalLibrary } from "./library.js?v=56";
+import { renderPhotoRecognition } from "./photo-recognition.js?v=56";
+import { getSearchResults } from "./search.js?v=56";
 import { state, resetSelection } from "./state.js?v=44";
 import {
     clearHistory,
@@ -24,6 +24,7 @@ import {
 } from "./ui.js?v=44";
 
 let database = { brands: [] };
+let searchRequestId = 0;
 
 export function initializeNavigation(loadedDatabase) {
     database = loadedDatabase;
@@ -43,6 +44,7 @@ function bindEvents() {
         const value = event.target.value.toLowerCase().trim();
 
         if (!value) {
+            searchRequestId += 1;
             renderBrands();
             return;
         }
@@ -471,15 +473,42 @@ function renderProductOverview() {
     }
 }
 
-function renderSearchResults(query) {
+async function renderSearchResults(query) {
+    const currentRequestId = ++searchRequestId;
     resetSelection("all");
     setPage("Résultats de recherche", ROUTES.search);
 
     const container = getContainer();
-    const results = getSearchResults(database, query);
+    container.appendChild(createInfo("Recherche dans le catalogue, vos clients et votre bibliothèque…"));
+
+    const localResults = getSearchResults(database, query);
+    const privateLibrary = await searchPersonalLibrary(query);
+    if (currentRequestId !== searchRequestId || document.getElementById("search")?.value.toLowerCase().trim() !== query) return;
+
+    const libraryResults = [
+        ...(privateLibrary.sections || []).map(section => ({
+            type: "librarySection",
+            title: section.name,
+            subtitle: "Votre dossier privé",
+            sectionId: section.id,
+            score: 80
+        })),
+        ...(privateLibrary.documents || []).map(document => ({
+            type: "libraryDocument",
+            title: document.title,
+            subtitle: `${document.sectionName} · ${document.originalFilename}`,
+            documentId: document.id,
+            score: 95
+        }))
+    ];
+    const results = [...localResults, ...libraryResults]
+        .sort((first, second) => (second.score || 0) - (first.score || 0))
+        .slice(0, 40);
+
+    container.innerHTML = "";
 
     if (!results.length) {
-        container.appendChild(createInfo("Aucun résultat trouvé. Essayez avec une marque, un produit ou une panne."));
+        container.appendChild(createInfo("Aucun résultat trouvé. Essayez avec une marque, un produit, un client, un devis ou un mot-clé de votre bibliothèque."));
         return;
     }
 
@@ -492,6 +521,21 @@ function renderSearchResults(query) {
                 () => {
                     if (result.type === "document") {
                         window.open(result.documentPath, "_blank", "noopener,noreferrer");
+                        return;
+                    }
+
+                    if (result.type === "libraryDocument") {
+                        window.open(`/api/library/documents/${encodeURIComponent(result.documentId)}/download`, "_blank", "noopener,noreferrer");
+                        return;
+                    }
+
+                    if (result.type === "librarySection") {
+                        openLibrarySection(result.sectionId);
+                        return;
+                    }
+
+                    if (result.type === "client" || result.type === "clientAttachment") {
+                        renderClients({ selectedId: result.clientId, database, navigateToRef });
                         return;
                     }
 
@@ -577,7 +621,7 @@ function renderSettings() {
         <h2>Paramètres</h2>
         <div class="procedure-meta">
             <span>${database.brands.length} gamme(s)</span>
-            <span>${getStoredRefs(STORAGE_KEYS.clients).length} client(s)</span>
+            <span>${getSearchableClients().length} client(s)</span>
             <span>${APP_VERSION}</span>
         </div>
     `;

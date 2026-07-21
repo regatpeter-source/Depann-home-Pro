@@ -28,6 +28,16 @@ Chaque utilisateur connecté peut créer ses propres sections métier (par exemp
 
 Les fichiers sont stockés dans PostgreSQL pour rester disponibles après les redéploiements Render. Ils utilisent donc l’espace de votre base de données : surveillez sa capacité et privilégiez des PDF optimisés. Une section et ses documents ne sont visibles, téléchargeables ou supprimables que par le compte qui les a créés. Même un autre utilisateur connecté ne peut pas ouvrir un document à partir de son lien direct.
 
+## Recherche privée par mots-clés
+
+La barre de recherche globale inclut le catalogue, les éléments privés du compte connecté et uniquement ceux-ci :
+
+- les sections, titres, descriptions et noms de fichiers de sa bibliothèque personnelle ;
+- ses clients enregistrés sur l’appareil ;
+- les équipements, notes, coordonnées et noms de ses devis, factures ou pièces jointes locales.
+
+Les clients et leurs fichiers locaux sont séparés par compte sur le navigateur actuel ; ils ne sont pas encore synchronisés entre plusieurs appareils. La recherche ne lit pas le texte à l’intérieur des PDF ou documents Office : ajoutez des mots-clés utiles au **titre**, à la **description** ou au **nom du fichier** lors de l’ajout.
+
 ## Premier déploiement
 
 Au premier démarrage, le serveur crée le compte indiqué par `INITIAL_ADMIN_USERNAME` et `INITIAL_ADMIN_PASSWORD`, seulement s’il n’existe pas déjà. Ensuite, retirez `INITIAL_ADMIN_PASSWORD` de Render ou remplacez-le par une valeur non sensible : le serveur ne réinitialise jamais un administrateur existant.

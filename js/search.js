@@ -1,4 +1,5 @@
 import { normalizeText } from "./utils.js?v=44";
+import { getSearchableClients } from "./clients.js?v=56";
 
 const STOP_WORDS = new Set(["a", "au", "aux", "ce", "ces", "d", "de", "des", "du", "en", "et", "la", "le", "les", "pour", "sur", "un", "une"]);
 
@@ -58,6 +59,40 @@ export function getSearchResults(database, query) {
                         score: 100
                     });
                 });
+            });
+        });
+    });
+
+    getSearchableClients().forEach(client => {
+        const clientSearchable = [
+            client.name,
+            client.type,
+            client.phone,
+            client.email,
+            client.address,
+            client.city,
+            client.equipment,
+            client.notes
+        ].join(" ");
+
+        if (matches(clientSearchable, query)) {
+            results.push({
+                type: "client",
+                title: client.name,
+                subtitle: [client.type, client.city || client.address].filter(Boolean).join(" · ") || "Client",
+                clientId: client.id,
+                score: 70
+            });
+        }
+
+        client.attachments.forEach(attachment => {
+            if (!matches(`${client.name} ${attachment.type} ${attachment.name}`, query)) return;
+            results.push({
+                type: "clientAttachment",
+                title: attachment.name,
+                subtitle: `${attachment.type} · Client : ${client.name}`,
+                clientId: client.id,
+                score: 90
             });
         });
     });

@@ -1,9 +1,9 @@
-import { initializeAuthentication, signOut } from "./auth.js?v=55";
-import { loadDatabase } from "./data.js?v=55";
-import { initializeNavigation } from "./navigation.js?v=55";
+import { initializeAuthentication, signOut } from "./auth.js?v=56";
+import { loadDatabase } from "./data.js?v=56";
+import { initializeNavigation } from "./navigation.js?v=56";
 import { renderError } from "./ui.js?v=44";
 import { getSettings } from "./storage.js?v=44";
-import { FONT_OPTIONS } from "./config.js?v=55";
+import { FONT_OPTIONS } from "./config.js?v=56";
 
 let applicationStarted = false;
 
@@ -47,6 +47,7 @@ function showAuthenticatedUser(user) {
 
     if (session) session.hidden = false;
     if (email) email.textContent = user.username || "Utilisateur connecté";
+    document.body.dataset.userId = user.id || "";
     document.body.classList.remove("auth-pending");
     logoutButton?.addEventListener("click", async () => {
         logoutButton.disabled = true;

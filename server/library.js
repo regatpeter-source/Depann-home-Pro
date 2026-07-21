@@ -108,6 +108,45 @@ export function registerLibraryRoutes(app, requireAuthentication) {
         }
     }));
 
+    app.get("/api/library/search", requireAuthentication, asyncHandler(async (request, response) => {
+        const query = cleanText(request.query?.q, 160);
+        if (getSearchTokens(query).length < 1) {
+            return response.json({ sections: [], documents: [] });
+        }
+
+        const database = getPool();
+        const [sectionsResult, documentsResult] = await Promise.all([
+            database.query(`
+                SELECT id, name
+                FROM depannhome_library_sections
+                WHERE created_by = $1
+                ORDER BY LOWER(name)
+            `, [request.user.sub]),
+            database.query(`
+                SELECT
+                    document.id,
+                    document.title,
+                    document.description,
+                    document.original_filename AS "originalFilename",
+                    document.file_size AS "fileSize",
+                    section.id AS "sectionId",
+                    section.name AS "sectionName"
+                FROM depannhome_library_documents document
+                JOIN depannhome_library_sections section ON section.id = document.section_id
+                WHERE document.created_by = $1 AND section.created_by = $1
+                ORDER BY document.created_at DESC
+                LIMIT 500
+            `, [request.user.sub])
+        ]);
+
+        const sections = sectionsResult.rows.filter(section => matchesSearch(`${section.name} dossier section`, query));
+        const documents = documentsResult.rows.filter(document => matchesSearch(
+            `${document.sectionName} ${document.title} ${document.description} ${document.originalFilename}`,
+            query
+        ));
+        response.json({ sections, documents });
+    }));
+
     app.get("/api/library/sections/:sectionId/documents", requireAuthentication, asyncHandler(async (request, response) => {
         const sectionId = positiveId(request.params.sectionId);
         if (!sectionId) return response.status(400).json({ message: "Section invalide." });
@@ -249,6 +288,36 @@ function slugify(value) {
         .replace(/[^a-z0-9]+/g, "-")
         .replace(/(^-|-$)/g, "")
         .slice(0, 100);
+}
+
+function matchesSearch(value, query) {
+    const queryTokens = getSearchTokens(query);
+    const valueTokens = getSearchTokens(value);
+    return queryTokens.every(queryToken => valueTokens.some(valueToken => {
+        const valueStem = getStem(valueToken);
+        const queryStem = getStem(queryToken);
+        return valueToken.includes(queryToken)
+            || queryToken.includes(valueToken)
+            || (valueStem.length >= 4 && queryStem.length >= 4 && (
+                valueStem.startsWith(queryStem) || queryStem.startsWith(valueStem)
+            ));
+    }));
+}
+
+function getSearchTokens(value) {
+    return String(value || "")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, " ")
+        .split(/\s+/)
+        .filter(token => token.length > 1 && !new Set(["au", "aux", "ce", "ces", "de", "des", "du", "en", "et", "la", "le", "les", "pour", "sur", "un", "une"]).has(token));
+}
+
+function getStem(token) {
+    return token
+        .replace(/(ations?|ements?|ions?|er|ez|es|s)$/i, "")
+        .replace(/(.)\1+$/i, "$1");
 }
 
 function positiveId(value) {

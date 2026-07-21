@@ -1,7 +1,7 @@
-import { ROUTES, STORAGE_KEYS } from "./config.js?v=55";
+import { ROUTES, STORAGE_KEYS } from "./config.js?v=56";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
-import { analyzeEquipmentPhoto, isPhotoRecognitionConfident } from "./photo-recognition.js?v=55";
+import { analyzeEquipmentPhoto, isPhotoRecognitionConfident } from "./photo-recognition.js?v=56";
 import {
     clearSearch,
     createButton,
@@ -54,9 +54,9 @@ function renderClientToolbar(clients) {
 
     panel.innerHTML = `
         <div>
-            <p class="eyebrow">Base locale</p>
+                <p class="eyebrow">Base locale privée</p>
             <h2> ${clients.length} client(s)</h2>
-            <p class="muted">Les clients sont enregistrés sur cet appareil. Aucune donnée n'est envoyée en ligne.</p>
+            <p class="muted">Les clients sont enregistrés sur cet appareil, dans l’espace du compte connecté. Ils apparaissent dans la recherche globale de ce compte.</p>
         </div>
         <div class="client-toolbar-actions">
             <input id="clientSearch" class="client-search" type="search" placeholder="Rechercher un client, une ville, un équipement...">
@@ -400,7 +400,7 @@ function saveClient(client) {
         : [...clients, nextClient];
 
     try {
-        localStorage.setItem(STORAGE_KEYS.clients, JSON.stringify(nextClients));
+        localStorage.setItem(getClientsStorageKey(), JSON.stringify(nextClients));
         return true;
     } catch {
         alert("Le stockage local est plein. Supprime quelques fichiers lourds ou compresse les photos avant de réessayer.");
@@ -410,7 +410,7 @@ function saveClient(client) {
 
 function deleteClient(id) {
     const clients = getClients().filter(client => client.id !== id);
-    localStorage.setItem(STORAGE_KEYS.clients, JSON.stringify(clients));
+    localStorage.setItem(getClientsStorageKey(), JSON.stringify(clients));
 }
 
 function getClientById(id) {
@@ -419,10 +419,34 @@ function getClientById(id) {
 
 function getClients() {
     try {
-        return (JSON.parse(localStorage.getItem(STORAGE_KEYS.clients)) || []).map(normalizeClient);
+        return (JSON.parse(localStorage.getItem(getClientsStorageKey())) || []).map(normalizeClient);
     } catch {
         return [];
     }
+}
+
+export function getSearchableClients() {
+    return getClients().map(client => ({
+        id: client.id,
+        type: client.type,
+        name: client.name,
+        phone: client.phone,
+        email: client.email,
+        address: client.address,
+        city: client.city,
+        equipment: client.equipment,
+        notes: client.notes,
+        attachments: client.attachments.map(attachment => ({
+            id: attachment.id,
+            type: attachment.type,
+            name: attachment.name
+        }))
+    }));
+}
+
+function getClientsStorageKey() {
+    const userId = String(document.body.dataset.userId || "anonymous").replace(/[^a-zA-Z0-9_-]/g, "");
+    return `${STORAGE_KEYS.clients}:${userId || "anonymous"}`;
 }
 
 function normalizeClient(client) {
