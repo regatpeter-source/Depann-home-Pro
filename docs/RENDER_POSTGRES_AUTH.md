@@ -30,9 +30,9 @@ L’utilisateur peut créer des lignes préenregistrées (prestation, fourniture
 
 Sur la fiche d’un client, les devis et factures associés sont proposés avec deux actions : **E-mail**, qui prépare un brouillon dans l’application de messagerie de l’appareil, et **Imprimer / PDF**, qui ouvre une mise en page propre à imprimer ou enregistrer au format PDF via le navigateur.
 
-## Messagerie interne
+## Notes internes synchronisées
 
-L’onglet **Messages** permet aux comptes Depann’Home Pro de s’écrire entre eux. Les conversations sont privées : le serveur renvoie uniquement les messages dont le compte connecté est l’expéditeur ou le destinataire. Un troisième compte ne peut pas lire la conversation.
+L’onglet **Messages** est un carnet de notes interne au compte, et non une messagerie entre utilisateurs. Une note saisie sur un téléphone — par exemple *« Clients à facturer : Martin, Résidence Les Pins »* — est synchronisée dans PostgreSQL et apparaît sur le PC connecté au **même compte**. Les autres comptes ne peuvent ni voir ni envoyer ces notes.
 
 ## Planning professionnel
 

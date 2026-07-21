@@ -85,9 +85,11 @@ CREATE TABLE IF NOT EXISTS depannhome_messages (
     recipient_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
     body VARCHAR(2000) NOT NULL,
     read_at TIMESTAMPTZ,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT depannhome_messages_distinct_accounts CHECK (sender_id <> recipient_id)
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE depannhome_messages
+    DROP CONSTRAINT IF EXISTS depannhome_messages_distinct_accounts;
 
 CREATE INDEX IF NOT EXISTS depannhome_messages_recipient_idx
     ON depannhome_messages (recipient_id, created_at DESC);

@@ -1,4 +1,4 @@
-export const APP_VERSION = "1.9.0 Client Documents And Messaging";
+export const APP_VERSION = "1.9.1 Same Account Internal Notes";
 export const DATA_VERSION = "2026-07-20-35";
 
 export const STORAGE_KEYS = {
