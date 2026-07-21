@@ -1,7 +1,7 @@
 import { initializeAuthentication, signOut } from "./auth.js?v=59";
 import { initializeClientSynchronization } from "./client-sync.js?v=59";
 import { loadDatabase } from "./data.js?v=59";
-import { initializeNavigation } from "./navigation.js?v=59";
+import { initializeNavigation } from "./navigation.js?v=60";
 import { renderError } from "./ui.js?v=44";
 import { getSettings } from "./storage.js?v=44";
 import { FONT_OPTIONS } from "./config.js?v=59";

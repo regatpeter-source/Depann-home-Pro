@@ -1401,6 +1401,7 @@ textarea{
     border-right:1px solid var(--border);
     border-bottom:1px solid var(--border);
     background:#fff;
+    cursor:pointer;
 }
 
 .calendar-day:nth-child(7n){
@@ -1420,13 +1421,13 @@ textarea{
 }
 
 .calendar-day-number{
+    display:inline-grid;
+    place-items:center;
     min-width:30px;
     height:30px;
-    border:none;
     border-radius:50%;
     background:transparent;
     color:var(--primary);
-    cursor:pointer;
     font-weight:800;
 }
 
@@ -1435,9 +1436,9 @@ textarea{
     color:#fff;
 }
 
-.calendar-day-number:hover,
-.calendar-day-number:focus-visible{
-    background:#dcecff;
+.calendar-day:hover,
+.calendar-day:focus-visible{
+    background:#f1f8ff;
     outline:none;
 }
 

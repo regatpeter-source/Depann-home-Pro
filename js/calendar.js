@@ -94,8 +94,14 @@ function renderHeader(panel) {
 }
 
 function renderEventForm(panel) {
+    if (!selectedEvent) {
+        panel.hidden = true;
+        panel.innerHTML = "";
+        return;
+    }
+
     panel.hidden = false;
-    const event = selectedEvent || newEventForDate(toDateString(new Date()));
+    const event = selectedEvent;
     const isEditing = Boolean(event.id);
     const clients = getSearchableClients().sort((first, second) => first.name.localeCompare(second.name, "fr"));
     panel.innerHTML = `
@@ -210,10 +216,22 @@ function renderCalendarGrid(panel) {
         const isCurrentMonth = day.getMonth() === displayedMonth.getMonth();
         const cell = document.createElement("article");
         cell.className = `calendar-day${isCurrentMonth ? "" : " outside"}${date === today ? " today" : ""}`;
-        cell.innerHTML = `<button type="button" class="calendar-day-number" title="Ajouter un rendez-vous le ${formatShortDate(day)}">${day.getDate()}</button><div class="calendar-event-list"></div>`;
-        cell.querySelector(".calendar-day-number").addEventListener("click", () => {
+        cell.tabIndex = 0;
+        cell.setAttribute("role", "button");
+        cell.setAttribute("aria-label", `Ajouter un rendez-vous le ${formatShortDate(day)}`);
+        cell.innerHTML = `<span class="calendar-day-number" aria-hidden="true">${day.getDate()}</span><div class="calendar-event-list"></div>`;
+        const openNewEvent = () => {
             selectedEvent = newEventForDate(date);
             renderCalendar({ date: day });
+        };
+        cell.addEventListener("click", eventClick => {
+            if (eventClick.target.closest(".calendar-event")) return;
+            openNewEvent();
+        });
+        cell.addEventListener("keydown", eventKey => {
+            if (eventKey.target !== cell || !["Enter", " "].includes(eventKey.key)) return;
+            eventKey.preventDefault();
+            openNewEvent();
         });
 
         const eventList = cell.querySelector(".calendar-event-list");

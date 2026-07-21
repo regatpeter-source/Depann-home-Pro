@@ -1,5 +1,5 @@
 import { ROUTES, STORAGE_KEYS, APP_VERSION, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=59";
-import { renderCalendar } from "./calendar.js?v=59";
+import { renderCalendar } from "./calendar.js?v=60";
 import { getSearchableClients, renderClients } from "./clients.js?v=59";
 import { openLibrarySection, renderLibrary, searchPersonalLibrary } from "./library.js?v=59";
 import { renderPhotoRecognition } from "./photo-recognition.js?v=59";
