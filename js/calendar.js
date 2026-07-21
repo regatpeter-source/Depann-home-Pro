@@ -1,5 +1,6 @@
-import { ROUTES } from "./config.js?v=71";
-import { getSearchableClients } from "./clients.js?v=71";
+import { ROUTES } from "./config.js?v=72";
+import { getSearchableClients } from "./clients.js?v=72";
+import { addClientActivityByName } from "./client-sync.js?v=72";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { clearSearch, createInfo, getContainer, setPage } from "./ui.js?v=44";
@@ -202,6 +203,11 @@ function renderEventForm(panel) {
             button.disabled = false;
             return;
         }
+        if (!isEditing && payload.clientName) addClientActivityByName(payload.clientName, {
+            type: "appointment",
+            label: "Rendez-vous créé",
+            detail: [payload.title, formatActivityDate(payload.date, payload.startTime)].filter(Boolean).join(" · ")
+        });
         displayedMonth = firstDayOfMonth(new Date(`${payload.date}T12:00:00`));
         selectedEvent = null;
         renderCalendar();
@@ -344,6 +350,10 @@ function toDateString(date) {
 
 function formatShortDate(date) {
     return new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "long" }).format(date);
+}
+
+function formatActivityDate(date, time) {
+    return `${new Intl.DateTimeFormat("fr-FR").format(new Date(`${date}T12:00:00`))}${time ? ` à ${time}` : ""}`;
 }
 
 function capitalize(value) {

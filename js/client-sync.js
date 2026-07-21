@@ -1,6 +1,7 @@
 const LEGACY_CLIENTS_KEY = "depannHomePro:clients";
 const CLIENTS_KEY_PREFIX = "depannHomePro:clients:";
 const QUEUE_KEY_PREFIX = "depannHomePro:clients-sync-queue:";
+const MAX_ACTIVITY_HISTORY = 150;
 
 let onlineListenerRegistered = false;
 let synchronizationPromise = null;
@@ -52,6 +53,22 @@ export function saveLocalClient(client) {
     return nextClient;
 }
 
+export function addClientActivity(clientId, activity) {
+    const client = getLocalClients().find(item => item.id === String(clientId));
+    if (!client) return false;
+    saveLocalClient({
+        ...client,
+        activityHistory: mergeActivityHistory(client.activityHistory, [normalizeActivity(activity)])
+    });
+    return true;
+}
+
+export function addClientActivityByName(clientName, activity) {
+    const normalizedName = normalizeName(clientName);
+    const client = getLocalClients().find(item => normalizeName(item.name) === normalizedName);
+    return client ? addClientActivity(client.id, activity) : false;
+}
+
 export function deleteLocalClient(clientId) {
     localStorage.setItem(getClientsKey(), JSON.stringify(getLocalClients().filter(client => client.id !== clientId)));
     enqueue({ type: "delete", clientId });
@@ -99,7 +116,15 @@ function mergeClients(firstClients, secondClients) {
     const merged = new Map();
     [...firstClients, ...secondClients].map(normalizeClient).forEach(client => {
         const existing = merged.get(client.id);
-        if (!existing || getTimestamp(client.updatedAt) >= getTimestamp(existing.updatedAt)) merged.set(client.id, client);
+        if (!existing) {
+            merged.set(client.id, client);
+            return;
+        }
+        const newest = getTimestamp(client.updatedAt) >= getTimestamp(existing.updatedAt) ? client : existing;
+        merged.set(client.id, {
+            ...newest,
+            activityHistory: mergeActivityHistory(existing.activityHistory, client.activityHistory)
+        });
     });
     return [...merged.values()];
 }
@@ -159,9 +184,33 @@ function normalizeClient(client) {
         id: String(client?.id || `client-${Date.now()}-${Math.random().toString(16).slice(2)}`),
         name: client?.name || "Client sans nom",
         attachments: Array.isArray(client?.attachments) ? client.attachments : [],
+        activityHistory: mergeActivityHistory(client?.activityHistory),
         createdAt: validDate(client?.createdAt) || now,
         updatedAt: validDate(client?.updatedAt) || now
     };
+}
+
+function mergeActivityHistory(...histories) {
+    const entries = new Map();
+    histories.flat().filter(Boolean).map(normalizeActivity).forEach(entry => entries.set(entry.id, entry));
+    return [...entries.values()]
+        .sort((first, second) => getTimestamp(second.createdAt) - getTimestamp(first.createdAt))
+        .slice(0, MAX_ACTIVITY_HISTORY);
+}
+
+function normalizeActivity(activity) {
+    const createdAt = validDate(activity?.createdAt) || new Date().toISOString();
+    return {
+        id: String(activity?.id || `activity-${Date.now()}-${Math.random().toString(16).slice(2)}`).slice(0, 100),
+        type: String(activity?.type || "other").slice(0, 40),
+        label: String(activity?.label || "Activité du dossier").slice(0, 200),
+        detail: String(activity?.detail || "").slice(0, 500),
+        createdAt
+    };
+}
+
+function normalizeName(value) {
+    return String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
 }
 
 function validDate(value) {

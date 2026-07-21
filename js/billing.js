@@ -1,5 +1,6 @@
-import { ROUTES } from "./config.js?v=71";
-import { getSearchableClients } from "./clients.js?v=71";
+import { ROUTES } from "./config.js?v=72";
+import { getSearchableClients } from "./clients.js?v=72";
+import { addClientActivityByName } from "./client-sync.js?v=72";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { clearSearch, createInfo, getContainer, setPage } from "./ui.js?v=44";
@@ -208,6 +209,11 @@ function renderDocumentEditor(panel) {
         const message = panel.querySelector("#billingDocumentMessage");
         const result = await apiRequest(isEditing ? `/api/billing/documents/${encodeURIComponent(document.id)}` : "/api/billing/documents", { method: isEditing ? "PUT" : "POST", body: JSON.stringify(payload) });
         if (!result.ok) { message.textContent = result.message || "Impossible d’enregistrer le document."; message.classList.add("error"); return; }
+        if (!isEditing) addClientActivityByName(payload.customerName, {
+            type: payload.documentType,
+            label: `${DOCUMENT_TYPES[payload.documentType]} créé`,
+            detail: payload.documentNumber
+        });
         if (shouldSaveAsDefault) {
             const templateResult = await apiRequest("/api/billing/default-quote", {
                 method: "PUT",

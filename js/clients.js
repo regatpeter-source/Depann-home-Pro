@@ -1,5 +1,5 @@
-import { ROUTES } from "./config.js?v=71";
-import { deleteLocalClient, getLocalClients, saveLocalClient, synchronizeClients } from "./client-sync.js?v=59";
+import { ROUTES } from "./config.js?v=72";
+import { addClientActivity, deleteLocalClient, getLocalClients, saveLocalClient, synchronizeClients } from "./client-sync.js?v=72";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { analyzeEquipmentPhoto, isPhotoRecognitionConfident } from "./photo-recognition.js?v=59";
@@ -21,7 +21,8 @@ const EMPTY_CLIENT = {
     city: "",
     equipment: "",
     notes: "",
-    attachments: []
+    attachments: [],
+    activityHistory: []
 };
 
 const ATTACHMENT_TYPES = ["Devis", "Facture", "Photo", "Autre"];
@@ -206,7 +207,19 @@ function renderClientForm(client, options = {}) {
         event.preventDefault();
         const nextClient = await readClientForm(event.currentTarget, client);
 
-        if (saveClient(nextClient)) {
+        const savedClient = saveClient(nextClient);
+        if (savedClient) {
+            const isNewClient = !client.id;
+            addClientActivity(savedClient.id, {
+                type: isNewClient ? "client" : "profile",
+                label: isNewClient ? "Fiche client créée" : "Fiche client mise à jour"
+            });
+            const newAttachments = savedClient.attachments.slice(client.attachments.length);
+            newAttachments.forEach(attachment => addClientActivity(savedClient.id, {
+                type: "attachment",
+                label: "Fichier ajouté",
+                detail: attachment.name
+            }));
             renderClients({ selectedId: nextClient.id, ...clientScreenOptions });
         }
     });
@@ -369,6 +382,10 @@ function renderClientDetail(client) {
             <p>${escapeHtml(client.notes || "Aucune note renseignée.")}</p>
         </section>
         <section class="procedure-section">
+            <h3> Historique du client</h3>
+            ${renderClientActivityHistory(client.activityHistory)}
+        </section>
+        <section class="procedure-section">
             <h3> Fichiers du client</h3>
             ${client.attachments.length ? renderAttachmentsHtml(client.attachments, true) : "<p>Aucun fichier enregistré.</p>"}
         </section>
@@ -498,6 +515,7 @@ async function readClientForm(form, previousClient = EMPTY_CLIENT) {
         city: String(formData.get("city") || "").trim(),
         equipment: String(formData.get("equipment") || "").trim(),
         notes: String(formData.get("notes") || "").trim(),
+        activityHistory: normalizeActivityHistory(previousClient.activityHistory),
         attachments: [
             ...normalizeAttachments(previousClient.attachments),
             ...newAttachments
@@ -507,8 +525,7 @@ async function readClientForm(form, previousClient = EMPTY_CLIENT) {
 
 function saveClient(client) {
     try {
-        saveLocalClient(client);
-        return true;
+        return saveLocalClient(client);
     } catch {
         alert("Le stockage local est plein. Supprime quelques fichiers lourds ou compresse les photos avant de réessayer.");
         return false;
@@ -553,7 +570,8 @@ function normalizeClient(client) {
         ...client,
         id: client.id || createClientId(),
         name: client.name || "Client sans nom",
-        attachments: normalizeAttachments(client.attachments)
+        attachments: normalizeAttachments(client.attachments),
+        activityHistory: normalizeActivityHistory(client.activityHistory)
     };
 }
 
@@ -571,6 +589,23 @@ function normalizeAttachments(attachments = []) {
             dataUrl: attachment.dataUrl,
             createdAt: attachment.createdAt || new Date().toISOString()
         }));
+}
+
+function renderClientActivityHistory(history) {
+    const entries = normalizeActivityHistory(history);
+    if (!entries.length) return "<p class=\"muted\">Les rendez-vous, documents et actions de ce dossier apparaîtront ici.</p>";
+    return `<div class="client-activity-list">${entries.map(entry => `<article class="client-activity-item"><div><strong>${escapeHtml(entry.label)}</strong>${entry.detail ? `<p>${escapeHtml(entry.detail)}</p>` : ""}</div><time datetime="${escapeHtml(entry.createdAt)}">${escapeHtml(formatActivityDate(entry.createdAt))}</time></article>`).join("")}</div>`;
+}
+
+function normalizeActivityHistory(history) {
+    return (Array.isArray(history) ? history : [])
+        .filter(entry => entry && entry.id && entry.label)
+        .map(entry => ({ id: String(entry.id), label: String(entry.label), detail: String(entry.detail || ""), createdAt: entry.createdAt || new Date().toISOString() }))
+        .sort((first, second) => new Date(second.createdAt).getTime() - new Date(first.createdAt).getTime());
+}
+
+function formatActivityDate(value) {
+    return new Intl.DateTimeFormat("fr-FR", { dateStyle: "short", timeStyle: "short" }).format(new Date(value));
 }
 
 function createClientId() {
@@ -658,10 +693,12 @@ function deleteClientAttachment(clientId, attachmentId) {
 
     if (!client) return;
 
-    saveClient({
+    const attachment = client.attachments.find(item => item.id === attachmentId);
+    const savedClient = saveClient({
         ...client,
         attachments: client.attachments.filter(attachment => attachment.id !== attachmentId)
     });
+    if (savedClient && attachment) addClientActivity(savedClient.id, { type: "attachment", label: "Fichier supprimé", detail: attachment.name });
 }
 
 function getAttachmentIcon(attachment) {

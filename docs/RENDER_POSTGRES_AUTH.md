@@ -28,7 +28,7 @@ L’onglet **Devis & factures** est privé à chaque compte. Chaque utilisateur 
 
 L’utilisateur peut créer des lignes préenregistrées (prestation, fourniture, unité, prix HT et TVA), puis les insérer dans ses devis et factures. Il peut aussi cocher **« Utiliser comme modèle de base »** lors de l’enregistrement d’un devis : ses lignes, TVA, conditions, catégorie et statut sont alors automatiquement proposés dans les futurs devis, tandis que le client, le numéro et les dates restent toujours vides et nouveaux. Les documents sont classés par destinataire : **Particulier**, **Professionnel**, **Magasin** ou **Autre**. Les montants HT, TVA et TTC sont calculés dans l’application. Tous les profils, lignes modèles, logos et documents sont filtrés côté serveur par compte : un autre utilisateur ne peut pas les lire ou les modifier, même en appelant l’API directement.
 
-Sur la fiche d’un client, les devis et factures associés sont proposés avec deux actions : **E-mail**, qui prépare un brouillon dans l’application de messagerie de l’appareil, et **Imprimer / PDF**, qui ouvre une mise en page propre à imprimer ou enregistrer au format PDF via le navigateur.
+Sur la fiche d’un client, les devis et factures associés sont proposés avec deux actions : **E-mail**, qui prépare un brouillon dans l’application de messagerie de l’appareil, et **Imprimer / PDF**, qui ouvre une mise en page propre à imprimer ou enregistrer au format PDF via le navigateur. La fiche présente aussi un **historique** daté : création ou modification du dossier, ajout/suppression de fichiers, nouveaux rendez-vous, devis et factures. Cet historique fait partie du dossier client privé et se synchronise avec les autres appareils du même compte.
 
 ## Notes internes synchronisées
 

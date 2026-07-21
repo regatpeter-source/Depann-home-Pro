@@ -2,6 +2,7 @@ import { getPool } from "./database.js";
 
 const MAX_CLIENT_PAYLOAD_SIZE = 20 * 1024 * 1024;
 const CLIENT_ID_PATTERN = /^client-[a-zA-Z0-9-]+$/;
+const MAX_ACTIVITY_HISTORY = 150;
 
 export async function initializeClients() {
     const database = getPool();
@@ -72,8 +73,23 @@ function sanitizeClient(value, expectedId) {
         id: expectedId,
         updatedAt: updatedAt.toISOString(),
         createdAt: validDate(value.createdAt) || updatedAt.toISOString(),
-        attachments: Array.isArray(value.attachments) ? value.attachments.slice(0, 30) : []
+        attachments: Array.isArray(value.attachments) ? value.attachments.slice(0, 30) : [],
+        activityHistory: sanitizeActivityHistory(value.activityHistory)
     };
+}
+
+function sanitizeActivityHistory(value) {
+    if (!Array.isArray(value)) return [];
+    return value
+        .filter(item => item && typeof item === "object" && item.id && item.label)
+        .map(item => ({
+            id: String(item.id).slice(0, 100),
+            type: String(item.type || "other").slice(0, 40),
+            label: String(item.label).slice(0, 200),
+            detail: String(item.detail || "").slice(0, 500),
+            createdAt: validDate(item.createdAt) || new Date().toISOString()
+        }))
+        .slice(0, MAX_ACTIVITY_HISTORY);
 }
 
 function validDate(value) {
