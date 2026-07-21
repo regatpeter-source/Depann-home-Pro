@@ -1,9 +1,9 @@
-import { initializeAuthentication, signOut } from "./auth.js?v=53";
-import { loadDatabase } from "./data.js?v=53";
-import { initializeNavigation } from "./navigation.js?v=53";
+import { initializeAuthentication, signOut } from "./auth.js?v=54";
+import { loadDatabase } from "./data.js?v=54";
+import { initializeNavigation } from "./navigation.js?v=54";
 import { renderError } from "./ui.js?v=44";
 import { getSettings } from "./storage.js?v=44";
-import { FONT_OPTIONS } from "./config.js?v=53";
+import { FONT_OPTIONS } from "./config.js?v=54";
 
 let applicationStarted = false;
 
@@ -95,8 +95,8 @@ function applyLanguage() {
 
         document.querySelectorAll('footer .nav-button span').forEach((span, idx) => {
             const texts = lang === 'en'
-                ? ['Home','Search','Store','Photo','Clients','Favorites','Settings']
-                : ['Accueil','Recherche','Magasin','Photo','Clients','Favoris','Paramètres'];
+                ? ['Home','Search','Store','Photo','Clients','Documents','Favorites','Settings']
+                : ['Accueil','Recherche','Magasin','Photo','Clients','Documents','Favoris','Paramètres'];
             span.textContent = texts[idx] || span.textContent;
         });
     } catch {

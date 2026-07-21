@@ -1,7 +1,8 @@
-import { ROUTES, STORAGE_KEYS, APP_VERSION, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=53";
-import { renderClients } from "./clients.js?v=53";
-import { renderPhotoRecognition } from "./photo-recognition.js?v=53";
-import { getSearchResults } from "./search.js?v=53";
+import { ROUTES, STORAGE_KEYS, APP_VERSION, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=54";
+import { renderClients } from "./clients.js?v=54";
+import { renderLibrary } from "./library.js?v=54";
+import { renderPhotoRecognition } from "./photo-recognition.js?v=54";
+import { getSearchResults } from "./search.js?v=54";
 import { state, resetSelection } from "./state.js?v=44";
 import {
     clearHistory,
@@ -33,6 +34,7 @@ export function initializeNavigation(loadedDatabase) {
 function bindEvents() {
     const search = document.getElementById("search");
     const clientsBtn = document.getElementById("clientsBtn");
+    const libraryBtn = document.getElementById("libraryBtn");
     const photoBtn = document.getElementById("photoBtn");
     const favoritesBtn = document.getElementById("favoritesBtn");
     const historyBtn = document.getElementById("historyBtn");
@@ -49,6 +51,7 @@ function bindEvents() {
     });
 
     clientsBtn.addEventListener("click", () => renderClients({ database, navigateToRef }));
+    libraryBtn?.addEventListener("click", renderLibrary);
     photoBtn?.addEventListener("click", () => renderPhotoRecognition(database, navigateToRef));
     favoritesBtn.addEventListener("click", renderFavorites);
     historyBtn.addEventListener("click", renderHistory);
@@ -62,6 +65,7 @@ function bindEvents() {
             if (nav === ROUTES.store) renderStore();
             if (nav === ROUTES.photo) renderPhotoRecognition(database, navigateToRef);
             if (nav === ROUTES.clients) renderClients({ database, navigateToRef });
+            if (nav === ROUTES.library) renderLibrary();
             if (nav === ROUTES.favorites) renderFavorites();
             if (nav === ROUTES.settings) renderSettings();
         });

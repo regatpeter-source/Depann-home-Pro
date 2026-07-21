@@ -1,4 +1,4 @@
-export const APP_VERSION = "1.1 Render PostgreSQL Authentication";
+export const APP_VERSION = "1.2 Shared Document Library";
 export const DATA_VERSION = "2026-07-20-35";
 
 export const STORAGE_KEYS = {
@@ -40,6 +40,7 @@ export const ROUTES = {
     store: "store",
     photo: "photo",
     clients: "clients",
+    library: "library",
     favorites: "favorites",
     history: "history",
     settings: "settings"

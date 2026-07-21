@@ -20,7 +20,13 @@ L’application est désormais un **Render Web Service** Node.js. Le serveur gè
 | `ALLOW_PUBLIC_REGISTRATION` | `false` recommandé. Passez à `true` seulement si chaque utilisateur doit pouvoir créer son propre compte. |
 | `NODE_ENV` | `production` |
 
-Le serveur crée automatiquement la table `depannhome_users` au démarrage. Cette table dédiée évite tout conflit avec les tables de votre service VHR. Le fichier `database/schema.sql` est fourni à titre de référence ; il n’est donc pas nécessaire de l’exécuter manuellement.
+Le serveur crée automatiquement les tables `depannhome_users`, `depannhome_library_sections` et `depannhome_library_documents` au démarrage. Elles sont dédiées à Depann’Home et évitent tout conflit avec les tables de votre service VHR. Le fichier `database/schema.sql` est fourni à titre de référence ; il n’est donc pas nécessaire de l’exécuter manuellement.
+
+## Bibliothèque partagée
+
+Chaque utilisateur connecté peut créer une section métier (par exemple **Serrurerie**, **Interphonie** ou **Alarmes**) et y déposer des documents. Les PDF, fichiers Office, fichiers texte et images sont acceptés, avec une limite de **5 fichiers** et **20 Mo par fichier** à chaque envoi.
+
+Les fichiers sont stockés dans PostgreSQL pour rester disponibles après les redéploiements Render. Ils utilisent donc l’espace de votre base de données : surveillez sa capacité et privilégiez des PDF optimisés. Tous les utilisateurs connectés peuvent ouvrir les documents ; seul l’auteur d’un document, ou un administrateur, peut le supprimer.
 
 ## Premier déploiement
 

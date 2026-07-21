@@ -13,6 +13,11 @@ import {
 	validateAuthenticationConfiguration
 } from "./server/auth.js";
 import { initializeDatabase } from "./server/database.js";
+import {
+	libraryUploadErrorHandler,
+	initializeLibrary,
+	registerLibraryRoutes
+} from "./server/library.js";
 
 const rootDirectory = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -32,6 +37,7 @@ app.use("/api/auth", rateLimit({
 	message: { message: "Trop de tentatives. Réessayez dans quelques minutes." }
 }));
 registerAuthRoutes(app);
+registerLibraryRoutes(app, requireAuthentication);
 
 // Seul le logo est nécessaire avant connexion. Le catalogue et les notices sont servis
 // uniquement après validation du cookie de session HTTP-only.
@@ -53,6 +59,7 @@ app.get("/service-worker.js", (request, response) => {
 	response.sendFile(path.join(rootDirectory, "service-worker.js"), { headers: { "Cache-Control": "no-cache" } });
 });
 
+app.use(libraryUploadErrorHandler);
 app.use((error, request, response, next) => {
 	console.error(error);
 	if (response.headersSent) return next(error);
@@ -62,6 +69,7 @@ app.use((error, request, response, next) => {
 async function start() {
 	validateAuthenticationConfiguration();
 	await initializeDatabase();
+	await initializeLibrary();
 	await createInitialAdministrator();
 	app.listen(port, () => console.log(`Depann'Home Pro écoute sur le port ${port}.`));
 }
