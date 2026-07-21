@@ -1,6 +1,6 @@
-import { ROUTES, STORAGE_KEYS, APP_VERSION, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=64";
-import { renderCalendar } from "./calendar.js?v=63";
-import { renderBilling } from "./billing.js?v=64";
+import { ROUTES, STORAGE_KEYS, APP_VERSION, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=65";
+import { renderCalendar } from "./calendar.js?v=65";
+import { renderBilling } from "./billing.js?v=65";
 import { getSearchableClients, renderClients } from "./clients.js?v=63";
 import { openLibrarySection, renderLibrary, searchPersonalLibrary } from "./library.js?v=59";
 import { renderPhotoRecognition } from "./photo-recognition.js?v=59";

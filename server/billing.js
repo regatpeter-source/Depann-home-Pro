@@ -29,10 +29,15 @@ export async function initializeBilling() {
             tax_number VARCHAR(100) NOT NULL DEFAULT '',
             payment_terms VARCHAR(500) NOT NULL DEFAULT '',
             footer_note VARCHAR(1000) NOT NULL DEFAULT '',
+            default_quote JSONB,
             logo_data BYTEA,
             logo_mime_type VARCHAR(50) NOT NULL DEFAULT '',
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
+    `);
+    await database.query(`
+        ALTER TABLE depannhome_billing_profiles
+        ADD COLUMN IF NOT EXISTS default_quote JSONB
     `);
     await database.query(`
         CREATE TABLE IF NOT EXISTS depannhome_billing_templates (
@@ -83,7 +88,8 @@ export function registerBillingRoutes(app, requireAuthentication) {
             database.query(`
                 SELECT company_name AS "companyName", legal_form AS "legalForm", address, postal_code AS "postalCode", city,
                     phone, email, registration_number AS "registrationNumber", tax_number AS "taxNumber",
-                    payment_terms AS "paymentTerms", footer_note AS "footerNote", (logo_data IS NOT NULL) AS "hasLogo"
+                    payment_terms AS "paymentTerms", footer_note AS "footerNote", default_quote AS "defaultQuote",
+                    (logo_data IS NOT NULL) AS "hasLogo"
                 FROM depannhome_billing_profiles WHERE owner_id = $1
             `, [request.user.sub]),
             database.query(`
@@ -130,6 +136,17 @@ export function registerBillingRoutes(app, requireAuthentication) {
         if (!rows[0]?.logo_data) return response.status(404).end();
         response.set({ "Content-Type": rows[0].logo_mime_type, "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" });
         response.send(rows[0].logo_data);
+    }));
+
+    app.put("/api/billing/default-quote", requireAuthentication, asyncHandler(async (request, response) => {
+        const quote = sanitizeQuoteTemplate(request.body);
+        if (!quote.ok) return response.status(400).json({ message: quote.message });
+        await getPool().query(`
+            INSERT INTO depannhome_billing_profiles (owner_id, default_quote)
+            VALUES ($1, $2::jsonb)
+            ON CONFLICT (owner_id) DO UPDATE SET default_quote = EXCLUDED.default_quote, updated_at = NOW()
+        `, [request.user.sub, JSON.stringify(quote.template)]);
+        response.status(204).end();
     }));
 
     app.post("/api/billing/templates", requireAuthentication, asyncHandler(async (request, response) => {
@@ -205,7 +222,7 @@ export function billingUploadErrorHandler(error, request, response, next) {
 }
 
 function emptyProfile() {
-    return { companyName: "", legalForm: "", address: "", postalCode: "", city: "", phone: "", email: "", registrationNumber: "", taxNumber: "", paymentTerms: "", footerNote: "", hasLogo: false };
+    return { companyName: "", legalForm: "", address: "", postalCode: "", city: "", phone: "", email: "", registrationNumber: "", taxNumber: "", paymentTerms: "", footerNote: "", defaultQuote: null, hasLogo: false };
 }
 
 function sanitizeProfile(value) {
@@ -244,6 +261,16 @@ function sanitizeDocument(value) {
     if (!lines.length) return { ok: false, message: "Ajoutez au moins une ligne." };
     if (value?.dueDate && !dueDate) return { ok: false, message: "La date d'échéance est invalide." };
     return { ok: true, documentType, documentNumber, customerType, customerName, customerAddress, issueDate, dueDate, status, lines, notes };
+}
+
+function sanitizeQuoteTemplate(value) {
+    if (value === null) return { ok: true, template: null };
+    const customerType = CUSTOMER_TYPES.has(value?.customerType) ? value.customerType : "Particulier";
+    const status = cleanText(value?.status, 30) || "draft";
+    const notes = cleanText(value?.notes, 2000);
+    const lines = sanitizeLines(value?.lines);
+    if (!lines.length) return { ok: false, message: "Le modèle de devis doit contenir au moins une ligne valide." };
+    return { ok: true, template: { customerType, status, notes, lines } };
 }
 
 function sanitizeLines(value) {

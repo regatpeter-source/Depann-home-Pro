@@ -1,4 +1,4 @@
-export const APP_VERSION = "1.8.0 Quotes And Invoices";
+export const APP_VERSION = "1.8.1 Default Quote Template";
 export const DATA_VERSION = "2026-07-20-35";
 
 export const STORAGE_KEYS = {

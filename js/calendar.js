@@ -1,4 +1,4 @@
-import { ROUTES } from "./config.js?v=64";
+import { ROUTES } from "./config.js?v=65";
 import { getSearchableClients } from "./clients.js?v=63";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";

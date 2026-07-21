@@ -1,4 +1,4 @@
-import { ROUTES } from "./config.js?v=64";
+import { ROUTES } from "./config.js?v=65";
 import { getSearchableClients } from "./clients.js?v=63";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
@@ -60,10 +60,16 @@ function renderOverview(panel) {
                 <button type="button" class="secondary-button" data-billing-action="new-invoice">+ Nouvelle facture</button>
             </div>
         </div>
-        <div class="billing-metrics"><span><strong>${quotes}</strong> devis</span><span><strong>${invoices}</strong> factures</span><span><strong>${billingData.templates.length}</strong> ligne(s) modèle</span></div>
+        <div class="billing-metrics"><span><strong>${quotes}</strong> devis</span><span><strong>${invoices}</strong> factures</span><span><strong>${billingData.templates.length}</strong> ligne(s) modèle</span>${profile.defaultQuote ? '<span class="billing-base-template"><strong>✓</strong> modèle de devis actif <button type="button" data-billing-action="clear-default">Retirer</button></span>' : ""}</div>
     `;
     panel.querySelector("[data-billing-action=new-quote]").addEventListener("click", () => openNewDocument("quote"));
     panel.querySelector("[data-billing-action=new-invoice]").addEventListener("click", () => openNewDocument("invoice"));
+    panel.querySelector("[data-billing-action=clear-default]")?.addEventListener("click", async () => {
+        if (!confirm("Retirer le modèle de devis de base ?")) return;
+        const result = await apiRequest("/api/billing/default-quote", { method: "PUT", body: JSON.stringify(null) });
+        if (!result.ok) { alert(result.message || "Impossible de retirer le modèle."); return; }
+        renderBilling();
+    });
 }
 
 function renderProfile(panel) {
@@ -170,6 +176,7 @@ function renderDocumentEditor(panel) {
             </div>
             <section class="billing-lines-section"><div class="form-heading"><div><p class="eyebrow">Prestations</p><h3>Lignes du document</h3></div><button type="button" class="secondary-button" id="addBillingLine">+ Ligne libre</button></div><div id="billingLines" class="billing-lines"></div><div class="billing-totals" id="billingTotals"></div></section>
             <label>Notes / conditions<textarea name="notes" rows="3" maxlength="2000" placeholder="Informations complémentaires, conditions, validité du devis…">${escapeHtml(document.notes)}</textarea></label>
+            ${document.documentType === "quote" ? `<label class="billing-default-option"><input name="saveAsDefaultQuote" type="checkbox" ${!billingData.profile.defaultQuote ? "checked" : ""}> Utiliser les lignes, la TVA, les conditions et le statut de ce devis comme modèle de base pour mes futurs devis.</label>` : ""}
             <p id="billingDocumentMessage" class="auth-message" aria-live="polite"></p>
             <div class="calendar-form-actions"><button type="submit" class="secondary-button">${isEditing ? "Enregistrer les modifications" : "Enregistrer le document"}</button>${isEditing ? '<button type="button" class="danger-button" id="deleteBillingDocument">Supprimer</button>' : ""}</div>
         </form>
@@ -190,9 +197,22 @@ function renderDocumentEditor(panel) {
     form.addEventListener("submit", async event => {
         event.preventDefault();
         const payload = { ...formDataToObject(new FormData(form)), lines: document.lines };
+        const shouldSaveAsDefault = payload.documentType === "quote" && payload.saveAsDefaultQuote === "on";
+        delete payload.saveAsDefaultQuote;
         const message = panel.querySelector("#billingDocumentMessage");
         const result = await apiRequest(isEditing ? `/api/billing/documents/${encodeURIComponent(document.id)}` : "/api/billing/documents", { method: isEditing ? "PUT" : "POST", body: JSON.stringify(payload) });
         if (!result.ok) { message.textContent = result.message || "Impossible d’enregistrer le document."; message.classList.add("error"); return; }
+        if (shouldSaveAsDefault) {
+            const templateResult = await apiRequest("/api/billing/default-quote", {
+                method: "PUT",
+                body: JSON.stringify({ customerType: payload.customerType, status: payload.status, notes: payload.notes, lines: payload.lines })
+            });
+            if (!templateResult.ok) {
+                message.textContent = templateResult.message || "Document enregistré, mais le modèle de devis n’a pas pu être mis à jour.";
+                message.classList.add("error");
+                return;
+            }
+        }
         activeDocument = null;
         renderBilling();
     });
@@ -258,7 +278,20 @@ function renderDocumentList(panel) {
 }
 
 function openNewDocument(type) {
-    activeDocument = { id: null, documentType: type, documentNumber: suggestNumber(type), customerType: "Particulier", customerName: "", customerAddress: "", issueDate: today(), dueDate: "", status: "draft", lines: [emptyLine()], notes: billingData.profile.paymentTerms || "" };
+    const baseQuote = type === "quote" ? normalizeQuoteTemplate(billingData.profile.defaultQuote) : null;
+    activeDocument = {
+        id: null,
+        documentType: type,
+        documentNumber: suggestNumber(type),
+        customerType: baseQuote?.customerType || "Particulier",
+        customerName: "",
+        customerAddress: "",
+        issueDate: today(),
+        dueDate: "",
+        status: baseQuote?.status || "draft",
+        lines: baseQuote?.lines || [emptyLine()],
+        notes: baseQuote?.notes || billingData.profile.paymentTerms || ""
+    };
     renderBilling();
 }
 
@@ -269,6 +302,10 @@ function fillCustomerAddress(input, form, clients) {
 
 function emptyLine() { return { description: "", quantity: 1, unit: "unité", unitPrice: 0, vatRate: 20 }; }
 function normalizeDocument(document) { return { ...document, lines: Array.isArray(document.lines) && document.lines.length ? document.lines.map(line => ({ ...emptyLine(), ...line })) : [emptyLine()] }; }
+function normalizeQuoteTemplate(template) {
+    if (!template || !Array.isArray(template.lines) || !template.lines.length) return null;
+    return { ...template, lines: template.lines.map(line => ({ ...emptyLine(), ...line })) };
+}
 function suggestNumber(type) { return `${type === "quote" ? "DEV" : "FAC"}-${new Date().getFullYear()}-${String((billingData.documents || []).filter(document => document.documentType === type).length + 1).padStart(3, "0")}`; }
 function lineTotal(line) { return (Number(line.quantity) || 0) * (Number(line.unitPrice) || 0); }
 function calculateTotals(lines) { const ht = lines.reduce((sum, line) => sum + lineTotal(line), 0); const vat = lines.reduce((sum, line) => sum + lineTotal(line) * (Number(line.vatRate) || 0) / 100, 0); return { ht, vat, ttc: ht + vat }; }

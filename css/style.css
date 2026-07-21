@@ -1646,6 +1646,42 @@ textarea{
     font-size:17px;
 }
 
+.billing-base-template{
+    display:inline-flex;
+    align-items:center;
+    gap:7px;
+    background:#effaf3 !important;
+}
+
+.billing-base-template button{
+    border:none;
+    padding:3px 6px;
+    border-radius:6px;
+    color:var(--danger);
+    background:transparent;
+    cursor:pointer;
+    font-weight:700;
+}
+
+.billing-default-option{
+    display:flex;
+    align-items:flex-start;
+    gap:9px;
+    padding:13px 14px;
+    border:1px solid rgba(10,92,54,.2);
+    border-radius:12px;
+    background:#effaf3;
+    color:var(--primary);
+    font-weight:700;
+}
+
+.billing-default-option input{
+    width:18px;
+    height:18px;
+    flex:0 0 auto;
+    accent-color:var(--secondary);
+}
+
 .billing-template-form{
     margin-top:18px;
 }

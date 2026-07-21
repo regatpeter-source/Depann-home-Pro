@@ -34,10 +34,14 @@ CREATE TABLE IF NOT EXISTS depannhome_billing_profiles (
     tax_number VARCHAR(100) NOT NULL DEFAULT '',
     payment_terms VARCHAR(500) NOT NULL DEFAULT '',
     footer_note VARCHAR(1000) NOT NULL DEFAULT '',
+    default_quote JSONB,
     logo_data BYTEA,
     logo_mime_type VARCHAR(50) NOT NULL DEFAULT '',
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE depannhome_billing_profiles
+    ADD COLUMN IF NOT EXISTS default_quote JSONB;
 
 CREATE TABLE IF NOT EXISTS depannhome_billing_templates (
     id BIGSERIAL PRIMARY KEY,
