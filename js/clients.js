@@ -1,7 +1,7 @@
-import { ROUTES, STORAGE_KEYS } from "./config.js?v=54";
+import { ROUTES, STORAGE_KEYS } from "./config.js?v=55";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
-import { analyzeEquipmentPhoto, isPhotoRecognitionConfident } from "./photo-recognition.js?v=54";
+import { analyzeEquipmentPhoto, isPhotoRecognitionConfident } from "./photo-recognition.js?v=55";
 import {
     clearSearch,
     createButton,

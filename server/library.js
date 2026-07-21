@@ -24,10 +24,28 @@ export async function initializeLibrary() {
         CREATE TABLE IF NOT EXISTS depannhome_library_sections (
             id BIGSERIAL PRIMARY KEY,
             name VARCHAR(80) NOT NULL,
-            slug VARCHAR(100) NOT NULL UNIQUE,
+            slug VARCHAR(100) NOT NULL,
             created_by BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE RESTRICT,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
+    `);
+
+    await database.query(`
+        ALTER TABLE depannhome_library_sections
+        DROP CONSTRAINT IF EXISTS depannhome_library_sections_slug_key
+    `);
+    await database.query(`
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint
+                WHERE conname = 'depannhome_library_sections_owner_slug_unique'
+            ) THEN
+                ALTER TABLE depannhome_library_sections
+                ADD CONSTRAINT depannhome_library_sections_owner_slug_unique
+                UNIQUE (created_by, slug);
+            END IF;
+        END $$
     `);
 
     await database.query(`
@@ -59,14 +77,14 @@ export function registerLibraryRoutes(app, requireAuthentication) {
                 section.name,
                 section.slug,
                 section.created_at AS "createdAt",
-                creator.username AS "createdBy",
                 COUNT(document.id)::int AS "documentCount"
             FROM depannhome_library_sections section
-            JOIN depannhome_users creator ON creator.id = section.created_by
-            LEFT JOIN depannhome_library_documents document ON document.section_id = section.id
-            GROUP BY section.id, creator.username
+            LEFT JOIN depannhome_library_documents document
+                ON document.section_id = section.id AND document.created_by = $1
+            WHERE section.created_by = $1
+            GROUP BY section.id
             ORDER BY LOWER(section.name)
-        `);
+        `, [request.user.sub]);
         response.json({ sections: rows });
     }));
 
@@ -84,7 +102,7 @@ export function registerLibraryRoutes(app, requireAuthentication) {
             return response.status(201).json({ section: rows[0] });
         } catch (error) {
             if (error.code === "23505") {
-                return response.status(409).json({ message: "Une section avec ce nom existe déjà." });
+                return response.status(409).json({ message: "Une section avec ce nom existe déjà dans votre bibliothèque." });
             }
             throw error;
         }
@@ -104,14 +122,14 @@ export function registerLibraryRoutes(app, requireAuthentication) {
                 document.file_size AS "fileSize",
                 document.created_at AS "createdAt",
                 section.name AS "sectionName",
-                creator.username AS "createdBy",
-                (document.created_by = $2 OR $3 = 'admin') AS "canDelete"
+                TRUE AS "canDelete"
             FROM depannhome_library_documents document
             JOIN depannhome_library_sections section ON section.id = document.section_id
-            JOIN depannhome_users creator ON creator.id = document.created_by
             WHERE document.section_id = $1
+              AND section.created_by = $2
+              AND document.created_by = $2
             ORDER BY document.created_at DESC
-        `, [sectionId, request.user.sub, request.user.role]);
+        `, [sectionId, request.user.sub]);
         response.json({ documents: rows });
     }));
 
@@ -126,7 +144,10 @@ export function registerLibraryRoutes(app, requireAuthentication) {
         if (!title) return response.status(400).json({ message: "Indiquez un titre pour les documents." });
 
         const database = getPool();
-        const section = await database.query("SELECT id FROM depannhome_library_sections WHERE id = $1", [sectionId]);
+        const section = await database.query(
+            "SELECT id FROM depannhome_library_sections WHERE id = $1 AND created_by = $2",
+            [sectionId, request.user.sub]
+        );
         if (!section.rowCount) return response.status(404).json({ message: "Section introuvable." });
 
         const client = await database.connect();
@@ -164,10 +185,13 @@ export function registerLibraryRoutes(app, requireAuthentication) {
         if (!documentId) return response.status(400).json({ message: "Document invalide." });
 
         const { rows } = await getPool().query(`
-            SELECT original_filename, mime_type, file_data
-            FROM depannhome_library_documents
-            WHERE id = $1
-        `, [documentId]);
+                        SELECT document.original_filename, document.mime_type, document.file_data
+                        FROM depannhome_library_documents document
+                        JOIN depannhome_library_sections section ON section.id = document.section_id
+                        WHERE document.id = $1
+                            AND document.created_by = $2
+                            AND section.created_by = $2
+                `, [documentId, request.user.sub]);
         if (!rows[0]) return response.status(404).json({ message: "Document introuvable." });
 
         const document = rows[0];
@@ -187,9 +211,13 @@ export function registerLibraryRoutes(app, requireAuthentication) {
 
         const { rowCount } = await getPool().query(`
             DELETE FROM depannhome_library_documents
-            WHERE id = $1 AND (created_by = $2 OR $3 = 'admin')
-        `, [documentId, request.user.sub, request.user.role]);
-        if (!rowCount) return response.status(403).json({ message: "Vous ne pouvez supprimer que vos propres documents." });
+            WHERE id = $1
+              AND created_by = $2
+              AND section_id IN (
+                  SELECT id FROM depannhome_library_sections WHERE created_by = $2
+              )
+        `, [documentId, request.user.sub]);
+        if (!rowCount) return response.status(404).json({ message: "Document introuvable." });
         response.status(204).end();
     }));
 }

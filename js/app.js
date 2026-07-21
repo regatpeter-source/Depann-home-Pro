@@ -1,9 +1,9 @@
-import { initializeAuthentication, signOut } from "./auth.js?v=54";
-import { loadDatabase } from "./data.js?v=54";
-import { initializeNavigation } from "./navigation.js?v=54";
+import { initializeAuthentication, signOut } from "./auth.js?v=55";
+import { loadDatabase } from "./data.js?v=55";
+import { initializeNavigation } from "./navigation.js?v=55";
 import { renderError } from "./ui.js?v=44";
 import { getSettings } from "./storage.js?v=44";
-import { FONT_OPTIONS } from "./config.js?v=54";
+import { FONT_OPTIONS } from "./config.js?v=55";
 
 let applicationStarted = false;
 

@@ -12,10 +12,24 @@ CREATE INDEX IF NOT EXISTS depannhome_users_username_lookup_idx ON depannhome_us
 CREATE TABLE IF NOT EXISTS depannhome_library_sections (
     id BIGSERIAL PRIMARY KEY,
     name VARCHAR(80) NOT NULL,
-    slug VARCHAR(100) NOT NULL UNIQUE,
+    slug VARCHAR(100) NOT NULL,
     created_by BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE RESTRICT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE depannhome_library_sections
+    DROP CONSTRAINT IF EXISTS depannhome_library_sections_slug_key;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'depannhome_library_sections_owner_slug_unique'
+    ) THEN
+        ALTER TABLE depannhome_library_sections
+            ADD CONSTRAINT depannhome_library_sections_owner_slug_unique UNIQUE (created_by, slug);
+    END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS depannhome_library_documents (
     id BIGSERIAL PRIMARY KEY,

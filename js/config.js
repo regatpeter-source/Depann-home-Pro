@@ -1,4 +1,4 @@
-export const APP_VERSION = "1.2 Shared Document Library";
+export const APP_VERSION = "1.3 Private Document Library";
 export const DATA_VERSION = "2026-07-20-35";
 
 export const STORAGE_KEYS = {

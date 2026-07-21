@@ -1,4 +1,4 @@
-import { ROUTES } from "./config.js?v=54";
+import { ROUTES } from "./config.js?v=55";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml } from "./utils.js?v=44";
 import { clearSearch, createInfo, getContainer, setPage } from "./ui.js?v=44";
@@ -12,7 +12,7 @@ export async function renderLibrary() {
     setPage("Bibliothèque", ROUTES.library, "detail");
 
     const container = getContainer();
-    container.appendChild(createInfo("Partagez des notices et documents techniques avec toute l’équipe. Les fichiers restent protégés par la connexion."));
+    container.appendChild(createInfo("Conservez vos notices et documents techniques dans votre espace personnel. Ils ne sont visibles que depuis votre compte."));
 
     const [sectionPanel, uploadPanel, listPanel] = [
         document.createElement("section"),
@@ -48,8 +48,8 @@ function renderSectionPanel(panel, sections, refresh) {
     panel.innerHTML = `
         <div class="form-heading">
             <div>
-                <p class="eyebrow">Sections partagées</p>
-                <h2>Bibliothèque technique</h2>
+                <p class="eyebrow">Vos sections privées</p>
+                <h2>Votre bibliothèque technique</h2>
                 <p class="muted">Créez une section métier : Serrurerie, Interphonie, Alarmes, Domotique…</p>
             </div>
         </div>
@@ -210,7 +210,7 @@ async function renderDocumentPanel(panel, sections) {
 
     list.querySelectorAll("[data-document-id]").forEach(button => {
         button.addEventListener("click", async () => {
-            if (!confirm("Supprimer ce document partagé ?")) return;
+            if (!confirm("Supprimer ce document ?")) return;
             button.disabled = true;
             const result = await apiRequest(`/api/library/documents/${encodeURIComponent(button.dataset.documentId)}`, { method: "DELETE" });
             if (!result.ok) {
