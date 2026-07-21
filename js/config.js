@@ -1,4 +1,4 @@
-export const APP_VERSION = "1.6.3 Mobile Navigation Visibility";
+export const APP_VERSION = "1.7.0 Responsive Client Directory";
 export const DATA_VERSION = "2026-07-20-35";
 
 export const STORAGE_KEYS = {

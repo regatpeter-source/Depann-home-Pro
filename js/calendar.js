@@ -1,5 +1,5 @@
 import { ROUTES } from "./config.js?v=59";
-import { getSearchableClients } from "./clients.js?v=59";
+import { getSearchableClients } from "./clients.js?v=63";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { clearSearch, createInfo, getContainer, setPage } from "./ui.js?v=44";

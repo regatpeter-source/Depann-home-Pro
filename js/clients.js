@@ -60,10 +60,11 @@ function renderClientToolbar(clients) {
             <p class="muted">Les clients sont enregistrés sur cet appareil, dans l’espace du compte connecté. Ils apparaissent dans la recherche globale de ce compte.</p>
         </div>
         <div class="client-toolbar-actions">
-            <input id="clientSearch" class="client-search" type="search" placeholder="Rechercher un client, une ville, un équipement...">
+            <input id="clientSearch" class="client-search" type="search" placeholder="Saisir le nom d’un client..." aria-describedby="clientSearchHint">
             <button type="button" class="secondary-button" id="syncClientsBtn">Synchroniser</button>
             <button type="button" class="secondary-button" id="newClientBtn">+ Nouveau client</button>
         </div>
+        <p id="clientSearchHint" class="client-search-hint">Sur téléphone, saisissez le nom d’un client pour afficher son dossier.</p>
         <p id="clientSyncMessage" class="auth-message" aria-live="polite"></p>
     `;
 
@@ -272,63 +273,68 @@ function renderClientPhotoRecognition(analysis, statusNode, resultNode, navigate
 
 function renderClientList(clients) {
     const section = document.createElement("section");
-    section.className = "client-list";
+    section.className = "client-list client-table-wrapper";
     section.id = "clientList";
+    section.dataset.hasQuery = "false";
 
     if (!clients.length) {
         section.appendChild(createInfo("Aucun client enregistré pour le moment."));
         return section;
     }
 
+    const table = document.createElement("table");
+    table.className = "client-table";
+    table.innerHTML = `
+        <thead>
+            <tr>
+                <th scope="col">Client</th>
+                <th scope="col">Type</th>
+                <th scope="col">Coordonnées</th>
+                <th scope="col">Adresse</th>
+                <th scope="col">Dossier</th>
+                <th scope="col"><span class="sr-only">Actions</span></th>
+            </tr>
+        </thead>
+        <tbody></tbody>
+    `;
+    const body = table.querySelector("tbody");
     clients
         .sort((a, b) => a.name.localeCompare(b.name, "fr"))
         .forEach(client => {
-            section.appendChild(renderClientCard(client));
+            body.appendChild(renderClientTableRow(client));
         });
+    section.appendChild(table);
 
     return section;
 }
 
-function renderClientCard(client) {
-    const card = document.createElement("article");
-    card.className = "client-card";
-    card.dataset.search = normalizeText([
-        client.name,
-        client.type,
-        client.phone,
-        client.email,
-        client.address,
-        client.city,
-        client.equipment,
-        client.notes,
-        client.attachments.map(attachment => `${attachment.type} ${attachment.name}`).join(" ")
-    ].join(" "));
-
-    card.innerHTML = `
-        <div>
-            <p class="eyebrow">${escapeHtml(client.type)}</p>
-            <h3>${escapeHtml(client.name)}</h3>
-            <p>${escapeHtml(formatClientLocation(client))}</p>
-            <p class="muted">${escapeHtml(client.phone || "Téléphone non renseigné")}</p>
-            <p class="muted"> ${client.attachments.length} fichier(s)</p>
-        </div>
-        <div class="client-card-actions">
+function renderClientTableRow(client) {
+    const row = document.createElement("tr");
+    row.className = "client-table-row";
+    row.dataset.clientName = normalizeText(client.name);
+    row.innerHTML = `
+        <td data-label="Client"><strong>${escapeHtml(client.name)}</strong></td>
+        <td data-label="Type">${escapeHtml(client.type)}</td>
+        <td data-label="Coordonnées"><span>${escapeHtml(client.phone || "Téléphone non renseigné")}</span>${client.email ? `<small>${escapeHtml(client.email)}</small>` : ""}</td>
+        <td data-label="Adresse">${escapeHtml(formatClientLocation(client))}</td>
+        <td data-label="Dossier">${client.attachments.length} fichier(s)</td>
+        <td data-label="Actions"><div class="client-card-actions">
             <button type="button" class="secondary-button" data-action="view">Voir</button>
             <button type="button" class="secondary-button" data-action="edit">Modifier</button>
             <button type="button" class="secondary-button danger-button" data-action="delete">Supprimer</button>
-        </div>
+        </div></td>
     `;
 
-    card.querySelector('[data-action="view"]').addEventListener("click", () => renderClients({ selectedId: client.id }));
-    card.querySelector('[data-action="edit"]').addEventListener("click", () => renderClients({ editId: client.id }));
-    card.querySelector('[data-action="delete"]').addEventListener("click", () => {
+    row.querySelector('[data-action="view"]').addEventListener("click", () => renderClients({ selectedId: client.id }));
+    row.querySelector('[data-action="edit"]').addEventListener("click", () => renderClients({ editId: client.id }));
+    row.querySelector('[data-action="delete"]').addEventListener("click", () => {
         if (confirm(`Supprimer le client ${client.name} ?`)) {
             deleteClient(client.id);
             renderClients();
         }
     });
 
-    return card;
+    return row;
 }
 
 function renderClientDetail(client) {
@@ -486,9 +492,12 @@ function formatClientLocation(client) {
 }
 
 function filterClientList(query) {
-    const normalizedQuery = normalizeText(query);
-    document.querySelectorAll(".client-card").forEach(card => {
-        card.hidden = normalizedQuery && !card.dataset.search.includes(normalizedQuery);
+    const normalizedQuery = normalizeText(query).trim();
+    const list = document.getElementById("clientList");
+    if (list) list.dataset.hasQuery = String(Boolean(normalizedQuery));
+
+    document.querySelectorAll(".client-table-row").forEach(row => {
+        row.hidden = Boolean(normalizedQuery) && !row.dataset.clientName.includes(normalizedQuery);
     });
 }
 

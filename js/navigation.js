@@ -1,9 +1,9 @@
 import { ROUTES, STORAGE_KEYS, APP_VERSION, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=59";
-import { renderCalendar } from "./calendar.js?v=61";
-import { getSearchableClients, renderClients } from "./clients.js?v=59";
+import { renderCalendar } from "./calendar.js?v=63";
+import { getSearchableClients, renderClients } from "./clients.js?v=63";
 import { openLibrarySection, renderLibrary, searchPersonalLibrary } from "./library.js?v=59";
 import { renderPhotoRecognition } from "./photo-recognition.js?v=59";
-import { getSearchResults } from "./search.js?v=59";
+import { getSearchResults } from "./search.js?v=63";
 import { state, resetSelection } from "./state.js?v=44";
 import {
     clearHistory,
