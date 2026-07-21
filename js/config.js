@@ -1,4 +1,4 @@
-export const APP_VERSION = "1.4 Private Keyword Search";
+export const APP_VERSION = "1.5 Cross-device Client Sync";
 export const DATA_VERSION = "2026-07-20-35";
 
 export const STORAGE_KEYS = {

@@ -57,9 +57,8 @@ Les notices officielles peuvent être référencées dans les champs `documents`
 
 ## Données clients
 
-Les clients sont stockés localement dans le navigateur avec `localStorage`, sous la clé `depannHomePro:clients`.
-Ces données restent sur l'appareil de l'utilisateur et ne sont pas envoyées vers un serveur.
-Chaque fiche client peut aussi contenir des pièces jointes locales : devis, factures, photos et autres documents.
-La prise de photo utilise un champ fichier compatible caméra mobile (`capture="environment"`) quand le navigateur le permet.
+Les dossiers clients et leurs pièces jointes sont enregistrés localement pour fonctionner hors ligne, puis synchronisés avec PostgreSQL dans la table privée `depannhome_clients`. Chaque compte ne peut récupérer que ses propres dossiers, devis, factures, photos et documents.
 
-Important : comme les fichiers sont enregistrés en local dans le navigateur, il faut éviter les photos trop lourdes et privilégier des documents compressés.
+Une modification est envoyée immédiatement lorsqu’un réseau est disponible. En mode hors ligne, elle est mise en attente puis synchronisée au retour de la connexion, au retour de l’application au premier plan et lors d’une vérification automatique toutes les 30 secondes. Le bouton **Synchroniser** de l’écran Clients permet aussi de lancer l’opération manuellement.
+
+La prise de photo utilise un champ fichier compatible caméra mobile (`capture="environment"`) quand le navigateur le permet. Évitez les photos trop lourdes et privilégiez des documents compressés.

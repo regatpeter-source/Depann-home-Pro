@@ -9,6 +9,18 @@ CREATE TABLE IF NOT EXISTS depannhome_users (
 
 CREATE INDEX IF NOT EXISTS depannhome_users_username_lookup_idx ON depannhome_users (username);
 
+CREATE TABLE IF NOT EXISTS depannhome_clients (
+    id BIGSERIAL PRIMARY KEY,
+    owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    client_id VARCHAR(100) NOT NULL,
+    client_data JSONB NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT depannhome_clients_owner_client_unique UNIQUE (owner_id, client_id)
+);
+
+CREATE INDEX IF NOT EXISTS depannhome_clients_owner_updated_idx
+    ON depannhome_clients (owner_id, updated_at DESC);
+
 CREATE TABLE IF NOT EXISTS depannhome_library_sections (
     id BIGSERIAL PRIMARY KEY,
     name VARCHAR(80) NOT NULL,

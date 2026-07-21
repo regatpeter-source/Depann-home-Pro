@@ -1,7 +1,8 @@
-import { ROUTES, STORAGE_KEYS } from "./config.js?v=56";
+import { ROUTES } from "./config.js?v=57";
+import { deleteLocalClient, getLocalClients, saveLocalClient, synchronizeClients } from "./client-sync.js?v=57";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
-import { analyzeEquipmentPhoto, isPhotoRecognitionConfident } from "./photo-recognition.js?v=56";
+import { analyzeEquipmentPhoto, isPhotoRecognitionConfident } from "./photo-recognition.js?v=57";
 import {
     clearSearch,
     createButton,
@@ -60,11 +61,31 @@ function renderClientToolbar(clients) {
         </div>
         <div class="client-toolbar-actions">
             <input id="clientSearch" class="client-search" type="search" placeholder="Rechercher un client, une ville, un équipement...">
+            <button type="button" class="secondary-button" id="syncClientsBtn">Synchroniser</button>
             <button type="button" class="secondary-button" id="newClientBtn">+ Nouveau client</button>
         </div>
+        <p id="clientSyncMessage" class="auth-message" aria-live="polite"></p>
     `;
 
     panel.querySelector("#newClientBtn").addEventListener("click", () => renderClients());
+    panel.querySelector("#syncClientsBtn").addEventListener("click", async event => {
+        const button = event.currentTarget;
+        const message = panel.querySelector("#clientSyncMessage");
+        button.disabled = true;
+        message.classList.remove("error");
+        message.textContent = navigator.onLine ? "Synchronisation en cours…" : "Hors ligne : la synchronisation reprendra automatiquement dès le retour du réseau.";
+        const result = await synchronizeClients();
+        if (result.ok) {
+            message.textContent = "Dossiers clients synchronisés.";
+            renderClients();
+            return;
+        }
+        if (!result.offline) {
+            message.textContent = result.message || "Synchronisation impossible pour le moment.";
+            message.classList.add("error");
+        }
+        button.disabled = false;
+    });
     panel.querySelector("#clientSearch").addEventListener("input", event => {
         filterClientList(event.target.value);
     });
@@ -385,22 +406,8 @@ async function readClientForm(form, previousClient = EMPTY_CLIENT) {
 }
 
 function saveClient(client) {
-    const clients = getClients();
-    const now = new Date().toISOString();
-    const existing = clients.find(item => item.id === client.id);
-
-    const nextClient = {
-        ...client,
-        createdAt: existing?.createdAt || now,
-        updatedAt: now
-    };
-
-    const nextClients = existing
-        ? clients.map(item => item.id === client.id ? nextClient : item)
-        : [...clients, nextClient];
-
     try {
-        localStorage.setItem(getClientsStorageKey(), JSON.stringify(nextClients));
+        saveLocalClient(client);
         return true;
     } catch {
         alert("Le stockage local est plein. Supprime quelques fichiers lourds ou compresse les photos avant de réessayer.");
@@ -409,8 +416,7 @@ function saveClient(client) {
 }
 
 function deleteClient(id) {
-    const clients = getClients().filter(client => client.id !== id);
-    localStorage.setItem(getClientsStorageKey(), JSON.stringify(clients));
+    deleteLocalClient(id);
 }
 
 function getClientById(id) {
@@ -418,11 +424,7 @@ function getClientById(id) {
 }
 
 function getClients() {
-    try {
-        return (JSON.parse(localStorage.getItem(getClientsStorageKey())) || []).map(normalizeClient);
-    } catch {
-        return [];
-    }
+    return getLocalClients().map(normalizeClient);
 }
 
 export function getSearchableClients() {
@@ -444,10 +446,6 @@ export function getSearchableClients() {
     }));
 }
 
-function getClientsStorageKey() {
-    const userId = String(document.body.dataset.userId || "anonymous").replace(/[^a-zA-Z0-9_-]/g, "");
-    return `${STORAGE_KEYS.clients}:${userId || "anonymous"}`;
-}
 
 function normalizeClient(client) {
     return {

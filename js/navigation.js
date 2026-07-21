@@ -1,8 +1,8 @@
-import { ROUTES, STORAGE_KEYS, APP_VERSION, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=56";
-import { getSearchableClients, renderClients } from "./clients.js?v=56";
-import { openLibrarySection, renderLibrary, searchPersonalLibrary } from "./library.js?v=56";
-import { renderPhotoRecognition } from "./photo-recognition.js?v=56";
-import { getSearchResults } from "./search.js?v=56";
+import { ROUTES, STORAGE_KEYS, APP_VERSION, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=57";
+import { getSearchableClients, renderClients } from "./clients.js?v=57";
+import { openLibrarySection, renderLibrary, searchPersonalLibrary } from "./library.js?v=57";
+import { renderPhotoRecognition } from "./photo-recognition.js?v=57";
+import { getSearchResults } from "./search.js?v=57";
 import { state, resetSelection } from "./state.js?v=44";
 import {
     clearHistory,

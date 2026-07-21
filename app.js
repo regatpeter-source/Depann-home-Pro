@@ -13,6 +13,7 @@ import {
 	validateAuthenticationConfiguration
 } from "./server/auth.js";
 import { initializeDatabase } from "./server/database.js";
+import { initializeClients, registerClientRoutes } from "./server/clients.js";
 import {
 	libraryUploadErrorHandler,
 	initializeLibrary,
@@ -25,7 +26,7 @@ const port = Number(process.env.PORT || 3000);
 
 app.set("trust proxy", 1);
 app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false }));
-app.use(express.json({ limit: "16kb" }));
+app.use(express.json({ limit: "25mb" }));
 app.use(cookieParser());
 app.use(authenticateRequest);
 
@@ -37,6 +38,7 @@ app.use("/api/auth", rateLimit({
 	message: { message: "Trop de tentatives. Réessayez dans quelques minutes." }
 }));
 registerAuthRoutes(app);
+registerClientRoutes(app, requireAuthentication);
 registerLibraryRoutes(app, requireAuthentication);
 
 // Seul le logo est nécessaire avant connexion. Le catalogue et les notices sont servis
@@ -69,6 +71,7 @@ app.use((error, request, response, next) => {
 async function start() {
 	validateAuthenticationConfiguration();
 	await initializeDatabase();
+	await initializeClients();
 	await initializeLibrary();
 	await createInitialAdministrator();
 	app.listen(port, () => console.log(`Depann'Home Pro écoute sur le port ${port}.`));

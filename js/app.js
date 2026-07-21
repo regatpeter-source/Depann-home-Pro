@@ -1,9 +1,10 @@
-import { initializeAuthentication, signOut } from "./auth.js?v=56";
-import { loadDatabase } from "./data.js?v=56";
-import { initializeNavigation } from "./navigation.js?v=56";
+import { initializeAuthentication, signOut } from "./auth.js?v=57";
+import { initializeClientSynchronization } from "./client-sync.js?v=57";
+import { loadDatabase } from "./data.js?v=57";
+import { initializeNavigation } from "./navigation.js?v=57";
 import { renderError } from "./ui.js?v=44";
 import { getSettings } from "./storage.js?v=44";
-import { FONT_OPTIONS } from "./config.js?v=56";
+import { FONT_OPTIONS } from "./config.js?v=57";
 
 let applicationStarted = false;
 
@@ -31,6 +32,7 @@ async function startApplication() {
         applyTheme();
         applyFont();
         applyLanguage();
+        await initializeClientSynchronization();
         const database = await loadDatabase();
         initializeNavigation(database);
         registerServiceWorker();

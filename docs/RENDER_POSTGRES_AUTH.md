@@ -20,7 +20,13 @@ L’application est désormais un **Render Web Service** Node.js. Le serveur gè
 | `ALLOW_PUBLIC_REGISTRATION` | `false` recommandé. Passez à `true` seulement si chaque utilisateur doit pouvoir créer son propre compte. |
 | `NODE_ENV` | `production` |
 
-Le serveur crée automatiquement les tables `depannhome_users`, `depannhome_library_sections` et `depannhome_library_documents` au démarrage. Elles sont dédiées à Depann’Home et évitent tout conflit avec les tables de votre service VHR. Le fichier `database/schema.sql` est fourni à titre de référence ; il n’est donc pas nécessaire de l’exécuter manuellement.
+Le serveur crée automatiquement les tables `depannhome_users`, `depannhome_clients`, `depannhome_library_sections` et `depannhome_library_documents` au démarrage. Elles sont dédiées à Depann’Home et évitent tout conflit avec les tables de votre service VHR. Le fichier `database/schema.sql` est fourni à titre de référence ; il n’est donc pas nécessaire de l’exécuter manuellement.
+
+## Synchronisation des dossiers clients
+
+Les dossiers clients, devis, factures, photos et autres pièces jointes sont maintenant synchronisés automatiquement entre les appareils connectés au **même compte**. Une modification est envoyée à PostgreSQL dès que le réseau est disponible. Hors ligne, elle est conservée sur l’appareil dans une file d’attente et synchronisée automatiquement au prochain retour du réseau.
+
+Le bouton **Synchroniser** de l’écran Clients permet de lancer cette opération manuellement. La dernière modification d’un même dossier est prioritaire ; évitez donc de modifier exactement le même client hors ligne sur deux appareils en même temps. Les pièces jointes peuvent occuper l’espace de la base de données : conservez des fichiers compressés et raisonnables.
 
 ## Bibliothèque personnelle
 

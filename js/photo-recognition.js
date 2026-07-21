@@ -1,5 +1,5 @@
-import { ROUTES } from "./config.js?v=56";
-import { getSearchResults } from "./search.js?v=56";
+import { ROUTES } from "./config.js?v=57";
+import { getSearchResults } from "./search.js?v=57";
 import { resetSelection } from "./state.js?v=44";
 import {
     createButton,
