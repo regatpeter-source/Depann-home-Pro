@@ -1923,6 +1923,37 @@ textarea{
     grid-column:1/-1;
 }
 
+.message-alert{
+    display:inline-grid;
+    min-width:18px;
+    height:18px;
+    place-items:center;
+    margin-left:4px;
+    padding:0 4px;
+    border-radius:999px;
+    background:#dc2626;
+    color:#fff;
+    font-size:10px;
+    font-style:normal;
+    line-height:1;
+    vertical-align:middle;
+}
+
+.message-alert[hidden]{
+    display:none;
+}
+
+.nav-button .message-alert{
+    position:absolute;
+    top:4px;
+    right:4px;
+    margin:0;
+}
+
+.nav-button{
+    position:relative;
+}
+
 /* ==========================
    FOOTER
 ========================== */

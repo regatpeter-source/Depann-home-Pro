@@ -1,7 +1,9 @@
-import { ROUTES } from "./config.js?v=67";
+import { ROUTES } from "./config.js?v=68";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml } from "./utils.js?v=44";
 import { clearSearch, getContainer, setPage } from "./ui.js?v=44";
+
+const LAST_READ_KEY_PREFIX = "depannHomePro:messages:lastRead:";
 
 export async function renderMessages() {
     clearSearch();
@@ -19,7 +21,20 @@ export async function renderMessages() {
         panel.innerHTML = `<p class="auth-message error">${escapeHtml(result.message || "Impossible de charger la messagerie.")}</p>`;
         return;
     }
-    renderMessagePanel(panel, result.data.messages || []);
+    const messages = result.data.messages || [];
+    markMessagesAsRead(messages);
+    renderMessagePanel(panel, messages);
+    refreshMessageAlert();
+}
+
+export async function refreshMessageAlert() {
+    const result = await request("/api/messages");
+    if (!result.ok) return;
+    const unreadCount = getUnreadMessages(result.data.messages || []).length;
+    document.querySelectorAll("[data-message-alert]").forEach(alert => {
+        alert.hidden = unreadCount === 0;
+        alert.textContent = unreadCount > 99 ? "99+" : String(unreadCount);
+    });
 }
 
 function renderMessagePanel(panel, messages) {
@@ -54,6 +69,23 @@ function renderMessagePanel(panel, messages) {
 
 function formatDate(value) {
     return new Intl.DateTimeFormat("fr-FR", { dateStyle: "short", timeStyle: "short" }).format(new Date(value));
+}
+
+function getUnreadMessages(messages) {
+    const lastRead = new Date(localStorage.getItem(getLastReadKey()) || 0).getTime();
+    return messages.filter(message => new Date(message.createdAt).getTime() > lastRead);
+}
+
+function markMessagesAsRead(messages) {
+    const newest = messages.reduce((latest, message) => {
+        const timestamp = new Date(message.createdAt).getTime();
+        return timestamp > latest ? timestamp : latest;
+    }, 0);
+    if (newest) localStorage.setItem(getLastReadKey(), new Date(newest).toISOString());
+}
+
+function getLastReadKey() {
+    return `${LAST_READ_KEY_PREFIX}${document.body.dataset.userId || "anonymous"}`;
 }
 
 async function request(url, options = {}) {

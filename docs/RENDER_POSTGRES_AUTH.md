@@ -34,6 +34,8 @@ Sur la fiche d’un client, les devis et factures associés sont proposés avec 
 
 L’onglet **Messages** est un carnet de notes interne au compte, et non une messagerie entre utilisateurs. Une note saisie sur un téléphone — par exemple *« Clients à facturer : Martin, Résidence Les Pins »* — est synchronisée dans PostgreSQL et apparaît sur le PC connecté au **même compte**. Les autres comptes ne peuvent ni voir ni envoyer ces notes.
 
+Un badge rouge indique le nombre de notes ajoutées depuis la dernière ouverture de **Messages** sur l’appareil concerné. L’indicateur est vérifié au chargement, au retour dans l’application et toutes les 30 secondes. Ouvrir les Messages marque les notes comme consultées sur cet appareil, sans modifier les autres appareils du même compte.
+
 ## Planning professionnel
 
 Le planning est personnel au compte connecté et synchronisé avec PostgreSQL. Il propose une vue mensuelle, une navigation par mois, des rendez-vous modifiables et six codes couleurs : intervention, confirmé, à préparer, urgent, personnel et indisponible.
