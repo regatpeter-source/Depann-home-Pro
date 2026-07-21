@@ -1,4 +1,4 @@
-export const APP_VERSION = "1.6.1 Calendar Day Selection";
+export const APP_VERSION = "1.6.2 Calendar Client Address";
 export const DATA_VERSION = "2026-07-20-35";
 
 export const STORAGE_KEYS = {

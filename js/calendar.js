@@ -1,7 +1,7 @@
 import { ROUTES } from "./config.js?v=59";
 import { getSearchableClients } from "./clients.js?v=59";
 import { resetSelection } from "./state.js?v=44";
-import { escapeHtml } from "./utils.js?v=44";
+import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { clearSearch, createInfo, getContainer, setPage } from "./ui.js?v=44";
 
 const COLOR_OPTIONS = [
@@ -160,7 +160,19 @@ function renderEventForm(panel) {
         selectedEvent = null;
         renderCalendar();
     });
-    panel.querySelector("#calendarEventForm").addEventListener("submit", async eventSubmit => {
+    const form = panel.querySelector("#calendarEventForm");
+    const clientInput = form.querySelector("[name=clientName]");
+    const locationInput = form.querySelector("[name=location]");
+    const fillClientAddress = () => {
+        const clientName = normalizeText(clientInput.value);
+        const client = clients.find(item => normalizeText(item.name) === clientName);
+        const address = client ? formatClientAddress(client) : "";
+        if (address) locationInput.value = address;
+    };
+    clientInput.addEventListener("input", fillClientAddress);
+    clientInput.addEventListener("change", fillClientAddress);
+
+    form.addEventListener("submit", async eventSubmit => {
         eventSubmit.preventDefault();
         const form = eventSubmit.currentTarget;
         const button = form.querySelector("button[type=submit]");
@@ -273,6 +285,10 @@ function formToEvent(form) {
         color: String(form.get("color") || "blue"),
         notes: String(form.get("notes") || "").trim()
     };
+}
+
+function formatClientAddress(client) {
+    return [client.address, client.city].map(value => String(value || "").trim()).filter(Boolean).join(", ");
 }
 
 function firstDayOfMonth(date) {
