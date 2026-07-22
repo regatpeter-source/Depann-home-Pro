@@ -107,6 +107,7 @@ CREATE INDEX IF NOT EXISTS depannhome_messages_sender_idx
 CREATE TABLE IF NOT EXISTS depannhome_calendar_events (
     id BIGSERIAL PRIMARY KEY,
     owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    assigned_technician_id BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
     title VARCHAR(160) NOT NULL,
     client_name VARCHAR(160) NOT NULL DEFAULT '',
     location VARCHAR(255) NOT NULL DEFAULT '',
@@ -125,6 +126,9 @@ CREATE TABLE IF NOT EXISTS depannhome_calendar_events (
 
 CREATE INDEX IF NOT EXISTS depannhome_calendar_events_owner_date_idx
     ON depannhome_calendar_events (owner_id, event_date, start_time);
+
+ALTER TABLE depannhome_calendar_events
+    ADD COLUMN IF NOT EXISTS assigned_technician_id BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL;
 
 CREATE TABLE IF NOT EXISTS depannhome_library_sections (
     id BIGSERIAL PRIMARY KEY,

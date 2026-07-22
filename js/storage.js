@@ -1,4 +1,4 @@
-import { STORAGE_KEYS, DEFAULT_SETTINGS, SETTINGS_KEY } from "./config.js?v=76";
+import { STORAGE_KEYS, DEFAULT_SETTINGS, SETTINGS_KEY } from "./config.js?v=77";
 
 export function getStoredRefs(key) {
     try {

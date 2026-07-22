@@ -1,4 +1,4 @@
-export const APP_VERSION = "1.10.3 Devis et factures technicien";
+export const APP_VERSION = "1.10.4 Affectation des rendez-vous";
 export const DATA_VERSION = "2026-07-20-35";
 
 export const STORAGE_KEYS = {

@@ -1,6 +1,6 @@
-import { ROUTES } from "./config.js?v=76";
-import { getSearchableClients } from "./clients.js?v=76";
-import { addClientActivityByName } from "./client-sync.js?v=76";
+import { ROUTES } from "./config.js?v=77";
+import { getSearchableClients } from "./clients.js?v=77";
+import { addClientActivityByName } from "./client-sync.js?v=77";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { clearSearch, createInfo, getContainer, setPage } from "./ui.js?v=44";
@@ -19,9 +19,10 @@ let displayedMonth = firstDayOfMonth(new Date());
 let events = [];
 let selectedEvent = null;
 let calendarView = "month";
+let technicians = [];
 
 export async function renderCalendar(options = {}) {
-    if (options.date) displayedMonth = firstDayOfMonth(options.date);
+    if (options.date) displayedMonth = calendarView === "month" ? firstDayOfMonth(options.date) : atNoon(options.date);
     if (options.event) selectedEvent = options.event;
 
     clearSearch();
@@ -41,13 +42,17 @@ export async function renderCalendar(options = {}) {
     formPanel.hidden = true;
     gridPanel.hidden = true;
 
-    const result = await loadEvents(displayedMonth);
+    const [result, availableTechnicians] = await Promise.all([
+        loadEvents(displayedMonth),
+        isReadOnlyCalendar() ? Promise.resolve([]) : loadTechnicians()
+    ]);
     if (!result.ok) {
         header.innerHTML = `<p class="auth-message error">${escapeHtml(result.message || "Impossible de charger le planning.")}</p>`;
         return;
     }
 
     events = result.events;
+    technicians = availableTechnicians;
     renderHeader(header);
     renderEventForm(formPanel);
     renderCalendarGrid(gridPanel);
@@ -109,7 +114,7 @@ function renderHeader(panel) {
         selectedEvent = null;
         renderCalendar();
     });
-    panel.querySelector("[data-calendar-action=new]").addEventListener("click", () => {
+    panel.querySelector("[data-calendar-action=new]")?.addEventListener("click", () => {
         selectedEvent = newEventForDate(toDateString(new Date()));
         renderCalendar();
     });
@@ -134,7 +139,7 @@ function renderEventForm(panel) {
         panel.innerHTML = `
             <div class="calendar-event-detail">
                 <div class="form-heading"><div><p class="eyebrow">Rendez-vous</p><h2>${escapeHtml(event.title)}</h2></div><button type="button" class="secondary-button" id="closeCalendarDetail">Fermer</button></div>
-                <dl><dt>Date</dt><dd>${escapeHtml(formatActivityDate(event.date, event.startTime))}${event.endTime ? ` — ${escapeHtml(event.endTime)}` : ""}</dd>${event.clientName ? `<dt>Client</dt><dd>${escapeHtml(event.clientName)}</dd>` : ""}${event.location ? `<dt>Lieu</dt><dd>${escapeHtml(event.location)}</dd>` : ""}${event.notes ? `<dt>Notes</dt><dd>${escapeHtml(event.notes)}</dd>` : ""}</dl>
+                <dl><dt>Date</dt><dd>${escapeHtml(formatActivityDate(event.date, event.startTime))}${event.endTime ? ` — ${escapeHtml(event.endTime)}` : ""}</dd>${event.assignedTechnicianName ? `<dt>Technicien</dt><dd>${escapeHtml(event.assignedTechnicianName)}</dd>` : ""}${event.clientName ? `<dt>Client</dt><dd>${escapeHtml(event.clientName)}</dd>` : ""}${event.location ? `<dt>Lieu</dt><dd>${escapeHtml(event.location)}</dd>` : ""}${event.notes ? `<dt>Notes</dt><dd>${escapeHtml(event.notes)}</dd>` : ""}</dl>
             </div>`;
         panel.querySelector("#closeCalendarDetail").addEventListener("click", () => {
             selectedEvent = null;
@@ -170,6 +175,10 @@ function renderEventForm(panel) {
                 <label>
                     Couleur / statut
                     <select name="color">${COLOR_OPTIONS.map(color => `<option value="${color.id}" ${event.color === color.id ? "selected" : ""}>${color.label}</option>`).join("")}</select>
+                </label>
+                <label>
+                    Technicien affecté
+                    <select name="assignedTechnicianId"><option value="">Non affecté</option>${technicians.map(technician => `<option value="${escapeHtml(technician.id)}" ${String(event.assignedTechnicianId || "") === String(technician.id) ? "selected" : ""}>${escapeHtml(technician.fullName || technician.username)}</option>`).join("")}</select>
                 </label>
                 <label>
                     Début
@@ -302,8 +311,8 @@ function renderCalendarGrid(panel) {
             const button = document.createElement("button");
             button.type = "button";
             button.className = `calendar-event color-${event.color}`;
-            button.title = [event.title, event.clientName, event.startTime && `${event.startTime}${event.endTime ? ` – ${event.endTime}` : ""}`, event.location].filter(Boolean).join(" · ");
-            button.innerHTML = `<span>${escapeHtml(event.startTime || "Toute la journée")}</span><strong>${escapeHtml(event.title)}</strong>${event.clientName ? `<small>${escapeHtml(event.clientName)}</small>` : ""}`;
+            button.title = [event.title, event.assignedTechnicianName, event.clientName, event.startTime && `${event.startTime}${event.endTime ? ` – ${event.endTime}` : ""}`, event.location].filter(Boolean).join(" · ");
+            button.innerHTML = `<span>${escapeHtml(event.startTime || "Toute la journée")}</span><strong>${escapeHtml(event.title)}</strong>${event.assignedTechnicianName ? `<small>👤 ${escapeHtml(event.assignedTechnicianName)}</small>` : ""}${event.clientName ? `<small>${escapeHtml(event.clientName)}</small>` : ""}`;
             button.addEventListener("click", () => {
                 selectedEvent = event;
                 renderCalendar({ date: day });
@@ -327,7 +336,7 @@ function renderCalendarList(panel) {
     panel.innerHTML = `<div class="calendar-list-view">${days.map(day => {
         const date = toDateString(day);
         const dayEvents = eventDates.get(date) || [];
-        return `<section class="calendar-list-day"><h3>${escapeHtml(new Intl.DateTimeFormat("fr-FR", { weekday: "long", day: "numeric", month: "long" }).format(day))}</h3>${dayEvents.length ? `<div class="calendar-list-events">${dayEvents.map(event => `<button type="button" class="calendar-event color-${escapeHtml(event.color)}" data-calendar-event="${escapeHtml(event.id)}"><span>${escapeHtml(event.startTime || "Toute la journée")}</span><strong>${escapeHtml(event.title)}</strong>${event.clientName ? `<small>${escapeHtml(event.clientName)}</small>` : ""}</button>`).join("")}</div>` : '<p class="muted">Aucun rendez-vous.</p>'}</section>`;
+        return `<section class="calendar-list-day"><h3>${escapeHtml(new Intl.DateTimeFormat("fr-FR", { weekday: "long", day: "numeric", month: "long" }).format(day))}</h3>${dayEvents.length ? `<div class="calendar-list-events">${dayEvents.map(event => `<button type="button" class="calendar-event color-${escapeHtml(event.color)}" data-calendar-event="${escapeHtml(event.id)}"><span>${escapeHtml(event.startTime || "Toute la journée")}</span><strong>${escapeHtml(event.title)}</strong>${event.assignedTechnicianName ? `<small>👤 ${escapeHtml(event.assignedTechnicianName)}</small>` : ""}${event.clientName ? `<small>${escapeHtml(event.clientName)}</small>` : ""}</button>`).join("")}</div>` : '<p class="muted">Aucun rendez-vous.</p>'}</section>`;
     }).join("")}</div>`;
     panel.querySelectorAll("[data-calendar-event]").forEach(button => button.addEventListener("click", () => {
         selectedEvent = events.find(event => String(event.id) === button.dataset.calendarEvent) || null;
@@ -341,6 +350,11 @@ async function loadEvents() {
     const endDate = toDateString(end);
     return request(`/api/calendar/events?start=${encodeURIComponent(startDate)}&end=${encodeURIComponent(endDate)}`)
         .then(result => result.ok ? { ok: true, events: result.data.events || [] } : { ok: false, message: result.message });
+}
+
+async function loadTechnicians() {
+    const result = await request("/api/auth/technicians");
+    return result.ok ? (result.data?.technicians || []).filter(technician => technician.isActive) : [];
 }
 
 function isReadOnlyCalendar() {
@@ -386,7 +400,7 @@ function startOfWeek(date) {
 function atNoon(date) { return new Date(date.getFullYear(), date.getMonth(), date.getDate(), 12); }
 
 function newEventForDate(date) {
-    return { title: "", clientName: "", location: "", date, startTime: "", endTime: "", color: "blue", notes: "" };
+    return { title: "", clientName: "", location: "", date, startTime: "", endTime: "", color: "blue", notes: "", assignedTechnicianId: "", assignedTechnicianName: "" };
 }
 
 function formToEvent(form) {
@@ -398,6 +412,7 @@ function formToEvent(form) {
         startTime: String(form.get("startTime") || ""),
         endTime: String(form.get("endTime") || ""),
         color: String(form.get("color") || "blue"),
+        assignedTechnicianId: String(form.get("assignedTechnicianId") || ""),
         notes: String(form.get("notes") || "").trim()
     };
 }
