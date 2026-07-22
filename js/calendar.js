@@ -1,6 +1,7 @@
-import { ROUTES } from "./config.js?v=78";
-import { getSearchableClients } from "./clients.js?v=78";
-import { addClientActivityByName } from "./client-sync.js?v=78";
+import { ROUTES } from "./config.js?v=79";
+import { createBillingDocumentForClient } from "./billing.js?v=79";
+import { getSearchableClients, renderClients } from "./clients.js?v=79";
+import { addClientActivityByName, synchronizeClients } from "./client-sync.js?v=79";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { clearSearch, createInfo, getContainer, setPage } from "./ui.js?v=44";
@@ -136,11 +137,32 @@ function renderEventForm(panel) {
     panel.hidden = false;
     const event = selectedEvent;
     if (isReadOnlyCalendar()) {
+        const client = findClientForEvent(event);
         panel.innerHTML = `
             <div class="calendar-event-detail">
                 <div class="form-heading"><div><p class="eyebrow">Rendez-vous</p><h2>${escapeHtml(event.title)}</h2></div><button type="button" class="secondary-button" id="closeCalendarDetail">Fermer</button></div>
                 <dl><dt>Date</dt><dd>${escapeHtml(formatActivityDate(event.date, event.startTime))}${event.endTime ? ` — ${escapeHtml(event.endTime)}` : ""}</dd>${event.assignedTechnicianName ? `<dt>Technicien</dt><dd>${escapeHtml(event.assignedTechnicianName)}</dd>` : ""}${event.clientName ? `<dt>Client</dt><dd>${escapeHtml(event.clientName)}</dd>` : ""}${event.location ? `<dt>Lieu</dt><dd>${escapeHtml(event.location)}</dd>` : ""}${event.notes ? `<dt>Notes</dt><dd>${escapeHtml(event.notes)}</dd>` : ""}</dl>
+                ${client ? `
+                    <div class="calendar-event-actions" aria-label="Actions pour ${escapeHtml(client.name)}">
+                        <button type="button" class="secondary-button" data-client-action="open">Fiche client</button>
+                        <button type="button" class="secondary-button" data-client-action="quote">+ Devis</button>
+                        <button type="button" class="secondary-button" data-client-action="invoice">+ Facture</button>
+                        <button type="button" class="secondary-button" data-client-action="messages">Notes / messages</button>
+                    </div>
+                    <form id="calendarClientUpload" class="calendar-client-upload">
+                        <div><p class="eyebrow">Dossier d’intervention</p><h3>Ajouter une photo ou un fichier</h3><p class="muted">Le dépôt est ajouté au dossier de ${escapeHtml(client.name)}, sans modifier ses coordonnées.</p></div>
+                        <label>Type de fichier<select name="type"><option value="Photo">Photo</option><option value="Autre">Document</option><option value="Devis">Devis</option><option value="Facture">Facture</option></select></label>
+                        <label>Fichiers<input name="files" type="file" multiple accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt"></label>
+                        <label>Photo depuis l’appareil<input name="cameraPhoto" type="file" accept="image/*" capture="environment"></label>
+                        <div class="calendar-form-actions"><button type="submit" class="secondary-button">Déposer dans le dossier</button></div>
+                        <p class="auth-message" aria-live="polite"></p>
+                    </form>` : `<p class="auth-message error">Aucun dossier client correspondant à ce rendez-vous. Demandez à l’administrateur d’associer le rendez-vous à un client existant.</p>`}
             </div>`;
+        panel.querySelector('[data-client-action="open"]')?.addEventListener("click", () => renderClients({ selectedId: client.id }));
+        panel.querySelector('[data-client-action="quote"]')?.addEventListener("click", () => createBillingDocumentForClient("quote", client));
+        panel.querySelector('[data-client-action="invoice"]')?.addEventListener("click", () => createBillingDocumentForClient("invoice", client));
+        panel.querySelector('[data-client-action="messages"]')?.addEventListener("click", () => renderClients({ selectedId: client.id }));
+        panel.querySelector("#calendarClientUpload")?.addEventListener("submit", eventSubmit => uploadClientAttachments(eventSubmit, client));
         panel.querySelector("#closeCalendarDetail").addEventListener("click", () => {
             selectedEvent = null;
             renderCalendar();
@@ -260,6 +282,44 @@ function renderEventForm(panel) {
         selectedEvent = null;
         renderCalendar();
     });
+}
+
+function findClientForEvent(event) {
+    const clientName = normalizeText(event.clientName || "");
+    return clientName ? getSearchableClients().find(client => normalizeText(client.name) === clientName) || null : null;
+}
+
+async function uploadClientAttachments(event, client) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const feedback = form.querySelector(".auth-message");
+    const button = form.querySelector("button[type=submit]");
+    const payload = new FormData();
+    payload.append("type", new FormData(form).get("type") || "Autre");
+    ["files", "cameraPhoto"].forEach(name => Array.from(form.elements[name].files || []).forEach(file => payload.append("files", file)));
+    if (![...payload.keys()].includes("files")) {
+        feedback.textContent = "Sélectionnez au moins une photo ou un fichier.";
+        feedback.classList.add("error");
+        return;
+    }
+    button.disabled = true;
+    feedback.textContent = "Dépôt en cours…";
+    feedback.classList.remove("error");
+    const response = await fetch(`/api/clients/${encodeURIComponent(client.id)}/attachments`, {
+        method: "POST",
+        credentials: "same-origin",
+        body: payload
+    });
+    const data = await response.json().catch(() => null);
+    if (!response.ok) {
+        feedback.textContent = data?.message || "Dépôt impossible.";
+        feedback.classList.add("error");
+        button.disabled = false;
+        return;
+    }
+    await synchronizeClients();
+    form.reset();
+    feedback.textContent = data?.message || "Fichier ajouté au dossier.";
 }
 
 function renderCalendarGrid(panel) {

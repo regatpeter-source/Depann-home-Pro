@@ -16,7 +16,7 @@ import { initializeDatabase } from "./server/database.js";
 import { billingUploadErrorHandler, initializeBilling, registerBillingRoutes } from "./server/billing.js";
 import { initializeMessages, registerMessageRoutes } from "./server/messages.js";
 import { initializeCalendar, registerCalendarRoutes } from "./server/calendar.js";
-import { initializeClients, registerClientRoutes } from "./server/clients.js";
+import { clientUploadErrorHandler, initializeClients, registerClientRoutes } from "./server/clients.js";
 import {
 	libraryUploadErrorHandler,
 	initializeLibrary,
@@ -68,6 +68,7 @@ app.get("/service-worker.js", (request, response) => {
 });
 
 app.use(billingUploadErrorHandler);
+app.use(clientUploadErrorHandler);
 app.use(libraryUploadErrorHandler);
 app.use((error, request, response, next) => {
 	console.error(error);

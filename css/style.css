@@ -1419,6 +1419,34 @@ textarea{
     gap:9px;
 }
 
+.calendar-event-actions{
+    display:flex;
+    flex-wrap:wrap;
+    gap:9px;
+    margin-top:18px;
+}
+
+.calendar-client-upload{
+    display:grid;
+    grid-template-columns:repeat(2, minmax(0, 1fr));
+    gap:12px;
+    margin-top:18px;
+    padding:16px;
+    border:1px solid var(--border);
+    border-radius:14px;
+    background:var(--surface-alt);
+}
+
+.calendar-client-upload > div:first-child,
+.calendar-client-upload .calendar-form-actions,
+.calendar-client-upload .auth-message{
+    grid-column:1/-1;
+}
+
+.calendar-client-upload h3{
+    margin:3px 0;
+}
+
 .calendar-toolbar-actions .secondary-button{
     padding:10px 12px;
 }
@@ -2309,6 +2337,10 @@ footer{
     .calendar-toolbar-actions .secondary-button,
     .calendar-form-actions .secondary-button{
         flex:1;
+    }
+
+    .calendar-client-upload{
+        grid-template-columns:1fr;
     }
 
     .calendar-view-switcher .secondary-button{

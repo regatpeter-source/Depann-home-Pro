@@ -1,4 +1,4 @@
-import { ROUTES } from "./config.js?v=78";
+import { ROUTES } from "./config.js?v=79";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml } from "./utils.js?v=44";
 import { clearSearch, createInfo, getContainer, setPage } from "./ui.js?v=44";

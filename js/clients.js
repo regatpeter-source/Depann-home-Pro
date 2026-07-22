@@ -1,6 +1,6 @@
-import { ROUTES } from "./config.js?v=78";
-import { addClientActivity, deleteLocalClient, getLocalClients, saveLocalClient, synchronizeClients } from "./client-sync.js?v=78";
-import { renderClientMessages } from "./messages.js?v=78";
+import { ROUTES } from "./config.js?v=79";
+import { addClientActivity, deleteLocalClient, getLocalClients, saveLocalClient, synchronizeClients } from "./client-sync.js?v=79";
+import { renderClientMessages } from "./messages.js?v=79";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { analyzeEquipmentPhoto, isPhotoRecognitionConfident } from "./photo-recognition.js?v=59";
