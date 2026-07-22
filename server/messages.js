@@ -45,7 +45,7 @@ export function registerMessageRoutes(app, requireAuthentication) {
     app.get("/api/messages", requireAuthentication, asyncHandler(async (request, response) => {
         const clientId = optionalClientId(request.query?.clientId);
         if (request.query?.clientId && !clientId) return response.status(400).json({ message: "Dossier client invalide." });
-        if (request.user.role === "technician" && !clientId) return response.status(403).json({ message: "Les notes technicien sont accessibles depuis une fiche client." });
+        if (!clientId) return response.status(403).json({ message: "Les notes sont accessibles depuis une fiche client." });
         if (clientId && !await clientExists(getAccountOwnerId(request), clientId)) return response.status(404).json({ message: "Dossier client introuvable." });
         const { rows } = await getPool().query(`
                  SELECT message.id, message.body, message.client_id AS "clientId", message.sender_id AS "senderId",
@@ -66,13 +66,13 @@ export function registerMessageRoutes(app, requireAuthentication) {
         const clientId = optionalClientId(request.body?.clientId);
         if (!body) return response.status(400).json({ message: "La note ne peut pas être vide." });
         if (request.body?.clientId && !clientId) return response.status(400).json({ message: "Dossier client invalide." });
-        if (request.user.role === "technician" && !clientId) return response.status(403).json({ message: "Les notes technicien doivent être ajoutées depuis une fiche client." });
+        if (!clientId) return response.status(403).json({ message: "Les notes doivent être ajoutées depuis une fiche client." });
         if (clientId && !await clientExists(getAccountOwnerId(request), clientId)) return response.status(404).json({ message: "Dossier client introuvable." });
         const { rows } = await getPool().query(`
             INSERT INTO depannhome_messages (sender_id, recipient_id, client_id, body)
             VALUES ($1, $2, $3, $4)
             RETURNING id, created_at AS "createdAt", updated_at AS "updatedAt"
-        `, [request.user.sub, getAccountOwnerId(request), clientId || null, body]);
+        `, [request.user.sub, getAccountOwnerId(request), clientId, body]);
         response.status(201).json({ note: rows[0] });
     }));
 

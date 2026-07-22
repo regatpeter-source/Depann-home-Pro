@@ -2112,8 +2112,8 @@ textarea{
     vertical-align:middle;
 }
 
-body[data-role="technician"] #messagesBtn,
-body[data-role="technician"] .nav-button[data-nav="messages"]{
+#messagesBtn,
+.nav-button[data-nav="messages"]{
     display:none;
 }
 

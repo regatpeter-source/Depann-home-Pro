@@ -1,4 +1,4 @@
-export const APP_VERSION = "1.10.7 Navigation client terrain";
+export const APP_VERSION = "1.10.8 Messagerie par fiche client";
 export const DATA_VERSION = "2026-07-20-35";
 
 export const STORAGE_KEYS = {

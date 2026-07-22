@@ -1,6 +1,6 @@
-import { ROUTES } from "./config.js?v=80";
-import { addClientActivity, deleteLocalClient, getLocalClients, saveLocalClient, synchronizeClients } from "./client-sync.js?v=80";
-import { renderClientMessages } from "./messages.js?v=80";
+import { ROUTES } from "./config.js?v=81";
+import { addClientActivity, deleteLocalClient, getLocalClients, saveLocalClient, synchronizeClients } from "./client-sync.js?v=81";
+import { renderClientMessages } from "./messages.js?v=81";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { analyzeEquipmentPhoto, isPhotoRecognitionConfident } from "./photo-recognition.js?v=59";
@@ -409,7 +409,7 @@ function renderClientDetail(client) {
 
     const detail = document.createDocumentFragment();
     detail.append(panel);
-    if (readOnly) detail.append(renderClientMessages(client));
+    detail.append(renderClientMessages(client));
     detail.append(renderClientBillingDocuments(client));
     return detail;
 }

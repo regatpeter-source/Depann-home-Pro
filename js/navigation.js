@@ -1,8 +1,7 @@
-import { ROUTES, STORAGE_KEYS, APP_VERSION, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=80";
-import { createCalendarEventForClient, renderCalendar } from "./calendar.js?v=80";
-import { createBillingDocumentForClient, renderBilling } from "./billing.js?v=80";
-import { refreshMessageAlert, renderMessages } from "./messages.js?v=80";
-import { getSearchableClients, renderClients } from "./clients.js?v=80";
+import { ROUTES, STORAGE_KEYS, APP_VERSION, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=81";
+import { createCalendarEventForClient, renderCalendar } from "./calendar.js?v=81";
+import { createBillingDocumentForClient, renderBilling } from "./billing.js?v=81";
+import { getSearchableClients, renderClients } from "./clients.js?v=81";
 import { openLibrarySection, renderLibrary, searchPersonalLibrary } from "./library.js?v=59";
 import { renderPhotoRecognition } from "./photo-recognition.js?v=59";
 import { getSearchResults } from "./search.js?v=63";
@@ -32,13 +31,6 @@ let searchRequestId = 0;
 export function initializeNavigation(loadedDatabase) {
     database = loadedDatabase;
     bindEvents();
-    if (document.body.dataset.role !== "technician") {
-        refreshMessageAlert();
-        window.setInterval(refreshMessageAlert, 30000);
-        document.addEventListener("visibilitychange", () => {
-            if (document.visibilityState === "visible") refreshMessageAlert();
-        });
-    }
     if (document.body.classList.contains("mobile-device") && document.body.dataset.role === "technician") renderCalendar();
     else renderBrands();
 }
@@ -47,7 +39,6 @@ function bindEvents() {
     const search = document.getElementById("search");
     const clientsBtn = document.getElementById("clientsBtn");
     const billingBtn = document.getElementById("billingBtn");
-        const messagesBtn = document.getElementById("messagesBtn");
     const calendarBtn = document.getElementById("calendarBtn");
     const libraryBtn = document.getElementById("libraryBtn");
     const photoBtn = document.getElementById("photoBtn");
@@ -68,7 +59,6 @@ function bindEvents() {
 
     clientsBtn.addEventListener("click", () => renderClients({ database, navigateToRef, createBillingDocument: createBillingDocumentForClient, createCalendarEvent: createCalendarEventForClient }));
     billingBtn?.addEventListener("click", renderBilling);
-    if (document.body.dataset.role !== "technician") messagesBtn?.addEventListener("click", renderMessages);
     calendarBtn?.addEventListener("click", renderCalendar);
     libraryBtn?.addEventListener("click", renderLibrary);
     photoBtn?.addEventListener("click", () => renderPhotoRecognition(database, navigateToRef));
@@ -85,7 +75,6 @@ function bindEvents() {
             if (nav === ROUTES.photo) renderPhotoRecognition(database, navigateToRef);
             if (nav === ROUTES.clients) renderClients({ database, navigateToRef, createBillingDocument: createBillingDocumentForClient, createCalendarEvent: createCalendarEventForClient });
             if (nav === ROUTES.billing) renderBilling();
-            if (nav === ROUTES.messages && document.body.dataset.role !== "technician") renderMessages();
             if (nav === ROUTES.calendar) renderCalendar();
             if (nav === ROUTES.library) renderLibrary();
             if (nav === ROUTES.favorites) renderFavorites();
