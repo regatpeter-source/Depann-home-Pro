@@ -1451,6 +1451,13 @@ textarea{
     padding:10px 12px;
 }
 
+.client-navigation-button{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    text-decoration:none;
+}
+
 .calendar-view-switcher{
     display:flex;
     flex-wrap:wrap;

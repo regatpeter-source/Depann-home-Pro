@@ -1,6 +1,6 @@
-import { ROUTES } from "./config.js?v=79";
-import { addClientActivity, deleteLocalClient, getLocalClients, saveLocalClient, synchronizeClients } from "./client-sync.js?v=79";
-import { renderClientMessages } from "./messages.js?v=79";
+import { ROUTES } from "./config.js?v=80";
+import { addClientActivity, deleteLocalClient, getLocalClients, saveLocalClient, synchronizeClients } from "./client-sync.js?v=80";
+import { renderClientMessages } from "./messages.js?v=80";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { analyzeEquipmentPhoto, isPhotoRecognitionConfident } from "./photo-recognition.js?v=59";
@@ -354,6 +354,7 @@ function renderClientTableRow(client) {
 
 function renderClientDetail(client) {
     const readOnly = isClientReadOnly();
+    const navigationHref = getClientNavigationHref(client);
     const panel = document.createElement("section");
     panel.className = "client-panel";
 
@@ -364,7 +365,7 @@ function renderClientDetail(client) {
                 <h2>${escapeHtml(client.name)}</h2>
             </div>
             <div class="client-card-actions">
-                ${readOnly ? '<button type="button" class="secondary-button" id="createClientQuote">+ Créer un devis</button><button type="button" class="secondary-button" id="createClientInvoice">+ Créer une facture</button>' : '<button type="button" class="secondary-button" id="createClientAppointment">+ Créer un rendez-vous</button><button type="button" class="secondary-button" id="createClientQuote">+ Créer un devis</button><button type="button" class="secondary-button" id="createClientInvoice">+ Créer une facture</button><button type="button" class="secondary-button" id="editSelectedClient">Modifier</button>'}
+                ${readOnly ? `${navigationHref ? `<a class="secondary-button client-navigation-button" href="${escapeHtml(navigationHref)}">Y aller</a>` : ""}<button type="button" class="secondary-button" id="createClientQuote">+ Créer un devis</button><button type="button" class="secondary-button" id="createClientInvoice">+ Créer une facture</button>` : '<button type="button" class="secondary-button" id="createClientAppointment">+ Créer un rendez-vous</button><button type="button" class="secondary-button" id="createClientQuote">+ Créer un devis</button><button type="button" class="secondary-button" id="createClientInvoice">+ Créer une facture</button><button type="button" class="secondary-button" id="editSelectedClient">Modifier</button>'}
             </div>
         </div>
         <div class="procedure-meta">
@@ -625,6 +626,11 @@ function createAttachmentId() {
 
 function formatClientLocation(client) {
     return [client.address, client.city].filter(Boolean).join(", ") || "Adresse non renseignée";
+}
+
+function getClientNavigationHref(client) {
+    const address = [client.address, client.city].filter(Boolean).join(", ").trim();
+    return address ? `geo:0,0?q=${encodeURIComponent(address)}` : "";
 }
 
 function filterClientList(query) {
