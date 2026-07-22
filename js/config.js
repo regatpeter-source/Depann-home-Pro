@@ -1,4 +1,4 @@
-export const APP_VERSION = "1.10.15 Dossier intervention mobile ajusté";
+export const APP_VERSION = "1.10.16 Vue planning technicien";
 export const DATA_VERSION = "2026-07-20-35";
 
 export const STORAGE_KEYS = {

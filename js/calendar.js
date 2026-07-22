@@ -59,6 +59,13 @@ export async function renderCalendar(options = {}) {
     renderCalendarGrid(gridPanel);
 }
 
+export function renderCalendarOverview() {
+    selectedEvent = null;
+    calendarView = "month";
+    displayedMonth = firstDayOfMonth(new Date());
+    renderCalendar();
+}
+
 export function createCalendarEventForClient(client) {
     if (!client) return;
     if (isReadOnlyCalendar()) {
@@ -83,7 +90,7 @@ function renderHeader(panel) {
             <div>
                 <p class="eyebrow">Planning professionnel</p>
                 <h2>${escapeHtml(periodLabel)}</h2>
-                <p class="muted">${readOnly ? "Consultation du planning de l’entreprise." : "Vos interventions, rendez-vous et indisponibilités sont synchronisés avec ce compte."}</p>
+                <p class="muted">${readOnly ? "Vue d’ensemble du planning. Sélectionnez un rendez-vous pour ouvrir sa fiche d’intervention." : "Vos interventions, rendez-vous et indisponibilités sont synchronisés avec ce compte."}</p>
             </div>
             <div class="calendar-toolbar-actions">
                 <button type="button" class="secondary-button" data-calendar-action="previous">← ${getPreviousLabel()}</button>

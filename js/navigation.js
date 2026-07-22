@@ -1,5 +1,5 @@
-import { ROUTES, STORAGE_KEYS, APP_VERSION, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=88";
-import { createCalendarEventForClient, renderCalendar } from "./calendar.js?v=88";
+import { ROUTES, STORAGE_KEYS, APP_VERSION, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=89";
+import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=89";
 import { createBillingDocumentForClient, renderBilling } from "./billing.js?v=88";
 import { getFirstUnreadClientId, refreshClientMessageAlert } from "./messages.js?v=88";
 import { getSearchableClients, renderClients } from "./clients.js?v=88";
@@ -37,7 +37,7 @@ export function initializeNavigation(loadedDatabase) {
     document.addEventListener("visibilitychange", () => {
         if (document.visibilityState === "visible") refreshClientMessageAlert();
     });
-    if (document.body.classList.contains("mobile-device") && document.body.dataset.role === "technician") renderCalendar();
+    if (document.body.classList.contains("mobile-device") && document.body.dataset.role === "technician") renderCalendarOverview();
     else renderBrands();
 }
 
@@ -65,7 +65,7 @@ function bindEvents() {
 
     clientsBtn.addEventListener("click", openClients);
     billingBtn?.addEventListener("click", renderBilling);
-    calendarBtn?.addEventListener("click", renderCalendar);
+    calendarBtn?.addEventListener("click", openCalendar);
     libraryBtn?.addEventListener("click", renderLibrary);
     photoBtn?.addEventListener("click", () => renderPhotoRecognition(database, navigateToRef));
     favoritesBtn.addEventListener("click", renderFavorites);
@@ -81,12 +81,20 @@ function bindEvents() {
             if (nav === ROUTES.photo) renderPhotoRecognition(database, navigateToRef);
             if (nav === ROUTES.clients) openClients();
             if (nav === ROUTES.billing) renderBilling();
-            if (nav === ROUTES.calendar) renderCalendar();
+            if (nav === ROUTES.calendar) openCalendar();
             if (nav === ROUTES.library) renderLibrary();
             if (nav === ROUTES.favorites) renderFavorites();
             if (nav === ROUTES.settings) renderSettings();
         });
     });
+}
+
+function openCalendar() {
+    if (document.body.dataset.role === "technician") {
+        renderCalendarOverview();
+        return;
+    }
+    renderCalendar();
 }
 
 async function openClients() {
