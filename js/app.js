@@ -1,10 +1,10 @@
 import { initializeAuthentication, signOut } from "./auth.js?v=59";
 import { initializeClientSynchronization } from "./client-sync.js?v=88";
 import { loadDatabase } from "./data.js?v=59";
-import { initializeNavigation } from "./navigation.js?v=93";
+import { initializeNavigation } from "./navigation.js?v=94";
 import { renderError } from "./ui.js?v=44";
 import { getSettings } from "./storage.js?v=44";
-import { FONT_OPTIONS } from "./config.js?v=93";
+import { FONT_OPTIONS } from "./config.js?v=94";
 
 let applicationStarted = false;
 
@@ -101,11 +101,12 @@ function applyLanguage() {
         const search = document.getElementById('search');
         if (search) search.placeholder = searchPlaceholder;
 
-        document.querySelectorAll('footer .nav-button span').forEach((span, idx) => {
-            const texts = lang === 'en'
-                ? ['Home','Search','Store','Photo','Clients','Quotes','Messages','Planning','Documents','Favorites','Settings']
-                : ['Accueil','Recherche','Magasin','Photo','Clients','Devis','Messages','Planning','Documents','Favoris','Paramètres'];
-            span.textContent = texts[idx] || span.textContent;
+        const texts = lang === "en"
+            ? { home: "Home", search: "Search", store: "Store", photo: "Photo", clients: "Clients", billing: "Quotes", calendar: "Planning", library: "Documents", favorites: "Favorites", settings: "Settings" }
+            : { home: "Accueil", search: "Recherche", store: "Magasin", photo: "Photo", clients: "Clients", billing: "Devis", calendar: "Planning", library: "Documents", favorites: "Favoris", settings: "Paramètres" };
+        document.querySelectorAll("footer .nav-button").forEach(button => {
+            const label = button.querySelector(".nav-label-clients") || button.querySelector("span");
+            if (label) label.textContent = texts[button.dataset.nav] || label.textContent;
         });
     } catch {
         // ignore

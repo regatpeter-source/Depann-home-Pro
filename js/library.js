@@ -1,4 +1,4 @@
-import { ROUTES } from "./config.js?v=92";
+import { ROUTES } from "./config.js?v=94";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml } from "./utils.js?v=44";
 import { clearSearch, createInfo, getContainer, setPage } from "./ui.js?v=44";
@@ -6,9 +6,11 @@ import { clearSearch, createInfo, getContainer, setPage } from "./ui.js?v=44";
 const MAX_FILE_SIZE_LABEL = "20 Mo";
 let selectedSectionId = null;
 let openCatalog = null;
+let openStore = null;
 
 export function configureLibrary(options = {}) {
     openCatalog = typeof options.openCatalog === "function" ? options.openCatalog : null;
+    openStore = typeof options.openStore === "function" ? options.openStore : null;
 }
 
 export async function renderLibrary() {
@@ -18,15 +20,30 @@ export async function renderLibrary() {
 
     const container = getContainer();
     container.appendChild(createInfo("Conservez vos notices et documents techniques dans votre espace personnel. Ils ne sont visibles que depuis votre compte."));
-    if (document.body.classList.contains("desktop-device") && openCatalog) {
-        const catalogPanel = document.createElement("section");
-        catalogPanel.className = "client-panel library-catalog-panel";
-        catalogPanel.innerHTML = `
-            <div><p class="eyebrow">Catalogue technique</p><h2>Gammes de motorisation</h2><p class="muted">Accédez aux volets roulants, portails et à leurs procédures techniques.</p></div>
-            <button type="button" class="secondary-button">Ouvrir les gammes</button>
-        `;
-        catalogPanel.querySelector("button").addEventListener("click", openCatalog);
-        container.appendChild(catalogPanel);
+    if (document.body.classList.contains("desktop-device") && (openCatalog || openStore)) {
+        const toolsPanel = document.createElement("section");
+        toolsPanel.className = "library-tools-panel";
+        if (openCatalog) {
+            const catalogPanel = document.createElement("section");
+            catalogPanel.className = "client-panel library-catalog-panel";
+            catalogPanel.innerHTML = `
+                <div><p class="eyebrow">Catalogue technique</p><h2>Gammes de motorisation</h2><p class="muted">Accédez aux volets roulants, portails et à leurs procédures techniques.</p></div>
+                <button type="button" class="secondary-button">Ouvrir les gammes</button>
+            `;
+            catalogPanel.querySelector("button").addEventListener("click", openCatalog);
+            toolsPanel.appendChild(catalogPanel);
+        }
+        if (openStore) {
+            const storePanel = document.createElement("section");
+            storePanel.className = "client-panel library-catalog-panel";
+            storePanel.innerHTML = `
+                <div><p class="eyebrow">Pièces détachées</p><h2>Magasin</h2><p class="muted">Recherchez une référence et accédez aux fournisseurs adaptés.</p></div>
+                <button type="button" class="secondary-button">Ouvrir le magasin</button>
+            `;
+            storePanel.querySelector("button").addEventListener("click", openStore);
+            toolsPanel.appendChild(storePanel);
+        }
+        container.appendChild(toolsPanel);
     }
 
     const [sectionPanel, uploadPanel, listPanel] = [

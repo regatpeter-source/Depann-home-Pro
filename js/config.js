@@ -1,4 +1,4 @@
-export const APP_VERSION = "1.10.20 Tableau de bord planning PC";
+export const APP_VERSION = "1.10.21 Navigation PC simplifiée";
 export const DATA_VERSION = "2026-07-20-35";
 
 export const STORAGE_KEYS = {

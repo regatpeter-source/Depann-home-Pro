@@ -1,9 +1,9 @@
-import { ROUTES, STORAGE_KEYS, APP_VERSION, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=93";
-import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=93";
+import { ROUTES, STORAGE_KEYS, APP_VERSION, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=94";
+import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=94";
 import { createBillingDocumentForClient, renderBilling } from "./billing.js?v=88";
 import { getFirstUnreadClientId, refreshClientMessageAlert } from "./messages.js?v=88";
 import { getSearchableClients, renderClients } from "./clients.js?v=88";
-import { configureLibrary, openLibrarySection, renderLibrary, searchPersonalLibrary } from "./library.js?v=92";
+import { configureLibrary, openLibrarySection, renderLibrary, searchPersonalLibrary } from "./library.js?v=94";
 import { renderPhotoRecognition } from "./photo-recognition.js?v=59";
 import { getSearchResults } from "./search.js?v=63";
 import { state, resetSelection } from "./state.js?v=44";
@@ -31,7 +31,7 @@ let searchRequestId = 0;
 
 export function initializeNavigation(loadedDatabase) {
     database = loadedDatabase;
-    configureLibrary({ openCatalog: renderBrands });
+    configureLibrary({ openCatalog: renderBrands, openStore: renderStore });
     bindEvents();
     refreshClientMessageAlert();
     window.setInterval(refreshClientMessageAlert, 30000);
@@ -839,11 +839,12 @@ function renderSettings() {
         const headerP = document.querySelector('header .header-content p');
         if (headerP) headerP.textContent = subtitle;
         const search = document.getElementById('search'); if (search) search.placeholder = searchPlaceholder;
-        document.querySelectorAll('footer .nav-button span').forEach((span, idx) => {
-            const texts = lang === 'en'
-                ? ['Home','Search','Store','Photo','Clients','Quotes','Messages','Planning','Documents','Favorites','Settings']
-                : ['Accueil','Recherche','Magasin','Photo','Clients','Devis','Messages','Planning','Documents','Favoris','Paramètres'];
-            span.textContent = texts[idx] || span.textContent;
+        const texts = lang === "en"
+            ? { home: "Home", search: "Search", store: "Store", photo: "Photo", clients: "Clients", billing: "Quotes", calendar: "Planning", library: "Documents", favorites: "Favorites", settings: "Settings" }
+            : { home: "Accueil", search: "Recherche", store: "Magasin", photo: "Photo", clients: "Clients", billing: "Devis", calendar: "Planning", library: "Documents", favorites: "Favoris", settings: "Paramètres" };
+        document.querySelectorAll("footer .nav-button").forEach(button => {
+            const label = button.querySelector(".nav-label-clients") || button.querySelector("span");
+            if (label) label.textContent = texts[button.dataset.nav] || label.textContent;
         });
         renderSettings();
     });
