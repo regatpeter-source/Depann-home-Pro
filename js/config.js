@@ -1,4 +1,4 @@
-export const APP_VERSION = "1.10.9 Alertes notes client admin";
+export const APP_VERSION = "1.10.10 Alertes notes client équipe";
 export const DATA_VERSION = "2026-07-20-35";
 
 export const STORAGE_KEYS = {

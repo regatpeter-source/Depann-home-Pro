@@ -1,4 +1,4 @@
-import { ROUTES } from "./config.js?v=82";
+import { ROUTES } from "./config.js?v=83";
 import { escapeHtml } from "./utils.js?v=44";
 import { clearSearch, getContainer, setPage } from "./ui.js?v=44";
 
@@ -36,7 +36,6 @@ async function loadClientMessages(panel, client, focus = false) {
 }
 
 export async function refreshClientMessageAlert() {
-    if (document.body.dataset.role !== "admin") return;
     const result = await request("/api/messages/unread-summary");
     if (!result.ok) return;
     const unreadClientIds = getUnreadClientIds(result.data.messages || []);
@@ -48,7 +47,6 @@ export async function refreshClientMessageAlert() {
 }
 
 export async function getFirstUnreadClientId() {
-    if (document.body.dataset.role !== "admin") return "";
     const result = await request("/api/messages/unread-summary");
     if (!result.ok) return "";
     const unreadClientIds = getUnreadClientIds(result.data.messages || []);

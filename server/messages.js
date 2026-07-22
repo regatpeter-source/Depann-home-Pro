@@ -43,7 +43,6 @@ export async function initializeMessages() {
 
 export function registerMessageRoutes(app, requireAuthentication) {
     app.get("/api/messages/unread-summary", requireAuthentication, asyncHandler(async (request, response) => {
-        if (request.user.role !== "admin") return response.status(403).json({ message: "Accès réservé à l’administrateur." });
         const { rows } = await getPool().query(`
             SELECT message.client_id AS "clientId", message.sender_id AS "senderId", message.created_at AS "createdAt"
             FROM depannhome_messages message

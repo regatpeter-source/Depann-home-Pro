@@ -1,4 +1,4 @@
-import { ROUTES } from "./config.js?v=82";
+import { ROUTES } from "./config.js?v=83";
 import { getSearchResults } from "./search.js?v=59";
 import { resetSelection } from "./state.js?v=44";
 import {

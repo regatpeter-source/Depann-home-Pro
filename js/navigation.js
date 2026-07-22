@@ -1,8 +1,8 @@
-import { ROUTES, STORAGE_KEYS, APP_VERSION, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=82";
-import { createCalendarEventForClient, renderCalendar } from "./calendar.js?v=82";
-import { createBillingDocumentForClient, renderBilling } from "./billing.js?v=82";
-import { getFirstUnreadClientId, refreshClientMessageAlert } from "./messages.js?v=82";
-import { getSearchableClients, renderClients } from "./clients.js?v=82";
+import { ROUTES, STORAGE_KEYS, APP_VERSION, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=83";
+import { createCalendarEventForClient, renderCalendar } from "./calendar.js?v=83";
+import { createBillingDocumentForClient, renderBilling } from "./billing.js?v=83";
+import { getFirstUnreadClientId, refreshClientMessageAlert } from "./messages.js?v=83";
+import { getSearchableClients, renderClients } from "./clients.js?v=83";
 import { openLibrarySection, renderLibrary, searchPersonalLibrary } from "./library.js?v=59";
 import { renderPhotoRecognition } from "./photo-recognition.js?v=59";
 import { getSearchResults } from "./search.js?v=63";
@@ -32,13 +32,11 @@ let searchRequestId = 0;
 export function initializeNavigation(loadedDatabase) {
     database = loadedDatabase;
     bindEvents();
-    if (document.body.dataset.role === "admin") {
-        refreshClientMessageAlert();
-        window.setInterval(refreshClientMessageAlert, 30000);
-        document.addEventListener("visibilitychange", () => {
-            if (document.visibilityState === "visible") refreshClientMessageAlert();
-        });
-    }
+    refreshClientMessageAlert();
+    window.setInterval(refreshClientMessageAlert, 30000);
+    document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible") refreshClientMessageAlert();
+    });
     if (document.body.classList.contains("mobile-device") && document.body.dataset.role === "technician") renderCalendar();
     else renderBrands();
 }
