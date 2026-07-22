@@ -1,4 +1,4 @@
-import { ROUTES, STORAGE_KEYS, APP_VERSION, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=94";
+import { ROUTES, STORAGE_KEYS, APP_VERSION, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=95";
 import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=94";
 import { createBillingDocumentForClient, renderBilling } from "./billing.js?v=88";
 import { getFirstUnreadClientId, refreshClientMessageAlert } from "./messages.js?v=88";

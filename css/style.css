@@ -294,7 +294,7 @@ textarea{
 
 body.desktop-device #photoBtn,
 body.desktop-device #favoritesBtn,
-body.desktop-device footer .nav-button:not([data-nav="home"]):not([data-nav="clients"]){
+body.desktop-device footer .nav-button:not([data-nav="home"]){
     display:none;
 }
 
@@ -2422,6 +2422,7 @@ footer{
     body.mobile-device[data-role="technician"] #libraryBtn,
     body.mobile-device[data-role="technician"] #favoritesBtn,
     body.mobile-device[data-role="technician"] #historyBtn,
+    body.mobile-device[data-role="technician"] #settingsBtn,
     body.mobile-device[data-role="technician"] .nav-button[data-nav="library"]{
         display:none;
     }
