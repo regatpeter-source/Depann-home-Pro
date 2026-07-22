@@ -1,5 +1,5 @@
-import { ROUTES } from "./config.js?v=72";
-import { addClientActivity, deleteLocalClient, getLocalClients, saveLocalClient, synchronizeClients } from "./client-sync.js?v=72";
+import { ROUTES } from "./config.js?v=76";
+import { addClientActivity, deleteLocalClient, getLocalClients, saveLocalClient, synchronizeClients } from "./client-sync.js?v=76";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { analyzeEquipmentPhoto, isPhotoRecognitionConfident } from "./photo-recognition.js?v=59";
@@ -37,11 +37,12 @@ export function renderClients(options = {}) {
 
     const container = getContainer();
     const clients = getClients();
-    const editingClient = options.editId ? getClientById(options.editId) : null;
+    const readOnly = isClientReadOnly();
+    const editingClient = !readOnly && options.editId ? getClientById(options.editId) : null;
     const selectedClient = options.selectedId ? getClientById(options.selectedId) : null;
 
-    container.appendChild(renderClientToolbar(clients));
-    container.appendChild(renderClientForm(editingClient || EMPTY_CLIENT, clientScreenOptions));
+    container.appendChild(renderClientToolbar(clients, readOnly));
+    if (!readOnly) container.appendChild(renderClientForm(editingClient || EMPTY_CLIENT, clientScreenOptions));
 
     if (selectedClient) {
         container.appendChild(renderClientDetail(selectedClient));
@@ -50,35 +51,35 @@ export function renderClients(options = {}) {
     container.appendChild(renderClientList(clients));
 }
 
-function renderClientToolbar(clients) {
+function renderClientToolbar(clients, readOnly) {
     const panel = document.createElement("section");
     panel.className = "client-panel";
 
     panel.innerHTML = `
         <div>
-                <p class="eyebrow">Base locale privée</p>
+                <p class="eyebrow">${readOnly ? "Dossiers d’intervention" : "Base clients"}</p>
             <h2> ${clients.length} client(s)</h2>
-            <p class="muted">Les clients sont enregistrés sur cet appareil, dans l’espace du compte connecté. Ils apparaissent dans la recherche globale de ce compte.</p>
+            <p class="muted">${readOnly ? "Recherchez un client pour consulter ses coordonnées, équipements, consignes et documents utiles à l’intervention." : "Les dossiers clients sont synchronisés dans l’espace entreprise."}</p>
         </div>
         <div class="client-toolbar-actions">
             <input id="clientSearch" class="client-search" type="search" placeholder="Saisir le nom d’un client..." aria-describedby="clientSearchHint">
-            <button type="button" class="secondary-button" id="syncClientsBtn">Synchroniser</button>
-            <button type="button" class="secondary-button" id="newClientBtn">+ Nouveau client</button>
+            <button type="button" class="secondary-button" id="syncClientsBtn">${readOnly ? "Actualiser" : "Synchroniser"}</button>
+            ${readOnly ? "" : '<button type="button" class="secondary-button" id="newClientBtn">+ Nouveau client</button>'}
         </div>
         <p id="clientSearchHint" class="client-search-hint">Sur téléphone, saisissez le nom d’un client pour afficher son dossier.</p>
         <p id="clientSyncMessage" class="auth-message" aria-live="polite"></p>
     `;
 
-    panel.querySelector("#newClientBtn").addEventListener("click", () => renderClients());
+    panel.querySelector("#newClientBtn")?.addEventListener("click", () => renderClients());
     panel.querySelector("#syncClientsBtn").addEventListener("click", async event => {
         const button = event.currentTarget;
         const message = panel.querySelector("#clientSyncMessage");
         button.disabled = true;
         message.classList.remove("error");
-        message.textContent = navigator.onLine ? "Synchronisation en cours…" : "Hors ligne : la synchronisation reprendra automatiquement dès le retour du réseau.";
+        message.textContent = navigator.onLine ? (readOnly ? "Actualisation en cours…" : "Synchronisation en cours…") : "Hors ligne : les dossiers déjà consultés restent disponibles.";
         const result = await synchronizeClients();
         if (result.ok) {
-            message.textContent = "Dossiers clients synchronisés.";
+            message.textContent = readOnly ? "Dossiers d’intervention actualisés." : "Dossiers clients synchronisés.";
             renderClients();
             return;
         }
@@ -322,6 +323,7 @@ function renderClientList(clients) {
 }
 
 function renderClientTableRow(client) {
+    const readOnly = isClientReadOnly();
     const row = document.createElement("tr");
     row.className = "client-table-row";
     row.dataset.clientName = normalizeText(client.name);
@@ -333,14 +335,13 @@ function renderClientTableRow(client) {
         <td data-label="Dossier">${client.attachments.length} fichier(s)</td>
         <td data-label="Actions"><div class="client-card-actions">
             <button type="button" class="secondary-button" data-action="view">Voir</button>
-            <button type="button" class="secondary-button" data-action="edit">Modifier</button>
-            <button type="button" class="secondary-button danger-button" data-action="delete">Supprimer</button>
+            ${readOnly ? "" : '<button type="button" class="secondary-button" data-action="edit">Modifier</button><button type="button" class="secondary-button danger-button" data-action="delete">Supprimer</button>'}
         </div></td>
     `;
 
     row.querySelector('[data-action="view"]').addEventListener("click", () => renderClients({ selectedId: client.id }));
-    row.querySelector('[data-action="edit"]').addEventListener("click", () => renderClients({ editId: client.id }));
-    row.querySelector('[data-action="delete"]').addEventListener("click", () => {
+    row.querySelector('[data-action="edit"]')?.addEventListener("click", () => renderClients({ editId: client.id }));
+    row.querySelector('[data-action="delete"]')?.addEventListener("click", () => {
         if (confirm(`Supprimer le client ${client.name} ?`)) {
             deleteClient(client.id);
             renderClients();
@@ -351,6 +352,7 @@ function renderClientTableRow(client) {
 }
 
 function renderClientDetail(client) {
+    const readOnly = isClientReadOnly();
     const panel = document.createElement("section");
     panel.className = "client-panel";
 
@@ -361,10 +363,7 @@ function renderClientDetail(client) {
                 <h2>${escapeHtml(client.name)}</h2>
             </div>
             <div class="client-card-actions">
-                <button type="button" class="secondary-button" id="createClientAppointment">+ Créer un rendez-vous</button>
-                <button type="button" class="secondary-button" id="createClientQuote">+ Créer un devis</button>
-                <button type="button" class="secondary-button" id="createClientInvoice">+ Créer une facture</button>
-                <button type="button" class="secondary-button" id="editSelectedClient">Modifier</button>
+                ${readOnly ? '<button type="button" class="secondary-button" id="createClientQuote">+ Créer un devis</button><button type="button" class="secondary-button" id="createClientInvoice">+ Créer une facture</button>' : '<button type="button" class="secondary-button" id="createClientAppointment">+ Créer un rendez-vous</button><button type="button" class="secondary-button" id="createClientQuote">+ Créer un devis</button><button type="button" class="secondary-button" id="createClientInvoice">+ Créer une facture</button><button type="button" class="secondary-button" id="editSelectedClient">Modifier</button>'}
             </div>
         </div>
         <div class="procedure-meta">
@@ -387,14 +386,14 @@ function renderClientDetail(client) {
         </section>
         <section class="procedure-section">
             <h3> Fichiers du client</h3>
-            ${client.attachments.length ? renderAttachmentsHtml(client.attachments, true) : "<p>Aucun fichier enregistré.</p>"}
+            ${client.attachments.length ? renderAttachmentsHtml(client.attachments, !readOnly) : "<p>Aucun fichier enregistré.</p>"}
         </section>
     `;
 
-    panel.querySelector("#editSelectedClient").addEventListener("click", () => renderClients({ editId: client.id }));
-    panel.querySelector("#createClientAppointment").addEventListener("click", () => openClientAppointment(client));
-    panel.querySelector("#createClientQuote").addEventListener("click", () => openClientBillingDocument("quote", client));
-    panel.querySelector("#createClientInvoice").addEventListener("click", () => openClientBillingDocument("invoice", client));
+    panel.querySelector("#editSelectedClient")?.addEventListener("click", () => renderClients({ editId: client.id }));
+    panel.querySelector("#createClientAppointment")?.addEventListener("click", () => openClientAppointment(client));
+    panel.querySelector("#createClientQuote")?.addEventListener("click", () => openClientBillingDocument("quote", client));
+    panel.querySelector("#createClientInvoice")?.addEventListener("click", () => openClientBillingDocument("invoice", client));
     panel.querySelectorAll("[data-delete-attachment]").forEach(button => {
         button.addEventListener("click", () => {
             const attachmentId = button.dataset.deleteAttachment;
@@ -533,7 +532,12 @@ function saveClient(client) {
 }
 
 function deleteClient(id) {
+    if (isClientReadOnly()) return;
     deleteLocalClient(id);
+}
+
+function isClientReadOnly() {
+    return document.body.dataset.role === "technician";
 }
 
 function getClientById(id) {
@@ -594,13 +598,13 @@ function normalizeAttachments(attachments = []) {
 function renderClientActivityHistory(history) {
     const entries = normalizeActivityHistory(history);
     if (!entries.length) return "<p class=\"muted\">Les rendez-vous, documents et actions de ce dossier apparaîtront ici.</p>";
-    return `<div class="client-activity-list">${entries.map(entry => `<article class="client-activity-item"><div><strong>${escapeHtml(entry.label)}</strong>${entry.detail ? `<p>${escapeHtml(entry.detail)}</p>` : ""}</div><time datetime="${escapeHtml(entry.createdAt)}">${escapeHtml(formatActivityDate(entry.createdAt))}</time></article>`).join("")}</div>`;
+    return `<div class="client-activity-list">${entries.map(entry => `<article class="client-activity-item"><div><strong>${escapeHtml(entry.label)}</strong>${entry.detail ? `<p>${escapeHtml(entry.detail)}</p>` : ""}${entry.actorName ? `<p class="muted">Par ${escapeHtml(entry.actorName)}</p>` : ""}</div><time datetime="${escapeHtml(entry.createdAt)}">${escapeHtml(formatActivityDate(entry.createdAt))}</time></article>`).join("")}</div>`;
 }
 
 function normalizeActivityHistory(history) {
     return (Array.isArray(history) ? history : [])
         .filter(entry => entry && entry.id && entry.label)
-        .map(entry => ({ id: String(entry.id), label: String(entry.label), detail: String(entry.detail || ""), createdAt: entry.createdAt || new Date().toISOString() }))
+        .map(entry => ({ id: String(entry.id), label: String(entry.label), detail: String(entry.detail || ""), actorName: String(entry.actorName || ""), createdAt: entry.createdAt || new Date().toISOString() }))
         .sort((first, second) => new Date(second.createdAt).getTime() - new Date(first.createdAt).getTime());
 }
 

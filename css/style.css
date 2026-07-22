@@ -1423,6 +1423,19 @@ textarea{
     padding:10px 12px;
 }
 
+.calendar-view-switcher{
+    display:flex;
+    flex-wrap:wrap;
+    gap:8px;
+    margin-top:16px;
+}
+
+.calendar-view-switcher .secondary-button.active{
+    color:#fff;
+    background:var(--secondary);
+    border-color:var(--secondary);
+}
+
 .calendar-legend{
     display:flex;
     flex-wrap:wrap;
@@ -1566,6 +1579,52 @@ textarea{
 .calendar-event.color-red{background:#fee2e2;color:#b91c1c;}
 .calendar-event.color-purple{background:#ede9fe;color:#6d28d9;}
 .calendar-event.color-gray{background:#e2e8f0;color:#334155;}
+
+.calendar-list-view{
+    display:grid;
+    gap:12px;
+}
+
+.calendar-list-day{
+    padding:14px;
+    border:1px solid var(--border);
+    border-radius:12px;
+    background:#fff;
+}
+
+.calendar-list-day h3{
+    margin:0 0 10px;
+    color:var(--primary);
+    font-size:16px;
+    text-transform:capitalize;
+}
+
+.calendar-list-events{
+    display:grid;
+    gap:8px;
+}
+
+.calendar-list-events .calendar-event{
+    padding:10px 12px;
+    font-size:14px;
+}
+
+.calendar-event-detail dl{
+    display:grid;
+    grid-template-columns:minmax(110px, .3fr) 1fr;
+    gap:10px 16px;
+    margin:20px 0 0;
+}
+
+.calendar-event-detail dt{
+    color:var(--muted);
+    font-weight:800;
+}
+
+.calendar-event-detail dd{
+    margin:0;
+    white-space:pre-wrap;
+}
 
 /* ==========================
    DEVIS ET FACTURES
@@ -1817,6 +1876,28 @@ textarea{
     padding:9px 12px;
 }
 
+.billing-read-only-lines{
+    display:grid;
+    gap:8px;
+    margin-top:18px;
+}
+
+.billing-read-only-lines div{
+    display:grid;
+    grid-template-columns:1fr auto auto;
+    gap:12px;
+    align-items:center;
+    padding:10px 12px;
+    border:1px solid var(--border);
+    border-radius:10px;
+    background:#f8fbff;
+}
+
+.billing-read-only-lines b{
+    color:var(--primary);
+    text-align:right;
+}
+
 .client-billing-panel{
     margin-top:18px;
 }
@@ -2050,6 +2131,26 @@ footer{
 ========================== */
 
 @media(max-width:700px){
+    body.mobile-device[data-role="technician"] #libraryBtn,
+    body.mobile-device[data-role="technician"] #favoritesBtn,
+    body.mobile-device[data-role="technician"] #historyBtn,
+    body.mobile-device[data-role="technician"] .nav-button[data-nav="library"],
+    body.mobile-device[data-role="technician"] .nav-button[data-nav="settings"]{
+        display:none;
+    }
+
+    body.mobile-device[data-role="technician"] .quick-actions{
+        display:grid;
+        grid-template-columns:repeat(2, minmax(0, 1fr));
+    }
+
+    .team-member{
+        display:grid;
+        gap:6px;
+        padding:12px 0;
+        border-top:1px solid rgba(0,59,115,.12);
+    }
+
     .header-content{
         flex-direction:column;
         text-align:center;
@@ -2180,6 +2281,15 @@ footer{
         flex:1;
     }
 
+    .calendar-view-switcher .secondary-button{
+        flex:1;
+    }
+
+    .calendar-event-detail dl{
+        grid-template-columns:1fr;
+        gap:3px;
+    }
+
     .calendar-day{
         min-height:108px;
         padding:4px;
@@ -2235,6 +2345,14 @@ footer{
     .billing-line-total{
         text-align:left;
         padding:7px 0;
+    }
+
+    .billing-read-only-lines div{
+        grid-template-columns:1fr auto;
+    }
+
+    .billing-read-only-lines b{
+        grid-column:2;
     }
 
     .billing-totals{

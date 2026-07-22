@@ -1,10 +1,10 @@
 import { initializeAuthentication, signOut } from "./auth.js?v=59";
-import { initializeClientSynchronization } from "./client-sync.js?v=72";
+import { initializeClientSynchronization } from "./client-sync.js?v=76";
 import { loadDatabase } from "./data.js?v=59";
-import { initializeNavigation } from "./navigation.js?v=72";
+import { initializeNavigation } from "./navigation.js?v=76";
 import { renderError } from "./ui.js?v=44";
 import { getSettings } from "./storage.js?v=44";
-import { FONT_OPTIONS } from "./config.js?v=72";
+import { FONT_OPTIONS } from "./config.js?v=76";
 
 let applicationStarted = false;
 
@@ -48,8 +48,13 @@ function showAuthenticatedUser(user) {
     const logoutButton = document.getElementById("logoutBtn");
 
     if (session) session.hidden = false;
-    if (email) email.textContent = user.username || "Utilisateur connecté";
+    if (email) email.textContent = user.fullName || user.username || "Utilisateur connecté";
     document.body.dataset.userId = user.id || "";
+    document.body.dataset.accountId = user.accountOwnerId || user.id || "";
+    document.body.dataset.role = user.role || "";
+    document.body.dataset.userName = user.fullName || user.username || "";
+    document.body.classList.toggle("mobile-device", window.matchMedia("(max-width: 700px)").matches);
+    document.body.classList.toggle("desktop-device", !document.body.classList.contains("mobile-device"));
     document.body.classList.remove("auth-pending");
     logoutButton?.addEventListener("click", async () => {
         logoutButton.disabled = true;

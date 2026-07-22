@@ -1,4 +1,5 @@
 import { getPool } from "./database.js";
+import { getAccountOwnerId } from "./auth.js";
 
 const MAX_MESSAGE_LENGTH = 2000;
 
@@ -31,12 +32,14 @@ export async function initializeMessages() {
 export function registerMessageRoutes(app, requireAuthentication) {
     app.get("/api/messages", requireAuthentication, asyncHandler(async (request, response) => {
         const { rows } = await getPool().query(`
-            SELECT id, body, created_at AS "createdAt"
-            FROM depannhome_messages
-            WHERE sender_id = $1 AND recipient_id = $1
+                 SELECT message.id, message.body, message.created_at AS "createdAt",
+                     sender.full_name AS "senderName", sender.username AS "senderUsername"
+                 FROM depannhome_messages message
+                 JOIN depannhome_users sender ON sender.id = message.sender_id
+                 WHERE message.recipient_id = $1
             ORDER BY created_at DESC
             LIMIT 300
-        `, [request.user.sub]);
+        `, [getAccountOwnerId(request)]);
         response.json({ messages: rows });
     }));
 
@@ -47,7 +50,7 @@ export function registerMessageRoutes(app, requireAuthentication) {
             INSERT INTO depannhome_messages (sender_id, recipient_id, body)
             VALUES ($1, $2, $3)
             RETURNING id, created_at AS "createdAt"
-        `, [request.user.sub, request.user.sub, body]);
+        `, [request.user.sub, getAccountOwnerId(request), body]);
         response.status(201).json({ note: rows[0] });
     }));
 }

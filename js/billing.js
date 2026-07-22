@@ -1,6 +1,6 @@
-import { ROUTES } from "./config.js?v=72";
-import { getSearchableClients } from "./clients.js?v=72";
-import { addClientActivityByName } from "./client-sync.js?v=72";
+import { ROUTES } from "./config.js?v=76";
+import { getSearchableClients } from "./clients.js?v=76";
+import { addClientActivityByName } from "./client-sync.js?v=76";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { clearSearch, createInfo, getContainer, setPage } from "./ui.js?v=44";
@@ -35,8 +35,10 @@ export async function renderBilling(options = {}) {
     billingData = result.data;
     if (options.newDocument) activeDocument = createNewDocument(options.newDocument.type, options.newDocument.client);
     renderOverview(overviewPanel);
-    renderProfile(profilePanel);
-    renderTemplates(templatePanel);
+    if (!isTechnician()) {
+        renderProfile(profilePanel);
+        renderTemplates(templatePanel);
+    }
     renderDocumentEditor(editorPanel);
     renderDocumentList(listPanel);
 }
@@ -67,7 +69,7 @@ function renderOverview(panel) {
                 <button type="button" class="secondary-button" data-billing-action="new-invoice">+ Nouvelle facture</button>
             </div>
         </div>
-        <div class="billing-metrics"><span><strong>${quotes}</strong> devis</span><span><strong>${invoices}</strong> factures</span><span><strong>${billingData.templates.length}</strong> ligne(s) modèle</span>${profile.defaultQuote ? '<span class="billing-base-template"><strong>✓</strong> modèle de devis actif <button type="button" data-billing-action="clear-default">Retirer</button></span>' : ""}</div>
+        <div class="billing-metrics"><span><strong>${quotes}</strong> devis</span><span><strong>${invoices}</strong> factures</span><span><strong>${billingData.templates.length}</strong> ligne(s) modèle</span>${profile.defaultQuote ? `<span class="billing-base-template"><strong>✓</strong> modèle de devis actif ${isTechnician() ? "" : '<button type="button" data-billing-action="clear-default">Retirer</button>'}</span>` : ""}</div>
     `;
     panel.querySelector("[data-billing-action=new-quote]").addEventListener("click", () => openNewDocument("quote"));
     panel.querySelector("[data-billing-action=new-invoice]").addEventListener("click", () => openNewDocument("invoice"));
@@ -167,6 +169,7 @@ function renderDocumentEditor(panel) {
     panel.hidden = false;
     const document = activeDocument;
     const isEditing = Boolean(document.id);
+    if (isEditing && isTechnician()) return renderReadOnlyDocument(panel, document);
     const clients = getSearchableClients().sort((a, b) => a.name.localeCompare(b.name, "fr"));
     panel.innerHTML = `
         <form id="billingDocumentForm" class="client-form">
@@ -183,7 +186,7 @@ function renderDocumentEditor(panel) {
             </div>
             <section class="billing-lines-section"><div class="form-heading"><div><p class="eyebrow">Prestations</p><h3>Lignes du document</h3></div><button type="button" class="secondary-button" id="addBillingLine">+ Ligne libre</button></div><div id="billingLines" class="billing-lines"></div><div class="billing-totals" id="billingTotals"></div></section>
             <label>Notes / conditions<textarea name="notes" rows="3" maxlength="2000" placeholder="Informations complémentaires, conditions, validité du devis…">${escapeHtml(document.notes)}</textarea></label>
-            ${document.documentType === "quote" ? `<label class="billing-default-option"><input name="saveAsDefaultQuote" type="checkbox" ${!billingData.profile.defaultQuote ? "checked" : ""}> Utiliser les lignes, la TVA, les conditions et le statut de ce devis comme modèle de base pour mes futurs devis.</label>` : ""}
+            ${document.documentType === "quote" && !isTechnician() ? `<label class="billing-default-option"><input name="saveAsDefaultQuote" type="checkbox" ${!billingData.profile.defaultQuote ? "checked" : ""}> Utiliser les lignes, la TVA, les conditions et le statut de ce devis comme modèle de base pour mes futurs devis.</label>` : ""}
             <p id="billingDocumentMessage" class="auth-message" aria-live="polite"></p>
             <div class="calendar-form-actions"><button type="submit" class="secondary-button">${isEditing ? "Enregistrer les modifications" : "Enregistrer le document"}</button>${isEditing ? '<button type="button" class="danger-button" id="deleteBillingDocument">Supprimer</button>' : ""}</div>
         </form>
@@ -237,6 +240,19 @@ function renderDocumentEditor(panel) {
     });
 }
 
+function renderReadOnlyDocument(panel, document) {
+    panel.innerHTML = `
+        <div class="billing-read-only-document">
+            <div class="form-heading"><div><p class="eyebrow">Consultation uniquement</p><h2>${escapeHtml(DOCUMENT_TYPES[document.documentType])} ${escapeHtml(document.documentNumber)}</h2><p class="muted">Seul l’administrateur peut modifier ou supprimer un document existant.</p></div><button type="button" class="secondary-button" id="closeBillingDocument">Fermer</button></div>
+            <div class="procedure-meta"><span>${escapeHtml(document.customerName)}</span><span>${escapeHtml(formatDate(document.issueDate))}</span><span>${escapeHtml(document.status || "brouillon")}</span></div>
+            <div class="billing-read-only-lines">${document.lines.map(line => `<div><span>${escapeHtml(line.description)}</span><strong>${escapeHtml(String(line.quantity))} × ${escapeHtml(formatMoney(line.unitPrice))}</strong><b>${escapeHtml(formatMoney(lineTotal(line)))}</b></div>`).join("")}</div>
+            <div class="billing-totals" id="billingReadOnlyTotals"></div>
+            ${document.notes ? `<section class="procedure-section"><h3>Notes / conditions</h3><p>${escapeHtml(document.notes)}</p></section>` : ""}
+        </div>`;
+    renderTotals(panel.querySelector("#billingReadOnlyTotals"), document.lines);
+    panel.querySelector("#closeBillingDocument").addEventListener("click", () => { activeDocument = null; renderBilling(); });
+}
+
 function createLineEditor(line, index, document, rerender) {
     const item = document.createElement("article");
     item.className = "billing-line";
@@ -283,7 +299,7 @@ function renderDocumentList(panel) {
         const item = document.createElement("article");
         item.className = "billing-document-item";
         const totals = calculateTotals(document.lines || []);
-        item.innerHTML = `<div><p class="eyebrow">${DOCUMENT_TYPES[document.documentType]} · ${escapeHtml(document.customerType)}</p><h3>${escapeHtml(document.documentNumber)}</h3><p>${escapeHtml(document.customerName)}</p><small>${escapeHtml(formatDate(document.issueDate))} · ${escapeHtml(document.status || "brouillon")}</small></div><div class="billing-document-amount"><strong>${formatMoney(totals.ttc)}</strong><small>TTC</small></div><button type="button" class="secondary-button">Ouvrir</button>`;
+        item.innerHTML = `<div><p class="eyebrow">${DOCUMENT_TYPES[document.documentType]} · ${escapeHtml(document.customerType)}</p><h3>${escapeHtml(document.documentNumber)}</h3><p>${escapeHtml(document.customerName)}</p><small>${escapeHtml(formatDate(document.issueDate))} · ${escapeHtml(document.status || "brouillon")}</small></div><div class="billing-document-amount"><strong>${formatMoney(totals.ttc)}</strong><small>TTC</small></div><button type="button" class="secondary-button">${isTechnician() ? "Consulter" : "Ouvrir"}</button>`;
         item.querySelector("button").addEventListener("click", () => { activeDocument = normalizeDocument(document); renderBilling(); });
         list.appendChild(item);
     });
@@ -331,6 +347,8 @@ function formatNumber(value) { return new Intl.NumberFormat("fr-FR", { maximumFr
 function formatDate(value) { return value ? new Intl.DateTimeFormat("fr-FR").format(new Date(`${value}T12:00:00`)) : "Date non renseignée"; }
 function today() { const date = new Date(); return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`; }
 function formDataToObject(data) { return Object.fromEntries(data.entries()); }
+
+function isTechnician() { return document.body.dataset.role === "technician"; }
 
 async function apiRequest(url, options = {}) {
     try {

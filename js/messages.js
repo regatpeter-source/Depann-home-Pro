@@ -1,4 +1,4 @@
-import { ROUTES } from "./config.js?v=72";
+import { ROUTES } from "./config.js?v=76";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml } from "./utils.js?v=44";
 import { clearSearch, getContainer, setPage } from "./ui.js?v=44";
@@ -39,7 +39,7 @@ export async function refreshMessageAlert() {
 
 function renderMessagePanel(panel, messages) {
     panel.innerHTML = `
-        <div class="form-heading"><div><p class="eyebrow">Notes internes synchronisées</p><h2>Mes notes entre téléphone et PC</h2><p class="muted">Créez des rappels comme « clients à facturer ». Ils sont accessibles uniquement depuis vos appareils connectés à ce même compte.</p></div></div>
+        <div class="form-heading"><div><p class="eyebrow">Notes internes synchronisées</p><h2>Notes de l’équipe</h2><p class="muted">Créez des rappels comme « clients à facturer ». Ils restent accessibles uniquement aux membres de votre entreprise.</p></div></div>
         <section class="message-conversation message-self-conversation">
             <div class="message-conversation-header"><h3>Notes du compte</h3></div>
             <div class="message-thread" id="messageThread"></div>
@@ -51,7 +51,8 @@ function renderMessagePanel(panel, messages) {
     messages.slice().reverse().forEach(message => {
         const article = document.createElement("article");
         article.className = "message-bubble outgoing";
-        article.innerHTML = `<p>${escapeHtml(message.body)}</p><small>${escapeHtml(formatDate(message.createdAt))}</small>`;
+        const author = message.senderName || message.senderUsername || "Membre de l’équipe";
+        article.innerHTML = `<p>${escapeHtml(message.body)}</p><small>${escapeHtml(author)} · ${escapeHtml(formatDate(message.createdAt))}</small>`;
         thread.appendChild(article);
     });
     thread.scrollTop = thread.scrollHeight;

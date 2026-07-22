@@ -8,7 +8,7 @@ let synchronizationPromise = null;
 let refreshTimerStarted = false;
 
 export async function initializeClientSynchronization() {
-    migrateLegacyClients();
+    if (canWriteClients()) migrateLegacyClients();
 
     if (!onlineListenerRegistered) {
         window.addEventListener("online", () => synchronizeClients().catch(() => {}));
@@ -36,6 +36,7 @@ export function getLocalClients() {
 }
 
 export function saveLocalClient(client) {
+    if (!canWriteClients()) return null;
     const clients = getLocalClients();
     const existing = clients.find(item => item.id === client.id);
     const nextClient = normalizeClient({
@@ -54,11 +55,15 @@ export function saveLocalClient(client) {
 }
 
 export function addClientActivity(clientId, activity) {
+    if (!canWriteClients()) return false;
     const client = getLocalClients().find(item => item.id === String(clientId));
     if (!client) return false;
     saveLocalClient({
         ...client,
-        activityHistory: mergeActivityHistory(client.activityHistory, [normalizeActivity(activity)])
+        activityHistory: mergeActivityHistory(client.activityHistory, [normalizeActivity({
+            ...activity,
+            actorName: activity?.actorName || document.body.dataset.userName || ""
+        })])
     });
     return true;
 }
@@ -70,13 +75,14 @@ export function addClientActivityByName(clientName, activity) {
 }
 
 export function deleteLocalClient(clientId) {
+    if (!canWriteClients()) return false;
     localStorage.setItem(getClientsKey(), JSON.stringify(getLocalClients().filter(client => client.id !== clientId)));
     enqueue({ type: "delete", clientId });
     synchronizeClients().catch(() => {});
 }
 
 export async function synchronizeClients() {
-    if (!navigator.onLine || !getUserId()) return { ok: false, offline: true };
+    if (!navigator.onLine || !getAccountId()) return { ok: false, offline: true };
     if (synchronizationPromise) return synchronizationPromise;
 
     synchronizationPromise = synchronize().finally(() => {
@@ -90,6 +96,10 @@ async function synchronize() {
     if (!remoteResult.ok) return { ok: false, message: remoteResult.data?.message || "Serveur indisponible." };
 
     const remoteClients = Array.isArray(remoteResult.data?.clients) ? remoteResult.data.clients.map(normalizeClient) : [];
+    if (!canWriteClients()) {
+        writeClients(remoteClients);
+        return { ok: true };
+    }
     const localClients = getLocalClients();
     enqueueUnsyncedLocalClients(localClients, remoteClients);
     const merged = mergeClients(localClients, remoteClients);
@@ -165,7 +175,7 @@ function writeClients(clients) {
 
 function migrateLegacyClients() {
     const key = getClientsKey();
-    if (localStorage.getItem(key) || !getUserId()) return;
+    if (localStorage.getItem(key) || !getAccountId()) return;
     try {
         const legacy = JSON.parse(localStorage.getItem(LEGACY_CLIENTS_KEY)) || [];
         if (!Array.isArray(legacy) || !legacy.length) return;
@@ -205,6 +215,7 @@ function normalizeActivity(activity) {
         type: String(activity?.type || "other").slice(0, 40),
         label: String(activity?.label || "Activité du dossier").slice(0, 200),
         detail: String(activity?.detail || "").slice(0, 500),
+        actorName: String(activity?.actorName || "").slice(0, 100),
         createdAt
     };
 }
@@ -222,16 +233,20 @@ function getTimestamp(value) {
     return new Date(value || 0).getTime() || 0;
 }
 
-function getUserId() {
-    return String(document.body.dataset.userId || "").replace(/[^a-zA-Z0-9_-]/g, "");
+function getAccountId() {
+    return String(document.body.dataset.accountId || document.body.dataset.userId || "").replace(/[^a-zA-Z0-9_-]/g, "");
+}
+
+function canWriteClients() {
+    return document.body.dataset.role !== "technician";
 }
 
 function getClientsKey() {
-    return `${CLIENTS_KEY_PREFIX}${getUserId() || "anonymous"}`;
+    return `${CLIENTS_KEY_PREFIX}${getAccountId() || "anonymous"}`;
 }
 
 function getQueueKey() {
-    return `${QUEUE_KEY_PREFIX}${getUserId() || "anonymous"}`;
+    return `${QUEUE_KEY_PREFIX}${getAccountId() || "anonymous"}`;
 }
 
 async function request(url, options = {}) {

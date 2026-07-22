@@ -1,4 +1,4 @@
-export const APP_VERSION = "1.9.6 Client Activity History";
+export const APP_VERSION = "1.10.3 Devis et factures technicien";
 export const DATA_VERSION = "2026-07-20-35";
 
 export const STORAGE_KEYS = {

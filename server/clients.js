@@ -1,4 +1,5 @@
 import { getPool } from "./database.js";
+import { getAccountOwnerId } from "./auth.js";
 
 const MAX_CLIENT_PAYLOAD_SIZE = 20 * 1024 * 1024;
 const CLIENT_ID_PATTERN = /^client-[a-zA-Z0-9-]+$/;
@@ -29,11 +30,11 @@ export function registerClientRoutes(app, requireAuthentication) {
             FROM depannhome_clients
             WHERE owner_id = $1
             ORDER BY updated_at DESC
-        `, [request.user.sub]);
+        `, [getAccountOwnerId(request)]);
         response.json({ clients: rows.map(row => row.client) });
     }));
 
-    app.put("/api/clients/:clientId", requireAuthentication, asyncHandler(async (request, response) => {
+    app.put("/api/clients/:clientId", requireAuthentication, requireClientWriteAccess, asyncHandler(async (request, response) => {
         const clientId = String(request.params.clientId || "");
         const client = sanitizeClient(request.body?.client, clientId);
         if (!client) return response.status(400).json({ message: "Dossier client invalide ou trop volumineux." });
@@ -44,20 +45,27 @@ export function registerClientRoutes(app, requireAuthentication) {
             ON CONFLICT (owner_id, client_id)
             DO UPDATE SET client_data = EXCLUDED.client_data, updated_at = EXCLUDED.updated_at
             RETURNING client_data AS client
-        `, [request.user.sub, clientId, JSON.stringify(client), client.updatedAt]);
+        `, [getAccountOwnerId(request), clientId, JSON.stringify(client), client.updatedAt]);
         response.json({ client: rows[0].client });
     }));
 
-    app.delete("/api/clients/:clientId", requireAuthentication, asyncHandler(async (request, response) => {
+    app.delete("/api/clients/:clientId", requireAuthentication, requireClientWriteAccess, asyncHandler(async (request, response) => {
         const clientId = String(request.params.clientId || "");
         if (!CLIENT_ID_PATTERN.test(clientId)) return response.status(400).json({ message: "Identifiant client invalide." });
 
         await getPool().query(
             "DELETE FROM depannhome_clients WHERE owner_id = $1 AND client_id = $2",
-            [request.user.sub, clientId]
+            [getAccountOwnerId(request), clientId]
         );
         response.status(204).end();
     }));
+}
+
+function requireClientWriteAccess(request, response, next) {
+    if (request.user?.role === "technician") {
+        return response.status(403).json({ message: "Les techniciens peuvent consulter les dossiers clients, sans les modifier." });
+    }
+    return next();
 }
 
 function sanitizeClient(value, expectedId) {
@@ -87,6 +95,7 @@ function sanitizeActivityHistory(value) {
             type: String(item.type || "other").slice(0, 40),
             label: String(item.label).slice(0, 200),
             detail: String(item.detail || "").slice(0, 500),
+            actorName: String(item.actorName || "").slice(0, 100),
             createdAt: validDate(item.createdAt) || new Date().toISOString()
         }))
         .slice(0, MAX_ACTIVITY_HISTORY);

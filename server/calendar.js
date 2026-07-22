@@ -1,4 +1,5 @@
 import { getPool } from "./database.js";
+import { getAccountOwnerId } from "./auth.js";
 
 const EVENT_COLORS = new Set(["blue", "green", "orange", "red", "purple", "gray"]);
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -54,11 +55,11 @@ export function registerCalendarRoutes(app, requireAuthentication) {
             FROM depannhome_calendar_events
             WHERE owner_id = $1 AND event_date BETWEEN $2::date AND $3::date
             ORDER BY event_date, start_time NULLS LAST, created_at
-        `, [request.user.sub, start, end]);
+        `, [getAccountOwnerId(request), start, end]);
         response.json({ events: rows });
     }));
 
-    app.post("/api/calendar/events", requireAuthentication, asyncHandler(async (request, response) => {
+    app.post("/api/calendar/events", requireAuthentication, requireCalendarWriteAccess, asyncHandler(async (request, response) => {
         const event = sanitizeEvent(request.body);
         if (!event.ok) return response.status(400).json({ message: event.message });
 
@@ -67,11 +68,11 @@ export function registerCalendarRoutes(app, requireAuthentication) {
                 (owner_id, title, client_name, location, event_date, start_time, end_time, color, notes)
             VALUES ($1, $2, $3, $4, $5::date, $6::time, $7::time, $8, $9)
             RETURNING id
-        `, [request.user.sub, event.title, event.clientName, event.location, event.date, event.startTime, event.endTime, event.color, event.notes]);
+        `, [getAccountOwnerId(request), event.title, event.clientName, event.location, event.date, event.startTime, event.endTime, event.color, event.notes]);
         response.status(201).json({ id: rows[0].id });
     }));
 
-    app.put("/api/calendar/events/:eventId", requireAuthentication, asyncHandler(async (request, response) => {
+    app.put("/api/calendar/events/:eventId", requireAuthentication, requireCalendarWriteAccess, asyncHandler(async (request, response) => {
         const id = positiveId(request.params.eventId);
         const event = sanitizeEvent(request.body);
         if (!id) return response.status(400).json({ message: "Rendez-vous invalide." });
@@ -82,21 +83,28 @@ export function registerCalendarRoutes(app, requireAuthentication) {
             SET title = $3, client_name = $4, location = $5, event_date = $6::date,
                 start_time = $7::time, end_time = $8::time, color = $9, notes = $10, updated_at = NOW()
             WHERE id = $1 AND owner_id = $2
-        `, [id, request.user.sub, event.title, event.clientName, event.location, event.date, event.startTime, event.endTime, event.color, event.notes]);
+        `, [id, getAccountOwnerId(request), event.title, event.clientName, event.location, event.date, event.startTime, event.endTime, event.color, event.notes]);
         if (!rowCount) return response.status(404).json({ message: "Rendez-vous introuvable." });
         response.status(204).end();
     }));
 
-    app.delete("/api/calendar/events/:eventId", requireAuthentication, asyncHandler(async (request, response) => {
+    app.delete("/api/calendar/events/:eventId", requireAuthentication, requireCalendarWriteAccess, asyncHandler(async (request, response) => {
         const id = positiveId(request.params.eventId);
         if (!id) return response.status(400).json({ message: "Rendez-vous invalide." });
         const { rowCount } = await getPool().query(
             "DELETE FROM depannhome_calendar_events WHERE id = $1 AND owner_id = $2",
-            [id, request.user.sub]
+            [id, getAccountOwnerId(request)]
         );
         if (!rowCount) return response.status(404).json({ message: "Rendez-vous introuvable." });
         response.status(204).end();
     }));
+}
+
+function requireCalendarWriteAccess(request, response, next) {
+    if (request.user?.role === "technician") {
+        return response.status(403).json({ message: "Les techniciens peuvent consulter le planning, sans le modifier." });
+    }
+    return next();
 }
 
 function sanitizeEvent(value) {

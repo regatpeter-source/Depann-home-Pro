@@ -22,9 +22,17 @@ L’application est désormais un **Render Web Service** Node.js. Le serveur gè
 
 Le serveur crée automatiquement les tables `depannhome_users`, `depannhome_clients`, `depannhome_calendar_events`, `depannhome_billing_profiles`, `depannhome_billing_templates`, `depannhome_billing_documents`, `depannhome_messages`, `depannhome_library_sections` et `depannhome_library_documents` au démarrage. Elles sont dédiées à Depann’Home et évitent tout conflit avec les tables de votre service VHR. Le fichier `database/schema.sql` est fourni à titre de référence ; il n’est donc pas nécessaire de l’exécuter manuellement.
 
-## Devis et factures personnels
+## Équipe et espace entreprise
 
-L’onglet **Devis & factures** est privé à chaque compte. Chaque utilisateur peut y enregistrer le nom, les coordonnées, les identifiants légaux, les conditions de règlement et un logo de sa propre structure. Le logo accepte les formats PNG, JPEG ou WebP jusqu’à 2 Mo et reste stocké de façon privée dans PostgreSQL.
+Le premier administrateur est le propriétaire de son **espace entreprise**. Dans **Paramètres → Équipe**, il peut créer un compte technicien en renseignant son nom, son téléphone, un identifiant et un mot de passe initial. Le technicien ne saisit ensuite que son identifiant et son mot de passe pour se connecter.
+
+Chaque technicien possède une session personnelle, mais utilise les données de son espace entreprise : clients, planning, devis, factures, bibliothèque et notes. Les requêtes API déterminent cet espace côté serveur à partir du compte authentifié ; aucun identifiant d’entreprise fourni par le navigateur n’est accepté. Désactiver un technicien invalide ses accès dès sa prochaine requête. Les comptes existants avant cette mise à jour deviennent automatiquement administrateurs de leur propre espace.
+
+Sur téléphone, un technicien ouvre directement le planning et voit une navigation terrain réduite aux outils utiles en intervention. Lorsqu’il ouvre **Agenda**, il peut consulter le planning en vues **mois**, **semaine** ou **jour**, mais ne peut ni créer, ni modifier, ni supprimer un rendez-vous. Dans **Clients**, il peut uniquement rechercher et consulter un dossier utile à l’intervention (coordonnées, équipements, consignes et fichiers), sans le créer, modifier ou supprimer. Il peut toutefois créer un **nouveau devis** ou une **nouvelle facture**, depuis la fiche client ou l’onglet Devis, puis consulter les documents existants ; seuls les administrateurs peuvent modifier ou supprimer les documents et les paramètres de facturation. Ces règles sont appliquées à la fois dans l’interface et par l’API. Les paramètres et la bibliothèque restent centrés sur l’administration sur ordinateur.
+
+## Devis et factures de l’entreprise
+
+L’onglet **Devis & factures** est privé à chaque espace entreprise. Chaque utilisateur autorisé peut y enregistrer le nom, les coordonnées, les identifiants légaux, les conditions de règlement et un logo de sa structure. Le logo accepte les formats PNG, JPEG ou WebP jusqu’à 2 Mo et reste stocké de façon privée dans PostgreSQL.
 
 L’utilisateur peut créer des lignes préenregistrées (prestation, fourniture, unité, prix HT et TVA), puis les insérer dans ses devis et factures. Il peut aussi cocher **« Utiliser comme modèle de base »** lors de l’enregistrement d’un devis : ses lignes, TVA, conditions, catégorie et statut sont alors automatiquement proposés dans les futurs devis, tandis que le client, le numéro et les dates restent toujours vides et nouveaux. Les documents sont classés par destinataire : **Particulier**, **Professionnel**, **Magasin** ou **Autre**. Les montants HT, TVA et TTC sont calculés dans l’application. Tous les profils, lignes modèles, logos et documents sont filtrés côté serveur par compte : un autre utilisateur ne peut pas les lire ou les modifier, même en appelant l’API directement.
 
@@ -32,13 +40,13 @@ Sur la fiche d’un client, les devis et factures associés sont proposés avec 
 
 ## Notes internes synchronisées
 
-L’onglet **Messages** est un carnet de notes interne au compte, et non une messagerie entre utilisateurs. Une note saisie sur un téléphone — par exemple *« Clients à facturer : Martin, Résidence Les Pins »* — est synchronisée dans PostgreSQL et apparaît sur le PC connecté au **même compte**. Les autres comptes ne peuvent ni voir ni envoyer ces notes.
+L’onglet **Messages** est un carnet de notes interne à l’entreprise, et non une messagerie entre entreprises. Une note saisie sur un téléphone — par exemple *« Clients à facturer : Martin, Résidence Les Pins »* — est synchronisée dans PostgreSQL et apparaît sur les appareils des membres de la **même entreprise**. Les autres entreprises ne peuvent ni voir ni envoyer ces notes.
 
 Un badge rouge indique le nombre de notes ajoutées depuis la dernière ouverture de **Messages** sur l’appareil concerné. L’indicateur est vérifié au chargement, au retour dans l’application et toutes les 30 secondes. Ouvrir les Messages marque les notes comme consultées sur cet appareil, sans modifier les autres appareils du même compte.
 
 ## Planning professionnel
 
-Le planning est personnel au compte connecté et synchronisé avec PostgreSQL. Il propose une vue mensuelle, une navigation par mois, des rendez-vous modifiables et six codes couleurs : intervention, confirmé, à préparer, urgent, personnel et indisponible.
+Le planning est partagé avec les membres de l’espace entreprise et synchronisé avec PostgreSQL. Il propose une vue mensuelle, une navigation par mois, des rendez-vous modifiables et six codes couleurs : intervention, confirmé, à préparer, urgent, personnel et indisponible.
 
 Chaque rendez-vous peut contenir un titre, un client, un lieu, une date, des horaires et des notes. Il reste inaccessible aux autres comptes, y compris par appel direct à l’API.
 

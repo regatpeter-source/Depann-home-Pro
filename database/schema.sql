@@ -2,12 +2,19 @@ CREATE TABLE IF NOT EXISTS depannhome_users (
     id BIGSERIAL PRIMARY KEY,
     username VARCHAR(32) NOT NULL UNIQUE,
     password_hash TEXT NOT NULL,
-    role VARCHAR(20) NOT NULL DEFAULT 'user',
+    role VARCHAR(20) NOT NULL DEFAULT 'admin',
+    account_owner_id BIGINT REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    full_name VARCHAR(100) NOT NULL DEFAULT '',
+    phone VARCHAR(30) NOT NULL DEFAULT '',
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS depannhome_users_username_lookup_idx ON depannhome_users (username);
+
+UPDATE depannhome_users SET account_owner_id = id WHERE account_owner_id IS NULL;
+UPDATE depannhome_users SET role = 'admin' WHERE role = 'user' AND account_owner_id = id;
 
 CREATE TABLE IF NOT EXISTS depannhome_clients (
     id BIGSERIAL PRIMARY KEY,
@@ -123,23 +130,15 @@ CREATE TABLE IF NOT EXISTS depannhome_library_sections (
     id BIGSERIAL PRIMARY KEY,
     name VARCHAR(80) NOT NULL,
     slug VARCHAR(100) NOT NULL,
+    owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
     created_by BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE RESTRICT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-ALTER TABLE depannhome_library_sections
-    DROP CONSTRAINT IF EXISTS depannhome_library_sections_slug_key;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'depannhome_library_sections_owner_slug_unique'
-    ) THEN
-        ALTER TABLE depannhome_library_sections
-            ADD CONSTRAINT depannhome_library_sections_owner_slug_unique UNIQUE (created_by, slug);
-    END IF;
-END $$;
+ALTER TABLE depannhome_library_sections ADD COLUMN IF NOT EXISTS owner_id BIGINT REFERENCES depannhome_users(id) ON DELETE CASCADE;
+UPDATE depannhome_library_sections SET owner_id = created_by WHERE owner_id IS NULL;
+ALTER TABLE depannhome_library_sections ALTER COLUMN owner_id SET NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS depannhome_library_sections_owner_slug_unique ON depannhome_library_sections (owner_id, slug);
 
 CREATE TABLE IF NOT EXISTS depannhome_library_documents (
     id BIGSERIAL PRIMARY KEY,
@@ -150,9 +149,14 @@ CREATE TABLE IF NOT EXISTS depannhome_library_documents (
     mime_type VARCHAR(150) NOT NULL,
     file_size INTEGER NOT NULL CHECK (file_size > 0 AND file_size <= 20971520),
     file_data BYTEA NOT NULL,
+    owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
     created_by BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE RESTRICT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS depannhome_library_documents_section_idx
     ON depannhome_library_documents (section_id, created_at DESC);
+
+ALTER TABLE depannhome_library_documents ADD COLUMN IF NOT EXISTS owner_id BIGINT REFERENCES depannhome_users(id) ON DELETE CASCADE;
+UPDATE depannhome_library_documents document SET owner_id = section.owner_id FROM depannhome_library_sections section WHERE document.section_id = section.id AND document.owner_id IS NULL;
+ALTER TABLE depannhome_library_documents ALTER COLUMN owner_id SET NOT NULL;

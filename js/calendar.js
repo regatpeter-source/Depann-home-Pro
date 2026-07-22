@@ -1,6 +1,6 @@
-import { ROUTES } from "./config.js?v=72";
-import { getSearchableClients } from "./clients.js?v=72";
-import { addClientActivityByName } from "./client-sync.js?v=72";
+import { ROUTES } from "./config.js?v=76";
+import { getSearchableClients } from "./clients.js?v=76";
+import { addClientActivityByName } from "./client-sync.js?v=76";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { clearSearch, createInfo, getContainer, setPage } from "./ui.js?v=44";
@@ -18,6 +18,7 @@ const WEEK_DAYS = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
 let displayedMonth = firstDayOfMonth(new Date());
 let events = [];
 let selectedEvent = null;
+let calendarView = "month";
 
 export async function renderCalendar(options = {}) {
     if (options.date) displayedMonth = firstDayOfMonth(options.date);
@@ -54,6 +55,11 @@ export async function renderCalendar(options = {}) {
 
 export function createCalendarEventForClient(client) {
     if (!client) return;
+    if (isReadOnlyCalendar()) {
+        selectedEvent = null;
+        renderCalendar({ date: new Date() });
+        return;
+    }
     const date = new Date();
     selectedEvent = {
         ...newEventForDate(toDateString(date)),
@@ -64,20 +70,24 @@ export function createCalendarEventForClient(client) {
 }
 
 function renderHeader(panel) {
-    const monthLabel = new Intl.DateTimeFormat("fr-FR", { month: "long", year: "numeric" }).format(displayedMonth);
+    const periodLabel = getPeriodLabel();
+    const readOnly = isReadOnlyCalendar();
     panel.innerHTML = `
         <div class="calendar-toolbar">
             <div>
                 <p class="eyebrow">Planning professionnel</p>
-                <h2>${escapeHtml(capitalize(monthLabel))}</h2>
-                <p class="muted">Vos interventions, rendez-vous et indisponibilités sont synchronisés avec ce compte.</p>
+                <h2>${escapeHtml(periodLabel)}</h2>
+                <p class="muted">${readOnly ? "Consultation du planning de l’entreprise." : "Vos interventions, rendez-vous et indisponibilités sont synchronisés avec ce compte."}</p>
             </div>
             <div class="calendar-toolbar-actions">
-                <button type="button" class="secondary-button" data-calendar-action="previous">← Mois précédent</button>
+                <button type="button" class="secondary-button" data-calendar-action="previous">← ${getPreviousLabel()}</button>
                 <button type="button" class="secondary-button auth-outline-button" data-calendar-action="today">Aujourd’hui</button>
-                <button type="button" class="secondary-button" data-calendar-action="next">Mois suivant →</button>
-                <button type="button" class="secondary-button" data-calendar-action="new">+ Nouveau rendez-vous</button>
+                <button type="button" class="secondary-button" data-calendar-action="next">${getNextLabel()} →</button>
+                ${readOnly ? "" : '<button type="button" class="secondary-button" data-calendar-action="new">+ Nouveau rendez-vous</button>'}
             </div>
+        </div>
+        <div class="calendar-view-switcher" role="group" aria-label="Vue du planning">
+            ${[ ["month", "Mois"], ["week", "Semaine"], ["day", "Jour"] ].map(([view, label]) => `<button type="button" class="secondary-button${calendarView === view ? " active" : ""}" data-calendar-view="${view}">${label}</button>`).join("")}
         </div>
         <div class="calendar-legend">
             ${COLOR_OPTIONS.map(color => `<span><i style="background:${color.value}"></i>${color.label}</span>`).join("")}
@@ -85,17 +95,17 @@ function renderHeader(panel) {
     `;
 
     panel.querySelector("[data-calendar-action=previous]").addEventListener("click", () => {
-        displayedMonth = addMonths(displayedMonth, -1);
+        displayedMonth = shiftDisplayedDate(-1);
         selectedEvent = null;
         renderCalendar();
     });
     panel.querySelector("[data-calendar-action=next]").addEventListener("click", () => {
-        displayedMonth = addMonths(displayedMonth, 1);
+        displayedMonth = shiftDisplayedDate(1);
         selectedEvent = null;
         renderCalendar();
     });
     panel.querySelector("[data-calendar-action=today]").addEventListener("click", () => {
-        displayedMonth = firstDayOfMonth(new Date());
+        displayedMonth = calendarView === "month" ? firstDayOfMonth(new Date()) : atNoon(new Date());
         selectedEvent = null;
         renderCalendar();
     });
@@ -103,6 +113,12 @@ function renderHeader(panel) {
         selectedEvent = newEventForDate(toDateString(new Date()));
         renderCalendar();
     });
+    panel.querySelectorAll("[data-calendar-view]").forEach(button => button.addEventListener("click", () => {
+        calendarView = button.dataset.calendarView;
+        displayedMonth = calendarView === "month" ? firstDayOfMonth(displayedMonth) : atNoon(displayedMonth);
+        selectedEvent = null;
+        renderCalendar();
+    }));
 }
 
 function renderEventForm(panel) {
@@ -114,6 +130,18 @@ function renderEventForm(panel) {
 
     panel.hidden = false;
     const event = selectedEvent;
+    if (isReadOnlyCalendar()) {
+        panel.innerHTML = `
+            <div class="calendar-event-detail">
+                <div class="form-heading"><div><p class="eyebrow">Rendez-vous</p><h2>${escapeHtml(event.title)}</h2></div><button type="button" class="secondary-button" id="closeCalendarDetail">Fermer</button></div>
+                <dl><dt>Date</dt><dd>${escapeHtml(formatActivityDate(event.date, event.startTime))}${event.endTime ? ` — ${escapeHtml(event.endTime)}` : ""}</dd>${event.clientName ? `<dt>Client</dt><dd>${escapeHtml(event.clientName)}</dd>` : ""}${event.location ? `<dt>Lieu</dt><dd>${escapeHtml(event.location)}</dd>` : ""}${event.notes ? `<dt>Notes</dt><dd>${escapeHtml(event.notes)}</dd>` : ""}</dl>
+            </div>`;
+        panel.querySelector("#closeCalendarDetail").addEventListener("click", () => {
+            selectedEvent = null;
+            renderCalendar();
+        });
+        return;
+    }
     const isEditing = Boolean(event.id);
     const clients = getSearchableClients().sort((first, second) => first.name.localeCompare(second.name, "fr"));
     panel.innerHTML = `
@@ -226,6 +254,7 @@ function renderEventForm(panel) {
 }
 
 function renderCalendarGrid(panel) {
+    if (calendarView !== "month") return renderCalendarList(panel);
     panel.hidden = false;
     const days = getCalendarDays(displayedMonth);
     const eventsByDate = new Map();
@@ -245,23 +274,28 @@ function renderCalendarGrid(panel) {
         const isCurrentMonth = day.getMonth() === displayedMonth.getMonth();
         const cell = document.createElement("article");
         cell.className = `calendar-day${isCurrentMonth ? "" : " outside"}${date === today ? " today" : ""}`;
-        cell.tabIndex = 0;
-        cell.setAttribute("role", "button");
-        cell.setAttribute("aria-label", `Ajouter un rendez-vous le ${formatShortDate(day)}`);
+        const readOnly = isReadOnlyCalendar();
+        if (!readOnly) {
+            cell.tabIndex = 0;
+            cell.setAttribute("role", "button");
+            cell.setAttribute("aria-label", `Ajouter un rendez-vous le ${formatShortDate(day)}`);
+        }
         cell.innerHTML = `<span class="calendar-day-number" aria-hidden="true">${day.getDate()}</span><div class="calendar-event-list"></div>`;
         const openNewEvent = () => {
             selectedEvent = newEventForDate(date);
             renderCalendar({ date: day });
         };
-        cell.addEventListener("click", eventClick => {
-            if (eventClick.target.closest(".calendar-event")) return;
-            openNewEvent();
-        });
-        cell.addEventListener("keydown", eventKey => {
-            if (eventKey.target !== cell || !["Enter", " "].includes(eventKey.key)) return;
-            eventKey.preventDefault();
-            openNewEvent();
-        });
+        if (!readOnly) {
+            cell.addEventListener("click", eventClick => {
+                if (eventClick.target.closest(".calendar-event")) return;
+                openNewEvent();
+            });
+            cell.addEventListener("keydown", eventKey => {
+                if (eventKey.target !== cell || !["Enter", " "].includes(eventKey.key)) return;
+                eventKey.preventDefault();
+                openNewEvent();
+            });
+        }
 
         const eventList = cell.querySelector(".calendar-event-list");
         (eventsByDate.get(date) || []).forEach(event => {
@@ -280,12 +314,76 @@ function renderCalendarGrid(panel) {
     });
 }
 
-async function loadEvents(month) {
-    const start = toDateString(startOfCalendar(month));
-    const end = toDateString(endOfCalendar(month));
-    return request(`/api/calendar/events?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`)
+function renderCalendarList(panel) {
+    panel.hidden = false;
+    const { start, end } = getDisplayedRange();
+    const eventDates = new Map();
+    events.forEach(event => {
+        if (!eventDates.has(event.date)) eventDates.set(event.date, []);
+        eventDates.get(event.date).push(event);
+    });
+    const days = [];
+    for (const day = new Date(start); day <= end; day.setDate(day.getDate() + 1)) days.push(new Date(day));
+    panel.innerHTML = `<div class="calendar-list-view">${days.map(day => {
+        const date = toDateString(day);
+        const dayEvents = eventDates.get(date) || [];
+        return `<section class="calendar-list-day"><h3>${escapeHtml(new Intl.DateTimeFormat("fr-FR", { weekday: "long", day: "numeric", month: "long" }).format(day))}</h3>${dayEvents.length ? `<div class="calendar-list-events">${dayEvents.map(event => `<button type="button" class="calendar-event color-${escapeHtml(event.color)}" data-calendar-event="${escapeHtml(event.id)}"><span>${escapeHtml(event.startTime || "Toute la journée")}</span><strong>${escapeHtml(event.title)}</strong>${event.clientName ? `<small>${escapeHtml(event.clientName)}</small>` : ""}</button>`).join("")}</div>` : '<p class="muted">Aucun rendez-vous.</p>'}</section>`;
+    }).join("")}</div>`;
+    panel.querySelectorAll("[data-calendar-event]").forEach(button => button.addEventListener("click", () => {
+        selectedEvent = events.find(event => String(event.id) === button.dataset.calendarEvent) || null;
+        renderCalendar();
+    }));
+}
+
+async function loadEvents() {
+    const { start, end } = getDisplayedRange();
+    const startDate = toDateString(start);
+    const endDate = toDateString(end);
+    return request(`/api/calendar/events?start=${encodeURIComponent(startDate)}&end=${encodeURIComponent(endDate)}`)
         .then(result => result.ok ? { ok: true, events: result.data.events || [] } : { ok: false, message: result.message });
 }
+
+function isReadOnlyCalendar() {
+    return document.body.dataset.role === "technician";
+}
+
+function getDisplayedRange() {
+    if (calendarView === "day") {
+        const day = atNoon(displayedMonth);
+        return { start: day, end: day };
+    }
+    if (calendarView === "week") {
+        const start = startOfWeek(displayedMonth);
+        const end = new Date(start);
+        end.setDate(end.getDate() + 6);
+        return { start, end };
+    }
+    return { start: startOfCalendar(displayedMonth), end: endOfCalendar(displayedMonth) };
+}
+
+function getPeriodLabel() {
+    if (calendarView === "month") return capitalize(new Intl.DateTimeFormat("fr-FR", { month: "long", year: "numeric" }).format(displayedMonth));
+    if (calendarView === "day") return capitalize(new Intl.DateTimeFormat("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" }).format(displayedMonth));
+    const { start, end } = getDisplayedRange();
+    return `Semaine du ${new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "long" }).format(start)} au ${new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "long", year: "numeric" }).format(end)}`;
+}
+
+function getPreviousLabel() { return calendarView === "month" ? "Mois précédent" : calendarView === "week" ? "Semaine précédente" : "Jour précédent"; }
+function getNextLabel() { return calendarView === "month" ? "Mois suivant" : calendarView === "week" ? "Semaine suivante" : "Jour suivant"; }
+function shiftDisplayedDate(amount) {
+    if (calendarView === "month") return addMonths(displayedMonth, amount);
+    const next = atNoon(displayedMonth);
+    next.setDate(next.getDate() + (calendarView === "week" ? amount * 7 : amount));
+    return next;
+}
+
+function startOfWeek(date) {
+    const start = atNoon(date);
+    start.setDate(start.getDate() - ((start.getDay() + 6) % 7));
+    return start;
+}
+
+function atNoon(date) { return new Date(date.getFullYear(), date.getMonth(), date.getDate(), 12); }
 
 function newEventForDate(date) {
     return { title: "", clientName: "", location: "", date, startTime: "", endTime: "", color: "blue", notes: "" };

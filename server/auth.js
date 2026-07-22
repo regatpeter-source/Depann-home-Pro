@@ -1,6 +1,6 @@
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
-import { createUser, findUserByUsername } from "./database.js";
+import { createUser, findUserById, findUserByUsername, getPool } from "./database.js";
 
 const COOKIE_NAME = "depann_home_session";
 const USERNAME_PATTERN = /^[a-z0-9._-]{3,32}$/;
@@ -27,7 +27,7 @@ export function registerAuthRoutes(app) {
         const username = normalizeUsername(request.body?.username);
         const password = String(request.body?.password || "");
         const user = username ? await findUserByUsername(username) : null;
-        const passwordMatches = user && await bcrypt.compare(password, user.password_hash);
+        const passwordMatches = user?.is_active && await bcrypt.compare(password, user.password_hash);
 
         if (!passwordMatches) {
             return response.status(401).json({ message: "Identifiant ou mot de passe incorrect." });
@@ -49,7 +49,7 @@ export function registerAuthRoutes(app) {
 
         try {
             const passwordHash = await bcrypt.hash(password, 12);
-            const user = await createUser({ username, passwordHash });
+            const user = await createUser({ username, passwordHash, role: "admin" });
             setSessionCookie(response, user);
             return response.status(201).json({ user: publicUser(user) });
         } catch (error) {
@@ -64,18 +64,66 @@ export function registerAuthRoutes(app) {
         response.clearCookie(COOKIE_NAME, cookieOptions());
         response.status(204).end();
     });
+
+    app.get("/api/auth/technicians", requireAccountAdministrator, asyncHandler(async (request, response) => {
+        const { rows } = await getPool().query(`
+            SELECT id, username, full_name AS "fullName", phone, is_active AS "isActive", created_at AS "createdAt"
+            FROM depannhome_users
+            WHERE account_owner_id = $1 AND id <> $1
+            ORDER BY LOWER(full_name), username
+        `, [getAccountOwnerId(request)]);
+        response.json({ technicians: rows });
+    }));
+
+    app.post("/api/auth/technicians", requireAccountAdministrator, asyncHandler(async (request, response) => {
+        const username = normalizeUsername(request.body?.username);
+        const password = String(request.body?.password || "");
+        const fullName = cleanText(request.body?.fullName, 100);
+        const phone = cleanText(request.body?.phone, 30);
+        const validationError = validateCredentials(username, password) || (!fullName ? "Le nom du technicien est obligatoire." : "") || (!phone ? "Le téléphone du technicien est obligatoire." : "");
+        if (validationError) return response.status(400).json({ message: validationError });
+        try {
+            const user = await createUser({ username, passwordHash: await bcrypt.hash(password, 12), role: "technician", accountOwnerId: getAccountOwnerId(request), fullName, phone });
+            response.status(201).json({ technician: publicUser(user) });
+        } catch (error) {
+            if (error.code === "23505") return response.status(409).json({ message: "Ce nom d’utilisateur est déjà utilisé." });
+            throw error;
+        }
+    }));
+
+    app.patch("/api/auth/technicians/:technicianId", requireAccountAdministrator, asyncHandler(async (request, response) => {
+        const technicianId = positiveId(request.params.technicianId);
+        if (!technicianId) return response.status(400).json({ message: "Technicien invalide." });
+        const isActive = Boolean(request.body?.isActive);
+        const result = await getPool().query(`
+            UPDATE depannhome_users SET is_active = $3, updated_at = NOW()
+            WHERE id = $1 AND account_owner_id = $2 AND id <> $2 AND role = 'technician'
+        `, [technicianId, getAccountOwnerId(request), isActive]);
+        if (!result.rowCount) return response.status(404).json({ message: "Technicien introuvable." });
+        response.status(204).end();
+    }));
 }
 
 export function validateAuthenticationConfiguration() {
     getSessionSecret();
 }
 
-export function authenticateRequest(request, response, next) {
+export async function authenticateRequest(request, response, next) {
     const token = request.cookies?.[COOKIE_NAME];
     if (!token) return next();
 
     try {
-        request.user = jwt.verify(token, getSessionSecret());
+        const session = jwt.verify(token, getSessionSecret());
+        const user = await findUserById(session.sub);
+        if (!user?.is_active) throw new Error("Session inactive");
+        request.user = {
+            sub: String(user.id),
+            username: user.username,
+            role: user.role,
+            accountOwnerId: String(user.account_owner_id || user.id),
+            fullName: user.full_name || "",
+            phone: user.phone || ""
+        };
     } catch {
         response.clearCookie(COOKIE_NAME, cookieOptions());
     }
@@ -88,6 +136,17 @@ export function requireAuthentication(request, response, next) {
         return response.status(401).json({ message: "Connexion requise." });
     }
 
+    return next();
+}
+
+export function getAccountOwnerId(request) {
+    return String(request.user?.accountOwnerId || request.user?.sub || "");
+}
+
+function requireAccountAdministrator(request, response, next) {
+    if (!request.user || request.user.role !== "admin" || String(request.user.accountOwnerId || request.user.sub) !== String(request.user.sub)) {
+        return response.status(403).json({ message: "Accès réservé à l’administrateur du compte." });
+    }
     return next();
 }
 
@@ -112,7 +171,7 @@ export async function createInitialAdministrator() {
 
 function setSessionCookie(response, user) {
     const token = jwt.sign(
-        { sub: String(user.id), username: user.username, role: user.role },
+        { sub: String(user.id), username: user.username, role: user.role, accountOwnerId: String(user.account_owner_id || user.id), fullName: user.full_name || "", phone: user.phone || "" },
         getSessionSecret(),
         { expiresIn: "12h" }
     );
@@ -133,11 +192,29 @@ function cookieOptions() {
 }
 
 function publicUser(user) {
-    return { id: String(user.id), username: user.username, role: user.role };
+    const id = user.id || user.sub;
+    return {
+        id: String(id),
+        username: user.username,
+        role: user.role,
+        accountOwnerId: String(user.account_owner_id || user.accountOwnerId || id),
+        fullName: user.full_name || user.fullName || "",
+        phone: user.phone || "",
+        isActive: user.is_active !== false
+    };
 }
 
 function normalizeUsername(value) {
     return String(value || "").trim().toLowerCase();
+}
+
+function cleanText(value, maximumLength) {
+    return String(value || "").replace(/\s+/g, " ").trim().slice(0, maximumLength);
+}
+
+function positiveId(value) {
+    const id = Number(value);
+    return Number.isSafeInteger(id) && id > 0 ? id : 0;
 }
 
 function validateCredentials(username, password) {

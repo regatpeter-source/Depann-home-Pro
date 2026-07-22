@@ -1,5 +1,6 @@
 import multer from "multer";
 import { getPool } from "./database.js";
+import { getAccountOwnerId } from "./auth.js";
 
 const MAX_LOGO_SIZE = 2 * 1024 * 1024;
 const DOCUMENT_TYPES = new Set(["quote", "invoice"]);
@@ -84,6 +85,7 @@ export async function initializeBilling() {
 export function registerBillingRoutes(app, requireAuthentication) {
     app.get("/api/billing", requireAuthentication, asyncHandler(async (request, response) => {
         const database = getPool();
+        const accountOwnerId = getAccountOwnerId(request);
         const [profileResult, templatesResult, documentsResult] = await Promise.all([
             database.query(`
                 SELECT company_name AS "companyName", legal_form AS "legalForm", address, postal_code AS "postalCode", city,
@@ -91,22 +93,22 @@ export function registerBillingRoutes(app, requireAuthentication) {
                     payment_terms AS "paymentTerms", footer_note AS "footerNote", default_quote AS "defaultQuote",
                     (logo_data IS NOT NULL) AS "hasLogo"
                 FROM depannhome_billing_profiles WHERE owner_id = $1
-            `, [request.user.sub]),
+            `, [accountOwnerId]),
             database.query(`
                 SELECT id, label, description, unit, unit_price::float AS "unitPrice", vat_rate::float AS "vatRate"
                 FROM depannhome_billing_templates WHERE owner_id = $1 ORDER BY LOWER(label)
-            `, [request.user.sub]),
+            `, [accountOwnerId]),
             database.query(`
                 SELECT id, document_type AS "documentType", document_number AS "documentNumber", customer_type AS "customerType",
                     customer_name AS "customerName", customer_address AS "customerAddress", TO_CHAR(issue_date, 'YYYY-MM-DD') AS "issueDate",
                     TO_CHAR(due_date, 'YYYY-MM-DD') AS "dueDate", status, lines, notes, updated_at AS "updatedAt"
                 FROM depannhome_billing_documents WHERE owner_id = $1 ORDER BY issue_date DESC, id DESC
-            `, [request.user.sub])
+            `, [accountOwnerId])
         ]);
         response.json({ profile: profileResult.rows[0] || emptyProfile(), templates: templatesResult.rows, documents: documentsResult.rows });
     }));
 
-    app.put("/api/billing/profile", requireAuthentication, upload.single("logo"), asyncHandler(async (request, response) => {
+    app.put("/api/billing/profile", requireAuthentication, requireBillingAdministration, upload.single("logo"), asyncHandler(async (request, response) => {
         const profile = sanitizeProfile(request.body);
         const removeLogo = String(request.body?.removeLogo || "") === "true";
         const logo = request.file;
@@ -123,7 +125,7 @@ export function registerBillingRoutes(app, requireAuthentication) {
                 logo_data = CASE WHEN $15 THEN NULL WHEN $16 THEN EXCLUDED.logo_data ELSE depannhome_billing_profiles.logo_data END,
                 logo_mime_type = CASE WHEN $15 THEN '' WHEN $16 THEN EXCLUDED.logo_mime_type ELSE depannhome_billing_profiles.logo_mime_type END,
                 updated_at = NOW()
-        `, [request.user.sub, profile.companyName, profile.legalForm, profile.address, profile.postalCode, profile.city, profile.phone,
+        `, [getAccountOwnerId(request), profile.companyName, profile.legalForm, profile.address, profile.postalCode, profile.city, profile.phone,
             profile.email, profile.registrationNumber, profile.taxNumber, profile.paymentTerms, profile.footerNote,
             logo?.buffer || null, logo?.mimetype || "", removeLogo, Boolean(logo)]);
         response.status(204).end();
@@ -131,7 +133,7 @@ export function registerBillingRoutes(app, requireAuthentication) {
 
     app.get("/api/billing/logo", requireAuthentication, asyncHandler(async (request, response) => {
         const { rows } = await getPool().query(
-            "SELECT logo_data, logo_mime_type FROM depannhome_billing_profiles WHERE owner_id = $1", [request.user.sub]
+            "SELECT logo_data, logo_mime_type FROM depannhome_billing_profiles WHERE owner_id = $1", [getAccountOwnerId(request)]
         );
         if (!rows[0]?.logo_data) return response.status(404).end();
         response.set({ "Content-Type": rows[0].logo_mime_type, "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" });
@@ -148,44 +150,44 @@ export function registerBillingRoutes(app, requireAuthentication) {
                     customer_name AS "customerName", customer_address AS "customerAddress", TO_CHAR(issue_date, 'YYYY-MM-DD') AS "issueDate",
                     TO_CHAR(due_date, 'YYYY-MM-DD') AS "dueDate", status, lines, notes
                 FROM depannhome_billing_documents WHERE id = $1 AND owner_id = $2
-            `, [id, request.user.sub]),
+            `, [id, getAccountOwnerId(request)]),
             database.query(`
                 SELECT company_name AS "companyName", legal_form AS "legalForm", address, postal_code AS "postalCode", city, phone, email,
                     registration_number AS "registrationNumber", tax_number AS "taxNumber", payment_terms AS "paymentTerms",
                     footer_note AS "footerNote", (logo_data IS NOT NULL) AS "hasLogo"
                 FROM depannhome_billing_profiles WHERE owner_id = $1
-            `, [request.user.sub])
+            `, [getAccountOwnerId(request)])
         ]);
         if (!documentResult.rows[0]) return response.status(404).json({ message: "Document introuvable." });
         response.json({ document: documentResult.rows[0], profile: profileResult.rows[0] || emptyProfile() });
     }));
 
-    app.put("/api/billing/default-quote", requireAuthentication, asyncHandler(async (request, response) => {
+    app.put("/api/billing/default-quote", requireAuthentication, requireBillingAdministration, asyncHandler(async (request, response) => {
         const quote = sanitizeQuoteTemplate(request.body);
         if (!quote.ok) return response.status(400).json({ message: quote.message });
         await getPool().query(`
             INSERT INTO depannhome_billing_profiles (owner_id, default_quote)
             VALUES ($1, $2::jsonb)
             ON CONFLICT (owner_id) DO UPDATE SET default_quote = EXCLUDED.default_quote, updated_at = NOW()
-        `, [request.user.sub, JSON.stringify(quote.template)]);
+        `, [getAccountOwnerId(request), JSON.stringify(quote.template)]);
         response.status(204).end();
     }));
 
-    app.post("/api/billing/templates", requireAuthentication, asyncHandler(async (request, response) => {
+    app.post("/api/billing/templates", requireAuthentication, requireBillingAdministration, asyncHandler(async (request, response) => {
         const template = sanitizeTemplate(request.body);
         if (!template.ok) return response.status(400).json({ message: template.message });
         const { rows } = await getPool().query(`
             INSERT INTO depannhome_billing_templates (owner_id, label, description, unit, unit_price, vat_rate)
             VALUES ($1,$2,$3,$4,$5,$6)
             RETURNING id, label, description, unit, unit_price::float AS "unitPrice", vat_rate::float AS "vatRate"
-        `, [request.user.sub, template.label, template.description, template.unit, template.unitPrice, template.vatRate]);
+        `, [getAccountOwnerId(request), template.label, template.description, template.unit, template.unitPrice, template.vatRate]);
         response.status(201).json({ template: rows[0] });
     }));
 
-    app.delete("/api/billing/templates/:templateId", requireAuthentication, asyncHandler(async (request, response) => {
+    app.delete("/api/billing/templates/:templateId", requireAuthentication, requireBillingAdministration, asyncHandler(async (request, response) => {
         const id = positiveId(request.params.templateId);
         if (!id) return response.status(400).json({ message: "Ligne modèle invalide." });
-        const result = await getPool().query("DELETE FROM depannhome_billing_templates WHERE id = $1 AND owner_id = $2", [id, request.user.sub]);
+        const result = await getPool().query("DELETE FROM depannhome_billing_templates WHERE id = $1 AND owner_id = $2", [id, getAccountOwnerId(request)]);
         if (!result.rowCount) return response.status(404).json({ message: "Ligne modèle introuvable." });
         response.status(204).end();
     }));
@@ -199,7 +201,7 @@ export function registerBillingRoutes(app, requireAuthentication) {
                     (owner_id, document_type, document_number, customer_type, customer_name, customer_address, issue_date, due_date, status, lines, notes)
                 VALUES ($1,$2,$3,$4,$5,$6,$7::date,$8::date,$9,$10::jsonb,$11)
                 RETURNING id
-            `, [request.user.sub, document.documentType, document.documentNumber, document.customerType, document.customerName,
+            `, [getAccountOwnerId(request), document.documentType, document.documentNumber, document.customerType, document.customerName,
                 document.customerAddress, document.issueDate, document.dueDate || null, document.status, JSON.stringify(document.lines), document.notes]);
             response.status(201).json({ id: rows[0].id });
         } catch (error) {
@@ -208,7 +210,7 @@ export function registerBillingRoutes(app, requireAuthentication) {
         }
     }));
 
-    app.put("/api/billing/documents/:documentId", requireAuthentication, asyncHandler(async (request, response) => {
+    app.put("/api/billing/documents/:documentId", requireAuthentication, requireBillingAdministration, asyncHandler(async (request, response) => {
         const id = positiveId(request.params.documentId);
         const document = sanitizeDocument(request.body);
         if (!id) return response.status(400).json({ message: "Document invalide." });
@@ -218,7 +220,7 @@ export function registerBillingRoutes(app, requireAuthentication) {
                 UPDATE depannhome_billing_documents SET document_type=$3, document_number=$4, customer_type=$5, customer_name=$6,
                     customer_address=$7, issue_date=$8::date, due_date=$9::date, status=$10, lines=$11::jsonb, notes=$12, updated_at=NOW()
                 WHERE id=$1 AND owner_id=$2
-            `, [id, request.user.sub, document.documentType, document.documentNumber, document.customerType, document.customerName,
+            `, [id, getAccountOwnerId(request), document.documentType, document.documentNumber, document.customerType, document.customerName,
                 document.customerAddress, document.issueDate, document.dueDate || null, document.status, JSON.stringify(document.lines), document.notes]);
             if (!result.rowCount) return response.status(404).json({ message: "Document introuvable." });
             response.status(204).end();
@@ -228,13 +230,20 @@ export function registerBillingRoutes(app, requireAuthentication) {
         }
     }));
 
-    app.delete("/api/billing/documents/:documentId", requireAuthentication, asyncHandler(async (request, response) => {
+    app.delete("/api/billing/documents/:documentId", requireAuthentication, requireBillingAdministration, asyncHandler(async (request, response) => {
         const id = positiveId(request.params.documentId);
         if (!id) return response.status(400).json({ message: "Document invalide." });
-        const result = await getPool().query("DELETE FROM depannhome_billing_documents WHERE id = $1 AND owner_id = $2", [id, request.user.sub]);
+        const result = await getPool().query("DELETE FROM depannhome_billing_documents WHERE id = $1 AND owner_id = $2", [id, getAccountOwnerId(request)]);
         if (!result.rowCount) return response.status(404).json({ message: "Document introuvable." });
         response.status(204).end();
     }));
+}
+
+function requireBillingAdministration(request, response, next) {
+    if (request.user?.role === "technician") {
+        return response.status(403).json({ message: "Les techniciens peuvent créer des devis et factures, sans modifier les documents ou paramètres existants." });
+    }
+    return next();
 }
 
 export function billingUploadErrorHandler(error, request, response, next) {

@@ -1,8 +1,8 @@
-import { ROUTES, STORAGE_KEYS, APP_VERSION, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=72";
-import { createCalendarEventForClient, renderCalendar } from "./calendar.js?v=72";
-import { createBillingDocumentForClient, renderBilling } from "./billing.js?v=72";
-import { refreshMessageAlert, renderMessages } from "./messages.js?v=72";
-import { getSearchableClients, renderClients } from "./clients.js?v=72";
+import { ROUTES, STORAGE_KEYS, APP_VERSION, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=76";
+import { createCalendarEventForClient, renderCalendar } from "./calendar.js?v=76";
+import { createBillingDocumentForClient, renderBilling } from "./billing.js?v=76";
+import { refreshMessageAlert, renderMessages } from "./messages.js?v=76";
+import { getSearchableClients, renderClients } from "./clients.js?v=76";
 import { openLibrarySection, renderLibrary, searchPersonalLibrary } from "./library.js?v=59";
 import { renderPhotoRecognition } from "./photo-recognition.js?v=59";
 import { getSearchResults } from "./search.js?v=63";
@@ -37,7 +37,8 @@ export function initializeNavigation(loadedDatabase) {
     document.addEventListener("visibilitychange", () => {
         if (document.visibilityState === "visible") refreshMessageAlert();
     });
-    renderBrands();
+    if (document.body.classList.contains("mobile-device") && document.body.dataset.role === "technician") renderCalendar();
+    else renderBrands();
 }
 
 function bindEvents() {
@@ -770,6 +771,76 @@ function renderSettings() {
     card.appendChild(section);
 
     container.appendChild(card);
+    if (document.body.dataset.role === "admin") renderTeamManagement(container);
+}
+
+async function renderTeamManagement(container) {
+    const card = document.createElement("article");
+    card.className = "brand-card full-card procedure-card team-management";
+    card.innerHTML = "<h2>Équipe</h2><p class=\"muted\">Créez les accès des techniciens de votre entreprise. Ils se connectent avec leur identifiant et mot de passe, puis partagent vos clients, planning et documents.</p>";
+    const form = document.createElement("form");
+    form.className = "settings-form team-form";
+    [["fullName", "Nom du technicien", "text", "Ex. Léa Martin"], ["phone", "Téléphone", "tel", "Ex. 06 12 34 56 78"], ["username", "Identifiant", "text", "minuscules, chiffres, . _ -"], ["password", "Mot de passe initial", "password", "12 caractères minimum"]].forEach(([name, label, type, placeholder]) => {
+        const field = document.createElement("label");
+        field.textContent = label;
+        const input = document.createElement("input");
+        input.name = name;
+        input.type = type;
+        input.required = true;
+        input.placeholder = placeholder;
+        input.autocomplete = "off";
+        field.appendChild(input);
+        form.appendChild(field);
+    });
+    const submit = createButton("Créer le compte technicien", "secondary-button", () => {});
+    submit.type = "submit";
+    form.appendChild(submit);
+    const feedback = document.createElement("p");
+    feedback.className = "muted";
+    form.appendChild(feedback);
+    card.appendChild(form);
+    const list = document.createElement("div");
+    list.className = "team-list";
+    card.appendChild(list);
+    container.appendChild(card);
+    const load = async () => {
+        list.textContent = "Chargement de l’équipe…";
+        try {
+            const response = await fetch("/api/auth/technicians", { credentials: "same-origin" });
+            const payload = await response.json();
+            if (!response.ok) throw new Error(payload.message || "Impossible de charger l’équipe.");
+            list.innerHTML = "";
+            if (!payload.technicians?.length) return void (list.textContent = "Aucun technicien créé pour le moment.");
+            payload.technicians.forEach(technician => {
+                const item = document.createElement("div");
+                item.className = "team-member";
+                item.innerHTML = `<strong>${escapeHtml(technician.fullName || technician.username)}</strong><span>${escapeHtml(technician.phone || "Téléphone non renseigné")} · ${escapeHtml(technician.username)}</span>`;
+                const toggle = createButton(technician.isActive ? "Désactiver" : "Réactiver", "secondary-button", async () => {
+                    toggle.disabled = true;
+                    const response = await fetch(`/api/auth/technicians/${encodeURIComponent(technician.id)}`, { method: "PATCH", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ isActive: !technician.isActive }) });
+                    if (!response.ok) feedback.textContent = "La mise à jour du technicien a échoué.";
+                    await load();
+                });
+                item.appendChild(toggle);
+                list.appendChild(item);
+            });
+        } catch (error) { list.textContent = error.message; }
+    };
+    form.addEventListener("submit", async event => {
+        event.preventDefault();
+        submit.disabled = true;
+        feedback.textContent = "";
+        try {
+            const response = await fetch("/api/auth/technicians", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify(Object.fromEntries(new FormData(form))) });
+            const payload = await response.json();
+            if (!response.ok) throw new Error(payload.message || "Création impossible.");
+            form.reset();
+            feedback.textContent = "Compte technicien créé.";
+            await load();
+        } catch (error) { feedback.textContent = error.message; }
+        finally { submit.disabled = false; }
+    });
+    await load();
 }
 
 function getCurrentRef() {

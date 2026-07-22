@@ -1,6 +1,7 @@
 import multer from "multer";
 import path from "node:path";
 import { getPool } from "./database.js";
+import { getAccountOwnerId } from "./auth.js";
 
 const MAX_FILE_SIZE = 20 * 1024 * 1024;
 const MAX_FILES_PER_UPLOAD = 5;
@@ -25,6 +26,7 @@ export async function initializeLibrary() {
             id BIGSERIAL PRIMARY KEY,
             name VARCHAR(80) NOT NULL,
             slug VARCHAR(100) NOT NULL,
+            owner_id BIGINT REFERENCES depannhome_users(id) ON DELETE CASCADE,
             created_by BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE RESTRICT,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
@@ -32,20 +34,15 @@ export async function initializeLibrary() {
 
     await database.query(`
         ALTER TABLE depannhome_library_sections
-        DROP CONSTRAINT IF EXISTS depannhome_library_sections_slug_key
+        DROP CONSTRAINT IF EXISTS depannhome_library_sections_slug_key,
+        DROP CONSTRAINT IF EXISTS depannhome_library_sections_owner_slug_unique
     `);
+    await database.query("ALTER TABLE depannhome_library_sections ADD COLUMN IF NOT EXISTS owner_id BIGINT REFERENCES depannhome_users(id) ON DELETE CASCADE");
+    await database.query("UPDATE depannhome_library_sections SET owner_id = created_by WHERE owner_id IS NULL");
+    await database.query("ALTER TABLE depannhome_library_sections ALTER COLUMN owner_id SET NOT NULL");
     await database.query(`
-        DO $$
-        BEGIN
-            IF NOT EXISTS (
-                SELECT 1 FROM pg_constraint
-                WHERE conname = 'depannhome_library_sections_owner_slug_unique'
-            ) THEN
-                ALTER TABLE depannhome_library_sections
-                ADD CONSTRAINT depannhome_library_sections_owner_slug_unique
-                UNIQUE (created_by, slug);
-            END IF;
-        END $$
+        ALTER TABLE depannhome_library_sections
+        ADD CONSTRAINT depannhome_library_sections_owner_slug_unique UNIQUE (owner_id, slug)
     `);
 
     await database.query(`
@@ -58,10 +55,19 @@ export async function initializeLibrary() {
             mime_type VARCHAR(150) NOT NULL,
             file_size INTEGER NOT NULL CHECK (file_size > 0 AND file_size <= ${MAX_FILE_SIZE}),
             file_data BYTEA NOT NULL,
+            owner_id BIGINT REFERENCES depannhome_users(id) ON DELETE CASCADE,
             created_by BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE RESTRICT,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
     `);
+    await database.query("ALTER TABLE depannhome_library_documents ADD COLUMN IF NOT EXISTS owner_id BIGINT REFERENCES depannhome_users(id) ON DELETE CASCADE");
+    await database.query(`
+        UPDATE depannhome_library_documents document
+        SET owner_id = section.owner_id
+        FROM depannhome_library_sections section
+        WHERE document.section_id = section.id AND document.owner_id IS NULL
+    `);
+    await database.query("ALTER TABLE depannhome_library_documents ALTER COLUMN owner_id SET NOT NULL");
 
     await database.query(`
         CREATE INDEX IF NOT EXISTS depannhome_library_documents_section_idx
@@ -80,11 +86,11 @@ export function registerLibraryRoutes(app, requireAuthentication) {
                 COUNT(document.id)::int AS "documentCount"
             FROM depannhome_library_sections section
             LEFT JOIN depannhome_library_documents document
-                ON document.section_id = section.id AND document.created_by = $1
-            WHERE section.created_by = $1
+                ON document.section_id = section.id AND document.owner_id = $1
+            WHERE section.owner_id = $1
             GROUP BY section.id
             ORDER BY LOWER(section.name)
-        `, [request.user.sub]);
+        `, [getAccountOwnerId(request)]);
         response.json({ sections: rows });
     }));
 
@@ -95,10 +101,10 @@ export function registerLibraryRoutes(app, requireAuthentication) {
         const slug = slugify(name);
         try {
             const { rows } = await getPool().query(`
-                INSERT INTO depannhome_library_sections (name, slug, created_by)
-                VALUES ($1, $2, $3)
+                INSERT INTO depannhome_library_sections (name, slug, owner_id, created_by)
+                VALUES ($1, $2, $3, $4)
                 RETURNING id, name, slug, created_at AS "createdAt"
-            `, [name, slug, request.user.sub]);
+            `, [name, slug, getAccountOwnerId(request), request.user.sub]);
             return response.status(201).json({ section: rows[0] });
         } catch (error) {
             if (error.code === "23505") {
@@ -119,9 +125,9 @@ export function registerLibraryRoutes(app, requireAuthentication) {
             database.query(`
                 SELECT id, name
                 FROM depannhome_library_sections
-                WHERE created_by = $1
+                WHERE owner_id = $1
                 ORDER BY LOWER(name)
-            `, [request.user.sub]),
+            `, [getAccountOwnerId(request)]),
             database.query(`
                 SELECT
                     document.id,
@@ -133,10 +139,10 @@ export function registerLibraryRoutes(app, requireAuthentication) {
                     section.name AS "sectionName"
                 FROM depannhome_library_documents document
                 JOIN depannhome_library_sections section ON section.id = document.section_id
-                WHERE document.created_by = $1 AND section.created_by = $1
+                WHERE document.owner_id = $1 AND section.owner_id = $1
                 ORDER BY document.created_at DESC
                 LIMIT 500
-            `, [request.user.sub])
+            `, [getAccountOwnerId(request)])
         ]);
 
         const sections = sectionsResult.rows.filter(section => matchesSearch(`${section.name} dossier section`, query));
@@ -165,10 +171,10 @@ export function registerLibraryRoutes(app, requireAuthentication) {
             FROM depannhome_library_documents document
             JOIN depannhome_library_sections section ON section.id = document.section_id
             WHERE document.section_id = $1
-              AND section.created_by = $2
-              AND document.created_by = $2
+              AND section.owner_id = $2
+              AND document.owner_id = $2
             ORDER BY document.created_at DESC
-        `, [sectionId, request.user.sub]);
+        `, [sectionId, getAccountOwnerId(request)]);
         response.json({ documents: rows });
     }));
 
@@ -184,8 +190,8 @@ export function registerLibraryRoutes(app, requireAuthentication) {
 
         const database = getPool();
         const section = await database.query(
-            "SELECT id FROM depannhome_library_sections WHERE id = $1 AND created_by = $2",
-            [sectionId, request.user.sub]
+            "SELECT id FROM depannhome_library_sections WHERE id = $1 AND owner_id = $2",
+            [sectionId, getAccountOwnerId(request)]
         );
         if (!section.rowCount) return response.status(404).json({ message: "Section introuvable." });
 
@@ -195,8 +201,8 @@ export function registerLibraryRoutes(app, requireAuthentication) {
             for (const file of files) {
                 await client.query(`
                     INSERT INTO depannhome_library_documents
-                        (section_id, title, description, original_filename, mime_type, file_size, file_data, created_by)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                        (section_id, title, description, original_filename, mime_type, file_size, file_data, owner_id, created_by)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
                 `, [
                     sectionId,
                     files.length === 1 ? title : `${title} — ${safeFilename(file.originalname)}`,
@@ -205,6 +211,7 @@ export function registerLibraryRoutes(app, requireAuthentication) {
                     safeMimeType(file.mimetype),
                     file.size,
                     file.buffer,
+                    getAccountOwnerId(request),
                     request.user.sub
                 ]);
             }
@@ -228,9 +235,9 @@ export function registerLibraryRoutes(app, requireAuthentication) {
                         FROM depannhome_library_documents document
                         JOIN depannhome_library_sections section ON section.id = document.section_id
                         WHERE document.id = $1
-                            AND document.created_by = $2
-                            AND section.created_by = $2
-                `, [documentId, request.user.sub]);
+                            AND document.owner_id = $2
+                            AND section.owner_id = $2
+                `, [documentId, getAccountOwnerId(request)]);
         if (!rows[0]) return response.status(404).json({ message: "Document introuvable." });
 
         const document = rows[0];
@@ -251,11 +258,11 @@ export function registerLibraryRoutes(app, requireAuthentication) {
         const { rowCount } = await getPool().query(`
             DELETE FROM depannhome_library_documents
             WHERE id = $1
-              AND created_by = $2
+              AND owner_id = $2
               AND section_id IN (
-                  SELECT id FROM depannhome_library_sections WHERE created_by = $2
+                  SELECT id FROM depannhome_library_sections WHERE owner_id = $2
               )
-        `, [documentId, request.user.sub]);
+        `, [documentId, getAccountOwnerId(request)]);
         if (!rowCount) return response.status(404).json({ message: "Document introuvable." });
         response.status(204).end();
     }));

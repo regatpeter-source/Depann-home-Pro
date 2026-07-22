@@ -57,7 +57,9 @@ Les notices officielles peuvent être référencées dans les champs `documents`
 
 ## Données clients
 
-Les dossiers clients et leurs pièces jointes sont enregistrés localement pour fonctionner hors ligne, puis synchronisés avec PostgreSQL dans la table privée `depannhome_clients`. Chaque compte ne peut récupérer que ses propres dossiers, devis, factures, photos et documents.
+Les dossiers clients et leurs pièces jointes sont enregistrés localement pour fonctionner hors ligne, puis synchronisés avec PostgreSQL dans la table privée `depannhome_clients`. Les données sont isolées par **espace entreprise** : l’administrateur et les techniciens qu’il crée partagent les mêmes dossiers, devis, planning, notes et documents ; les autres entreprises ne peuvent pas y accéder.
+
+Un technicien possède son propre identifiant et mot de passe, mais son nom et son téléphone sont renseignés uniquement par l’administrateur au moment de la création. L’identité du technicien reste disponible pour attribuer les nouvelles activités dans l’historique client. Sur mobile, l’interface technicien privilégie directement le planning, les clients, la prise de photo et les notes ; les outils d’administration restent accessibles sur ordinateur à l’administrateur. Les clients sont pour lui un annuaire d’intervention en **consultation uniquement** : il peut rechercher et ouvrir un dossier, sans créer, modifier, supprimer ni ajouter des fichiers.
 
 Une modification est envoyée immédiatement lorsqu’un réseau est disponible. En mode hors ligne, elle est mise en attente puis synchronisée au retour de la connexion, au retour de l’application au premier plan et lors d’une vérification automatique toutes les 30 secondes. Le bouton **Synchroniser** de l’écran Clients permet aussi de lancer l’opération manuellement.
 
