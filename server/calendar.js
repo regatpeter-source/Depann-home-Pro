@@ -72,6 +72,8 @@ export function registerCalendarRoutes(app, requireAuthentication) {
         if (!event.ok) return response.status(400).json({ message: event.message });
         const assignmentError = await validateAssignedTechnician(getAccountOwnerId(request), event.assignedTechnicianId);
         if (assignmentError) return response.status(400).json({ message: assignmentError });
+        const conflict = await findCalendarConflict(getAccountOwnerId(request), event);
+        if (conflict) return response.status(409).json({ message: conflictMessage(conflict) });
 
         const { rows } = await getPool().query(`
             INSERT INTO depannhome_calendar_events
@@ -89,6 +91,8 @@ export function registerCalendarRoutes(app, requireAuthentication) {
         if (!event.ok) return response.status(400).json({ message: event.message });
         const assignmentError = await validateAssignedTechnician(getAccountOwnerId(request), event.assignedTechnicianId);
         if (assignmentError) return response.status(400).json({ message: assignmentError });
+        const conflict = await findCalendarConflict(getAccountOwnerId(request), event, id);
+        if (conflict) return response.status(409).json({ message: conflictMessage(conflict) });
 
         const { rowCount } = await getPool().query(`
             UPDATE depannhome_calendar_events
@@ -147,6 +151,30 @@ async function validateAssignedTechnician(accountOwnerId, technicianId) {
         WHERE id = $1 AND account_owner_id = $2 AND role = 'technician' AND is_active = TRUE
     `, [technicianId, accountOwnerId]);
     return rowCount ? "" : "Le technicien sélectionné est introuvable ou inactif.";
+}
+
+async function findCalendarConflict(accountOwnerId, event, excludedEventId = 0) {
+    const timedEvent = Boolean(event.startTime && event.endTime);
+    const { rows } = await getPool().query(`
+        SELECT title, TO_CHAR(start_time, 'HH24:MI') AS "startTime", TO_CHAR(end_time, 'HH24:MI') AS "endTime"
+        FROM depannhome_calendar_events
+        WHERE owner_id = $1
+          AND event_date = $2::date
+          AND id <> $3
+          AND ${timedEvent
+        ? "(start_time IS NULL OR end_time IS NULL OR (start_time < $5::time AND end_time > $4::time))"
+        : "TRUE"}
+        ORDER BY start_time NULLS FIRST, created_at
+        LIMIT 1
+    `, timedEvent
+        ? [accountOwnerId, event.date, excludedEventId, event.startTime, event.endTime]
+        : [accountOwnerId, event.date, excludedEventId]);
+    return rows[0] || null;
+}
+
+function conflictMessage(event) {
+    const time = event.startTime && event.endTime ? ` (${event.startTime} – ${event.endTime})` : " (toute la journée)";
+    return `Ce rendez-vous chevauche déjà « ${event.title} »${time}. Choisissez un autre créneau.`;
 }
 
 function sanitizeDate(value) {

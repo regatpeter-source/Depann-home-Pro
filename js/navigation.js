@@ -1,8 +1,8 @@
-import { ROUTES, STORAGE_KEYS, APP_VERSION, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=83";
-import { createCalendarEventForClient, renderCalendar } from "./calendar.js?v=83";
-import { createBillingDocumentForClient, renderBilling } from "./billing.js?v=83";
-import { getFirstUnreadClientId, refreshClientMessageAlert } from "./messages.js?v=83";
-import { getSearchableClients, renderClients } from "./clients.js?v=83";
+import { ROUTES, STORAGE_KEYS, APP_VERSION, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=84";
+import { createCalendarEventForClient, renderCalendar } from "./calendar.js?v=84";
+import { createBillingDocumentForClient, renderBilling } from "./billing.js?v=84";
+import { getFirstUnreadClientId, refreshClientMessageAlert } from "./messages.js?v=84";
+import { getSearchableClients, renderClients } from "./clients.js?v=84";
 import { openLibrarySection, renderLibrary, searchPersonalLibrary } from "./library.js?v=59";
 import { renderPhotoRecognition } from "./photo-recognition.js?v=59";
 import { getSearchResults } from "./search.js?v=63";

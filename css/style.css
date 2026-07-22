@@ -1451,6 +1451,68 @@ textarea{
     padding:10px 12px;
 }
 
+.calendar-availability{
+    margin-top:16px;
+    padding:15px;
+    border:1px solid var(--border);
+    border-radius:14px;
+    background:#f8fbff;
+}
+
+.calendar-availability.has-conflict{
+    border-color:#f59e0b;
+    background:#fff8e8;
+}
+
+.calendar-availability-heading{
+    display:flex;
+    justify-content:space-between;
+    align-items:start;
+    gap:16px;
+}
+
+.calendar-availability-heading h3{
+    margin:3px 0 0;
+    color:var(--primary);
+    text-transform:capitalize;
+}
+
+.calendar-time-preview{
+    display:grid;
+    gap:7px;
+    margin-top:12px;
+}
+
+.calendar-time-slot{
+    display:grid;
+    grid-template-columns:110px 1fr;
+    gap:3px 12px;
+    padding:9px 11px;
+    border-left:4px solid #94a3b8;
+    border-radius:8px;
+    background:#fff;
+}
+
+.calendar-time-slot time{
+    grid-row:span 2;
+    color:var(--primary);
+    font-weight:800;
+}
+
+.calendar-time-slot small{
+    color:var(--muted);
+}
+
+.calendar-time-slot-preview{
+    border-left-color:var(--secondary);
+    background:#eaf8ef;
+}
+
+.calendar-time-slot-preview.conflict{
+    border-left-color:#dc2626;
+    background:#fff0f0;
+}
+
 .client-navigation-button{
     display:inline-flex;
     align-items:center;

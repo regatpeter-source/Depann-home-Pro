@@ -1,7 +1,7 @@
-import { ROUTES } from "./config.js?v=83";
-import { createBillingDocumentForClient } from "./billing.js?v=83";
-import { getSearchableClients, renderClients } from "./clients.js?v=83";
-import { addClientActivityByName, synchronizeClients } from "./client-sync.js?v=83";
+import { ROUTES } from "./config.js?v=84";
+import { createBillingDocumentForClient } from "./billing.js?v=84";
+import { getSearchableClients, renderClients } from "./clients.js?v=84";
+import { addClientActivityByName, synchronizeClients } from "./client-sync.js?v=84";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { clearSearch, createInfo, getContainer, setPage } from "./ui.js?v=44";
@@ -220,6 +220,7 @@ function renderEventForm(panel) {
                 </label>
             </div>
             <p id="calendarFormMessage" class="auth-message" aria-live="polite"></p>
+            <section class="calendar-availability" id="calendarAvailability" aria-live="polite"></section>
             <div class="calendar-form-actions">
                 <button type="submit" class="secondary-button">${isEditing ? "Enregistrer les modifications" : "Ajouter au planning"}</button>
                 ${isEditing ? '<button type="button" class="secondary-button danger-button" id="deleteCalendarEvent">Supprimer</button>' : ""}
@@ -242,6 +243,8 @@ function renderEventForm(panel) {
     };
     clientInput.addEventListener("input", fillClientAddress);
     clientInput.addEventListener("change", fillClientAddress);
+    ["date", "startTime", "endTime", "title"].forEach(name => form.elements[name].addEventListener("input", () => renderCalendarAvailability(form, event.id)));
+    renderCalendarAvailability(form, event.id);
 
     form.addEventListener("submit", async eventSubmit => {
         eventSubmit.preventDefault();
@@ -282,6 +285,45 @@ function renderEventForm(panel) {
         selectedEvent = null;
         renderCalendar();
     });
+}
+
+function renderCalendarAvailability(form, editedEventId) {
+    const preview = form.querySelector("#calendarAvailability");
+    const candidate = formToEvent(new FormData(form));
+    if (!candidate.date) {
+        preview.innerHTML = "<p class=\"muted\">Choisissez une date pour visualiser les créneaux du planning.</p>";
+        return;
+    }
+    const sameDayEvents = events
+        .filter(event => event.date === candidate.date && String(event.id || "") !== String(editedEventId || ""))
+        .sort(compareEventTimes);
+    const conflict = findLocalCalendarConflict(sameDayEvents, candidate);
+    const candidateLabel = candidate.title || "Nouveau rendez-vous";
+    preview.classList.toggle("has-conflict", Boolean(conflict));
+    preview.innerHTML = `
+        <div class="calendar-availability-heading"><div><p class="eyebrow">Aperçu planning</p><h3>${escapeHtml(formatPreviewDate(candidate.date))}</h3></div><p class="${conflict ? "auth-message error" : "muted"}">${conflict ? `Chevauchement avec « ${escapeHtml(conflict.title)} » (${escapeHtml(formatEventTime(conflict))}).` : "Créneau disponible."}</p></div>
+        <div class="calendar-time-preview">
+            ${sameDayEvents.map(event => `<article class="calendar-time-slot"><time>${escapeHtml(formatEventTime(event))}</time><strong>${escapeHtml(event.title)}</strong>${event.clientName ? `<small>${escapeHtml(event.clientName)}</small>` : ""}</article>`).join("") || '<p class="muted">Aucun autre rendez-vous ce jour.</p>'}
+            <article class="calendar-time-slot calendar-time-slot-preview${conflict ? " conflict" : ""}"><time>${escapeHtml(formatEventTime(candidate))}</time><strong>${escapeHtml(candidateLabel)}</strong><small>Créneau en cours de saisie</small></article>
+        </div>
+    `;
+}
+
+function findLocalCalendarConflict(dayEvents, candidate) {
+    if (!candidate.startTime || !candidate.endTime) return dayEvents[0] || null;
+    return dayEvents.find(event => !event.startTime || !event.endTime || (event.startTime < candidate.endTime && event.endTime > candidate.startTime)) || null;
+}
+
+function compareEventTimes(first, second) {
+    return (first.startTime || "00:00").localeCompare(second.startTime || "00:00");
+}
+
+function formatEventTime(event) {
+    return event.startTime && event.endTime ? `${event.startTime} – ${event.endTime}` : "Toute la journée";
+}
+
+function formatPreviewDate(value) {
+    return new Intl.DateTimeFormat("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" }).format(new Date(`${value}T12:00:00`));
 }
 
 function findClientForEvent(event) {
