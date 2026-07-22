@@ -292,6 +292,14 @@ textarea{
     outline-offset:2px;
 }
 
+body.desktop-device #photoBtn,
+body.desktop-device #favoritesBtn,
+body.desktop-device footer .nav-button[data-nav="home"],
+body.desktop-device footer .nav-button[data-nav="photo"],
+body.desktop-device footer .nav-button[data-nav="favorites"]{
+    display:none;
+}
+
 .photo-recognition-actions{
     display:flex;
     flex-wrap:wrap;
