@@ -1,4 +1,4 @@
-export const APP_VERSION = "1.10.18 Raccourcis PC allégés";
+export const APP_VERSION = "1.10.19 Gammes dans la bibliothèque PC";
 export const DATA_VERSION = "2026-07-20-35";
 
 export const STORAGE_KEYS = {

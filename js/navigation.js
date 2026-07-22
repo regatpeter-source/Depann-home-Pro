@@ -1,9 +1,9 @@
-import { ROUTES, STORAGE_KEYS, APP_VERSION, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=91";
+import { ROUTES, STORAGE_KEYS, APP_VERSION, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=92";
 import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=89";
 import { createBillingDocumentForClient, renderBilling } from "./billing.js?v=88";
 import { getFirstUnreadClientId, refreshClientMessageAlert } from "./messages.js?v=88";
 import { getSearchableClients, renderClients } from "./clients.js?v=88";
-import { openLibrarySection, renderLibrary, searchPersonalLibrary } from "./library.js?v=59";
+import { configureLibrary, openLibrarySection, renderLibrary, searchPersonalLibrary } from "./library.js?v=92";
 import { renderPhotoRecognition } from "./photo-recognition.js?v=59";
 import { getSearchResults } from "./search.js?v=63";
 import { state, resetSelection } from "./state.js?v=44";
@@ -31,6 +31,7 @@ let searchRequestId = 0;
 
 export function initializeNavigation(loadedDatabase) {
     database = loadedDatabase;
+    configureLibrary({ openCatalog: renderBrands });
     bindEvents();
     refreshClientMessageAlert();
     window.setInterval(refreshClientMessageAlert, 30000);
@@ -38,6 +39,7 @@ export function initializeNavigation(loadedDatabase) {
         if (document.visibilityState === "visible") refreshClientMessageAlert();
     });
     if (document.body.classList.contains("mobile-device") && document.body.dataset.role === "technician") renderCalendarOverview();
+    else if (document.body.classList.contains("desktop-device")) renderHome();
     else renderBrands();
 }
 
@@ -57,7 +59,7 @@ function bindEvents() {
 
         if (!value) {
             searchRequestId += 1;
-            renderBrands();
+            openHome();
             return;
         }
 
@@ -77,7 +79,7 @@ function bindEvents() {
         button.addEventListener("click", async () => {
             const nav = button.dataset.nav;
 
-            if (nav === ROUTES.home) renderBrands();
+            if (nav === ROUTES.home) openHome();
             if (nav === ROUTES.search) focusSearch();
             if (nav === ROUTES.store) renderStore();
             if (nav === ROUTES.photo) renderPhotoRecognition(database, navigateToRef);
@@ -89,6 +91,14 @@ function bindEvents() {
             if (nav === ROUTES.settings) renderSettings();
         });
     });
+}
+
+function openHome() {
+    if (document.body.classList.contains("desktop-device")) {
+        renderHome();
+        return;
+    }
+    renderBrands();
 }
 
 function openCalendar() {
@@ -329,6 +339,23 @@ export function renderBrands() {
             )
         );
     });
+}
+
+function renderHome() {
+    clearSearch();
+    resetSelection("all");
+    setPage("Accueil", ROUTES.home, "detail");
+
+    const container = getContainer();
+    const panel = document.createElement("section");
+    panel.className = "client-panel home-panel";
+    panel.innerHTML = `
+        <p class="eyebrow">Depann’Home Pro</p>
+        <h2>Bienvenue</h2>
+        <p class="muted">Retrouvez vos clients, votre planning, vos devis et vos documents depuis les raccourcis ci-dessus.</p>
+        <p class="muted">Les gammes techniques (volets roulants et portails) sont disponibles dans la Bibliothèque.</p>
+    `;
+    container.appendChild(panel);
 }
 
 function renderBrandCategories() {

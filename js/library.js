@@ -1,10 +1,15 @@
-import { ROUTES } from "./config.js?v=88";
+import { ROUTES } from "./config.js?v=92";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml } from "./utils.js?v=44";
 import { clearSearch, createInfo, getContainer, setPage } from "./ui.js?v=44";
 
 const MAX_FILE_SIZE_LABEL = "20 Mo";
 let selectedSectionId = null;
+let openCatalog = null;
+
+export function configureLibrary(options = {}) {
+    openCatalog = typeof options.openCatalog === "function" ? options.openCatalog : null;
+}
 
 export async function renderLibrary() {
     clearSearch();
@@ -13,6 +18,16 @@ export async function renderLibrary() {
 
     const container = getContainer();
     container.appendChild(createInfo("Conservez vos notices et documents techniques dans votre espace personnel. Ils ne sont visibles que depuis votre compte."));
+    if (document.body.classList.contains("desktop-device") && openCatalog) {
+        const catalogPanel = document.createElement("section");
+        catalogPanel.className = "client-panel library-catalog-panel";
+        catalogPanel.innerHTML = `
+            <div><p class="eyebrow">Catalogue technique</p><h2>Gammes de motorisation</h2><p class="muted">Accédez aux volets roulants, portails et à leurs procédures techniques.</p></div>
+            <button type="button" class="secondary-button">Ouvrir les gammes</button>
+        `;
+        catalogPanel.querySelector("button").addEventListener("click", openCatalog);
+        container.appendChild(catalogPanel);
+    }
 
     const [sectionPanel, uploadPanel, listPanel] = [
         document.createElement("section"),

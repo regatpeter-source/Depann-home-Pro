@@ -294,7 +294,6 @@ textarea{
 
 body.desktop-device #photoBtn,
 body.desktop-device #favoritesBtn,
-body.desktop-device footer .nav-button[data-nav="home"],
 body.desktop-device footer .nav-button[data-nav="photo"],
 body.desktop-device footer .nav-button[data-nav="favorites"]{
     display:none;
@@ -1283,6 +1282,19 @@ body.desktop-device footer .nav-button[data-nav="favorites"]{
 .library-upload-panel,
 .library-list-panel{
     margin-top:20px;
+}
+
+.library-catalog-panel{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:18px;
+    margin-top:20px;
+}
+
+.library-catalog-panel h2{
+    margin:3px 0;
+    color:var(--primary);
 }
 
 .library-section-layout{
