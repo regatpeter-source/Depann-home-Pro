@@ -90,19 +90,28 @@ CREATE TABLE IF NOT EXISTS depannhome_messages (
     id BIGSERIAL PRIMARY KEY,
     sender_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
     recipient_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    client_id VARCHAR(100),
     body VARCHAR(2000) NOT NULL,
     read_at TIMESTAMPTZ,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 ALTER TABLE depannhome_messages
     DROP CONSTRAINT IF EXISTS depannhome_messages_distinct_accounts;
+
+ALTER TABLE depannhome_messages
+    ADD COLUMN IF NOT EXISTS client_id VARCHAR(100),
+    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
 CREATE INDEX IF NOT EXISTS depannhome_messages_recipient_idx
     ON depannhome_messages (recipient_id, created_at DESC);
 
 CREATE INDEX IF NOT EXISTS depannhome_messages_sender_idx
     ON depannhome_messages (sender_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS depannhome_messages_client_idx
+    ON depannhome_messages (recipient_id, client_id, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS depannhome_calendar_events (
     id BIGSERIAL PRIMARY KEY,

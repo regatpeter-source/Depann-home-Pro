@@ -2036,6 +2036,31 @@ textarea{
     grid-column:1/-1;
 }
 
+.message-edit-button{
+    margin-top:8px;
+    padding:5px 8px;
+    font-size:12px;
+}
+
+.message-edit-form{
+    display:grid;
+    gap:8px;
+    min-width:min(70vw, 360px);
+}
+
+.message-edit-form textarea{
+    width:100%;
+    padding:8px;
+    border:1px solid var(--border);
+    border-radius:9px;
+}
+
+.message-edit-form div{
+    display:flex;
+    flex-wrap:wrap;
+    gap:7px;
+}
+
 .message-alert{
     display:inline-grid;
     min-width:18px;
@@ -2050,6 +2075,11 @@ textarea{
     font-style:normal;
     line-height:1;
     vertical-align:middle;
+}
+
+body[data-role="technician"] #messagesBtn,
+body[data-role="technician"] .nav-button[data-nav="messages"]{
+    display:none;
 }
 
 .message-alert[hidden]{

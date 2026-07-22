@@ -1,6 +1,6 @@
-import { ROUTES } from "./config.js?v=77";
-import { getSearchableClients } from "./clients.js?v=77";
-import { addClientActivityByName } from "./client-sync.js?v=77";
+import { ROUTES } from "./config.js?v=78";
+import { getSearchableClients } from "./clients.js?v=78";
+import { addClientActivityByName } from "./client-sync.js?v=78";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { clearSearch, createInfo, getContainer, setPage } from "./ui.js?v=44";
