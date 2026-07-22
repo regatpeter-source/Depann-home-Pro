@@ -1,7 +1,7 @@
-import { ROUTES } from "./config.js?v=87";
-import { createBillingDocumentForClient } from "./billing.js?v=87";
-import { getSearchableClients, renderClients } from "./clients.js?v=87";
-import { addClientActivityByName, synchronizeClients } from "./client-sync.js?v=87";
+import { ROUTES } from "./config.js?v=88";
+import { createBillingDocumentForClient } from "./billing.js?v=88";
+import { getSearchableClients, renderClients } from "./clients.js?v=88";
+import { addClientActivityByName, synchronizeClients } from "./client-sync.js?v=88";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { clearSearch, createInfo, getContainer, setPage } from "./ui.js?v=44";
