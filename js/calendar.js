@@ -1,7 +1,7 @@
-import { ROUTES } from "./config.js?v=84";
-import { createBillingDocumentForClient } from "./billing.js?v=84";
-import { getSearchableClients, renderClients } from "./clients.js?v=84";
-import { addClientActivityByName, synchronizeClients } from "./client-sync.js?v=84";
+import { ROUTES } from "./config.js?v=85";
+import { createBillingDocumentForClient } from "./billing.js?v=85";
+import { getSearchableClients, renderClients } from "./clients.js?v=85";
+import { addClientActivityByName, synchronizeClients } from "./client-sync.js?v=85";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { clearSearch, createInfo, getContainer, setPage } from "./ui.js?v=44";
@@ -410,11 +410,12 @@ function renderCalendarGrid(panel) {
 
         const eventList = cell.querySelector(".calendar-event-list");
         (eventsByDate.get(date) || []).forEach(event => {
+            const clientDetails = getEventClientDetails(event);
             const button = document.createElement("button");
             button.type = "button";
             button.className = `calendar-event color-${event.color}`;
-            button.title = [event.title, event.assignedTechnicianName, event.clientName, event.startTime && `${event.startTime}${event.endTime ? ` – ${event.endTime}` : ""}`, event.location].filter(Boolean).join(" · ");
-            button.innerHTML = `<span>${escapeHtml(event.startTime || "Toute la journée")}</span><strong>${escapeHtml(event.title)}</strong>${event.assignedTechnicianName ? `<small>👤 ${escapeHtml(event.assignedTechnicianName)}</small>` : ""}${event.clientName ? `<small>${escapeHtml(event.clientName)}</small>` : ""}`;
+            button.title = [event.title, event.assignedTechnicianName, clientDetails.name, clientDetails.phone, clientDetails.address, event.startTime && `${event.startTime}${event.endTime ? ` – ${event.endTime}` : ""}`].filter(Boolean).join(" · ");
+            button.innerHTML = renderCalendarEventCard(event, clientDetails);
             button.addEventListener("click", () => {
                 selectedEvent = event;
                 renderCalendar({ date: day });
@@ -438,12 +439,25 @@ function renderCalendarList(panel) {
     panel.innerHTML = `<div class="calendar-list-view">${days.map(day => {
         const date = toDateString(day);
         const dayEvents = eventDates.get(date) || [];
-        return `<section class="calendar-list-day"><h3>${escapeHtml(new Intl.DateTimeFormat("fr-FR", { weekday: "long", day: "numeric", month: "long" }).format(day))}</h3>${dayEvents.length ? `<div class="calendar-list-events">${dayEvents.map(event => `<button type="button" class="calendar-event color-${escapeHtml(event.color)}" data-calendar-event="${escapeHtml(event.id)}"><span>${escapeHtml(event.startTime || "Toute la journée")}</span><strong>${escapeHtml(event.title)}</strong>${event.assignedTechnicianName ? `<small>👤 ${escapeHtml(event.assignedTechnicianName)}</small>` : ""}${event.clientName ? `<small>${escapeHtml(event.clientName)}</small>` : ""}</button>`).join("")}</div>` : '<p class="muted">Aucun rendez-vous.</p>'}</section>`;
+        return `<section class="calendar-list-day"><h3>${escapeHtml(new Intl.DateTimeFormat("fr-FR", { weekday: "long", day: "numeric", month: "long" }).format(day))}</h3>${dayEvents.length ? `<div class="calendar-list-events">${dayEvents.map(event => `<button type="button" class="calendar-event color-${escapeHtml(event.color)}" data-calendar-event="${escapeHtml(event.id)}">${renderCalendarEventCard(event, getEventClientDetails(event))}</button>`).join("")}</div>` : '<p class="muted">Aucun rendez-vous.</p>'}</section>`;
     }).join("")}</div>`;
     panel.querySelectorAll("[data-calendar-event]").forEach(button => button.addEventListener("click", () => {
         selectedEvent = events.find(event => String(event.id) === button.dataset.calendarEvent) || null;
         renderCalendar();
     }));
+}
+
+function renderCalendarEventCard(event, client) {
+    return `<span>${escapeHtml(event.startTime || "Toute la journée")}</span><strong>${escapeHtml(event.title)}</strong>${event.assignedTechnicianName ? `<small>👤 ${escapeHtml(event.assignedTechnicianName)}</small>` : ""}${client.name ? `<small class="calendar-event-client">${escapeHtml(client.name)}</small>` : ""}${client.phone ? `<small class="calendar-event-contact">📞 ${escapeHtml(client.phone)}</small>` : ""}${client.address ? `<small class="calendar-event-contact">📍 ${escapeHtml(client.address)}</small>` : ""}`;
+}
+
+function getEventClientDetails(event) {
+    const client = findClientForEvent(event);
+    return {
+        name: client?.name || event.clientName || "",
+        phone: client?.phone || "",
+        address: (client ? formatClientAddress(client) : "") || event.location || ""
+    };
 }
 
 async function loadEvents() {

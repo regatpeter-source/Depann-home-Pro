@@ -1670,6 +1670,17 @@ textarea{
     opacity:.85;
 }
 
+.calendar-event-client{
+    font-weight:800;
+}
+
+.calendar-event-contact{
+    white-space:normal;
+    overflow:visible;
+    text-overflow:clip;
+    overflow-wrap:anywhere;
+}
+
 .calendar-event.color-blue{background:#dbeafe;color:#1d4ed8;}
 .calendar-event.color-green{background:#dcfce7;color:#15803d;}
 .calendar-event.color-orange{background:#ffedd5;color:#c2410c;}
@@ -2443,6 +2454,17 @@ footer{
 
     .calendar-event small{
         display:none;
+    }
+
+    .calendar-event .calendar-event-client,
+    .calendar-event .calendar-event-contact{
+        display:block;
+        overflow:visible;
+        white-space:normal;
+        text-overflow:clip;
+        overflow-wrap:anywhere;
+        font-size:9px;
+        line-height:1.15;
     }
 
     .billing-overview,
