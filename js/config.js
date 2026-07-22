@@ -1,4 +1,4 @@
-export const APP_VERSION = "1.10.13 Navigation client pour tous";
+export const APP_VERSION = "1.10.14 Navigation depuis les rendez-vous";
 export const DATA_VERSION = "2026-07-20-35";
 
 export const STORAGE_KEYS = {

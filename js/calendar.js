@@ -1,7 +1,7 @@
-import { ROUTES } from "./config.js?v=86";
-import { createBillingDocumentForClient } from "./billing.js?v=86";
-import { getSearchableClients, renderClients } from "./clients.js?v=86";
-import { addClientActivityByName, synchronizeClients } from "./client-sync.js?v=86";
+import { ROUTES } from "./config.js?v=87";
+import { createBillingDocumentForClient } from "./billing.js?v=87";
+import { getSearchableClients, renderClients } from "./clients.js?v=87";
+import { addClientActivityByName, synchronizeClients } from "./client-sync.js?v=87";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { clearSearch, createInfo, getContainer, setPage } from "./ui.js?v=44";
@@ -138,12 +138,14 @@ function renderEventForm(panel) {
     const event = selectedEvent;
     if (isReadOnlyCalendar()) {
         const client = findClientForEvent(event);
+        const navigationHref = client ? getClientNavigationHref(client) : "";
         panel.innerHTML = `
             <div class="calendar-event-detail">
                 <div class="form-heading"><div><p class="eyebrow">Rendez-vous</p><h2>${escapeHtml(event.title)}</h2></div><button type="button" class="secondary-button" id="closeCalendarDetail">Fermer</button></div>
                 <dl><dt>Date</dt><dd>${escapeHtml(formatActivityDate(event.date, event.startTime))}${event.endTime ? ` — ${escapeHtml(event.endTime)}` : ""}</dd>${event.assignedTechnicianName ? `<dt>Technicien</dt><dd>${escapeHtml(event.assignedTechnicianName)}</dd>` : ""}${event.clientName ? `<dt>Client</dt><dd>${escapeHtml(event.clientName)}</dd>` : ""}${event.location ? `<dt>Lieu</dt><dd>${escapeHtml(event.location)}</dd>` : ""}${event.notes ? `<dt>Notes</dt><dd>${escapeHtml(event.notes)}</dd>` : ""}</dl>
                 ${client ? `
                     <div class="calendar-event-actions" aria-label="Actions pour ${escapeHtml(client.name)}">
+                        ${navigationHref ? `<a class="secondary-button client-navigation-button" href="${escapeHtml(navigationHref)}" aria-label="Y aller vers ${escapeHtml(formatClientAddress(client))}">Y aller</a>` : '<button type="button" class="secondary-button client-navigation-button" disabled title="Adresse client non renseignée.">Y aller</button>'}
                         <button type="button" class="secondary-button" data-client-action="open">Fiche client</button>
                         <button type="button" class="secondary-button" data-client-action="quote">+ Devis</button>
                         <button type="button" class="secondary-button" data-client-action="invoice">+ Facture</button>
@@ -535,6 +537,11 @@ function formToEvent(form) {
 
 function formatClientAddress(client) {
     return [client.address, client.city].map(value => String(value || "").trim()).filter(Boolean).join(", ");
+}
+
+function getClientNavigationHref(client) {
+    const address = formatClientAddress(client);
+    return address ? `geo:0,0?q=${encodeURIComponent(address)}` : "";
 }
 
 function firstDayOfMonth(date) {
