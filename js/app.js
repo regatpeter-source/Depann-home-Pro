@@ -1,10 +1,10 @@
 import { initializeAuthentication, signOut } from "./auth.js?v=59";
-import { initializeClientSynchronization } from "./client-sync.js?v=81";
+import { initializeClientSynchronization } from "./client-sync.js?v=82";
 import { loadDatabase } from "./data.js?v=59";
-import { initializeNavigation } from "./navigation.js?v=81";
+import { initializeNavigation } from "./navigation.js?v=82";
 import { renderError } from "./ui.js?v=44";
 import { getSettings } from "./storage.js?v=44";
-import { FONT_OPTIONS } from "./config.js?v=81";
+import { FONT_OPTIONS } from "./config.js?v=82";
 
 let applicationStarted = false;
 

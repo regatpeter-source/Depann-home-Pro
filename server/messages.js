@@ -42,6 +42,18 @@ export async function initializeMessages() {
 }
 
 export function registerMessageRoutes(app, requireAuthentication) {
+    app.get("/api/messages/unread-summary", requireAuthentication, asyncHandler(async (request, response) => {
+        if (request.user.role !== "admin") return response.status(403).json({ message: "Accès réservé à l’administrateur." });
+        const { rows } = await getPool().query(`
+            SELECT message.client_id AS "clientId", message.sender_id AS "senderId", message.created_at AS "createdAt"
+            FROM depannhome_messages message
+            WHERE message.recipient_id = $1 AND message.client_id IS NOT NULL
+            ORDER BY message.created_at DESC
+            LIMIT 1000
+        `, [getAccountOwnerId(request)]);
+        response.json({ messages: rows });
+    }));
+
     app.get("/api/messages", requireAuthentication, asyncHandler(async (request, response) => {
         const clientId = optionalClientId(request.query?.clientId);
         if (request.query?.clientId && !clientId) return response.status(400).json({ message: "Dossier client invalide." });

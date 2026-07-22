@@ -1,7 +1,8 @@
-import { ROUTES, STORAGE_KEYS, APP_VERSION, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=81";
-import { createCalendarEventForClient, renderCalendar } from "./calendar.js?v=81";
-import { createBillingDocumentForClient, renderBilling } from "./billing.js?v=81";
-import { getSearchableClients, renderClients } from "./clients.js?v=81";
+import { ROUTES, STORAGE_KEYS, APP_VERSION, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=82";
+import { createCalendarEventForClient, renderCalendar } from "./calendar.js?v=82";
+import { createBillingDocumentForClient, renderBilling } from "./billing.js?v=82";
+import { getFirstUnreadClientId, refreshClientMessageAlert } from "./messages.js?v=82";
+import { getSearchableClients, renderClients } from "./clients.js?v=82";
 import { openLibrarySection, renderLibrary, searchPersonalLibrary } from "./library.js?v=59";
 import { renderPhotoRecognition } from "./photo-recognition.js?v=59";
 import { getSearchResults } from "./search.js?v=63";
@@ -31,6 +32,13 @@ let searchRequestId = 0;
 export function initializeNavigation(loadedDatabase) {
     database = loadedDatabase;
     bindEvents();
+    if (document.body.dataset.role === "admin") {
+        refreshClientMessageAlert();
+        window.setInterval(refreshClientMessageAlert, 30000);
+        document.addEventListener("visibilitychange", () => {
+            if (document.visibilityState === "visible") refreshClientMessageAlert();
+        });
+    }
     if (document.body.classList.contains("mobile-device") && document.body.dataset.role === "technician") renderCalendar();
     else renderBrands();
 }
@@ -57,7 +65,7 @@ function bindEvents() {
         renderSearchResults(value);
     });
 
-    clientsBtn.addEventListener("click", () => renderClients({ database, navigateToRef, createBillingDocument: createBillingDocumentForClient, createCalendarEvent: createCalendarEventForClient }));
+    clientsBtn.addEventListener("click", openClients);
     billingBtn?.addEventListener("click", renderBilling);
     calendarBtn?.addEventListener("click", renderCalendar);
     libraryBtn?.addEventListener("click", renderLibrary);
@@ -66,14 +74,14 @@ function bindEvents() {
     historyBtn.addEventListener("click", renderHistory);
 
     document.querySelectorAll(".nav-button").forEach(button => {
-        button.addEventListener("click", () => {
+        button.addEventListener("click", async () => {
             const nav = button.dataset.nav;
 
             if (nav === ROUTES.home) renderBrands();
             if (nav === ROUTES.search) focusSearch();
             if (nav === ROUTES.store) renderStore();
             if (nav === ROUTES.photo) renderPhotoRecognition(database, navigateToRef);
-            if (nav === ROUTES.clients) renderClients({ database, navigateToRef, createBillingDocument: createBillingDocumentForClient, createCalendarEvent: createCalendarEventForClient });
+            if (nav === ROUTES.clients) openClients();
             if (nav === ROUTES.billing) renderBilling();
             if (nav === ROUTES.calendar) renderCalendar();
             if (nav === ROUTES.library) renderLibrary();
@@ -81,6 +89,11 @@ function bindEvents() {
             if (nav === ROUTES.settings) renderSettings();
         });
     });
+}
+
+async function openClients() {
+    const selectedId = await getFirstUnreadClientId();
+    renderClients({ database, navigateToRef, createBillingDocument: createBillingDocumentForClient, createCalendarEvent: createCalendarEventForClient, ...(selectedId ? { selectedId, focusMessages: true } : {}) });
 }
 
 function renderStore() {

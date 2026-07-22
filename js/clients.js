@@ -1,6 +1,6 @@
-import { ROUTES } from "./config.js?v=81";
-import { addClientActivity, deleteLocalClient, getLocalClients, saveLocalClient, synchronizeClients } from "./client-sync.js?v=81";
-import { renderClientMessages } from "./messages.js?v=81";
+import { ROUTES } from "./config.js?v=82";
+import { addClientActivity, deleteLocalClient, getLocalClients, saveLocalClient, synchronizeClients } from "./client-sync.js?v=82";
+import { renderClientMessages } from "./messages.js?v=82";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { analyzeEquipmentPhoto, isPhotoRecognitionConfident } from "./photo-recognition.js?v=59";
@@ -46,7 +46,7 @@ export function renderClients(options = {}) {
     if (!readOnly) container.appendChild(renderClientForm(editingClient || EMPTY_CLIENT, clientScreenOptions));
 
     if (selectedClient) {
-        container.appendChild(renderClientDetail(selectedClient));
+        container.appendChild(renderClientDetail(selectedClient, { focusMessages: Boolean(options.focusMessages) }));
     }
 
     container.appendChild(renderClientList(clients));
@@ -352,7 +352,7 @@ function renderClientTableRow(client) {
     return row;
 }
 
-function renderClientDetail(client) {
+function renderClientDetail(client, options = {}) {
     const readOnly = isClientReadOnly();
     const navigationHref = getClientNavigationHref(client);
     const panel = document.createElement("section");
@@ -409,7 +409,7 @@ function renderClientDetail(client) {
 
     const detail = document.createDocumentFragment();
     detail.append(panel);
-    detail.append(renderClientMessages(client));
+    detail.append(renderClientMessages(client, options.focusMessages));
     detail.append(renderClientBillingDocuments(client));
     return detail;
 }
