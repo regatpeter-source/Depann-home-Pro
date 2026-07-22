@@ -1,5 +1,5 @@
-import { ROUTES, STORAGE_KEYS, APP_VERSION, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=92";
-import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=89";
+import { ROUTES, STORAGE_KEYS, APP_VERSION, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=93";
+import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=93";
 import { createBillingDocumentForClient, renderBilling } from "./billing.js?v=88";
 import { getFirstUnreadClientId, refreshClientMessageAlert } from "./messages.js?v=88";
 import { getSearchableClients, renderClients } from "./clients.js?v=88";
@@ -341,21 +341,82 @@ export function renderBrands() {
     });
 }
 
-function renderHome() {
+async function renderHome() {
     clearSearch();
     resetSelection("all");
     setPage("Accueil", ROUTES.home, "detail");
 
     const container = getContainer();
     const panel = document.createElement("section");
-    panel.className = "client-panel home-panel";
+    panel.className = "client-panel home-panel dashboard-panel";
     panel.innerHTML = `
-        <p class="eyebrow">Depann’Home Pro</p>
-        <h2>Bienvenue</h2>
-        <p class="muted">Retrouvez vos clients, votre planning, vos devis et vos documents depuis les raccourcis ci-dessus.</p>
-        <p class="muted">Les gammes techniques (volets roulants et portails) sont disponibles dans la Bibliothèque.</p>
+        <div class="dashboard-heading"><div><p class="eyebrow">Depann’Home Pro</p><h2>Tableau de bord</h2><p class="muted">Votre activité et vos prochaines interventions.</p></div><button type="button" class="secondary-button" data-dashboard-action="calendar">Voir le planning complet</button></div>
+        <div class="dashboard-grid">
+            <section class="dashboard-card"><p class="eyebrow">Aujourd’hui</p><h3>${escapeHtml(formatDashboardDate(new Date()))}</h3><div class="dashboard-events" data-dashboard-events="today"><p class="muted">Chargement des rendez-vous…</p></div></section>
+            <section class="dashboard-card"><p class="eyebrow">À venir</p><h3>Les 7 prochains jours</h3><div class="dashboard-events" data-dashboard-events="upcoming"><p class="muted">Chargement des rendez-vous…</p></div></section>
+        </div>
+        <p class="dashboard-catalog-note">Les gammes techniques — volets roulants et portails — sont disponibles dans la <strong>Bibliothèque</strong>.</p>
     `;
     container.appendChild(panel);
+
+    panel.querySelector('[data-dashboard-action="calendar"]').addEventListener("click", renderCalendar);
+    const result = await loadDashboardEvents();
+    if (!panel.isConnected) return;
+    if (!result.ok) {
+        panel.querySelectorAll("[data-dashboard-events]").forEach(list => {
+            list.innerHTML = `<p class="auth-message error">${escapeHtml(result.message || "Impossible de charger le planning.")}</p>`;
+        });
+        return;
+    }
+
+    const today = toDashboardDate(new Date());
+    const upcomingEnd = toDashboardDate(addDashboardDays(new Date(), 6));
+    const todayEvents = result.events.filter(event => event.date === today);
+    const upcomingEvents = result.events.filter(event => event.date > today && event.date <= upcomingEnd);
+    renderDashboardEvents(panel.querySelector('[data-dashboard-events="today"]'), todayEvents, "Aucun rendez-vous aujourd’hui.");
+    renderDashboardEvents(panel.querySelector('[data-dashboard-events="upcoming"]'), upcomingEvents, "Aucun rendez-vous prévu dans les 7 prochains jours.");
+}
+
+async function loadDashboardEvents() {
+    const start = toDashboardDate(new Date());
+    const end = toDashboardDate(addDashboardDays(new Date(), 6));
+    try {
+        const response = await fetch(`/api/calendar/events?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`, { credentials: "same-origin" });
+        const data = await response.json().catch(() => null);
+        return response.ok ? { ok: true, events: data?.events || [] } : { ok: false, events: [], message: data?.message };
+    } catch {
+        return { ok: false, events: [], message: "Serveur indisponible." };
+    }
+}
+
+function renderDashboardEvents(container, events, emptyMessage) {
+    if (!events.length) {
+        container.innerHTML = `<p class="muted">${escapeHtml(emptyMessage)}</p>`;
+        return;
+    }
+    container.innerHTML = "";
+    events.sort((first, second) => `${first.date}${first.startTime || "00:00"}`.localeCompare(`${second.date}${second.startTime || "00:00"}`)).forEach(event => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = `dashboard-event color-${escapeHtml(event.color || "blue")}`;
+        const date = event.date === toDashboardDate(new Date()) ? "Aujourd’hui" : formatDashboardDate(new Date(`${event.date}T12:00:00`));
+        button.innerHTML = `<time>${escapeHtml(`${date}${event.startTime ? ` · ${event.startTime}` : ""}`)}</time><strong>${escapeHtml(event.title)}</strong>${event.clientName ? `<span>${escapeHtml(event.clientName)}</span>` : ""}${event.location ? `<small>${escapeHtml(event.location)}</small>` : ""}`;
+        button.addEventListener("click", () => renderCalendar({ date: new Date(`${event.date}T12:00:00`), event }));
+        container.appendChild(button);
+    });
+}
+
+function addDashboardDays(date, amount) {
+    const result = new Date(date.getFullYear(), date.getMonth(), date.getDate() + amount, 12);
+    return result;
+}
+
+function toDashboardDate(date) {
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function formatDashboardDate(date) {
+    return new Intl.DateTimeFormat("fr-FR", { weekday: "long", day: "numeric", month: "long" }).format(date);
 }
 
 function renderBrandCategories() {
