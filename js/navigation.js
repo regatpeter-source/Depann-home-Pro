@@ -1,4 +1,4 @@
-import { ROUTES, STORAGE_KEYS, APP_VERSION, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=89";
+import { ROUTES, STORAGE_KEYS, APP_VERSION, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=90";
 import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=89";
 import { createBillingDocumentForClient, renderBilling } from "./billing.js?v=88";
 import { getFirstUnreadClientId, refreshClientMessageAlert } from "./messages.js?v=88";
@@ -50,6 +50,7 @@ function bindEvents() {
     const photoBtn = document.getElementById("photoBtn");
     const favoritesBtn = document.getElementById("favoritesBtn");
     const historyBtn = document.getElementById("historyBtn");
+    const settingsBtn = document.getElementById("settingsBtn");
 
     search.addEventListener("input", event => {
         const value = event.target.value.toLowerCase().trim();
@@ -70,6 +71,7 @@ function bindEvents() {
     photoBtn?.addEventListener("click", () => renderPhotoRecognition(database, navigateToRef));
     favoritesBtn.addEventListener("click", renderFavorites);
     historyBtn.addEventListener("click", renderHistory);
+    settingsBtn?.addEventListener("click", renderSettings);
 
     document.querySelectorAll(".nav-button").forEach(button => {
         button.addEventListener("click", async () => {

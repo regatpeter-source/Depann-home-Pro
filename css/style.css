@@ -2295,8 +2295,7 @@ footer{
     body.mobile-device[data-role="technician"] #libraryBtn,
     body.mobile-device[data-role="technician"] #favoritesBtn,
     body.mobile-device[data-role="technician"] #historyBtn,
-    body.mobile-device[data-role="technician"] .nav-button[data-nav="library"],
-    body.mobile-device[data-role="technician"] .nav-button[data-nav="settings"]{
+    body.mobile-device[data-role="technician"] .nav-button[data-nav="library"]{
         display:none;
     }
 
