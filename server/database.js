@@ -34,6 +34,13 @@ export async function initializeDatabase() {
             company_name VARCHAR(160) NOT NULL DEFAULT '',
             max_pc_users INTEGER NOT NULL DEFAULT 1,
             max_technicians INTEGER NOT NULL DEFAULT 5,
+            subscription_plan VARCHAR(20) NOT NULL DEFAULT 'free',
+            subscription_label VARCHAR(80) NOT NULL DEFAULT '',
+            monthly_price_cents INTEGER NOT NULL DEFAULT 0,
+            subscription_status VARCHAR(20) NOT NULL DEFAULT 'active',
+            subscription_renewal_date DATE,
+            billing_reference VARCHAR(100) NOT NULL DEFAULT '',
+            creator_note VARCHAR(1000) NOT NULL DEFAULT '',
             is_active BOOLEAN NOT NULL DEFAULT TRUE,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -48,6 +55,13 @@ export async function initializeDatabase() {
         ADD COLUMN IF NOT EXISTS company_name VARCHAR(160) NOT NULL DEFAULT '',
         ADD COLUMN IF NOT EXISTS max_pc_users INTEGER NOT NULL DEFAULT 1,
         ADD COLUMN IF NOT EXISTS max_technicians INTEGER NOT NULL DEFAULT 5,
+        ADD COLUMN IF NOT EXISTS subscription_plan VARCHAR(20) NOT NULL DEFAULT 'free',
+        ADD COLUMN IF NOT EXISTS subscription_label VARCHAR(80) NOT NULL DEFAULT '',
+        ADD COLUMN IF NOT EXISTS monthly_price_cents INTEGER NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS subscription_status VARCHAR(20) NOT NULL DEFAULT 'active',
+        ADD COLUMN IF NOT EXISTS subscription_renewal_date DATE,
+        ADD COLUMN IF NOT EXISTS billing_reference VARCHAR(100) NOT NULL DEFAULT '',
+        ADD COLUMN IF NOT EXISTS creator_note VARCHAR(1000) NOT NULL DEFAULT '',
         ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE
     `);
     await database.query("UPDATE depannhome_users SET account_owner_id = id WHERE account_owner_id IS NULL");

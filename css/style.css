@@ -987,6 +987,55 @@ body.desktop-device .nav-label-messages{
     color:var(--primary);
 }
 
+.creator-subscription-summary{
+    display:grid;
+    grid-template-columns:repeat(4, minmax(0, 1fr));
+    gap:12px;
+}
+
+.creator-subscription-summary article{
+    display:grid;
+    gap:4px;
+    padding:14px;
+    border:1px solid rgba(0,59,115,.1);
+    border-radius:14px;
+    background:#f8fbff;
+}
+
+.creator-subscription-summary span{
+    color:var(--muted);
+    font-size:13px;
+    font-weight:700;
+}
+
+.creator-subscription-summary strong{
+    color:var(--primary);
+    font-size:20px;
+}
+
+.creator-subscription-summary .attention{
+    border-color:#f59e0b;
+    background:#fff8e8;
+}
+
+.creator-subscription-badge{
+    width:max-content;
+    max-width:100%;
+    overflow-wrap:anywhere;
+    padding:4px 7px;
+    border-radius:8px;
+    background:#eaf3fb;
+    color:var(--primary) !important;
+    font-size:12px;
+    font-style:normal;
+    font-weight:800;
+}
+
+.creator-subscription-badge.trial{background:#ede9fe;color:#6d28d9 !important;}
+.creator-subscription-badge.past_due{background:#fff4d8;color:#9a6700 !important;}
+.creator-subscription-badge.suspended,
+.creator-subscription-badge.cancelled{background:#fee2e2;color:#b42318 !important;}
+
 .creator-account span,
 .creator-account small,
 .creator-member span{
@@ -1009,6 +1058,27 @@ body.desktop-device .nav-label-messages{
 .creator-form{
     display:grid;
     gap:18px;
+}
+
+.creator-subscription-fields{
+    display:grid;
+    gap:12px;
+    min-width:0;
+    padding:16px;
+    border:1px solid rgba(0,59,115,.12);
+    border-radius:14px;
+    background:#f8fbff;
+}
+
+.creator-subscription-fields legend{
+    padding:0 7px;
+    color:var(--primary);
+    font-weight:800;
+}
+
+.creator-subscription-fields .muted{
+    margin:0;
+    font-size:13px;
 }
 
 .creator-form-actions{
@@ -1116,6 +1186,10 @@ body.desktop-device .nav-label-messages{
     .creator-member-actions .secondary-button,
     .creator-form-actions .secondary-button{
         flex:1;
+    }
+
+    .creator-subscription-summary{
+        grid-template-columns:repeat(2, minmax(0, 1fr));
     }
 }
 

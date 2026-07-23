@@ -1,6 +1,6 @@
-import { ROUTES, STORAGE_KEYS, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=103";
+import { ROUTES, STORAGE_KEYS, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=104";
 import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=100";
-import { renderCreatorConsole } from "./creator.js?v=100";
+import { renderCreatorConsole } from "./creator.js?v=104";
 import { createBillingDocumentForClient, renderBilling } from "./billing.js?v=88";
 import { getFirstUnreadClientId, refreshClientMessageAlert } from "./messages.js?v=88";
 import { getSearchableClients, renderClients } from "./clients.js?v=97";

@@ -1,4 +1,4 @@
-import { ROUTES } from "./config.js?v=100";
+import { ROUTES } from "./config.js?v=104";
 import { clearSearch, getContainer, setPage } from "./ui.js?v=44";
 import { escapeHtml } from "./utils.js?v=44";
 
@@ -16,6 +16,7 @@ export async function renderCreatorConsole() {
                 <button type="button" class="secondary-button" id="creatorNewAccount">+ Nouvelle entreprise</button>
             </header>
             <p id="creatorFeedback" class="auth-message" aria-live="polite"></p>
+            <section class="creator-subscription-summary" id="creatorSubscriptionSummary" aria-label="Synthèse des abonnements"></section>
             <div class="creator-layout">
                 <aside class="creator-accounts" id="creatorAccounts"><p class="muted">Chargement des entreprises…</p></aside>
                 <section class="creator-workspace" id="creatorWorkspace"><p class="muted">Sélectionnez une entreprise ou créez-en une.</p></section>
@@ -31,9 +32,25 @@ async function loadAccounts(preferredId = selectedAccountId) {
     if (!result.ok) return showFeedback(result.message || "Impossible de charger les entreprises.", true);
     accounts = result.data.accounts || [];
     selectedAccountId = accounts.some(account => String(account.id) === String(preferredId)) ? String(preferredId) : "";
+    renderSubscriptionSummary();
     renderAccountList();
     if (selectedAccountId) await renderAccountDetail(selectedAccountId);
     else document.querySelector("#creatorWorkspace").innerHTML = '<p class="muted">Aucune entreprise créée pour le moment.</p>';
+}
+
+function renderSubscriptionSummary() {
+    const summary = document.querySelector("#creatorSubscriptionSummary");
+    if (!summary) return;
+    const paidAccounts = accounts.filter(account => account.subscriptionPlan === "paid");
+    const activePaidAccounts = paidAccounts.filter(account => ["active", "trial", "past_due"].includes(account.subscriptionStatus));
+    const monthlyRevenue = activePaidAccounts.reduce((total, account) => total + Number(account.monthlyPriceCents || 0), 0);
+    const pastDue = accounts.filter(account => account.subscriptionStatus === "past_due").length;
+    summary.innerHTML = `
+        <article><span>Entreprises</span><strong>${accounts.length}</strong></article>
+        <article><span>Abonnements payants</span><strong>${paidAccounts.length}</strong></article>
+        <article><span>Mensuel estimé</span><strong>${formatCurrency(monthlyRevenue)}</strong></article>
+        <article class="${pastDue ? "attention" : ""}"><span>Paiements à suivre</span><strong>${pastDue}</strong></article>
+    `;
 }
 
 function renderAccountList() {
@@ -42,6 +59,7 @@ function renderAccountList() {
         <button type="button" class="creator-account${String(account.id) === selectedAccountId ? " selected" : ""}" data-account-id="${escapeHtml(account.id)}">
             <strong>${escapeHtml(account.companyName || account.ownerFullName || account.ownerUsername)}</strong>
             <span>${escapeHtml(account.ownerUsername)} · ${account.isActive ? "Active" : "Suspendue"}</span>
+            <em class="creator-subscription-badge ${escapeHtml(account.subscriptionStatus || "active")}">${escapeHtml(subscriptionPlanLabel(account))} · ${escapeHtml(subscriptionStatusLabel(account.subscriptionStatus))}</em>
             <small>${account.activePcUsers}/${account.maxPcUsers} PC · ${account.activeTechnicians}/${account.maxTechnicians} techniciens</small>
         </button>
     `).join("") : '<p class="muted">Aucune entreprise.</p>';
@@ -67,6 +85,7 @@ async function renderAccountDetail(accountId) {
                 <label>Techniciens autorisés<input name="maxTechnicians" type="number" min="0" max="500" required value="${escapeHtml(account.maxTechnicians)}"></label>
                 <label class="creator-switch">Entreprise active<input name="isActive" type="checkbox" ${account.isActive ? "checked" : ""}><span>Les membres peuvent se connecter</span></label>
             </div>
+            ${renderSubscriptionFields(account)}
             <div class="creator-form-actions"><button type="submit" class="secondary-button">Enregistrer l’entreprise</button><button type="button" class="secondary-button danger-button" id="creatorDeleteAccount">Supprimer l’entreprise</button></div>
         </form>
         <section class="creator-members-section"><div class="form-heading"><div><p class="eyebrow">Accès</p><h3>Postes PC et techniciens</h3></div><button type="button" class="secondary-button" id="creatorNewMember">+ Ajouter un accès</button></div><div id="creatorMembers"><p class="muted">Chargement des accès…</p></div></section>
@@ -92,6 +111,7 @@ async function renderAccountDetail(accountId) {
         await loadAccounts();
     });
     workspace.querySelector("#creatorNewMember").addEventListener("click", () => renderMemberForm(account));
+    bindSubscriptionPlan(workspace.querySelector("#creatorAccountForm"));
     await loadMembers(accountId);
 }
 
@@ -110,9 +130,11 @@ function renderAccountForm() {
                 <label>Postes PC autorisés<input name="maxPcUsers" type="number" min="1" max="100" required value="1"></label>
                 <label>Techniciens autorisés<input name="maxTechnicians" type="number" min="0" max="500" required value="1"></label>
             </div>
+            ${renderSubscriptionFields({ subscriptionPlan: "free", subscriptionLabel: "", monthlyPriceCents: 0, subscriptionStatus: "active", subscriptionRenewalDate: "", billingReference: "", creatorNote: "" })}
             <div class="creator-form-actions"><button type="submit" class="secondary-button">Créer l’entreprise</button></div>
         </form>
     `;
+    bindSubscriptionPlan(document.querySelector("#creatorNewAccountForm"));
     document.querySelector("#creatorNewAccountForm").addEventListener("submit", async event => {
         event.preventDefault();
         const button = event.currentTarget.querySelector('button[type="submit"]');
@@ -124,6 +146,53 @@ function renderAccountForm() {
         showFeedback("Entreprise et administrateur principal créés.");
         await loadAccounts(selectedAccountId);
     });
+}
+
+function renderSubscriptionFields(account) {
+    const plan = account.subscriptionPlan === "paid" ? "paid" : "free";
+    return `
+        <fieldset class="creator-subscription-fields"><legend>Abonnement et suivi commercial</legend><p class="muted">Suivi manuel : aucun prélèvement n’est déclenché par l’application.</p>
+            <div class="form-grid">
+                <label>Formule<select name="subscriptionPlan"><option value="free" ${plan === "free" ? "selected" : ""}>Abonnement mensuel gratuit</option><option value="paid" ${plan === "paid" ? "selected" : ""}>Abonnement mensuel payant</option></select></label>
+                <label>Nom de l’offre<input name="subscriptionLabel" maxlength="80" value="${escapeHtml(account.subscriptionLabel || "")}" placeholder="Ex. Pro équipe"></label>
+                <label>Tarif mensuel TTC (€)<input name="monthlyPrice" type="number" min="0" max="999999.99" step="0.01" value="${escapeHtml(centsToAmount(account.monthlyPriceCents))}" ${plan === "free" ? "disabled" : ""}></label>
+                <label>Statut de l’abonnement<select name="subscriptionStatus">${["active", "trial", "past_due", "suspended", "cancelled"].map(status => `<option value="${status}" ${account.subscriptionStatus === status ? "selected" : ""}>${subscriptionStatusLabel(status)}</option>`).join("")}</select></label>
+                <label>Prochaine échéance<input name="subscriptionRenewalDate" type="date" value="${escapeHtml(account.subscriptionRenewalDate || "")}"></label>
+                <label>Référence de paiement / facture<input name="billingReference" maxlength="100" value="${escapeHtml(account.billingReference || "")}" placeholder="Ex. Virement juillet 2026"></label>
+                <label class="form-wide">Note interne Créateur<textarea name="creatorNote" rows="3" maxlength="1000" placeholder="Suivi commercial, demande client, action à prévoir…">${escapeHtml(account.creatorNote || "")}</textarea></label>
+            </div>
+        </fieldset>
+    `;
+}
+
+function bindSubscriptionPlan(form) {
+    const plan = form.elements.subscriptionPlan;
+    const price = form.elements.monthlyPrice;
+    const update = () => {
+        const isPaid = plan.value === "paid";
+        price.disabled = !isPaid;
+        if (!isPaid) price.value = "0";
+    };
+    plan.addEventListener("change", update);
+    update();
+}
+
+function centsToAmount(value) {
+    return (Number(value || 0) / 100).toFixed(2);
+}
+
+function formatCurrency(cents) {
+    return new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" }).format(Number(cents || 0) / 100);
+}
+
+function subscriptionPlanLabel(account) {
+    return account.subscriptionPlan === "paid"
+        ? `${account.subscriptionLabel || "Payant"} · ${formatCurrency(account.monthlyPriceCents)}/mois`
+        : account.subscriptionLabel || "Gratuit";
+}
+
+function subscriptionStatusLabel(status) {
+    return ({ active: "À jour", trial: "Période d’essai", past_due: "Paiement à suivre", suspended: "Suspendu", cancelled: "Résilié" })[status] || "À jour";
 }
 
 async function loadMembers(accountId) {
