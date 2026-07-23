@@ -1,10 +1,13 @@
 import multer from "multer";
+import PDFDocument from "pdfkit";
+import nodemailer from "nodemailer";
 import { getPool } from "./database.js";
 import { getAccountOwnerId } from "./auth.js";
 
 const MAX_LOGO_SIZE = 2 * 1024 * 1024;
 const DOCUMENT_TYPES = new Set(["quote", "invoice"]);
 const CUSTOMER_TYPES = new Set(["Particulier", "Professionnel", "Magasin", "Autre"]);
+let smtpTransporter = null;
 const upload = multer({
     storage: multer.memoryStorage(),
     limits: { fileSize: MAX_LOGO_SIZE, files: 1 },
@@ -173,6 +176,40 @@ export function registerBillingRoutes(app, requireAuthentication) {
         ]);
         if (!documentResult.rows[0]) return response.status(404).json({ message: "Document introuvable." });
         response.json({ document: documentResult.rows[0], profile: profileResult.rows[0] || emptyProfile() });
+    }));
+
+    app.get("/api/billing/documents/:documentId/pdf", requireAuthentication, asyncHandler(async (request, response) => {
+        const billingExport = await getBillingExport(request);
+        if (!billingExport) return response.status(404).json({ message: "Document introuvable." });
+        const pdf = await createBillingPdf(billingExport.document, billingExport.profile);
+        const fileName = billingPdfFileName(billingExport.document);
+        response.set({
+            "Content-Type": "application/pdf",
+            "Content-Disposition": `inline; filename="${fileName}"`,
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff"
+        });
+        response.send(pdf);
+    }));
+
+    app.post("/api/billing/documents/:documentId/email", requireAuthentication, asyncHandler(async (request, response) => {
+        const recipient = cleanEmail(request.body?.recipient);
+        if (!recipient) return response.status(400).json({ message: "L’adresse e-mail du destinataire est invalide." });
+        const transport = getSmtpTransporter();
+        if (!transport) return response.status(503).json({ message: "L’envoi direct doit être configuré avec SMTP_HOST, SMTP_USER, SMTP_PASSWORD et SMTP_FROM dans Render." });
+        const billingExport = await getBillingExport(request);
+        if (!billingExport) return response.status(404).json({ message: "Document introuvable." });
+        const { document, profile } = billingExport;
+        const type = document.documentType === "invoice" ? "facture" : "devis";
+        const pdf = await createBillingPdf(document, profile);
+        await transport.sendMail({
+            from: process.env.SMTP_FROM,
+            to: recipient,
+            subject: `${type.charAt(0).toUpperCase()}${type.slice(1)} ${document.documentNumber}`,
+            text: `Bonjour ${document.customerName},\n\nVeuillez trouver votre ${type} ${document.documentNumber} en pièce jointe.\n\nCordialement,\n${profile.companyName || "Votre prestataire"}`,
+            attachments: [{ filename: billingPdfFileName(document), content: pdf, contentType: "application/pdf" }]
+        });
+        response.status(202).json({ message: `Le ${type} PDF a été envoyé à ${recipient}.` });
     }));
 
     app.put("/api/billing/default-quote", requireAuthentication, requireBillingAdministration, asyncHandler(async (request, response) => {
@@ -368,6 +405,169 @@ function nonNegativeNumber(value) {
 
 function cleanText(value, maximumLength) {
     return String(value || "").replace(/\s+/g, " ").trim().slice(0, maximumLength);
+}
+
+async function getBillingExport(request) {
+    const id = positiveId(request.params.documentId);
+    if (!id) return null;
+    const database = getPool();
+    const [documentResult, profileResult] = await Promise.all([
+        database.query(`
+            SELECT id, document_type AS "documentType", document_number AS "documentNumber", customer_type AS "customerType",
+                customer_name AS "customerName", customer_address AS "customerAddress", TO_CHAR(issue_date, 'YYYY-MM-DD') AS "issueDate",
+                TO_CHAR(due_date, 'YYYY-MM-DD') AS "dueDate", lines, notes
+            FROM depannhome_billing_documents WHERE id = $1 AND owner_id = $2
+        `, [id, getAccountOwnerId(request)]),
+        database.query(`
+            SELECT company_name AS "companyName", legal_form AS "legalForm", address, postal_code AS "postalCode", city, phone, email,
+                registration_number AS "registrationNumber", tax_number AS "taxNumber", payment_terms AS "paymentTerms",
+                footer_note AS "footerNote", logo_data AS "logoData", logo_mime_type AS "logoMimeType"
+            FROM depannhome_billing_profiles WHERE owner_id = $1
+        `, [getAccountOwnerId(request)])
+    ]);
+    if (!documentResult.rows[0]) return null;
+    return { document: documentResult.rows[0], profile: profileResult.rows[0] || emptyProfile() };
+}
+
+function getSmtpTransporter() {
+    const host = cleanText(process.env.SMTP_HOST, 255);
+    const user = cleanText(process.env.SMTP_USER, 255);
+    const password = String(process.env.SMTP_PASSWORD || "");
+    const from = smtpSender();
+    const port = Number(process.env.SMTP_PORT || 587);
+    if (!host || !user || !password || !from || !Number.isInteger(port) || port < 1 || port > 65535) return null;
+    if (!smtpTransporter) {
+        smtpTransporter = nodemailer.createTransport({
+            host,
+            port,
+            secure: String(process.env.SMTP_SECURE).toLowerCase() === "true",
+            auth: { user, pass: password }
+        });
+    }
+    return smtpTransporter;
+}
+
+function cleanEmail(value) {
+    const email = cleanText(value, 254);
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : "";
+}
+
+function smtpSender() {
+    const sender = cleanText(process.env.SMTP_FROM, 254);
+    const address = sender.match(/<([^>]+)>$/)?.[1] || sender;
+    return cleanEmail(address) ? sender : "";
+}
+
+function billingPdfFileName(document) {
+    const type = document.documentType === "invoice" ? "facture" : "devis";
+    const number = String(document.documentNumber || "document").replace(/[^a-z0-9_-]+/gi, "-").replace(/^-+|-+$/g, "");
+    return `${type}-${number || "document"}.pdf`;
+}
+
+function createBillingPdf(document, profile) {
+    return new Promise((resolve, reject) => {
+        const pdf = new PDFDocument({ size: "A4", margin: 44, bufferPages: true, info: { Title: `${document.documentType === "invoice" ? "Facture" : "Devis"} ${document.documentNumber}`, Author: profile.companyName || "Depann'Home Pro" } });
+        const chunks = [];
+        pdf.on("data", chunk => chunks.push(chunk));
+        pdf.on("end", () => resolve(Buffer.concat(chunks)));
+        pdf.on("error", reject);
+
+        const margin = 44;
+        const contentWidth = pdf.page.width - margin * 2;
+        const bottom = () => pdf.page.height - 58;
+        const ensureSpace = height => {
+            if (pdf.y + height <= bottom()) return;
+            pdf.addPage();
+            pdf.y = margin;
+        };
+        const line = (y, color = "#d7dde3") => pdf.moveTo(margin, y).lineTo(margin + contentWidth, y).lineWidth(1).strokeColor(color).stroke();
+        const text = (value, x, y, width, options = {}) => pdf.fillColor(options.color || "#172033").font(options.bold ? "Helvetica-Bold" : "Helvetica").fontSize(options.size || 9).text(String(value || ""), x, y, { width, ...options });
+        const formatMoney = value => new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" }).format(Number(value) || 0);
+        const formatDate = value => value ? new Intl.DateTimeFormat("fr-FR").format(new Date(`${value}T12:00:00`)) : "Non renseignée";
+        const totalHt = (document.lines || []).reduce((sum, item) => sum + Number(item.quantity || 0) * Number(item.unitPrice || 0), 0);
+        const totalVat = (document.lines || []).reduce((sum, item) => sum + Number(item.quantity || 0) * Number(item.unitPrice || 0) * Number(item.vatRate || 0) / 100, 0);
+        const title = document.documentType === "invoice" ? "FACTURE" : "DEVIS";
+
+        if (profile.logoData && ["image/png", "image/jpeg"].includes(profile.logoMimeType)) {
+            try { pdf.image(profile.logoData, margin, margin, { fit: [56, 56] }); } catch { /* Le PDF reste disponible même si le logo est illisible. */ }
+        }
+        const companyX = profile.logoData ? margin + 68 : margin;
+        const companyDetails = [profile.companyName || "Votre structure", profile.legalForm, profile.address, [profile.postalCode, profile.city].filter(Boolean).join(" "), profile.phone ? `Tél. ${profile.phone}` : "", profile.email].filter(Boolean).join("\n");
+        text(companyDetails, companyX, margin, 250, { size: 9, lineGap: 2, bold: false });
+        text(title, margin + contentWidth - 145, margin, 145, { size: 25, bold: true, align: "right", color: "#172033" });
+        text(`N° ${document.documentNumber}\nÉmis le ${formatDate(document.issueDate)}${document.dueDate ? `\nÉchéance : ${formatDate(document.dueDate)}` : ""}`, margin + contentWidth - 170, margin + 34, 170, { size: 9, align: "right", lineGap: 2 });
+        pdf.y = Math.max(margin + 74, pdf.y) + 15;
+        line(pdf.y, "#172033");
+        pdf.y += 20;
+
+        const partyY = pdf.y;
+        pdf.rect(margin, partyY, 225, 82).fill("#f0f2f4");
+        pdf.rect(margin + contentWidth - 225, partyY, 225, 82).fill("#f0f2f4");
+        text("ÉMETTEUR", margin + 12, partyY + 10, 200, { size: 8, bold: true });
+        text([profile.companyName || "Votre structure", profile.registrationNumber ? `SIRET ${profile.registrationNumber}` : "", profile.taxNumber ? `TVA ${profile.taxNumber}` : ""].filter(Boolean).join("\n"), margin + 12, partyY + 24, 200, { size: 9, lineGap: 2 });
+        text("CLIENT", margin + contentWidth - 213, partyY + 10, 200, { size: 8, bold: true });
+        text([document.customerName, document.customerAddress].filter(Boolean).join("\n"), margin + contentWidth - 213, partyY + 24, 200, { size: 9, lineGap: 2 });
+        pdf.y = partyY + 100;
+        text("OBJET / PRESTATION", margin, pdf.y, contentWidth, { size: 8, bold: true });
+        text(document.documentType === "invoice" ? "Prestation facturée" : "Proposition de prestation", margin, pdf.y + 12, contentWidth, { size: 9 });
+        pdf.y += 32;
+
+        const columns = [margin, margin + 205, margin + 255, margin + 300, margin + 390, margin + 440];
+        const drawTableHeader = () => {
+            ensureSpace(28);
+            pdf.rect(margin, pdf.y, contentWidth, 22).fill("#172033");
+            const headerY = pdf.y + 7;
+            [["Désignation", columns[0], 195], ["Qté", columns[1], 42], ["Unité", columns[2], 38], ["PU HT", columns[3], 80], ["TVA", columns[4], 42], ["Total HT", columns[5], 65]].forEach(([label, x, width]) => text(label, x + 5, headerY, width - 8, { size: 8, bold: true, color: "#ffffff", align: x === columns[0] || x === columns[2] ? "left" : "right" }));
+            pdf.y += 22;
+        };
+        drawTableHeader();
+        (document.lines || []).forEach(item => {
+            const rowHeight = Math.max(26, pdf.heightOfString(String(item.description || ""), { width: 190, fontSize: 8, lineGap: 2 }) + 12);
+            if (pdf.y + rowHeight > bottom()) { pdf.addPage(); pdf.y = margin; drawTableHeader(); }
+            const y = pdf.y;
+            pdf.rect(margin, y, contentWidth, rowHeight).fill("#ffffff");
+            pdf.rect(margin, y, contentWidth, rowHeight).lineWidth(.5).strokeColor("#d7dde3").stroke();
+            text(item.description, columns[0] + 5, y + 6, 190, { size: 8, lineGap: 2 });
+            text(item.quantity, columns[1] + 3, y + 6, 40, { size: 8, align: "right" });
+            text(item.unit, columns[2] + 4, y + 6, 34, { size: 8 });
+            text(formatMoney(item.unitPrice), columns[3] + 3, y + 6, 76, { size: 8, align: "right" });
+            text(`${item.vatRate || 0} %`, columns[4] + 3, y + 6, 38, { size: 8, align: "right" });
+            text(formatMoney(Number(item.quantity || 0) * Number(item.unitPrice || 0)), columns[5] + 3, y + 6, 60, { size: 8, align: "right" });
+            pdf.y += rowHeight;
+        });
+
+        ensureSpace(150);
+        pdf.y += 18;
+        const summaryY = pdf.y;
+        text("CONDITIONS DE RÈGLEMENT", margin, summaryY, 260, { size: 9, bold: true });
+        text(document.notes || profile.paymentTerms || "Conditions de règlement non renseignées.", margin, summaryY + 14, 260, { size: 8, lineGap: 2 });
+        const totalX = margin + contentWidth - 180;
+        [["Total HT", totalHt, "#172033"], ["Total TVA", totalVat, "#172033"], [document.documentType === "invoice" ? "Net à payer" : "Total TTC", totalHt + totalVat, "#0a5c36"]].forEach(([label, value, color], index) => {
+            const y = summaryY + index * 26;
+            pdf.rect(totalX, y, 180, 24).fill(color);
+            text(label, totalX + 9, y + 7, 92, { size: index === 2 ? 10 : 8, bold: true, color: "#ffffff" });
+            text(formatMoney(value), totalX + 100, y + 6, 72, { size: index === 2 ? 10 : 8, bold: true, color: "#ffffff", align: "right" });
+        });
+        pdf.y = Math.max(pdf.y, summaryY + 88);
+        if (document.documentType === "quote") {
+            ensureSpace(82);
+            pdf.rect(margin + contentWidth - 245, pdf.y, 245, 70).lineWidth(1).strokeColor("#d7dde3").stroke();
+            text("BON POUR ACCORD", margin + contentWidth - 233, pdf.y + 10, 220, { size: 9, bold: true });
+            text("Devis accepté avant le début de la prestation.\nDate et signature du client :", margin + contentWidth - 233, pdf.y + 25, 220, { size: 8, lineGap: 3 });
+            pdf.y += 78;
+        }
+        if (profile.footerNote) {
+            ensureSpace(42);
+            line(pdf.y, "#d7dde3");
+            text(profile.footerNote, margin, pdf.y + 8, contentWidth, { size: 7, color: "#4b5563", align: "center" });
+        }
+        const pages = pdf.bufferedPageRange();
+        for (let index = 0; index < pages.count; index += 1) {
+            pdf.switchToPage(index);
+            text(`${profile.companyName || "Votre structure"} · ${document.documentNumber} · Page ${index + 1}/${pages.count}`, margin, pdf.page.height - 32, contentWidth, { size: 7, color: "#6b7280", align: "center" });
+        }
+        pdf.end();
+    });
 }
 
 function asyncHandler(handler) {

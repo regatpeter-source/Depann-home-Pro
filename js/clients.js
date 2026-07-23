@@ -1,4 +1,4 @@
-import { ROUTES } from "./config.js?v=112";
+import { ROUTES } from "./config.js?v=113";
 import { addClientActivity, deleteLocalClient, getLocalClients, saveLocalClient, synchronizeClients } from "./client-sync.js?v=110";
 import { renderClientMessages } from "./messages.js?v=105";
 import { resetSelection } from "./state.js?v=44";
@@ -461,7 +461,7 @@ async function loadClientBillingDocuments(panel, client) {
         documents.forEach(document => {
             const article = document.createElement("article");
             article.className = "client-billing-item";
-            article.innerHTML = `<div><p class="eyebrow">${document.documentType === "invoice" ? "Facture" : "Devis"} · ${escapeHtml(document.status || "brouillon")}</p><h3>${escapeHtml(document.documentNumber)}</h3><p>${escapeHtml(formatBillingDate(document.issueDate))}</p></div><div class="client-card-actions"><button type="button" class="secondary-button" data-action="view">Visualiser</button><button type="button" class="secondary-button" data-action="email" ${client.email ? "" : "disabled title=\"Ajoutez l’e-mail du client pour préparer un envoi.\""}>E-mail</button><button type="button" class="secondary-button" data-action="print">Imprimer / PDF</button></div>`;
+            article.innerHTML = `<div><p class="eyebrow">${document.documentType === "invoice" ? "Facture" : "Devis"} · ${escapeHtml(document.status || "brouillon")}</p><h3>${escapeHtml(document.documentNumber)}</h3><p>${escapeHtml(formatBillingDate(document.issueDate))}</p></div><div class="client-card-actions"><button type="button" class="secondary-button" data-action="view">Visualiser</button><button type="button" class="secondary-button" data-action="email" ${client.email ? "" : "disabled title=\"Ajoutez l’e-mail du client pour envoyer le PDF.\""}>Envoyer le PDF</button><button type="button" class="secondary-button" data-action="print">PDF / Imprimer</button></div>`;
             article.querySelector('[data-action="view"]').addEventListener("click", () => viewClientBillingDocument(client, document.id, document.documentNumber));
             article.querySelector('[data-action="email"]').addEventListener("click", () => emailBillingDocument(document, client));
             article.querySelector('[data-action="print"]').addEventListener("click", () => printBillingDocument(document.id));
@@ -472,12 +472,21 @@ async function loadClientBillingDocuments(panel, client) {
     }
 }
 
-function emailBillingDocument(document, client) {
+async function emailBillingDocument(document, client) {
     if (!client.email) { alert("Ajoutez d’abord l’adresse e-mail du client."); return; }
-    const type = document.documentType === "invoice" ? "facture" : "devis";
-    const subject = `${type.charAt(0).toUpperCase()}${type.slice(1)} ${document.documentNumber}`;
-    const body = `Bonjour ${client.name},\n\nVeuillez trouver votre ${type} ${document.documentNumber}.\n\nPour joindre le PDF, utilisez d’abord « Imprimer / PDF », puis ajoutez le fichier à cet e-mail.\n\nCordialement,`;
-    window.location.href = `mailto:${encodeURIComponent(client.email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    try {
+        const response = await fetch(`/api/billing/documents/${encodeURIComponent(document.id)}/email`, {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ recipient: client.email })
+        });
+        const data = await response.json().catch(() => null);
+        if (!response.ok) throw new Error(data?.message || "Impossible d’envoyer le PDF.");
+        alert(data?.message || "Le PDF a été envoyé.");
+    } catch (error) {
+        alert(error.message || "Impossible d’envoyer le PDF.");
+    }
 }
 
 async function getClientBillingDocument(client, documentId, documentNumber) {
@@ -503,7 +512,7 @@ async function viewClientBillingDocument(client, documentId, documentNumber) {
 async function printClientBillingDocument(client, documentId, documentNumber) {
     const popup = window.open("", "_blank");
     if (!popup) { alert("Autorisez les fenêtres pop-up pour imprimer le document."); return; }
-    popup.document.write("<p>Préparation du document…</p>");
+    popup.document.write("<p>Préparation du PDF…</p>");
     try {
         const document = await getClientBillingDocument(client, documentId, documentNumber);
         await printBillingDocument(document.id, popup);
@@ -522,19 +531,7 @@ async function emailClientBillingDocument(client, documentId, documentNumber) {
 async function printBillingDocument(documentId, existingPopup = null) {
     const popup = existingPopup || window.open("", "_blank");
     if (!popup) { alert("Autorisez les fenêtres pop-up pour imprimer le document."); return; }
-    if (!existingPopup) popup.document.write("<p>Préparation du document…</p>");
-    try {
-        const response = await fetch(`/api/billing/documents/${encodeURIComponent(documentId)}`, { credentials: "same-origin" });
-        const data = await response.json().catch(() => null);
-        if (!response.ok) throw new Error(data?.message);
-        popup.document.open();
-        popup.document.write(buildPrintableBillingHtml(data.document, data.profile));
-        popup.document.close();
-        popup.focus();
-        popup.print();
-    } catch (error) {
-        popup.document.body.innerHTML = `<p>Erreur : ${escapeHtml(error.message || "document indisponible")}</p>`;
-    }
+    popup.location.href = `/api/billing/documents/${encodeURIComponent(documentId)}/pdf`;
 }
 
 function buildLegacyPrintableBillingHtml(document, profile) {

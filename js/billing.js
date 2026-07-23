@@ -1,5 +1,5 @@
-import { ROUTES } from "./config.js?v=110";
-import { getSearchableClients } from "./clients.js?v=88";
+import { ROUTES } from "./config.js?v=113";
+import { getSearchableClients } from "./clients.js?v=113";
 import { addClientActivityByName } from "./client-sync.js?v=110";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
@@ -332,8 +332,12 @@ function renderDocumentList(panel) {
             item.className = "billing-document-item";
             const totals = calculateTotals(document.lines || []);
             const accountingLabel = document.documentType === "invoice" ? (document.isAccounted ? `Comptabilisée le ${formatDate(document.accountedAt)}` : "À comptabiliser") : "Non concerné";
-            item.innerHTML = `<div><p class="eyebrow">${DOCUMENT_TYPES[document.documentType]} · ${escapeHtml(document.customerType)}</p><h3>${escapeHtml(document.documentNumber)}</h3><p>${escapeHtml(document.customerName)}</p><small>${escapeHtml(formatDate(document.issueDate))} · ${escapeHtml(document.status || "brouillon")} · <span class="billing-accounting-status ${document.isAccounted ? "is-accounted" : ""}">${escapeHtml(accountingLabel)}</span></small></div><div class="billing-document-amount"><strong>${formatMoney(totals.ttc)}</strong><small>TTC</small></div><div class="billing-document-actions">${document.documentType === "invoice" && !isTechnician() ? `<button type="button" class="secondary-button" data-accounting="${document.isAccounted ? "false" : "true"}">${document.isAccounted ? "Décomptabiliser" : "Comptabiliser"}</button>` : ""}<button type="button" class="secondary-button" data-open-document>${isTechnician() ? "Consulter" : "Ouvrir"}</button></div>`;
+            const client = getSearchableClients().find(item => normalizeText(item.name) === normalizeText(document.customerName));
+            const recipient = client?.email || "";
+            item.innerHTML = `<div><p class="eyebrow">${DOCUMENT_TYPES[document.documentType]} · ${escapeHtml(document.customerType)}</p><h3>${escapeHtml(document.documentNumber)}</h3><p>${escapeHtml(document.customerName)}</p><small>${escapeHtml(formatDate(document.issueDate))} · ${escapeHtml(document.status || "brouillon")} · <span class="billing-accounting-status ${document.isAccounted ? "is-accounted" : ""}">${escapeHtml(accountingLabel)}</span></small></div><div class="billing-document-amount"><strong>${formatMoney(totals.ttc)}</strong><small>TTC</small></div><div class="billing-document-actions">${document.documentType === "invoice" && !isTechnician() ? `<button type="button" class="secondary-button" data-accounting="${document.isAccounted ? "false" : "true"}">${document.isAccounted ? "Décomptabiliser" : "Comptabiliser"}</button>` : ""}<button type="button" class="secondary-button" data-open-document>${isTechnician() ? "Consulter" : "Ouvrir"}</button><button type="button" class="secondary-button" data-pdf>PDF / Imprimer</button><button type="button" class="secondary-button" data-email ${recipient ? "" : "disabled title=\"Ajoutez l’e-mail du client dans sa fiche pour envoyer le PDF.\""}>Envoyer le PDF</button></div>`;
             item.querySelector("[data-open-document]").addEventListener("click", () => { activeDocument = normalizeDocument(document); renderBilling(); });
+            item.querySelector("[data-pdf]").addEventListener("click", () => openBillingPdf(document.id));
+            item.querySelector("[data-email]").addEventListener("click", () => emailBillingPdf(document.id, recipient));
             item.querySelector("[data-accounting]")?.addEventListener("click", async event => {
                 const result = await apiRequest(`/api/billing/documents/${encodeURIComponent(document.id)}/accounting`, { method: "PATCH", body: JSON.stringify({ isAccounted: event.currentTarget.dataset.accounting === "true" }) });
                 if (!result.ok) { alert(result.message || "Impossible de mettre à jour la comptabilité."); return; }
@@ -391,6 +395,22 @@ function today() { const date = new Date(); return `${date.getFullYear()}-${Stri
 function formDataToObject(data) { return Object.fromEntries(data.entries()); }
 
 function isTechnician() { return document.body.dataset.role === "technician"; }
+
+function openBillingPdf(documentId) {
+    const popup = window.open("", "_blank");
+    if (!popup) { alert("Autorisez les fenêtres pop-up pour afficher le PDF."); return; }
+    popup.location.href = `/api/billing/documents/${encodeURIComponent(documentId)}/pdf`;
+}
+
+async function emailBillingPdf(documentId, recipient) {
+    if (!recipient) { alert("Ajoutez l’e-mail du client dans sa fiche avant l’envoi."); return; }
+    const result = await apiRequest(`/api/billing/documents/${encodeURIComponent(documentId)}/email`, {
+        method: "POST",
+        body: JSON.stringify({ recipient })
+    });
+    if (!result.ok) { alert(result.message || "Impossible d’envoyer le PDF."); return; }
+    alert(result.message || "Le PDF a été envoyé.");
+}
 
 async function apiRequest(url, options = {}) {
     try {

@@ -1,6 +1,6 @@
 {
   "name": "depann-home-pro",
-  "version": "1.14.4",
+  "version": "1.15.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -19,6 +19,8 @@
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.2",
     "multer": "^2.0.2",
+    "nodemailer": "^9.0.3",
+    "pdfkit": "^0.19.1",
     "pg": "^8.16.3"
   }
 }

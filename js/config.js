@@ -1,4 +1,4 @@
-export const APP_VERSION = "1.14.4 Base de devis et factures";
+export const APP_VERSION = "1.15.0 PDF et envoi des documents";
 export const DATA_VERSION = "2026-07-20-35";
 
 export const STORAGE_KEYS = {
