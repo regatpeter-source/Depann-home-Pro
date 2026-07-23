@@ -1,4 +1,4 @@
-export const APP_VERSION = "1.11.2 Mot de passe visible et session technicien";
+export const APP_VERSION = "1.11.3 Paramètres simplifiés";
 export const DATA_VERSION = "2026-07-20-35";
 
 export const STORAGE_KEYS = {

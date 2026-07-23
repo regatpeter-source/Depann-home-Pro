@@ -1,4 +1,4 @@
-import { ROUTES, STORAGE_KEYS, APP_VERSION, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=102";
+import { ROUTES, STORAGE_KEYS, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=103";
 import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=100";
 import { renderCreatorConsole } from "./creator.js?v=100";
 import { createBillingDocumentForClient, renderBilling } from "./billing.js?v=88";
@@ -735,17 +735,7 @@ function renderSettings() {
     const card = document.createElement("article");
     card.className = "brand-card full-card procedure-card";
 
-    // header info
-    const infoHtml = `
-        <h2>Paramètres</h2>
-        <div class="procedure-meta">
-            <span>${database.brands.length} gamme(s)</span>
-            <span>${getSearchableClients().length} client(s)</span>
-            <span>${APP_VERSION}</span>
-        </div>
-    `;
-
-    card.innerHTML = infoHtml;
+    card.innerHTML = "<h2>Paramètres</h2>";
 
     // settings form
     const settings = getSettings();
