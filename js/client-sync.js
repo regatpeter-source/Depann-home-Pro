@@ -215,6 +215,7 @@ function normalizeActivity(activity) {
         type: String(activity?.type || "other").slice(0, 40),
         label: String(activity?.label || "Activité du dossier").slice(0, 200),
         detail: String(activity?.detail || "").slice(0, 500),
+        documentId: String(activity?.documentId || "").slice(0, 30),
         actorName: String(activity?.actorName || "").slice(0, 100),
         createdAt
     };

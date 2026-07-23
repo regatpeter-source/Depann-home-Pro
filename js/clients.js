@@ -1,5 +1,5 @@
-import { ROUTES } from "./config.js?v=105";
-import { addClientActivity, deleteLocalClient, getLocalClients, saveLocalClient, synchronizeClients } from "./client-sync.js?v=88";
+import { ROUTES } from "./config.js?v=109";
+import { addClientActivity, deleteLocalClient, getLocalClients, saveLocalClient, synchronizeClients } from "./client-sync.js?v=109";
 import { renderClientMessages } from "./messages.js?v=105";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
@@ -384,7 +384,7 @@ function renderClientDetail(client, options = {}) {
         </section>
         <section class="procedure-section">
             <h3> Historique du client</h3>
-            ${renderClientActivityHistory(client.activityHistory)}
+            ${renderClientActivityHistory(client)}
         </section>
         <section class="procedure-section">
             <h3> Fichiers du client</h3>
@@ -396,6 +396,15 @@ function renderClientDetail(client, options = {}) {
     panel.querySelector("#createClientAppointment")?.addEventListener("click", () => openClientAppointment(client));
     panel.querySelector("#createClientQuote")?.addEventListener("click", () => openClientBillingDocument("quote", client));
     panel.querySelector("#createClientInvoice")?.addEventListener("click", () => openClientBillingDocument("invoice", client));
+    panel.querySelectorAll("[data-view-billing-document]").forEach(button => {
+        button.addEventListener("click", () => viewClientBillingDocument(client, button.dataset.documentId, button.dataset.documentNumber));
+    });
+    panel.querySelectorAll("[data-print-billing-document]").forEach(button => {
+        button.addEventListener("click", () => printClientBillingDocument(client, button.dataset.documentId, button.dataset.documentNumber));
+    });
+    panel.querySelectorAll("[data-email-billing-document]").forEach(button => {
+        button.addEventListener("click", () => emailClientBillingDocument(client, button.dataset.documentId, button.dataset.documentNumber));
+    });
     panel.querySelectorAll("[data-delete-attachment]").forEach(button => {
         button.addEventListener("click", () => {
             const attachmentId = button.dataset.deleteAttachment;
@@ -452,7 +461,8 @@ async function loadClientBillingDocuments(panel, client) {
         documents.forEach(document => {
             const article = document.createElement("article");
             article.className = "client-billing-item";
-            article.innerHTML = `<div><p class="eyebrow">${document.documentType === "invoice" ? "Facture" : "Devis"} · ${escapeHtml(document.status || "brouillon")}</p><h3>${escapeHtml(document.documentNumber)}</h3><p>${escapeHtml(formatBillingDate(document.issueDate))}</p></div><div class="client-card-actions"><button type="button" class="secondary-button" data-action="email">E-mail</button><button type="button" class="secondary-button" data-action="print">Imprimer / PDF</button></div>`;
+            article.innerHTML = `<div><p class="eyebrow">${document.documentType === "invoice" ? "Facture" : "Devis"} · ${escapeHtml(document.status || "brouillon")}</p><h3>${escapeHtml(document.documentNumber)}</h3><p>${escapeHtml(formatBillingDate(document.issueDate))}</p></div><div class="client-card-actions"><button type="button" class="secondary-button" data-action="view">Visualiser</button><button type="button" class="secondary-button" data-action="email" ${client.email ? "" : "disabled title=\"Ajoutez l’e-mail du client pour préparer un envoi.\""}>E-mail</button><button type="button" class="secondary-button" data-action="print">Imprimer / PDF</button></div>`;
+            article.querySelector('[data-action="view"]').addEventListener("click", () => viewClientBillingDocument(client, document.id, document.documentNumber));
             article.querySelector('[data-action="email"]').addEventListener("click", () => emailBillingDocument(document, client));
             article.querySelector('[data-action="print"]').addEventListener("click", () => printBillingDocument(document.id));
             list.appendChild(article);
@@ -463,16 +473,56 @@ async function loadClientBillingDocuments(panel, client) {
 }
 
 function emailBillingDocument(document, client) {
+    if (!client.email) { alert("Ajoutez d’abord l’adresse e-mail du client."); return; }
     const type = document.documentType === "invoice" ? "facture" : "devis";
     const subject = `${type.charAt(0).toUpperCase()}${type.slice(1)} ${document.documentNumber}`;
-    const body = `Bonjour ${client.name},%0D%0A%0D%0AVeuillez trouver ci-joint votre ${type} ${document.documentNumber}.%0D%0A%0D%Cordialement,`;
-    window.location.href = `mailto:${encodeURIComponent(client.email || "")}?subject=${encodeURIComponent(subject)}&body=${body}`;
+    const body = `Bonjour ${client.name},\n\nVeuillez trouver votre ${type} ${document.documentNumber}.\n\nPour joindre le PDF, utilisez d’abord « Imprimer / PDF », puis ajoutez le fichier à cet e-mail.\n\nCordialement,`;
+    window.location.href = `mailto:${encodeURIComponent(client.email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 }
 
-async function printBillingDocument(documentId) {
+async function getClientBillingDocument(client, documentId, documentNumber) {
+    const response = await fetch("/api/billing", { credentials: "same-origin" });
+    const data = await response.json().catch(() => null);
+    if (!response.ok) throw new Error(data?.message || "Impossible de charger le document.");
+    const document = (data?.documents || []).find(item =>
+        normalizeText(item.customerName) === normalizeText(client.name)
+        && (String(item.id) === String(documentId) || (!documentId && item.documentNumber === documentNumber))
+    );
+    if (!document) throw new Error("Le devis ou la facture n’est plus disponible.");
+    return document;
+}
+
+async function viewClientBillingDocument(client, documentId, documentNumber) {
+    try {
+        const document = await getClientBillingDocument(client, documentId, documentNumber);
+        if (typeof clientScreenOptions.viewBillingDocument !== "function") throw new Error("Ouverture du document indisponible.");
+        clientScreenOptions.viewBillingDocument(document.id);
+    } catch (error) { alert(error.message || "Impossible d’ouvrir le document."); }
+}
+
+async function printClientBillingDocument(client, documentId, documentNumber) {
     const popup = window.open("", "_blank");
     if (!popup) { alert("Autorisez les fenêtres pop-up pour imprimer le document."); return; }
     popup.document.write("<p>Préparation du document…</p>");
+    try {
+        const document = await getClientBillingDocument(client, documentId, documentNumber);
+        await printBillingDocument(document.id, popup);
+    } catch (error) {
+        popup.document.body.innerHTML = `<p>Erreur : ${escapeHtml(error.message || "document indisponible")}</p>`;
+    }
+}
+
+async function emailClientBillingDocument(client, documentId, documentNumber) {
+    try {
+        const document = await getClientBillingDocument(client, documentId, documentNumber);
+        emailBillingDocument(document, client);
+    } catch (error) { alert(error.message || "Impossible de préparer l’e-mail."); }
+}
+
+async function printBillingDocument(documentId, existingPopup = null) {
+    const popup = existingPopup || window.open("", "_blank");
+    if (!popup) { alert("Autorisez les fenêtres pop-up pour imprimer le document."); return; }
+    if (!existingPopup) popup.document.write("<p>Préparation du document…</p>");
     try {
         const response = await fetch(`/api/billing/documents/${encodeURIComponent(documentId)}`, { credentials: "same-origin" });
         const data = await response.json().catch(() => null);
@@ -599,16 +649,20 @@ function normalizeAttachments(attachments = []) {
         }));
 }
 
-function renderClientActivityHistory(history) {
-    const entries = normalizeActivityHistory(history);
+function renderClientActivityHistory(client) {
+    const entries = normalizeActivityHistory(client.activityHistory);
     if (!entries.length) return "<p class=\"muted\">Les rendez-vous, documents et actions de ce dossier apparaîtront ici.</p>";
-    return `<div class="client-activity-list">${entries.map(entry => `<article class="client-activity-item"><div><strong>${escapeHtml(entry.label)}</strong>${entry.detail ? `<p>${escapeHtml(entry.detail)}</p>` : ""}${entry.actorName ? `<p class="muted">Par ${escapeHtml(entry.actorName)}</p>` : ""}</div><time datetime="${escapeHtml(entry.createdAt)}">${escapeHtml(formatActivityDate(entry.createdAt))}</time></article>`).join("")}</div>`;
+    return `<div class="client-activity-list">${entries.map(entry => {
+        const isBillingDocument = ["quote", "invoice"].includes(entry.type) && entry.detail;
+        const actions = isBillingDocument ? `<div class="client-card-actions client-activity-actions"><button type="button" class="secondary-button" data-view-billing-document data-document-id="${escapeHtml(entry.documentId)}" data-document-number="${escapeHtml(entry.detail)}">Visualiser</button><button type="button" class="secondary-button" data-print-billing-document data-document-id="${escapeHtml(entry.documentId)}" data-document-number="${escapeHtml(entry.detail)}">Imprimer / PDF</button><button type="button" class="secondary-button" data-email-billing-document data-document-id="${escapeHtml(entry.documentId)}" data-document-number="${escapeHtml(entry.detail)}" ${client.email ? "" : "disabled title=\"Ajoutez l’e-mail du client pour préparer un envoi.\""}>E-mail</button></div>` : "";
+        return `<article class="client-activity-item"><div><strong>${escapeHtml(entry.label)}</strong>${entry.detail ? `<p>${escapeHtml(entry.detail)}</p>` : ""}${entry.actorName ? `<p class="muted">Par ${escapeHtml(entry.actorName)}</p>` : ""}${actions}</div><time datetime="${escapeHtml(entry.createdAt)}">${escapeHtml(formatActivityDate(entry.createdAt))}</time></article>`;
+    }).join("")}</div>`;
 }
 
 function normalizeActivityHistory(history) {
     return (Array.isArray(history) ? history : [])
         .filter(entry => entry && entry.id && entry.label)
-        .map(entry => ({ id: String(entry.id), label: String(entry.label), detail: String(entry.detail || ""), actorName: String(entry.actorName || ""), createdAt: entry.createdAt || new Date().toISOString() }))
+        .map(entry => ({ id: String(entry.id), type: String(entry.type || "other"), label: String(entry.label), detail: String(entry.detail || ""), documentId: String(entry.documentId || ""), actorName: String(entry.actorName || ""), createdAt: entry.createdAt || new Date().toISOString() }))
         .sort((first, second) => new Date(second.createdAt).getTime() - new Date(first.createdAt).getTime());
 }
 

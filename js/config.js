@@ -1,4 +1,4 @@
-export const APP_VERSION = "1.14.0 Registre des achats";
+export const APP_VERSION = "1.14.1 Actions des documents clients";
 export const DATA_VERSION = "2026-07-20-35";
 
 export const STORAGE_KEYS = {

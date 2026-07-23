@@ -1,6 +1,6 @@
-import { ROUTES } from "./config.js?v=88";
+import { ROUTES } from "./config.js?v=109";
 import { getSearchableClients } from "./clients.js?v=88";
-import { addClientActivityByName } from "./client-sync.js?v=88";
+import { addClientActivityByName } from "./client-sync.js?v=109";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { clearSearch, createInfo, getContainer, setPage } from "./ui.js?v=44";
@@ -34,6 +34,10 @@ export async function renderBilling(options = {}) {
 
     billingData = result.data;
     if (options.newDocument) activeDocument = createNewDocument(options.newDocument.type, options.newDocument.client);
+    if (options.documentId) {
+        const document = (billingData.documents || []).find(item => String(item.id) === String(options.documentId));
+        activeDocument = document ? normalizeDocument(document) : null;
+    }
     renderOverview(overviewPanel);
     if (!isTechnician()) {
         renderProfile(profilePanel);
@@ -46,6 +50,11 @@ export async function renderBilling(options = {}) {
 export function createBillingDocumentForClient(type, client) {
     if (!DOCUMENT_TYPES[type] || !client) return;
     renderBilling({ newDocument: { type, client } });
+}
+
+export function viewBillingDocument(documentId) {
+    if (!documentId) return;
+    renderBilling({ documentId });
 }
 
 function createPanel(className) {
@@ -216,7 +225,8 @@ function renderDocumentEditor(panel) {
         if (!isEditing) addClientActivityByName(payload.customerName, {
             type: payload.documentType,
             label: `${DOCUMENT_TYPES[payload.documentType]} créé`,
-            detail: payload.documentNumber
+            detail: payload.documentNumber,
+            documentId: result.data?.id
         });
         if (shouldSaveAsDefault) {
             const templateResult = await apiRequest("/api/billing/default-quote", {

@@ -1,10 +1,10 @@
-import { ROUTES, STORAGE_KEYS, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=108";
-import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=105";
+import { ROUTES, STORAGE_KEYS, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=109";
+import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=109";
 import { renderCreatorConsole } from "./creator.js?v=105";
-import { createBillingDocumentForClient, renderBilling } from "./billing.js?v=107";
+import { createBillingDocumentForClient, renderBilling, viewBillingDocument } from "./billing.js?v=109";
 import { renderPurchases } from "./purchases.js?v=108";
 import { getFirstUnreadClientId, refreshClientMessageAlert } from "./messages.js?v=88";
-import { getSearchableClients, renderClients } from "./clients.js?v=105";
+import { getSearchableClients, renderClients } from "./clients.js?v=109";
 import { configureLibrary, openLibrarySection, renderLibrary, searchPersonalLibrary } from "./library.js?v=105";
 import { renderPhotoRecognition } from "./photo-recognition.js?v=105";
 import { getSearchResults } from "./search.js?v=63";
@@ -116,7 +116,7 @@ function openCalendar() {
 
 async function openClients() {
     const selectedId = await getFirstUnreadClientId();
-    renderClients({ database, navigateToRef, createBillingDocument: createBillingDocumentForClient, createCalendarEvent: createCalendarEventForClient, ...(selectedId ? { selectedId, focusMessages: true } : {}) });
+    renderClients({ database, navigateToRef, createBillingDocument: createBillingDocumentForClient, viewBillingDocument, createCalendarEvent: createCalendarEventForClient, ...(selectedId ? { selectedId, focusMessages: true } : {}) });
 }
 
 function renderStore() {
