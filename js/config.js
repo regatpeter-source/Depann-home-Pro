@@ -1,4 +1,4 @@
-export const APP_VERSION = "1.10.22 Navigation PC et technicien épurée";
+export const APP_VERSION = "1.10.23 Planning quotidien technicien";
 export const DATA_VERSION = "2026-07-20-35";
 
 export const STORAGE_KEYS = {

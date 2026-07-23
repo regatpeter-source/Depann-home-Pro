@@ -1,4 +1,4 @@
-import { ROUTES } from "./config.js?v=88";
+import { ROUTES } from "./config.js?v=96";
 import { createBillingDocumentForClient } from "./billing.js?v=88";
 import { getSearchableClients, renderClients } from "./clients.js?v=88";
 import { addClientActivityByName, synchronizeClients } from "./client-sync.js?v=88";
@@ -61,8 +61,8 @@ export async function renderCalendar(options = {}) {
 
 export function renderCalendarOverview() {
     selectedEvent = null;
-    calendarView = "month";
-    displayedMonth = firstDayOfMonth(new Date());
+    calendarView = "day";
+    displayedMonth = atNoon(new Date());
     renderCalendar();
 }
 
@@ -90,7 +90,7 @@ function renderHeader(panel) {
             <div>
                 <p class="eyebrow">Planning professionnel</p>
                 <h2>${escapeHtml(periodLabel)}</h2>
-                <p class="muted">${readOnly ? "Vue d’ensemble du planning. Sélectionnez un rendez-vous pour ouvrir sa fiche d’intervention." : "Vos interventions, rendez-vous et indisponibilités sont synchronisés avec ce compte."}</p>
+                <p class="muted">${readOnly ? "Vos rendez-vous du jour. Sélectionnez une intervention pour ouvrir sa fiche." : "Vos interventions, rendez-vous et indisponibilités sont synchronisés avec ce compte."}</p>
             </div>
             <div class="calendar-toolbar-actions">
                 <button type="button" class="secondary-button" data-calendar-action="previous">← ${getPreviousLabel()}</button>
@@ -127,8 +127,11 @@ function renderHeader(panel) {
         renderCalendar();
     });
     panel.querySelectorAll("[data-calendar-view]").forEach(button => button.addEventListener("click", () => {
-        calendarView = button.dataset.calendarView;
-        displayedMonth = calendarView === "month" ? firstDayOfMonth(displayedMonth) : atNoon(displayedMonth);
+        const nextView = button.dataset.calendarView;
+        calendarView = nextView;
+        displayedMonth = isReadOnlyCalendar() && nextView === "day"
+            ? atNoon(new Date())
+            : nextView === "month" ? firstDayOfMonth(displayedMonth) : atNoon(displayedMonth);
         selectedEvent = null;
         renderCalendar();
     }));
@@ -146,6 +149,7 @@ function renderEventForm(panel) {
     if (isReadOnlyCalendar()) {
         const client = findClientForEvent(event);
         const navigationHref = client ? getClientNavigationHref(client) : "";
+        const phoneHref = client ? getClientPhoneHref(client) : "";
         panel.innerHTML = `
             <div class="calendar-event-detail">
                 <div class="form-heading"><div><p class="eyebrow">Rendez-vous</p><h2>${escapeHtml(event.title)}</h2></div><button type="button" class="secondary-button" id="closeCalendarDetail">Fermer</button></div>
@@ -153,6 +157,7 @@ function renderEventForm(panel) {
                 ${client ? `
                     <div class="calendar-event-actions" aria-label="Actions pour ${escapeHtml(client.name)}">
                         ${navigationHref ? `<a class="secondary-button client-navigation-button" href="${escapeHtml(navigationHref)}" aria-label="Y aller vers ${escapeHtml(formatClientAddress(client))}">Y aller</a>` : '<button type="button" class="secondary-button client-navigation-button" disabled title="Adresse client non renseignée.">Y aller</button>'}
+                        ${phoneHref ? `<a class="secondary-button client-navigation-button" href="${escapeHtml(phoneHref)}" aria-label="Appeler ${escapeHtml(client.name)} au ${escapeHtml(client.phone)}">Appeler</a>` : '<button type="button" class="secondary-button client-navigation-button" disabled title="Téléphone client non renseigné.">Appeler</button>'}
                         <button type="button" class="secondary-button" data-client-action="open">Fiche client</button>
                         <button type="button" class="secondary-button" data-client-action="quote">+ Devis</button>
                         <button type="button" class="secondary-button" data-client-action="invoice">+ Facture</button>
@@ -549,6 +554,11 @@ function formatClientAddress(client) {
 function getClientNavigationHref(client) {
     const address = formatClientAddress(client);
     return address ? `geo:0,0?q=${encodeURIComponent(address)}` : "";
+}
+
+function getClientPhoneHref(client) {
+    const phone = String(client?.phone || "").replace(/[^\d+]/g, "");
+    return phone.replace(/\D/g, "").length >= 6 ? `tel:${phone}` : "";
 }
 
 function firstDayOfMonth(date) {
