@@ -12,6 +12,8 @@ export async function initializePurchases() {
             created_by BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE RESTRICT,
             purchase_date DATE NOT NULL,
             category VARCHAR(40) NOT NULL DEFAULT 'Autre',
+            client_id VARCHAR(100) NOT NULL DEFAULT '',
+            client_name VARCHAR(160) NOT NULL DEFAULT '',
             supplier VARCHAR(160) NOT NULL DEFAULT '',
             description VARCHAR(500) NOT NULL,
             reference VARCHAR(100) NOT NULL DEFAULT '',
@@ -29,6 +31,11 @@ export async function initializePurchases() {
         ON depannhome_purchases (owner_id, purchase_date DESC, id DESC)
     `);
     await database.query(`
+        ALTER TABLE depannhome_purchases
+        ADD COLUMN IF NOT EXISTS client_id VARCHAR(100) NOT NULL DEFAULT '',
+        ADD COLUMN IF NOT EXISTS client_name VARCHAR(160) NOT NULL DEFAULT ''
+    `);
+    await database.query(`
         CREATE INDEX IF NOT EXISTS depannhome_purchases_accounting_idx
         ON depannhome_purchases (owner_id, is_accounted, purchase_date DESC)
     `);
@@ -37,7 +44,7 @@ export async function initializePurchases() {
 export function registerPurchaseRoutes(app, requireAuthentication) {
     app.get("/api/purchases", requireAuthentication, requirePurchaseAdministration, asyncHandler(async (request, response) => {
         const { rows } = await getPool().query(`
-            SELECT id, TO_CHAR(purchase_date, 'YYYY-MM-DD') AS "purchaseDate", category, supplier, description, reference,
+            SELECT id, TO_CHAR(purchase_date, 'YYYY-MM-DD') AS "purchaseDate", category, client_id AS "clientId", client_name AS "clientName", supplier, description, reference,
                 amount_ht::float AS "amountHt", vat_rate::float AS "vatRate", is_accounted AS "isAccounted",
                 TO_CHAR(accounted_at, 'YYYY-MM-DD') AS "accountedAt", notes, created_at AS "createdAt", updated_at AS "updatedAt"
             FROM depannhome_purchases
@@ -52,11 +59,11 @@ export function registerPurchaseRoutes(app, requireAuthentication) {
         if (!purchase.ok) return response.status(400).json({ message: purchase.message });
         const { rows } = await getPool().query(`
             INSERT INTO depannhome_purchases
-                (owner_id, created_by, purchase_date, category, supplier, description, reference, amount_ht, vat_rate, is_accounted, accounted_at, notes)
-            VALUES ($1,$2,$3::date,$4,$5,$6,$7,$8,$9,$10,CASE WHEN $10 THEN CURRENT_DATE ELSE NULL END,$11)
+                (owner_id, created_by, purchase_date, category, client_id, client_name, supplier, description, reference, amount_ht, vat_rate, is_accounted, accounted_at, notes)
+            VALUES ($1,$2,$3::date,$4,$5,$6,$7,$8,$9,$10,$11,$12,CASE WHEN $12 THEN CURRENT_DATE ELSE NULL END,$13)
             RETURNING id
-        `, [getAccountOwnerId(request), request.user.sub, purchase.purchaseDate, purchase.category, purchase.supplier,
-            purchase.description, purchase.reference, purchase.amountHt, purchase.vatRate, purchase.isAccounted, purchase.notes]);
+        `, [getAccountOwnerId(request), request.user.sub, purchase.purchaseDate, purchase.category, purchase.clientId, purchase.clientName,
+            purchase.supplier, purchase.description, purchase.reference, purchase.amountHt, purchase.vatRate, purchase.isAccounted, purchase.notes]);
         response.status(201).json({ id: rows[0].id });
     }));
 
@@ -67,11 +74,11 @@ export function registerPurchaseRoutes(app, requireAuthentication) {
         if (!purchase.ok) return response.status(400).json({ message: purchase.message });
         const result = await getPool().query(`
             UPDATE depannhome_purchases
-            SET purchase_date=$3::date, category=$4, supplier=$5, description=$6, reference=$7, amount_ht=$8, vat_rate=$9,
-                is_accounted=$10, accounted_at=CASE WHEN $10 THEN COALESCE(accounted_at, CURRENT_DATE) ELSE NULL END,
-                notes=$11, updated_at=NOW()
+            SET purchase_date=$3::date, category=$4, client_id=$5, client_name=$6, supplier=$7, description=$8, reference=$9, amount_ht=$10, vat_rate=$11,
+                is_accounted=$12, accounted_at=CASE WHEN $12 THEN COALESCE(accounted_at, CURRENT_DATE) ELSE NULL END,
+                notes=$13, updated_at=NOW()
             WHERE id=$1 AND owner_id=$2
-        `, [id, getAccountOwnerId(request), purchase.purchaseDate, purchase.category, purchase.supplier, purchase.description,
+        `, [id, getAccountOwnerId(request), purchase.purchaseDate, purchase.category, purchase.clientId, purchase.clientName, purchase.supplier, purchase.description,
             purchase.reference, purchase.amountHt, purchase.vatRate, purchase.isAccounted, purchase.notes]);
         if (!result.rowCount) return response.status(404).json({ message: "Achat introuvable." });
         response.status(204).end();
@@ -109,6 +116,8 @@ function requirePurchaseAdministration(request, response, next) {
 function sanitizePurchase(value) {
     const purchaseDate = sanitizeDate(value?.purchaseDate);
     const category = PURCHASE_CATEGORIES.has(value?.category) ? value.category : "Autre";
+    const clientId = cleanText(value?.clientId, 100);
+    const clientName = cleanText(value?.clientName, 160);
     const supplier = cleanText(value?.supplier, 160);
     const description = cleanText(value?.description, 500);
     const reference = cleanText(value?.reference, 100);
@@ -118,7 +127,7 @@ function sanitizePurchase(value) {
     const notes = cleanText(value?.notes, 2000);
     if (!purchaseDate || !description) return { ok: false, message: "La date et le libellé de l’achat sont obligatoires." };
     if (amountHt === null || vatRate === null || vatRate > 100) return { ok: false, message: "Le montant HT ou la TVA est invalide." };
-    return { ok: true, purchaseDate, category, supplier, description, reference, amountHt, vatRate, isAccounted, notes };
+    return { ok: true, purchaseDate, category, clientId, clientName, supplier, description, reference, amountHt, vatRate, isAccounted, notes };
 }
 
 function sanitizeDate(value) {

@@ -123,6 +123,8 @@ CREATE TABLE IF NOT EXISTS depannhome_purchases (
     created_by BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE RESTRICT,
     purchase_date DATE NOT NULL,
     category VARCHAR(40) NOT NULL DEFAULT 'Autre',
+    client_id VARCHAR(100) NOT NULL DEFAULT '',
+    client_name VARCHAR(160) NOT NULL DEFAULT '',
     supplier VARCHAR(160) NOT NULL DEFAULT '',
     description VARCHAR(500) NOT NULL,
     reference VARCHAR(100) NOT NULL DEFAULT '',
@@ -137,6 +139,10 @@ CREATE TABLE IF NOT EXISTS depannhome_purchases (
 
 CREATE INDEX IF NOT EXISTS depannhome_purchases_owner_date_idx
     ON depannhome_purchases (owner_id, purchase_date DESC, id DESC);
+
+ALTER TABLE depannhome_purchases
+    ADD COLUMN IF NOT EXISTS client_id VARCHAR(100) NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS client_name VARCHAR(160) NOT NULL DEFAULT '';
 
 CREATE INDEX IF NOT EXISTS depannhome_purchases_accounting_idx
     ON depannhome_purchases (owner_id, is_accounted, purchase_date DESC);

@@ -1,4 +1,5 @@
-import { ROUTES } from "./config.js?v=108";
+import { ROUTES } from "./config.js?v=111";
+import { getSearchableClients } from "./clients.js?v=110";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { clearSearch, getContainer, setPage } from "./ui.js?v=44";
@@ -60,12 +61,18 @@ function renderPurchaseEditor(panel) {
     panel.hidden = false;
     const purchase = activePurchase;
     const isEditing = Boolean(purchase.id);
+    const clients = getSearchableClients().sort((first, second) => first.name.localeCompare(second.name, "fr"));
+    const selectedClient = clients.find(client => client.id === purchase.clientId);
+    const unavailableClientOption = purchase.clientId && !selectedClient
+        ? `<option value="${escapeHtml(purchase.clientId)}" selected>${escapeHtml(purchase.clientName || "Client archivé")}</option>`
+        : "";
     panel.innerHTML = `
         <form id="purchaseForm" class="client-form">
             <div class="form-heading"><div><p class="eyebrow">${isEditing ? "Modification" : "Nouvel achat"}</p><h2>${isEditing ? "Modifier l’achat" : "Enregistrer un achat"}</h2></div><button type="button" class="secondary-button" id="cancelPurchase">Annuler</button></div>
             <div class="form-grid">
                 <label>Date *<input name="purchaseDate" type="date" required value="${escapeHtml(purchase.purchaseDate)}"></label>
                 <label>Catégorie *<select name="category">${PURCHASE_CATEGORIES.map(category => `<option value="${escapeHtml(category)}" ${purchase.category === category ? "selected" : ""}>${escapeHtml(category)}</option>`).join("")}</select></label>
+                <label>Client concerné<select name="clientId"><option value="">Aucun client</option>${unavailableClientOption}${clients.map(client => `<option value="${escapeHtml(client.id)}" ${purchase.clientId === client.id ? "selected" : ""}>${escapeHtml(client.name)}</option>`).join("")}</select></label>
                 <label>Fournisseur<input name="supplier" maxlength="160" placeholder="Ex. fournisseur, bailleur…" value="${escapeHtml(purchase.supplier)}"></label>
                 <label>Référence / justificatif<input name="reference" maxlength="100" placeholder="N° facture, ticket, contrat…" value="${escapeHtml(purchase.reference)}"></label>
                 <label class="form-wide">Libellé *<input name="description" maxlength="500" required placeholder="Ex. Moteur de portail, fournitures, loyer atelier…" value="${escapeHtml(purchase.description)}"></label>
@@ -94,6 +101,7 @@ function renderPurchaseEditor(panel) {
         event.preventDefault();
         const message = panel.querySelector("#purchaseMessage");
         const payload = formDataToObject(new FormData(form));
+        payload.clientName = payload.clientId ? (clients.find(client => client.id === payload.clientId)?.name || purchase.clientName || "") : "";
         const result = await apiRequest(isEditing ? `/api/purchases/${encodeURIComponent(purchase.id)}` : "/api/purchases", { method: isEditing ? "PUT" : "POST", body: JSON.stringify(payload) });
         if (!result.ok) { message.textContent = result.message || "Impossible d’enregistrer l’achat."; message.classList.add("error"); return; }
         activePurchase = null;
@@ -122,7 +130,7 @@ function renderPurchaseList(panel) {
     const renderFilteredPurchases = () => {
         const query = normalizeText(search.value);
         const visiblePurchases = purchases.filter(purchase => {
-            const matchesQuery = !query || normalizeText(`${purchase.supplier} ${purchase.description} ${purchase.reference}`).includes(query);
+            const matchesQuery = !query || normalizeText(`${purchase.clientName} ${purchase.supplier} ${purchase.description} ${purchase.reference}`).includes(query);
             const matchesCategory = categoryFilter.value === "all" || purchase.category === categoryFilter.value;
             const matchesAccounting = accountingFilter.value === "all" || (accountingFilter.value === "accounted" ? purchase.isAccounted : !purchase.isAccounted);
             return matchesQuery && matchesCategory && matchesAccounting;
@@ -134,7 +142,7 @@ function renderPurchaseList(panel) {
             item.className = "purchase-item";
             const totals = calculateTotals([purchase]);
             const accountingLabel = purchase.isAccounted ? `Comptabilisé le ${formatDate(purchase.accountedAt)}` : "À comptabiliser";
-            item.innerHTML = `<div><p class="eyebrow">${escapeHtml(purchase.category)}</p><h3>${escapeHtml(purchase.description)}</h3><p>${escapeHtml(purchase.supplier || "Fournisseur non renseigné")}${purchase.reference ? ` · ${escapeHtml(purchase.reference)}` : ""}</p><small>${escapeHtml(formatDate(purchase.purchaseDate))} · <span class="billing-accounting-status ${purchase.isAccounted ? "is-accounted" : ""}">${escapeHtml(accountingLabel)}</span></small></div><div class="billing-document-amount"><strong>${formatMoney(totals.ttc)}</strong><small>${formatMoney(totals.ht)} HT · TVA ${formatMoney(totals.vat)}</small></div><div class="billing-document-actions"><button type="button" class="secondary-button" data-accounting="${purchase.isAccounted ? "false" : "true"}">${purchase.isAccounted ? "Décomptabiliser" : "Comptabiliser"}</button><button type="button" class="secondary-button" data-open-purchase>Ouvrir</button></div>`;
+            item.innerHTML = `<div><p class="eyebrow">${escapeHtml(purchase.category)}${purchase.clientName ? ` · Client : ${escapeHtml(purchase.clientName)}` : ""}</p><h3>${escapeHtml(purchase.description)}</h3><p>${escapeHtml(purchase.supplier || "Fournisseur non renseigné")}${purchase.reference ? ` · ${escapeHtml(purchase.reference)}` : ""}</p><small>${escapeHtml(formatDate(purchase.purchaseDate))} · <span class="billing-accounting-status ${purchase.isAccounted ? "is-accounted" : ""}">${escapeHtml(accountingLabel)}</span></small></div><div class="billing-document-amount"><strong>${formatMoney(totals.ttc)}</strong><small>${formatMoney(totals.ht)} HT · TVA ${formatMoney(totals.vat)}</small></div><div class="billing-document-actions"><button type="button" class="secondary-button" data-accounting="${purchase.isAccounted ? "false" : "true"}">${purchase.isAccounted ? "Décomptabiliser" : "Comptabiliser"}</button><button type="button" class="secondary-button" data-open-purchase>Ouvrir</button></div>`;
             item.querySelector("[data-open-purchase]").addEventListener("click", () => { activePurchase = normalizePurchase(purchase); renderPurchases(); });
             item.querySelector("[data-accounting]").addEventListener("click", async event => {
                 const result = await apiRequest(`/api/purchases/${encodeURIComponent(purchase.id)}/accounting`, { method: "PATCH", body: JSON.stringify({ isAccounted: event.currentTarget.dataset.accounting === "true" }) });
@@ -149,7 +157,7 @@ function renderPurchaseList(panel) {
 }
 
 function createNewPurchase() {
-    return { id: null, purchaseDate: today(), category: "Matériel", supplier: "", description: "", reference: "", amountHt: 0, vatRate: 20, isAccounted: false, notes: "" };
+    return { id: null, purchaseDate: today(), category: "Matériel", clientId: "", clientName: "", supplier: "", description: "", reference: "", amountHt: 0, vatRate: 20, isAccounted: false, notes: "" };
 }
 
 function normalizePurchase(purchase) {

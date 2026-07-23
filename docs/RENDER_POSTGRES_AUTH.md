@@ -49,7 +49,7 @@ Sur la fiche d’un client, les devis et factures associés sont proposés avec 
 
 ## Achats de l’entreprise
 
-L’onglet PC **Achats** contient un registre des dépenses de l’entreprise : matériel, consommables, loyer, véhicule, outillage, sous-traitance, services, assurances et autres achats. Chaque achat conserve sa date, son fournisseur, sa référence ou son justificatif, son libellé, son montant HT, sa TVA, ses notes et son état de comptabilisation. Le registre calcule les totaux HT, TVA, TTC et comptabilisés, et peut être filtré par catégorie ou état comptable. Il est isolé côté serveur par entreprise et réservé aux administrateurs.
+L’onglet PC **Achats** contient un registre des dépenses de l’entreprise : matériel, consommables, loyer, véhicule, outillage, sous-traitance, services, assurances et autres achats. Chaque achat peut être attribué à un client et conserve sa date, son fournisseur, sa référence ou son justificatif, son libellé, son montant HT, sa TVA, ses notes et son état de comptabilisation. Le registre calcule les totaux HT, TVA, TTC et comptabilisés, et peut être filtré par catégorie ou état comptable. Il est isolé côté serveur par entreprise et réservé aux administrateurs.
 
 ## Notes internes synchronisées
 
