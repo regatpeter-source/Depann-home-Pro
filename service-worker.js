@@ -1,4 +1,4 @@
-const CACHE_NAME = "depann-home-pro-v105";
+const CACHE_NAME = "depann-home-pro-v106";
 const ASSETS = [
     "./",
     "./index.html",

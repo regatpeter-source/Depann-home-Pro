@@ -1,7 +1,7 @@
-import { ROUTES, STORAGE_KEYS, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=105";
+import { ROUTES, STORAGE_KEYS, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=106";
 import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=105";
 import { renderCreatorConsole } from "./creator.js?v=105";
-import { createBillingDocumentForClient, renderBilling } from "./billing.js?v=105";
+import { createBillingDocumentForClient, renderBilling } from "./billing.js?v=106";
 import { getFirstUnreadClientId, refreshClientMessageAlert } from "./messages.js?v=88";
 import { getSearchableClients, renderClients } from "./clients.js?v=105";
 import { configureLibrary, openLibrarySection, renderLibrary, searchPersonalLibrary } from "./library.js?v=105";

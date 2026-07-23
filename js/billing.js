@@ -253,7 +253,7 @@ function renderReadOnlyDocument(panel, document) {
     panel.querySelector("#closeBillingDocument").addEventListener("click", () => { activeDocument = null; renderBilling(); });
 }
 
-function createLineEditor(line, index, document, rerender) {
+function createLineEditor(line, index, billingDocument, rerender) {
     const item = document.createElement("article");
     item.className = "billing-line";
     item.innerHTML = `
@@ -271,7 +271,7 @@ function createLineEditor(line, index, document, rerender) {
         const field = input.dataset.field;
         line[field] = ["quantity", "unitPrice", "vatRate"].includes(field) ? Number(input.value) || 0 : input.value;
         item.querySelector(".billing-line-total").textContent = formatMoney(lineTotal(line));
-        renderTotals(item.closest("form").querySelector("#billingTotals"), document.lines);
+        renderTotals(item.closest("form").querySelector("#billingTotals"), billingDocument.lines);
     }));
     item.querySelector("select").addEventListener("change", event => {
         const template = billingData.templates.find(value => String(value.id) === event.target.value);
@@ -279,7 +279,7 @@ function createLineEditor(line, index, document, rerender) {
         Object.assign(line, { description: template.description ? `${template.label} — ${template.description}` : template.label, unit: template.unit, unitPrice: Number(template.unitPrice), vatRate: Number(template.vatRate) });
         rerender();
     });
-    item.querySelector("button").addEventListener("click", () => { document.lines.splice(index, 1); if (!document.lines.length) document.lines.push(emptyLine()); rerender(); });
+    item.querySelector("button").addEventListener("click", () => { billingDocument.lines.splice(index, 1); if (!billingDocument.lines.length) billingDocument.lines.push(emptyLine()); rerender(); });
     return item;
 }
 
