@@ -124,6 +124,7 @@ CREATE TABLE IF NOT EXISTS depannhome_calendar_events (
     start_time TIME,
     end_time TIME,
     color VARCHAR(20) NOT NULL DEFAULT 'blue',
+    event_type VARCHAR(20) NOT NULL DEFAULT 'appointment',
     notes VARCHAR(2000) NOT NULL DEFAULT '',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -138,6 +139,9 @@ CREATE INDEX IF NOT EXISTS depannhome_calendar_events_owner_date_idx
 
 ALTER TABLE depannhome_calendar_events
     ADD COLUMN IF NOT EXISTS assigned_technician_id BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL;
+
+ALTER TABLE depannhome_calendar_events
+ADD COLUMN IF NOT EXISTS event_type VARCHAR(20) NOT NULL DEFAULT 'appointment';
 
 CREATE TABLE IF NOT EXISTS depannhome_library_sections (
     id BIGSERIAL PRIMARY KEY,

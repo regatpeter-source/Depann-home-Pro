@@ -2,6 +2,7 @@ import { getPool } from "./database.js";
 import { getAccountOwnerId } from "./auth.js";
 
 const EVENT_COLORS = new Set(["blue", "green", "orange", "red", "purple", "gray"]);
+const EVENT_TYPES = new Set(["appointment", "vacation", "sick_leave", "unavailable"]);
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
 
@@ -19,6 +20,7 @@ export async function initializeCalendar() {
             start_time TIME,
             end_time TIME,
             color VARCHAR(20) NOT NULL DEFAULT 'blue',
+            event_type VARCHAR(20) NOT NULL DEFAULT 'appointment',
             notes VARCHAR(2000) NOT NULL DEFAULT '',
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -31,6 +33,10 @@ export async function initializeCalendar() {
     await database.query(`
         ALTER TABLE depannhome_calendar_events
         ADD COLUMN IF NOT EXISTS assigned_technician_id BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL
+    `);
+    await database.query(`
+        ALTER TABLE depannhome_calendar_events
+        ADD COLUMN IF NOT EXISTS event_type VARCHAR(20) NOT NULL DEFAULT 'appointment'
     `);
     await database.query(`
         CREATE INDEX IF NOT EXISTS depannhome_calendar_events_owner_date_idx
@@ -56,6 +62,7 @@ export function registerCalendarRoutes(app, requireAuthentication) {
                 TO_CHAR(event.start_time, 'HH24:MI') AS "startTime",
                 TO_CHAR(event.end_time, 'HH24:MI') AS "endTime",
                 event.color,
+                event.event_type AS "eventType",
                 event.notes,
                 event.created_at AS "createdAt",
                 event.updated_at AS "updatedAt"
@@ -77,10 +84,10 @@ export function registerCalendarRoutes(app, requireAuthentication) {
 
         const { rows } = await getPool().query(`
             INSERT INTO depannhome_calendar_events
-                (owner_id, assigned_technician_id, title, client_name, location, event_date, start_time, end_time, color, notes)
-            VALUES ($1, $2, $3, $4, $5, $6::date, $7::time, $8::time, $9, $10)
+                (owner_id, assigned_technician_id, title, client_name, location, event_date, start_time, end_time, color, event_type, notes)
+            VALUES ($1, $2, $3, $4, $5, $6::date, $7::time, $8::time, $9, $10, $11)
             RETURNING id
-        `, [getAccountOwnerId(request), event.assignedTechnicianId || null, event.title, event.clientName, event.location, event.date, event.startTime, event.endTime, event.color, event.notes]);
+        `, [getAccountOwnerId(request), event.assignedTechnicianId || null, event.title, event.clientName, event.location, event.date, event.startTime, event.endTime, event.color, event.eventType, event.notes]);
         response.status(201).json({ id: rows[0].id });
     }));
 
@@ -97,9 +104,9 @@ export function registerCalendarRoutes(app, requireAuthentication) {
         const { rowCount } = await getPool().query(`
             UPDATE depannhome_calendar_events
             SET assigned_technician_id = $3, title = $4, client_name = $5, location = $6, event_date = $7::date,
-                start_time = $8::time, end_time = $9::time, color = $10, notes = $11, updated_at = NOW()
+                start_time = $8::time, end_time = $9::time, color = $10, event_type = $11, notes = $12, updated_at = NOW()
             WHERE id = $1 AND owner_id = $2
-        `, [id, getAccountOwnerId(request), event.assignedTechnicianId || null, event.title, event.clientName, event.location, event.date, event.startTime, event.endTime, event.color, event.notes]);
+        `, [id, getAccountOwnerId(request), event.assignedTechnicianId || null, event.title, event.clientName, event.location, event.date, event.startTime, event.endTime, event.color, event.eventType, event.notes]);
         if (!rowCount) return response.status(404).json({ message: "Rendez-vous introuvable." });
         response.status(204).end();
     }));
@@ -131,6 +138,7 @@ function sanitizeEvent(value) {
     const startTime = sanitizeTime(value?.startTime);
     const endTime = sanitizeTime(value?.endTime);
     const color = EVENT_COLORS.has(value?.color) ? value.color : "blue";
+    const eventType = EVENT_TYPES.has(value?.eventType) ? value.eventType : "appointment";
     const notes = cleanText(value?.notes, 2000);
     const assignedTechnicianId = optionalPositiveId(value?.assignedTechnicianId);
 
@@ -141,7 +149,7 @@ function sanitizeEvent(value) {
     if (startTime && endTime && endTime < startTime) return { ok: false, message: "L’heure de fin doit être après l’heure de début." };
 
     if (value?.assignedTechnicianId && !assignedTechnicianId) return { ok: false, message: "Le technicien sélectionné est invalide." };
-    return { ok: true, title, clientName, location, date, startTime, endTime, color, notes, assignedTechnicianId };
+    return { ok: true, title, clientName, location, date, startTime, endTime, color, eventType, notes, assignedTechnicianId };
 }
 
 async function validateAssignedTechnician(accountOwnerId, technicianId) {
@@ -161,14 +169,15 @@ async function findCalendarConflict(accountOwnerId, event, excludedEventId = 0) 
         WHERE owner_id = $1
           AND event_date = $2::date
           AND id <> $3
+                    AND assigned_technician_id IS NOT DISTINCT FROM $4::bigint
           AND ${timedEvent
-        ? "(start_time IS NULL OR end_time IS NULL OR (start_time < $5::time AND end_time > $4::time))"
+                ? "(start_time IS NULL OR end_time IS NULL OR (start_time < $6::time AND end_time > $5::time))"
         : "TRUE"}
         ORDER BY start_time NULLS FIRST, created_at
         LIMIT 1
     `, timedEvent
-        ? [accountOwnerId, event.date, excludedEventId, event.startTime, event.endTime]
-        : [accountOwnerId, event.date, excludedEventId]);
+        ? [accountOwnerId, event.date, excludedEventId, event.assignedTechnicianId || null, event.startTime, event.endTime]
+        : [accountOwnerId, event.date, excludedEventId, event.assignedTechnicianId || null]);
     return rows[0] || null;
 }
 

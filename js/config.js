@@ -1,4 +1,4 @@
-export const APP_VERSION = "1.10.24 Ouverture fichiers technicien";
+export const APP_VERSION = "1.10.25 Planning équipe et absences";
 export const DATA_VERSION = "2026-07-20-35";
 
 export const STORAGE_KEYS = {

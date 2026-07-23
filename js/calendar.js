@@ -1,6 +1,6 @@
-import { ROUTES } from "./config.js?v=97";
-import { createBillingDocumentForClient } from "./billing.js?v=97";
-import { getSearchableClients, renderClients } from "./clients.js?v=97";
+import { ROUTES } from "./config.js?v=98";
+import { createBillingDocumentForClient } from "./billing.js?v=98";
+import { getSearchableClients, renderClients } from "./clients.js?v=98";
 import { addClientActivityByName, synchronizeClients } from "./client-sync.js?v=88";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
@@ -15,12 +15,20 @@ const COLOR_OPTIONS = [
     { id: "gray", label: "Indisponible", value: "#475569" }
 ];
 const WEEK_DAYS = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
+const EVENT_TYPE_OPTIONS = [
+    { id: "appointment", label: "Rendez-vous", title: "Intervention", color: "blue" },
+    { id: "vacation", label: "Vacances", title: "Vacances", color: "purple" },
+    { id: "sick_leave", label: "Arrêt", title: "Arrêt", color: "red" },
+    { id: "unavailable", label: "Indisponibilité", title: "Indisponibilité", color: "gray" }
+];
 
 let displayedMonth = firstDayOfMonth(new Date());
 let events = [];
 let selectedEvent = null;
 let calendarView = "month";
 let technicians = [];
+let showAllTechnicians = true;
+let visibleTechnicianIds = new Set();
 
 export async function renderCalendar(options = {}) {
     if (options.date) displayedMonth = calendarView === "month" ? firstDayOfMonth(options.date) : atNoon(options.date);
@@ -102,6 +110,7 @@ function renderHeader(panel) {
         <div class="calendar-view-switcher" role="group" aria-label="Vue du planning">
             ${[ ["month", "Mois"], ["week", "Semaine"], ["day", "Jour"] ].map(([view, label]) => `<button type="button" class="secondary-button${calendarView === view ? " active" : ""}" data-calendar-view="${view}">${label}</button>`).join("")}
         </div>
+        ${readOnly ? "" : renderTechnicianFilter()}
         <div class="calendar-legend">
             ${COLOR_OPTIONS.map(color => `<span><i style="background:${color.value}"></i>${color.label}</span>`).join("")}
         </div>
@@ -135,6 +144,31 @@ function renderHeader(panel) {
         selectedEvent = null;
         renderCalendar();
     }));
+    panel.querySelector("[data-calendar-filter=all]")?.addEventListener("change", event => {
+        showAllTechnicians = event.currentTarget.checked;
+        if (showAllTechnicians) visibleTechnicianIds.clear();
+        renderCalendar();
+    });
+    panel.querySelectorAll("[data-calendar-technician]").forEach(input => input.addEventListener("change", event => {
+        showAllTechnicians = false;
+        const id = String(event.currentTarget.dataset.calendarTechnician);
+        if (event.currentTarget.checked) visibleTechnicianIds.add(id);
+        else visibleTechnicianIds.delete(id);
+        renderCalendar();
+    }));
+}
+
+function renderTechnicianFilter() {
+    const count = showAllTechnicians ? technicians.length : visibleTechnicianIds.size;
+    return `
+        <section class="calendar-technician-filter" aria-label="Filtrer le planning par technicien">
+            <div><p class="eyebrow">Équipe affichée</p><strong>${count} technicien${count === 1 ? "" : "s"} sélectionné${count === 1 ? "" : "s"}</strong></div>
+            <div class="calendar-technician-options">
+                <label><input type="checkbox" data-calendar-filter="all" ${showAllTechnicians ? "checked" : ""}> Toute l’équipe</label>
+                ${technicians.map(technician => `<label><input type="checkbox" data-calendar-technician="${escapeHtml(technician.id)}" ${showAllTechnicians || visibleTechnicianIds.has(String(technician.id)) ? "checked" : ""}> ${escapeHtml(technician.fullName || technician.username)}</label>`).join("")}
+            </div>
+        </section>
+    `;
 }
 
 function renderEventForm(panel) {
@@ -196,6 +230,10 @@ function renderEventForm(panel) {
             </div>
             <div class="form-grid">
                 <label>
+                    Type
+                    <select name="eventType">${EVENT_TYPE_OPTIONS.map(type => `<option value="${type.id}" ${event.eventType === type.id ? "selected" : ""}>${type.label}</option>`).join("")}</select>
+                </label>
+                <label>
                     Titre *
                     <input name="title" maxlength="160" required placeholder="Ex. Intervention volet roulant" value="${escapeHtml(event.title)}">
                 </label>
@@ -249,6 +287,7 @@ function renderEventForm(panel) {
     const form = panel.querySelector("#calendarEventForm");
     const clientInput = form.querySelector("[name=clientName]");
     const locationInput = form.querySelector("[name=location]");
+    const eventTypeInput = form.querySelector("[name=eventType]");
     const fillClientAddress = () => {
         const clientName = normalizeText(clientInput.value);
         const client = clients.find(item => normalizeText(item.name) === clientName);
@@ -257,7 +296,19 @@ function renderEventForm(panel) {
     };
     clientInput.addEventListener("input", fillClientAddress);
     clientInput.addEventListener("change", fillClientAddress);
-    ["date", "startTime", "endTime", "title"].forEach(name => form.elements[name].addEventListener("input", () => renderCalendarAvailability(form, event.id)));
+    eventTypeInput.addEventListener("change", () => {
+        const type = getEventType(eventTypeInput.value);
+        if (!event.id || form.elements.title.value === getEventType(event.eventType).title) form.elements.title.value = type.title;
+        form.elements.color.value = type.color;
+        if (type.id !== "appointment") {
+            clientInput.value = "";
+            locationInput.value = "";
+            form.elements.startTime.value = "";
+            form.elements.endTime.value = "";
+        }
+        renderCalendarAvailability(form, event.id);
+    });
+    ["date", "startTime", "endTime", "title", "assignedTechnicianId"].forEach(name => form.elements[name].addEventListener("input", () => renderCalendarAvailability(form, event.id)));
     renderCalendarAvailability(form, event.id);
 
     form.addEventListener("submit", async eventSubmit => {
@@ -383,7 +434,7 @@ function renderCalendarGrid(panel) {
     panel.hidden = false;
     const days = getCalendarDays(displayedMonth);
     const eventsByDate = new Map();
-    events.forEach(event => {
+    getVisibleEvents().forEach(event => {
         if (!eventsByDate.has(event.date)) eventsByDate.set(event.date, []);
         eventsByDate.get(event.date).push(event);
     });
@@ -444,21 +495,41 @@ function renderCalendarList(panel) {
     panel.hidden = false;
     const { start, end } = getDisplayedRange();
     const eventDates = new Map();
-    events.forEach(event => {
+    getVisibleEvents().forEach(event => {
         if (!eventDates.has(event.date)) eventDates.set(event.date, []);
         eventDates.get(event.date).push(event);
     });
     const days = [];
     for (const day = new Date(start); day <= end; day.setDate(day.getDate() + 1)) days.push(new Date(day));
+    const canCreate = !isReadOnlyCalendar();
     panel.innerHTML = `<div class="calendar-list-view">${days.map(day => {
         const date = toDateString(day);
         const dayEvents = eventDates.get(date) || [];
-        return `<section class="calendar-list-day"><h3>${escapeHtml(new Intl.DateTimeFormat("fr-FR", { weekday: "long", day: "numeric", month: "long" }).format(day))}</h3>${dayEvents.length ? `<div class="calendar-list-events">${dayEvents.map(event => `<button type="button" class="calendar-event color-${escapeHtml(event.color)}" data-calendar-event="${escapeHtml(event.id)}">${renderCalendarEventCard(event, getEventClientDetails(event))}</button>`).join("")}</div>` : '<p class="muted">Aucun rendez-vous.</p>'}</section>`;
+        return `<section class="calendar-list-day${canCreate ? " calendar-list-day-clickable" : ""}"${canCreate ? ` data-calendar-date="${date}" tabindex="0" role="button" aria-label="Ajouter un événement le ${escapeHtml(formatShortDate(day))}"` : ""}><h3>${escapeHtml(new Intl.DateTimeFormat("fr-FR", { weekday: "long", day: "numeric", month: "long" }).format(day))}</h3>${dayEvents.length ? `<div class="calendar-list-events">${dayEvents.map(event => `<button type="button" class="calendar-event color-${escapeHtml(event.color)}" data-calendar-event="${escapeHtml(event.id)}">${renderCalendarEventCard(event, getEventClientDetails(event))}</button>`).join("")}</div>` : '<p class="muted">Aucun événement. Cliquez pour en ajouter un.</p>'}</section>`;
     }).join("")}</div>`;
     panel.querySelectorAll("[data-calendar-event]").forEach(button => button.addEventListener("click", () => {
         selectedEvent = events.find(event => String(event.id) === button.dataset.calendarEvent) || null;
         renderCalendar();
     }));
+    panel.querySelectorAll("[data-calendar-date]").forEach(day => {
+        const openNewEvent = () => {
+            selectedEvent = newEventForDate(day.dataset.calendarDate);
+            renderCalendar({ date: new Date(`${day.dataset.calendarDate}T12:00:00`) });
+        };
+        day.addEventListener("click", event => {
+            if (!event.target.closest(".calendar-event")) openNewEvent();
+        });
+        day.addEventListener("keydown", event => {
+            if (event.target !== day || !["Enter", " "].includes(event.key)) return;
+            event.preventDefault();
+            openNewEvent();
+        });
+    });
+}
+
+function getVisibleEvents() {
+    if (isReadOnlyCalendar() || showAllTechnicians) return events;
+    return events.filter(event => visibleTechnicianIds.has(String(event.assignedTechnicianId || "")));
 }
 
 function renderCalendarEventCard(event, client) {
@@ -530,7 +601,7 @@ function startOfWeek(date) {
 function atNoon(date) { return new Date(date.getFullYear(), date.getMonth(), date.getDate(), 12); }
 
 function newEventForDate(date) {
-    return { title: "", clientName: "", location: "", date, startTime: "", endTime: "", color: "blue", notes: "", assignedTechnicianId: "", assignedTechnicianName: "" };
+    return { title: "", clientName: "", location: "", date, startTime: "", endTime: "", color: "blue", eventType: "appointment", notes: "", assignedTechnicianId: "", assignedTechnicianName: "" };
 }
 
 function formToEvent(form) {
@@ -542,9 +613,14 @@ function formToEvent(form) {
         startTime: String(form.get("startTime") || ""),
         endTime: String(form.get("endTime") || ""),
         color: String(form.get("color") || "blue"),
+        eventType: String(form.get("eventType") || "appointment"),
         assignedTechnicianId: String(form.get("assignedTechnicianId") || ""),
         notes: String(form.get("notes") || "").trim()
     };
+}
+
+function getEventType(value) {
+    return EVENT_TYPE_OPTIONS.find(type => type.id === value) || EVENT_TYPE_OPTIONS[0];
 }
 
 function formatClientAddress(client) {

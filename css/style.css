@@ -1678,6 +1678,39 @@ body.desktop-device .nav-label-messages{
     border-color:var(--secondary);
 }
 
+.calendar-technician-filter{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:16px;
+    margin-top:16px;
+    padding:14px 16px;
+    border:1px solid var(--border);
+    border-radius:14px;
+    background:#f8fbff;
+}
+
+.calendar-technician-filter strong{
+    color:var(--primary);
+}
+
+.calendar-technician-options{
+    display:flex;
+    flex-wrap:wrap;
+    justify-content:flex-end;
+    gap:8px 12px;
+}
+
+.calendar-technician-options label{
+    display:inline-flex;
+    align-items:center;
+    gap:5px;
+    color:var(--primary);
+    font-size:13px;
+    font-weight:700;
+    cursor:pointer;
+}
+
 .calendar-legend{
     display:flex;
     flex-wrap:wrap;
@@ -1850,6 +1883,17 @@ body.desktop-device .nav-label-messages{
     color:var(--primary);
     font-size:16px;
     text-transform:capitalize;
+}
+
+.calendar-list-day-clickable{
+    cursor:pointer;
+}
+
+.calendar-list-day-clickable:hover,
+.calendar-list-day-clickable:focus-visible{
+    border-color:var(--secondary);
+    box-shadow:0 0 0 3px rgba(10,92,54,.12);
+    outline:none;
 }
 
 .calendar-list-events{
@@ -2577,6 +2621,15 @@ footer{
 
     .calendar-view-switcher .secondary-button{
         flex:1;
+    }
+
+    .calendar-technician-filter{
+        align-items:stretch;
+        flex-direction:column;
+    }
+
+    .calendar-technician-options{
+        justify-content:flex-start;
     }
 
     .calendar-event-detail dl{
