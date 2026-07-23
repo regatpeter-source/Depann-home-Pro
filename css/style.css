@@ -1553,6 +1553,99 @@ body.desktop-device .nav-label-messages{
     margin-top:18px;
 }
 
+.calendar-quitus,
+.calendar-intervention-photos{
+    display:grid;
+    gap:14px;
+    margin-top:18px;
+    padding:16px;
+    border:1px solid var(--border);
+    border-radius:14px;
+    background:#f8fbff;
+}
+
+.calendar-quitus label,
+.calendar-intervention-photos label{
+    display:grid;
+    gap:7px;
+    color:var(--primary);
+    font-weight:700;
+}
+
+.calendar-quitus input,
+.calendar-intervention-photos input{
+    width:100%;
+    min-width:0;
+    padding:10px 12px;
+    border:1px solid var(--border);
+    border-radius:10px;
+    background:#fff;
+}
+
+.quitus-status{
+    align-self:start;
+    padding:6px 10px;
+    border-radius:999px;
+    background:#fff4d8;
+    color:#9a6700;
+    font-size:13px;
+    font-weight:800;
+}
+
+.quitus-status.signed{
+    background:#dcfce7;
+    color:#15803d;
+}
+
+.quitus-signature-canvas{
+    width:100%;
+    height:160px;
+    touch-action:none;
+    border:2px dashed #94a3b8;
+    border-radius:12px;
+    background:#fff;
+    cursor:crosshair;
+}
+
+.calendar-intervention-photos{
+    grid-template-columns:repeat(2, minmax(0, 1fr));
+}
+
+.calendar-intervention-photos > div:first-child,
+.calendar-intervention-photos .calendar-form-actions,
+.calendar-intervention-photos .auth-message{
+    grid-column:1/-1;
+}
+
+.calendar-intervention-photos section{
+    min-width:0;
+    padding:12px;
+    border:1px solid var(--border);
+    border-radius:12px;
+    background:#fff;
+}
+
+.calendar-intervention-photos h3,
+.calendar-intervention-photos h4{
+    margin:3px 0;
+    color:var(--primary);
+}
+
+.intervention-photo-previews{
+    display:grid;
+    grid-template-columns:repeat(auto-fit, minmax(80px, 1fr));
+    gap:8px;
+    margin:10px 0;
+}
+
+.intervention-photo-previews img{
+    width:100%;
+    aspect-ratio:1;
+    object-fit:cover;
+    border:1px solid var(--border);
+    border-radius:9px;
+}
+
 .calendar-client-upload{
     display:grid;
     grid-template-columns:repeat(2, minmax(0, 1fr));
@@ -2617,6 +2710,17 @@ footer{
         grid-template-columns:1fr;
         width:100%;
         padding:12px;
+    }
+
+    .calendar-intervention-photos{
+        grid-template-columns:1fr;
+        padding:12px;
+    }
+
+    .calendar-intervention-photos > div:first-child,
+    .calendar-intervention-photos .calendar-form-actions,
+    .calendar-intervention-photos .auth-message{
+        grid-column:auto;
     }
 
     .calendar-view-switcher .secondary-button{

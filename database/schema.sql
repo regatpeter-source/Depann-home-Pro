@@ -125,6 +125,10 @@ CREATE TABLE IF NOT EXISTS depannhome_calendar_events (
     end_time TIME,
     color VARCHAR(20) NOT NULL DEFAULT 'blue',
     event_type VARCHAR(20) NOT NULL DEFAULT 'appointment',
+    quitus_status VARCHAR(20) NOT NULL DEFAULT 'pending',
+    quitus_signed_by VARCHAR(160) NOT NULL DEFAULT '',
+    quitus_signature TEXT NOT NULL DEFAULT '',
+    quitus_signed_at TIMESTAMPTZ,
     notes VARCHAR(2000) NOT NULL DEFAULT '',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -142,6 +146,12 @@ ALTER TABLE depannhome_calendar_events
 
 ALTER TABLE depannhome_calendar_events
 ADD COLUMN IF NOT EXISTS event_type VARCHAR(20) NOT NULL DEFAULT 'appointment';
+
+ALTER TABLE depannhome_calendar_events
+ADD COLUMN IF NOT EXISTS quitus_status VARCHAR(20) NOT NULL DEFAULT 'pending',
+ADD COLUMN IF NOT EXISTS quitus_signed_by VARCHAR(160) NOT NULL DEFAULT '',
+ADD COLUMN IF NOT EXISTS quitus_signature TEXT NOT NULL DEFAULT '',
+ADD COLUMN IF NOT EXISTS quitus_signed_at TIMESTAMPTZ;
 
 CREATE TABLE IF NOT EXISTS depannhome_library_sections (
     id BIGSERIAL PRIMARY KEY,

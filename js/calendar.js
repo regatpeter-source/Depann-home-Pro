@@ -1,6 +1,6 @@
-import { ROUTES } from "./config.js?v=98";
-import { createBillingDocumentForClient } from "./billing.js?v=98";
-import { getSearchableClients, renderClients } from "./clients.js?v=98";
+import { ROUTES } from "./config.js?v=99";
+import { createBillingDocumentForClient } from "./billing.js?v=99";
+import { getSearchableClients, renderClients } from "./clients.js?v=99";
 import { addClientActivityByName, synchronizeClients } from "./client-sync.js?v=88";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
@@ -188,6 +188,7 @@ function renderEventForm(panel) {
             <div class="calendar-event-detail">
                 <div class="form-heading"><div><p class="eyebrow">Rendez-vous</p><h2>${escapeHtml(event.title)}</h2></div><button type="button" class="secondary-button" id="closeCalendarDetail">Fermer</button></div>
                 <dl><dt>Date</dt><dd>${escapeHtml(formatActivityDate(event.date, event.startTime))}${event.endTime ? ` — ${escapeHtml(event.endTime)}` : ""}</dd>${event.assignedTechnicianName ? `<dt>Technicien</dt><dd>${escapeHtml(event.assignedTechnicianName)}</dd>` : ""}${event.clientName ? `<dt>Client</dt><dd>${escapeHtml(event.clientName)}</dd>` : ""}${event.location ? `<dt>Lieu</dt><dd>${escapeHtml(event.location)}</dd>` : ""}${event.notes ? `<dt>Notes</dt><dd>${escapeHtml(event.notes)}</dd>` : ""}</dl>
+                ${event.eventType === "appointment" && client ? renderQuitusHtml(event) : ""}
                 ${client ? `
                     <div class="calendar-event-actions" aria-label="Actions pour ${escapeHtml(client.name)}">
                         ${navigationHref ? `<a class="secondary-button client-navigation-button" href="${escapeHtml(navigationHref)}" aria-label="Y aller vers ${escapeHtml(formatClientAddress(client))}">Y aller</a>` : '<button type="button" class="secondary-button client-navigation-button" disabled title="Adresse client non renseignée.">Y aller</button>'}
@@ -197,6 +198,7 @@ function renderEventForm(panel) {
                         <button type="button" class="secondary-button" data-client-action="invoice">+ Facture</button>
                         <button type="button" class="secondary-button" data-client-action="messages">Notes / messages</button>
                     </div>
+                    ${renderInterventionPhotosHtml(client)}
                     <form id="calendarClientUpload" class="calendar-client-upload">
                         <div><p class="eyebrow">Dossier d’intervention</p><h3>Ajouter une photo ou un fichier</h3><p class="muted">Le dépôt est ajouté au dossier de ${escapeHtml(client.name)}, sans modifier ses coordonnées.</p></div>
                         <label>Type de fichier<select name="type"><option value="Photo">Photo</option><option value="Autre">Document</option><option value="Devis">Devis</option><option value="Facture">Facture</option></select></label>
@@ -206,10 +208,12 @@ function renderEventForm(panel) {
                         <p class="auth-message" aria-live="polite"></p>
                     </form>` : `<p class="auth-message error">Aucun dossier client correspondant à ce rendez-vous. Demandez à l’administrateur d’associer le rendez-vous à un client existant.</p>`}
             </div>`;
+        if (event.eventType === "appointment" && client) initializeQuitusForm(panel, event);
         panel.querySelector('[data-client-action="open"]')?.addEventListener("click", () => renderClients({ selectedId: client.id }));
         panel.querySelector('[data-client-action="quote"]')?.addEventListener("click", () => createBillingDocumentForClient("quote", client));
         panel.querySelector('[data-client-action="invoice"]')?.addEventListener("click", () => createBillingDocumentForClient("invoice", client));
         panel.querySelector('[data-client-action="messages"]')?.addEventListener("click", () => renderClients({ selectedId: client.id }));
+        panel.querySelector("#calendarInterventionPhotos")?.addEventListener("submit", eventSubmit => uploadInterventionPhotos(eventSubmit, client));
         panel.querySelector("#calendarClientUpload")?.addEventListener("submit", eventSubmit => uploadClientAttachments(eventSubmit, client));
         panel.querySelector("#closeCalendarDetail").addEventListener("click", () => {
             selectedEvent = null;
@@ -401,10 +405,8 @@ async function uploadClientAttachments(event, client) {
     const form = event.currentTarget;
     const feedback = form.querySelector(".auth-message");
     const button = form.querySelector("button[type=submit]");
-    const payload = new FormData();
-    payload.append("type", new FormData(form).get("type") || "Autre");
-    ["files", "cameraPhoto"].forEach(name => Array.from(form.elements[name].files || []).forEach(file => payload.append("files", file)));
-    if (![...payload.keys()].includes("files")) {
+    const files = ["files", "cameraPhoto"].flatMap(name => Array.from(form.elements[name].files || []));
+    if (!files.length) {
         feedback.textContent = "Sélectionnez au moins une photo ou un fichier.";
         feedback.classList.add("error");
         return;
@@ -412,21 +414,163 @@ async function uploadClientAttachments(event, client) {
     button.disabled = true;
     feedback.textContent = "Dépôt en cours…";
     feedback.classList.remove("error");
-    const response = await fetch(`/api/clients/${encodeURIComponent(client.id)}/attachments`, {
-        method: "POST",
-        credentials: "same-origin",
-        body: payload
-    });
-    const data = await response.json().catch(() => null);
-    if (!response.ok) {
-        feedback.textContent = data?.message || "Dépôt impossible.";
+    const result = await uploadClientFiles(client, new FormData(form).get("type") || "Autre", files);
+    if (!result.ok) {
+        feedback.textContent = result.message || "Dépôt impossible.";
         feedback.classList.add("error");
         button.disabled = false;
         return;
     }
-    await synchronizeClients();
     form.reset();
-    feedback.textContent = data?.message || "Fichier ajouté au dossier.";
+    feedback.textContent = result.message || "Fichier ajouté au dossier.";
+}
+
+function renderQuitusHtml(event) {
+    const signed = event.quitusStatus === "signed";
+    return `
+        <form id="calendarQuitusForm" class="calendar-quitus">
+            <div class="form-heading"><div><p class="eyebrow">Quitus d’intervention</p><h3>${signed ? "Quitus signé" : "Quitus à faire signer"}</h3><p class="muted">Le client confirme la réalisation de l’intervention en signant ci-dessous.</p></div><span class="quitus-status${signed ? " signed" : ""}">${signed ? "Signé" : "En attente"}</span></div>
+            <label>Nom du client signataire<input name="signedBy" maxlength="160" required value="${escapeHtml(event.quitusSignedBy || event.clientName || "")}" placeholder="Nom et prénom"></label>
+            <label>Signature du client<canvas class="quitus-signature-canvas" width="640" height="220" aria-label="Zone de signature tactile"></canvas></label>
+            <div class="calendar-form-actions"><button type="button" class="secondary-button" data-quitus-action="clear">Effacer la signature</button><button type="submit" class="secondary-button">Valider le quitus</button></div>
+            <p class="auth-message" aria-live="polite"></p>
+        </form>
+    `;
+}
+
+function initializeQuitusForm(panel, event) {
+    const form = panel.querySelector("#calendarQuitusForm");
+    if (!form) return;
+    const signature = initializeSignatureCanvas(form.querySelector("canvas"), event.quitusSignature || "");
+    form.querySelector('[data-quitus-action="clear"]').addEventListener("click", () => signature.clear());
+    form.addEventListener("submit", async eventSubmit => {
+        eventSubmit.preventDefault();
+        const button = form.querySelector('button[type="submit"]');
+        const feedback = form.querySelector(".auth-message");
+        const signatureValue = signature.value();
+        if (!signatureValue) {
+            feedback.textContent = "Le client doit signer le quitus.";
+            feedback.classList.add("error");
+            return;
+        }
+        button.disabled = true;
+        feedback.classList.remove("error");
+        feedback.textContent = "Validation du quitus…";
+        const result = await request(`/api/calendar/events/${encodeURIComponent(event.id)}/quitus`, {
+            method: "PATCH",
+            body: JSON.stringify({ status: "signed", signedBy: new FormData(form).get("signedBy"), signature: signatureValue })
+        });
+        if (!result.ok) {
+            feedback.textContent = result.message || "Validation du quitus impossible.";
+            feedback.classList.add("error");
+            button.disabled = false;
+            return;
+        }
+        Object.assign(event, result.data?.quitus || {});
+        renderCalendar({ event });
+    });
+}
+
+function initializeSignatureCanvas(canvas, existingSignature = "") {
+    const context = canvas.getContext("2d");
+    context.lineWidth = 3;
+    context.lineCap = "round";
+    context.strokeStyle = "#003B73";
+    let drawing = false;
+    let hasSignature = false;
+    const position = pointer => {
+        const bounds = canvas.getBoundingClientRect();
+        return { x: (pointer.clientX - bounds.left) * canvas.width / bounds.width, y: (pointer.clientY - bounds.top) * canvas.height / bounds.height };
+    };
+    const clear = () => {
+        context.clearRect(0, 0, canvas.width, canvas.height);
+        hasSignature = false;
+    };
+    const load = source => {
+        if (!source) return;
+        const image = new Image();
+        image.onload = () => {
+            context.clearRect(0, 0, canvas.width, canvas.height);
+            context.drawImage(image, 0, 0, canvas.width, canvas.height);
+            hasSignature = true;
+        };
+        image.src = source;
+    };
+    canvas.addEventListener("pointerdown", pointer => {
+        pointer.preventDefault();
+        drawing = true;
+        canvas.setPointerCapture(pointer.pointerId);
+        const point = position(pointer);
+        context.beginPath();
+        context.moveTo(point.x, point.y);
+    });
+    canvas.addEventListener("pointermove", pointer => {
+        if (!drawing) return;
+        const point = position(pointer);
+        context.lineTo(point.x, point.y);
+        context.stroke();
+        hasSignature = true;
+    });
+    ["pointerup", "pointercancel"].forEach(name => canvas.addEventListener(name, () => { drawing = false; }));
+    load(existingSignature);
+    return { clear, value: () => hasSignature ? canvas.toDataURL("image/png") : "" };
+}
+
+function renderInterventionPhotosHtml(client) {
+    const before = (client.attachments || []).filter(attachment => attachment.type === "Photo avant");
+    const after = (client.attachments || []).filter(attachment => attachment.type === "Photo après");
+    const previews = photos => photos.length
+        ? `<div class="intervention-photo-previews">${photos.map(photo => `<img src="${escapeHtml(photo.dataUrl)}" alt="${escapeHtml(photo.name)}">`).join("")}</div>`
+        : '<p class="muted">Aucune photo pour le moment.</p>';
+    return `
+        <form id="calendarInterventionPhotos" class="calendar-intervention-photos">
+            <div><p class="eyebrow">Photos d’intervention</p><h3>Avant / après</h3><p class="muted">Prenez les photos nécessaires pour documenter le dossier client.</p></div>
+            <section><h4>Avant intervention</h4>${previews(before)}<label>Ajouter une photo avant<input name="beforePhoto" type="file" accept="image/*" capture="environment"></label></section>
+            <section><h4>Après intervention</h4>${previews(after)}<label>Ajouter une photo après<input name="afterPhoto" type="file" accept="image/*" capture="environment"></label></section>
+            <div class="calendar-form-actions"><button type="submit" class="secondary-button">Ajouter les photos</button></div><p class="auth-message" aria-live="polite"></p>
+        </form>
+    `;
+}
+
+async function uploadInterventionPhotos(event, client) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const feedback = form.querySelector(".auth-message");
+    const button = form.querySelector('button[type="submit"]');
+    const uploads = [
+        { type: "Photo avant", files: Array.from(form.elements.beforePhoto.files || []) },
+        { type: "Photo après", files: Array.from(form.elements.afterPhoto.files || []) }
+    ].filter(upload => upload.files.length);
+    if (!uploads.length) {
+        feedback.textContent = "Sélectionnez au moins une photo avant ou après.";
+        feedback.classList.add("error");
+        return;
+    }
+    button.disabled = true;
+    feedback.classList.remove("error");
+    feedback.textContent = "Ajout des photos…";
+    for (const upload of uploads) {
+        const result = await uploadClientFiles(client, upload.type, upload.files);
+        if (!result.ok) {
+            feedback.textContent = result.message || "Ajout des photos impossible.";
+            feedback.classList.add("error");
+            button.disabled = false;
+            return;
+        }
+    }
+    selectedEvent = event;
+    renderCalendar({ event });
+}
+
+async function uploadClientFiles(client, type, files) {
+    const payload = new FormData();
+    payload.append("type", type);
+    files.forEach(file => payload.append("files", file));
+    const response = await fetch(`/api/clients/${encodeURIComponent(client.id)}/attachments`, { method: "POST", credentials: "same-origin", body: payload });
+    const data = await response.json().catch(() => null);
+    if (!response.ok) return { ok: false, message: data?.message };
+    await synchronizeClients();
+    return { ok: true, message: data?.message };
 }
 
 function renderCalendarGrid(panel) {

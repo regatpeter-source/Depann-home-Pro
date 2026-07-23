@@ -3,6 +3,7 @@ import { getAccountOwnerId } from "./auth.js";
 
 const EVENT_COLORS = new Set(["blue", "green", "orange", "red", "purple", "gray"]);
 const EVENT_TYPES = new Set(["appointment", "vacation", "sick_leave", "unavailable"]);
+const QUITUS_STATUS = new Set(["pending", "signed"]);
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
 
@@ -21,6 +22,10 @@ export async function initializeCalendar() {
             end_time TIME,
             color VARCHAR(20) NOT NULL DEFAULT 'blue',
             event_type VARCHAR(20) NOT NULL DEFAULT 'appointment',
+            quitus_status VARCHAR(20) NOT NULL DEFAULT 'pending',
+            quitus_signed_by VARCHAR(160) NOT NULL DEFAULT '',
+            quitus_signature TEXT NOT NULL DEFAULT '',
+            quitus_signed_at TIMESTAMPTZ,
             notes VARCHAR(2000) NOT NULL DEFAULT '',
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -37,6 +42,13 @@ export async function initializeCalendar() {
     await database.query(`
         ALTER TABLE depannhome_calendar_events
         ADD COLUMN IF NOT EXISTS event_type VARCHAR(20) NOT NULL DEFAULT 'appointment'
+    `);
+    await database.query(`
+        ALTER TABLE depannhome_calendar_events
+        ADD COLUMN IF NOT EXISTS quitus_status VARCHAR(20) NOT NULL DEFAULT 'pending',
+        ADD COLUMN IF NOT EXISTS quitus_signed_by VARCHAR(160) NOT NULL DEFAULT '',
+        ADD COLUMN IF NOT EXISTS quitus_signature TEXT NOT NULL DEFAULT '',
+        ADD COLUMN IF NOT EXISTS quitus_signed_at TIMESTAMPTZ
     `);
     await database.query(`
         CREATE INDEX IF NOT EXISTS depannhome_calendar_events_owner_date_idx
@@ -63,6 +75,10 @@ export function registerCalendarRoutes(app, requireAuthentication) {
                 TO_CHAR(event.end_time, 'HH24:MI') AS "endTime",
                 event.color,
                 event.event_type AS "eventType",
+                event.quitus_status AS "quitusStatus",
+                event.quitus_signed_by AS "quitusSignedBy",
+                event.quitus_signature AS "quitusSignature",
+                event.quitus_signed_at AS "quitusSignedAt",
                 event.notes,
                 event.created_at AS "createdAt",
                 event.updated_at AS "updatedAt"
@@ -121,6 +137,24 @@ export function registerCalendarRoutes(app, requireAuthentication) {
         if (!rowCount) return response.status(404).json({ message: "Rendez-vous introuvable." });
         response.status(204).end();
     }));
+
+    app.patch("/api/calendar/events/:eventId/quitus", requireAuthentication, asyncHandler(async (request, response) => {
+        const id = positiveId(request.params.eventId);
+        const quitus = sanitizeQuitus(request.body);
+        if (!id) return response.status(400).json({ message: "Rendez-vous invalide." });
+        if (!quitus.ok) return response.status(400).json({ message: quitus.message });
+
+        const { rows } = await getPool().query(`
+            UPDATE depannhome_calendar_events
+            SET quitus_status = $3, quitus_signed_by = $4, quitus_signature = $5,
+                quitus_signed_at = CASE WHEN $3 = 'signed' THEN NOW() ELSE NULL END, updated_at = NOW()
+            WHERE id = $1 AND owner_id = $2 AND event_type = 'appointment' AND client_name <> ''
+            RETURNING quitus_status AS "quitusStatus", quitus_signed_by AS "quitusSignedBy",
+                quitus_signature AS "quitusSignature", quitus_signed_at AS "quitusSignedAt"
+        `, [id, getAccountOwnerId(request), quitus.status, quitus.signedBy, quitus.signature]);
+        if (!rows[0]) return response.status(404).json({ message: "Rendez-vous introuvable." });
+        response.json({ quitus: rows[0] });
+    }));
 }
 
 function requireCalendarWriteAccess(request, response, next) {
@@ -150,6 +184,18 @@ function sanitizeEvent(value) {
 
     if (value?.assignedTechnicianId && !assignedTechnicianId) return { ok: false, message: "Le technicien sélectionné est invalide." };
     return { ok: true, title, clientName, location, date, startTime, endTime, color, eventType, notes, assignedTechnicianId };
+}
+
+function sanitizeQuitus(value) {
+    const status = QUITUS_STATUS.has(value?.status) ? value.status : "pending";
+    const signedBy = cleanText(value?.signedBy, 160);
+    const signature = String(value?.signature || "");
+    if (status !== "signed") return { ok: true, status: "pending", signedBy: "", signature: "" };
+    if (!signedBy) return { ok: false, message: "Indiquez le nom du client signataire." };
+    if (!/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(signature) || Buffer.byteLength(signature, "utf8") > 700000) {
+        return { ok: false, message: "La signature est invalide ou trop volumineuse." };
+    }
+    return { ok: true, status, signedBy, signature };
 }
 
 async function validateAssignedTechnician(accountOwnerId, technicianId) {

@@ -1,4 +1,4 @@
-export const APP_VERSION = "1.10.25 Planning équipe et absences";
+export const APP_VERSION = "1.10.26 Quitus et photos intervention";
 export const DATA_VERSION = "2026-07-20-35";
 
 export const STORAGE_KEYS = {
