@@ -1,4 +1,4 @@
-export const APP_VERSION = "1.12.2 Correction des lignes de devis";
+export const APP_VERSION = "1.13.0 Registre commercial";
 export const DATA_VERSION = "2026-07-20-35";
 
 export const STORAGE_KEYS = {

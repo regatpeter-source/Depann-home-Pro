@@ -183,6 +183,7 @@ function renderDocumentEditor(panel) {
                 <label>Date *<input name="issueDate" type="date" required value="${escapeHtml(document.issueDate)}"></label>
                 <label>Échéance<input name="dueDate" type="date" value="${escapeHtml(document.dueDate || "")}"></label>
                 <label>Statut<input name="status" maxlength="30" value="${escapeHtml(document.status || "draft")}" placeholder="Brouillon, envoyé, réglé…"></label>
+                ${document.documentType === "invoice" ? `<label class="billing-accounting-option"><input name="isAccounted" type="checkbox" ${document.isAccounted ? "checked" : ""}> Facture comptabilisée</label>` : ""}
             </div>
             <section class="billing-lines-section"><div class="form-heading"><div><p class="eyebrow">Prestations</p><h3>Lignes du document</h3></div><button type="button" class="secondary-button" id="addBillingLine">+ Ligne libre</button></div><div id="billingLines" class="billing-lines"></div><div class="billing-totals" id="billingTotals"></div></section>
             <label>Notes / conditions<textarea name="notes" rows="3" maxlength="2000" placeholder="Informations complémentaires, conditions, validité du devis…">${escapeHtml(document.notes)}</textarea></label>
@@ -244,7 +245,7 @@ function renderReadOnlyDocument(panel, document) {
     panel.innerHTML = `
         <div class="billing-read-only-document">
             <div class="form-heading"><div><p class="eyebrow">Consultation uniquement</p><h2>${escapeHtml(DOCUMENT_TYPES[document.documentType])} ${escapeHtml(document.documentNumber)}</h2></div><button type="button" class="secondary-button" id="closeBillingDocument">Fermer</button></div>
-            <div class="procedure-meta"><span>${escapeHtml(document.customerName)}</span><span>${escapeHtml(formatDate(document.issueDate))}</span><span>${escapeHtml(document.status || "brouillon")}</span></div>
+            <div class="procedure-meta"><span>${escapeHtml(document.customerName)}</span><span>${escapeHtml(formatDate(document.issueDate))}</span><span>${escapeHtml(document.status || "brouillon")}</span>${document.documentType === "invoice" ? `<span>${document.isAccounted ? `Comptabilisée le ${escapeHtml(formatDate(document.accountedAt))}` : "Non comptabilisée"}</span>` : ""}</div>
             <div class="billing-read-only-lines">${document.lines.map(line => `<div><span>${escapeHtml(line.description)}</span><strong>${escapeHtml(String(line.quantity))} × ${escapeHtml(formatMoney(line.unitPrice))}</strong><b>${escapeHtml(formatMoney(lineTotal(line)))}</b></div>`).join("")}</div>
             <div class="billing-totals" id="billingReadOnlyTotals"></div>
             ${document.notes ? `<section class="procedure-section"><h3>Notes / conditions</h3><p>${escapeHtml(document.notes)}</p></section>` : ""}
@@ -292,17 +293,47 @@ function renderTotals(panel, lines) {
 function renderDocumentList(panel) {
     panel.hidden = false;
     const documents = billingData.documents || [];
-    panel.innerHTML = `<div class="form-heading"><div><p class="eyebrow">Documents enregistrés</p><h2>${documents.length} document(s)</h2></div></div><div class="billing-document-list" id="billingDocumentList"></div>`;
+    const quotes = documents.filter(document => document.documentType === "quote");
+    const invoices = documents.filter(document => document.documentType === "invoice");
+    const invoicedTotal = invoices.reduce((total, document) => total + calculateTotals(document.lines || []).ttc, 0);
+    const accountedTotal = invoices.filter(document => document.isAccounted).reduce((total, document) => total + calculateTotals(document.lines || []).ttc, 0);
+    panel.innerHTML = `
+        <div class="form-heading"><div><p class="eyebrow">Base de données commerciale</p><h2>Registre des devis & factures</h2></div></div>
+        <div class="billing-metrics billing-register-metrics"><span><strong>${quotes.length}</strong> devis générés</span><span><strong>${invoices.length}</strong> factures générées</span><span><strong>${formatMoney(invoicedTotal)}</strong> facturé TTC</span><span class="billing-accounted-metric"><strong>${formatMoney(accountedTotal)}</strong> comptabilisé TTC</span></div>
+        <div class="billing-register-filters"><input id="billingDocumentSearch" type="search" placeholder="Rechercher un numéro ou un client" aria-label="Rechercher un document"><select id="billingDocumentTypeFilter" aria-label="Filtrer par type"><option value="all">Tous les documents</option><option value="quote">Devis</option><option value="invoice">Factures</option></select><select id="billingAccountingFilter" aria-label="Filtrer par comptabilisation"><option value="all">Tous les statuts comptables</option><option value="accounted">Comptabilisées</option><option value="unaccounted">À comptabiliser</option></select></div>
+        <div class="billing-document-list" id="billingDocumentList"></div>
+    `;
     const list = panel.querySelector("#billingDocumentList");
-    if (!documents.length) { list.innerHTML = "<p class=\"muted\">Créez votre premier devis ou votre première facture.</p>"; return; }
-    documents.forEach(document => {
-        const item = document.createElement("article");
-        item.className = "billing-document-item";
-        const totals = calculateTotals(document.lines || []);
-        item.innerHTML = `<div><p class="eyebrow">${DOCUMENT_TYPES[document.documentType]} · ${escapeHtml(document.customerType)}</p><h3>${escapeHtml(document.documentNumber)}</h3><p>${escapeHtml(document.customerName)}</p><small>${escapeHtml(formatDate(document.issueDate))} · ${escapeHtml(document.status || "brouillon")}</small></div><div class="billing-document-amount"><strong>${formatMoney(totals.ttc)}</strong><small>TTC</small></div><button type="button" class="secondary-button">${isTechnician() ? "Consulter" : "Ouvrir"}</button>`;
-        item.querySelector("button").addEventListener("click", () => { activeDocument = normalizeDocument(document); renderBilling(); });
-        list.appendChild(item);
-    });
+    const search = panel.querySelector("#billingDocumentSearch");
+    const typeFilter = panel.querySelector("#billingDocumentTypeFilter");
+    const accountingFilter = panel.querySelector("#billingAccountingFilter");
+    const renderFilteredDocuments = () => {
+        const query = normalizeText(search.value);
+        const visibleDocuments = documents.filter(document => {
+            const matchesQuery = !query || normalizeText(`${document.documentNumber} ${document.customerName}`).includes(query);
+            const matchesType = typeFilter.value === "all" || document.documentType === typeFilter.value;
+            const matchesAccounting = accountingFilter.value === "all" || (document.documentType === "invoice" && (accountingFilter.value === "accounted" ? document.isAccounted : !document.isAccounted));
+            return matchesQuery && matchesType && matchesAccounting;
+        });
+        list.innerHTML = "";
+        if (!visibleDocuments.length) { list.innerHTML = `<p class="muted">${documents.length ? "Aucun document ne correspond aux filtres." : "Créez votre premier devis ou votre première facture."}</p>`; return; }
+        visibleDocuments.forEach(document => {
+            const item = document.createElement("article");
+            item.className = "billing-document-item";
+            const totals = calculateTotals(document.lines || []);
+            const accountingLabel = document.documentType === "invoice" ? (document.isAccounted ? `Comptabilisée le ${formatDate(document.accountedAt)}` : "À comptabiliser") : "Non concerné";
+            item.innerHTML = `<div><p class="eyebrow">${DOCUMENT_TYPES[document.documentType]} · ${escapeHtml(document.customerType)}</p><h3>${escapeHtml(document.documentNumber)}</h3><p>${escapeHtml(document.customerName)}</p><small>${escapeHtml(formatDate(document.issueDate))} · ${escapeHtml(document.status || "brouillon")} · <span class="billing-accounting-status ${document.isAccounted ? "is-accounted" : ""}">${escapeHtml(accountingLabel)}</span></small></div><div class="billing-document-amount"><strong>${formatMoney(totals.ttc)}</strong><small>TTC</small></div><div class="billing-document-actions">${document.documentType === "invoice" && !isTechnician() ? `<button type="button" class="secondary-button" data-accounting="${document.isAccounted ? "false" : "true"}">${document.isAccounted ? "Décomptabiliser" : "Comptabiliser"}</button>` : ""}<button type="button" class="secondary-button" data-open-document>${isTechnician() ? "Consulter" : "Ouvrir"}</button></div>`;
+            item.querySelector("[data-open-document]").addEventListener("click", () => { activeDocument = normalizeDocument(document); renderBilling(); });
+            item.querySelector("[data-accounting]")?.addEventListener("click", async event => {
+                const result = await apiRequest(`/api/billing/documents/${encodeURIComponent(document.id)}/accounting`, { method: "PATCH", body: JSON.stringify({ isAccounted: event.currentTarget.dataset.accounting === "true" }) });
+                if (!result.ok) { alert(result.message || "Impossible de mettre à jour la comptabilité."); return; }
+                renderBilling();
+            });
+            list.appendChild(item);
+        });
+    };
+    [search, typeFilter, accountingFilter].forEach(input => input.addEventListener(input === search ? "input" : "change", renderFilteredDocuments));
+    renderFilteredDocuments();
 }
 
 function openNewDocument(type) {
@@ -322,6 +353,7 @@ function createNewDocument(type, client = null) {
         issueDate: today(),
         dueDate: "",
         status: baseQuote?.status || "draft",
+        isAccounted: false,
         lines: baseQuote?.lines || [emptyLine()],
         notes: baseQuote?.notes || billingData.profile.paymentTerms || ""
     };
@@ -334,7 +366,7 @@ function fillCustomerAddress(input, form, clients) {
 }
 
 function emptyLine() { return { description: "", quantity: 1, unit: "unité", unitPrice: 0, vatRate: 20 }; }
-function normalizeDocument(document) { return { ...document, lines: Array.isArray(document.lines) && document.lines.length ? document.lines.map(line => ({ ...emptyLine(), ...line })) : [emptyLine()] }; }
+function normalizeDocument(document) { return { ...document, isAccounted: Boolean(document.isAccounted), lines: Array.isArray(document.lines) && document.lines.length ? document.lines.map(line => ({ ...emptyLine(), ...line })) : [emptyLine()] }; }
 function normalizeQuoteTemplate(template) {
     if (!template || !Array.isArray(template.lines) || !template.lines.length) return null;
     return { ...template, lines: template.lines.map(line => ({ ...emptyLine(), ...line })) };

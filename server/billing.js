@@ -69,6 +69,8 @@ export async function initializeBilling() {
             issue_date DATE NOT NULL,
             due_date DATE,
             status VARCHAR(30) NOT NULL DEFAULT 'draft',
+            is_accounted BOOLEAN NOT NULL DEFAULT FALSE,
+            accounted_at DATE,
             lines JSONB NOT NULL DEFAULT '[]'::jsonb,
             notes VARCHAR(2000) NOT NULL DEFAULT '',
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -79,6 +81,15 @@ export async function initializeBilling() {
     await database.query(`
         CREATE INDEX IF NOT EXISTS depannhome_billing_documents_owner_date_idx
         ON depannhome_billing_documents (owner_id, issue_date DESC, created_at DESC)
+    `);
+    await database.query(`
+        ALTER TABLE depannhome_billing_documents
+        ADD COLUMN IF NOT EXISTS is_accounted BOOLEAN NOT NULL DEFAULT FALSE,
+        ADD COLUMN IF NOT EXISTS accounted_at DATE
+    `);
+    await database.query(`
+        CREATE INDEX IF NOT EXISTS depannhome_billing_documents_accounting_idx
+        ON depannhome_billing_documents (owner_id, document_type, is_accounted, issue_date DESC)
     `);
 }
 
@@ -101,7 +112,8 @@ export function registerBillingRoutes(app, requireAuthentication) {
             database.query(`
                 SELECT id, document_type AS "documentType", document_number AS "documentNumber", customer_type AS "customerType",
                     customer_name AS "customerName", customer_address AS "customerAddress", TO_CHAR(issue_date, 'YYYY-MM-DD') AS "issueDate",
-                    TO_CHAR(due_date, 'YYYY-MM-DD') AS "dueDate", status, lines, notes, updated_at AS "updatedAt"
+                    TO_CHAR(due_date, 'YYYY-MM-DD') AS "dueDate", status, is_accounted AS "isAccounted",
+                    TO_CHAR(accounted_at, 'YYYY-MM-DD') AS "accountedAt", lines, notes, updated_at AS "updatedAt"
                 FROM depannhome_billing_documents WHERE owner_id = $1 ORDER BY issue_date DESC, id DESC
             `, [accountOwnerId])
         ]);
@@ -148,7 +160,8 @@ export function registerBillingRoutes(app, requireAuthentication) {
             database.query(`
                 SELECT id, document_type AS "documentType", document_number AS "documentNumber", customer_type AS "customerType",
                     customer_name AS "customerName", customer_address AS "customerAddress", TO_CHAR(issue_date, 'YYYY-MM-DD') AS "issueDate",
-                    TO_CHAR(due_date, 'YYYY-MM-DD') AS "dueDate", status, lines, notes
+                    TO_CHAR(due_date, 'YYYY-MM-DD') AS "dueDate", status, is_accounted AS "isAccounted",
+                    TO_CHAR(accounted_at, 'YYYY-MM-DD') AS "accountedAt", lines, notes
                 FROM depannhome_billing_documents WHERE id = $1 AND owner_id = $2
             `, [id, getAccountOwnerId(request)]),
             database.query(`
@@ -198,11 +211,11 @@ export function registerBillingRoutes(app, requireAuthentication) {
         try {
             const { rows } = await getPool().query(`
                 INSERT INTO depannhome_billing_documents
-                    (owner_id, document_type, document_number, customer_type, customer_name, customer_address, issue_date, due_date, status, lines, notes)
-                VALUES ($1,$2,$3,$4,$5,$6,$7::date,$8::date,$9,$10::jsonb,$11)
+                    (owner_id, document_type, document_number, customer_type, customer_name, customer_address, issue_date, due_date, status, is_accounted, accounted_at, lines, notes)
+                VALUES ($1,$2,$3,$4,$5,$6,$7::date,$8::date,$9,$10,CASE WHEN $10 THEN CURRENT_DATE ELSE NULL END,$11::jsonb,$12)
                 RETURNING id
             `, [getAccountOwnerId(request), document.documentType, document.documentNumber, document.customerType, document.customerName,
-                document.customerAddress, document.issueDate, document.dueDate || null, document.status, JSON.stringify(document.lines), document.notes]);
+                document.customerAddress, document.issueDate, document.dueDate || null, document.status, document.isAccounted, JSON.stringify(document.lines), document.notes]);
             response.status(201).json({ id: rows[0].id });
         } catch (error) {
             if (error.code === "23505") return response.status(409).json({ message: "Ce numéro de document existe déjà dans votre compte." });
@@ -218,16 +231,31 @@ export function registerBillingRoutes(app, requireAuthentication) {
         try {
             const result = await getPool().query(`
                 UPDATE depannhome_billing_documents SET document_type=$3, document_number=$4, customer_type=$5, customer_name=$6,
-                    customer_address=$7, issue_date=$8::date, due_date=$9::date, status=$10, lines=$11::jsonb, notes=$12, updated_at=NOW()
+                    customer_address=$7, issue_date=$8::date, due_date=$9::date, status=$10, is_accounted=$11,
+                    accounted_at=CASE WHEN $11 THEN COALESCE(accounted_at, CURRENT_DATE) ELSE NULL END, lines=$12::jsonb, notes=$13, updated_at=NOW()
                 WHERE id=$1 AND owner_id=$2
             `, [id, getAccountOwnerId(request), document.documentType, document.documentNumber, document.customerType, document.customerName,
-                document.customerAddress, document.issueDate, document.dueDate || null, document.status, JSON.stringify(document.lines), document.notes]);
+                document.customerAddress, document.issueDate, document.dueDate || null, document.status, document.isAccounted, JSON.stringify(document.lines), document.notes]);
             if (!result.rowCount) return response.status(404).json({ message: "Document introuvable." });
             response.status(204).end();
         } catch (error) {
             if (error.code === "23505") return response.status(409).json({ message: "Ce numéro de document existe déjà dans votre compte." });
             throw error;
         }
+    }));
+
+    app.patch("/api/billing/documents/:documentId/accounting", requireAuthentication, requireBillingAdministration, asyncHandler(async (request, response) => {
+        const id = positiveId(request.params.documentId);
+        if (!id || typeof request.body?.isAccounted !== "boolean") return response.status(400).json({ message: "Statut comptable invalide." });
+        const result = await getPool().query(`
+            UPDATE depannhome_billing_documents
+            SET is_accounted = $3,
+                accounted_at = CASE WHEN $3 THEN COALESCE(accounted_at, CURRENT_DATE) ELSE NULL END,
+                updated_at = NOW()
+            WHERE id = $1 AND owner_id = $2 AND document_type = 'invoice'
+        `, [id, getAccountOwnerId(request), request.body.isAccounted]);
+        if (!result.rowCount) return response.status(404).json({ message: "Facture introuvable." });
+        response.status(204).end();
     }));
 
     app.delete("/api/billing/documents/:documentId", requireAuthentication, requireBillingAdministration, asyncHandler(async (request, response) => {
@@ -285,13 +313,14 @@ function sanitizeDocument(value) {
     const issueDate = sanitizeDate(value?.issueDate);
     const dueDate = value?.dueDate ? sanitizeDate(value.dueDate) : "";
     const status = cleanText(value?.status, 30) || "draft";
+    const isAccounted = documentType === "invoice" && value?.isAccounted === "on";
     const notes = cleanText(value?.notes, 2000);
     const lines = sanitizeLines(value?.lines);
     if (!documentType || !documentNumber || !issueDate) return { ok: false, message: "Le type, le numéro et la date sont obligatoires." };
     if (!customerName) return { ok: false, message: "Le nom du client est obligatoire." };
     if (!lines.length) return { ok: false, message: "Ajoutez au moins une ligne." };
     if (value?.dueDate && !dueDate) return { ok: false, message: "La date d'échéance est invalide." };
-    return { ok: true, documentType, documentNumber, customerType, customerName, customerAddress, issueDate, dueDate, status, lines, notes };
+    return { ok: true, documentType, documentNumber, customerType, customerName, customerAddress, issueDate, dueDate, status, isAccounted, lines, notes };
 }
 
 function sanitizeQuoteTemplate(value) {
