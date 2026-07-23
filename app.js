@@ -16,6 +16,7 @@ import {
 import { initializeDatabase } from "./server/database.js";
 import { registerCreatorRoutes } from "./server/creator.js";
 import { billingUploadErrorHandler, initializeBilling, registerBillingRoutes } from "./server/billing.js";
+import { initializePurchases, registerPurchaseRoutes } from "./server/purchases.js";
 import { initializeMessages, registerMessageRoutes } from "./server/messages.js";
 import { initializeCalendar, registerCalendarRoutes } from "./server/calendar.js";
 import { clientUploadErrorHandler, initializeClients, registerClientRoutes } from "./server/clients.js";
@@ -45,6 +46,7 @@ app.use("/api/auth", rateLimit({
 registerAuthRoutes(app);
 registerCreatorRoutes(app, requireCreator);
 registerBillingRoutes(app, requireAuthentication);
+registerPurchaseRoutes(app, requireAuthentication);
 registerMessageRoutes(app, requireAuthentication);
 registerCalendarRoutes(app, requireAuthentication);
 registerClientRoutes(app, requireAuthentication);
@@ -83,6 +85,7 @@ async function start() {
 	validateAuthenticationConfiguration();
 	await initializeDatabase();
 	await initializeBilling();
+	await initializePurchases();
 	await initializeMessages();
 	await initializeCalendar();
 	await initializeClients();

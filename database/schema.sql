@@ -117,6 +117,30 @@ ALTER TABLE depannhome_billing_documents
 CREATE INDEX IF NOT EXISTS depannhome_billing_documents_accounting_idx
     ON depannhome_billing_documents (owner_id, document_type, is_accounted, issue_date DESC);
 
+CREATE TABLE IF NOT EXISTS depannhome_purchases (
+    id BIGSERIAL PRIMARY KEY,
+    owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    created_by BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE RESTRICT,
+    purchase_date DATE NOT NULL,
+    category VARCHAR(40) NOT NULL DEFAULT 'Autre',
+    supplier VARCHAR(160) NOT NULL DEFAULT '',
+    description VARCHAR(500) NOT NULL,
+    reference VARCHAR(100) NOT NULL DEFAULT '',
+    amount_ht NUMERIC(12,2) NOT NULL CHECK (amount_ht >= 0),
+    vat_rate NUMERIC(5,2) NOT NULL DEFAULT 20 CHECK (vat_rate >= 0 AND vat_rate <= 100),
+    is_accounted BOOLEAN NOT NULL DEFAULT FALSE,
+    accounted_at DATE,
+    notes VARCHAR(2000) NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS depannhome_purchases_owner_date_idx
+    ON depannhome_purchases (owner_id, purchase_date DESC, id DESC);
+
+CREATE INDEX IF NOT EXISTS depannhome_purchases_accounting_idx
+    ON depannhome_purchases (owner_id, is_accounted, purchase_date DESC);
+
 CREATE TABLE IF NOT EXISTS depannhome_messages (
     id BIGSERIAL PRIMARY KEY,
     sender_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,

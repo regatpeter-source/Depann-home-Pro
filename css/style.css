@@ -2345,13 +2345,19 @@ body.desktop-device .nav-label-messages{
 .billing-branding,
 .billing-overview-actions,
 .billing-metrics,
-.billing-document-item{
+.billing-document-item,
+.purchases-overview,
+.purchase-item{
     display:flex;
     align-items:center;
     gap:16px;
 }
 
 .billing-overview{
+    justify-content:space-between;
+}
+
+.purchases-overview{
     justify-content:space-between;
 }
 
@@ -2497,14 +2503,16 @@ body.desktop-device .nav-label-messages{
 }
 
 .billing-template-list,
-.billing-document-list{
+.billing-document-list,
+.purchase-list{
     display:grid;
     gap:10px;
     margin-top:16px;
 }
 
 .billing-template-item,
-.billing-document-item{
+.billing-document-item,
+.purchase-item{
     justify-content:space-between;
     padding:14px 16px;
     border:1px solid var(--border);
@@ -2605,7 +2613,15 @@ body.desktop-device .nav-label-messages{
     align-items:center;
 }
 
+.purchase-item{
+    align-items:center;
+}
+
 .billing-document-item > div:first-child{
+    flex:1;
+}
+
+.purchase-item > div:first-child{
     flex:1;
 }
 
@@ -2838,6 +2854,11 @@ body.desktop-device .nav-label-messages{
 
 #messagesBtn,
 .nav-button[data-nav="messages"]{
+    display:none;
+}
+
+body[data-role="technician"] #purchasesBtn,
+body[data-role="technician"] .nav-button[data-nav="purchases"]{
     display:none;
 }
 
@@ -3137,7 +3158,9 @@ footer{
 
     .billing-overview,
     .billing-branding,
-    .billing-document-item{
+    .billing-document-item,
+    .purchases-overview,
+    .purchase-item{
         align-items:stretch;
         flex-direction:column;
     }
@@ -3193,8 +3216,17 @@ footer{
         width:100%;
     }
 
+    .purchase-item .secondary-button{
+        width:100%;
+    }
+
     .billing-document-actions{
         width:100%;
+    }
+
+    body.mobile-device #purchasesBtn,
+    body.mobile-device .nav-button[data-nav="purchases"]{
+        display:none;
     }
 
     .client-billing-item{

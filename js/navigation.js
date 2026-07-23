@@ -1,7 +1,8 @@
-import { ROUTES, STORAGE_KEYS, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=107";
+import { ROUTES, STORAGE_KEYS, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=108";
 import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=105";
 import { renderCreatorConsole } from "./creator.js?v=105";
 import { createBillingDocumentForClient, renderBilling } from "./billing.js?v=107";
+import { renderPurchases } from "./purchases.js?v=108";
 import { getFirstUnreadClientId, refreshClientMessageAlert } from "./messages.js?v=88";
 import { getSearchableClients, renderClients } from "./clients.js?v=105";
 import { configureLibrary, openLibrarySection, renderLibrary, searchPersonalLibrary } from "./library.js?v=105";
@@ -48,6 +49,7 @@ function bindEvents() {
     const search = document.getElementById("search");
     const clientsBtn = document.getElementById("clientsBtn");
     const billingBtn = document.getElementById("billingBtn");
+    const purchasesBtn = document.getElementById("purchasesBtn");
     const calendarBtn = document.getElementById("calendarBtn");
     const libraryBtn = document.getElementById("libraryBtn");
     const photoBtn = document.getElementById("photoBtn");
@@ -69,6 +71,7 @@ function bindEvents() {
 
     clientsBtn.addEventListener("click", openClients);
     billingBtn?.addEventListener("click", renderBilling);
+    purchasesBtn?.addEventListener("click", renderPurchases);
     calendarBtn?.addEventListener("click", openCalendar);
     libraryBtn?.addEventListener("click", renderLibrary);
     photoBtn?.addEventListener("click", () => renderPhotoRecognition(database, navigateToRef));
@@ -86,6 +89,7 @@ function bindEvents() {
             if (nav === ROUTES.photo) renderPhotoRecognition(database, navigateToRef);
             if (nav === ROUTES.clients) openClients();
             if (nav === ROUTES.billing) renderBilling();
+            if (nav === ROUTES.purchases) renderPurchases();
             if (nav === ROUTES.calendar) openCalendar();
             if (nav === ROUTES.library) renderLibrary();
             if (nav === ROUTES.favorites) renderFavorites();
@@ -830,8 +834,8 @@ function renderSettings() {
         if (headerP) headerP.textContent = subtitle;
         const search = document.getElementById('search'); if (search) search.placeholder = searchPlaceholder;
         const texts = lang === "en"
-            ? { home: "Home", search: "Search", store: "Store", photo: "Photo", clients: "Clients", billing: "Quotes", calendar: "Planning", library: "Documents", favorites: "Favorites", settings: "Settings" }
-            : { home: "Accueil", search: "Recherche", store: "Magasin", photo: "Photo", clients: "Clients", billing: "Devis", calendar: "Planning", library: "Documents", favorites: "Favoris", settings: "Paramètres" };
+            ? { home: "Home", search: "Search", store: "Store", photo: "Photo", clients: "Clients", billing: "Quotes", purchases: "Purchases", calendar: "Planning", library: "Documents", favorites: "Favorites", settings: "Settings" }
+            : { home: "Accueil", search: "Recherche", store: "Magasin", photo: "Photo", clients: "Clients", billing: "Devis", purchases: "Achats", calendar: "Planning", library: "Documents", favorites: "Favoris", settings: "Paramètres" };
         document.querySelectorAll("footer .nav-button").forEach(button => {
             const label = button.querySelector(".nav-label-clients") || button.querySelector("span");
             if (label) label.textContent = texts[button.dataset.nav] || label.textContent;

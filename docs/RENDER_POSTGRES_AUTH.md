@@ -21,7 +21,7 @@ L’application est désormais un **Render Web Service** Node.js. Le serveur gè
 | `ALLOW_PUBLIC_REGISTRATION` | `false` recommandé. Passez à `true` seulement si chaque utilisateur doit pouvoir créer son propre compte. |
 | `NODE_ENV` | `production` |
 
-Le serveur crée automatiquement les tables `depannhome_users`, `depannhome_clients`, `depannhome_calendar_events`, `depannhome_billing_profiles`, `depannhome_billing_templates`, `depannhome_billing_documents`, `depannhome_messages`, `depannhome_library_sections` et `depannhome_library_documents` au démarrage. Elles sont dédiées à Depann’Home et évitent tout conflit avec les tables de votre service VHR. Le fichier `database/schema.sql` est fourni à titre de référence ; il n’est donc pas nécessaire de l’exécuter manuellement.
+Le serveur crée automatiquement les tables `depannhome_users`, `depannhome_clients`, `depannhome_calendar_events`, `depannhome_billing_profiles`, `depannhome_billing_templates`, `depannhome_billing_documents`, `depannhome_purchases`, `depannhome_messages`, `depannhome_library_sections` et `depannhome_library_documents` au démarrage. Elles sont dédiées à Depann’Home et évitent tout conflit avec les tables de votre service VHR. Le fichier `database/schema.sql` est fourni à titre de référence ; il n’est donc pas nécessaire de l’exécuter manuellement.
 
 ## Équipe et espace entreprise
 
@@ -46,6 +46,10 @@ L’onglet **Devis & factures** est privé à chaque espace entreprise. Chaque u
 L’utilisateur peut créer des lignes préenregistrées (prestation, fourniture, unité, prix HT et TVA), puis les insérer dans ses devis et factures. Il peut aussi cocher **« Utiliser comme modèle de base »** lors de l’enregistrement d’un devis : ses lignes, TVA, conditions, catégorie et statut sont alors automatiquement proposés dans les futurs devis, tandis que le client, le numéro et les dates restent toujours vides et nouveaux. Les documents sont classés par destinataire : **Particulier**, **Professionnel**, **Magasin** ou **Autre**. Les montants HT, TVA et TTC sont calculés dans l’application. Le registre commercial affiche les devis et factures générés, le montant total facturé TTC et le montant des factures comptabilisées ; un administrateur peut comptabiliser ou décomptabiliser une facture, avec date automatique. Tous les profils, lignes modèles, logos et documents sont filtrés côté serveur par compte : un autre utilisateur ne peut pas les lire ou les modifier, même en appelant l’API directement.
 
 Sur la fiche d’un client, les devis et factures associés sont proposés avec deux actions : **E-mail**, qui prépare un brouillon dans l’application de messagerie de l’appareil, et **Imprimer / PDF**, qui ouvre une mise en page propre à imprimer ou enregistrer au format PDF via le navigateur. La fiche présente aussi un **historique** daté : création ou modification du dossier, ajout/suppression de fichiers, nouveaux rendez-vous, devis et factures. Cet historique fait partie du dossier client privé et se synchronise avec les autres appareils du même compte.
+
+## Achats de l’entreprise
+
+L’onglet PC **Achats** contient un registre des dépenses de l’entreprise : matériel, consommables, loyer, véhicule, outillage, sous-traitance, services, assurances et autres achats. Chaque achat conserve sa date, son fournisseur, sa référence ou son justificatif, son libellé, son montant HT, sa TVA, ses notes et son état de comptabilisation. Le registre calcule les totaux HT, TVA, TTC et comptabilisés, et peut être filtré par catégorie ou état comptable. Il est isolé côté serveur par entreprise et réservé aux administrateurs.
 
 ## Notes internes synchronisées
 
