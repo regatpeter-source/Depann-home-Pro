@@ -146,6 +146,26 @@ export function registerClientRoutes(app, requireAuthentication) {
             connection.release();
         }
     }));
+
+    app.get("/api/clients/:clientId/attachments/:attachmentId/open", requireAuthentication, asyncHandler(async (request, response) => {
+        const clientId = String(request.params.clientId || "");
+        const attachmentId = String(request.params.attachmentId || "");
+        if (!CLIENT_ID_PATTERN.test(clientId) || !attachmentId) return response.status(400).json({ message: "Fichier invalide." });
+
+        const { rows } = await getPool().query(`
+            SELECT client_data AS client
+            FROM depannhome_clients
+            WHERE owner_id = $1 AND client_id = $2
+        `, [getAccountOwnerId(request), clientId]);
+        const attachments = Array.isArray(rows[0]?.client?.attachments) ? rows[0].client.attachments : [];
+        const attachment = attachments.find(item => String(item?.id) === attachmentId);
+        const content = attachment ? decodeAttachmentDataUrl(attachment.dataUrl) : null;
+        if (!attachment || !content) return response.status(404).json({ message: "Fichier introuvable." });
+
+        response.type(attachmentMimeType(attachment.name));
+        response.setHeader("Content-Disposition", `inline; filename*=UTF-8''${encodeURIComponent(safeFilename(attachment.name))}`);
+        response.send(content.buffer);
+    }));
 }
 
 export function clientUploadErrorHandler(error, request, response, next) {
@@ -221,6 +241,16 @@ function attachmentMimeType(filename) {
         ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         ".txt": "text/plain"
     }[extension] || "application/octet-stream";
+}
+
+function decodeAttachmentDataUrl(value) {
+    const match = /^data:([^;,]+);base64,([a-zA-Z0-9+/=]+)$/.exec(String(value || ""));
+    if (!match) return null;
+    try {
+        return { mime: match[1], buffer: Buffer.from(match[2], "base64") };
+    } catch {
+        return null;
+    }
 }
 
 function asyncHandler(handler) {

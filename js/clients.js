@@ -169,7 +169,7 @@ function renderClientForm(client, options = {}) {
                     <span class="file-count-badge">${client.attachments.length} fichier(s)</span>
                 </div>
 
-                ${client.attachments.length ? renderAttachmentsHtml(client.attachments, false) : "<p class=\"muted\">Aucun fichier enregistré pour ce client.</p>"}
+                ${client.attachments.length ? renderAttachmentsHtml(client.id, client.attachments, false) : "<p class=\"muted\">Aucun fichier enregistré pour ce client.</p>"}
 
                 <div class="file-input-grid">
                     <label>
@@ -389,7 +389,7 @@ function renderClientDetail(client, options = {}) {
         </section>
         <section class="procedure-section">
             <h3> Fichiers du client</h3>
-            ${client.attachments.length ? renderAttachmentsHtml(client.attachments, !readOnly) : "<p>Aucun fichier enregistré.</p>"}
+            ${client.attachments.length ? renderAttachmentsHtml(client.id, client.attachments, !readOnly) : "<p>Aucun fichier enregistré.</p>"}
         </section>
     `;
 
@@ -680,7 +680,7 @@ function readFileAsDataUrl(file) {
     });
 }
 
-function renderAttachmentsHtml(attachments, withActions) {
+function renderAttachmentsHtml(clientId, attachments, withActions) {
     return `
         <div class="attachment-list">
             ${normalizeAttachments(attachments).map(attachment => `
@@ -692,8 +692,8 @@ function renderAttachmentsHtml(attachments, withActions) {
                         <p class="muted">${escapeHtml(formatFileSize(attachment.size))} · ${escapeHtml(formatDate(attachment.createdAt))}</p>
                     </div>
                     <div class="attachment-actions">
-                        <a class="secondary-button" href="${escapeHtml(attachment.dataUrl)}" target="_blank" rel="noopener">Ouvrir</a>
-                        <a class="secondary-button" href="${escapeHtml(attachment.dataUrl)}" download="${escapeHtml(attachment.name)}">Télécharger</a>
+                        <a class="secondary-button" href="/api/clients/${encodeURIComponent(clientId)}/attachments/${encodeURIComponent(attachment.id)}/open" target="_blank" rel="noopener">Ouvrir</a>
+                        <a class="secondary-button" href="/api/clients/${encodeURIComponent(clientId)}/attachments/${encodeURIComponent(attachment.id)}/open" download="${escapeHtml(attachment.name)}">Télécharger</a>
                         ${withActions ? `<button type="button" class="secondary-button danger-button" data-delete-attachment="${escapeHtml(attachment.id)}">Supprimer</button>` : ""}
                     </div>
                 </article>
