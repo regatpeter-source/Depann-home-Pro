@@ -1,4 +1,4 @@
-import { ROUTES } from "./config.js?v=113";
+import { ROUTES } from "./config.js?v=114";
 import { getSearchableClients } from "./clients.js?v=113";
 import { addClientActivityByName } from "./client-sync.js?v=110";
 import { resetSelection } from "./state.js?v=44";
@@ -120,6 +120,7 @@ function renderProfile(panel) {
         const form = event.currentTarget;
         const message = panel.querySelector("#billingProfileMessage");
         const submit = form.querySelector("button[type=submit]");
+        if (form.elements.removeLogo?.checked && !confirm("Supprimer définitivement le logo actuel de votre structure ?")) return;
         submit.disabled = true;
         message.textContent = "Enregistrement…";
         message.classList.remove("error");
@@ -290,7 +291,12 @@ function createLineEditor(line, index, billingDocument, rerender) {
         Object.assign(line, { description: template.description ? `${template.label} — ${template.description}` : template.label, unit: template.unit, unitPrice: Number(template.unitPrice), vatRate: Number(template.vatRate) });
         rerender();
     });
-    item.querySelector("button").addEventListener("click", () => { billingDocument.lines.splice(index, 1); if (!billingDocument.lines.length) billingDocument.lines.push(emptyLine()); rerender(); });
+    item.querySelector("button").addEventListener("click", () => {
+        if (!confirm("Supprimer cette ligne du document en cours ?")) return;
+        billingDocument.lines.splice(index, 1);
+        if (!billingDocument.lines.length) billingDocument.lines.push(emptyLine());
+        rerender();
+    });
     return item;
 }
 

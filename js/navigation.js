@@ -1,7 +1,7 @@
-import { ROUTES, STORAGE_KEYS, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=113";
+import { ROUTES, STORAGE_KEYS, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=114";
 import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=110";
 import { renderCreatorConsole } from "./creator.js?v=105";
-import { createBillingDocumentForClient, renderBilling, viewBillingDocument } from "./billing.js?v=113";
+import { createBillingDocumentForClient, renderBilling, viewBillingDocument } from "./billing.js?v=114";
 import { renderPurchases } from "./purchases.js?v=111";
 import { getFirstUnreadClientId, refreshClientMessageAlert } from "./messages.js?v=88";
 import { getSearchableClients, renderClients } from "./clients.js?v=113";
@@ -705,6 +705,7 @@ function renderHistory() {
     }
 
     container.appendChild(createButton("Effacer l'historique", "secondary-button danger-button", () => {
+        if (!confirm("Effacer définitivement tout l’historique des procédures consultées ?")) return;
         clearHistory();
         renderHistory();
     }));
@@ -844,6 +845,7 @@ function renderSettings() {
     });
 
     const resetBtn = createButton("Réinitialiser", "secondary-button", () => {
+        if (!confirm("Réinitialiser tous les paramètres de l’application ?")) return;
         saveSettings(DEFAULT_SETTINGS);
         document.body.classList.toggle("dark-theme", DEFAULT_SETTINGS.theme === "dark");
         const font = FONT_OPTIONS.find(f => f.id === DEFAULT_SETTINGS.font) || FONT_OPTIONS[0];

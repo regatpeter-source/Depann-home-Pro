@@ -441,7 +441,9 @@ function initializeQuitusForm(panel, event) {
     const form = panel.querySelector("#calendarQuitusForm");
     if (!form) return;
     const signature = initializeSignatureCanvas(form.querySelector("canvas"), event.quitusSignature || "");
-    form.querySelector('[data-quitus-action="clear"]').addEventListener("click", () => signature.clear());
+    form.querySelector('[data-quitus-action="clear"]').addEventListener("click", () => {
+        if (confirm("Effacer définitivement la signature en cours ?")) signature.clear();
+    });
     form.addEventListener("submit", async eventSubmit => {
         eventSubmit.preventDefault();
         const button = form.querySelector('button[type="submit"]');
