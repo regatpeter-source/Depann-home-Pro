@@ -6,6 +6,9 @@ CREATE TABLE IF NOT EXISTS depannhome_users (
     account_owner_id BIGINT REFERENCES depannhome_users(id) ON DELETE CASCADE,
     full_name VARCHAR(100) NOT NULL DEFAULT '',
     phone VARCHAR(30) NOT NULL DEFAULT '',
+    company_name VARCHAR(160) NOT NULL DEFAULT '',
+    max_pc_users INTEGER NOT NULL DEFAULT 1,
+    max_technicians INTEGER NOT NULL DEFAULT 5,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -15,6 +18,11 @@ CREATE INDEX IF NOT EXISTS depannhome_users_username_lookup_idx ON depannhome_us
 
 UPDATE depannhome_users SET account_owner_id = id WHERE account_owner_id IS NULL;
 UPDATE depannhome_users SET role = 'admin' WHERE role = 'user' AND account_owner_id = id;
+
+ALTER TABLE depannhome_users
+    ADD COLUMN IF NOT EXISTS company_name VARCHAR(160) NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS max_pc_users INTEGER NOT NULL DEFAULT 1,
+    ADD COLUMN IF NOT EXISTS max_technicians INTEGER NOT NULL DEFAULT 5;
 
 CREATE TABLE IF NOT EXISTS depannhome_clients (
     id BIGSERIAL PRIMARY KEY,

@@ -1,12 +1,12 @@
 {
   "name": "depann-home-pro",
-  "version": "1.10.26",
+  "version": "1.11.0",
   "private": true,
   "type": "module",
   "scripts": {
     "start": "node app.js",
     "dev": "node --watch app.js",
-    "check": "node --check app.js && node --check server/auth.js && node --check server/billing.js && node --check server/calendar.js && node --check server/clients.js && node --check server/database.js && node --check server/library.js && node --check server/messages.js && node --check js/auth.js && node --check js/app.js && node --check js/billing.js && node --check js/calendar.js && node --check js/library.js && node --check js/messages.js",
+    "check": "node --check app.js && node --check server/auth.js && node --check server/billing.js && node --check server/calendar.js && node --check server/clients.js && node --check server/creator.js && node --check server/database.js && node --check server/library.js && node --check server/messages.js && node --check js/auth.js && node --check js/app.js && node --check js/billing.js && node --check js/calendar.js && node --check js/creator.js && node --check js/library.js && node --check js/messages.js",
     "generate-notice-manifest": "node scripts/generate-notice-manifest.js",
     "watch-notice-manifest": "node scripts/watch-notice-manifest.js"
   },

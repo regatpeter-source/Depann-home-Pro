@@ -31,6 +31,9 @@ export async function initializeDatabase() {
             account_owner_id BIGINT REFERENCES depannhome_users(id) ON DELETE CASCADE,
             full_name VARCHAR(100) NOT NULL DEFAULT '',
             phone VARCHAR(30) NOT NULL DEFAULT '',
+            company_name VARCHAR(160) NOT NULL DEFAULT '',
+            max_pc_users INTEGER NOT NULL DEFAULT 1,
+            max_technicians INTEGER NOT NULL DEFAULT 5,
             is_active BOOLEAN NOT NULL DEFAULT TRUE,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -42,6 +45,9 @@ export async function initializeDatabase() {
         ADD COLUMN IF NOT EXISTS account_owner_id BIGINT REFERENCES depannhome_users(id) ON DELETE CASCADE,
         ADD COLUMN IF NOT EXISTS full_name VARCHAR(100) NOT NULL DEFAULT '',
         ADD COLUMN IF NOT EXISTS phone VARCHAR(30) NOT NULL DEFAULT '',
+        ADD COLUMN IF NOT EXISTS company_name VARCHAR(160) NOT NULL DEFAULT '',
+        ADD COLUMN IF NOT EXISTS max_pc_users INTEGER NOT NULL DEFAULT 1,
+        ADD COLUMN IF NOT EXISTS max_technicians INTEGER NOT NULL DEFAULT 5,
         ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE
     `);
     await database.query("UPDATE depannhome_users SET account_owner_id = id WHERE account_owner_id IS NULL");
@@ -55,7 +61,11 @@ export async function initializeDatabase() {
 
 export async function findUserByUsername(username) {
     const { rows } = await getPool().query(
-        "SELECT id, username, password_hash, role, account_owner_id, full_name, phone, is_active FROM depannhome_users WHERE username = $1",
+        `SELECT user_account.id, user_account.username, user_account.password_hash, user_account.role, user_account.account_owner_id,
+            user_account.full_name, user_account.phone, user_account.is_active, owner.is_active AS account_is_active
+         FROM depannhome_users user_account
+         JOIN depannhome_users owner ON owner.id = user_account.account_owner_id
+         WHERE user_account.username = $1`,
         [username]
     );
 
@@ -64,7 +74,11 @@ export async function findUserByUsername(username) {
 
 export async function findUserById(id) {
     const { rows } = await getPool().query(
-        "SELECT id, username, password_hash, role, account_owner_id, full_name, phone, is_active FROM depannhome_users WHERE id = $1",
+        `SELECT user_account.id, user_account.username, user_account.password_hash, user_account.role, user_account.account_owner_id,
+            user_account.full_name, user_account.phone, user_account.is_active, owner.is_active AS account_is_active
+         FROM depannhome_users user_account
+         JOIN depannhome_users owner ON owner.id = user_account.account_owner_id
+         WHERE user_account.id = $1`,
         [id]
     );
     return rows[0] || null;

@@ -1,5 +1,6 @@
-import { ROUTES, STORAGE_KEYS, APP_VERSION, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=99";
-import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=99";
+import { ROUTES, STORAGE_KEYS, APP_VERSION, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=100";
+import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=100";
+import { renderCreatorConsole } from "./creator.js?v=100";
 import { createBillingDocumentForClient, renderBilling } from "./billing.js?v=88";
 import { getFirstUnreadClientId, refreshClientMessageAlert } from "./messages.js?v=88";
 import { getSearchableClients, renderClients } from "./clients.js?v=97";
@@ -873,6 +874,13 @@ function renderSettings() {
 
     container.appendChild(card);
     if (document.body.dataset.role === "admin") renderTeamManagement(container);
+    if (document.body.dataset.creator === "true") {
+        const creatorCard = document.createElement("article");
+        creatorCard.className = "brand-card full-card procedure-card creator-entry-card";
+        creatorCard.innerHTML = '<p class="eyebrow">Administration plateforme</p><h2>Console Créateur</h2><p class="muted">Créez et pilotez les entreprises clientes, leurs postes PC, techniciens et accès.</p>';
+        creatorCard.appendChild(createButton("Ouvrir la console Créateur", "secondary-button", renderCreatorConsole));
+        container.appendChild(creatorCard);
+    }
 }
 
 async function renderTeamManagement(container) {

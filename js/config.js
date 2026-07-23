@@ -1,4 +1,4 @@
-export const APP_VERSION = "1.10.26 Quitus et photos intervention";
+export const APP_VERSION = "1.11.0 Console Créateur";
 export const DATA_VERSION = "2026-07-20-35";
 
 export const STORAGE_KEYS = {
@@ -46,5 +46,6 @@ export const ROUTES = {
     library: "library",
     favorites: "favorites",
     history: "history",
-    settings: "settings"
+    settings: "settings",
+    creator: "creator"
 };

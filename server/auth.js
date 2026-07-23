@@ -27,7 +27,7 @@ export function registerAuthRoutes(app) {
         const username = normalizeUsername(request.body?.username);
         const password = String(request.body?.password || "");
         const user = username ? await findUserByUsername(username) : null;
-        const passwordMatches = user?.is_active && await bcrypt.compare(password, user.password_hash);
+        const passwordMatches = user?.is_active && user?.account_is_active && await bcrypt.compare(password, user.password_hash);
 
         if (!passwordMatches) {
             return response.status(401).json({ message: "Identifiant ou mot de passe incorrect." });
@@ -82,6 +82,15 @@ export function registerAuthRoutes(app) {
         const phone = cleanText(request.body?.phone, 30);
         const validationError = validateCredentials(username, password) || (!fullName ? "Le nom du technicien est obligatoire." : "") || (!phone ? "Le téléphone du technicien est obligatoire." : "");
         if (validationError) return response.status(400).json({ message: validationError });
+        const seats = await getPool().query(`
+            SELECT owner.max_technicians, COUNT(member.id) FILTER (WHERE member.role = 'technician' AND member.is_active)::int AS active_technicians
+            FROM depannhome_users owner
+            LEFT JOIN depannhome_users member ON member.account_owner_id = owner.id
+            WHERE owner.id = $1 GROUP BY owner.id
+        `, [getAccountOwnerId(request)]);
+        if (seats.rows[0]?.active_technicians >= seats.rows[0]?.max_technicians) {
+            return response.status(400).json({ message: "La limite de techniciens de votre entreprise est atteinte." });
+        }
         try {
             const user = await createUser({ username, passwordHash: await bcrypt.hash(password, 12), role: "technician", accountOwnerId: getAccountOwnerId(request), fullName, phone });
             response.status(201).json({ technician: publicUser(user) });
@@ -95,6 +104,18 @@ export function registerAuthRoutes(app) {
         const technicianId = positiveId(request.params.technicianId);
         if (!technicianId) return response.status(400).json({ message: "Technicien invalide." });
         const isActive = Boolean(request.body?.isActive);
+        if (isActive) {
+            const seats = await getPool().query(`
+                SELECT owner.max_technicians,
+                    COUNT(member.id) FILTER (WHERE member.role = 'technician' AND member.is_active AND member.id <> $2)::int AS active_technicians
+                FROM depannhome_users owner
+                LEFT JOIN depannhome_users member ON member.account_owner_id = owner.id
+                WHERE owner.id = $1 GROUP BY owner.id
+            `, [getAccountOwnerId(request), technicianId]);
+            if (seats.rows[0]?.active_technicians >= seats.rows[0]?.max_technicians) {
+                return response.status(400).json({ message: "La limite de techniciens de votre entreprise est atteinte." });
+            }
+        }
         const result = await getPool().query(`
             UPDATE depannhome_users SET is_active = $3, updated_at = NOW()
             WHERE id = $1 AND account_owner_id = $2 AND id <> $2 AND role = 'technician'
@@ -115,14 +136,15 @@ export async function authenticateRequest(request, response, next) {
     try {
         const session = jwt.verify(token, getSessionSecret());
         const user = await findUserById(session.sub);
-        if (!user?.is_active) throw new Error("Session inactive");
+        if (!user?.is_active || !user.account_is_active) throw new Error("Session inactive");
         request.user = {
             sub: String(user.id),
             username: user.username,
             role: user.role,
             accountOwnerId: String(user.account_owner_id || user.id),
             fullName: user.full_name || "",
-            phone: user.phone || ""
+            phone: user.phone || "",
+            isCreator: isCreatorUsername(user.username)
         };
     } catch {
         response.clearCookie(COOKIE_NAME, cookieOptions());
@@ -141,6 +163,15 @@ export function requireAuthentication(request, response, next) {
 
 export function getAccountOwnerId(request) {
     return String(request.user?.accountOwnerId || request.user?.sub || "");
+}
+
+export function requireCreator(request, response, next) {
+    if (!request.user?.isCreator) return response.status(403).json({ message: "Accès réservé au Créateur de l’application." });
+    return next();
+}
+
+export function isCreatorUsername(username) {
+    return getCreatorUsernames().has(normalizeUsername(username));
 }
 
 function requireAccountAdministrator(request, response, next) {
@@ -200,7 +231,8 @@ function publicUser(user) {
         accountOwnerId: String(user.account_owner_id || user.accountOwnerId || id),
         fullName: user.full_name || user.fullName || "",
         phone: user.phone || "",
-        isActive: user.is_active !== false
+        isActive: user.is_active !== false,
+        isCreator: Boolean(user.isCreator || isCreatorUsername(user.username))
     };
 }
 
@@ -231,6 +263,13 @@ function validateCredentials(username, password) {
 
 function isPublicRegistrationEnabled() {
     return process.env.ALLOW_PUBLIC_REGISTRATION === "true";
+}
+
+function getCreatorUsernames() {
+    return new Set(String(process.env.CREATOR_USERNAMES || "")
+        .split(",")
+        .map(normalizeUsername)
+        .filter(Boolean));
 }
 
 function getSessionSecret() {

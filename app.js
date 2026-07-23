@@ -8,11 +8,13 @@ import rateLimit from "express-rate-limit";
 import {
 	authenticateRequest,
 	createInitialAdministrator,
+	requireCreator,
 	registerAuthRoutes,
 	requireAuthentication,
 	validateAuthenticationConfiguration
 } from "./server/auth.js";
 import { initializeDatabase } from "./server/database.js";
+import { registerCreatorRoutes } from "./server/creator.js";
 import { billingUploadErrorHandler, initializeBilling, registerBillingRoutes } from "./server/billing.js";
 import { initializeMessages, registerMessageRoutes } from "./server/messages.js";
 import { initializeCalendar, registerCalendarRoutes } from "./server/calendar.js";
@@ -41,6 +43,7 @@ app.use("/api/auth", rateLimit({
 	message: { message: "Trop de tentatives. Réessayez dans quelques minutes." }
 }));
 registerAuthRoutes(app);
+registerCreatorRoutes(app, requireCreator);
 registerBillingRoutes(app, requireAuthentication);
 registerMessageRoutes(app, requireAuthentication);
 registerCalendarRoutes(app, requireAuthentication);

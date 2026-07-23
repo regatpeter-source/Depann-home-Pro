@@ -1,10 +1,10 @@
 import { initializeAuthentication, signOut } from "./auth.js?v=59";
 import { initializeClientSynchronization } from "./client-sync.js?v=88";
 import { loadDatabase } from "./data.js?v=59";
-import { initializeNavigation } from "./navigation.js?v=99";
+import { initializeNavigation } from "./navigation.js?v=100";
 import { renderError } from "./ui.js?v=44";
 import { getSettings } from "./storage.js?v=44";
-import { FONT_OPTIONS } from "./config.js?v=99";
+import { FONT_OPTIONS } from "./config.js?v=100";
 
 let applicationStarted = false;
 
@@ -53,6 +53,7 @@ function showAuthenticatedUser(user) {
     document.body.dataset.accountId = user.accountOwnerId || user.id || "";
     document.body.dataset.role = user.role || "";
     document.body.dataset.userName = user.fullName || user.username || "";
+    document.body.dataset.creator = user.isCreator ? "true" : "false";
     document.body.classList.toggle("mobile-device", window.matchMedia("(max-width: 700px)").matches);
     document.body.classList.toggle("desktop-device", !document.body.classList.contains("mobile-device"));
     document.body.classList.remove("auth-pending");

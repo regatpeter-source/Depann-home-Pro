@@ -1,4 +1,4 @@
-import { ROUTES } from "./config.js?v=99";
+import { ROUTES } from "./config.js?v=100";
 import { createBillingDocumentForClient } from "./billing.js?v=99";
 import { getSearchableClients, renderClients } from "./clients.js?v=99";
 import { addClientActivityByName, synchronizeClients } from "./client-sync.js?v=88";
