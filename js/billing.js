@@ -62,7 +62,7 @@ function renderOverview(panel) {
         <div class="billing-overview">
             <div class="billing-branding">
                 ${profile.hasLogo ? '<img class="billing-logo-preview" src="/api/billing/logo" alt="Logo de votre structure">' : '<div class="billing-logo-placeholder">Votre logo</div>'}
-                <div><p class="eyebrow">Espace privé de facturation</p><h2>${escapeHtml(profile.companyName || "Votre structure")}</h2><p class="muted">Vos paramètres, lignes et documents sont visibles uniquement depuis ce compte.</p></div>
+                <div><p class="eyebrow">Espace privé de facturation</p><h2>${escapeHtml(profile.companyName || "Votre structure")}</h2></div>
             </div>
             <div class="billing-overview-actions">
                 <button type="button" class="secondary-button" data-billing-action="new-quote">+ Nouveau devis</button>
@@ -128,7 +128,7 @@ function renderProfile(panel) {
 function renderTemplates(panel) {
     panel.hidden = false;
     panel.innerHTML = `
-        <div class="form-heading"><div><p class="eyebrow">Lignes préenregistrées</p><h2>Vos prestations et fournitures</h2><p class="muted">Enregistrez les lignes que vous utilisez souvent, puis ajoutez-les en un clic dans un devis ou une facture.</p></div></div>
+        <div class="form-heading"><div><p class="eyebrow">Lignes préenregistrées</p><h2>Vos prestations et fournitures</h2></div></div>
         <form id="billingTemplateForm" class="form-grid billing-template-form">
             <label>Libellé *<input name="label" maxlength="160" required placeholder="Ex. Déplacement et diagnostic"></label>
             <label>Prix unitaire HT *<input name="unitPrice" type="number" min="0" step="0.01" required placeholder="0,00"></label>
@@ -243,7 +243,7 @@ function renderDocumentEditor(panel) {
 function renderReadOnlyDocument(panel, document) {
     panel.innerHTML = `
         <div class="billing-read-only-document">
-            <div class="form-heading"><div><p class="eyebrow">Consultation uniquement</p><h2>${escapeHtml(DOCUMENT_TYPES[document.documentType])} ${escapeHtml(document.documentNumber)}</h2><p class="muted">Seul l’administrateur peut modifier ou supprimer un document existant.</p></div><button type="button" class="secondary-button" id="closeBillingDocument">Fermer</button></div>
+            <div class="form-heading"><div><p class="eyebrow">Consultation uniquement</p><h2>${escapeHtml(DOCUMENT_TYPES[document.documentType])} ${escapeHtml(document.documentNumber)}</h2></div><button type="button" class="secondary-button" id="closeBillingDocument">Fermer</button></div>
             <div class="procedure-meta"><span>${escapeHtml(document.customerName)}</span><span>${escapeHtml(formatDate(document.issueDate))}</span><span>${escapeHtml(document.status || "brouillon")}</span></div>
             <div class="billing-read-only-lines">${document.lines.map(line => `<div><span>${escapeHtml(line.description)}</span><strong>${escapeHtml(String(line.quantity))} × ${escapeHtml(formatMoney(line.unitPrice))}</strong><b>${escapeHtml(formatMoney(lineTotal(line)))}</b></div>`).join("")}</div>
             <div class="billing-totals" id="billingReadOnlyTotals"></div>

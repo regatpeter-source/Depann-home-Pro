@@ -28,7 +28,6 @@ function renderAuthentication({ onAuthenticated, registrationEnabled, message = 
                         <p>Connexion professionnelle</p>
                     </div>
                 </div>
-                <p class="muted">Connectez-vous pour accéder à l’application.</p>
                 <p id="authMessage" class="auth-message" aria-live="polite">${escapeHtml(message)}</p>
                 <form id="loginForm" class="auth-form">
                     <label>Nom d’utilisateur<input name="username" type="text" autocomplete="username" minlength="3" maxlength="32" required></label>

@@ -46,7 +46,6 @@ export function renderPhotoRecognition(database, navigateToRef) {
                 <h2> Reconnaissance visuelle</h2>
             </div>
         </div>
-        <p class="muted">Prenez ou importez une photo d’un moteur, d’une télécommande, d’un portail ou d’un volet roulant pour ouvrir automatiquement le dossier le plus probable.</p>
 
         <section class="procedure-section">
             <h3>1. Choisir la photo</h3>

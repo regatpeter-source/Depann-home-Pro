@@ -1,6 +1,6 @@
-import { ROUTES } from "./config.js?v=100";
-import { createBillingDocumentForClient } from "./billing.js?v=99";
-import { getSearchableClients, renderClients } from "./clients.js?v=99";
+import { ROUTES } from "./config.js?v=105";
+import { createBillingDocumentForClient } from "./billing.js?v=105";
+import { getSearchableClients, renderClients } from "./clients.js?v=105";
 import { addClientActivityByName, synchronizeClients } from "./client-sync.js?v=88";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
@@ -98,7 +98,6 @@ function renderHeader(panel) {
             <div>
                 <p class="eyebrow">Planning professionnel</p>
                 <h2>${escapeHtml(periodLabel)}</h2>
-                <p class="muted">${readOnly ? "Vos rendez-vous du jour. Sélectionnez une intervention pour ouvrir sa fiche." : "Vos interventions, rendez-vous et indisponibilités sont synchronisés avec ce compte."}</p>
             </div>
             <div class="calendar-toolbar-actions">
                 <button type="button" class="secondary-button" data-calendar-action="previous">← ${getPreviousLabel()}</button>
@@ -200,7 +199,7 @@ function renderEventForm(panel) {
                     </div>
                     ${renderInterventionPhotosHtml(client)}
                     <form id="calendarClientUpload" class="calendar-client-upload">
-                        <div><p class="eyebrow">Dossier d’intervention</p><h3>Ajouter une photo ou un fichier</h3><p class="muted">Le dépôt est ajouté au dossier de ${escapeHtml(client.name)}, sans modifier ses coordonnées.</p></div>
+                        <div><p class="eyebrow">Dossier d’intervention</p><h3>Ajouter une photo ou un fichier</h3></div>
                         <label>Type de fichier<select name="type"><option value="Photo">Photo</option><option value="Autre">Document</option><option value="Devis">Devis</option><option value="Facture">Facture</option></select></label>
                         <label>Fichiers<input name="files" type="file" multiple accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt"></label>
                         <label>Photo depuis l’appareil<input name="cameraPhoto" type="file" accept="image/*" capture="environment"></label>
@@ -429,7 +428,7 @@ function renderQuitusHtml(event) {
     const signed = event.quitusStatus === "signed";
     return `
         <form id="calendarQuitusForm" class="calendar-quitus">
-            <div class="form-heading"><div><p class="eyebrow">Quitus d’intervention</p><h3>${signed ? "Quitus signé" : "Quitus à faire signer"}</h3><p class="muted">Le client confirme la réalisation de l’intervention en signant ci-dessous.</p></div><span class="quitus-status${signed ? " signed" : ""}">${signed ? "Signé" : "En attente"}</span></div>
+            <div class="form-heading"><div><p class="eyebrow">Quitus d’intervention</p><h3>${signed ? "Quitus signé" : "Quitus à faire signer"}</h3></div><span class="quitus-status${signed ? " signed" : ""}">${signed ? "Signé" : "En attente"}</span></div>
             <label>Nom du client signataire<input name="signedBy" maxlength="160" required value="${escapeHtml(event.quitusSignedBy || event.clientName || "")}" placeholder="Nom et prénom"></label>
             <label>Signature du client<canvas class="quitus-signature-canvas" width="640" height="220" aria-label="Zone de signature tactile"></canvas></label>
             <div class="calendar-form-actions"><button type="button" class="secondary-button" data-quitus-action="clear">Effacer la signature</button><button type="submit" class="secondary-button">Valider le quitus</button></div>
@@ -524,7 +523,7 @@ function renderInterventionPhotosHtml(client) {
         : '<p class="muted">Aucune photo pour le moment.</p>';
     return `
         <form id="calendarInterventionPhotos" class="calendar-intervention-photos">
-            <div><p class="eyebrow">Photos d’intervention</p><h3>Avant / après</h3><p class="muted">Prenez les photos nécessaires pour documenter le dossier client.</p></div>
+            <div><p class="eyebrow">Photos d’intervention</p><h3>Avant / après</h3></div>
             <section><h4>Avant intervention</h4>${previews(before)}<label>Ajouter une photo avant<input name="beforePhoto" type="file" accept="image/*" capture="environment"></label></section>
             <section><h4>Après intervention</h4>${previews(after)}<label>Ajouter une photo après<input name="afterPhoto" type="file" accept="image/*" capture="environment"></label></section>
             <div class="calendar-form-actions"><button type="submit" class="secondary-button">Ajouter les photos</button></div><p class="auth-message" aria-live="polite"></p>

@@ -1,4 +1,4 @@
-import { ROUTES } from "./config.js?v=104";
+import { ROUTES } from "./config.js?v=105";
 import { clearSearch, getContainer, setPage } from "./ui.js?v=44";
 import { escapeHtml } from "./utils.js?v=44";
 
@@ -12,7 +12,7 @@ export async function renderCreatorConsole() {
     container.innerHTML = `
         <section class="creator-console">
             <header class="creator-heading">
-                <div><p class="eyebrow">Administration plateforme</p><h2>Console Créateur</h2><p class="muted">Gérez les entreprises, leurs accès PC, techniciens et limites de licences.</p></div>
+                <div><p class="eyebrow">Administration plateforme</p><h2>Console Créateur</h2></div>
                 <button type="button" class="secondary-button" id="creatorNewAccount">+ Nouvelle entreprise</button>
             </header>
             <p id="creatorFeedback" class="auth-message" aria-live="polite"></p>
@@ -120,7 +120,7 @@ function renderAccountForm() {
     renderAccountList();
     document.querySelector("#creatorWorkspace").innerHTML = `
         <form id="creatorNewAccountForm" class="creator-form">
-            <div class="form-heading"><div><p class="eyebrow">Nouvelle entreprise</p><h3>Créer un espace client</h3><p class="muted">Le premier poste PC est l’administrateur principal de l’entreprise.</p></div></div>
+            <div class="form-heading"><div><p class="eyebrow">Nouvelle entreprise</p><h3>Créer un espace client</h3></div></div>
             <div class="form-grid">
                 <label>Nom de l’entreprise<input name="companyName" maxlength="160" required placeholder="Ex. Martin Automatismes"></label>
                 <label>Responsable principal<input name="fullName" maxlength="100" required placeholder="Nom et prénom"></label>
@@ -151,7 +151,7 @@ function renderAccountForm() {
 function renderSubscriptionFields(account) {
     const plan = account.subscriptionPlan === "paid" ? "paid" : "free";
     return `
-        <fieldset class="creator-subscription-fields"><legend>Abonnement et suivi commercial</legend><p class="muted">Suivi manuel : aucun prélèvement n’est déclenché par l’application.</p>
+        <fieldset class="creator-subscription-fields"><legend>Abonnement et suivi commercial</legend>
             <div class="form-grid">
                 <label>Formule<select name="subscriptionPlan"><option value="free" ${plan === "free" ? "selected" : ""}>Abonnement mensuel gratuit</option><option value="paid" ${plan === "paid" ? "selected" : ""}>Abonnement mensuel payant</option></select></label>
                 <label>Nom de l’offre<input name="subscriptionLabel" maxlength="80" value="${escapeHtml(account.subscriptionLabel || "")}" placeholder="Ex. Pro équipe"></label>
@@ -218,7 +218,7 @@ function renderMemberForm(account, member = null) {
     const workspace = document.querySelector("#creatorWorkspace");
     workspace.innerHTML = `
         <form id="creatorMemberForm" class="creator-form">
-            <div class="form-heading"><div><p class="eyebrow">${editing ? "Modifier l’accès" : "Nouvel accès"}</p><h3>${editing ? escapeHtml(member.fullName || member.username) : "Créer un accès"}</h3><p class="muted">${primary ? "Administrateur principal : l’état de connexion se pilote au niveau de l’entreprise." : "Les limites de licences actives sont contrôlées à l’enregistrement."}</p></div></div>
+            <div class="form-heading"><div><p class="eyebrow">${editing ? "Modifier l’accès" : "Nouvel accès"}</p><h3>${editing ? escapeHtml(member.fullName || member.username) : "Créer un accès"}</h3></div></div>
             <div class="form-grid">
                 ${editing ? `<label>Type d’accès<input value="${member.role === "admin" ? "Poste PC" : "Technicien"}" disabled></label>` : `<label>Type d’accès<select name="role"><option value="admin">Poste PC</option><option value="technician">Technicien</option></select></label>`}
                 <label>Nom et prénom<input name="fullName" maxlength="100" required value="${escapeHtml(member?.fullName || "")}"></label>

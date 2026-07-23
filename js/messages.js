@@ -55,7 +55,7 @@ export async function getFirstUnreadClientId() {
 
 function renderClientMessagePanel(panel, client, messages, unreadMessageId = "") {
     panel.innerHTML = `
-        <div class="form-heading"><div><p class="eyebrow">Notes d’intervention</p><h2>Messagerie du dossier</h2><p class="muted">Ajoutez les informations utiles à l’intervention. Vous pouvez modifier vos propres notes.</p></div></div>
+        <div class="form-heading"><div><p class="eyebrow">Notes d’intervention</p><h2>Messagerie du dossier</h2></div></div>
         <div class="message-thread client-message-thread"></div>
         <form class="message-form client-message-form"><textarea name="body" rows="3" maxlength="2000" required placeholder="Ex. Moteur à contrôler, accès par le portail arrière…"></textarea><button type="submit" class="secondary-button">Ajouter la note</button><p class="auth-message" aria-live="polite"></p></form>
     `;

@@ -1,9 +1,9 @@
-import { ROUTES } from "./config.js?v=88";
+import { ROUTES } from "./config.js?v=105";
 import { addClientActivity, deleteLocalClient, getLocalClients, saveLocalClient, synchronizeClients } from "./client-sync.js?v=88";
-import { renderClientMessages } from "./messages.js?v=88";
+import { renderClientMessages } from "./messages.js?v=105";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
-import { analyzeEquipmentPhoto, isPhotoRecognitionConfident } from "./photo-recognition.js?v=59";
+import { analyzeEquipmentPhoto, isPhotoRecognitionConfident } from "./photo-recognition.js?v=105";
 import {
     clearSearch,
     createButton,
@@ -60,7 +60,6 @@ function renderClientToolbar(clients, readOnly) {
         <div>
                 <p class="eyebrow">${readOnly ? "Dossiers d’intervention" : "Base clients"}</p>
             <h2> ${clients.length} client(s)</h2>
-            <p class="muted">${readOnly ? "Recherchez un client pour consulter ses coordonnées, équipements, consignes et documents utiles à l’intervention." : "Les dossiers clients sont synchronisés dans l’espace entreprise."}</p>
         </div>
         <div class="client-toolbar-actions">
             <input id="clientSearch" class="client-search" type="search" placeholder="Saisir le nom d’un client..." aria-describedby="clientSearchHint">
@@ -442,7 +441,7 @@ async function loadClientBillingDocuments(panel, client) {
         if (!response.ok) throw new Error(data?.message);
         const documents = (data?.documents || []).filter(document => normalizeText(document.customerName) === normalizeText(client.name));
         panel.innerHTML = `
-            <div class="form-heading"><div><p class="eyebrow">Devis, factures et envois</p><h2>${documents.length} document(s) pour ${escapeHtml(client.name)}</h2><p class="muted">Les documents associés à ce client peuvent être imprimés ou préparés pour un envoi e-mail.</p></div></div>
+            <div class="form-heading"><div><p class="eyebrow">Devis, factures et envois</p><h2>${documents.length} document(s) pour ${escapeHtml(client.name)}</h2></div></div>
             <div class="client-billing-list" id="clientBillingList"></div>
         `;
         const list = panel.querySelector("#clientBillingList");

@@ -1,11 +1,11 @@
-import { ROUTES, STORAGE_KEYS, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=104";
-import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=100";
-import { renderCreatorConsole } from "./creator.js?v=104";
-import { createBillingDocumentForClient, renderBilling } from "./billing.js?v=88";
+import { ROUTES, STORAGE_KEYS, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=105";
+import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=105";
+import { renderCreatorConsole } from "./creator.js?v=105";
+import { createBillingDocumentForClient, renderBilling } from "./billing.js?v=105";
 import { getFirstUnreadClientId, refreshClientMessageAlert } from "./messages.js?v=88";
-import { getSearchableClients, renderClients } from "./clients.js?v=97";
-import { configureLibrary, openLibrarySection, renderLibrary, searchPersonalLibrary } from "./library.js?v=94";
-import { renderPhotoRecognition } from "./photo-recognition.js?v=59";
+import { getSearchableClients, renderClients } from "./clients.js?v=105";
+import { configureLibrary, openLibrarySection, renderLibrary, searchPersonalLibrary } from "./library.js?v=105";
+import { renderPhotoRecognition } from "./photo-recognition.js?v=105";
 import { getSearchResults } from "./search.js?v=63";
 import { state, resetSelection } from "./state.js?v=44";
 import {
@@ -130,7 +130,6 @@ function renderStore() {
                 <h2>Trouver une pièce</h2>
             </div>
         </div>
-        <p class="muted">Saisissez une référence connue ou inconnue. Le catalogue identifie la marque quand il le peut, puis vous dirige vers Servistores ou le fabricant.</p>
     `;
 
     const form = document.createElement("form");
@@ -351,7 +350,7 @@ async function renderHome() {
     const panel = document.createElement("section");
     panel.className = "client-panel home-panel dashboard-panel";
     panel.innerHTML = `
-        <div class="dashboard-heading"><div><p class="eyebrow">Depann’Home Pro</p><h2>Tableau de bord</h2><p class="muted">Votre activité et vos prochaines interventions.</p></div><button type="button" class="secondary-button" data-dashboard-action="calendar">Voir le planning complet</button></div>
+        <div class="dashboard-heading"><div><p class="eyebrow">Depann’Home Pro</p><h2>Tableau de bord</h2></div><button type="button" class="secondary-button" data-dashboard-action="calendar">Voir le planning complet</button></div>
         <div class="dashboard-grid">
             <section class="dashboard-card"><p class="eyebrow">Aujourd’hui</p><h3>${escapeHtml(formatDashboardDate(new Date()))}</h3><div class="dashboard-events" data-dashboard-events="today"><p class="muted">Chargement des rendez-vous…</p></div></section>
             <section class="dashboard-card"><p class="eyebrow">À venir</p><h3>Les 7 prochains jours</h3><div class="dashboard-events" data-dashboard-events="upcoming"><p class="muted">Chargement des rendez-vous…</p></div></section>
@@ -867,7 +866,7 @@ function renderSettings() {
     if (document.body.dataset.creator === "true") {
         const creatorCard = document.createElement("article");
         creatorCard.className = "brand-card full-card procedure-card creator-entry-card";
-        creatorCard.innerHTML = '<p class="eyebrow">Administration plateforme</p><h2>Console Créateur</h2><p class="muted">Créez et pilotez les entreprises clientes, leurs postes PC, techniciens et accès.</p>';
+        creatorCard.innerHTML = '<p class="eyebrow">Administration plateforme</p><h2>Console Créateur</h2>';
         creatorCard.appendChild(createButton("Ouvrir la console Créateur", "secondary-button", renderCreatorConsole));
         container.appendChild(creatorCard);
     }
@@ -876,7 +875,7 @@ function renderSettings() {
 async function renderTeamManagement(container) {
     const card = document.createElement("article");
     card.className = "brand-card full-card procedure-card team-management";
-    card.innerHTML = "<h2>Équipe</h2><p class=\"muted\">Créez les accès des techniciens de votre entreprise. Ils se connectent avec leur identifiant et mot de passe, puis partagent vos clients, planning et documents.</p>";
+    card.innerHTML = "<h2>Équipe</h2>";
     const form = document.createElement("form");
     form.className = "settings-form team-form";
     [["fullName", "Nom du technicien", "text", "Ex. Léa Martin"], ["phone", "Téléphone", "tel", "Ex. 06 12 34 56 78"], ["username", "Identifiant", "text", "minuscules, chiffres, . _ -"], ["password", "Mot de passe initial", "password", "12 caractères minimum"]].forEach(([name, label, type, placeholder]) => {
