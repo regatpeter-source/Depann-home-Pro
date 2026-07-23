@@ -1,4 +1,4 @@
-import { ROUTES } from "./config.js?v=115";
+import { ROUTES } from "./config.js?v=116";
 import { addClientActivity, deleteLocalClient, getLocalClients, saveLocalClient, synchronizeClients } from "./client-sync.js?v=110";
 import { renderClientMessages } from "./messages.js?v=105";
 import { resetSelection } from "./state.js?v=44";

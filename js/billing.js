@@ -1,5 +1,5 @@
-import { ROUTES } from "./config.js?v=115";
-import { getSearchableClients } from "./clients.js?v=115";
+import { ROUTES } from "./config.js?v=116";
+import { getSearchableClients } from "./clients.js?v=116";
 import { addClientActivityByName } from "./client-sync.js?v=110";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
@@ -183,7 +183,7 @@ function renderDocumentEditor(panel) {
     const clients = getSearchableClients().sort((a, b) => a.name.localeCompare(b.name, "fr"));
     panel.innerHTML = `
         <form id="billingDocumentForm" class="client-form">
-            <div class="form-heading"><div><p class="eyebrow">${isEditing ? "Modification" : "Nouveau document"}</p><h2>${isEditing ? "Modifier le document" : `Créer un ${DOCUMENT_TYPES[document.documentType].toLowerCase()}`}</h2></div><button type="button" class="secondary-button" id="cancelBillingDocument">Annuler</button></div>
+            <div class="form-heading"><div><p class="eyebrow">${isEditing ? "Modification" : "Nouveau document"}</p><h2>${isEditing ? "Modifier le document" : `Créer un ${DOCUMENT_TYPES[document.documentType].toLowerCase()}`}</h2></div><div class="calendar-form-actions">${isEditing && document.documentType === "quote" ? '<button type="button" class="secondary-button" id="createInvoiceFromQuote">Créer la facture</button>' : ""}<button type="button" class="secondary-button" id="cancelBillingDocument">Annuler</button></div></div>
             <div class="form-grid">
                 <label>Type *<select name="documentType">${Object.entries(DOCUMENT_TYPES).map(([id, label]) => `<option value="${id}" ${document.documentType === id ? "selected" : ""}>${label}</option>`).join("")}</select></label>
                 <label>Numéro *<input name="documentNumber" maxlength="80" required placeholder="Ex. DEV-2026-001" value="${escapeHtml(document.documentNumber)}"></label>
@@ -212,6 +212,7 @@ function renderDocumentEditor(panel) {
     renderLines();
     form.querySelector("#addBillingLine").addEventListener("click", () => { document.lines.push(emptyLine()); renderLines(); });
     form.querySelector("#cancelBillingDocument").addEventListener("click", () => { activeDocument = null; renderBilling(); });
+    form.querySelector("#createInvoiceFromQuote")?.addEventListener("click", () => createInvoiceFromQuote(document));
     const customerInput = form.querySelector("[name=customerName]");
     customerInput.addEventListener("change", () => fillCustomerAddress(customerInput, form, clients));
     customerInput.addEventListener("input", () => fillCustomerAddress(customerInput, form, clients));
@@ -255,7 +256,7 @@ function renderDocumentEditor(panel) {
 function renderReadOnlyDocument(panel, document) {
     panel.innerHTML = `
         <div class="billing-read-only-document">
-            <div class="form-heading"><div><p class="eyebrow">Consultation uniquement</p><h2>${escapeHtml(DOCUMENT_TYPES[document.documentType])} ${escapeHtml(document.documentNumber)}</h2></div><button type="button" class="secondary-button" id="closeBillingDocument">Fermer</button></div>
+            <div class="form-heading"><div><p class="eyebrow">Consultation uniquement</p><h2>${escapeHtml(DOCUMENT_TYPES[document.documentType])} ${escapeHtml(document.documentNumber)}</h2></div><div class="calendar-form-actions">${document.documentType === "quote" ? '<button type="button" class="secondary-button" id="createInvoiceFromQuote">Créer la facture</button>' : ""}<button type="button" class="secondary-button" id="closeBillingDocument">Fermer</button></div></div>
             <div class="procedure-meta"><span>${escapeHtml(document.customerName)}</span><span>${escapeHtml(formatDate(document.issueDate))}</span><span>${escapeHtml(document.status || "brouillon")}</span>${document.documentType === "invoice" ? `<span>${document.isAccounted ? `Comptabilisée le ${escapeHtml(formatDate(document.accountedAt))}` : "Non comptabilisée"}</span>` : ""}</div>
             <div class="billing-read-only-lines">${document.lines.map(line => `<div><span>${escapeHtml(line.description)}</span><strong>${escapeHtml(String(line.quantity))} × ${escapeHtml(formatMoney(line.unitPrice))}</strong><b>${escapeHtml(formatMoney(lineTotal(line)))}</b></div>`).join("")}</div>
             <div class="billing-totals" id="billingReadOnlyTotals"></div>
@@ -263,6 +264,7 @@ function renderReadOnlyDocument(panel, document) {
         </div>`;
     renderTotals(panel.querySelector("#billingReadOnlyTotals"), document.lines);
     panel.querySelector("#closeBillingDocument").addEventListener("click", () => { activeDocument = null; renderBilling(); });
+    panel.querySelector("#createInvoiceFromQuote")?.addEventListener("click", () => createInvoiceFromQuote(document));
 }
 
 function createLineEditor(line, index, billingDocument, rerender) {
@@ -340,8 +342,9 @@ function renderDocumentList(panel) {
             const accountingLabel = document.documentType === "invoice" ? (document.isAccounted ? `Comptabilisée le ${formatDate(document.accountedAt)}` : "À comptabiliser") : "Non concerné";
             const client = getSearchableClients().find(item => normalizeText(item.name) === normalizeText(document.customerName));
             const recipient = client?.email || "";
-            item.innerHTML = `<div><p class="eyebrow">${DOCUMENT_TYPES[document.documentType]} · ${escapeHtml(document.customerType)}</p><h3>${escapeHtml(document.documentNumber)}</h3><p>${escapeHtml(document.customerName)}</p><small>${escapeHtml(formatDate(document.issueDate))} · ${escapeHtml(document.status || "brouillon")} · <span class="billing-accounting-status ${document.isAccounted ? "is-accounted" : ""}">${escapeHtml(accountingLabel)}</span></small></div><div class="billing-document-amount"><strong>${formatMoney(totals.ttc)}</strong><small>TTC</small></div><div class="billing-document-actions">${document.documentType === "invoice" && !isTechnician() ? `<button type="button" class="secondary-button" data-accounting="${document.isAccounted ? "false" : "true"}">${document.isAccounted ? "Décomptabiliser" : "Comptabiliser"}</button>` : ""}<button type="button" class="secondary-button" data-open-document>${isTechnician() ? "Consulter" : "Ouvrir"}</button><button type="button" class="secondary-button" data-pdf>PDF / Imprimer</button><button type="button" class="secondary-button" data-email ${recipient ? "" : "disabled title=\"Ajoutez l’e-mail du client dans sa fiche pour préparer l’e-mail.\""}>Préparer l’e-mail</button></div>`;
+            item.innerHTML = `<div><p class="eyebrow">${DOCUMENT_TYPES[document.documentType]} · ${escapeHtml(document.customerType)}</p><h3>${escapeHtml(document.documentNumber)}</h3><p>${escapeHtml(document.customerName)}</p><small>${escapeHtml(formatDate(document.issueDate))} · ${escapeHtml(document.status || "brouillon")} · <span class="billing-accounting-status ${document.isAccounted ? "is-accounted" : ""}">${escapeHtml(accountingLabel)}</span></small></div><div class="billing-document-amount"><strong>${formatMoney(totals.ttc)}</strong><small>TTC</small></div><div class="billing-document-actions">${document.documentType === "invoice" && !isTechnician() ? `<button type="button" class="secondary-button" data-accounting="${document.isAccounted ? "false" : "true"}">${document.isAccounted ? "Décomptabiliser" : "Comptabiliser"}</button>` : ""}${document.documentType === "quote" ? '<button type="button" class="secondary-button" data-create-invoice>Créer la facture</button>' : ""}<button type="button" class="secondary-button" data-open-document>${isTechnician() ? "Consulter" : "Ouvrir"}</button><button type="button" class="secondary-button" data-pdf>PDF / Imprimer</button><button type="button" class="secondary-button" data-email ${recipient ? "" : "disabled title=\"Ajoutez l’e-mail du client dans sa fiche pour préparer l’e-mail.\""}>Préparer l’e-mail</button></div>`;
             item.querySelector("[data-open-document]").addEventListener("click", () => { activeDocument = normalizeDocument(document); renderBilling(); });
+            item.querySelector("[data-create-invoice]")?.addEventListener("click", () => createInvoiceFromQuote(document));
             item.querySelector("[data-pdf]").addEventListener("click", () => openBillingPdf(document.id));
             item.querySelector("[data-email]").addEventListener("click", () => emailBillingPdf(document, recipient));
             item.querySelector("[data-accounting]")?.addEventListener("click", async event => {
@@ -358,6 +361,25 @@ function renderDocumentList(panel) {
 
 function openNewDocument(type) {
     activeDocument = createNewDocument(type);
+    renderBilling();
+}
+
+function createInvoiceFromQuote(quote) {
+    if (!quote || quote.documentType !== "quote") return;
+    activeDocument = {
+        id: null,
+        documentType: "invoice",
+        documentNumber: suggestNumber("invoice"),
+        customerType: quote.customerType || "Particulier",
+        customerName: quote.customerName || "",
+        customerAddress: quote.customerAddress || "",
+        issueDate: today(),
+        dueDate: "",
+        status: "draft",
+        isAccounted: false,
+        lines: (quote.lines || []).map(line => ({ ...emptyLine(), ...line })),
+        notes: quote.notes || ""
+    };
     renderBilling();
 }
 

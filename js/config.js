@@ -1,4 +1,4 @@
-export const APP_VERSION = "1.15.2 Préparation locale des e-mails";
+export const APP_VERSION = "1.15.3 Facture depuis devis";
 export const DATA_VERSION = "2026-07-20-35";
 
 export const STORAGE_KEYS = {
