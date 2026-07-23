@@ -60,6 +60,7 @@ function showAuthenticatedUser(user) {
     logoutButton?.addEventListener("click", async () => {
         logoutButton.disabled = true;
         await signOut();
+        window.location.replace("/");
     }, { once: true });
 }
 
