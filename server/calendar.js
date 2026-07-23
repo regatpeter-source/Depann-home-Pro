@@ -146,8 +146,8 @@ export function registerCalendarRoutes(app, requireAuthentication) {
 
         const { rows } = await getPool().query(`
             UPDATE depannhome_calendar_events
-            SET quitus_status = $3, quitus_signed_by = $4, quitus_signature = $5,
-                quitus_signed_at = CASE WHEN $3 = 'signed' THEN NOW() ELSE NULL END, updated_at = NOW()
+            SET quitus_status = $3::varchar, quitus_signed_by = $4, quitus_signature = $5,
+                quitus_signed_at = CASE WHEN $3::varchar = 'signed'::varchar THEN NOW() ELSE NULL END, updated_at = NOW()
             WHERE id = $1 AND owner_id = $2 AND event_type = 'appointment' AND client_name <> ''
             RETURNING quitus_status AS "quitusStatus", quitus_signed_by AS "quitusSignedBy",
                 quitus_signature AS "quitusSignature", quitus_signed_at AS "quitusSignedAt"
