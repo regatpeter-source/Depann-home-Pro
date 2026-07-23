@@ -1,4 +1,4 @@
-import { ROUTES } from "./config.js?v=113";
+import { ROUTES } from "./config.js?v=115";
 import { addClientActivity, deleteLocalClient, getLocalClients, saveLocalClient, synchronizeClients } from "./client-sync.js?v=110";
 import { renderClientMessages } from "./messages.js?v=105";
 import { resetSelection } from "./state.js?v=44";
@@ -461,7 +461,7 @@ async function loadClientBillingDocuments(panel, client) {
         documents.forEach(document => {
             const article = document.createElement("article");
             article.className = "client-billing-item";
-            article.innerHTML = `<div><p class="eyebrow">${document.documentType === "invoice" ? "Facture" : "Devis"} · ${escapeHtml(document.status || "brouillon")}</p><h3>${escapeHtml(document.documentNumber)}</h3><p>${escapeHtml(formatBillingDate(document.issueDate))}</p></div><div class="client-card-actions"><button type="button" class="secondary-button" data-action="view">Visualiser</button><button type="button" class="secondary-button" data-action="email" ${client.email ? "" : "disabled title=\"Ajoutez l’e-mail du client pour envoyer le PDF.\""}>Envoyer le PDF</button><button type="button" class="secondary-button" data-action="print">PDF / Imprimer</button></div>`;
+            article.innerHTML = `<div><p class="eyebrow">${document.documentType === "invoice" ? "Facture" : "Devis"} · ${escapeHtml(document.status || "brouillon")}</p><h3>${escapeHtml(document.documentNumber)}</h3><p>${escapeHtml(formatBillingDate(document.issueDate))}</p></div><div class="client-card-actions"><button type="button" class="secondary-button" data-action="view">Visualiser</button><button type="button" class="secondary-button" data-action="email" ${client.email ? "" : "disabled title=\"Ajoutez l’e-mail du client pour préparer l’e-mail.\""}>Préparer l’e-mail</button><button type="button" class="secondary-button" data-action="print">PDF / Imprimer</button></div>`;
             article.querySelector('[data-action="view"]').addEventListener("click", () => viewClientBillingDocument(client, document.id, document.documentNumber));
             article.querySelector('[data-action="email"]').addEventListener("click", () => emailBillingDocument(document, client));
             article.querySelector('[data-action="print"]').addEventListener("click", () => printBillingDocument(document.id));
@@ -472,21 +472,9 @@ async function loadClientBillingDocuments(panel, client) {
     }
 }
 
-async function emailBillingDocument(document, client) {
+function emailBillingDocument(document, client) {
     if (!client.email) { alert("Ajoutez d’abord l’adresse e-mail du client."); return; }
-    try {
-        const response = await fetch(`/api/billing/documents/${encodeURIComponent(document.id)}/email`, {
-            method: "POST",
-            credentials: "same-origin",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ recipient: client.email })
-        });
-        const data = await response.json().catch(() => null);
-        if (!response.ok) throw new Error(data?.message || "Impossible d’envoyer le PDF.");
-        alert(data?.message || "Le PDF a été envoyé.");
-    } catch (error) {
-        alert(error.message || "Impossible d’envoyer le PDF.");
-    }
+    prepareBillingEmail(document, client.email, client.name);
 }
 
 async function getClientBillingDocument(client, documentId, documentNumber) {
@@ -532,6 +520,15 @@ async function printBillingDocument(documentId, existingPopup = null) {
     const popup = existingPopup || window.open("", "_blank");
     if (!popup) { alert("Autorisez les fenêtres pop-up pour imprimer le document."); return; }
     popup.location.href = `/api/billing/documents/${encodeURIComponent(documentId)}/pdf`;
+}
+
+function prepareBillingEmail(document, recipient, clientName) {
+    const popup = window.open(`/api/billing/documents/${encodeURIComponent(document.id)}/pdf`, "_blank");
+    if (!popup) alert("Autorisez les fenêtres pop-up pour ouvrir le PDF à joindre.");
+    const type = document.documentType === "invoice" ? "facture" : "devis";
+    const subject = `${type.charAt(0).toUpperCase()}${type.slice(1)} ${document.documentNumber}`;
+    const body = `Bonjour ${clientName || document.customerName},\n\nVeuillez trouver votre ${type} ${document.documentNumber} en pièce jointe.\n\nLe PDF vient de s’ouvrir : téléchargez-le, puis ajoutez-le à cet e-mail.\n\nCordialement,`;
+    window.location.href = `mailto:${encodeURIComponent(recipient)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 }
 
 function buildLegacyPrintableBillingHtml(document, profile) {

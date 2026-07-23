@@ -1,13 +1,11 @@
 import multer from "multer";
 import PDFDocument from "pdfkit";
-import nodemailer from "nodemailer";
 import { getPool } from "./database.js";
 import { getAccountOwnerId } from "./auth.js";
 
 const MAX_LOGO_SIZE = 2 * 1024 * 1024;
 const DOCUMENT_TYPES = new Set(["quote", "invoice"]);
 const CUSTOMER_TYPES = new Set(["Particulier", "Professionnel", "Magasin", "Autre"]);
-let smtpTransporter = null;
 const upload = multer({
     storage: multer.memoryStorage(),
     limits: { fileSize: MAX_LOGO_SIZE, files: 1 },
@@ -190,26 +188,6 @@ export function registerBillingRoutes(app, requireAuthentication) {
             "X-Content-Type-Options": "nosniff"
         });
         response.send(pdf);
-    }));
-
-    app.post("/api/billing/documents/:documentId/email", requireAuthentication, asyncHandler(async (request, response) => {
-        const recipient = cleanEmail(request.body?.recipient);
-        if (!recipient) return response.status(400).json({ message: "L’adresse e-mail du destinataire est invalide." });
-        const transport = getSmtpTransporter();
-        if (!transport) return response.status(503).json({ message: "L’envoi direct doit être configuré avec SMTP_HOST, SMTP_USER, SMTP_PASSWORD et SMTP_FROM dans Render." });
-        const billingExport = await getBillingExport(request);
-        if (!billingExport) return response.status(404).json({ message: "Document introuvable." });
-        const { document, profile } = billingExport;
-        const type = document.documentType === "invoice" ? "facture" : "devis";
-        const pdf = await createBillingPdf(document, profile);
-        await transport.sendMail({
-            from: process.env.SMTP_FROM,
-            to: recipient,
-            subject: `${type.charAt(0).toUpperCase()}${type.slice(1)} ${document.documentNumber}`,
-            text: `Bonjour ${document.customerName},\n\nVeuillez trouver votre ${type} ${document.documentNumber} en pièce jointe.\n\nCordialement,\n${profile.companyName || "Votre prestataire"}`,
-            attachments: [{ filename: billingPdfFileName(document), content: pdf, contentType: "application/pdf" }]
-        });
-        response.status(202).json({ message: `Le ${type} PDF a été envoyé à ${recipient}.` });
     }));
 
     app.put("/api/billing/default-quote", requireAuthentication, requireBillingAdministration, asyncHandler(async (request, response) => {
@@ -427,35 +405,6 @@ async function getBillingExport(request) {
     ]);
     if (!documentResult.rows[0]) return null;
     return { document: documentResult.rows[0], profile: profileResult.rows[0] || emptyProfile() };
-}
-
-function getSmtpTransporter() {
-    const host = cleanText(process.env.SMTP_HOST, 255);
-    const user = cleanText(process.env.SMTP_USER, 255);
-    const password = String(process.env.SMTP_PASSWORD || "");
-    const from = smtpSender();
-    const port = Number(process.env.SMTP_PORT || 587);
-    if (!host || !user || !password || !from || !Number.isInteger(port) || port < 1 || port > 65535) return null;
-    if (!smtpTransporter) {
-        smtpTransporter = nodemailer.createTransport({
-            host,
-            port,
-            secure: String(process.env.SMTP_SECURE).toLowerCase() === "true",
-            auth: { user, pass: password }
-        });
-    }
-    return smtpTransporter;
-}
-
-function cleanEmail(value) {
-    const email = cleanText(value, 254);
-    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : "";
-}
-
-function smtpSender() {
-    const sender = cleanText(process.env.SMTP_FROM, 254);
-    const address = sender.match(/<([^>]+)>$/)?.[1] || sender;
-    return cleanEmail(address) ? sender : "";
 }
 
 function billingPdfFileName(document) {
