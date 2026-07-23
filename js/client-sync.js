@@ -48,8 +48,8 @@ export function saveLocalClient(client) {
         ? clients.map(item => item.id === nextClient.id ? nextClient : item)
         : [...clients, nextClient];
 
-    localStorage.setItem(getClientsKey(), JSON.stringify(nextClients));
-    enqueue({ type: "upsert", client: nextClient });
+    if (!writeClients(nextClients)) return null;
+    enqueue({ type: "upsert", clientId: nextClient.id });
     synchronizeClients().catch(() => {});
     return nextClient;
 }
@@ -76,7 +76,7 @@ export function addClientActivityByName(clientName, activity) {
 
 export function deleteLocalClient(clientId) {
     if (!canWriteClients()) return false;
-    localStorage.setItem(getClientsKey(), JSON.stringify(getLocalClients().filter(client => client.id !== clientId)));
+    if (!writeClients(getLocalClients().filter(client => client.id !== clientId))) return false;
     enqueue({ type: "delete", clientId });
     synchronizeClients().catch(() => {});
 }
@@ -103,15 +103,21 @@ async function synchronize() {
     const localClients = getLocalClients();
     enqueueUnsyncedLocalClients(localClients, remoteClients);
     const merged = mergeClients(localClients, remoteClients);
-    writeClients(merged);
+    if (!writeClients(merged)) return { ok: false, message: "Espace de stockage local saturé. Supprimez ou compressez des fichiers clients." };
 
     const operations = getQueue();
+    const clientsById = new Map(getLocalClients().map(client => [client.id, client]));
     for (const operation of operations) {
+        const client = clientsById.get(operation.clientId);
+        if (operation.type !== "delete" && !client) {
+            removeQueuedOperation(operation.id);
+            continue;
+        }
         const result = operation.type === "delete"
             ? await request(`/api/clients/${encodeURIComponent(operation.clientId)}`, { method: "DELETE" })
-            : await request(`/api/clients/${encodeURIComponent(operation.client.id)}`, {
+            : await request(`/api/clients/${encodeURIComponent(client.id)}`, {
                 method: "PUT",
-                body: JSON.stringify({ client: operation.client })
+                body: JSON.stringify({ client })
             });
         if (!result.ok) return { ok: false, message: result.data?.message || "Synchronisation interrompue." };
         removeQueuedOperation(operation.id);
@@ -140,11 +146,11 @@ function mergeClients(firstClients, secondClients) {
 }
 
 function enqueue(operation) {
-    const queue = getQueue();
-    const key = operation.type === "delete" ? operation.clientId : operation.client.id;
-    const nextQueue = queue.filter(item => (item.type === "delete" ? item.clientId : item.client.id) !== key);
-    nextQueue.push({ ...operation, id: `sync-${Date.now()}-${Math.random().toString(16).slice(2)}` });
-    localStorage.setItem(getQueueKey(), JSON.stringify(nextQueue));
+    const compactOperation = normalizeQueueOperation(operation);
+    if (!compactOperation) return false;
+    const nextQueue = getQueue().filter(item => item.clientId !== compactOperation.clientId);
+    nextQueue.push(compactOperation);
+    return writeQueue(nextQueue);
 }
 
 function enqueueUnsyncedLocalClients(localClients, remoteClients) {
@@ -152,25 +158,56 @@ function enqueueUnsyncedLocalClients(localClients, remoteClients) {
     localClients.forEach(client => {
         const remoteClient = remoteById.get(client.id);
         if (!remoteClient || getTimestamp(client.updatedAt) > getTimestamp(remoteClient.updatedAt)) {
-            enqueue({ type: "upsert", client });
+            enqueue({ type: "upsert", clientId: client.id });
         }
     });
 }
 
 function getQueue() {
     try {
-        return JSON.parse(localStorage.getItem(getQueueKey())) || [];
+        return (JSON.parse(localStorage.getItem(getQueueKey())) || []).map(normalizeQueueOperation).filter(Boolean);
     } catch {
         return [];
     }
 }
 
 function removeQueuedOperation(operationId) {
-    localStorage.setItem(getQueueKey(), JSON.stringify(getQueue().filter(item => item.id !== operationId)));
+    writeQueue(getQueue().filter(item => item.id !== operationId));
 }
 
 function writeClients(clients) {
-    localStorage.setItem(getClientsKey(), JSON.stringify(clients.map(normalizeClient)));
+    try {
+        localStorage.setItem(getClientsKey(), JSON.stringify(clients.map(normalizeClient)));
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+function writeQueue(queue) {
+    try {
+        localStorage.setItem(getQueueKey(), JSON.stringify(queue.map(normalizeQueueOperation).filter(Boolean)));
+        return true;
+    } catch {
+        try {
+            localStorage.removeItem(getQueueKey());
+            localStorage.setItem(getQueueKey(), JSON.stringify(queue.slice(-1).map(normalizeQueueOperation).filter(Boolean)));
+            return true;
+        } catch {
+            return false;
+        }
+    }
+}
+
+function normalizeQueueOperation(operation) {
+    const type = operation?.type === "delete" ? "delete" : "upsert";
+    const clientId = String(operation?.clientId || operation?.client?.id || "");
+    if (!clientId) return null;
+    return {
+        id: String(operation?.id || `sync-${Date.now()}-${Math.random().toString(16).slice(2)}`),
+        type,
+        clientId
+    };
 }
 
 function migrateLegacyClients() {
@@ -181,7 +218,7 @@ function migrateLegacyClients() {
         if (!Array.isArray(legacy) || !legacy.length) return;
         const clients = legacy.map(normalizeClient);
         writeClients(clients);
-        clients.forEach(client => enqueue({ type: "upsert", client }));
+        clients.forEach(client => enqueue({ type: "upsert", clientId: client.id }));
     } catch {
         // Ignore unreadable legacy data.
     }
