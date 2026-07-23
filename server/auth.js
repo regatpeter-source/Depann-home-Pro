@@ -5,6 +5,8 @@ import { createUser, findUserById, findUserByUsername, getPool } from "./databas
 const COOKIE_NAME = "depann_home_session";
 const USERNAME_PATTERN = /^[a-z0-9._-]{3,32}$/;
 const MIN_PASSWORD_LENGTH = 12;
+const ADMIN_SESSION_DURATION = 12 * 60 * 60 * 1000;
+const TECHNICIAN_SESSION_DURATION = 30 * 24 * 60 * 60 * 1000;
 
 export function registerAuthRoutes(app) {
     app.get("/api/auth/session", (request, response) => {
@@ -201,15 +203,16 @@ export async function createInitialAdministrator() {
 }
 
 function setSessionCookie(response, user) {
+    const duration = user.role === "technician" ? TECHNICIAN_SESSION_DURATION : ADMIN_SESSION_DURATION;
     const token = jwt.sign(
         { sub: String(user.id), username: user.username, role: user.role, accountOwnerId: String(user.account_owner_id || user.id), fullName: user.full_name || "", phone: user.phone || "" },
         getSessionSecret(),
-        { expiresIn: "12h" }
+        { expiresIn: Math.floor(duration / 1000) }
     );
 
     response.cookie(COOKIE_NAME, token, {
         ...cookieOptions(),
-        maxAge: 12 * 60 * 60 * 1000
+        maxAge: duration
     });
 }
 

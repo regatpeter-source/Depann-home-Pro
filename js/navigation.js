@@ -1,4 +1,4 @@
-import { ROUTES, STORAGE_KEYS, APP_VERSION, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=100";
+import { ROUTES, STORAGE_KEYS, APP_VERSION, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=102";
 import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=100";
 import { renderCreatorConsole } from "./creator.js?v=100";
 import { createBillingDocumentForClient, renderBilling } from "./billing.js?v=88";

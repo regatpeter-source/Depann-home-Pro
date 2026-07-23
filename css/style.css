@@ -158,6 +158,37 @@ textarea{
     box-shadow:0 0 0 3px rgba(10,92,54,.12);
 }
 
+.password-input{
+    position:relative;
+    display:block;
+}
+
+.password-input input{
+    padding-right:94px;
+}
+
+.password-toggle{
+    position:absolute;
+    top:50%;
+    right:8px;
+    transform:translateY(-50%);
+    border:0;
+    border-radius:8px;
+    padding:6px 8px;
+    background:#eaf3fb;
+    color:var(--primary);
+    cursor:pointer;
+    font-size:13px;
+    font-weight:800;
+}
+
+.password-toggle:hover,
+.password-toggle:focus-visible{
+    background:#d8eadf;
+    color:var(--secondary);
+    outline:none;
+}
+
 .auth-outline-button{
     background:var(--surface);
     border:1px solid var(--secondary);

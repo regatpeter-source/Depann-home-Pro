@@ -32,14 +32,14 @@ function renderAuthentication({ onAuthenticated, registrationEnabled, message = 
                 <p id="authMessage" class="auth-message" aria-live="polite">${escapeHtml(message)}</p>
                 <form id="loginForm" class="auth-form">
                     <label>Nom d’utilisateur<input name="username" type="text" autocomplete="username" minlength="3" maxlength="32" required></label>
-                    <label>Mot de passe<input name="password" type="password" autocomplete="current-password" minlength="12" required></label>
+                    ${passwordField("Mot de passe", "current-password")}
                     <button type="submit" class="secondary-button">Se connecter</button>
                 </form>
                 ${registrationEnabled ? `
                     <div class="auth-separator">ou</div>
                     <form id="signupForm" class="auth-form">
                         <label>Nouveau nom d’utilisateur<input name="username" type="text" autocomplete="username" minlength="3" maxlength="32" required></label>
-                        <label>Créer un mot de passe<input name="password" type="password" autocomplete="new-password" minlength="12" required></label>
+                        ${passwordField("Créer un mot de passe", "new-password")}
                         <button type="submit" class="secondary-button auth-outline-button">Créer un compte</button>
                     </form>` : ""}
             </section>
@@ -48,6 +48,14 @@ function renderAuthentication({ onAuthenticated, registrationEnabled, message = 
 
     document.body.classList.remove("auth-pending");
     const status = app.querySelector("#authMessage");
+    app.querySelectorAll("[data-password-toggle]").forEach(button => button.addEventListener("click", () => {
+        const input = button.parentElement.querySelector("input");
+        const visible = input.type === "password";
+        input.type = visible ? "text" : "password";
+        button.textContent = visible ? "Masquer" : "Afficher";
+        button.setAttribute("aria-pressed", String(visible));
+        input.focus();
+    }));
     const setStatus = (text, isError = false) => {
         status.textContent = text;
         status.classList.toggle("error", isError);
@@ -82,6 +90,10 @@ function renderAuthentication({ onAuthenticated, registrationEnabled, message = 
         }
         onAuthenticated(result.data.user);
     });
+}
+
+function passwordField(label, autocomplete) {
+    return `<label>${label}<span class="password-input"><input name="password" type="password" autocomplete="${autocomplete}" minlength="12" required><button type="button" class="password-toggle" data-password-toggle aria-label="Afficher le mot de passe" aria-pressed="false">Afficher</button></span></label>`;
 }
 
 async function request(url, options = {}) {

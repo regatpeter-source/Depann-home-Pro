@@ -1,4 +1,4 @@
-export const APP_VERSION = "1.11.1 Redirection après déconnexion";
+export const APP_VERSION = "1.11.2 Mot de passe visible et session technicien";
 export const DATA_VERSION = "2026-07-20-35";
 
 export const STORAGE_KEYS = {
