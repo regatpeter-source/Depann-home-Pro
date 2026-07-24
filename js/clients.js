@@ -453,7 +453,7 @@ function renderClientDetail(client, options = {}) {
         </section>
         <section class="procedure-section">
             <h3> Fichiers du client</h3>
-            ${client.attachments.length ? renderAttachmentsHtml(client.id, client.attachments, !readOnly) : "<p>Aucun fichier enregistré.</p>"}
+            ${client.attachments.length ? renderAttachmentsHtml(client.id, client.attachments, !readOnly, client.email) : "<p>Aucun fichier enregistré.</p>"}
         </section>
     `;
 
@@ -469,6 +469,9 @@ function renderClientDetail(client, options = {}) {
     });
     panel.querySelectorAll("[data-email-billing-document]").forEach(button => {
         button.addEventListener("click", () => emailClientBillingDocument(client, button.dataset.documentId, button.dataset.documentNumber));
+    });
+    panel.querySelectorAll("[data-email-attachment]").forEach(button => {
+        button.addEventListener("click", () => emailClientAttachment(client, button.dataset.emailAttachment));
     });
     panel.querySelectorAll("[data-delete-attachment]").forEach(button => {
         button.addEventListener("click", () => {
@@ -526,7 +529,7 @@ async function loadClientBillingDocuments(panel, client) {
         documents.forEach(document => {
             const article = document.createElement("article");
             article.className = "client-billing-item";
-            article.innerHTML = `<div><p class="eyebrow">${document.documentType === "invoice" ? "Facture" : "Devis"} · ${escapeHtml(document.status || "brouillon")}</p><h3>${escapeHtml(document.documentNumber)}</h3><p>${escapeHtml(formatBillingDate(document.issueDate))}</p></div><div class="client-card-actions"><button type="button" class="secondary-button" data-action="view">Visualiser</button><button type="button" class="secondary-button" data-action="email" ${client.email ? "" : "disabled title=\"Ajoutez l’e-mail du client pour préparer l’e-mail.\""}>Préparer l’e-mail</button><button type="button" class="secondary-button" data-action="print">PDF / Imprimer</button></div>`;
+            article.innerHTML = `<div><p class="eyebrow">${document.documentType === "invoice" ? "Facture" : "Devis"} · ${escapeHtml(document.status || "brouillon")}</p><h3>${escapeHtml(document.documentNumber)}</h3><p>${escapeHtml(formatBillingDate(document.issueDate))}</p></div><div class="client-card-actions"><button type="button" class="secondary-button" data-action="view">Visualiser</button><button type="button" class="secondary-button" data-action="email" ${client.email ? "" : "disabled title=\"Ajoutez l’e-mail du client pour envoyer le document.\""}>Envoyer par e-mail</button><button type="button" class="secondary-button" data-action="print">PDF / Imprimer</button></div>`;
             article.querySelector('[data-action="view"]').addEventListener("click", () => viewClientBillingDocument(client, document.id, document.documentNumber));
             article.querySelector('[data-action="email"]').addEventListener("click", () => emailBillingDocument(document, client));
             article.querySelector('[data-action="print"]').addEventListener("click", () => printBillingDocument(document.id));
@@ -539,7 +542,7 @@ async function loadClientBillingDocuments(panel, client) {
 
 function emailBillingDocument(document, client) {
     if (!client.email) { alert("Ajoutez d’abord l’adresse e-mail du client."); return; }
-    prepareBillingEmail(document, client.email, client.name);
+    sendBillingEmail(document, client.email, client.name);
 }
 
 async function getClientBillingDocument(client, documentId, documentNumber) {
@@ -578,7 +581,7 @@ async function emailClientBillingDocument(client, documentId, documentNumber) {
     try {
         const document = await getClientBillingDocument(client, documentId, documentNumber);
         emailBillingDocument(document, client);
-    } catch (error) { alert(error.message || "Impossible de préparer l’e-mail."); }
+    } catch (error) { alert(error.message || "Impossible d’envoyer le document par e-mail."); }
 }
 
 async function printBillingDocument(documentId, existingPopup = null) {
@@ -587,13 +590,44 @@ async function printBillingDocument(documentId, existingPopup = null) {
     popup.location.href = `/api/billing/documents/${encodeURIComponent(documentId)}/pdf`;
 }
 
-function prepareBillingEmail(document, recipient, clientName) {
-    const popup = window.open(`/api/billing/documents/${encodeURIComponent(document.id)}/pdf`, "_blank");
-    if (!popup) alert("Autorisez les fenêtres pop-up pour ouvrir le PDF à joindre.");
+async function sendBillingEmail(document, recipient, clientName) {
+    const destination = window.prompt("Adresse e-mail du destinataire :", recipient);
+    if (destination === null) return;
+    if (!destination.trim()) { alert("Saisissez une adresse e-mail valide."); return; }
     const type = document.documentType === "invoice" ? "facture" : "devis";
-    const subject = `${type.charAt(0).toUpperCase()}${type.slice(1)} ${document.documentNumber}`;
-    const body = `Bonjour ${clientName || document.customerName},\n\nVeuillez trouver votre ${type} ${document.documentNumber} en pièce jointe.\n\nLe PDF vient de s’ouvrir : téléchargez-le, puis ajoutez-le à cet e-mail.\n\nCordialement,`;
-    window.location.href = `mailto:${encodeURIComponent(recipient)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    if (!confirm(`Envoyer la ${type} ${document.documentNumber} en PDF à ${destination.trim()} ?`)) return;
+    try {
+        const response = await fetch(`/api/billing/documents/${encodeURIComponent(document.id)}/email`, {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ recipient: destination.trim() })
+        });
+        const data = await response.json().catch(() => null);
+        if (!response.ok) throw new Error(data?.message);
+        alert(data?.message || "Document envoyé par e-mail.");
+    } catch (error) { alert(error.message || "Impossible d’envoyer le document par e-mail."); }
+}
+
+async function emailClientAttachment(client, attachmentId) {
+    if (!client.email) { alert("Ajoutez d’abord l’adresse e-mail du client."); return; }
+    const attachment = client.attachments.find(item => item.id === attachmentId);
+    if (!attachment) { alert("Ce fichier n’est plus disponible."); return; }
+    const destination = window.prompt("Adresse e-mail du destinataire :", client.email);
+    if (destination === null) return;
+    if (!destination.trim()) { alert("Saisissez une adresse e-mail valide."); return; }
+    if (!confirm(`Envoyer « ${attachment.name} » à ${destination.trim()} ?`)) return;
+    try {
+        const response = await fetch(`/api/clients/${encodeURIComponent(client.id)}/attachments/${encodeURIComponent(attachment.id)}/email`, {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ recipient: destination.trim() })
+        });
+        const data = await response.json().catch(() => null);
+        if (!response.ok) throw new Error(data?.message);
+        alert(data?.message || "Document envoyé par e-mail.");
+    } catch (error) { alert(error.message || "Impossible d’envoyer le document par e-mail."); }
 }
 
 function buildLegacyPrintableBillingHtml(document, profile) {
@@ -882,7 +916,7 @@ function readFileAsDataUrl(file) {
     });
 }
 
-function renderAttachmentsHtml(clientId, attachments, withActions) {
+function renderAttachmentsHtml(clientId, attachments, withActions, recipient) {
     return `
         <div class="attachment-list">
             ${normalizeAttachments(attachments).map(attachment => `
@@ -896,6 +930,7 @@ function renderAttachmentsHtml(clientId, attachments, withActions) {
                     <div class="attachment-actions">
                         <a class="secondary-button" href="/api/clients/${encodeURIComponent(clientId)}/attachments/${encodeURIComponent(attachment.id)}/open" target="_blank" rel="noopener">Ouvrir</a>
                         <a class="secondary-button" href="/api/clients/${encodeURIComponent(clientId)}/attachments/${encodeURIComponent(attachment.id)}/open" download="${escapeHtml(attachment.name)}">Télécharger</a>
+                        <button type="button" class="secondary-button" data-email-attachment="${escapeHtml(attachment.id)}" ${recipient ? "" : "disabled title=\"Ajoutez l’e-mail du client pour envoyer ce fichier.\""}>Envoyer par e-mail</button>
                         ${withActions ? `<button type="button" class="secondary-button danger-button" data-delete-attachment="${escapeHtml(attachment.id)}">Supprimer</button>` : ""}
                     </div>
                 </article>

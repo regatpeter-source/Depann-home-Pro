@@ -3,6 +3,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { getPool } from "./database.js";
 import { getAccountOwnerId } from "./auth.js";
+import { sendDocumentEmail } from "./email.js";
 
 const MAX_CLIENT_PAYLOAD_SIZE = 20 * 1024 * 1024;
 const CLIENT_ID_PATTERN = /^client-[a-zA-Z0-9-]+$/;
@@ -166,6 +167,33 @@ export function registerClientRoutes(app, requireAuthentication) {
         response.setHeader("Content-Disposition", `inline; filename*=UTF-8''${encodeURIComponent(safeFilename(attachment.name))}`);
         response.send(content.buffer);
     }));
+
+    app.post("/api/clients/:clientId/attachments/:attachmentId/email", requireAuthentication, asyncHandler(async (request, response) => {
+        const clientId = String(request.params.clientId || "");
+        const attachmentId = String(request.params.attachmentId || "");
+        const recipient = sanitizeEmailRecipient(request.body?.recipient);
+        if (!CLIENT_ID_PATTERN.test(clientId) || !attachmentId) return response.status(400).json({ message: "Fichier invalide." });
+        if (!recipient) return response.status(400).json({ message: "L’adresse e-mail du destinataire est invalide." });
+
+        const { rows } = await getPool().query(`
+            SELECT client_data AS client
+            FROM depannhome_clients
+            WHERE owner_id = $1 AND client_id = $2
+        `, [getAccountOwnerId(request), clientId]);
+        const client = rows[0]?.client;
+        const attachments = Array.isArray(client?.attachments) ? client.attachments : [];
+        const attachment = attachments.find(item => String(item?.id) === attachmentId);
+        const content = attachment ? decodeAttachmentDataUrl(attachment.dataUrl) : null;
+        if (!attachment || !content) return response.status(404).json({ message: "Fichier introuvable." });
+
+        await sendDocumentEmail({
+            recipient,
+            recipientName: String(client?.name || ""),
+            documentLabel: `${String(attachment.type || "Document")} ${safeFilename(attachment.name)}`,
+            attachment: { filename: safeFilename(attachment.name), content: content.buffer, contentType: attachmentMimeType(attachment.name) }
+        });
+        response.json({ message: "Document envoyé par e-mail." });
+    }));
 }
 
 export function clientUploadErrorHandler(error, request, response, next) {
@@ -251,6 +279,11 @@ function decodeAttachmentDataUrl(value) {
     } catch {
         return null;
     }
+}
+
+function sanitizeEmailRecipient(value) {
+    const recipient = String(value || "").trim().slice(0, 254);
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient) ? recipient : "";
 }
 
 function asyncHandler(handler) {

@@ -2,6 +2,7 @@ import multer from "multer";
 import PDFDocument from "pdfkit";
 import { getPool } from "./database.js";
 import { getAccountOwnerId } from "./auth.js";
+import { sendDocumentEmail } from "./email.js";
 
 const MAX_LOGO_SIZE = 2 * 1024 * 1024;
 const DOCUMENT_TYPES = new Set(["quote", "invoice"]);
@@ -190,6 +191,23 @@ export function registerBillingRoutes(app, requireAuthentication) {
             "X-Content-Type-Options": "nosniff"
         });
         response.send(pdf);
+    }));
+
+    app.post("/api/billing/documents/:documentId/email", requireAuthentication, requireTechnicianBillingAccess, asyncHandler(async (request, response) => {
+        const recipient = sanitizeEmailRecipient(request.body?.recipient);
+        if (!recipient) return response.status(400).json({ message: "L’adresse e-mail du destinataire est invalide." });
+        const billingExport = await getBillingExport(request);
+        if (!billingExport) return response.status(404).json({ message: "Document introuvable." });
+
+        const pdf = await createBillingPdf(billingExport.document, billingExport.profile);
+        const type = billingExport.document.documentType === "invoice" ? "Facture" : "Devis";
+        await sendDocumentEmail({
+            recipient,
+            recipientName: billingExport.document.customerName,
+            documentLabel: `${type} ${billingExport.document.documentNumber}`,
+            attachment: { filename: billingPdfFileName(billingExport.document), content: pdf, contentType: "application/pdf" }
+        });
+        response.json({ message: `${type} envoyé(e) par e-mail.` });
     }));
 
     app.put("/api/billing/default-quote", requireAuthentication, requireBillingAdministration, asyncHandler(async (request, response) => {
@@ -397,6 +415,11 @@ function nonNegativeNumber(value) {
 
 function cleanText(value, maximumLength) {
     return String(value || "").replace(/\s+/g, " ").trim().slice(0, maximumLength);
+}
+
+function sanitizeEmailRecipient(value) {
+    const recipient = String(value || "").trim().slice(0, 254);
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient) ? recipient : "";
 }
 
 async function getBillingExport(request) {

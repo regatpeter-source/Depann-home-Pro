@@ -329,7 +329,7 @@ function renderDocumentList(panel) {
             const accountingLabel = document.documentType === "invoice" ? (document.isAccounted ? `Comptabilisée le ${formatDate(document.accountedAt)}` : "À comptabiliser") : "Non concerné";
             const client = getSearchableClients().find(item => normalizeText(item.name) === normalizeText(document.customerName));
             const recipient = client?.email || "";
-            item.innerHTML = `<div><p class="eyebrow">${DOCUMENT_TYPES[document.documentType]} · ${escapeHtml(document.customerType)}</p><h3>${escapeHtml(document.documentNumber)}</h3><p>${escapeHtml(document.customerName)}</p><small>${escapeHtml(formatDate(document.issueDate))} · ${escapeHtml(document.status || "brouillon")} · <span class="billing-accounting-status ${document.isAccounted ? "is-accounted" : ""}">${escapeHtml(accountingLabel)}</span></small></div><div class="billing-document-amount"><strong>${formatMoney(totals.ttc)}</strong><small>TTC</small></div><div class="billing-document-actions">${document.documentType === "invoice" && !isTechnician() ? `<button type="button" class="secondary-button" data-accounting="${document.isAccounted ? "false" : "true"}">${document.isAccounted ? "Décomptabiliser" : "Comptabiliser"}</button>` : ""}${document.documentType === "quote" ? '<button type="button" class="secondary-button" data-create-invoice>Créer la facture</button>' : ""}<button type="button" class="secondary-button" data-open-document>${isTechnician() ? "Consulter" : "Ouvrir"}</button><button type="button" class="secondary-button" data-pdf>PDF / Imprimer</button><button type="button" class="secondary-button" data-email ${recipient ? "" : "disabled title=\"Ajoutez l’e-mail du client dans sa fiche pour préparer l’e-mail.\""}>Préparer l’e-mail</button></div>`;
+            item.innerHTML = `<div><p class="eyebrow">${DOCUMENT_TYPES[document.documentType]} · ${escapeHtml(document.customerType)}</p><h3>${escapeHtml(document.documentNumber)}</h3><p>${escapeHtml(document.customerName)}</p><small>${escapeHtml(formatDate(document.issueDate))} · ${escapeHtml(document.status || "brouillon")} · <span class="billing-accounting-status ${document.isAccounted ? "is-accounted" : ""}">${escapeHtml(accountingLabel)}</span></small></div><div class="billing-document-amount"><strong>${formatMoney(totals.ttc)}</strong><small>TTC</small></div><div class="billing-document-actions">${document.documentType === "invoice" && !isTechnician() ? `<button type="button" class="secondary-button" data-accounting="${document.isAccounted ? "false" : "true"}">${document.isAccounted ? "Décomptabiliser" : "Comptabiliser"}</button>` : ""}${document.documentType === "quote" ? '<button type="button" class="secondary-button" data-create-invoice>Créer la facture</button>' : ""}<button type="button" class="secondary-button" data-open-document>${isTechnician() ? "Consulter" : "Ouvrir"}</button><button type="button" class="secondary-button" data-pdf>PDF / Imprimer</button><button type="button" class="secondary-button" data-email ${recipient ? "" : "disabled title=\"Ajoutez l’e-mail du client dans sa fiche pour envoyer le document.\""}>Envoyer par e-mail</button></div>`;
             item.querySelector("[data-open-document]").addEventListener("click", () => { activeDocument = normalizeDocument(document); renderBilling(); });
             item.querySelector("[data-create-invoice]")?.addEventListener("click", () => createInvoiceFromQuote(document));
             item.querySelector("[data-pdf]").addEventListener("click", () => openBillingPdf(document.id));
@@ -418,14 +418,15 @@ function openBillingPdf(documentId) {
     popup.location.href = `/api/billing/documents/${encodeURIComponent(documentId)}/pdf`;
 }
 
-function emailBillingPdf(document, recipient) {
-    if (!recipient) { alert("Ajoutez l’e-mail du client dans sa fiche avant de préparer l’e-mail."); return; }
-    const popup = window.open(`/api/billing/documents/${encodeURIComponent(document.id)}/pdf`, "_blank");
-    if (!popup) alert("Autorisez les fenêtres pop-up pour ouvrir le PDF à joindre.");
+async function emailBillingPdf(document, recipient) {
+    if (!recipient) { alert("Ajoutez l’e-mail du client dans sa fiche avant d’envoyer le document."); return; }
+    const destination = window.prompt("Adresse e-mail du destinataire :", recipient);
+    if (destination === null) return;
+    if (!destination.trim()) { alert("Saisissez une adresse e-mail valide."); return; }
     const type = document.documentType === "invoice" ? "facture" : "devis";
-    const subject = `${type.charAt(0).toUpperCase()}${type.slice(1)} ${document.documentNumber}`;
-    const body = `Bonjour ${document.customerName},\n\nVeuillez trouver votre ${type} ${document.documentNumber} en pièce jointe.\n\nLe PDF vient de s’ouvrir : téléchargez-le, puis ajoutez-le à cet e-mail.\n\nCordialement,`;
-    window.location.href = `mailto:${encodeURIComponent(recipient)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    if (!confirm(`Envoyer la ${type} ${document.documentNumber} en PDF à ${destination.trim()} ?`)) return;
+    const result = await apiRequest(`/api/billing/documents/${encodeURIComponent(document.id)}/email`, { method: "POST", body: JSON.stringify({ recipient: destination.trim() }) });
+    alert(result.ok ? result.message || "Document envoyé par e-mail." : result.message || "Impossible d’envoyer le document par e-mail.");
 }
 
 async function apiRequest(url, options = {}) {

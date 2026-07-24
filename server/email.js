@@ -8,8 +8,28 @@ function smtpConfigured() {
 }
 
 export async function sendDeviceVerificationCode({ recipient, name, code }) {
+    await sendEmail({
+        recipient,
+        subject: "Code de connexion Depann'Home Pro",
+        text: `Bonjour ${name || ""},\n\nVotre code de validation Depann'Home Pro est : ${code}\n\nIl expire dans 10 minutes. Ne le communiquez à personne.\n`,
+        html: `<p>Bonjour ${escapeHtml(name || "")},</p><p>Votre code de validation Depann'Home Pro est :</p><p style="font-size:24px;font-weight:bold;letter-spacing:4px">${code}</p><p>Il expire dans 10 minutes. Ne le communiquez à personne.</p>`
+    });
+}
+
+export async function sendDocumentEmail({ recipient, recipientName, documentLabel, attachment }) {
+    const greeting = recipientName ? `Bonjour ${recipientName},` : "Bonjour,";
+    await sendEmail({
+        recipient,
+        subject: `${documentLabel} - Depann'Home Pro`,
+        text: `${greeting}\n\nVeuillez trouver ${documentLabel.toLowerCase()} en pièce jointe.\n\nCordialement,`,
+        html: `<p>${escapeHtml(greeting)}</p><p>Veuillez trouver ${escapeHtml(documentLabel.toLowerCase())} en pièce jointe.</p><p>Cordialement,</p>`,
+        attachments: [attachment]
+    });
+}
+
+async function sendEmail({ recipient, subject, text, html, attachments = [] }) {
     if (!smtpConfigured()) {
-        const error = new Error("L’envoi des codes n’est pas configuré. Renseignez Brevo SMTP dans les variables d’environnement.");
+        const error = new Error("L’envoi d’e-mails n’est pas configuré. Renseignez Brevo SMTP dans les variables d’environnement.");
         error.code = "SMTP_NOT_CONFIGURED";
         throw error;
     }
@@ -23,9 +43,10 @@ export async function sendDeviceVerificationCode({ recipient, name, code }) {
     await transporter.sendMail({
         from: process.env.BREVO_SMTP_FROM,
         to: recipient,
-        subject: "Code de connexion Depann'Home Pro",
-        text: `Bonjour ${name || ""},\n\nVotre code de validation Depann'Home Pro est : ${code}\n\nIl expire dans 10 minutes. Ne le communiquez à personne.\n`,
-        html: `<p>Bonjour ${escapeHtml(name || "")},</p><p>Votre code de validation Depann'Home Pro est :</p><p style="font-size:24px;font-weight:bold;letter-spacing:4px">${code}</p><p>Il expire dans 10 minutes. Ne le communiquez à personne.</p>`
+        subject,
+        text,
+        html,
+        attachments
     });
 }
 
