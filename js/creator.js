@@ -226,12 +226,13 @@ function renderMemberForm(account, member = null) {
                 <label>Téléphone<input name="phone" maxlength="30" value="${escapeHtml(member?.phone || "")}" placeholder="Obligatoire pour un technicien"></label>
                 <label>E-mail professionnel<input name="email" type="email" maxlength="160" value="${escapeHtml(member?.email || "")}" placeholder="Obligatoire pour un technicien"></label>
                 <label>Identifiant<input name="username" minlength="3" maxlength="32" required value="${escapeHtml(member?.username || "")}"></label>
-                <label>${editing ? "Nouveau mot de passe (facultatif)" : "Mot de passe initial"}<input name="password" type="password" minlength="12" ${editing ? "" : "required"} autocomplete="new-password"></label>
+                <label>${editing ? "Nouveau mot de passe (facultatif)" : "Mot de passe initial"}<span class="password-input"><input name="password" type="password" minlength="12" ${editing ? "" : "required"} autocomplete="new-password"><button type="button" class="secondary-button" data-password-visibility aria-label="Afficher le mot de passe" aria-pressed="false">Afficher</button></span></label>
                 ${primary ? "" : `<label class="creator-switch">Accès actif<input name="isActive" type="checkbox" ${member?.isActive !== false ? "checked" : ""}><span>Autoriser la connexion</span></label>`}
             </div>
             <div class="creator-form-actions"><button type="submit" class="secondary-button">${editing ? "Enregistrer l’accès" : "Créer l’accès"}</button><button type="button" class="secondary-button" id="creatorCancelMember">Retour à l’entreprise</button>${editing && !primary ? '<button type="button" class="secondary-button danger-button" id="creatorDeleteMember">Supprimer l’accès</button>' : ""}</div>
         </form>
     `;
+    bindPasswordVisibilityToggle(workspace);
     workspace.querySelector("#creatorCancelMember").addEventListener("click", () => renderAccountDetail(account.id));
     workspace.querySelector("#creatorMemberForm").addEventListener("submit", async event => {
         event.preventDefault();
@@ -261,6 +262,18 @@ function showFeedback(message, isError = false) {
     if (!feedback) return;
     feedback.textContent = message;
     feedback.classList.toggle("error", isError);
+}
+
+function bindPasswordVisibilityToggle(container) {
+    container.querySelectorAll("[data-password-visibility]").forEach(button => button.addEventListener("click", () => {
+        const input = button.parentElement.querySelector("input");
+        const visible = input.type === "password";
+        input.type = visible ? "text" : "password";
+        button.textContent = visible ? "Masquer" : "Afficher";
+        button.setAttribute("aria-label", visible ? "Masquer le mot de passe" : "Afficher le mot de passe");
+        button.setAttribute("aria-pressed", String(visible));
+        input.focus();
+    }));
 }
 
 async function api(url, options = {}) {

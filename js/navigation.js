@@ -1,6 +1,6 @@
 import { ROUTES, STORAGE_KEYS, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=116";
 import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=128";
-import { renderCreatorConsole } from "./creator.js?v=107";
+import { renderCreatorConsole } from "./creator.js?v=108";
 import { createBillingDocumentForClient, renderBilling, viewBillingDocument } from "./billing.js?v=128";
 import { renderPurchases } from "./purchases.js?v=111";
 import { getFirstUnreadClientId, refreshClientMessageAlert } from "./messages.js?v=88";
@@ -936,8 +936,26 @@ async function renderTeamManagement(container) {
         input.type = type;
         input.required = true;
         input.placeholder = placeholder;
-        input.autocomplete = "off";
-        field.appendChild(input);
+        input.autocomplete = name === "password" ? "new-password" : "off";
+        if (name === "password") {
+            const wrapper = document.createElement("span");
+            wrapper.className = "password-input";
+            const toggle = createButton("Afficher", "secondary-button", () => {
+                const visible = input.type === "password";
+                input.type = visible ? "text" : "password";
+                toggle.textContent = visible ? "Masquer" : "Afficher";
+                toggle.setAttribute("aria-label", visible ? "Masquer le mot de passe" : "Afficher le mot de passe");
+                toggle.setAttribute("aria-pressed", String(visible));
+                input.focus();
+            });
+            toggle.type = "button";
+            toggle.setAttribute("aria-label", "Afficher le mot de passe");
+            toggle.setAttribute("aria-pressed", "false");
+            wrapper.append(input, toggle);
+            field.appendChild(wrapper);
+        } else {
+            field.appendChild(input);
+        }
         form.appendChild(field);
     });
     const submit = createButton("Créer le compte technicien", "secondary-button", () => {});
