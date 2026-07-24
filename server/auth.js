@@ -67,7 +67,7 @@ export function registerAuthRoutes(app) {
         const code = String(request.body?.code || "").replace(/\s/g, "");
         if (!deviceId || !/^\d{6}$/.test(code)) return response.status(400).json({ message: "Code de validation invalide." });
         const { rows } = await getPool().query(`
-            SELECT device.*, account.id AS user_id, account.username, account.role, account.account_owner_id, account.full_name, account.phone, account.email, account.is_active, owner.is_active AS account_is_active, owner.technician_billing_enabled
+            SELECT device.*, account.id AS user_id, account.username, account.role, account.account_owner_id, account.full_name, account.phone, account.email, account.is_active, owner.is_active AS account_is_active, owner.technician_billing_enabled, owner.max_pc_users
             FROM depannhome_auth_devices device JOIN depannhome_users account ON account.id = device.user_id JOIN depannhome_users owner ON owner.id = account.account_owner_id WHERE device.id = $1
         `, [deviceId]);
         const device = rows[0];
@@ -182,14 +182,25 @@ export function registerAuthRoutes(app) {
     }));
 
     app.get("/api/auth/devices", requireAccountAdministrator, asyncHandler(async (request, response) => {
-        const { rows } = await getPool().query(`
+        const database = getPool();
+        const [devicesResult, seatsResult] = await Promise.all([
+            database.query(`
             SELECT device.id, device.label, device.status, device.created_at AS "createdAt", device.last_seen_at AS "lastSeenAt",
-                account.id AS "userId", account.full_name AS "fullName", account.username, account.email
+                account.id AS "userId", account.full_name AS "fullName", account.username, account.email, account.role AS "userRole"
             FROM depannhome_auth_devices device JOIN depannhome_users account ON account.id = device.user_id
             WHERE account.account_owner_id = $1
             ORDER BY CASE device.status WHEN 'approval_pending' THEN 0 WHEN 'code_pending' THEN 1 ELSE 2 END, device.created_at DESC
-        `, [getAccountOwnerId(request)]);
-        response.json({ devices: rows });
+            `, [getAccountOwnerId(request)]),
+            database.query(`
+                SELECT owner.max_pc_users AS "maxPcUsers",
+                    COUNT(device.id) FILTER (WHERE device.status = 'approved')::int AS "activePcUsers"
+                FROM depannhome_users owner
+                LEFT JOIN depannhome_users account ON account.account_owner_id = owner.id AND account.role = 'admin'
+                LEFT JOIN depannhome_auth_devices device ON device.user_id = account.id
+                WHERE owner.id = $1 GROUP BY owner.id
+            `, [getAccountOwnerId(request)])
+        ]);
+        response.json({ devices: devicesResult.rows, pcSeats: seatsResult.rows[0] || { maxPcUsers: 1, activePcUsers: 0 } });
     }));
 
     app.post("/api/auth/devices/:deviceId/approve", requireAccountAdministrator, asyncHandler(async (request, response) => {
@@ -210,7 +221,7 @@ export function registerAuthRoutes(app) {
                 LEFT JOIN depannhome_auth_devices auth_device ON auth_device.user_id = account.id
                 WHERE owner.id = $1 GROUP BY owner.id
             `, [getAccountOwnerId(request)]);
-            if (seats.rows[0]?.approved_devices >= seats.rows[0]?.max_pc_users) return response.status(400).json({ message: "La limite de postes PC autorisés est atteinte." });
+            if (seats.rows[0]?.approved_devices >= seats.rows[0]?.max_pc_users) return response.status(400).json({ message: "Aucun poste PC supplémentaire n’est inclus dans votre offre. Contactez Depann’Home Pro pour activer un poste PC." });
             await getPool().query("UPDATE depannhome_auth_devices SET status = 'approved', approved_at = NOW(), approved_by = $2 WHERE id = $1", [deviceId, request.user.sub]);
             return response.status(204).end();
         }
@@ -265,6 +276,7 @@ export async function authenticateRequest(request, response, next) {
             phone: user.phone || "",
             email: user.email || "",
             technicianBillingEnabled: user.technician_billing_enabled !== false,
+            maxPcUsers: Number(user.max_pc_users) || 1,
             deviceId: device.id,
             isCreator: isCreatorUsername(user.username)
         };
@@ -356,6 +368,7 @@ function publicUser(user) {
         phone: user.phone || "",
         email: user.email || "",
         technicianBillingEnabled: (user.technician_billing_enabled ?? user.technicianBillingEnabled) !== false,
+        maxPcUsers: Number(user.max_pc_users ?? user.maxPcUsers) || 1,
         isActive: user.is_active !== false,
         isCreator: Boolean(user.isCreator || isCreatorUsername(user.username))
     };

@@ -102,7 +102,7 @@ export async function findUserByUsername(username) {
     const { rows } = await getPool().query(
         `SELECT user_account.id, user_account.username, user_account.password_hash, user_account.role, user_account.account_owner_id,
             user_account.full_name, user_account.phone, user_account.email, user_account.is_active, owner.is_active AS account_is_active,
-            owner.technician_billing_enabled AS technician_billing_enabled
+            owner.technician_billing_enabled AS technician_billing_enabled, owner.max_pc_users AS max_pc_users
          FROM depannhome_users user_account
          JOIN depannhome_users owner ON owner.id = user_account.account_owner_id
          WHERE user_account.username = $1`,
@@ -116,7 +116,7 @@ export async function findUserById(id) {
     const { rows } = await getPool().query(
         `SELECT user_account.id, user_account.username, user_account.password_hash, user_account.role, user_account.account_owner_id,
             user_account.full_name, user_account.phone, user_account.email, user_account.is_active, owner.is_active AS account_is_active,
-            owner.technician_billing_enabled AS technician_billing_enabled
+            owner.technician_billing_enabled AS technician_billing_enabled, owner.max_pc_users AS max_pc_users
          FROM depannhome_users user_account
          JOIN depannhome_users owner ON owner.id = user_account.account_owner_id
          WHERE user_account.id = $1`,

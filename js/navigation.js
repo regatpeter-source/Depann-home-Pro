@@ -819,6 +819,9 @@ function renderSettings() {
     const technicianBillingHint = document.createElement("p");
     technicianBillingHint.className = "muted";
     technicianBillingHint.textContent = "Si cette option est désactivée, les techniciens ne peuvent plus créer de devis ni de factures depuis leur application.";
+    const pcSeatsHint = document.createElement("p");
+    pcSeatsHint.className = "muted";
+    pcSeatsHint.textContent = `Postes PC inclus dans votre offre : ${document.body.dataset.maxPcUsers || "1"}. Les postes supplémentaires sont activés par Depann’Home Pro, puis validés dans la section Équipe.`;
 
     // actions
     const actions = document.createElement("div");
@@ -877,6 +880,7 @@ function renderSettings() {
     if (document.body.dataset.role === "admin") {
         form.appendChild(technicianBillingLabel);
         form.appendChild(technicianBillingHint);
+        form.appendChild(pcSeatsHint);
     }
     form.appendChild(actions);
 
@@ -974,19 +978,23 @@ async function renderTeamManagement(container) {
             const deviceResponse = await fetch("/api/auth/devices", { credentials: "same-origin" });
             const devicePayload = await deviceResponse.json();
             if (!deviceResponse.ok) throw new Error(devicePayload.message || "Impossible de charger les appareils.");
-            devices.innerHTML = "<h3>Appareils à valider</h3>";
+            const pcSeats = devicePayload.pcSeats || { maxPcUsers: Number(document.body.dataset.maxPcUsers || 1), activePcUsers: 0 };
+            devices.innerHTML = `<h3>Appareils à valider</h3><p class="muted">Postes PC : ${escapeHtml(pcSeats.activePcUsers)}/${escapeHtml(pcSeats.maxPcUsers)} activé(s) par votre offre. Vous pouvez créer des techniciens ci-dessus ; les postes PC sont ajoutés uniquement par Depann’Home Pro.</p>`;
             const pending = (devicePayload.devices || []).filter(device => device.status === "approval_pending" || device.status === "code_pending");
             if (!pending.length) devices.insertAdjacentHTML("beforeend", "<p class=\"muted\">Aucun appareil en attente.</p>");
             pending.forEach(device => {
+                const isPc = device.userRole === "admin";
+                const pcSeatAvailable = Number(pcSeats.activePcUsers) < Number(pcSeats.maxPcUsers);
                 const item = document.createElement("div");
                 item.className = "team-member";
-                item.innerHTML = `<strong>${escapeHtml(device.fullName || device.username)}</strong><span>${escapeHtml(device.label)} · ${device.status === "code_pending" ? "Code e-mail envoyé" : "En attente d’autorisation"}</span>`;
-                const approve = createButton(device.status === "code_pending" ? "Renvoyer le code" : "Autoriser et envoyer le code", "secondary-button", async () => {
+                item.innerHTML = `<strong>${isPc ? "Poste PC" : escapeHtml(device.fullName || device.username)}</strong><span>${escapeHtml(device.label)} · ${isPc ? (pcSeatAvailable ? "En attente d’activation" : "Aucun poste PC inclus disponible") : (device.status === "code_pending" ? "Code e-mail envoyé" : "En attente d’autorisation")}</span>`;
+                const approve = createButton(isPc ? "Activer ce poste PC" : (device.status === "code_pending" ? "Renvoyer le code" : "Autoriser et envoyer le code"), "secondary-button", async () => {
                     approve.disabled = true;
                     const result = await fetch(`/api/auth/devices/${encodeURIComponent(device.id)}/approve`, { method: "POST", credentials: "same-origin" });
                     if (!result.ok) feedback.textContent = (await result.json().catch(() => ({}))).message || "Autorisation impossible.";
                     await load();
                 });
+                if (isPc && !pcSeatAvailable) approve.disabled = true;
                 const reject = createButton("Refuser", "secondary-button", async () => {
                     const result = await fetch(`/api/auth/devices/${encodeURIComponent(device.id)}/reject`, { method: "POST", credentials: "same-origin" });
                     if (!result.ok) feedback.textContent = "Refus impossible.";
