@@ -1,4 +1,5 @@
 import { ROUTES } from "./config.js?v=105";
+import { addLocalLibraryDocuments, createLocalLibrarySection, getLocalLibraryDocuments, getLocalLibrarySections, openLocalLibraryDocument } from "./local-library.js?v=118";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml } from "./utils.js?v=44";
 import { clearSearch, getContainer, setPage } from "./ui.js?v=44";
@@ -59,19 +60,22 @@ export async function renderLibrary() {
     uploadPanel.hidden = true;
     listPanel.hidden = true;
 
-    const result = await apiRequest("/api/library");
+    const [result, localSections] = await Promise.all([
+        apiRequest("/api/library"),
+        isTechnician() ? getLocalLibrarySections(getAccountId()).catch(() => []) : Promise.resolve([])
+    ]);
     if (!result.ok) {
         sectionPanel.innerHTML = `<p class="auth-message error">${escapeHtml(result.data?.message || "Impossible de charger la bibliothèque.")}</p>`;
         return;
     }
 
-    const sections = result.data.sections || [];
+    const sections = [...(result.data.sections || []), ...localSections];
     if (!selectedSectionId || !sections.some(section => String(section.id) === String(selectedSectionId))) {
         selectedSectionId = sections[0]?.id || null;
     }
 
     renderSectionPanel(sectionPanel, sections, () => renderLibrary());
-    if (!isReadOnlyLibrary()) renderUploadPanel(uploadPanel, sections, () => renderLibrary());
+    renderUploadPanel(uploadPanel, sections, () => renderLibrary());
     await renderDocumentPanel(listPanel, sections);
 }
 
@@ -86,7 +90,6 @@ export async function searchPersonalLibrary(query) {
 }
 
 function renderSectionPanel(panel, sections, refresh) {
-    const readOnly = isReadOnlyLibrary();
     panel.innerHTML = `
         <div class="form-heading">
             <div>
@@ -95,12 +98,13 @@ function renderSectionPanel(panel, sections, refresh) {
             </div>
         </div>
         <div class="library-section-layout">
-            ${readOnly ? "" : `<form id="librarySectionForm" class="library-section-form">
+            <form id="librarySectionForm" class="library-section-form">
                 <label>Nouvelle section<input name="name" maxlength="80" minlength="2" placeholder="Ex. Serrurerie" required></label>
                 <button type="submit" class="secondary-button">Créer la section</button>
-            </form>`}
+            </form>
             <div class="library-section-list" id="librarySectionList"></div>
         </div>
+        ${isTechnician() ? '<p class="muted small-note">Vos sections et notices ajoutées depuis ce compte sont enregistrées uniquement sur cet appareil.</p>' : ""}
         <p id="librarySectionMessage" class="auth-message" aria-live="polite"></p>
     `;
 
@@ -121,7 +125,7 @@ function renderSectionPanel(panel, sections, refresh) {
         });
     }
 
-    panel.querySelector("#librarySectionForm")?.addEventListener("submit", async event => {
+    panel.querySelector("#librarySectionForm").addEventListener("submit", async event => {
         event.preventDefault();
         const form = event.currentTarget;
         const message = panel.querySelector("#librarySectionMessage");
@@ -130,18 +134,19 @@ function renderSectionPanel(panel, sections, refresh) {
         message.textContent = "Création de la section…";
         message.classList.remove("error");
 
-        const result = await apiRequest("/api/library/sections", {
-            method: "POST",
-            body: JSON.stringify({ name: new FormData(form).get("name") })
-        });
-        if (!result.ok) {
-            message.textContent = result.data?.message || "Impossible de créer la section.";
+        try {
+            const name = new FormData(form).get("name");
+            const result = isTechnician()
+                ? { ok: true, data: { section: await createLocalLibrarySection(getAccountId(), name) } }
+                : await apiRequest("/api/library/sections", { method: "POST", body: JSON.stringify({ name }) });
+            if (!result.ok) throw new Error(result.data?.message || "Impossible de créer la section.");
+            selectedSectionId = result.data.section.id;
+            refresh();
+        } catch (error) {
+            message.textContent = error.message || "Impossible de créer la section.";
             message.classList.add("error");
             submit.disabled = false;
-            return;
         }
-        selectedSectionId = result.data.section.id;
-        refresh();
     });
 }
 
@@ -191,19 +196,26 @@ function renderUploadPanel(panel, sections, refresh) {
         message.textContent = "Envoi des fichiers…";
         message.classList.remove("error");
 
-        const result = await apiRequest("/api/library/documents", { method: "POST", body: new FormData(form) });
-        if (!result.ok) {
-            message.textContent = result.data?.message || "Impossible d’ajouter les fichiers.";
+        try {
+            const formData = new FormData(form);
+            const files = Array.from(formData.getAll("files")).filter(file => file instanceof File && file.size > 0);
+            if (!files.length) throw new Error("Ajoutez au moins un fichier.");
+            if (files.some(file => file.size > 20 * 1024 * 1024)) throw new Error("Chaque fichier est limité à 20 Mo.");
+            const result = isTechnician()
+                ? { ok: true, data: { documents: await addLocalLibraryDocuments(getAccountId(), formData.get("sectionId"), formData.get("title"), formData.get("description"), files) } }
+                : await apiRequest("/api/library/documents", { method: "POST", body: formData });
+            if (!result.ok) throw new Error(result.data?.message || "Impossible d’ajouter les fichiers.");
+            selectedSectionId = formData.get("sectionId");
+            refresh();
+        } catch (error) {
+            message.textContent = error.message || "Impossible d’ajouter les fichiers. Vérifiez l’espace disponible sur le téléphone.";
             message.classList.add("error");
             submit.disabled = false;
-            return;
         }
-        selectedSectionId = new FormData(form).get("sectionId");
-        refresh();
     });
 }
 
-function isReadOnlyLibrary() {
+function isTechnician() {
     return document.body.dataset.role === "technician";
 }
 
@@ -212,14 +224,18 @@ async function renderDocumentPanel(panel, sections) {
     panel.hidden = false;
     panel.innerHTML = "<p class=\"muted\">Chargement des documents…</p>";
 
-    const result = await apiRequest(`/api/library/sections/${encodeURIComponent(selectedSectionId)}/documents`);
+    const currentSection = sections.find(section => String(section.id) === String(selectedSectionId));
+    const result = currentSection?.isLocal
+        ? await getLocalLibraryDocuments(getAccountId(), selectedSectionId).then(documents => ({ ok: true, data: { documents } })).catch(() => ({ ok: false, data: null }))
+        : await apiRequest(`/api/library/sections/${encodeURIComponent(selectedSectionId)}/documents`);
     if (!result.ok) {
         panel.innerHTML = `<p class="auth-message error">${escapeHtml(result.data?.message || "Impossible de charger les documents.")}</p>`;
         return;
     }
-
-    const currentSection = sections.find(section => String(section.id) === String(selectedSectionId));
-    const documents = result.data.documents || [];
+    const localDocuments = isTechnician() && !currentSection?.isLocal
+        ? await getLocalLibraryDocuments(getAccountId(), selectedSectionId).catch(() => [])
+        : [];
+    const documents = [...(result.data.documents || []), ...localDocuments];
     panel.innerHTML = `
         <div class="form-heading">
             <div>
@@ -246,11 +262,19 @@ async function renderDocumentPanel(panel, sections) {
                 <small>${escapeHtml(document.originalFilename)} · ${formatFileSize(document.fileSize)} · ajouté par ${escapeHtml(document.createdBy)}</small>
             </div>
             <div class="library-document-actions">
-                <a class="secondary-button" target="_blank" rel="noopener noreferrer" href="/api/library/documents/${encodeURIComponent(document.id)}/download">Ouvrir</a>
-                ${document.canDelete && !isReadOnlyLibrary() ? `<button type="button" class="danger-button" data-document-id="${escapeHtml(document.id)}">Supprimer</button>` : ""}
+                ${document.isLocal ? `<button type="button" class="secondary-button" data-open-local-document="${escapeHtml(document.id)}">Ouvrir</button>` : `<a class="secondary-button" target="_blank" rel="noopener noreferrer" href="/api/library/documents/${encodeURIComponent(document.id)}/download">Ouvrir</a>`}
+                ${document.canDelete && !isTechnician() ? `<button type="button" class="danger-button" data-document-id="${escapeHtml(document.id)}">Supprimer</button>` : ""}
             </div>
         `;
         list.appendChild(article);
+    });
+
+    list.querySelectorAll("[data-open-local-document]").forEach(button => {
+        button.addEventListener("click", () => {
+            const document = documents.find(item => String(item.id) === button.dataset.openLocalDocument);
+            if (!document) return;
+            try { openLocalLibraryDocument(document); } catch (error) { alert(error.message || "Impossible d’ouvrir le document."); }
+        });
     });
 
     list.querySelectorAll("[data-document-id]").forEach(button => {
@@ -266,6 +290,10 @@ async function renderDocumentPanel(panel, sections) {
             renderLibrary();
         });
     });
+}
+
+function getAccountId() {
+    return String(document.body.dataset.accountId || document.body.dataset.userId || "anonymous");
 }
 
 async function apiRequest(url, options = {}) {
