@@ -1,6 +1,5 @@
 import { ROUTES } from "./config.js?v=105";
-import { createBillingDocumentForClient } from "./billing.js?v=110";
-import { getSearchableClients, renderClients } from "./clients.js?v=105";
+import { getSearchableClients } from "./clients.js?v=105";
 import { addClientActivityByName, synchronizeClients } from "./client-sync.js?v=88";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
@@ -192,10 +191,6 @@ function renderEventForm(panel) {
                     <div class="calendar-event-actions" aria-label="Actions pour ${escapeHtml(client.name)}">
                         ${navigationHref ? `<a class="secondary-button client-navigation-button" href="${escapeHtml(navigationHref)}" aria-label="Y aller vers ${escapeHtml(formatClientAddress(client))}">Y aller</a>` : '<button type="button" class="secondary-button client-navigation-button" disabled title="Adresse client non renseignée.">Y aller</button>'}
                         ${phoneHref ? `<a class="secondary-button client-navigation-button" href="${escapeHtml(phoneHref)}" aria-label="Appeler ${escapeHtml(client.name)} au ${escapeHtml(client.phone)}">Appeler</a>` : '<button type="button" class="secondary-button client-navigation-button" disabled title="Téléphone client non renseigné.">Appeler</button>'}
-                        <button type="button" class="secondary-button" data-client-action="open">Fiche client</button>
-                        <button type="button" class="secondary-button" data-client-action="quote">+ Devis</button>
-                        <button type="button" class="secondary-button" data-client-action="invoice">+ Facture</button>
-                        <button type="button" class="secondary-button" data-client-action="messages">Notes / messages</button>
                     </div>
                     ${renderInterventionPhotosHtml(client)}
                     <form id="calendarClientUpload" class="calendar-client-upload">
@@ -208,10 +203,6 @@ function renderEventForm(panel) {
                     </form>` : `<p class="auth-message error">Aucun dossier client correspondant à ce rendez-vous. Demandez à l’administrateur d’associer le rendez-vous à un client existant.</p>`}
             </div>`;
         if (event.eventType === "appointment" && client) initializeQuitusForm(panel, event);
-        panel.querySelector('[data-client-action="open"]')?.addEventListener("click", () => renderClients({ selectedId: client.id }));
-        panel.querySelector('[data-client-action="quote"]')?.addEventListener("click", () => createBillingDocumentForClient("quote", client));
-        panel.querySelector('[data-client-action="invoice"]')?.addEventListener("click", () => createBillingDocumentForClient("invoice", client));
-        panel.querySelector('[data-client-action="messages"]')?.addEventListener("click", () => renderClients({ selectedId: client.id }));
         panel.querySelector("#calendarInterventionPhotos")?.addEventListener("submit", eventSubmit => uploadInterventionPhotos(eventSubmit, client));
         panel.querySelector("#calendarClientUpload")?.addEventListener("submit", eventSubmit => uploadClientAttachments(eventSubmit, client));
         panel.querySelector("#closeCalendarDetail").addEventListener("click", () => {
@@ -665,7 +656,8 @@ function renderCalendarList(panel) {
     panel.innerHTML = `<div class="calendar-list-view">${days.map(day => {
         const date = toDateString(day);
         const dayEvents = eventDates.get(date) || [];
-        return `<section class="calendar-list-day${canCreate ? " calendar-list-day-clickable" : ""}"${canCreate ? ` data-calendar-date="${date}" tabindex="0" role="button" aria-label="Ajouter un événement le ${escapeHtml(formatShortDate(day))}"` : ""}><h3>${escapeHtml(new Intl.DateTimeFormat("fr-FR", { weekday: "long", day: "numeric", month: "long" }).format(day))}</h3>${dayEvents.length ? `<div class="calendar-list-events">${dayEvents.map(event => `<button type="button" class="calendar-event color-${escapeHtml(event.color)}" data-calendar-event="${escapeHtml(event.id)}">${renderCalendarEventCard(event, getEventClientDetails(event))}</button>`).join("")}</div>` : '<p class="muted">Aucun événement. Cliquez pour en ajouter un.</p>'}</section>`;
+        const emptyMessage = canCreate ? "Aucun événement. Cliquez pour en ajouter un." : "Aucun rendez-vous prévu.";
+        return `<section class="calendar-list-day${canCreate ? " calendar-list-day-clickable" : ""}"${canCreate ? ` data-calendar-date="${date}" tabindex="0" role="button" aria-label="Ajouter un événement le ${escapeHtml(formatShortDate(day))}"` : ""}><h3>${escapeHtml(new Intl.DateTimeFormat("fr-FR", { weekday: "long", day: "numeric", month: "long" }).format(day))}</h3>${dayEvents.length ? `<div class="calendar-list-events">${dayEvents.map(event => `<button type="button" class="calendar-event color-${escapeHtml(event.color)}" data-calendar-event="${escapeHtml(event.id)}">${renderCalendarEventCard(event, getEventClientDetails(event))}</button>`).join("")}</div>` : `<p class="muted">${emptyMessage}</p>`}</section>`;
     }).join("")}</div>`;
     panel.querySelectorAll("[data-calendar-event]").forEach(button => button.addEventListener("click", () => {
         selectedEvent = events.find(event => String(event.id) === button.dataset.calendarEvent) || null;

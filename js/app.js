@@ -1,7 +1,7 @@
 import { initializeAuthentication, signOut } from "./auth.js?v=112";
 import { initializeClientSynchronization } from "./client-sync.js?v=110";
 import { loadDatabase } from "./data.js?v=59";
-import { initializeNavigation } from "./navigation.js?v=116";
+import { initializeNavigation } from "./navigation.js?v=117";
 import { renderError } from "./ui.js?v=44";
 import { getSettings } from "./storage.js?v=44";
 import { FONT_OPTIONS } from "./config.js?v=116";
@@ -104,8 +104,8 @@ function applyLanguage() {
         if (search) search.placeholder = searchPlaceholder;
 
         const texts = lang === "en"
-            ? { home: "Home", search: "Search", store: "Store", photo: "Photo", clients: "Clients", billing: "Quotes", calendar: "Planning", library: "Documents", favorites: "Favorites", settings: "Settings" }
-            : { home: "Accueil", search: "Recherche", store: "Magasin", photo: "Photo", clients: "Clients", billing: "Devis", calendar: "Planning", library: "Documents", favorites: "Favoris", settings: "Paramètres" };
+            ? { home: "Home", search: "Search", store: "Store", photo: "Photo", clients: "Clients", billing: "Quotes", calendar: "Planning", library: "Library", favorites: "Favorites", settings: "Settings" }
+            : { home: "Accueil", search: "Recherche", store: "Magasin", photo: "Photo", clients: "Clients", billing: "Devis", calendar: "Planning", library: "Bibliothèque", favorites: "Favoris", settings: "Paramètres" };
         document.querySelectorAll("footer .nav-button").forEach(button => {
             const label = button.querySelector(".nav-label-clients") || button.querySelector("span");
             if (label) label.textContent = texts[button.dataset.nav] || label.textContent;

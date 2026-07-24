@@ -1,11 +1,11 @@
 import { ROUTES, STORAGE_KEYS, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=116";
-import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=110";
+import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=117";
 import { renderCreatorConsole } from "./creator.js?v=105";
 import { createBillingDocumentForClient, renderBilling, viewBillingDocument } from "./billing.js?v=116";
 import { renderPurchases } from "./purchases.js?v=111";
 import { getFirstUnreadClientId, refreshClientMessageAlert } from "./messages.js?v=88";
 import { getSearchableClients, renderClients } from "./clients.js?v=116";
-import { configureLibrary, openLibrarySection, renderLibrary, searchPersonalLibrary } from "./library.js?v=105";
+import { configureLibrary, openLibrarySection, renderLibrary, searchPersonalLibrary } from "./library.js?v=117";
 import { renderPhotoRecognition } from "./photo-recognition.js?v=105";
 import { getSearchResults } from "./search.js?v=63";
 import { state, resetSelection } from "./state.js?v=44";
@@ -40,7 +40,7 @@ export function initializeNavigation(loadedDatabase) {
     document.addEventListener("visibilitychange", () => {
         if (document.visibilityState === "visible") refreshClientMessageAlert();
     });
-    if (document.body.classList.contains("mobile-device") && document.body.dataset.role === "technician") renderCalendarOverview();
+    if (document.body.dataset.role === "technician") renderCalendarOverview();
     else if (document.body.classList.contains("desktop-device")) renderHome();
     else renderBrands();
 }
@@ -835,8 +835,8 @@ function renderSettings() {
         if (headerP) headerP.textContent = subtitle;
         const search = document.getElementById('search'); if (search) search.placeholder = searchPlaceholder;
         const texts = lang === "en"
-            ? { home: "Home", search: "Search", store: "Store", photo: "Photo", clients: "Clients", billing: "Quotes", purchases: "Purchases", calendar: "Planning", library: "Documents", favorites: "Favorites", settings: "Settings" }
-            : { home: "Accueil", search: "Recherche", store: "Magasin", photo: "Photo", clients: "Clients", billing: "Devis", purchases: "Achats", calendar: "Planning", library: "Documents", favorites: "Favoris", settings: "Paramètres" };
+            ? { home: "Home", search: "Search", store: "Store", photo: "Photo", clients: "Clients", billing: "Quotes", purchases: "Purchases", calendar: "Planning", library: "Library", favorites: "Favorites", settings: "Settings" }
+            : { home: "Accueil", search: "Recherche", store: "Magasin", photo: "Photo", clients: "Clients", billing: "Devis", purchases: "Achats", calendar: "Planning", library: "Bibliothèque", favorites: "Favoris", settings: "Paramètres" };
         document.querySelectorAll("footer .nav-button").forEach(button => {
             const label = button.querySelector(".nav-label-clients") || button.querySelector("span");
             if (label) label.textContent = texts[button.dataset.nav] || label.textContent;

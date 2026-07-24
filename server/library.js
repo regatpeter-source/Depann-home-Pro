@@ -94,7 +94,7 @@ export function registerLibraryRoutes(app, requireAuthentication) {
         response.json({ sections: rows });
     }));
 
-    app.post("/api/library/sections", requireAuthentication, asyncHandler(async (request, response) => {
+    app.post("/api/library/sections", requireAuthentication, requireLibraryWriteAccess, asyncHandler(async (request, response) => {
         const name = normalizeSectionName(request.body?.name);
         if (!name) return response.status(400).json({ message: "Le nom de la section doit contenir entre 2 et 80 caractères." });
 
@@ -178,7 +178,7 @@ export function registerLibraryRoutes(app, requireAuthentication) {
         response.json({ documents: rows });
     }));
 
-    app.post("/api/library/documents", requireAuthentication, upload.array("files", MAX_FILES_PER_UPLOAD), asyncHandler(async (request, response) => {
+    app.post("/api/library/documents", requireAuthentication, requireLibraryWriteAccess, upload.array("files", MAX_FILES_PER_UPLOAD), asyncHandler(async (request, response) => {
         const sectionId = positiveId(request.body?.sectionId);
         const files = Array.isArray(request.files) ? request.files : [];
         const title = cleanText(request.body?.title, 160);
@@ -251,7 +251,7 @@ export function registerLibraryRoutes(app, requireAuthentication) {
         response.send(document.file_data);
     }));
 
-    app.delete("/api/library/documents/:documentId", requireAuthentication, asyncHandler(async (request, response) => {
+    app.delete("/api/library/documents/:documentId", requireAuthentication, requireLibraryWriteAccess, asyncHandler(async (request, response) => {
         const documentId = positiveId(request.params.documentId);
         if (!documentId) return response.status(400).json({ message: "Document invalide." });
 
@@ -266,6 +266,13 @@ export function registerLibraryRoutes(app, requireAuthentication) {
         if (!rowCount) return response.status(404).json({ message: "Document introuvable." });
         response.status(204).end();
     }));
+}
+
+function requireLibraryWriteAccess(request, response, next) {
+    if (request.user?.role === "technician") {
+        return response.status(403).json({ message: "La bibliothèque est disponible en consultation pour les techniciens." });
+    }
+    return next();
 }
 
 export function libraryUploadErrorHandler(error, request, response, next) {

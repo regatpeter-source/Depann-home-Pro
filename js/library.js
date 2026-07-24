@@ -71,7 +71,7 @@ export async function renderLibrary() {
     }
 
     renderSectionPanel(sectionPanel, sections, () => renderLibrary());
-    renderUploadPanel(uploadPanel, sections, () => renderLibrary());
+    if (!isReadOnlyLibrary()) renderUploadPanel(uploadPanel, sections, () => renderLibrary());
     await renderDocumentPanel(listPanel, sections);
 }
 
@@ -86,6 +86,7 @@ export async function searchPersonalLibrary(query) {
 }
 
 function renderSectionPanel(panel, sections, refresh) {
+    const readOnly = isReadOnlyLibrary();
     panel.innerHTML = `
         <div class="form-heading">
             <div>
@@ -94,10 +95,10 @@ function renderSectionPanel(panel, sections, refresh) {
             </div>
         </div>
         <div class="library-section-layout">
-            <form id="librarySectionForm" class="library-section-form">
+            ${readOnly ? "" : `<form id="librarySectionForm" class="library-section-form">
                 <label>Nouvelle section<input name="name" maxlength="80" minlength="2" placeholder="Ex. Serrurerie" required></label>
                 <button type="submit" class="secondary-button">Créer la section</button>
-            </form>
+            </form>`}
             <div class="library-section-list" id="librarySectionList"></div>
         </div>
         <p id="librarySectionMessage" class="auth-message" aria-live="polite"></p>
@@ -120,7 +121,7 @@ function renderSectionPanel(panel, sections, refresh) {
         });
     }
 
-    panel.querySelector("#librarySectionForm").addEventListener("submit", async event => {
+    panel.querySelector("#librarySectionForm")?.addEventListener("submit", async event => {
         event.preventDefault();
         const form = event.currentTarget;
         const message = panel.querySelector("#librarySectionMessage");
@@ -202,6 +203,10 @@ function renderUploadPanel(panel, sections, refresh) {
     });
 }
 
+function isReadOnlyLibrary() {
+    return document.body.dataset.role === "technician";
+}
+
 async function renderDocumentPanel(panel, sections) {
     if (!sections.length || !selectedSectionId) return;
     panel.hidden = false;
@@ -242,7 +247,7 @@ async function renderDocumentPanel(panel, sections) {
             </div>
             <div class="library-document-actions">
                 <a class="secondary-button" target="_blank" rel="noopener noreferrer" href="/api/library/documents/${encodeURIComponent(document.id)}/download">Ouvrir</a>
-                ${document.canDelete ? `<button type="button" class="danger-button" data-document-id="${escapeHtml(document.id)}">Supprimer</button>` : ""}
+                ${document.canDelete && !isReadOnlyLibrary() ? `<button type="button" class="danger-button" data-document-id="${escapeHtml(document.id)}">Supprimer</button>` : ""}
             </div>
         `;
         list.appendChild(article);

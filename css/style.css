@@ -2862,6 +2862,11 @@ body[data-role="technician"] .nav-button[data-nav="purchases"]{
     display:none;
 }
 
+body.desktop-device[data-role="technician"] .quick-actions > :not(#calendarBtn):not(#libraryBtn),
+body.desktop-device[data-role="technician"] .nav-button:not([data-nav="calendar"]):not([data-nav="library"]){
+    display:none;
+}
+
 .message-alert[hidden]{
     display:none;
 }
@@ -2941,17 +2946,18 @@ footer{
 ========================== */
 
 @media(max-width:700px){
-    body.mobile-device[data-role="technician"] #libraryBtn,
-    body.mobile-device[data-role="technician"] #favoritesBtn,
-    body.mobile-device[data-role="technician"] #historyBtn,
-    body.mobile-device[data-role="technician"] #settingsBtn,
-    body.mobile-device[data-role="technician"] .nav-button[data-nav="library"]{
+    body.mobile-device[data-role="technician"] .quick-actions > :not(#calendarBtn):not(#libraryBtn),
+    body.mobile-device[data-role="technician"] .nav-button:not([data-nav="calendar"]):not([data-nav="library"]){
         display:none;
     }
 
     body.mobile-device[data-role="technician"] .quick-actions{
         display:grid;
         grid-template-columns:repeat(2, minmax(0, 1fr));
+    }
+
+    body.mobile-device[data-role="technician"] footer{
+        justify-content:center;
     }
 
     .team-member{

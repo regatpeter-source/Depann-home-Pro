@@ -94,9 +94,11 @@ export function registerCalendarRoutes(app, requireAuthentication) {
                 event.updated_at AS "updatedAt"
             FROM depannhome_calendar_events event
             LEFT JOIN depannhome_users technician ON technician.id = event.assigned_technician_id
-            WHERE event.owner_id = $1 AND event_date BETWEEN $2::date AND $3::date
+                        WHERE event.owner_id = $1
+                            AND event_date BETWEEN $2::date AND $3::date
+                            AND ($4 <> 'technician' OR event.assigned_technician_id = $5::bigint)
             ORDER BY event.event_date, event.start_time NULLS LAST, event.created_at
-        `, [getAccountOwnerId(request), start, end]);
+                `, [getAccountOwnerId(request), start, end, request.user.role, request.user.sub]);
         response.json({ events: rows });
     }));
 
@@ -165,9 +167,10 @@ export function registerCalendarRoutes(app, requireAuthentication) {
                     TO_CHAR(start_time, 'HH24:MI') AS "startTime", TO_CHAR(end_time, 'HH24:MI') AS "endTime",
                     notes, quitus_status AS "quitusStatus"
                 FROM depannhome_calendar_events
-                WHERE id = $1 AND owner_id = $2 AND event_type = 'appointment' AND client_name <> ''
+                                WHERE id = $1 AND owner_id = $2 AND event_type = 'appointment' AND client_name <> ''
+                                    AND ($3 <> 'technician' OR assigned_technician_id = $4::bigint)
                 FOR UPDATE
-            `, [id, accountOwnerId]);
+                        `, [id, accountOwnerId, request.user.role, request.user.sub]);
             const event = eventResult.rows[0];
             if (!event) {
                 await connection.query("ROLLBACK");
