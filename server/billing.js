@@ -30,6 +30,7 @@ export async function initializeBilling() {
             registration_number VARCHAR(100) NOT NULL DEFAULT '',
             tax_number VARCHAR(100) NOT NULL DEFAULT '',
             payment_terms VARCHAR(500) NOT NULL DEFAULT '',
+            deposit_terms VARCHAR(500) NOT NULL DEFAULT '',
             footer_note VARCHAR(1000) NOT NULL DEFAULT '',
             default_quote JSONB,
             logo_data BYTEA,
@@ -39,7 +40,8 @@ export async function initializeBilling() {
     `);
     await database.query(`
         ALTER TABLE depannhome_billing_profiles
-        ADD COLUMN IF NOT EXISTS default_quote JSONB
+        ADD COLUMN IF NOT EXISTS default_quote JSONB,
+        ADD COLUMN IF NOT EXISTS deposit_terms VARCHAR(500) NOT NULL DEFAULT ''
     `);
     await database.query(`
         CREATE TABLE IF NOT EXISTS depannhome_billing_templates (
@@ -102,7 +104,7 @@ export function registerBillingRoutes(app, requireAuthentication) {
             database.query(`
                 SELECT company_name AS "companyName", legal_form AS "legalForm", address, postal_code AS "postalCode", city,
                     phone, email, registration_number AS "registrationNumber", tax_number AS "taxNumber",
-                    payment_terms AS "paymentTerms", footer_note AS "footerNote", default_quote AS "defaultQuote",
+                    payment_terms AS "paymentTerms", deposit_terms AS "depositTerms", footer_note AS "footerNote", default_quote AS "defaultQuote",
                     (logo_data IS NOT NULL) AS "hasLogo"
                 FROM depannhome_billing_profiles WHERE owner_id = $1
             `, [accountOwnerId]),
@@ -128,18 +130,18 @@ export function registerBillingRoutes(app, requireAuthentication) {
         const database = getPool();
         await database.query(`
             INSERT INTO depannhome_billing_profiles
-                (owner_id, company_name, legal_form, address, postal_code, city, phone, email, registration_number, tax_number, payment_terms, footer_note, logo_data, logo_mime_type)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+                (owner_id, company_name, legal_form, address, postal_code, city, phone, email, registration_number, tax_number, payment_terms, deposit_terms, footer_note, logo_data, logo_mime_type)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
             ON CONFLICT (owner_id) DO UPDATE SET
                 company_name = EXCLUDED.company_name, legal_form = EXCLUDED.legal_form, address = EXCLUDED.address,
                 postal_code = EXCLUDED.postal_code, city = EXCLUDED.city, phone = EXCLUDED.phone, email = EXCLUDED.email,
                 registration_number = EXCLUDED.registration_number, tax_number = EXCLUDED.tax_number,
-                payment_terms = EXCLUDED.payment_terms, footer_note = EXCLUDED.footer_note,
-                logo_data = CASE WHEN $15 THEN NULL WHEN $16 THEN EXCLUDED.logo_data ELSE depannhome_billing_profiles.logo_data END,
-                logo_mime_type = CASE WHEN $15 THEN '' WHEN $16 THEN EXCLUDED.logo_mime_type ELSE depannhome_billing_profiles.logo_mime_type END,
+                payment_terms = EXCLUDED.payment_terms, deposit_terms = EXCLUDED.deposit_terms, footer_note = EXCLUDED.footer_note,
+                logo_data = CASE WHEN $16 THEN NULL WHEN $17 THEN EXCLUDED.logo_data ELSE depannhome_billing_profiles.logo_data END,
+                logo_mime_type = CASE WHEN $16 THEN '' WHEN $17 THEN EXCLUDED.logo_mime_type ELSE depannhome_billing_profiles.logo_mime_type END,
                 updated_at = NOW()
         `, [getAccountOwnerId(request), profile.companyName, profile.legalForm, profile.address, profile.postalCode, profile.city, profile.phone,
-            profile.email, profile.registrationNumber, profile.taxNumber, profile.paymentTerms, profile.footerNote,
+            profile.email, profile.registrationNumber, profile.taxNumber, profile.paymentTerms, profile.depositTerms, profile.footerNote,
             logo?.buffer || null, logo?.mimetype || "", removeLogo, Boolean(logo)]);
         response.status(204).end();
     }));
@@ -168,7 +170,7 @@ export function registerBillingRoutes(app, requireAuthentication) {
             database.query(`
                 SELECT company_name AS "companyName", legal_form AS "legalForm", address, postal_code AS "postalCode", city, phone, email,
                     registration_number AS "registrationNumber", tax_number AS "taxNumber", payment_terms AS "paymentTerms",
-                    footer_note AS "footerNote", (logo_data IS NOT NULL) AS "hasLogo"
+                    deposit_terms AS "depositTerms", footer_note AS "footerNote", (logo_data IS NOT NULL) AS "hasLogo"
                 FROM depannhome_billing_profiles WHERE owner_id = $1
             `, [getAccountOwnerId(request)])
         ]);
@@ -296,7 +298,7 @@ export function billingUploadErrorHandler(error, request, response, next) {
 }
 
 function emptyProfile() {
-    return { companyName: "", legalForm: "", address: "", postalCode: "", city: "", phone: "", email: "", registrationNumber: "", taxNumber: "", paymentTerms: "", footerNote: "", defaultQuote: null, hasLogo: false };
+    return { companyName: "", legalForm: "", address: "", postalCode: "", city: "", phone: "", email: "", registrationNumber: "", taxNumber: "", paymentTerms: "", depositTerms: "", footerNote: "", defaultQuote: null, hasLogo: false };
 }
 
 function sanitizeProfile(value) {
@@ -304,7 +306,7 @@ function sanitizeProfile(value) {
         companyName: cleanText(value?.companyName, 160), legalForm: cleanText(value?.legalForm, 100), address: cleanText(value?.address, 255),
         postalCode: cleanText(value?.postalCode, 20), city: cleanText(value?.city, 100), phone: cleanText(value?.phone, 50),
         email: cleanText(value?.email, 160), registrationNumber: cleanText(value?.registrationNumber, 100), taxNumber: cleanText(value?.taxNumber, 100),
-        paymentTerms: cleanText(value?.paymentTerms, 500), footerNote: cleanText(value?.footerNote, 1000)
+        paymentTerms: cleanText(value?.paymentTerms, 500), depositTerms: cleanText(value?.depositTerms, 500), footerNote: cleanText(value?.footerNote, 1000)
     };
 }
 
@@ -398,7 +400,7 @@ async function getBillingExport(request) {
         `, [id, getAccountOwnerId(request)]),
         database.query(`
             SELECT company_name AS "companyName", legal_form AS "legalForm", address, postal_code AS "postalCode", city, phone, email,
-                registration_number AS "registrationNumber", tax_number AS "taxNumber", payment_terms AS "paymentTerms",
+                registration_number AS "registrationNumber", tax_number AS "taxNumber", payment_terms AS "paymentTerms", deposit_terms AS "depositTerms",
                 footer_note AS "footerNote", logo_data AS "logoData", logo_mime_type AS "logoMimeType"
             FROM depannhome_billing_profiles WHERE owner_id = $1
         `, [getAccountOwnerId(request)])
@@ -489,7 +491,11 @@ function createBillingPdf(document, profile) {
         pdf.y += 18;
         const summaryY = pdf.y;
         text("CONDITIONS DE RÈGLEMENT", margin, summaryY, 260, { size: 9, bold: true });
-        text(document.notes || profile.paymentTerms || "Conditions de règlement non renseignées.", margin, summaryY + 14, 260, { size: 8, lineGap: 2 });
+        const conditions = [
+            document.notes || profile.paymentTerms || "Conditions de règlement non renseignées.",
+            document.documentType === "quote" && profile.depositTerms ? `Acompte : ${profile.depositTerms}` : ""
+        ].filter(Boolean).join("\n");
+        text(conditions, margin, summaryY + 14, 260, { size: 8, lineGap: 2 });
         const totalX = margin + contentWidth - 180;
         [["Total HT", totalHt, "#172033"], ["Total TVA", totalVat, "#172033"], [document.documentType === "invoice" ? "Net à payer" : "Total TTC", totalHt + totalVat, "#0a5c36"]].forEach(([label, value, color], index) => {
             const y = summaryY + index * 26;

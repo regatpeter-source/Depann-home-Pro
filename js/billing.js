@@ -19,12 +19,11 @@ export async function renderBilling(options = {}) {
     const container = getContainer();
     const overviewPanel = createPanel("billing-overview-panel");
     const profilePanel = createPanel("billing-profile-panel");
-    const templatePanel = createPanel("billing-template-panel");
     const editorPanel = createPanel("billing-editor-panel");
     const listPanel = createPanel("billing-list-panel");
-    container.append(overviewPanel, profilePanel, templatePanel, editorPanel, listPanel);
+    container.append(overviewPanel, profilePanel, editorPanel, listPanel);
     overviewPanel.innerHTML = "<p class=\"muted\">Chargement de l’espace de facturation…</p>";
-    [profilePanel, templatePanel, editorPanel, listPanel].forEach(panel => panel.hidden = true);
+    [profilePanel, editorPanel, listPanel].forEach(panel => panel.hidden = true);
 
     const result = await apiRequest("/api/billing");
     if (!result.ok) {
@@ -38,11 +37,7 @@ export async function renderBilling(options = {}) {
         const document = (billingData.documents || []).find(item => String(item.id) === String(options.documentId));
         activeDocument = document ? normalizeDocument(document) : null;
     }
-    renderOverview(overviewPanel);
-    if (!isTechnician()) {
-        renderProfile(profilePanel);
-        renderTemplates(templatePanel);
-    }
+    renderOverview(overviewPanel, profilePanel);
     renderDocumentEditor(editorPanel);
     renderDocumentList(listPanel);
 }
@@ -63,7 +58,7 @@ function createPanel(className) {
     return panel;
 }
 
-function renderOverview(panel) {
+function renderOverview(panel, profilePanel) {
     const { profile, documents = [] } = billingData;
     const quotes = documents.filter(document => document.documentType === "quote").length;
     const invoices = documents.filter(document => document.documentType === "invoice").length;
@@ -76,17 +71,17 @@ function renderOverview(panel) {
             <div class="billing-overview-actions">
                 <button type="button" class="secondary-button" data-billing-action="new-quote">+ Nouveau devis</button>
                 <button type="button" class="secondary-button" data-billing-action="new-invoice">+ Nouvelle facture</button>
+                ${isTechnician() ? "" : '<button type="button" class="secondary-button auth-outline-button" data-billing-action="edit-company">Modifier les informations entreprise</button>'}
             </div>
         </div>
-        <div class="billing-metrics"><span><strong>${quotes}</strong> devis</span><span><strong>${invoices}</strong> factures</span><span><strong>${billingData.templates.length}</strong> ligne(s) modèle</span>${profile.defaultQuote ? `<span class="billing-base-template"><strong>✓</strong> modèle de devis actif ${isTechnician() ? "" : '<button type="button" data-billing-action="clear-default">Retirer</button>'}</span>` : ""}</div>
+        <div class="billing-metrics"><span><strong>${quotes}</strong> devis</span><span><strong>${invoices}</strong> factures</span><span class="billing-base-template"><strong>✓</strong> modèle de document fixe</span></div>
     `;
     panel.querySelector("[data-billing-action=new-quote]").addEventListener("click", () => openNewDocument("quote"));
     panel.querySelector("[data-billing-action=new-invoice]").addEventListener("click", () => openNewDocument("invoice"));
-    panel.querySelector("[data-billing-action=clear-default]")?.addEventListener("click", async () => {
-        if (!confirm("Retirer le modèle de devis de base ?")) return;
-        const result = await apiRequest("/api/billing/default-quote", { method: "PUT", body: JSON.stringify(null) });
-        if (!result.ok) { alert(result.message || "Impossible de retirer le modèle."); return; }
-        renderBilling();
+    panel.querySelector("[data-billing-action=edit-company]")?.addEventListener("click", () => {
+        renderProfile(profilePanel);
+        profilePanel.hidden = false;
+        profilePanel.scrollIntoView({ behavior: "smooth", block: "start" });
     });
 }
 
@@ -95,7 +90,7 @@ function renderProfile(panel) {
     const profile = billingData.profile;
     panel.innerHTML = `
         <form id="billingProfileForm" class="client-form" enctype="multipart/form-data">
-            <div class="form-heading"><div><p class="eyebrow">Paramètres de votre structure</p><h2>Identité, coordonnées et logo</h2></div></div>
+            <div class="form-heading"><div><p class="eyebrow">Informations entreprise</p><h2>Coordonnées, mentions et logo</h2><p class="muted">Ces informations sont reprises sur vos devis et factures. Le modèle du document reste inchangé.</p></div><button type="button" class="secondary-button" id="closeBillingProfile">Fermer</button></div>
             <div class="form-grid">
                 <label>Nom de la structure<input name="companyName" maxlength="160" placeholder="Ex. Dépann’Home Services" value="${escapeHtml(profile.companyName)}"></label>
                 <label>Forme juridique / activité<input name="legalForm" maxlength="100" placeholder="Ex. SASU – dépannage à domicile" value="${escapeHtml(profile.legalForm)}"></label>
@@ -106,6 +101,7 @@ function renderProfile(panel) {
                 <label>E-mail<input name="email" type="email" maxlength="160" value="${escapeHtml(profile.email)}"></label>
                 <label>Immatriculation / SIRET<input name="registrationNumber" maxlength="100" value="${escapeHtml(profile.registrationNumber)}"></label>
                 <label>N° TVA intracommunautaire<input name="taxNumber" maxlength="100" value="${escapeHtml(profile.taxNumber)}"></label>
+                <label>Acompte / condition de devis<input name="depositTerms" maxlength="500" placeholder="Ex. Acompte de 30 % à la commande" value="${escapeHtml(profile.depositTerms || "")}"></label>
                 <label class="form-wide">Conditions de règlement<input name="paymentTerms" maxlength="500" placeholder="Ex. Paiement à réception par virement ou chèque" value="${escapeHtml(profile.paymentTerms)}"></label>
                 <label class="form-wide">Mention de bas de page<textarea name="footerNote" rows="2" maxlength="1000" placeholder="Mentions légales, pénalités de retard, assurance…">${escapeHtml(profile.footerNote)}</textarea></label>
                 <label>Logo (PNG, JPEG ou WebP, 2 Mo maximum)<input name="logo" type="file" accept="image/png,image/jpeg,image/webp"></label>
@@ -115,6 +111,7 @@ function renderProfile(panel) {
             <div class="form-actions"><button type="submit" class="secondary-button">Enregistrer les paramètres</button></div>
         </form>
     `;
+    panel.querySelector("#closeBillingProfile").addEventListener("click", () => { panel.hidden = true; });
     panel.querySelector("form").addEventListener("submit", async event => {
         event.preventDefault();
         const form = event.currentTarget;
@@ -197,7 +194,6 @@ function renderDocumentEditor(panel) {
             </div>
             <section class="billing-lines-section"><div class="form-heading"><div><p class="eyebrow">Prestations</p><h3>Lignes du document</h3></div><button type="button" class="secondary-button" id="addBillingLine">+ Ligne libre</button></div><div id="billingLines" class="billing-lines"></div><div class="billing-totals" id="billingTotals"></div></section>
             <label>Notes / conditions<textarea name="notes" rows="3" maxlength="2000" placeholder="Informations complémentaires, conditions, validité du devis…">${escapeHtml(document.notes)}</textarea></label>
-            ${document.documentType === "quote" && !isTechnician() ? `<label class="billing-default-option"><input name="saveAsDefaultQuote" type="checkbox" ${!billingData.profile.defaultQuote ? "checked" : ""}> Utiliser les lignes, la TVA, les conditions et le statut de ce devis comme modèle de base pour mes futurs devis.</label>` : ""}
             <p id="billingDocumentMessage" class="auth-message" aria-live="polite"></p>
             <div class="calendar-form-actions"><button type="submit" class="secondary-button">${isEditing ? "Enregistrer les modifications" : "Enregistrer le document"}</button>${isEditing ? '<button type="button" class="danger-button" id="deleteBillingDocument">Supprimer</button>' : ""}</div>
         </form>
@@ -219,8 +215,6 @@ function renderDocumentEditor(panel) {
     form.addEventListener("submit", async event => {
         event.preventDefault();
         const payload = { ...formDataToObject(new FormData(form)), lines: document.lines };
-        const shouldSaveAsDefault = payload.documentType === "quote" && payload.saveAsDefaultQuote === "on";
-        delete payload.saveAsDefaultQuote;
         const message = panel.querySelector("#billingDocumentMessage");
         const result = await apiRequest(isEditing ? `/api/billing/documents/${encodeURIComponent(document.id)}` : "/api/billing/documents", { method: isEditing ? "PUT" : "POST", body: JSON.stringify(payload) });
         if (!result.ok) { message.textContent = result.message || "Impossible d’enregistrer le document."; message.classList.add("error"); return; }
@@ -230,17 +224,6 @@ function renderDocumentEditor(panel) {
             detail: payload.documentNumber,
             documentId: result.data?.id
         });
-        if (shouldSaveAsDefault) {
-            const templateResult = await apiRequest("/api/billing/default-quote", {
-                method: "PUT",
-                body: JSON.stringify({ customerType: payload.customerType, status: payload.status, notes: payload.notes, lines: payload.lines })
-            });
-            if (!templateResult.ok) {
-                message.textContent = templateResult.message || "Document enregistré, mais le modèle de devis n’a pas pu être mis à jour.";
-                message.classList.add("error");
-                return;
-            }
-        }
         activeDocument = null;
         renderBilling();
     });
