@@ -2049,6 +2049,31 @@ body[data-role="technician"] .library-tools-panel .library-catalog-panel{
     border-color:var(--secondary);
 }
 
+.technician-calendar-view-switcher{
+    display:grid;
+    grid-template-columns:repeat(3, 1fr);
+    gap:6px;
+    max-width:360px;
+    margin:10px auto 0;
+    padding:4px;
+    border-radius:14px;
+    background:#edf4f0;
+}
+
+.technician-calendar-view-switcher .secondary-button{
+    min-height:38px;
+    padding:6px 8px;
+    border-color:transparent;
+    background:transparent;
+    font-size:13px;
+}
+
+.technician-calendar-view-switcher .secondary-button.active{
+    color:#fff;
+    background:var(--secondary);
+    border-color:var(--secondary);
+}
+
 body.mobile-device[data-role="technician"] .calendar-grid-panel{
     padding:14px;
     background:transparent;

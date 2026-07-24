@@ -102,8 +102,12 @@ function renderHeader(panel) {
                 <button type="button" class="secondary-button active" data-calendar-action="today">Aujourd’hui</button>
                 <button type="button" class="secondary-button" data-calendar-action="next" aria-label="Jour suivant">→</button>
             </div>
+            <div class="technician-calendar-view-switcher" role="group" aria-label="Vue du planning">
+                ${[ ["day", "Jour"], ["week", "Semaine"], ["month", "Mois"] ].map(([view, label]) => `<button type="button" class="secondary-button${calendarView === view ? " active" : ""}" data-calendar-view="${view}">${label}</button>`).join("")}
+            </div>
         `;
         bindCalendarNavigation(panel);
+        bindCalendarViewSwitcher(panel);
         return;
     }
     panel.innerHTML = `
@@ -133,13 +137,7 @@ function renderHeader(panel) {
         selectedEvent = newEventForDate(toDateString(new Date()));
         renderCalendar();
     });
-    panel.querySelectorAll("[data-calendar-view]").forEach(button => button.addEventListener("click", () => {
-        const nextView = button.dataset.calendarView;
-        calendarView = nextView;
-        displayedMonth = nextView === "month" ? firstDayOfMonth(displayedMonth) : atNoon(displayedMonth);
-        selectedEvent = null;
-        renderCalendar();
-    }));
+    bindCalendarViewSwitcher(panel);
     panel.querySelector("[data-calendar-filter=all]")?.addEventListener("change", event => {
         showAllTechnicians = event.currentTarget.checked;
         if (showAllTechnicians) visibleTechnicianIds.clear();
@@ -150,6 +148,16 @@ function renderHeader(panel) {
         const id = String(event.currentTarget.dataset.calendarTechnician);
         if (event.currentTarget.checked) visibleTechnicianIds.add(id);
         else visibleTechnicianIds.delete(id);
+        renderCalendar();
+    }));
+}
+
+function bindCalendarViewSwitcher(panel) {
+    panel.querySelectorAll("[data-calendar-view]").forEach(button => button.addEventListener("click", () => {
+        const nextView = button.dataset.calendarView;
+        calendarView = nextView;
+        displayedMonth = nextView === "month" ? firstDayOfMonth(displayedMonth) : atNoon(displayedMonth);
+        selectedEvent = null;
         renderCalendar();
     }));
 }
