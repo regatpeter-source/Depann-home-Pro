@@ -20,7 +20,9 @@ export async function renderLibrary() {
     setPage("Bibliothèque", ROUTES.library, "detail");
 
     const container = getContainer();
-    if (document.body.classList.contains("desktop-device") && (openCatalog || openStore)) {
+    const showCatalogTools = (document.body.classList.contains("desktop-device") && (openCatalog || openStore))
+        || (isTechnician() && openCatalog);
+    if (showCatalogTools) {
         const toolsPanel = document.createElement("section");
         toolsPanel.className = "library-tools-panel";
         if (openCatalog) {
@@ -33,7 +35,7 @@ export async function renderLibrary() {
             catalogPanel.querySelector("button").addEventListener("click", openCatalog);
             toolsPanel.appendChild(catalogPanel);
         }
-        if (openStore) {
+        if (openStore && !isTechnician()) {
             const storePanel = document.createElement("section");
             storePanel.className = "client-panel library-catalog-panel";
             storePanel.innerHTML = `

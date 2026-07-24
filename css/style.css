@@ -1626,6 +1626,14 @@ body.desktop-device .nav-label-messages{
     margin-top:20px;
 }
 
+body[data-role="technician"] .library-tools-panel{
+    grid-template-columns:1fr;
+}
+
+body[data-role="technician"] .library-tools-panel .library-catalog-panel{
+    margin-top:0;
+}
+
 .library-catalog-panel h2{
     margin:3px 0;
     color:var(--primary);
