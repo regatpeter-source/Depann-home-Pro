@@ -37,7 +37,7 @@ export function registerCreatorRoutes(app, requireCreator) {
             GROUP BY owner.id
             ORDER BY LOWER(COALESCE(NULLIF(owner.company_name, ''), owner.full_name, owner.username))
         `);
-        response.json({ accounts: rows.filter(account => !isCreatorUsername(account.ownerUsername)) });
+        response.json({ accounts: rows.filter(account => !isCreatorUsername(account.ownerUsername) || String(account.id) === String(request.user.sub)) });
     }));
 
     app.post("/api/creator/accounts", requireCreator, asyncHandler(async (request, response) => {
@@ -67,13 +67,12 @@ export function registerCreatorRoutes(app, requireCreator) {
     app.patch("/api/creator/accounts/:accountId", requireCreator, asyncHandler(async (request, response) => {
         const accountId = positiveId(request.params.accountId);
         if (!accountId) return response.status(400).json({ message: "Compte entreprise invalide." });
-        if (String(accountId) === String(request.user.sub)) return response.status(403).json({ message: "Le compte Créateur ne peut pas être modifié ici." });
         const account = sanitizeAccount(request.body);
         if (!account.ok) return response.status(400).json({ message: account.message });
 
         const database = getPool();
         const owner = await findAccountOwner(database, accountId);
-        if (!owner || isCreatorUsername(owner.username)) return response.status(404).json({ message: "Compte entreprise introuvable." });
+        if (!canManageAccount(owner, request)) return response.status(404).json({ message: "Compte entreprise introuvable." });
         const counts = await countActiveSeats(database, accountId);
         if (account.maxPcUsers < counts.activePcUsers || account.maxTechnicians < counts.activeTechnicians) {
             return response.status(400).json({ message: "Les limites ne peuvent pas être inférieures aux accès actifs existants." });
@@ -84,7 +83,7 @@ export function registerCreatorRoutes(app, requireCreator) {
                 subscription_plan = $8, subscription_label = $9, monthly_price_cents = $10, subscription_status = $11,
                 subscription_renewal_date = $12::date, billing_reference = $13, creator_note = $14, updated_at = NOW()
             WHERE id = $1 AND account_owner_id = id
-        `, [accountId, account.companyName, account.fullName, account.phone, account.maxPcUsers, account.maxTechnicians, account.isActive,
+        `, [accountId, account.companyName, account.fullName, account.phone, account.maxPcUsers, account.maxTechnicians, isOwnCreatorAccount(owner, request) ? true : account.isActive,
             account.subscriptionPlan, account.subscriptionLabel, account.monthlyPriceCents, account.subscriptionStatus, account.subscriptionRenewalDate || null, account.billingReference, account.creatorNote]);
         response.status(204).end();
     }));
@@ -104,7 +103,7 @@ export function registerCreatorRoutes(app, requireCreator) {
     app.get("/api/creator/accounts/:accountId/members", requireCreator, asyncHandler(async (request, response) => {
         const accountId = positiveId(request.params.accountId);
         const owner = accountId && await findAccountOwner(getPool(), accountId);
-        if (!owner || isCreatorUsername(owner.username)) return response.status(404).json({ message: "Compte entreprise introuvable." });
+        if (!canManageAccount(owner, request)) return response.status(404).json({ message: "Compte entreprise introuvable." });
         const { rows } = await getPool().query(`
             SELECT id, username, role, full_name AS "fullName", phone, is_active AS "isActive", created_at AS "createdAt"
             FROM depannhome_users WHERE account_owner_id = $1
@@ -120,7 +119,7 @@ export function registerCreatorRoutes(app, requireCreator) {
         const credentials = sanitizeCredentials(request.body);
         const database = getPool();
         const owner = accountId && await findAccountOwner(database, accountId);
-        if (!owner || isCreatorUsername(owner.username)) return response.status(404).json({ message: "Compte entreprise introuvable." });
+        if (!canManageAccount(owner, request)) return response.status(404).json({ message: "Compte entreprise introuvable." });
         if (!role) return response.status(400).json({ message: "Choisissez le type d’accès." });
         if (!profile.ok) return response.status(400).json({ message: profile.message });
         if (!credentials.ok) return response.status(400).json({ message: credentials.message });
@@ -151,7 +150,7 @@ export function registerCreatorRoutes(app, requireCreator) {
         const memberId = positiveId(request.params.memberId);
         const database = getPool();
         const owner = accountId && await findAccountOwner(database, accountId);
-        if (!owner || isCreatorUsername(owner.username)) return response.status(404).json({ message: "Compte entreprise introuvable." });
+        if (!canManageAccount(owner, request)) return response.status(404).json({ message: "Compte entreprise introuvable." });
         const member = await findMember(database, accountId, memberId);
         if (!member) return response.status(404).json({ message: "Accès introuvable." });
         const profile = sanitizeMemberProfile(request.body, member.role);
@@ -190,7 +189,7 @@ export function registerCreatorRoutes(app, requireCreator) {
         if (!accountId || !memberId) return response.status(400).json({ message: "Accès invalide." });
         if (accountId === memberId) return response.status(400).json({ message: "Supprimez l’entreprise entière pour supprimer son administrateur principal." });
         const owner = await findAccountOwner(getPool(), accountId);
-        if (!owner || isCreatorUsername(owner.username)) return response.status(404).json({ message: "Compte entreprise introuvable." });
+        if (!canManageAccount(owner, request)) return response.status(404).json({ message: "Compte entreprise introuvable." });
         const result = await getPool().query("DELETE FROM depannhome_users WHERE id = $1 AND account_owner_id = $2", [memberId, accountId]);
         if (!result.rowCount) return response.status(404).json({ message: "Accès introuvable." });
         response.status(204).end();
@@ -204,6 +203,14 @@ async function findAccountOwner(database, id) {
         FROM depannhome_users WHERE id = $1 AND account_owner_id = id
     `, [id]);
     return rows[0] || null;
+}
+
+function isOwnCreatorAccount(owner, request) {
+    return Boolean(owner) && isCreatorUsername(owner.username) && String(owner.id) === String(request.user.sub);
+}
+
+function canManageAccount(owner, request) {
+    return Boolean(owner) && (!isCreatorUsername(owner.username) || isOwnCreatorAccount(owner, request));
 }
 
 async function findMember(database, accountId, memberId) {

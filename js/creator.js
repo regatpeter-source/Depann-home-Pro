@@ -73,6 +73,7 @@ function renderAccountList() {
 async function renderAccountDetail(accountId) {
     const account = accounts.find(item => String(item.id) === String(accountId));
     if (!account) return;
+    const isOwnCreatorAccount = String(account.id) === String(document.body.dataset.userId);
     const workspace = document.querySelector("#creatorWorkspace");
     workspace.innerHTML = `
         <form id="creatorAccountForm" class="creator-form">
@@ -83,10 +84,10 @@ async function renderAccountDetail(accountId) {
                 <label>Téléphone responsable<input name="phone" maxlength="30" value="${escapeHtml(account.ownerPhone)}"></label>
                 <label>Postes PC autorisés<input name="maxPcUsers" type="number" min="1" max="100" required value="${escapeHtml(account.maxPcUsers)}"></label>
                 <label>Techniciens autorisés<input name="maxTechnicians" type="number" min="0" max="500" required value="${escapeHtml(account.maxTechnicians)}"></label>
-                <label class="creator-switch">Entreprise active<input name="isActive" type="checkbox" ${account.isActive ? "checked" : ""}><span>Les membres peuvent se connecter</span></label>
+                <label class="creator-switch">Entreprise active<input name="isActive" type="checkbox" ${account.isActive ? "checked" : ""} ${isOwnCreatorAccount ? "disabled" : ""}><span>${isOwnCreatorAccount ? "Le compte Créateur reste actif" : "Les membres peuvent se connecter"}</span></label>
             </div>
             ${renderSubscriptionFields(account)}
-            <div class="creator-form-actions"><button type="submit" class="secondary-button">Enregistrer l’entreprise</button><button type="button" class="secondary-button danger-button" id="creatorDeleteAccount">Supprimer l’entreprise</button></div>
+            <div class="creator-form-actions"><button type="submit" class="secondary-button">Enregistrer l’entreprise</button>${isOwnCreatorAccount ? "" : '<button type="button" class="secondary-button danger-button" id="creatorDeleteAccount">Supprimer l’entreprise</button>'}</div>
         </form>
         <section class="creator-members-section"><div class="form-heading"><div><p class="eyebrow">Accès</p><h3>Postes PC et techniciens</h3></div><button type="button" class="secondary-button" id="creatorNewMember">+ Ajouter un accès</button></div><div id="creatorMembers"><p class="muted">Chargement des accès…</p></div></section>
     `;

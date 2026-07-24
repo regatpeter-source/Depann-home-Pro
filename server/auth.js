@@ -199,6 +199,17 @@ export function registerAuthRoutes(app) {
         response.status(204).end();
     }));
 
+    app.delete("/api/auth/technicians/:technicianId", requireAccountAdministrator, asyncHandler(async (request, response) => {
+        const technicianId = positiveId(request.params.technicianId);
+        if (!technicianId) return response.status(400).json({ message: "Technicien invalide." });
+        const result = await getPool().query(`
+            DELETE FROM depannhome_users
+            WHERE id = $1 AND account_owner_id = $2 AND id <> $2 AND role = 'technician'
+        `, [technicianId, getAccountOwnerId(request)]);
+        if (!result.rowCount) return response.status(404).json({ message: "Technicien introuvable." });
+        response.status(204).end();
+    }));
+
     app.get("/api/auth/devices", requireAccountAdministrator, asyncHandler(async (request, response) => {
         const database = getPool();
         const [devicesResult, seatsResult] = await Promise.all([
@@ -266,6 +277,19 @@ export function registerAuthRoutes(app) {
         const result = await getPool().query(`
             UPDATE depannhome_auth_devices device SET status = 'rejected', verification_code_hash = '', verification_code_expires_at = NULL
             WHERE device.id = $1 AND EXISTS (SELECT 1 FROM depannhome_users account WHERE account.id = device.user_id AND account.account_owner_id = $2)
+        `, [deviceId, getAccountOwnerId(request)]);
+        if (!result.rowCount) return response.status(404).json({ message: "Appareil introuvable." });
+        response.status(204).end();
+    }));
+
+    app.delete("/api/auth/devices/:deviceId", requireAccountAdministrator, asyncHandler(async (request, response) => {
+        const deviceId = validDeviceId(request.params.deviceId);
+        if (!deviceId) return response.status(400).json({ message: "Appareil invalide." });
+        if (deviceId === request.user.deviceId) return response.status(400).json({ message: "Vous ne pouvez pas supprimer l’appareil utilisé pour cette session." });
+        const result = await getPool().query(`
+            DELETE FROM depannhome_auth_devices device
+            USING depannhome_users account
+            WHERE device.id = $1 AND account.id = device.user_id AND account.account_owner_id = $2
         `, [deviceId, getAccountOwnerId(request)]);
         if (!result.rowCount) return response.status(404).json({ message: "Appareil introuvable." });
         response.status(204).end();

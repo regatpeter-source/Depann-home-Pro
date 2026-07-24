@@ -1,6 +1,6 @@
 import { ROUTES, STORAGE_KEYS, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=116";
 import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=128";
-import { renderCreatorConsole } from "./creator.js?v=105";
+import { renderCreatorConsole } from "./creator.js?v=106";
 import { createBillingDocumentForClient, renderBilling, viewBillingDocument } from "./billing.js?v=128";
 import { renderPurchases } from "./purchases.js?v=111";
 import { getFirstUnreadClientId, refreshClientMessageAlert } from "./messages.js?v=88";
@@ -972,35 +972,53 @@ async function renderTeamManagement(container) {
                     if (!response.ok) feedback.textContent = "La mise à jour du technicien a échoué.";
                     await load();
                 });
-                item.appendChild(toggle);
+                const remove = createButton("Supprimer", "secondary-button danger-button", async () => {
+                    if (!confirm(`Supprimer définitivement le compte technicien de ${technician.fullName || technician.username} ?`)) return;
+                    remove.disabled = true;
+                    const response = await fetch(`/api/auth/technicians/${encodeURIComponent(technician.id)}`, { method: "DELETE", credentials: "same-origin" });
+                    if (!response.ok) feedback.textContent = (await response.json().catch(() => ({}))).message || "La suppression du technicien a échoué.";
+                    await load();
+                });
+                item.append(toggle, remove);
                 list.appendChild(item);
             });
             const deviceResponse = await fetch("/api/auth/devices", { credentials: "same-origin" });
             const devicePayload = await deviceResponse.json();
             if (!deviceResponse.ok) throw new Error(devicePayload.message || "Impossible de charger les appareils.");
             const pcSeats = devicePayload.pcSeats || { maxPcUsers: Number(document.body.dataset.maxPcUsers || 1), activePcUsers: 0 };
-            devices.innerHTML = `<h3>Appareils à valider</h3><p class="muted">Postes PC : ${escapeHtml(pcSeats.activePcUsers)}/${escapeHtml(pcSeats.maxPcUsers)} activé(s) par votre offre. Vous pouvez créer des techniciens ci-dessus ; les postes PC sont ajoutés uniquement par Depann’Home Pro.</p>`;
-            const pending = (devicePayload.devices || []).filter(device => device.status === "approval_pending" || device.status === "code_pending");
-            if (!pending.length) devices.insertAdjacentHTML("beforeend", "<p class=\"muted\">Aucun appareil en attente.</p>");
-            pending.forEach(device => {
+            devices.innerHTML = `<h3>Appareils et postes PC</h3><p class="muted">Postes PC : ${escapeHtml(pcSeats.activePcUsers)}/${escapeHtml(pcSeats.maxPcUsers)} activé(s) par votre offre. Vous pouvez supprimer un appareil pour libérer son poste PC ou supprimer une demande devenue inutile.</p>`;
+            const managedDevices = devicePayload.devices || [];
+            if (!managedDevices.length) devices.insertAdjacentHTML("beforeend", "<p class=\"muted\">Aucun appareil enregistré.</p>");
+            managedDevices.forEach(device => {
                 const isPc = device.userRole === "admin";
                 const pcSeatAvailable = Number(pcSeats.activePcUsers) < Number(pcSeats.maxPcUsers);
                 const item = document.createElement("div");
                 item.className = "team-member";
-                item.innerHTML = `<strong>${isPc ? "Poste PC" : escapeHtml(device.fullName || device.username)}</strong><span>${escapeHtml(device.label)} · ${isPc ? (pcSeatAvailable ? "En attente d’activation" : "Aucun poste PC inclus disponible") : (device.status === "code_pending" ? "Code e-mail envoyé" : "En attente d’autorisation")}</span>`;
-                const approve = createButton(isPc ? "Activer ce poste PC" : (device.status === "code_pending" ? "Renvoyer le code" : "Autoriser et envoyer le code"), "secondary-button", async () => {
-                    approve.disabled = true;
-                    const result = await fetch(`/api/auth/devices/${encodeURIComponent(device.id)}/approve`, { method: "POST", credentials: "same-origin" });
-                    if (!result.ok) feedback.textContent = (await result.json().catch(() => ({}))).message || "Autorisation impossible.";
+                const statusLabel = device.status === "approved" ? "Activé" : device.status === "rejected" ? "Refusé" : device.status === "code_pending" ? "Code e-mail envoyé" : "En attente d’autorisation";
+                item.innerHTML = `<strong>${isPc ? "Poste PC" : escapeHtml(device.fullName || device.username)}</strong><span>${escapeHtml(device.label)} · ${statusLabel}</span>`;
+                if (device.status === "approval_pending" || device.status === "code_pending") {
+                    const approve = createButton(isPc ? "Activer ce poste PC" : (device.status === "code_pending" ? "Renvoyer le code" : "Autoriser et envoyer le code"), "secondary-button", async () => {
+                        approve.disabled = true;
+                        const result = await fetch(`/api/auth/devices/${encodeURIComponent(device.id)}/approve`, { method: "POST", credentials: "same-origin" });
+                        if (!result.ok) feedback.textContent = (await result.json().catch(() => ({}))).message || "Autorisation impossible.";
+                        await load();
+                    });
+                    if (isPc && !pcSeatAvailable) approve.disabled = true;
+                    const reject = createButton("Refuser", "secondary-button", async () => {
+                        const result = await fetch(`/api/auth/devices/${encodeURIComponent(device.id)}/reject`, { method: "POST", credentials: "same-origin" });
+                        if (!result.ok) feedback.textContent = (await result.json().catch(() => ({}))).message || "Refus impossible.";
+                        await load();
+                    });
+                    item.append(approve, reject);
+                }
+                const remove = createButton("Supprimer", "secondary-button danger-button", async () => {
+                    if (!confirm(`Supprimer définitivement ${isPc ? "ce poste PC" : "cet appareil"} ?`)) return;
+                    remove.disabled = true;
+                    const result = await fetch(`/api/auth/devices/${encodeURIComponent(device.id)}`, { method: "DELETE", credentials: "same-origin" });
+                    if (!result.ok) feedback.textContent = (await result.json().catch(() => ({}))).message || "La suppression de l’appareil a échoué.";
                     await load();
                 });
-                if (isPc && !pcSeatAvailable) approve.disabled = true;
-                const reject = createButton("Refuser", "secondary-button", async () => {
-                    const result = await fetch(`/api/auth/devices/${encodeURIComponent(device.id)}/reject`, { method: "POST", credentials: "same-origin" });
-                    if (!result.ok) feedback.textContent = "Refus impossible.";
-                    await load();
-                });
-                item.append(approve, reject);
+                item.appendChild(remove);
                 devices.appendChild(item);
             });
         } catch (error) { list.textContent = error.message; }
