@@ -29,6 +29,7 @@ const EMPTY_CLIENT = {
 const ATTACHMENT_TYPES = ["Devis", "Facture", "Quitus", "Photo", "Photo avant", "Photo après", "Autre"];
 const MAX_ATTACHMENT_SIZE = 4 * 1024 * 1024;
 let clientScreenOptions = {};
+let clientDirectoryFilters = createEmptyDirectoryFilters();
 
 export function renderClients(options = {}) {
     clientScreenOptions = { ...clientScreenOptions, ...options };
@@ -42,31 +43,57 @@ export function renderClients(options = {}) {
     const editingClient = !readOnly && options.editId ? getClientById(options.editId) : null;
     const selectedClient = options.selectedId ? getClientById(options.selectedId) : null;
 
-    container.appendChild(renderClientToolbar(clients, readOnly));
+    const directory = renderClientDirectory(clients);
+    container.appendChild(renderClientToolbar(clients, readOnly, directory));
     if (!readOnly) container.appendChild(renderClientForm(editingClient || EMPTY_CLIENT, clientScreenOptions));
 
     if (selectedClient) {
         container.appendChild(renderClientDetail(selectedClient, { focusMessages: Boolean(options.focusMessages) }));
     }
 
-    container.appendChild(renderClientList(clients));
+    container.appendChild(directory);
 }
 
-function renderClientToolbar(clients, readOnly) {
+function renderClientToolbar(clients, readOnly, directory) {
     const panel = document.createElement("section");
     panel.className = "client-panel";
 
     panel.innerHTML = `
         <div>
                 <p class="eyebrow">${readOnly ? "Dossiers d’intervention" : "Base clients"}</p>
-            <h2> ${clients.length} client(s)</h2>
+            <h2>Recherche de dossiers clients</h2>
         </div>
+        <form id="clientDirectoryForm" class="client-directory-form">
+            <label>Mode de recherche
+                <select name="field" id="clientSearchField">
+                    <option value="name" ${clientDirectoryFilters.field === "name" ? "selected" : ""}>Nom / société</option>
+                    <option value="phone" ${clientDirectoryFilters.field === "phone" ? "selected" : ""}>Numéro de téléphone</option>
+                    <option value="address" ${clientDirectoryFilters.field === "address" ? "selected" : ""}>Adresse ou ville</option>
+                    <option value="email" ${clientDirectoryFilters.field === "email" ? "selected" : ""}>E-mail</option>
+                </select>
+            </label>
+            <label>Recherche
+                <input name="query" class="client-search" type="search" placeholder="Saisir votre recherche" value="${escapeHtml(clientDirectoryFilters.query)}">
+            </label>
+            <label>Date de création
+                <input name="createdDate" type="date" value="${escapeHtml(clientDirectoryFilters.createdDate)}">
+            </label>
+            <label>Jour du rendez-vous
+                <input name="appointmentDate" type="date" value="${escapeHtml(clientDirectoryFilters.appointmentDate)}">
+            </label>
+            <label>Année de création
+                <select name="year"><option value="">Toutes les années</option>${getDirectoryYears(clients).map(year => `<option value="${year}" ${clientDirectoryFilters.year === String(year) ? "selected" : ""}>${year}</option>`).join("")}</select>
+            </label>
+            <label>Mois de création
+                <select name="month"><option value="">Tous les mois</option>${getDirectoryMonths().map(({ value, label }) => `<option value="${value}" ${clientDirectoryFilters.month === value ? "selected" : ""}>${label}</option>`).join("")}</select>
+            </label>
+            <div class="client-directory-actions"><button type="submit" class="secondary-button">Rechercher</button><button type="button" class="secondary-button" id="clearClientDirectory">Effacer</button></div>
+        </form>
         <div class="client-toolbar-actions">
-            <input id="clientSearch" class="client-search" type="search" placeholder="Saisir le nom d’un client..." aria-describedby="clientSearchHint">
             <button type="button" class="secondary-button" id="syncClientsBtn">${readOnly ? "Actualiser" : "Synchroniser"}</button>
             ${readOnly ? "" : '<button type="button" class="secondary-button" id="newClientBtn">+ Nouveau client</button>'}
         </div>
-        <p id="clientSearchHint" class="client-search-hint">Sur téléphone, saisissez le nom d’un client pour afficher son dossier.</p>
+        <p id="clientSearchHint" class="client-search-hint">Les dossiers ne sont affichés qu’après une recherche. Vous pouvez combiner le mode de recherche, les dates et la période année/mois.</p>
         <p id="clientSyncMessage" class="auth-message" aria-live="polite"></p>
     `;
 
@@ -89,8 +116,15 @@ function renderClientToolbar(clients, readOnly) {
         }
         button.disabled = false;
     });
-    panel.querySelector("#clientSearch").addEventListener("input", event => {
-        filterClientList(event.target.value);
+    panel.querySelector("#clientDirectoryForm").addEventListener("submit", async event => {
+        event.preventDefault();
+        clientDirectoryFilters = readDirectoryFilters(new FormData(event.currentTarget));
+        await applyClientDirectorySearch(directory, clients, clientDirectoryFilters);
+    });
+    panel.querySelector("#clearClientDirectory").addEventListener("click", event => {
+        clientDirectoryFilters = createEmptyDirectoryFilters();
+        event.currentTarget.form.reset();
+        renderClientDirectoryPrompt(directory);
     });
 
     return panel;
@@ -285,16 +319,53 @@ function renderClientPhotoRecognition(analysis, statusNode, resultNode, navigate
     }
 }
 
-function renderClientList(clients) {
+function renderClientDirectory(clients) {
     const section = document.createElement("section");
-    section.className = "client-list client-table-wrapper";
-    section.id = "clientList";
-    section.dataset.hasQuery = "false";
+    section.className = "client-directory-results";
+    section.id = "clientDirectoryResults";
+    renderClientDirectoryPrompt(section, clients.length);
+    return section;
+}
 
-    if (!clients.length) {
-        section.appendChild(createInfo("Aucun client enregistré pour le moment."));
-        return section;
+function renderClientDirectoryPrompt(section, clientCount = getClients().length) {
+    section.innerHTML = "";
+    section.appendChild(createInfo(clientCount ? "Utilisez les critères ci-dessus pour rechercher un dossier client. Les résultats seront classés par année et mois de création." : "Aucun client enregistré pour le moment."));
+}
+
+async function applyClientDirectorySearch(section, clients, filters) {
+    section.innerHTML = "<p class=\"muted\">Recherche des dossiers…</p>";
+    try {
+        const appointmentDatesByClient = filters.appointmentDate ? await loadAppointmentDatesByClient() : new Map();
+        const results = clients.filter(client => clientMatchesDirectoryFilters(client, filters, appointmentDatesByClient));
+        renderClientDirectoryResults(section, results, appointmentDatesByClient);
+    } catch (error) {
+        section.innerHTML = `<p class="auth-message error">${escapeHtml(error.message || "Impossible de rechercher les rendez-vous.")}</p>`;
     }
+}
+
+function renderClientDirectoryResults(section, clients, appointmentDatesByClient) {
+    section.innerHTML = "";
+    if (!clients.length) {
+        section.appendChild(createInfo("Aucun dossier ne correspond à ces critères."));
+        return;
+    }
+    const groups = new Map();
+    clients.forEach(client => {
+        const date = parseDirectoryDate(client.createdAt) || new Date(0);
+        const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+        if (!groups.has(key)) groups.set(key, { date, clients: [] });
+        groups.get(key).clients.push(client);
+    });
+    [...groups.values()].sort((first, second) => second.date - first.date).forEach(group => {
+        const panel = document.createElement("section");
+        panel.className = "client-results-group client-table-wrapper";
+        panel.innerHTML = `<div class="client-results-group-heading"><div><p class="eyebrow">Dossiers créés</p><h2>${escapeHtml(formatDirectoryMonth(group.date))}</h2></div><span>${group.clients.length} client(s)</span></div>`;
+        panel.appendChild(renderClientTable(group.clients, appointmentDatesByClient));
+        section.appendChild(panel);
+    });
+}
+
+function renderClientTable(clients, appointmentDatesByClient = new Map()) {
 
     const table = document.createElement("table");
     table.className = "client-table";
@@ -305,34 +376,27 @@ function renderClientList(clients) {
                 <th scope="col">Type</th>
                 <th scope="col">Coordonnées</th>
                 <th scope="col">Adresse</th>
-                <th scope="col">Dossier</th>
+                <th scope="col">Création / rendez-vous</th>
                 <th scope="col"><span class="sr-only">Actions</span></th>
             </tr>
         </thead>
         <tbody></tbody>
     `;
     const body = table.querySelector("tbody");
-    clients
-        .sort((a, b) => a.name.localeCompare(b.name, "fr"))
-        .forEach(client => {
-            body.appendChild(renderClientTableRow(client));
-        });
-    section.appendChild(table);
-
-    return section;
+    clients.sort((a, b) => a.name.localeCompare(b.name, "fr")).forEach(client => body.appendChild(renderClientTableRow(client, appointmentDatesByClient.get(client.id) || [])));
+    return table;
 }
 
-function renderClientTableRow(client) {
+function renderClientTableRow(client, appointmentDates = []) {
     const readOnly = isClientReadOnly();
     const row = document.createElement("tr");
     row.className = "client-table-row";
-    row.dataset.clientName = normalizeText(client.name);
     row.innerHTML = `
         <td data-label="Client"><strong>${escapeHtml(client.name)}</strong></td>
         <td data-label="Type">${escapeHtml(client.type)}</td>
         <td data-label="Coordonnées"><span>${escapeHtml(client.phone || "Téléphone non renseigné")}</span>${client.email ? `<small>${escapeHtml(client.email)}</small>` : ""}</td>
         <td data-label="Adresse">${escapeHtml(formatClientLocation(client))}</td>
-        <td data-label="Dossier">${client.attachments.length} fichier(s)</td>
+        <td data-label="Création / rendez-vous"><strong>Créé le ${escapeHtml(formatDate(client.createdAt))}</strong><small>${appointmentDates.length ? `RDV : ${escapeHtml(appointmentDates.map(formatDirectoryShortDate).join(" · "))}` : `${client.attachments.length} fichier(s)`}</small></td>
         <td data-label="Actions"><div class="client-card-actions">
             <button type="button" class="secondary-button" data-action="view">Voir</button>
             ${readOnly ? "" : '<button type="button" class="secondary-button" data-action="edit">Modifier</button><button type="button" class="secondary-button danger-button" data-action="delete">Supprimer</button>'}
@@ -704,14 +768,77 @@ function getClientNavigationHref(client) {
     return address ? `geo:0,0?q=${encodeURIComponent(address)}` : "";
 }
 
-function filterClientList(query) {
-    const normalizedQuery = normalizeText(query).trim();
-    const list = document.getElementById("clientList");
-    if (list) list.dataset.hasQuery = String(Boolean(normalizedQuery));
+function createEmptyDirectoryFilters() {
+    return { field: "name", query: "", createdDate: "", appointmentDate: "", year: "", month: "" };
+}
 
-    document.querySelectorAll(".client-table-row").forEach(row => {
-        row.hidden = Boolean(normalizedQuery) && !row.dataset.clientName.includes(normalizedQuery);
+function readDirectoryFilters(formData) {
+    return {
+        field: ["name", "phone", "address", "email"].includes(formData.get("field")) ? formData.get("field") : "name",
+        query: String(formData.get("query") || "").trim(),
+        createdDate: String(formData.get("createdDate") || ""),
+        appointmentDate: String(formData.get("appointmentDate") || ""),
+        year: /^\d{4}$/.test(String(formData.get("year") || "")) ? String(formData.get("year")) : "",
+        month: /^(0[1-9]|1[0-2])$/.test(String(formData.get("month") || "")) ? String(formData.get("month")) : ""
+    };
+}
+
+function getDirectoryYears(clients) {
+    return [...new Set(clients.map(client => parseDirectoryDate(client.createdAt)?.getFullYear()).filter(Boolean))].sort((first, second) => second - first);
+}
+
+function getDirectoryMonths() {
+    return Array.from({ length: 12 }, (_, index) => {
+        const date = new Date(2024, index, 1);
+        return { value: String(index + 1).padStart(2, "0"), label: new Intl.DateTimeFormat("fr-FR", { month: "long" }).format(date) };
     });
+}
+
+function clientMatchesDirectoryFilters(client, filters, appointmentDatesByClient) {
+    const date = parseDirectoryDate(client.createdAt);
+    const searchableValue = filters.field === "address"
+        ? [client.address, client.city].join(" ")
+        : client[filters.field] || "";
+    if (filters.query && !normalizeText(searchableValue).includes(normalizeText(filters.query))) return false;
+    if (filters.createdDate && toDirectoryDateString(date) !== filters.createdDate) return false;
+    if (filters.year && String(date?.getFullYear() || "") !== filters.year) return false;
+    if (filters.month && String((date?.getMonth() || 0) + 1).padStart(2, "0") !== filters.month) return false;
+    if (filters.appointmentDate && !(appointmentDatesByClient.get(client.id) || []).some(value => value === filters.appointmentDate)) return false;
+    return true;
+}
+
+async function loadAppointmentDatesByClient() {
+    const response = await fetch("/api/calendar/events?start=2000-01-01&end=2100-12-31", { credentials: "same-origin" });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) throw new Error(payload?.message || "Impossible de charger les rendez-vous.");
+    const clientsByName = new Map(getClients().map(client => [normalizeText(client.name), client.id]));
+    const datesByClient = new Map();
+    (payload?.events || []).filter(event => event.eventType === "appointment" && event.clientName && /^\d{4}-\d{2}-\d{2}$/.test(event.date || "")).forEach(event => {
+        const clientId = clientsByName.get(normalizeText(event.clientName));
+        if (!clientId) return;
+        const dates = datesByClient.get(clientId) || [];
+        if (!dates.includes(event.date)) dates.push(event.date);
+        datesByClient.set(clientId, dates.sort());
+    });
+    return datesByClient;
+}
+
+function parseDirectoryDate(value) {
+    const date = new Date(value || "");
+    return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function toDirectoryDateString(date) {
+    if (!date) return "";
+    return [date.getFullYear(), String(date.getMonth() + 1).padStart(2, "0"), String(date.getDate()).padStart(2, "0")].join("-");
+}
+
+function formatDirectoryMonth(date) {
+    return new Intl.DateTimeFormat("fr-FR", { month: "long", year: "numeric" }).format(date).replace(/^./, letter => letter.toUpperCase());
+}
+
+function formatDirectoryShortDate(value) {
+    return new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(`${value}T12:00:00`));
 }
 
 function isUsableFile(file) {

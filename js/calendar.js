@@ -1,6 +1,6 @@
 import { ROUTES } from "./config.js?v=105";
 import { createBillingDocumentForClient } from "./billing.js?v=116";
-import { getSearchableClients } from "./clients.js?v=105";
+import { getSearchableClients } from "./clients.js?v=124";
 import { addClientActivityByName, synchronizeClients } from "./client-sync.js?v=88";
 import { renderClientMessages } from "./messages.js?v=88";
 import { resetSelection } from "./state.js?v=44";
