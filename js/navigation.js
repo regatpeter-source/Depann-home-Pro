@@ -1,6 +1,6 @@
 import { ROUTES, STORAGE_KEYS, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=116";
 import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=128";
-import { renderCreatorConsole } from "./creator.js?v=106";
+import { renderCreatorConsole } from "./creator.js?v=107";
 import { createBillingDocumentForClient, renderBilling, viewBillingDocument } from "./billing.js?v=128";
 import { renderPurchases } from "./purchases.js?v=111";
 import { getFirstUnreadClientId, refreshClientMessageAlert } from "./messages.js?v=88";
@@ -986,7 +986,7 @@ async function renderTeamManagement(container) {
             const devicePayload = await deviceResponse.json();
             if (!deviceResponse.ok) throw new Error(devicePayload.message || "Impossible de charger les appareils.");
             const pcSeats = devicePayload.pcSeats || { maxPcUsers: Number(document.body.dataset.maxPcUsers || 1), activePcUsers: 0 };
-            devices.innerHTML = `<h3>Appareils et postes PC</h3><p class="muted">Postes PC : ${escapeHtml(pcSeats.activePcUsers)}/${escapeHtml(pcSeats.maxPcUsers)} activé(s) par votre offre. Vous pouvez supprimer un appareil pour libérer son poste PC ou supprimer une demande devenue inutile.</p>`;
+            devices.innerHTML = `<h3>Appareils et postes PC</h3><p class="muted">Postes PC : ${escapeHtml(pcSeats.activePcUsers)}/${escapeHtml(pcSeats.maxPcUsers)} activé(s) par votre offre. Après sa première connexion, le technicien crée ici une demande : le bouton « Autoriser et envoyer le code » apparaît alors. Vous pouvez aussi supprimer un appareil pour libérer son poste PC ou supprimer une demande devenue inutile.</p>`;
             const managedDevices = devicePayload.devices || [];
             if (!managedDevices.length) devices.insertAdjacentHTML("beforeend", "<p class=\"muted\">Aucun appareil enregistré.</p>");
             managedDevices.forEach(device => {

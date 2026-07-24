@@ -4,6 +4,7 @@ import { isCreatorUsername } from "./auth.js";
 
 const USERNAME_PATTERN = /^[a-z0-9._-]{3,32}$/;
 const MIN_PASSWORD_LENGTH = 12;
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MEMBER_ROLES = new Set(["admin", "technician"]);
 const SUBSCRIPTION_PLANS = new Set(["free", "paid"]);
 const SUBSCRIPTION_STATUSES = new Set(["active", "trial", "past_due", "suspended", "cancelled"]);
@@ -105,7 +106,7 @@ export function registerCreatorRoutes(app, requireCreator) {
         const owner = accountId && await findAccountOwner(getPool(), accountId);
         if (!canManageAccount(owner, request)) return response.status(404).json({ message: "Compte entreprise introuvable." });
         const { rows } = await getPool().query(`
-            SELECT id, username, role, full_name AS "fullName", phone, is_active AS "isActive", created_at AS "createdAt"
+            SELECT id, username, role, full_name AS "fullName", phone, email, is_active AS "isActive", created_at AS "createdAt"
             FROM depannhome_users WHERE account_owner_id = $1
             ORDER BY CASE WHEN id = $1 THEN 0 ELSE 1 END, role, LOWER(full_name), username
         `, [accountId]);
@@ -130,9 +131,9 @@ export function registerCreatorRoutes(app, requireCreator) {
             await client.query("BEGIN");
             await ensureSeatAvailable(client, accountId, role);
             const { rows } = await client.query(`
-                INSERT INTO depannhome_users (username, password_hash, role, account_owner_id, full_name, phone)
-                VALUES ($1, $2, $3, $4, $5, $6) RETURNING id
-            `, [credentials.username, await bcrypt.hash(credentials.password, 12), role, accountId, profile.fullName, profile.phone]);
+                INSERT INTO depannhome_users (username, password_hash, role, account_owner_id, full_name, phone, email)
+                VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id
+            `, [credentials.username, await bcrypt.hash(credentials.password, 12), role, accountId, profile.fullName, profile.phone, profile.email]);
             await client.query("COMMIT");
             response.status(201).json({ id: String(rows[0].id) });
         } catch (error) {
@@ -167,10 +168,10 @@ export function registerCreatorRoutes(app, requireCreator) {
             if (isActive && !member.isActive) await ensureSeatAvailable(client, accountId, member.role);
             await client.query(`
                 UPDATE depannhome_users
-                SET username = $3, full_name = $4, phone = $5, is_active = $6,
-                    password_hash = CASE WHEN $7 <> '' THEN $8 ELSE password_hash END, updated_at = NOW()
+                SET username = $3, full_name = $4, phone = $5, email = $6, is_active = $7,
+                    password_hash = CASE WHEN $8 <> '' THEN $9 ELSE password_hash END, updated_at = NOW()
                 WHERE id = $1 AND account_owner_id = $2
-            `, [memberId, accountId, username, profile.fullName, profile.phone, isActive, password, password ? await bcrypt.hash(password, 12) : ""]);
+            `, [memberId, accountId, username, profile.fullName, profile.phone, profile.email, isActive, password, password ? await bcrypt.hash(password, 12) : ""]);
             await client.query("COMMIT");
             response.status(204).end();
         } catch (error) {
@@ -215,7 +216,7 @@ function canManageAccount(owner, request) {
 
 async function findMember(database, accountId, memberId) {
     const { rows } = await database.query(`
-        SELECT id, username, role, full_name AS "fullName", phone, is_active AS "isActive"
+        SELECT id, username, role, full_name AS "fullName", phone, email, is_active AS "isActive"
         FROM depannhome_users WHERE id = $1 AND account_owner_id = $2
     `, [memberId, accountId]);
     return rows[0] || null;
@@ -271,9 +272,11 @@ function sanitizeAccount(value) {
 function sanitizeMemberProfile(value, role) {
     const fullName = cleanText(value?.fullName, 100);
     const phone = cleanText(value?.phone, 30);
+    const email = cleanText(value?.email, 160).toLowerCase();
     if (!fullName) return { ok: false, message: "Le nom est obligatoire." };
     if (role === "technician" && !phone) return { ok: false, message: "Le téléphone du technicien est obligatoire." };
-    return { ok: true, fullName, phone };
+    if (role === "technician" && !EMAIL_PATTERN.test(email)) return { ok: false, message: "L’e-mail professionnel du technicien est obligatoire." };
+    return { ok: true, fullName, phone, email };
 }
 
 function sanitizeCredentials(value) {

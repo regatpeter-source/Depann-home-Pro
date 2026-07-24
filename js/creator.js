@@ -203,7 +203,7 @@ async function loadMembers(accountId) {
     const members = result.data.members || [];
     container.innerHTML = members.length ? `<div class="creator-members">${members.map(member => `
         <article class="creator-member">
-            <div><strong>${escapeHtml(member.fullName || member.username)}</strong><span>${member.role === "admin" ? "Poste PC" : "Technicien"} · ${escapeHtml(member.username)}${member.phone ? ` · ${escapeHtml(member.phone)}` : ""}</span></div>
+            <div><strong>${escapeHtml(member.fullName || member.username)}</strong><span>${member.role === "admin" ? "Poste PC" : "Technicien"} · ${escapeHtml(member.username)}${member.phone ? ` · ${escapeHtml(member.phone)}` : ""}${member.email ? ` · ${escapeHtml(member.email)}` : ""}</span></div>
             <div class="creator-member-actions"><span class="creator-state${member.isActive ? "" : " suspended"}">${member.isActive ? "Actif" : "Désactivé"}</span><button type="button" class="secondary-button" data-edit-member="${escapeHtml(member.id)}">Gérer</button></div>
         </article>
     `).join("")}</div>` : '<p class="muted">Aucun accès pour le moment.</p>';
@@ -224,6 +224,7 @@ function renderMemberForm(account, member = null) {
                 ${editing ? `<label>Type d’accès<input value="${member.role === "admin" ? "Poste PC" : "Technicien"}" disabled></label>` : `<label>Type d’accès<select name="role"><option value="admin">Poste PC</option><option value="technician">Technicien</option></select></label>`}
                 <label>Nom et prénom<input name="fullName" maxlength="100" required value="${escapeHtml(member?.fullName || "")}"></label>
                 <label>Téléphone<input name="phone" maxlength="30" value="${escapeHtml(member?.phone || "")}" placeholder="Obligatoire pour un technicien"></label>
+                <label>E-mail professionnel<input name="email" type="email" maxlength="160" value="${escapeHtml(member?.email || "")}" placeholder="Obligatoire pour un technicien"></label>
                 <label>Identifiant<input name="username" minlength="3" maxlength="32" required value="${escapeHtml(member?.username || "")}"></label>
                 <label>${editing ? "Nouveau mot de passe (facultatif)" : "Mot de passe initial"}<input name="password" type="password" minlength="12" ${editing ? "" : "required"} autocomplete="new-password"></label>
                 ${primary ? "" : `<label class="creator-switch">Accès actif<input name="isActive" type="checkbox" ${member?.isActive !== false ? "checked" : ""}><span>Autoriser la connexion</span></label>`}
@@ -243,7 +244,7 @@ function renderMemberForm(account, member = null) {
             : await api(`/api/creator/accounts/${encodeURIComponent(account.id)}/members`, { method: "POST", body: JSON.stringify(values) });
         button.disabled = false;
         if (!result.ok) return showFeedback(result.message || "Enregistrement impossible.", true);
-        showFeedback(editing ? "Accès mis à jour." : "Accès créé.");
+        showFeedback(editing ? "Accès mis à jour." : values.role === "technician" ? "Technicien créé. Il doit se connecter une première fois pour afficher sa demande de validation dans Équipe." : "Accès créé.");
         await loadAccounts(account.id);
     });
     workspace.querySelector("#creatorDeleteMember")?.addEventListener("click", async () => {
