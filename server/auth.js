@@ -374,7 +374,7 @@ async function userHasApprovedDevice(userId) {
 async function createAuthDevice(userId, device, status) {
     const { rows } = await getPool().query(`
         INSERT INTO depannhome_auth_devices (id, user_id, label, status, approved_at)
-        VALUES ($1, $2, $3, $4, CASE WHEN $4 = 'approved' THEN NOW() ELSE NULL END)
+        VALUES ($1, $2, $3, $4::text, CASE WHEN $4::text = 'approved' THEN NOW() ELSE NULL END)
         RETURNING *
     `, [device.id, userId, device.label, status]);
     return rows[0];
