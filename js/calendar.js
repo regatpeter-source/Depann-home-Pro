@@ -35,11 +35,12 @@ export async function renderCalendar(options = {}) {
 
     clearSearch();
     resetSelection("all");
-    setPage("Planning", ROUTES.calendar, "detail");
+    const technicianHome = isReadOnlyCalendar();
+    setPage(technicianHome ? "Accueil" : "Planning", ROUTES.calendar, "detail");
 
     const container = getContainer();
     const header = document.createElement("section");
-    header.className = "client-panel calendar-panel";
+    header.className = technicianHome ? "technician-calendar-home" : "client-panel calendar-panel";
     const formPanel = document.createElement("section");
     formPanel.className = "client-panel calendar-form-panel";
     const gridPanel = document.createElement("section");
@@ -92,6 +93,19 @@ export function createCalendarEventForClient(client) {
 function renderHeader(panel) {
     const periodLabel = getPeriodLabel();
     const readOnly = isReadOnlyCalendar();
+    if (readOnly) {
+        panel.innerHTML = `
+            <p class="eyebrow">Mon planning</p>
+            <h2>${escapeHtml(periodLabel)}</h2>
+            <div class="technician-calendar-navigation" aria-label="Navigation dans le planning">
+                <button type="button" class="secondary-button" data-calendar-action="previous" aria-label="Jour précédent">←</button>
+                <button type="button" class="secondary-button active" data-calendar-action="today">Aujourd’hui</button>
+                <button type="button" class="secondary-button" data-calendar-action="next" aria-label="Jour suivant">→</button>
+            </div>
+        `;
+        bindCalendarNavigation(panel);
+        return;
+    }
     panel.innerHTML = `
         <div class="calendar-toolbar">
             <div>
@@ -114,21 +128,7 @@ function renderHeader(panel) {
         </div>
     `;
 
-    panel.querySelector("[data-calendar-action=previous]").addEventListener("click", () => {
-        displayedMonth = shiftDisplayedDate(-1);
-        selectedEvent = null;
-        renderCalendar();
-    });
-    panel.querySelector("[data-calendar-action=next]").addEventListener("click", () => {
-        displayedMonth = shiftDisplayedDate(1);
-        selectedEvent = null;
-        renderCalendar();
-    });
-    panel.querySelector("[data-calendar-action=today]").addEventListener("click", () => {
-        displayedMonth = calendarView === "month" ? firstDayOfMonth(new Date()) : atNoon(new Date());
-        selectedEvent = null;
-        renderCalendar();
-    });
+    bindCalendarNavigation(panel);
     panel.querySelector("[data-calendar-action=new]")?.addEventListener("click", () => {
         selectedEvent = newEventForDate(toDateString(new Date()));
         renderCalendar();
@@ -136,9 +136,7 @@ function renderHeader(panel) {
     panel.querySelectorAll("[data-calendar-view]").forEach(button => button.addEventListener("click", () => {
         const nextView = button.dataset.calendarView;
         calendarView = nextView;
-        displayedMonth = isReadOnlyCalendar() && nextView === "day"
-            ? atNoon(new Date())
-            : nextView === "month" ? firstDayOfMonth(displayedMonth) : atNoon(displayedMonth);
+        displayedMonth = nextView === "month" ? firstDayOfMonth(displayedMonth) : atNoon(displayedMonth);
         selectedEvent = null;
         renderCalendar();
     }));
@@ -154,6 +152,24 @@ function renderHeader(panel) {
         else visibleTechnicianIds.delete(id);
         renderCalendar();
     }));
+}
+
+function bindCalendarNavigation(panel) {
+    panel.querySelector("[data-calendar-action=previous]").addEventListener("click", () => {
+        displayedMonth = shiftDisplayedDate(-1);
+        selectedEvent = null;
+        renderCalendar();
+    });
+    panel.querySelector("[data-calendar-action=next]").addEventListener("click", () => {
+        displayedMonth = shiftDisplayedDate(1);
+        selectedEvent = null;
+        renderCalendar();
+    });
+    panel.querySelector("[data-calendar-action=today]").addEventListener("click", () => {
+        displayedMonth = calendarView === "month" ? firstDayOfMonth(new Date()) : atNoon(new Date());
+        selectedEvent = null;
+        renderCalendar();
+    });
 }
 
 function renderTechnicianFilter() {

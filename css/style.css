@@ -2002,6 +2002,57 @@ body.desktop-device .nav-label-messages{
     padding:10px 12px;
 }
 
+.technician-calendar-home{
+    padding:18px 4px 8px;
+    text-align:center;
+}
+
+.technician-calendar-home .eyebrow{
+    margin:0;
+    color:var(--secondary);
+}
+
+.technician-calendar-home h2{
+    margin:8px auto 18px;
+    max-width:620px;
+    color:var(--primary);
+    font-size:clamp(28px, 8vw, 42px);
+    line-height:1.15;
+    text-transform:capitalize;
+}
+
+.technician-calendar-navigation{
+    display:grid;
+    grid-template-columns:54px 1fr 54px;
+    gap:10px;
+    max-width:360px;
+    margin:0 auto;
+}
+
+.technician-calendar-navigation .secondary-button{
+    min-height:48px;
+    padding:8px 10px;
+    font-size:16px;
+}
+
+.technician-calendar-navigation .secondary-button.active{
+    color:#fff;
+    background:var(--secondary);
+    border-color:var(--secondary);
+}
+
+body.mobile-device[data-role="technician"] .calendar-grid-panel{
+    padding:14px;
+    background:transparent;
+    box-shadow:none;
+}
+
+body.mobile-device[data-role="technician"] .calendar-list-day{
+    padding:18px;
+    border-radius:18px;
+    box-shadow:0 8px 22px rgba(0,59,115,.08);
+}
+
 .calendar-availability{
     margin-top:16px;
     padding:15px;
