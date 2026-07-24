@@ -49,6 +49,9 @@ export function registerAuthRoutes(app) {
             } else {
                 authDevice = await createAuthDevice(user.id, device, "approval_pending");
             }
+            if (!authDevice) {
+                return response.status(409).json({ message: "Cet appareil est déjà associé à un autre compte. Utilisez un autre navigateur ou contactez l’administrateur." });
+            }
         } else {
             await getPool().query("UPDATE depannhome_auth_devices SET label = $2, last_seen_at = NOW() WHERE id = $1", [authDevice.id, device.label]);
         }
@@ -96,8 +99,11 @@ export function registerAuthRoutes(app) {
         try {
             const passwordHash = await bcrypt.hash(password, 12);
             const user = await createUser({ username, passwordHash, role: "admin" });
-            await createAuthDevice(user.id, device, "approved");
-            setSessionCookie(response, user, device.id);
+            const authDevice = await createAuthDevice(user.id, device, "approved");
+            if (!authDevice) {
+                return response.status(409).json({ message: "Cet appareil est déjà associé à un autre compte. Utilisez un autre navigateur ou contactez l’administrateur." });
+            }
+            setSessionCookie(response, user, authDevice.id);
             return response.status(201).json({ user: publicUser(user) });
         } catch (error) {
             if (error.code === "23505") {
@@ -399,6 +405,9 @@ async function createAuthDevice(userId, device, status) {
     const { rows } = await getPool().query(`
         INSERT INTO depannhome_auth_devices (id, user_id, label, status, approved_at)
         VALUES ($1, $2, $3, $4::text, CASE WHEN $4::text = 'approved' THEN NOW() ELSE NULL END)
+        ON CONFLICT (id) DO UPDATE
+        SET label = EXCLUDED.label, last_seen_at = NOW()
+        WHERE depannhome_auth_devices.user_id = EXCLUDED.user_id
         RETURNING *
     `, [device.id, userId, device.label, status]);
     return rows[0];
