@@ -1,6 +1,8 @@
 import { ROUTES } from "./config.js?v=105";
+import { createBillingDocumentForClient } from "./billing.js?v=116";
 import { getSearchableClients } from "./clients.js?v=105";
 import { addClientActivityByName, synchronizeClients } from "./client-sync.js?v=88";
+import { renderClientMessages } from "./messages.js?v=88";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { clearSearch, createInfo, getContainer, setPage } from "./ui.js?v=44";
@@ -209,14 +211,26 @@ function renderEventForm(panel) {
         panel.innerHTML = `
             <div class="calendar-event-detail">
                 <div class="form-heading"><div><p class="eyebrow">Rendez-vous</p><h2>${escapeHtml(event.title)}</h2></div><button type="button" class="secondary-button" id="closeCalendarDetail">Fermer</button></div>
-                <dl><dt>Date</dt><dd>${escapeHtml(formatActivityDate(event.date, event.startTime))}${event.endTime ? ` — ${escapeHtml(event.endTime)}` : ""}</dd>${event.assignedTechnicianName ? `<dt>Technicien</dt><dd>${escapeHtml(event.assignedTechnicianName)}</dd>` : ""}${event.clientName ? `<dt>Client</dt><dd>${escapeHtml(event.clientName)}</dd>` : ""}${event.location ? `<dt>Lieu</dt><dd>${escapeHtml(event.location)}</dd>` : ""}${event.notes ? `<dt>Notes</dt><dd>${escapeHtml(event.notes)}</dd>` : ""}</dl>
-                ${event.eventType === "appointment" && client ? renderQuitusHtml(event) : ""}
                 ${client ? `
-                    <div class="calendar-event-actions" aria-label="Actions pour ${escapeHtml(client.name)}">
-                        ${navigationHref ? `<a class="secondary-button client-navigation-button" href="${escapeHtml(navigationHref)}" aria-label="Y aller vers ${escapeHtml(formatClientAddress(client))}">Y aller</a>` : '<button type="button" class="secondary-button client-navigation-button" disabled title="Adresse client non renseignée.">Y aller</button>'}
-                        ${phoneHref ? `<a class="secondary-button client-navigation-button" href="${escapeHtml(phoneHref)}" aria-label="Appeler ${escapeHtml(client.name)} au ${escapeHtml(client.phone)}">Appeler</a>` : '<button type="button" class="secondary-button client-navigation-button" disabled title="Téléphone client non renseigné.">Appeler</button>'}
-                    </div>
+                    <section class="calendar-client-summary">
+                        <div><p class="eyebrow">Fiche client</p><h3>${escapeHtml(client.name)}</h3><p class="muted">${escapeHtml(client.type || "Client")}</p></div>
+                        <div class="calendar-contact-list">
+                            <div class="calendar-contact-item"><span>Téléphone</span><strong>${escapeHtml(client.phone || "Non renseigné")}</strong>${phoneHref ? `<a class="secondary-button client-navigation-button" href="${escapeHtml(phoneHref)}" aria-label="Appeler ${escapeHtml(client.name)} au ${escapeHtml(client.phone)}">Appeler</a>` : ""}</div>
+                            ${client.email ? `<div class="calendar-contact-item"><span>E-mail</span><strong>${escapeHtml(client.email)}</strong><a class="secondary-button client-navigation-button" href="mailto:${escapeHtml(client.email)}" aria-label="Écrire à ${escapeHtml(client.name)}">E-mail</a></div>` : ""}
+                            <div class="calendar-contact-item"><span>Adresse</span><strong>${escapeHtml(formatClientAddress(client) || event.location || "Non renseignée")}</strong>${navigationHref ? `<a class="secondary-button client-navigation-button" href="${escapeHtml(navigationHref)}" aria-label="Y aller vers ${escapeHtml(formatClientAddress(client))}">Y aller</a>` : ""}</div>
+                        </div>
+                    </section>
+                    <section class="calendar-appointment-information">
+                        <p class="eyebrow">Informations du rendez-vous</p>
+                        <dl><dt>Date</dt><dd>${escapeHtml(formatActivityDate(event.date, event.startTime))}${event.endTime ? ` — ${escapeHtml(event.endTime)}` : ""}</dd>${event.assignedTechnicianName ? `<dt>Technicien</dt><dd>${escapeHtml(event.assignedTechnicianName)}</dd>` : ""}${event.notes ? `<dt>Notes</dt><dd>${escapeHtml(event.notes)}</dd>` : ""}</dl>
+                    </section>
                     ${renderInterventionPhotosHtml(client)}
+                    <section class="calendar-billing-actions">
+                        <div><p class="eyebrow">Fin d’intervention</p><h3>Devis et facture</h3><p class="muted">Créez le document adapté après avoir renseigné l’intervention.</p></div>
+                        <div><button type="button" class="secondary-button" data-client-action="quote">Créer un devis</button><button type="button" class="secondary-button" data-client-action="invoice">Créer une facture</button></div>
+                    </section>
+                    ${event.eventType === "appointment" ? renderQuitusHtml(event) : ""}
+                    <div class="calendar-client-messages-slot"></div>
                     <form id="calendarClientUpload" class="calendar-client-upload">
                         <div><p class="eyebrow">Dossier d’intervention</p><h3>Ajouter une photo ou un fichier</h3></div>
                         <label>Type de fichier<select name="type"><option value="Photo">Photo</option><option value="Autre">Document</option><option value="Devis">Devis</option><option value="Facture">Facture</option></select></label>
@@ -226,7 +240,10 @@ function renderEventForm(panel) {
                         <p class="auth-message" aria-live="polite"></p>
                     </form>` : `<p class="auth-message error">Aucun dossier client correspondant à ce rendez-vous. Demandez à l’administrateur d’associer le rendez-vous à un client existant.</p>`}
             </div>`;
+        panel.querySelector(".calendar-client-messages-slot")?.append(renderClientMessages(client));
         if (event.eventType === "appointment" && client) initializeQuitusForm(panel, event);
+        panel.querySelector('[data-client-action="quote"]')?.addEventListener("click", () => createBillingDocumentForClient("quote", client));
+        panel.querySelector('[data-client-action="invoice"]')?.addEventListener("click", () => createBillingDocumentForClient("invoice", client));
         panel.querySelector("#calendarInterventionPhotos")?.addEventListener("submit", eventSubmit => uploadInterventionPhotos(eventSubmit, client));
         panel.querySelector("#calendarClientUpload")?.addEventListener("submit", eventSubmit => uploadClientAttachments(eventSubmit, client));
         panel.querySelector("#closeCalendarDetail").addEventListener("click", () => {

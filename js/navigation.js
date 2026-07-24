@@ -1,5 +1,5 @@
 import { ROUTES, STORAGE_KEYS, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=116";
-import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=121";
+import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=122";
 import { renderCreatorConsole } from "./creator.js?v=105";
 import { createBillingDocumentForClient, renderBilling, viewBillingDocument } from "./billing.js?v=116";
 import { renderPurchases } from "./purchases.js?v=111";

@@ -1874,6 +1874,79 @@ body[data-role="technician"] .library-tools-panel .library-catalog-panel{
     margin-top:18px;
 }
 
+.calendar-client-summary,
+.calendar-appointment-information,
+.calendar-billing-actions{
+    margin-top:18px;
+    padding:16px;
+    border:1px solid var(--border);
+    border-radius:14px;
+    background:#f8fbff;
+}
+
+.calendar-client-summary h3,
+.calendar-billing-actions h3{
+    margin:3px 0;
+    color:var(--primary);
+}
+
+.calendar-client-summary > div:first-child > .muted,
+.calendar-billing-actions .muted{
+    margin:4px 0 0;
+}
+
+.calendar-contact-list{
+    display:grid;
+    gap:8px;
+    margin-top:14px;
+}
+
+.calendar-contact-item{
+    display:grid;
+    grid-template-columns:92px minmax(0, 1fr) auto;
+    align-items:center;
+    gap:10px;
+    padding:10px 0;
+    border-top:1px solid var(--border);
+}
+
+.calendar-contact-item span{
+    color:var(--muted);
+    font-size:13px;
+    font-weight:700;
+}
+
+.calendar-contact-item strong{
+    min-width:0;
+    overflow-wrap:anywhere;
+}
+
+.calendar-appointment-information .eyebrow{
+    margin:0;
+}
+
+.calendar-appointment-information dl{
+    margin-top:12px;
+}
+
+.calendar-billing-actions{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:16px;
+}
+
+.calendar-billing-actions > div:last-child{
+    display:flex;
+    flex-wrap:wrap;
+    justify-content:flex-end;
+    gap:8px;
+}
+
+.calendar-client-messages-slot > .client-panel{
+    margin-top:18px;
+}
+
 .calendar-quitus,
 .calendar-intervention-photos{
     display:grid;
@@ -3185,6 +3258,27 @@ footer{
         grid-template-columns:1fr;
         width:100%;
         padding:12px;
+    }
+
+    .calendar-contact-item{
+        grid-template-columns:1fr auto;
+        gap:5px 10px;
+    }
+
+    .calendar-contact-item span{
+        grid-column:1/-1;
+    }
+
+    .calendar-billing-actions{
+        display:grid;
+    }
+
+    .calendar-billing-actions > div:last-child{
+        justify-content:stretch;
+    }
+
+    .calendar-billing-actions .secondary-button{
+        flex:1;
     }
 
     .calendar-intervention-photos{
