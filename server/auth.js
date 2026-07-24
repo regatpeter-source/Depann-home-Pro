@@ -67,7 +67,7 @@ export function registerAuthRoutes(app) {
         const code = String(request.body?.code || "").replace(/\s/g, "");
         if (!deviceId || !/^\d{6}$/.test(code)) return response.status(400).json({ message: "Code de validation invalide." });
         const { rows } = await getPool().query(`
-            SELECT device.*, account.id AS user_id, account.username, account.role, account.account_owner_id, account.full_name, account.phone, account.email, account.is_active, owner.is_active AS account_is_active
+            SELECT device.*, account.id AS user_id, account.username, account.role, account.account_owner_id, account.full_name, account.phone, account.email, account.is_active, owner.is_active AS account_is_active, owner.technician_billing_enabled
             FROM depannhome_auth_devices device JOIN depannhome_users account ON account.id = device.user_id JOIN depannhome_users owner ON owner.id = account.account_owner_id WHERE device.id = $1
         `, [deviceId]);
         const device = rows[0];
@@ -111,6 +111,15 @@ export function registerAuthRoutes(app) {
         response.clearCookie(COOKIE_NAME, cookieOptions());
         response.status(204).end();
     });
+
+    app.put("/api/auth/technician-billing", requireAccountAdministrator, asyncHandler(async (request, response) => {
+        if (typeof request.body?.enabled !== "boolean") return response.status(400).json({ message: "Réglage d’autorisation invalide." });
+        await getPool().query(
+            "UPDATE depannhome_users SET technician_billing_enabled = $2, updated_at = NOW() WHERE id = $1",
+            [getAccountOwnerId(request), request.body.enabled]
+        );
+        response.status(204).end();
+    }));
 
     app.get("/api/auth/technicians", requireAccountAdministrator, asyncHandler(async (request, response) => {
         const { rows } = await getPool().query(`
@@ -255,6 +264,7 @@ export async function authenticateRequest(request, response, next) {
             fullName: user.full_name || "",
             phone: user.phone || "",
             email: user.email || "",
+            technicianBillingEnabled: user.technician_billing_enabled !== false,
             deviceId: device.id,
             isCreator: isCreatorUsername(user.username)
         };
@@ -345,6 +355,7 @@ function publicUser(user) {
         fullName: user.full_name || user.fullName || "",
         phone: user.phone || "",
         email: user.email || "",
+        technicianBillingEnabled: (user.technician_billing_enabled ?? user.technicianBillingEnabled) !== false,
         isActive: user.is_active !== false,
         isCreator: Boolean(user.isCreator || isCreatorUsername(user.username))
     };

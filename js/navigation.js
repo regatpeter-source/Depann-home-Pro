@@ -1,10 +1,10 @@
 import { ROUTES, STORAGE_KEYS, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=116";
-import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=124";
+import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=126";
 import { renderCreatorConsole } from "./creator.js?v=105";
-import { createBillingDocumentForClient, renderBilling, viewBillingDocument } from "./billing.js?v=125";
+import { createBillingDocumentForClient, renderBilling, viewBillingDocument } from "./billing.js?v=126";
 import { renderPurchases } from "./purchases.js?v=111";
 import { getFirstUnreadClientId, refreshClientMessageAlert } from "./messages.js?v=88";
-import { getSearchableClients, renderClients } from "./clients.js?v=124";
+import { getSearchableClients, renderClients } from "./clients.js?v=126";
 import { configureLibrary, openLibrarySection, renderLibrary, searchPersonalLibrary } from "./library.js?v=120";
 import { renderPhotoRecognition } from "./photo-recognition.js?v=105";
 import { getSearchResults } from "./search.js?v=63";
@@ -808,6 +808,18 @@ function renderSettings() {
     offlineCheckbox.style.marginLeft = "8px";
     offlineLabel.appendChild(offlineCheckbox);
 
+    const technicianBillingLabel = document.createElement("label");
+    technicianBillingLabel.textContent = "Autoriser les techniciens à créer des devis et factures";
+    technicianBillingLabel.style.display = "block";
+    const technicianBillingCheckbox = document.createElement("input");
+    technicianBillingCheckbox.type = "checkbox";
+    technicianBillingCheckbox.checked = document.body.dataset.technicianBillingEnabled !== "false";
+    technicianBillingCheckbox.style.marginLeft = "8px";
+    technicianBillingLabel.appendChild(technicianBillingCheckbox);
+    const technicianBillingHint = document.createElement("p");
+    technicianBillingHint.className = "muted";
+    technicianBillingHint.textContent = "Si cette option est désactivée, les techniciens ne peuvent plus créer de devis ni de factures depuis leur application.";
+
     // actions
     const actions = document.createElement("div");
     actions.style.marginTop = "12px";
@@ -862,12 +874,40 @@ function renderSettings() {
     form.appendChild(fontLabel);
     form.appendChild(langLabel);
     form.appendChild(offlineLabel);
+    if (document.body.dataset.role === "admin") {
+        form.appendChild(technicianBillingLabel);
+        form.appendChild(technicianBillingHint);
+    }
     form.appendChild(actions);
 
     section.appendChild(form);
     card.appendChild(section);
 
     container.appendChild(card);
+    technicianBillingCheckbox.addEventListener("change", async event => {
+        const enabled = event.currentTarget.checked;
+        technicianBillingCheckbox.disabled = true;
+        technicianBillingHint.textContent = "Mise à jour de l’autorisation…";
+        try {
+            const response = await fetch("/api/auth/technician-billing", {
+                method: "PUT",
+                credentials: "same-origin",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ enabled })
+            });
+            const payload = await response.json().catch(() => null);
+            if (!response.ok) throw new Error(payload?.message || "Mise à jour impossible.");
+            document.body.dataset.technicianBillingEnabled = String(enabled);
+            technicianBillingHint.textContent = enabled
+                ? "Les techniciens peuvent créer des devis et des factures."
+                : "La création de devis et factures est maintenant bloquée pour les techniciens.";
+        } catch (error) {
+            technicianBillingCheckbox.checked = !enabled;
+            technicianBillingHint.textContent = error.message;
+        } finally {
+            technicianBillingCheckbox.disabled = false;
+        }
+    });
     if (document.body.dataset.role === "admin") renderTeamManagement(container);
     if (document.body.dataset.creator === "true") {
         const creatorCard = document.createElement("article");

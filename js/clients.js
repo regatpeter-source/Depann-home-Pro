@@ -417,6 +417,7 @@ function renderClientTableRow(client, appointmentDates = []) {
 
 function renderClientDetail(client, options = {}) {
     const readOnly = isClientReadOnly();
+    const canCreateBillingDocuments = !readOnly || isTechnicianBillingAllowed();
     const navigationHref = getClientNavigationHref(client);
     const panel = document.createElement("section");
     panel.className = "client-panel";
@@ -429,7 +430,7 @@ function renderClientDetail(client, options = {}) {
             </div>
             <div class="client-card-actions">
                 ${navigationHref ? `<a class="secondary-button client-navigation-button" href="${escapeHtml(navigationHref)}" aria-label="Y aller vers ${escapeHtml(formatClientLocation(client))}">Y aller</a>` : '<button type="button" class="secondary-button client-navigation-button" disabled title="Ajoutez une adresse au client pour lancer la navigation.">Y aller</button>'}
-                ${readOnly ? '<button type="button" class="secondary-button" id="createClientQuote">+ Créer un devis</button><button type="button" class="secondary-button" id="createClientInvoice">+ Créer une facture</button>' : '<button type="button" class="secondary-button" id="createClientAppointment">+ Créer un rendez-vous</button><button type="button" class="secondary-button" id="createClientQuote">+ Créer un devis</button><button type="button" class="secondary-button" id="createClientInvoice">+ Créer une facture</button><button type="button" class="secondary-button" id="editSelectedClient">Modifier</button>'}
+                ${readOnly ? (canCreateBillingDocuments ? '<button type="button" class="secondary-button" id="createClientQuote">+ Créer un devis</button><button type="button" class="secondary-button" id="createClientInvoice">+ Créer une facture</button>' : "") : '<button type="button" class="secondary-button" id="createClientAppointment">+ Créer un rendez-vous</button><button type="button" class="secondary-button" id="createClientQuote">+ Créer un devis</button><button type="button" class="secondary-button" id="createClientInvoice">+ Créer une facture</button><button type="button" class="secondary-button" id="editSelectedClient">Modifier</button>'}
             </div>
         </div>
         <div class="procedure-meta">
@@ -673,6 +674,10 @@ function deleteClient(id) {
 
 function isClientReadOnly() {
     return document.body.dataset.role === "technician";
+}
+
+function isTechnicianBillingAllowed() {
+    return !isClientReadOnly() || document.body.dataset.technicianBillingEnabled !== "false";
 }
 
 function getClientById(id) {

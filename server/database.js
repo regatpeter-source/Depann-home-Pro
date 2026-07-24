@@ -35,6 +35,7 @@ export async function initializeDatabase() {
             company_name VARCHAR(160) NOT NULL DEFAULT '',
             max_pc_users INTEGER NOT NULL DEFAULT 1,
             max_technicians INTEGER NOT NULL DEFAULT 5,
+            technician_billing_enabled BOOLEAN NOT NULL DEFAULT TRUE,
             subscription_plan VARCHAR(20) NOT NULL DEFAULT 'free',
             subscription_label VARCHAR(80) NOT NULL DEFAULT '',
             monthly_price_cents INTEGER NOT NULL DEFAULT 0,
@@ -57,6 +58,7 @@ export async function initializeDatabase() {
         ADD COLUMN IF NOT EXISTS company_name VARCHAR(160) NOT NULL DEFAULT '',
         ADD COLUMN IF NOT EXISTS max_pc_users INTEGER NOT NULL DEFAULT 1,
         ADD COLUMN IF NOT EXISTS max_technicians INTEGER NOT NULL DEFAULT 5,
+        ADD COLUMN IF NOT EXISTS technician_billing_enabled BOOLEAN NOT NULL DEFAULT TRUE,
         ADD COLUMN IF NOT EXISTS subscription_plan VARCHAR(20) NOT NULL DEFAULT 'free',
         ADD COLUMN IF NOT EXISTS subscription_label VARCHAR(80) NOT NULL DEFAULT '',
         ADD COLUMN IF NOT EXISTS monthly_price_cents INTEGER NOT NULL DEFAULT 0,
@@ -99,7 +101,8 @@ export async function initializeDatabase() {
 export async function findUserByUsername(username) {
     const { rows } = await getPool().query(
         `SELECT user_account.id, user_account.username, user_account.password_hash, user_account.role, user_account.account_owner_id,
-            user_account.full_name, user_account.phone, user_account.email, user_account.is_active, owner.is_active AS account_is_active
+            user_account.full_name, user_account.phone, user_account.email, user_account.is_active, owner.is_active AS account_is_active,
+            owner.technician_billing_enabled AS technician_billing_enabled
          FROM depannhome_users user_account
          JOIN depannhome_users owner ON owner.id = user_account.account_owner_id
          WHERE user_account.username = $1`,
@@ -112,7 +115,8 @@ export async function findUserByUsername(username) {
 export async function findUserById(id) {
     const { rows } = await getPool().query(
         `SELECT user_account.id, user_account.username, user_account.password_hash, user_account.role, user_account.account_owner_id,
-            user_account.full_name, user_account.phone, user_account.email, user_account.is_active, owner.is_active AS account_is_active
+            user_account.full_name, user_account.phone, user_account.email, user_account.is_active, owner.is_active AS account_is_active,
+            owner.technician_billing_enabled AS technician_billing_enabled
          FROM depannhome_users user_account
          JOIN depannhome_users owner ON owner.id = user_account.account_owner_id
          WHERE user_account.id = $1`,

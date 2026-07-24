@@ -1,6 +1,6 @@
 import { ROUTES } from "./config.js?v=105";
-import { createBillingDocumentForClient } from "./billing.js?v=125";
-import { getSearchableClients } from "./clients.js?v=124";
+import { createBillingDocumentForClient } from "./billing.js?v=126";
+import { getSearchableClients } from "./clients.js?v=126";
 import { addClientActivityByName, synchronizeClients } from "./client-sync.js?v=88";
 import { renderClientMessages } from "./messages.js?v=88";
 import { resetSelection } from "./state.js?v=44";
@@ -225,10 +225,10 @@ function renderEventForm(panel) {
                         <dl><dt>Date</dt><dd>${escapeHtml(formatActivityDate(event.date, event.startTime))}${event.endTime ? ` — ${escapeHtml(event.endTime)}` : ""}</dd>${event.assignedTechnicianName ? `<dt>Technicien</dt><dd>${escapeHtml(event.assignedTechnicianName)}</dd>` : ""}${event.notes ? `<dt>Notes</dt><dd>${escapeHtml(event.notes)}</dd>` : ""}</dl>
                     </section>
                     ${renderInterventionPhotosHtml(client)}
-                    <section class="calendar-billing-actions">
+                    ${isTechnicianBillingAllowed() ? `<section class="calendar-billing-actions">
                         <div><p class="eyebrow">Fin d’intervention</p><h3>Devis et facture</h3><p class="muted">Créez le document adapté après avoir renseigné l’intervention.</p></div>
                         <div><button type="button" class="secondary-button" data-client-action="quote">Créer un devis</button><button type="button" class="secondary-button" data-client-action="invoice">Créer une facture</button></div>
-                    </section>
+                    </section>` : ""}
                     ${event.eventType === "appointment" ? renderQuitusHtml(event) : ""}
                     <div class="calendar-client-messages-slot"></div>
                     <form id="calendarClientUpload" class="calendar-client-upload">
@@ -749,6 +749,10 @@ async function loadEvents() {
 async function loadTechnicians() {
     const result = await request("/api/auth/technicians");
     return result.ok ? (result.data?.technicians || []).filter(technician => technician.isActive) : [];
+}
+
+function isTechnicianBillingAllowed() {
+    return document.body.dataset.role !== "technician" || document.body.dataset.technicianBillingEnabled !== "false";
 }
 
 function isReadOnlyCalendar() {

@@ -222,7 +222,7 @@ export function registerBillingRoutes(app, requireAuthentication) {
         response.status(204).end();
     }));
 
-    app.post("/api/billing/documents", requireAuthentication, asyncHandler(async (request, response) => {
+    app.post("/api/billing/documents", requireAuthentication, requireTechnicianBillingAccess, asyncHandler(async (request, response) => {
         const document = sanitizeDocument(request.body);
         if (!document.ok) return response.status(400).json({ message: document.message });
         try {
@@ -287,6 +287,18 @@ export function registerBillingRoutes(app, requireAuthentication) {
 function requireBillingAdministration(request, response, next) {
     if (request.user?.role === "technician") {
         return response.status(403).json({ message: "Les techniciens peuvent créer des devis et factures, sans modifier les documents ou paramètres existants." });
+    }
+    return next();
+}
+
+async function requireTechnicianBillingAccess(request, response, next) {
+    if (request.user?.role !== "technician") return next();
+    const { rows } = await getPool().query(
+        "SELECT technician_billing_enabled FROM depannhome_users WHERE id = $1",
+        [getAccountOwnerId(request)]
+    );
+    if (rows[0]?.technician_billing_enabled === false) {
+        return response.status(403).json({ message: "La création de devis et factures est désactivée pour les techniciens par l’administrateur." });
     }
     return next();
 }

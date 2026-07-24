@@ -1,5 +1,5 @@
 import { ROUTES } from "./config.js?v=116";
-import { getSearchableClients } from "./clients.js?v=124";
+import { getSearchableClients } from "./clients.js?v=126";
 import { addClientActivityByName } from "./client-sync.js?v=110";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
@@ -44,6 +44,10 @@ export async function renderBilling(options = {}) {
 
 export function createBillingDocumentForClient(type, client) {
     if (!DOCUMENT_TYPES[type] || !client) return;
+    if (!isTechnicianBillingAllowed()) {
+        alert("La création de devis et factures est désactivée par l’administrateur.");
+        return;
+    }
     renderBilling({ newDocument: { type, client } });
 }
 
@@ -406,6 +410,7 @@ function today() { const date = new Date(); return `${date.getFullYear()}-${Stri
 function formDataToObject(data) { return Object.fromEntries(data.entries()); }
 
 function isTechnician() { return document.body.dataset.role === "technician"; }
+function isTechnicianBillingAllowed() { return !isTechnician() || document.body.dataset.technicianBillingEnabled !== "false"; }
 
 function openBillingPdf(documentId) {
     const popup = window.open("", "_blank");
