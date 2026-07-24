@@ -26,7 +26,7 @@ const EMPTY_CLIENT = {
     activityHistory: []
 };
 
-const ATTACHMENT_TYPES = ["Devis", "Facture", "Photo", "Photo avant", "Photo après", "Autre"];
+const ATTACHMENT_TYPES = ["Devis", "Facture", "Quitus", "Photo", "Photo avant", "Photo après", "Autre"];
 const MAX_ATTACHMENT_SIZE = 4 * 1024 * 1024;
 let clientScreenOptions = {};
 
@@ -789,6 +789,7 @@ function getAttachmentIcon(attachment) {
     if (attachment.type === "Photo" || attachment.mime.startsWith("image/")) return "";
     if (attachment.type === "Devis") return "";
     if (attachment.type === "Facture") return "";
+    if (attachment.type === "Quitus") return "";
     if (attachment.mime.includes("pdf")) return "";
     return "";
 }

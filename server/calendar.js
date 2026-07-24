@@ -1,11 +1,16 @@
 import { getPool } from "./database.js";
 import { getAccountOwnerId } from "./auth.js";
+import { randomUUID } from "node:crypto";
+import PDFDocument from "pdfkit";
 
 const EVENT_COLORS = new Set(["blue", "green", "orange", "red", "purple", "gray"]);
 const EVENT_TYPES = new Set(["appointment", "vacation", "sick_leave", "unavailable"]);
-const QUITUS_STATUS = new Set(["pending", "signed"]);
+const QUITUS_STATUS = new Set(["pending", "validated"]);
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
+const MAX_CLIENT_PAYLOAD_SIZE = 20 * 1024 * 1024;
+const MAX_CLIENT_ATTACHMENTS = 30;
+const MAX_ACTIVITY_HISTORY = 150;
 
 export async function initializeCalendar() {
     const database = getPool();
@@ -49,6 +54,11 @@ export async function initializeCalendar() {
         ADD COLUMN IF NOT EXISTS quitus_signed_by VARCHAR(160) NOT NULL DEFAULT '',
         ADD COLUMN IF NOT EXISTS quitus_signature TEXT NOT NULL DEFAULT '',
         ADD COLUMN IF NOT EXISTS quitus_signed_at TIMESTAMPTZ
+    `);
+    await database.query(`
+        UPDATE depannhome_calendar_events
+        SET quitus_status = 'validated'
+        WHERE quitus_status = 'signed'
     `);
     await database.query(`
         CREATE INDEX IF NOT EXISTS depannhome_calendar_events_owner_date_idx
@@ -144,16 +154,99 @@ export function registerCalendarRoutes(app, requireAuthentication) {
         if (!id) return response.status(400).json({ message: "Rendez-vous invalide." });
         if (!quitus.ok) return response.status(400).json({ message: quitus.message });
 
-        const { rows } = await getPool().query(`
-            UPDATE depannhome_calendar_events
-            SET quitus_status = $3::varchar, quitus_signed_by = $4, quitus_signature = $5,
-                quitus_signed_at = CASE WHEN $3::varchar = 'signed'::varchar THEN NOW() ELSE NULL END, updated_at = NOW()
-            WHERE id = $1 AND owner_id = $2 AND event_type = 'appointment' AND client_name <> ''
-            RETURNING quitus_status AS "quitusStatus", quitus_signed_by AS "quitusSignedBy",
-                quitus_signature AS "quitusSignature", quitus_signed_at AS "quitusSignedAt"
-        `, [id, getAccountOwnerId(request), quitus.status, quitus.signedBy, quitus.signature]);
-        if (!rows[0]) return response.status(404).json({ message: "Rendez-vous introuvable." });
-        response.json({ quitus: rows[0] });
+        const accountOwnerId = getAccountOwnerId(request);
+        const database = getPool();
+        const connection = await database.connect();
+        try {
+            await connection.query("BEGIN");
+            const eventResult = await connection.query(`
+                SELECT id, title, client_name AS "clientName", location,
+                    TO_CHAR(event_date, 'YYYY-MM-DD') AS date,
+                    TO_CHAR(start_time, 'HH24:MI') AS "startTime", TO_CHAR(end_time, 'HH24:MI') AS "endTime",
+                    notes, quitus_status AS "quitusStatus"
+                FROM depannhome_calendar_events
+                WHERE id = $1 AND owner_id = $2 AND event_type = 'appointment' AND client_name <> ''
+                FOR UPDATE
+            `, [id, accountOwnerId]);
+            const event = eventResult.rows[0];
+            if (!event) {
+                await connection.query("ROLLBACK");
+                return response.status(404).json({ message: "Rendez-vous introuvable." });
+            }
+            if (event.quitusStatus !== "pending") {
+                await connection.query("ROLLBACK");
+                return response.status(409).json({ message: "Ce quitus est déjà validé et ne peut plus être modifié." });
+            }
+
+            const clientResult = await connection.query(`
+                SELECT client_id AS "clientId", client_data AS client
+                FROM depannhome_clients
+                WHERE owner_id = $1 AND LOWER(BTRIM(client_data->>'name')) = LOWER(BTRIM($2))
+                ORDER BY updated_at DESC
+                LIMIT 1
+                FOR UPDATE
+            `, [accountOwnerId, event.clientName]);
+            const clientRow = clientResult.rows[0];
+            if (!clientRow) {
+                await connection.query("ROLLBACK");
+                return response.status(400).json({ message: "Aucun dossier client correspondant : le quitus ne peut pas être validé." });
+            }
+
+            const pdf = await createQuitusPdf(event, quitus);
+            const createdAt = new Date().toISOString();
+            const attachment = {
+                id: `file-${randomUUID()}`,
+                type: "Quitus",
+                name: quitusPdfFileName(event),
+                mime: "application/pdf",
+                size: pdf.length,
+                dataUrl: `data:application/pdf;base64,${pdf.toString("base64")}`,
+                createdAt
+            };
+            const client = clientRow.client || {};
+            const attachments = Array.isArray(client.attachments) ? client.attachments : [];
+            if (attachments.length >= MAX_CLIENT_ATTACHMENTS) {
+                await connection.query("ROLLBACK");
+                return response.status(400).json({ message: `Le dossier client contient déjà le maximum de ${MAX_CLIENT_ATTACHMENTS} fichiers.` });
+            }
+            const activityHistory = Array.isArray(client.activityHistory) ? client.activityHistory : [];
+            const updatedClient = {
+                ...client,
+                attachments: [...attachments, attachment],
+                activityHistory: [{
+                    id: `activity-${randomUUID()}`,
+                    type: "quitus",
+                    label: "Quitus validé",
+                    detail: attachment.name,
+                    actorName: String(request.user.fullName || request.user.username || "Technicien").slice(0, 100),
+                    createdAt
+                }, ...activityHistory].slice(0, MAX_ACTIVITY_HISTORY),
+                updatedAt: createdAt
+            };
+            if (Buffer.byteLength(JSON.stringify(updatedClient), "utf8") > MAX_CLIENT_PAYLOAD_SIZE) {
+                await connection.query("ROLLBACK");
+                return response.status(400).json({ message: "Le dossier client est trop volumineux pour y ajouter le PDF du quitus." });
+            }
+            await connection.query(`
+                UPDATE depannhome_clients SET client_data = $3::jsonb, updated_at = $4
+                WHERE owner_id = $1 AND client_id = $2
+            `, [accountOwnerId, clientRow.clientId, JSON.stringify(updatedClient), createdAt]);
+            const { rows } = await connection.query(`
+                UPDATE depannhome_calendar_events
+                SET quitus_status = 'validated', quitus_signed_by = $3, quitus_signature = $4,
+                    quitus_signed_at = NOW(), updated_at = NOW()
+                WHERE id = $1 AND owner_id = $2
+                RETURNING quitus_status AS "quitusStatus", quitus_signed_by AS "quitusSignedBy",
+                    quitus_signature AS "quitusSignature", quitus_signed_at AS "quitusSignedAt"
+            `, [id, accountOwnerId, quitus.signedBy, quitus.signature]);
+            await connection.query("COMMIT");
+            response.json({ quitus: rows[0], message: "Quitus validé et PDF ajouté au dossier client." });
+        } catch (error) {
+            await connection.query("ROLLBACK");
+            throw error;
+        } finally {
+            connection.release();
+        }
     }));
 }
 
@@ -190,12 +283,49 @@ function sanitizeQuitus(value) {
     const status = QUITUS_STATUS.has(value?.status) ? value.status : "pending";
     const signedBy = cleanText(value?.signedBy, 160);
     const signature = String(value?.signature || "");
-    if (status !== "signed") return { ok: true, status: "pending", signedBy: "", signature: "" };
+    if (status !== "validated") return { ok: false, message: "Le quitus doit être validé avec la signature du client." };
     if (!signedBy) return { ok: false, message: "Indiquez le nom du client signataire." };
     if (!/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(signature) || Buffer.byteLength(signature, "utf8") > 700000) {
         return { ok: false, message: "La signature est invalide ou trop volumineuse." };
     }
     return { ok: true, status, signedBy, signature };
+}
+
+function quitusPdfFileName(event) {
+    return `quitus-intervention-${event.id}-${event.date}.pdf`;
+}
+
+function createQuitusPdf(event, quitus) {
+    return new Promise((resolve, reject) => {
+        const pdf = new PDFDocument({ size: "A4", margin: 48, info: { Title: `Quitus d’intervention ${event.id}`, Author: "Depann'Home Pro" } });
+        const chunks = [];
+        pdf.on("data", chunk => chunks.push(chunk));
+        pdf.on("end", () => resolve(Buffer.concat(chunks)));
+        pdf.on("error", reject);
+        const text = (value, x, y, width, options = {}) => pdf.fillColor(options.color || "#172033").font(options.bold ? "Helvetica-Bold" : "Helvetica").fontSize(options.size || 10).text(String(value || ""), x, y, { width, ...options });
+        const formatDate = value => new Intl.DateTimeFormat("fr-FR", { dateStyle: "long" }).format(new Date(`${value}T12:00:00`));
+
+        text("QUITUS D’INTERVENTION", 48, 48, 499, { size: 22, bold: true, color: "#003b73" });
+        text("Document validé", 48, 78, 499, { size: 11, bold: true, color: "#0a5c36" });
+        pdf.moveTo(48, 102).lineTo(547, 102).lineWidth(1).strokeColor("#d7dde3").stroke();
+        text("INTERVENTION", 48, 124, 220, { size: 9, bold: true });
+        text([event.title, formatDate(event.date), [event.startTime, event.endTime].filter(Boolean).join(" – "), event.location].filter(Boolean).join("\n"), 48, 140, 220, { size: 10, lineGap: 4 });
+        text("CLIENT", 315, 124, 232, { size: 9, bold: true });
+        text(event.clientName, 315, 140, 232, { size: 10, lineGap: 4 });
+        if (event.notes) {
+            text("NOTES D’INTERVENTION", 48, 232, 499, { size: 9, bold: true });
+            text(event.notes, 48, 248, 499, { size: 10, lineGap: 4 });
+        }
+        const signatureY = event.notes ? 340 : 272;
+        pdf.rect(48, signatureY, 499, 190).lineWidth(1).strokeColor("#d7dde3").stroke();
+        text("VALIDATION DU CLIENT", 62, signatureY + 14, 250, { size: 9, bold: true });
+        text(`Signé par : ${quitus.signedBy}`, 62, signatureY + 34, 300, { size: 10 });
+        text(`Validé le : ${new Intl.DateTimeFormat("fr-FR", { dateStyle: "long", timeStyle: "short" }).format(new Date())}`, 62, signatureY + 52, 420, { size: 9, color: "#4b5563" });
+        const signature = Buffer.from(quitus.signature.replace(/^data:image\/png;base64,/, ""), "base64");
+        try { pdf.image(signature, 62, signatureY + 78, { fit: [300, 94] }); } catch { /* La signature est validée avant la génération ; le PDF reste traçable en cas d'image illisible. */ }
+        text("Ce quitus a été validé électroniquement et ne peut plus être modifié.", 48, 748, 499, { size: 8, color: "#4b5563", align: "center" });
+        pdf.end();
+    });
 }
 
 async function validateAssignedTechnician(accountOwnerId, technicianId) {

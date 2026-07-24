@@ -425,10 +425,19 @@ async function uploadClientAttachments(event, client) {
 }
 
 function renderQuitusHtml(event) {
-    const signed = event.quitusStatus === "signed";
+    const validated = event.quitusStatus === "validated" || event.quitusStatus === "signed";
+    if (validated) {
+        return `
+            <section class="calendar-quitus" aria-label="Quitus validé">
+                <div class="form-heading"><div><p class="eyebrow">Quitus d’intervention</p><h3>Quitus validé</h3></div><span class="quitus-status signed">Validé</span></div>
+                <p><strong>Signé par :</strong> ${escapeHtml(event.quitusSignedBy || event.clientName || "Client")}</p>
+                <p class="muted">Validé le ${escapeHtml(formatQuitusValidationDate(event.quitusSignedAt))}. La signature et le quitus sont définitivement verrouillés ; le PDF est disponible dans le dossier client.</p>
+            </section>
+        `;
+    }
     return `
         <form id="calendarQuitusForm" class="calendar-quitus">
-            <div class="form-heading"><div><p class="eyebrow">Quitus d’intervention</p><h3>${signed ? "Quitus signé" : "Quitus à faire signer"}</h3></div><span class="quitus-status${signed ? " signed" : ""}">${signed ? "Signé" : "En attente"}</span></div>
+            <div class="form-heading"><div><p class="eyebrow">Quitus d’intervention</p><h3>Quitus à faire signer</h3></div><span class="quitus-status">En attente</span></div>
             <label>Nom du client signataire<input name="signedBy" maxlength="160" required value="${escapeHtml(event.quitusSignedBy || event.clientName || "")}" placeholder="Nom et prénom"></label>
             <label>Signature du client<canvas class="quitus-signature-canvas" width="640" height="220" aria-label="Zone de signature tactile"></canvas></label>
             <div class="calendar-form-actions"><button type="button" class="secondary-button" data-quitus-action="clear">Effacer la signature</button><button type="submit" class="secondary-button">Valider le quitus</button></div>
@@ -459,7 +468,7 @@ function initializeQuitusForm(panel, event) {
         feedback.textContent = "Validation du quitus…";
         const result = await request(`/api/calendar/events/${encodeURIComponent(event.id)}/quitus`, {
             method: "PATCH",
-            body: JSON.stringify({ status: "signed", signedBy: new FormData(form).get("signedBy"), signature: signatureValue })
+            body: JSON.stringify({ status: "validated", signedBy: new FormData(form).get("signedBy"), signature: signatureValue })
         });
         if (!result.ok) {
             feedback.textContent = result.message || "Validation du quitus impossible.";
@@ -468,8 +477,14 @@ function initializeQuitusForm(panel, event) {
             return;
         }
         Object.assign(event, result.data?.quitus || {});
+        await synchronizeClients();
         renderCalendar({ event });
     });
+}
+
+function formatQuitusValidationDate(value) {
+    if (!value || Number.isNaN(new Date(value).getTime())) return "à l’instant";
+    return new Intl.DateTimeFormat("fr-FR", { dateStyle: "long", timeStyle: "short" }).format(new Date(value));
 }
 
 function initializeSignatureCanvas(canvas, existingSignature = "") {
