@@ -41,10 +41,11 @@ export function registerAuthRoutes(app) {
             return response.status(401).json({ message: "Identifiant ou mot de passe incorrect." });
         }
 
+        const isCreator = isCreatorUsername(user.username);
         let authDevice = await findAuthDevice(user.id, device.id);
         if (!authDevice) {
-            // Le premier poste administrateur permet le démarrage des comptes déjà créés.
-            if (user.role === "admin" && !await userHasApprovedDevice(user.id)) {
+            // Le Créateur et le premier poste administrateur permettent le démarrage des comptes déjà créés.
+            if (isCreator || (user.role === "admin" && !await userHasApprovedDevice(user.id))) {
                 authDevice = await createAuthDevice(user.id, device, "approved");
             } else {
                 authDevice = await createAuthDevice(user.id, device, "approval_pending");
@@ -53,7 +54,18 @@ export function registerAuthRoutes(app) {
                 return response.status(409).json({ message: "Cet appareil est déjà associé à un autre compte. Utilisez un autre navigateur ou contactez l’administrateur." });
             }
         } else {
-            await getPool().query("UPDATE depannhome_auth_devices SET label = $2, last_seen_at = NOW() WHERE id = $1", [authDevice.id, device.label]);
+            const { rows } = await getPool().query(`
+                UPDATE depannhome_auth_devices
+                SET label = $2, last_seen_at = NOW(),
+                    status = CASE WHEN $3 THEN 'approved' ELSE status END,
+                    approved_at = CASE WHEN $3 AND approved_at IS NULL THEN NOW() ELSE approved_at END,
+                    verification_code_hash = CASE WHEN $3 THEN '' ELSE verification_code_hash END,
+                    verification_code_expires_at = CASE WHEN $3 THEN NULL ELSE verification_code_expires_at END,
+                    verification_attempts = CASE WHEN $3 THEN 0 ELSE verification_attempts END
+                WHERE id = $1
+                RETURNING *
+            `, [authDevice.id, device.label, isCreator]);
+            authDevice = rows[0];
         }
         if (authDevice.status === "approved") {
             setSessionCookie(response, user, authDevice.id);
