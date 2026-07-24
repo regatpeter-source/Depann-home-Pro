@@ -66,9 +66,13 @@ function renderAuthentication({ onAuthenticated, registrationEnabled, message = 
         setStatus("Connexion en cours...");
         const result = await request("/api/auth/login", {
             method: "POST",
-            body: JSON.stringify({ username: form.get("username"), password: form.get("password") })
+            body: JSON.stringify({ username: form.get("username"), password: form.get("password"), ...getDeviceIdentity() })
         });
         if (!result.ok) {
+            if (result.data?.codeRequired) {
+                renderCodeVerification({ onAuthenticated, deviceId: result.data.deviceId, message: result.data.message });
+                return;
+            }
             setStatus(result.data?.message || "Impossible de se connecter.", true);
             return;
         }
@@ -81,7 +85,7 @@ function renderAuthentication({ onAuthenticated, registrationEnabled, message = 
         setStatus("Création du compte en cours...");
         const result = await request("/api/auth/register", {
             method: "POST",
-            body: JSON.stringify({ username: form.get("username"), password: form.get("password") })
+            body: JSON.stringify({ username: form.get("username"), password: form.get("password"), ...getDeviceIdentity() })
         });
         if (!result.ok) {
             setStatus(result.data?.message || "Impossible de créer le compte.", true);
@@ -89,6 +93,39 @@ function renderAuthentication({ onAuthenticated, registrationEnabled, message = 
         }
         onAuthenticated(result.data.user);
     });
+}
+
+function renderCodeVerification({ onAuthenticated, deviceId, message }) {
+    const app = getAppRoot();
+    app.innerHTML = `
+        <main class="auth-page"><section class="auth-card">
+            <div class="auth-brand"><img src="assets/logo.png.png" alt="Depann'Home Pro" class="auth-logo"><div><h1>Depann'Home Pro</h1><p>Validation de l’appareil</p></div></div>
+            <p id="authMessage" class="auth-message" aria-live="polite">${escapeHtml(message)}</p>
+            <form id="deviceCodeForm" class="auth-form">
+                <label>Code reçu par e-mail<input name="code" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required autofocus></label>
+                <button type="submit" class="secondary-button">Valider l’appareil</button>
+            </form>
+        </section></main>`;
+    const status = app.querySelector("#authMessage");
+    app.querySelector("#deviceCodeForm").addEventListener("submit", async event => {
+        event.preventDefault();
+        status.textContent = "Vérification du code…";
+        status.classList.remove("error");
+        const code = new FormData(event.currentTarget).get("code");
+        const result = await request("/api/auth/verify-device-code", { method: "POST", body: JSON.stringify({ deviceId, code }) });
+        if (!result.ok) { status.textContent = result.data?.message || "Impossible de valider le code."; status.classList.add("error"); return; }
+        onAuthenticated(result.data.user);
+    });
+}
+
+function getDeviceIdentity() {
+    const key = "depannHomePro:deviceId";
+    let deviceId = localStorage.getItem(key);
+    if (!deviceId || !/^[0-9a-f-]{36}$/i.test(deviceId)) {
+        deviceId = crypto.randomUUID();
+        localStorage.setItem(key, deviceId);
+    }
+    return { deviceId, deviceLabel: navigator.userAgent.slice(0, 100) };
 }
 
 function passwordField(label, autocomplete) {

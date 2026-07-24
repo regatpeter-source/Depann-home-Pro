@@ -1,5 +1,5 @@
 import { ROUTES, STORAGE_KEYS, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=116";
-import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=122";
+import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=123";
 import { renderCreatorConsole } from "./creator.js?v=105";
 import { createBillingDocumentForClient, renderBilling, viewBillingDocument } from "./billing.js?v=116";
 import { renderPurchases } from "./purchases.js?v=111";
@@ -884,7 +884,7 @@ async function renderTeamManagement(container) {
     card.innerHTML = "<h2>Équipe</h2>";
     const form = document.createElement("form");
     form.className = "settings-form team-form";
-    [["fullName", "Nom du technicien", "text", "Ex. Léa Martin"], ["phone", "Téléphone", "tel", "Ex. 06 12 34 56 78"], ["username", "Identifiant", "text", "minuscules, chiffres, . _ -"], ["password", "Mot de passe initial", "password", "12 caractères minimum"]].forEach(([name, label, type, placeholder]) => {
+    [["fullName", "Nom du technicien", "text", "Ex. Léa Martin"], ["phone", "Téléphone", "tel", "Ex. 06 12 34 56 78"], ["email", "E-mail professionnel", "email", "lea@entreprise.fr"], ["username", "Identifiant", "text", "minuscules, chiffres, . _ -"], ["password", "Mot de passe initial", "password", "12 caractères minimum"]].forEach(([name, label, type, placeholder]) => {
         const field = document.createElement("label");
         field.textContent = label;
         const input = document.createElement("input");
@@ -906,6 +906,9 @@ async function renderTeamManagement(container) {
     const list = document.createElement("div");
     list.className = "team-list";
     card.appendChild(list);
+    const devices = document.createElement("div");
+    devices.className = "team-list";
+    card.appendChild(devices);
     container.appendChild(card);
     const load = async () => {
         list.textContent = "Chargement de l’équipe…";
@@ -914,11 +917,11 @@ async function renderTeamManagement(container) {
             const payload = await response.json();
             if (!response.ok) throw new Error(payload.message || "Impossible de charger l’équipe.");
             list.innerHTML = "";
-            if (!payload.technicians?.length) return void (list.textContent = "Aucun technicien créé pour le moment.");
-            payload.technicians.forEach(technician => {
+            if (!payload.technicians?.length) list.textContent = "Aucun technicien créé pour le moment.";
+            (payload.technicians || []).forEach(technician => {
                 const item = document.createElement("div");
                 item.className = "team-member";
-                item.innerHTML = `<strong>${escapeHtml(technician.fullName || technician.username)}</strong><span>${escapeHtml(technician.phone || "Téléphone non renseigné")} · ${escapeHtml(technician.username)}</span>`;
+                item.innerHTML = `<strong>${escapeHtml(technician.fullName || technician.username)}</strong><span>${escapeHtml(technician.phone || "Téléphone non renseigné")} · ${escapeHtml(technician.email || "E-mail non renseigné")} · ${escapeHtml(technician.username)}</span>`;
                 const toggle = createButton(technician.isActive ? "Désactiver" : "Réactiver", "secondary-button", async () => {
                     toggle.disabled = true;
                     const response = await fetch(`/api/auth/technicians/${encodeURIComponent(technician.id)}`, { method: "PATCH", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ isActive: !technician.isActive }) });
@@ -927,6 +930,30 @@ async function renderTeamManagement(container) {
                 });
                 item.appendChild(toggle);
                 list.appendChild(item);
+            });
+            const deviceResponse = await fetch("/api/auth/devices", { credentials: "same-origin" });
+            const devicePayload = await deviceResponse.json();
+            if (!deviceResponse.ok) throw new Error(devicePayload.message || "Impossible de charger les appareils.");
+            devices.innerHTML = "<h3>Appareils à valider</h3>";
+            const pending = (devicePayload.devices || []).filter(device => device.status === "approval_pending" || device.status === "code_pending");
+            if (!pending.length) devices.insertAdjacentHTML("beforeend", "<p class=\"muted\">Aucun appareil en attente.</p>");
+            pending.forEach(device => {
+                const item = document.createElement("div");
+                item.className = "team-member";
+                item.innerHTML = `<strong>${escapeHtml(device.fullName || device.username)}</strong><span>${escapeHtml(device.label)} · ${device.status === "code_pending" ? "Code e-mail envoyé" : "En attente d’autorisation"}</span>`;
+                const approve = createButton(device.status === "code_pending" ? "Renvoyer le code" : "Autoriser et envoyer le code", "secondary-button", async () => {
+                    approve.disabled = true;
+                    const result = await fetch(`/api/auth/devices/${encodeURIComponent(device.id)}/approve`, { method: "POST", credentials: "same-origin" });
+                    if (!result.ok) feedback.textContent = (await result.json().catch(() => ({}))).message || "Autorisation impossible.";
+                    await load();
+                });
+                const reject = createButton("Refuser", "secondary-button", async () => {
+                    const result = await fetch(`/api/auth/devices/${encodeURIComponent(device.id)}/reject`, { method: "POST", credentials: "same-origin" });
+                    if (!result.ok) feedback.textContent = "Refus impossible.";
+                    await load();
+                });
+                item.append(approve, reject);
+                devices.appendChild(item);
             });
         } catch (error) { list.textContent = error.message; }
     };
