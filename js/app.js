@@ -56,14 +56,21 @@ function showAuthenticatedUser(user) {
     document.body.dataset.creator = user.isCreator ? "true" : "false";
     document.body.dataset.technicianBillingEnabled = user.technicianBillingEnabled === false ? "false" : "true";
     document.body.dataset.maxPcUsers = String(user.maxPcUsers || 1);
-    document.body.classList.toggle("mobile-device", window.matchMedia("(max-width: 700px)").matches);
-    document.body.classList.toggle("desktop-device", !document.body.classList.contains("mobile-device"));
+    updateDeviceMode();
+    window.addEventListener("resize", updateDeviceMode);
     document.body.classList.remove("auth-pending");
     logoutButton?.addEventListener("click", async () => {
         logoutButton.disabled = true;
         await signOut();
         window.location.replace("/");
     }, { once: true });
+}
+
+function updateDeviceMode() {
+    const isMobileDevice = window.matchMedia("(max-width: 700px)").matches
+        || window.matchMedia("(pointer: coarse)").matches;
+    document.body.classList.toggle("mobile-device", isMobileDevice);
+    document.body.classList.toggle("desktop-device", !isMobileDevice);
 }
 
 function applyTheme() {

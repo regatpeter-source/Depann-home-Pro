@@ -3096,6 +3096,21 @@ body.desktop-device[data-role="technician"] .nav-button:not([data-nav="calendar"
     display:none;
 }
 
+/* Un téléphone tactile garde la même navigation technicien en portrait et paysage. */
+body.mobile-device[data-role="technician"] .quick-actions > :not(#calendarBtn):not(#libraryBtn),
+body.mobile-device[data-role="technician"] .nav-button:not([data-nav="calendar"]):not([data-nav="library"]){
+    display:none;
+}
+
+body.mobile-device[data-role="technician"] .quick-actions{
+    display:grid;
+    grid-template-columns:repeat(2, minmax(0, 1fr));
+}
+
+body.mobile-device[data-role="technician"] footer{
+    justify-content:center;
+}
+
 .message-alert[hidden]{
     display:none;
 }
@@ -3175,20 +3190,6 @@ footer{
 ========================== */
 
 @media(max-width:700px){
-    body.mobile-device[data-role="technician"] .quick-actions > :not(#calendarBtn):not(#libraryBtn),
-    body.mobile-device[data-role="technician"] .nav-button:not([data-nav="calendar"]):not([data-nav="library"]){
-        display:none;
-    }
-
-    body.mobile-device[data-role="technician"] .quick-actions{
-        display:grid;
-        grid-template-columns:repeat(2, minmax(0, 1fr));
-    }
-
-    body.mobile-device[data-role="technician"] footer{
-        justify-content:center;
-    }
-
     .team-member{
         display:grid;
         gap:6px;
