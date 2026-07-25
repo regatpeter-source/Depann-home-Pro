@@ -67,8 +67,9 @@ function showAuthenticatedUser(user) {
 }
 
 function updateDeviceMode() {
-    const isMobileDevice = window.matchMedia("(max-width: 700px)").matches
-        || window.matchMedia("(pointer: coarse)").matches;
+    const isCreator = document.body.dataset.creator === "true";
+    const isMobileDevice = !isCreator && (window.matchMedia("(max-width: 700px)").matches
+        || window.matchMedia("(pointer: coarse)").matches);
     document.body.classList.toggle("mobile-device", isMobileDevice);
     document.body.classList.toggle("desktop-device", !isMobileDevice);
 }
