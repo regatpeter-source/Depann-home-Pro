@@ -1004,18 +1004,19 @@ async function renderTeamManagement(container) {
             const devicePayload = await deviceResponse.json();
             if (!deviceResponse.ok) throw new Error(devicePayload.message || "Impossible de charger les appareils.");
             const pcSeats = devicePayload.pcSeats || { maxPcUsers: Number(document.body.dataset.maxPcUsers || 1), activePcUsers: 0 };
-            devices.innerHTML = `<h3>Appareils et postes PC</h3><p class="muted">Postes PC : ${escapeHtml(pcSeats.activePcUsers)}/${escapeHtml(pcSeats.maxPcUsers)} activé(s) par votre offre. Après sa première connexion, le technicien crée ici une demande : le bouton « Autoriser et envoyer le code » apparaît alors. Vous pouvez aussi supprimer un appareil pour libérer son poste PC ou supprimer une demande devenue inutile.</p>`;
+            devices.innerHTML = `<h3>Appareils et postes PC</h3><p class="muted">Postes PC : ${escapeHtml(pcSeats.activePcUsers)}/${escapeHtml(pcSeats.maxPcUsers)} activé(s) par votre offre. Les téléphones et tablettes d’administrateurs ne consomment pas de poste PC. Après sa première connexion, le technicien crée ici une demande : le bouton « Autoriser et envoyer le code » apparaît alors.</p>`;
             const managedDevices = devicePayload.devices || [];
             if (!managedDevices.length) devices.insertAdjacentHTML("beforeend", "<p class=\"muted\">Aucun appareil enregistré.</p>");
             managedDevices.forEach(device => {
-                const isPc = device.userRole === "admin";
+                const isPc = device.userRole === "admin" && device.deviceType !== "mobile";
+                const isMobile = device.deviceType === "mobile";
                 const pcSeatAvailable = Number(pcSeats.activePcUsers) < Number(pcSeats.maxPcUsers);
                 const item = document.createElement("div");
                 item.className = "team-member";
                 const statusLabel = device.status === "approved" ? "Activé" : device.status === "rejected" ? "Refusé" : device.status === "code_pending" ? "Code e-mail envoyé" : "En attente d’autorisation";
-                item.innerHTML = `<strong>${isPc ? "Poste PC" : escapeHtml(device.fullName || device.username)}</strong><span>${escapeHtml(device.label)} · ${statusLabel}</span>`;
+                item.innerHTML = `<strong>${isPc ? "Poste PC" : isMobile ? "Appareil mobile" : escapeHtml(device.fullName || device.username)}</strong><span>${escapeHtml(device.label)} · ${statusLabel}${isMobile && device.userRole === "admin" ? " · Sans poste PC" : ""}</span>`;
                 if (device.status === "approval_pending" || device.status === "code_pending") {
-                    const approve = createButton(isPc ? "Activer ce poste PC" : (device.status === "code_pending" ? "Renvoyer le code" : "Autoriser et envoyer le code"), "secondary-button", async () => {
+                    const approve = createButton(isPc ? "Activer ce poste PC" : isMobile && device.userRole === "admin" ? "Autoriser cet appareil mobile" : (device.status === "code_pending" ? "Renvoyer le code" : "Autoriser et envoyer le code"), "secondary-button", async () => {
                         approve.disabled = true;
                         const result = await fetch(`/api/auth/devices/${encodeURIComponent(device.id)}/approve`, { method: "POST", credentials: "same-origin" });
                         if (!result.ok) feedback.textContent = (await result.json().catch(() => ({}))).message || "Autorisation impossible.";

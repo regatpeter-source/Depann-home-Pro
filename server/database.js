@@ -80,6 +80,7 @@ export async function initializeDatabase() {
             id UUID PRIMARY KEY,
             user_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
             label VARCHAR(100) NOT NULL DEFAULT '',
+            device_type VARCHAR(10) NOT NULL DEFAULT 'desktop' CHECK (device_type IN ('mobile', 'desktop')),
             status VARCHAR(20) NOT NULL DEFAULT 'approval_pending',
             verification_code_hash TEXT NOT NULL DEFAULT '',
             verification_code_expires_at TIMESTAMPTZ,
@@ -91,6 +92,10 @@ export async function initializeDatabase() {
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             CONSTRAINT depannhome_auth_devices_status_check CHECK (status IN ('approval_pending', 'code_pending', 'approved', 'rejected'))
         )
+    `);
+    await database.query(`
+        ALTER TABLE depannhome_auth_devices
+        ADD COLUMN IF NOT EXISTS device_type VARCHAR(10) NOT NULL DEFAULT 'desktop'
     `);
     await database.query(`
         CREATE INDEX IF NOT EXISTS depannhome_auth_devices_user_idx

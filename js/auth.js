@@ -125,7 +125,8 @@ function getDeviceIdentity() {
         deviceId = crypto.randomUUID();
         localStorage.setItem(key, deviceId);
     }
-    return { deviceId, deviceLabel: navigator.userAgent.slice(0, 100) };
+    const deviceType = window.matchMedia("(pointer: coarse)").matches ? "mobile" : "desktop";
+    return { deviceId, deviceLabel: navigator.userAgent.slice(0, 100), deviceType };
 }
 
 function passwordField(label, autocomplete) {

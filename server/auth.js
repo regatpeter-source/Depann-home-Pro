@@ -56,15 +56,15 @@ export function registerAuthRoutes(app) {
         } else {
             const { rows } = await getPool().query(`
                 UPDATE depannhome_auth_devices
-                SET label = $2, last_seen_at = NOW(),
-                    status = CASE WHEN $3 THEN 'approved' ELSE status END,
-                    approved_at = CASE WHEN $3 AND approved_at IS NULL THEN NOW() ELSE approved_at END,
-                    verification_code_hash = CASE WHEN $3 THEN '' ELSE verification_code_hash END,
-                    verification_code_expires_at = CASE WHEN $3 THEN NULL ELSE verification_code_expires_at END,
-                    verification_attempts = CASE WHEN $3 THEN 0 ELSE verification_attempts END
+                SET label = $2, device_type = $3, last_seen_at = NOW(),
+                    status = CASE WHEN $4 THEN 'approved' ELSE status END,
+                    approved_at = CASE WHEN $4 AND approved_at IS NULL THEN NOW() ELSE approved_at END,
+                    verification_code_hash = CASE WHEN $4 THEN '' ELSE verification_code_hash END,
+                    verification_code_expires_at = CASE WHEN $4 THEN NULL ELSE verification_code_expires_at END,
+                    verification_attempts = CASE WHEN $4 THEN 0 ELSE verification_attempts END
                 WHERE id = $1
                 RETURNING *
-            `, [authDevice.id, device.label, isCreator]);
+            `, [authDevice.id, device.label, device.type, isCreator]);
             authDevice = rows[0];
         }
         if (authDevice.status === "approved") {
@@ -214,7 +214,7 @@ export function registerAuthRoutes(app) {
         const database = getPool();
         const [devicesResult, seatsResult] = await Promise.all([
             database.query(`
-            SELECT device.id, device.label, device.status, device.created_at AS "createdAt", device.last_seen_at AS "lastSeenAt",
+            SELECT device.id, device.label, device.device_type AS "deviceType", device.status, device.created_at AS "createdAt", device.last_seen_at AS "lastSeenAt",
                 account.id AS "userId", account.full_name AS "fullName", account.username, account.email, account.role AS "userRole"
             FROM depannhome_auth_devices device JOIN depannhome_users account ON account.id = device.user_id
             WHERE account.account_owner_id = $1
@@ -222,7 +222,7 @@ export function registerAuthRoutes(app) {
             `, [getAccountOwnerId(request)]),
             database.query(`
                 SELECT owner.max_pc_users AS "maxPcUsers",
-                    COUNT(device.id) FILTER (WHERE device.status = 'approved')::int AS "activePcUsers"
+                    COUNT(device.id) FILTER (WHERE device.status = 'approved' AND device.device_type = 'desktop')::int AS "activePcUsers"
                 FROM depannhome_users owner
                 LEFT JOIN depannhome_users account ON account.account_owner_id = owner.id AND account.role = 'admin'
                 LEFT JOIN depannhome_auth_devices device ON device.user_id = account.id
@@ -236,15 +236,19 @@ export function registerAuthRoutes(app) {
         const deviceId = validDeviceId(request.params.deviceId);
         if (!deviceId) return response.status(400).json({ message: "Appareil invalide." });
         const { rows } = await getPool().query(`
-            SELECT device.id, account.role, account.full_name, account.email
+            SELECT device.id, device.device_type AS "deviceType", account.role, account.full_name, account.email
             FROM depannhome_auth_devices device JOIN depannhome_users account ON account.id = device.user_id
             WHERE device.id = $1 AND account.account_owner_id = $2
         `, [deviceId, getAccountOwnerId(request)]);
         const device = rows[0];
         if (!device) return response.status(404).json({ message: "Appareil introuvable." });
         if (device.role === "admin") {
+            if (device.deviceType === "mobile") {
+                await getPool().query("UPDATE depannhome_auth_devices SET status = 'approved', approved_at = NOW(), approved_by = $2 WHERE id = $1", [deviceId, request.user.sub]);
+                return response.status(204).end();
+            }
             const seats = await getPool().query(`
-                SELECT owner.max_pc_users, COUNT(auth_device.id) FILTER (WHERE auth_device.status = 'approved')::int AS approved_devices
+                SELECT owner.max_pc_users, COUNT(auth_device.id) FILTER (WHERE auth_device.status = 'approved' AND auth_device.device_type = 'desktop')::int AS approved_devices
                 FROM depannhome_users owner
                 LEFT JOIN depannhome_users account ON account.account_owner_id = owner.id AND account.role = 'admin'
                 LEFT JOIN depannhome_auth_devices auth_device ON auth_device.user_id = account.id
@@ -418,7 +422,8 @@ function publicUser(user) {
 
 function getDeviceDetails(body) {
     const id = validDeviceId(body?.deviceId);
-    return id ? { id, label: cleanText(body?.deviceLabel, 100) || "Appareil non nommé" } : null;
+    const type = body?.deviceType === "mobile" ? "mobile" : "desktop";
+    return id ? { id, label: cleanText(body?.deviceLabel, 100) || "Appareil non nommé", type } : null;
 }
 
 function validDeviceId(value) {
@@ -439,13 +444,13 @@ async function userHasApprovedDevice(userId) {
 
 async function createAuthDevice(userId, device, status) {
     const { rows } = await getPool().query(`
-        INSERT INTO depannhome_auth_devices (id, user_id, label, status, approved_at)
-        VALUES ($1, $2, $3, $4::text, CASE WHEN $4::text = 'approved' THEN NOW() ELSE NULL END)
+        INSERT INTO depannhome_auth_devices (id, user_id, label, device_type, status, approved_at)
+        VALUES ($1, $2, $3, $4, $5::text, CASE WHEN $5::text = 'approved' THEN NOW() ELSE NULL END)
         ON CONFLICT (id) DO UPDATE
-        SET label = EXCLUDED.label, last_seen_at = NOW()
+        SET label = EXCLUDED.label, device_type = EXCLUDED.device_type, last_seen_at = NOW()
         WHERE depannhome_auth_devices.user_id = EXCLUDED.user_id
         RETURNING *
-    `, [device.id, userId, device.label, status]);
+    `, [device.id, userId, device.label, device.type, status]);
     return rows[0];
 }
 
