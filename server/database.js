@@ -12,7 +12,12 @@ export function getPool() {
 
         pool = new Pool({
             connectionString: process.env.DATABASE_URL,
-            ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : undefined
+            ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : undefined,
+            application_name: "depann-home-pro",
+            max: 5,
+            idleTimeoutMillis: 30_000,
+            connectionTimeoutMillis: 8_000,
+            query_timeout: 8_000
         });
     }
 
