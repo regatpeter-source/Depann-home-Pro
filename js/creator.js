@@ -103,7 +103,7 @@ async function renderAccountDetail(accountId) {
         showFeedback("Entreprise mise à jour.");
         await loadAccounts(accountId);
     });
-    workspace.querySelector("#creatorDeleteAccount").addEventListener("click", async () => {
+    workspace.querySelector("#creatorDeleteAccount")?.addEventListener("click", async () => {
         if (!confirm(`Supprimer définitivement ${account.companyName}, ses accès et toutes ses données ?`)) return;
         const result = await api(`/api/creator/accounts/${encodeURIComponent(accountId)}`, { method: "DELETE" });
         if (!result.ok) return showFeedback(result.message || "Suppression impossible.", true);
