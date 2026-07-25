@@ -1,4 +1,7 @@
+let applicationShell = "";
+
 export async function initializeAuthentication({ onAuthenticated }) {
+    if (!applicationShell) applicationShell = getAppRoot().innerHTML;
     const session = await request("/api/auth/session");
     if (session.ok && session.data.authenticated) {
         onAuthenticated(session.data.user);
@@ -14,6 +17,13 @@ export async function initializeAuthentication({ onAuthenticated }) {
 
 export async function signOut() {
     await request("/api/auth/logout", { method: "POST" });
+}
+
+export function restoreApplicationShell() {
+    const root = getAppRoot();
+    if (!applicationShell || document.getElementById("app")) return Boolean(document.getElementById("app"));
+    root.innerHTML = applicationShell;
+    return Boolean(document.getElementById("app"));
 }
 
 function renderAuthentication({ onAuthenticated, registrationEnabled, message = "" }) {
