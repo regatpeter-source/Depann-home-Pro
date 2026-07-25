@@ -465,6 +465,31 @@ export async function createInitialAdministrator() {
     console.log(`Administrateur initial « ${username} » créé.`);
 }
 
+export async function recoverCreatorPassword() {
+    const username = normalizeUsername(process.env.CREATOR_PASSWORD_RECOVERY_USERNAME);
+    const password = String(process.env.CREATOR_PASSWORD_RECOVERY_PASSWORD || "");
+    const confirmation = String(process.env.CREATOR_PASSWORD_RECOVERY_CONFIRM || "");
+    const configured = username || password || confirmation;
+    if (!configured) return;
+    if (confirmation !== "RESET_CREATOR_PASSWORD") {
+        throw new Error("Réinitialisation Créateur refusée : définissez CREATOR_PASSWORD_RECOVERY_CONFIRM sur RESET_CREATOR_PASSWORD.");
+    }
+    if (!isCreatorUsername(username)) {
+        throw new Error("Réinitialisation Créateur refusée : l’identifiant ciblé doit être présent dans CREATOR_USERNAMES.");
+    }
+    const validationError = validateCredentials(username, password);
+    if (validationError) throw new Error(`Réinitialisation Créateur invalide : ${validationError}`);
+
+    const result = await getPool().query(`
+        UPDATE depannhome_users
+        SET password_hash = $2, updated_at = NOW()
+        WHERE username = $1
+        RETURNING id
+    `, [username, await bcrypt.hash(password, 12)]);
+    if (!result.rowCount) throw new Error("Réinitialisation Créateur impossible : aucun compte correspondant à cet identifiant.");
+    console.log(`Mot de passe Créateur réinitialisé pour « ${username} ». Retirez immédiatement les variables CREATOR_PASSWORD_RECOVERY_* après connexion.`);
+}
+
 function setSessionCookie(response, user, deviceId) {
     const duration = user.role === "technician" ? TECHNICIAN_SESSION_DURATION : ADMIN_SESSION_DURATION;
     const token = jwt.sign(

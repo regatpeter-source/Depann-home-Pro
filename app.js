@@ -8,6 +8,7 @@ import rateLimit from "express-rate-limit";
 import {
 	authenticateRequest,
 	createInitialAdministrator,
+	recoverCreatorPassword,
 	requireCreator,
 	registerAuthRoutes,
 	requireAuthentication,
@@ -103,6 +104,7 @@ async function start() {
 	await initializeClients();
 	await initializeLibrary();
 	await createInitialAdministrator();
+	await recoverCreatorPassword();
 	app.listen(port, () => console.log(`Depann'Home Pro écoute sur le port ${port}.`));
 }
 
