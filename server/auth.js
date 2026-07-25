@@ -50,7 +50,7 @@ export function registerAuthRoutes(app) {
                 return response.status(409).json({ message: "Un téléphone ou une tablette est déjà associé à ce compte administrateur. Supprimez d’abord l’ancien appareil dans Équipe." });
             }
             // Le Créateur et le premier poste administrateur permettent le démarrage des comptes déjà créés.
-            if (isCreator || (user.role === "admin" && !await userHasApprovedDevice(user.id))) {
+            if (isCreator || (user.role === "admin" && String(user.account_owner_id) === String(user.id) && !await userHasApprovedDevice(user.id))) {
                 authDevice = await createAuthDevice(user.id, authDeviceDetails, "approved");
             } else {
                 authDevice = await createAuthDevice(user.id, authDeviceDetails, "approval_pending");
@@ -147,11 +147,88 @@ export function registerAuthRoutes(app) {
         response.status(204).end();
     }));
 
+    app.get("/api/auth/members", requireAccountAdministrator, asyncHandler(async (request, response) => {
+        const { rows } = await getPool().query(`
+            SELECT id, username, role, full_name AS "fullName", phone, email, is_active AS "isActive", created_at AS "createdAt"
+            FROM depannhome_users
+            WHERE account_owner_id = $1 AND id <> $1
+            ORDER BY role, LOWER(full_name), username
+        `, [getAccountOwnerId(request)]);
+        response.json({ members: rows });
+    }));
+
+    app.post("/api/auth/members", requireAccountAdministrator, asyncHandler(async (request, response) => {
+        const role = request.body?.role === "admin" || request.body?.role === "technician" ? request.body.role : "";
+        const username = normalizeUsername(request.body?.username);
+        const password = String(request.body?.password || "");
+        const fullName = cleanText(request.body?.fullName, 100);
+        const phone = cleanText(request.body?.phone, 30);
+        const email = cleanText(request.body?.email, 160).toLowerCase();
+        const validationError = validateCredentials(username, password)
+            || (!role ? "Choisissez le type de poste." : "")
+            || (!fullName ? "Le nom de l’utilisateur est obligatoire." : "")
+            || (role === "technician" && !phone ? "Le téléphone du technicien est obligatoire." : "")
+            || (role === "technician" && !EMAIL_PATTERN.test(email) ? "L’e-mail professionnel du technicien est obligatoire." : "");
+        if (validationError) return response.status(400).json({ message: validationError });
+
+        if (role === "technician") {
+            const seats = await getPool().query(`
+                SELECT owner.max_technicians, COUNT(member.id) FILTER (WHERE member.role = 'technician' AND member.is_active)::int AS active_technicians
+                FROM depannhome_users owner
+                LEFT JOIN depannhome_users member ON member.account_owner_id = owner.id
+                WHERE owner.id = $1 GROUP BY owner.id
+            `, [getAccountOwnerId(request)]);
+            if (seats.rows[0]?.active_technicians >= seats.rows[0]?.max_technicians) {
+                return response.status(400).json({ message: "La limite de techniciens de votre entreprise est atteinte." });
+            }
+        }
+        try {
+            const member = await createUser({ username, passwordHash: await bcrypt.hash(password, 12), role, accountOwnerId: getAccountOwnerId(request), fullName, phone, email });
+            response.status(201).json({ member: publicUser(member) });
+        } catch (error) {
+            if (error.code === "23505") return response.status(409).json({ message: "Ce nom d’utilisateur est déjà utilisé." });
+            throw error;
+        }
+    }));
+
+    app.patch("/api/auth/members/:memberId", requireAccountAdministrator, asyncHandler(async (request, response) => {
+        const memberId = positiveId(request.params.memberId);
+        if (!memberId) return response.status(400).json({ message: "Accès invalide." });
+        const { rows } = await getPool().query(`
+            SELECT id, role, is_active AS "isActive" FROM depannhome_users
+            WHERE id = $1 AND account_owner_id = $2 AND id <> $2
+        `, [memberId, getAccountOwnerId(request)]);
+        const member = rows[0];
+        if (!member) return response.status(404).json({ message: "Accès introuvable." });
+        const isActive = Boolean(request.body?.isActive);
+        if (member.role === "technician" && isActive && !member.isActive) {
+            const seats = await getPool().query(`
+                SELECT owner.max_technicians, COUNT(member.id) FILTER (WHERE member.role = 'technician' AND member.is_active AND member.id <> $2)::int AS active_technicians
+                FROM depannhome_users owner
+                LEFT JOIN depannhome_users member ON member.account_owner_id = owner.id
+                WHERE owner.id = $1 GROUP BY owner.id
+            `, [getAccountOwnerId(request), memberId]);
+            if (seats.rows[0]?.active_technicians >= seats.rows[0]?.max_technicians) {
+                return response.status(400).json({ message: "La limite de techniciens de votre entreprise est atteinte." });
+            }
+        }
+        await getPool().query("UPDATE depannhome_users SET is_active = $3, updated_at = NOW() WHERE id = $1 AND account_owner_id = $2", [memberId, getAccountOwnerId(request), isActive]);
+        response.status(204).end();
+    }));
+
+    app.delete("/api/auth/members/:memberId", requireAccountAdministrator, asyncHandler(async (request, response) => {
+        const memberId = positiveId(request.params.memberId);
+        if (!memberId) return response.status(400).json({ message: "Accès invalide." });
+        const result = await getPool().query("DELETE FROM depannhome_users WHERE id = $1 AND account_owner_id = $2 AND id <> $2", [memberId, getAccountOwnerId(request)]);
+        if (!result.rowCount) return response.status(404).json({ message: "Accès introuvable." });
+        response.status(204).end();
+    }));
+
     app.get("/api/auth/technicians", requireAccountAdministrator, asyncHandler(async (request, response) => {
         const { rows } = await getPool().query(`
             SELECT id, username, full_name AS "fullName", phone, email, is_active AS "isActive", created_at AS "createdAt"
             FROM depannhome_users
-            WHERE account_owner_id = $1 AND id <> $1
+            WHERE account_owner_id = $1 AND id <> $1 AND role = 'technician'
             ORDER BY LOWER(full_name), username
         `, [getAccountOwnerId(request)]);
         response.json({ technicians: rows });

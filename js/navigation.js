@@ -958,10 +958,10 @@ function renderSupportContact(container) {
 async function renderTeamManagement(container) {
     const card = document.createElement("article");
     card.className = "brand-card full-card procedure-card team-management";
-    card.innerHTML = "<h2>Équipe</h2>";
+    card.innerHTML = "<h2>Équipe</h2><p class=\"muted\">Créez les accès de vos techniciens et les postes PC inclus dans votre offre.</p>";
     const form = document.createElement("form");
     form.className = "settings-form team-form";
-    [["fullName", "Nom du technicien", "text", "Ex. Léa Martin"], ["phone", "Téléphone", "tel", "Ex. 06 12 34 56 78"], ["email", "E-mail professionnel", "email", "lea@entreprise.fr"], ["username", "Identifiant", "text", "minuscules, chiffres, . _ -"], ["password", "Mot de passe initial", "password", "12 caractères minimum"]].forEach(([name, label, type, placeholder]) => {
+    [["fullName", "Nom et prénom", "text", "Ex. Léa Martin"], ["phone", "Téléphone", "tel", "Ex. 06 12 34 56 78"], ["email", "E-mail professionnel", "email", "lea@entreprise.fr"], ["username", "Identifiant", "text", "minuscules, chiffres, . _ -"], ["password", "Mot de passe initial", "password", "12 caractères minimum"]].forEach(([name, label, type, placeholder]) => {
         const field = document.createElement("label");
         field.textContent = label;
         const input = document.createElement("input");
@@ -991,7 +991,14 @@ async function renderTeamManagement(container) {
         }
         form.appendChild(field);
     });
-    const submit = createButton("Créer le compte technicien", "secondary-button", () => {});
+    const roleField = document.createElement("label");
+    roleField.textContent = "Type de poste";
+    const roleInput = document.createElement("select");
+    roleInput.name = "role";
+    roleInput.innerHTML = '<option value="technician">Technicien</option><option value="admin">Poste PC</option>';
+    roleField.appendChild(roleInput);
+    form.appendChild(roleField);
+    const submit = createButton("Créer le technicien", "secondary-button", () => {});
     submit.type = "submit";
     form.appendChild(submit);
     const feedback = document.createElement("p");
@@ -1005,29 +1012,38 @@ async function renderTeamManagement(container) {
     devices.className = "team-list";
     card.appendChild(devices);
     container.appendChild(card);
+    const updateRoleFields = () => {
+        const isTechnician = roleInput.value === "technician";
+        form.elements.phone.required = isTechnician;
+        form.elements.email.required = isTechnician;
+        submit.textContent = isTechnician ? "Créer le technicien" : "Créer le poste PC";
+    };
+    roleInput.addEventListener("change", updateRoleFields);
+    updateRoleFields();
     const load = async () => {
         list.textContent = "Chargement de l’équipe…";
         try {
-            const response = await fetch("/api/auth/technicians", { credentials: "same-origin" });
+            const response = await fetch("/api/auth/members", { credentials: "same-origin" });
             const payload = await response.json();
             if (!response.ok) throw new Error(payload.message || "Impossible de charger l’équipe.");
             list.innerHTML = "";
-            if (!payload.technicians?.length) list.textContent = "Aucun technicien créé pour le moment.";
-            (payload.technicians || []).forEach(technician => {
+            if (!payload.members?.length) list.textContent = "Aucun accès créé pour le moment.";
+            (payload.members || []).forEach(member => {
                 const item = document.createElement("div");
                 item.className = "team-member";
-                item.innerHTML = `<strong>${escapeHtml(technician.fullName || technician.username)}</strong><span>${escapeHtml(technician.phone || "Téléphone non renseigné")} · ${escapeHtml(technician.email || "E-mail non renseigné")} · ${escapeHtml(technician.username)}</span>`;
-                const toggle = createButton(technician.isActive ? "Désactiver" : "Réactiver", "secondary-button", async () => {
+                const memberType = member.role === "admin" ? "Poste PC" : "Technicien";
+                item.innerHTML = `<strong>${escapeHtml(member.fullName || member.username)}</strong><span>${memberType} · ${escapeHtml(member.phone || "Téléphone non renseigné")} · ${escapeHtml(member.email || "E-mail non renseigné")} · ${escapeHtml(member.username)}</span>`;
+                const toggle = createButton(member.isActive ? "Désactiver" : "Réactiver", "secondary-button", async () => {
                     toggle.disabled = true;
-                    const response = await fetch(`/api/auth/technicians/${encodeURIComponent(technician.id)}`, { method: "PATCH", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ isActive: !technician.isActive }) });
-                    if (!response.ok) feedback.textContent = "La mise à jour du technicien a échoué.";
+                    const response = await fetch(`/api/auth/members/${encodeURIComponent(member.id)}`, { method: "PATCH", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ isActive: !member.isActive }) });
+                    if (!response.ok) feedback.textContent = "La mise à jour de l’accès a échoué.";
                     await load();
                 });
                 const remove = createButton("Supprimer", "secondary-button danger-button", async () => {
-                    if (!confirm(`Supprimer définitivement le compte technicien de ${technician.fullName || technician.username} ?`)) return;
+                    if (!confirm(`Supprimer définitivement l’accès de ${member.fullName || member.username} ?`)) return;
                     remove.disabled = true;
-                    const response = await fetch(`/api/auth/technicians/${encodeURIComponent(technician.id)}`, { method: "DELETE", credentials: "same-origin" });
-                    if (!response.ok) feedback.textContent = (await response.json().catch(() => ({}))).message || "La suppression du technicien a échoué.";
+                    const response = await fetch(`/api/auth/members/${encodeURIComponent(member.id)}`, { method: "DELETE", credentials: "same-origin" });
+                    if (!response.ok) feedback.textContent = (await response.json().catch(() => ({}))).message || "La suppression de l’accès a échoué.";
                     await load();
                 });
                 item.append(toggle, remove);
@@ -1080,11 +1096,13 @@ async function renderTeamManagement(container) {
         submit.disabled = true;
         feedback.textContent = "";
         try {
-            const response = await fetch("/api/auth/technicians", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify(Object.fromEntries(new FormData(form))) });
+            const values = Object.fromEntries(new FormData(form));
+            const response = await fetch("/api/auth/members", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify(values) });
             const payload = await response.json();
             if (!response.ok) throw new Error(payload.message || "Création impossible.");
             form.reset();
-            feedback.textContent = "Compte technicien créé.";
+            updateRoleFields();
+            feedback.textContent = values.role === "admin" ? "Poste PC créé. Sa première connexion devra être activée dans la liste des appareils." : "Compte technicien créé.";
             await load();
         } catch (error) { feedback.textContent = error.message; }
         finally { submit.disabled = false; }
