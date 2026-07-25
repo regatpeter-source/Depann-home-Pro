@@ -198,7 +198,10 @@ function subscriptionStatusLabel(status) {
 }
 
 async function loadMembers(accountId) {
-    const result = await api(`/api/creator/accounts/${encodeURIComponent(accountId)}/members`);
+    const result = await Promise.race([
+        api(`/api/creator/accounts/${encodeURIComponent(accountId)}/members`),
+        new Promise(resolve => window.setTimeout(() => resolve({ ok: false, message: "Le chargement des accès a expiré. Réessayez dans quelques instants." }), 12_000))
+    ]);
     const container = document.querySelector("#creatorMembers");
     if (!container) return;
     if (!result.ok) {

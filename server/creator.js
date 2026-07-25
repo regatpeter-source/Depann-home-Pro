@@ -102,14 +102,20 @@ export function registerCreatorRoutes(app, requireCreator) {
     }));
 
     app.get("/api/creator/accounts/:accountId/members", requireCreator, asyncHandler(async (request, response) => {
+        const startedAt = Date.now();
         const accountId = positiveId(request.params.accountId);
+        console.info("[creator-members] request", { accountId, creatorId: request.user.sub });
         const owner = accountId && await findAccountOwner(getPool(), accountId);
-        if (!canManageAccount(owner, request)) return response.status(404).json({ message: "Compte entreprise introuvable." });
+        if (!canManageAccount(owner, request)) {
+            console.info("[creator-members] account unavailable", { accountId, durationMs: Date.now() - startedAt });
+            return response.status(404).json({ message: "Compte entreprise introuvable." });
+        }
         const { rows } = await getPool().query(`
             SELECT id, username, role, full_name AS "fullName", phone, email, is_active AS "isActive", created_at AS "createdAt"
             FROM depannhome_users WHERE account_owner_id = $1
             ORDER BY CASE WHEN id = $1 THEN 0 ELSE 1 END, role, LOWER(full_name), username
         `, [accountId]);
+        console.info("[creator-members] response", { accountId, count: rows.length, durationMs: Date.now() - startedAt });
         response.json({ members: rows });
     }));
 
