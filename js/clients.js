@@ -736,7 +736,10 @@ export function getSearchableClients() {
         attachments: client.attachments.map(attachment => ({
             id: attachment.id,
             type: attachment.type,
-            name: attachment.name
+            name: attachment.name,
+            dataUrl: attachment.dataUrl,
+            appointmentId: attachment.appointmentId || "",
+            createdAt: attachment.createdAt
         }))
     }));
 }
@@ -765,6 +768,7 @@ function normalizeAttachments(attachments = []) {
             mime: attachment.mime || "application/octet-stream",
             size: Number(attachment.size) || 0,
             dataUrl: attachment.dataUrl,
+            appointmentId: String(attachment.appointmentId || "").replace(/[^0-9]/g, ""),
             createdAt: attachment.createdAt || new Date().toISOString()
         }));
 }

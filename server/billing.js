@@ -75,6 +75,7 @@ export async function initializeBilling() {
             status VARCHAR(30) NOT NULL DEFAULT 'draft',
             is_accounted BOOLEAN NOT NULL DEFAULT FALSE,
             accounted_at DATE,
+            appointment_id BIGINT,
             source_quote_id BIGINT,
             quote_reference VARCHAR(80) NOT NULL DEFAULT '',
             lines JSONB NOT NULL DEFAULT '[]'::jsonb,
@@ -92,12 +93,17 @@ export async function initializeBilling() {
         ALTER TABLE depannhome_billing_documents
         ADD COLUMN IF NOT EXISTS is_accounted BOOLEAN NOT NULL DEFAULT FALSE,
         ADD COLUMN IF NOT EXISTS accounted_at DATE,
+        ADD COLUMN IF NOT EXISTS appointment_id BIGINT,
         ADD COLUMN IF NOT EXISTS source_quote_id BIGINT,
         ADD COLUMN IF NOT EXISTS quote_reference VARCHAR(80) NOT NULL DEFAULT ''
     `);
     await database.query(`
         CREATE INDEX IF NOT EXISTS depannhome_billing_documents_accounting_idx
         ON depannhome_billing_documents (owner_id, document_type, is_accounted, issue_date DESC)
+    `);
+    await database.query(`
+        CREATE INDEX IF NOT EXISTS depannhome_billing_documents_appointment_idx
+        ON depannhome_billing_documents (owner_id, appointment_id)
     `);
 }
 
@@ -121,7 +127,7 @@ export function registerBillingRoutes(app, requireAuthentication) {
                 SELECT id, document_type AS "documentType", document_number AS "documentNumber", customer_type AS "customerType",
                     customer_name AS "customerName", customer_address AS "customerAddress", TO_CHAR(issue_date, 'YYYY-MM-DD') AS "issueDate",
                     TO_CHAR(due_date, 'YYYY-MM-DD') AS "dueDate", status, is_accounted AS "isAccounted",
-                    TO_CHAR(accounted_at, 'YYYY-MM-DD') AS "accountedAt", source_quote_id AS "sourceQuoteId", quote_reference AS "quoteReference", lines, notes, updated_at AS "updatedAt"
+                    TO_CHAR(accounted_at, 'YYYY-MM-DD') AS "accountedAt", appointment_id AS "appointmentId", source_quote_id AS "sourceQuoteId", quote_reference AS "quoteReference", lines, notes, updated_at AS "updatedAt"
                 FROM depannhome_billing_documents WHERE owner_id = $1 ORDER BY issue_date DESC, id DESC
             `, [accountOwnerId])
         ]);
@@ -169,7 +175,7 @@ export function registerBillingRoutes(app, requireAuthentication) {
                 SELECT id, document_type AS "documentType", document_number AS "documentNumber", customer_type AS "customerType",
                     customer_name AS "customerName", customer_address AS "customerAddress", TO_CHAR(issue_date, 'YYYY-MM-DD') AS "issueDate",
                     TO_CHAR(due_date, 'YYYY-MM-DD') AS "dueDate", status, is_accounted AS "isAccounted",
-                    TO_CHAR(accounted_at, 'YYYY-MM-DD') AS "accountedAt", source_quote_id AS "sourceQuoteId", quote_reference AS "quoteReference", lines, notes
+                    TO_CHAR(accounted_at, 'YYYY-MM-DD') AS "accountedAt", appointment_id AS "appointmentId", source_quote_id AS "sourceQuoteId", quote_reference AS "quoteReference", lines, notes
                 FROM depannhome_billing_documents WHERE id = $1 AND owner_id = $2
             `, [id, getAccountOwnerId(request)]),
             database.query(`
@@ -248,15 +254,17 @@ export function registerBillingRoutes(app, requireAuthentication) {
         const document = sanitizeDocument(request.body);
         if (!document.ok) return response.status(400).json({ message: document.message });
         try {
+            const appointment = await findAccessibleAppointment(getPool(), getAccountOwnerId(request), document.appointmentId, request);
+            if (document.appointmentId && !appointment) return response.status(400).json({ message: "Le rendez-vous associé est introuvable ou n’est pas accessible." });
             const sourceQuote = await findSourceQuote(getPool(), getAccountOwnerId(request), document.sourceQuoteId);
             if (document.sourceQuoteId && !sourceQuote) return response.status(400).json({ message: "Le devis de référence est introuvable." });
             const { rows } = await getPool().query(`
                 INSERT INTO depannhome_billing_documents
-                    (owner_id, document_type, document_number, customer_type, customer_name, customer_address, issue_date, due_date, status, is_accounted, accounted_at, source_quote_id, quote_reference, lines, notes)
-                VALUES ($1,$2,$3,$4,$5,$6,$7::date,$8::date,$9,$10,CASE WHEN $10 THEN CURRENT_DATE ELSE NULL END,$11,$12,$13::jsonb,$14)
+                    (owner_id, document_type, document_number, customer_type, customer_name, customer_address, issue_date, due_date, status, is_accounted, accounted_at, appointment_id, source_quote_id, quote_reference, lines, notes)
+                VALUES ($1,$2,$3,$4,$5,$6,$7::date,$8::date,$9,$10,CASE WHEN $10 THEN CURRENT_DATE ELSE NULL END,$11,$12,$13,$14::jsonb,$15)
                 RETURNING id
             `, [getAccountOwnerId(request), document.documentType, document.documentNumber, document.customerType, document.customerName,
-                document.customerAddress, document.issueDate, document.dueDate || null, document.status, document.isAccounted, sourceQuote?.id || null, sourceQuote?.documentNumber || "", JSON.stringify(document.lines), document.notes]);
+                document.customerAddress, document.issueDate, document.dueDate || null, document.status, document.isAccounted, appointment?.id || null, sourceQuote?.id || null, sourceQuote?.documentNumber || "", JSON.stringify(document.lines), document.notes]);
             response.status(201).json({ id: rows[0].id });
         } catch (error) {
             if (error.code === "23505") return response.status(409).json({ message: "Ce numéro de document existe déjà dans votre compte." });
@@ -270,16 +278,18 @@ export function registerBillingRoutes(app, requireAuthentication) {
         if (!id) return response.status(400).json({ message: "Document invalide." });
         if (!document.ok) return response.status(400).json({ message: document.message });
         try {
+            const appointment = await findAccessibleAppointment(getPool(), getAccountOwnerId(request), document.appointmentId, request);
+            if (document.appointmentId && !appointment) return response.status(400).json({ message: "Le rendez-vous associé est introuvable ou n’est pas accessible." });
             const sourceQuote = await findSourceQuote(getPool(), getAccountOwnerId(request), document.sourceQuoteId);
             if (document.sourceQuoteId && !sourceQuote) return response.status(400).json({ message: "Le devis de référence est introuvable." });
             const result = await getPool().query(`
                 UPDATE depannhome_billing_documents SET document_type=$3, document_number=$4, customer_type=$5, customer_name=$6,
                     customer_address=$7, issue_date=$8::date, due_date=$9::date, status=$10, is_accounted=$11,
-                    accounted_at=CASE WHEN $11 THEN COALESCE(accounted_at, CURRENT_DATE) ELSE NULL END, source_quote_id=$12,
-                    quote_reference=$13, lines=$14::jsonb, notes=$15, updated_at=NOW()
+                    accounted_at=CASE WHEN $11 THEN COALESCE(accounted_at, CURRENT_DATE) ELSE NULL END, appointment_id=$12,
+                    source_quote_id=$13, quote_reference=$14, lines=$15::jsonb, notes=$16, updated_at=NOW()
                 WHERE id=$1 AND owner_id=$2
             `, [id, getAccountOwnerId(request), document.documentType, document.documentNumber, document.customerType, document.customerName,
-                document.customerAddress, document.issueDate, document.dueDate || null, document.status, document.isAccounted, sourceQuote?.id || null, sourceQuote?.documentNumber || "", JSON.stringify(document.lines), document.notes]);
+                document.customerAddress, document.issueDate, document.dueDate || null, document.status, document.isAccounted, appointment?.id || null, sourceQuote?.id || null, sourceQuote?.documentNumber || "", JSON.stringify(document.lines), document.notes]);
             if (!result.rowCount) return response.status(404).json({ message: "Document introuvable." });
             response.status(204).end();
         } catch (error) {
@@ -370,6 +380,7 @@ function sanitizeDocument(value) {
     const dueDate = value?.dueDate ? sanitizeDate(value.dueDate) : "";
     const status = cleanText(value?.status, 30) || "draft";
     const isAccounted = documentType === "invoice" && value?.isAccounted === "on";
+    const appointmentId = positiveId(value?.appointmentId);
     const sourceQuoteId = documentType === "invoice" ? positiveId(value?.sourceQuoteId) : 0;
     const notes = cleanText(value?.notes, 2000);
     const lines = sanitizeLines(value?.lines);
@@ -377,7 +388,7 @@ function sanitizeDocument(value) {
     if (!customerName) return { ok: false, message: "Le nom du client est obligatoire." };
     if (!lines.length) return { ok: false, message: "Ajoutez au moins une ligne." };
     if (value?.dueDate && !dueDate) return { ok: false, message: "La date d'échéance est invalide." };
-    return { ok: true, documentType, documentNumber, customerType, customerName, customerAddress, issueDate, dueDate, status, isAccounted, sourceQuoteId, lines, notes };
+    return { ok: true, documentType, documentNumber, customerType, customerName, customerAddress, issueDate, dueDate, status, isAccounted, appointmentId, sourceQuoteId, lines, notes };
 }
 
 function sanitizeQuoteTemplate(value) {
@@ -577,6 +588,17 @@ async function findSourceQuote(database, ownerId, sourceQuoteId) {
         FROM depannhome_billing_documents
         WHERE id = $1 AND owner_id = $2 AND document_type = 'quote'
     `, [sourceQuoteId, ownerId]);
+    return rows[0] || null;
+}
+
+async function findAccessibleAppointment(database, ownerId, appointmentId, request) {
+    if (!appointmentId) return null;
+    const { rows } = await database.query(`
+        SELECT id
+        FROM depannhome_calendar_events
+        WHERE id = $1 AND owner_id = $2 AND event_type = 'appointment'
+          AND ($3 <> 'technician' OR assigned_technician_id = $4::bigint)
+    `, [appointmentId, ownerId, request.user?.role || "", request.user?.sub || 0]);
     return rows[0] || null;
 }
 

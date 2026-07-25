@@ -1,5 +1,5 @@
 import { ROUTES } from "./config.js?v=105";
-import { createBillingDocumentForClient } from "./billing.js?v=126";
+import { createBillingDocumentForClient, viewBillingDocument } from "./billing.js?v=130";
 import { getSearchableClients } from "./clients.js?v=126";
 import { addClientActivityByName, synchronizeClients } from "./client-sync.js?v=88";
 import { renderClientMessages } from "./messages.js?v=88";
@@ -30,6 +30,16 @@ let calendarView = "month";
 let technicians = [];
 let showAllTechnicians = true;
 let visibleTechnicianIds = new Set();
+
+window.addEventListener("depannhome:billing-document-saved", event => {
+    const appointmentId = String(event.detail?.appointmentId || "");
+    const appointment = events.find(item => String(item.id) === appointmentId);
+    if (!appointment) return;
+    selectedEvent = appointment;
+    calendarView = "day";
+    displayedMonth = atNoon(new Date(`${appointment.date}T12:00:00`));
+    renderCalendar({ date: displayedMonth, event: appointment });
+});
 
 export async function renderCalendar(options = {}) {
     if (options.date) displayedMonth = calendarView === "month" ? firstDayOfMonth(options.date) : atNoon(options.date);
@@ -224,7 +234,8 @@ function renderEventForm(panel) {
                         <p class="eyebrow">Informations du rendez-vous</p>
                         <dl><dt>Date</dt><dd>${escapeHtml(formatActivityDate(event.date, event.startTime))}${event.endTime ? ` — ${escapeHtml(event.endTime)}` : ""}</dd>${event.assignedTechnicianName ? `<dt>Technicien</dt><dd>${escapeHtml(event.assignedTechnicianName)}</dd>` : ""}${event.notes ? `<dt>Notes</dt><dd>${escapeHtml(event.notes)}</dd>` : ""}</dl>
                     </section>
-                    ${renderInterventionPhotosHtml(client)}
+                    ${renderInterventionPhotosHtml(client, event)}
+                    <section class="calendar-linked-documents" id="calendarLinkedDocuments"><p class="muted">Chargement des devis et factures de cette intervention…</p></section>
                     ${isTechnicianBillingAllowed() ? `<section class="calendar-billing-actions">
                         <div><p class="eyebrow">Fin d’intervention</p><h3>Devis et facture</h3><p class="muted">Créez le document adapté après avoir renseigné l’intervention.</p></div>
                         <div><button type="button" class="secondary-button" data-client-action="quote">Créer un devis</button><button type="button" class="secondary-button" data-client-action="invoice">Créer une facture</button></div>
@@ -242,10 +253,11 @@ function renderEventForm(panel) {
             </div>`;
         panel.querySelector(".calendar-client-messages-slot")?.append(renderClientMessages(client));
         if (event.eventType === "appointment" && client) initializeQuitusForm(panel, event);
-        panel.querySelector('[data-client-action="quote"]')?.addEventListener("click", () => createBillingDocumentForClient("quote", client));
-        panel.querySelector('[data-client-action="invoice"]')?.addEventListener("click", () => createBillingDocumentForClient("invoice", client));
-        panel.querySelector("#calendarInterventionPhotos")?.addEventListener("submit", eventSubmit => uploadInterventionPhotos(eventSubmit, client));
-        panel.querySelector("#calendarClientUpload")?.addEventListener("submit", eventSubmit => uploadClientAttachments(eventSubmit, client));
+        loadLinkedBillingDocuments(panel.querySelector("#calendarLinkedDocuments"), event);
+        panel.querySelector('[data-client-action="quote"]')?.addEventListener("click", () => createBillingDocumentForClient("quote", client, event.id));
+        panel.querySelector('[data-client-action="invoice"]')?.addEventListener("click", () => createBillingDocumentForClient("invoice", client, event.id));
+        panel.querySelector("#calendarInterventionPhotos")?.addEventListener("submit", eventSubmit => uploadInterventionPhotos(eventSubmit, client, event));
+        panel.querySelector("#calendarClientUpload")?.addEventListener("submit", eventSubmit => uploadClientAttachments(eventSubmit, client, event));
         panel.querySelector("#closeCalendarDetail").addEventListener("click", () => {
             selectedEvent = null;
             renderCalendar();
@@ -431,7 +443,7 @@ function findClientForEvent(event) {
     return clientName ? getSearchableClients().find(client => normalizeText(client.name) === clientName) || null : null;
 }
 
-async function uploadClientAttachments(event, client) {
+async function uploadClientAttachments(event, client, appointment) {
     event.preventDefault();
     const form = event.currentTarget;
     const feedback = form.querySelector(".auth-message");
@@ -445,7 +457,7 @@ async function uploadClientAttachments(event, client) {
     button.disabled = true;
     feedback.textContent = "Dépôt en cours…";
     feedback.classList.remove("error");
-    const result = await uploadClientFiles(client, new FormData(form).get("type") || "Autre", files);
+    const result = await uploadClientFiles(client, new FormData(form).get("type") || "Autre", files, appointment?.id);
     if (!result.ok) {
         feedback.textContent = result.message || "Dépôt impossible.";
         feedback.classList.add("error");
@@ -454,6 +466,8 @@ async function uploadClientAttachments(event, client) {
     }
     form.reset();
     feedback.textContent = result.message || "Fichier ajouté au dossier.";
+    selectedEvent = appointment;
+    renderCalendar({ event: appointment });
 }
 
 function renderQuitusHtml(event) {
@@ -564,9 +578,11 @@ function initializeSignatureCanvas(canvas, existingSignature = "") {
     return { clear, value: () => hasSignature ? canvas.toDataURL("image/png") : "" };
 }
 
-function renderInterventionPhotosHtml(client) {
-    const before = (client.attachments || []).filter(attachment => attachment.type === "Photo avant");
-    const after = (client.attachments || []).filter(attachment => attachment.type === "Photo après");
+function renderInterventionPhotosHtml(client, appointment) {
+    const appointmentPhotos = (client.attachments || []).filter(attachment => String(attachment.appointmentId || "") === String(appointment?.id || ""));
+    const before = appointmentPhotos.filter(attachment => attachment.type === "Photo avant");
+    const after = appointmentPhotos.filter(attachment => attachment.type === "Photo après");
+    const general = appointmentPhotos.filter(attachment => attachment.type === "Photo");
     const previews = photos => photos.length
         ? `<div class="intervention-photo-previews">${photos.map(photo => `<img src="${escapeHtml(photo.dataUrl)}" alt="${escapeHtml(photo.name)}">`).join("")}</div>`
         : '<p class="muted">Aucune photo pour le moment.</p>';
@@ -575,12 +591,13 @@ function renderInterventionPhotosHtml(client) {
             <div><p class="eyebrow">Photos d’intervention</p><h3>Avant / après</h3></div>
             <section><h4>Avant intervention</h4>${previews(before)}<label>Ajouter une photo avant<input name="beforePhoto" type="file" accept="image/*" capture="environment"></label></section>
             <section><h4>Après intervention</h4>${previews(after)}<label>Ajouter une photo après<input name="afterPhoto" type="file" accept="image/*" capture="environment"></label></section>
+            ${general.length ? `<section><h4>Autres photos de l’intervention</h4>${previews(general)}</section>` : ""}
             <div class="calendar-form-actions"><button type="submit" class="secondary-button">Ajouter les photos</button></div><p class="auth-message" aria-live="polite"></p>
         </form>
     `;
 }
 
-async function uploadInterventionPhotos(event, client) {
+async function uploadInterventionPhotos(event, client, appointment) {
     event.preventDefault();
     const form = event.currentTarget;
     const feedback = form.querySelector(".auth-message");
@@ -598,7 +615,7 @@ async function uploadInterventionPhotos(event, client) {
     feedback.classList.remove("error");
     feedback.textContent = "Ajout des photos…";
     for (const upload of uploads) {
-        const result = await uploadClientFiles(client, upload.type, upload.files);
+        const result = await uploadClientFiles(client, upload.type, upload.files, appointment?.id);
         if (!result.ok) {
             feedback.textContent = result.message || "Ajout des photos impossible.";
             feedback.classList.add("error");
@@ -606,19 +623,35 @@ async function uploadInterventionPhotos(event, client) {
             return;
         }
     }
-    selectedEvent = event;
-    renderCalendar({ event });
+    selectedEvent = appointment;
+    renderCalendar({ event: appointment });
 }
 
-async function uploadClientFiles(client, type, files) {
+async function uploadClientFiles(client, type, files, appointmentId = "") {
     const payload = new FormData();
     payload.append("type", type);
+    if (appointmentId) payload.append("appointmentId", String(appointmentId));
     files.forEach(file => payload.append("files", file));
     const response = await fetch(`/api/clients/${encodeURIComponent(client.id)}/attachments`, { method: "POST", credentials: "same-origin", body: payload });
     const data = await response.json().catch(() => null);
     if (!response.ok) return { ok: false, message: data?.message };
     await synchronizeClients();
     return { ok: true, message: data?.message };
+}
+
+async function loadLinkedBillingDocuments(panel, appointment) {
+    if (!panel || !appointment?.id) return;
+    const result = await request("/api/billing");
+    if (!result.ok) {
+        panel.innerHTML = `<p class="auth-message error">${escapeHtml(result.message || "Impossible de charger les documents de l’intervention.")}</p>`;
+        return;
+    }
+    const documents = (result.data?.documents || []).filter(document => String(document.appointmentId || "") === String(appointment.id));
+    panel.innerHTML = `
+        <div class="form-heading"><div><p class="eyebrow">Dossier d’intervention</p><h3>Devis et factures créés</h3></div><span class="quitus-status${documents.length ? " signed" : ""}">${documents.length ? `${documents.length} créé${documents.length > 1 ? "s" : ""}` : "Aucun"}</span></div>
+        ${documents.length ? `<div class="client-activity-list">${documents.map(document => `<article class="client-activity-item"><div><strong>${escapeHtml(document.documentType === "invoice" ? "Facture" : "Devis")} ${escapeHtml(document.documentNumber)}</strong><p>${escapeHtml(document.status || "brouillon")}${document.quoteReference ? ` · Réf. devis ${escapeHtml(document.quoteReference)}` : ""}</p></div><button type="button" class="secondary-button" data-linked-document="${escapeHtml(document.id)}">Consulter</button></article>`).join("")}</div>` : '<p class="muted">Les devis et factures créés depuis ce rendez-vous apparaîtront ici.</p>'}
+    `;
+    panel.querySelectorAll("[data-linked-document]").forEach(button => button.addEventListener("click", () => viewBillingDocument(button.dataset.linkedDocument)));
 }
 
 function renderCalendarGrid(panel) {

@@ -35,7 +35,7 @@ export async function renderBilling(options = {}) {
 
     billingData = result.data;
     startBillingRefresh();
-    if (options.newDocument) activeDocument = createNewDocument(options.newDocument.type, options.newDocument.client);
+    if (options.newDocument) activeDocument = createNewDocument(options.newDocument.type, options.newDocument.client, options.newDocument.appointmentId);
     if (options.documentId) {
         const document = (billingData.documents || []).find(item => String(item.id) === String(options.documentId));
         activeDocument = document ? normalizeDocument(document) : null;
@@ -45,13 +45,13 @@ export async function renderBilling(options = {}) {
     renderDocumentList(listPanel);
 }
 
-export function createBillingDocumentForClient(type, client) {
+export function createBillingDocumentForClient(type, client, appointmentId = "") {
     if (!DOCUMENT_TYPES[type] || !client) return;
     if (!isTechnicianBillingAllowed()) {
         alert("La création de devis et factures est désactivée par l’administrateur.");
         return;
     }
-    renderBilling({ newDocument: { type, client } });
+    renderBilling({ newDocument: { type, client, appointmentId } });
 }
 
 export function viewBillingDocument(documentId) {
@@ -191,6 +191,7 @@ function renderDocumentEditor(panel) {
             <div class="form-grid">
                 <label>Type *<select name="documentType">${Object.entries(DOCUMENT_TYPES).map(([id, label]) => `<option value="${id}" ${document.documentType === id ? "selected" : ""}>${label}</option>`).join("")}</select></label>
                 <label>Numéro *<input name="documentNumber" maxlength="80" required placeholder="Ex. DEV-2026-001" value="${escapeHtml(document.documentNumber)}"></label>
+                <input name="appointmentId" type="hidden" value="${escapeHtml(document.appointmentId || "")}">
                 ${document.documentType === "invoice" ? `<input name="sourceQuoteId" type="hidden" value="${escapeHtml(document.sourceQuoteId || "")}"><p class="billing-quote-reference">${document.quoteReference ? `Référence devis : <strong>${escapeHtml(document.quoteReference)}</strong>` : "Facture sans devis associé"}</p>` : ""}
                 <label>Catégorie client<select name="customerType">${CUSTOMER_TYPES.map(type => `<option ${document.customerType === type ? "selected" : ""}>${type}</option>`).join("")}</select></label>
                 <label>Client / destinataire *<input name="customerName" list="billingClients" maxlength="160" required value="${escapeHtml(document.customerName)}"><datalist id="billingClients">${clients.map(client => `<option value="${escapeHtml(client.name)}">${escapeHtml([client.address, client.city].filter(Boolean).join(", "))}</option>`).join("")}</datalist></label>
@@ -233,6 +234,10 @@ function renderDocumentEditor(panel) {
             documentId: result.data?.id
         });
         activeDocument = null;
+        if (!isEditing && payload.appointmentId) {
+            window.dispatchEvent(new CustomEvent("depannhome:billing-document-saved", { detail: { appointmentId: payload.appointmentId } }));
+            return;
+        }
         renderBilling();
     });
     form.querySelector("#deleteBillingDocument")?.addEventListener("click", async () => {
@@ -361,6 +366,7 @@ function createInvoiceFromQuote(quote) {
         id: null,
         documentType: "invoice",
         documentNumber: suggestNumber("invoice"),
+        appointmentId: quote.appointmentId || "",
         sourceQuoteId: quote.id,
         quoteReference: quote.documentNumber,
         customerType: quote.customerType || "Particulier",
@@ -376,12 +382,13 @@ function createInvoiceFromQuote(quote) {
     renderBilling();
 }
 
-function createNewDocument(type, client = null) {
+function createNewDocument(type, client = null, appointmentId = "") {
     const baseQuote = type === "quote" ? normalizeQuoteTemplate(billingData.profile.defaultQuote) : null;
     return {
         id: null,
         documentType: type,
         documentNumber: suggestNumber(type),
+        appointmentId,
         customerType: client ? getBillingCustomerType(client.type) : baseQuote?.customerType || "Particulier",
         customerName: client?.name || "",
         customerAddress: client ? [client.address, client.city].filter(Boolean).join(", ") : "",
@@ -401,7 +408,7 @@ function fillCustomerAddress(input, form, clients) {
 }
 
 function emptyLine() { return { description: "", quantity: 1, unit: "unité", unitPrice: 0, vatRate: 20 }; }
-function normalizeDocument(document) { return { ...document, sourceQuoteId: document.sourceQuoteId || "", quoteReference: document.quoteReference || "", isAccounted: Boolean(document.isAccounted), lines: Array.isArray(document.lines) && document.lines.length ? document.lines.map(line => ({ ...emptyLine(), ...line })) : [emptyLine()] }; }
+function normalizeDocument(document) { return { ...document, appointmentId: document.appointmentId || "", sourceQuoteId: document.sourceQuoteId || "", quoteReference: document.quoteReference || "", isAccounted: Boolean(document.isAccounted), lines: Array.isArray(document.lines) && document.lines.length ? document.lines.map(line => ({ ...emptyLine(), ...line })) : [emptyLine()] }; }
 function normalizeQuoteTemplate(template) {
     if (!template || !Array.isArray(template.lines) || !template.lines.length) return null;
     return { ...template, lines: template.lines.map(line => ({ ...emptyLine(), ...line })) };

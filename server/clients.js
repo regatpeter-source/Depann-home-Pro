@@ -81,8 +81,12 @@ export function registerClientRoutes(app, requireAuthentication) {
         const clientId = String(request.params.clientId || "");
         const files = Array.isArray(request.files) ? request.files : [];
         const attachmentType = ATTACHMENT_TYPES.has(request.body?.type) ? request.body.type : "Autre";
+        const appointmentId = positiveId(request.body?.appointmentId);
         if (!CLIENT_ID_PATTERN.test(clientId)) return response.status(400).json({ message: "Identifiant client invalide." });
         if (!files.length) return response.status(400).json({ message: "Ajoutez au moins un fichier accepté." });
+        if (appointmentId && !await hasAccessibleAppointment(getAccountOwnerId(request), appointmentId, request)) {
+            return response.status(400).json({ message: "Le rendez-vous associé est introuvable ou n’est pas accessible." });
+        }
 
         const database = getPool();
         const connection = await database.connect();
@@ -113,6 +117,7 @@ export function registerClientRoutes(app, requireAuthentication) {
                 mime: attachmentMimeType(file.originalname),
                 size: file.size,
                 dataUrl: `data:${attachmentMimeType(file.originalname)};base64,${file.buffer.toString("base64")}`,
+                appointmentId: appointmentId || undefined,
                 createdAt
             }));
             const activityHistory = Array.isArray(client.activityHistory) ? client.activityHistory : [];
@@ -249,6 +254,20 @@ function sanitizeActivityHistory(value) {
 function validDate(value) {
     const date = new Date(value || "");
     return Number.isNaN(date.getTime()) ? "" : date.toISOString();
+}
+
+function positiveId(value) {
+    const id = Number(value);
+    return Number.isSafeInteger(id) && id > 0 ? id : 0;
+}
+
+async function hasAccessibleAppointment(ownerId, appointmentId, request) {
+    const { rowCount } = await getPool().query(`
+        SELECT 1 FROM depannhome_calendar_events
+        WHERE id = $1 AND owner_id = $2 AND event_type = 'appointment'
+          AND ($3 <> 'technician' OR assigned_technician_id = $4::bigint)
+    `, [appointmentId, ownerId, request.user?.role || "", request.user?.sub || 0]);
+    return Boolean(rowCount);
 }
 
 function safeFilename(value) {
