@@ -111,6 +111,10 @@ export function registerClientRoutes(app, requireAuthentication) {
                 "DELETE FROM depannhome_clients WHERE owner_id = $1 AND client_id = $2",
                 [getAccountOwnerId(request), clientId]
             );
+            await connection.query(
+                "DELETE FROM depannhome_messages WHERE recipient_id = $1 AND client_id = $2",
+                [getAccountOwnerId(request), clientId]
+            );
             await connection.query(`
                 INSERT INTO depannhome_deleted_clients (owner_id, client_id, deleted_at)
                 VALUES ($1, $2, NOW())

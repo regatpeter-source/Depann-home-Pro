@@ -46,6 +46,8 @@ export function registerMessageRoutes(app, requireAuthentication) {
         const { rows } = await getPool().query(`
             SELECT message.client_id AS "clientId", message.sender_id AS "senderId", message.created_at AS "createdAt"
             FROM depannhome_messages message
+            JOIN depannhome_clients client
+                ON client.owner_id = message.recipient_id AND client.client_id = message.client_id
             WHERE message.recipient_id = $1 AND message.client_id IS NOT NULL
             ORDER BY message.created_at DESC
             LIMIT 1000
