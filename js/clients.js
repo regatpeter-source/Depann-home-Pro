@@ -1,5 +1,5 @@
 import { ROUTES } from "./config.js?v=116";
-import { addClientActivity, deleteLocalClient, getLocalClients, saveLocalClient, synchronizeClients } from "./client-sync.js?v=111";
+import { addClientActivity, deleteLocalClient, getLocalClients, saveLocalClient, synchronizeClients } from "./client-sync.js?v=112";
 import { renderClientMessages } from "./messages.js?v=105";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
@@ -405,10 +405,9 @@ function renderClientTableRow(client, appointmentDates = []) {
 
     row.querySelector('[data-action="view"]').addEventListener("click", () => renderClients({ selectedId: client.id }));
     row.querySelector('[data-action="edit"]')?.addEventListener("click", () => renderClients({ editId: client.id }));
-    row.querySelector('[data-action="delete"]')?.addEventListener("click", () => {
+    row.querySelector('[data-action="delete"]')?.addEventListener("click", async () => {
         if (confirm(`Supprimer le client ${client.name} ?`)) {
-            deleteClient(client.id);
-            renderClients();
+            await deleteClient(client.id);
         }
     });
 
@@ -704,9 +703,19 @@ function saveClient(client) {
     }
 }
 
-function deleteClient(id) {
+async function deleteClient(id) {
     if (isClientReadOnly()) return;
-    deleteLocalClient(id);
+    try {
+        const response = await fetch(`/api/clients/${encodeURIComponent(id)}`, { method: "DELETE", credentials: "same-origin" });
+        const data = await response.json().catch(() => null);
+        if (!response.ok) throw new Error(data?.message);
+        deleteLocalClient(id);
+        const result = await synchronizeClients();
+        if (!result.ok) throw new Error(result.message || "Le dossier est supprimé, mais l’actualisation locale a échoué.");
+        renderClients(clientScreenOptions);
+    } catch (error) {
+        alert(error.message || "Suppression du dossier impossible.");
+    }
 }
 
 function isClientReadOnly() {

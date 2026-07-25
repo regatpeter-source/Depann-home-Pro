@@ -39,6 +39,14 @@ export async function initializeClients() {
         CREATE INDEX IF NOT EXISTS depannhome_clients_owner_updated_idx
         ON depannhome_clients (owner_id, updated_at DESC)
     `);
+    await database.query(`
+        CREATE TABLE IF NOT EXISTS depannhome_deleted_clients (
+            owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+            client_id VARCHAR(100) NOT NULL,
+            deleted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            PRIMARY KEY (owner_id, client_id)
+        )
+    `);
 }
 
 export function registerClientRoutes(app, requireAuthentication) {
@@ -61,6 +69,14 @@ export function registerClientRoutes(app, requireAuthentication) {
         const connection = await database.connect();
         try {
             await connection.query("BEGIN");
+            const deleted = await connection.query(
+                "SELECT 1 FROM depannhome_deleted_clients WHERE owner_id = $1 AND client_id = $2",
+                [getAccountOwnerId(request), clientId]
+            );
+            if (deleted.rowCount) {
+                await connection.query("ROLLBACK");
+                return response.status(410).json({ message: "Ce dossier a été supprimé et ne peut pas être restauré par une ancienne synchronisation." });
+            }
             const existing = await connection.query(`
                 SELECT client_data AS client FROM depannhome_clients
                 WHERE owner_id = $1 AND client_id = $2 FOR UPDATE
@@ -87,12 +103,27 @@ export function registerClientRoutes(app, requireAuthentication) {
     app.delete("/api/clients/:clientId", requireAuthentication, requireClientWriteAccess, asyncHandler(async (request, response) => {
         const clientId = String(request.params.clientId || "");
         if (!CLIENT_ID_PATTERN.test(clientId)) return response.status(400).json({ message: "Identifiant client invalide." });
-
-        await getPool().query(
-            "DELETE FROM depannhome_clients WHERE owner_id = $1 AND client_id = $2",
-            [getAccountOwnerId(request), clientId]
-        );
-        response.status(204).end();
+        const database = getPool();
+        const connection = await database.connect();
+        try {
+            await connection.query("BEGIN");
+            await connection.query(
+                "DELETE FROM depannhome_clients WHERE owner_id = $1 AND client_id = $2",
+                [getAccountOwnerId(request), clientId]
+            );
+            await connection.query(`
+                INSERT INTO depannhome_deleted_clients (owner_id, client_id, deleted_at)
+                VALUES ($1, $2, NOW())
+                ON CONFLICT (owner_id, client_id) DO UPDATE SET deleted_at = NOW()
+            `, [getAccountOwnerId(request), clientId]);
+            await connection.query("COMMIT");
+            response.status(204).end();
+        } catch (error) {
+            await connection.query("ROLLBACK");
+            throw error;
+        } finally {
+            connection.release();
+        }
     }));
 
     app.post("/api/clients/:clientId/attachments", requireAuthentication, attachmentUpload.array("files", MAX_ATTACHMENTS_PER_UPLOAD), asyncHandler(async (request, response) => {

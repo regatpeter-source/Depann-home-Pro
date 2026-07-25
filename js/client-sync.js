@@ -120,6 +120,11 @@ async function synchronize() {
                 method: "PUT",
                 body: JSON.stringify({ client })
             });
+        if (result.status === 410 && operation.type === "upsert") {
+            writeClients(getLocalClients().filter(item => item.id !== operation.clientId));
+            removeQueuedOperation(operation.id);
+            continue;
+        }
         if (!result.ok) return { ok: false, message: result.data?.message || "Synchronisation interrompue." };
         removeQueuedOperation(operation.id);
     }
@@ -308,8 +313,8 @@ async function request(url, options = {}) {
             ...options
         });
         const data = response.status === 204 ? null : await response.json().catch(() => null);
-        return { ok: response.ok, data };
+        return { ok: response.ok, data, status: response.status };
     } catch {
-        return { ok: false, data: null };
+        return { ok: false, data: null, status: 0 };
     }
 }

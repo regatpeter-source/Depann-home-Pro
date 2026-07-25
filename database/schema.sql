@@ -50,6 +50,13 @@ CREATE TABLE IF NOT EXISTS depannhome_clients (
 CREATE INDEX IF NOT EXISTS depannhome_clients_owner_updated_idx
     ON depannhome_clients (owner_id, updated_at DESC);
 
+CREATE TABLE IF NOT EXISTS depannhome_deleted_clients (
+    owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    client_id VARCHAR(100) NOT NULL,
+    deleted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (owner_id, client_id)
+);
+
 CREATE TABLE IF NOT EXISTS depannhome_billing_profiles (
     owner_id BIGINT PRIMARY KEY REFERENCES depannhome_users(id) ON DELETE CASCADE,
     company_name VARCHAR(160) NOT NULL DEFAULT '',
