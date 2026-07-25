@@ -200,7 +200,20 @@ function subscriptionStatusLabel(status) {
 async function loadMembers(accountId) {
     const result = await api(`/api/creator/accounts/${encodeURIComponent(accountId)}/members`);
     const container = document.querySelector("#creatorMembers");
-    if (!result.ok) return container.innerHTML = `<p class="auth-message error">${escapeHtml(result.message || "Impossible de charger les accès.")}</p>`;
+    if (!container) return;
+    if (!result.ok) {
+        container.replaceChildren();
+        const message = document.createElement("p");
+        message.className = "auth-message error";
+        message.textContent = result.message || "Impossible de charger les accès.";
+        const retry = document.createElement("button");
+        retry.type = "button";
+        retry.className = "secondary-button";
+        retry.textContent = "Réessayer";
+        retry.addEventListener("click", () => loadMembers(accountId));
+        container.append(message, retry);
+        return;
+    }
     const members = result.data.members || [];
     container.innerHTML = members.length ? `<div class="creator-members">${members.map(member => `
         <article class="creator-member">
@@ -300,11 +313,16 @@ function bindPasswordVisibilityToggle(container) {
 }
 
 async function api(url, options = {}) {
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 12_000);
     try {
-        const response = await fetch(url, { credentials: "same-origin", headers: { "Content-Type": "application/json", ...(options.headers || {}) }, ...options });
+        const response = await fetch(url, { credentials: "same-origin", headers: { "Content-Type": "application/json", ...(options.headers || {}) }, ...options, signal: controller.signal });
         const data = response.status === 204 ? null : await response.json().catch(() => null);
         return { ok: response.ok, data, message: data?.message };
-    } catch {
+    } catch (error) {
+        if (error.name === "AbortError") return { ok: false, message: "Le chargement des accès a expiré. Réessayez dans quelques instants." };
         return { ok: false, message: "Impossible de joindre le serveur." };
+    } finally {
+        window.clearTimeout(timeout);
     }
 }
