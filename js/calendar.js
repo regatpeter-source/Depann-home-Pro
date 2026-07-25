@@ -117,9 +117,11 @@ function renderHeader(panel) {
             <div class="technician-calendar-view-switcher" role="group" aria-label="Vue du planning">
                 ${[ ["day", "Jour"], ["week", "Semaine"], ["month", "Mois"] ].map(([view, label]) => `<button type="button" class="secondary-button${calendarView === view ? " active" : ""}" data-calendar-view="${view}">${label}</button>`).join("")}
             </div>
+            <button type="button" class="secondary-button auth-outline-button" data-support-request>Contacter le support</button>
         `;
         bindCalendarNavigation(panel);
         bindCalendarViewSwitcher(panel);
+        panel.querySelector("[data-support-request]").addEventListener("click", sendSupportRequest);
         return;
     }
     panel.innerHTML = `
@@ -917,6 +919,19 @@ function formatActivityDate(date, time) {
 
 function capitalize(value) {
     return value ? value.charAt(0).toUpperCase() + value.slice(1) : value;
+}
+
+async function sendSupportRequest(event) {
+    const message = window.prompt("Décrivez votre demande au support :");
+    if (message === null) return;
+    const button = event.currentTarget;
+    button.disabled = true;
+    const originalLabel = button.textContent;
+    button.textContent = "Envoi…";
+    const result = await request("/api/support/requests", { method: "POST", body: JSON.stringify({ message }) });
+    alert(result.ok ? result.data?.message || "Votre demande a été envoyée au support." : result.message || "Impossible d’envoyer votre demande au support.");
+    button.disabled = false;
+    button.textContent = originalLabel;
 }
 
 async function request(url, options = {}) {

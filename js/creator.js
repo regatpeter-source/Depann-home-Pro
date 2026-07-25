@@ -89,7 +89,7 @@ async function renderAccountDetail(accountId) {
             ${renderSubscriptionFields(account)}
             <div class="creator-form-actions"><button type="submit" class="secondary-button">Enregistrer l’entreprise</button>${isOwnCreatorAccount ? "" : '<button type="button" class="secondary-button danger-button" id="creatorDeleteAccount">Supprimer l’entreprise</button>'}</div>
         </form>
-        <section class="creator-members-section"><div class="form-heading"><div><p class="eyebrow">Accès</p><h3>Postes PC et techniciens</h3></div><button type="button" class="secondary-button" id="creatorNewMember">+ Ajouter un accès</button></div><div id="creatorMembers"><p class="muted">Chargement des accès…</p></div></section>
+        <section class="creator-members-section"><div class="form-heading"><div><p class="eyebrow">Accès</p><h3>Postes PC et techniciens</h3></div><div class="creator-form-actions"><button type="button" class="secondary-button auth-outline-button" id="creatorNewPcMember">+ Poste PC</button><button type="button" class="secondary-button" id="creatorNewTechnician">+ Technicien</button></div></div><div id="creatorMembers"><p class="muted">Chargement des accès…</p></div></section>
     `;
     workspace.querySelector("#creatorAccountForm").addEventListener("submit", async event => {
         event.preventDefault();
@@ -111,7 +111,8 @@ async function renderAccountDetail(accountId) {
         showFeedback("Entreprise supprimée.");
         await loadAccounts();
     });
-    workspace.querySelector("#creatorNewMember").addEventListener("click", () => renderMemberForm(account));
+    workspace.querySelector("#creatorNewPcMember").addEventListener("click", () => renderMemberForm(account, null, "admin"));
+    workspace.querySelector("#creatorNewTechnician").addEventListener("click", () => renderMemberForm(account, null, "technician"));
     bindSubscriptionPlan(workspace.querySelector("#creatorAccountForm"));
     await loadMembers(accountId);
 }
@@ -213,26 +214,29 @@ async function loadMembers(accountId) {
     }));
 }
 
-function renderMemberForm(account, member = null) {
+function renderMemberForm(account, member = null, initialRole = "admin") {
     const editing = Boolean(member);
     const primary = editing && String(member.id) === String(account.id);
+    const role = member?.role || initialRole;
     const workspace = document.querySelector("#creatorWorkspace");
     workspace.innerHTML = `
         <form id="creatorMemberForm" class="creator-form">
-            <div class="form-heading"><div><p class="eyebrow">${editing ? "Modifier l’accès" : "Nouvel accès"}</p><h3>${editing ? escapeHtml(member.fullName || member.username) : "Créer un accès"}</h3></div></div>
+            <div class="form-heading"><div><p class="eyebrow">${editing ? "Modifier l’accès" : "Nouvel accès"}</p><h3>${editing ? escapeHtml(member.fullName || member.username) : role === "technician" ? "Créer un poste technicien" : "Créer un poste PC"}</h3></div></div>
             <div class="form-grid">
-                ${editing ? `<label>Type d’accès<input value="${member.role === "admin" ? "Poste PC" : "Technicien"}" disabled></label>` : `<label>Type d’accès<select name="role"><option value="admin">Poste PC</option><option value="technician">Technicien</option></select></label>`}
+                ${editing ? `<label>Type d’accès<input value="${member.role === "admin" ? "Poste PC" : "Technicien"}" disabled></label>` : `<label>Type d’accès<select name="role"><option value="admin" ${role === "admin" ? "selected" : ""}>Poste PC</option><option value="technician" ${role === "technician" ? "selected" : ""}>Technicien</option></select></label>`}
                 <label>Nom et prénom<input name="fullName" maxlength="100" required value="${escapeHtml(member?.fullName || "")}"></label>
-                <label>Téléphone<input name="phone" maxlength="30" value="${escapeHtml(member?.phone || "")}" placeholder="Obligatoire pour un technicien"></label>
-                <label>E-mail professionnel<input name="email" type="email" maxlength="160" value="${escapeHtml(member?.email || "")}" placeholder="Obligatoire pour un technicien"></label>
-                <label>Identifiant<input name="username" minlength="3" maxlength="32" required value="${escapeHtml(member?.username || "")}"></label>
-                <label>${editing ? "Nouveau mot de passe (facultatif)" : "Mot de passe initial"}<span class="password-input"><input name="password" type="password" minlength="12" ${editing ? "" : "required"} autocomplete="new-password"><button type="button" class="secondary-button" data-password-visibility aria-label="Afficher le mot de passe" aria-pressed="false">Afficher</button></span></label>
+                <label data-member-phone>Téléphone<input name="phone" type="tel" maxlength="30" value="${escapeHtml(member?.phone || "")}" placeholder="06 12 34 56 78"></label>
+                <label data-member-email>E-mail professionnel<input name="email" type="email" maxlength="160" value="${escapeHtml(member?.email || "")}" placeholder="technicien@entreprise.fr"></label>
+                <label data-member-username>Identifiant<input name="username" minlength="3" maxlength="32" required value="${escapeHtml(member?.username || "")}" placeholder="minuscules, chiffres, . _ -"></label>
+                <label data-member-password>${editing ? "Nouveau mot de passe (facultatif)" : "Mot de passe initial"}<span class="password-input"><input name="password" type="password" minlength="12" ${editing ? "" : "required"} autocomplete="new-password"><button type="button" class="secondary-button" data-password-visibility aria-label="Afficher le mot de passe" aria-pressed="false">Afficher</button></span></label>
                 ${primary ? "" : `<label class="creator-switch">Accès actif<input name="isActive" type="checkbox" ${member?.isActive !== false ? "checked" : ""}><span>Autoriser la connexion</span></label>`}
             </div>
+            <p id="creatorMemberRoleHint" class="muted"></p>
             <div class="creator-form-actions"><button type="submit" class="secondary-button">${editing ? "Enregistrer l’accès" : "Créer l’accès"}</button><button type="button" class="secondary-button" id="creatorCancelMember">Retour à l’entreprise</button>${editing && !primary ? '<button type="button" class="secondary-button danger-button" id="creatorDeleteMember">Supprimer l’accès</button>' : ""}</div>
         </form>
     `;
     bindPasswordVisibilityToggle(workspace);
+    bindMemberRoleForm(workspace.querySelector("#creatorMemberForm"), editing, role);
     workspace.querySelector("#creatorCancelMember").addEventListener("click", () => renderAccountDetail(account.id));
     workspace.querySelector("#creatorMemberForm").addEventListener("submit", async event => {
         event.preventDefault();
@@ -255,6 +259,25 @@ function renderMemberForm(account, member = null) {
         showFeedback("Accès supprimé.");
         await loadAccounts(account.id);
     });
+}
+
+function bindMemberRoleForm(form, editing, initialRole) {
+    const roleInput = form.elements.role;
+    const phone = form.elements.phone;
+    const email = form.elements.email;
+    const hint = form.querySelector("#creatorMemberRoleHint");
+    const update = () => {
+        const isTechnician = (roleInput?.value || initialRole) === "technician";
+        phone.required = isTechnician;
+        email.required = isTechnician;
+        form.querySelector("[data-member-phone]").firstChild.textContent = isTechnician ? "Téléphone du technicien *" : "Téléphone";
+        form.querySelector("[data-member-email]").firstChild.textContent = isTechnician ? "E-mail professionnel du technicien *" : "E-mail professionnel";
+        hint.textContent = isTechnician
+            ? "Le téléphone, l’e-mail professionnel, l’identifiant et le mot de passe sont nécessaires pour créer un poste technicien."
+            : "L’identifiant et le mot de passe permettent la connexion au poste PC.";
+    };
+    roleInput?.addEventListener("change", update);
+    update();
 }
 
 function showFeedback(message, isError = false) {

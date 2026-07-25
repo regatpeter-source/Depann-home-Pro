@@ -27,6 +27,25 @@ export async function sendDocumentEmail({ recipient, recipientName, documentLabe
     });
 }
 
+export async function sendSupportRequestEmail({ senderName, senderEmail, senderUsername, message }) {
+    const recipient = String(process.env.SUPPORT_EMAIL || "").trim();
+    if (!recipient || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient)) {
+        const error = new Error("L’adresse e-mail du support n’est pas configurée.");
+        error.code = "SUPPORT_EMAIL_NOT_CONFIGURED";
+        throw error;
+    }
+
+    const sender = senderName || senderUsername || "Technicien";
+    const contact = senderEmail || "E-mail non renseigné";
+    await sendEmail({
+        recipient,
+        subject: `Demande support Depann'Home Pro — ${sender}`,
+        text: `Nouvelle demande de support\n\nTechnicien : ${sender}\nIdentifiant : ${senderUsername || "Non renseigné"}\nE-mail : ${contact}\n\nMessage :\n${message}`,
+        html: `<p><strong>Nouvelle demande de support</strong></p><p><strong>Technicien :</strong> ${escapeHtml(sender)}<br><strong>Identifiant :</strong> ${escapeHtml(senderUsername || "Non renseigné")}<br><strong>E-mail :</strong> ${escapeHtml(contact)}</p><p><strong>Message :</strong><br>${escapeHtml(message).replace(/\n/g, "<br>")}</p>`,
+        attachments: []
+    });
+}
+
 async function sendEmail({ recipient, subject, text, html, attachments = [] }) {
     if (!smtpConfigured()) {
         const error = new Error("L’envoi d’e-mails n’est pas configuré. Renseignez Brevo SMTP dans les variables d’environnement.");

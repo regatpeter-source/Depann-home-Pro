@@ -20,6 +20,7 @@ import { initializePurchases, registerPurchaseRoutes } from "./server/purchases.
 import { initializeMessages, registerMessageRoutes } from "./server/messages.js";
 import { initializeCalendar, registerCalendarRoutes } from "./server/calendar.js";
 import { clientUploadErrorHandler, initializeClients, registerClientRoutes } from "./server/clients.js";
+import { registerSupportRoutes } from "./server/support.js";
 import {
 	libraryUploadErrorHandler,
 	initializeLibrary,
@@ -43,6 +44,13 @@ app.use("/api/auth", rateLimit({
 	legacyHeaders: false,
 	message: { message: "Trop de tentatives. Réessayez dans quelques minutes." }
 }));
+app.use("/api/support", rateLimit({
+	windowMs: 15 * 60 * 1000,
+	limit: 10,
+	standardHeaders: "draft-7",
+	legacyHeaders: false,
+	message: { message: "Trop de demandes au support. Réessayez dans quelques minutes." }
+}));
 registerAuthRoutes(app);
 registerCreatorRoutes(app, requireCreator);
 registerBillingRoutes(app, requireAuthentication);
@@ -51,6 +59,7 @@ registerMessageRoutes(app, requireAuthentication);
 registerCalendarRoutes(app, requireAuthentication);
 registerClientRoutes(app, requireAuthentication);
 registerLibraryRoutes(app, requireAuthentication);
+registerSupportRoutes(app, requireAuthentication);
 
 // Seul le logo est nécessaire avant connexion. Le catalogue et les notices sont servis
 // uniquement après validation du cookie de session HTTP-only.
