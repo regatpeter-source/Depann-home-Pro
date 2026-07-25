@@ -1,5 +1,5 @@
 import { ROUTES, STORAGE_KEYS, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=116";
-import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=131";
+import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=132";
 import { renderCreatorConsole } from "./creator.js?v=109";
 import { createBillingDocumentForClient, renderBilling, viewBillingDocument } from "./billing.js?v=133";
 import { renderPurchases } from "./purchases.js?v=111";
@@ -919,6 +919,40 @@ function renderSettings() {
         creatorCard.appendChild(createButton("Ouvrir la console Créateur", "secondary-button", renderCreatorConsole));
         container.appendChild(creatorCard);
     }
+    if (document.body.dataset.role === "admin" && document.body.classList.contains("desktop-device")) {
+        renderSupportContact(container);
+    }
+}
+
+function renderSupportContact(container) {
+    const card = document.createElement("article");
+    card.className = "brand-card full-card procedure-card creator-entry-card";
+    card.innerHTML = '<p class="eyebrow">Assistance Depann’Home Pro</p><h2>Contacter le support</h2><p>Envoyez une demande au support depuis votre application PC.</p>';
+    const button = createButton("Envoyer une demande", "secondary-button", async () => {
+        const message = window.prompt("Décrivez votre demande au support :");
+        if (message === null) return;
+        button.disabled = true;
+        const label = button.textContent;
+        button.textContent = "Envoi…";
+        try {
+            const response = await fetch("/api/support/requests", {
+                method: "POST",
+                credentials: "same-origin",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ message })
+            });
+            const data = await response.json().catch(() => null);
+            if (!response.ok) throw new Error(data?.message || "Impossible d’envoyer votre demande au support.");
+            alert(data?.message || "Votre demande a été envoyée au support.");
+        } catch (error) {
+            alert(error.message || "Impossible d’envoyer votre demande au support.");
+        } finally {
+            button.disabled = false;
+            button.textContent = label;
+        }
+    });
+    card.appendChild(button);
+    container.appendChild(card);
 }
 
 async function renderTeamManagement(container) {
