@@ -100,6 +100,8 @@ CREATE TABLE IF NOT EXISTS depannhome_billing_documents (
     status VARCHAR(30) NOT NULL DEFAULT 'draft',
     is_accounted BOOLEAN NOT NULL DEFAULT FALSE,
     accounted_at DATE,
+    source_quote_id BIGINT,
+    quote_reference VARCHAR(80) NOT NULL DEFAULT '',
     lines JSONB NOT NULL DEFAULT '[]'::jsonb,
     notes VARCHAR(2000) NOT NULL DEFAULT '',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -112,7 +114,9 @@ CREATE INDEX IF NOT EXISTS depannhome_billing_documents_owner_date_idx
 
 ALTER TABLE depannhome_billing_documents
     ADD COLUMN IF NOT EXISTS is_accounted BOOLEAN NOT NULL DEFAULT FALSE,
-    ADD COLUMN IF NOT EXISTS accounted_at DATE;
+    ADD COLUMN IF NOT EXISTS accounted_at DATE,
+    ADD COLUMN IF NOT EXISTS source_quote_id BIGINT,
+    ADD COLUMN IF NOT EXISTS quote_reference VARCHAR(80) NOT NULL DEFAULT '';
 
 CREATE INDEX IF NOT EXISTS depannhome_billing_documents_accounting_idx
     ON depannhome_billing_documents (owner_id, document_type, is_accounted, issue_date DESC);

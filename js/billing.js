@@ -9,6 +9,8 @@ const CUSTOMER_TYPES = ["Particulier", "Professionnel", "Magasin", "Autre"];
 const DOCUMENT_TYPES = { quote: "Devis", invoice: "Facture" };
 let activeDocument = null;
 let billingData = null;
+let billingRefreshTimerStarted = false;
+let billingRefreshInProgress = false;
 
 export async function renderBilling(options = {}) {
     if (options.document) activeDocument = options.document;
@@ -32,6 +34,7 @@ export async function renderBilling(options = {}) {
     }
 
     billingData = result.data;
+    startBillingRefresh();
     if (options.newDocument) activeDocument = createNewDocument(options.newDocument.type, options.newDocument.client);
     if (options.documentId) {
         const document = (billingData.documents || []).find(item => String(item.id) === String(options.documentId));
@@ -188,6 +191,7 @@ function renderDocumentEditor(panel) {
             <div class="form-grid">
                 <label>Type *<select name="documentType">${Object.entries(DOCUMENT_TYPES).map(([id, label]) => `<option value="${id}" ${document.documentType === id ? "selected" : ""}>${label}</option>`).join("")}</select></label>
                 <label>Numéro *<input name="documentNumber" maxlength="80" required placeholder="Ex. DEV-2026-001" value="${escapeHtml(document.documentNumber)}"></label>
+                ${document.documentType === "invoice" ? `<input name="sourceQuoteId" type="hidden" value="${escapeHtml(document.sourceQuoteId || "")}"><p class="billing-quote-reference">${document.quoteReference ? `Référence devis : <strong>${escapeHtml(document.quoteReference)}</strong>` : "Facture sans devis associé"}</p>` : ""}
                 <label>Catégorie client<select name="customerType">${CUSTOMER_TYPES.map(type => `<option ${document.customerType === type ? "selected" : ""}>${type}</option>`).join("")}</select></label>
                 <label>Client / destinataire *<input name="customerName" list="billingClients" maxlength="160" required value="${escapeHtml(document.customerName)}"><datalist id="billingClients">${clients.map(client => `<option value="${escapeHtml(client.name)}">${escapeHtml([client.address, client.city].filter(Boolean).join(", "))}</option>`).join("")}</datalist></label>
                 <label class="form-wide">Adresse du destinataire<textarea name="customerAddress" rows="2" maxlength="500" placeholder="Adresse de facturation">${escapeHtml(document.customerAddress)}</textarea></label>
@@ -244,7 +248,7 @@ function renderReadOnlyDocument(panel, document) {
     panel.innerHTML = `
         <div class="billing-read-only-document">
             <div class="form-heading"><div><p class="eyebrow">Consultation uniquement</p><h2>${escapeHtml(DOCUMENT_TYPES[document.documentType])} ${escapeHtml(document.documentNumber)}</h2></div><div class="calendar-form-actions">${document.documentType === "quote" ? '<button type="button" class="secondary-button" id="createInvoiceFromQuote">Créer la facture</button>' : ""}<button type="button" class="secondary-button" id="closeBillingDocument">Fermer</button></div></div>
-            <div class="procedure-meta"><span>${escapeHtml(document.customerName)}</span><span>${escapeHtml(formatDate(document.issueDate))}</span><span>${escapeHtml(document.status || "brouillon")}</span>${document.documentType === "invoice" ? `<span>${document.isAccounted ? `Comptabilisée le ${escapeHtml(formatDate(document.accountedAt))}` : "Non comptabilisée"}</span>` : ""}</div>
+            <div class="procedure-meta"><span>${escapeHtml(document.customerName)}</span><span>${escapeHtml(formatDate(document.issueDate))}</span><span>${escapeHtml(document.status || "brouillon")}</span>${document.documentType === "invoice" ? `<span>${document.quoteReference ? `Réf. devis ${escapeHtml(document.quoteReference)}` : "Sans devis associé"}</span><span>${document.isAccounted ? `Comptabilisée le ${escapeHtml(formatDate(document.accountedAt))}` : "Non comptabilisée"}</span>` : ""}</div>
             <div class="billing-read-only-lines">${document.lines.map(line => `<div><span>${escapeHtml(line.description)}</span><strong>${escapeHtml(String(line.quantity))} × ${escapeHtml(formatMoney(line.unitPrice))}</strong><b>${escapeHtml(formatMoney(lineTotal(line)))}</b></div>`).join("")}</div>
             <div class="billing-totals" id="billingReadOnlyTotals"></div>
             ${document.notes ? `<section class="procedure-section"><h3>Notes / conditions</h3><p>${escapeHtml(document.notes)}</p></section>` : ""}
@@ -315,7 +319,7 @@ function renderDocumentList(panel) {
     const renderFilteredDocuments = () => {
         const query = normalizeText(search.value);
         const visibleDocuments = documents.filter(document => {
-            const matchesQuery = !query || normalizeText(`${document.documentNumber} ${document.customerName}`).includes(query);
+            const matchesQuery = !query || normalizeText(`${document.documentNumber} ${document.quoteReference || ""} ${document.customerName}`).includes(query);
             const matchesType = typeFilter.value === "all" || document.documentType === typeFilter.value;
             const matchesAccounting = accountingFilter.value === "all" || (document.documentType === "invoice" && (accountingFilter.value === "accounted" ? document.isAccounted : !document.isAccounted));
             return matchesQuery && matchesType && matchesAccounting;
@@ -329,7 +333,7 @@ function renderDocumentList(panel) {
             const accountingLabel = document.documentType === "invoice" ? (document.isAccounted ? `Comptabilisée le ${formatDate(document.accountedAt)}` : "À comptabiliser") : "Non concerné";
             const client = getSearchableClients().find(item => normalizeText(item.name) === normalizeText(document.customerName));
             const recipient = client?.email || "";
-            item.innerHTML = `<div><p class="eyebrow">${DOCUMENT_TYPES[document.documentType]} · ${escapeHtml(document.customerType)}</p><h3>${escapeHtml(document.documentNumber)}</h3><p>${escapeHtml(document.customerName)}</p><small>${escapeHtml(formatDate(document.issueDate))} · ${escapeHtml(document.status || "brouillon")} · <span class="billing-accounting-status ${document.isAccounted ? "is-accounted" : ""}">${escapeHtml(accountingLabel)}</span></small></div><div class="billing-document-amount"><strong>${formatMoney(totals.ttc)}</strong><small>TTC</small></div><div class="billing-document-actions">${document.documentType === "invoice" && !isTechnician() ? `<button type="button" class="secondary-button" data-accounting="${document.isAccounted ? "false" : "true"}">${document.isAccounted ? "Décomptabiliser" : "Comptabiliser"}</button>` : ""}${document.documentType === "quote" ? '<button type="button" class="secondary-button" data-create-invoice>Créer la facture</button>' : ""}<button type="button" class="secondary-button" data-open-document>${isTechnician() ? "Consulter" : "Ouvrir"}</button><button type="button" class="secondary-button" data-pdf>PDF / Imprimer</button><button type="button" class="secondary-button" data-email ${recipient ? "" : "disabled title=\"Ajoutez l’e-mail du client dans sa fiche pour envoyer le document.\""}>Envoyer par e-mail</button></div>`;
+            item.innerHTML = `<div><p class="eyebrow">${DOCUMENT_TYPES[document.documentType]} · ${escapeHtml(document.customerType)}</p><h3>${escapeHtml(document.documentNumber)}</h3><p>${escapeHtml(document.customerName)}</p><small>${escapeHtml(formatDate(document.issueDate))} · ${escapeHtml(document.status || "brouillon")}${document.quoteReference ? ` · Réf. devis ${escapeHtml(document.quoteReference)}` : ""} · <span class="billing-accounting-status ${document.isAccounted ? "is-accounted" : ""}">${escapeHtml(accountingLabel)}</span></small></div><div class="billing-document-amount"><strong>${formatMoney(totals.ttc)}</strong><small>TTC</small></div><div class="billing-document-actions">${document.documentType === "invoice" && !isTechnician() ? `<button type="button" class="secondary-button" data-accounting="${document.isAccounted ? "false" : "true"}">${document.isAccounted ? "Décomptabiliser" : "Comptabiliser"}</button>` : ""}${document.documentType === "quote" ? '<button type="button" class="secondary-button" data-create-invoice>Créer la facture</button>' : ""}<button type="button" class="secondary-button" data-open-document>${isTechnician() ? "Consulter" : "Ouvrir"}</button><button type="button" class="secondary-button" data-pdf>PDF / Imprimer</button><button type="button" class="secondary-button" data-email ${recipient ? "" : "disabled title=\"Ajoutez l’e-mail du client dans sa fiche pour envoyer le document.\""}>Envoyer par e-mail</button></div>`;
             item.querySelector("[data-open-document]").addEventListener("click", () => { activeDocument = normalizeDocument(document); renderBilling(); });
             item.querySelector("[data-create-invoice]")?.addEventListener("click", () => createInvoiceFromQuote(document));
             item.querySelector("[data-pdf]").addEventListener("click", () => openBillingPdf(document.id));
@@ -357,6 +361,8 @@ function createInvoiceFromQuote(quote) {
         id: null,
         documentType: "invoice",
         documentNumber: suggestNumber("invoice"),
+        sourceQuoteId: quote.id,
+        quoteReference: quote.documentNumber,
         customerType: quote.customerType || "Particulier",
         customerName: quote.customerName || "",
         customerAddress: quote.customerAddress || "",
@@ -395,7 +401,7 @@ function fillCustomerAddress(input, form, clients) {
 }
 
 function emptyLine() { return { description: "", quantity: 1, unit: "unité", unitPrice: 0, vatRate: 20 }; }
-function normalizeDocument(document) { return { ...document, isAccounted: Boolean(document.isAccounted), lines: Array.isArray(document.lines) && document.lines.length ? document.lines.map(line => ({ ...emptyLine(), ...line })) : [emptyLine()] }; }
+function normalizeDocument(document) { return { ...document, sourceQuoteId: document.sourceQuoteId || "", quoteReference: document.quoteReference || "", isAccounted: Boolean(document.isAccounted), lines: Array.isArray(document.lines) && document.lines.length ? document.lines.map(line => ({ ...emptyLine(), ...line })) : [emptyLine()] }; }
 function normalizeQuoteTemplate(template) {
     if (!template || !Array.isArray(template.lines) || !template.lines.length) return null;
     return { ...template, lines: template.lines.map(line => ({ ...emptyLine(), ...line })) };
@@ -411,6 +417,26 @@ function formDataToObject(data) { return Object.fromEntries(data.entries()); }
 
 function isTechnician() { return document.body.dataset.role === "technician"; }
 function isTechnicianBillingAllowed() { return !isTechnician() || document.body.dataset.technicianBillingEnabled !== "false"; }
+
+function startBillingRefresh() {
+    if (billingRefreshTimerStarted) return;
+    billingRefreshTimerStarted = true;
+    window.setInterval(refreshOpenBillingRegister, 30_000);
+    window.addEventListener("focus", refreshOpenBillingRegister);
+    document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible") refreshOpenBillingRegister();
+    });
+}
+
+async function refreshOpenBillingRegister() {
+    if (billingRefreshInProgress || activeDocument || !document.querySelector(".billing-overview-panel")) return;
+    billingRefreshInProgress = true;
+    try {
+        await renderBilling();
+    } finally {
+        billingRefreshInProgress = false;
+    }
+}
 
 function openBillingPdf(documentId) {
     const popup = window.open("", "_blank");
