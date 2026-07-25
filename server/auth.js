@@ -38,6 +38,13 @@ export function registerAuthRoutes(app) {
         const passwordMatches = user?.is_active && user?.account_is_active && await bcrypt.compare(password, user.password_hash);
 
         if (!passwordMatches) {
+            console.warn("[auth-login] rejected", {
+                username,
+                userFound: Boolean(user),
+                userActive: Boolean(user?.is_active),
+                accountActive: Boolean(user?.account_is_active),
+                passwordVerified: user ? await bcrypt.compare(password, user.password_hash) : false
+            });
             return response.status(401).json({ message: "Identifiant ou mot de passe incorrect." });
         }
 
@@ -482,7 +489,7 @@ export async function recoverCreatorPassword() {
 
     const result = await getPool().query(`
         UPDATE depannhome_users
-        SET password_hash = $2, updated_at = NOW()
+        SET password_hash = $2, is_active = TRUE, updated_at = NOW()
         WHERE username = $1
         RETURNING id
     `, [username, await bcrypt.hash(password, 12)]);
@@ -491,6 +498,7 @@ export async function recoverCreatorPassword() {
     if (!recoveredUser || !await bcrypt.compare(password, recoveredUser.password_hash)) {
         throw new Error("Réinitialisation Créateur impossible : la vérification du nouveau mot de passe a échoué.");
     }
+    await getPool().query("UPDATE depannhome_users SET is_active = TRUE, updated_at = NOW() WHERE id = $1", [recoveredUser.account_owner_id]);
     console.log(`Mot de passe Créateur réinitialisé et vérifié pour « ${username} ». Retirez immédiatement les variables CREATOR_PASSWORD_RECOVERY_* après connexion.`);
 }
 
