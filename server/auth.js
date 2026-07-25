@@ -42,18 +42,26 @@ export function registerAuthRoutes(app) {
         }
 
         const isCreator = isCreatorUsername(user.username);
+        const isMobileAdministrator = user.role === "admin" && device.type === "mobile";
+        const authDeviceDetails = { ...device, type: isMobileAdministrator ? "mobile" : "desktop" };
         let authDevice = await findAuthDevice(user.id, device.id);
         if (!authDevice) {
+            if (isMobileAdministrator && await userHasActiveMobileDevice(user.id)) {
+                return response.status(409).json({ message: "Un téléphone ou une tablette est déjà associé à ce compte administrateur. Supprimez d’abord l’ancien appareil dans Équipe." });
+            }
             // Le Créateur et le premier poste administrateur permettent le démarrage des comptes déjà créés.
             if (isCreator || (user.role === "admin" && !await userHasApprovedDevice(user.id))) {
-                authDevice = await createAuthDevice(user.id, device, "approved");
+                authDevice = await createAuthDevice(user.id, authDeviceDetails, "approved");
             } else {
-                authDevice = await createAuthDevice(user.id, device, "approval_pending");
+                authDevice = await createAuthDevice(user.id, authDeviceDetails, "approval_pending");
             }
             if (!authDevice) {
-                return response.status(409).json({ message: "Cet appareil est déjà associé à un autre compte. Utilisez un autre navigateur ou contactez l’administrateur." });
+                return response.status(409).json({ message: isMobileAdministrator ? "Un téléphone ou une tablette est déjà associé à ce compte administrateur. Supprimez d’abord l’ancien appareil dans Équipe." : "Cet appareil est déjà associé à un autre compte. Utilisez un autre navigateur ou contactez l’administrateur." });
             }
         } else {
+            if (isMobileAdministrator && authDevice.device_type !== "mobile" && await userHasActiveMobileDevice(user.id)) {
+                return response.status(409).json({ message: "Un téléphone ou une tablette est déjà associé à ce compte administrateur. Supprimez d’abord l’ancien appareil dans Équipe." });
+            }
             const { rows } = await getPool().query(`
                 UPDATE depannhome_auth_devices
                 SET label = $2, device_type = $3, last_seen_at = NOW(),
@@ -64,7 +72,7 @@ export function registerAuthRoutes(app) {
                     verification_attempts = CASE WHEN $4 THEN 0 ELSE verification_attempts END
                 WHERE id = $1
                 RETURNING *
-            `, [authDevice.id, device.label, device.type, isCreator]);
+            `, [authDevice.id, device.label, authDeviceDetails.type, isCreator]);
             authDevice = rows[0];
         }
         if (authDevice.status === "approved") {
@@ -442,16 +450,31 @@ async function userHasApprovedDevice(userId) {
     return rows[0]?.has_device;
 }
 
-async function createAuthDevice(userId, device, status) {
+async function userHasActiveMobileDevice(userId) {
     const { rows } = await getPool().query(`
-        INSERT INTO depannhome_auth_devices (id, user_id, label, device_type, status, approved_at)
-        VALUES ($1, $2, $3, $4, $5::text, CASE WHEN $5::text = 'approved' THEN NOW() ELSE NULL END)
-        ON CONFLICT (id) DO UPDATE
-        SET label = EXCLUDED.label, device_type = EXCLUDED.device_type, last_seen_at = NOW()
-        WHERE depannhome_auth_devices.user_id = EXCLUDED.user_id
-        RETURNING *
-    `, [device.id, userId, device.label, device.type, status]);
-    return rows[0];
+        SELECT EXISTS(
+            SELECT 1 FROM depannhome_auth_devices
+            WHERE user_id = $1 AND device_type = 'mobile' AND status <> 'rejected'
+        ) AS has_device
+    `, [userId]);
+    return rows[0]?.has_device;
+}
+
+async function createAuthDevice(userId, device, status) {
+    try {
+        const { rows } = await getPool().query(`
+            INSERT INTO depannhome_auth_devices (id, user_id, label, device_type, status, approved_at)
+            VALUES ($1, $2, $3, $4, $5::text, CASE WHEN $5::text = 'approved' THEN NOW() ELSE NULL END)
+            ON CONFLICT (id) DO UPDATE
+            SET label = EXCLUDED.label, device_type = EXCLUDED.device_type, last_seen_at = NOW()
+            WHERE depannhome_auth_devices.user_id = EXCLUDED.user_id
+            RETURNING *
+        `, [device.id, userId, device.label, device.type, status]);
+        return rows[0];
+    } catch (error) {
+        if (error.code === "23505" && error.constraint === "depannhome_auth_devices_one_active_mobile_per_user_idx") return null;
+        throw error;
+    }
 }
 
 function normalizeUsername(value) {
