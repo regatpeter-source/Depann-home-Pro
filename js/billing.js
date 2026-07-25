@@ -1,6 +1,6 @@
 import { ROUTES } from "./config.js?v=116";
 import { getSearchableClients } from "./clients.js?v=126";
-import { addClientActivityByName } from "./client-sync.js?v=110";
+import { addClientActivityByName } from "./client-sync.js?v=113";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { clearSearch, createInfo, getContainer, setPage } from "./ui.js?v=44";
@@ -9,8 +9,6 @@ const CUSTOMER_TYPES = ["Particulier", "Professionnel", "Magasin", "Autre"];
 const DOCUMENT_TYPES = { quote: "Devis", invoice: "Facture" };
 let activeDocument = null;
 let billingData = null;
-let billingRefreshTimerStarted = false;
-let billingRefreshInProgress = false;
 
 export async function renderBilling(options = {}) {
     if (options.document) activeDocument = options.document;
@@ -34,7 +32,6 @@ export async function renderBilling(options = {}) {
     }
 
     billingData = result.data;
-    startBillingRefresh();
     if (options.newDocument) activeDocument = createNewDocument(options.newDocument.type, options.newDocument.client, options.newDocument.appointmentId);
     if (options.documentId) {
         const document = (billingData.documents || []).find(item => String(item.id) === String(options.documentId));
@@ -427,26 +424,6 @@ function formDataToObject(data) { return Object.fromEntries(data.entries()); }
 
 function isTechnician() { return document.body.dataset.role === "technician"; }
 function isTechnicianBillingAllowed() { return !isTechnician() || document.body.dataset.technicianBillingEnabled !== "false"; }
-
-function startBillingRefresh() {
-    if (billingRefreshTimerStarted) return;
-    billingRefreshTimerStarted = true;
-    window.setInterval(refreshOpenBillingRegister, 30_000);
-    window.addEventListener("focus", refreshOpenBillingRegister);
-    document.addEventListener("visibilitychange", () => {
-        if (document.visibilityState === "visible") refreshOpenBillingRegister();
-    });
-}
-
-async function refreshOpenBillingRegister() {
-    if (billingRefreshInProgress || activeDocument || !document.querySelector(".billing-overview-panel")) return;
-    billingRefreshInProgress = true;
-    try {
-        await renderBilling();
-    } finally {
-        billingRefreshInProgress = false;
-    }
-}
 
 function openBillingPdf(documentId) {
     const popup = window.open("", "_blank");

@@ -6,7 +6,6 @@ const MAX_DELETED_ATTACHMENT_IDS = 500;
 
 let onlineListenerRegistered = false;
 let synchronizationPromise = null;
-let refreshTimerStarted = false;
 
 export async function initializeClientSynchronization() {
     if (canWriteClients()) migrateLegacyClients();
@@ -18,11 +17,6 @@ export async function initializeClientSynchronization() {
             if (document.visibilityState === "visible") synchronizeClients().catch(() => {});
         });
         onlineListenerRegistered = true;
-    }
-
-    if (!refreshTimerStarted) {
-        window.setInterval(() => synchronizeClients().catch(() => {}), 30_000);
-        refreshTimerStarted = true;
     }
 
     return synchronizeClients();
