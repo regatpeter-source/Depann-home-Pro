@@ -487,7 +487,11 @@ export async function recoverCreatorPassword() {
         RETURNING id
     `, [username, await bcrypt.hash(password, 12)]);
     if (!result.rowCount) throw new Error("Réinitialisation Créateur impossible : aucun compte correspondant à cet identifiant.");
-    console.log(`Mot de passe Créateur réinitialisé pour « ${username} ». Retirez immédiatement les variables CREATOR_PASSWORD_RECOVERY_* après connexion.`);
+    const recoveredUser = await findUserByUsername(username);
+    if (!recoveredUser || !await bcrypt.compare(password, recoveredUser.password_hash)) {
+        throw new Error("Réinitialisation Créateur impossible : la vérification du nouveau mot de passe a échoué.");
+    }
+    console.log(`Mot de passe Créateur réinitialisé et vérifié pour « ${username} ». Retirez immédiatement les variables CREATOR_PASSWORD_RECOVERY_* après connexion.`);
 }
 
 function setSessionCookie(response, user, deviceId) {
