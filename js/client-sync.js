@@ -2,6 +2,7 @@ const LEGACY_CLIENTS_KEY = "depannHomePro:clients";
 const CLIENTS_KEY_PREFIX = "depannHomePro:clients:";
 const QUEUE_KEY_PREFIX = "depannHomePro:clients-sync-queue:";
 const MAX_ACTIVITY_HISTORY = 150;
+const MAX_DELETED_ATTACHMENT_IDS = 500;
 
 let onlineListenerRegistered = false;
 let synchronizationPromise = null;
@@ -136,9 +137,14 @@ function mergeClients(firstClients, secondClients) {
             merged.set(client.id, client);
             return;
         }
-        const newest = getTimestamp(client.updatedAt) >= getTimestamp(existing.updatedAt) ? client : existing;
+        const newest = getTimestamp(client.updatedAt) > getTimestamp(existing.updatedAt) ? client : existing;
+        const deletedAttachmentIds = mergeDeletedAttachmentIds(existing.deletedAttachmentIds, client.deletedAttachmentIds);
+        const deletedAttachments = new Set(deletedAttachmentIds);
         merged.set(client.id, {
             ...newest,
+            attachments: (Array.isArray(newest.attachments) ? newest.attachments : [])
+                .filter(attachment => attachment && !deletedAttachments.has(String(attachment.id || ""))),
+            deletedAttachmentIds,
             activityHistory: mergeActivityHistory(existing.activityHistory, client.activityHistory)
         });
     });
@@ -231,10 +237,17 @@ function normalizeClient(client) {
         id: String(client?.id || `client-${Date.now()}-${Math.random().toString(16).slice(2)}`),
         name: client?.name || "Client sans nom",
         attachments: Array.isArray(client?.attachments) ? client.attachments : [],
+        deletedAttachmentIds: mergeDeletedAttachmentIds(client?.deletedAttachmentIds),
         activityHistory: mergeActivityHistory(client?.activityHistory),
         createdAt: validDate(client?.createdAt) || now,
         updatedAt: validDate(client?.updatedAt) || now
     };
+}
+
+function mergeDeletedAttachmentIds(...collections) {
+    return [...new Set(collections.flatMap(collection => Array.isArray(collection) ? collection : [])
+        .map(id => String(id || "").slice(0, 100))
+        .filter(Boolean))].slice(-MAX_DELETED_ATTACHMENT_IDS);
 }
 
 function mergeActivityHistory(...histories) {

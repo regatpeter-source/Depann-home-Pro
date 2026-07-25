@@ -11,6 +11,7 @@ const MAX_ACTIVITY_HISTORY = 150;
 const MAX_CLIENT_ATTACHMENTS = 30;
 const MAX_ATTACHMENT_SIZE = 4 * 1024 * 1024;
 const MAX_ATTACHMENTS_PER_UPLOAD = 5;
+const MAX_DELETED_ATTACHMENT_IDS = 500;
 const ATTACHMENT_TYPES = new Set(["Devis", "Facture", "Quitus", "Photo", "Photo avant", "Photo après", "Autre"]);
 const ALLOWED_ATTACHMENT_EXTENSIONS = new Set([".pdf", ".doc", ".docx", ".xls", ".xlsx", ".txt", ".jpg", ".jpeg", ".png", ".webp"]);
 const attachmentUpload = multer({
@@ -53,17 +54,34 @@ export function registerClientRoutes(app, requireAuthentication) {
 
     app.put("/api/clients/:clientId", requireAuthentication, requireClientWriteAccess, asyncHandler(async (request, response) => {
         const clientId = String(request.params.clientId || "");
-        const client = sanitizeClient(request.body?.client, clientId);
-        if (!client) return response.status(400).json({ message: "Dossier client invalide ou trop volumineux." });
+        const submittedClient = sanitizeClient(request.body?.client, clientId);
+        if (!submittedClient) return response.status(400).json({ message: "Dossier client invalide ou trop volumineux." });
 
-        const { rows } = await getPool().query(`
-            INSERT INTO depannhome_clients (owner_id, client_id, client_data, updated_at)
-            VALUES ($1, $2, $3::jsonb, $4)
-            ON CONFLICT (owner_id, client_id)
-            DO UPDATE SET client_data = EXCLUDED.client_data, updated_at = EXCLUDED.updated_at
-            RETURNING client_data AS client
-        `, [getAccountOwnerId(request), clientId, JSON.stringify(client), client.updatedAt]);
-        response.json({ client: rows[0].client });
+        const database = getPool();
+        const connection = await database.connect();
+        try {
+            await connection.query("BEGIN");
+            const existing = await connection.query(`
+                SELECT client_data AS client FROM depannhome_clients
+                WHERE owner_id = $1 AND client_id = $2 FOR UPDATE
+            `, [getAccountOwnerId(request), clientId]);
+            const now = new Date().toISOString();
+            const client = mergeDeletedAttachments(existing.rows[0]?.client, { ...submittedClient, updatedAt: now });
+            const { rows } = await connection.query(`
+                INSERT INTO depannhome_clients (owner_id, client_id, client_data, updated_at)
+                VALUES ($1, $2, $3::jsonb, NOW())
+                ON CONFLICT (owner_id, client_id)
+                DO UPDATE SET client_data = EXCLUDED.client_data, updated_at = NOW()
+                RETURNING client_data AS client
+            `, [getAccountOwnerId(request), clientId, JSON.stringify(client)]);
+            await connection.query("COMMIT");
+            response.json({ client: rows[0].client });
+        } catch (error) {
+            await connection.query("ROLLBACK");
+            throw error;
+        } finally {
+            connection.release();
+        }
     }));
 
     app.delete("/api/clients/:clientId", requireAuthentication, requireClientWriteAccess, asyncHandler(async (request, response) => {
@@ -153,6 +171,47 @@ export function registerClientRoutes(app, requireAuthentication) {
         }
     }));
 
+    app.delete("/api/clients/:clientId/attachments/:attachmentId", requireAuthentication, requireClientWriteAccess, asyncHandler(async (request, response) => {
+        const clientId = String(request.params.clientId || "");
+        const attachmentId = String(request.params.attachmentId || "").slice(0, 100);
+        if (!CLIENT_ID_PATTERN.test(clientId) || !attachmentId) return response.status(400).json({ message: "Fichier invalide." });
+
+        const database = getPool();
+        const connection = await database.connect();
+        try {
+            await connection.query("BEGIN");
+            const result = await connection.query(`
+                SELECT client_data AS client FROM depannhome_clients
+                WHERE owner_id = $1 AND client_id = $2 FOR UPDATE
+            `, [getAccountOwnerId(request), clientId]);
+            const client = result.rows[0]?.client;
+            const attachments = Array.isArray(client?.attachments) ? client.attachments : [];
+            const attachment = attachments.find(item => String(item?.id) === attachmentId);
+            if (!client || !attachment) {
+                await connection.query("ROLLBACK");
+                return response.status(404).json({ message: "Fichier introuvable." });
+            }
+            const now = new Date().toISOString();
+            const updatedClient = mergeDeletedAttachments(client, {
+                ...client,
+                attachments: attachments.filter(item => String(item?.id) !== attachmentId),
+                deletedAttachmentIds: [...(Array.isArray(client.deletedAttachmentIds) ? client.deletedAttachmentIds : []), attachmentId],
+                updatedAt: now
+            });
+            await connection.query(`
+                UPDATE depannhome_clients SET client_data = $3::jsonb, updated_at = NOW()
+                WHERE owner_id = $1 AND client_id = $2
+            `, [getAccountOwnerId(request), clientId, JSON.stringify(updatedClient)]);
+            await connection.query("COMMIT");
+            response.json({ message: "Fichier supprimé définitivement du dossier." });
+        } catch (error) {
+            await connection.query("ROLLBACK");
+            throw error;
+        } finally {
+            connection.release();
+        }
+    }));
+
     app.get("/api/clients/:clientId/attachments/:attachmentId/open", requireAuthentication, asyncHandler(async (request, response) => {
         const clientId = String(request.params.clientId || "");
         const attachmentId = String(request.params.attachmentId || "");
@@ -232,6 +291,7 @@ function sanitizeClient(value, expectedId) {
         updatedAt: updatedAt.toISOString(),
         createdAt: validDate(value.createdAt) || updatedAt.toISOString(),
         attachments: Array.isArray(value.attachments) ? value.attachments.slice(0, MAX_CLIENT_ATTACHMENTS) : [],
+        deletedAttachmentIds: sanitizeDeletedAttachmentIds(value.deletedAttachmentIds),
         activityHistory: sanitizeActivityHistory(value.activityHistory)
     };
 }
@@ -254,6 +314,26 @@ function sanitizeActivityHistory(value) {
 function validDate(value) {
     const date = new Date(value || "");
     return Number.isNaN(date.getTime()) ? "" : date.toISOString();
+}
+
+function sanitizeDeletedAttachmentIds(value) {
+    return [...new Set((Array.isArray(value) ? value : [])
+        .map(item => String(item || "").slice(0, 100))
+        .filter(Boolean))].slice(-MAX_DELETED_ATTACHMENT_IDS);
+}
+
+function mergeDeletedAttachments(existingClient, nextClient) {
+    const deletedAttachmentIds = sanitizeDeletedAttachmentIds([
+        ...(Array.isArray(existingClient?.deletedAttachmentIds) ? existingClient.deletedAttachmentIds : []),
+        ...(Array.isArray(nextClient?.deletedAttachmentIds) ? nextClient.deletedAttachmentIds : [])
+    ]);
+    const deleted = new Set(deletedAttachmentIds);
+    return {
+        ...nextClient,
+        attachments: (Array.isArray(nextClient?.attachments) ? nextClient.attachments : [])
+            .filter(attachment => attachment && !deleted.has(String(attachment.id || ""))),
+        deletedAttachmentIds
+    };
 }
 
 function positiveId(value) {

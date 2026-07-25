@@ -1,5 +1,5 @@
 import { ROUTES } from "./config.js?v=116";
-import { addClientActivity, deleteLocalClient, getLocalClients, saveLocalClient, synchronizeClients } from "./client-sync.js?v=110";
+import { addClientActivity, deleteLocalClient, getLocalClients, saveLocalClient, synchronizeClients } from "./client-sync.js?v=111";
 import { renderClientMessages } from "./messages.js?v=105";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
@@ -474,12 +474,11 @@ function renderClientDetail(client, options = {}) {
         button.addEventListener("click", () => emailClientAttachment(client, button.dataset.emailAttachment));
     });
     panel.querySelectorAll("[data-delete-attachment]").forEach(button => {
-        button.addEventListener("click", () => {
+        button.addEventListener("click", async () => {
             const attachmentId = button.dataset.deleteAttachment;
 
             if (confirm("Supprimer ce fichier du dossier client ?")) {
-                deleteClientAttachment(client.id, attachmentId);
-                renderClients({ selectedId: client.id });
+                await deleteClientAttachment(client.id, attachmentId);
             }
         });
     });
@@ -947,17 +946,19 @@ function renderAttachmentsHtml(clientId, attachments, withActions, recipient) {
     `;
 }
 
-function deleteClientAttachment(clientId, attachmentId) {
+async function deleteClientAttachment(clientId, attachmentId) {
     const client = getClientById(clientId);
-
-    if (!client) return;
-
-    const attachment = client.attachments.find(item => item.id === attachmentId);
-    const savedClient = saveClient({
-        ...client,
-        attachments: client.attachments.filter(attachment => attachment.id !== attachmentId)
-    });
-    if (savedClient && attachment) addClientActivity(savedClient.id, { type: "attachment", label: "Fichier supprimé", detail: attachment.name });
+    if (!client || !attachmentId) return;
+    try {
+        const response = await fetch(`/api/clients/${encodeURIComponent(clientId)}/attachments/${encodeURIComponent(attachmentId)}`, { method: "DELETE", credentials: "same-origin" });
+        const data = await response.json().catch(() => null);
+        if (!response.ok) throw new Error(data?.message);
+        const result = await synchronizeClients();
+        if (!result.ok) throw new Error(result.message || "La suppression est enregistrée, mais l’actualisation du dossier a échoué.");
+        renderClients({ selectedId: clientId, ...clientScreenOptions });
+    } catch (error) {
+        alert(error.message || "Suppression impossible.");
+    }
 }
 
 function getAttachmentIcon(attachment) {
