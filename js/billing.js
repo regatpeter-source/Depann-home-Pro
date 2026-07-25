@@ -191,6 +191,7 @@ function renderDocumentEditor(panel) {
             <div class="form-grid">
                 <label>Type *<select name="documentType">${Object.entries(DOCUMENT_TYPES).map(([id, label]) => `<option value="${id}" ${document.documentType === id ? "selected" : ""}>${label}</option>`).join("")}</select></label>
                 <label>Numéro *<input name="documentNumber" maxlength="80" required placeholder="Ex. DEV-2026-001" value="${escapeHtml(document.documentNumber)}"></label>
+                <input name="clientId" type="hidden" value="${escapeHtml(document.clientId || "")}">
                 <input name="appointmentId" type="hidden" value="${escapeHtml(document.appointmentId || "")}">
                 ${document.documentType === "invoice" ? `<input name="sourceQuoteId" type="hidden" value="${escapeHtml(document.sourceQuoteId || "")}"><p class="billing-quote-reference">${document.quoteReference ? `Référence devis : <strong>${escapeHtml(document.quoteReference)}</strong>` : "Facture sans devis associé"}</p>` : ""}
                 <label>Catégorie client<select name="customerType">${CUSTOMER_TYPES.map(type => `<option ${document.customerType === type ? "selected" : ""}>${type}</option>`).join("")}</select></label>
@@ -366,6 +367,7 @@ function createInvoiceFromQuote(quote) {
         id: null,
         documentType: "invoice",
         documentNumber: suggestNumber("invoice"),
+        clientId: quote.clientId || "",
         appointmentId: quote.appointmentId || "",
         sourceQuoteId: quote.id,
         quoteReference: quote.documentNumber,
@@ -388,6 +390,7 @@ function createNewDocument(type, client = null, appointmentId = "") {
         id: null,
         documentType: type,
         documentNumber: suggestNumber(type),
+        clientId: client?.id || "",
         appointmentId,
         customerType: client ? getBillingCustomerType(client.type) : baseQuote?.customerType || "Particulier",
         customerName: client?.name || "",
@@ -408,7 +411,7 @@ function fillCustomerAddress(input, form, clients) {
 }
 
 function emptyLine() { return { description: "", quantity: 1, unit: "unité", unitPrice: 0, vatRate: 20 }; }
-function normalizeDocument(document) { return { ...document, appointmentId: document.appointmentId || "", sourceQuoteId: document.sourceQuoteId || "", quoteReference: document.quoteReference || "", isAccounted: Boolean(document.isAccounted), lines: Array.isArray(document.lines) && document.lines.length ? document.lines.map(line => ({ ...emptyLine(), ...line })) : [emptyLine()] }; }
+function normalizeDocument(document) { return { ...document, clientId: document.clientId || "", appointmentId: document.appointmentId || "", sourceQuoteId: document.sourceQuoteId || "", quoteReference: document.quoteReference || "", isAccounted: Boolean(document.isAccounted), lines: Array.isArray(document.lines) && document.lines.length ? document.lines.map(line => ({ ...emptyLine(), ...line })) : [emptyLine()] }; }
 function normalizeQuoteTemplate(template) {
     if (!template || !Array.isArray(template.lines) || !template.lines.length) return null;
     return { ...template, lines: template.lines.map(line => ({ ...emptyLine(), ...line })) };

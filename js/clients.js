@@ -516,7 +516,10 @@ async function loadClientBillingDocuments(panel, client) {
         const response = await fetch("/api/billing", { credentials: "same-origin" });
         const data = await response.json().catch(() => null);
         if (!response.ok) throw new Error(data?.message);
-        const documents = (data?.documents || []).filter(document => normalizeText(document.customerName) === normalizeText(client.name));
+        const documents = (data?.documents || []).filter(document =>
+            String(document.clientId || "") === String(client.id)
+            || (!document.clientId && normalizeText(document.customerName) === normalizeText(client.name))
+        );
         panel.innerHTML = `
             <div class="form-heading"><div><p class="eyebrow">Devis, factures et envois</p><h2>${documents.length} document(s) pour ${escapeHtml(client.name)}</h2></div></div>
             <div class="client-billing-list" id="clientBillingList"></div>
@@ -550,7 +553,8 @@ async function getClientBillingDocument(client, documentId, documentNumber) {
     const data = await response.json().catch(() => null);
     if (!response.ok) throw new Error(data?.message || "Impossible de charger le document.");
     const document = (data?.documents || []).find(item =>
-        normalizeText(item.customerName) === normalizeText(client.name)
+        (String(item.clientId || "") === String(client.id)
+            || (!item.clientId && normalizeText(item.customerName) === normalizeText(client.name)))
         && (String(item.id) === String(documentId) || (!documentId && item.documentNumber === documentNumber))
     );
     if (!document) throw new Error("Le devis ou la facture n’est plus disponible.");

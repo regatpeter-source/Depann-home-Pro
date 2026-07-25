@@ -7,6 +7,7 @@ import { sendDocumentEmail } from "./email.js";
 const MAX_LOGO_SIZE = 2 * 1024 * 1024;
 const DOCUMENT_TYPES = new Set(["quote", "invoice"]);
 const CUSTOMER_TYPES = new Set(["Particulier", "Professionnel", "Magasin", "Autre"]);
+const CLIENT_ID_PATTERN = /^client-[a-zA-Z0-9-]+$/;
 const upload = multer({
     storage: multer.memoryStorage(),
     limits: { fileSize: MAX_LOGO_SIZE, files: 1 },
@@ -67,6 +68,7 @@ export async function initializeBilling() {
             owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
             document_type VARCHAR(10) NOT NULL CHECK (document_type IN ('quote', 'invoice')),
             document_number VARCHAR(80) NOT NULL,
+            client_id VARCHAR(100),
             customer_type VARCHAR(30) NOT NULL DEFAULT 'Particulier',
             customer_name VARCHAR(160) NOT NULL DEFAULT '',
             customer_address VARCHAR(500) NOT NULL DEFAULT '',
@@ -93,6 +95,7 @@ export async function initializeBilling() {
         ALTER TABLE depannhome_billing_documents
         ADD COLUMN IF NOT EXISTS is_accounted BOOLEAN NOT NULL DEFAULT FALSE,
         ADD COLUMN IF NOT EXISTS accounted_at DATE,
+        ADD COLUMN IF NOT EXISTS client_id VARCHAR(100),
         ADD COLUMN IF NOT EXISTS appointment_id BIGINT,
         ADD COLUMN IF NOT EXISTS source_quote_id BIGINT,
         ADD COLUMN IF NOT EXISTS quote_reference VARCHAR(80) NOT NULL DEFAULT ''
@@ -104,6 +107,10 @@ export async function initializeBilling() {
     await database.query(`
         CREATE INDEX IF NOT EXISTS depannhome_billing_documents_appointment_idx
         ON depannhome_billing_documents (owner_id, appointment_id)
+    `);
+    await database.query(`
+        CREATE INDEX IF NOT EXISTS depannhome_billing_documents_client_idx
+        ON depannhome_billing_documents (owner_id, client_id)
     `);
 }
 
@@ -124,7 +131,7 @@ export function registerBillingRoutes(app, requireAuthentication) {
                 FROM depannhome_billing_templates WHERE owner_id = $1 ORDER BY LOWER(label)
             `, [accountOwnerId]),
             database.query(`
-                SELECT id, document_type AS "documentType", document_number AS "documentNumber", customer_type AS "customerType",
+                SELECT id, document_type AS "documentType", document_number AS "documentNumber", client_id AS "clientId", customer_type AS "customerType",
                     customer_name AS "customerName", customer_address AS "customerAddress", TO_CHAR(issue_date, 'YYYY-MM-DD') AS "issueDate",
                     TO_CHAR(due_date, 'YYYY-MM-DD') AS "dueDate", status, is_accounted AS "isAccounted",
                     TO_CHAR(accounted_at, 'YYYY-MM-DD') AS "accountedAt", appointment_id AS "appointmentId", source_quote_id AS "sourceQuoteId", quote_reference AS "quoteReference", lines, notes, updated_at AS "updatedAt"
@@ -172,7 +179,7 @@ export function registerBillingRoutes(app, requireAuthentication) {
         const database = getPool();
         const [documentResult, profileResult] = await Promise.all([
             database.query(`
-                SELECT id, document_type AS "documentType", document_number AS "documentNumber", customer_type AS "customerType",
+                SELECT id, document_type AS "documentType", document_number AS "documentNumber", client_id AS "clientId", customer_type AS "customerType",
                     customer_name AS "customerName", customer_address AS "customerAddress", TO_CHAR(issue_date, 'YYYY-MM-DD') AS "issueDate",
                     TO_CHAR(due_date, 'YYYY-MM-DD') AS "dueDate", status, is_accounted AS "isAccounted",
                     TO_CHAR(accounted_at, 'YYYY-MM-DD') AS "accountedAt", appointment_id AS "appointmentId", source_quote_id AS "sourceQuoteId", quote_reference AS "quoteReference", lines, notes
@@ -254,16 +261,19 @@ export function registerBillingRoutes(app, requireAuthentication) {
         const document = sanitizeDocument(request.body);
         if (!document.ok) return response.status(400).json({ message: document.message });
         try {
+            if (document.clientId && !await hasClient(getPool(), getAccountOwnerId(request), document.clientId)) {
+                return response.status(400).json({ message: "Le dossier client associé est introuvable." });
+            }
             const appointment = await findAccessibleAppointment(getPool(), getAccountOwnerId(request), document.appointmentId, request);
             if (document.appointmentId && !appointment) return response.status(400).json({ message: "Le rendez-vous associé est introuvable ou n’est pas accessible." });
             const sourceQuote = await findSourceQuote(getPool(), getAccountOwnerId(request), document.sourceQuoteId);
             if (document.sourceQuoteId && !sourceQuote) return response.status(400).json({ message: "Le devis de référence est introuvable." });
             const { rows } = await getPool().query(`
                 INSERT INTO depannhome_billing_documents
-                    (owner_id, document_type, document_number, customer_type, customer_name, customer_address, issue_date, due_date, status, is_accounted, accounted_at, appointment_id, source_quote_id, quote_reference, lines, notes)
-                VALUES ($1,$2,$3,$4,$5,$6,$7::date,$8::date,$9,$10,CASE WHEN $10 THEN CURRENT_DATE ELSE NULL END,$11,$12,$13,$14::jsonb,$15)
+                    (owner_id, document_type, document_number, client_id, customer_type, customer_name, customer_address, issue_date, due_date, status, is_accounted, accounted_at, appointment_id, source_quote_id, quote_reference, lines, notes)
+                VALUES ($1,$2,$3,$4,$5,$6,$7,$8::date,$9::date,$10,$11,CASE WHEN $11 THEN CURRENT_DATE ELSE NULL END,$12,$13,$14,$15::jsonb,$16)
                 RETURNING id
-            `, [getAccountOwnerId(request), document.documentType, document.documentNumber, document.customerType, document.customerName,
+            `, [getAccountOwnerId(request), document.documentType, document.documentNumber, document.clientId || null, document.customerType, document.customerName,
                 document.customerAddress, document.issueDate, document.dueDate || null, document.status, document.isAccounted, appointment?.id || null, sourceQuote?.id || null, sourceQuote?.documentNumber || "", JSON.stringify(document.lines), document.notes]);
             response.status(201).json({ id: rows[0].id });
         } catch (error) {
@@ -278,17 +288,20 @@ export function registerBillingRoutes(app, requireAuthentication) {
         if (!id) return response.status(400).json({ message: "Document invalide." });
         if (!document.ok) return response.status(400).json({ message: document.message });
         try {
+            if (document.clientId && !await hasClient(getPool(), getAccountOwnerId(request), document.clientId)) {
+                return response.status(400).json({ message: "Le dossier client associé est introuvable." });
+            }
             const appointment = await findAccessibleAppointment(getPool(), getAccountOwnerId(request), document.appointmentId, request);
             if (document.appointmentId && !appointment) return response.status(400).json({ message: "Le rendez-vous associé est introuvable ou n’est pas accessible." });
             const sourceQuote = await findSourceQuote(getPool(), getAccountOwnerId(request), document.sourceQuoteId);
             if (document.sourceQuoteId && !sourceQuote) return response.status(400).json({ message: "Le devis de référence est introuvable." });
             const result = await getPool().query(`
-                UPDATE depannhome_billing_documents SET document_type=$3, document_number=$4, customer_type=$5, customer_name=$6,
-                    customer_address=$7, issue_date=$8::date, due_date=$9::date, status=$10, is_accounted=$11,
-                    accounted_at=CASE WHEN $11 THEN COALESCE(accounted_at, CURRENT_DATE) ELSE NULL END, appointment_id=$12,
-                    source_quote_id=$13, quote_reference=$14, lines=$15::jsonb, notes=$16, updated_at=NOW()
+                UPDATE depannhome_billing_documents SET document_type=$3, document_number=$4, client_id=$5, customer_type=$6, customer_name=$7,
+                    customer_address=$8, issue_date=$9::date, due_date=$10::date, status=$11, is_accounted=$12,
+                    accounted_at=CASE WHEN $12 THEN COALESCE(accounted_at, CURRENT_DATE) ELSE NULL END, appointment_id=$13,
+                    source_quote_id=$14, quote_reference=$15, lines=$16::jsonb, notes=$17, updated_at=NOW()
                 WHERE id=$1 AND owner_id=$2
-            `, [id, getAccountOwnerId(request), document.documentType, document.documentNumber, document.customerType, document.customerName,
+            `, [id, getAccountOwnerId(request), document.documentType, document.documentNumber, document.clientId || null, document.customerType, document.customerName,
                 document.customerAddress, document.issueDate, document.dueDate || null, document.status, document.isAccounted, appointment?.id || null, sourceQuote?.id || null, sourceQuote?.documentNumber || "", JSON.stringify(document.lines), document.notes]);
             if (!result.rowCount) return response.status(404).json({ message: "Document introuvable." });
             response.status(204).end();
@@ -373,6 +386,7 @@ function sanitizeTemplate(value) {
 function sanitizeDocument(value) {
     const documentType = DOCUMENT_TYPES.has(value?.documentType) ? value.documentType : "";
     const documentNumber = cleanText(value?.documentNumber, 80);
+    const clientId = CLIENT_ID_PATTERN.test(String(value?.clientId || "")) ? String(value.clientId) : "";
     const customerType = CUSTOMER_TYPES.has(value?.customerType) ? value.customerType : "Particulier";
     const customerName = cleanText(value?.customerName, 160);
     const customerAddress = cleanText(value?.customerAddress, 500);
@@ -388,7 +402,7 @@ function sanitizeDocument(value) {
     if (!customerName) return { ok: false, message: "Le nom du client est obligatoire." };
     if (!lines.length) return { ok: false, message: "Ajoutez au moins une ligne." };
     if (value?.dueDate && !dueDate) return { ok: false, message: "La date d'échéance est invalide." };
-    return { ok: true, documentType, documentNumber, customerType, customerName, customerAddress, issueDate, dueDate, status, isAccounted, appointmentId, sourceQuoteId, lines, notes };
+    return { ok: true, documentType, documentNumber, clientId, customerType, customerName, customerAddress, issueDate, dueDate, status, isAccounted, appointmentId, sourceQuoteId, lines, notes };
 }
 
 function sanitizeQuoteTemplate(value) {
@@ -589,6 +603,14 @@ async function findSourceQuote(database, ownerId, sourceQuoteId) {
         WHERE id = $1 AND owner_id = $2 AND document_type = 'quote'
     `, [sourceQuoteId, ownerId]);
     return rows[0] || null;
+}
+
+async function hasClient(database, ownerId, clientId) {
+    const { rowCount } = await database.query(
+        "SELECT 1 FROM depannhome_clients WHERE owner_id = $1 AND client_id = $2",
+        [ownerId, clientId]
+    );
+    return Boolean(rowCount);
 }
 
 async function findAccessibleAppointment(database, ownerId, appointmentId, request) {
