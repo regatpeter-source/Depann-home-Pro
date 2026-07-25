@@ -1023,7 +1023,7 @@ async function renderTeamManagement(container) {
     const load = async () => {
         list.textContent = "Chargement de l’équipe…";
         try {
-            const response = await fetch("/api/auth/members", { credentials: "same-origin" });
+            const response = await teamRequest("/api/auth/members");
             const payload = await response.json();
             if (!response.ok) throw new Error(payload.message || "Impossible de charger l’équipe.");
             list.innerHTML = "";
@@ -1049,7 +1049,7 @@ async function renderTeamManagement(container) {
                 item.append(toggle, remove);
                 list.appendChild(item);
             });
-            const deviceResponse = await fetch("/api/auth/devices", { credentials: "same-origin" });
+            const deviceResponse = await teamRequest("/api/auth/devices");
             const devicePayload = await deviceResponse.json();
             if (!deviceResponse.ok) throw new Error(devicePayload.message || "Impossible de charger les appareils.");
             const pcSeats = devicePayload.pcSeats || { maxPcUsers: Number(document.body.dataset.maxPcUsers || 1), activePcUsers: 0 };
@@ -1089,7 +1089,14 @@ async function renderTeamManagement(container) {
                 item.appendChild(remove);
                 devices.appendChild(item);
             });
-        } catch (error) { list.textContent = error.message; }
+        } catch (error) {
+            list.replaceChildren();
+            const message = document.createElement("p");
+            message.className = "auth-message error";
+            message.textContent = error.message || "Impossible de charger les accès.";
+            const retry = createButton("Réessayer", "secondary-button", load);
+            list.append(message, retry);
+        }
     };
     form.addEventListener("submit", async event => {
         event.preventDefault();
@@ -1108,6 +1115,19 @@ async function renderTeamManagement(container) {
         finally { submit.disabled = false; }
     });
     await load();
+}
+
+async function teamRequest(url, options = {}) {
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 15_000);
+    try {
+        return await fetch(url, { credentials: "same-origin", ...options, signal: controller.signal });
+    } catch (error) {
+        if (error.name === "AbortError") throw new Error("Le chargement des accès a expiré. Vérifiez votre connexion puis réessayez.");
+        throw error;
+    } finally {
+        window.clearTimeout(timeout);
+    }
 }
 
 function getCurrentRef() {

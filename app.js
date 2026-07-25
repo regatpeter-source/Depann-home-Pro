@@ -37,13 +37,16 @@ app.use(express.json({ limit: "25mb" }));
 app.use(cookieParser());
 app.use(authenticateRequest);
 
-app.use("/api/auth", rateLimit({
+const authenticationRateLimit = rateLimit({
 	windowMs: 15 * 60 * 1000,
 	limit: 20,
 	standardHeaders: "draft-7",
 	legacyHeaders: false,
 	message: { message: "Trop de tentatives. Réessayez dans quelques minutes." }
-}));
+});
+app.use("/api/auth/login", authenticationRateLimit);
+app.use("/api/auth/register", authenticationRateLimit);
+app.use("/api/auth/verify-device-code", authenticationRateLimit);
 app.use("/api/support", rateLimit({
 	windowMs: 15 * 60 * 1000,
 	limit: 10,
