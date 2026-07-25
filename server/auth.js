@@ -97,7 +97,7 @@ export function registerAuthRoutes(app) {
         const code = String(request.body?.code || "").replace(/\s/g, "");
         if (!deviceId || !/^\d{6}$/.test(code)) return response.status(400).json({ message: "Code de validation invalide." });
         const { rows } = await getPool().query(`
-            SELECT device.*, account.id AS user_id, account.username, account.role, account.account_owner_id, account.full_name, account.phone, account.email, account.is_active, owner.is_active AS account_is_active, owner.technician_billing_enabled, owner.max_pc_users
+            SELECT device.*, account.id AS user_id, account.username, account.role, account.account_owner_id, account.full_name, account.phone, account.email, account.is_active, account.can_create_billing, owner.is_active AS account_is_active, owner.max_pc_users
             FROM depannhome_auth_devices device JOIN depannhome_users account ON account.id = device.user_id JOIN depannhome_users owner ON owner.id = account.account_owner_id WHERE device.id = $1
         `, [deviceId]);
         const device = rows[0];
@@ -145,18 +145,9 @@ export function registerAuthRoutes(app) {
         response.status(204).end();
     });
 
-    app.put("/api/auth/technician-billing", requireAccountAdministrator, asyncHandler(async (request, response) => {
-        if (typeof request.body?.enabled !== "boolean") return response.status(400).json({ message: "Réglage d’autorisation invalide." });
-        await getPool().query(
-            "UPDATE depannhome_users SET technician_billing_enabled = $2, updated_at = NOW() WHERE id = $1",
-            [getAccountOwnerId(request), request.body.enabled]
-        );
-        response.status(204).end();
-    }));
-
     app.get("/api/auth/members", requireAccountAdministrator, asyncHandler(async (request, response) => {
         const { rows } = await getPool().query(`
-            SELECT id, username, role, full_name AS "fullName", phone, email, is_active AS "isActive", created_at AS "createdAt"
+            SELECT id, username, role, full_name AS "fullName", phone, email, is_active AS "isActive", can_create_billing AS "canCreateBilling", created_at AS "createdAt"
             FROM depannhome_users
             WHERE account_owner_id = $1 AND id <> $1
             ORDER BY role, LOWER(full_name), username
@@ -202,12 +193,15 @@ export function registerAuthRoutes(app) {
         const memberId = positiveId(request.params.memberId);
         if (!memberId) return response.status(400).json({ message: "Accès invalide." });
         const { rows } = await getPool().query(`
-            SELECT id, role, is_active AS "isActive" FROM depannhome_users
+            SELECT id, role, is_active AS "isActive", can_create_billing AS "canCreateBilling" FROM depannhome_users
             WHERE id = $1 AND account_owner_id = $2 AND id <> $2
         `, [memberId, getAccountOwnerId(request)]);
         const member = rows[0];
         if (!member) return response.status(404).json({ message: "Accès introuvable." });
         const isActive = Boolean(request.body?.isActive);
+        const canCreateBilling = member.role === "technician" && typeof request.body?.canCreateBilling === "boolean"
+            ? request.body.canCreateBilling
+            : member.canCreateBilling;
         if (member.role === "technician" && isActive && !member.isActive) {
             const seats = await getPool().query(`
                 SELECT owner.max_technicians, COUNT(member.id) FILTER (WHERE member.role = 'technician' AND member.is_active AND member.id <> $2)::int AS active_technicians
@@ -219,7 +213,7 @@ export function registerAuthRoutes(app) {
                 return response.status(400).json({ message: "La limite de techniciens de votre entreprise est atteinte." });
             }
         }
-        await getPool().query("UPDATE depannhome_users SET is_active = $3, updated_at = NOW() WHERE id = $1 AND account_owner_id = $2", [memberId, getAccountOwnerId(request), isActive]);
+        await getPool().query("UPDATE depannhome_users SET is_active = $3, can_create_billing = $4, updated_at = NOW() WHERE id = $1 AND account_owner_id = $2", [memberId, getAccountOwnerId(request), isActive, canCreateBilling]);
         response.status(204).end();
     }));
 
@@ -413,7 +407,7 @@ export async function authenticateRequest(request, response, next) {
             fullName: user.full_name || "",
             phone: user.phone || "",
             email: user.email || "",
-            technicianBillingEnabled: user.technician_billing_enabled !== false,
+            technicianBillingEnabled: user.can_create_billing !== false,
             maxPcUsers: Number(user.max_pc_users) || 1,
             deviceId: device.id,
             isCreator: isCreatorUsername(user.username)
@@ -535,7 +529,7 @@ function publicUser(user) {
         fullName: user.full_name || user.fullName || "",
         phone: user.phone || "",
         email: user.email || "",
-        technicianBillingEnabled: (user.technician_billing_enabled ?? user.technicianBillingEnabled) !== false,
+        technicianBillingEnabled: (user.can_create_billing ?? user.technicianBillingEnabled) !== false,
         maxPcUsers: Number(user.max_pc_users ?? user.maxPcUsers) || 1,
         isActive: user.is_active !== false,
         isCreator: Boolean(user.isCreator || isCreatorUsername(user.username))

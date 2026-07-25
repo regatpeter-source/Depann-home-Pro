@@ -807,17 +807,6 @@ function renderSettings() {
     offlineCheckbox.style.marginLeft = "8px";
     offlineLabel.appendChild(offlineCheckbox);
 
-    const technicianBillingLabel = document.createElement("label");
-    technicianBillingLabel.textContent = "Autoriser les techniciens à créer des devis et factures";
-    technicianBillingLabel.style.display = "block";
-    const technicianBillingCheckbox = document.createElement("input");
-    technicianBillingCheckbox.type = "checkbox";
-    technicianBillingCheckbox.checked = document.body.dataset.technicianBillingEnabled !== "false";
-    technicianBillingCheckbox.style.marginLeft = "8px";
-    technicianBillingLabel.appendChild(technicianBillingCheckbox);
-    const technicianBillingHint = document.createElement("p");
-    technicianBillingHint.className = "muted";
-    technicianBillingHint.textContent = "Si cette option est désactivée, les techniciens ne peuvent plus créer de devis ni de factures depuis leur application.";
     const pcSeatsHint = document.createElement("p");
     pcSeatsHint.className = "muted";
     pcSeatsHint.textContent = `Postes PC inclus dans votre offre : ${document.body.dataset.maxPcUsers || "1"}. Les postes supplémentaires sont activés par Depann’Home Pro, puis validés dans la section Équipe.`;
@@ -877,8 +866,6 @@ function renderSettings() {
     form.appendChild(langLabel);
     form.appendChild(offlineLabel);
     if (document.body.dataset.role === "admin") {
-        form.appendChild(technicianBillingLabel);
-        form.appendChild(technicianBillingHint);
         form.appendChild(pcSeatsHint);
     }
     form.appendChild(actions);
@@ -887,30 +874,6 @@ function renderSettings() {
     card.appendChild(section);
 
     container.appendChild(card);
-    technicianBillingCheckbox.addEventListener("change", async event => {
-        const enabled = event.currentTarget.checked;
-        technicianBillingCheckbox.disabled = true;
-        technicianBillingHint.textContent = "Mise à jour de l’autorisation…";
-        try {
-            const response = await fetch("/api/auth/technician-billing", {
-                method: "PUT",
-                credentials: "same-origin",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ enabled })
-            });
-            const payload = await response.json().catch(() => null);
-            if (!response.ok) throw new Error(payload?.message || "Mise à jour impossible.");
-            document.body.dataset.technicianBillingEnabled = String(enabled);
-            technicianBillingHint.textContent = enabled
-                ? "Les techniciens peuvent créer des devis et des factures."
-                : "La création de devis et factures est maintenant bloquée pour les techniciens.";
-        } catch (error) {
-            technicianBillingCheckbox.checked = !enabled;
-            technicianBillingHint.textContent = error.message;
-        } finally {
-            technicianBillingCheckbox.disabled = false;
-        }
-    });
     if (document.body.dataset.role === "admin") renderTeamManagement(container);
     if (document.body.dataset.creator === "true") {
         const creatorCard = document.createElement("article");
@@ -1046,7 +1009,15 @@ async function renderTeamManagement(container) {
                     if (!response.ok) feedback.textContent = (await response.json().catch(() => ({}))).message || "La suppression de l’accès a échoué.";
                     await load();
                 });
-                item.append(toggle, remove);
+                if (member.role === "technician") {
+                    const billingPermission = createButton(member.canCreateBilling ? "Retirer le droit devis/factures" : "Autoriser devis/factures", "secondary-button", async () => {
+                        billingPermission.disabled = true;
+                        const response = await fetch(`/api/auth/members/${encodeURIComponent(member.id)}`, { method: "PATCH", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ isActive: member.isActive, canCreateBilling: !member.canCreateBilling }) });
+                        if (!response.ok) feedback.textContent = (await response.json().catch(() => ({}))).message || "La mise à jour de l’autorisation a échoué.";
+                        await load();
+                    });
+                    item.append(toggle, billingPermission, remove);
+                } else item.append(toggle, remove);
                 list.appendChild(item);
             });
             const deviceResponse = await teamRequest("/api/auth/devices");

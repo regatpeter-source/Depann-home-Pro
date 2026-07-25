@@ -28,6 +28,10 @@ export function getPool() {
 
 export async function initializeDatabase() {
     const database = getPool();
+    const { rows: billingPermissionColumn } = await database.query(`
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = current_schema() AND table_name = 'depannhome_users' AND column_name = 'can_create_billing'
+    `);
 
     await database.query(`
         CREATE TABLE IF NOT EXISTS depannhome_users (
@@ -43,6 +47,7 @@ export async function initializeDatabase() {
             max_pc_users INTEGER NOT NULL DEFAULT 1,
             max_technicians INTEGER NOT NULL DEFAULT 5,
             technician_billing_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+            can_create_billing BOOLEAN NOT NULL DEFAULT TRUE,
             subscription_plan VARCHAR(20) NOT NULL DEFAULT 'free',
             subscription_label VARCHAR(80) NOT NULL DEFAULT '',
             monthly_price_cents INTEGER NOT NULL DEFAULT 0,
@@ -66,6 +71,7 @@ export async function initializeDatabase() {
         ADD COLUMN IF NOT EXISTS max_pc_users INTEGER NOT NULL DEFAULT 1,
         ADD COLUMN IF NOT EXISTS max_technicians INTEGER NOT NULL DEFAULT 5,
         ADD COLUMN IF NOT EXISTS technician_billing_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+        ADD COLUMN IF NOT EXISTS can_create_billing BOOLEAN NOT NULL DEFAULT TRUE,
         ADD COLUMN IF NOT EXISTS subscription_plan VARCHAR(20) NOT NULL DEFAULT 'free',
         ADD COLUMN IF NOT EXISTS subscription_label VARCHAR(80) NOT NULL DEFAULT '',
         ADD COLUMN IF NOT EXISTS monthly_price_cents INTEGER NOT NULL DEFAULT 0,
@@ -75,6 +81,14 @@ export async function initializeDatabase() {
         ADD COLUMN IF NOT EXISTS creator_note VARCHAR(1000) NOT NULL DEFAULT '',
         ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE
     `);
+    if (!billingPermissionColumn.length) {
+        await database.query(`
+            UPDATE depannhome_users technician
+            SET can_create_billing = owner.technician_billing_enabled
+            FROM depannhome_users owner
+            WHERE technician.role = 'technician' AND owner.id = technician.account_owner_id
+        `);
+    }
     await database.query("UPDATE depannhome_users SET account_owner_id = id WHERE account_owner_id IS NULL");
     await database.query("UPDATE depannhome_users SET role = 'admin' WHERE role = 'user' AND account_owner_id = id");
 
@@ -138,7 +152,7 @@ export async function findUserByUsername(username) {
     const { rows } = await getPool().query(
         `SELECT user_account.id, user_account.username, user_account.password_hash, user_account.role, user_account.account_owner_id,
             user_account.full_name, user_account.phone, user_account.email, user_account.is_active, owner.is_active AS account_is_active,
-            owner.technician_billing_enabled AS technician_billing_enabled, owner.max_pc_users AS max_pc_users
+            user_account.can_create_billing, owner.max_pc_users AS max_pc_users
          FROM depannhome_users user_account
          JOIN depannhome_users owner ON owner.id = user_account.account_owner_id
          WHERE user_account.username = $1`,
@@ -152,7 +166,7 @@ export async function findUserById(id) {
     const { rows } = await getPool().query(
         `SELECT user_account.id, user_account.username, user_account.password_hash, user_account.role, user_account.account_owner_id,
             user_account.full_name, user_account.phone, user_account.email, user_account.is_active, owner.is_active AS account_is_active,
-            owner.technician_billing_enabled AS technician_billing_enabled, owner.max_pc_users AS max_pc_users
+            user_account.can_create_billing, owner.max_pc_users AS max_pc_users
          FROM depannhome_users user_account
          JOIN depannhome_users owner ON owner.id = user_account.account_owner_id
          WHERE user_account.id = $1`,

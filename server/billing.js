@@ -344,11 +344,11 @@ function requireBillingAdministration(request, response, next) {
 async function requireTechnicianBillingAccess(request, response, next) {
     if (request.user?.role !== "technician") return next();
     const { rows } = await getPool().query(
-        "SELECT technician_billing_enabled FROM depannhome_users WHERE id = $1",
-        [getAccountOwnerId(request)]
+        "SELECT can_create_billing FROM depannhome_users WHERE id = $1",
+        [request.user.sub]
     );
-    if (rows[0]?.technician_billing_enabled === false) {
-        return response.status(403).json({ message: "La création de devis et factures est désactivée pour les techniciens par l’administrateur." });
+    if (rows[0]?.can_create_billing === false) {
+        return response.status(403).json({ message: "Vous n’êtes pas autorisé à créer des devis et factures. Contactez votre administrateur." });
     }
     return next();
 }
