@@ -36,6 +36,7 @@ export function initializeNavigation(loadedDatabase) {
     configureLibrary({ openCatalog: renderBrands, openStore: renderStore });
     bindEvents();
     window.addEventListener("depannhome:open-client", event => openClients(String(event.detail?.clientId || "")));
+    window.addEventListener("depannhome:clients-synchronized", () => refreshClientMessageAlert());
     refreshClientMessageAlert();
     document.addEventListener("visibilitychange", () => {
         if (document.visibilityState === "visible") refreshClientMessageAlert();
