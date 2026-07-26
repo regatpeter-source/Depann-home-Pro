@@ -97,6 +97,7 @@ CREATE INDEX IF NOT EXISTS depannhome_billing_templates_owner_idx
 CREATE TABLE IF NOT EXISTS depannhome_billing_documents (
     id BIGSERIAL PRIMARY KEY,
     owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    created_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
     document_type VARCHAR(10) NOT NULL CHECK (document_type IN ('quote', 'invoice')),
     document_number VARCHAR(80) NOT NULL,
     client_id VARCHAR(100),
@@ -124,6 +125,7 @@ CREATE INDEX IF NOT EXISTS depannhome_billing_documents_owner_date_idx
 ALTER TABLE depannhome_billing_documents
     ADD COLUMN IF NOT EXISTS is_accounted BOOLEAN NOT NULL DEFAULT FALSE,
     ADD COLUMN IF NOT EXISTS accounted_at DATE,
+    ADD COLUMN IF NOT EXISTS created_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
     ADD COLUMN IF NOT EXISTS client_id VARCHAR(100),
     ADD COLUMN IF NOT EXISTS appointment_id BIGINT,
     ADD COLUMN IF NOT EXISTS source_quote_id BIGINT,

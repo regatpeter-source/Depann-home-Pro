@@ -66,6 +66,7 @@ export async function initializeBilling() {
         CREATE TABLE IF NOT EXISTS depannhome_billing_documents (
             id BIGSERIAL PRIMARY KEY,
             owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+            created_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
             document_type VARCHAR(10) NOT NULL CHECK (document_type IN ('quote', 'invoice')),
             document_number VARCHAR(80) NOT NULL,
             client_id VARCHAR(100),
@@ -95,6 +96,7 @@ export async function initializeBilling() {
         ALTER TABLE depannhome_billing_documents
         ADD COLUMN IF NOT EXISTS is_accounted BOOLEAN NOT NULL DEFAULT FALSE,
         ADD COLUMN IF NOT EXISTS accounted_at DATE,
+        ADD COLUMN IF NOT EXISTS created_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
         ADD COLUMN IF NOT EXISTS client_id VARCHAR(100),
         ADD COLUMN IF NOT EXISTS appointment_id BIGINT,
         ADD COLUMN IF NOT EXISTS source_quote_id BIGINT,
@@ -131,12 +133,15 @@ export function registerBillingRoutes(app, requireAuthentication) {
                 FROM depannhome_billing_templates WHERE owner_id = $1 ORDER BY LOWER(label)
             `, [accountOwnerId]),
             database.query(`
-                SELECT id, document_type AS "documentType", document_number AS "documentNumber", client_id AS "clientId", customer_type AS "customerType",
+                SELECT depannhome_billing_documents.id, document_type AS "documentType", document_number AS "documentNumber", client_id AS "clientId", customer_type AS "customerType",
                     customer_name AS "customerName", customer_address AS "customerAddress", TO_CHAR(issue_date, 'YYYY-MM-DD') AS "issueDate",
                     TO_CHAR(due_date, 'YYYY-MM-DD') AS "dueDate", status, is_accounted AS "isAccounted",
                     TO_CHAR(accounted_at, 'YYYY-MM-DD') AS "accountedAt", appointment_id AS "appointmentId", source_quote_id AS "sourceQuoteId", quote_reference AS "quoteReference", lines, notes,
-                    created_at AS "createdAt", updated_at AS "updatedAt"
-                FROM depannhome_billing_documents WHERE owner_id = $1 ORDER BY issue_date DESC, id DESC
+                    depannhome_billing_documents.created_at AS "createdAt", depannhome_billing_documents.updated_at AS "updatedAt",
+                    COALESCE(NULLIF(creator.full_name, ''), creator.username, '') AS "creatorName"
+                FROM depannhome_billing_documents
+                LEFT JOIN depannhome_users creator ON creator.id = depannhome_billing_documents.created_by
+                WHERE depannhome_billing_documents.owner_id = $1 ORDER BY issue_date DESC, depannhome_billing_documents.id DESC
             `, [accountOwnerId])
         ]);
         response.json({ profile: profileResult.rows[0] || emptyProfile(), templates: templatesResult.rows, documents: documentsResult.rows });
@@ -299,10 +304,10 @@ export function registerBillingRoutes(app, requireAuthentication) {
             if (document.sourceQuoteId && !sourceQuote) return response.status(400).json({ message: "Le devis de référence est introuvable." });
             const { rows } = await getPool().query(`
                 INSERT INTO depannhome_billing_documents
-                    (owner_id, document_type, document_number, client_id, customer_type, customer_name, customer_address, issue_date, due_date, status, is_accounted, accounted_at, appointment_id, source_quote_id, quote_reference, lines, notes)
-                VALUES ($1,$2,$3,$4,$5,$6,$7,$8::date,$9::date,$10,$11,CASE WHEN $11 THEN CURRENT_DATE ELSE NULL END,$12,$13,$14,$15::jsonb,$16)
+                    (owner_id, created_by, document_type, document_number, client_id, customer_type, customer_name, customer_address, issue_date, due_date, status, is_accounted, accounted_at, appointment_id, source_quote_id, quote_reference, lines, notes)
+                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::date,$10::date,$11,$12,CASE WHEN $12 THEN CURRENT_DATE ELSE NULL END,$13,$14,$15,$16::jsonb,$17)
                 RETURNING id
-            `, [getAccountOwnerId(request), document.documentType, document.documentNumber, document.clientId || null, document.customerType, document.customerName,
+            `, [getAccountOwnerId(request), request.user.sub, document.documentType, document.documentNumber, document.clientId || null, document.customerType, document.customerName,
                 document.customerAddress, document.issueDate, document.dueDate || null, document.status, document.isAccounted, appointment?.id || null, sourceQuote?.id || null, sourceQuote?.documentNumber || "", JSON.stringify(document.lines), document.notes]);
             response.status(201).json({ id: rows[0].id });
         } catch (error) {

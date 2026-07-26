@@ -785,7 +785,7 @@ function renderClientActivityHistory(client, billingDocuments = []) {
             detail: `${document.documentNumber} · ${document.status || "brouillon"}`,
             documentId: String(document.id),
             attachmentId: "",
-            actorName: "",
+            actorName: String(document.creatorName || "Auteur non renseigné"),
             createdAt: document.createdAt || document.updatedAt || `${document.issueDate}T12:00:00`
         };
     });
