@@ -1,10 +1,11 @@
 import { ROUTES, STORAGE_KEYS, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=116";
-import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=133";
+import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=135";
 import { renderCreatorConsole } from "./creator.js?v=112";
-import { createBillingDocumentForClient, renderBilling, viewBillingDocument } from "./billing.js?v=134";
+import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=135";
 import { renderPurchases } from "./purchases.js?v=111";
-import { getFirstUnreadClientId, refreshClientMessageAlert } from "./messages.js?v=88";
-import { getSearchableClients, renderClients } from "./clients.js?v=132";
+import { getFirstUnreadClientId, refreshClientMessageAlert, refreshVisibleClientMessages } from "./messages.js?v=106";
+import { getSearchableClients, renderClients } from "./clients.js?v=133";
+import { synchronizeClients } from "./client-sync.js?v=116";
 import { configureLibrary, openLibrarySection, renderLibrary, searchPersonalLibrary } from "./library.js?v=120";
 import { renderPhotoRecognition } from "./photo-recognition.js?v=105";
 import { getSearchResults } from "./search.js?v=63";
@@ -30,6 +31,8 @@ import {
 
 let database = { brands: [] };
 let searchRequestId = 0;
+let sharedSynchronizationTimer = null;
+let sharedSynchronizationPromise = null;
 
 export function initializeNavigation(loadedDatabase) {
     database = loadedDatabase;
@@ -39,11 +42,33 @@ export function initializeNavigation(loadedDatabase) {
     window.addEventListener("depannhome:clients-synchronized", () => refreshClientMessageAlert());
     refreshClientMessageAlert();
     document.addEventListener("visibilitychange", () => {
-        if (document.visibilityState === "visible") refreshClientMessageAlert();
+        if (document.visibilityState === "visible") refreshSharedData();
     });
+    if (!sharedSynchronizationTimer) {
+        sharedSynchronizationTimer = window.setInterval(() => {
+            if (document.visibilityState === "visible") refreshSharedData();
+        }, 90_000);
+    }
     if (document.body.dataset.role === "technician") renderCalendarOverview();
     else if (document.body.classList.contains("desktop-device")) renderHome();
     else renderBrands();
+}
+
+export async function refreshSharedData(options = {}) {
+    if (sharedSynchronizationPromise) {
+        return options.includeClients
+            ? Promise.all([sharedSynchronizationPromise, synchronizeClients()])
+            : sharedSynchronizationPromise;
+    }
+    const requests = [
+        refreshVisibleClientMessages(),
+        synchronizeBillingDocuments({ refreshView: true, force: Boolean(options.forceBilling) })
+    ];
+    if (options.includeClients) requests.push(synchronizeClients());
+    sharedSynchronizationPromise = Promise.all(requests).finally(() => {
+        sharedSynchronizationPromise = null;
+    });
+    return sharedSynchronizationPromise;
 }
 
 function bindEvents() {

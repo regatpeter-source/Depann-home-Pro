@@ -13,12 +13,24 @@ export async function renderMessages() {
 export function renderClientMessages(client, focus = false) {
     const panel = document.createElement("section");
     panel.className = "client-panel client-messages-panel";
+    panel.dataset.clientId = client.id;
+    panel.clientData = client;
     panel.innerHTML = "<p class=\"muted\">Chargement des notes d’intervention…</p>";
     loadClientMessages(panel, client, focus);
     return panel;
 }
 
-async function loadClientMessages(panel, client, focus = false) {
+export async function refreshVisibleClientMessages() {
+    const panels = [...document.querySelectorAll(".client-messages-panel")];
+    await Promise.all(panels.map(async panel => {
+        const draft = panel.querySelector(".client-message-form textarea")?.value.trim();
+        if (draft || panel.querySelector(".message-edit-form")) return;
+        if (panel.clientData) await loadClientMessages(panel, panel.clientData, false, false);
+    }));
+    await refreshClientMessageAlert();
+}
+
+async function loadClientMessages(panel, client, focus = false, refreshAlert = true) {
     const result = await request(`/api/messages?clientId=${encodeURIComponent(client.id)}`);
     if (!result.ok) {
         panel.innerHTML = `<p class="auth-message error">${escapeHtml(result.message || "Impossible de charger les notes d’intervention.")}</p>`;
@@ -28,7 +40,7 @@ async function loadClientMessages(panel, client, focus = false) {
     const unreadMessageId = focus ? getFirstUnreadMessageId(client.id, messages) : "";
     markClientMessagesAsRead(client.id, messages);
     renderClientMessagePanel(panel, client, messages, unreadMessageId);
-    refreshClientMessageAlert();
+    if (refreshAlert) refreshClientMessageAlert();
     if (focus && !unreadMessageId) {
         panel.scrollIntoView({ behavior: "smooth", block: "start" });
         panel.querySelector("textarea")?.focus({ preventScroll: true });

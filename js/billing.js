@@ -25,13 +25,16 @@ export async function renderBilling(options = {}) {
     overviewPanel.innerHTML = "<p class=\"muted\">Chargement de l’espace de facturation…</p>";
     [profilePanel, editorPanel, listPanel].forEach(panel => panel.hidden = true);
 
-    const result = await apiRequest("/api/billing");
-    if (!result.ok) {
-        overviewPanel.innerHTML = `<p class="auth-message error">${escapeHtml(result.message || "Impossible de charger les devis et factures.")}</p>`;
-        return;
+    if (options.data) {
+        billingData = options.data;
+    } else {
+        const result = await apiRequest("/api/billing");
+        if (!result.ok) {
+            overviewPanel.innerHTML = `<p class="auth-message error">${escapeHtml(result.message || "Impossible de charger les devis et factures.")}</p>`;
+            return;
+        }
+        billingData = result.data;
     }
-
-    billingData = result.data;
     if (options.newDocument) activeDocument = createNewDocument(options.newDocument.type, options.newDocument.client, options.newDocument.appointmentId);
     if (options.documentId) {
         const document = (billingData.documents || []).find(item => String(item.id) === String(options.documentId));
@@ -54,6 +57,17 @@ export function createBillingDocumentForClient(type, client, appointmentId = "")
 export function viewBillingDocument(documentId) {
     if (!documentId) return;
     renderBilling({ documentId });
+}
+
+export async function synchronizeBillingDocuments(options = {}) {
+    const isBillingScreen = Boolean(document.querySelector(".billing-list-panel"));
+    if (!isBillingScreen && !options.force) return { ok: true, skipped: true };
+    const result = await apiRequest("/api/billing");
+    if (!result.ok) return result;
+    billingData = result.data;
+    const canRefreshList = options.refreshView && isBillingScreen && !activeDocument && !document.querySelector("#billingProfileForm");
+    if (canRefreshList) renderBilling({ data: billingData });
+    return result;
 }
 
 function createPanel(className) {

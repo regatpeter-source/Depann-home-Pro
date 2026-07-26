@@ -1,7 +1,7 @@
 import { initializeAuthentication, restoreApplicationShell, signOut } from "./auth.js?v=114";
 import { initializeClientSynchronization } from "./client-sync.js?v=116";
 import { loadDatabase } from "./data.js?v=59";
-import { initializeNavigation } from "./navigation.js?v=150";
+import { initializeNavigation, refreshSharedData } from "./navigation.js?v=154";
 import { renderError } from "./ui.js?v=44";
 import { getSettings } from "./storage.js?v=44";
 import { FONT_OPTIONS } from "./config.js?v=116";
@@ -45,6 +45,7 @@ async function startApplication() {
 function showAuthenticatedUser(user) {
     const session = document.getElementById("userSession");
     const email = document.getElementById("userEmail");
+    const refreshButton = document.getElementById("refreshBtn");
     const logoutButton = document.getElementById("logoutBtn");
 
     if (session) session.hidden = false;
@@ -59,6 +60,11 @@ function showAuthenticatedUser(user) {
     updateDeviceMode();
     window.addEventListener("resize", updateDeviceMode);
     document.body.classList.remove("auth-pending");
+    refreshButton?.addEventListener("click", async () => {
+        refreshButton.disabled = true;
+        await refreshSharedData({ includeClients: true, forceBilling: true });
+        refreshButton.disabled = false;
+    });
     logoutButton?.addEventListener("click", async () => {
         logoutButton.disabled = true;
         await signOut();
