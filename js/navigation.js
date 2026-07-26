@@ -1,7 +1,7 @@
 import { ROUTES, STORAGE_KEYS, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=116";
 import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=133";
 import { renderCreatorConsole } from "./creator.js?v=112";
-import { createBillingDocumentForClient, renderBilling, viewBillingDocument } from "./billing.js?v=133";
+import { createBillingDocumentForClient, renderBilling, viewBillingDocument } from "./billing.js?v=134";
 import { renderPurchases } from "./purchases.js?v=111";
 import { getFirstUnreadClientId, refreshClientMessageAlert } from "./messages.js?v=88";
 import { getSearchableClients, renderClients } from "./clients.js?v=132";

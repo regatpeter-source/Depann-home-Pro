@@ -343,7 +343,7 @@ function renderDocumentList(panel) {
             item.querySelector("[data-pdf]").addEventListener("click", () => openBillingPdf(billingDocument.id));
             item.querySelector("[data-email]").addEventListener("click", () => emailBillingPdf(billingDocument, recipient));
             item.querySelector("[data-accounting]")?.addEventListener("click", async event => {
-                const result = await apiRequest(`/api/billing/documents/${encodeURIComponent(document.id)}/accounting`, { method: "PATCH", body: JSON.stringify({ isAccounted: event.currentTarget.dataset.accounting === "true" }) });
+                const result = await apiRequest(`/api/billing/documents/${encodeURIComponent(billingDocument.id)}/accounting`, { method: "PATCH", body: JSON.stringify({ isAccounted: event.currentTarget.dataset.accounting === "true" }) });
                 if (!result.ok) { alert(result.message || "Impossible de mettre à jour la comptabilité."); return; }
                 renderBilling();
             });
