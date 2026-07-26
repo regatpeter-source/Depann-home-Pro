@@ -7,6 +7,11 @@ import { clearSearch, createInfo, getContainer, setPage } from "./ui.js?v=44";
 
 const CUSTOMER_TYPES = ["Particulier", "Professionnel", "Magasin", "Autre"];
 const DOCUMENT_TYPES = { quote: "Devis", invoice: "Facture" };
+const BILLING_MONTHS = [
+    { value: "01", label: "Janvier" }, { value: "02", label: "Février" }, { value: "03", label: "Mars" }, { value: "04", label: "Avril" },
+    { value: "05", label: "Mai" }, { value: "06", label: "Juin" }, { value: "07", label: "Juillet" }, { value: "08", label: "Août" },
+    { value: "09", label: "Septembre" }, { value: "10", label: "Octobre" }, { value: "11", label: "Novembre" }, { value: "12", label: "Décembre" }
+];
 let activeDocument = null;
 let billingData = null;
 
@@ -338,29 +343,43 @@ function renderDocumentList(panel) {
     const documents = billingData.documents || [];
     const quotes = documents.filter(document => document.documentType === "quote");
     const invoices = documents.filter(document => document.documentType === "invoice");
+    const years = [...new Set(documents.map(document => String(document.issueDate || "").slice(0, 4)).filter(Boolean))].sort((first, second) => second.localeCompare(first));
     const invoicedTotal = invoices.reduce((total, document) => total + calculateTotals(document.lines || []).ttc, 0);
     const accountedTotal = invoices.filter(document => document.isAccounted).reduce((total, document) => total + calculateTotals(document.lines || []).ttc, 0);
     panel.innerHTML = `
         <div class="form-heading"><div><p class="eyebrow">Base de données commerciale</p><h2>Registre des devis & factures</h2></div></div>
         <div class="billing-metrics billing-register-metrics"><span><strong>${quotes.length}</strong> devis générés</span><span><strong>${invoices.length}</strong> factures générées</span><span><strong>${formatMoney(invoicedTotal)}</strong> facturé TTC</span><span class="billing-accounted-metric"><strong>${formatMoney(accountedTotal)}</strong> comptabilisé TTC</span></div>
-        <div class="billing-register-filters"><input id="billingDocumentSearch" type="search" placeholder="Rechercher un numéro ou un client" aria-label="Rechercher un document"><select id="billingDocumentTypeFilter" aria-label="Filtrer par type"><option value="all">Tous les documents</option><option value="quote">Devis</option><option value="invoice">Factures</option></select><select id="billingAccountingFilter" aria-label="Filtrer par comptabilisation"><option value="all">Tous les statuts comptables</option><option value="accounted">Comptabilisées</option><option value="unaccounted">À comptabiliser</option></select></div>
+        <div class="billing-register-filters"><input id="billingDocumentSearch" type="search" placeholder="Rechercher un numéro ou un client" aria-label="Rechercher un document"><select id="billingDocumentTypeFilter" aria-label="Filtrer par type"><option value="all">Tous les documents</option><option value="quote">Devis</option><option value="invoice">Factures</option></select><select id="billingDocumentYearFilter" aria-label="Filtrer par année"><option value="all">Toutes les années</option>${years.map(year => `<option value="${escapeHtml(year)}">${escapeHtml(year)}</option>`).join("")}</select><select id="billingDocumentMonthFilter" aria-label="Filtrer par mois"><option value="all">Tous les mois</option>${BILLING_MONTHS.map(({ value, label }) => `<option value="${value}">${label}</option>`).join("")}</select><select id="billingAccountingFilter" aria-label="Filtrer par comptabilisation"><option value="all">Tous les statuts comptables</option><option value="accounted">Comptabilisées</option><option value="unaccounted">À comptabiliser</option></select></div>
         <div class="billing-document-list" id="billingDocumentList"></div>
     `;
     const list = panel.querySelector("#billingDocumentList");
     const search = panel.querySelector("#billingDocumentSearch");
     const typeFilter = panel.querySelector("#billingDocumentTypeFilter");
+    const yearFilter = panel.querySelector("#billingDocumentYearFilter");
+    const monthFilter = panel.querySelector("#billingDocumentMonthFilter");
     const accountingFilter = panel.querySelector("#billingAccountingFilter");
     const renderFilteredDocuments = () => {
         const query = normalizeText(search.value);
         const visibleDocuments = documents.filter(document => {
             const matchesQuery = !query || normalizeText(`${document.documentNumber} ${document.quoteReference || ""} ${document.customerName}`).includes(query);
             const matchesType = typeFilter.value === "all" || document.documentType === typeFilter.value;
+            const matchesYear = yearFilter.value === "all" || String(document.issueDate || "").slice(0, 4) === yearFilter.value;
+            const matchesMonth = monthFilter.value === "all" || String(document.issueDate || "").slice(5, 7) === monthFilter.value;
             const matchesAccounting = accountingFilter.value === "all" || (document.documentType === "invoice" && (accountingFilter.value === "accounted" ? document.isAccounted : !document.isAccounted));
-            return matchesQuery && matchesType && matchesAccounting;
+            return matchesQuery && matchesType && matchesYear && matchesMonth && matchesAccounting;
         });
         list.innerHTML = "";
         if (!visibleDocuments.length) { list.innerHTML = `<p class="muted">${documents.length ? "Aucun document ne correspond aux filtres." : "Créez votre premier devis ou votre première facture."}</p>`; return; }
+        let currentPeriod = "";
         visibleDocuments.forEach(billingDocument => {
+            const period = formatBillingPeriod(billingDocument.issueDate);
+            if (period !== currentPeriod) {
+                const heading = document.createElement("h3");
+                heading.className = "billing-document-period";
+                heading.textContent = period;
+                list.appendChild(heading);
+                currentPeriod = period;
+            }
             const item = document.createElement("article");
             item.className = "billing-document-item";
             const linkedInvoice = billingDocument.documentType === "quote" ? getInvoiceForQuote(billingDocument) : null;
@@ -382,7 +401,7 @@ function renderDocumentList(panel) {
             list.appendChild(item);
         });
     };
-    [search, typeFilter, accountingFilter].forEach(input => input.addEventListener(input === search ? "input" : "change", renderFilteredDocuments));
+    [search, typeFilter, yearFilter, monthFilter, accountingFilter].forEach(input => input.addEventListener(input === search ? "input" : "change", renderFilteredDocuments));
     renderFilteredDocuments();
 }
 
@@ -457,6 +476,10 @@ function calculateTotals(lines) { const ht = lines.reduce((sum, line) => sum + l
 function formatMoney(value) { return new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" }).format(Number(value) || 0); }
 function formatNumber(value) { return new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 2 }).format(Number(value) || 0); }
 function formatDate(value) { return value ? new Intl.DateTimeFormat("fr-FR").format(new Date(`${value}T12:00:00`)) : "Date non renseignée"; }
+function formatBillingPeriod(value) {
+    const [year, month] = String(value || "").split("-");
+    return `${BILLING_MONTHS.find(item => item.value === month)?.label || "Date non renseignée"}${year ? ` ${year}` : ""}`;
+}
 function today() { const date = new Date(); return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`; }
 function formDataToObject(data) { return Object.fromEntries(data.entries()); }
 

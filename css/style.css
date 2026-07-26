@@ -2740,7 +2740,7 @@ body.mobile-device[data-role="technician"] .calendar-list-day{
 
 .billing-register-filters{
     display:grid;
-    grid-template-columns:minmax(220px, 1fr) repeat(2, minmax(160px, .45fr));
+    grid-template-columns:minmax(220px, 1fr) repeat(4, minmax(145px, .45fr));
     gap:10px;
     margin-top:16px;
 }
@@ -2811,6 +2811,19 @@ body.mobile-device[data-role="technician"] .calendar-list-day{
     display:grid;
     gap:10px;
     margin-top:16px;
+}
+
+.billing-document-period{
+    grid-column:1 / -1;
+    margin:14px 0 0;
+    padding:0 0 8px;
+    border-bottom:1px solid var(--border);
+    color:var(--primary);
+    font-size:16px;
+}
+
+.billing-document-period:first-child{
+    margin-top:0;
 }
 
 .billing-template-item,
