@@ -453,6 +453,7 @@ function renderClientDetail(client, options = {}) {
         <section class="procedure-section">
             <h3> Fichiers du client</h3>
             ${client.attachments.length ? renderAttachmentsHtml(client.id, client.attachments, !readOnly, client.email) : "<p>Aucun fichier enregistré.</p>"}
+            <div id="clientBillingFiles"><p class="muted">Chargement des devis et factures du dossier…</p></div>
         </section>
     `;
 
@@ -481,6 +482,7 @@ function renderClientDetail(client, options = {}) {
             }
         });
     });
+    loadClientBillingFiles(panel.querySelector("#clientBillingFiles"), client);
 
     const detail = document.createDocumentFragment();
     detail.append(panel);
@@ -538,6 +540,29 @@ async function loadClientBillingDocuments(panel, client) {
         });
     } catch (error) {
         panel.innerHTML = `<p class="auth-message error">${escapeHtml(error.message || "Impossible de charger les documents du client.")}</p>`;
+    }
+}
+
+async function loadClientBillingFiles(panel, client) {
+    if (!panel) return;
+    try {
+        const response = await fetch("/api/billing", { credentials: "same-origin" });
+        const data = await response.json().catch(() => null);
+        if (!response.ok) throw new Error(data?.message);
+        const documents = (data?.documents || []).filter(document =>
+            String(document.clientId || "") === String(client.id)
+            || (!document.clientId && normalizeText(document.customerName) === normalizeText(client.name))
+        );
+        if (!documents.length) {
+            panel.innerHTML = "<p class=\"muted\">Aucun devis ou aucune facture enregistré(e) dans ce dossier.</p>";
+            return;
+        }
+        panel.innerHTML = `<div class="attachment-list">${documents.map(document => `<article class="attachment-card"><div><p class="eyebrow">${escapeHtml(document.documentType === "invoice" ? "Facture" : "Devis")}</p><h4>${escapeHtml(document.documentNumber)}</h4><p class="muted">${escapeHtml(formatBillingDate(document.issueDate))} · ${escapeHtml(document.status || "brouillon")}</p></div><div class="attachment-actions"><button type="button" class="secondary-button" data-billing-file-view="${escapeHtml(document.id)}">Consulter</button><button type="button" class="secondary-button" data-billing-file-pdf="${escapeHtml(document.id)}">PDF / Imprimer</button>${client.email ? `<button type="button" class="secondary-button" data-billing-file-email="${escapeHtml(document.id)}">Envoyer par e-mail</button>` : ""}</div></article>`).join("")}</div>`;
+        panel.querySelectorAll("[data-billing-file-view]").forEach(button => button.addEventListener("click", () => viewClientBillingDocument(client, button.dataset.billingFileView, "")));
+        panel.querySelectorAll("[data-billing-file-pdf]").forEach(button => button.addEventListener("click", () => printClientBillingDocument(client, button.dataset.billingFilePdf, "")));
+        panel.querySelectorAll("[data-billing-file-email]").forEach(button => button.addEventListener("click", () => emailClientBillingDocument(client, button.dataset.billingFileEmail, "")));
+    } catch (error) {
+        panel.innerHTML = `<p class="auth-message error">${escapeHtml(error.message || "Impossible de charger les fichiers de facturation.")}</p>`;
     }
 }
 

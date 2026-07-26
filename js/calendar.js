@@ -1,7 +1,7 @@
 import { ROUTES } from "./config.js?v=105";
 import { createBillingDocumentForClient, viewBillingDocument } from "./billing.js?v=132";
-import { getSearchableClients } from "./clients.js?v=126";
-import { addClientActivityByName, synchronizeClients } from "./client-sync.js?v=88";
+import { getSearchableClients } from "./clients.js?v=132";
+import { addClientActivityByName, synchronizeClients } from "./client-sync.js?v=114";
 import { renderClientMessages } from "./messages.js?v=88";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
@@ -286,7 +286,7 @@ function renderEventForm(panel) {
                 </label>
                 <label>
                     Client
-                    <input name="clientName" list="calendarClients" maxlength="160" placeholder="Nom du client" value="${escapeHtml(event.clientName)}">
+                    <span class="calendar-client-picker"><input name="clientName" list="calendarClients" maxlength="160" placeholder="Nom du client" value="${escapeHtml(event.clientName)}"><button type="button" class="secondary-button" id="openCalendarClient" hidden>Ouvrir la fiche</button></span>
                     <datalist id="calendarClients">${clients.map(client => `<option value="${escapeHtml(client.name)}">${escapeHtml([client.city, client.phone].filter(Boolean).join(" · "))}</option>`).join("")}</datalist>
                 </label>
                 <label>
@@ -335,14 +335,20 @@ function renderEventForm(panel) {
     const clientInput = form.querySelector("[name=clientName]");
     const locationInput = form.querySelector("[name=location]");
     const eventTypeInput = form.querySelector("[name=eventType]");
+    const openClientButton = form.querySelector("#openCalendarClient");
     const fillClientAddress = () => {
         const clientName = normalizeText(clientInput.value);
         const client = clients.find(item => normalizeText(item.name) === clientName);
         const address = client ? formatClientAddress(client) : "";
         if (address) locationInput.value = address;
+        openClientButton.hidden = !client;
+        openClientButton.onclick = () => {
+            if (client) window.dispatchEvent(new CustomEvent("depannhome:open-client", { detail: { clientId: client.id } }));
+        };
     };
     clientInput.addEventListener("input", fillClientAddress);
     clientInput.addEventListener("change", fillClientAddress);
+    fillClientAddress();
     eventTypeInput.addEventListener("change", () => {
         const type = getEventType(eventTypeInput.value);
         if (!event.id || form.elements.title.value === getEventType(event.eventType).title) form.elements.title.value = type.title;
@@ -352,6 +358,7 @@ function renderEventForm(panel) {
             locationInput.value = "";
             form.elements.startTime.value = "";
             form.elements.endTime.value = "";
+            fillClientAddress();
         }
         renderCalendarAvailability(form, event.id);
     });

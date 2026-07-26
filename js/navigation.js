@@ -1,10 +1,10 @@
 import { ROUTES, STORAGE_KEYS, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=116";
-import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=132";
+import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=133";
 import { renderCreatorConsole } from "./creator.js?v=112";
 import { createBillingDocumentForClient, renderBilling, viewBillingDocument } from "./billing.js?v=133";
 import { renderPurchases } from "./purchases.js?v=111";
 import { getFirstUnreadClientId, refreshClientMessageAlert } from "./messages.js?v=88";
-import { getSearchableClients, renderClients } from "./clients.js?v=131";
+import { getSearchableClients, renderClients } from "./clients.js?v=132";
 import { configureLibrary, openLibrarySection, renderLibrary, searchPersonalLibrary } from "./library.js?v=120";
 import { renderPhotoRecognition } from "./photo-recognition.js?v=105";
 import { getSearchResults } from "./search.js?v=63";
@@ -35,6 +35,7 @@ export function initializeNavigation(loadedDatabase) {
     database = loadedDatabase;
     configureLibrary({ openCatalog: renderBrands, openStore: renderStore });
     bindEvents();
+    window.addEventListener("depannhome:open-client", event => openClients(String(event.detail?.clientId || "")));
     refreshClientMessageAlert();
     document.addEventListener("visibilitychange", () => {
         if (document.visibilityState === "visible") refreshClientMessageAlert();
@@ -113,8 +114,8 @@ function openCalendar() {
     renderCalendar();
 }
 
-async function openClients() {
-    const selectedId = await getFirstUnreadClientId();
+async function openClients(clientId = "") {
+    const selectedId = clientId || await getFirstUnreadClientId();
     renderClients({ database, navigateToRef, createBillingDocument: createBillingDocumentForClient, viewBillingDocument, createCalendarEvent: createCalendarEventForClient, ...(selectedId ? { selectedId, focusMessages: true } : {}) });
 }
 

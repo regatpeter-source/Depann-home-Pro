@@ -6,6 +6,7 @@ const MAX_DELETED_ATTACHMENT_IDS = 500;
 
 let onlineListenerRegistered = false;
 let synchronizationPromise = null;
+let silentSynchronizationTimer = null;
 
 export async function initializeClientSynchronization() {
     if (canWriteClients()) migrateLegacyClients();
@@ -17,6 +18,11 @@ export async function initializeClientSynchronization() {
             if (document.visibilityState === "visible") synchronizeClients().catch(() => {});
         });
         onlineListenerRegistered = true;
+    }
+    if (!silentSynchronizationTimer) {
+        silentSynchronizationTimer = window.setInterval(() => {
+            if (document.visibilityState === "visible") synchronizeClients().catch(() => {});
+        }, 90_000);
     }
 
     return synchronizeClients();
@@ -93,6 +99,7 @@ async function synchronize() {
     const remoteClients = Array.isArray(remoteResult.data?.clients) ? remoteResult.data.clients.map(normalizeClient) : [];
     if (!canWriteClients()) {
         writeClients(remoteClients);
+        window.dispatchEvent(new CustomEvent("depannhome:clients-synchronized"));
         return { ok: true };
     }
     const localClients = getLocalClients();
@@ -125,6 +132,7 @@ async function synchronize() {
 
     const refreshed = await request("/api/clients");
     if (refreshed.ok) writeClients(mergeClients(getLocalClients(), refreshed.data.clients || []));
+    window.dispatchEvent(new CustomEvent("depannhome:clients-synchronized"));
     return { ok: true };
 }
 
