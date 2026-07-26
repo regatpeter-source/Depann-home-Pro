@@ -173,6 +173,34 @@ export function registerBillingRoutes(app, requireAuthentication) {
         response.send(rows[0].logo_data);
     }));
 
+    app.get("/api/billing/blank-quote/pdf", requireAuthentication, requireBillingAdministration, asyncHandler(async (request, response) => {
+        const { rows } = await getPool().query(`
+            SELECT company_name AS "companyName", legal_form AS "legalForm", address, postal_code AS "postalCode", city, phone, email,
+                registration_number AS "registrationNumber", tax_number AS "taxNumber", payment_terms AS "paymentTerms", deposit_terms AS "depositTerms",
+                footer_note AS "footerNote", logo_data AS "logoData", logo_mime_type AS "logoMimeType"
+            FROM depannhome_billing_profiles WHERE owner_id = $1
+        `, [getAccountOwnerId(request)]);
+        const profile = rows[0] || emptyProfile();
+        const document = {
+            documentType: "quote",
+            documentNumber: "APERÇU",
+            customerName: "",
+            customerAddress: "",
+            issueDate: new Date().toISOString().slice(0, 10),
+            dueDate: "",
+            lines: [],
+            notes: profile.paymentTerms || ""
+        };
+        const pdf = await createBillingPdf(document, profile);
+        response.set({
+            "Content-Type": "application/pdf",
+            "Content-Disposition": 'inline; filename="apercu-devis-vierge.pdf"',
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff"
+        });
+        response.send(pdf);
+    }));
+
     app.get("/api/billing/documents/:documentId", requireAuthentication, asyncHandler(async (request, response) => {
         const id = positiveId(request.params.documentId);
         if (!id) return response.status(400).json({ message: "Document invalide." });

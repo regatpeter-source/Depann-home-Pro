@@ -75,13 +75,14 @@ function renderOverview(panel, profilePanel) {
             <div class="billing-overview-actions">
                 <button type="button" class="secondary-button" data-billing-action="new-quote">+ Nouveau devis</button>
                 <button type="button" class="secondary-button" data-billing-action="new-invoice">+ Nouvelle facture</button>
-                ${isTechnician() ? "" : '<button type="button" class="secondary-button auth-outline-button" data-billing-action="edit-company">Modifier les informations entreprise</button>'}
+                ${isTechnician() ? "" : '<button type="button" class="secondary-button" data-billing-action="preview-blank-quote">Aperçu du devis vierge</button><button type="button" class="secondary-button auth-outline-button" data-billing-action="edit-company">Modifier les informations entreprise</button>'}
             </div>
         </div>
         <div class="billing-metrics"><span><strong>${quotes}</strong> devis</span><span><strong>${invoices}</strong> factures</span><span class="billing-base-template"><strong>✓</strong> modèle de document fixe</span></div>
     `;
     panel.querySelector("[data-billing-action=new-quote]").addEventListener("click", () => openNewDocument("quote"));
     panel.querySelector("[data-billing-action=new-invoice]").addEventListener("click", () => openNewDocument("invoice"));
+    panel.querySelector("[data-billing-action=preview-blank-quote]")?.addEventListener("click", openBlankQuotePreview);
     panel.querySelector("[data-billing-action=edit-company]")?.addEventListener("click", () => {
         renderProfile(profilePanel);
         profilePanel.hidden = false;
@@ -429,6 +430,12 @@ function openBillingPdf(documentId) {
     const popup = window.open("", "_blank");
     if (!popup) { alert("Autorisez les fenêtres pop-up pour afficher le PDF."); return; }
     popup.location.href = `/api/billing/documents/${encodeURIComponent(documentId)}/pdf`;
+}
+
+function openBlankQuotePreview() {
+    const popup = window.open("", "_blank");
+    if (!popup) { alert("Autorisez les fenêtres pop-up pour afficher l’aperçu du devis."); return; }
+    popup.location.href = "/api/billing/blank-quote/pdf";
 }
 
 async function emailBillingPdf(document, recipient) {
