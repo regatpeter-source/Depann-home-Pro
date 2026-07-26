@@ -134,7 +134,8 @@ export function registerBillingRoutes(app, requireAuthentication) {
                 SELECT id, document_type AS "documentType", document_number AS "documentNumber", client_id AS "clientId", customer_type AS "customerType",
                     customer_name AS "customerName", customer_address AS "customerAddress", TO_CHAR(issue_date, 'YYYY-MM-DD') AS "issueDate",
                     TO_CHAR(due_date, 'YYYY-MM-DD') AS "dueDate", status, is_accounted AS "isAccounted",
-                    TO_CHAR(accounted_at, 'YYYY-MM-DD') AS "accountedAt", appointment_id AS "appointmentId", source_quote_id AS "sourceQuoteId", quote_reference AS "quoteReference", lines, notes, updated_at AS "updatedAt"
+                    TO_CHAR(accounted_at, 'YYYY-MM-DD') AS "accountedAt", appointment_id AS "appointmentId", source_quote_id AS "sourceQuoteId", quote_reference AS "quoteReference", lines, notes,
+                    created_at AS "createdAt", updated_at AS "updatedAt"
                 FROM depannhome_billing_documents WHERE owner_id = $1 ORDER BY issue_date DESC, id DESC
             `, [accountOwnerId])
         ]);

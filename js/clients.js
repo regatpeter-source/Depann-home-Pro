@@ -532,7 +532,8 @@ async function loadClientBillingHistory(panel, client) {
         }
         panel.innerHTML = `<div class="client-activity-list">${documents.map(billingDocument => {
             const type = billingDocument.documentType === "invoice" ? "Facture" : "Devis";
-            return `<article class="client-activity-item"><div><strong>${escapeHtml(type)} créé(e)</strong><p>${escapeHtml(billingDocument.documentNumber)} · ${escapeHtml(billingDocument.status || "brouillon")}</p><div class="client-card-actions client-activity-actions"><button type="button" class="secondary-button" data-action="view" data-document-id="${escapeHtml(billingDocument.id)}">Visualiser</button><button type="button" class="secondary-button" data-action="print" data-document-id="${escapeHtml(billingDocument.id)}">Imprimer / PDF</button><button type="button" class="secondary-button" data-action="email" data-document-id="${escapeHtml(billingDocument.id)}" ${client.email ? "" : "disabled title=\"Ajoutez l’e-mail du client pour préparer un envoi.\""}>E-mail</button></div></div><time datetime="${escapeHtml(billingDocument.issueDate)}">${escapeHtml(formatBillingDate(billingDocument.issueDate))}</time></article>`;
+            const createdAt = billingDocument.createdAt || billingDocument.updatedAt || `${billingDocument.issueDate}T12:00:00`;
+            return `<article class="client-activity-item"><div><strong>${escapeHtml(type)} créé(e)</strong><p>${escapeHtml(billingDocument.documentNumber)} · ${escapeHtml(billingDocument.status || "brouillon")}</p><div class="client-card-actions client-activity-actions"><button type="button" class="secondary-button" data-action="view" data-document-id="${escapeHtml(billingDocument.id)}">Visualiser</button><button type="button" class="secondary-button" data-action="print" data-document-id="${escapeHtml(billingDocument.id)}">Imprimer / PDF</button><button type="button" class="secondary-button" data-action="email" data-document-id="${escapeHtml(billingDocument.id)}" ${client.email ? "" : "disabled title=\"Ajoutez l’e-mail du client pour préparer un envoi.\""}>E-mail</button></div></div><time datetime="${escapeHtml(createdAt)}">${escapeHtml(formatActivityDate(createdAt))}</time></article>`;
         }).join("")}</div>`;
         panel.querySelectorAll('[data-action="view"]').forEach(button => button.addEventListener("click", () => viewClientBillingDocument(client, button.dataset.documentId, "")));
         panel.querySelectorAll('[data-action="print"]').forEach(button => button.addEventListener("click", () => printClientBillingDocument(client, button.dataset.documentId, "")));
@@ -787,7 +788,7 @@ function normalizeAttachments(attachments = []) {
 }
 
 function renderClientActivityHistory(client) {
-    const entries = normalizeActivityHistory(client.activityHistory).filter(entry => !["quote", "invoice"].includes(entry.type));
+    const entries = normalizeActivityHistory(client.activityHistory).filter(entry => !["quote", "invoice", "quitus"].includes(entry.type));
     if (!entries.length) return "<p class=\"muted\">Les rendez-vous, documents et actions de ce dossier apparaîtront ici.</p>";
     return `<div class="client-activity-list">${entries.map(entry => {
         const isBillingDocument = ["quote", "invoice"].includes(entry.type) && entry.detail;
