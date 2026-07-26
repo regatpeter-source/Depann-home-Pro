@@ -2,6 +2,7 @@ const CLIENTS_KEY_PREFIX = "depannHomePro:clients:";
 const QUEUE_KEY_PREFIX = "depannHomePro:clients-sync-queue:";
 const MAX_ACTIVITY_HISTORY = 150;
 const MAX_DELETED_ATTACHMENT_IDS = 500;
+const SILENT_SYNCHRONIZATION_INTERVAL = 20_000;
 
 let onlineListenerRegistered = false;
 let synchronizationPromise = null;
@@ -19,7 +20,7 @@ export async function initializeClientSynchronization() {
     if (!silentSynchronizationTimer) {
         silentSynchronizationTimer = window.setInterval(() => {
             if (document.visibilityState === "visible") synchronizeClients().catch(() => {});
-        }, 90_000);
+        }, SILENT_SYNCHRONIZATION_INTERVAL);
     }
 
     return synchronizeClients();
@@ -256,6 +257,7 @@ function normalizeActivity(activity) {
         label: String(activity?.label || "Activité du dossier").slice(0, 200),
         detail: String(activity?.detail || "").slice(0, 500),
         documentId: String(activity?.documentId || "").slice(0, 30),
+        attachmentId: String(activity?.attachmentId || "").slice(0, 100),
         actorName: String(activity?.actorName || "").slice(0, 100),
         createdAt
     };
