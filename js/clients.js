@@ -457,6 +457,7 @@ function renderClientDetail(client, options = {}) {
         <section class="procedure-section">
             <h3> Historique du client</h3>
             ${renderClientActivityHistory(client)}
+            <div id="clientBillingHistory"><p class="muted">Chargement des devis et factures du dossier…</p></div>
         </section>
         ${interventionPhotos.length ? `
             <section class="procedure-section client-intervention-photos">
@@ -467,7 +468,6 @@ function renderClientDetail(client, options = {}) {
         <section class="procedure-section">
             <h3> Fichiers du client</h3>
             ${clientFiles.length ? renderAttachmentsHtml(client.id, clientFiles, !readOnly, client.email) : "<p>Aucun autre fichier enregistré.</p>"}
-            <div id="clientBillingFiles"><p class="muted">Chargement des devis et factures du dossier…</p></div>
         </section>
     `;
 
@@ -496,12 +496,11 @@ function renderClientDetail(client, options = {}) {
             }
         });
     });
-    loadClientBillingFiles(panel.querySelector("#clientBillingFiles"), client);
+    loadClientBillingHistory(panel.querySelector("#clientBillingHistory"), client);
 
     const detail = document.createDocumentFragment();
     detail.append(panel);
     detail.append(renderClientMessages(client, options.focusMessages));
-    detail.append(renderClientBillingDocuments(client));
     return detail;
 }
 
@@ -517,66 +516,29 @@ function openClientBillingDocument(type, client) {
     }
 }
 
-function renderClientBillingDocuments(client) {
-    const panel = document.createElement("section");
-    panel.className = "client-panel client-billing-panel";
-    panel.innerHTML = "<p class=\"muted\">Chargement des devis et factures du client…</p>";
-    loadClientBillingDocuments(panel, client);
-    return panel;
-}
-
-async function loadClientBillingDocuments(panel, client) {
-    try {
-        const response = await fetch("/api/billing", { credentials: "same-origin" });
-        const data = await response.json().catch(() => null);
-        if (!response.ok) throw new Error(data?.message);
-        const documents = (data?.documents || []).filter(document =>
-            String(document.clientId || "") === String(client.id)
-            || (!document.clientId && normalizeText(document.customerName) === normalizeText(client.name))
-        );
-        panel.innerHTML = `
-            <div class="form-heading"><div><p class="eyebrow">Devis, factures et envois</p><h2>${documents.length} document(s) pour ${escapeHtml(client.name)}</h2></div></div>
-            <div class="client-billing-list" id="clientBillingList"></div>
-        `;
-        const list = panel.querySelector("#clientBillingList");
-        if (!documents.length) {
-            list.innerHTML = "<p class=\"muted\">Aucun devis ou aucune facture associé(e) à ce client pour le moment.</p>";
-            return;
-        }
-        documents.forEach(billingDocument => {
-            const article = document.createElement("article");
-            article.className = "client-billing-item";
-            article.innerHTML = `<div><p class="eyebrow">${billingDocument.documentType === "invoice" ? "Facture" : "Devis"} · ${escapeHtml(billingDocument.status || "brouillon")}</p><h3>${escapeHtml(billingDocument.documentNumber)}</h3><p>${escapeHtml(formatBillingDate(billingDocument.issueDate))}</p></div><div class="client-card-actions"><button type="button" class="secondary-button" data-action="view">Visualiser</button><button type="button" class="secondary-button" data-action="email" ${client.email ? "" : "disabled title=\"Ajoutez l’e-mail du client pour envoyer le document.\""}>Envoyer par e-mail</button><button type="button" class="secondary-button" data-action="print">PDF / Imprimer</button></div>`;
-            article.querySelector('[data-action="view"]').addEventListener("click", () => viewClientBillingDocument(client, billingDocument.id, billingDocument.documentNumber));
-            article.querySelector('[data-action="email"]').addEventListener("click", () => emailBillingDocument(billingDocument, client));
-            article.querySelector('[data-action="print"]').addEventListener("click", () => printBillingDocument(billingDocument.id));
-            list.appendChild(article);
-        });
-    } catch (error) {
-        panel.innerHTML = `<p class="auth-message error">${escapeHtml(error.message || "Impossible de charger les documents du client.")}</p>`;
-    }
-}
-
-async function loadClientBillingFiles(panel, client) {
+async function loadClientBillingHistory(panel, client) {
     if (!panel) return;
     try {
         const response = await fetch("/api/billing", { credentials: "same-origin" });
         const data = await response.json().catch(() => null);
         if (!response.ok) throw new Error(data?.message);
-        const documents = (data?.documents || []).filter(document =>
-            String(document.clientId || "") === String(client.id)
-            || (!document.clientId && normalizeText(document.customerName) === normalizeText(client.name))
+        const documents = (data?.documents || []).filter(billingDocument =>
+            String(billingDocument.clientId || "") === String(client.id)
+            || (!billingDocument.clientId && normalizeText(billingDocument.customerName) === normalizeText(client.name))
         );
         if (!documents.length) {
-            panel.innerHTML = "<p class=\"muted\">Aucun devis ou aucune facture enregistré(e) dans ce dossier.</p>";
+            panel.innerHTML = "";
             return;
         }
-        panel.innerHTML = `<div class="attachment-list">${documents.map(document => `<article class="attachment-card"><div><p class="eyebrow">${escapeHtml(document.documentType === "invoice" ? "Facture" : "Devis")}</p><h4>${escapeHtml(document.documentNumber)}</h4><p class="muted">${escapeHtml(formatBillingDate(document.issueDate))} · ${escapeHtml(document.status || "brouillon")}</p></div><div class="attachment-actions"><button type="button" class="secondary-button" data-billing-file-view="${escapeHtml(document.id)}">Consulter</button><button type="button" class="secondary-button" data-billing-file-pdf="${escapeHtml(document.id)}">PDF / Imprimer</button>${client.email ? `<button type="button" class="secondary-button" data-billing-file-email="${escapeHtml(document.id)}">Envoyer par e-mail</button>` : ""}</div></article>`).join("")}</div>`;
-        panel.querySelectorAll("[data-billing-file-view]").forEach(button => button.addEventListener("click", () => viewClientBillingDocument(client, button.dataset.billingFileView, "")));
-        panel.querySelectorAll("[data-billing-file-pdf]").forEach(button => button.addEventListener("click", () => printClientBillingDocument(client, button.dataset.billingFilePdf, "")));
-        panel.querySelectorAll("[data-billing-file-email]").forEach(button => button.addEventListener("click", () => emailClientBillingDocument(client, button.dataset.billingFileEmail, "")));
+        panel.innerHTML = `<div class="client-activity-list">${documents.map(billingDocument => {
+            const type = billingDocument.documentType === "invoice" ? "Facture" : "Devis";
+            return `<article class="client-activity-item"><div><strong>${escapeHtml(type)} créé(e)</strong><p>${escapeHtml(billingDocument.documentNumber)} · ${escapeHtml(billingDocument.status || "brouillon")}</p><div class="client-card-actions client-activity-actions"><button type="button" class="secondary-button" data-action="view" data-document-id="${escapeHtml(billingDocument.id)}">Visualiser</button><button type="button" class="secondary-button" data-action="print" data-document-id="${escapeHtml(billingDocument.id)}">Imprimer / PDF</button><button type="button" class="secondary-button" data-action="email" data-document-id="${escapeHtml(billingDocument.id)}" ${client.email ? "" : "disabled title=\"Ajoutez l’e-mail du client pour préparer un envoi.\""}>E-mail</button></div></div><time datetime="${escapeHtml(billingDocument.issueDate)}">${escapeHtml(formatBillingDate(billingDocument.issueDate))}</time></article>`;
+        }).join("")}</div>`;
+        panel.querySelectorAll('[data-action="view"]').forEach(button => button.addEventListener("click", () => viewClientBillingDocument(client, button.dataset.documentId, "")));
+        panel.querySelectorAll('[data-action="print"]').forEach(button => button.addEventListener("click", () => printClientBillingDocument(client, button.dataset.documentId, "")));
+        panel.querySelectorAll('[data-action="email"]').forEach(button => button.addEventListener("click", () => emailClientBillingDocument(client, button.dataset.documentId, "")));
     } catch (error) {
-        panel.innerHTML = `<p class="auth-message error">${escapeHtml(error.message || "Impossible de charger les fichiers de facturation.")}</p>`;
+        panel.innerHTML = `<p class="auth-message error">${escapeHtml(error.message || "Impossible de charger les devis et factures du dossier.")}</p>`;
     }
 }
 
@@ -825,7 +787,7 @@ function normalizeAttachments(attachments = []) {
 }
 
 function renderClientActivityHistory(client) {
-    const entries = normalizeActivityHistory(client.activityHistory);
+    const entries = normalizeActivityHistory(client.activityHistory).filter(entry => !["quote", "invoice"].includes(entry.type));
     if (!entries.length) return "<p class=\"muted\">Les rendez-vous, documents et actions de ce dossier apparaîtront ici.</p>";
     return `<div class="client-activity-list">${entries.map(entry => {
         const isBillingDocument = ["quote", "invoice"].includes(entry.type) && entry.detail;
