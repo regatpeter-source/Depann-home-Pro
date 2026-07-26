@@ -1,8 +1,9 @@
 const CLIENTS_KEY_PREFIX = "depannHomePro:clients:";
 const QUEUE_KEY_PREFIX = "depannHomePro:clients-sync-queue:";
+const CURSOR_KEY_PREFIX = "depannHomePro:clients-sync-cursor:";
 const MAX_ACTIVITY_HISTORY = 150;
 const MAX_DELETED_ATTACHMENT_IDS = 500;
-const SILENT_SYNCHRONIZATION_INTERVAL = 20_000;
+const SILENT_SYNCHRONIZATION_INTERVAL = 90_000;
 
 let onlineListenerRegistered = false;
 let synchronizationPromise = null;
@@ -91,19 +92,29 @@ export async function synchronizeClients() {
 }
 
 async function synchronize() {
-    const remoteResult = await request("/api/clients");
+    const remoteResult = await request(getClientSynchronizationUrl());
     if (!remoteResult.ok) return { ok: false, message: remoteResult.data?.message || "Serveur indisponible." };
 
     const remoteClients = Array.isArray(remoteResult.data?.clients) ? remoteResult.data.clients.map(normalizeClient) : [];
+    const deletedClientIds = Array.isArray(remoteResult.data?.deletedClientIds) ? remoteResult.data.deletedClientIds : [];
+    const cursor = validDate(remoteResult.data?.cursor);
+    const isInitialSynchronization = !getSynchronizationCursor();
     if (!canWriteClients()) {
-        writeClients(remoteClients);
+        const synchronizedClients = isInitialSynchronization
+            ? remoteClients
+            : applyRemoteChanges(getLocalClients(), remoteClients, deletedClientIds);
+        if (!writeClients(synchronizedClients)) {
+            return { ok: false, message: "Espace de stockage local saturé. Supprimez ou compressez des fichiers clients." };
+        }
+        if (cursor) writeSynchronizationCursor(cursor);
         window.dispatchEvent(new CustomEvent("depannhome:clients-synchronized"));
         return { ok: true };
     }
-    const localClients = getLocalClients();
-    enqueueUnsyncedLocalClients(localClients, remoteClients);
+    const localClients = applyRemoteChanges(getLocalClients(), remoteClients, deletedClientIds);
+    if (isInitialSynchronization) enqueueUnsyncedLocalClients(localClients, remoteClients);
     const merged = mergeClients(localClients, remoteClients);
     if (!writeClients(merged)) return { ok: false, message: "Espace de stockage local saturé. Supprimez ou compressez des fichiers clients." };
+    if (cursor) writeSynchronizationCursor(cursor);
 
     const operations = getQueue();
     const clientsById = new Map(getLocalClients().map(client => [client.id, client]));
@@ -128,10 +139,25 @@ async function synchronize() {
         removeQueuedOperation(operation.id);
     }
 
-    const refreshed = await request("/api/clients");
-    if (refreshed.ok) writeClients(mergeClients(getLocalClients(), refreshed.data.clients || []));
+    const refreshed = await request(getClientSynchronizationUrl());
+    if (refreshed.ok) {
+        const refreshedClients = Array.isArray(refreshed.data?.clients) ? refreshed.data.clients.map(normalizeClient) : [];
+        const refreshedDeletedClientIds = Array.isArray(refreshed.data?.deletedClientIds) ? refreshed.data.deletedClientIds : [];
+        if (!writeClients(applyRemoteChanges(getLocalClients(), refreshedClients, refreshedDeletedClientIds))) {
+            return { ok: false, message: "Espace de stockage local saturé. Supprimez ou compressez des fichiers clients." };
+        }
+        const refreshedCursor = validDate(refreshed.data?.cursor);
+        if (refreshedCursor) writeSynchronizationCursor(refreshedCursor);
+    }
     window.dispatchEvent(new CustomEvent("depannhome:clients-synchronized"));
     return { ok: true };
+}
+
+function applyRemoteChanges(localClients, remoteClients, deletedClientIds = []) {
+    const deleted = new Set(deletedClientIds.map(clientId => String(clientId || "")).filter(Boolean));
+    const remainingClients = localClients.filter(client => !deleted.has(client.id));
+    if (deleted.size) writeQueue(getQueue().filter(operation => !deleted.has(operation.clientId)));
+    return mergeClients(remainingClients, remoteClients);
 }
 
 function mergeClients(firstClients, secondClients) {
@@ -294,6 +320,33 @@ function getQueueKey() {
     const accountId = getAccountId();
     if (!accountId) throw new Error("Compte non initialisé.");
     return `${QUEUE_KEY_PREFIX}${accountId}`;
+}
+
+function getSynchronizationCursor() {
+    try {
+        return validDate(localStorage.getItem(getSynchronizationCursorKey()));
+    } catch {
+        return "";
+    }
+}
+
+function writeSynchronizationCursor(cursor) {
+    try {
+        localStorage.setItem(getSynchronizationCursorKey(), cursor);
+    } catch {
+        // Sans espace pour le curseur, la prochaine synchronisation sera complète mais reste fonctionnelle.
+    }
+}
+
+function getSynchronizationCursorKey() {
+    const accountId = getAccountId();
+    if (!accountId) throw new Error("Compte non initialisé.");
+    return `${CURSOR_KEY_PREFIX}${accountId}`;
+}
+
+function getClientSynchronizationUrl() {
+    const cursor = getSynchronizationCursor();
+    return cursor ? `/api/clients?since=${encodeURIComponent(cursor)}` : "/api/clients";
 }
 
 async function request(url, options = {}) {

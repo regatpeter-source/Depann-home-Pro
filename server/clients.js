@@ -51,13 +51,25 @@ export async function initializeClients() {
 
 export function registerClientRoutes(app, requireAuthentication) {
     app.get("/api/clients", requireAuthentication, asyncHandler(async (request, response) => {
-        const { rows } = await getPool().query(`
+        const sinceParameter = String(request.query?.since || "");
+        const since = sinceParameter ? validDate(sinceParameter) : "";
+        if (sinceParameter && !since) return response.status(400).json({ message: "Curseur de synchronisation invalide." });
+        const database = getPool();
+        const { rows: cursorRows } = await database.query("SELECT NOW() AS cursor");
+        const cursor = cursorRows[0].cursor;
+        const { rows } = await database.query(`
             SELECT client_data AS client
             FROM depannhome_clients
-            WHERE owner_id = $1
+            WHERE owner_id = $1 AND updated_at <= $2
+              AND ($3::timestamptz IS NULL OR updated_at > $3::timestamptz)
             ORDER BY updated_at DESC
-        `, [getAccountOwnerId(request)]);
-        response.json({ clients: rows.map(row => row.client) });
+        `, [getAccountOwnerId(request), cursor, since || null]);
+        const deletedClientIds = since ? (await database.query(`
+            SELECT client_id AS "clientId"
+            FROM depannhome_deleted_clients
+            WHERE owner_id = $1 AND deleted_at <= $2 AND deleted_at > $3::timestamptz
+        `, [getAccountOwnerId(request), cursor, since])).rows.map(row => row.clientId) : [];
+        response.json({ clients: rows.map(row => row.client), deletedClientIds, cursor: cursor.toISOString() });
     }));
 
     app.put("/api/clients/:clientId", requireAuthentication, requireClientWriteAccess, asyncHandler(async (request, response) => {
@@ -340,6 +352,8 @@ function sanitizeActivityHistory(value) {
             type: String(item.type || "other").slice(0, 40),
             label: String(item.label).slice(0, 200),
             detail: String(item.detail || "").slice(0, 500),
+            documentId: String(item.documentId || "").slice(0, 30),
+            attachmentId: String(item.attachmentId || "").slice(0, 100),
             actorName: String(item.actorName || "").slice(0, 100),
             createdAt: validDate(item.createdAt) || new Date().toISOString()
         }))
