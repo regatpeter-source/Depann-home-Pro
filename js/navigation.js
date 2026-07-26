@@ -1,7 +1,7 @@
 import { ROUTES, STORAGE_KEYS, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=116";
 import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=135";
 import { renderCreatorConsole } from "./creator.js?v=112";
-import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=135";
+import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=136";
 import { renderPurchases } from "./purchases.js?v=111";
 import { getFirstUnreadClientId, refreshClientMessageAlert, refreshVisibleClientMessages } from "./messages.js?v=106";
 import { getSearchableClients, renderClients } from "./clients.js?v=133";
@@ -96,7 +96,9 @@ function bindEvents() {
     });
 
     clientsBtn.addEventListener("click", () => openClients());
-    billingBtn?.addEventListener("click", renderBilling);
+    billingBtn?.addEventListener("click", () => {
+        if (document.body.dataset.role !== "technician") renderBilling();
+    });
     purchasesBtn?.addEventListener("click", renderPurchases);
     calendarBtn?.addEventListener("click", openCalendar);
     libraryBtn?.addEventListener("click", renderLibrary);
@@ -114,7 +116,7 @@ function bindEvents() {
             if (nav === ROUTES.store) renderStore();
             if (nav === ROUTES.photo) renderPhotoRecognition(database, navigateToRef);
             if (nav === ROUTES.clients) openClients();
-            if (nav === ROUTES.billing) renderBilling();
+            if (nav === ROUTES.billing && document.body.dataset.role !== "technician") renderBilling();
             if (nav === ROUTES.purchases) renderPurchases();
             if (nav === ROUTES.calendar) openCalendar();
             if (nav === ROUTES.library) renderLibrary();

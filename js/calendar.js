@@ -1,5 +1,5 @@
 import { ROUTES } from "./config.js?v=105";
-import { createBillingDocumentForClient, viewBillingDocument } from "./billing.js?v=135";
+import { createBillingDocumentForClient, viewBillingDocument } from "./billing.js?v=136";
 import { getSearchableClients } from "./clients.js?v=132";
 import { addClientActivityByName, synchronizeClients } from "./client-sync.js?v=116";
 import { renderClientMessages } from "./messages.js?v=106";

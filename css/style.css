@@ -336,6 +336,11 @@ body.desktop-device footer .nav-button:not([data-nav="home"]){
     display:none;
 }
 
+body[data-role="technician"] #billingBtn,
+body[data-role="technician"] .nav-button[data-nav="billing"]{
+    display:none;
+}
+
 .nav-label-messages{
     display:none;
 }

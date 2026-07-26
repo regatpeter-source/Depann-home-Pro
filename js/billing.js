@@ -40,6 +40,18 @@ export async function renderBilling(options = {}) {
         const document = (billingData.documents || []).find(item => String(item.id) === String(options.documentId));
         activeDocument = document ? normalizeDocument(document) : null;
     }
+    if (isTechnician()) {
+        overviewPanel.hidden = true;
+        profilePanel.hidden = true;
+        listPanel.hidden = true;
+        if (!activeDocument) {
+            editorPanel.hidden = false;
+            editorPanel.innerHTML = "<p class=\"muted\">Les devis et factures sont accessibles depuis le rendez-vous ou la fiche du client concerné.</p>";
+            return;
+        }
+        renderDocumentEditor(editorPanel);
+        return;
+    }
     renderOverview(overviewPanel, profilePanel);
     renderDocumentEditor(editorPanel);
     renderDocumentList(listPanel);

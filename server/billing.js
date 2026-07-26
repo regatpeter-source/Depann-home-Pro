@@ -141,8 +141,17 @@ export function registerBillingRoutes(app, requireAuthentication) {
                     COALESCE(NULLIF(creator.full_name, ''), creator.username, '') AS "creatorName"
                 FROM depannhome_billing_documents
                 LEFT JOIN depannhome_users creator ON creator.id = depannhome_billing_documents.created_by
-                WHERE depannhome_billing_documents.owner_id = $1 ORDER BY issue_date DESC, depannhome_billing_documents.id DESC
-            `, [accountOwnerId])
+                                WHERE depannhome_billing_documents.owner_id = $1
+                                    AND ($2 <> 'technician'
+                                        OR depannhome_billing_documents.created_by = $3
+                                        OR EXISTS (
+                                                SELECT 1 FROM depannhome_calendar_events appointment
+                                                WHERE appointment.id = depannhome_billing_documents.appointment_id
+                                                    AND appointment.owner_id = $1
+                                                    AND appointment.assigned_technician_id = $3
+                                        ))
+                                ORDER BY issue_date DESC, depannhome_billing_documents.id DESC
+                        `, [accountOwnerId, request.user?.role || "", request.user?.sub || 0])
         ]);
         response.json({ profile: profileResult.rows[0] || emptyProfile(), templates: templatesResult.rows, documents: documentsResult.rows });
     }));
@@ -217,8 +226,17 @@ export function registerBillingRoutes(app, requireAuthentication) {
                     customer_name AS "customerName", customer_address AS "customerAddress", TO_CHAR(issue_date, 'YYYY-MM-DD') AS "issueDate",
                     TO_CHAR(due_date, 'YYYY-MM-DD') AS "dueDate", status, is_accounted AS "isAccounted",
                     TO_CHAR(accounted_at, 'YYYY-MM-DD') AS "accountedAt", appointment_id AS "appointmentId", source_quote_id AS "sourceQuoteId", quote_reference AS "quoteReference", lines, notes
-                FROM depannhome_billing_documents WHERE id = $1 AND owner_id = $2
-            `, [id, getAccountOwnerId(request)]),
+                                FROM depannhome_billing_documents
+                                WHERE id = $1 AND owner_id = $2
+                                    AND ($3 <> 'technician'
+                                        OR created_by = $4
+                                        OR EXISTS (
+                                                SELECT 1 FROM depannhome_calendar_events appointment
+                                                WHERE appointment.id = depannhome_billing_documents.appointment_id
+                                                    AND appointment.owner_id = $2
+                                                    AND appointment.assigned_technician_id = $4
+                                        ))
+                        `, [id, getAccountOwnerId(request), request.user?.role || "", request.user?.sub || 0]),
             database.query(`
                 SELECT company_name AS "companyName", legal_form AS "legalForm", address, postal_code AS "postalCode", city, phone, email,
                     registration_number AS "registrationNumber", tax_number AS "taxNumber", payment_terms AS "paymentTerms",
@@ -300,7 +318,7 @@ export function registerBillingRoutes(app, requireAuthentication) {
             }
             const appointment = await findAccessibleAppointment(getPool(), getAccountOwnerId(request), document.appointmentId, request);
             if (document.appointmentId && !appointment) return response.status(400).json({ message: "Le rendez-vous associé est introuvable ou n’est pas accessible." });
-            const sourceQuote = await findSourceQuote(getPool(), getAccountOwnerId(request), document.sourceQuoteId);
+            const sourceQuote = await findSourceQuote(getPool(), getAccountOwnerId(request), document.sourceQuoteId, request);
             if (document.sourceQuoteId && !sourceQuote) return response.status(400).json({ message: "Le devis de référence est introuvable." });
             const { rows } = await getPool().query(`
                 INSERT INTO depannhome_billing_documents
@@ -327,7 +345,7 @@ export function registerBillingRoutes(app, requireAuthentication) {
             }
             const appointment = await findAccessibleAppointment(getPool(), getAccountOwnerId(request), document.appointmentId, request);
             if (document.appointmentId && !appointment) return response.status(400).json({ message: "Le rendez-vous associé est introuvable ou n’est pas accessible." });
-            const sourceQuote = await findSourceQuote(getPool(), getAccountOwnerId(request), document.sourceQuoteId);
+            const sourceQuote = await findSourceQuote(getPool(), getAccountOwnerId(request), document.sourceQuoteId, request);
             if (document.sourceQuoteId && !sourceQuote) return response.status(400).json({ message: "Le devis de référence est introuvable." });
             const result = await getPool().query(`
                 UPDATE depannhome_billing_documents SET document_type=$3, document_number=$4, client_id=$5, customer_type=$6, customer_name=$7,
@@ -500,8 +518,17 @@ async function getBillingExport(request) {
             SELECT id, document_type AS "documentType", document_number AS "documentNumber", customer_type AS "customerType",
                 customer_name AS "customerName", customer_address AS "customerAddress", TO_CHAR(issue_date, 'YYYY-MM-DD') AS "issueDate",
                 TO_CHAR(due_date, 'YYYY-MM-DD') AS "dueDate", quote_reference AS "quoteReference", lines, notes
-            FROM depannhome_billing_documents WHERE id = $1 AND owner_id = $2
-        `, [id, getAccountOwnerId(request)]),
+                        FROM depannhome_billing_documents
+                        WHERE id = $1 AND owner_id = $2
+                            AND ($3 <> 'technician'
+                                OR created_by = $4
+                                OR EXISTS (
+                                        SELECT 1 FROM depannhome_calendar_events appointment
+                                        WHERE appointment.id = depannhome_billing_documents.appointment_id
+                                            AND appointment.owner_id = $2
+                                            AND appointment.assigned_technician_id = $4
+                                ))
+                `, [id, getAccountOwnerId(request), request.user?.role || "", request.user?.sub || 0]),
         database.query(`
             SELECT company_name AS "companyName", legal_form AS "legalForm", address, postal_code AS "postalCode", city, phone, email,
                 registration_number AS "registrationNumber", tax_number AS "taxNumber", payment_terms AS "paymentTerms", deposit_terms AS "depositTerms",
@@ -629,13 +656,21 @@ function createBillingPdf(document, profile) {
     });
 }
 
-async function findSourceQuote(database, ownerId, sourceQuoteId) {
+async function findSourceQuote(database, ownerId, sourceQuoteId, request) {
     if (!sourceQuoteId) return null;
     const { rows } = await database.query(`
         SELECT id, document_number AS "documentNumber"
         FROM depannhome_billing_documents
-        WHERE id = $1 AND owner_id = $2 AND document_type = 'quote'
-    `, [sourceQuoteId, ownerId]);
+                WHERE id = $1 AND owner_id = $2 AND document_type = 'quote'
+                    AND ($3 <> 'technician'
+                        OR created_by = $4
+                        OR EXISTS (
+                                SELECT 1 FROM depannhome_calendar_events appointment
+                                WHERE appointment.id = depannhome_billing_documents.appointment_id
+                                    AND appointment.owner_id = $2
+                                    AND appointment.assigned_technician_id = $4
+                        ))
+        `, [sourceQuoteId, ownerId, request?.user?.role || "", request?.user?.sub || 0]);
     return rows[0] || null;
 }
 
