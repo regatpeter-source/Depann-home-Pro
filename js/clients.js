@@ -120,6 +120,7 @@ function renderClientToolbar(clients, readOnly, directory) {
         event.preventDefault();
         clientDirectoryFilters = readDirectoryFilters(new FormData(event.currentTarget));
         await applyClientDirectorySearch(directory, clients, clientDirectoryFilters);
+        directory.scrollIntoView({ behavior: "smooth", block: "start" });
     });
     panel.querySelector("#clearClientDirectory").addEventListener("click", event => {
         clientDirectoryFilters = createEmptyDirectoryFilters();
@@ -346,9 +347,14 @@ async function applyClientDirectorySearch(section, clients, filters) {
 function renderClientDirectoryResults(section, clients, appointmentDatesByClient) {
     section.innerHTML = "";
     if (!clients.length) {
-        section.appendChild(createInfo("Aucun dossier ne correspond à ces critères."));
+        section.appendChild(createInfo("Aucun dossier ne correspond à ces critères. Modifiez les critères puis relancez la recherche."));
         return;
     }
+    const summary = document.createElement("div");
+    summary.className = "client-search-results-summary";
+    summary.tabIndex = -1;
+    summary.innerHTML = `<strong>${clients.length} dossier${clients.length > 1 ? "s" : ""} trouvé${clients.length > 1 ? "s" : ""}</strong><span>Les résultats apparaissent ci-dessous.</span>`;
+    section.appendChild(summary);
     const groups = new Map();
     clients.forEach(client => {
         const date = parseDirectoryDate(client.createdAt) || new Date(0);
@@ -418,6 +424,8 @@ function renderClientDetail(client, options = {}) {
     const readOnly = isClientReadOnly();
     const canCreateBillingDocuments = !readOnly || isTechnicianBillingAllowed();
     const navigationHref = getClientNavigationHref(client);
+    const interventionPhotos = client.attachments.filter(isInterventionPhoto);
+    const clientFiles = client.attachments.filter(attachment => !isInterventionPhoto(attachment));
     const panel = document.createElement("section");
     panel.className = "client-panel";
 
@@ -450,9 +458,15 @@ function renderClientDetail(client, options = {}) {
             <h3> Historique du client</h3>
             ${renderClientActivityHistory(client)}
         </section>
+        ${interventionPhotos.length ? `
+            <section class="procedure-section client-intervention-photos">
+                <div class="form-heading"><div><p class="eyebrow">Interventions terrain</p><h3>Photos ajoutées par les techniciens</h3></div><span class="file-count-badge">${interventionPhotos.length} photo(s)</span></div>
+                <div class="client-intervention-photo-gallery">${interventionPhotos.map(attachment => renderInterventionPhotoHtml(client.id, attachment)).join("")}</div>
+            </section>
+        ` : ""}
         <section class="procedure-section">
             <h3> Fichiers du client</h3>
-            ${client.attachments.length ? renderAttachmentsHtml(client.id, client.attachments, !readOnly, client.email) : "<p>Aucun fichier enregistré.</p>"}
+            ${clientFiles.length ? renderAttachmentsHtml(client.id, clientFiles, !readOnly, client.email) : "<p>Aucun autre fichier enregistré.</p>"}
             <div id="clientBillingFiles"><p class="muted">Chargement des devis et factures du dossier…</p></div>
         </section>
     `;
@@ -978,6 +992,16 @@ function renderAttachmentsHtml(clientId, attachments, withActions, recipient) {
             `).join("")}
         </div>
     `;
+}
+
+function isInterventionPhoto(attachment) {
+    return Boolean(attachment?.appointmentId) && ["Photo", "Photo avant", "Photo après"].includes(attachment.type);
+}
+
+function renderInterventionPhotoHtml(clientId, attachment) {
+    const type = attachment.type === "Photo avant" ? "Avant intervention" : attachment.type === "Photo après" ? "Après intervention" : "Photo d’intervention";
+    const url = `/api/clients/${encodeURIComponent(clientId)}/attachments/${encodeURIComponent(attachment.id)}/open`;
+    return `<article class="client-intervention-photo"><a href="${url}" target="_blank" rel="noopener"><img src="${escapeHtml(attachment.dataUrl)}" alt="${escapeHtml(attachment.name)}"></a><div><strong>${escapeHtml(type)}</strong><span>${escapeHtml(attachment.name)}</span><small>${escapeHtml(formatDate(attachment.createdAt))}</small></div></article>`;
 }
 
 async function deleteClientAttachment(clientId, attachmentId) {
