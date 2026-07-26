@@ -149,7 +149,15 @@ export function registerBillingRoutes(app, requireAuthentication) {
                                                 WHERE appointment.id = depannhome_billing_documents.appointment_id
                                                     AND appointment.owner_id = $1
                                                     AND appointment.assigned_technician_id = $3
-                                        ))
+                                                  )
+                                                  OR EXISTS (
+                                                    SELECT 1
+                                                    FROM depannhome_billing_documents source_quote
+                                                    LEFT JOIN depannhome_calendar_events quote_appointment ON quote_appointment.id = source_quote.appointment_id
+                                                    WHERE source_quote.id = depannhome_billing_documents.source_quote_id
+                                                      AND source_quote.owner_id = $1
+                                                      AND (source_quote.created_by = $3 OR quote_appointment.assigned_technician_id = $3)
+                                                  ))
                                 ORDER BY issue_date DESC, depannhome_billing_documents.id DESC
                         `, [accountOwnerId, request.user?.role || "", request.user?.sub || 0])
         ]);
@@ -235,7 +243,15 @@ export function registerBillingRoutes(app, requireAuthentication) {
                                                 WHERE appointment.id = depannhome_billing_documents.appointment_id
                                                     AND appointment.owner_id = $2
                                                     AND appointment.assigned_technician_id = $4
-                                        ))
+                                                  )
+                                                  OR EXISTS (
+                                                    SELECT 1
+                                                    FROM depannhome_billing_documents source_quote
+                                                    LEFT JOIN depannhome_calendar_events quote_appointment ON quote_appointment.id = source_quote.appointment_id
+                                                    WHERE source_quote.id = depannhome_billing_documents.source_quote_id
+                                                      AND source_quote.owner_id = $2
+                                                      AND (source_quote.created_by = $4 OR quote_appointment.assigned_technician_id = $4)
+                                                  ))
                         `, [id, getAccountOwnerId(request), request.user?.role || "", request.user?.sub || 0]),
             database.query(`
                 SELECT company_name AS "companyName", legal_form AS "legalForm", address, postal_code AS "postalCode", city, phone, email,
@@ -320,6 +336,9 @@ export function registerBillingRoutes(app, requireAuthentication) {
             if (document.appointmentId && !appointment) return response.status(400).json({ message: "Le rendez-vous associé est introuvable ou n’est pas accessible." });
             const sourceQuote = await findSourceQuote(getPool(), getAccountOwnerId(request), document.sourceQuoteId, request);
             if (document.sourceQuoteId && !sourceQuote) return response.status(400).json({ message: "Le devis de référence est introuvable." });
+            if (document.documentType === "invoice" && sourceQuote && await hasInvoiceForQuote(getPool(), getAccountOwnerId(request), sourceQuote.id)) {
+                return response.status(409).json({ message: "Une facture existe déjà pour ce devis." });
+            }
             const { rows } = await getPool().query(`
                 INSERT INTO depannhome_billing_documents
                     (owner_id, created_by, document_type, document_number, client_id, customer_type, customer_name, customer_address, issue_date, due_date, status, is_accounted, accounted_at, appointment_id, source_quote_id, quote_reference, lines, notes)
@@ -347,6 +366,9 @@ export function registerBillingRoutes(app, requireAuthentication) {
             if (document.appointmentId && !appointment) return response.status(400).json({ message: "Le rendez-vous associé est introuvable ou n’est pas accessible." });
             const sourceQuote = await findSourceQuote(getPool(), getAccountOwnerId(request), document.sourceQuoteId, request);
             if (document.sourceQuoteId && !sourceQuote) return response.status(400).json({ message: "Le devis de référence est introuvable." });
+            if (document.documentType === "invoice" && sourceQuote && await hasInvoiceForQuote(getPool(), getAccountOwnerId(request), sourceQuote.id, id)) {
+                return response.status(409).json({ message: "Une facture existe déjà pour ce devis." });
+            }
             const result = await getPool().query(`
                 UPDATE depannhome_billing_documents SET document_type=$3, document_number=$4, client_id=$5, customer_type=$6, customer_name=$7,
                     customer_address=$8, issue_date=$9::date, due_date=$10::date, status=$11, is_accounted=$12,
@@ -527,7 +549,15 @@ async function getBillingExport(request) {
                                         WHERE appointment.id = depannhome_billing_documents.appointment_id
                                             AND appointment.owner_id = $2
                                             AND appointment.assigned_technician_id = $4
-                                ))
+                                            )
+                                            OR EXISTS (
+                                              SELECT 1
+                                              FROM depannhome_billing_documents source_quote
+                                              LEFT JOIN depannhome_calendar_events quote_appointment ON quote_appointment.id = source_quote.appointment_id
+                                              WHERE source_quote.id = depannhome_billing_documents.source_quote_id
+                                                AND source_quote.owner_id = $2
+                                                AND (source_quote.created_by = $4 OR quote_appointment.assigned_technician_id = $4)
+                                            ))
                 `, [id, getAccountOwnerId(request), request.user?.role || "", request.user?.sub || 0]),
         database.query(`
             SELECT company_name AS "companyName", legal_form AS "legalForm", address, postal_code AS "postalCode", city, phone, email,
@@ -672,6 +702,17 @@ async function findSourceQuote(database, ownerId, sourceQuoteId, request) {
                         ))
         `, [sourceQuoteId, ownerId, request?.user?.role || "", request?.user?.sub || 0]);
     return rows[0] || null;
+}
+
+async function hasInvoiceForQuote(database, ownerId, sourceQuoteId, excludedDocumentId = 0) {
+    const { rowCount } = await database.query(`
+        SELECT 1
+        FROM depannhome_billing_documents
+        WHERE owner_id = $1 AND document_type = 'invoice' AND source_quote_id = $2
+          AND ($3::bigint = 0 OR id <> $3::bigint)
+        LIMIT 1
+    `, [ownerId, sourceQuoteId, excludedDocumentId]);
+    return Boolean(rowCount);
 }
 
 async function hasClient(database, ownerId, clientId) {
