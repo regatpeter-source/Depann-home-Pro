@@ -1,4 +1,3 @@
-const LEGACY_CLIENTS_KEY = "depannHomePro:clients";
 const CLIENTS_KEY_PREFIX = "depannHomePro:clients:";
 const QUEUE_KEY_PREFIX = "depannHomePro:clients-sync-queue:";
 const MAX_ACTIVITY_HISTORY = 150;
@@ -9,8 +8,6 @@ let synchronizationPromise = null;
 let silentSynchronizationTimer = null;
 
 export async function initializeClientSynchronization() {
-    if (canWriteClients()) migrateLegacyClients();
-
     if (!onlineListenerRegistered) {
         window.addEventListener("online", () => synchronizeClients().catch(() => {}));
         window.addEventListener("focus", () => synchronizeClients().catch(() => {}));
@@ -223,20 +220,6 @@ function normalizeQueueOperation(operation) {
     };
 }
 
-function migrateLegacyClients() {
-    const key = getClientsKey();
-    if (localStorage.getItem(key) || !getAccountId()) return;
-    try {
-        const legacy = JSON.parse(localStorage.getItem(LEGACY_CLIENTS_KEY)) || [];
-        if (!Array.isArray(legacy) || !legacy.length) return;
-        const clients = legacy.map(normalizeClient);
-        writeClients(clients);
-        clients.forEach(client => enqueue({ type: "upsert", clientId: client.id }));
-    } catch {
-        // Ignore unreadable legacy data.
-    }
-}
-
 function normalizeClient(client) {
     const now = new Date().toISOString();
     return {
@@ -300,11 +283,15 @@ function canWriteClients() {
 }
 
 function getClientsKey() {
-    return `${CLIENTS_KEY_PREFIX}${getAccountId() || "anonymous"}`;
+    const accountId = getAccountId();
+    if (!accountId) throw new Error("Compte non initialisé.");
+    return `${CLIENTS_KEY_PREFIX}${accountId}`;
 }
 
 function getQueueKey() {
-    return `${QUEUE_KEY_PREFIX}${getAccountId() || "anonymous"}`;
+    const accountId = getAccountId();
+    if (!accountId) throw new Error("Compte non initialisé.");
+    return `${QUEUE_KEY_PREFIX}${accountId}`;
 }
 
 async function request(url, options = {}) {
