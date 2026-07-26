@@ -529,13 +529,13 @@ async function loadClientBillingDocuments(panel, client) {
             list.innerHTML = "<p class=\"muted\">Aucun devis ou aucune facture associé(e) à ce client pour le moment.</p>";
             return;
         }
-        documents.forEach(document => {
+        documents.forEach(billingDocument => {
             const article = document.createElement("article");
             article.className = "client-billing-item";
-            article.innerHTML = `<div><p class="eyebrow">${document.documentType === "invoice" ? "Facture" : "Devis"} · ${escapeHtml(document.status || "brouillon")}</p><h3>${escapeHtml(document.documentNumber)}</h3><p>${escapeHtml(formatBillingDate(document.issueDate))}</p></div><div class="client-card-actions"><button type="button" class="secondary-button" data-action="view">Visualiser</button><button type="button" class="secondary-button" data-action="email" ${client.email ? "" : "disabled title=\"Ajoutez l’e-mail du client pour envoyer le document.\""}>Envoyer par e-mail</button><button type="button" class="secondary-button" data-action="print">PDF / Imprimer</button></div>`;
-            article.querySelector('[data-action="view"]').addEventListener("click", () => viewClientBillingDocument(client, document.id, document.documentNumber));
-            article.querySelector('[data-action="email"]').addEventListener("click", () => emailBillingDocument(document, client));
-            article.querySelector('[data-action="print"]').addEventListener("click", () => printBillingDocument(document.id));
+            article.innerHTML = `<div><p class="eyebrow">${billingDocument.documentType === "invoice" ? "Facture" : "Devis"} · ${escapeHtml(billingDocument.status || "brouillon")}</p><h3>${escapeHtml(billingDocument.documentNumber)}</h3><p>${escapeHtml(formatBillingDate(billingDocument.issueDate))}</p></div><div class="client-card-actions"><button type="button" class="secondary-button" data-action="view">Visualiser</button><button type="button" class="secondary-button" data-action="email" ${client.email ? "" : "disabled title=\"Ajoutez l’e-mail du client pour envoyer le document.\""}>Envoyer par e-mail</button><button type="button" class="secondary-button" data-action="print">PDF / Imprimer</button></div>`;
+            article.querySelector('[data-action="view"]').addEventListener("click", () => viewClientBillingDocument(client, billingDocument.id, billingDocument.documentNumber));
+            article.querySelector('[data-action="email"]').addEventListener("click", () => emailBillingDocument(billingDocument, client));
+            article.querySelector('[data-action="print"]').addEventListener("click", () => printBillingDocument(billingDocument.id));
             list.appendChild(article);
         });
     } catch (error) {
