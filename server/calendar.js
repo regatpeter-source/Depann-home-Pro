@@ -221,6 +221,7 @@ export function registerCalendarRoutes(app, requireAuthentication) {
                     type: "quitus",
                     label: "Quitus validé",
                     detail: attachment.name,
+                    attachmentId: attachment.id,
                     actorName: String(request.user.fullName || request.user.username || "Technicien").slice(0, 100),
                     createdAt
                 }, ...activityHistory].slice(0, MAX_ACTIVITY_HISTORY),

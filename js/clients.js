@@ -425,7 +425,7 @@ function renderClientDetail(client, options = {}) {
     const canCreateBillingDocuments = !readOnly || isTechnicianBillingAllowed();
     const navigationHref = getClientNavigationHref(client);
     const interventionPhotos = client.attachments.filter(isInterventionPhoto);
-    const clientFiles = client.attachments.filter(attachment => !isInterventionPhoto(attachment));
+    const clientFiles = client.attachments.filter(attachment => !isInterventionPhoto(attachment) && attachment.type !== "Quitus");
     const panel = document.createElement("section");
     panel.className = "client-panel";
 
@@ -483,6 +483,15 @@ function renderClientDetail(client, options = {}) {
     });
     panel.querySelectorAll("[data-email-billing-document]").forEach(button => {
         button.addEventListener("click", () => emailClientBillingDocument(client, button.dataset.documentId, button.dataset.documentNumber));
+    });
+    panel.querySelectorAll("[data-view-quituses]").forEach(button => {
+        button.addEventListener("click", () => openClientAttachment(client.id, button.dataset.viewQuituses));
+    });
+    panel.querySelectorAll("[data-print-quituses]").forEach(button => {
+        button.addEventListener("click", () => openClientAttachment(client.id, button.dataset.printQuituses));
+    });
+    panel.querySelectorAll("[data-email-quituses]").forEach(button => {
+        button.addEventListener("click", () => emailClientAttachment(client, button.dataset.emailQuituses));
     });
     panel.querySelectorAll("[data-email-attachment]").forEach(button => {
         button.addEventListener("click", () => emailClientAttachment(client, button.dataset.emailAttachment));
@@ -611,6 +620,13 @@ async function sendBillingEmail(document, recipient, clientName) {
         if (!response.ok) throw new Error(data?.message);
         alert(data?.message || "Document envoyé par e-mail.");
     } catch (error) { alert(error.message || "Impossible d’envoyer le document par e-mail."); }
+}
+
+function openClientAttachment(clientId, attachmentId) {
+    if (!attachmentId) return;
+    const popup = window.open("", "_blank");
+    if (!popup) { alert("Autorisez les fenêtres pop-up pour ouvrir le quitus."); return; }
+    popup.location.href = `/api/clients/${encodeURIComponent(clientId)}/attachments/${encodeURIComponent(attachmentId)}/open`;
 }
 
 async function emailClientAttachment(client, attachmentId) {
@@ -788,11 +804,13 @@ function normalizeAttachments(attachments = []) {
 }
 
 function renderClientActivityHistory(client) {
-    const entries = normalizeActivityHistory(client.activityHistory).filter(entry => !["quote", "invoice", "quitus"].includes(entry.type));
+    const entries = normalizeActivityHistory(client.activityHistory).filter(entry => !["quote", "invoice"].includes(entry.type));
     if (!entries.length) return "<p class=\"muted\">Les rendez-vous, documents et actions de ce dossier apparaîtront ici.</p>";
     return `<div class="client-activity-list">${entries.map(entry => {
         const isBillingDocument = ["quote", "invoice"].includes(entry.type) && entry.detail;
-        const actions = isBillingDocument ? `<div class="client-card-actions client-activity-actions"><button type="button" class="secondary-button" data-view-billing-document data-document-id="${escapeHtml(entry.documentId)}" data-document-number="${escapeHtml(entry.detail)}">Visualiser</button><button type="button" class="secondary-button" data-print-billing-document data-document-id="${escapeHtml(entry.documentId)}" data-document-number="${escapeHtml(entry.detail)}">Imprimer / PDF</button><button type="button" class="secondary-button" data-email-billing-document data-document-id="${escapeHtml(entry.documentId)}" data-document-number="${escapeHtml(entry.detail)}" ${client.email ? "" : "disabled title=\"Ajoutez l’e-mail du client pour préparer un envoi.\""}>E-mail</button></div>` : "";
+        const quitusAttachment = entry.type === "quitus" ? client.attachments.find(attachment => String(attachment.id) === entry.attachmentId || attachment.type === "Quitus" && attachment.name === entry.detail) : null;
+        const quitusActions = quitusAttachment ? `<div class="client-card-actions client-activity-actions"><button type="button" class="secondary-button" data-view-quituses="${escapeHtml(quitusAttachment.id)}">Visualiser</button><button type="button" class="secondary-button" data-print-quituses="${escapeHtml(quitusAttachment.id)}">Imprimer / PDF</button><button type="button" class="secondary-button" data-email-quituses="${escapeHtml(quitusAttachment.id)}" ${client.email ? "" : "disabled title=\"Ajoutez l’e-mail du client pour préparer un envoi.\""}>E-mail</button></div>` : "";
+        const actions = isBillingDocument ? `<div class="client-card-actions client-activity-actions"><button type="button" class="secondary-button" data-view-billing-document data-document-id="${escapeHtml(entry.documentId)}" data-document-number="${escapeHtml(entry.detail)}">Visualiser</button><button type="button" class="secondary-button" data-print-billing-document data-document-id="${escapeHtml(entry.documentId)}" data-document-number="${escapeHtml(entry.detail)}">Imprimer / PDF</button><button type="button" class="secondary-button" data-email-billing-document data-document-id="${escapeHtml(entry.documentId)}" data-document-number="${escapeHtml(entry.detail)}" ${client.email ? "" : "disabled title=\"Ajoutez l’e-mail du client pour préparer un envoi.\""}>E-mail</button></div>` : quitusActions;
         return `<article class="client-activity-item"><div><strong>${escapeHtml(entry.label)}</strong>${entry.detail ? `<p>${escapeHtml(entry.detail)}</p>` : ""}${entry.actorName ? `<p class="muted">Par ${escapeHtml(entry.actorName)}</p>` : ""}${actions}</div><time datetime="${escapeHtml(entry.createdAt)}">${escapeHtml(formatActivityDate(entry.createdAt))}</time></article>`;
     }).join("")}</div>`;
 }
@@ -800,7 +818,7 @@ function renderClientActivityHistory(client) {
 function normalizeActivityHistory(history) {
     return (Array.isArray(history) ? history : [])
         .filter(entry => entry && entry.id && entry.label)
-        .map(entry => ({ id: String(entry.id), type: String(entry.type || "other"), label: String(entry.label), detail: String(entry.detail || ""), documentId: String(entry.documentId || ""), actorName: String(entry.actorName || ""), createdAt: entry.createdAt || new Date().toISOString() }))
+        .map(entry => ({ id: String(entry.id), type: String(entry.type || "other"), label: String(entry.label), detail: String(entry.detail || ""), documentId: String(entry.documentId || ""), attachmentId: String(entry.attachmentId || ""), actorName: String(entry.actorName || ""), createdAt: entry.createdAt || new Date().toISOString() }))
         .sort((first, second) => new Date(second.createdAt).getTime() - new Date(first.createdAt).getTime());
 }
 
