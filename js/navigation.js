@@ -70,7 +70,7 @@ function bindEvents() {
         renderSearchResults(value);
     });
 
-    clientsBtn.addEventListener("click", openClients);
+    clientsBtn.addEventListener("click", () => openClients());
     billingBtn?.addEventListener("click", renderBilling);
     purchasesBtn?.addEventListener("click", renderPurchases);
     calendarBtn?.addEventListener("click", openCalendar);
