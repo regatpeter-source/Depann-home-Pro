@@ -1095,14 +1095,15 @@ async function renderTeamManagement(container) {
                     });
                     actions.append(approve, reject);
                 }
-                const remove = createButton("Supprimer", "secondary-button danger-button", async () => {
-                    if (!confirm(`Supprimer définitivement ${isPc ? "ce poste PC" : "cet appareil"} ?`)) return;
-                    remove.disabled = true;
+                const manage = createButton("Gérer", "secondary-button", async () => {
+                    if (!confirm(`La gestion de ${isPc ? "ce poste PC" : "cet appareil"} permet actuellement de le supprimer définitivement. Continuer ?`)) return;
+                    manage.disabled = true;
                     const result = await fetch(`/api/auth/devices/${encodeURIComponent(device.id)}`, { method: "DELETE", credentials: "same-origin" });
                     if (!result.ok) feedback.textContent = (await result.json().catch(() => ({}))).message || "La suppression de l’appareil a échoué.";
                     await load();
                 });
-                actions.appendChild(remove);
+                manage.title = `Gérer ${isPc ? "ce poste PC" : "cet appareil"}`;
+                actions.appendChild(manage);
                 item.appendChild(actions);
                 devices.appendChild(item);
             });
