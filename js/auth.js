@@ -1,4 +1,5 @@
 let applicationShell = "";
+let deviceValidationTimer = null;
 
 export async function initializeAuthentication({ onAuthenticated }) {
     if (!applicationShell) applicationShell = getAppRoot().innerHTML;
@@ -27,6 +28,7 @@ export function restoreApplicationShell() {
 }
 
 function renderAuthentication({ onAuthenticated, registrationEnabled, message = "" }) {
+    stopDeviceValidationPolling();
     const app = getAppRoot();
     app.innerHTML = `
         <main class="auth-page">
@@ -83,6 +85,10 @@ function renderAuthentication({ onAuthenticated, registrationEnabled, message = 
                 renderCodeVerification({ onAuthenticated, deviceId: result.data.deviceId, message: result.data.message });
                 return;
             }
+            if (result.data?.approvalRequired) {
+                renderDeviceValidationPending({ onAuthenticated, registrationEnabled, deviceId: result.data.deviceId, message: result.data.message });
+                return;
+            }
             setStatus(result.data?.message || "Impossible de se connecter.", true);
             return;
         }
@@ -105,7 +111,44 @@ function renderAuthentication({ onAuthenticated, registrationEnabled, message = 
     });
 }
 
+function renderDeviceValidationPending({ onAuthenticated, registrationEnabled, deviceId, message }) {
+    stopDeviceValidationPolling();
+    const app = getAppRoot();
+    app.innerHTML = `
+        <main class="auth-page"><section class="auth-card auth-validation-card">
+            <div class="auth-brand"><img src="assets/logo.png.png" alt="Depann'Home Pro" class="auth-logo"><div><h1>Depann'Home Pro</h1><p>Validation de l’appareil</p></div></div>
+            <div class="auth-validation-pending" role="status" aria-live="polite"><span class="auth-validation-spinner" aria-hidden="true"></span><div><strong>En attente de validation</strong><p id="authMessage" class="auth-message">${escapeHtml(message || "En attente de la validation de l’administrateur…")}</p><p class="muted">Dès que l’administrateur envoie le code, sa saisie s’affichera automatiquement ici.</p></div></div>
+            <button type="button" class="secondary-button auth-outline-button" id="backToAuthentication">Retour à la connexion</button>
+        </section></main>`;
+    const status = app.querySelector("#authMessage");
+    app.querySelector("#backToAuthentication").addEventListener("click", () => renderAuthentication({ onAuthenticated, registrationEnabled }));
+    const checkStatus = async () => {
+        const result = await request("/api/auth/device-validation-status", { method: "POST", body: JSON.stringify({ deviceId }) });
+        if (!result.ok) {
+            if (!result.networkError) {
+                status.textContent = result.data?.message || "Impossible de vérifier la validation de l’appareil.";
+                status.classList.add("error");
+            }
+            return;
+        }
+        if (result.data?.codeRequired) {
+            stopDeviceValidationPolling();
+            renderCodeVerification({ onAuthenticated, deviceId, message: result.data.message });
+            return;
+        }
+        if (result.data?.rejected) {
+            stopDeviceValidationPolling();
+            status.textContent = result.data.message;
+            status.classList.add("error");
+            return;
+        }
+        status.textContent = result.data?.message || "En attente de la validation de l’administrateur…";
+    };
+    deviceValidationTimer = window.setInterval(checkStatus, 3_000);
+}
+
 function renderCodeVerification({ onAuthenticated, deviceId, message }) {
+    stopDeviceValidationPolling();
     const app = getAppRoot();
     app.innerHTML = `
         <main class="auth-page"><section class="auth-card">
@@ -126,6 +169,12 @@ function renderCodeVerification({ onAuthenticated, deviceId, message }) {
         if (!result.ok) { status.textContent = result.data?.message || "Impossible de valider le code."; status.classList.add("error"); return; }
         onAuthenticated(result.data.user);
     });
+}
+
+function stopDeviceValidationPolling() {
+    if (!deviceValidationTimer) return;
+    window.clearInterval(deviceValidationTimer);
+    deviceValidationTimer = null;
 }
 
 function getDeviceIdentity() {

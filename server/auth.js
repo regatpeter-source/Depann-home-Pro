@@ -92,6 +92,17 @@ export function registerAuthRoutes(app) {
         return response.status(403).json({ approvalRequired: true, deviceId: authDevice.id, message: authDevice.status === "rejected" ? "Cet appareil a été refusé par l’administrateur." : "Cet appareil est en attente de validation par l’administrateur." });
     }));
 
+    app.post("/api/auth/device-validation-status", asyncHandler(async (request, response) => {
+        const deviceId = validDeviceId(request.body?.deviceId);
+        if (!deviceId) return response.status(400).json({ message: "Appareil invalide." });
+        const { rows } = await getPool().query("SELECT status FROM depannhome_auth_devices WHERE id = $1", [deviceId]);
+        const device = rows[0];
+        if (!device) return response.status(404).json({ message: "Cette demande de validation n’existe plus." });
+        if (device.status === "code_pending") return response.json({ codeRequired: true, message: "Le code a été envoyé à votre e-mail professionnel." });
+        if (device.status === "rejected") return response.json({ rejected: true, message: "Cet appareil a été refusé par l’administrateur." });
+        return response.json({ approvalRequired: true, message: "En attente de la validation de l’administrateur…" });
+    }));
+
     app.post("/api/auth/verify-device-code", asyncHandler(async (request, response) => {
         const deviceId = validDeviceId(request.body?.deviceId);
         const code = String(request.body?.code || "").replace(/\s/g, "");
