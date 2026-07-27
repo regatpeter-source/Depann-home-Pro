@@ -1023,6 +1023,63 @@ async function renderTeamManagement(container) {
     };
     roleInput.addEventListener("change", updateRoleFields);
     updateRoleFields();
+    const openDeviceManagement = device => {
+        const isPc = device.userRole === "admin" && device.deviceType !== "mobile";
+        const deviceName = isPc ? "ce poste PC" : "cet appareil";
+        const accountName = device.fullName || device.username || "ce compte";
+        const dialog = document.createElement("dialog");
+        dialog.className = "device-management-dialog";
+        dialog.innerHTML = `
+            <div class="device-management-heading"><div><p class="eyebrow">Sécurité des connexions</p><h2>Gérer ${escapeHtml(deviceName)}</h2><p class="muted">${escapeHtml(device.label)} · Compte : ${escapeHtml(accountName)}</p></div><button type="button" class="secondary-button" data-close-device-management>Fermer</button></div>
+            <form class="device-password-form"><h3>Réinitialiser le mot de passe</h3><p class="muted">Le nouveau mot de passe sera demandé lors de la prochaine connexion du compte.</p><label>Nouveau mot de passe<input name="password" type="password" autocomplete="new-password" minlength="12" required placeholder="12 caractères minimum"></label><label>Confirmer le mot de passe<input name="passwordConfirmation" type="password" autocomplete="new-password" minlength="12" required></label><p class="auth-message" aria-live="polite"></p><button type="submit" class="secondary-button">Réinitialiser le mot de passe</button></form>
+            <section class="device-management-danger"><h3>Supprimer ${escapeHtml(deviceName)}</h3><p>Cette action retire uniquement ${escapeHtml(deviceName)}. Le compte utilisateur reste disponible et pourra se reconnecter après une nouvelle validation.</p><button type="button" class="secondary-button danger-button" data-delete-device>Supprimer ${escapeHtml(deviceName)}</button></section>
+        `;
+        const close = () => dialog.close();
+        dialog.querySelector("[data-close-device-management]").addEventListener("click", close);
+        dialog.addEventListener("close", () => dialog.remove(), { once: true });
+        dialog.querySelector(".device-password-form").addEventListener("submit", async event => {
+            event.preventDefault();
+            const form = event.currentTarget;
+            const status = form.querySelector(".auth-message");
+            const submitButton = form.querySelector("button[type=submit]");
+            const values = new FormData(form);
+            const password = String(values.get("password") || "");
+            if (password !== String(values.get("passwordConfirmation") || "")) {
+                status.textContent = "Les deux mots de passe ne correspondent pas.";
+                status.classList.add("error");
+                return;
+            }
+            submitButton.disabled = true;
+            status.textContent = "Réinitialisation en cours…";
+            status.classList.remove("error");
+            const result = await fetch(`/api/auth/members/${encodeURIComponent(device.userId)}/reset-password`, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password }) });
+            const payload = await result.json().catch(() => ({}));
+            if (!result.ok) {
+                status.textContent = payload.message || "La réinitialisation du mot de passe a échoué.";
+                status.classList.add("error");
+                submitButton.disabled = false;
+                return;
+            }
+            feedback.textContent = `Mot de passe réinitialisé pour ${accountName}.`;
+            close();
+        });
+        dialog.querySelector("[data-delete-device]").addEventListener("click", async event => {
+            if (!confirm(`Supprimer définitivement ${deviceName} ?`)) return;
+            event.currentTarget.disabled = true;
+            const result = await fetch(`/api/auth/devices/${encodeURIComponent(device.id)}`, { method: "DELETE", credentials: "same-origin" });
+            const payload = await result.json().catch(() => ({}));
+            if (!result.ok) {
+                event.currentTarget.disabled = false;
+                feedback.textContent = payload.message || "La suppression de l’appareil a échoué.";
+                return;
+            }
+            feedback.textContent = `${isPc ? "Poste PC" : "Appareil"} supprimé.`;
+            close();
+            await load();
+        });
+        document.body.appendChild(dialog);
+        dialog.showModal();
+    };
     const load = async () => {
         list.textContent = "Chargement de l’équipe…";
         try {
@@ -1095,13 +1152,7 @@ async function renderTeamManagement(container) {
                     });
                     actions.append(approve, reject);
                 }
-                const manage = createButton("Gérer", "secondary-button", async () => {
-                    if (!confirm(`La gestion de ${isPc ? "ce poste PC" : "cet appareil"} permet actuellement de le supprimer définitivement. Continuer ?`)) return;
-                    manage.disabled = true;
-                    const result = await fetch(`/api/auth/devices/${encodeURIComponent(device.id)}`, { method: "DELETE", credentials: "same-origin" });
-                    if (!result.ok) feedback.textContent = (await result.json().catch(() => ({}))).message || "La suppression de l’appareil a échoué.";
-                    await load();
-                });
+                const manage = createButton("Gérer", "secondary-button", () => openDeviceManagement(device));
                 manage.title = `Gérer ${isPc ? "ce poste PC" : "cet appareil"}`;
                 actions.appendChild(manage);
                 item.appendChild(actions);

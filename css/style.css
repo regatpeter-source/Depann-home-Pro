@@ -3304,6 +3304,88 @@ body.mobile-device[data-role="technician"] .calendar-list-day{
     background:#fef3c7;
 }
 
+.device-management-dialog{
+    width:min(560px, calc(100vw - 32px));
+    max-height:calc(100vh - 32px);
+    padding:0;
+    border:1px solid var(--border);
+    border-radius:18px;
+    background:var(--surface);
+    color:var(--text);
+    box-shadow:0 24px 70px rgba(15,23,42,.3);
+}
+
+.device-management-dialog::backdrop{
+    background:rgba(15,23,42,.5);
+}
+
+.device-management-heading,
+.device-password-form,
+.device-management-danger{
+    padding:20px;
+}
+
+.device-management-heading{
+    display:flex;
+    align-items:flex-start;
+    justify-content:space-between;
+    gap:14px;
+    border-bottom:1px solid var(--border);
+    background:linear-gradient(135deg, #effaf3, #eef6ff);
+}
+
+.device-management-heading h2,
+.device-password-form h3,
+.device-management-danger h3{
+    margin:2px 0 6px;
+    color:var(--primary);
+}
+
+.device-management-heading .muted,
+.device-password-form .muted,
+.device-management-danger p{
+    margin:0;
+}
+
+.device-password-form{
+    display:grid;
+    gap:12px;
+}
+
+.device-password-form label{
+    display:grid;
+    gap:7px;
+    color:var(--primary);
+    font-size:14px;
+    font-weight:800;
+}
+
+.device-password-form input{
+    width:100%;
+    padding:10px 12px;
+    border:1px solid var(--border);
+    border-radius:10px;
+    background:#fff;
+    color:var(--text);
+    font:inherit;
+}
+
+.device-password-form .auth-message{
+    min-height:20px;
+    margin:0;
+}
+
+.device-management-danger{
+    display:grid;
+    gap:12px;
+    border-top:1px solid var(--border);
+    background:#fff7f7;
+}
+
+.device-management-danger h3{
+    color:var(--danger);
+}
+
 .client-billing-panel{
     margin-top:18px;
 }
@@ -3635,6 +3717,16 @@ footer{
     .settings-actions .secondary-button,
     .team-form-actions .secondary-button{
         flex:1;
+    }
+
+    .device-management-heading{
+        flex-direction:column;
+    }
+
+    .device-management-heading .secondary-button,
+    .device-password-form .secondary-button,
+    .device-management-danger .secondary-button{
+        width:100%;
     }
 
     .header-content{

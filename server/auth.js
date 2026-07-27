@@ -228,6 +228,20 @@ export function registerAuthRoutes(app) {
         response.status(204).end();
     }));
 
+    app.post("/api/auth/members/:memberId/reset-password", requireAccountAdministrator, asyncHandler(async (request, response) => {
+        const memberId = positiveId(request.params.memberId);
+        const password = String(request.body?.password || "");
+        if (!memberId) return response.status(400).json({ message: "Accès invalide." });
+        if (password.length < MIN_PASSWORD_LENGTH) return response.status(400).json({ message: `Le mot de passe doit contenir au moins ${MIN_PASSWORD_LENGTH} caractères.` });
+        const result = await getPool().query(`
+            UPDATE depannhome_users
+            SET password_hash = $3, updated_at = NOW()
+            WHERE id = $1 AND account_owner_id = $2
+        `, [memberId, getAccountOwnerId(request), await bcrypt.hash(password, 12)]);
+        if (!result.rowCount) return response.status(404).json({ message: "Accès introuvable." });
+        response.status(204).end();
+    }));
+
     app.delete("/api/auth/members/:memberId", requireAccountAdministrator, asyncHandler(async (request, response) => {
         const memberId = positiveId(request.params.memberId);
         if (!memberId) return response.status(400).json({ message: "Accès invalide." });
