@@ -765,33 +765,35 @@ function renderSettings() {
 
     const container = getContainer();
     const card = document.createElement("article");
-    card.className = "brand-card full-card procedure-card";
+    card.className = "brand-card full-card procedure-card settings-card";
 
-    card.innerHTML = "<h2>Paramètres</h2>";
+    card.innerHTML = '<div class="settings-heading"><div><p class="eyebrow">Application PC</p><h2>Paramètres</h2><p class="muted">Personnalisez l’affichage et le fonctionnement de votre espace de travail.</p></div></div>';
 
     // settings form
     const settings = getSettings();
 
     const section = document.createElement("section");
-    section.className = "procedure-section";
+    section.className = "procedure-section settings-section";
 
     const form = document.createElement("div");
     form.className = "settings-form";
+    const fields = document.createElement("div");
+    fields.className = "settings-fields";
 
     // max history
     const maxLabel = document.createElement("label");
+    maxLabel.className = "settings-field";
     maxLabel.textContent = "Taille de l'historique (max)";
     const maxInput = document.createElement("input");
     maxInput.type = "number";
     maxInput.min = "1";
     maxInput.value = settings.maxHistory || DEFAULT_SETTINGS.maxHistory;
-    maxInput.style.marginLeft = "8px";
     maxLabel.appendChild(maxInput);
 
     // theme select
     const themeLabel = document.createElement("label");
+    themeLabel.className = "settings-field";
     themeLabel.textContent = "Thème";
-    themeLabel.style.display = "block";
     const themeSelect = document.createElement("select");
     const optLight = document.createElement("option"); optLight.value = "light"; optLight.text = "Clair";
     const optDark = document.createElement("option"); optDark.value = "dark"; optDark.text = "Sombre";
@@ -802,8 +804,8 @@ function renderSettings() {
 
     // font select
     const fontLabel = document.createElement("label");
+    fontLabel.className = "settings-field";
     fontLabel.textContent = "Police";
-    fontLabel.style.display = "block";
     const fontSelect = document.createElement("select");
     FONT_OPTIONS.forEach(opt => {
         const o = document.createElement("option");
@@ -815,8 +817,8 @@ function renderSettings() {
 
     // language select
     const langLabel = document.createElement("label");
+    langLabel.className = "settings-field";
     langLabel.textContent = "Langue";
-    langLabel.style.display = "block";
     const langSelect = document.createElement("select");
     LANG_OPTIONS.forEach(opt => {
         const o = document.createElement("option");
@@ -828,21 +830,20 @@ function renderSettings() {
 
     // show offline badge
     const offlineLabel = document.createElement("label");
+    offlineLabel.className = "settings-toggle";
     offlineLabel.textContent = "Montrer l'état hors-ligne";
-    offlineLabel.style.display = "block";
     const offlineCheckbox = document.createElement("input");
     offlineCheckbox.type = "checkbox";
     offlineCheckbox.checked = settings.showOfflineBadge !== false;
-    offlineCheckbox.style.marginLeft = "8px";
     offlineLabel.appendChild(offlineCheckbox);
 
     const pcSeatsHint = document.createElement("p");
-    pcSeatsHint.className = "muted";
+    pcSeatsHint.className = "muted settings-info";
     pcSeatsHint.textContent = `Postes PC inclus dans votre offre : ${document.body.dataset.maxPcUsers || "1"}. Les postes supplémentaires sont activés par Depann’Home Pro, puis validés dans la section Équipe.`;
 
     // actions
     const actions = document.createElement("div");
-    actions.style.marginTop = "12px";
+    actions.className = "settings-actions";
 
     const saveBtn = createButton("Enregistrer", "secondary-button", () => {
         const newSettings = {
@@ -889,11 +890,8 @@ function renderSettings() {
     actions.appendChild(saveBtn);
     actions.appendChild(resetBtn);
 
-    form.appendChild(maxLabel);
-    form.appendChild(themeLabel);
-    form.appendChild(fontLabel);
-    form.appendChild(langLabel);
-    form.appendChild(offlineLabel);
+    fields.append(maxLabel, themeLabel, fontLabel, langLabel, offlineLabel);
+    form.appendChild(fields);
     if (document.body.dataset.role === "admin") {
         form.appendChild(pcSeatsHint);
     }
@@ -950,9 +948,12 @@ function renderSupportContact(container) {
 async function renderTeamManagement(container) {
     const card = document.createElement("article");
     card.className = "brand-card full-card procedure-card team-management";
-    card.innerHTML = "<h2>Équipe</h2><p class=\"muted\">Créez les accès de vos techniciens et les postes PC inclus dans votre offre.</p>";
+    card.innerHTML = '<div class="team-heading"><div><p class="eyebrow">Gestion des accès</p><h2>Équipe et postes PC</h2><p class="muted">Créez les accès de vos techniciens et les postes PC inclus dans votre offre.</p></div><span class="team-heading-badge">Administration</span></div>';
     const form = document.createElement("form");
     form.className = "settings-form team-form";
+    form.innerHTML = '<div class="team-form-heading"><div><h3>Créer un accès</h3><p class="muted">Choisissez le type de poste, puis renseignez les informations de la personne.</p></div></div>';
+    const formFields = document.createElement("div");
+    formFields.className = "team-form-fields";
     [["fullName", "Nom et prénom", "text", "Ex. Léa Martin"], ["phone", "Téléphone", "tel", "Ex. 06 12 34 56 78"], ["email", "E-mail professionnel", "email", "lea@entreprise.fr"], ["username", "Identifiant", "text", "minuscules, chiffres, . _ -"], ["password", "Mot de passe initial", "password", "12 caractères minimum"]].forEach(([name, label, type, placeholder]) => {
         const field = document.createElement("label");
         field.textContent = label;
@@ -981,7 +982,7 @@ async function renderTeamManagement(container) {
         } else {
             field.appendChild(input);
         }
-        form.appendChild(field);
+        formFields.appendChild(field);
     });
     const roleField = document.createElement("label");
     roleField.textContent = "Type de poste";
@@ -989,26 +990,36 @@ async function renderTeamManagement(container) {
     roleInput.name = "role";
     roleInput.innerHTML = '<option value="technician">Technicien</option><option value="admin">Poste PC</option>';
     roleField.appendChild(roleInput);
-    form.appendChild(roleField);
+    formFields.appendChild(roleField);
     const submit = createButton("Créer le technicien", "secondary-button", () => {});
     submit.type = "submit";
-    form.appendChild(submit);
+    const formActions = document.createElement("div");
+    formActions.className = "team-form-actions";
+    formActions.appendChild(submit);
     const feedback = document.createElement("p");
-    feedback.className = "muted";
-    form.appendChild(feedback);
+    feedback.className = "muted team-feedback";
+    form.append(formFields, formActions, feedback);
     card.appendChild(form);
+    const membersSection = document.createElement("section");
+    membersSection.className = "team-section";
+    membersSection.innerHTML = '<div class="team-section-heading"><div><p class="eyebrow">Accès créés</p><h3>Membres de l’équipe</h3></div></div>';
     const list = document.createElement("div");
     list.className = "team-list";
-    card.appendChild(list);
+    membersSection.appendChild(list);
+    card.appendChild(membersSection);
+    const devicesSection = document.createElement("section");
+    devicesSection.className = "team-section";
     const devices = document.createElement("div");
     devices.className = "team-list";
-    card.appendChild(devices);
+    devicesSection.appendChild(devices);
+    card.appendChild(devicesSection);
     container.appendChild(card);
     const updateRoleFields = () => {
         const isTechnician = roleInput.value === "technician";
         form.elements.phone.required = isTechnician;
         form.elements.email.required = isTechnician;
         submit.textContent = isTechnician ? "Créer le technicien" : "Créer le poste PC";
+        roleField.dataset.role = isTechnician ? "technician" : "admin";
     };
     roleInput.addEventListener("change", updateRoleFields);
     updateRoleFields();
@@ -1024,7 +1035,9 @@ async function renderTeamManagement(container) {
                 const item = document.createElement("div");
                 item.className = "team-member";
                 const memberType = member.role === "admin" ? "Poste PC" : "Technicien";
-                item.innerHTML = `<strong>${escapeHtml(member.fullName || member.username)}</strong><span>${memberType} · ${escapeHtml(member.phone || "Téléphone non renseigné")} · ${escapeHtml(member.email || "E-mail non renseigné")} · ${escapeHtml(member.username)}</span>`;
+                item.innerHTML = `<div class="team-member-summary"><div class="team-member-title"><strong>${escapeHtml(member.fullName || member.username)}</strong><span class="team-role-badge ${member.role === "admin" ? "is-admin" : "is-technician"}">${memberType}</span><span class="team-state-badge ${member.isActive ? "is-active" : "is-inactive"}">${member.isActive ? "Actif" : "Désactivé"}</span></div><span class="team-member-meta">${escapeHtml(member.phone || "Téléphone non renseigné")}<span aria-hidden="true">·</span>${escapeHtml(member.email || "E-mail non renseigné")}<span aria-hidden="true">·</span>${escapeHtml(member.username)}</span></div>`;
+                const actions = document.createElement("div");
+                actions.className = "team-member-actions";
                 const toggle = createButton(member.isActive ? "Désactiver" : "Réactiver", "secondary-button", async () => {
                     toggle.disabled = true;
                     const response = await fetch(`/api/auth/members/${encodeURIComponent(member.id)}`, { method: "PATCH", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ isActive: !member.isActive }) });
@@ -1045,15 +1058,16 @@ async function renderTeamManagement(container) {
                         if (!response.ok) feedback.textContent = (await response.json().catch(() => ({}))).message || "La mise à jour de l’autorisation a échoué.";
                         await load();
                     });
-                    item.append(toggle, billingPermission, remove);
-                } else item.append(toggle, remove);
+                    actions.append(toggle, billingPermission, remove);
+                } else actions.append(toggle, remove);
+                item.appendChild(actions);
                 list.appendChild(item);
             });
             const deviceResponse = await teamRequest("/api/auth/devices");
             const devicePayload = await deviceResponse.json();
             if (!deviceResponse.ok) throw new Error(devicePayload.message || "Impossible de charger les appareils.");
             const pcSeats = devicePayload.pcSeats || { maxPcUsers: Number(document.body.dataset.maxPcUsers || 1), activePcUsers: 0 };
-            devices.innerHTML = `<h3>Appareils et postes PC</h3><p class="muted">Postes PC : ${escapeHtml(pcSeats.activePcUsers)}/${escapeHtml(pcSeats.maxPcUsers)} activé(s) par votre offre. Les téléphones et tablettes d’administrateurs ne consomment pas de poste PC. Après sa première connexion, le technicien crée ici une demande : le bouton « Autoriser et envoyer le code » apparaît alors.</p>`;
+            devices.innerHTML = `<div class="team-section-heading"><div><p class="eyebrow">Sécurité des connexions</p><h3>Appareils et postes PC</h3></div><span class="team-seat-badge">${escapeHtml(pcSeats.activePcUsers)} / ${escapeHtml(pcSeats.maxPcUsers)} postes PC</span></div><p class="muted team-section-description">Les téléphones et tablettes d’administrateurs ne consomment pas de poste PC. Après sa première connexion, le technicien crée ici une demande : le bouton « Autoriser et envoyer le code » apparaît alors.</p>`;
             const managedDevices = devicePayload.devices || [];
             if (!managedDevices.length) devices.insertAdjacentHTML("beforeend", "<p class=\"muted\">Aucun appareil enregistré.</p>");
             managedDevices.forEach(device => {
@@ -1063,7 +1077,9 @@ async function renderTeamManagement(container) {
                 const item = document.createElement("div");
                 item.className = "team-member";
                 const statusLabel = device.status === "approved" ? "Activé" : device.status === "rejected" ? "Refusé" : device.status === "code_pending" ? "Code e-mail envoyé" : "En attente d’autorisation";
-                item.innerHTML = `<strong>${isPc ? "Poste PC" : isMobile ? "Appareil mobile" : escapeHtml(device.fullName || device.username)}</strong><span>${escapeHtml(device.label)} · ${statusLabel}${isMobile && device.userRole === "admin" ? " · Sans poste PC" : ""}</span>`;
+                item.innerHTML = `<div class="team-member-summary"><div class="team-member-title"><strong>${isPc ? "Poste PC" : isMobile ? "Appareil mobile" : escapeHtml(device.fullName || device.username)}</strong><span class="team-role-badge ${isPc ? "is-admin" : "is-technician"}">${isPc ? "Poste PC" : "Mobile"}</span><span class="team-state-badge ${device.status === "approved" ? "is-active" : device.status === "rejected" ? "is-inactive" : "is-pending"}">${statusLabel}</span></div><span class="team-member-meta">${escapeHtml(device.label)}${isMobile && device.userRole === "admin" ? " · Sans poste PC" : ""}</span></div>`;
+                const actions = document.createElement("div");
+                actions.className = "team-member-actions";
                 if (device.status === "approval_pending" || device.status === "code_pending") {
                     const approve = createButton(isPc ? "Activer ce poste PC" : isMobile && device.userRole === "admin" ? "Autoriser cet appareil mobile" : (device.status === "code_pending" ? "Renvoyer le code" : "Autoriser et envoyer le code"), "secondary-button", async () => {
                         approve.disabled = true;
@@ -1077,7 +1093,7 @@ async function renderTeamManagement(container) {
                         if (!result.ok) feedback.textContent = (await result.json().catch(() => ({}))).message || "Refus impossible.";
                         await load();
                     });
-                    item.append(approve, reject);
+                    actions.append(approve, reject);
                 }
                 const remove = createButton("Supprimer", "secondary-button danger-button", async () => {
                     if (!confirm(`Supprimer définitivement ${isPc ? "ce poste PC" : "cet appareil"} ?`)) return;
@@ -1086,7 +1102,8 @@ async function renderTeamManagement(container) {
                     if (!result.ok) feedback.textContent = (await result.json().catch(() => ({}))).message || "La suppression de l’appareil a échoué.";
                     await load();
                 });
-                item.appendChild(remove);
+                actions.appendChild(remove);
+                item.appendChild(actions);
                 devices.appendChild(item);
             });
         } catch (error) {

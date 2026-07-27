@@ -2984,6 +2984,284 @@ body.mobile-device[data-role="technician"] .calendar-list-day{
     text-align:right;
 }
 
+/* ==========================
+   PARAMÈTRES ET ÉQUIPE
+========================== */
+
+.settings-card,
+.team-management{
+    display:grid;
+    gap:18px;
+}
+
+.settings-heading,
+.team-heading{
+    display:flex;
+    align-items:flex-start;
+    justify-content:space-between;
+    gap:18px;
+    padding:20px;
+    border:1px solid rgba(10,92,54,.16);
+    border-radius:16px;
+    background:linear-gradient(135deg, #effaf3, #eef6ff);
+}
+
+.settings-heading h2,
+.team-heading h2{
+    margin:2px 0 5px;
+    color:var(--primary);
+}
+
+.settings-heading .muted,
+.team-heading .muted,
+.team-form-heading .muted,
+.team-section-description{
+    margin:0;
+}
+
+.settings-section{
+    margin:0;
+}
+
+.settings-form,
+.team-form{
+    display:grid;
+    gap:16px;
+}
+
+.settings-fields{
+    display:grid;
+    grid-template-columns:repeat(2, minmax(0, 1fr));
+    gap:12px;
+}
+
+.settings-field,
+.team-form-fields > label{
+    display:grid;
+    gap:7px;
+    color:var(--primary);
+    font-size:14px;
+    font-weight:800;
+}
+
+.settings-field input,
+.settings-field select,
+.team-form-fields input,
+.team-form-fields select{
+    width:100%;
+    min-width:0;
+    padding:10px 12px;
+    border:1px solid var(--border);
+    border-radius:10px;
+    background:#fff;
+    color:var(--text);
+    font:inherit;
+}
+
+.settings-toggle{
+    display:flex;
+    grid-column:1 / -1;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+    padding:12px 14px;
+    border:1px solid rgba(10,92,54,.16);
+    border-radius:12px;
+    background:#f8fbff;
+    color:var(--primary);
+    font-size:14px;
+    font-weight:800;
+}
+
+.settings-toggle input{
+    width:19px;
+    height:19px;
+    accent-color:var(--secondary);
+}
+
+.settings-info{
+    margin:0;
+    padding:12px 14px;
+    border-left:3px solid var(--secondary);
+    border-radius:0 10px 10px 0;
+    background:#effaf3;
+}
+
+.settings-actions,
+.team-form-actions{
+    display:flex;
+    flex-wrap:wrap;
+    justify-content:flex-end;
+    gap:9px;
+}
+
+.team-heading-badge,
+.team-seat-badge,
+.team-role-badge,
+.team-state-badge{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    width:max-content;
+    border-radius:999px;
+    font-size:12px;
+    font-weight:800;
+    line-height:1.2;
+}
+
+.team-heading-badge{
+    padding:7px 10px;
+    background:rgba(255,255,255,.8);
+    color:var(--primary);
+    white-space:nowrap;
+}
+
+.team-form,
+.team-section{
+    padding:18px;
+    border:1px solid var(--border);
+    border-radius:16px;
+    background:#f8fbff;
+}
+
+.team-form-heading h3,
+.team-section-heading h3{
+    margin:2px 0 4px;
+    color:var(--primary);
+}
+
+.team-form-fields{
+    display:grid;
+    grid-template-columns:repeat(2, minmax(0, 1fr));
+    gap:12px;
+}
+
+.team-form-fields > label:nth-child(3),
+.team-form-fields > label:nth-child(4),
+.team-form-fields > label:nth-child(5){
+    grid-column:span 2;
+}
+
+.team-form-fields > label:last-child{
+    max-width:280px;
+}
+
+.team-form-fields > label[data-role="technician"] select{
+    border-color:rgba(10,92,54,.38);
+    background:#effaf3;
+}
+
+.team-form-fields > label[data-role="admin"] select{
+    border-color:rgba(0,59,115,.3);
+    background:#eef6ff;
+}
+
+.team-feedback{
+    min-height:20px;
+    margin:0;
+}
+
+.team-section{
+    display:grid;
+    gap:14px;
+}
+
+.team-section-heading{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+}
+
+.team-seat-badge{
+    padding:7px 10px;
+    color:var(--secondary);
+    background:#effaf3;
+    white-space:nowrap;
+}
+
+.team-list{
+    display:grid;
+    gap:10px;
+}
+
+.team-member{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:16px;
+    padding:14px;
+    border:1px solid var(--border);
+    border-radius:14px;
+    background:#fff;
+}
+
+.team-member-summary{
+    display:grid;
+    min-width:0;
+    gap:6px;
+}
+
+.team-member-title,
+.team-member-actions{
+    display:flex;
+    flex-wrap:wrap;
+    align-items:center;
+    gap:7px;
+}
+
+.team-member-title strong{
+    color:var(--primary);
+}
+
+.team-member-meta{
+    display:flex;
+    flex-wrap:wrap;
+    gap:6px;
+    color:var(--muted);
+    font-size:13px;
+    overflow-wrap:anywhere;
+}
+
+.team-member-actions{
+    justify-content:flex-end;
+}
+
+.team-member-actions .secondary-button{
+    padding:8px 10px;
+    font-size:13px;
+}
+
+.team-role-badge,
+.team-state-badge{
+    padding:4px 8px;
+}
+
+.team-role-badge.is-technician{
+    color:#075985;
+    background:#e0f2fe;
+}
+
+.team-role-badge.is-admin{
+    color:#5b21b6;
+    background:#ede9fe;
+}
+
+.team-state-badge.is-active{
+    color:#166534;
+    background:#dcfce7;
+}
+
+.team-state-badge.is-inactive{
+    color:#991b1b;
+    background:#fee2e2;
+}
+
+.team-state-badge.is-pending{
+    color:#92400e;
+    background:#fef3c7;
+}
+
 .client-billing-panel{
     margin-top:18px;
 }
@@ -3277,11 +3555,44 @@ footer{
 ========================== */
 
 @media(max-width:700px){
+    .settings-heading,
+    .team-heading{
+        flex-direction:column;
+        padding:16px;
+    }
+
+    .settings-fields,
+    .team-form-fields{
+        grid-template-columns:1fr;
+    }
+
+    .team-form-fields > label:nth-child(3),
+    .team-form-fields > label:nth-child(4),
+    .team-form-fields > label:nth-child(5){
+        grid-column:auto;
+    }
+
+    .team-form-fields > label:last-child{
+        max-width:none;
+    }
+
     .team-member{
         display:grid;
-        gap:6px;
-        padding:12px 0;
-        border-top:1px solid rgba(0,59,115,.12);
+        gap:12px;
+        padding:12px;
+        border:1px solid var(--border);
+    }
+
+    .team-member-actions,
+    .settings-actions,
+    .team-form-actions{
+        justify-content:stretch;
+    }
+
+    .team-member-actions .secondary-button,
+    .settings-actions .secondary-button,
+    .team-form-actions .secondary-button{
+        flex:1;
     }
 
     .header-content{
