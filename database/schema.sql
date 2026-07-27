@@ -231,6 +231,8 @@ ALTER TABLE depannhome_calendar_events
 ALTER TABLE depannhome_calendar_events
 ADD COLUMN IF NOT EXISTS event_type VARCHAR(20) NOT NULL DEFAULT 'appointment';
 
+-- Types gérés par l’application : appointment, task, vacation, sick_leave, unavailable.
+
 ALTER TABLE depannhome_calendar_events
 ADD COLUMN IF NOT EXISTS quitus_status VARCHAR(20) NOT NULL DEFAULT 'pending',
 ADD COLUMN IF NOT EXISTS quitus_signed_by VARCHAR(160) NOT NULL DEFAULT '',

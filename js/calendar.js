@@ -18,6 +18,7 @@ const COLOR_OPTIONS = [
 const WEEK_DAYS = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
 const EVENT_TYPE_OPTIONS = [
     { id: "appointment", label: "Rendez-vous", title: "Intervention", color: "blue" },
+    { id: "task", label: "Tâche interne", title: "Tâche à réaliser", color: "orange" },
     { id: "vacation", label: "Vacances", title: "Vacances", color: "purple" },
     { id: "sick_leave", label: "Arrêt", title: "Arrêt", color: "red" },
     { id: "unavailable", label: "Indisponibilité", title: "Indisponibilité", color: "gray" }
@@ -132,7 +133,7 @@ function renderHeader(panel) {
                 <button type="button" class="secondary-button" data-calendar-action="previous">← ${getPreviousLabel()}</button>
                 <button type="button" class="secondary-button auth-outline-button" data-calendar-action="today">Aujourd’hui</button>
                 <button type="button" class="secondary-button" data-calendar-action="next">${getNextLabel()} →</button>
-                ${readOnly ? "" : '<button type="button" class="secondary-button" data-calendar-action="new">+ Nouveau rendez-vous</button>'}
+                ${readOnly ? "" : '<button type="button" class="secondary-button" data-calendar-action="new">+ Nouveau rendez-vous</button><button type="button" class="secondary-button" data-calendar-action="new-task">+ Nouvelle tâche</button>'}
             </div>
         </div>
         <div class="calendar-view-switcher" role="group" aria-label="Vue du planning">
@@ -147,6 +148,10 @@ function renderHeader(panel) {
     bindCalendarNavigation(panel);
     panel.querySelector("[data-calendar-action=new]")?.addEventListener("click", () => {
         selectedEvent = newEventForDate(toDateString(new Date()));
+        renderCalendar();
+    });
+    panel.querySelector("[data-calendar-action=new-task]")?.addEventListener("click", () => {
+        selectedEvent = { ...newEventForDate(toDateString(new Date())), eventType: "task", title: getEventType("task").title, color: getEventType("task").color };
         renderCalendar();
     });
     bindCalendarViewSwitcher(panel);
@@ -215,6 +220,18 @@ function renderEventForm(panel) {
     panel.hidden = false;
     const event = selectedEvent;
     if (isReadOnlyCalendar()) {
+        if (event.eventType !== "appointment") {
+            panel.innerHTML = `
+                <div class="calendar-event-detail">
+                    <div class="form-heading"><div><p class="eyebrow">${escapeHtml(getEventType(event.eventType).label)}</p><h2>${escapeHtml(event.title)}</h2></div><button type="button" class="secondary-button" id="closeCalendarDetail">Fermer</button></div>
+                    <section class="calendar-appointment-information"><dl><dt>Date</dt><dd>${escapeHtml(formatActivityDate(event.date, event.startTime))}${event.endTime ? ` — ${escapeHtml(event.endTime)}` : ""}</dd>${event.assignedTechnicianName ? `<dt>Technicien</dt><dd>${escapeHtml(event.assignedTechnicianName)}</dd>` : ""}${event.location ? `<dt>Lieu</dt><dd>${escapeHtml(event.location)}</dd>` : ""}${event.notes ? `<dt>Notes</dt><dd>${escapeHtml(event.notes)}</dd>` : ""}</dl></section>
+                </div>`;
+            panel.querySelector("#closeCalendarDetail").addEventListener("click", () => {
+                selectedEvent = null;
+                renderCalendar();
+            });
+            return;
+        }
         const client = findClientForEvent(event);
         const navigationHref = client ? getClientNavigationHref(client) : "";
         const phoneHref = client ? getClientPhoneHref(client) : "";
@@ -270,8 +287,8 @@ function renderEventForm(panel) {
         <form id="calendarEventForm" class="client-form">
             <div class="form-heading">
                 <div>
-                    <p class="eyebrow">${isEditing ? "Modification" : "Nouveau rendez-vous"}</p>
-                    <h2>${isEditing ? "Modifier le rendez-vous" : "Planifier une intervention"}</h2>
+                    <p class="eyebrow">${isEditing ? "Modification" : event.eventType === "task" ? "Nouvelle tâche" : "Nouveau rendez-vous"}</p>
+                    <h2>${isEditing ? "Modifier l’élément du planning" : event.eventType === "task" ? "Planifier une tâche interne" : "Planifier une intervention"}</h2>
                 </div>
                 ${isEditing ? '<button type="button" class="secondary-button" id="cancelCalendarEdit">Annuler</button>' : ""}
             </div>
@@ -284,7 +301,7 @@ function renderEventForm(panel) {
                     Titre *
                     <input name="title" maxlength="160" required placeholder="Ex. Intervention volet roulant" value="${escapeHtml(event.title)}">
                 </label>
-                <label>
+                <label class="calendar-client-field">
                     Client
                     <span class="calendar-client-picker"><input name="clientName" list="calendarClients" maxlength="160" placeholder="Nom du client" value="${escapeHtml(event.clientName)}"><button type="button" class="secondary-button" id="openCalendarClient" hidden>Ouvrir la fiche</button></span>
                     <datalist id="calendarClients">${clients.map(client => `<option value="${escapeHtml(client.name)}">${escapeHtml([client.city, client.phone].filter(Boolean).join(" · "))}</option>`).join("")}</datalist>
@@ -333,6 +350,7 @@ function renderEventForm(panel) {
     });
     const form = panel.querySelector("#calendarEventForm");
     const clientInput = form.querySelector("[name=clientName]");
+    const clientField = clientInput.closest("label");
     const locationInput = form.querySelector("[name=location]");
     const eventTypeInput = form.querySelector("[name=eventType]");
     const openClientButton = form.querySelector("#openCalendarClient");
@@ -355,13 +373,17 @@ function renderEventForm(panel) {
         form.elements.color.value = type.color;
         if (type.id !== "appointment") {
             clientInput.value = "";
-            locationInput.value = "";
-            form.elements.startTime.value = "";
-            form.elements.endTime.value = "";
+            if (type.id !== "task") {
+                locationInput.value = "";
+                form.elements.startTime.value = "";
+                form.elements.endTime.value = "";
+            }
             fillClientAddress();
         }
+        clientField.hidden = type.id !== "appointment";
         renderCalendarAvailability(form, event.id);
     });
+    clientField.hidden = eventTypeInput.value !== "appointment";
     ["date", "startTime", "endTime", "title", "assignedTechnicianId"].forEach(name => form.elements[name].addEventListener("input", () => renderCalendarAvailability(form, event.id)));
     renderCalendarAvailability(form, event.id);
 
@@ -379,7 +401,7 @@ function renderEventForm(panel) {
             ? await request(`/api/calendar/events/${encodeURIComponent(event.id)}`, { method: "PUT", body: JSON.stringify(payload) })
             : await request("/api/calendar/events", { method: "POST", body: JSON.stringify(payload) });
         if (!result.ok) {
-            message.textContent = result.message || "Impossible d’enregistrer le rendez-vous.";
+            message.textContent = result.message || "Impossible d’enregistrer cet élément du planning.";
             message.classList.add("error");
             button.disabled = false;
             return;
@@ -394,7 +416,7 @@ function renderEventForm(panel) {
         renderCalendar();
     });
     panel.querySelector("#deleteCalendarEvent")?.addEventListener("click", async () => {
-        if (!confirm("Supprimer ce rendez-vous du planning ?")) return;
+        if (!confirm("Supprimer cet élément du planning ?")) return;
         const result = await request(`/api/calendar/events/${encodeURIComponent(event.id)}`, { method: "DELETE" });
         if (!result.ok) {
             panel.querySelector("#calendarFormMessage").textContent = result.message || "Suppression impossible.";

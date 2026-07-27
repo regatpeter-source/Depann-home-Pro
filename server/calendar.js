@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import PDFDocument from "pdfkit";
 
 const EVENT_COLORS = new Set(["blue", "green", "orange", "red", "purple", "gray"]);
-const EVENT_TYPES = new Set(["appointment", "vacation", "sick_leave", "unavailable"]);
+const EVENT_TYPES = new Set(["appointment", "task", "vacation", "sick_leave", "unavailable"]);
 const QUITUS_STATUS = new Set(["pending", "validated"]);
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
