@@ -71,6 +71,41 @@ export async function refreshSharedData(options = {}) {
     return sharedSynchronizationPromise;
 }
 
+export async function refreshApplication() {
+    const activeRoute = document.querySelector(".nav-button.active")?.dataset.nav || "";
+    const preserveCurrentWork = hasRefreshProtectedWork();
+    await refreshSharedData({ includeClients: true, forceBilling: true });
+    if (preserveCurrentWork) return { refreshed: true, preservedCurrentWork: true };
+
+    if (activeRoute === ROUTES.clients) {
+        const selectedId = document.querySelector(".client-messages-panel")?.dataset.clientId || "";
+        renderClients({ database, navigateToRef, createBillingDocument: createBillingDocumentForClient, viewBillingDocument, createCalendarEvent: createCalendarEventForClient, ...(selectedId ? { selectedId } : {}) });
+    } else if (activeRoute === ROUTES.calendar) {
+        renderCalendar();
+    } else if (activeRoute === ROUTES.billing && document.body.dataset.role !== "technician") {
+        renderBilling();
+    } else if (activeRoute === ROUTES.purchases) {
+        renderPurchases();
+    } else if (activeRoute === ROUTES.settings) {
+        renderSettings();
+    } else if (activeRoute === ROUTES.home) {
+        openHome();
+    }
+    return { refreshed: true, preservedCurrentWork: false };
+}
+
+function hasRefreshProtectedWork() {
+    if (document.querySelector("#calendarQuitusForm, .message-edit-form")) return true;
+    if (document.querySelector(".client-message-form textarea")?.value.trim()) return true;
+    return [...document.querySelectorAll("#clientForm, #billingDocumentForm, #billingProfileForm, #billingTemplateForm, #purchaseForm, #calendarEventForm, .team-form")]
+        .some(form => [...form.elements].some(element => {
+            if (element.disabled || ["button", "submit", "reset"].includes(element.type)) return false;
+            if (element.type === "file") return element.files?.length > 0;
+            if (["checkbox", "radio"].includes(element.type)) return element.checked !== element.defaultChecked;
+            return element.value !== element.defaultValue;
+        }));
+}
+
 function bindEvents() {
     const search = document.getElementById("search");
     const clientsBtn = document.getElementById("clientsBtn");
