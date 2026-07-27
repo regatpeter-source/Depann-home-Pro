@@ -1154,8 +1154,10 @@ async function renderTeamManagement(container) {
                 const pcSeatAvailable = Number(pcSeats.activePcUsers) < Number(pcSeats.maxPcUsers);
                 const item = document.createElement("div");
                 item.className = "team-member";
+                const deviceTypeLabel = isPc ? "Poste PC" : isMobile ? "Appareil mobile" : "Appareil technicien";
+                const assigneeName = device.fullName || device.username || "Titulaire non renseigné";
                 const statusLabel = device.status === "approved" ? "Activé" : device.status === "rejected" ? "Refusé" : device.status === "code_pending" ? "Code e-mail envoyé" : "En attente d’autorisation";
-                item.innerHTML = `<div class="team-member-summary"><div class="team-member-title"><strong>${isPc ? "Poste PC" : isMobile ? "Appareil mobile" : escapeHtml(device.fullName || device.username)}</strong><span class="team-role-badge ${isPc ? "is-admin" : "is-technician"}">${isPc ? "Poste PC" : "Mobile"}</span><span class="team-state-badge ${device.status === "approved" ? "is-active" : device.status === "rejected" ? "is-inactive" : "is-pending"}">${statusLabel}</span></div><span class="team-member-meta">${escapeHtml(device.label)}${isMobile && device.userRole === "admin" ? " · Sans poste PC" : ""}</span></div>`;
+                item.innerHTML = `<div class="team-member-summary"><div class="team-member-title"><strong>${escapeHtml(deviceTypeLabel)} — ${escapeHtml(assigneeName)}</strong><span class="team-role-badge ${isPc ? "is-admin" : "is-technician"}">${isPc ? "Poste PC" : "Mobile"}</span><span class="team-state-badge ${device.status === "approved" ? "is-active" : device.status === "rejected" ? "is-inactive" : "is-pending"}">${statusLabel}</span></div><span class="team-member-meta">Attribué à ${escapeHtml(assigneeName)}${device.username ? ` · ${escapeHtml(device.username)}` : ""} · ${escapeHtml(device.label)}${isMobile && device.userRole === "admin" ? " · Sans poste PC" : ""}</span></div>`;
                 const actions = document.createElement("div");
                 actions.className = "team-member-actions";
                 if (device.status === "approval_pending" || device.status === "code_pending") {
