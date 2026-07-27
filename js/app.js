@@ -1,7 +1,7 @@
 import { initializeAuthentication, restoreApplicationShell, signOut } from "./auth.js?v=115";
 import { initializeClientSynchronization } from "./client-sync.js?v=116";
 import { loadDatabase } from "./data.js?v=59";
-import { initializeNavigation, refreshApplication } from "./navigation.js?v=161";
+import { initializeNavigation, refreshApplication } from "./navigation.js?v=162";
 import { renderError } from "./ui.js?v=44";
 import { getSettings } from "./storage.js?v=44";
 import { FONT_OPTIONS } from "./config.js?v=116";
@@ -65,8 +65,8 @@ function showAuthenticatedUser(user) {
         const initialLabel = refreshButton.textContent;
         refreshButton.textContent = "Actualisation…";
         try {
-            const result = await refreshApplication();
-            refreshButton.textContent = result.preservedCurrentWork ? "Actualisé ✓ (saisie conservée)" : "Actualisé ✓";
+            await refreshApplication();
+            refreshButton.textContent = "Actualisé ✓";
         } finally {
             refreshButton.disabled = false;
             window.setTimeout(() => { refreshButton.textContent = initialLabel; }, 1_800);
