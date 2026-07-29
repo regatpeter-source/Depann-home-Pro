@@ -64,6 +64,26 @@ export async function initializeCalendar() {
         CREATE INDEX IF NOT EXISTS depannhome_calendar_events_owner_date_idx
         ON depannhome_calendar_events (owner_id, event_date, start_time)
     `);
+    await database.query(`
+        CREATE TABLE IF NOT EXISTS depannhome_calendar_assignments (
+            event_id BIGINT NOT NULL REFERENCES depannhome_calendar_events(id) ON DELETE CASCADE,
+            technician_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+            is_primary BOOLEAN NOT NULL DEFAULT FALSE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            PRIMARY KEY (event_id, technician_id)
+        )
+    `);
+    await database.query(`
+        CREATE INDEX IF NOT EXISTS depannhome_calendar_assignments_technician_idx
+        ON depannhome_calendar_assignments (technician_id, event_id)
+    `);
+    await database.query(`
+        INSERT INTO depannhome_calendar_assignments (event_id, technician_id, is_primary)
+        SELECT id, assigned_technician_id, TRUE
+        FROM depannhome_calendar_events
+        WHERE assigned_technician_id IS NOT NULL
+        ON CONFLICT (event_id, technician_id) DO NOTHING
+    `);
 }
 
 export function registerCalendarRoutes(app, requireAuthentication) {
@@ -78,6 +98,17 @@ export function registerCalendarRoutes(app, requireAuthentication) {
                 event.title,
                 assigned_technician_id AS "assignedTechnicianId",
                 COALESCE(technician.full_name, technician.username, '') AS "assignedTechnicianName",
+                COALESCE((
+                    SELECT json_agg(json_build_object(
+                        'id', assignment.technician_id,
+                        'fullName', COALESCE(assigned.full_name, assigned.username, ''),
+                        'department', assigned.department,
+                        'isPrimary', assignment.is_primary
+                    ) ORDER BY assignment.is_primary DESC, LOWER(COALESCE(assigned.full_name, assigned.username, '')))
+                    FROM depannhome_calendar_assignments assignment
+                    JOIN depannhome_users assigned ON assigned.id = assignment.technician_id
+                    WHERE assignment.event_id = event.id
+                ), '[]'::json) AS "assignedTechnicians",
                 event.client_name AS "clientName",
                 event.location,
                 TO_CHAR(event.event_date, 'YYYY-MM-DD') AS date,
@@ -96,7 +127,10 @@ export function registerCalendarRoutes(app, requireAuthentication) {
             LEFT JOIN depannhome_users technician ON technician.id = event.assigned_technician_id
                         WHERE event.owner_id = $1
                             AND event_date BETWEEN $2::date AND $3::date
-                            AND ($4 <> 'technician' OR event.assigned_technician_id = $5::bigint)
+                            AND ($4 <> 'technician' OR EXISTS (
+                                SELECT 1 FROM depannhome_calendar_assignments assignment
+                                WHERE assignment.event_id = event.id AND assignment.technician_id = $5::bigint
+                            ))
             ORDER BY event.event_date, event.start_time NULLS LAST, event.created_at
                 `, [getAccountOwnerId(request), start, end, request.user.role, request.user.sub]);
         response.json({ events: rows });
@@ -105,18 +139,29 @@ export function registerCalendarRoutes(app, requireAuthentication) {
     app.post("/api/calendar/events", requireAuthentication, requireCalendarWriteAccess, asyncHandler(async (request, response) => {
         const event = sanitizeEvent(request.body);
         if (!event.ok) return response.status(400).json({ message: event.message });
-        const assignmentError = await validateAssignedTechnician(getAccountOwnerId(request), event.assignedTechnicianId);
+        const assignmentError = await validateAssignedTechnicians(getAccountOwnerId(request), event.assignedTechnicianIds);
         if (assignmentError) return response.status(400).json({ message: assignmentError });
         const conflict = await findCalendarConflict(getAccountOwnerId(request), event);
         if (conflict) return response.status(409).json({ message: conflictMessage(conflict) });
 
-        const { rows } = await getPool().query(`
-            INSERT INTO depannhome_calendar_events
-                (owner_id, assigned_technician_id, title, client_name, location, event_date, start_time, end_time, color, event_type, notes)
-            VALUES ($1, $2, $3, $4, $5, $6::date, $7::time, $8::time, $9, $10, $11)
-            RETURNING id
-        `, [getAccountOwnerId(request), event.assignedTechnicianId || null, event.title, event.clientName, event.location, event.date, event.startTime, event.endTime, event.color, event.eventType, event.notes]);
-        response.status(201).json({ id: rows[0].id });
+        const connection = await getPool().connect();
+        try {
+            await connection.query("BEGIN");
+            const { rows } = await connection.query(`
+                INSERT INTO depannhome_calendar_events
+                    (owner_id, assigned_technician_id, title, client_name, location, event_date, start_time, end_time, color, event_type, notes)
+                VALUES ($1, $2, $3, $4, $5, $6::date, $7::time, $8::time, $9, $10, $11)
+                RETURNING id
+            `, [getAccountOwnerId(request), event.assignedTechnicianId || null, event.title, event.clientName, event.location, event.date, event.startTime, event.endTime, event.color, event.eventType, event.notes]);
+            await replaceEventAssignments(connection, rows[0].id, event.assignedTechnicianIds, event.assignedTechnicianId);
+            await connection.query("COMMIT");
+            response.status(201).json({ id: rows[0].id });
+        } catch (error) {
+            await connection.query("ROLLBACK");
+            throw error;
+        } finally {
+            connection.release();
+        }
     }));
 
     app.put("/api/calendar/events/:eventId", requireAuthentication, requireCalendarWriteAccess, asyncHandler(async (request, response) => {
@@ -124,19 +169,33 @@ export function registerCalendarRoutes(app, requireAuthentication) {
         const event = sanitizeEvent(request.body);
         if (!id) return response.status(400).json({ message: "Rendez-vous invalide." });
         if (!event.ok) return response.status(400).json({ message: event.message });
-        const assignmentError = await validateAssignedTechnician(getAccountOwnerId(request), event.assignedTechnicianId);
+        const assignmentError = await validateAssignedTechnicians(getAccountOwnerId(request), event.assignedTechnicianIds);
         if (assignmentError) return response.status(400).json({ message: assignmentError });
         const conflict = await findCalendarConflict(getAccountOwnerId(request), event, id);
         if (conflict) return response.status(409).json({ message: conflictMessage(conflict) });
 
-        const { rowCount } = await getPool().query(`
-            UPDATE depannhome_calendar_events
-            SET assigned_technician_id = $3, title = $4, client_name = $5, location = $6, event_date = $7::date,
-                start_time = $8::time, end_time = $9::time, color = $10, event_type = $11, notes = $12, updated_at = NOW()
-            WHERE id = $1 AND owner_id = $2
-        `, [id, getAccountOwnerId(request), event.assignedTechnicianId || null, event.title, event.clientName, event.location, event.date, event.startTime, event.endTime, event.color, event.eventType, event.notes]);
-        if (!rowCount) return response.status(404).json({ message: "Rendez-vous introuvable." });
-        response.status(204).end();
+        const connection = await getPool().connect();
+        try {
+            await connection.query("BEGIN");
+            const { rowCount } = await connection.query(`
+                UPDATE depannhome_calendar_events
+                SET assigned_technician_id = $3, title = $4, client_name = $5, location = $6, event_date = $7::date,
+                    start_time = $8::time, end_time = $9::time, color = $10, event_type = $11, notes = $12, updated_at = NOW()
+                WHERE id = $1 AND owner_id = $2
+            `, [id, getAccountOwnerId(request), event.assignedTechnicianId || null, event.title, event.clientName, event.location, event.date, event.startTime, event.endTime, event.color, event.eventType, event.notes]);
+            if (!rowCount) {
+                await connection.query("ROLLBACK");
+                return response.status(404).json({ message: "Rendez-vous introuvable." });
+            }
+            await replaceEventAssignments(connection, id, event.assignedTechnicianIds, event.assignedTechnicianId);
+            await connection.query("COMMIT");
+            response.status(204).end();
+        } catch (error) {
+            await connection.query("ROLLBACK");
+            throw error;
+        } finally {
+            connection.release();
+        }
     }));
 
     app.delete("/api/calendar/events/:eventId", requireAuthentication, requireCalendarWriteAccess, asyncHandler(async (request, response) => {
@@ -168,7 +227,10 @@ export function registerCalendarRoutes(app, requireAuthentication) {
                     notes, quitus_status AS "quitusStatus"
                 FROM depannhome_calendar_events
                                 WHERE id = $1 AND owner_id = $2 AND event_type = 'appointment' AND client_name <> ''
-                                    AND ($3 <> 'technician' OR assigned_technician_id = $4::bigint)
+                                    AND ($3 <> 'technician' OR EXISTS (
+                                        SELECT 1 FROM depannhome_calendar_assignments assignment
+                                        WHERE assignment.event_id = depannhome_calendar_events.id AND assignment.technician_id = $4::bigint
+                                    ))
                 FOR UPDATE
                         `, [id, accountOwnerId, request.user.role, request.user.sub]);
             const event = eventResult.rows[0];
@@ -271,7 +333,10 @@ function sanitizeEvent(value) {
     const color = EVENT_COLORS.has(value?.color) ? value.color : "blue";
     const eventType = EVENT_TYPES.has(value?.eventType) ? value.eventType : "appointment";
     const notes = cleanText(value?.notes, 2000);
-    const assignedTechnicianId = optionalPositiveId(value?.assignedTechnicianId);
+    const assignedTechnicianIds = sanitizePositiveIds(value?.assignedTechnicianIds);
+    const requestedPrimaryTechnicianId = optionalPositiveId(value?.assignedTechnicianId);
+    if (requestedPrimaryTechnicianId && !assignedTechnicianIds.includes(requestedPrimaryTechnicianId)) assignedTechnicianIds.unshift(requestedPrimaryTechnicianId);
+    const assignedTechnicianId = requestedPrimaryTechnicianId || assignedTechnicianIds[0] || 0;
 
     if (!title) return { ok: false, message: "Le titre du rendez-vous est obligatoire." };
     if (!date) return { ok: false, message: "La date du rendez-vous est invalide." };
@@ -279,8 +344,8 @@ function sanitizeEvent(value) {
     if (value?.endTime && !endTime) return { ok: false, message: "L’heure de fin est invalide." };
     if (startTime && endTime && endTime < startTime) return { ok: false, message: "L’heure de fin doit être après l’heure de début." };
 
-    if (value?.assignedTechnicianId && !assignedTechnicianId) return { ok: false, message: "Le technicien sélectionné est invalide." };
-    return { ok: true, title, clientName, location, date, startTime, endTime, color, eventType, notes, assignedTechnicianId };
+    if ((value?.assignedTechnicianId && !requestedPrimaryTechnicianId) || (Array.isArray(value?.assignedTechnicianIds) && value.assignedTechnicianIds.length > 0 && !assignedTechnicianIds.length)) return { ok: false, message: "Un technicien sélectionné est invalide." };
+    return { ok: true, title, clientName, location, date, startTime, endTime, color, eventType, notes, assignedTechnicianId, assignedTechnicianIds };
 }
 
 function sanitizeQuitus(value) {
@@ -332,13 +397,13 @@ function createQuitusPdf(event, quitus) {
     });
 }
 
-async function validateAssignedTechnician(accountOwnerId, technicianId) {
-    if (!technicianId) return "";
+async function validateAssignedTechnicians(accountOwnerId, technicianIds) {
+    if (!technicianIds.length) return "";
     const { rowCount } = await getPool().query(`
         SELECT 1 FROM depannhome_users
-        WHERE id = $1 AND account_owner_id = $2 AND role = 'technician' AND is_active = TRUE
-    `, [technicianId, accountOwnerId]);
-    return rowCount ? "" : "Le technicien sélectionné est introuvable ou inactif.";
+        WHERE id = ANY($1::bigint[]) AND account_owner_id = $2 AND role = 'technician' AND is_active = TRUE
+    `, [technicianIds, accountOwnerId]);
+    return rowCount === technicianIds.length ? "" : "Un des techniciens sélectionnés est introuvable ou inactif.";
 }
 
 async function findCalendarConflict(accountOwnerId, event, excludedEventId = 0) {
@@ -349,16 +414,33 @@ async function findCalendarConflict(accountOwnerId, event, excludedEventId = 0) 
         WHERE owner_id = $1
           AND event_date = $2::date
           AND id <> $3
-                    AND assigned_technician_id IS NOT DISTINCT FROM $4::bigint
+                    AND (
+                        (cardinality($4::bigint[]) > 0 AND EXISTS (
+                            SELECT 1 FROM depannhome_calendar_assignments assignment
+                            WHERE assignment.event_id = depannhome_calendar_events.id
+                              AND assignment.technician_id = ANY($4::bigint[])
+                        ))
+                        OR (cardinality($4::bigint[]) = 0 AND assigned_technician_id IS NULL)
+                    )
           AND ${timedEvent
                 ? "(start_time IS NULL OR end_time IS NULL OR (start_time < $6::time AND end_time > $5::time))"
         : "TRUE"}
         ORDER BY start_time NULLS FIRST, created_at
         LIMIT 1
     `, timedEvent
-        ? [accountOwnerId, event.date, excludedEventId, event.assignedTechnicianId || null, event.startTime, event.endTime]
-        : [accountOwnerId, event.date, excludedEventId, event.assignedTechnicianId || null]);
+        ? [accountOwnerId, event.date, excludedEventId, event.assignedTechnicianIds, event.startTime, event.endTime]
+        : [accountOwnerId, event.date, excludedEventId, event.assignedTechnicianIds]);
     return rows[0] || null;
+}
+
+async function replaceEventAssignments(connection, eventId, technicianIds, primaryTechnicianId) {
+    await connection.query("DELETE FROM depannhome_calendar_assignments WHERE event_id = $1", [eventId]);
+    if (!technicianIds.length) return;
+    await connection.query(`
+        INSERT INTO depannhome_calendar_assignments (event_id, technician_id, is_primary)
+        SELECT $1, technician_id, technician_id = $3::bigint
+        FROM UNNEST($2::bigint[]) AS technician_id
+    `, [eventId, technicianIds, primaryTechnicianId]);
 }
 
 function conflictMessage(event) {
@@ -389,6 +471,13 @@ function positiveId(value) {
 function optionalPositiveId(value) {
     if (value === undefined || value === null || value === "") return 0;
     return positiveId(value);
+}
+
+function sanitizePositiveIds(value) {
+    const values = Array.isArray(value) ? value : value === undefined || value === null || value === "" ? [] : [value];
+    const ids = values.map(optionalPositiveId);
+    if (ids.some(id => !id)) return [];
+    return [...new Set(ids)].slice(0, 30);
 }
 
 function asyncHandler(handler) {

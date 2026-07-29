@@ -148,7 +148,7 @@ export function registerBillingRoutes(app, requireAuthentication) {
                                                 SELECT 1 FROM depannhome_calendar_events appointment
                                                 WHERE appointment.id = depannhome_billing_documents.appointment_id
                                                     AND appointment.owner_id = $1
-                                                    AND appointment.assigned_technician_id = $3
+                                                    AND EXISTS (SELECT 1 FROM depannhome_calendar_assignments assignment WHERE assignment.event_id = appointment.id AND assignment.technician_id = $3)
                                                   )
                                                   OR EXISTS (
                                                     SELECT 1
@@ -156,7 +156,7 @@ export function registerBillingRoutes(app, requireAuthentication) {
                                                     LEFT JOIN depannhome_calendar_events quote_appointment ON quote_appointment.id = source_quote.appointment_id
                                                     WHERE source_quote.id = depannhome_billing_documents.source_quote_id
                                                       AND source_quote.owner_id = $1
-                                                      AND (source_quote.created_by = $3 OR quote_appointment.assigned_technician_id = $3)
+                                                      AND (source_quote.created_by = $3 OR EXISTS (SELECT 1 FROM depannhome_calendar_assignments assignment WHERE assignment.event_id = quote_appointment.id AND assignment.technician_id = $3))
                                                   ))
                                 ORDER BY issue_date DESC, depannhome_billing_documents.id DESC
                         `, [accountOwnerId, request.user?.role || "", request.user?.sub || 0])
@@ -242,7 +242,7 @@ export function registerBillingRoutes(app, requireAuthentication) {
                                                 SELECT 1 FROM depannhome_calendar_events appointment
                                                 WHERE appointment.id = depannhome_billing_documents.appointment_id
                                                     AND appointment.owner_id = $2
-                                                    AND appointment.assigned_technician_id = $4
+                                                    AND EXISTS (SELECT 1 FROM depannhome_calendar_assignments assignment WHERE assignment.event_id = appointment.id AND assignment.technician_id = $4)
                                                   )
                                                   OR EXISTS (
                                                     SELECT 1
@@ -250,7 +250,7 @@ export function registerBillingRoutes(app, requireAuthentication) {
                                                     LEFT JOIN depannhome_calendar_events quote_appointment ON quote_appointment.id = source_quote.appointment_id
                                                     WHERE source_quote.id = depannhome_billing_documents.source_quote_id
                                                       AND source_quote.owner_id = $2
-                                                      AND (source_quote.created_by = $4 OR quote_appointment.assigned_technician_id = $4)
+                                                      AND (source_quote.created_by = $4 OR EXISTS (SELECT 1 FROM depannhome_calendar_assignments assignment WHERE assignment.event_id = quote_appointment.id AND assignment.technician_id = $4))
                                                   ))
                         `, [id, getAccountOwnerId(request), request.user?.role || "", request.user?.sub || 0]),
             database.query(`
@@ -548,7 +548,7 @@ async function getBillingExport(request) {
                                         SELECT 1 FROM depannhome_calendar_events appointment
                                         WHERE appointment.id = depannhome_billing_documents.appointment_id
                                             AND appointment.owner_id = $2
-                                            AND appointment.assigned_technician_id = $4
+                                            AND EXISTS (SELECT 1 FROM depannhome_calendar_assignments assignment WHERE assignment.event_id = appointment.id AND assignment.technician_id = $4)
                                             )
                                             OR EXISTS (
                                               SELECT 1
@@ -556,7 +556,7 @@ async function getBillingExport(request) {
                                               LEFT JOIN depannhome_calendar_events quote_appointment ON quote_appointment.id = source_quote.appointment_id
                                               WHERE source_quote.id = depannhome_billing_documents.source_quote_id
                                                 AND source_quote.owner_id = $2
-                                                AND (source_quote.created_by = $4 OR quote_appointment.assigned_technician_id = $4)
+                                                AND (source_quote.created_by = $4 OR EXISTS (SELECT 1 FROM depannhome_calendar_assignments assignment WHERE assignment.event_id = quote_appointment.id AND assignment.technician_id = $4))
                                             ))
                 `, [id, getAccountOwnerId(request), request.user?.role || "", request.user?.sub || 0]),
         database.query(`
@@ -698,7 +698,7 @@ async function findSourceQuote(database, ownerId, sourceQuoteId, request) {
                                 SELECT 1 FROM depannhome_calendar_events appointment
                                 WHERE appointment.id = depannhome_billing_documents.appointment_id
                                     AND appointment.owner_id = $2
-                                    AND appointment.assigned_technician_id = $4
+                                    AND EXISTS (SELECT 1 FROM depannhome_calendar_assignments assignment WHERE assignment.event_id = appointment.id AND assignment.technician_id = $4)
                         ))
         `, [sourceQuoteId, ownerId, request?.user?.role || "", request?.user?.sub || 0]);
     return rows[0] || null;
@@ -729,7 +729,7 @@ async function findAccessibleAppointment(database, ownerId, appointmentId, reque
         SELECT id
         FROM depannhome_calendar_events
         WHERE id = $1 AND owner_id = $2 AND event_type = 'appointment'
-          AND ($3 <> 'technician' OR assigned_technician_id = $4::bigint)
+          AND ($3 <> 'technician' OR EXISTS (SELECT 1 FROM depannhome_calendar_assignments assignment WHERE assignment.event_id = depannhome_calendar_events.id AND assignment.technician_id = $4::bigint))
     `, [appointmentId, ownerId, request.user?.role || "", request.user?.sub || 0]);
     return rows[0] || null;
 }

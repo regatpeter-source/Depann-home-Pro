@@ -199,12 +199,13 @@ function bindCalendarNavigation(panel) {
 
 function renderTechnicianFilter() {
     const count = showAllTechnicians ? technicians.length : visibleTechnicianIds.size;
+    const groups = groupTechniciansByDepartment(technicians);
     return `
         <section class="calendar-technician-filter" aria-label="Filtrer le planning par technicien">
             <div><p class="eyebrow">Équipe affichée</p><strong>${count} technicien${count === 1 ? "" : "s"} sélectionné${count === 1 ? "" : "s"}</strong></div>
             <div class="calendar-technician-options">
                 <label><input type="checkbox" data-calendar-filter="all" ${showAllTechnicians ? "checked" : ""}> Toute l’équipe</label>
-                ${technicians.map(technician => `<label><input type="checkbox" data-calendar-technician="${escapeHtml(technician.id)}" ${showAllTechnicians || visibleTechnicianIds.has(String(technician.id)) ? "checked" : ""}> ${escapeHtml(technician.fullName || technician.username)}</label>`).join("")}
+                ${groups.map(([department, members]) => `<span class="calendar-technician-group"><em>${escapeHtml(department)}</em>${members.map(technician => `<label><input type="checkbox" data-calendar-technician="${escapeHtml(technician.id)}" ${showAllTechnicians || visibleTechnicianIds.has(String(technician.id)) ? "checked" : ""}> ${escapeHtml(technician.fullName || technician.username)}</label>`).join("")}</span>`).join("")}
             </div>
         </section>
     `;
@@ -224,7 +225,7 @@ function renderEventForm(panel) {
             panel.innerHTML = `
                 <div class="calendar-event-detail">
                     <div class="form-heading"><div><p class="eyebrow">${escapeHtml(getEventType(event.eventType).label)}</p><h2>${escapeHtml(event.title)}</h2></div><button type="button" class="secondary-button" id="closeCalendarDetail">Fermer</button></div>
-                    <section class="calendar-appointment-information"><dl><dt>Date</dt><dd>${escapeHtml(formatActivityDate(event.date, event.startTime))}${event.endTime ? ` — ${escapeHtml(event.endTime)}` : ""}</dd>${event.assignedTechnicianName ? `<dt>Technicien</dt><dd>${escapeHtml(event.assignedTechnicianName)}</dd>` : ""}${event.location ? `<dt>Lieu</dt><dd>${escapeHtml(event.location)}</dd>` : ""}${event.notes ? `<dt>Notes</dt><dd>${escapeHtml(event.notes)}</dd>` : ""}</dl></section>
+                    <section class="calendar-appointment-information"><dl><dt>Date</dt><dd>${escapeHtml(formatActivityDate(event.date, event.startTime))}${event.endTime ? ` — ${escapeHtml(event.endTime)}` : ""}</dd>${renderAssignedTechniciansDetail(event)}${event.location ? `<dt>Lieu</dt><dd>${escapeHtml(event.location)}</dd>` : ""}${event.notes ? `<dt>Notes</dt><dd>${escapeHtml(event.notes)}</dd>` : ""}</dl></section>
                 </div>`;
             panel.querySelector("#closeCalendarDetail").addEventListener("click", () => {
                 selectedEvent = null;
@@ -251,7 +252,7 @@ function renderEventForm(panel) {
                     </section>
                     <section class="calendar-appointment-information">
                         <p class="eyebrow">Informations du rendez-vous</p>
-                        <dl><dt>Date</dt><dd>${escapeHtml(formatActivityDate(event.date, event.startTime))}${event.endTime ? ` — ${escapeHtml(event.endTime)}` : ""}</dd>${event.assignedTechnicianName ? `<dt>Technicien</dt><dd>${escapeHtml(event.assignedTechnicianName)}</dd>` : ""}${event.notes ? `<dt>Notes</dt><dd>${escapeHtml(event.notes)}</dd>` : ""}</dl>
+                        <dl><dt>Date</dt><dd>${escapeHtml(formatActivityDate(event.date, event.startTime))}${event.endTime ? ` — ${escapeHtml(event.endTime)}` : ""}</dd>${renderAssignedTechniciansDetail(event)}${event.notes ? `<dt>Notes</dt><dd>${escapeHtml(event.notes)}</dd>` : ""}</dl>
                     </section>
                     ${renderInterventionPhotosHtml(client, event)}
                     <section class="calendar-linked-documents" id="calendarLinkedDocuments"><p class="muted">Chargement des devis et factures de cette intervention…</p></section>
@@ -317,10 +318,7 @@ function renderEventForm(panel) {
                     Couleur / statut
                     <select name="color">${COLOR_OPTIONS.map(color => `<option value="${color.id}" ${event.color === color.id ? "selected" : ""}>${color.label}</option>`).join("")}</select>
                 </label>
-                <label>
-                    Technicien affecté
-                    <select name="assignedTechnicianId"><option value="">Non affecté</option>${technicians.map(technician => `<option value="${escapeHtml(technician.id)}" ${String(event.assignedTechnicianId || "") === String(technician.id) ? "selected" : ""}>${escapeHtml(technician.fullName || technician.username)}</option>`).join("")}</select>
-                </label>
+                ${renderTechnicianAssignmentField(event)}
                 <label>
                     Début
                     <input name="startTime" type="time" value="${escapeHtml(event.startTime)}">
@@ -358,6 +356,30 @@ function renderEventForm(panel) {
     const eventTypeInput = form.querySelector("[name=eventType]");
     const openClientButton = form.querySelector("#openCalendarClient");
     const clientPreview = form.querySelector("#calendarClientPreview");
+    const technicianSearch = form.querySelector("#calendarTechnicianSearch");
+    const primaryTechnicianInput = form.querySelector("[name=assignedTechnicianId]");
+    const assignmentInputs = [...form.querySelectorAll("[data-calendar-assignment]")];
+    const syncPrimaryTechnician = () => {
+        const selected = assignmentInputs.filter(input => input.checked).map(input => String(input.value));
+        const current = String(primaryTechnicianInput.value || event.assignedTechnicianId || "");
+        primaryTechnicianInput.innerHTML = selected.length
+            ? selected.map(id => {
+                const technician = technicians.find(item => String(item.id) === id);
+                return `<option value="${escapeHtml(id)}" ${current === id ? "selected" : ""}>${escapeHtml(technician?.fullName || technician?.username || "Technicien")}</option>`;
+            }).join("")
+            : '<option value="">Aucun technicien sélectionné</option>';
+        if (selected.length && !selected.includes(current)) primaryTechnicianInput.value = selected[0];
+        primaryTechnicianInput.disabled = !selected.length;
+    };
+    const filterTechnicians = () => {
+        const search = normalizeText(technicianSearch.value);
+        form.querySelectorAll("[data-calendar-assignment-option]").forEach(option => {
+            option.hidden = Boolean(search) && !normalizeText(option.dataset.calendarAssignmentOption).includes(search);
+        });
+        form.querySelectorAll("[data-calendar-assignment-group]").forEach(group => {
+            group.hidden = [...group.querySelectorAll("[data-calendar-assignment-option]")].every(option => option.hidden);
+        });
+    };
     const fillClientAddress = () => {
         const clientName = normalizeText(clientInput.value);
         const client = clients.find(item => normalizeText(item.name) === clientName);
@@ -373,6 +395,12 @@ function renderEventForm(panel) {
     clientInput.addEventListener("input", fillClientAddress);
     clientInput.addEventListener("change", fillClientAddress);
     fillClientAddress();
+    assignmentInputs.forEach(input => input.addEventListener("change", () => {
+        syncPrimaryTechnician();
+        renderCalendarAvailability(form, event.id);
+    }));
+    technicianSearch.addEventListener("input", filterTechnicians);
+    syncPrimaryTechnician();
     eventTypeInput.addEventListener("change", () => {
         const type = getEventType(eventTypeInput.value);
         if (!event.id || form.elements.title.value === getEventType(event.eventType).title) form.elements.title.value = type.title;
@@ -459,7 +487,14 @@ function renderCalendarAvailability(form, editedEventId) {
 
 function findLocalCalendarConflict(dayEvents, candidate) {
     if (!candidate.startTime || !candidate.endTime) return dayEvents[0] || null;
-    return dayEvents.find(event => !event.startTime || !event.endTime || (event.startTime < candidate.endTime && event.endTime > candidate.startTime)) || null;
+    const candidateTechnicians = new Set(getAssignedTechnicianIds(candidate));
+    return dayEvents.find(event => {
+        const eventTechnicians = getAssignedTechnicianIds(event);
+        const sharesTechnician = candidateTechnicians.size
+            ? eventTechnicians.some(id => candidateTechnicians.has(id))
+            : !eventTechnicians.length;
+        return sharesTechnician && (!event.startTime || !event.endTime || (event.startTime < candidate.endTime && event.endTime > candidate.startTime));
+    }) || null;
 }
 
 function compareEventTimes(first, second) {
@@ -484,6 +519,51 @@ function renderCalendarClientPreview(client) {
             ${client.equipment ? `<span class="calendar-client-preview-wide"><strong>Équipements</strong>${escapeHtml(client.equipment)}</span>` : ""}
             ${client.notes ? `<span class="calendar-client-preview-wide"><strong>Consignes client</strong>${escapeHtml(client.notes)}</span>` : ""}
         </div>`;
+}
+
+function renderTechnicianAssignmentField(event) {
+    const selected = new Set(getAssignedTechnicianIds(event));
+    const groups = groupTechniciansByDepartment(technicians);
+    return `
+        <section class="calendar-technician-assignment form-wide">
+            <div class="calendar-technician-assignment-heading"><div><p class="eyebrow">Équipe d’intervention</p><h3>Techniciens affectés</h3><p class="muted">Recherchez puis cochez tous les intervenants. Le référent est utilisé pour les anciens rendez-vous et les exports.</p></div></div>
+            <label class="calendar-technician-search">Rechercher un technicien ou un pôle<input id="calendarTechnicianSearch" type="search" placeholder="Ex. dépannage, chantier, Léa…" autocomplete="off"></label>
+            <div class="calendar-technician-assignment-groups">
+                ${groups.map(([department, members]) => `<section data-calendar-assignment-group><h4>${escapeHtml(department)}</h4>${members.map(technician => `<label data-calendar-assignment-option="${escapeHtml(`${department} ${technician.fullName || technician.username}`)}"><input type="checkbox" name="assignedTechnicianIds" value="${escapeHtml(technician.id)}" data-calendar-assignment ${selected.has(String(technician.id)) ? "checked" : ""}><span>${escapeHtml(technician.fullName || technician.username)}</span><small>${escapeHtml(technician.phone || "")}</small></label>`).join("")}</section>`).join("") || '<p class="muted">Aucun technicien actif n’est disponible.</p>'}
+            </div>
+            <label class="calendar-primary-technician">Technicien référent<select name="assignedTechnicianId"></select></label>
+        </section>`;
+}
+
+function groupTechniciansByDepartment(items) {
+    const groups = new Map();
+    items.forEach(technician => {
+        const department = String(technician.department || "Non classé").trim() || "Non classé";
+        if (!groups.has(department)) groups.set(department, []);
+        groups.get(department).push(technician);
+    });
+    return [...groups.entries()].sort(([first], [second]) => first.localeCompare(second, "fr"));
+}
+
+function getAssignedTechnicianIds(event) {
+    const assigned = Array.isArray(event?.assignedTechnicianIds)
+        ? event.assignedTechnicianIds
+        : Array.isArray(event?.assignedTechnicians)
+            ? event.assignedTechnicians.map(technician => technician?.id)
+            : [event?.assignedTechnicianId];
+    return [...new Set(assigned.map(id => String(id || "")).filter(Boolean))];
+}
+
+function getAssignedTechnicianNames(event) {
+    if (Array.isArray(event?.assignedTechnicians) && event.assignedTechnicians.length) {
+        return event.assignedTechnicians.map(technician => technician.fullName || "Technicien").filter(Boolean);
+    }
+    return event?.assignedTechnicianName ? [event.assignedTechnicianName] : [];
+}
+
+function renderAssignedTechniciansDetail(event) {
+    const names = getAssignedTechnicianNames(event);
+    return names.length ? `<dt>Technicien${names.length > 1 ? "s" : ""}</dt><dd>${escapeHtml(names.join(" · "))}</dd>` : "";
 }
 
 function findClientForEvent(event) {
@@ -752,7 +832,7 @@ function renderCalendarGrid(panel) {
             const button = document.createElement("button");
             button.type = "button";
             button.className = `calendar-event color-${event.color}`;
-            button.title = [event.title, event.assignedTechnicianName, clientDetails.name, clientDetails.phone, clientDetails.address, event.startTime && `${event.startTime}${event.endTime ? ` – ${event.endTime}` : ""}`].filter(Boolean).join(" · ");
+            button.title = [event.title, getAssignedTechnicianNames(event).join(" · "), clientDetails.name, clientDetails.phone, clientDetails.address, event.startTime && `${event.startTime}${event.endTime ? ` – ${event.endTime}` : ""}`].filter(Boolean).join(" · ");
             button.innerHTML = renderCalendarEventCard(event, clientDetails);
             button.addEventListener("click", () => {
                 selectedEvent = event;
@@ -803,11 +883,12 @@ function renderCalendarList(panel) {
 
 function getVisibleEvents() {
     if (isReadOnlyCalendar() || showAllTechnicians) return events;
-    return events.filter(event => visibleTechnicianIds.has(String(event.assignedTechnicianId || "")));
+    return events.filter(event => getAssignedTechnicianIds(event).some(id => visibleTechnicianIds.has(id)));
 }
 
 function renderCalendarEventCard(event, client) {
-    return `<span>${escapeHtml(event.startTime || "Toute la journée")}</span><strong>${escapeHtml(event.title)}</strong>${event.assignedTechnicianName ? `<small>👤 ${escapeHtml(event.assignedTechnicianName)}</small>` : ""}${client.name ? `<small class="calendar-event-client">${escapeHtml(client.name)}</small>` : ""}${client.phone ? `<small class="calendar-event-contact">📞 ${escapeHtml(client.phone)}</small>` : ""}${client.address ? `<small class="calendar-event-contact">📍 ${escapeHtml(client.address)}</small>` : ""}`;
+    const technicianNames = getAssignedTechnicianNames(event);
+    return `<span>${escapeHtml(event.startTime || "Toute la journée")}</span><strong>${escapeHtml(event.title)}</strong>${technicianNames.length ? `<small>👥 ${escapeHtml(technicianNames.join(" · "))}</small>` : ""}${client.name ? `<small class="calendar-event-client">${escapeHtml(client.name)}</small>` : ""}${client.phone ? `<small class="calendar-event-contact">📞 ${escapeHtml(client.phone)}</small>` : ""}${client.address ? `<small class="calendar-event-contact">📍 ${escapeHtml(client.address)}</small>` : ""}`;
 }
 
 function getEventClientDetails(event) {
@@ -879,7 +960,7 @@ function startOfWeek(date) {
 function atNoon(date) { return new Date(date.getFullYear(), date.getMonth(), date.getDate(), 12); }
 
 function newEventForDate(date) {
-    return { title: "", clientName: "", location: "", date, startTime: "", endTime: "", color: "blue", eventType: "appointment", notes: "", assignedTechnicianId: "", assignedTechnicianName: "" };
+    return { title: "", clientName: "", location: "", date, startTime: "", endTime: "", color: "blue", eventType: "appointment", notes: "", assignedTechnicianId: "", assignedTechnicianName: "", assignedTechnicianIds: [] };
 }
 
 function formToEvent(form) {
@@ -893,6 +974,7 @@ function formToEvent(form) {
         color: String(form.get("color") || "blue"),
         eventType: String(form.get("eventType") || "appointment"),
         assignedTechnicianId: String(form.get("assignedTechnicianId") || ""),
+        assignedTechnicianIds: form.getAll("assignedTechnicianIds").map(value => String(value || "")),
         notes: String(form.get("notes") || "").trim()
     };
 }

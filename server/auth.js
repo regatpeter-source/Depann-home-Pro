@@ -158,7 +158,7 @@ export function registerAuthRoutes(app) {
 
     app.get("/api/auth/members", requireAccountAdministrator, asyncHandler(async (request, response) => {
         const { rows } = await getPool().query(`
-            SELECT id, username, role, full_name AS "fullName", phone, email, is_active AS "isActive", can_create_billing AS "canCreateBilling", created_at AS "createdAt"
+            SELECT id, username, role, full_name AS "fullName", phone, email, department, is_active AS "isActive", can_create_billing AS "canCreateBilling", created_at AS "createdAt"
             FROM depannhome_users
             WHERE account_owner_id = $1 AND id <> $1
             ORDER BY role, LOWER(full_name), username
@@ -173,6 +173,7 @@ export function registerAuthRoutes(app) {
         const fullName = cleanText(request.body?.fullName, 100);
         const phone = cleanText(request.body?.phone, 30);
         const email = cleanText(request.body?.email, 160).toLowerCase();
+        const department = cleanText(request.body?.department, 80);
         const validationError = validateCredentials(username, password)
             || (!role ? "Choisissez le type de poste." : "")
             || (!fullName ? "Le nom de l’utilisateur est obligatoire." : "")
@@ -192,7 +193,7 @@ export function registerAuthRoutes(app) {
             }
         }
         try {
-            const member = await createUser({ username, passwordHash: await bcrypt.hash(password, 12), role, accountOwnerId: getAccountOwnerId(request), fullName, phone, email });
+            const member = await createUser({ username, passwordHash: await bcrypt.hash(password, 12), role, accountOwnerId: getAccountOwnerId(request), fullName, phone, email, department: role === "technician" ? department : "" });
             response.status(201).json({ member: publicUser(member) });
         } catch (error) {
             if (error.code === "23505") return response.status(409).json({ message: "Ce nom d’utilisateur est déjà utilisé." });
@@ -204,7 +205,7 @@ export function registerAuthRoutes(app) {
         const memberId = positiveId(request.params.memberId);
         if (!memberId) return response.status(400).json({ message: "Accès invalide." });
         const { rows } = await getPool().query(`
-            SELECT id, role, is_active AS "isActive", can_create_billing AS "canCreateBilling" FROM depannhome_users
+            SELECT id, role, department, is_active AS "isActive", can_create_billing AS "canCreateBilling" FROM depannhome_users
             WHERE id = $1 AND account_owner_id = $2 AND id <> $2
         `, [memberId, getAccountOwnerId(request)]);
         const member = rows[0];
@@ -213,6 +214,9 @@ export function registerAuthRoutes(app) {
         const canCreateBilling = member.role === "technician" && typeof request.body?.canCreateBilling === "boolean"
             ? request.body.canCreateBilling
             : member.canCreateBilling;
+        const department = member.role === "technician" && typeof request.body?.department === "string"
+            ? cleanText(request.body.department, 80)
+            : member.department;
         if (member.role === "technician" && isActive && !member.isActive) {
             const seats = await getPool().query(`
                 SELECT owner.max_technicians, COUNT(member.id) FILTER (WHERE member.role = 'technician' AND member.is_active AND member.id <> $2)::int AS active_technicians
@@ -224,7 +228,7 @@ export function registerAuthRoutes(app) {
                 return response.status(400).json({ message: "La limite de techniciens de votre entreprise est atteinte." });
             }
         }
-        await getPool().query("UPDATE depannhome_users SET is_active = $3, can_create_billing = $4, updated_at = NOW() WHERE id = $1 AND account_owner_id = $2", [memberId, getAccountOwnerId(request), isActive, canCreateBilling]);
+        await getPool().query("UPDATE depannhome_users SET is_active = $3, can_create_billing = $4, department = $5, updated_at = NOW() WHERE id = $1 AND account_owner_id = $2", [memberId, getAccountOwnerId(request), isActive, canCreateBilling, department]);
         response.status(204).end();
     }));
 
@@ -252,7 +256,7 @@ export function registerAuthRoutes(app) {
 
     app.get("/api/auth/technicians", requireAccountAdministrator, asyncHandler(async (request, response) => {
         const { rows } = await getPool().query(`
-            SELECT id, username, full_name AS "fullName", phone, email, is_active AS "isActive", created_at AS "createdAt"
+            SELECT id, username, full_name AS "fullName", phone, email, department, is_active AS "isActive", created_at AS "createdAt"
             FROM depannhome_users
             WHERE account_owner_id = $1 AND id <> $1 AND role = 'technician'
             ORDER BY LOWER(full_name), username
@@ -266,6 +270,7 @@ export function registerAuthRoutes(app) {
         const fullName = cleanText(request.body?.fullName, 100);
         const phone = cleanText(request.body?.phone, 30);
         const email = cleanText(request.body?.email, 160).toLowerCase();
+        const department = cleanText(request.body?.department, 80);
         const validationError = validateCredentials(username, password) || (!fullName ? "Le nom du technicien est obligatoire." : "") || (!phone ? "Le téléphone du technicien est obligatoire." : "") || (!EMAIL_PATTERN.test(email) ? "L’e-mail professionnel du technicien est obligatoire." : "");
         if (validationError) return response.status(400).json({ message: validationError });
         const seats = await getPool().query(`
@@ -278,7 +283,7 @@ export function registerAuthRoutes(app) {
             return response.status(400).json({ message: "La limite de techniciens de votre entreprise est atteinte." });
         }
         try {
-            const user = await createUser({ username, passwordHash: await bcrypt.hash(password, 12), role: "technician", accountOwnerId: getAccountOwnerId(request), fullName, phone, email });
+            const user = await createUser({ username, passwordHash: await bcrypt.hash(password, 12), role: "technician", accountOwnerId: getAccountOwnerId(request), fullName, phone, email, department });
             response.status(201).json({ technician: publicUser(user) });
         } catch (error) {
             if (error.code === "23505") return response.status(409).json({ message: "Ce nom d’utilisateur est déjà utilisé." });
@@ -290,6 +295,7 @@ export function registerAuthRoutes(app) {
         const technicianId = positiveId(request.params.technicianId);
         if (!technicianId) return response.status(400).json({ message: "Technicien invalide." });
         const isActive = Boolean(request.body?.isActive);
+        const department = cleanText(request.body?.department, 80);
         if (isActive) {
             const seats = await getPool().query(`
                 SELECT owner.max_technicians,
@@ -303,9 +309,9 @@ export function registerAuthRoutes(app) {
             }
         }
         const result = await getPool().query(`
-            UPDATE depannhome_users SET is_active = $3, updated_at = NOW()
+            UPDATE depannhome_users SET is_active = $3, department = $4, updated_at = NOW()
             WHERE id = $1 AND account_owner_id = $2 AND id <> $2 AND role = 'technician'
-        `, [technicianId, getAccountOwnerId(request), isActive]);
+        `, [technicianId, getAccountOwnerId(request), isActive, department]);
         if (!result.rowCount) return response.status(404).json({ message: "Technicien introuvable." });
         response.status(204).end();
     }));

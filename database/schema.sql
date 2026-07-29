@@ -6,6 +6,8 @@ CREATE TABLE IF NOT EXISTS depannhome_users (
     account_owner_id BIGINT REFERENCES depannhome_users(id) ON DELETE CASCADE,
     full_name VARCHAR(100) NOT NULL DEFAULT '',
     phone VARCHAR(30) NOT NULL DEFAULT '',
+    email VARCHAR(160) NOT NULL DEFAULT '',
+    department VARCHAR(80) NOT NULL DEFAULT '',
     company_name VARCHAR(160) NOT NULL DEFAULT '',
     max_pc_users INTEGER NOT NULL DEFAULT 1,
     max_technicians INTEGER NOT NULL DEFAULT 5,
@@ -28,6 +30,8 @@ UPDATE depannhome_users SET role = 'admin' WHERE role = 'user' AND account_owner
 
 ALTER TABLE depannhome_users
     ADD COLUMN IF NOT EXISTS company_name VARCHAR(160) NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS email VARCHAR(160) NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS department VARCHAR(80) NOT NULL DEFAULT '',
     ADD COLUMN IF NOT EXISTS max_pc_users INTEGER NOT NULL DEFAULT 1,
     ADD COLUMN IF NOT EXISTS max_technicians INTEGER NOT NULL DEFAULT 5,
     ADD COLUMN IF NOT EXISTS subscription_plan VARCHAR(20) NOT NULL DEFAULT 'free',
@@ -238,6 +242,25 @@ ADD COLUMN IF NOT EXISTS quitus_status VARCHAR(20) NOT NULL DEFAULT 'pending',
 ADD COLUMN IF NOT EXISTS quitus_signed_by VARCHAR(160) NOT NULL DEFAULT '',
 ADD COLUMN IF NOT EXISTS quitus_signature TEXT NOT NULL DEFAULT '',
 ADD COLUMN IF NOT EXISTS quitus_signed_at TIMESTAMPTZ;
+
+-- Un rendez-vous peut réunir plusieurs techniciens. Le champ historique
+-- assigned_technician_id reste le technicien référent pour compatibilité.
+CREATE TABLE IF NOT EXISTS depannhome_calendar_assignments (
+    event_id BIGINT NOT NULL REFERENCES depannhome_calendar_events(id) ON DELETE CASCADE,
+    technician_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    is_primary BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (event_id, technician_id)
+);
+
+CREATE INDEX IF NOT EXISTS depannhome_calendar_assignments_technician_idx
+    ON depannhome_calendar_assignments (technician_id, event_id);
+
+INSERT INTO depannhome_calendar_assignments (event_id, technician_id, is_primary)
+SELECT id, assigned_technician_id, TRUE
+FROM depannhome_calendar_events
+WHERE assigned_technician_id IS NOT NULL
+ON CONFLICT (event_id, technician_id) DO NOTHING;
 
 CREATE TABLE IF NOT EXISTS depannhome_library_sections (
     id BIGSERIAL PRIMARY KEY,

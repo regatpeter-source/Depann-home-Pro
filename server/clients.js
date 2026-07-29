@@ -394,7 +394,7 @@ async function hasAccessibleAppointment(ownerId, appointmentId, request) {
     const { rowCount } = await getPool().query(`
         SELECT 1 FROM depannhome_calendar_events
         WHERE id = $1 AND owner_id = $2 AND event_type = 'appointment'
-          AND ($3 <> 'technician' OR assigned_technician_id = $4::bigint)
+          AND ($3 <> 'technician' OR EXISTS (SELECT 1 FROM depannhome_calendar_assignments assignment WHERE assignment.event_id = depannhome_calendar_events.id AND assignment.technician_id = $4::bigint))
     `, [appointmentId, ownerId, request.user?.role || "", request.user?.sub || 0]);
     return Boolean(rowCount);
 }

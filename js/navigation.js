@@ -1,5 +1,5 @@
 import { ROUTES, STORAGE_KEYS, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=116";
-import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=138";
+import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=139";
 import { renderCreatorConsole } from "./creator.js?v=112";
 import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=138";
 import { renderPurchases } from "./purchases.js?v=111";
@@ -975,7 +975,7 @@ async function renderTeamManagement(container) {
     form.innerHTML = '<div class="team-form-heading"><div><h3>Créer un accès</h3><p class="muted">Choisissez le type de poste, puis renseignez les informations de la personne.</p></div></div>';
     const formFields = document.createElement("div");
     formFields.className = "team-form-fields";
-    [["fullName", "Nom et prénom", "text", "Ex. Léa Martin"], ["phone", "Téléphone", "tel", "Ex. 06 12 34 56 78"], ["email", "E-mail professionnel", "email", "lea@entreprise.fr"], ["username", "Identifiant", "text", "minuscules, chiffres, . _ -"], ["password", "Mot de passe initial", "password", "12 caractères minimum"]].forEach(([name, label, type, placeholder]) => {
+    [["fullName", "Nom et prénom", "text", "Ex. Léa Martin"], ["phone", "Téléphone", "tel", "Ex. 06 12 34 56 78"], ["email", "E-mail professionnel", "email", "lea@entreprise.fr"], ["department", "Pôle / équipe", "text", "Ex. Dépannage, Chantiers, Métrés"], ["username", "Identifiant", "text", "minuscules, chiffres, . _ -"], ["password", "Mot de passe initial", "password", "12 caractères minimum"]].forEach(([name, label, type, placeholder]) => {
         const field = document.createElement("label");
         field.textContent = label;
         const input = document.createElement("input");
@@ -984,6 +984,10 @@ async function renderTeamManagement(container) {
         input.required = true;
         input.placeholder = placeholder;
         input.autocomplete = name === "password" ? "new-password" : "off";
+        if (name === "department") {
+            input.setAttribute("list", "teamDepartmentSuggestions");
+            input.dataset.technicianOnly = "true";
+        }
         if (name === "password") {
             const wrapper = document.createElement("span");
             wrapper.className = "password-input";
@@ -1012,6 +1016,10 @@ async function renderTeamManagement(container) {
     roleInput.innerHTML = '<option value="technician">Technicien</option><option value="admin">Poste PC</option>';
     roleField.appendChild(roleInput);
     formFields.appendChild(roleField);
+    const departmentSuggestions = document.createElement("datalist");
+    departmentSuggestions.id = "teamDepartmentSuggestions";
+    departmentSuggestions.innerHTML = ["Dépannage", "Chantiers", "Métrés", "Maintenance", "Pose", "SAV"].map(value => `<option value="${value}"></option>`).join("");
+    form.appendChild(departmentSuggestions);
     const submit = createButton("Créer le technicien", "secondary-button", () => {});
     submit.type = "submit";
     const formActions = document.createElement("div");
@@ -1039,6 +1047,7 @@ async function renderTeamManagement(container) {
         const isTechnician = roleInput.value === "technician";
         form.elements.phone.required = isTechnician;
         form.elements.email.required = isTechnician;
+        form.elements.department.disabled = !isTechnician;
         submit.textContent = isTechnician ? "Créer le technicien" : "Créer le poste PC";
         roleField.dataset.role = isTechnician ? "technician" : "admin";
     };
@@ -1113,7 +1122,7 @@ async function renderTeamManagement(container) {
                 const item = document.createElement("div");
                 item.className = "team-member";
                 const memberType = member.role === "admin" ? "Poste PC" : "Technicien";
-                item.innerHTML = `<div class="team-member-summary"><div class="team-member-title"><strong>${escapeHtml(member.fullName || member.username)}</strong><span class="team-role-badge ${member.role === "admin" ? "is-admin" : "is-technician"}">${memberType}</span><span class="team-state-badge ${member.isActive ? "is-active" : "is-inactive"}">${member.isActive ? "Actif" : "Désactivé"}</span></div><span class="team-member-meta">${escapeHtml(member.phone || "Téléphone non renseigné")}<span aria-hidden="true">·</span>${escapeHtml(member.email || "E-mail non renseigné")}<span aria-hidden="true">·</span>${escapeHtml(member.username)}</span></div>`;
+                item.innerHTML = `<div class="team-member-summary"><div class="team-member-title"><strong>${escapeHtml(member.fullName || member.username)}</strong><span class="team-role-badge ${member.role === "admin" ? "is-admin" : "is-technician"}">${memberType}</span>${member.role === "technician" ? `<span class="team-department-badge">${escapeHtml(member.department || "Non classé")}</span>` : ""}<span class="team-state-badge ${member.isActive ? "is-active" : "is-inactive"}">${member.isActive ? "Actif" : "Désactivé"}</span></div><span class="team-member-meta">${escapeHtml(member.phone || "Téléphone non renseigné")}<span aria-hidden="true">·</span>${escapeHtml(member.email || "E-mail non renseigné")}<span aria-hidden="true">·</span>${escapeHtml(member.username)}</span></div>`;
                 const actions = document.createElement("div");
                 actions.className = "team-member-actions";
                 const toggle = createButton(member.isActive ? "Désactiver" : "Réactiver", "secondary-button", async () => {
@@ -1130,13 +1139,21 @@ async function renderTeamManagement(container) {
                     await load();
                 });
                 if (member.role === "technician") {
+                    const editDepartment = createButton("Modifier le pôle", "secondary-button", async () => {
+                        const department = window.prompt(`Pôle de ${member.fullName || member.username} :`, member.department || "");
+                        if (department === null) return;
+                        editDepartment.disabled = true;
+                        const response = await fetch(`/api/auth/members/${encodeURIComponent(member.id)}`, { method: "PATCH", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ isActive: member.isActive, canCreateBilling: member.canCreateBilling, department }) });
+                        if (!response.ok) feedback.textContent = (await response.json().catch(() => ({}))).message || "La mise à jour du pôle a échoué.";
+                        await load();
+                    });
                     const billingPermission = createButton(member.canCreateBilling ? "Retirer le droit devis/factures" : "Autoriser devis/factures", "secondary-button", async () => {
                         billingPermission.disabled = true;
                         const response = await fetch(`/api/auth/members/${encodeURIComponent(member.id)}`, { method: "PATCH", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ isActive: member.isActive, canCreateBilling: !member.canCreateBilling }) });
                         if (!response.ok) feedback.textContent = (await response.json().catch(() => ({}))).message || "La mise à jour de l’autorisation a échoué.";
                         await load();
                     });
-                    actions.append(toggle, billingPermission, remove);
+                    actions.append(toggle, editDepartment, billingPermission, remove);
                 } else actions.append(toggle, remove);
                 item.appendChild(actions);
                 list.appendChild(item);

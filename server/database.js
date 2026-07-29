@@ -43,6 +43,7 @@ export async function initializeDatabase() {
             full_name VARCHAR(100) NOT NULL DEFAULT '',
             phone VARCHAR(30) NOT NULL DEFAULT '',
             email VARCHAR(160) NOT NULL DEFAULT '',
+            department VARCHAR(80) NOT NULL DEFAULT '',
             company_name VARCHAR(160) NOT NULL DEFAULT '',
             max_pc_users INTEGER NOT NULL DEFAULT 1,
             max_technicians INTEGER NOT NULL DEFAULT 5,
@@ -67,6 +68,7 @@ export async function initializeDatabase() {
         ADD COLUMN IF NOT EXISTS full_name VARCHAR(100) NOT NULL DEFAULT '',
         ADD COLUMN IF NOT EXISTS phone VARCHAR(30) NOT NULL DEFAULT '',
         ADD COLUMN IF NOT EXISTS email VARCHAR(160) NOT NULL DEFAULT '',
+        ADD COLUMN IF NOT EXISTS department VARCHAR(80) NOT NULL DEFAULT '',
         ADD COLUMN IF NOT EXISTS company_name VARCHAR(160) NOT NULL DEFAULT '',
         ADD COLUMN IF NOT EXISTS max_pc_users INTEGER NOT NULL DEFAULT 1,
         ADD COLUMN IF NOT EXISTS max_technicians INTEGER NOT NULL DEFAULT 5,
@@ -175,17 +177,17 @@ export async function findUserById(id) {
     return rows[0] || null;
 }
 
-export async function createUser({ username, passwordHash, role = "admin", accountOwnerId, fullName = "", phone = "", email = "" }) {
+export async function createUser({ username, passwordHash, role = "admin", accountOwnerId, fullName = "", phone = "", email = "", department = "" }) {
     const { rows } = await getPool().query(
-        `INSERT INTO depannhome_users (username, password_hash, role, account_owner_id, full_name, phone, email)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
-         RETURNING id, username, role, account_owner_id, full_name, phone, email, is_active`,
-        [username, passwordHash, role, accountOwnerId || null, fullName, phone, email]
+        `INSERT INTO depannhome_users (username, password_hash, role, account_owner_id, full_name, phone, email, department)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         RETURNING id, username, role, account_owner_id, full_name, phone, email, department, is_active`,
+        [username, passwordHash, role, accountOwnerId || null, fullName, phone, email, department]
     );
     const user = rows[0];
     if (!user.account_owner_id) {
         const { rows: updatedRows } = await getPool().query(
-            "UPDATE depannhome_users SET account_owner_id = id WHERE id = $1 RETURNING id, username, role, account_owner_id, full_name, phone, email, is_active",
+            "UPDATE depannhome_users SET account_owner_id = id WHERE id = $1 RETURNING id, username, role, account_owner_id, full_name, phone, email, department, is_active",
             [user.id]
         );
         return updatedRows[0];
