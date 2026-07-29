@@ -1125,6 +1125,14 @@ body.desktop-device .nav-label-messages{
     gap:18px;
 }
 
+.billing-quote-template-settings{
+    display:grid;
+    gap:16px;
+    margin-top:18px;
+    padding-top:18px;
+    border-top:1px solid var(--border);
+}
+
 .creator-subscription-fields{
     display:grid;
     gap:12px;

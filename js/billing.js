@@ -40,7 +40,11 @@ export async function renderBilling(options = {}) {
         }
         billingData = result.data;
     }
-    if (options.newDocument) activeDocument = createNewDocument(options.newDocument.type, options.newDocument.client, options.newDocument.appointmentId);
+    if (options.newDocument) {
+        activeDocument = options.newDocument.type === "quote" && usesExternalQuoteTemplate()
+            ? null
+            : createNewDocument(options.newDocument.type, options.newDocument.client, options.newDocument.appointmentId);
+    }
     if (options.documentId) {
         const document = (billingData.documents || []).find(item => String(item.id) === String(options.documentId));
         activeDocument = document ? normalizeDocument(document) : null;
@@ -97,6 +101,7 @@ function renderOverview(panel, profilePanel) {
     const { profile, documents = [] } = billingData;
     const quotes = documents.filter(document => document.documentType === "quote").length;
     const invoices = documents.filter(document => document.documentType === "invoice").length;
+    const usesExternalTemplate = usesExternalQuoteTemplate();
     panel.innerHTML = `
         <div class="billing-overview">
             <div class="billing-branding">
@@ -104,17 +109,19 @@ function renderOverview(panel, profilePanel) {
                 <div><p class="eyebrow">Espace privé de facturation</p><h2>${escapeHtml(profile.companyName || "Votre structure")}</h2></div>
             </div>
             <div class="billing-overview-actions">
-                <button type="button" class="secondary-button" data-billing-action="new-quote">+ Nouveau devis</button>
+                ${usesExternalTemplate && !isAccountant() ? `<button type="button" class="secondary-button" data-billing-action="download-quote-template" ${profile.hasQuoteTemplate ? "" : "disabled"}>Télécharger la base de devis</button>` : usesExternalTemplate ? "" : '<button type="button" class="secondary-button" data-billing-action="new-quote">+ Nouveau devis</button>'}
                 <button type="button" class="secondary-button" data-billing-action="new-invoice">+ Nouvelle facture</button>
                 ${isTechnician() || isAccountant() ? "" : '<button type="button" class="secondary-button" data-billing-action="preview-blank-quote">Aperçu du devis vierge</button><button type="button" class="secondary-button auth-outline-button" data-billing-action="edit-company">Modifier les informations entreprise</button>'}
             </div>
         </div>
-        <div class="billing-metrics"><span><strong>${quotes}</strong> devis</span><span><strong>${invoices}</strong> factures</span><span class="billing-base-template"><strong>✓</strong> modèle de document fixe</span></div>
+        <div class="billing-metrics"><span><strong>${quotes}</strong> devis</span><span><strong>${invoices}</strong> factures</span><span class="billing-base-template"><strong>✓</strong> ${usesExternalTemplate ? "base PDF / Word externe" : "modèle Depann’Home intégré"}</span></div>
+        ${usesExternalTemplate && !profile.hasQuoteTemplate ? '<p class="auth-message error">Aucune base de devis n’est encore déposée. Un administrateur doit l’ajouter dans « Modifier les informations entreprise ».</p>' : ""}
     `;
-    panel.querySelector("[data-billing-action=new-quote]").hidden = isAccountant();
+    panel.querySelector("[data-billing-action=new-quote]")?.toggleAttribute("hidden", isAccountant());
     panel.querySelector("[data-billing-action=new-invoice]").hidden = isAccountant();
-    panel.querySelector("[data-billing-action=new-quote]").addEventListener("click", () => { if (!isAccountant()) openNewDocument("quote"); });
+    panel.querySelector("[data-billing-action=new-quote]")?.addEventListener("click", () => { if (!isAccountant()) openNewDocument("quote"); });
     panel.querySelector("[data-billing-action=new-invoice]").addEventListener("click", () => { if (!isAccountant()) openNewDocument("invoice"); });
+    panel.querySelector("[data-billing-action=download-quote-template]")?.addEventListener("click", openQuoteTemplateDownload);
     panel.querySelector("[data-billing-action=preview-blank-quote]")?.addEventListener("click", openBlankQuotePreview);
     panel.querySelector("[data-billing-action=edit-company]")?.addEventListener("click", () => {
         renderProfile(profilePanel);
@@ -162,6 +169,52 @@ function renderProfile(panel) {
         const result = await apiRequest("/api/billing/profile", { method: "PUT", body: new FormData(form) });
         if (!result.ok) {
             message.textContent = result.message || "Impossible d’enregistrer la structure.";
+            message.classList.add("error");
+            submit.disabled = false;
+            return;
+        }
+        renderBilling();
+    });
+    renderQuoteTemplateSettings(panel, profile);
+}
+
+function renderQuoteTemplateSettings(panel, profile) {
+    const policy = profile.quoteTemplatePolicy || "company_choice";
+    const mode = policy === "integrated_only" ? "integrated" : policy === "external_only" ? "external" : profile.quoteTemplateMode || "integrated";
+    const canChooseMode = policy === "company_choice";
+    const canUseExternalTemplate = policy !== "integrated_only";
+    const policyMessage = policy === "integrated_only"
+        ? "Le Créateur a imposé le modèle Depann’Home intégré pour cette entreprise."
+        : policy === "external_only"
+            ? "Le Créateur a imposé une base de devis externe. Déposez un fichier avant de créer vos devis."
+            : "Votre entreprise peut utiliser le modèle intégré ou sa propre base de devis.";
+    panel.insertAdjacentHTML("beforeend", `
+        <section class="billing-quote-template-settings">
+            <div class="form-heading"><div><p class="eyebrow">Base de devis</p><h2>Modèle intégré ou fichier entreprise</h2><p class="muted">${escapeHtml(policyMessage)}</p></div>${profile.hasQuoteTemplate ? '<button type="button" class="secondary-button" id="downloadQuoteTemplate">Télécharger la base actuelle</button>' : ""}</div>
+            <form id="quoteTemplateForm" class="client-form" enctype="multipart/form-data">
+                <div class="form-grid">
+                    <label>Base utilisée<select name="quoteTemplateMode" ${canChooseMode ? "" : "disabled"}><option value="integrated" ${mode === "integrated" ? "selected" : ""}>Modèle Depann’Home intégré</option><option value="external" ${mode === "external" ? "selected" : ""}>Base PDF / Word de l’entreprise</option></select></label>
+                    <label>Déposer ou remplacer la base (PDF, DOC ou DOCX · 10 Mo max)<input name="quoteTemplate" type="file" accept="application/pdf,.pdf,application/msword,.doc,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx" ${canUseExternalTemplate ? "" : "disabled"}></label>
+                    ${profile.hasQuoteTemplate && canUseExternalTemplate ? '<label class="billing-remove-logo"><input name="removeQuoteTemplate" type="checkbox" value="true"> Supprimer la base déposée</label>' : ""}
+                </div>
+                ${profile.hasQuoteTemplate ? `<p class="muted">Fichier actuel : ${escapeHtml(profile.quoteTemplateFilename || "base-devis")}</p>` : ""}
+                <p id="quoteTemplateMessage" class="auth-message" aria-live="polite"></p>
+                <div class="form-actions"><button type="submit" class="secondary-button" ${canUseExternalTemplate ? "" : "disabled"}>Enregistrer la base de devis</button></div>
+            </form>
+        </section>
+    `);
+    panel.querySelector("#downloadQuoteTemplate")?.addEventListener("click", openQuoteTemplateDownload);
+    panel.querySelector("#quoteTemplateForm").addEventListener("submit", async event => {
+        event.preventDefault();
+        const form = event.currentTarget;
+        const message = panel.querySelector("#quoteTemplateMessage");
+        const submit = form.querySelector("button[type=submit]");
+        submit.disabled = true;
+        message.textContent = "Enregistrement…";
+        message.classList.remove("error");
+        const result = await apiRequest("/api/billing/quote-template", { method: "PUT", body: new FormData(form) });
+        if (!result.ok) {
+            message.textContent = result.message || "Impossible d’enregistrer la base de devis.";
             message.classList.add("error");
             submit.disabled = false;
             return;
@@ -488,6 +541,10 @@ function formDataToObject(data) { return Object.fromEntries(data.entries()); }
 function isTechnician() { return document.body.dataset.role === "technician"; }
 function isAccountant() { return document.body.dataset.role === "accountant"; }
 function isTechnicianBillingAllowed() { return !isTechnician() || document.body.dataset.technicianBillingEnabled !== "false"; }
+function usesExternalQuoteTemplate() {
+    const policy = billingData?.profile?.quoteTemplatePolicy;
+    return policy === "external_only" || (policy !== "integrated_only" && billingData?.profile?.quoteTemplateMode === "external");
+}
 
 function openBillingPdf(documentId) {
     const popup = window.open("", "_blank");
@@ -499,6 +556,12 @@ function openBlankQuotePreview() {
     const popup = window.open("", "_blank");
     if (!popup) { alert("Autorisez les fenêtres pop-up pour afficher l’aperçu du devis."); return; }
     popup.location.href = "/api/billing/blank-quote/pdf";
+}
+
+function openQuoteTemplateDownload() {
+    const popup = window.open("", "_blank");
+    if (!popup) { alert("Autorisez les fenêtres pop-up pour télécharger la base de devis."); return; }
+    popup.location.href = "/api/billing/quote-template/file";
 }
 
 async function emailBillingPdf(document, recipient) {

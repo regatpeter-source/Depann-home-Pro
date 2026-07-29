@@ -8,6 +8,7 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MEMBER_ROLES = new Set(["admin", "technician", "accountant"]);
 const SUBSCRIPTION_PLANS = new Set(["free", "paid"]);
 const SUBSCRIPTION_STATUSES = new Set(["active", "trial", "past_due", "suspended", "cancelled"]);
+const QUOTE_TEMPLATE_POLICIES = new Set(["integrated_only", "company_choice", "external_only"]);
 
 export function registerCreatorRoutes(app, requireCreator) {
     app.get("/api/creator/accounts", requireCreator, asyncHandler(async (request, response) => {
@@ -28,6 +29,7 @@ export function registerCreatorRoutes(app, requireCreator) {
                 TO_CHAR(owner.subscription_renewal_date, 'YYYY-MM-DD') AS "subscriptionRenewalDate",
                 owner.billing_reference AS "billingReference",
                 owner.creator_note AS "creatorNote",
+                owner.quote_template_policy AS "quoteTemplatePolicy",
                 owner.created_at AS "createdAt",
                 COUNT(member.id) FILTER (WHERE member.role = 'admin' AND member.is_active)::int AS "activePcUsers",
                 COUNT(member.id) FILTER (WHERE member.role = 'technician' AND member.is_active)::int AS "activeTechnicians",
@@ -51,11 +53,11 @@ export function registerCreatorRoutes(app, requireCreator) {
             const database = getPool();
             const { rows } = await database.query(`
                 INSERT INTO depannhome_users (username, password_hash, role, full_name, phone, company_name, max_pc_users, max_technicians,
-                    subscription_plan, subscription_label, monthly_price_cents, subscription_status, subscription_renewal_date, billing_reference, creator_note)
-                VALUES ($1, $2, 'admin', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::date, $13, $14)
+                    subscription_plan, subscription_label, monthly_price_cents, subscription_status, subscription_renewal_date, billing_reference, creator_note, quote_template_policy)
+                VALUES ($1, $2, 'admin', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::date, $13, $14, $15)
                 RETURNING id
             `, [credentials.username, await bcrypt.hash(credentials.password, 12), account.fullName, account.phone, account.companyName, account.maxPcUsers, account.maxTechnicians,
-                account.subscriptionPlan, account.subscriptionLabel, account.monthlyPriceCents, account.subscriptionStatus, account.subscriptionRenewalDate || null, account.billingReference, account.creatorNote]);
+                account.subscriptionPlan, account.subscriptionLabel, account.monthlyPriceCents, account.subscriptionStatus, account.subscriptionRenewalDate || null, account.billingReference, account.creatorNote, account.quoteTemplatePolicy]);
             const id = rows[0].id;
             await database.query("UPDATE depannhome_users SET account_owner_id = id WHERE id = $1", [id]);
             response.status(201).json({ id: String(id) });
@@ -82,10 +84,10 @@ export function registerCreatorRoutes(app, requireCreator) {
             UPDATE depannhome_users
             SET company_name = $2, full_name = $3, phone = $4, max_pc_users = $5, max_technicians = $6, is_active = $7,
                 subscription_plan = $8, subscription_label = $9, monthly_price_cents = $10, subscription_status = $11,
-                subscription_renewal_date = $12::date, billing_reference = $13, creator_note = $14, updated_at = NOW()
+                subscription_renewal_date = $12::date, billing_reference = $13, creator_note = $14, quote_template_policy = $15, updated_at = NOW()
             WHERE id = $1 AND account_owner_id = id
         `, [accountId, account.companyName, account.fullName, account.phone, account.maxPcUsers, account.maxTechnicians, isOwnCreatorAccount(owner, request) ? true : account.isActive,
-            account.subscriptionPlan, account.subscriptionLabel, account.monthlyPriceCents, account.subscriptionStatus, account.subscriptionRenewalDate || null, account.billingReference, account.creatorNote]);
+            account.subscriptionPlan, account.subscriptionLabel, account.monthlyPriceCents, account.subscriptionStatus, account.subscriptionRenewalDate || null, account.billingReference, account.creatorNote, account.quoteTemplatePolicy]);
         response.status(204).end();
     }));
 
@@ -264,6 +266,7 @@ function sanitizeAccount(value) {
     const subscriptionRenewalDate = sanitizeDate(value?.subscriptionRenewalDate);
     const billingReference = cleanText(value?.billingReference, 100);
     const creatorNote = cleanText(value?.creatorNote, 1000);
+    const quoteTemplatePolicy = QUOTE_TEMPLATE_POLICIES.has(value?.quoteTemplatePolicy) ? value.quoteTemplatePolicy : "company_choice";
     const isActive = value?.isActive !== false;
     if (!companyName) return { ok: false, message: "Le nom de l’entreprise est obligatoire." };
     if (!fullName) return { ok: false, message: "Le nom du responsable est obligatoire." };
@@ -273,7 +276,7 @@ function sanitizeAccount(value) {
     if (subscriptionPlan === "paid" && monthlyPriceCents <= 0) return { ok: false, message: "Indiquez un tarif mensuel supérieur à zéro pour un abonnement payant." };
     return { ok: true, companyName, fullName, phone, maxPcUsers, maxTechnicians, subscriptionPlan, subscriptionLabel,
         monthlyPriceCents: subscriptionPlan === "free" ? 0 : monthlyPriceCents, subscriptionStatus, subscriptionRenewalDate,
-        billingReference, creatorNote, isActive };
+        billingReference, creatorNote, quoteTemplatePolicy, isActive };
 }
 
 function sanitizeMemberProfile(value, role) {

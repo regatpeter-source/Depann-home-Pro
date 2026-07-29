@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS depannhome_users (
     subscription_renewal_date DATE,
     billing_reference VARCHAR(100) NOT NULL DEFAULT '',
     creator_note VARCHAR(1000) NOT NULL DEFAULT '',
+    quote_template_policy VARCHAR(30) NOT NULL DEFAULT 'company_choice',
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -40,7 +41,8 @@ ALTER TABLE depannhome_users
     ADD COLUMN IF NOT EXISTS subscription_status VARCHAR(20) NOT NULL DEFAULT 'active',
     ADD COLUMN IF NOT EXISTS subscription_renewal_date DATE,
     ADD COLUMN IF NOT EXISTS billing_reference VARCHAR(100) NOT NULL DEFAULT '',
-    ADD COLUMN IF NOT EXISTS creator_note VARCHAR(1000) NOT NULL DEFAULT '';
+    ADD COLUMN IF NOT EXISTS creator_note VARCHAR(1000) NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS quote_template_policy VARCHAR(30) NOT NULL DEFAULT 'company_choice';
 
 CREATE TABLE IF NOT EXISTS depannhome_clients (
     id BIGSERIAL PRIMARY KEY,
@@ -75,13 +77,21 @@ CREATE TABLE IF NOT EXISTS depannhome_billing_profiles (
     payment_terms VARCHAR(500) NOT NULL DEFAULT '',
     footer_note VARCHAR(1000) NOT NULL DEFAULT '',
     default_quote JSONB,
+    quote_template_mode VARCHAR(20) NOT NULL DEFAULT 'integrated',
+    quote_template_filename VARCHAR(255) NOT NULL DEFAULT '',
+    quote_template_data BYTEA,
+    quote_template_mime_type VARCHAR(150) NOT NULL DEFAULT '',
     logo_data BYTEA,
     logo_mime_type VARCHAR(50) NOT NULL DEFAULT '',
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 ALTER TABLE depannhome_billing_profiles
-    ADD COLUMN IF NOT EXISTS default_quote JSONB;
+    ADD COLUMN IF NOT EXISTS default_quote JSONB,
+    ADD COLUMN IF NOT EXISTS quote_template_mode VARCHAR(20) NOT NULL DEFAULT 'integrated',
+    ADD COLUMN IF NOT EXISTS quote_template_filename VARCHAR(255) NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS quote_template_data BYTEA,
+    ADD COLUMN IF NOT EXISTS quote_template_mime_type VARCHAR(150) NOT NULL DEFAULT '';
 
 CREATE TABLE IF NOT EXISTS depannhome_billing_templates (
     id BIGSERIAL PRIMARY KEY,

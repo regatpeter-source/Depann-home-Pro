@@ -87,6 +87,7 @@ async function renderAccountDetail(accountId) {
                 <label class="creator-switch">Entreprise active<input name="isActive" type="checkbox" ${account.isActive ? "checked" : ""} ${isOwnCreatorAccount ? "disabled" : ""}><span>${isOwnCreatorAccount ? "Le compte Créateur reste actif" : "Les membres peuvent se connecter"}</span></label>
             </div>
             ${renderSubscriptionFields(account)}
+            ${renderQuoteTemplatePolicyFields(account)}
             <div class="creator-form-actions"><button type="submit" class="secondary-button">Enregistrer l’entreprise</button>${isOwnCreatorAccount ? "" : '<button type="button" class="secondary-button danger-button" id="creatorDeleteAccount">Supprimer l’entreprise</button>'}</div>
         </form>
         <section class="creator-members-section"><div class="form-heading"><div><p class="eyebrow">Accès</p><h3>Postes PC et techniciens</h3></div><div class="creator-form-actions"><button type="button" class="secondary-button auth-outline-button" id="creatorNewPcMember">+ Poste PC</button><button type="button" class="secondary-button" id="creatorNewTechnician">+ Technicien</button></div></div><div id="creatorMembers"><p class="muted">Chargement des accès…</p></div></section>
@@ -133,6 +134,7 @@ function renderAccountForm() {
                 <label>Techniciens autorisés<input name="maxTechnicians" type="number" min="0" max="500" required value="1"></label>
             </div>
             ${renderSubscriptionFields({ subscriptionPlan: "free", subscriptionLabel: "", monthlyPriceCents: 0, subscriptionStatus: "active", subscriptionRenewalDate: "", billingReference: "", creatorNote: "" })}
+            ${renderQuoteTemplatePolicyFields({ quoteTemplatePolicy: "company_choice" })}
             <div class="creator-form-actions"><button type="submit" class="secondary-button">Créer l’entreprise</button></div>
         </form>
     `;
@@ -162,6 +164,22 @@ function renderSubscriptionFields(account) {
                 <label>Prochaine échéance<input name="subscriptionRenewalDate" type="date" value="${escapeHtml(account.subscriptionRenewalDate || "")}"></label>
                 <label>Référence de paiement / facture<input name="billingReference" maxlength="100" value="${escapeHtml(account.billingReference || "")}" placeholder="Ex. Virement juillet 2026"></label>
                 <label class="form-wide">Note interne Créateur<textarea name="creatorNote" rows="3" maxlength="1000" placeholder="Suivi commercial, demande client, action à prévoir…">${escapeHtml(account.creatorNote || "")}</textarea></label>
+            </div>
+        </fieldset>
+    `;
+}
+
+function renderQuoteTemplatePolicyFields(account) {
+    const policy = account.quoteTemplatePolicy || "company_choice";
+    return `
+        <fieldset class="creator-subscription-fields"><legend>Base de devis</legend>
+            <div class="form-grid">
+                <label class="form-wide">Mode autorisé pour cette entreprise<select name="quoteTemplatePolicy">
+                    <option value="integrated_only" ${policy === "integrated_only" ? "selected" : ""}>Modèle Depann’Home intégré uniquement</option>
+                    <option value="company_choice" ${policy === "company_choice" ? "selected" : ""}>L’entreprise choisit son modèle</option>
+                    <option value="external_only" ${policy === "external_only" ? "selected" : ""}>Base PDF / Word déposée par l’entreprise uniquement</option>
+                </select></label>
+                <p class="muted form-wide">Une base externe est stockée dans l’espace privé de l’entreprise et téléchargée depuis le poste PC administrateur. Elle n’est jamais partagée entre entreprises.</p>
             </div>
         </fieldset>
     `;
