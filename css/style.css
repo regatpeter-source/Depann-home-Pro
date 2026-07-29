@@ -2109,6 +2109,67 @@ body[data-role="technician"] .library-tools-panel .library-catalog-panel{
     overflow-wrap:anywhere;
 }
 
+.calendar-client-full-width{
+    grid-template-columns:92px minmax(0, 1fr);
+}
+
+.calendar-client-preview{
+    display:grid;
+    gap:12px;
+    padding:16px;
+    border:1px solid rgba(10,92,54,.22);
+    border-radius:14px;
+    background:#effaf3;
+}
+
+.calendar-client-preview-heading{
+    display:flex;
+    align-items:flex-start;
+    justify-content:space-between;
+    gap:12px;
+}
+
+.calendar-client-preview-heading .eyebrow{
+    margin:0;
+}
+
+.calendar-client-preview-heading h3{
+    margin:3px 0 0;
+    color:var(--primary);
+}
+
+.calendar-client-preview-heading > span{
+    padding:5px 9px;
+    border-radius:999px;
+    background:#fff;
+    color:var(--primary);
+    font-size:12px;
+    font-weight:800;
+}
+
+.calendar-client-preview-details{
+    display:grid;
+    grid-template-columns:repeat(2, minmax(0, 1fr));
+    gap:10px;
+}
+
+.calendar-client-preview-details span{
+    display:grid;
+    gap:3px;
+    min-width:0;
+    color:var(--text);
+    overflow-wrap:anywhere;
+}
+
+.calendar-client-preview-details strong{
+    color:var(--muted);
+    font-size:12px;
+}
+
+.calendar-client-preview-wide{
+    grid-column:1 / -1;
+}
+
 .calendar-appointment-information .eyebrow{
     margin:0;
 }
@@ -3884,6 +3945,18 @@ footer{
 
     .calendar-contact-item span{
         grid-column:1/-1;
+    }
+
+    .calendar-client-preview-heading{
+        flex-direction:column;
+    }
+
+    .calendar-client-preview-details{
+        grid-template-columns:1fr;
+    }
+
+    .calendar-client-preview-wide{
+        grid-column:auto;
     }
 
     .calendar-billing-actions{

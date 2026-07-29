@@ -245,6 +245,8 @@ function renderEventForm(panel) {
                             <div class="calendar-contact-item"><span>Téléphone</span><strong>${escapeHtml(client.phone || "Non renseigné")}</strong>${phoneHref ? `<a class="secondary-button client-navigation-button" href="${escapeHtml(phoneHref)}" aria-label="Appeler ${escapeHtml(client.name)} au ${escapeHtml(client.phone)}">Appeler</a>` : ""}</div>
                             ${client.email ? `<div class="calendar-contact-item"><span>E-mail</span><strong>${escapeHtml(client.email)}</strong><a class="secondary-button client-navigation-button" href="mailto:${escapeHtml(client.email)}" aria-label="Écrire à ${escapeHtml(client.name)}">E-mail</a></div>` : ""}
                             <div class="calendar-contact-item"><span>Adresse</span><strong>${escapeHtml(formatClientAddress(client) || event.location || "Non renseignée")}</strong>${navigationHref ? `<a class="secondary-button client-navigation-button" href="${escapeHtml(navigationHref)}" aria-label="Y aller vers ${escapeHtml(formatClientAddress(client))}">Y aller</a>` : ""}</div>
+                            ${client.equipment ? `<div class="calendar-contact-item calendar-client-full-width"><span>Équipements</span><strong>${escapeHtml(client.equipment)}</strong></div>` : ""}
+                            ${client.notes ? `<div class="calendar-contact-item calendar-client-full-width"><span>Consignes client</span><strong>${escapeHtml(client.notes)}</strong></div>` : ""}
                         </div>
                     </section>
                     <section class="calendar-appointment-information">
@@ -306,6 +308,7 @@ function renderEventForm(panel) {
                     <span class="calendar-client-picker"><input name="clientName" list="calendarClients" maxlength="160" placeholder="Nom du client" value="${escapeHtml(event.clientName)}"><button type="button" class="secondary-button" id="openCalendarClient" hidden>Ouvrir la fiche</button></span>
                     <datalist id="calendarClients">${clients.map(client => `<option value="${escapeHtml(client.name)}">${escapeHtml([client.city, client.phone].filter(Boolean).join(" · "))}</option>`).join("")}</datalist>
                 </label>
+                <section class="calendar-client-preview form-wide" id="calendarClientPreview" hidden></section>
                 <label>
                     Date *
                     <input name="date" type="date" required value="${escapeHtml(event.date)}">
@@ -354,12 +357,15 @@ function renderEventForm(panel) {
     const locationInput = form.querySelector("[name=location]");
     const eventTypeInput = form.querySelector("[name=eventType]");
     const openClientButton = form.querySelector("#openCalendarClient");
+    const clientPreview = form.querySelector("#calendarClientPreview");
     const fillClientAddress = () => {
         const clientName = normalizeText(clientInput.value);
         const client = clients.find(item => normalizeText(item.name) === clientName);
         const address = client ? formatClientAddress(client) : "";
         if (address) locationInput.value = address;
         openClientButton.hidden = !client;
+        clientPreview.hidden = !client;
+        clientPreview.innerHTML = client ? renderCalendarClientPreview(client) : "";
         openClientButton.onclick = () => {
             if (client) window.dispatchEvent(new CustomEvent("depannhome:open-client", { detail: { clientId: client.id } }));
         };
@@ -381,6 +387,7 @@ function renderEventForm(panel) {
             fillClientAddress();
         }
         clientField.hidden = type.id !== "appointment";
+        clientPreview.hidden = type.id !== "appointment" || !clientInput.value;
         renderCalendarAvailability(form, event.id);
     });
     clientField.hidden = eventTypeInput.value !== "appointment";
@@ -465,6 +472,18 @@ function formatEventTime(event) {
 
 function formatPreviewDate(value) {
     return new Intl.DateTimeFormat("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" }).format(new Date(`${value}T12:00:00`));
+}
+
+function renderCalendarClientPreview(client) {
+    return `
+        <div class="calendar-client-preview-heading"><div><p class="eyebrow">Informations du client</p><h3>${escapeHtml(client.name)}</h3></div><span>${escapeHtml(client.type || "Client")}</span></div>
+        <div class="calendar-client-preview-details">
+            <span><strong>Téléphone</strong>${escapeHtml(client.phone || "Non renseigné")}</span>
+            <span><strong>E-mail</strong>${escapeHtml(client.email || "Non renseigné")}</span>
+            <span class="calendar-client-preview-wide"><strong>Adresse</strong>${escapeHtml(formatClientAddress(client) || "Non renseignée")}</span>
+            ${client.equipment ? `<span class="calendar-client-preview-wide"><strong>Équipements</strong>${escapeHtml(client.equipment)}</span>` : ""}
+            ${client.notes ? `<span class="calendar-client-preview-wide"><strong>Consignes client</strong>${escapeHtml(client.notes)}</span>` : ""}
+        </div>`;
 }
 
 function findClientForEvent(event) {
