@@ -43,26 +43,29 @@ export async function initializePurchases() {
 
 export function registerPurchaseRoutes(app, requireAuthentication) {
     app.get("/api/purchases", requireAuthentication, requirePurchaseReadAccess, asyncHandler(async (request, response) => {
+        const clientId = cleanText(request.query?.clientId, 100);
         const { rows } = await getPool().query(`
             SELECT id, TO_CHAR(purchase_date, 'YYYY-MM-DD') AS "purchaseDate", category, client_id AS "clientId", client_name AS "clientName", supplier, description, reference,
                 amount_ht::float AS "amountHt", vat_rate::float AS "vatRate", is_accounted AS "isAccounted",
                 TO_CHAR(accounted_at, 'YYYY-MM-DD') AS "accountedAt", notes, created_at AS "createdAt", updated_at AS "updatedAt"
             FROM depannhome_purchases
-            WHERE owner_id = $1
+            WHERE owner_id = $1 AND ($2 = '' OR client_id = $2)
             ORDER BY purchase_date DESC, id DESC
-        `, [getAccountOwnerId(request)]);
+        `, [getAccountOwnerId(request), clientId]);
         response.json({ purchases: rows });
     }));
 
     app.post("/api/purchases", requireAuthentication, requirePurchaseAdministration, asyncHandler(async (request, response) => {
         const purchase = sanitizePurchase(request.body);
         if (!purchase.ok) return response.status(400).json({ message: purchase.message });
+        const clientName = await resolveClientName(getAccountOwnerId(request), purchase.clientId);
+        if (purchase.clientId && clientName === null) return response.status(400).json({ message: "Le client associé à cet achat est introuvable." });
         const { rows } = await getPool().query(`
             INSERT INTO depannhome_purchases
                 (owner_id, created_by, purchase_date, category, client_id, client_name, supplier, description, reference, amount_ht, vat_rate, is_accounted, accounted_at, notes)
             VALUES ($1,$2,$3::date,$4,$5,$6,$7,$8,$9,$10,$11,$12,CASE WHEN $12 THEN CURRENT_DATE ELSE NULL END,$13)
             RETURNING id
-        `, [getAccountOwnerId(request), request.user.sub, purchase.purchaseDate, purchase.category, purchase.clientId, purchase.clientName,
+        `, [getAccountOwnerId(request), request.user.sub, purchase.purchaseDate, purchase.category, purchase.clientId, clientName || "",
             purchase.supplier, purchase.description, purchase.reference, purchase.amountHt, purchase.vatRate, purchase.isAccounted, purchase.notes]);
         response.status(201).json({ id: rows[0].id });
     }));
@@ -72,13 +75,15 @@ export function registerPurchaseRoutes(app, requireAuthentication) {
         const purchase = sanitizePurchase(request.body);
         if (!id) return response.status(400).json({ message: "Achat invalide." });
         if (!purchase.ok) return response.status(400).json({ message: purchase.message });
+        const clientName = await resolveClientName(getAccountOwnerId(request), purchase.clientId);
+        if (purchase.clientId && clientName === null) return response.status(400).json({ message: "Le client associé à cet achat est introuvable." });
         const result = await getPool().query(`
             UPDATE depannhome_purchases
             SET purchase_date=$3::date, category=$4, client_id=$5, client_name=$6, supplier=$7, description=$8, reference=$9, amount_ht=$10, vat_rate=$11,
                 is_accounted=$12, accounted_at=CASE WHEN $12 THEN COALESCE(accounted_at, CURRENT_DATE) ELSE NULL END,
                 notes=$13, updated_at=NOW()
             WHERE id=$1 AND owner_id=$2
-        `, [id, getAccountOwnerId(request), purchase.purchaseDate, purchase.category, purchase.clientId, purchase.clientName, purchase.supplier, purchase.description,
+        `, [id, getAccountOwnerId(request), purchase.purchaseDate, purchase.category, purchase.clientId, clientName || "", purchase.supplier, purchase.description,
             purchase.reference, purchase.amountHt, purchase.vatRate, purchase.isAccounted, purchase.notes]);
         if (!result.rowCount) return response.status(404).json({ message: "Achat introuvable." });
         response.status(204).end();
@@ -133,6 +138,15 @@ function sanitizePurchase(value) {
     if (!purchaseDate || !description) return { ok: false, message: "La date et le libellé de l’achat sont obligatoires." };
     if (amountHt === null || vatRate === null || vatRate > 100) return { ok: false, message: "Le montant HT ou la TVA est invalide." };
     return { ok: true, purchaseDate, category, clientId, clientName, supplier, description, reference, amountHt, vatRate, isAccounted, notes };
+}
+
+async function resolveClientName(ownerId, clientId) {
+    if (!clientId) return "";
+    const { rows } = await getPool().query(
+        "SELECT client_data->>'name' AS name FROM depannhome_clients WHERE owner_id = $1 AND client_id = $2",
+        [ownerId, clientId]
+    );
+    return rows[0] ? cleanText(rows[0].name, 160) : null;
 }
 
 function sanitizeDate(value) {

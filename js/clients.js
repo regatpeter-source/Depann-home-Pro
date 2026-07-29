@@ -486,7 +486,7 @@ function renderClientDetail(client, options = {}) {
             }
         });
     });
-    loadClientBillingHistory(panel.querySelector("#clientHistory"), client);
+    loadClientFinancialHistory(panel.querySelector("#clientHistory"), client);
 
     const detail = document.createDocumentFragment();
     detail.append(panel);
@@ -506,21 +506,31 @@ function openClientBillingDocument(type, client) {
     }
 }
 
-async function loadClientBillingHistory(panel, client) {
+async function loadClientFinancialHistory(panel, client) {
     if (!panel) return;
     try {
-        const response = await fetch("/api/billing", { credentials: "same-origin" });
-        const data = await response.json().catch(() => null);
-        if (!response.ok) throw new Error(data?.message);
-        const documents = (data?.documents || []).filter(billingDocument =>
+        const billingResponse = await fetch("/api/billing", { credentials: "same-origin" });
+        const billingData = await billingResponse.json().catch(() => null);
+        if (!billingResponse.ok) throw new Error(billingData?.message);
+        const documents = (billingData?.documents || []).filter(billingDocument =>
             String(billingDocument.clientId || "") === String(client.id)
             || (!billingDocument.clientId && normalizeText(billingDocument.customerName) === normalizeText(client.name))
         );
-        panel.innerHTML = renderClientActivityHistory(client, documents);
+        const purchases = isClientReadOnly()
+            ? []
+            : await loadClientPurchases(client.id);
+        panel.innerHTML = renderClientActivityHistory(client, documents, purchases);
     } catch (error) {
-        panel.innerHTML = `${renderClientActivityHistory(client)}<p class="auth-message error">${escapeHtml(error.message || "Impossible de charger les devis et factures du dossier.")}</p>`;
+        panel.innerHTML = `${renderClientActivityHistory(client)}<p class="auth-message error">${escapeHtml(error.message || "Impossible de charger l’historique financier du dossier.")}</p>`;
     }
     bindClientHistoryActions(panel, client);
+}
+
+async function loadClientPurchases(clientId) {
+    const response = await fetch(`/api/purchases?clientId=${encodeURIComponent(clientId)}`, { credentials: "same-origin" });
+    const data = await response.json().catch(() => null);
+    if (!response.ok) throw new Error(data?.message || "Impossible de charger les achats associés au client.");
+    return Array.isArray(data?.purchases) ? data.purchases : [];
 }
 
 function emailBillingDocument(document, client) {
@@ -774,7 +784,7 @@ function normalizeAttachments(attachments = []) {
         }));
 }
 
-function renderClientActivityHistory(client, billingDocuments = []) {
+function renderClientActivityHistory(client, billingDocuments = [], purchases = []) {
     const activityEntries = normalizeActivityHistory(client.activityHistory).filter(entry => !["quote", "invoice"].includes(entry.type));
     const billingEntries = billingDocuments.map(document => {
         const type = document.documentType === "invoice" ? "Facture" : "Devis";
@@ -789,7 +799,20 @@ function renderClientActivityHistory(client, billingDocuments = []) {
             createdAt: document.createdAt || document.updatedAt || `${document.issueDate}T12:00:00`
         };
     });
-    const entries = [...activityEntries, ...billingEntries]
+    const purchaseEntries = purchases.map(purchase => {
+        const totalTtc = Number(purchase.amountHt || 0) * (1 + Number(purchase.vatRate || 0) / 100);
+        return {
+            id: `purchase-${purchase.id}`,
+            type: "purchase",
+            label: "Achat associé au client",
+            detail: `${purchase.description}${purchase.supplier ? ` · ${purchase.supplier}` : ""} · ${formatBillingMoney(totalTtc)} TTC`,
+            documentId: "",
+            attachmentId: "",
+            actorName: "",
+            createdAt: purchase.createdAt || purchase.updatedAt || `${purchase.purchaseDate}T12:00:00`
+        };
+    });
+    const entries = [...activityEntries, ...billingEntries, ...purchaseEntries]
         .sort((first, second) => new Date(second.createdAt).getTime() - new Date(first.createdAt).getTime());
     if (!entries.length) return "<p class=\"muted\">Les rendez-vous, documents et actions de ce dossier apparaîtront ici.</p>";
     return `<div class="client-activity-list">${entries.map(entry => {
