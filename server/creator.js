@@ -19,6 +19,7 @@ export function registerCreatorRoutes(app, requireCreator) {
                 owner.username AS "ownerUsername",
                 owner.full_name AS "ownerFullName",
                 owner.phone AS "ownerPhone",
+                owner.email AS "billingEmail",
                 owner.is_active AS "isActive",
                 owner.max_pc_users AS "maxPcUsers",
                 owner.max_technicians AS "maxTechnicians",
@@ -52,11 +53,11 @@ export function registerCreatorRoutes(app, requireCreator) {
         try {
             const database = getPool();
             const { rows } = await database.query(`
-                INSERT INTO depannhome_users (username, password_hash, role, full_name, phone, company_name, max_pc_users, max_technicians,
+                INSERT INTO depannhome_users (username, password_hash, role, full_name, phone, email, company_name, max_pc_users, max_technicians,
                     subscription_plan, subscription_label, monthly_price_cents, subscription_status, subscription_renewal_date, billing_reference, creator_note, quote_template_policy)
-                VALUES ($1, $2, 'admin', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::date, $13, $14, $15)
+                VALUES ($1, $2, 'admin', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::date, $14, $15, $16)
                 RETURNING id
-            `, [credentials.username, await bcrypt.hash(credentials.password, 12), account.fullName, account.phone, account.companyName, account.maxPcUsers, account.maxTechnicians,
+            `, [credentials.username, await bcrypt.hash(credentials.password, 12), account.fullName, account.phone, account.billingEmail, account.companyName, account.maxPcUsers, account.maxTechnicians,
                 account.subscriptionPlan, account.subscriptionLabel, account.monthlyPriceCents, account.subscriptionStatus, account.subscriptionRenewalDate || null, account.billingReference, account.creatorNote, account.quoteTemplatePolicy]);
             const id = rows[0].id;
             await database.query("UPDATE depannhome_users SET account_owner_id = id WHERE id = $1", [id]);
@@ -82,11 +83,11 @@ export function registerCreatorRoutes(app, requireCreator) {
         }
         await database.query(`
             UPDATE depannhome_users
-            SET company_name = $2, full_name = $3, phone = $4, max_pc_users = $5, max_technicians = $6, is_active = $7,
-                subscription_plan = $8, subscription_label = $9, monthly_price_cents = $10, subscription_status = $11,
-                subscription_renewal_date = $12::date, billing_reference = $13, creator_note = $14, quote_template_policy = $15, updated_at = NOW()
+            SET company_name = $2, full_name = $3, phone = $4, email = $5, max_pc_users = $6, max_technicians = $7, is_active = $8,
+                subscription_plan = $9, subscription_label = $10, monthly_price_cents = $11, subscription_status = $12,
+                subscription_renewal_date = $13::date, billing_reference = $14, creator_note = $15, quote_template_policy = $16, updated_at = NOW()
             WHERE id = $1 AND account_owner_id = id
-        `, [accountId, account.companyName, account.fullName, account.phone, account.maxPcUsers, account.maxTechnicians, isOwnCreatorAccount(owner, request) ? true : account.isActive,
+        `, [accountId, account.companyName, account.fullName, account.phone, account.billingEmail, account.maxPcUsers, account.maxTechnicians, isOwnCreatorAccount(owner, request) ? true : account.isActive,
             account.subscriptionPlan, account.subscriptionLabel, account.monthlyPriceCents, account.subscriptionStatus, account.subscriptionRenewalDate || null, account.billingReference, account.creatorNote, account.quoteTemplatePolicy]);
         response.status(204).end();
     }));
@@ -257,6 +258,7 @@ function sanitizeAccount(value) {
     const companyName = cleanText(value?.companyName, 160);
     const fullName = cleanText(value?.fullName, 100);
     const phone = cleanText(value?.phone, 30);
+    const billingEmail = cleanText(value?.billingEmail, 160).toLowerCase();
     const maxPcUsers = positiveLimit(value?.maxPcUsers, 1, 100);
     const maxTechnicians = positiveLimit(value?.maxTechnicians, 0, 500);
     const subscriptionPlan = SUBSCRIPTION_PLANS.has(value?.subscriptionPlan) ? value.subscriptionPlan : "free";
@@ -274,7 +276,9 @@ function sanitizeAccount(value) {
     if (maxTechnicians === null) return { ok: false, message: "Le nombre de techniciens est invalide." };
     if (monthlyPriceCents === null) return { ok: false, message: "Le tarif mensuel est invalide." };
     if (subscriptionPlan === "paid" && monthlyPriceCents <= 0) return { ok: false, message: "Indiquez un tarif mensuel supérieur à zéro pour un abonnement payant." };
-    return { ok: true, companyName, fullName, phone, maxPcUsers, maxTechnicians, subscriptionPlan, subscriptionLabel,
+    if (billingEmail && !EMAIL_PATTERN.test(billingEmail)) return { ok: false, message: "L’e-mail de facturation est invalide." };
+    if (subscriptionPlan === "paid" && !billingEmail) return { ok: false, message: "L’e-mail de facturation est obligatoire pour un abonnement payant." };
+    return { ok: true, companyName, fullName, phone, billingEmail, maxPcUsers, maxTechnicians, subscriptionPlan, subscriptionLabel,
         monthlyPriceCents: subscriptionPlan === "free" ? 0 : monthlyPriceCents, subscriptionStatus, subscriptionRenewalDate,
         billingReference, creatorNote, quoteTemplatePolicy, isActive };
 }

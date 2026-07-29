@@ -677,7 +677,7 @@ function billingPdfFileName(document) {
     return `${type}-${number || "document"}.pdf`;
 }
 
-function createBillingPdf(document, profile) {
+export function createBillingPdf(document, profile) {
     return new Promise((resolve, reject) => {
         const pdf = new PDFDocument({ size: "A4", margin: 44, bufferPages: true, info: { Title: `${document.documentType === "invoice" ? "Facture" : "Devis"} ${document.documentNumber}`, Author: profile.companyName || "Depann'Home Pro" } });
         const chunks = [];
@@ -755,7 +755,8 @@ function createBillingPdf(document, profile) {
         text("CONDITIONS DE RÈGLEMENT", margin, summaryY, 260, { size: 9, bold: true });
         const conditions = [
             document.notes || profile.paymentTerms || "Conditions de règlement non renseignées.",
-            document.documentType === "quote" && profile.depositTerms ? `Acompte : ${profile.depositTerms}` : ""
+            document.documentType === "quote" && profile.depositTerms ? `Acompte : ${profile.depositTerms}` : "",
+            document.documentType === "invoice" && profile.bankIban ? `Règlement par virement · IBAN : ${profile.bankIban}${profile.bankBic ? ` · BIC : ${profile.bankBic}` : ""}` : ""
         ].filter(Boolean).join("\n");
         text(conditions, margin, summaryY + 14, 260, { size: 8, lineGap: 2 });
         const totalX = margin + contentWidth - 180;

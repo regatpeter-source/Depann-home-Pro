@@ -13,7 +13,7 @@ export async function renderCreatorConsole() {
         <section class="creator-console">
             <header class="creator-heading">
                 <div><p class="eyebrow">Administration plateforme</p><h2>Console Créateur</h2></div>
-                <button type="button" class="secondary-button" id="creatorNewAccount">+ Nouvelle entreprise</button>
+                <div class="creator-form-actions"><button type="button" class="secondary-button auth-outline-button" id="creatorBillingProfile">Facturation plateforme</button><button type="button" class="secondary-button" id="creatorNewAccount">+ Nouvelle entreprise</button></div>
             </header>
             <p id="creatorFeedback" class="auth-message" aria-live="polite"></p>
             <section class="creator-subscription-summary" id="creatorSubscriptionSummary" aria-label="Synthèse des abonnements"></section>
@@ -24,6 +24,7 @@ export async function renderCreatorConsole() {
         </section>
     `;
     container.querySelector("#creatorNewAccount").addEventListener("click", () => renderAccountForm());
+    container.querySelector("#creatorBillingProfile").addEventListener("click", renderSubscriptionBillingProfile);
     await loadAccounts();
 }
 
@@ -82,6 +83,7 @@ async function renderAccountDetail(accountId) {
                 <label>Nom de l’entreprise<input name="companyName" maxlength="160" required value="${escapeHtml(account.companyName)}"></label>
                 <label>Responsable principal<input name="fullName" maxlength="100" required value="${escapeHtml(account.ownerFullName)}"></label>
                 <label>Téléphone responsable<input name="phone" maxlength="30" value="${escapeHtml(account.ownerPhone)}"></label>
+                <label>E-mail de facturation<input name="billingEmail" type="email" maxlength="160" value="${escapeHtml(account.billingEmail || "")}" placeholder="comptabilite@entreprise.fr"></label>
                 <label>Postes PC autorisés<input name="maxPcUsers" type="number" min="1" max="100" required value="${escapeHtml(account.maxPcUsers)}"></label>
                 <label>Techniciens autorisés<input name="maxTechnicians" type="number" min="0" max="500" required value="${escapeHtml(account.maxTechnicians)}"></label>
                 <label class="creator-switch">Entreprise active<input name="isActive" type="checkbox" ${account.isActive ? "checked" : ""} ${isOwnCreatorAccount ? "disabled" : ""}><span>${isOwnCreatorAccount ? "Le compte Créateur reste actif" : "Les membres peuvent se connecter"}</span></label>
@@ -128,6 +130,7 @@ function renderAccountForm() {
                 <label>Nom de l’entreprise<input name="companyName" maxlength="160" required placeholder="Ex. Martin Automatismes"></label>
                 <label>Responsable principal<input name="fullName" maxlength="100" required placeholder="Nom et prénom"></label>
                 <label>Téléphone responsable<input name="phone" maxlength="30" placeholder="06 12 34 56 78"></label>
+                <label>E-mail de facturation<input name="billingEmail" type="email" maxlength="160" placeholder="comptabilite@entreprise.fr"></label>
                 <label>Identifiant administrateur<input name="username" minlength="3" maxlength="32" required placeholder="minuscules, chiffres, . _ -"></label>
                 <label>Mot de passe initial<input name="password" type="password" minlength="12" required autocomplete="new-password"></label>
                 <label>Postes PC autorisés<input name="maxPcUsers" type="number" min="1" max="100" required value="1"></label>
@@ -188,13 +191,56 @@ function renderQuoteTemplatePolicyFields(account) {
 function bindSubscriptionPlan(form) {
     const plan = form.elements.subscriptionPlan;
     const price = form.elements.monthlyPrice;
+    const billingEmail = form.elements.billingEmail;
     const update = () => {
         const isPaid = plan.value === "paid";
         price.disabled = !isPaid;
+        billingEmail.required = isPaid;
         if (!isPaid) price.value = "0";
     };
     plan.addEventListener("change", update);
     update();
+}
+
+async function renderSubscriptionBillingProfile() {
+    const workspace = document.querySelector("#creatorWorkspace");
+    workspace.innerHTML = '<p class="muted">Chargement des paramètres de facturation…</p>';
+    const result = await api("/api/creator/subscription-billing-profile");
+    if (!result.ok) return showFeedback(result.message || "Impossible de charger les paramètres de facturation.", true);
+    const profile = result.data.profile || {};
+    workspace.innerHTML = `
+        <form id="creatorSubscriptionBillingProfile" class="creator-form">
+            <div class="form-heading"><div><p class="eyebrow">Facturation des abonnements</p><h3>Coordonnées de l’émetteur</h3></div></div>
+            <p class="muted">Ces coordonnées figurent sur les factures mensuelles envoyées automatiquement aux entreprises payantes. L’IBAN et le BIC ne sont accessibles qu’au Créateur et sont ajoutés uniquement aux PDF envoyés aux destinataires.</p>
+            <div class="form-grid">
+                <label>Raison sociale *<input name="companyName" maxlength="160" required value="${escapeHtml(profile.companyName || "")}"></label>
+                <label>Forme juridique<input name="legalForm" maxlength="100" value="${escapeHtml(profile.legalForm || "")}"></label>
+                <label>SIRET / immatriculation *<input name="registrationNumber" maxlength="100" required value="${escapeHtml(profile.registrationNumber || "")}"></label>
+                <label>N° TVA intracommunautaire<input name="taxNumber" maxlength="100" value="${escapeHtml(profile.taxNumber || "")}"></label>
+                <label class="form-wide">Adresse *<input name="address" maxlength="255" required value="${escapeHtml(profile.address || "")}"></label>
+                <label>Code postal *<input name="postalCode" maxlength="20" required value="${escapeHtml(profile.postalCode || "")}"></label>
+                <label>Ville *<input name="city" maxlength="100" required value="${escapeHtml(profile.city || "")}"></label>
+                <label>Téléphone<input name="phone" maxlength="50" value="${escapeHtml(profile.phone || "")}"></label>
+                <label>E-mail de facturation *<input name="email" type="email" maxlength="160" required value="${escapeHtml(profile.email || "")}"></label>
+                <label>IBAN *<input name="bankIban" maxlength="34" required value="${escapeHtml(profile.bankIban || "")}" placeholder="FR76…"></label>
+                <label>BIC *<input name="bankBic" maxlength="11" required value="${escapeHtml(profile.bankBic || "")}" placeholder="ABCDEFGHXXX"></label>
+                <label>Taux de TVA (%)<input name="vatRate" type="number" min="0" max="100" step="0.01" value="${escapeHtml(profile.vatRate ?? 20)}"></label>
+                <label class="form-wide">Conditions de règlement<input name="paymentTerms" maxlength="500" value="${escapeHtml(profile.paymentTerms || "")}" placeholder="Paiement à réception de facture par virement bancaire."></label>
+                <label class="form-wide">Mention de bas de page<textarea name="footerNote" rows="3" maxlength="1000">${escapeHtml(profile.footerNote || "")}</textarea></label>
+            </div>
+            <div class="creator-form-actions"><button type="submit" class="secondary-button">Enregistrer les coordonnées</button><button type="button" class="secondary-button" id="creatorBackToAccounts">Retour aux entreprises</button></div>
+        </form>
+    `;
+    workspace.querySelector("#creatorBackToAccounts").addEventListener("click", () => selectedAccountId ? renderAccountDetail(selectedAccountId) : workspace.replaceChildren());
+    workspace.querySelector("#creatorSubscriptionBillingProfile").addEventListener("submit", async event => {
+        event.preventDefault();
+        const button = event.currentTarget.querySelector('button[type="submit"]');
+        button.disabled = true;
+        const save = await api("/api/creator/subscription-billing-profile", { method: "PUT", body: JSON.stringify(Object.fromEntries(new FormData(event.currentTarget))) });
+        button.disabled = false;
+        if (!save.ok) return showFeedback(save.message || "Enregistrement impossible.", true);
+        showFeedback("Coordonnées de facturation de la plateforme enregistrées.");
+    });
 }
 
 function centsToAmount(value) {

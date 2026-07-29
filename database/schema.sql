@@ -154,6 +154,51 @@ CREATE INDEX IF NOT EXISTS depannhome_billing_documents_appointment_idx
 CREATE INDEX IF NOT EXISTS depannhome_billing_documents_client_idx
     ON depannhome_billing_documents (owner_id, client_id);
 
+-- Factures d’abonnement émises par la plateforme aux entreprises clientes.
+CREATE TABLE IF NOT EXISTS depannhome_subscription_billing_profile (
+    id BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (id),
+    company_name VARCHAR(160) NOT NULL DEFAULT '',
+    legal_form VARCHAR(100) NOT NULL DEFAULT '',
+    address VARCHAR(255) NOT NULL DEFAULT '',
+    postal_code VARCHAR(20) NOT NULL DEFAULT '',
+    city VARCHAR(100) NOT NULL DEFAULT '',
+    phone VARCHAR(50) NOT NULL DEFAULT '',
+    email VARCHAR(160) NOT NULL DEFAULT '',
+    registration_number VARCHAR(100) NOT NULL DEFAULT '',
+    tax_number VARCHAR(100) NOT NULL DEFAULT '',
+    bank_iban VARCHAR(34) NOT NULL DEFAULT '',
+    bank_bic VARCHAR(11) NOT NULL DEFAULT '',
+    vat_rate NUMERIC(5,2) NOT NULL DEFAULT 20 CHECK (vat_rate >= 0 AND vat_rate <= 100),
+    payment_terms VARCHAR(500) NOT NULL DEFAULT '',
+    footer_note VARCHAR(1000) NOT NULL DEFAULT '',
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS depannhome_subscription_invoices (
+    id BIGSERIAL PRIMARY KEY,
+    account_owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    billing_period DATE NOT NULL,
+    invoice_number VARCHAR(80) NOT NULL UNIQUE,
+    recipient_name VARCHAR(160) NOT NULL,
+    recipient_email VARCHAR(160) NOT NULL,
+    recipient_address VARCHAR(500) NOT NULL DEFAULT '',
+    subscription_label VARCHAR(80) NOT NULL DEFAULT '',
+    amount_cents INTEGER NOT NULL CHECK (amount_cents > 0),
+    vat_rate NUMERIC(5,2) NOT NULL CHECK (vat_rate >= 0 AND vat_rate <= 100),
+    issue_date DATE NOT NULL,
+    due_date DATE NOT NULL,
+    issuer_profile JSONB NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'sending', 'sent', 'failed')),
+    sent_at TIMESTAMPTZ,
+    last_error VARCHAR(1000) NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT depannhome_subscription_invoices_owner_period_unique UNIQUE (account_owner_id, billing_period)
+);
+
+CREATE INDEX IF NOT EXISTS depannhome_subscription_invoices_status_idx
+    ON depannhome_subscription_invoices (status, created_at);
+
 CREATE TABLE IF NOT EXISTS depannhome_purchases (
     id BIGSERIAL PRIMARY KEY,
     owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
