@@ -50,6 +50,7 @@ export async function initializeClients() {
 }
 
 export function registerClientRoutes(app, requireAuthentication) {
+    app.use("/api/clients", requireAuthentication, requireClientReadAccess);
     app.get("/api/clients", requireAuthentication, asyncHandler(async (request, response) => {
         const sinceParameter = String(request.query?.since || "");
         const since = sinceParameter ? validDate(sinceParameter) : "";
@@ -321,6 +322,11 @@ function requireClientWriteAccess(request, response, next) {
     if (request.user?.role === "technician") {
         return response.status(403).json({ message: "Les techniciens peuvent consulter les dossiers clients, sans les modifier." });
     }
+    return next();
+}
+
+function requireClientReadAccess(request, response, next) {
+    if (request.user?.role === "accountant") return response.status(403).json({ message: "L’espace comptabilité ne donne pas accès aux dossiers clients." });
     return next();
 }
 

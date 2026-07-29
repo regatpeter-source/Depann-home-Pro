@@ -70,8 +70,8 @@ registerSupportRoutes(app, requireAuthentication);
 app.get("/assets/logo.png.png", (request, response) => {
 	response.sendFile(path.join(rootDirectory, "assets", "logo.png.png"));
 });
-app.use("/data", requireAuthentication, express.static(path.join(rootDirectory, "data"), { index: false }));
-app.use("/assets", requireAuthentication, express.static(path.join(rootDirectory, "assets"), { index: false }));
+app.use("/data", requireAuthentication, requireTechnicalWorkspaceAccess, express.static(path.join(rootDirectory, "data"), { index: false }));
+app.use("/assets", requireAuthentication, requireTechnicalWorkspaceAccess, express.static(path.join(rootDirectory, "assets"), { index: false }));
 
 app.get(["/", "/index.html"], (request, response) => {
 	response.sendFile(path.join(rootDirectory, "index.html"), { headers: { "Cache-Control": "no-store" } });
@@ -112,3 +112,8 @@ start().catch(error => {
 	console.error("Impossible de démarrer l’application :", error.message);
 	process.exit(1);
 });
+
+function requireTechnicalWorkspaceAccess(request, response, next) {
+	if (request.user?.role === "accountant") return response.status(403).json({ message: "L’espace comptabilité ne donne pas accès aux ressources techniques." });
+	return next();
+}

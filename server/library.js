@@ -76,6 +76,7 @@ export async function initializeLibrary() {
 }
 
 export function registerLibraryRoutes(app, requireAuthentication) {
+    app.use("/api/library", requireAuthentication, requireLibraryReadAccess);
     app.get("/api/library", requireAuthentication, asyncHandler(async (request, response) => {
         const { rows } = await getPool().query(`
             SELECT
@@ -272,6 +273,11 @@ function requireLibraryWriteAccess(request, response, next) {
     if (request.user?.role === "technician") {
         return response.status(403).json({ message: "La bibliothèque est disponible en consultation pour les techniciens." });
     }
+    return next();
+}
+
+function requireLibraryReadAccess(request, response, next) {
+    if (request.user?.role === "accountant") return response.status(403).json({ message: "L’espace comptabilité ne donne pas accès à la bibliothèque technique." });
     return next();
 }
 

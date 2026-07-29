@@ -106,13 +106,15 @@ function renderOverview(panel, profilePanel) {
             <div class="billing-overview-actions">
                 <button type="button" class="secondary-button" data-billing-action="new-quote">+ Nouveau devis</button>
                 <button type="button" class="secondary-button" data-billing-action="new-invoice">+ Nouvelle facture</button>
-                ${isTechnician() ? "" : '<button type="button" class="secondary-button" data-billing-action="preview-blank-quote">Aperçu du devis vierge</button><button type="button" class="secondary-button auth-outline-button" data-billing-action="edit-company">Modifier les informations entreprise</button>'}
+                ${isTechnician() || isAccountant() ? "" : '<button type="button" class="secondary-button" data-billing-action="preview-blank-quote">Aperçu du devis vierge</button><button type="button" class="secondary-button auth-outline-button" data-billing-action="edit-company">Modifier les informations entreprise</button>'}
             </div>
         </div>
         <div class="billing-metrics"><span><strong>${quotes}</strong> devis</span><span><strong>${invoices}</strong> factures</span><span class="billing-base-template"><strong>✓</strong> modèle de document fixe</span></div>
     `;
-    panel.querySelector("[data-billing-action=new-quote]").addEventListener("click", () => openNewDocument("quote"));
-    panel.querySelector("[data-billing-action=new-invoice]").addEventListener("click", () => openNewDocument("invoice"));
+    panel.querySelector("[data-billing-action=new-quote]").hidden = isAccountant();
+    panel.querySelector("[data-billing-action=new-invoice]").hidden = isAccountant();
+    panel.querySelector("[data-billing-action=new-quote]").addEventListener("click", () => { if (!isAccountant()) openNewDocument("quote"); });
+    panel.querySelector("[data-billing-action=new-invoice]").addEventListener("click", () => { if (!isAccountant()) openNewDocument("invoice"); });
     panel.querySelector("[data-billing-action=preview-blank-quote]")?.addEventListener("click", openBlankQuotePreview);
     panel.querySelector("[data-billing-action=edit-company]")?.addEventListener("click", () => {
         renderProfile(profilePanel);
@@ -213,7 +215,7 @@ function renderDocumentEditor(panel) {
     const document = activeDocument;
     const isEditing = Boolean(document.id);
     const linkedInvoice = document.documentType === "quote" ? getInvoiceForQuote(document) : null;
-    if (isEditing && isTechnician()) return renderReadOnlyDocument(panel, document);
+    if (isEditing && (isTechnician() || isAccountant())) return renderReadOnlyDocument(panel, document);
     const clients = getSearchableClients().sort((a, b) => a.name.localeCompare(b.name, "fr"));
     panel.innerHTML = `
         <form id="billingDocumentForm" class="client-form">
@@ -285,7 +287,7 @@ function renderReadOnlyDocument(panel, document) {
     const linkedInvoice = document.documentType === "quote" ? getInvoiceForQuote(document) : null;
     panel.innerHTML = `
         <div class="billing-read-only-document">
-            <div class="form-heading"><div><p class="eyebrow">Consultation uniquement</p><h2>${escapeHtml(DOCUMENT_TYPES[document.documentType])} ${escapeHtml(document.documentNumber)}</h2></div><div class="calendar-form-actions">${document.documentType === "quote" ? linkedInvoice ? `<button type="button" class="secondary-button" data-view-linked-invoice="${escapeHtml(linkedInvoice.id)}">Voir la facture</button>` : '<button type="button" class="secondary-button" id="createInvoiceFromQuote">Créer la facture</button>' : ""}<button type="button" class="secondary-button" id="closeBillingDocument">Fermer</button></div></div>
+            <div class="form-heading"><div><p class="eyebrow">Consultation uniquement</p><h2>${escapeHtml(DOCUMENT_TYPES[document.documentType])} ${escapeHtml(document.documentNumber)}</h2></div><div class="calendar-form-actions">${document.documentType === "quote" && (linkedInvoice || !isAccountant()) ? linkedInvoice ? `<button type="button" class="secondary-button" data-view-linked-invoice="${escapeHtml(linkedInvoice.id)}">Voir la facture</button>` : '<button type="button" class="secondary-button" id="createInvoiceFromQuote">Créer la facture</button>' : ""}<button type="button" class="secondary-button" id="closeBillingDocument">Fermer</button></div></div>
             <div class="procedure-meta"><span>${escapeHtml(document.customerName)}</span><span>${escapeHtml(formatDate(document.issueDate))}</span><span>${escapeHtml(document.status || "brouillon")}</span>${document.documentType === "invoice" ? `<span>${document.quoteReference ? `Réf. devis ${escapeHtml(document.quoteReference)}` : "Sans devis associé"}</span><span>${document.isAccounted ? `Comptabilisée le ${escapeHtml(formatDate(document.accountedAt))}` : "Non comptabilisée"}</span>` : ""}</div>
             <div class="billing-read-only-lines">${document.lines.map(line => `<div><span>${escapeHtml(line.description)}</span><strong>${escapeHtml(String(line.quantity))} × ${escapeHtml(formatMoney(line.unitPrice))}</strong><b>${escapeHtml(formatMoney(lineTotal(line)))}</b></div>`).join("")}</div>
             <div class="billing-totals" id="billingReadOnlyTotals"></div>
@@ -387,12 +389,12 @@ function renderDocumentList(panel) {
             const accountingLabel = billingDocument.documentType === "invoice" ? (billingDocument.isAccounted ? `Comptabilisée le ${formatDate(billingDocument.accountedAt)}` : "À comptabiliser") : "Non concerné";
             const client = getSearchableClients().find(item => normalizeText(item.name) === normalizeText(billingDocument.customerName));
             const recipient = client?.email || "";
-            item.innerHTML = `<div><p class="eyebrow">${DOCUMENT_TYPES[billingDocument.documentType]} · ${escapeHtml(billingDocument.customerType)}</p><h3>${escapeHtml(billingDocument.documentNumber)}</h3><p>${escapeHtml(billingDocument.customerName)}</p><small>${escapeHtml(formatDate(billingDocument.issueDate))} · ${escapeHtml(billingDocument.status || "brouillon")}${billingDocument.quoteReference ? ` · Réf. devis ${escapeHtml(billingDocument.quoteReference)}` : ""} · <span class="billing-accounting-status ${billingDocument.isAccounted ? "is-accounted" : ""}">${escapeHtml(accountingLabel)}</span></small></div><div class="billing-document-amount"><strong>${formatMoney(totals.ttc)}</strong><small>TTC</small></div><div class="billing-document-actions">${billingDocument.documentType === "invoice" && !isTechnician() ? `<button type="button" class="secondary-button" data-accounting="${billingDocument.isAccounted ? "false" : "true"}">${billingDocument.isAccounted ? "Décomptabiliser" : "Comptabiliser"}</button>` : ""}${billingDocument.documentType === "quote" ? linkedInvoice ? `<button type="button" class="secondary-button" data-view-linked-invoice="${escapeHtml(linkedInvoice.id)}">Voir la facture</button>` : '<button type="button" class="secondary-button" data-create-invoice>Créer la facture</button>' : ""}<button type="button" class="secondary-button" data-open-document>${isTechnician() ? "Consulter" : "Ouvrir"}</button><button type="button" class="secondary-button" data-pdf>PDF / Imprimer</button><button type="button" class="secondary-button" data-email ${recipient ? "" : "disabled title=\"Ajoutez l’e-mail du client dans sa fiche pour envoyer le document.\""}>Envoyer par e-mail</button></div>`;
+            item.innerHTML = `<div><p class="eyebrow">${DOCUMENT_TYPES[billingDocument.documentType]} · ${escapeHtml(billingDocument.customerType)}</p><h3>${escapeHtml(billingDocument.documentNumber)}</h3><p>${escapeHtml(billingDocument.customerName)}</p><small>${escapeHtml(formatDate(billingDocument.issueDate))} · ${escapeHtml(billingDocument.status || "brouillon")}${billingDocument.quoteReference ? ` · Réf. devis ${escapeHtml(billingDocument.quoteReference)}` : ""} · <span class="billing-accounting-status ${billingDocument.isAccounted ? "is-accounted" : ""}">${escapeHtml(accountingLabel)}</span></small></div><div class="billing-document-amount"><strong>${formatMoney(totals.ttc)}</strong><small>TTC</small></div><div class="billing-document-actions">${billingDocument.documentType === "invoice" && !isTechnician() && !isAccountant() ? `<button type="button" class="secondary-button" data-accounting="${billingDocument.isAccounted ? "false" : "true"}">${billingDocument.isAccounted ? "Décomptabiliser" : "Comptabiliser"}</button>` : ""}${billingDocument.documentType === "quote" && !isAccountant() ? linkedInvoice ? `<button type="button" class="secondary-button" data-view-linked-invoice="${escapeHtml(linkedInvoice.id)}">Voir la facture</button>` : '<button type="button" class="secondary-button" data-create-invoice>Créer la facture</button>' : ""}<button type="button" class="secondary-button" data-open-document>${isTechnician() || isAccountant() ? "Consulter" : "Ouvrir"}</button><button type="button" class="secondary-button" data-pdf>PDF / Imprimer</button>${isAccountant() ? "" : `<button type="button" class="secondary-button" data-email ${recipient ? "" : "disabled title=\"Ajoutez l’e-mail du client dans sa fiche pour envoyer le document.\""}>Envoyer par e-mail</button>`}</div>`;
             item.querySelector("[data-open-document]").addEventListener("click", () => { activeDocument = normalizeDocument(billingDocument); renderBilling(); });
             item.querySelector("[data-create-invoice]")?.addEventListener("click", () => createInvoiceFromQuote(billingDocument));
             item.querySelector("[data-view-linked-invoice]")?.addEventListener("click", event => viewBillingDocument(event.currentTarget.dataset.viewLinkedInvoice));
             item.querySelector("[data-pdf]").addEventListener("click", () => openBillingPdf(billingDocument.id));
-            item.querySelector("[data-email]").addEventListener("click", () => emailBillingPdf(billingDocument, recipient));
+            item.querySelector("[data-email]")?.addEventListener("click", () => emailBillingPdf(billingDocument, recipient));
             item.querySelector("[data-accounting]")?.addEventListener("click", async event => {
                 const result = await apiRequest(`/api/billing/documents/${encodeURIComponent(billingDocument.id)}/accounting`, { method: "PATCH", body: JSON.stringify({ isAccounted: event.currentTarget.dataset.accounting === "true" }) });
                 if (!result.ok) { alert(result.message || "Impossible de mettre à jour la comptabilité."); return; }
@@ -484,6 +486,7 @@ function today() { const date = new Date(); return `${date.getFullYear()}-${Stri
 function formDataToObject(data) { return Object.fromEntries(data.entries()); }
 
 function isTechnician() { return document.body.dataset.role === "technician"; }
+function isAccountant() { return document.body.dataset.role === "accountant"; }
 function isTechnicianBillingAllowed() { return !isTechnician() || document.body.dataset.technicianBillingEnabled !== "false"; }
 
 function openBillingPdf(documentId) {

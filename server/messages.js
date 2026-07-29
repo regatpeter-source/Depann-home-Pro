@@ -42,6 +42,7 @@ export async function initializeMessages() {
 }
 
 export function registerMessageRoutes(app, requireAuthentication) {
+    app.use("/api/messages", requireAuthentication, requireMessageAccess);
     app.get("/api/messages/unread-summary", requireAuthentication, asyncHandler(async (request, response) => {
         const { rows } = await getPool().query(`
             SELECT message.client_id AS "clientId", message.sender_id AS "senderId", message.created_at AS "createdAt"
@@ -100,6 +101,11 @@ export function registerMessageRoutes(app, requireAuthentication) {
         if (!rowCount) return response.status(403).json({ message: "Vous pouvez modifier uniquement vos propres notes." });
         response.status(204).end();
     }));
+}
+
+function requireMessageAccess(request, response, next) {
+    if (request.user?.role === "accountant") return response.status(403).json({ message: "L’espace comptabilité ne donne pas accès aux notes clients." });
+    return next();
 }
 
 async function clientExists(accountOwnerId, clientId) {

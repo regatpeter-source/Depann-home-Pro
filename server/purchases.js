@@ -42,7 +42,7 @@ export async function initializePurchases() {
 }
 
 export function registerPurchaseRoutes(app, requireAuthentication) {
-    app.get("/api/purchases", requireAuthentication, requirePurchaseAdministration, asyncHandler(async (request, response) => {
+    app.get("/api/purchases", requireAuthentication, requirePurchaseReadAccess, asyncHandler(async (request, response) => {
         const { rows } = await getPool().query(`
             SELECT id, TO_CHAR(purchase_date, 'YYYY-MM-DD') AS "purchaseDate", category, client_id AS "clientId", client_name AS "clientName", supplier, description, reference,
                 amount_ht::float AS "amountHt", vat_rate::float AS "vatRate", is_accounted AS "isAccounted",
@@ -109,6 +109,11 @@ export function registerPurchaseRoutes(app, requireAuthentication) {
 }
 
 function requirePurchaseAdministration(request, response, next) {
+    if (request.user?.role !== "admin") return response.status(403).json({ message: request.user?.role === "accountant" ? "L’espace comptabilité est en consultation uniquement." : "Les achats sont réservés à l’administration de l’entreprise." });
+    return next();
+}
+
+function requirePurchaseReadAccess(request, response, next) {
     if (request.user?.role === "technician") return response.status(403).json({ message: "Les achats sont réservés à l’administration de l’entreprise." });
     return next();
 }

@@ -10,6 +10,7 @@ let synchronizationPromise = null;
 let silentSynchronizationTimer = null;
 
 export async function initializeClientSynchronization() {
+    if (isAccountant()) return { ok: true, skipped: true };
     if (!onlineListenerRegistered) {
         window.addEventListener("online", () => synchronizeClients().catch(() => {}));
         window.addEventListener("focus", () => synchronizeClients().catch(() => {}));
@@ -28,6 +29,7 @@ export async function initializeClientSynchronization() {
 }
 
 export function getLocalClients() {
+    if (isAccountant()) return [];
     try {
         return (JSON.parse(localStorage.getItem(getClientsKey())) || []).map(normalizeClient);
     } catch {
@@ -82,6 +84,7 @@ export function deleteLocalClient(clientId) {
 }
 
 export async function synchronizeClients() {
+    if (isAccountant()) return { ok: true, skipped: true };
     if (!navigator.onLine || !getAccountId()) return { ok: false, offline: true };
     if (synchronizationPromise) return synchronizationPromise;
 
@@ -307,7 +310,11 @@ function getAccountId() {
 }
 
 function canWriteClients() {
-    return document.body.dataset.role !== "technician";
+    return document.body.dataset.role === "admin";
+}
+
+function isAccountant() {
+    return document.body.dataset.role === "accountant";
 }
 
 function getClientsKey() {

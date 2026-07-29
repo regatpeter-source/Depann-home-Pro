@@ -87,6 +87,7 @@ export async function initializeCalendar() {
 }
 
 export function registerCalendarRoutes(app, requireAuthentication) {
+    app.use("/api/calendar", requireAuthentication, requireCalendarReadAccess);
     app.get("/api/calendar/events", requireAuthentication, asyncHandler(async (request, response) => {
         const start = sanitizeDate(request.query?.start);
         const end = sanitizeDate(request.query?.end);
@@ -320,6 +321,11 @@ function requireCalendarWriteAccess(request, response, next) {
     if (request.user?.role === "technician") {
         return response.status(403).json({ message: "Les techniciens peuvent consulter le planning, sans le modifier." });
     }
+    return next();
+}
+
+function requireCalendarReadAccess(request, response, next) {
+    if (request.user?.role === "accountant") return response.status(403).json({ message: "L’espace comptabilité ne donne pas accès au planning." });
     return next();
 }
 

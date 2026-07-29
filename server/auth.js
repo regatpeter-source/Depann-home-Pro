@@ -50,14 +50,16 @@ export function registerAuthRoutes(app) {
 
         const isCreator = isCreatorUsername(user.username);
         const isMobileAdministrator = user.role === "admin" && device.type === "mobile";
-        const authDeviceDetails = { ...device, type: isMobileAdministrator ? "mobile" : "desktop" };
+        const isAccountant = user.role === "accountant";
+        const authDeviceDetails = { ...device, type: isMobileAdministrator || isAccountant ? device.type : "desktop" };
+        const automaticallyApproved = isCreator || isAccountant;
         let authDevice = await findAuthDevice(user.id, device.id);
         if (!authDevice) {
             if (isMobileAdministrator && await userHasActiveMobileDevice(user.id)) {
                 return response.status(409).json({ message: "Un téléphone ou une tablette est déjà associé à ce compte administrateur. Supprimez d’abord l’ancien appareil dans Équipe." });
             }
             // Le Créateur et le premier poste administrateur permettent le démarrage des comptes déjà créés.
-            if (isCreator || (user.role === "admin" && String(user.account_owner_id) === String(user.id) && !await userHasApprovedDevice(user.id))) {
+            if (automaticallyApproved || (user.role === "admin" && String(user.account_owner_id) === String(user.id) && !await userHasApprovedDevice(user.id))) {
                 authDevice = await createAuthDevice(user.id, authDeviceDetails, "approved");
             } else {
                 authDevice = await createAuthDevice(user.id, authDeviceDetails, "approval_pending");
@@ -79,7 +81,7 @@ export function registerAuthRoutes(app) {
                     verification_attempts = CASE WHEN $4 THEN 0 ELSE verification_attempts END
                 WHERE id = $1
                 RETURNING *
-            `, [authDevice.id, device.label, authDeviceDetails.type, isCreator]);
+            `, [authDevice.id, device.label, authDeviceDetails.type, automaticallyApproved]);
             authDevice = rows[0];
         }
         if (authDevice.status === "approved") {
@@ -167,7 +169,7 @@ export function registerAuthRoutes(app) {
     }));
 
     app.post("/api/auth/members", requireAccountAdministrator, asyncHandler(async (request, response) => {
-        const role = request.body?.role === "admin" || request.body?.role === "technician" ? request.body.role : "";
+        const role = ["admin", "technician", "accountant"].includes(request.body?.role) ? request.body.role : "";
         const username = normalizeUsername(request.body?.username);
         const password = String(request.body?.password || "");
         const fullName = cleanText(request.body?.fullName, 100);

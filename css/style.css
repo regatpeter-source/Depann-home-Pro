@@ -383,6 +383,17 @@ body[data-role="technician"] .nav-button[data-nav="billing"]{
     display:none;
 }
 
+body[data-role="accountant"] .search-section,
+body[data-role="accountant"] .quick-actions > :not(#billingBtn):not(#purchasesBtn),
+body[data-role="accountant"] .nav-button:not([data-nav="billing"]):not([data-nav="purchases"]){
+    display:none;
+}
+
+body.desktop-device[data-role="accountant"] footer .nav-button[data-nav="billing"],
+body.desktop-device[data-role="accountant"] footer .nav-button[data-nav="purchases"]{
+    display:flex;
+}
+
 .nav-label-messages{
     display:none;
 }
@@ -3432,6 +3443,11 @@ body.mobile-device[data-role="technician"] .calendar-list-day{
 .team-role-badge,
 .team-state-badge{
     padding:4px 8px;
+}
+
+.team-role-badge.is-accountant{
+    color:#6b21a8;
+    background:#f3e8ff;
 }
 
 .team-department-badge{

@@ -1,8 +1,8 @@
 import { ROUTES, STORAGE_KEYS, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=116";
 import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=139";
 import { renderCreatorConsole } from "./creator.js?v=112";
-import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=138";
-import { renderPurchases } from "./purchases.js?v=111";
+import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=140";
+import { renderPurchases } from "./purchases.js?v=112";
 import { getFirstUnreadClientId, refreshClientMessageAlert, refreshVisibleClientMessages } from "./messages.js?v=106";
 import { getSearchableClients, renderClients } from "./clients.js?v=133";
 import { synchronizeClients } from "./client-sync.js?v=116";
@@ -49,7 +49,8 @@ export function initializeNavigation(loadedDatabase) {
             if (document.visibilityState === "visible") refreshSharedData();
         }, 90_000);
     }
-    if (document.body.dataset.role === "technician") renderCalendarOverview();
+    if (isAccountant()) renderBilling();
+    else if (document.body.dataset.role === "technician") renderCalendarOverview();
     else if (document.body.classList.contains("desktop-device")) renderHome();
     else renderBrands();
 }
@@ -60,11 +61,9 @@ export async function refreshSharedData(options = {}) {
             ? Promise.all([sharedSynchronizationPromise, synchronizeClients()])
             : sharedSynchronizationPromise;
     }
-    const requests = [
-        refreshVisibleClientMessages(),
-        synchronizeBillingDocuments({ refreshView: true, force: Boolean(options.forceBilling) })
-    ];
-    if (options.includeClients) requests.push(synchronizeClients());
+    const requests = [synchronizeBillingDocuments({ refreshView: true, force: Boolean(options.forceBilling) })];
+    if (!isAccountant()) requests.unshift(refreshVisibleClientMessages());
+    if (options.includeClients && !isAccountant()) requests.push(synchronizeClients());
     sharedSynchronizationPromise = Promise.all(requests).finally(() => {
         sharedSynchronizationPromise = null;
     });
@@ -75,7 +74,10 @@ export async function refreshApplication() {
     const activeRoute = document.querySelector(".nav-button.active")?.dataset.nav || "";
     await refreshSharedData({ includeClients: true, forceBilling: true });
 
-    if (activeRoute === ROUTES.clients) {
+    if (isAccountant()) {
+        if (activeRoute === ROUTES.purchases) renderPurchases();
+        else renderBilling();
+    } else if (activeRoute === ROUTES.clients) {
         const selectedId = document.querySelector(".client-messages-panel")?.dataset.clientId || "";
         renderClients({ database, navigateToRef, createBillingDocument: createBillingDocumentForClient, viewBillingDocument, createCalendarEvent: createCalendarEventForClient, ...(selectedId ? { selectedId } : {}) });
     } else if (activeRoute === ROUTES.calendar) {
@@ -116,21 +118,27 @@ function bindEvents() {
         renderSearchResults(value);
     });
 
-    clientsBtn.addEventListener("click", () => openClients());
+    clientsBtn.addEventListener("click", () => { if (!isAccountant()) openClients(); });
     billingBtn?.addEventListener("click", () => {
         if (document.body.dataset.role !== "technician") renderBilling();
     });
     purchasesBtn?.addEventListener("click", renderPurchases);
-    calendarBtn?.addEventListener("click", openCalendar);
-    libraryBtn?.addEventListener("click", renderLibrary);
-    photoBtn?.addEventListener("click", () => renderPhotoRecognition(database, navigateToRef));
-    favoritesBtn.addEventListener("click", renderFavorites);
-    historyBtn.addEventListener("click", renderHistory);
-    settingsBtn?.addEventListener("click", renderSettings);
+    calendarBtn?.addEventListener("click", () => { if (!isAccountant()) openCalendar(); });
+    libraryBtn?.addEventListener("click", () => { if (!isAccountant()) renderLibrary(); });
+    photoBtn?.addEventListener("click", () => { if (!isAccountant()) renderPhotoRecognition(database, navigateToRef); });
+    favoritesBtn.addEventListener("click", () => { if (!isAccountant()) renderFavorites(); });
+    historyBtn.addEventListener("click", () => { if (!isAccountant()) renderHistory(); });
+    settingsBtn?.addEventListener("click", () => { if (!isAccountant()) renderSettings(); });
 
     document.querySelectorAll(".nav-button").forEach(button => {
         button.addEventListener("click", async () => {
             const nav = button.dataset.nav;
+
+            if (isAccountant()) {
+                if (nav === ROUTES.billing) renderBilling();
+                if (nav === ROUTES.purchases) renderPurchases();
+                return;
+            }
 
             if (nav === ROUTES.home) openHome();
             if (nav === ROUTES.search) focusSearch();
@@ -148,6 +156,10 @@ function bindEvents() {
 }
 
 function openHome() {
+    if (isAccountant()) {
+        renderBilling();
+        return;
+    }
     if (document.body.classList.contains("desktop-device")) {
         renderHome();
         return;
@@ -164,8 +176,13 @@ function openCalendar() {
 }
 
 async function openClients(clientId = "") {
+    if (isAccountant()) return;
     const selectedId = clientId || await getFirstUnreadClientId();
     renderClients({ database, navigateToRef, createBillingDocument: createBillingDocumentForClient, viewBillingDocument, createCalendarEvent: createCalendarEventForClient, ...(selectedId ? { selectedId, focusMessages: true } : {}) });
+}
+
+function isAccountant() {
+    return document.body.dataset.role === "accountant";
 }
 
 function renderStore() {
@@ -1013,7 +1030,7 @@ async function renderTeamManagement(container) {
     roleField.textContent = "Type de poste";
     const roleInput = document.createElement("select");
     roleInput.name = "role";
-    roleInput.innerHTML = '<option value="technician">Technicien</option><option value="admin">Poste PC</option>';
+    roleInput.innerHTML = '<option value="technician">Technicien</option><option value="admin">Poste PC</option><option value="accountant">Comptable</option>';
     roleField.appendChild(roleInput);
     formFields.appendChild(roleField);
     const departmentSuggestions = document.createElement("datalist");
@@ -1045,11 +1062,12 @@ async function renderTeamManagement(container) {
     container.appendChild(card);
     const updateRoleFields = () => {
         const isTechnician = roleInput.value === "technician";
+        const isAccountantAccess = roleInput.value === "accountant";
         form.elements.phone.required = isTechnician;
         form.elements.email.required = isTechnician;
         form.elements.department.disabled = !isTechnician;
-        submit.textContent = isTechnician ? "Créer le technicien" : "Créer le poste PC";
-        roleField.dataset.role = isTechnician ? "technician" : "admin";
+        submit.textContent = isTechnician ? "Créer le technicien" : isAccountantAccess ? "Créer le comptable" : "Créer le poste PC";
+        roleField.dataset.role = isTechnician ? "technician" : isAccountantAccess ? "accountant" : "admin";
     };
     roleInput.addEventListener("change", updateRoleFields);
     updateRoleFields();
@@ -1121,8 +1139,8 @@ async function renderTeamManagement(container) {
             (payload.members || []).forEach(member => {
                 const item = document.createElement("div");
                 item.className = "team-member";
-                const memberType = member.role === "admin" ? "Poste PC" : "Technicien";
-                item.innerHTML = `<div class="team-member-summary"><div class="team-member-title"><strong>${escapeHtml(member.fullName || member.username)}</strong><span class="team-role-badge ${member.role === "admin" ? "is-admin" : "is-technician"}">${memberType}</span>${member.role === "technician" ? `<span class="team-department-badge">${escapeHtml(member.department || "Non classé")}</span>` : ""}<span class="team-state-badge ${member.isActive ? "is-active" : "is-inactive"}">${member.isActive ? "Actif" : "Désactivé"}</span></div><span class="team-member-meta">${escapeHtml(member.phone || "Téléphone non renseigné")}<span aria-hidden="true">·</span>${escapeHtml(member.email || "E-mail non renseigné")}<span aria-hidden="true">·</span>${escapeHtml(member.username)}</span></div>`;
+                const memberType = member.role === "admin" ? "Poste PC" : member.role === "accountant" ? "Comptable" : "Technicien";
+                item.innerHTML = `<div class="team-member-summary"><div class="team-member-title"><strong>${escapeHtml(member.fullName || member.username)}</strong><span class="team-role-badge ${member.role === "admin" ? "is-admin" : member.role === "accountant" ? "is-accountant" : "is-technician"}">${memberType}</span>${member.role === "technician" ? `<span class="team-department-badge">${escapeHtml(member.department || "Non classé")}</span>` : ""}<span class="team-state-badge ${member.isActive ? "is-active" : "is-inactive"}">${member.isActive ? "Actif" : "Désactivé"}</span></div><span class="team-member-meta">${escapeHtml(member.phone || "Téléphone non renseigné")}<span aria-hidden="true">·</span>${escapeHtml(member.email || "E-mail non renseigné")}<span aria-hidden="true">·</span>${escapeHtml(member.username)}${member.role === "accountant" ? " · Espace comptabilité, sans limite de poste PC" : ""}</span></div>`;
                 const actions = document.createElement("div");
                 actions.className = "team-member-actions";
                 const toggle = createButton(member.isActive ? "Désactiver" : "Réactiver", "secondary-button", async () => {

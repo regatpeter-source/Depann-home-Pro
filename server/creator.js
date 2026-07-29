@@ -5,7 +5,7 @@ import { isCreatorUsername } from "./auth.js";
 const USERNAME_PATTERN = /^[a-z0-9._-]{3,32}$/;
 const MIN_PASSWORD_LENGTH = 12;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const MEMBER_ROLES = new Set(["admin", "technician"]);
+const MEMBER_ROLES = new Set(["admin", "technician", "accountant"]);
 const SUBSCRIPTION_PLANS = new Set(["free", "paid"]);
 const SUBSCRIPTION_STATUSES = new Set(["active", "trial", "past_due", "suspended", "cancelled"]);
 
@@ -239,6 +239,7 @@ async function countActiveSeats(database, accountId) {
 }
 
 async function ensureSeatAvailable(database, accountId, role) {
+    if (role === "accountant") return;
     const { rows: owners } = await database.query(`
         SELECT max_pc_users AS "maxPcUsers", max_technicians AS "maxTechnicians"
         FROM depannhome_users WHERE id = $1 AND account_owner_id = id FOR UPDATE

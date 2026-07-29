@@ -409,13 +409,16 @@ export function registerBillingRoutes(app, requireAuthentication) {
 }
 
 function requireBillingAdministration(request, response, next) {
-    if (request.user?.role === "technician") {
-        return response.status(403).json({ message: "Les techniciens peuvent créer des devis et factures, sans modifier les documents ou paramètres existants." });
+    if (request.user?.role !== "admin") {
+        return response.status(403).json({ message: request.user?.role === "accountant" ? "L’espace comptabilité est en consultation uniquement." : "Les techniciens peuvent créer des devis et factures, sans modifier les documents ou paramètres existants." });
     }
     return next();
 }
 
 async function requireTechnicianBillingAccess(request, response, next) {
+    if (request.user?.role === "accountant") {
+        return response.status(403).json({ message: "L’espace comptabilité est en consultation uniquement." });
+    }
     if (request.user?.role !== "technician") return next();
     const { rows } = await getPool().query(
         "SELECT can_create_billing FROM depannhome_users WHERE id = $1",
