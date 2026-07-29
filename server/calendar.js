@@ -137,26 +137,76 @@ export function registerCalendarRoutes(app, requireAuthentication) {
         response.json({ events: rows });
     }));
 
+    app.get("/api/calendar/availability", requireAuthentication, asyncHandler(async (request, response) => {
+        const start = sanitizeDate(request.query?.start);
+        const end = sanitizeDate(request.query?.end);
+        const technicianIds = sanitizePositiveIds(String(request.query?.technicianIds || "").split(",").filter(Boolean));
+        const startTime = sanitizeTime(request.query?.startTime);
+        const endTime = sanitizeTime(request.query?.endTime);
+        const requestedCount = Number(request.query?.count);
+        const count = Number.isInteger(requestedCount) ? Math.min(Math.max(requestedCount, 1), 31) : 12;
+        if (!start || !end || start > end || daysBetween(start, end) > 90) return response.status(400).json({ message: "Période de recherche invalide." });
+        if (request.query?.technicianIds && !technicianIds.length) return response.status(400).json({ message: "Technicien invalide." });
+        if ((request.query?.startTime && !startTime) || (request.query?.endTime && !endTime) || (startTime && endTime && endTime < startTime)) {
+            return response.status(400).json({ message: "Plage horaire invalide." });
+        }
+        const assignmentError = await validateAssignedTechnicians(getAccountOwnerId(request), technicianIds);
+        if (assignmentError) return response.status(400).json({ message: assignmentError });
+
+        const { rows } = await getPool().query(`
+            SELECT TO_CHAR(event_date, 'YYYY-MM-DD') AS date, TO_CHAR(start_time, 'HH24:MI') AS "startTime", TO_CHAR(end_time, 'HH24:MI') AS "endTime"
+            FROM depannhome_calendar_events
+            WHERE owner_id = $1 AND event_date BETWEEN $2::date AND $3::date
+                AND (
+                    (cardinality($4::bigint[]) > 0 AND EXISTS (
+                        SELECT 1 FROM depannhome_calendar_assignments assignment
+                        WHERE assignment.event_id = depannhome_calendar_events.id AND assignment.technician_id = ANY($4::bigint[])
+                    ))
+                    OR (cardinality($4::bigint[]) = 0 AND assigned_technician_id IS NULL)
+                )
+        `, [getAccountOwnerId(request), start, end, technicianIds]);
+        const eventsByDate = new Map();
+        rows.forEach(event => {
+            if (!eventsByDate.has(event.date)) eventsByDate.set(event.date, []);
+            eventsByDate.get(event.date).push(event);
+        });
+        const availableDates = [];
+        for (const date of datesInRange(start, end)) {
+            const conflict = eventsByDate.get(date)?.some(event => calendarTimesOverlap(event, { startTime, endTime }));
+            if (!conflict) availableDates.push(date);
+            if (availableDates.length >= count) break;
+        }
+        response.json({ availableDates });
+    }));
+
     app.post("/api/calendar/events", requireAuthentication, requireCalendarWriteAccess, asyncHandler(async (request, response) => {
         const event = sanitizeEvent(request.body);
         if (!event.ok) return response.status(400).json({ message: event.message });
+        const dates = sanitizeEventDates(request.body?.dates, event.date);
+        if (!dates.length) return response.status(400).json({ message: "Une des dates sélectionnées est invalide." });
         const assignmentError = await validateAssignedTechnicians(getAccountOwnerId(request), event.assignedTechnicianIds);
         if (assignmentError) return response.status(400).json({ message: assignmentError });
-        const conflict = await findCalendarConflict(getAccountOwnerId(request), event);
-        if (conflict) return response.status(409).json({ message: conflictMessage(conflict) });
+        for (const date of dates) {
+            const conflict = await findCalendarConflict(getAccountOwnerId(request), { ...event, date });
+            if (conflict) return response.status(409).json({ message: `${conflictMessage(conflict)} Date concernée : ${date}.` });
+        }
 
         const connection = await getPool().connect();
         try {
             await connection.query("BEGIN");
-            const { rows } = await connection.query(`
-                INSERT INTO depannhome_calendar_events
-                    (owner_id, assigned_technician_id, title, client_name, location, event_date, start_time, end_time, color, event_type, notes)
-                VALUES ($1, $2, $3, $4, $5, $6::date, $7::time, $8::time, $9, $10, $11)
-                RETURNING id
-            `, [getAccountOwnerId(request), event.assignedTechnicianId || null, event.title, event.clientName, event.location, event.date, event.startTime, event.endTime, event.color, event.eventType, event.notes]);
-            await replaceEventAssignments(connection, rows[0].id, event.assignedTechnicianIds, event.assignedTechnicianId);
+            const ids = [];
+            for (const date of dates) {
+                const { rows } = await connection.query(`
+                    INSERT INTO depannhome_calendar_events
+                        (owner_id, assigned_technician_id, title, client_name, location, event_date, start_time, end_time, color, event_type, notes)
+                    VALUES ($1, $2, $3, $4, $5, $6::date, $7::time, $8::time, $9, $10, $11)
+                    RETURNING id
+                `, [getAccountOwnerId(request), event.assignedTechnicianId || null, event.title, event.clientName, event.location, date, event.startTime, event.endTime, event.color, event.eventType, event.notes]);
+                await replaceEventAssignments(connection, rows[0].id, event.assignedTechnicianIds, event.assignedTechnicianId);
+                ids.push(rows[0].id);
+            }
             await connection.query("COMMIT");
-            response.status(201).json({ id: rows[0].id });
+            response.status(201).json({ id: ids[0], ids, count: ids.length });
         } catch (error) {
             await connection.query("ROLLBACK");
             throw error;
@@ -354,6 +404,15 @@ function sanitizeEvent(value) {
     return { ok: true, title, clientName, location, date, startTime, endTime, color, eventType, notes, assignedTechnicianId, assignedTechnicianIds };
 }
 
+function sanitizeEventDates(value, fallbackDate) {
+    const rawDates = Array.isArray(value) ? value : value === undefined || value === null || value === "" ? [fallbackDate] : [value];
+    if (!rawDates.length || rawDates.length > 30) return [];
+    const dates = rawDates.map(sanitizeDate);
+    if (dates.some(date => !date)) return [];
+    const uniqueDates = [...new Set(dates)];
+    return uniqueDates.length > 30 ? [] : uniqueDates;
+}
+
 function sanitizeQuitus(value) {
     const status = QUITUS_STATUS.has(value?.status) ? value.status : "pending";
     const signedBy = cleanText(value?.signedBy, 160);
@@ -463,6 +522,30 @@ function sanitizeDate(value) {
 function sanitizeTime(value) {
     const time = String(value || "");
     return TIME_PATTERN.test(time) ? time : "";
+}
+
+function calendarTimesOverlap(first, second) {
+    if (!first.startTime || !first.endTime || !second.startTime || !second.endTime) return true;
+    return first.startTime < second.endTime && first.endTime > second.startTime;
+}
+
+function datesInRange(start, end) {
+    const dates = [];
+    const date = new Date(`${start}T12:00:00`);
+    const last = new Date(`${end}T12:00:00`);
+    while (date <= last) {
+        dates.push(dateString(date));
+        date.setDate(date.getDate() + 1);
+    }
+    return dates;
+}
+
+function daysBetween(start, end) {
+    return Math.round((new Date(`${end}T12:00:00`) - new Date(`${start}T12:00:00`)) / 86400000);
+}
+
+function dateString(date) {
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
 function cleanText(value, maximumLength) {

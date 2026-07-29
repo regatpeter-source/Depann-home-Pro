@@ -317,6 +317,7 @@ function renderEventForm(panel) {
                     Date *
                     <input name="date" type="date" required value="${escapeHtml(event.date)}">
                 </label>
+                ${isEditing ? "" : renderMultiDatePlanning(event)}
                 <label>
                     Couleur / statut
                     <select name="color">${COLOR_OPTIONS.map(color => `<option value="${color.id}" ${event.color === color.id ? "selected" : ""}>${color.label}</option>`).join("")}</select>
@@ -362,6 +363,7 @@ function renderEventForm(panel) {
     const technicianSearch = form.querySelector("#calendarTechnicianSearch");
     const primaryTechnicianInput = form.querySelector("[name=assignedTechnicianId]");
     const assignmentInputs = [...form.querySelectorAll("[data-calendar-assignment]")];
+    const multiDatePlanning = initializeMultiDatePlanning(form, event);
     const syncPrimaryTechnician = () => {
         const selected = assignmentInputs.filter(input => input.checked).map(input => String(input.value));
         const current = String(primaryTechnicianInput.value || event.assignedTechnicianId || "");
@@ -401,6 +403,7 @@ function renderEventForm(panel) {
     assignmentInputs.forEach(input => input.addEventListener("change", () => {
         syncPrimaryTechnician();
         renderCalendarAvailability(form, event.id);
+        multiDatePlanning?.refresh();
     }));
     technicianSearch.addEventListener("input", filterTechnicians);
     syncPrimaryTechnician();
@@ -422,7 +425,11 @@ function renderEventForm(panel) {
         renderCalendarAvailability(form, event.id);
     });
     clientField.hidden = eventTypeInput.value !== "appointment";
-    ["date", "startTime", "endTime", "title", "assignedTechnicianId"].forEach(name => form.elements[name].addEventListener("input", () => renderCalendarAvailability(form, event.id)));
+    ["date", "startTime", "endTime", "title", "assignedTechnicianId"].forEach(name => form.elements[name].addEventListener("input", () => {
+        renderCalendarAvailability(form, event.id);
+        if (name === "date") multiDatePlanning?.setPrimaryDate();
+        if (["date", "startTime", "endTime", "assignedTechnicianId"].includes(name)) multiDatePlanning?.refresh();
+    }));
     renderCalendarAvailability(form, event.id);
 
     form.addEventListener("submit", async eventSubmit => {
@@ -446,7 +453,7 @@ function renderEventForm(panel) {
         }
         if (!isEditing && payload.clientName) addClientActivityByName(payload.clientName, {
             type: "appointment",
-            label: "Rendez-vous créé",
+            label: (result.data?.count || payload.dates?.length || 1) > 1 ? `${result.data?.count || payload.dates.length} rendez-vous créés` : "Rendez-vous créé",
             detail: [payload.title, formatActivityDate(payload.date, payload.startTime)].filter(Boolean).join(" · ")
         });
         displayedMonth = firstDayOfMonth(new Date(`${payload.date}T12:00:00`));
@@ -464,6 +471,91 @@ function renderEventForm(panel) {
         selectedEvent = null;
         renderCalendar();
     });
+}
+
+function renderMultiDatePlanning(event) {
+    return `
+        <section class="calendar-multi-date-planning form-wide" id="calendarMultiDatePlanning">
+            <div class="calendar-multi-date-heading"><div><p class="eyebrow">Planification étendue</p><h3>Proposer ou sélectionner plusieurs dates</h3></div><span class="calendar-multi-date-count" id="calendarMultiDateCount">1 date</span></div>
+            <p class="muted">Une occurrence du ${escapeHtml(event.eventType === "task" ? "travail" : "rendez-vous")} sera créée pour chaque date sélectionnée, avec les mêmes techniciens et horaires.</p>
+            <div class="calendar-multi-date-controls"><label>Ajouter une date depuis le calendrier<input type="date" id="calendarAdditionalDate" value="${escapeHtml(event.date)}"></label><button type="button" class="secondary-button" id="calendarAddDate">Ajouter</button></div>
+            <div class="calendar-selected-dates" id="calendarSelectedDates" aria-live="polite"></div>
+            <div class="calendar-date-proposals" id="calendarDateProposals" aria-live="polite"><p class="muted">Recherche des créneaux proposés…</p></div>
+            <div class="calendar-selected-date-inputs" id="calendarSelectedDateInputs"></div>
+        </section>
+    `;
+}
+
+function initializeMultiDatePlanning(form, event) {
+    const section = form.querySelector("#calendarMultiDatePlanning");
+    if (!section) return null;
+    const selectedDates = new Set([form.elements.date.value]);
+    let primaryDate = form.elements.date.value;
+    let availableDates = [];
+    let requestVersion = 0;
+    const selected = () => [...selectedDates].filter(Boolean).sort();
+    const render = () => {
+        const dates = selected();
+        section.querySelector("#calendarMultiDateCount").textContent = `${dates.length} date${dates.length > 1 ? "s" : ""}`;
+        section.querySelector("#calendarSelectedDateInputs").innerHTML = dates.map(date => `<input type="hidden" name="dates" value="${escapeHtml(date)}">`).join("");
+        section.querySelector("#calendarSelectedDates").innerHTML = dates.map(date => `<span class="calendar-selected-date"><time>${escapeHtml(formatPlanningDate(date))}</time>${date === primaryDate ? '<em>Date principale</em>' : `<button type="button" data-remove-planning-date="${escapeHtml(date)}" aria-label="Retirer le ${escapeHtml(formatPlanningDate(date))}">×</button>`}</span>`).join("");
+        section.querySelector("#calendarDateProposals").innerHTML = availableDates.length ? `
+            <div class="calendar-date-proposals-heading"><strong>Créneaux disponibles proposés</strong><span>Cliquez pour ${dates.length > 1 ? "ajouter ou retirer" : "sélectionner plusieurs dates"}.</span></div>
+            <div class="calendar-date-proposal-grid">${availableDates.map(date => `<button type="button" class="calendar-date-proposal${selectedDates.has(date) ? " selected" : ""}" data-planning-date="${escapeHtml(date)}" aria-pressed="${selectedDates.has(date)}">${escapeHtml(formatPlanningDate(date))}</button>`).join("")}</div>
+        ` : '<p class="muted">Sélectionnez un technicien et des horaires pour recevoir des propositions de créneaux libres, ou ajoutez des dates avec le calendrier ci-dessus.</p>';
+        section.querySelectorAll("[data-planning-date]").forEach(button => button.addEventListener("click", () => {
+            const date = button.dataset.planningDate;
+            if (selectedDates.has(date) && date !== primaryDate) selectedDates.delete(date);
+            else selectedDates.add(date);
+            render();
+        }));
+        section.querySelectorAll("[data-remove-planning-date]").forEach(button => button.addEventListener("click", () => {
+            selectedDates.delete(button.dataset.removePlanningDate);
+            render();
+        }));
+    };
+    const refresh = async () => {
+        const date = form.elements.date.value;
+        const technicianIds = [...form.querySelectorAll("[data-calendar-assignment]:checked")].map(input => input.value);
+        if (!date || !technicianIds.length) {
+            availableDates = [];
+            render();
+            return;
+        }
+        const end = new Date(`${date}T12:00:00`);
+        end.setDate(end.getDate() + 60);
+        const version = ++requestVersion;
+        section.querySelector("#calendarDateProposals").innerHTML = '<p class="muted">Recherche des créneaux disponibles pour les techniciens sélectionnés…</p>';
+        const query = new URLSearchParams({ start: date, end: toDateString(end), technicianIds: technicianIds.join(","), startTime: form.elements.startTime.value, endTime: form.elements.endTime.value, count: "14" });
+        const result = await request(`/api/calendar/availability?${query}`);
+        if (version !== requestVersion) return;
+        availableDates = result.ok ? result.data?.availableDates || [] : [];
+        render();
+    };
+    section.querySelector("#calendarAddDate").addEventListener("click", () => {
+        const date = section.querySelector("#calendarAdditionalDate").value;
+        if (!date) return;
+        selectedDates.add(date);
+        render();
+    });
+    render();
+    refresh();
+    return {
+        refresh,
+        setPrimaryDate: () => {
+            const nextDate = form.elements.date.value;
+            if (!nextDate || nextDate === primaryDate) return;
+            selectedDates.delete(primaryDate);
+            primaryDate = nextDate;
+            selectedDates.add(primaryDate);
+            section.querySelector("#calendarAdditionalDate").value = primaryDate;
+            render();
+        }
+    };
+}
+
+function formatPlanningDate(value) {
+    return new Intl.DateTimeFormat("fr-FR", { weekday: "short", day: "numeric", month: "short", year: "numeric" }).format(new Date(`${value}T12:00:00`));
 }
 
 function renderCalendarAvailability(form, editedEventId) {
@@ -978,6 +1070,7 @@ function formToEvent(form) {
         eventType: String(form.get("eventType") || "appointment"),
         assignedTechnicianId: String(form.get("assignedTechnicianId") || ""),
         assignedTechnicianIds: form.getAll("assignedTechnicianIds").map(value => String(value || "")),
+        dates: form.getAll("dates").map(value => String(value || "")),
         notes: String(form.get("notes") || "").trim()
     };
 }
