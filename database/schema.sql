@@ -44,6 +44,18 @@ ALTER TABLE depannhome_users
     ADD COLUMN IF NOT EXISTS creator_note VARCHAR(1000) NOT NULL DEFAULT '',
     ADD COLUMN IF NOT EXISTS quote_template_policy VARCHAR(30) NOT NULL DEFAULT 'company_choice';
 
+-- Double authentification TOTP réservée au compte Créateur.
+-- Le secret est chiffré côté serveur avec SESSION_SECRET avant son stockage.
+CREATE TABLE IF NOT EXISTS depannhome_creator_totp (
+    user_id BIGINT PRIMARY KEY REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    secret_ciphertext TEXT NOT NULL DEFAULT '',
+    pending_secret_ciphertext TEXT NOT NULL DEFAULT '',
+    pending_expires_at TIMESTAMPTZ,
+    enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    confirmed_at TIMESTAMPTZ,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS depannhome_clients (
     id BIGSERIAL PRIMARY KEY,
     owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,

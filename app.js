@@ -9,6 +9,7 @@ import {
 	authenticateRequest,
 	createInitialAdministrator,
 	recoverCreatorPassword,
+	recoverCreatorTotp,
 	requireCreator,
 	registerAuthRoutes,
 	requireAuthentication,
@@ -49,6 +50,7 @@ const authenticationRateLimit = rateLimit({
 app.use("/api/auth/login", authenticationRateLimit);
 app.use("/api/auth/register", authenticationRateLimit);
 app.use("/api/auth/verify-device-code", authenticationRateLimit);
+app.use("/api/auth/verify-creator-totp", authenticationRateLimit);
 app.use("/api/support", rateLimit({
 	windowMs: 15 * 60 * 1000,
 	limit: 10,
@@ -108,6 +110,7 @@ async function start() {
 	await initializeLibrary();
 	await createInitialAdministrator();
 	await recoverCreatorPassword();
+	await recoverCreatorTotp();
 	app.listen(port, () => {
 		console.log(`Depann'Home Pro écoute sur le port ${port}.`);
 		startSubscriptionInvoicingScheduler();

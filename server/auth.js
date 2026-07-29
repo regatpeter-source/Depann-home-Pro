@@ -1,6 +1,8 @@
 import bcrypt from "bcrypt";
 import crypto from "node:crypto";
 import jwt from "jsonwebtoken";
+import * as OTPAuth from "otpauth";
+import QRCode from "qrcode";
 import { createUser, findUserById, findUserByUsername, getPool } from "./database.js";
 import { sendDeviceVerificationCode } from "./email.js";
 
@@ -11,6 +13,7 @@ const ADMIN_SESSION_DURATION = 12 * 60 * 60 * 1000;
 const TECHNICIAN_SESSION_DURATION = 30 * 24 * 60 * 60 * 1000;
 const DEVICE_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const CREATOR_TOTP_CHALLENGE_DURATION_SECONDS = 5 * 60;
 
 export function registerAuthRoutes(app) {
     app.get("/api/auth/session", (request, response) => {
@@ -48,50 +51,31 @@ export function registerAuthRoutes(app) {
             return response.status(401).json({ message: "Identifiant ou mot de passe incorrect." });
         }
 
-        const isCreator = isCreatorUsername(user.username);
-        const isMobileAdministrator = user.role === "admin" && device.type === "mobile";
-        const isAccountant = user.role === "accountant";
-        const authDeviceDetails = { ...device, type: isMobileAdministrator || isAccountant ? device.type : "desktop" };
-        const automaticallyApproved = isCreator || isAccountant;
-        let authDevice = await findAuthDevice(user.id, device.id);
-        if (!authDevice) {
-            if (isMobileAdministrator && await userHasActiveMobileDevice(user.id)) {
-                return response.status(409).json({ message: "Un téléphone ou une tablette est déjà associé à ce compte administrateur. Supprimez d’abord l’ancien appareil dans Équipe." });
-            }
-            // Le Créateur et le premier poste administrateur permettent le démarrage des comptes déjà créés.
-            if (automaticallyApproved || (user.role === "admin" && String(user.account_owner_id) === String(user.id) && !await userHasApprovedDevice(user.id))) {
-                authDevice = await createAuthDevice(user.id, authDeviceDetails, "approved");
-            } else {
-                authDevice = await createAuthDevice(user.id, authDeviceDetails, "approval_pending");
-            }
-            if (!authDevice) {
-                return response.status(409).json({ message: isMobileAdministrator ? "Un téléphone ou une tablette est déjà associé à ce compte administrateur. Supprimez d’abord l’ancien appareil dans Équipe." : "Cet appareil est déjà associé à un autre compte. Utilisez un autre navigateur ou contactez l’administrateur." });
-            }
-        } else {
-            if (isMobileAdministrator && authDevice.device_type !== "mobile" && await userHasActiveMobileDevice(user.id)) {
-                return response.status(409).json({ message: "Un téléphone ou une tablette est déjà associé à ce compte administrateur. Supprimez d’abord l’ancien appareil dans Équipe." });
-            }
-            const { rows } = await getPool().query(`
-                UPDATE depannhome_auth_devices
-                SET label = $2, device_type = $3, last_seen_at = NOW(),
-                    status = CASE WHEN $4 THEN 'approved' ELSE status END,
-                    approved_at = CASE WHEN $4 AND approved_at IS NULL THEN NOW() ELSE approved_at END,
-                    verification_code_hash = CASE WHEN $4 THEN '' ELSE verification_code_hash END,
-                    verification_code_expires_at = CASE WHEN $4 THEN NULL ELSE verification_code_expires_at END,
-                    verification_attempts = CASE WHEN $4 THEN 0 ELSE verification_attempts END
-                WHERE id = $1
-                RETURNING *
-            `, [authDevice.id, device.label, authDeviceDetails.type, automaticallyApproved]);
-            authDevice = rows[0];
+        if (isCreatorUsername(user.username) && await isCreatorTotpEnabled(user.id)) {
+            return response.status(401).json({
+                totpRequired: true,
+                challenge: createCreatorTotpChallenge(user, device),
+                message: "Saisissez le code affiché dans Google Authenticator."
+            });
         }
-        if (authDevice.status === "approved") {
-            setSessionCookie(response, user, authDevice.id);
-            return response.json({ user: publicUser(user) });
+        return completeLogin(user, device, response);
+    }));
+
+    app.post("/api/auth/verify-creator-totp", asyncHandler(async (request, response) => {
+        const challenge = verifyCreatorTotpChallenge(request.body?.challenge);
+        const code = normalizeTotpCode(request.body?.code);
+        if (!challenge || !code) return response.status(401).json({ message: "Le code de sécurité est invalide ou a expiré." });
+        const user = await findUserById(challenge.sub);
+        if (!user?.is_active || !user.account_is_active || !isCreatorUsername(user.username)) {
+            return response.status(401).json({ message: "Cette connexion n’est plus autorisée." });
         }
-        if (authDevice.status === "code_pending") {
-            return response.status(403).json({ codeRequired: true, deviceId: authDevice.id, message: "Saisissez le code envoyé à votre e-mail professionnel." });
+        const secret = await getCreatorTotpSecret(user.id);
+        if (!secret || !isValidTotpCode(secret, code, user.username)) {
+            return response.status(401).json({ message: "Le code Google Authenticator est incorrect." });
         }
-        return response.status(403).json({ approvalRequired: true, deviceId: authDevice.id, message: authDevice.status === "rejected" ? "Cet appareil a été refusé par l’administrateur." : "Cet appareil est en attente de validation par l’administrateur." });
+        const device = getDeviceDetails({ deviceId: challenge.device?.id, deviceLabel: challenge.device?.label, deviceType: challenge.device?.type });
+        if (!device) return response.status(401).json({ message: "Cet appareil ne peut pas être identifié. Recommencez la connexion." });
+        return completeLogin(user, device, response);
     }));
 
     app.post("/api/auth/device-validation-status", asyncHandler(async (request, response) => {
@@ -157,6 +141,57 @@ export function registerAuthRoutes(app) {
         response.clearCookie(COOKIE_NAME, cookieOptions());
         response.status(204).end();
     });
+
+    app.get("/api/auth/creator-2fa", requireAuthentication, requireCreator, asyncHandler(async (request, response) => {
+        response.json({ enabled: await isCreatorTotpEnabled(request.user.sub) });
+    }));
+
+    app.post("/api/auth/creator-2fa/setup", requireAuthentication, requireCreator, asyncHandler(async (request, response) => {
+        if (await isCreatorTotpEnabled(request.user.sub)) {
+            return response.status(409).json({ message: "La double authentification est déjà activée. Désactivez-la avec un code valide avant de la reconfigurer." });
+        }
+        const secret = new OTPAuth.Secret({ size: 20 }).base32;
+        const totp = createTotp(secret, request.user.username);
+        const qrCodeDataUrl = await QRCode.toDataURL(totp.toString(), { width: 260, margin: 1, errorCorrectionLevel: "M" });
+        await getPool().query(`
+            INSERT INTO depannhome_creator_totp (user_id, pending_secret_ciphertext, pending_expires_at, enabled, updated_at)
+            VALUES ($1, $2, NOW() + INTERVAL '10 minutes', FALSE, NOW())
+            ON CONFLICT (user_id) DO UPDATE SET pending_secret_ciphertext = EXCLUDED.pending_secret_ciphertext,
+                pending_expires_at = EXCLUDED.pending_expires_at, enabled = FALSE, updated_at = NOW()
+        `, [request.user.sub, encryptCreatorTotpSecret(secret)]);
+        response.json({ qrCodeDataUrl, manualSecret: secret, expiresInSeconds: 600 });
+    }));
+
+    app.post("/api/auth/creator-2fa/confirm", requireAuthentication, requireCreator, asyncHandler(async (request, response) => {
+        const code = normalizeTotpCode(request.body?.code);
+        if (!code) return response.status(400).json({ message: "Saisissez les 6 chiffres affichés dans Google Authenticator." });
+        const { rows } = await getPool().query(`
+            SELECT pending_secret_ciphertext AS "pendingSecretCiphertext"
+            FROM depannhome_creator_totp
+            WHERE user_id = $1 AND enabled = FALSE AND pending_expires_at > NOW()
+        `, [request.user.sub]);
+        const secret = rows[0]?.pendingSecretCiphertext ? decryptCreatorTotpSecret(rows[0].pendingSecretCiphertext) : "";
+        if (!secret || !isValidTotpCode(secret, code, request.user.username)) {
+            return response.status(400).json({ message: "Le code Google Authenticator est incorrect ou la configuration a expiré." });
+        }
+        await getPool().query(`
+            UPDATE depannhome_creator_totp
+            SET secret_ciphertext = pending_secret_ciphertext, pending_secret_ciphertext = '', pending_expires_at = NULL,
+                enabled = TRUE, confirmed_at = NOW(), updated_at = NOW()
+            WHERE user_id = $1
+        `, [request.user.sub]);
+        response.json({ message: "Google Authenticator est maintenant activé pour votre compte Créateur." });
+    }));
+
+    app.delete("/api/auth/creator-2fa", requireAuthentication, requireCreator, asyncHandler(async (request, response) => {
+        const code = normalizeTotpCode(request.body?.code);
+        const secret = await getCreatorTotpSecret(request.user.sub);
+        if (!code || !secret || !isValidTotpCode(secret, code, request.user.username)) {
+            return response.status(400).json({ message: "Saisissez un code Google Authenticator valide pour désactiver la double authentification." });
+        }
+        await getPool().query("DELETE FROM depannhome_creator_totp WHERE user_id = $1", [request.user.sub]);
+        response.json({ message: "La double authentification a été désactivée." });
+    }));
 
     app.get("/api/auth/members", requireAccountAdministrator, asyncHandler(async (request, response) => {
         const { rows } = await getPool().query(`
@@ -527,6 +562,146 @@ export async function recoverCreatorPassword() {
     }
     await getPool().query("UPDATE depannhome_users SET is_active = TRUE, updated_at = NOW() WHERE id = $1", [recoveredUser.account_owner_id]);
     console.log(`Mot de passe Créateur réinitialisé et vérifié pour « ${username} ». Retirez immédiatement les variables CREATOR_PASSWORD_RECOVERY_* après connexion.`);
+}
+
+export async function recoverCreatorTotp() {
+    const username = normalizeUsername(process.env.CREATOR_TOTP_RECOVERY_USERNAME);
+    const confirmation = String(process.env.CREATOR_TOTP_RECOVERY_CONFIRM || "");
+    if (!username && !confirmation) return;
+    if (confirmation !== "RESET_CREATOR_TOTP" || !isCreatorUsername(username)) {
+        throw new Error("Réinitialisation Google Authenticator refusée : vérifiez CREATOR_TOTP_RECOVERY_USERNAME, CREATOR_TOTP_RECOVERY_CONFIRM et CREATOR_USERNAMES.");
+    }
+    const result = await getPool().query(`
+        DELETE FROM depannhome_creator_totp
+        WHERE user_id = (SELECT id FROM depannhome_users WHERE username = $1)
+    `, [username]);
+    console.log(`Google Authenticator réinitialisé pour « ${username} » (${result.rowCount ? "configuration supprimée" : "aucune configuration active"}). Retirez immédiatement les variables CREATOR_TOTP_RECOVERY_* après redémarrage.`);
+}
+
+async function completeLogin(user, device, response) {
+    const isCreator = isCreatorUsername(user.username);
+    const isMobileAdministrator = user.role === "admin" && device.type === "mobile";
+    const isAccountant = user.role === "accountant";
+    const authDeviceDetails = { ...device, type: isMobileAdministrator || isAccountant ? device.type : "desktop" };
+    const automaticallyApproved = isCreator || isAccountant;
+    let authDevice = await findAuthDevice(user.id, device.id);
+    if (!authDevice) {
+        if (isMobileAdministrator && await userHasActiveMobileDevice(user.id)) {
+            return response.status(409).json({ message: "Un téléphone ou une tablette est déjà associé à ce compte administrateur. Supprimez d’abord l’ancien appareil dans Équipe." });
+        }
+        if (automaticallyApproved || (user.role === "admin" && String(user.account_owner_id) === String(user.id) && !await userHasApprovedDevice(user.id))) {
+            authDevice = await createAuthDevice(user.id, authDeviceDetails, "approved");
+        } else {
+            authDevice = await createAuthDevice(user.id, authDeviceDetails, "approval_pending");
+        }
+        if (!authDevice) {
+            return response.status(409).json({ message: isMobileAdministrator ? "Un téléphone ou une tablette est déjà associé à ce compte administrateur. Supprimez d’abord l’ancien appareil dans Équipe." : "Cet appareil est déjà associé à un autre compte. Utilisez un autre navigateur ou contactez l’administrateur." });
+        }
+    } else {
+        if (isMobileAdministrator && authDevice.device_type !== "mobile" && await userHasActiveMobileDevice(user.id)) {
+            return response.status(409).json({ message: "Un téléphone ou une tablette est déjà associé à ce compte administrateur. Supprimez d’abord l’ancien appareil dans Équipe." });
+        }
+        const { rows } = await getPool().query(`
+            UPDATE depannhome_auth_devices
+            SET label = $2, device_type = $3, last_seen_at = NOW(),
+                status = CASE WHEN $4 THEN 'approved' ELSE status END,
+                approved_at = CASE WHEN $4 AND approved_at IS NULL THEN NOW() ELSE approved_at END,
+                verification_code_hash = CASE WHEN $4 THEN '' ELSE verification_code_hash END,
+                verification_code_expires_at = CASE WHEN $4 THEN NULL ELSE verification_code_expires_at END,
+                verification_attempts = CASE WHEN $4 THEN 0 ELSE verification_attempts END
+            WHERE id = $1
+            RETURNING *
+        `, [authDevice.id, device.label, authDeviceDetails.type, automaticallyApproved]);
+        authDevice = rows[0];
+    }
+    if (authDevice.status === "approved") {
+        setSessionCookie(response, user, authDevice.id);
+        return response.json({ user: publicUser(user) });
+    }
+    if (authDevice.status === "code_pending") {
+        return response.status(403).json({ codeRequired: true, deviceId: authDevice.id, message: "Saisissez le code envoyé à votre e-mail professionnel." });
+    }
+    return response.status(403).json({ approvalRequired: true, deviceId: authDevice.id, message: authDevice.status === "rejected" ? "Cet appareil a été refusé par l’administrateur." : "Cet appareil est en attente de validation par l’administrateur." });
+}
+
+async function isCreatorTotpEnabled(userId) {
+    const { rows } = await getPool().query(
+        "SELECT enabled, secret_ciphertext AS \"secretCiphertext\" FROM depannhome_creator_totp WHERE user_id = $1",
+        [userId]
+    );
+    return Boolean(rows[0]?.enabled && rows[0]?.secretCiphertext);
+}
+
+async function getCreatorTotpSecret(userId) {
+    const { rows } = await getPool().query(`
+        SELECT secret_ciphertext AS "secretCiphertext" FROM depannhome_creator_totp
+        WHERE user_id = $1 AND enabled = TRUE
+    `, [userId]);
+    return rows[0]?.secretCiphertext ? decryptCreatorTotpSecret(rows[0].secretCiphertext) : "";
+}
+
+function createCreatorTotpChallenge(user, device) {
+    return jwt.sign(
+        { purpose: "creator-totp", sub: String(user.id), device },
+        getSessionSecret(),
+        { expiresIn: CREATOR_TOTP_CHALLENGE_DURATION_SECONDS }
+    );
+}
+
+function verifyCreatorTotpChallenge(value) {
+    try {
+        const challenge = jwt.verify(String(value || ""), getSessionSecret());
+        return challenge?.purpose === "creator-totp" && validDeviceId(challenge.device?.id) ? challenge : null;
+    } catch {
+        return null;
+    }
+}
+
+function createTotp(secret, username) {
+    return new OTPAuth.TOTP({
+        issuer: "Depann'Home Pro",
+        label: username,
+        algorithm: "SHA1",
+        digits: 6,
+        period: 30,
+        secret: OTPAuth.Secret.fromBase32(secret)
+    });
+}
+
+function normalizeTotpCode(value) {
+    const code = String(value || "").replace(/\s/g, "");
+    return /^\d{6}$/.test(code) ? code : "";
+}
+
+function isValidTotpCode(secret, code, username) {
+    try {
+        return createTotp(secret, username).validate({ token: code, window: 1 }) !== null;
+    } catch {
+        return false;
+    }
+}
+
+function encryptCreatorTotpSecret(secret) {
+    const iv = crypto.randomBytes(12);
+    const cipher = crypto.createCipheriv("aes-256-gcm", getCreatorTotpEncryptionKey(), iv);
+    const encrypted = Buffer.concat([cipher.update(secret, "utf8"), cipher.final()]);
+    return [iv.toString("base64url"), cipher.getAuthTag().toString("base64url"), encrypted.toString("base64url")].join(".");
+}
+
+function decryptCreatorTotpSecret(value) {
+    try {
+        const [ivValue, tagValue, encryptedValue] = String(value || "").split(".");
+        if (!ivValue || !tagValue || !encryptedValue) return "";
+        const decipher = crypto.createDecipheriv("aes-256-gcm", getCreatorTotpEncryptionKey(), Buffer.from(ivValue, "base64url"));
+        decipher.setAuthTag(Buffer.from(tagValue, "base64url"));
+        return Buffer.concat([decipher.update(Buffer.from(encryptedValue, "base64url")), decipher.final()]).toString("utf8");
+    } catch {
+        return "";
+    }
+}
+
+function getCreatorTotpEncryptionKey() {
+    return crypto.createHash("sha256").update(`${getSessionSecret()}:creator-totp:v1`).digest();
 }
 
 function setSessionCookie(response, user, deviceId) {

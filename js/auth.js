@@ -81,6 +81,10 @@ function renderAuthentication({ onAuthenticated, registrationEnabled, message = 
             body: JSON.stringify({ username: form.get("username"), password: form.get("password"), ...getDeviceIdentity() })
         });
         if (!result.ok) {
+            if (result.data?.totpRequired) {
+                renderCreatorTotpVerification({ onAuthenticated, registrationEnabled, challenge: result.data.challenge, message: result.data.message });
+                return;
+            }
             if (result.data?.codeRequired) {
                 renderCodeVerification({ onAuthenticated, deviceId: result.data.deviceId, message: result.data.message });
                 return;
@@ -167,6 +171,37 @@ function renderCodeVerification({ onAuthenticated, deviceId, message }) {
         const code = new FormData(event.currentTarget).get("code");
         const result = await request("/api/auth/verify-device-code", { method: "POST", body: JSON.stringify({ deviceId, code }) });
         if (!result.ok) { status.textContent = result.data?.message || "Impossible de valider le code."; status.classList.add("error"); return; }
+        onAuthenticated(result.data.user);
+    });
+}
+
+function renderCreatorTotpVerification({ onAuthenticated, registrationEnabled, challenge, message }) {
+    stopDeviceValidationPolling();
+    const app = getAppRoot();
+    app.innerHTML = `
+        <main class="auth-page"><section class="auth-card">
+            <div class="auth-brand"><img src="assets/logo.png.png" alt="Depann'Home Pro" class="auth-logo"><div><h1>Depann'Home Pro</h1><p>Vérification en deux étapes</p></div></div>
+            <p id="authMessage" class="auth-message" aria-live="polite">${escapeHtml(message || "Saisissez le code affiché dans Google Authenticator.")}</p>
+            <form id="creatorTotpForm" class="auth-form">
+                <label>Code Google Authenticator<input name="code" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required autofocus placeholder="000000"></label>
+                <button type="submit" class="secondary-button">Vérifier et se connecter</button>
+            </form>
+            <button type="button" class="secondary-button auth-outline-button" id="backToAuthentication">Retour à la connexion</button>
+        </section></main>`;
+    const status = app.querySelector("#authMessage");
+    app.querySelector("#backToAuthentication").addEventListener("click", () => renderAuthentication({ onAuthenticated, registrationEnabled }));
+    app.querySelector("#creatorTotpForm").addEventListener("submit", async event => {
+        event.preventDefault();
+        status.textContent = "Vérification du code…";
+        status.classList.remove("error");
+        const code = new FormData(event.currentTarget).get("code");
+        const result = await request("/api/auth/verify-creator-totp", { method: "POST", body: JSON.stringify({ challenge, code }) });
+        if (!result.ok) {
+            status.textContent = result.data?.message || "Impossible de vérifier le code de sécurité.";
+            status.classList.add("error");
+            event.currentTarget.elements.code.select();
+            return;
+        }
         onAuthenticated(result.data.user);
     });
 }

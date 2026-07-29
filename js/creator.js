@@ -13,7 +13,7 @@ export async function renderCreatorConsole() {
         <section class="creator-console">
             <header class="creator-heading">
                 <div><p class="eyebrow">Administration plateforme</p><h2>Console Créateur</h2></div>
-                <div class="creator-form-actions"><button type="button" class="secondary-button auth-outline-button" id="creatorBillingProfile">Facturation plateforme</button><button type="button" class="secondary-button" id="creatorNewAccount">+ Nouvelle entreprise</button></div>
+                <div class="creator-form-actions"><button type="button" class="secondary-button auth-outline-button" id="creatorSecurity">Sécurité du compte</button><button type="button" class="secondary-button auth-outline-button" id="creatorBillingProfile">Facturation plateforme</button><button type="button" class="secondary-button" id="creatorNewAccount">+ Nouvelle entreprise</button></div>
             </header>
             <p id="creatorFeedback" class="auth-message" aria-live="polite"></p>
             <section class="creator-subscription-summary" id="creatorSubscriptionSummary" aria-label="Synthèse des abonnements"></section>
@@ -25,6 +25,7 @@ export async function renderCreatorConsole() {
     `;
     container.querySelector("#creatorNewAccount").addEventListener("click", () => renderAccountForm());
     container.querySelector("#creatorBillingProfile").addEventListener("click", renderSubscriptionBillingProfile);
+    container.querySelector("#creatorSecurity").addEventListener("click", renderCreatorSecurity);
     await loadAccounts();
 }
 
@@ -240,6 +241,78 @@ async function renderSubscriptionBillingProfile() {
         button.disabled = false;
         if (!save.ok) return showFeedback(save.message || "Enregistrement impossible.", true);
         showFeedback("Coordonnées de facturation de la plateforme enregistrées.");
+    });
+}
+
+async function renderCreatorSecurity() {
+    const workspace = document.querySelector("#creatorWorkspace");
+    workspace.innerHTML = '<p class="muted">Chargement des paramètres de sécurité…</p>';
+    const result = await api("/api/auth/creator-2fa");
+    if (!result.ok) return showFeedback(result.message || "Impossible de charger les paramètres de sécurité.", true);
+    if (result.data?.enabled) {
+        workspace.innerHTML = `
+            <section class="creator-form creator-security-panel">
+                <div class="form-heading"><div><p class="eyebrow">Sécurité du compte Créateur</p><h3>Google Authenticator est activé</h3></div><span class="creator-state">Protégé</span></div>
+                <p class="muted">À chaque nouvelle connexion, votre mot de passe doit être complété par le code à 6 chiffres de Google Authenticator.</p>
+                <form id="creatorTotpDisableForm" class="creator-security-form"><label>Code actuel Google Authenticator<input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required placeholder="000000"></label><p class="auth-message" aria-live="polite"></p><div class="creator-form-actions"><button type="submit" class="secondary-button danger-button">Désactiver la double authentification</button><button type="button" class="secondary-button" id="creatorSecurityBack">Retour aux entreprises</button></div></form>
+            </section>
+        `;
+        workspace.querySelector("#creatorSecurityBack").addEventListener("click", () => selectedAccountId ? renderAccountDetail(selectedAccountId) : workspace.replaceChildren());
+        workspace.querySelector("#creatorTotpDisableForm").addEventListener("submit", async event => {
+            event.preventDefault();
+            const form = event.currentTarget;
+            const feedback = form.querySelector(".auth-message");
+            const button = form.querySelector('button[type="submit"]');
+            button.disabled = true;
+            const disable = await api("/api/auth/creator-2fa", { method: "DELETE", body: JSON.stringify({ code: new FormData(form).get("code") }) });
+            button.disabled = false;
+            if (!disable.ok) { feedback.textContent = disable.message || "Désactivation impossible."; feedback.classList.add("error"); return; }
+            showFeedback("La double authentification est désactivée.");
+            renderCreatorSecurity();
+        });
+        return;
+    }
+    workspace.innerHTML = `
+        <section class="creator-form creator-security-panel">
+            <div class="form-heading"><div><p class="eyebrow">Sécurité du compte Créateur</p><h3>Protéger avec Google Authenticator</h3></div><span class="creator-state suspended">Non activé</span></div>
+            <p class="muted">Ajoutez une seconde vérification à votre compte Créateur. Le code temporaire sera exigé après le mot de passe à chaque connexion.</p>
+            <div class="creator-form-actions"><button type="button" class="secondary-button" id="creatorTotpStart">Configurer Google Authenticator</button><button type="button" class="secondary-button" id="creatorSecurityBack">Retour aux entreprises</button></div>
+        </section>
+    `;
+    workspace.querySelector("#creatorSecurityBack").addEventListener("click", () => selectedAccountId ? renderAccountDetail(selectedAccountId) : workspace.replaceChildren());
+    workspace.querySelector("#creatorTotpStart").addEventListener("click", async event => {
+        const button = event.currentTarget;
+        button.disabled = true;
+        const setup = await api("/api/auth/creator-2fa/setup", { method: "POST", body: "{}" });
+        button.disabled = false;
+        if (!setup.ok) return showFeedback(setup.message || "Configuration impossible.", true);
+        renderCreatorTotpSetup(setup.data);
+    });
+}
+
+function renderCreatorTotpSetup(setup) {
+    const workspace = document.querySelector("#creatorWorkspace");
+    workspace.innerHTML = `
+        <section class="creator-form creator-security-panel">
+            <div class="form-heading"><div><p class="eyebrow">Sécurité du compte Créateur</p><h3>Associer Google Authenticator</h3></div></div>
+            <ol class="creator-totp-steps"><li>Ouvrez Google Authenticator sur votre téléphone.</li><li>Appuyez sur <strong>+</strong>, puis scannez ce QR code.</li><li>Saisissez ci-dessous le code à 6 chiffres affiché par l’application.</li></ol>
+            <img class="creator-totp-qr" src="${escapeHtml(setup.qrCodeDataUrl || "")}" alt="QR code Google Authenticator pour Depann’Home Pro">
+            <p class="muted">Si le scan est impossible, saisissez cette clé dans Google Authenticator : <code class="creator-totp-secret">${escapeHtml(setup.manualSecret || "")}</code></p>
+            <form id="creatorTotpConfirmForm" class="creator-security-form"><label>Code Google Authenticator<input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required autofocus placeholder="000000"></label><p class="auth-message" aria-live="polite"></p><div class="creator-form-actions"><button type="submit" class="secondary-button">Activer la double authentification</button><button type="button" class="secondary-button" id="creatorTotpCancel">Annuler</button></div></form>
+        </section>
+    `;
+    workspace.querySelector("#creatorTotpCancel").addEventListener("click", renderCreatorSecurity);
+    workspace.querySelector("#creatorTotpConfirmForm").addEventListener("submit", async event => {
+        event.preventDefault();
+        const form = event.currentTarget;
+        const feedback = form.querySelector(".auth-message");
+        const button = form.querySelector('button[type="submit"]');
+        button.disabled = true;
+        const confirmation = await api("/api/auth/creator-2fa/confirm", { method: "POST", body: JSON.stringify({ code: new FormData(form).get("code") }) });
+        button.disabled = false;
+        if (!confirmation.ok) { feedback.textContent = confirmation.message || "Activation impossible."; feedback.classList.add("error"); return; }
+        showFeedback(confirmation.message || "Google Authenticator est activé.");
+        renderCreatorSecurity();
     });
 }
 

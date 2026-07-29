@@ -150,6 +150,17 @@ export async function initializeDatabase() {
         ON depannhome_auth_devices (user_id)
         WHERE device_type = 'mobile' AND status <> 'rejected'
     `);
+    await database.query(`
+        CREATE TABLE IF NOT EXISTS depannhome_creator_totp (
+            user_id BIGINT PRIMARY KEY REFERENCES depannhome_users(id) ON DELETE CASCADE,
+            secret_ciphertext TEXT NOT NULL DEFAULT '',
+            pending_secret_ciphertext TEXT NOT NULL DEFAULT '',
+            pending_expires_at TIMESTAMPTZ,
+            enabled BOOLEAN NOT NULL DEFAULT FALSE,
+            confirmed_at TIMESTAMPTZ,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+    `);
 }
 
 export async function findUserByUsername(username) {
