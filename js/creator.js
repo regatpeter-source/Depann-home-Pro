@@ -13,7 +13,7 @@ export async function renderCreatorConsole() {
         <section class="creator-console">
             <header class="creator-heading">
                 <div><p class="eyebrow">Administration plateforme</p><h2>Console Créateur</h2></div>
-                <div class="creator-form-actions"><button type="button" class="secondary-button auth-outline-button" id="creatorSecurity">Sécurité du compte</button><button type="button" class="secondary-button auth-outline-button" id="creatorBillingProfile">Facturation plateforme</button><button type="button" class="secondary-button" id="creatorNewAccount">+ Nouvelle entreprise</button></div>
+                <div class="creator-form-actions"><button type="button" class="secondary-button auth-outline-button" id="creatorSecurity">Sécurité du compte</button><button type="button" class="secondary-button auth-outline-button" id="creatorSubscriptionInvoices">Factures abonnements</button><button type="button" class="secondary-button auth-outline-button" id="creatorBillingProfile">Facturation plateforme</button><button type="button" class="secondary-button" id="creatorNewAccount">+ Nouvelle entreprise</button></div>
             </header>
             <p id="creatorFeedback" class="auth-message" aria-live="polite"></p>
             <section class="creator-subscription-summary" id="creatorSubscriptionSummary" aria-label="Synthèse des abonnements"></section>
@@ -26,6 +26,7 @@ export async function renderCreatorConsole() {
     container.querySelector("#creatorNewAccount").addEventListener("click", () => renderAccountForm());
     container.querySelector("#creatorBillingProfile").addEventListener("click", renderSubscriptionBillingProfile);
     container.querySelector("#creatorSecurity").addEventListener("click", renderCreatorSecurity);
+    container.querySelector("#creatorSubscriptionInvoices").addEventListener("click", renderSubscriptionInvoices);
     await loadAccounts();
 }
 
@@ -242,6 +243,50 @@ async function renderSubscriptionBillingProfile() {
         if (!save.ok) return showFeedback(save.message || "Enregistrement impossible.", true);
         showFeedback("Coordonnées de facturation de la plateforme enregistrées.");
     });
+}
+
+async function renderSubscriptionInvoices() {
+    const workspace = document.querySelector("#creatorWorkspace");
+    workspace.innerHTML = '<p class="muted">Chargement des factures d’abonnement…</p>';
+    const result = await api("/api/creator/subscription-invoices");
+    if (!result.ok) return showFeedback(result.message || "Impossible de charger les factures d’abonnement.", true);
+    const invoices = result.data.invoices || [];
+    workspace.innerHTML = `
+        <section class="creator-form creator-subscription-invoices-panel">
+            <div class="form-heading"><div><p class="eyebrow">Facturation plateforme</p><h3>Factures d’abonnement envoyées</h3></div><span class="creator-state">${invoices.length} facture${invoices.length > 1 ? "s" : ""}</span></div>
+            <p class="muted">Chaque PDF reprend les informations légales, bancaires et tarifaires enregistrées au moment de son émission.</p>
+            <div class="creator-subscription-invoice-list">${invoices.length ? invoices.map(renderSubscriptionInvoice).join("") : '<p class="muted">Aucune facture d’abonnement n’a encore été créée.</p>'}</div>
+            <div class="creator-form-actions"><button type="button" class="secondary-button" id="creatorSubscriptionInvoicesBack">Retour aux entreprises</button></div>
+        </section>
+    `;
+    workspace.querySelector("#creatorSubscriptionInvoicesBack").addEventListener("click", () => selectedAccountId ? renderAccountDetail(selectedAccountId) : workspace.replaceChildren());
+}
+
+function renderSubscriptionInvoice(invoice) {
+    const status = subscriptionInvoiceStatus(invoice.status);
+    const sentAt = invoice.sentAt ? `Envoyée le ${formatDateTime(invoice.sentAt)}` : invoice.status === "failed" ? "Envoi en échec" : "En attente d’envoi";
+    const error = invoice.status === "failed" && invoice.lastError ? `<p class="auth-message error">${escapeHtml(invoice.lastError)}</p>` : "";
+    return `
+        <article class="creator-subscription-invoice">
+            <div><p class="eyebrow">${escapeHtml(invoice.subscriptionLabel || "Abonnement Depann’Home Pro")}</p><h4>${escapeHtml(invoice.invoiceNumber)}</h4><p>${escapeHtml(invoice.companyName || invoice.recipientName)} · ${escapeHtml(invoice.recipientEmail || "E-mail non renseigné")}</p></div>
+            <div class="creator-subscription-invoice-details"><span class="creator-subscription-badge ${escapeHtml(invoice.status || "pending")}">${status}</span><strong>${formatCurrency(invoice.amountCents)}</strong><small>Émise le ${formatDate(invoice.issueDate)} · Échéance ${formatDate(invoice.dueDate)}</small><small>${escapeHtml(sentAt)}</small>${error}</div>
+            <a class="secondary-button" href="/api/creator/subscription-invoices/${encodeURIComponent(invoice.id)}/pdf" download> Télécharger le PDF</a>
+        </article>
+    `;
+}
+
+function subscriptionInvoiceStatus(status) {
+    return ({ sent: "Envoyée", pending: "À envoyer", sending: "Envoi en cours", failed: "Échec d’envoi" })[status] || "À envoyer";
+}
+
+function formatDate(value) {
+    if (!value) return "Non renseignée";
+    return new Intl.DateTimeFormat("fr-FR").format(new Date(`${value}T12:00:00`));
+}
+
+function formatDateTime(value) {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? "date inconnue" : new Intl.DateTimeFormat("fr-FR", { dateStyle: "medium", timeStyle: "short" }).format(date);
 }
 
 async function renderCreatorSecurity() {

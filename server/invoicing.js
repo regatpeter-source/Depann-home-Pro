@@ -83,6 +83,41 @@ export function registerSubscriptionInvoicingRoutes(app, requireCreator) {
             profile.registrationNumber, profile.taxNumber, profile.bankIban, profile.bankBic, profile.vatRate, profile.paymentTerms, profile.footerNote]);
         response.status(204).end();
     }));
+
+    app.get("/api/creator/subscription-invoices", requireCreator, asyncHandler(async (request, response) => {
+        const { rows } = await getPool().query(`
+            SELECT invoice.id, invoice.invoice_number AS "invoiceNumber", invoice.recipient_name AS "recipientName", invoice.recipient_email AS "recipientEmail",
+                invoice.subscription_label AS "subscriptionLabel", invoice.amount_cents AS "amountCents", invoice.vat_rate::float AS "vatRate",
+                TO_CHAR(invoice.issue_date, 'YYYY-MM-DD') AS "issueDate", TO_CHAR(invoice.due_date, 'YYYY-MM-DD') AS "dueDate",
+                invoice.status, invoice.sent_at AS "sentAt", invoice.last_error AS "lastError", invoice.created_at AS "createdAt",
+                owner.company_name AS "companyName"
+            FROM depannhome_subscription_invoices invoice
+            JOIN depannhome_users owner ON owner.id = invoice.account_owner_id
+            ORDER BY invoice.issue_date DESC, invoice.id DESC
+        `);
+        response.json({ invoices: rows });
+    }));
+
+    app.get("/api/creator/subscription-invoices/:invoiceId/pdf", requireCreator, asyncHandler(async (request, response) => {
+        const invoiceId = positiveId(request.params.invoiceId);
+        if (!invoiceId) return response.status(400).json({ message: "Facture invalide." });
+        const { rows } = await getPool().query(`
+            SELECT id, invoice_number AS "invoiceNumber", recipient_name AS "recipientName", recipient_address AS "recipientAddress",
+                subscription_label AS "subscriptionLabel", amount_cents AS "amountCents", vat_rate::float AS "vatRate",
+                TO_CHAR(issue_date, 'YYYY-MM-DD') AS "issueDate", TO_CHAR(due_date, 'YYYY-MM-DD') AS "dueDate", issuer_profile AS "issuerProfile"
+            FROM depannhome_subscription_invoices WHERE id = $1
+        `, [invoiceId]);
+        const invoice = rows[0];
+        if (!invoice) return response.status(404).json({ message: "Facture introuvable." });
+        const pdf = await createBillingPdf(subscriptionInvoiceDocument(invoice), invoice.issuerProfile || emptyProfile());
+        response.set({
+            "Content-Type": "application/pdf",
+            "Content-Disposition": `attachment; filename="${subscriptionInvoicePdfFileName(invoice)}"`,
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff"
+        });
+        response.send(pdf);
+    }));
 }
 
 export function startSubscriptionInvoicingScheduler() {
@@ -175,12 +210,7 @@ async function deliverPendingInvoices() {
         const claimed = await database.query(`UPDATE depannhome_subscription_invoices SET status='sending', updated_at=NOW() WHERE id=$1 AND status IN ('pending', 'failed') RETURNING id`, [invoice.id]);
         if (!claimed.rowCount) continue;
         try {
-            const document = {
-                documentType: "invoice", documentNumber: invoice.invoiceNumber, customerName: invoice.recipientName, customerAddress: invoice.recipientAddress,
-                issueDate: dateString(invoice.issueDate), dueDate: dateString(invoice.dueDate), lines: [{
-                    description: `${invoice.subscriptionLabel} — abonnement mensuel`, quantity: 1, unit: "mois", unitPrice: amountExcludingVat(invoice.amountCents, invoice.vatRate), vatRate: invoice.vatRate
-                }], notes: invoice.issuerProfile.paymentTerms || "Paiement à réception de facture par virement bancaire."
-            };
+            const document = subscriptionInvoiceDocument(invoice);
             const pdf = await createBillingPdf(document, invoice.issuerProfile);
             await sendDocumentEmail({
                 recipient: invoice.recipientEmail, recipientName: invoice.recipientName, documentLabel: `Facture d’abonnement ${invoice.invoiceNumber}`,
@@ -259,6 +289,35 @@ function addDays(date, days) {
 
 function amountExcludingVat(amountCents, vatRate) {
     return Math.round(Number(amountCents) * 100 / (100 + Number(vatRate || 0))) / 100;
+}
+
+function subscriptionInvoiceDocument(invoice) {
+    return {
+        documentType: "invoice",
+        documentNumber: invoice.invoiceNumber,
+        customerName: invoice.recipientName,
+        customerAddress: invoice.recipientAddress,
+        issueDate: dateString(invoice.issueDate),
+        dueDate: dateString(invoice.dueDate),
+        lines: [{
+            description: `${invoice.subscriptionLabel} — abonnement mensuel`,
+            quantity: 1,
+            unit: "mois",
+            unitPrice: amountExcludingVat(invoice.amountCents, invoice.vatRate),
+            vatRate: invoice.vatRate
+        }],
+        notes: invoice.issuerProfile?.paymentTerms || "Paiement à réception de facture par virement bancaire."
+    };
+}
+
+function subscriptionInvoicePdfFileName(invoice) {
+    const number = String(invoice.invoiceNumber || "facture-abonnement").replace(/[^a-z0-9_-]+/gi, "-").replace(/^-+|-+$/g, "");
+    return `facture-abonnement-${number || "document"}.pdf`;
+}
+
+function positiveId(value) {
+    const id = Number(value);
+    return Number.isSafeInteger(id) && id > 0 ? id : 0;
 }
 
 function numberInRange(value, minimum, maximum) {

@@ -1208,6 +1208,59 @@ body.desktop-device .nav-label-messages{
 .creator-subscription-badge.suspended,
 .creator-subscription-badge.cancelled{background:#fee2e2;color:#b42318 !important;}
 
+.creator-subscription-invoices-panel{
+    max-width:920px;
+}
+
+.creator-subscription-invoice-list{
+    display:grid;
+    gap:12px;
+}
+
+.creator-subscription-invoice{
+    display:grid;
+    grid-template-columns:minmax(210px, 1fr) minmax(180px, auto) auto;
+    align-items:center;
+    gap:16px;
+    padding:16px;
+    border:1px solid var(--border);
+    border-radius:14px;
+    background:#f8fbff;
+}
+
+.creator-subscription-invoice h4{
+    margin:3px 0;
+    color:var(--primary);
+}
+
+.creator-subscription-invoice p{
+    margin:0;
+    color:var(--muted);
+    font-size:13px;
+}
+
+.creator-subscription-invoice-details{
+    display:grid;
+    gap:5px;
+    justify-items:start;
+}
+
+.creator-subscription-invoice-details strong{
+    color:var(--primary);
+}
+
+.creator-subscription-invoice-details small{
+    color:var(--muted);
+}
+
+.creator-subscription-invoice .secondary-button{
+    white-space:nowrap;
+}
+
+.creator-subscription-badge.pending{background:#eef6ff;color:#075985 !important;}
+.creator-subscription-badge.sending{background:#fff4d8;color:#9a6700 !important;}
+.creator-subscription-badge.failed{background:#fee2e2;color:#b42318 !important;}
+
 .creator-account span,
 .creator-account small,
 .creator-member span{
@@ -1370,6 +1423,15 @@ body.desktop-device .nav-label-messages{
 
     .creator-subscription-summary{
         grid-template-columns:repeat(2, minmax(0, 1fr));
+    }
+
+    .creator-subscription-invoice{
+        grid-template-columns:1fr;
+        align-items:start;
+    }
+
+    .creator-subscription-invoice .secondary-button{
+        width:100%;
     }
 }
 
