@@ -2632,6 +2632,132 @@ body.mobile-device[data-role="technician"] .calendar-list-day{
     font-size:13px;
 }
 
+.calendar-date-range{
+    display:grid;
+    gap:12px;
+    padding:14px;
+    border:1px solid rgba(0,59,115,.14);
+    border-radius:12px;
+    background:rgba(255,255,255,.72);
+}
+
+.calendar-date-range h4{
+    margin:3px 0 0;
+    color:var(--primary);
+}
+
+.calendar-date-range .muted{
+    margin:4px 0 0;
+    font-size:13px;
+}
+
+.calendar-date-range-inputs{
+    display:grid;
+    grid-template-columns:repeat(2, minmax(0, 1fr));
+    gap:10px;
+}
+
+.calendar-date-range-inputs label{
+    display:grid;
+    gap:6px;
+    color:var(--primary);
+    font-size:13px;
+    font-weight:800;
+}
+
+.calendar-date-range-inputs input{
+    min-height:42px;
+    padding:9px 11px;
+    border:1px solid var(--border);
+    border-radius:10px;
+    background:#fff;
+}
+
+.calendar-range-picker{
+    user-select:none;
+}
+
+.calendar-range-picker-toolbar{
+    display:grid;
+    grid-template-columns:42px 1fr 42px;
+    align-items:center;
+    gap:8px;
+    margin-bottom:10px;
+    text-align:center;
+    color:var(--primary);
+}
+
+.calendar-range-picker-toolbar .secondary-button{
+    min-height:38px;
+    padding:6px;
+}
+
+.calendar-range-months{
+    display:grid;
+    grid-template-columns:repeat(2, minmax(0, 1fr));
+    gap:12px;
+}
+
+.calendar-range-month{
+    min-width:0;
+}
+
+.calendar-range-month h5{
+    margin:0 0 7px;
+    color:var(--primary);
+    font-size:13px;
+    text-align:center;
+}
+
+.calendar-range-weekdays,
+.calendar-range-days{
+    display:grid;
+    grid-template-columns:repeat(7, minmax(0, 1fr));
+    gap:2px;
+}
+
+.calendar-range-weekdays span{
+    padding:3px 0;
+    color:var(--muted);
+    font-size:11px;
+    font-weight:800;
+    text-align:center;
+}
+
+.calendar-range-day{
+    min-height:34px;
+    border:0;
+    border-radius:6px;
+    background:transparent;
+    color:var(--text);
+    cursor:crosshair;
+    font-size:12px;
+    font-weight:700;
+}
+
+.calendar-range-day:hover,
+.calendar-range-day:focus-visible{
+    background:#dbeafe;
+    outline:none;
+}
+
+.calendar-range-day.outside{
+    color:#aab4c2;
+}
+
+.calendar-range-day.selected{
+    border-radius:0;
+    background:#d8eadf;
+    color:#075c37;
+}
+
+.calendar-range-day.range-start,
+.calendar-range-day.range-end{
+    border-radius:8px;
+    background:var(--secondary);
+    color:#fff;
+}
+
 .calendar-multi-date-count{
     padding:5px 9px;
     border-radius:999px;
@@ -4389,6 +4515,15 @@ footer{
 
     .calendar-multi-date-controls .secondary-button{
         width:100%;
+    }
+
+    .calendar-date-range-inputs,
+    .calendar-range-months{
+        grid-template-columns:1fr;
+    }
+
+    .calendar-range-picker{
+        display:none;
     }
 
     .calendar-client-upload{
