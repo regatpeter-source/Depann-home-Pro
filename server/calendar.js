@@ -201,7 +201,7 @@ export function registerCalendarRoutes(app, requireAuthentication) {
                         (owner_id, assigned_technician_id, title, client_name, location, event_date, start_time, end_time, color, event_type, notes)
                     VALUES ($1, $2, $3, $4, $5, $6::date, $7::time, $8::time, $9, $10, $11)
                     RETURNING id
-                `, [getAccountOwnerId(request), event.assignedTechnicianId || null, event.title, event.clientName, event.location, date, event.startTime, event.endTime, event.color, event.eventType, event.notes]);
+                `, [getAccountOwnerId(request), event.assignedTechnicianId || null, event.title, event.clientName, event.location, date, optionalTime(event.startTime), optionalTime(event.endTime), event.color, event.eventType, event.notes]);
                 await replaceEventAssignments(connection, rows[0].id, event.assignedTechnicianIds, event.assignedTechnicianId);
                 ids.push(rows[0].id);
             }
@@ -233,7 +233,7 @@ export function registerCalendarRoutes(app, requireAuthentication) {
                 SET assigned_technician_id = $3, title = $4, client_name = $5, location = $6, event_date = $7::date,
                     start_time = $8::time, end_time = $9::time, color = $10, event_type = $11, notes = $12, updated_at = NOW()
                 WHERE id = $1 AND owner_id = $2
-            `, [id, getAccountOwnerId(request), event.assignedTechnicianId || null, event.title, event.clientName, event.location, event.date, event.startTime, event.endTime, event.color, event.eventType, event.notes]);
+            `, [id, getAccountOwnerId(request), event.assignedTechnicianId || null, event.title, event.clientName, event.location, event.date, optionalTime(event.startTime), optionalTime(event.endTime), event.color, event.eventType, event.notes]);
             if (!rowCount) {
                 await connection.query("ROLLBACK");
                 return response.status(404).json({ message: "Rendez-vous introuvable." });
@@ -522,6 +522,10 @@ function sanitizeDate(value) {
 function sanitizeTime(value) {
     const time = String(value || "");
     return TIME_PATTERN.test(time) ? time : "";
+}
+
+function optionalTime(value) {
+    return value || null;
 }
 
 function calendarTimesOverlap(first, second) {
