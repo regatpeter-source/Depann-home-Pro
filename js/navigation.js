@@ -1,5 +1,5 @@
 import { ROUTES, STORAGE_KEYS, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=116";
-import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=139";
+import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=140";
 import { renderCreatorConsole } from "./creator.js?v=113";
 import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=141";
 import { renderPurchases } from "./purchases.js?v=112";
@@ -33,6 +33,7 @@ let database = { brands: [] };
 let searchRequestId = 0;
 let sharedSynchronizationTimer = null;
 let sharedSynchronizationPromise = null;
+const TECHNICIAN_CALENDAR_ALERT_KEY_PREFIX = "depannHomePro:technicianCalendar:lastViewed:";
 
 export function initializeNavigation(loadedDatabase) {
     database = loadedDatabase;
@@ -40,14 +41,16 @@ export function initializeNavigation(loadedDatabase) {
     bindEvents();
     window.addEventListener("depannhome:open-client", event => openClients(String(event.detail?.clientId || "")));
     window.addEventListener("depannhome:clients-synchronized", () => refreshClientMessageAlert());
+    window.addEventListener("depannhome:technician-calendar-viewed", event => markTechnicianCalendarAlertsRead(event.detail?.events || []));
     refreshClientMessageAlert();
+    refreshTechnicianCalendarAlert();
     document.addEventListener("visibilitychange", () => {
         if (document.visibilityState === "visible") refreshSharedData();
     });
     if (!sharedSynchronizationTimer) {
         sharedSynchronizationTimer = window.setInterval(() => {
             if (document.visibilityState === "visible") refreshSharedData();
-        }, 90_000);
+        }, isTechnician() ? 30_000 : 90_000);
     }
     if (isAccountant()) renderBilling();
     else if (document.body.dataset.role === "technician") renderCalendarOverview();
@@ -62,6 +65,7 @@ export async function refreshSharedData(options = {}) {
             : sharedSynchronizationPromise;
     }
     const requests = [synchronizeBillingDocuments({ refreshView: true, force: Boolean(options.forceBilling) })];
+    if (isTechnician()) requests.unshift(refreshTechnicianCalendarAlert());
     if (!isAccountant()) requests.unshift(refreshVisibleClientMessages());
     if (options.includeClients && !isAccountant()) requests.push(synchronizeClients());
     sharedSynchronizationPromise = Promise.all(requests).finally(() => {
@@ -183,6 +187,71 @@ async function openClients(clientId = "") {
 
 function isAccountant() {
     return document.body.dataset.role === "accountant";
+}
+
+function isTechnician() {
+    return document.body.dataset.role === "technician";
+}
+
+async function refreshTechnicianCalendarAlert() {
+    if (!isTechnician()) return { ok: true, skipped: true };
+    const today = dateString(new Date());
+    try {
+        const response = await fetch(`/api/calendar/events?start=${encodeURIComponent(today)}&end=${encodeURIComponent(today)}`, { credentials: "same-origin" });
+        const data = await response.json().catch(() => null);
+        if (!response.ok) return { ok: false, message: data?.message || "Impossible de vérifier le planning." };
+        const seenEvents = getViewedTechnicianCalendarEvents(today);
+        const unreadEvents = (data?.events || []).filter(event => seenEvents[String(event.id)] !== calendarEventVersion(event));
+        updateTechnicianCalendarAlert(unreadEvents.length);
+        return { ok: true, unreadCount: unreadEvents.length };
+    } catch {
+        return { ok: false, message: "Serveur indisponible." };
+    }
+}
+
+function markTechnicianCalendarAlertsRead(calendarEvents) {
+    if (!isTechnician()) return;
+    const today = dateString(new Date());
+    const seenEvents = getViewedTechnicianCalendarEvents(today);
+    const todayEvents = calendarEvents.filter(event => event?.date === today);
+    todayEvents
+        .forEach(event => { seenEvents[String(event.id)] = calendarEventVersion(event); });
+    try {
+        localStorage.setItem(getTechnicianCalendarAlertKey(today), JSON.stringify(seenEvents));
+    } catch {
+        // Sans stockage local, l’alerte restera visible jusqu’à la prochaine actualisation.
+    }
+    if (todayEvents.length) updateTechnicianCalendarAlert(0);
+    else refreshTechnicianCalendarAlert();
+}
+
+function updateTechnicianCalendarAlert(count) {
+    document.querySelectorAll("[data-calendar-alert]").forEach(alert => {
+        alert.hidden = count === 0;
+        alert.textContent = count > 99 ? "99+" : String(count);
+        alert.setAttribute("aria-label", `${count} nouveau${count > 1 ? "x" : ""} rendez-vous aujourd’hui`);
+    });
+}
+
+function getViewedTechnicianCalendarEvents(date) {
+    try {
+        const value = JSON.parse(localStorage.getItem(getTechnicianCalendarAlertKey(date)) || "{}");
+        return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+    } catch {
+        return {};
+    }
+}
+
+function getTechnicianCalendarAlertKey(date) {
+    return `${TECHNICIAN_CALENDAR_ALERT_KEY_PREFIX}${document.body.dataset.userId || "anonymous"}:${date}`;
+}
+
+function calendarEventVersion(event) {
+    return String(event?.updatedAt || event?.createdAt || event?.id || "");
+}
+
+function dateString(date) {
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
 function renderStore() {

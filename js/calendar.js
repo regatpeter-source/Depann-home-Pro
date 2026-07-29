@@ -75,6 +75,9 @@ export async function renderCalendar(options = {}) {
 
     events = result.events;
     technicians = availableTechnicians;
+    if (technicianHome) {
+        window.dispatchEvent(new CustomEvent("depannhome:technician-calendar-viewed", { detail: { events } }));
+    }
     renderHeader(header);
     renderEventForm(formPanel);
     renderCalendarGrid(gridPanel);
