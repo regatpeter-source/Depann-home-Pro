@@ -15,7 +15,7 @@ export function registerSupportRoutes(app, requireAuthentication) {
             senderUsername: cleanText(request.user?.username, 32),
             message
         });
-        response.status(202).json({ message: "Votre demande a été envoyée au support." });
+        response.status(202).json({ message: "Votre message est envoyé et sera traité dans les meilleurs délais." });
     }));
 }
 

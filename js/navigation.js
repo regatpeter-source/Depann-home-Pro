@@ -1024,31 +1024,51 @@ function renderSettings() {
 function renderSupportContact(container) {
     const card = document.createElement("article");
     card.className = "brand-card full-card procedure-card creator-entry-card";
-    card.innerHTML = '<p class="eyebrow">Assistance Depann’Home Pro</p><h2>Contacter le support</h2><p>Envoyez une demande au support depuis votre application PC.</p>';
-    const button = createButton("Envoyer une demande", "secondary-button", async () => {
-        const message = window.prompt("Décrivez votre demande au support :");
-        if (message === null) return;
+    card.innerHTML = `
+        <p class="eyebrow">Assistance Depann’Home Pro</p>
+        <h2>Contacter le support</h2>
+        <p>Décrivez votre demande : notre équipe la recevra avec les informations de votre compte.</p>
+        <form class="support-request-form">
+            <label>Votre message<textarea name="message" rows="10" maxlength="4000" required aria-describedby="supportMessageHint supportRequestFeedback" placeholder="Expliquez la situation rencontrée, les étapes déjà effectuées et toute information utile…"></textarea></label>
+            <div class="support-request-meta"><span id="supportMessageHint">10 caractères minimum · 4 000 maximum</span><span data-support-character-count aria-live="polite">0 / 4 000</span></div>
+            <div class="support-request-actions"><button type="submit" class="secondary-button">Envoyer ma demande</button></div>
+            <p id="supportRequestFeedback" class="auth-message" aria-live="polite"></p>
+        </form>
+    `;
+    const form = card.querySelector(".support-request-form");
+    const textarea = form.elements.message;
+    const characterCount = form.querySelector("[data-support-character-count]");
+    const feedback = form.querySelector(".auth-message");
+    const button = form.querySelector('button[type="submit"]');
+    const updateCharacterCount = () => { characterCount.textContent = `${textarea.value.length.toLocaleString("fr-FR")} / 4 000`; };
+    textarea.addEventListener("input", updateCharacterCount);
+    form.addEventListener("submit", async event => {
+        event.preventDefault();
         button.disabled = true;
         const label = button.textContent;
         button.textContent = "Envoi…";
+        feedback.textContent = "";
+        feedback.classList.remove("error");
         try {
             const response = await fetch("/api/support/requests", {
                 method: "POST",
                 credentials: "same-origin",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ message })
+                body: JSON.stringify({ message: textarea.value })
             });
             const data = await response.json().catch(() => null);
             if (!response.ok) throw new Error(data?.message || "Impossible d’envoyer votre demande au support.");
-            alert(data?.message || "Votre demande a été envoyée au support.");
+            form.reset();
+            updateCharacterCount();
+            feedback.textContent = data?.message || "Votre message est envoyé et sera traité dans les meilleurs délais.";
         } catch (error) {
-            alert(error.message || "Impossible d’envoyer votre demande au support.");
+            feedback.textContent = error.message || "Impossible d’envoyer votre demande au support.";
+            feedback.classList.add("error");
         } finally {
             button.disabled = false;
             button.textContent = label;
         }
     });
-    card.appendChild(button);
     container.appendChild(card);
 }
 
