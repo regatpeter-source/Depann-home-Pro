@@ -1,5 +1,6 @@
 import { initializeAuthentication, restoreApplicationShell, signOut } from "./auth.js?v=116";
 import { initializeClientSynchronization } from "./client-sync.js?v=117";
+import { initializeCollaboration } from "./collaboration.js?v=1";
 import { loadDatabase } from "./data.js?v=59";
 import { initializeNavigation, refreshApplication } from "./navigation.js?v=181";
 import { renderError } from "./ui.js?v=44";
@@ -33,6 +34,7 @@ async function startApplication() {
         applyFont();
         applyLanguage();
         await initializeClientSynchronization();
+        initializeCollaboration();
         const database = await loadDatabase();
         initializeNavigation(database);
         registerServiceWorker();

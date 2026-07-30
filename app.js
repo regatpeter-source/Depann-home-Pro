@@ -26,6 +26,7 @@ import { initializeMessages, registerMessageRoutes } from "./server/messages.js"
 import { initializeCalendar, registerCalendarRoutes } from "./server/calendar.js";
 import { clientUploadErrorHandler, initializeClients, registerClientRoutes } from "./server/clients.js";
 import { initializeTechnicalReports, registerTechnicalReportRoutes, technicalReportUploadErrorHandler } from "./server/technical-reports.js";
+import { initializeCollaboration, registerCollaborationRoutes } from "./server/collaboration.js";
 import { registerSupportRoutes } from "./server/support.js";
 import {
 	libraryUploadErrorHandler,
@@ -70,6 +71,7 @@ registerBillingRoutes(app, requireAuthentication);
 registerPurchaseRoutes(app, requireAuthentication);
 registerMessageRoutes(app, requireAuthentication);
 registerCalendarRoutes(app, requireAuthentication);
+registerCollaborationRoutes(app, requireAuthentication);
 registerTechnicalReportRoutes(app, requireAuthentication);
 registerClientRoutes(app, requireAuthentication);
 registerLibraryRoutes(app, requireAuthentication);
@@ -115,6 +117,7 @@ async function start() {
 	await initializePurchases();
 	await initializeMessages();
 	await initializeCalendar();
+	await initializeCollaboration();
 	await initializeTechnicalReports();
 	await initializeClients();
 	await initializeLibrary();

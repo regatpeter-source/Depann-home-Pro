@@ -18,7 +18,7 @@
 
     <link rel="icon" href="assets/logo.png.png" type="image/png">
 
-    <link rel="stylesheet" href="css/style.css?v=142">
+    <link rel="stylesheet" href="css/style.css?v=143">
 
 </head>
 
@@ -45,6 +45,8 @@
 
             <div class="user-session" id="userSession" hidden>
                 <span id="userEmail"></span>
+                <span class="collaboration-sync" data-collaboration-sync="syncing" title="Connexion en temps réel" aria-label="Connexion en temps réel">●</span>
+                <button type="button" id="notificationsBtn" class="refresh-button" aria-label="Notifications">Notifications</button>
                 <button type="button" id="refreshBtn" class="refresh-button" title="Actualiser les données partagées" aria-label="Actualiser les données partagées">Actualiser</button>
                 <button type="button" id="logoutBtn" class="logout-button">Déconnexion</button>
             </div>
@@ -198,7 +200,7 @@
 
     </div>
 
-    <script type="module" src="js/app.js?v=182"></script>
+    <script type="module" src="js/app.js?v=183"></script>
 
 </body>
 

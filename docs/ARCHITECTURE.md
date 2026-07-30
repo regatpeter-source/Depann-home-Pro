@@ -24,7 +24,9 @@ Les appels de test imposent HTTPS/HTTP externe, refusent les hôtes locaux et pl
 
 `server/technical-reports.js` fournit un moteur de rapports extensible lié aux interventions du planning. Le premier modèle, `leak_detection`, couvre les recherches de fuite avec état des lieux, contrôles, mesures, méthodes de détection, photos, conclusion et signatures. Les données et médias du rapport sont isolés par `owner_id`; les techniciens n’accèdent qu’aux interventions qui leur sont affectées.
 
-Les médias techniques restent dans les tables dédiées du rapport afin de ne pas dépasser les limites des dossiers clients. À la validation administrative, PDFKit produit le PDF, qui est conservé dans le rapport et archivé au dossier client dans la même transaction. Les demandes de correction sont associées à une section précise. L’éditeur enregistre après une courte temporisation et les rafraîchissements partagés rendent les changements disponibles aux autres utilisateurs ; aucun WebSocket/SSE n’est utilisé à ce stade.
+Les médias techniques restent dans les tables dédiées du rapport afin de ne pas dépasser les limites des dossiers clients. À la validation administrative, PDFKit produit le PDF, qui est conservé dans le rapport et archivé au dossier client dans la même transaction. Les demandes de correction sont associées à une section précise.
+
+`server/collaboration.js` apporte un verrou exclusif persistant par ressource, une pulsation d’activité et une expiration après 15 minutes d’inactivité. Le détenteur peut modifier le rapport ; les autres utilisateurs le consultent en lecture seule, avec le nom, rôle et temps d’ouverture de l’éditeur actif. Les écritures sont contrôlées côté serveur, et l’administrateur peut reprendre un verrou avec un motif audité. Un flux SSE natif diffuse les événements métier importants (verrou, sauvegarde, photo, statut, correction, validation), sans coédition caractère par caractère. Les notifications et l’audit sont stockés en PostgreSQL. Voir `docs/COLLABORATION.md` pour l’extension à d’autres entités.
 
 ## Structure
 

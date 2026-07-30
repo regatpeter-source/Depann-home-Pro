@@ -458,6 +458,37 @@ CREATE TABLE IF NOT EXISTS depannhome_technical_report_library (
 );
 CREATE INDEX IF NOT EXISTS depannhome_technical_report_library_owner_idx ON depannhome_technical_report_library (owner_id, category, LOWER(label));
 
+-- Collaboration réutilisable : le verrou est persistant et expirant. Les événements
+-- temps réel SSE sont un transport ; l’audit et les notifications restent disponibles
+-- après déconnexion, redémarrage ou perte de réseau.
+CREATE TABLE IF NOT EXISTS depannhome_collaboration_locks (
+    owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    entity_type VARCHAR(40) NOT NULL, entity_id VARCHAR(120) NOT NULL,
+    locked_by BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    locked_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), last_activity_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    expires_at TIMESTAMPTZ NOT NULL, device_type VARCHAR(20) NOT NULL DEFAULT 'desktop', device_label VARCHAR(100) NOT NULL DEFAULT '',
+    PRIMARY KEY (owner_id, entity_type, entity_id)
+);
+CREATE INDEX IF NOT EXISTS depannhome_collaboration_locks_expiry_idx ON depannhome_collaboration_locks (expires_at);
+
+CREATE TABLE IF NOT EXISTS depannhome_collaboration_notifications (
+    id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    recipient_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    event_type VARCHAR(80) NOT NULL, entity_type VARCHAR(40) NOT NULL DEFAULT '', entity_id VARCHAR(120) NOT NULL DEFAULT '',
+    title VARCHAR(200) NOT NULL, body VARCHAR(2000) NOT NULL DEFAULT '', payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    read_at TIMESTAMPTZ, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS depannhome_collaboration_notifications_recipient_idx ON depannhome_collaboration_notifications (recipient_id, read_at, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS depannhome_collaboration_audit (
+    id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    entity_type VARCHAR(40) NOT NULL, entity_id VARCHAR(120) NOT NULL, action VARCHAR(80) NOT NULL,
+    actor_id BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL, actor_role VARCHAR(30) NOT NULL DEFAULT '',
+    ip_address VARCHAR(100) NOT NULL DEFAULT '', device_type VARCHAR(20) NOT NULL DEFAULT '', device_label VARCHAR(100) NOT NULL DEFAULT '',
+    details JSONB NOT NULL DEFAULT '{}'::jsonb, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS depannhome_collaboration_audit_entity_idx ON depannhome_collaboration_audit (owner_id, entity_type, entity_id, created_at DESC);
+
 ALTER TABLE depannhome_library_documents ADD COLUMN IF NOT EXISTS owner_id BIGINT REFERENCES depannhome_users(id) ON DELETE CASCADE;
 UPDATE depannhome_library_documents document SET owner_id = section.owner_id FROM depannhome_library_sections section WHERE document.section_id = section.id AND document.owner_id IS NULL;
 ALTER TABLE depannhome_library_documents ALTER COLUMN owner_id SET NOT NULL;

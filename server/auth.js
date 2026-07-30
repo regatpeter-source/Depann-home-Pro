@@ -5,6 +5,7 @@ import * as OTPAuth from "otpauth";
 import QRCode from "qrcode";
 import { createUser, findUserById, findUserByUsername, getPool } from "./database.js";
 import { sendDeviceVerificationCode } from "./email.js";
+import { releaseLocksForUser } from "./collaboration.js";
 
 const COOKIE_NAME = "depann_home_session";
 const USERNAME_PATTERN = /^[a-z0-9._-]{3,32}$/;
@@ -137,10 +138,11 @@ export function registerAuthRoutes(app) {
         }
     }));
 
-    app.post("/api/auth/logout", (request, response) => {
+    app.post("/api/auth/logout", asyncHandler(async (request, response) => {
+        if (request.user) await releaseLocksForUser(request, "logout");
         response.clearCookie(COOKIE_NAME, cookieOptions());
         response.status(204).end();
-    });
+    }));
 
     app.get("/api/auth/creator-2fa", requireAuthentication, requireCreator, asyncHandler(async (request, response) => {
         response.json({ enabled: await isCreatorTotpEnabled(request.user.sub) });
@@ -478,6 +480,7 @@ export async function authenticateRequest(request, response, next) {
             technicianBillingEnabled: user.can_create_billing !== false,
             maxPcUsers: Number(user.max_pc_users) || 1,
             deviceId: device.id,
+            deviceType: device.device_type || "desktop",
             isCreator: isCreatorUsername(user.username)
         };
     } catch {
