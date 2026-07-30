@@ -12,7 +12,7 @@ const MAX_CLIENT_ATTACHMENTS = 30;
 const MAX_ATTACHMENT_SIZE = 4 * 1024 * 1024;
 const MAX_ATTACHMENTS_PER_UPLOAD = 5;
 const MAX_DELETED_ATTACHMENT_IDS = 500;
-const ATTACHMENT_TYPES = new Set(["Devis", "Facture", "Quitus", "Photo", "Photo avant", "Photo après", "Autre"]);
+const ATTACHMENT_TYPES = new Set(["Devis", "Facture", "Quitus", "Rapport fuite", "Photo", "Photo avant", "Photo après", "Autre"]);
 const ALLOWED_ATTACHMENT_EXTENSIONS = new Set([".pdf", ".doc", ".docx", ".xls", ".xlsx", ".txt", ".jpg", ".jpeg", ".png", ".webp"]);
 const attachmentUpload = multer({
     storage: multer.memoryStorage(),

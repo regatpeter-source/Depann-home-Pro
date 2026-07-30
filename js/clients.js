@@ -26,7 +26,7 @@ const EMPTY_CLIENT = {
     activityHistory: []
 };
 
-const ATTACHMENT_TYPES = ["Devis", "Facture", "Quitus", "Photo", "Photo avant", "Photo après", "Autre"];
+const ATTACHMENT_TYPES = ["Devis", "Facture", "Quitus", "Rapport fuite", "Photo", "Photo avant", "Photo après", "Autre"];
 const MAX_ATTACHMENT_SIZE = 4 * 1024 * 1024;
 let clientScreenOptions = {};
 let clientDirectoryFilters = createEmptyDirectoryFilters();

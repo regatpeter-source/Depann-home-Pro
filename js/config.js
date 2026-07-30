@@ -43,6 +43,7 @@ export const ROUTES = {
     billing: "billing",
     accounting: "accounting",
     connectors: "connectors",
+    technicalReports: "technical-reports",
     purchases: "purchases",
         messages: "messages",
     calendar: "calendar",

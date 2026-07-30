@@ -25,6 +25,7 @@ import { initializePurchases, registerPurchaseRoutes } from "./server/purchases.
 import { initializeMessages, registerMessageRoutes } from "./server/messages.js";
 import { initializeCalendar, registerCalendarRoutes } from "./server/calendar.js";
 import { clientUploadErrorHandler, initializeClients, registerClientRoutes } from "./server/clients.js";
+import { initializeTechnicalReports, registerTechnicalReportRoutes, technicalReportUploadErrorHandler } from "./server/technical-reports.js";
 import { registerSupportRoutes } from "./server/support.js";
 import {
 	libraryUploadErrorHandler,
@@ -69,6 +70,7 @@ registerBillingRoutes(app, requireAuthentication);
 registerPurchaseRoutes(app, requireAuthentication);
 registerMessageRoutes(app, requireAuthentication);
 registerCalendarRoutes(app, requireAuthentication);
+registerTechnicalReportRoutes(app, requireAuthentication);
 registerClientRoutes(app, requireAuthentication);
 registerLibraryRoutes(app, requireAuthentication);
 registerSupportRoutes(app, requireAuthentication);
@@ -95,6 +97,7 @@ app.get("/service-worker.js", (request, response) => {
 
 app.use(billingUploadErrorHandler);
 app.use(clientUploadErrorHandler);
+app.use(technicalReportUploadErrorHandler);
 app.use(libraryUploadErrorHandler);
 app.use((error, request, response, next) => {
 	console.error(error);
@@ -112,6 +115,7 @@ async function start() {
 	await initializePurchases();
 	await initializeMessages();
 	await initializeCalendar();
+	await initializeTechnicalReports();
 	await initializeClients();
 	await initializeLibrary();
 	await createInitialAdministrator();

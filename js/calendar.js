@@ -3,6 +3,7 @@ import { createBillingDocumentForClient, viewBillingDocument } from "./billing.j
 import { getSearchableClients } from "./clients.js?v=132";
 import { addClientActivityByName, synchronizeClients } from "./client-sync.js?v=116";
 import { renderClientMessages } from "./messages.js?v=106";
+import { renderTechnicalReports } from "./technical-reports.js?v=1";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { clearSearch, createInfo, getContainer, setPage } from "./ui.js?v=44";
@@ -258,6 +259,10 @@ function renderEventForm(panel) {
                         <dl><dt>Date</dt><dd>${escapeHtml(formatActivityDate(event.date, event.startTime))}${event.endTime ? ` — ${escapeHtml(event.endTime)}` : ""}</dd>${renderAssignedTechniciansDetail(event)}${event.notes ? `<dt>Notes</dt><dd>${escapeHtml(event.notes)}</dd>` : ""}</dl>
                     </section>
                     ${renderInterventionPhotosHtml(client, event)}
+                    <section class="calendar-billing-actions report-entry-point">
+                        <div><p class="eyebrow">Rapport technique</p><h3>Recherche de fuite</h3><p class="muted">Rédigez le rapport terrain, joignez les photos et transmettez-le à l’administration.</p></div>
+                        <div><button type="button" class="secondary-button" id="openTechnicalReport">Ouvrir le rapport</button></div>
+                    </section>
                     <section class="calendar-linked-documents" id="calendarLinkedDocuments"><p class="muted">Chargement des devis et factures de cette intervention…</p></section>
                     ${isTechnicianBillingAllowed() ? `<section class="calendar-billing-actions">
                         <div><p class="eyebrow">Fin d’intervention</p><h3>Devis et facture</h3><p class="muted">Créez le document adapté après avoir renseigné l’intervention.</p></div>
@@ -279,6 +284,7 @@ function renderEventForm(panel) {
         loadLinkedBillingDocuments(panel.querySelector("#calendarLinkedDocuments"), event);
         panel.querySelector('[data-client-action="quote"]')?.addEventListener("click", () => createBillingDocumentForClient("quote", client, event.id));
         panel.querySelector('[data-client-action="invoice"]')?.addEventListener("click", () => createBillingDocumentForClient("invoice", client, event.id));
+        panel.querySelector("#openTechnicalReport")?.addEventListener("click", () => renderTechnicalReports(0, event.id));
         panel.querySelector("#calendarInterventionPhotos")?.addEventListener("submit", eventSubmit => uploadInterventionPhotos(eventSubmit, client, event));
         panel.querySelector("#calendarClientUpload")?.addEventListener("submit", eventSubmit => uploadClientAttachments(eventSubmit, client, event));
         panel.querySelector("#closeCalendarDetail").addEventListener("click", () => {

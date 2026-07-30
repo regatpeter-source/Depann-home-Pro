@@ -425,6 +425,39 @@ CREATE TABLE IF NOT EXISTS depannhome_library_documents (
 CREATE INDEX IF NOT EXISTS depannhome_library_documents_section_idx
     ON depannhome_library_documents (section_id, created_at DESC);
 
+-- Moteur générique de rapports techniques. Le type leak_detection est le premier
+-- modèle livré ; content et media permettent l’ajout de futurs modèles sans
+-- modifier les dossiers clients ni leurs limites de pièces jointes.
+CREATE TABLE IF NOT EXISTS depannhome_technical_reports (
+    id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    created_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+    appointment_id BIGINT REFERENCES depannhome_calendar_events(id) ON DELETE SET NULL,
+    client_id VARCHAR(100) NOT NULL DEFAULT '', report_type VARCHAR(40) NOT NULL DEFAULT 'leak_detection',
+    title VARCHAR(160) NOT NULL DEFAULT 'Rapport de recherche de fuite', report_date DATE NOT NULL DEFAULT CURRENT_DATE,
+    content JSONB NOT NULL DEFAULT '{}'::jsonb, media JSONB NOT NULL DEFAULT '[]'::jsonb,
+    status VARCHAR(30) NOT NULL DEFAULT 'draft', submitted_at TIMESTAMPTZ, validated_at TIMESTAMPTZ,
+    validated_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+    pdf_data BYTEA, pdf_filename VARCHAR(255) NOT NULL DEFAULT '', created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS depannhome_technical_reports_owner_updated_idx ON depannhome_technical_reports (owner_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS depannhome_technical_reports_owner_appointment_idx ON depannhome_technical_reports (owner_id, appointment_id);
+
+CREATE TABLE IF NOT EXISTS depannhome_technical_report_corrections (
+    id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    report_id BIGINT NOT NULL REFERENCES depannhome_technical_reports(id) ON DELETE CASCADE,
+    section_key VARCHAR(40) NOT NULL, comment VARCHAR(2000) NOT NULL,
+    requested_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+    resolved_at TIMESTAMPTZ, resolved_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS depannhome_technical_report_corrections_report_idx ON depannhome_technical_report_corrections (owner_id, report_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS depannhome_technical_report_library (
+    id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    category VARCHAR(40) NOT NULL, label VARCHAR(160) NOT NULL, content JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS depannhome_technical_report_library_owner_idx ON depannhome_technical_report_library (owner_id, category, LOWER(label));
+
 ALTER TABLE depannhome_library_documents ADD COLUMN IF NOT EXISTS owner_id BIGINT REFERENCES depannhome_users(id) ON DELETE CASCADE;
 UPDATE depannhome_library_documents document SET owner_id = section.owner_id FROM depannhome_library_sections section WHERE document.section_id = section.id AND document.owner_id IS NULL;
 ALTER TABLE depannhome_library_documents ALTER COLUMN owner_id SET NOT NULL;

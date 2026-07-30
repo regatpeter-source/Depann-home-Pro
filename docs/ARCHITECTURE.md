@@ -20,6 +20,12 @@ Les paquets exportés contiennent le manifeste, le modèle de synchronisation et
 
 Les appels de test imposent HTTPS/HTTP externe, refusent les hôtes locaux et plages IPv4 privées usuelles, appliquent timeout et nouvelles tentatives, puis écrivent un journal en masquant les entêtes et valeurs sensibles. Les connecteurs restent compatibles avec une infrastructure Render à disque éphémère, car aucune installation n’écrit dans le système de fichiers.
 
+## Rapports techniques
+
+`server/technical-reports.js` fournit un moteur de rapports extensible lié aux interventions du planning. Le premier modèle, `leak_detection`, couvre les recherches de fuite avec état des lieux, contrôles, mesures, méthodes de détection, photos, conclusion et signatures. Les données et médias du rapport sont isolés par `owner_id`; les techniciens n’accèdent qu’aux interventions qui leur sont affectées.
+
+Les médias techniques restent dans les tables dédiées du rapport afin de ne pas dépasser les limites des dossiers clients. À la validation administrative, PDFKit produit le PDF, qui est conservé dans le rapport et archivé au dossier client dans la même transaction. Les demandes de correction sont associées à une section précise. L’éditeur enregistre après une courte temporisation et les rafraîchissements partagés rendent les changements disponibles aux autres utilisateurs ; aucun WebSocket/SSE n’est utilisé à ce stade.
+
 ## Structure
 
 ```text

@@ -1,0 +1,177 @@
+import crypto from "node:crypto";
+import multer from "multer";
+import path from "node:path";
+import PDFDocument from "pdfkit";
+import { getPool } from "./database.js";
+import { getAccountOwnerId } from "./auth.js";
+
+const REPORT_TYPE = "leak_detection";
+const STATUSES = new Set(["draft", "submitted", "in_correction", "validated"]);
+const SECTIONS = ["cover", "overview", "installation", "visual", "measurements", "leakSearch", "location", "work", "finalControl", "conclusion", "signatures"];
+const MEDIA_SECTIONS = new Set(SECTIONS);
+const MAX_MEDIA_PER_REPORT = 40;
+const MAX_MEDIA_SIZE = 4 * 1024 * 1024;
+const MAX_REPORT_BYTES = 45 * 1024 * 1024;
+const MAX_LIBRARY_ITEMS = 200;
+const IMAGE_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".webp"]);
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_MEDIA_SIZE, files: 5 }, fileFilter: (request, file, callback) => callback(null, IMAGE_EXTENSIONS.has(path.extname(file.originalname || "").toLowerCase())) });
+
+const defaultContent = () => ({
+    cover: { insurance: "", claimNumber: "", interventionReference: "", generalPhotoId: "" },
+    overview: { generalDescription: "", incidentNature: "", customerHistory: "", context: "", interventionConditions: "" },
+    installation: { installationType: "", brand: "", model: "", year: "", refrigerant: "", serialNumber: "", power: "" },
+    visual: { checklist: [], observations: "", anomalies: "" },
+    measurements: { rows: [] },
+    leakSearch: { methods: [] },
+    location: { description: "", preciseLocation: "", comments: "" },
+    work: { repair: "", replacement: "", recharge: "", refrigerantQuantity: "", tests: "", equipment: "" },
+    finalControl: { rows: [], tightness: "", operatingTests: "", validation: "" },
+    conclusion: { recommendations: "" },
+    signatures: { technician: "", client: "", clientName: "", signedAt: "" }
+});
+
+export async function initializeTechnicalReports() {
+    const database = getPool();
+    await database.query(`
+        CREATE TABLE IF NOT EXISTS depannhome_technical_reports (
+            id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+            created_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+            appointment_id BIGINT REFERENCES depannhome_calendar_events(id) ON DELETE SET NULL,
+            client_id VARCHAR(100) NOT NULL DEFAULT '', report_type VARCHAR(40) NOT NULL DEFAULT 'leak_detection',
+            title VARCHAR(160) NOT NULL DEFAULT 'Rapport de recherche de fuite', report_date DATE NOT NULL DEFAULT CURRENT_DATE,
+            content JSONB NOT NULL DEFAULT '{}'::jsonb, media JSONB NOT NULL DEFAULT '[]'::jsonb,
+            status VARCHAR(30) NOT NULL DEFAULT 'draft', submitted_at TIMESTAMPTZ, validated_at TIMESTAMPTZ,
+            validated_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL, pdf_data BYTEA, pdf_filename VARCHAR(255) NOT NULL DEFAULT '',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+    `);
+    await database.query("CREATE INDEX IF NOT EXISTS depannhome_technical_reports_owner_updated_idx ON depannhome_technical_reports (owner_id, updated_at DESC)");
+    await database.query("CREATE INDEX IF NOT EXISTS depannhome_technical_reports_owner_appointment_idx ON depannhome_technical_reports (owner_id, appointment_id)");
+    await database.query(`
+        CREATE TABLE IF NOT EXISTS depannhome_technical_report_corrections (
+            id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+            report_id BIGINT NOT NULL REFERENCES depannhome_technical_reports(id) ON DELETE CASCADE,
+            section_key VARCHAR(40) NOT NULL, comment VARCHAR(2000) NOT NULL, requested_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+            resolved_at TIMESTAMPTZ, resolved_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+    `);
+    await database.query("CREATE INDEX IF NOT EXISTS depannhome_technical_report_corrections_report_idx ON depannhome_technical_report_corrections (owner_id, report_id, created_at DESC)");
+    await database.query(`
+        CREATE TABLE IF NOT EXISTS depannhome_technical_report_library (
+            id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+            category VARCHAR(40) NOT NULL, label VARCHAR(160) NOT NULL, content JSONB NOT NULL DEFAULT '{}'::jsonb,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+    `);
+    await database.query("CREATE INDEX IF NOT EXISTS depannhome_technical_report_library_owner_idx ON depannhome_technical_report_library (owner_id, category, LOWER(label))");
+}
+
+export function registerTechnicalReportRoutes(app, requireAuthentication) {
+    app.use("/api/technical-reports", requireAuthentication, requireReportAccess);
+    app.get("/api/technical-reports", asyncHandler(async (request, response) => response.json({ reports: await loadReports(getAccountOwnerId(request), request), library: await loadLibrary(getAccountOwnerId(request)) })));
+    app.get("/api/technical-reports/appointments/:appointmentId", asyncHandler(async (request, response) => {
+        const appointment = await findAccessibleAppointment(getAccountOwnerId(request), positiveId(request.params.appointmentId), request);
+        if (!appointment) return response.status(404).json({ message: "Intervention introuvable ou non accessible." });
+        const report = await findByAppointment(getAccountOwnerId(request), appointment.id, request);
+        response.json({ appointment, report });
+    }));
+    app.post("/api/technical-reports", asyncHandler(async (request, response) => {
+        const ownerId = getAccountOwnerId(request); const input = sanitizeReport(request.body);
+        if (!input.ok) return response.status(400).json({ message: input.message });
+        const appointment = await findAccessibleAppointment(ownerId, input.appointmentId, request);
+        if (!appointment) return response.status(400).json({ message: "Créez le rapport depuis une intervention accessible." });
+        const clientId = await findClientId(ownerId, input.clientId, appointment.clientName);
+        const { rows } = await getPool().query(`INSERT INTO depannhome_technical_reports (owner_id, created_by, appointment_id, client_id, report_type, title, report_date, content) VALUES ($1,$2,$3,$4,$5,$6,$7::date,$8::jsonb) RETURNING id`, [ownerId, request.user.sub, appointment.id, clientId, REPORT_TYPE, input.title, input.reportDate, JSON.stringify(input.content)]);
+        response.status(201).json({ id: rows[0].id });
+    }));
+    app.get("/api/technical-reports/:reportId", asyncHandler(async (request, response) => {
+        const report = await findReport(getAccountOwnerId(request), positiveId(request.params.reportId), request);
+        if (!report) return response.status(404).json({ message: "Rapport introuvable." });
+        response.json({ report, corrections: await loadCorrections(getAccountOwnerId(request), report.id) });
+    }));
+    app.put("/api/technical-reports/:reportId", asyncHandler(async (request, response) => {
+        const ownerId = getAccountOwnerId(request); const report = await findReport(ownerId, positiveId(request.params.reportId), request);
+        const input = sanitizeReport(request.body);
+        if (!report) return response.status(404).json({ message: "Rapport introuvable." });
+        if (!input.ok) return response.status(400).json({ message: input.message });
+        if (!canEdit(report, request)) return response.status(409).json({ message: "Ce rapport validé ne peut plus être modifié." });
+        await getPool().query("UPDATE depannhome_technical_reports SET title=$3, report_date=$4::date, content=$5::jsonb, status=CASE WHEN status='in_correction' THEN 'draft' ELSE status END, updated_at=NOW() WHERE id=$1 AND owner_id=$2", [report.id, ownerId, input.title, input.reportDate, JSON.stringify(input.content)]);
+        response.status(204).end();
+    }));
+    app.post("/api/technical-reports/:reportId/media", upload.array("files", 5), asyncHandler(async (request, response) => {
+        const ownerId = getAccountOwnerId(request); const report = await findReport(ownerId, positiveId(request.params.reportId), request);
+        const section = MEDIA_SECTIONS.has(request.body?.section) ? request.body.section : ""; const files = Array.isArray(request.files) ? request.files : [];
+        if (!report) return response.status(404).json({ message: "Rapport introuvable." });
+        if (!canEdit(report, request)) return response.status(409).json({ message: "Le rapport est verrouillé." });
+        if (!section || !files.length) return response.status(400).json({ message: "Section et photo(s) obligatoires." });
+        const media = Array.isArray(report.media) ? report.media : [];
+        if (media.length + files.length > MAX_MEDIA_PER_REPORT) return response.status(400).json({ message: `Le rapport est limité à ${MAX_MEDIA_PER_REPORT} photos.` });
+        const additions = files.map(file => ({ id: `media-${crypto.randomUUID()}`, section, name: safeName(file.originalname), mime: file.mimetype, size: file.size, caption: cleanText(request.body?.caption, 500), annotation: cleanText(request.body?.annotation, 1000), dataUrl: `data:${file.mimetype};base64,${file.buffer.toString("base64")}`, createdAt: new Date().toISOString() }));
+        const next = [...media, ...additions]; if (Buffer.byteLength(JSON.stringify(next)) > MAX_REPORT_BYTES) return response.status(400).json({ message: "Le rapport est trop volumineux : compressez les photos." });
+        await getPool().query("UPDATE depannhome_technical_reports SET media=$3::jsonb, updated_at=NOW() WHERE id=$1 AND owner_id=$2", [report.id, ownerId, JSON.stringify(next)]);
+        response.status(201).json({ media: additions });
+    }));
+    app.patch("/api/technical-reports/:reportId/media/:mediaId", asyncHandler(async (request, response) => {
+        const ownerId = getAccountOwnerId(request); const report = await findReport(ownerId, positiveId(request.params.reportId), request); if (!report) return response.status(404).json({ message: "Rapport introuvable." }); if (!canEdit(report, request)) return response.status(409).json({ message: "Le rapport est verrouillé." });
+        const id = String(request.params.mediaId || ""); const media = (report.media || []).map(item => item.id === id ? { ...item, caption: cleanText(request.body?.caption, 500), annotation: cleanText(request.body?.annotation, 1000) } : item); if (!media.some(item => item.id === id)) return response.status(404).json({ message: "Photo introuvable." });
+        await getPool().query("UPDATE depannhome_technical_reports SET media=$3::jsonb, updated_at=NOW() WHERE id=$1 AND owner_id=$2", [report.id, ownerId, JSON.stringify(media)]); response.status(204).end();
+    }));
+    app.delete("/api/technical-reports/:reportId/media/:mediaId", asyncHandler(async (request, response) => {
+        const ownerId = getAccountOwnerId(request); const report = await findReport(ownerId, positiveId(request.params.reportId), request); if (!report) return response.status(404).json({ message: "Rapport introuvable." }); if (!canEdit(report, request)) return response.status(409).json({ message: "Le rapport est verrouillé." });
+        const media = (report.media || []).filter(item => item.id !== String(request.params.mediaId || "")); await getPool().query("UPDATE depannhome_technical_reports SET media=$3::jsonb, updated_at=NOW() WHERE id=$1 AND owner_id=$2", [report.id, ownerId, JSON.stringify(media)]); response.status(204).end();
+    }));
+    app.post("/api/technical-reports/:reportId/submit", asyncHandler(async (request, response) => {
+        const report = await findReport(getAccountOwnerId(request), positiveId(request.params.reportId), request); if (!report) return response.status(404).json({ message: "Rapport introuvable." }); if (!canEdit(report, request)) return response.status(409).json({ message: "Le rapport est verrouillé." });
+        await getPool().query("UPDATE depannhome_technical_reports SET status='submitted', submitted_at=NOW(), updated_at=NOW() WHERE id=$1 AND owner_id=$2", [report.id, getAccountOwnerId(request)]); response.status(204).end();
+    }));
+    app.post("/api/technical-reports/:reportId/corrections", requireReportAdministration, asyncHandler(async (request, response) => {
+        const ownerId = getAccountOwnerId(request); const report = await findReport(ownerId, positiveId(request.params.reportId), request); const section = MEDIA_SECTIONS.has(request.body?.section) ? request.body.section : ""; const comment = cleanText(request.body?.comment, 2000);
+        if (!report) return response.status(404).json({ message: "Rapport introuvable." }); if (!section || !comment) return response.status(400).json({ message: "Section et commentaire obligatoires." });
+        await getPool().query("INSERT INTO depannhome_technical_report_corrections (owner_id, report_id, section_key, comment, requested_by) VALUES ($1,$2,$3,$4,$5)", [ownerId, report.id, section, comment, request.user.sub]);
+        await getPool().query("UPDATE depannhome_technical_reports SET status='in_correction', updated_at=NOW() WHERE id=$1 AND owner_id=$2", [report.id, ownerId]);
+        await notifyTechnician(ownerId, report, request.user.sub, section, comment); response.status(201).end();
+    }));
+    app.post("/api/technical-reports/:reportId/validate", requireReportAdministration, asyncHandler(async (request, response) => {
+        const ownerId = getAccountOwnerId(request); const report = await findReport(ownerId, positiveId(request.params.reportId), request); if (!report) return response.status(404).json({ message: "Rapport introuvable." }); if (report.status !== "submitted") return response.status(409).json({ message: "Soumettez le rapport avant validation." });
+        const profile = await loadProfile(ownerId); const pdf = await createLeakReportPdf(report, profile); const filename = `rapport-recherche-fuite-${report.id}.pdf`;
+        const connection = await getPool().connect(); try { await connection.query("BEGIN"); await connection.query("UPDATE depannhome_technical_reports SET status='validated', validated_at=NOW(), validated_by=$3, pdf_data=$4, pdf_filename=$5, updated_at=NOW() WHERE id=$1 AND owner_id=$2", [report.id, ownerId, request.user.sub, pdf, filename]); await archivePdf(connection, ownerId, report, pdf, filename, request); await connection.query("COMMIT"); } catch (error) { await connection.query("ROLLBACK"); throw error; } finally { connection.release(); }
+        response.json({ message: "Rapport validé, PDF généré et archivé." });
+    }));
+    app.post("/api/technical-reports/:reportId/reopen", requireReportAdministration, asyncHandler(async (request, response) => { const ownerId = getAccountOwnerId(request); const report = await findReport(ownerId, positiveId(request.params.reportId), request); if (!report) return response.status(404).json({ message: "Rapport introuvable." }); await getPool().query("UPDATE depannhome_technical_reports SET status='draft', pdf_data=NULL, pdf_filename='', validated_at=NULL, validated_by=NULL, updated_at=NOW() WHERE id=$1 AND owner_id=$2", [report.id, ownerId]); response.status(204).end(); }));
+    app.get("/api/technical-reports/:reportId/pdf", asyncHandler(async (request, response) => { const report = await findReport(getAccountOwnerId(request), positiveId(request.params.reportId), request, true); if (!report) return response.status(404).json({ message: "Rapport introuvable." }); const pdf = report.pdfData || await createLeakReportPdf(report, await loadProfile(getAccountOwnerId(request))); response.set({ "Content-Type": "application/pdf", "Content-Disposition": `inline; filename="${report.pdfFilename || `rapport-recherche-fuite-${report.id}.pdf`}"`, "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" }); response.send(pdf); }));
+    app.post("/api/technical-reports/library", requireReportAdministration, asyncHandler(async (request, response) => { const item = sanitizeLibraryItem(request.body); if (!item.ok) return response.status(400).json({ message: item.message }); const ownerId = getAccountOwnerId(request); const count = await getPool().query("SELECT count(*)::int AS count FROM depannhome_technical_report_library WHERE owner_id=$1", [ownerId]); if (count.rows[0].count >= MAX_LIBRARY_ITEMS) return response.status(400).json({ message: "Bibliothèque complète." }); const { rows } = await getPool().query("INSERT INTO depannhome_technical_report_library (owner_id, category, label, content) VALUES ($1,$2,$3,$4::jsonb) RETURNING id", [ownerId, item.category, item.label, JSON.stringify(item.content)]); response.status(201).json({ id: rows[0].id }); }));
+    app.delete("/api/technical-reports/library/:itemId", requireReportAdministration, asyncHandler(async (request, response) => { const result = await getPool().query("DELETE FROM depannhome_technical_report_library WHERE id=$1 AND owner_id=$2", [positiveId(request.params.itemId), getAccountOwnerId(request)]); if (!result.rowCount) return response.status(404).json({ message: "Élément introuvable." }); response.status(204).end(); }));
+}
+
+function requireReportAccess(request, response, next) { if (request.user?.role === "accountant") return response.status(403).json({ message: "L’espace comptabilité n’accède pas aux rapports techniques." }); return next(); }
+function requireReportAdministration(request, response, next) { if (request.user?.role !== "admin") return response.status(403).json({ message: "Cette action est réservée au personnel administratif." }); return next(); }
+async function loadReports(ownerId, request) { const { rows } = await getPool().query(`SELECT report.id, report.appointment_id AS "appointmentId", report.client_id AS "clientId", report.title, TO_CHAR(report.report_date,'YYYY-MM-DD') AS "reportDate", report.status, report.created_by AS "createdBy", report.created_at AS "createdAt", report.updated_at AS "updatedAt", creator.full_name AS "technicianName" FROM depannhome_technical_reports report LEFT JOIN depannhome_users creator ON creator.id=report.created_by WHERE report.owner_id=$1 AND ($2 <> 'technician' OR report.created_by=$3 OR EXISTS (SELECT 1 FROM depannhome_calendar_assignments assignment WHERE assignment.event_id=report.appointment_id AND assignment.technician_id=$3)) ORDER BY report.updated_at DESC`, [ownerId, request.user.role, request.user.sub]); return rows; }
+async function findReport(ownerId, id, request, includePdf = false) { if (!id) return null; const { rows } = await getPool().query(`SELECT report.*, report.appointment_id AS "appointmentId", report.client_id AS "clientId", TO_CHAR(report.report_date,'YYYY-MM-DD') AS "reportDate", report.created_by AS "createdBy", report.pdf_data AS "pdfData", report.pdf_filename AS "pdfFilename", creator.full_name AS "technicianName", event.client_name AS "clientName", event.location AS "appointmentLocation", TO_CHAR(event.event_date,'YYYY-MM-DD') AS "appointmentDate", TO_CHAR(event.start_time,'HH24:MI') AS "appointmentStartTime", client.client_data->>'phone' AS "clientPhone", CONCAT_WS(', ', NULLIF(client.client_data->>'address',''), NULLIF(client.client_data->>'city','')) AS "clientAddress" FROM depannhome_technical_reports report LEFT JOIN depannhome_users creator ON creator.id=report.created_by LEFT JOIN depannhome_calendar_events event ON event.id=report.appointment_id AND event.owner_id=report.owner_id LEFT JOIN depannhome_clients client ON client.owner_id=report.owner_id AND client.client_id=report.client_id WHERE report.id=$1 AND report.owner_id=$2 AND ($3 <> 'technician' OR report.created_by=$4 OR EXISTS (SELECT 1 FROM depannhome_calendar_assignments assignment WHERE assignment.event_id=report.appointment_id AND assignment.technician_id=$4))`, [id, ownerId, request.user.role, request.user.sub]); return rows[0] ? publicReport(rows[0], includePdf) : null; }
+async function findByAppointment(ownerId, appointmentId, request) { const { rows } = await getPool().query(`SELECT id FROM depannhome_technical_reports WHERE owner_id=$1 AND appointment_id=$2 ORDER BY updated_at DESC LIMIT 1`, [ownerId, appointmentId]); return rows[0] ? findReport(ownerId, rows[0].id, request) : null; }
+function publicReport(report, includePdf = false) { const value = { ...report, content: normalizeContent(report.content), media: Array.isArray(report.media) ? report.media : [] }; if (!includePdf) delete value.pdfData; return value; }
+async function findAccessibleAppointment(ownerId, id, request) { if (!id) return null; const { rows } = await getPool().query(`SELECT event.id, event.client_name AS "clientName", event.location, event.title, TO_CHAR(event.event_date,'YYYY-MM-DD') AS date, TO_CHAR(event.start_time,'HH24:MI') AS "startTime", event.notes FROM depannhome_calendar_events event WHERE event.id=$1 AND event.owner_id=$2 AND event.event_type='appointment' AND ($3 <> 'technician' OR EXISTS (SELECT 1 FROM depannhome_calendar_assignments assignment WHERE assignment.event_id=event.id AND assignment.technician_id=$4))`, [id, ownerId, request.user.role, request.user.sub]); return rows[0] || null; }
+async function findClientId(ownerId, requested, name) { if (CLIENT_ID.test(String(requested || ""))) return requested; const { rows } = await getPool().query("SELECT client_id FROM depannhome_clients WHERE owner_id=$1 AND LOWER(BTRIM(client_data->>'name'))=LOWER(BTRIM($2)) LIMIT 1", [ownerId, name || ""]); return rows[0]?.client_id || ""; }
+async function loadCorrections(ownerId, reportId) { const { rows } = await getPool().query(`SELECT correction.id, correction.section_key AS section, correction.comment, correction.resolved_at AS "resolvedAt", correction.created_at AS "createdAt", user_account.full_name AS "requestedBy" FROM depannhome_technical_report_corrections correction LEFT JOIN depannhome_users user_account ON user_account.id=correction.requested_by WHERE correction.owner_id=$1 AND correction.report_id=$2 ORDER BY correction.created_at DESC`, [ownerId, reportId]); return rows; }
+async function loadLibrary(ownerId) { const { rows } = await getPool().query("SELECT id, category, label, content FROM depannhome_technical_report_library WHERE owner_id=$1 ORDER BY category, LOWER(label)", [ownerId]); return rows; }
+function canEdit(report, request) { return report.status !== "validated" && (request.user.role === "admin" || Number(report.createdBy) === Number(request.user.sub)); }
+async function notifyTechnician(ownerId, report, senderId, section, comment) { if (!report.createdBy || Number(report.createdBy) === Number(senderId)) return; await getPool().query("INSERT INTO depannhome_messages (sender_id, recipient_id, client_id, body) VALUES ($1,$2,$3,$4)", [senderId, report.createdBy, report.clientId || null, `Correction demandée — rapport fuite #${report.id}, section ${section} : ${comment}`.slice(0, 2000)]); }
+function sanitizeReport(value) { const appointmentId = positiveId(value?.appointmentId); const title = cleanText(value?.title, 160) || "Rapport de recherche de fuite"; const reportDate = validDate(value?.reportDate) || new Date().toISOString().slice(0, 10); if (!appointmentId) return { ok: false, message: "Une intervention est obligatoire." }; return { ok: true, appointmentId, clientId: cleanText(value?.clientId, 100), title, reportDate, content: normalizeContent(value?.content) }; }
+function normalizeContent(value) { const input = value && typeof value === "object" && !Array.isArray(value) ? value : {}; const merged = structuredClone(defaultContent()); for (const section of SECTIONS) { if (input[section] && typeof input[section] === "object") merged[section] = { ...merged[section], ...input[section] }; } for (const field of ["checklist", "rows", "methods"]) { for (const section of SECTIONS) if (Array.isArray(merged[section]?.[field])) merged[section][field] = merged[section][field].slice(0, 50); } return JSON.parse(JSON.stringify(merged).slice(0, 100000)); }
+function sanitizeLibraryItem(value) { const category = cleanText(value?.category, 40); const label = cleanText(value?.label, 160); const content = value?.content && typeof value.content === "object" && !Array.isArray(value.content) ? value.content : {}; return category && label ? { ok: true, category, label, content } : { ok: false, message: "Catégorie et libellé obligatoires." }; }
+async function loadProfile(ownerId) { const { rows } = await getPool().query("SELECT company_name AS \"companyName\", address, postal_code AS \"postalCode\", city, phone, email, registration_number AS \"registrationNumber\", tax_number AS \"taxNumber\", logo_data AS \"logoData\", logo_mime_type AS \"logoMimeType\" FROM depannhome_billing_profiles WHERE owner_id=$1", [ownerId]); return rows[0] || {}; }
+async function archivePdf(connection, ownerId, report, pdf, filename, request) { if (!report.clientId) return; const { rows } = await connection.query("SELECT client_data AS client FROM depannhome_clients WHERE owner_id=$1 AND client_id=$2 FOR UPDATE", [ownerId, report.clientId]); const client = rows[0]?.client; if (!client) return; const attachments = Array.isArray(client.attachments) ? client.attachments : []; if (attachments.length >= 30) throw new Error("Le dossier client contient déjà le maximum de fichiers autorisés."); const createdAt = new Date().toISOString(); const attachment = { id: `file-${crypto.randomUUID()}`, type: "Rapport fuite", name: filename, mime: "application/pdf", size: pdf.length, dataUrl: `data:application/pdf;base64,${pdf.toString("base64")}`, appointmentId: report.appointmentId || undefined, createdAt }; const history = Array.isArray(client.activityHistory) ? client.activityHistory : []; const updated = { ...client, attachments: [...attachments, attachment], activityHistory: [{ id: `activity-${crypto.randomUUID()}`, type: "technical_report", label: "Rapport de recherche de fuite validé", detail: filename, attachmentId: attachment.id, actorName: String(request.user.fullName || request.user.username || "Administration").slice(0, 100), createdAt }, ...history].slice(0, 150), updatedAt: createdAt }; if (Buffer.byteLength(JSON.stringify(updated)) > 20 * 1024 * 1024) throw new Error("Le dossier client est trop volumineux pour archiver ce PDF."); await connection.query("UPDATE depannhome_clients SET client_data=$3::jsonb, updated_at=NOW() WHERE owner_id=$1 AND client_id=$2", [ownerId, report.clientId, JSON.stringify(updated)]); }
+
+export function createLeakReportPdf(report, profile) { return new Promise((resolve, reject) => { const pdf = new PDFDocument({ size: "A4", margin: 44, bufferPages: true, info: { Title: report.title, Author: profile.companyName || "Depann'Home Pro" } }); const chunks = []; pdf.on("data", chunk => chunks.push(chunk)); pdf.on("end", () => resolve(Buffer.concat(chunks))); pdf.on("error", reject); const content = report.content; const media = report.media || []; const title = value => { pdf.fillColor("#003b73").font("Helvetica-Bold").fontSize(19).text(value); pdf.moveDown(.5); }; const paragraph = value => { if (value) pdf.fillColor("#172033").font("Helvetica").fontSize(9).text(String(value), { lineGap: 3 }); }; const section = (name, fields = []) => { pdf.addPage(); title(name); fields.forEach(([label, value]) => { if (value) { pdf.font("Helvetica-Bold").fontSize(9).fillColor("#003b73").text(label); paragraph(value); pdf.moveDown(.45); } }); addPhotos(pdf, media.filter(item => item.section === sectionKey(name)), 3); }; if (profile.logoData && ["image/png", "image/jpeg"].includes(profile.logoMimeType)) { try { pdf.image(profile.logoData, 44, 44, { fit: [75, 75] }); } catch {} } pdf.fillColor("#003b73").font("Helvetica-Bold").fontSize(25).text("RAPPORT DE RECHERCHE DE FUITE", 135, 50, { width: 415, align: "right" }); pdf.moveDown(5); pdf.fillColor("#172033").fontSize(12).text(profile.companyName || "Votre entreprise"); paragraph([profile.address, [profile.postalCode, profile.city].filter(Boolean).join(" "), profile.phone, profile.email].filter(Boolean).join("\n")); pdf.moveDown(2); title("Intervention"); paragraph(`Rapport n° ${report.id}\nClient : ${report.clientName || "Non renseigné"}\nAdresse : ${report.clientAddress || report.appointmentLocation || "Non renseignée"}\nTéléphone : ${report.clientPhone || "Non renseigné"}\nIntervention : ${formatDate(report.appointmentDate || report.reportDate)}${report.appointmentStartTime ? ` à ${report.appointmentStartTime}` : ""}\nTechnicien : ${report.technicianName || "Non renseigné"}\nAssurance : ${content.cover.insurance || "Non renseignée"}\nDossier : ${content.cover.claimNumber || "Non renseigné"}\nRéférence : ${content.cover.interventionReference || "Non renseignée"}`); addPhotos(pdf, media.filter(item => item.id === content.cover.generalPhotoId || item.section === "cover"), 1); pdf.addPage(); title("Sommaire"); ["État des lieux", "Description de l’installation", "Contrôle visuel", "Mesures techniques", "Recherche de fuite", "Localisation de la fuite", "Travaux réalisés", "Contrôle final", "Conclusion", "Signatures"].forEach((item, index) => paragraph(`${index + 1}. ${item}`)); section("État des lieux", [["Description générale", content.overview.generalDescription], ["Nature du sinistre", content.overview.incidentNature], ["Historique client", content.overview.customerHistory], ["Contexte", content.overview.context], ["Conditions d’intervention", content.overview.interventionConditions]]); section("Description de l’installation", [["Type", content.installation.installationType], ["Marque / modèle", [content.installation.brand, content.installation.model].filter(Boolean).join(" · ")], ["Année", content.installation.year], ["Fluide frigorigène", content.installation.refrigerant], ["N° de série", content.installation.serialNumber], ["Puissance", content.installation.power]]); section("Contrôle visuel", [["Check-list", (content.visual.checklist || []).map(item => `${item.label || item}: ${item.checked ? "conforme" : "à contrôler"}`).join("\n")], ["Observations", content.visual.observations], ["Anomalies constatées", content.visual.anomalies]]); tablePage(pdf, "Mesures techniques", content.measurements.rows, media.filter(item => item.section === "measurements")); section("Recherche de fuite", (content.leakSearch.methods || []).map(item => [item.name || "Méthode", `${item.result || ""}\n${item.observations || ""}\n${item.comments || ""}`])); section("Localisation de la fuite", [["Description précise", content.location.description], ["Localisation", content.location.preciseLocation], ["Commentaires", content.location.comments]]); section("Travaux réalisés", [["Réparation", content.work.repair], ["Remplacement", content.work.replacement], ["Recharge", content.work.recharge], ["Quantité de fluide", content.work.refrigerantQuantity], ["Essais", content.work.tests], ["Matériel", content.work.equipment]]); tablePage(pdf, "Contrôle final", content.finalControl.rows, media.filter(item => item.section === "finalControl")); section("Conclusion et préconisations", [["Contrôle d’étanchéité", content.finalControl.tightness], ["Essais de fonctionnement", content.finalControl.operatingTests], ["Validation", content.finalControl.validation], ["Préconisations", content.conclusion.recommendations]]); pdf.addPage(); title("Signatures"); paragraph(`Technicien : ${report.technicianName || ""}\nClient : ${content.signatures.clientName || report.clientName || ""}`); addSignature(pdf, content.signatures.technician, "Signature technicien", 70); addSignature(pdf, content.signatures.client, "Signature client", 280); const pages = pdf.bufferedPageRange(); for (let index = 0; index < pages.count; index += 1) { pdf.switchToPage(index); pdf.fillColor("#64748b").fontSize(7).text(`${profile.companyName || "Depann’Home Pro"} · Rapport #${report.id} · Page ${index + 1}/${pages.count}`, 44, pdf.page.height - 32, { width: pdf.page.width - 88, align: "center" }); } pdf.end(); }); }
+function tablePage(pdf, name, rows, photos) { pdf.addPage(); pdf.fillColor("#003b73").font("Helvetica-Bold").fontSize(19).text(name); pdf.moveDown(); const list = Array.isArray(rows) ? rows : []; if (!list.length) pdf.font("Helvetica").fontSize(9).fillColor("#475569").text("Aucune mesure renseignée."); list.forEach(row => { pdf.rect(44, pdf.y, 507, 22).fill("#f1f5f9"); pdf.fillColor("#172033").font("Helvetica-Bold").fontSize(9).text(row.label || "Mesure", 52, pdf.y - 15, { width: 260 }); pdf.font("Helvetica").text(`${row.value || "—"} ${row.unit || ""}`, 330, pdf.y - 11, { width: 200, align: "right" }); pdf.moveDown(.8); }); addPhotos(pdf, photos, 3); }
+function addPhotos(pdf, photos, maximum) { photos.slice(0, maximum).forEach(photo => { try { if (pdf.y > 650) pdf.addPage(); pdf.moveDown(.5); pdf.image(dataUrlBuffer(photo.dataUrl), 44, pdf.y, { fit: [500, 230] }); pdf.y += 238; pdf.fillColor("#475569").fontSize(8).text([photo.caption, photo.annotation].filter(Boolean).join(" · ") || photo.name, { width: 500 }); } catch {} }); }
+function addSignature(pdf, dataUrl, label, y) { pdf.fillColor("#003b73").font("Helvetica-Bold").fontSize(10).text(label, 44, y); pdf.rect(44, y + 20, 220, 105).strokeColor("#cbd5e1").stroke(); if (dataUrl) { try { pdf.image(dataUrlBuffer(dataUrl), 52, y + 27, { fit: [205, 88] }); } catch {} } }
+function dataUrlBuffer(value) { const match = /^data:[^;,]+;base64,([a-zA-Z0-9+/=]+)$/.exec(String(value || "")); if (!match) throw new Error("Média invalide"); return Buffer.from(match[1], "base64"); }
+function sectionKey(name) { return ({ "État des lieux": "overview", "Description de l’installation": "installation", "Contrôle visuel": "visual", "Recherche de fuite": "leakSearch", "Localisation de la fuite": "location", "Travaux réalisés": "work", "Conclusion et préconisations": "conclusion" })[name] || ""; }
+function formatDate(value) { return value ? new Intl.DateTimeFormat("fr-FR").format(new Date(`${value}T12:00:00`)) : ""; }
+const CLIENT_ID = /^client-[a-zA-Z0-9-]+$/;
+function validDate(value) { const date = String(value || ""); return /^\d{4}-\d{2}-\d{2}$/.test(date) && !Number.isNaN(new Date(`${date}T12:00:00`).getTime()) ? date : ""; }
+function positiveId(value) { const id = Number(value); return Number.isSafeInteger(id) && id > 0 ? id : 0; }
+function cleanText(value, max) { return String(value || "").replace(/\s+/g, " ").trim().slice(0, max); }
+function safeName(value) { return path.basename(String(value || "photo")).replace(/[\r\n]/g, " ").slice(0, 255) || "photo"; }
+export function technicalReportUploadErrorHandler(error, request, response, next) { if (error instanceof multer.MulterError) return response.status(400).json({ message: error.code === "LIMIT_FILE_SIZE" ? "Chaque photo est limitée à 4 Mo." : "Ajout des photos impossible." }); return next(error); }
+function asyncHandler(handler) { return (request, response, next) => Promise.resolve(handler(request, response, next)).catch(next); }
