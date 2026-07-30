@@ -14,7 +14,7 @@ export async function renderCreatorConsole() {
         <section class="creator-console">
             <header class="creator-heading">
                 <div><p class="eyebrow">Administration plateforme</p><h2>Console Créateur</h2></div>
-                <div class="creator-form-actions"><button type="button" class="secondary-button auth-outline-button" id="creatorSecurity">Sécurité du compte</button><button type="button" class="secondary-button auth-outline-button" id="creatorSubscriptionInvoices">Factures abonnements</button><button type="button" class="secondary-button auth-outline-button" id="creatorBillingProfile">Facturation plateforme</button><button type="button" class="secondary-button auth-outline-button" id="creatorExternalProviders">Prestataires externes</button><button type="button" class="secondary-button" id="creatorNewAccount">+ Nouvelle entreprise</button></div>
+                <div class="creator-form-actions"><button type="button" class="secondary-button auth-outline-button" id="creatorPartnerRequests">Demandes de partenariat</button><button type="button" class="secondary-button auth-outline-button" id="creatorSecurity">Sécurité du compte</button><button type="button" class="secondary-button auth-outline-button" id="creatorSubscriptionInvoices">Factures abonnements</button><button type="button" class="secondary-button auth-outline-button" id="creatorBillingProfile">Facturation plateforme</button><button type="button" class="secondary-button auth-outline-button" id="creatorExternalProviders">Prestataires externes</button><button type="button" class="secondary-button" id="creatorNewAccount">+ Nouvelle entreprise</button></div>
             </header>
             <p id="creatorFeedback" class="auth-message" aria-live="polite"></p>
             <section class="creator-subscription-summary" id="creatorSubscriptionSummary" aria-label="Synthèse des abonnements"></section>
@@ -25,12 +25,78 @@ export async function renderCreatorConsole() {
         </section>
     `;
     container.querySelector("#creatorNewAccount").addEventListener("click", () => renderAccountForm());
+    container.querySelector("#creatorPartnerRequests").addEventListener("click", renderPartnerRequests);
     container.querySelector("#creatorBillingProfile").addEventListener("click", renderSubscriptionBillingProfile);
     container.querySelector("#creatorSecurity").addEventListener("click", renderCreatorSecurity);
     container.querySelector("#creatorSubscriptionInvoices").addEventListener("click", renderSubscriptionInvoices);
     container.querySelector("#creatorExternalProviders").addEventListener("click", renderCreatorConnectors);
     await loadAccounts();
 }
+
+async function renderPartnerRequests() {
+    const workspace = document.querySelector("#creatorWorkspace");
+    workspace.innerHTML = '<p class="muted">Chargement des demandes de partenariat…</p>';
+    const result = await api("/api/creator/partner-requests");
+    if (!result.ok) return showFeedback(result.message || "Impossible de charger les demandes de partenariat.", true);
+    const requests = result.data.requests || [];
+    workspace.innerHTML = `
+        <section class="creator-form creator-partner-requests-panel">
+            <div class="form-heading"><div><p class="eyebrow">Prospection et réseau</p><h3>Demandes de partenariat</h3></div><span class="creator-state">${requests.length} demande${requests.length > 1 ? "s" : ""}</span></div>
+            <p class="muted">Une demande acceptée crée automatiquement une fiche partenaire officielle prête pour la future gestion des accès, contrats, autorisations et connecteurs.</p>
+            <div class="creator-partner-request-list">${requests.length ? requests.map(partnerRequestRow).join("") : '<p class="muted">Aucune demande de partenariat pour le moment.</p>'}</div>
+            <div class="creator-form-actions"><button type="button" class="secondary-button" id="creatorPartnerRequestsBack">Retour aux entreprises</button></div>
+        </section>
+    `;
+    workspace.querySelector("#creatorPartnerRequestsBack").addEventListener("click", () => selectedAccountId ? renderAccountDetail(selectedAccountId) : workspace.replaceChildren());
+    workspace.querySelectorAll("[data-partner-request-id]").forEach(button => button.addEventListener("click", () => renderPartnerRequestDetail(button.dataset.partnerRequestId)));
+}
+
+function partnerRequestRow(partnerRequest) {
+    return `<article class="creator-partner-request"><div><p class="eyebrow">${escapeHtml(partnerOrganizationLabel(partnerRequest.organizationType))} · ${escapeHtml(formatDateTime(partnerRequest.createdAt))}</p><h4>${escapeHtml(partnerRequest.companyName)}</h4><p>${escapeHtml(partnerRequest.contactName)} · ${escapeHtml(partnerRequest.contactRole)}</p><small>${escapeHtml(partnerRequest.email)}</small></div><div class="creator-partner-request-actions"><span class="creator-subscription-badge ${escapeHtml(partnerRequest.status)}">${escapeHtml(partnerRequestStatusLabel(partnerRequest.status))}</span><button type="button" class="secondary-button" data-partner-request-id="${escapeHtml(partnerRequest.id)}">Consulter</button></div></article>`;
+}
+
+async function renderPartnerRequestDetail(requestId) {
+    const workspace = document.querySelector("#creatorWorkspace");
+    workspace.innerHTML = '<p class="muted">Chargement de la demande…</p>';
+    const result = await api(`/api/creator/partner-requests/${encodeURIComponent(requestId)}`);
+    if (!result.ok) return showFeedback(result.message || "Impossible de charger la demande.", true);
+    const partnerRequest = result.data.request;
+    workspace.innerHTML = `
+        <form id="creatorPartnerRequestForm" class="creator-form creator-partner-request-detail">
+            <div class="form-heading"><div><p class="eyebrow">${escapeHtml(partnerOrganizationLabel(partnerRequest.organizationType))} · Demande du ${escapeHtml(formatDateTime(partnerRequest.createdAt))}</p><h3>${escapeHtml(partnerRequest.companyName)}</h3></div><span class="creator-subscription-badge ${escapeHtml(partnerRequest.status)}">${escapeHtml(partnerRequestStatusLabel(partnerRequest.status))}</span></div>
+            <dl class="creator-partner-request-summary"><div><dt>Contact</dt><dd>${escapeHtml(partnerRequest.contactName)} · ${escapeHtml(partnerRequest.contactRole)}</dd></div><div><dt>E-mail</dt><dd><a href="mailto:${escapeHtml(partnerRequest.email)}">${escapeHtml(partnerRequest.email)}</a></dd></div><div><dt>Téléphone</dt><dd><a href="tel:${escapeHtml(partnerRequest.phone.replace(/[^+0-9]/g, ""))}">${escapeHtml(partnerRequest.phone)}</a></dd></div><div><dt>Site internet</dt><dd>${partnerRequest.website ? `<a href="${escapeHtml(partnerRequest.website)}" target="_blank" rel="noopener noreferrer">${escapeHtml(partnerRequest.website)}</a>` : "Non renseigné"}</dd></div></dl>
+            <section class="creator-partner-request-message"><h4>Projet ou besoin</h4><p>${escapeHtml(partnerRequest.message).replace(/\n/g, "<br>")}</p></section>
+            <div class="form-grid"><label>Statut<select name="status">${["new", "under_review", "contacted", "accepted", "refused"].map(status => `<option value="${status}" ${partnerRequest.status === status ? "selected" : ""}>${partnerRequestStatusLabel(status)}</option>`).join("")}</select></label><label class="form-wide">Notes administratives internes<textarea name="administrativeNotes" rows="6" maxlength="4000" placeholder="Compte-rendu d’échange, conditions, prochaines étapes…">${escapeHtml(partnerRequest.administrativeNotes || "")}</textarea></label></div>
+            <p class="muted">Le statut « Acceptée » crée une fiche partenaire officielle sans créer de compte utilisateur ni donner accès aux données.</p>
+            <p class="auth-message" aria-live="polite" id="creatorPartnerRequestFeedback"></p>
+            <div class="creator-form-actions"><a class="secondary-button auth-outline-button" href="mailto:${escapeHtml(partnerRequest.email)}?subject=${encodeURIComponent(`Depann’Home Pro — demande de partenariat ${partnerRequest.companyName}`)}">Contacter le partenaire</a><button type="submit" class="secondary-button">Enregistrer le suivi</button><button type="button" class="secondary-button danger-button" id="creatorDeletePartnerRequest">Supprimer la demande</button><button type="button" class="secondary-button" id="creatorPartnerRequestBack">Retour à la liste</button></div>
+        </form>
+    `;
+    workspace.querySelector("#creatorPartnerRequestBack").addEventListener("click", renderPartnerRequests);
+    workspace.querySelector("#creatorPartnerRequestForm").addEventListener("submit", async event => {
+        event.preventDefault();
+        const form = event.currentTarget;
+        const feedback = form.querySelector("#creatorPartnerRequestFeedback");
+        const submit = form.querySelector('button[type="submit"]');
+        submit.disabled = true;
+        const update = await api(`/api/creator/partner-requests/${encodeURIComponent(requestId)}`, { method: "PATCH", body: JSON.stringify(Object.fromEntries(new FormData(form))) });
+        submit.disabled = false;
+        if (!update.ok) { feedback.textContent = update.message || "Enregistrement impossible."; feedback.classList.add("error"); return; }
+        feedback.textContent = update.data.request.officialPartnerId ? "Suivi enregistré. La fiche partenaire officielle est prête à être configurée." : "Suivi enregistré.";
+        feedback.classList.remove("error");
+        renderPartnerRequestDetail(requestId);
+    });
+    workspace.querySelector("#creatorDeletePartnerRequest").addEventListener("click", async () => {
+        if (!confirm(`Supprimer définitivement la demande de ${partnerRequest.companyName} ?`)) return;
+        const deleted = await api(`/api/creator/partner-requests/${encodeURIComponent(requestId)}`, { method: "DELETE" });
+        if (!deleted.ok) return showFeedback(deleted.message || "Suppression impossible.", true);
+        showFeedback("Demande de partenariat supprimée.");
+        renderPartnerRequests();
+    });
+}
+
+function partnerRequestStatusLabel(status) { return ({ new: "Nouvelle", under_review: "En cours d’étude", contacted: "Contactée", accepted: "Acceptée", refused: "Refusée" })[status] || "Nouvelle"; }
+function partnerOrganizationLabel(type) { return ({ insurance: "Assurance", assistance_company: "Société d’assistance", expert: "Expert", claims_manager: "Gestionnaire de sinistres", local_authority: "Collectivité", landlord: "Bailleur", franchise_network: "Réseau de franchise", private_company: "Entreprise privée", other: "Autre" })[type] || "Organisation"; }
 
 async function loadAccounts(preferredId = selectedAccountId) {
     const result = await api("/api/creator/accounts");

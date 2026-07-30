@@ -32,6 +32,7 @@ function renderAuthentication({ onAuthenticated, registrationEnabled, message = 
     const app = getAppRoot();
     app.innerHTML = `
         <main class="auth-page">
+            <div class="auth-access-layout">
             <section class="auth-card">
                 <div class="auth-brand">
                     <img src="assets/logo.png.png" alt="Depann'Home Pro" class="auth-logo">
@@ -54,6 +55,15 @@ function renderAuthentication({ onAuthenticated, registrationEnabled, message = 
                         <button type="submit" class="secondary-button auth-outline-button">Créer un compte</button>
                     </form>` : ""}
             </section>
+            <aside class="auth-partner-card">
+                <p class="eyebrow">Partenariats</p>
+                <h2>Vous représentez une organisation ?</h2>
+                <p>Vous êtes une assurance, un assisteur, un expert, une collectivité, un bailleur ou un donneur d’ordres ?</p>
+                <p>Rejoignez le réseau Depann’Home Pro afin d’échanger automatiquement vos interventions avec les entreprises utilisant notre logiciel.</p>
+                <button type="button" class="secondary-button" id="openPartnerRequest">Devenir partenaire</button>
+                <p class="auth-partner-login-hint"><strong>Déjà partenaire ?</strong> Connectez-vous avec vos identifiants professionnels.</p>
+            </aside>
+            </div>
         </main>
     `;
 
@@ -71,6 +81,7 @@ function renderAuthentication({ onAuthenticated, registrationEnabled, message = 
         status.textContent = text;
         status.classList.toggle("error", isError);
     };
+    app.querySelector("#openPartnerRequest")?.addEventListener("click", openPartnerRequestDialog);
 
     app.querySelector("#loginForm").addEventListener("submit", async event => {
         event.preventDefault();
@@ -113,6 +124,55 @@ function renderAuthentication({ onAuthenticated, registrationEnabled, message = 
         }
         onAuthenticated(result.data.user);
     });
+}
+
+function openPartnerRequestDialog() {
+    const modal = document.createElement("div");
+    modal.className = "auth-partner-modal";
+    modal.innerHTML = `
+        <section role="dialog" aria-modal="true" aria-labelledby="partnerRequestTitle">
+            <button type="button" class="text-button auth-partner-close" aria-label="Fermer">Fermer</button>
+            <p class="eyebrow">Partenariat Depann’Home Pro</p>
+            <h2 id="partnerRequestTitle">Devenir partenaire</h2>
+            <p class="muted">Présentez votre organisation et votre besoin. Cette demande ne crée pas de compte de connexion.</p>
+            <form id="partnerRequestForm" class="auth-partner-form">
+                <div class="form-grid">
+                    <label>Nom de l’entreprise *<input name="companyName" maxlength="160" required autocomplete="organization"></label>
+                    <label>Type d’organisation *<select name="organizationType" required><option value="">Sélectionnez…</option><option value="insurance">Assurance</option><option value="assistance_company">Société d’assistance</option><option value="expert">Expert</option><option value="claims_manager">Gestionnaire de sinistres</option><option value="local_authority">Collectivité</option><option value="landlord">Bailleur</option><option value="franchise_network">Réseau de franchise</option><option value="private_company">Entreprise privée</option><option value="other">Autre</option></select></label>
+                    <label>Nom du contact *<input name="contactName" maxlength="100" required autocomplete="name"></label>
+                    <label>Fonction *<input name="contactRole" maxlength="100" required autocomplete="organization-title"></label>
+                    <label>Adresse e-mail *<input name="email" type="email" maxlength="160" required autocomplete="email"></label>
+                    <label>Téléphone *<input name="phone" type="tel" maxlength="50" required autocomplete="tel"></label>
+                    <label class="form-wide">Site internet <input name="website" type="url" maxlength="500" placeholder="https://www.exemple.fr" autocomplete="url"></label>
+                    <label class="form-wide">Décrivez votre projet ou votre besoin *<textarea name="message" rows="6" maxlength="4000" minlength="10" required></textarea></label>
+                </div>
+                <p class="auth-message" aria-live="polite" data-partner-request-message></p>
+                <div class="form-actions"><button type="submit" class="secondary-button">Envoyer ma demande</button></div>
+            </form>
+        </section>
+    `;
+    const close = () => modal.remove();
+    modal.querySelector(".auth-partner-close").addEventListener("click", close);
+    modal.addEventListener("click", event => { if (event.target === modal) close(); });
+    modal.querySelector("#partnerRequestForm").addEventListener("submit", async event => {
+        event.preventDefault();
+        const form = event.currentTarget;
+        const feedback = form.querySelector("[data-partner-request-message]");
+        const submit = form.querySelector('button[type="submit"]');
+        submit.disabled = true;
+        feedback.textContent = "Envoi de votre demande…";
+        feedback.classList.remove("error");
+        const result = await request("/api/partner-requests", { method: "POST", body: JSON.stringify(Object.fromEntries(new FormData(form))) });
+        if (!result.ok) {
+            feedback.textContent = result.data?.message || "Impossible d’envoyer votre demande. Réessayez dans quelques instants.";
+            feedback.classList.add("error");
+            submit.disabled = false;
+            return;
+        }
+        form.innerHTML = `<section class="auth-partner-confirmation"><h3>Merci pour votre demande de partenariat.</h3><p>Notre équipe va étudier votre demande et vous recontactera dans les meilleurs délais.</p></section>`;
+    });
+    document.body.appendChild(modal);
+    modal.querySelector("input")?.focus();
 }
 
 function renderDeviceValidationPending({ onAuthenticated, registrationEnabled, deviceId, message }) {

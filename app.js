@@ -30,6 +30,7 @@ import { initializeCollaboration, registerCollaborationRoutes } from "./server/c
 import { initializePartnerMissions, registerPartnerMissionRoutes } from "./server/partner-missions.js";
 import { initializePartnerDialogue, partnerDialogueUploadErrorHandler, registerPartnerDialogueRoutes } from "./server/partner-dialogue.js";
 import { initializePartnerConnections, registerPartnerConnectionRoutes } from "./server/partner-connections.js";
+import { initializePartnerRequests, registerPartnerRequestRoutes } from "./server/partner-requests.js";
 import { registerSupportRoutes } from "./server/support.js";
 import {
 	libraryUploadErrorHandler,
@@ -79,8 +80,16 @@ app.use("/api/partner-dialogue/external", rateLimit({
 	legacyHeaders: false,
 	message: { message: "Trop de requêtes partenaire. Réessayez dans quelques minutes." }
 }));
+app.use("/api/partner-requests", rateLimit({
+	windowMs: 15 * 60 * 1000,
+	limit: 8,
+	standardHeaders: "draft-7",
+	legacyHeaders: false,
+	message: { message: "Trop de demandes ont été envoyées. Réessayez dans quelques minutes." }
+}));
 registerAuthRoutes(app);
 registerCreatorRoutes(app, requireCreator);
+registerPartnerRequestRoutes(app, requireCreator);
 registerSubscriptionInvoicingRoutes(app, requireCreator);
 registerAccountingRoutes(app, requireAuthentication);
 registerConnectorRoutes(app, requireAuthentication, requireCreator);
@@ -143,6 +152,7 @@ async function start() {
 	await initializePartnerMissions();
 	await initializePartnerDialogue();
 	await initializePartnerConnections();
+	await initializePartnerRequests();
 	await initializeClients();
 	await initializeLibrary();
 	await createInitialAdministrator();

@@ -579,6 +579,42 @@ CREATE TABLE IF NOT EXISTS depannhome_partner_connection_sync_log (
 );
 CREATE INDEX IF NOT EXISTS depannhome_partner_connection_sync_source_event_idx ON depannhome_partner_connection_sync_log(source_owner_id, source_event_id, created_at DESC);
 
+-- Demandes publiques de partenariat : aucune session ni autorisation n’est créée
+-- au dépôt. Une demande acceptée est reliée à une fiche officielle, laquelle
+-- prépare les futurs contrats, connecteurs, permissions et espaces partenaires.
+CREATE TABLE IF NOT EXISTS depannhome_official_partners (
+    id BIGSERIAL PRIMARY KEY,
+    request_id BIGINT UNIQUE,
+    company_name VARCHAR(160) NOT NULL,
+    organization_type VARCHAR(40) NOT NULL,
+    contact_name VARCHAR(100) NOT NULL DEFAULT '',
+    contact_role VARCHAR(100) NOT NULL DEFAULT '',
+    email VARCHAR(160) NOT NULL DEFAULT '',
+    phone VARCHAR(50) NOT NULL DEFAULT '',
+    website VARCHAR(500) NOT NULL DEFAULT '',
+    status VARCHAR(30) NOT NULL DEFAULT 'pending_setup',
+    permissions JSONB NOT NULL DEFAULT '{}'::jsonb,
+    connector_config JSONB NOT NULL DEFAULT '{}'::jsonb,
+    partner_account_id BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT depannhome_official_partners_status_check CHECK (status IN ('pending_setup', 'active', 'inactive'))
+);
+CREATE TABLE IF NOT EXISTS depannhome_partner_requests (
+    id BIGSERIAL PRIMARY KEY,
+    company_name VARCHAR(160) NOT NULL, organization_type VARCHAR(40) NOT NULL,
+    contact_name VARCHAR(100) NOT NULL, contact_role VARCHAR(100) NOT NULL,
+    email VARCHAR(160) NOT NULL, phone VARCHAR(50) NOT NULL, website VARCHAR(500) NOT NULL DEFAULT '',
+    message VARCHAR(4000) NOT NULL, status VARCHAR(30) NOT NULL DEFAULT 'new',
+    administrative_notes VARCHAR(4000) NOT NULL DEFAULT '',
+    official_partner_id BIGINT REFERENCES depannhome_official_partners(id) ON DELETE SET NULL,
+    submitted_ip VARCHAR(100) NOT NULL DEFAULT '', created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT depannhome_partner_requests_status_check CHECK (status IN ('new', 'under_review', 'contacted', 'accepted', 'refused'))
+);
+ALTER TABLE depannhome_official_partners ADD COLUMN IF NOT EXISTS request_id BIGINT UNIQUE;
+ALTER TABLE depannhome_partner_requests ADD COLUMN IF NOT EXISTS official_partner_id BIGINT REFERENCES depannhome_official_partners(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS depannhome_partner_requests_status_created_idx ON depannhome_partner_requests(status, created_at DESC);
+CREATE INDEX IF NOT EXISTS depannhome_official_partners_status_idx ON depannhome_official_partners(status, created_at DESC);
+
 ALTER TABLE depannhome_library_documents ADD COLUMN IF NOT EXISTS owner_id BIGINT REFERENCES depannhome_users(id) ON DELETE CASCADE;
 UPDATE depannhome_library_documents document SET owner_id = section.owner_id FROM depannhome_library_sections section WHERE document.section_id = section.id AND document.owner_id IS NULL;
 ALTER TABLE depannhome_library_documents ALTER COLUMN owner_id SET NOT NULL;
