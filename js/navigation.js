@@ -3,8 +3,8 @@ import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } 
 import { renderCreatorConsole } from "./creator.js?v=117";
 import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=141";
 import { renderAccounting } from "./accounting.js?v=1";
-import { renderPartnerMissions } from "./partner-missions.js?v=1";
-import { renderPartnerConnections } from "./partner-connections.js?v=1";
+import { renderPartnerMissions } from "./partner-missions.js?v=2";
+import { renderPartnerConnections } from "./partner-connections.js?v=2";
 import { renderPurchases } from "./purchases.js?v=112";
 import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=2";
 import { getFirstUnreadClientId, refreshClientMessageAlert, refreshVisibleClientMessages } from "./messages.js?v=106";
