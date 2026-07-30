@@ -383,6 +383,11 @@ body[data-role="technician"] .nav-button[data-nav="billing"]{
     display:none;
 }
 
+body[data-role]:not([data-role="admin"]) #accountingBtn,
+body[data-role]:not([data-role="admin"]) .nav-button[data-nav="accounting"]{
+    display:none;
+}
+
 body[data-role="accountant"] .search-section,
 body[data-role="accountant"] .quick-actions > :not(#billingBtn):not(#purchasesBtn),
 body[data-role="accountant"] .nav-button:not([data-nav="billing"]):not([data-nav="purchases"]){
@@ -393,6 +398,23 @@ body.desktop-device[data-role="accountant"] footer .nav-button[data-nav="billing
 body.desktop-device[data-role="accountant"] footer .nav-button[data-nav="purchases"]{
     display:flex;
 }
+
+/* Comptabilité & Facturation électronique */
+.accounting-shell{max-width:1180px;margin:0 auto;padding:clamp(12px,2vw,28px)}
+.accounting-heading{display:flex;justify-content:space-between;gap:18px;align-items:start;margin-bottom:18px}
+.accounting-heading h2{margin:2px 0 6px;color:#003b73}
+.accounting-tabs{display:flex;gap:8px;overflow-x:auto;padding:2px 1px 13px;margin-bottom:12px}
+.accounting-tabs .secondary-button{white-space:nowrap;background:#f1f5f9;color:#334155;border:1px solid #dbe4ee}
+.accounting-tabs .secondary-button.active{background:#003b73;color:#fff;border-color:#003b73}
+.accounting-cards{display:grid;grid-template-columns:repeat(5,minmax(145px,1fr));gap:12px;margin:14px 0}
+.accounting-cards article{padding:17px;border:1px solid #dbe4ee;border-radius:14px;background:linear-gradient(135deg,#fff,#f8fafc);box-shadow:0 4px 16px rgba(15,23,42,.05)}
+.accounting-cards span,.accounting-cards small{display:block;color:#64748b;font-size:.82rem}.accounting-cards strong{display:block;color:#003b73;font-size:1.28rem;margin:7px 0}.accounting-cards .attention strong{color:#b45309}
+.accounting-panel{margin:14px 0;padding:clamp(16px,2vw,24px);background:#fff;border:1px solid #dbe4ee;border-radius:16px;box-shadow:0 6px 20px rgba(15,23,42,.05)}
+.accounting-panel h3{margin:3px 0}.accounting-panel h4{margin:25px 0 11px;color:#003b73}.accounting-search{width:100%;margin:12px 0;padding:11px 13px;border:1px solid #cbd5e1;border-radius:9px}
+.accounting-document-list,.accounting-transmission-list,.accounting-aid-list{display:grid;gap:9px}.accounting-document,.accounting-transmission-list article,.accounting-aid-list article{display:flex;align-items:center;gap:16px;justify-content:space-between;padding:13px;border:1px solid #e2e8f0;border-radius:11px;background:#fcfdff}
+.accounting-document h4,.accounting-document p,.accounting-transmission-list p,.accounting-aid-list p{margin:3px 0}.accounting-document small,.accounting-transmission-list small,.accounting-aid-list small{color:#64748b}.accounting-document-totals{text-align:right;min-width:135px}.accounting-document-totals strong{display:block;color:#003b73}.accounting-document-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:7px}.accounting-inline-form{border-color:#93c5fd;background:#f8fbff}
+.accounting-aid-fieldset,.accounting-rules{border:1px solid #dbe4ee;border-radius:10px;padding:13px;display:flex;gap:13px;flex-wrap:wrap}.accounting-aid-fieldset label,.accounting-switch{font-size:.92rem}.accounting-rules label{display:grid;gap:5px;min-width:180px;flex:1}.accounting-rules input{width:100%}.accounting-rules legend,.accounting-aid-fieldset legend{padding:0 6px;color:#003b73;font-weight:700}.accounting-aid-list article strong{color:#003b73}
+@media(max-width:850px){.accounting-cards{grid-template-columns:repeat(2,minmax(0,1fr))}.accounting-document,.accounting-transmission-list article,.accounting-aid-list article{align-items:flex-start;flex-direction:column}.accounting-document-totals{text-align:left}.accounting-document-actions{justify-content:flex-start}}@media(max-width:440px){.accounting-cards{grid-template-columns:1fr}.accounting-panel{padding:14px}.accounting-heading{display:block}}
 
 .nav-label-messages{
     display:none;

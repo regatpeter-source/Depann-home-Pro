@@ -2,6 +2,7 @@ import { ROUTES, STORAGE_KEYS, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } fr
 import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=142";
 import { renderCreatorConsole } from "./creator.js?v=116";
 import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=141";
+import { renderAccounting } from "./accounting.js?v=1";
 import { renderPurchases } from "./purchases.js?v=112";
 import { getFirstUnreadClientId, refreshClientMessageAlert, refreshVisibleClientMessages } from "./messages.js?v=106";
 import { getSearchableClients, renderClients } from "./clients.js?v=134";
@@ -102,6 +103,7 @@ function bindEvents() {
     const search = document.getElementById("search");
     const clientsBtn = document.getElementById("clientsBtn");
     const billingBtn = document.getElementById("billingBtn");
+    const accountingBtn = document.getElementById("accountingBtn");
     const purchasesBtn = document.getElementById("purchasesBtn");
     const calendarBtn = document.getElementById("calendarBtn");
     const libraryBtn = document.getElementById("libraryBtn");
@@ -126,6 +128,7 @@ function bindEvents() {
     billingBtn?.addEventListener("click", () => {
         if (document.body.dataset.role !== "technician") renderBilling();
     });
+    accountingBtn?.addEventListener("click", () => { if (document.body.dataset.role === "admin") renderAccounting(); });
     purchasesBtn?.addEventListener("click", renderPurchases);
     calendarBtn?.addEventListener("click", () => { if (!isAccountant()) openCalendar(); });
     libraryBtn?.addEventListener("click", () => { if (!isAccountant()) renderLibrary(); });
@@ -150,6 +153,7 @@ function bindEvents() {
             if (nav === ROUTES.photo) renderPhotoRecognition(database, navigateToRef);
             if (nav === ROUTES.clients) openClients();
             if (nav === ROUTES.billing && document.body.dataset.role !== "technician") renderBilling();
+            if (nav === ROUTES.accounting && document.body.dataset.role === "admin") renderAccounting();
             if (nav === ROUTES.purchases) renderPurchases();
             if (nav === ROUTES.calendar) openCalendar();
             if (nav === ROUTES.library) renderLibrary();
@@ -1119,7 +1123,7 @@ async function renderTeamManagement(container) {
     roleField.textContent = "Type de poste";
     const roleInput = document.createElement("select");
     roleInput.name = "role";
-    roleInput.innerHTML = '<option value="technician">Technicien</option><option value="admin">Poste PC</option><option value="accountant">Comptable</option>';
+    roleInput.innerHTML = '<option value="technician">Technicien</option><option value="admin">Poste PC</option>';
     roleField.appendChild(roleInput);
     formFields.appendChild(roleField);
     const departmentSuggestions = document.createElement("datalist");
@@ -1151,12 +1155,11 @@ async function renderTeamManagement(container) {
     container.appendChild(card);
     const updateRoleFields = () => {
         const isTechnician = roleInput.value === "technician";
-        const isAccountantAccess = roleInput.value === "accountant";
         form.elements.phone.required = isTechnician;
         form.elements.email.required = isTechnician;
         form.elements.department.disabled = !isTechnician;
-        submit.textContent = isTechnician ? "Créer le technicien" : isAccountantAccess ? "Créer le comptable" : "Créer le poste PC";
-        roleField.dataset.role = isTechnician ? "technician" : isAccountantAccess ? "accountant" : "admin";
+        submit.textContent = isTechnician ? "Créer le technicien" : "Créer le poste PC";
+        roleField.dataset.role = isTechnician ? "technician" : "admin";
     };
     roleInput.addEventListener("change", updateRoleFields);
     updateRoleFields();

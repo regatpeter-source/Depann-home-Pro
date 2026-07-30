@@ -41,6 +41,7 @@ export const ROUTES = {
     photo: "photo",
     clients: "clients",
     billing: "billing",
+    accounting: "accounting",
     purchases: "purchases",
         messages: "messages",
     calendar: "calendar",

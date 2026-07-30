@@ -145,7 +145,10 @@ function renderProfile(panel) {
                 <label>Téléphone<input name="phone" maxlength="50" value="${escapeHtml(profile.phone)}"></label>
                 <label>E-mail<input name="email" type="email" maxlength="160" value="${escapeHtml(profile.email)}"></label>
                 <label>Immatriculation / SIRET<input name="registrationNumber" maxlength="100" value="${escapeHtml(profile.registrationNumber)}"></label>
+                <label>SIREN<input name="siren" maxlength="20" value="${escapeHtml(profile.siren || "")}"></label>
                 <label>N° TVA intracommunautaire<input name="taxNumber" maxlength="100" value="${escapeHtml(profile.taxNumber)}"></label>
+                <label>IBAN<input name="bankIban" maxlength="80" value="${escapeHtml(profile.bankIban || "")}"></label>
+                <label>BIC<input name="bankBic" maxlength="40" value="${escapeHtml(profile.bankBic || "")}"></label>
                 <label>Acompte / condition de devis<input name="depositTerms" maxlength="500" placeholder="Ex. Acompte de 30 % à la commande" value="${escapeHtml(profile.depositTerms || "")}"></label>
                 <label class="form-wide">Conditions de règlement<input name="paymentTerms" maxlength="500" placeholder="Ex. Paiement à réception par virement ou chèque" value="${escapeHtml(profile.paymentTerms)}"></label>
                 <label class="form-wide">Mention de bas de page<textarea name="footerNote" rows="2" maxlength="1000" placeholder="Mentions légales, pénalités de retard, assurance…">${escapeHtml(profile.footerNote)}</textarea></label>

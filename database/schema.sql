@@ -85,8 +85,12 @@ CREATE TABLE IF NOT EXISTS depannhome_billing_profiles (
     phone VARCHAR(50) NOT NULL DEFAULT '',
     email VARCHAR(160) NOT NULL DEFAULT '',
     registration_number VARCHAR(100) NOT NULL DEFAULT '',
+    siren VARCHAR(20) NOT NULL DEFAULT '',
     tax_number VARCHAR(100) NOT NULL DEFAULT '',
+    bank_iban VARCHAR(80) NOT NULL DEFAULT '',
+    bank_bic VARCHAR(40) NOT NULL DEFAULT '',
     payment_terms VARCHAR(500) NOT NULL DEFAULT '',
+    deposit_terms VARCHAR(500) NOT NULL DEFAULT '',
     footer_note VARCHAR(1000) NOT NULL DEFAULT '',
     default_quote JSONB,
     quote_template_mode VARCHAR(20) NOT NULL DEFAULT 'integrated',
@@ -100,6 +104,10 @@ CREATE TABLE IF NOT EXISTS depannhome_billing_profiles (
 
 ALTER TABLE depannhome_billing_profiles
     ADD COLUMN IF NOT EXISTS default_quote JSONB,
+    ADD COLUMN IF NOT EXISTS deposit_terms VARCHAR(500) NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS siren VARCHAR(20) NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS bank_iban VARCHAR(80) NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS bank_bic VARCHAR(40) NOT NULL DEFAULT '',
     ADD COLUMN IF NOT EXISTS quote_template_mode VARCHAR(20) NOT NULL DEFAULT 'integrated',
     ADD COLUMN IF NOT EXISTS quote_template_filename VARCHAR(255) NOT NULL DEFAULT '',
     ADD COLUMN IF NOT EXISTS quote_template_data BYTEA,
@@ -165,6 +173,44 @@ CREATE INDEX IF NOT EXISTS depannhome_billing_documents_appointment_idx
 
 CREATE INDEX IF NOT EXISTS depannhome_billing_documents_client_idx
     ON depannhome_billing_documents (owner_id, client_id);
+
+-- Comptabilité & Facturation électronique : données strictement isolées par owner_id.
+ALTER TABLE depannhome_billing_documents ADD COLUMN IF NOT EXISTS financial_data JSONB NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE depannhome_billing_documents DROP CONSTRAINT IF EXISTS depannhome_billing_documents_document_type_check;
+ALTER TABLE depannhome_billing_documents ADD CONSTRAINT depannhome_billing_documents_document_type_check CHECK (document_type IN ('quote', 'invoice', 'credit'));
+
+CREATE TABLE IF NOT EXISTS depannhome_accounting_aids (
+    id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    name VARCHAR(160) NOT NULL, description VARCHAR(1000) NOT NULL DEFAULT '', aid_type VARCHAR(40) NOT NULL DEFAULT 'custom',
+    calculation_mode VARCHAR(20) NOT NULL DEFAULT 'fixed', amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+    auto_apply BOOLEAN NOT NULL DEFAULT FALSE, rules JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS depannhome_accounting_aids_owner_idx ON depannhome_accounting_aids (owner_id, auto_apply, LOWER(name));
+
+CREATE TABLE IF NOT EXISTS depannhome_accounting_settlements (
+    id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    document_id BIGINT NOT NULL REFERENCES depannhome_billing_documents(id) ON DELETE CASCADE, settlement_date DATE NOT NULL,
+    amount NUMERIC(12,2) NOT NULL CHECK (amount > 0), method VARCHAR(40) NOT NULL DEFAULT 'Virement',
+    reference VARCHAR(160) NOT NULL DEFAULT '', notes VARCHAR(1000) NOT NULL DEFAULT '',
+    created_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS depannhome_accounting_settlements_owner_document_idx ON depannhome_accounting_settlements (owner_id, document_id, settlement_date DESC);
+
+CREATE TABLE IF NOT EXISTS depannhome_accounting_settings (
+    owner_id BIGINT PRIMARY KEY REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    chart_config JSONB NOT NULL DEFAULT '{}'::jsonb, aid_engine_config JSONB NOT NULL DEFAULT '{}'::jsonb,
+    pdp_provider VARCHAR(60) NOT NULL DEFAULT 'sandbox', pdp_identifier VARCHAR(160) NOT NULL DEFAULT '',
+    pdp_api_secret TEXT NOT NULL DEFAULT '', pdp_enabled BOOLEAN NOT NULL DEFAULT FALSE, updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS depannhome_einvoice_transmissions (
+    id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    document_id BIGINT NOT NULL REFERENCES depannhome_billing_documents(id) ON DELETE CASCADE, provider VARCHAR(60) NOT NULL,
+    remote_id VARCHAR(160) NOT NULL DEFAULT '', status VARCHAR(30) NOT NULL DEFAULT 'draft', message VARCHAR(1000) NOT NULL DEFAULT '',
+    attempts INTEGER NOT NULL DEFAULT 0, last_attempt_at TIMESTAMPTZ, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS depannhome_einvoice_transmissions_owner_idx ON depannhome_einvoice_transmissions (owner_id, status, updated_at DESC);
 
 -- Factures d’abonnement émises par la plateforme aux entreprises clientes.
 CREATE TABLE IF NOT EXISTS depannhome_subscription_billing_profile (

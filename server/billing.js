@@ -41,7 +41,10 @@ export async function initializeBilling() {
             phone VARCHAR(50) NOT NULL DEFAULT '',
             email VARCHAR(160) NOT NULL DEFAULT '',
             registration_number VARCHAR(100) NOT NULL DEFAULT '',
+            siren VARCHAR(20) NOT NULL DEFAULT '',
             tax_number VARCHAR(100) NOT NULL DEFAULT '',
+            bank_iban VARCHAR(80) NOT NULL DEFAULT '',
+            bank_bic VARCHAR(40) NOT NULL DEFAULT '',
             payment_terms VARCHAR(500) NOT NULL DEFAULT '',
             deposit_terms VARCHAR(500) NOT NULL DEFAULT '',
             footer_note VARCHAR(1000) NOT NULL DEFAULT '',
@@ -58,6 +61,9 @@ export async function initializeBilling() {
     await database.query(`
         ALTER TABLE depannhome_billing_profiles
         ADD COLUMN IF NOT EXISTS default_quote JSONB,
+        ADD COLUMN IF NOT EXISTS siren VARCHAR(20) NOT NULL DEFAULT '',
+        ADD COLUMN IF NOT EXISTS bank_iban VARCHAR(80) NOT NULL DEFAULT '',
+        ADD COLUMN IF NOT EXISTS bank_bic VARCHAR(40) NOT NULL DEFAULT '',
         ADD COLUMN IF NOT EXISTS deposit_terms VARCHAR(500) NOT NULL DEFAULT '',
         ADD COLUMN IF NOT EXISTS quote_template_mode VARCHAR(20) NOT NULL DEFAULT 'integrated',
         ADD COLUMN IF NOT EXISTS quote_template_filename VARCHAR(255) NOT NULL DEFAULT '',
@@ -142,7 +148,7 @@ export function registerBillingRoutes(app, requireAuthentication) {
         const [profileResult, templatesResult, documentsResult] = await Promise.all([
             database.query(`
                 SELECT profile.company_name AS "companyName", profile.legal_form AS "legalForm", profile.address, profile.postal_code AS "postalCode", profile.city,
-                    profile.phone, profile.email, profile.registration_number AS "registrationNumber", profile.tax_number AS "taxNumber",
+                    profile.phone, profile.email, profile.registration_number AS "registrationNumber", profile.siren, profile.tax_number AS "taxNumber", profile.bank_iban AS "bankIban", profile.bank_bic AS "bankBic",
                     profile.payment_terms AS "paymentTerms", profile.deposit_terms AS "depositTerms", profile.footer_note AS "footerNote", profile.default_quote AS "defaultQuote",
                     profile.quote_template_mode AS "quoteTemplateMode", profile.quote_template_filename AS "quoteTemplateFilename",
                     (profile.quote_template_data IS NOT NULL) AS "hasQuoteTemplate", (profile.logo_data IS NOT NULL) AS "hasLogo",
@@ -159,7 +165,7 @@ export function registerBillingRoutes(app, requireAuthentication) {
                 SELECT depannhome_billing_documents.id, document_type AS "documentType", document_number AS "documentNumber", client_id AS "clientId", customer_type AS "customerType",
                     customer_name AS "customerName", customer_address AS "customerAddress", TO_CHAR(issue_date, 'YYYY-MM-DD') AS "issueDate",
                     TO_CHAR(due_date, 'YYYY-MM-DD') AS "dueDate", status, is_accounted AS "isAccounted",
-                    TO_CHAR(accounted_at, 'YYYY-MM-DD') AS "accountedAt", appointment_id AS "appointmentId", source_quote_id AS "sourceQuoteId", quote_reference AS "quoteReference", lines, notes,
+                    TO_CHAR(accounted_at, 'YYYY-MM-DD') AS "accountedAt", appointment_id AS "appointmentId", source_quote_id AS "sourceQuoteId", quote_reference AS "quoteReference", lines, notes, financial_data AS "financialData",
                     depannhome_billing_documents.created_at AS "createdAt", depannhome_billing_documents.updated_at AS "updatedAt",
                     COALESCE(NULLIF(creator.full_name, ''), creator.username, '') AS "creatorName"
                 FROM depannhome_billing_documents
@@ -194,18 +200,18 @@ export function registerBillingRoutes(app, requireAuthentication) {
         const database = getPool();
         await database.query(`
             INSERT INTO depannhome_billing_profiles
-                (owner_id, company_name, legal_form, address, postal_code, city, phone, email, registration_number, tax_number, payment_terms, deposit_terms, footer_note, logo_data, logo_mime_type)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+                (owner_id, company_name, legal_form, address, postal_code, city, phone, email, registration_number, siren, tax_number, bank_iban, bank_bic, payment_terms, deposit_terms, footer_note, logo_data, logo_mime_type)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
             ON CONFLICT (owner_id) DO UPDATE SET
                 company_name = EXCLUDED.company_name, legal_form = EXCLUDED.legal_form, address = EXCLUDED.address,
                 postal_code = EXCLUDED.postal_code, city = EXCLUDED.city, phone = EXCLUDED.phone, email = EXCLUDED.email,
-                registration_number = EXCLUDED.registration_number, tax_number = EXCLUDED.tax_number,
+                registration_number = EXCLUDED.registration_number, siren = EXCLUDED.siren, tax_number = EXCLUDED.tax_number, bank_iban = EXCLUDED.bank_iban, bank_bic = EXCLUDED.bank_bic,
                 payment_terms = EXCLUDED.payment_terms, deposit_terms = EXCLUDED.deposit_terms, footer_note = EXCLUDED.footer_note,
-                logo_data = CASE WHEN $16 THEN NULL WHEN $17 THEN EXCLUDED.logo_data ELSE depannhome_billing_profiles.logo_data END,
-                logo_mime_type = CASE WHEN $16 THEN '' WHEN $17 THEN EXCLUDED.logo_mime_type ELSE depannhome_billing_profiles.logo_mime_type END,
+                logo_data = CASE WHEN $19 THEN NULL WHEN $20 THEN EXCLUDED.logo_data ELSE depannhome_billing_profiles.logo_data END,
+                logo_mime_type = CASE WHEN $19 THEN '' WHEN $20 THEN EXCLUDED.logo_mime_type ELSE depannhome_billing_profiles.logo_mime_type END,
                 updated_at = NOW()
         `, [getAccountOwnerId(request), profile.companyName, profile.legalForm, profile.address, profile.postalCode, profile.city, profile.phone,
-            profile.email, profile.registrationNumber, profile.taxNumber, profile.paymentTerms, profile.depositTerms, profile.footerNote,
+            profile.email, profile.registrationNumber, profile.siren, profile.taxNumber, profile.bankIban, profile.bankBic, profile.paymentTerms, profile.depositTerms, profile.footerNote,
             logo?.buffer || null, logo?.mimetype || "", removeLogo, Boolean(logo)]);
         response.status(204).end();
     }));
@@ -269,7 +275,7 @@ export function registerBillingRoutes(app, requireAuthentication) {
         }
         const { rows } = await getPool().query(`
             SELECT company_name AS "companyName", legal_form AS "legalForm", address, postal_code AS "postalCode", city, phone, email,
-                registration_number AS "registrationNumber", tax_number AS "taxNumber", payment_terms AS "paymentTerms", deposit_terms AS "depositTerms",
+                registration_number AS "registrationNumber", siren, tax_number AS "taxNumber", bank_iban AS "bankIban", bank_bic AS "bankBic", payment_terms AS "paymentTerms", deposit_terms AS "depositTerms",
                 footer_note AS "footerNote", logo_data AS "logoData", logo_mime_type AS "logoMimeType"
             FROM depannhome_billing_profiles WHERE owner_id = $1
         `, [getAccountOwnerId(request)]);
@@ -303,7 +309,7 @@ export function registerBillingRoutes(app, requireAuthentication) {
                 SELECT id, document_type AS "documentType", document_number AS "documentNumber", client_id AS "clientId", customer_type AS "customerType",
                     customer_name AS "customerName", customer_address AS "customerAddress", TO_CHAR(issue_date, 'YYYY-MM-DD') AS "issueDate",
                     TO_CHAR(due_date, 'YYYY-MM-DD') AS "dueDate", status, is_accounted AS "isAccounted",
-                    TO_CHAR(accounted_at, 'YYYY-MM-DD') AS "accountedAt", appointment_id AS "appointmentId", source_quote_id AS "sourceQuoteId", quote_reference AS "quoteReference", lines, notes
+                    TO_CHAR(accounted_at, 'YYYY-MM-DD') AS "accountedAt", appointment_id AS "appointmentId", source_quote_id AS "sourceQuoteId", quote_reference AS "quoteReference", lines, notes, financial_data AS "financialData"
                                 FROM depannhome_billing_documents
                                 WHERE id = $1 AND owner_id = $2
                                     AND ($3 <> 'technician'
@@ -325,7 +331,7 @@ export function registerBillingRoutes(app, requireAuthentication) {
                         `, [id, getAccountOwnerId(request), request.user?.role || "", request.user?.sub || 0]),
             database.query(`
                 SELECT company_name AS "companyName", legal_form AS "legalForm", address, postal_code AS "postalCode", city, phone, email,
-                    registration_number AS "registrationNumber", tax_number AS "taxNumber", payment_terms AS "paymentTerms",
+                    registration_number AS "registrationNumber", siren, tax_number AS "taxNumber", bank_iban AS "bankIban", bank_bic AS "bankBic", payment_terms AS "paymentTerms",
                     deposit_terms AS "depositTerms", footer_note AS "footerNote", (logo_data IS NOT NULL) AS "hasLogo"
                 FROM depannhome_billing_profiles WHERE owner_id = $1
             `, [getAccountOwnerId(request)])
@@ -514,7 +520,7 @@ export function billingUploadErrorHandler(error, request, response, next) {
 }
 
 function emptyProfile() {
-    return { companyName: "", legalForm: "", address: "", postalCode: "", city: "", phone: "", email: "", registrationNumber: "", taxNumber: "", paymentTerms: "", depositTerms: "", footerNote: "", defaultQuote: null, quoteTemplateMode: "integrated", quoteTemplateFilename: "", hasQuoteTemplate: false, quoteTemplatePolicy: "company_choice", hasLogo: false };
+    return { companyName: "", legalForm: "", address: "", postalCode: "", city: "", phone: "", email: "", registrationNumber: "", siren: "", taxNumber: "", bankIban: "", bankBic: "", paymentTerms: "", depositTerms: "", footerNote: "", defaultQuote: null, quoteTemplateMode: "integrated", quoteTemplateFilename: "", hasQuoteTemplate: false, quoteTemplatePolicy: "company_choice", hasLogo: false };
 }
 
 async function getQuoteTemplatePolicy(accountOwnerId) {
@@ -542,7 +548,7 @@ function sanitizeProfile(value) {
     return {
         companyName: cleanText(value?.companyName, 160), legalForm: cleanText(value?.legalForm, 100), address: cleanText(value?.address, 255),
         postalCode: cleanText(value?.postalCode, 20), city: cleanText(value?.city, 100), phone: cleanText(value?.phone, 50),
-        email: cleanText(value?.email, 160), registrationNumber: cleanText(value?.registrationNumber, 100), taxNumber: cleanText(value?.taxNumber, 100),
+        email: cleanText(value?.email, 160), registrationNumber: cleanText(value?.registrationNumber, 100), siren: cleanText(value?.siren, 20), taxNumber: cleanText(value?.taxNumber, 100), bankIban: cleanText(value?.bankIban, 80), bankBic: cleanText(value?.bankBic, 40),
         paymentTerms: cleanText(value?.paymentTerms, 500), depositTerms: cleanText(value?.depositTerms, 500), footerNote: cleanText(value?.footerNote, 1000)
     };
 }
@@ -640,7 +646,7 @@ async function getBillingExport(request) {
         database.query(`
             SELECT id, document_type AS "documentType", document_number AS "documentNumber", customer_type AS "customerType",
                 customer_name AS "customerName", customer_address AS "customerAddress", TO_CHAR(issue_date, 'YYYY-MM-DD') AS "issueDate",
-                TO_CHAR(due_date, 'YYYY-MM-DD') AS "dueDate", quote_reference AS "quoteReference", lines, notes
+                TO_CHAR(due_date, 'YYYY-MM-DD') AS "dueDate", quote_reference AS "quoteReference", lines, notes, financial_data AS "financialData"
                         FROM depannhome_billing_documents
                         WHERE id = $1 AND owner_id = $2
                             AND ($3 <> 'technician'
@@ -662,7 +668,7 @@ async function getBillingExport(request) {
                 `, [id, getAccountOwnerId(request), request.user?.role || "", request.user?.sub || 0]),
         database.query(`
             SELECT company_name AS "companyName", legal_form AS "legalForm", address, postal_code AS "postalCode", city, phone, email,
-                registration_number AS "registrationNumber", tax_number AS "taxNumber", payment_terms AS "paymentTerms", deposit_terms AS "depositTerms",
+                registration_number AS "registrationNumber", siren, tax_number AS "taxNumber", bank_iban AS "bankIban", bank_bic AS "bankBic", payment_terms AS "paymentTerms", deposit_terms AS "depositTerms",
                 footer_note AS "footerNote", logo_data AS "logoData", logo_mime_type AS "logoMimeType"
             FROM depannhome_billing_profiles WHERE owner_id = $1
         `, [getAccountOwnerId(request)])
@@ -697,8 +703,14 @@ export function createBillingPdf(document, profile) {
         const text = (value, x, y, width, options = {}) => pdf.fillColor(options.color || "#172033").font(options.bold ? "Helvetica-Bold" : "Helvetica").fontSize(options.size || 9).text(String(value || ""), x, y, { width, ...options });
         const formatMoney = value => new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" }).format(Number(value) || 0);
         const formatDate = value => value ? new Intl.DateTimeFormat("fr-FR").format(new Date(`${value}T12:00:00`)) : "Non renseignée";
+        const financialData = document.financialData && typeof document.financialData === "object" ? document.financialData : {};
         const totalHt = (document.lines || []).reduce((sum, item) => sum + Number(item.quantity || 0) * Number(item.unitPrice || 0), 0);
-        const totalVat = (document.lines || []).reduce((sum, item) => sum + Number(item.quantity || 0) * Number(item.unitPrice || 0) * Number(item.vatRate || 0) / 100, 0);
+        const grossVat = (document.lines || []).reduce((sum, item) => sum + Number(item.quantity || 0) * Number(item.unitPrice || 0) * Number(item.vatRate || 0) / 100, 0);
+        const discountAmount = Math.min(totalHt, financialData.discountMode === "percentage" ? totalHt * Number(financialData.discountAmount || 0) / 100 : Number(financialData.discountAmount || 0));
+        const totalVat = totalHt ? grossVat * (totalHt - discountAmount) / totalHt : 0;
+        const totalTtc = totalHt - discountAmount + totalVat;
+        const aidAmount = Math.min(totalTtc, (Array.isArray(financialData.aids) ? financialData.aids : []).reduce((sum, aid) => sum + (aid.calculationMode === "percentage" ? (totalHt - discountAmount) * Number(aid.amount || 0) / 100 : Number(aid.amount || 0)), 0));
+        const remainingAmount = Math.max(0, totalTtc - aidAmount);
         const title = document.documentType === "invoice" ? "FACTURE" : "DEVIS";
 
         if (profile.logoData && ["image/png", "image/jpeg"].includes(profile.logoMimeType)) {
@@ -754,19 +766,25 @@ export function createBillingPdf(document, profile) {
         const summaryY = pdf.y;
         text("CONDITIONS DE RÈGLEMENT", margin, summaryY, 260, { size: 9, bold: true });
         const conditions = [
-            document.notes || profile.paymentTerms || "Conditions de règlement non renseignées.",
+            financialData.conditions || financialData.comments || document.notes || profile.paymentTerms || "Conditions de règlement non renseignées.",
             document.documentType === "quote" && profile.depositTerms ? `Acompte : ${profile.depositTerms}` : "",
             document.documentType === "invoice" && profile.bankIban ? `Règlement par virement · IBAN : ${profile.bankIban}${profile.bankBic ? ` · BIC : ${profile.bankBic}` : ""}` : ""
         ].filter(Boolean).join("\n");
         text(conditions, margin, summaryY + 14, 260, { size: 8, lineGap: 2 });
         const totalX = margin + contentWidth - 180;
-        [["Total HT", totalHt, "#172033"], ["Total TVA", totalVat, "#172033"], [document.documentType === "invoice" ? "Net à payer" : "Total TTC", totalHt + totalVat, "#0a5c36"]].forEach(([label, value, color], index) => {
+        [["Total HT", totalHt, "#172033"], ["Total TVA", totalVat, "#172033"], ["Total TTC", totalTtc, "#172033"], [document.documentType === "quote" ? "Reste à charge" : "Net à payer", remainingAmount, "#0a5c36"]].forEach(([label, value, color], index) => {
             const y = summaryY + index * 26;
             pdf.rect(totalX, y, 180, 24).fill(color);
             text(label, totalX + 9, y + 7, 92, { size: index === 2 ? 10 : 8, bold: true, color: "#ffffff" });
             text(formatMoney(value), totalX + 100, y + 6, 72, { size: index === 2 ? 10 : 8, bold: true, color: "#ffffff", align: "right" });
         });
-        pdf.y = Math.max(pdf.y, summaryY + 88);
+        pdf.y = Math.max(pdf.y, summaryY + 114);
+        if (discountAmount || aidAmount) {
+            ensureSpace(44);
+            const aidLines = (Array.isArray(financialData.aids) ? financialData.aids : []).map(aid => `${aid.name || "Aide"} : ${aid.calculationMode === "percentage" ? `${aid.amount || 0} %` : formatMoney(aid.amount)}`).join(" · ");
+            text([discountAmount ? `Remise : ${formatMoney(discountAmount)}` : "", aidLines, aidAmount ? `Total des aides : ${formatMoney(aidAmount)}` : ""].filter(Boolean).join("\n"), margin, pdf.y, contentWidth, { size: 8, color: "#475569", lineGap: 2 });
+            pdf.y += 38;
+        }
         if (document.documentType === "quote") {
             ensureSpace(82);
             pdf.rect(margin + contentWidth - 245, pdf.y, 245, 70).lineWidth(1).strokeColor("#d7dde3").stroke();

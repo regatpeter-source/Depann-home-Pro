@@ -5,7 +5,7 @@ import { isCreatorUsername } from "./auth.js";
 const USERNAME_PATTERN = /^[a-z0-9._-]{3,32}$/;
 const MIN_PASSWORD_LENGTH = 12;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const MEMBER_ROLES = new Set(["admin", "technician", "accountant"]);
+const MEMBER_ROLES = new Set(["admin", "technician"]);
 const SUBSCRIPTION_PLANS = new Set(["free", "paid"]);
 const SUBSCRIPTION_STATUSES = new Set(["active", "trial", "past_due", "suspended", "cancelled"]);
 const QUOTE_TEMPLATE_POLICIES = new Set(["integrated_only", "company_choice", "external_only"]);
