@@ -4,7 +4,9 @@
 
 Le module `server/technical-reports.js` est un moteur de rapports rattachés à une intervention (`appointment_id`). Chaque rapport porte un `report_type`, un contenu structuré JSON et des médias propres : il peut donc accueillir de nouveaux modèles sans modifier les dossiers clients.
 
-Le premier modèle est `leak_detection`, destiné aux recherches de fuite en plomberie, chauffage, PAC, CVC et réseaux hydrauliques. Il contient les sections couverture, état des lieux, installation, contrôle visuel, mesures initiales, méthodes de recherche, localisation, travaux, contrôle final, conclusion et signatures.
+Le premier modèle est `leak_detection`, destiné aux recherches de fuite en plomberie, chauffage, PAC, CVC et réseaux hydrauliques. Il est rendu par l’assistant mobile `js/leak-report-wizard.js` et décrit par `server/leak-report-template.js`. Les 12 étapes sont : informations générales, état des lieux, observations visuelles, humidité, pression, moyens techniques, test à l’eau/colorant, mise en charge, mise en sécurité, ventilation, conclusion et préconisations/signatures.
+
+La première étape est un instantané **en lecture seule** généré lors de la création depuis le planning, le dossier client, le profil entreprise et le compte du technicien. Les données non disponibles dans Depann'Home Pro restent simplement absentes : elles ne sont jamais inventées. Chaque entreprise peut ensuite étendre le modèle en ajoutant une définition d’étape sans modifier les tables de rapports.
 
 ## Accès et cycle de vie
 
@@ -14,11 +16,19 @@ Le premier modèle est `leak_detection`, destiné aux recherches de fuite en plo
 - Le cycle est `draft`, `submitted`, `in_correction`, puis `validated`.
 - La validation génère un PDF et verrouille le rapport. Le retour en brouillon enlève le PDF courant afin que toute nouvelle validation génère une version à jour.
 
-## Synchronisation et photos
+## Assistant, synchronisation et photos
 
-L’éditeur effectue un enregistrement immédiat, déclenché après une courte temporisation pendant la saisie. Les données sont ensuite visibles via les rafraîchissements partagés déjà présents dans l’application. Il ne s’agit pas d’un canal WebSocket/SSE : la collaboration est donc quasi temps réel lors des sauvegardes et des actualisations, pas une coédition caractère par caractère.
+Une seule étape est présentée à la fois sur téléphone. Les boutons **Précédent**, **Suivant** et **Ignorer cette étape** permettent de ne saisir que les contrôles réellement effectués. Les relevés d’humidité et de pression, ainsi que les matériels techniques, peuvent être ajoutés sans limite fonctionnelle raisonnable. Les modifications sont enregistrées après une courte temporisation, toutes les cinq secondes, lors du changement d’étape et à la mise en arrière-plan.
 
-Les photos sont conservées dans le rapport, séparément des pièces jointes habituelles du dossier client. La limite actuelle est de 40 images de 4 Mo maximum par rapport. Les photos comportent une légende et une annotation textuelle. Le navigateur mobile peut ouvrir la caméra avec `capture="environment"`.
+Les photos sont conservées dans le rapport, séparément des pièces jointes habituelles du dossier client. La limite actuelle est de 40 images de 4 Mo maximum par rapport. Le navigateur mobile peut ouvrir la caméra avec `capture="environment"`; chaque photo peut recevoir une légende, une annotation textuelle et un dessin tactile intégré à l’image.
+
+Le verrou collaboratif et le flux SSE décrits dans `docs/COLLABORATION.md` restent la protection de référence : un seul éditeur modifie le rapport, les autres le consultent en lecture seule et le secrétariat reçoit les changements immédiatement.
+
+## PDF adaptatif et compatibilité
+
+Le PDF conserve toujours sa page d’informations générales. Les autres étapes ne sont générées que si elles contiennent une valeur, un relevé, un matériel ou une photo. La pagination est recalculée après cette sélection : un diagnostic simple produit donc naturellement un document court, tandis qu’un diagnostic complet garde toutes les pages utiles.
+
+Les rapports créés avec l’ancien formulaire sont convertis à la lecture vers le nouveau contenu structuré. Les routes HTTP, le cycle `draft → submitted → in_correction → validated`, les verrous, les médias et les archives PDF restent inchangés.
 
 ## Archivage
 
