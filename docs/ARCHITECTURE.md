@@ -12,6 +12,14 @@ Le module `server/accounting.js` reste indépendant de la facturation historique
 - Les PDP sont des connecteurs isolés. Seul le bac à sable est fourni ; l’ajout d’un partenaire certifié consiste à enregistrer un connecteur sans modifier le cœur de la facturation. Les échecs sont journalisés et renvoyables depuis l’interface.
 - Les critères de travaux, équipements, catégories de clients, localisation et dates de validité sont conservés dans les règles d’aide pour permettre l’ajout ultérieur de référentiels officiels ou régionaux.
 
+## Assistant Connecteurs API
+
+`server/connectors.js` fournit un runtime de plugins **déclaratifs**. Chaque connecteur stocke un manifeste versionné (informations partenaire, authentification, endpoints et mappings), une configuration et des credentials AES-256-GCM chiffrés, tous filtrés par `owner_id`.
+
+Les paquets exportés contiennent le manifeste, le modèle de synchronisation et la documentation, mais jamais les secrets. Ils peuvent être importés puis complétés avec les credentials propres à l’entreprise. Le runtime ne charge jamais de JavaScript issu d’un paquet : il interprète uniquement les endpoints configurés, ce qui évite qu’un partenaire modifie ou exécute du code dans le cœur de Depann’Home Pro.
+
+Les appels de test imposent HTTPS/HTTP externe, refusent les hôtes locaux et plages IPv4 privées usuelles, appliquent timeout et nouvelles tentatives, puis écrivent un journal en masquant les entêtes et valeurs sensibles. Les connecteurs restent compatibles avec une infrastructure Render à disque éphémère, car aucune installation n’écrit dans le système de fichiers.
+
 ## Structure
 
 ```text

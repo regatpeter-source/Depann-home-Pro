@@ -42,6 +42,7 @@ export const ROUTES = {
     clients: "clients",
     billing: "billing",
     accounting: "accounting",
+    connectors: "connectors",
     purchases: "purchases",
         messages: "messages",
     calendar: "calendar",

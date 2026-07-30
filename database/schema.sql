@@ -212,6 +212,25 @@ CREATE TABLE IF NOT EXISTS depannhome_einvoice_transmissions (
 );
 CREATE INDEX IF NOT EXISTS depannhome_einvoice_transmissions_owner_idx ON depannhome_einvoice_transmissions (owner_id, status, updated_at DESC);
 
+-- Assistant Connecteurs API : plugins déclaratifs isolés par entreprise, sans exécution de code tiers.
+CREATE TABLE IF NOT EXISTS depannhome_api_connectors (
+    id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    connector_key VARCHAR(64) NOT NULL, manifest JSONB NOT NULL DEFAULT '{}'::jsonb,
+    configuration JSONB NOT NULL DEFAULT '{}'::jsonb, encrypted_credentials TEXT NOT NULL DEFAULT '', enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    created_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT depannhome_api_connectors_owner_key_unique UNIQUE (owner_id, connector_key)
+);
+CREATE INDEX IF NOT EXISTS depannhome_api_connectors_owner_updated_idx ON depannhome_api_connectors (owner_id, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS depannhome_api_connector_logs (
+    id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    connector_id BIGINT NOT NULL REFERENCES depannhome_api_connectors(id) ON DELETE CASCADE,
+    action VARCHAR(40) NOT NULL, status VARCHAR(20) NOT NULL, endpoint_name VARCHAR(160) NOT NULL DEFAULT '',
+    request_summary JSONB NOT NULL DEFAULT '{}'::jsonb, response_summary JSONB NOT NULL DEFAULT '{}'::jsonb,
+    message VARCHAR(1000) NOT NULL DEFAULT '', created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS depannhome_api_connector_logs_owner_connector_idx ON depannhome_api_connector_logs (owner_id, connector_id, created_at DESC);
+
 -- Factures d’abonnement émises par la plateforme aux entreprises clientes.
 CREATE TABLE IF NOT EXISTS depannhome_subscription_billing_profile (
     id BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (id),
