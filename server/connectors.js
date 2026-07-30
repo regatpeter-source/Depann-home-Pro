@@ -47,8 +47,8 @@ export async function initializeConnectors() {
     await database.query("CREATE INDEX IF NOT EXISTS depannhome_api_connector_logs_owner_connector_idx ON depannhome_api_connector_logs (owner_id, connector_id, created_at DESC)");
 }
 
-export function registerConnectorRoutes(app, requireAuthentication) {
-    app.use("/api/connectors", requireAuthentication, requireConnectorAdministration);
+export function registerConnectorRoutes(app, requireAuthentication, requireCreator) {
+    app.use("/api/connectors", requireAuthentication, requireCreator);
 
     app.get("/api/connectors", asyncHandler(async (request, response) => {
         const ownerId = getAccountOwnerId(request);
@@ -141,11 +141,6 @@ export function registerConnectorRoutes(app, requireAuthentication) {
         response.set({ "Content-Type": "text/markdown; charset=utf-8", "Content-Disposition": `attachment; filename="${safeFileName(connector.connectorKey)}-README.md"`, "Cache-Control": "private, no-store" });
         response.send(buildDocumentation(connector));
     }));
-}
-
-function requireConnectorAdministration(request, response, next) {
-    if (request.user?.role !== "admin") return response.status(403).json({ message: "L’assistant de connecteurs API est réservé à l’administrateur de l’entreprise." });
-    return next();
 }
 
 async function loadConnectors(ownerId) {

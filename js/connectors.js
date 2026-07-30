@@ -7,15 +7,19 @@ const DEPANNHOME_FIELDS = ["Nom du client", "Adresse d’intervention", "Télép
 let data = null;
 let activeSection = "new";
 let selectedId = 0;
+let creatorMode = false;
+
+export function renderCreatorConnectors() { creatorMode = true; return renderConnectors(); }
 
 export async function renderConnectors(section = activeSection, connectorId = selectedId) {
     activeSection = SECTIONS.some(([id]) => id === section) ? section : "new"; selectedId = Number(connectorId) || 0;
-    clearSearch(); setPage("Assistant Connecteurs API", ROUTES.connectors, "detail");
+    clearSearch(); setPage("Prestataires externes", ROUTES.creator, "detail");
     const container = getContainer(); container.innerHTML = '<section class="client-panel connectors-shell"><p class="muted">Chargement des connecteurs…</p></section>';
     const result = await api("/api/connectors");
     if (!result.ok) { container.innerHTML = `<section class="client-panel"><p class="auth-message error">${escapeHtml(result.message || "Impossible de charger les connecteurs.")}</p></section>`; return; }
     data = result.data; const shell = container.querySelector(".connectors-shell");
-    shell.innerHTML = `<header class="connectors-heading"><div><p class="eyebrow">Plugins partenaires</p><h2>Assistant Connecteurs API</h2><p class="muted">Créez, testez, exportez et maintenez des intégrations sans modifier le cœur de Depann’Home Pro.</p></div><label class="secondary-button connector-import">Importer un paquet<input type="file" accept="application/json,.json" id="connectorImport"></label></header><nav class="connector-tabs">${SECTIONS.map(([id, label]) => `<button type="button" class="secondary-button${id === activeSection ? " active" : ""}" data-section="${id}">${label}</button>`).join("")}</nav><section id="connectorsContent"></section>`;
+    shell.innerHTML = `<header class="connectors-heading"><div><p class="eyebrow">Administration plateforme</p><h2>Base de prestataires externes</h2><p class="muted">Créez, testez, exportez et enrichissez le registre des intégrations partenaires, sans exposer ces réglages aux entreprises.</p></div><div class="connector-header-actions">${creatorMode ? '<button type="button" class="secondary-button" id="backToCreator">Retour à la console</button>' : ""}<label class="secondary-button connector-import">Importer un paquet<input type="file" accept="application/json,.json" id="connectorImport"></label></div></header><nav class="connector-tabs">${SECTIONS.map(([id, label]) => `<button type="button" class="secondary-button${id === activeSection ? " active" : ""}" data-section="${id}">${label}</button>`).join("")}</nav><section id="connectorsContent"></section>`;
+    shell.querySelector("#backToCreator")?.addEventListener("click", async () => { creatorMode = false; const { renderCreatorConsole } = await import("./creator.js?v=117"); renderCreatorConsole(); });
     shell.querySelectorAll("[data-section]").forEach(button => button.addEventListener("click", () => renderConnectors(button.dataset.section, selectedId)));
     shell.querySelector("#connectorImport").addEventListener("change", importBundle);
     const content = shell.querySelector("#connectorsContent");

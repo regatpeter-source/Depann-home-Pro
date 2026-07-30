@@ -1,9 +1,8 @@
 import { ROUTES, STORAGE_KEYS, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=116";
 import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=142";
-import { renderCreatorConsole } from "./creator.js?v=116";
+import { renderCreatorConsole } from "./creator.js?v=117";
 import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=141";
 import { renderAccounting } from "./accounting.js?v=1";
-import { renderConnectors } from "./connectors.js?v=1";
 import { renderPartnerMissions } from "./partner-missions.js?v=1";
 import { renderPartnerConnections } from "./partner-connections.js?v=1";
 import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=1";
@@ -93,8 +92,6 @@ export async function refreshApplication() {
         renderCalendar();
     } else if (activeRoute === ROUTES.billing && document.body.dataset.role !== "technician") {
         renderBilling();
-    } else if (activeRoute === ROUTES.connectors && document.body.dataset.role === "admin") {
-        renderConnectors();
     } else if (activeRoute === ROUTES.partnerMissions && !isAccountant()) {
         renderPartnerMissions();
     } else if (activeRoute === ROUTES.technicalReports) {
@@ -114,7 +111,6 @@ function bindEvents() {
     const clientsBtn = document.getElementById("clientsBtn");
     const billingBtn = document.getElementById("billingBtn");
     const accountingBtn = document.getElementById("accountingBtn");
-    const connectorsBtn = document.getElementById("connectorsBtn");
     const partnerMissionsBtn = document.getElementById("partnerMissionsBtn");
     const technicalReportsBtn = document.getElementById("technicalReportsBtn");
     const purchasesBtn = document.getElementById("purchasesBtn");
@@ -142,7 +138,6 @@ function bindEvents() {
         if (document.body.dataset.role !== "technician") renderBilling();
     });
     accountingBtn?.addEventListener("click", () => { if (document.body.dataset.role === "admin") renderAccounting(); });
-    connectorsBtn?.addEventListener("click", () => { if (document.body.dataset.role === "admin") renderConnectors(); });
     partnerMissionsBtn?.addEventListener("click", () => { if (!isAccountant()) renderPartnerMissions(); });
     technicalReportsBtn?.addEventListener("click", () => { if (!isAccountant()) renderTechnicalReports(); });
     purchasesBtn?.addEventListener("click", renderPurchases);
@@ -170,7 +165,6 @@ function bindEvents() {
             if (nav === ROUTES.clients) openClients();
             if (nav === ROUTES.billing && document.body.dataset.role !== "technician") renderBilling();
             if (nav === ROUTES.accounting && document.body.dataset.role === "admin") renderAccounting();
-            if (nav === ROUTES.connectors && document.body.dataset.role === "admin") renderConnectors();
             if (nav === ROUTES.partnerMissions) renderPartnerMissions();
             if (nav === ROUTES.technicalReports) renderTechnicalReports();
             if (nav === ROUTES.purchases) renderPurchases();

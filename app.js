@@ -83,7 +83,7 @@ registerAuthRoutes(app);
 registerCreatorRoutes(app, requireCreator);
 registerSubscriptionInvoicingRoutes(app, requireCreator);
 registerAccountingRoutes(app, requireAuthentication);
-registerConnectorRoutes(app, requireAuthentication);
+registerConnectorRoutes(app, requireAuthentication, requireCreator);
 registerPartnerMissionRoutes(app, requireAuthentication);
 registerPartnerDialogueRoutes(app, requireAuthentication);
 registerPartnerConnectionRoutes(app, requireAuthentication);

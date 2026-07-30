@@ -2,7 +2,7 @@
 
 ## Principe
 
-Un connecteur Depann'Home Pro est un **plugin déclaratif** : il contient un manifeste, des endpoints, un mapping et des paramètres par entreprise. Aucun fichier JavaScript externe n'est chargé ni exécuté par le serveur de production.
+Un connecteur Depann'Home Pro est un **plugin déclaratif** du registre de prestataires externes, administré uniquement depuis la **Console Créateur**. Il contient un manifeste, des endpoints, un mapping et les paramètres sécurisés de la plateforme. Aucun fichier JavaScript externe n'est chargé ni exécuté par le serveur de production.
 
 Cette règle maintient le cœur applicatif stable, empêche l'exécution de code issu d'un partenaire et fonctionne sur Render, dont le système de fichiers est éphémère.
 
@@ -17,7 +17,7 @@ Un paquet JSON généré par l'assistant contient :
 - `README.md` : documentation et historique du paquet ;
 - `logs/README.md` : politique de journalisation.
 
-Les secrets ne sont jamais exportés. Après un import, ils doivent être renseignés dans l'assistant avant activation.
+Les secrets ne sont jamais exportés. Après un import, le Créateur les renseigne dans le registre avant activation. Les entreprises clientes n’ont aucun accès à cet écran ni à ces valeurs.
 
 ## Manifeste
 
@@ -32,7 +32,8 @@ Les chemins d'endpoint commencent obligatoirement par `/`. Les URLs doivent êtr
 
 ## Sécurité
 
-- Tous les connecteurs et journaux sont systématiquement filtrés par `owner_id`.
+- Tous les connecteurs et journaux sont systématiquement isolés dans l’espace du compte Créateur (`owner_id`).
+- Les routes du registre exigent une session Créateur ; un administrateur d’entreprise ne peut ni consulter ni modifier un connecteur.
 - Les credentials sont chiffrés AES-256-GCM à partir de `SESSION_SECRET`.
 - Le client n'obtient que l'indication `hasCredentials`, jamais les valeurs secrètes.
 - Les logs masquent les clés API, tokens, mots de passe et en-têtes `Authorization`.
@@ -43,7 +44,7 @@ Les chemins d'endpoint commencent obligatoirement par `/`. Les URLs doivent êtr
 
 1. Créer le connecteur avec l'assistant.
 2. Décrire les endpoints et mappings.
-3. Ajouter les secrets dans la configuration locale de l'entreprise.
+3. Ajouter les secrets dans la configuration sécurisée de la plateforme.
 4. Tester chaque endpoint et contrôler la réponse JSON ainsi que le journal.
 5. Activer le connecteur lorsque les tests sont validés.
 6. Exporter un paquet pour le versionner ou le partager sans secret.

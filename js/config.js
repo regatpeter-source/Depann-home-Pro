@@ -42,7 +42,6 @@ export const ROUTES = {
     clients: "clients",
     billing: "billing",
     accounting: "accounting",
-    connectors: "connectors",
     partnerMissions: "partner-missions",
     technicalReports: "technical-reports",
     purchases: "purchases",

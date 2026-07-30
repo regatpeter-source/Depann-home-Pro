@@ -1,6 +1,7 @@
 import { ROUTES } from "./config.js?v=105";
 import { clearSearch, getContainer, setPage } from "./ui.js?v=44";
 import { escapeHtml } from "./utils.js?v=44";
+import { renderCreatorConnectors } from "./connectors.js?v=1";
 
 let accounts = [];
 let selectedAccountId = "";
@@ -13,7 +14,7 @@ export async function renderCreatorConsole() {
         <section class="creator-console">
             <header class="creator-heading">
                 <div><p class="eyebrow">Administration plateforme</p><h2>Console Créateur</h2></div>
-                <div class="creator-form-actions"><button type="button" class="secondary-button auth-outline-button" id="creatorSecurity">Sécurité du compte</button><button type="button" class="secondary-button auth-outline-button" id="creatorSubscriptionInvoices">Factures abonnements</button><button type="button" class="secondary-button auth-outline-button" id="creatorBillingProfile">Facturation plateforme</button><button type="button" class="secondary-button" id="creatorNewAccount">+ Nouvelle entreprise</button></div>
+                <div class="creator-form-actions"><button type="button" class="secondary-button auth-outline-button" id="creatorSecurity">Sécurité du compte</button><button type="button" class="secondary-button auth-outline-button" id="creatorSubscriptionInvoices">Factures abonnements</button><button type="button" class="secondary-button auth-outline-button" id="creatorBillingProfile">Facturation plateforme</button><button type="button" class="secondary-button auth-outline-button" id="creatorExternalProviders">Prestataires externes</button><button type="button" class="secondary-button" id="creatorNewAccount">+ Nouvelle entreprise</button></div>
             </header>
             <p id="creatorFeedback" class="auth-message" aria-live="polite"></p>
             <section class="creator-subscription-summary" id="creatorSubscriptionSummary" aria-label="Synthèse des abonnements"></section>
@@ -27,6 +28,7 @@ export async function renderCreatorConsole() {
     container.querySelector("#creatorBillingProfile").addEventListener("click", renderSubscriptionBillingProfile);
     container.querySelector("#creatorSecurity").addEventListener("click", renderCreatorSecurity);
     container.querySelector("#creatorSubscriptionInvoices").addEventListener("click", renderSubscriptionInvoices);
+    container.querySelector("#creatorExternalProviders").addEventListener("click", renderCreatorConnectors);
     await loadAccounts();
 }
 
