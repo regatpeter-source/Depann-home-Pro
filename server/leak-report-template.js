@@ -43,9 +43,12 @@ export function createLeakReportPdf(report, profile) {
 }
 
 function addGeneralPage(pdf, report, profile, snapshot) {
-    if (profile.logoData && /^image\/(png|jpeg)$/.test(profile.logoMimeType || "")) { try { pdf.image(profile.logoData, 44, 42, { fit: [78, 62] }); } catch {} }
-    title(pdf, "RAPPORT DE RECHERCHE DE FUITE", 44, 48, 480, 23); pdf.font("Helvetica").fontSize(10).fillColor("#475569").text(`Rapport n° ${report.id}`, 44, 82, { width: 500, align: "right" });
-    pdf.moveTo(44, 112).lineTo(551, 112).strokeColor("#cbd5e1").stroke();
+    const hasLogo = Boolean(profile.logoData && ["image/png", "image/jpeg"].includes(profile.logoMimeType));
+    if (hasLogo) { try { pdf.image(profile.logoData, 44, 44, { fit: [56, 56] }); } catch {} }
+    const companyX = hasLogo ? 112 : 44;
+    pdf.fillColor("#172033").font("Helvetica").fontSize(9).text([snapshot.companyName || profile.companyName, snapshot.companyAddress || [profile.address, profile.postalCode, profile.city].filter(Boolean).join(" "), snapshot.companyPhone || profile.phone, snapshot.companyEmail || profile.email].filter(Boolean).join("\n"), companyX, 44, { width: 235, lineGap: 2 });
+    title(pdf, "RAPPORT DE RECHERCHE DE FUITE", 300, 44, 251, 18); pdf.font("Helvetica").fontSize(9).fillColor("#475569").text(`Rapport n° ${report.id}`, 300, 68, { width: 251, align: "right" });
+    pdf.moveTo(44, 120).lineTo(551, 120).strokeColor("#cbd5e1").stroke();
     block(pdf, "ENTREPRISE", [snapshot.companyName || profile.companyName, snapshot.companyAddress || [profile.address, profile.postalCode, profile.city].filter(Boolean).join(" "), snapshot.companyPhone || profile.phone, snapshot.companyEmail || profile.email].filter(Boolean), 44, 132, 225);
     block(pdf, "INTERVENTION", [`N° intervention : ${snapshot.interventionNumber || report.appointmentId || "—"}`, `Type : ${snapshot.interventionType || "Intervention"}`, `Date : ${snapshot.date || report.reportDate || "—"}${snapshot.time ? ` · ${snapshot.time}` : ""}`, snapshot.interventionReference ? `Référence : ${snapshot.interventionReference}` : "", snapshot.claimNumber ? `Sinistre : ${snapshot.claimNumber}` : "", snapshot.insurance ? `Assurance : ${snapshot.insurance}` : ""].filter(Boolean), 315, 132, 236);
     block(pdf, "CLIENT", [snapshot.clientName || report.clientName, snapshot.clientAddress || report.clientAddress || report.appointmentLocation, snapshot.clientPhone || report.clientPhone, snapshot.clientEmail, snapshot.expert ? `Expert : ${snapshot.expert}` : "", snapshot.manager ? `Gestionnaire : ${snapshot.manager}` : ""].filter(Boolean), 44, 290, 225);
