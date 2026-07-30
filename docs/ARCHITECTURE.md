@@ -26,6 +26,10 @@ Les appels de test imposent HTTPS/HTTP externe, refusent les hôtes locaux et pl
 
 Après validation administrative, une transaction rapproche le client, planifie l’intervention, affecte le technicien et crée le brouillon du rapport de fuite lorsque nécessaire. Les notifications réutilisent le centre de collaboration persistant. Les callbacks de statut sont ajoutés à une boîte d’envoi durable, relançable depuis l’interface ; les erreurs et nouvelles tentatives restent auditées. Les techniciens ne voient que leurs missions attribuées. Les détails du contrat d’intégration figurent dans `docs/PARTNER_MISSIONS.md`.
 
+## Dialogue collaboratif par dossier partenaire
+
+`server/partner-dialogue.js` conserve un fil privé, chronologique et strictement rattaché à une mission partenaire. Il ne réutilise pas les notes client internes : messages, incidents et pièces jointes résident dans des tables dédiées et sont isolés par `owner_id` et `mission_id`. Les accès internes suivent les droits de la mission ; l’accès externe passe uniquement par la clé API de l’organisme qui a créé cette mission. Les changements métier ajoutent des événements système au fil, tandis que les messages et fichiers génèrent des notifications persistantes et un callback partenaire relançable. Voir `docs/PARTNER_DIALOGUE.md`.
+
 ## Rapports techniques
 
 `server/technical-reports.js` fournit un moteur de rapports extensible lié aux interventions du planning. Le premier modèle, `leak_detection`, couvre les recherches de fuite avec état des lieux, contrôles, mesures, méthodes de détection, photos, conclusion et signatures. Les données et médias du rapport sont isolés par `owner_id`; les techniciens n’accèdent qu’aux interventions qui leur sont affectées.

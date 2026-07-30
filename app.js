@@ -28,6 +28,7 @@ import { clientUploadErrorHandler, initializeClients, registerClientRoutes } fro
 import { initializeTechnicalReports, registerTechnicalReportRoutes, technicalReportUploadErrorHandler } from "./server/technical-reports.js";
 import { initializeCollaboration, registerCollaborationRoutes } from "./server/collaboration.js";
 import { initializePartnerMissions, registerPartnerMissionRoutes } from "./server/partner-missions.js";
+import { initializePartnerDialogue, partnerDialogueUploadErrorHandler, registerPartnerDialogueRoutes } from "./server/partner-dialogue.js";
 import { registerSupportRoutes } from "./server/support.js";
 import {
 	libraryUploadErrorHandler,
@@ -70,12 +71,20 @@ app.use("/api/partner-intake", rateLimit({
 	legacyHeaders: false,
 	message: { message: "Trop de missions reçues. Réessayez dans quelques minutes." }
 }));
+app.use("/api/partner-dialogue/external", rateLimit({
+	windowMs: 15 * 60 * 1000,
+	limit: 120,
+	standardHeaders: "draft-7",
+	legacyHeaders: false,
+	message: { message: "Trop de requêtes partenaire. Réessayez dans quelques minutes." }
+}));
 registerAuthRoutes(app);
 registerCreatorRoutes(app, requireCreator);
 registerSubscriptionInvoicingRoutes(app, requireCreator);
 registerAccountingRoutes(app, requireAuthentication);
 registerConnectorRoutes(app, requireAuthentication);
 registerPartnerMissionRoutes(app, requireAuthentication);
+registerPartnerDialogueRoutes(app, requireAuthentication);
 registerBillingRoutes(app, requireAuthentication);
 registerPurchaseRoutes(app, requireAuthentication);
 registerMessageRoutes(app, requireAuthentication);
@@ -110,6 +119,7 @@ app.use(billingUploadErrorHandler);
 app.use(clientUploadErrorHandler);
 app.use(technicalReportUploadErrorHandler);
 app.use(libraryUploadErrorHandler);
+app.use(partnerDialogueUploadErrorHandler);
 app.use((error, request, response, next) => {
 	console.error(error);
 	if (response.headersSent) return next(error);
@@ -129,6 +139,7 @@ async function start() {
 	await initializeCollaboration();
 	await initializeTechnicalReports();
 	await initializePartnerMissions();
+	await initializePartnerDialogue();
 	await initializeClients();
 	await initializeLibrary();
 	await createInitialAdministrator();
