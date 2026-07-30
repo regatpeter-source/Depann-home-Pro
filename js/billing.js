@@ -19,7 +19,7 @@ export async function renderBilling(options = {}) {
     if (options.document) activeDocument = options.document;
     clearSearch();
     resetSelection("all");
-    setPage("Devis & factures", ROUTES.billing, "detail");
+    setPage("Devis, factures & rapports de fuite", ROUTES.billing, "detail");
 
     const container = getContainer();
     const overviewPanel = createPanel("billing-overview-panel");
@@ -27,7 +27,7 @@ export async function renderBilling(options = {}) {
     const editorPanel = createPanel("billing-editor-panel");
     const listPanel = createPanel("billing-list-panel");
     container.append(overviewPanel, profilePanel, editorPanel, listPanel);
-    overviewPanel.innerHTML = "<p class=\"muted\">Chargement de l’espace de facturation…</p>";
+    overviewPanel.innerHTML = "<p class=\"muted\">Chargement de l’espace devis, factures et rapports…</p>";
     [profilePanel, editorPanel, listPanel].forEach(panel => panel.hidden = true);
 
     if (options.data) {
@@ -106,11 +106,12 @@ function renderOverview(panel, profilePanel) {
         <div class="billing-overview">
             <div class="billing-branding">
                 ${profile.hasLogo ? '<img class="billing-logo-preview" src="/api/billing/logo" alt="Logo de votre structure">' : '<div class="billing-logo-placeholder">Votre logo</div>'}
-                <div><p class="eyebrow">Espace privé de facturation</p><h2>${escapeHtml(profile.companyName || "Votre structure")}</h2></div>
+                <div><p class="eyebrow">Espace commercial et technique</p><h2>${escapeHtml(profile.companyName || "Votre structure")}</h2></div>
             </div>
             <div class="billing-overview-actions">
                 ${usesExternalTemplate && !isAccountant() ? `<button type="button" class="secondary-button" data-billing-action="download-quote-template" ${profile.hasQuoteTemplate ? "" : "disabled"}>Télécharger la base de devis</button>` : usesExternalTemplate ? "" : '<button type="button" class="secondary-button" data-billing-action="new-quote">+ Nouveau devis</button>'}
                 <button type="button" class="secondary-button" data-billing-action="new-invoice">+ Nouvelle facture</button>
+                ${isAccountant() ? "" : '<button type="button" class="secondary-button" data-billing-action="open-leak-reports">Rapports de fuite</button>'}
                 ${isTechnician() || isAccountant() ? "" : '<button type="button" class="secondary-button" data-billing-action="preview-blank-quote">Aperçu du devis vierge</button><button type="button" class="secondary-button auth-outline-button" data-billing-action="edit-company">Modifier les informations entreprise</button>'}
             </div>
         </div>
@@ -121,6 +122,10 @@ function renderOverview(panel, profilePanel) {
     panel.querySelector("[data-billing-action=new-invoice]").hidden = isAccountant();
     panel.querySelector("[data-billing-action=new-quote]")?.addEventListener("click", () => { if (!isAccountant()) openNewDocument("quote"); });
     panel.querySelector("[data-billing-action=new-invoice]").addEventListener("click", () => { if (!isAccountant()) openNewDocument("invoice"); });
+    panel.querySelector("[data-billing-action=open-leak-reports]")?.addEventListener("click", async () => {
+        const { renderLeakReportWizard } = await import("./leak-report-wizard.js?v=2");
+        renderLeakReportWizard();
+    });
     panel.querySelector("[data-billing-action=download-quote-template]")?.addEventListener("click", openQuoteTemplateDownload);
     panel.querySelector("[data-billing-action=preview-blank-quote]")?.addEventListener("click", openBlankQuotePreview);
     panel.querySelector("[data-billing-action=edit-company]")?.addEventListener("click", () => {

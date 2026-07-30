@@ -5,8 +5,8 @@ import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocume
 import { renderAccounting } from "./accounting.js?v=1";
 import { renderPartnerMissions } from "./partner-missions.js?v=1";
 import { renderPartnerConnections } from "./partner-connections.js?v=1";
-import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=1";
 import { renderPurchases } from "./purchases.js?v=112";
+import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=2";
 import { getFirstUnreadClientId, refreshClientMessageAlert, refreshVisibleClientMessages } from "./messages.js?v=106";
 import { getSearchableClients, renderClients } from "./clients.js?v=134";
 import { synchronizeClients } from "./client-sync.js?v=116";
@@ -90,12 +90,13 @@ export async function refreshApplication() {
         renderClients({ database, navigateToRef, createBillingDocument: createBillingDocumentForClient, viewBillingDocument, createCalendarEvent: createCalendarEventForClient, ...(selectedId ? { selectedId } : {}) });
     } else if (activeRoute === ROUTES.calendar) {
         renderCalendar();
-    } else if (activeRoute === ROUTES.billing && document.body.dataset.role !== "technician") {
-        renderBilling();
-    } else if (activeRoute === ROUTES.partnerMissions && !isAccountant()) {
-        renderPartnerMissions();
+    } else if (activeRoute === ROUTES.billing) {
+        if (isTechnician()) renderTechnicalReports();
+        else renderBilling();
     } else if (activeRoute === ROUTES.technicalReports) {
         renderTechnicalReports();
+    } else if (activeRoute === ROUTES.partnerMissions && !isAccountant()) {
+        renderPartnerMissions();
     } else if (activeRoute === ROUTES.purchases) {
         renderPurchases();
     } else if (activeRoute === ROUTES.settings) {
@@ -112,7 +113,6 @@ function bindEvents() {
     const billingBtn = document.getElementById("billingBtn");
     const accountingBtn = document.getElementById("accountingBtn");
     const partnerMissionsBtn = document.getElementById("partnerMissionsBtn");
-    const technicalReportsBtn = document.getElementById("technicalReportsBtn");
     const purchasesBtn = document.getElementById("purchasesBtn");
     const calendarBtn = document.getElementById("calendarBtn");
     const libraryBtn = document.getElementById("libraryBtn");
@@ -135,11 +135,11 @@ function bindEvents() {
 
     clientsBtn.addEventListener("click", () => { if (!isAccountant()) openClients(); });
     billingBtn?.addEventListener("click", () => {
-        if (document.body.dataset.role !== "technician") renderBilling();
+        if (isTechnician()) renderTechnicalReports();
+        else renderBilling();
     });
     accountingBtn?.addEventListener("click", () => { if (document.body.dataset.role === "admin") renderAccounting(); });
     partnerMissionsBtn?.addEventListener("click", () => { if (!isAccountant()) renderPartnerMissions(); });
-    technicalReportsBtn?.addEventListener("click", () => { if (!isAccountant()) renderTechnicalReports(); });
     purchasesBtn?.addEventListener("click", renderPurchases);
     calendarBtn?.addEventListener("click", () => { if (!isAccountant()) openCalendar(); });
     libraryBtn?.addEventListener("click", () => { if (!isAccountant()) renderLibrary(); });
@@ -163,10 +163,12 @@ function bindEvents() {
             if (nav === ROUTES.store) renderStore();
             if (nav === ROUTES.photo) renderPhotoRecognition(database, navigateToRef);
             if (nav === ROUTES.clients) openClients();
-            if (nav === ROUTES.billing && document.body.dataset.role !== "technician") renderBilling();
+            if (nav === ROUTES.billing) {
+                if (isTechnician()) renderTechnicalReports();
+                else renderBilling();
+            }
             if (nav === ROUTES.accounting && document.body.dataset.role === "admin") renderAccounting();
             if (nav === ROUTES.partnerMissions) renderPartnerMissions();
-            if (nav === ROUTES.technicalReports) renderTechnicalReports();
             if (nav === ROUTES.purchases) renderPurchases();
             if (nav === ROUTES.calendar) openCalendar();
             if (nav === ROUTES.library) renderLibrary();
