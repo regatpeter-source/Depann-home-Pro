@@ -2,6 +2,7 @@ import { getPool } from "./database.js";
 import { getAccountOwnerId } from "./auth.js";
 import { randomUUID } from "node:crypto";
 import PDFDocument from "pdfkit";
+import { synchronizeConnectedAppointment } from "./partner-connections.js";
 
 const EVENT_COLORS = new Set(["blue", "green", "orange", "red", "purple", "gray"]);
 const EVENT_TYPES = new Set(["appointment", "task", "vacation", "sick_leave", "unavailable"]);
@@ -206,6 +207,7 @@ export function registerCalendarRoutes(app, requireAuthentication) {
                 ids.push(rows[0].id);
             }
             await connection.query("COMMIT");
+            await Promise.all(ids.map(id => synchronizeConnectedAppointment(getAccountOwnerId(request), id)));
             response.status(201).json({ id: ids[0], ids, count: ids.length });
         } catch (error) {
             await connection.query("ROLLBACK");
@@ -240,6 +242,7 @@ export function registerCalendarRoutes(app, requireAuthentication) {
             }
             await replaceEventAssignments(connection, id, event.assignedTechnicianIds, event.assignedTechnicianId);
             await connection.query("COMMIT");
+            await synchronizeConnectedAppointment(getAccountOwnerId(request), id);
             response.status(204).end();
         } catch (error) {
             await connection.query("ROLLBACK");

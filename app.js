@@ -29,6 +29,7 @@ import { initializeTechnicalReports, registerTechnicalReportRoutes, technicalRep
 import { initializeCollaboration, registerCollaborationRoutes } from "./server/collaboration.js";
 import { initializePartnerMissions, registerPartnerMissionRoutes } from "./server/partner-missions.js";
 import { initializePartnerDialogue, partnerDialogueUploadErrorHandler, registerPartnerDialogueRoutes } from "./server/partner-dialogue.js";
+import { initializePartnerConnections, registerPartnerConnectionRoutes } from "./server/partner-connections.js";
 import { registerSupportRoutes } from "./server/support.js";
 import {
 	libraryUploadErrorHandler,
@@ -85,6 +86,7 @@ registerAccountingRoutes(app, requireAuthentication);
 registerConnectorRoutes(app, requireAuthentication);
 registerPartnerMissionRoutes(app, requireAuthentication);
 registerPartnerDialogueRoutes(app, requireAuthentication);
+registerPartnerConnectionRoutes(app, requireAuthentication);
 registerBillingRoutes(app, requireAuthentication);
 registerPurchaseRoutes(app, requireAuthentication);
 registerMessageRoutes(app, requireAuthentication);
@@ -140,6 +142,7 @@ async function start() {
 	await initializeTechnicalReports();
 	await initializePartnerMissions();
 	await initializePartnerDialogue();
+	await initializePartnerConnections();
 	await initializeClients();
 	await initializeLibrary();
 	await createInitialAdministrator();

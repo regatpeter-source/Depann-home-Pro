@@ -6,6 +6,7 @@ import { getPool } from "./database.js";
 import { getAccountOwnerId } from "./auth.js";
 import { assertLockOwner, getAudit, getLock, publishEvent, releaseLock } from "./collaboration.js";
 import { REPORT_STEP_KEYS, createEmptyLeakContent, createLeakReportPdf as createWizardLeakReportPdf, normalizeLeakContent } from "./leak-report-template.js";
+import { synchronizeConnectedReport } from "./partner-connections.js";
 
 const REPORT_TYPE = "leak_detection";
 const STATUSES = new Set(["draft", "submitted", "in_correction", "validated"]);
@@ -134,6 +135,7 @@ export function registerTechnicalReportRoutes(app, requireAuthentication) {
         const ownerId = getAccountOwnerId(request); const report = await findReport(ownerId, positiveId(request.params.reportId), request); if (!report) return response.status(404).json({ message: "Rapport introuvable." }); if (report.status !== "submitted") return response.status(409).json({ message: "Soumettez le rapport avant validation." }); if (!await enforceReportLock(request, response, report.id)) return;
         const profile = await loadProfile(ownerId); const pdf = await createWizardLeakReportPdf(report, profile); const filename = `rapport-recherche-fuite-${report.id}.pdf`;
         const connection = await getPool().connect(); try { await connection.query("BEGIN"); await connection.query("UPDATE depannhome_technical_reports SET status='validated', validated_at=NOW(), validated_by=$3, pdf_data=$4, pdf_filename=$5, updated_at=NOW() WHERE id=$1 AND owner_id=$2", [report.id, ownerId, request.user.sub, pdf, filename]); await archivePdf(connection, ownerId, report, pdf, filename, request); await connection.query("COMMIT"); } catch (error) { await connection.query("ROLLBACK"); throw error; } finally { connection.release(); }
+        await synchronizeConnectedReport(ownerId, report.id);
         await publishEvent(request, reportTarget(report.id), "report_validated", { pdfGenerated: true }, report.createdBy ? [{ recipientId: report.createdBy, title: "Rapport validé", body: `Le rapport #${report.id} a été validé et son PDF a été archivé.`, eventType: "report_validated" }] : []);
         response.json({ message: "Rapport validé, PDF généré et archivé." });
     }));

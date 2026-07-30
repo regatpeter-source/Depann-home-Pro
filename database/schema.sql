@@ -550,6 +550,35 @@ CREATE TABLE IF NOT EXISTS depannhome_partner_dialogue_attachments (
 );
 CREATE INDEX IF NOT EXISTS depannhome_partner_dialogue_attachments_message_idx ON depannhome_partner_dialogue_attachments(message_id);
 
+-- Connexions simples entre entreprises Depann'Home Pro. Les secrets éventuels
+-- restent internes au serveur : l'utilisateur ne configure ni clé, ni URL, ni webhook.
+CREATE TABLE IF NOT EXISTS depannhome_partner_directory (
+    owner_id BIGINT PRIMARY KEY REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    is_listed BOOLEAN NOT NULL DEFAULT TRUE, updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE TABLE IF NOT EXISTS depannhome_partner_connections (
+    id BIGSERIAL PRIMARY KEY, company_low_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    company_high_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    requester_owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE RESTRICT,
+    status VARCHAR(20) NOT NULL DEFAULT 'pending', permissions_for_low JSONB NOT NULL DEFAULT '{}'::jsonb,
+    permissions_for_high JSONB NOT NULL DEFAULT '{}'::jsonb, requested_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    responded_at TIMESTAMPTZ, responded_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+    disconnected_at TIMESTAMPTZ, updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT depannhome_partner_connections_pair_unique UNIQUE(company_low_id, company_high_id),
+    CONSTRAINT depannhome_partner_connections_pair_check CHECK(company_low_id < company_high_id),
+    CONSTRAINT depannhome_partner_connections_state_check CHECK(status IN ('pending','connected','refused','disconnected'))
+);
+CREATE INDEX IF NOT EXISTS depannhome_partner_connections_company_idx ON depannhome_partner_connections(company_low_id, company_high_id, status, updated_at DESC);
+CREATE TABLE IF NOT EXISTS depannhome_partner_connection_sync_log (
+    id BIGSERIAL PRIMARY KEY, connection_id BIGINT NOT NULL REFERENCES depannhome_partner_connections(id) ON DELETE CASCADE,
+    source_owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    target_owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    source_event_id BIGINT REFERENCES depannhome_calendar_events(id) ON DELETE SET NULL,
+    target_mission_id BIGINT REFERENCES depannhome_partner_missions(id) ON DELETE SET NULL,
+    event_type VARCHAR(60) NOT NULL, details JSONB NOT NULL DEFAULT '{}'::jsonb, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS depannhome_partner_connection_sync_source_event_idx ON depannhome_partner_connection_sync_log(source_owner_id, source_event_id, created_at DESC);
+
 ALTER TABLE depannhome_library_documents ADD COLUMN IF NOT EXISTS owner_id BIGINT REFERENCES depannhome_users(id) ON DELETE CASCADE;
 UPDATE depannhome_library_documents document SET owner_id = section.owner_id FROM depannhome_library_sections section WHERE document.section_id = section.id AND document.owner_id IS NULL;
 ALTER TABLE depannhome_library_documents ALTER COLUMN owner_id SET NOT NULL;

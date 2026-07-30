@@ -5,6 +5,7 @@ import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocume
 import { renderAccounting } from "./accounting.js?v=1";
 import { renderConnectors } from "./connectors.js?v=1";
 import { renderPartnerMissions } from "./partner-missions.js?v=1";
+import { renderPartnerConnections } from "./partner-connections.js?v=1";
 import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=1";
 import { renderPurchases } from "./purchases.js?v=112";
 import { getFirstUnreadClientId, refreshClientMessageAlert, refreshVisibleClientMessages } from "./messages.js?v=106";
@@ -1031,6 +1032,7 @@ function renderSettings() {
 
     container.appendChild(card);
     if (document.body.dataset.role === "admin") renderTeamManagement(container);
+    if (document.body.dataset.role === "admin") renderPartnerConnections(container);
     if (document.body.dataset.creator === "true") {
         const creatorCard = document.createElement("article");
         creatorCard.className = "brand-card full-card procedure-card creator-entry-card";
