@@ -4,6 +4,7 @@ import { renderCreatorConsole } from "./creator.js?v=116";
 import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=141";
 import { renderAccounting } from "./accounting.js?v=1";
 import { renderConnectors } from "./connectors.js?v=1";
+import { renderPartnerMissions } from "./partner-missions.js?v=1";
 import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=1";
 import { renderPurchases } from "./purchases.js?v=112";
 import { getFirstUnreadClientId, refreshClientMessageAlert, refreshVisibleClientMessages } from "./messages.js?v=106";
@@ -93,6 +94,8 @@ export async function refreshApplication() {
         renderBilling();
     } else if (activeRoute === ROUTES.connectors && document.body.dataset.role === "admin") {
         renderConnectors();
+    } else if (activeRoute === ROUTES.partnerMissions && !isAccountant()) {
+        renderPartnerMissions();
     } else if (activeRoute === ROUTES.technicalReports) {
         renderTechnicalReports();
     } else if (activeRoute === ROUTES.purchases) {
@@ -111,6 +114,7 @@ function bindEvents() {
     const billingBtn = document.getElementById("billingBtn");
     const accountingBtn = document.getElementById("accountingBtn");
     const connectorsBtn = document.getElementById("connectorsBtn");
+    const partnerMissionsBtn = document.getElementById("partnerMissionsBtn");
     const technicalReportsBtn = document.getElementById("technicalReportsBtn");
     const purchasesBtn = document.getElementById("purchasesBtn");
     const calendarBtn = document.getElementById("calendarBtn");
@@ -138,6 +142,7 @@ function bindEvents() {
     });
     accountingBtn?.addEventListener("click", () => { if (document.body.dataset.role === "admin") renderAccounting(); });
     connectorsBtn?.addEventListener("click", () => { if (document.body.dataset.role === "admin") renderConnectors(); });
+    partnerMissionsBtn?.addEventListener("click", () => { if (!isAccountant()) renderPartnerMissions(); });
     technicalReportsBtn?.addEventListener("click", () => { if (!isAccountant()) renderTechnicalReports(); });
     purchasesBtn?.addEventListener("click", renderPurchases);
     calendarBtn?.addEventListener("click", () => { if (!isAccountant()) openCalendar(); });
@@ -165,6 +170,7 @@ function bindEvents() {
             if (nav === ROUTES.billing && document.body.dataset.role !== "technician") renderBilling();
             if (nav === ROUTES.accounting && document.body.dataset.role === "admin") renderAccounting();
             if (nav === ROUTES.connectors && document.body.dataset.role === "admin") renderConnectors();
+            if (nav === ROUTES.partnerMissions) renderPartnerMissions();
             if (nav === ROUTES.technicalReports) renderTechnicalReports();
             if (nav === ROUTES.purchases) renderPurchases();
             if (nav === ROUTES.calendar) openCalendar();

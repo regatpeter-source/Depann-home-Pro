@@ -27,6 +27,7 @@ import { initializeCalendar, registerCalendarRoutes } from "./server/calendar.js
 import { clientUploadErrorHandler, initializeClients, registerClientRoutes } from "./server/clients.js";
 import { initializeTechnicalReports, registerTechnicalReportRoutes, technicalReportUploadErrorHandler } from "./server/technical-reports.js";
 import { initializeCollaboration, registerCollaborationRoutes } from "./server/collaboration.js";
+import { initializePartnerMissions, registerPartnerMissionRoutes } from "./server/partner-missions.js";
 import { registerSupportRoutes } from "./server/support.js";
 import {
 	libraryUploadErrorHandler,
@@ -62,11 +63,19 @@ app.use("/api/support", rateLimit({
 	legacyHeaders: false,
 	message: { message: "Trop de demandes au support. Réessayez dans quelques minutes." }
 }));
+app.use("/api/partner-intake", rateLimit({
+	windowMs: 15 * 60 * 1000,
+	limit: 120,
+	standardHeaders: "draft-7",
+	legacyHeaders: false,
+	message: { message: "Trop de missions reçues. Réessayez dans quelques minutes." }
+}));
 registerAuthRoutes(app);
 registerCreatorRoutes(app, requireCreator);
 registerSubscriptionInvoicingRoutes(app, requireCreator);
 registerAccountingRoutes(app, requireAuthentication);
 registerConnectorRoutes(app, requireAuthentication);
+registerPartnerMissionRoutes(app, requireAuthentication);
 registerBillingRoutes(app, requireAuthentication);
 registerPurchaseRoutes(app, requireAuthentication);
 registerMessageRoutes(app, requireAuthentication);
@@ -119,6 +128,7 @@ async function start() {
 	await initializeCalendar();
 	await initializeCollaboration();
 	await initializeTechnicalReports();
+	await initializePartnerMissions();
 	await initializeClients();
 	await initializeLibrary();
 	await createInitialAdministrator();

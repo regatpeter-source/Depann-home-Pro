@@ -1,7 +1,7 @@
 import { getPool } from "./database.js";
 
 const LOCK_TIMEOUT_SECONDS = 15 * 60;
-const ENTITY_TYPES = new Set(["technical_report", "billing_document", "client", "calendar_event"]);
+const ENTITY_TYPES = new Set(["technical_report", "billing_document", "client", "calendar_event", "partner_mission"]);
 const streamsByOwner = new Map();
 
 export async function initializeCollaboration() {

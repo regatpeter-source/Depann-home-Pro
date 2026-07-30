@@ -20,6 +20,12 @@ Les paquets exportés contiennent le manifeste, le modèle de synchronisation et
 
 Les appels de test imposent HTTPS/HTTP externe, refusent les hôtes locaux et plages IPv4 privées usuelles, appliquent timeout et nouvelles tentatives, puis écrivent un journal en masquant les entêtes et valeurs sensibles. Les connecteurs restent compatibles avec une infrastructure Render à disque éphémère, car aucune installation n’écrit dans le système de fichiers.
 
+## Réception des missions partenaires
+
+`server/partner-missions.js` est volontairement séparé des connecteurs déclaratifs sortants. Il fournit des endpoints publics limités par débit, authentifiés par une clé partenaire dont seul le hash est conservé. Un identifiant de mission stable garantit le dédoublonnage par entreprise et partenaire ; la charge brute, la donnée normalisée et chaque transition sont conservées dans PostgreSQL.
+
+Après validation administrative, une transaction rapproche le client, planifie l’intervention, affecte le technicien et crée le brouillon du rapport de fuite lorsque nécessaire. Les notifications réutilisent le centre de collaboration persistant. Les callbacks de statut sont ajoutés à une boîte d’envoi durable, relançable depuis l’interface ; les erreurs et nouvelles tentatives restent auditées. Les techniciens ne voient que leurs missions attribuées. Les détails du contrat d’intégration figurent dans `docs/PARTNER_MISSIONS.md`.
+
 ## Rapports techniques
 
 `server/technical-reports.js` fournit un moteur de rapports extensible lié aux interventions du planning. Le premier modèle, `leak_detection`, couvre les recherches de fuite avec état des lieux, contrôles, mesures, méthodes de détection, photos, conclusion et signatures. Les données et médias du rapport sont isolés par `owner_id`; les techniciens n’accèdent qu’aux interventions qui leur sont affectées.
