@@ -34,6 +34,11 @@ function openNetworkSettings(reload) { api("/api/partner-connections").then(resu
 function openDirectorySearchDialog(reload) {
     const dialog = modal('<section class="partner-search-dialog"><button class="text-button partner-dialog-close">Fermer</button><p class="eyebrow">Connexion DepanHomePro</p><h2>Rechercher une entreprise</h2><p class="muted">Seules les entreprises ayant choisi d’être visibles sont affichées.</p><form data-directory-search class="form-grid"><label>Nom, SIREN ou SIRET<input name="q" type="search" placeholder="Ex. ABC Dépannage"></label><label>Métier<input name="trade" placeholder="Ex. motorisation"></label><label>Spécialité<input name="specialty" placeholder="Ex. dépannage urgent"></label><label>Marque<input name="brand" placeholder="Ex. Somfy"></label><label>Département<input name="department" placeholder="Ex. 69"></label><label>Commune<input name="city" placeholder="Ex. Lyon"></label><label>Code postal<input name="postalCode" placeholder="Ex. 69003"></label><label>Rayon (km)<input name="radiusKm" type="number" min="0" max="500" value="0"></label><div class="form-actions"><button class="secondary-button">Rechercher</button></div></form><div data-results><p class="muted">Saisissez au moins un critère de recherche.</p></div></section>');
     const form = dialog.querySelector("form");
+    const initialResults = dialog.querySelector("[data-results]");
+    if (sandboxScenario) {
+        initialResults.innerHTML = sandboxDirectoryHtml(sandboxScenario);
+        bindSandboxProfile(dialog, sandboxScenario, reload);
+    }
     form.addEventListener("submit", async event => {
         event.preventDefault();
         const values = Object.fromEntries(new FormData(form));
