@@ -31,6 +31,7 @@ import { initializePartnerMissions, registerPartnerMissionRoutes } from "./serve
 import { initializePartnerDialogue, partnerDialogueUploadErrorHandler, registerPartnerDialogueRoutes } from "./server/partner-dialogue.js";
 import { initializePartnerConnections, registerPartnerConnectionRoutes } from "./server/partner-connections.js";
 import { initializePartnerRequests, registerPartnerRequestRoutes } from "./server/partner-requests.js";
+import { initializePartnerSandbox, registerPartnerSandboxRoutes } from "./server/partner-sandbox.js";
 import { registerSupportRoutes } from "./server/support.js";
 import {
 	libraryUploadErrorHandler,
@@ -96,6 +97,7 @@ registerConnectorRoutes(app, requireAuthentication, requireCreator);
 registerPartnerMissionRoutes(app, requireAuthentication);
 registerPartnerDialogueRoutes(app, requireAuthentication);
 registerPartnerConnectionRoutes(app, requireAuthentication);
+registerPartnerSandboxRoutes(app, requireAuthentication);
 registerBillingRoutes(app, requireAuthentication);
 registerPurchaseRoutes(app, requireAuthentication);
 registerMessageRoutes(app, requireAuthentication);
@@ -152,6 +154,7 @@ async function start() {
 	await initializePartnerMissions();
 	await initializePartnerDialogue();
 	await initializePartnerConnections();
+	await initializePartnerSandbox();
 	await initializePartnerRequests();
 	await initializeClients();
 	await initializeLibrary();

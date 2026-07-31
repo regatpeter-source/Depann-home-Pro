@@ -43,6 +43,7 @@ export const ROUTES = {
     billing: "billing",
     accounting: "accounting",
     partnerMissions: "partner-missions",
+    partnerSandbox: "partner-sandbox",
     purchases: "purchases",
     technicalReports: "technical-reports",
         messages: "messages",

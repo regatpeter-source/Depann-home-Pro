@@ -4,6 +4,7 @@ import { renderCreatorConsole } from "./creator.js?v=118";
 import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=142";
 import { renderAccounting } from "./accounting.js?v=1";
 import { renderPartnerMissions } from "./partner-missions.js?v=2";
+import { renderPartnerSandbox } from "./partner-sandbox.js?v=1";
 import { renderPartnerConnections } from "./partner-connections.js?v=2";
 import { renderPurchases } from "./purchases.js?v=112";
 import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=3";
@@ -98,6 +99,8 @@ export async function refreshApplication() {
         renderTechnicalReports();
     } else if (activeRoute === ROUTES.partnerMissions && !isAccountant()) {
         renderPartnerMissions();
+    } else if (activeRoute === ROUTES.partnerSandbox && document.body.dataset.role === "admin") {
+        renderPartnerSandbox();
     } else if (activeRoute === ROUTES.purchases) {
         renderPurchases();
     } else if (activeRoute === ROUTES.settings) {
@@ -114,6 +117,7 @@ function bindEvents() {
     const billingBtn = document.getElementById("billingBtn");
     const accountingBtn = document.getElementById("accountingBtn");
     const partnerMissionsBtn = document.getElementById("partnerMissionsBtn");
+    const partnerSandboxBtn = document.getElementById("partnerSandboxBtn");
     const purchasesBtn = document.getElementById("purchasesBtn");
     const calendarBtn = document.getElementById("calendarBtn");
     const libraryBtn = document.getElementById("libraryBtn");
@@ -141,6 +145,7 @@ function bindEvents() {
     });
     accountingBtn?.addEventListener("click", () => { if (document.body.dataset.role === "admin") renderAccounting(); });
     partnerMissionsBtn?.addEventListener("click", () => { if (!isAccountant()) renderPartnerMissions(); });
+    partnerSandboxBtn?.addEventListener("click", () => { if (document.body.dataset.role === "admin") renderPartnerSandbox(); });
     purchasesBtn?.addEventListener("click", renderPurchases);
     calendarBtn?.addEventListener("click", () => { if (!isAccountant()) openCalendar(); });
     libraryBtn?.addEventListener("click", () => { if (!isAccountant()) renderLibrary(); });
@@ -170,6 +175,7 @@ function bindEvents() {
             }
             if (nav === ROUTES.accounting && document.body.dataset.role === "admin") renderAccounting();
             if (nav === ROUTES.partnerMissions) renderPartnerMissions();
+            if (nav === ROUTES.partnerSandbox && document.body.dataset.role === "admin") renderPartnerSandbox();
             if (nav === ROUTES.purchases) renderPurchases();
             if (nav === ROUTES.calendar) openCalendar();
             if (nav === ROUTES.library) renderLibrary();
