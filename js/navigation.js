@@ -1,4 +1,4 @@
-import { ROUTES, STORAGE_KEYS, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=116";
+import { ROUTES, STORAGE_KEYS, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=117";
 import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=142";
 import { renderCreatorConsole } from "./creator.js?v=119";
 import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=142";
@@ -47,6 +47,7 @@ export function initializeNavigation(loadedDatabase) {
     database = loadedDatabase;
     configureLibrary({ openCatalog: renderBrands, openStore: renderStore });
     bindEvents();
+    applyRoleBasedMenus();
     window.addEventListener("depannhome:open-client", event => openClients(String(event.detail?.clientId || "")));
     window.addEventListener("depannhome:clients-synchronized", () => refreshClientMessageAlert());
     window.addEventListener("depannhome:technician-calendar-viewed", event => markTechnicianCalendarAlertsRead(event.detail?.events || []));
@@ -87,6 +88,11 @@ export async function refreshApplication() {
     const activeRoute = document.querySelector(".nav-button.active")?.dataset.nav || "";
     await refreshSharedData({ includeClients: true, forceBilling: true });
 
+    if (activeRoute && MENU_ACCESS.navigation[activeRoute] && !canAccessRoute(activeRoute)) {
+        openHome();
+        return { refreshed: true };
+    }
+
     if (isAccountant()) {
         if (activeRoute === ROUTES.purchases) renderPurchases();
         else renderBilling();
@@ -110,7 +116,7 @@ export async function refreshApplication() {
         renderGroupWorkspace();
     } else if (activeRoute === ROUTES.purchases) {
         renderPurchases();
-    } else if (activeRoute === ROUTES.settings) {
+    } else if (activeRoute === ROUTES.settings && canAccessRoute(ROUTES.settings)) {
         renderSettings();
     } else if (activeRoute === ROUTES.home) {
         openHome();
@@ -146,26 +152,29 @@ function bindEvents() {
         renderSearchResults(value);
     });
 
-    clientsBtn.addEventListener("click", () => { if (!isAccountant()) openClients(); });
+    clientsBtn.addEventListener("click", () => { if (canAccessQuick("clients")) openClients(); });
     billingBtn?.addEventListener("click", () => {
+        if (!canAccessQuick("billing")) return;
         if (isTechnician()) renderTechnicalReports();
         else renderBilling();
     });
-    accountingBtn?.addEventListener("click", () => { if (document.body.dataset.role === "admin") renderAccounting(); });
-    groupsBtn?.addEventListener("click", () => { if (document.body.dataset.groupAdmin === "true") renderGroupWorkspace(); });
-    partnerMissionsBtn?.addEventListener("click", () => { if (!isAccountant()) renderPartnerMissions(); });
-    partnerSandboxBtn?.addEventListener("click", () => { if (document.body.dataset.role === "admin") renderPartnerSandbox(); });
-    purchasesBtn?.addEventListener("click", renderPurchases);
-    calendarBtn?.addEventListener("click", () => { if (!isAccountant()) openCalendar(); });
-    libraryBtn?.addEventListener("click", () => { if (!isAccountant()) renderLibrary(); });
-    photoBtn?.addEventListener("click", () => { if (!isAccountant()) renderPhotoRecognition(database, navigateToRef); });
-    favoritesBtn.addEventListener("click", () => { if (!isAccountant()) renderFavorites(); });
-    historyBtn.addEventListener("click", () => { if (!isAccountant()) renderHistory(); });
-    settingsBtn?.addEventListener("click", () => { if (!isAccountant()) renderSettings(); });
+    accountingBtn?.addEventListener("click", () => { if (canAccessQuick("accounting")) renderAccounting(); });
+    groupsBtn?.addEventListener("click", () => { if (canAccessQuick("groups")) renderGroupWorkspace(); });
+    partnerMissionsBtn?.addEventListener("click", () => { if (canAccessQuick("partnerMissions")) renderPartnerMissions(); });
+    partnerSandboxBtn?.addEventListener("click", () => { if (canAccessQuick("partnerSandbox")) renderPartnerSandbox(); });
+    purchasesBtn?.addEventListener("click", () => { if (canAccessQuick("purchases")) renderPurchases(); });
+    calendarBtn?.addEventListener("click", () => { if (canAccessQuick("calendar")) openCalendar(); });
+    libraryBtn?.addEventListener("click", () => { if (canAccessQuick("library")) renderLibrary(); });
+    photoBtn?.addEventListener("click", () => { if (canAccessQuick("photo")) renderPhotoRecognition(database, navigateToRef); });
+    favoritesBtn.addEventListener("click", () => { if (canAccessQuick("favorites")) renderFavorites(); });
+    historyBtn.addEventListener("click", () => { if (canAccessQuick("history")) renderHistory(); });
+    settingsBtn?.addEventListener("click", () => { if (canAccessQuick("settings")) renderSettings(); });
 
     document.querySelectorAll(".nav-button").forEach(button => {
         button.addEventListener("click", async () => {
             const nav = button.dataset.nav;
+
+            if (!canAccessRoute(nav)) return;
 
             if (isAccountant()) {
                 if (nav === ROUTES.billing) renderBilling();
@@ -194,6 +203,41 @@ function bindEvents() {
             if (nav === ROUTES.settings) renderSettings();
         });
     });
+}
+
+function applyRoleBasedMenus() {
+    const quickSelectors = {
+        clients: "#clientsBtn", calendar: "#calendarBtn", library: "#libraryBtn", billing: "#billingBtn",
+        accounting: "#accountingBtn", groups: "#groupsBtn", partnerMissions: "#partnerMissionsBtn",
+        partnerSandbox: "#partnerSandboxBtn", purchases: "#purchasesBtn", photo: "#photoBtn",
+        favorites: "#favoritesBtn", history: "#historyBtn", settings: "#settingsBtn"
+    };
+    Object.entries(quickSelectors).forEach(([menu, selector]) => {
+        const button = document.querySelector(selector);
+        if (!isMenuAllowed(MENU_ACCESS.quick[menu], menuRoute(menu))) button?.remove();
+    });
+    document.querySelectorAll(".nav-button").forEach(button => {
+        if (!canAccessRoute(button.dataset.nav)) button.remove();
+    });
+}
+
+function isMenuAllowed(roles, route = "") {
+    if (!Array.isArray(roles) || !roles.includes(document.body.dataset.role)) return false;
+    if (route === ROUTES.groups) return document.body.dataset.groupAdmin === "true";
+    if (route === ROUTES.partnerSandbox) return document.body.classList.contains("partner-sandbox-enabled");
+    return true;
+}
+
+function canAccessQuick(menu) {
+    return isMenuAllowed(MENU_ACCESS.quick[menu], menuRoute(menu));
+}
+
+function canAccessRoute(route) {
+    return isMenuAllowed(MENU_ACCESS.navigation[route], route);
+}
+
+function menuRoute(menu) {
+    return ({ calendar: ROUTES.calendar, library: ROUTES.library, billing: ROUTES.billing, accounting: ROUTES.accounting, groups: ROUTES.groups, partnerMissions: ROUTES.partnerMissions, partnerSandbox: ROUTES.partnerSandbox, purchases: ROUTES.purchases, photo: ROUTES.photo, favorites: ROUTES.favorites, history: ROUTES.history, settings: ROUTES.settings })[menu] || "";
 }
 
 function openHome() {
@@ -907,6 +951,10 @@ function renderRefList(refs, container, icon) {
 }
 
 function renderSettings() {
+    if (!canAccessRoute(ROUTES.settings)) {
+        openHome();
+        return;
+    }
     clearSearch();
     resetSelection("all");
     setPage("Paramètres", ROUTES.settings, "detail");

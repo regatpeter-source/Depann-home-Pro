@@ -56,3 +56,48 @@ export const ROUTES = {
     settings: "settings",
     creator: "creator"
 };
+
+const ADMINISTRATORS = ["admin"];
+const OPERATIONAL_PC = ["admin", "pc_standard"];
+const OPERATIONAL_MOBILE = ["admin", "pc_standard", "mobile_admin"];
+const TERRAIN = ["admin", "pc_standard", "mobile_admin", "team_lead", "technician"];
+
+// Toute nouvelle entrée de navigation doit être déclarée ici. Les éléments
+// hors rôle sont retirés du DOM avant l’affichage de l’application.
+export const MENU_ACCESS = Object.freeze({
+    quick: Object.freeze({
+        clients: OPERATIONAL_MOBILE,
+        calendar: TERRAIN,
+        library: TERRAIN,
+        billing: OPERATIONAL_MOBILE.concat("accountant"),
+        accounting: ADMINISTRATORS,
+        groups: ADMINISTRATORS,
+        partnerMissions: OPERATIONAL_PC,
+        partnerSandbox: ADMINISTRATORS,
+        purchases: OPERATIONAL_PC.concat("accountant"),
+        photo: OPERATIONAL_MOBILE,
+        favorites: OPERATIONAL_MOBILE,
+        history: OPERATIONAL_MOBILE,
+        settings: ADMINISTRATORS
+    }),
+    navigation: Object.freeze({
+        [ROUTES.home]: OPERATIONAL_MOBILE,
+        [ROUTES.search]: OPERATIONAL_MOBILE,
+        [ROUTES.store]: OPERATIONAL_MOBILE,
+        [ROUTES.photo]: OPERATIONAL_MOBILE,
+        [ROUTES.clients]: OPERATIONAL_MOBILE,
+        [ROUTES.billing]: OPERATIONAL_MOBILE.concat("accountant"),
+        [ROUTES.accounting]: ADMINISTRATORS,
+        [ROUTES.accountingSandbox]: ADMINISTRATORS,
+        [ROUTES.groups]: ADMINISTRATORS,
+        [ROUTES.partnerMissions]: OPERATIONAL_PC,
+        [ROUTES.partnerSandbox]: ADMINISTRATORS,
+        [ROUTES.purchases]: OPERATIONAL_PC.concat("accountant"),
+        [ROUTES.technicalReports]: TERRAIN,
+        [ROUTES.calendar]: TERRAIN,
+        [ROUTES.library]: TERRAIN,
+        [ROUTES.favorites]: OPERATIONAL_MOBILE,
+        [ROUTES.history]: OPERATIONAL_MOBILE,
+        [ROUTES.settings]: ADMINISTRATORS
+    })
+});

@@ -19,7 +19,7 @@ export async function initializeGroups() {
 export function registerGroupRoutes(app, requireAuthentication) {
     app.use("/api/groups", requireAuthentication);
     app.get("/api/groups/context", asyncHandler(async (req, res) => {
-        if (!req.user?.isGroupAdministrator) return res.json({ enabled: false });
+        if (!isCompanyAdministrator(req) || !req.user?.isGroupAdministrator) return res.status(403).json({ message: "Accès réservé à l’Administrateur (PC) du groupe." });
         res.json({ enabled: true, ...(await groupContext(req.user.groupId, getAccountOwnerId(req))) });
     }));
     app.get("/api/groups/audit", requireGroupAdministrator, asyncHandler(async (req, res) => {
@@ -114,7 +114,7 @@ async function dashboard(companyIds, start, end) {
     return { total, companies };
 }
 async function audit(db, { groupId, companyId, actorId, action, details, ip }) { await db.query("INSERT INTO depannhome_group_audit(group_id,company_owner_id,actor_id,action,details,ip_address) VALUES($1,$2,$3,$4,$5::jsonb,$6)", [groupId, companyId || null, actorId, action, JSON.stringify(details || {}), String(ip || "").slice(0, 100)]); }
-function requireGroupAdministrator(req, res, next) { if (req.user?.isGroupAdministrator && req.user?.groupId) return next(); return res.status(403).json({ message: "Accès réservé à l’Administrateur Groupe." }); }
+function requireGroupAdministrator(req, res, next) { if (isCompanyAdministrator(req) && req.user?.isGroupAdministrator && req.user?.groupId) return next(); return res.status(403).json({ message: "Accès réservé à l’Administrateur (PC) du groupe." }); }
 function companyInput(value) { const companyName = clean(value?.companyName, 160), fullName = clean(value?.fullName, 100), phone = clean(value?.phone, 30), email = clean(value?.email, 160).toLowerCase(), username = clean(value?.username, 32).toLowerCase(), password = String(value?.password || ""), maxPcUsers = limit(value?.maxPcUsers, 1, 100), maxTechnicians = limit(value?.maxTechnicians, 0, 500); if (!companyName || !fullName || !USERNAME_PATTERN.test(username) || password.length < MIN_PASSWORD_LENGTH || (email && !EMAIL_PATTERN.test(email)) || !maxPcUsers || maxTechnicians === null) return { ok: false, message: "Informations de la nouvelle entreprise invalides." }; return { ok: true, companyName, fullName, phone, email, username, password, maxPcUsers, maxTechnicians }; }
 function clean(value, maximum) { return String(value || "").replace(/\s+/g, " ").trim().slice(0, maximum); }
 function positiveId(value) { const id = Number(value); return Number.isSafeInteger(id) && id > 0 ? id : 0; }

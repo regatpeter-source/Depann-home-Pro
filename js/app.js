@@ -2,10 +2,10 @@ import { initializeAuthentication, restoreApplicationShell, signOut } from "./au
 import { initializeClientSynchronization } from "./client-sync.js?v=118";
 import { initializeCollaboration } from "./collaboration.js?v=2";
 import { loadDatabase } from "./data.js?v=59";
-import { initializeNavigation, refreshApplication } from "./navigation.js?v=197";
+import { initializeNavigation, refreshApplication } from "./navigation.js?v=198";
 import { renderError } from "./ui.js?v=44";
 import { getSettings } from "./storage.js?v=44";
-import { FONT_OPTIONS } from "./config.js?v=116";
+import { FONT_OPTIONS } from "./config.js?v=117";
 
 let applicationStarted = false;
 
@@ -39,9 +39,11 @@ async function startApplication() {
         initializeCollaboration();
         const database = await loadDatabase();
         initializeNavigation(database);
+        document.body.classList.remove("auth-pending");
         registerServiceWorker();
     } catch (error) {
         applicationStarted = false;
+        document.body.classList.remove("auth-pending");
         renderError("Impossible de charger la base de données.", error.message);
     }
 }
@@ -83,7 +85,6 @@ function showAuthenticatedUser(user) {
     document.body.dataset.groupId = user.groupId || "";
     updateDeviceMode();
     window.addEventListener("resize", updateDeviceMode);
-    document.body.classList.remove("auth-pending");
     refreshButton?.addEventListener("click", async () => {
         refreshButton.disabled = true;
         const initialLabel = refreshButton.textContent;
@@ -106,7 +107,7 @@ function showAuthenticatedUser(user) {
 async function initializeGroupCompanySelector(user) {
     const field = document.getElementById("groupCompanySelector");
     const select = field?.querySelector("select");
-    if (!field || !select || !user.isGroupAdministrator) { if (field) field.hidden = true; return; }
+    if (!field || !select || user.role !== "admin" || !user.isGroupAdministrator) { if (field) field.hidden = true; return; }
     try {
         const response = await fetch("/api/groups/context", { credentials: "same-origin" });
         const data = response.ok ? await response.json() : null;
