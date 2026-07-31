@@ -607,8 +607,32 @@ CREATE INDEX IF NOT EXISTS depannhome_partner_dialogue_audit_message_idx ON depa
 -- restent internes au serveur : l'utilisateur ne configure ni clé, ni URL, ni webhook.
 CREATE TABLE IF NOT EXISTS depannhome_partner_directory (
     owner_id BIGINT PRIMARY KEY REFERENCES depannhome_users(id) ON DELETE CASCADE,
-    is_listed BOOLEAN NOT NULL DEFAULT TRUE, updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    is_listed BOOLEAN NOT NULL DEFAULT FALSE, visibility_explicit BOOLEAN NOT NULL DEFAULT FALSE,
+    description VARCHAR(1000) NOT NULL DEFAULT '', trades JSONB NOT NULL DEFAULT '[]'::jsonb,
+    supported_brands JSONB NOT NULL DEFAULT '[]'::jsonb, specialties JSONB NOT NULL DEFAULT '[]'::jsonb,
+    service_area VARCHAR(500) NOT NULL DEFAULT '', service_radius_km INTEGER NOT NULL DEFAULT 0,
+    departments JSONB NOT NULL DEFAULT '[]'::jsonb, opening_hours VARCHAR(1000) NOT NULL DEFAULT '',
+    share_phone BOOLEAN NOT NULL DEFAULT FALSE, share_email BOOLEAN NOT NULL DEFAULT FALSE,
+    website VARCHAR(500) NOT NULL DEFAULT '', accepts_partner_missions BOOLEAN NOT NULL DEFAULT FALSE,
+    latitude NUMERIC(9,6), longitude NUMERIC(9,6), creator_suspended BOOLEAN NOT NULL DEFAULT FALSE,
+    creator_note VARCHAR(1000) NOT NULL DEFAULT '', updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+-- Chaque propriétaire d’entreprise est inscrit automatiquement au registre interne.
+-- La visibilité reste strictement désactivée tant que l’entreprise ne la confirme pas.
+CREATE OR REPLACE FUNCTION depannhome_register_partner_directory() RETURNS trigger AS $$
+BEGIN
+    IF NEW.account_owner_id = NEW.id THEN
+        INSERT INTO depannhome_partner_directory(owner_id,is_listed,visibility_explicit)
+        VALUES(NEW.id,FALSE,FALSE) ON CONFLICT(owner_id) DO NOTHING;
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+DROP TRIGGER IF EXISTS depannhome_partner_directory_registration ON depannhome_users;
+CREATE TRIGGER depannhome_partner_directory_registration
+AFTER INSERT OR UPDATE OF account_owner_id ON depannhome_users
+FOR EACH ROW EXECUTE FUNCTION depannhome_register_partner_directory();
+CREATE INDEX IF NOT EXISTS depannhome_partner_directory_search_idx ON depannhome_partner_directory(is_listed,creator_suspended,updated_at DESC);
 CREATE TABLE IF NOT EXISTS depannhome_partner_connections (
     id BIGSERIAL PRIMARY KEY, company_low_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
     company_high_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,

@@ -1,6 +1,7 @@
 import bcrypt from "bcrypt";
 import { getPool } from "./database.js";
 import { isCreatorUsername } from "./auth.js";
+import { creatorNetworkDirectory, creatorNetworkStatistics, updateCreatorNetworkDirectory } from "./partner-connections.js";
 
 const USERNAME_PATTERN = /^[a-z0-9._-]{3,32}$/;
 const MIN_PASSWORD_LENGTH = 12;
@@ -11,6 +12,23 @@ const SUBSCRIPTION_STATUSES = new Set(["active", "trial", "past_due", "suspended
 const QUOTE_TEMPLATE_POLICIES = new Set(["integrated_only", "company_choice", "external_only"]);
 
 export function registerCreatorRoutes(app, requireCreator) {
+    app.get("/api/creator/network-directory", requireCreator, asyncHandler(async (request, response) => {
+        response.json({ companies: await creatorNetworkDirectory(request.query?.q), statistics: await creatorNetworkStatistics() });
+    }));
+    app.patch("/api/creator/network-directory/:accountId", requireCreator, asyncHandler(async (request, response) => {
+        const accountId = positiveId(request.params.accountId);
+        const owner = accountId && await findAccountOwner(getPool(), accountId);
+        if (!canManageAccount(owner, request)) return response.status(404).json({ message: "Entreprise introuvable dans le Réseau DepannHomePro." });
+        await updateCreatorNetworkDirectory(accountId, request.body);
+        response.status(204).end();
+    }));
+    app.delete("/api/creator/network-directory/:accountId", requireCreator, asyncHandler(async (request, response) => {
+        const accountId = positiveId(request.params.accountId);
+        const owner = accountId && await findAccountOwner(getPool(), accountId);
+        if (!canManageAccount(owner, request)) return response.status(404).json({ message: "Entreprise introuvable dans le Réseau DepannHomePro." });
+        await getPool().query("DELETE FROM depannhome_partner_directory WHERE owner_id=$1", [accountId]);
+        response.status(204).end();
+    }));
     app.get("/api/creator/accounts", requireCreator, asyncHandler(async (request, response) => {
         const { rows } = await getPool().query(`
             SELECT
