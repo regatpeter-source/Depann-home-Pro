@@ -8,6 +8,7 @@ import { renderGroupActivation, renderGroupWorkspace } from "./groups.js?v=2";
 import { renderPartnerMissions } from "./partner-missions.js?v=2";
 import { renderPartnerSandbox } from "./partner-sandbox.js?v=3";
 import { renderPartnerConnections } from "./partner-connections.js?v=4";
+import { renderDataImportTool } from "./data-imports.js?v=1";
 import { renderPurchases } from "./purchases.js?v=112";
 import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=3";
 import { getFirstUnreadClientId, refreshClientMessageAlert, refreshVisibleClientMessages } from "./messages.js?v=106";
@@ -1065,6 +1066,7 @@ function renderSettings() {
         container.appendChild(creatorCard);
     }
     if (document.body.dataset.role === "admin" && document.body.classList.contains("desktop-device")) {
+        renderDataImportTool(container);
         renderSupportContact(container);
     }
 }

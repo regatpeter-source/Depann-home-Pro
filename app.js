@@ -35,6 +35,7 @@ import { initializePartnerSandbox, registerPartnerSandboxRoutes } from "./server
 import { initializeAccountingSandbox, registerAccountingSandboxRoutes } from "./server/accounting-sandbox.js";
 import { initializeGroups, registerGroupRoutes } from "./server/groups.js";
 import { registerSupportRoutes } from "./server/support.js";
+import { dataImportUploadErrorHandler, initializeDataImports, registerDataImportRoutes } from "./server/data-imports.js";
 import {
 	libraryUploadErrorHandler,
 	initializeLibrary,
@@ -109,6 +110,7 @@ registerCalendarRoutes(app, requireAuthentication);
 registerCollaborationRoutes(app, requireAuthentication);
 registerTechnicalReportRoutes(app, requireAuthentication);
 registerClientRoutes(app, requireAuthentication);
+registerDataImportRoutes(app, requireAuthentication);
 registerLibraryRoutes(app, requireAuthentication);
 registerSupportRoutes(app, requireAuthentication);
 
@@ -135,6 +137,7 @@ app.get("/service-worker.js", (request, response) => {
 app.use(billingUploadErrorHandler);
 app.use(clientUploadErrorHandler);
 app.use(technicalReportUploadErrorHandler);
+app.use(dataImportUploadErrorHandler);
 app.use(libraryUploadErrorHandler);
 app.use(partnerDialogueUploadErrorHandler);
 app.use((error, request, response, next) => {
@@ -163,6 +166,7 @@ async function start() {
 	await initializeAccountingSandbox();
 	await initializePartnerRequests();
 	await initializeClients();
+	await initializeDataImports();
 	await initializeLibrary();
 	await createInitialAdministrator();
 	await recoverCreatorPassword();

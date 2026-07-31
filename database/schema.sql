@@ -493,6 +493,24 @@ CREATE TABLE IF NOT EXISTS depannhome_technical_report_library (
 );
 CREATE INDEX IF NOT EXISTS depannhome_technical_report_library_owner_idx ON depannhome_technical_report_library (owner_id, category, LOWER(label));
 
+-- Importations de données : les fichiers sont analysés côté serveur, puis seule
+-- une session temporaire par entreprise/utilisateur est conservée avant validation.
+CREATE TABLE IF NOT EXISTS depannhome_data_import_sessions (
+    id UUID PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    user_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE, data_type VARCHAR(20) NOT NULL,
+    filename VARCHAR(255) NOT NULL, columns JSONB NOT NULL DEFAULT '[]'::jsonb, rows JSONB NOT NULL DEFAULT '[]'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), expires_at TIMESTAMPTZ NOT NULL
+);
+CREATE TABLE IF NOT EXISTS depannhome_data_import_logs (
+    id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    user_id BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL, data_type VARCHAR(20) NOT NULL,
+    filename VARCHAR(255) NOT NULL, source_rows INTEGER NOT NULL DEFAULT 0, imported_count INTEGER NOT NULL DEFAULT 0,
+    duplicate_count INTEGER NOT NULL DEFAULT 0, error_count INTEGER NOT NULL DEFAULT 0,
+    duplicate_strategy VARCHAR(20) NOT NULL DEFAULT 'skip', details JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS depannhome_data_import_logs_owner_created_idx ON depannhome_data_import_logs(owner_id, created_at DESC);
+
 -- Collaboration réutilisable : le verrou est persistant et expirant. Les événements
 -- temps réel SSE sont un transport ; l’audit et les notifications restent disponibles
 -- après déconnexion, redémarrage ou perte de réseau.
