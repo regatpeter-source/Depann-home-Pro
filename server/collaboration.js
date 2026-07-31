@@ -170,6 +170,7 @@ export async function getAudit(ownerId, entityType, entityId) {
 }
 
 async function broadcast(ownerId, event, data) { for (const stream of streamsByOwner.get(String(ownerId)) || []) { try { stream.response.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`); } catch { /* Le handler close retire la connexion. */ } } }
+export async function broadcastOwnerEvent(ownerId, event, data) { await broadcast(ownerId, event, data); }
 function mapLock(lock) { return { entityType: lock.entity_type, entityId: lock.entity_id, lockedBy: String(lock.locked_by), userName: lock.full_name || lock.username || "Utilisateur", role: lock.role || "", openedAt: lock.locked_at, lastActivityAt: lock.last_activity_at, expiresAt: lock.expires_at, deviceType: lock.device_type || "desktop" }; }
 function lockMessage(lock) { return `Rapport actuellement modifié par ${lock.userName} (${roleLabel(lock.role)}) depuis ${new Intl.DateTimeFormat("fr-FR", { timeStyle: "short" }).format(new Date(lock.openedAt))}.`; }
 function roleLabel(role) { return ({ technician: "Technicien", admin: "Administrateur", accountant: "Comptabilité" })[role] || "Utilisateur"; }

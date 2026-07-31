@@ -426,6 +426,7 @@ export function registerBillingRoutes(app, requireAuthentication) {
             `, [getAccountOwnerId(request), request.user.sub, document.documentType, document.documentNumber, document.clientId || null, document.customerType, document.customerName,
                 document.customerAddress, document.issueDate, document.dueDate || null, document.status, document.isAccounted, appointment?.id || null, sourceQuote?.id || null, sourceQuote?.documentNumber || "", JSON.stringify(document.lines), document.notes]);
             await (await import("./partner-connections.js")).synchronizeConnectedBillingDocument(getAccountOwnerId(request), rows[0].id);
+            const { recordMissionEventForSource } = await import("./partner-dialogue.js"); await recordMissionEventForSource({ ownerId: getAccountOwnerId(request), sourceType: "appointment", sourceId: appointment?.id, status: document.documentType === "invoice" ? "invoice_created" : "quote_created", action: "billing_document_created", details: { documentId: rows[0].id, documentType: document.documentType, status: document.status }, actorName: request.user.fullName || request.user.username });
             response.status(201).json({ id: rows[0].id });
         } catch (error) {
             if (error.code === "23505") return response.status(409).json({ message: "Ce numéro de document existe déjà dans votre compte." });
@@ -462,6 +463,7 @@ export function registerBillingRoutes(app, requireAuthentication) {
                 document.customerAddress, document.issueDate, document.dueDate || null, document.status, document.isAccounted, appointment?.id || null, sourceQuote?.id || null, sourceQuote?.documentNumber || "", JSON.stringify(document.lines), document.notes]);
             if (!result.rowCount) return response.status(404).json({ message: "Document introuvable." });
             await (await import("./partner-connections.js")).synchronizeConnectedBillingDocument(getAccountOwnerId(request), id);
+            const { recordMissionEventForSource } = await import("./partner-dialogue.js"); await recordMissionEventForSource({ ownerId: getAccountOwnerId(request), sourceType: "appointment", sourceId: appointment?.id, status: document.documentType === "invoice" ? "invoice_sent" : "quote_sent", action: "billing_document_updated", details: { documentId: id, documentType: document.documentType, status: document.status }, actorName: request.user.fullName || request.user.username });
             response.status(204).end();
         } catch (error) {
             if (error.code === "23505") return response.status(409).json({ message: "Ce numéro de document existe déjà dans votre compte." });

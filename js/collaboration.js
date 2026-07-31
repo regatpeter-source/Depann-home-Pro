@@ -9,7 +9,7 @@ export function initializeCollaboration() {
     loadNotifications();
     stream = new EventSource("/api/collaboration/stream");
     stream.addEventListener("notification", event => handleEvent("notification", event));
-    ["lock_acquired", "lock_released", "lock_force_released", "report_started", "report_saved", "report_media_added", "report_media_updated", "report_media_deleted", "report_submitted", "report_correction_requested", "report_validated", "report_reopened"].forEach(type => stream.addEventListener(type, event => handleEvent(type, event)));
+    ["lock_acquired", "lock_released", "lock_force_released", "report_started", "report_saved", "report_media_added", "report_media_updated", "report_media_deleted", "report_submitted", "report_correction_requested", "report_validated", "report_reopened", "mission_journal_updated"].forEach(type => stream.addEventListener(type, event => handleEvent(type, event)));
     stream.onerror = () => updateSyncIndicator("syncing", "Reconnexion en cours");
     stream.onopen = () => updateSyncIndicator("synced", "Synchronisé en temps réel");
     window.addEventListener("beforeunload", releaseSessionLocks, { capture: true });

@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import { getPool } from "./database.js";
 import { getAccountOwnerId } from "./auth.js";
 import { createNotification } from "./collaboration.js";
-import { recordMissionDialogueEvent } from "./partner-dialogue.js";
+import { recordMissionDialogueDocument, recordMissionDialogueEvent } from "./partner-dialogue.js";
 
 const STATES = new Set(["pending", "connected", "refused", "disconnected"]);
 const PERMISSION_KEYS = ["canSendInterventions", "canReceiveInterventions", "canViewReports", "canViewQuotes", "canViewInvoices", "canUseMessaging", "canViewStatusChanges"];
@@ -77,8 +77,8 @@ export async function synchronizeConnectedReport(ownerId, reportId) {
         if (!ownPermissions(connection, ownerId).canViewReports) continue;
         const targetOwnerId = partnerOwnerId(connection, ownerId); const mission = await connectedMission(connection.id, targetOwnerId, report.appointment_id); if (!mission) continue;
         const canAttach = report.pdf_data && report.pdf_data.length <= 5 * 1024 * 1024;
-        const { rows: messageRows } = await db.query("INSERT INTO depannhome_partner_dialogue_messages(owner_id,mission_id,sender_type,sender_name,organization_name,kind,body) VALUES($1,$2,'system',$3,$3,'system',$4) RETURNING id", [targetOwnerId, mission.id, (await companyIdentity(ownerId)).name, canAttach ? `Rapport partagé : ${report.title || "rapport d’intervention"}.` : `Rapport validé : ${report.title || "rapport d’intervention"}. Le fichier dépasse la taille de partage automatique.`]);
-        if (canAttach) await db.query("INSERT INTO depannhome_partner_dialogue_attachments(owner_id,mission_id,message_id,attachment_type,filename,mime_type,file_size,file_data) VALUES($1,$2,$3,'report',$4,'application/pdf',$5,$6)", [targetOwnerId, mission.id, messageRows[0].id, report.pdf_filename || `rapport-${report.id}.pdf`, report.pdf_data.length, report.pdf_data]);
+        if (canAttach) await recordMissionDialogueDocument({ ownerId: targetOwnerId, missionId: mission.id, actorName: (await companyIdentity(ownerId)).name, body: `Rapport partagé : ${report.title || "rapport d’intervention"}.`, attachment: { type: "report", filename: report.pdf_filename || `rapport-${report.id}.pdf`, mimeType: "application/pdf", buffer: report.pdf_data }, partnerVisible: true, eventType: "report_shared" });
+        else await recordMissionDialogueEvent({ ownerId: targetOwnerId, missionId: mission.id, status: "report_validated", action: "report_shared", actorName: (await companyIdentity(ownerId)).name, partnerVisible: true });
         await db.query("INSERT INTO depannhome_partner_connection_sync_log(connection_id,source_owner_id,target_owner_id,source_event_id,target_mission_id,event_type,details) VALUES($1,$2,$3,$4,$5,'report_shared',$6::jsonb)", [connection.id, ownerId, targetOwnerId, report.appointment_id, mission.id, JSON.stringify({ reportId })]);
     }
 }
@@ -89,8 +89,7 @@ export async function synchronizeConnectedBillingDocument(ownerId, documentId) {
     for (const connection of await activeConnections(ownerId)) {
         if (!ownPermissions(connection, ownerId)[permission]) continue;
         const targetOwnerId = partnerOwnerId(connection, ownerId); const mission = await connectedMission(connection.id, targetOwnerId, document.appointment_id); if (!mission) continue;
-        const pdf = await createSharedBillingPdf(document, profile); const label = document.document_type === "invoice" ? "Facture" : "Devis"; const { rows: messageRows } = await db.query("INSERT INTO depannhome_partner_dialogue_messages(owner_id,mission_id,sender_type,sender_name,organization_name,kind,body) VALUES($1,$2,'system',$3,$3,'system',$4) RETURNING id", [targetOwnerId, mission.id, source.name, `${label} partagé : ${document.document_number}.`]);
-        await db.query("INSERT INTO depannhome_partner_dialogue_attachments(owner_id,mission_id,message_id,attachment_type,filename,mime_type,file_size,file_data) VALUES($1,$2,$3,$4,$5,'application/pdf',$6,$7)", [targetOwnerId, mission.id, messageRows[0].id, document.document_type, `${document.document_type === "invoice" ? "facture" : "devis"}-${safeName(document.document_number)}.pdf`, pdf.length, pdf]);
+        const pdf = await createSharedBillingPdf(document, profile); const label = document.document_type === "invoice" ? "Facture" : "Devis"; await recordMissionDialogueDocument({ ownerId: targetOwnerId, missionId: mission.id, actorName: source.name, body: `${label} partagé : ${document.document_number}.`, attachment: { type: document.document_type, filename: `${document.document_type === "invoice" ? "facture" : "devis"}-${safeName(document.document_number)}.pdf`, mimeType: "application/pdf", buffer: pdf }, partnerVisible: true, eventType: `${document.document_type}_shared` });
         await db.query("INSERT INTO depannhome_partner_connection_sync_log(connection_id,source_owner_id,target_owner_id,source_event_id,target_mission_id,event_type,details) VALUES($1,$2,$3,$4,$5,$6,$7::jsonb)", [connection.id, ownerId, targetOwnerId, document.appointment_id, mission.id, `${document.document_type}_shared`, JSON.stringify({ documentId, documentNumber: document.document_number })]);
     }
 }

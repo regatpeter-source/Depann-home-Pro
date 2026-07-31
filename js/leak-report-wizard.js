@@ -1,7 +1,7 @@
 import { ROUTES } from "./config.js?v=118";
 import { clearSearch, getContainer, setPage } from "./ui.js?v=44";
 import { escapeHtml } from "./utils.js?v=44";
-import { acquireReportLock, forceReleaseReportLock, heartbeatReportLock, releaseReportLock } from "./collaboration.js?v=1";
+import { acquireReportLock, forceReleaseReportLock, heartbeatReportLock, releaseReportLock } from "./collaboration.js?v=2";
 
 const STEPS = [["general", "Informations"], ["overview", "État des lieux"], ["visual", "Visuel"], ["humidity", "Humidité"], ["pressure", "Pression"], ["methods", "Moyens"], ["waterTest", "Test eau"], ["charging", "Mise en charge"], ["safety", "Sécurité"], ["ventilation", "Ventilation"], ["conclusion", "Conclusion"], ["recommendations", "Préconisations"]];
 const MATERIALS = ["Gaz traceur", "Contrôle acoustique", "Caméra endoscopique", "Traçage de réseau", "Fumigation", "Caméra thermique", "Détecteur électronique", "Colorant fluorescent", "Inspection vidéo", "Autre matériel"];

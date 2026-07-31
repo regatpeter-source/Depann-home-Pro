@@ -537,8 +537,15 @@ CREATE TABLE IF NOT EXISTS depannhome_partner_dialogue_messages (
     sender_name VARCHAR(160) NOT NULL DEFAULT '', organization_name VARCHAR(160) NOT NULL DEFAULT '',
     kind VARCHAR(20) NOT NULL DEFAULT 'message', issue_type VARCHAR(60) NOT NULL DEFAULT '',
     body VARCHAR(4000) NOT NULL DEFAULT '', reply_to_id BIGINT REFERENCES depannhome_partner_dialogue_messages(id) ON DELETE SET NULL,
+    partner_visible BOOLEAN NOT NULL DEFAULT FALSE, event_type VARCHAR(80) NOT NULL DEFAULT '', immutable BOOLEAN NOT NULL DEFAULT FALSE,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+ALTER TABLE depannhome_partner_dialogue_messages
+    ADD COLUMN IF NOT EXISTS partner_visible BOOLEAN NOT NULL DEFAULT FALSE,
+    ADD COLUMN IF NOT EXISTS event_type VARCHAR(80) NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS immutable BOOLEAN NOT NULL DEFAULT FALSE,
+    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 CREATE INDEX IF NOT EXISTS depannhome_partner_dialogue_messages_mission_idx ON depannhome_partner_dialogue_messages(owner_id, mission_id, created_at, id);
 CREATE TABLE IF NOT EXISTS depannhome_partner_dialogue_attachments (
     id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
@@ -549,6 +556,17 @@ CREATE TABLE IF NOT EXISTS depannhome_partner_dialogue_attachments (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS depannhome_partner_dialogue_attachments_message_idx ON depannhome_partner_dialogue_attachments(message_id);
+-- Les entrées ne sont jamais supprimées par le journal : toute modification de
+-- visibilité est tracée avec l’auteur, l’horodatage et les valeurs avant/après.
+CREATE TABLE IF NOT EXISTS depannhome_partner_dialogue_audit (
+    id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    mission_id BIGINT NOT NULL REFERENCES depannhome_partner_missions(id) ON DELETE CASCADE,
+    message_id BIGINT NOT NULL REFERENCES depannhome_partner_dialogue_messages(id) ON DELETE CASCADE,
+    action VARCHAR(60) NOT NULL, actor_id BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+    actor_name VARCHAR(160) NOT NULL DEFAULT '', old_value JSONB NOT NULL DEFAULT '{}'::jsonb,
+    new_value JSONB NOT NULL DEFAULT '{}'::jsonb, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS depannhome_partner_dialogue_audit_message_idx ON depannhome_partner_dialogue_audit(owner_id, mission_id, message_id, created_at DESC);
 
 -- Connexions simples entre entreprises Depann'Home Pro. Les secrets éventuels
 -- restent internes au serveur : l'utilisateur ne configure ni clé, ni URL, ni webhook.

@@ -7,6 +7,7 @@ import { getAccountOwnerId } from "./auth.js";
 import { assertLockOwner, getAudit, getLock, publishEvent, releaseLock } from "./collaboration.js";
 import { REPORT_STEP_KEYS, createEmptyLeakContent, createLeakReportPdf as createWizardLeakReportPdf, normalizeLeakContent } from "./leak-report-template.js";
 import { synchronizeConnectedReport } from "./partner-connections.js";
+import { recordMissionEventForSource } from "./partner-dialogue.js";
 
 const REPORT_TYPE = "leak_detection";
 const STATUSES = new Set(["draft", "submitted", "in_correction", "validated"]);
@@ -76,6 +77,7 @@ export function registerTechnicalReportRoutes(app, requireAuthentication) {
         const content = normalizeLeakContent({ ...input.content, snapshot }, snapshot);
         const { rows } = await getPool().query(`INSERT INTO depannhome_technical_reports (owner_id, created_by, appointment_id, client_id, report_type, title, report_date, content) VALUES ($1,$2,$3,$4,$5,$6,$7::date,$8::jsonb) RETURNING id`, [ownerId, request.user.sub, appointment.id, clientId, REPORT_TYPE, input.title, input.reportDate, JSON.stringify(content)]);
         await publishEvent(request, reportTarget(rows[0].id), "report_started", { appointmentId: appointment.id }, await administrationNotifications(ownerId, "Rapport commencé", `Le rapport #${rows[0].id} vient d’être créé.`));
+        await recordMissionEventForSource({ ownerId, sourceType: "appointment", sourceId: appointment.id, status: "report_in_progress", action: "report_started", actorName: request.user.fullName || request.user.username });
         response.status(201).json({ id: rows[0].id });
     }));
     app.get("/api/technical-reports/:reportId", asyncHandler(async (request, response) => {
@@ -92,6 +94,7 @@ export function registerTechnicalReportRoutes(app, requireAuthentication) {
         if (!await enforceReportLock(request, response, report.id)) return;
         await getPool().query("UPDATE depannhome_technical_reports SET title=$3, report_date=$4::date, content=$5::jsonb, status=CASE WHEN status='in_correction' THEN 'draft' ELSE status END, updated_at=NOW() WHERE id=$1 AND owner_id=$2", [report.id, ownerId, input.title, input.reportDate, JSON.stringify(input.content)]);
         await publishEvent(request, reportTarget(report.id), "report_saved", { status: report.status });
+        await recordMissionEventForSource({ ownerId, sourceType: "report", sourceId: report.id, status: "report_in_progress", action: "report_saved", actorName: request.user.fullName || request.user.username });
         response.status(204).end();
     }));
     app.post("/api/technical-reports/:reportId/media", upload.array("files", 5), asyncHandler(async (request, response) => {
@@ -136,6 +139,7 @@ export function registerTechnicalReportRoutes(app, requireAuthentication) {
         const profile = await loadProfile(ownerId); const pdf = await createWizardLeakReportPdf(report, profile); const filename = `rapport-recherche-fuite-${report.id}.pdf`;
         const connection = await getPool().connect(); try { await connection.query("BEGIN"); await connection.query("UPDATE depannhome_technical_reports SET status='validated', validated_at=NOW(), validated_by=$3, pdf_data=$4, pdf_filename=$5, updated_at=NOW() WHERE id=$1 AND owner_id=$2", [report.id, ownerId, request.user.sub, pdf, filename]); await archivePdf(connection, ownerId, report, pdf, filename, request); await connection.query("COMMIT"); } catch (error) { await connection.query("ROLLBACK"); throw error; } finally { connection.release(); }
         await synchronizeConnectedReport(ownerId, report.id);
+        await recordMissionEventForSource({ ownerId, sourceType: "report", sourceId: report.id, status: "report_validated", action: "report_validated", actorName: request.user.fullName || request.user.username });
         await publishEvent(request, reportTarget(report.id), "report_validated", { pdfGenerated: true }, report.createdBy ? [{ recipientId: report.createdBy, title: "Rapport validé", body: `Le rapport #${report.id} a été validé et son PDF a été archivé.`, eventType: "report_validated" }] : []);
         response.json({ message: "Rapport validé, PDF généré et archivé." });
     }));
