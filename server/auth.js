@@ -283,7 +283,7 @@ export function registerAuthRoutes(app) {
         const enabled = request.body.enabled;
         await getPool().query(`
             INSERT INTO depannhome_company_totp_policies (owner_id, enabled, enabled_at, enabled_by, updated_at)
-            VALUES ($1, $2, CASE WHEN $2 THEN NOW() ELSE NULL END, CASE WHEN $2 THEN $3 ELSE NULL END, NOW())
+            VALUES ($1, $2, CASE WHEN $2 THEN NOW() ELSE NULL END, CASE WHEN $2 THEN $3::bigint ELSE NULL END, NOW())
             ON CONFLICT (owner_id) DO UPDATE SET enabled = EXCLUDED.enabled, enabled_at = EXCLUDED.enabled_at,
                 enabled_by = EXCLUDED.enabled_by, updated_at = NOW()
         `, [ownerId, enabled, request.user.sub]);
