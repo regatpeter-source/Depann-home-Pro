@@ -29,6 +29,38 @@ CREATE INDEX IF NOT EXISTS depannhome_users_username_lookup_idx ON depannhome_us
 UPDATE depannhome_users SET account_owner_id = id WHERE account_owner_id IS NULL;
 UPDATE depannhome_users SET role = 'admin' WHERE role = 'user' AND account_owner_id = id;
 
+-- Mode Groupe optionnel. Chaque société reste un propriétaire de compte existant ;
+-- les données métier restent donc isolées par owner_id sans migration des données.
+CREATE TABLE IF NOT EXISTS depannhome_groups (
+    id BIGSERIAL PRIMARY KEY,
+    name VARCHAR(160) NOT NULL,
+    shared_partner_directory_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE TABLE IF NOT EXISTS depannhome_group_companies (
+    group_id BIGINT NOT NULL REFERENCES depannhome_groups(id) ON DELETE CASCADE,
+    company_owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE RESTRICT,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY(group_id, company_owner_id), UNIQUE(company_owner_id)
+);
+CREATE TABLE IF NOT EXISTS depannhome_group_administrators (
+    group_id BIGINT NOT NULL REFERENCES depannhome_groups(id) ON DELETE CASCADE,
+    user_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), PRIMARY KEY(group_id, user_id)
+);
+CREATE TABLE IF NOT EXISTS depannhome_group_audit (
+    id BIGSERIAL PRIMARY KEY, group_id BIGINT NOT NULL REFERENCES depannhome_groups(id) ON DELETE CASCADE,
+    company_owner_id BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+    actor_id BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+    action VARCHAR(80) NOT NULL, details JSONB NOT NULL DEFAULT '{}'::jsonb,
+    ip_address VARCHAR(100) NOT NULL DEFAULT '', created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- Rôle mobile dédié : compte rattaché à l’entreprise, jamais propriétaire du compte.
 -- Son appareil utilise le flux existant d’autorisation et de code e-mail.
 

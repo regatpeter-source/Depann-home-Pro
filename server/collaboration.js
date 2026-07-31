@@ -1,4 +1,5 @@
 import { getPool } from "./database.js";
+import { getAccountOwnerId } from "./auth.js";
 
 const LOCK_TIMEOUT_SECONDS = 15 * 60;
 const ENTITY_TYPES = new Set(["technical_report", "billing_document", "client", "calendar_event", "partner_mission"]);
@@ -41,7 +42,7 @@ export async function initializeCollaboration() {
 
 export function registerCollaborationRoutes(app, requireAuthentication) {
     app.get("/api/collaboration/stream", requireAuthentication, (request, response) => {
-        const ownerId = String(request.user.accountOwnerId || request.user.sub);
+        const ownerId = getAccountOwnerId(request);
         response.status(200).set({ "Content-Type": "text/event-stream", "Cache-Control": "no-cache, no-transform", Connection: "keep-alive", "X-Accel-Buffering": "no" });
         response.flushHeaders?.();
         response.write(`event: connected\ndata: ${JSON.stringify({ at: new Date().toISOString() })}\n\n`);
@@ -83,7 +84,7 @@ export function registerCollaborationRoutes(app, requireAuthentication) {
 
 export async function acquireLock(request, entityType, entityId) {
     const target = validTarget(entityType, entityId); if (!target) return { acquired: false, message: "Ressource collaborative invalide." };
-    const ownerId = String(request.user.accountOwnerId || request.user.sub); const database = getPool();
+    const ownerId = getAccountOwnerId(request); const database = getPool();
     await database.query("DELETE FROM depannhome_collaboration_locks WHERE owner_id=$1 AND entity_type=$2 AND entity_id=$3 AND expires_at <= NOW()", [ownerId, target.entityType, target.entityId]);
     const current = await getLock(ownerId, target.entityType, target.entityId);
     if (current && String(current.lockedBy) !== String(request.user.sub)) return { acquired: false, message: lockMessage(current), lock: current };
@@ -105,19 +106,19 @@ export async function acquireLock(request, entityType, entityId) {
 
 export async function heartbeatLock(request, entityType, entityId) {
     const target = validTarget(entityType, entityId); if (!target) return { ok: false, message: "Ressource collaborative invalide." };
-    const { rows } = await getPool().query(`UPDATE depannhome_collaboration_locks SET last_activity_at=NOW(), expires_at=NOW()+($5::text || ' seconds')::interval WHERE owner_id=$1 AND entity_type=$2 AND entity_id=$3 AND locked_by=$4 AND expires_at>NOW() RETURNING *`, [String(request.user.accountOwnerId || request.user.sub), target.entityType, target.entityId, request.user.sub, LOCK_TIMEOUT_SECONDS]);
+    const { rows } = await getPool().query(`UPDATE depannhome_collaboration_locks SET last_activity_at=NOW(), expires_at=NOW()+($5::text || ' seconds')::interval WHERE owner_id=$1 AND entity_type=$2 AND entity_id=$3 AND locked_by=$4 AND expires_at>NOW() RETURNING *`, [getAccountOwnerId(request), target.entityType, target.entityId, request.user.sub, LOCK_TIMEOUT_SECONDS]);
     return rows[0] ? { ok: true, lock: mapLock(rows[0]) } : { ok: false, message: "Le verrouillage a expiré ou a été repris." };
 }
 
 export async function releaseLock(request, entityType, entityId, action = "lock_released") {
-    const target = validTarget(entityType, entityId); if (!target) return false; const ownerId = String(request.user.accountOwnerId || request.user.sub);
+    const target = validTarget(entityType, entityId); if (!target) return false; const ownerId = getAccountOwnerId(request);
     const result = await getPool().query("DELETE FROM depannhome_collaboration_locks WHERE owner_id=$1 AND entity_type=$2 AND entity_id=$3 AND locked_by=$4", [ownerId, target.entityType, target.entityId, request.user.sub]);
     if (result.rowCount) { await recordEvent(request, target, action); await broadcast(ownerId, action, { entityType: target.entityType, entityId: target.entityId }); }
     return Boolean(result.rowCount);
 }
 
 export async function forceReleaseLock(request, entityType, entityId, reason = "") {
-    const target = validTarget(entityType, entityId); if (!target) return { released: false, message: "Ressource collaborative invalide." }; const ownerId = String(request.user.accountOwnerId || request.user.sub);
+    const target = validTarget(entityType, entityId); if (!target) return { released: false, message: "Ressource collaborative invalide." }; const ownerId = getAccountOwnerId(request);
     const lock = await getLock(ownerId, target.entityType, target.entityId); if (!lock) return { released: false, message: "Aucun verrou actif." };
     await getPool().query("DELETE FROM depannhome_collaboration_locks WHERE owner_id=$1 AND entity_type=$2 AND entity_id=$3", [ownerId, target.entityType, target.entityId]);
     await recordEvent(request, target, "lock_force_released", { previousLock: lock, reason }); await broadcast(ownerId, "lock_force_released", { entityType: target.entityType, entityId: target.entityId, reason });
@@ -126,7 +127,7 @@ export async function forceReleaseLock(request, entityType, entityId, reason = "
 }
 
 export async function assertLockOwner(request, entityType, entityId) {
-    const target = validTarget(entityType, entityId); if (!target) return { ok: false, message: "Ressource collaborative invalide." }; const ownerId = String(request.user.accountOwnerId || request.user.sub);
+    const target = validTarget(entityType, entityId); if (!target) return { ok: false, message: "Ressource collaborative invalide." }; const ownerId = getAccountOwnerId(request);
     await getPool().query("DELETE FROM depannhome_collaboration_locks WHERE owner_id=$1 AND entity_type=$2 AND entity_id=$3 AND expires_at<=NOW()", [ownerId, target.entityType, target.entityId]);
     const lock = await getLock(ownerId, target.entityType, target.entityId);
     if (lock && String(lock.lockedBy) !== String(request.user.sub)) return { ok: false, message: lockMessage(lock), lock };
@@ -142,13 +143,13 @@ export async function getLock(ownerId, entityType, entityId) {
 
 export async function recordEvent(request, target, action, details = {}) {
     if (!target?.entityType || !target?.entityId) return;
-    const ownerId = String(request.user?.accountOwnerId || request.user?.sub || ""); if (!ownerId) return;
-    await getPool().query(`INSERT INTO depannhome_collaboration_audit (owner_id, entity_type, entity_id, action, actor_id, actor_role, ip_address, device_type, device_label, details) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb)`, [ownerId, target.entityType, target.entityId, action, request.user?.sub || null, request.user?.role || "", request.ip || "", deviceType(request), deviceLabel(request), JSON.stringify(details)]);
+    const ownerId = getAccountOwnerId(request); if (!ownerId) return;
+    await getPool().query(`INSERT INTO depannhome_collaboration_audit (owner_id, entity_type, entity_id, action, actor_id, actor_role, ip_address, device_type, device_label, details) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb)`, [ownerId, target.entityType, target.entityId, action, request.user?.sub || null, request.user?.principalRole || request.user?.role || "", request.ip || "", deviceType(request), deviceLabel(request), JSON.stringify(details)]);
 }
 
 export async function publishEvent(request, target, action, details = {}, notifications = []) {
     await recordEvent(request, target, action, details);
-    const ownerId = String(request.user.accountOwnerId || request.user.sub);
+    const ownerId = getAccountOwnerId(request);
     await broadcast(ownerId, action, { entityType: target.entityType, entityId: target.entityId, details, actor: actor(request) });
     await Promise.all(notifications.map(notification => createNotification(ownerId, notification.recipientId, notification.eventType || action, target, notification.title, notification.body, notification.payload || {})));
 }
@@ -160,7 +161,7 @@ export async function createNotification(ownerId, recipientId, eventType, target
 }
 
 export async function releaseLocksForUser(request, action = "session_closed") {
-    const ownerId = String(request.user.accountOwnerId || request.user.sub); const { rows } = await getPool().query("DELETE FROM depannhome_collaboration_locks WHERE owner_id=$1 AND locked_by=$2 RETURNING entity_type, entity_id", [ownerId, request.user.sub]);
+    const ownerId = getAccountOwnerId(request); const { rows } = await getPool().query("DELETE FROM depannhome_collaboration_locks WHERE owner_id=$1 AND locked_by=$2 RETURNING entity_type, entity_id", [ownerId, request.user.sub]);
     await Promise.all(rows.map(row => publishEvent(request, { entityType: row.entity_type, entityId: row.entity_id }, action)));
 }
 

@@ -4,6 +4,7 @@ import { renderCreatorConsole } from "./creator.js?v=118";
 import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=142";
 import { renderAccounting } from "./accounting.js?v=2";
 import { renderAccountingSandbox } from "./accounting-sandbox.js?v=1";
+import { renderGroupActivation, renderGroupWorkspace } from "./groups.js?v=2";
 import { renderPartnerMissions } from "./partner-missions.js?v=2";
 import { renderPartnerSandbox } from "./partner-sandbox.js?v=3";
 import { renderPartnerConnections } from "./partner-connections.js?v=3";
@@ -104,6 +105,8 @@ export async function refreshApplication() {
         renderPartnerSandbox();
     } else if (activeRoute === ROUTES.accountingSandbox && document.body.dataset.role === "admin") {
         renderAccountingSandbox();
+    } else if (activeRoute === ROUTES.groups && document.body.dataset.groupAdmin === "true") {
+        renderGroupWorkspace();
     } else if (activeRoute === ROUTES.purchases) {
         renderPurchases();
     } else if (activeRoute === ROUTES.settings) {
@@ -119,6 +122,7 @@ function bindEvents() {
     const clientsBtn = document.getElementById("clientsBtn");
     const billingBtn = document.getElementById("billingBtn");
     const accountingBtn = document.getElementById("accountingBtn");
+    const groupsBtn = document.getElementById("groupsBtn");
     const partnerMissionsBtn = document.getElementById("partnerMissionsBtn");
     const partnerSandboxBtn = document.getElementById("partnerSandboxBtn");
     const purchasesBtn = document.getElementById("purchasesBtn");
@@ -147,6 +151,7 @@ function bindEvents() {
         else renderBilling();
     });
     accountingBtn?.addEventListener("click", () => { if (document.body.dataset.role === "admin") renderAccounting(); });
+    groupsBtn?.addEventListener("click", () => { if (document.body.dataset.groupAdmin === "true") renderGroupWorkspace(); });
     partnerMissionsBtn?.addEventListener("click", () => { if (!isAccountant()) renderPartnerMissions(); });
     partnerSandboxBtn?.addEventListener("click", () => { if (document.body.dataset.role === "admin") renderPartnerSandbox(); });
     purchasesBtn?.addEventListener("click", renderPurchases);
@@ -177,6 +182,7 @@ function bindEvents() {
                 else renderBilling();
             }
             if (nav === ROUTES.accounting && document.body.dataset.role === "admin") renderAccounting();
+            if (nav === ROUTES.groups && document.body.dataset.groupAdmin === "true") renderGroupWorkspace();
             if (nav === ROUTES.accountingSandbox && document.body.dataset.role === "admin") renderAccountingSandbox();
             if (nav === ROUTES.partnerMissions) renderPartnerMissions();
             if (nav === ROUTES.partnerSandbox && document.body.dataset.role === "admin") renderPartnerSandbox();
@@ -1044,6 +1050,13 @@ function renderSettings() {
     container.appendChild(card);
     if (document.body.dataset.role === "admin") renderTeamManagement(container);
     if (document.body.dataset.role === "admin") renderPartnerConnections(container);
+    if (document.body.dataset.groupAdmin === "true") {
+        const groupCard = document.createElement("article");
+        groupCard.className = "brand-card full-card procedure-card creator-entry-card";
+        groupCard.innerHTML = '<p class="eyebrow">Multi-entreprises</p><h2>Groupe & entreprises</h2><p>Changez d’entreprise, pilotez les sociétés du groupe et consultez les indicateurs consolidés.</p>';
+        groupCard.appendChild(createButton("Ouvrir le pilotage Groupe", "secondary-button", renderGroupWorkspace));
+        container.appendChild(groupCard);
+    } else if (document.body.dataset.role === "admin") renderGroupActivation(container);
     if (document.body.dataset.creator === "true") {
         const creatorCard = document.createElement("article");
         creatorCard.className = "brand-card full-card procedure-card creator-entry-card";

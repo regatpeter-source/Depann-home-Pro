@@ -2,7 +2,7 @@ import { initializeAuthentication, restoreApplicationShell, signOut } from "./au
 import { initializeClientSynchronization } from "./client-sync.js?v=118";
 import { initializeCollaboration } from "./collaboration.js?v=2";
 import { loadDatabase } from "./data.js?v=59";
-import { initializeNavigation, refreshApplication } from "./navigation.js?v=192";
+import { initializeNavigation, refreshApplication } from "./navigation.js?v=194";
 import { renderError } from "./ui.js?v=44";
 import { getSettings } from "./storage.js?v=44";
 import { FONT_OPTIONS } from "./config.js?v=116";
@@ -20,6 +20,7 @@ async function initializeApp() {
             }
 
             showAuthenticatedUser(user);
+            initializeGroupCompanySelector(user);
             startApplication();
         }
     });
@@ -78,6 +79,8 @@ function showAuthenticatedUser(user) {
     document.body.dataset.creator = user.isCreator ? "true" : "false";
     document.body.dataset.technicianBillingEnabled = user.technicianBillingEnabled === false ? "false" : "true";
     document.body.dataset.maxPcUsers = String(user.maxPcUsers || 1);
+    document.body.dataset.groupAdmin = user.isGroupAdministrator ? "true" : "false";
+    document.body.dataset.groupId = user.groupId || "";
     updateDeviceMode();
     window.addEventListener("resize", updateDeviceMode);
     document.body.classList.remove("auth-pending");
@@ -99,6 +102,28 @@ function showAuthenticatedUser(user) {
         window.location.replace("/");
     }, { once: true });
 }
+
+async function initializeGroupCompanySelector(user) {
+    const field = document.getElementById("groupCompanySelector");
+    const select = field?.querySelector("select");
+    if (!field || !select || !user.isGroupAdministrator) { if (field) field.hidden = true; return; }
+    try {
+        const response = await fetch("/api/groups/context", { credentials: "same-origin" });
+        const data = response.ok ? await response.json() : null;
+        if (!data?.enabled || !data.companies?.length) return;
+        select.innerHTML = data.companies.filter(company => company.isActive).map(company => `<option value="${escapeAttribute(company.id)}" ${String(company.id) === String(data.activeCompanyId) ? "selected" : ""}>${escapeHtmlText(company.companyName)}</option>`).join("");
+        field.hidden = false;
+        select.addEventListener("change", async () => {
+            select.disabled = true;
+            const result = await fetch("/api/groups/active-company", { method: "PUT", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ companyId: select.value }) });
+            if (!result.ok) { select.disabled = false; return alert((await result.json().catch(() => ({}))).message || "Changement d’entreprise impossible."); }
+            window.location.reload();
+        });
+    } catch { field.hidden = true; }
+}
+
+function escapeHtmlText(value) { const node = document.createElement("span"); node.textContent = String(value || ""); return node.innerHTML; }
+function escapeAttribute(value) { return escapeHtmlText(value).replace(/"/g, "&quot;"); }
 
 function updateDeviceMode() {
     const isCreator = document.body.dataset.creator === "true";

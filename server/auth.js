@@ -6,6 +6,7 @@ import QRCode from "qrcode";
 import { createUser, findUserById, findUserByUsername, getPool } from "./database.js";
 import { sendDeviceVerificationCode } from "./email.js";
 import { releaseLocksForUser } from "./collaboration.js";
+import { resolveGroupCompany } from "./group-context.js";
 
 const COOKIE_NAME = "depann_home_session";
 const USERNAME_PATTERN = /^[a-z0-9._-]{3,32}$/;
@@ -471,11 +472,18 @@ export async function authenticateRequest(request, response, next) {
         const user = await findUserById(session.sub);
         const device = user && await findAuthDevice(user.id, session.deviceId);
         if (!user?.is_active || !user.account_is_active || device?.status !== "approved") throw new Error("Session inactive");
+        const groupCompany = user.role === "admin" ? await resolveGroupCompany(user.id, session.activeCompanyId) : null;
         request.user = {
             sub: String(user.id),
             username: user.username,
-            role: user.role,
-            accountOwnerId: String(user.account_owner_id || user.id),
+            role: groupCompany ? "admin" : user.role,
+            principalRole: groupCompany ? "group_admin" : user.role,
+            accountOwnerId: String(groupCompany?.companyId || user.account_owner_id || user.id),
+            activeCompanyId: String(groupCompany?.companyId || user.account_owner_id || user.id),
+            groupId: groupCompany ? String(groupCompany.groupId) : "",
+            groupName: groupCompany?.groupName || "",
+            activeCompanyName: groupCompany?.companyName || "",
+            isGroupAdministrator: Boolean(groupCompany),
             fullName: user.full_name || "",
             phone: user.phone || "",
             email: user.email || "",
@@ -504,6 +512,14 @@ export function getAccountOwnerId(request) {
     return String(request.user?.accountOwnerId || request.user?.sub || "");
 }
 
+export function isCompanyAdministrator(request) {
+    return request.user?.role === "admin" && (Boolean(request.user?.isGroupAdministrator) || String(request.user?.accountOwnerId || request.user?.sub) === String(request.user?.sub));
+}
+
+export async function refreshSessionForActiveCompany(response, user, deviceId, activeCompanyId) {
+    setSessionCookie(response, user, deviceId, activeCompanyId);
+}
+
 export function requireCreator(request, response, next) {
     if (!request.user?.isCreator) return response.status(403).json({ message: "Accès réservé au Créateur de l’application." });
     return next();
@@ -514,7 +530,7 @@ export function isCreatorUsername(username) {
 }
 
 function requireAccountAdministrator(request, response, next) {
-    if (!request.user || request.user.role !== "admin" || String(request.user.accountOwnerId || request.user.sub) !== String(request.user.sub)) {
+    if (!isCompanyAdministrator(request)) {
         return response.status(403).json({ message: "Accès réservé à l’administrateur du compte." });
     }
     return next();
@@ -629,8 +645,9 @@ async function completeLogin(user, device, response) {
         authDevice = rows[0];
     }
     if (authDevice.status === "approved") {
-        setSessionCookie(response, user, authDevice.id);
-        return response.json({ user: publicUser(user) });
+        const groupCompany = user.role === "admin" ? await resolveGroupCompany(user.id, null) : null;
+        setSessionCookie(response, user, authDevice.id, groupCompany?.companyId);
+        return response.json({ user: publicUser({ ...user, accountOwnerId: groupCompany?.companyId || user.account_owner_id, activeCompanyId: groupCompany?.companyId || user.account_owner_id, groupId: groupCompany?.groupId, groupName: groupCompany?.groupName, activeCompanyName: groupCompany?.companyName, isGroupAdministrator: Boolean(groupCompany), role: user.role, principalRole: groupCompany ? "group_admin" : user.role }) });
     }
     if (authDevice.status === "code_pending") {
         return response.status(403).json({ codeRequired: true, deviceId: authDevice.id, message: "Saisissez le code envoyé à votre e-mail professionnel." });
@@ -718,10 +735,10 @@ function getCreatorTotpEncryptionKey() {
     return crypto.createHash("sha256").update(`${getSessionSecret()}:creator-totp:v1`).digest();
 }
 
-function setSessionCookie(response, user, deviceId) {
+function setSessionCookie(response, user, deviceId, activeCompanyId = "") {
     const duration = user.role === "technician" ? TECHNICIAN_SESSION_DURATION : ADMIN_SESSION_DURATION;
     const token = jwt.sign(
-        { sub: String(user.id || user.user_id), username: user.username, role: user.role, accountOwnerId: String(user.account_owner_id || user.id || user.user_id), fullName: user.full_name || "", phone: user.phone || "", deviceId },
+        { sub: String(user.id || user.user_id), username: user.username, role: user.role, accountOwnerId: String(user.account_owner_id || user.id || user.user_id), activeCompanyId: String(activeCompanyId || ""), fullName: user.full_name || "", phone: user.phone || "", deviceId },
         getSessionSecret(),
         { expiresIn: Math.floor(duration / 1000) }
     );
@@ -747,7 +764,13 @@ function publicUser(user) {
         id: String(id),
         username: user.username,
         role: user.role,
-        accountOwnerId: String(user.account_owner_id || user.accountOwnerId || id),
+        principalRole: user.principalRole || user.role,
+        accountOwnerId: String(user.accountOwnerId || user.account_owner_id || id),
+        activeCompanyId: String(user.activeCompanyId || user.accountOwnerId || user.account_owner_id || id),
+        groupId: user.groupId ? String(user.groupId) : "",
+        groupName: user.groupName || "",
+        activeCompanyName: user.activeCompanyName || "",
+        isGroupAdministrator: Boolean(user.isGroupAdministrator),
         fullName: user.full_name || user.fullName || "",
         phone: user.phone || "",
         email: user.email || "",

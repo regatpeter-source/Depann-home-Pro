@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import ExcelJS from "exceljs";
 import { getPool } from "./database.js";
-import { getAccountOwnerId } from "./auth.js";
+import { getAccountOwnerId, isCompanyAdministrator } from "./auth.js";
 
 const ACTIONS = new Set(["new_invoice", "new_quote", "quote_to_invoice", "payment", "overdue", "partial_credit", "total_credit", "pdp_accepted", "pdp_rejected", "pdp_processing", "pdp_format_error", "pdp_recipient_not_found", "pdp_distributed"]);
 const PDP_OUTCOMES = new Set(["received", "accepted", "processing", "rejected", "format_error", "recipient_not_found", "distributed"]);
@@ -225,7 +225,7 @@ function log(payload, type, label, when = new Date()) { payload.timeline.unshift
 async function loadSession(ownerId) { const { rows } = await getPool().query("SELECT payload FROM depannhome_accounting_sandbox_sessions WHERE owner_id=$1", [ownerId]); return rows[0]?.payload || null; }
 async function requiredPayload(request) { const payload = await loadSession(getAccountOwnerId(request)); if (!payload) throw clientError(404, "Le laboratoire comptable n’est pas activé."); return payload; }
 async function saveSession(ownerId, userId, payload) { await getPool().query(`INSERT INTO depannhome_accounting_sandbox_sessions(owner_id,payload,created_by) VALUES($1,$2::jsonb,$3) ON CONFLICT(owner_id) DO UPDATE SET payload=EXCLUDED.payload, updated_at=NOW()`, [ownerId, JSON.stringify(payload), userId || null]); }
-function requireSandboxAdministration(request, response, next) { if (request.user?.role === "admin" && String(request.user.accountOwnerId || request.user.sub) === String(request.user.sub)) return next(); return response.status(403).json({ message: "Le laboratoire comptable est réservé à l’administrateur principal." }); }
+function requireSandboxAdministration(request, response, next) { if (isCompanyAdministrator(request)) return next(); return response.status(403).json({ message: "Le laboratoire comptable est réservé à l’administrateur principal." }); }
 function requireSandboxEnabled(_request, response, next) { if (isAccountingSandboxEnabled()) return next(); return response.status(404).json({ message: "Laboratoire comptable indisponible." }); }
 function textDownload(response, content, filename, contentType) { response.set({ "Content-Type": contentType, "Content-Disposition": `attachment; filename=\"${filename}\"`, "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" }); response.send(content); }
 function statusLabel(value) { return ({ draft: "Brouillon", validated: "Validée", sent: "Envoyée", paid: "Payée", partial: "Partiellement réglée", overdue: "Impayée", cancelled: "Annulée", accepted: "Accepté", rejected: "Refusé", pending: "En attente" })[value] || value; }

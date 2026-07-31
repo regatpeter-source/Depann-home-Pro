@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { getPool } from "./database.js";
-import { getAccountOwnerId } from "./auth.js";
+import { getAccountOwnerId, isCompanyAdministrator } from "./auth.js";
 
 const ACTIONS = new Set([
     "new_mission", "accept", "reject", "reschedule", "reassign", "partner_message", "internal_message",
@@ -290,7 +290,7 @@ function connectionScenario(payload) {
 }
 
 function requireSandboxAdministration(request, response, next) {
-    if (request.user?.role === "admin" && String(request.user.accountOwnerId || request.user.sub) === String(request.user.sub)) return next();
+    if (isCompanyAdministrator(request)) return next();
     return response.status(403).json({ message: "Le mode Sandbox est réservé à l’administrateur principal du compte." });
 }
 

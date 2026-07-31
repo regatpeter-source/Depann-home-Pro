@@ -33,6 +33,7 @@ import { initializePartnerConnections, registerPartnerConnectionRoutes } from ".
 import { initializePartnerRequests, registerPartnerRequestRoutes } from "./server/partner-requests.js";
 import { initializePartnerSandbox, registerPartnerSandboxRoutes } from "./server/partner-sandbox.js";
 import { initializeAccountingSandbox, registerAccountingSandboxRoutes } from "./server/accounting-sandbox.js";
+import { initializeGroups, registerGroupRoutes } from "./server/groups.js";
 import { registerSupportRoutes } from "./server/support.js";
 import {
 	libraryUploadErrorHandler,
@@ -100,6 +101,7 @@ registerPartnerDialogueRoutes(app, requireAuthentication);
 registerPartnerConnectionRoutes(app, requireAuthentication);
 registerPartnerSandboxRoutes(app, requireAuthentication);
 registerAccountingSandboxRoutes(app, requireAuthentication);
+registerGroupRoutes(app, requireAuthentication);
 registerBillingRoutes(app, requireAuthentication);
 registerPurchaseRoutes(app, requireAuthentication);
 registerMessageRoutes(app, requireAuthentication);
@@ -144,6 +146,7 @@ app.use((error, request, response, next) => {
 async function start() {
 	validateAuthenticationConfiguration();
 	await initializeDatabase();
+	await initializeGroups();
 	await initializeBilling();
 	await initializeAccounting();
 	await initializeConnectors();

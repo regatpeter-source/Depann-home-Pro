@@ -43,6 +43,7 @@ export const ROUTES = {
     billing: "billing",
     accounting: "accounting",
     accountingSandbox: "accounting-sandbox",
+    groups: "groups",
     partnerMissions: "partner-missions",
     partnerSandbox: "partner-sandbox",
     purchases: "purchases",

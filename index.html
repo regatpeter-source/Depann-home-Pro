@@ -18,7 +18,7 @@
 
     <link rel="icon" href="assets/logo.png.png" type="image/png">
 
-    <link rel="stylesheet" href="css/style.css?v=151">
+    <link rel="stylesheet" href="css/style.css?v=153">
 
 </head>
 
@@ -45,6 +45,7 @@
 
             <div class="user-session" id="userSession" hidden>
                 <span id="userEmail"></span>
+                <label id="groupCompanySelector" class="group-company-selector" hidden>Entreprise <select aria-label="Entreprise active"></select></label>
                 <span class="collaboration-sync" data-collaboration-sync="syncing" title="Connexion en temps réel" aria-label="Connexion en temps réel">●</span>
                 <button type="button" id="notificationsBtn" class="refresh-button" aria-label="Notifications">Notifications</button>
                 <button type="button" id="refreshBtn" class="refresh-button" title="Actualiser les données partagées" aria-label="Actualiser les données partagées">Actualiser</button>
@@ -90,6 +91,10 @@
 
               <button id="accountingBtn">
                   Comptabilité &amp; facturation électronique
+              </button>
+
+              <button id="groupsBtn">
+                  Groupe &amp; entreprises
               </button>
 
               <button id="partnerMissionsBtn">
@@ -168,6 +173,10 @@
             <span>Comptabilité</span>
         </button>
 
+        <button class="nav-button" data-nav="groups">
+            <span>Groupe</span>
+        </button>
+
         <button class="nav-button" data-nav="partner-missions">
             <span>Missions</span>
         </button>
@@ -200,7 +209,7 @@
 
     </div>
 
-    <script type="module" src="js/app.js?v=195"></script>
+    <script type="module" src="js/app.js?v=197"></script>
 
 </body>
 
