@@ -26,6 +26,21 @@ CREATE TABLE IF NOT EXISTS depannhome_users (
 
 CREATE INDEX IF NOT EXISTS depannhome_users_username_lookup_idx ON depannhome_users (username);
 
+-- Gestion des accès : les journaux restent conservés après suppression d’un
+-- membre, grâce aux références d’auteur et de cible annulables.
+CREATE TABLE IF NOT EXISTS depannhome_member_audit (
+    id BIGSERIAL PRIMARY KEY,
+    owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    actor_id BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+    target_user_id BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+    target_username VARCHAR(32) NOT NULL DEFAULT '',
+    target_full_name VARCHAR(100) NOT NULL DEFAULT '',
+    action VARCHAR(60) NOT NULL,
+    details JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS depannhome_member_audit_owner_created_idx ON depannhome_member_audit (owner_id, created_at DESC);
+
 UPDATE depannhome_users SET account_owner_id = id WHERE account_owner_id IS NULL;
 UPDATE depannhome_users SET role = 'admin' WHERE role = 'user' AND account_owner_id = id;
 

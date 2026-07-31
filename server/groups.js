@@ -27,7 +27,7 @@ export function registerGroupRoutes(app, requireAuthentication) {
         res.json({ entries: rows });
     }));
     app.post("/api/groups/activate", asyncHandler(async (req, res) => {
-        if (!isCompanyAdministrator(req) || req.user?.isGroupAdministrator) return res.status(403).json({ message: "Seul l’administrateur principal d’une entreprise peut activer le mode Groupe." });
+        if (!isCompanyAdministrator(req) || req.user?.isGroupAdministrator) return res.status(403).json({ message: "Seul un Administrateur (PC) de l’entreprise peut activer le mode Groupe." });
         const name = clean(req.body?.name, 160);
         if (!name) return res.status(400).json({ message: "Le nom du groupe est obligatoire." });
         const db = getPool(); const companyId = getAccountOwnerId(req);

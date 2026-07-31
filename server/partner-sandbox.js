@@ -291,7 +291,7 @@ function connectionScenario(payload) {
 
 function requireSandboxAdministration(request, response, next) {
     if (isCompanyAdministrator(request)) return next();
-    return response.status(403).json({ message: "Le mode Sandbox est réservé à l’administrateur principal du compte." });
+    return response.status(403).json({ message: "Le mode Sandbox est réservé à un Administrateur (PC) du compte." });
 }
 
 function requireSandboxEnabled(_request, response, next) {

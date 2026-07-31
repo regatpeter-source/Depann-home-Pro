@@ -246,7 +246,7 @@ function renderAccountForm() {
         button.disabled = false;
         if (!result.ok) return showFeedback(result.message || "Création impossible.", true);
         selectedAccountId = result.data.id;
-        showFeedback("Entreprise et administrateur principal créés.");
+        showFeedback("Entreprise et Administrateur (PC) créés.");
         await loadAccounts(selectedAccountId);
     });
 }

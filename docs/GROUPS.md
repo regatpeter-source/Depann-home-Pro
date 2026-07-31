@@ -12,7 +12,7 @@ Les comptes administrateurs, techniciens, comptables et utilisateurs qui ne figu
 
 ## Administrateur Groupe
 
-L’activation ajoute l’administrateur principal à `depannhome_group_administrators`. Son rôle applicatif reste `admin` : ce choix préserve les règles existantes de validation d’appareils, de postes PC et de gestion d’équipe. Le privilège de groupe est une capacité distincte, déterminée côté serveur par la table d’appartenance.
+L’activation ajoute l’Administrateur (PC) qui active le groupe à `depannhome_group_administrators`. Son rôle applicatif reste `admin` : ce choix préserve les règles existantes de validation d’appareils, de postes PC et de gestion d’équipe. Le privilège de groupe est une capacité distincte, déterminée côté serveur par la table d’appartenance.
 
 Un Administrateur Groupe peut :
 

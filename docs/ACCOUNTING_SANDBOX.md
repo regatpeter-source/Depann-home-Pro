@@ -2,7 +2,7 @@
 
 ## Objet
 
-Le **laboratoire Comptabilité & Facturation électronique** est exclusivement destiné au développement, à la recette et aux démonstrations. Il est réservé à l’administrateur principal et activé explicitement avec :
+Le **laboratoire Comptabilité & Facturation électronique** est exclusivement destiné au développement, à la recette et aux démonstrations. Il est réservé à un Administrateur (PC) et activé explicitement avec :
 
 ```dotenv
 NODE_ENV=development

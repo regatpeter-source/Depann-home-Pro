@@ -215,7 +215,7 @@ export function registerCreatorRoutes(app, requireCreator) {
         const accountId = positiveId(request.params.accountId);
         const memberId = positiveId(request.params.memberId);
         if (!accountId || !memberId) return response.status(400).json({ message: "Accès invalide." });
-        if (accountId === memberId) return response.status(400).json({ message: "Supprimez l’entreprise entière pour supprimer son administrateur principal." });
+        if (accountId === memberId) return response.status(400).json({ message: "Supprimez l’entreprise entière pour retirer son compte d’ancrage technique." });
         const owner = await findAccountOwner(getPool(), accountId);
         if (!canManageAccount(owner, request)) return response.status(404).json({ message: "Compte entreprise introuvable." });
         const result = await getPool().query("DELETE FROM depannhome_users WHERE id = $1 AND account_owner_id = $2", [memberId, accountId]);

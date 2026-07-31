@@ -17,6 +17,9 @@ const DEVICE_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const CREATOR_TOTP_CHALLENGE_DURATION_SECONDS = 5 * 60;
 const MOBILE_ADMIN_ROLE = "mobile_admin";
+const STANDARD_PC_ROLE = "pc_standard";
+const TEAM_LEAD_ROLE = "team_lead";
+const MEMBER_ROLES = new Set(["admin", STANDARD_PC_ROLE, MOBILE_ADMIN_ROLE, TEAM_LEAD_ROLE, "technician", "accountant"]);
 
 export function registerAuthRoutes(app) {
     app.get("/api/auth/session", (request, response) => {
@@ -207,8 +210,21 @@ export function registerAuthRoutes(app) {
         response.json({ members: rows });
     }));
 
+    app.get("/api/auth/members/audit", requireAccountAdministrator, asyncHandler(async (request, response) => {
+        const { rows } = await getPool().query(`
+            SELECT audit.id, audit.action, audit.target_username AS "targetUsername", audit.target_full_name AS "targetFullName",
+                audit.details, audit.created_at AS "createdAt", COALESCE(actor.full_name, actor.username, 'Compte supprimé') AS "actorName"
+            FROM depannhome_member_audit audit
+            LEFT JOIN depannhome_users actor ON actor.id = audit.actor_id
+            WHERE audit.owner_id = $1
+            ORDER BY audit.created_at DESC
+            LIMIT 100
+        `, [getAccountOwnerId(request)]);
+        response.json({ entries: rows });
+    }));
+
     app.post("/api/auth/members", requireAccountAdministrator, asyncHandler(async (request, response) => {
-        const role = ["admin", MOBILE_ADMIN_ROLE, "technician", "accountant"].includes(request.body?.role) ? request.body.role : "";
+        const role = MEMBER_ROLES.has(request.body?.role) ? request.body.role : "";
         const username = normalizeUsername(request.body?.username);
         const password = String(request.body?.password || "");
         const fullName = cleanText(request.body?.fullName, 100);
@@ -218,14 +234,14 @@ export function registerAuthRoutes(app) {
         const validationError = validateCredentials(username, password)
             || (!role ? "Choisissez le type de poste." : "")
             || (!fullName ? "Le nom de l’utilisateur est obligatoire." : "")
-            || (role === "technician" && !phone ? "Le téléphone du technicien est obligatoire." : "")
+            || (["technician", TEAM_LEAD_ROLE].includes(role) && !phone ? "Le téléphone du technicien est obligatoire." : "")
             || (role === MOBILE_ADMIN_ROLE && !phone ? "Le téléphone de l’Administrateur Mobile est obligatoire." : "")
-            || (["technician", MOBILE_ADMIN_ROLE].includes(role) && !EMAIL_PATTERN.test(email) ? "L’e-mail professionnel est obligatoire pour l’activation mobile." : "");
+            || (["technician", TEAM_LEAD_ROLE, MOBILE_ADMIN_ROLE].includes(role) && !EMAIL_PATTERN.test(email) ? "L’e-mail professionnel est obligatoire pour l’activation." : "");
         if (validationError) return response.status(400).json({ message: validationError });
 
-        if (role === "technician") {
+        if (["technician", TEAM_LEAD_ROLE].includes(role)) {
             const seats = await getPool().query(`
-                SELECT owner.max_technicians, COUNT(member.id) FILTER (WHERE member.role = 'technician' AND member.is_active)::int AS active_technicians
+            SELECT owner.max_technicians, COUNT(member.id) FILTER (WHERE member.role IN ('technician', 'team_lead') AND member.is_active)::int AS active_technicians
                 FROM depannhome_users owner
                 LEFT JOIN depannhome_users member ON member.account_owner_id = owner.id
                 WHERE owner.id = $1 GROUP BY owner.id
@@ -235,7 +251,8 @@ export function registerAuthRoutes(app) {
             }
         }
         try {
-            const member = await createUser({ username, passwordHash: await bcrypt.hash(password, 12), role, accountOwnerId: getAccountOwnerId(request), fullName, phone, email, department: role === "technician" ? department : "" });
+            const member = await createUser({ username, passwordHash: await bcrypt.hash(password, 12), role, accountOwnerId: getAccountOwnerId(request), fullName, phone, email, department: ["technician", TEAM_LEAD_ROLE].includes(role) ? department : "" });
+            await recordMemberAudit(getAccountOwnerId(request), request.user.sub, member, role === "admin" ? "administrator_created" : "member_created", { role });
             response.status(201).json({ member: publicUser(member) });
         } catch (error) {
             if (error.code === "23505") return response.status(409).json({ message: "Ce nom d’utilisateur est déjà utilisé." });
@@ -247,7 +264,7 @@ export function registerAuthRoutes(app) {
         const memberId = positiveId(request.params.memberId);
         if (!memberId) return response.status(400).json({ message: "Accès invalide." });
         const { rows } = await getPool().query(`
-            SELECT id, role, department, is_active AS "isActive", can_create_billing AS "canCreateBilling" FROM depannhome_users
+            SELECT id, username, full_name AS "fullName", role, department, is_active AS "isActive", can_create_billing AS "canCreateBilling" FROM depannhome_users
             WHERE id = $1 AND account_owner_id = $2 AND id <> $2
         `, [memberId, getAccountOwnerId(request)]);
         const member = rows[0];
@@ -256,12 +273,15 @@ export function registerAuthRoutes(app) {
         const canCreateBilling = member.role === "technician" && typeof request.body?.canCreateBilling === "boolean"
             ? request.body.canCreateBilling
             : member.canCreateBilling;
-        const department = member.role === "technician" && typeof request.body?.department === "string"
+        const department = ["technician", TEAM_LEAD_ROLE].includes(member.role) && typeof request.body?.department === "string"
             ? cleanText(request.body.department, 80)
             : member.department;
-        if (member.role === "technician" && isActive && !member.isActive) {
+        if (member.role === "admin" && member.isActive && !isActive) {
+            await ensureActiveAdministratorRemains(getAccountOwnerId(request), memberId);
+        }
+        if (["technician", TEAM_LEAD_ROLE].includes(member.role) && isActive && !member.isActive) {
             const seats = await getPool().query(`
-                SELECT owner.max_technicians, COUNT(member.id) FILTER (WHERE member.role = 'technician' AND member.is_active AND member.id <> $2)::int AS active_technicians
+            SELECT owner.max_technicians, COUNT(member.id) FILTER (WHERE member.role IN ('technician', 'team_lead') AND member.is_active AND member.id <> $2)::int AS active_technicians
                 FROM depannhome_users owner
                 LEFT JOIN depannhome_users member ON member.account_owner_id = owner.id
                 WHERE owner.id = $1 GROUP BY owner.id
@@ -271,6 +291,30 @@ export function registerAuthRoutes(app) {
             }
         }
         await getPool().query("UPDATE depannhome_users SET is_active = $3, can_create_billing = $4, department = $5, updated_at = NOW() WHERE id = $1 AND account_owner_id = $2", [memberId, getAccountOwnerId(request), isActive, canCreateBilling, department]);
+        await recordMemberAudit(getAccountOwnerId(request), request.user.sub, member, member.role === "admin" ? (isActive ? "administrator_activated" : "administrator_deactivated") : "member_updated", { isActive, canCreateBilling, department });
+        response.status(204).end();
+    }));
+
+    app.patch("/api/auth/members/:memberId/role", requireAccountAdministrator, asyncHandler(async (request, response) => {
+        const memberId = positiveId(request.params.memberId);
+        const nextRole = MEMBER_ROLES.has(request.body?.role) ? request.body.role : "";
+        if (!memberId || !nextRole) return response.status(400).json({ message: "Rôle invalide." });
+        const { rows } = await getPool().query(`
+            SELECT id, username, full_name AS "fullName", role, is_active AS "isActive"
+            FROM depannhome_users WHERE id = $1 AND account_owner_id = $2 AND id <> $2
+        `, [memberId, getAccountOwnerId(request)]);
+        const member = rows[0];
+        if (!member) return response.status(404).json({ message: "Accès introuvable." });
+        if (member.role === nextRole) return response.status(204).end();
+        if (member.role === "admin" && member.isActive && nextRole !== "admin") {
+            await ensureActiveAdministratorRemains(getAccountOwnerId(request), memberId);
+        }
+        await getPool().query(`
+            UPDATE depannhome_users
+            SET role = $3, department = CASE WHEN $3 IN ('technician', 'team_lead') THEN department ELSE '' END, updated_at = NOW()
+            WHERE id = $1 AND account_owner_id = $2
+        `, [memberId, getAccountOwnerId(request), nextRole]);
+        await recordMemberAudit(getAccountOwnerId(request), request.user.sub, member, "role_changed", { previousRole: member.role, nextRole });
         response.status(204).end();
     }));
 
@@ -283,16 +327,23 @@ export function registerAuthRoutes(app) {
             UPDATE depannhome_users
             SET password_hash = $3, updated_at = NOW()
             WHERE id = $1 AND account_owner_id = $2
+            RETURNING id, username, full_name AS "fullName", role
         `, [memberId, getAccountOwnerId(request), await bcrypt.hash(password, 12)]);
         if (!result.rowCount) return response.status(404).json({ message: "Accès introuvable." });
+        await recordMemberAudit(getAccountOwnerId(request), request.user.sub, result.rows[0], result.rows[0].role === "admin" ? "administrator_modified" : "member_password_reset", { field: "password" });
         response.status(204).end();
     }));
 
     app.delete("/api/auth/members/:memberId", requireAccountAdministrator, asyncHandler(async (request, response) => {
         const memberId = positiveId(request.params.memberId);
         if (!memberId) return response.status(400).json({ message: "Accès invalide." });
+        const { rows } = await getPool().query("SELECT id, username, full_name AS \"fullName\", role, is_active AS \"isActive\" FROM depannhome_users WHERE id = $1 AND account_owner_id = $2 AND id <> $2", [memberId, getAccountOwnerId(request)]);
+        const member = rows[0];
+        if (!member) return response.status(404).json({ message: "Accès introuvable." });
+        if (member.role === "admin" && member.isActive) await ensureActiveAdministratorRemains(getAccountOwnerId(request), memberId);
         const result = await getPool().query("DELETE FROM depannhome_users WHERE id = $1 AND account_owner_id = $2 AND id <> $2", [memberId, getAccountOwnerId(request)]);
         if (!result.rowCount) return response.status(404).json({ message: "Accès introuvable." });
+        await recordMemberAudit(getAccountOwnerId(request), request.user.sub, member, member.role === "admin" ? "administrator_deleted" : "member_deleted", { role: member.role });
         response.status(204).end();
     }));
 
@@ -383,7 +434,7 @@ export function registerAuthRoutes(app) {
                 SELECT owner.max_pc_users AS "maxPcUsers",
                     COUNT(device.id) FILTER (WHERE device.status = 'approved' AND device.device_type = 'desktop')::int AS "activePcUsers"
                 FROM depannhome_users owner
-                LEFT JOIN depannhome_users account ON account.account_owner_id = owner.id AND account.role = 'admin'
+                LEFT JOIN depannhome_users account ON account.account_owner_id = owner.id AND account.role IN ('admin', 'pc_standard')
                 LEFT JOIN depannhome_auth_devices device ON device.user_id = account.id
                 WHERE owner.id = $1 GROUP BY owner.id
             `, [getAccountOwnerId(request)])
@@ -401,7 +452,7 @@ export function registerAuthRoutes(app) {
         `, [deviceId, getAccountOwnerId(request)]);
         const device = rows[0];
         if (!device) return response.status(404).json({ message: "Appareil introuvable." });
-        if (device.role === "admin") {
+        if (["admin", STANDARD_PC_ROLE].includes(device.role)) {
             if (device.deviceType === "mobile") {
                 await getPool().query("UPDATE depannhome_auth_devices SET status = 'approved', approved_at = NOW(), approved_by = $2 WHERE id = $1", [deviceId, request.user.sub]);
                 return response.status(204).end();
@@ -409,7 +460,7 @@ export function registerAuthRoutes(app) {
             const seats = await getPool().query(`
                 SELECT owner.max_pc_users, COUNT(auth_device.id) FILTER (WHERE auth_device.status = 'approved' AND auth_device.device_type = 'desktop')::int AS approved_devices
                 FROM depannhome_users owner
-                LEFT JOIN depannhome_users account ON account.account_owner_id = owner.id AND account.role = 'admin'
+                LEFT JOIN depannhome_users account ON account.account_owner_id = owner.id AND account.role IN ('admin', 'pc_standard')
                 LEFT JOIN depannhome_auth_devices auth_device ON auth_device.user_id = account.id
                 WHERE owner.id = $1 GROUP BY owner.id
             `, [getAccountOwnerId(request)]);
@@ -513,7 +564,7 @@ export function getAccountOwnerId(request) {
 }
 
 export function isCompanyAdministrator(request) {
-    return request.user?.role === "admin" && (Boolean(request.user?.isGroupAdministrator) || String(request.user?.accountOwnerId || request.user?.sub) === String(request.user?.sub));
+    return request.user?.role === "admin";
 }
 
 export async function refreshSessionForActiveCompany(response, user, deviceId, activeCompanyId) {
@@ -534,6 +585,24 @@ function requireAccountAdministrator(request, response, next) {
         return response.status(403).json({ message: "Accès réservé à l’administrateur du compte." });
     }
     return next();
+}
+
+async function ensureActiveAdministratorRemains(ownerId, targetId) {
+    const { rows } = await getPool().query(`
+        SELECT COUNT(*) FILTER (WHERE role = 'admin' AND is_active AND id <> $2)::int AS "remainingAdministrators"
+        FROM depannhome_users
+        WHERE account_owner_id = $1
+    `, [ownerId, targetId]);
+    if (!rows[0]?.remainingAdministrators) {
+        throw clientError(409, "Cette opération est refusée : chaque entreprise doit conserver au moins un Administrateur (PC) actif.");
+    }
+}
+
+async function recordMemberAudit(ownerId, actorId, member, action, details = {}) {
+    await getPool().query(`
+        INSERT INTO depannhome_member_audit (owner_id, actor_id, target_user_id, target_username, target_full_name, action, details)
+        VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
+    `, [ownerId, actorId || null, member?.id || null, cleanText(member?.username, 32), cleanText(member?.fullName || member?.full_name, 100), action, JSON.stringify(details)]);
 }
 
 function requireTechnicianDirectoryAccess(request, response, next) {
@@ -843,6 +912,12 @@ function positiveId(value) {
     return Number.isSafeInteger(id) && id > 0 ? id : 0;
 }
 
+function clientError(status, message) {
+    const error = new Error(message);
+    error.status = status;
+    return error;
+}
+
 function validateCredentials(username, password) {
     if (!USERNAME_PATTERN.test(username || "")) {
         return "Le nom d’utilisateur doit contenir de 3 à 32 caractères : lettres minuscules, chiffres, point, tiret ou souligné.";
@@ -875,5 +950,5 @@ function getSessionSecret() {
 }
 
 function asyncHandler(handler) {
-    return (request, response, next) => Promise.resolve(handler(request, response, next)).catch(next);
+    return (request, response, next) => Promise.resolve(handler(request, response, next)).catch(error => error.status ? response.status(error.status).json({ message: error.message }) : next(error));
 }

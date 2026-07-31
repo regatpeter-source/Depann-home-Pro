@@ -161,6 +161,20 @@ export async function initializeDatabase() {
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
     `);
+    await database.query(`
+        CREATE TABLE IF NOT EXISTS depannhome_member_audit (
+            id BIGSERIAL PRIMARY KEY,
+            owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+            actor_id BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+            target_user_id BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+            target_username VARCHAR(32) NOT NULL DEFAULT '',
+            target_full_name VARCHAR(100) NOT NULL DEFAULT '',
+            action VARCHAR(60) NOT NULL,
+            details JSONB NOT NULL DEFAULT '{}'::jsonb,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+    `);
+    await database.query("CREATE INDEX IF NOT EXISTS depannhome_member_audit_owner_created_idx ON depannhome_member_audit (owner_id, created_at DESC)");
 }
 
 export async function findUserByUsername(username) {
