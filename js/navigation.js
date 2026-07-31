@@ -2,7 +2,8 @@ import { ROUTES, STORAGE_KEYS, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } fr
 import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=142";
 import { renderCreatorConsole } from "./creator.js?v=118";
 import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=142";
-import { renderAccounting } from "./accounting.js?v=1";
+import { renderAccounting } from "./accounting.js?v=2";
+import { renderAccountingSandbox } from "./accounting-sandbox.js?v=1";
 import { renderPartnerMissions } from "./partner-missions.js?v=2";
 import { renderPartnerSandbox } from "./partner-sandbox.js?v=3";
 import { renderPartnerConnections } from "./partner-connections.js?v=3";
@@ -101,6 +102,8 @@ export async function refreshApplication() {
         renderPartnerMissions();
     } else if (activeRoute === ROUTES.partnerSandbox && document.body.dataset.role === "admin") {
         renderPartnerSandbox();
+    } else if (activeRoute === ROUTES.accountingSandbox && document.body.dataset.role === "admin") {
+        renderAccountingSandbox();
     } else if (activeRoute === ROUTES.purchases) {
         renderPurchases();
     } else if (activeRoute === ROUTES.settings) {
@@ -174,6 +177,7 @@ function bindEvents() {
                 else renderBilling();
             }
             if (nav === ROUTES.accounting && document.body.dataset.role === "admin") renderAccounting();
+            if (nav === ROUTES.accountingSandbox && document.body.dataset.role === "admin") renderAccountingSandbox();
             if (nav === ROUTES.partnerMissions) renderPartnerMissions();
             if (nav === ROUTES.partnerSandbox && document.body.dataset.role === "admin") renderPartnerSandbox();
             if (nav === ROUTES.purchases) renderPurchases();

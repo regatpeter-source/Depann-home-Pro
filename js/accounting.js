@@ -1,6 +1,7 @@
 import { clearSearch, getContainer, setPage } from "./ui.js?v=44";
 import { ROUTES } from "./config.js?v=116";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
+import { renderAccountingSandbox } from "./accounting-sandbox.js?v=1";
 
 const SECTIONS = [
     ["dashboard", "Tableau de bord"], ["quotes", "Devis"], ["invoices", "Factures"], ["export", "Export comptable"], ["electronic", "Facturation électronique"], ["aids", "Aides financières"], ["settings", "Paramètres"]
@@ -19,8 +20,9 @@ export async function renderAccounting(section = activeSection) {
     if (!result.ok) { container.innerHTML = `<section class="client-panel"><p class="auth-message error">${escapeHtml(result.message || "Impossible de charger le module comptable.")}</p></section>`; return; }
     accounting = result.data;
     const shell = container.querySelector(".accounting-shell");
-    shell.innerHTML = `<header class="accounting-heading"><div><p class="eyebrow">Gestion financière</p><h2>Comptabilité & Facturation électronique</h2><p class="muted">Données isolées pour votre entreprise · exports, aides et transmissions PDP.</p></div></header><nav class="accounting-tabs" aria-label="Sections comptables">${SECTIONS.map(([id, label]) => `<button type="button" class="secondary-button${id === activeSection ? " active" : ""}" data-accounting-section="${id}">${label}</button>`).join("")}</nav><section id="accountingContent"></section>`;
+    shell.innerHTML = `<header class="accounting-heading"><div><p class="eyebrow">Gestion financière</p><h2>Comptabilité & Facturation électronique</h2><p class="muted">Données isolées pour votre entreprise · exports, aides et transmissions PDP.</p></div><button type="button" class="secondary-button accounting-sandbox-launch" id="openAccountingSandbox">Ouvrir la Sandbox comptable</button></header><nav class="accounting-tabs" aria-label="Sections comptables">${SECTIONS.map(([id, label]) => `<button type="button" class="secondary-button${id === activeSection ? " active" : ""}" data-accounting-section="${id}">${label}</button>`).join("")}</nav><section id="accountingContent"></section>`;
     shell.querySelectorAll("[data-accounting-section]").forEach(button => button.addEventListener("click", () => renderAccounting(button.dataset.accountingSection)));
+    shell.querySelector("#openAccountingSandbox").addEventListener("click", () => renderAccountingSandbox());
     const content = shell.querySelector("#accountingContent");
     ({ dashboard: renderDashboard, quotes: () => renderDocuments(content, "quote"), invoices: () => renderDocuments(content, "invoice"), export: renderExports, electronic: renderElectronic, aids: renderAids, settings: renderSettings })[activeSection](content);
 }

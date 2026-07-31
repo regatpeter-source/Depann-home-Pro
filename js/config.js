@@ -42,6 +42,7 @@ export const ROUTES = {
     clients: "clients",
     billing: "billing",
     accounting: "accounting",
+    accountingSandbox: "accounting-sandbox",
     partnerMissions: "partner-missions",
     partnerSandbox: "partner-sandbox",
     purchases: "purchases",
