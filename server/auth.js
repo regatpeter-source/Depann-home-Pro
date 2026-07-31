@@ -16,6 +16,8 @@ const TECHNICIAN_SESSION_DURATION = 30 * 24 * 60 * 60 * 1000;
 const DEVICE_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const CREATOR_TOTP_CHALLENGE_DURATION_SECONDS = 5 * 60;
+const COMPANY_TOTP_CHALLENGE_DURATION_SECONDS = 5 * 60;
+const COMPANY_TOTP_MAX_ATTEMPTS = 5;
 const MOBILE_ADMIN_ROLE = "mobile_admin";
 const STANDARD_PC_ROLE = "pc_standard";
 const TEAM_LEAD_ROLE = "team_lead";
@@ -64,6 +66,17 @@ export function registerAuthRoutes(app) {
                 message: "Saisissez le code affiché dans Google Authenticator."
             });
         }
+        if (user.role === "admin" && !isCreatorUsername(user.username) && await isCompanyTotpEnabled(user.account_owner_id)) {
+            const purpose = await hasCompanyTotpAuthenticator(user.id) ? "login" : "enrollment";
+            return response.status(401).json({
+                companyTotpRequired: purpose === "login",
+                companyTotpEnrollmentRequired: purpose === "enrollment",
+                challenge: await createCompanyTotpChallenge(user, device, purpose),
+                message: purpose === "login"
+                    ? "Saisissez le code de votre application d’authentification."
+                    : "La double authentification de votre entreprise doit être configurée avant votre première connexion."
+            });
+        }
         return completeLogin(user, device, response);
     }));
 
@@ -79,6 +92,55 @@ export function registerAuthRoutes(app) {
         if (!secret || !isValidTotpCode(secret, code, user.username)) {
             return response.status(401).json({ message: "Le code Google Authenticator est incorrect." });
         }
+        const device = getDeviceDetails({ deviceId: challenge.device?.id, deviceLabel: challenge.device?.label, deviceType: challenge.device?.type });
+        if (!device) return response.status(401).json({ message: "Cet appareil ne peut pas être identifié. Recommencez la connexion." });
+        return completeLogin(user, device, response);
+    }));
+
+    app.post("/api/auth/company-2fa/enrollment", asyncHandler(async (request, response) => {
+        const challenge = await getCompanyTotpChallenge(request.body?.challenge, "enrollment");
+        if (!challenge) return response.status(401).json({ message: "La demande de configuration est invalide ou a expiré. Recommencez la connexion." });
+        const user = await findUserById(challenge.user_id);
+        if (!user?.is_active || !user.account_is_active || user.role !== "admin" || !await isCompanyTotpEnabled(user.account_owner_id)) {
+            return response.status(401).json({ message: "Cette configuration n’est plus autorisée." });
+        }
+        await getPool().query("DELETE FROM depannhome_company_totp_authenticators WHERE user_id = $1 AND status = 'pending'", [user.id]);
+        const secret = new OTPAuth.Secret({ size: 20 }).base32;
+        const totp = createTotp(secret, user.username);
+        const authenticatorId = crypto.randomUUID();
+        await getPool().query(`
+            INSERT INTO depannhome_company_totp_authenticators (id, owner_id, user_id, secret_ciphertext, status, pending_expires_at)
+            VALUES ($1, $2, $3, $4, 'pending', NOW() + INTERVAL '10 minutes')
+        `, [authenticatorId, user.account_owner_id, user.id, encryptCompanyTotpSecret(secret)]);
+        const qrCodeDataUrl = await QRCode.toDataURL(totp.toString(), { width: 260, margin: 1, errorCorrectionLevel: "M" });
+        response.json({ qrCodeDataUrl, manualSecret: secret, expiresInSeconds: COMPANY_TOTP_CHALLENGE_DURATION_SECONDS });
+    }));
+
+    app.post("/api/auth/verify-company-totp", asyncHandler(async (request, response) => {
+        const challenge = await getCompanyTotpChallenge(request.body?.challenge);
+        const code = normalizeTotpCode(request.body?.code);
+        if (!challenge || !code) return response.status(401).json({ message: "Le code de sécurité est invalide ou a expiré." });
+        const user = await findUserById(challenge.user_id);
+        if (!user?.is_active || !user.account_is_active || user.role !== "admin" || !await isCompanyTotpEnabled(user.account_owner_id)) {
+            return response.status(401).json({ message: "Cette connexion n’est plus autorisée." });
+        }
+        const authenticator = await getCompanyTotpAuthenticator(user.id, challenge.purpose === "enrollment" ? "pending" : "active");
+        const secret = authenticator?.secret_ciphertext ? decryptCompanyTotpSecret(authenticator.secret_ciphertext) : "";
+        if (!secret || !isValidTotpCode(secret, code, user.username)) {
+            const attempts = await recordCompanyTotpFailure(challenge, user);
+            return response.status(401).json({ message: attempts >= COMPANY_TOTP_MAX_ATTEMPTS ? "Trop de codes incorrects. Recommencez la connexion." : "Le code de votre application d’authentification est incorrect." });
+        }
+        const consumed = await getPool().query("UPDATE depannhome_company_totp_challenges SET consumed_at = NOW() WHERE id = $1 AND consumed_at IS NULL RETURNING id", [challenge.id]);
+        if (!consumed.rowCount) return response.status(401).json({ message: "Cette demande a déjà été utilisée. Recommencez la connexion." });
+        if (challenge.purpose === "enrollment") {
+            await getPool().query(`
+                UPDATE depannhome_company_totp_authenticators
+                SET status = 'active', pending_expires_at = NULL, confirmed_at = NOW(), updated_at = NOW()
+                WHERE id = $1 AND user_id = $2 AND status = 'pending'
+            `, [authenticator.id, user.id]);
+            await recordMemberAudit(user.account_owner_id, user.id, user, "company_2fa_configured", { authenticator: "totp" });
+        }
+        await recordMemberAudit(user.account_owner_id, user.id, user, "company_2fa_login_succeeded", { purpose: challenge.purpose });
         const device = getDeviceDetails({ deviceId: challenge.device?.id, deviceLabel: challenge.device?.label, deviceType: challenge.device?.type });
         if (!device) return response.status(401).json({ message: "Cet appareil ne peut pas être identifié. Recommencez la connexion." });
         return completeLogin(user, device, response);
@@ -198,6 +260,51 @@ export function registerAuthRoutes(app) {
         }
         await getPool().query("DELETE FROM depannhome_creator_totp WHERE user_id = $1", [request.user.sub]);
         response.json({ message: "La double authentification a été désactivée." });
+    }));
+
+    app.get("/api/auth/company-2fa", requireAccountAdministrator, asyncHandler(async (request, response) => {
+        const ownerId = getAccountOwnerId(request);
+        const [policy, administrators] = await Promise.all([
+            getCompanyTotpPolicy(ownerId),
+            getPool().query(`
+                SELECT account.id, account.username, account.full_name AS "fullName", account.is_active AS "isActive",
+                    EXISTS(SELECT 1 FROM depannhome_company_totp_authenticators authenticator WHERE authenticator.user_id = account.id AND authenticator.status = 'active') AS "configured"
+                FROM depannhome_users account
+                WHERE account.account_owner_id = $1 AND account.role = 'admin'
+                ORDER BY LOWER(account.full_name), account.username
+            `, [ownerId])
+        ]);
+        response.json({ enabled: policy.enabled, administrators: administrators.rows });
+    }));
+
+    app.put("/api/auth/company-2fa/policy", requireAccountAdministrator, asyncHandler(async (request, response) => {
+        if (typeof request.body?.enabled !== "boolean") return response.status(400).json({ message: "Le statut de la double authentification est invalide." });
+        const ownerId = getAccountOwnerId(request);
+        const enabled = request.body.enabled;
+        await getPool().query(`
+            INSERT INTO depannhome_company_totp_policies (owner_id, enabled, enabled_at, enabled_by, updated_at)
+            VALUES ($1, $2, CASE WHEN $2 THEN NOW() ELSE NULL END, CASE WHEN $2 THEN $3 ELSE NULL END, NOW())
+            ON CONFLICT (owner_id) DO UPDATE SET enabled = EXCLUDED.enabled, enabled_at = EXCLUDED.enabled_at,
+                enabled_by = EXCLUDED.enabled_by, updated_at = NOW()
+        `, [ownerId, enabled, request.user.sub]);
+        if (!enabled) await getPool().query("DELETE FROM depannhome_company_totp_authenticators WHERE owner_id = $1", [ownerId]);
+        const actor = await findUserById(request.user.sub);
+        await recordMemberAudit(ownerId, request.user.sub, actor, enabled ? "company_2fa_enabled" : "company_2fa_disabled", { scope: "administrators" });
+        response.json({ enabled });
+    }));
+
+    app.post("/api/auth/company-2fa/administrators/:memberId/reset", requireAccountAdministrator, asyncHandler(async (request, response) => {
+        const memberId = positiveId(request.params.memberId);
+        const ownerId = getAccountOwnerId(request);
+        const { rows } = await getPool().query(`
+            SELECT id, username, full_name AS "fullName", role FROM depannhome_users
+            WHERE id = $1 AND account_owner_id = $2 AND role = 'admin'
+        `, [memberId, ownerId]);
+        const member = rows[0];
+        if (!member) return response.status(404).json({ message: "Administrateur introuvable." });
+        await getPool().query("DELETE FROM depannhome_company_totp_authenticators WHERE user_id = $1", [memberId]);
+        await recordMemberAudit(ownerId, request.user.sub, member, "company_2fa_reset", { requestedBy: request.user.sub });
+        response.status(204).end();
     }));
 
     app.get("/api/auth/members", requireAccountAdministrator, asyncHandler(async (request, response) => {
@@ -740,6 +847,78 @@ async function getCreatorTotpSecret(userId) {
     return rows[0]?.secretCiphertext ? decryptCreatorTotpSecret(rows[0].secretCiphertext) : "";
 }
 
+async function getCompanyTotpPolicy(ownerId) {
+    const { rows } = await getPool().query(
+        "SELECT enabled FROM depannhome_company_totp_policies WHERE owner_id = $1",
+        [ownerId]
+    );
+    return { enabled: Boolean(rows[0]?.enabled) };
+}
+
+async function isCompanyTotpEnabled(ownerId) {
+    return (await getCompanyTotpPolicy(ownerId)).enabled;
+}
+
+async function getCompanyTotpAuthenticator(userId, status) {
+    const { rows } = await getPool().query(`
+        SELECT id, secret_ciphertext, status
+        FROM depannhome_company_totp_authenticators
+        WHERE user_id = $1 AND status = $2
+            AND (status <> 'pending' OR pending_expires_at > NOW())
+        ORDER BY confirmed_at DESC NULLS LAST, updated_at DESC
+        LIMIT 1
+    `, [userId, status]);
+    return rows[0] || null;
+}
+
+async function hasCompanyTotpAuthenticator(userId) {
+    return Boolean(await getCompanyTotpAuthenticator(userId, "active"));
+}
+
+async function createCompanyTotpChallenge(user, device, purpose) {
+    const id = crypto.randomUUID();
+    await getPool().query("DELETE FROM depannhome_company_totp_challenges WHERE user_id = $1 AND (expires_at <= NOW() OR consumed_at IS NOT NULL)", [user.id]);
+    await getPool().query(`
+        INSERT INTO depannhome_company_totp_challenges (id, owner_id, user_id, purpose, device, expires_at)
+        VALUES ($1, $2, $3, $4, $5::jsonb, NOW() + INTERVAL '5 minutes')
+    `, [id, user.account_owner_id, user.id, purpose, JSON.stringify(device)]);
+    return jwt.sign(
+        { purpose: "company-totp", challengeId: id, sub: String(user.id), device },
+        getSessionSecret(),
+        { expiresIn: COMPANY_TOTP_CHALLENGE_DURATION_SECONDS }
+    );
+}
+
+async function getCompanyTotpChallenge(value, expectedPurpose = "") {
+    try {
+        const token = jwt.verify(String(value || ""), getSessionSecret());
+        if (token?.purpose !== "company-totp" || !validDeviceId(token.device?.id) || !token.challengeId || (expectedPurpose && !["login", "enrollment"].includes(expectedPurpose))) return null;
+        const { rows } = await getPool().query(`
+            SELECT id, owner_id, user_id, purpose, device, attempts
+            FROM depannhome_company_totp_challenges
+            WHERE id = $1 AND user_id = $2 AND expires_at > NOW() AND consumed_at IS NULL AND attempts < $3
+                ${expectedPurpose ? "AND purpose = $4" : ""}
+        `, expectedPurpose
+            ? [token.challengeId, token.sub, COMPANY_TOTP_MAX_ATTEMPTS, expectedPurpose]
+            : [token.challengeId, token.sub, COMPANY_TOTP_MAX_ATTEMPTS]);
+        return rows[0] || null;
+    } catch {
+        return null;
+    }
+}
+
+async function recordCompanyTotpFailure(challenge, user) {
+    const { rows } = await getPool().query(`
+        UPDATE depannhome_company_totp_challenges
+        SET attempts = attempts + 1
+        WHERE id = $1 AND consumed_at IS NULL
+        RETURNING attempts
+    `, [challenge.id]);
+    const attempts = Number(rows[0]?.attempts || COMPANY_TOTP_MAX_ATTEMPTS);
+    await recordMemberAudit(user.account_owner_id, null, user, "company_2fa_validation_failed", { purpose: challenge.purpose, attempts });
+    return attempts;
+}
+
 function createCreatorTotpChallenge(user, device) {
     return jwt.sign(
         { purpose: "creator-totp", sub: String(user.id), device },
@@ -800,8 +979,31 @@ function decryptCreatorTotpSecret(value) {
     }
 }
 
+function encryptCompanyTotpSecret(secret) {
+    const iv = crypto.randomBytes(12);
+    const cipher = crypto.createCipheriv("aes-256-gcm", getCompanyTotpEncryptionKey(), iv);
+    const encrypted = Buffer.concat([cipher.update(secret, "utf8"), cipher.final()]);
+    return [iv.toString("base64url"), cipher.getAuthTag().toString("base64url"), encrypted.toString("base64url")].join(".");
+}
+
+function decryptCompanyTotpSecret(value) {
+    try {
+        const [ivValue, tagValue, encryptedValue] = String(value || "").split(".");
+        if (!ivValue || !tagValue || !encryptedValue) return "";
+        const decipher = crypto.createDecipheriv("aes-256-gcm", getCompanyTotpEncryptionKey(), Buffer.from(ivValue, "base64url"));
+        decipher.setAuthTag(Buffer.from(tagValue, "base64url"));
+        return Buffer.concat([decipher.update(Buffer.from(encryptedValue, "base64url")), decipher.final()]).toString("utf8");
+    } catch {
+        return "";
+    }
+}
+
 function getCreatorTotpEncryptionKey() {
     return crypto.createHash("sha256").update(`${getSessionSecret()}:creator-totp:v1`).digest();
+}
+
+function getCompanyTotpEncryptionKey() {
+    return crypto.createHash("sha256").update(`${getSessionSecret()}:company-totp:v1`).digest();
 }
 
 function setSessionCookie(response, user, deviceId, activeCompanyId = "") {

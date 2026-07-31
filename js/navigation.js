@@ -1097,7 +1097,10 @@ function renderSettings() {
     card.appendChild(section);
 
     container.appendChild(card);
-    if (document.body.dataset.role === "admin") renderTeamManagement(container);
+    if (document.body.dataset.role === "admin") {
+        renderTeamManagement(container);
+        renderCompanyTwoFactorSecurity(container);
+    }
     if (document.body.dataset.role === "admin") renderPartnerConnections(container);
     if (document.body.dataset.groupAdmin === "true") {
         const groupCard = document.createElement("article");
@@ -1116,6 +1119,66 @@ function renderSettings() {
     if (document.body.dataset.role === "admin" && document.body.classList.contains("desktop-device")) {
         renderDataImportTool(container);
         renderSupportContact(container);
+    }
+}
+
+async function renderCompanyTwoFactorSecurity(container) {
+    const card = document.createElement("article");
+    card.className = "brand-card full-card procedure-card creator-entry-card company-two-factor-card";
+    card.innerHTML = '<p class="eyebrow">Sécurité</p><h2>Double authentification (2FA)</h2><p class="muted">Chargement des paramètres de sécurité…</p>';
+    container.appendChild(card);
+    try {
+        const response = await fetch("/api/auth/company-2fa", { credentials: "same-origin" });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.message || "Impossible de charger les paramètres de sécurité.");
+        const administrators = data.administrators || [];
+        const administratorRows = data.enabled
+            ? `<section class="team-section"><div class="team-section-heading"><div><p class="eyebrow">Comptes concernés</p><h3>Administrateurs (PC)</h3></div></div><p class="muted">Chaque administrateur configure sa propre application lors de sa prochaine connexion. Une réinitialisation entraîne la génération d’un nouveau QR code à la connexion suivante.</p><div class="team-list">${administrators.map(administrator => `<div class="team-member"><div class="team-member-summary"><div class="team-member-title"><strong>${escapeHtml(administrator.fullName || administrator.username)}</strong><span class="team-state-badge ${administrator.configured ? "is-active" : "is-pending"}">${administrator.configured ? "Application associée" : "Configuration requise"}</span></div><span class="team-member-meta">${escapeHtml(administrator.username)}</span></div><div class="team-member-actions">${administrator.configured ? `<button type="button" class="secondary-button" data-company-2fa-reset="${escapeHtml(administrator.id)}">Réinitialiser le 2FA</button>` : ""}</div></div>`).join("") || '<p class="muted">Aucun Administrateur (PC) actif n’est disponible.</p>'}</div></section>`
+            : "";
+        card.innerHTML = `
+            <div class="settings-heading"><div><p class="eyebrow">Sécurité</p><h2>Double authentification (2FA)</h2><p class="muted">Activez une protection supplémentaire pour les comptes Administrateur de votre entreprise en demandant un code de validation lors de chaque connexion.</p></div><span class="team-state-badge ${data.enabled ? "is-active" : "is-inactive"}">${data.enabled ? "Activée" : "Désactivée"}</span></div>
+            <form class="settings-form company-two-factor-form">
+                <label class="settings-toggle"><input name="enabled" type="checkbox" ${data.enabled ? "checked" : ""}>Activer la double authentification pour les comptes Administrateur.<span>Les Administrateurs Mobile, postes PC standard, techniciens et chefs d’équipe ne sont pas concernés.</span></label>
+                <p class="muted">Compatible avec Google Authenticator, Microsoft Authenticator, Authy et toute application TOTP. Les codes ne sont jamais enregistrés.</p>
+                <div class="settings-actions"><button type="submit" class="secondary-button">Enregistrer la sécurité</button></div>
+                <p class="auth-message" aria-live="polite"></p>
+            </form>
+            ${administratorRows}
+        `;
+        const form = card.querySelector(".company-two-factor-form");
+        form.addEventListener("submit", async event => {
+            event.preventDefault();
+            const enabled = form.elements.enabled.checked;
+            if (!enabled && data.enabled && !confirm("Désactiver la double authentification pour tous les Administrateurs (PC) ? Les associations actuelles seront supprimées.")) return;
+            const button = form.querySelector('button[type="submit"]');
+            const feedback = form.querySelector(".auth-message");
+            button.disabled = true;
+            feedback.textContent = "Enregistrement…";
+            feedback.classList.remove("error");
+            const result = await fetch("/api/auth/company-2fa/policy", { method: "PUT", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ enabled }) });
+            const payload = await result.json().catch(() => ({}));
+            if (!result.ok) {
+                feedback.textContent = payload.message || "La mise à jour de la sécurité a échoué.";
+                feedback.classList.add("error");
+                button.disabled = false;
+                return;
+            }
+            renderSettings();
+        });
+        card.querySelectorAll("[data-company-2fa-reset]").forEach(button => button.addEventListener("click", async () => {
+            if (!confirm("Réinitialiser cette application d’authentification ? L’administrateur devra scanner un nouveau QR code à sa prochaine connexion.")) return;
+            button.disabled = true;
+            const result = await fetch(`/api/auth/company-2fa/administrators/${encodeURIComponent(button.dataset.company2faReset)}/reset`, { method: "POST", credentials: "same-origin" });
+            if (!result.ok) {
+                button.disabled = false;
+                alert((await result.json().catch(() => ({}))).message || "La réinitialisation a échoué.");
+                return;
+            }
+            renderSettings();
+        }));
+    } catch (error) {
+        card.innerHTML = '<p class="eyebrow">Sécurité</p><h2>Double authentification (2FA)</h2>';
+        card.appendChild(createInfo(error.message || "Impossible de charger les paramètres de sécurité."));
     }
 }
 

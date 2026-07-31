@@ -63,6 +63,8 @@ app.use("/api/auth/login", authenticationRateLimit);
 app.use("/api/auth/register", authenticationRateLimit);
 app.use("/api/auth/verify-device-code", authenticationRateLimit);
 app.use("/api/auth/verify-creator-totp", authenticationRateLimit);
+app.use("/api/auth/verify-company-totp", authenticationRateLimit);
+app.use("/api/auth/company-2fa/enrollment", authenticationRateLimit);
 app.use("/api/support", rateLimit({
 	windowMs: 15 * 60 * 1000,
 	limit: 10,

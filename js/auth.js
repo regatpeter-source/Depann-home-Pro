@@ -92,6 +92,14 @@ function renderAuthentication({ onAuthenticated, registrationEnabled, message = 
             body: JSON.stringify({ username: form.get("username"), password: form.get("password"), ...getDeviceIdentity() })
         });
         if (!result.ok) {
+            if (result.data?.companyTotpEnrollmentRequired) {
+                renderCompanyTotpEnrollment({ onAuthenticated, registrationEnabled, challenge: result.data.challenge, message: result.data.message });
+                return;
+            }
+            if (result.data?.companyTotpRequired) {
+                renderCompanyTotpVerification({ onAuthenticated, registrationEnabled, challenge: result.data.challenge, message: result.data.message });
+                return;
+            }
             if (result.data?.totpRequired) {
                 renderCreatorTotpVerification({ onAuthenticated, registrationEnabled, challenge: result.data.challenge, message: result.data.message });
                 return;
@@ -256,6 +264,74 @@ function renderCreatorTotpVerification({ onAuthenticated, registrationEnabled, c
         status.classList.remove("error");
         const code = new FormData(event.currentTarget).get("code");
         const result = await request("/api/auth/verify-creator-totp", { method: "POST", body: JSON.stringify({ challenge, code }) });
+        if (!result.ok) {
+            status.textContent = result.data?.message || "Impossible de vérifier le code de sécurité.";
+            status.classList.add("error");
+            event.currentTarget.elements.code.select();
+            return;
+        }
+        onAuthenticated(result.data.user);
+    });
+}
+
+function renderCompanyTotpVerification({ onAuthenticated, registrationEnabled, challenge, message }) {
+    stopDeviceValidationPolling();
+    const app = getAppRoot();
+    app.innerHTML = `
+        <main class="auth-page"><section class="auth-card">
+            <div class="auth-brand"><img src="assets/logo.png.png" alt="Depann'Home Pro" class="auth-logo"><div><h1>Depann'Home Pro</h1><p>Vérification en deux étapes</p></div></div>
+            <p id="authMessage" class="auth-message" aria-live="polite">${escapeHtml(message || "Saisissez le code affiché dans votre application d’authentification.")}</p>
+            <form id="companyTotpForm" class="auth-form">
+                <label>Code d’authentification<input name="code" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required autofocus placeholder="000000"></label>
+                <button type="submit" class="secondary-button">Vérifier et se connecter</button>
+            </form>
+            <button type="button" class="secondary-button auth-outline-button" id="backToAuthentication">Retour à la connexion</button>
+        </section></main>`;
+    const status = app.querySelector("#authMessage");
+    app.querySelector("#backToAuthentication").addEventListener("click", () => renderAuthentication({ onAuthenticated, registrationEnabled }));
+    app.querySelector("#companyTotpForm").addEventListener("submit", async event => {
+        event.preventDefault();
+        status.textContent = "Vérification du code…";
+        status.classList.remove("error");
+        const code = new FormData(event.currentTarget).get("code");
+        const result = await request("/api/auth/verify-company-totp", { method: "POST", body: JSON.stringify({ challenge, code }) });
+        if (!result.ok) {
+            status.textContent = result.data?.message || "Impossible de vérifier le code de sécurité.";
+            status.classList.add("error");
+            event.currentTarget.elements.code.select();
+            return;
+        }
+        onAuthenticated(result.data.user);
+    });
+}
+
+async function renderCompanyTotpEnrollment({ onAuthenticated, registrationEnabled, challenge, message }) {
+    stopDeviceValidationPolling();
+    const app = getAppRoot();
+    app.innerHTML = `<main class="auth-page"><section class="auth-card"><div class="auth-brand"><img src="assets/logo.png.png" alt="Depann'Home Pro" class="auth-logo"><div><h1>Depann'Home Pro</h1><p>Configuration de la double authentification</p></div></div><p class="auth-message">Préparation de votre QR code sécurisé…</p></section></main>`;
+    const setup = await request("/api/auth/company-2fa/enrollment", { method: "POST", body: JSON.stringify({ challenge }) });
+    if (!setup.ok) {
+        renderAuthentication({ onAuthenticated, registrationEnabled, message: setup.data?.message || "La configuration de la double authentification a expiré. Recommencez la connexion." });
+        return;
+    }
+    app.innerHTML = `
+        <main class="auth-page"><section class="auth-card auth-totp-enrollment-card">
+            <div class="auth-brand"><img src="assets/logo.png.png" alt="Depann'Home Pro" class="auth-logo"><div><h1>Depann'Home Pro</h1><p>Double authentification de l’entreprise</p></div></div>
+            <p id="authMessage" class="auth-message" aria-live="polite">${escapeHtml(message || "Associez votre application avant de poursuivre.")}</p>
+            <ol class="creator-totp-steps"><li>Ouvrez Google Authenticator, Microsoft Authenticator, Authy ou toute application compatible TOTP.</li><li>Ajoutez un compte et scannez ce QR code.</li><li>Saisissez le code à 6 chiffres pour terminer l’association.</li></ol>
+            <img class="creator-totp-qr" src="${escapeHtml(setup.data?.qrCodeDataUrl || "")}" alt="QR code TOTP Depann’Home Pro">
+            <p class="muted">Si le scan est impossible, saisissez cette clé : <code class="creator-totp-secret">${escapeHtml(setup.data?.manualSecret || "")}</code></p>
+            <form id="companyTotpEnrollmentForm" class="auth-form"><label>Code d’authentification<input name="code" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required autofocus placeholder="000000"></label><button type="submit" class="secondary-button">Activer et se connecter</button></form>
+            <button type="button" class="secondary-button auth-outline-button" id="backToAuthentication">Retour à la connexion</button>
+        </section></main>`;
+    const status = app.querySelector("#authMessage");
+    app.querySelector("#backToAuthentication").addEventListener("click", () => renderAuthentication({ onAuthenticated, registrationEnabled }));
+    app.querySelector("#companyTotpEnrollmentForm").addEventListener("submit", async event => {
+        event.preventDefault();
+        status.textContent = "Vérification du code…";
+        status.classList.remove("error");
+        const code = new FormData(event.currentTarget).get("code");
+        const result = await request("/api/auth/verify-company-totp", { method: "POST", body: JSON.stringify({ challenge, code }) });
         if (!result.ok) {
             status.textContent = result.data?.message || "Impossible de vérifier le code de sécurité.";
             status.classList.add("error");
