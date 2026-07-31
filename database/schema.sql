@@ -29,6 +29,9 @@ CREATE INDEX IF NOT EXISTS depannhome_users_username_lookup_idx ON depannhome_us
 UPDATE depannhome_users SET account_owner_id = id WHERE account_owner_id IS NULL;
 UPDATE depannhome_users SET role = 'admin' WHERE role = 'user' AND account_owner_id = id;
 
+-- Rôle mobile dédié : compte rattaché à l’entreprise, jamais propriétaire du compte.
+-- Son appareil utilise le flux existant d’autorisation et de code e-mail.
+
 ALTER TABLE depannhome_users
     ADD COLUMN IF NOT EXISTS company_name VARCHAR(160) NOT NULL DEFAULT '',
     ADD COLUMN IF NOT EXISTS email VARCHAR(160) NOT NULL DEFAULT '',

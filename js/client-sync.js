@@ -310,7 +310,7 @@ function getAccountId() {
 }
 
 function canWriteClients() {
-    return document.body.dataset.role === "admin";
+    return ["admin", "mobile_admin"].includes(document.body.dataset.role);
 }
 
 function isAccountant() {

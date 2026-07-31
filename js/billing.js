@@ -112,7 +112,7 @@ function renderOverview(panel, profilePanel) {
                 ${usesExternalTemplate && !isAccountant() ? `<button type="button" class="secondary-button" data-billing-action="download-quote-template" ${profile.hasQuoteTemplate ? "" : "disabled"}>Télécharger la base de devis</button>` : usesExternalTemplate ? "" : '<button type="button" class="secondary-button" data-billing-action="new-quote">+ Nouveau devis</button>'}
                 <button type="button" class="secondary-button" data-billing-action="new-invoice">+ Nouvelle facture</button>
                 ${isAccountant() ? "" : '<button type="button" class="secondary-button" data-billing-action="open-leak-reports">Rapports de fuite</button>'}
-                ${isTechnician() || isAccountant() ? "" : '<button type="button" class="secondary-button" data-billing-action="preview-blank-quote">Aperçu du devis vierge</button><button type="button" class="secondary-button auth-outline-button" data-billing-action="edit-company">Modifier les informations entreprise</button>'}
+                ${isFullAdministrator() ? '<button type="button" class="secondary-button" data-billing-action="preview-blank-quote">Aperçu du devis vierge</button><button type="button" class="secondary-button auth-outline-button" data-billing-action="edit-company">Modifier les informations entreprise</button>' : ""}
             </div>
         </div>
         <div class="billing-metrics"><span><strong>${quotes}</strong> devis</span><span><strong>${invoices}</strong> factures</span><span class="billing-base-template"><strong>✓</strong> ${usesExternalTemplate ? "base PDF / Word externe" : "modèle Depann’Home intégré"}</span></div>
@@ -123,7 +123,7 @@ function renderOverview(panel, profilePanel) {
     panel.querySelector("[data-billing-action=new-quote]")?.addEventListener("click", () => { if (!isAccountant()) openNewDocument("quote"); });
     panel.querySelector("[data-billing-action=new-invoice]").addEventListener("click", () => { if (!isAccountant()) openNewDocument("invoice"); });
     panel.querySelector("[data-billing-action=open-leak-reports]")?.addEventListener("click", async () => {
-        const { renderLeakReportWizard } = await import("./leak-report-wizard.js?v=2");
+        const { renderLeakReportWizard } = await import("./leak-report-wizard.js?v=3");
         renderLeakReportWizard();
     });
     panel.querySelector("[data-billing-action=download-quote-template]")?.addEventListener("click", openQuoteTemplateDownload);
@@ -548,6 +548,7 @@ function formDataToObject(data) { return Object.fromEntries(data.entries()); }
 
 function isTechnician() { return document.body.dataset.role === "technician"; }
 function isAccountant() { return document.body.dataset.role === "accountant"; }
+function isFullAdministrator() { return document.body.dataset.role === "admin"; }
 function isTechnicianBillingAllowed() { return !isTechnician() || document.body.dataset.technicianBillingEnabled !== "false"; }
 function usesExternalQuoteTemplate() {
     const policy = billingData?.profile?.quoteTemplatePolicy;

@@ -1,8 +1,8 @@
 import { initializeAuthentication, restoreApplicationShell, signOut } from "./auth.js?v=117";
-import { initializeClientSynchronization } from "./client-sync.js?v=117";
+import { initializeClientSynchronization } from "./client-sync.js?v=118";
 import { initializeCollaboration } from "./collaboration.js?v=2";
 import { loadDatabase } from "./data.js?v=59";
-import { initializeNavigation, refreshApplication } from "./navigation.js?v=187";
+import { initializeNavigation, refreshApplication } from "./navigation.js?v=189";
 import { renderError } from "./ui.js?v=44";
 import { getSettings } from "./storage.js?v=44";
 import { FONT_OPTIONS } from "./config.js?v=116";

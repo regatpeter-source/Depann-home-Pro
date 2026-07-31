@@ -15,6 +15,7 @@ const TECHNICIAN_SESSION_DURATION = 30 * 24 * 60 * 60 * 1000;
 const DEVICE_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const CREATOR_TOTP_CHALLENGE_DURATION_SECONDS = 5 * 60;
+const MOBILE_ADMIN_ROLE = "mobile_admin";
 
 export function registerAuthRoutes(app) {
     app.get("/api/auth/session", (request, response) => {
@@ -206,7 +207,7 @@ export function registerAuthRoutes(app) {
     }));
 
     app.post("/api/auth/members", requireAccountAdministrator, asyncHandler(async (request, response) => {
-        const role = ["admin", "technician", "accountant"].includes(request.body?.role) ? request.body.role : "";
+        const role = ["admin", MOBILE_ADMIN_ROLE, "technician", "accountant"].includes(request.body?.role) ? request.body.role : "";
         const username = normalizeUsername(request.body?.username);
         const password = String(request.body?.password || "");
         const fullName = cleanText(request.body?.fullName, 100);
@@ -217,7 +218,8 @@ export function registerAuthRoutes(app) {
             || (!role ? "Choisissez le type de poste." : "")
             || (!fullName ? "Le nom de l’utilisateur est obligatoire." : "")
             || (role === "technician" && !phone ? "Le téléphone du technicien est obligatoire." : "")
-            || (role === "technician" && !EMAIL_PATTERN.test(email) ? "L’e-mail professionnel du technicien est obligatoire." : "");
+            || (role === MOBILE_ADMIN_ROLE && !phone ? "Le téléphone de l’Administrateur Mobile est obligatoire." : "")
+            || (["technician", MOBILE_ADMIN_ROLE].includes(role) && !EMAIL_PATTERN.test(email) ? "L’e-mail professionnel est obligatoire pour l’activation mobile." : "");
         if (validationError) return response.status(400).json({ message: validationError });
 
         if (role === "technician") {
@@ -293,7 +295,7 @@ export function registerAuthRoutes(app) {
         response.status(204).end();
     }));
 
-    app.get("/api/auth/technicians", requireAccountAdministrator, asyncHandler(async (request, response) => {
+    app.get("/api/auth/technicians", requireTechnicianDirectoryAccess, asyncHandler(async (request, response) => {
         const { rows } = await getPool().query(`
             SELECT id, username, full_name AS "fullName", phone, email, department, is_active AS "isActive", created_at AS "createdAt"
             FROM depannhome_users
@@ -518,6 +520,11 @@ function requireAccountAdministrator(request, response, next) {
     return next();
 }
 
+function requireTechnicianDirectoryAccess(request, response, next) {
+    if (request.user?.role === MOBILE_ADMIN_ROLE) return next();
+    return requireAccountAdministrator(request, response, next);
+}
+
 export async function createInitialAdministrator() {
     const username = normalizeUsername(process.env.INITIAL_ADMIN_USERNAME);
     const password = String(process.env.INITIAL_ADMIN_PASSWORD || "");
@@ -583,7 +590,11 @@ export async function recoverCreatorTotp() {
 
 async function completeLogin(user, device, response) {
     const isCreator = isCreatorUsername(user.username);
-    const isMobileAdministrator = user.role === "admin" && device.type === "mobile";
+    const isDedicatedMobileAdministrator = user.role === MOBILE_ADMIN_ROLE;
+    if (user.role === MOBILE_ADMIN_ROLE && device.type !== "mobile") {
+        return response.status(403).json({ message: "Le poste Administrateur Mobile doit être activé depuis un téléphone ou une tablette." });
+    }
+    const isMobileAdministrator = (user.role === "admin" && device.type === "mobile") || isDedicatedMobileAdministrator;
     const isAccountant = user.role === "accountant";
     const authDeviceDetails = { ...device, type: isMobileAdministrator || isAccountant ? device.type : "desktop" };
     const automaticallyApproved = isCreator || isAccountant;
@@ -598,7 +609,7 @@ async function completeLogin(user, device, response) {
             authDevice = await createAuthDevice(user.id, authDeviceDetails, "approval_pending");
         }
         if (!authDevice) {
-            return response.status(409).json({ message: isMobileAdministrator ? "Un téléphone ou une tablette est déjà associé à ce compte administrateur. Supprimez d’abord l’ancien appareil dans Équipe." : "Cet appareil est déjà associé à un autre compte. Utilisez un autre navigateur ou contactez l’administrateur." });
+            return response.status(409).json({ message: isMobileAdministrator ? `Un téléphone ou une tablette est déjà associé à ce compte ${isDedicatedMobileAdministrator ? "Administrateur Mobile" : "administrateur"}. Supprimez d’abord l’ancien appareil dans Équipe.` : "Cet appareil est déjà associé à un autre compte. Utilisez un autre navigateur ou contactez l’administrateur." });
         }
     } else {
         if (isMobileAdministrator && authDevice.device_type !== "mobile" && await userHasActiveMobileDevice(user.id)) {

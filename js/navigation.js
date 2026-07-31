@@ -1,15 +1,15 @@
 import { ROUTES, STORAGE_KEYS, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS } from "./config.js?v=116";
 import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=142";
 import { renderCreatorConsole } from "./creator.js?v=118";
-import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=141";
+import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=142";
 import { renderAccounting } from "./accounting.js?v=1";
 import { renderPartnerMissions } from "./partner-missions.js?v=2";
 import { renderPartnerConnections } from "./partner-connections.js?v=2";
 import { renderPurchases } from "./purchases.js?v=112";
-import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=2";
+import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=3";
 import { getFirstUnreadClientId, refreshClientMessageAlert, refreshVisibleClientMessages } from "./messages.js?v=106";
 import { getSearchableClients, renderClients } from "./clients.js?v=134";
-import { synchronizeClients } from "./client-sync.js?v=116";
+import { synchronizeClients } from "./client-sync.js?v=118";
 import { configureLibrary, openLibrarySection, renderLibrary, searchPersonalLibrary } from "./library.js?v=120";
 import { renderPhotoRecognition } from "./photo-recognition.js?v=105";
 import { getSearchResults } from "./search.js?v=63";
@@ -58,6 +58,7 @@ export function initializeNavigation(loadedDatabase) {
     }
     if (isAccountant()) renderBilling();
     else if (document.body.dataset.role === "technician") renderCalendarOverview();
+    else if (isMobileAdministrator()) renderHome();
     else if (document.body.classList.contains("desktop-device")) renderHome();
     else renderBrands();
 }
@@ -183,7 +184,7 @@ function openHome() {
         renderBilling();
         return;
     }
-    if (document.body.classList.contains("desktop-device")) {
+    if (document.body.classList.contains("desktop-device") || isMobileAdministrator()) {
         renderHome();
         return;
     }
@@ -210,6 +211,10 @@ function isAccountant() {
 
 function isTechnician() {
     return document.body.dataset.role === "technician";
+}
+
+function isMobileAdministrator() {
+    return document.body.dataset.role === "mobile_admin";
 }
 
 async function refreshTechnicianCalendarAlert() {
@@ -1139,7 +1144,7 @@ async function renderTeamManagement(container) {
     roleField.textContent = "Type de poste";
     const roleInput = document.createElement("select");
     roleInput.name = "role";
-    roleInput.innerHTML = '<option value="technician">Technicien</option><option value="admin">Poste PC</option>';
+    roleInput.innerHTML = '<option value="technician">Technicien</option><option value="admin">Poste PC / Secrétariat</option><option value="mobile_admin">Administrateur Mobile</option>';
     roleField.appendChild(roleInput);
     formFields.appendChild(roleField);
     const departmentSuggestions = document.createElement("datalist");
@@ -1171,11 +1176,13 @@ async function renderTeamManagement(container) {
     container.appendChild(card);
     const updateRoleFields = () => {
         const isTechnician = roleInput.value === "technician";
-        form.elements.phone.required = isTechnician;
-        form.elements.email.required = isTechnician;
+        const isMobileAdmin = roleInput.value === "mobile_admin";
+        form.elements.phone.required = isTechnician || isMobileAdmin;
+        form.elements.email.required = isTechnician || isMobileAdmin;
         form.elements.department.disabled = !isTechnician;
-        submit.textContent = isTechnician ? "Créer le technicien" : "Créer le poste PC";
-        roleField.dataset.role = isTechnician ? "technician" : "admin";
+        submit.textContent = isTechnician ? "Créer le technicien" : isMobileAdmin ? "Créer l’Administrateur Mobile" : "Créer le poste PC";
+        roleField.dataset.role = roleInput.value;
+        feedback.textContent = isMobileAdmin ? "Ce poste s’active uniquement depuis un smartphone ou une tablette : l’appareil devra être autorisé, puis confirmé avec le code envoyé par e-mail." : "";
     };
     roleInput.addEventListener("change", updateRoleFields);
     updateRoleFields();
@@ -1247,8 +1254,8 @@ async function renderTeamManagement(container) {
             (payload.members || []).forEach(member => {
                 const item = document.createElement("div");
                 item.className = "team-member";
-                const memberType = member.role === "admin" ? "Poste PC" : member.role === "accountant" ? "Comptable" : "Technicien";
-                item.innerHTML = `<div class="team-member-summary"><div class="team-member-title"><strong>${escapeHtml(member.fullName || member.username)}</strong><span class="team-role-badge ${member.role === "admin" ? "is-admin" : member.role === "accountant" ? "is-accountant" : "is-technician"}">${memberType}</span>${member.role === "technician" ? `<span class="team-department-badge">${escapeHtml(member.department || "Non classé")}</span>` : ""}<span class="team-state-badge ${member.isActive ? "is-active" : "is-inactive"}">${member.isActive ? "Actif" : "Désactivé"}</span></div><span class="team-member-meta">${escapeHtml(member.phone || "Téléphone non renseigné")}<span aria-hidden="true">·</span>${escapeHtml(member.email || "E-mail non renseigné")}<span aria-hidden="true">·</span>${escapeHtml(member.username)}${member.role === "accountant" ? " · Espace comptabilité, sans limite de poste PC" : ""}</span></div>`;
+                const memberType = member.role === "admin" ? "Poste PC / Secrétariat" : member.role === "mobile_admin" ? "Administrateur Mobile" : member.role === "accountant" ? "Comptable" : "Technicien";
+                item.innerHTML = `<div class="team-member-summary"><div class="team-member-title"><strong>${escapeHtml(member.fullName || member.username)}</strong><span class="team-role-badge ${member.role === "admin" ? "is-admin" : member.role === "mobile_admin" ? "is-mobile-admin" : member.role === "accountant" ? "is-accountant" : "is-technician"}">${memberType}</span>${member.role === "technician" ? `<span class="team-department-badge">${escapeHtml(member.department || "Non classé")}</span>` : ""}<span class="team-state-badge ${member.isActive ? "is-active" : "is-inactive"}">${member.isActive ? "Actif" : "Désactivé"}</span></div><span class="team-member-meta">${escapeHtml(member.phone || "Téléphone non renseigné")}<span aria-hidden="true">·</span>${escapeHtml(member.email || "E-mail non renseigné")}<span aria-hidden="true">·</span>${escapeHtml(member.username)}${member.role === "mobile_admin" ? " · Activation par code e-mail sur smartphone" : member.role === "accountant" ? " · Espace comptabilité, sans limite de poste PC" : ""}</span></div>`;
                 const actions = document.createElement("div");
                 actions.className = "team-member-actions";
                 const toggle = createButton(member.isActive ? "Désactiver" : "Réactiver", "secondary-button", async () => {
@@ -1297,7 +1304,7 @@ async function renderTeamManagement(container) {
                 const pcSeatAvailable = Number(pcSeats.activePcUsers) < Number(pcSeats.maxPcUsers);
                 const item = document.createElement("div");
                 item.className = "team-member";
-                const deviceTypeLabel = isPc ? "Poste PC" : isMobile ? "Appareil mobile" : "Appareil technicien";
+                const deviceTypeLabel = isPc ? "Poste PC" : isMobile && device.userRole === "mobile_admin" ? "Administrateur Mobile" : isMobile ? "Appareil mobile" : "Appareil technicien";
                 const assigneeName = device.fullName || device.username || "Titulaire non renseigné";
                 const statusLabel = device.status === "approved" ? "Activé" : device.status === "rejected" ? "Refusé" : device.status === "code_pending" ? "Code e-mail envoyé" : "En attente d’autorisation";
                 item.innerHTML = `<div class="team-member-summary"><div class="team-member-title"><strong>${escapeHtml(deviceTypeLabel)} — ${escapeHtml(assigneeName)}</strong><span class="team-role-badge ${isPc ? "is-admin" : "is-technician"}">${isPc ? "PC" : "Mobile"}</span><span class="team-state-badge ${device.status === "approved" ? "is-active" : device.status === "rejected" ? "is-inactive" : "is-pending"}">${statusLabel}</span></div><span class="team-member-meta">Attribué à ${escapeHtml(assigneeName)}${device.username ? ` · ${escapeHtml(device.username)}` : ""} · ${escapeHtml(device.label)}${isMobile && device.userRole === "admin" ? " · Sans poste PC" : ""}</span></div>`;
@@ -1344,7 +1351,7 @@ async function renderTeamManagement(container) {
             if (!response.ok) throw new Error(payload.message || "Création impossible.");
             form.reset();
             updateRoleFields();
-            feedback.textContent = values.role === "admin" ? "Poste PC créé. Sa première connexion devra être activée dans la liste des appareils." : "Compte technicien créé.";
+            feedback.textContent = values.role === "admin" ? "Poste PC créé. Sa première connexion devra être activée dans la liste des appareils." : values.role === "mobile_admin" ? "Administrateur Mobile créé. À sa première connexion smartphone, autorisez l’appareil puis envoyez le code e-mail." : "Compte technicien créé.";
             await load();
         } catch (error) { feedback.textContent = error.message; }
         finally { submit.disabled = false; }

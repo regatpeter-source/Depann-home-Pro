@@ -126,7 +126,7 @@ export async function initializeDatabase() {
         UPDATE depannhome_auth_devices device
         SET device_type = 'desktop'
         FROM depannhome_users account
-        WHERE account.id = device.user_id AND account.role <> 'admin' AND device.device_type = 'mobile'
+        WHERE account.id = device.user_id AND account.role NOT IN ('admin', 'mobile_admin') AND device.device_type = 'mobile'
     `);
     await database.query(`
         WITH duplicate_mobile_devices AS (
@@ -134,7 +134,7 @@ export async function initializeDatabase() {
                 ROW_NUMBER() OVER (PARTITION BY device.user_id ORDER BY device.last_seen_at DESC, device.created_at DESC) AS mobile_rank
             FROM depannhome_auth_devices device
             JOIN depannhome_users account ON account.id = device.user_id
-            WHERE account.role = 'admin' AND device.device_type = 'mobile' AND device.status <> 'rejected'
+            WHERE account.role IN ('admin', 'mobile_admin') AND device.device_type = 'mobile' AND device.status <> 'rejected'
         )
         UPDATE depannhome_auth_devices device
         SET status = 'rejected', verification_code_hash = '', verification_code_expires_at = NULL

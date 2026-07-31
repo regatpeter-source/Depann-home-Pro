@@ -434,7 +434,7 @@ export function registerBillingRoutes(app, requireAuthentication) {
         }
     }));
 
-    app.put("/api/billing/documents/:documentId", requireAuthentication, requireBillingAdministration, asyncHandler(async (request, response) => {
+    app.put("/api/billing/documents/:documentId", requireAuthentication, requireBillingDocumentAdministration, asyncHandler(async (request, response) => {
         const id = positiveId(request.params.documentId);
         const document = sanitizeDocument(request.body);
         if (!id) return response.status(400).json({ message: "Document invalide." });
@@ -499,6 +499,11 @@ function requireBillingAdministration(request, response, next) {
         return response.status(403).json({ message: request.user?.role === "accountant" ? "L’espace comptabilité est en consultation uniquement." : "Les techniciens peuvent créer des devis et factures, sans modifier les documents ou paramètres existants." });
     }
     return next();
+}
+
+function requireBillingDocumentAdministration(request, response, next) {
+    if (["admin", "mobile_admin"].includes(request.user?.role)) return next();
+    return response.status(403).json({ message: request.user?.role === "accountant" ? "L’espace comptabilité est en consultation uniquement." : "Les techniciens peuvent créer des devis et factures, sans modifier les documents existants." });
 }
 
 async function requireTechnicianBillingAccess(request, response, next) {
