@@ -48,6 +48,36 @@ function renderWorkspace(shell, context, dashboard = { total: {}, companies: [] 
     });
     shell.querySelectorAll("[data-edit-company]").forEach(button => button.addEventListener("click", () => editCompany(button)));
     shell.querySelectorAll("[data-toggle-company]").forEach(button => button.addEventListener("click", () => toggleCompany(button)));
+    renderGroupDeactivation(shell, context);
+}
+
+function renderGroupDeactivation(shell, context) {
+    const companyCount = context.companies?.length || 0;
+    const panel = document.createElement("section");
+    panel.className = "group-panel group-deactivation";
+    panel.innerHTML = `
+        <div class="form-heading"><div><p class="eyebrow">Annulation du mode Groupe</p><h3>Désactiver le mode Groupe</h3></div></div>
+        <p class="muted">Cette action supprime uniquement le groupe et les liens multi-entreprises. Aucune société, aucun utilisateur, client, planning, devis, facture ou autre donnée métier ne sera supprimé.</p>
+        <p class="muted">Chaque société conservera son espace indépendant. ${companyCount > 1 ? `${companyCount} sociétés seront retirées de ce groupe.` : "Votre entreprise reprendra immédiatement son fonctionnement indépendant."}</p>
+        <button type="button" class="secondary-button danger-button" data-deactivate-group>Désactiver le mode Groupe</button>
+    `;
+    const button = panel.querySelector("[data-deactivate-group]");
+    button.addEventListener("click", async () => {
+        const firstConfirmation = companyCount > 1
+            ? `Dissoudre ce groupe et rendre ses ${companyCount} sociétés indépendantes ? Aucune donnée métier ne sera supprimée.`
+            : "Désactiver ce groupe ? Votre entreprise redeviendra indépendante et aucune donnée métier ne sera supprimée.";
+        if (!confirm(firstConfirmation)) return;
+        if (!confirm("Confirmez la désactivation définitive du mode Groupe.")) return;
+        button.disabled = true;
+        const result = await api("/api/groups/current", { method: "DELETE" });
+        if (!result.ok) {
+            button.disabled = false;
+            alert(result.message || "La désactivation du mode Groupe a échoué.");
+            return;
+        }
+        window.location.reload();
+    });
+    shell.appendChild(panel);
 }
 
 async function loadDashboard(shell, form) {

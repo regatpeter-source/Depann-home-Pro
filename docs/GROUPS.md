@@ -17,11 +17,18 @@ L’activation ajoute l’Administrateur (PC) qui active le groupe à `depannhom
 Un Administrateur Groupe peut :
 
 - créer, renommer, activer et désactiver des sociétés du groupe ;
+- désactiver le mode Groupe et dissoudre ses liaisons multi-entreprises ;
 - sélectionner une société active sans déconnexion ;
 - consulter des indicateurs agrégés et par société, filtrés par période ;
 - consulter les 100 dernières actions Groupe.
 
 Le changement de société émet un nouveau cookie de session HTTP-only, puis l’interface se recharge afin d’éliminer les données en mémoire de la société précédente.
+
+## Annuler le mode Groupe
+
+Depuis **Groupe & entreprises**, l’Administrateur Groupe peut choisir **Désactiver le mode Groupe**. L’action est confirmée deux fois, puis elle supprime le groupe, ses membres administrateurs et ses liaisons de sociétés.
+
+Elle ne supprime aucune entreprise ni aucune donnée métier : chaque société conserve ses utilisateurs, clients, planning, documents, devis, factures et paramètres, et redevient simplement indépendante. La session de l’administrateur est automatiquement replacée sur son entreprise d’origine.
 
 ## Audit et évolutions futures
 

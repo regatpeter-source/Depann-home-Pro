@@ -50,6 +50,41 @@ export function registerGroupRoutes(app, requireAuthentication) {
             res.status(201).json({ groupId: String(groupId) });
         } catch (error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }
     }));
+    app.delete("/api/groups/current", requireGroupAdministrator, asyncHandler(async (req, res) => {
+        const db = getPool();
+        const user = await findUserById(req.user.sub);
+        if (!user) return res.status(401).json({ message: "Utilisateur introuvable." });
+        const client = await db.connect();
+        try {
+            await client.query("BEGIN");
+            const group = await client.query(`
+                SELECT group_data.id, group_data.name
+                FROM depannhome_groups group_data
+                JOIN depannhome_group_administrators administrator ON administrator.group_id = group_data.id AND administrator.user_id = $1
+                WHERE group_data.id = $2 AND group_data.is_active = TRUE
+                FOR UPDATE
+            `, [req.user.sub, req.user.groupId]);
+            const currentGroup = group.rows[0];
+            if (!currentGroup) {
+                await client.query("ROLLBACK");
+                return res.status(404).json({ message: "Groupe introuvable ou déjà désactivé." });
+            }
+            const companies = await client.query("SELECT COUNT(*)::int AS count FROM depannhome_group_companies WHERE group_id = $1", [currentGroup.id]);
+            await client.query("DELETE FROM depannhome_groups WHERE id = $1", [currentGroup.id]);
+            await client.query(`
+                INSERT INTO depannhome_member_audit (owner_id, actor_id, target_user_id, target_username, target_full_name, action, details)
+                VALUES ($1, $2, $2, $3, $4, 'group_deactivated', $5::jsonb)
+            `, [user.account_owner_id, user.id, user.username, user.full_name || "", JSON.stringify({ groupName: currentGroup.name, companyCount: companies.rows[0]?.count || 0 })]);
+            await client.query("COMMIT");
+        } catch (error) {
+            await client.query("ROLLBACK");
+            throw error;
+        } finally {
+            client.release();
+        }
+        await refreshSessionForActiveCompany(res, user, req.user.deviceId, user.account_owner_id);
+        res.status(204).end();
+    }));
     app.post("/api/groups/companies", requireGroupAdministrator, asyncHandler(async (req, res) => {
         const input = companyInput(req.body);
         if (!input.ok) return res.status(400).json({ message: input.message });
