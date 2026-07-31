@@ -355,7 +355,9 @@ function getDeviceIdentity() {
         deviceId = crypto.randomUUID();
         localStorage.setItem(key, deviceId);
     }
-    const deviceType = window.matchMedia("(pointer: coarse)").matches ? "mobile" : "desktop";
+    const deviceType = window.matchMedia("(pointer: coarse)").matches || /android|iphone|ipad|ipod|mobile/i.test(navigator.userAgent)
+        ? "mobile"
+        : "desktop";
     return { deviceId, deviceLabel: navigator.userAgent.slice(0, 100), deviceType };
 }
 

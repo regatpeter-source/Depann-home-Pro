@@ -794,6 +794,11 @@ async function completeLogin(user, device, response) {
     // suit le même circuit d’autorisation qu’un Administrateur mobile.
     const automaticallyApproved = (isCreator && device.type !== "mobile") || isAccountant;
     let authDevice = await findAuthDevice(user.id, device.id);
+    if (isCreator && device.type === "desktop") {
+        // Le compte Créateur conserve uniquement le poste courant. Cette
+        // requête supprime aussi les doublons créés avant ce correctif.
+        await getPool().query("DELETE FROM depannhome_auth_devices WHERE user_id = $1 AND device_type = 'desktop' AND id <> $2", [user.id, device.id]);
+    }
     if (!authDevice) {
         if (isMobileAdministrator && await userHasActiveMobileDevice(user.id)) {
             return response.status(409).json({ message: "Un téléphone ou une tablette est déjà associé à ce compte administrateur. Supprimez d’abord l’ancien appareil dans Équipe." });

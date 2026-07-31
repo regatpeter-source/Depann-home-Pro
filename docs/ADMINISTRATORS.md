@@ -10,6 +10,8 @@ Le compte Créateur est distinct : sa capacité provient uniquement de `CREATOR_
 
 Le même compte peut également être utilisé sur un smartphone comme Administrateur Mobile opérationnel. Son appareil mobile suit alors le circuit normal d’autorisation des appareils administrateurs. La console Créateur et toutes ses routes restent toutefois strictement réservées à un appareil déclaré **poste PC** : elles sont absentes de l’interface mobile et refusées côté serveur.
 
+Pour éviter les doublons causés par une réinitialisation du stockage navigateur, le compte Créateur conserve au maximum un smartphone et un poste PC actifs. Lorsqu’un nouvel identifiant navigateur est présenté sur PC, il remplace l’ancien poste Créateur au lieu d’ajouter une ligne supplémentaire.
+
 ## Profils créables par un Administrateur (PC)
 
 | Profil | Rôle | Administration de l’entreprise |
