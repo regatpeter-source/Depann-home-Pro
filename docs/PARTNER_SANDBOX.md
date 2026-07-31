@@ -4,6 +4,8 @@
 
 Le module **Sandbox partenaires** est un laboratoire local réservé à l’administrateur principal. Il sert aux démonstrations, à la recette et aux développements de connecteurs, sans partenaire externe ni communication Internet.
 
+Il est **désactivé par défaut** et n’est jamais exposé en production. Pour une instance de développement ou de recette, définissez `PARTNER_SANDBOX_ENABLED=true` avec un `NODE_ENV` différent de `production`. En production, les routes Sandbox retournent `404` et aucune entrée de navigation ou d’annuaire n’est affichée.
+
 Son activation prépare immédiatement :
 
 - le partenaire fictif **AssurTest Démo** (assurance, connecteur et API simulés) ;
@@ -28,3 +30,9 @@ Chaque ligne est scindée par `owner_id` et n’est accessible qu’à l’admin
 ## Simulateur local
 
 Les boutons de simulation modifient uniquement l’instantané Sandbox et ajoutent les événements métier attendus à sa chronologie. Les retours API sont enregistrés dans un journal local : création, modification, acceptation, refus, annulation, demande d’informations et changement de visibilité des messages. Aucun `fetch` sortant n’est exécuté par le serveur.
+
+## Scénario de connexion partenaire
+
+Dans **Paramètres → Entreprises partenaires Depann’Home Pro → Connecter une entreprise**, l’annuaire de démonstration propose **AssurTest Démo** avec sa fiche (type, statut, description, connecteur et API simulés). La demande suit les étapes visibles « demande envoyée » puis « connexion acceptée ». L’acceptation active automatiquement le connecteur simulé, sans URL, clé API, OAuth ou autre paramétrage.
+
+Le panneau de test de la connexion propose la génération/réception de mission, la consultation des échanges, de la chronologie et du dossier généré, une réponse partenaire et la déconnexion. Une déconnexion désactive uniquement le connecteur simulé ; l’historique de démonstration est conservé pour une reconnexion ultérieure.

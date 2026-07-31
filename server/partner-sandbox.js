@@ -8,8 +8,14 @@ const ACTIONS = new Set([
     "create_invoice", "close", "cancel", "request_information"
 ]);
 const TECHNICIANS = ["Technicien Démo", "Sophie Bernard", "Lucas Morel"];
+const DEMO_PARTNER = Object.freeze({ id: "assurtest-demo", name: "AssurTest Démo", organizationType: "Assurance", status: "Partenaire officiel de démonstration", connector: "Simulé", api: "Simulée", description: "Assurance fictive permettant de tester les échanges avec Depann’Home Pro." });
+
+export function isPartnerSandboxEnabled() {
+    return process.env.PARTNER_SANDBOX_ENABLED === "true" && process.env.NODE_ENV !== "production";
+}
 
 export async function initializePartnerSandbox() {
+    if (!isPartnerSandboxEnabled()) return;
     const database = getPool();
     await database.query(`
         CREATE TABLE IF NOT EXISTS depannhome_partner_sandbox_sessions (
@@ -23,9 +29,43 @@ export async function initializePartnerSandbox() {
 }
 
 export function registerPartnerSandboxRoutes(app, requireAuthentication) {
-    app.use("/api/partner-sandbox", requireAuthentication, requireSandboxAdministration);
+    app.use("/api/partner-sandbox", requireAuthentication, requireSandboxAdministration, requireSandboxEnabled);
     app.get("/api/partner-sandbox", asyncHandler(async (request, response) => {
-        response.json({ enabled: Boolean(await loadSession(getAccountOwnerId(request))) });
+        response.json({ available: true, enabled: Boolean(await loadSession(getAccountOwnerId(request))) });
+    }));
+    app.get("/api/partner-sandbox/connection-scenario", asyncHandler(async (request, response) => {
+        response.json({ scenario: connectionScenario(await loadSession(getAccountOwnerId(request))) });
+    }));
+    app.post("/api/partner-sandbox/connection-scenario/request", asyncHandler(async (request, response) => {
+        const ownerId = getAccountOwnerId(request);
+        const payload = await ensureSandboxPayload(ownerId, request.user);
+        const connection = payload.connection || {};
+        if (connection.status === "connected") return response.status(409).json({ message: "AssurTest Démo est déjà connecté." });
+        payload.connection = { status: "pending", connectorActive: false, requestedAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+        appendApi(payload, "POST", "/simulated-api/connections", "202 Accepted", "Demande de connexion envoyée à AssurTest Démo.");
+        appendTimeline(currentMission(payload), new Date(), "system", "Demande de connexion envoyée à AssurTest Démo.", "connection_requested", request.user.fullName || request.user.username);
+        await saveSession(ownerId, request.user.sub, payload);
+        response.status(201).json({ scenario: connectionScenario(payload) });
+    }));
+    app.post("/api/partner-sandbox/connection-scenario/accept", asyncHandler(async (request, response) => {
+        const ownerId = getAccountOwnerId(request);
+        const payload = await loadSession(ownerId);
+        if (!payload?.connection || payload.connection.status !== "pending") return response.status(409).json({ message: "Aucune demande Sandbox en attente de validation." });
+        payload.connection = { ...payload.connection, status: "connected", connectorActive: true, acceptedAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+        appendApi(payload, "POST", "/simulated-api/connections/assurtest-demo/accept", "200 OK", "Connexion acceptée et connecteur simulé activé.");
+        appendTimeline(currentMission(payload), new Date(), "partner", "Connexion acceptée par AssurTest Démo. Le connecteur simulé est actif.", "connection_accepted");
+        await saveSession(ownerId, request.user.sub, payload);
+        response.json({ scenario: connectionScenario(payload) });
+    }));
+    app.post("/api/partner-sandbox/connection-scenario/disconnect", asyncHandler(async (request, response) => {
+        const ownerId = getAccountOwnerId(request);
+        const payload = await loadSession(ownerId);
+        if (!payload?.connection || payload.connection.status !== "connected") return response.status(409).json({ message: "AssurTest Démo n’est pas connecté." });
+        payload.connection = { ...payload.connection, status: "disconnected", connectorActive: false, disconnectedAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+        appendApi(payload, "POST", "/simulated-api/connections/assurtest-demo/disconnect", "200 OK", "Connecteur simulé désactivé ; l’historique est conservé.");
+        appendTimeline(currentMission(payload), new Date(), "internal", "Connexion AssurTest Démo désactivée. L’historique Sandbox est conservé.", "connection_disconnected", request.user.fullName || request.user.username);
+        await saveSession(ownerId, request.user.sub, payload);
+        response.json({ scenario: connectionScenario(payload) });
     }));
     app.post("/api/partner-sandbox/activate", asyncHandler(async (request, response) => {
         const ownerId = getAccountOwnerId(request);
@@ -64,15 +104,8 @@ function createSandboxPayload(user) {
     const mission = createMission({ today, appointment, sequence: 1 });
     const payload = {
         version: 1,
-        partner: {
-            id: "assurtest-demo",
-            name: "AssurTest Démo",
-            organizationType: "Assurance",
-            status: "Partenaire de démonstration",
-            connector: "Simulé",
-            api: "Simulée",
-            banner: "Environnement de démonstration — aucune donnée réelle ni communication Internet."
-        },
+        partner: { ...DEMO_PARTNER, banner: "Environnement de démonstration — aucune donnée réelle ni communication Internet." },
+        connection: { status: "available", connectorActive: false, updatedAt: now.toISOString() },
         technicians: TECHNICIANS,
         activeMissionId: mission.id,
         missions: [mission],
@@ -231,6 +264,14 @@ async function loadSession(ownerId) {
     return rows[0]?.payload || null;
 }
 
+async function ensureSandboxPayload(ownerId, user) {
+    const existing = await loadSession(ownerId);
+    if (existing) return existing;
+    const payload = createSandboxPayload(user);
+    await saveSession(ownerId, user?.sub || user?.id, payload);
+    return payload;
+}
+
 async function saveSession(ownerId, userId, payload) {
     await getPool().query(`
         INSERT INTO depannhome_partner_sandbox_sessions(owner_id,payload,created_by)
@@ -243,9 +284,19 @@ function publicSandbox(payload) {
     return payload;
 }
 
+function connectionScenario(payload) {
+    const connection = payload?.connection || { status: "available", connectorActive: false, updatedAt: null };
+    return { partner: DEMO_PARTNER, connection: { ...connection, isSandbox: true, id: "assurtest-demo", isRequester: true, lastSynchronizedAt: payload?.updatedAt || null } };
+}
+
 function requireSandboxAdministration(request, response, next) {
     if (request.user?.role === "admin" && String(request.user.accountOwnerId || request.user.sub) === String(request.user.sub)) return next();
     return response.status(403).json({ message: "Le mode Sandbox est réservé à l’administrateur principal du compte." });
+}
+
+function requireSandboxEnabled(_request, response, next) {
+    if (isPartnerSandboxEnabled()) return next();
+    return response.status(404).json({ message: "Environnement de démonstration indisponible." });
 }
 
 function dateAt(date, hour, minute) { const value = new Date(date); value.setHours(hour, minute, 0, 0); return value; }

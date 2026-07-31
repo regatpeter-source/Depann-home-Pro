@@ -394,10 +394,15 @@ body[data-role]:not([data-role="admin"]) .nav-button[data-nav="connectors"]{
     display:none;
 }
 
+#partnerSandboxBtn,
+.nav-button[data-nav="partner-sandbox"],
 body[data-role]:not([data-role="admin"]) #partnerSandboxBtn,
 body[data-role]:not([data-role="admin"]) .nav-button[data-nav="partner-sandbox"]{
     display:none;
 }
+
+body.partner-sandbox-enabled[data-role="admin"] #partnerSandboxBtn,
+body.partner-sandbox-enabled[data-role="admin"] .nav-button[data-nav="partner-sandbox"]{display:inline-flex;}
 
 /* Sandbox missions partenaires : module de recette totalement indépendant. */
 .partner-sandbox-shell{max-width:1280px;margin:0 auto;padding:clamp(12px,2vw,28px)}
@@ -2572,6 +2577,9 @@ body[data-role="technician"] .library-tools-panel .library-catalog-panel{
 .calendar-client-upload .auth-message{
     grid-column:1/-1;
 }
+
+/* Parcours de connexion AssurTest Démo : uniquement révélé par la capacité Sandbox serveur. */
+.partner-sandbox-note{margin:14px 0;padding:10px 12px;border:1px solid #c4b5fd;border-radius:10px;background:#f5f3ff;color:#5b21b6;font-weight:700}.partner-sandbox-connection{border-color:#c4b5fd;background:#faf5ff}.partner-sandbox-directory{margin:12px 0;padding:12px;border:1px dashed #a78bfa;border-radius:11px;background:#faf5ff}.partner-sandbox-directory .eyebrow{color:#6d28d9}.partner-sandbox-profile dl{display:grid;grid-template-columns:130px 1fr;gap:8px 12px;padding:12px;border:1px solid #e2e8f0;border-radius:10px;background:#f8fafc}.partner-sandbox-profile dt{font-weight:800;color:#475569}.partner-sandbox-profile dd{margin:0;color:#003b73}.sandbox-step{padding:10px 12px;border:1px solid #e2e8f0;border-radius:9px;background:#f8fafc}.sandbox-step.done{border-color:#86efac;background:#f0fdf4;color:#166534;font-weight:800}.partner-sandbox-test-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.partner-sandbox-test-actions .danger-button{grid-column:1/-1}@media(max-width:700px){.partner-sandbox-test-actions{grid-template-columns:1fr}.partner-sandbox-profile dl{grid-template-columns:1fr}.partner-sandbox-test-actions .danger-button{grid-column:auto}}
 
 .calendar-client-upload h3{
     margin:3px 0;

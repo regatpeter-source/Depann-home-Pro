@@ -2,7 +2,7 @@ import { initializeAuthentication, restoreApplicationShell, signOut } from "./au
 import { initializeClientSynchronization } from "./client-sync.js?v=118";
 import { initializeCollaboration } from "./collaboration.js?v=2";
 import { loadDatabase } from "./data.js?v=59";
-import { initializeNavigation, refreshApplication } from "./navigation.js?v=190";
+import { initializeNavigation, refreshApplication } from "./navigation.js?v=191";
 import { renderError } from "./ui.js?v=44";
 import { getSettings } from "./storage.js?v=44";
 import { FONT_OPTIONS } from "./config.js?v=116";
@@ -33,6 +33,7 @@ async function startApplication() {
         applyTheme();
         applyFont();
         applyLanguage();
+        await initializeSandboxCapability();
         await initializeClientSynchronization();
         initializeCollaboration();
         const database = await loadDatabase();
@@ -41,6 +42,16 @@ async function startApplication() {
     } catch (error) {
         applicationStarted = false;
         renderError("Impossible de charger la base de données.", error.message);
+    }
+}
+
+async function initializeSandboxCapability() {
+    try {
+        const response = await fetch("/api/partner-sandbox", { credentials: "same-origin" });
+        const data = response.ok ? await response.json() : null;
+        document.body.classList.toggle("partner-sandbox-enabled", Boolean(data?.available));
+    } catch {
+        document.body.classList.remove("partner-sandbox-enabled");
     }
 }
 
