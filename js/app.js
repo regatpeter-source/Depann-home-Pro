@@ -1,8 +1,8 @@
-import { initializeAuthentication, restoreApplicationShell, signOut } from "./auth.js?v=118";
+import { initializeAuthentication, restoreApplicationShell, signOut } from "./auth.js?v=119";
 import { initializeClientSynchronization } from "./client-sync.js?v=118";
 import { initializeCollaboration } from "./collaboration.js?v=2";
 import { loadDatabase } from "./data.js?v=59";
-import { initializeNavigation, refreshApplication } from "./navigation.js?v=200";
+import { initializeNavigation, refreshApplication } from "./navigation.js?v=201";
 import { renderError } from "./ui.js?v=44";
 import { getSettings } from "./storage.js?v=44";
 import { FONT_OPTIONS } from "./config.js?v=117";
@@ -79,6 +79,7 @@ function showAuthenticatedUser(user) {
     document.body.dataset.role = user.role || "";
     document.body.dataset.userName = user.fullName || user.username || "";
     document.body.dataset.creator = user.isCreator ? "true" : "false";
+    document.body.dataset.deviceType = user.deviceType || "desktop";
     document.body.dataset.technicianBillingEnabled = user.technicianBillingEnabled === false ? "false" : "true";
     document.body.dataset.maxPcUsers = String(user.maxPcUsers || 1);
     document.body.dataset.groupAdmin = user.isGroupAdministrator ? "true" : "false";
@@ -127,9 +128,7 @@ function escapeHtmlText(value) { const node = document.createElement("span"); no
 function escapeAttribute(value) { return escapeHtmlText(value).replace(/"/g, "&quot;"); }
 
 function updateDeviceMode() {
-    const isCreator = document.body.dataset.creator === "true";
-    const isMobileDevice = !isCreator && (window.matchMedia("(max-width: 700px)").matches
-        || window.matchMedia("(pointer: coarse)").matches);
+    const isMobileDevice = document.body.dataset.deviceType === "mobile";
     document.body.classList.toggle("mobile-device", isMobileDevice);
     document.body.classList.toggle("desktop-device", !isMobileDevice);
 }

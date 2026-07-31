@@ -196,7 +196,7 @@ export function registerAuthRoutes(app) {
                 return response.status(409).json({ message: "Cet appareil est déjà associé à un autre compte. Utilisez un autre navigateur ou contactez l’administrateur." });
             }
             setSessionCookie(response, user, authDevice.id);
-            return response.status(201).json({ user: publicUser(user) });
+            return response.status(201).json({ user: publicUser({ ...user, deviceType: device.type }) });
         } catch (error) {
             if (error.code === "23505") {
                 return response.status(409).json({ message: "Ce nom d’utilisateur est déjà utilisé." });
@@ -680,6 +680,7 @@ export async function refreshSessionForActiveCompany(response, user, deviceId, a
 
 export function requireCreator(request, response, next) {
     if (!request.user?.isCreator) return response.status(403).json({ message: "Accès réservé au Créateur de l’application." });
+    if (request.user.deviceType !== "desktop") return response.status(403).json({ message: "La console Créateur est accessible uniquement depuis un poste PC." });
     return next();
 }
 
@@ -789,7 +790,9 @@ async function completeLogin(user, device, response) {
     const isMobileAdministrator = (user.role === "admin" && device.type === "mobile") || isDedicatedMobileAdministrator;
     const isAccountant = user.role === "accountant";
     const authDeviceDetails = { ...device, type: isMobileAdministrator || isAccountant ? device.type : "desktop" };
-    const automaticallyApproved = isCreator || isAccountant;
+    // Le Créateur garde son accès plateforme sur PC. Sur mobile, son compte
+    // suit le même circuit d’autorisation qu’un Administrateur mobile.
+    const automaticallyApproved = (isCreator && device.type !== "mobile") || isAccountant;
     let authDevice = await findAuthDevice(user.id, device.id);
     if (!authDevice) {
         if (isMobileAdministrator && await userHasActiveMobileDevice(user.id)) {
@@ -823,7 +826,7 @@ async function completeLogin(user, device, response) {
     if (authDevice.status === "approved") {
         const groupCompany = user.role === "admin" ? await resolveGroupCompany(user.id, null) : null;
         setSessionCookie(response, user, authDevice.id, groupCompany?.companyId);
-        return response.json({ user: publicUser({ ...user, accountOwnerId: groupCompany?.companyId || user.account_owner_id, activeCompanyId: groupCompany?.companyId || user.account_owner_id, groupId: groupCompany?.groupId, groupName: groupCompany?.groupName, activeCompanyName: groupCompany?.companyName, isGroupAdministrator: Boolean(groupCompany), role: user.role, principalRole: groupCompany ? "group_admin" : user.role }) });
+        return response.json({ user: publicUser({ ...user, accountOwnerId: groupCompany?.companyId || user.account_owner_id, activeCompanyId: groupCompany?.companyId || user.account_owner_id, groupId: groupCompany?.groupId, groupName: groupCompany?.groupName, activeCompanyName: groupCompany?.companyName, isGroupAdministrator: Boolean(groupCompany), role: user.role, principalRole: groupCompany ? "group_admin" : user.role, deviceType: authDevice.device_type }) });
     }
     if (authDevice.status === "code_pending") {
         return response.status(403).json({ codeRequired: true, deviceId: authDevice.id, message: "Saisissez le code envoyé à votre e-mail professionnel." });
@@ -1048,7 +1051,8 @@ function publicUser(user) {
         technicianBillingEnabled: (user.can_create_billing ?? user.technicianBillingEnabled) !== false,
         maxPcUsers: Number(user.max_pc_users ?? user.maxPcUsers) || 1,
         isActive: user.is_active !== false,
-        isCreator: Boolean(user.isCreator || isCreatorUsername(user.username))
+        isCreator: Boolean(user.isCreator || isCreatorUsername(user.username)),
+        deviceType: user.deviceType || user.device_type || "desktop"
     };
 }
 

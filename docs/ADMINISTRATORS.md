@@ -8,6 +8,8 @@ Il n’existe pas de rôle d’« administrateur principal » ni d’administrat
 
 Le compte Créateur est distinct : sa capacité provient uniquement de `CREATOR_USERNAMES` et reste protégée par `requireCreator`. Un administrateur d’entreprise ne peut pas accéder aux routes ni à la console Créateur.
 
+Le même compte peut également être utilisé sur un smartphone comme Administrateur Mobile opérationnel. Son appareil mobile suit alors le circuit normal d’autorisation des appareils administrateurs. La console Créateur et toutes ses routes restent toutefois strictement réservées à un appareil déclaré **poste PC** : elles sont absentes de l’interface mobile et refusées côté serveur.
+
 ## Profils créables par un Administrateur (PC)
 
 | Profil | Rôle | Administration de l’entreprise |
