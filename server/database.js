@@ -113,6 +113,7 @@ export async function initializeDatabase() {
             verified_at TIMESTAMPTZ,
             approved_at TIMESTAMPTZ,
             approved_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+            session_id UUID,
             last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             CONSTRAINT depannhome_auth_devices_status_check CHECK (status IN ('approval_pending', 'code_pending', 'approved', 'rejected'))
@@ -121,6 +122,10 @@ export async function initializeDatabase() {
     await database.query(`
         ALTER TABLE depannhome_auth_devices
         ADD COLUMN IF NOT EXISTS device_type VARCHAR(10) NOT NULL DEFAULT 'desktop'
+    `);
+    await database.query(`
+        ALTER TABLE depannhome_auth_devices
+        ADD COLUMN IF NOT EXISTS session_id UUID
     `);
     await database.query(`
         UPDATE depannhome_auth_devices device
