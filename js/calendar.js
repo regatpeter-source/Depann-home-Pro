@@ -1,5 +1,5 @@
 import { ROUTES } from "./config.js?v=105";
-import { createBillingDocumentForClient, viewBillingDocument } from "./billing.js?v=138";
+import { createBillingDocumentForClient, viewBillingDocument } from "./billing.js?v=145";
 import { getSearchableClients } from "./clients.js?v=132";
 import { addClientActivityByName, synchronizeClients } from "./client-sync.js?v=116";
 import { renderClientMessages } from "./messages.js?v=106";
@@ -265,8 +265,8 @@ function renderEventForm(panel) {
                     </section>
                     <section class="calendar-linked-documents" id="calendarLinkedDocuments"><p class="muted">Chargement des devis et factures de cette intervention…</p></section>
                     ${isTechnicianBillingAllowed() ? `<section class="calendar-billing-actions">
-                        <div><p class="eyebrow">Fin d’intervention</p><h3>Devis et facture</h3><p class="muted">Créez le document adapté après avoir renseigné l’intervention.</p></div>
-                        <div><button type="button" class="secondary-button" data-client-action="quote">Créer un devis</button><button type="button" class="secondary-button" data-client-action="invoice">Créer une facture</button></div>
+                        <div><p class="eyebrow">Fin d’intervention</p><h3>${isReadOnlyCalendar() ? "Devis" : "Devis et facture"}</h3><p class="muted">${isReadOnlyCalendar() ? "Créez le devis de cette intervention." : "Créez le document adapté après avoir renseigné l’intervention."}</p></div>
+                        <div><button type="button" class="secondary-button" data-client-action="quote">Créer un devis</button>${isReadOnlyCalendar() ? "" : '<button type="button" class="secondary-button" data-client-action="invoice">Créer une facture</button>'}</div>
                     </section>` : ""}
                     ${event.eventType === "appointment" ? renderQuitusHtml(event) : ""}
                     <div class="calendar-client-messages-slot"></div>

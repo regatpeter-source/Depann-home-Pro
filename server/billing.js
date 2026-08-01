@@ -413,6 +413,9 @@ export function registerBillingRoutes(app, requireAuthentication) {
         }
         const document = sanitizeDocument(request.body);
         if (!document.ok) return response.status(400).json({ message: document.message });
+        if (request.user?.role === "technician" && (document.documentType !== "quote" || !document.appointmentId)) {
+            return response.status(403).json({ message: "Les techniciens peuvent créer un devis uniquement depuis une intervention qui leur est attribuée." });
+        }
         try {
             if (document.clientId && !await hasClient(getPool(), getAccountOwnerId(request), document.clientId)) {
                 return response.status(400).json({ message: "Le dossier client associé est introuvable." });

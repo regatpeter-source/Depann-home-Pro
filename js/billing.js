@@ -72,6 +72,10 @@ export function createBillingDocumentForClient(type, client, appointmentId = "")
         alert("La création de devis et factures est désactivée par l’administrateur.");
         return;
     }
+    if (isTechnician() && (type !== "quote" || !appointmentId)) {
+        alert("Un technicien peut créer un devis uniquement depuis l’intervention qui lui est attribuée.");
+        return;
+    }
     renderBilling({ newDocument: { type, client, appointmentId } });
 }
 
@@ -282,7 +286,7 @@ function renderDocumentEditor(panel) {
         <form id="billingDocumentForm" class="client-form">
             <div class="form-heading"><div><p class="eyebrow">${isEditing ? "Modification" : "Nouveau document"}</p><h2>${isEditing ? "Modifier le document" : `Créer un ${DOCUMENT_TYPES[document.documentType].toLowerCase()}`}</h2></div><div class="calendar-form-actions">${isEditing && document.documentType === "quote" ? linkedInvoice ? `<button type="button" class="secondary-button" data-view-linked-invoice="${escapeHtml(linkedInvoice.id)}">Voir la facture</button>` : '<button type="button" class="secondary-button" id="createInvoiceFromQuote">Créer la facture</button>' : ""}<button type="button" class="secondary-button" id="cancelBillingDocument">Annuler</button></div></div>
             <div class="form-grid">
-                <label>Type *<select name="documentType">${Object.entries(DOCUMENT_TYPES).map(([id, label]) => `<option value="${id}" ${document.documentType === id ? "selected" : ""}>${label}</option>`).join("")}</select></label>
+                ${isTechnician() ? '<input name="documentType" type="hidden" value="quote"><p class="billing-quote-reference">Type : <strong>Devis</strong></p>' : `<label>Type *<select name="documentType">${Object.entries(DOCUMENT_TYPES).map(([id, label]) => `<option value="${id}" ${document.documentType === id ? "selected" : ""}>${label}</option>`).join("")}</select></label>`}
                 <label>Numéro *<input name="documentNumber" maxlength="80" required placeholder="Ex. DEV-2026-001" value="${escapeHtml(document.documentNumber)}"></label>
                 <input name="clientId" type="hidden" value="${escapeHtml(document.clientId || "")}">
                 <input name="appointmentId" type="hidden" value="${escapeHtml(document.appointmentId || "")}">
