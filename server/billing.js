@@ -145,7 +145,7 @@ export function registerBillingRoutes(app, requireAuthentication) {
     app.get("/api/billing", requireAuthentication, asyncHandler(async (request, response) => {
         const database = getPool();
         const accountOwnerId = getAccountOwnerId(request);
-        const [profileResult, templatesResult, documentsResult] = await Promise.all([
+        const [profileResult, templatesResult, documentsResult, aidsResult] = await Promise.all([
             database.query(`
                 SELECT profile.company_name AS "companyName", profile.legal_form AS "legalForm", profile.address, profile.postal_code AS "postalCode", profile.city,
                     profile.phone, profile.email, profile.registration_number AS "registrationNumber", profile.siren, profile.tax_number AS "taxNumber", profile.bank_iban AS "bankIban", profile.bank_bic AS "bankBic",
@@ -188,9 +188,15 @@ export function registerBillingRoutes(app, requireAuthentication) {
                                                       AND (source_quote.created_by = $3 OR EXISTS (SELECT 1 FROM depannhome_calendar_assignments assignment WHERE assignment.event_id = quote_appointment.id AND assignment.technician_id = $3))
                                                   ))
                                 ORDER BY issue_date DESC, depannhome_billing_documents.id DESC
-                        `, [accountOwnerId, request.user?.role || "", request.user?.sub || 0])
+                        `, [accountOwnerId, request.user?.role || "", request.user?.sub || 0]),
+            database.query(`
+                SELECT id, name, description, aid_type AS "aidType", calculation_mode AS "calculationMode", amount::float AS amount, auto_apply AS "autoApply"
+                FROM depannhome_accounting_aids
+                WHERE owner_id = $1
+                ORDER BY auto_apply DESC, LOWER(name)
+            `, [accountOwnerId])
         ]);
-        response.json({ profile: { ...emptyProfile(), ...(profileResult.rows[0] || {}) }, templates: templatesResult.rows, documents: documentsResult.rows });
+        response.json({ profile: { ...emptyProfile(), ...(profileResult.rows[0] || {}) }, templates: templatesResult.rows, documents: documentsResult.rows, aids: aidsResult.rows });
     }));
 
     app.put("/api/billing/profile", requireAuthentication, requireBillingAdministration, upload.single("logo"), asyncHandler(async (request, response) => {
@@ -407,6 +413,7 @@ export function registerBillingRoutes(app, requireAuthentication) {
         }
         const document = sanitizeDocument(request.body);
         if (!document.ok) return response.status(400).json({ message: document.message });
+        if (request.user?.role !== "admin") document.financialData = { ...document.financialData, aids: [] };
         try {
             if (document.clientId && !await hasClient(getPool(), getAccountOwnerId(request), document.clientId)) {
                 return response.status(400).json({ message: "Le dossier client associé est introuvable." });
@@ -420,11 +427,11 @@ export function registerBillingRoutes(app, requireAuthentication) {
             }
             const { rows } = await getPool().query(`
                 INSERT INTO depannhome_billing_documents
-                    (owner_id, created_by, document_type, document_number, client_id, customer_type, customer_name, customer_address, issue_date, due_date, status, is_accounted, accounted_at, appointment_id, source_quote_id, quote_reference, lines, notes)
-                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::date,$10::date,$11,$12,CASE WHEN $12 THEN CURRENT_DATE ELSE NULL END,$13,$14,$15,$16::jsonb,$17)
+                    (owner_id, created_by, document_type, document_number, client_id, customer_type, customer_name, customer_address, issue_date, due_date, status, is_accounted, accounted_at, appointment_id, source_quote_id, quote_reference, lines, notes, financial_data)
+                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::date,$10::date,$11,$12,CASE WHEN $12 THEN CURRENT_DATE ELSE NULL END,$13,$14,$15,$16::jsonb,$17,$18::jsonb)
                 RETURNING id
             `, [getAccountOwnerId(request), request.user.sub, document.documentType, document.documentNumber, document.clientId || null, document.customerType, document.customerName,
-                document.customerAddress, document.issueDate, document.dueDate || null, document.status, document.isAccounted, appointment?.id || null, sourceQuote?.id || null, sourceQuote?.documentNumber || "", JSON.stringify(document.lines), document.notes]);
+                document.customerAddress, document.issueDate, document.dueDate || null, document.status, document.isAccounted, appointment?.id || null, sourceQuote?.id || null, sourceQuote?.documentNumber || "", JSON.stringify(document.lines), document.notes, JSON.stringify(document.financialData)]);
             await (await import("./partner-connections.js")).synchronizeConnectedBillingDocument(getAccountOwnerId(request), rows[0].id);
             const { recordMissionEventForSource } = await import("./partner-dialogue.js"); await recordMissionEventForSource({ ownerId: getAccountOwnerId(request), sourceType: "appointment", sourceId: appointment?.id, status: document.documentType === "invoice" ? "invoice_created" : "quote_created", action: "billing_document_created", details: { documentId: rows[0].id, documentType: document.documentType, status: document.status }, actorName: request.user.fullName || request.user.username });
             response.status(201).json({ id: rows[0].id });
@@ -439,6 +446,11 @@ export function registerBillingRoutes(app, requireAuthentication) {
         const document = sanitizeDocument(request.body);
         if (!id) return response.status(400).json({ message: "Document invalide." });
         if (!document.ok) return response.status(400).json({ message: document.message });
+        if (request.user?.role !== "admin") {
+            const existing = await getPool().query("SELECT financial_data FROM depannhome_billing_documents WHERE id = $1 AND owner_id = $2", [id, getAccountOwnerId(request)]);
+            if (!existing.rowCount) return response.status(404).json({ message: "Document introuvable." });
+            document.financialData = sanitizeFinancialData(existing.rows[0].financial_data);
+        }
         if (document.documentType === "quote" && await usesExternalQuoteTemplate(getAccountOwnerId(request))) {
             return response.status(403).json({ message: "Cette entreprise utilise une base de devis PDF ou Word déposée dans son espace." });
         }
@@ -457,10 +469,10 @@ export function registerBillingRoutes(app, requireAuthentication) {
                 UPDATE depannhome_billing_documents SET document_type=$3, document_number=$4, client_id=$5, customer_type=$6, customer_name=$7,
                     customer_address=$8, issue_date=$9::date, due_date=$10::date, status=$11, is_accounted=$12,
                     accounted_at=CASE WHEN $12 THEN COALESCE(accounted_at, CURRENT_DATE) ELSE NULL END, appointment_id=$13,
-                    source_quote_id=$14, quote_reference=$15, lines=$16::jsonb, notes=$17, updated_at=NOW()
+                    source_quote_id=$14, quote_reference=$15, lines=$16::jsonb, notes=$17, financial_data=$18::jsonb, updated_at=NOW()
                 WHERE id=$1 AND owner_id=$2
             `, [id, getAccountOwnerId(request), document.documentType, document.documentNumber, document.clientId || null, document.customerType, document.customerName,
-                document.customerAddress, document.issueDate, document.dueDate || null, document.status, document.isAccounted, appointment?.id || null, sourceQuote?.id || null, sourceQuote?.documentNumber || "", JSON.stringify(document.lines), document.notes]);
+                document.customerAddress, document.issueDate, document.dueDate || null, document.status, document.isAccounted, appointment?.id || null, sourceQuote?.id || null, sourceQuote?.documentNumber || "", JSON.stringify(document.lines), document.notes, JSON.stringify(document.financialData)]);
             if (!result.rowCount) return response.status(404).json({ message: "Document introuvable." });
             await (await import("./partner-connections.js")).synchronizeConnectedBillingDocument(getAccountOwnerId(request), id);
             const { recordMissionEventForSource } = await import("./partner-dialogue.js"); await recordMissionEventForSource({ ownerId: getAccountOwnerId(request), sourceType: "appointment", sourceId: appointment?.id, status: document.documentType === "invoice" ? "invoice_sent" : "quote_sent", action: "billing_document_updated", details: { documentId: id, documentType: document.documentType, status: document.status }, actorName: request.user.fullName || request.user.username });
@@ -588,11 +600,32 @@ function sanitizeDocument(value) {
     const sourceQuoteId = documentType === "invoice" ? positiveId(value?.sourceQuoteId) : 0;
     const notes = cleanText(value?.notes, 2000);
     const lines = sanitizeLines(value?.lines);
+    const financialData = sanitizeFinancialData(value?.financialData);
     if (!documentType || !documentNumber || !issueDate) return { ok: false, message: "Le type, le numéro et la date sont obligatoires." };
     if (!customerName) return { ok: false, message: "Le nom du client est obligatoire." };
     if (!lines.length) return { ok: false, message: "Ajoutez au moins une ligne." };
     if (value?.dueDate && !dueDate) return { ok: false, message: "La date d'échéance est invalide." };
-    return { ok: true, documentType, documentNumber, clientId, customerType, customerName, customerAddress, issueDate, dueDate, status, isAccounted, appointmentId, sourceQuoteId, lines, notes };
+    return { ok: true, documentType, documentNumber, clientId, customerType, customerName, customerAddress, issueDate, dueDate, status, isAccounted, appointmentId, sourceQuoteId, lines, notes, financialData };
+}
+
+function sanitizeFinancialData(value) {
+    const data = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+    const aids = Array.isArray(data.aids) ? data.aids.map(aid => {
+        const name = cleanText(aid?.name, 160);
+        const amount = nonNegativeNumber(aid?.amount);
+        const calculationMode = aid?.calculationMode === "percentage" ? "percentage" : "fixed";
+        return name && amount !== null
+            ? { name, amount, calculationMode, aidType: cleanText(aid?.aidType, 40) || "custom", description: cleanText(aid?.description, 1000) }
+            : null;
+    }).filter(Boolean).slice(0, 30) : [];
+    return {
+        discountMode: data.discountMode === "percentage" ? "percentage" : "fixed",
+        discountAmount: nonNegativeNumber(data.discountAmount) || 0,
+        depositAmount: nonNegativeNumber(data.depositAmount) || 0,
+        conditions: cleanText(data.conditions, 2000),
+        comments: cleanText(data.comments, 2000),
+        aids
+    };
 }
 
 function sanitizeQuoteTemplate(value) {

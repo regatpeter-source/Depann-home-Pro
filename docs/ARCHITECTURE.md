@@ -7,7 +7,7 @@ Cette version sépare le moteur de l'application en modules simples et stables.
 Le module `server/accounting.js` reste indépendant de la facturation historique : ses tables, routes et connecteurs ne modifient pas les flux métier existants. Chaque requête est filtrée avec l’`owner_id` dérivé de la session afin de garantir l’isolation des entreprises.
 
 - Les aides, règlements, paramètres comptables et journaux PDP sont persistés dans des tables dédiées.
-- `financial_data` porte les remises, acomptes, conditions, options et aides appliquées à un document ; les PDF affichent le TTC, les aides et le reste à charge.
+- `financial_data` porte les remises, acomptes, conditions, options et aides appliquées à un document. Dans l’éditeur de devis Administrateur, les aides configurées sont affichées comme lignes de **primes et aides**, déduites du reste à charge ; les PDF affichent le TTC, les aides et le reste à charge.
 - Les exports CSV, XLSX, PDF et FEC sont préparés pour les outils comptables. Le FEC doit être contrôlé par le cabinet comptable avant dépôt réglementaire : l’application ne certifie pas à elle seule les paramétrages comptables de chaque entreprise.
 - Les PDP sont des connecteurs isolés. Seul le bac à sable est fourni ; l’ajout d’un partenaire certifié consiste à enregistrer un connecteur sans modifier le cœur de la facturation. Les échecs sont journalisés et renvoyables depuis l’interface.
 - Les critères de travaux, équipements, catégories de clients, localisation et dates de validité sont conservés dans les règles d’aide pour permettre l’ajout ultérieur de référentiels officiels ou régionaux.

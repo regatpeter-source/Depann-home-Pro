@@ -296,6 +296,7 @@ function renderDocumentEditor(panel) {
                 ${document.documentType === "invoice" ? `<label class="billing-accounting-option"><input name="isAccounted" type="checkbox" ${document.isAccounted ? "checked" : ""}> Facture comptabilisée</label>` : ""}
             </div>
             <section class="billing-lines-section"><div class="form-heading"><div><p class="eyebrow">Prestations</p><h3>Lignes du document</h3></div><button type="button" class="secondary-button" id="addBillingLine">+ Ligne libre</button></div><div id="billingLines" class="billing-lines"></div><div class="billing-totals" id="billingTotals"></div></section>
+            ${document.documentType === "quote" && isFullAdministrator() ? '<section class="billing-aids-section" id="billingAids"></section>' : ""}
             <label>Notes / conditions<textarea name="notes" rows="3" maxlength="2000" placeholder="Informations complémentaires, conditions, validité du devis…">${escapeHtml(document.notes)}</textarea></label>
             <p id="billingDocumentMessage" class="auth-message" aria-live="polite"></p>
             <div class="calendar-form-actions"><button type="submit" class="secondary-button">${isEditing ? "Enregistrer les modifications" : "Enregistrer le document"}</button>${isEditing ? '<button type="button" class="danger-button" id="deleteBillingDocument">Supprimer</button>' : ""}</div>
@@ -306,9 +307,10 @@ function renderDocumentEditor(panel) {
     const renderLines = () => {
         linesNode.innerHTML = "";
         document.lines.forEach((line, index) => linesNode.appendChild(createLineEditor(line, index, document, renderLines)));
-        renderTotals(panel.querySelector("#billingTotals"), document.lines);
+        renderTotals(panel.querySelector("#billingTotals"), document.lines, document.financialData);
     };
     renderLines();
+    renderQuoteAids(panel.querySelector("#billingAids"), document, renderLines);
     form.querySelector("#addBillingLine").addEventListener("click", () => { document.lines.push(emptyLine()); renderLines(); });
     form.querySelector("#cancelBillingDocument").addEventListener("click", () => { activeDocument = null; renderBilling(); });
     form.querySelector("#createInvoiceFromQuote")?.addEventListener("click", () => createInvoiceFromQuote(document));
@@ -318,7 +320,7 @@ function renderDocumentEditor(panel) {
     customerInput.addEventListener("input", () => fillCustomerAddress(customerInput, form, clients));
     form.addEventListener("submit", async event => {
         event.preventDefault();
-        const payload = { ...formDataToObject(new FormData(form)), lines: document.lines };
+        const payload = { ...formDataToObject(new FormData(form)), lines: document.lines, financialData: document.financialData };
         const message = panel.querySelector("#billingDocumentMessage");
         const result = await apiRequest(isEditing ? `/api/billing/documents/${encodeURIComponent(document.id)}` : "/api/billing/documents", { method: isEditing ? "PUT" : "POST", body: JSON.stringify(payload) });
         if (!result.ok) { message.textContent = result.message || "Impossible d’enregistrer le document."; message.classList.add("error"); return; }
@@ -354,7 +356,7 @@ function renderReadOnlyDocument(panel, document) {
             <div class="billing-totals" id="billingReadOnlyTotals"></div>
             ${document.notes ? `<section class="procedure-section"><h3>Notes / conditions</h3><p>${escapeHtml(document.notes)}</p></section>` : ""}
         </div>`;
-    renderTotals(panel.querySelector("#billingReadOnlyTotals"), document.lines);
+    renderTotals(panel.querySelector("#billingReadOnlyTotals"), document.lines, document.financialData);
     panel.querySelector("#closeBillingDocument").addEventListener("click", () => { activeDocument = null; renderBilling(); });
     panel.querySelector("#createInvoiceFromQuote")?.addEventListener("click", () => createInvoiceFromQuote(document));
     panel.querySelector("[data-view-linked-invoice]")?.addEventListener("click", event => viewBillingDocument(event.currentTarget.dataset.viewLinkedInvoice));
@@ -378,7 +380,7 @@ function createLineEditor(line, index, billingDocument, rerender) {
         const field = input.dataset.field;
         line[field] = ["quantity", "unitPrice", "vatRate"].includes(field) ? Number(input.value) || 0 : input.value;
         item.querySelector(".billing-line-total").textContent = formatMoney(lineTotal(line));
-        renderTotals(item.closest("form").querySelector("#billingTotals"), billingDocument.lines);
+        renderTotals(item.closest("form").querySelector("#billingTotals"), billingDocument.lines, billingDocument.financialData);
     }));
     item.querySelector("select").addEventListener("change", event => {
         const template = billingData.templates.find(value => String(value.id) === event.target.value);
@@ -395,10 +397,28 @@ function createLineEditor(line, index, billingDocument, rerender) {
     return item;
 }
 
-function renderTotals(panel, lines) {
+function renderQuoteAids(panel, billingDocument, rerender) {
+    if (!panel) return;
+    const aids = billingData.aids || [];
+    if (!billingDocument.financialData.aids.length) {
+        billingDocument.financialData.aids = aids.filter(aid => aid.autoApply).map(toAidSnapshot);
+    }
+    const selectedAids = billingDocument.financialData.aids;
+    panel.innerHTML = `<div class="form-heading"><div><p class="eyebrow">Primes et aides</p><h3>Déduites du reste à charge</h3><p class="muted">Sélectionnez les primes applicables à ce devis. Elles restent affichées sur le PDF.</p></div></div>${aids.length ? `<fieldset class="accounting-aid-fieldset">${aids.map(aid => `<label><input type="checkbox" value="${escapeHtml(aid.id)}" ${selectedAids.some(item => item.name === aid.name) ? "checked" : ""}> ${escapeHtml(aid.name)} · ${aid.calculationMode === "percentage" ? `${formatNumber(aid.amount)} %` : formatMoney(aid.amount)}</label>`).join("")}</fieldset>` : '<p class="muted">Aucune prime configurée. Ajoutez-les dans Comptabilité → Aides financières.</p>'}`;
+    panel.querySelectorAll("input[type=checkbox]").forEach(input => input.addEventListener("change", () => {
+        billingDocument.financialData.aids = [...panel.querySelectorAll("input:checked")].map(field => aids.find(aid => String(aid.id) === field.value)).filter(Boolean).map(toAidSnapshot);
+        rerender();
+    }));
+}
+
+function toAidSnapshot(aid) { return { name: aid.name, amount: Number(aid.amount) || 0, calculationMode: aid.calculationMode === "percentage" ? "percentage" : "fixed", aidType: aid.aidType || "custom", description: aid.description || "" }; }
+
+function renderTotals(panel, lines, financialData = {}) {
     const totalHt = lines.reduce((total, line) => total + lineTotal(line), 0);
     const totalVat = lines.reduce((total, line) => total + lineTotal(line) * (Number(line.vatRate) || 0) / 100, 0);
-    panel.innerHTML = `<span>Total HT <strong>${formatMoney(totalHt)}</strong></span><span>TVA <strong>${formatMoney(totalVat)}</strong></span><span>Total TTC <strong>${formatMoney(totalHt + totalVat)}</strong></span>`;
+    const totalTtc = totalHt + totalVat;
+    const aidAmount = Math.min(totalTtc, (financialData.aids || []).reduce((total, aid) => total + (aid.calculationMode === "percentage" ? totalHt * Number(aid.amount || 0) / 100 : Number(aid.amount || 0)), 0));
+    panel.innerHTML = `<span>Total HT <strong>${formatMoney(totalHt)}</strong></span><span>TVA <strong>${formatMoney(totalVat)}</strong></span><span>Total TTC <strong>${formatMoney(totalTtc)}</strong></span>${aidAmount ? `<span>Primes / aides <strong>− ${formatMoney(aidAmount)}</strong></span><span>Reste à charge <strong>${formatMoney(Math.max(0, totalTtc - aidAmount))}</strong></span>` : ""}`;
 }
 
 function renderDocumentList(panel) {
@@ -493,6 +513,7 @@ function createInvoiceFromQuote(quote) {
         status: "draft",
         isAccounted: false,
         lines: (quote.lines || []).map(line => ({ ...emptyLine(), ...line })),
+        financialData: normalizeFinancialData(quote.financialData),
         notes: quote.notes || ""
     };
     renderBilling();
@@ -514,6 +535,7 @@ function createNewDocument(type, client = null, appointmentId = "") {
         status: baseQuote?.status || "draft",
         isAccounted: false,
         lines: baseQuote?.lines || [emptyLine()],
+        financialData: emptyFinancialData(),
         notes: baseQuote?.notes || billingData.profile.paymentTerms || ""
     };
 }
@@ -528,7 +550,9 @@ function fillCustomerAddress(input, form, clients) {
 }
 
 function emptyLine() { return { description: "", quantity: 1, unit: "unité", unitPrice: 0, vatRate: 20 }; }
-function normalizeDocument(document) { return { ...document, clientId: document.clientId || "", appointmentId: document.appointmentId || "", sourceQuoteId: document.sourceQuoteId || "", quoteReference: document.quoteReference || "", isAccounted: Boolean(document.isAccounted), lines: Array.isArray(document.lines) && document.lines.length ? document.lines.map(line => ({ ...emptyLine(), ...line })) : [emptyLine()] }; }
+function normalizeDocument(document) { return { ...document, clientId: document.clientId || "", appointmentId: document.appointmentId || "", sourceQuoteId: document.sourceQuoteId || "", quoteReference: document.quoteReference || "", isAccounted: Boolean(document.isAccounted), financialData: normalizeFinancialData(document.financialData), lines: Array.isArray(document.lines) && document.lines.length ? document.lines.map(line => ({ ...emptyLine(), ...line })) : [emptyLine()] }; }
+function emptyFinancialData() { return { discountMode: "fixed", discountAmount: 0, depositAmount: 0, conditions: "", comments: "", aids: [] }; }
+function normalizeFinancialData(value) { return { ...emptyFinancialData(), discountMode: value?.discountMode === "percentage" ? "percentage" : "fixed", discountAmount: Number(value?.discountAmount) || 0, depositAmount: Number(value?.depositAmount) || 0, conditions: value?.conditions || "", comments: value?.comments || "", aids: Array.isArray(value?.aids) ? value.aids.filter(aid => aid?.name).map(toAidSnapshot) : [] }; }
 function normalizeQuoteTemplate(template) {
     if (!template || !Array.isArray(template.lines) || !template.lines.length) return null;
     return { ...template, lines: template.lines.map(line => ({ ...emptyLine(), ...line })) };
