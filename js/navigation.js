@@ -10,7 +10,7 @@ import { renderPartnerSandbox } from "./partner-sandbox.js?v=3";
 import { renderPartnerConnections } from "./partner-connections.js?v=6";
 import { renderDataImportTool } from "./data-imports.js?v=1";
 import { renderPurchases } from "./purchases.js?v=112";
-import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=5";
+import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=6";
 import { getFirstUnreadClientId, refreshClientMessageAlert, refreshVisibleClientMessages } from "./messages.js?v=106";
 import { getSearchableClients, renderClients } from "./clients.js?v=136";
 import { synchronizeClients } from "./client-sync.js?v=118";
@@ -1117,9 +1117,27 @@ function renderSettings() {
         container.appendChild(creatorCard);
     }
     if (document.body.dataset.role === "admin" && document.body.classList.contains("desktop-device")) {
+        renderReportTemplateSettings(container);
         renderDataImportTool(container);
         renderSupportContact(container);
     }
+}
+
+async function renderReportTemplateSettings(container) {
+    const card = document.createElement("article");
+    card.className = "brand-card full-card procedure-card report-template-settings";
+    card.innerHTML = '<div class="settings-heading"><div><p class="eyebrow">Rapports</p><h2>Modèle de rapport</h2><p class="muted">Personnalisez la charte graphique et les informations affichées sur vos rapports PDF.</p></div></div><p class="muted">Chargement du modèle…</p>';
+    container.appendChild(card);
+    try {
+        const response = await fetch("/api/technical-reports/template", { credentials: "same-origin" });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.message || "Impossible de charger le modèle de rapport.");
+        const template = data.template || {};
+        const footerOptions = [["address", "Adresse"], ["phone", "Téléphone"], ["email", "E-mail"], ["website", "Site Internet"], ["siret", "SIRET"], ["vat", "TVA"], ["legalNotice", "Mentions légales"]];
+        const selected = new Set(template.footerFields || []);
+        card.innerHTML = `<div class="settings-heading"><div><p class="eyebrow">Paramètres → Rapports</p><h2>Modèle de rapport</h2><p class="muted">Les réglages sont appliqués à la prévisualisation et aux PDF officiels futurs.</p></div></div><form class="client-form report-template-form" enctype="multipart/form-data"><div class="form-grid"><label>Logo principal<input name="primaryLogo" type="file" accept="image/png,image/jpeg,image/webp"></label><label>Logo secondaire (pied de page)<input name="secondaryLogo" type="file" accept="image/png,image/jpeg,image/webp"></label>${template.hasPrimaryLogo ? '<label class="billing-remove-logo"><input name="removePrimaryLogo" type="checkbox" value="true"> Supprimer le logo principal</label>' : ""}${template.hasSecondaryLogo ? '<label class="billing-remove-logo"><input name="removeSecondaryLogo" type="checkbox" value="true"> Supprimer le logo secondaire</label>' : ""}<label>Nom de l’entreprise<input name="companyName" maxlength="160" value="${escapeHtml(template.companyName || "")}"></label><label>Téléphone<input name="phone" maxlength="50" value="${escapeHtml(template.phone || "")}"></label><label class="form-wide">Adresse<input name="address" maxlength="255" value="${escapeHtml(template.address || "")}"></label><label>E-mail<input name="email" type="email" maxlength="160" value="${escapeHtml(template.email || "")}"></label><label>Site Internet<input name="website" maxlength="160" value="${escapeHtml(template.website || "")}"></label><label>SIRET<input name="siret" maxlength="100" value="${escapeHtml(template.siret || "")}"></label><label>TVA<input name="vat" maxlength="100" value="${escapeHtml(template.vat || "")}"></label><label class="form-wide">Mentions légales<textarea name="legalNotice" rows="2" maxlength="1000">${escapeHtml(template.legalNotice || "")}</textarea></label><label class="form-wide">Texte d’en-tête<textarea name="headerText" rows="2" maxlength="500">${escapeHtml(template.headerText || "")}</textarea></label><label class="form-wide">Texte du pied de page<textarea name="footerText" rows="2" maxlength="500">${escapeHtml(template.footerText || "")}</textarea></label><label>Couleur principale<input name="primaryColor" type="color" value="${escapeHtml(template.primaryColor || "#003b73")}"></label><label>Couleur secondaire<input name="secondaryColor" type="color" value="${escapeHtml(template.secondaryColor || "#0a5c36")}"></label><label>Couleur des titres<input name="titleColor" type="color" value="${escapeHtml(template.titleColor || "#003b73")}"></label><label>Couleur des séparateurs<input name="separatorColor" type="color" value="${escapeHtml(template.separatorColor || "#0a5c36")}"></label><label>Police<select name="font"><option value="Helvetica" ${template.font === "Helvetica" ? "selected" : ""}>Helvetica / Sans-serif</option><option value="Times-Roman" ${template.font === "Times-Roman" ? "selected" : ""}>Times / Serif</option><option value="Courier" ${template.font === "Courier" ? "selected" : ""}>Courier / Monospace</option></select></label></div><fieldset class="report-template-footer-fields"><legend>Informations affichées dans le pied de page</legend>${footerOptions.map(([value, label]) => `<label><input type="checkbox" name="footerFields" value="${value}" ${selected.has(value) ? "checked" : ""}> ${label}</label>`).join("")}</fieldset><p class="auth-message" aria-live="polite"></p><div class="form-actions"><button type="submit" class="secondary-button">Enregistrer le modèle de rapport</button></div></form>`;
+        card.querySelector("form").addEventListener("submit", async event => { event.preventDefault(); const form = event.currentTarget; const message = form.querySelector(".auth-message"); const submit = form.querySelector("button[type=submit]"); submit.disabled = true; message.textContent = "Enregistrement…"; message.classList.remove("error"); const result = await fetch("/api/technical-reports/template", { method: "PUT", credentials: "same-origin", body: new FormData(form) }); if (!result.ok) { const payload = await result.json().catch(() => ({})); message.textContent = payload.message || "Impossible d’enregistrer le modèle."; message.classList.add("error"); submit.disabled = false; return; } message.textContent = "Modèle de rapport enregistré."; });
+    } catch (error) { card.innerHTML = `<p class="auth-message error">${escapeHtml(error.message || "Impossible de charger le modèle de rapport.")}</p>`; }
 }
 
 async function renderCompanyTwoFactorSecurity(container) {

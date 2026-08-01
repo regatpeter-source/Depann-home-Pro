@@ -68,7 +68,10 @@ export async function initializeBilling() {
         ADD COLUMN IF NOT EXISTS quote_template_mode VARCHAR(20) NOT NULL DEFAULT 'integrated',
         ADD COLUMN IF NOT EXISTS quote_template_filename VARCHAR(255) NOT NULL DEFAULT '',
         ADD COLUMN IF NOT EXISTS quote_template_data BYTEA,
-        ADD COLUMN IF NOT EXISTS quote_template_mime_type VARCHAR(150) NOT NULL DEFAULT ''
+        ADD COLUMN IF NOT EXISTS quote_template_mime_type VARCHAR(150) NOT NULL DEFAULT '',
+        ADD COLUMN IF NOT EXISTS report_template JSONB NOT NULL DEFAULT '{}'::jsonb,
+        ADD COLUMN IF NOT EXISTS report_secondary_logo_data BYTEA,
+        ADD COLUMN IF NOT EXISTS report_secondary_logo_mime_type VARCHAR(50) NOT NULL DEFAULT ''
     `);
     await database.query(`
         CREATE TABLE IF NOT EXISTS depannhome_billing_templates (
