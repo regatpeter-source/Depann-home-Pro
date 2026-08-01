@@ -36,7 +36,11 @@ Après validation administrative, une transaction rapproche le client, planifie 
 
 ## Rapports techniques
 
-`server/technical-reports.js` fournit un moteur de rapports extensible lié aux interventions du planning. Le premier modèle, `leak_detection`, couvre les recherches de fuite avec état des lieux, contrôles, mesures, méthodes de détection, photos, conclusion et signatures. Les données et médias du rapport sont isolés par `owner_id`; les techniciens n’accèdent qu’aux interventions qui leur sont affectées.
+`server/technical-reports.js` fournit un moteur de rapports extensible lié aux interventions du planning. Le premier modèle, `leak_detection`, est édité par `js/leak-report-wizard.js` sous la forme d’un éditeur plein écran, optimisé pour le smartphone. Les informations client, intervention et technicien sont générées automatiquement ; chaque module métier peut contenir autant d’observations libres et de photos que nécessaire dans les limites globales de sécurité du rapport. Les données et médias du rapport sont isolés par `owner_id`; les techniciens n’accèdent qu’aux interventions qui leur sont affectées.
+
+Le contenu est normalisé par `server/leak-report-template.js`. Le schéma actuel ajoute une liste `observations` par module, avec un identifiant stable, le constat, le moyen technique éventuel et la date de création. Les rapports antérieurs restent pris en charge : leurs champs historiques sont conservés et leurs anciens textes d’observation sont migrés dans la liste modulaire. Chaque photo peut référencer une observation par `observationId`.
+
+L’éditeur enregistre automatiquement les brouillons, permet d’ignorer un module inutilisé, de prévisualiser le PDF temporaire et de revenir immédiatement à l’édition. Le PDF final ne produit que les modules ou photos réellement renseignés ; il conserve les observations et leurs médias associés, avec pagination automatique. L’envoi, la validation définitive, les demandes de correction et la réouverture conservent les droits existants. La validation génère le PDF officiel, l’archive au dossier client et synchronise la mission partenaire associée.
 
 Les médias techniques restent dans les tables dédiées du rapport afin de ne pas dépasser les limites des dossiers clients. À la validation administrative, PDFKit produit le PDF, qui est conservé dans le rapport et archivé au dossier client dans la même transaction. Les demandes de correction sont associées à une section précise.
 
