@@ -60,13 +60,24 @@ export function createLeakReportPdf(report, profile = {}) {
 
 function addCover(pdf, report, profile, template, snapshot, photos) {
     addCompanyHeader(pdf, profile, template, 44);
-    centeredTitle(pdf, "RAPPORT DE RECHERCHE DE FUITE", 128, template, 22);
-    const exterior = photos[0]; let y = 184;
-    if (exterior) { y = addPhoto(pdf, exterior, y, 350, 250) + 18; }
-    const intervention = [
-        ["INTERVENTION", `N° ${snapshot.interventionNumber || report.appointmentId || "—"}`], ["DATE", `${snapshot.date || report.reportDate || "—"}${snapshot.time ? ` · ${snapshot.time}` : ""}`], ["CLIENT", snapshot.clientName || report.clientName || "—"], ["ADRESSE", snapshot.clientAddress || report.clientAddress || report.appointmentLocation || "—"], ["SINISTRE", snapshot.claimNumber || "Non renseigné"], ["ASSURANCE", snapshot.insurance || "Non renseignée"], ["TECHNICIEN", snapshot.technicianName || report.technicianName || "—"]
+    pdf.moveTo(44, 104).lineTo(551, 104).lineWidth(1.5).strokeColor(template.separatorColor).stroke();
+    const clientName = snapshot.clientName || report.clientName || "Non renseigné";
+    const location = snapshot.clientAddress || report.clientAddress || report.appointmentLocation || "Non renseigné";
+    const interventionDate = `${snapshot.date || report.reportDate || "—"}${snapshot.time ? ` · ${snapshot.time}` : ""}`;
+    const facts = [
+        ["Référence intervention", snapshot.interventionReference || snapshot.interventionType || "Non renseignée"],
+        ["N° de service", snapshot.interventionNumber || report.appointmentId || "—"],
+        ["Bénéficiaire", clientName],
+        ["Lieu d’intervention", location],
+        ["Sinistre / assurance", [snapshot.claimNumber, snapshot.insurance].filter(Boolean).join(" · ") || "Non renseigné"],
+        ["Le", interventionDate],
+        ["Technicien", snapshot.technicianName || report.technicianName || "Non renseigné"]
     ];
-    addInfoGrid(pdf, intervention, Math.max(y, exterior ? y : 214), template);
+    const factsBottom = addCoverFacts(pdf, facts, 118, template);
+    const titleY = factsBottom + 18;
+    centeredTitle(pdf, "RAPPORT DE RECHERCHE DE FUITE", titleY, template, 20);
+    const exterior = photos[0];
+    if (exterior) addPhoto(pdf, exterior, titleY + 46, 350, 330);
 }
 
 function addSection(pdf, title, values, photos, profile, template, isRecommendations = false, technicianName = "") {
@@ -93,6 +104,7 @@ function addCompanyHeader(pdf, profile, template, y) {
     if (template.headerText) pdf.fillColor(template.secondaryColor).fontSize(8).text(template.headerText, 360, y + 12, { width: 191, align: "right" });
 }
 function centeredTitle(pdf, value, y, template, size) { pdf.font(template.font).fillColor(template.titleColor).fontSize(size).text(value, 44, y, { width: 507, align: "center" }); }
+function addCoverFacts(pdf, facts, y, template) { let cursor = y; for (const [label, value] of facts) { const textValue = text(value, 500); pdf.font(template.font).fillColor("#334155").fontSize(9.5).text(`${label} :`, 44, cursor, { width: 132, continued: true }); pdf.fillColor("#172033").text(` ${textValue}`, { width: 375 }); cursor = Math.max(cursor + 15, pdf.y + 4); } return cursor; }
 function addInfoGrid(pdf, entries, y, template) { let cursor = y; for (let index = 0; index < entries.length; index += 2) { const row = entries.slice(index, index + 2); row.forEach(([label, value], column) => { const x = 44 + column * 258; pdf.roundedRect(x, cursor, 249, 43, 5).fillAndStroke("#f8fafc", "#dbe4ee"); pdf.font(template.font).fillColor(template.titleColor).fontSize(7.5).text(label, x + 10, cursor + 7); pdf.fillColor("#172033").fontSize(9).text(value, x + 10, cursor + 19, { width: 229, height: 16, ellipsis: true }); }); cursor += 51; } }
 function addPhotoWithPage(pdf, photo, y, profile, template) { y = ensureSpace(pdf, y, 250, profile, template); return addPhoto(pdf, photo, y, 507, 235) + 18; }
 function addPhoto(pdf, photo, y, width, maxHeight) { try { const buffer = dataUrl(photo.dataUrl); const dimensions = pdf.openImage(buffer); const ratio = Math.min(width / dimensions.width, maxHeight / dimensions.height); const renderedWidth = dimensions.width * ratio; const renderedHeight = dimensions.height * ratio; const x = 44 + (507 - renderedWidth) / 2; pdf.image(buffer, x, y, { width: renderedWidth, height: renderedHeight }); return y + renderedHeight; } catch { return y; } }
