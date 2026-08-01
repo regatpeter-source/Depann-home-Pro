@@ -413,7 +413,6 @@ export function registerBillingRoutes(app, requireAuthentication) {
         }
         const document = sanitizeDocument(request.body);
         if (!document.ok) return response.status(400).json({ message: document.message });
-        if (request.user?.role !== "admin") document.financialData = { ...document.financialData, aids: [] };
         try {
             if (document.clientId && !await hasClient(getPool(), getAccountOwnerId(request), document.clientId)) {
                 return response.status(400).json({ message: "Le dossier client associé est introuvable." });
@@ -446,11 +445,6 @@ export function registerBillingRoutes(app, requireAuthentication) {
         const document = sanitizeDocument(request.body);
         if (!id) return response.status(400).json({ message: "Document invalide." });
         if (!document.ok) return response.status(400).json({ message: document.message });
-        if (request.user?.role !== "admin") {
-            const existing = await getPool().query("SELECT financial_data FROM depannhome_billing_documents WHERE id = $1 AND owner_id = $2", [id, getAccountOwnerId(request)]);
-            if (!existing.rowCount) return response.status(404).json({ message: "Document introuvable." });
-            document.financialData = sanitizeFinancialData(existing.rows[0].financial_data);
-        }
         if (document.documentType === "quote" && await usesExternalQuoteTemplate(getAccountOwnerId(request))) {
             return response.status(403).json({ message: "Cette entreprise utilise une base de devis PDF ou Word déposée dans son espace." });
         }

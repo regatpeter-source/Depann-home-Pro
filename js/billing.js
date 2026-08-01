@@ -296,7 +296,7 @@ function renderDocumentEditor(panel) {
                 ${document.documentType === "invoice" ? `<label class="billing-accounting-option"><input name="isAccounted" type="checkbox" ${document.isAccounted ? "checked" : ""}> Facture comptabilisée</label>` : ""}
             </div>
             <section class="billing-lines-section"><div class="form-heading"><div><p class="eyebrow">Prestations</p><h3>Lignes du document</h3></div><button type="button" class="secondary-button" id="addBillingLine">+ Ligne libre</button></div><div id="billingLines" class="billing-lines"></div><div class="billing-totals" id="billingTotals"></div></section>
-            ${document.documentType === "quote" && isFullAdministrator() ? '<section class="billing-aids-section" id="billingAids"></section>' : ""}
+            ${!isAccountant() ? '<section class="billing-aids-section" id="billingAids"></section>' : ""}
             <label>Notes / conditions<textarea name="notes" rows="3" maxlength="2000" placeholder="Informations complémentaires, conditions, validité du devis…">${escapeHtml(document.notes)}</textarea></label>
             <p id="billingDocumentMessage" class="auth-message" aria-live="polite"></p>
             <div class="calendar-form-actions"><button type="submit" class="secondary-button">${isEditing ? "Enregistrer les modifications" : "Enregistrer le document"}</button>${isEditing ? '<button type="button" class="danger-button" id="deleteBillingDocument">Supprimer</button>' : ""}</div>
@@ -310,7 +310,7 @@ function renderDocumentEditor(panel) {
         renderTotals(panel.querySelector("#billingTotals"), document.lines, document.financialData);
     };
     renderLines();
-    renderQuoteAids(panel.querySelector("#billingAids"), document, renderLines);
+    renderDocumentAids(panel.querySelector("#billingAids"), document, renderLines);
     form.querySelector("#addBillingLine").addEventListener("click", () => { document.lines.push(emptyLine()); renderLines(); });
     form.querySelector("#cancelBillingDocument").addEventListener("click", () => { activeDocument = null; renderBilling(); });
     form.querySelector("#createInvoiceFromQuote")?.addEventListener("click", () => createInvoiceFromQuote(document));
@@ -397,14 +397,14 @@ function createLineEditor(line, index, billingDocument, rerender) {
     return item;
 }
 
-function renderQuoteAids(panel, billingDocument, rerender) {
+function renderDocumentAids(panel, billingDocument, rerender) {
     if (!panel) return;
     const aids = billingData.aids || [];
     if (!billingDocument.financialData.aids.length) {
         billingDocument.financialData.aids = aids.filter(aid => aid.autoApply).map(toAidSnapshot);
     }
     const selectedAids = billingDocument.financialData.aids;
-    panel.innerHTML = `<div class="form-heading"><div><p class="eyebrow">Primes et aides</p><h3>Déduites du reste à charge</h3><p class="muted">Sélectionnez les primes applicables à ce devis. Elles restent affichées sur le PDF.</p></div></div>${aids.length ? `<fieldset class="accounting-aid-fieldset">${aids.map(aid => `<label><input type="checkbox" value="${escapeHtml(aid.id)}" ${selectedAids.some(item => item.name === aid.name) ? "checked" : ""}> ${escapeHtml(aid.name)} · ${aid.calculationMode === "percentage" ? `${formatNumber(aid.amount)} %` : formatMoney(aid.amount)}</label>`).join("")}</fieldset>` : '<p class="muted">Aucune prime configurée. Ajoutez-les dans Comptabilité → Aides financières.</p>'}`;
+    panel.innerHTML = `<div class="form-heading"><div><p class="eyebrow">Primes et aides</p><h3>Déduites du reste à charge</h3><p class="muted">Sélectionnez les primes applicables à ce document. Elles restent affichées sur le PDF.</p></div></div>${aids.length ? `<fieldset class="accounting-aid-fieldset">${aids.map(aid => `<label><input type="checkbox" value="${escapeHtml(aid.id)}" ${selectedAids.some(item => item.name === aid.name) ? "checked" : ""}> ${escapeHtml(aid.name)} · ${aid.calculationMode === "percentage" ? `${formatNumber(aid.amount)} %` : formatMoney(aid.amount)}</label>`).join("")}</fieldset>` : '<p class="muted">Aucune prime configurée. Ajoutez-les dans Comptabilité → Aides financières.</p>'}`;
     panel.querySelectorAll("input[type=checkbox]").forEach(input => input.addEventListener("change", () => {
         billingDocument.financialData.aids = [...panel.querySelectorAll("input:checked")].map(field => aids.find(aid => String(aid.id) === field.value)).filter(Boolean).map(toAidSnapshot);
         rerender();
