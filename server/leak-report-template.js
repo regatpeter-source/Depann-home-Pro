@@ -39,14 +39,13 @@ export function createLeakReportPdf(report, profile) {
         const pdf = new PDFDocument({ size: "A4", margin: 44, bufferPages: true, info: { Title: report.title, Author: profile.companyName || "Depann'Home Pro" } });
         const chunks = []; pdf.on("data", chunk => chunks.push(chunk)); pdf.on("end", () => resolve(Buffer.concat(chunks))); pdf.on("error", reject);
         const content = normalizeLeakContent(report.content); const media = report.media || []; const snapshot = content.snapshot || {};
-        addGeneralPage(pdf, report, profile, snapshot);
-        if ((media || []).some(photo => photo.section === "general")) addStepPage(pdf, "general", "Photo générale", content.general, media.filter(photo => photo.section === "general"));
+        addGeneralPage(pdf, report, profile, snapshot, media.filter(photo => photo.section === "general"));
         for (const [key, label] of REPORT_STEPS.slice(1)) if (sectionHasContent(content, media, key)) addStepPage(pdf, key, label, content[key], media.filter(photo => photo.section === key));
         addPageNumbers(pdf); pdf.end();
     });
 }
 
-function addGeneralPage(pdf, report, profile, snapshot) {
+function addGeneralPage(pdf, report, profile, snapshot, exteriorPhotos = []) {
     const hasLogo = Boolean(profile.logoData && ["image/png", "image/jpeg"].includes(profile.logoMimeType));
     if (hasLogo) { try { pdf.image(profile.logoData, 44, 44, { fit: [56, 56] }); } catch {} }
     const companyX = hasLogo ? 112 : 44;
@@ -57,7 +56,12 @@ function addGeneralPage(pdf, report, profile, snapshot) {
     block(pdf, "INTERVENTION", [`N° intervention : ${snapshot.interventionNumber || report.appointmentId || "—"}`, `Type : ${snapshot.interventionType || "Intervention"}`, `Date : ${snapshot.date || report.reportDate || "—"}${snapshot.time ? ` · ${snapshot.time}` : ""}`, snapshot.interventionReference ? `Référence : ${snapshot.interventionReference}` : "", snapshot.claimNumber ? `Sinistre : ${snapshot.claimNumber}` : "", snapshot.insurance ? `Assurance : ${snapshot.insurance}` : ""].filter(Boolean), 315, 132, 236);
     block(pdf, "CLIENT", [snapshot.clientName || report.clientName, snapshot.clientAddress || report.clientAddress || report.appointmentLocation, snapshot.clientPhone || report.clientPhone, snapshot.clientEmail, snapshot.expert ? `Expert : ${snapshot.expert}` : "", snapshot.manager ? `Gestionnaire : ${snapshot.manager}` : ""].filter(Boolean), 44, 290, 225);
     block(pdf, "TECHNICIEN", [snapshot.technicianName || report.technicianName || "Non renseigné", snapshot.technicianPhone || ""].filter(Boolean), 315, 290, 236);
-    pdf.fillColor("#64748b").font("Helvetica").fontSize(9).text("Informations générées automatiquement à partir de l’intervention et du dossier client.", 44, 470, { width: 507, align: "center" });
+    pdf.fillColor("#64748b").font("Helvetica").fontSize(9).text("Informations générées automatiquement à partir de l’intervention et du dossier client.", 44, 456, { width: 507, align: "center" });
+    const exteriorPhoto = exteriorPhotos[0];
+    if (!exteriorPhoto) return;
+    pdf.fillColor("#003b73").font("Helvetica-Bold").fontSize(9).text("PHOTO EXTÉRIEURE DU LOGEMENT", 44, 486, { width: 507, align: "center" });
+    try { pdf.image(dataUrl(exteriorPhoto.dataUrl), 144, 505, { fit: [307, 210] }); } catch { return; }
+    pdf.fillColor("#475569").font("Helvetica").fontSize(8).text([exteriorPhoto.caption, exteriorPhoto.annotation].filter(Boolean).join(" · ") || exteriorPhoto.name || "Photo extérieure du logement", 44, 724, { width: 507, align: "center" });
 }
 function addStepPage(pdf, key, label, values, photos) {
     pdf.addPage(); title(pdf, label, 44, 45, 507, 19); let y = 82;
@@ -76,7 +80,7 @@ function addStepPage(pdf, key, label, values, photos) {
     } else if (key === "humidity" || key === "pressure") { y = addTable(pdf, values.readings, key === "humidity" ? ["Localisation", "Valeur", "Unité"] : ["Repère", "Valeur", "Unité"], y); for (const [labelText, value] of Object.entries(values).filter(([name]) => name !== "readings" && name !== "observations")) y = addField(pdf, pretty(labelText), value, y); }
     else if (key === "methods") { for (const item of values.items || []) { pdf.fillColor("#003b73").font("Helvetica-Bold").fontSize(11).text(item.name || "Matériel technique", 44, y); y += 18; for (const [name, value] of Object.entries(item).filter(([name]) => name !== "name")) y = addField(pdf, pretty(name), value, y); y += 6; } }
     else for (const [field, value] of Object.entries(values || {})) if (!field.toLowerCase().includes("signature") && field !== "clientName" && field !== "signedAt" && field !== "observations") y = addField(pdf, pretty(field), value, y);
-    y = addPhotos(pdf, photos, y);
+    if (!observations.length) y = addPhotos(pdf, photos, y);
     if (key === "recommendations") addSignatures(pdf, values, y);
 }
 function addField(pdf, label, value, y) { if (!String(value || "").trim()) return y; if (y > 690) { pdf.addPage(); y = 52; } pdf.fillColor("#003b73").font("Helvetica-Bold").fontSize(9).text(label, 44, y); y += 14; pdf.fillColor("#172033").font("Helvetica").fontSize(10).text(String(value), 44, y, { width: 507, lineGap: 3 }); return pdf.y + 13; }
