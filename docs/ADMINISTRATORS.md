@@ -10,7 +10,7 @@ Le compte Créateur est distinct : sa capacité provient uniquement de `CREATOR_
 
 Le même compte peut également être utilisé sur un smartphone comme Administrateur Mobile opérationnel. Son appareil mobile suit alors le circuit normal d’autorisation des appareils administrateurs. La console Créateur et toutes ses routes restent toutefois strictement réservées à un appareil déclaré **poste PC** : elles sont absentes de l’interface mobile et refusées côté serveur.
 
-Pour éviter les doublons causés par une réinitialisation du stockage navigateur, le compte Créateur conserve au maximum un smartphone et un poste PC actifs. Lorsqu’un nouvel identifiant navigateur est présenté sur PC, il remplace l’ancien poste Créateur au lieu d’ajouter une ligne supplémentaire.
+Chaque compte Administrateur (PC), y compris le compte Créateur, peut se connecter depuis n’importe quel ordinateur. Une seule session PC est conservée par compte : après une authentification réussie sur un nouveau PC, l’ancien poste est automatiquement révoqué et sa session est refusée à la prochaine requête. Le smartphone Administrateur Mobile reste indépendant de cette règle.
 
 ## Profils créables par un Administrateur (PC)
 
@@ -24,7 +24,7 @@ Pour éviter les doublons causés par une réinitialisation du stockage navigate
 
 Les Administrateurs (PC) sont les seuls à pouvoir créer ou promouvoir un Administrateur (PC). Les autres rôles ne peuvent pas appeler les routes de création, suppression, activation, désactivation ou changement de rôle des membres.
 
-Les mécanismes actuels de première connexion sont conservés : validation de l’appareil, activation par l’administrateur et code e-mail quand le flux concerné l’exige. Les postes PC administrateur et standard sont comptabilisés dans le quota de postes PC de l’entreprise ; les chefs d’équipe comptent dans le quota technique.
+Les Administrateurs (PC) peuvent donc remplacer leur poste actif après leur authentification habituelle (mot de passe et 2FA d’entreprise si elle est activée), sans validation manuelle du nouvel ordinateur. Les mécanismes de validation d’appareil et de code e-mail restent inchangés pour les autres profils concernés. Les postes PC administrateur et standard sont comptabilisés dans le quota de postes PC de l’entreprise ; les chefs d’équipe comptent dans le quota technique.
 
 ## Continuité administrative
 

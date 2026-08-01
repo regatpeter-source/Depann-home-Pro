@@ -782,21 +782,23 @@ export async function recoverCreatorTotp() {
 }
 
 async function completeLogin(user, device, response) {
-    const isCreator = isCreatorUsername(user.username);
     const isDedicatedMobileAdministrator = user.role === MOBILE_ADMIN_ROLE;
     if (user.role === MOBILE_ADMIN_ROLE && device.type !== "mobile") {
         return response.status(403).json({ message: "Le poste Administrateur Mobile doit être activé depuis un téléphone ou une tablette." });
     }
     const isMobileAdministrator = (user.role === "admin" && device.type === "mobile") || isDedicatedMobileAdministrator;
+    const isCompanyAdministratorPc = user.role === "admin" && device.type === "desktop";
     const isAccountant = user.role === "accountant";
     const authDeviceDetails = { ...device, type: isMobileAdministrator || isAccountant ? device.type : "desktop" };
-    // Le Créateur garde son accès plateforme sur PC. Sur mobile, son compte
-    // suit le même circuit d’autorisation qu’un Administrateur mobile.
-    const automaticallyApproved = (isCreator && device.type !== "mobile") || isAccountant;
+    // Un Administrateur (PC), Créateur inclus, peut changer de poste sans
+    // validation manuelle. Un seul poste PC de ce compte reste autorisé.
+    // Sur mobile, le compte continue de suivre le circuit Administrateur Mobile.
+    const automaticallyApproved = isCompanyAdministratorPc || isAccountant;
     let authDevice = await findAuthDevice(user.id, device.id);
-    if (isCreator && device.type === "desktop") {
-        // Le compte Créateur conserve uniquement le poste courant. Cette
-        // requête supprime aussi les doublons créés avant ce correctif.
+    if (isCompanyAdministratorPc) {
+        // Une nouvelle connexion PC remplace le poste précédent du même
+        // administrateur. Un cookie lié à l’ancien appareil est alors refusé
+        // par authenticateRequest, ce qui met fin à cette session.
         await getPool().query("DELETE FROM depannhome_auth_devices WHERE user_id = $1 AND device_type = 'desktop' AND id <> $2", [user.id, device.id]);
     }
     if (!authDevice) {
