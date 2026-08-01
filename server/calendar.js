@@ -89,6 +89,30 @@ export async function initializeCalendar() {
 
 export function registerCalendarRoutes(app, requireAuthentication) {
     app.use("/api/calendar", requireAuthentication, requireCalendarReadAccess);
+    app.get("/api/calendar/client-history/:clientId", requireAuthentication, asyncHandler(async (request, response) => {
+        const clientId = String(request.params.clientId || "");
+        if (!/^client-[a-zA-Z0-9-]+$/.test(clientId)) return response.status(400).json({ message: "Client invalide." });
+        const ownerId = getAccountOwnerId(request);
+        const clientResult = await getPool().query("SELECT client_data->>'name' AS name FROM depannhome_clients WHERE owner_id = $1 AND client_id = $2", [ownerId, clientId]);
+        const clientName = String(clientResult.rows[0]?.name || "").trim();
+        if (!clientName) return response.status(404).json({ message: "Dossier client introuvable." });
+        const { rows } = await getPool().query(`
+            SELECT event.id, event.title, event.client_name AS "clientName", event.location, TO_CHAR(event.event_date, 'YYYY-MM-DD') AS date,
+                TO_CHAR(event.start_time, 'HH24:MI') AS "startTime", TO_CHAR(event.end_time, 'HH24:MI') AS "endTime", event.event_type AS "eventType",
+                event.quitus_status AS "quitusStatus", event.created_at AS "createdAt", event.updated_at AS "updatedAt",
+                COALESCE(technician.full_name, technician.username, '') AS "assignedTechnicianName"
+            FROM depannhome_calendar_events event
+            LEFT JOIN depannhome_users technician ON technician.id = event.assigned_technician_id
+            WHERE event.owner_id = $1
+              AND LOWER(BTRIM(event.client_name)) = LOWER(BTRIM($2))
+              AND ($3 <> 'technician' OR EXISTS (
+                    SELECT 1 FROM depannhome_calendar_assignments assignment
+                    WHERE assignment.event_id = event.id AND assignment.technician_id = $4::bigint
+              ))
+            ORDER BY event.event_date DESC, event.start_time DESC NULLS LAST, event.id DESC
+        `, [ownerId, clientName, request.user?.role || "", request.user?.sub || 0]);
+        response.json({ events: rows });
+    }));
     app.get("/api/calendar/events", requireAuthentication, asyncHandler(async (request, response) => {
         const start = sanitizeDate(request.query?.start);
         const end = sanitizeDate(request.query?.end);

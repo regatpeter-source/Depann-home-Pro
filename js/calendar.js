@@ -1,6 +1,6 @@
 import { ROUTES } from "./config.js?v=105";
-import { createBillingDocumentForClient, viewBillingDocument } from "./billing.js?v=145";
-import { getSearchableClients } from "./clients.js?v=132";
+import { createBillingDocumentForClient, viewBillingDocument } from "./billing.js?v=147";
+import { getSearchableClients } from "./clients.js?v=136";
 import { addClientActivityByName, synchronizeClients } from "./client-sync.js?v=116";
 import { renderClientMessages } from "./messages.js?v=106";
 import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=1";
@@ -963,7 +963,7 @@ async function loadLinkedBillingDocuments(panel, appointment) {
     const documents = (result.data?.documents || []).filter(document => String(document.appointmentId || "") === String(appointment.id));
     panel.innerHTML = `
         <div class="form-heading"><div><p class="eyebrow">Dossier d’intervention</p><h3>Devis et factures créés</h3></div><span class="quitus-status${documents.length ? " signed" : ""}">${documents.length ? `${documents.length} créé${documents.length > 1 ? "s" : ""}` : "Aucun"}</span></div>
-        ${documents.length ? `<div class="client-activity-list">${documents.map(document => `<article class="client-activity-item"><div><strong>${escapeHtml(document.documentType === "invoice" ? "Facture" : "Devis")} ${escapeHtml(document.documentNumber)}</strong><p>${escapeHtml(document.status || "brouillon")}${document.quoteReference ? ` · Réf. devis ${escapeHtml(document.quoteReference)}` : ""}</p></div><button type="button" class="secondary-button" data-linked-document="${escapeHtml(document.id)}">Consulter</button></article>`).join("")}</div>` : '<p class="muted">Les devis et factures créés depuis ce rendez-vous apparaîtront ici.</p>'}
+        ${documents.length ? `<div class="client-activity-list">${documents.map(document => `<article class="client-activity-item"><div><strong>${escapeHtml(document.documentType === "invoice" ? "Facture" : document.documentType === "credit" ? "Avoir" : "Devis")} ${escapeHtml(document.documentNumber)}</strong><p>${escapeHtml(documentStatusLabel(document.status))}${document.quoteReference ? ` · Réf. devis ${escapeHtml(document.quoteReference)}` : ""}</p></div><button type="button" class="secondary-button" data-linked-document="${escapeHtml(document.id)}">Consulter</button></article>`).join("")}</div>` : '<p class="muted">Les devis, factures et avoirs créés depuis ce rendez-vous apparaîtront ici.</p>'}
     `;
     panel.querySelectorAll("[data-linked-document]").forEach(button => button.addEventListener("click", () => viewBillingDocument(button.dataset.linkedDocument)));
 }
@@ -1106,6 +1106,8 @@ function isTechnicianBillingAllowed() {
 function isReadOnlyCalendar() {
     return document.body.dataset.role === "technician";
 }
+
+function documentStatusLabel(value) { return ({ draft: "Brouillon", sent: "Envoyé", validated: "Validé", paid: "Réglé", issued: "Émis", cancelled: "Annulé", accepted: "Accepté", rejected: "Refusé", pending: "En attente" })[String(value || "").toLowerCase()] || "Non renseigné"; }
 
 function getDisplayedRange() {
     if (calendarView === "day") {

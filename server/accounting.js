@@ -394,7 +394,15 @@ function exportRows(data, scope) {
 }
 
 function documentExportRow(item) {
-    return { Type: item.documentType === "quote" ? "Devis" : item.documentType === "credit" ? "Avoir" : "Facture", Numéro: item.documentNumber, Date: item.issueDate, Échéance: item.dueDate, Client: item.customerName, Statut: item.status, "Total HT": item.totals.ht, TVA: item.totals.vat, "Total TTC": item.totals.ttc, Aides: item.totals.aids, "Reste à charge": item.totals.netPayable, Réglé: item.settledAmount, Solde: item.remainingAmount, Paiement: item.paymentStatus };
+    return { Type: item.documentType === "quote" ? "Devis" : item.documentType === "credit" ? "Avoir" : "Facture", Numéro: item.documentNumber, Date: item.issueDate, Échéance: item.dueDate, Client: item.customerName, Statut: documentStatusLabel(item.status), "Total HT": item.totals.ht, TVA: item.totals.vat, "Total TTC": item.totals.ttc, Aides: item.totals.aids, "Reste à charge": item.totals.netPayable, Réglé: item.settledAmount, Solde: item.remainingAmount, Paiement: paymentStatusLabel(item.paymentStatus) };
+}
+
+function documentStatusLabel(value) {
+    return ({ draft: "Brouillon", sent: "Envoyé", validated: "Validé", paid: "Réglé", issued: "Émis", cancelled: "Annulé", accepted: "Accepté", rejected: "Refusé", pending: "En attente" })[String(value || "").toLowerCase()] || "Non renseigné";
+}
+
+function paymentStatusLabel(value) {
+    return ({ paid: "Réglée", partial: "Partiellement réglée", unpaid: "À encaisser", overdue: "Impayée / échue", not_applicable: "Non concerné" })[String(value || "").toLowerCase()] || "Non concerné";
 }
 
 function buildCsv(data, scope) {

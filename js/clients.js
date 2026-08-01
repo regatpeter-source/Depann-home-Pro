@@ -422,7 +422,6 @@ function renderClientTableRow(client, appointmentDates = []) {
 
 function renderClientDetail(client, options = {}) {
     const readOnly = isClientReadOnly();
-    const canCreateBillingDocuments = !readOnly || isTechnicianBillingAllowed();
     const navigationHref = getClientNavigationHref(client);
     const interventionPhotos = client.attachments.filter(isInterventionPhoto);
     const clientFiles = client.attachments.filter(attachment => !isInterventionPhoto(attachment) && attachment.type !== "Quitus");
@@ -437,7 +436,7 @@ function renderClientDetail(client, options = {}) {
             </div>
             <div class="client-card-actions">
                 ${navigationHref ? `<a class="secondary-button client-navigation-button" href="${escapeHtml(navigationHref)}" aria-label="Y aller vers ${escapeHtml(formatClientLocation(client))}">Y aller</a>` : '<button type="button" class="secondary-button client-navigation-button" disabled title="Ajoutez une adresse au client pour lancer la navigation.">Y aller</button>'}
-                ${readOnly ? (canCreateBillingDocuments ? '<button type="button" class="secondary-button" id="createClientQuote">+ Créer un devis</button><button type="button" class="secondary-button" id="createClientInvoice">+ Créer une facture</button>' : "") : '<button type="button" class="secondary-button" id="createClientAppointment">+ Créer un rendez-vous</button><button type="button" class="secondary-button" id="createClientQuote">+ Créer un devis</button><button type="button" class="secondary-button" id="createClientInvoice">+ Créer une facture</button><button type="button" class="secondary-button" id="editSelectedClient">Modifier</button>'}
+                ${readOnly ? "" : '<button type="button" class="secondary-button" id="createClientAppointment">+ Créer un rendez-vous</button><button type="button" class="secondary-button" id="createClientQuote">+ Créer un devis</button><button type="button" class="secondary-button" id="createClientInvoice">+ Créer une facture</button><button type="button" class="secondary-button" id="editSelectedClient">Modifier</button>'}
             </div>
         </div>
         <div class="procedure-meta">
@@ -508,23 +507,40 @@ function openClientBillingDocument(type, client) {
 
 async function loadClientFinancialHistory(panel, client) {
     if (!panel) return;
-    try {
-        const billingResponse = await fetch("/api/billing", { credentials: "same-origin" });
-        const billingData = await billingResponse.json().catch(() => null);
-        if (!billingResponse.ok) throw new Error(billingData?.message);
-        const documents = (billingData?.documents || []).filter(billingDocument =>
-            String(billingDocument.clientId || "") === String(client.id)
-            || (!billingDocument.clientId && normalizeText(billingDocument.customerName) === normalizeText(client.name))
-        );
-        const purchases = isClientReadOnly()
-            ? []
-            : await loadClientPurchases(client.id);
-        panel.innerHTML = renderClientActivityHistory(client, documents, purchases);
-    } catch (error) {
-        panel.innerHTML = `${renderClientActivityHistory(client)}<p class="auth-message error">${escapeHtml(error.message || "Impossible de charger l’historique financier du dossier.")}</p>`;
-    }
+    const [billingResult, purchasesResult, appointmentsResult] = await Promise.allSettled([
+        loadClientBillingDocuments(client),
+        isClientReadOnly() ? Promise.resolve([]) : loadClientPurchases(client.id),
+        loadClientAppointments(client.id)
+    ]);
+    const documents = billingResult.status === "fulfilled" ? billingResult.value : [];
+    const purchases = purchasesResult.status === "fulfilled" ? purchasesResult.value : [];
+    const appointments = appointmentsResult.status === "fulfilled" ? appointmentsResult.value : [];
+    const failedSources = [billingResult, purchasesResult, appointmentsResult].filter(result => result.status === "rejected");
+    panel.innerHTML = `${renderClientActivityHistory(client, documents, purchases, appointments)}${failedSources.length ? '<p class="auth-message error">Une partie de l’historique n’a pas pu être chargée. Les éléments disponibles restent affichés.</p>' : ""}`;
     bindClientHistoryActions(panel, client);
 }
+
+async function loadClientBillingDocuments(client) {
+    const response = await fetch("/api/billing", { credentials: "same-origin" });
+    const data = await response.json().catch(() => null);
+    if (!response.ok) throw new Error(data?.message || "Impossible de charger les documents associés au client.");
+    return (data?.documents || []).filter(document => belongsToClient(document, client));
+}
+
+async function loadClientAppointments(clientId) {
+    const response = await fetch(`/api/calendar/client-history/${encodeURIComponent(clientId)}`, { credentials: "same-origin" });
+    const data = await response.json().catch(() => null);
+    if (!response.ok) throw new Error(data?.message || "Impossible de charger les rendez-vous du client.");
+    return Array.isArray(data?.events) ? data.events : [];
+}
+
+function belongsToClient(document, client) {
+    if (String(document?.clientId || "") === String(client.id)) return true;
+    if (document?.clientId) return false;
+    return normalizeClientName(document?.customerName) === normalizeClientName(client.name);
+}
+
+function normalizeClientName(value) { return normalizeText(value).replace(/[^a-z0-9]/g, ""); }
 
 async function loadClientPurchases(clientId) {
     const response = await fetch(`/api/purchases?clientId=${encodeURIComponent(clientId)}`, { credentials: "same-origin" });
@@ -543,8 +559,7 @@ async function getClientBillingDocument(client, documentId, documentNumber) {
     const data = await response.json().catch(() => null);
     if (!response.ok) throw new Error(data?.message || "Impossible de charger le document.");
     const document = (data?.documents || []).find(item =>
-        (String(item.clientId || "") === String(client.id)
-            || (!item.clientId && normalizeText(item.customerName) === normalizeText(client.name)))
+        belongsToClient(item, client)
         && (String(item.id) === String(documentId) || (!documentId && item.documentNumber === documentNumber))
     );
     if (!document) throw new Error("Le devis ou la facture n’est plus disponible.");
@@ -721,10 +736,6 @@ function isClientReadOnly() {
     return document.body.dataset.role === "technician";
 }
 
-function isTechnicianBillingAllowed() {
-    return !isClientReadOnly() || document.body.dataset.technicianBillingEnabled !== "false";
-}
-
 function getClientById(id) {
     return getClients().find(client => client.id === id) || null;
 }
@@ -784,15 +795,15 @@ function normalizeAttachments(attachments = []) {
         }));
 }
 
-function renderClientActivityHistory(client, billingDocuments = [], purchases = []) {
+function renderClientActivityHistory(client, billingDocuments = [], purchases = [], appointments = []) {
     const activityEntries = normalizeActivityHistory(client.activityHistory).filter(entry => !["quote", "invoice"].includes(entry.type));
     const billingEntries = billingDocuments.map(document => {
-        const type = document.documentType === "invoice" ? "Facture" : "Devis";
+        const type = document.documentType === "invoice" ? "Facture" : document.documentType === "credit" ? "Avoir" : "Devis";
         return {
             id: `billing-${document.id}`,
             type: document.documentType,
             label: `${type} créé(e)`,
-            detail: `${document.documentNumber} · ${document.status || "brouillon"}`,
+            detail: `${document.documentNumber} · ${billingStatusLabel(document.status)}`,
             documentId: String(document.id),
             attachmentId: "",
             actorName: String(document.creatorName || "Auteur non renseigné"),
@@ -812,11 +823,34 @@ function renderClientActivityHistory(client, billingDocuments = [], purchases = 
             createdAt: purchase.createdAt || purchase.updatedAt || `${purchase.purchaseDate}T12:00:00`
         };
     });
-    const entries = [...activityEntries, ...billingEntries, ...purchaseEntries]
+    const appointmentEntries = appointments.map(appointment => ({
+        id: `appointment-${appointment.id}`,
+        type: "appointment",
+        label: appointment.eventType === "appointment" ? "Intervention planifiée" : "Événement client",
+        detail: [appointment.title, appointment.location, appointment.startTime, appointment.quitusStatus === "validated" ? "Quitus validé" : ""].filter(Boolean).join(" · "),
+        documentId: "",
+        attachmentId: "",
+        actorName: String(appointment.assignedTechnicianName || ""),
+        createdAt: `${appointment.date}T${appointment.startTime || "12:00"}:00`
+    }));
+    const attachmentEntries = client.attachments.filter(attachment => !activityEntries.some(entry =>
+        String(entry.attachmentId || "") === String(attachment.id)
+        || (entry.type === "attachment" && String(entry.detail || "").includes(attachment.name))
+    )).map(attachment => ({
+        id: `attachment-${attachment.id}`,
+        type: "attachment",
+        label: `${attachment.type || "Fichier"} ajouté(e)`,
+        detail: attachment.name,
+        documentId: "",
+        attachmentId: attachment.id,
+        actorName: "",
+        createdAt: attachment.createdAt
+    }));
+    const entries = [...activityEntries, ...billingEntries, ...purchaseEntries, ...appointmentEntries, ...attachmentEntries]
         .sort((first, second) => new Date(second.createdAt).getTime() - new Date(first.createdAt).getTime());
     if (!entries.length) return "<p class=\"muted\">Les rendez-vous, documents et actions de ce dossier apparaîtront ici.</p>";
     return `<div class="client-activity-list">${entries.map(entry => {
-        const isBillingDocument = ["quote", "invoice"].includes(entry.type) && entry.detail;
+        const isBillingDocument = ["quote", "invoice", "credit"].includes(entry.type) && entry.detail;
         const quitusAttachment = entry.type === "quitus" ? client.attachments.find(attachment => String(attachment.id) === entry.attachmentId || attachment.type === "Quitus" && attachment.name === entry.detail) : null;
         const quitusActions = quitusAttachment ? `<div class="client-card-actions client-activity-actions"><button type="button" class="secondary-button" data-view-quituses="${escapeHtml(quitusAttachment.id)}">Visualiser</button><button type="button" class="secondary-button" data-print-quituses="${escapeHtml(quitusAttachment.id)}">Imprimer / PDF</button><button type="button" class="secondary-button" data-email-quituses="${escapeHtml(quitusAttachment.id)}" ${client.email ? "" : "disabled title=\"Ajoutez l’e-mail du client pour préparer un envoi.\""}>Envoyer par e-mail</button></div>` : "";
         const actions = isBillingDocument ? `<div class="client-card-actions client-activity-actions"><button type="button" class="secondary-button" data-view-billing-document data-document-id="${escapeHtml(entry.documentId)}" data-document-number="${escapeHtml(entry.detail)}">Visualiser</button><button type="button" class="secondary-button" data-print-billing-document data-document-id="${escapeHtml(entry.documentId)}" data-document-number="${escapeHtml(entry.detail)}">Imprimer / PDF</button><button type="button" class="secondary-button" data-email-billing-document data-document-id="${escapeHtml(entry.documentId)}" data-document-number="${escapeHtml(entry.detail)}" ${client.email ? "" : "disabled title=\"Ajoutez l’e-mail du client pour préparer un envoi.\""}>Envoyer par e-mail</button></div>` : quitusActions;
@@ -854,6 +888,10 @@ function normalizeActivityHistory(history) {
 
 function formatActivityDate(value) {
     return new Intl.DateTimeFormat("fr-FR", { dateStyle: "short", timeStyle: "short" }).format(new Date(value));
+}
+
+function billingStatusLabel(value) {
+    return ({ draft: "Brouillon", sent: "Envoyé", validated: "Validé", paid: "Réglé", issued: "Émis", cancelled: "Annulé", accepted: "Accepté", rejected: "Refusé", pending: "En attente" })[String(value || "").toLowerCase()] || "Brouillon";
 }
 
 function createClientId() {
