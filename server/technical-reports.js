@@ -5,7 +5,7 @@ import PDFDocument from "pdfkit";
 import { getPool } from "./database.js";
 import { getAccountOwnerId } from "./auth.js";
 import { assertLockOwner, getAudit, getLock, publishEvent, releaseLock } from "./collaboration.js";
-import { REPORT_STEP_KEYS, createEmptyLeakContent, createLeakReportPdf as createWizardLeakReportPdf, normalizeLeakContent } from "./leak-report-template.js";
+import { DEFAULT_MATERIALS, REPORT_STEP_KEYS, createEmptyLeakContent, createLeakReportPdf as createWizardLeakReportPdf, normalizeLeakContent } from "./leak-report-template.js";
 import { synchronizeConnectedReport } from "./partner-connections.js";
 import { recordMissionEventForSource } from "./partner-dialogue.js";
 
@@ -60,7 +60,7 @@ export async function initializeTechnicalReports() {
 
 export function registerTechnicalReportRoutes(app, requireAuthentication) {
     app.use("/api/technical-reports", requireAuthentication, requireReportAccess);
-    app.get("/api/technical-reports", asyncHandler(async (request, response) => response.json({ reports: await loadReports(getAccountOwnerId(request), request), library: await loadLibrary(getAccountOwnerId(request)) })));
+    app.get("/api/technical-reports", asyncHandler(async (request, response) => { const ownerId = getAccountOwnerId(request); const library = await loadLibrary(ownerId); const materials = [...new Set([...DEFAULT_MATERIALS, ...library.filter(item => item.category === "materials").map(item => item.label)])]; response.json({ reports: await loadReports(ownerId, request), library, materials }); }));
     app.get("/api/technical-reports/appointments/:appointmentId", asyncHandler(async (request, response) => {
         const appointment = await findAccessibleAppointment(getAccountOwnerId(request), positiveId(request.params.appointmentId), request);
         if (!appointment) return response.status(404).json({ message: "Intervention introuvable ou non accessible." });
@@ -106,8 +106,8 @@ export function registerTechnicalReportRoutes(app, requireAuthentication) {
         if (!section || !files.length) return response.status(400).json({ message: "Section et photo(s) obligatoires." });
         const media = Array.isArray(report.media) ? report.media : [];
         if (media.length + files.length > MAX_MEDIA_PER_REPORT) return response.status(400).json({ message: `Le rapport est limité à ${MAX_MEDIA_PER_REPORT} photos.` });
-        const observationId = cleanText(request.body?.observationId, 100);
-        const additions = files.map(file => ({ id: `media-${crypto.randomUUID()}`, section, observationId, name: safeName(file.originalname), mime: file.mimetype, size: file.size, caption: cleanText(request.body?.caption, 500), annotation: cleanText(request.body?.annotation, 1000), dataUrl: `data:${file.mimetype};base64,${file.buffer.toString("base64")}`, createdAt: new Date().toISOString() }));
+        const observationId = cleanText(request.body?.observationId, 100); const materialId = cleanText(request.body?.materialId, 100);
+        const additions = files.map(file => ({ id: `media-${crypto.randomUUID()}`, section, observationId, materialId, name: safeName(file.originalname), mime: file.mimetype, size: file.size, caption: cleanText(request.body?.caption, 500), annotation: cleanText(request.body?.annotation, 1000), dataUrl: `data:${file.mimetype};base64,${file.buffer.toString("base64")}`, createdAt: new Date().toISOString() }));
         const next = [...media, ...additions]; if (Buffer.byteLength(JSON.stringify(next)) > MAX_REPORT_BYTES) return response.status(400).json({ message: "Le rapport est trop volumineux : compressez les photos." });
         await getPool().query("UPDATE depannhome_technical_reports SET media=$3::jsonb, updated_at=NOW() WHERE id=$1 AND owner_id=$2", [report.id, ownerId, JSON.stringify(next)]);
         await publishEvent(request, reportTarget(report.id), "report_media_added", { count: additions.length, section });
@@ -115,7 +115,7 @@ export function registerTechnicalReportRoutes(app, requireAuthentication) {
     }));
     app.patch("/api/technical-reports/:reportId/media/:mediaId", asyncHandler(async (request, response) => {
         const ownerId = getAccountOwnerId(request); const report = await findReport(ownerId, positiveId(request.params.reportId), request); if (!report) return response.status(404).json({ message: "Rapport introuvable." }); if (!canEdit(report, request)) return response.status(409).json({ message: "Le rapport est verrouillé." }); if (!await enforceReportLock(request, response, report.id)) return;
-        const id = String(request.params.mediaId || ""); const annotatedImage = /^data:image\/(jpeg|png|webp);base64,[a-zA-Z0-9+/=]+$/.test(String(request.body?.dataUrl || "")) && Buffer.byteLength(String(request.body.dataUrl), "utf8") <= MAX_MEDIA_SIZE * 1.4 ? String(request.body.dataUrl) : ""; const media = (report.media || []).map(item => item.id === id ? { ...item, caption: cleanText(request.body?.caption, 500), annotation: cleanText(request.body?.annotation, 1000), observationId: cleanText(request.body?.observationId, 100) || item.observationId || "", ...(annotatedImage ? { dataUrl: annotatedImage } : {}) } : item); if (!media.some(item => item.id === id)) return response.status(404).json({ message: "Photo introuvable." });
+        const id = String(request.params.mediaId || ""); const annotatedImage = /^data:image\/(jpeg|png|webp);base64,[a-zA-Z0-9+/=]+$/.test(String(request.body?.dataUrl || "")) && Buffer.byteLength(String(request.body.dataUrl), "utf8") <= MAX_MEDIA_SIZE * 1.4 ? String(request.body.dataUrl) : ""; const media = (report.media || []).map(item => item.id === id ? { ...item, caption: cleanText(request.body?.caption, 500), annotation: cleanText(request.body?.annotation, 1000), observationId: cleanText(request.body?.observationId, 100) || item.observationId || "", materialId: cleanText(request.body?.materialId, 100) || item.materialId || "", ...(annotatedImage ? { dataUrl: annotatedImage } : {}) } : item); if (!media.some(item => item.id === id)) return response.status(404).json({ message: "Photo introuvable." });
         await getPool().query("UPDATE depannhome_technical_reports SET media=$3::jsonb, updated_at=NOW() WHERE id=$1 AND owner_id=$2", [report.id, ownerId, JSON.stringify(media)]); await publishEvent(request, reportTarget(report.id), "report_media_updated", { mediaId: id }); response.status(204).end();
     }));
     app.delete("/api/technical-reports/:reportId/media/:mediaId", asyncHandler(async (request, response) => {

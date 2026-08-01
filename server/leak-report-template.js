@@ -1,13 +1,13 @@
 import PDFDocument from "pdfkit";
 
 export const REPORT_STEPS = [
-    ["general", "Informations générales"], ["overview", "État des lieux"], ["visual", "Observations visuelles"], ["humidity", "Contrôle d’humidité"], ["pressure", "Contrôle des manomètres de pression"], ["methods", "Moyens techniques utilisés"], ["waterTest", "Test d’étanchéité à l’eau claire / colorant"], ["charging", "Mise en charge"], ["safety", "Mise en sécurité"], ["ventilation", "Contrôle de la ventilation"], ["conclusion", "Conclusion"], ["recommendations", "Préconisations et signatures"]
+    ["general", "Informations générales"], ["overview", "État des lieux"], ["visual", "Observations visuelles"], ["humidity", "Contrôle d’humidité"], ["pressure", "Contrôle des manomètres de pression"], ["methods", "Matériels techniques utilisés"], ["waterTest", "Test d’étanchéité à l’eau claire / colorant"], ["charging", "Mise en charge"], ["safety", "Mise en sécurité"], ["ventilation", "Contrôle de la ventilation"], ["conclusion", "Conclusion"], ["recommendations", "Préconisations et signatures"]
 ];
 export const REPORT_STEP_KEYS = REPORT_STEPS.map(([key]) => key);
-export const DEFAULT_MATERIALS = ["Gaz traceur", "Contrôle acoustique", "Caméra endoscopique", "Traçage de réseau", "Fumigation", "Caméra thermique", "Détecteur électronique", "Colorant fluorescent", "Inspection vidéo", "Autre matériel"];
+export const DEFAULT_MATERIALS = ["Gaz traceur", "Contrôle acoustique", "Caméra endoscopique", "Caméra thermique", "Traçage réseau", "Fumigation", "Colorant", "Détecteur d’humidité", "Thermomètre infrarouge", "Autre matériel"];
 
 export function createEmptyLeakContent(snapshot = {}) {
-    return { schemaVersion: 3, activeStep: "overview", skippedSteps: [], snapshot, general: { observations: [] }, overview: { disorders: "", location: "", rooms: "", observations: [] }, visual: { defects: "", comments: "", observations: [] }, humidity: { readings: [], location: "", observations: [] }, pressure: { readings: [], holdingTime: "", variation: "", comments: "", observations: [] }, methods: { items: [], observations: [] }, waterTest: { testType: "", result: "", comments: "", observations: [] }, charging: { pressure: "", duration: "", result: "", observations: [] }, safety: { actions: "", measures: "", observations: [] }, ventilation: { checks: "", comments: "", observations: [] }, conclusion: { diagnosis: "", probableOrigin: "", summary: "", finalObservations: "", observations: [] }, recommendations: { work: "", repairs: "", urgency: "", customerAdvice: "", technicianSignature: "", clientSignature: "", clientName: "", signedAt: "", observations: [] } };
+    return { schemaVersion: 4, activeStep: "overview", activeMaterialId: "", skippedSteps: [], snapshot, general: { observations: [] }, overview: { disorders: "", location: "", rooms: "", observations: [] }, visual: { defects: "", comments: "", observations: [] }, humidity: { readings: [], location: "", observations: [] }, pressure: { readings: [], holdingTime: "", variation: "", comments: "", observations: [] }, methods: { materials: [], items: [], observations: [] }, waterTest: { testType: "", result: "", comments: "", observations: [] }, charging: { pressure: "", duration: "", result: "", observations: [] }, safety: { actions: "", measures: "", observations: [] }, ventilation: { checks: "", comments: "", observations: [] }, conclusion: { diagnosis: "", probableOrigin: "", summary: "", finalObservations: "", observations: [] }, recommendations: { work: "", repairs: "", urgency: "", customerAdvice: "", technicianSignature: "", clientSignature: "", clientName: "", signedAt: "", observations: [] } };
 }
 
 export function normalizeLeakContent(value, snapshot = {}) {
@@ -15,7 +15,7 @@ export function normalizeLeakContent(value, snapshot = {}) {
     if (!input.schemaVersion && (input.cover || input.leakSearch || input.measurements)) return normalizeLeakContent({ schemaVersion: 2, activeStep: "overview", snapshot: { insurance: input.cover?.insurance || "", claimNumber: input.cover?.claimNumber || "", interventionReference: input.cover?.interventionReference || "" }, overview: { disorders: input.overview?.generalDescription || "", location: input.location?.preciseLocation || "", rooms: "", observations: [input.overview?.customerHistory, input.overview?.context, input.overview?.interventionConditions].filter(Boolean).join("\n") }, visual: { observations: input.visual?.observations || "", defects: input.visual?.anomalies || "", comments: "" }, humidity: { readings: input.measurements?.rows || [], location: "", observations: "" }, pressure: { readings: input.finalControl?.rows || [], holdingTime: "", variation: "", comments: input.finalControl?.tightness || "" }, methods: { items: (input.leakSearch?.methods || []).map(item => ({ name: item.name, observations: item.observations, result: item.result, comments: item.comments })) }, waterTest: { testType: "", result: "", observations: "", comments: "" }, charging: { pressure: "", duration: "", result: "", observations: "" }, safety: { actions: "", measures: "", observations: "" }, ventilation: { checks: "", observations: "", comments: "" }, conclusion: { diagnosis: input.location?.description || "", probableOrigin: input.location?.comments || "", summary: input.work?.repair || "", finalObservations: input.work?.tests || "" }, recommendations: { work: input.conclusion?.recommendations || "", repairs: input.work?.replacement || "", urgency: "", customerAdvice: "", technicianSignature: input.signatures?.technician || "", clientSignature: input.signatures?.client || "", clientName: input.signatures?.clientName || "", signedAt: input.signatures?.signedAt || "" } }, snapshot);
     const content = createEmptyLeakContent(input.snapshot && typeof input.snapshot === "object" ? input.snapshot : snapshot);
     for (const key of REPORT_STEP_KEYS) if (input[key] && typeof input[key] === "object" && !Array.isArray(input[key])) content[key] = { ...content[key], ...input[key] };
-    content.schemaVersion = 3;
+    content.schemaVersion = 4;
     content.activeStep = REPORT_STEP_KEYS.includes(input.activeStep) ? input.activeStep : "overview";
     content.skippedSteps = [...new Set((Array.isArray(input.skippedSteps) ? input.skippedSteps : []).filter(key => REPORT_STEP_KEYS.includes(key) && key !== "general"))].slice(0, REPORT_STEP_KEYS.length);
     content.humidity.readings = sanitizeRows(content.humidity.readings, ["location", "value", "unit"]);
@@ -23,6 +23,8 @@ export function normalizeLeakContent(value, snapshot = {}) {
     content.methods.items = (Array.isArray(content.methods.items) ? content.methods.items : []).slice(0, 40).map(item => ({ name: text(item?.name, 120), observations: text(item?.observations, 2000), result: text(item?.result, 2000), comments: text(item?.comments, 2000) }));
     const isLegacySchema = Number(input.schemaVersion || 2) < 3;
     for (const step of REPORT_STEP_KEYS) content[step].observations = normalizeObservations(isLegacySchema ? legacyObservation(content[step], step) : content[step].observations);
+    content.methods.materials = normalizeMaterials(input.methods?.materials, content.methods);
+    content.activeMaterialId = content.methods.materials.some(item => item.id === input.activeMaterialId) ? input.activeMaterialId : "";
     for (const step of REPORT_STEP_KEYS) for (const [field, fieldValue] of Object.entries(content[step] || {})) if (typeof fieldValue === "string") content[step][field] = text(fieldValue, field.includes("Signature") ? 700000 : 5000);
     return JSON.parse(JSON.stringify(content).slice(0, 120000));
 }
@@ -30,6 +32,7 @@ export function normalizeLeakContent(value, snapshot = {}) {
 export function sectionHasContent(content, media, key) {
     if (key === "general") return true;
     if ((media || []).some(item => item.section === key)) return true;
+    if (key === "methods") return Array.isArray(content?.methods?.materials) && content.methods.materials.length > 0;
     const value = content?.[key] || {};
     return Object.entries(value).some(([field, item]) => field !== "technicianSignature" && field !== "clientSignature" && (Array.isArray(item) ? item.length : typeof item === "string" ? Boolean(item.trim()) : Boolean(item)));
 }
@@ -40,7 +43,11 @@ export function createLeakReportPdf(report, profile) {
         const chunks = []; pdf.on("data", chunk => chunks.push(chunk)); pdf.on("end", () => resolve(Buffer.concat(chunks))); pdf.on("error", reject);
         const content = normalizeLeakContent(report.content); const media = report.media || []; const snapshot = content.snapshot || {};
         addGeneralPage(pdf, report, profile, snapshot, media.filter(photo => photo.section === "general"));
-        for (const [key, label] of REPORT_STEPS.slice(1)) if (sectionHasContent(content, media, key)) addStepPage(pdf, key, label, content[key], media.filter(photo => photo.section === key));
+        for (const [key, label] of REPORT_STEPS.slice(1)) {
+            if (key === "methods") {
+                for (const material of content.methods.materials || []) addStepPage(pdf, "methods", materialLabel(material), { observations: material.observations }, media.filter(photo => photo.section === "methods" && photo.materialId === material.id));
+            } else if (sectionHasContent(content, media, key)) addStepPage(pdf, key, label, content[key], media.filter(photo => photo.section === key));
+        }
         addPageNumbers(pdf); pdf.end();
     });
 }
@@ -93,6 +100,13 @@ function title(pdf, value, x, y, width, size) { pdf.fillColor("#003b73").font("H
 function pretty(value) { return ({ disorders: "Description des désordres", rooms: "Pièces concernées", checks: "Vérifications réalisées", probableOrigin: "Origine probable de la fuite", work: "Travaux recommandés", customerAdvice: "Conseils au client", holdingTime: "Temps de maintien", testType: "Type de test" })[value] || String(value).replace(/([A-Z])/g, " $1").replace(/^./, char => char.toUpperCase()); }
 function sanitizeRows(rows, fields) { return (Array.isArray(rows) ? rows : []).slice(0, 100).map(row => Object.fromEntries(fields.map(field => [field, text(row?.[field], 500)]))); }
 function normalizeObservations(value) { const entries = Array.isArray(value) ? value : typeof value === "string" && value.trim() ? [{ text: value }] : []; return entries.slice(0, 100).map((item, index) => ({ id: text(item?.id, 100) || `observation-${index + 1}`, text: text(item?.text, 5000), method: text(item?.method, 120), createdAt: text(item?.createdAt, 40) })).filter(item => item.text || item.method); }
+function normalizeMaterials(value, legacyMethods) { const listed = Array.isArray(value) ? value : legacyMaterials(legacyMethods); const usedIds = new Set(); return listed.slice(0, 40).map((item, index) => { const name = text(item?.name, 120); const baseId = text(item?.id, 100) || `material-${index + 1}`; const id = uniqueId(baseId, usedIds); return { id, name, customName: text(item?.customName, 120), observations: normalizeObservations(item?.observations) }; }).filter(item => item.name); }
+function legacyMaterials(methods) { const byName = new Map(); const add = (name, observation) => { const label = text(name, 120) || "Matériel technique"; const material = byName.get(label) || { id: `legacy-material-${byName.size + 1}`, name: label, observations: [] }; if (observation?.text || observation?.method) material.observations.push(observation); byName.set(label, material); };
+    for (const item of Array.isArray(methods?.items) ? methods.items : []) add(item.name, { text: [item.observations, item.result, item.comments].filter(Boolean).join("\n") });
+    for (const observation of Array.isArray(methods?.observations) ? methods.observations : []) add(observation.method, observation);
+    return [...byName.values()]; }
+function uniqueId(value, used) { const base = value.replace(/[^a-zA-Z0-9_-]/g, "-") || "material"; let id = base; let index = 2; while (used.has(id)) id = `${base}-${index++}`; used.add(id); return id; }
+function materialLabel(material) { return material?.name === "Autre matériel" ? material.customName || material.name : material?.name || "Matériel technique"; }
 function legacyObservation(values, key) { const lines = []; for (const [field, value] of Object.entries(values || {})) { if (["technicianSignature", "clientSignature", "clientName", "signedAt", "observations"].includes(field) || !value) continue; if (field === "items") { (Array.isArray(value) ? value : []).forEach(item => lines.push([item.name, item.observations, item.result, item.comments].filter(Boolean).join(" — "))); continue; } if (field === "readings") { (Array.isArray(value) ? value : []).forEach(row => lines.push(Object.values(row || {}).filter(Boolean).join(" · "))); continue; } if (typeof value === "string") lines.push(`${pretty(field)} : ${value}`); } const observation = typeof values?.observations === "string" ? values.observations : ""; return [observation, ...lines].filter(Boolean).join("\n"); }
 function text(value, max) { return String(value || "").replace(/\s+/g, " ").trim().slice(0, max); }
 function dataUrl(value) { const match = /^data:[^;,]+;base64,([a-zA-Z0-9+/=]+)$/.exec(String(value || "")); if (!match) throw new Error("Média invalide"); return Buffer.from(match[1], "base64"); }

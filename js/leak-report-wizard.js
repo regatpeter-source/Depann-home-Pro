@@ -9,7 +9,7 @@ const MODULES = [
     ["visual", "Observations visuelles", "Désordres et anomalies visibles"],
     ["humidity", "Contrôle d’humidité", "Mesures et zones contrôlées"],
     ["pressure", "Manomètre de pression", "Contrôles de pression"],
-    ["methods", "Recherche technique", "Méthodes de localisation utilisées"],
+    ["methods", "Matériels techniques utilisés", "Sélectionnez les équipements employés"],
     ["waterTest", "Test d’étanchéité à l’eau claire / colorant", "Essais réalisés"],
     ["charging", "Mise en charge", "Mise sous pression ou en charge"],
     ["safety", "Mise en sécurité", "Mesures de prévention"],
@@ -17,9 +17,9 @@ const MODULES = [
     ["conclusion", "Conclusion", "Diagnostic et synthèse"],
     ["recommendations", "Préconisations", "Travaux et conseils"],
 ];
-const TECHNICAL_METHODS = ["Gaz traceur", "Contrôle acoustique", "Caméra endoscopique", "Caméra thermique", "Traçage réseau", "Fumigation", "Autre matériel"];
 let reports = [];
 let library = [];
+let materialCatalog = [];
 let current = null;
 let corrections = [];
 let reportLock = null;
@@ -40,6 +40,7 @@ export async function renderLeakReportWizard(reportId = 0, appointmentId = 0) {
     if (!index.ok) return showFailure(root, index.message);
     reports = index.data.reports || [];
     library = index.data.library || [];
+    materialCatalog = index.data.materials || [];
     if (reportId) await loadReport(reportId);
     else if (appointmentId) await openAppointmentReport(appointmentId);
     bindCollaborationEvents();
@@ -81,6 +82,8 @@ function ensureModularContent() {
         current.content[key] = current.content[key] && typeof current.content[key] === "object" ? current.content[key] : {};
         current.content[key].observations = Array.isArray(current.content[key].observations) ? current.content[key].observations : [];
     });
+    current.content.methods.materials = Array.isArray(current.content.methods.materials) ? current.content.methods.materials : [];
+    current.content.activeMaterialId = current.content.methods.materials.some(material => material.id === current.content.activeMaterialId) ? current.content.activeMaterialId : "";
 }
 
 async function acquireLock() {
@@ -94,6 +97,7 @@ function renderEditor(shell) {
     ensureModularContent();
     const activeKey = current.content.activeStep;
     const activeModule = moduleDefinition(activeKey);
+    const activeMaterial = activeKey === "methods" ? selectedMaterial() : null;
     const write = editable();
     const snapshot = current.content.snapshot || {};
     shell.className = "report-editor-shell report-editor-fullscreen";
@@ -107,8 +111,8 @@ function renderEditor(shell) {
         ${corrections.length ? `<section class="report-editor-corrections"><strong>Commentaires de l’administration</strong>${corrections.map(item => `<p><b>${escapeHtml(moduleDefinition(item.section)?.[1] || "Module")}</b> · ${escapeHtml(item.comment)}</p>`).join("")}</section>` : ""}
         <nav class="report-module-nav" aria-label="Modules du rapport">${MODULES.map(([key, title, description], index) => `<button type="button" class="${key === activeKey ? "active" : ""}${moduleUsed(key) ? " used" : ""}" data-module="${key}"><span>${key === "general" ? "i" : index}</span><b>${escapeHtml(title)}</b><small>${escapeHtml(description)}</small></button>`).join("")}</nav>
         <main class="report-editor-main">
-            <div class="report-editor-module-heading"><div><p class="eyebrow">Module ${activeKey === "general" ? "automatique" : moduleNumber(activeKey)}</p><h2>${escapeHtml(activeModule[1])}</h2><p class="muted">${escapeHtml(activeModule[2])}</p></div>${activeKey !== "general" && write ? `<button type="button" class="secondary-button" data-skip-module>${isSkipped(activeKey) ? "Réactiver" : "Ignorer ce module"}</button>` : ""}</div>
-            ${activeKey === "general" ? generalModuleHtml(write) : observationsModuleHtml(activeKey, write)}
+            <div class="report-editor-module-heading"><div><p class="eyebrow">${activeMaterial ? "Matériel sélectionné" : `Module ${activeKey === "general" ? "automatique" : moduleNumber(activeKey)}`}</p><h2>${escapeHtml(activeMaterial?.name || activeModule[1])}</h2><p class="muted">${escapeHtml(activeMaterial ? "Observations et photos associées à cet équipement" : activeModule[2])}</p></div>${activeMaterial ? '<button type="button" class="secondary-button" data-back-to-materials>← Matériels utilisés</button>' : activeKey !== "general" && activeKey !== "methods" && write ? `<button type="button" class="secondary-button" data-skip-module>${isSkipped(activeKey) ? "Réactiver" : "Ignorer ce module"}</button>` : ""}</div>
+            ${activeKey === "general" ? generalModuleHtml(write) : activeKey === "methods" ? materialsModuleHtml(write, activeMaterial) : observationsModuleHtml(activeKey, write)}
         </main>
         <footer class="report-editor-footer">
             <button type="button" class="secondary-button" data-previous-module ${moduleIndex(activeKey) <= 0 ? "disabled" : ""}>← Précédent</button>
@@ -131,20 +135,27 @@ function generalModuleHtml(write) {
     return `<section class="report-auto-summary"><p>Ces informations sont générées automatiquement à partir du dossier client et de l’intervention.</p><dl>${values.map(([label, value]) => `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd></div>`).join("")}</dl></section>${photosHtml("general", "", write, "Ajouter la photo extérieure du logement", true)}`;
 }
 
-function observationsModuleHtml(moduleKey, write) {
-    const observations = current.content[moduleKey].observations;
+function observationsModuleHtml(moduleKey, write, material = null) {
+    const observations = material ? material.observations : current.content[moduleKey].observations;
     if (isSkipped(moduleKey)) return `<section class="report-module-empty"><h3>Module ignoré</h3><p>Il ne figurera pas dans le PDF final tant qu’il n’est pas réactivé.</p></section>`;
-    return `<section class="report-observations">${observations.map((observation, index) => observationHtml(moduleKey, observation, index, write)).join("") || '<section class="report-module-empty"><h3>Aucune observation</h3><p>Ajoutez uniquement les constats utiles à cette intervention.</p></section>'}${write ? '<button type="button" class="report-add-observation" data-add-observation>+ Ajouter une observation</button>' : ""}</section>`;
+    return `<section class="report-observations">${observations.map((observation, index) => observationHtml(moduleKey, observation, index, write, material?.id || "")).join("") || '<section class="report-module-empty"><h3>Aucune observation</h3><p>Ajoutez uniquement les constats utiles à cette intervention.</p></section>'}${write ? `<button type="button" class="report-add-observation" data-add-observation data-material-id="${escapeHtml(material?.id || "")}">+ Ajouter une observation</button>` : ""}</section>`;
 }
 
-function observationHtml(moduleKey, observation, index, write) {
-    const methodControl = moduleKey === "methods" ? `<label>Moyen utilisé<select data-observation-method="${escapeHtml(observation.id)}" ${write ? "" : "disabled"}><option value="">Choisir un moyen</option>${[...TECHNICAL_METHODS, ...library.filter(item => item.category === "materials").map(item => item.label)].filter((value, position, all) => all.indexOf(value) === position).map(method => `<option value="${escapeHtml(method)}" ${observation.method === method ? "selected" : ""}>${escapeHtml(method)}</option>`).join("")}</select></label>` : "";
-    return `<article class="report-observation-card" data-observation-card="${escapeHtml(observation.id)}"><header><strong>Observation ${index + 1}</strong>${write ? `<div><button type="button" class="text-button" data-move-observation="up" data-observation-id="${escapeHtml(observation.id)}" ${index ? "" : "disabled"}>↑</button><button type="button" class="text-button" data-move-observation="down" data-observation-id="${escapeHtml(observation.id)}" ${index < current.content[moduleKey].observations.length - 1 ? "" : "disabled"}>↓</button><button type="button" class="text-button danger-text" data-delete-observation="${escapeHtml(observation.id)}">Supprimer</button></div>` : ""}</header>${methodControl}<label>Constat<textarea data-observation-text="${escapeHtml(observation.id)}" rows="6" placeholder="Décrivez uniquement ce qui a été observé…" ${write ? "" : "disabled"}>${escapeHtml(observation.text || "")}</textarea></label>${photosHtml(moduleKey, observation.id, write, "Ajouter des photos")}</article>`;
+function materialsModuleHtml(write, material) {
+    if (material) return observationsModuleHtml("methods", write, material);
+    const selected = current.content.methods.materials;
+    const choices = materialCatalog;
+    return `<section class="report-material-selector"><p>Sélectionnez tous les matériels réellement utilisés. Chaque sélection crée sa propre page dans le PDF final.</p><div class="report-material-options">${choices.map(name => { const material = selected.find(item => item.name === name); return `<label class="${material ? "selected" : ""}"><input type="checkbox" data-material-choice="${escapeHtml(name)}" ${material ? "checked" : ""} ${write ? "" : "disabled"}><span>${escapeHtml(name)}</span></label>`; }).join("")}</div>${selected.some(item => item.name === "Autre matériel") ? `<label class="report-other-material">Nom de l’autre matériel<input data-other-material-name value="${escapeHtml(selected.find(item => item.name === "Autre matériel")?.customName || "")}" placeholder="Ex. pompe d’épreuve" ${write ? "" : "disabled"}></label>` : ""}<section class="report-selected-materials"><h3>Pages créées</h3>${selected.length ? selected.map((item, index) => `<article><button type="button" data-open-material="${escapeHtml(item.id)}"><strong>${escapeHtml(materialLabel(item))}</strong><span>${item.observations.length} observation${item.observations.length > 1 ? "s" : ""}</span></button>${write ? `<button type="button" class="text-button danger-text" data-remove-material="${escapeHtml(item.id)}">Supprimer</button>` : ""}</article>`).join("") : '<p class="muted">Aucun matériel sélectionné.</p>'}</section></section>`;
 }
 
-function photosHtml(moduleKey, observationId, write, addLabel, singlePhoto = false) {
-    const photos = (current.media || []).filter(photo => photo.section === moduleKey && String(photo.observationId || "") === String(observationId));
-    return `<section class="report-observation-photos"><div class="report-photo-grid">${photos.map(photo => `<article><img src="${escapeHtml(photo.dataUrl)}" alt="${escapeHtml(photo.caption || photo.name || "Photo du rapport")}">${write ? `<input value="${escapeHtml(photo.caption || "")}" maxlength="500" placeholder="Commentaire facultatif" data-photo-caption="${escapeHtml(photo.id)}"><button type="button" class="text-button danger-text" data-delete-photo="${escapeHtml(photo.id)}">Supprimer</button>` : photo.caption ? `<p>${escapeHtml(photo.caption)}</p>` : ""}</article>`).join("")}</div>${write && (!singlePhoto || !photos.length) ? `<label class="report-photo-add">${escapeHtml(addLabel)}<input type="file" accept="image/*" capture="environment" ${singlePhoto ? "" : "multiple"} data-photo-input data-module-key="${escapeHtml(moduleKey)}" data-observation-id="${escapeHtml(observationId)}"></label>` : ""}</section>`;
+function observationHtml(moduleKey, observation, index, write, materialId = "") {
+    const observations = materialId ? materialById(materialId)?.observations || [] : current.content[moduleKey].observations;
+    return `<article class="report-observation-card" data-observation-card="${escapeHtml(observation.id)}"><header><strong>Observation ${index + 1}</strong>${write ? `<div><button type="button" class="text-button" data-move-observation="up" data-observation-id="${escapeHtml(observation.id)}" data-material-id="${escapeHtml(materialId)}" ${index ? "" : "disabled"}>↑</button><button type="button" class="text-button" data-move-observation="down" data-observation-id="${escapeHtml(observation.id)}" data-material-id="${escapeHtml(materialId)}" ${index < observations.length - 1 ? "" : "disabled"}>↓</button><button type="button" class="text-button danger-text" data-delete-observation="${escapeHtml(observation.id)}" data-material-id="${escapeHtml(materialId)}">Supprimer</button></div>` : ""}</header><label>Constat<textarea data-observation-text="${escapeHtml(observation.id)}" data-material-id="${escapeHtml(materialId)}" rows="6" placeholder="Décrivez uniquement ce qui a été observé…" ${write ? "" : "disabled"}>${escapeHtml(observation.text || "")}</textarea></label>${photosHtml(moduleKey, observation.id, write, "Ajouter des photos", false, materialId)}</article>`;
+}
+
+function photosHtml(moduleKey, observationId, write, addLabel, singlePhoto = false, materialId = "") {
+    const photos = (current.media || []).filter(photo => photo.section === moduleKey && String(photo.observationId || "") === String(observationId) && String(photo.materialId || "") === String(materialId));
+    return `<section class="report-observation-photos"><div class="report-photo-grid">${photos.map(photo => `<article><img src="${escapeHtml(photo.dataUrl)}" alt="${escapeHtml(photo.caption || photo.name || "Photo du rapport")}">${write ? `<input value="${escapeHtml(photo.caption || "")}" maxlength="500" placeholder="Commentaire facultatif" data-photo-caption="${escapeHtml(photo.id)}"><button type="button" class="text-button danger-text" data-delete-photo="${escapeHtml(photo.id)}">Supprimer</button>` : photo.caption ? `<p>${escapeHtml(photo.caption)}</p>` : ""}</article>`).join("")}</div>${write && (!singlePhoto || !photos.length) ? `<label class="report-photo-add">${escapeHtml(addLabel)}<input type="file" accept="image/*" capture="environment" ${singlePhoto ? "" : "multiple"} data-photo-input data-module-key="${escapeHtml(moduleKey)}" data-observation-id="${escapeHtml(observationId)}" data-material-id="${escapeHtml(materialId)}"></label>` : ""}</section>`;
 }
 
 function bindEditor(shell, moduleKey) {
@@ -152,11 +163,15 @@ function bindEditor(shell, moduleKey) {
     shell.querySelector("[data-previous-module]")?.addEventListener("click", () => openModule(shell, MODULES[moduleIndex(moduleKey) - 1][0]));
     shell.querySelector("[data-next-module]")?.addEventListener("click", () => openModule(shell, MODULES[moduleIndex(moduleKey) + 1][0]));
     shell.querySelector("[data-skip-module]")?.addEventListener("click", () => { const skipped = new Set(current.content.skippedSteps || []); skipped.has(moduleKey) ? skipped.delete(moduleKey) : skipped.add(moduleKey); current.content.skippedSteps = [...skipped]; queueSave(shell); renderEditor(shell); });
-    shell.querySelector("[data-add-observation]")?.addEventListener("click", () => { current.content[moduleKey].observations.push({ id: newObservationId(), text: "", method: "", createdAt: new Date().toISOString() }); current.content.skippedSteps = (current.content.skippedSteps || []).filter(key => key !== moduleKey); queueSave(shell); renderEditor(shell); });
-    shell.querySelectorAll("[data-observation-text]").forEach(input => input.addEventListener("input", () => { const observation = findObservation(moduleKey, input.dataset.observationText); if (observation) observation.text = input.value; queueSave(shell); }));
-    shell.querySelectorAll("[data-observation-method]").forEach(input => input.addEventListener("change", () => { const observation = findObservation(moduleKey, input.dataset.observationMethod); if (observation) observation.method = input.value; queueSave(shell); }));
-    shell.querySelectorAll("[data-delete-observation]").forEach(button => button.addEventListener("click", async () => { if (!confirm("Supprimer cette observation et ses photos ?")) return; if (!await removeObservation(moduleKey, button.dataset.deleteObservation)) return; queueSave(shell); renderEditor(shell); }));
-    shell.querySelectorAll("[data-move-observation]").forEach(button => button.addEventListener("click", () => { moveObservation(moduleKey, button.dataset.observationId, button.dataset.moveObservation); queueSave(shell); renderEditor(shell); }));
+    shell.querySelector("[data-back-to-materials]")?.addEventListener("click", () => { current.content.activeMaterialId = ""; queueSave(shell); renderEditor(shell); });
+    shell.querySelectorAll("[data-material-choice]").forEach(input => input.addEventListener("change", () => toggleMaterial(input.dataset.materialChoice, input.checked, shell)));
+    shell.querySelector("[data-other-material-name]")?.addEventListener("input", input => { const material = current.content.methods.materials.find(item => item.name === "Autre matériel"); if (material) material.customName = input.target.value; queueSave(shell); });
+    shell.querySelectorAll("[data-open-material]").forEach(button => button.addEventListener("click", () => { current.content.activeMaterialId = button.dataset.openMaterial; queueSave(shell); renderEditor(shell); }));
+    shell.querySelectorAll("[data-remove-material]").forEach(button => button.addEventListener("click", async () => { if (!confirm("Supprimer ce matériel, toutes ses observations et ses photos ?")) return; if (!await removeMaterial(button.dataset.removeMaterial)) return; queueSave(shell); renderEditor(shell); }));
+    shell.querySelector("[data-add-observation]")?.addEventListener("click", button => { const material = materialById(button.target.dataset.materialId); const observations = material ? material.observations : current.content[moduleKey].observations; observations.push({ id: newObservationId(), text: "", createdAt: new Date().toISOString() }); current.content.skippedSteps = (current.content.skippedSteps || []).filter(key => key !== moduleKey); queueSave(shell); renderEditor(shell); });
+    shell.querySelectorAll("[data-observation-text]").forEach(input => input.addEventListener("input", () => { const observation = findObservation(moduleKey, input.dataset.observationText, input.dataset.materialId); if (observation) observation.text = input.value; queueSave(shell); }));
+    shell.querySelectorAll("[data-delete-observation]").forEach(button => button.addEventListener("click", async () => { if (!confirm("Supprimer cette observation et ses photos ?")) return; if (!await removeObservation(moduleKey, button.dataset.deleteObservation, button.dataset.materialId)) return; queueSave(shell); renderEditor(shell); }));
+    shell.querySelectorAll("[data-move-observation]").forEach(button => button.addEventListener("click", () => { moveObservation(moduleKey, button.dataset.observationId, button.dataset.moveObservation, button.dataset.materialId); queueSave(shell); renderEditor(shell); }));
     shell.querySelectorAll("[data-photo-input]").forEach(input => input.addEventListener("change", () => uploadPhotos(input, shell)));
     shell.querySelectorAll("[data-photo-caption]").forEach(input => input.addEventListener("change", () => updatePhotoCaption(input)));
     shell.querySelectorAll("[data-delete-photo]").forEach(button => button.addEventListener("click", () => deletePhoto(button.dataset.deletePhoto, shell)));
@@ -188,9 +203,14 @@ function openModule(shell, key) {
     renderEditor(shell);
 }
 
-function findObservation(moduleKey, id) { return current.content[moduleKey].observations.find(observation => observation.id === id); }
-async function removeObservation(moduleKey, id) { const photos = (current.media || []).filter(photo => String(photo.observationId || "") === String(id)); const deleted = await Promise.all(photos.map(photo => api(`/api/technical-reports/${encodeURIComponent(current.id)}/media/${encodeURIComponent(photo.id)}`, { method: "DELETE" }))); if (deleted.some(result => !result.ok)) { alert("Une ou plusieurs photos n’ont pas pu être supprimées."); return false; } current.content[moduleKey].observations = current.content[moduleKey].observations.filter(observation => observation.id !== id); current.media = (current.media || []).filter(photo => String(photo.observationId || "") !== String(id)); return true; }
-function moveObservation(moduleKey, id, direction) { const items = current.content[moduleKey].observations; const index = items.findIndex(observation => observation.id === id); const next = direction === "up" ? index - 1 : index + 1; if (index < 0 || next < 0 || next >= items.length) return; [items[index], items[next]] = [items[next], items[index]]; }
+function toggleMaterial(name, selected, shell) { const materials = current.content.methods.materials; const index = materials.findIndex(item => item.name === name); if (selected && index < 0) materials.push({ id: newMaterialId(), name, customName: "", observations: [] }); if (!selected && index >= 0) { const material = materials[index]; if ((material.observations.length || (current.media || []).some(photo => photo.materialId === material.id)) && !confirm("Supprimer ce matériel, toutes ses observations et ses photos ?")) { renderEditor(shell); return; } removeMaterial(material.id).then(removed => { if (!removed) return; queueSave(shell); renderEditor(shell); }); return; } queueSave(shell); renderEditor(shell); }
+function materialById(id) { return (current.content.methods.materials || []).find(material => material.id === id); }
+function selectedMaterial() { return materialById(current.content.activeMaterialId); }
+function materialLabel(material) { return material?.name === "Autre matériel" ? material.customName?.trim() || "Autre matériel" : material?.name || "Matériel technique"; }
+function findObservation(moduleKey, id, materialId = "") { const items = materialId ? materialById(materialId)?.observations || [] : current.content[moduleKey].observations; return items.find(observation => observation.id === id); }
+async function removeObservation(moduleKey, id, materialId = "") { const photos = (current.media || []).filter(photo => String(photo.observationId || "") === String(id) && String(photo.materialId || "") === String(materialId || "")); const deleted = await Promise.all(photos.map(photo => api(`/api/technical-reports/${encodeURIComponent(current.id)}/media/${encodeURIComponent(photo.id)}`, { method: "DELETE" }))); if (deleted.some(result => !result.ok)) { alert("Une ou plusieurs photos n’ont pas pu être supprimées."); return false; } const material = materialById(materialId); const items = material ? material.observations : current.content[moduleKey].observations; if (material) material.observations = items.filter(observation => observation.id !== id); else current.content[moduleKey].observations = items.filter(observation => observation.id !== id); current.media = (current.media || []).filter(photo => !(String(photo.observationId || "") === String(id) && String(photo.materialId || "") === String(materialId || ""))); return true; }
+async function removeMaterial(id) { const material = materialById(id); if (!material) return true; const photos = (current.media || []).filter(photo => String(photo.materialId || "") === String(id)); const deleted = await Promise.all(photos.map(photo => api(`/api/technical-reports/${encodeURIComponent(current.id)}/media/${encodeURIComponent(photo.id)}`, { method: "DELETE" }))); if (deleted.some(result => !result.ok)) { alert("Une ou plusieurs photos n’ont pas pu être supprimées."); return false; } current.content.methods.materials = current.content.methods.materials.filter(item => item.id !== id); current.media = (current.media || []).filter(photo => String(photo.materialId || "") !== String(id)); if (current.content.activeMaterialId === id) current.content.activeMaterialId = ""; return true; }
+function moveObservation(moduleKey, id, direction, materialId = "") { const material = materialById(materialId); const items = material ? material.observations : current.content[moduleKey].observations; const index = items.findIndex(observation => observation.id === id); const next = direction === "up" ? index - 1 : index + 1; if (index < 0 || next < 0 || next >= items.length) return; [items[index], items[next]] = [items[next], items[index]]; }
 
 async function uploadPhotos(input, shell) {
     const files = [...input.files || []];
@@ -199,6 +219,7 @@ async function uploadPhotos(input, shell) {
     files.forEach(file => data.append("files", file));
     data.append("section", input.dataset.moduleKey);
     data.append("observationId", input.dataset.observationId || "");
+    data.append("materialId", input.dataset.materialId || "");
     const result = await upload(`/api/technical-reports/${encodeURIComponent(current.id)}/media`, data);
     if (!result.ok) return alert(result.message || "Ajout des photos impossible.");
     current.media.push(...(result.data.media || []));
@@ -209,7 +230,7 @@ async function updatePhotoCaption(input) {
     const photo = (current.media || []).find(item => item.id === input.dataset.photoCaption);
     if (!photo) return;
     photo.caption = input.value;
-    const result = await api(`/api/technical-reports/${encodeURIComponent(current.id)}/media/${encodeURIComponent(photo.id)}`, { method: "PATCH", body: JSON.stringify({ caption: photo.caption, annotation: photo.annotation || "", observationId: photo.observationId || "" }) });
+    const result = await api(`/api/technical-reports/${encodeURIComponent(current.id)}/media/${encodeURIComponent(photo.id)}`, { method: "PATCH", body: JSON.stringify({ caption: photo.caption, annotation: photo.annotation || "", observationId: photo.observationId || "", materialId: photo.materialId || "" }) });
     if (!result.ok) alert(result.message || "Mise à jour de la photo impossible.");
 }
 
@@ -320,8 +341,9 @@ function moduleKeys() { return MODULES.map(([key]) => key); }
 function moduleIndex(key) { return MODULES.findIndex(([id]) => id === key); }
 function moduleNumber(key) { return Math.max(1, moduleIndex(key)); }
 function isSkipped(key) { return (current.content.skippedSteps || []).includes(key); }
-function moduleUsed(key) { return key === "general" || (current.media || []).some(photo => photo.section === key) || !isSkipped(key) && current.content[key].observations.length > 0; }
+function moduleUsed(key) { return key === "general" || key === "methods" && current.content.methods.materials.length > 0 || (current.media || []).some(photo => photo.section === key) || !isSkipped(key) && current.content[key].observations.length > 0; }
 function newObservationId() { return `observation-${Date.now()}-${Math.random().toString(16).slice(2)}`; }
+function newMaterialId() { return `material-${Date.now()}-${Math.random().toString(16).slice(2)}`; }
 function ownsLock() { return String(reportLock?.lockedBy || "") === String(document.body.dataset.userId || ""); }
 function editable() { return current?.status !== "validated" && ownsLock(); }
 function isAdministrator() { return document.body.dataset.role === "admin"; }
