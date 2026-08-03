@@ -7,13 +7,15 @@ import { clearSearch, getContainer, setPage } from "./ui.js?v=44";
 const PURCHASE_CATEGORIES = ["Matériel", "Consommables", "Loyer", "Véhicule", "Outillage", "Sous-traitance", "Services", "Assurances", "Autre"];
 let purchases = [];
 let activePurchase = null;
+let presentation = {};
 
-export async function renderPurchases() {
+export async function renderPurchases(options = {}) {
+    presentation = { ...options };
     clearSearch();
     resetSelection("all");
-    setPage("Achats", ROUTES.purchases, "detail");
+    if (!presentation.embedded) setPage("Achats", ROUTES.purchases, "detail");
 
-    const container = getContainer();
+    const container = presentation.container || getContainer();
     const overviewPanel = createPanel("purchases-overview-panel");
     const editorPanel = createPanel("purchases-editor-panel");
     const listPanel = createPanel("purchases-list-panel");
@@ -52,7 +54,7 @@ function renderOverview(panel) {
     `;
     panel.querySelector("#newPurchase")?.addEventListener("click", () => {
         activePurchase = createNewPurchase();
-        renderPurchases();
+        renderPurchases(presentation);
     });
 }
 
@@ -62,7 +64,7 @@ function renderPurchaseEditor(panel) {
     const purchase = activePurchase;
     if (isAccountant()) {
         panel.innerHTML = `<section class="billing-read-only-document"><div class="form-heading"><div><p class="eyebrow">Consultation uniquement</p><h2>${escapeHtml(purchase.description)}</h2></div><button type="button" class="secondary-button" id="closePurchase">Fermer</button></div><div class="procedure-meta"><span>${escapeHtml(formatDate(purchase.purchaseDate))}</span><span>${escapeHtml(purchase.category)}</span><span>${escapeHtml(purchase.supplier || "Fournisseur non renseigné")}</span><span>${purchase.isAccounted ? `Comptabilisé le ${escapeHtml(formatDate(purchase.accountedAt))}` : "À comptabiliser"}</span></div><div class="billing-metrics"><span><strong>${formatMoney(purchase.amountHt)}</strong> HT</span><span><strong>${formatMoney(Number(purchase.amountHt) * (1 + Number(purchase.vatRate) / 100))}</strong> TTC</span></div>${purchase.reference ? `<p><strong>Référence :</strong> ${escapeHtml(purchase.reference)}</p>` : ""}${purchase.notes ? `<section class="procedure-section"><h3>Notes</h3><p>${escapeHtml(purchase.notes)}</p></section>` : ""}</section>`;
-        panel.querySelector("#closePurchase").addEventListener("click", () => { activePurchase = null; renderPurchases(); });
+        panel.querySelector("#closePurchase").addEventListener("click", () => { activePurchase = null; renderPurchases(presentation); });
         return;
     }
     const isEditing = Boolean(purchase.id);
@@ -101,7 +103,7 @@ function renderPurchaseEditor(panel) {
     form.elements.amountHt.addEventListener("input", renderEditorTotal);
     form.elements.vatRate.addEventListener("input", renderEditorTotal);
     renderEditorTotal();
-    panel.querySelector("#cancelPurchase").addEventListener("click", () => { activePurchase = null; renderPurchases(); });
+    panel.querySelector("#cancelPurchase").addEventListener("click", () => { activePurchase = null; renderPurchases(presentation); });
     form.addEventListener("submit", async event => {
         event.preventDefault();
         const message = panel.querySelector("#purchaseMessage");
@@ -110,14 +112,14 @@ function renderPurchaseEditor(panel) {
         const result = await apiRequest(isEditing ? `/api/purchases/${encodeURIComponent(purchase.id)}` : "/api/purchases", { method: isEditing ? "PUT" : "POST", body: JSON.stringify(payload) });
         if (!result.ok) { message.textContent = result.message || "Impossible d’enregistrer l’achat."; message.classList.add("error"); return; }
         activePurchase = null;
-        renderPurchases();
+        renderPurchases(presentation);
     });
     panel.querySelector("#deletePurchase")?.addEventListener("click", async () => {
         if (!confirm("Supprimer cet achat ?")) return;
         const result = await apiRequest(`/api/purchases/${encodeURIComponent(purchase.id)}`, { method: "DELETE" });
         if (!result.ok) { alert(result.message || "Suppression impossible."); return; }
         activePurchase = null;
-        renderPurchases();
+        renderPurchases(presentation);
     });
 }
 
@@ -148,11 +150,11 @@ function renderPurchaseList(panel) {
             const totals = calculateTotals([purchase]);
             const accountingLabel = purchase.isAccounted ? `Comptabilisé le ${formatDate(purchase.accountedAt)}` : "À comptabiliser";
             item.innerHTML = `<div><p class="eyebrow">${escapeHtml(purchase.category)}${purchase.clientName ? ` · Client : ${escapeHtml(purchase.clientName)}` : ""}</p><h3>${escapeHtml(purchase.description)}</h3><p>${escapeHtml(purchase.supplier || "Fournisseur non renseigné")}${purchase.reference ? ` · ${escapeHtml(purchase.reference)}` : ""}</p><small>${escapeHtml(formatDate(purchase.purchaseDate))} · <span class="billing-accounting-status ${purchase.isAccounted ? "is-accounted" : ""}">${escapeHtml(accountingLabel)}</span></small></div><div class="billing-document-amount"><strong>${formatMoney(totals.ttc)}</strong><small>${formatMoney(totals.ht)} HT · TVA ${formatMoney(totals.vat)}</small></div><div class="billing-document-actions">${isAccountant() ? "" : `<button type="button" class="secondary-button" data-accounting="${purchase.isAccounted ? "false" : "true"}">${purchase.isAccounted ? "Décomptabiliser" : "Comptabiliser"}</button>`}<button type="button" class="secondary-button" data-open-purchase>${isAccountant() ? "Consulter" : "Ouvrir"}</button></div>`;
-            item.querySelector("[data-open-purchase]").addEventListener("click", () => { activePurchase = normalizePurchase(purchase); renderPurchases(); });
+            item.querySelector("[data-open-purchase]").addEventListener("click", () => { activePurchase = normalizePurchase(purchase); renderPurchases(presentation); });
             item.querySelector("[data-accounting]")?.addEventListener("click", async event => {
                 const result = await apiRequest(`/api/purchases/${encodeURIComponent(purchase.id)}/accounting`, { method: "PATCH", body: JSON.stringify({ isAccounted: event.currentTarget.dataset.accounting === "true" }) });
                 if (!result.ok) { alert(result.message || "Impossible de mettre à jour la comptabilité."); return; }
-                renderPurchases();
+                renderPurchases(presentation);
             });
             list.appendChild(item);
         });

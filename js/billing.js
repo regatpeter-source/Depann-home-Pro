@@ -116,7 +116,7 @@ function renderOverview(panel, profilePanel) {
             <div class="billing-overview-actions">
                 ${usesExternalTemplate && !isAccountant() ? `<button type="button" class="secondary-button" data-billing-action="download-quote-template" ${profile.hasQuoteTemplate ? "" : "disabled"}>Télécharger la base de devis</button>` : usesExternalTemplate ? "" : '<button type="button" class="secondary-button" data-billing-action="new-quote">+ Nouveau devis</button>'}
                 <button type="button" class="secondary-button" data-billing-action="new-invoice">+ Nouvelle facture</button>
-                ${isAccountant() ? "" : '<button type="button" class="secondary-button" data-billing-action="open-leak-reports">Rapports de fuite</button>'}
+                ${isAccountant() ? "" : '<button type="button" class="secondary-button" data-billing-action="open-leak-reports">Rapports de fuite</button><button type="button" class="secondary-button" data-billing-action="new-leak-report">Nouveau rapport de recherche de fuite</button>'}
                 ${isFullAdministrator() ? '<button type="button" class="secondary-button" data-billing-action="preview-blank-quote">Aperçu du devis vierge</button>' : ""}
             </div>
         </div>
@@ -128,8 +128,12 @@ function renderOverview(panel, profilePanel) {
     panel.querySelector("[data-billing-action=new-quote]")?.addEventListener("click", () => { if (!isAccountant()) openNewDocument("quote"); });
     panel.querySelector("[data-billing-action=new-invoice]").addEventListener("click", () => { if (!isAccountant()) openNewDocument("invoice"); });
     panel.querySelector("[data-billing-action=open-leak-reports]")?.addEventListener("click", async () => {
-        const { renderLeakReportWizard } = await import("./leak-report-wizard.js?v=7");
+        const { renderLeakReportWizard } = await import("./leak-report-wizard.js?v=9");
         renderLeakReportWizard();
+    });
+    panel.querySelector("[data-billing-action=new-leak-report]")?.addEventListener("click", async () => {
+        const { openLeakReportCreation } = await import("./leak-report-wizard.js?v=9");
+        openLeakReportCreation();
     });
     panel.querySelector("[data-billing-action=download-quote-template]")?.addEventListener("click", openQuoteTemplateDownload);
     panel.querySelector("[data-billing-action=preview-blank-quote]")?.addEventListener("click", openBlankQuotePreview);

@@ -1,16 +1,15 @@
-import { ROUTES, STORAGE_KEYS, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=117";
+import { ROUTES, STORAGE_KEYS, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=118";
 import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=145";
 import { renderCreatorConsole } from "./creator.js?v=119";
-import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=151";
-import { renderAccounting } from "./accounting.js?v=3";
+import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=152";
+import { renderAccounting } from "./accounting.js?v=4";
 import { renderAccountingSandbox } from "./accounting-sandbox.js?v=1";
 import { renderGroupActivation, renderGroupWorkspace } from "./groups.js?v=3";
 import { renderPartnerMissions } from "./partner-missions.js?v=3";
 import { renderPartnerSandbox } from "./partner-sandbox.js?v=3";
 import { renderPartnerConnections } from "./partner-connections.js?v=7";
 import { renderDataImportTool } from "./data-imports.js?v=2";
-import { renderPurchases } from "./purchases.js?v=113";
-import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=8";
+import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=9";
 import { getFirstUnreadClientId, refreshClientMessageAlert, refreshVisibleClientMessages } from "./messages.js?v=106";
 import { getSearchableClients, renderClients } from "./clients.js?v=137";
 import { synchronizeClients } from "./client-sync.js?v=118";
@@ -19,7 +18,6 @@ import { renderPhotoRecognition } from "./photo-recognition.js?v=105";
 import { getSearchResults } from "./search.js?v=64";
 import { state, resetSelection } from "./state.js?v=44";
 import {
-    clearHistory,
     getStoredRefs,
     getSettings,
     saveSettings
@@ -98,8 +96,7 @@ export async function refreshApplication() {
     }
 
     if (isAccountant()) {
-        if (activeRoute === ROUTES.purchases) renderPurchases();
-        else renderBilling();
+        renderBilling();
     } else if (activeRoute === ROUTES.clients) {
         const selectedId = document.querySelector(".client-messages-panel")?.dataset.clientId || "";
         renderClients({ database, navigateToRef, createBillingDocument: createBillingDocumentForClient, viewBillingDocument, createCalendarEvent: createCalendarEventForClient, ...(selectedId ? { selectedId } : {}) });
@@ -118,12 +115,8 @@ export async function refreshApplication() {
         renderAccountingSandbox();
     } else if (activeRoute === ROUTES.groups && document.body.dataset.groupAdmin === "true") {
         renderGroupWorkspace();
-    } else if (activeRoute === ROUTES.purchases) {
-        renderPurchases();
     } else if (activeRoute === ROUTES.settings && canAccessRoute(ROUTES.settings)) {
         renderSettings();
-    } else if (activeRoute === ROUTES.help && canAccessRoute(ROUTES.help)) {
-        renderHelpCenter();
     } else if (activeRoute === ROUTES.home) {
         openHome();
     }
@@ -138,14 +131,11 @@ function bindEvents() {
     const groupsBtn = document.getElementById("groupsBtn");
     const partnerMissionsBtn = document.getElementById("partnerMissionsBtn");
     const partnerSandboxBtn = document.getElementById("partnerSandboxBtn");
-    const purchasesBtn = document.getElementById("purchasesBtn");
     const calendarBtn = document.getElementById("calendarBtn");
     const libraryBtn = document.getElementById("libraryBtn");
     const photoBtn = document.getElementById("photoBtn");
     const favoritesBtn = document.getElementById("favoritesBtn");
-    const historyBtn = document.getElementById("historyBtn");
     const settingsBtn = document.getElementById("settingsBtn");
-    const helpBtn = document.getElementById("helpBtn");
 
     search.addEventListener("input", event => {
         const value = event.target.value.toLowerCase().trim();
@@ -169,14 +159,11 @@ function bindEvents() {
     groupsBtn?.addEventListener("click", () => { if (canAccessQuick("groups")) renderGroupWorkspace(); });
     partnerMissionsBtn?.addEventListener("click", () => { if (canAccessQuick("partnerMissions")) renderPartnerMissions(); });
     partnerSandboxBtn?.addEventListener("click", () => { if (canAccessQuick("partnerSandbox")) renderPartnerSandbox(); });
-    purchasesBtn?.addEventListener("click", () => { if (canAccessQuick("purchases")) renderPurchases(); });
     calendarBtn?.addEventListener("click", () => { if (canAccessQuick("calendar")) openCalendar(); });
     libraryBtn?.addEventListener("click", () => { if (canAccessQuick("library")) renderLibrary(); });
     photoBtn?.addEventListener("click", () => { if (canAccessQuick("photo")) renderPhotoRecognition(database, navigateToRef); });
     favoritesBtn.addEventListener("click", () => { if (canAccessQuick("favorites")) renderFavorites(); });
-    historyBtn.addEventListener("click", () => { if (canAccessQuick("history")) renderHistory(); });
     settingsBtn?.addEventListener("click", () => { if (canAccessQuick("settings")) renderSettings(); });
-    helpBtn?.addEventListener("click", () => { if (canAccessQuick("help")) renderHelpCenter(); });
 
     document.querySelectorAll(".nav-button").forEach(button => {
         button.addEventListener("click", async () => {
@@ -186,7 +173,6 @@ function bindEvents() {
 
             if (isAccountant()) {
                 if (nav === ROUTES.billing) renderBilling();
-                if (nav === ROUTES.purchases) renderPurchases();
                 return;
             }
 
@@ -204,12 +190,10 @@ function bindEvents() {
             if (nav === ROUTES.accountingSandbox && document.body.dataset.role === "admin") renderAccountingSandbox();
             if (nav === ROUTES.partnerMissions) renderPartnerMissions();
             if (nav === ROUTES.partnerSandbox && document.body.dataset.role === "admin") renderPartnerSandbox();
-            if (nav === ROUTES.purchases) renderPurchases();
             if (nav === ROUTES.calendar) openCalendar();
             if (nav === ROUTES.library) renderLibrary();
             if (nav === ROUTES.favorites) renderFavorites();
             if (nav === ROUTES.settings) renderSettings();
-            if (nav === ROUTES.help) renderHelpCenter();
         });
     });
 }
@@ -218,8 +202,8 @@ function applyRoleBasedMenus() {
     const quickSelectors = {
         clients: "#clientsBtn", calendar: "#calendarBtn", library: "#libraryBtn", billing: "#billingBtn",
         accounting: "#accountingBtn", groups: "#groupsBtn", partnerMissions: "#partnerMissionsBtn",
-        partnerSandbox: "#partnerSandboxBtn", purchases: "#purchasesBtn", photo: "#photoBtn",
-        favorites: "#favoritesBtn", history: "#historyBtn", settings: "#settingsBtn", help: "#helpBtn"
+        partnerSandbox: "#partnerSandboxBtn", photo: "#photoBtn",
+        favorites: "#favoritesBtn", settings: "#settingsBtn"
     };
     Object.entries(quickSelectors).forEach(([menu, selector]) => {
         const button = document.querySelector(selector);
@@ -246,7 +230,7 @@ function canAccessRoute(route) {
 }
 
 function menuRoute(menu) {
-    return ({ calendar: ROUTES.calendar, library: ROUTES.library, billing: ROUTES.billing, accounting: ROUTES.accounting, groups: ROUTES.groups, partnerMissions: ROUTES.partnerMissions, partnerSandbox: ROUTES.partnerSandbox, purchases: ROUTES.purchases, photo: ROUTES.photo, favorites: ROUTES.favorites, history: ROUTES.history, settings: ROUTES.settings, help: ROUTES.help })[menu] || "";
+    return ({ calendar: ROUTES.calendar, library: ROUTES.library, billing: ROUTES.billing, accounting: ROUTES.accounting, groups: ROUTES.groups, partnerMissions: ROUTES.partnerMissions, partnerSandbox: ROUTES.partnerSandbox, photo: ROUTES.photo, favorites: ROUTES.favorites, settings: ROUTES.settings })[menu] || "";
 }
 
 function openHome() {
@@ -918,28 +902,6 @@ function renderFavorites() {
     }
 
     renderRefList(favorites, container, "");
-}
-
-function renderHistory() {
-    clearSearch();
-    resetSelection("all");
-    setPage("Historique", ROUTES.history);
-
-    const container = getContainer();
-    const history = getStoredRefs(STORAGE_KEYS.history);
-
-    if (!history.length) {
-        container.appendChild(createInfo("L'historique est vide. Les procédures consultées apparaîtront ici."));
-        return;
-    }
-
-    container.appendChild(createButton("Effacer l'historique", "secondary-button danger-button", () => {
-        if (!confirm("Effacer définitivement tout l’historique des procédures consultées ?")) return;
-        clearHistory();
-        renderHistory();
-    }));
-
-    renderRefList(history, container, "");
 }
 
 function renderRefList(refs, container, icon) {

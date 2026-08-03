@@ -2,9 +2,10 @@ import { clearSearch, getContainer, setPage } from "./ui.js?v=44";
 import { ROUTES } from "./config.js?v=116";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { renderAccountingSandbox } from "./accounting-sandbox.js?v=1";
+import { renderPurchases } from "./purchases.js?v=114";
 
 const SECTIONS = [
-    ["dashboard", "Tableau de bord"], ["quotes", "Devis"], ["invoices", "Factures"], ["export", "Export comptable"], ["electronic", "Facturation électronique"], ["aids", "Aides financières"], ["settings", "Paramètres"]
+    ["dashboard", "Tableau de bord"], ["quotes", "Devis"], ["invoices", "Factures"], ["purchases", "Achats"], ["export", "Export comptable"], ["electronic", "Facturation électronique"], ["aids", "Aides financières"], ["settings", "Paramètres"]
 ];
 const AID_TYPES = { cee: "CEE", maprimerenov: "MaPrimeRénov'", coup_de_pouce: "Prime Coup de Pouce", eco_ptz: "Éco-PTZ", regional: "Aide régionale", departmental: "Aide départementale", supplier: "Participation fournisseur", manufacturer: "Participation constructeur", custom: "Autre aide" };
 let accounting = null;
@@ -24,7 +25,7 @@ export async function renderAccounting(section = activeSection) {
     shell.querySelectorAll("[data-accounting-section]").forEach(button => button.addEventListener("click", () => renderAccounting(button.dataset.accountingSection)));
     shell.querySelector("#openAccountingSandbox").addEventListener("click", () => renderAccountingSandbox());
     const content = shell.querySelector("#accountingContent");
-    ({ dashboard: renderDashboard, quotes: () => renderDocuments(content, "quote"), invoices: () => renderDocuments(content, "invoice"), export: renderExports, electronic: renderElectronic, aids: renderAids, settings: renderSettings })[activeSection](content);
+    ({ dashboard: renderDashboard, quotes: () => renderDocuments(content, "quote"), invoices: () => renderDocuments(content, "invoice"), purchases: () => renderPurchases({ container: content, embedded: true }), export: renderExports, electronic: renderElectronic, aids: renderAids, settings: renderSettings })[activeSection](content);
 }
 
 function renderDashboard(node) {

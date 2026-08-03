@@ -75,12 +75,9 @@ export const MENU_ACCESS = Object.freeze({
         groups: ADMINISTRATORS,
         partnerMissions: OPERATIONAL_PC,
         partnerSandbox: ADMINISTRATORS,
-        purchases: OPERATIONAL_PC.concat("accountant"),
         photo: OPERATIONAL_MOBILE,
         favorites: OPERATIONAL_MOBILE,
-        history: OPERATIONAL_MOBILE,
-        settings: ADMINISTRATORS,
-        help: TERRAIN
+        settings: ADMINISTRATORS
     }),
     navigation: Object.freeze({
         [ROUTES.home]: OPERATIONAL_MOBILE,
@@ -94,13 +91,10 @@ export const MENU_ACCESS = Object.freeze({
         [ROUTES.groups]: ADMINISTRATORS,
         [ROUTES.partnerMissions]: OPERATIONAL_PC,
         [ROUTES.partnerSandbox]: ADMINISTRATORS,
-        [ROUTES.purchases]: OPERATIONAL_PC.concat("accountant"),
         [ROUTES.technicalReports]: TERRAIN,
         [ROUTES.calendar]: TERRAIN,
         [ROUTES.library]: TERRAIN,
         [ROUTES.favorites]: OPERATIONAL_MOBILE,
-        [ROUTES.history]: OPERATIONAL_MOBILE,
-        [ROUTES.settings]: ADMINISTRATORS,
-        [ROUTES.help]: TERRAIN
+        [ROUTES.settings]: ADMINISTRATORS
     })
 });
