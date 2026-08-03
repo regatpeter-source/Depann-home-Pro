@@ -1120,6 +1120,7 @@ function renderSettingsWorkspace(options = {}) {
             ["groups", "Groupe / Multi-entreprises", "Sociétés, bascule de contexte et indicateurs consolidés.", "group"],
             ["personalization", "Personnalisation", "Langue, thème, police et préférences d’affichage.", "appearance"],
             ...(document.body.classList.contains("desktop-device") ? [["imports", "Importation de données", "Importez vos clients, devis, factures et rapports depuis Excel ou CSV.", "import"]] : []),
+            ...(document.body.dataset.creator === "true" && document.body.dataset.deviceType === "desktop" ? [["creator", "Console Créateur", "Pilotage des entreprises, abonnements et services de la plateforme.", "creator"]] : []),
             ["help", "Centre d’aide", "Guides par rôle, FAQ, tutoriels et assistance.", "help"]
         ];
         cards.forEach(([id, title, description, icon]) => grid.appendChild(createSettingsNavigationCard(title, description, icon, () => renderSettings({ section: id }))));
@@ -1130,7 +1131,7 @@ function renderSettingsWorkspace(options = {}) {
 
     clearSearch();
     resetSelection("all");
-    const titles = { documents: "Modèles de documents", network: "Réseau Depann'Home Pro", users: "Utilisateurs", security: "Sécurité", groups: "Groupe / Multi-entreprises", personalization: "Personnalisation", imports: "Importation de données", help: "Centre d’aide" };
+    const titles = { documents: "Modèles de documents", network: "Réseau Depann'Home Pro", users: "Utilisateurs", security: "Sécurité", groups: "Groupe / Multi-entreprises", personalization: "Personnalisation", imports: "Importation de données", creator: "Console Créateur", help: "Centre d’aide" };
     setPage(`Paramètres · ${titles[section] || "Configuration"}`, ROUTES.settings, "detail");
     const container = getContainer();
     container.appendChild(createBackCard("Retour aux Paramètres", () => renderSettings()));
@@ -1173,6 +1174,11 @@ function renderSettingsWorkspace(options = {}) {
         renderDataImportTool(container);
         return;
     }
+    if (section === "creator") {
+        if (document.body.dataset.creator !== "true" || document.body.dataset.deviceType !== "desktop") return renderSettings();
+        renderCreatorConsole();
+        return;
+    }
     if (section === "help") return renderHelpCenter({ embedded: true });
     renderSettings({ legacy: true, personalizationOnly: true });
 }
@@ -1201,6 +1207,7 @@ function settingsIcon(icon) {
         users: '<circle cx="9" cy="8" r="3"/><circle cx="17" cy="9" r="2"/><path d="M3 20c.6-4 3-6 6-6s5.4 2 6 6M15 15c2.5.2 4 1.8 4.5 4"/>',
         security: '<rect x="6" y="10" width="12" height="10" rx="2"/><path d="M9 10V7a3 3 0 016 0v3M12 14v2"/>',
         group: '<path d="M4 20V9l8-5 8 5v11M8 20v-6h8v6M4 9h16"/>',
+        creator: '<circle cx="12" cy="8" r="3"/><path d="M5 21c.5-4.2 3.1-6.5 7-6.5s6.5 2.3 7 6.5M18 5l1 1 2-1M18 5l1-2"/>',
         appearance: '<circle cx="12" cy="12" r="8"/><path d="M12 4v16M4 12h16"/>',
         import: '<path d="M12 3v12M7 10l5 5 5-5M5 20h14"/>',
         help: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.7 2.7 0 015.1 1.3c0 1.8-2.1 2.1-2.6 3.5M12 17h.01"/>'
