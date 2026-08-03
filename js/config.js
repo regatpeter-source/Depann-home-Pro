@@ -54,6 +54,7 @@ export const ROUTES = {
     favorites: "favorites",
     history: "history",
     settings: "settings",
+    help: "help",
     creator: "creator"
 };
 
@@ -78,7 +79,8 @@ export const MENU_ACCESS = Object.freeze({
         photo: OPERATIONAL_MOBILE,
         favorites: OPERATIONAL_MOBILE,
         history: OPERATIONAL_MOBILE,
-        settings: ADMINISTRATORS
+        settings: ADMINISTRATORS,
+        help: TERRAIN
     }),
     navigation: Object.freeze({
         [ROUTES.home]: OPERATIONAL_MOBILE,
@@ -98,6 +100,7 @@ export const MENU_ACCESS = Object.freeze({
         [ROUTES.library]: TERRAIN,
         [ROUTES.favorites]: OPERATIONAL_MOBILE,
         [ROUTES.history]: OPERATIONAL_MOBILE,
-        [ROUTES.settings]: ADMINISTRATORS
+        [ROUTES.settings]: ADMINISTRATORS,
+        [ROUTES.help]: TERRAIN
     })
 });

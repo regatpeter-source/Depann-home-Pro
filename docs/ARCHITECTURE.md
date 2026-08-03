@@ -94,7 +94,7 @@ Le moteur JavaScript doit rester stable. Les futures évolutions métier doivent
 - `clients.js` : base clients locale, formulaire, liste, détail, modification, suppression et pièces jointes.
 - `config.js` : version, clés de stockage, constantes.
 - `data.js` : chargement et normalisation de `database.json`.
-- `navigation.js` : affichage familles, marques, gammes, produits, favoris, historique et paramètres.
+- `navigation.js` : affichage familles, marques, gammes, produits, favoris, historique, Centre d’aide et Paramètres. Les Paramètres sont un hub à cartes qui sépare les réglages d’entreprise (modèles de documents, partenaires, réseau, utilisateurs, sécurité, groupe et personnalisation) des fonctions métier quotidiennes du menu principal.
 - `search.js` : recherche globale dans les familles, marques, gammes et produits.
 - `state.js` : état de navigation courant.
 - `storage.js` : favoris et historique en localStorage.

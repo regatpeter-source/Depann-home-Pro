@@ -62,6 +62,7 @@ export async function renderBilling(options = {}) {
         return;
     }
     renderOverview(overviewPanel, profilePanel);
+    if (options.profile) renderProfile(profilePanel);
     renderDocumentEditor(editorPanel);
     renderDocumentList(listPanel);
 }
@@ -116,11 +117,11 @@ function renderOverview(panel, profilePanel) {
                 ${usesExternalTemplate && !isAccountant() ? `<button type="button" class="secondary-button" data-billing-action="download-quote-template" ${profile.hasQuoteTemplate ? "" : "disabled"}>Télécharger la base de devis</button>` : usesExternalTemplate ? "" : '<button type="button" class="secondary-button" data-billing-action="new-quote">+ Nouveau devis</button>'}
                 <button type="button" class="secondary-button" data-billing-action="new-invoice">+ Nouvelle facture</button>
                 ${isAccountant() ? "" : '<button type="button" class="secondary-button" data-billing-action="open-leak-reports">Rapports de fuite</button>'}
-                ${isFullAdministrator() ? '<button type="button" class="secondary-button" data-billing-action="preview-blank-quote">Aperçu du devis vierge</button><button type="button" class="secondary-button" data-billing-action="edit-report-template">Modifier le modèle de rapport</button><button type="button" class="secondary-button auth-outline-button" data-billing-action="edit-company">Modifier les informations entreprise</button>' : ""}
+                ${isFullAdministrator() ? '<button type="button" class="secondary-button" data-billing-action="preview-blank-quote">Aperçu du devis vierge</button>' : ""}
             </div>
         </div>
         <div class="billing-metrics"><span><strong>${quotes}</strong> devis</span><span><strong>${invoices}</strong> factures</span><span class="billing-base-template"><strong>✓</strong> ${usesExternalTemplate ? "base PDF / Word externe" : "modèle Depann’Home intégré"}</span></div>
-        ${usesExternalTemplate && !profile.hasQuoteTemplate ? '<p class="auth-message error">Aucune base de devis n’est encore déposée. Un administrateur doit l’ajouter dans « Modifier les informations entreprise ».</p>' : ""}
+        ${usesExternalTemplate && !profile.hasQuoteTemplate ? '<p class="auth-message error">Aucune base de devis n’est encore déposée. Un administrateur doit l’ajouter dans Paramètres → Modèles de documents.</p>' : ""}
     `;
     panel.querySelector("[data-billing-action=new-quote]")?.toggleAttribute("hidden", isAccountant());
     panel.querySelector("[data-billing-action=new-invoice]").hidden = isAccountant();
@@ -132,12 +133,6 @@ function renderOverview(panel, profilePanel) {
     });
     panel.querySelector("[data-billing-action=download-quote-template]")?.addEventListener("click", openQuoteTemplateDownload);
     panel.querySelector("[data-billing-action=preview-blank-quote]")?.addEventListener("click", openBlankQuotePreview);
-    panel.querySelector("[data-billing-action=edit-report-template]")?.addEventListener("click", () => window.dispatchEvent(new CustomEvent("depannhome:edit-report-template")));
-    panel.querySelector("[data-billing-action=edit-company]")?.addEventListener("click", () => {
-        renderProfile(profilePanel);
-        profilePanel.hidden = false;
-        profilePanel.scrollIntoView({ behavior: "smooth", block: "start" });
-    });
 }
 
 function renderProfile(panel) {

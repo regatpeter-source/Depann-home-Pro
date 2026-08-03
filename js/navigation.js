@@ -1,7 +1,7 @@
 import { ROUTES, STORAGE_KEYS, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=117";
 import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=145";
 import { renderCreatorConsole } from "./creator.js?v=119";
-import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=149";
+import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=151";
 import { renderAccounting } from "./accounting.js?v=3";
 import { renderAccountingSandbox } from "./accounting-sandbox.js?v=1";
 import { renderGroupActivation, renderGroupWorkspace } from "./groups.js?v=3";
@@ -10,7 +10,7 @@ import { renderPartnerSandbox } from "./partner-sandbox.js?v=3";
 import { renderPartnerConnections } from "./partner-connections.js?v=6";
 import { renderDataImportTool } from "./data-imports.js?v=1";
 import { renderPurchases } from "./purchases.js?v=113";
-import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=7";
+import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=8";
 import { getFirstUnreadClientId, refreshClientMessageAlert, refreshVisibleClientMessages } from "./messages.js?v=106";
 import { getSearchableClients, renderClients } from "./clients.js?v=137";
 import { synchronizeClients } from "./client-sync.js?v=118";
@@ -122,6 +122,8 @@ export async function refreshApplication() {
         renderPurchases();
     } else if (activeRoute === ROUTES.settings && canAccessRoute(ROUTES.settings)) {
         renderSettings();
+    } else if (activeRoute === ROUTES.help && canAccessRoute(ROUTES.help)) {
+        renderHelpCenter();
     } else if (activeRoute === ROUTES.home) {
         openHome();
     }
@@ -143,6 +145,7 @@ function bindEvents() {
     const favoritesBtn = document.getElementById("favoritesBtn");
     const historyBtn = document.getElementById("historyBtn");
     const settingsBtn = document.getElementById("settingsBtn");
+    const helpBtn = document.getElementById("helpBtn");
 
     search.addEventListener("input", event => {
         const value = event.target.value.toLowerCase().trim();
@@ -173,6 +176,7 @@ function bindEvents() {
     favoritesBtn.addEventListener("click", () => { if (canAccessQuick("favorites")) renderFavorites(); });
     historyBtn.addEventListener("click", () => { if (canAccessQuick("history")) renderHistory(); });
     settingsBtn?.addEventListener("click", () => { if (canAccessQuick("settings")) renderSettings(); });
+    helpBtn?.addEventListener("click", () => { if (canAccessQuick("help")) renderHelpCenter(); });
 
     document.querySelectorAll(".nav-button").forEach(button => {
         button.addEventListener("click", async () => {
@@ -205,6 +209,7 @@ function bindEvents() {
             if (nav === ROUTES.library) renderLibrary();
             if (nav === ROUTES.favorites) renderFavorites();
             if (nav === ROUTES.settings) renderSettings();
+            if (nav === ROUTES.help) renderHelpCenter();
         });
     });
 }
@@ -214,7 +219,7 @@ function applyRoleBasedMenus() {
         clients: "#clientsBtn", calendar: "#calendarBtn", library: "#libraryBtn", billing: "#billingBtn",
         accounting: "#accountingBtn", groups: "#groupsBtn", partnerMissions: "#partnerMissionsBtn",
         partnerSandbox: "#partnerSandboxBtn", purchases: "#purchasesBtn", photo: "#photoBtn",
-        favorites: "#favoritesBtn", history: "#historyBtn", settings: "#settingsBtn"
+        favorites: "#favoritesBtn", history: "#historyBtn", settings: "#settingsBtn", help: "#helpBtn"
     };
     Object.entries(quickSelectors).forEach(([menu, selector]) => {
         const button = document.querySelector(selector);
@@ -241,7 +246,7 @@ function canAccessRoute(route) {
 }
 
 function menuRoute(menu) {
-    return ({ calendar: ROUTES.calendar, library: ROUTES.library, billing: ROUTES.billing, accounting: ROUTES.accounting, groups: ROUTES.groups, partnerMissions: ROUTES.partnerMissions, partnerSandbox: ROUTES.partnerSandbox, purchases: ROUTES.purchases, photo: ROUTES.photo, favorites: ROUTES.favorites, history: ROUTES.history, settings: ROUTES.settings })[menu] || "";
+    return ({ calendar: ROUTES.calendar, library: ROUTES.library, billing: ROUTES.billing, accounting: ROUTES.accounting, groups: ROUTES.groups, partnerMissions: ROUTES.partnerMissions, partnerSandbox: ROUTES.partnerSandbox, purchases: ROUTES.purchases, photo: ROUTES.photo, favorites: ROUTES.favorites, history: ROUTES.history, settings: ROUTES.settings, help: ROUTES.help })[menu] || "";
 }
 
 function openHome() {
@@ -959,6 +964,10 @@ function renderSettings(options = {}) {
         openHome();
         return;
     }
+    if (!options.legacy) {
+        renderSettingsWorkspace(options);
+        return;
+    }
     clearSearch();
     resetSelection("all");
     setPage("Paramètres", ROUTES.settings, "detail");
@@ -1074,7 +1083,7 @@ function renderSettings(options = {}) {
             const label = button.querySelector(".nav-label-clients") || button.querySelector("span");
             if (label) label.textContent = texts[button.dataset.nav] || label.textContent;
         });
-        renderSettings();
+        renderSettings({ section: "personalization" });
     });
 
     const resetBtn = createButton("Réinitialiser", "secondary-button", () => {
@@ -1084,7 +1093,7 @@ function renderSettings(options = {}) {
         const font = FONT_OPTIONS.find(f => f.id === DEFAULT_SETTINGS.font) || FONT_OPTIONS[0];
         document.body.style.fontFamily = font && font.css ? font.css : "";
         document.documentElement.lang = DEFAULT_SETTINGS.lang || 'fr';
-        renderSettings();
+        renderSettings({ section: "personalization" });
     });
 
     actions.appendChild(saveBtn);
@@ -1101,31 +1110,156 @@ function renderSettings(options = {}) {
     card.appendChild(section);
 
     container.appendChild(card);
-    if (document.body.dataset.role === "admin") {
+    if (!options.personalizationOnly && document.body.dataset.role === "admin") {
         renderTeamManagement(container);
         renderCompanyTwoFactorSecurity(container);
     }
-    if (document.body.dataset.role === "admin") renderPartnerConnections(container);
-    if (document.body.dataset.groupAdmin === "true") {
+    if (!options.personalizationOnly && document.body.dataset.role === "admin") renderPartnerConnections(container);
+    if (!options.personalizationOnly && document.body.dataset.groupAdmin === "true") {
         const groupCard = document.createElement("article");
         groupCard.className = "brand-card full-card procedure-card creator-entry-card";
         groupCard.innerHTML = '<p class="eyebrow">Multi-entreprises</p><h2>Groupe & entreprises</h2><p>Changez d’entreprise, pilotez les sociétés du groupe et consultez les indicateurs consolidés.</p>';
         groupCard.appendChild(createButton("Ouvrir le pilotage Groupe", "secondary-button", renderGroupWorkspace));
         container.appendChild(groupCard);
-    } else if (document.body.dataset.role === "admin") renderGroupActivation(container);
-    if (document.body.dataset.creator === "true" && document.body.dataset.deviceType === "desktop") {
+    } else if (!options.personalizationOnly && document.body.dataset.role === "admin") renderGroupActivation(container);
+    if (!options.personalizationOnly && document.body.dataset.creator === "true" && document.body.dataset.deviceType === "desktop") {
         const creatorCard = document.createElement("article");
         creatorCard.className = "brand-card full-card procedure-card creator-entry-card";
         creatorCard.innerHTML = '<p class="eyebrow">Administration plateforme</p><h2>Console Créateur</h2>';
         creatorCard.appendChild(createButton("Ouvrir la console Créateur", "secondary-button", renderCreatorConsole));
         container.appendChild(creatorCard);
     }
-    if (document.body.dataset.role === "admin" && document.body.classList.contains("desktop-device")) {
+    if (!options.personalizationOnly && document.body.dataset.role === "admin" && document.body.classList.contains("desktop-device")) {
         renderReportTemplateSettings(container);
         renderDataImportTool(container);
         renderSupportContact(container);
         if (options.focusReportTemplate) window.requestAnimationFrame(() => document.getElementById("reportTemplateSettings")?.scrollIntoView({ behavior: "smooth", block: "start" }));
     }
+}
+
+function renderSettingsWorkspace(options = {}) {
+    const section = options.section || (options.focusReportTemplate ? "documents" : "");
+    if (!section) {
+        clearSearch();
+        resetSelection("all");
+        setPage("Paramètres", ROUTES.settings, "detail");
+        const container = getContainer();
+        const hub = document.createElement("section");
+        hub.className = "settings-hub";
+        hub.innerHTML = '<header class="settings-hub-heading"><div><p class="eyebrow">Configuration de l’entreprise</p><h2>Paramètres</h2><p class="muted">Toutes les configurations sont regroupées ici. Le menu principal reste dédié aux opérations quotidiennes.</p></div></header>';
+        const grid = document.createElement("div");
+        grid.className = "settings-card-grid";
+        const cards = [
+            ["documents", "Modèles de documents", "Identité, présentation et modèles des devis, quitus et rapports.", "document"],
+            ["partners", "Partenaires", "Liste des partenaires, droits d’échange et environnement de recette.", "partners"],
+            ["network", "Réseau DepannHomePro", "Annuaire des entreprises et demandes de partenariat.", "network"],
+            ["users", "Utilisateurs", "Accès, postes, techniciens et chefs d’équipe.", "users"],
+            ["security", "Sécurité", "Double authentification et protection des accès.", "security"],
+            ["groups", "Groupe / Multi-entreprises", "Sociétés, bascule de contexte et indicateurs consolidés.", "group"],
+            ["personalization", "Personnalisation", "Langue, thème, police et préférences d’affichage.", "appearance"],
+            ["help", "Centre d’aide", "Guides par rôle, FAQ, tutoriels et assistance.", "help"]
+        ];
+        cards.forEach(([id, title, description, icon]) => grid.appendChild(createSettingsNavigationCard(title, description, icon, () => renderSettings({ section: id }))));
+        hub.appendChild(grid);
+        container.appendChild(hub);
+        return;
+    }
+
+    clearSearch();
+    resetSelection("all");
+    const titles = { documents: "Modèles de documents", partners: "Partenaires", network: "Réseau DepannHomePro", users: "Utilisateurs", security: "Sécurité", groups: "Groupe / Multi-entreprises", personalization: "Personnalisation", help: "Centre d’aide" };
+    setPage(`Paramètres · ${titles[section] || "Configuration"}`, ROUTES.settings, "detail");
+    const container = getContainer();
+    container.appendChild(createBackCard("Retour aux Paramètres", () => renderSettings()));
+
+    if (section === "documents") {
+        const intro = createSettingsIntro("Modèles de documents", "Les réglages enregistrés sont appliqués automatiquement aux futurs documents de l’entreprise.");
+        const grid = document.createElement("div");
+        grid.className = "settings-subsection-grid";
+        grid.append(
+            createSettingsNavigationCard("Modèle de devis", "Coordonnées, logo, mentions et base de devis de l’entreprise.", "document", () => renderBilling({ profile: true })),
+            createSettingsNavigationCard("Modèle de quitus", "Les quitus restent sécurisés par signature ; leur charte sera centralisée ici lors de son évolution dédiée.", "document", () => document.getElementById("quitusTemplateNotice")?.focus()),
+            createSettingsNavigationCard("Modèle de rapport", "Logos, couleurs, coordonnées, en-tête et pied de page PDF.", "document", () => document.getElementById("reportTemplateSettings")?.scrollIntoView({ behavior: "smooth", block: "start" }))
+        );
+        intro.appendChild(grid);
+        const notice = document.createElement("p");
+        notice.id = "quitusTemplateNotice";
+        notice.className = "muted settings-note";
+        notice.tabIndex = -1;
+        notice.textContent = "Le flux de Quitus existant reste inchangé : signature client et archivage PDF demeurent sécurisés.";
+        intro.appendChild(notice);
+        container.appendChild(intro);
+        renderReportTemplateSettings(container);
+        if (options.focusReportTemplate) window.requestAnimationFrame(() => document.getElementById("reportTemplateSettings")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+        return;
+    }
+    if (section === "partners" || section === "network") {
+        container.appendChild(createSettingsIntro(section === "partners" ? "Partenaires" : "Réseau DepannHomePro", section === "partners" ? "Gérez les partenaires enregistrés, leurs droits et leurs échanges autorisés." : "Recherchez une entreprise, consultez sa fiche et traitez les demandes reçues."));
+        renderPartnerConnections(container);
+        if (section === "partners" && document.body.classList.contains("partner-sandbox-enabled")) container.appendChild(createButton("Ouvrir l’environnement de recette partenaire", "secondary-button settings-inline-action", renderPartnerSandbox));
+        return;
+    }
+    if (section === "users") return renderTeamManagement(container);
+    if (section === "security") {
+        renderCompanyTwoFactorSecurity(container);
+        container.appendChild(createSettingsIntro("Évolutions de sécurité", "Les réglages de fournisseurs SMS et les futures options d’activation de comptes seront regroupés dans cet espace."));
+        return;
+    }
+    if (section === "groups") {
+        if (document.body.dataset.groupAdmin === "true") renderGroupWorkspace();
+        else renderGroupActivation(container);
+        return;
+    }
+    if (section === "help") return renderHelpCenter({ embedded: true });
+    renderSettings({ legacy: true, personalizationOnly: true });
+}
+
+function createSettingsIntro(title, description) {
+    const card = document.createElement("article");
+    card.className = "brand-card full-card procedure-card settings-section-intro";
+    card.innerHTML = `<p class="eyebrow">Configuration</p><h2>${escapeHtml(title)}</h2><p class="muted">${escapeHtml(description)}</p>`;
+    return card;
+}
+
+function createSettingsNavigationCard(title, description, icon, onClick) {
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = "settings-navigation-card";
+    card.innerHTML = `<span class="settings-navigation-icon" aria-hidden="true">${settingsIcon(icon)}</span><span><strong>${escapeHtml(title)}</strong><small>${escapeHtml(description)}</small></span><span class="settings-navigation-arrow" aria-hidden="true">›</span>`;
+    card.addEventListener("click", onClick);
+    return card;
+}
+
+function settingsIcon(icon) {
+    const paths = {
+        document: '<path d="M7 3h7l4 4v14H7z"/><path d="M14 3v5h5M10 12h5M10 16h5"/>',
+        partners: '<path d="M8 12l3 3 5-6"/><path d="M4 12a8 8 0 0114-5M20 12a8 8 0 01-14 5"/>',
+        network: '<circle cx="12" cy="12" r="8"/><path d="M4 12h16M12 4a12 12 0 010 16M12 4a12 12 0 000 16"/>',
+        users: '<circle cx="9" cy="8" r="3"/><circle cx="17" cy="9" r="2"/><path d="M3 20c.6-4 3-6 6-6s5.4 2 6 6M15 15c2.5.2 4 1.8 4.5 4"/>',
+        security: '<rect x="6" y="10" width="12" height="10" rx="2"/><path d="M9 10V7a3 3 0 016 0v3M12 14v2"/>',
+        group: '<path d="M4 20V9l8-5 8 5v11M8 20v-6h8v6M4 9h16"/>',
+        appearance: '<circle cx="12" cy="12" r="8"/><path d="M12 4v16M4 12h16"/>',
+        help: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.7 2.7 0 015.1 1.3c0 1.8-2.1 2.1-2.6 3.5M12 17h.01"/>'
+    };
+    return `<svg viewBox="0 0 24 24" focusable="false">${paths[icon] || paths.help}</svg>`;
+}
+
+function renderHelpCenter(options = {}) {
+    if (!options.embedded) {
+        clearSearch();
+        resetSelection("all");
+        setPage("Centre d’aide", ROUTES.help, "detail");
+    }
+    const container = getContainer();
+    const role = document.body.dataset.role || "technician";
+    const guide = role === "admin" ? "Guide Administrateur" : role === "mobile_admin" ? "Guide Administrateur Mobile" : role === "pc_standard" ? "Guide Secrétariat / Poste PC" : role === "team_lead" ? "Guide Chef d’équipe" : "Guide Technicien";
+    const card = createSettingsIntro("Centre d’aide", `${guide} : guides, FAQ et tutoriels adaptés à vos droits.`);
+    const grid = document.createElement("div");
+    grid.className = "settings-subsection-grid help-center-grid";
+    grid.innerHTML = `<section><h3>${escapeHtml(guide)}</h3><p>Procédures liées à votre poste : clients, planning, documents et collaboration.</p></section><section><h3>FAQ</h3><p>Réponses sur les accès, appareils, synchronisations et documents.</p></section><section><h3>Tutoriels</h3><p>Parcours guidés disponibles au fil des modules autorisés.</p></section>`;
+    card.appendChild(grid);
+    container.appendChild(card);
+    if (role === "admin") renderSupportContact(container);
 }
 
 async function renderReportTemplateSettings(container) {
