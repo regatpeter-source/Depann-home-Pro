@@ -1,4 +1,4 @@
-import { ROUTES, STORAGE_KEYS, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=118";
+import { ROUTES, STORAGE_KEYS, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=119";
 import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=145";
 import { renderCreatorConsole } from "./creator.js?v=119";
 import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=152";
@@ -814,10 +814,11 @@ async function renderSearchResults(query) {
     setPage("Résultats de recherche", ROUTES.search);
 
     const container = getContainer();
-    container.appendChild(createInfo("Recherche dans le catalogue, vos clients et votre bibliothèque…"));
+    const canSearchLibrary = canAccessRoute(ROUTES.library);
+    container.appendChild(createInfo(canSearchLibrary ? "Recherche dans le catalogue, vos clients et votre bibliothèque…" : "Recherche dans le catalogue et vos clients…"));
 
     const localResults = getSearchResults(database, query);
-    const privateLibrary = await searchPersonalLibrary(query);
+    const privateLibrary = canSearchLibrary ? await searchPersonalLibrary(query) : { sections: [], documents: [] };
     if (currentRequestId !== searchRequestId || document.getElementById("search")?.value.toLowerCase().trim() !== query) return;
 
     const libraryResults = [

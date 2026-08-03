@@ -62,6 +62,7 @@ const ADMINISTRATORS = ["admin"];
 const OPERATIONAL_PC = ["admin", "pc_standard"];
 const OPERATIONAL_MOBILE = ["admin", "pc_standard", "mobile_admin"];
 const TERRAIN = ["admin", "pc_standard", "mobile_admin", "team_lead", "technician"];
+const LIBRARY_USERS = ["mobile_admin", "team_lead", "technician"];
 
 // Toute nouvelle entrée de navigation doit être déclarée ici. Les éléments
 // hors rôle sont retirés du DOM avant l’affichage de l’application.
@@ -69,7 +70,7 @@ export const MENU_ACCESS = Object.freeze({
     quick: Object.freeze({
         clients: OPERATIONAL_MOBILE,
         calendar: TERRAIN,
-        library: TERRAIN,
+        library: LIBRARY_USERS,
         billing: OPERATIONAL_MOBILE.concat("accountant"),
         accounting: ADMINISTRATORS,
         groups: ADMINISTRATORS,
@@ -93,7 +94,7 @@ export const MENU_ACCESS = Object.freeze({
         [ROUTES.partnerSandbox]: ADMINISTRATORS,
         [ROUTES.technicalReports]: TERRAIN,
         [ROUTES.calendar]: TERRAIN,
-        [ROUTES.library]: TERRAIN,
+        [ROUTES.library]: LIBRARY_USERS,
         [ROUTES.favorites]: OPERATIONAL_MOBILE,
         [ROUTES.settings]: ADMINISTRATORS
     })

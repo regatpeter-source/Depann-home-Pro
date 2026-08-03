@@ -14,8 +14,8 @@ Toute nouvelle entrée de menu doit être ajoutée à `MENU_ACCESS` avant son ut
 
 | Rôle | Navigation visible |
 | --- | --- |
-| `admin` — Administrateur (PC) | Toutes les fonctions opérationnelles et administratives compatibles avec les capacités activées : paramètres, comptabilité, groupe, réseau, sandbox, postes et importation de données. |
-| `pc_standard` — Poste PC standard | Clients, planning, bibliothèque, devis/factures, missions partenaires, achats, recherche, photo, favoris et historique. Aucun réglage ni outil d’administration. |
+| `admin` — Administrateur (PC) | Toutes les fonctions opérationnelles et administratives compatibles avec les capacités activées, hors bibliothèque technique : paramètres, comptabilité, groupe, réseau, sandbox, postes et importation de données. |
+| `pc_standard` — Poste PC standard | Clients, planning, devis/factures, missions partenaires, achats, recherche, photo, favoris et historique. Aucun réglage, outil d’administration ou accès à la bibliothèque technique. |
 | `mobile_admin` — Administrateur Mobile | Fonctions opérationnelles mobiles : clients, planning, bibliothèque, devis/factures, recherche, photo, favoris et historique. Aucun paramètre ni sécurité d’entreprise. |
 | `team_lead` / `technician` | Navigation terrain : planning et bibliothèque. Les rapports nécessaires restent accessibles dans le parcours d’intervention existant. |
 | `accountant` | Devis/factures et achats, conformément à l’espace comptable existant. |

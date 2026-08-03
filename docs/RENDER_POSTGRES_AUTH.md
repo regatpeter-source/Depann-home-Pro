@@ -27,7 +27,7 @@ Le serveur crée automatiquement les tables `depannhome_users`, `depannhome_clie
 
 Le premier administrateur est le propriétaire de son **espace entreprise**. Dans **Paramètres → Équipe**, il peut créer un compte technicien en renseignant son nom, son téléphone, un identifiant et un mot de passe initial. Le technicien ne saisit ensuite que son identifiant et son mot de passe pour se connecter.
 
-Chaque technicien possède une session personnelle, mais utilise les données de son espace entreprise : clients, planning, devis, factures, bibliothèque et notes. Les requêtes API déterminent cet espace côté serveur à partir du compte authentifié ; aucun identifiant d’entreprise fourni par le navigateur n’est accepté. Désactiver un technicien invalide ses accès dès sa prochaine requête. Les comptes existants avant cette mise à jour deviennent automatiquement administrateurs de leur propre espace.
+Chaque technicien possède une session personnelle, mais utilise les données de son espace entreprise : clients, planning, devis, factures, bibliothèque et notes. Les requêtes API déterminent cet espace côté serveur à partir du compte authentifié ; aucun identifiant d’entreprise fourni par le navigateur n’est accepté. Désactiver un technicien invalide ses accès dès sa prochaine requête. Les comptes existants avant cette mise à jour deviennent automatiquement administrateurs de leur propre espace. La bibliothèque technique est réservée aux rôles `technician`, `team_lead` et `mobile_admin` ; les postes PC n’y accèdent pas.
 
 ## Console Créateur
 
@@ -69,7 +69,7 @@ Le bouton **Synchroniser** de l’écran Clients permet de lancer cette opérati
 
 ## Bibliothèque personnelle
 
-Chaque utilisateur connecté peut créer ses propres sections métier (par exemple **Serrurerie**, **Interphonie** ou **Alarmes**) et y déposer des documents. Les PDF, fichiers Office, fichiers texte et images sont acceptés, avec une limite de **5 fichiers** et **20 Mo par fichier** à chaque envoi.
+Les utilisateurs autorisés de la bibliothèque technique (`technician`, `team_lead` et `mobile_admin`) peuvent créer leurs sections métier (par exemple **Serrurerie**, **Interphonie** ou **Alarmes**) et y déposer des documents. Les PDF, fichiers Office, fichiers texte et images sont acceptés, avec une limite de **5 fichiers** et **20 Mo par fichier** à chaque envoi.
 
 Les fichiers sont stockés dans PostgreSQL pour rester disponibles après les redéploiements Render. Ils utilisent donc l’espace de votre base de données : surveillez sa capacité et privilégiez des PDF optimisés. Une section et ses documents ne sont visibles, téléchargeables ou supprimables que par le compte qui les a créés. Même un autre utilisateur connecté ne peut pas ouvrir un document à partir de son lien direct.
 
