@@ -33,6 +33,6 @@ Les boutons de simulation modifient uniquement l’instantané Sandbox et ajoute
 
 ## Scénario de connexion partenaire
 
-Dans **Paramètres → Entreprises partenaires Depann’Home Pro → Connecter une entreprise**, l’annuaire de démonstration propose **AssurTest Démo** avec sa fiche (type, statut, description, connecteur et API simulés). La demande suit les étapes visibles « demande envoyée » puis « connexion acceptée ». L’acceptation active automatiquement le connecteur simulé, sans URL, clé API, OAuth ou autre paramétrage.
+Dans **Paramètres → Réseau Depann'Home Pro → Annuaire Depann'Home Pro**, l’annuaire de démonstration propose **AssurTest Démo** avec sa fiche (type, statut, description, connecteur et API simulés). La demande suit les étapes visibles « demande envoyée » puis « connexion acceptée ». L’acceptation active automatiquement le connecteur simulé, sans URL, clé API, OAuth ou autre paramétrage.
 
 Le panneau de test de la connexion propose la génération/réception de mission, la consultation des échanges, de la chronologie et du dossier généré, une réponse partenaire et la déconnexion. Une déconnexion désactive uniquement le connecteur simulé ; l’historique de démonstration est conservé pour une reconnexion ultérieure.

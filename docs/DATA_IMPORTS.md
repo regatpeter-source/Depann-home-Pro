@@ -1,6 +1,6 @@
 # Importation de données
 
-L’outil **Paramètres → Outils → Importation de données** est réservé aux administrateurs connectés depuis un poste PC. Il permet de reprendre une base existante sans ressaisie manuelle.
+L’outil **Paramètres → Importation de données** est réservé aux administrateurs connectés depuis un poste PC. Il permet de reprendre une base existante sans ressaisie manuelle.
 
 ## Périmètre de la première version
 
@@ -16,7 +16,7 @@ Les utilisateurs, techniciens, rendez-vous, partenaires, paramètres de l’entr
 
 1. L’administrateur choisit le type de données et le fichier.
 2. Le serveur lit le fichier sans créer de donnée métier.
-3. L’administrateur associe les colonnes détectées aux champs Depann’Home Pro.
+3. L’administrateur associe les colonnes détectées aux champs Depann'Home Pro.
 4. Un aperçu affiche les enregistrements, erreurs et doublons.
 5. L’administrateur sélectionne la stratégie de doublons et confirme.
 6. Les lignes valides sont importées indépendamment : une erreur n’annule pas les autres lignes.
@@ -53,4 +53,4 @@ Chaque import est journalisé avec la date, le type, le fichier, le nombre de li
 - 10 000 lignes analysées au maximum ;
 - seule la première feuille d’un classeur Excel est lue.
 
-L’architecture par type de données et champs de destination permet l’ajout ultérieur de nouveaux formats et adaptateurs, sans ouvrir les types volontairement exclus de cette première version.
+L’architecture par type de données et champs de destination permet l’ajout ultérieur de nouveaux formats et adaptateurs dédiés (IREN, EBP, Sage et autres logiciels), sans ouvrir les types volontairement exclus de cette première version.

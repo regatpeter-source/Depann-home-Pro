@@ -1,6 +1,6 @@
 # Architecture des menus par rôle
 
-La navigation Depann’Home Pro est déterminée par le rôle authentifié avant le premier affichage applicatif. Elle ne constitue jamais une autorisation de sécurité : les routes API restent protégées côté serveur par leurs middlewares métier.
+La navigation Depann'Home Pro est déterminée par le rôle authentifié avant le premier affichage applicatif. Elle ne constitue jamais une autorisation de sécurité : les routes API restent protégées côté serveur par leurs middlewares métier.
 
 ## Source unique de visibilité
 
@@ -14,13 +14,13 @@ Toute nouvelle entrée de menu doit être ajoutée à `MENU_ACCESS` avant son ut
 
 | Rôle | Navigation visible |
 | --- | --- |
-| `admin` — Administrateur (PC) | Toutes les fonctions opérationnelles et administratives compatibles avec les capacités activées : paramètres, comptabilité, groupe, partenaires, sandbox, postes et outils. |
+| `admin` — Administrateur (PC) | Toutes les fonctions opérationnelles et administratives compatibles avec les capacités activées : paramètres, comptabilité, groupe, réseau, sandbox, postes et importation de données. |
 | `pc_standard` — Poste PC standard | Clients, planning, bibliothèque, devis/factures, missions partenaires, achats, recherche, photo, favoris et historique. Aucun réglage ni outil d’administration. |
 | `mobile_admin` — Administrateur Mobile | Fonctions opérationnelles mobiles : clients, planning, bibliothèque, devis/factures, recherche, photo, favoris et historique. Aucun paramètre ni sécurité d’entreprise. |
 | `team_lead` / `technician` | Navigation terrain : planning et bibliothèque. Les rapports nécessaires restent accessibles dans le parcours d’intervention existant. |
 | `accountant` | Devis/factures et achats, conformément à l’espace comptable existant. |
 
-Les entrées Groupe et Sandbox exigent en plus leurs capacités existantes (`groupAdmin` et sandbox activée). Elles sont donc absentes même pour un administrateur lorsque ces capacités ne sont pas disponibles.
+Les entrées Groupe et Sandbox exigent en plus leurs capacités existantes (`groupAdmin` et sandbox activée). Elles sont accessibles depuis les Paramètres et restent absentes même pour un administrateur lorsque ces capacités ne sont pas disponibles.
 
 ## Sécurité côté serveur
 

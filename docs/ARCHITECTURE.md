@@ -16,7 +16,7 @@ Le module `server/accounting.js` reste indépendant de la facturation historique
 
 `server/connectors.js` fournit un registre de prestataires externes et un runtime de plugins **déclaratifs**, réservé au compte Créateur. Chaque connecteur stocke un manifeste versionné (informations partenaire, authentification, endpoints et mappings), une configuration et des credentials AES-256-GCM chiffrés dans l’espace plateforme. Les entreprises ne voient ni les connecteurs ni leurs réglages techniques.
 
-Les paquets exportés contiennent le manifeste, le modèle de synchronisation et la documentation, mais jamais les secrets. Ils peuvent être importés puis complétés avec les credentials propres à l’entreprise. Le runtime ne charge jamais de JavaScript issu d’un paquet : il interprète uniquement les endpoints configurés, ce qui évite qu’un partenaire modifie ou exécute du code dans le cœur de Depann’Home Pro.
+Les paquets exportés contiennent le manifeste, le modèle de synchronisation et la documentation, mais jamais les secrets. Ils peuvent être importés puis complétés avec les credentials propres à l’entreprise. Le runtime ne charge jamais de JavaScript issu d’un paquet : il interprète uniquement les endpoints configurés, ce qui évite qu’un partenaire modifie ou exécute du code dans le cœur de Depann'Home Pro.
 
 Les appels de test imposent HTTPS/HTTP externe, refusent les hôtes locaux et plages IPv4 privées usuelles, appliquent timeout et nouvelles tentatives, puis écrivent un journal en masquant les entêtes et valeurs sensibles. Les connecteurs restent compatibles avec une infrastructure Render à disque éphémère, car aucune installation n’écrit dans le système de fichiers.
 
@@ -32,7 +32,7 @@ Après validation administrative, une transaction rapproche le client, planifie 
 
 ## Connexions partenaires simplifiées
 
-`server/partner-connections.js` est le parcours sans configuration destiné aux entreprises déjà inscrites sur Depann’Home Pro. Il sépare l’annuaire opt-in, la demande bilatérale, les droits directionnels et le journal de synchronisation des connecteurs API historiques. Les rendez-vous autorisés sont automatiquement répliqués en mission partenaire dans l’espace destinataire ; les rapports validés sont ajoutés au dossier partagé lorsque le droit correspondant est accordé. Voir `docs/PARTNER_CONNECTIONS.md`.
+`server/partner-connections.js` est le parcours sans configuration destiné aux entreprises déjà inscrites sur Depann'Home Pro. Dans **Paramètres → Réseau Depann'Home Pro**, l’onglet **Mes partenaires** regroupe les connexions actives et les accès API externes ; l’onglet **Annuaire Depann'Home Pro** regroupe la visibilité, la recherche et les demandes bilatérales. Les rendez-vous autorisés sont automatiquement répliqués en mission partenaire dans l’espace destinataire ; les rapports validés sont ajoutés au dossier partagé lorsque le droit correspondant est accordé. Les Missions partenaires restent uniquement opérationnelles. Voir `docs/PARTNER_CONNECTIONS.md`.
 
 ## Rapports techniques
 
@@ -94,7 +94,7 @@ Le moteur JavaScript doit rester stable. Les futures évolutions métier doivent
 - `clients.js` : base clients locale, formulaire, liste, détail, modification, suppression et pièces jointes.
 - `config.js` : version, clés de stockage, constantes.
 - `data.js` : chargement et normalisation de `database.json`.
-- `navigation.js` : affichage familles, marques, gammes, produits, favoris, historique, Centre d’aide et Paramètres. Les Paramètres sont un hub à cartes qui sépare les réglages d’entreprise (modèles de documents, partenaires, réseau, utilisateurs, sécurité, groupe et personnalisation) des fonctions métier quotidiennes du menu principal.
+- `navigation.js` : affichage familles, marques, gammes, produits, favoris, historique, Centre d’aide et Paramètres. Les Paramètres sont un hub à cartes qui sépare les réglages d’entreprise (modèles de documents, réseau, utilisateurs, sécurité, groupe, personnalisation et importation de données) des fonctions métier quotidiennes du menu principal.
 - `search.js` : recherche globale dans les familles, marques, gammes et produits.
 - `state.js` : état de navigation courant.
 - `storage.js` : favoris et historique en localStorage.

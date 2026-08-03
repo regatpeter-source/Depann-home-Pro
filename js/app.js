@@ -2,7 +2,7 @@ import { initializeAuthentication, restoreApplicationShell, signOut } from "./au
 import { initializeClientSynchronization } from "./client-sync.js?v=118";
 import { initializeCollaboration } from "./collaboration.js?v=2";
 import { loadDatabase } from "./data.js?v=59";
-import { initializeNavigation, refreshApplication } from "./navigation.js?v=213";
+import { initializeNavigation, refreshApplication } from "./navigation.js?v=214";
 import { renderError } from "./ui.js?v=44";
 import { getSettings } from "./storage.js?v=44";
 import { FONT_OPTIONS } from "./config.js?v=117";
@@ -34,6 +34,7 @@ async function startApplication() {
         applyTheme();
         applyFont();
         applyLanguage();
+        enforceOfficialProductName();
         await initializeSandboxCapabilities();
         await initializeClientSynchronization();
         initializeCollaboration();
@@ -46,6 +47,23 @@ async function startApplication() {
         document.body.classList.remove("auth-pending");
         renderError("Impossible de charger la base de données.", error.message);
     }
+}
+
+function enforceOfficialProductName() {
+    const normalize = node => {
+        if (node.nodeType === Node.TEXT_NODE) {
+            const parentTag = node.parentElement?.tagName;
+            if (["SCRIPT", "STYLE", "CODE", "PRE"].includes(parentTag)) return;
+            const normalized = node.nodeValue
+                .replace(/Depann[’']Home Pro/g, "Depann'Home Pro")
+                .replace(/DepannHomePro|DepanHomePro/g, "Depann'Home Pro");
+            if (normalized !== node.nodeValue) node.nodeValue = normalized;
+            return;
+        }
+        if (node.nodeType === Node.ELEMENT_NODE) node.childNodes.forEach(normalize);
+    };
+    normalize(document.body);
+    new MutationObserver(records => records.forEach(record => record.addedNodes.forEach(normalize))).observe(document.body, { childList: true, subtree: true });
 }
 
 async function initializeSandboxCapabilities() {

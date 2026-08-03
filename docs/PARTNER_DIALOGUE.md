@@ -6,7 +6,7 @@ Chaque mission reçue dispose d’un fil privé, persistant et chronologique. Le
 
 - Les administrateurs voient tous les fils de leur entreprise.
 - Un technicien ne voit et ne publie que dans les missions qui lui sont affectées.
-- L’organisme partenaire accède uniquement aux missions créées par **son propre accès d’intégration**, avec la même clé fournie lors de la création de l’accès (`X-API-Key`). Il n’obtient ni cookie Depann’Home ni accès au flux SSE interne.
+- L’organisme partenaire accède uniquement aux missions créées par **son propre accès d’intégration**, avec la même clé fournie lors de la création de l’accès (`X-API-Key`). Il n’obtient ni cookie Depann'Home Pro ni accès au flux SSE interne.
 - Les experts ou gestionnaires d’un organisme utilisent l’accès API de cet organisme et sont identifiés dans le message avec `authorName`. Leur organisation reste strictement limitée aux missions de cet accès partenaire.
 
 Toutes les requêtes vérifient simultanément la clé, l’accès partenaire, le dossier et l’entreprise propriétaire. Les réponses d’autorisation ne révèlent pas l’existence d’un dossier inaccessible.

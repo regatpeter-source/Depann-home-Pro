@@ -5,10 +5,10 @@ import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocume
 import { renderAccounting } from "./accounting.js?v=3";
 import { renderAccountingSandbox } from "./accounting-sandbox.js?v=1";
 import { renderGroupActivation, renderGroupWorkspace } from "./groups.js?v=3";
-import { renderPartnerMissions } from "./partner-missions.js?v=2";
+import { renderPartnerMissions } from "./partner-missions.js?v=3";
 import { renderPartnerSandbox } from "./partner-sandbox.js?v=3";
-import { renderPartnerConnections } from "./partner-connections.js?v=6";
-import { renderDataImportTool } from "./data-imports.js?v=1";
+import { renderPartnerConnections } from "./partner-connections.js?v=7";
+import { renderDataImportTool } from "./data-imports.js?v=2";
 import { renderPurchases } from "./purchases.js?v=113";
 import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=8";
 import { getFirstUnreadClientId, refreshClientMessageAlert, refreshVisibleClientMessages } from "./messages.js?v=106";
@@ -1151,12 +1151,12 @@ function renderSettingsWorkspace(options = {}) {
         grid.className = "settings-card-grid";
         const cards = [
             ["documents", "Modèles de documents", "Identité, présentation et modèles des devis, quitus et rapports.", "document"],
-            ["partners", "Partenaires", "Liste des partenaires, droits d’échange et environnement de recette.", "partners"],
-            ["network", "Réseau DepannHomePro", "Annuaire des entreprises et demandes de partenariat.", "network"],
+            ["network", "Réseau Depann'Home Pro", "Partenaires, annuaire et connexions API de l’entreprise.", "network"],
             ["users", "Utilisateurs", "Accès, postes, techniciens et chefs d’équipe.", "users"],
             ["security", "Sécurité", "Double authentification et protection des accès.", "security"],
             ["groups", "Groupe / Multi-entreprises", "Sociétés, bascule de contexte et indicateurs consolidés.", "group"],
             ["personalization", "Personnalisation", "Langue, thème, police et préférences d’affichage.", "appearance"],
+            ...(document.body.classList.contains("desktop-device") ? [["imports", "Importation de données", "Importez vos clients, devis, factures et rapports depuis Excel ou CSV.", "import"]] : []),
             ["help", "Centre d’aide", "Guides par rôle, FAQ, tutoriels et assistance.", "help"]
         ];
         cards.forEach(([id, title, description, icon]) => grid.appendChild(createSettingsNavigationCard(title, description, icon, () => renderSettings({ section: id }))));
@@ -1167,7 +1167,7 @@ function renderSettingsWorkspace(options = {}) {
 
     clearSearch();
     resetSelection("all");
-    const titles = { documents: "Modèles de documents", partners: "Partenaires", network: "Réseau DepannHomePro", users: "Utilisateurs", security: "Sécurité", groups: "Groupe / Multi-entreprises", personalization: "Personnalisation", help: "Centre d’aide" };
+    const titles = { documents: "Modèles de documents", network: "Réseau Depann'Home Pro", users: "Utilisateurs", security: "Sécurité", groups: "Groupe / Multi-entreprises", personalization: "Personnalisation", imports: "Importation de données", help: "Centre d’aide" };
     setPage(`Paramètres · ${titles[section] || "Configuration"}`, ROUTES.settings, "detail");
     const container = getContainer();
     container.appendChild(createBackCard("Retour aux Paramètres", () => renderSettings()));
@@ -1193,10 +1193,10 @@ function renderSettingsWorkspace(options = {}) {
         if (options.focusReportTemplate) window.requestAnimationFrame(() => document.getElementById("reportTemplateSettings")?.scrollIntoView({ behavior: "smooth", block: "start" }));
         return;
     }
-    if (section === "partners" || section === "network") {
-        container.appendChild(createSettingsIntro(section === "partners" ? "Partenaires" : "Réseau DepannHomePro", section === "partners" ? "Gérez les partenaires enregistrés, leurs droits et leurs échanges autorisés." : "Recherchez une entreprise, consultez sa fiche et traitez les demandes reçues."));
+    if (section === "network") {
+        container.appendChild(createSettingsIntro("Réseau Depann'Home Pro", "Centralisez vos partenaires, l’annuaire et la configuration des connexions API."));
         renderPartnerConnections(container);
-        if (section === "partners" && document.body.classList.contains("partner-sandbox-enabled")) container.appendChild(createButton("Ouvrir l’environnement de recette partenaire", "secondary-button settings-inline-action", renderPartnerSandbox));
+        if (document.body.classList.contains("partner-sandbox-enabled")) container.appendChild(createButton("Ouvrir l’environnement de recette partenaire", "secondary-button settings-inline-action", renderPartnerSandbox));
         return;
     }
     if (section === "users") return renderTeamManagement(container);
@@ -1208,6 +1208,12 @@ function renderSettingsWorkspace(options = {}) {
     if (section === "groups") {
         if (document.body.dataset.groupAdmin === "true") renderGroupWorkspace();
         else renderGroupActivation(container);
+        return;
+    }
+    if (section === "imports") {
+        if (!document.body.classList.contains("desktop-device")) return renderSettings();
+        container.appendChild(createSettingsIntro("Importation de données", "Importez en toute sécurité vos clients, devis, factures et rapports à partir de fichiers Excel ou CSV."));
+        renderDataImportTool(container);
         return;
     }
     if (section === "help") return renderHelpCenter({ embedded: true });
@@ -1239,6 +1245,7 @@ function settingsIcon(icon) {
         security: '<rect x="6" y="10" width="12" height="10" rx="2"/><path d="M9 10V7a3 3 0 016 0v3M12 14v2"/>',
         group: '<path d="M4 20V9l8-5 8 5v11M8 20v-6h8v6M4 9h16"/>',
         appearance: '<circle cx="12" cy="12" r="8"/><path d="M12 4v16M4 12h16"/>',
+        import: '<path d="M12 3v12M7 10l5 5 5-5M5 20h14"/>',
         help: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.7 2.7 0 015.1 1.3c0 1.8-2.1 2.1-2.6 3.5M12 17h.01"/>'
     };
     return `<svg viewBox="0 0 24 24" focusable="false">${paths[icon] || paths.help}</svg>`;

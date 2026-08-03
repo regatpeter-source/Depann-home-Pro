@@ -27,7 +27,7 @@ export async function renderCreatorConsole() {
     const networkButton = document.createElement("button");
     networkButton.type = "button";
     networkButton.className = "secondary-button auth-outline-button";
-    networkButton.textContent = "Réseau DepanHomePro";
+    networkButton.textContent = "Réseau Depann'Home Pro";
     document.querySelector(".creator-heading .creator-form-actions").prepend(networkButton);
     container.querySelector("#creatorNewAccount").addEventListener("click", () => renderAccountForm());
     networkButton.addEventListener("click", renderNetworkDirectory);
@@ -41,7 +41,7 @@ export async function renderCreatorConsole() {
 
 async function renderNetworkDirectory() {
     const workspace = document.querySelector("#creatorWorkspace");
-    workspace.innerHTML = '<p class="muted">Chargement du Réseau DepanHomePro…</p>';
+    workspace.innerHTML = '<p class="muted">Chargement du Réseau Depann\'Home Pro…</p>';
     const result = await api("/api/creator/network-directory");
     if (!result.ok) return showFeedback(result.message || "Impossible de charger le réseau.", true);
     const companies = result.data.companies || []; const stats = result.data.statistics || {};
