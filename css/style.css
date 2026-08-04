@@ -461,7 +461,7 @@ body.desktop-device[data-role="accountant"] footer .nav-button[data-nav="purchas
     display:flex;
 }
 
-/* Comptabilité & Facturation électronique */
+/* Comptabilité · Facturation électronique & PDP */
 .accounting-shell{max-width:1180px;margin:0 auto;padding:clamp(12px,2vw,28px)}
 .accounting-heading{display:flex;justify-content:space-between;gap:18px;align-items:start;margin-bottom:18px}
 .accounting-heading h2{margin:2px 0 6px;color:#003b73}
@@ -473,6 +473,7 @@ body.desktop-device[data-role="accountant"] footer .nav-button[data-nav="purchas
 .accounting-cards span,.accounting-cards small{display:block;color:#64748b;font-size:.82rem}.accounting-cards strong{display:block;color:#003b73;font-size:1.28rem;margin:7px 0}.accounting-cards .attention strong{color:#b45309}
 .accounting-panel{margin:14px 0;padding:clamp(16px,2vw,24px);background:#fff;border:1px solid #dbe4ee;border-radius:16px;box-shadow:0 6px 20px rgba(15,23,42,.05)}
 .accounting-panel h3{margin:3px 0}.accounting-panel h4{margin:25px 0 11px;color:#003b73}.accounting-search{width:100%;margin:12px 0;padding:11px 13px;border:1px solid #cbd5e1;border-radius:9px}
+.accounting-pdp-notice{margin:16px 0;padding:13px 15px;border:1px solid #bfdbfe;border-radius:10px;background:#eff6ff;color:#1e3a5f;font-size:.92rem;line-height:1.5}
 .accounting-document-list,.accounting-transmission-list,.accounting-aid-list{display:grid;gap:9px}.accounting-document,.accounting-transmission-list article,.accounting-aid-list article{display:flex;align-items:center;gap:16px;justify-content:space-between;padding:13px;border:1px solid #e2e8f0;border-radius:11px;background:#fcfdff}
 .accounting-document h4,.accounting-document p,.accounting-transmission-list p,.accounting-aid-list p{margin:3px 0}.accounting-document small,.accounting-transmission-list small,.accounting-aid-list small{color:#64748b}.accounting-document-totals{text-align:right;min-width:135px}.accounting-document-totals strong{display:block;color:#003b73}.accounting-document-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:7px}.accounting-inline-form{border-color:#93c5fd;background:#f8fbff}
 .accounting-aid-fieldset,.accounting-rules{border:1px solid #dbe4ee;border-radius:10px;padding:13px;display:flex;gap:13px;flex-wrap:wrap}.accounting-aid-fieldset label,.accounting-switch{font-size:.92rem}.accounting-rules label{display:grid;gap:5px;min-width:180px;flex:1}.accounting-rules input{width:100%}.accounting-rules legend,.accounting-aid-fieldset legend{padding:0 6px;color:#003b73;font-weight:700}.accounting-aid-list article strong{color:#003b73}

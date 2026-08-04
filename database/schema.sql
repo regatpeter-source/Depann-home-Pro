@@ -271,7 +271,7 @@ CREATE INDEX IF NOT EXISTS depannhome_billing_documents_appointment_idx
 CREATE INDEX IF NOT EXISTS depannhome_billing_documents_client_idx
     ON depannhome_billing_documents (owner_id, client_id);
 
--- Comptabilité & Facturation électronique : données strictement isolées par owner_id.
+-- Comptabilité et facturation électronique compatible PDP : préparation et transmission via le connecteur choisi par l'entreprise, données isolées par owner_id.
 ALTER TABLE depannhome_billing_documents ADD COLUMN IF NOT EXISTS financial_data JSONB NOT NULL DEFAULT '{}'::jsonb;
 ALTER TABLE depannhome_billing_documents DROP CONSTRAINT IF EXISTS depannhome_billing_documents_document_type_check;
 ALTER TABLE depannhome_billing_documents ADD CONSTRAINT depannhome_billing_documents_document_type_check CHECK (document_type IN ('quote', 'invoice', 'credit'));

@@ -27,7 +27,7 @@ Les entrées Groupe et Sandbox exigent en plus leurs capacités existantes (`gro
 Les règles d’interface ne remplacent pas les contrôles existants :
 
 - gestion des utilisateurs, rôles, appareils et audit : `requireAccountAdministrator` ;
-- comptabilité et facturation électronique : `requireAccountingAdministration` ;
+- comptabilité et facturation électronique & PDP : `requireAccountingAdministration` ;
 - partenaires et connecteurs : middlewares d’administration dédiés ;
 - groupe, changement d’entreprise et pilotage multi-entreprises : Administrateur (PC) du groupe ;
 - autres données métier : contrôles de rôle existants et filtrage par `owner_id`.

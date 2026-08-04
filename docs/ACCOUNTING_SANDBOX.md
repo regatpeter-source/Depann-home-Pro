@@ -1,8 +1,8 @@
-# Sandbox Comptabilité et Facturation électronique
+# Sandbox Comptabilité · Facturation électronique & PDP
 
 ## Objet
 
-Le **laboratoire Comptabilité & Facturation électronique** est exclusivement destiné au développement, à la recette et aux démonstrations. Il est réservé à un Administrateur (PC) et activé explicitement avec :
+Le **laboratoire Comptabilité · Facturation électronique & PDP** est exclusivement destiné au développement, à la recette et aux démonstrations. Il est réservé à un Administrateur (PC) et activé explicitement avec :
 
 ```dotenv
 NODE_ENV=development
@@ -21,7 +21,7 @@ Toutes les données sont stockées dans la seule table `depannhome_accounting_sa
 - `depannhome_einvoice_transmissions` ;
 - `depannhome_clients`, `depannhome_calendar_events` ou `depannhome_technical_reports`.
 
-Les fichiers CSV, Excel et FEC sont assemblés uniquement à partir de cet instantané fictif. Le simulateur PDP ne contient aucun `fetch`, aucune URL externe, aucune clé API ni OAuth.
+Les fichiers CSV, Excel et FEC sont assemblés uniquement à partir de cet instantané fictif. Le simulateur PDP ne contient aucun `fetch`, aucune URL externe, aucune clé API ni OAuth ; il ne représente pas une PDP agréée par l’État.
 
 ## Jeu de données et parcours
 

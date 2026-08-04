@@ -9,10 +9,10 @@ const AID_MODES = new Set(["fixed", "percentage"]);
 const PDP_STATUSES = new Set(["configured", "draft", "queued", "sent", "accepted", "rejected", "failed"]);
 const EXPORT_SCOPES = new Set(["invoices", "quotes", "credits", "settlements", "clients", "overdue", "all", "fec"]);
 
-// Les connecteurs PDP restent volontairement isolés : l'ajout d'un prestataire n'impacte ni la facturation ni les exports.
+// Depann'Home Pro prépare les factures et délègue leur transmission aux connecteurs PDP choisis par chaque entreprise.
 const pdpConnectors = new Map([
     ["sandbox", {
-        label: "Bac à sable Depann’Home Pro",
+        label: "Transmission de test (Bac à sable Depann’Home Pro)",
         async transmit(document) {
             if (!document.customerName) throw new Error("Le destinataire de la facture est obligatoire.");
             return { remoteId: `sandbox-${document.id}-${Date.now()}`, status: "sent", message: "Facture placée dans le bac à sable PDP." };
@@ -241,7 +241,7 @@ export function registerAccountingRoutes(app, requireAuthentication) {
 }
 
 function requireAccountingAdministration(request, response, next) {
-    if (request.user?.role !== "admin") return response.status(403).json({ message: "Le module Comptabilité & Facturation électronique est réservé à l’administrateur de l’entreprise." });
+    if (request.user?.role !== "admin") return response.status(403).json({ message: "Le module Comptabilité · Facturation électronique & PDP est réservé à l’administrateur de l’entreprise." });
     return next();
 }
 
