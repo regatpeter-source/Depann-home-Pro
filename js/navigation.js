@@ -15,7 +15,7 @@ import { getSearchableClients, renderClients } from "./clients.js?v=137";
 import { synchronizeClients } from "./client-sync.js?v=118";
 import { configureLibrary, openLibrarySection, renderLibrary, searchPersonalLibrary } from "./library.js?v=120";
 import { renderPhotoRecognition } from "./photo-recognition.js?v=105";
-import { getSearchResults } from "./search.js?v=64";
+import { getContextualSearchResults } from "./search.js?v=65";
 import { state, resetSelection } from "./state.js?v=44";
 import {
     getStoredRefs,
@@ -38,15 +38,20 @@ import {
 
 let database = { brands: [] };
 let searchRequestId = 0;
+let searchInputTimer = null;
 let sharedSynchronizationTimer = null;
 let sharedSynchronizationPromise = null;
 const TECHNICIAN_CALENDAR_ALERT_KEY_PREFIX = "depannHomePro:technicianCalendar:lastViewed:";
+const SEARCH_EVENTS_TTL = 30_000;
+let searchEventsCache = { expiresAt: 0, events: [] };
+let searchEventsPromise = null;
 
 export function initializeNavigation(loadedDatabase) {
     database = loadedDatabase;
     configureLibrary({ openCatalog: renderBrands, openStore: renderStore });
     bindEvents();
     applyRoleBasedMenus();
+    updateSearchPlaceholder();
     window.addEventListener("depannhome:open-client", event => openClients(String(event.detail?.clientId || "")));
     window.addEventListener("depannhome:edit-report-template", () => {
         if (document.body.dataset.role !== "admin" || !document.body.classList.contains("desktop-device")) return;
@@ -140,6 +145,7 @@ function bindEvents() {
 
     search.addEventListener("input", event => {
         const value = event.target.value.toLowerCase().trim();
+        window.clearTimeout(searchInputTimer);
 
         if (!value) {
             searchRequestId += 1;
@@ -147,7 +153,7 @@ function bindEvents() {
             return;
         }
 
-        renderSearchResults(value);
+        searchInputTimer = window.setTimeout(() => renderSearchResults(value), 120);
     });
 
     clientsBtn.addEventListener("click", () => { if (canAccessQuick("clients")) openClients(); });
@@ -821,36 +827,46 @@ async function renderSearchResults(query) {
 
     const container = getContainer();
     const canSearchLibrary = canAccessRoute(ROUTES.library);
-    container.appendChild(createInfo(canSearchLibrary ? "Recherche dans le catalogue, vos clients et votre bibliothèque…" : "Recherche dans le catalogue et vos clients…"));
+    const canSearchClients = canAccessRoute(ROUTES.clients);
+    const canSearchCalendar = canAccessRoute(ROUTES.calendar);
+    const includeTechnical = canSearchLibrary;
+    container.appendChild(createInfo(includeTechnical ? "Recherche dans vos modules, clients, interventions et bibliothèque technique…" : "Recherche dans les fonctions et données accessibles à votre poste…"));
 
-    const localResults = getSearchResults(database, query);
-    const privateLibrary = canSearchLibrary ? await searchPersonalLibrary(query) : { sections: [], documents: [] };
+    const [privateLibrary, events] = await Promise.all([
+        canSearchLibrary ? searchPersonalLibrary(query) : Promise.resolve({ sections: [], documents: [] }),
+        canSearchCalendar ? loadSearchEvents() : Promise.resolve([])
+    ]);
     if (currentRequestId !== searchRequestId || document.getElementById("search")?.value.toLowerCase().trim() !== query) return;
 
     const libraryResults = [
         ...(privateLibrary.sections || []).map(section => ({
             type: "librarySection",
             title: section.name,
-            subtitle: "Votre dossier privé",
+            subtitle: "📂 Bibliothèque privée — Section",
             sectionId: section.id,
             score: 80
         })),
         ...(privateLibrary.documents || []).map(document => ({
             type: "libraryDocument",
             title: document.title,
-            subtitle: `${document.sectionName} · ${document.originalFilename}`,
+            subtitle: `📖 Document privé — ${document.sectionName} · ${document.originalFilename}`,
             documentId: document.id,
             score: 95
         }))
     ];
-    const results = [...localResults, ...libraryResults]
+    const results = [...getContextualSearchResults(database, query, {
+        modules: getSearchModules(),
+        includeClients: canSearchClients,
+        includeTechnical,
+        events
+    }), ...libraryResults]
         .sort((first, second) => (second.score || 0) - (first.score || 0))
         .slice(0, 40);
 
     container.innerHTML = "";
 
     if (!results.length) {
-        container.appendChild(createInfo("Aucun résultat trouvé. Essayez avec une marque, un produit, un client, un devis ou un mot-clé de votre bibliothèque."));
+        container.appendChild(createInfo("Aucun résultat accessible trouvé. Essayez un nom de module, un client, une intervention ou un mot-clé autorisé."));
         return;
     }
 
@@ -861,6 +877,16 @@ async function renderSearchResults(query) {
                 result.title,
                 result.type === "document" ? `${result.subtitle} · Document PDF` : result.subtitle,
                 () => {
+                    if (result.type === "module") {
+                        result.open();
+                        return;
+                    }
+
+                    if (result.type === "event") {
+                        renderCalendar({ date: new Date(`${result.event.date}T12:00:00`), event: result.event });
+                        return;
+                    }
+
                     if (result.type === "document") {
                         window.open(result.documentPath, "_blank", "noopener,noreferrer");
                         return;
@@ -887,6 +913,58 @@ async function renderSearchResults(query) {
             )
         );
     });
+}
+
+function getSearchModules() {
+    const modules = [];
+    const add = (title, keywords, route, open) => {
+        if (route && !canAccessRoute(route)) return;
+        modules.push({ title, subtitle: `📂 Module — ${title}`, keywords, open });
+    };
+    add("Clients", "client dossier contact fiche client", ROUTES.clients, () => openClients());
+    add("Messagerie client", "messagerie message messages note échange discussion", ROUTES.clients, () => openClients());
+    add("Planning", "planning agenda rendez vous intervention calendrier", ROUTES.calendar, openCalendar);
+    if (document.body.dataset.technicianBillingEnabled !== "false") add("Devis et factures", "devis facture document commercial facturation", ROUTES.billing, renderBilling);
+    add("Rapports de recherche de fuite", "rapport rapports fuite technique intervention", ROUTES.technicalReports, renderTechnicalReports);
+    add("Missions partenaires", "mission partenaire réseau intervention externe", ROUTES.partnerMissions, renderPartnerMissions);
+    add("Bibliothèque technique", "bibliothèque notice procédure moteur automatisme télécommande schéma diagnostic portail volet roulant porte garage serrure pièce détachée", ROUTES.library, renderLibrary);
+    add("Comptabilité et facturation électronique & PDP", "comptabilité facturation électronique pdp export comptable facture", ROUTES.accounting, renderAccounting);
+    add("Réseau Depann'Home Pro", "réseau partenaire partenaires api connexion annuaire", ROUTES.settings, () => renderSettings({ section: "network" }));
+    add("Modèles de documents", "modèle devis rapport quitus document logo", ROUTES.settings, () => renderSettings({ section: "documents" }));
+    add("Utilisateurs", "utilisateur équipe technicien chef équipe poste pc droit accès", ROUTES.settings, () => renderSettings({ section: "users" }));
+    add("Sécurité", "sécurité double authentification 2fa sms accès", ROUTES.settings, () => renderSettings({ section: "security" }));
+    if (document.body.dataset.groupAdmin === "true") add("Groupe / Multi-entreprises", "groupe multi entreprises société", ROUTES.groups, renderGroupWorkspace);
+    add("Importation de données", "import importation excel csv clients devis factures rapports", ROUTES.settings, () => renderSettings({ section: "imports" }));
+    add("Centre d’aide", "aide support faq tutoriel assistance", ROUTES.settings, () => renderSettings({ section: "help" }));
+    return modules;
+}
+
+async function loadSearchEvents() {
+    if (searchEventsCache.expiresAt > Date.now()) return searchEventsCache.events;
+        if (searchEventsPromise) return searchEventsPromise;
+    const start = toDashboardDate(new Date());
+    const end = toDashboardDate(addDashboardDays(new Date(), 90));
+        searchEventsPromise = (async () => {
+            try {
+        const response = await fetch(`/api/calendar/events?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`, { credentials: "same-origin" });
+        const data = response.ok ? await response.json() : null;
+        searchEventsCache = { events: data?.events || [], expiresAt: Date.now() + SEARCH_EVENTS_TTL };
+            } catch {
+        searchEventsCache = { events: [], expiresAt: Date.now() + 5_000 };
+            } finally {
+                searchEventsPromise = null;
+            }
+            return searchEventsCache.events;
+        })();
+        return searchEventsPromise;
+}
+
+function updateSearchPlaceholder() {
+    const search = document.getElementById("search");
+    if (!search) return;
+    search.placeholder = canAccessRoute(ROUTES.library)
+        ? "Rechercher un module, client, intervention, notice…"
+        : "Rechercher un module, un client ou une intervention…";
 }
 
 function getRefPhoto(ref) {
