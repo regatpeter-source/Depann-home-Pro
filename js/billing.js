@@ -3,6 +3,7 @@ import { getSearchableClients } from "./clients.js?v=137";
 import { addClientActivityByName } from "./client-sync.js?v=116";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
+import { renderPlatformAnnouncement } from "./platform-announcement.js?v=1";
 import { clearSearch, createInfo, getContainer, setPage } from "./ui.js?v=44";
 
 const CUSTOMER_TYPES = ["Particulier", "Professionnel", "Magasin", "Autre"];
@@ -27,6 +28,7 @@ export async function renderBilling(options = {}) {
     const editorPanel = createPanel("billing-editor-panel");
     const listPanel = createPanel("billing-list-panel");
     container.append(overviewPanel, profilePanel, editorPanel, listPanel);
+    if (isAccountant()) renderPlatformAnnouncement(container);
     overviewPanel.innerHTML = "<p class=\"muted\">Chargement de l’espace devis, factures et rapports…</p>";
     [profilePanel, editorPanel, listPanel].forEach(panel => panel.hidden = true);
 

@@ -1,7 +1,7 @@
 import { ROUTES, STORAGE_KEYS, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=119";
-import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=145";
+import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=146";
 import { renderCreatorConsole } from "./creator.js?v=119";
-import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=152";
+import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=153";
 import { renderAccounting } from "./accounting.js?v=4";
 import { renderAccountingSandbox } from "./accounting-sandbox.js?v=1";
 import { renderGroupActivation, renderGroupWorkspace } from "./groups.js?v=3";
@@ -23,6 +23,7 @@ import {
     saveSettings
 } from "./storage.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
+import { renderPlatformAnnouncement } from "./platform-announcement.js?v=1";
 import {
     clearSearch,
     createBackCard,
@@ -579,6 +580,7 @@ async function renderHome() {
         <p class="dashboard-catalog-note">Les gammes techniques — volets roulants et portails — sont disponibles dans la <strong>Bibliothèque</strong>.</p>
     `;
     container.appendChild(panel);
+    renderPlatformAnnouncement(container);
 
     panel.querySelector('[data-dashboard-action="calendar"]').addEventListener("click", renderCalendar);
     const result = await loadDashboardEvents();

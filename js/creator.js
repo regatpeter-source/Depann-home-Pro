@@ -14,7 +14,7 @@ export async function renderCreatorConsole() {
         <section class="creator-console">
             <header class="creator-heading">
                 <div><p class="eyebrow">Administration plateforme</p><h2>Console Créateur</h2></div>
-                <div class="creator-form-actions"><button type="button" class="secondary-button auth-outline-button" id="creatorPartnerRequests">Demandes de partenariat</button><button type="button" class="secondary-button auth-outline-button" id="creatorSecurity">Sécurité du compte</button><button type="button" class="secondary-button auth-outline-button" id="creatorSubscriptionInvoices">Factures abonnements</button><button type="button" class="secondary-button auth-outline-button" id="creatorBillingProfile">Facturation plateforme</button><button type="button" class="secondary-button auth-outline-button" id="creatorExternalProviders">Prestataires externes</button><button type="button" class="secondary-button" id="creatorNewAccount">+ Nouvelle entreprise</button></div>
+                <div class="creator-form-actions"><button type="button" class="secondary-button auth-outline-button" id="creatorPlatformAnnouncement">Affichage général</button><button type="button" class="secondary-button auth-outline-button" id="creatorPartnerRequests">Demandes de partenariat</button><button type="button" class="secondary-button auth-outline-button" id="creatorSecurity">Sécurité du compte</button><button type="button" class="secondary-button auth-outline-button" id="creatorSubscriptionInvoices">Factures abonnements</button><button type="button" class="secondary-button auth-outline-button" id="creatorBillingProfile">Facturation plateforme</button><button type="button" class="secondary-button auth-outline-button" id="creatorExternalProviders">Prestataires externes</button><button type="button" class="secondary-button" id="creatorNewAccount">+ Nouvelle entreprise</button></div>
             </header>
             <p id="creatorFeedback" class="auth-message" aria-live="polite"></p>
             <section class="creator-subscription-summary" id="creatorSubscriptionSummary" aria-label="Synthèse des abonnements"></section>
@@ -31,12 +31,45 @@ export async function renderCreatorConsole() {
     document.querySelector(".creator-heading .creator-form-actions").prepend(networkButton);
     container.querySelector("#creatorNewAccount").addEventListener("click", () => renderAccountForm());
     networkButton.addEventListener("click", renderNetworkDirectory);
+    container.querySelector("#creatorPlatformAnnouncement").addEventListener("click", renderPlatformAnnouncementSettings);
     container.querySelector("#creatorPartnerRequests").addEventListener("click", renderPartnerRequests);
     container.querySelector("#creatorBillingProfile").addEventListener("click", renderSubscriptionBillingProfile);
     container.querySelector("#creatorSecurity").addEventListener("click", renderCreatorSecurity);
     container.querySelector("#creatorSubscriptionInvoices").addEventListener("click", renderSubscriptionInvoices);
     container.querySelector("#creatorExternalProviders").addEventListener("click", renderCreatorConnectors);
     await loadAccounts();
+}
+
+async function renderPlatformAnnouncementSettings() {
+    const workspace = document.querySelector("#creatorWorkspace");
+    workspace.innerHTML = '<p class="muted">Chargement de l’affichage général…</p>';
+    const result = await api("/api/creator/platform-announcement");
+    if (!result.ok) return showFeedback(result.message || "Impossible de charger l’affichage général.", true);
+    const announcement = result.data?.announcement || {};
+    workspace.innerHTML = `
+        <form id="creatorPlatformAnnouncementForm" class="creator-form creator-platform-announcement-form">
+            <div class="form-heading"><div><p class="eyebrow">Communication plateforme</p><h3>Affichage général</h3></div><span class="creator-state${announcement.isActive ? "" : " suspended"}">${announcement.isActive ? "Diffusé" : "Masqué"}</span></div>
+            <p class="muted">Ce message est affiché sur l’accueil de tous les postes, pour toutes les entreprises. Utilisez-le notamment pour prévenir d’une mise à jour pouvant ralentir temporairement le logiciel.</p>
+            <div class="form-grid"><label class="form-wide">Message à afficher<textarea name="message" rows="6" maxlength="2000" placeholder="Ex. Une mise à jour est en cours. Le logiciel peut être momentanément ralenti.">${escapeHtml(announcement.message || "")}</textarea></label><label class="creator-switch form-wide">Afficher ce message sur tous les accueils<input name="isActive" type="checkbox" ${announcement.isActive ? "checked" : ""}><span>Vous pouvez le masquer sans effacer son contenu.</span></label></div>
+            <p class="auth-message" aria-live="polite"></p>
+            <div class="creator-form-actions"><button type="submit" class="secondary-button">Enregistrer l’affichage</button><button type="button" class="secondary-button" id="creatorPlatformAnnouncementBack">Retour aux entreprises</button></div>
+        </form>
+    `;
+    workspace.querySelector("#creatorPlatformAnnouncementBack").addEventListener("click", () => selectedAccountId ? renderAccountDetail(selectedAccountId) : workspace.replaceChildren());
+    workspace.querySelector("#creatorPlatformAnnouncementForm").addEventListener("submit", async event => {
+        event.preventDefault();
+        const form = event.currentTarget;
+        const feedback = form.querySelector(".auth-message");
+        const button = form.querySelector('button[type="submit"]');
+        button.disabled = true;
+        const save = await api("/api/creator/platform-announcement", { method: "PUT", body: JSON.stringify({ message: form.elements.message.value, isActive: form.elements.isActive.checked }) });
+        button.disabled = false;
+        if (!save.ok) { feedback.textContent = save.message || "Enregistrement impossible."; feedback.classList.add("error"); return; }
+        feedback.textContent = save.data?.announcement?.isActive ? "L’affichage général est diffusé sur tous les accueils." : "L’affichage général est enregistré et masqué.";
+        feedback.classList.remove("error");
+        form.querySelector(".creator-state").textContent = save.data?.announcement?.isActive ? "Diffusé" : "Masqué";
+        form.querySelector(".creator-state").classList.toggle("suspended", !save.data?.announcement?.isActive);
+    });
 }
 
 async function renderNetworkDirectory() {

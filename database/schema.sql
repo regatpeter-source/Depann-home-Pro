@@ -26,6 +26,15 @@ CREATE TABLE IF NOT EXISTS depannhome_users (
 
 CREATE INDEX IF NOT EXISTS depannhome_users_username_lookup_idx ON depannhome_users (username);
 
+-- Annonce unique administrée par le Créateur et diffusée à toutes les entreprises.
+CREATE TABLE IF NOT EXISTS depannhome_platform_announcements (
+    id BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (id),
+    message VARCHAR(2000) NOT NULL DEFAULT '',
+    is_active BOOLEAN NOT NULL DEFAULT FALSE,
+    updated_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- Gestion des accès : les journaux restent conservés après suppression d’un
 -- membre, grâce aux références d’auteur et de cible annulables.
 CREATE TABLE IF NOT EXISTS depannhome_member_audit (

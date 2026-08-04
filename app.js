@@ -94,7 +94,7 @@ app.use("/api/partner-requests", rateLimit({
 	message: { message: "Trop de demandes ont été envoyées. Réessayez dans quelques minutes." }
 }));
 registerAuthRoutes(app);
-registerCreatorRoutes(app, requireCreator);
+registerCreatorRoutes(app, requireCreator, requireAuthentication);
 registerPartnerRequestRoutes(app, requireCreator);
 registerSubscriptionInvoicingRoutes(app, requireCreator);
 registerAccountingRoutes(app, requireAuthentication);

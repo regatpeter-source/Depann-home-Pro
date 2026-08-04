@@ -218,6 +218,15 @@ export async function initializeDatabase() {
         )
     `);
     await database.query("CREATE INDEX IF NOT EXISTS depannhome_member_audit_owner_created_idx ON depannhome_member_audit (owner_id, created_at DESC)");
+    await database.query(`
+        CREATE TABLE IF NOT EXISTS depannhome_platform_announcements (
+            id BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (id),
+            message VARCHAR(2000) NOT NULL DEFAULT '',
+            is_active BOOLEAN NOT NULL DEFAULT FALSE,
+            updated_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+    `);
 }
 
 export async function findUserByUsername(username) {

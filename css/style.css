@@ -1079,6 +1079,27 @@ body.desktop-device .nav-label-messages{
     margin-top:4px;
 }
 
+.platform-announcement{
+    margin:0 0 18px;
+    padding:16px 18px;
+    border:1px solid #fbbf24;
+    border-left:5px solid #d97706;
+    border-radius:14px;
+    background:#fffbeb;
+    color:#78350f;
+    box-shadow:0 5px 16px rgba(146,64,14,.08);
+}
+
+.platform-announcement .eyebrow{
+    color:#92400e;
+}
+
+.platform-announcement p:last-child{
+    margin:5px 0 0;
+    font-weight:600;
+    overflow-wrap:anywhere;
+}
+
 /* ==========================
    PARAMÈTRES — HUB DE CONFIGURATION
 ========================== */

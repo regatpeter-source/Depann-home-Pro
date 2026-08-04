@@ -6,6 +6,7 @@ import { renderClientMessages } from "./messages.js?v=106";
 import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=9";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
+import { renderPlatformAnnouncement } from "./platform-announcement.js?v=1";
 import { clearSearch, createInfo, getContainer, setPage } from "./ui.js?v=44";
 
 const COLOR_OPTIONS = [
@@ -60,6 +61,7 @@ export async function renderCalendar(options = {}) {
     const gridPanel = document.createElement("section");
     gridPanel.className = "client-panel calendar-grid-panel";
     container.append(header, formPanel, gridPanel);
+    if (technicianHome) renderPlatformAnnouncement(container);
 
     header.innerHTML = "<p class=\"muted\">Chargement du planning…</p>";
     formPanel.hidden = true;

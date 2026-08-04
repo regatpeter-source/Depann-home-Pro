@@ -11,7 +11,36 @@ const SUBSCRIPTION_PLANS = new Set(["free", "paid"]);
 const SUBSCRIPTION_STATUSES = new Set(["active", "trial", "past_due", "suspended", "cancelled"]);
 const QUOTE_TEMPLATE_POLICIES = new Set(["integrated_only", "company_choice", "external_only"]);
 
-export function registerCreatorRoutes(app, requireCreator) {
+export function registerCreatorRoutes(app, requireCreator, requireAuthentication) {
+    app.get("/api/creator/platform-announcement/current", requireAuthentication, asyncHandler(async (request, response) => {
+        const { rows } = await getPool().query(`
+            SELECT message, updated_at AS "updatedAt"
+            FROM depannhome_platform_announcements
+            WHERE id = TRUE AND is_active = TRUE
+        `);
+        response.json({ announcement: rows[0] || null });
+    }));
+    app.get("/api/creator/platform-announcement", requireCreator, asyncHandler(async (request, response) => {
+        const { rows } = await getPool().query(`
+            SELECT message, is_active AS "isActive", updated_at AS "updatedAt"
+            FROM depannhome_platform_announcements
+            WHERE id = TRUE
+        `);
+        response.json({ announcement: rows[0] || { message: "", isActive: false, updatedAt: null } });
+    }));
+    app.put("/api/creator/platform-announcement", requireCreator, asyncHandler(async (request, response) => {
+        const message = cleanMultilineText(request.body?.message, 2000);
+        const isActive = Boolean(request.body?.isActive);
+        if (isActive && !message) return response.status(400).json({ message: "Saisissez le message à diffuser avant de l’activer." });
+        const { rows } = await getPool().query(`
+            INSERT INTO depannhome_platform_announcements (id, message, is_active, updated_by)
+            VALUES (TRUE, $1, $2, $3)
+            ON CONFLICT (id) DO UPDATE
+            SET message = EXCLUDED.message, is_active = EXCLUDED.is_active, updated_by = EXCLUDED.updated_by, updated_at = NOW()
+            RETURNING message, is_active AS "isActive", updated_at AS "updatedAt"
+        `, [message, isActive, request.user.sub]);
+        response.json({ announcement: rows[0] });
+    }));
     app.get("/api/creator/network-directory", requireCreator, asyncHandler(async (request, response) => {
         response.json({ companies: await creatorNetworkDirectory(request.query?.q), statistics: await creatorNetworkStatistics() });
     }));
@@ -325,6 +354,10 @@ function normalizeUsername(value) {
 
 function cleanText(value, maximumLength) {
     return String(value || "").replace(/\s+/g, " ").trim().slice(0, maximumLength);
+}
+
+function cleanMultilineText(value, maximumLength) {
+    return String(value || "").replace(/\r\n?/g, "\n").replace(/[ \t]+\n/g, "\n").trim().slice(0, maximumLength);
 }
 
 function positiveId(value) {
