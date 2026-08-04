@@ -210,6 +210,10 @@ function applyRoleBasedMenus() {
         if (!isMenuAllowed(MENU_ACCESS.quick[menu], menuRoute(menu))) button?.remove();
     });
     document.querySelectorAll(".nav-button").forEach(button => {
+        if (isMobileAdministrator() && button.dataset.nav !== ROUTES.home) {
+            button.remove();
+            return;
+        }
         if (!canAccessRoute(button.dataset.nav)) button.remove();
     });
 }
