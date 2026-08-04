@@ -10,7 +10,7 @@ La première étape est un instantané **en lecture seule** généré lors de la
 
 ## Accès et cycle de vie
 
-- Un rapport est toujours créé depuis une intervention de planning.
+- Un rapport est toujours créé depuis une intervention de planning rattachée à un dossier client. Il n’existe pas de création autonome ou de rapport sans client.
 - Un technicien ne peut consulter ou créer que les rapports d’une intervention qui lui est affectée. Il peut modifier son rapport tant qu’il n’est pas validé.
 - L’administration accède à l’ensemble des rapports de l’entreprise, peut demander une correction par section, valider ou remettre un document validé en brouillon.
 - Le cycle est `draft`, `submitted`, `in_correction`, puis `validated`.
@@ -31,6 +31,8 @@ Le verrou collaboratif et le flux SSE décrits dans `docs/COLLABORATION.md` rest
 ## PDF adaptatif et compatibilité
 
 Le PDF conserve toujours sa page d’informations générales. Les autres sections sont générées dans l’ordre défini dans le sommaire, avec leurs titres personnalisés, et uniquement si elles contiennent une valeur, un relevé, un matériel ou une photo. Les sections supprimées sont exclues. La pagination est recalculée après cette sélection : un diagnostic simple produit donc naturellement un document court, tandis qu’un diagnostic complet garde toutes les pages utiles.
+
+Avant validation, le bouton **Prévisualiser le rapport** ouvre ce même PDF directement dans une visionneuse intégrée, sans téléchargement. Depuis cette visionneuse, l’utilisateur peut revenir à l’édition, fermer l’aperçu sans perdre ses modifications ou valider le rapport. La validation archive alors le PDF dans le dossier client.
 
 Les rapports créés avec l’ancien formulaire sont convertis à la lecture vers le nouveau contenu structuré. Les routes HTTP, le cycle `draft → submitted → in_correction → validated`, les verrous, les médias et les archives PDF restent inchangés.
 

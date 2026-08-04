@@ -2,8 +2,6 @@ import { ROUTES } from "./config.js?v=118";
 import { clearSearch, getContainer, setPage } from "./ui.js?v=44";
 import { escapeHtml } from "./utils.js?v=44";
 import { acquireReportLock, forceReleaseReportLock, heartbeatReportLock, releaseReportLock } from "./collaboration.js?v=2";
-import { getSearchableClients } from "./clients.js?v=137";
-import { synchronizeClients } from "./client-sync.js?v=118";
 
 const MODULES = [
     ["general", "Informations générales", "Données récupérées automatiquement"],
@@ -53,7 +51,7 @@ export async function renderLeakReportWizard(reportId = 0, appointmentId = 0) {
 
 function renderDirectory(shell) {
     shell.classList.add("report-directory");
-    shell.innerHTML = `<header class="report-directory-heading"><div><p class="eyebrow">Rapports terrain</p><h2>Rapports de recherche de fuite</h2><p class="muted">Créez un rapport depuis une intervention ou de manière autonome, puis retrouvez-le ici.</p></div><button type="button" class="secondary-button" data-create-report>Nouveau rapport de recherche de fuite</button></header><section class="report-directory-list">${reports.length ? reports.map(report => `<article><div><strong>${escapeHtml(report.title)}</strong><p>${escapeHtml(statusLabel(report.status))} · ${report.appointmentId ? `Intervention n° ${escapeHtml(report.appointmentId)}` : "Rapport autonome"} · ${escapeHtml(formatDate(report.reportDate))}</p></div><button class="secondary-button" data-open-report="${escapeHtml(report.id)}">${report.status === "validated" ? "Consulter" : "Ouvrir"}</button></article>`).join("") : '<p class="muted">Aucun rapport accessible. Créez votre premier rapport.</p>'}</section>`;
+    shell.innerHTML = `<header class="report-directory-heading"><div><p class="eyebrow">Rapports terrain</p><h2>Rapports de recherche de fuite</h2><p class="muted">Chaque rapport est créé depuis une intervention rattachée à un dossier client.</p></div><button type="button" class="secondary-button" data-create-report>Nouveau rapport de recherche de fuite</button></header><section class="report-directory-list">${reports.length ? reports.map(report => `<article><div><strong>${escapeHtml(report.title)}</strong><p>${escapeHtml(statusLabel(report.status))} · ${report.appointmentId ? `Intervention n° ${escapeHtml(report.appointmentId)}` : "Rapport historique"} · ${escapeHtml(formatDate(report.reportDate))}</p></div><button class="secondary-button" data-open-report="${escapeHtml(report.id)}">${report.status === "validated" ? "Consulter" : "Ouvrir"}</button></article>`).join("") : '<p class="muted">Aucun rapport accessible. Créez votre premier rapport depuis une intervention.</p>'}</section>`;
     shell.querySelector("[data-create-report]").addEventListener("click", openLeakReportCreation);
     shell.querySelectorAll("[data-open-report]").forEach(button => button.addEventListener("click", () => renderLeakReportWizard(button.dataset.openReport)));
 }
@@ -61,68 +59,11 @@ function renderDirectory(shell) {
 export function openLeakReportCreation() {
     const dialog = document.createElement("section");
     dialog.className = "report-creation-dialog";
-    dialog.innerHTML = `<div><header><div><p class="eyebrow">Nouveau rapport</p><h2>Rapport de recherche de fuite</h2></div><button type="button" class="text-button" data-close-report-creation>Fermer</button></header><p class="muted">Choisissez le point de départ du rapport. L’éditeur, les photos, les observations et la validation restent identiques.</p><div class="report-creation-options"><button type="button" data-report-from-appointment><strong>Depuis un rendez-vous existant</strong><span>Ouvrez l’intervention planifiée : le fonctionnement actuel est conservé.</span></button><button type="button" data-report-standalone><strong>Sans rendez-vous</strong><span>Renseignez le dossier client et ouvrez directement le nouvel éditeur.</span></button></div></div>`;
+    dialog.innerHTML = `<div><header><div><p class="eyebrow">Nouveau rapport</p><h2>Rapport de recherche de fuite</h2></div><button type="button" class="text-button" data-close-report-creation>Fermer</button></header><p class="muted">Un rapport est toujours rattaché à une intervention et au dossier client correspondant.</p><div class="report-creation-options"><button type="button" data-report-from-appointment><strong>Choisir une intervention</strong><span>Ouvrez une intervention existante pour créer ou reprendre son rapport.</span></button><button type="button" data-create-client-first><strong>Créer d’abord un client</strong><span>Créez le dossier client, planifiez son intervention, puis ouvrez le rapport depuis le planning.</span></button></div></div>`;
     document.body.append(dialog);
     dialog.querySelector("[data-close-report-creation]").addEventListener("click", () => dialog.remove());
-    dialog.querySelector("[data-report-from-appointment]").addEventListener("click", async () => { dialog.remove(); const { renderCalendar } = await import("./calendar.js?v=145"); renderCalendar(); });
-    dialog.querySelector("[data-report-standalone]").addEventListener("click", () => renderStandaloneReportForm(dialog));
-}
-
-function renderStandaloneReportForm(dialog) {
-    const clients = getSearchableClients().sort((left, right) => left.name.localeCompare(right.name, "fr"));
-    dialog.innerHTML = `<div><header><div><p class="eyebrow">Rapport sans rendez-vous</p><h2>Informations du dossier</h2></div><button type="button" class="text-button" data-close-report-creation>Fermer</button></header><p class="muted">Sélectionnez un client existant ou créez sa fiche avant l’ouverture de l’éditeur.</p><form class="client-form report-creation-form"><div class="form-grid"><label class="form-wide">Client *<select name="clientId" required><option value="">Créer un nouveau client</option>${clients.map(client => `<option value="${escapeHtml(client.id)}">${escapeHtml(client.name)}${client.city ? ` · ${escapeHtml(client.city)}` : ""}</option>`).join("")}</select></label><div class="report-new-client-fields form-wide"><div class="form-grid"><label>Nom / société *<input name="clientName" maxlength="160" placeholder="Ex. Mme Martin"></label><label>Téléphone<input name="clientPhone" type="tel" maxlength="50"></label><label>E-mail<input name="clientEmail" type="email" maxlength="160"></label></div></div><label class="form-wide">Adresse *<input name="address" required maxlength="255" placeholder="Adresse complète de l’intervention"></label><label>Numéro de dossier<input name="caseNumber" maxlength="160" placeholder="Facultatif"></label><label>Numéro de sinistre<input name="claimNumber" maxlength="160" placeholder="Facultatif"></label><label>Assurance<input name="insurance" maxlength="160" placeholder="Facultatif"></label><label>Donneur d’ordre<input name="manager" maxlength="160" placeholder="Facultatif"></label></div><p class="auth-message" aria-live="polite"></p><div class="form-actions"><button type="submit" class="secondary-button">Créer et ouvrir le rapport</button><button type="button" class="secondary-button" data-back-report-creation>Retour</button></div></form></div>`;
-    const form = dialog.querySelector("form");
-    const clientSelect = form.elements.clientId;
-    const newClientFields = form.querySelector(".report-new-client-fields");
-    const syncClientFields = () => {
-        const client = clients.find(item => item.id === clientSelect.value);
-        const isNew = !client;
-        newClientFields.hidden = !isNew;
-        form.elements.clientName.required = isNew;
-        if (client) {
-            form.elements.address.value = [client.address, client.postalCode, client.city].filter(Boolean).join(", ");
-            form.elements.clientPhone.value = client.phone || "";
-            form.elements.clientEmail.value = client.email || "";
-        }
-    };
-    clientSelect.addEventListener("change", syncClientFields);
-    syncClientFields();
-    dialog.querySelector("[data-close-report-creation]").addEventListener("click", () => dialog.remove());
-    dialog.querySelector("[data-back-report-creation]").addEventListener("click", () => openReplacementReportCreation(dialog));
-    form.addEventListener("submit", async event => {
-        event.preventDefault();
-        const values = Object.fromEntries(new FormData(form));
-        const message = form.querySelector(".auth-message");
-        const submit = form.querySelector('button[type="submit"]');
-        submit.disabled = true;
-        message.classList.remove("error");
-        try {
-            const selected = clients.find(client => client.id === values.clientId);
-            let clientId = selected?.id || "";
-            if (!clientId) clientId = await createReportClient(values);
-            const result = await api("/api/technical-reports", { method: "POST", body: JSON.stringify({ standalone: true, clientId, address: values.address, caseNumber: values.caseNumber, claimNumber: values.claimNumber, insurance: values.insurance, manager: values.manager }) });
-            if (!result.ok) throw new Error(result.message || "Création du rapport impossible.");
-            dialog.remove();
-            await renderLeakReportWizard(result.data.id);
-        } catch (error) {
-            message.textContent = error.message || "Création du rapport impossible.";
-            message.classList.add("error");
-            submit.disabled = false;
-        }
-    });
-}
-
-function openReplacementReportCreation(dialog) { dialog.remove(); openLeakReportCreation(); }
-
-async function createReportClient(values) {
-    const clientId = `client-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-    const now = new Date().toISOString();
-    const client = { id: clientId, type: "Particulier", name: values.clientName.trim(), phone: values.clientPhone.trim(), email: values.clientEmail.trim(), address: values.address.trim(), city: "", equipment: "", notes: "", attachments: [], activityHistory: [{ id: `activity-${Date.now()}`, type: "technical_report", label: "Dossier créé pour un rapport de recherche de fuite", detail: "Rapport créé sans rendez-vous", actorName: document.body.dataset.userName || "", createdAt: now }], createdAt: now, updatedAt: now };
-    if (!client.name) throw new Error("Le nom du nouveau client est obligatoire.");
-    const saved = await api(`/api/clients/${encodeURIComponent(clientId)}`, { method: "PUT", body: JSON.stringify({ client }) });
-    if (!saved.ok) throw new Error(saved.message || "Création de la fiche client impossible.");
-    await synchronizeClients();
-    return clientId;
+    dialog.querySelector("[data-report-from-appointment]").addEventListener("click", async () => { dialog.remove(); const { renderCalendar } = await import("./calendar.js?v=146"); renderCalendar(); });
+    dialog.querySelector("[data-create-client-first]").addEventListener("click", async () => { dialog.remove(); const { renderClients } = await import("./clients.js?v=137"); renderClients(); });
 }
 
 async function openAppointmentReport(appointmentId) {
@@ -195,7 +136,7 @@ function renderEditor(shell) {
         </main>
         <footer class="report-editor-footer">
             <button type="button" class="secondary-button" data-previous-module ${moduleIndex(activeKey) <= 0 ? "disabled" : ""}>← Section précédente</button>
-            <button type="button" class="secondary-button" data-preview>Prévisualiser le rapport</button>
+            <button type="button" class="secondary-button" data-preview>👁 Prévisualiser le rapport</button>
             ${write ? '<span class="report-autosave" data-save-state>Enregistré automatiquement</span>' : ""}
             ${write && current.status !== "submitted" ? '<button type="button" class="secondary-button report-primary-action" data-submit-report>Envoyer pour validation</button>' : ""}
             ${write && canValidate() && current.status === "submitted" ? '<button type="button" class="secondary-button report-primary-action" data-validate-report>Valider définitivement</button>' : ""}
@@ -272,8 +213,11 @@ function bindEditor(shell, moduleKey) {
 
 function renderPreview(shell) {
     shell.className = "report-editor-shell report-preview-shell";
-    shell.innerHTML = `<header class="report-preview-header"><div><p class="eyebrow">Prévisualisation temporaire</p><h2>${escapeHtml(current.title)}</h2><p class="muted">Le PDF reflète l’état enregistré du rapport.</p></div><button class="secondary-button" data-back-to-editor>Retour à l’édition</button></header><iframe title="Prévisualisation du rapport" src="/api/technical-reports/${encodeURIComponent(current.id)}/pdf?preview=${Date.now()}"></iframe>`;
-    shell.querySelector("[data-back-to-editor]").addEventListener("click", () => { previewMode = false; renderEditor(shell); });
+    shell.innerHTML = `<header class="report-preview-header"><div><p class="eyebrow">Prévisualisation PDF intégrée</p><h2>${escapeHtml(current.title)}</h2><p class="muted">Cet aperçu reprend fidèlement le PDF qui sera archivé, sans téléchargement.</p></div><div class="report-preview-actions"><button class="secondary-button" data-modify-report>Modifier le rapport</button>${editable() && canValidate() ? '<button class="secondary-button report-primary-action" data-preview-validate>Valider le rapport</button>' : ""}<button class="secondary-button" data-close-preview>Fermer la prévisualisation</button></div></header><iframe title="Prévisualisation intégrée du rapport PDF" src="/api/technical-reports/${encodeURIComponent(current.id)}/pdf?preview=${Date.now()}"></iframe>`;
+    const returnToEditor = () => { previewMode = false; renderEditor(shell); };
+    shell.querySelector("[data-modify-report]").addEventListener("click", returnToEditor);
+    shell.querySelector("[data-close-preview]").addEventListener("click", returnToEditor);
+    shell.querySelector("[data-preview-validate]")?.addEventListener("click", () => finalizePreview(shell));
 }
 
 function lockBanner() {
@@ -393,6 +337,25 @@ async function validateReport(shell) {
     renderCalendar();
 }
 
+async function finalizePreview(shell) {
+    if (!confirm("Valider définitivement ce rapport et archiver son PDF dans le dossier client ?")) return;
+    if (current.status !== "submitted") {
+        if (!await save(shell)) return;
+        const submitted = await api(`/api/technical-reports/${encodeURIComponent(current.id)}/submit`, { method: "POST" });
+        if (!submitted.ok) return alert(submitted.message || "Envoi pour validation impossible.");
+        await loadReport(current.id);
+    }
+    const result = await api(`/api/technical-reports/${encodeURIComponent(current.id)}/validate`, { method: "POST" });
+    if (!result.ok) return alert(result.message || "Validation impossible.");
+    const appointmentId = current.appointmentId;
+    await leaveReport();
+    const { synchronizeClients } = await import("./client-sync.js?v=118");
+    await synchronizeClients();
+    window.dispatchEvent(new CustomEvent("depannhome:technical-report-validated", { detail: { appointmentId } }));
+    const { renderCalendar } = await import("./calendar.js?v=146");
+    renderCalendar();
+}
+
 async function requestCorrection(shell) {
     const section = prompt(`Module à corriger (${moduleKeys().join(", ")}) :`, current.content.activeStep);
     if (!section || !moduleKeys().includes(section)) return alert("Choisissez un module valide.");
@@ -464,7 +427,7 @@ function newMaterialId() { return `material-${Date.now()}-${Math.random().toStri
 function ownsLock() { return String(reportLock?.lockedBy || "") === String(document.body.dataset.userId || ""); }
 function editable() { return current?.status !== "validated" && ownsLock(); }
 function isAdministrator() { return document.body.dataset.role === "admin"; }
-function canValidate() { return ["admin", "mobile_admin"].includes(document.body.dataset.role); }
+function canValidate() { return ["admin", "mobile_admin", "team_lead", "technician"].includes(document.body.dataset.role); }
 function statusLabel(value) { return ({ draft: "Brouillon", submitted: "En cours de validation", in_correction: "En cours", validated: "Validé" })[value] || "En cours"; }
 function formatDate(value) { return value ? new Intl.DateTimeFormat("fr-FR").format(new Date(`${value}T12:00:00`)) : ""; }
 function showFailure(root, message) { root.innerHTML = `<section class="client-panel"><p class="auth-message error">${escapeHtml(message || "Impossible de charger les rapports.")}</p></section>`; }
