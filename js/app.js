@@ -2,7 +2,7 @@ import { initializeAuthentication, restoreApplicationShell, signOut } from "./au
 import { initializeClientSynchronization } from "./client-sync.js?v=118";
 import { initializeCollaboration } from "./collaboration.js?v=2";
 import { loadDatabase } from "./data.js?v=59";
-import { initializeNavigation, refreshApplication } from "./navigation.js?v=226";
+import { initializeNavigation, refreshApplication } from "./navigation.js?v=227";
 import { renderError } from "./ui.js?v=44";
 import { getSettings } from "./storage.js?v=44";
 import { FONT_OPTIONS } from "./config.js?v=120";
@@ -180,7 +180,7 @@ function applyLanguage() {
         // update a few static UI strings (header, placeholder, nav labels)
         const title = lang === 'en' ? "Depann'Home Pro" : "Depann'Home Pro";
         const subtitle = lang === 'en' ? "Professional troubleshooting assistant" : "Assistant de dépannage professionnel";
-        const searchPlaceholder = lang === 'en' ? "Search a procedure, motor, remote..." : "Rechercher une procédure, un moteur, une télécommande...";
+        const searchPlaceholder = lang === "en" ? "Search a module, client, or appointment..." : "Rechercher un module, un client ou une intervention...";
 
         const headerH1 = document.querySelector('header .header-content h1');
         const headerP = document.querySelector('header .header-content p');
