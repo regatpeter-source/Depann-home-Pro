@@ -10,7 +10,7 @@ const RECOMMENDATION_INTRO = "Nous préconisons :";
 const DEFAULT_TEMPLATE = { primaryColor: "#003b73", secondaryColor: "#0a5c36", titleColor: "#003b73", separatorColor: "#0a5c36", font: "Helvetica", footerFields: ["address", "phone", "email", "website", "siret", "vat", "legalNotice"] };
 
 export function createEmptyLeakContent(snapshot = {}) {
-    return { schemaVersion: 4, activeStep: "overview", activeMaterialId: "", skippedSteps: [], snapshot, general: { observations: [] }, overview: { disorders: "", location: "", rooms: "", observations: [] }, visual: { defects: "", comments: "", observations: [] }, humidity: { readings: [], location: "", observations: [] }, pressure: { readings: [], holdingTime: "", variation: "", comments: "", observations: [] }, methods: { materials: [], items: [], observations: [] }, waterTest: { testType: "", result: "", comments: "", observations: [] }, charging: { pressure: "", duration: "", result: "", observations: [] }, safety: { actions: "", measures: "", observations: [] }, ventilation: { checks: "", comments: "", observations: [] }, conclusion: { diagnosis: "", probableOrigin: "", summary: "", finalObservations: "", observations: [{ id: "conclusion-intro", text: CONCLUSION_INTRO, createdAt: "" }] }, recommendations: { work: "", repairs: "", urgency: "", customerAdvice: "", technicianSignature: "", clientSignature: "", clientName: "", signedAt: "", observations: [{ id: "recommendations-intro", text: RECOMMENDATION_INTRO, createdAt: "" }] } };
+    return { schemaVersion: 5, activeStep: "overview", activeMaterialId: "", skippedSteps: [], sectionOrder: [...REPORT_STEP_KEYS], sectionTitles: {}, removedSections: [], customSections: [], snapshot, general: { observations: [] }, overview: { disorders: "", location: "", rooms: "", observations: [] }, visual: { defects: "", comments: "", observations: [] }, humidity: { readings: [], location: "", observations: [] }, pressure: { readings: [], holdingTime: "", variation: "", comments: "", observations: [] }, methods: { materials: [], items: [], observations: [] }, waterTest: { testType: "", result: "", comments: "", observations: [] }, charging: { pressure: "", duration: "", result: "", observations: [] }, safety: { actions: "", measures: "", observations: [] }, ventilation: { checks: "", comments: "", observations: [] }, conclusion: { diagnosis: "", probableOrigin: "", summary: "", finalObservations: "", observations: [{ id: "conclusion-intro", text: CONCLUSION_INTRO, createdAt: "" }] }, recommendations: { work: "", repairs: "", urgency: "", customerAdvice: "", technicianSignature: "", clientSignature: "", clientName: "", signedAt: "", observations: [{ id: "recommendations-intro", text: RECOMMENDATION_INTRO, createdAt: "" }] } };
 }
 
 export function normalizeLeakContent(value, snapshot = {}) {
@@ -18,8 +18,14 @@ export function normalizeLeakContent(value, snapshot = {}) {
     if (!input.schemaVersion && (input.cover || input.leakSearch || input.measurements)) return normalizeLeakContent({ schemaVersion: 2, activeStep: "overview", snapshot: { insurance: input.cover?.insurance || "", claimNumber: input.cover?.claimNumber || "", interventionReference: input.cover?.interventionReference || "" }, overview: { disorders: input.overview?.generalDescription || "", location: input.location?.preciseLocation || "", observations: [input.overview?.customerHistory, input.overview?.context, input.overview?.interventionConditions].filter(Boolean).join("\n") }, visual: { observations: input.visual?.observations || "", defects: input.visual?.anomalies || "" }, humidity: { readings: input.measurements?.rows || [] }, pressure: { readings: input.finalControl?.rows || [], comments: input.finalControl?.tightness || "" }, methods: { items: input.leakSearch?.methods || [] }, conclusion: { diagnosis: input.location?.description || "", probableOrigin: input.location?.comments || "", summary: input.work?.repair || "", finalObservations: input.work?.tests || "" }, recommendations: { work: input.conclusion?.recommendations || "", repairs: input.work?.replacement || "", technicianSignature: input.signatures?.technician || "", clientSignature: input.signatures?.client || "", clientName: input.signatures?.clientName || "", signedAt: input.signatures?.signedAt || "" } }, snapshot);
     const content = createEmptyLeakContent(input.snapshot && typeof input.snapshot === "object" ? input.snapshot : snapshot);
     for (const key of REPORT_STEP_KEYS) if (input[key] && typeof input[key] === "object" && !Array.isArray(input[key])) content[key] = { ...content[key], ...input[key] };
-    content.schemaVersion = 4;
-    content.activeStep = REPORT_STEP_KEYS.includes(input.activeStep) ? input.activeStep : "overview";
+    content.schemaVersion = 5;
+    content.customSections = normalizeCustomSections(input.customSections);
+    const customIds = content.customSections.map(section => section.id);
+    const knownSectionIds = [...REPORT_STEP_KEYS, ...customIds];
+    content.sectionTitles = Object.fromEntries(REPORT_STEPS.map(([key]) => [key, text(input.sectionTitles?.[key], 160)]).filter(([, title]) => title));
+    content.removedSections = [...new Set((Array.isArray(input.removedSections) ? input.removedSections : []).filter(key => knownSectionIds.includes(key) && key !== "general"))].slice(0, knownSectionIds.length);
+    content.sectionOrder = orderedSectionIds(input.sectionOrder, knownSectionIds);
+    content.activeStep = knownSectionIds.includes(input.activeStep) && !content.removedSections.includes(input.activeStep) ? input.activeStep : content.sectionOrder.find(key => !content.removedSections.includes(key) && key !== "general") || "general";
     content.skippedSteps = [...new Set((Array.isArray(input.skippedSteps) ? input.skippedSteps : []).filter(key => REPORT_STEP_KEYS.includes(key) && key !== "general" && key !== "conclusion" && key !== "recommendations"))].slice(0, REPORT_STEP_KEYS.length);
     content.humidity.readings = sanitizeRows(content.humidity.readings, ["location", "value", "unit"]);
     content.pressure.readings = sanitizeRows(content.pressure.readings, ["label", "value", "unit"]);
@@ -34,7 +40,21 @@ export function normalizeLeakContent(value, snapshot = {}) {
     return JSON.parse(JSON.stringify(content));
 }
 
+export function reportSections(content, includeRemoved = false) {
+    const normalized = normalizeLeakContent(content);
+    const custom = new Map(normalized.customSections.map(section => [section.id, section]));
+    return normalized.sectionOrder.map(id => {
+        const definition = REPORT_STEPS.find(([key]) => key === id);
+        const duplicate = custom.get(id);
+        const sourceKey = duplicate?.sourceKey || id;
+        const defaultTitle = duplicate?.title || definition?.[1] || "Section";
+        return { id, sourceKey, title: normalized.sectionTitles[id] || defaultTitle, custom: Boolean(duplicate), content: duplicate?.content || normalized[id], removed: normalized.removedSections.includes(id) };
+    }).filter(section => includeRemoved || !section.removed);
+}
+
 export function sectionHasContent(content, media, key) {
+    const section = reportSections(content, true).find(item => item.id === key);
+    if (section?.custom) return (media || []).some(item => item.section === key) || section.content.observations.some(item => item.text);
     if (key === "general" || key === "conclusion" || key === "recommendations") return true;
     if (key === "methods") return Array.isArray(content?.methods?.materials) && content.methods.materials.length > 0;
     if ((media || []).some(item => item.section === key)) return true;
@@ -48,12 +68,13 @@ export function createLeakReportPdf(report, profile = {}) {
         const chunks = []; pdf.on("data", chunk => chunks.push(chunk)); pdf.on("end", () => resolve(Buffer.concat(chunks))); pdf.on("error", reject);
         const content = normalizeLeakContent(report.content); const media = Array.isArray(report.media) ? report.media : []; const template = reportTemplate(profile); const snapshot = content.snapshot || {};
         addCover(pdf, report, profile, template, snapshot, media.filter(photo => photo.section === "general"));
-        for (const [key, label] of REPORT_STEPS.slice(1).filter(([key]) => !["conclusion", "recommendations"].includes(key))) {
-            if (key === "methods") for (const material of content.methods.materials || []) addSection(pdf, materialLabel(material), { observations: material.observations }, media.filter(photo => photo.section === "methods" && photo.materialId === material.id), profile, template);
-            else if (sectionHasContent(content, media, key)) addSection(pdf, label, content[key], media.filter(photo => photo.section === key), profile, template);
+        for (const section of reportSections(content).filter(item => item.id !== "general")) {
+            if (section.id === "methods" && !section.custom) {
+                for (const material of content.methods.materials || []) addSection(pdf, materialLabel(material), { observations: material.observations }, media.filter(photo => photo.section === "methods" && photo.materialId === material.id), profile, template);
+            } else if (sectionHasContent(content, media, section.id) || ["conclusion", "recommendations"].includes(section.id)) {
+                addSection(pdf, section.title, section.content, media.filter(photo => photo.section === section.id), profile, template, section.id === "recommendations", snapshot.technicianName || report.technicianName || "");
+            }
         }
-        addSection(pdf, "Conclusion", content.conclusion, media.filter(photo => photo.section === "conclusion"), profile, template);
-        addSection(pdf, "Préconisations", content.recommendations, media.filter(photo => photo.section === "recommendations"), profile, template, true, snapshot.technicianName || report.technicianName || "");
         decoratePages(pdf, profile, template); pdf.end();
     });
 }
@@ -119,6 +140,8 @@ function reportTemplate(profile) { return { ...DEFAULT_TEMPLATE, ...(profile.rep
 function companyLines(profile, template) { const name = template.companyName || profile.companyName || "Depann’Home Pro"; const address = template.address || [profile.address, profile.postalCode, profile.city].filter(Boolean).join(" "); return [name, address, template.phone || profile.phone, template.email || profile.email].filter(Boolean); }
 function footerLines(profile, template) { const values = { address: template.address || [profile.address, profile.postalCode, profile.city].filter(Boolean).join(" "), phone: template.phone || profile.phone, email: template.email || profile.email, website: template.website, siret: template.siret || profile.registrationNumber, vat: template.vat || profile.taxNumber, legalNotice: template.legalNotice, footerText: template.footerText }; return [...(template.footerFields || []).map(field => values[field]).filter(Boolean), values.footerText].filter(Boolean); }
 function normalizeObservations(value) { const entries = Array.isArray(value) ? value : typeof value === "string" && value.trim() ? [{ text: value }] : []; return entries.slice(0, 100).map((item, index) => ({ id: text(item?.id, 100) || `observation-${index + 1}`, text: text(item?.text, 5000), createdAt: text(item?.createdAt, 40) })).filter(item => item.text); }
+function normalizeCustomSections(value) { const ids = new Set(); return (Array.isArray(value) ? value : []).slice(0, 100).map((section, index) => { const id = uniqueId(text(section?.id, 100) || `section-${index + 1}`, ids); const sourceKey = REPORT_STEP_KEYS.includes(section?.sourceKey) ? section.sourceKey : "overview"; return { id, sourceKey, title: text(section?.title, 160) || `${REPORT_STEPS.find(([key]) => key === sourceKey)?.[1] || "Section"} (${index + 2})`, content: { observations: normalizeObservations(section?.content?.observations) } }; }).filter(section => section.id); }
+function orderedSectionIds(value, knownIds) { const requested = Array.isArray(value) ? value : []; const ordered = [...new Set(requested.filter(id => knownIds.includes(id)))]; for (const id of knownIds) if (!ordered.includes(id)) ordered.push(id); const general = ordered.indexOf("general"); if (general > 0) { ordered.splice(general, 1); ordered.unshift("general"); } return ordered; }
 function normalizeMaterials(value, legacyMethods) { const listed = Array.isArray(value) ? value : legacyMaterials(legacyMethods); const ids = new Set(); return listed.slice(0, 40).map((item, index) => ({ id: uniqueId(text(item?.id, 100) || `material-${index + 1}`, ids), name: text(item?.name, 120), customName: text(item?.customName, 120), observations: normalizeObservations(item?.observations) })).filter(item => item.name); }
 function legacyMaterials(methods) { const materials = new Map(); const add = (name, observation) => { const label = text(name, 120) || "Matériel technique"; const current = materials.get(label) || { id: `legacy-material-${materials.size + 1}`, name: label, observations: [] }; if (observation?.text) current.observations.push(observation); materials.set(label, current); }; for (const item of Array.isArray(methods?.items) ? methods.items : []) add(item.name, { text: [item.observations, item.result, item.comments].filter(Boolean).join("\n") }); for (const observation of Array.isArray(methods?.observations) ? methods.observations : []) add(observation.method, observation); return [...materials.values()]; }
 function ensureIntro(section, id, intro) { const observations = Array.isArray(section.observations) ? section.observations : []; if (!observations.length) section.observations = [{ id, text: intro, createdAt: "" }]; }

@@ -523,8 +523,9 @@ CREATE INDEX IF NOT EXISTS depannhome_library_documents_section_idx
     ON depannhome_library_documents (section_id, created_at DESC);
 
 -- Moteur générique de rapports techniques. Le type leak_detection est le premier
--- modèle livré ; content et media permettent l’ajout de futurs modèles sans
--- modifier les dossiers clients ni leurs limites de pièces jointes.
+-- modèle livré ; content stocke aussi l'ordre, les titres et les copies de
+-- sections, tandis que media permet l’ajout de futurs modèles sans modifier
+-- les dossiers clients ni leurs limites de pièces jointes.
 CREATE TABLE IF NOT EXISTS depannhome_technical_reports (
     id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
     created_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,

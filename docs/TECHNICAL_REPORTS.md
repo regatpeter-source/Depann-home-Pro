@@ -18,7 +18,11 @@ La première étape est un instantané **en lecture seule** généré lors de la
 
 ## Assistant, synchronisation et photos
 
-Une seule étape est présentée à la fois sur téléphone. Les boutons **Précédent**, **Suivant** et **Ignorer cette étape** permettent de ne saisir que les contrôles réellement effectués. Les relevés d’humidité et de pression, ainsi que les matériels techniques, peuvent être ajoutés sans limite fonctionnelle raisonnable. Les modifications sont enregistrées après une courte temporisation, toutes les cinq secondes, lors du changement d’étape et à la mise en arrière-plan.
+Une seule section est présentée à la fois sur téléphone. Une barre horizontale défilable permet d’ouvrir directement n’importe quelle section, tandis que les boutons **Section précédente** et **Section suivante** facilitent le parcours séquentiel. Les relevés d’humidité et de pression, ainsi que les matériels techniques, peuvent être ajoutés sans limite fonctionnelle raisonnable. Les modifications sont enregistrées après une courte temporisation, toutes les cinq secondes, lors du changement de section et à la mise en arrière-plan.
+
+## Sections adaptables
+
+Chaque section peut recevoir un titre personnalisé, être dupliquée, déplacée dans le sommaire ou supprimée. Les copies disposent de leurs propres observations et photos ; les photos sont clonées dans le rapport en respectant les mêmes limites de taille et le verrou collaboratif existant. L’ordre, les titres et les copies sont conservés dans le JSON `content` du rapport, ce qui garde les rapports historiques compatibles sans migration de table.
 
 Les photos sont conservées dans le rapport, séparément des pièces jointes habituelles du dossier client. La limite actuelle est de 40 images de 4 Mo maximum par rapport. Le navigateur mobile peut ouvrir la caméra avec `capture="environment"`; chaque photo peut recevoir une légende, une annotation textuelle et un dessin tactile intégré à l’image.
 
@@ -26,7 +30,7 @@ Le verrou collaboratif et le flux SSE décrits dans `docs/COLLABORATION.md` rest
 
 ## PDF adaptatif et compatibilité
 
-Le PDF conserve toujours sa page d’informations générales. Les autres étapes ne sont générées que si elles contiennent une valeur, un relevé, un matériel ou une photo. La pagination est recalculée après cette sélection : un diagnostic simple produit donc naturellement un document court, tandis qu’un diagnostic complet garde toutes les pages utiles.
+Le PDF conserve toujours sa page d’informations générales. Les autres sections sont générées dans l’ordre défini dans le sommaire, avec leurs titres personnalisés, et uniquement si elles contiennent une valeur, un relevé, un matériel ou une photo. Les sections supprimées sont exclues. La pagination est recalculée après cette sélection : un diagnostic simple produit donc naturellement un document court, tandis qu’un diagnostic complet garde toutes les pages utiles.
 
 Les rapports créés avec l’ancien formulaire sont convertis à la lecture vers le nouveau contenu structuré. Les routes HTTP, le cycle `draft → submitted → in_correction → validated`, les verrous, les médias et les archives PDF restent inchangés.
 
