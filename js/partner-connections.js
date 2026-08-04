@@ -1,5 +1,5 @@
 import { escapeHtml } from "./utils.js?v=44";
-import { renderPartnerSandbox } from "./partner-sandbox.js?v=2";
+import { renderPartnerSandbox } from "./partner-sandbox.js?v=3";
 
 const RIGHTS = [["canSendInterventions", "Peut envoyer des interventions"], ["canReceiveInterventions", "Peut recevoir des interventions"], ["canViewReports", "Peut consulter les rapports"], ["canViewQuotes", "Peut consulter les devis"], ["canViewInvoices", "Peut consulter les factures"], ["canUseMessaging", "Peut utiliser la messagerie"], ["canViewStatusChanges", "Peut voir les changements de statut"]];
 let sandboxScenario = null;
@@ -11,7 +11,8 @@ export async function renderPartnerConnections(container) {
     let activeTab = "partners";
     card.querySelectorAll("[data-network-tab]").forEach(button => button.addEventListener("click", () => { activeTab = button.dataset.networkTab; render(); }));
     async function load() {
-        const [connectionsResult, scenarioResult, intakesResult] = await Promise.all([api("/api/partner-connections"), api("/api/partner-sandbox/connection-scenario"), api("/api/partner-missions/intakes")]);
+        const sandboxAvailable = document.body.classList.contains("partner-sandbox-enabled");
+        const [connectionsResult, scenarioResult, intakesResult] = await Promise.all([api("/api/partner-connections"), sandboxAvailable ? api("/api/partner-sandbox/connection-scenario") : Promise.resolve({ ok: false }), api("/api/partner-missions/intakes")]);
         if (!connectionsResult.ok) { card.querySelector("[data-partner-connections]").innerHTML = `<p class="auth-message error">${escapeHtml(connectionsResult.message)}</p>`; return; }
         sandboxScenario = scenarioResult.ok ? scenarioResult.data.scenario : null;
         card._network = { ...connectionsResult.data, intakes: intakesResult.ok ? intakesResult.data.intakes || [] : [] };
@@ -28,7 +29,7 @@ export async function renderPartnerConnections(container) {
 }
 
 function renderPartnersTab(target, data, reload) {
-    const connections = sandboxScenario?.connection?.status !== "available" ? [...data.connections, sandboxConnection(sandboxScenario)] : data.connections;
+    const connections = sandboxScenario && sandboxScenario.connection?.status !== "available" ? [...data.connections, sandboxConnection(sandboxScenario)] : data.connections;
     target.innerHTML = `<div class="partner-network-tab-heading"><div><h3>Mes partenaires</h3><p class="muted">Partenaires connectés et accès API externes de votre entreprise.</p></div><button type="button" class="secondary-button" data-add-api-partner>Ajouter un partenaire API</button></div><section class="partner-connection-table"><div class="partner-connection-row partner-connection-labels"><span>Entreprise</span><span>Statut</span><span>Dernière synchronisation</span><span>Actions</span></div>${connections.length ? connections.map(connection => rowHtml(connection)).join("") : '<p class="muted">Aucun partenaire Depann\'Home Pro connecté.</p>'}</section><section class="partner-api-connections"><div class="partner-network-tab-heading"><div><p class="eyebrow">Connexions API externes</p><h3>Accès de réception des missions</h3></div></div><div class="partner-api-list">${data.intakes.length ? data.intakes.map(apiIntakeHtml).join("") : '<p class="muted">Aucun accès API externe configuré.</p>'}</div></section>`;
     target.querySelector("[data-add-api-partner]").addEventListener("click", () => openApiIntakeDialog(null, reload));
     target.querySelectorAll("[data-manage]").forEach(button => button.addEventListener("click", () => openManagement(connections.find(item => String(item.id) === button.dataset.manage), reload)));

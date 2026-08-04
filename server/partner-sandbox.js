@@ -29,10 +29,13 @@ export async function initializePartnerSandbox() {
 }
 
 export function registerPartnerSandboxRoutes(app, requireAuthentication) {
-    app.use("/api/partner-sandbox", requireAuthentication, requireSandboxAdministration, requireSandboxEnabled);
-    app.get("/api/partner-sandbox", asyncHandler(async (request, response) => {
+    app.get("/api/partner-sandbox", requireAuthentication, asyncHandler(async (request, response) => {
+        if (!isCompanyAdministrator(request) || !isPartnerSandboxEnabled()) {
+            return response.json({ available: false, enabled: false });
+        }
         response.json({ available: true, enabled: Boolean(await loadSession(getAccountOwnerId(request))) });
     }));
+    app.use("/api/partner-sandbox", requireAuthentication, requireSandboxAdministration, requireSandboxEnabled);
     app.get("/api/partner-sandbox/connection-scenario", asyncHandler(async (request, response) => {
         response.json({ scenario: connectionScenario(await loadSession(getAccountOwnerId(request))) });
     }));

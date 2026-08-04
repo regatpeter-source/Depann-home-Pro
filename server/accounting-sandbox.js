@@ -25,8 +25,13 @@ export async function initializeAccountingSandbox() {
 }
 
 export function registerAccountingSandboxRoutes(app, requireAuthentication) {
+    app.get("/api/accounting-sandbox", requireAuthentication, asyncHandler(async (request, response) => {
+        if (!isCompanyAdministrator(request) || !isAccountingSandboxEnabled()) {
+            return response.json({ available: false, enabled: false });
+        }
+        response.json({ available: true, enabled: Boolean(await loadSession(getAccountOwnerId(request))) });
+    }));
     app.use("/api/accounting-sandbox", requireAuthentication, requireSandboxAdministration, requireSandboxEnabled);
-    app.get("/api/accounting-sandbox", asyncHandler(async (request, response) => response.json({ available: true, enabled: Boolean(await loadSession(getAccountOwnerId(request))) })));
     app.get("/api/accounting-sandbox/workspace", asyncHandler(async (request, response) => {
         const payload = await loadSession(getAccountOwnerId(request));
         if (!payload) return response.status(404).json({ message: "Le laboratoire comptable n’est pas activé." });
