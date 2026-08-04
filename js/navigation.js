@@ -1,4 +1,4 @@
-import { ROUTES, STORAGE_KEYS, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=119";
+import { ROUTES, STORAGE_KEYS, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=120";
 import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=146";
 import { renderCreatorConsole } from "./creator.js?v=119";
 import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=153";
@@ -935,7 +935,6 @@ function getSearchModules() {
     add("Sécurité", "sécurité double authentification 2fa sms accès", ROUTES.settings, () => renderSettings({ section: "security" }));
     if (document.body.dataset.groupAdmin === "true") add("Groupe / Multi-entreprises", "groupe multi entreprises société", ROUTES.groups, renderGroupWorkspace);
     add("Importation de données", "import importation excel csv clients devis factures rapports", ROUTES.settings, () => renderSettings({ section: "imports" }));
-    add("Centre d’aide", "aide support faq tutoriel assistance", ROUTES.settings, () => renderSettings({ section: "help" }));
     return modules;
 }
 
@@ -1204,8 +1203,7 @@ function renderSettingsWorkspace(options = {}) {
             ["groups", "Groupe / Multi-entreprises", "Sociétés, bascule de contexte et indicateurs consolidés.", "group"],
             ["personalization", "Personnalisation", "Langue, thème, police et préférences d’affichage.", "appearance"],
             ...(document.body.classList.contains("desktop-device") ? [["imports", "Importation de données", "Importez vos clients, devis, factures et rapports depuis Excel ou CSV.", "import"]] : []),
-            ...(document.body.dataset.creator === "true" && document.body.dataset.deviceType === "desktop" ? [["creator", "Console Créateur", "Pilotage des entreprises, abonnements et services de la plateforme.", "creator"]] : []),
-            ["help", "Centre d’aide", "Guides par rôle, FAQ, tutoriels et assistance.", "help"]
+            ...(document.body.dataset.creator === "true" && document.body.dataset.deviceType === "desktop" ? [["creator", "Console Créateur", "Pilotage des entreprises, abonnements et services de la plateforme.", "creator"]] : [])
         ];
         cards.forEach(([id, title, description, icon]) => grid.appendChild(createSettingsNavigationCard(title, description, icon, () => renderSettings({ section: id }))));
         hub.appendChild(grid);
@@ -1215,7 +1213,7 @@ function renderSettingsWorkspace(options = {}) {
 
     clearSearch();
     resetSelection("all");
-    const titles = { documents: "Modèles de documents", network: "Réseau Depann'Home Pro", users: "Utilisateurs", security: "Sécurité", groups: "Groupe / Multi-entreprises", personalization: "Personnalisation", imports: "Importation de données", creator: "Console Créateur", help: "Centre d’aide" };
+    const titles = { documents: "Modèles de documents", network: "Réseau Depann'Home Pro", users: "Utilisateurs", security: "Sécurité", groups: "Groupe / Multi-entreprises", personalization: "Personnalisation", imports: "Importation de données", creator: "Console Créateur" };
     setPage(`Paramètres · ${titles[section] || "Configuration"}`, ROUTES.settings, "detail");
     const container = getContainer();
     container.appendChild(createBackCard("Retour aux Paramètres", () => renderSettings()));
@@ -1263,7 +1261,6 @@ function renderSettingsWorkspace(options = {}) {
         renderCreatorConsole();
         return;
     }
-    if (section === "help") return renderHelpCenter({ embedded: true });
     renderSettings({ legacy: true, personalizationOnly: true });
 }
 
@@ -1293,28 +1290,9 @@ function settingsIcon(icon) {
         group: '<path d="M4 20V9l8-5 8 5v11M8 20v-6h8v6M4 9h16"/>',
         creator: '<circle cx="12" cy="8" r="3"/><path d="M5 21c.5-4.2 3.1-6.5 7-6.5s6.5 2.3 7 6.5M18 5l1 1 2-1M18 5l1-2"/>',
         appearance: '<circle cx="12" cy="12" r="8"/><path d="M12 4v16M4 12h16"/>',
-        import: '<path d="M12 3v12M7 10l5 5 5-5M5 20h14"/>',
-        help: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.7 2.7 0 015.1 1.3c0 1.8-2.1 2.1-2.6 3.5M12 17h.01"/>'
+        import: '<path d="M12 3v12M7 10l5 5 5-5M5 20h14"/>'
     };
     return `<svg viewBox="0 0 24 24" focusable="false">${paths[icon] || paths.help}</svg>`;
-}
-
-function renderHelpCenter(options = {}) {
-    if (!options.embedded) {
-        clearSearch();
-        resetSelection("all");
-        setPage("Centre d’aide", ROUTES.help, "detail");
-    }
-    const container = getContainer();
-    const role = document.body.dataset.role || "technician";
-    const guide = role === "admin" ? "Guide Administrateur" : role === "mobile_admin" ? "Guide Administrateur Mobile" : role === "pc_standard" ? "Guide Secrétariat / Poste PC" : role === "team_lead" ? "Guide Chef d’équipe" : "Guide Technicien";
-    const card = createSettingsIntro("Centre d’aide", `${guide} : guides, FAQ et tutoriels adaptés à vos droits.`);
-    const grid = document.createElement("div");
-    grid.className = "settings-subsection-grid help-center-grid";
-    grid.innerHTML = `<section><h3>${escapeHtml(guide)}</h3><p>Procédures liées à votre poste : clients, planning, documents et collaboration.</p></section><section><h3>FAQ</h3><p>Réponses sur les accès, appareils, synchronisations et documents.</p></section><section><h3>Tutoriels</h3><p>Parcours guidés disponibles au fil des modules autorisés.</p></section>`;
-    card.appendChild(grid);
-    container.appendChild(card);
-    if (role === "admin") renderSupportContact(container);
 }
 
 async function renderReportTemplateSettings(container) {

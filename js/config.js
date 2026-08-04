@@ -54,7 +54,6 @@ export const ROUTES = {
     favorites: "favorites",
     history: "history",
     settings: "settings",
-    help: "help",
     creator: "creator"
 };
 
