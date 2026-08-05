@@ -253,11 +253,11 @@ async function renderAccountDetail(accountId) {
                 <label>E-mail de facturation<input name="billingEmail" type="email" maxlength="160" value="${escapeHtml(account.billingEmail || "")}" placeholder="comptabilite@entreprise.fr"></label>
                 <label>Postes PC autorisés<input name="maxPcUsers" type="number" min="1" max="100" required value="${escapeHtml(account.maxPcUsers)}"></label>
                 <label>Techniciens autorisés<input name="maxTechnicians" type="number" min="0" max="500" required value="${escapeHtml(account.maxTechnicians)}"></label>
-                <label class="creator-switch">Entreprise active<input name="isActive" type="checkbox" ${account.isActive ? "checked" : ""} ${isOwnCreatorAccount ? "disabled" : ""}><span>${isOwnCreatorAccount ? "Le compte Créateur reste actif" : "Les membres peuvent se connecter"}</span></label>
             </div>
             ${renderSubscriptionFields(account)}
             ${renderOrganizationFields(account.organization)}
             ${renderQuoteTemplatePolicyFields(account)}
+            ${isOwnCreatorAccount ? '<p class="creator-account-status-note">Le compte Créateur reste actif en permanence.</p>' : `<section class="creator-account-status-panel ${account.isActive ? "active" : "suspended"}"><div><strong>${account.isActive ? "Entreprise active" : "Entreprise suspendue"}</strong><p>${account.isActive ? "Les membres peuvent se connecter et utiliser leur espace." : "Les connexions et les sessions en cours sont bloquées. Les données restent conservées."}</p></div><button type="button" class="secondary-button ${account.isActive ? "danger-button" : ""}" id="creatorToggleAccountStatus">${account.isActive ? "Suspendre l’entreprise" : "Réactiver l’entreprise"}</button></section>`}
             <div class="creator-form-actions"><button type="submit" class="secondary-button">Enregistrer l’entreprise</button>${isOwnCreatorAccount ? "" : '<button type="button" class="secondary-button danger-button" id="creatorDeleteAccount">Supprimer l’entreprise</button>'}</div>
         </form>
         <section class="creator-members-section"><div class="form-heading"><div><p class="eyebrow">Traçabilité</p><h3>Historique de l’organisation</h3></div></div><div id="creatorOrganizationHistory"><p class="muted">Chargement de l’historique…</p></div></section>
@@ -269,11 +269,22 @@ async function renderAccountDetail(accountId) {
         button.disabled = true;
         const values = Object.fromEntries(new FormData(event.currentTarget));
         values.organization = organizationFromForm(event.currentTarget);
-        values.isActive = event.currentTarget.elements.isActive.checked;
         const result = await api(`/api/creator/accounts/${encodeURIComponent(accountId)}`, { method: "PATCH", body: JSON.stringify(values) });
         button.disabled = false;
         if (!result.ok) return showFeedback(result.message || "Mise à jour impossible.", true);
         showFeedback("Entreprise mise à jour.");
+        await loadAccounts(accountId);
+    });
+    workspace.querySelector("#creatorToggleAccountStatus")?.addEventListener("click", async event => {
+        const isActivating = !account.isActive;
+        const confirmation = isActivating
+            ? `Réactiver ${account.companyName} ? Les membres pourront de nouveau se connecter.`
+            : `Suspendre ${account.companyName} ? Tous les membres seront déconnectés à leur prochain appel et aucune nouvelle connexion ne sera autorisée.`;
+        if (!confirm(confirmation)) return;
+        event.currentTarget.disabled = true;
+        const result = await api(`/api/creator/accounts/${encodeURIComponent(accountId)}/activation`, { method: "PATCH", body: JSON.stringify({ isActive: isActivating }) });
+        if (!result.ok) { event.currentTarget.disabled = false; return showFeedback(result.message || "Modification du statut impossible.", true); }
+        showFeedback(isActivating ? "Entreprise réactivée. Les membres peuvent de nouveau se connecter." : "Entreprise suspendue. Les données sont conservées et les accès sont bloqués.");
         await loadAccounts(accountId);
     });
     workspace.querySelector("#creatorDeleteAccount")?.addEventListener("click", async () => {

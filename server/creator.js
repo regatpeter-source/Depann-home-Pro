@@ -145,10 +145,26 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
                 subscription_plan = $9, subscription_label = $10, monthly_price_cents = $11, subscription_status = $12,
                 subscription_renewal_date = $13::date, billing_reference = $14, creator_note = $15, quote_template_policy = $16, updated_at = NOW()
             WHERE id = $1 AND account_owner_id = id
-        `, [accountId, account.companyName, account.fullName, account.phone, account.billingEmail, account.maxPcUsers, account.maxTechnicians, isOwnCreatorAccount(owner, request) ? true : account.isActive,
+        `, [accountId, account.companyName, account.fullName, account.phone, account.billingEmail, account.maxPcUsers, account.maxTechnicians, owner.is_active,
             account.subscriptionPlan, account.subscriptionLabel, account.monthlyPriceCents, account.subscriptionStatus, account.subscriptionRenewalDate || null, account.billingReference, account.creatorNote, account.quoteTemplatePolicy]);
         await updateOrganization(accountId, request.body?.organization, request.user.sub);
         response.status(204).end();
+    }));
+
+    app.patch("/api/creator/accounts/:accountId/activation", requireCreator, asyncHandler(async (request, response) => {
+        const accountId = positiveId(request.params.accountId);
+        if (!accountId || typeof request.body?.isActive !== "boolean") return response.status(400).json({ message: "Le statut de l’entreprise est invalide." });
+        const database = getPool();
+        const owner = await findAccountOwner(database, accountId);
+        if (!canManageAccount(owner, request)) return response.status(404).json({ message: "Compte entreprise introuvable." });
+        if (isOwnCreatorAccount(owner, request)) return response.status(403).json({ message: "Le compte Créateur ne peut pas être suspendu." });
+        const { rows } = await database.query(`
+            UPDATE depannhome_users
+            SET is_active = $2, updated_at = NOW()
+            WHERE id = $1 AND account_owner_id = id
+            RETURNING is_active AS "isActive"
+        `, [accountId, request.body.isActive]);
+        response.json({ isActive: Boolean(rows[0]?.isActive) });
     }));
 
     app.delete("/api/creator/accounts/:accountId", requireCreator, asyncHandler(async (request, response) => {

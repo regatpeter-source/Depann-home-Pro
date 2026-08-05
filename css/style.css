@@ -1632,6 +1632,8 @@ body.desktop-device .nav-label-messages{
     font-weight:400;
 }
 
+.creator-account-status-panel{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:15px 16px;border:1px solid #86efac;border-radius:13px;background:#f0fdf4}.creator-account-status-panel.suspended{border-color:#fecaca;background:#fef2f2}.creator-account-status-panel strong{color:#166534}.creator-account-status-panel.suspended strong{color:#b42318}.creator-account-status-panel p{margin:3px 0 0;color:#475569;font-size:.9rem}.creator-account-status-note{margin:0;padding:12px;border:1px solid #bfdbfe;border-radius:10px;background:#eff6ff;color:#075985;font-size:.9rem;font-weight:700}
+
 .creator-state{
     display:inline-flex;
     align-items:center;
@@ -1715,6 +1717,8 @@ body.desktop-device .nav-label-messages{
     .creator-form-actions .secondary-button{
         flex:1;
     }
+
+    .creator-account-status-panel{align-items:stretch;flex-direction:column;}.creator-account-status-panel .secondary-button{width:100%;}
 
     .creator-subscription-summary{
         grid-template-columns:repeat(2, minmax(0, 1fr));
