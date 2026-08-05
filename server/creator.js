@@ -89,9 +89,10 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
             GROUP BY owner.id
             ORDER BY LOWER(COALESCE(NULLIF(owner.company_name, ''), owner.full_name, owner.username))
         `);
+        const profiles = await loadCompanyProfiles(getPool(), rows.map(account => account.id));
         const accounts = await Promise.all(rows
             .filter(account => !isCreatorUsername(account.ownerUsername) || String(account.id) === String(request.user.sub))
-            .map(async account => ({ ...account, organization: await getOrganization(account.id) })));
+            .map(async account => ({ ...account, companyProfile: profiles.get(String(account.id)) || emptyCompanyProfile(), organization: await getOrganization(account.id) })));
         response.json({ accounts });
     }));
     app.get("/api/creator/accounts/:accountId/organization-history", requireCreator, asyncHandler(async (request, response) => {
@@ -102,24 +103,29 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
     }));
 
     app.post("/api/creator/accounts", requireCreator, asyncHandler(async (request, response) => {
-        const account = sanitizeAccount(request.body);
+        const account = sanitizeAccount(request.body, true);
         const credentials = sanitizeCredentials(request.body);
         if (!account.ok) return response.status(400).json({ message: account.message });
         if (!credentials.ok) return response.status(400).json({ message: credentials.message });
 
         try {
-            const database = getPool();
-            const { rows } = await database.query(`
+            const database = getPool(); const connection = await database.connect();
+            try {
+                await connection.query("BEGIN");
+                const { rows } = await connection.query(`
                 INSERT INTO depannhome_users (username, password_hash, role, full_name, phone, email, company_name, max_pc_users, max_technicians,
                     subscription_plan, subscription_label, monthly_price_cents, subscription_status, subscription_renewal_date, billing_reference, creator_note, quote_template_policy)
                 VALUES ($1, $2, 'admin', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::date, $14, $15, $16)
                 RETURNING id
             `, [credentials.username, await bcrypt.hash(credentials.password, 12), account.fullName, account.phone, account.billingEmail, account.companyName, account.maxPcUsers, account.maxTechnicians,
                 account.subscriptionPlan, account.subscriptionLabel, account.monthlyPriceCents, account.subscriptionStatus, account.subscriptionRenewalDate || null, account.billingReference, account.creatorNote, account.quoteTemplatePolicy]);
-            const id = rows[0].id;
-            await database.query("UPDATE depannhome_users SET account_owner_id = id WHERE id = $1", [id]);
+                const id = rows[0].id;
+                await connection.query("UPDATE depannhome_users SET account_owner_id = id WHERE id = $1", [id]);
+                await synchronizeCompanyProfile(connection, id, account.companyProfile);
+                await connection.query("COMMIT");
             await createOrganization(id, request.body?.organization, request.user.sub);
             response.status(201).json({ id: String(id) });
+            } catch (error) { await connection.query("ROLLBACK"); throw error; } finally { connection.release(); }
         } catch (error) {
             if (error.code === "23505") return response.status(409).json({ message: "Cet identifiant est déjà utilisé." });
             throw error;
@@ -139,14 +145,20 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
         if (account.maxPcUsers < counts.activePcUsers || account.maxTechnicians < counts.activeTechnicians) {
             return response.status(400).json({ message: "Les limites ne peuvent pas être inférieures aux accès actifs existants." });
         }
-        await database.query(`
+        const connection = await database.connect();
+        try {
+            await connection.query("BEGIN");
+            await connection.query(`
             UPDATE depannhome_users
             SET company_name = $2, full_name = $3, phone = $4, email = $5, max_pc_users = $6, max_technicians = $7, is_active = $8,
                 subscription_plan = $9, subscription_label = $10, monthly_price_cents = $11, subscription_status = $12,
                 subscription_renewal_date = $13::date, billing_reference = $14, creator_note = $15, quote_template_policy = $16, updated_at = NOW()
             WHERE id = $1 AND account_owner_id = id
-        `, [accountId, account.companyName, account.fullName, account.phone, account.billingEmail, account.maxPcUsers, account.maxTechnicians, owner.is_active,
+            `, [accountId, account.companyName, account.fullName, account.phone, account.billingEmail, account.maxPcUsers, account.maxTechnicians, owner.is_active,
             account.subscriptionPlan, account.subscriptionLabel, account.monthlyPriceCents, account.subscriptionStatus, account.subscriptionRenewalDate || null, account.billingReference, account.creatorNote, account.quoteTemplatePolicy]);
+            await synchronizeCompanyProfile(connection, accountId, account.companyProfile);
+            await connection.query("COMMIT");
+        } catch (error) { await connection.query("ROLLBACK"); throw error; } finally { connection.release(); }
         await updateOrganization(accountId, request.body?.organization, request.user.sub);
         response.status(204).end();
     }));
@@ -329,7 +341,7 @@ async function ensureSeatAvailable(database, accountId, role) {
     if (active >= maximum) throw new Error(`LIMIT:La limite de ${role === "admin" ? "postes PC" : "techniciens"} est atteinte.`);
 }
 
-function sanitizeAccount(value) {
+function sanitizeAccount(value, requireCompleteProfile = false) {
     const companyName = cleanText(value?.companyName, 160);
     const fullName = cleanText(value?.fullName, 100);
     const phone = cleanText(value?.phone, 30);
@@ -353,10 +365,45 @@ function sanitizeAccount(value) {
     if (subscriptionPlan === "paid" && monthlyPriceCents <= 0) return { ok: false, message: "Indiquez un tarif mensuel supérieur à zéro pour un abonnement payant." };
     if (billingEmail && !EMAIL_PATTERN.test(billingEmail)) return { ok: false, message: "L’e-mail de facturation est invalide." };
     if (subscriptionPlan === "paid" && !billingEmail) return { ok: false, message: "L’e-mail de facturation est obligatoire pour un abonnement payant." };
+    const companyProfile = sanitizeCompanyProfile(value, { companyName, billingEmail, phone, requireCompleteProfile });
+    if (!companyProfile.ok) return companyProfile;
     return { ok: true, companyName, fullName, phone, billingEmail, maxPcUsers, maxTechnicians, subscriptionPlan, subscriptionLabel,
         monthlyPriceCents: subscriptionPlan === "free" ? 0 : monthlyPriceCents, subscriptionStatus, subscriptionRenewalDate,
-        billingReference, creatorNote, quoteTemplatePolicy, isActive };
+        billingReference, creatorNote, quoteTemplatePolicy, isActive, companyProfile };
 }
+
+async function loadCompanyProfiles(database, ownerIds) {
+    if (!ownerIds.length) return new Map();
+    const { rows } = await database.query(`SELECT owner.id,profile.company_name AS "legalName",profile.address,profile.postal_code AS "postalCode",profile.city,profile.phone,profile.secondary_phone AS "secondaryPhone",profile.email,profile.registration_number AS "siret",profile.country,directory.commercial_name AS "commercialName",directory.description,directory.specialties,directory.service_area AS "serviceArea",directory.service_radius_km AS "serviceRadiusKm",directory.departments,directory.region,directory.regions,directory.coverage_mode AS "coverageMode",directory.website,directory.accepts_partner_missions AS "acceptsPartnerMissions",directory.availability_status AS "availabilityStatus",(profile.logo_data IS NOT NULL) AS "hasLogo" FROM depannhome_users owner LEFT JOIN depannhome_billing_profiles profile ON profile.owner_id=owner.id LEFT JOIN depannhome_partner_directory directory ON directory.owner_id=owner.id WHERE owner.id=ANY($1::bigint[])`, [ownerIds]);
+    return new Map(rows.map(row => [String(row.id), { ...emptyCompanyProfile(), ...row, specialties: Array.isArray(row.specialties) ? row.specialties : [], departments: Array.isArray(row.departments) ? row.departments : [], regions: Array.isArray(row.regions) ? row.regions : [] }]));
+}
+
+function emptyCompanyProfile() { return { legalName: "", commercialName: "", siret: "", address: "", postalCode: "", city: "", departments: [], region: "", regions: [], country: "France", phone: "", secondaryPhone: "", email: "", website: "", specialties: [], coverageMode: "custom", serviceArea: "", serviceRadiusKm: 0, description: "", acceptsPartnerMissions: true, availabilityStatus: "available", hasLogo: false }; }
+
+function sanitizeCompanyProfile(value, defaults) {
+    const legalName = cleanText(value?.legalName || defaults.companyName, 160), commercialName = cleanText(value?.commercialName, 160), siret = String(value?.siret || "").replace(/\s/g, "").slice(0, 14);
+    const address = cleanText(value?.address, 255), postalCode = cleanText(value?.postalCode, 20), city = cleanText(value?.city, 100), country = cleanText(value?.country || "France", 100);
+    const phone = cleanText(value?.companyPhone || defaults.phone, 50), secondaryPhone = cleanText(value?.secondaryPhone, 50), email = cleanText(value?.companyEmail || defaults.billingEmail, 160).toLowerCase();
+    const specialties = cleanList(value?.specialties, 30, 80), departments = cleanList(value?.departments, 30, 20), regions = cleanList(value?.regions, 20, 100);
+    const website = cleanText(value?.website, 500); const coverageMode = ["france", "departments", "regions", "radius", "custom"].includes(value?.coverageMode) ? value.coverageMode : "custom";
+    const serviceRadiusKm = positiveLimit(value?.serviceRadiusKm, 0, 500); const acceptsPartnerMissions = value?.acceptsPartnerMissions !== false;
+    const logo = parseLogo(value?.logoDataUrl);
+    if (siret && !/^\d{14}$/.test(siret)) return { ok: false, message: "Le numéro SIRET doit comporter 14 chiffres." };
+    if (email && !EMAIL_PATTERN.test(email)) return { ok: false, message: "L’adresse e-mail de l’entreprise est invalide." };
+    if (website && !/^https?:\/\/[^\s]+$/i.test(website)) return { ok: false, message: "Le site Internet doit commencer par http:// ou https://." };
+    if (logo.error) return { ok: false, message: logo.error };
+    if (defaults.requireCompleteProfile && (!siret || !address || !postalCode || !city || !phone || !email)) return { ok: false, message: "Complétez le SIRET, l’adresse, le code postal, la ville, le téléphone et l’e-mail de l’entreprise." };
+    return { ok: true, legalName, commercialName, siret, address, postalCode, city, country, phone, secondaryPhone, email, website, specialties, departments, regions, coverageMode, serviceArea: coverageMode === "france" ? "France entière" : cleanText(value?.serviceArea, 500), serviceRadiusKm: coverageMode === "radius" ? serviceRadiusKm || 0 : 0, description: cleanMultilineText(value?.description, 1000), acceptsPartnerMissions, availabilityStatus: acceptsPartnerMissions ? "available" : "temporarily_unavailable", logoBuffer: logo.buffer, logoMimeType: logo.mimeType };
+}
+
+function parseLogo(value) { if (!value) return {}; const match = /^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=]+)$/.exec(String(value)); if (!match) return { error: "Le logo doit être une image PNG, JPEG ou WebP." }; const buffer = Buffer.from(match[2], "base64"); return buffer.length > 2 * 1024 * 1024 ? { error: "Le logo ne doit pas dépasser 2 Mo." } : { buffer, mimeType: match[1] }; }
+
+async function synchronizeCompanyProfile(connection, ownerId, profile) {
+    await connection.query(`INSERT INTO depannhome_billing_profiles(owner_id,company_name,address,postal_code,city,phone,secondary_phone,email,registration_number,siren,country,logo_data,logo_mime_type) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) ON CONFLICT(owner_id) DO UPDATE SET company_name=EXCLUDED.company_name,address=EXCLUDED.address,postal_code=EXCLUDED.postal_code,city=EXCLUDED.city,phone=EXCLUDED.phone,secondary_phone=EXCLUDED.secondary_phone,email=EXCLUDED.email,registration_number=EXCLUDED.registration_number,siren=EXCLUDED.siren,country=EXCLUDED.country,logo_data=CASE WHEN $14 THEN EXCLUDED.logo_data ELSE depannhome_billing_profiles.logo_data END,logo_mime_type=CASE WHEN $14 THEN EXCLUDED.logo_mime_type ELSE depannhome_billing_profiles.logo_mime_type END,updated_at=NOW()`, [ownerId, profile.legalName, profile.address, profile.postalCode, profile.city, profile.phone, profile.secondaryPhone, profile.email, profile.siret, profile.siret.slice(0, 9), profile.country, profile.logoBuffer || null, profile.logoMimeType || "", Boolean(profile.logoBuffer)]);
+    await connection.query(`INSERT INTO depannhome_partner_directory(owner_id,is_listed,visibility_explicit,description,trades,specialties,service_area,service_radius_km,departments,website,accepts_partner_missions,availability_status,commercial_name,region,regions,coverage_mode,share_phone,share_email,updated_at) VALUES($1,TRUE,TRUE,$2,'[]'::jsonb,$3::jsonb,$4,$5,$6::jsonb,$7,$8,$9,$10,$11,$12::jsonb,$13,TRUE,TRUE,NOW()) ON CONFLICT(owner_id) DO UPDATE SET is_listed=TRUE,visibility_explicit=TRUE,description=EXCLUDED.description,specialties=EXCLUDED.specialties,service_area=EXCLUDED.service_area,service_radius_km=EXCLUDED.service_radius_km,departments=EXCLUDED.departments,website=EXCLUDED.website,accepts_partner_missions=EXCLUDED.accepts_partner_missions,availability_status=EXCLUDED.availability_status,commercial_name=EXCLUDED.commercial_name,region=EXCLUDED.region,regions=EXCLUDED.regions,coverage_mode=EXCLUDED.coverage_mode,share_phone=TRUE,share_email=TRUE,updated_at=NOW()`, [ownerId, profile.description, JSON.stringify(profile.specialties), profile.serviceArea, profile.serviceRadiusKm, JSON.stringify(profile.departments), profile.website, profile.acceptsPartnerMissions, profile.availabilityStatus, profile.commercialName, profile.regions[0] || "", JSON.stringify(profile.regions), profile.coverageMode]);
+}
+
+function cleanList(value, maximumItems, maximumLength) { const items = Array.isArray(value) ? value : String(value || "").split(/[,;\n|]/); return [...new Set(items.map(item => cleanText(item, maximumLength)).filter(Boolean))].slice(0, maximumItems); }
 
 function sanitizeMemberProfile(value, role) {
     const fullName = cleanText(value?.fullName, 100);

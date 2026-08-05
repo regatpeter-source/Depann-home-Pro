@@ -153,8 +153,10 @@ function renderProfile(panel) {
                 <label class="form-wide">Adresse<input name="address" maxlength="255" value="${escapeHtml(profile.address)}"></label>
                 <label>Code postal<input name="postalCode" maxlength="20" value="${escapeHtml(profile.postalCode)}"></label>
                 <label>Ville<input name="city" maxlength="100" value="${escapeHtml(profile.city)}"></label>
-                <label>Téléphone<input name="phone" maxlength="50" value="${escapeHtml(profile.phone)}"></label>
+                <label>Téléphone principal<input name="phone" maxlength="50" value="${escapeHtml(profile.phone)}"></label>
+                <label>Téléphone secondaire<input name="secondaryPhone" maxlength="50" value="${escapeHtml(profile.secondaryPhone || "")}"></label>
                 <label>E-mail<input name="email" type="email" maxlength="160" value="${escapeHtml(profile.email)}"></label>
+                <label>Pays<input name="country" maxlength="100" value="${escapeHtml(profile.country || "France")}"></label>
                 <label>Immatriculation / SIRET<input name="registrationNumber" maxlength="100" value="${escapeHtml(profile.registrationNumber)}"></label>
                 <label>SIREN<input name="siren" maxlength="20" value="${escapeHtml(profile.siren || "")}"></label>
                 <label>N° TVA intracommunautaire<input name="taxNumber" maxlength="100" value="${escapeHtml(profile.taxNumber)}"></label>

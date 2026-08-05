@@ -39,7 +39,9 @@ export async function initializeBilling() {
             postal_code VARCHAR(20) NOT NULL DEFAULT '',
             city VARCHAR(100) NOT NULL DEFAULT '',
             phone VARCHAR(50) NOT NULL DEFAULT '',
+            secondary_phone VARCHAR(50) NOT NULL DEFAULT '',
             email VARCHAR(160) NOT NULL DEFAULT '',
+            country VARCHAR(100) NOT NULL DEFAULT 'France',
             registration_number VARCHAR(100) NOT NULL DEFAULT '',
             siren VARCHAR(20) NOT NULL DEFAULT '',
             tax_number VARCHAR(100) NOT NULL DEFAULT '',
@@ -64,6 +66,8 @@ export async function initializeBilling() {
     await database.query(`
         ALTER TABLE depannhome_billing_profiles
         ADD COLUMN IF NOT EXISTS default_quote JSONB,
+        ADD COLUMN IF NOT EXISTS secondary_phone VARCHAR(50) NOT NULL DEFAULT '',
+        ADD COLUMN IF NOT EXISTS country VARCHAR(100) NOT NULL DEFAULT 'France',
         ADD COLUMN IF NOT EXISTS siren VARCHAR(20) NOT NULL DEFAULT '',
         ADD COLUMN IF NOT EXISTS bank_iban VARCHAR(80) NOT NULL DEFAULT '',
         ADD COLUMN IF NOT EXISTS bank_bic VARCHAR(40) NOT NULL DEFAULT '',
@@ -154,7 +158,7 @@ export function registerBillingRoutes(app, requireAuthentication) {
         const [profileResult, templatesResult, documentsResult, aidsResult] = await Promise.all([
             database.query(`
                 SELECT profile.company_name AS "companyName", profile.legal_form AS "legalForm", profile.address, profile.postal_code AS "postalCode", profile.city,
-                    profile.phone, profile.email, profile.registration_number AS "registrationNumber", profile.siren, profile.tax_number AS "taxNumber", profile.bank_iban AS "bankIban", profile.bank_bic AS "bankBic",
+                    profile.phone, profile.secondary_phone AS "secondaryPhone", profile.email, profile.country, profile.registration_number AS "registrationNumber", profile.siren, profile.tax_number AS "taxNumber", profile.bank_iban AS "bankIban", profile.bank_bic AS "bankBic",
                     profile.payment_terms AS "paymentTerms", profile.deposit_terms AS "depositTerms", profile.footer_note AS "footerNote", profile.default_quote AS "defaultQuote",
                     profile.quote_template_mode AS "quoteTemplateMode", profile.quote_template_filename AS "quoteTemplateFilename",
                     (profile.quote_template_data IS NOT NULL) AS "hasQuoteTemplate", (profile.logo_data IS NOT NULL) AS "hasLogo",
@@ -212,18 +216,18 @@ export function registerBillingRoutes(app, requireAuthentication) {
         const database = getPool();
         await database.query(`
             INSERT INTO depannhome_billing_profiles
-                (owner_id, company_name, legal_form, address, postal_code, city, phone, email, registration_number, siren, tax_number, bank_iban, bank_bic, payment_terms, deposit_terms, footer_note, logo_data, logo_mime_type)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+                (owner_id, company_name, legal_form, address, postal_code, city, phone, secondary_phone, email, country, registration_number, siren, tax_number, bank_iban, bank_bic, payment_terms, deposit_terms, footer_note, logo_data, logo_mime_type)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
             ON CONFLICT (owner_id) DO UPDATE SET
                 company_name = EXCLUDED.company_name, legal_form = EXCLUDED.legal_form, address = EXCLUDED.address,
-                postal_code = EXCLUDED.postal_code, city = EXCLUDED.city, phone = EXCLUDED.phone, email = EXCLUDED.email,
+                postal_code = EXCLUDED.postal_code, city = EXCLUDED.city, phone = EXCLUDED.phone, secondary_phone = EXCLUDED.secondary_phone, email = EXCLUDED.email, country = EXCLUDED.country,
                 registration_number = EXCLUDED.registration_number, siren = EXCLUDED.siren, tax_number = EXCLUDED.tax_number, bank_iban = EXCLUDED.bank_iban, bank_bic = EXCLUDED.bank_bic,
                 payment_terms = EXCLUDED.payment_terms, deposit_terms = EXCLUDED.deposit_terms, footer_note = EXCLUDED.footer_note,
-                logo_data = CASE WHEN $19 THEN NULL WHEN $20 THEN EXCLUDED.logo_data ELSE depannhome_billing_profiles.logo_data END,
-                logo_mime_type = CASE WHEN $19 THEN '' WHEN $20 THEN EXCLUDED.logo_mime_type ELSE depannhome_billing_profiles.logo_mime_type END,
+                logo_data = CASE WHEN $21 THEN NULL WHEN $22 THEN EXCLUDED.logo_data ELSE depannhome_billing_profiles.logo_data END,
+                logo_mime_type = CASE WHEN $21 THEN '' WHEN $22 THEN EXCLUDED.logo_mime_type ELSE depannhome_billing_profiles.logo_mime_type END,
                 updated_at = NOW()
-        `, [getAccountOwnerId(request), profile.companyName, profile.legalForm, profile.address, profile.postalCode, profile.city, profile.phone,
-            profile.email, profile.registrationNumber, profile.siren, profile.taxNumber, profile.bankIban, profile.bankBic, profile.paymentTerms, profile.depositTerms, profile.footerNote,
+        `, [getAccountOwnerId(request), profile.companyName, profile.legalForm, profile.address, profile.postalCode, profile.city, profile.phone, profile.secondaryPhone,
+            profile.email, profile.country, profile.registrationNumber, profile.siren, profile.taxNumber, profile.bankIban, profile.bankBic, profile.paymentTerms, profile.depositTerms, profile.footerNote,
             logo?.buffer || null, logo?.mimetype || "", removeLogo, Boolean(logo)]);
         response.status(204).end();
     }));
@@ -546,7 +550,7 @@ export function billingUploadErrorHandler(error, request, response, next) {
 }
 
 function emptyProfile() {
-    return { companyName: "", legalForm: "", address: "", postalCode: "", city: "", phone: "", email: "", registrationNumber: "", siren: "", taxNumber: "", bankIban: "", bankBic: "", paymentTerms: "", depositTerms: "", footerNote: "", defaultQuote: null, quoteTemplateMode: "integrated", quoteTemplateFilename: "", hasQuoteTemplate: false, quoteTemplatePolicy: "company_choice", hasLogo: false };
+    return { companyName: "", legalForm: "", address: "", postalCode: "", city: "", phone: "", secondaryPhone: "", email: "", country: "France", registrationNumber: "", siren: "", taxNumber: "", bankIban: "", bankBic: "", paymentTerms: "", depositTerms: "", footerNote: "", defaultQuote: null, quoteTemplateMode: "integrated", quoteTemplateFilename: "", hasQuoteTemplate: false, quoteTemplatePolicy: "company_choice", hasLogo: false };
 }
 
 async function getQuoteTemplatePolicy(accountOwnerId) {
@@ -573,8 +577,8 @@ function contentDispositionFileName(value) {
 function sanitizeProfile(value) {
     return {
         companyName: cleanText(value?.companyName, 160), legalForm: cleanText(value?.legalForm, 100), address: cleanText(value?.address, 255),
-        postalCode: cleanText(value?.postalCode, 20), city: cleanText(value?.city, 100), phone: cleanText(value?.phone, 50),
-        email: cleanText(value?.email, 160), registrationNumber: cleanText(value?.registrationNumber, 100), siren: cleanText(value?.siren, 20), taxNumber: cleanText(value?.taxNumber, 100), bankIban: cleanText(value?.bankIban, 80), bankBic: cleanText(value?.bankBic, 40),
+        postalCode: cleanText(value?.postalCode, 20), city: cleanText(value?.city, 100), phone: cleanText(value?.phone, 50), secondaryPhone: cleanText(value?.secondaryPhone, 50),
+        email: cleanText(value?.email, 160), country: cleanText(value?.country, 100) || "France", registrationNumber: cleanText(value?.registrationNumber, 100), siren: cleanText(value?.siren, 20), taxNumber: cleanText(value?.taxNumber, 100), bankIban: cleanText(value?.bankIban, 80), bankBic: cleanText(value?.bankBic, 40),
         paymentTerms: cleanText(value?.paymentTerms, 500), depositTerms: cleanText(value?.depositTerms, 500), footerNote: cleanText(value?.footerNote, 1000)
     };
 }

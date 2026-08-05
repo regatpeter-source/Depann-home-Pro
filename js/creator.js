@@ -247,13 +247,14 @@ async function renderAccountDetail(accountId) {
         <form id="creatorAccountForm" class="creator-form">
             <div class="form-heading"><div><p class="eyebrow">${escapeHtml(account.organization?.badge || "Entreprise Depann’Home Pro")}</p><h3>${escapeHtml(account.companyName)}</h3></div><span class="creator-state${account.isActive ? "" : " suspended"}">${account.isActive ? "Active" : "Suspendue"}</span></div>
             <div class="form-grid">
-                <label>Nom de l’entreprise<input name="companyName" maxlength="160" required value="${escapeHtml(account.companyName)}"></label>
+                <label>Raison sociale<input name="companyName" maxlength="160" required value="${escapeHtml(account.companyName)}"></label>
                 <label>Responsable principal<input name="fullName" maxlength="100" required value="${escapeHtml(account.ownerFullName)}"></label>
                 <label>Téléphone responsable<input name="phone" maxlength="30" value="${escapeHtml(account.ownerPhone)}"></label>
                 <label>E-mail de facturation<input name="billingEmail" type="email" maxlength="160" value="${escapeHtml(account.billingEmail || "")}" placeholder="comptabilite@entreprise.fr"></label>
                 <label>Postes PC autorisés<input name="maxPcUsers" type="number" min="1" max="100" required value="${escapeHtml(account.maxPcUsers)}"></label>
                 <label>Techniciens autorisés<input name="maxTechnicians" type="number" min="0" max="500" required value="${escapeHtml(account.maxTechnicians)}"></label>
             </div>
+            ${renderCompanyProfileFields(account.companyProfile)}
             ${renderSubscriptionFields(account)}
             ${renderOrganizationFields(account.organization)}
             ${renderQuoteTemplatePolicyFields(account)}
@@ -267,7 +268,7 @@ async function renderAccountDetail(accountId) {
         event.preventDefault();
         const button = event.currentTarget.querySelector('button[type="submit"]');
         button.disabled = true;
-        const values = Object.fromEntries(new FormData(event.currentTarget));
+        const values = await companyProfileFromForm(event.currentTarget);
         values.organization = organizationFromForm(event.currentTarget);
         const result = await api(`/api/creator/accounts/${encodeURIComponent(accountId)}`, { method: "PATCH", body: JSON.stringify(values) });
         button.disabled = false;
@@ -310,7 +311,7 @@ function renderAccountForm() {
         <form id="creatorNewAccountForm" class="creator-form">
             <div class="form-heading"><div><p class="eyebrow">Nouvelle organisation</p><h3>Créer un espace client</h3></div></div>
             <div class="form-grid">
-                <label>Nom de l’entreprise<input name="companyName" maxlength="160" required placeholder="Ex. Martin Automatismes"></label>
+                <label>Raison sociale<input name="companyName" maxlength="160" required placeholder="Ex. Martin Automatismes"></label>
                 <label>Responsable principal<input name="fullName" maxlength="100" required placeholder="Nom et prénom"></label>
                 <label>Téléphone responsable<input name="phone" maxlength="30" placeholder="06 12 34 56 78"></label>
                 <label>E-mail de facturation<input name="billingEmail" type="email" maxlength="160" placeholder="comptabilite@entreprise.fr"></label>
@@ -319,6 +320,7 @@ function renderAccountForm() {
                 <label>Postes PC autorisés<input name="maxPcUsers" type="number" min="1" max="100" required value="1"></label>
                 <label>Techniciens autorisés<input name="maxTechnicians" type="number" min="0" max="500" required value="1"></label>
             </div>
+            ${renderCompanyProfileFields()}
             ${renderSubscriptionFields({ subscriptionPlan: "free", subscriptionLabel: "", monthlyPriceCents: 0, subscriptionStatus: "active", subscriptionRenewalDate: "", billingReference: "", creatorNote: "" })}
             ${renderOrganizationFields()}
             ${renderQuoteTemplatePolicyFields({ quoteTemplatePolicy: "company_choice" })}
@@ -331,7 +333,7 @@ function renderAccountForm() {
         event.preventDefault();
         const button = event.currentTarget.querySelector('button[type="submit"]');
         button.disabled = true;
-        const values = Object.fromEntries(new FormData(event.currentTarget));
+        const values = await companyProfileFromForm(event.currentTarget);
         values.organization = organizationFromForm(event.currentTarget);
         const result = await api("/api/creator/accounts", { method: "POST", body: JSON.stringify(values) });
         button.disabled = false;
@@ -340,6 +342,53 @@ function renderAccountForm() {
         showFeedback("Organisation et Administrateur (PC) créés.");
         await loadAccounts(selectedAccountId);
     });
+}
+
+function renderCompanyProfileFields(profile = {}) {
+    const activities = ["Recherche de fuite", "Plomberie", "Serrurerie", "Menuiserie", "Volets roulants", "Portails", "Portes de garage", "Domotique", "Électricité", "Chauffage", "Climatisation", "Assèchement", "Vitrerie", "Autres"];
+    const specialties = Array.isArray(profile.specialties) ? profile.specialties : [];
+    const departments = Array.isArray(profile.departments) ? profile.departments.join(", ") : "";
+    const regions = Array.isArray(profile.regions) ? profile.regions.join(", ") : profile.region || "";
+    const coverageMode = profile.coverageMode || "custom";
+    return `
+        <fieldset class="creator-subscription-fields creator-company-profile-fields"><legend>Fiche entreprise et Réseau Depann’Home Pro</legend>
+            <p class="muted">Ces informations créent et actualisent automatiquement la fiche publique de l’entreprise dans le Réseau Depann’Home Pro.</p>
+            <div class="form-grid">
+                <label>Nom commercial (facultatif)<input name="commercialName" maxlength="160" value="${escapeHtml(profile.commercialName || "")}"></label>
+                <label>SIRET *<input name="siret" inputmode="numeric" maxlength="14" required value="${escapeHtml(profile.siret || "")}" placeholder="14 chiffres"></label>
+                <label class="form-wide">Adresse complète *<input name="address" maxlength="255" required value="${escapeHtml(profile.address || "")}"></label>
+                <label>Code postal *<input name="postalCode" maxlength="20" required value="${escapeHtml(profile.postalCode || "")}"></label>
+                <label>Ville *<input name="city" maxlength="100" required value="${escapeHtml(profile.city || "")}"></label>
+                <label>Département(s)<input name="departments" maxlength="300" value="${escapeHtml(departments)}" placeholder="Ex. 69, 01"></label>
+                <label>Région(s)<input name="regions" maxlength="500" value="${escapeHtml(regions)}" placeholder="Ex. Auvergne-Rhône-Alpes"></label>
+                <label>Pays<input name="country" maxlength="100" value="${escapeHtml(profile.country || "France")}"></label>
+                <label>Téléphone principal *<input name="companyPhone" type="tel" maxlength="50" required value="${escapeHtml(profile.phone || "")}"></label>
+                <label>Téléphone secondaire<input name="secondaryPhone" type="tel" maxlength="50" value="${escapeHtml(profile.secondaryPhone || "")}"></label>
+                <label>E-mail *<input name="companyEmail" type="email" maxlength="160" required value="${escapeHtml(profile.email || "")}"></label>
+                <label>Site Internet<input name="website" type="url" maxlength="500" value="${escapeHtml(profile.website || "")}" placeholder="https://www.exemple.fr"></label>
+                <label class="form-wide">Spécialités<select name="specialties" multiple size="6" aria-describedby="companySpecialtiesHelp">${activities.map(activity => `<option value="${escapeHtml(activity)}" ${specialties.includes(activity) ? "selected" : ""}>${escapeHtml(activity)}</option>`).join("")}</select><small id="companySpecialtiesHelp">Utilisez Ctrl ou Cmd pour sélectionner plusieurs activités.</small></label>
+                <label>Zone d’intervention<select name="coverageMode"><option value="france" ${coverageMode === "france" ? "selected" : ""}>France entière</option><option value="departments" ${coverageMode === "departments" ? "selected" : ""}>Département(s)</option><option value="regions" ${coverageMode === "regions" ? "selected" : ""}>Région(s)</option><option value="radius" ${coverageMode === "radius" ? "selected" : ""}>Rayon kilométrique personnalisé</option><option value="custom" ${coverageMode === "custom" ? "selected" : ""}>Zone personnalisée</option></select></label>
+                <label>Rayon personnalisé (km)<input name="serviceRadiusKm" type="number" min="0" max="500" value="${escapeHtml(profile.serviceRadiusKm || 0)}"></label>
+                <label class="form-wide">Précision sur la zone<input name="serviceArea" maxlength="500" value="${escapeHtml(profile.serviceArea || "")}" placeholder="Ex. Lyon et 40 km autour"></label>
+                <label class="form-wide">Présentation de l’entreprise<textarea name="description" rows="4" maxlength="1000" placeholder="Historique, domaines d’expertise et types d’interventions réalisés.">${escapeHtml(profile.description || "")}</textarea></label>
+                <label>Logo (PNG, JPEG ou WebP, 2 Mo max)<input name="companyLogo" type="file" accept="image/png,image/jpeg,image/webp"></label>
+                <label class="creator-switch">Disponible pour recevoir des missions partenaires<input name="acceptsPartnerMissions" type="checkbox" ${profile.acceptsPartnerMissions !== false ? "checked" : ""}><span>Si cette option est désactivée, l’entreprise reste dans l’annuaire avec le statut temporairement indisponible.</span></label>
+            </div>
+        </fieldset>
+    `;
+}
+
+async function companyProfileFromForm(form) {
+    const values = Object.fromEntries(new FormData(form));
+    values.specialties = [...form.querySelectorAll('select[name="specialties"] option:checked')].map(option => option.value);
+    values.acceptsPartnerMissions = form.elements.acceptsPartnerMissions?.checked !== false;
+    const logo = form.elements.companyLogo?.files?.[0];
+    if (logo) values.logoDataUrl = await fileAsDataUrl(logo);
+    return values;
+}
+
+function fileAsDataUrl(file) {
+    return new Promise((resolve, reject) => { const reader = new FileReader(); reader.addEventListener("load", () => resolve(String(reader.result || ""))); reader.addEventListener("error", () => reject(new Error("Le logo n’a pas pu être lu."))); reader.readAsDataURL(file); });
 }
 
 function renderSubscriptionFields(account) {

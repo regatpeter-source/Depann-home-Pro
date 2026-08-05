@@ -180,7 +180,9 @@ CREATE TABLE IF NOT EXISTS depannhome_billing_profiles (
     postal_code VARCHAR(20) NOT NULL DEFAULT '',
     city VARCHAR(100) NOT NULL DEFAULT '',
     phone VARCHAR(50) NOT NULL DEFAULT '',
+    secondary_phone VARCHAR(50) NOT NULL DEFAULT '',
     email VARCHAR(160) NOT NULL DEFAULT '',
+    country VARCHAR(100) NOT NULL DEFAULT 'France',
     registration_number VARCHAR(100) NOT NULL DEFAULT '',
     siren VARCHAR(20) NOT NULL DEFAULT '',
     tax_number VARCHAR(100) NOT NULL DEFAULT '',
@@ -201,6 +203,8 @@ CREATE TABLE IF NOT EXISTS depannhome_billing_profiles (
 
 ALTER TABLE depannhome_billing_profiles
     ADD COLUMN IF NOT EXISTS default_quote JSONB,
+    ADD COLUMN IF NOT EXISTS secondary_phone VARCHAR(50) NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS country VARCHAR(100) NOT NULL DEFAULT 'France',
     ADD COLUMN IF NOT EXISTS deposit_terms VARCHAR(500) NOT NULL DEFAULT '',
     ADD COLUMN IF NOT EXISTS siren VARCHAR(20) NOT NULL DEFAULT '',
     ADD COLUMN IF NOT EXISTS bank_iban VARCHAR(80) NOT NULL DEFAULT '',
@@ -719,6 +723,7 @@ CREATE TABLE IF NOT EXISTS depannhome_partner_directory (
     website VARCHAR(500) NOT NULL DEFAULT '', accepts_partner_missions BOOLEAN NOT NULL DEFAULT FALSE,
     availability_status VARCHAR(30) NOT NULL DEFAULT 'available' CHECK (availability_status IN ('available', 'unavailable', 'temporarily_unavailable')),
     commercial_name VARCHAR(160) NOT NULL DEFAULT '', region VARCHAR(100) NOT NULL DEFAULT '',
+    regions JSONB NOT NULL DEFAULT '[]'::jsonb, coverage_mode VARCHAR(20) NOT NULL DEFAULT 'custom',
     latitude NUMERIC(9,6), longitude NUMERIC(9,6), creator_suspended BOOLEAN NOT NULL DEFAULT FALSE,
     creator_note VARCHAR(1000) NOT NULL DEFAULT '', updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -741,7 +746,9 @@ CREATE INDEX IF NOT EXISTS depannhome_partner_directory_search_idx ON depannhome
 ALTER TABLE depannhome_partner_directory
     ADD COLUMN IF NOT EXISTS availability_status VARCHAR(30) NOT NULL DEFAULT 'available',
     ADD COLUMN IF NOT EXISTS commercial_name VARCHAR(160) NOT NULL DEFAULT '',
-    ADD COLUMN IF NOT EXISTS region VARCHAR(100) NOT NULL DEFAULT '';
+    ADD COLUMN IF NOT EXISTS region VARCHAR(100) NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS regions JSONB NOT NULL DEFAULT '[]'::jsonb,
+    ADD COLUMN IF NOT EXISTS coverage_mode VARCHAR(20) NOT NULL DEFAULT 'custom';
 ALTER TABLE depannhome_partner_directory DROP CONSTRAINT IF EXISTS depannhome_partner_directory_availability_status_check;
 ALTER TABLE depannhome_partner_directory ADD CONSTRAINT depannhome_partner_directory_availability_status_check CHECK (availability_status IN ('available','unavailable','temporarily_unavailable'));
 CREATE TABLE IF NOT EXISTS depannhome_partner_connections (
