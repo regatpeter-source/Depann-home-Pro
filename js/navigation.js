@@ -1,11 +1,11 @@
 import { ROUTES, STORAGE_KEYS, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=122";
 import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=147";
-import { renderCreatorConsole } from "./creator.js?v=122";
+import { openCreatorPartnerRequest, renderCreatorConsole } from "./creator.js?v=123";
 import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=153";
 import { renderAccounting } from "./accounting.js?v=5";
 import { renderAccountingSandbox } from "./accounting-sandbox.js?v=2";
 import { renderGroupActivation, renderGroupWorkspace } from "./groups.js?v=3";
-import { renderPartnerMissions } from "./partner-missions.js?v=8";
+import { renderPartnerMissions } from "./partner-missions.js?v=9";
 import { renderPartnerSandbox } from "./partner-sandbox.js?v=3";
 import { renderPartnerConnections } from "./partner-connections.js?v=12";
 import { renderDataImportTool } from "./data-imports.js?v=2";
@@ -59,6 +59,7 @@ export function initializeNavigation(loadedDatabase) {
     });
     window.addEventListener("depannhome:clients-synchronized", () => refreshClientMessageAlert());
     window.addEventListener("depannhome:technician-calendar-viewed", event => markTechnicianCalendarAlertsRead(event.detail?.events || []));
+    window.addEventListener("depannhome:open-notification", event => openNotificationDestination(event.detail?.notification));
     refreshClientMessageAlert();
     refreshTechnicianCalendarAlert();
     document.addEventListener("visibilitychange", () => {
@@ -282,6 +283,18 @@ async function openClients(clientId = "") {
     if (isAccountant()) return;
     const selectedId = clientId || await getFirstUnreadClientId();
     renderClients({ database, navigateToRef, createBillingDocument: createBillingDocumentForClient, viewBillingDocument, createCalendarEvent: createCalendarEventForClient, ...(selectedId ? { selectedId, focusMessages: true } : {}) });
+}
+
+function openNotificationDestination(notification) {
+    const entityType = notification?.entityType || "";
+    const entityId = String(notification?.entityId || notification?.payload?.partnerRequestId || "");
+    if (entityType === "partner_request" && document.body.dataset.creator === "true") return openCreatorPartnerRequest(entityId);
+    if (entityType === "partner_mission") return renderPartnerMissions({ missionId: entityId });
+    if (entityType === "partner_connection") return renderSettings({ section: "network" });
+    if (entityType === "technical_report") return renderTechnicalReports(Number(entityId) || 0);
+    if (entityType === "billing_document") return renderBilling();
+    if (entityType === "client") return openClients(entityId);
+    if (entityType === "calendar_event") return renderCalendar();
 }
 
 function isAccountant() {

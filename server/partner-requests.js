@@ -1,6 +1,7 @@
 import { getPool } from "./database.js";
 import crypto from "node:crypto";
-import { getAccountOwnerId } from "./auth.js";
+import { getAccountOwnerId, isCreatorUsername } from "./auth.js";
+import { createNotification } from "./collaboration.js";
 
 const ORGANIZATION_TYPES = new Set([
     "insurance",
@@ -103,6 +104,7 @@ export function registerPartnerRequestRoutes(app, requireCreator, requireAuthent
             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
             RETURNING id
         `, [partnerRequest.companyName, partnerRequest.organizationType, partnerRequest.contactName, partnerRequest.contactRole, partnerRequest.email, partnerRequest.phone, partnerRequest.website, partnerRequest.message, clientIp(request)]);
+        await notifyCreatorsOfPartnerRequest(rows[0].id, partnerRequest);
         response.status(201).json({ id: String(rows[0].id), message: "Merci pour votre demande de partenariat. Notre équipe va étudier votre demande et vous recontactera dans les meilleurs délais." });
     }));
 
@@ -242,6 +244,12 @@ async function findRequest(id) {
         FROM depannhome_partner_requests WHERE id=$1
     `, [id]);
     return rows[0] || null;
+}
+
+async function notifyCreatorsOfPartnerRequest(requestId, partnerRequest) {
+    const { rows } = await getPool().query("SELECT id,account_owner_id AS \"ownerId\",username FROM depannhome_users WHERE is_active=TRUE");
+    const creators = rows.filter(account => isCreatorUsername(account.username));
+    await Promise.all(creators.map(account => createNotification(account.ownerId || account.id, account.id, "partner_request_received", { entityType: "partner_request", entityId: String(requestId) }, "Nouvelle demande de partenariat", `${partnerRequest.companyName} · ${partnerRequest.contactName}`, { partnerRequestId: String(requestId), companyName: partnerRequest.companyName, organizationType: partnerRequest.organizationType })));
 }
 
 function sanitizeRequest(value) {

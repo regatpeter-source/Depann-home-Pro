@@ -11,7 +11,7 @@ let preferredConnectionId = "";
 window.addEventListener("depannhome:new-partner-mission", event => { preferredConnectionId = String(event.detail?.connectionId || ""); activeMissionTab = "new"; });
 window.addEventListener("depannhome:open-partner-missions", event => { activeMissionTab = event.detail?.tab === "messages" ? "messages" : "received"; });
 
-export async function renderPartnerMissions() {
+export async function renderPartnerMissions(options = {}) {
     clearSearch();
     setPage("Missions partenaires", ROUTES.partnerMissions, "detail");
     const container = getContainer();
@@ -26,6 +26,7 @@ export async function renderPartnerMissions() {
     shell.querySelector("#retryPartnerOutbox")?.addEventListener("click", async () => { const result = await api("/api/partner-missions/outbox/retry", { method: "POST" }); alert(result.ok ? `${result.data.delivered} retour(s) transmis.` : result.message); renderPartnerMissions(); });
     shell.querySelectorAll("[data-mission-tab]").forEach(button => button.addEventListener("click", () => { activeMissionTab = button.dataset.missionTab; renderMissionTab(shell); }));
     renderMissionTab(shell);
+    if (options.missionId) await showDetail(options.missionId);
 }
 
 function renderMissionTab(shell) {

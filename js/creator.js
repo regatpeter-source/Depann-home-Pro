@@ -41,6 +41,11 @@ export async function renderCreatorConsole() {
     await loadAccounts();
 }
 
+export async function openCreatorPartnerRequest(requestId) {
+    await renderCreatorConsole();
+    if (requestId) await renderPartnerRequestDetail(requestId);
+}
+
 async function renderOfficialPartners() {
     const workspace = document.querySelector("#creatorWorkspace");
     workspace.innerHTML = '<p class="muted">Chargement des partenaires officiels…</p>';

@@ -2,7 +2,7 @@ import { getPool } from "./database.js";
 import { getAccountOwnerId } from "./auth.js";
 
 const LOCK_TIMEOUT_SECONDS = 15 * 60;
-const ENTITY_TYPES = new Set(["technical_report", "billing_document", "client", "calendar_event", "partner_mission"]);
+const ENTITY_TYPES = new Set(["technical_report", "billing_document", "client", "calendar_event", "partner_mission", "partner_connection", "partner_request"]);
 const streamsByOwner = new Map();
 
 export async function initializeCollaboration() {
