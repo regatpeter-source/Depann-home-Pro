@@ -1076,7 +1076,7 @@ function getVisibleEvents() {
 
 function renderCalendarEventCard(event, client) {
     const technicianNames = getAssignedTechnicianNames(event);
-    return `<span>${escapeHtml(event.startTime || "Toute la journée")}</span><strong>${escapeHtml(event.title)}</strong>${technicianNames.length ? `<small>👥 ${escapeHtml(technicianNames.join(" · "))}</small>` : ""}${client.name ? `<small class="calendar-event-client">${escapeHtml(client.name)}</small>` : ""}${client.phone ? `<small class="calendar-event-contact">📞 ${escapeHtml(client.phone)}</small>` : ""}${client.address ? `<small class="calendar-event-contact">📍 ${escapeHtml(client.address)}</small>` : ""}`;
+    return `<span>${escapeHtml(event.startTime || "Toute la journée")}</span><strong>${escapeHtml(event.title)}</strong>${technicianNames.length ? `<small>${escapeHtml(technicianNames.join(" · "))}</small>` : ""}${client.name ? `<small class="calendar-event-client">${escapeHtml(client.name)}</small>` : ""}${client.phone ? `<small class="calendar-event-contact">${escapeHtml(client.phone)}</small>` : ""}${client.address ? `<small class="calendar-event-contact">${escapeHtml(client.address)}</small>` : ""}`;
 }
 
 function getEventClientDetails(event) {

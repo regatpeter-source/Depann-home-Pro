@@ -856,14 +856,14 @@ async function renderSearchResults(query) {
         ...(privateLibrary.sections || []).map(section => ({
             type: "librarySection",
             title: section.name,
-            subtitle: "📂 Bibliothèque privée — Section",
+            subtitle: "Bibliothèque privée — Section",
             sectionId: section.id,
             score: 80
         })),
         ...(privateLibrary.documents || []).map(document => ({
             type: "libraryDocument",
             title: document.title,
-            subtitle: `📖 Document privé — ${document.sectionName} · ${document.originalFilename}`,
+            subtitle: `Document privé — ${document.sectionName} · ${document.originalFilename}`,
             documentId: document.id,
             score: 95
         }))
@@ -933,7 +933,7 @@ function getSearchModules() {
     const modules = [];
     const add = (title, keywords, route, open) => {
         if (route && !canAccessRoute(route)) return;
-        modules.push({ title, subtitle: `📂 Module — ${title}`, keywords, open });
+        modules.push({ title, subtitle: `Module — ${title}`, keywords, open });
     };
     add("Clients", "client dossier contact fiche client", ROUTES.clients, () => openClients());
     add("Messagerie client", "messagerie message messages note échange discussion", ROUTES.clients, () => openClients());

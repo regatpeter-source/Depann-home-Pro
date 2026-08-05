@@ -16,16 +16,16 @@ export function getContextualSearchResults(database, query, options = {}) {
     if (includeClients) {
         getSearchableClients().forEach(client => {
             const searchable = [client.name, client.type, client.phone, client.email, client.address, client.city, client.equipment, client.notes].join(" ");
-            if (matches(searchable, query)) results.push({ type: "client", title: client.name, subtitle: `👤 Client — ${[client.type, client.city || client.address].filter(Boolean).join(" · ") || "Dossier client"}`, clientId: client.id, score: 800 });
+            if (matches(searchable, query)) results.push({ type: "client", title: client.name, subtitle: `Client — ${[client.type, client.city || client.address].filter(Boolean).join(" · ") || "Dossier client"}`, clientId: client.id, score: 800 });
             (client.attachments || []).forEach(attachment => {
-                if (matches(`${client.name} ${attachment.type} ${attachment.name}`, query)) results.push({ type: "clientAttachment", title: attachment.name, subtitle: `📎 ${attachment.type} — Client : ${client.name}`, clientId: client.id, score: 720 });
+                if (matches(`${client.name} ${attachment.type} ${attachment.name}`, query)) results.push({ type: "clientAttachment", title: attachment.name, subtitle: `${attachment.type} — Client : ${client.name}`, clientId: client.id, score: 720 });
             });
         });
     }
 
     (options.events || []).forEach(event => {
         if (!matches(`${event.title} ${event.clientName} ${event.location} ${event.notes} intervention rendez vous planning`, query)) return;
-        results.push({ type: "event", title: event.title || "Intervention", subtitle: `📅 Intervention — ${[event.clientName, event.date, event.startTime].filter(Boolean).join(" · ")}`, event, score: 700 });
+        results.push({ type: "event", title: event.title || "Intervention", subtitle: `Intervention — ${[event.clientName, event.date, event.startTime].filter(Boolean).join(" · ")}`, event, score: 700 });
     });
 
     if (includeTechnical) results.push(...getTechnicalResults(database, query));
@@ -150,14 +150,14 @@ function getTechnicalIndex(database) {
     if (technicalIndexCache.has(database)) return technicalIndexCache.get(database);
     const index = [];
     (database?.brands || []).forEach((brand, brandIndex) => {
-        if (brand.name) index.push({ type: "brand", title: brand.name, subtitle: "🏷️ Marque — Bibliothèque technique", ref: { type: "brand", brandIndex }, searchable: `${brand.name} marque fabricant bibliothèque technique`, score: 500 });
+        if (brand.name) index.push({ type: "brand", title: brand.name, subtitle: "Marque — Bibliothèque technique", ref: { type: "brand", brandIndex }, searchable: `${brand.name} marque fabricant bibliothèque technique`, score: 500 });
         (brand.categories || []).forEach((category, categoryIndex) => {
-            index.push({ type: "category", title: category.name, subtitle: `📚 Gamme technique — ${brand.name}`, ref: { type: "category", brandIndex, categoryIndex }, searchable: `${brand.name} ${category.name} gamme fabricant bibliothèque technique`, score: 480 });
+            index.push({ type: "category", title: category.name, subtitle: `Gamme technique — ${brand.name}`, ref: { type: "category", brandIndex, categoryIndex }, searchable: `${brand.name} ${category.name} gamme fabricant bibliothèque technique`, score: 480 });
             (category.products || []).forEach((product, productIndex) => {
                 const ref = { type: "product", brandIndex, categoryIndex, productIndex };
                 const searchable = [brand.name, category.name, product.name, product.reference, ...(Array.isArray(product.keywords) ? product.keywords : [])].join(" ");
-                index.push({ type: "product", title: product.name, subtitle: `🔧 Référence technique — ${brand.name} · ${category.name}`, ref, searchable, score: 460 });
-                (Array.isArray(product.documents) ? product.documents : []).forEach(documentPath => index.push({ type: "document", title: formatDocumentTitle(documentPath), subtitle: `📖 Notice — ${brand.name} · ${category.name} · ${product.name}`, documentPath, ref, searchable: `${searchable} ${documentPath} notice procédure schéma diagnostic`, score: 440 }));
+                index.push({ type: "product", title: product.name, subtitle: `Référence technique — ${brand.name} · ${category.name}`, ref, searchable, score: 460 });
+                (Array.isArray(product.documents) ? product.documents : []).forEach(documentPath => index.push({ type: "document", title: formatDocumentTitle(documentPath), subtitle: `Notice — ${brand.name} · ${category.name} · ${product.name}`, documentPath, ref, searchable: `${searchable} ${documentPath} notice procédure schéma diagnostic`, score: 440 }));
             });
         });
     });

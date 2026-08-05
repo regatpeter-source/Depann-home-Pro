@@ -136,7 +136,7 @@ function renderEditor(shell) {
         </main>
         <footer class="report-editor-footer">
             <button type="button" class="secondary-button" data-previous-module ${moduleIndex(activeKey) <= 0 ? "disabled" : ""}>← Section précédente</button>
-            <button type="button" class="secondary-button" data-preview>👁 Prévisualiser le rapport</button>
+            <button type="button" class="secondary-button" data-preview>Prévisualiser le rapport</button>
             ${write ? '<span class="report-autosave" data-save-state>Enregistré automatiquement</span>' : ""}
             ${write && current.status !== "submitted" ? '<button type="button" class="secondary-button report-primary-action" data-submit-report>Envoyer pour validation</button>' : ""}
             ${write && canValidate() && current.status === "submitted" ? '<button type="button" class="secondary-button report-primary-action" data-validate-report>Valider définitivement</button>' : ""}
@@ -246,7 +246,7 @@ function moveObservation(moduleKey, id, direction, materialId = "") { const mate
 function openPhotoSource(shell, context) {
     const existing = document.querySelector(".report-photo-source-dialog"); if (existing) existing.remove();
     const dialog = document.createElement("section"); dialog.className = "report-photo-source-dialog";
-    dialog.innerHTML = `<div><header><h3>${context.replacePhotoId ? "Remplacer la photo" : "Ajouter une photo"}</h3><button type="button" class="text-button" data-close-photo-source>Fermer</button></header><p>Choisissez la source de l’image.</p><div class="report-photo-source-actions"><label>📷 Prendre une photo<input type="file" accept="image/*" capture="environment" data-camera-source></label><label>🖼️ Choisir dans la galerie<input type="file" accept="image/*" ${context.singlePhoto || context.replacePhotoId ? "" : "multiple"} data-gallery-source></label></div></div>`;
+    dialog.innerHTML = `<div><header><h3>${context.replacePhotoId ? "Remplacer la photo" : "Ajouter une photo"}</h3><button type="button" class="text-button" data-close-photo-source>Fermer</button></header><p>Choisissez la source de l’image.</p><div class="report-photo-source-actions"><label>Prendre une photo<input type="file" accept="image/*" capture="environment" data-camera-source></label><label>Choisir dans la galerie<input type="file" accept="image/*" ${context.singlePhoto || context.replacePhotoId ? "" : "multiple"} data-gallery-source></label></div></div>`;
     document.body.append(dialog); dialog.querySelector("[data-close-photo-source]").addEventListener("click", () => dialog.remove());
     ["[data-camera-source]", "[data-gallery-source]"].forEach(selector => dialog.querySelector(selector).addEventListener("change", async event => { const files = [...event.target.files || []]; if (!files.length) return; dialog.remove(); if (context.replacePhotoId) await replacePhoto(context.replacePhotoId, files[0], shell); else await uploadPhotos(files, context, shell); }));
 }

@@ -101,7 +101,7 @@ export function publicOrganization(row) {
 }
 
 export function organizationBadge(interfaceType) {
-    return ({ standard: "🟢 Entreprise Depann’Home Pro", partner: "🔵 Partenaire", group: "🟣 Groupe" })[interfaceType] || "🔵 Organisation";
+    return ({ standard: "Entreprise Depann’Home Pro", partner: "Partenaire", group: "Groupe" })[interfaceType] || "Organisation";
 }
 
 function resolvedFeatures(interfaceType, overrides) {
