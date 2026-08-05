@@ -61,6 +61,10 @@ export function registerCollaborationRoutes(app, requireAuthentication) {
         await getPool().query(ids.length ? "UPDATE depannhome_collaboration_notifications SET read_at=NOW() WHERE recipient_id=$1 AND id=ANY($2::bigint[]) AND read_at IS NULL" : "UPDATE depannhome_collaboration_notifications SET read_at=NOW() WHERE recipient_id=$1 AND read_at IS NULL", ids.length ? [request.user.sub, ids] : [request.user.sub]);
         response.status(204).end();
     }));
+    app.delete("/api/collaboration/notifications/read", requireAuthentication, asyncHandler(async (request, response) => {
+        const result = await getPool().query("DELETE FROM depannhome_collaboration_notifications WHERE recipient_id=$1 AND read_at IS NOT NULL", [request.user.sub]);
+        response.json({ deletedCount: result.rowCount || 0 });
+    }));
     app.post("/api/collaboration/locks/:entityType/:entityId/acquire", requireAuthentication, asyncHandler(async (request, response) => {
         const result = await acquireLock(request, request.params.entityType, request.params.entityId);
         response.status(result.acquired ? 200 : 409).json(result);
