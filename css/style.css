@@ -3056,6 +3056,11 @@ body.mobile-device[data-role="technician"] .calendar-list-day{
     color:#075c37;
 }
 
+.calendar-range-day.pending{
+    background:#bfdbfe;
+    color:#1d4ed8;
+}
+
 .calendar-range-day.range-start,
 .calendar-range-day.range-end{
     border-radius:8px;
