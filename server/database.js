@@ -97,6 +97,34 @@ export async function initializeDatabase() {
     await database.query("UPDATE depannhome_users SET role = 'admin' WHERE role = 'user' AND account_owner_id = id");
 
     await database.query(`
+        CREATE TABLE IF NOT EXISTS depannhome_organizations (
+            id BIGSERIAL PRIMARY KEY,
+            account_owner_id BIGINT NOT NULL UNIQUE REFERENCES depannhome_users(id) ON DELETE CASCADE,
+            interface_type VARCHAR(20) NOT NULL DEFAULT 'standard',
+            organization_type VARCHAR(40) NOT NULL DEFAULT 'troubleshooting_company',
+            license_type VARCHAR(30) NOT NULL DEFAULT 'depannhome_standard',
+            license_features JSONB NOT NULL DEFAULT '{}'::jsonb,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            CONSTRAINT depannhome_organizations_interface_check CHECK (interface_type IN ('partner','standard','group')),
+            CONSTRAINT depannhome_organizations_type_check CHECK (organization_type IN ('troubleshooting_company','leak_detection_company','locksmith','plumber','property_manager','real_estate_agency','insurance','expert','principal','partner_platform','other')),
+            CONSTRAINT depannhome_organizations_license_check CHECK (license_type IN ('partner_portal','depannhome_standard','depannhome_group'))
+        )
+    `);
+    await database.query(`
+        CREATE TABLE IF NOT EXISTS depannhome_organization_audit (
+            id BIGSERIAL PRIMARY KEY,
+            account_owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+            actor_id BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+            action VARCHAR(40) NOT NULL,
+            previous_value JSONB NOT NULL DEFAULT '{}'::jsonb,
+            next_value JSONB NOT NULL DEFAULT '{}'::jsonb,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+    `);
+    await database.query("CREATE INDEX IF NOT EXISTS depannhome_organization_audit_owner_created_idx ON depannhome_organization_audit(account_owner_id, created_at DESC)");
+
+    await database.query(`
         CREATE INDEX IF NOT EXISTS depannhome_users_username_lookup_idx
         ON depannhome_users (username)
     `);

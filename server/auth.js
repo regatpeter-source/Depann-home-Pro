@@ -7,6 +7,7 @@ import { createUser, findUserById, findUserByUsername, getPool } from "./databas
 import { sendDeviceVerificationCode } from "./email.js";
 import { releaseLocksForUser } from "./collaboration.js";
 import { resolveGroupCompany } from "./group-context.js";
+import { getOrganization } from "./organizations.js";
 
 const COOKIE_NAME = "depann_home_session";
 const USERNAME_PATTERN = /^[a-z0-9._-]{3,32}$/;
@@ -638,13 +639,15 @@ export async function authenticateRequest(request, response, next) {
             throw new Error("Session PC remplacée");
         }
         const groupCompany = user.role === "admin" ? await resolveGroupCompany(user.id, session.activeCompanyId) : null;
+        const accountOwnerId = String(groupCompany?.companyId || user.account_owner_id || user.id);
+        const organization = await getOrganization(accountOwnerId);
         request.user = {
             sub: String(user.id),
             username: user.username,
             role: groupCompany ? "admin" : user.role,
             principalRole: groupCompany ? "group_admin" : user.role,
-            accountOwnerId: String(groupCompany?.companyId || user.account_owner_id || user.id),
-            activeCompanyId: String(groupCompany?.companyId || user.account_owner_id || user.id),
+            accountOwnerId,
+            activeCompanyId: accountOwnerId,
             groupId: groupCompany ? String(groupCompany.groupId) : "",
             groupName: groupCompany?.groupName || "",
             activeCompanyName: groupCompany?.companyName || "",
@@ -656,6 +659,7 @@ export async function authenticateRequest(request, response, next) {
             maxPcUsers: Number(user.max_pc_users) || 1,
             deviceId: device.id,
             deviceType: device.device_type || "desktop",
+            organization,
             isCreator: isCreatorUsername(user.username)
         };
     } catch {
@@ -840,9 +844,11 @@ async function completeLogin(user, device, response) {
     }
     if (authDevice.status === "approved") {
         const groupCompany = user.role === "admin" ? await resolveGroupCompany(user.id, null) : null;
+        const accountOwnerId = String(groupCompany?.companyId || user.account_owner_id || user.id);
+        const organization = await getOrganization(accountOwnerId);
         const sessionId = isCompanyAdministratorPc ? await issueAdministratorPcSession(user.id, authDevice.id) : "";
         setSessionCookie(response, user, authDevice.id, groupCompany?.companyId, sessionId);
-        return response.json({ user: publicUser({ ...user, accountOwnerId: groupCompany?.companyId || user.account_owner_id, activeCompanyId: groupCompany?.companyId || user.account_owner_id, groupId: groupCompany?.groupId, groupName: groupCompany?.groupName, activeCompanyName: groupCompany?.companyName, isGroupAdministrator: Boolean(groupCompany), role: user.role, principalRole: groupCompany ? "group_admin" : user.role, deviceType: authDevice.device_type }) });
+        return response.json({ user: publicUser({ ...user, accountOwnerId, activeCompanyId: accountOwnerId, groupId: groupCompany?.groupId, groupName: groupCompany?.groupName, activeCompanyName: groupCompany?.companyName, isGroupAdministrator: Boolean(groupCompany), role: user.role, principalRole: groupCompany ? "group_admin" : user.role, deviceType: authDevice.device_type, organization }) });
     }
     if (authDevice.status === "code_pending") {
         return response.status(403).json({ codeRequired: true, deviceId: authDevice.id, message: "Saisissez le code envoyé à votre e-mail professionnel." });
@@ -1078,6 +1084,7 @@ function publicUser(user) {
         email: user.email || "",
         technicianBillingEnabled: (user.can_create_billing ?? user.technicianBillingEnabled) !== false,
         maxPcUsers: Number(user.max_pc_users ?? user.maxPcUsers) || 1,
+        organization: user.organization || null,
         isActive: user.is_active !== false,
         isCreator: Boolean(user.isCreator || isCreatorUsername(user.username)),
         deviceType: user.deviceType || user.device_type || "desktop"

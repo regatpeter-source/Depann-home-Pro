@@ -16,6 +16,7 @@ import {
 	validateAuthenticationConfiguration
 } from "./server/auth.js";
 import { initializeDatabase } from "./server/database.js";
+import { initializeOrganizations, requireOrganizationFeature } from "./server/organizations.js";
 import { registerCreatorRoutes } from "./server/creator.js";
 import { billingUploadErrorHandler, initializeBilling, registerBillingRoutes } from "./server/billing.js";
 import { initializeSubscriptionInvoicing, registerSubscriptionInvoicingRoutes, startSubscriptionInvoicingScheduler } from "./server/invoicing.js";
@@ -93,6 +94,10 @@ app.use("/api/partner-requests", rateLimit({
 	legacyHeaders: false,
 	message: { message: "Trop de demandes ont été envoyées. Réessayez dans quelques minutes." }
 }));
+app.use("/api/accounting", requireAuthentication, requireOrganizationFeature("accounting"));
+app.use("/api/library", requireAuthentication, requireOrganizationFeature("library"));
+app.use("/api/technical-reports", requireAuthentication, requireOrganizationFeature("technicalReports"));
+app.use("/api/partner-missions", requireAuthentication, requireOrganizationFeature("partnerMissions"));
 registerAuthRoutes(app);
 registerCreatorRoutes(app, requireCreator, requireAuthentication);
 registerPartnerRequestRoutes(app, requireCreator, requireAuthentication);
@@ -151,6 +156,7 @@ app.use((error, request, response, next) => {
 async function start() {
 	validateAuthenticationConfiguration();
 	await initializeDatabase();
+	await initializeOrganizations();
 	await initializeGroups();
 	await initializeBilling();
 	await initializeAccounting();

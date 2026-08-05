@@ -2,6 +2,14 @@
 
 Cette version sépare le moteur de l'application en modules simples et stables.
 
+## Organisations, interfaces et licences
+
+Une **Organisation** est la fiche administrative unique d’un compte propriétaire. Elle est stockée dans `depannhome_organizations` et référencée par l’identifiant historique `account_owner_id` de `depannhome_users`. Les clients, rendez-vous, missions, documents, utilisateurs et historiques existants restent donc rattachés au même propriétaire : un changement d’interface ne copie, ne déplace et ne supprime aucune donnée métier.
+
+Le Créateur choisit et peut modifier à tout moment le type d’interface (`partner`, `standard` ou `group`), le secteur d’activité et la licence (`partner_portal`, `depannhome_standard` ou `depannhome_group`). Les droits effectifs sont calculés par `server/organizations.js`, ajoutés à la session authentifiée et vérifiés côté interface comme côté API pour les modules sensibles. Les organisations Partenaire conservent les clients, planning, facturation partagée, missions, réseau et collaboration, sans accès aux modules techniques, comptables ou d’importation. Les interfaces Standard et Groupe conservent l’expérience complète, sous réserve des droits de rôle et d’appareil existants.
+
+La migration est additive : au démarrage, chaque compte propriétaire historique reçoit une organisation Standard. `depannhome_organization_audit` trace toute création ou modification d’interface, de secteur ou de licence avec son auteur ; la Console Créateur affiche cet historique. Les badges de réseau sont calculés sans dupliquer les comptes : 🟢 Entreprise Depann’Home Pro, 🔵 Partenaire et 🟣 Groupe.
+
 ## Comptabilité, facturation électronique & PDP et aides
 
 Le module `server/accounting.js` reste indépendant de la facturation historique : ses tables, routes et connecteurs ne modifient pas les flux métier existants. Chaque requête est filtrée avec l’`owner_id` dérivé de la session afin de garantir l’isolation des entreprises.

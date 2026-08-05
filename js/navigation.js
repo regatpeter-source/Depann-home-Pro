@@ -1,6 +1,6 @@
 import { ROUTES, STORAGE_KEYS, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=120";
 import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=146";
-import { renderCreatorConsole } from "./creator.js?v=120";
+import { renderCreatorConsole } from "./creator.js?v=121";
 import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=153";
 import { renderAccounting } from "./accounting.js?v=5";
 import { renderAccountingSandbox } from "./accounting-sandbox.js?v=2";
@@ -229,7 +229,7 @@ function isMenuAllowed(roles, route = "") {
     if (!Array.isArray(roles) || !roles.includes(document.body.dataset.role)) return false;
     if (route === ROUTES.groups) return document.body.dataset.groupAdmin === "true";
     if (route === ROUTES.partnerSandbox) return document.body.classList.contains("partner-sandbox-enabled");
-    return true;
+    return !route || isOrganizationRouteEnabled(route);
 }
 
 function canAccessQuick(menu) {
@@ -237,7 +237,16 @@ function canAccessQuick(menu) {
 }
 
 function canAccessRoute(route) {
-    return isMenuAllowed(MENU_ACCESS.navigation[route], route);
+    return isMenuAllowed(MENU_ACCESS.navigation[route], route) && isOrganizationRouteEnabled(route);
+}
+
+function isOrganizationRouteEnabled(route) {
+    if (document.body.dataset.creator === "true") return true;
+    let features = {};
+    try { features = JSON.parse(document.body.dataset.organizationFeatures || "{}"); } catch { features = {}; }
+    const featureByRoute = { [ROUTES.library]: "library", [ROUTES.billing]: "billing", [ROUTES.accounting]: "accounting", [ROUTES.technicalReports]: "technicalReports", [ROUTES.partnerMissions]: "partnerMissions", [ROUTES.groups]: "groups", [ROUTES.photo]: "photo", [ROUTES.favorites]: "favorites", [ROUTES.settings]: "settings" };
+    const feature = featureByRoute[route];
+    return !feature || features[feature] !== false;
 }
 
 function menuRoute(menu) {

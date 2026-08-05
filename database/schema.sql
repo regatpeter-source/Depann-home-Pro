@@ -801,6 +801,37 @@ ALTER TABLE depannhome_partner_requests ADD COLUMN IF NOT EXISTS official_partne
 CREATE INDEX IF NOT EXISTS depannhome_partner_requests_status_created_idx ON depannhome_partner_requests(status, created_at DESC);
 CREATE INDEX IF NOT EXISTS depannhome_official_partners_status_idx ON depannhome_official_partners(status, created_at DESC);
 
+-- Organisation unifiée : couche additive liée au compte propriétaire existant.
+-- Les tables métier continuent de cibler owner_id/account_owner_id : changer
+-- l’interface ou la licence ne déplace donc aucune donnée.
+CREATE TABLE IF NOT EXISTS depannhome_organizations (
+    id BIGSERIAL PRIMARY KEY,
+    account_owner_id BIGINT NOT NULL UNIQUE REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    interface_type VARCHAR(20) NOT NULL DEFAULT 'standard',
+    organization_type VARCHAR(40) NOT NULL DEFAULT 'troubleshooting_company',
+    license_type VARCHAR(30) NOT NULL DEFAULT 'depannhome_standard',
+    license_features JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT depannhome_organizations_interface_check CHECK (interface_type IN ('partner','standard','group')),
+    CONSTRAINT depannhome_organizations_type_check CHECK (organization_type IN ('troubleshooting_company','leak_detection_company','locksmith','plumber','property_manager','real_estate_agency','insurance','expert','principal','partner_platform','other')),
+    CONSTRAINT depannhome_organizations_license_check CHECK (license_type IN ('partner_portal','depannhome_standard','depannhome_group'))
+);
+INSERT INTO depannhome_organizations(account_owner_id,interface_type,organization_type,license_type)
+SELECT id,'standard','troubleshooting_company','depannhome_standard' FROM depannhome_users WHERE account_owner_id=id
+ON CONFLICT(account_owner_id) DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS depannhome_organization_audit (
+    id BIGSERIAL PRIMARY KEY,
+    account_owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    actor_id BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+    action VARCHAR(40) NOT NULL,
+    previous_value JSONB NOT NULL DEFAULT '{}'::jsonb,
+    next_value JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS depannhome_organization_audit_owner_created_idx ON depannhome_organization_audit(account_owner_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS depannhome_organizations_interface_idx ON depannhome_organizations(interface_type, license_type);
+
 ALTER TABLE depannhome_library_documents ADD COLUMN IF NOT EXISTS owner_id BIGINT REFERENCES depannhome_users(id) ON DELETE CASCADE;
 UPDATE depannhome_library_documents document SET owner_id = section.owner_id FROM depannhome_library_sections section WHERE document.section_id = section.id AND document.owner_id IS NULL;
 ALTER TABLE depannhome_library_documents ALTER COLUMN owner_id SET NOT NULL;

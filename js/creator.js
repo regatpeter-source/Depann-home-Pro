@@ -14,13 +14,13 @@ export async function renderCreatorConsole() {
         <section class="creator-console">
             <header class="creator-heading">
                 <div><p class="eyebrow">Administration plateforme</p><h2>Console Créateur</h2></div>
-                <div class="creator-form-actions"><button type="button" class="secondary-button auth-outline-button" id="creatorPlatformAnnouncement">Affichage général</button><button type="button" class="secondary-button auth-outline-button" id="creatorPartnerRequests">Demandes de partenariat</button><button type="button" class="secondary-button auth-outline-button" id="creatorOfficialPartners">Partenaires officiels</button><button type="button" class="secondary-button auth-outline-button" id="creatorSecurity">Sécurité du compte</button><button type="button" class="secondary-button auth-outline-button" id="creatorSubscriptionInvoices">Factures abonnements</button><button type="button" class="secondary-button auth-outline-button" id="creatorBillingProfile">Facturation plateforme</button><button type="button" class="secondary-button auth-outline-button" id="creatorExternalProviders">Prestataires externes</button><button type="button" class="secondary-button" id="creatorNewAccount">+ Nouvelle entreprise</button></div>
+                <div class="creator-form-actions"><button type="button" class="secondary-button auth-outline-button" id="creatorPlatformAnnouncement">Affichage général</button><button type="button" class="secondary-button auth-outline-button" id="creatorPartnerRequests">Demandes de partenariat</button><button type="button" class="secondary-button auth-outline-button" id="creatorOfficialPartners">Partenaires officiels</button><button type="button" class="secondary-button auth-outline-button" id="creatorSecurity">Sécurité du compte</button><button type="button" class="secondary-button auth-outline-button" id="creatorSubscriptionInvoices">Factures abonnements</button><button type="button" class="secondary-button auth-outline-button" id="creatorBillingProfile">Facturation plateforme</button><button type="button" class="secondary-button auth-outline-button" id="creatorExternalProviders">Prestataires externes</button><button type="button" class="secondary-button" id="creatorNewAccount">+ Nouvelle organisation</button></div>
             </header>
             <p id="creatorFeedback" class="auth-message" aria-live="polite"></p>
             <section class="creator-subscription-summary" id="creatorSubscriptionSummary" aria-label="Synthèse des abonnements"></section>
             <div class="creator-layout">
-                <aside class="creator-accounts" id="creatorAccounts"><p class="muted">Chargement des entreprises…</p></aside>
-                <section class="creator-workspace" id="creatorWorkspace"><p class="muted">Sélectionnez une entreprise ou créez-en une.</p></section>
+                <aside class="creator-accounts" id="creatorAccounts"><p class="muted">Chargement des organisations…</p></aside>
+                <section class="creator-workspace" id="creatorWorkspace"><p class="muted">Sélectionnez une organisation ou créez-en une.</p></section>
             </div>
         </section>
     `;
@@ -122,7 +122,7 @@ async function renderNetworkDirectory() {
     bindNetworkActions(workspace);
 }
 
-function networkRow(company) { return `<article class="creator-network-company"><div><strong>${escapeHtml(company.companyName || "Entreprise")}</strong><p>${escapeHtml([company.city, company.postalCode].filter(Boolean).join(" · ") || "Coordonnées non renseignées")}</p><small>${company.isListed ? "Visible" : "Interne"}${company.creatorSuspended ? " · Suspendue" : ""}${company.acceptsPartnerMissions ? " · Missions acceptées" : ""}</small></div><div class="creator-form-actions"><button type="button" class="secondary-button" data-network-manage="${escapeHtml(company.id)}">Gérer</button><button type="button" class="secondary-button danger-button" data-network-delete="${escapeHtml(company.id)}">Retirer du réseau</button></div></article>`; }
+function networkRow(company) { return `<article class="creator-network-company"><div><strong>${escapeHtml(company.companyName || "Organisation")}</strong><p>${escapeHtml(company.organizationBadge || "🔵 Organisation")}</p><p>${escapeHtml([company.city, company.postalCode].filter(Boolean).join(" · ") || "Coordonnées non renseignées")}</p><small>${company.isListed ? "Visible" : "Interne"}${company.creatorSuspended ? " · Suspendue" : ""}${company.acceptsPartnerMissions ? " · Missions acceptées" : ""}</small></div><div class="creator-form-actions"><button type="button" class="secondary-button" data-network-manage="${escapeHtml(company.id)}">Gérer</button><button type="button" class="secondary-button danger-button" data-network-delete="${escapeHtml(company.id)}">Retirer du réseau</button></div></article>`; }
 
 function bindNetworkActions(container) { container.querySelectorAll("[data-network-manage]").forEach(button => button.addEventListener("click", async () => { const company = (await api("/api/creator/network-directory")).data?.companies?.find(item => String(item.id) === button.dataset.networkManage); if (company) renderNetworkCompanyForm(company); })); container.querySelectorAll("[data-network-delete]").forEach(button => button.addEventListener("click", async () => { if (!confirm("Retirer cette fiche du Réseau DepanHomePro ? Le compte et les partenariats existants restent inchangés.")) return; const deleted = await api(`/api/creator/network-directory/${encodeURIComponent(button.dataset.networkDelete)}`, { method: "DELETE" }); if (!deleted.ok) return showFeedback(deleted.message || "Suppression impossible.", true); showFeedback("Fiche retirée du réseau."); renderNetworkDirectory(); })); }
 
@@ -245,7 +245,7 @@ async function renderAccountDetail(accountId) {
     const workspace = document.querySelector("#creatorWorkspace");
     workspace.innerHTML = `
         <form id="creatorAccountForm" class="creator-form">
-            <div class="form-heading"><div><p class="eyebrow">Entreprise</p><h3>${escapeHtml(account.companyName)}</h3></div><span class="creator-state${account.isActive ? "" : " suspended"}">${account.isActive ? "Active" : "Suspendue"}</span></div>
+            <div class="form-heading"><div><p class="eyebrow">${escapeHtml(account.organization?.badge || "🟢 Entreprise Depann’Home Pro")}</p><h3>${escapeHtml(account.companyName)}</h3></div><span class="creator-state${account.isActive ? "" : " suspended"}">${account.isActive ? "Active" : "Suspendue"}</span></div>
             <div class="form-grid">
                 <label>Nom de l’entreprise<input name="companyName" maxlength="160" required value="${escapeHtml(account.companyName)}"></label>
                 <label>Responsable principal<input name="fullName" maxlength="100" required value="${escapeHtml(account.ownerFullName)}"></label>
@@ -256,9 +256,11 @@ async function renderAccountDetail(accountId) {
                 <label class="creator-switch">Entreprise active<input name="isActive" type="checkbox" ${account.isActive ? "checked" : ""} ${isOwnCreatorAccount ? "disabled" : ""}><span>${isOwnCreatorAccount ? "Le compte Créateur reste actif" : "Les membres peuvent se connecter"}</span></label>
             </div>
             ${renderSubscriptionFields(account)}
+            ${renderOrganizationFields(account.organization)}
             ${renderQuoteTemplatePolicyFields(account)}
             <div class="creator-form-actions"><button type="submit" class="secondary-button">Enregistrer l’entreprise</button>${isOwnCreatorAccount ? "" : '<button type="button" class="secondary-button danger-button" id="creatorDeleteAccount">Supprimer l’entreprise</button>'}</div>
         </form>
+        <section class="creator-members-section"><div class="form-heading"><div><p class="eyebrow">Traçabilité</p><h3>Historique de l’organisation</h3></div></div><div id="creatorOrganizationHistory"><p class="muted">Chargement de l’historique…</p></div></section>
         <section class="creator-members-section"><div class="form-heading"><div><p class="eyebrow">Accès</p><h3>Postes PC et techniciens</h3></div><div class="creator-form-actions"><button type="button" class="secondary-button auth-outline-button" id="creatorNewPcMember">+ Poste PC</button><button type="button" class="secondary-button" id="creatorNewTechnician">+ Technicien</button></div></div><div id="creatorMembers"><p class="muted">Chargement des accès…</p></div></section>
     `;
     workspace.querySelector("#creatorAccountForm").addEventListener("submit", async event => {
@@ -266,6 +268,7 @@ async function renderAccountDetail(accountId) {
         const button = event.currentTarget.querySelector('button[type="submit"]');
         button.disabled = true;
         const values = Object.fromEntries(new FormData(event.currentTarget));
+        values.organization = organizationFromForm(event.currentTarget);
         values.isActive = event.currentTarget.elements.isActive.checked;
         const result = await api(`/api/creator/accounts/${encodeURIComponent(accountId)}`, { method: "PATCH", body: JSON.stringify(values) });
         button.disabled = false;
@@ -284,6 +287,8 @@ async function renderAccountDetail(accountId) {
     workspace.querySelector("#creatorNewPcMember").addEventListener("click", () => renderMemberForm(account, null, "admin"));
     workspace.querySelector("#creatorNewTechnician").addEventListener("click", () => renderMemberForm(account, null, "technician"));
     bindSubscriptionPlan(workspace.querySelector("#creatorAccountForm"));
+    bindOrganizationInterface(workspace.querySelector("#creatorAccountForm"));
+    await loadOrganizationHistory(accountId);
     await loadMembers(accountId);
 }
 
@@ -292,7 +297,7 @@ function renderAccountForm() {
     renderAccountList();
     document.querySelector("#creatorWorkspace").innerHTML = `
         <form id="creatorNewAccountForm" class="creator-form">
-            <div class="form-heading"><div><p class="eyebrow">Nouvelle entreprise</p><h3>Créer un espace client</h3></div></div>
+            <div class="form-heading"><div><p class="eyebrow">Nouvelle organisation</p><h3>Créer un espace client</h3></div></div>
             <div class="form-grid">
                 <label>Nom de l’entreprise<input name="companyName" maxlength="160" required placeholder="Ex. Martin Automatismes"></label>
                 <label>Responsable principal<input name="fullName" maxlength="100" required placeholder="Nom et prénom"></label>
@@ -304,20 +309,24 @@ function renderAccountForm() {
                 <label>Techniciens autorisés<input name="maxTechnicians" type="number" min="0" max="500" required value="1"></label>
             </div>
             ${renderSubscriptionFields({ subscriptionPlan: "free", subscriptionLabel: "", monthlyPriceCents: 0, subscriptionStatus: "active", subscriptionRenewalDate: "", billingReference: "", creatorNote: "" })}
+            ${renderOrganizationFields()}
             ${renderQuoteTemplatePolicyFields({ quoteTemplatePolicy: "company_choice" })}
             <div class="creator-form-actions"><button type="submit" class="secondary-button">Créer l’entreprise</button></div>
         </form>
     `;
     bindSubscriptionPlan(document.querySelector("#creatorNewAccountForm"));
+    bindOrganizationInterface(document.querySelector("#creatorNewAccountForm"));
     document.querySelector("#creatorNewAccountForm").addEventListener("submit", async event => {
         event.preventDefault();
         const button = event.currentTarget.querySelector('button[type="submit"]');
         button.disabled = true;
-        const result = await api("/api/creator/accounts", { method: "POST", body: JSON.stringify(Object.fromEntries(new FormData(event.currentTarget))) });
+        const values = Object.fromEntries(new FormData(event.currentTarget));
+        values.organization = organizationFromForm(event.currentTarget);
+        const result = await api("/api/creator/accounts", { method: "POST", body: JSON.stringify(values) });
         button.disabled = false;
         if (!result.ok) return showFeedback(result.message || "Création impossible.", true);
         selectedAccountId = result.data.id;
-        showFeedback("Entreprise et Administrateur (PC) créés.");
+        showFeedback("Organisation et Administrateur (PC) créés.");
         await loadAccounts(selectedAccountId);
     });
 }
@@ -337,6 +346,47 @@ function renderSubscriptionFields(account) {
             </div>
         </fieldset>
     `;
+}
+
+function renderOrganizationFields(organization = {}) {
+    const interfaceType = organization.interfaceType || "standard";
+    const organizationType = organization.organizationType || "troubleshooting_company";
+    const licenseType = organization.licenseType || "depannhome_standard";
+    return `
+        <fieldset class="creator-subscription-fields"><legend>Organisation et interface</legend>
+            <p class="muted">L’organisation conserve toujours le même compte, ses utilisateurs et toutes ses données. Modifier cette interface active simplement les modules correspondants.</p>
+            <div class="form-grid">
+                <label>Type d’interface<select name="organizationInterfaceType"><option value="partner" ${interfaceType === "partner" ? "selected" : ""}>Interface Partenaire</option><option value="standard" ${interfaceType === "standard" ? "selected" : ""}>Interface Standard Depann’Home Pro</option><option value="group" ${interfaceType === "group" ? "selected" : ""}>Interface Groupe / Multi-entreprises</option></select></label>
+                <label>Type d’organisation<select name="organizationType"><option value="troubleshooting_company" ${organizationType === "troubleshooting_company" ? "selected" : ""}>Entreprise de dépannage</option><option value="leak_detection_company" ${organizationType === "leak_detection_company" ? "selected" : ""}>Recherche de fuite</option><option value="locksmith" ${organizationType === "locksmith" ? "selected" : ""}>Serrurier</option><option value="plumber" ${organizationType === "plumber" ? "selected" : ""}>Plombier</option><option value="property_manager" ${organizationType === "property_manager" ? "selected" : ""}>Syndic</option><option value="real_estate_agency" ${organizationType === "real_estate_agency" ? "selected" : ""}>Agence immobilière</option><option value="insurance" ${organizationType === "insurance" ? "selected" : ""}>Assurance</option><option value="expert" ${organizationType === "expert" ? "selected" : ""}>Expert</option><option value="principal" ${organizationType === "principal" ? "selected" : ""}>Donneur d’ordre</option><option value="partner_platform" ${organizationType === "partner_platform" ? "selected" : ""}>Plateforme partenaire</option><option value="other" ${organizationType === "other" ? "selected" : ""}>Autre</option></select></label>
+                <label>Licence<select name="organizationLicenseType"><option value="partner_portal" ${licenseType === "partner_portal" ? "selected" : ""}>Portail Partenaire</option><option value="depannhome_standard" ${licenseType === "depannhome_standard" ? "selected" : ""}>Depann’Home Pro Standard</option><option value="depannhome_group" ${licenseType === "depannhome_group" ? "selected" : ""}>Depann’Home Pro Groupe</option></select></label>
+            </div>
+        </fieldset>
+    `;
+}
+
+function organizationFromForm(form) {
+    return { interfaceType: form.elements.organizationInterfaceType.value, organizationType: form.elements.organizationType.value, licenseType: form.elements.organizationLicenseType.value };
+}
+
+function bindOrganizationInterface(form) {
+    const interfaceType = form.elements.organizationInterfaceType;
+    const licenseType = form.elements.organizationLicenseType;
+    if (!interfaceType || !licenseType) return;
+    const syncLicense = () => {
+        const expected = interfaceType.value === "partner" ? "partner_portal" : interfaceType.value === "group" ? "depannhome_group" : "depannhome_standard";
+        licenseType.value = expected;
+    };
+    interfaceType.addEventListener("change", syncLicense);
+    syncLicense();
+}
+
+async function loadOrganizationHistory(accountId) {
+    const container = document.querySelector("#creatorOrganizationHistory");
+    if (!container) return;
+    const result = await api(`/api/creator/accounts/${encodeURIComponent(accountId)}/organization-history`);
+    if (!result.ok) { container.innerHTML = '<p class="muted">Historique indisponible.</p>'; return; }
+    const history = result.data?.history || [];
+    container.innerHTML = history.length ? `<div class="creator-network-list">${history.map(entry => `<article class="creator-network-company"><div><strong>${escapeHtml(entry.action === "created" ? "Organisation créée" : "Interface ou licence modifiée")}</strong><p>${escapeHtml(entry.nextValue?.interfaceType || "standard")} · ${escapeHtml(entry.nextValue?.licenseType || "depannhome_standard")}</p><small>${escapeHtml(entry.actorName || "Système")} · ${escapeHtml(formatDateTime(entry.createdAt))}</small></div></article>`).join("")}</div>` : '<p class="muted">Aucune modification d’interface ou de licence enregistrée.</p>';
 }
 
 function renderQuoteTemplatePolicyFields(account) {

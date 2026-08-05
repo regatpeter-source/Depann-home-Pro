@@ -2,6 +2,7 @@ import bcrypt from "bcrypt";
 import { getPool } from "./database.js";
 import { isCreatorUsername } from "./auth.js";
 import { creatorNetworkDirectory, creatorNetworkStatistics, updateCreatorNetworkDirectory } from "./partner-connections.js";
+import { createOrganization, getOrganization, getOrganizationHistory, updateOrganization } from "./organizations.js";
 
 const USERNAME_PATTERN = /^[a-z0-9._-]{3,32}$/;
 const MIN_PASSWORD_LENGTH = 12;
@@ -88,7 +89,16 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
             GROUP BY owner.id
             ORDER BY LOWER(COALESCE(NULLIF(owner.company_name, ''), owner.full_name, owner.username))
         `);
-        response.json({ accounts: rows.filter(account => !isCreatorUsername(account.ownerUsername) || String(account.id) === String(request.user.sub)) });
+        const accounts = await Promise.all(rows
+            .filter(account => !isCreatorUsername(account.ownerUsername) || String(account.id) === String(request.user.sub))
+            .map(async account => ({ ...account, organization: await getOrganization(account.id) })));
+        response.json({ accounts });
+    }));
+    app.get("/api/creator/accounts/:accountId/organization-history", requireCreator, asyncHandler(async (request, response) => {
+        const accountId = positiveId(request.params.accountId);
+        const owner = accountId && await findAccountOwner(getPool(), accountId);
+        if (!canManageAccount(owner, request)) return response.status(404).json({ message: "Organisation introuvable." });
+        response.json({ history: await getOrganizationHistory(accountId) });
     }));
 
     app.post("/api/creator/accounts", requireCreator, asyncHandler(async (request, response) => {
@@ -108,6 +118,7 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
                 account.subscriptionPlan, account.subscriptionLabel, account.monthlyPriceCents, account.subscriptionStatus, account.subscriptionRenewalDate || null, account.billingReference, account.creatorNote, account.quoteTemplatePolicy]);
             const id = rows[0].id;
             await database.query("UPDATE depannhome_users SET account_owner_id = id WHERE id = $1", [id]);
+            await createOrganization(id, request.body?.organization, request.user.sub);
             response.status(201).json({ id: String(id) });
         } catch (error) {
             if (error.code === "23505") return response.status(409).json({ message: "Cet identifiant est déjà utilisé." });
@@ -136,6 +147,7 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
             WHERE id = $1 AND account_owner_id = id
         `, [accountId, account.companyName, account.fullName, account.phone, account.billingEmail, account.maxPcUsers, account.maxTechnicians, isOwnCreatorAccount(owner, request) ? true : account.isActive,
             account.subscriptionPlan, account.subscriptionLabel, account.monthlyPriceCents, account.subscriptionStatus, account.subscriptionRenewalDate || null, account.billingReference, account.creatorNote, account.quoteTemplatePolicy]);
+        await updateOrganization(accountId, request.body?.organization, request.user.sub);
         response.status(204).end();
     }));
 
