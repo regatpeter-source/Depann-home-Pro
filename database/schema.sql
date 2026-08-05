@@ -717,6 +717,8 @@ CREATE TABLE IF NOT EXISTS depannhome_partner_directory (
     departments JSONB NOT NULL DEFAULT '[]'::jsonb, opening_hours VARCHAR(1000) NOT NULL DEFAULT '',
     share_phone BOOLEAN NOT NULL DEFAULT FALSE, share_email BOOLEAN NOT NULL DEFAULT FALSE,
     website VARCHAR(500) NOT NULL DEFAULT '', accepts_partner_missions BOOLEAN NOT NULL DEFAULT FALSE,
+    availability_status VARCHAR(30) NOT NULL DEFAULT 'available' CHECK (availability_status IN ('available', 'unavailable', 'temporarily_unavailable')),
+    commercial_name VARCHAR(160) NOT NULL DEFAULT '', region VARCHAR(100) NOT NULL DEFAULT '',
     latitude NUMERIC(9,6), longitude NUMERIC(9,6), creator_suspended BOOLEAN NOT NULL DEFAULT FALSE,
     creator_note VARCHAR(1000) NOT NULL DEFAULT '', updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -736,6 +738,12 @@ CREATE TRIGGER depannhome_partner_directory_registration
 AFTER INSERT OR UPDATE OF account_owner_id ON depannhome_users
 FOR EACH ROW EXECUTE FUNCTION depannhome_register_partner_directory();
 CREATE INDEX IF NOT EXISTS depannhome_partner_directory_search_idx ON depannhome_partner_directory(is_listed,creator_suspended,updated_at DESC);
+ALTER TABLE depannhome_partner_directory
+    ADD COLUMN IF NOT EXISTS availability_status VARCHAR(30) NOT NULL DEFAULT 'available',
+    ADD COLUMN IF NOT EXISTS commercial_name VARCHAR(160) NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS region VARCHAR(100) NOT NULL DEFAULT '';
+ALTER TABLE depannhome_partner_directory DROP CONSTRAINT IF EXISTS depannhome_partner_directory_availability_status_check;
+ALTER TABLE depannhome_partner_directory ADD CONSTRAINT depannhome_partner_directory_availability_status_check CHECK (availability_status IN ('available','unavailable','temporarily_unavailable'));
 CREATE TABLE IF NOT EXISTS depannhome_partner_connections (
     id BIGSERIAL PRIMARY KEY, company_low_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
     company_high_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,

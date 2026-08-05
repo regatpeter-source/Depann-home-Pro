@@ -1,0 +1,85 @@
+import { escapeHtml } from "./utils.js?v=44";
+
+const ACTIVITIES = ["Recherche de fuite", "Plomberie", "Serrurerie", "Menuiserie", "Volets roulants", "Portails", "Portes de garage", "Domotique", "Électricité", "Chauffage", "Climatisation", "Assèchement", "Vitrerie", "Autres spécialités"];
+const AVAILABILITY = { available: "Disponible", unavailable: "N’accepte plus de nouvelles missions", temporarily_unavailable: "Temporairement indisponible" };
+const PARTNERSHIP = { new: "Nouvelle entreprise", pending: "Demande en attente", connected: "Déjà partenaire" };
+
+export function openProfessionalDirectory(reloadNetwork, sandboxScenario = null) {
+    const dialog = modal(`<section class="professional-directory-dialog"><button class="text-button partner-dialog-close">Fermer</button><header class="professional-directory-heading"><div><p class="eyebrow">Réseau Depann'Home Pro</p><h2>Annuaire professionnel</h2><p class="muted">Trouvez le partenaire adapté à une intervention, une spécialité ou une zone géographique.</p></div><button type="button" class="secondary-button" data-update-availability>Ma disponibilité</button></header><div class="professional-directory-layout"><aside class="professional-directory-filters"><h3>Affiner la recherche</h3><label>Région<input name="region" data-directory-filter placeholder="Ex. Auvergne-Rhône-Alpes"></label><label>Département ou code postal<input name="department" data-directory-filter placeholder="Ex. 69 ou 69000"></label><label>Rayon autour de moi<select name="radiusKm" data-directory-filter><option value="0">France entière</option><option value="10">10 km</option><option value="25">25 km</option><option value="50">50 km</option><option value="100">100 km</option><option value="custom">Rayon personnalisé…</option></select></label><label class="directory-custom-radius" hidden>Rayon personnalisé (km)<input name="customRadiusKm" type="number" min="1" max="500" value="25" data-directory-filter></label><fieldset><legend>Disponibilité</legend><label><input type="radio" name="availability" value="all" checked data-directory-filter> Toutes</label>${Object.entries(AVAILABILITY).map(([value, label]) => `<label><input type="radio" name="availability" value="${value}" data-directory-filter> ${escapeHtml(label)}</label>`).join("")}</fieldset><fieldset><legend>Type de partenariat</legend><label><input type="radio" name="partnership" value="all" checked data-directory-filter> Tous</label>${Object.entries(PARTNERSHIP).map(([value, label]) => `<label><input type="radio" name="partnership" value="${value}" data-directory-filter> ${escapeHtml(label)}</label>`).join("")}</fieldset><fieldset><legend>Mode d'organisation</legend><label><input type="radio" name="groupMode" value="all" checked data-directory-filter> Tous</label><label><input type="radio" name="groupMode" value="independent" data-directory-filter> Indépendantes</label><label><input type="radio" name="groupMode" value="group" data-directory-filter> Groupes d'entreprises</label></fieldset><fieldset class="directory-activity-filters"><legend>Domaines d'activité</legend>${ACTIVITIES.map(activity => `<label><input type="checkbox" name="activities" value="${escapeHtml(activity)}" data-directory-filter> ${escapeHtml(activity)}</label>`).join("")}</fieldset><label class="directory-filter-toggle"><input type="checkbox" name="acceptsMissions" data-directory-filter> Disponibles pour les missions partenaires</label><button type="button" class="text-button" data-reset-directory-filters>Réinitialiser les filtres</button></aside><main class="professional-directory-content"><div class="professional-directory-toolbar"><label class="professional-directory-search"><span class="visually-hidden">Rechercher une entreprise</span><input name="q" type="search" autocomplete="off" data-directory-filter autofocus placeholder="Entreprise, ville, département, code postal, région, SIRET, spécialité…"></label><label>Tri<select name="sort" data-directory-filter><option value="name_asc">Nom (A → Z)</option><option value="name_desc">Nom (Z → A)</option><option value="distance">Distance</option><option value="department">Département</option><option value="registration">Date d'inscription</option><option value="activity">Dernière activité</option></select></label></div><p class="professional-directory-summary" data-directory-summary>Chargement des entreprises disponibles…</p><section class="professional-directory-results" data-directory-results aria-live="polite"></section></main></div></section>`);
+    const state = { position: null, requestId: 0, timer: null };
+    const formRoot = dialog.querySelector(".professional-directory-layout");
+    const results = dialog.querySelector("[data-directory-results]");
+    const summary = dialog.querySelector("[data-directory-summary]");
+    const customRadius = dialog.querySelector(".directory-custom-radius");
+    const field = name => formRoot.querySelector(`[name="${name}"]`);
+    const radiusSelect = field("radiusKm");
+
+    const values = () => {
+        const radiusKm = radiusSelect.value === "custom" ? field("customRadiusKm").value : radiusSelect.value;
+        return {
+            q: field("q").value.trim(), region: field("region").value.trim(), department: field("department").value.trim(), radiusKm,
+            availability: formRoot.querySelector('input[name="availability"]:checked')?.value || "all", partnership: formRoot.querySelector('input[name="partnership"]:checked')?.value || "all",
+            groupMode: formRoot.querySelector('input[name="groupMode"]:checked')?.value || "all", activities: [...formRoot.querySelectorAll('input[name="activities"]:checked')].map(input => input.value),
+            acceptsMissions: field("acceptsMissions").checked, sort: field("sort").value
+        };
+    };
+    const load = async () => {
+        const current = values(); const requestId = ++state.requestId;
+        if (Number(current.radiusKm) > 0 && !state.position) {
+            summary.textContent = "Localisation en cours pour calculer les distances…";
+            try {
+                state.position = await new Promise((resolve, reject) => navigator.geolocation?.getCurrentPosition(resolve, reject, { timeout: 7000, maximumAge: 300000 }) || reject(new Error("unsupported")));
+            } catch {
+                summary.textContent = "Autorisez la localisation pour utiliser un rayon kilométrique.";
+                return;
+            }
+        }
+        if (state.position) { current.latitude = state.position.coords.latitude; current.longitude = state.position.coords.longitude; }
+        const query = new URLSearchParams({ ...current, activities: current.activities.join("|") });
+        results.setAttribute("aria-busy", "true");
+        const response = await api(`/api/partner-connections/directory/professional-search?${query}`);
+        if (requestId !== state.requestId || !dialog.isConnected) return;
+        results.removeAttribute("aria-busy");
+        if (!response.ok) { results.innerHTML = `<p class="auth-message error">${escapeHtml(response.message)}</p>`; return; }
+        const companies = response.data.companies || [];
+        summary.textContent = companies.length ? `${companies.length} entreprise${companies.length > 1 ? "s" : ""} trouvée${companies.length > 1 ? "s" : ""}.` : "Aucune entreprise ne correspond à ces critères.";
+        results.innerHTML = `${sandboxScenario ? sandboxCard(sandboxScenario) : ""}${companies.map(directoryCard).join("") || (sandboxScenario ? "" : '<p class="professional-directory-empty">Élargissez votre recherche ou modifiez les filtres.</p>')}`;
+        bindResultActions(results, companies, dialog, reloadNetwork, load);
+    };
+    const schedule = () => { window.clearTimeout(state.timer); state.timer = window.setTimeout(load, 180); };
+    formRoot.querySelectorAll("[data-directory-filter]").forEach(input => input.addEventListener(input.type === "search" || input.type === "text" || input.type === "number" ? "input" : "change", schedule));
+    radiusSelect.addEventListener("change", () => { customRadius.hidden = radiusSelect.value !== "custom"; if (Number(radiusSelect.value) === 0) state.position = null; });
+    dialog.querySelector("[data-reset-directory-filters]").addEventListener("click", () => { formRoot.querySelectorAll("input").forEach(input => { if (input.type === "checkbox" || input.type === "radio") input.checked = input.defaultChecked; else input.value = input.defaultValue; }); radiusSelect.value = "0"; customRadius.hidden = true; state.position = null; load(); });
+    dialog.querySelector("[data-update-availability]").addEventListener("click", () => openAvailabilityDialog(load));
+    load();
+}
+
+function directoryCard(company) {
+    const location = [company.city, company.department ? `Dpt. ${company.department}` : "", company.distanceKm !== null ? `${company.distanceKm} km` : ""].filter(Boolean).join(" · ");
+    const specialties = [...company.trades, ...company.specialties].slice(0, 5);
+    const partnership = PARTNERSHIP[company.connectionStatus] || PARTNERSHIP.new;
+    const action = company.connectionStatus === "connected" ? `<button type="button" class="secondary-button" data-directory-profile="${company.id}">Déjà partenaire</button>` : company.connectionStatus === "pending" ? `<button type="button" class="secondary-button" data-directory-profile="${company.id}">${company.isRequester ? "Demande envoyée" : "En attente de validation"}</button>` : `<button type="button" class="secondary-button" data-directory-request="${company.id}">Envoyer une demande</button>`;
+    return `<article class="professional-directory-card"><div class="professional-directory-card-logo">${company.hasLogo ? `<img src="/api/partner-connections/directory/${encodeURIComponent(company.id)}/logo" alt="Logo de ${escapeHtml(company.name)}">` : `<span aria-hidden="true">${escapeHtml(company.name.slice(0, 1).toUpperCase())}</span>`}</div><div class="professional-directory-card-body"><div class="professional-directory-card-title"><div><h3>${escapeHtml(company.name)}</h3><p>${escapeHtml(location || "Localisation non renseignée")}</p></div><span class="directory-availability ${escapeHtml(company.availabilityStatus)}">${escapeHtml(AVAILABILITY[company.availabilityStatus])}</span></div><div class="professional-directory-badges"><span class="directory-partnership ${escapeHtml(company.connectionStatus)}">${escapeHtml(partnership)}</span>${company.isGroup ? '<span class="directory-group">Groupe d’entreprises</span>' : '<span class="directory-group">Indépendante</span>'}</div>${specialties.length ? `<p class="professional-directory-specialties">${specialties.map(item => `<span>${escapeHtml(item)}</span>`).join("")}</p>` : '<p class="muted">Spécialités non renseignées.</p>'}<p class="professional-directory-area">${escapeHtml(company.serviceArea || (company.acceptsPartnerMissions ? "Disponible pour les missions partenaires" : "Zone d’intervention non renseignée"))}</p></div><div class="professional-directory-card-actions"><button type="button" class="text-button" data-directory-profile="${company.id}">Voir la fiche</button>${action}</div></article>`;
+}
+
+function bindResultActions(root, companies, parentDialog, reloadNetwork, refresh) {
+    root.querySelectorAll("[data-directory-profile]").forEach(button => button.addEventListener("click", () => openCompanyProfile(companies.find(company => String(company.id) === button.dataset.directoryProfile), parentDialog, refresh)));
+    root.querySelectorAll("[data-directory-request]").forEach(button => button.addEventListener("click", async () => { button.disabled = true; const result = await api("/api/partner-connections/requests", { method: "POST", body: JSON.stringify({ companyId: Number(button.dataset.directoryRequest) }) }); if (!result.ok) { button.disabled = false; return alert(result.message); } await reloadNetwork(); refresh(); }));
+    root.querySelector("[data-sandbox-directory-request]")?.addEventListener("click", async () => { const result = await api("/api/partner-sandbox/connection-scenario/request", { method: "POST", body: "{}" }); if (!result.ok) return alert(result.message); await reloadNetwork(); parentDialog.remove(); });
+}
+
+function openCompanyProfile(company, parentDialog, refresh) {
+    if (!company) return;
+    const contact = [company.phone, company.email].filter(Boolean);
+    const dialog = modal(`<section class="professional-company-profile"><button class="text-button partner-dialog-close">Fermer</button><header>${company.hasLogo ? `<img src="/api/partner-connections/directory/${encodeURIComponent(company.id)}/logo" alt="Logo de ${escapeHtml(company.name)}">` : ""}<div><p class="eyebrow">Fiche entreprise</p><h2>${escapeHtml(company.name)}</h2><p class="muted">${escapeHtml([company.city, company.postalCode, company.region].filter(Boolean).join(" · ") || "Coordonnées non renseignées")}</p></div></header><dl><dt>Raison sociale</dt><dd>${escapeHtml(company.legalName || company.name)}</dd><dt>Nom commercial</dt><dd>${escapeHtml(company.commercialName || company.name)}</dd><dt>Zone d’intervention</dt><dd>${escapeHtml(company.serviceArea || "Non renseignée")}</dd><dt>Spécialités</dt><dd>${escapeHtml([...company.trades, ...company.specialties].join(", ") || "Non renseignées")}</dd><dt>Horaires</dt><dd>${escapeHtml(company.openingHours || "Non renseignés")}</dd><dt>Disponibilité</dt><dd>${escapeHtml(AVAILABILITY[company.availabilityStatus])}${company.acceptsPartnerMissions ? " · Accepte les missions partenaires" : ""}</dd>${contact.length ? `<dt>Coordonnées partagées</dt><dd>${escapeHtml(contact.join(" · "))}</dd>` : ""}</dl>${company.description ? `<p class="professional-company-description">${escapeHtml(company.description)}</p>` : ""}${company.website ? `<a class="text-button" href="${escapeHtml(company.website)}" target="_blank" rel="noopener noreferrer">Site internet</a>` : ""}<div class="form-actions">${company.connectionStatus === "new" ? `<button class="secondary-button" data-profile-request>Envoyer une demande de partenariat</button>` : `<span class="directory-partnership ${escapeHtml(company.connectionStatus)}">${escapeHtml(PARTNERSHIP[company.connectionStatus])}</span>`}</div></section>`);
+    dialog.querySelector("[data-profile-request]")?.addEventListener("click", async event => { event.currentTarget.disabled = true; const result = await api("/api/partner-connections/requests", { method: "POST", body: JSON.stringify({ companyId: Number(company.id) }) }); if (!result.ok) { event.currentTarget.disabled = false; return alert(result.message); } dialog.remove(); refresh(); });
+}
+
+function openAvailabilityDialog(refresh) {
+    const dialog = modal(`<section class="professional-availability-dialog"><button class="text-button partner-dialog-close">Fermer</button><p class="eyebrow">Ma fiche réseau</p><h2>Disponibilité partenaire</h2><p class="muted">Cette information aide les entreprises à vous contacter au bon moment.</p><form><label>Disponibilité<select name="availabilityStatus">${Object.entries(AVAILABILITY).map(([value, label]) => `<option value="${value}">${escapeHtml(label)}</option>`).join("")}</select></label><div class="form-actions"><button class="secondary-button">Enregistrer</button></div></form></section>`);
+    dialog.querySelector("form").addEventListener("submit", async event => { event.preventDefault(); const result = await api("/api/partner-connections/directory/availability", { method: "PATCH", body: JSON.stringify({ availabilityStatus: event.currentTarget.elements.availabilityStatus.value }) }); if (!result.ok) return alert(result.message); dialog.remove(); refresh(); });
+}
+
+function sandboxCard(scenario) { return `<article class="professional-directory-card professional-directory-sandbox"><div class="professional-directory-card-logo"><span aria-hidden="true">A</span></div><div class="professional-directory-card-body"><div class="professional-directory-card-title"><div><h3>${escapeHtml(scenario.partner.name)}</h3><p>Environnement de démonstration</p></div><span class="directory-availability available">Disponible</span></div><p>${escapeHtml(scenario.partner.description)}</p></div><div class="professional-directory-card-actions"><button type="button" class="secondary-button" data-sandbox-directory-request>Tester la connexion</button></div></article>`; }
+function modal(content) { const dialog = document.createElement("div"); dialog.className = "partner-mission-dialog professional-directory-modal"; dialog.innerHTML = content; dialog.querySelector(".partner-dialog-close").addEventListener("click", () => dialog.remove()); document.body.appendChild(dialog); return dialog; }
+async function api(url, options = {}) { try { const response = await fetch(url, { credentials: "same-origin", headers: { "Content-Type": "application/json", ...(options.headers || {}) }, ...options }); const data = response.status === 204 ? null : await response.json().catch(() => null); return { ok: response.ok, data, message: data?.message || "Serveur indisponible." }; } catch { return { ok: false, message: "Serveur indisponible." }; } }

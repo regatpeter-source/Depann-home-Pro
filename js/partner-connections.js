@@ -1,5 +1,6 @@
 import { escapeHtml } from "./utils.js?v=44";
 import { renderPartnerSandbox } from "./partner-sandbox.js?v=3";
+import { openProfessionalDirectory } from "./professional-directory.js?v=1";
 
 const RIGHTS = [["canSendInterventions", "Peut envoyer des interventions"], ["canReceiveInterventions", "Peut recevoir des interventions"], ["canViewReports", "Peut consulter les rapports"], ["canViewQuotes", "Peut consulter les devis"], ["canViewInvoices", "Peut consulter les factures"], ["canUseMessaging", "Peut utiliser la messagerie"], ["canViewStatusChanges", "Peut voir les changements de statut"]];
 let sandboxScenario = null;
@@ -66,7 +67,7 @@ function openOfficialPartnerConnection(partner, reload) {
 function renderDirectoryTab(target, data, reload) {
     const { directory, incomingRequests } = data;
     target.innerHTML = `<div class="partner-network-tab-heading"><div><h3>Annuaire Depann'Home Pro</h3><p class="muted">Recherchez des entreprises inscrites et gérez les demandes de partenariat.</p></div><div class="partner-network-actions"><button type="button" class="secondary-button" data-directory-search>Rechercher une entreprise</button><button type="button" class="secondary-button auth-outline-button" data-network-settings>Ma fiche réseau</button></div></div><label class="partner-directory-toggle"><input type="checkbox" data-directory-listing ${directory.isListed ? "checked" : ""}> Rendre mon entreprise visible dans le Réseau Depann'Home Pro</label>${sandboxScenario ? '<p class="partner-sandbox-note">Mode Démonstration actif : AssurTest Démo est disponible dans l’annuaire fictif. Aucun partenaire réel n’est contacté.</p>' : ""}${incomingRequests.length ? `<section class="partner-requests"><h3>Demandes reçues</h3>${incomingRequests.map(connection => requestHtml(connection)).join("")}</section>` : '<p class="muted">Aucune demande de partenariat en attente.</p>'}`;
-    target.querySelector("[data-directory-search]").addEventListener("click", () => openDirectorySearchDialog(reload));
+    target.querySelector("[data-directory-search]").addEventListener("click", () => openProfessionalDirectory(reload, sandboxScenario));
     target.querySelector("[data-network-settings]").addEventListener("click", () => openNetworkSettings(reload));
     const listing = target.querySelector("[data-directory-listing]");
     listing.addEventListener("change", async event => { const update = await api("/api/partner-connections/directory", { method: "PUT", body: JSON.stringify({ ...directory, isListed: event.currentTarget.checked }) }); if (!update.ok) { event.currentTarget.checked = !event.currentTarget.checked; alert(update.message); } });
