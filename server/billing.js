@@ -441,6 +441,7 @@ export function registerBillingRoutes(app, requireAuthentication) {
             `, [getAccountOwnerId(request), request.user.sub, document.documentType, document.documentNumber, document.clientId || null, document.customerType, document.customerName,
                 document.customerAddress, document.issueDate, document.dueDate || null, document.status, document.isAccounted, appointment?.id || null, sourceQuote?.id || null, sourceQuote?.documentNumber || "", JSON.stringify(document.lines), document.notes, JSON.stringify(document.financialData)]);
             await (await import("./partner-connections.js")).synchronizeConnectedBillingDocument(getAccountOwnerId(request), rows[0].id);
+            const { registerMissionSourceItem } = await import("./partner-dialogue.js"); await registerMissionSourceItem({ ownerId: getAccountOwnerId(request), appointmentId: appointment?.id, sourceType: document.documentType, sourceId: rows[0].id, label: document.documentNumber, details: { status: document.status, issueDate: document.issueDate } });
             const { recordMissionEventForSource } = await import("./partner-dialogue.js"); await recordMissionEventForSource({ ownerId: getAccountOwnerId(request), sourceType: "appointment", sourceId: appointment?.id, status: document.documentType === "invoice" ? "invoice_created" : "quote_created", action: "billing_document_created", details: { documentId: rows[0].id, documentType: document.documentType, status: document.status }, actorName: request.user.fullName || request.user.username });
             response.status(201).json({ id: rows[0].id });
         } catch (error) {
@@ -478,6 +479,7 @@ export function registerBillingRoutes(app, requireAuthentication) {
                 document.customerAddress, document.issueDate, document.dueDate || null, document.status, document.isAccounted, appointment?.id || null, sourceQuote?.id || null, sourceQuote?.documentNumber || "", JSON.stringify(document.lines), document.notes, JSON.stringify(document.financialData)]);
             if (!result.rowCount) return response.status(404).json({ message: "Document introuvable." });
             await (await import("./partner-connections.js")).synchronizeConnectedBillingDocument(getAccountOwnerId(request), id);
+            const { registerMissionSourceItem } = await import("./partner-dialogue.js"); await registerMissionSourceItem({ ownerId: getAccountOwnerId(request), appointmentId: appointment?.id, sourceType: document.documentType, sourceId: id, label: document.documentNumber, details: { status: document.status, issueDate: document.issueDate } });
             const { recordMissionEventForSource } = await import("./partner-dialogue.js"); await recordMissionEventForSource({ ownerId: getAccountOwnerId(request), sourceType: "appointment", sourceId: appointment?.id, status: document.documentType === "invoice" ? "invoice_sent" : "quote_sent", action: "billing_document_updated", details: { documentId: id, documentType: document.documentType, status: document.status }, actorName: request.user.fullName || request.user.username });
             response.status(204).end();
         } catch (error) {

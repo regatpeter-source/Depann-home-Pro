@@ -621,6 +621,7 @@ CREATE TABLE IF NOT EXISTS depannhome_partner_missions (
     id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
     intake_id BIGINT NOT NULL REFERENCES depannhome_partner_intakes(id) ON DELETE RESTRICT, external_mission_id VARCHAR(160) NOT NULL,
     partner_reference VARCHAR(160) NOT NULL DEFAULT '', status VARCHAR(30) NOT NULL DEFAULT 'received', priority VARCHAR(20) NOT NULL DEFAULT 'normal',
+    billing_mode VARCHAR(30) NOT NULL DEFAULT 'direct_client' CHECK (billing_mode IN ('direct_client','principal')),
     source_data JSONB NOT NULL DEFAULT '{}'::jsonb, mapped_data JSONB NOT NULL DEFAULT '{}'::jsonb, validation_errors JSONB NOT NULL DEFAULT '[]'::jsonb,
     client_id VARCHAR(100) NOT NULL DEFAULT '', calendar_event_id BIGINT REFERENCES depannhome_calendar_events(id) ON DELETE SET NULL,
     technical_report_id BIGINT REFERENCES depannhome_technical_reports(id) ON DELETE SET NULL, assigned_technician_id BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
@@ -668,10 +669,11 @@ CREATE TABLE IF NOT EXISTS depannhome_partner_dialogue_attachments (
     mission_id BIGINT NOT NULL REFERENCES depannhome_partner_missions(id) ON DELETE CASCADE,
     message_id BIGINT NOT NULL REFERENCES depannhome_partner_dialogue_messages(id) ON DELETE CASCADE,
     attachment_type VARCHAR(40) NOT NULL DEFAULT 'document', filename VARCHAR(255) NOT NULL, mime_type VARCHAR(150) NOT NULL,
-    file_size INTEGER NOT NULL CHECK(file_size > 0 AND file_size <= 5242880), file_data BYTEA NOT NULL,
+    file_size INTEGER NOT NULL CHECK (file_size > 0 AND file_size <= 5242880), file_data BYTEA NOT NULL, partner_visible BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS depannhome_partner_dialogue_attachments_message_idx ON depannhome_partner_dialogue_attachments(message_id);
+ALTER TABLE depannhome_partner_dialogue_attachments ADD COLUMN IF NOT EXISTS partner_visible BOOLEAN NOT NULL DEFAULT FALSE;
 -- Les entrées ne sont jamais supprimées par le journal : toute modification de
 -- visibilité est tracée avec l’auteur, l’horodatage et les valeurs avant/après.
 CREATE TABLE IF NOT EXISTS depannhome_partner_dialogue_audit (
@@ -683,6 +685,26 @@ CREATE TABLE IF NOT EXISTS depannhome_partner_dialogue_audit (
     new_value JSONB NOT NULL DEFAULT '{}'::jsonb, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS depannhome_partner_dialogue_audit_message_idx ON depannhome_partner_dialogue_audit(owner_id, mission_id, message_id, created_at DESC);
+
+-- Les contenus mission sont internes par défaut : devis, factures, rapports et
+-- photos ne sont exposés au partenaire que par une décision explicite.
+CREATE TABLE IF NOT EXISTS depannhome_partner_mission_items (
+    id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    mission_id BIGINT NOT NULL REFERENCES depannhome_partner_missions(id) ON DELETE CASCADE,
+    source_type VARCHAR(30) NOT NULL, source_id VARCHAR(120) NOT NULL, source_item_id VARCHAR(120) NOT NULL DEFAULT '',
+    label VARCHAR(255) NOT NULL DEFAULT '', details JSONB NOT NULL DEFAULT '{}'::jsonb,
+    partner_visible BOOLEAN NOT NULL DEFAULT FALSE, dialogue_message_id BIGINT REFERENCES depannhome_partner_dialogue_messages(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT depannhome_partner_mission_items_unique UNIQUE(mission_id, source_type, source_id, source_item_id)
+);
+CREATE INDEX IF NOT EXISTS depannhome_partner_mission_items_visibility_idx ON depannhome_partner_mission_items(owner_id, mission_id, partner_visible, updated_at DESC);
+CREATE TABLE IF NOT EXISTS depannhome_partner_mission_item_audit (
+    id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    mission_id BIGINT NOT NULL REFERENCES depannhome_partner_missions(id) ON DELETE CASCADE,
+    item_id BIGINT NOT NULL REFERENCES depannhome_partner_mission_items(id) ON DELETE CASCADE,
+    action VARCHAR(60) NOT NULL, actor_id BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+    old_value JSONB NOT NULL DEFAULT '{}'::jsonb, new_value JSONB NOT NULL DEFAULT '{}'::jsonb, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 
 -- Connexions simples entre entreprises Depann'Home Pro. Les secrets éventuels
 -- restent internes au serveur : l'utilisateur ne configure ni clé, ni URL, ni webhook.

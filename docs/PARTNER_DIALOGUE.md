@@ -11,6 +11,19 @@ Chaque mission reçue dispose d’un fil privé, persistant et chronologique. Le
 
 Toutes les requêtes vérifient simultanément la clé, l’accès partenaire, le dossier et l’entreprise propriétaire. Les réponses d’autorisation ne révèlent pas l’existence d’un dossier inaccessible.
 
+## Confidentialité et partage sélectif
+
+Chaque contenu de mission est **interne par défaut**. Le registre `depannhome_partner_mission_items` référence les devis, factures, rapports et photos sans dupliquer leurs données métier ; seul un élément dont `partner_visible` est activé apparaît dans l’espace externe, son historique et son téléchargement protégé. Le retrait de cette visibilité masque immédiatement l’élément et l’entrée de journal correspondante pour le partenaire.
+
+Les messages conservent leur contrôle de partage existant. Les pièces jointes (PDF et photos) possèdent également leur propre visibilité : elles restent privées même si le message parent est partagé, jusqu’à ce qu’un utilisateur les rende explicitement visibles. Un fichier ne peut pas être partagé depuis un message interne : il faut d’abord partager le message ou créer un message dédié, pour ne jamais révéler de commentaire interne.
+
+Chaque mission porte `billing_mode` :
+
+- `direct_client` : la prestation est facturée au client final ; les devis, factures, paiements et informations comptables restent privés et le serveur refuse leur partage partenaire.
+- `principal` : la facturation est destinée à l’entreprise donneuse d’ordre ; les devis et factures associés sont enregistrés comme contenus partagés et ajoutés automatiquement au journal. Revenir au mode `direct_client` révoque immédiatement ce partage.
+
+Les rapports et leurs photos restent internes jusqu’à leur partage volontaire. Un rapport partagé doit être validé afin que le partenaire reçoive uniquement son PDF final.
+
 ## API partenaire
 
 Les routes externes exigent l’en-tête `X-API-Key` :
