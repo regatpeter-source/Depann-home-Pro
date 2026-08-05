@@ -1,5 +1,5 @@
 import { ROUTES } from "./config.js?v=116";
-import { addClientActivity, deleteLocalClient, getLocalClients, saveLocalClient, synchronizeClients } from "./client-sync.js?v=116";
+import { addClientActivity, deleteLocalClient, getLocalClients, saveLocalClient, synchronizeClients } from "./client-sync.js?v=120";
 import { renderClientMessages } from "./messages.js?v=106";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
@@ -31,7 +31,8 @@ const MAX_ATTACHMENT_SIZE = 4 * 1024 * 1024;
 let clientScreenOptions = {};
 let clientDirectoryFilters = createEmptyDirectoryFilters();
 
-export function renderClients(options = {}) {
+export async function renderClients(options = {}) {
+    await synchronizeClients().catch(() => {});
     clientScreenOptions = { ...clientScreenOptions, ...options };
     clearSearch();
     resetSelection("all");

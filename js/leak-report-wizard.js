@@ -63,7 +63,7 @@ export function openLeakReportCreation() {
     document.body.append(dialog);
     dialog.querySelector("[data-close-report-creation]").addEventListener("click", () => dialog.remove());
     dialog.querySelector("[data-report-from-appointment]").addEventListener("click", async () => { dialog.remove(); const { renderCalendar } = await import("./calendar.js?v=149"); renderCalendar(); });
-    dialog.querySelector("[data-create-client-first]").addEventListener("click", async () => { dialog.remove(); const { renderClients } = await import("./clients.js?v=137"); renderClients(); });
+    dialog.querySelector("[data-create-client-first]").addEventListener("click", async () => { dialog.remove(); const { renderClients } = await import("./clients.js?v=138"); renderClients(); });
 }
 
 async function openAppointmentReport(appointmentId) {
@@ -330,7 +330,7 @@ async function validateReport(shell) {
     if (!result.ok) return alert(result.message || "Validation impossible.");
     const appointmentId = current.appointmentId;
     await leaveReport();
-    const { synchronizeClients } = await import("./client-sync.js?v=117");
+    const { synchronizeClients } = await import("./client-sync.js?v=120");
     await synchronizeClients();
     window.dispatchEvent(new CustomEvent("depannhome:technical-report-validated", { detail: { appointmentId } }));
     const { renderCalendar } = await import("./calendar.js?v=149");
@@ -349,7 +349,7 @@ async function finalizePreview(shell) {
     if (!result.ok) return alert(result.message || "Validation impossible.");
     const appointmentId = current.appointmentId;
     await leaveReport();
-    const { synchronizeClients } = await import("./client-sync.js?v=118");
+    const { synchronizeClients } = await import("./client-sync.js?v=120");
     await synchronizeClients();
     window.dispatchEvent(new CustomEvent("depannhome:technical-report-validated", { detail: { appointmentId } }));
     const { renderCalendar } = await import("./calendar.js?v=149");
