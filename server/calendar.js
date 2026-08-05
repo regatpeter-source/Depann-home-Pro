@@ -105,7 +105,7 @@ export function registerCalendarRoutes(app, requireAuthentication) {
             LEFT JOIN depannhome_users technician ON technician.id = event.assigned_technician_id
             WHERE event.owner_id = $1
               AND LOWER(BTRIM(event.client_name)) = LOWER(BTRIM($2))
-              AND ($3 <> 'technician' OR EXISTS (
+              AND ($3 NOT IN ('technician', 'accountant') OR EXISTS (
                     SELECT 1 FROM depannhome_calendar_assignments assignment
                     WHERE assignment.event_id = event.id AND assignment.technician_id = $4::bigint
               ))
@@ -129,6 +129,7 @@ export function registerCalendarRoutes(app, requireAuthentication) {
                         'id', assignment.technician_id,
                         'fullName', COALESCE(assigned.full_name, assigned.username, ''),
                         'department', assigned.department,
+                        'role', assigned.role,
                         'isPrimary', assignment.is_primary
                     ) ORDER BY assignment.is_primary DESC, LOWER(COALESCE(assigned.full_name, assigned.username, '')))
                     FROM depannhome_calendar_assignments assignment
@@ -153,7 +154,7 @@ export function registerCalendarRoutes(app, requireAuthentication) {
             LEFT JOIN depannhome_users technician ON technician.id = event.assigned_technician_id
                         WHERE event.owner_id = $1
                             AND event_date BETWEEN $2::date AND $3::date
-                            AND ($4 <> 'technician' OR EXISTS (
+                            AND ($4 NOT IN ('technician', 'accountant') OR EXISTS (
                                 SELECT 1 FROM depannhome_calendar_assignments assignment
                                 WHERE assignment.event_id = event.id AND assignment.technician_id = $5::bigint
                             ))
@@ -171,11 +172,11 @@ export function registerCalendarRoutes(app, requireAuthentication) {
         const requestedCount = Number(request.query?.count);
         const count = Number.isInteger(requestedCount) ? Math.min(Math.max(requestedCount, 1), 31) : 12;
         if (!start || !end || start > end || daysBetween(start, end) > 90) return response.status(400).json({ message: "Période de recherche invalide." });
-        if (request.query?.technicianIds && !technicianIds.length) return response.status(400).json({ message: "Technicien invalide." });
+        if (request.query?.technicianIds && !technicianIds.length) return response.status(400).json({ message: "Membre affecté invalide." });
         if ((request.query?.startTime && !startTime) || (request.query?.endTime && !endTime) || (startTime && endTime && endTime < startTime)) {
             return response.status(400).json({ message: "Plage horaire invalide." });
         }
-        const assignmentError = await validateAssignedTechnicians(getAccountOwnerId(request), technicianIds);
+        const assignmentError = await validateAssignedMembers(getAccountOwnerId(request), technicianIds);
         if (assignmentError) return response.status(400).json({ message: assignmentError });
 
         const { rows } = await getPool().query(`
@@ -209,7 +210,7 @@ export function registerCalendarRoutes(app, requireAuthentication) {
         if (!event.ok) return response.status(400).json({ message: event.message });
         const dates = sanitizeEventDates(request.body?.dates, event.date);
         if (!dates.length) return response.status(400).json({ message: "Une des dates sélectionnées est invalide." });
-        const assignmentError = await validateAssignedTechnicians(getAccountOwnerId(request), event.assignedTechnicianIds);
+        const assignmentError = await validateAssignedMembers(getAccountOwnerId(request), event.assignedTechnicianIds);
         if (assignmentError) return response.status(400).json({ message: assignmentError });
         for (const date of dates) {
             const conflict = await findCalendarConflict(getAccountOwnerId(request), { ...event, date });
@@ -246,7 +247,7 @@ export function registerCalendarRoutes(app, requireAuthentication) {
         const event = sanitizeEvent(request.body);
         if (!id) return response.status(400).json({ message: "Rendez-vous invalide." });
         if (!event.ok) return response.status(400).json({ message: event.message });
-        const assignmentError = await validateAssignedTechnicians(getAccountOwnerId(request), event.assignedTechnicianIds);
+        const assignmentError = await validateAssignedMembers(getAccountOwnerId(request), event.assignedTechnicianIds);
         if (assignmentError) return response.status(400).json({ message: assignmentError });
         const conflict = await findCalendarConflict(getAccountOwnerId(request), event, id);
         if (conflict) return response.status(409).json({ message: conflictMessage(conflict) });
@@ -305,7 +306,7 @@ export function registerCalendarRoutes(app, requireAuthentication) {
                     notes, quitus_status AS "quitusStatus"
                 FROM depannhome_calendar_events
                                 WHERE id = $1 AND owner_id = $2 AND event_type = 'appointment' AND client_name <> ''
-                                    AND ($3 <> 'technician' OR EXISTS (
+                                    AND ($3 NOT IN ('technician', 'accountant') OR EXISTS (
                                         SELECT 1 FROM depannhome_calendar_assignments assignment
                                         WHERE assignment.event_id = depannhome_calendar_events.id AND assignment.technician_id = $4::bigint
                                     ))
@@ -395,14 +396,13 @@ export function registerCalendarRoutes(app, requireAuthentication) {
 }
 
 function requireCalendarWriteAccess(request, response, next) {
-    if (request.user?.role === "technician") {
-        return response.status(403).json({ message: "Les techniciens peuvent consulter le planning, sans le modifier." });
+    if (["technician", "accountant"].includes(request.user?.role)) {
+        return response.status(403).json({ message: "Ce poste peut consulter son planning, sans le modifier." });
     }
     return next();
 }
 
 function requireCalendarReadAccess(request, response, next) {
-    if (request.user?.role === "accountant") return response.status(403).json({ message: "L’espace comptabilité ne donne pas accès au planning." });
     return next();
 }
 
@@ -427,7 +427,7 @@ function sanitizeEvent(value) {
     if (value?.endTime && !endTime) return { ok: false, message: "L’heure de fin est invalide." };
     if (startTime && endTime && endTime < startTime) return { ok: false, message: "L’heure de fin doit être après l’heure de début." };
 
-    if ((value?.assignedTechnicianId && !requestedPrimaryTechnicianId) || (Array.isArray(value?.assignedTechnicianIds) && value.assignedTechnicianIds.length > 0 && !assignedTechnicianIds.length)) return { ok: false, message: "Un technicien sélectionné est invalide." };
+    if ((value?.assignedTechnicianId && !requestedPrimaryTechnicianId) || (Array.isArray(value?.assignedTechnicianIds) && value.assignedTechnicianIds.length > 0 && !assignedTechnicianIds.length)) return { ok: false, message: "Un membre sélectionné est invalide." };
     return { ok: true, title, clientName, location, date, startTime, endTime, color, eventType, notes, assignedTechnicianId, assignedTechnicianIds };
 }
 
@@ -489,13 +489,13 @@ function createQuitusPdf(event, quitus) {
     });
 }
 
-async function validateAssignedTechnicians(accountOwnerId, technicianIds) {
-    if (!technicianIds.length) return "";
+async function validateAssignedMembers(accountOwnerId, memberIds) {
+    if (!memberIds.length) return "";
     const { rowCount } = await getPool().query(`
         SELECT 1 FROM depannhome_users
-        WHERE id = ANY($1::bigint[]) AND account_owner_id = $2 AND role = 'technician' AND is_active = TRUE
-    `, [technicianIds, accountOwnerId]);
-    return rowCount === technicianIds.length ? "" : "Un des techniciens sélectionnés est introuvable ou inactif.";
+        WHERE id = ANY($1::bigint[]) AND account_owner_id = $2 AND is_active = TRUE
+    `, [memberIds, accountOwnerId]);
+    return rowCount === memberIds.length ? "" : "Un des membres sélectionnés est introuvable ou inactif.";
 }
 
 async function findCalendarConflict(accountOwnerId, event, excludedEventId = 0) {

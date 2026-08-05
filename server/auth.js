@@ -469,6 +469,16 @@ export function registerAuthRoutes(app) {
         response.json({ technicians: rows });
     }));
 
+    app.get("/api/auth/calendar-members", requireCalendarMemberDirectoryAccess, asyncHandler(async (request, response) => {
+        const { rows } = await getPool().query(`
+            SELECT id, username, full_name AS "fullName", phone, email, department, role, is_active AS "isActive"
+            FROM depannhome_users
+            WHERE account_owner_id = $1 AND is_active = TRUE
+            ORDER BY LOWER(COALESCE(NULLIF(full_name, ''), username)), username
+        `, [getAccountOwnerId(request)]);
+        response.json({ members: rows });
+    }));
+
     app.post("/api/auth/technicians", requireAccountAdministrator, asyncHandler(async (request, response) => {
         const username = normalizeUsername(request.body?.username);
         const password = String(request.body?.password || "");
@@ -728,6 +738,11 @@ async function recordMemberAudit(ownerId, actorId, member, action, details = {})
 function requireTechnicianDirectoryAccess(request, response, next) {
     if (request.user?.role === MOBILE_ADMIN_ROLE) return next();
     return requireAccountAdministrator(request, response, next);
+}
+
+function requireCalendarMemberDirectoryAccess(request, response, next) {
+    if (["admin", STANDARD_PC_ROLE, MOBILE_ADMIN_ROLE, TEAM_LEAD_ROLE].includes(request.user?.role)) return next();
+    return response.status(403).json({ message: "L’annuaire du planning n’est pas accessible." });
 }
 
 export async function createInitialAdministrator() {

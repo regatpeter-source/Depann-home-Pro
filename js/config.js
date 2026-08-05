@@ -61,6 +61,7 @@ const ADMINISTRATORS = ["admin"];
 const OPERATIONAL_PC = ["admin", "pc_standard"];
 const OPERATIONAL_MOBILE = ["admin", "pc_standard", "mobile_admin"];
 const TERRAIN = ["admin", "pc_standard", "mobile_admin", "team_lead", "technician"];
+const CALENDAR_USERS = TERRAIN.concat("accountant");
 const PARTNER_MISSION_USERS = OPERATIONAL_PC.concat("team_lead", "technician");
 const LIBRARY_USERS = ["mobile_admin", "team_lead", "technician"];
 
@@ -69,7 +70,7 @@ const LIBRARY_USERS = ["mobile_admin", "team_lead", "technician"];
 export const MENU_ACCESS = Object.freeze({
     quick: Object.freeze({
         clients: OPERATIONAL_MOBILE,
-        calendar: TERRAIN,
+        calendar: CALENDAR_USERS,
         library: LIBRARY_USERS,
         billing: OPERATIONAL_MOBILE.concat("accountant"),
         accounting: ADMINISTRATORS,
@@ -93,7 +94,7 @@ export const MENU_ACCESS = Object.freeze({
         [ROUTES.partnerMissions]: PARTNER_MISSION_USERS,
         [ROUTES.partnerSandbox]: ADMINISTRATORS,
         [ROUTES.technicalReports]: TERRAIN,
-        [ROUTES.calendar]: TERRAIN,
+        [ROUTES.calendar]: CALENDAR_USERS,
         [ROUTES.library]: LIBRARY_USERS,
         [ROUTES.favorites]: OPERATIONAL_MOBILE,
         [ROUTES.settings]: OPERATIONAL_PC

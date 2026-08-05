@@ -472,8 +472,8 @@ ADD COLUMN IF NOT EXISTS quitus_signed_by VARCHAR(160) NOT NULL DEFAULT '',
 ADD COLUMN IF NOT EXISTS quitus_signature TEXT NOT NULL DEFAULT '',
 ADD COLUMN IF NOT EXISTS quitus_signed_at TIMESTAMPTZ;
 
--- Un rendez-vous peut réunir plusieurs techniciens. Le champ historique
--- assigned_technician_id reste le technicien référent pour compatibilité.
+-- Un élément du planning peut réunir plusieurs membres. Les noms de colonnes
+-- historiques restent conservés pour compatibilité, mais acceptent tout utilisateur actif de l’entreprise.
 CREATE TABLE IF NOT EXISTS depannhome_calendar_assignments (
     event_id BIGINT NOT NULL REFERENCES depannhome_calendar_events(id) ON DELETE CASCADE,
     technician_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
