@@ -150,6 +150,7 @@ async function createConnectedMission(req) {
 
     const database = getPool();
     const client = await upsertMissionClient(database, ownerId, value.client, req);
+    if (!value.keepInOwnCalendar) return createDirectConnectedMission(database, ownerId, connection, value, client);
     const { rows } = await database.query(`
         INSERT INTO depannhome_calendar_events
             (owner_id, title, client_name, location, event_date, color, event_type, notes)
@@ -167,7 +168,24 @@ async function createConnectedMission(req) {
     `, [connection.id, ownerId, eventId]);
     const targetMission = synced[0];
     if (!targetMission) throw clientError(409, "La mission locale a été créée, mais sa transmission au partenaire n’a pas pu être confirmée.");
-    return { id: targetMission.missionId, externalMissionId: targetMission.externalMissionId, calendarEventId: eventId, partner: (await publicConnection(connection, ownerId)).partner, status: "pending_validation" };
+    return { id: targetMission.missionId, externalMissionId: targetMission.externalMissionId, calendarEventId: eventId, senderCalendarEventId: eventId, partner: (await publicConnection(connection, ownerId)).partner, status: "pending_validation" };
+}
+
+async function createDirectConnectedMission(database, ownerId, connection, value, client) {
+    const targetOwnerId = partnerOwnerId(connection, ownerId);
+    const sourceCompany = await companyIdentity(ownerId);
+    const intakeId = await ensureManagedIntake(targetOwnerId, sourceCompany.name, connection.id);
+    const externalMissionId = `dpc-${connection.id}-${crypto.randomUUID()}`;
+    const mapped = { externalMissionId, partnerReference: value.subject, date: value.requestedDate, startTime: "", endTime: "", priority: value.priority, interventionType: value.interventionType, clientName: client.name || "", address: client.address || "", city: client.city || "", phone: client.phone || "", email: client.email || "", insurance: client.insurance || "", claimNumber: client.claimNumber || "", expert: client.expert || "", manager: client.manager || "", description: value.comments, comments: value.comments, connectionId: connection.id, sourceEventId: "" };
+    const { rows } = await database.query(`INSERT INTO depannhome_partner_missions(owner_id,intake_id,external_mission_id,partner_reference,status,priority,source_data,mapped_data,scheduled_date) VALUES($1,$2,$3,$4,'pending_validation',$5,$6::jsonb,$7::jsonb,$8::date) RETURNING id`, [targetOwnerId, intakeId, externalMissionId, mapped.partnerReference, mapped.priority, JSON.stringify({ managedConnection: true, directMission: true, sourceOwnerId: ownerId }), JSON.stringify(mapped), mapped.date]);
+    const mission = rows[0];
+    const targetClient = await provisionPartnerMissionClient(database, targetOwnerId, mapped, { user: { fullName: sourceCompany.name } });
+    await database.query("UPDATE depannhome_partner_missions SET client_id=$3,updated_at=NOW() WHERE id=$1 AND owner_id=$2", [mission.id, targetOwnerId, targetClient.id]);
+    await database.query("INSERT INTO depannhome_partner_mission_history(owner_id,mission_id,status,action,actor_role,details) VALUES($1,$2,'pending_validation','received','partner',$3::jsonb)", [targetOwnerId, mission.id, JSON.stringify({ connectionId: connection.id, clientId: targetClient.id, clientCreated: targetClient.created, directMission: true })]);
+    await database.query("INSERT INTO depannhome_partner_connection_sync_log(connection_id,source_owner_id,target_owner_id,target_mission_id,event_type,details) VALUES($1,$2,$3,$4,'mission_sent',$5::jsonb)", [connection.id, ownerId, targetOwnerId, mission.id, JSON.stringify({ clientId: targetClient.id, clientCreated: targetClient.created, keepInOwnCalendar: false })]);
+    await recordMissionDialogueEvent({ ownerId: targetOwnerId, missionId: mission.id, status: "received", action: "received", actorName: sourceCompany.name, details: { clientId: targetClient.id, clientCreated: targetClient.created } });
+    await notifyAdmins(targetOwnerId, "partner_connection_intervention", "Nouvelle mission partenaire", `${sourceCompany.name} a transmis la mission « ${value.subject} ».`, { connectionId: connection.id, missionId: mission.id });
+    return { id: mission.id, externalMissionId, calendarEventId: null, senderCalendarEventId: null, partner: (await publicConnection(connection, ownerId)).partner, status: "pending_validation" };
 }
 
 async function upsertMissionClient(database, ownerId, client, req) {
@@ -193,7 +211,7 @@ async function sourceClientForEvent(database, ownerId, event) {
 
 async function sentMissions(ownerId) {
     const { rows } = await getPool().query(`
-        SELECT DISTINCT ON (log.connection_id, log.source_event_id)
+        SELECT DISTINCT ON (log.target_mission_id)
             log.connection_id AS "connectionId", log.source_event_id AS "calendarEventId", log.target_mission_id AS id,
             log.created_at AS "sentAt", mission.external_mission_id AS "externalMissionId", mission.partner_reference AS "partnerReference",
             mission.status, mission.priority, mission.mapped_data AS "mappedData", mission.scheduled_date AS "scheduledDate",
@@ -204,8 +222,8 @@ async function sentMissions(ownerId) {
         JOIN depannhome_partner_missions mission ON mission.id=log.target_mission_id AND mission.owner_id=log.target_owner_id
         JOIN depannhome_users partner ON partner.id=log.target_owner_id
         LEFT JOIN depannhome_billing_profiles profile ON profile.owner_id=partner.id
-        WHERE log.source_owner_id=$1 AND log.event_type='appointment_synced'
-        ORDER BY log.connection_id, log.source_event_id, log.created_at DESC
+        WHERE log.source_owner_id=$1 AND log.event_type IN ('appointment_synced','mission_sent')
+        ORDER BY log.target_mission_id, log.created_at DESC
     `, [ownerId]);
     return rows;
 }
@@ -217,13 +235,14 @@ function sanitizeConnectedMission(value) {
     const comments = clean(value?.comments, 2000);
     const requestedDate = validDate(value?.requestedDate);
     const priority = ["low", "normal", "high", "urgent"].includes(value?.priority) ? value.priority : "normal";
+    const keepInOwnCalendar = value?.keepInOwnCalendar === true;
     const input = value?.client && typeof value.client === "object" ? value.client : {};
     const client = { id: clean(input.id, 100), type: clean(input.type, 80) || "Particulier", name: clean(input.name, 160), phone: clean(input.phone, 50), email: clean(input.email, 160), address: clean(input.address, 255), city: clean(input.city, 100) };
     if (!connectionId) return { ok: false, message: "Choisissez un partenaire connecté." };
     if (!client.id && !client.name) return { ok: false, message: "Choisissez ou créez un client." };
     if (!subject) return { ok: false, message: "L’objet de la mission est obligatoire." };
     if (!requestedDate) return { ok: false, message: "La date souhaitée est invalide." };
-    return { ok: true, connectionId, subject, interventionType: interventionType || subject, comments, requestedDate, priority, client };
+    return { ok: true, connectionId, subject, interventionType: interventionType || subject, comments, requestedDate, priority, keepInOwnCalendar, client };
 }
 
 function missionNotes(value) {
