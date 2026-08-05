@@ -116,7 +116,7 @@ async function technicians(ownerId) { const { rows } = await getPool().query("SE
 async function upsertClient(connection, ownerId, data, req) { return (await provisionPartnerMissionClient(connection, ownerId, data, req)).id; }
 
 export async function provisionPartnerMissionClient(connection, ownerId, data, req = {}) {
-    const { rows } = await connection.query("SELECT client_id,client_data FROM depannhome_clients WHERE owner_id=$1 AND (($2<>'' AND LOWER(BTRIM(client_data->>'email'))=LOWER(BTRIM($2))) OR ($3<>'' AND regexp_replace(COALESCE(client_data->>'phone',''),'\\D','','g')=$3) OR ($4<>'' AND LOWER(BTRIM(client_data->>'name'))=LOWER(BTRIM($4)))) FOR UPDATE", [ownerId, normalizedEmail(data.email), normalizedPhone(data.phone), clean(data.clientName, 160)]);
+    const { rows } = await connection.query("SELECT client_id,client_data FROM depannhome_clients WHERE owner_id=$1 FOR UPDATE", [ownerId]);
     const row = findMatchingClient(rows, data);
     const now = new Date().toISOString();
     const clientId = row?.client_id || `client-${crypto.randomUUID()}`;
