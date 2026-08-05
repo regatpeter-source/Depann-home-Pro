@@ -1,7 +1,7 @@
 import { ROUTES } from "./config.js?v=118";
 import { clearSearch, getContainer, setPage } from "./ui.js?v=44";
 import { escapeHtml } from "./utils.js?v=44";
-import { openPartnerDialogue } from "./partner-dialogue.js?v=4";
+import { openPartnerDialogue } from "./partner-dialogue.js?v=5";
 import { getSearchableClients } from "./clients.js?v=137";
 
 let dashboard = null;
@@ -26,7 +26,7 @@ export async function renderPartnerMissions(options = {}) {
     shell.querySelector("#retryPartnerOutbox")?.addEventListener("click", async () => { const result = await api("/api/partner-missions/outbox/retry", { method: "POST" }); alert(result.ok ? `${result.data.delivered} retour(s) transmis.` : result.message); renderPartnerMissions(); });
     shell.querySelectorAll("[data-mission-tab]").forEach(button => button.addEventListener("click", () => { activeMissionTab = button.dataset.missionTab; renderMissionTab(shell); }));
     renderMissionTab(shell);
-    if (options.missionId) await showDetail(options.missionId);
+    if (options.missionId) options.sourceDialogue ? await openPartnerDialogue(options.missionId, { sourceDialogue: true }) : await showDetail(options.missionId);
 }
 
 function renderMissionTab(shell) {
@@ -35,21 +35,23 @@ function renderMissionTab(shell) {
     if (activeMissionTab === "new") return renderNewMissionEntry(content);
     const sent = activeMissionTab === "sent";
     const messages = activeMissionTab === "messages";
-    const source = sent ? dashboard.sentMissions : dashboard.missions;
-    content.innerHTML = `${messages ? '<p class="muted">Chaque conversation reste rattachée à sa mission. Ouvrez une mission reçue pour consulter son journal, ses documents et ses échanges.</p>' : `<div class="partner-mission-filters"><label>Statut <select id="partnerMissionStatus"><option value="">Tous les statuts</option>${dashboard.statuses.map(status => `<option value="${escapeHtml(status)}">${escapeHtml(labelStatus(status))}</option>`).join("")}</select></label><label>Recherche <input id="partnerMissionSearch" type="search" placeholder="Client, référence, adresse"></label></div>`}<section class="partner-mission-list" id="partnerMissionList"></section>`;
+    const source = messages ? [...dashboard.missions.map(mission => ({ ...mission, conversationSide: "received" })), ...dashboard.sentMissions.map(mission => ({ ...mission, conversationSide: "sent" }))] : sent ? dashboard.sentMissions : dashboard.missions;
+    content.innerHTML = `${messages ? '<p class="muted">Une conversation est disponible pour chaque mission. Ouvrez-la pour écrire directement à l’autre entreprise et consulter les informations partagées.</p>' : `<div class="partner-mission-filters"><label>Statut <select id="partnerMissionStatus"><option value="">Tous les statuts</option>${dashboard.statuses.map(status => `<option value="${escapeHtml(status)}">${escapeHtml(labelStatus(status))}</option>`).join("")}</select></label><label>Recherche <input id="partnerMissionSearch" type="search" placeholder="Client, référence, adresse"></label></div>`}<section class="partner-mission-list" id="partnerMissionList"></section>`;
     const renderList = () => {
         const status = content.querySelector("#partnerMissionStatus")?.value || "";
         const query = content.querySelector("#partnerMissionSearch")?.value.trim().toLowerCase() || "";
         const missions = source.filter(mission => (!status || mission.status === status) && (!query || `${mission.externalMissionId} ${mission.partnerReference} ${mission.partnerName} ${mission.mappedData?.clientName} ${mission.mappedData?.address}`.toLowerCase().includes(query)));
-        renderMissions(content.querySelector("#partnerMissionList"), messages ? missions : missions, { sent, messages });
+        renderMissions(content.querySelector("#partnerMissionList"), missions, { sent, messages });
     };
     content.querySelector("#partnerMissionStatus")?.addEventListener("change", renderList);
     content.querySelector("#partnerMissionSearch")?.addEventListener("input", renderList);
     renderList();
 }
 
-function renderMissions(node, missions, options = {}) { node.innerHTML = missions.length ? missions.map(mission => `<article class="partner-mission-card priority-${escapeHtml(mission.priority)}"><div class="partner-mission-card-title"><div><p class="eyebrow">${escapeHtml(mission.partnerName || "Partenaire")} · ${escapeHtml(mission.externalMissionId)}</p><h3>${escapeHtml(mission.mappedData?.clientName || "Client non renseigné")}</h3><p>${escapeHtml(mission.mappedData?.address || "Adresse non renseignée")}</p></div><span class="partner-mission-status ${escapeHtml(mission.status)}">${escapeHtml(labelStatus(mission.status))}</span></div><div class="partner-mission-meta"><span>${escapeHtml(mission.mappedData?.interventionType || "Intervention")}</span><span>${mission.scheduledDate ? escapeHtml(mission.scheduledDate) : "À planifier"}</span><span class="priority">${escapeHtml(labelPriority(mission.priority))}</span></div><p>${escapeHtml(mission.mappedData?.description || mission.mappedData?.comments || "Aucun descriptif transmis.")}</p><div class="partner-mission-card-actions">${options.sent ? `<span class="muted">Envoyée le ${escapeHtml(formatDate(mission.sentAt))}</span>` : `<button class="secondary-button" data-open="${mission.id}">Détail</button>${canManagePartnerMissions() && ["received", "pending_validation"].includes(mission.status) ? `<button class="secondary-button" data-accept="${mission.id}">Accepter et planifier</button><button class="danger-button" data-reject="${mission.id}">Refuser</button>` : ""}`}</div></article>`).join("") : '<p class="muted">Aucune mission ne correspond à ce filtre.</p>';
+function renderMissions(node, missions, options = {}) { node.innerHTML = missions.length ? missions.map(mission => `<article class="partner-mission-card priority-${escapeHtml(mission.priority)}"><div class="partner-mission-card-title"><div><p class="eyebrow">${escapeHtml(mission.partnerName || "Partenaire")} · ${escapeHtml(mission.externalMissionId)}</p><h3>${escapeHtml(mission.mappedData?.clientName || "Client non renseigné")}</h3><p>${escapeHtml(mission.mappedData?.address || "Adresse non renseignée")}</p></div><span class="partner-mission-status ${escapeHtml(mission.status)}">${escapeHtml(labelStatus(mission.status))}</span></div><div class="partner-mission-meta"><span>${escapeHtml(mission.mappedData?.interventionType || "Intervention")}</span><span>${mission.scheduledDate ? escapeHtml(mission.scheduledDate) : "À planifier"}</span><span class="priority">${escapeHtml(labelPriority(mission.priority))}</span></div><p>${escapeHtml(mission.mappedData?.description || mission.mappedData?.comments || "Aucun descriptif transmis.")}</p><div class="partner-mission-card-actions">${options.sent || mission.conversationSide === "sent" ? `<span class="muted">Envoyée le ${escapeHtml(formatDate(mission.sentAt))}</span><button class="secondary-button" data-open-sent-dialogue="${mission.id}">Ouvrir la conversation</button>` : `<button class="secondary-button" data-open="${mission.id}">Détail</button><button class="secondary-button" data-open-dialogue="${mission.id}">Ouvrir la conversation</button>${canManagePartnerMissions() && ["received", "pending_validation"].includes(mission.status) ? `<button class="secondary-button" data-accept="${mission.id}">Accepter et planifier</button><button class="danger-button" data-reject="${mission.id}">Refuser</button>` : ""}`}</div></article>`).join("") : '<p class="muted">Aucune mission ne correspond à ce filtre.</p>';
     node.querySelectorAll("[data-open]").forEach(button => button.addEventListener("click", () => showDetail(button.dataset.open)));
+    node.querySelectorAll("[data-open-dialogue]").forEach(button => button.addEventListener("click", () => openPartnerDialogue(button.dataset.openDialogue)));
+    node.querySelectorAll("[data-open-sent-dialogue]").forEach(button => button.addEventListener("click", () => openPartnerDialogue(button.dataset.openSentDialogue, { sourceDialogue: true })));
     node.querySelectorAll("[data-accept]").forEach(button => button.addEventListener("click", () => showAccept(button.dataset.accept)));
     node.querySelectorAll("[data-reject]").forEach(button => button.addEventListener("click", async () => { const reason = prompt("Motif du refus à transmettre au partenaire :"); if (reason === null) return; const result = await api(`/api/partner-missions/${button.dataset.reject}/reject`, { method: "POST", body: JSON.stringify({ reason }) }); if (!result.ok) return alert(result.message); renderPartnerMissions(); }));
 }

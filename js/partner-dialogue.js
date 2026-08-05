@@ -2,7 +2,8 @@ import { escapeHtml } from "./utils.js?v=44";
 
 const ISSUE_LABELS = { client_absent: "Client absent", access_impossible: "Accès impossible", information_missing: "Informations manquantes", material_unavailable: "Matériel indisponible", awaiting_authorization: "En attente d’autorisation", rescheduled: "Intervention reportée", information_requested: "Informations complémentaires demandées", other: "Autre difficulté" };
 
-export async function openPartnerDialogue(missionId) {
+export async function openPartnerDialogue(missionId, options = {}) {
+    const dialogueUrl = options.sourceDialogue ? `/api/partner-dialogue/sent-missions/${missionId}` : `/api/partner-dialogue/missions/${missionId}`;
     const dialog = document.createElement("div");
     dialog.className = "partner-mission-dialog partner-dialogue-modal";
     dialog.innerHTML = '<section><p class="muted">Chargement de la conversation…</p></section>';
@@ -12,18 +13,18 @@ export async function openPartnerDialogue(missionId) {
     const refresh = async event => {
         const detail = event.detail || {};
         if (refreshing || detail.type !== "mission_journal_updated" || String(detail.missionId) !== String(missionId)) return;
-        refreshing = true; const result = await api(`/api/partner-dialogue/missions/${missionId}`); refreshing = false;
-        if (result.ok && dialog.isConnected) renderDialogue(dialog, result.data, close);
+        refreshing = true; const result = await api(dialogueUrl); refreshing = false;
+        if (result.ok && dialog.isConnected) renderDialogue(dialog, result.data, close, dialogueUrl);
     };
     window.addEventListener("depannhome:collaboration-event", refresh);
     try {
-        const result = await api(`/api/partner-dialogue/missions/${missionId}`);
+        const result = await api(dialogueUrl);
         if (!result.ok) { dialog.querySelector("section").innerHTML = `<button class="text-button partner-dialog-close">Fermer</button><p class="auth-message error">${escapeHtml(result.message || "Conversation indisponible.")}</p>`; dialog.querySelector("button").addEventListener("click", close); return; }
-        renderDialogue(dialog, result.data, close);
+        renderDialogue(dialog, result.data, close, dialogueUrl);
     } catch { close(); }
 }
 
-function renderDialogue(dialog, data, close) {
+function renderDialogue(dialog, data, close, dialogueUrl) {
     const { mission, messages, linkedDocuments, readOnly } = data;
     const section = dialog.querySelector("section");
     section.className = "partner-dialogue";
@@ -40,19 +41,20 @@ function renderDialogue(dialog, data, close) {
         if (!link) return;
         const button = document.createElement("button"); button.type = "button"; button.className = "text-button"; button.dataset.attachmentVisibility = attachment.id; button.dataset.currentVisible = String(Boolean(attachment.partnerVisible)); button.textContent = attachment.partnerVisible ? "◉" : "◌"; button.setAttribute("aria-label", attachment.partnerVisible ? "Masquer la pièce jointe au partenaire" : "Partager la pièce jointe avec le partenaire"); link.after(button); button.addEventListener("click", () => updateAttachmentVisibility(mission.id, button));
     });
+    if (data.sourceDialogue) section.querySelectorAll("[data-partner-visibility], [data-item-visibility], [data-attachment-visibility]").forEach(button => button.remove());
     const form = section.querySelector("form");
     form?.addEventListener("submit", async event => {
         event.preventDefault();
         const formData = new FormData(form); const submit = form.querySelector("button[type=submit]"); submit.disabled = true;
-        const result = await fetch(`/api/partner-dialogue/missions/${mission.id}/messages`, { method: "POST", credentials: "same-origin", body: formData });
+        const result = await fetch(`${dialogueUrl}/messages`, { method: "POST", credentials: "same-origin", body: formData });
         const payload = await result.json().catch(() => null); submit.disabled = false;
         if (!result.ok) return alert(payload?.message || "Message impossible à envoyer.");
-        const latest = await api(`/api/partner-dialogue/missions/${mission.id}`); if (latest.ok) renderDialogue(dialog, latest.data, close);
+        const latest = await api(dialogueUrl); if (latest.ok) renderDialogue(dialog, latest.data, close, dialogueUrl);
     });
 }
 
 function messageCard(message) { const system = message.kind === "system"; const issue = message.kind === "issue"; const attachments = Array.isArray(message.attachments) ? message.attachments : []; const categories = [system ? "events" : "messages", message.senderType === "internal" ? "internal" : "", message.partnerVisible ? "partner_visible" : "", ...attachments.map(attachment => attachment.attachmentType || (attachment.mimeType.startsWith("image/") ? "photos" : "documents"))].filter(Boolean).join(" "); return `<article class="partner-dialogue-message journal-entry ${system ? "system" : ""} ${issue ? "issue" : ""}" data-journal-category="${escapeHtml(categories)}"><header><strong>${escapeHtml(system ? "Événement système" : message.senderName || "Participant")}</strong><span>${escapeHtml(system ? "Depann’Home Pro" : message.organizationName || "")}${issue ? ` · ${escapeHtml(ISSUE_LABELS[message.issueType] || "Difficulté")}` : ""}</span><time>${escapeHtml(formatDate(message.createdAt))}</time></header>${message.body ? `<p>${escapeHtml(message.body)}</p>` : ""}${attachments.length ? `<div class="partner-dialogue-attachments">${attachments.map(attachment => attachment.mimeType.startsWith("image/") ? `<a class="partner-journal-photo" href="${escapeHtml(attachment.url)}" target="_blank" rel="noopener"><span>Photo</span><strong>${escapeHtml(attachment.filename)}</strong></a>` : `<a href="${escapeHtml(attachment.url)}" target="_blank" rel="noopener">${escapeHtml(documentLabel(attachment.attachmentType))} · ${escapeHtml(attachment.filename)} <small>${formatSize(attachment.fileSize)}</small></a>`).join("")}</div>` : ""}<footer><span class="partner-visibility ${message.partnerVisible ? "shared" : "private"}">${message.partnerVisible ? "◉ Visible au partenaire" : "◉ Interne uniquement"}</span><button type="button" class="text-button" data-partner-visibility="${message.id}" data-current-visible="${message.partnerVisible ? "true" : "false"}" aria-label="${message.partnerVisible ? "Masquer au partenaire" : "Partager avec le partenaire"}">${message.partnerVisible ? "◉" : "◌"}</button></footer></article>`; }
-function composer() { return `<form class="partner-dialogue-composer"><div class="form-grid"><label class="form-wide">Message<textarea name="body" rows="4" maxlength="4000" placeholder="Partager une information utile concernant cette intervention…"></textarea></label><label>Type<select name="kind"><option value="message">Message</option><option value="issue">Signaler une difficulté</option></select></label><label>Difficulté<select name="issueType"><option value="other">Autre</option>${Object.entries(ISSUE_LABELS).filter(([key]) => key !== "other").map(([key, label]) => `<option value="${key}">${escapeHtml(label)}</option>`).join("")}</select></label><label class="form-wide">Pièces jointes (photos ou PDF, 5 Mo par fichier)<input name="files" type="file" multiple accept="image/jpeg,image/png,image/webp,application/pdf"></label><label>Nature des fichiers<select name="attachmentType"><option value="document">Document</option><option value="photo">Photo</option><option value="quote">Devis</option><option value="report">Rapport</option><option value="invoice">Facture</option></select></label><label class="journal-share-control"><input type="checkbox" name="partnerVisible" value="true"> Partager avec le partenaire</label></div><div class="form-actions"><button class="secondary-button" type="submit">Ajouter au journal</button></div></form>`; }
+function composer() { return `<form class="partner-dialogue-composer"><div class="form-grid"><label class="form-wide">Message<textarea name="body" rows="4" maxlength="4000" placeholder="Partager une information utile concernant cette intervention…"></textarea></label><label>Type<select name="kind"><option value="message">Message</option><option value="issue">Signaler une difficulté</option></select></label><label>Difficulté<select name="issueType"><option value="other">Autre</option>${Object.entries(ISSUE_LABELS).filter(([key]) => key !== "other").map(([key, label]) => `<option value="${key}">${escapeHtml(label)}</option>`).join("")}</select></label><label class="form-wide">Pièces jointes (photos ou PDF, 5 Mo par fichier)<input name="files" type="file" multiple accept="image/jpeg,image/png,image/webp,application/pdf"></label><label>Nature des fichiers<select name="attachmentType"><option value="document">Document</option><option value="photo">Photo</option><option value="quote">Devis</option><option value="report">Rapport</option><option value="invoice">Facture</option></select></label><label class="journal-share-control"><input type="checkbox" name="partnerVisible" value="true" checked> Partager avec le partenaire</label></div><div class="form-actions"><button class="secondary-button" type="submit">Ajouter au journal</button></div></form>`; }
 function filterButtons(filters) { const labels = { all: "Tout", events: "Événements", messages: "Messages", documents: "Documents", photos: "Photos", quote: "Devis", report: "Rapports", invoice: "Factures", internal: "Internes", partner_visible: "Visibles partenaire" }; return (filters || ["all"]).map(filter => `<button type="button" class="text-button ${filter === "all" ? "active" : ""}" data-journal-filter="${escapeHtml(filter)}">${escapeHtml(labels[filter] || filter)}</button>`).join(""); }
 function applyFilter(section, filter) { section.querySelectorAll("[data-journal-filter]").forEach(button => button.classList.toggle("active", button.dataset.journalFilter === filter)); section.querySelectorAll("[data-journal-category]").forEach(entry => { entry.hidden = filter !== "all" && !entry.dataset.journalCategory.split(" ").includes(filter); }); }
 async function updateVisibility(missionId, button) { const partnerVisible = button.dataset.currentVisible !== "true"; button.disabled = true; const result = await fetch(`/api/partner-dialogue/missions/${missionId}/entries/${button.dataset.partnerVisibility}/visibility`, { method: "PATCH", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ partnerVisible }) }); button.disabled = false; if (!result.ok) { const payload = await result.json().catch(() => null); alert(payload?.message || "Visibilité impossible à modifier."); return; } const entry = button.closest(".journal-entry"); entry.querySelector(".partner-visibility").className = `partner-visibility ${partnerVisible ? "shared" : "private"}`; entry.querySelector(".partner-visibility").textContent = partnerVisible ? "◉ Visible au partenaire" : "◉ Interne uniquement"; button.dataset.currentVisible = String(partnerVisible); button.textContent = partnerVisible ? "◉" : "◌"; button.setAttribute("aria-label", partnerVisible ? "Masquer au partenaire" : "Partager avec le partenaire"); entry.dataset.journalCategory = entry.dataset.journalCategory.split(" ").filter(category => category !== "partner_visible").concat(partnerVisible ? ["partner_visible"] : []).join(" "); }

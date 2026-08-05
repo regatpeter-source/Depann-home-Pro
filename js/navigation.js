@@ -5,7 +5,7 @@ import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocume
 import { renderAccounting } from "./accounting.js?v=5";
 import { renderAccountingSandbox } from "./accounting-sandbox.js?v=2";
 import { renderGroupActivation, renderGroupWorkspace } from "./groups.js?v=3";
-import { renderPartnerMissions } from "./partner-missions.js?v=10";
+import { renderPartnerMissions } from "./partner-missions.js?v=12";
 import { renderPartnerSandbox } from "./partner-sandbox.js?v=3";
 import { renderPartnerConnections } from "./partner-connections.js?v=12";
 import { renderDataImportTool } from "./data-imports.js?v=2";
@@ -289,7 +289,7 @@ function openNotificationDestination(notification) {
     const entityType = notification?.entityType || "";
     const entityId = String(notification?.entityId || notification?.payload?.partnerRequestId || "");
     if (entityType === "partner_request" && document.body.dataset.creator === "true") return openCreatorPartnerRequest(entityId);
-    if (entityType === "partner_mission") return renderPartnerMissions({ missionId: entityId });
+    if (entityType === "partner_mission") return renderPartnerMissions({ missionId: entityId, sourceDialogue: Boolean(notification?.payload?.sourceDialogue) });
     if (entityType === "partner_connection") return renderSettings({ section: "network" });
     if (entityType === "technical_report") return renderTechnicalReports(Number(entityId) || 0);
     if (entityType === "billing_document") return renderBilling();
