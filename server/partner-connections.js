@@ -104,17 +104,23 @@ export function registerPartnerConnectionRoutes(app, requireAuthentication) {
     app.post("/api/partner-connections/:connectionId/refuse", asyncHandler(async (req, res) => res.json({ connection: await respondToRequest(req, positiveId(req.params.connectionId), "refused") })));
     app.patch("/api/partner-connections/:connectionId/permissions", asyncHandler(async (req, res) => res.json({ connection: await updatePermissions(req, positiveId(req.params.connectionId)) })));
     app.post("/api/partner-connections/:connectionId/disconnect", asyncHandler(async (req, res) => res.json({ connection: await disconnect(req, positiveId(req.params.connectionId)) })));
+    app.get("/api/partner-connections/missions-sent", asyncHandler(async (req, res) => res.json({ missions: await sentMissions(getAccountOwnerId(req)) })));
+    app.post("/api/partner-connections/missions", asyncHandler(async (req, res) => {
+        const mission = await createConnectedMission(req);
+        res.status(201).json({ mission });
+    }));
 }
 
-export async function synchronizeConnectedAppointment(ownerId, eventId) {
+export async function synchronizeConnectedAppointment(ownerId, eventId, connectionId = 0) {
     if (!ownerId || !eventId) return;
     const db = getPool();
     const { rows: sourceRows } = await db.query("SELECT id,title,client_name,location,TO_CHAR(event_date,'YYYY-MM-DD') AS date,TO_CHAR(start_time,'HH24:MI') AS \"startTime\",TO_CHAR(end_time,'HH24:MI') AS \"endTime\",notes,event_type FROM depannhome_calendar_events WHERE id=$1 AND owner_id=$2", [eventId, ownerId]);
     const event = sourceRows[0]; if (!event || event.event_type !== "appointment") return;
     const sourceCompany = await companyIdentity(ownerId);
-    for (const connection of await activeConnections(ownerId)) {
+    const connections = await activeConnections(ownerId);
+    for (const connection of connectionId ? connections.filter(item => Number(item.id) === Number(connectionId)) : connections) {
         const own = ownPermissions(connection, ownerId), partner = partnerPermissions(connection, ownerId);
-        if (!own.canReceiveInterventions || !partner.canSendInterventions) continue;
+        if (!own.canSendInterventions || !partner.canReceiveInterventions) continue;
         const targetOwnerId = partnerOwnerId(connection, ownerId); const intakeId = await ensureManagedIntake(targetOwnerId, sourceCompany.name, connection.id);
         const externalMissionId = `dpc-${connection.id}-${event.id}`;
         const mapped = { externalMissionId, partnerReference: `Intervention ${event.id}`, date: event.date, startTime: event.startTime || "", endTime: event.endTime || "", priority: "normal", interventionType: event.title, clientName: event.client_name, address: event.location, description: event.notes, connectionId: connection.id, sourceEventId: event.id };
@@ -125,6 +131,95 @@ export async function synchronizeConnectedAppointment(ownerId, eventId) {
         await recordMissionDialogueEvent({ ownerId: targetOwnerId, missionId: mission.id, status: mission.inserted ? "received" : "pending_validation", action: mission.inserted ? "received" : "updated", actorName: sourceCompany.name });
         await notifyAdmins(targetOwnerId, "partner_connection_intervention", "Nouvelle intervention partenaire", `${sourceCompany.name} a partagé l’intervention « ${event.title} ».`, { connectionId: connection.id, missionId: mission.id });
     }
+}
+
+async function createConnectedMission(req) {
+    const ownerId = getAccountOwnerId(req);
+    const value = sanitizeConnectedMission(req.body);
+    if (!value.ok) throw clientError(400, value.message);
+    const connection = await connectionForOwner(value.connectionId, ownerId);
+    if (!connection || connection.status !== "connected") throw clientError(404, "Partenaire connecté introuvable.");
+    if (!ownPermissions(connection, ownerId).canSendInterventions || !partnerPermissions(connection, ownerId).canReceiveInterventions) {
+        throw clientError(403, "Ce partenaire n’est pas autorisé à recevoir des missions.");
+    }
+
+    const database = getPool();
+    const client = await upsertMissionClient(database, ownerId, value.client, req);
+    const { rows } = await database.query(`
+        INSERT INTO depannhome_calendar_events
+            (owner_id, title, client_name, location, event_date, color, event_type, notes)
+        VALUES ($1, $2, $3, $4, $5::date, $6, 'appointment', $7)
+        RETURNING id
+    `, [ownerId, value.subject, client.name, [client.address, client.city].filter(Boolean).join(", "), value.requestedDate, value.priority === "urgent" ? "red" : value.priority === "high" ? "orange" : "blue", missionNotes(value)]);
+    const eventId = rows[0].id;
+    await synchronizeConnectedAppointment(ownerId, eventId, connection.id);
+    const { rows: synced } = await database.query(`
+        SELECT log.target_mission_id AS "missionId", mission.external_mission_id AS "externalMissionId"
+        FROM depannhome_partner_connection_sync_log log
+        JOIN depannhome_partner_missions mission ON mission.id = log.target_mission_id
+        WHERE log.connection_id = $1 AND log.source_owner_id = $2 AND log.source_event_id = $3
+        ORDER BY log.created_at DESC LIMIT 1
+    `, [connection.id, ownerId, eventId]);
+    const targetMission = synced[0];
+    if (!targetMission) throw clientError(409, "La mission locale a été créée, mais sa transmission au partenaire n’a pas pu être confirmée.");
+    return { id: targetMission.missionId, externalMissionId: targetMission.externalMissionId, calendarEventId: eventId, partner: (await publicConnection(connection, ownerId)).partner, status: "pending_validation" };
+}
+
+async function upsertMissionClient(database, ownerId, client, req) {
+    if (client.id) {
+        const { rows } = await database.query("SELECT client_data AS client FROM depannhome_clients WHERE owner_id=$1 AND client_id=$2", [ownerId, client.id]);
+        if (!rows[0]?.client) throw clientError(404, "Client sélectionné introuvable.");
+        return rows[0].client;
+    }
+    const now = new Date().toISOString();
+    const id = `client-${crypto.randomUUID()}`;
+    const created = { id, type: client.type, name: client.name, phone: client.phone, email: client.email, address: client.address, city: client.city, equipment: "", notes: "", attachments: [], activityHistory: [{ id: `activity-${crypto.randomUUID()}`, type: "partner_mission", label: "Client créé depuis une mission partenaire", actorName: String(req.user.fullName || req.user.username || "Depann’Home Pro").slice(0, 100), createdAt: now }], createdAt: now, updatedAt: now };
+    await database.query("INSERT INTO depannhome_clients(owner_id,client_id,client_data,updated_at) VALUES($1,$2,$3::jsonb,NOW())", [ownerId, id, JSON.stringify(created)]);
+    return created;
+}
+
+async function sentMissions(ownerId) {
+    const { rows } = await getPool().query(`
+        SELECT DISTINCT ON (log.connection_id, log.source_event_id)
+            log.connection_id AS "connectionId", log.source_event_id AS "calendarEventId", log.target_mission_id AS id,
+            log.created_at AS "sentAt", mission.external_mission_id AS "externalMissionId", mission.partner_reference AS "partnerReference",
+            mission.status, mission.priority, mission.mapped_data AS "mappedData", mission.scheduled_date AS "scheduledDate",
+            mission.scheduled_start_time AS "scheduledStartTime", mission.scheduled_end_time AS "scheduledEndTime",
+            COALESCE(NULLIF(profile.company_name,''),NULLIF(partner.company_name,''),partner.full_name,partner.username) AS "partnerName"
+        FROM depannhome_partner_connection_sync_log log
+        JOIN depannhome_partner_connections connection ON connection.id=log.connection_id AND connection.status='connected'
+        JOIN depannhome_partner_missions mission ON mission.id=log.target_mission_id AND mission.owner_id=log.target_owner_id
+        JOIN depannhome_users partner ON partner.id=log.target_owner_id
+        LEFT JOIN depannhome_billing_profiles profile ON profile.owner_id=partner.id
+        WHERE log.source_owner_id=$1 AND log.event_type='appointment_synced'
+        ORDER BY log.connection_id, log.source_event_id, log.created_at DESC
+    `, [ownerId]);
+    return rows;
+}
+
+function sanitizeConnectedMission(value) {
+    const connectionId = positiveId(value?.connectionId);
+    const subject = clean(value?.subject, 160);
+    const interventionType = clean(value?.interventionType, 160);
+    const comments = clean(value?.comments, 2000);
+    const requestedDate = validDate(value?.requestedDate);
+    const priority = ["low", "normal", "high", "urgent"].includes(value?.priority) ? value.priority : "normal";
+    const input = value?.client && typeof value.client === "object" ? value.client : {};
+    const client = { id: clean(input.id, 100), type: clean(input.type, 80) || "Particulier", name: clean(input.name, 160), phone: clean(input.phone, 50), email: clean(input.email, 160), address: clean(input.address, 255), city: clean(input.city, 100) };
+    if (!connectionId) return { ok: false, message: "Choisissez un partenaire connecté." };
+    if (!client.id && !client.name) return { ok: false, message: "Choisissez ou créez un client." };
+    if (!subject) return { ok: false, message: "L’objet de la mission est obligatoire." };
+    if (!requestedDate) return { ok: false, message: "La date souhaitée est invalide." };
+    return { ok: true, connectionId, subject, interventionType: interventionType || subject, comments, requestedDate, priority, client };
+}
+
+function missionNotes(value) {
+    return [
+        `Mission partenaire : ${value.subject}`,
+        `Type d’intervention : ${value.interventionType}`,
+        `Urgence : ${value.priority}`,
+        value.comments
+    ].filter(Boolean).join("\n").slice(0, 2000);
 }
 
 export async function synchronizeConnectedReport(ownerId, reportId) {
@@ -170,7 +265,7 @@ async function updatePermissions(req, id) { const ownerId = getAccountOwnerId(re
 async function disconnect(req, id) { const ownerId = getAccountOwnerId(req); const { rows } = await getPool().query("UPDATE depannhome_partner_connections SET status='disconnected',disconnected_at=NOW(),updated_at=NOW() WHERE id=$1 AND ($2=company_low_id OR $2=company_high_id) RETURNING *", [id, ownerId]); if (!rows[0]) throw clientError(404, "Connexion introuvable."); const partnerId = partnerOwnerId(rows[0], ownerId); const source = await companyIdentity(ownerId); await notifyAdmins(partnerId, "partner_connection_disconnected", "Connexion partenaire interrompue", `${source.name} a interrompu la connexion partenaire.`, { connectionId: id }); return publicConnection(rows[0], ownerId); }
 async function loadConnections(ownerId) { const { rows } = await getPool().query("SELECT * FROM depannhome_partner_connections WHERE company_low_id=$1 OR company_high_id=$1 ORDER BY updated_at DESC", [ownerId]); return Promise.all(rows.map(row => publicConnection(row, ownerId))); }
 async function incomingRequests(ownerId) { const { rows } = await getPool().query("SELECT * FROM depannhome_partner_connections WHERE status='pending' AND requester_owner_id<>$1 AND (company_low_id=$1 OR company_high_id=$1) ORDER BY requested_at DESC", [ownerId]); return Promise.all(rows.map(row => publicConnection(row, ownerId))); }
-async function publicConnection(row, ownerId) { const partnerId = partnerOwnerId(row, ownerId); const partner = await companyIdentity(partnerId); const { rows: last } = await getPool().query("SELECT created_at AS \"createdAt\" FROM depannhome_partner_connection_sync_log WHERE connection_id=$1 AND (source_owner_id=$2 OR target_owner_id=$2) ORDER BY created_at DESC LIMIT 1", [row.id, ownerId]); return { id: row.id, partner: { id: partnerId, name: partner.name, siren: partner.siren, siret: partner.siret, city: partner.city, interfaceType: partner.interfaceType, organizationBadge: organizationBadge(partner.interfaceType) }, status: STATES.has(row.status) ? row.status : "pending", isRequester: Number(row.requester_owner_id) === Number(ownerId), permissions: ownPermissions(row, ownerId), requestedAt: row.requested_at, respondedAt: row.responded_at, updatedAt: row.updated_at, lastSynchronizedAt: last[0]?.createdAt || null }; }
+async function publicConnection(row, ownerId) { const partnerId = partnerOwnerId(row, ownerId); const partner = await companyIdentity(partnerId); const { rows: last } = await getPool().query("SELECT created_at AS \"createdAt\" FROM depannhome_partner_connection_sync_log WHERE connection_id=$1 AND (source_owner_id=$2 OR target_owner_id=$2) ORDER BY created_at DESC LIMIT 1", [row.id, ownerId]); return { id: row.id, partner: { id: partnerId, name: partner.name, siren: partner.siren, siret: partner.siret, city: partner.city, postalCode: partner.postalCode, department: String(partner.postalCode || "").slice(0, 2), hasLogo: Boolean(partner.hasLogo), interfaceType: partner.interfaceType, organizationBadge: organizationBadge(partner.interfaceType) }, status: STATES.has(row.status) ? row.status : "pending", isRequester: Number(row.requester_owner_id) === Number(ownerId), permissions: ownPermissions(row, ownerId), requestedAt: row.requested_at, respondedAt: row.responded_at, updatedAt: row.updated_at, lastSynchronizedAt: last[0]?.createdAt || null }; }
 async function searchCompanies(ownerId, value) { return searchDirectory(ownerId, { q: value }); }
 async function searchDirectory(ownerId, query) {
     const filters = directorySearchFilters(query);
@@ -242,7 +337,7 @@ async function updateDirectory(ownerId, value, companyControlled) {
 }
 async function listedCompany(ownerId) { const { rows } = await getPool().query("SELECT directory.owner_id FROM depannhome_partner_directory directory JOIN depannhome_users owner ON owner.id=directory.owner_id WHERE directory.owner_id=$1 AND directory.is_listed=TRUE AND directory.creator_suspended=FALSE AND owner.is_active=TRUE", [ownerId]); return rows[0] || null; }
 async function visibleCompanyLogo(ownerId) { const { rows } = await getPool().query("SELECT profile.logo_data AS data,profile.logo_mime_type AS \"mimeType\" FROM depannhome_partner_directory directory JOIN depannhome_users owner ON owner.id=directory.owner_id JOIN depannhome_billing_profiles profile ON profile.owner_id=owner.id WHERE directory.owner_id=$1 AND directory.is_listed=TRUE AND directory.creator_suspended=FALSE AND owner.is_active=TRUE", [ownerId]); return rows[0] || null; }
-async function companyIdentity(ownerId) { const { rows } = await getPool().query("SELECT COALESCE(NULLIF(profile.company_name,''),NULLIF(owner.company_name,''),NULLIF(owner.full_name,''),owner.username) AS name,COALESCE(profile.siren,'') AS siren,COALESCE(profile.registration_number,'') AS siret,COALESCE(profile.city,'') AS city,COALESCE(organization.interface_type,'standard') AS \"interfaceType\" FROM depannhome_users owner LEFT JOIN depannhome_billing_profiles profile ON profile.owner_id=owner.id LEFT JOIN depannhome_organizations organization ON organization.account_owner_id=owner.id WHERE owner.id=$1", [ownerId]); return rows[0] || { name: "Organisation partenaire", siren: "", siret: "", city: "", interfaceType: "partner" }; }
+async function companyIdentity(ownerId) { const { rows } = await getPool().query("SELECT COALESCE(NULLIF(profile.company_name,''),NULLIF(owner.company_name,''),NULLIF(owner.full_name,''),owner.username) AS name,COALESCE(profile.siren,'') AS siren,COALESCE(profile.registration_number,'') AS siret,COALESCE(profile.city,'') AS city,COALESCE(profile.postal_code,'') AS \"postalCode\",(profile.logo_data IS NOT NULL) AS \"hasLogo\",COALESCE(organization.interface_type,'standard') AS \"interfaceType\" FROM depannhome_users owner LEFT JOIN depannhome_billing_profiles profile ON profile.owner_id=owner.id LEFT JOIN depannhome_organizations organization ON organization.account_owner_id=owner.id WHERE owner.id=$1", [ownerId]); return rows[0] || { name: "Organisation partenaire", siren: "", siret: "", city: "", postalCode: "", hasLogo: false, interfaceType: "partner" }; }
 async function activeConnections(ownerId) { const { rows } = await getPool().query("SELECT * FROM depannhome_partner_connections WHERE status='connected' AND (company_low_id=$1 OR company_high_id=$1)", [ownerId]); return rows; }
 async function connectionForOwner(id, ownerId) { if (!id) return null; const { rows } = await getPool().query("SELECT * FROM depannhome_partner_connections WHERE id=$1 AND ($2=company_low_id OR $2=company_high_id)", [id, ownerId]); return rows[0] || null; }
 async function ensureManagedIntake(ownerId, partnerName, connectionId) { const key = `connection-${connectionId}`; const secretHash = crypto.createHash("sha256").update(`managed:${connectionId}:${ownerId}`).digest("hex"); const { rows } = await getPool().query("INSERT INTO depannhome_partner_intakes(owner_id,partner_key,partner_name,api_key_hash,assignment_mode,rules,enabled) VALUES($1,$2,$3,$4,'manual',$5::jsonb,TRUE) ON CONFLICT(owner_id,partner_key) DO UPDATE SET partner_name=EXCLUDED.partner_name,enabled=TRUE,updated_at=NOW() RETURNING id", [ownerId, key, partnerName, secretHash, JSON.stringify({ managedBy: "partner_connections", connectionId })]); return rows[0].id; }
@@ -276,6 +371,7 @@ function coordinate(value, minimum, maximum) { if (value === "" || value === nul
 function clean(value, max) { return String(value || "").replace(/\s+/g, " ").trim().slice(0, max); }
 function safeName(value) { return clean(value, 80).replace(/[^a-z0-9_-]+/gi, "-").replace(/^-+|-+$/g, "") || "document"; }
 function positiveId(value) { const id = Number(value); return Number.isSafeInteger(id) && id > 0 ? id : 0; }
+function validDate(value) { const date = String(value || "").slice(0, 10); return /^\d{4}-\d{2}-\d{2}$/.test(date) && !Number.isNaN(new Date(`${date}T12:00:00`).getTime()) ? date : ""; }
 function requireAdministration(req, res, next) { return ["admin", "pc_standard"].includes(req.user?.role) ? next() : res.status(403).json({ message: "La gestion des partenaires est réservée aux postes PC autorisés." }); }
 function clientError(status, message) { const error = new Error(message); error.status = status; return error; }
 function asyncHandler(handler) { return (req, res, next) => Promise.resolve(handler(req, res, next)).catch(error => error.status ? res.status(error.status).json({ message: error.message }) : next(error)); }
