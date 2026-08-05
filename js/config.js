@@ -61,6 +61,7 @@ const ADMINISTRATORS = ["admin"];
 const OPERATIONAL_PC = ["admin", "pc_standard"];
 const OPERATIONAL_MOBILE = ["admin", "pc_standard", "mobile_admin"];
 const TERRAIN = ["admin", "pc_standard", "mobile_admin", "team_lead", "technician"];
+const PARTNER_MISSION_USERS = OPERATIONAL_PC.concat("team_lead", "technician");
 const LIBRARY_USERS = ["mobile_admin", "team_lead", "technician"];
 
 // Toute nouvelle entrée de navigation doit être déclarée ici. Les éléments
@@ -73,11 +74,11 @@ export const MENU_ACCESS = Object.freeze({
         billing: OPERATIONAL_MOBILE.concat("accountant"),
         accounting: ADMINISTRATORS,
         groups: ADMINISTRATORS,
-        partnerMissions: OPERATIONAL_PC,
+        partnerMissions: PARTNER_MISSION_USERS,
         partnerSandbox: ADMINISTRATORS,
         photo: OPERATIONAL_MOBILE,
         favorites: OPERATIONAL_MOBILE,
-        settings: ADMINISTRATORS
+        settings: OPERATIONAL_PC
     }),
     navigation: Object.freeze({
         [ROUTES.home]: OPERATIONAL_MOBILE,
@@ -89,12 +90,12 @@ export const MENU_ACCESS = Object.freeze({
         [ROUTES.accounting]: ADMINISTRATORS,
         [ROUTES.accountingSandbox]: ADMINISTRATORS,
         [ROUTES.groups]: ADMINISTRATORS,
-        [ROUTES.partnerMissions]: OPERATIONAL_PC,
+        [ROUTES.partnerMissions]: PARTNER_MISSION_USERS,
         [ROUTES.partnerSandbox]: ADMINISTRATORS,
         [ROUTES.technicalReports]: TERRAIN,
         [ROUTES.calendar]: TERRAIN,
         [ROUTES.library]: LIBRARY_USERS,
         [ROUTES.favorites]: OPERATIONAL_MOBILE,
-        [ROUTES.settings]: ADMINISTRATORS
+        [ROUTES.settings]: OPERATIONAL_PC
     })
 });

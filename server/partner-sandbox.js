@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { getPool } from "./database.js";
-import { getAccountOwnerId, isCompanyAdministrator } from "./auth.js";
+import { getAccountOwnerId } from "./auth.js";
 
 const ACTIONS = new Set([
     "new_mission", "accept", "reject", "reschedule", "reassign", "partner_message", "internal_message",
@@ -30,7 +30,7 @@ export async function initializePartnerSandbox() {
 
 export function registerPartnerSandboxRoutes(app, requireAuthentication) {
     app.get("/api/partner-sandbox", requireAuthentication, asyncHandler(async (request, response) => {
-        if (!isCompanyAdministrator(request) || !isPartnerSandboxEnabled()) {
+        if (!isPartnerPcUser(request) || !isPartnerSandboxEnabled()) {
             return response.json({ available: false, enabled: false });
         }
         response.json({ available: true, enabled: Boolean(await loadSession(getAccountOwnerId(request))) });
@@ -292,9 +292,13 @@ function connectionScenario(payload) {
     return { partner: DEMO_PARTNER, connection: { ...connection, isSandbox: true, id: "assurtest-demo", isRequester: true, lastSynchronizedAt: payload?.updatedAt || null } };
 }
 
+function isPartnerPcUser(request) {
+    return ["admin", "pc_standard"].includes(request.user?.role);
+}
+
 function requireSandboxAdministration(request, response, next) {
-    if (isCompanyAdministrator(request)) return next();
-    return response.status(403).json({ message: "Le mode Sandbox est réservé à un Administrateur (PC) du compte." });
+    if (isPartnerPcUser(request)) return next();
+    return response.status(403).json({ message: "Le mode Sandbox est réservé aux postes PC autorisés du compte." });
 }
 
 function requireSandboxEnabled(_request, response, next) {

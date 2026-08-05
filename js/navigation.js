@@ -1,11 +1,11 @@
-import { ROUTES, STORAGE_KEYS, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=120";
+import { ROUTES, STORAGE_KEYS, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=121";
 import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=146";
 import { renderCreatorConsole } from "./creator.js?v=121";
 import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=153";
 import { renderAccounting } from "./accounting.js?v=5";
 import { renderAccountingSandbox } from "./accounting-sandbox.js?v=2";
 import { renderGroupActivation, renderGroupWorkspace } from "./groups.js?v=3";
-import { renderPartnerMissions } from "./partner-missions.js?v=4";
+import { renderPartnerMissions } from "./partner-missions.js?v=5";
 import { renderPartnerSandbox } from "./partner-sandbox.js?v=3";
 import { renderPartnerConnections } from "./partner-connections.js?v=10";
 import { renderDataImportTool } from "./data-imports.js?v=2";
@@ -238,6 +238,11 @@ function canAccessQuick(menu) {
 
 function canAccessRoute(route) {
     return isMenuAllowed(MENU_ACCESS.navigation[route], route) && isOrganizationRouteEnabled(route);
+}
+
+function canAccessSettingsSection(section) {
+    if (document.body.dataset.role === "admin") return true;
+    return ["network", "personalization"].includes(section);
 }
 
 function isOrganizationRouteEnabled(route) {
@@ -1194,6 +1199,10 @@ function renderSettings(options = {}) {
 
 function renderSettingsWorkspace(options = {}) {
     const section = options.section || (options.focusReportTemplate ? "documents" : "");
+    if (section && !canAccessSettingsSection(section)) {
+        renderSettings();
+        return;
+    }
     if (!section) {
         clearSearch();
         resetSelection("all");
@@ -1205,14 +1214,12 @@ function renderSettingsWorkspace(options = {}) {
         const grid = document.createElement("div");
         grid.className = "settings-card-grid";
         const cards = [
-            ["documents", "Modèles de documents", "Identité, présentation et modèles des devis, quitus et rapports.", "document"],
+            ...(document.body.dataset.role === "admin" ? [["documents", "Modèles de documents", "Identité, présentation et modèles des devis, quitus et rapports.", "document"]] : []),
             ["network", "Réseau Depann'Home Pro", "Partenaires, annuaire et connexions API de l’entreprise.", "network"],
-            ["users", "Utilisateurs", "Accès, postes, techniciens et chefs d’équipe.", "users"],
-            ["security", "Sécurité", "Double authentification et protection des accès.", "security"],
-            ["groups", "Groupe / Multi-entreprises", "Sociétés, bascule de contexte et indicateurs consolidés.", "group"],
+            ...(document.body.dataset.role === "admin" ? [["users", "Utilisateurs", "Accès, postes, techniciens et chefs d’équipe.", "users"], ["security", "Sécurité", "Double authentification et protection des accès.", "security"], ["groups", "Groupe / Multi-entreprises", "Sociétés, bascule de contexte et indicateurs consolidés.", "group"]] : []),
             ["personalization", "Personnalisation", "Langue, thème, police et préférences d’affichage.", "appearance"],
-            ...(document.body.classList.contains("desktop-device") ? [["imports", "Importation de données", "Importez vos clients, devis, factures et rapports depuis Excel ou CSV.", "import"]] : []),
-            ...(document.body.dataset.creator === "true" && document.body.dataset.deviceType === "desktop" ? [["creator", "Console Créateur", "Pilotage des entreprises, abonnements et services de la plateforme.", "creator"]] : [])
+            ...(document.body.dataset.role === "admin" && document.body.classList.contains("desktop-device") ? [["imports", "Importation de données", "Importez vos clients, devis, factures et rapports depuis Excel ou CSV.", "import"]] : []),
+            ...(document.body.dataset.role === "admin" && document.body.dataset.creator === "true" && document.body.dataset.deviceType === "desktop" ? [["creator", "Console Créateur", "Pilotage des entreprises, abonnements et services de la plateforme.", "creator"]] : [])
         ];
         cards.forEach(([id, title, description, icon]) => grid.appendChild(createSettingsNavigationCard(title, description, icon, () => renderSettings({ section: id }))));
         hub.appendChild(grid);

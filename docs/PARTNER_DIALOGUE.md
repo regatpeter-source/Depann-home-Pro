@@ -24,6 +24,12 @@ Chaque mission porte `billing_mode` :
 
 Les rapports et leurs photos restent internes jusqu’à leur partage volontaire. Un rapport partagé doit être validé afin que le partenaire reçoive uniquement son PDF final.
 
+## Accès selon le poste
+
+Le **Réseau Depann'Home Pro** (annuaire, recherche d’entreprise, demandes de partenariat, connexions, droits de synchronisation, partenaires officiels et accès API) est réservé aux postes PC `admin` et `pc_standard` (Secrétariat). Ces rôles peuvent consulter, créer, accepter, refuser et administrer les connexions entre entreprises.
+
+Les rôles `technician` et `team_lead` ne voient jamais l’annuaire, les recherches, les paramètres réseau ou les actions de gestion de partenaires. Ils accèdent uniquement à leurs missions partenaires affectées (`assigned_technician_id`), à leur dialogue, ainsi qu’aux rapports, photos et documents rattachés aux interventions auxquelles ils sont affectés. Les filtres sont appliqués par les API SQL ; masquer les entrées dans l’interface n’est donc pas le seul contrôle de sécurité.
+
 ## API partenaire
 
 Les routes externes exigent l’en-tête `X-API-Key` :

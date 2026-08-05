@@ -346,7 +346,7 @@ async function exchangeAuthorizationCode(pending, code, redirectUri) {
 }
 
 function requireAdministration(request, response, next) {
-    return request.user?.role === "admin" ? next() : response.status(403).json({ message: "La gestion des partenaires est réservée à l’administration." });
+    return ["admin", "pc_standard"].includes(request.user?.role) ? next() : response.status(403).json({ message: "La gestion des partenaires est réservée aux postes PC autorisés." });
 }
 
 function encryptionKey() { return crypto.createHash("sha256").update(String(process.env.SESSION_SECRET || "development-official-partner-key")).digest(); }

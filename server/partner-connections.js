@@ -234,6 +234,6 @@ function coordinate(value, minimum, maximum) { if (value === "" || value === nul
 function clean(value, max) { return String(value || "").replace(/\s+/g, " ").trim().slice(0, max); }
 function safeName(value) { return clean(value, 80).replace(/[^a-z0-9_-]+/gi, "-").replace(/^-+|-+$/g, "") || "document"; }
 function positiveId(value) { const id = Number(value); return Number.isSafeInteger(id) && id > 0 ? id : 0; }
-function requireAdministration(req, res, next) { return req.user?.role === "admin" ? next() : res.status(403).json({ message: "La gestion des partenaires est réservée à l’administration." }); }
+function requireAdministration(req, res, next) { return ["admin", "pc_standard"].includes(req.user?.role) ? next() : res.status(403).json({ message: "La gestion des partenaires est réservée aux postes PC autorisés." }); }
 function clientError(status, message) { const error = new Error(message); error.status = status; return error; }
 function asyncHandler(handler) { return (req, res, next) => Promise.resolve(handler(req, res, next)).catch(error => error.status ? res.status(error.status).json({ message: error.message }) : next(error)); }
