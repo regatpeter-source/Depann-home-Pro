@@ -1,7 +1,7 @@
 import { ROUTES } from "./config.js?v=106";
 import { createBillingDocumentForClient, viewBillingDocument } from "./billing.js?v=149";
 import { getSearchableClients } from "./clients.js?v=137";
-import { addClientActivityByName, synchronizeClients } from "./client-sync.js?v=116";
+import { addClientActivityByName, synchronizeClients } from "./client-sync.js?v=119";
 import { renderClientMessages } from "./messages.js?v=106";
 import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=11";
 import { resetSelection } from "./state.js?v=44";
@@ -78,6 +78,7 @@ export async function renderCalendar(options = {}) {
 
     events = result.events;
     members = availableMembers;
+    await synchronizeClients().catch(() => {});
     if (technicianHome) {
         window.dispatchEvent(new CustomEvent("depannhome:technician-calendar-viewed", { detail: { events } }));
     }
@@ -772,6 +773,8 @@ function renderAssignedTechniciansDetail(event) {
 }
 
 function findClientForEvent(event) {
+    const clientId = String(event.clientId || "");
+    if (clientId) return getSearchableClients().find(client => String(client.id) === clientId) || null;
     const clientName = normalizeText(event.clientName || "");
     return clientName ? getSearchableClients().find(client => normalizeText(client.name) === clientName) || null : null;
 }

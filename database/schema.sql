@@ -439,6 +439,7 @@ CREATE TABLE IF NOT EXISTS depannhome_calendar_events (
     owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
     assigned_technician_id BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
     title VARCHAR(160) NOT NULL,
+    client_id VARCHAR(100) NOT NULL DEFAULT '',
     client_name VARCHAR(160) NOT NULL DEFAULT '',
     location VARCHAR(255) NOT NULL DEFAULT '',
     event_date DATE NOT NULL,
@@ -464,6 +465,9 @@ CREATE INDEX IF NOT EXISTS depannhome_calendar_events_owner_date_idx
 
 ALTER TABLE depannhome_calendar_events
     ADD COLUMN IF NOT EXISTS assigned_technician_id BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL;
+
+ALTER TABLE depannhome_calendar_events
+    ADD COLUMN IF NOT EXISTS client_id VARCHAR(100) NOT NULL DEFAULT '';
 
 ALTER TABLE depannhome_calendar_events
 ADD COLUMN IF NOT EXISTS event_type VARCHAR(20) NOT NULL DEFAULT 'appointment';

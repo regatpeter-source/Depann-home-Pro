@@ -21,6 +21,7 @@ export async function initializeCalendar() {
             owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
             assigned_technician_id BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
             title VARCHAR(160) NOT NULL,
+            client_id VARCHAR(100) NOT NULL DEFAULT '',
             client_name VARCHAR(160) NOT NULL DEFAULT '',
             location VARCHAR(255) NOT NULL DEFAULT '',
             event_date DATE NOT NULL,
@@ -45,6 +46,7 @@ export async function initializeCalendar() {
         ALTER TABLE depannhome_calendar_events
         ADD COLUMN IF NOT EXISTS assigned_technician_id BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL
     `);
+    await database.query("ALTER TABLE depannhome_calendar_events ADD COLUMN IF NOT EXISTS client_id VARCHAR(100) NOT NULL DEFAULT ''");
     await database.query(`
         ALTER TABLE depannhome_calendar_events
         ADD COLUMN IF NOT EXISTS event_type VARCHAR(20) NOT NULL DEFAULT 'appointment'
@@ -136,7 +138,7 @@ export function registerCalendarRoutes(app, requireAuthentication) {
                     JOIN depannhome_users assigned ON assigned.id = assignment.technician_id
                     WHERE assignment.event_id = event.id
                 ), '[]'::json) AS "assignedTechnicians",
-                event.client_name AS "clientName",
+                COALESCE(NULLIF(event.client_id,''), (SELECT mission.client_id FROM depannhome_partner_missions mission WHERE mission.owner_id=event.owner_id AND mission.calendar_event_id=event.id AND mission.client_id<>'' ORDER BY mission.updated_at DESC LIMIT 1), '') AS "clientId", event.client_name AS "clientName",
                 event.location,
                 TO_CHAR(event.event_date, 'YYYY-MM-DD') AS date,
                 TO_CHAR(event.start_time, 'HH24:MI') AS "startTime",
@@ -224,10 +226,10 @@ export function registerCalendarRoutes(app, requireAuthentication) {
             for (const date of dates) {
                 const { rows } = await connection.query(`
                     INSERT INTO depannhome_calendar_events
-                        (owner_id, assigned_technician_id, title, client_name, location, event_date, start_time, end_time, color, event_type, notes)
-                    VALUES ($1, $2, $3, $4, $5, $6::date, $7::time, $8::time, $9, $10, $11)
+                        (owner_id, assigned_technician_id, title, client_id, client_name, location, event_date, start_time, end_time, color, event_type, notes)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7::date, $8::time, $9::time, $10, $11, $12)
                     RETURNING id
-                `, [getAccountOwnerId(request), event.assignedTechnicianId || null, event.title, event.clientName, event.location, date, optionalTime(event.startTime), optionalTime(event.endTime), event.color, event.eventType, event.notes]);
+                `, [getAccountOwnerId(request), event.assignedTechnicianId || null, event.title, await resolveClientId(connection, getAccountOwnerId(request), event.clientName), event.clientName, event.location, date, optionalTime(event.startTime), optionalTime(event.endTime), event.color, event.eventType, event.notes]);
                 await replaceEventAssignments(connection, rows[0].id, event.assignedTechnicianIds, event.assignedTechnicianId);
                 ids.push(rows[0].id);
             }
@@ -257,10 +259,10 @@ export function registerCalendarRoutes(app, requireAuthentication) {
             await connection.query("BEGIN");
             const { rowCount } = await connection.query(`
                 UPDATE depannhome_calendar_events
-                SET assigned_technician_id = $3, title = $4, client_name = $5, location = $6, event_date = $7::date,
-                    start_time = $8::time, end_time = $9::time, color = $10, event_type = $11, notes = $12, updated_at = NOW()
+                SET assigned_technician_id = $3, title = $4, client_id = $5, client_name = $6, location = $7, event_date = $8::date,
+                    start_time = $9::time, end_time = $10::time, color = $11, event_type = $12, notes = $13, updated_at = NOW()
                 WHERE id = $1 AND owner_id = $2
-            `, [id, getAccountOwnerId(request), event.assignedTechnicianId || null, event.title, event.clientName, event.location, event.date, optionalTime(event.startTime), optionalTime(event.endTime), event.color, event.eventType, event.notes]);
+            `, [id, getAccountOwnerId(request), event.assignedTechnicianId || null, event.title, await resolveClientId(connection, getAccountOwnerId(request), event.clientName), event.clientName, event.location, event.date, optionalTime(event.startTime), optionalTime(event.endTime), event.color, event.eventType, event.notes]);
             if (!rowCount) {
                 await connection.query("ROLLBACK");
                 return response.status(404).json({ message: "Rendez-vous introuvable." });
@@ -429,6 +431,12 @@ function sanitizeEvent(value) {
 
     if ((value?.assignedTechnicianId && !requestedPrimaryTechnicianId) || (Array.isArray(value?.assignedTechnicianIds) && value.assignedTechnicianIds.length > 0 && !assignedTechnicianIds.length)) return { ok: false, message: "Un membre sélectionné est invalide." };
     return { ok: true, title, clientName, location, date, startTime, endTime, color, eventType, notes, assignedTechnicianId, assignedTechnicianIds };
+}
+
+async function resolveClientId(connection, ownerId, clientName) {
+    if (!clientName) return "";
+    const { rows } = await connection.query("SELECT client_id FROM depannhome_clients WHERE owner_id=$1 AND LOWER(BTRIM(client_data->>'name'))=LOWER(BTRIM($2)) ORDER BY updated_at DESC LIMIT 1", [ownerId, clientName]);
+    return rows[0]?.client_id || "";
 }
 
 function sanitizeEventDates(value, fallbackDate) {

@@ -53,7 +53,7 @@ export function registerCollaborationRoutes(app, requireAuthentication) {
         request.on("close", () => { clearInterval(heartbeat); streamsByOwner.get(ownerId)?.delete(stream); if (!streamsByOwner.get(ownerId)?.size) streamsByOwner.delete(ownerId); });
     });
     app.get("/api/collaboration/notifications", requireAuthentication, asyncHandler(async (request, response) => {
-        const { rows } = await getPool().query(`SELECT id, event_type AS "eventType", entity_type AS "entityType", entity_id AS "entityId", title, body, payload, read_at AS "readAt", created_at AS "createdAt" FROM depannhome_collaboration_notifications WHERE recipient_id=$1 ORDER BY created_at DESC LIMIT 100`, [request.user.sub]);
+        const { rows } = await getPool().query(`SELECT id, event_type AS "eventType", entity_type AS "entityType", entity_id AS "entityId", title, body, payload, read_at AS "readAt", created_at AS "createdAt" FROM depannhome_collaboration_notifications WHERE recipient_id=$1 AND ($2=FALSE OR (event_type NOT LIKE 'partner_mission_%' AND event_type NOT LIKE 'partner_connection_%' AND event_type NOT LIKE 'partner_request_%')) ORDER BY created_at DESC LIMIT 100`, [request.user.sub, ["technician", "team_lead"].includes(request.user.role)]);
         response.json({ notifications: rows });
     }));
     app.post("/api/collaboration/notifications/read", requireAuthentication, asyncHandler(async (request, response) => {
@@ -160,8 +160,17 @@ export async function publishEvent(request, target, action, details = {}, notifi
 
 export async function createNotification(ownerId, recipientId, eventType, target, title, body = "", payload = {}) {
     if (!recipientId) return null;
+    if (isPartnerBusinessNotification(eventType)) {
+        const { rows: recipients } = await getPool().query("SELECT role FROM depannhome_users WHERE id=$1 AND account_owner_id=$2", [recipientId, ownerId]);
+        if (["technician", "team_lead"].includes(recipients[0]?.role)) return null;
+    }
     const { rows } = await getPool().query(`INSERT INTO depannhome_collaboration_notifications (owner_id, recipient_id, event_type, entity_type, entity_id, title, body, payload) VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb) RETURNING id, created_at AS "createdAt"`, [ownerId, recipientId, eventType, target.entityType, target.entityId, cleanText(title, 200), cleanText(body, 2000), JSON.stringify(payload)]);
     await broadcast(ownerId, "notification", { recipientId: String(recipientId), notification: { id: rows[0].id, eventType, entityType: target.entityType, entityId: target.entityId, title, body, payload, createdAt: rows[0].createdAt } }); return rows[0];
+}
+
+function isPartnerBusinessNotification(eventType) {
+    const type = String(eventType || "");
+    return type.startsWith("partner_mission_") || type.startsWith("partner_connection_") || type.startsWith("partner_request_");
 }
 
 export async function releaseLocksForUser(request, action = "session_closed") {
