@@ -3,6 +3,7 @@ import { getPool } from "./database.js";
 import { getAccountOwnerId } from "./auth.js";
 import { createNotification } from "./collaboration.js";
 import { recordMissionDialogueDocument, recordMissionDialogueEvent } from "./partner-dialogue.js";
+import { provisionPartnerMissionClient } from "./partner-missions.js";
 import { organizationBadge } from "./organizations.js";
 
 const STATES = new Set(["pending", "connected", "refused", "disconnected"]);
@@ -116,6 +117,7 @@ export async function synchronizeConnectedAppointment(ownerId, eventId, connecti
     const db = getPool();
     const { rows: sourceRows } = await db.query("SELECT id,title,client_name,location,TO_CHAR(event_date,'YYYY-MM-DD') AS date,TO_CHAR(start_time,'HH24:MI') AS \"startTime\",TO_CHAR(end_time,'HH24:MI') AS \"endTime\",notes,event_type FROM depannhome_calendar_events WHERE id=$1 AND owner_id=$2", [eventId, ownerId]);
     const event = sourceRows[0]; if (!event || event.event_type !== "appointment") return;
+    const sourceClient = await sourceClientForEvent(db, ownerId, event);
     const sourceCompany = await companyIdentity(ownerId);
     const connections = await activeConnections(ownerId);
     for (const connection of connectionId ? connections.filter(item => Number(item.id) === Number(connectionId)) : connections) {
@@ -123,11 +125,11 @@ export async function synchronizeConnectedAppointment(ownerId, eventId, connecti
         if (!own.canSendInterventions || !partner.canReceiveInterventions) continue;
         const targetOwnerId = partnerOwnerId(connection, ownerId); const intakeId = await ensureManagedIntake(targetOwnerId, sourceCompany.name, connection.id);
         const externalMissionId = `dpc-${connection.id}-${event.id}`;
-        const mapped = { externalMissionId, partnerReference: `Intervention ${event.id}`, date: event.date, startTime: event.startTime || "", endTime: event.endTime || "", priority: "normal", interventionType: event.title, clientName: event.client_name, address: event.location, description: event.notes, connectionId: connection.id, sourceEventId: event.id };
+        const mapped = { externalMissionId, partnerReference: `Intervention ${event.id}`, date: event.date, startTime: event.startTime || "", endTime: event.endTime || "", priority: "normal", interventionType: event.title, clientName: event.client_name || sourceClient?.name || "", address: sourceClient?.address || event.location, city: sourceClient?.city || "", phone: sourceClient?.phone || "", email: sourceClient?.email || "", insurance: sourceClient?.insurance || "", claimNumber: sourceClient?.claimNumber || "", expert: sourceClient?.expert || "", manager: sourceClient?.manager || "", description: event.notes, connectionId: connection.id, sourceEventId: event.id };
         const { rows } = await db.query(`INSERT INTO depannhome_partner_missions(owner_id,intake_id,external_mission_id,partner_reference,status,priority,source_data,mapped_data,scheduled_date,scheduled_start_time,scheduled_end_time)
             VALUES($1,$2,$3,$4,'pending_validation','normal',$5::jsonb,$6::jsonb,$7::date,$8::time,$9::time)
             ON CONFLICT(owner_id,intake_id,external_mission_id) DO UPDATE SET source_data=EXCLUDED.source_data,mapped_data=EXCLUDED.mapped_data,scheduled_date=EXCLUDED.scheduled_date,scheduled_start_time=EXCLUDED.scheduled_start_time,scheduled_end_time=EXCLUDED.scheduled_end_time,updated_at=NOW() RETURNING id,(xmax=0) AS inserted`, [targetOwnerId, intakeId, externalMissionId, mapped.partnerReference, JSON.stringify({ managedConnection: true, event }), JSON.stringify(mapped), event.date, event.startTime || null, event.endTime || null]);
-        const mission = rows[0]; await db.query("INSERT INTO depannhome_partner_connection_sync_log(connection_id,source_owner_id,target_owner_id,source_event_id,target_mission_id,event_type,details) VALUES($1,$2,$3,$4,$5,'appointment_synced',$6::jsonb)", [connection.id, ownerId, targetOwnerId, event.id, mission.id, JSON.stringify({ inserted: mission.inserted })]);
+        const mission = rows[0]; const client = await provisionPartnerMissionClient(db, targetOwnerId, mapped, { user: { fullName: sourceCompany.name } }); await db.query("UPDATE depannhome_partner_missions SET client_id=$3,updated_at=NOW() WHERE id=$1 AND owner_id=$2", [mission.id, targetOwnerId, client.id]); await db.query("INSERT INTO depannhome_partner_connection_sync_log(connection_id,source_owner_id,target_owner_id,source_event_id,target_mission_id,event_type,details) VALUES($1,$2,$3,$4,$5,'appointment_synced',$6::jsonb)", [connection.id, ownerId, targetOwnerId, event.id, mission.id, JSON.stringify({ inserted: mission.inserted, clientId: client.id, clientCreated: client.created })]);
         await recordMissionDialogueEvent({ ownerId: targetOwnerId, missionId: mission.id, status: mission.inserted ? "received" : "pending_validation", action: mission.inserted ? "received" : "updated", actorName: sourceCompany.name });
         await notifyAdmins(targetOwnerId, "partner_connection_intervention", "Nouvelle intervention partenaire", `${sourceCompany.name} a partagé l’intervention « ${event.title} ».`, { connectionId: connection.id, missionId: mission.id });
     }
@@ -176,6 +178,14 @@ async function upsertMissionClient(database, ownerId, client, req) {
     const created = { id, type: client.type, name: client.name, phone: client.phone, email: client.email, address: client.address, city: client.city, equipment: "", notes: "", attachments: [], activityHistory: [{ id: `activity-${crypto.randomUUID()}`, type: "partner_mission", label: "Client créé depuis une mission partenaire", actorName: String(req.user.fullName || req.user.username || "Depann’Home Pro").slice(0, 100), createdAt: now }], createdAt: now, updatedAt: now };
     await database.query("INSERT INTO depannhome_clients(owner_id,client_id,client_data,updated_at) VALUES($1,$2,$3::jsonb,NOW())", [ownerId, id, JSON.stringify(created)]);
     return created;
+}
+
+async function sourceClientForEvent(database, ownerId, event) {
+    if (!event.client_name) return null;
+    const { rows } = await database.query("SELECT client_data FROM depannhome_clients WHERE owner_id=$1 AND LOWER(BTRIM(client_data->>'name'))=LOWER(BTRIM($2)) ORDER BY updated_at DESC LIMIT 20", [ownerId, event.client_name]);
+    const eventAddress = normalizedText(event.location);
+    const candidates = rows.map(row => row.client_data || {}).filter(client => !eventAddress || normalizedText([client.address, client.city].filter(Boolean).join(", ")) === eventAddress || normalizedText(client.address) === eventAddress);
+    return candidates.length === 1 ? candidates[0] : null;
 }
 
 async function sentMissions(ownerId) {
@@ -369,6 +379,7 @@ function stringList(value, maximumItems, maximumLength) { const values = Array.i
 function jsonList(value) { return Array.isArray(value) ? value.map(item => clean(item, 100)).filter(Boolean) : []; }
 function coordinate(value, minimum, maximum) { if (value === "" || value === null || value === undefined) return null; const number = Number(value); return Number.isFinite(number) && number >= minimum && number <= maximum ? Math.round(number * 1000000) / 1000000 : null; }
 function clean(value, max) { return String(value || "").replace(/\s+/g, " ").trim().slice(0, max); }
+function normalizedText(value) { return clean(value, 500).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim(); }
 function safeName(value) { return clean(value, 80).replace(/[^a-z0-9_-]+/gi, "-").replace(/^-+|-+$/g, "") || "document"; }
 function positiveId(value) { const id = Number(value); return Number.isSafeInteger(id) && id > 0 ? id : 0; }
 function validDate(value) { const date = String(value || "").slice(0, 10); return /^\d{4}-\d{2}-\d{2}$/.test(date) && !Number.isNaN(new Date(`${date}T12:00:00`).getTime()) ? date : ""; }
