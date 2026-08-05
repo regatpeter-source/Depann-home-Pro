@@ -769,6 +769,34 @@ CREATE TABLE IF NOT EXISTS depannhome_partner_requests (
     CONSTRAINT depannhome_partner_requests_status_check CHECK (status IN ('new', 'under_review', 'contacted', 'accepted', 'refused'))
 );
 ALTER TABLE depannhome_official_partners ADD COLUMN IF NOT EXISTS request_id BIGINT UNIQUE;
+ALTER TABLE depannhome_official_partners
+    ADD COLUMN IF NOT EXISTS partner_type VARCHAR(30) NOT NULL DEFAULT 'credentials',
+    ADD COLUMN IF NOT EXISTS logo_url VARCHAR(1000) NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS description VARCHAR(2000) NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS activity_category VARCHAR(160) NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS api_url VARCHAR(1000) NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS documentation_url VARCHAR(1000) NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS sandbox_url VARCHAR(1000) NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS connector_state VARCHAR(30) NOT NULL DEFAULT 'development',
+    ADD COLUMN IF NOT EXISTS connector_secret_ciphertext TEXT NOT NULL DEFAULT '';
+ALTER TABLE depannhome_official_partners DROP CONSTRAINT IF EXISTS depannhome_official_partners_partner_type_check;
+ALTER TABLE depannhome_official_partners ADD CONSTRAINT depannhome_official_partners_partner_type_check CHECK (partner_type IN ('depannhome_company','credentials','oauth'));
+ALTER TABLE depannhome_official_partners DROP CONSTRAINT IF EXISTS depannhome_official_partners_connector_state_check;
+ALTER TABLE depannhome_official_partners ADD CONSTRAINT depannhome_official_partners_connector_state_check CHECK (connector_state IN ('development','beta','available','disabled'));
+CREATE TABLE IF NOT EXISTS depannhome_official_partner_connections (
+    id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    official_partner_id BIGINT NOT NULL REFERENCES depannhome_official_partners(id) ON DELETE CASCADE,
+    status VARCHAR(30) NOT NULL DEFAULT 'connected', credentials_ciphertext TEXT NOT NULL DEFAULT '',
+    connected_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+    connected_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT depannhome_official_partner_connections_unique UNIQUE(owner_id, official_partner_id),
+    CONSTRAINT depannhome_official_partner_connections_status_check CHECK (status IN ('connected', 'disconnected'))
+);
+CREATE TABLE IF NOT EXISTS depannhome_official_partner_oauth_states (
+    state VARCHAR(128) PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    official_partner_id BIGINT NOT NULL REFERENCES depannhome_official_partners(id) ON DELETE CASCADE,
+    expires_at TIMESTAMPTZ NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 ALTER TABLE depannhome_partner_requests ADD COLUMN IF NOT EXISTS official_partner_id BIGINT REFERENCES depannhome_official_partners(id) ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS depannhome_partner_requests_status_created_idx ON depannhome_partner_requests(status, created_at DESC);
 CREATE INDEX IF NOT EXISTS depannhome_official_partners_status_idx ON depannhome_official_partners(status, created_at DESC);

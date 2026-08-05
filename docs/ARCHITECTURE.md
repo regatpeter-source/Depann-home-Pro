@@ -33,7 +33,9 @@ Après validation administrative, une transaction rapproche le client, planifie 
 
 ## Connexions partenaires simplifiées
 
-`server/partner-connections.js` est le parcours sans configuration destiné aux entreprises déjà inscrites sur Depann'Home Pro. Dans **Paramètres → Réseau Depann'Home Pro**, l’onglet **Mes partenaires** regroupe les connexions actives et les accès API externes ; l’onglet **Annuaire Depann'Home Pro** regroupe la visibilité, la recherche et les demandes bilatérales. Les rendez-vous autorisés sont automatiquement répliqués en mission partenaire dans l’espace destinataire ; les rapports validés sont ajoutés au dossier partagé lorsque le droit correspondant est accordé. Les Missions partenaires restent uniquement opérationnelles. Voir `docs/PARTNER_CONNECTIONS.md`.
+`server/partner-connections.js` est le parcours sans configuration destiné aux entreprises déjà inscrites sur Depann'Home Pro. Dans **Paramètres → Réseau Depann'Home Pro**, l’onglet **Mes partenaires** regroupe les connexions actives et les partenaires externes disponibles ; l’onglet **Annuaire Depann'Home Pro** regroupe la visibilité, la recherche et les demandes bilatérales. Les rendez-vous autorisés sont automatiquement répliqués en mission partenaire dans l’espace destinataire ; les rapports validés sont ajoutés au dossier partagé lorsque le droit correspondant est accordé. Les Missions partenaires restent uniquement opérationnelles. Voir `docs/PARTNER_CONNECTIONS.md`.
+
+Le catalogue de partenaires officiels, administré depuis la Console Créateur, ajoute les types **Entreprise Depann’Home Pro**, **Authentification classique** et **OAuth / autorisation sécurisée**. Le type choisit le parcours sans demander de détail technique à l’entreprise : les entreprises Depann’Home Pro utilisent l’annuaire et l’acceptation bilatérale ; les partenaires classiques affichent les seules informations d’identification demandées ; les partenaires OAuth ouvrent leur page officielle d’autorisation. Les informations d’identification et jetons sont chiffrés côté serveur, isolés par entreprise et ne sont jamais renvoyés au navigateur.
 
 ## Rapports techniques
 

@@ -95,7 +95,7 @@ app.use("/api/partner-requests", rateLimit({
 }));
 registerAuthRoutes(app);
 registerCreatorRoutes(app, requireCreator, requireAuthentication);
-registerPartnerRequestRoutes(app, requireCreator);
+registerPartnerRequestRoutes(app, requireCreator, requireAuthentication);
 registerSubscriptionInvoicingRoutes(app, requireCreator);
 registerAccountingRoutes(app, requireAuthentication);
 registerConnectorRoutes(app, requireAuthentication, requireCreator);
