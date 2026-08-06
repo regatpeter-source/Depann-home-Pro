@@ -35,6 +35,12 @@ let showAllTechnicians = true;
 let visibleTechnicianIds = new Set();
 let userFilterOpen = false;
 let calendarPanels = null;
+let cachedMembers = null;
+let cachedMembersAt = 0;
+let calendarEventsCache = new Map();
+let calendarUpdateVersion = 0;
+const MEMBERS_CACHE_DURATION = 15 * 60 * 1000;
+const EVENTS_CACHE_DURATION = 30 * 1000;
 
 window.addEventListener("depannhome:billing-document-saved", event => {
     const appointmentId = String(event.detail?.appointmentId || "");
@@ -63,7 +69,7 @@ export async function renderCalendar(options = {}) {
     const gridPanel = document.createElement("section");
     gridPanel.className = "client-panel calendar-grid-panel";
     container.append(header, formPanel, gridPanel);
-    calendarPanels = { header, grid: gridPanel };
+    calendarPanels = { header, form: formPanel, grid: gridPanel };
     if (technicianHome) renderPlatformAnnouncement(container);
 
     header.innerHTML = "<p class=\"muted\">Chargement du planning…</p>";
@@ -81,7 +87,6 @@ export async function renderCalendar(options = {}) {
 
     events = result.events;
     members = availableMembers;
-    await synchronizeClients().catch(() => {});
     if (technicianHome) {
         window.dispatchEvent(new CustomEvent("depannhome:technician-calendar-viewed", { detail: { events } }));
     }
@@ -184,7 +189,7 @@ function renderHeader(panel) {
 }
 
 function refreshCalendarFilterView() {
-    if (!calendarPanels?.header?.isConnected || !calendarPanels?.grid?.isConnected) {
+    if (!hasCalendarPanels()) {
         renderCalendar();
         return;
     }
@@ -192,13 +197,48 @@ function refreshCalendarFilterView() {
     renderCalendarGrid(calendarPanels.grid);
 }
 
+function hasCalendarPanels() {
+    return Boolean(calendarPanels?.header?.isConnected && calendarPanels?.form?.isConnected && calendarPanels?.grid?.isConnected);
+}
+
+async function refreshCalendarPeriod() {
+    if (!hasCalendarPanels()) {
+        renderCalendar();
+        return;
+    }
+    const version = ++calendarUpdateVersion;
+    renderHeader(calendarPanels.header);
+    renderEventForm(calendarPanels.form);
+    calendarPanels.grid.hidden = false;
+    calendarPanels.grid.innerHTML = '<p class="muted">Mise à jour du planning…</p>';
+    const result = await loadEvents();
+    if (version !== calendarUpdateVersion || !hasCalendarPanels()) return;
+    if (!result.ok) {
+        calendarPanels.grid.innerHTML = `<p class="auth-message error">${escapeHtml(result.message || "Impossible de charger le planning.")}</p>`;
+        return;
+    }
+    events = result.events;
+    if (isReadOnlyCalendar()) window.dispatchEvent(new CustomEvent("depannhome:technician-calendar-viewed", { detail: { events } }));
+    renderHeader(calendarPanels.header);
+    renderCalendarGrid(calendarPanels.grid);
+}
+
+function refreshCalendarDetail() {
+    if (!hasCalendarPanels()) {
+        renderCalendar();
+        return;
+    }
+    renderEventForm(calendarPanels.form);
+}
+
 function bindCalendarViewSwitcher(panel) {
     panel.querySelectorAll("[data-calendar-view]").forEach(button => button.addEventListener("click", () => {
         const nextView = button.dataset.calendarView;
+        if (nextView === calendarView) return;
         calendarView = nextView;
         displayedMonth = nextView === "month" ? firstDayOfMonth(displayedMonth) : atNoon(displayedMonth);
         selectedEvent = null;
-        renderCalendar();
+        refreshCalendarPeriod();
     }));
 }
 
@@ -206,17 +246,17 @@ function bindCalendarNavigation(panel) {
     panel.querySelector("[data-calendar-action=previous]").addEventListener("click", () => {
         displayedMonth = shiftDisplayedDate(-1);
         selectedEvent = null;
-        renderCalendar();
+        refreshCalendarPeriod();
     });
     panel.querySelector("[data-calendar-action=next]").addEventListener("click", () => {
         displayedMonth = shiftDisplayedDate(1);
         selectedEvent = null;
-        renderCalendar();
+        refreshCalendarPeriod();
     });
     panel.querySelector("[data-calendar-action=today]").addEventListener("click", () => {
         displayedMonth = calendarView === "month" ? firstDayOfMonth(new Date()) : atNoon(new Date());
         selectedEvent = null;
-        renderCalendar();
+        refreshCalendarPeriod();
     });
 }
 
@@ -252,7 +292,7 @@ function renderEventForm(panel) {
                 </div>`;
             panel.querySelector("#closeCalendarDetail").addEventListener("click", () => {
                 selectedEvent = null;
-                renderCalendar();
+                refreshCalendarDetail();
             });
             return;
         }
@@ -308,7 +348,7 @@ function renderEventForm(panel) {
         panel.querySelector("#calendarClientUpload")?.addEventListener("submit", eventSubmit => uploadClientAttachments(eventSubmit, client, event));
         panel.querySelector("#closeCalendarDetail").addEventListener("click", () => {
             selectedEvent = null;
-            renderCalendar();
+            refreshCalendarDetail();
         });
         return;
     }
@@ -376,7 +416,7 @@ function renderEventForm(panel) {
 
     panel.querySelector("#cancelCalendarEdit")?.addEventListener("click", () => {
         selectedEvent = null;
-        renderCalendar();
+        refreshCalendarDetail();
     });
     const form = panel.querySelector("#calendarEventForm");
     const clientInput = form.querySelector("[name=clientName]");
@@ -483,6 +523,7 @@ function renderEventForm(panel) {
         });
         displayedMonth = firstDayOfMonth(new Date(`${payload.date}T12:00:00`));
         selectedEvent = null;
+        invalidateCalendarEventsCache();
         renderCalendar();
     });
     panel.querySelector("#deleteCalendarEvent")?.addEventListener("click", async () => {
@@ -494,6 +535,7 @@ function renderEventForm(panel) {
             return;
         }
         selectedEvent = null;
+        invalidateCalendarEventsCache();
         renderCalendar();
     });
 }
@@ -819,6 +861,7 @@ async function uploadClientAttachments(event, client, appointment) {
     form.reset();
     feedback.textContent = result.message || "Fichier ajouté au dossier.";
     selectedEvent = appointment;
+    invalidateCalendarEventsCache();
     renderCalendar({ event: appointment });
 }
 
@@ -876,6 +919,7 @@ function initializeQuitusForm(panel, event) {
         }
         Object.assign(event, result.data?.quitus || {});
         await synchronizeClients();
+        invalidateCalendarEventsCache();
         renderCalendar({ event });
     });
 }
@@ -976,6 +1020,7 @@ async function uploadInterventionPhotos(event, client, appointment) {
         }
     }
     selectedEvent = appointment;
+    invalidateCalendarEventsCache();
     renderCalendar({ event: appointment });
 }
 
@@ -1036,7 +1081,8 @@ function renderCalendarGrid(panel) {
         cell.innerHTML = `<span class="calendar-day-number" aria-hidden="true">${day.getDate()}</span><div class="calendar-event-list"></div>`;
         const openNewEvent = () => {
             selectedEvent = newEventForDate(date);
-            renderCalendar({ date: day });
+            displayedMonth = calendarView === "month" ? firstDayOfMonth(day) : atNoon(day);
+            refreshCalendarDetail();
         };
         if (!readOnly) {
             cell.addEventListener("click", eventClick => {
@@ -1060,7 +1106,7 @@ function renderCalendarGrid(panel) {
             button.innerHTML = renderCalendarEventCard(event, clientDetails);
             button.addEventListener("click", () => {
                 selectedEvent = event;
-                renderCalendar({ date: day });
+                refreshCalendarDetail();
             });
             eventList.appendChild(button);
         });
@@ -1087,12 +1133,12 @@ function renderCalendarList(panel) {
     }).join("")}</div>`;
     panel.querySelectorAll("[data-calendar-event]").forEach(button => button.addEventListener("click", () => {
         selectedEvent = events.find(event => String(event.id) === button.dataset.calendarEvent) || null;
-        renderCalendar();
+        refreshCalendarDetail();
     }));
     panel.querySelectorAll("[data-calendar-date]").forEach(day => {
         const openNewEvent = () => {
             selectedEvent = newEventForDate(day.dataset.calendarDate);
-            renderCalendar({ date: new Date(`${day.dataset.calendarDate}T12:00:00`) });
+            refreshCalendarDetail();
         };
         day.addEventListener("click", event => {
             if (!event.target.closest(".calendar-event")) openNewEvent();
@@ -1124,17 +1170,35 @@ function getEventClientDetails(event) {
     };
 }
 
+function invalidateCalendarEventsCache() {
+    calendarEventsCache.clear();
+}
+
 async function loadEvents() {
     const { start, end } = getDisplayedRange();
     const startDate = toDateString(start);
     const endDate = toDateString(end);
+    const cacheKey = `${startDate}:${endDate}`;
+    const cached = calendarEventsCache.get(cacheKey);
+    if (cached && Date.now() - cached.loadedAt < EVENTS_CACHE_DURATION) return { ok: true, events: cached.events };
     return request(`/api/calendar/events?start=${encodeURIComponent(startDate)}&end=${encodeURIComponent(endDate)}`)
-        .then(result => result.ok ? { ok: true, events: result.data.events || [] } : { ok: false, message: result.message });
+        .then(result => {
+            if (!result.ok) return { ok: false, message: result.message };
+            const loadedEvents = result.data.events || [];
+            calendarEventsCache.set(cacheKey, { events: loadedEvents, loadedAt: Date.now() });
+            return { ok: true, events: loadedEvents };
+        });
 }
 
 async function loadCalendarMembers() {
+    if (cachedMembers && Date.now() - cachedMembersAt < MEMBERS_CACHE_DURATION) return cachedMembers;
     const result = await request("/api/auth/calendar-members");
-    return result.ok ? (result.data?.members || []).filter(member => member.isActive) : [];
+    const loadedMembers = result.ok ? (result.data?.members || []).filter(member => member.isActive) : [];
+    if (result.ok) {
+        cachedMembers = loadedMembers;
+        cachedMembersAt = Date.now();
+    }
+    return loadedMembers;
 }
 
 function isTechnicianBillingAllowed() {
