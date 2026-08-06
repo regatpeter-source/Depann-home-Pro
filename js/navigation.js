@@ -5,9 +5,9 @@ import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocume
 import { renderAccounting } from "./accounting.js?v=5";
 import { renderAccountingSandbox } from "./accounting-sandbox.js?v=2";
 import { renderGroupActivation, renderGroupWorkspace } from "./groups.js?v=3";
-import { renderPartnerMissions } from "./partner-missions.js?v=14";
+import { renderPartnerMissions } from "./partner-missions.js?v=15";
 import { renderPartnerSandbox } from "./partner-sandbox.js?v=3";
-import { renderPartnerConnections } from "./partner-connections.js?v=12";
+import { renderPartnerConnections } from "./partner-connections.js?v=13";
 import { renderDataImportTool } from "./data-imports.js?v=2";
 import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=14";
 import { getFirstUnreadClientId, refreshClientMessageAlert, refreshVisibleClientMessages } from "./messages.js?v=106";
@@ -1247,7 +1247,7 @@ function renderSettingsWorkspace(options = {}) {
         grid.className = "settings-card-grid";
         const cards = [
             ...(document.body.dataset.role === "admin" ? [["documents", "Modèles de documents", "Identité, présentation et modèles des devis, quitus et rapports.", "document"]] : []),
-            ["network", "Réseau Depann'Home Pro", "Partenaires, annuaire et connexions API de l’entreprise.", "network"],
+            ["network", "Réseau & connecteurs", "Deux espaces distincts : le réseau collaboratif Depann’Home Pro et les connecteurs API externes.", "network"],
             ...(document.body.dataset.role === "admin" ? [["users", "Utilisateurs", "Accès, postes, techniciens et chefs d’équipe.", "users"], ["security", "Sécurité", "Double authentification et protection des accès.", "security"], ["groups", "Groupe / Multi-entreprises", "Sociétés, bascule de contexte et indicateurs consolidés.", "group"]] : []),
             ["personalization", "Personnalisation", "Langue, thème, police et préférences d’affichage.", "appearance"],
             ...(document.body.dataset.role === "admin" && document.body.classList.contains("desktop-device") ? [["imports", "Importation de données", "Importez vos clients, devis, factures et rapports depuis Excel ou CSV.", "import"]] : []),
@@ -1261,7 +1261,7 @@ function renderSettingsWorkspace(options = {}) {
 
     clearSearch();
     resetSelection("all");
-    const titles = { documents: "Modèles de documents", network: "Réseau Depann'Home Pro", users: "Utilisateurs", security: "Sécurité", groups: "Groupe / Multi-entreprises", personalization: "Personnalisation", imports: "Importation de données", creator: "Console Créateur" };
+    const titles = { documents: "Modèles de documents", network: "Réseau & connecteurs", users: "Utilisateurs", security: "Sécurité", groups: "Groupe / Multi-entreprises", personalization: "Personnalisation", imports: "Importation de données", creator: "Console Créateur" };
     setPage(`Paramètres · ${titles[section] || "Configuration"}`, ROUTES.settings, "detail");
     const container = getContainer();
     container.appendChild(createBackCard("Retour aux Paramètres", () => renderSettings()));
@@ -1282,7 +1282,7 @@ function renderSettingsWorkspace(options = {}) {
         return;
     }
     if (section === "network") {
-        container.appendChild(createSettingsIntro("Réseau Depann'Home Pro", "Centralisez vos partenaires, l’annuaire et la configuration des connexions API."));
+        container.appendChild(createSettingsIntro("Réseau & connecteurs", "Le Réseau Depann’Home Pro relie uniquement les entreprises utilisatrices. Les connecteurs externes sont configurés séparément pour les échanges API avec les organismes tiers."));
         renderPartnerConnections(container);
         if (document.body.classList.contains("partner-sandbox-enabled")) container.appendChild(createButton("Ouvrir l’environnement de recette partenaire", "secondary-button settings-inline-action", renderPartnerSandbox));
         return;

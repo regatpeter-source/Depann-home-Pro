@@ -1,6 +1,6 @@
 import { escapeHtml } from "./utils.js?v=44";
 import { renderPartnerSandbox } from "./partner-sandbox.js?v=3";
-import { renderPartnerMissions } from "./partner-missions.js?v=14";
+import { renderPartnerMissions } from "./partner-missions.js?v=15";
 import { openProfessionalDirectory } from "./professional-directory.js?v=1";
 
 const RIGHTS = [["canSendInterventions", "Peut envoyer des interventions"], ["canReceiveInterventions", "Peut recevoir des interventions"], ["canViewReports", "Peut consulter les rapports"], ["canViewQuotes", "Peut consulter les devis"], ["canViewInvoices", "Peut consulter les factures"], ["canUseMessaging", "Peut utiliser la messagerie"], ["canViewStatusChanges", "Peut voir les changements de statut"]];
@@ -8,31 +8,38 @@ let sandboxScenario = null;
 
 export async function renderPartnerConnections(container) {
     const card = document.createElement("article"); card.className = "brand-card full-card procedure-card partner-connections-card";
-    card.innerHTML = '<header class="partner-connections-heading"><div><p class="eyebrow">Gestion des partenariats</p><h2>Réseau Depann\'Home Pro</h2><p class="muted">Recherchez, connectez et gérez vos partenaires depuis un espace unique.</p></div></header><nav class="partner-network-tabs" aria-label="Réseau Depann\'Home Pro"><button type="button" class="secondary-button active" data-network-tab="partners">Mes partenaires</button><button type="button" class="secondary-button" data-network-tab="directory">Annuaire Depann\'Home Pro</button></nav><div data-partner-connections><p class="muted">Chargement du réseau…</p></div>';
+    card.innerHTML = '<header class="partner-connections-heading"><div><p class="eyebrow">Partenariats & intégrations</p><h2>Réseau et connecteurs</h2><p class="muted">Le réseau Depann\'Home Pro relie les entreprises utilisatrices. Les connecteurs externes reçoivent leurs missions directement par API.</p></div></header><nav class="partner-network-tabs" aria-label="Espaces partenaires"><button type="button" class="secondary-button active" data-partner-space="network">Réseau Depann\'Home Pro</button><button type="button" class="secondary-button" data-partner-space="external">Connecteurs externes</button></nav><div data-partner-connections><p class="muted">Chargement des espaces partenaires…</p></div>';
     container.appendChild(card);
+    let activeSpace = "network";
     let activeTab = "partners";
-    card.querySelectorAll("[data-network-tab]").forEach(button => button.addEventListener("click", () => { activeTab = button.dataset.networkTab; render(); }));
+    let activeExternalTab = "available";
+    card.querySelectorAll("[data-partner-space]").forEach(button => button.addEventListener("click", () => { activeSpace = button.dataset.partnerSpace; render(); }));
     async function load() {
         const sandboxAvailable = document.body.classList.contains("partner-sandbox-enabled");
-        const [connectionsResult, scenarioResult, officialPartnersResult] = await Promise.all([api("/api/partner-connections"), sandboxAvailable ? api("/api/partner-sandbox/connection-scenario") : Promise.resolve({ ok: false }), api("/api/official-partners")]);
+        const [connectionsResult, scenarioResult, officialPartnersResult, intakesResult] = await Promise.all([api("/api/partner-connections"), sandboxAvailable ? api("/api/partner-sandbox/connection-scenario") : Promise.resolve({ ok: false }), api("/api/official-partners"), api("/api/partner-missions/intakes")]);
         if (!connectionsResult.ok) { card.querySelector("[data-partner-connections]").innerHTML = `<p class="auth-message error">${escapeHtml(connectionsResult.message)}</p>`; return; }
         sandboxScenario = scenarioResult.ok ? scenarioResult.data.scenario : null;
-        card._network = { ...connectionsResult.data, officialPartners: officialPartnersResult.ok ? officialPartnersResult.data?.partners || [] : [], officialConnections: officialPartnersResult.ok ? officialPartnersResult.data?.connections || [] : [] };
+        card._workspace = { ...connectionsResult.data, officialPartners: officialPartnersResult.ok ? officialPartnersResult.data?.partners || [] : [], officialConnections: officialPartnersResult.ok ? officialPartnersResult.data?.connections || [] : [], intakes: intakesResult.ok ? intakesResult.data?.intakes || [] : [] };
         render();
     }
     function render() {
-        const data = card._network; if (!data) return;
+        const data = card._workspace; if (!data) return;
         const target = card.querySelector("[data-partner-connections]");
-        card.querySelectorAll("[data-network-tab]").forEach(button => button.classList.toggle("active", button.dataset.networkTab === activeTab));
-        if (activeTab === "directory") return renderDirectoryTab(target, data, load);
-        renderPartnersTab(target, data, load);
+        card.querySelectorAll("[data-partner-space]").forEach(button => button.classList.toggle("active", button.dataset.partnerSpace === activeSpace));
+        if (activeSpace === "external") return renderExternalConnectors(target, data, activeExternalTab, tab => { activeExternalTab = tab; render(); }, load);
+        target.innerHTML = '<nav class="partner-network-tabs" aria-label="Réseau Depann\'Home Pro"><button type="button" class="secondary-button" data-network-tab="partners">Mes partenaires</button><button type="button" class="secondary-button" data-network-tab="directory">Annuaire Depann\'Home Pro</button></nav><div data-network-content></div>';
+        target.querySelectorAll("[data-network-tab]").forEach(button => button.addEventListener("click", () => { activeTab = button.dataset.networkTab; render(); }));
+        const networkTarget = target.querySelector("[data-network-content]");
+        target.querySelectorAll("[data-network-tab]").forEach(button => button.classList.toggle("active", button.dataset.networkTab === activeTab));
+        if (activeTab === "directory") return renderDirectoryTab(networkTarget, data, load);
+        renderPartnersTab(networkTarget, data, load);
     }
     await load();
 }
 
 function renderPartnersTab(target, data, reload) {
     const connections = sandboxScenario && sandboxScenario.connection?.status !== "available" ? [...data.connections, sandboxConnection(sandboxScenario)] : data.connections;
-    target.innerHTML = `<div class="partner-network-tab-heading"><div><h3>Mes partenaires</h3><p class="muted">Les connexions sont adaptées automatiquement à chaque partenaire.</p></div></div><section class="partner-connection-table"><div class="partner-connection-row partner-connection-labels"><span>Entreprise</span><span>Statut</span><span>Dernière synchronisation</span><span>Actions</span></div>${connections.length ? connections.map(connection => rowHtml(connection)).join("") : '<p class="muted">Aucune entreprise Depann\'Home Pro connectée.</p>'}</section><section class="partner-api-connections"><div class="partner-network-tab-heading"><div><p class="eyebrow">Partenaires officiels</p><h3>Connexions externes</h3><p class="muted">Choisissez un partenaire : Depann’Home Pro vous guide automatiquement, sans paramètre technique.</p></div></div><div class="partner-api-list">${data.officialPartners.length ? data.officialPartners.map(partner => officialPartnerHtml(partner, data.officialConnections)).join("") : '<p class="muted">Aucun partenaire externe disponible actuellement.</p>'}</div></section>`;
+    target.innerHTML = `<div class="partner-network-tab-heading"><div><p class="eyebrow">Entreprises Depann’Home Pro</p><h3>Mes partenaires</h3><p class="muted">Ces connexions permettent les demandes de partenariat, les missions entre entreprises, la messagerie et le partage de documents.</p></div></div><section class="partner-connection-table"><div class="partner-connection-row partner-connection-labels"><span>Entreprise</span><span>Statut</span><span>Dernière synchronisation</span><span>Actions</span></div>${connections.length ? connections.map(connection => rowHtml(connection)).join("") : '<p class="muted">Aucune entreprise Depann\'Home Pro connectée.</p>'}</section>`;
     target.querySelectorAll("[data-manage]").forEach(button => button.addEventListener("click", () => openManagement(connections.find(item => String(item.id) === button.dataset.manage), reload)));
     target.querySelectorAll("[data-new-partner-mission]").forEach(button => button.addEventListener("click", () => { window.dispatchEvent(new CustomEvent("depannhome:new-partner-mission", { detail: { connectionId: button.dataset.newPartnerMission } })); renderPartnerMissions(); }));
     target.querySelectorAll("[data-open-partner-messaging]").forEach(button => button.addEventListener("click", () => { window.dispatchEvent(new CustomEvent("depannhome:open-partner-missions", { detail: { tab: "messages" } })); renderPartnerMissions(); }));
@@ -42,6 +49,24 @@ function renderPartnersTab(target, data, reload) {
     target.querySelectorAll("[data-sandbox-reconnect]").forEach(button => button.addEventListener("click", () => requestSandboxConnection(reload)));
     target.querySelectorAll("[data-connect-official]").forEach(button => button.addEventListener("click", () => openOfficialPartnerConnection(data.officialPartners.find(partner => String(partner.id) === button.dataset.connectOfficial), reload)));
     target.querySelectorAll("[data-disconnect-official]").forEach(button => button.addEventListener("click", async () => { if (!confirm("Déconnecter ce partenaire ?")) return; const result = await api(`/api/official-partners/${encodeURIComponent(button.dataset.disconnectOfficial)}/disconnect`, { method: "POST" }); if (!result.ok) return alert(result.message); reload(); }));
+}
+
+function renderExternalConnectors(target, data, activeTab, setActiveTab, reload) {
+    target.innerHTML = `<section class="partner-external-workspace"><div class="partner-network-tab-heading"><div><p class="eyebrow">Organismes extérieurs</p><h3>Connecteurs externes</h3><p class="muted">Assurances, donneurs d’ordre, plateformes de sinistres et logiciels métiers transmettent leurs missions directement par API. Ils ne font pas partie de l’annuaire ni du réseau collaboratif Depann’Home Pro.</p></div></div><nav class="partner-network-tabs" aria-label="Connecteurs externes"><button type="button" class="secondary-button${activeTab === "available" ? " active" : ""}" data-external-tab="available">Connecteurs disponibles</button><button type="button" class="secondary-button${activeTab === "api" ? " active" : ""}" data-external-tab="api">Connexions API</button></nav><div data-external-content></div></section>`;
+    target.querySelectorAll("[data-external-tab]").forEach(button => button.addEventListener("click", () => setActiveTab(button.dataset.externalTab)));
+    const content = target.querySelector("[data-external-content]");
+    if (activeTab === "api") {
+        content.innerHTML = `<section class="partner-api-connections"><div class="partner-network-tab-heading"><div><p class="eyebrow">Réception directe de missions</p><h3>Connexions API configurées</h3><p class="muted">Chaque connexion possède son endpoint, son état et ses règles de synchronisation. Aucune demande de partenariat n’est utilisée.</p></div><button type="button" class="secondary-button" data-add-intake>Ajouter une connexion API</button></div><div class="partner-api-list">${data.intakes.length ? data.intakes.map(apiIntakeHtml).join("") : '<p class="muted">Aucune connexion API externe n’est configurée.</p>'}</div></section>`;
+        content.querySelector("[data-add-intake]").addEventListener("click", () => openApiIntakeDialog(null, reload));
+        content.querySelectorAll("[data-edit-intake]").forEach(button => button.addEventListener("click", () => openApiIntakeDialog(data.intakes.find(intake => String(intake.id) === button.dataset.editIntake), reload)));
+        content.querySelectorAll("[data-test-intake]").forEach(button => button.addEventListener("click", async () => { const result = await api(`/api/partner-missions/intakes/${button.dataset.testIntake}/test`, { method: "POST" }); alert(result.ok ? result.data?.message || "Connexion API prête." : result.message); }));
+        content.querySelectorAll("[data-rotate-intake]").forEach(button => button.addEventListener("click", async () => { if (!confirm("Renouveler cette clé API ? L’ancienne clé cessera immédiatement de fonctionner.")) return; const result = await api(`/api/partner-missions/intakes/${button.dataset.rotateIntake}/rotate-key`, { method: "POST" }); if (!result.ok) return alert(result.message); showApiKey(result.data.apiKey, `/api/partner-intake/${data.intakes.find(intake => String(intake.id) === button.dataset.rotateIntake)?.partnerKey || ""}`); }));
+        content.querySelectorAll("[data-delete-intake]").forEach(button => button.addEventListener("click", async () => { if (!confirm("Supprimer cette connexion API externe ?")) return; const result = await api(`/api/partner-missions/intakes/${button.dataset.deleteIntake}`, { method: "DELETE" }); if (!result.ok) return alert(result.message); reload(); }));
+        return;
+    }
+    content.innerHTML = `<section class="partner-api-connections"><div class="partner-network-tab-heading"><div><p class="eyebrow">Catalogue d’intégrations</p><h3>Partenaires externes disponibles</h3><p class="muted">Connectez un organisme extérieur par identifiants sécurisés ou OAuth. Ces intégrations ne créent jamais de partenariat entre entreprises Depann’Home Pro.</p></div></div><div class="partner-api-list">${data.officialPartners.length ? data.officialPartners.map(partner => officialPartnerHtml(partner, data.officialConnections)).join("") : '<p class="muted">Aucun connecteur externe disponible actuellement.</p>'}</div></section>`;
+    content.querySelectorAll("[data-connect-official]").forEach(button => button.addEventListener("click", () => openOfficialPartnerConnection(data.officialPartners.find(partner => String(partner.id) === button.dataset.connectOfficial), reload)));
+    content.querySelectorAll("[data-disconnect-official]").forEach(button => button.addEventListener("click", async () => { if (!confirm("Déconnecter ce connecteur externe ?")) return; const result = await api(`/api/official-partners/${encodeURIComponent(button.dataset.disconnectOfficial)}/disconnect`, { method: "POST" }); if (!result.ok) return alert(result.message); reload(); }));
 }
 
 function officialPartnerHtml(partner, connections) {
