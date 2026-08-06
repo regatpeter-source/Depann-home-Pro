@@ -3,6 +3,7 @@ import { clearSearch, getContainer, setPage } from "./ui.js?v=44";
 import { escapeHtml } from "./utils.js?v=44";
 import { openPartnerDialogue } from "./partner-dialogue.js?v=5";
 import { getSearchableClients } from "./clients.js?v=137";
+import { synchronizeClients } from "./client-sync.js?v=121";
 
 let dashboard = null;
 let activeMissionTab = "received";
@@ -109,4 +110,13 @@ function labelPriority(value) { return ({ low: "Faible", normal: "Normale", high
 function labelField(value) { return ({ clientName: "Client", address: "Adresse", interventionType: "Intervention", partnerReference: "Référence", claimNumber: "Sinistre", phone: "Téléphone", email: "E-mail", description: "Description", comments: "Commentaires", insurance: "Assureur", expert: "Expert", manager: "Gestionnaire", date: "Date", startTime: "Début", endTime: "Fin", gps: "GPS" })[value] || value; }
 function formatDate(value) { return value ? new Intl.DateTimeFormat("fr-FR", { dateStyle: "short", timeStyle: "short" }).format(new Date(value)) : ""; }
 function canManagePartnerMissions() { return ["admin", "pc_standard"].includes(document.body.dataset.role); }
-async function api(url, options = {}) { try { const response = await fetch(url, { credentials: "same-origin", headers: { "Content-Type": "application/json", ...(options.headers || {}) }, ...options }); const data = response.status === 204 ? null : await response.json().catch(() => null); return { ok: response.ok, data, message: data?.message || "Serveur indisponible." }; } catch { return { ok: false, message: "Serveur indisponible." }; } }
+async function api(url, options = {}) {
+    try {
+        const response = await fetch(url, { credentials: "same-origin", headers: { "Content-Type": "application/json", ...(options.headers || {}) }, ...options });
+        const data = response.status === 204 ? null : await response.json().catch(() => null);
+        if (response.ok && /\/api\/partner-missions\/\d+\/accept$/.test(url)) await synchronizeClients().catch(() => {});
+        return { ok: response.ok, data, message: data?.message || "Serveur indisponible." };
+    } catch {
+        return { ok: false, message: "Serveur indisponible." };
+    }
+}
