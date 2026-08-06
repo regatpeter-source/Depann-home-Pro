@@ -35,6 +35,8 @@ export async function renderClients(options = {}) {
     const refreshFromServer = options.refreshFromServer === true;
     const viewOptions = { ...options };
     delete viewOptions.refreshFromServer;
+    const directoryClientId = String(viewOptions.directoryClientId || "");
+    delete viewOptions.directoryClientId;
     if (refreshFromServer) await synchronizeClients().catch(() => {});
     else scheduleClientSynchronization();
     clientScreenOptions = { ...clientScreenOptions, ...viewOptions };
@@ -57,6 +59,7 @@ export async function renderClients(options = {}) {
     }
 
     container.appendChild(directory);
+    if (directoryClientId) renderProvisionedClientDirectory(directory, clients, directoryClientId);
 }
 
 function renderClientToolbar(clients, readOnly, directory) {
@@ -336,6 +339,14 @@ function renderClientDirectory(clients) {
 function renderClientDirectoryPrompt(section, clientCount = getClients().length) {
     section.innerHTML = "";
     section.appendChild(createInfo(clientCount ? "Utilisez les critères ci-dessus pour rechercher un dossier client. Les résultats seront classés par année et mois de création." : "Aucun client enregistré pour le moment."));
+}
+
+function renderProvisionedClientDirectory(section, clients, clientId) {
+    const client = clients.find(item => String(item.id) === String(clientId));
+    if (!client) return;
+    renderClientDirectoryResults(section, [client], new Map());
+    const notice = createInfo("La fiche client partenaire vient d’être synchronisée et est affichée ci-dessous.");
+    section.prepend(notice);
 }
 
 async function applyClientDirectorySearch(section, clients, filters) {

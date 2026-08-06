@@ -11,7 +11,7 @@ import { renderPartnerConnections } from "./partner-connections.js?v=13";
 import { renderDataImportTool } from "./data-imports.js?v=2";
 import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=14";
 import { getFirstUnreadClientId, refreshClientMessageAlert, refreshVisibleClientMessages } from "./messages.js?v=106";
-import { getSearchableClients, renderClients } from "./clients.js?v=139";
+import { getSearchableClients, renderClients } from "./clients.js?v=140";
 import { synchronizeClients } from "./client-sync.js?v=121";
 import { configureLibrary, openLibrarySection, renderLibrary, searchPersonalLibrary } from "./library.js?v=120";
 import { renderPhotoRecognition } from "./photo-recognition.js?v=105";
@@ -43,6 +43,7 @@ let sharedSynchronizationTimer = null;
 let sharedSynchronizationPromise = null;
 let interactionSynchronizationTimer = null;
 let interactionSynchronizationBound = false;
+let pendingPartnerClientId = "";
 const TECHNICIAN_CALENDAR_ALERT_KEY_PREFIX = "depannHomePro:technicianCalendar:lastViewed:";
 const INTERACTION_SYNCHRONIZATION_DELAY = 1_500;
 const SEARCH_EVENTS_TTL = 30_000;
@@ -63,9 +64,11 @@ export function initializeNavigation(loadedDatabase) {
     });
     window.addEventListener("depannhome:clients-synchronized", () => refreshClientMessageAlert());
     window.addEventListener("depannhome:partner-client-provisioned", event => {
-        if (document.querySelector(".nav-button.active")?.dataset.nav !== ROUTES.clients) return;
         const clientId = String(event.detail?.clientId || "");
-        renderClients({ database, navigateToRef, createBillingDocument: createBillingDocumentForClient, viewBillingDocument, createCalendarEvent: createCalendarEventForClient, ...(clientId ? { selectedId: clientId } : {}) });
+        if (!clientId) return;
+        pendingPartnerClientId = clientId;
+        if (document.querySelector(".nav-button.active")?.dataset.nav !== ROUTES.clients) return;
+        renderClients({ database, navigateToRef, createBillingDocument: createBillingDocumentForClient, viewBillingDocument, createCalendarEvent: createCalendarEventForClient, selectedId: clientId, directoryClientId: clientId });
     });
     window.addEventListener("depannhome:technician-calendar-viewed", event => markTechnicianCalendarAlertsRead(event.detail?.events || []));
     window.addEventListener("depannhome:open-notification", event => openNotificationDestination(event.detail?.notification));
@@ -305,8 +308,10 @@ function openCalendar() {
 
 async function openClients(clientId = "") {
     if (isAccountant()) return;
-    const selectedId = clientId || await getFirstUnreadClientId();
-    await renderClients({ database, navigateToRef, createBillingDocument: createBillingDocumentForClient, viewBillingDocument, createCalendarEvent: createCalendarEventForClient, refreshFromServer: true, ...(selectedId ? { selectedId, focusMessages: true } : {}) });
+    const provisionedClientId = clientId ? "" : pendingPartnerClientId;
+    const selectedId = clientId || provisionedClientId || await getFirstUnreadClientId();
+    await renderClients({ database, navigateToRef, createBillingDocument: createBillingDocumentForClient, viewBillingDocument, createCalendarEvent: createCalendarEventForClient, refreshFromServer: true, ...(selectedId ? { selectedId, focusMessages: true } : {}), ...(provisionedClientId ? { directoryClientId: provisionedClientId } : {}) });
+    if (provisionedClientId === pendingPartnerClientId) pendingPartnerClientId = "";
 }
 
 function openNotificationDestination(notification) {
