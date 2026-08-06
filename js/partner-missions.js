@@ -122,7 +122,11 @@ async function api(url, options = {}) {
     try {
         const response = await fetch(url, { credentials: "same-origin", headers: { "Content-Type": "application/json", ...(options.headers || {}) }, ...options });
         const data = response.status === 204 ? null : await response.json().catch(() => null);
-        if (response.ok && /\/api\/partner-missions\/\d+\/accept$/.test(url)) await synchronizeClients().catch(() => {});
+        if (response.ok && /\/api\/partner-missions\/\d+\/accept$/.test(url)) {
+            await synchronizeClients().catch(() => {});
+            const clientId = String(data?.mission?.clientId || "");
+            if (clientId) window.dispatchEvent(new CustomEvent("depannhome:partner-client-provisioned", { detail: { clientId } }));
+        }
         return { ok: response.ok, data, message: data?.message || "Serveur indisponible." };
     } catch {
         return { ok: false, message: "Serveur indisponible." };

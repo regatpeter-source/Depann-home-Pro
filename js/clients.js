@@ -32,8 +32,12 @@ let clientScreenOptions = {};
 let clientDirectoryFilters = createEmptyDirectoryFilters();
 
 export async function renderClients(options = {}) {
-    scheduleClientSynchronization();
-    clientScreenOptions = { ...clientScreenOptions, ...options };
+    const refreshFromServer = options.refreshFromServer === true;
+    const viewOptions = { ...options };
+    delete viewOptions.refreshFromServer;
+    if (refreshFromServer) await synchronizeClients().catch(() => {});
+    else scheduleClientSynchronization();
+    clientScreenOptions = { ...clientScreenOptions, ...viewOptions };
     clearSearch();
     resetSelection("all");
     setPage("Clients", ROUTES.clients, "detail");
@@ -41,8 +45,8 @@ export async function renderClients(options = {}) {
     const container = getContainer();
     const clients = getClients();
     const readOnly = isClientReadOnly();
-    const editingClient = !readOnly && options.editId ? getClientById(options.editId) : null;
-    const selectedClient = options.selectedId ? getClientById(options.selectedId) : null;
+    const editingClient = !readOnly && viewOptions.editId ? getClientById(viewOptions.editId) : null;
+    const selectedClient = viewOptions.selectedId ? getClientById(viewOptions.selectedId) : null;
 
     const directory = renderClientDirectory(clients);
     container.appendChild(renderClientToolbar(clients, readOnly, directory));
