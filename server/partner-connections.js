@@ -120,12 +120,14 @@ export function registerPartnerConnectionRoutes(app, requireAuthentication) {
 export async function synchronizeConnectedAppointment(ownerId, eventId, connectionId = 0) {
     if (!ownerId || !eventId) return;
     const db = getPool();
-    const { rows: sourceRows } = await db.query("SELECT id,title,client_name,location,TO_CHAR(event_date,'YYYY-MM-DD') AS date,TO_CHAR(start_time,'HH24:MI') AS \"startTime\",TO_CHAR(end_time,'HH24:MI') AS \"endTime\",notes,event_type FROM depannhome_calendar_events WHERE id=$1 AND owner_id=$2", [eventId, ownerId]);
-    const event = sourceRows[0]; if (!event || event.event_type !== "appointment") return;
+    const { rows: sourceRows } = await db.query("SELECT id,title,client_name,location,TO_CHAR(event_date,'YYYY-MM-DD') AS date,TO_CHAR(start_time,'HH24:MI') AS \"startTime\",TO_CHAR(end_time,'HH24:MI') AS \"endTime\",notes,event_type,event_origin,partner_connection_id FROM depannhome_calendar_events WHERE id=$1 AND owner_id=$2", [eventId, ownerId]);
+    const event = sourceRows[0];
+    if (!event || event.event_type !== "appointment" || event.event_origin !== "partner_mission" || !event.partner_connection_id) return;
+    if (connectionId && Number(connectionId) !== Number(event.partner_connection_id)) return;
     const sourceClient = await sourceClientForEvent(db, ownerId, event);
     const sourceCompany = await companyIdentity(ownerId);
     const connections = await activeConnections(ownerId);
-    for (const connection of connectionId ? connections.filter(item => Number(item.id) === Number(connectionId)) : connections) {
+    for (const connection of connections.filter(item => Number(item.id) === Number(event.partner_connection_id))) {
         const own = ownPermissions(connection, ownerId), partner = partnerPermissions(connection, ownerId);
         if (!own.canSendInterventions || !partner.canReceiveInterventions) continue;
         const targetOwnerId = partnerOwnerId(connection, ownerId); const intakeId = await ensureManagedIntake(targetOwnerId, sourceCompany.name, connection.id);
@@ -134,7 +136,7 @@ export async function synchronizeConnectedAppointment(ownerId, eventId, connecti
         const { rows } = await db.query(`INSERT INTO depannhome_partner_missions(owner_id,intake_id,external_mission_id,partner_reference,status,priority,source_data,mapped_data,scheduled_date,scheduled_start_time,scheduled_end_time)
             VALUES($1,$2,$3,$4,'pending_validation','normal',$5::jsonb,$6::jsonb,$7::date,$8::time,$9::time)
             ON CONFLICT(owner_id,intake_id,external_mission_id) DO UPDATE SET source_data=EXCLUDED.source_data,mapped_data=EXCLUDED.mapped_data,scheduled_date=EXCLUDED.scheduled_date,scheduled_start_time=EXCLUDED.scheduled_start_time,scheduled_end_time=EXCLUDED.scheduled_end_time,updated_at=NOW() RETURNING id,(xmax=0) AS inserted`, [targetOwnerId, intakeId, externalMissionId, mapped.partnerReference, JSON.stringify({ managedConnection: true, event }), JSON.stringify(mapped), event.date, event.startTime || null, event.endTime || null]);
-        const mission = rows[0]; await ensureBusinessMissionNumber(db, mission.id); tracePartnerClient("network_route_selected", { flow: "connected_appointment_sync", sourceOwnerId: ownerId, targetOwnerId, missionId: mission.id, persistenceMode: "autocommit" }); const client = await provisionPartnerMissionClient(db, targetOwnerId, mapped, { user: { fullName: sourceCompany.name } }); await db.query("UPDATE depannhome_partner_missions SET client_id=$3,updated_at=NOW() WHERE id=$1 AND owner_id=$2", [mission.id, targetOwnerId, client.id]); await traceCommittedPartnerClient(targetOwnerId, client.id, { flow: "connected_appointment_sync", sourceOwnerId: ownerId, missionId: mission.id, persistenceMode: "autocommit" }); await db.query("INSERT INTO depannhome_partner_connection_sync_log(connection_id,source_owner_id,target_owner_id,source_event_id,target_mission_id,event_type,details) VALUES($1,$2,$3,$4,$5,'appointment_synced',$6::jsonb)", [connection.id, ownerId, targetOwnerId, event.id, mission.id, JSON.stringify({ inserted: mission.inserted, clientId: client.id, clientCreated: client.created })]);
+        const mission = rows[0]; await ensureBusinessMissionNumber(db, mission.id); tracePartnerClient("network_route_selected", { flow: "connected_appointment_sync", sourceOwnerId: ownerId, targetOwnerId, missionId: mission.id, persistenceMode: "autocommit" }); const client = await provisionPartnerMissionClient(db, targetOwnerId, mapped, { user: { fullName: sourceCompany.name } }); await db.query("UPDATE depannhome_partner_missions SET client_id=$3,updated_at=NOW() WHERE id=$1 AND owner_id=$2", [mission.id, targetOwnerId, client.id]); await db.query("UPDATE depannhome_calendar_events SET partner_mission_id=$3,updated_at=NOW() WHERE id=$1 AND owner_id=$2", [event.id, ownerId, mission.id]); await traceCommittedPartnerClient(targetOwnerId, client.id, { flow: "connected_appointment_sync", sourceOwnerId: ownerId, missionId: mission.id, persistenceMode: "autocommit" }); await db.query("INSERT INTO depannhome_partner_connection_sync_log(connection_id,source_owner_id,target_owner_id,source_event_id,target_mission_id,event_type,details) VALUES($1,$2,$3,$4,$5,'appointment_synced',$6::jsonb)", [connection.id, ownerId, targetOwnerId, event.id, mission.id, JSON.stringify({ inserted: mission.inserted, clientId: client.id, clientCreated: client.created })]);
         await recordMissionDialogueEvent({ ownerId: targetOwnerId, missionId: mission.id, status: mission.inserted ? "received" : "pending_validation", action: mission.inserted ? "received" : "updated", actorName: sourceCompany.name });
         await notifyAdmins(targetOwnerId, "partner_connection_intervention", "Nouvelle intervention partenaire", `${sourceCompany.name} a partagé l’intervention « ${event.title} ».`, { connectionId: connection.id, missionId: mission.id });
     }
@@ -155,10 +157,10 @@ async function createConnectedMission(req) {
     if (!value.keepInOwnCalendar) return createDirectConnectedMission(database, ownerId, connection, value, client);
     const { rows } = await database.query(`
         INSERT INTO depannhome_calendar_events
-            (owner_id, title, client_name, location, event_date, color, event_type, notes)
-        VALUES ($1, $2, $3, $4, $5::date, $6, 'appointment', $7)
+            (owner_id, title, client_name, location, event_date, color, event_type, event_origin, partner_connection_id, notes)
+        VALUES ($1, $2, $3, $4, $5::date, $6, 'appointment', 'partner_mission', $7, $8)
         RETURNING id
-    `, [ownerId, value.subject, client.name, [client.address, client.city].filter(Boolean).join(", "), value.requestedDate, value.priority === "urgent" ? "red" : value.priority === "high" ? "orange" : "blue", missionNotes(value)]);
+    `, [ownerId, value.subject, client.name, [client.address, client.city].filter(Boolean).join(", "), value.requestedDate, value.priority === "urgent" ? "red" : value.priority === "high" ? "orange" : "blue", connection.id, missionNotes(value)]);
     const eventId = rows[0].id;
     await synchronizeConnectedAppointment(ownerId, eventId, connection.id);
     const { rows: synced } = await database.query(`

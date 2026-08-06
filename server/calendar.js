@@ -29,6 +29,9 @@ export async function initializeCalendar() {
             end_time TIME,
             color VARCHAR(20) NOT NULL DEFAULT 'blue',
             event_type VARCHAR(20) NOT NULL DEFAULT 'appointment',
+            event_origin VARCHAR(30) NOT NULL DEFAULT 'standard',
+            partner_connection_id BIGINT,
+            partner_mission_id BIGINT,
             quitus_status VARCHAR(20) NOT NULL DEFAULT 'pending',
             quitus_signed_by VARCHAR(160) NOT NULL DEFAULT '',
             quitus_signature TEXT NOT NULL DEFAULT '',
@@ -51,6 +54,14 @@ export async function initializeCalendar() {
         ALTER TABLE depannhome_calendar_events
         ADD COLUMN IF NOT EXISTS event_type VARCHAR(20) NOT NULL DEFAULT 'appointment'
     `);
+    await database.query(`
+        ALTER TABLE depannhome_calendar_events
+        ADD COLUMN IF NOT EXISTS event_origin VARCHAR(30) NOT NULL DEFAULT 'standard',
+        ADD COLUMN IF NOT EXISTS partner_connection_id BIGINT,
+        ADD COLUMN IF NOT EXISTS partner_mission_id BIGINT
+    `);
+    await database.query("UPDATE depannhome_calendar_events SET event_origin='standard' WHERE event_origin IS NULL OR event_origin NOT IN ('standard','partner_mission')");
+    await database.query("CREATE INDEX IF NOT EXISTS depannhome_calendar_events_partner_origin_idx ON depannhome_calendar_events(owner_id,event_origin,partner_connection_id)");
     await database.query(`
         ALTER TABLE depannhome_calendar_events
         ADD COLUMN IF NOT EXISTS quitus_status VARCHAR(20) NOT NULL DEFAULT 'pending',
@@ -145,6 +156,9 @@ export function registerCalendarRoutes(app, requireAuthentication) {
                 TO_CHAR(event.end_time, 'HH24:MI') AS "endTime",
                 event.color,
                 event.event_type AS "eventType",
+                event.event_origin AS "eventOrigin",
+                event.partner_connection_id AS "partnerConnectionId",
+                event.partner_mission_id AS "partnerMissionId",
                 event.quitus_status AS "quitusStatus",
                 event.quitus_signed_by AS "quitusSignedBy",
                 event.quitus_signature AS "quitusSignature",
@@ -226,15 +240,14 @@ export function registerCalendarRoutes(app, requireAuthentication) {
             for (const date of dates) {
                 const { rows } = await connection.query(`
                     INSERT INTO depannhome_calendar_events
-                        (owner_id, assigned_technician_id, title, client_id, client_name, location, event_date, start_time, end_time, color, event_type, notes)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7::date, $8::time, $9::time, $10, $11, $12)
+                        (owner_id, assigned_technician_id, title, client_id, client_name, location, event_date, start_time, end_time, color, event_type, event_origin, notes)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7::date, $8::time, $9::time, $10, $11, 'standard', $12)
                     RETURNING id
                 `, [getAccountOwnerId(request), event.assignedTechnicianId || null, event.title, await resolveClientId(connection, getAccountOwnerId(request), event.clientName), event.clientName, event.location, date, optionalTime(event.startTime), optionalTime(event.endTime), event.color, event.eventType, event.notes]);
                 await replaceEventAssignments(connection, rows[0].id, event.assignedTechnicianIds, event.assignedTechnicianId);
                 ids.push(rows[0].id);
             }
             await connection.query("COMMIT");
-            await Promise.all(ids.map(id => synchronizeConnectedAppointment(getAccountOwnerId(request), id)));
             response.status(201).json({ id: ids[0], ids, count: ids.length });
         } catch (error) {
             await connection.query("ROLLBACK");
