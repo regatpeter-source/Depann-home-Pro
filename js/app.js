@@ -9,21 +9,28 @@ import { FONT_OPTIONS } from "./config.js?v=121";
 
 let applicationStarted = false;
 
-window.addEventListener("DOMContentLoaded", initializeApp);
+if (document.readyState === "loading") window.addEventListener("DOMContentLoaded", initializeApp, { once: true });
+else initializeApp();
 
 async function initializeApp() {
-    await initializeAuthentication({
-        onAuthenticated: user => {
-            if (!document.getElementById("app") && !restoreApplicationShell()) {
-                console.error("Le conteneur principal de l’application est introuvable.");
-                return;
-            }
+    try {
+        await initializeAuthentication({
+            onAuthenticated: user => {
+                if (!document.getElementById("app") && !restoreApplicationShell()) {
+                    console.error("Le conteneur principal de l’application est introuvable.");
+                    return;
+                }
 
-            showAuthenticatedUser(user);
-            initializeGroupCompanySelector(user);
-            startApplication();
-        }
-    });
+                showAuthenticatedUser(user);
+                initializeGroupCompanySelector(user);
+                startApplication();
+            }
+        });
+    } catch (error) {
+        document.body.classList.remove("auth-pending");
+        document.getElementById("authRoot").innerHTML = `<main class="auth-page"><section class="auth-card"><h1>Depann'Home Pro</h1><p class="auth-message error">Impossible de joindre le serveur. Vérifiez votre connexion puis actualisez la page.</p></section></main>`;
+        console.error("Impossible d’initialiser l’application.", error);
+    }
 }
 
 async function startApplication() {
