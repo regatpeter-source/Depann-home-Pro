@@ -128,7 +128,7 @@ export async function synchronizeConnectedAppointment(ownerId, eventId, connecti
         if (!own.canSendInterventions || !partner.canReceiveInterventions) continue;
         const targetOwnerId = partnerOwnerId(connection, ownerId); const intakeId = await ensureManagedIntake(targetOwnerId, sourceCompany.name, connection.id);
         const externalMissionId = `dpc-${connection.id}-${event.id}`;
-        const mapped = { externalMissionId, partnerReference: `Intervention ${event.id}`, date: event.date, startTime: event.startTime || "", endTime: event.endTime || "", priority: "normal", interventionType: event.title, clientName: event.client_name || sourceClient?.name || "", address: sourceClient?.address || event.location, city: sourceClient?.city || "", phone: sourceClient?.phone || "", email: sourceClient?.email || "", insurance: sourceClient?.insurance || "", claimNumber: sourceClient?.claimNumber || "", expert: sourceClient?.expert || "", manager: sourceClient?.manager || "", description: event.notes, connectionId: connection.id, sourceEventId: event.id };
+        const mapped = { externalMissionId, partnerReference: `Intervention ${event.id}`, date: event.date, startTime: event.startTime || "", endTime: event.endTime || "", priority: "normal", interventionType: event.title, clientName: event.client_name || sourceClient?.name || "", address: sourceClient?.address || event.location, city: sourceClient?.city || "", phone: sourceClient?.phone || "", email: sourceClient?.email || "", insurance: sourceClient?.insurance || "", claimNumber: sourceClient?.claimNumber || "", expert: sourceClient?.expert || "", manager: sourceClient?.manager || "", description: event.notes, attachments: partnerMissionAttachments(sourceClient?.attachments), connectionId: connection.id, sourceEventId: event.id };
         const { rows } = await db.query(`INSERT INTO depannhome_partner_missions(owner_id,intake_id,external_mission_id,partner_reference,status,priority,source_data,mapped_data,scheduled_date,scheduled_start_time,scheduled_end_time)
             VALUES($1,$2,$3,$4,'pending_validation','normal',$5::jsonb,$6::jsonb,$7::date,$8::time,$9::time)
             ON CONFLICT(owner_id,intake_id,external_mission_id) DO UPDATE SET source_data=EXCLUDED.source_data,mapped_data=EXCLUDED.mapped_data,scheduled_date=EXCLUDED.scheduled_date,scheduled_start_time=EXCLUDED.scheduled_start_time,scheduled_end_time=EXCLUDED.scheduled_end_time,updated_at=NOW() RETURNING id,(xmax=0) AS inserted`, [targetOwnerId, intakeId, externalMissionId, mapped.partnerReference, JSON.stringify({ managedConnection: true, event }), JSON.stringify(mapped), event.date, event.startTime || null, event.endTime || null]);
@@ -176,7 +176,7 @@ async function createDirectConnectedMission(database, ownerId, connection, value
     const sourceCompany = await companyIdentity(ownerId);
     const intakeId = await ensureManagedIntake(targetOwnerId, sourceCompany.name, connection.id);
     const externalMissionId = `dpc-${connection.id}-${crypto.randomUUID()}`;
-    const mapped = { externalMissionId, partnerReference: value.subject, date: value.requestedDate, startTime: "", endTime: "", priority: value.priority, interventionType: value.interventionType, clientName: client.name || "", address: client.address || "", city: client.city || "", phone: client.phone || "", email: client.email || "", insurance: client.insurance || "", claimNumber: client.claimNumber || "", expert: client.expert || "", manager: client.manager || "", description: value.comments, comments: value.comments, connectionId: connection.id, sourceEventId: "" };
+    const mapped = { externalMissionId, partnerReference: value.subject, date: value.requestedDate, startTime: "", endTime: "", priority: value.priority, interventionType: value.interventionType, clientName: client.name || "", address: client.address || "", city: client.city || "", phone: client.phone || "", email: client.email || "", insurance: client.insurance || "", claimNumber: client.claimNumber || "", expert: client.expert || "", manager: client.manager || "", description: value.comments, comments: value.comments, attachments: partnerMissionAttachments(client.attachments), connectionId: connection.id, sourceEventId: "" };
     const { rows } = await database.query(`INSERT INTO depannhome_partner_missions(owner_id,intake_id,external_mission_id,partner_reference,status,priority,source_data,mapped_data,scheduled_date) VALUES($1,$2,$3,$4,'pending_validation',$5,$6::jsonb,$7::jsonb,$8::date) RETURNING id`, [targetOwnerId, intakeId, externalMissionId, mapped.partnerReference, mapped.priority, JSON.stringify({ managedConnection: true, directMission: true, sourceOwnerId: ownerId }), JSON.stringify(mapped), mapped.date]);
     const mission = rows[0];
     const targetClient = await provisionPartnerMissionClient(database, targetOwnerId, mapped, { user: { fullName: sourceCompany.name } });
@@ -252,6 +252,13 @@ function missionNotes(value) {
         `Urgence : ${value.priority}`,
         value.comments
     ].filter(Boolean).join("\n").slice(0, 2000);
+}
+
+function partnerMissionAttachments(value) {
+    return (Array.isArray(value) ? value : [])
+        .filter(item => /^data:(image\/(jpeg|png|webp)|application\/(pdf|msword|vnd\.openxmlformats-officedocument\.wordprocessingml\.document|vnd\.ms-excel|vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet)|text\/plain);base64,[A-Za-z0-9+/=]+$/.test(String(item?.dataUrl || "")))
+        .slice(0, 30)
+        .map(item => ({ name: clean(item.name, 255) || "document-partenaire", mime: clean(item.mime, 150), size: Number(item.size) || 0, dataUrl: item.dataUrl }));
 }
 
 export async function synchronizeConnectedReport(ownerId, reportId) {
