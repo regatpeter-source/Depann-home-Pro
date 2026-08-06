@@ -12,7 +12,7 @@ const MESSAGE_KINDS = new Set(["message", "issue", "system"]);
 const ISSUE_TYPES = new Set(["client_absent", "access_impossible", "information_missing", "material_unavailable", "awaiting_authorization", "rescheduled", "information_requested", "other"]);
 const ALLOWED_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "application/pdf"]);
 const FIELD_ROLES = new Set(["technician", "team_lead"]);
-const PARTNER_MANAGEMENT_ROLES = new Set(["admin", "pc_standard"]);
+const PARTNER_MANAGEMENT_ROLES = new Set(["admin", "pc_standard", "mobile_admin"]);
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_ATTACHMENT_BYTES, files: MAX_ATTACHMENTS }, fileFilter: (request, file, callback) => callback(null, ALLOWED_MIME_TYPES.has(file.mimetype)) });
 
 export async function initializePartnerDialogue() {

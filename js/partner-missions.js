@@ -109,7 +109,7 @@ function labelStatus(value) { return ({ received: "Reçue", pending_validation: 
 function labelPriority(value) { return ({ low: "Faible", normal: "Normale", high: "Haute", urgent: "Urgente" })[value] || value; }
 function labelField(value) { return ({ clientName: "Client", address: "Adresse", interventionType: "Intervention", partnerReference: "Référence", claimNumber: "Sinistre", phone: "Téléphone", email: "E-mail", description: "Description", comments: "Commentaires", insurance: "Assureur", expert: "Expert", manager: "Gestionnaire", date: "Date", startTime: "Début", endTime: "Fin", gps: "GPS" })[value] || value; }
 function formatDate(value) { return value ? new Intl.DateTimeFormat("fr-FR", { dateStyle: "short", timeStyle: "short" }).format(new Date(value)) : ""; }
-function canManagePartnerMissions() { return ["admin", "pc_standard"].includes(document.body.dataset.role); }
+function canManagePartnerMissions() { return ["admin", "pc_standard", "mobile_admin"].includes(document.body.dataset.role); }
 async function api(url, options = {}) {
     try {
         const response = await fetch(url, { credentials: "same-origin", headers: { "Content-Type": "application/json", ...(options.headers || {}) }, ...options });
