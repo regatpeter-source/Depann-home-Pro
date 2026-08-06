@@ -5,7 +5,7 @@ import { acquireReportLock, forceReleaseReportLock, heartbeatReportLock, release
 
 const MODULES = [
     ["general", "Informations générales", "Données récupérées automatiquement"],
-    ["presentation", "Rapport de recherche de fuite", "Photo et remarque de présentation du rapport"],
+    ["presentation", "Rapport de recherche de fuite", "Photo de présentation du logement"],
     ["overview", "État des lieux", "Constats à l’arrivée"],
     ["visual", "Observations visuelles", "Désordres et anomalies visibles"],
     ["humidity", "Contrôle d’humidité", "Mesures et zones contrôlées"],
@@ -30,6 +30,7 @@ let heartbeatTimer = null;
 let periodicTimer = null;
 let saving = false;
 let eventsBound = false;
+let moduleNavScrollLeft = 0;
 
 export async function renderLeakReportWizard(reportId = 0, appointmentId = 0) {
     if ((!reportId && !appointmentId) || (reportId && String(current?.id || "") !== String(reportId))) await leaveReport();
@@ -91,6 +92,7 @@ function ensureModularContent() {
     if (!current?.content) return;
     current.content.customSections = Array.isArray(current.content.customSections) ? current.content.customSections : [];
     current.content.sectionTitles = current.content.sectionTitles && typeof current.content.sectionTitles === "object" ? current.content.sectionTitles : {};
+    delete current.content.sectionTitles.presentation;
     current.content.removedSections = Array.isArray(current.content.removedSections) ? current.content.removedSections : [];
     current.content.sectionOrder = Array.isArray(current.content.sectionOrder) ? current.content.sectionOrder : moduleKeys();
     MODULES.forEach(([key]) => {
@@ -115,6 +117,8 @@ async function acquireLock() {
 
 function renderEditor(shell) {
     if (previewMode) return renderPreview(shell);
+    const existingNavigation = shell.querySelector(".report-module-nav");
+    if (existingNavigation) moduleNavScrollLeft = existingNavigation.scrollLeft;
     document.body.classList.add("report-writing-active");
     ensureModularContent();
     const activeKey = current.content.activeStep;
@@ -134,7 +138,7 @@ function renderEditor(shell) {
         ${corrections.length ? `<section class="report-editor-corrections"><strong>Commentaires de l’administration</strong>${corrections.map(item => `<p><b>${escapeHtml(moduleDefinition(item.section)?.[1] || "Page")}</b> · ${escapeHtml(item.comment)}</p>`).join("")}</section>` : ""}
         <nav class="report-module-nav" aria-label="Pages du rapport">${visibleSections().map((section, index) => `<button type="button" draggable="${write && !["general", "presentation"].includes(section.id) ? "true" : "false"}" class="${section.id === activeKey ? "active" : ""}${moduleUsed(section.id) ? " used" : ""}" data-module="${escapeHtml(section.id)}"><span>${index + 1}</span><b>${escapeHtml(section.title)}</b></button>`).join("")}</nav>
         <main class="report-editor-main">
-            <div class="report-editor-module-heading"><div><p class="eyebrow">${activeMaterial ? "Matériel sélectionné" : `Page ${moduleNumber(activeKey)} sur ${visibleSections().length}`}</p>${write && !activeMaterial ? `<label class="report-section-title"><input aria-label="Titre de la page" value="${escapeHtml(activeModule[1])}" maxlength="160" data-section-title="${escapeHtml(activeKey)}"></label>` : `<h2>${escapeHtml(activeMaterial?.name || activeModule[1])}</h2>`}<p class="muted">${escapeHtml(activeMaterial ? "Observations et photos associées à cet équipement" : activeModule[2])}</p></div>${activeMaterial ? '<button type="button" class="secondary-button" data-back-to-materials>Retour aux matériels</button>' : write ? `<div class="report-section-actions"><button type="button" class="secondary-button" data-duplicate-section>Dupliquer cette page</button>${!["general", "presentation"].includes(activeKey) ? '<button type="button" class="text-button danger-text" data-delete-section>Supprimer la page</button>' : ""}</div>` : ""}</div>
+            <div class="report-editor-module-heading"><div><p class="eyebrow">${activeMaterial ? "Matériel sélectionné" : `Page ${moduleNumber(activeKey)} sur ${visibleSections().length}`}</p>${write && !activeMaterial && activeKey !== "presentation" ? `<label class="report-section-title"><input aria-label="Titre de la page" value="${escapeHtml(activeModule[1])}" maxlength="160" data-section-title="${escapeHtml(activeKey)}"></label>` : `<h2>${escapeHtml(activeMaterial?.name || activeModule[1])}</h2>`}<p class="muted">${escapeHtml(activeMaterial ? "Observations et photos associées à cet équipement" : activeModule[2])}</p></div>${activeMaterial ? '<button type="button" class="secondary-button" data-back-to-materials>Retour aux matériels</button>' : write && activeKey !== "presentation" ? `<div class="report-section-actions"><button type="button" class="secondary-button" data-duplicate-section>Dupliquer cette page</button>${activeKey !== "general" ? '<button type="button" class="text-button danger-text" data-delete-section>Supprimer la page</button>' : ""}</div>` : ""}</div>
             ${activeKey === "general" && !activeModule.custom ? generalModuleHtml(write) : activeKey === "presentation" && !activeModule.custom ? presentationModuleHtml(write) : activeKey === "methods" && !activeModule.custom ? materialsModuleHtml(write, activeMaterial) : observationsModuleHtml(activeKey, write)}
         </main>
         <footer class="report-editor-footer">
@@ -149,6 +153,7 @@ function renderEditor(shell) {
         </footer>
     `;
     bindEditor(shell, activeKey);
+    restoreModuleNavigation(shell, activeKey);
     startTimers(shell);
 }
 
@@ -159,8 +164,8 @@ function generalModuleHtml(write) {
 }
 
 function presentationModuleHtml(write) {
-    const presentation = current.content.presentation || {};
-    return `<section class="report-presentation-page"><label>Remarque de présentation (facultative)<textarea data-presentation-intro rows="5" maxlength="5000" placeholder="Ajoutez une courte présentation ou une remarque générale…" ${write ? "" : "disabled"}>${escapeHtml(presentation.introText || "")}</textarea></label>${write ? '<div class="report-photo-source-actions"><label>Prendre une photo<input type="file" accept="image/*" capture="environment" data-presentation-camera></label><label>Choisir une photo dans la galerie<input type="file" accept="image/*" multiple data-presentation-gallery></label></div>' : ""}${photosHtml("presentation", "", write, "", false, "", false)}</section>`;
+    const photo = orderedPhotos((current.media || []).filter(item => item.section === "presentation"))[0];
+    return `<section class="report-presentation-page">${write ? '<div class="report-photo-source-actions"><label>Prendre une photo<input type="file" accept="image/*" capture="environment" data-presentation-camera></label><label>Choisir une photo dans la galerie<input type="file" accept="image/*" data-presentation-gallery></label></div>' : ""}${photo ? `<button type="button" class="report-photo-preview" data-open-photo="${escapeHtml(photo.id)}"><img src="${escapeHtml(photo.dataUrl)}" alt="Photo du logement"></button>` : '<p class="muted">Ajoutez la photo du logement qui servira de présentation au rapport PDF.</p>'}</section>`;
 }
 
 function observationsModuleHtml(moduleKey, write, material = null) {
@@ -194,8 +199,7 @@ function bindEditor(shell, moduleKey) {
     shell.querySelector("[data-previous-module]")?.addEventListener("click", () => openModule(shell, visibleSections()[moduleIndex(moduleKey) - 1]?.id));
     shell.querySelector("[data-next-module]")?.addEventListener("click", () => openModule(shell, visibleSections()[moduleIndex(moduleKey) + 1]?.id));
     shell.querySelector("[data-section-title]")?.addEventListener("input", input => { renameSection(input.dataset.sectionTitle, input.value); queueSave(shell); });
-    shell.querySelector("[data-presentation-intro]")?.addEventListener("input", input => { current.content.presentation.introText = input.target.value; queueSave(shell); });
-    ["[data-presentation-camera]", "[data-presentation-gallery]"].forEach(selector => shell.querySelector(selector)?.addEventListener("change", async event => uploadPhotos([...event.target.files || []], { moduleKey: "presentation", observationId: "", materialId: "" }, shell)));
+    ["[data-presentation-camera]", "[data-presentation-gallery]"].forEach(selector => shell.querySelector(selector)?.addEventListener("change", async event => replacePresentationPhoto([...event.target.files || []][0], shell)));
     shell.querySelector("[data-report-summary]")?.addEventListener("click", () => openReportSummary(shell));
     shell.querySelector("[data-duplicate-section]")?.addEventListener("click", () => duplicateSection(moduleKey, shell));
     shell.querySelectorAll("[data-move-section]").forEach(button => button.addEventListener("click", () => { moveSection(moduleKey, button.dataset.moveSection); queueSave(shell); renderEditor(shell); }));
@@ -242,12 +246,71 @@ function lockBanner() {
 function bindSectionReordering(shell) {
     if (!editable()) return;
     let draggedId = "";
+    let touchTargetId = "";
+    let touchStart = null;
+    let touchTimer = null;
+    let touchDragging = false;
+    const navigation = shell.querySelector(".report-module-nav");
+    const clearDragState = () => { draggedId = ""; touchTargetId = ""; touchStart = null; touchDragging = false; clearTimeout(touchTimer); shell.querySelectorAll("[data-module]").forEach(item => item.classList.remove("dragging", "drop-target")); };
+    const reorder = (sourceId, targetId) => {
+        if (!sourceId || !targetId || sourceId === targetId || ["general", "presentation"].includes(sourceId) || ["general", "presentation"].includes(targetId)) return;
+        const order = current.content.sectionOrder.filter(id => id !== sourceId);
+        const targetIndex = order.indexOf(targetId);
+        if (targetIndex < 0) return;
+        order.splice(targetIndex, 0, sourceId);
+        current.content.sectionOrder = order;
+        pinRequiredSections();
+        queueSave(shell);
+        renderEditor(shell);
+    };
     shell.querySelectorAll("[data-module]").forEach(button => {
         button.addEventListener("dragstart", event => { draggedId = button.dataset.module; if (["general", "presentation"].includes(draggedId)) { event.preventDefault(); draggedId = ""; return; } event.dataTransfer.effectAllowed = "move"; button.classList.add("dragging"); });
-        button.addEventListener("dragend", () => { draggedId = ""; button.classList.remove("dragging"); shell.querySelectorAll("[data-module]").forEach(item => item.classList.remove("drop-target")); });
+        button.addEventListener("dragend", clearDragState);
         button.addEventListener("dragover", event => { if (!draggedId || draggedId === button.dataset.module) return; event.preventDefault(); event.dataTransfer.dropEffect = "move"; button.classList.add("drop-target"); });
         button.addEventListener("dragleave", () => button.classList.remove("drop-target"));
-        button.addEventListener("drop", event => { event.preventDefault(); const targetId = button.dataset.module; if (!draggedId || draggedId === targetId || ["general", "presentation"].includes(targetId)) return; const order = current.content.sectionOrder; const from = order.indexOf(draggedId), to = order.indexOf(targetId); if (from < 0 || to < 0) return; order.splice(from, 1); order.splice(to, 0, draggedId); pinRequiredSections(); queueSave(shell); renderEditor(shell); });
+        button.addEventListener("drop", event => { event.preventDefault(); const sourceId = draggedId; clearDragState(); reorder(sourceId, button.dataset.module); });
+    });
+    navigation?.addEventListener("pointerdown", event => {
+        const button = event.target.closest("[data-module]");
+        if (!button || event.pointerType === "mouse" || ["general", "presentation"].includes(button.dataset.module)) return;
+        touchTargetId = button.dataset.module;
+        touchStart = { x: event.clientX, y: event.clientY };
+        navigation.setPointerCapture?.(event.pointerId);
+        touchTimer = setTimeout(() => { touchDragging = true; button.classList.add("dragging"); }, 350);
+    });
+    navigation?.addEventListener("pointermove", event => {
+        if (!touchTargetId || !touchStart) return;
+        if (!touchDragging && Math.hypot(event.clientX - touchStart.x, event.clientY - touchStart.y) > 10) { clearTimeout(touchTimer); touchTargetId = ""; return; }
+        if (!touchDragging) return;
+        event.preventDefault();
+        const target = document.elementFromPoint(event.clientX, event.clientY)?.closest("[data-module]");
+        if (!target || target.dataset.module === touchTargetId || ["general", "presentation"].includes(target.dataset.module)) return;
+        shell.querySelectorAll("[data-module]").forEach(item => item.classList.toggle("drop-target", item === target));
+    });
+    navigation?.addEventListener("pointerup", event => {
+        if (!touchDragging) return clearDragState();
+        const sourceId = touchTargetId;
+        const targetId = document.elementFromPoint(event.clientX, event.clientY)?.closest("[data-module]")?.dataset.module || "";
+        navigation.releasePointerCapture?.(event.pointerId);
+        clearDragState();
+        reorder(sourceId, targetId);
+    });
+    navigation?.addEventListener("pointercancel", clearDragState);
+}
+
+function restoreModuleNavigation(shell, activeKey) {
+    const navigation = shell.querySelector(".report-module-nav");
+    if (!navigation) return;
+    navigation.scrollLeft = moduleNavScrollLeft;
+    navigation.addEventListener("scroll", () => { moduleNavScrollLeft = navigation.scrollLeft; }, { passive: true });
+    requestAnimationFrame(() => {
+        const active = navigation.querySelector(`[data-module="${CSS.escape(activeKey)}"]`);
+        if (!active) return;
+        const left = active.offsetLeft;
+        const right = left + active.offsetWidth;
+        if (left < navigation.scrollLeft) navigation.scrollLeft = left;
+        else if (right > navigation.scrollLeft + navigation.clientWidth) navigation.scrollLeft = right - navigation.clientWidth;
+        moduleNavScrollLeft = navigation.scrollLeft;
     });
 }
 
@@ -298,6 +361,13 @@ async function uploadPhotos(files, context, shell) {
     if (!result.ok) return alert(result.message || "Ajout des photos impossible.");
     current.media.push(...(result.data.media || []));
     renderEditor(shell);
+}
+
+async function replacePresentationPhoto(file, shell) {
+    if (!file) return;
+    const photo = orderedPhotos((current.media || []).filter(item => item.section === "presentation"))[0];
+    if (photo) return replacePhoto(photo.id, file, shell);
+    await uploadPhotos([file], { moduleKey: "presentation", observationId: "", materialId: "" }, shell);
 }
 
 async function updatePhotoCaption(input) {
@@ -448,7 +518,7 @@ function moduleKeys() { return [...MODULES.map(([key]) => key), ...(current?.con
 function moduleIndex(key) { return visibleSections().findIndex(section => section.id === key); }
 function moduleNumber(key) { return Math.max(1, moduleIndex(key) + 1); }
 function isSkipped(key) { return (current.content.skippedSteps || []).includes(key); }
-function moduleUsed(key) { const content = sectionContent(key) || { observations: [] }; return key === "general" || key === "presentation" && Boolean(content.introText?.trim()) || key === "methods" && current.content.methods.materials.length > 0 || (current.media || []).some(photo => photo.section === key) || !isSkipped(key) && (content.observations || []).length > 0; }
+function moduleUsed(key) { const content = sectionContent(key) || { observations: [] }; return key === "general" || key === "methods" && current.content.methods.materials.length > 0 || (current.media || []).some(photo => photo.section === key) || !isSkipped(key) && (content.observations || []).length > 0; }
 function renameSection(id, title) { const value = String(title || "").trim().slice(0, 160); const duplicate = (current.content.customSections || []).find(section => section.id === id); if (duplicate) duplicate.title = value || "Section"; else if (value) current.content.sectionTitles[id] = value; }
 function moveSection(id, direction) { if (["general", "presentation"].includes(id)) return; const order = current.content.sectionOrder; const index = order.indexOf(id); const target = direction === "up" ? index - 1 : index + 1; if (index < 0 || target < 2 || target >= order.length) return; [order[index], order[target]] = [order[target], order[index]]; }
 function nextSectionId() { return `section-${Date.now()}-${Math.random().toString(16).slice(2)}`; }

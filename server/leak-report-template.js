@@ -10,7 +10,7 @@ const RECOMMENDATION_INTRO = "Nous préconisons :";
 const DEFAULT_TEMPLATE = { primaryColor: "#003b73", secondaryColor: "#0a5c36", titleColor: "#003b73", separatorColor: "#0a5c36", font: "Helvetica", footerFields: ["address", "phone", "email", "website", "siret", "vat", "legalNotice"] };
 
 export function createEmptyLeakContent(snapshot = {}) {
-    return { schemaVersion: 6, activeStep: "overview", activeMaterialId: "", skippedSteps: [], sectionOrder: [...REPORT_STEP_KEYS], sectionTitles: {}, removedSections: [], customSections: [], snapshot, general: { observations: [] }, presentation: { introText: "", observations: [] }, overview: { disorders: "", location: "", rooms: "", observations: [] }, visual: { defects: "", comments: "", observations: [] }, humidity: { readings: [], location: "", observations: [] }, pressure: { readings: [], holdingTime: "", variation: "", comments: "", observations: [] }, methods: { materials: [], items: [], observations: [] }, waterTest: { testType: "", result: "", comments: "", observations: [] }, charging: { pressure: "", duration: "", result: "", observations: [] }, safety: { actions: "", measures: "", observations: [] }, ventilation: { checks: "", comments: "", observations: [] }, conclusion: { diagnosis: "", probableOrigin: "", summary: "", finalObservations: "", observations: [{ id: "conclusion-intro", text: CONCLUSION_INTRO, createdAt: "" }] }, recommendations: { work: "", repairs: "", urgency: "", customerAdvice: "", technicianSignature: "", clientSignature: "", clientName: "", signedAt: "", observations: [{ id: "recommendations-intro", text: RECOMMENDATION_INTRO, createdAt: "" }] } };
+    return { schemaVersion: 7, activeStep: "overview", activeMaterialId: "", skippedSteps: [], sectionOrder: [...REPORT_STEP_KEYS], sectionTitles: {}, removedSections: [], customSections: [], snapshot, general: { observations: [] }, presentation: { observations: [] }, overview: { disorders: "", location: "", rooms: "", observations: [] }, visual: { defects: "", comments: "", observations: [] }, humidity: { readings: [], location: "", observations: [] }, pressure: { readings: [], holdingTime: "", variation: "", comments: "", observations: [] }, methods: { materials: [], items: [], observations: [] }, waterTest: { testType: "", result: "", comments: "", observations: [] }, charging: { pressure: "", duration: "", result: "", observations: [] }, safety: { actions: "", measures: "", observations: [] }, ventilation: { checks: "", comments: "", observations: [] }, conclusion: { diagnosis: "", probableOrigin: "", summary: "", finalObservations: "", observations: [{ id: "conclusion-intro", text: CONCLUSION_INTRO, createdAt: "" }] }, recommendations: { work: "", repairs: "", urgency: "", customerAdvice: "", technicianSignature: "", clientSignature: "", clientName: "", signedAt: "", observations: [{ id: "recommendations-intro", text: RECOMMENDATION_INTRO, createdAt: "" }] } };
 }
 
 export function normalizeLeakContent(value, snapshot = {}) {
@@ -18,11 +18,12 @@ export function normalizeLeakContent(value, snapshot = {}) {
     if (!input.schemaVersion && (input.cover || input.leakSearch || input.measurements)) return normalizeLeakContent({ schemaVersion: 2, activeStep: "overview", snapshot: { insurance: input.cover?.insurance || "", claimNumber: input.cover?.claimNumber || "", interventionReference: input.cover?.interventionReference || "" }, overview: { disorders: input.overview?.generalDescription || "", location: input.location?.preciseLocation || "", observations: [input.overview?.customerHistory, input.overview?.context, input.overview?.interventionConditions].filter(Boolean).join("\n") }, visual: { observations: input.visual?.observations || "", defects: input.visual?.anomalies || "" }, humidity: { readings: input.measurements?.rows || [] }, pressure: { readings: input.finalControl?.rows || [], comments: input.finalControl?.tightness || "" }, methods: { items: input.leakSearch?.methods || [] }, conclusion: { diagnosis: input.location?.description || "", probableOrigin: input.location?.comments || "", summary: input.work?.repair || "", finalObservations: input.work?.tests || "" }, recommendations: { work: input.conclusion?.recommendations || "", repairs: input.work?.replacement || "", technicianSignature: input.signatures?.technician || "", clientSignature: input.signatures?.client || "", clientName: input.signatures?.clientName || "", signedAt: input.signatures?.signedAt || "" } }, snapshot);
     const content = createEmptyLeakContent(input.snapshot && typeof input.snapshot === "object" ? input.snapshot : snapshot);
     for (const key of REPORT_STEP_KEYS) if (input[key] && typeof input[key] === "object" && !Array.isArray(input[key])) content[key] = { ...content[key], ...input[key] };
-    content.schemaVersion = 6;
+    content.schemaVersion = 7;
     content.customSections = normalizeCustomSections(input.customSections);
     const customIds = content.customSections.map(section => section.id);
     const knownSectionIds = [...REPORT_STEP_KEYS, ...customIds];
     content.sectionTitles = Object.fromEntries(REPORT_STEPS.map(([key]) => [key, text(input.sectionTitles?.[key], 160)]).filter(([, title]) => title));
+    delete content.sectionTitles.presentation;
     content.removedSections = [...new Set((Array.isArray(input.removedSections) ? input.removedSections : []).filter(key => knownSectionIds.includes(key) && !["general", "presentation"].includes(key)))].slice(0, knownSectionIds.length);
     content.sectionOrder = orderedSectionIds(input.sectionOrder, knownSectionIds);
     content.activeStep = knownSectionIds.includes(input.activeStep) && !content.removedSections.includes(input.activeStep) ? input.activeStep : content.sectionOrder.find(key => !content.removedSections.includes(key) && key !== "general") || "general";
@@ -32,6 +33,7 @@ export function normalizeLeakContent(value, snapshot = {}) {
     content.methods.items = (Array.isArray(content.methods.items) ? content.methods.items : []).slice(0, 40).map(item => ({ name: text(item?.name, 120), observations: text(item?.observations, 2000), result: text(item?.result, 2000), comments: text(item?.comments, 2000) }));
     const legacy = Number(input.schemaVersion || 2) < 3;
     for (const step of REPORT_STEP_KEYS) content[step].observations = normalizeObservations(legacy ? legacyObservation(content[step]) : content[step].observations);
+    delete content.presentation.introText;
     content.methods.materials = normalizeMaterials(input.methods?.materials, content.methods);
     content.activeMaterialId = content.methods.materials.some(item => item.id === input.activeMaterialId) ? input.activeMaterialId : "";
     ensureIntro(content.conclusion, "conclusion-intro", CONCLUSION_INTRO);
@@ -68,8 +70,7 @@ export function createLeakReportPdf(report, profile = {}) {
         const chunks = []; pdf.on("data", chunk => chunks.push(chunk)); pdf.on("end", () => resolve(Buffer.concat(chunks))); pdf.on("error", reject);
         const content = normalizeLeakContent(report.content); const media = Array.isArray(report.media) ? report.media : []; const template = reportTemplate(profile); const snapshot = content.snapshot || {};
         addCover(pdf, report, profile, template, snapshot, media.filter(photo => photo.section === "general"));
-        const presentation = reportSections(content).find(section => section.id === "presentation");
-        addPresentationPage(pdf, presentation?.title || "Rapport de recherche de fuite", presentation?.content || content.presentation, media.filter(photo => photo.section === "presentation"), profile, template);
+        addPresentationPage(pdf, media.filter(photo => photo.section === "presentation"), profile, template);
         for (const section of reportSections(content).filter(item => !["general", "presentation"].includes(item.id))) {
             if (section.id === "methods" && !section.custom) {
                 for (const material of content.methods.materials || []) addSection(pdf, materialLabel(material), { observations: material.observations }, media.filter(photo => photo.section === "methods" && photo.materialId === material.id), profile, template);
@@ -103,11 +104,10 @@ function addCover(pdf, report, profile, template, snapshot, photos) {
     if (exterior) addPhoto(pdf, exterior, titleY + 46, 350, 330);
 }
 
-function addPresentationPage(pdf, title, values, photos, profile, template) {
-    pdf.addPage(); addCompanyHeader(pdf, profile, template, 44); centeredTitle(pdf, title, 104, template, 20); pdf.moveTo(44, 136).lineTo(551, 136).lineWidth(2).strokeColor(template.separatorColor).stroke();
-    let y = 160; const intro = text(values?.introText, 5000);
-    if (intro) { pdf.font(template.font).fillColor("#172033").fontSize(10.5).text(intro, 44, y, { width: 507, lineGap: 4 }); y = pdf.y + 16; }
-    for (const photo of orderedPhotos(photos)) y = addPhotoWithPage(pdf, photo, y, profile, template);
+function addPresentationPage(pdf, photos, profile, template) {
+    pdf.addPage(); addCompanyHeader(pdf, profile, template, 44); centeredTitle(pdf, "Rapport de recherche de fuite", 104, template, 20); pdf.moveTo(44, 136).lineTo(551, 136).lineWidth(2).strokeColor(template.separatorColor).stroke();
+    const photo = orderedPhotos(photos)[0];
+    if (photo) addPhoto(pdf, photo, 160, 507, 500);
 }
 
 function addSection(pdf, title, values, photos, profile, template, isRecommendations = false, technicianName = "") {
