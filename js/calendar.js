@@ -33,6 +33,7 @@ let calendarView = "month";
 let members = [];
 let showAllTechnicians = true;
 let visibleTechnicianIds = new Set();
+let userFilterOpen = false;
 
 window.addEventListener("depannhome:billing-document-saved", event => {
     const appointmentId = String(event.detail?.appointmentId || "");
@@ -162,6 +163,10 @@ function renderHeader(panel) {
         renderCalendar();
     });
     bindCalendarViewSwitcher(panel);
+    panel.querySelector("[data-calendar-filter-toggle]")?.addEventListener("click", () => {
+        userFilterOpen = !userFilterOpen;
+        renderCalendar();
+    });
     panel.querySelector("[data-calendar-filter=all]")?.addEventListener("change", event => {
         showAllTechnicians = event.currentTarget.checked;
         if (showAllTechnicians) visibleTechnicianIds.clear();
@@ -209,8 +214,8 @@ function renderTechnicianFilter() {
     const groups = groupTechniciansByDepartment(members);
     return `
         <section class="calendar-technician-filter" aria-label="Filtrer le planning par membre">
-            <div><p class="eyebrow">Équipe affichée</p><strong>${count} membre${count === 1 ? "" : "s"} sélectionné${count === 1 ? "" : "s"}</strong></div>
-            <div class="calendar-technician-options">
+            <div class="calendar-technician-filter-heading"><div><p class="eyebrow">Équipe affichée</p><strong>${count} membre${count === 1 ? "" : "s"} sélectionné${count === 1 ? "" : "s"}</strong></div><button type="button" class="secondary-button" data-calendar-filter-toggle aria-expanded="${userFilterOpen}">Filtrer les utilisateurs</button></div>
+            <div class="calendar-technician-options" ${userFilterOpen ? "" : "hidden"}>
                 <label><input type="checkbox" data-calendar-filter="all" ${showAllTechnicians ? "checked" : ""}> Toute l’équipe</label>
                 ${groups.map(([department, members]) => `<span class="calendar-technician-group"><em>${escapeHtml(department)}</em>${members.map(technician => `<label><input type="checkbox" data-calendar-technician="${escapeHtml(technician.id)}" ${showAllTechnicians || visibleTechnicianIds.has(String(technician.id)) ? "checked" : ""}> ${escapeHtml(technician.fullName || technician.username)}</label>`).join("")}</span>`).join("")}
             </div>
@@ -1126,7 +1131,7 @@ function isTechnicianBillingAllowed() {
 }
 
 function isReadOnlyCalendar() {
-    return ["technician", "mobile_admin", "accountant"].includes(document.body.dataset.role);
+    return ["technician", "accountant"].includes(document.body.dataset.role);
 }
 
 function roleLabel(role) {

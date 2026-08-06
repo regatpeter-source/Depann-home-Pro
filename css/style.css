@@ -3266,6 +3266,12 @@ body.mobile-device[data-role="technician"] .calendar-list-day{
     color:var(--primary);
 }
 
+.calendar-technician-filter-heading{
+    display:flex;
+    align-items:center;
+    gap:12px;
+}
+
 .calendar-technician-options{
     display:flex;
     flex-wrap:wrap;
@@ -4891,6 +4897,11 @@ footer{
     }
 
     .calendar-technician-filter{
+        align-items:stretch;
+        flex-direction:column;
+    }
+
+    .calendar-technician-filter-heading{
         align-items:stretch;
         flex-direction:column;
     }

@@ -107,7 +107,7 @@ export function registerCalendarRoutes(app, requireAuthentication) {
             LEFT JOIN depannhome_users technician ON technician.id = event.assigned_technician_id
             WHERE event.owner_id = $1
               AND LOWER(BTRIM(event.client_name)) = LOWER(BTRIM($2))
-              AND ($3 NOT IN ('technician', 'mobile_admin', 'accountant') OR EXISTS (
+              AND ($3 NOT IN ('technician', 'accountant') OR EXISTS (
                     SELECT 1 FROM depannhome_calendar_assignments assignment
                     WHERE assignment.event_id = event.id AND assignment.technician_id = $4::bigint
               ))
@@ -156,7 +156,7 @@ export function registerCalendarRoutes(app, requireAuthentication) {
             LEFT JOIN depannhome_users technician ON technician.id = event.assigned_technician_id
                         WHERE event.owner_id = $1
                             AND event_date BETWEEN $2::date AND $3::date
-                            AND ($4 NOT IN ('technician', 'mobile_admin', 'accountant') OR EXISTS (
+                            AND ($4 NOT IN ('technician', 'accountant') OR EXISTS (
                                 SELECT 1 FROM depannhome_calendar_assignments assignment
                                 WHERE assignment.event_id = event.id AND assignment.technician_id = $5::bigint
                             ))
@@ -308,7 +308,7 @@ export function registerCalendarRoutes(app, requireAuthentication) {
                     notes, quitus_status AS "quitusStatus"
                 FROM depannhome_calendar_events
                                 WHERE id = $1 AND owner_id = $2 AND event_type = 'appointment' AND client_name <> ''
-                                    AND ($3 NOT IN ('technician', 'mobile_admin', 'accountant') OR EXISTS (
+                                    AND ($3 NOT IN ('technician', 'accountant') OR EXISTS (
                                         SELECT 1 FROM depannhome_calendar_assignments assignment
                                         WHERE assignment.event_id = depannhome_calendar_events.id AND assignment.technician_id = $4::bigint
                                     ))
