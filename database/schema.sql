@@ -628,6 +628,7 @@ CREATE TABLE IF NOT EXISTS depannhome_partner_intakes (
 CREATE TABLE IF NOT EXISTS depannhome_partner_missions (
     id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
     intake_id BIGINT NOT NULL REFERENCES depannhome_partner_intakes(id) ON DELETE RESTRICT, external_mission_id VARCHAR(160) NOT NULL,
+    mission_number VARCHAR(32) NOT NULL DEFAULT '', deleted_at TIMESTAMPTZ,
     partner_reference VARCHAR(160) NOT NULL DEFAULT '', status VARCHAR(30) NOT NULL DEFAULT 'received', priority VARCHAR(20) NOT NULL DEFAULT 'normal',
     billing_mode VARCHAR(30) NOT NULL DEFAULT 'direct_client' CHECK (billing_mode IN ('direct_client','principal')),
     source_data JSONB NOT NULL DEFAULT '{}'::jsonb, mapped_data JSONB NOT NULL DEFAULT '{}'::jsonb, validation_errors JSONB NOT NULL DEFAULT '[]'::jsonb,
@@ -638,6 +639,7 @@ CREATE TABLE IF NOT EXISTS depannhome_partner_missions (
     CONSTRAINT depannhome_partner_missions_unique UNIQUE(owner_id, intake_id, external_mission_id)
 );
 CREATE INDEX IF NOT EXISTS depannhome_partner_missions_owner_status_idx ON depannhome_partner_missions(owner_id, status, created_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS depannhome_partner_missions_number_unique ON depannhome_partner_missions(mission_number) WHERE mission_number<>'';
 CREATE TABLE IF NOT EXISTS depannhome_partner_mission_history (
     id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
     mission_id BIGINT NOT NULL REFERENCES depannhome_partner_missions(id) ON DELETE CASCADE, status VARCHAR(30) NOT NULL, action VARCHAR(80) NOT NULL,

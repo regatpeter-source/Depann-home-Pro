@@ -3,7 +3,7 @@ import { getPool } from "./database.js";
 import { getAccountOwnerId } from "./auth.js";
 import { createNotification } from "./collaboration.js";
 import { recordMissionDialogueDocument, recordMissionDialogueEvent } from "./partner-dialogue.js";
-import { provisionPartnerMissionClient } from "./partner-missions.js";
+import { ensureBusinessMissionNumber, provisionPartnerMissionClient } from "./partner-missions.js";
 import { organizationBadge } from "./organizations.js";
 
 const STATES = new Set(["pending", "connected", "refused", "disconnected"]);
@@ -109,6 +109,8 @@ export function registerPartnerConnectionRoutes(app, requireAuthentication) {
     app.patch("/api/partner-connections/:connectionId/permissions", asyncHandler(async (req, res) => res.json({ connection: await updatePermissions(req, positiveId(req.params.connectionId)) })));
     app.post("/api/partner-connections/:connectionId/disconnect", asyncHandler(async (req, res) => res.json({ connection: await disconnect(req, positiveId(req.params.connectionId)) })));
     app.get("/api/partner-connections/missions-sent", asyncHandler(async (req, res) => res.json({ missions: await sentMissions(getAccountOwnerId(req)) })));
+    app.delete("/api/partner-connections/missions/:missionId", asyncHandler(async (req, res) => res.json({ mission: await archiveSentMission(req, positiveId(req.params.missionId)) })));
+    app.post("/api/partner-connections/missions/:missionId/cancel", asyncHandler(async (req, res) => res.json({ mission: await cancelSentMission(req, positiveId(req.params.missionId)) })));
     app.post("/api/partner-connections/missions", asyncHandler(async (req, res) => {
         const mission = await createConnectedMission(req);
         res.status(201).json({ mission });
@@ -132,7 +134,7 @@ export async function synchronizeConnectedAppointment(ownerId, eventId, connecti
         const { rows } = await db.query(`INSERT INTO depannhome_partner_missions(owner_id,intake_id,external_mission_id,partner_reference,status,priority,source_data,mapped_data,scheduled_date,scheduled_start_time,scheduled_end_time)
             VALUES($1,$2,$3,$4,'pending_validation','normal',$5::jsonb,$6::jsonb,$7::date,$8::time,$9::time)
             ON CONFLICT(owner_id,intake_id,external_mission_id) DO UPDATE SET source_data=EXCLUDED.source_data,mapped_data=EXCLUDED.mapped_data,scheduled_date=EXCLUDED.scheduled_date,scheduled_start_time=EXCLUDED.scheduled_start_time,scheduled_end_time=EXCLUDED.scheduled_end_time,updated_at=NOW() RETURNING id,(xmax=0) AS inserted`, [targetOwnerId, intakeId, externalMissionId, mapped.partnerReference, JSON.stringify({ managedConnection: true, event }), JSON.stringify(mapped), event.date, event.startTime || null, event.endTime || null]);
-        const mission = rows[0]; const client = await provisionPartnerMissionClient(db, targetOwnerId, mapped, { user: { fullName: sourceCompany.name } }); await db.query("UPDATE depannhome_partner_missions SET client_id=$3,updated_at=NOW() WHERE id=$1 AND owner_id=$2", [mission.id, targetOwnerId, client.id]); await db.query("INSERT INTO depannhome_partner_connection_sync_log(connection_id,source_owner_id,target_owner_id,source_event_id,target_mission_id,event_type,details) VALUES($1,$2,$3,$4,$5,'appointment_synced',$6::jsonb)", [connection.id, ownerId, targetOwnerId, event.id, mission.id, JSON.stringify({ inserted: mission.inserted, clientId: client.id, clientCreated: client.created })]);
+        const mission = rows[0]; await ensureBusinessMissionNumber(db, mission.id); const client = await provisionPartnerMissionClient(db, targetOwnerId, mapped, { user: { fullName: sourceCompany.name } }); await db.query("UPDATE depannhome_partner_missions SET client_id=$3,updated_at=NOW() WHERE id=$1 AND owner_id=$2", [mission.id, targetOwnerId, client.id]); await db.query("INSERT INTO depannhome_partner_connection_sync_log(connection_id,source_owner_id,target_owner_id,source_event_id,target_mission_id,event_type,details) VALUES($1,$2,$3,$4,$5,'appointment_synced',$6::jsonb)", [connection.id, ownerId, targetOwnerId, event.id, mission.id, JSON.stringify({ inserted: mission.inserted, clientId: client.id, clientCreated: client.created })]);
         await recordMissionDialogueEvent({ ownerId: targetOwnerId, missionId: mission.id, status: mission.inserted ? "received" : "pending_validation", action: mission.inserted ? "received" : "updated", actorName: sourceCompany.name });
         await notifyAdmins(targetOwnerId, "partner_connection_intervention", "Nouvelle intervention partenaire", `${sourceCompany.name} a partagé l’intervention « ${event.title} ».`, { connectionId: connection.id, missionId: mission.id });
     }
@@ -179,6 +181,7 @@ async function createDirectConnectedMission(database, ownerId, connection, value
     const mapped = { externalMissionId, partnerReference: value.subject, date: value.requestedDate, startTime: "", endTime: "", priority: value.priority, interventionType: value.interventionType, clientName: client.name || "", address: client.address || "", city: client.city || "", phone: client.phone || "", email: client.email || "", insurance: client.insurance || "", claimNumber: client.claimNumber || "", expert: client.expert || "", manager: client.manager || "", description: value.comments, comments: value.comments, attachments: partnerMissionAttachments(client.attachments), connectionId: connection.id, sourceEventId: "" };
     const { rows } = await database.query(`INSERT INTO depannhome_partner_missions(owner_id,intake_id,external_mission_id,partner_reference,status,priority,source_data,mapped_data,scheduled_date) VALUES($1,$2,$3,$4,'pending_validation',$5,$6::jsonb,$7::jsonb,$8::date) RETURNING id`, [targetOwnerId, intakeId, externalMissionId, mapped.partnerReference, mapped.priority, JSON.stringify({ managedConnection: true, directMission: true, sourceOwnerId: ownerId }), JSON.stringify(mapped), mapped.date]);
     const mission = rows[0];
+    await ensureBusinessMissionNumber(database, mission.id);
     const targetClient = await provisionPartnerMissionClient(database, targetOwnerId, mapped, { user: { fullName: sourceCompany.name } });
     await database.query("UPDATE depannhome_partner_missions SET client_id=$3,updated_at=NOW() WHERE id=$1 AND owner_id=$2", [mission.id, targetOwnerId, targetClient.id]);
     await database.query("INSERT INTO depannhome_partner_mission_history(owner_id,mission_id,status,action,actor_role,details) VALUES($1,$2,'pending_validation','received','partner',$3::jsonb)", [targetOwnerId, mission.id, JSON.stringify({ connectionId: connection.id, clientId: targetClient.id, clientCreated: targetClient.created, directMission: true })]);
@@ -213,7 +216,7 @@ async function sentMissions(ownerId) {
     const { rows } = await getPool().query(`
         SELECT DISTINCT ON (log.target_mission_id)
             log.connection_id AS "connectionId", log.source_event_id AS "calendarEventId", log.target_mission_id AS id,
-            log.created_at AS "sentAt", mission.external_mission_id AS "externalMissionId", mission.partner_reference AS "partnerReference",
+            log.created_at AS "sentAt", mission.mission_number AS "missionNumber", mission.external_mission_id AS "externalMissionId", mission.partner_reference AS "partnerReference",
             mission.status, mission.priority, mission.mapped_data AS "mappedData", mission.scheduled_date AS "scheduledDate",
             mission.scheduled_start_time AS "scheduledStartTime", mission.scheduled_end_time AS "scheduledEndTime",
             COALESCE(NULLIF(profile.company_name,''),NULLIF(partner.company_name,''),partner.full_name,partner.username) AS "partnerName"
@@ -222,11 +225,40 @@ async function sentMissions(ownerId) {
         JOIN depannhome_partner_missions mission ON mission.id=log.target_mission_id AND mission.owner_id=log.target_owner_id
         JOIN depannhome_users partner ON partner.id=log.target_owner_id
         LEFT JOIN depannhome_billing_profiles profile ON profile.owner_id=partner.id
-        WHERE log.source_owner_id=$1 AND log.event_type IN ('appointment_synced','mission_sent')
+        WHERE log.source_owner_id=$1 AND mission.deleted_at IS NULL AND log.event_type IN ('appointment_synced','mission_sent')
         ORDER BY log.target_mission_id, log.created_at DESC
     `, [ownerId]);
     return rows;
 }
+
+async function archiveSentMission(req, missionId) {
+    const ownerId = getAccountOwnerId(req);
+    const { rows } = await getPool().query(`UPDATE depannhome_partner_missions mission SET status='cancelled',deleted_at=NOW(),updated_at=NOW()
+        WHERE mission.id=$1 AND mission.deleted_at IS NULL AND mission.status IN ('received','pending_validation')
+          AND EXISTS(SELECT 1 FROM depannhome_partner_connection_sync_log log WHERE log.target_mission_id=mission.id AND log.source_owner_id=$2)
+        RETURNING mission.*`, [missionId, ownerId]);
+    if (rows[0]) return publicSentMission(rows[0]);
+    const existing = await sentMissionForSource(ownerId, missionId);
+    if (!existing) throw clientError(404, "Mission envoyée introuvable.");
+    throw clientError(409, "Cette mission a déjà été acceptée. Utilisez « Clôturer / Annuler la mission » afin de conserver l’historique.");
+}
+
+async function cancelSentMission(req, missionId) {
+    const ownerId = getAccountOwnerId(req); const existing = await sentMissionForSource(ownerId, missionId);
+    if (!existing) throw clientError(404, "Mission envoyée introuvable.");
+    if (["received", "pending_validation"].includes(existing.status)) return archiveSentMission(req, missionId);
+    if (["closed", "cancelled"].includes(existing.status)) throw clientError(409, "Cette mission est déjà clôturée ou annulée.");
+    const { rows } = await getPool().query("UPDATE depannhome_partner_missions SET status='cancelled',updated_at=NOW() WHERE id=$1 RETURNING *", [missionId]);
+    await recordMissionDialogueEvent({ ownerId: rows[0].owner_id, missionId, status: "cancelled", action: "cancelled", details: { reason: clean(req.body?.reason, 500), requestedBySource: true }, actorName: req.user.fullName || req.user.username });
+    return publicSentMission(rows[0]);
+}
+
+async function sentMissionForSource(ownerId, missionId) {
+    const { rows } = await getPool().query("SELECT mission.* FROM depannhome_partner_missions mission WHERE mission.id=$1 AND EXISTS(SELECT 1 FROM depannhome_partner_connection_sync_log log WHERE log.target_mission_id=mission.id AND log.source_owner_id=$2)", [missionId, ownerId]);
+    return rows[0] || null;
+}
+
+function publicSentMission(row) { return { id: row.id, missionNumber: row.mission_number || "", status: row.status }; }
 
 function sanitizeConnectedMission(value) {
     const connectionId = positiveId(value?.connectionId);
