@@ -3,7 +3,7 @@ import { createBillingDocumentForClient, viewBillingDocument } from "./billing.j
 import { getSearchableClients } from "./clients.js?v=137";
 import { addClientActivityByName, synchronizeClients } from "./client-sync.js?v=120";
 import { renderClientMessages } from "./messages.js?v=106";
-import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=11";
+import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=12";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { renderPlatformAnnouncement } from "./platform-announcement.js?v=1";
@@ -1126,7 +1126,7 @@ function isTechnicianBillingAllowed() {
 }
 
 function isReadOnlyCalendar() {
-    return ["technician", "accountant"].includes(document.body.dataset.role);
+    return ["technician", "mobile_admin", "accountant"].includes(document.body.dataset.role);
 }
 
 function roleLabel(role) {

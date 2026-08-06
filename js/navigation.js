@@ -1,5 +1,5 @@
 import { ROUTES, STORAGE_KEYS, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=122";
-import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=149";
+import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=150";
 import { openCreatorPartnerRequest, renderCreatorConsole } from "./creator.js?v=123";
 import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=153";
 import { renderAccounting } from "./accounting.js?v=5";
@@ -68,11 +68,10 @@ export function initializeNavigation(loadedDatabase) {
     if (!sharedSynchronizationTimer) {
         sharedSynchronizationTimer = window.setInterval(() => {
             if (document.visibilityState === "visible") refreshSharedData();
-        }, isTechnician() ? 30_000 : 90_000);
+        }, isFieldIntervenor() ? 30_000 : 90_000);
     }
     if (isAccountant()) renderBilling();
-    else if (document.body.dataset.role === "technician") renderCalendarOverview();
-    else if (isMobileAdministrator()) renderHome();
+    else if (isFieldIntervenor()) renderCalendarOverview();
     else if (document.body.classList.contains("desktop-device")) renderHome();
     else renderBrands();
 }
@@ -84,7 +83,7 @@ export async function refreshSharedData(options = {}) {
             : sharedSynchronizationPromise;
     }
     const requests = [synchronizeBillingDocuments({ refreshView: true, force: Boolean(options.forceBilling) })];
-    if (isTechnician()) requests.unshift(refreshTechnicianCalendarAlert());
+    if (isFieldIntervenor()) requests.unshift(refreshTechnicianCalendarAlert());
     if (!isAccountant()) requests.unshift(refreshVisibleClientMessages());
     if (options.includeClients && !isAccountant()) requests.push(synchronizeClients());
     sharedSynchronizationPromise = Promise.all(requests).finally(() => {
@@ -218,7 +217,7 @@ function applyRoleBasedMenus() {
         if (!isMenuAllowed(MENU_ACCESS.quick[menu], menuRoute(menu))) button?.remove();
     });
     document.querySelectorAll(".nav-button").forEach(button => {
-        if (isMobileAdministrator() && button.dataset.nav !== ROUTES.home) {
+        if (isMobileAdministrator() && ![ROUTES.home, ROUTES.calendar].includes(button.dataset.nav)) {
             button.remove();
             return;
         }
@@ -272,7 +271,7 @@ function openHome() {
 }
 
 function openCalendar() {
-    if (document.body.dataset.role === "technician") {
+    if (isFieldIntervenor()) {
         renderCalendarOverview();
         return;
     }
@@ -309,8 +308,12 @@ function isMobileAdministrator() {
     return document.body.dataset.role === "mobile_admin";
 }
 
+function isFieldIntervenor() {
+    return isTechnician() || isMobileAdministrator();
+}
+
 async function refreshTechnicianCalendarAlert() {
-    if (!isTechnician()) return { ok: true, skipped: true };
+    if (!isFieldIntervenor()) return { ok: true, skipped: true };
     const today = dateString(new Date());
     try {
         const response = await fetch(`/api/calendar/events?start=${encodeURIComponent(today)}&end=${encodeURIComponent(today)}`, { credentials: "same-origin" });
@@ -326,7 +329,7 @@ async function refreshTechnicianCalendarAlert() {
 }
 
 function markTechnicianCalendarAlertsRead(calendarEvents) {
-    if (!isTechnician()) return;
+    if (!isFieldIntervenor()) return;
     const today = dateString(new Date());
     const seenEvents = getViewedTechnicianCalendarEvents(today);
     const todayEvents = calendarEvents.filter(event => event?.date === today);
