@@ -2,8 +2,8 @@ import { ROUTES } from "./config.js?v=118";
 import { clearSearch, getContainer, setPage } from "./ui.js?v=44";
 import { escapeHtml } from "./utils.js?v=44";
 import { openPartnerDialogue } from "./partner-dialogue.js?v=5";
-import { getSearchableClients } from "./clients.js?v=137";
-import { synchronizeClients } from "./client-sync.js?v=121";
+import { getSearchableClients } from "./clients.js?v=141";
+import { synchronizeClients } from "./client-sync.js?v=123";
 
 let dashboard = null;
 let activeMissionTab = "received";
@@ -128,7 +128,7 @@ async function api(url, options = {}) {
         const response = await fetch(url, { credentials: "same-origin", headers: { "Content-Type": "application/json", ...(options.headers || {}) }, ...options });
         const data = response.status === 204 ? null : await response.json().catch(() => null);
         if (response.ok && /\/api\/partner-missions\/\d+\/accept$/.test(url)) {
-            await synchronizeClients().catch(() => {});
+            await synchronizeClients({ forceFull: true }).catch(() => {});
             const clientId = String(data?.mission?.clientId || "");
             if (clientId) window.dispatchEvent(new CustomEvent("depannhome:partner-client-provisioned", { detail: { clientId } }));
         }

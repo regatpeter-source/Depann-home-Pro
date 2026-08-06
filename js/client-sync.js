@@ -9,6 +9,7 @@ const FOCUS_SYNCHRONIZATION_DELAY = 3_000;
 
 let onlineListenerRegistered = false;
 let synchronizationPromise = null;
+let synchronizationIsFull = false;
 let silentSynchronizationTimer = null;
 let scheduledSynchronizationTimer = null;
 
@@ -96,37 +97,45 @@ export function scheduleClientSynchronization(delay = DESKTOP_SYNCHRONIZATION_DE
     }, effectiveDelay);
 }
 
-export async function synchronizeClients() {
+export async function synchronizeClients(options = {}) {
     if (isAccountant()) return { ok: true, skipped: true };
     if (!navigator.onLine || !getAccountId()) return { ok: false, offline: true };
-    if (synchronizationPromise) return synchronizationPromise;
+    const forceFull = options.forceFull === true;
+    if (synchronizationPromise) {
+        if (forceFull && !synchronizationIsFull) return synchronizationPromise.then(() => synchronizeClients({ forceFull: true }));
+        return synchronizationPromise;
+    }
 
-    synchronizationPromise = synchronize().finally(() => {
+    synchronizationIsFull = forceFull;
+    synchronizationPromise = synchronize({ forceFull }).finally(() => {
         synchronizationPromise = null;
+        synchronizationIsFull = false;
     });
     return synchronizationPromise;
 }
 
-async function synchronize() {
-    const remoteResult = await request(getClientSynchronizationUrl());
+async function synchronize({ forceFull = false } = {}) {
+    const remoteResult = await request(getClientSynchronizationUrl(forceFull));
     if (!remoteResult.ok) return { ok: false, message: remoteResult.data?.message || "Serveur indisponible." };
 
     const remoteClients = Array.isArray(remoteResult.data?.clients) ? remoteResult.data.clients.map(normalizeClient) : [];
+    console.info("[clients-debug] GET /api/clients", { forceFull, receivedCount: remoteClients.length, clientNames: remoteClients.map(client => client.name) });
     const deletedClientIds = Array.isArray(remoteResult.data?.deletedClientIds) ? remoteResult.data.deletedClientIds : [];
     const cursor = validDate(remoteResult.data?.cursor);
-    const isInitialSynchronization = !getSynchronizationCursor();
+    const isInitialSynchronization = !getSynchronizationCursor() && !forceFull;
     if (!canWriteClients()) {
         const synchronizedClients = isInitialSynchronization
             ? remoteClients
-            : applyRemoteChanges(getLocalClients(), remoteClients, deletedClientIds);
+            : forceFull ? mergeRemoteWithQueuedClients(remoteClients) : applyRemoteChanges(getLocalClients(), remoteClients, deletedClientIds);
         if (!writeClients(synchronizedClients)) {
             return { ok: false, message: "Espace de stockage local saturé. Supprimez ou compressez des fichiers clients." };
         }
         if (cursor) writeSynchronizationCursor(cursor);
+        console.info("[clients-debug] cache local mis à jour", { clientCount: synchronizedClients.length, clientNames: synchronizedClients.map(client => client.name) });
         window.dispatchEvent(new CustomEvent("depannhome:clients-synchronized"));
         return { ok: true };
     }
-    const localClients = applyRemoteChanges(getLocalClients(), remoteClients, deletedClientIds);
+    const localClients = forceFull ? mergeRemoteWithQueuedClients(remoteClients) : applyRemoteChanges(getLocalClients(), remoteClients, deletedClientIds);
     if (isInitialSynchronization) enqueueUnsyncedLocalClients(localClients, remoteClients);
     const merged = mergeClients(localClients, remoteClients);
     if (!writeClients(merged)) return { ok: false, message: "Espace de stockage local saturé. Supprimez ou compressez des fichiers clients." };
@@ -155,15 +164,18 @@ async function synchronize() {
         removeQueuedOperation(operation.id);
     }
 
-    const refreshed = await request(getClientSynchronizationUrl());
+    const refreshed = await request(getClientSynchronizationUrl(forceFull));
     if (refreshed.ok) {
         const refreshedClients = Array.isArray(refreshed.data?.clients) ? refreshed.data.clients.map(normalizeClient) : [];
+        console.info("[clients-debug] GET /api/clients après opérations", { forceFull, receivedCount: refreshedClients.length, clientNames: refreshedClients.map(client => client.name) });
         const refreshedDeletedClientIds = Array.isArray(refreshed.data?.deletedClientIds) ? refreshed.data.deletedClientIds : [];
-        if (!writeClients(applyRemoteChanges(getLocalClients(), refreshedClients, refreshedDeletedClientIds))) {
+        const finalClients = forceFull ? mergeRemoteWithQueuedClients(refreshedClients) : applyRemoteChanges(getLocalClients(), refreshedClients, refreshedDeletedClientIds);
+        if (!writeClients(finalClients)) {
             return { ok: false, message: "Espace de stockage local saturé. Supprimez ou compressez des fichiers clients." };
         }
         const refreshedCursor = validDate(refreshed.data?.cursor);
         if (refreshedCursor) writeSynchronizationCursor(refreshedCursor);
+        console.info("[clients-debug] cache local final", { clientCount: finalClients.length, clientNames: finalClients.map(client => client.name) });
     }
     window.dispatchEvent(new CustomEvent("depannhome:clients-synchronized"));
     return { ok: true };
@@ -174,6 +186,12 @@ function applyRemoteChanges(localClients, remoteClients, deletedClientIds = []) 
     const remainingClients = localClients.filter(client => !deleted.has(client.id));
     if (deleted.size) writeQueue(getQueue().filter(operation => !deleted.has(operation.clientId)));
     return mergeClients(remainingClients, remoteClients);
+}
+
+function mergeRemoteWithQueuedClients(remoteClients) {
+    const queuedClientIds = new Set(getQueue().filter(operation => operation.type !== "delete").map(operation => operation.clientId));
+    const queuedLocalClients = getLocalClients().filter(client => queuedClientIds.has(client.id));
+    return mergeClients(remoteClients, queuedLocalClients);
 }
 
 function mergeClients(firstClients, secondClients) {
@@ -364,7 +382,8 @@ function getSynchronizationCursorKey() {
     return `${CURSOR_KEY_PREFIX}${accountId}`;
 }
 
-function getClientSynchronizationUrl() {
+function getClientSynchronizationUrl(forceFull = false) {
+    if (forceFull) return "/api/clients";
     const cursor = getSynchronizationCursor();
     return cursor ? `/api/clients?since=${encodeURIComponent(cursor)}` : "/api/clients";
 }

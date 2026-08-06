@@ -5,14 +5,14 @@ import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocume
 import { renderAccounting } from "./accounting.js?v=5";
 import { renderAccountingSandbox } from "./accounting-sandbox.js?v=2";
 import { renderGroupActivation, renderGroupWorkspace } from "./groups.js?v=3";
-import { renderPartnerMissions } from "./partner-missions.js?v=18";
+import { renderPartnerMissions } from "./partner-missions.js?v=19";
 import { renderPartnerSandbox } from "./partner-sandbox.js?v=3";
 import { renderPartnerConnections } from "./partner-connections.js?v=13";
 import { renderDataImportTool } from "./data-imports.js?v=2";
 import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=14";
 import { getFirstUnreadClientId, refreshClientMessageAlert, refreshVisibleClientMessages } from "./messages.js?v=106";
-import { getSearchableClients, renderClients } from "./clients.js?v=140";
-import { synchronizeClients } from "./client-sync.js?v=121";
+import { getSearchableClients, renderClients } from "./clients.js?v=141";
+import { synchronizeClients } from "./client-sync.js?v=123";
 import { configureLibrary, openLibrarySection, renderLibrary, searchPersonalLibrary } from "./library.js?v=120";
 import { renderPhotoRecognition } from "./photo-recognition.js?v=105";
 import { getContextualSearchResults } from "./search.js?v=65";

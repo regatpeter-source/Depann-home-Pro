@@ -1,5 +1,5 @@
 import { ROUTES } from "./config.js?v=116";
-import { addClientActivity, deleteLocalClient, getLocalClients, saveLocalClient, scheduleClientSynchronization, synchronizeClients } from "./client-sync.js?v=121";
+import { addClientActivity, deleteLocalClient, getLocalClients, saveLocalClient, scheduleClientSynchronization, synchronizeClients } from "./client-sync.js?v=123";
 import { renderClientMessages } from "./messages.js?v=106";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
@@ -37,7 +37,7 @@ export async function renderClients(options = {}) {
     delete viewOptions.refreshFromServer;
     const directoryClientId = String(viewOptions.directoryClientId || "");
     delete viewOptions.directoryClientId;
-    if (refreshFromServer) await synchronizeClients().catch(() => {});
+    if (refreshFromServer) await synchronizeClients({ forceFull: true }).catch(() => {});
     else scheduleClientSynchronization();
     clientScreenOptions = { ...clientScreenOptions, ...viewOptions };
     clearSearch();
@@ -354,6 +354,7 @@ async function applyClientDirectorySearch(section, clients, filters) {
     try {
         const appointmentDatesByClient = filters.appointmentDate ? await loadAppointmentDatesByClient() : new Map();
         const results = clients.filter(client => clientMatchesDirectoryFilters(client, filters, appointmentDatesByClient));
+        console.info("[clients-debug] recherche Clients", { query: filters.query, filters, availableClientCount: clients.length, availableClientNames: clients.map(client => client.name), resultCount: results.length, resultNames: results.map(client => client.name) });
         renderClientDirectoryResults(section, results, appointmentDatesByClient);
     } catch (error) {
         section.innerHTML = `<p class="auth-message error">${escapeHtml(error.message || "Impossible de rechercher les rendez-vous.")}</p>`;
