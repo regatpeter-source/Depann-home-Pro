@@ -49,28 +49,31 @@ export async function initializeClients() {
     `);
 }
 
+export async function listClientsForOwner(ownerId, sinceParameter = "") {
+    const since = sinceParameter ? validDate(sinceParameter) : "";
+    if (sinceParameter && !since) throw clientError(400, "Curseur de synchronisation invalide.");
+    const database = getPool();
+    const { rows: cursorRows } = await database.query("SELECT NOW() AS cursor");
+    const cursor = cursorRows[0].cursor;
+    const { rows } = await database.query(`
+        SELECT client_data AS client
+        FROM depannhome_clients
+        WHERE owner_id = $1 AND updated_at <= $2
+          AND ($3::timestamptz IS NULL OR updated_at > $3::timestamptz)
+        ORDER BY updated_at DESC
+    `, [ownerId, cursor, since || null]);
+    const deletedClientIds = since ? (await database.query(`
+        SELECT client_id AS "clientId"
+        FROM depannhome_deleted_clients
+        WHERE owner_id = $1 AND deleted_at <= $2 AND deleted_at > $3::timestamptz
+    `, [ownerId, cursor, since])).rows.map(row => row.clientId) : [];
+    return { clients: rows.map(row => row.client), deletedClientIds, cursor: cursor.toISOString() };
+}
+
 export function registerClientRoutes(app, requireAuthentication) {
     app.use("/api/clients", requireAuthentication, requireClientReadAccess);
     app.get("/api/clients", requireAuthentication, asyncHandler(async (request, response) => {
-        const sinceParameter = String(request.query?.since || "");
-        const since = sinceParameter ? validDate(sinceParameter) : "";
-        if (sinceParameter && !since) return response.status(400).json({ message: "Curseur de synchronisation invalide." });
-        const database = getPool();
-        const { rows: cursorRows } = await database.query("SELECT NOW() AS cursor");
-        const cursor = cursorRows[0].cursor;
-        const { rows } = await database.query(`
-            SELECT client_data AS client
-            FROM depannhome_clients
-            WHERE owner_id = $1 AND updated_at <= $2
-              AND ($3::timestamptz IS NULL OR updated_at > $3::timestamptz)
-            ORDER BY updated_at DESC
-        `, [getAccountOwnerId(request), cursor, since || null]);
-        const deletedClientIds = since ? (await database.query(`
-            SELECT client_id AS "clientId"
-            FROM depannhome_deleted_clients
-            WHERE owner_id = $1 AND deleted_at <= $2 AND deleted_at > $3::timestamptz
-        `, [getAccountOwnerId(request), cursor, since])).rows.map(row => row.clientId) : [];
-        response.json({ clients: rows.map(row => row.client), deletedClientIds, cursor: cursor.toISOString() });
+        response.json(await listClientsForOwner(getAccountOwnerId(request), String(request.query?.since || "")));
     }));
 
     app.put("/api/clients/:clientId", requireAuthentication, requireClientWriteAccess, asyncHandler(async (request, response) => {
