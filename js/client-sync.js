@@ -4,24 +4,27 @@ const CURSOR_KEY_PREFIX = "depannHomePro:clients-sync-cursor:";
 const MAX_ACTIVITY_HISTORY = 150;
 const MAX_DELETED_ATTACHMENT_IDS = 500;
 const SILENT_SYNCHRONIZATION_INTERVAL = 90_000;
+const DESKTOP_SYNCHRONIZATION_DELAY = 1_500;
+const FOCUS_SYNCHRONIZATION_DELAY = 3_000;
 
 let onlineListenerRegistered = false;
 let synchronizationPromise = null;
 let silentSynchronizationTimer = null;
+let scheduledSynchronizationTimer = null;
 
 export async function initializeClientSynchronization() {
     if (isAccountant()) return { ok: true, skipped: true };
     if (!onlineListenerRegistered) {
-        window.addEventListener("online", () => synchronizeClients().catch(() => {}));
-        window.addEventListener("focus", () => synchronizeClients().catch(() => {}));
+        window.addEventListener("online", () => scheduleClientSynchronization(0));
+        window.addEventListener("focus", () => scheduleClientSynchronization(FOCUS_SYNCHRONIZATION_DELAY));
         document.addEventListener("visibilitychange", () => {
-            if (document.visibilityState === "visible") synchronizeClients().catch(() => {});
+            if (document.visibilityState === "visible") scheduleClientSynchronization(FOCUS_SYNCHRONIZATION_DELAY);
         });
         onlineListenerRegistered = true;
     }
     if (!silentSynchronizationTimer) {
         silentSynchronizationTimer = window.setInterval(() => {
-            if (document.visibilityState === "visible") synchronizeClients().catch(() => {});
+            if (document.visibilityState === "visible") scheduleClientSynchronization(0);
         }, SILENT_SYNCHRONIZATION_INTERVAL);
     }
 
@@ -52,7 +55,7 @@ export function saveLocalClient(client) {
 
     if (!writeClients(nextClients)) return null;
     enqueue({ type: "upsert", clientId: nextClient.id });
-    synchronizeClients().catch(() => {});
+    scheduleClientSynchronization();
     return nextClient;
 }
 
@@ -80,7 +83,17 @@ export function deleteLocalClient(clientId) {
     if (!canWriteClients()) return false;
     if (!writeClients(getLocalClients().filter(client => client.id !== clientId))) return false;
     enqueue({ type: "delete", clientId });
-    synchronizeClients().catch(() => {});
+    scheduleClientSynchronization();
+}
+
+export function scheduleClientSynchronization(delay = DESKTOP_SYNCHRONIZATION_DELAY) {
+    if (isAccountant()) return;
+    window.clearTimeout(scheduledSynchronizationTimer);
+    const effectiveDelay = document.body.classList.contains("desktop-device") ? delay : 0;
+    scheduledSynchronizationTimer = window.setTimeout(() => {
+        scheduledSynchronizationTimer = null;
+        synchronizeClients().catch(() => {});
+    }, effectiveDelay);
 }
 
 export async function synchronizeClients() {

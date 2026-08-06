@@ -432,7 +432,7 @@ async function validateReport(shell) {
     if (!result.ok) return alert(result.message || "Validation impossible.");
     const appointmentId = current.appointmentId;
     await leaveReport();
-    const { synchronizeClients } = await import("./client-sync.js?v=120");
+    const { synchronizeClients } = await import("./client-sync.js?v=121");
     await synchronizeClients();
     window.dispatchEvent(new CustomEvent("depannhome:technical-report-validated", { detail: { appointmentId } }));
     const { renderCalendar } = await import("./calendar.js?v=149");
@@ -451,7 +451,7 @@ async function finalizePreview(shell) {
     if (!result.ok) return alert(result.message || "Validation impossible.");
     const appointmentId = current.appointmentId;
     await leaveReport();
-    const { synchronizeClients } = await import("./client-sync.js?v=120");
+    const { synchronizeClients } = await import("./client-sync.js?v=121");
     await synchronizeClients();
     window.dispatchEvent(new CustomEvent("depannhome:technical-report-validated", { detail: { appointmentId } }));
     const { renderCalendar } = await import("./calendar.js?v=149");

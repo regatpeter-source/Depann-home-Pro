@@ -2,7 +2,7 @@
     const { openLeakReportCreation } = await import("./leak-report-wizard.js?v=14");
 import { ROUTES } from "./config.js?v=116";
 import { getSearchableClients } from "./clients.js?v=137";
-import { addClientActivityByName } from "./client-sync.js?v=120";
+import { addClientActivityByName } from "./client-sync.js?v=121";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { renderPlatformAnnouncement } from "./platform-announcement.js?v=1";

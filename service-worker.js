@@ -1,10 +1,10 @@
-const CACHE_NAME = "depann-home-pro-v261";
+const CACHE_NAME = "depann-home-pro-v262";
 const ASSETS = [
     "./",
     "./index.html",
     "./css/style.css",
     "./css/report-editor.css?v=4",
-    "./js/app.js?v=245",
+    "./js/app.js?v=246",
     "./js/accounting.js",
     "./js/accounting-sandbox.js",
     "./js/groups.js",
@@ -46,8 +46,6 @@ self.addEventListener("install", event => {
             console.error("Préchargement du cache impossible.", error);
         })
     );
-
-    self.skipWaiting();
 });
 
 self.addEventListener("activate", event => {
@@ -58,7 +56,6 @@ self.addEventListener("activate", event => {
                     .filter(key => key !== CACHE_NAME)
                     .map(key => caches.delete(key))
             ))
-            .then(() => self.clients.claim())
     );
 });
 
