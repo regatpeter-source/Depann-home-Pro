@@ -41,7 +41,10 @@ let searchRequestId = 0;
 let searchInputTimer = null;
 let sharedSynchronizationTimer = null;
 let sharedSynchronizationPromise = null;
+let interactionSynchronizationTimer = null;
+let interactionSynchronizationBound = false;
 const TECHNICIAN_CALENDAR_ALERT_KEY_PREFIX = "depannHomePro:technicianCalendar:lastViewed:";
+const INTERACTION_SYNCHRONIZATION_DELAY = 1_500;
 const SEARCH_EVENTS_TTL = 30_000;
 let searchEventsCache = { expiresAt: 0, events: [] };
 let searchEventsPromise = null;
@@ -50,6 +53,7 @@ export function initializeNavigation(loadedDatabase) {
     database = loadedDatabase;
     configureLibrary({ openCatalog: renderBrands, openStore: renderStore });
     bindEvents();
+    bindSilentInteractionSynchronization();
     applyRoleBasedMenus();
     updateSearchPlaceholder();
     window.addEventListener("depannhome:open-client", event => openClients(String(event.detail?.clientId || "")));
@@ -63,11 +67,11 @@ export function initializeNavigation(loadedDatabase) {
     refreshClientMessageAlert();
     refreshTechnicianCalendarAlert();
     document.addEventListener("visibilitychange", () => {
-        if (document.visibilityState === "visible") refreshSharedData();
+        if (document.visibilityState === "visible") refreshSharedData({ silent: true });
     });
     if (!sharedSynchronizationTimer) {
         sharedSynchronizationTimer = window.setInterval(() => {
-            if (document.visibilityState === "visible") refreshSharedData();
+            if (document.visibilityState === "visible") refreshSharedData({ silent: true });
         }, isTechnician() ? 30_000 : 90_000);
     }
     if (isAccountant()) renderBilling();
@@ -82,7 +86,7 @@ export async function refreshSharedData(options = {}) {
             ? Promise.all([sharedSynchronizationPromise, synchronizeClients()])
             : sharedSynchronizationPromise;
     }
-    const requests = [synchronizeBillingDocuments({ refreshView: true, force: Boolean(options.forceBilling) })];
+    const requests = [synchronizeBillingDocuments({ refreshView: !options.silent, force: Boolean(options.forceBilling) })];
     if (isTechnician()) requests.unshift(refreshTechnicianCalendarAlert());
     if (!isAccountant()) requests.unshift(refreshVisibleClientMessages());
     if (options.includeClients && !isAccountant()) requests.push(synchronizeClients());
@@ -90,6 +94,22 @@ export async function refreshSharedData(options = {}) {
         sharedSynchronizationPromise = null;
     });
     return sharedSynchronizationPromise;
+}
+
+function bindSilentInteractionSynchronization() {
+    if (interactionSynchronizationBound) return;
+    interactionSynchronizationBound = true;
+    const schedule = event => {
+        const control = event.target.closest("button, input[type=checkbox], input[type=radio], select");
+        if (!control || control.disabled || control.id === "refreshBtn" || document.body.classList.contains("auth-pending")) return;
+        window.clearTimeout(interactionSynchronizationTimer);
+        interactionSynchronizationTimer = window.setTimeout(() => {
+            interactionSynchronizationTimer = null;
+            refreshSharedData({ includeClients: true, silent: true }).catch(() => {});
+        }, INTERACTION_SYNCHRONIZATION_DELAY);
+    };
+    document.addEventListener("click", schedule, { capture: true });
+    document.addEventListener("change", schedule, { capture: true });
 }
 
 export async function refreshApplication() {
