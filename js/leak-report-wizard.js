@@ -113,6 +113,7 @@ async function acquireLock() {
 
 function renderEditor(shell) {
     if (previewMode) return renderPreview(shell);
+    document.body.classList.add("report-writing-active");
     ensureModularContent();
     const activeKey = current.content.activeStep;
     const activeModule = moduleDefinition(activeKey);
@@ -128,21 +129,21 @@ function renderEditor(shell) {
             <span class="report-editor-status ${escapeHtml(current.status)}">${escapeHtml(statusLabel(current.status))}</span>
         </header>
         ${lockBanner()}
-        ${corrections.length ? `<section class="report-editor-corrections"><strong>Commentaires de l’administration</strong>${corrections.map(item => `<p><b>${escapeHtml(moduleDefinition(item.section)?.[1] || "Section")}</b> · ${escapeHtml(item.comment)}</p>`).join("")}</section>` : ""}
-        <nav class="report-module-nav" aria-label="Sections du rapport">${visibleSections().map((section, index) => `<button type="button" class="${section.id === activeKey ? "active" : ""}${moduleUsed(section.id) ? " used" : ""}" data-module="${escapeHtml(section.id)}"><span>${index + 1}</span><b>${escapeHtml(section.title)}</b></button>`).join("")}</nav>
+        ${corrections.length ? `<section class="report-editor-corrections"><strong>Commentaires de l’administration</strong>${corrections.map(item => `<p><b>${escapeHtml(moduleDefinition(item.section)?.[1] || "Page")}</b> · ${escapeHtml(item.comment)}</p>`).join("")}</section>` : ""}
+        <nav class="report-module-nav" aria-label="Pages du rapport">${visibleSections().map((section, index) => `<button type="button" draggable="${write && section.id !== "general" ? "true" : "false"}" class="${section.id === activeKey ? "active" : ""}${moduleUsed(section.id) ? " used" : ""}" data-module="${escapeHtml(section.id)}"><span>${index + 1}</span><b>${escapeHtml(section.title)}</b></button>`).join("")}</nav>
         <main class="report-editor-main">
-            <div class="report-editor-module-heading"><div><p class="eyebrow">${activeMaterial ? "Matériel sélectionné" : `Section ${moduleNumber(activeKey)}`}</p>${write && !activeMaterial ? `<label class="report-section-title">Titre de la section<input value="${escapeHtml(activeModule[1])}" maxlength="160" data-section-title="${escapeHtml(activeKey)}"></label>` : `<h2>${escapeHtml(activeMaterial?.name || activeModule[1])}</h2>`}<p class="muted">${escapeHtml(activeMaterial ? "Observations et photos associées à cet équipement" : activeModule[2])}</p></div>${activeMaterial ? '<button type="button" class="secondary-button" data-back-to-materials>← Matériels utilisés</button>' : write ? `<div class="report-section-actions"><button type="button" class="secondary-button" data-report-summary>Sommaire du rapport</button><button type="button" class="secondary-button" data-duplicate-section>Dupliquer cette section</button><button type="button" class="secondary-button" data-move-section="up" ${moduleIndex(activeKey) ? "" : "disabled"}>↑</button><button type="button" class="secondary-button" data-move-section="down" ${moduleIndex(activeKey) < visibleSections().length - 1 ? "" : "disabled"}>↓</button>${activeKey !== "general" ? '<button type="button" class="text-button danger-text" data-delete-section>Supprimer</button>' : ""}</div>` : ""}</div>
+            <div class="report-editor-module-heading"><div><p class="eyebrow">${activeMaterial ? "Matériel sélectionné" : `Page ${moduleNumber(activeKey)} sur ${visibleSections().length}`}</p>${write && !activeMaterial ? `<label class="report-section-title"><input aria-label="Titre de la page" value="${escapeHtml(activeModule[1])}" maxlength="160" data-section-title="${escapeHtml(activeKey)}"></label>` : `<h2>${escapeHtml(activeMaterial?.name || activeModule[1])}</h2>`}<p class="muted">${escapeHtml(activeMaterial ? "Observations et photos associées à cet équipement" : activeModule[2])}</p></div>${activeMaterial ? '<button type="button" class="secondary-button" data-back-to-materials>Retour aux matériels</button>' : write ? `<div class="report-section-actions"><button type="button" class="secondary-button" data-duplicate-section>Dupliquer cette page</button>${activeKey !== "general" ? '<button type="button" class="text-button danger-text" data-delete-section>Supprimer la page</button>' : ""}</div>` : ""}</div>
             ${activeKey === "general" && !activeModule.custom ? generalModuleHtml(write) : activeKey === "methods" && !activeModule.custom ? materialsModuleHtml(write, activeMaterial) : observationsModuleHtml(activeKey, write)}
         </main>
         <footer class="report-editor-footer">
-            <button type="button" class="secondary-button" data-previous-module ${moduleIndex(activeKey) <= 0 ? "disabled" : ""}>← Section précédente</button>
+            <button type="button" class="secondary-button" data-previous-module ${moduleIndex(activeKey) <= 0 ? "disabled" : ""}>Page précédente</button>
             <button type="button" class="secondary-button" data-preview>Prévisualiser le rapport</button>
             ${write ? '<span class="report-autosave" data-save-state>Enregistré automatiquement</span>' : ""}
             ${write && current.status !== "submitted" ? '<button type="button" class="secondary-button report-primary-action" data-submit-report>Envoyer pour validation</button>' : ""}
             ${write && canValidate() && current.status === "submitted" ? '<button type="button" class="secondary-button report-primary-action" data-validate-report>Valider définitivement</button>' : ""}
             ${editable() && isAdministrator() && ["submitted", "in_correction"].includes(current.status) ? '<button type="button" class="secondary-button" data-request-correction>Demander une correction</button>' : ""}
             ${isAdministrator() && current.status === "validated" ? '<button type="button" class="secondary-button" data-reopen-report>Réouvrir le rapport</button>' : ""}
-            <button type="button" class="secondary-button" data-next-module ${moduleIndex(activeKey) >= visibleSections().length - 1 ? "disabled" : ""}>Section suivante →</button>
+            <button type="button" class="secondary-button" data-next-module ${moduleIndex(activeKey) >= visibleSections().length - 1 ? "disabled" : ""}>Page suivante</button>
         </footer>
     `;
     bindEditor(shell, activeKey);
@@ -181,6 +182,8 @@ function photosHtml(moduleKey, observationId, write, addLabel, singlePhoto = fal
 
 function bindEditor(shell, moduleKey) {
     shell.querySelectorAll("[data-module]").forEach(button => button.addEventListener("click", () => openModule(shell, button.dataset.module)));
+    bindSectionReordering(shell);
+    bindPageSwipe(shell, moduleKey);
     shell.querySelector("[data-previous-module]")?.addEventListener("click", () => openModule(shell, visibleSections()[moduleIndex(moduleKey) - 1]?.id));
     shell.querySelector("[data-next-module]")?.addEventListener("click", () => openModule(shell, visibleSections()[moduleIndex(moduleKey) + 1]?.id));
     shell.querySelector("[data-section-title]")?.addEventListener("input", input => { renameSection(input.dataset.sectionTitle, input.value); queueSave(shell); });
@@ -222,9 +225,29 @@ function renderPreview(shell) {
 
 function lockBanner() {
     if (current.status === "validated") return '<p class="report-editor-lock validated">Rapport validé : il est désormais en consultation seule.</p>';
-    if (editable()) return '<p class="report-editor-lock editable">● Sauvegarde automatique active</p>';
+    if (editable()) return '<p class="report-editor-lock editable">Sauvegarde automatique active</p>';
     if (reportLock) return `<p class="report-editor-lock readonly">Lecture seule : ${escapeHtml(reportLock.userName || "un utilisateur")} modifie ce rapport.${isAdministrator() ? ' <button class="secondary-button" data-force-lock>Reprendre la main</button>' : ""}</p>`;
     return '<p class="report-editor-lock readonly">Lecture seule : verrou indisponible.</p>';
+}
+
+function bindSectionReordering(shell) {
+    if (!editable()) return;
+    let draggedId = "";
+    shell.querySelectorAll("[data-module]").forEach(button => {
+        button.addEventListener("dragstart", event => { draggedId = button.dataset.module; event.dataTransfer.effectAllowed = "move"; button.classList.add("dragging"); });
+        button.addEventListener("dragend", () => { draggedId = ""; button.classList.remove("dragging"); shell.querySelectorAll("[data-module]").forEach(item => item.classList.remove("drop-target")); });
+        button.addEventListener("dragover", event => { if (!draggedId || draggedId === button.dataset.module) return; event.preventDefault(); event.dataTransfer.dropEffect = "move"; button.classList.add("drop-target"); });
+        button.addEventListener("dragleave", () => button.classList.remove("drop-target"));
+        button.addEventListener("drop", event => { event.preventDefault(); const targetId = button.dataset.module; if (!draggedId || draggedId === targetId) return; const order = current.content.sectionOrder; const from = order.indexOf(draggedId), to = order.indexOf(targetId); if (from < 0 || to < 0) return; order.splice(from, 1); order.splice(to, 0, draggedId); queueSave(shell); renderEditor(shell); });
+    });
+}
+
+function bindPageSwipe(shell, moduleKey) {
+    const page = shell.querySelector(".report-editor-main");
+    if (!page) return;
+    let startX = 0, startY = 0;
+    page.addEventListener("touchstart", event => { if (event.target.closest("textarea,input,button,label")) return; const touch = event.touches[0]; startX = touch.clientX; startY = touch.clientY; }, { passive: true });
+    page.addEventListener("touchend", event => { if (!startX) return; const touch = event.changedTouches[0], deltaX = touch.clientX - startX, deltaY = touch.clientY - startY; startX = 0; if (Math.abs(deltaX) < 70 || Math.abs(deltaX) < Math.abs(deltaY)) return; const index = moduleIndex(moduleKey); openModule(shell, visibleSections()[deltaX < 0 ? index + 1 : index - 1]?.id); }, { passive: true });
 }
 
 function openModule(shell, key) {
@@ -386,7 +409,7 @@ function startTimers(shell) {
 }
 
 function stopTimers() { clearTimeout(saveTimer); clearInterval(heartbeatTimer); clearInterval(periodicTimer); saveTimer = heartbeatTimer = periodicTimer = null; }
-async function leaveReport() { stopTimers(); if (current && ownsLock()) await releaseReportLock(current.id); current = null; reportLock = null; previewMode = false; }
+async function leaveReport() { stopTimers(); if (current && ownsLock()) await releaseReportLock(current.id); current = null; reportLock = null; previewMode = false; document.body.classList.remove("report-writing-active"); }
 async function forceTakeover() { if (!isAdministrator() || !confirm("Reprendre la main sur ce rapport ?")) return; const result = await forceReleaseReportLock(current.id, "Reprise de l’édition du rapport"); if (!result.ok) return alert(result.message || "Reprise impossible."); await acquireLock(); const shell = document.querySelector(".report-editor-shell"); if (shell) renderEditor(shell); }
 
 function bindCollaborationEvents() {
