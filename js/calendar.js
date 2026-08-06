@@ -34,6 +34,7 @@ let members = [];
 let showAllTechnicians = true;
 let visibleTechnicianIds = new Set();
 let userFilterOpen = false;
+let calendarPanels = null;
 
 window.addEventListener("depannhome:billing-document-saved", event => {
     const appointmentId = String(event.detail?.appointmentId || "");
@@ -62,6 +63,7 @@ export async function renderCalendar(options = {}) {
     const gridPanel = document.createElement("section");
     gridPanel.className = "client-panel calendar-grid-panel";
     container.append(header, formPanel, gridPanel);
+    calendarPanels = { header, grid: gridPanel };
     if (technicianHome) renderPlatformAnnouncement(container);
 
     header.innerHTML = "<p class=\"muted\">Chargement du planning…</p>";
@@ -165,20 +167,29 @@ function renderHeader(panel) {
     bindCalendarViewSwitcher(panel);
     panel.querySelector("[data-calendar-filter-toggle]")?.addEventListener("click", () => {
         userFilterOpen = !userFilterOpen;
-        renderCalendar();
+        refreshCalendarFilterView();
     });
     panel.querySelector("[data-calendar-filter=all]")?.addEventListener("change", event => {
         showAllTechnicians = event.currentTarget.checked;
         if (showAllTechnicians) visibleTechnicianIds.clear();
-        renderCalendar();
+        refreshCalendarFilterView();
     });
     panel.querySelectorAll("[data-calendar-technician]").forEach(input => input.addEventListener("change", event => {
         showAllTechnicians = false;
         const id = String(event.currentTarget.dataset.calendarTechnician);
         if (event.currentTarget.checked) visibleTechnicianIds.add(id);
         else visibleTechnicianIds.delete(id);
-        renderCalendar();
+        refreshCalendarFilterView();
     }));
+}
+
+function refreshCalendarFilterView() {
+    if (!calendarPanels?.header?.isConnected || !calendarPanels?.grid?.isConnected) {
+        renderCalendar();
+        return;
+    }
+    renderHeader(calendarPanels.header);
+    renderCalendarGrid(calendarPanels.grid);
 }
 
 function bindCalendarViewSwitcher(panel) {
