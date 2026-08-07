@@ -817,17 +817,12 @@ async function completeLogin(user, device, response) {
     const isCompanyAdministratorPc = user.role === "admin" && device.type === "desktop";
     const isAccountant = user.role === "accountant";
     const authDeviceDetails = { ...device, type: isMobileAdministrator || isAccountant ? device.type : "desktop" };
-    // Un Administrateur (PC), Créateur inclus, peut changer de poste sans
-    // validation manuelle. Un seul poste PC de ce compte reste autorisé.
-    // Sur mobile, le compte continue de suivre le circuit Administrateur Mobile.
-    const automaticallyApproved = isCompanyAdministratorPc || isAccountant;
+    // Un nouveau navigateur privé possède un identifiant local distinct. Il ne
+    // doit donc jamais remplacer ni approuver automatiquement un poste PC déjà
+    // comptabilisé. Seul le premier appareil du propriétaire peut amorcer un
+    // nouveau compte ; les autres postes passent par la validation d’un admin.
+    const automaticallyApproved = isAccountant;
     let authDevice = await findAuthDevice(user.id, device.id);
-    if (isCompanyAdministratorPc) {
-        // Une nouvelle connexion PC remplace le poste précédent du même
-        // administrateur. Un cookie lié à l’ancien appareil est alors refusé
-        // par authenticateRequest, ce qui met fin à cette session.
-        await getPool().query("DELETE FROM depannhome_auth_devices WHERE user_id = $1 AND device_type = 'desktop' AND id <> $2", [user.id, device.id]);
-    }
     if (!authDevice) {
         if (isMobileAdministrator && await userHasActiveMobileDevice(user.id)) {
             return response.status(409).json({ message: "Un téléphone ou une tablette est déjà associé à ce compte administrateur. Supprimez d’abord l’ancien appareil dans Équipe." });
