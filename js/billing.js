@@ -410,11 +410,8 @@ function createLineEditor(line, index, billingDocument, rerender) {
 function renderDocumentAids(panel, billingDocument, rerender) {
     if (!panel) return;
     const aids = billingData.aids || [];
-    if (!billingDocument.financialData.aids.length) {
-        billingDocument.financialData.aids = aids.filter(aid => aid.autoApply).map(toAidSnapshot);
-    }
     const selectedAids = billingDocument.financialData.aids;
-    panel.innerHTML = `<div class="form-heading"><div><p class="eyebrow">Primes et aides</p><h3>Déduites du reste à charge</h3><p class="muted">Sélectionnez les primes applicables à ce document. Elles restent affichées sur le PDF.</p></div></div>${aids.length ? `<fieldset class="accounting-aid-fieldset">${aids.map(aid => `<label><input type="checkbox" value="${escapeHtml(aid.id)}" ${selectedAids.some(item => item.name === aid.name) ? "checked" : ""}> ${escapeHtml(aid.name)} · ${aid.calculationMode === "percentage" ? `${formatNumber(aid.amount)} %` : formatMoney(aid.amount)}</label>`).join("")}</fieldset>` : '<p class="muted">Aucune prime configurée. Ajoutez-les dans Comptabilité → Aides financières.</p>'}`;
+    panel.innerHTML = `<div class="form-heading"><div><p class="eyebrow">Primes et aides</p><h3>Déduites du reste à charge</h3><p class="muted">Aucune aide n’est ajoutée automatiquement : sélectionnez uniquement celles applicables à ce devis. Elles restent affichées sur le PDF.</p></div></div>${aids.length ? `<fieldset class="accounting-aid-fieldset">${aids.map(aid => `<label><input type="checkbox" value="${escapeHtml(aid.id)}" ${selectedAids.some(item => item.name === aid.name) ? "checked" : ""}> ${escapeHtml(aid.name)} · ${aid.calculationMode === "percentage" ? `${formatNumber(aid.amount)} %` : formatMoney(aid.amount)}</label>`).join("")}</fieldset>` : '<p class="muted">Aucune prime configurée. Ajoutez-les dans Comptabilité → Aides financières.</p>'}`;
     panel.querySelectorAll("input[type=checkbox]").forEach(input => input.addEventListener("change", () => {
         billingDocument.financialData.aids = [...panel.querySelectorAll("input:checked")].map(field => aids.find(aid => String(aid.id) === field.value)).filter(Boolean).map(toAidSnapshot);
         rerender();

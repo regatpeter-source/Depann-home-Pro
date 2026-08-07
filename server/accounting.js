@@ -47,6 +47,7 @@ export async function initializeAccounting() {
         )
     `);
     await database.query("CREATE INDEX IF NOT EXISTS depannhome_accounting_aids_owner_idx ON depannhome_accounting_aids (owner_id, auto_apply, LOWER(name))");
+    await database.query("UPDATE depannhome_accounting_aids SET auto_apply=FALSE WHERE auto_apply=TRUE");
     await database.query(`
         CREATE TABLE IF NOT EXISTS depannhome_accounting_settlements (
             id BIGSERIAL PRIMARY KEY,
@@ -346,7 +347,7 @@ function sanitizeAid(value) {
     if (!name || amount === null) return { ok: false, message: "Le nom et le montant de l’aide sont obligatoires." };
     const aidType = AID_TYPES.has(value?.aidType) ? value.aidType : "custom";
     const calculationMode = AID_MODES.has(value?.calculationMode) ? value.calculationMode : "fixed";
-    return { ok: true, name, amount, aidType, calculationMode, description: cleanText(value?.description, 1000), autoApply: Boolean(value?.autoApply), rules: sanitizeRules(value?.rules) };
+    return { ok: true, name, amount, aidType, calculationMode, description: cleanText(value?.description, 1000), autoApply: false, rules: sanitizeRules(value?.rules) };
 }
 
 function sanitizeRules(value) {

@@ -288,6 +288,7 @@ CREATE TABLE IF NOT EXISTS depannhome_accounting_aids (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS depannhome_accounting_aids_owner_idx ON depannhome_accounting_aids (owner_id, auto_apply, LOWER(name));
+UPDATE depannhome_accounting_aids SET auto_apply=FALSE WHERE auto_apply=TRUE;
 
 CREATE TABLE IF NOT EXISTS depannhome_accounting_settlements (
     id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
