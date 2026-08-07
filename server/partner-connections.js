@@ -181,15 +181,29 @@ async function createDirectConnectedMission(database, ownerId, connection, value
     const intakeId = await ensureManagedIntake(targetOwnerId, sourceCompany.name, connection.id);
     const externalMissionId = `dpc-${connection.id}-${crypto.randomUUID()}`;
     const mapped = { externalMissionId, partnerReference: value.subject, date: value.requestedDate, startTime: "", endTime: "", priority: value.priority, interventionType: value.interventionType, clientName: client.name || "", address: client.address || "", city: client.city || "", phone: client.phone || "", email: client.email || "", insurance: client.insurance || "", claimNumber: client.claimNumber || "", expert: client.expert || "", manager: client.manager || "", description: value.comments, comments: value.comments, attachments: partnerMissionAttachments(client.attachments), connectionId: connection.id, sourceEventId: "" };
-    const { rows } = await database.query(`INSERT INTO depannhome_partner_missions(owner_id,intake_id,external_mission_id,partner_reference,status,priority,source_data,mapped_data,scheduled_date) VALUES($1,$2,$3,$4,'pending_validation',$5,$6::jsonb,$7::jsonb,$8::date) RETURNING id`, [targetOwnerId, intakeId, externalMissionId, mapped.partnerReference, mapped.priority, JSON.stringify({ managedConnection: true, directMission: true, sourceOwnerId: ownerId }), JSON.stringify(mapped), mapped.date]);
-    const mission = rows[0];
-    await ensureBusinessMissionNumber(database, mission.id);
-    tracePartnerClient("network_route_selected", { flow: "connected_direct_mission", sourceOwnerId: ownerId, targetOwnerId, missionId: mission.id, persistenceMode: "autocommit" });
-    const targetClient = await provisionPartnerMissionClient(database, targetOwnerId, mapped, { user: { fullName: sourceCompany.name } });
-    await database.query("UPDATE depannhome_partner_missions SET client_id=$3,updated_at=NOW() WHERE id=$1 AND owner_id=$2", [mission.id, targetOwnerId, targetClient.id]);
-    await traceCommittedPartnerClient(targetOwnerId, targetClient.id, { flow: "connected_direct_mission", sourceOwnerId: ownerId, missionId: mission.id, persistenceMode: "autocommit" });
-    await database.query("INSERT INTO depannhome_partner_mission_history(owner_id,mission_id,status,action,actor_role,details) VALUES($1,$2,'pending_validation','received','partner',$3::jsonb)", [targetOwnerId, mission.id, JSON.stringify({ connectionId: connection.id, clientId: targetClient.id, clientCreated: targetClient.created, directMission: true })]);
-    await database.query("INSERT INTO depannhome_partner_connection_sync_log(connection_id,source_owner_id,target_owner_id,target_mission_id,event_type,details) VALUES($1,$2,$3,$4,'mission_sent',$5::jsonb)", [connection.id, ownerId, targetOwnerId, mission.id, JSON.stringify({ clientId: targetClient.id, clientCreated: targetClient.created, keepInOwnCalendar: false })]);
+    const databaseConnection = await database.connect();
+    let mission, targetClient;
+    try {
+        await databaseConnection.query("BEGIN");
+        tracePartnerClient("transaction_started", { flow: "connected_direct_mission", sourceOwnerId: ownerId, targetOwnerId, persistenceMode: "transaction" });
+        const { rows } = await databaseConnection.query(`INSERT INTO depannhome_partner_missions(owner_id,intake_id,external_mission_id,partner_reference,status,priority,source_data,mapped_data,scheduled_date) VALUES($1,$2,$3,$4,'pending_validation',$5,$6::jsonb,$7::jsonb,$8::date) RETURNING id`, [targetOwnerId, intakeId, externalMissionId, mapped.partnerReference, mapped.priority, JSON.stringify({ managedConnection: true, directMission: true, sourceOwnerId: ownerId }), JSON.stringify(mapped), mapped.date]);
+        mission = rows[0];
+        await ensureBusinessMissionNumber(databaseConnection, mission.id);
+        targetClient = await provisionPartnerMissionClient(databaseConnection, targetOwnerId, mapped, { user: { fullName: sourceCompany.name } });
+        await databaseConnection.query("UPDATE depannhome_partner_missions SET client_id=$3,updated_at=NOW() WHERE id=$1 AND owner_id=$2", [mission.id, targetOwnerId, targetClient.id]);
+        const verification = await databaseConnection.query("SELECT client_id FROM depannhome_clients WHERE owner_id=$1 AND client_id=$2", [targetOwnerId, targetClient.id]);
+        if (!verification.rowCount) throw new Error("La fiche client destinataire est absente : mission partenaire annulée.");
+        await databaseConnection.query("INSERT INTO depannhome_partner_mission_history(owner_id,mission_id,status,action,actor_role,details) VALUES($1,$2,'pending_validation','received','partner',$3::jsonb)", [targetOwnerId, mission.id, JSON.stringify({ connectionId: connection.id, clientId: targetClient.id, clientCreated: targetClient.created, directMission: true })]);
+        await databaseConnection.query("INSERT INTO depannhome_partner_connection_sync_log(connection_id,source_owner_id,target_owner_id,target_mission_id,event_type,details) VALUES($1,$2,$3,$4,'mission_sent',$5::jsonb)", [connection.id, ownerId, targetOwnerId, mission.id, JSON.stringify({ clientId: targetClient.id, clientCreated: targetClient.created, keepInOwnCalendar: false })]);
+        await databaseConnection.query("COMMIT");
+    } catch (error) {
+        await databaseConnection.query("ROLLBACK");
+        tracePartnerClient("transaction_rolled_back", { flow: "connected_direct_mission", sourceOwnerId: ownerId, targetOwnerId, error: error.message });
+        throw error;
+    } finally {
+        databaseConnection.release();
+    }
+    await traceCommittedPartnerClient(targetOwnerId, targetClient.id, { flow: "connected_direct_mission", sourceOwnerId: ownerId, missionId: mission.id, persistenceMode: "transaction" });
     await recordMissionDialogueEvent({ ownerId: targetOwnerId, missionId: mission.id, status: "received", action: "received", actorName: sourceCompany.name, details: { clientId: targetClient.id, clientCreated: targetClient.created, summary: value.comments || value.subject } });
     await notifyAdmins(targetOwnerId, "partner_connection_intervention", "Nouvelle mission partenaire", `${sourceCompany.name} a transmis la mission « ${value.subject} ».`, { connectionId: connection.id, missionId: mission.id });
     return { id: mission.id, externalMissionId, calendarEventId: null, senderCalendarEventId: null, partner: (await publicConnection(connection, ownerId)).partner, status: "pending_validation" };

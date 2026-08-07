@@ -117,7 +117,30 @@ async function changeStatus(req, id, status, details) { const ownerId = getAccou
 
 async function updateBillingMode(req, id, billingMode) { const ownerId = getAccountOwnerId(req); if (!id) throw clientError(400, "Mission invalide."); const { rows } = await getPool().query("UPDATE depannhome_partner_missions SET billing_mode=$3,updated_at=NOW() WHERE id=$1 AND owner_id=$2 RETURNING *", [id, ownerId, billingMode]); if (!rows[0]) throw clientError(404, "Mission introuvable."); await writeHistory(getPool(), ownerId, id, rows[0].status, "billing_mode_changed", req.user.sub, req.user.role, { billingMode }, req.ip); if (billingMode === "principal") { const { sharePrincipalBillingDocuments } = await import("./partner-dialogue.js"); await sharePrincipalBillingDocuments(ownerId, id); } else { const { hideDirectClientBillingDocuments } = await import("./partner-dialogue.js"); await hideDirectClientBillingDocuments(ownerId, id); } return publicMission(rows[0]); }
 
-async function missionDashboard(ownerId, request) { const [missionRows, intakeRows, techRows, outbox] = await Promise.all([getPool().query(`SELECT mission.*, intake.partner_name AS "partnerName", intake.partner_key AS "partnerKey", technician.full_name AS "technicianName" FROM depannhome_partner_missions mission JOIN depannhome_partner_intakes intake ON intake.id=mission.intake_id LEFT JOIN depannhome_users technician ON technician.id=mission.assigned_technician_id WHERE mission.owner_id=$1 AND mission.deleted_at IS NULL ORDER BY mission.updated_at DESC LIMIT 200`, [ownerId]), intakes(ownerId), canManagePartnerMissions(request) ? technicians(ownerId) : Promise.resolve([]), getPool().query("SELECT count(*)::int AS count FROM depannhome_partner_mission_outbox WHERE owner_id=$1 AND status='failed'", [ownerId])]); return { missions: missionRows.rows.map(publicMission), intakes: intakeRows, technicians: techRows, failedDeliveries: outbox.rows[0].count, statuses: [...STATUSES] }; }
+async function missionDashboard(ownerId, request) { await reconcileMissionClients(ownerId, request); const [missionRows, intakeRows, techRows, outbox] = await Promise.all([getPool().query(`SELECT mission.*, intake.partner_name AS "partnerName", intake.partner_key AS "partnerKey", technician.full_name AS "technicianName" FROM depannhome_partner_missions mission JOIN depannhome_partner_intakes intake ON intake.id=mission.intake_id LEFT JOIN depannhome_users technician ON technician.id=mission.assigned_technician_id WHERE mission.owner_id=$1 AND mission.deleted_at IS NULL ORDER BY mission.updated_at DESC LIMIT 200`, [ownerId]), intakes(ownerId), canManagePartnerMissions(request) ? technicians(ownerId) : Promise.resolve([]), getPool().query("SELECT count(*)::int AS count FROM depannhome_partner_mission_outbox WHERE owner_id=$1 AND status='failed'", [ownerId])]); return { missions: missionRows.rows.map(publicMission), intakes: intakeRows, technicians: techRows, failedDeliveries: outbox.rows[0].count, statuses: [...STATUSES] }; }
+async function reconcileMissionClients(ownerId, request) {
+    const database = getPool(); const connection = await database.connect();
+    try {
+        await connection.query("BEGIN");
+        const { rows: missions } = await connection.query(`
+            SELECT mission.id,mission.client_id,mission.mapped_data
+            FROM depannhome_partner_missions mission
+            LEFT JOIN depannhome_clients client ON client.owner_id=mission.owner_id AND client.client_id=mission.client_id
+            WHERE mission.owner_id=$1 AND mission.deleted_at IS NULL
+                AND (mission.client_id='' OR client.client_id IS NULL)
+            FOR UPDATE OF mission
+        `, [ownerId]);
+        for (const mission of missions) {
+            const client = await provisionPartnerMissionClient(connection, ownerId, mission.mapped_data || {}, request, mission.client_id);
+            await connection.query("UPDATE depannhome_partner_missions SET client_id=$3,updated_at=NOW() WHERE id=$1 AND owner_id=$2", [mission.id, ownerId, client.id]);
+            await connection.query("UPDATE depannhome_calendar_events SET client_id=$3,updated_at=NOW() WHERE owner_id=$1 AND partner_mission_id=$2", [ownerId, mission.id, client.id]);
+        }
+        await connection.query("COMMIT");
+    } catch (error) {
+        await connection.query("ROLLBACK");
+        throw error;
+    } finally { connection.release(); }
+}
 async function intakes(ownerId) { const { rows } = await getPool().query("SELECT id,partner_key AS \"partnerKey\",partner_name AS \"partnerName\",callback_url AS \"callbackUrl\",assignment_mode AS \"assignmentMode\",rules,enabled,created_at AS \"createdAt\",updated_at AS \"updatedAt\" FROM depannhome_partner_intakes WHERE owner_id=$1 ORDER BY partner_name", [ownerId]); return rows; }
 async function findMission(ownerId, id, request = null) { if (!id) return null; const { rows } = await getPool().query("SELECT mission.*, intake.partner_name AS \"partnerName\", intake.partner_key AS \"partnerKey\", intake.assignment_mode AS \"assignmentMode\", technician.full_name AS \"technicianName\" FROM depannhome_partner_missions mission JOIN depannhome_partner_intakes intake ON intake.id=mission.intake_id LEFT JOIN depannhome_users technician ON technician.id=mission.assigned_technician_id WHERE mission.id=$1 AND mission.owner_id=$2", [id, ownerId]); return rows[0] ? publicMission(rows[0]) : null; }
 async function lockMission(connection, ownerId, id) { const { rows } = await connection.query("SELECT mission.*, intake.assignment_mode AS \"assignmentMode\" FROM depannhome_partner_missions mission JOIN depannhome_partner_intakes intake ON intake.id=mission.intake_id WHERE mission.id=$1 AND mission.owner_id=$2 FOR UPDATE", [id, ownerId]); return rows[0] ? { ...rows[0], mappedData: rows[0].mapped_data || {} } : null; }
