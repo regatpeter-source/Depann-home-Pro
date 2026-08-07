@@ -133,7 +133,7 @@ export async function synchronizeConnectedAppointment(ownerId, eventId, connecti
         if (!own.canSendInterventions || !partner.canReceiveInterventions) continue;
         const targetOwnerId = partnerOwnerId(connection, ownerId); const intakeId = await ensureManagedIntake(targetOwnerId, sourceCompany.name, connection.id);
         const externalMissionId = `dpc-${connection.id}-${event.id}`;
-        const mapped = { externalMissionId, partnerReference: `Intervention ${event.id}`, date: event.date, startTime: event.startTime || "", endTime: event.endTime || "", priority: "normal", interventionType: event.title, clientName: event.client_name || sourceClient?.name || "", address: sourceClient?.address || event.location, city: sourceClient?.city || "", phone: sourceClient?.phone || "", email: sourceClient?.email || "", insurance: sourceClient?.insurance || "", claimNumber: sourceClient?.claimNumber || "", expert: sourceClient?.expert || "", manager: sourceClient?.manager || "", description: event.notes, attachments: partnerMissionAttachments(sourceClient?.attachments), connectionId: connection.id, sourceEventId: event.id };
+        const mapped = { externalMissionId, partnerReference: `Intervention ${event.id}`, date: event.date, startTime: event.startTime || "", endTime: event.endTime || "", priority: "normal", interventionType: event.title, clientName: event.client_name || sourceClient?.name || "", address: sourceClient?.address || event.location, city: sourceClient?.city || "", phone: sourceClient?.phone || "", email: sourceClient?.email || "", insurance: sourceClient?.insurance || "", claimNumber: sourceClient?.claimNumber || "", expert: sourceClient?.expert || "", manager: sourceClient?.manager || "", description: event.notes, attachments: [], connectionId: connection.id, sourceEventId: event.id };
         const { rows } = await db.query(`INSERT INTO depannhome_partner_missions(owner_id,intake_id,external_mission_id,partner_reference,status,priority,source_data,mapped_data,scheduled_date,scheduled_start_time,scheduled_end_time)
             VALUES($1,$2,$3,$4,'pending_validation','normal',$5::jsonb,$6::jsonb,$7::date,$8::time,$9::time)
             ON CONFLICT(owner_id,intake_id,external_mission_id) DO UPDATE SET source_data=EXCLUDED.source_data,mapped_data=EXCLUDED.mapped_data,scheduled_date=EXCLUDED.scheduled_date,scheduled_start_time=EXCLUDED.scheduled_start_time,scheduled_end_time=EXCLUDED.scheduled_end_time,updated_at=NOW() RETURNING id,(xmax=0) AS inserted`, [targetOwnerId, intakeId, externalMissionId, mapped.partnerReference, JSON.stringify({ managedConnection: true, event }), JSON.stringify(mapped), event.date, event.startTime || null, event.endTime || null]);
@@ -181,7 +181,7 @@ async function createDirectConnectedMission(database, ownerId, connection, value
     const sourceCompany = await companyIdentity(ownerId);
     const intakeId = await ensureManagedIntake(targetOwnerId, sourceCompany.name, connection.id);
     const externalMissionId = `dpc-${connection.id}-${crypto.randomUUID()}`;
-    const mapped = { externalMissionId, partnerReference: value.subject, date: value.requestedDate, startTime: "", endTime: "", priority: value.priority, interventionType: value.interventionType, clientName: client.name || "", address: client.address || "", city: client.city || "", phone: client.phone || "", email: client.email || "", insurance: client.insurance || "", claimNumber: client.claimNumber || "", expert: client.expert || "", manager: client.manager || "", description: value.comments, comments: value.comments, attachments: partnerMissionAttachments(client.attachments), connectionId: connection.id, sourceEventId: "" };
+    const mapped = { externalMissionId, partnerReference: value.subject, date: value.requestedDate, startTime: "", endTime: "", priority: value.priority, interventionType: value.interventionType, clientName: client.name || "", address: client.address || "", city: client.city || "", phone: client.phone || "", email: client.email || "", insurance: client.insurance || "", claimNumber: client.claimNumber || "", expert: client.expert || "", manager: client.manager || "", description: value.comments, comments: value.comments, attachments: partnerMissionAttachments(client.attachments, value.sharedAttachmentIds), connectionId: connection.id, sourceEventId: "" };
     const databaseConnection = await database.connect();
     let mission, targetClient;
     try {
@@ -195,7 +195,7 @@ async function createDirectConnectedMission(database, ownerId, connection, value
         const verification = await databaseConnection.query("SELECT client_id FROM depannhome_clients WHERE owner_id=$1 AND client_id=$2", [targetOwnerId, targetClient.id]);
         if (!verification.rowCount) throw new Error("La fiche client destinataire est absente : mission partenaire annulée.");
         await databaseConnection.query("INSERT INTO depannhome_partner_mission_history(owner_id,mission_id,status,action,actor_role,details) VALUES($1,$2,'pending_validation','received','partner',$3::jsonb)", [targetOwnerId, mission.id, JSON.stringify({ connectionId: connection.id, clientId: targetClient.id, clientCreated: targetClient.created, directMission: true })]);
-        await databaseConnection.query("INSERT INTO depannhome_partner_connection_sync_log(connection_id,source_owner_id,target_owner_id,target_mission_id,event_type,details) VALUES($1,$2,$3,$4,'mission_sent',$5::jsonb)", [connection.id, ownerId, targetOwnerId, mission.id, JSON.stringify({ clientId: targetClient.id, clientCreated: targetClient.created, keepInOwnCalendar: false })]);
+        await databaseConnection.query("INSERT INTO depannhome_partner_connection_sync_log(connection_id,source_owner_id,target_owner_id,target_mission_id,event_type,details) VALUES($1,$2,$3,$4,'mission_sent',$5::jsonb)", [connection.id, ownerId, targetOwnerId, mission.id, JSON.stringify({ clientId: targetClient.id, clientCreated: targetClient.created, keepInOwnCalendar: false, sharedAttachmentCount: mapped.attachments.length })]);
         await databaseConnection.query("COMMIT");
     } catch (error) {
         await databaseConnection.query("ROLLBACK");
@@ -297,13 +297,14 @@ function sanitizeConnectedMission(value) {
     const requestedDate = validDate(value?.requestedDate);
     const priority = ["low", "normal", "high", "urgent"].includes(value?.priority) ? value.priority : "normal";
     const keepInOwnCalendar = value?.keepInOwnCalendar === true;
+    const sharedAttachmentIds = attachmentIds(value?.sharedAttachmentIds);
     const input = value?.client && typeof value.client === "object" ? value.client : {};
     const client = { id: clean(input.id, 100), type: clean(input.type, 80) || "Particulier", name: clean(input.name, 160), phone: clean(input.phone, 50), email: clean(input.email, 160), address: clean(input.address, 255), city: clean(input.city, 100) };
     if (!connectionId) return { ok: false, message: "Choisissez un partenaire connecté." };
     if (!client.id && !client.name) return { ok: false, message: "Choisissez ou créez un client." };
     if (!subject) return { ok: false, message: "L’objet de la mission est obligatoire." };
     if (!requestedDate) return { ok: false, message: "La date souhaitée est invalide." };
-    return { ok: true, connectionId, subject, interventionType: interventionType || subject, comments, requestedDate, priority, keepInOwnCalendar, client };
+    return { ok: true, connectionId, subject, interventionType: interventionType || subject, comments, requestedDate, priority, keepInOwnCalendar, sharedAttachmentIds, client };
 }
 
 function missionNotes(value) {
@@ -315,12 +316,16 @@ function missionNotes(value) {
     ].filter(Boolean).join("\n").slice(0, 2000);
 }
 
-function partnerMissionAttachments(value) {
+function partnerMissionAttachments(value, selectedIds = []) {
+    const selected = new Set(attachmentIds(selectedIds));
+    if (!selected.size) return [];
     return (Array.isArray(value) ? value : [])
-        .filter(item => /^data:(image\/(jpeg|png|webp)|application\/(pdf|msword|vnd\.openxmlformats-officedocument\.wordprocessingml\.document|vnd\.ms-excel|vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet)|text\/plain);base64,[A-Za-z0-9+/=]+$/.test(String(item?.dataUrl || "")))
+        .filter(item => selected.has(String(item?.id || "")) && /^data:(image\/(jpeg|png|webp)|application\/(pdf|msword|vnd\.openxmlformats-officedocument\.wordprocessingml\.document|vnd\.ms-excel|vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet)|text\/plain);base64,[A-Za-z0-9+/=]+$/.test(String(item?.dataUrl || "")))
         .slice(0, 30)
         .map(item => ({ name: clean(item.name, 255) || "document-partenaire", mime: clean(item.mime, 150), size: Number(item.size) || 0, dataUrl: item.dataUrl }));
 }
+
+function attachmentIds(value) { return [...new Set((Array.isArray(value) ? value : []).map(item => clean(item, 100)).filter(item => /^[A-Za-z0-9_-]+$/.test(item)))].slice(0, 30); }
 
 export async function synchronizeConnectedReport(ownerId, reportId) {
     const db = getPool(); const { rows } = await db.query("SELECT id,appointment_id,title,pdf_data,pdf_filename FROM depannhome_technical_reports WHERE id=$1 AND owner_id=$2 AND status='validated'", [reportId, ownerId]); const report = rows[0]; if (!report?.appointment_id) return;
