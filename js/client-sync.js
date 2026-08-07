@@ -119,7 +119,6 @@ async function synchronize({ forceFull = false } = {}) {
     if (!remoteResult.ok) return { ok: false, message: remoteResult.data?.message || "Serveur indisponible." };
 
     const remoteClients = Array.isArray(remoteResult.data?.clients) ? remoteResult.data.clients.map(normalizeClient) : [];
-    console.info("[clients-debug] GET /api/clients", { forceFull, receivedCount: remoteClients.length, clientNames: remoteClients.map(client => client.name) });
     const deletedClientIds = Array.isArray(remoteResult.data?.deletedClientIds) ? remoteResult.data.deletedClientIds : [];
     const cursor = validDate(remoteResult.data?.cursor);
     const isInitialSynchronization = !getSynchronizationCursor() && !forceFull;
@@ -131,7 +130,6 @@ async function synchronize({ forceFull = false } = {}) {
             return { ok: false, message: "Espace de stockage local saturé. Supprimez ou compressez des fichiers clients." };
         }
         if (cursor) writeSynchronizationCursor(cursor);
-        console.info("[clients-debug] cache local mis à jour", { clientCount: synchronizedClients.length, clientNames: synchronizedClients.map(client => client.name) });
         window.dispatchEvent(new CustomEvent("depannhome:clients-synchronized"));
         return { ok: true };
     }
@@ -167,7 +165,6 @@ async function synchronize({ forceFull = false } = {}) {
     const refreshed = await request(getClientSynchronizationUrl(forceFull));
     if (refreshed.ok) {
         const refreshedClients = Array.isArray(refreshed.data?.clients) ? refreshed.data.clients.map(normalizeClient) : [];
-        console.info("[clients-debug] GET /api/clients après opérations", { forceFull, receivedCount: refreshedClients.length, clientNames: refreshedClients.map(client => client.name) });
         const refreshedDeletedClientIds = Array.isArray(refreshed.data?.deletedClientIds) ? refreshed.data.deletedClientIds : [];
         const finalClients = forceFull ? mergeRemoteWithQueuedClients(refreshedClients) : applyRemoteChanges(getLocalClients(), refreshedClients, refreshedDeletedClientIds);
         if (!writeClients(finalClients)) {
@@ -175,7 +172,6 @@ async function synchronize({ forceFull = false } = {}) {
         }
         const refreshedCursor = validDate(refreshed.data?.cursor);
         if (refreshedCursor) writeSynchronizationCursor(refreshedCursor);
-        console.info("[clients-debug] cache local final", { clientCount: finalClients.length, clientNames: finalClients.map(client => client.name) });
     }
     window.dispatchEvent(new CustomEvent("depannhome:clients-synchronized"));
     return { ok: true };
