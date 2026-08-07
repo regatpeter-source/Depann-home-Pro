@@ -33,6 +33,7 @@ let calendarView = "month";
 let members = [];
 let showAllTechnicians = true;
 let visibleTechnicianIds = new Set();
+const mobileAdminEditingEvents = new Set();
 let userFilterOpen = false;
 let calendarPanels = null;
 let cachedMembers = null;
@@ -283,7 +284,7 @@ function renderEventForm(panel) {
 
     panel.hidden = false;
     const event = selectedEvent;
-    if (isReadOnlyCalendar()) {
+    if (usesTerrainInterventionView(event)) {
         if (event.eventType !== "appointment") {
             panel.innerHTML = `
                 <div class="calendar-event-detail">
@@ -301,7 +302,7 @@ function renderEventForm(panel) {
         const phoneHref = client ? getClientPhoneHref(client) : "";
         panel.innerHTML = `
             <div class="calendar-event-detail">
-                <div class="form-heading"><div><p class="eyebrow">Rendez-vous</p><h2>${escapeHtml(event.title)}</h2></div><button type="button" class="secondary-button" id="closeCalendarDetail">Fermer</button></div>
+                <div class="form-heading"><div><p class="eyebrow">Rendez-vous</p><h2>${escapeHtml(event.title)}</h2></div><div class="calendar-detail-actions">${isMobileAdministrator() ? '<button type="button" class="secondary-button" id="editCalendarEvent">Modifier</button>' : ""}<button type="button" class="secondary-button" id="closeCalendarDetail">Fermer</button></div></div>
                 ${client ? `
                     <section class="calendar-client-summary">
                         <div><p class="eyebrow">Fiche client</p><h3>${escapeHtml(client.name)}</h3><p class="muted">${escapeHtml(client.type || "Client")}</p></div>
@@ -346,6 +347,10 @@ function renderEventForm(panel) {
         panel.querySelector("#openTechnicalReport")?.addEventListener("click", () => renderTechnicalReports(0, event.id));
         panel.querySelector("#calendarInterventionPhotos")?.addEventListener("submit", eventSubmit => uploadInterventionPhotos(eventSubmit, client, event));
         panel.querySelector("#calendarClientUpload")?.addEventListener("submit", eventSubmit => uploadClientAttachments(eventSubmit, client, event));
+        panel.querySelector("#editCalendarEvent")?.addEventListener("click", () => {
+            mobileAdminEditingEvents.add(String(event.id));
+            refreshCalendarDetail();
+        });
         panel.querySelector("#closeCalendarDetail").addEventListener("click", () => {
             selectedEvent = null;
             refreshCalendarDetail();
@@ -415,6 +420,7 @@ function renderEventForm(panel) {
     `;
 
     panel.querySelector("#cancelCalendarEdit")?.addEventListener("click", () => {
+        mobileAdminEditingEvents.delete(String(event.id || ""));
         selectedEvent = null;
         refreshCalendarDetail();
     });
@@ -534,6 +540,7 @@ function renderEventForm(panel) {
             panel.querySelector("#calendarFormMessage").classList.add("error");
             return;
         }
+        mobileAdminEditingEvents.delete(String(event.id || ""));
         selectedEvent = null;
         invalidateCalendarEventsCache();
         renderCalendar();
@@ -1207,6 +1214,14 @@ function isTechnicianBillingAllowed() {
 
 function isReadOnlyCalendar() {
     return ["technician", "accountant"].includes(document.body.dataset.role);
+}
+
+function isMobileAdministrator() {
+    return document.body.dataset.role === "mobile_admin";
+}
+
+function usesTerrainInterventionView(event) {
+    return isReadOnlyCalendar() || (isMobileAdministrator() && event?.eventType === "appointment" && !mobileAdminEditingEvents.has(String(event.id || "")));
 }
 
 function roleLabel(role) {
