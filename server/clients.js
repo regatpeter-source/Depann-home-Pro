@@ -54,6 +54,7 @@ export async function listClientsForOwner(ownerId, sinceParameter = "") {
     if (sinceParameter && !since) throw clientError(400, "Curseur de synchronisation invalide.");
     const database = getPool();
     await reconcilePartnerMissionClients(database, ownerId);
+    await reconcilePartnerCalendarClients(database, ownerId);
     const { rows: cursorRows } = await database.query("SELECT NOW() AS cursor");
     const cursor = cursorRows[0].cursor;
     const { rows } = await database.query(`
@@ -119,6 +120,56 @@ async function reconcilePartnerMissionClients(database, ownerId) {
             `, [ownerId, clientId, JSON.stringify(client)]);
             await connection.query("UPDATE depannhome_partner_missions SET client_id=$3,updated_at=NOW() WHERE id=$1 AND owner_id=$2 AND client_id=''", [mission.id, ownerId, clientId]);
             await connection.query("UPDATE depannhome_calendar_events SET client_id=$3,updated_at=NOW() WHERE owner_id=$1 AND partner_mission_id=$2 AND client_id=''", [ownerId, mission.id, clientId]);
+        }
+        await connection.query("COMMIT");
+    } catch (error) {
+        await connection.query("ROLLBACK");
+        throw error;
+    } finally {
+        connection.release();
+    }
+}
+
+async function reconcilePartnerCalendarClients(database, ownerId) {
+    const { rows: events } = await database.query(`
+        SELECT event.id, event.client_id AS "clientId", event.client_name AS "clientName", event.location,
+            event.notes, event.created_at AS "createdAt", event.partner_mission_id AS "partnerMissionId",
+            mission.id AS "missionId", mission.mapped_data AS "mappedData"
+        FROM depannhome_calendar_events event
+        LEFT JOIN LATERAL (
+            SELECT id, mapped_data FROM depannhome_partner_missions mission
+            WHERE mission.owner_id = event.owner_id
+                AND (mission.id = event.partner_mission_id OR mission.calendar_event_id = event.id)
+            ORDER BY mission.updated_at DESC LIMIT 1
+        ) mission ON TRUE
+        LEFT JOIN depannhome_clients client ON client.owner_id = event.owner_id
+            AND client.client_id = NULLIF(event.client_id, '')
+        WHERE event.owner_id = $1 AND event.event_type = 'appointment' AND event.client_name <> ''
+            AND (event.event_origin = 'partner_mission' OR event.partner_mission_id IS NOT NULL OR mission.id IS NOT NULL)
+            AND (event.client_id = '' OR client.client_id IS NULL)
+    `, [ownerId]);
+    if (!events.length) return;
+
+    const connection = await database.connect();
+    try {
+        await connection.query("BEGIN");
+        for (const event of events) {
+            const data = event.mappedData || {};
+            const clientId = String(event.clientId || `client-${randomUUID()}`);
+            const createdAt = event.createdAt ? new Date(event.createdAt).toISOString() : new Date().toISOString();
+            const client = {
+                id: clientId, type: "Particulier", name: String(data.clientName || event.clientName).slice(0, 160),
+                firstName: String(data.firstName || "").slice(0, 100), lastName: String(data.lastName || "").slice(0, 100),
+                address: String(data.address || event.location || "").slice(0, 255), interventionAddress: String(data.interventionAddress || data.address || event.location || "").slice(0, 255),
+                city: String(data.city || "").slice(0, 100), phone: String(data.phone || "").slice(0, 50), email: String(data.email || "").slice(0, 160),
+                insurance: String(data.insurance || "").slice(0, 160), principal: String(data.principal || "").slice(0, 160), claimNumber: String(data.claimNumber || "").slice(0, 160),
+                expert: String(data.expert || "").slice(0, 160), manager: String(data.manager || "").slice(0, 160), equipment: "", notes: String(data.description || data.comments || event.notes || "").slice(0, 2000),
+                attachments: [], activityHistory: [{ id: `activity-partner-calendar-repair-${event.id}`, type: "partner_mission", label: "Fiche client restaurée depuis le planning partenaire", detail: String(data.partnerReference || data.externalMissionId || event.id).slice(0, 500), actorName: "Depann’Home Pro", createdAt }],
+                createdAt, updatedAt: new Date().toISOString()
+            };
+            await connection.query("INSERT INTO depannhome_clients(owner_id,client_id,client_data,updated_at) VALUES($1,$2,$3::jsonb,NOW()) ON CONFLICT(owner_id,client_id) DO NOTHING", [ownerId, clientId, JSON.stringify(client)]);
+            await connection.query("UPDATE depannhome_calendar_events SET client_id=$3,updated_at=NOW() WHERE id=$1 AND owner_id=$2", [event.id, ownerId, clientId]);
+            if (event.missionId) await connection.query("UPDATE depannhome_partner_missions SET client_id=$3,updated_at=NOW() WHERE id=$1 AND owner_id=$2 AND client_id=''", [event.missionId, ownerId, clientId]);
         }
         await connection.query("COMMIT");
     } catch (error) {
