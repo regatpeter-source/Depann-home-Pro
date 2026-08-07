@@ -799,14 +799,15 @@ function normalizeAttachments(attachments = []) {
     if (!Array.isArray(attachments)) return [];
 
     return attachments
-        .filter(attachment => attachment && attachment.dataUrl)
+        .filter(attachment => attachment && attachment.id)
         .map(attachment => ({
             id: attachment.id || createAttachmentId(),
             type: ATTACHMENT_TYPES.includes(attachment.type) ? attachment.type : "Autre",
             name: attachment.name || "Fichier sans nom",
             mime: attachment.mime || "application/octet-stream",
             size: Number(attachment.size) || 0,
-            dataUrl: attachment.dataUrl,
+            dataUrl: attachment.dataUrl || "",
+            cachedLocally: attachment.cachedLocally !== false,
             appointmentId: String(attachment.appointmentId || "").replace(/[^0-9]/g, ""),
             createdAt: attachment.createdAt || new Date().toISOString()
         }));
@@ -1082,7 +1083,7 @@ function isInterventionPhoto(attachment) {
 function renderInterventionPhotoHtml(clientId, attachment) {
     const type = attachment.type === "Photo avant" ? "Avant intervention" : attachment.type === "Photo après" ? "Après intervention" : "Photo d’intervention";
     const url = `/api/clients/${encodeURIComponent(clientId)}/attachments/${encodeURIComponent(attachment.id)}/open`;
-    return `<article class="client-intervention-photo"><a href="${url}" target="_blank" rel="noopener"><img src="${escapeHtml(attachment.dataUrl)}" alt="${escapeHtml(attachment.name)}"></a><div><strong>${escapeHtml(type)}</strong><span>${escapeHtml(attachment.name)}</span><small>${escapeHtml(formatDate(attachment.createdAt))}</small></div></article>`;
+    return `<article class="client-intervention-photo"><a href="${url}" target="_blank" rel="noopener"><img src="${escapeHtml(attachment.dataUrl || url)}" alt="${escapeHtml(attachment.name)}"></a><div><strong>${escapeHtml(type)}</strong><span>${escapeHtml(attachment.name)}</span><small>${escapeHtml(formatDate(attachment.createdAt))}</small></div></article>`;
 }
 
 async function deleteClientAttachment(clientId, attachmentId) {
@@ -1110,7 +1111,7 @@ function getAttachmentIcon(attachment) {
 }
 
 function renderAttachmentPreview(attachment) {
-    if (!attachment.mime.startsWith("image/")) return "";
+    if (!attachment.mime.startsWith("image/") || !attachment.dataUrl) return "";
 
     return `<img class="attachment-preview" src="${escapeHtml(attachment.dataUrl)}" alt="Aperçu ${escapeHtml(attachment.name)}">`;
 }

@@ -155,7 +155,11 @@ export function registerClientRoutes(app, requireAuthentication) {
                 WHERE owner_id = $1 AND client_id = $2 FOR UPDATE
             `, [getAccountOwnerId(request), clientId]);
             const now = new Date().toISOString();
-            const client = mergeDeletedAttachments(existing.rows[0]?.client, { ...submittedClient, updatedAt: now });
+            const client = mergeDeletedAttachments(existing.rows[0]?.client, {
+                ...submittedClient,
+                attachments: mergeClientAttachments(existing.rows[0]?.client?.attachments, submittedClient.attachments),
+                updatedAt: now
+            });
             const { rows } = await connection.query(`
                 INSERT INTO depannhome_clients (owner_id, client_id, client_data, updated_at)
                 VALUES ($1, $2, $3::jsonb, NOW())
@@ -449,6 +453,16 @@ function mergeDeletedAttachments(existingClient, nextClient) {
             .filter(attachment => attachment && !deleted.has(String(attachment.id || ""))),
         deletedAttachmentIds
     };
+}
+
+function mergeClientAttachments(existingAttachments, submittedAttachments) {
+    const merged = new Map((Array.isArray(existingAttachments) ? existingAttachments : [])
+        .filter(attachment => attachment?.id)
+        .map(attachment => [String(attachment.id), attachment]));
+    (Array.isArray(submittedAttachments) ? submittedAttachments : [])
+        .filter(attachment => attachment?.id && attachment?.dataUrl)
+        .forEach(attachment => merged.set(String(attachment.id), attachment));
+    return [...merged.values()].slice(0, MAX_CLIENT_ATTACHMENTS);
 }
 
 function positiveId(value) {

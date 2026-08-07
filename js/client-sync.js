@@ -247,7 +247,23 @@ function writeClients(clients) {
         localStorage.setItem(getClientsKey(), JSON.stringify(clients.map(normalizeClient)));
         return true;
     } catch {
-        return false;
+        try {
+            const pendingClientIds = new Set(getQueue()
+                .filter(operation => operation.type !== "delete")
+                .map(operation => operation.clientId));
+            const compacted = clients.map(client => {
+                const normalized = normalizeClient(client);
+                if (pendingClientIds.has(normalized.id)) return normalized;
+                return {
+                    ...normalized,
+                    attachments: normalized.attachments.map(attachment => ({ ...attachment, dataUrl: "", cachedLocally: false }))
+                };
+            });
+            localStorage.setItem(getClientsKey(), JSON.stringify(compacted));
+            return true;
+        } catch {
+            return false;
+        }
     }
 }
 
@@ -283,7 +299,7 @@ function normalizeClient(client) {
         ...client,
         id: String(client?.id || `client-${Date.now()}-${Math.random().toString(16).slice(2)}`),
         name: client?.name || "Client sans nom",
-        attachments: Array.isArray(client?.attachments) ? client.attachments : [],
+        attachments: Array.isArray(client?.attachments) ? client.attachments.map(attachment => ({ ...attachment, cachedLocally: attachment?.cachedLocally !== false })) : [],
         deletedAttachmentIds: mergeDeletedAttachmentIds(client?.deletedAttachmentIds),
         activityHistory: mergeActivityHistory(client?.activityHistory),
         createdAt: validDate(client?.createdAt) || now,
