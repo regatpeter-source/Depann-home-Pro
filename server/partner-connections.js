@@ -111,6 +111,7 @@ export function registerPartnerConnectionRoutes(app, requireAuthentication) {
     app.get("/api/partner-connections/missions-sent", asyncHandler(async (req, res) => res.json({ missions: await sentMissions(getAccountOwnerId(req)) })));
     app.delete("/api/partner-connections/missions/:missionId", asyncHandler(async (req, res) => res.json({ mission: await archiveSentMission(req, positiveId(req.params.missionId)) })));
     app.post("/api/partner-connections/missions/:missionId/cancel", asyncHandler(async (req, res) => res.json({ mission: await cancelSentMission(req, positiveId(req.params.missionId)) })));
+    app.post("/api/partner-connections/missions/archive-terminal", asyncHandler(async (req, res) => res.json(await archiveSentTerminalMissions(req))));
     app.post("/api/partner-connections/missions", asyncHandler(async (req, res) => {
         const mission = await createConnectedMission(req);
         res.status(201).json({ mission });
@@ -269,6 +270,16 @@ async function cancelSentMission(req, missionId) {
     const { rows } = await getPool().query("UPDATE depannhome_partner_missions SET status='cancelled',updated_at=NOW() WHERE id=$1 RETURNING *", [missionId]);
     await recordMissionDialogueEvent({ ownerId: rows[0].owner_id, missionId, status: "cancelled", action: "cancelled", details: { reason: clean(req.body?.reason, 500), requestedBySource: true }, actorName: req.user.fullName || req.user.username });
     return publicSentMission(rows[0]);
+}
+
+async function archiveSentTerminalMissions(req) {
+    const ownerId = getAccountOwnerId(req);
+    const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(positiveId).filter(Boolean).slice(0, 100) : [];
+    if (!ids.length) throw clientError(400, "Sélectionnez au moins une mission à supprimer.");
+    const result = await getPool().query(`UPDATE depannhome_partner_missions mission SET deleted_at=NOW(),updated_at=NOW()
+        WHERE mission.id=ANY($1::bigint[]) AND mission.deleted_at IS NULL AND mission.status IN ('rejected','cancelled')
+          AND EXISTS(SELECT 1 FROM depannhome_partner_connection_sync_log log WHERE log.target_mission_id=mission.id AND log.source_owner_id=$2)`, [ids, ownerId]);
+    return { deletedCount: result.rowCount || 0 };
 }
 
 async function sentMissionForSource(ownerId, missionId) {

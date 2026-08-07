@@ -72,6 +72,13 @@ export function registerCollaborationRoutes(app, requireAuthentication) {
         const result = await getPool().query("DELETE FROM depannhome_collaboration_notifications WHERE recipient_id=$1 AND read_at IS NOT NULL", [request.user.sub]);
         response.json({ deletedCount: result.rowCount || 0 });
     }));
+    app.delete("/api/collaboration/partner-notifications", requireAuthentication, requirePartnerNotificationAccess, asyncHandler(async (request, response) => {
+        const ids = Array.isArray(request.body?.ids) ? request.body.ids.map(positiveId).filter(Boolean).slice(0, 100) : [];
+        if (!ids.length) return response.status(400).json({ message: "Sélectionnez au moins une notification partenaire." });
+        const partnerCondition = "(entity_type IN ('partner_mission','partner_connection','partner_request') OR event_type LIKE 'partner_mission_%' OR event_type LIKE 'partner_connection_%' OR event_type LIKE 'partner_request_%' OR event_type='partner_dialogue_updated')";
+        const result = await getPool().query(`DELETE FROM depannhome_collaboration_notifications WHERE recipient_id=$1 AND id=ANY($2::bigint[]) AND ${partnerCondition}`, [request.user.sub, ids]);
+        response.json({ deletedCount: result.rowCount || 0 });
+    }));
     app.post("/api/collaboration/locks/:entityType/:entityId/acquire", requireAuthentication, asyncHandler(async (request, response) => {
         const result = await acquireLock(request, request.params.entityType, request.params.entityId);
         response.status(result.acquired ? 200 : 409).json(result);
