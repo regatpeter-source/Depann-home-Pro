@@ -819,10 +819,14 @@ async function completeLogin(user, device, response) {
     const authDeviceDetails = { ...device, type: isMobileAdministrator || isAccountant ? device.type : "desktop" };
     // Un nouveau navigateur privé possède un identifiant local distinct. Il ne
     // doit donc jamais remplacer ni approuver automatiquement un poste PC déjà
-    // comptabilisé. Seul le premier appareil du propriétaire peut amorcer un
-    // nouveau compte ; les autres postes passent par la validation d’un admin.
+    // comptabilisé d’un autre utilisateur. Pour un même administrateur, une
+    // nouvelle connexion PC remplace toutefois son ancienne session PC afin
+    // qu’il ne puisse jamais conserver deux sessions simultanées.
     const automaticallyApproved = isAccountant;
     let authDevice = await findAuthDevice(user.id, device.id);
+    if (isCompanyAdministratorPc && authDevice?.status !== "approved" && await userHasApprovedDesktopDevice(user.id)) {
+        authDevice = await replaceAdministratorDesktopDevice(user.id, authDevice?.id || device.id, authDeviceDetails);
+    }
     if (!authDevice) {
         if (isMobileAdministrator && await userHasActiveMobileDevice(user.id)) {
             return response.status(409).json({ message: "Un téléphone ou une tablette est déjà associé à ce compte administrateur. Supprimez d’abord l’ancien appareil dans Équipe." });
@@ -1121,6 +1125,39 @@ async function findAuthDevice(userId, deviceId) {
 async function userHasApprovedDevice(userId) {
     const { rows } = await getPool().query("SELECT EXISTS(SELECT 1 FROM depannhome_auth_devices WHERE user_id = $1 AND status = 'approved') AS has_device", [userId]);
     return rows[0]?.has_device;
+}
+
+async function userHasApprovedDesktopDevice(userId) {
+    const { rows } = await getPool().query("SELECT EXISTS(SELECT 1 FROM depannhome_auth_devices WHERE user_id=$1 AND device_type='desktop' AND status='approved') AS has_device", [userId]);
+    return rows[0]?.has_device;
+}
+
+async function replaceAdministratorDesktopDevice(userId, deviceId, device) {
+    const database = getPool();
+    const connection = await database.connect();
+    try {
+        await connection.query("BEGIN");
+        await connection.query(`
+            UPDATE depannhome_auth_devices
+            SET status='rejected', session_id=NULL, verification_code_hash='', verification_code_expires_at=NULL
+            WHERE user_id=$1 AND device_type='desktop' AND status='approved' AND id<>$2
+        `, [userId, deviceId]);
+        const { rows } = await connection.query(`
+            INSERT INTO depannhome_auth_devices (id,user_id,label,device_type,status,approved_at,last_seen_at)
+            VALUES($1,$2,$3,'desktop','approved',NOW(),NOW())
+            ON CONFLICT(id) DO UPDATE SET user_id=EXCLUDED.user_id,label=EXCLUDED.label,device_type='desktop',status='approved',approved_at=NOW(),last_seen_at=NOW(),session_id=NULL,verification_code_hash='',verification_code_expires_at=NULL,verification_attempts=0
+            WHERE depannhome_auth_devices.user_id=EXCLUDED.user_id
+            RETURNING *
+        `, [deviceId, userId, device.label]);
+        if (!rows[0]) throw new Error("Cet appareil est déjà associé à un autre compte.");
+        await connection.query("COMMIT");
+        return rows[0];
+    } catch (error) {
+        await connection.query("ROLLBACK");
+        throw error;
+    } finally {
+        connection.release();
+    }
 }
 
 async function userHasActiveMobileDevice(userId) {
