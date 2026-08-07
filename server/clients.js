@@ -53,6 +53,7 @@ export async function listClientsForOwner(ownerId, sinceParameter = "") {
     const since = sinceParameter ? validDate(sinceParameter) : "";
     if (sinceParameter && !since) throw clientError(400, "Curseur de synchronisation invalide.");
     const database = getPool();
+    await reconcilePartnerMissionClients(database, ownerId);
     const { rows: cursorRows } = await database.query("SELECT NOW() AS cursor");
     const cursor = cursorRows[0].cursor;
     const { rows } = await database.query(`
@@ -68,6 +69,64 @@ export async function listClientsForOwner(ownerId, sinceParameter = "") {
         WHERE owner_id = $1 AND deleted_at <= $2 AND deleted_at > $3::timestamptz
     `, [ownerId, cursor, since])).rows.map(row => row.clientId) : [];
     return { clients: rows.map(row => row.client), deletedClientIds, cursor: cursor.toISOString() };
+}
+
+async function reconcilePartnerMissionClients(database, ownerId) {
+    const { rows: missions } = await database.query(`
+        SELECT mission.id, mission.client_id AS "missionClientId", mission.mapped_data AS "mappedData",
+            mission.created_at AS "createdAt", event.client_id AS "eventClientId"
+        FROM depannhome_partner_missions mission
+        LEFT JOIN depannhome_calendar_events event ON event.id = mission.calendar_event_id AND event.owner_id = mission.owner_id
+        LEFT JOIN depannhome_clients client ON client.owner_id = mission.owner_id
+            AND client.client_id = COALESCE(NULLIF(mission.client_id, ''), NULLIF(event.client_id, ''))
+        WHERE mission.owner_id = $1 AND mission.deleted_at IS NULL
+            AND COALESCE(NULLIF(mission.client_id, ''), NULLIF(event.client_id, '')) <> ''
+            AND client.client_id IS NULL
+    `, [ownerId]);
+    if (!missions.length) return;
+
+    const connection = await database.connect();
+    try {
+        await connection.query("BEGIN");
+        for (const mission of missions) {
+            const clientId = String(mission.missionClientId || mission.eventClientId || "");
+            const data = mission.mappedData || {};
+            const createdAt = mission.createdAt ? new Date(mission.createdAt).toISOString() : new Date().toISOString();
+            const client = {
+                id: clientId,
+                type: "Particulier",
+                name: String(data.clientName || "Client partenaire").slice(0, 160),
+                firstName: String(data.firstName || "").slice(0, 100),
+                lastName: String(data.lastName || "").slice(0, 100),
+                address: String(data.address || "").slice(0, 255),
+                interventionAddress: String(data.interventionAddress || data.address || "").slice(0, 255),
+                city: String(data.city || "").slice(0, 100),
+                phone: String(data.phone || "").slice(0, 50),
+                email: String(data.email || "").slice(0, 160),
+                insurance: String(data.insurance || "").slice(0, 160),
+                principal: String(data.principal || "").slice(0, 160),
+                claimNumber: String(data.claimNumber || "").slice(0, 160),
+                expert: String(data.expert || "").slice(0, 160),
+                manager: String(data.manager || "").slice(0, 160),
+                equipment: "", notes: String(data.description || data.comments || "").slice(0, 2000),
+                attachments: [], activityHistory: [{ id: `activity-partner-repair-${mission.id}`, type: "partner_mission", label: "Fiche client restaurée depuis une mission partenaire", detail: String(data.partnerReference || data.externalMissionId || "").slice(0, 500), actorName: "Depann’Home Pro", createdAt }],
+                createdAt, updatedAt: new Date().toISOString()
+            };
+            await connection.query(`
+                INSERT INTO depannhome_clients(owner_id, client_id, client_data, updated_at)
+                VALUES($1, $2, $3::jsonb, NOW())
+                ON CONFLICT(owner_id, client_id) DO NOTHING
+            `, [ownerId, clientId, JSON.stringify(client)]);
+            await connection.query("UPDATE depannhome_partner_missions SET client_id=$3,updated_at=NOW() WHERE id=$1 AND owner_id=$2 AND client_id=''", [mission.id, ownerId, clientId]);
+            await connection.query("UPDATE depannhome_calendar_events SET client_id=$3,updated_at=NOW() WHERE owner_id=$1 AND partner_mission_id=$2 AND client_id=''", [ownerId, mission.id, clientId]);
+        }
+        await connection.query("COMMIT");
+    } catch (error) {
+        await connection.query("ROLLBACK");
+        throw error;
+    } finally {
+        connection.release();
+    }
 }
 
 export function registerClientRoutes(app, requireAuthentication) {
