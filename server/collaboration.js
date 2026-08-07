@@ -177,6 +177,14 @@ export async function createNotification(ownerId, recipientId, eventType, target
     if (isPartnerBusinessNotification(eventType, target)) {
         const { rows: recipients } = await getPool().query("SELECT role FROM depannhome_users WHERE id=$1 AND account_owner_id=$2", [recipientId, ownerId]);
         if (["technician", "team_lead"].includes(recipients[0]?.role)) return null;
+        const duplicate = await getPool().query(`
+            SELECT id, created_at AS "createdAt"
+            FROM depannhome_collaboration_notifications
+            WHERE owner_id=$1 AND recipient_id=$2 AND event_type=$3 AND entity_type=$4 AND entity_id=$5
+                AND title=$6 AND body=$7 AND read_at IS NULL
+            ORDER BY created_at DESC LIMIT 1
+        `, [ownerId, recipientId, eventType, target.entityType, target.entityId, cleanText(title, 200), cleanText(body, 2000)]);
+        if (duplicate.rows[0]) return duplicate.rows[0];
     }
     const { rows } = await getPool().query(`INSERT INTO depannhome_collaboration_notifications (owner_id, recipient_id, event_type, entity_type, entity_id, title, body, payload) VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb) RETURNING id, created_at AS "createdAt"`, [ownerId, recipientId, eventType, target.entityType, target.entityId, cleanText(title, 200), cleanText(body, 2000), JSON.stringify(payload)]);
     await broadcast(ownerId, "notification", { recipientId: String(recipientId), notification: { id: rows[0].id, eventType, entityType: target.entityType, entityId: target.entityId, title, body, payload, createdAt: rows[0].createdAt } }); return rows[0];

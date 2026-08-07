@@ -809,7 +809,7 @@ function normalizeAttachments(attachments = []) {
 }
 
 function renderClientActivityHistory(client, billingDocuments = [], purchases = [], appointments = []) {
-    const activityEntries = normalizeActivityHistory(client.activityHistory).filter(entry => !["quote", "invoice"].includes(entry.type));
+    const activityEntries = deduplicatePartnerMissionActivities(normalizeActivityHistory(client.activityHistory)).filter(entry => !["quote", "invoice"].includes(entry.type));
     const billingEntries = billingDocuments.map(document => {
         const type = document.documentType === "invoice" ? "Facture" : document.documentType === "credit" ? "Avoir" : "Devis";
         return {
@@ -912,6 +912,17 @@ function normalizeActivityHistory(history) {
         .filter(entry => entry && entry.id && entry.label)
         .map(entry => ({ id: String(entry.id), type: String(entry.type || "other"), label: String(entry.label), detail: String(entry.detail || ""), documentId: String(entry.documentId || ""), attachmentId: String(entry.attachmentId || ""), actorName: String(entry.actorName || ""), createdAt: entry.createdAt || new Date().toISOString() }))
         .sort((first, second) => new Date(second.createdAt).getTime() - new Date(first.createdAt).getTime());
+}
+
+function deduplicatePartnerMissionActivities(activities) {
+    const seenMissionActivities = new Set();
+    return activities.filter(activity => {
+        if (activity.type !== "partner_mission" || activity.label !== "Mission partenaire reçue") return true;
+        const key = `${activity.label}\u0000${activity.detail}`;
+        if (seenMissionActivities.has(key)) return false;
+        seenMissionActivities.add(key);
+        return true;
+    });
 }
 
 function formatActivityDate(value) {

@@ -188,7 +188,7 @@ export async function provisionPartnerMissionClient(connection, ownerId, data, r
     const clientId = row?.client_id || (CLIENT_ID_PATTERN.test(String(linkedClientId || "")) ? String(linkedClientId) : `client-${crypto.randomUUID()}`);
     const old = row?.client_data || {};
     const attachments = mergeAttachments(old.attachments, data.attachments);
-    const activity = [{ id: `activity-${crypto.randomUUID()}`, type: "partner_mission", label: "Mission partenaire reçue", detail: `${data.partnerReference || data.externalMissionId} · ${data.interventionType}`.slice(0, 500), actorName: req.user?.fullName || "API partenaire", createdAt: now }, ...(Array.isArray(old.activityHistory) ? old.activityHistory : [])].slice(0, 150);
+    const activity = mergePartnerMissionActivityHistory(old.activityHistory, data, req, now);
     const client = { ...old, id: clientId, name: data.clientName || old.name || "Client partenaire", firstName: data.firstName || old.firstName || "", lastName: data.lastName || old.lastName || "", address: data.address || old.address || "", interventionAddress: data.interventionAddress || old.interventionAddress || data.address || "", city: data.city || old.city || "", phone: data.phone || old.phone || "", email: data.email || old.email || "", insurance: data.insurance || old.insurance || "", principal: data.principal || old.principal || "", claimNumber: data.claimNumber || old.claimNumber || "", expert: data.expert || old.expert || "", manager: data.manager || old.manager || "", gps: data.gps || old.gps || "", notes: mergeText(old.notes, data.description, data.comments), attachments, activityHistory: activity, createdAt: old.createdAt || now, updatedAt: now };
     const saved = await connection.query("INSERT INTO depannhome_clients(owner_id,client_id,client_data,updated_at) VALUES($1,$2,$3::jsonb,NOW()) ON CONFLICT(owner_id,client_id) DO UPDATE SET client_data=EXCLUDED.client_data,updated_at=NOW() RETURNING client_id", [ownerId, clientId, JSON.stringify(client)]);
     if (saved.rows[0]?.client_id !== clientId) throw new Error("La fiche client partenaire n’a pas pu être enregistrée.");
@@ -235,6 +235,15 @@ function canManagePartnerMissions(req) { return PARTNER_MANAGEMENT_ROLES.has(req
 function requireMissionAccess(req, res, next) { if (canManagePartnerMissions(req)) return next(); return res.status(403).json({ message: "Les missions partenaires sont réservées à l’administration." }); }
 function requireAdministration(req, res, next) { if (canManagePartnerMissions(req)) return next(); return res.status(403).json({ message: "Cette action est réservée aux postes PC autorisés." }); }
 function mergeAttachments(existing, incoming) { const base = Array.isArray(existing) ? existing : []; const added = (Array.isArray(incoming) ? incoming : []).filter(item => /^data:(image\/(jpeg|png|webp)|application\/(pdf|msword|vnd\.openxmlformats-officedocument\.wordprocessingml\.document|vnd\.ms-excel|vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet)|text\/plain);base64,[A-Za-z0-9+/=]+$/.test(String(item?.dataUrl || ""))).map(item => ({ id: `file-${crypto.randomUUID()}`, type: "Document partenaire", name: clean(item.name, 255) || "document-partenaire", mime: clean(item.mime, 150), size: Number(item.size) || 0, dataUrl: item.dataUrl, createdAt: new Date().toISOString() })); return [...base, ...added].slice(0, 30); }
+function mergePartnerMissionActivityHistory(history, data, req, createdAt) {
+    const detail = `${data.partnerReference || data.externalMissionId} · ${data.interventionType}`.slice(0, 500);
+    const activities = Array.isArray(history) ? history : [];
+    const duplicate = activities.some(activity => activity?.type === "partner_mission"
+        && activity?.label === "Mission partenaire reçue"
+        && String(activity?.detail || "") === detail);
+    if (duplicate) return activities.slice(0, 150);
+    return [{ id: `activity-${crypto.randomUUID()}`, type: "partner_mission", label: "Mission partenaire reçue", detail, actorName: req.user?.fullName || "API partenaire", createdAt }, ...activities].slice(0, 150);
+}
 function mergeText(...values) { return values.filter(Boolean).map(value => String(value).trim()).filter(Boolean).join("\n").slice(0, 2000); }
 function isLeak(value) { return /fuite|infiltration|etancheite/i.test(String(value || "")); }
 function priorityOf(value) { const raw = String(value || "").toLowerCase(); return /urgent|critique|critical/.test(raw) ? "urgent" : /high|haute|élevée/.test(raw) ? "high" : /low|faible/.test(raw) ? "low" : "normal"; }

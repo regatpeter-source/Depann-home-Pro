@@ -27,9 +27,9 @@ export function getNotifications() { return notifications; }
 export function getPartnerNotifications() { return partnerNotifications; }
 
 async function loadNotifications() { const result = await request("/api/collaboration/notifications"); if (!result.ok) return; notifications = result.data.notifications || []; renderNotificationBadge(); }
-export async function loadPartnerNotifications() { const result = await request("/api/collaboration/partner-notifications"); if (!result.ok) return []; partnerNotifications = result.data.notifications || []; renderPartnerNotificationBadge(); return partnerNotifications; }
+export async function loadPartnerNotifications() { const result = await request("/api/collaboration/partner-notifications"); if (!result.ok) return []; partnerNotifications = deduplicatePartnerNotifications(result.data.notifications || []); renderPartnerNotificationBadge(); return partnerNotifications; }
 export async function markPartnerNotificationsRead() { const unreadIds = partnerNotifications.filter(item => !item.readAt).map(item => item.id); if (!unreadIds.length) return; const result = await request("/api/collaboration/notifications/read", { method: "POST", body: JSON.stringify({ ids: unreadIds, scope: "partner" }) }); if (!result.ok) return; const readAt = new Date().toISOString(); partnerNotifications = partnerNotifications.map(item => !item.readAt ? { ...item, readAt } : item); renderPartnerNotificationBadge(); }
-function handleEvent(type, event) { let data = {}; try { data = JSON.parse(event.data); } catch { return; } if (type === "notification" && String(data.recipientId || "") === String(document.body.dataset.userId || "")) { if (isPartnerNotification(data.notification)) { partnerNotifications.unshift(data.notification); renderPartnerNotificationBadge(); } else { notifications.unshift(data.notification); renderNotificationBadge(); } }
+function handleEvent(type, event) { let data = {}; try { data = JSON.parse(event.data); } catch { return; } if (type === "notification" && String(data.recipientId || "") === String(document.body.dataset.userId || "")) { if (isPartnerNotification(data.notification)) { partnerNotifications = deduplicatePartnerNotifications([data.notification, ...partnerNotifications]); renderPartnerNotificationBadge(); } else { notifications.unshift(data.notification); renderNotificationBadge(); } }
     window.dispatchEvent(new CustomEvent("depannhome:collaboration-event", { detail: { type, ...data } }));
 }
 function renderNotificationBadge() { const unread = notifications.filter(item => !item.readAt).length; if (!notificationButton) return; notificationButton.classList.toggle("has-notifications", unread > 0); notificationButton.setAttribute("aria-label", unread ? `${unread} notification${unread > 1 ? "s" : ""} non lue${unread > 1 ? "s" : ""}` : "Notifications"); notificationButton.textContent = unread ? `Notifications (${unread > 99 ? "99+" : unread})` : "Notifications"; }
@@ -38,6 +38,15 @@ function openNotificationCenter() { const existing = document.getElementById("no
 function canOpenNotification(notification) { return ["technical_report", "billing_document", "client", "calendar_event", "partner_mission", "partner_connection", "partner_request"].includes(notification?.entityType); }
 async function markNotificationRead(id) { if (!id) return; const result = await request("/api/collaboration/notifications/read", { method: "POST", body: JSON.stringify({ ids: [id] }) }); if (!result.ok) return; notifications = notifications.map(item => String(item.id) === String(id) ? { ...item, readAt: new Date().toISOString() } : item); renderNotificationBadge(); }
 function isPartnerNotification(notification) { const type = String(notification?.eventType || ""); return ["partner_mission", "partner_connection", "partner_request"].includes(notification?.entityType) || type.startsWith("partner_mission_") || type.startsWith("partner_connection_") || type.startsWith("partner_request_") || type === "partner_dialogue_updated"; }
+function deduplicatePartnerNotifications(items) {
+    const seen = new Set();
+    return (Array.isArray(items) ? items : []).filter(item => {
+        const key = [item?.eventType, item?.entityType, item?.entityId, item?.title, item?.body].map(value => String(value || "")).join("\u0000");
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+    });
+}
 function releaseSessionLocks() { if (!navigator.sendBeacon) return; navigator.sendBeacon("/api/collaboration/release-session-locks", new Blob(["{}"], { type: "application/json" })); }
 function updateSyncIndicator(state, label) { document.querySelectorAll("[data-collaboration-sync]").forEach(element => { element.dataset.collaborationSync = state; element.title = label; element.setAttribute("aria-label", label); }); }
 async function request(url, options = {}) { try { const response = await fetch(url, { credentials: "same-origin", headers: { "Content-Type": "application/json", ...(options.headers || {}) }, ...options }); const data = response.status === 204 ? null : await response.json().catch(() => null); return { ok: response.ok, data, message: data?.message }; } catch { return { ok: false, message: "Serveur indisponible." }; } }
