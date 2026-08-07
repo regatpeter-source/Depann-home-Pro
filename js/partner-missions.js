@@ -52,7 +52,10 @@ function renderMissionTab(shell) {
     const renderList = () => {
         const status = content.querySelector("#partnerMissionStatus")?.value || "";
         const query = content.querySelector("#partnerMissionSearch")?.value.trim().toLowerCase() || "";
-        const missions = source.filter(mission => (!status || mission.status === status) && (!query || `${mission.externalMissionId} ${mission.partnerReference} ${mission.partnerName} ${mission.mappedData?.clientName} ${mission.mappedData?.address}`.toLowerCase().includes(query)));
+        const missions = source.filter(mission => {
+            const matchesSearch = `${mission.missionNumber} ${mission.externalMissionId} ${mission.partnerReference} ${mission.partnerName} ${mission.mappedData?.clientName} ${mission.mappedData?.address}`.toLowerCase().includes(query);
+            return (!status || mission.status === status) && (mission.status !== "closed" || Boolean(query)) && (!query || matchesSearch);
+        });
         renderMissions(content.querySelector("#partnerMissionList"), missions, { sent, messages });
     };
     content.querySelector("#partnerMissionStatus")?.addEventListener("change", renderList);
