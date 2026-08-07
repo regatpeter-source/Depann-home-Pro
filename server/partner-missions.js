@@ -160,7 +160,7 @@ async function upsertClient(connection, ownerId, data, req, linkedClientId = "")
 export async function provisionPartnerMissionClient(connection, ownerId, data, req = {}, linkedClientId = "") {
     tracePartnerClient("provision_called", { ownerId });
     const { rows } = await connection.query("SELECT client_id,client_data FROM depannhome_clients WHERE owner_id=$1 FOR UPDATE", [ownerId]);
-    const row = rows.find(item => String(item.client_id) === String(linkedClientId || "")) || findMatchingClient(rows, data);
+    const row = rows.find(item => String(item.client_id) === String(linkedClientId || ""));
     const now = new Date().toISOString();
     const clientId = row?.client_id || (CLIENT_ID.test(String(linkedClientId || "")) ? String(linkedClientId) : `client-${crypto.randomUUID()}`);
     const old = row?.client_data || {};
@@ -192,19 +192,6 @@ export async function traceCommittedPartnerClient(ownerId, clientId, context = {
 function partnerClientTraceEnabled() { return process.env.PARTNER_CLIENT_TRACE !== "false"; }
 export function tracePartnerClient(step, details) { if (partnerClientTraceEnabled()) console.log("[partner-client-trace]", JSON.stringify({ at: new Date().toISOString(), step, ...details })); }
 
-function findMatchingClient(rows, data) {
-    const email = normalizedEmail(data.email), phone = normalizedPhone(data.phone), name = normalizedText(data.clientName), address = normalizedAddress(data.address, data.city);
-    const scored = rows.map(row => {
-        const client = row.client_data || {};
-        const sameEmail = email && normalizedEmail(client.email) === email;
-        const samePhone = phone && normalizedPhone(client.phone) === phone;
-        const sameName = name && sameClientName(client.name, name);
-        const sameAddress = address && normalizedAddress(client.address, client.city) === address;
-        const score = (sameEmail ? 8 : 0) + (samePhone ? 8 : 0) + (sameName ? 3 : 0) + (sameAddress ? 3 : 0);
-        return { row, score };
-    }).filter(match => match.score >= 6).sort((first, second) => second.score - first.score);
-    return scored.length && (scored.length === 1 || scored[0].score > scored[1].score) ? scored[0].row : null;
-}
 async function upsertCalendar(connection, ownerId, mission, data, technicianId, schedule, clientId = "") { if (!schedule.date) return null; const notes = [`Mission partenaire : ${mission.partner_reference || data.interventionType || "Intervention"}`, data.description, data.comments, data.gps?.latitude ? `GPS : ${data.gps.latitude}, ${data.gps.longitude}` : ""].filter(Boolean).join("\n").slice(0, 2000); const title = `${data.interventionType || "Intervention"} · ${data.priority === "urgent" ? "URGENT · " : ""}${data.clientName}`.slice(0, 160); if (mission.calendar_event_id) { await connection.query("UPDATE depannhome_calendar_events SET assigned_technician_id=$3,title=$4,client_id=$5,client_name=$6,location=$7,event_date=$8::date,start_time=$9::time,end_time=$10::time,event_origin='partner_mission',partner_mission_id=$11,notes=$12,updated_at=NOW() WHERE id=$1 AND owner_id=$2", [mission.calendar_event_id, ownerId, technicianId || null, title, clientId, data.clientName, data.address, schedule.date, schedule.startTime || null, schedule.endTime || null, mission.id, notes]); return mission.calendar_event_id; } const { rows } = await connection.query("INSERT INTO depannhome_calendar_events(owner_id,assigned_technician_id,title,client_id,client_name,location,event_date,start_time,end_time,color,event_type,event_origin,partner_mission_id,notes) VALUES($1,$2,$3,$4,$5,$6,$7::date,$8::time,$9::time,$10,'appointment','partner_mission',$11,$12) RETURNING id", [ownerId, technicianId || null, title, clientId, data.clientName, data.address, schedule.date, schedule.startTime || null, schedule.endTime || null, data.priority === "urgent" ? "red" : data.priority === "high" ? "orange" : "blue", mission.id, notes]); if (technicianId) await connection.query("INSERT INTO depannhome_calendar_assignments(event_id,technician_id,is_primary) VALUES($1,$2,TRUE) ON CONFLICT DO NOTHING", [rows[0].id, technicianId]); return rows[0].id; }
 async function ensureLeakReport(connection, ownerId, mission, data, clientId, eventId, technicianId) { if (!isLeak(data.interventionType) || !eventId) return null; if (mission.technical_report_id) return mission.technical_report_id; const snapshot = { companyName: "", interventionNumber: String(eventId), interventionReference: mission.external_mission_id, interventionType: data.interventionType, date: data.date, time: data.startTime, clientName: data.clientName, clientAddress: data.address, clientPhone: data.phone, clientEmail: data.email, technicianName: "", insurance: data.insurance, claimNumber: data.claimNumber, expert: data.expert, manager: data.manager }; const content = createEmptyLeakContent(snapshot); const { rows } = await connection.query("INSERT INTO depannhome_technical_reports(owner_id,created_by,appointment_id,client_id,report_type,title,report_date,content) VALUES($1,$2,$3,$4,'leak_detection','Rapport de recherche de fuite',$5::date,$6::jsonb) RETURNING id", [ownerId, technicianId || null, eventId, clientId, data.date || new Date().toISOString().slice(0, 10), JSON.stringify(content)]); return rows[0].id; }
 async function selectTechnician(connection, ownerId, mission, mode) { if (mode !== "automatic") return null; const { rows } = await connection.query(`SELECT user_account.id FROM depannhome_users user_account WHERE user_account.account_owner_id=$1 AND user_account.role IN ('technician','team_lead','mobile_admin') AND user_account.is_active=TRUE ORDER BY (SELECT count(*) FROM depannhome_calendar_assignments assignment JOIN depannhome_calendar_events event ON event.id=assignment.event_id WHERE assignment.technician_id=user_account.id AND event.event_date>=CURRENT_DATE) ASC, user_account.id LIMIT 1`, [ownerId]); return rows[0]?.id || null; }
@@ -235,11 +222,6 @@ function optionalId(value) { const id = Number(value); return Number.isSafeInteg
 function positiveId(value) { return optionalId(value); }
 function clean(value, max) { return String(value || "").replace(/\s+/g, " ").trim().slice(0, max); }
 function clientNameFromPayload(value) { const client = value?.client && typeof value.client === "object" ? value.client : value?.customer && typeof value.customer === "object" ? value.customer : value || {}; return clean(client.fullName || client.name || [client.firstName || client.firstname || client.prenom || client["prénom"], client.lastName || client.lastname || client.nom].filter(Boolean).join(" "), 160); }
-function normalizedText(value) { return clean(value, 500).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim(); }
-function sameClientName(value, normalizedIncoming) { const first = normalizedText(value), second = normalizedIncoming; if (!first || !second) return false; return first === second || first.split(" ").sort().join(" ") === second.split(" ").sort().join(" "); }
-function normalizedAddress(address, city) { return normalizedText([address, city].filter(Boolean).join(" ")); }
-function normalizedEmail(value) { return clean(value, 160).toLowerCase(); }
-function normalizedPhone(value) { return String(value || "").replace(/\D/g, ""); }
 function slug(value) { return clean(value, 160).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 64); }
 function safeUrl(value) { try { const url = new URL(clean(value, 1000)); const host = url.hostname.toLowerCase(); const privateHost = ["localhost", "0.0.0.0", "::1"].includes(host) || /^127\./.test(host) || /^10\./.test(host) || /^192\.168\./.test(host) || /^169\.254\./.test(host) || /^172\.(1[6-9]|2\d|3[01])\./.test(host); return /^https?:$/.test(url.protocol) && !privateHost ? url.toString() : ""; } catch { return ""; } }
 function hash(value) { return crypto.createHash("sha256").update(String(value)).digest("hex"); }

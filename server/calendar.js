@@ -106,9 +106,8 @@ export function registerCalendarRoutes(app, requireAuthentication) {
         const clientId = String(request.params.clientId || "");
         if (!/^client-[a-zA-Z0-9-]+$/.test(clientId)) return response.status(400).json({ message: "Client invalide." });
         const ownerId = getAccountOwnerId(request);
-        const clientResult = await getPool().query("SELECT client_data->>'name' AS name FROM depannhome_clients WHERE owner_id = $1 AND client_id = $2", [ownerId, clientId]);
-        const clientName = String(clientResult.rows[0]?.name || "").trim();
-        if (!clientName) return response.status(404).json({ message: "Dossier client introuvable." });
+        const clientResult = await getPool().query("SELECT 1 FROM depannhome_clients WHERE owner_id = $1 AND client_id = $2", [ownerId, clientId]);
+        if (!clientResult.rows[0]) return response.status(404).json({ message: "Dossier client introuvable." });
         const { rows } = await getPool().query(`
             SELECT event.id, event.title, event.client_name AS "clientName", event.location, TO_CHAR(event.event_date, 'YYYY-MM-DD') AS date,
                 TO_CHAR(event.start_time, 'HH24:MI') AS "startTime", TO_CHAR(event.end_time, 'HH24:MI') AS "endTime", event.event_type AS "eventType",
@@ -117,13 +116,13 @@ export function registerCalendarRoutes(app, requireAuthentication) {
             FROM depannhome_calendar_events event
             LEFT JOIN depannhome_users technician ON technician.id = event.assigned_technician_id
             WHERE event.owner_id = $1
-              AND LOWER(BTRIM(event.client_name)) = LOWER(BTRIM($2))
+                            AND event.client_id = $2
               AND ($3 NOT IN ('technician', 'accountant') OR EXISTS (
                     SELECT 1 FROM depannhome_calendar_assignments assignment
                     WHERE assignment.event_id = event.id AND assignment.technician_id = $4::bigint
               ))
             ORDER BY event.event_date DESC, event.start_time DESC NULLS LAST, event.id DESC
-        `, [ownerId, clientName, request.user?.role || "", request.user?.sub || 0]);
+        `, [ownerId, clientId, request.user?.role || "", request.user?.sub || 0]);
         response.json({ events: rows });
     }));
     app.get("/api/calendar/events", requireAuthentication, asyncHandler(async (request, response) => {

@@ -552,12 +552,8 @@ async function loadClientAppointments(clientId) {
 }
 
 function belongsToClient(document, client) {
-    if (String(document?.clientId || "") === String(client.id)) return true;
-    if (document?.clientId) return false;
-    return normalizeClientName(document?.customerName) === normalizeClientName(client.name);
+    return Boolean(document?.clientId) && String(document.clientId) === String(client.id);
 }
-
-function normalizeClientName(value) { return normalizeText(value).replace(/[^a-z0-9]/g, ""); }
 
 async function loadClientPurchases(clientId) {
     const response = await fetch(`/api/purchases?clientId=${encodeURIComponent(clientId)}`, { credentials: "same-origin" });
