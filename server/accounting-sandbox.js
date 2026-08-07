@@ -233,7 +233,7 @@ async function saveSession(ownerId, userId, payload) { await getPool().query(`IN
 function requireSandboxAdministration(request, response, next) { if (isCompanyAdministrator(request)) return next(); return response.status(403).json({ message: "Le laboratoire comptable est réservé à un Administrateur (PC)." }); }
 function requireSandboxEnabled(_request, response, next) { if (isAccountingSandboxEnabled()) return next(); return response.status(404).json({ message: "Laboratoire comptable indisponible." }); }
 function textDownload(response, content, filename, contentType) { response.set({ "Content-Type": contentType, "Content-Disposition": `attachment; filename=\"${filename}\"`, "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" }); response.send(content); }
-function statusLabel(value) { return ({ draft: "Brouillon", validated: "Validée", sent: "Envoyée", paid: "Payée", partial: "Partiellement réglée", overdue: "Impayée", cancelled: "Annulée", accepted: "Accepté", rejected: "Refusé", pending: "En attente" })[value] || value; }
+function statusLabel(value) { return ({ draft: "Brouillon", validated: "Validée", sent: "Envoyée", paid: "Payée", partial: "Partiellement réglée", overdue: "Impayée", cancelled: "Annulée", accepted: "Accepté", rejected: "Refusé", pending: "En attente" })[value] || "Statut non renseigné"; }
 function dateKey(value) { return new Date(value).toISOString().slice(0, 10); }
 function addDays(value, days) { const date = new Date(value); date.setDate(date.getDate() + days); return date; }
 function daysAgo(days) { return addDays(new Date(), -days); }

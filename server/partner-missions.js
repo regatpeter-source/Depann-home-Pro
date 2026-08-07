@@ -247,7 +247,9 @@ function mergePartnerMissionActivityHistory(history, data, req, createdAt) {
 function mergeText(...values) { return values.filter(Boolean).map(value => String(value).trim()).filter(Boolean).join("\n").slice(0, 2000); }
 function isLeak(value) { return /fuite|infiltration|etancheite/i.test(String(value || "")); }
 function priorityOf(value) { const raw = String(value || "").toLowerCase(); return /urgent|critique|critical/.test(raw) ? "urgent" : /high|haute|élevée/.test(raw) ? "high" : /low|faible/.test(raw) ? "low" : "normal"; }
-function statusLabel(value) { return ({ pending_validation: "en attente de validation", scheduled: "rendez-vous planifié", assigned: "technicien affecté", en_route: "technicien en route", on_site: "technicien sur site" })[value] || value; }
+function statusLabel(value) {
+    return ({ received: "reçue", pending_validation: "en attente de validation", accepted: "acceptée", rejected: "refusée", assigned: "technicien affecté", scheduled: "rendez-vous planifié", en_route: "technicien en route", on_site: "technicien sur site", report_in_progress: "rapport en cours", report_completed: "rapport terminé", report_validated: "rapport validé", quote_sent: "devis envoyé", quote_accepted: "devis accepté", work_completed: "travaux terminés", invoice_sent: "facture envoyée", closed: "clôturée", cancelled: "annulée" })[value] || "statut mis à jour";
+}
 function validDate(value) { const text = String(value || "").slice(0, 10); return /^\d{4}-\d{2}-\d{2}$/.test(text) && !Number.isNaN(new Date(`${text}T12:00:00`).getTime()) ? text : ""; }
 function validTime(value) { const text = String(value || "").slice(0, 5); return /^([01]\d|2[0-3]):[0-5]\d$/.test(text) ? text : ""; }
 function optionalId(value) { const id = Number(value); return Number.isSafeInteger(id) && id > 0 ? id : 0; }
