@@ -64,6 +64,7 @@ function renderMissionTab(shell) {
 }
 
 function renderMissions(node, missions, options = {}) { node.innerHTML = missions.length ? missions.map(mission => `<article class="partner-mission-card priority-${escapeHtml(mission.priority)}"><div class="partner-mission-card-title"><div><p class="eyebrow">${escapeHtml(mission.partnerName || "Partenaire")} · ${escapeHtml(mission.missionNumber || "Mission partenaire")}</p><h3>${escapeHtml(mission.mappedData?.clientName || "Client non renseigné")}</h3><p>${escapeHtml(mission.mappedData?.address || "Adresse non renseignée")}</p></div><span class="partner-mission-status ${escapeHtml(mission.status)}">${escapeHtml(labelStatus(mission.status))}</span></div><div class="partner-mission-meta"><span>${escapeHtml(mission.mappedData?.interventionType || "Intervention")}</span><span>${mission.scheduledDate ? escapeHtml(mission.scheduledDate) : "À planifier"}</span><span class="priority">${escapeHtml(labelPriority(mission.priority))}</span></div><p>${escapeHtml(mission.mappedData?.description || mission.mappedData?.comments || "Aucun descriptif transmis.")}</p><div class="partner-mission-card-actions">${options.sent || mission.conversationSide === "sent" ? `<span class="muted">Envoyée le ${escapeHtml(formatMissionDate(mission.sentAt))}</span><button class="secondary-button" data-open-sent-dialogue="${mission.id}">Ouvrir la conversation</button>${["received", "pending_validation"].includes(mission.status) ? `<button class="danger-button" data-delete-sent="${mission.id}">Supprimer</button>` : !["closed", "cancelled", "rejected"].includes(mission.status) ? `<button class="danger-button" data-cancel-sent="${mission.id}">Clôturer / Annuler</button>` : ""}` : `<span class="muted">Reçue le ${escapeHtml(formatMissionDate(mission.createdAt))}</span><button class="secondary-button" data-open="${mission.id}">Détail</button><button class="secondary-button" data-open-dialogue="${mission.id}">Ouvrir la conversation</button>${canManagePartnerMissions() && ["received", "pending_validation"].includes(mission.status) ? `<button class="secondary-button" data-accept="${mission.id}">Accepter et planifier</button><button class="danger-button" data-reject="${mission.id}">Refuser</button>` : canManagePartnerMissions() && !["closed", "cancelled", "rejected"].includes(mission.status) ? `<button class="secondary-button" data-close="${mission.id}">Clôturer la mission</button>` : ""}`}</div></article>`).join("") : '<p class="muted">Aucune mission ne correspond à ce filtre.</p>';
+    enableClosedMissionCorrection(node, missions, options);
     enableTerminalMissionSelection(node, missions, options);
     node.querySelectorAll("[data-open]").forEach(button => button.addEventListener("click", () => showDetail(button.dataset.open)));
     node.querySelectorAll("[data-open-dialogue]").forEach(button => button.addEventListener("click", () => openPartnerDialogue(button.dataset.openDialogue)));
@@ -73,6 +74,28 @@ function renderMissions(node, missions, options = {}) { node.innerHTML = mission
     node.querySelectorAll("[data-delete-sent]").forEach(button => button.addEventListener("click", async () => { if (!confirm("Êtes-vous certain de vouloir supprimer cette mission ?\n\nCette action est irréversible.")) return; const result = await api(`/api/partner-connections/missions/${button.dataset.deleteSent}`, { method: "DELETE" }); if (!result.ok) return alert(result.message); renderPartnerMissions(); }));
     node.querySelectorAll("[data-cancel-sent]").forEach(button => button.addEventListener("click", async () => { if (!confirm("Annuler cette mission acceptée ? L’historique sera conservé chez les deux entreprises.")) return; const reason = prompt("Motif de l’annulation (facultatif) :"); if (reason === null) return; const result = await api(`/api/partner-connections/missions/${button.dataset.cancelSent}/cancel`, { method: "POST", body: JSON.stringify({ reason }) }); if (!result.ok) return alert(result.message); renderPartnerMissions(); }));
     node.querySelectorAll("[data-close]").forEach(button => button.addEventListener("click", async () => { if (!confirm("Clôturer cette mission ? Le journal sera conservé et la conversation deviendra en lecture seule.")) return; const result = await api(`/api/partner-missions/${button.dataset.close}/close`, { method: "POST" }); if (!result.ok) return alert(result.message); renderPartnerMissions(); }));
+}
+
+function enableClosedMissionCorrection(node, missions, options) {
+    if (!canManagePartnerMissions() || options.sent || options.messages) return;
+    missions.forEach((mission, index) => {
+        if (mission.status !== "closed") return;
+        const actions = node.children[index]?.querySelector(".partner-mission-card-actions");
+        if (!actions) return;
+        actions.insertAdjacentHTML("beforeend", `<button class="secondary-button" data-reopen="${mission.id}">Rouvrir</button><button class="danger-button" data-archive-closed="${mission.id}">Supprimer</button>`);
+    });
+    node.querySelectorAll("[data-reopen]").forEach(button => button.addEventListener("click", async () => {
+        if (!confirm("Rouvrir cette mission ? Le partenaire sera informé du retour au statut opérationnel.")) return;
+        const reason = prompt("Motif de la réouverture (facultatif) :"); if (reason === null) return;
+        const result = await api(`/api/partner-missions/${button.dataset.reopen}/reopen`, { method: "POST", body: JSON.stringify({ reason }) });
+        if (!result.ok) return alert(result.message); renderPartnerMissions();
+    }));
+    node.querySelectorAll("[data-archive-closed]").forEach(button => button.addEventListener("click", async () => {
+        if (!confirm("Supprimer cette mission clôturée de la liste ? Le journal restera conservé.")) return;
+        const reason = prompt("Motif de la suppression (facultatif) :"); if (reason === null) return;
+        const result = await api(`/api/partner-missions/${button.dataset.archiveClosed}/archive-closed`, { method: "POST", body: JSON.stringify({ reason }) });
+        if (!result.ok) return alert(result.message); renderPartnerMissions();
+    }));
 }
 
 function enablePartnerNotificationDeletion(shell, alerts) {
