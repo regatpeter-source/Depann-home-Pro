@@ -141,6 +141,7 @@ export async function provisionPartnerMissionClient(connection, ownerId, data, r
     if (saved.rows[0]?.client_id !== clientId) throw new Error("La fiche client partenaire n’a pas pu être enregistrée.");
     tracePartnerClient("upsert_succeeded", { ownerId, clientId, operation: row ? "update_existing_match" : "insert_new", rowCount: saved.rowCount });
     const verification = await connection.query("SELECT client_id FROM depannhome_clients WHERE owner_id=$1 AND client_id=$2", [ownerId, clientId]);
+    if (!verification.rows[0]) throw new Error("La fiche client partenaire est absente de la base de données de l’entreprise destinataire.");
     tracePartnerClient("sql_verification", { ownerId, clientId, exists: Boolean(verification.rows[0]) });
     return { id: clientId, created: !row };
 }
