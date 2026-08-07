@@ -77,12 +77,15 @@ function enablePartnerNotificationDeletion(shell, alerts) {
     const shownAlerts = alerts.slice(0, 10);
     const cards = [...section?.querySelectorAll("article") || []];
     if (!section || !shownAlerts.length || cards.length !== shownAlerts.length) return;
-    section.querySelector("h3")?.insertAdjacentHTML("afterend", '<div class="form-actions"><button type="button" class="danger-button" data-delete-selected-partner-notifications disabled>Supprimer la sélection</button></div>');
+    section.querySelector("h3")?.insertAdjacentHTML("afterend", '<div class="form-actions"><label><input type="checkbox" data-select-all-partner-notifications> Tout sélectionner</label><button type="button" class="danger-button" data-delete-selected-partner-notifications disabled>Supprimer la sélection</button></div>');
     cards.forEach((card, index) => card.insertAdjacentHTML("afterbegin", `<label><input type="checkbox" data-partner-notification-id="${escapeHtml(shownAlerts[index].id)}"> Sélectionner</label>`));
     const button = section.querySelector("[data-delete-selected-partner-notifications]");
-    const selectedIds = () => [...section.querySelectorAll("[data-partner-notification-id]:checked")].map(input => Number(input.dataset.partnerNotificationId)).filter(Number.isSafeInteger);
-    const updateButton = () => { const count = selectedIds().length; button.disabled = count === 0; button.textContent = count ? `Supprimer la sélection (${count})` : "Supprimer la sélection"; };
-    section.querySelectorAll("[data-partner-notification-id]").forEach(input => input.addEventListener("change", updateButton));
+    const selectAll = section.querySelector("[data-select-all-partner-notifications]");
+    const inputs = [...section.querySelectorAll("[data-partner-notification-id]")];
+    const selectedIds = () => inputs.filter(input => input.checked).map(input => Number(input.dataset.partnerNotificationId)).filter(Number.isSafeInteger);
+    const updateButton = () => { const count = selectedIds().length; button.disabled = count === 0; button.textContent = count ? `Supprimer la sélection (${count})` : "Supprimer la sélection"; selectAll.checked = count === inputs.length; selectAll.indeterminate = count > 0 && count < inputs.length; };
+    inputs.forEach(input => input.addEventListener("change", updateButton));
+    selectAll.addEventListener("change", () => { inputs.forEach(input => { input.checked = selectAll.checked; }); updateButton(); });
     button.addEventListener("click", async () => {
         const ids = selectedIds();
         if (!ids.length || !confirm(`Supprimer définitivement ${ids.length} notification${ids.length > 1 ? "s" : ""} partenaire${ids.length > 1 ? "s" : ""} ?`)) return;
@@ -99,7 +102,7 @@ function enableTerminalMissionSelection(node, missions, options) {
     if (!selectable.length) return;
     const toolbar = document.createElement("div");
     toolbar.className = "form-actions";
-    toolbar.innerHTML = '<button type="button" class="danger-button" data-archive-selected-terminal disabled>Supprimer la sélection</button>';
+    toolbar.innerHTML = '<label><input type="checkbox" data-select-all-terminal-missions> Tout sélectionner</label><button type="button" class="danger-button" data-archive-selected-terminal disabled>Supprimer la sélection</button>';
     node.prepend(toolbar);
     selectable.forEach(({ mission, card }) => {
         const sent = options.sent || mission.conversationSide === "sent";
@@ -107,9 +110,12 @@ function enableTerminalMissionSelection(node, missions, options) {
         actions.insertAdjacentHTML("afterbegin", `<label><input type="checkbox" data-terminal-mission-id="${mission.id}" data-terminal-mission-source="${sent ? "sent" : "received"}"> Sélectionner</label>`);
     });
     const button = toolbar.querySelector("[data-archive-selected-terminal]");
-    const selected = () => [...node.querySelectorAll("[data-terminal-mission-id]:checked")];
-    const updateButton = () => { const count = selected().length; button.disabled = count === 0; button.textContent = count ? `Supprimer la sélection (${count})` : "Supprimer la sélection"; };
-    node.querySelectorAll("[data-terminal-mission-id]").forEach(input => input.addEventListener("change", updateButton));
+    const selectAll = toolbar.querySelector("[data-select-all-terminal-missions]");
+    const inputs = [...node.querySelectorAll("[data-terminal-mission-id]")];
+    const selected = () => inputs.filter(input => input.checked);
+    const updateButton = () => { const count = selected().length; button.disabled = count === 0; button.textContent = count ? `Supprimer la sélection (${count})` : "Supprimer la sélection"; selectAll.checked = count === inputs.length; selectAll.indeterminate = count > 0 && count < inputs.length; };
+    inputs.forEach(input => input.addEventListener("change", updateButton));
+    selectAll.addEventListener("change", () => { inputs.forEach(input => { input.checked = selectAll.checked; }); updateButton(); });
     button.addEventListener("click", async () => {
         const inputs = selected();
         if (!inputs.length || !confirm(`Masquer ${inputs.length} mission${inputs.length > 1 ? "s" : ""} refusée${inputs.length > 1 ? "s" : ""} ou annulée${inputs.length > 1 ? "s" : ""} ? L’historique restera conservé.`)) return;
