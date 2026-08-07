@@ -13,6 +13,7 @@ const BILLING_MODES = new Set(["direct_client", "principal"]);
 const PARTNER_MANAGEMENT_ROLES = new Set(["admin", "pc_standard", "mobile_admin"]);
 const MAX_PAYLOAD_BYTES = 20 * 1024 * 1024;
 const MAX_RETRY_ATTEMPTS = 5;
+const CLIENT_ID_PATTERN = /^client-[a-zA-Z0-9-]+$/;
 
 export async function initializePartnerMissions() {
     const db = getPool();
@@ -184,7 +185,7 @@ export async function provisionPartnerMissionClient(connection, ownerId, data, r
     const { rows } = await connection.query("SELECT client_id,client_data FROM depannhome_clients WHERE owner_id=$1 FOR UPDATE", [ownerId]);
     const row = rows.find(item => String(item.client_id) === String(linkedClientId || ""));
     const now = new Date().toISOString();
-    const clientId = row?.client_id || (CLIENT_ID.test(String(linkedClientId || "")) ? String(linkedClientId) : `client-${crypto.randomUUID()}`);
+    const clientId = row?.client_id || (CLIENT_ID_PATTERN.test(String(linkedClientId || "")) ? String(linkedClientId) : `client-${crypto.randomUUID()}`);
     const old = row?.client_data || {};
     const attachments = mergeAttachments(old.attachments, data.attachments);
     const activity = [{ id: `activity-${crypto.randomUUID()}`, type: "partner_mission", label: "Mission partenaire reçue", detail: `${data.partnerReference || data.externalMissionId} · ${data.interventionType}`.slice(0, 500), actorName: req.user?.fullName || "API partenaire", createdAt: now }, ...(Array.isArray(old.activityHistory) ? old.activityHistory : [])].slice(0, 150);

@@ -354,7 +354,6 @@ async function applyClientDirectorySearch(section, clients, filters) {
     try {
         const appointmentDatesByClient = filters.appointmentDate ? await loadAppointmentDatesByClient() : new Map();
         const results = clients.filter(client => clientMatchesDirectoryFilters(client, filters, appointmentDatesByClient));
-        console.info("[clients-debug] recherche Clients", { query: filters.query, filters, availableClientCount: clients.length, availableClientNames: clients.map(client => client.name), resultCount: results.length, resultNames: results.map(client => client.name) });
         renderClientDirectoryResults(section, results, appointmentDatesByClient);
     } catch (error) {
         section.innerHTML = `<p class="auth-message error">${escapeHtml(error.message || "Impossible de rechercher les rendez-vous.")}</p>`;
