@@ -62,7 +62,7 @@ const OPERATIONAL_PC = ["admin", "pc_standard"];
 const OPERATIONAL_MOBILE = ["admin", "pc_standard", "mobile_admin"];
 const TERRAIN = ["admin", "pc_standard", "mobile_admin", "team_lead", "technician"];
 const CALENDAR_USERS = TERRAIN.concat("accountant");
-const PARTNER_MISSION_USERS = OPERATIONAL_MOBILE.concat("team_lead", "technician");
+const PARTNER_MISSION_USERS = OPERATIONAL_MOBILE;
 const LIBRARY_USERS = ["mobile_admin", "team_lead", "technician"];
 
 // Toute nouvelle entrée de navigation doit être déclarée ici. Les éléments

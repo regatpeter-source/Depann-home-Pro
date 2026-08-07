@@ -3,6 +3,7 @@ import { getAccountOwnerId } from "./auth.js";
 
 const LOCK_TIMEOUT_SECONDS = 15 * 60;
 const ENTITY_TYPES = new Set(["technical_report", "billing_document", "client", "calendar_event", "partner_mission", "partner_connection", "partner_request"]);
+const PARTNER_ENTITY_TYPES = new Set(["partner_mission", "partner_connection", "partner_request"]);
 const streamsByOwner = new Map();
 
 export async function initializeCollaboration() {
@@ -53,12 +54,18 @@ export function registerCollaborationRoutes(app, requireAuthentication) {
         request.on("close", () => { clearInterval(heartbeat); streamsByOwner.get(ownerId)?.delete(stream); if (!streamsByOwner.get(ownerId)?.size) streamsByOwner.delete(ownerId); });
     });
     app.get("/api/collaboration/notifications", requireAuthentication, asyncHandler(async (request, response) => {
-        const { rows } = await getPool().query(`SELECT id, event_type AS "eventType", entity_type AS "entityType", entity_id AS "entityId", title, body, payload, read_at AS "readAt", created_at AS "createdAt" FROM depannhome_collaboration_notifications WHERE recipient_id=$1 AND ($2=FALSE OR (event_type NOT LIKE 'partner_mission_%' AND event_type NOT LIKE 'partner_connection_%' AND event_type NOT LIKE 'partner_request_%')) ORDER BY created_at DESC LIMIT 100`, [request.user.sub, ["technician", "team_lead"].includes(request.user.role)]);
+        const { rows } = await getPool().query(`SELECT id, event_type AS "eventType", entity_type AS "entityType", entity_id AS "entityId", title, body, payload, read_at AS "readAt", created_at AS "createdAt" FROM depannhome_collaboration_notifications WHERE recipient_id=$1 AND NOT (entity_type IN ('partner_mission','partner_connection','partner_request') OR event_type LIKE 'partner_mission_%' OR event_type LIKE 'partner_connection_%' OR event_type LIKE 'partner_request_%' OR event_type='partner_dialogue_updated') ORDER BY created_at DESC LIMIT 100`, [request.user.sub]);
+        response.json({ notifications: rows });
+    }));
+    app.get("/api/collaboration/partner-notifications", requireAuthentication, requirePartnerNotificationAccess, asyncHandler(async (request, response) => {
+        const { rows } = await getPool().query(`SELECT id, event_type AS "eventType", entity_type AS "entityType", entity_id AS "entityId", title, body, payload, read_at AS "readAt", created_at AS "createdAt" FROM depannhome_collaboration_notifications WHERE recipient_id=$1 AND (entity_type IN ('partner_mission','partner_connection','partner_request') OR event_type LIKE 'partner_mission_%' OR event_type LIKE 'partner_connection_%' OR event_type LIKE 'partner_request_%' OR event_type='partner_dialogue_updated') ORDER BY created_at DESC LIMIT 100`, [request.user.sub]);
         response.json({ notifications: rows });
     }));
     app.post("/api/collaboration/notifications/read", requireAuthentication, asyncHandler(async (request, response) => {
         const ids = Array.isArray(request.body?.ids) ? request.body.ids.map(positiveId).filter(Boolean).slice(0, 100) : [];
-        await getPool().query(ids.length ? "UPDATE depannhome_collaboration_notifications SET read_at=NOW() WHERE recipient_id=$1 AND id=ANY($2::bigint[]) AND read_at IS NULL" : "UPDATE depannhome_collaboration_notifications SET read_at=NOW() WHERE recipient_id=$1 AND read_at IS NULL", ids.length ? [request.user.sub, ids] : [request.user.sub]);
+        const partnerOnly = request.body?.scope === "partner";
+        const partnerCondition = "(entity_type IN ('partner_mission','partner_connection','partner_request') OR event_type LIKE 'partner_mission_%' OR event_type LIKE 'partner_connection_%' OR event_type LIKE 'partner_request_%' OR event_type='partner_dialogue_updated')";
+        await getPool().query(ids.length ? `UPDATE depannhome_collaboration_notifications SET read_at=NOW() WHERE recipient_id=$1 AND id=ANY($2::bigint[]) AND read_at IS NULL${partnerOnly ? ` AND ${partnerCondition}` : ""}` : `UPDATE depannhome_collaboration_notifications SET read_at=NOW() WHERE recipient_id=$1 AND read_at IS NULL${partnerOnly ? ` AND ${partnerCondition}` : ""}`, ids.length ? [request.user.sub, ids] : [request.user.sub]);
         response.status(204).end();
     }));
     app.delete("/api/collaboration/notifications/read", requireAuthentication, asyncHandler(async (request, response) => {
@@ -160,7 +167,7 @@ export async function publishEvent(request, target, action, details = {}, notifi
 
 export async function createNotification(ownerId, recipientId, eventType, target, title, body = "", payload = {}) {
     if (!recipientId) return null;
-    if (isPartnerBusinessNotification(eventType)) {
+    if (isPartnerBusinessNotification(eventType, target)) {
         const { rows: recipients } = await getPool().query("SELECT role FROM depannhome_users WHERE id=$1 AND account_owner_id=$2", [recipientId, ownerId]);
         if (["technician", "team_lead"].includes(recipients[0]?.role)) return null;
     }
@@ -168,9 +175,9 @@ export async function createNotification(ownerId, recipientId, eventType, target
     await broadcast(ownerId, "notification", { recipientId: String(recipientId), notification: { id: rows[0].id, eventType, entityType: target.entityType, entityId: target.entityId, title, body, payload, createdAt: rows[0].createdAt } }); return rows[0];
 }
 
-function isPartnerBusinessNotification(eventType) {
+function isPartnerBusinessNotification(eventType, target = {}) {
     const type = String(eventType || "");
-    return type.startsWith("partner_mission_") || type.startsWith("partner_connection_") || type.startsWith("partner_request_");
+    return PARTNER_ENTITY_TYPES.has(String(target?.entityType || "")) || type.startsWith("partner_mission_") || type.startsWith("partner_connection_") || type.startsWith("partner_request_") || type === "partner_dialogue_updated";
 }
 
 export async function releaseLocksForUser(request, action = "session_closed") {
@@ -195,4 +202,5 @@ function deviceLabel(request) { return String(request.get?.("user-agent") || "")
 function positiveId(value) { const id = Number(value); return Number.isSafeInteger(id) && id > 0 ? id : 0; }
 function cleanText(value, max) { return String(value || "").replace(/\s+/g, " ").trim().slice(0, max); }
 function requireAdministrator(request, response, next) { if (request.user?.role !== "admin") return response.status(403).json({ message: "La reprise de verrou est réservée à l’administration." }); return next(); }
+function requirePartnerNotificationAccess(request, response, next) { if (["admin", "pc_standard", "mobile_admin"].includes(request.user?.role)) return next(); return response.status(403).json({ message: "Les notifications partenaires sont réservées à l’administration." }); }
 function asyncHandler(handler) { return (request, response, next) => Promise.resolve(handler(request, response, next)).catch(next); }
