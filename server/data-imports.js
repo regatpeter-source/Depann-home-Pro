@@ -40,6 +40,15 @@ export async function initializeDataImports() {
 
 export function registerDataImportRoutes(app, requireAuthentication) {
     app.use("/api/data-imports", requireAuthentication, requireDesktopAdministrator);
+    app.get("/api/data-imports/template", asyncHandler(async (request, response) => {
+        const dataType = TYPES.has(request.query?.dataType) ? request.query.dataType : "clients";
+        const workbook = createImportTemplate(dataType);
+        const filename = `modele-import-${dataType}.xlsx`;
+        response.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        response.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+        await workbook.xlsx.write(response);
+        response.end();
+    }));
     app.post("/api/data-imports/analyze", upload.single("file"), asyncHandler(async (request, response) => {
         const dataType = TYPES.has(request.body?.dataType) ? request.body.dataType : "";
         if (!dataType || !request.file) return response.status(400).json({ message: "Choisissez un type de données et un fichier Excel (.xlsx) ou CSV (.csv)." });
@@ -94,6 +103,29 @@ function rowsFromMatrix(matrix) {
     return { columns, rows, errors };
 }
 function parseCsvMatrix(text) { const delimiter = [";", ",", "\t"].sort((first, second) => text.split(second).length - text.split(first).length)[0]; const rows = []; let row = [], value = "", quoted = false; for (let index = 0; index < text.length; index += 1) { const char = text[index]; if (char === '"') { if (quoted && text[index + 1] === '"') { value += '"'; index += 1; } else quoted = !quoted; } else if (char === delimiter && !quoted) { row.push(value); value = ""; } else if ((char === "\n" || char === "\r") && !quoted) { if (char === "\r" && text[index + 1] === "\n") index += 1; row.push(value); rows.push(row); row = []; value = ""; } else value += char; } if (value || row.length) { row.push(value); rows.push(row); } return rows; }
+function createImportTemplate(dataType) {
+    const workbook = new ExcelJS.Workbook(); workbook.creator = "Depann'Home Pro"; workbook.created = new Date();
+    const worksheet = workbook.addWorksheet("Données à importer", { views: [{ state: "frozen", ySplit: 1 }] });
+    const fields = TYPE_FIELDS[dataType]; const headers = fields.map(field => field.label);
+    worksheet.addRow(headers); worksheet.getRow(1).height = 28;
+    worksheet.getRow(1).eachCell(cell => { cell.font = { bold: true, color: { argb: "FFFFFFFF" } }; cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF14532D" } }; cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true }; cell.border = { bottom: { style: "medium", color: { argb: "FF0F3D20" } } }; });
+    fields.forEach((field, index) => { worksheet.getColumn(index + 1).width = Math.max(16, Math.min(35, field.label.length + 10)); });
+    worksheet.autoFilter = { from: "A1", to: worksheet.getCell(1, headers.length).address };
+    const required = fields.filter(field => field.required).map(field => field.label).join(", ") || "aucun";
+    const instructions = workbook.addWorksheet("Instructions"); instructions.columns = [{ width: 28 }, { width: 96 }];
+    instructions.addRows([
+        ["Modèle d’import", `Type de données : ${importTypeLabel(dataType)}.`],
+        ["Utilisation", "Saisissez ou collez vos données dans l’onglet « Données à importer », à partir de la ligne 2. Ne modifiez pas les en-têtes de la ligne 1."],
+        ["Champs obligatoires", required],
+        ["Conseil", "Conservez le fichier au format .xlsx ou exportez-le en .csv UTF-8 avant de le sélectionner dans Depann’Home Pro."],
+        ["Doublons", "L’assistant vérifiera les doublons avant l’import. Vous pourrez choisir de les ignorer ou de mettre à jour les données existantes."],
+        ["Important", "Pour les clients, renseignez le nom ou la société. Un Client_ID technique seul ne permet pas de créer une fiche client." ]
+    ]);
+    instructions.getRow(1).eachCell(cell => { cell.font = { bold: true, color: { argb: "FFFFFFFF" } }; cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF14532D" } }; });
+    instructions.eachRow((row, rowNumber) => { row.alignment = { vertical: "top", wrapText: true }; if (rowNumber > 1) row.height = 42; row.getCell(1).font = { bold: true, color: { argb: "FF14532D" } }; });
+    return workbook;
+}
+function importTypeLabel(value) { return ({ clients: "Clients", quotes: "Devis", invoices: "Factures", reports: "Rapports d’intervention" })[value] || "Données"; }
 function uniqueColumns(values) { const used = new Set(); return values.map((value, index) => clean(value, 80) || `Colonne ${index + 1}`).map(value => { let candidate = value, suffix = 2; while (used.has(candidate)) candidate = `${value} ${suffix++}`; used.add(candidate); return candidate; }); }
 function suggestMapping(columns, dataType) { const aliases = { name: ["nom", "client", "société", "societe", "entreprise"], type: ["type", "catégorie", "categorie"], phone: ["téléphone", "telephone", "mobile", "fixe", "tel"], email: ["mail", "email", "e-mail"], address: ["adresse"], city: ["ville", "commune"], equipment: ["équipement", "equipement", "marque", "brand"], notes: ["note", "commentaire", "observation"], documentNumber: ["numéro", "numero", "référence", "reference", "devis", "facture"], customerName: ["client", "nom", "société", "societe"], issueDate: ["date", "émission", "emission"], description: ["description", "objet", "commentaire", "conclusion"], title: ["titre", "rapport"], reportDate: ["date", "rapport"], quantity: ["quantité", "quantite", "qté", "qte"], unitPrice: ["prix", "montant", "pu"], vatRate: ["tva"] }; const mapping = {}; TYPE_FIELDS[dataType].forEach(field => { const found = columns.find(column => aliases[field.key]?.some(alias => normalize(column).includes(normalize(alias))) && !(field.key === "name" && isClientIdentifierColumn(column))); if (found) mapping[field.key] = found; }); return mapping; }
 async function loadSession(request, id) { const { rows } = await getPool().query("SELECT * FROM depannhome_data_import_sessions WHERE id=$1 AND owner_id=$2 AND user_id=$3 AND expires_at>NOW()", [String(id || ""), getAccountOwnerId(request), request.user.sub]); if (!rows[0]) throw clientError(404, "La session d’analyse a expiré. Analysez de nouveau le fichier."); return rows[0]; }
