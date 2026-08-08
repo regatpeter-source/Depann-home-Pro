@@ -1,7 +1,7 @@
 import { ROUTES, STORAGE_KEYS, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=123";
 import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=153";
 import { openCreatorPartnerRequest, renderCreatorConsole } from "./creator.js?v=123";
-import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=153";
+import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=154";
 import { renderAccounting } from "./accounting.js?v=5";
 import { renderAccountingSandbox } from "./accounting-sandbox.js?v=2";
 import { renderGroupActivation, renderGroupWorkspace } from "./groups.js?v=3";
@@ -60,7 +60,7 @@ export function initializeNavigation(loadedDatabase) {
     window.addEventListener("depannhome:open-client", event => openClients(String(event.detail?.clientId || "")));
     window.addEventListener("depannhome:edit-report-template", () => {
         if (document.body.dataset.role !== "admin" || !document.body.classList.contains("desktop-device")) return;
-        renderSettings({ focusReportTemplate: true });
+        openDocumentTemplateSettings("report");
     });
     window.addEventListener("depannhome:clients-synchronized", () => refreshClientMessageAlert());
     window.addEventListener("depannhome:partner-client-provisioned", event => {
@@ -1277,14 +1277,12 @@ function renderSettingsWorkspace(options = {}) {
         const grid = document.createElement("div");
         grid.className = "settings-subsection-grid";
         grid.append(
-            createSettingsNavigationCard("Modèle de devis", "", "document", () => renderBilling({ profile: true })),
-            createSettingsNavigationCard("Modèle de quitus", "Base officielle PDF ou Word", "document", () => renderBilling({ profile: true })),
-            createSettingsNavigationCard("Modèle de rapport", "Base officielle et personnalisation intégrée", "document", () => renderBilling({ profile: true }))
+            createSettingsNavigationCard("Modèle de devis", "Paramétrer uniquement les devis", "document", () => openDocumentTemplateSettings("quote")),
+            createSettingsNavigationCard("Modèle de quitus", "Paramétrer uniquement les quitus", "document", () => openDocumentTemplateSettings("quitus")),
+            createSettingsNavigationCard("Modèle de rapport", "Paramétrer uniquement les rapports", "document", () => openDocumentTemplateSettings("report"))
         );
         intro.appendChild(grid);
         container.appendChild(intro);
-        renderReportTemplateSettings(container);
-        if (options.focusReportTemplate) window.requestAnimationFrame(() => document.getElementById("reportTemplateSettings")?.scrollIntoView({ behavior: "smooth", block: "start" }));
         return;
     }
     if (section === "network") {
@@ -1316,6 +1314,10 @@ function renderSettingsWorkspace(options = {}) {
         return;
     }
     renderSettings({ legacy: true, personalizationOnly: true });
+}
+
+async function openDocumentTemplateSettings(type) {
+    await renderBilling({ profile: true, templateSection: type, onTemplateRendered: type === "report" ? () => renderReportTemplateSettings(getContainer()) : null });
 }
 
 function createSettingsIntro(title, description) {

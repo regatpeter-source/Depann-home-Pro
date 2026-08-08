@@ -22,7 +22,9 @@ export async function renderBilling(options = {}) {
     if (options.document) activeDocument = options.document;
     clearSearch();
     resetSelection("all");
-    setPage("Devis, factures & rapports de fuite", ROUTES.billing, "detail");
+    const templateSection = ["quote", "quitus", "report"].includes(options.templateSection) ? options.templateSection : "";
+    const templateTitle = ({ quote: "Modèle de devis", quitus: "Modèle de quitus", report: "Modèle de rapport" })[templateSection];
+    setPage(templateTitle ? `Paramètres · ${templateTitle}` : "Devis, factures & rapports de fuite", templateTitle ? ROUTES.settings : ROUTES.billing, "detail");
 
     const container = getContainer();
     const overviewPanel = createPanel("billing-overview-panel");
@@ -43,6 +45,17 @@ export async function renderBilling(options = {}) {
             return;
         }
         billingData = result.data;
+    }
+    if (templateSection) {
+        overviewPanel.hidden = true;
+        editorPanel.hidden = true;
+        listPanel.hidden = true;
+        profilePanel.hidden = false;
+        profilePanel.innerHTML = "";
+        if (templateSection === "quote") renderQuoteTemplateSettings(profilePanel, billingData.profile, true, options.onTemplateRendered);
+        else renderAdditionalDocumentTemplateSettings(profilePanel, billingData.profile, templateSection, true, options.onTemplateRendered);
+        if (typeof options.onTemplateRendered === "function") await options.onTemplateRendered();
+        return;
     }
     if (options.newDocument) {
         activeDocument = options.newDocument.type === "quote" && usesExternalQuoteTemplate()
@@ -90,7 +103,7 @@ export function viewBillingDocument(documentId) {
 }
 
 export async function synchronizeBillingDocuments(options = {}) {
-    const isBillingScreen = Boolean(document.querySelector(".billing-list-panel"));
+    const isBillingScreen = Boolean(document.querySelector(".billing-list-panel:not([hidden])"));
     if (!isBillingScreen && !options.force) return { ok: true, skipped: true };
     const result = await apiRequest("/api/billing");
     if (!result.ok) return result;
@@ -206,7 +219,7 @@ function renderProfile(panel) {
     renderAdditionalDocumentTemplateSettings(panel, profile, "report");
 }
 
-function renderQuoteTemplateSettings(panel, profile) {
+function renderQuoteTemplateSettings(panel, profile, focused = false, onTemplateRendered = null) {
     const policy = profile.quoteTemplatePolicy || "company_choice";
     const mode = policy === "integrated_only" ? "integrated" : policy === "external_only" ? "external" : profile.quoteTemplateMode || "integrated";
     const canChooseMode = policy === "company_choice";
@@ -247,11 +260,11 @@ function renderQuoteTemplateSettings(panel, profile) {
             submit.disabled = false;
             return;
         }
-        renderBilling();
+        renderBilling(focused ? { profile: true, templateSection: "quote", onTemplateRendered } : {});
     });
 }
 
-function renderAdditionalDocumentTemplateSettings(panel, profile, type) {
+function renderAdditionalDocumentTemplateSettings(panel, profile, type, focused = false, onTemplateRendered = null) {
     const definition = type === "quitus"
         ? { label: "quitus", title: "Base officielle de quitus", policy: profile.quitusTemplatePolicy, mode: profile.quitusTemplateMode, hasTemplate: profile.hasQuitusTemplate, filename: profile.quitusTemplateFilename }
         : { label: "rapport", title: "Base officielle de rapport", policy: profile.reportTemplatePolicy, mode: profile.reportFileTemplateMode, hasTemplate: profile.hasReportFileTemplate, filename: profile.reportFileTemplateFilename };
@@ -259,7 +272,7 @@ function renderAdditionalDocumentTemplateSettings(panel, profile, type) {
     const message = policy === "integrated_only" ? "Le Créateur autorise uniquement le modèle intégré." : policy === "external_only" ? `Le Créateur impose une base externe de ${definition.label}.` : `Votre entreprise choisit entre le modèle intégré et sa propre base de ${definition.label}.`;
     panel.insertAdjacentHTML("beforeend", `<section class="billing-quote-template-settings" id="${type}TemplateSettings"><div class="form-heading"><div><p class="eyebrow">Documents officiels</p><h2>${definition.title}</h2><p class="muted">${escapeHtml(message)} Une base externe activée devient la référence officielle à télécharger pour les rédactions futures.</p></div>${definition.hasTemplate && canUseExternal ? `<button type="button" class="secondary-button" data-download-template="${type}">Télécharger la base actuelle</button>` : ""}</div><form class="client-form" data-document-template-form="${type}" enctype="multipart/form-data"><div class="form-grid"><label>Base utilisée<select name="templateMode" ${canChoose ? "" : "disabled"}><option value="integrated" ${mode === "integrated" ? "selected" : ""}>Modèle Depann’Home intégré</option><option value="external" ${mode === "external" ? "selected" : ""}>Base PDF / Word officielle de l’entreprise</option></select></label><label>Déposer ou remplacer la base (PDF, DOC ou DOCX · 10 Mo max)<input name="documentTemplate" type="file" accept="application/pdf,.pdf,application/msword,.doc,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx" ${canUseExternal ? "" : "disabled"}></label>${definition.hasTemplate && canUseExternal ? '<label class="billing-remove-logo"><input name="removeTemplate" type="checkbox" value="true"> Supprimer la base déposée</label>' : ""}</div>${definition.hasTemplate ? `<p class="muted">Fichier officiel actuel : ${escapeHtml(definition.filename || `base-${definition.label}`)}</p>` : ""}<p class="auth-message" aria-live="polite"></p><div class="form-actions"><button type="submit" class="secondary-button" ${canUseExternal ? "" : "disabled"}>Enregistrer la base de ${definition.label}</button></div></form></section>`);
     panel.querySelector(`[data-download-template="${type}"]`)?.addEventListener("click", () => openDocumentTemplateDownload(type));
-    panel.querySelector(`[data-document-template-form="${type}"]`).addEventListener("submit", async event => { event.preventDefault(); const form = event.currentTarget; const feedback = form.querySelector(".auth-message"); const submit = form.querySelector('button[type="submit"]'); submit.disabled = true; feedback.textContent = "Enregistrement…"; feedback.classList.remove("error"); const result = await apiRequest(`/api/billing/document-templates/${type}`, { method: "PUT", body: new FormData(form) }); if (!result.ok) { feedback.textContent = result.message || `Impossible d’enregistrer la base de ${definition.label}.`; feedback.classList.add("error"); submit.disabled = false; return; } renderBilling({ profile: true }); });
+    panel.querySelector(`[data-document-template-form="${type}"]`).addEventListener("submit", async event => { event.preventDefault(); const form = event.currentTarget; const feedback = form.querySelector(".auth-message"); const submit = form.querySelector('button[type="submit"]'); submit.disabled = true; feedback.textContent = "Enregistrement…"; feedback.classList.remove("error"); const result = await apiRequest(`/api/billing/document-templates/${type}`, { method: "PUT", body: new FormData(form) }); if (!result.ok) { feedback.textContent = result.message || `Impossible d’enregistrer la base de ${definition.label}.`; feedback.classList.add("error"); submit.disabled = false; return; } renderBilling(focused ? { profile: true, templateSection: type, onTemplateRendered } : { profile: true }); });
 }
 
 function renderTemplates(panel) {
