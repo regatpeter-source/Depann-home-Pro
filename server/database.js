@@ -57,6 +57,8 @@ export async function initializeDatabase() {
             billing_reference VARCHAR(100) NOT NULL DEFAULT '',
             creator_note VARCHAR(1000) NOT NULL DEFAULT '',
             quote_template_policy VARCHAR(30) NOT NULL DEFAULT 'company_choice',
+            quitus_template_policy VARCHAR(30) NOT NULL DEFAULT 'company_choice',
+            report_template_policy VARCHAR(30) NOT NULL DEFAULT 'company_choice',
             is_active BOOLEAN NOT NULL DEFAULT TRUE,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -83,6 +85,8 @@ export async function initializeDatabase() {
         ADD COLUMN IF NOT EXISTS billing_reference VARCHAR(100) NOT NULL DEFAULT '',
         ADD COLUMN IF NOT EXISTS creator_note VARCHAR(1000) NOT NULL DEFAULT '',
         ADD COLUMN IF NOT EXISTS quote_template_policy VARCHAR(30) NOT NULL DEFAULT 'company_choice',
+        ADD COLUMN IF NOT EXISTS quitus_template_policy VARCHAR(30) NOT NULL DEFAULT 'company_choice',
+        ADD COLUMN IF NOT EXISTS report_template_policy VARCHAR(30) NOT NULL DEFAULT 'company_choice',
         ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE
     `);
     if (!billingPermissionColumn.length) {
