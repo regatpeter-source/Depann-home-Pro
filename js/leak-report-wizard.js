@@ -65,7 +65,7 @@ export function openLeakReportCreation() {
     dialog.innerHTML = `<div><header><div><p class="eyebrow">Nouveau rapport</p><h2>Rapport de recherche de fuite</h2></div><button type="button" class="text-button" data-close-report-creation>Fermer</button></header><p class="muted">Un rapport est toujours rattaché à une intervention et au dossier client correspondant.</p><div class="report-creation-options"><button type="button" data-report-from-appointment><strong>Choisir une intervention</strong><span>Ouvrez une intervention existante pour créer ou reprendre son rapport.</span></button><button type="button" data-create-client-first><strong>Créer d’abord un client</strong><span>Créez le dossier client, planifiez son intervention, puis ouvrez le rapport depuis le planning.</span></button></div></div>`;
     document.body.append(dialog);
     dialog.querySelector("[data-close-report-creation]").addEventListener("click", () => dialog.remove());
-    dialog.querySelector("[data-report-from-appointment]").addEventListener("click", async () => { dialog.remove(); const { renderCalendar } = await import("./calendar.js?v=161"); renderCalendar(); });
+    dialog.querySelector("[data-report-from-appointment]").addEventListener("click", async () => { dialog.remove(); const { renderCalendar } = await import("./calendar.js?v=162"); renderCalendar(); });
     dialog.querySelector("[data-create-client-first]").addEventListener("click", async () => { dialog.remove(); const { renderClients } = await import("./clients.js?v=142"); renderClients(); });
 }
 
@@ -146,6 +146,7 @@ function renderEditor(shell) {
         <footer class="report-editor-footer">
             <button type="button" class="secondary-button" data-previous-module ${moduleIndex(activeKey) <= 0 ? "disabled" : ""}>Page précédente</button>
             <button type="button" class="secondary-button" data-preview>Prévisualiser le rapport</button>
+            ${write && canAdjustPdfLayout() ? '<button type="button" class="secondary-button" data-proofread-report>Corriger l’orthographe</button>' : ""}
             ${write ? '<span class="report-autosave" data-save-state>Enregistré automatiquement</span>' : ""}
             ${write && current.status !== "submitted" ? '<button type="button" class="secondary-button report-primary-action" data-submit-report>Envoyer pour validation</button>' : ""}
             ${write && canValidate() && current.status === "submitted" ? '<button type="button" class="secondary-button report-primary-action" data-validate-report>Valider définitivement</button>' : ""}
@@ -227,6 +228,7 @@ function bindEditor(shell, moduleKey) {
     shell.querySelectorAll("[data-delete-photo]").forEach(button => button.addEventListener("click", () => deletePhoto(button.dataset.deletePhoto, shell)));
     shell.querySelectorAll("[data-move-photo]").forEach(button => button.addEventListener("click", () => movePhoto(button.dataset.photoId, button.dataset.movePhoto, shell)));
     shell.querySelector("[data-preview]").addEventListener("click", async () => { await save(shell, true); previewMode = true; renderEditor(shell); });
+    shell.querySelector("[data-proofread-report]")?.addEventListener("click", () => openReportProofreading(shell));
     shell.querySelector("[data-submit-report]")?.addEventListener("click", () => submitReport(shell));
     shell.querySelector("[data-validate-report]")?.addEventListener("click", () => validateReport(shell));
     shell.querySelector("[data-request-correction]")?.addEventListener("click", () => requestCorrection(shell));
@@ -329,6 +331,62 @@ function bindPageSwipe(shell, moduleKey) {
     let startX = 0, startY = 0;
     page.addEventListener("touchstart", event => { if (event.target.closest("textarea,input,button,label")) return; const touch = event.touches[0]; startX = touch.clientX; startY = touch.clientY; }, { passive: true });
     page.addEventListener("touchend", event => { if (!startX) return; const touch = event.changedTouches[0], deltaX = touch.clientX - startX, deltaY = touch.clientY - startY; startX = 0; if (Math.abs(deltaX) < 70 || Math.abs(deltaX) < Math.abs(deltaY)) return; const index = moduleIndex(moduleKey); openModule(shell, visibleSections()[deltaX < 0 ? index + 1 : index - 1]?.id); }, { passive: true });
+}
+
+function openReportProofreading(shell) {
+    if (!editable() || !canAdjustPdfLayout()) return;
+    document.querySelector(".report-proofreading-dialog")?.remove();
+    const entries = collectReportObservations();
+    if (!entries.length) return alert("Ajoutez au moins une observation avant de lancer la correction orthographique.");
+    const dialog = document.createElement("section");
+    dialog.className = "report-proofreading-dialog";
+    dialog.innerHTML = `<form><header><div><p class="eyebrow">Relecture complète sur PC</p><h2>Corriger l’orthographe du rapport</h2></div><button type="button" class="text-button" data-close-proofreading>Fermer</button></header><p class="report-proofreading-help">Toutes les observations du rapport sont réunies ici. Les fautes sont soulignées par le correcteur français du navigateur : faites un clic droit sur un mot pour afficher ses suggestions.</p><div class="report-proofreading-list">${entries.map((entry, index) => `<article><label><span>${escapeHtml(entry.sectionTitle)}</span><strong>${escapeHtml(entry.observationLabel)}</strong><textarea rows="5" lang="fr" spellcheck="true" autocapitalize="sentences" data-proofreading-entry="${index}">${escapeHtml(entry.observation.text || "")}</textarea></label></article>`).join("")}</div><p class="auth-message" aria-live="polite"></p><div class="report-proofreading-actions"><button type="button" class="secondary-button" data-close-proofreading>Annuler</button><button type="submit" class="secondary-button report-primary-action">Enregistrer toutes les corrections</button></div></form>`;
+    document.body.append(dialog);
+    const close = () => dialog.remove();
+    dialog.querySelectorAll("[data-close-proofreading]").forEach(button => button.addEventListener("click", close));
+    dialog.addEventListener("click", event => { if (event.target === dialog) close(); });
+    dialog.querySelector("textarea")?.focus();
+    dialog.querySelector("form").addEventListener("submit", async event => {
+        event.preventDefault();
+        const submit = dialog.querySelector('button[type="submit"]');
+        const feedback = dialog.querySelector(".auth-message");
+        if (!editable()) {
+            feedback.textContent = "Le verrou du rapport a expiré. Reprenez la main avant d’enregistrer.";
+            feedback.classList.add("error");
+            return;
+        }
+        submit.disabled = true;
+        feedback.classList.remove("error");
+        feedback.textContent = "Enregistrement de toutes les corrections…";
+        const originalTexts = entries.map(entry => entry.observation.text || "");
+        entries.forEach((entry, index) => { entry.observation.text = dialog.querySelector(`[data-proofreading-entry="${index}"]`)?.value || ""; });
+        clearTimeout(saveTimer);
+        while (saving) await new Promise(resolve => window.setTimeout(resolve, 50));
+        if (!await save(shell, true)) {
+            entries.forEach((entry, index) => { entry.observation.text = originalTexts[index]; });
+            feedback.textContent = "Impossible d’enregistrer les corrections. Vérifiez votre connexion et réessayez.";
+            feedback.classList.add("error");
+            submit.disabled = false;
+            return;
+        }
+        close();
+        renderEditor(shell);
+    });
+}
+
+function collectReportObservations() {
+    const entries = [];
+    for (const section of visibleSections()) {
+        if (isSkipped(section.id) || ["general", "presentation"].includes(section.id)) continue;
+        if (section.id === "methods" && !section.custom) {
+            for (const material of current.content.methods.materials || []) {
+                (material.observations || []).forEach((observation, index) => entries.push({ sectionTitle: `${section.title} — ${materialLabel(material)}`, observationLabel: `Observation ${index + 1}`, observation }));
+            }
+            continue;
+        }
+        (sectionContent(section.id)?.observations || []).forEach((observation, index) => entries.push({ sectionTitle: section.title, observationLabel: `Observation ${index + 1}`, observation }));
+    }
+    return entries;
 }
 
 function openModule(shell, key) {
@@ -458,7 +516,7 @@ async function validateReport(shell) {
     const { synchronizeClients } = await import("./client-sync.js?v=123");
     await synchronizeClients();
     window.dispatchEvent(new CustomEvent("depannhome:technical-report-validated", { detail: { appointmentId } }));
-    const { renderCalendar } = await import("./calendar.js?v=161");
+    const { renderCalendar } = await import("./calendar.js?v=162");
     renderCalendar();
 }
 
@@ -477,7 +535,7 @@ async function finalizePreview(shell) {
     const { synchronizeClients } = await import("./client-sync.js?v=123");
     await synchronizeClients();
     window.dispatchEvent(new CustomEvent("depannhome:technical-report-validated", { detail: { appointmentId } }));
-    const { renderCalendar } = await import("./calendar.js?v=161");
+    const { renderCalendar } = await import("./calendar.js?v=162");
     renderCalendar();
 }
 
