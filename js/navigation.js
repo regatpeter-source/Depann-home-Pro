@@ -84,6 +84,7 @@ export function initializeNavigation(loadedDatabase) {
         }, isTechnician() ? 30_000 : 90_000);
     }
     if (isAccountant()) renderBilling();
+    else if (isTechnician()) renderCalendarOverview();
     else if (isMobileAdministrator()) renderHome();
     else if (document.body.classList.contains("desktop-device")) renderHome();
     else renderBrands();
@@ -293,6 +294,10 @@ function menuRoute(menu) {
 function openHome() {
     if (isAccountant()) {
         renderBilling();
+        return;
+    }
+    if (isTechnician()) {
+        renderCalendarOverview();
         return;
     }
     if (document.body.classList.contains("desktop-device") || isMobileAdministrator()) {
