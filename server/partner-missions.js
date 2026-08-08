@@ -68,7 +68,11 @@ export async function initializePartnerMissions() {
 export function registerPartnerMissionRoutes(app, requireAuthentication) {
     app.post("/api/partner-intake/:partnerKey", asyncHandler(receiveMission));
     app.use("/api/partner-missions", requireAuthentication, requireMissionAccess);
-    app.get("/api/partner-missions", asyncHandler(async (req, res) => res.json(await missionDashboard(getAccountOwnerId(req), req))));
+    app.get("/api/partner-missions", asyncHandler(async (req, res) => {
+        const ownerId = getAccountOwnerId(req);
+        await getPool().query("UPDATE depannhome_partner_missions SET planning_draft='{}'::jsonb WHERE owner_id=$1 AND status NOT IN ('received','pending_validation') AND planning_draft<>'{}'::jsonb", [ownerId]);
+        res.json(await missionDashboard(ownerId, req));
+    }));
     app.get("/api/partner-missions/:missionId", asyncHandler(async (req, res) => { const mission = await findMission(getAccountOwnerId(req), positiveId(req.params.missionId), req); if (!mission) return res.status(404).json({ message: "Mission introuvable." }); res.json({ mission, history: await history(mission.id), technicians: canManagePartnerMissions(req) ? await technicians(getAccountOwnerId(req)) : [] }); }));
     app.post("/api/partner-missions/:missionId/accept", requireAdministration, asyncHandler(async (req, res) => { const mission = await acceptMission(req, positiveId(req.params.missionId)); await getPool().query("UPDATE depannhome_partner_missions SET planning_draft='{}'::jsonb WHERE id=$1 AND owner_id=$2", [mission.id, getAccountOwnerId(req)]); mission.planningDraft = {}; await notifyManagedMissionSource(getAccountOwnerId(req), mission, "Mission acceptée"); res.json({ mission }); }));
     app.post("/api/partner-missions/:missionId/reject", requireAdministration, asyncHandler(async (req, res) => { const mission = await changeStatus(req, positiveId(req.params.missionId), "rejected", { reason: clean(req.body?.reason, 500) }); res.json({ mission }); }));

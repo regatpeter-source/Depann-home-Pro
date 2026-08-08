@@ -68,7 +68,7 @@ function renderMissions(node, missions, options = {}) { node.innerHTML = mission
     enableTerminalMissionSelection(node, missions, options);
     node.querySelectorAll("[data-accept]").forEach(button => {
         const mission = missions.find(item => String(item.id) === button.dataset.accept);
-        if (mission?.planningDraft?.pausedAt) {
+        if (["received", "pending_validation"].includes(mission?.status) && mission?.planningDraft?.pausedAt) {
             button.textContent = "Reprendre la planification";
             button.title = "Reprendre les informations enregistrées après l’appel du client";
             const notice = document.createElement("p");
@@ -260,6 +260,8 @@ async function openNetworkMissionPlanning(mission) {
             })
         });
         if (!accepted.ok) return accepted;
+        mission.status = accepted.data?.mission?.status || "accepted";
+        mission.planningDraft = {};
         const eventId = accepted.data?.mission?.calendarEventId;
         if (eventId) {
             const calendarUpdate = await api(`/api/calendar/events/${encodeURIComponent(eventId)}`, {
