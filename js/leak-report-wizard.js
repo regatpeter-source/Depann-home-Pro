@@ -65,7 +65,7 @@ export function openLeakReportCreation() {
     dialog.innerHTML = `<div><header><div><p class="eyebrow">Nouveau rapport</p><h2>Rapport de recherche de fuite</h2></div><button type="button" class="text-button" data-close-report-creation>Fermer</button></header><p class="muted">Un rapport est toujours rattaché à une intervention et au dossier client correspondant.</p><div class="report-creation-options"><button type="button" data-report-from-appointment><strong>Choisir une intervention</strong><span>Ouvrez une intervention existante pour créer ou reprendre son rapport.</span></button><button type="button" data-create-client-first><strong>Créer d’abord un client</strong><span>Créez le dossier client, planifiez son intervention, puis ouvrez le rapport depuis le planning.</span></button></div></div>`;
     document.body.append(dialog);
     dialog.querySelector("[data-close-report-creation]").addEventListener("click", () => dialog.remove());
-    dialog.querySelector("[data-report-from-appointment]").addEventListener("click", async () => { dialog.remove(); const { renderCalendar } = await import("./calendar.js?v=160"); renderCalendar(); });
+    dialog.querySelector("[data-report-from-appointment]").addEventListener("click", async () => { dialog.remove(); const { renderCalendar } = await import("./calendar.js?v=161"); renderCalendar(); });
     dialog.querySelector("[data-create-client-first]").addEventListener("click", async () => { dialog.remove(); const { renderClients } = await import("./clients.js?v=142"); renderClients(); });
 }
 
@@ -185,13 +185,15 @@ function materialsModuleHtml(write, material) {
 
 function observationHtml(moduleKey, observation, index, write, materialId = "") {
     const observations = materialId ? materialById(materialId)?.observations || [] : sectionContent(moduleKey).observations;
-    return `<article class="report-observation-card" data-observation-card="${escapeHtml(observation.id)}"><header><strong>Observation ${index + 1}</strong>${write ? `<div><button type="button" class="text-button" data-move-observation="up" data-observation-id="${escapeHtml(observation.id)}" data-material-id="${escapeHtml(materialId)}" ${index ? "" : "disabled"}>↑</button><button type="button" class="text-button" data-move-observation="down" data-observation-id="${escapeHtml(observation.id)}" data-material-id="${escapeHtml(materialId)}" ${index < observations.length - 1 ? "" : "disabled"}>↓</button><button type="button" class="text-button danger-text" data-delete-observation="${escapeHtml(observation.id)}" data-material-id="${escapeHtml(materialId)}">Supprimer</button></div>` : ""}</header><label>Constat<textarea data-observation-text="${escapeHtml(observation.id)}" data-material-id="${escapeHtml(materialId)}" rows="6" placeholder="Décrivez uniquement ce qui a été observé…" ${write ? "" : "disabled"}>${escapeHtml(observation.text || "")}</textarea></label>${photosHtml(moduleKey, observation.id, write, "Ajouter des photos", false, materialId)}</article>`;
+    const desktopLayout = write && canAdjustPdfLayout();
+    return `<article class="report-observation-card" data-observation-card="${escapeHtml(observation.id)}"><header><strong>Observation ${index + 1}</strong>${write ? `<div><button type="button" class="text-button" data-move-observation="up" data-observation-id="${escapeHtml(observation.id)}" data-material-id="${escapeHtml(materialId)}" ${index ? "" : "disabled"}>↑</button><button type="button" class="text-button" data-move-observation="down" data-observation-id="${escapeHtml(observation.id)}" data-material-id="${escapeHtml(materialId)}" ${index < observations.length - 1 ? "" : "disabled"}>↓</button><button type="button" class="text-button danger-text" data-delete-observation="${escapeHtml(observation.id)}" data-material-id="${escapeHtml(materialId)}">Supprimer</button></div>` : ""}</header><label>Constat<textarea data-observation-text="${escapeHtml(observation.id)}" data-material-id="${escapeHtml(materialId)}" rows="6" placeholder="Décrivez uniquement ce qui a été observé…" ${write ? "" : "disabled"}>${escapeHtml(observation.text || "")}</textarea></label>${desktopLayout ? `<fieldset class="report-pdf-layout-controls"><legend>Mise en page du PDF</legend><label><input type="checkbox" data-observation-keep-together="${escapeHtml(observation.id)}" data-material-id="${escapeHtml(materialId)}" ${observation.keepTogether !== false ? "checked" : ""}> Garder cette observation et ses photos ensemble si elles tiennent sur une page</label>${index ? `<label><input type="checkbox" data-observation-page-break="${escapeHtml(observation.id)}" data-material-id="${escapeHtml(materialId)}" ${observation.pageBreakBefore ? "checked" : ""}> Commencer cette observation sur une nouvelle page</label>` : ""}<small>Utilisez les flèches ci-dessus pour changer l’ordre des observations.</small></fieldset>` : ""}${photosHtml(moduleKey, observation.id, write, "Ajouter des photos", false, materialId)}</article>`;
 }
 
 function photosHtml(moduleKey, observationId, write, addLabel, singlePhoto = false, materialId = "", showAdd = true) {
     const photos = orderedPhotos((current.media || []).filter(photo => photo.section === moduleKey && String(photo.observationId || "") === String(observationId) && String(photo.materialId || "") === String(materialId)));
     const source = `data-photo-source data-module-key="${escapeHtml(moduleKey)}" data-observation-id="${escapeHtml(observationId)}" data-material-id="${escapeHtml(materialId)}" ${singlePhoto ? 'data-single-photo="true"' : ""}`;
-    return `<section class="report-observation-photos"><div class="report-photo-grid">${photos.map((photo, index) => `<article><button type="button" class="report-photo-preview" data-open-photo="${escapeHtml(photo.id)}"><img src="${escapeHtml(photo.dataUrl)}" alt="Agrandir la photo"></button>${write ? `<input value="${escapeHtml(photo.caption || "")}" maxlength="500" placeholder="Commentaire facultatif" data-photo-caption="${escapeHtml(photo.id)}"><div class="report-photo-actions"><button type="button" class="text-button" data-replace-photo="${escapeHtml(photo.id)}" ${source}>Remplacer</button><button type="button" class="text-button" data-move-photo="up" data-photo-id="${escapeHtml(photo.id)}" ${index ? "" : "disabled"}>↑</button><button type="button" class="text-button" data-move-photo="down" data-photo-id="${escapeHtml(photo.id)}" ${index < photos.length - 1 ? "" : "disabled"}>↓</button><button type="button" class="text-button danger-text" data-delete-photo="${escapeHtml(photo.id)}">Supprimer</button></div>` : ""}</article>`).join("")}</div>${showAdd && write && (!singlePhoto || !photos.length) ? `<button type="button" class="report-photo-add" ${source}>${escapeHtml(addLabel)}</button>` : ""}</section>`;
+    const desktopLayout = write && Boolean(observationId) && canAdjustPdfLayout();
+    return `<section class="report-observation-photos"><div class="report-photo-grid">${photos.map((photo, index) => `<article><button type="button" class="report-photo-preview" data-open-photo="${escapeHtml(photo.id)}"><img src="${escapeHtml(photo.dataUrl)}" alt="Agrandir la photo"></button>${write ? `<input value="${escapeHtml(photo.caption || "")}" maxlength="500" placeholder="Commentaire facultatif" data-photo-caption="${escapeHtml(photo.id)}">${desktopLayout ? `<label class="report-photo-pdf-size">Taille dans le PDF<select data-photo-pdf-size="${escapeHtml(photo.id)}"><option value="compact" ${photo.pdfSize === "compact" ? "selected" : ""}>Compacte — plusieurs photos par page</option><option value="medium" ${photo.pdfSize === "medium" ? "selected" : ""}>Moyenne</option><option value="large" ${!["compact", "medium"].includes(photo.pdfSize) ? "selected" : ""}>Grande — largeur de page</option></select></label>` : ""}<div class="report-photo-actions"><button type="button" class="text-button" data-replace-photo="${escapeHtml(photo.id)}" ${source}>Remplacer</button><button type="button" class="text-button" data-move-photo="up" data-photo-id="${escapeHtml(photo.id)}" ${index ? "" : "disabled"}>↑</button><button type="button" class="text-button" data-move-photo="down" data-photo-id="${escapeHtml(photo.id)}" ${index < photos.length - 1 ? "" : "disabled"}>↓</button><button type="button" class="text-button danger-text" data-delete-photo="${escapeHtml(photo.id)}">Supprimer</button></div>` : ""}</article>`).join("")}</div>${showAdd && write && (!singlePhoto || !photos.length) ? `<button type="button" class="report-photo-add" ${source}>${escapeHtml(addLabel)}</button>` : ""}</section>`;
 }
 
 function bindEditor(shell, moduleKey) {
@@ -212,13 +214,16 @@ function bindEditor(shell, moduleKey) {
     shell.querySelector("[data-other-material-name]")?.addEventListener("input", input => { const material = current.content.methods.materials.find(item => item.name === "Autre matériel"); if (material) material.customName = input.target.value; queueSave(shell); });
     shell.querySelectorAll("[data-open-material]").forEach(button => button.addEventListener("click", () => { current.content.activeMaterialId = button.dataset.openMaterial; queueSave(shell); renderEditor(shell); }));
     shell.querySelectorAll("[data-remove-material]").forEach(button => button.addEventListener("click", async () => { if (!confirm("Supprimer ce matériel, toutes ses observations et ses photos ?")) return; if (!await removeMaterial(button.dataset.removeMaterial)) return; queueSave(shell); renderEditor(shell); }));
-    shell.querySelector("[data-add-observation]")?.addEventListener("click", button => { const material = materialById(button.target.dataset.materialId); const observations = material ? material.observations : sectionContent(moduleKey).observations; observations.push({ id: newObservationId(), text: "", createdAt: new Date().toISOString() }); current.content.skippedSteps = (current.content.skippedSteps || []).filter(key => key !== moduleKey); queueSave(shell); renderEditor(shell); });
+    shell.querySelector("[data-add-observation]")?.addEventListener("click", button => { const material = materialById(button.target.dataset.materialId); const observations = material ? material.observations : sectionContent(moduleKey).observations; observations.push({ id: newObservationId(), text: "", createdAt: new Date().toISOString(), keepTogether: true, pageBreakBefore: false }); current.content.skippedSteps = (current.content.skippedSteps || []).filter(key => key !== moduleKey); queueSave(shell); renderEditor(shell); });
     shell.querySelectorAll("[data-observation-text]").forEach(input => input.addEventListener("input", () => { const observation = findObservation(moduleKey, input.dataset.observationText, input.dataset.materialId); if (observation) observation.text = input.value; queueSave(shell); }));
+    shell.querySelectorAll("[data-observation-keep-together]").forEach(input => input.addEventListener("change", () => { const observation = findObservation(moduleKey, input.dataset.observationKeepTogether, input.dataset.materialId); if (observation) observation.keepTogether = input.checked; queueSave(shell); }));
+    shell.querySelectorAll("[data-observation-page-break]").forEach(input => input.addEventListener("change", () => { const observation = findObservation(moduleKey, input.dataset.observationPageBreak, input.dataset.materialId); if (observation) observation.pageBreakBefore = input.checked; queueSave(shell); }));
     shell.querySelectorAll("[data-delete-observation]").forEach(button => button.addEventListener("click", async () => { if (!confirm("Supprimer cette observation et ses photos ?")) return; if (!await removeObservation(moduleKey, button.dataset.deleteObservation, button.dataset.materialId)) return; queueSave(shell); renderEditor(shell); }));
     shell.querySelectorAll("[data-move-observation]").forEach(button => button.addEventListener("click", () => { moveObservation(moduleKey, button.dataset.observationId, button.dataset.moveObservation, button.dataset.materialId); queueSave(shell); renderEditor(shell); }));
     shell.querySelectorAll("[data-photo-source]").forEach(button => button.addEventListener("click", () => openPhotoSource(shell, { moduleKey: button.dataset.moduleKey, observationId: button.dataset.observationId, materialId: button.dataset.materialId, singlePhoto: button.dataset.singlePhoto === "true", replacePhotoId: button.dataset.replacePhoto || "" })));
     shell.querySelectorAll("[data-open-photo]").forEach(button => button.addEventListener("click", () => openPhotoPreview(button.dataset.openPhoto)));
     shell.querySelectorAll("[data-photo-caption]").forEach(input => input.addEventListener("change", () => trackMediaSave(updatePhotoCaption(input))));
+    shell.querySelectorAll("[data-photo-pdf-size]").forEach(input => input.addEventListener("change", () => trackMediaSave(updatePhotoPdfSize(input))));
     shell.querySelectorAll("[data-delete-photo]").forEach(button => button.addEventListener("click", () => deletePhoto(button.dataset.deletePhoto, shell)));
     shell.querySelectorAll("[data-move-photo]").forEach(button => button.addEventListener("click", () => movePhoto(button.dataset.photoId, button.dataset.movePhoto, shell)));
     shell.querySelector("[data-preview]").addEventListener("click", async () => { await save(shell, true); previewMode = true; renderEditor(shell); });
@@ -382,6 +387,14 @@ async function updatePhotoCaption(input) {
     if (!result.ok) alert(result.message || "Mise à jour de la photo impossible.");
 }
 
+async function updatePhotoPdfSize(input) {
+    const photo = (current.media || []).find(item => item.id === input.dataset.photoPdfSize);
+    if (!photo || !["compact", "medium", "large"].includes(input.value)) return;
+    photo.pdfSize = input.value;
+    const result = await api(`/api/technical-reports/${encodeURIComponent(current.id)}/media/${encodeURIComponent(photo.id)}`, { method: "PATCH", body: JSON.stringify({ caption: photo.caption || "", annotation: photo.annotation || "", observationId: photo.observationId || "", materialId: photo.materialId || "", sortOrder: photo.sortOrder, pdfSize: photo.pdfSize }) });
+    if (!result.ok) alert(result.message || "Mise à jour de la taille de la photo impossible.");
+}
+
 function trackMediaSave(promise) {
     mediaSavePromises.add(promise);
     promise.finally(() => mediaSavePromises.delete(promise));
@@ -445,7 +458,7 @@ async function validateReport(shell) {
     const { synchronizeClients } = await import("./client-sync.js?v=123");
     await synchronizeClients();
     window.dispatchEvent(new CustomEvent("depannhome:technical-report-validated", { detail: { appointmentId } }));
-    const { renderCalendar } = await import("./calendar.js?v=160");
+    const { renderCalendar } = await import("./calendar.js?v=161");
     renderCalendar();
 }
 
@@ -464,7 +477,7 @@ async function finalizePreview(shell) {
     const { synchronizeClients } = await import("./client-sync.js?v=123");
     await synchronizeClients();
     window.dispatchEvent(new CustomEvent("depannhome:technical-report-validated", { detail: { appointmentId } }));
-    const { renderCalendar } = await import("./calendar.js?v=160");
+    const { renderCalendar } = await import("./calendar.js?v=161");
     renderCalendar();
 }
 
@@ -552,6 +565,7 @@ function newMaterialId() { return `material-${Date.now()}-${Math.random().toStri
 function ownsLock() { return String(reportLock?.lockedBy || "") === String(document.body.dataset.userId || ""); }
 function editable() { return current?.status !== "validated" && ownsLock(); }
 function isAdministrator() { return document.body.dataset.role === "admin"; }
+function canAdjustPdfLayout() { return document.body.classList.contains("desktop-device"); }
 function canValidate() { return ["admin", "mobile_admin", "team_lead", "technician"].includes(document.body.dataset.role); }
 function statusLabel(value) { return ({ draft: "Brouillon", submitted: "En cours de validation", in_correction: "En cours", validated: "Validé" })[value] || "En cours"; }
 function formatDate(value) { return value ? new Intl.DateTimeFormat("fr-FR").format(new Date(`${value}T12:00:00`)) : ""; }
