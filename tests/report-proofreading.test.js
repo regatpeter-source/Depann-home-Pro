@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { isReportProofreadingCurrent, reportProofreadingFingerprint } from "../server/report-proofreading.js";
+import { canConfirmReportProofreading, isReportProofreadingCurrent, reportProofreadingFingerprint } from "../server/report-proofreading.js";
 
 function report() {
     return {
@@ -16,6 +16,14 @@ function report() {
         media: [{ id: "photo-1", caption: "Arrivée d’eau", pdfSize: "large", dataUrl: "data:image/png;base64,AA==" }]
     };
 }
+
+test("only authorized PC roles can confirm report proofreading", () => {
+    assert.equal(canConfirmReportProofreading("admin", "desktop"), true);
+    assert.equal(canConfirmReportProofreading("pc_standard", "desktop"), true);
+    assert.equal(canConfirmReportProofreading("technician", "desktop"), false);
+    assert.equal(canConfirmReportProofreading("team_lead", "desktop"), false);
+    assert.equal(canConfirmReportProofreading("admin", "mobile"), false);
+});
 
 test("proofreading remains current when only editor navigation changes", () => {
     const value = report();

@@ -8,7 +8,7 @@ import { assertLockOwner, getAudit, getLock, publishEvent, releaseLock } from ".
 import { DEFAULT_MATERIALS, REPORT_STEP_KEYS, createEmptyLeakContent, createLeakReportPdf as createWizardLeakReportPdf, normalizeLeakContent, reportSections } from "./leak-report-template.js";
 import { synchronizeConnectedReport } from "./partner-connections.js";
 import { recordMissionEventForSource } from "./partner-dialogue.js";
-import { isReportProofreadingCurrent, reportProofreadingFingerprint } from "./report-proofreading.js";
+import { canConfirmReportProofreading, isReportProofreadingCurrent, reportProofreadingFingerprint } from "./report-proofreading.js";
 
 const REPORT_TYPE = "leak_detection";
 const STATUSES = new Set(["draft", "submitted", "in_correction", "validated"]);
@@ -108,7 +108,7 @@ export function registerTechnicalReportRoutes(app, requireAuthentication) {
         await recordMissionEventForSource({ ownerId, sourceType: "report", sourceId: report.id, status: "report_in_progress", action: "report_saved", actorName: request.user.fullName || request.user.username });
         response.status(204).end();
     }));
-    app.post("/api/technical-reports/:reportId/proofread", asyncHandler(async (request, response) => {
+    app.post("/api/technical-reports/:reportId/proofread", requireReportProofreadingAccess, asyncHandler(async (request, response) => {
         const ownerId = getAccountOwnerId(request); const report = await findReport(ownerId, positiveId(request.params.reportId), request);
         if (!report) return response.status(404).json({ message: "Rapport introuvable." });
         const input = sanitizeReport(request.body);
@@ -194,6 +194,7 @@ export function registerTechnicalReportRoutes(app, requireAuthentication) {
 
 function requireReportAccess(request, response, next) { if (request.user?.role === "accountant") return response.status(403).json({ message: "L’espace comptabilité n’accède pas aux rapports techniques." }); return next(); }
 function requireReportAdministration(request, response, next) { if (!["admin", "mobile_admin"].includes(request.user?.role)) return response.status(403).json({ message: "Cette action est réservée au personnel administratif." }); return next(); }
+function requireReportProofreadingAccess(request, response, next) { if (!canConfirmReportProofreading(request.user?.role, request.user?.deviceType)) return response.status(403).json({ message: "La correction finale du rapport est réservée à un poste PC autorisé." }); return next(); }
 function requireReportValidationAccess(request, response, next) { if (!["admin", "mobile_admin", "team_lead", "technician"].includes(request.user?.role)) return response.status(403).json({ message: "La validation du rapport est réservée aux intervenants autorisés." }); return next(); }
 async function enforceReportLock(request, response, reportId) { const result = await assertLockOwner(request, "technical_report", String(reportId)); if (result.ok) return true; response.status(409).json({ message: result.message, lock: result.lock || null }); return false; }
 function reportTarget(reportId) { return { entityType: "technical_report", entityId: String(reportId) }; }

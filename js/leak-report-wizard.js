@@ -65,7 +65,7 @@ export function openLeakReportCreation() {
     dialog.innerHTML = `<div><header><div><p class="eyebrow">Nouveau rapport</p><h2>Rapport de recherche de fuite</h2></div><button type="button" class="text-button" data-close-report-creation>Fermer</button></header><p class="muted">Un rapport est toujours rattaché à une intervention et au dossier client correspondant.</p><div class="report-creation-options"><button type="button" data-report-from-appointment><strong>Choisir une intervention</strong><span>Ouvrez une intervention existante pour créer ou reprendre son rapport.</span></button><button type="button" data-create-client-first><strong>Créer d’abord un client</strong><span>Créez le dossier client, planifiez son intervention, puis ouvrez le rapport depuis le planning.</span></button></div></div>`;
     document.body.append(dialog);
     dialog.querySelector("[data-close-report-creation]").addEventListener("click", () => dialog.remove());
-    dialog.querySelector("[data-report-from-appointment]").addEventListener("click", async () => { dialog.remove(); const { renderCalendar } = await import("./calendar.js?v=163"); renderCalendar(); });
+    dialog.querySelector("[data-report-from-appointment]").addEventListener("click", async () => { dialog.remove(); const { renderCalendar } = await import("./calendar.js?v=164"); renderCalendar(); });
     dialog.querySelector("[data-create-client-first]").addEventListener("click", async () => { dialog.remove(); const { renderClients } = await import("./clients.js?v=142"); renderClients(); });
 }
 
@@ -147,8 +147,8 @@ function renderEditor(shell) {
         <footer class="report-editor-footer">
             <button type="button" class="secondary-button" data-previous-module ${moduleIndex(activeKey) <= 0 ? "disabled" : ""}>Page précédente</button>
             <button type="button" class="secondary-button" data-preview>Prévisualiser le rapport</button>
-            ${write && canAdjustPdfLayout() ? `<button type="button" class="secondary-button${proofread ? "" : " report-primary-action"}" data-proofread-report>${proofread ? "Corriger ou modifier à nouveau" : "Corriger et confirmer le rapport"}</button>` : ""}
-            ${write ? `<span class="report-proofreading-state ${proofread ? "confirmed" : "required"}" data-proofreading-state>${proofread ? "Rapport corrigé — prêt à être envoyé" : `Correction obligatoire avant envoi${canAdjustPdfLayout() ? "" : " — à effectuer sur PC"}`}</span>` : ""}
+            ${write && canProofreadReport() ? `<button type="button" class="secondary-button${proofread ? "" : " report-primary-action"}" data-proofread-report>${proofread ? "Corriger ou modifier à nouveau" : "Corriger et confirmer le rapport"}</button>` : ""}
+            ${write ? `<span class="report-proofreading-state ${proofread ? "confirmed" : "required"}" data-proofreading-state>${proofread ? "Rapport corrigé — prêt à être envoyé" : `Correction obligatoire avant envoi${canProofreadReport() ? "" : " — réservée à un poste PC autorisé"}`}</span>` : ""}
             ${write ? '<span class="report-autosave" data-save-state>Enregistré automatiquement</span>' : ""}
             ${write && current.status !== "submitted" ? `<button type="button" class="secondary-button report-primary-action" data-submit-report ${proofread ? "" : "disabled"}>Envoyer pour validation</button>` : ""}
             ${write && canValidate() && current.status === "submitted" ? `<button type="button" class="secondary-button report-primary-action" data-validate-report ${proofread ? "" : "disabled"}>Valider définitivement</button>` : ""}
@@ -336,7 +336,7 @@ function bindPageSwipe(shell, moduleKey) {
 }
 
 function openReportProofreading(shell) {
-    if (!editable() || !canAdjustPdfLayout()) return;
+    if (!editable() || !canProofreadReport()) return;
     document.querySelector(".report-proofreading-dialog")?.remove();
     const entries = collectReportObservations();
     if (!entries.length) return alert("Ajoutez au moins une observation avant de lancer la correction orthographique.");
@@ -501,7 +501,7 @@ function markReportModified(shell) {
     if (state) {
         state.classList.remove("confirmed");
         state.classList.add("required");
-        state.textContent = `Correction obligatoire avant envoi${canAdjustPdfLayout() ? "" : " — à effectuer sur PC"}`;
+        state.textContent = `Correction obligatoire avant envoi${canProofreadReport() ? "" : " — réservée à un poste PC autorisé"}`;
     }
     shell?.querySelectorAll("[data-submit-report], [data-validate-report], [data-preview-validate]").forEach(button => { button.disabled = true; });
     const proofreadButton = shell?.querySelector("[data-proofread-report]");
@@ -548,7 +548,7 @@ async function validateReport(shell) {
     const { synchronizeClients } = await import("./client-sync.js?v=123");
     await synchronizeClients();
     window.dispatchEvent(new CustomEvent("depannhome:technical-report-validated", { detail: { appointmentId } }));
-    const { renderCalendar } = await import("./calendar.js?v=163");
+    const { renderCalendar } = await import("./calendar.js?v=164");
     renderCalendar();
 }
 
@@ -569,7 +569,7 @@ async function finalizePreview(shell) {
     const { synchronizeClients } = await import("./client-sync.js?v=123");
     await synchronizeClients();
     window.dispatchEvent(new CustomEvent("depannhome:technical-report-validated", { detail: { appointmentId } }));
-    const { renderCalendar } = await import("./calendar.js?v=163");
+    const { renderCalendar } = await import("./calendar.js?v=164");
     renderCalendar();
 }
 
@@ -658,6 +658,7 @@ function ownsLock() { return String(reportLock?.lockedBy || "") === String(docum
 function editable() { return current?.status !== "validated" && ownsLock(); }
 function isAdministrator() { return document.body.dataset.role === "admin"; }
 function canAdjustPdfLayout() { return document.body.classList.contains("desktop-device"); }
+function canProofreadReport() { return canAdjustPdfLayout() && ["admin", "pc_standard"].includes(document.body.dataset.role); }
 function canValidate() { return ["admin", "mobile_admin", "team_lead", "technician"].includes(document.body.dataset.role); }
 function statusLabel(value) { return ({ draft: "Brouillon", submitted: "En cours de validation", in_correction: "En cours", validated: "Validé" })[value] || "En cours"; }
 function formatDate(value) { return value ? new Intl.DateTimeFormat("fr-FR").format(new Date(`${value}T12:00:00`)) : ""; }
