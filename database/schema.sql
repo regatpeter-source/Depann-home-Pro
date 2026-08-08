@@ -571,8 +571,13 @@ CREATE TABLE IF NOT EXISTS depannhome_technical_reports (
     content JSONB NOT NULL DEFAULT '{}'::jsonb, media JSONB NOT NULL DEFAULT '[]'::jsonb,
     status VARCHAR(30) NOT NULL DEFAULT 'draft', submitted_at TIMESTAMPTZ, validated_at TIMESTAMPTZ,
     validated_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+    proofread_at TIMESTAMPTZ, proofread_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+    proofread_fingerprint VARCHAR(64) NOT NULL DEFAULT '',
     pdf_data BYTEA, pdf_filename VARCHAR(255) NOT NULL DEFAULT '', created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+ALTER TABLE depannhome_technical_reports ADD COLUMN IF NOT EXISTS proofread_at TIMESTAMPTZ;
+ALTER TABLE depannhome_technical_reports ADD COLUMN IF NOT EXISTS proofread_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL;
+ALTER TABLE depannhome_technical_reports ADD COLUMN IF NOT EXISTS proofread_fingerprint VARCHAR(64) NOT NULL DEFAULT '';
 CREATE INDEX IF NOT EXISTS depannhome_technical_reports_owner_updated_idx ON depannhome_technical_reports (owner_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS depannhome_technical_reports_owner_appointment_idx ON depannhome_technical_reports (owner_id, appointment_id);
 

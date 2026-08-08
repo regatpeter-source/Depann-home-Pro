@@ -65,7 +65,7 @@ export function openLeakReportCreation() {
     dialog.innerHTML = `<div><header><div><p class="eyebrow">Nouveau rapport</p><h2>Rapport de recherche de fuite</h2></div><button type="button" class="text-button" data-close-report-creation>Fermer</button></header><p class="muted">Un rapport est toujours rattaché à une intervention et au dossier client correspondant.</p><div class="report-creation-options"><button type="button" data-report-from-appointment><strong>Choisir une intervention</strong><span>Ouvrez une intervention existante pour créer ou reprendre son rapport.</span></button><button type="button" data-create-client-first><strong>Créer d’abord un client</strong><span>Créez le dossier client, planifiez son intervention, puis ouvrez le rapport depuis le planning.</span></button></div></div>`;
     document.body.append(dialog);
     dialog.querySelector("[data-close-report-creation]").addEventListener("click", () => dialog.remove());
-    dialog.querySelector("[data-report-from-appointment]").addEventListener("click", async () => { dialog.remove(); const { renderCalendar } = await import("./calendar.js?v=162"); renderCalendar(); });
+    dialog.querySelector("[data-report-from-appointment]").addEventListener("click", async () => { dialog.remove(); const { renderCalendar } = await import("./calendar.js?v=163"); renderCalendar(); });
     dialog.querySelector("[data-create-client-first]").addEventListener("click", async () => { dialog.remove(); const { renderClients } = await import("./clients.js?v=142"); renderClients(); });
 }
 
@@ -126,6 +126,7 @@ function renderEditor(shell) {
     const activeModule = moduleDefinition(activeKey);
     const activeMaterial = activeKey === "methods" && !activeModule.custom ? selectedMaterial() : null;
     const write = editable();
+    const proofread = Boolean(current.proofreadCurrent);
     const snapshot = current.content.snapshot || {};
     const sourceLabel = current.appointmentId ? "Intervention" : "Dossier";
     shell.className = "report-editor-shell report-editor-fullscreen";
@@ -146,10 +147,11 @@ function renderEditor(shell) {
         <footer class="report-editor-footer">
             <button type="button" class="secondary-button" data-previous-module ${moduleIndex(activeKey) <= 0 ? "disabled" : ""}>Page précédente</button>
             <button type="button" class="secondary-button" data-preview>Prévisualiser le rapport</button>
-            ${write && canAdjustPdfLayout() ? '<button type="button" class="secondary-button" data-proofread-report>Corriger l’orthographe</button>' : ""}
+            ${write && canAdjustPdfLayout() ? `<button type="button" class="secondary-button${proofread ? "" : " report-primary-action"}" data-proofread-report>${proofread ? "Corriger ou modifier à nouveau" : "Corriger et confirmer le rapport"}</button>` : ""}
+            ${write ? `<span class="report-proofreading-state ${proofread ? "confirmed" : "required"}" data-proofreading-state>${proofread ? "Rapport corrigé — prêt à être envoyé" : `Correction obligatoire avant envoi${canAdjustPdfLayout() ? "" : " — à effectuer sur PC"}`}</span>` : ""}
             ${write ? '<span class="report-autosave" data-save-state>Enregistré automatiquement</span>' : ""}
-            ${write && current.status !== "submitted" ? '<button type="button" class="secondary-button report-primary-action" data-submit-report>Envoyer pour validation</button>' : ""}
-            ${write && canValidate() && current.status === "submitted" ? '<button type="button" class="secondary-button report-primary-action" data-validate-report>Valider définitivement</button>' : ""}
+            ${write && current.status !== "submitted" ? `<button type="button" class="secondary-button report-primary-action" data-submit-report ${proofread ? "" : "disabled"}>Envoyer pour validation</button>` : ""}
+            ${write && canValidate() && current.status === "submitted" ? `<button type="button" class="secondary-button report-primary-action" data-validate-report ${proofread ? "" : "disabled"}>Valider définitivement</button>` : ""}
             ${editable() && isAdministrator() && ["submitted", "in_correction"].includes(current.status) ? '<button type="button" class="secondary-button" data-request-correction>Demander une correction</button>' : ""}
             ${isAdministrator() && current.status === "validated" ? '<button type="button" class="secondary-button" data-reopen-report>Réouvrir le rapport</button>' : ""}
             <button type="button" class="secondary-button" data-next-module ${moduleIndex(activeKey) >= visibleSections().length - 1 ? "disabled" : ""}>Page suivante</button>
@@ -210,10 +212,10 @@ function bindEditor(shell, moduleKey) {
     shell.querySelectorAll("[data-move-section]").forEach(button => button.addEventListener("click", () => { moveSection(moduleKey, button.dataset.moveSection); queueSave(shell); renderEditor(shell); }));
     shell.querySelector("[data-delete-section]")?.addEventListener("click", () => deleteSection(moduleKey, shell));
     shell.querySelector("[data-skip-module]")?.addEventListener("click", () => { const skipped = new Set(current.content.skippedSteps || []); skipped.has(moduleKey) ? skipped.delete(moduleKey) : skipped.add(moduleKey); current.content.skippedSteps = [...skipped]; queueSave(shell); renderEditor(shell); });
-    shell.querySelector("[data-back-to-materials]")?.addEventListener("click", () => { current.content.activeMaterialId = ""; queueSave(shell); renderEditor(shell); });
+    shell.querySelector("[data-back-to-materials]")?.addEventListener("click", () => { current.content.activeMaterialId = ""; queueSave(shell, false); renderEditor(shell); });
     shell.querySelectorAll("[data-material-choice]").forEach(input => input.addEventListener("change", () => toggleMaterial(input.dataset.materialChoice, input.checked, shell)));
     shell.querySelector("[data-other-material-name]")?.addEventListener("input", input => { const material = current.content.methods.materials.find(item => item.name === "Autre matériel"); if (material) material.customName = input.target.value; queueSave(shell); });
-    shell.querySelectorAll("[data-open-material]").forEach(button => button.addEventListener("click", () => { current.content.activeMaterialId = button.dataset.openMaterial; queueSave(shell); renderEditor(shell); }));
+    shell.querySelectorAll("[data-open-material]").forEach(button => button.addEventListener("click", () => { current.content.activeMaterialId = button.dataset.openMaterial; queueSave(shell, false); renderEditor(shell); }));
     shell.querySelectorAll("[data-remove-material]").forEach(button => button.addEventListener("click", async () => { if (!confirm("Supprimer ce matériel, toutes ses observations et ses photos ?")) return; if (!await removeMaterial(button.dataset.removeMaterial)) return; queueSave(shell); renderEditor(shell); }));
     shell.querySelector("[data-add-observation]")?.addEventListener("click", button => { const material = materialById(button.target.dataset.materialId); const observations = material ? material.observations : sectionContent(moduleKey).observations; observations.push({ id: newObservationId(), text: "", createdAt: new Date().toISOString(), keepTogether: true, pageBreakBefore: false }); current.content.skippedSteps = (current.content.skippedSteps || []).filter(key => key !== moduleKey); queueSave(shell); renderEditor(shell); });
     shell.querySelectorAll("[data-observation-text]").forEach(input => input.addEventListener("input", () => { const observation = findObservation(moduleKey, input.dataset.observationText, input.dataset.materialId); if (observation) observation.text = input.value; queueSave(shell); }));
@@ -223,8 +225,8 @@ function bindEditor(shell, moduleKey) {
     shell.querySelectorAll("[data-move-observation]").forEach(button => button.addEventListener("click", () => { moveObservation(moduleKey, button.dataset.observationId, button.dataset.moveObservation, button.dataset.materialId); queueSave(shell); renderEditor(shell); }));
     shell.querySelectorAll("[data-photo-source]").forEach(button => button.addEventListener("click", () => openPhotoSource(shell, { moduleKey: button.dataset.moduleKey, observationId: button.dataset.observationId, materialId: button.dataset.materialId, singlePhoto: button.dataset.singlePhoto === "true", replacePhotoId: button.dataset.replacePhoto || "" })));
     shell.querySelectorAll("[data-open-photo]").forEach(button => button.addEventListener("click", () => openPhotoPreview(button.dataset.openPhoto)));
-    shell.querySelectorAll("[data-photo-caption]").forEach(input => input.addEventListener("change", () => trackMediaSave(updatePhotoCaption(input))));
-    shell.querySelectorAll("[data-photo-pdf-size]").forEach(input => input.addEventListener("change", () => trackMediaSave(updatePhotoPdfSize(input))));
+    shell.querySelectorAll("[data-photo-caption]").forEach(input => input.addEventListener("change", () => trackMediaSave(updatePhotoCaption(input, shell))));
+    shell.querySelectorAll("[data-photo-pdf-size]").forEach(input => input.addEventListener("change", () => trackMediaSave(updatePhotoPdfSize(input, shell))));
     shell.querySelectorAll("[data-delete-photo]").forEach(button => button.addEventListener("click", () => deletePhoto(button.dataset.deletePhoto, shell)));
     shell.querySelectorAll("[data-move-photo]").forEach(button => button.addEventListener("click", () => movePhoto(button.dataset.photoId, button.dataset.movePhoto, shell)));
     shell.querySelector("[data-preview]").addEventListener("click", async () => { await save(shell, true); previewMode = true; renderEditor(shell); });
@@ -239,7 +241,7 @@ function bindEditor(shell, moduleKey) {
 
 function renderPreview(shell) {
     shell.className = "report-editor-shell report-preview-shell";
-    shell.innerHTML = `<header class="report-preview-header"><div><p class="eyebrow">Prévisualisation PDF intégrée</p><h2>${escapeHtml(current.title)}</h2><p class="muted">Cet aperçu reprend fidèlement le PDF qui sera archivé, sans téléchargement.</p></div><div class="report-preview-actions"><button class="secondary-button" data-modify-report>Modifier le rapport</button>${editable() && canValidate() ? '<button class="secondary-button report-primary-action" data-preview-validate>Valider le rapport</button>' : ""}<button class="secondary-button" data-close-preview>Fermer la prévisualisation</button><button class="secondary-button" data-report-home>Accueil</button></div></header><iframe title="Prévisualisation intégrée du rapport PDF" src="/api/technical-reports/${encodeURIComponent(current.id)}/pdf?preview=${Date.now()}"></iframe>`;
+    shell.innerHTML = `<header class="report-preview-header"><div><p class="eyebrow">Prévisualisation PDF intégrée</p><h2>${escapeHtml(current.title)}</h2><p class="muted">Cet aperçu reprend fidèlement le PDF qui sera archivé, sans téléchargement.</p></div><div class="report-preview-actions"><button class="secondary-button" data-modify-report>Modifier le rapport</button>${editable() && canValidate() ? `<button class="secondary-button report-primary-action" data-preview-validate ${current.proofreadCurrent ? "" : "disabled"}>Valider le rapport</button>` : ""}<button class="secondary-button" data-close-preview>Fermer la prévisualisation</button><button class="secondary-button" data-report-home>Accueil</button></div></header><iframe title="Prévisualisation intégrée du rapport PDF" src="/api/technical-reports/${encodeURIComponent(current.id)}/pdf?preview=${Date.now()}"></iframe>`;
     const returnToEditor = () => { previewMode = false; renderEditor(shell); };
     shell.querySelector("[data-modify-report]").addEventListener("click", returnToEditor);
     shell.querySelector("[data-close-preview]").addEventListener("click", returnToEditor);
@@ -340,7 +342,7 @@ function openReportProofreading(shell) {
     if (!entries.length) return alert("Ajoutez au moins une observation avant de lancer la correction orthographique.");
     const dialog = document.createElement("section");
     dialog.className = "report-proofreading-dialog";
-    dialog.innerHTML = `<form><header><div><p class="eyebrow">Relecture complète sur PC</p><h2>Corriger l’orthographe du rapport</h2></div><button type="button" class="text-button" data-close-proofreading>Fermer</button></header><p class="report-proofreading-help">Toutes les observations du rapport sont réunies ici. Les fautes sont soulignées par le correcteur français du navigateur : faites un clic droit sur un mot pour afficher ses suggestions.</p><div class="report-proofreading-list">${entries.map((entry, index) => `<article><label><span>${escapeHtml(entry.sectionTitle)}</span><strong>${escapeHtml(entry.observationLabel)}</strong><textarea rows="5" lang="fr" spellcheck="true" autocapitalize="sentences" data-proofreading-entry="${index}">${escapeHtml(entry.observation.text || "")}</textarea></label></article>`).join("")}</div><p class="auth-message" aria-live="polite"></p><div class="report-proofreading-actions"><button type="button" class="secondary-button" data-close-proofreading>Annuler</button><button type="submit" class="secondary-button report-primary-action">Enregistrer toutes les corrections</button></div></form>`;
+    dialog.innerHTML = `<form><header><div><p class="eyebrow">Étape obligatoire avant envoi</p><h2>Corriger et confirmer le rapport</h2></div><button type="button" class="text-button" data-close-proofreading>Fermer</button></header><p class="report-proofreading-help">Relisez et modifiez toutes les observations ci-dessous. Les fautes sont soulignées par le correcteur français du navigateur : faites un clic droit sur un mot pour afficher ses suggestions. Cette confirmation sera annulée si le rapport ou ses photos sont ensuite modifiés.</p><div class="report-proofreading-list">${entries.map((entry, index) => `<article><label><span>${escapeHtml(entry.sectionTitle)}</span><strong>${escapeHtml(entry.observationLabel)}</strong><textarea rows="5" lang="fr" spellcheck="true" autocapitalize="sentences" data-proofreading-entry="${index}">${escapeHtml(entry.observation.text || "")}</textarea></label></article>`).join("")}</div><p class="auth-message" aria-live="polite"></p><div class="report-proofreading-actions"><button type="button" class="secondary-button" data-close-proofreading>Annuler</button><button type="submit" class="secondary-button report-primary-action">Confirmer les corrections et modifications</button></div></form>`;
     document.body.append(dialog);
     const close = () => dialog.remove();
     dialog.querySelectorAll("[data-close-proofreading]").forEach(button => button.addEventListener("click", close));
@@ -357,18 +359,23 @@ function openReportProofreading(shell) {
         }
         submit.disabled = true;
         feedback.classList.remove("error");
-        feedback.textContent = "Enregistrement de toutes les corrections…";
+        feedback.textContent = "Enregistrement et confirmation du rapport…";
         const originalTexts = entries.map(entry => entry.observation.text || "");
         entries.forEach((entry, index) => { entry.observation.text = dialog.querySelector(`[data-proofreading-entry="${index}"]`)?.value || ""; });
         clearTimeout(saveTimer);
         while (saving) await new Promise(resolve => window.setTimeout(resolve, 50));
-        if (!await save(shell, true)) {
+        await Promise.all([...mediaSavePromises]);
+        const result = await api(`/api/technical-reports/${encodeURIComponent(current.id)}/proofread`, { method: "POST", body: JSON.stringify({ appointmentId: current.appointmentId, clientId: current.clientId, title: current.title, reportDate: current.reportDate, content: current.content }) });
+        if (!result.ok) {
             entries.forEach((entry, index) => { entry.observation.text = originalTexts[index]; });
-            feedback.textContent = "Impossible d’enregistrer les corrections. Vérifiez votre connexion et réessayez.";
+            if (result.data?.lock) reportLock = result.data.lock;
+            feedback.textContent = result.message || "Impossible de confirmer les corrections. Vérifiez votre connexion et réessayez.";
             feedback.classList.add("error");
             submit.disabled = false;
             return;
         }
+        current.proofreadCurrent = true;
+        current.proofreadAt = result.data?.proofreadAt || new Date().toISOString();
         close();
         renderEditor(shell);
     });
@@ -392,7 +399,7 @@ function collectReportObservations() {
 function openModule(shell, key) {
     if (!visibleSections().some(section => section.id === key)) return;
     current.content.activeStep = key;
-    queueSave(shell);
+    queueSave(shell, false);
     renderEditor(shell);
 }
 
@@ -427,6 +434,7 @@ async function uploadPhotos(files, context, shell) {
     const result = await upload(`/api/technical-reports/${encodeURIComponent(current.id)}/media`, data);
     if (!result.ok) return alert(result.message || "Ajout des photos impossible.");
     current.media.push(...(result.data.media || []));
+    markReportModified(shell);
     renderEditor(shell);
 }
 
@@ -437,20 +445,22 @@ async function replacePresentationPhoto(file, shell) {
     await uploadPhotos([file], { moduleKey: "presentation", observationId: "", materialId: "" }, shell);
 }
 
-async function updatePhotoCaption(input) {
+async function updatePhotoCaption(input, shell) {
     const photo = (current.media || []).find(item => item.id === input.dataset.photoCaption);
     if (!photo) return;
     photo.caption = input.value;
     const result = await api(`/api/technical-reports/${encodeURIComponent(current.id)}/media/${encodeURIComponent(photo.id)}`, { method: "PATCH", body: JSON.stringify({ caption: photo.caption, annotation: photo.annotation || "", observationId: photo.observationId || "", materialId: photo.materialId || "" }) });
     if (!result.ok) alert(result.message || "Mise à jour de la photo impossible.");
+    else markReportModified(shell);
 }
 
-async function updatePhotoPdfSize(input) {
+async function updatePhotoPdfSize(input, shell) {
     const photo = (current.media || []).find(item => item.id === input.dataset.photoPdfSize);
     if (!photo || !["compact", "medium", "large"].includes(input.value)) return;
     photo.pdfSize = input.value;
     const result = await api(`/api/technical-reports/${encodeURIComponent(current.id)}/media/${encodeURIComponent(photo.id)}`, { method: "PATCH", body: JSON.stringify({ caption: photo.caption || "", annotation: photo.annotation || "", observationId: photo.observationId || "", materialId: photo.materialId || "", sortOrder: photo.sortOrder, pdfSize: photo.pdfSize }) });
     if (!result.ok) alert(result.message || "Mise à jour de la taille de la photo impossible.");
+    else markReportModified(shell);
 }
 
 function trackMediaSave(promise) {
@@ -458,9 +468,9 @@ function trackMediaSave(promise) {
     promise.finally(() => mediaSavePromises.delete(promise));
 }
 
-async function replacePhoto(id, file, shell) { const photo = (current.media || []).find(item => item.id === id); if (!photo) return; const [optimized] = await optimizeImages([file]); if (!optimized) return; const result = await api(`/api/technical-reports/${encodeURIComponent(current.id)}/media/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify({ caption: photo.caption || "", annotation: photo.annotation || "", observationId: photo.observationId || "", materialId: photo.materialId || "", dataUrl: await fileDataUrl(optimized), name: optimized.name, mime: optimized.type, size: optimized.size }) }); if (!result.ok) return alert(result.message || "Remplacement impossible."); photo.dataUrl = await fileDataUrl(optimized); photo.name = optimized.name; photo.mime = optimized.type; photo.size = optimized.size; renderEditor(shell); }
+async function replacePhoto(id, file, shell) { const photo = (current.media || []).find(item => item.id === id); if (!photo) return; const [optimized] = await optimizeImages([file]); if (!optimized) return; const result = await api(`/api/technical-reports/${encodeURIComponent(current.id)}/media/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify({ caption: photo.caption || "", annotation: photo.annotation || "", observationId: photo.observationId || "", materialId: photo.materialId || "", dataUrl: await fileDataUrl(optimized), name: optimized.name, mime: optimized.type, size: optimized.size }) }); if (!result.ok) return alert(result.message || "Remplacement impossible."); photo.dataUrl = await fileDataUrl(optimized); photo.name = optimized.name; photo.mime = optimized.type; photo.size = optimized.size; markReportModified(shell); renderEditor(shell); }
 
-async function movePhoto(id, direction, shell) { const photo = (current.media || []).find(item => item.id === id); if (!photo) return; const siblings = orderedPhotos((current.media || []).filter(item => item.section === photo.section && String(item.observationId || "") === String(photo.observationId || "") && String(item.materialId || "") === String(photo.materialId || ""))); const index = siblings.findIndex(item => item.id === id); const other = siblings[direction === "up" ? index - 1 : index + 1]; if (!other) return; const photoOrder = Number(photo.sortOrder || index); photo.sortOrder = Number(other.sortOrder || (direction === "up" ? index - 1 : index + 1)); other.sortOrder = photoOrder; const results = await Promise.all([photo, other].map(item => api(`/api/technical-reports/${encodeURIComponent(current.id)}/media/${encodeURIComponent(item.id)}`, { method: "PATCH", body: JSON.stringify({ caption: item.caption || "", annotation: item.annotation || "", observationId: item.observationId || "", materialId: item.materialId || "", sortOrder: item.sortOrder }) }))); if (results.some(result => !result.ok)) return alert("Réorganisation impossible."); renderEditor(shell); }
+async function movePhoto(id, direction, shell) { const photo = (current.media || []).find(item => item.id === id); if (!photo) return; const siblings = orderedPhotos((current.media || []).filter(item => item.section === photo.section && String(item.observationId || "") === String(photo.observationId || "") && String(item.materialId || "") === String(photo.materialId || ""))); const index = siblings.findIndex(item => item.id === id); const other = siblings[direction === "up" ? index - 1 : index + 1]; if (!other) return; const photoOrder = Number(photo.sortOrder || index); photo.sortOrder = Number(other.sortOrder || (direction === "up" ? index - 1 : index + 1)); other.sortOrder = photoOrder; const results = await Promise.all([photo, other].map(item => api(`/api/technical-reports/${encodeURIComponent(current.id)}/media/${encodeURIComponent(item.id)}`, { method: "PATCH", body: JSON.stringify({ caption: item.caption || "", annotation: item.annotation || "", observationId: item.observationId || "", materialId: item.materialId || "", sortOrder: item.sortOrder }) }))); if (results.some(result => !result.ok)) return alert("Réorganisation impossible."); markReportModified(shell); renderEditor(shell); }
 
 async function optimizeImages(files) { const optimized = []; for (const file of files) { try { if (!file.type.startsWith("image/") || !window.createImageBitmap) { optimized.push(file); continue; } const bitmap = await createImageBitmap(file); const scale = Math.min(1, 1920 / Math.max(bitmap.width, bitmap.height)); const canvas = document.createElement("canvas"); canvas.width = Math.max(1, Math.round(bitmap.width * scale)); canvas.height = Math.max(1, Math.round(bitmap.height * scale)); canvas.getContext("2d", { alpha: false }).drawImage(bitmap, 0, 0, canvas.width, canvas.height); bitmap.close?.(); const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/jpeg", .84)); optimized.push(blob ? new File([blob], `${file.name.replace(/\.[^.]+$/, "") || "photo"}.jpg`, { type: "image/jpeg" }) : file); } catch { optimized.push(file); } } return optimized; }
 function fileDataUrl(file) { return new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result || "")); reader.onerror = reject; reader.readAsDataURL(file); }); }
@@ -471,15 +481,34 @@ async function deletePhoto(id, shell) {
     const result = await api(`/api/technical-reports/${encodeURIComponent(current.id)}/media/${encodeURIComponent(id)}`, { method: "DELETE" });
     if (!result.ok) return alert(result.message || "Suppression impossible.");
     current.media = current.media.filter(photo => photo.id !== id);
+    markReportModified(shell);
     renderEditor(shell);
 }
 
-function queueSave(shell) {
+function queueSave(shell, affectsReport = true) {
     if (!editable()) return;
+    if (affectsReport) markReportModified(shell);
     clearTimeout(saveTimer);
     const state = shell.querySelector("[data-save-state]");
     if (state) state.textContent = "Enregistrement…";
     saveTimer = setTimeout(() => save(shell, true), 650);
+}
+
+function markReportModified(shell) {
+    if (!current) return;
+    current.proofreadCurrent = false;
+    const state = shell?.querySelector("[data-proofreading-state]");
+    if (state) {
+        state.classList.remove("confirmed");
+        state.classList.add("required");
+        state.textContent = `Correction obligatoire avant envoi${canAdjustPdfLayout() ? "" : " — à effectuer sur PC"}`;
+    }
+    shell?.querySelectorAll("[data-submit-report], [data-validate-report], [data-preview-validate]").forEach(button => { button.disabled = true; });
+    const proofreadButton = shell?.querySelector("[data-proofread-report]");
+    if (proofreadButton) {
+        proofreadButton.textContent = "Corriger et confirmer le rapport";
+        proofreadButton.classList.add("report-primary-action");
+    }
 }
 
 async function save(shell, silent = false) {
@@ -499,6 +528,7 @@ async function save(shell, silent = false) {
 }
 
 async function submitReport(shell) {
+    if (!current.proofreadCurrent) return alert("Corrigez et confirmez obligatoirement le rapport avec le bouton prévu avant de l’envoyer.");
     if (!await save(shell)) return;
     if (!confirm("Envoyer ce rapport pour validation ?")) return;
     const result = await api(`/api/technical-reports/${encodeURIComponent(current.id)}/submit`, { method: "POST" });
@@ -508,19 +538,22 @@ async function submitReport(shell) {
 }
 
 async function validateReport(shell) {
+    if (!current.proofreadCurrent) return alert("Le rapport doit être corrigé et confirmé avant sa validation.");
     if (!await save(shell) || !confirm("Valider définitivement le rapport et générer son PDF officiel ?")) return;
     const result = await api(`/api/technical-reports/${encodeURIComponent(current.id)}/validate`, { method: "POST" });
     if (!result.ok) return alert(result.message || "Validation impossible.");
+    alert(result.data?.message || "Rapport corrigé et validé");
     const appointmentId = current.appointmentId;
     await leaveReport();
     const { synchronizeClients } = await import("./client-sync.js?v=123");
     await synchronizeClients();
     window.dispatchEvent(new CustomEvent("depannhome:technical-report-validated", { detail: { appointmentId } }));
-    const { renderCalendar } = await import("./calendar.js?v=162");
+    const { renderCalendar } = await import("./calendar.js?v=163");
     renderCalendar();
 }
 
 async function finalizePreview(shell) {
+    if (!current.proofreadCurrent) return alert("Le rapport doit être corrigé et confirmé avant sa validation.");
     if (!confirm("Valider définitivement ce rapport et archiver son PDF dans le dossier client ?")) return;
     if (current.status !== "submitted") {
         if (!await save(shell)) return;
@@ -530,12 +563,13 @@ async function finalizePreview(shell) {
     }
     const result = await api(`/api/technical-reports/${encodeURIComponent(current.id)}/validate`, { method: "POST" });
     if (!result.ok) return alert(result.message || "Validation impossible.");
+    alert(result.data?.message || "Rapport corrigé et validé");
     const appointmentId = current.appointmentId;
     await leaveReport();
     const { synchronizeClients } = await import("./client-sync.js?v=123");
     await synchronizeClients();
     window.dispatchEvent(new CustomEvent("depannhome:technical-report-validated", { detail: { appointmentId } }));
-    const { renderCalendar } = await import("./calendar.js?v=162");
+    const { renderCalendar } = await import("./calendar.js?v=163");
     renderCalendar();
 }
 
@@ -593,7 +627,7 @@ function bindCollaborationEvents() {
     window.addEventListener("depannhome:collaboration-event", async event => {
         const detail = event.detail || {};
         if (!current || detail.entityType !== "technical_report" || String(detail.entityId) !== String(current.id) || ownsLock()) return;
-        if (!["report_saved", "report_media_added", "report_media_updated", "report_media_deleted", "report_submitted", "report_correction_requested", "report_validated", "report_reopened", "lock_force_released"].includes(detail.type)) return;
+        if (!["report_saved", "report_media_added", "report_media_updated", "report_media_deleted", "report_proofread", "report_submitted", "report_correction_requested", "report_validated", "report_reopened", "lock_force_released"].includes(detail.type)) return;
         const result = await api(`/api/technical-reports/${encodeURIComponent(current.id)}`);
         if (!result.ok) return;
         current = result.data.report; corrections = result.data.corrections || []; reportLock = result.data.lock || null; ensureModularContent();

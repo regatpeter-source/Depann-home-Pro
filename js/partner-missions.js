@@ -230,7 +230,7 @@ function showWizardMessage(node, message) { const target = node.querySelector(".
 
 async function showDetail(id) { const result = await api(`/api/partner-missions/${id}`); if (!result.ok) return alert(result.message); const { mission, history } = result.data; const details = Object.entries(mission.mappedData).filter(([key, value]) => value && !["attachments", "errors"].includes(key)).map(([key, value]) => `<dt>${escapeHtml(labelField(key))}</dt><dd>${escapeHtml(typeof value === "object" ? JSON.stringify(value) : value)}</dd>`).join(""); const dialog = openDialog(`<h3>Mission ${escapeHtml(mission.missionNumber || "partenaire")}</h3><p class="muted">Reçue le ${escapeHtml(formatMissionDate(mission.createdAt))} · ${escapeHtml(mission.partnerName || "Partenaire")} · ${escapeHtml(labelStatus(mission.status))}</p><div class="partner-mission-card-actions"><button class="secondary-button" id="openPartnerDialogue">Ouvrir le dialogue</button></div><dl class="partner-mission-details">${details}</dl><h4>Journal de mission</h4><ol class="partner-mission-history">${history.map(item => `<li><strong>${escapeHtml(labelStatus(item.status))}</strong> · ${escapeHtml(item.action)}<br><small>${escapeHtml(item.actorName)} · ${escapeHtml(formatMissionDate(item.createdAt))}</small></li>`).join("")}</ol>`); dialog.querySelector("#openPartnerDialogue").addEventListener("click", () => { dialog.remove(); openPartnerDialogue(mission.id); }); }
 async function openNetworkMissionPlanning(mission) {
-    const { renderCalendar } = await import("./calendar.js?v=162");
+    const { renderCalendar } = await import("./calendar.js?v=163");
     const data = mission.mappedData || {};
     const draft = mission.planningDraft || {};
     const hasDraft = Boolean(draft.pausedAt);
