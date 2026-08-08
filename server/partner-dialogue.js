@@ -29,6 +29,12 @@ export async function initializePartnerDialogue() {
     )`);
     await db.query("ALTER TABLE depannhome_partner_dialogue_messages ADD COLUMN IF NOT EXISTS partner_visible BOOLEAN NOT NULL DEFAULT FALSE, ADD COLUMN IF NOT EXISTS event_type VARCHAR(80) NOT NULL DEFAULT '', ADD COLUMN IF NOT EXISTS immutable BOOLEAN NOT NULL DEFAULT FALSE, ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()");
     await db.query("UPDATE depannhome_partner_dialogue_messages SET partner_visible=TRUE WHERE sender_type='partner'");
+    await db.query(`UPDATE depannhome_partner_dialogue_messages message
+        SET organization_name=COALESCE(NULLIF(profile.company_name,''),NULLIF(owner.company_name,''),NULLIF(owner.full_name,''),owner.username)
+        FROM depannhome_users owner
+        LEFT JOIN depannhome_billing_profiles profile ON profile.owner_id=owner.id
+        WHERE message.owner_id=owner.id AND message.sender_type='internal'
+            AND message.organization_name IN ('','Votre entreprise')`);
     await db.query("CREATE INDEX IF NOT EXISTS depannhome_partner_dialogue_messages_mission_idx ON depannhome_partner_dialogue_messages(owner_id, mission_id, created_at, id)");
     await db.query(`CREATE TABLE IF NOT EXISTS depannhome_partner_dialogue_attachments (
         id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
@@ -170,7 +176,8 @@ async function internalMessage(req, res) {
     if (!mission) return res.status(404).json({ message: "Dossier introuvable ou non accessible." });
     if (mission.status === "closed") return res.status(409).json({ message: "Ce dossier est clôturé : le fil est en lecture seule." });
     const input = messageInput(req.body, req.files); if (!input.ok) return res.status(400).json({ message: input.message });
-    const message = await createMessageWithAttachments({ ownerId, missionId: mission.id, senderType: "internal", senderUserId: req.user.sub, senderName: req.user.fullName || req.user.username, organizationName: "Votre entreprise", partnerVisible: Boolean(req.body?.partnerVisible), ...input });
+    const company = await sourceCompany(ownerId);
+    const message = await createMessageWithAttachments({ ownerId, missionId: mission.id, senderType: "internal", senderUserId: req.user.sub, senderName: req.user.fullName || req.user.username, organizationName: company.name, partnerVisible: Boolean(req.body?.partnerVisible), ...input });
     if (message.partnerVisible) await queuePartnerEvent(ownerId, mission.id, input.kind === "issue" ? "partner_dialogue_issue" : "partner_dialogue_message", { messageId: message.id, kind: input.kind, issueType: input.issueType, body: input.body, attachmentCount: message.attachments.length });
     await notifyInternalParticipants(ownerId, mission, req.user.sub, input.kind === "issue" ? "Problème signalé sur un dossier" : "Nouveau message de dossier", input.body || "Une pièce jointe a été ajoutée.", { missionId: mission.id, dialogueMessageId: message.id, kind: input.kind });
     if (message.partnerVisible) await notifyMissionSourceParticipants(ownerId, mission.id, input.kind === "issue" ? "Problème signalé par l’entreprise exécutante" : "Nouveau message de l’entreprise exécutante", input.body || "Une pièce jointe a été ajoutée.", message.id);

@@ -1,7 +1,7 @@
 import { ROUTES } from "./config.js?v=118";
 import { clearSearch, getContainer, setPage } from "./ui.js?v=44";
 import { escapeHtml } from "./utils.js?v=44";
-import { openPartnerDialogue } from "./partner-dialogue.js?v=5";
+import { openPartnerDialogue } from "./partner-dialogue.js?v=6";
 import { getSearchableClients } from "./clients.js?v=141";
 import { synchronizeClients } from "./client-sync.js?v=123";
 import { loadPartnerNotifications, markPartnerNotificationsRead } from "./collaboration.js?v=4";

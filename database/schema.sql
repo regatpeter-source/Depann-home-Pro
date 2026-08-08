@@ -703,6 +703,12 @@ ALTER TABLE depannhome_partner_dialogue_messages
     ADD COLUMN IF NOT EXISTS event_type VARCHAR(80) NOT NULL DEFAULT '',
     ADD COLUMN IF NOT EXISTS immutable BOOLEAN NOT NULL DEFAULT FALSE,
     ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+UPDATE depannhome_partner_dialogue_messages message
+SET organization_name=COALESCE(NULLIF(profile.company_name,''),NULLIF(owner.company_name,''),NULLIF(owner.full_name,''),owner.username)
+FROM depannhome_users owner
+LEFT JOIN depannhome_billing_profiles profile ON profile.owner_id=owner.id
+WHERE message.owner_id=owner.id AND message.sender_type='internal'
+    AND message.organization_name IN ('','Votre entreprise');
 CREATE INDEX IF NOT EXISTS depannhome_partner_dialogue_messages_mission_idx ON depannhome_partner_dialogue_messages(owner_id, mission_id, created_at, id);
 CREATE TABLE IF NOT EXISTS depannhome_partner_dialogue_attachments (
     id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
