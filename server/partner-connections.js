@@ -173,6 +173,7 @@ async function createConnectedMission(req) {
     `, [connection.id, ownerId, eventId]);
     const targetMission = synced[0];
     if (!targetMission) throw clientError(409, "La mission locale a été créée, mais sa transmission au partenaire n’a pas pu être confirmée.");
+    await database.query("UPDATE depannhome_partner_missions SET source_mission_number=CASE WHEN $3='' THEN source_mission_number ELSE $3 END,intervention_number=CASE WHEN $4='' THEN intervention_number ELSE $4 END,updated_at=NOW() WHERE id=$1 AND owner_id=$2", [targetMission.missionId, partnerOwnerId(connection, ownerId), value.missionNumber, value.interventionNumber]);
     return { id: targetMission.missionId, externalMissionId: targetMission.externalMissionId, calendarEventId: eventId, senderCalendarEventId: eventId, partner: (await publicConnection(connection, ownerId)).partner, status: "pending_validation" };
 }
 
@@ -187,7 +188,7 @@ async function createDirectConnectedMission(database, ownerId, connection, value
     try {
         await databaseConnection.query("BEGIN");
         tracePartnerClient("transaction_started", { flow: "connected_direct_mission", sourceOwnerId: ownerId, targetOwnerId, persistenceMode: "transaction" });
-        const { rows } = await databaseConnection.query(`INSERT INTO depannhome_partner_missions(owner_id,intake_id,external_mission_id,partner_reference,status,priority,source_data,mapped_data,scheduled_date) VALUES($1,$2,$3,$4,'pending_validation',$5,$6::jsonb,$7::jsonb,$8::date) RETURNING id`, [targetOwnerId, intakeId, externalMissionId, mapped.partnerReference, mapped.priority, JSON.stringify({ managedConnection: true, directMission: true, sourceOwnerId: ownerId }), JSON.stringify(mapped), mapped.date]);
+        const { rows } = await databaseConnection.query(`INSERT INTO depannhome_partner_missions(owner_id,intake_id,external_mission_id,partner_reference,source_mission_number,intervention_number,status,priority,source_data,mapped_data,scheduled_date) VALUES($1,$2,$3,$4,$5,$6,'pending_validation',$7,$8::jsonb,$9::jsonb,$10::date) RETURNING id`, [targetOwnerId, intakeId, externalMissionId, mapped.partnerReference, value.missionNumber, value.interventionNumber, mapped.priority, JSON.stringify({ managedConnection: true, directMission: true, sourceOwnerId: ownerId }), JSON.stringify(mapped), mapped.date]);
         mission = rows[0];
         await ensureBusinessMissionNumber(databaseConnection, mission.id);
         targetClient = await provisionPartnerMissionClient(databaseConnection, targetOwnerId, mapped, { user: { fullName: sourceCompany.name } });
@@ -235,7 +236,7 @@ async function sentMissions(ownerId) {
     const { rows } = await getPool().query(`
         SELECT DISTINCT ON (log.target_mission_id)
             log.connection_id AS "connectionId", log.source_event_id AS "calendarEventId", log.target_mission_id AS id,
-            log.created_at AS "sentAt", mission.mission_number AS "missionNumber", mission.external_mission_id AS "externalMissionId", mission.partner_reference AS "partnerReference",
+            log.created_at AS "sentAt", COALESCE(NULLIF(mission.source_mission_number,''),mission.mission_number) AS "missionNumber", mission.intervention_number AS "interventionNumber", mission.external_mission_id AS "externalMissionId", mission.partner_reference AS "partnerReference",
             mission.status, mission.priority, mission.mapped_data AS "mappedData", mission.scheduled_date AS "scheduledDate",
             mission.scheduled_start_time AS "scheduledStartTime", mission.scheduled_end_time AS "scheduledEndTime",
             COALESCE(NULLIF(profile.company_name,''),NULLIF(partner.company_name,''),partner.full_name,partner.username) AS "partnerName"
@@ -287,13 +288,15 @@ async function sentMissionForSource(ownerId, missionId) {
     return rows[0] || null;
 }
 
-function publicSentMission(row) { return { id: row.id, missionNumber: row.mission_number || "", status: row.status }; }
+function publicSentMission(row) { return { id: row.id, missionNumber: row.source_mission_number || row.mission_number || "", interventionNumber: row.intervention_number || "", status: row.status }; }
 
 function sanitizeConnectedMission(value) {
     const connectionId = positiveId(value?.connectionId);
     const subject = clean(value?.subject, 160);
     const interventionType = clean(value?.interventionType, 160);
     const comments = clean(value?.comments, 2000);
+    const missionNumber = clean(value?.missionNumber, 64);
+    const interventionNumber = clean(value?.interventionNumber, 64);
     const requestedDate = validDate(value?.requestedDate);
     const priority = ["low", "normal", "high", "urgent"].includes(value?.priority) ? value.priority : "normal";
     const keepInOwnCalendar = value?.keepInOwnCalendar === true;
@@ -304,7 +307,7 @@ function sanitizeConnectedMission(value) {
     if (!client.id && !client.name) return { ok: false, message: "Choisissez ou créez un client." };
     if (!subject) return { ok: false, message: "L’objet de la mission est obligatoire." };
     if (!requestedDate) return { ok: false, message: "La date souhaitée est invalide." };
-    return { ok: true, connectionId, subject, interventionType: interventionType || subject, comments, requestedDate, priority, keepInOwnCalendar, sharedAttachmentIds, client };
+    return { ok: true, connectionId, subject, interventionType: interventionType || subject, missionNumber, interventionNumber, comments, requestedDate, priority, keepInOwnCalendar, sharedAttachmentIds, client };
 }
 
 function missionNotes(value) {

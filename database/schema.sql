@@ -656,7 +656,7 @@ CREATE TABLE IF NOT EXISTS depannhome_partner_intakes (
 CREATE TABLE IF NOT EXISTS depannhome_partner_missions (
     id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
     intake_id BIGINT NOT NULL REFERENCES depannhome_partner_intakes(id) ON DELETE RESTRICT, external_mission_id VARCHAR(160) NOT NULL,
-    mission_number VARCHAR(32) NOT NULL DEFAULT '', deleted_at TIMESTAMPTZ,
+    mission_number VARCHAR(32) NOT NULL DEFAULT '', source_mission_number VARCHAR(64) NOT NULL DEFAULT '', intervention_number VARCHAR(64) NOT NULL DEFAULT '', deleted_at TIMESTAMPTZ,
     partner_reference VARCHAR(160) NOT NULL DEFAULT '', status VARCHAR(30) NOT NULL DEFAULT 'received', priority VARCHAR(20) NOT NULL DEFAULT 'normal',
     billing_mode VARCHAR(30) NOT NULL DEFAULT 'direct_client' CHECK (billing_mode IN ('direct_client','principal')),
     planning_draft JSONB NOT NULL DEFAULT '{}'::jsonb,
@@ -669,6 +669,8 @@ CREATE TABLE IF NOT EXISTS depannhome_partner_missions (
 );
 CREATE INDEX IF NOT EXISTS depannhome_partner_missions_owner_status_idx ON depannhome_partner_missions(owner_id, status, created_at DESC);
 ALTER TABLE depannhome_partner_missions ADD COLUMN IF NOT EXISTS planning_draft JSONB NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE depannhome_partner_missions ADD COLUMN IF NOT EXISTS source_mission_number VARCHAR(64) NOT NULL DEFAULT '', ADD COLUMN IF NOT EXISTS intervention_number VARCHAR(64) NOT NULL DEFAULT '';
+UPDATE depannhome_partner_missions SET source_mission_number=CASE WHEN source_mission_number='' THEN mission_number ELSE source_mission_number END, intervention_number=CASE WHEN intervention_number='' THEN 'INT-' || TO_CHAR(created_at AT TIME ZONE 'Europe/Paris','YYYY') || '-' || LPAD(id::text,6,'0') ELSE intervention_number END WHERE source_mission_number='' OR intervention_number='';
 CREATE UNIQUE INDEX IF NOT EXISTS depannhome_partner_missions_number_unique ON depannhome_partner_missions(mission_number) WHERE mission_number<>'';
 CREATE TABLE IF NOT EXISTS depannhome_partner_mission_history (
     id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
