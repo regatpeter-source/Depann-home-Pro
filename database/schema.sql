@@ -162,12 +162,21 @@ CREATE TABLE IF NOT EXISTS depannhome_clients (
     owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
     client_id VARCHAR(100) NOT NULL,
     client_data JSONB NOT NULL,
+    client_status VARCHAR(20) NOT NULL DEFAULT 'active' CONSTRAINT depannhome_clients_status_check CHECK (client_status IN ('active', 'archived')),
+    archived_at TIMESTAMPTZ,
+    archived_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT depannhome_clients_owner_client_unique UNIQUE (owner_id, client_id)
 );
 
 CREATE INDEX IF NOT EXISTS depannhome_clients_owner_updated_idx
     ON depannhome_clients (owner_id, updated_at DESC);
+ALTER TABLE depannhome_clients ADD COLUMN IF NOT EXISTS client_status VARCHAR(20) NOT NULL DEFAULT 'active';
+ALTER TABLE depannhome_clients ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ;
+ALTER TABLE depannhome_clients ADD COLUMN IF NOT EXISTS archived_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL;
+UPDATE depannhome_clients SET client_status='active' WHERE client_status NOT IN ('active','archived');
+DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='depannhome_clients_status_check') THEN ALTER TABLE depannhome_clients ADD CONSTRAINT depannhome_clients_status_check CHECK (client_status IN ('active','archived')); END IF; END $$;
+CREATE INDEX IF NOT EXISTS depannhome_clients_owner_status_updated_idx ON depannhome_clients (owner_id, client_status, updated_at DESC);
 
 CREATE TABLE IF NOT EXISTS depannhome_deleted_clients (
     owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
@@ -175,6 +184,14 @@ CREATE TABLE IF NOT EXISTS depannhome_deleted_clients (
     deleted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     PRIMARY KEY (owner_id, client_id)
 );
+
+CREATE TABLE IF NOT EXISTS depannhome_client_lifecycle_audit (
+    id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    client_id VARCHAR(100) NOT NULL, action VARCHAR(30) NOT NULL,
+    actor_id BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL, actor_name VARCHAR(160) NOT NULL DEFAULT '',
+    details JSONB NOT NULL DEFAULT '{}'::jsonb, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS depannhome_client_lifecycle_audit_client_idx ON depannhome_client_lifecycle_audit (owner_id, client_id, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS depannhome_billing_profiles (
     owner_id BIGINT PRIMARY KEY REFERENCES depannhome_users(id) ON DELETE CASCADE,

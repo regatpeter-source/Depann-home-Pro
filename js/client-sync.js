@@ -80,11 +80,9 @@ export function addClientActivityByName(clientName, activity) {
     return client ? addClientActivity(client.id, activity) : false;
 }
 
-export function deleteLocalClient(clientId) {
+export function removeLocalClient(clientId) {
     if (!canWriteClients()) return false;
-    if (!writeClients(getLocalClients().filter(client => client.id !== clientId))) return false;
-    enqueue({ type: "delete", clientId });
-    scheduleClientSynchronization();
+    return writeClients(getLocalClients().filter(client => client.id !== clientId));
 }
 
 export function scheduleClientSynchronization(delay = DESKTOP_SYNCHRONIZATION_DELAY) {
@@ -143,13 +141,11 @@ async function synchronize({ forceFull = false } = {}) {
     const clientsById = new Map(getLocalClients().map(client => [client.id, client]));
     for (const operation of operations) {
         const client = clientsById.get(operation.clientId);
-        if (operation.type !== "delete" && !client) {
+        if (!client) {
             removeQueuedOperation(operation.id);
             continue;
         }
-        const result = operation.type === "delete"
-            ? await request(`/api/clients/${encodeURIComponent(operation.clientId)}`, { method: "DELETE" })
-            : await request(`/api/clients/${encodeURIComponent(client.id)}`, {
+        const result = await request(`/api/clients/${encodeURIComponent(client.id)}`, {
                 method: "PUT",
                 body: JSON.stringify({ client })
             });
@@ -185,7 +181,7 @@ function applyRemoteChanges(localClients, remoteClients, deletedClientIds = []) 
 }
 
 function mergeRemoteWithQueuedClients(remoteClients) {
-    const queuedClientIds = new Set(getQueue().filter(operation => operation.type !== "delete").map(operation => operation.clientId));
+    const queuedClientIds = new Set(getQueue().map(operation => operation.clientId));
     const queuedLocalClients = getLocalClients().filter(client => queuedClientIds.has(client.id));
     return mergeClients(remoteClients, queuedLocalClients);
 }
@@ -248,9 +244,7 @@ function writeClients(clients) {
         return true;
     } catch {
         try {
-            const pendingClientIds = new Set(getQueue()
-                .filter(operation => operation.type !== "delete")
-                .map(operation => operation.clientId));
+            const pendingClientIds = new Set(getQueue().map(operation => operation.clientId));
             const compacted = clients.map(client => {
                 const normalized = normalizeClient(client);
                 if (pendingClientIds.has(normalized.id)) return normalized;
@@ -283,7 +277,7 @@ function writeQueue(queue) {
 }
 
 function normalizeQueueOperation(operation) {
-    const type = operation?.type === "delete" ? "delete" : "upsert";
+    const type = "upsert";
     const clientId = String(operation?.clientId || operation?.client?.id || "");
     if (!clientId) return null;
     return {
@@ -299,6 +293,8 @@ function normalizeClient(client) {
         ...client,
         id: String(client?.id || `client-${Date.now()}-${Math.random().toString(16).slice(2)}`),
         name: client?.name || "Client sans nom",
+        clientStatus: client?.clientStatus === "archived" ? "archived" : "active",
+        archivedAt: client?.archivedAt || null,
         attachments: Array.isArray(client?.attachments) ? client.attachments.map(attachment => ({ ...attachment, cachedLocally: attachment?.cachedLocally !== false })) : [],
         deletedAttachmentIds: mergeDeletedAttachmentIds(client?.deletedAttachmentIds),
         activityHistory: mergeActivityHistory(client?.activityHistory),

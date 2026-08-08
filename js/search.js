@@ -1,5 +1,5 @@
 import { normalizeText } from "./utils.js?v=44";
-import { getSearchableClients } from "./clients.js?v=142";
+import { getSearchableClients } from "./clients.js?v=143";
 
 const STOP_WORDS = new Set(["a", "au", "aux", "ce", "ces", "d", "de", "des", "du", "en", "et", "la", "le", "les", "pour", "sur", "un", "une"]);
 const technicalIndexCache = new WeakMap();

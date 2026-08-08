@@ -509,8 +509,8 @@ export function registerBillingRoutes(app, requireAuthentication) {
             return response.status(403).json({ message: "Les techniciens peuvent créer un devis uniquement depuis une intervention qui leur est attribuée." });
         }
         try {
-            if (document.clientId && !await hasClient(getPool(), getAccountOwnerId(request), document.clientId)) {
-                return response.status(400).json({ message: "Le dossier client associé est introuvable." });
+            if (document.clientId && !await hasClient(getPool(), getAccountOwnerId(request), document.clientId, true)) {
+                return response.status(400).json({ message: "Le dossier client associé est introuvable ou archivé." });
             }
             const appointment = await findAccessibleAppointment(getPool(), getAccountOwnerId(request), document.appointmentId, request);
             if (document.appointmentId && !appointment) return response.status(400).json({ message: "Le rendez-vous associé est introuvable ou n’est pas accessible." });
@@ -1018,10 +1018,10 @@ async function hasInvoiceForQuote(database, ownerId, sourceQuoteId, excludedDocu
     return Boolean(rowCount);
 }
 
-async function hasClient(database, ownerId, clientId) {
+async function hasClient(database, ownerId, clientId, activeOnly = false) {
     const { rowCount } = await database.query(
-        "SELECT 1 FROM depannhome_clients WHERE owner_id = $1 AND client_id = $2",
-        [ownerId, clientId]
+        "SELECT 1 FROM depannhome_clients WHERE owner_id = $1 AND client_id = $2 AND ($3::boolean = FALSE OR client_status = 'active')",
+        [ownerId, clientId, activeOnly]
     );
     return Boolean(rowCount);
 }

@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { getPool } from "./database.js";
 import { getAccountOwnerId } from "./auth.js";
 import { sendDocumentEmail } from "./email.js";
+import { clientLifecycleDecision, normalizeClientStatus } from "./client-lifecycle.js";
 
 const MAX_CLIENT_PAYLOAD_SIZE = 20 * 1024 * 1024;
 const CLIENT_ID_PATTERN = /^client-[a-zA-Z0-9-]+$/;
@@ -31,10 +32,15 @@ export async function initializeClients() {
             owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
             client_id VARCHAR(100) NOT NULL,
             client_data JSONB NOT NULL,
+            client_status VARCHAR(20) NOT NULL DEFAULT 'active' CONSTRAINT depannhome_clients_status_check CHECK (client_status IN ('active', 'archived')), archived_at TIMESTAMPTZ, archived_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             CONSTRAINT depannhome_clients_owner_client_unique UNIQUE (owner_id, client_id)
         )
     `);
+    await database.query("ALTER TABLE depannhome_clients ADD COLUMN IF NOT EXISTS client_status VARCHAR(20) NOT NULL DEFAULT 'active', ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ, ADD COLUMN IF NOT EXISTS archived_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL");
+    await database.query("UPDATE depannhome_clients SET client_status='active' WHERE client_status NOT IN ('active','archived')");
+    await database.query(`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='depannhome_clients_status_check') THEN ALTER TABLE depannhome_clients ADD CONSTRAINT depannhome_clients_status_check CHECK (client_status IN ('active','archived')); END IF; END $$`);
+    await database.query("CREATE INDEX IF NOT EXISTS depannhome_clients_owner_status_updated_idx ON depannhome_clients (owner_id, client_status, updated_at DESC)");
     await database.query(`
         CREATE INDEX IF NOT EXISTS depannhome_clients_owner_updated_idx
         ON depannhome_clients (owner_id, updated_at DESC)
@@ -47,6 +53,15 @@ export async function initializeClients() {
             PRIMARY KEY (owner_id, client_id)
         )
     `);
+    await database.query(`
+        CREATE TABLE IF NOT EXISTS depannhome_client_lifecycle_audit (
+            id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+            client_id VARCHAR(100) NOT NULL, action VARCHAR(30) NOT NULL,
+            actor_id BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL, actor_name VARCHAR(160) NOT NULL DEFAULT '',
+            details JSONB NOT NULL DEFAULT '{}'::jsonb, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+    `);
+    await database.query("CREATE INDEX IF NOT EXISTS depannhome_client_lifecycle_audit_client_idx ON depannhome_client_lifecycle_audit (owner_id, client_id, created_at DESC)");
 }
 
 export async function listClientsForOwner(ownerId, sinceParameter = "") {
@@ -57,7 +72,7 @@ export async function listClientsForOwner(ownerId, sinceParameter = "") {
     const { rows: cursorRows } = await database.query("SELECT NOW() AS cursor");
     const cursor = cursorRows[0].cursor;
     const { rows } = await database.query(`
-        SELECT client_data AS client
+        SELECT client_data AS client, client_status AS "clientStatus", archived_at AS "archivedAt", archived_by AS "archivedBy", updated_at AS "updatedAt"
         FROM depannhome_clients
         WHERE owner_id = $1 AND updated_at <= $2
           AND ($3::timestamptz IS NULL OR updated_at > $3::timestamptz)
@@ -68,7 +83,7 @@ export async function listClientsForOwner(ownerId, sinceParameter = "") {
         FROM depannhome_deleted_clients
         WHERE owner_id = $1 AND deleted_at <= $2 AND deleted_at > $3::timestamptz
     `, [ownerId, cursor, since])).rows.map(row => row.clientId) : [];
-    return { clients: rows.map(row => row.client), deletedClientIds, cursor: cursor.toISOString() };
+    return { clients: rows.map(publicClient), deletedClientIds, cursor: cursor.toISOString() };
 }
 
 async function reconcilePartnerMissionClients(database, ownerId) {
@@ -177,30 +192,75 @@ export function registerClientRoutes(app, requireAuthentication) {
         }
     }));
 
-    app.delete("/api/clients/:clientId", requireAuthentication, requireClientWriteAccess, asyncHandler(async (request, response) => {
+    app.get("/api/clients/:clientId/deletion-analysis", requireAuthentication, requireClientWriteAccess, asyncHandler(async (request, response) => {
         const clientId = String(request.params.clientId || "");
         if (!CLIENT_ID_PATTERN.test(clientId)) return response.status(400).json({ message: "Identifiant client invalide." });
+        const analysis = await analyzeClientLifecycle(getPool(), getAccountOwnerId(request), clientId);
+        if (!analysis) return response.status(404).json({ message: "Dossier client introuvable." });
+        response.json({ analysis });
+    }));
+
+    app.patch("/api/clients/:clientId/archive", requireAuthentication, requireClientWriteAccess, asyncHandler(async (request, response) => {
+        const clientId = String(request.params.clientId || "");
+        if (!CLIENT_ID_PATTERN.test(clientId)) return response.status(400).json({ message: "Identifiant client invalide." });
+        const ownerId = getAccountOwnerId(request);
+        const connection = await getPool().connect();
+        try {
+            await connection.query("BEGIN");
+            const { rowCount } = await connection.query("UPDATE depannhome_clients SET client_status='archived', archived_at=NOW(), archived_by=$3, updated_at=NOW() WHERE owner_id=$1 AND client_id=$2 AND client_status<>'archived'", [ownerId, clientId, request.user.sub]);
+            if (!rowCount) { await connection.query("ROLLBACK"); return response.status(404).json({ message: "Dossier client introuvable ou déjà archivé." }); }
+            await recordClientLifecycle(connection, ownerId, clientId, "archived", request);
+            await connection.query("COMMIT");
+            response.json({ message: "Client archivé. Tous ses documents et son historique sont conservés." });
+        } catch (error) { await connection.query("ROLLBACK"); throw error; } finally { connection.release(); }
+    }));
+
+    app.patch("/api/clients/:clientId/reactivate", requireAuthentication, requireClientWriteAccess, asyncHandler(async (request, response) => {
+        const clientId = String(request.params.clientId || "");
+        if (!CLIENT_ID_PATTERN.test(clientId)) return response.status(400).json({ message: "Identifiant client invalide." });
+        const ownerId = getAccountOwnerId(request);
+        const connection = await getPool().connect();
+        try {
+            await connection.query("BEGIN");
+            const { rowCount } = await connection.query("UPDATE depannhome_clients SET client_status='active', archived_at=NULL, archived_by=NULL, updated_at=NOW() WHERE owner_id=$1 AND client_id=$2 AND client_status='archived'", [ownerId, clientId]);
+            if (!rowCount) { await connection.query("ROLLBACK"); return response.status(404).json({ message: "Dossier client introuvable ou déjà actif." }); }
+            await recordClientLifecycle(connection, ownerId, clientId, "reactivated", request);
+            await connection.query("COMMIT");
+            response.json({ message: "Client réactivé." });
+        } catch (error) { await connection.query("ROLLBACK"); throw error; } finally { connection.release(); }
+    }));
+
+    app.delete("/api/clients/:clientId", requireAuthentication, requirePermanentClientDeletion, asyncHandler(async (request, response) => {
+        const clientId = String(request.params.clientId || "");
+        if (!CLIENT_ID_PATTERN.test(clientId)) return response.status(400).json({ message: "Identifiant client invalide." });
+        if (request.body?.confirmation !== "SUPPRESSION DÉFINITIVE") return response.status(400).json({ message: "Une confirmation explicite est obligatoire." });
         const ownerId = getAccountOwnerId(request);
         const database = getPool();
         const connection = await database.connect();
         try {
             await connection.query("BEGIN");
             const existing = await connection.query(
-                "SELECT 1 FROM depannhome_clients WHERE owner_id=$1 AND client_id=$2 FOR UPDATE",
+                "SELECT client_data AS client FROM depannhome_clients WHERE owner_id=$1 AND client_id=$2 FOR UPDATE",
                 [ownerId, clientId]
             );
             if (!existing.rowCount) {
                 await connection.query("ROLLBACK");
                 return response.status(404).json({ message: "Dossier client introuvable." });
             }
-            const deleted = await purgeClientData(connection, ownerId, clientId);
+            const analysis = await analyzeClientLifecycle(connection, ownerId, clientId, existing.rows[0].client);
+            if (!analysis.canDeletePermanently) {
+                await connection.query("ROLLBACK");
+                return response.status(409).json({ message: "Ce client possède des documents ou un historique qui doivent être conservés. La suppression définitive n'est pas disponible. Vous pouvez archiver ce client.", analysis });
+            }
+            await recordClientLifecycle(connection, ownerId, clientId, "deleted", request, analysis.dependencies);
+            await connection.query("DELETE FROM depannhome_clients WHERE owner_id=$1 AND client_id=$2", [ownerId, clientId]);
             await connection.query(`
                 INSERT INTO depannhome_deleted_clients (owner_id, client_id, deleted_at)
                 VALUES ($1, $2, NOW())
                 ON CONFLICT (owner_id, client_id) DO UPDATE SET deleted_at = NOW()
             `, [ownerId, clientId]);
             await connection.query("COMMIT");
-            response.json({ message: "Le dossier client et toutes ses données associées ont été supprimés définitivement.", deleted });
+            response.json({ message: "Le client sans historique a été supprimé définitivement." });
         } catch (error) {
             await connection.query("ROLLBACK");
             throw error;
@@ -374,116 +434,32 @@ export function registerClientRoutes(app, requireAuthentication) {
     }));
 }
 
-async function purgeClientData(connection, ownerId, clientId) {
-    let eventIds = await linkedIds(connection, "depannhome_calendar_events", "owner_id=$1 AND client_id=$2", [ownerId, clientId]);
-    let reportIds = await linkedIds(connection, "depannhome_technical_reports", "owner_id=$1 AND client_id=$2", [ownerId, clientId]);
-    let missionIds = await linkedIds(connection, "depannhome_partner_missions", "owner_id=$1 AND client_id=$2", [ownerId, clientId]);
-    let documentIds = await billingDocumentIds(connection, ownerId, clientId, eventIds);
-
-    eventIds = uniqueIds(
-        eventIds,
-        await linkedColumnIds(connection, "depannhome_technical_reports", "appointment_id", "owner_id=$1 AND id=ANY($2::bigint[])", [ownerId, reportIds]),
-        await linkedColumnIds(connection, "depannhome_billing_documents", "appointment_id", "owner_id=$1 AND id=ANY($2::bigint[])", [ownerId, documentIds]),
-        await linkedColumnIds(connection, "depannhome_partner_missions", "calendar_event_id", "owner_id=$1 AND id=ANY($2::bigint[])", [ownerId, missionIds])
-    );
-    missionIds = uniqueIds(missionIds, await linkedIds(connection, "depannhome_partner_missions", "owner_id=$1 AND (calendar_event_id=ANY($2::bigint[]) OR technical_report_id=ANY($3::bigint[]))", [ownerId, eventIds, reportIds]));
-    eventIds = uniqueIds(eventIds, await linkedIds(connection, "depannhome_calendar_events", "owner_id=$1 AND partner_mission_id=ANY($2::bigint[])", [ownerId, missionIds]));
-    reportIds = uniqueIds(
-        reportIds,
-        await linkedIds(connection, "depannhome_technical_reports", "owner_id=$1 AND appointment_id=ANY($2::bigint[])", [ownerId, eventIds]),
-        await linkedColumnIds(connection, "depannhome_partner_missions", "technical_report_id", "owner_id=$1 AND id=ANY($2::bigint[])", [ownerId, missionIds])
-    );
-    missionIds = uniqueIds(missionIds, await linkedIds(connection, "depannhome_partner_missions", "owner_id=$1 AND (client_id=$2 OR calendar_event_id=ANY($3::bigint[]) OR technical_report_id=ANY($4::bigint[]))", [ownerId, clientId, eventIds, reportIds]));
-    eventIds = uniqueIds(eventIds, await linkedColumnIds(connection, "depannhome_partner_missions", "calendar_event_id", "owner_id=$1 AND id=ANY($2::bigint[])", [ownerId, missionIds]));
-    reportIds = uniqueIds(reportIds, await linkedIds(connection, "depannhome_technical_reports", "owner_id=$1 AND appointment_id=ANY($2::bigint[])", [ownerId, eventIds]));
-    missionIds = uniqueIds(missionIds, await linkedIds(connection, "depannhome_partner_missions", "owner_id=$1 AND technical_report_id=ANY($2::bigint[])", [ownerId, reportIds]));
-    documentIds = await billingDocumentIds(connection, ownerId, clientId, eventIds);
-    const entityTargets = [
-        ["client", [clientId]],
-        ["calendar_event", eventIds.map(String)],
-        ["technical_report", reportIds.map(String)],
-        ["billing_document", documentIds.map(String)],
-        ["partner_mission", missionIds.map(String)]
-    ];
-
-    for (const table of ["depannhome_collaboration_locks", "depannhome_collaboration_notifications", "depannhome_collaboration_audit"]) {
-        for (const [entityType, entityIds] of entityTargets) {
-            if (!entityIds.length) continue;
-            await connection.query(`DELETE FROM ${table} WHERE owner_id=$1 AND entity_type=$2 AND entity_id=ANY($3::varchar[])`, [ownerId, entityType, entityIds]);
-        }
-    }
-
-    await connection.query(`
-        DELETE FROM depannhome_partner_mission_items
-        WHERE owner_id=$1 AND (
-            (source_type IN ('appointment') AND source_id=ANY($2::varchar[])) OR
-            (source_type IN ('report','photo') AND source_id=ANY($3::varchar[])) OR
-            (source_type IN ('quote','invoice','credit') AND source_id=ANY($4::varchar[]))
-        )
-    `, [ownerId, eventIds.map(String), reportIds.map(String), documentIds.map(String)]);
-    await connection.query(`
-        DELETE FROM depannhome_partner_connection_sync_log
-        WHERE (source_owner_id=$1 AND source_event_id=ANY($2::bigint[]))
-           OR (target_owner_id=$1 AND target_mission_id=ANY($3::bigint[]))
-    `, [ownerId, eventIds, missionIds]);
-
-    const missions = await deleteLinked(connection, "depannhome_partner_missions", ownerId, missionIds);
-    const reports = await deleteLinked(connection, "depannhome_technical_reports", ownerId, reportIds);
-    const documents = await deleteLinked(connection, "depannhome_billing_documents", ownerId, documentIds);
-    const purchases = await connection.query("DELETE FROM depannhome_purchases WHERE owner_id=$1 AND client_id=$2", [ownerId, clientId]);
-    const events = await deleteLinked(connection, "depannhome_calendar_events", ownerId, eventIds);
-    const messages = await connection.query(`
-        DELETE FROM depannhome_messages message
-        USING depannhome_users recipient
-        WHERE message.recipient_id=recipient.id AND recipient.account_owner_id=$1 AND message.client_id=$2
+async function analyzeClientLifecycle(database, ownerId, clientId, knownClient = null) {
+    const clientResult = knownClient ? { rows: [{ client: knownClient }] } : await database.query("SELECT client_data AS client FROM depannhome_clients WHERE owner_id=$1 AND client_id=$2", [ownerId, clientId]);
+    const client = clientResult.rows[0]?.client;
+    if (!client) return null;
+    const { rows } = await database.query(`
+        WITH events AS (SELECT id FROM depannhome_calendar_events WHERE owner_id=$1 AND client_id=$2),
+        reports AS (SELECT id FROM depannhome_technical_reports WHERE owner_id=$1 AND (client_id=$2 OR appointment_id IN (SELECT id FROM events))),
+        documents AS (SELECT id FROM depannhome_billing_documents WHERE owner_id=$1 AND (client_id=$2 OR appointment_id IN (SELECT id FROM events))),
+        missions AS (SELECT id FROM depannhome_partner_missions WHERE owner_id=$1 AND (client_id=$2 OR calendar_event_id IN (SELECT id FROM events) OR technical_report_id IN (SELECT id FROM reports)))
+        SELECT (SELECT COUNT(*)::int FROM events) AS appointments,
+            (SELECT COUNT(*)::int FROM reports) AS reports,
+            (SELECT COUNT(*)::int FROM documents) AS "billingDocuments",
+            (SELECT COUNT(*)::int FROM missions) AS "partnerMissions",
+            (SELECT COUNT(*)::int FROM depannhome_purchases WHERE owner_id=$1 AND client_id=$2) AS purchases,
+            (SELECT COUNT(*)::int FROM depannhome_messages message JOIN depannhome_users recipient ON recipient.id=message.recipient_id WHERE (recipient.id=$1 OR recipient.account_owner_id=$1) AND message.client_id=$2) AS messages,
+            (SELECT COUNT(*)::int FROM depannhome_collaboration_audit WHERE owner_id=$1 AND entity_type='client' AND entity_id=$2) AS "auditEntries"
     `, [ownerId, clientId]);
-    const clients = await connection.query("DELETE FROM depannhome_clients WHERE owner_id=$1 AND client_id=$2", [ownerId, clientId]);
-
-    return {
-        clients: clients.rowCount || 0,
-        appointmentsAndQuitus: events,
-        reports,
-        commercialDocuments: documents,
-        purchases: purchases.rowCount || 0,
-        messages: messages.rowCount || 0,
-        partnerMissions: missions
-    };
+    return clientLifecycleDecision(rows[0], client);
 }
 
-async function linkedIds(connection, table, where, parameters) {
-    const { rows } = await connection.query(`SELECT id FROM ${table} WHERE ${where}`, parameters);
-    return rows.map(row => Number(row.id)).filter(Number.isSafeInteger);
+async function recordClientLifecycle(database, ownerId, clientId, action, request, details = {}) {
+    await database.query("INSERT INTO depannhome_client_lifecycle_audit(owner_id,client_id,action,actor_id,actor_name,details) VALUES($1,$2,$3,$4,$5,$6::jsonb)", [ownerId, clientId, action, request.user.sub, String(request.user.fullName || request.user.username || "").slice(0, 160), JSON.stringify(details)]);
 }
 
-async function linkedColumnIds(connection, table, column, where, parameters) {
-    const { rows } = await connection.query(`SELECT ${column} AS id FROM ${table} WHERE ${where} AND ${column} IS NOT NULL`, parameters);
-    return rows.map(row => Number(row.id)).filter(Number.isSafeInteger);
-}
-
-async function billingDocumentIds(connection, ownerId, clientId, eventIds) {
-    const { rows } = await connection.query(`
-        WITH RECURSIVE linked_documents AS (
-            SELECT id FROM depannhome_billing_documents
-            WHERE owner_id=$1 AND (client_id=$2 OR appointment_id=ANY($3::bigint[]))
-            UNION
-            SELECT document.id
-            FROM depannhome_billing_documents document
-            JOIN linked_documents source ON document.source_quote_id=source.id
-            WHERE document.owner_id=$1
-        )
-        SELECT id FROM linked_documents
-    `, [ownerId, clientId, eventIds]);
-    return uniqueIds(rows.map(row => row.id));
-}
-
-function uniqueIds(...groups) {
-    return [...new Set(groups.flat().map(Number).filter(Number.isSafeInteger))];
-}
-
-async function deleteLinked(connection, table, ownerId, ids) {
-    if (!ids.length) return 0;
-    const result = await connection.query(`DELETE FROM ${table} WHERE owner_id=$1 AND id=ANY($2::bigint[])`, [ownerId, ids]);
-    return result.rowCount || 0;
+function publicClient(row) {
+    return { ...(row.client || {}), clientStatus: normalizeClientStatus(row.clientStatus), archivedAt: row.archivedAt || null, archivedBy: row.archivedBy || null, updatedAt: row.updatedAt ? new Date(row.updatedAt).toISOString() : row.client?.updatedAt };
 }
 
 export function clientUploadErrorHandler(error, request, response, next) {
@@ -500,6 +476,11 @@ function requireClientWriteAccess(request, response, next) {
     if (request.user?.role === "technician") {
         return response.status(403).json({ message: "Les techniciens peuvent consulter les dossiers clients, sans les modifier." });
     }
+    return next();
+}
+
+function requirePermanentClientDeletion(request, response, next) {
+    if (request.user?.role !== "admin") return response.status(403).json({ message: "La suppression définitive d’un client est réservée aux administrateurs." });
     return next();
 }
 

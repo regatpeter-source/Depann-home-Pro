@@ -1,9 +1,9 @@
 import { ROUTES } from "./config.js?v=106";
-import { createBillingDocumentForClient, viewBillingDocument } from "./billing.js?v=162";
-import { getSearchableClients } from "./clients.js?v=142";
-import { addClientActivityByName, synchronizeClients } from "./client-sync.js?v=123";
+import { createBillingDocumentForClient, viewBillingDocument } from "./billing.js?v=163";
+import { getSearchableClients } from "./clients.js?v=143";
+import { addClientActivityByName, synchronizeClients } from "./client-sync.js?v=124";
 import { renderClientMessages } from "./messages.js?v=106";
-import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=21";
+import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=22";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { renderPlatformAnnouncement } from "./platform-announcement.js?v=1";

@@ -242,7 +242,7 @@ export function registerCalendarRoutes(app, requireAuthentication) {
                         (owner_id, assigned_technician_id, title, client_id, client_name, location, event_date, start_time, end_time, color, event_type, event_origin, notes)
                     VALUES ($1, $2, $3, $4, $5, $6, $7::date, $8::time, $9::time, $10, $11, 'standard', $12)
                     RETURNING id
-                `, [getAccountOwnerId(request), event.assignedTechnicianId || null, event.title, await resolveClientId(connection, getAccountOwnerId(request), event.clientName), event.clientName, event.location, date, optionalTime(event.startTime), optionalTime(event.endTime), event.color, event.eventType, event.notes]);
+                `, [getAccountOwnerId(request), event.assignedTechnicianId || null, event.title, await resolveClientId(connection, getAccountOwnerId(request), event.clientName, true), event.clientName, event.location, date, optionalTime(event.startTime), optionalTime(event.endTime), event.color, event.eventType, event.notes]);
                 await replaceEventAssignments(connection, rows[0].id, event.assignedTechnicianIds, event.assignedTechnicianId);
                 ids.push(rows[0].id);
             }
@@ -445,9 +445,9 @@ function sanitizeEvent(value) {
     return { ok: true, title, clientName, location, date, startTime, endTime, color, eventType, notes, assignedTechnicianId, assignedTechnicianIds };
 }
 
-async function resolveClientId(connection, ownerId, clientName) {
+async function resolveClientId(connection, ownerId, clientName, activeOnly = false) {
     if (!clientName) return "";
-    const { rows } = await connection.query("SELECT client_id FROM depannhome_clients WHERE owner_id=$1 AND LOWER(BTRIM(client_data->>'name'))=LOWER(BTRIM($2)) ORDER BY updated_at DESC LIMIT 1", [ownerId, clientName]);
+    const { rows } = await connection.query("SELECT client_id FROM depannhome_clients WHERE owner_id=$1 AND LOWER(BTRIM(client_data->>'name'))=LOWER(BTRIM($2)) AND ($3::boolean=FALSE OR client_status='active') ORDER BY updated_at DESC LIMIT 1", [ownerId, clientName, activeOnly]);
     return rows[0]?.client_id || "";
 }
 

@@ -58,8 +58,8 @@ export function registerPurchaseRoutes(app, requireAuthentication) {
     app.post("/api/purchases", requireAuthentication, requirePurchaseAdministration, asyncHandler(async (request, response) => {
         const purchase = sanitizePurchase(request.body);
         if (!purchase.ok) return response.status(400).json({ message: purchase.message });
-        const clientName = await resolveClientName(getAccountOwnerId(request), purchase.clientId);
-        if (purchase.clientId && clientName === null) return response.status(400).json({ message: "Le client associé à cet achat est introuvable." });
+        const clientName = await resolveClientName(getAccountOwnerId(request), purchase.clientId, true);
+        if (purchase.clientId && clientName === null) return response.status(400).json({ message: "Le client associé à cet achat est introuvable ou archivé." });
         const { rows } = await getPool().query(`
             INSERT INTO depannhome_purchases
                 (owner_id, created_by, purchase_date, category, client_id, client_name, supplier, description, reference, amount_ht, vat_rate, is_accounted, accounted_at, notes)
@@ -140,11 +140,11 @@ function sanitizePurchase(value) {
     return { ok: true, purchaseDate, category, clientId, clientName, supplier, description, reference, amountHt, vatRate, isAccounted, notes };
 }
 
-async function resolveClientName(ownerId, clientId) {
+async function resolveClientName(ownerId, clientId, activeOnly = false) {
     if (!clientId) return "";
     const { rows } = await getPool().query(
-        "SELECT client_data->>'name' AS name FROM depannhome_clients WHERE owner_id = $1 AND client_id = $2",
-        [ownerId, clientId]
+        "SELECT client_data->>'name' AS name FROM depannhome_clients WHERE owner_id = $1 AND client_id = $2 AND ($3::boolean = FALSE OR client_status = 'active')",
+        [ownerId, clientId, activeOnly]
     );
     return rows[0] ? cleanText(rows[0].name, 160) : null;
 }

@@ -2,7 +2,7 @@ import { clearSearch, getContainer, setPage } from "./ui.js?v=44";
 import { ROUTES } from "./config.js?v=116";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { renderAccountingSandbox } from "./accounting-sandbox.js?v=2";
-import { renderPurchases } from "./purchases.js?v=115";
+import { renderPurchases } from "./purchases.js?v=116";
 
 const SECTIONS = [
     ["dashboard", "Tableau de bord"], ["quotes", "Devis"], ["invoices", "Factures"], ["purchases", "Achats"], ["export", "Export comptable"], ["electronic", "Facturation électronique & PDP"], ["aids", "Aides financières"], ["settings", "Paramètres"]

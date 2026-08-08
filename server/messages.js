@@ -81,7 +81,7 @@ export function registerMessageRoutes(app, requireAuthentication) {
         if (!body) return response.status(400).json({ message: "La note ne peut pas être vide." });
         if (request.body?.clientId && !clientId) return response.status(400).json({ message: "Dossier client invalide." });
         if (!clientId) return response.status(403).json({ message: "Les notes doivent être ajoutées depuis une fiche client." });
-        if (clientId && !await clientExists(getAccountOwnerId(request), clientId)) return response.status(404).json({ message: "Dossier client introuvable." });
+        if (clientId && !await clientExists(getAccountOwnerId(request), clientId, true)) return response.status(404).json({ message: "Dossier client introuvable ou archivé." });
         const { rows } = await getPool().query(`
             INSERT INTO depannhome_messages (sender_id, recipient_id, client_id, body)
             VALUES ($1, $2, $3, $4)
@@ -108,10 +108,10 @@ function requireMessageAccess(request, response, next) {
     return next();
 }
 
-async function clientExists(accountOwnerId, clientId) {
+async function clientExists(accountOwnerId, clientId, activeOnly = false) {
     const { rowCount } = await getPool().query(
-        "SELECT 1 FROM depannhome_clients WHERE owner_id = $1 AND client_id = $2",
-        [accountOwnerId, clientId]
+        "SELECT 1 FROM depannhome_clients WHERE owner_id = $1 AND client_id = $2 AND ($3::boolean = FALSE OR client_status = 'active')",
+        [accountOwnerId, clientId, activeOnly]
     );
     return Boolean(rowCount);
 }

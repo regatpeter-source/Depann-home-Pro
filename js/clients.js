@@ -1,9 +1,9 @@
 import { ROUTES } from "./config.js?v=116";
-import { addClientActivity, deleteLocalClient, getLocalClients, saveLocalClient, scheduleClientSynchronization, synchronizeClients } from "./client-sync.js?v=123";
+import { addClientActivity, getLocalClients, removeLocalClient, saveLocalClient, scheduleClientSynchronization, synchronizeClients } from "./client-sync.js?v=124";
 import { renderClientMessages } from "./messages.js?v=106";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
-import { analyzeEquipmentPhoto, isPhotoRecognitionConfident } from "./photo-recognition.js?v=105";
+import { analyzeEquipmentPhoto, isPhotoRecognitionConfident } from "./photo-recognition.js?v=107";
 import {
     clearSearch,
     createButton,
@@ -72,6 +72,7 @@ function renderClientToolbar(clients, readOnly, directory) {
             <h2>Recherche de dossiers clients</h2>
         </div>
         <form id="clientDirectoryForm" class="client-directory-form">
+            <fieldset class="client-status-filter"><legend>État des clients</legend><label><input type="radio" name="status" value="active" ${clientDirectoryFilters.status === "active" ? "checked" : ""}> Clients actifs</label><label><input type="radio" name="status" value="archived" ${clientDirectoryFilters.status === "archived" ? "checked" : ""}> Clients archivés</label><label><input type="radio" name="status" value="all" ${clientDirectoryFilters.status === "all" ? "checked" : ""}> Tous</label></fieldset>
             <label>Mode de recherche
                 <select name="field" id="clientSearchField">
                     <option value="name" ${clientDirectoryFilters.field === "name" ? "selected" : ""}>Nom / société</option>
@@ -411,33 +412,31 @@ function renderClientTable(clients, appointmentDatesByClient = new Map()) {
 
 function renderClientTableRow(client, appointmentDates = []) {
     const readOnly = isClientReadOnly();
+    const archived = client.clientStatus === "archived";
     const row = document.createElement("tr");
     row.className = "client-table-row";
     row.innerHTML = `
-        <td data-label="Client"><strong>${escapeHtml(client.name)}</strong></td>
+        <td data-label="Client"><strong>${escapeHtml(client.name)}</strong>${archived ? '<span class="client-archived-badge">Client archivé</span>' : ""}</td>
         <td data-label="Type">${escapeHtml(client.type)}</td>
         <td data-label="Coordonnées"><span>${escapeHtml(client.phone || "Téléphone non renseigné")}</span>${client.email ? `<small>${escapeHtml(client.email)}</small>` : ""}</td>
         <td data-label="Adresse">${escapeHtml(formatClientLocation(client))}</td>
         <td data-label="Création / rendez-vous"><strong>Créé le ${escapeHtml(formatDate(client.createdAt))}</strong><small>${appointmentDates.length ? `RDV : ${escapeHtml(appointmentDates.map(formatDirectoryShortDate).join(" · "))}` : `${client.attachments.length} fichier(s)`}</small></td>
         <td data-label="Actions"><div class="client-card-actions">
             <button type="button" class="secondary-button" data-action="view">Voir</button>
-            ${readOnly ? "" : '<button type="button" class="secondary-button" data-action="edit">Modifier</button><button type="button" class="secondary-button danger-button" data-action="delete">Supprimer</button>'}
+            ${readOnly ? "" : archived ? '<button type="button" class="secondary-button" data-action="reactivate">Réactiver</button>' : '<button type="button" class="secondary-button" data-action="edit">Modifier</button>'}
         </div></td>
     `;
 
     row.querySelector('[data-action="view"]').addEventListener("click", () => renderClients({ selectedId: client.id }));
     row.querySelector('[data-action="edit"]')?.addEventListener("click", () => renderClients({ editId: client.id }));
-    row.querySelector('[data-action="delete"]')?.addEventListener("click", async () => {
-        if (confirm(`Supprimer définitivement le client ${client.name} ?\n\nCette action supprimera aussi ses rendez-vous, quitus, devis, factures, rapports, photos, fichiers, messages et tout son historique. Cette action est irréversible.`)) {
-            await deleteClient(client.id);
-        }
-    });
+    row.querySelector('[data-action="reactivate"]')?.addEventListener("click", () => reactivateClient(client.id));
 
     return row;
 }
 
 function renderClientDetail(client, options = {}) {
     const readOnly = isClientReadOnly();
+    const archived = client.clientStatus === "archived";
     const navigationHref = getClientNavigationHref(client);
     const interventionPhotos = client.attachments.filter(isInterventionPhoto);
     const clientFiles = client.attachments.filter(attachment => !isInterventionPhoto(attachment) && attachment.type !== "Quitus");
@@ -447,12 +446,13 @@ function renderClientDetail(client, options = {}) {
     panel.innerHTML = `
         <div class="procedure-header">
             <div>
-                <p class="eyebrow">Fiche client</p>
+                <p class="eyebrow">${archived ? "Client archivé" : "Fiche client"}</p>
                 <h2>${escapeHtml(client.name)}</h2>
+                ${archived ? '<strong class="client-archived-banner">CLIENT ARCHIVÉ</strong>' : ""}
             </div>
             <div class="client-card-actions">
                 ${navigationHref ? `<a class="secondary-button client-navigation-button" href="${escapeHtml(navigationHref)}" aria-label="Y aller vers ${escapeHtml(formatClientLocation(client))}">Y aller</a>` : '<button type="button" class="secondary-button client-navigation-button" disabled title="Ajoutez une adresse au client pour lancer la navigation.">Y aller</button>'}
-                ${readOnly ? "" : '<button type="button" class="secondary-button" id="createClientAppointment">+ Créer un rendez-vous</button><button type="button" class="secondary-button" id="createClientQuote">+ Créer un devis</button><button type="button" class="secondary-button" id="createClientInvoice">+ Créer une facture</button><button type="button" class="secondary-button" id="editSelectedClient">Modifier</button>'}
+                ${readOnly ? "" : archived ? '<button type="button" class="secondary-button report-primary-action" id="reactivateSelectedClient">Réactiver le client</button>' : '<button type="button" class="secondary-button" id="createClientAppointment">+ Créer un rendez-vous</button><button type="button" class="secondary-button" id="createClientQuote">+ Créer un devis</button><button type="button" class="secondary-button" id="createClientInvoice">+ Créer une facture</button><button type="button" class="secondary-button" id="editSelectedClient">Modifier</button><button type="button" class="secondary-button danger-button" id="deleteSelectedClient">Supprimer le client</button>'}
             </div>
         </div>
         <div class="procedure-meta">
@@ -486,6 +486,8 @@ function renderClientDetail(client, options = {}) {
     `;
 
     panel.querySelector("#editSelectedClient")?.addEventListener("click", () => renderClients({ editId: client.id }));
+    panel.querySelector("#deleteSelectedClient")?.addEventListener("click", () => inspectClientDeletion(client));
+    panel.querySelector("#reactivateSelectedClient")?.addEventListener("click", () => reactivateClient(client.id));
     panel.querySelector("#createClientAppointment")?.addEventListener("click", () => openClientAppointment(client));
     panel.querySelector("#createClientQuote")?.addEventListener("click", () => openClientBillingDocument("quote", client));
     panel.querySelector("#createClientInvoice")?.addEventListener("click", () => openClientBillingDocument("invoice", client));
@@ -729,19 +731,54 @@ function saveClient(client) {
     }
 }
 
-async function deleteClient(id) {
+async function inspectClientDeletion(client) {
     if (isClientReadOnly()) return;
     try {
-        const response = await fetch(`/api/clients/${encodeURIComponent(id)}`, { method: "DELETE", credentials: "same-origin" });
+        const response = await fetch(`/api/clients/${encodeURIComponent(client.id)}/deletion-analysis`, { credentials: "same-origin" });
         const data = await response.json().catch(() => null);
         if (!response.ok) throw new Error(data?.message);
-        deleteLocalClient(id);
-        const result = await synchronizeClients();
-        if (!result.ok) throw new Error(result.message || "Le dossier est supprimé, mais l’actualisation locale a échoué.");
-        renderClients(clientScreenOptions);
+        openClientLifecycleDialog(client, data.analysis || {});
     } catch (error) {
-        alert(error.message || "Suppression du dossier impossible.");
+        alert(error.message || "Analyse du dossier impossible.");
     }
+}
+
+function openClientLifecycleDialog(client, analysis) {
+    document.querySelector(".client-lifecycle-dialog")?.remove();
+    const canDelete = Boolean(analysis.canDeletePermanently) && document.body.dataset.role === "admin";
+    const dialog = document.createElement("section");
+    dialog.className = "client-lifecycle-dialog";
+    dialog.innerHTML = `<div><header><div><p class="eyebrow">${canDelete ? "Suppression définitive" : "Conservation obligatoire"}</p><h2>${escapeHtml(client.name)}</h2></div><button type="button" class="text-button" data-close-client-lifecycle>Fermer</button></header>${analysis.canDeletePermanently ? `<p>Ce client ne possède aucun document nécessitant une conservation.</p>${canDelete ? '<p class="auth-message error"><strong>Cette opération est irréversible.</strong> La fiche client sera supprimée définitivement.</p><label class="client-delete-confirmation">Pour confirmer, saisissez <strong>SUPPRESSION DÉFINITIVE</strong><input data-permanent-delete-confirmation autocomplete="off"></label>' : '<p>La suppression définitive est réservée aux administrateurs. Vous pouvez archiver ce client.</p>'}` : '<p class="auth-message error">Ce client possède des documents ou un historique qui doivent être conservés. La suppression définitive n’est pas disponible. Vous pouvez archiver ce client.</p>'}<div class="client-lifecycle-actions"><button type="button" class="secondary-button" data-close-client-lifecycle>Annuler</button><button type="button" class="secondary-button" data-archive-client>Archiver le client</button>${canDelete ? '<button type="button" class="secondary-button danger-button" data-delete-client disabled>Supprimer définitivement</button>' : ""}</div><p class="auth-message" data-client-lifecycle-feedback aria-live="polite"></p></div>`;
+    document.body.append(dialog);
+    const close = () => dialog.remove();
+    dialog.querySelectorAll("[data-close-client-lifecycle]").forEach(button => button.addEventListener("click", close));
+    dialog.querySelector("[data-permanent-delete-confirmation]")?.addEventListener("input", event => { dialog.querySelector("[data-delete-client]").disabled = event.target.value !== "SUPPRESSION DÉFINITIVE"; });
+    dialog.querySelector("[data-archive-client]").addEventListener("click", () => changeClientStatus(client.id, "archive", dialog));
+    dialog.querySelector("[data-delete-client]")?.addEventListener("click", () => permanentlyDeleteClient(client.id, dialog));
+}
+
+async function changeClientStatus(clientId, action, dialog = null) {
+    const response = await fetch(`/api/clients/${encodeURIComponent(clientId)}/${action}`, { method: "PATCH", credentials: "same-origin" });
+    const data = await response.json().catch(() => null);
+    if (!response.ok) { const feedback = dialog?.querySelector("[data-client-lifecycle-feedback]"); if (feedback) { feedback.textContent = data?.message || "Action impossible."; feedback.classList.add("error"); return; } throw new Error(data?.message); }
+    dialog?.remove();
+    await synchronizeClients({ forceFull: true });
+    renderClients({ ...clientScreenOptions, selectedId: action === "reactivate" ? clientId : "" });
+}
+
+async function reactivateClient(clientId) {
+    try { await changeClientStatus(clientId, "reactivate"); } catch (error) { alert(error.message || "Réactivation impossible."); }
+}
+
+async function permanentlyDeleteClient(clientId, dialog) {
+    const confirmation = dialog.querySelector("[data-permanent-delete-confirmation]")?.value || "";
+    const response = await fetch(`/api/clients/${encodeURIComponent(clientId)}`, { method: "DELETE", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ confirmation }) });
+    const data = await response.json().catch(() => null);
+    if (!response.ok) { const feedback = dialog.querySelector("[data-client-lifecycle-feedback]"); feedback.textContent = data?.message || "Suppression impossible."; feedback.classList.add("error"); return; }
+    removeLocalClient(clientId);
+    dialog.remove();
+    await synchronizeClients({ forceFull: true });
+    renderClients(clientScreenOptions);
 }
 
 function isClientReadOnly() {
@@ -757,7 +794,7 @@ function getClients() {
 }
 
 export function getSearchableClients() {
-    return getClients().map(client => ({
+    return getClients().filter(client => client.clientStatus !== "archived").map(client => ({
         id: client.id,
         type: client.type,
         name: client.name,
@@ -785,6 +822,7 @@ function normalizeClient(client) {
         ...client,
         id: client.id || createClientId(),
         name: client.name || "Client sans nom",
+        clientStatus: client.clientStatus === "archived" ? "archived" : "active",
         attachments: normalizeAttachments(client.attachments),
         activityHistory: normalizeActivityHistory(client.activityHistory)
     };
@@ -951,11 +989,12 @@ function getClientNavigationHref(client) {
 }
 
 function createEmptyDirectoryFilters() {
-    return { field: "name", query: "", createdDate: "", appointmentDate: "", year: "", month: "" };
+    return { status: "active", field: "name", query: "", createdDate: "", appointmentDate: "", year: "", month: "" };
 }
 
 function readDirectoryFilters(formData) {
     return {
+        status: ["active", "archived", "all"].includes(formData.get("status")) ? formData.get("status") : "active",
         field: ["name", "phone", "address", "email"].includes(formData.get("field")) ? formData.get("field") : "name",
         query: String(formData.get("query") || "").trim(),
         createdDate: String(formData.get("createdDate") || ""),
@@ -977,6 +1016,7 @@ function getDirectoryMonths() {
 }
 
 function clientMatchesDirectoryFilters(client, filters, appointmentDatesByClient) {
+    if (filters.status !== "all" && client.clientStatus !== filters.status) return false;
     const date = parseDirectoryDate(client.createdAt);
     const searchableValue = filters.field === "address"
         ? [client.address, client.city].join(" ")

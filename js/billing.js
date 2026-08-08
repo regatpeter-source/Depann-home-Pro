@@ -1,6 +1,6 @@
 import { ROUTES } from "./config.js?v=116";
-import { getSearchableClients } from "./clients.js?v=142";
-import { addClientActivityByName } from "./client-sync.js?v=123";
+import { getSearchableClients } from "./clients.js?v=143";
+import { addClientActivityByName } from "./client-sync.js?v=124";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { renderPlatformAnnouncement } from "./platform-announcement.js?v=1";
@@ -149,11 +149,11 @@ function renderOverview(panel, profilePanel) {
     panel.querySelector("[data-billing-action=new-quote]")?.addEventListener("click", () => { if (!isAccountant()) openNewDocument("quote"); });
     panel.querySelector("[data-billing-action=new-invoice]").addEventListener("click", () => { if (!isAccountant()) openNewDocument("invoice"); });
     panel.querySelector("[data-billing-action=open-leak-reports]")?.addEventListener("click", async () => {
-        const { renderLeakReportWizard } = await import("./leak-report-wizard.js?v=21");
+        const { renderLeakReportWizard } = await import("./leak-report-wizard.js?v=22");
         renderLeakReportWizard();
     });
     panel.querySelector("[data-billing-action=new-leak-report]")?.addEventListener("click", async () => {
-        const { openLeakReportCreation } = await import("./leak-report-wizard.js?v=21");
+        const { openLeakReportCreation } = await import("./leak-report-wizard.js?v=22");
         openLeakReportCreation();
     });
     panel.querySelector("[data-billing-action=download-quote-template]")?.addEventListener("click", openQuoteTemplateDownload);
