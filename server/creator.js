@@ -79,6 +79,8 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
                 owner.billing_reference AS "billingReference",
                 owner.creator_note AS "creatorNote",
                 owner.quote_template_policy AS "quoteTemplatePolicy",
+                owner.quitus_template_policy AS "quitusTemplatePolicy",
+                owner.report_template_policy AS "reportTemplatePolicy",
                 owner.created_at AS "createdAt",
                 COUNT(member.id) FILTER (WHERE member.role = 'admin' AND member.is_active)::int AS "activePcUsers",
                 COUNT(member.id) FILTER (WHERE member.role = 'technician' AND member.is_active)::int AS "activeTechnicians",
@@ -114,11 +116,11 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
                 await connection.query("BEGIN");
                 const { rows } = await connection.query(`
                 INSERT INTO depannhome_users (username, password_hash, role, full_name, phone, email, company_name, max_pc_users, max_technicians,
-                    subscription_plan, subscription_label, monthly_price_cents, subscription_status, subscription_renewal_date, billing_reference, creator_note, quote_template_policy)
-                VALUES ($1, $2, 'admin', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::date, $14, $15, $16)
+                    subscription_plan, subscription_label, monthly_price_cents, subscription_status, subscription_renewal_date, billing_reference, creator_note, quote_template_policy, quitus_template_policy, report_template_policy)
+                VALUES ($1, $2, 'admin', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::date, $14, $15, $16, $17, $18)
                 RETURNING id
             `, [credentials.username, await bcrypt.hash(credentials.password, 12), account.fullName, account.phone, account.billingEmail, account.companyName, account.maxPcUsers, account.maxTechnicians,
-                account.subscriptionPlan, account.subscriptionLabel, account.monthlyPriceCents, account.subscriptionStatus, account.subscriptionRenewalDate || null, account.billingReference, account.creatorNote, account.quoteTemplatePolicy]);
+                account.subscriptionPlan, account.subscriptionLabel, account.monthlyPriceCents, account.subscriptionStatus, account.subscriptionRenewalDate || null, account.billingReference, account.creatorNote, account.quoteTemplatePolicy, account.quitusTemplatePolicy, account.reportTemplatePolicy]);
                 const id = rows[0].id;
                 await connection.query("UPDATE depannhome_users SET account_owner_id = id WHERE id = $1", [id]);
                 await synchronizeCompanyProfile(connection, id, account.companyProfile);
@@ -152,10 +154,11 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
             UPDATE depannhome_users
             SET company_name = $2, full_name = $3, phone = $4, email = $5, max_pc_users = $6, max_technicians = $7, is_active = $8,
                 subscription_plan = $9, subscription_label = $10, monthly_price_cents = $11, subscription_status = $12,
-                subscription_renewal_date = $13::date, billing_reference = $14, creator_note = $15, quote_template_policy = $16, updated_at = NOW()
+                subscription_renewal_date = $13::date, billing_reference = $14, creator_note = $15, quote_template_policy = $16,
+                quitus_template_policy = $17, report_template_policy = $18, updated_at = NOW()
             WHERE id = $1 AND account_owner_id = id
             `, [accountId, account.companyName, account.fullName, account.phone, account.billingEmail, account.maxPcUsers, account.maxTechnicians, owner.is_active,
-            account.subscriptionPlan, account.subscriptionLabel, account.monthlyPriceCents, account.subscriptionStatus, account.subscriptionRenewalDate || null, account.billingReference, account.creatorNote, account.quoteTemplatePolicy]);
+            account.subscriptionPlan, account.subscriptionLabel, account.monthlyPriceCents, account.subscriptionStatus, account.subscriptionRenewalDate || null, account.billingReference, account.creatorNote, account.quoteTemplatePolicy, account.quitusTemplatePolicy, account.reportTemplatePolicy]);
             await synchronizeCompanyProfile(connection, accountId, account.companyProfile);
             await connection.query("COMMIT");
         } catch (error) { await connection.query("ROLLBACK"); throw error; } finally { connection.release(); }
@@ -356,6 +359,8 @@ function sanitizeAccount(value, requireCompleteProfile = false) {
     const billingReference = cleanText(value?.billingReference, 100);
     const creatorNote = cleanText(value?.creatorNote, 1000);
     const quoteTemplatePolicy = QUOTE_TEMPLATE_POLICIES.has(value?.quoteTemplatePolicy) ? value.quoteTemplatePolicy : "company_choice";
+    const quitusTemplatePolicy = QUOTE_TEMPLATE_POLICIES.has(value?.quitusTemplatePolicy) ? value.quitusTemplatePolicy : "company_choice";
+    const reportTemplatePolicy = QUOTE_TEMPLATE_POLICIES.has(value?.reportTemplatePolicy) ? value.reportTemplatePolicy : "company_choice";
     const isActive = value?.isActive !== false;
     if (!companyName) return { ok: false, message: "Le nom de l’entreprise est obligatoire." };
     if (!fullName) return { ok: false, message: "Le nom du responsable est obligatoire." };
@@ -369,7 +374,7 @@ function sanitizeAccount(value, requireCompleteProfile = false) {
     if (!companyProfile.ok) return companyProfile;
     return { ok: true, companyName, fullName, phone, billingEmail, maxPcUsers, maxTechnicians, subscriptionPlan, subscriptionLabel,
         monthlyPriceCents: subscriptionPlan === "free" ? 0 : monthlyPriceCents, subscriptionStatus, subscriptionRenewalDate,
-        billingReference, creatorNote, quoteTemplatePolicy, isActive, companyProfile };
+        billingReference, creatorNote, quoteTemplatePolicy, quitusTemplatePolicy, reportTemplatePolicy, isActive, companyProfile };
 }
 
 async function loadCompanyProfiles(database, ownerIds) {

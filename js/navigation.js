@@ -1278,8 +1278,8 @@ function renderSettingsWorkspace(options = {}) {
         grid.className = "settings-subsection-grid";
         grid.append(
             createSettingsNavigationCard("Modèle de devis", "", "document", () => renderBilling({ profile: true })),
-            createSettingsNavigationCard("Modèle de quitus", "", "document", () => {}),
-            createSettingsNavigationCard("Modèle de rapport", "", "document", () => document.getElementById("reportTemplateSettings")?.scrollIntoView({ behavior: "smooth", block: "start" }))
+            createSettingsNavigationCard("Modèle de quitus", "Base officielle PDF ou Word", "document", () => renderBilling({ profile: true })),
+            createSettingsNavigationCard("Modèle de rapport", "Base officielle et personnalisation intégrée", "document", () => renderBilling({ profile: true }))
         );
         intro.appendChild(grid);
         container.appendChild(intro);

@@ -262,7 +262,7 @@ async function renderAccountDetail(accountId) {
             ${renderCompanyProfileFields(account.companyProfile)}
             ${renderSubscriptionFields(account)}
             ${renderOrganizationFields(account.organization)}
-            ${renderQuoteTemplatePolicyFields(account)}
+            ${renderDocumentTemplatePolicyFields(account)}
             ${isOwnCreatorAccount ? '<p class="creator-account-status-note">Le compte Créateur reste actif en permanence.</p>' : `<section class="creator-account-status-panel ${account.isActive ? "active" : "suspended"}"><div><strong>${account.isActive ? "Entreprise active" : "Entreprise suspendue"}</strong><p>${account.isActive ? "Les membres peuvent se connecter et utiliser leur espace." : "Les connexions et les sessions en cours sont bloquées. Les données restent conservées."}</p></div><button type="button" class="secondary-button ${account.isActive ? "danger-button" : ""}" id="creatorToggleAccountStatus">${account.isActive ? "Suspendre l’entreprise" : "Réactiver l’entreprise"}</button></section>`}
             <div class="creator-form-actions"><button type="submit" class="secondary-button">Enregistrer l’entreprise</button>${isOwnCreatorAccount ? "" : '<button type="button" class="secondary-button danger-button" id="creatorDeleteAccount">Supprimer l’entreprise</button>'}</div>
         </form>
@@ -328,7 +328,7 @@ function renderAccountForm() {
             ${renderCompanyProfileFields()}
             ${renderSubscriptionFields({ subscriptionPlan: "free", subscriptionLabel: "", monthlyPriceCents: 0, subscriptionStatus: "active", subscriptionRenewalDate: "", billingReference: "", creatorNote: "" })}
             ${renderOrganizationFields()}
-            ${renderQuoteTemplatePolicyFields({ quoteTemplatePolicy: "company_choice" })}
+            ${renderDocumentTemplatePolicyFields({ quoteTemplatePolicy: "company_choice", quitusTemplatePolicy: "company_choice", reportTemplatePolicy: "company_choice" })}
             <div class="creator-form-actions"><button type="submit" class="secondary-button">Créer l’entreprise</button></div>
         </form>
     `;
@@ -454,20 +454,22 @@ async function loadOrganizationHistory(accountId) {
     container.innerHTML = history.length ? `<div class="creator-network-list">${history.map(entry => `<article class="creator-network-company"><div><strong>${escapeHtml(entry.action === "created" ? "Organisation créée" : "Interface ou licence modifiée")}</strong><p>${escapeHtml(entry.nextValue?.interfaceType || "standard")} · ${escapeHtml(entry.nextValue?.licenseType || "depannhome_standard")}</p><small>${escapeHtml(entry.actorName || "Système")} · ${escapeHtml(formatDateTime(entry.createdAt))}</small></div></article>`).join("")}</div>` : '<p class="muted">Aucune modification d’interface ou de licence enregistrée.</p>';
 }
 
-function renderQuoteTemplatePolicyFields(account) {
-    const policy = account.quoteTemplatePolicy || "company_choice";
+function renderDocumentTemplatePolicyFields(account) {
     return `
-        <fieldset class="creator-subscription-fields"><legend>Base de devis</legend>
+        <fieldset class="creator-subscription-fields"><legend>Bases officielles des documents</legend>
             <div class="form-grid">
-                <label class="form-wide">Mode autorisé pour cette entreprise<select name="quoteTemplatePolicy">
-                    <option value="integrated_only" ${policy === "integrated_only" ? "selected" : ""}>Modèle Depann’Home intégré uniquement</option>
-                    <option value="company_choice" ${policy === "company_choice" ? "selected" : ""}>L’entreprise choisit son modèle</option>
-                    <option value="external_only" ${policy === "external_only" ? "selected" : ""}>Base PDF / Word déposée par l’entreprise uniquement</option>
-                </select></label>
-                <p class="muted form-wide">Une base externe est stockée dans l’espace privé de l’entreprise et téléchargée depuis le poste PC administrateur. Elle n’est jamais partagée entre entreprises.</p>
+                ${renderTemplatePolicySelect("quoteTemplatePolicy", "Devis", account.quoteTemplatePolicy)}
+                ${renderTemplatePolicySelect("quitusTemplatePolicy", "Quitus", account.quitusTemplatePolicy)}
+                ${renderTemplatePolicySelect("reportTemplatePolicy", "Rapports", account.reportTemplatePolicy)}
+                <p class="muted form-wide">Chaque base externe PDF ou Word reste privée à l’entreprise. Une fois activée, elle devient sa base officielle à télécharger pour la rédaction du document concerné.</p>
             </div>
         </fieldset>
     `;
+}
+
+function renderTemplatePolicySelect(name, label, value) {
+    const policy = value || "company_choice";
+    return `<label>Base de ${escapeHtml(label)}<select name="${name}"><option value="integrated_only" ${policy === "integrated_only" ? "selected" : ""}>Modèle intégré uniquement</option><option value="company_choice" ${policy === "company_choice" ? "selected" : ""}>L’entreprise choisit</option><option value="external_only" ${policy === "external_only" ? "selected" : ""}>Base externe obligatoire</option></select></label>`;
 }
 
 function bindSubscriptionPlan(form) {

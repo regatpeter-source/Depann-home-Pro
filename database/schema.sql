@@ -19,6 +19,8 @@ CREATE TABLE IF NOT EXISTS depannhome_users (
     billing_reference VARCHAR(100) NOT NULL DEFAULT '',
     creator_note VARCHAR(1000) NOT NULL DEFAULT '',
     quote_template_policy VARCHAR(30) NOT NULL DEFAULT 'company_choice',
+    quitus_template_policy VARCHAR(30) NOT NULL DEFAULT 'company_choice',
+    report_template_policy VARCHAR(30) NOT NULL DEFAULT 'company_choice',
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -101,7 +103,9 @@ ALTER TABLE depannhome_users
     ADD COLUMN IF NOT EXISTS subscription_renewal_date DATE,
     ADD COLUMN IF NOT EXISTS billing_reference VARCHAR(100) NOT NULL DEFAULT '',
     ADD COLUMN IF NOT EXISTS creator_note VARCHAR(1000) NOT NULL DEFAULT '',
-    ADD COLUMN IF NOT EXISTS quote_template_policy VARCHAR(30) NOT NULL DEFAULT 'company_choice';
+    ADD COLUMN IF NOT EXISTS quote_template_policy VARCHAR(30) NOT NULL DEFAULT 'company_choice',
+    ADD COLUMN IF NOT EXISTS quitus_template_policy VARCHAR(30) NOT NULL DEFAULT 'company_choice',
+    ADD COLUMN IF NOT EXISTS report_template_policy VARCHAR(30) NOT NULL DEFAULT 'company_choice';
 
 -- Double authentification TOTP réservée au compte Créateur.
 -- Le secret est chiffré côté serveur avec SESSION_SECRET avant son stockage.
@@ -212,7 +216,15 @@ ALTER TABLE depannhome_billing_profiles
     ADD COLUMN IF NOT EXISTS quote_template_mode VARCHAR(20) NOT NULL DEFAULT 'integrated',
     ADD COLUMN IF NOT EXISTS quote_template_filename VARCHAR(255) NOT NULL DEFAULT '',
     ADD COLUMN IF NOT EXISTS quote_template_data BYTEA,
-    ADD COLUMN IF NOT EXISTS quote_template_mime_type VARCHAR(150) NOT NULL DEFAULT '';
+    ADD COLUMN IF NOT EXISTS quote_template_mime_type VARCHAR(150) NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS quitus_template_mode VARCHAR(20) NOT NULL DEFAULT 'integrated',
+    ADD COLUMN IF NOT EXISTS quitus_template_filename VARCHAR(255) NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS quitus_template_data BYTEA,
+    ADD COLUMN IF NOT EXISTS quitus_template_mime_type VARCHAR(150) NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS report_file_template_mode VARCHAR(20) NOT NULL DEFAULT 'integrated',
+    ADD COLUMN IF NOT EXISTS report_file_template_filename VARCHAR(255) NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS report_file_template_data BYTEA,
+    ADD COLUMN IF NOT EXISTS report_file_template_mime_type VARCHAR(150) NOT NULL DEFAULT '';
 
 CREATE TABLE IF NOT EXISTS depannhome_billing_templates (
     id BIGSERIAL PRIMARY KEY,

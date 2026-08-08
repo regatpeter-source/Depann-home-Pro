@@ -11,6 +11,10 @@ const CUSTOMER_TYPES = new Set(["Particulier", "Professionnel", "Magasin", "Autr
 const CLIENT_ID_PATTERN = /^client-[a-zA-Z0-9-]+$/;
 const QUOTE_TEMPLATE_POLICIES = new Set(["integrated_only", "company_choice", "external_only"]);
 const QUOTE_TEMPLATE_MODES = new Set(["integrated", "external"]);
+const ADDITIONAL_TEMPLATE_TYPES = Object.freeze({
+    quitus: { label: "quitus", policyColumn: "quitus_template_policy", modeColumn: "quitus_template_mode", filenameColumn: "quitus_template_filename", dataColumn: "quitus_template_data", mimeColumn: "quitus_template_mime_type" },
+    report: { label: "rapport", policyColumn: "report_template_policy", modeColumn: "report_file_template_mode", filenameColumn: "report_file_template_filename", dataColumn: "report_file_template_data", mimeColumn: "report_file_template_mime_type" }
+});
 const upload = multer({
     storage: multer.memoryStorage(),
     limits: { fileSize: MAX_LOGO_SIZE, files: 1 },
@@ -55,6 +59,14 @@ export async function initializeBilling() {
             quote_template_filename VARCHAR(255) NOT NULL DEFAULT '',
             quote_template_data BYTEA,
             quote_template_mime_type VARCHAR(150) NOT NULL DEFAULT '',
+            quitus_template_mode VARCHAR(20) NOT NULL DEFAULT 'integrated',
+            quitus_template_filename VARCHAR(255) NOT NULL DEFAULT '',
+            quitus_template_data BYTEA,
+            quitus_template_mime_type VARCHAR(150) NOT NULL DEFAULT '',
+            report_file_template_mode VARCHAR(20) NOT NULL DEFAULT 'integrated',
+            report_file_template_filename VARCHAR(255) NOT NULL DEFAULT '',
+            report_file_template_data BYTEA,
+            report_file_template_mime_type VARCHAR(150) NOT NULL DEFAULT '',
             report_template JSONB NOT NULL DEFAULT '{}'::jsonb,
             report_secondary_logo_data BYTEA,
             report_secondary_logo_mime_type VARCHAR(50) NOT NULL DEFAULT '',
@@ -76,6 +88,14 @@ export async function initializeBilling() {
         ADD COLUMN IF NOT EXISTS quote_template_filename VARCHAR(255) NOT NULL DEFAULT '',
         ADD COLUMN IF NOT EXISTS quote_template_data BYTEA,
         ADD COLUMN IF NOT EXISTS quote_template_mime_type VARCHAR(150) NOT NULL DEFAULT '',
+        ADD COLUMN IF NOT EXISTS quitus_template_mode VARCHAR(20) NOT NULL DEFAULT 'integrated',
+        ADD COLUMN IF NOT EXISTS quitus_template_filename VARCHAR(255) NOT NULL DEFAULT '',
+        ADD COLUMN IF NOT EXISTS quitus_template_data BYTEA,
+        ADD COLUMN IF NOT EXISTS quitus_template_mime_type VARCHAR(150) NOT NULL DEFAULT '',
+        ADD COLUMN IF NOT EXISTS report_file_template_mode VARCHAR(20) NOT NULL DEFAULT 'integrated',
+        ADD COLUMN IF NOT EXISTS report_file_template_filename VARCHAR(255) NOT NULL DEFAULT '',
+        ADD COLUMN IF NOT EXISTS report_file_template_data BYTEA,
+        ADD COLUMN IF NOT EXISTS report_file_template_mime_type VARCHAR(150) NOT NULL DEFAULT '',
         ADD COLUMN IF NOT EXISTS report_template JSONB NOT NULL DEFAULT '{}'::jsonb,
         ADD COLUMN IF NOT EXISTS report_secondary_logo_data BYTEA,
         ADD COLUMN IF NOT EXISTS report_secondary_logo_mime_type VARCHAR(50) NOT NULL DEFAULT ''
@@ -162,7 +182,9 @@ export function registerBillingRoutes(app, requireAuthentication) {
                     profile.payment_terms AS "paymentTerms", profile.deposit_terms AS "depositTerms", profile.footer_note AS "footerNote", profile.default_quote AS "defaultQuote",
                     profile.quote_template_mode AS "quoteTemplateMode", profile.quote_template_filename AS "quoteTemplateFilename",
                     (profile.quote_template_data IS NOT NULL) AS "hasQuoteTemplate", (profile.logo_data IS NOT NULL) AS "hasLogo",
-                    owner.quote_template_policy AS "quoteTemplatePolicy"
+                    profile.quitus_template_mode AS "quitusTemplateMode", profile.quitus_template_filename AS "quitusTemplateFilename", (profile.quitus_template_data IS NOT NULL) AS "hasQuitusTemplate",
+                    profile.report_file_template_mode AS "reportFileTemplateMode", profile.report_file_template_filename AS "reportFileTemplateFilename", (profile.report_file_template_data IS NOT NULL) AS "hasReportFileTemplate",
+                    owner.quote_template_policy AS "quoteTemplatePolicy", owner.quitus_template_policy AS "quitusTemplatePolicy", owner.report_template_policy AS "reportTemplatePolicy"
                 FROM depannhome_users owner
                 LEFT JOIN depannhome_billing_profiles profile ON profile.owner_id = owner.id
                 WHERE owner.id = $1
@@ -248,6 +270,7 @@ export function registerBillingRoutes(app, requireAuthentication) {
         const mode = policy === "integrated_only" ? "integrated" : policy === "external_only" ? "external" : requestedMode;
         const removeTemplate = String(request.body?.removeQuoteTemplate || "") === "true";
         const template = request.file;
+        if (policy === "integrated_only" && template) return response.status(403).json({ message: "Le Créateur n’autorise pas de base de devis externe pour cette entreprise." });
         const { rows } = await getPool().query(
             "SELECT quote_template_data IS NOT NULL AS \"hasQuoteTemplate\" FROM depannhome_billing_profiles WHERE owner_id = $1",
             [accountOwnerId]
@@ -270,6 +293,7 @@ export function registerBillingRoutes(app, requireAuthentication) {
     }));
 
     app.get("/api/billing/quote-template/file", requireAuthentication, requireBillingAdministration, asyncHandler(async (request, response) => {
+        if (await getQuoteTemplatePolicy(getAccountOwnerId(request)) === "integrated_only") return response.status(403).json({ message: "Le téléchargement d’une base de devis externe n’est pas autorisé pour cette entreprise." });
         const { rows } = await getPool().query(`
             SELECT quote_template_filename AS "filename", quote_template_data AS "data", quote_template_mime_type AS "mimeType"
             FROM depannhome_billing_profiles WHERE owner_id = $1
@@ -283,6 +307,27 @@ export function registerBillingRoutes(app, requireAuthentication) {
             "X-Content-Type-Options": "nosniff"
         });
         response.send(template.data);
+    }));
+
+    app.put("/api/billing/document-templates/:templateType", requireAuthentication, requireBillingAdministration, quoteTemplateUpload.single("documentTemplate"), asyncHandler(async (request, response) => {
+        const definition = ADDITIONAL_TEMPLATE_TYPES[request.params.templateType];
+        if (!definition) return response.status(404).json({ message: "Type de base documentaire inconnu." });
+        const ownerId = getAccountOwnerId(request); const policy = await getTemplatePolicy(ownerId, definition); const requestedMode = QUOTE_TEMPLATE_MODES.has(request.body?.templateMode) ? request.body.templateMode : "integrated";
+        const mode = policy === "integrated_only" ? "integrated" : policy === "external_only" ? "external" : requestedMode; const removeTemplate = String(request.body?.removeTemplate || "") === "true"; const template = request.file;
+        if (policy === "integrated_only" && template) return response.status(403).json({ message: `Le Créateur n’autorise pas de base de ${definition.label} externe pour cette entreprise.` });
+        const current = await getPool().query(`SELECT ${definition.dataColumn} IS NOT NULL AS "hasTemplate" FROM depannhome_billing_profiles WHERE owner_id=$1`, [ownerId]);
+        if (mode === "external" && !template && (removeTemplate || !current.rows[0]?.hasTemplate)) return response.status(400).json({ message: `Déposez une base de ${definition.label} PDF, DOC ou DOCX avant d’activer ce mode.` });
+        await getPool().query(`INSERT INTO depannhome_billing_profiles (owner_id,${definition.modeColumn},${definition.filenameColumn},${definition.dataColumn},${definition.mimeColumn}) VALUES ($1,$2,$3,$4,$5) ON CONFLICT(owner_id) DO UPDATE SET ${definition.modeColumn}=EXCLUDED.${definition.modeColumn},${definition.filenameColumn}=CASE WHEN $6 THEN '' WHEN $7 THEN EXCLUDED.${definition.filenameColumn} ELSE depannhome_billing_profiles.${definition.filenameColumn} END,${definition.dataColumn}=CASE WHEN $6 THEN NULL WHEN $7 THEN EXCLUDED.${definition.dataColumn} ELSE depannhome_billing_profiles.${definition.dataColumn} END,${definition.mimeColumn}=CASE WHEN $6 THEN '' WHEN $7 THEN EXCLUDED.${definition.mimeColumn} ELSE depannhome_billing_profiles.${definition.mimeColumn} END,updated_at=NOW()`, [ownerId, mode, cleanFileName(template?.originalname || `base-${definition.label}`), template?.buffer || null, template?.mimetype || "", removeTemplate, Boolean(template)]);
+        response.status(204).end();
+    }));
+
+    app.get("/api/billing/document-templates/:templateType/file", requireAuthentication, requireBillingAdministration, asyncHandler(async (request, response) => {
+        const definition = ADDITIONAL_TEMPLATE_TYPES[request.params.templateType];
+        if (!definition) return response.status(404).json({ message: "Type de base documentaire inconnu." });
+        if (await getTemplatePolicy(getAccountOwnerId(request), definition) === "integrated_only") return response.status(403).json({ message: `Le téléchargement d’une base de ${definition.label} externe n’est pas autorisé pour cette entreprise.` });
+        const { rows } = await getPool().query(`SELECT ${definition.filenameColumn} AS filename,${definition.dataColumn} AS data,${definition.mimeColumn} AS "mimeType" FROM depannhome_billing_profiles WHERE owner_id=$1`, [getAccountOwnerId(request)]); const template = rows[0];
+        if (!template?.data) return response.status(404).json({ message: `Aucune base de ${definition.label} déposée.` });
+        response.set({ "Content-Type": template.mimeType || "application/octet-stream", "Content-Disposition": `attachment; filename="${contentDispositionFileName(template.filename || `base-${definition.label}`)}"`, "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" }); response.send(template.data);
     }));
 
     app.get("/api/billing/blank-quote/pdf", requireAuthentication, requireBillingAdministration, asyncHandler(async (request, response) => {
@@ -543,15 +588,17 @@ async function requireTechnicianBillingAccess(request, response, next) {
 }
 
 export function billingUploadErrorHandler(error, request, response, next) {
-    if (error instanceof multer.MulterError) return response.status(400).json({ message: error.field === "quoteTemplate" ? "La base de devis doit faire au maximum 10 Mo." : "Le logo doit faire au maximum 2 Mo." });
+    if (error instanceof multer.MulterError) return response.status(400).json({ message: ["quoteTemplate", "documentTemplate"].includes(error.field) ? "La base documentaire doit faire au maximum 10 Mo." : "Le logo doit faire au maximum 2 Mo." });
     if (error?.message === "Seules les images PNG, JPEG ou WebP sont acceptées.") return response.status(400).json({ message: error.message });
     if (error?.message === "Seuls les fichiers PDF, DOC et DOCX sont acceptés.") return response.status(400).json({ message: error.message });
     return next(error);
 }
 
 function emptyProfile() {
-    return { companyName: "", legalForm: "", address: "", postalCode: "", city: "", phone: "", secondaryPhone: "", email: "", country: "France", registrationNumber: "", siren: "", taxNumber: "", bankIban: "", bankBic: "", paymentTerms: "", depositTerms: "", footerNote: "", defaultQuote: null, quoteTemplateMode: "integrated", quoteTemplateFilename: "", hasQuoteTemplate: false, quoteTemplatePolicy: "company_choice", hasLogo: false };
+    return { companyName: "", legalForm: "", address: "", postalCode: "", city: "", phone: "", secondaryPhone: "", email: "", country: "France", registrationNumber: "", siren: "", taxNumber: "", bankIban: "", bankBic: "", paymentTerms: "", depositTerms: "", footerNote: "", defaultQuote: null, quoteTemplateMode: "integrated", quoteTemplateFilename: "", hasQuoteTemplate: false, quoteTemplatePolicy: "company_choice", quitusTemplateMode: "integrated", quitusTemplateFilename: "", hasQuitusTemplate: false, quitusTemplatePolicy: "company_choice", reportFileTemplateMode: "integrated", reportFileTemplateFilename: "", hasReportFileTemplate: false, reportTemplatePolicy: "company_choice", hasLogo: false };
 }
+
+async function getTemplatePolicy(ownerId, definition) { const { rows } = await getPool().query(`SELECT ${definition.policyColumn} AS policy FROM depannhome_users WHERE id=$1`, [ownerId]); return QUOTE_TEMPLATE_POLICIES.has(rows[0]?.policy) ? rows[0].policy : "company_choice"; }
 
 async function getQuoteTemplatePolicy(accountOwnerId) {
     const { rows } = await getPool().query("SELECT quote_template_policy FROM depannhome_users WHERE id = $1", [accountOwnerId]);
