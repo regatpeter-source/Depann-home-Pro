@@ -65,7 +65,7 @@ export async function renderCalendar(options = {}) {
     clearSearch();
     resetSelection("all");
     const technicianHome = isReadOnlyCalendar();
-    setPage(technicianHome ? "Accueil" : "Planning", ROUTES.calendar, "detail");
+    setPage(technicianHome ? "Accueil" : isMobileAdministrator() ? "Interventions" : "Planning", ROUTES.calendar, "detail");
 
     const container = getContainer();
     const header = document.createElement("section");
@@ -147,14 +147,14 @@ function renderHeader(panel) {
     panel.innerHTML = `
         <div class="calendar-toolbar">
             <div>
-                <p class="eyebrow">Planning professionnel</p>
+                <p class="eyebrow">${isMobileAdministrator() ? "Interventions terrain" : "Planning professionnel"}</p>
                 <h2>${escapeHtml(periodLabel)}</h2>
             </div>
             <div class="calendar-toolbar-actions">
                 <button type="button" class="secondary-button" data-calendar-action="previous">← ${getPreviousLabel()}</button>
                 <button type="button" class="secondary-button auth-outline-button" data-calendar-action="today">Aujourd’hui</button>
                 <button type="button" class="secondary-button" data-calendar-action="next">${getNextLabel()} →</button>
-                ${readOnly ? "" : '<button type="button" class="secondary-button" data-calendar-action="new">+ Nouveau rendez-vous</button><button type="button" class="secondary-button" data-calendar-action="new-task">+ Nouvelle tâche</button>'}
+                ${readOnly ? "" : `<button type="button" class="secondary-button" data-calendar-action="new">${isMobileAdministrator() ? "+ Planifier une intervention" : "+ Nouveau rendez-vous"}</button><button type="button" class="secondary-button" data-calendar-action="new-task">+ Nouvelle tâche</button>`}
             </div>
         </div>
         <div class="calendar-view-switcher" role="group" aria-label="Vue du planning">
@@ -307,7 +307,7 @@ function renderEventForm(panel) {
         const phoneHref = client ? getClientPhoneHref(client) : "";
         panel.innerHTML = `
             <div class="calendar-event-detail">
-                <div class="form-heading"><div><p class="eyebrow">Rendez-vous</p><h2>${escapeHtml(event.title)}</h2></div><div class="calendar-detail-actions">${isMobileAdministrator() ? '<button type="button" class="secondary-button" id="editCalendarEvent">Modifier</button>' : ""}<button type="button" class="secondary-button" id="closeCalendarDetail">Fermer</button></div></div>
+                <div class="form-heading"><div><p class="eyebrow">${isMobileAdministrator() ? "Intervention à réaliser" : "Rendez-vous"}</p><h2>${escapeHtml(event.title)}</h2></div><div class="calendar-detail-actions">${isMobileAdministrator() ? '<button type="button" class="secondary-button" id="editCalendarEvent">Modifier le rendez-vous</button>' : ""}<button type="button" class="secondary-button" id="closeCalendarDetail">Fermer</button></div></div>
                 ${client ? `
                     <section class="calendar-client-summary">
                         <div><p class="eyebrow">Fiche client</p><h3>${escapeHtml(client.name)}</h3><p class="muted">${escapeHtml(client.type || "Client")}</p></div>
@@ -553,6 +553,7 @@ function renderEventForm(panel) {
             label: (result.data?.count || payload.dates?.length || 1) > 1 ? `${result.data?.count || payload.dates.length} rendez-vous créés` : "Rendez-vous créé",
             detail: [payload.title, formatActivityDate(payload.date, payload.startTime)].filter(Boolean).join(" · ")
         });
+        mobileAdminEditingEvents.delete(String(event.id || ""));
         displayedMonth = firstDayOfMonth(new Date(`${payload.date}T12:00:00`));
         selectedEvent = null;
         invalidateCalendarEventsCache();
@@ -1247,7 +1248,7 @@ function isMobileAdministrator() {
 }
 
 function usesTerrainInterventionView(event) {
-    return isReadOnlyCalendar() || (isMobileAdministrator() && event?.eventType === "appointment" && !mobileAdminEditingEvents.has(String(event.id || "")));
+    return isReadOnlyCalendar() || (isMobileAdministrator() && Boolean(event?.id) && event.eventType === "appointment" && !mobileAdminEditingEvents.has(String(event.id)));
 }
 
 function roleLabel(role) {
