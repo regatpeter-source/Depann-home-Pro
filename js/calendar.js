@@ -54,6 +54,11 @@ window.addEventListener("depannhome:billing-document-saved", event => {
 });
 
 export async function renderCalendar(options = {}) {
+    if (["month", "week", "day"].includes(options.view)) calendarView = options.view;
+    if (options.showAllTechnicians) {
+        showAllTechnicians = true;
+        visibleTechnicianIds.clear();
+    }
     if (options.date) displayedMonth = calendarView === "month" ? firstDayOfMonth(options.date) : atNoon(options.date);
     if (options.event) selectedEvent = options.event;
 
@@ -363,15 +368,15 @@ function renderEventForm(panel) {
         <form id="calendarEventForm" class="client-form">
             <div class="form-heading">
                 <div>
-                    <p class="eyebrow">${isEditing ? "Modification" : event.eventType === "task" ? "Nouvelle tâche" : "Nouveau rendez-vous"}</p>
-                    <h2>${isEditing ? "Modifier l’élément du planning" : event.eventType === "task" ? "Planifier une tâche interne" : "Planifier une intervention"}</h2>
+                    <p class="eyebrow">${event.partnerMissionId ? `Mission partenaire · ${escapeHtml(event.partnerMissionNumber || event.partnerMissionId)}` : isEditing ? "Modification" : event.eventType === "task" ? "Nouvelle tâche" : "Nouveau rendez-vous"}</p>
+                    <h2>${event.partnerMissionId ? "Planifier la mission dans le planning général" : isEditing ? "Modifier l’élément du planning" : event.eventType === "task" ? "Planifier une tâche interne" : "Planifier une intervention"}</h2>
                 </div>
                 ${isEditing ? '<button type="button" class="secondary-button" id="cancelCalendarEdit">Annuler</button>' : ""}
             </div>
             <div class="form-grid">
                 <label>
                     Type
-                    <select name="eventType">${EVENT_TYPE_OPTIONS.map(type => `<option value="${type.id}" ${event.eventType === type.id ? "selected" : ""}>${type.label}</option>`).join("")}</select>
+                    <select name="eventType" ${event.partnerMissionId ? "disabled" : ""}>${EVENT_TYPE_OPTIONS.map(type => `<option value="${type.id}" ${event.eventType === type.id ? "selected" : ""}>${type.label}</option>`).join("")}</select>
                 </label>
                 <label>
                     Titre *
@@ -379,7 +384,7 @@ function renderEventForm(panel) {
                 </label>
                 <label class="calendar-client-field">
                     Client
-                    <span class="calendar-client-picker"><input name="clientName" list="calendarClients" maxlength="160" placeholder="Nom du client" value="${escapeHtml(event.clientName)}"><button type="button" class="secondary-button" id="openCalendarClient" hidden>Ouvrir la fiche</button></span>
+                    <span class="calendar-client-picker"><input name="clientName" list="calendarClients" maxlength="160" placeholder="Nom du client" value="${escapeHtml(event.clientName)}" ${event.partnerMissionId ? "readonly" : ""}><button type="button" class="secondary-button" id="openCalendarClient" hidden>Ouvrir la fiche</button></span>
                     <datalist id="calendarClients">${clients.map(client => `<option value="${escapeHtml(client.name)}">${escapeHtml([client.city, client.phone].filter(Boolean).join(" · "))}</option>`).join("")}</datalist>
                 </label>
                 <section class="calendar-client-preview form-wide" id="calendarClientPreview" hidden></section>
@@ -387,7 +392,7 @@ function renderEventForm(panel) {
                     Date *
                     <input name="date" type="date" required value="${escapeHtml(event.date)}">
                 </label>
-                ${isEditing ? "" : renderMultiDatePlanning(event)}
+                ${isEditing || event.partnerMissionId ? "" : renderMultiDatePlanning(event)}
                 <label>
                     Couleur / statut
                     <select name="color">${COLOR_OPTIONS.map(color => `<option value="${color.id}" ${event.color === color.id ? "selected" : ""}>${color.label}</option>`).join("")}</select>
@@ -409,6 +414,7 @@ function renderEventForm(panel) {
                     Notes
                     <textarea name="notes" rows="3" maxlength="2000" placeholder="Travaux prévus, matériel à prévoir, consignes d’accès…">${escapeHtml(event.notes)}</textarea>
                 </label>
+                ${event.partnerMissionId ? `<label class="form-wide">Type de facturation<select name="billingMode"><option value="direct_client" ${event.billingMode !== "principal" ? "selected" : ""}>Facturation directe au client final — documents privés</option><option value="principal" ${event.billingMode === "principal" ? "selected" : ""}>Facturation destinée à ${escapeHtml(event.partnerName || "l’entreprise donneuse d’ordre")} — devis et factures partagés</option></select></label>` : ""}
             </div>
             <p id="calendarFormMessage" class="auth-message" aria-live="polite"></p>
             <section class="calendar-availability" id="calendarAvailability" aria-live="polite"></section>
@@ -460,7 +466,7 @@ function renderEventForm(panel) {
         const clientName = normalizeText(clientInput.value);
         const client = clients.find(item => normalizeText(item.name) === clientName);
         const address = client ? formatClientAddress(client) : "";
-        if (address) locationInput.value = address;
+        if (address && (!event.partnerMissionId || !locationInput.value)) locationInput.value = address;
         openClientButton.hidden = !client;
         clientPreview.hidden = !client;
         clientPreview.innerHTML = client ? renderCalendarClientPreview(client) : "";
@@ -513,9 +519,11 @@ function renderEventForm(panel) {
         message.classList.remove("error");
 
         const payload = formToEvent(new FormData(form));
-        const result = isEditing
-            ? await request(`/api/calendar/events/${encodeURIComponent(event.id)}`, { method: "PUT", body: JSON.stringify(payload) })
-            : await request("/api/calendar/events", { method: "POST", body: JSON.stringify(payload) });
+        const result = typeof event.saveEvent === "function"
+            ? await event.saveEvent(payload)
+            : isEditing
+                ? await request(`/api/calendar/events/${encodeURIComponent(event.id)}`, { method: "PUT", body: JSON.stringify(payload) })
+                : await request("/api/calendar/events", { method: "POST", body: JSON.stringify(payload) });
         if (!result.ok) {
             message.textContent = result.message || "Impossible d’enregistrer cet élément du planning.";
             message.classList.add("error");
@@ -1284,6 +1292,7 @@ function formToEvent(form) {
         eventType: String(form.get("eventType") || "appointment"),
         assignedTechnicianId: String(form.get("assignedTechnicianId") || ""),
         assignedTechnicianIds: form.getAll("assignedTechnicianIds").map(value => String(value || "")),
+        billingMode: String(form.get("billingMode") || ""),
         dates: form.getAll("dates").map(value => String(value || "")),
         notes: String(form.get("notes") || "").trim()
     };

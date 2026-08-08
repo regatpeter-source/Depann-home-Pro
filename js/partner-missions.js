@@ -69,7 +69,11 @@ function renderMissions(node, missions, options = {}) { node.innerHTML = mission
     node.querySelectorAll("[data-open]").forEach(button => button.addEventListener("click", () => showDetail(button.dataset.open)));
     node.querySelectorAll("[data-open-dialogue]").forEach(button => button.addEventListener("click", () => openPartnerDialogue(button.dataset.openDialogue)));
     node.querySelectorAll("[data-open-sent-dialogue]").forEach(button => button.addEventListener("click", () => openPartnerDialogue(button.dataset.openSentDialogue, { sourceDialogue: true })));
-    node.querySelectorAll("[data-accept]").forEach(button => button.addEventListener("click", () => showAccept(button.dataset.accept)));
+    node.querySelectorAll("[data-accept]").forEach(button => button.addEventListener("click", () => {
+        const mission = dashboard.missions.find(item => Number(item.id) === Number(button.dataset.accept));
+        if (mission?.sourceType === "depannhome_network") openNetworkMissionPlanning(mission);
+        else showAccept(button.dataset.accept);
+    }));
     node.querySelectorAll("[data-reject]").forEach(button => button.addEventListener("click", async () => { const reason = prompt("Motif du refus à transmettre au partenaire :"); if (reason === null) return; const result = await api(`/api/partner-missions/${button.dataset.reject}/reject`, { method: "POST", body: JSON.stringify({ reason }) }); if (!result.ok) return alert(result.message); renderPartnerMissions(); }));
     node.querySelectorAll("[data-delete-sent]").forEach(button => button.addEventListener("click", async () => { if (!confirm("Êtes-vous certain de vouloir supprimer cette mission ?\n\nCette action est irréversible.")) return; const result = await api(`/api/partner-connections/missions/${button.dataset.deleteSent}`, { method: "DELETE" }); if (!result.ok) return alert(result.message); renderPartnerMissions(); }));
     node.querySelectorAll("[data-cancel-sent]").forEach(button => button.addEventListener("click", async () => { if (!confirm("Annuler cette mission acceptée ? L’historique sera conservé chez les deux entreprises.")) return; const reason = prompt("Motif de l’annulation (facultatif) :"); if (reason === null) return; const result = await api(`/api/partner-connections/missions/${button.dataset.cancelSent}/cancel`, { method: "POST", body: JSON.stringify({ reason }) }); if (!result.ok) return alert(result.message); renderPartnerMissions(); }));
@@ -214,6 +218,66 @@ function formatAttachmentSize(value) { const size = Number(value) || 0; return s
 function showWizardMessage(node, message) { const target = node.querySelector(".auth-message"); target.textContent = message; target.classList.add("error"); }
 
 async function showDetail(id) { const result = await api(`/api/partner-missions/${id}`); if (!result.ok) return alert(result.message); const { mission, history } = result.data; const details = Object.entries(mission.mappedData).filter(([key, value]) => value && !["attachments", "errors"].includes(key)).map(([key, value]) => `<dt>${escapeHtml(labelField(key))}</dt><dd>${escapeHtml(typeof value === "object" ? JSON.stringify(value) : value)}</dd>`).join(""); const dialog = openDialog(`<h3>Mission ${escapeHtml(mission.missionNumber || "partenaire")}</h3><p class="muted">Reçue le ${escapeHtml(formatMissionDate(mission.createdAt))} · ${escapeHtml(mission.partnerName || "Partenaire")} · ${escapeHtml(labelStatus(mission.status))}</p><div class="partner-mission-card-actions"><button class="secondary-button" id="openPartnerDialogue">Ouvrir le dialogue</button></div><dl class="partner-mission-details">${details}</dl><h4>Journal de mission</h4><ol class="partner-mission-history">${history.map(item => `<li><strong>${escapeHtml(labelStatus(item.status))}</strong> · ${escapeHtml(item.action)}<br><small>${escapeHtml(item.actorName)} · ${escapeHtml(formatMissionDate(item.createdAt))}</small></li>`).join("")}</ol>`); dialog.querySelector("#openPartnerDialogue").addEventListener("click", () => { dialog.remove(); openPartnerDialogue(mission.id); }); }
+async function openNetworkMissionPlanning(mission) {
+    const { renderCalendar } = await import("./calendar.js?v=154");
+    const data = mission.mappedData || {};
+    const date = htmlDateValue(mission.scheduledDate || data.date) || new Date().toISOString().slice(0, 10);
+    const technicianId = String(mission.assignedTechnicianId || "");
+    const saveEvent = async payload => {
+        const mode = await api(`/api/partner-missions/${mission.id}/billing-mode`, {
+            method: "PATCH",
+            body: JSON.stringify({ billingMode: payload.billingMode || mission.billingMode || "direct_client" })
+        });
+        if (!mode.ok) return mode;
+        const accepted = await api(`/api/partner-missions/${mission.id}/accept`, {
+            method: "POST",
+            body: JSON.stringify({
+                date: payload.date,
+                startTime: payload.startTime,
+                endTime: payload.endTime,
+                technicianId: payload.assignedTechnicianId,
+                assignedTechnicianIds: payload.assignedTechnicianIds,
+                assignmentMode: "manual"
+            })
+        });
+        if (!accepted.ok) return accepted;
+        const eventId = accepted.data?.mission?.calendarEventId;
+        if (eventId) {
+            const calendarUpdate = await api(`/api/calendar/events/${encodeURIComponent(eventId)}`, {
+                method: "PUT",
+                body: JSON.stringify(payload)
+            });
+            if (!calendarUpdate.ok) {
+                alert("La mission est acceptée et visible dans le planning, mais certaines personnalisations du rendez-vous n’ont pas pu être appliquées.");
+            }
+        }
+        return accepted;
+    };
+    await renderCalendar({
+        date: new Date(`${date}T12:00:00`),
+        view: "month",
+        showAllTechnicians: true,
+        event: {
+            title: `${data.interventionType || "Intervention"}${data.clientName ? ` · ${data.clientName}` : ""}`,
+            clientId: mission.clientId || "",
+            clientName: data.clientName || "",
+            location: data.interventionAddress || data.address || "",
+            date,
+            startTime: mission.scheduledStartTime || data.startTime || "",
+            endTime: mission.scheduledEndTime || data.endTime || "",
+            color: mission.priority === "urgent" ? "red" : mission.priority === "high" ? "orange" : "blue",
+            eventType: "appointment",
+            notes: [data.description, data.comments].filter(Boolean).join("\n"),
+            assignedTechnicianId: technicianId,
+            assignedTechnicianIds: technicianId ? [technicianId] : [],
+            partnerMissionId: mission.id,
+            partnerMissionNumber: mission.missionNumber,
+            partnerName: mission.partnerName,
+            billingMode: mission.billingMode || "direct_client",
+            saveEvent
+        }
+    });
+}
 function showAccept(id) { const mission = dashboard.missions.find(item => Number(item.id) === Number(id)); if (!mission) return; const options = dashboard.technicians.map(technician => `<option value="${technician.id}">${escapeHtml(technician.fullName)}</option>`).join(""); const dialog = openDialog(`<form id="acceptPartnerMission"><h3>Accepter et planifier</h3><p>${escapeHtml(mission.mappedData.clientName || "Client")}</p><div class="form-grid"><label>Date <input name="date" type="date" value="${escapeHtml(htmlDateValue(mission.scheduledDate || mission.mappedData.date))}"></label><label>Début <input name="startTime" type="time" value="${escapeHtml(mission.scheduledStartTime || mission.mappedData.startTime || "")}"></label><label>Fin <input name="endTime" type="time" value="${escapeHtml(mission.scheduledEndTime || mission.mappedData.endTime || "")}"></label><label>Technicien <select name="technicianId"><option value="">Affectation ultérieure</option>${options}</select></label><label>Mode <select name="assignmentMode"><option value="manual">Manuel</option><option value="automatic">Automatique selon la charge</option></select></label><label class="form-wide">Type de facturation<select name="billingMode"><option value="direct_client" ${mission.billingMode !== "principal" ? "selected" : ""}>Facturation directe au client final — devis, factures et comptabilité restent privés</option><option value="principal" ${mission.billingMode === "principal" ? "selected" : ""}>Facturation destinée à l’entreprise donneuse d’ordre — devis et factures partagés</option></select></label></div><p class="muted">Les documents restent internes par défaut. En mode donneur d’ordre, les devis et factures liés à cette mission sont partagés automatiquement.</p><div class="form-actions"><button class="secondary-button">Confirmer</button></div></form>`); dialog.querySelector("form").addEventListener("submit", async event => { event.preventDefault(); const values = Object.fromEntries(new FormData(event.currentTarget)); const mode = await api(`/api/partner-missions/${id}/billing-mode`, { method: "PATCH", body: JSON.stringify({ billingMode: values.billingMode }) }); if (!mode.ok) return alert(mode.message); const result = await api(`/api/partner-missions/${id}/accept`, { method: "POST", body: JSON.stringify(values) }); if (!result.ok) return alert(result.message); dialog.remove(); renderPartnerMissions(); }); }
 function openDialog(content) { const dialog = document.createElement("div"); dialog.className = "partner-mission-dialog"; dialog.innerHTML = `<section><button class="text-button partner-dialog-close" aria-label="Fermer">Fermer</button>${content}</section>`; dialog.querySelector(".partner-dialog-close").addEventListener("click", () => dialog.remove()); document.body.appendChild(dialog); return dialog; }
 function labelStatus(value) { return ({ received: "Reçue", pending_validation: "À valider", accepted: "Acceptée", rejected: "Refusée", assigned: "Affectée", scheduled: "Planifiée", en_route: "En route", on_site: "Sur site", report_in_progress: "Rapport en cours", report_completed: "Rapport terminé", report_validated: "Rapport validé", quote_sent: "Devis envoyé", quote_accepted: "Devis accepté", work_completed: "Travaux terminés", invoice_sent: "Facture envoyée", closed: "Clôturée", cancelled: "Annulée" })[value] || "Statut non renseigné"; }
@@ -225,6 +289,10 @@ function htmlDateValue(value) { const match = /^(\d{4}-\d{2}-\d{2})/.exec(String
 function canManagePartnerMissions() { return ["admin", "pc_standard", "mobile_admin"].includes(document.body.dataset.role); }
 async function api(url, options = {}) {
     try {
+        if (/\/api\/partner-missions\/\d+\/accept$/.test(url)) {
+            const payload = typeof options.body === "string" ? JSON.parse(options.body) : options.body || {};
+            if (!htmlDateValue(payload.date)) return { ok: false, message: "Choisissez une date pour ajouter cette intervention au planning général." };
+        }
         const response = await fetch(url, { credentials: "same-origin", headers: { "Content-Type": "application/json", ...(options.headers || {}) }, ...options });
         const data = response.status === 204 ? null : await response.json().catch(() => null);
         if (response.ok && /\/api\/partner-missions\/\d+\/accept$/.test(url)) {
