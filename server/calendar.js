@@ -476,7 +476,7 @@ function quitusPdfFileName(event) {
     return `quitus-intervention-${event.id}-${event.date}.pdf`;
 }
 
-function createQuitusPdf(event, quitus) {
+export function createQuitusPdf(event, quitus) {
     return new Promise((resolve, reject) => {
         const pdf = new PDFDocument({ size: "A4", margin: 48, info: { Title: `Quitus d’intervention ${event.id}`, Author: "Depann'Home Pro" } });
         const chunks = [];
@@ -502,9 +502,13 @@ function createQuitusPdf(event, quitus) {
         text("VALIDATION DU CLIENT", 62, signatureY + 14, 250, { size: 9, bold: true });
         text(`Signé par : ${quitus.signedBy}`, 62, signatureY + 34, 300, { size: 10 });
         text(`Validé le : ${new Intl.DateTimeFormat("fr-FR", { dateStyle: "long", timeStyle: "short" }).format(new Date())}`, 62, signatureY + 52, 420, { size: 9, color: "#4b5563" });
-        const signature = Buffer.from(quitus.signature.replace(/^data:image\/png;base64,/, ""), "base64");
-        try { pdf.image(signature, 62, signatureY + 78, { fit: [300, 94] }); } catch { /* La signature est validée avant la génération ; le PDF reste traçable en cas d'image illisible. */ }
-        text("Ce quitus a été validé électroniquement et ne peut plus être modifié.", 48, 748, 499, { size: 8, color: "#4b5563", align: "center" });
+        if (/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(String(quitus.signature || ""))) {
+            const signature = Buffer.from(quitus.signature.replace(/^data:image\/png;base64,/, ""), "base64");
+            try { pdf.image(signature, 62, signatureY + 78, { fit: [300, 94] }); } catch { /* La signature est validée avant la génération ; le PDF reste traçable en cas d'image illisible. */ }
+        } else {
+            text("Emplacement réservé à la signature du client", 62, signatureY + 112, 300, { size: 9, color: "#6b7280", align: "center" });
+        }
+        text(quitus.signature ? "Ce quitus a été validé électroniquement et ne peut plus être modifié." : "Aperçu du quitus avant validation et signature du client.", 48, 748, 499, { size: 8, color: "#4b5563", align: "center" });
         pdf.end();
     });
 }

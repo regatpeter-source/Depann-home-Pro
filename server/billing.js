@@ -3,6 +3,8 @@ import PDFDocument from "pdfkit";
 import { getPool } from "./database.js";
 import { getAccountOwnerId } from "./auth.js";
 import { sendDocumentEmail } from "./email.js";
+import { createQuitusPdf } from "./calendar.js";
+import { createEmptyLeakContent, createLeakReportPdf } from "./leak-report-template.js";
 
 const MAX_LOGO_SIZE = 2 * 1024 * 1024;
 const MAX_QUOTE_TEMPLATE_SIZE = 10 * 1024 * 1024;
@@ -330,6 +332,41 @@ export function registerBillingRoutes(app, requireAuthentication) {
         response.set({ "Content-Type": template.mimeType || "application/octet-stream", "Content-Disposition": `attachment; filename="${contentDispositionFileName(template.filename || `base-${definition.label}`)}"`, "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" }); response.send(template.data);
     }));
 
+    app.get("/api/billing/document-templates/:templateType/preview", requireAuthentication, requireBillingAdministration, asyncHandler(async (request, response) => {
+        const definition = ADDITIONAL_TEMPLATE_TYPES[request.params.templateType];
+        if (!definition) return response.status(404).json({ message: "Type de base documentaire inconnu." });
+        const ownerId = getAccountOwnerId(request);
+        const policy = await getTemplatePolicy(ownerId, definition);
+        const { rows } = await getPool().query(`
+            SELECT ${definition.modeColumn} AS mode, ${definition.filenameColumn} AS filename,
+                ${definition.dataColumn} AS data, ${definition.mimeColumn} AS "mimeType"
+            FROM depannhome_billing_profiles WHERE owner_id = $1
+        `, [ownerId]);
+        const template = rows[0];
+        const usesExternal = policy === "external_only" || (policy !== "integrated_only" && template?.mode === "external");
+        if (usesExternal) {
+            if (!template?.data) return response.status(404).json({ message: `Aucune base de ${definition.label} déposée.` });
+            const mimeType = template.mimeType || "application/octet-stream";
+            response.set({
+                "Content-Type": mimeType,
+                "Content-Disposition": `${mimeType === "application/pdf" ? "inline" : "attachment"}; filename="${contentDispositionFileName(template.filename || `base-${definition.label}`)}"`,
+                "Cache-Control": "private, no-store",
+                "X-Content-Type-Options": "nosniff"
+            });
+            return response.send(template.data);
+        }
+        const preview = request.params.templateType === "quitus"
+            ? await createQuitusPreview()
+            : await createReportPreview(ownerId);
+        response.set({
+            "Content-Type": "application/pdf",
+            "Content-Disposition": `inline; filename="apercu-${definition.label}.pdf"`,
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff"
+        });
+        response.send(preview);
+    }));
+
     app.get("/api/billing/blank-quote/pdf", requireAuthentication, requireBillingAdministration, asyncHandler(async (request, response) => {
         if (await usesExternalQuoteTemplate(getAccountOwnerId(request))) {
             return response.status(403).json({ message: "Cette entreprise utilise une base de devis PDF ou Word déposée dans son espace." });
@@ -611,6 +648,54 @@ async function usesExternalQuoteTemplate(accountOwnerId) {
         getPool().query("SELECT quote_template_mode FROM depannhome_billing_profiles WHERE owner_id = $1", [accountOwnerId])
     ]);
     return policy === "external_only" || (policy !== "integrated_only" && profile.rows[0]?.quote_template_mode === "external");
+}
+
+function createQuitusPreview() {
+    const date = new Date().toISOString().slice(0, 10);
+    return createQuitusPdf({
+        id: "APERÇU",
+        title: "Intervention de démonstration",
+        clientName: "Nom du client",
+        location: "Adresse de l’intervention",
+        date,
+        startTime: "09:00",
+        endTime: "10:30",
+        notes: "Compte rendu et observations de l’intervention."
+    }, {
+        signedBy: "Nom du client",
+        signature: ""
+    });
+}
+
+async function createReportPreview(ownerId) {
+    const { rows } = await getPool().query(`
+        SELECT company_name AS "companyName", address, postal_code AS "postalCode", city, phone, email,
+            registration_number AS "registrationNumber", tax_number AS "taxNumber", logo_data AS "logoData",
+            logo_mime_type AS "logoMimeType", report_template AS "reportTemplate",
+            report_secondary_logo_data AS "secondaryLogoData", report_secondary_logo_mime_type AS "secondaryLogoMimeType"
+        FROM depannhome_billing_profiles WHERE owner_id = $1
+    `, [ownerId]);
+    const profile = rows[0] || emptyProfile();
+    const date = new Date().toISOString().slice(0, 10);
+    const snapshot = {
+        interventionNumber: "APERÇU",
+        interventionReference: "Intervention de démonstration",
+        clientName: "Nom du client",
+        clientAddress: "Adresse de l’intervention",
+        date,
+        time: "09:00",
+        technicianName: "Nom du technicien"
+    };
+    return createLeakReportPdf({
+        id: "APERÇU",
+        title: "Rapport de recherche de fuite — Aperçu",
+        reportDate: date,
+        clientName: snapshot.clientName,
+        appointmentLocation: snapshot.clientAddress,
+        technicianName: snapshot.technicianName,
+        content: createEmptyLeakContent(snapshot),
+        media: []
+    }, profile);
 }
 
 function cleanFileName(value) {
