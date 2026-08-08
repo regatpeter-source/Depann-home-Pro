@@ -66,6 +66,17 @@ function renderMissionTab(shell) {
 function renderMissions(node, missions, options = {}) { node.innerHTML = missions.length ? missions.map(mission => `<article class="partner-mission-card priority-${escapeHtml(mission.priority)}"><div class="partner-mission-card-title"><div><p class="eyebrow">${escapeHtml(mission.partnerName || "Partenaire")} · ${escapeHtml(mission.missionNumber || "Mission partenaire")}</p><h3>${escapeHtml(mission.mappedData?.clientName || "Client non renseigné")}</h3><p>${escapeHtml(mission.mappedData?.address || "Adresse non renseignée")}</p></div><span class="partner-mission-status ${escapeHtml(mission.status)}">${escapeHtml(labelStatus(mission.status))}</span></div><div class="partner-mission-meta"><span>${escapeHtml(mission.mappedData?.interventionType || "Intervention")}</span><span>${mission.scheduledDate ? escapeHtml(mission.scheduledDate) : "À planifier"}</span><span class="priority">${escapeHtml(labelPriority(mission.priority))}</span></div><p>${escapeHtml(mission.mappedData?.description || mission.mappedData?.comments || "Aucun descriptif transmis.")}</p><div class="partner-mission-card-actions">${options.sent || mission.conversationSide === "sent" ? `<span class="muted">Envoyée le ${escapeHtml(formatMissionDate(mission.sentAt))}</span><button class="secondary-button" data-open-sent-dialogue="${mission.id}">Ouvrir la conversation</button>${["received", "pending_validation"].includes(mission.status) ? `<button class="danger-button" data-delete-sent="${mission.id}">Supprimer</button>` : !["closed", "cancelled", "rejected"].includes(mission.status) ? `<button class="danger-button" data-cancel-sent="${mission.id}">Clôturer / Annuler</button>` : ""}` : `<span class="muted">Reçue le ${escapeHtml(formatMissionDate(mission.createdAt))}</span><button class="secondary-button" data-open="${mission.id}">Détail</button><button class="secondary-button" data-open-dialogue="${mission.id}">Ouvrir la conversation</button>${canManagePartnerMissions() && ["received", "pending_validation"].includes(mission.status) ? `<button class="secondary-button" data-accept="${mission.id}">Accepter et planifier</button><button class="danger-button" data-reject="${mission.id}">Refuser</button>` : canManagePartnerMissions() && !["closed", "cancelled", "rejected"].includes(mission.status) ? `<button class="secondary-button" data-close="${mission.id}">Clôturer la mission</button>` : ""}`}</div></article>`).join("") : '<p class="muted">Aucune mission ne correspond à ce filtre.</p>';
     enableClosedMissionCorrection(node, missions, options);
     enableTerminalMissionSelection(node, missions, options);
+    node.querySelectorAll("[data-accept]").forEach(button => {
+        const mission = missions.find(item => String(item.id) === button.dataset.accept);
+        if (mission?.planningDraft?.pausedAt) {
+            button.textContent = "Reprendre la planification";
+            button.title = "Reprendre les informations enregistrées après l’appel du client";
+            const notice = document.createElement("p");
+            notice.className = "muted";
+            notice.textContent = `Planification en pause · enregistrée le ${formatMissionDate(mission.planningDraft.pausedAt)}`;
+            button.closest(".partner-mission-card-actions")?.before(notice);
+        }
+    });
     node.querySelectorAll("[data-open]").forEach(button => button.addEventListener("click", () => showDetail(button.dataset.open)));
     node.querySelectorAll("[data-open-dialogue]").forEach(button => button.addEventListener("click", () => openPartnerDialogue(button.dataset.openDialogue)));
     node.querySelectorAll("[data-open-sent-dialogue]").forEach(button => button.addEventListener("click", () => openPartnerDialogue(button.dataset.openSentDialogue, { sourceDialogue: true })));
@@ -219,10 +230,18 @@ function showWizardMessage(node, message) { const target = node.querySelector(".
 
 async function showDetail(id) { const result = await api(`/api/partner-missions/${id}`); if (!result.ok) return alert(result.message); const { mission, history } = result.data; const details = Object.entries(mission.mappedData).filter(([key, value]) => value && !["attachments", "errors"].includes(key)).map(([key, value]) => `<dt>${escapeHtml(labelField(key))}</dt><dd>${escapeHtml(typeof value === "object" ? JSON.stringify(value) : value)}</dd>`).join(""); const dialog = openDialog(`<h3>Mission ${escapeHtml(mission.missionNumber || "partenaire")}</h3><p class="muted">Reçue le ${escapeHtml(formatMissionDate(mission.createdAt))} · ${escapeHtml(mission.partnerName || "Partenaire")} · ${escapeHtml(labelStatus(mission.status))}</p><div class="partner-mission-card-actions"><button class="secondary-button" id="openPartnerDialogue">Ouvrir le dialogue</button></div><dl class="partner-mission-details">${details}</dl><h4>Journal de mission</h4><ol class="partner-mission-history">${history.map(item => `<li><strong>${escapeHtml(labelStatus(item.status))}</strong> · ${escapeHtml(item.action)}<br><small>${escapeHtml(item.actorName)} · ${escapeHtml(formatMissionDate(item.createdAt))}</small></li>`).join("")}</ol>`); dialog.querySelector("#openPartnerDialogue").addEventListener("click", () => { dialog.remove(); openPartnerDialogue(mission.id); }); }
 async function openNetworkMissionPlanning(mission) {
-    const { renderCalendar } = await import("./calendar.js?v=154");
+    const { renderCalendar } = await import("./calendar.js?v=155");
     const data = mission.mappedData || {};
-    const date = htmlDateValue(mission.scheduledDate || data.date) || new Date().toISOString().slice(0, 10);
-    const technicianId = String(mission.assignedTechnicianId || "");
+    const draft = mission.planningDraft || {};
+    const hasDraft = Boolean(draft.pausedAt);
+    const date = htmlDateValue(draft.date || mission.scheduledDate || data.date) || new Date().toISOString().slice(0, 10);
+    const technicianId = String(draft.assignedTechnicianId || mission.assignedTechnicianId || "");
+    const assignedTechnicianIds = Array.isArray(draft.assignedTechnicianIds) && draft.assignedTechnicianIds.length ? draft.assignedTechnicianIds.map(String) : technicianId ? [technicianId] : [];
+    const pauseEvent = async payload => {
+        const result = await api(`/api/partner-missions/${mission.id}/planning-draft`, { method: "PATCH", body: JSON.stringify(payload) });
+        if (result.ok) await renderPartnerMissions();
+        return result;
+    };
     const saveEvent = async payload => {
         const mode = await api(`/api/partner-missions/${mission.id}/billing-mode`, {
             method: "PATCH",
@@ -258,23 +277,24 @@ async function openNetworkMissionPlanning(mission) {
         view: "month",
         showAllTechnicians: true,
         event: {
-            title: `${data.interventionType || "Intervention"}${data.clientName ? ` · ${data.clientName}` : ""}`,
+            title: hasDraft ? draft.title : `${data.interventionType || "Intervention"}${data.clientName ? ` · ${data.clientName}` : ""}`,
             clientId: mission.clientId || "",
             clientName: data.clientName || "",
-            location: data.interventionAddress || data.address || "",
+            location: hasDraft ? draft.location : data.interventionAddress || data.address || "",
             date,
-            startTime: mission.scheduledStartTime || data.startTime || "",
-            endTime: mission.scheduledEndTime || data.endTime || "",
-            color: mission.priority === "urgent" ? "red" : mission.priority === "high" ? "orange" : "blue",
+            startTime: hasDraft ? draft.startTime : mission.scheduledStartTime || data.startTime || "",
+            endTime: hasDraft ? draft.endTime : mission.scheduledEndTime || data.endTime || "",
+            color: hasDraft ? draft.color : mission.priority === "urgent" ? "red" : mission.priority === "high" ? "orange" : "blue",
             eventType: "appointment",
-            notes: [data.description, data.comments].filter(Boolean).join("\n"),
+            notes: hasDraft ? draft.notes : [data.description, data.comments].filter(Boolean).join("\n"),
             assignedTechnicianId: technicianId,
-            assignedTechnicianIds: technicianId ? [technicianId] : [],
+            assignedTechnicianIds,
             partnerMissionId: mission.id,
             partnerMissionNumber: mission.missionNumber,
             partnerName: mission.partnerName,
-            billingMode: mission.billingMode || "direct_client",
-            saveEvent
+            billingMode: hasDraft ? draft.billingMode : mission.billingMode || "direct_client",
+            saveEvent,
+            pauseEvent
         }
     });
 }

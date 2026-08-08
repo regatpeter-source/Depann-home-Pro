@@ -1,6 +1,6 @@
 import { escapeHtml } from "./utils.js?v=44";
 import { renderPartnerSandbox } from "./partner-sandbox.js?v=3";
-import { renderPartnerMissions } from "./partner-missions.js?v=20";
+import { renderPartnerMissions } from "./partner-missions.js?v=21";
 import { openProfessionalDirectory } from "./professional-directory.js?v=1";
 
 const RIGHTS = [["canSendInterventions", "Peut envoyer des interventions"], ["canReceiveInterventions", "Peut recevoir des interventions"], ["canViewReports", "Peut consulter les rapports"], ["canViewQuotes", "Peut consulter les devis"], ["canViewInvoices", "Peut consulter les factures"], ["canUseMessaging", "Peut utiliser la messagerie"], ["canViewStatusChanges", "Peut voir les changements de statut"]];

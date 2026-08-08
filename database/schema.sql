@@ -659,6 +659,7 @@ CREATE TABLE IF NOT EXISTS depannhome_partner_missions (
     mission_number VARCHAR(32) NOT NULL DEFAULT '', deleted_at TIMESTAMPTZ,
     partner_reference VARCHAR(160) NOT NULL DEFAULT '', status VARCHAR(30) NOT NULL DEFAULT 'received', priority VARCHAR(20) NOT NULL DEFAULT 'normal',
     billing_mode VARCHAR(30) NOT NULL DEFAULT 'direct_client' CHECK (billing_mode IN ('direct_client','principal')),
+    planning_draft JSONB NOT NULL DEFAULT '{}'::jsonb,
     source_data JSONB NOT NULL DEFAULT '{}'::jsonb, mapped_data JSONB NOT NULL DEFAULT '{}'::jsonb, validation_errors JSONB NOT NULL DEFAULT '[]'::jsonb,
     client_id VARCHAR(100) NOT NULL DEFAULT '', calendar_event_id BIGINT REFERENCES depannhome_calendar_events(id) ON DELETE SET NULL,
     technical_report_id BIGINT REFERENCES depannhome_technical_reports(id) ON DELETE SET NULL, assigned_technician_id BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
@@ -667,6 +668,7 @@ CREATE TABLE IF NOT EXISTS depannhome_partner_missions (
     CONSTRAINT depannhome_partner_missions_unique UNIQUE(owner_id, intake_id, external_mission_id)
 );
 CREATE INDEX IF NOT EXISTS depannhome_partner_missions_owner_status_idx ON depannhome_partner_missions(owner_id, status, created_at DESC);
+ALTER TABLE depannhome_partner_missions ADD COLUMN IF NOT EXISTS planning_draft JSONB NOT NULL DEFAULT '{}'::jsonb;
 CREATE UNIQUE INDEX IF NOT EXISTS depannhome_partner_missions_number_unique ON depannhome_partner_missions(mission_number) WHERE mission_number<>'';
 CREATE TABLE IF NOT EXISTS depannhome_partner_mission_history (
     id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,

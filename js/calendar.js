@@ -420,6 +420,7 @@ function renderEventForm(panel) {
             <section class="calendar-availability" id="calendarAvailability" aria-live="polite"></section>
             <div class="calendar-form-actions">
                 <button type="submit" class="secondary-button">${isEditing ? "Enregistrer les modifications" : "Ajouter au planning"}</button>
+                ${typeof event.pauseEvent === "function" ? '<button type="button" class="secondary-button" id="pauseCalendarEvent">Mettre en pause pour appeler le client</button>' : ""}
                 ${isEditing ? '<button type="button" class="secondary-button danger-button" id="deleteCalendarEvent">Supprimer</button>' : ""}
             </div>
         </form>
@@ -508,6 +509,23 @@ function renderEventForm(panel) {
         if (["date", "startTime", "endTime", "assignedTechnicianId"].includes(name)) multiDatePlanning?.refresh();
     }));
     renderCalendarAvailability(form, event.id);
+
+    form.querySelector("#pauseCalendarEvent")?.addEventListener("click", async () => {
+        const button = form.querySelector("#pauseCalendarEvent");
+        const submitButton = form.querySelector("button[type=submit]");
+        const message = panel.querySelector("#calendarFormMessage");
+        button.disabled = true;
+        submitButton.disabled = true;
+        message.textContent = "Mise en pause…";
+        message.classList.remove("error");
+        const result = await event.pauseEvent(formToEvent(new FormData(form)));
+        if (!result.ok) {
+            message.textContent = result.message || "Impossible de mettre cette planification en pause.";
+            message.classList.add("error");
+            button.disabled = false;
+            submitButton.disabled = false;
+        }
+    });
 
     form.addEventListener("submit", async eventSubmit => {
         eventSubmit.preventDefault();
