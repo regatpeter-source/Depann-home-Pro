@@ -1,21 +1,21 @@
 import { ROUTES, STORAGE_KEYS, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=123";
-import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=159";
+import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=160";
 import { openCreatorPartnerRequest, renderCreatorConsole } from "./creator.js?v=123";
-import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=157";
-import { renderAccounting } from "./accounting.js?v=5";
+import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=158";
+import { renderAccounting } from "./accounting.js?v=6";
 import { renderAccountingSandbox } from "./accounting-sandbox.js?v=2";
 import { renderGroupActivation, renderGroupWorkspace } from "./groups.js?v=3";
-import { renderPartnerMissions } from "./partner-missions.js?v=28";
+import { renderPartnerMissions } from "./partner-missions.js?v=29";
 import { renderPartnerSandbox } from "./partner-sandbox.js?v=3";
-import { renderPartnerConnections } from "./partner-connections.js?v=13";
+import { renderPartnerConnections } from "./partner-connections.js?v=14";
 import { renderDataImportTool } from "./data-imports.js?v=2";
-import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=16";
+import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=17";
 import { getFirstUnreadClientId, refreshClientMessageAlert, refreshVisibleClientMessages } from "./messages.js?v=106";
-import { getSearchableClients, renderClients } from "./clients.js?v=141";
+import { getSearchableClients, renderClients } from "./clients.js?v=142";
 import { synchronizeClients } from "./client-sync.js?v=123";
 import { configureLibrary, openLibrarySection, renderLibrary, searchPersonalLibrary } from "./library.js?v=120";
-import { renderPhotoRecognition } from "./photo-recognition.js?v=105";
-import { getContextualSearchResults } from "./search.js?v=65";
+import { renderPhotoRecognition } from "./photo-recognition.js?v=106";
+import { getContextualSearchResults } from "./search.js?v=66";
 import { state, resetSelection } from "./state.js?v=44";
 import {
     getStoredRefs,

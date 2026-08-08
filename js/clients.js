@@ -428,7 +428,7 @@ function renderClientTableRow(client, appointmentDates = []) {
     row.querySelector('[data-action="view"]').addEventListener("click", () => renderClients({ selectedId: client.id }));
     row.querySelector('[data-action="edit"]')?.addEventListener("click", () => renderClients({ editId: client.id }));
     row.querySelector('[data-action="delete"]')?.addEventListener("click", async () => {
-        if (confirm(`Supprimer le client ${client.name} ?`)) {
+        if (confirm(`Supprimer définitivement le client ${client.name} ?\n\nCette action supprimera aussi ses rendez-vous, quitus, devis, factures, rapports, photos, fichiers, messages et tout son historique. Cette action est irréversible.`)) {
             await deleteClient(client.id);
         }
     });

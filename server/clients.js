@@ -180,25 +180,27 @@ export function registerClientRoutes(app, requireAuthentication) {
     app.delete("/api/clients/:clientId", requireAuthentication, requireClientWriteAccess, asyncHandler(async (request, response) => {
         const clientId = String(request.params.clientId || "");
         if (!CLIENT_ID_PATTERN.test(clientId)) return response.status(400).json({ message: "Identifiant client invalide." });
+        const ownerId = getAccountOwnerId(request);
         const database = getPool();
         const connection = await database.connect();
         try {
             await connection.query("BEGIN");
-            await connection.query(
-                "DELETE FROM depannhome_clients WHERE owner_id = $1 AND client_id = $2",
-                [getAccountOwnerId(request), clientId]
+            const existing = await connection.query(
+                "SELECT 1 FROM depannhome_clients WHERE owner_id=$1 AND client_id=$2 FOR UPDATE",
+                [ownerId, clientId]
             );
-            await connection.query(
-                "DELETE FROM depannhome_messages WHERE recipient_id = $1 AND client_id = $2",
-                [getAccountOwnerId(request), clientId]
-            );
+            if (!existing.rowCount) {
+                await connection.query("ROLLBACK");
+                return response.status(404).json({ message: "Dossier client introuvable." });
+            }
+            const deleted = await purgeClientData(connection, ownerId, clientId);
             await connection.query(`
                 INSERT INTO depannhome_deleted_clients (owner_id, client_id, deleted_at)
                 VALUES ($1, $2, NOW())
                 ON CONFLICT (owner_id, client_id) DO UPDATE SET deleted_at = NOW()
-            `, [getAccountOwnerId(request), clientId]);
+            `, [ownerId, clientId]);
             await connection.query("COMMIT");
-            response.status(204).end();
+            response.json({ message: "Le dossier client et toutes ses données associées ont été supprimés définitivement.", deleted });
         } catch (error) {
             await connection.query("ROLLBACK");
             throw error;
@@ -370,6 +372,118 @@ export function registerClientRoutes(app, requireAuthentication) {
         });
         response.json({ message: "Document envoyé par e-mail." });
     }));
+}
+
+async function purgeClientData(connection, ownerId, clientId) {
+    let eventIds = await linkedIds(connection, "depannhome_calendar_events", "owner_id=$1 AND client_id=$2", [ownerId, clientId]);
+    let reportIds = await linkedIds(connection, "depannhome_technical_reports", "owner_id=$1 AND client_id=$2", [ownerId, clientId]);
+    let missionIds = await linkedIds(connection, "depannhome_partner_missions", "owner_id=$1 AND client_id=$2", [ownerId, clientId]);
+    let documentIds = await billingDocumentIds(connection, ownerId, clientId, eventIds);
+
+    eventIds = uniqueIds(
+        eventIds,
+        await linkedColumnIds(connection, "depannhome_technical_reports", "appointment_id", "owner_id=$1 AND id=ANY($2::bigint[])", [ownerId, reportIds]),
+        await linkedColumnIds(connection, "depannhome_billing_documents", "appointment_id", "owner_id=$1 AND id=ANY($2::bigint[])", [ownerId, documentIds]),
+        await linkedColumnIds(connection, "depannhome_partner_missions", "calendar_event_id", "owner_id=$1 AND id=ANY($2::bigint[])", [ownerId, missionIds])
+    );
+    missionIds = uniqueIds(missionIds, await linkedIds(connection, "depannhome_partner_missions", "owner_id=$1 AND (calendar_event_id=ANY($2::bigint[]) OR technical_report_id=ANY($3::bigint[]))", [ownerId, eventIds, reportIds]));
+    eventIds = uniqueIds(eventIds, await linkedIds(connection, "depannhome_calendar_events", "owner_id=$1 AND partner_mission_id=ANY($2::bigint[])", [ownerId, missionIds]));
+    reportIds = uniqueIds(
+        reportIds,
+        await linkedIds(connection, "depannhome_technical_reports", "owner_id=$1 AND appointment_id=ANY($2::bigint[])", [ownerId, eventIds]),
+        await linkedColumnIds(connection, "depannhome_partner_missions", "technical_report_id", "owner_id=$1 AND id=ANY($2::bigint[])", [ownerId, missionIds])
+    );
+    missionIds = uniqueIds(missionIds, await linkedIds(connection, "depannhome_partner_missions", "owner_id=$1 AND (client_id=$2 OR calendar_event_id=ANY($3::bigint[]) OR technical_report_id=ANY($4::bigint[]))", [ownerId, clientId, eventIds, reportIds]));
+    eventIds = uniqueIds(eventIds, await linkedColumnIds(connection, "depannhome_partner_missions", "calendar_event_id", "owner_id=$1 AND id=ANY($2::bigint[])", [ownerId, missionIds]));
+    reportIds = uniqueIds(reportIds, await linkedIds(connection, "depannhome_technical_reports", "owner_id=$1 AND appointment_id=ANY($2::bigint[])", [ownerId, eventIds]));
+    missionIds = uniqueIds(missionIds, await linkedIds(connection, "depannhome_partner_missions", "owner_id=$1 AND technical_report_id=ANY($2::bigint[])", [ownerId, reportIds]));
+    documentIds = await billingDocumentIds(connection, ownerId, clientId, eventIds);
+    const entityTargets = [
+        ["client", [clientId]],
+        ["calendar_event", eventIds.map(String)],
+        ["technical_report", reportIds.map(String)],
+        ["billing_document", documentIds.map(String)],
+        ["partner_mission", missionIds.map(String)]
+    ];
+
+    for (const table of ["depannhome_collaboration_locks", "depannhome_collaboration_notifications", "depannhome_collaboration_audit"]) {
+        for (const [entityType, entityIds] of entityTargets) {
+            if (!entityIds.length) continue;
+            await connection.query(`DELETE FROM ${table} WHERE owner_id=$1 AND entity_type=$2 AND entity_id=ANY($3::varchar[])`, [ownerId, entityType, entityIds]);
+        }
+    }
+
+    await connection.query(`
+        DELETE FROM depannhome_partner_mission_items
+        WHERE owner_id=$1 AND (
+            (source_type IN ('appointment') AND source_id=ANY($2::varchar[])) OR
+            (source_type IN ('report','photo') AND source_id=ANY($3::varchar[])) OR
+            (source_type IN ('quote','invoice','credit') AND source_id=ANY($4::varchar[]))
+        )
+    `, [ownerId, eventIds.map(String), reportIds.map(String), documentIds.map(String)]);
+    await connection.query(`
+        DELETE FROM depannhome_partner_connection_sync_log
+        WHERE (source_owner_id=$1 AND source_event_id=ANY($2::bigint[]))
+           OR (target_owner_id=$1 AND target_mission_id=ANY($3::bigint[]))
+    `, [ownerId, eventIds, missionIds]);
+
+    const missions = await deleteLinked(connection, "depannhome_partner_missions", ownerId, missionIds);
+    const reports = await deleteLinked(connection, "depannhome_technical_reports", ownerId, reportIds);
+    const documents = await deleteLinked(connection, "depannhome_billing_documents", ownerId, documentIds);
+    const purchases = await connection.query("DELETE FROM depannhome_purchases WHERE owner_id=$1 AND client_id=$2", [ownerId, clientId]);
+    const events = await deleteLinked(connection, "depannhome_calendar_events", ownerId, eventIds);
+    const messages = await connection.query(`
+        DELETE FROM depannhome_messages message
+        USING depannhome_users recipient
+        WHERE message.recipient_id=recipient.id AND recipient.account_owner_id=$1 AND message.client_id=$2
+    `, [ownerId, clientId]);
+    const clients = await connection.query("DELETE FROM depannhome_clients WHERE owner_id=$1 AND client_id=$2", [ownerId, clientId]);
+
+    return {
+        clients: clients.rowCount || 0,
+        appointmentsAndQuitus: events,
+        reports,
+        commercialDocuments: documents,
+        purchases: purchases.rowCount || 0,
+        messages: messages.rowCount || 0,
+        partnerMissions: missions
+    };
+}
+
+async function linkedIds(connection, table, where, parameters) {
+    const { rows } = await connection.query(`SELECT id FROM ${table} WHERE ${where}`, parameters);
+    return rows.map(row => Number(row.id)).filter(Number.isSafeInteger);
+}
+
+async function linkedColumnIds(connection, table, column, where, parameters) {
+    const { rows } = await connection.query(`SELECT ${column} AS id FROM ${table} WHERE ${where} AND ${column} IS NOT NULL`, parameters);
+    return rows.map(row => Number(row.id)).filter(Number.isSafeInteger);
+}
+
+async function billingDocumentIds(connection, ownerId, clientId, eventIds) {
+    const { rows } = await connection.query(`
+        WITH RECURSIVE linked_documents AS (
+            SELECT id FROM depannhome_billing_documents
+            WHERE owner_id=$1 AND (client_id=$2 OR appointment_id=ANY($3::bigint[]))
+            UNION
+            SELECT document.id
+            FROM depannhome_billing_documents document
+            JOIN linked_documents source ON document.source_quote_id=source.id
+            WHERE document.owner_id=$1
+        )
+        SELECT id FROM linked_documents
+    `, [ownerId, clientId, eventIds]);
+    return uniqueIds(rows.map(row => row.id));
+}
+
+function uniqueIds(...groups) {
+    return [...new Set(groups.flat().map(Number).filter(Number.isSafeInteger))];
+}
+
+async function deleteLinked(connection, table, ownerId, ids) {
+    if (!ids.length) return 0;
+    const result = await connection.query(`DELETE FROM ${table} WHERE owner_id=$1 AND id=ANY($2::bigint[])`, [ownerId, ids]);
+    return result.rowCount || 0;
 }
 
 export function clientUploadErrorHandler(error, request, response, next) {
