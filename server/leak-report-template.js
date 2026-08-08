@@ -69,8 +69,11 @@ export function createLeakReportPdf(report, profile = {}) {
         const pdf = new PDFDocument({ size: "A4", margin: 44, bufferPages: true, info: { Title: report.title || "Rapport de recherche de fuite", Author: profile.companyName || "Depann'Home Pro" } });
         const chunks = []; pdf.on("data", chunk => chunks.push(chunk)); pdf.on("end", () => resolve(Buffer.concat(chunks))); pdf.on("error", reject);
         const content = normalizeLeakContent(report.content); const media = Array.isArray(report.media) ? report.media : []; const template = reportTemplate(profile); const snapshot = content.snapshot || {};
-        addCover(pdf, report, profile, template, snapshot, media.filter(photo => photo.section === "general"));
-        addPresentationPage(pdf, media.filter(photo => photo.section === "presentation"), profile, template);
+        const coverPhotos = [
+            ...orderedPhotos(media.filter(photo => photo.section === "presentation")),
+            ...orderedPhotos(media.filter(photo => photo.section === "general"))
+        ];
+        addCover(pdf, report, profile, template, snapshot, coverPhotos);
         for (const section of reportSections(content).filter(item => !["general", "presentation"].includes(item.id))) {
             if (section.id === "methods" && !section.custom) {
                 for (const material of content.methods.materials || []) addSection(pdf, materialLabel(material), { observations: material.observations }, media.filter(photo => photo.section === "methods" && photo.materialId === material.id), profile, template);
@@ -101,13 +104,12 @@ function addCover(pdf, report, profile, template, snapshot, photos) {
     const titleY = factsBottom + 18;
     centeredTitle(pdf, "RAPPORT DE RECHERCHE DE FUITE", titleY, template, 20);
     const exterior = photos[0];
-    if (exterior) addPhoto(pdf, exterior, titleY + 46, 350, 330);
-}
-
-function addPresentationPage(pdf, photos, profile, template) {
-    pdf.addPage(); addCompanyHeader(pdf, profile, template, 44); centeredTitle(pdf, "Rapport de recherche de fuite", 104, template, 20); pdf.moveTo(44, 136).lineTo(551, 136).lineWidth(2).strokeColor(template.separatorColor).stroke();
-    const photo = orderedPhotos(photos)[0];
-    if (photo) addPhoto(pdf, photo, 160, 507, 500);
+    if (exterior) {
+        const photoY = titleY + 46;
+        const captionHeight = photoCaptionHeight(pdf, exterior, 507, template);
+        const availableHeight = Math.max(80, 748 - photoY - captionHeight);
+        addPhoto(pdf, exterior, photoY, 320, Math.min(275, availableHeight), template);
+    }
 }
 
 function addSection(pdf, title, values, photos, profile, template, isRecommendations = false, technicianName = "") {
@@ -136,8 +138,10 @@ function addCompanyHeader(pdf, profile, template, y) {
 function centeredTitle(pdf, value, y, template, size) { pdf.font(template.font).fillColor(template.titleColor).fontSize(size).text(value, 44, y, { width: 507, align: "center" }); }
 function addCoverFacts(pdf, facts, y, template) { let cursor = y; for (const [label, value] of facts) { const textValue = text(value, 500); pdf.font(template.font).fillColor("#334155").fontSize(9.5).text(`${label} :`, 44, cursor, { width: 132, continued: true }); pdf.fillColor("#172033").text(` ${textValue}`, { width: 375 }); cursor = Math.max(cursor + 15, pdf.y + 4); } return cursor; }
 function addInfoGrid(pdf, entries, y, template) { let cursor = y; for (let index = 0; index < entries.length; index += 2) { const row = entries.slice(index, index + 2); row.forEach(([label, value], column) => { const x = 44 + column * 258; pdf.roundedRect(x, cursor, 249, 43, 5).fillAndStroke("#f8fafc", "#dbe4ee"); pdf.font(template.font).fillColor(template.titleColor).fontSize(7.5).text(label, x + 10, cursor + 7); pdf.fillColor("#172033").fontSize(9).text(value, x + 10, cursor + 19, { width: 229, height: 16, ellipsis: true }); }); cursor += 51; } }
-function addPhotoWithPage(pdf, photo, y, profile, template) { y = ensureSpace(pdf, y, 250, profile, template); return addPhoto(pdf, photo, y, 507, 235) + 18; }
-function addPhoto(pdf, photo, y, width, maxHeight) { try { const buffer = dataUrl(photo.dataUrl); const dimensions = pdf.openImage(buffer); const ratio = Math.min(width / dimensions.width, maxHeight / dimensions.height); const renderedWidth = dimensions.width * ratio; const renderedHeight = dimensions.height * ratio; const x = 44 + (507 - renderedWidth) / 2; pdf.image(buffer, x, y, { width: renderedWidth, height: renderedHeight }); return y + renderedHeight; } catch { return y; } }
+function addPhotoWithPage(pdf, photo, y, profile, template) { const captionHeight = photoCaptionHeight(pdf, photo, 507, template); y = ensureSpace(pdf, y, 235 + captionHeight + 12, profile, template); return addPhoto(pdf, photo, y, 507, 235, template) + 18; }
+function addPhoto(pdf, photo, y, width, maxHeight, template) { try { const buffer = dataUrl(photo.dataUrl); const dimensions = pdf.openImage(buffer); const ratio = Math.min(width / dimensions.width, maxHeight / dimensions.height); const renderedWidth = dimensions.width * ratio; const renderedHeight = dimensions.height * ratio; const x = 44 + (507 - renderedWidth) / 2; pdf.image(buffer, x, y, { width: renderedWidth, height: renderedHeight }); const caption = photoCaption(photo); if (!caption) return y + renderedHeight; const captionY = y + renderedHeight + 7; pdf.font(template.font).fillColor("#475569").fontSize(8.5).text(caption, 44, captionY, { width: 507, align: "center", lineGap: 2 }); return pdf.y; } catch { return y; } }
+function photoCaptionHeight(pdf, photo, width, template) { const caption = photoCaption(photo); if (!caption) return 0; return pdf.font(template.font).fontSize(8.5).heightOfString(caption, { width, lineGap: 2 }) + 7; }
+function photoCaption(photo) { return [text(photo?.caption, 500), text(photo?.annotation, 1000)].filter(Boolean).join(" · "); }
 function ensureSpace(pdf, y, height, profile, template) { if (y + height <= 748) return y; pdf.addPage(); addCompanyHeader(pdf, profile, template, 44); return 126; }
 function addCourtesy(pdf, y, technicianName, template, profile) { y = ensureSpace(pdf, y + 16, 105, profile, template); pdf.moveTo(44, y).lineTo(551, y).lineWidth(1).strokeColor("#dbe4ee").stroke(); pdf.font(template.font).fillColor("#334155").fontSize(10).text("Vous en souhaitant bonne réception, nous vous prions d’agréer, Madame, Monsieur, l’expression de nos salutations distinguées.", 44, y + 18, { width: 507, lineGap: 4, align: "justify" }); pdf.font(template.font).fillColor(template.titleColor).fontSize(10).text(technicianName, 44, pdf.y + 15, { width: 507, align: "right" }); }
 function addStructuredFields(pdf, values, y, profile, template) { for (const [field, value] of Object.entries(values || {})) { if (field.toLowerCase().includes("signature") || ["clientName", "signedAt", "observations", "materials", "items", "readings"].includes(field)) continue; const line = text(value, 5000); if (!line) continue; y = ensureSpace(pdf, y, 55, profile, template); pdf.font(template.font).fillColor(template.titleColor).fontSize(9).text(pretty(field), 44, y); y += 14; pdf.fillColor("#172033").fontSize(10).text(line, 44, y, { width: 507, lineGap: 3 }); y = pdf.y + 14; }

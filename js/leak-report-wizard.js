@@ -29,6 +29,7 @@ let saveTimer = null;
 let heartbeatTimer = null;
 let periodicTimer = null;
 let saving = false;
+const mediaSavePromises = new Set();
 let eventsBound = false;
 let moduleNavScrollLeft = 0;
 
@@ -64,7 +65,7 @@ export function openLeakReportCreation() {
     dialog.innerHTML = `<div><header><div><p class="eyebrow">Nouveau rapport</p><h2>Rapport de recherche de fuite</h2></div><button type="button" class="text-button" data-close-report-creation>Fermer</button></header><p class="muted">Un rapport est toujours rattaché à une intervention et au dossier client correspondant.</p><div class="report-creation-options"><button type="button" data-report-from-appointment><strong>Choisir une intervention</strong><span>Ouvrez une intervention existante pour créer ou reprendre son rapport.</span></button><button type="button" data-create-client-first><strong>Créer d’abord un client</strong><span>Créez le dossier client, planifiez son intervention, puis ouvrez le rapport depuis le planning.</span></button></div></div>`;
     document.body.append(dialog);
     dialog.querySelector("[data-close-report-creation]").addEventListener("click", () => dialog.remove());
-    dialog.querySelector("[data-report-from-appointment]").addEventListener("click", async () => { dialog.remove(); const { renderCalendar } = await import("./calendar.js?v=149"); renderCalendar(); });
+    dialog.querySelector("[data-report-from-appointment]").addEventListener("click", async () => { dialog.remove(); const { renderCalendar } = await import("./calendar.js?v=158"); renderCalendar(); });
     dialog.querySelector("[data-create-client-first]").addEventListener("click", async () => { dialog.remove(); const { renderClients } = await import("./clients.js?v=141"); renderClients(); });
 }
 
@@ -216,7 +217,7 @@ function bindEditor(shell, moduleKey) {
     shell.querySelectorAll("[data-move-observation]").forEach(button => button.addEventListener("click", () => { moveObservation(moduleKey, button.dataset.observationId, button.dataset.moveObservation, button.dataset.materialId); queueSave(shell); renderEditor(shell); }));
     shell.querySelectorAll("[data-photo-source]").forEach(button => button.addEventListener("click", () => openPhotoSource(shell, { moduleKey: button.dataset.moduleKey, observationId: button.dataset.observationId, materialId: button.dataset.materialId, singlePhoto: button.dataset.singlePhoto === "true", replacePhotoId: button.dataset.replacePhoto || "" })));
     shell.querySelectorAll("[data-open-photo]").forEach(button => button.addEventListener("click", () => openPhotoPreview(button.dataset.openPhoto)));
-    shell.querySelectorAll("[data-photo-caption]").forEach(input => input.addEventListener("change", () => updatePhotoCaption(input)));
+    shell.querySelectorAll("[data-photo-caption]").forEach(input => input.addEventListener("change", () => trackMediaSave(updatePhotoCaption(input))));
     shell.querySelectorAll("[data-delete-photo]").forEach(button => button.addEventListener("click", () => deletePhoto(button.dataset.deletePhoto, shell)));
     shell.querySelectorAll("[data-move-photo]").forEach(button => button.addEventListener("click", () => movePhoto(button.dataset.photoId, button.dataset.movePhoto, shell)));
     shell.querySelector("[data-preview]").addEventListener("click", async () => { await save(shell, true); previewMode = true; renderEditor(shell); });
@@ -378,6 +379,11 @@ async function updatePhotoCaption(input) {
     if (!result.ok) alert(result.message || "Mise à jour de la photo impossible.");
 }
 
+function trackMediaSave(promise) {
+    mediaSavePromises.add(promise);
+    promise.finally(() => mediaSavePromises.delete(promise));
+}
+
 async function replacePhoto(id, file, shell) { const photo = (current.media || []).find(item => item.id === id); if (!photo) return; const [optimized] = await optimizeImages([file]); if (!optimized) return; const result = await api(`/api/technical-reports/${encodeURIComponent(current.id)}/media/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify({ caption: photo.caption || "", annotation: photo.annotation || "", observationId: photo.observationId || "", materialId: photo.materialId || "", dataUrl: await fileDataUrl(optimized), name: optimized.name, mime: optimized.type, size: optimized.size }) }); if (!result.ok) return alert(result.message || "Remplacement impossible."); photo.dataUrl = await fileDataUrl(optimized); photo.name = optimized.name; photo.mime = optimized.type; photo.size = optimized.size; renderEditor(shell); }
 
 async function movePhoto(id, direction, shell) { const photo = (current.media || []).find(item => item.id === id); if (!photo) return; const siblings = orderedPhotos((current.media || []).filter(item => item.section === photo.section && String(item.observationId || "") === String(photo.observationId || "") && String(item.materialId || "") === String(photo.materialId || ""))); const index = siblings.findIndex(item => item.id === id); const other = siblings[direction === "up" ? index - 1 : index + 1]; if (!other) return; const photoOrder = Number(photo.sortOrder || index); photo.sortOrder = Number(other.sortOrder || (direction === "up" ? index - 1 : index + 1)); other.sortOrder = photoOrder; const results = await Promise.all([photo, other].map(item => api(`/api/technical-reports/${encodeURIComponent(current.id)}/media/${encodeURIComponent(item.id)}`, { method: "PATCH", body: JSON.stringify({ caption: item.caption || "", annotation: item.annotation || "", observationId: item.observationId || "", materialId: item.materialId || "", sortOrder: item.sortOrder }) }))); if (results.some(result => !result.ok)) return alert("Réorganisation impossible."); renderEditor(shell); }
@@ -405,6 +411,7 @@ function queueSave(shell) {
 async function save(shell, silent = false) {
     if (!editable() || saving) return false;
     saving = true;
+    await Promise.all([...mediaSavePromises]);
     const result = await api(`/api/technical-reports/${encodeURIComponent(current.id)}`, { method: "PUT", body: JSON.stringify({ appointmentId: current.appointmentId, clientId: current.clientId, title: current.title, reportDate: current.reportDate, content: current.content }) });
     saving = false;
     if (!result.ok) {
@@ -435,7 +442,7 @@ async function validateReport(shell) {
     const { synchronizeClients } = await import("./client-sync.js?v=123");
     await synchronizeClients();
     window.dispatchEvent(new CustomEvent("depannhome:technical-report-validated", { detail: { appointmentId } }));
-    const { renderCalendar } = await import("./calendar.js?v=149");
+    const { renderCalendar } = await import("./calendar.js?v=158");
     renderCalendar();
 }
 
@@ -454,7 +461,7 @@ async function finalizePreview(shell) {
     const { synchronizeClients } = await import("./client-sync.js?v=123");
     await synchronizeClients();
     window.dispatchEvent(new CustomEvent("depannhome:technical-report-validated", { detail: { appointmentId } }));
-    const { renderCalendar } = await import("./calendar.js?v=149");
+    const { renderCalendar } = await import("./calendar.js?v=158");
     renderCalendar();
 }
 
