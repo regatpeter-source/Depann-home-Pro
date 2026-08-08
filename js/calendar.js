@@ -419,7 +419,7 @@ function renderEventForm(panel) {
             <p id="calendarFormMessage" class="auth-message" aria-live="polite"></p>
             <section class="calendar-availability" id="calendarAvailability" aria-live="polite"></section>
             <div class="calendar-form-actions">
-                <button type="submit" class="secondary-button">${isEditing ? "Enregistrer les modifications" : "Ajouter au planning"}</button>
+                <button type="submit" class="secondary-button">${event.partnerMissionId ? "Valider la planification" : isEditing ? "Enregistrer les modifications" : "Ajouter au planning"}</button>
                 ${typeof event.pauseEvent === "function" ? '<button type="button" class="secondary-button" id="pauseCalendarEvent">Mettre en pause pour appeler le client</button>' : ""}
                 ${isEditing ? '<button type="button" class="secondary-button danger-button" id="deleteCalendarEvent">Supprimer</button>' : ""}
             </div>
