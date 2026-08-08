@@ -65,7 +65,7 @@ export function openLeakReportCreation() {
     dialog.innerHTML = `<div><header><div><p class="eyebrow">Nouveau rapport</p><h2>Rapport de recherche de fuite</h2></div><button type="button" class="text-button" data-close-report-creation>Fermer</button></header><p class="muted">Un rapport est toujours rattaché à une intervention et au dossier client correspondant.</p><div class="report-creation-options"><button type="button" data-report-from-appointment><strong>Choisir une intervention</strong><span>Ouvrez une intervention existante pour créer ou reprendre son rapport.</span></button><button type="button" data-create-client-first><strong>Créer d’abord un client</strong><span>Créez le dossier client, planifiez son intervention, puis ouvrez le rapport depuis le planning.</span></button></div></div>`;
     document.body.append(dialog);
     dialog.querySelector("[data-close-report-creation]").addEventListener("click", () => dialog.remove());
-    dialog.querySelector("[data-report-from-appointment]").addEventListener("click", async () => { dialog.remove(); const { renderCalendar } = await import("./calendar.js?v=158"); renderCalendar(); });
+    dialog.querySelector("[data-report-from-appointment]").addEventListener("click", async () => { dialog.remove(); const { renderCalendar } = await import("./calendar.js?v=159"); renderCalendar(); });
     dialog.querySelector("[data-create-client-first]").addEventListener("click", async () => { dialog.remove(); const { renderClients } = await import("./clients.js?v=141"); renderClients(); });
 }
 
@@ -134,6 +134,7 @@ function renderEditor(shell) {
             <div class="report-editor-identity"><strong>${escapeHtml(snapshot.clientName || current.clientName || "Client non renseigné")}</strong><span>${escapeHtml(snapshot.clientAddress || current.clientAddress || current.appointmentLocation || "Adresse non renseignée")}</span></div>
             <div class="report-editor-meta"><span>${sourceLabel} n° ${escapeHtml(snapshot.interventionNumber || current.appointmentId || "—")}</span><span>${snapshot.claimNumber ? `Sinistre n° ${escapeHtml(snapshot.claimNumber)}` : "Sinistre non renseigné"}</span><span>${escapeHtml(snapshot.technicianName || current.technicianName || "Technicien")}</span></div>
             <span class="report-editor-status ${escapeHtml(current.status)}">${escapeHtml(statusLabel(current.status))}</span>
+            <button type="button" class="secondary-button report-editor-home-button" data-report-home>Accueil</button>
         </header>
         ${lockBanner()}
         ${corrections.length ? `<section class="report-editor-corrections"><strong>Commentaires de l’administration</strong>${corrections.map(item => `<p><b>${escapeHtml(moduleDefinition(item.section)?.[1] || "Page")}</b> · ${escapeHtml(item.comment)}</p>`).join("")}</section>` : ""}
@@ -226,15 +227,17 @@ function bindEditor(shell, moduleKey) {
     shell.querySelector("[data-request-correction]")?.addEventListener("click", () => requestCorrection(shell));
     shell.querySelector("[data-reopen-report]")?.addEventListener("click", () => reopenReport(shell));
     shell.querySelector("[data-force-lock]")?.addEventListener("click", forceTakeover);
+    shell.querySelector("[data-report-home]")?.addEventListener("click", () => exitReportToHome(shell));
 }
 
 function renderPreview(shell) {
     shell.className = "report-editor-shell report-preview-shell";
-    shell.innerHTML = `<header class="report-preview-header"><div><p class="eyebrow">Prévisualisation PDF intégrée</p><h2>${escapeHtml(current.title)}</h2><p class="muted">Cet aperçu reprend fidèlement le PDF qui sera archivé, sans téléchargement.</p></div><div class="report-preview-actions"><button class="secondary-button" data-modify-report>Modifier le rapport</button>${editable() && canValidate() ? '<button class="secondary-button report-primary-action" data-preview-validate>Valider le rapport</button>' : ""}<button class="secondary-button" data-close-preview>Fermer la prévisualisation</button></div></header><iframe title="Prévisualisation intégrée du rapport PDF" src="/api/technical-reports/${encodeURIComponent(current.id)}/pdf?preview=${Date.now()}"></iframe>`;
+    shell.innerHTML = `<header class="report-preview-header"><div><p class="eyebrow">Prévisualisation PDF intégrée</p><h2>${escapeHtml(current.title)}</h2><p class="muted">Cet aperçu reprend fidèlement le PDF qui sera archivé, sans téléchargement.</p></div><div class="report-preview-actions"><button class="secondary-button" data-modify-report>Modifier le rapport</button>${editable() && canValidate() ? '<button class="secondary-button report-primary-action" data-preview-validate>Valider le rapport</button>' : ""}<button class="secondary-button" data-close-preview>Fermer la prévisualisation</button><button class="secondary-button" data-report-home>Accueil</button></div></header><iframe title="Prévisualisation intégrée du rapport PDF" src="/api/technical-reports/${encodeURIComponent(current.id)}/pdf?preview=${Date.now()}"></iframe>`;
     const returnToEditor = () => { previewMode = false; renderEditor(shell); };
     shell.querySelector("[data-modify-report]").addEventListener("click", returnToEditor);
     shell.querySelector("[data-close-preview]").addEventListener("click", returnToEditor);
     shell.querySelector("[data-preview-validate]")?.addEventListener("click", () => finalizePreview(shell));
+    shell.querySelector("[data-report-home]")?.addEventListener("click", () => exitReportToHome(shell));
 }
 
 function lockBanner() {
@@ -442,7 +445,7 @@ async function validateReport(shell) {
     const { synchronizeClients } = await import("./client-sync.js?v=123");
     await synchronizeClients();
     window.dispatchEvent(new CustomEvent("depannhome:technical-report-validated", { detail: { appointmentId } }));
-    const { renderCalendar } = await import("./calendar.js?v=158");
+    const { renderCalendar } = await import("./calendar.js?v=159");
     renderCalendar();
 }
 
@@ -461,7 +464,7 @@ async function finalizePreview(shell) {
     const { synchronizeClients } = await import("./client-sync.js?v=123");
     await synchronizeClients();
     window.dispatchEvent(new CustomEvent("depannhome:technical-report-validated", { detail: { appointmentId } }));
-    const { renderCalendar } = await import("./calendar.js?v=158");
+    const { renderCalendar } = await import("./calendar.js?v=159");
     renderCalendar();
 }
 
@@ -485,6 +488,18 @@ async function reopenReport(shell) {
     if (!result.ok) return alert(result.message || "Réouverture impossible.");
     await loadReport(current.id);
     renderEditor(shell);
+}
+
+async function exitReportToHome(shell) {
+    stopTimers();
+    while (saving) await new Promise(resolve => window.setTimeout(resolve, 50));
+    if (editable() && !await save(shell)) {
+        startTimers(shell);
+        alert("Impossible d’enregistrer le rapport. Restez sur cette page et réessayez.");
+        return;
+    }
+    await leaveReport();
+    window.dispatchEvent(new CustomEvent("depannhome:open-home"));
 }
 
 function startTimers(shell) {
