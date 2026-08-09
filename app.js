@@ -33,6 +33,7 @@ import { initializePartnerDialogue, partnerDialogueUploadErrorHandler, registerP
 import { initializePartnerConnections, registerPartnerConnectionRoutes } from "./server/partner-connections.js";
 import { initializePartnerRequests, registerPartnerRequestRoutes } from "./server/partner-requests.js";
 import { initializePartnerSandbox, registerPartnerSandboxRoutes } from "./server/partner-sandbox.js";
+import { initializePartnerApiSandbox, registerPartnerApiSandboxRoutes } from "./server/partner-api-sandbox.js";
 import { initializeAccountingSandbox, registerAccountingSandboxRoutes } from "./server/accounting-sandbox.js";
 import { initializeGroups, registerGroupRoutes } from "./server/groups.js";
 import { registerSupportRoutes } from "./server/support.js";
@@ -80,6 +81,13 @@ app.use("/api/partner-intake", rateLimit({
 	legacyHeaders: false,
 	message: { message: "Trop de missions reçues. Réessayez dans quelques minutes." }
 }));
+app.use("/api/partner-sandbox/external-callback", rateLimit({
+	windowMs: 15 * 60 * 1000,
+	limit: 120,
+	standardHeaders: "draft-7",
+	legacyHeaders: false,
+	message: { message: "Trop de callbacks Sandbox. Réessayez dans quelques minutes." }
+}));
 app.use("/api/partner-dialogue/external", rateLimit({
 	windowMs: 15 * 60 * 1000,
 	limit: 120,
@@ -107,6 +115,7 @@ registerConnectorRoutes(app, requireAuthentication, requireCreator);
 registerPartnerMissionRoutes(app, requireAuthentication);
 registerPartnerDialogueRoutes(app, requireAuthentication);
 registerPartnerConnectionRoutes(app, requireAuthentication);
+registerPartnerApiSandboxRoutes(app, requireCreator);
 registerPartnerSandboxRoutes(app, requireAuthentication);
 registerAccountingSandboxRoutes(app, requireAuthentication);
 registerGroupRoutes(app, requireAuthentication);
@@ -172,6 +181,7 @@ async function start() {
 	await initializePartnerDialogue();
 	await initializePartnerConnections();
 	await initializePartnerSandbox();
+	await initializePartnerApiSandbox();
 	await initializeAccountingSandbox();
 	await initializePartnerRequests();
 	await initializeClients();

@@ -74,7 +74,7 @@ export async function listClientsForOwner(ownerId, sinceParameter = "") {
     const { rows } = await database.query(`
         SELECT client_data AS client, client_status AS "clientStatus", archived_at AS "archivedAt", archived_by AS "archivedBy", updated_at AS "updatedAt"
         FROM depannhome_clients
-        WHERE owner_id = $1 AND updated_at <= $2
+        WHERE owner_id = $1 AND updated_at <= $2 AND COALESCE(client_data->>'isSandbox','false')<>'true'
           AND ($3::timestamptz IS NULL OR updated_at > $3::timestamptz)
         ORDER BY updated_at DESC
     `, [ownerId, cursor, since || null]);
@@ -91,9 +91,10 @@ async function reconcilePartnerMissionClients(database, ownerId) {
         SELECT mission.id, mission.client_id AS "missionClientId", mission.mapped_data AS "mappedData",
             mission.created_at AS "createdAt"
         FROM depannhome_partner_missions mission
+        JOIN depannhome_partner_intakes intake ON intake.id=mission.intake_id
         LEFT JOIN depannhome_clients client ON client.owner_id = mission.owner_id
             AND client.client_id = NULLIF(mission.client_id, '')
-        WHERE mission.owner_id = $1 AND mission.deleted_at IS NULL
+        WHERE mission.owner_id = $1 AND mission.deleted_at IS NULL AND intake.is_sandbox=FALSE
             AND (mission.client_id = '' OR client.client_id IS NULL)
     `, [ownerId]);
     if (!missions.length) return;

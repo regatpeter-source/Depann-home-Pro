@@ -730,12 +730,14 @@ CREATE TABLE IF NOT EXISTS depannhome_partner_intakes (
     id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
     partner_key VARCHAR(64) NOT NULL, partner_name VARCHAR(160) NOT NULL, api_key_hash VARCHAR(128) NOT NULL,
     callback_url VARCHAR(1000) NOT NULL DEFAULT '', assignment_mode VARCHAR(20) NOT NULL DEFAULT 'manual',
-    rules JSONB NOT NULL DEFAULT '{}'::jsonb, enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    rules JSONB NOT NULL DEFAULT '{}'::jsonb, enabled BOOLEAN NOT NULL DEFAULT TRUE, is_sandbox BOOLEAN NOT NULL DEFAULT FALSE,
     created_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT depannhome_partner_intakes_owner_key_unique UNIQUE(owner_id, partner_key),
     CONSTRAINT depannhome_partner_intakes_api_key_unique UNIQUE(api_key_hash)
 );
+ALTER TABLE depannhome_partner_intakes ADD COLUMN IF NOT EXISTS is_sandbox BOOLEAN NOT NULL DEFAULT FALSE;
+CREATE INDEX IF NOT EXISTS depannhome_partner_intakes_owner_sandbox_idx ON depannhome_partner_intakes(owner_id,is_sandbox,updated_at DESC);
 CREATE TABLE IF NOT EXISTS depannhome_partner_missions (
     id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
     intake_id BIGINT NOT NULL REFERENCES depannhome_partner_intakes(id) ON DELETE RESTRICT, external_mission_id VARCHAR(160) NOT NULL,
@@ -769,6 +771,24 @@ CREATE TABLE IF NOT EXISTS depannhome_partner_mission_outbox (
     last_error VARCHAR(1000) NOT NULL DEFAULT '', next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), delivered_at TIMESTAMPTZ, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS depannhome_partner_mission_outbox_pending_idx ON depannhome_partner_mission_outbox(status, next_attempt_at);
+
+-- Partenaire API fictif géré par le Créateur. Le secret d'appel est chiffré,
+-- sa copie d'authentification reste hachée dans l'intake et les journaux sont expurgés.
+CREATE TABLE IF NOT EXISTS depannhome_partner_api_sandboxes (
+    id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL UNIQUE REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    intake_id BIGINT NOT NULL UNIQUE REFERENCES depannhome_partner_intakes(id) ON DELETE CASCADE,
+    api_key_cipher TEXT NOT NULL, callback_token_hash VARCHAR(64) NOT NULL UNIQUE,
+    fault_mode VARCHAR(30) NOT NULL DEFAULT 'none', created_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE TABLE IF NOT EXISTS depannhome_partner_api_sandbox_logs (
+    id BIGSERIAL PRIMARY KEY, sandbox_id BIGINT NOT NULL REFERENCES depannhome_partner_api_sandboxes(id) ON DELETE CASCADE,
+    owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    direction VARCHAR(20) NOT NULL, method VARCHAR(12) NOT NULL DEFAULT 'POST', endpoint VARCHAR(1000) NOT NULL,
+    http_status INTEGER, event_type VARCHAR(80) NOT NULL DEFAULT '', request_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    response_payload JSONB NOT NULL DEFAULT '{}'::jsonb, error_message VARCHAR(1000) NOT NULL DEFAULT '', created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS depannhome_partner_api_sandbox_logs_owner_idx ON depannhome_partner_api_sandbox_logs(owner_id,created_at DESC);
 
 -- Fil collaboratif strictement rattaché à une mission partenaire. Les fichiers
 -- sont séparés des dossiers clients pour conserver les limites métier existantes.
