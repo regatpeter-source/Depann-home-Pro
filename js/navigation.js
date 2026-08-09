@@ -13,7 +13,7 @@ import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-
 import { getFirstUnreadClientId, refreshClientMessageAlert, refreshVisibleClientMessages } from "./messages.js?v=106";
 import { getSearchableClients, renderClients } from "./clients.js?v=143";
 import { synchronizeClients } from "./client-sync.js?v=124";
-import { configureLibrary, openLibrarySection, renderLibrary, searchPersonalLibrary } from "./library.js?v=121";
+import { configureLibrary, openLibrarySection, renderLibrary, searchPersonalLibrary } from "./library.js?v=122";
 import { renderPhotoRecognition } from "./photo-recognition.js?v=107";
 import { getContextualSearchResults } from "./search.js?v=67";
 import { state, resetSelection } from "./state.js?v=44";
@@ -52,7 +52,12 @@ let searchEventsPromise = null;
 
 export function initializeNavigation(loadedDatabase) {
     database = loadedDatabase;
-    configureLibrary({ openCatalog: renderBrands, openStore: renderStore });
+    configureLibrary({
+        openCatalog: renderBrands,
+        openStore: renderStore,
+        openRollerShutters: () => renderMotorFamily("volets-roulants"),
+        openGates: () => renderMotorFamily("portails")
+    });
     bindEvents();
     bindSilentInteractionSynchronization();
     applyRoleBasedMenus();
@@ -619,8 +624,10 @@ export function renderBrands() {
         return;
     }
 
+    const grid = document.createElement("section");
+    grid.className = "motor-catalog-grid motor-family-grid";
     database.brands.forEach(brand => {
-        container.appendChild(
+        grid.appendChild(
             createCard(
                 "",
                 brand.name,
@@ -632,6 +639,14 @@ export function renderBrands() {
             )
         );
     });
+    container.appendChild(grid);
+}
+
+function renderMotorFamily(familyId) {
+    const brand = database.brands.find(item => item.id === familyId);
+    if (!brand) return renderBrands();
+    state.brand = brand;
+    renderBrandCategories();
 }
 
 async function renderHome() {
@@ -726,8 +741,10 @@ function renderBrandCategories() {
         return;
     }
 
+    const grid = document.createElement("section");
+    grid.className = "motor-catalog-grid motor-brand-grid";
     categories.forEach(category => {
-        container.appendChild(
+        grid.appendChild(
             createCard(
                 "",
                 category.name,
@@ -739,6 +756,7 @@ function renderBrandCategories() {
             )
         );
     });
+    container.appendChild(grid);
 }
 
 function renderCategoryOverview() {
@@ -754,6 +772,8 @@ function renderCategoryOverview() {
         return;
     }
 
+    const grid = document.createElement("section");
+    grid.className = "motor-catalog-grid motor-product-grid";
     products.forEach((product, productIndex) => {
         const ref = {
             type: "product",
@@ -762,7 +782,7 @@ function renderCategoryOverview() {
             productIndex
         };
 
-        container.appendChild(createCard(
+        grid.appendChild(createCard(
             "",
             product.name,
             product.reference || "Référence à préciser",
@@ -773,6 +793,7 @@ function renderCategoryOverview() {
             { image: getRefPhoto(ref) }
         ));
     });
+    container.appendChild(grid);
 }
 
 function renderProductOverview() {

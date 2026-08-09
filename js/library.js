@@ -8,10 +8,14 @@ const MAX_FILE_SIZE_LABEL = "20 Mo";
 let selectedSectionId = null;
 let openCatalog = null;
 let openStore = null;
+let openRollerShutters = null;
+let openGates = null;
 
 export function configureLibrary(options = {}) {
     openCatalog = typeof options.openCatalog === "function" ? options.openCatalog : null;
     openStore = typeof options.openStore === "function" ? options.openStore : null;
+    openRollerShutters = typeof options.openRollerShutters === "function" ? options.openRollerShutters : null;
+    openGates = typeof options.openGates === "function" ? options.openGates : null;
 }
 
 export async function renderLibrary() {
@@ -24,12 +28,34 @@ export async function renderLibrary() {
         || (isMobileLibraryUser() && openCatalog);
     if (showCatalogTools) {
         const toolsPanel = document.createElement("section");
-        toolsPanel.className = "library-tools-panel";
-        if (openCatalog) {
+        const mobileAdminTools = isMobileAdministrator() && openRollerShutters && openGates;
+        toolsPanel.className = `library-tools-panel${mobileAdminTools ? " mobile-admin-library-tools" : ""}`;
+        if (mobileAdminTools) {
+            toolsPanel.innerHTML = `
+                <button type="button" class="library-mobile-tool roller-shutter-tool" data-library-tool="roller-shutters">
+                    <span class="library-tool-icon" aria-hidden="true">▤</span>
+                    <span><small>Catalogue technique</small><strong>Moteurs volets roulants</strong><em>Somfy, Nice, Bubendorff, Servistores, FAAC…</em></span>
+                    <b aria-hidden="true">›</b>
+                </button>
+                <button type="button" class="library-mobile-tool gate-tool" data-library-tool="gates">
+                    <span class="library-tool-icon" aria-hidden="true">↔</span>
+                    <span><small>Catalogue technique</small><strong>Moteurs portails</strong><em>CAME, FAAC, Nice, Somfy, Hörmann…</em></span>
+                    <b aria-hidden="true">›</b>
+                </button>
+                ${openStore ? `<button type="button" class="library-mobile-tool store-tool" data-library-tool="store">
+                    <span class="library-tool-icon" aria-hidden="true">⌕</span>
+                    <span><small>Pièces détachées</small><strong>Magasin</strong><em>Rechercher une référence ou un fabricant</em></span>
+                    <b aria-hidden="true">›</b>
+                </button>` : ""}
+            `;
+            toolsPanel.querySelector('[data-library-tool="roller-shutters"]').addEventListener("click", openRollerShutters);
+            toolsPanel.querySelector('[data-library-tool="gates"]').addEventListener("click", openGates);
+            toolsPanel.querySelector('[data-library-tool="store"]')?.addEventListener("click", openStore);
+        } else if (openCatalog) {
             const catalogPanel = document.createElement("section");
             catalogPanel.className = "client-panel library-catalog-panel";
             catalogPanel.innerHTML = `
-                <div><p class="eyebrow">Catalogue technique</p><h2>Gammes de motorisation</h2></div>
+                <div><p class="eyebrow">Catalogue technique</p><h2>Moteurs volets roulants et portails</h2></div>
                 <button type="button" class="secondary-button">Ouvrir les gammes</button>
             `;
             catalogPanel.querySelector("button").addEventListener("click", openCatalog);
@@ -223,6 +249,10 @@ function isTechnician() {
 
 function isMobileLibraryUser() {
     return ["mobile_admin", "team_lead", "technician"].includes(document.body.dataset.role);
+}
+
+function isMobileAdministrator() {
+    return document.body.dataset.role === "mobile_admin" && document.body.classList.contains("mobile-device");
 }
 
 async function renderDocumentPanel(panel, sections) {
