@@ -21,7 +21,7 @@ export async function renderLibrary() {
 
     const container = getContainer();
     const showCatalogTools = (document.body.classList.contains("desktop-device") && (openCatalog || openStore))
-        || (isTechnician() && openCatalog);
+        || (isMobileLibraryUser() && openCatalog);
     if (showCatalogTools) {
         const toolsPanel = document.createElement("section");
         toolsPanel.className = "library-tools-panel";
@@ -219,6 +219,10 @@ function renderUploadPanel(panel, sections, refresh) {
 
 function isTechnician() {
     return document.body.dataset.role === "technician";
+}
+
+function isMobileLibraryUser() {
+    return ["mobile_admin", "team_lead", "technician"].includes(document.body.dataset.role);
 }
 
 async function renderDocumentPanel(panel, sections) {

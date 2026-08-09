@@ -13,7 +13,7 @@ import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-
 import { getFirstUnreadClientId, refreshClientMessageAlert, refreshVisibleClientMessages } from "./messages.js?v=106";
 import { getSearchableClients, renderClients } from "./clients.js?v=143";
 import { synchronizeClients } from "./client-sync.js?v=124";
-import { configureLibrary, openLibrarySection, renderLibrary, searchPersonalLibrary } from "./library.js?v=120";
+import { configureLibrary, openLibrarySection, renderLibrary, searchPersonalLibrary } from "./library.js?v=121";
 import { renderPhotoRecognition } from "./photo-recognition.js?v=107";
 import { getContextualSearchResults } from "./search.js?v=67";
 import { state, resetSelection } from "./state.js?v=44";
