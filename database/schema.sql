@@ -321,19 +321,80 @@ UPDATE depannhome_accounting_aids SET auto_apply=FALSE WHERE auto_apply=TRUE;
 
 CREATE TABLE IF NOT EXISTS depannhome_accounting_settlements (
     id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
-    document_id BIGINT NOT NULL REFERENCES depannhome_billing_documents(id) ON DELETE CASCADE, settlement_date DATE NOT NULL,
+    document_id BIGINT NOT NULL REFERENCES depannhome_billing_documents(id) ON DELETE RESTRICT, settlement_date DATE NOT NULL,
     amount NUMERIC(12,2) NOT NULL CHECK (amount > 0), method VARCHAR(40) NOT NULL DEFAULT 'Virement',
     reference VARCHAR(160) NOT NULL DEFAULT '', notes VARCHAR(1000) NOT NULL DEFAULT '',
     created_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS depannhome_accounting_settlements_owner_document_idx ON depannhome_accounting_settlements (owner_id, document_id, settlement_date DESC);
+ALTER TABLE depannhome_accounting_settlements DROP CONSTRAINT IF EXISTS depannhome_accounting_settlements_document_id_fkey;
+ALTER TABLE depannhome_accounting_settlements ADD CONSTRAINT depannhome_accounting_settlements_document_id_fkey FOREIGN KEY(document_id) REFERENCES depannhome_billing_documents(id) ON DELETE RESTRICT;
 
 CREATE TABLE IF NOT EXISTS depannhome_accounting_settings (
     owner_id BIGINT PRIMARY KEY REFERENCES depannhome_users(id) ON DELETE CASCADE,
     chart_config JSONB NOT NULL DEFAULT '{}'::jsonb, aid_engine_config JSONB NOT NULL DEFAULT '{}'::jsonb,
     pdp_provider VARCHAR(60) NOT NULL DEFAULT 'sandbox', pdp_identifier VARCHAR(160) NOT NULL DEFAULT '',
-    pdp_api_secret TEXT NOT NULL DEFAULT '', pdp_enabled BOOLEAN NOT NULL DEFAULT FALSE, updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    pdp_api_secret TEXT NOT NULL DEFAULT '', pdp_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    journal_config JSONB NOT NULL DEFAULT '{}'::jsonb, fec_config JSONB NOT NULL DEFAULT '{}'::jsonb,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+ALTER TABLE depannhome_accounting_settings ADD COLUMN IF NOT EXISTS journal_config JSONB NOT NULL DEFAULT '{}'::jsonb, ADD COLUMN IF NOT EXISTS fec_config JSONB NOT NULL DEFAULT '{}'::jsonb;
+
+-- Grand livre persistant : les pièces métier restent les sources uniques ; les
+-- écritures validées en sont des instantanés numérotés, isolés par owner_id.
+CREATE TABLE IF NOT EXISTS depannhome_accounting_journals (
+    id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    journal_type VARCHAR(30) NOT NULL CHECK(journal_type IN ('sales','bank','general','purchase')),
+    code VARCHAR(10) NOT NULL, label VARCHAR(100) NOT NULL, description VARCHAR(300) NOT NULL DEFAULT '',
+    is_active BOOLEAN NOT NULL DEFAULT TRUE, next_sequence BIGINT NOT NULL DEFAULT 1 CHECK(next_sequence>0),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(owner_id,journal_type), UNIQUE(owner_id,code), UNIQUE(owner_id,id)
+);
+CREATE TABLE IF NOT EXISTS depannhome_accounting_entries (
+    id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    journal_id BIGINT NOT NULL, journal_code VARCHAR(10) NOT NULL, journal_label VARCHAR(100) NOT NULL,
+    entry_number VARCHAR(80) NOT NULL, entry_date DATE NOT NULL, piece_reference VARCHAR(160) NOT NULL,
+    piece_date DATE NOT NULL, description VARCHAR(300) NOT NULL, source_type VARCHAR(30) NOT NULL,
+    source_id VARCHAR(120) NOT NULL, client_id VARCHAR(100) NOT NULL DEFAULT '', appointment_id BIGINT,
+    status VARCHAR(20) NOT NULL DEFAULT 'validated' CHECK(status='validated'), validated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    FOREIGN KEY(owner_id,journal_id) REFERENCES depannhome_accounting_journals(owner_id,id) ON DELETE RESTRICT,
+    UNIQUE(owner_id,entry_number), UNIQUE(owner_id,source_type,source_id), UNIQUE(owner_id,id)
+);
+CREATE INDEX IF NOT EXISTS depannhome_accounting_entries_owner_date_idx ON depannhome_accounting_entries(owner_id,entry_date,validated_at,id);
+CREATE INDEX IF NOT EXISTS depannhome_accounting_entries_client_idx ON depannhome_accounting_entries(owner_id,client_id,entry_date DESC);
+CREATE TABLE IF NOT EXISTS depannhome_accounting_entry_lines (
+    id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    entry_id BIGINT NOT NULL, line_number INTEGER NOT NULL CHECK(line_number>0), account_number VARCHAR(20) NOT NULL CHECK(account_number ~ '^[0-9]{3,20}$'),
+    account_label VARCHAR(160) NOT NULL, auxiliary_number VARCHAR(40) NOT NULL DEFAULT '', auxiliary_label VARCHAR(160) NOT NULL DEFAULT '',
+    debit NUMERIC(14,2) NOT NULL DEFAULT 0 CHECK(debit>=0), credit NUMERIC(14,2) NOT NULL DEFAULT 0 CHECK(credit>=0),
+    lettering VARCHAR(40) NOT NULL DEFAULT '', lettering_date DATE, currency_amount NUMERIC(14,2), currency_code VARCHAR(3) NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), FOREIGN KEY(owner_id,entry_id) REFERENCES depannhome_accounting_entries(owner_id,id) ON DELETE RESTRICT,
+    UNIQUE(owner_id,entry_id,line_number), CHECK((debit>0 AND credit=0) OR (credit>0 AND debit=0)), CHECK(lettering_date IS NULL OR lettering<>'')
+);
+CREATE INDEX IF NOT EXISTS depannhome_accounting_entry_lines_account_idx ON depannhome_accounting_entry_lines(owner_id,account_number,entry_id);
+CREATE TABLE IF NOT EXISTS depannhome_accounting_allocations (
+    id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    settlement_id BIGINT NOT NULL REFERENCES depannhome_accounting_settlements(id) ON DELETE RESTRICT,
+    document_id BIGINT NOT NULL REFERENCES depannhome_billing_documents(id) ON DELETE RESTRICT,
+    amount NUMERIC(14,2) NOT NULL CHECK(amount>0), lettering VARCHAR(40) NOT NULL DEFAULT '', lettering_date DATE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), UNIQUE(owner_id,settlement_id), CHECK(lettering_date IS NULL OR lettering<>'')
+);
+CREATE TABLE IF NOT EXISTS depannhome_accounting_audit (
+    id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    actor_id BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL, action VARCHAR(80) NOT NULL,
+    target_type VARCHAR(40) NOT NULL, target_id VARCHAR(120) NOT NULL, details JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS depannhome_accounting_audit_owner_created_idx ON depannhome_accounting_audit(owner_id,created_at DESC);
+CREATE TABLE IF NOT EXISTS depannhome_accounting_exports (
+    id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    actor_id BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL, export_type VARCHAR(20) NOT NULL CHECK(export_type IN ('csv','xlsx','fec')),
+    period_start DATE, period_end DATE, entry_count INTEGER NOT NULL DEFAULT 0, line_count INTEGER NOT NULL DEFAULT 0,
+    validation_summary JSONB NOT NULL DEFAULT '{}'::jsonb, file_hash VARCHAR(64) NOT NULL, filename VARCHAR(255) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS depannhome_accounting_exports_owner_created_idx ON depannhome_accounting_exports(owner_id,created_at DESC);
 
 CREATE TABLE IF NOT EXISTS depannhome_einvoice_transmissions (
     id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,

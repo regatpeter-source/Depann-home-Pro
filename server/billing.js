@@ -5,6 +5,7 @@ import { getAccountOwnerId } from "./auth.js";
 import { sendDocumentEmail } from "./email.js";
 import { createQuitusPdf } from "./calendar.js";
 import { createEmptyLeakContent, createLeakReportPdf } from "./leak-report-template.js";
+import { postAccountingDocument } from "./accounting.js";
 
 const MAX_LOGO_SIZE = 2 * 1024 * 1024;
 const MAX_QUOTE_TEMPLATE_SIZE = 10 * 1024 * 1024;
@@ -529,7 +530,10 @@ export function registerBillingRoutes(app, requireAuthentication) {
             await (await import("./partner-connections.js")).synchronizeConnectedBillingDocument(getAccountOwnerId(request), rows[0].id);
             const { registerMissionSourceItem } = await import("./partner-dialogue.js"); await registerMissionSourceItem({ ownerId: getAccountOwnerId(request), appointmentId: appointment?.id, sourceType: document.documentType, sourceId: rows[0].id, label: document.documentNumber, details: { status: document.status, issueDate: document.issueDate } });
             const { recordMissionEventForSource } = await import("./partner-dialogue.js"); await recordMissionEventForSource({ ownerId: getAccountOwnerId(request), sourceType: "appointment", sourceId: appointment?.id, status: document.documentType === "invoice" ? "invoice_created" : "quote_created", action: "billing_document_created", details: { documentId: rows[0].id, documentType: document.documentType, status: document.status }, actorName: request.user.fullName || request.user.username });
-            response.status(201).json({ id: rows[0].id });
+            const posting = document.isAccounted
+                ? await postAccountingDocument({ ownerId: getAccountOwnerId(request), documentId: rows[0].id, actorId: request.user.sub })
+                : null;
+            response.status(201).json({ id: rows[0].id, posting });
         } catch (error) {
             if (error.code === "23505") return response.status(409).json({ message: "Ce numéro de document existe déjà dans votre compte." });
             throw error;
@@ -560,10 +564,11 @@ export function registerBillingRoutes(app, requireAuthentication) {
                     customer_address=$8, issue_date=$9::date, due_date=$10::date, status=$11, is_accounted=$12,
                     accounted_at=CASE WHEN $12 THEN COALESCE(accounted_at, CURRENT_DATE) ELSE NULL END, appointment_id=$13,
                     source_quote_id=$14, quote_reference=$15, lines=$16::jsonb, notes=$17, financial_data=$18::jsonb, updated_at=NOW()
-                WHERE id=$1 AND owner_id=$2
+                WHERE id=$1 AND owner_id=$2 AND is_accounted=FALSE
+                    AND NOT EXISTS (SELECT 1 FROM depannhome_accounting_entries entry WHERE entry.owner_id=$2 AND entry.source_type IN ('invoice','credit') AND entry.source_id=id::text)
             `, [id, getAccountOwnerId(request), document.documentType, document.documentNumber, document.clientId || null, document.customerType, document.customerName,
                 document.customerAddress, document.issueDate, document.dueDate || null, document.status, document.isAccounted, appointment?.id || null, sourceQuote?.id || null, sourceQuote?.documentNumber || "", JSON.stringify(document.lines), document.notes, JSON.stringify(document.financialData)]);
-            if (!result.rowCount) return response.status(404).json({ message: "Document introuvable." });
+            if (!result.rowCount) return response.status(409).json({ message: "Un document comptabilisé est immuable. Utilisez un avoir pour le corriger." });
             await (await import("./partner-connections.js")).synchronizeConnectedBillingDocument(getAccountOwnerId(request), id);
             const { registerMissionSourceItem } = await import("./partner-dialogue.js"); await registerMissionSourceItem({ ownerId: getAccountOwnerId(request), appointmentId: appointment?.id, sourceType: document.documentType, sourceId: id, label: document.documentNumber, details: { status: document.status, issueDate: document.issueDate } });
             const { recordMissionEventForSource } = await import("./partner-dialogue.js"); await recordMissionEventForSource({ ownerId: getAccountOwnerId(request), sourceType: "appointment", sourceId: appointment?.id, status: document.documentType === "invoice" ? "invoice_sent" : "quote_sent", action: "billing_document_updated", details: { documentId: id, documentType: document.documentType, status: document.status }, actorName: request.user.fullName || request.user.username });
@@ -577,22 +582,16 @@ export function registerBillingRoutes(app, requireAuthentication) {
     app.patch("/api/billing/documents/:documentId/accounting", requireAuthentication, requireBillingAdministration, asyncHandler(async (request, response) => {
         const id = positiveId(request.params.documentId);
         if (!id || typeof request.body?.isAccounted !== "boolean") return response.status(400).json({ message: "Statut comptable invalide." });
-        const result = await getPool().query(`
-            UPDATE depannhome_billing_documents
-            SET is_accounted = $3,
-                accounted_at = CASE WHEN $3 THEN COALESCE(accounted_at, CURRENT_DATE) ELSE NULL END,
-                updated_at = NOW()
-            WHERE id = $1 AND owner_id = $2 AND document_type = 'invoice'
-        `, [id, getAccountOwnerId(request), request.body.isAccounted]);
-        if (!result.rowCount) return response.status(404).json({ message: "Facture introuvable." });
-        response.status(204).end();
+        if (!request.body.isAccounted) return response.status(409).json({ message: "Une écriture validée ne peut pas être décomptabilisée. Utilisez un avoir ou une écriture corrective." });
+        const result = await postAccountingDocument({ ownerId: getAccountOwnerId(request), documentId: id, actorId: request.user.sub });
+        response.json(result);
     }));
 
     app.delete("/api/billing/documents/:documentId", requireAuthentication, requireBillingAdministration, asyncHandler(async (request, response) => {
         const id = positiveId(request.params.documentId);
         if (!id) return response.status(400).json({ message: "Document invalide." });
-        const result = await getPool().query("DELETE FROM depannhome_billing_documents WHERE id = $1 AND owner_id = $2", [id, getAccountOwnerId(request)]);
-        if (!result.rowCount) return response.status(404).json({ message: "Document introuvable." });
+        const result = await getPool().query(`DELETE FROM depannhome_billing_documents document WHERE id=$1 AND owner_id=$2 AND is_accounted=FALSE AND NOT EXISTS(SELECT 1 FROM depannhome_accounting_entries entry WHERE entry.owner_id=$2 AND entry.source_type IN ('invoice','credit') AND entry.source_id=document.id::text)`, [id, getAccountOwnerId(request)]);
+        if (!result.rowCount) return response.status(409).json({ message: "Une pièce comptabilisée ou liée à un règlement ne peut pas être supprimée." });
         response.status(204).end();
     }));
 }
@@ -736,7 +735,7 @@ function sanitizeDocument(value) {
     const issueDate = sanitizeDate(value?.issueDate);
     const dueDate = value?.dueDate ? sanitizeDate(value.dueDate) : "";
     const status = cleanText(value?.status, 30) || "draft";
-    const isAccounted = documentType === "invoice" && value?.isAccounted === "on";
+    const isAccounted = documentType === "invoice" && value?.isAccounted === "on" && !["draft", "cancelled", "rejected"].includes(status.toLowerCase());
     const appointmentId = positiveId(value?.appointmentId);
     const sourceQuoteId = documentType === "invoice" ? positiveId(value?.sourceQuoteId) : 0;
     const notes = cleanText(value?.notes, 2000);

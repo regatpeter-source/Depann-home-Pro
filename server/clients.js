@@ -449,7 +449,8 @@ async function analyzeClientLifecycle(database, ownerId, clientId, knownClient =
             (SELECT COUNT(*)::int FROM missions) AS "partnerMissions",
             (SELECT COUNT(*)::int FROM depannhome_purchases WHERE owner_id=$1 AND client_id=$2) AS purchases,
             (SELECT COUNT(*)::int FROM depannhome_messages message JOIN depannhome_users recipient ON recipient.id=message.recipient_id WHERE (recipient.id=$1 OR recipient.account_owner_id=$1) AND message.client_id=$2) AS messages,
-            (SELECT COUNT(*)::int FROM depannhome_collaboration_audit WHERE owner_id=$1 AND entity_type='client' AND entity_id=$2) AS "auditEntries"
+            (SELECT COUNT(*)::int FROM depannhome_collaboration_audit WHERE owner_id=$1 AND entity_type='client' AND entity_id=$2) AS "auditEntries",
+            (SELECT COUNT(*)::int FROM depannhome_accounting_entries WHERE owner_id=$1 AND client_id=$2) AS "accountingEntries"
     `, [ownerId, clientId]);
     return clientLifecycleDecision(rows[0], client);
 }

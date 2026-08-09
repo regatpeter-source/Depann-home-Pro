@@ -150,7 +150,8 @@ app.use(partnerDialogueUploadErrorHandler);
 app.use((error, request, response, next) => {
 	console.error(error);
 	if (response.headersSent) return next(error);
-	return response.status(500).json({ message: "Erreur interne du serveur." });
+	const status = Number.isInteger(error?.status) && error.status >= 400 && error.status < 500 ? error.status : 500;
+	return response.status(status).json({ message: status === 500 ? "Erreur interne du serveur." : String(error.message || "Requête invalide.") });
 });
 
 async function start() {

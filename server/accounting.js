@@ -3,11 +3,20 @@ import ExcelJS from "exceljs";
 import PDFDocument from "pdfkit";
 import { getPool } from "./database.js";
 import { getAccountOwnerId } from "./auth.js";
+import {
+    DEFAULT_JOURNALS,
+    buildFecFile,
+    createDocumentAccountingEntry,
+    createSettlementAccountingEntry,
+    fecFileName,
+    normalizeAccountingConfig,
+    validateLedger
+} from "./accounting-ledger.js";
 
 const AID_TYPES = new Set(["cee", "maprimerenov", "coup_de_pouce", "eco_ptz", "regional", "departmental", "supplier", "manufacturer", "custom"]);
 const AID_MODES = new Set(["fixed", "percentage"]);
 const PDP_STATUSES = new Set(["configured", "draft", "queued", "sent", "accepted", "rejected", "failed"]);
-const EXPORT_SCOPES = new Set(["invoices", "quotes", "credits", "settlements", "clients", "overdue", "all", "fec"]);
+const EXPORT_SCOPES = new Set(["invoices", "quotes", "credits", "settlements", "clients", "overdue", "all"]);
 
 // Depann'Home Pro prépare les factures et délègue leur transmission aux connecteurs PDP choisis par chaque entreprise.
 const pdpConnectors = new Map([
@@ -63,6 +72,12 @@ export async function initializeAccounting() {
         )
     `);
     await database.query("CREATE INDEX IF NOT EXISTS depannhome_accounting_settlements_owner_document_idx ON depannhome_accounting_settlements (owner_id, document_id, settlement_date DESC)");
+    await database.query("ALTER TABLE depannhome_accounting_settlements DROP CONSTRAINT IF EXISTS depannhome_accounting_settlements_document_id_fkey");
+    await database.query(`
+        ALTER TABLE depannhome_accounting_settlements
+        ADD CONSTRAINT depannhome_accounting_settlements_document_id_fkey
+        FOREIGN KEY (document_id) REFERENCES depannhome_billing_documents(id) ON DELETE RESTRICT
+    `);
     await database.query(`
         CREATE TABLE IF NOT EXISTS depannhome_accounting_settings (
             owner_id BIGINT PRIMARY KEY REFERENCES depannhome_users(id) ON DELETE CASCADE,
@@ -75,6 +90,124 @@ export async function initializeAccounting() {
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
     `);
+    await database.query(`
+        ALTER TABLE depannhome_accounting_settings
+        ADD COLUMN IF NOT EXISTS journal_config JSONB NOT NULL DEFAULT '{}'::jsonb,
+        ADD COLUMN IF NOT EXISTS fec_config JSONB NOT NULL DEFAULT '{}'::jsonb
+    `);
+    await database.query(`
+        CREATE TABLE IF NOT EXISTS depannhome_accounting_journals (
+            id BIGSERIAL PRIMARY KEY,
+            owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+            journal_type VARCHAR(30) NOT NULL CHECK (journal_type IN ('sales','bank','general','purchase')),
+            code VARCHAR(10) NOT NULL,
+            label VARCHAR(100) NOT NULL,
+            description VARCHAR(300) NOT NULL DEFAULT '',
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            next_sequence BIGINT NOT NULL DEFAULT 1 CHECK (next_sequence > 0),
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            CONSTRAINT depannhome_accounting_journals_owner_type_unique UNIQUE (owner_id, journal_type),
+            CONSTRAINT depannhome_accounting_journals_owner_code_unique UNIQUE (owner_id, code),
+            CONSTRAINT depannhome_accounting_journals_owner_id_unique UNIQUE (owner_id, id)
+        )
+    `);
+    await database.query(`
+        CREATE TABLE IF NOT EXISTS depannhome_accounting_entries (
+            id BIGSERIAL PRIMARY KEY,
+            owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+            journal_id BIGINT NOT NULL,
+            journal_code VARCHAR(10) NOT NULL,
+            journal_label VARCHAR(100) NOT NULL,
+            entry_number VARCHAR(80) NOT NULL,
+            entry_date DATE NOT NULL,
+            piece_reference VARCHAR(160) NOT NULL,
+            piece_date DATE NOT NULL,
+            description VARCHAR(300) NOT NULL,
+            source_type VARCHAR(30) NOT NULL,
+            source_id VARCHAR(120) NOT NULL,
+            client_id VARCHAR(100) NOT NULL DEFAULT '',
+            appointment_id BIGINT,
+            status VARCHAR(20) NOT NULL DEFAULT 'validated' CHECK (status='validated'),
+            validated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            created_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            CONSTRAINT depannhome_accounting_entries_journal_owner_fk FOREIGN KEY (owner_id, journal_id) REFERENCES depannhome_accounting_journals(owner_id, id) ON DELETE RESTRICT,
+            CONSTRAINT depannhome_accounting_entries_owner_number_unique UNIQUE (owner_id, entry_number),
+            CONSTRAINT depannhome_accounting_entries_owner_source_unique UNIQUE (owner_id, source_type, source_id),
+            CONSTRAINT depannhome_accounting_entries_owner_id_unique UNIQUE (owner_id, id)
+        )
+    `);
+    await database.query("CREATE INDEX IF NOT EXISTS depannhome_accounting_entries_owner_date_idx ON depannhome_accounting_entries (owner_id, entry_date, validated_at, id)");
+    await database.query("CREATE INDEX IF NOT EXISTS depannhome_accounting_entries_client_idx ON depannhome_accounting_entries (owner_id, client_id, entry_date DESC)");
+    await database.query(`
+        CREATE TABLE IF NOT EXISTS depannhome_accounting_entry_lines (
+            id BIGSERIAL PRIMARY KEY,
+            owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+            entry_id BIGINT NOT NULL,
+            line_number INTEGER NOT NULL CHECK (line_number > 0),
+            account_number VARCHAR(20) NOT NULL CHECK (account_number ~ '^[0-9]{3,20}$'),
+            account_label VARCHAR(160) NOT NULL,
+            auxiliary_number VARCHAR(40) NOT NULL DEFAULT '',
+            auxiliary_label VARCHAR(160) NOT NULL DEFAULT '',
+            debit NUMERIC(14,2) NOT NULL DEFAULT 0 CHECK (debit >= 0),
+            credit NUMERIC(14,2) NOT NULL DEFAULT 0 CHECK (credit >= 0),
+            lettering VARCHAR(40) NOT NULL DEFAULT '',
+            lettering_date DATE,
+            currency_amount NUMERIC(14,2),
+            currency_code VARCHAR(3) NOT NULL DEFAULT '',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            CONSTRAINT depannhome_accounting_entry_lines_entry_owner_fk FOREIGN KEY (owner_id, entry_id) REFERENCES depannhome_accounting_entries(owner_id, id) ON DELETE RESTRICT,
+            CONSTRAINT depannhome_accounting_entry_lines_owner_entry_line_unique UNIQUE (owner_id, entry_id, line_number),
+            CONSTRAINT depannhome_accounting_entry_lines_direction_check CHECK ((debit > 0 AND credit = 0) OR (credit > 0 AND debit = 0)),
+            CONSTRAINT depannhome_accounting_entry_lines_lettering_check CHECK (lettering_date IS NULL OR lettering <> '')
+        )
+    `);
+    await database.query("CREATE INDEX IF NOT EXISTS depannhome_accounting_entry_lines_account_idx ON depannhome_accounting_entry_lines (owner_id, account_number, entry_id)");
+    await database.query(`
+        CREATE TABLE IF NOT EXISTS depannhome_accounting_allocations (
+            id BIGSERIAL PRIMARY KEY,
+            owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+            settlement_id BIGINT NOT NULL REFERENCES depannhome_accounting_settlements(id) ON DELETE RESTRICT,
+            document_id BIGINT NOT NULL REFERENCES depannhome_billing_documents(id) ON DELETE RESTRICT,
+            amount NUMERIC(14,2) NOT NULL CHECK (amount > 0),
+            lettering VARCHAR(40) NOT NULL DEFAULT '',
+            lettering_date DATE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            CONSTRAINT depannhome_accounting_allocations_owner_settlement_unique UNIQUE (owner_id, settlement_id),
+            CONSTRAINT depannhome_accounting_allocations_lettering_check CHECK (lettering_date IS NULL OR lettering <> '')
+        )
+    `);
+    await database.query(`
+        CREATE TABLE IF NOT EXISTS depannhome_accounting_audit (
+            id BIGSERIAL PRIMARY KEY,
+            owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+            actor_id BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+            action VARCHAR(80) NOT NULL,
+            target_type VARCHAR(40) NOT NULL,
+            target_id VARCHAR(120) NOT NULL,
+            details JSONB NOT NULL DEFAULT '{}'::jsonb,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+    `);
+    await database.query("CREATE INDEX IF NOT EXISTS depannhome_accounting_audit_owner_created_idx ON depannhome_accounting_audit (owner_id, created_at DESC)");
+    await database.query(`
+        CREATE TABLE IF NOT EXISTS depannhome_accounting_exports (
+            id BIGSERIAL PRIMARY KEY,
+            owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+            actor_id BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+            export_type VARCHAR(20) NOT NULL CHECK (export_type IN ('csv','xlsx','fec')),
+            period_start DATE,
+            period_end DATE,
+            entry_count INTEGER NOT NULL DEFAULT 0,
+            line_count INTEGER NOT NULL DEFAULT 0,
+            validation_summary JSONB NOT NULL DEFAULT '{}'::jsonb,
+            file_hash VARCHAR(64) NOT NULL,
+            filename VARCHAR(255) NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+    `);
+    await database.query("CREATE INDEX IF NOT EXISTS depannhome_accounting_exports_owner_created_idx ON depannhome_accounting_exports (owner_id, created_at DESC)");
     await database.query(`
         CREATE TABLE IF NOT EXISTS depannhome_einvoice_transmissions (
             id BIGSERIAL PRIMARY KEY,
@@ -98,13 +231,15 @@ export function registerAccountingRoutes(app, requireAuthentication) {
 
     app.get("/api/accounting", asyncHandler(async (request, response) => {
         const ownerId = getAccountOwnerId(request);
-        const [documents, settlements, purchases, aids, settings, transmissions] = await Promise.all([
-            loadDocuments(ownerId), loadSettlements(ownerId), loadPurchases(ownerId), loadAids(ownerId), loadSettings(ownerId), loadTransmissions(ownerId)
+        const [documents, settlements, purchases, aids, settings, transmissions, entries, profile] = await Promise.all([
+            loadDocuments(ownerId), loadSettlements(ownerId), loadPurchases(ownerId), loadAids(ownerId), loadSettings(ownerId), loadTransmissions(ownerId), loadLedgerEntries(ownerId), loadAccountingProfile(ownerId)
         ]);
         response.json({
             dashboard: buildDashboard(documents, settlements, purchases),
             documents, settlements, purchases, aids,
             settings: publicSettings(settings),
+            ledger: { entries, control: validateLedger(entries, { ownerId }) },
+            accountingProfile: profile,
             transmissions,
             connectors: [...pdpConnectors.entries()].map(([id, connector]) => ({ id, label: connector.label }))
         });
@@ -143,45 +278,72 @@ export function registerAccountingRoutes(app, requireAuthentication) {
         const financialData = sanitizeFinancialData(request.body);
         if (!id || !financialData.ok) return response.status(400).json({ message: financialData.message || "Données financières invalides." });
         const result = await getPool().query(`
-            UPDATE depannhome_billing_documents SET financial_data=$3::jsonb, updated_at=NOW() WHERE id=$1 AND owner_id=$2
+            UPDATE depannhome_billing_documents SET financial_data=$3::jsonb, updated_at=NOW()
+            WHERE id=$1 AND owner_id=$2 AND is_accounted=FALSE
         `, [id, getAccountOwnerId(request), JSON.stringify(financialData.value)]);
-        if (!result.rowCount) return response.status(404).json({ message: "Document introuvable." });
+        if (!result.rowCount) return response.status(409).json({ message: "Un document comptabilisé est immuable. Créez un avoir ou une écriture corrective." });
         response.status(204).end();
+    }));
+
+    app.post("/api/accounting/documents/:documentId/post", asyncHandler(async (request, response) => {
+        const documentId = positiveId(request.params.documentId);
+        if (!documentId) return response.status(400).json({ message: "Document invalide." });
+        const result = await postAccountingDocument({ ownerId: getAccountOwnerId(request), documentId, actorId: request.user.sub });
+        response.status(result.alreadyPosted ? 200 : 201).json(result);
     }));
 
     app.post("/api/accounting/documents/:documentId/credits", asyncHandler(async (request, response) => {
         const sourceId = positiveId(request.params.documentId);
         const ownerId = getAccountOwnerId(request);
-        const { rows } = await getPool().query(`
-            SELECT * FROM depannhome_billing_documents WHERE id=$1 AND owner_id=$2 AND document_type='invoice'
-        `, [sourceId, ownerId]);
-        const invoice = rows[0];
-        if (!invoice) return response.status(404).json({ message: "Facture introuvable." });
-        const amount = positiveMoney(request.body?.amount);
-        const total = calculateDocumentTotals(invoice.lines, invoice.financial_data).netPayable;
-        if (amount === null || amount > total) return response.status(400).json({ message: "Le montant de l’avoir doit être positif et ne pas dépasser le reste facturé." });
-        const number = `AVO-${String(invoice.document_number).replace(/^FAC-?/i, "")}-${Date.now().toString().slice(-5)}`.slice(0, 80);
-        const lines = [{ description: `Avoir sur facture ${invoice.document_number}`, quantity: 1, unit: "forfait", unitPrice: -amount / (1 + weightedVatRate(invoice.lines) / 100), vatRate: weightedVatRate(invoice.lines) }];
-        const { rows: created } = await getPool().query(`
-            INSERT INTO depannhome_billing_documents (owner_id, created_by, document_type, document_number, client_id, customer_type, customer_name, customer_address, issue_date, status, source_quote_id, quote_reference, lines, notes, financial_data)
-            VALUES ($1,$2,'credit',$3,$4,$5,$6,$7,CURRENT_DATE,'issued',$8,$9,$10::jsonb,$11,$12::jsonb) RETURNING id
-        `, [ownerId, request.user.sub, number, invoice.client_id, invoice.customer_type, invoice.customer_name, invoice.customer_address, invoice.source_quote_id, invoice.document_number, JSON.stringify(lines), cleanText(request.body?.notes, 2000), JSON.stringify({ sourceInvoiceId: invoice.id })]);
-        response.status(201).json({ id: created[0].id });
+        const client = await getPool().connect();
+        try {
+            await client.query("BEGIN");
+            const { rows } = await client.query(`SELECT * FROM depannhome_billing_documents WHERE id=$1 AND owner_id=$2 AND document_type='invoice' FOR UPDATE`, [sourceId, ownerId]);
+            const invoice = rows[0];
+            if (!invoice) { await client.query("ROLLBACK"); return response.status(404).json({ message: "Facture introuvable." }); }
+            const amount = positiveMoney(request.body?.amount);
+            const total = calculateDocumentTotals(invoice.lines, invoice.financial_data).netPayable;
+            if (amount === null || amount > total) { await client.query("ROLLBACK"); return response.status(400).json({ message: "Le montant de l’avoir doit être positif et ne pas dépasser le montant facturé." }); }
+            await postAccountingDocument({ ownerId, documentId: sourceId, actorId: request.user.sub, database: client });
+            const number = `AVO-${String(invoice.document_number).replace(/^FAC-?/i, "")}-${Date.now().toString().slice(-5)}`.slice(0, 80);
+            const vatRate = weightedVatRate(invoice.lines);
+            const lines = [{ description: `Avoir sur facture ${invoice.document_number}`, quantity: 1, unit: "forfait", unitPrice: roundMoney(-amount / (1 + vatRate / 100)), vatRate }];
+            const { rows: created } = await client.query(`
+                INSERT INTO depannhome_billing_documents (owner_id, created_by, document_type, document_number, client_id, customer_type, customer_name, customer_address, issue_date, status, source_quote_id, quote_reference, lines, notes, financial_data)
+                VALUES ($1,$2,'credit',$3,$4,$5,$6,$7,CURRENT_DATE,'issued',$8,$9,$10::jsonb,$11,$12::jsonb) RETURNING id
+            `, [ownerId, request.user.sub, number, invoice.client_id, invoice.customer_type, invoice.customer_name, invoice.customer_address, invoice.source_quote_id, invoice.document_number, JSON.stringify(lines), cleanText(request.body?.notes, 2000), JSON.stringify({ sourceInvoiceId: invoice.id })]);
+            const posting = await postAccountingDocument({ ownerId, documentId: created[0].id, actorId: request.user.sub, database: client });
+            await client.query("COMMIT");
+            response.status(201).json({ id: created[0].id, posting });
+        } catch (error) {
+            await client.query("ROLLBACK");
+            throw error;
+        } finally { client.release(); }
     }));
 
     app.post("/api/accounting/settlements", asyncHandler(async (request, response) => {
         const settlement = sanitizeSettlement(request.body);
         if (!settlement.ok) return response.status(400).json({ message: settlement.message });
         const ownerId = getAccountOwnerId(request);
-        const documents = await loadDocuments(ownerId);
-        const document = documents.find(item => String(item.id) === String(settlement.documentId) && item.documentType === "invoice");
-        if (!document) return response.status(404).json({ message: "Facture introuvable." });
-        if (settlement.amount > document.remainingAmount + 0.01) return response.status(400).json({ message: "Le règlement dépasse le solde restant de la facture." });
-        const { rows } = await getPool().query(`
-            INSERT INTO depannhome_accounting_settlements (owner_id, document_id, settlement_date, amount, method, reference, notes, created_by)
-            VALUES ($1,$2,$3::date,$4,$5,$6,$7,$8) RETURNING id
-        `, [ownerId, settlement.documentId, settlement.date, settlement.amount, settlement.method, settlement.reference, settlement.notes, request.user.sub]);
-        response.status(201).json({ id: rows[0].id });
+        const client = await getPool().connect();
+        try {
+            await client.query("BEGIN");
+            const { rows } = await client.query(`SELECT id,owner_id AS "ownerId",document_type AS "documentType",document_number AS "documentNumber",client_id AS "clientId",customer_name AS "customerName",TO_CHAR(issue_date,'YYYY-MM-DD') AS "issueDate",status,lines,financial_data AS "financialData",appointment_id AS "appointmentId" FROM depannhome_billing_documents WHERE id=$1 AND owner_id=$2 AND document_type='invoice' FOR UPDATE`, [settlement.documentId, ownerId]);
+            const document = rows[0];
+            if (!document) { await client.query("ROLLBACK"); return response.status(404).json({ message: "Facture introuvable." }); }
+            const settled = await client.query("SELECT COALESCE(SUM(amount),0)::float AS total FROM depannhome_accounting_settlements WHERE owner_id=$1 AND document_id=$2", [ownerId, document.id]);
+            const remainingAmount = roundMoney(calculateDocumentTotals(document.lines, document.financialData).netPayable - Number(settled.rows[0].total));
+            if (settlement.amount > remainingAmount + 0.01) { await client.query("ROLLBACK"); return response.status(400).json({ message: "Le règlement dépasse le solde restant de la facture." }); }
+            await postAccountingDocument({ ownerId, documentId: document.id, actorId: request.user.sub, database: client });
+            const { rows: created } = await client.query(`INSERT INTO depannhome_accounting_settlements(owner_id,document_id,settlement_date,amount,method,reference,notes,created_by) VALUES($1,$2,$3::date,$4,$5,$6,$7,$8) RETURNING id,owner_id AS "ownerId",TO_CHAR(settlement_date,'YYYY-MM-DD') AS date,amount::float AS amount,reference`, [ownerId, document.id, settlement.date, settlement.amount, settlement.method, settlement.reference, settlement.notes, request.user.sub]);
+            const settings = await loadSettings(ownerId, client);
+            const posting = await postSettlementEntry(client, { ownerId, actorId: request.user.sub, settlement: created[0], document, settings });
+            await client.query("COMMIT");
+            response.status(201).json({ id: created[0].id, posting });
+        } catch (error) {
+            await client.query("ROLLBACK");
+            throw error;
+        } finally { client.release(); }
     }));
 
     app.get("/api/accounting/settings", asyncHandler(async (request, response) => response.json({ settings: publicSettings(await loadSettings(getAccountOwnerId(request))) })));
@@ -192,13 +354,68 @@ export function registerAccountingRoutes(app, requireAuthentication) {
         const previous = await loadSettings(ownerId);
         const secret = settings.apiKey ? encryptSecret(settings.apiKey) : previous.pdpApiSecret || "";
         await getPool().query(`
-            INSERT INTO depannhome_accounting_settings (owner_id, chart_config, aid_engine_config, pdp_provider, pdp_identifier, pdp_api_secret, pdp_enabled)
-            VALUES ($1,$2::jsonb,$3::jsonb,$4,$5,$6,$7)
+            INSERT INTO depannhome_accounting_settings (owner_id, chart_config, aid_engine_config, pdp_provider, pdp_identifier, pdp_api_secret, pdp_enabled, journal_config, fec_config)
+            VALUES ($1,$2::jsonb,$3::jsonb,$4,$5,$6,$7,$8::jsonb,$9::jsonb)
             ON CONFLICT (owner_id) DO UPDATE SET chart_config=EXCLUDED.chart_config, aid_engine_config=EXCLUDED.aid_engine_config,
                 pdp_provider=EXCLUDED.pdp_provider, pdp_identifier=EXCLUDED.pdp_identifier, pdp_api_secret=EXCLUDED.pdp_api_secret,
-                pdp_enabled=EXCLUDED.pdp_enabled, updated_at=NOW()
-        `, [ownerId, JSON.stringify(settings.chartConfig), JSON.stringify(settings.aidEngineConfig), settings.provider, settings.identifier, secret, settings.enabled]);
+                pdp_enabled=EXCLUDED.pdp_enabled, journal_config=EXCLUDED.journal_config, fec_config=EXCLUDED.fec_config, updated_at=NOW()
+        `, [ownerId, JSON.stringify(settings.chartConfig), JSON.stringify(settings.aidEngineConfig), settings.provider, settings.identifier, secret, settings.enabled, JSON.stringify(settings.journalConfig), JSON.stringify(settings.fecConfig)]);
+        await ensureAccountingJournals(getPool(), ownerId, settings.journalConfig, true);
         response.status(204).end();
+    }));
+
+    app.get("/api/accounting/ledger", asyncHandler(async (request, response) => {
+        const period = sanitizeLedgerPeriod(request.query);
+        if (!period.ok) return response.status(400).json({ message: period.message });
+        const ownerId = getAccountOwnerId(request);
+        const entries = await loadLedgerEntries(ownerId, period);
+        response.json({ entries, control: validateLedger(entries, { ownerId }) });
+    }));
+
+    app.post("/api/accounting/export/control", asyncHandler(async (request, response) => {
+        const period = sanitizeLedgerPeriod(request.body);
+        if (!period.ok) return response.status(400).json({ message: period.message });
+        const ownerId = getAccountOwnerId(request);
+        const [entries, profile] = await Promise.all([loadLedgerEntries(ownerId, period), loadAccountingProfile(ownerId)]);
+        const confirmations = sanitizeFecConfirmations(request.body);
+        const control = validateLedger(entries, { ownerId, requireFiscalCompleteness: Boolean(request.body?.fec), siren: profile.siren, ...confirmations });
+        response.json({ control, period, profile: { companyName: profile.companyName, siren: profile.siren }, warning: accountingExportWarning() });
+    }));
+
+    app.get("/api/accounting/export/ledger", asyncHandler(async (request, response) => {
+        const period = sanitizeLedgerPeriod(request.query);
+        if (!period.ok) return response.status(400).json({ message: period.message });
+        const format = request.query?.format === "xlsx" ? "xlsx" : "csv";
+        const ownerId = getAccountOwnerId(request);
+        const entries = await loadLedgerEntries(ownerId, period);
+        const control = validateLedger(entries, { ownerId });
+        if (!control.valid) return response.status(409).json({ message: "L’export comptable est bloqué par des anomalies.", control });
+        if (format === "xlsx") {
+            const workbook = await buildLedgerWorkbook(entries, control);
+            const content = Buffer.from(await workbook.xlsx.writeBuffer());
+            const filename = ledgerExportFileName("xlsx", period);
+            await recordAccountingExport(ownerId, request.user.sub, "xlsx", period, control, content, filename);
+            response.set({ "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "Content-Disposition": `attachment; filename=\"${filename}\"`, "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" });
+            return response.send(content);
+        }
+        const content = Buffer.from(buildLedgerCsv(entries), "utf8");
+        const filename = ledgerExportFileName("csv", period);
+        await recordAccountingExport(ownerId, request.user.sub, "csv", period, control, content, filename);
+        return sendTextDownload(response, content, filename, "text/csv; charset=utf-8");
+    }));
+
+    app.post("/api/accounting/export/fec", asyncHandler(async (request, response) => {
+        const period = sanitizeLedgerPeriod(request.body, true);
+        if (!period.ok) return response.status(400).json({ message: period.message });
+        const ownerId = getAccountOwnerId(request);
+        const [entries, profile] = await Promise.all([loadLedgerEntries(ownerId, period), loadAccountingProfile(ownerId)]);
+        const control = validateLedger(entries, { ownerId, requireFiscalCompleteness: true, siren: profile.siren, ...sanitizeFecConfirmations(request.body) });
+        if (!control.valid) return response.status(409).json({ message: "La préparation FEC est bloquée par des anomalies.", control, warning: accountingExportWarning() });
+        const content = Buffer.from(buildFecFile(entries), "utf8");
+        const filename = fecFileName(profile.siren, period.end);
+        await recordAccountingExport(ownerId, request.user.sub, "fec", period, control, content, filename);
+        response.set({ "X-Accounting-Warning": encodeURIComponent(accountingExportWarning()) });
+        return sendTextDownload(response, content, filename, "text/plain; charset=utf-8");
     }));
 
     app.post("/api/accounting/e-invoices/:documentId/transmit", asyncHandler(async (request, response) => {
@@ -224,11 +441,11 @@ export function registerAccountingRoutes(app, requireAuthentication) {
     }));
 
     app.get("/api/accounting/export", asyncHandler(async (request, response) => {
+        if (request.query?.format === "fec" || request.query?.scope === "fec") return response.status(410).json({ message: "L’ancien export FEC a été retiré. Utilisez l’assistant de contrôle FEC dédié." });
         const options = sanitizeExportOptions(request.query);
         if (!options.ok) return response.status(400).json({ message: options.message });
         const data = await collectExportData(getAccountOwnerId(request), options);
         if (options.format === "csv") return sendTextDownload(response, buildCsv(data, options.scope), `${exportFileBase(options)}.csv`, "text/csv; charset=utf-8");
-        if (options.format === "fec") return sendTextDownload(response, buildFec(data), `${exportFileBase(options)}.txt`, "text/plain; charset=utf-8");
         if (options.format === "pdf") {
             const pdf = await buildExportPdf(data, options);
             response.set({ "Content-Type": "application/pdf", "Content-Disposition": `attachment; filename=\"${exportFileBase(options)}.pdf\"`, "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" });
@@ -244,6 +461,133 @@ export function registerAccountingRoutes(app, requireAuthentication) {
 function requireAccountingAdministration(request, response, next) {
     if (request.user?.role !== "admin") return response.status(403).json({ message: "Le module Comptabilité · Facturation électronique & PDP est réservé à l’administrateur de l’entreprise." });
     return next();
+}
+
+export async function postAccountingDocument({ ownerId, documentId, actorId, database = getPool() }) {
+    const ownsTransaction = typeof database.release !== "function";
+    const client = ownsTransaction ? await database.connect() : database;
+    try {
+        if (ownsTransaction) await client.query("BEGIN");
+        const existing = await client.query("SELECT id, entry_number AS \"entryNumber\" FROM depannhome_accounting_entries WHERE owner_id=$1 AND source_type IN ('invoice','credit') AND source_id=$2::text", [ownerId, documentId]);
+        if (existing.rows[0]) {
+            if (ownsTransaction) await client.query("COMMIT");
+            return { entryId: existing.rows[0].id, entryNumber: existing.rows[0].entryNumber, alreadyPosted: true };
+        }
+        const { rows } = await client.query(`
+            SELECT id, owner_id AS "ownerId", document_type AS "documentType", document_number AS "documentNumber",
+                client_id AS "clientId", customer_name AS "customerName", TO_CHAR(issue_date,'YYYY-MM-DD') AS "issueDate",
+                status, lines, financial_data AS "financialData", appointment_id AS "appointmentId"
+            FROM depannhome_billing_documents WHERE id=$1 AND owner_id=$2 FOR UPDATE
+        `, [documentId, ownerId]);
+        const document = rows[0];
+        if (!document) throw accountingError(404, "Document introuvable.");
+        if (!['invoice', 'credit'].includes(document.documentType)) throw accountingError(400, "Seules les factures et les avoirs peuvent être comptabilisés.");
+        if (['draft', 'cancelled', 'rejected'].includes(String(document.status).toLowerCase())) throw accountingError(409, "Validez ou émettez la pièce avant sa comptabilisation.");
+        const settings = await loadSettings(ownerId, client);
+        const journals = await ensureAccountingJournals(client, ownerId, settings.journalConfig);
+        const sequence = await allocateJournalSequence(client, ownerId, "sales");
+        const entry = createDocumentAccountingEntry({ document, chartConfig: settings.chartConfig, journal: journals.sales, entryNumber: sequence.entryNumber, validDate: today() });
+        const entryId = await persistAccountingEntry(client, ownerId, actorId, sequence.id, entry);
+        await client.query("UPDATE depannhome_billing_documents SET is_accounted=TRUE, accounted_at=COALESCE(accounted_at,CURRENT_DATE), updated_at=NOW() WHERE id=$1 AND owner_id=$2", [documentId, ownerId]);
+        await recordAccountingAudit(client, ownerId, actorId, "entry_posted", document.documentType, documentId, { entryId, entryNumber: entry.entryNumber, totalDebit: entry.totalDebit, totalCredit: entry.totalCredit });
+        if (ownsTransaction) await client.query("COMMIT");
+        return { entryId, entryNumber: entry.entryNumber, alreadyPosted: false };
+    } catch (error) {
+        if (ownsTransaction) await client.query("ROLLBACK");
+        throw error;
+    } finally {
+        if (ownsTransaction) client.release();
+    }
+}
+
+async function postSettlementEntry(client, { ownerId, actorId, settlement, document, settings }) {
+    const journals = await ensureAccountingJournals(client, ownerId, settings.journalConfig);
+    const sequence = await allocateJournalSequence(client, ownerId, "bank");
+    const entry = createSettlementAccountingEntry({ settlement, document, chartConfig: settings.chartConfig, journal: journals.bank, entryNumber: sequence.entryNumber, validDate: today() });
+    const entryId = await persistAccountingEntry(client, ownerId, actorId, sequence.id, entry);
+    await client.query(`INSERT INTO depannhome_accounting_allocations(owner_id,settlement_id,document_id,amount) VALUES($1,$2,$3,$4)`, [ownerId, settlement.id, document.id, settlement.amount]);
+    await recordAccountingAudit(client, ownerId, actorId, "settlement_posted", "settlement", settlement.id, { entryId, entryNumber: entry.entryNumber, documentId: document.id, amount: settlement.amount });
+    return { entryId, entryNumber: entry.entryNumber };
+}
+
+async function ensureAccountingJournals(database, ownerId, journalConfig = {}, updateConfiguration = false) {
+    const normalized = normalizeAccountingConfig({}, journalConfig).journals;
+    for (const [journalType, journal] of Object.entries(normalized)) {
+        if (journalType === "general" || journalType === "sales" || journalType === "bank") {
+            await database.query(`
+                INSERT INTO depannhome_accounting_journals(owner_id,journal_type,code,label,description,is_active)
+                VALUES($1,$2,$3,$4,$5,$6)
+                ON CONFLICT(owner_id,journal_type) DO UPDATE SET
+                    code=CASE WHEN $7 THEN EXCLUDED.code ELSE depannhome_accounting_journals.code END,
+                    label=CASE WHEN $7 THEN EXCLUDED.label ELSE depannhome_accounting_journals.label END,
+                    description=CASE WHEN $7 THEN EXCLUDED.description ELSE depannhome_accounting_journals.description END,
+                    is_active=CASE WHEN $7 THEN EXCLUDED.is_active ELSE depannhome_accounting_journals.is_active END,
+                    updated_at=CASE WHEN $7 THEN NOW() ELSE depannhome_accounting_journals.updated_at END
+            `, [ownerId, journalType, journal.code, journal.label, journal.description, journal.active, updateConfiguration]);
+        }
+    }
+    const { rows } = await database.query(`SELECT id,journal_type AS "journalType",code,label,description,is_active AS active FROM depannhome_accounting_journals WHERE owner_id=$1`, [ownerId]);
+    return Object.fromEntries(rows.map(row => [row.journalType, row]));
+}
+
+async function allocateJournalSequence(database, ownerId, journalType) {
+    const { rows } = await database.query(`
+        UPDATE depannhome_accounting_journals SET next_sequence=next_sequence+1,updated_at=NOW()
+        WHERE owner_id=$1 AND journal_type=$2 AND is_active=TRUE
+        RETURNING id,code,label,next_sequence-1 AS sequence
+    `, [ownerId, journalType]);
+    if (!rows[0]) throw accountingError(409, `Le journal ${journalType} est inactif ou introuvable.`);
+    return { ...rows[0], entryNumber: `${rows[0].code}${String(rows[0].sequence).padStart(8, "0")}` };
+}
+
+async function persistAccountingEntry(database, ownerId, actorId, journalId, entry) {
+    const { rows } = await database.query(`
+        INSERT INTO depannhome_accounting_entries(owner_id,journal_id,journal_code,journal_label,entry_number,entry_date,piece_reference,piece_date,description,source_type,source_id,client_id,appointment_id,created_by)
+        VALUES($1,$2,$3,$4,$5,$6::date,$7,$8::date,$9,$10,$11,$12,$13,$14) RETURNING id
+    `, [ownerId, journalId, entry.journalCode, entry.journalLabel, entry.entryNumber, entry.entryDate, entry.pieceRef, entry.pieceDate, entry.description, entry.sourceType, String(entry.sourceId), entry.clientId, entry.appointmentId, actorId]);
+    const entryId = rows[0].id;
+    for (const [index, line] of entry.lines.entries()) {
+        await database.query(`
+            INSERT INTO depannhome_accounting_entry_lines(owner_id,entry_id,line_number,account_number,account_label,auxiliary_number,auxiliary_label,debit,credit,lettering,lettering_date,currency_amount,currency_code)
+            VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::date,$12,$13)
+        `, [ownerId, entryId, index + 1, line.accountNumber, line.accountLabel, line.auxiliaryNumber, line.auxiliaryLabel, line.debit, line.credit, line.lettering, line.letteringDate || null, line.currencyAmount || null, line.currencyCode || ""]);
+    }
+    return entryId;
+}
+
+async function loadLedgerEntries(ownerId, period = {}, database = getPool()) {
+    const { rows: entries } = await database.query(`
+        SELECT id,owner_id AS "ownerId",journal_code AS "journalCode",journal_label AS "journalLabel",entry_number AS "entryNumber",
+            TO_CHAR(entry_date,'YYYY-MM-DD') AS "entryDate",piece_reference AS "pieceRef",TO_CHAR(piece_date,'YYYY-MM-DD') AS "pieceDate",
+            description,source_type AS "sourceType",source_id AS "sourceId",client_id AS "clientId",appointment_id AS "appointmentId",
+            TO_CHAR(validated_at AT TIME ZONE 'Europe/Paris','YYYY-MM-DD') AS "validDate"
+        FROM depannhome_accounting_entries
+        WHERE owner_id=$1 AND ($2::date IS NULL OR entry_date >= $2::date) AND ($3::date IS NULL OR entry_date <= $3::date)
+        ORDER BY validated_at,id
+    `, [ownerId, period.start || null, period.end || null]);
+    if (!entries.length) return [];
+    const { rows: lines } = await database.query(`
+        SELECT entry_id AS "entryId",account_number AS "accountNumber",account_label AS "accountLabel",auxiliary_number AS "auxiliaryNumber",
+            auxiliary_label AS "auxiliaryLabel",debit::float AS debit,credit::float AS credit,lettering,
+            COALESCE(TO_CHAR(lettering_date,'YYYY-MM-DD'),'') AS "letteringDate",currency_amount::float AS "currencyAmount",currency_code AS "currencyCode"
+        FROM depannhome_accounting_entry_lines WHERE owner_id=$1 AND entry_id=ANY($2::bigint[]) ORDER BY entry_id,line_number
+    `, [ownerId, entries.map(entry => entry.id)]);
+    const linesByEntry = lines.reduce((map, line) => {
+        const key = String(line.entryId);
+        if (!map.has(key)) map.set(key, []);
+        map.get(key).push(line);
+        return map;
+    }, new Map());
+    return entries.map(entry => ({ ...entry, lines: (linesByEntry.get(String(entry.id)) || []).map(({ entryId, ...line }) => line) }));
+}
+
+async function loadAccountingProfile(ownerId, database = getPool()) {
+    const { rows } = await database.query(`SELECT COALESCE(NULLIF(profile.company_name,''),owner.company_name,owner.full_name,owner.username) AS "companyName",REGEXP_REPLACE(COALESCE(profile.siren,''),'[^0-9]','','g') AS siren FROM depannhome_users owner LEFT JOIN depannhome_billing_profiles profile ON profile.owner_id=owner.id WHERE owner.id=$1`, [ownerId]);
+    return rows[0] || { companyName: "", siren: "" };
+}
+
+async function recordAccountingAudit(database, ownerId, actorId, action, targetType, targetId, details = {}) {
+    await database.query(`INSERT INTO depannhome_accounting_audit(owner_id,actor_id,action,target_type,target_id,details) VALUES($1,$2,$3,$4,$5,$6::jsonb)`, [ownerId, actorId, action, targetType, String(targetId), JSON.stringify(details)]);
 }
 
 async function loadDocuments(ownerId) {
@@ -281,9 +625,9 @@ async function loadAids(ownerId) {
     return rows;
 }
 
-async function loadSettings(ownerId) {
-    const { rows } = await getPool().query("SELECT chart_config AS \"chartConfig\", aid_engine_config AS \"aidEngineConfig\", pdp_provider AS \"pdpProvider\", pdp_identifier AS \"pdpIdentifier\", pdp_api_secret AS \"pdpApiSecret\", pdp_enabled AS \"pdpEnabled\" FROM depannhome_accounting_settings WHERE owner_id=$1", [ownerId]);
-    return rows[0] || { chartConfig: {}, aidEngineConfig: {}, pdpProvider: "sandbox", pdpIdentifier: "", pdpApiSecret: "", pdpEnabled: false };
+async function loadSettings(ownerId, database = getPool()) {
+    const { rows } = await database.query("SELECT chart_config AS \"chartConfig\", aid_engine_config AS \"aidEngineConfig\", journal_config AS \"journalConfig\", fec_config AS \"fecConfig\", pdp_provider AS \"pdpProvider\", pdp_identifier AS \"pdpIdentifier\", pdp_api_secret AS \"pdpApiSecret\", pdp_enabled AS \"pdpEnabled\" FROM depannhome_accounting_settings WHERE owner_id=$1", [ownerId]);
+    return rows[0] || { chartConfig: {}, aidEngineConfig: {}, journalConfig: {}, fecConfig: {}, pdpProvider: "sandbox", pdpIdentifier: "", pdpApiSecret: "", pdpEnabled: false };
 }
 
 async function loadTransmissions(ownerId) {
@@ -297,7 +641,8 @@ async function loadTransmissions(ownerId) {
 }
 
 function publicSettings(settings) {
-    return { chartConfig: settings.chartConfig || {}, aidEngineConfig: settings.aidEngineConfig || {}, pdpProvider: settings.pdpProvider || "sandbox", pdpIdentifier: settings.pdpIdentifier || "", pdpEnabled: Boolean(settings.pdpEnabled), hasApiKey: Boolean(settings.pdpApiSecret) };
+    const normalized = normalizeAccountingConfig(settings.chartConfig, settings.journalConfig);
+    return { chartConfig: normalized.accounts, journalConfig: normalized.journals, fecConfig: settings.fecConfig || {}, aidEngineConfig: settings.aidEngineConfig || {}, pdpProvider: settings.pdpProvider || "sandbox", pdpIdentifier: settings.pdpIdentifier || "", pdpEnabled: Boolean(settings.pdpEnabled), hasApiKey: Boolean(settings.pdpApiSecret) };
 }
 
 function buildDashboard(documents, settlements, purchases) {
@@ -365,16 +710,75 @@ function sanitizeSettlement(value) {
 
 function sanitizeSettings(value) {
     const provider = pdpConnectors.has(value?.provider) ? value.provider : "sandbox";
-    return { ok: true, provider, identifier: cleanText(value?.identifier, 160), apiKey: String(value?.apiKey || "").trim().slice(0, 1000), enabled: Boolean(value?.enabled), chartConfig: { salesAccount: cleanText(value?.chartConfig?.salesAccount, 20) || "706000", customerAccount: cleanText(value?.chartConfig?.customerAccount, 20) || "411000", bankAccount: cleanText(value?.chartConfig?.bankAccount, 20) || "512000", vatCollectedAccount: cleanText(value?.chartConfig?.vatCollectedAccount, 20) || "445710", purchaseAccount: cleanText(value?.chartConfig?.purchaseAccount, 20) || "606000", supplierAccount: cleanText(value?.chartConfig?.supplierAccount, 20) || "401000" }, aidEngineConfig: { enabled: Boolean(value?.aidEngineConfig?.enabled), mode: cleanText(value?.aidEngineConfig?.mode, 40) || "manual", source: cleanText(value?.aidEngineConfig?.source, 160) } };
+    const normalized = normalizeAccountingConfig(value?.chartConfig, value?.journalConfig);
+    const journalCodes = Object.values(normalized.journals).map(journal => journal.code);
+    if (new Set(journalCodes).size !== journalCodes.length) return { ok: false, message: "Chaque journal doit avoir un code distinct." };
+    return { ok: true, provider, identifier: cleanText(value?.identifier, 160), apiKey: String(value?.apiKey || "").trim().slice(0, 1000), enabled: Boolean(value?.enabled), chartConfig: normalized.accounts, journalConfig: normalized.journals, fecConfig: { fiscalYearStart: sanitizeDate(value?.fecConfig?.fiscalYearStart), fiscalYearEnd: sanitizeDate(value?.fecConfig?.fiscalYearEnd) }, aidEngineConfig: { enabled: Boolean(value?.aidEngineConfig?.enabled), mode: cleanText(value?.aidEngineConfig?.mode, 40) || "manual", source: cleanText(value?.aidEngineConfig?.source, 160) } };
 }
 
+function sanitizeLedgerPeriod(value, required = false) {
+    const start = value?.start ? sanitizeDate(value.start) : "";
+    const end = value?.end ? sanitizeDate(value.end) : "";
+    if ((required && (!start || !end)) || (value?.start && !start) || (value?.end && !end) || (start && end && start > end)) return { ok: false, message: required ? "Les dates de début et de clôture de l’exercice sont obligatoires." : "Période comptable invalide.", start, end };
+    return { ok: true, start, end };
+}
+
+function sanitizeFecConfirmations(value) {
+    return { openingEntriesConfirmed: value?.openingEntriesConfirmed === true, inventoryEntriesConfirmed: value?.inventoryEntriesConfirmed === true, completeLedgerConfirmed: value?.completeLedgerConfirmed === true };
+}
+
+function accountingExportWarning() {
+    return "Préparation d’écritures comptables à faire valider par votre cabinet comptable. Depann’Home Pro n’est ni un logiciel comptable certifié, ni une PDP agréée par l’État.";
+}
+
+function buildLedgerRows(entries) {
+    return entries.flatMap(entry => entry.lines.map(line => ({
+        Journal: entry.journalCode, "Libellé journal": entry.journalLabel, "N° écriture": entry.entryNumber,
+        "Date écriture": entry.entryDate, Compte: line.accountNumber, "Libellé compte": line.accountLabel,
+        Auxiliaire: line.auxiliaryNumber, "Libellé auxiliaire": line.auxiliaryLabel, Pièce: entry.pieceRef,
+        "Date pièce": entry.pieceDate, Libellé: entry.description, Débit: line.debit, Crédit: line.credit,
+        Lettrage: line.lettering, "Date lettrage": line.letteringDate, "Date validation": entry.validDate
+    })));
+}
+
+function buildLedgerCsv(entries) {
+    const rows = buildLedgerRows(entries);
+    const headers = rows.length ? Object.keys(rows[0]) : ["Aucune écriture"];
+    const escape = value => `"${String(value ?? "").replace(/"/g, '""')}"`;
+    return `\ufeff${headers.map(escape).join(";")}\r\n${rows.map(row => headers.map(header => escape(row[header])).join(";")).join("\r\n")}`;
+}
+
+async function buildLedgerWorkbook(entries, control) {
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = "Depann’Home Pro";
+    const journal = workbook.addWorksheet("Journal comptable");
+    const rows = buildLedgerRows(entries);
+    const headers = rows.length ? Object.keys(rows[0]) : ["Aucune écriture"];
+    journal.columns = headers.map(header => ({ header, key: header, width: Math.max(14, Math.min(32, header.length + 4)) }));
+    rows.forEach(row => journal.addRow(row));
+    journal.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
+    journal.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF003B73" } };
+    journal.views = [{ state: "frozen", ySplit: 1 }];
+    const summary = workbook.addWorksheet("Contrôle");
+    [["Avertissement", accountingExportWarning()], ["Écritures", control.entries], ["Lignes", control.lines], ["Pièces", control.pieces], ["Journaux", control.journals], ["Total débit", control.totalDebit], ["Total crédit", control.totalCredit], ["Écart", control.difference]].forEach(row => summary.addRow(row));
+    return workbook;
+}
+
+function ledgerExportFileName(extension, period) { return `export-comptable-${period.start || "debut"}-${period.end || today()}.${extension}`; }
+
+async function recordAccountingExport(ownerId, actorId, exportType, period, control, content, filename) {
+    const hash = crypto.createHash("sha256").update(content).digest("hex");
+    await getPool().query(`INSERT INTO depannhome_accounting_exports(owner_id,actor_id,export_type,period_start,period_end,entry_count,line_count,validation_summary,file_hash,filename) VALUES($1,$2,$3,$4::date,$5::date,$6,$7,$8::jsonb,$9,$10)`, [ownerId, actorId, exportType, period.start || null, period.end || null, control.entries, control.lines, JSON.stringify(control), hash, filename]);
+}
+
+function accountingError(status, message) { const error = new Error(message); error.status = status; return error; }
+
 function sanitizeExportOptions(value) {
-    const format = ["csv", "xlsx", "pdf", "fec"].includes(value?.format) ? value.format : "csv";
+    const format = ["csv", "xlsx", "pdf"].includes(value?.format) ? value.format : "csv";
     const scope = EXPORT_SCOPES.has(value?.scope) ? value.scope : "all";
     const start = value?.start ? sanitizeDate(value.start) : "";
     const end = value?.end ? sanitizeDate(value.end) : "";
     if ((value?.start && !start) || (value?.end && !end) || (start && end && start > end)) return { ok: false, message: "Période d’export invalide." };
-    if (format === "fec" && scope !== "fec") return { ok: false, message: "Sélectionnez l’export FEC pour le format FEC." };
     return { ok: true, format, scope, start, end };
 }
 
@@ -413,26 +817,6 @@ function buildCsv(data, scope) {
     return `\ufeff${headers.map(escape).join(";")}\n${rows.map(row => headers.map(header => escape(row[header])).join(";")).join("\n")}`;
 }
 
-function buildFec(data) {
-    const columns = ["JournalCode", "JournalLib", "EcritureNum", "EcritureDate", "CompteNum", "CompteLib", "CompAuxNum", "CompAuxLib", "PieceRef", "PieceDate", "EcritureLib", "Debit", "Credit", "EcrDate", "DateLet", "ValidDate", "Montantdevise", "Idevise"];
-    const rows = [];
-    const push = values => rows.push(values.map(value => String(value ?? "").replace(/[\t\r\n]/g, " ")).join("\t"));
-    data.documents.filter(item => ["invoice", "credit"].includes(item.documentType)).forEach(item => {
-        const debit = item.documentType === "credit" ? 0 : item.totals.netPayable;
-        const credit = item.documentType === "credit" ? Math.abs(item.totals.netPayable) : 0;
-        const suffix = String(item.id).padStart(6, "0");
-        push(["VTE", "Ventes", `VTE${suffix}A`, item.issueDate.replaceAll("-", ""), "411000", "Clients", "", item.customerName, item.documentNumber, item.issueDate.replaceAll("-", ""), item.documentNumber, debit, credit, item.issueDate.replaceAll("-", ""), "", item.issueDate.replaceAll("-", ""), "", "EUR"]);
-        push(["VTE", "Ventes", `VTE${suffix}B`, item.issueDate.replaceAll("-", ""), "706000", "Prestations", "", "", item.documentNumber, item.issueDate.replaceAll("-", ""), item.documentNumber, credit ? 0 : item.totals.ht, credit ? Math.abs(item.totals.ht) : 0, item.issueDate.replaceAll("-", ""), "", item.issueDate.replaceAll("-", ""), "", "EUR"]);
-        push(["VTE", "Ventes", `VTE${suffix}C`, item.issueDate.replaceAll("-", ""), "445710", "TVA collectée", "", "", item.documentNumber, item.issueDate.replaceAll("-", ""), item.documentNumber, credit ? 0 : item.totals.vat, credit ? Math.abs(item.totals.vat) : 0, item.issueDate.replaceAll("-", ""), "", item.issueDate.replaceAll("-", ""), "", "EUR"]);
-    });
-    data.settlements.forEach(item => {
-        const suffix = String(item.id).padStart(6, "0");
-        push(["BQ", "Banque", `BQ${suffix}A`, item.date.replaceAll("-", ""), "512000", "Banque", "", "", item.reference || item.documentNumber, item.date.replaceAll("-", ""), `Règlement ${item.documentNumber}`, item.amount, 0, item.date.replaceAll("-", ""), item.date.replaceAll("-", ""), item.date.replaceAll("-", ""), "", "EUR"]);
-        push(["BQ", "Banque", `BQ${suffix}B`, item.date.replaceAll("-", ""), "411000", "Clients", "", item.customerName, item.reference || item.documentNumber, item.date.replaceAll("-", ""), `Règlement ${item.documentNumber}`, 0, item.amount, item.date.replaceAll("-", ""), item.date.replaceAll("-", ""), item.date.replaceAll("-", ""), "", "EUR"]);
-    });
-    return `${columns.join("\t")}\n${rows.join("\n")}`;
-}
-
 async function buildWorkbook(data, scope) {
     const workbook = new ExcelJS.Workbook();
     workbook.creator = "Depann’Home Pro";
@@ -446,7 +830,7 @@ async function buildWorkbook(data, scope) {
         sheet.views = [{ state: "frozen", ySplit: 1 }];
     };
     if (scope === "all") { addSheet("Documents", exportRows(data, "all")); addSheet("Règlements", exportRows(data, "settlements")); addSheet("Achats", data.purchases.map(item => ({ Date: item.date, Fournisseur: item.supplier, Libellé: item.description, "Montant HT": item.amountHt, TVA: item.vatRate, Comptabilisé: item.isAccounted ? "Oui" : "Non" }))); }
-    else addSheet(scope === "fec" ? "FEC" : "Export", scope === "fec" ? [{ FEC: buildFec(data) }] : exportRows(data, scope));
+    else addSheet("Export", exportRows(data, scope));
     return workbook;
 }
 
