@@ -124,3 +124,16 @@ test("placeholder Render URL is rejected with an actionable configuration error"
     assert.match(source, /votre-service\\\.onrender\\\.com/);
     assert.match(source, /Configurez PARTNER_SANDBOX_BASE_URL/);
 });
+
+test("external connector missions use the same professional dialogue interface", () => {
+    const missionsSource = readFileSync(new URL("../js/partner-missions.js", import.meta.url), "utf8");
+    const dialogueSource = readFileSync(new URL("../js/partner-dialogue.js", import.meta.url), "utf8");
+    assert.match(missionsSource, /const externalTabs = .*data-mission-tab="messages"/);
+    assert.match(missionsSource, /const messages = activeMissionTab === "messages"/);
+    assert.match(missionsSource, /messages && activeMissionSpace === "network"/);
+    assert.match(missionsSource, /data-open-dialogue="\$\{mission\.id\}"/);
+    assert.match(missionsSource, /openPartnerDialogue\(button\.dataset\.openDialogue\)/);
+    assert.doesNotMatch(missionsSource, /ni messagerie collaborative/);
+    assert.match(dialogueSource, /Envoyer le message/);
+    assert.match(dialogueSource, /Joindre des documents ou photos/);
+});

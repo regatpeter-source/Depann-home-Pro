@@ -2,6 +2,8 @@
 
 Chaque mission reçue dispose d’un fil privé, persistant et chronologique. Le module `server/partner-dialogue.js` est distinct de `server/messages.js`, qui reste réservé aux notes internes associées aux dossiers clients.
 
+Côté entreprise Dépann'Home Pro, le **Centre de mission utilise la même interface professionnelle** pour une mission reçue d’une autre entreprise du réseau ou d’un connecteur externe : synthèse, historique, messages, difficultés, pièces jointes et documents liés. Seuls le mode d’authentification et le logiciel utilisé par l’émetteur diffèrent.
+
 ## Participants et accès
 
 - Les administrateurs voient tous les fils de leur entreprise.
@@ -37,6 +39,7 @@ Les routes externes exigent l’en-tête `X-API-Key` :
 - `GET /api/partner-dialogue/external/missions/:externalMissionId` : résumé, messages et documents liés ;
 - `POST /api/partner-dialogue/external/missions/:externalMissionId/messages` : nouveau message ou difficulté ;
 - `GET /api/partner-dialogue/external/missions/:externalMissionId/attachments/:attachmentId` : téléchargement d’une pièce jointe du fil.
+- `GET /api/partner-dialogue/external/missions/:externalMissionId/items/:itemId/download` : téléchargement d’un devis, d’une facture, d’un rapport ou d’une photo rendu visible au partenaire.
 
 Le corps d’un message peut contenir `authorName`, `body`, `kind` (`message` ou `issue`), `issueType`, `replyToId` et jusqu’à cinq pièces jointes encodées en data URL. Seuls JPEG, PNG, WebP et PDF sont acceptés, dans la limite de 5 Mo par fichier.
 
