@@ -115,7 +115,7 @@ registerConnectorRoutes(app, requireAuthentication, requireCreator);
 registerPartnerMissionRoutes(app, requireAuthentication);
 registerPartnerDialogueRoutes(app, requireAuthentication);
 registerPartnerConnectionRoutes(app, requireAuthentication);
-registerPartnerApiSandboxRoutes(app, requireCreator);
+registerPartnerApiSandboxRoutes(app, requireCreator, requireAuthentication);
 registerPartnerSandboxRoutes(app, requireAuthentication);
 registerAccountingSandboxRoutes(app, requireAuthentication);
 registerGroupRoutes(app, requireAuthentication);

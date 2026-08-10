@@ -87,3 +87,31 @@ test("sandbox reset protects clients referenced by production business records",
     assert.match(source, /NOT EXISTS\(SELECT 1 FROM depannhome_billing_documents/);
     assert.match(source, /NOT EXISTS\(SELECT 1 FROM depannhome_technical_reports/);
 });
+
+test("recipient-company inbox remains owner-scoped and sandbox-only", () => {
+    const source = readFileSync(new URL("../server/partner-api-sandbox.js", import.meta.url), "utf8");
+    assert.match(source, /getAccountOwnerId\(req\)/);
+    assert.match(source, /mission\.owner_id=\$2 AND intake\.is_sandbox=TRUE/);
+    assert.match(source, /\["admin", "pc_standard", "mobile_admin"\]/);
+    assert.doesNotMatch(source, /company\/[^"'`]*:ownerId/);
+});
+
+test("sandbox mission IDs cannot enter legacy production mission routes", () => {
+    const source = readFileSync(new URL("../server/partner-missions.js", import.meta.url), "utf8");
+    assert.match(source, /app\.use\("\/api\/partner-missions\/:missionId", asyncHandler\(requireProductionMission\)\)/);
+    assert.match(source, /function requireProductionMission/);
+    assert.match(source, /mission\.owner_id=\$2 AND intake\.is_sandbox=FALSE/);
+    assert.match(source, /intake\.is_sandbox=FALSE FOR UPDATE/);
+});
+
+test("callback secrets are never returned and old callback log URLs are redacted", () => {
+    const source = readFileSync(new URL("../server/partner-api-sandbox.js", import.meta.url), "utf8");
+    assert.match(source, /callbackUrl: row\.callback_url \? "\[WEBHOOK GÉRÉ PAR LE SERVEUR\]"/);
+    assert.match(source, /external-callback.*REDACTED/s);
+});
+
+test("placeholder Render URL is rejected with an actionable configuration error", () => {
+    const source = readFileSync(new URL("../server/partner-api-sandbox.js", import.meta.url), "utf8");
+    assert.match(source, /votre-service\\\.onrender\\\.com/);
+    assert.match(source, /Configurez PARTNER_SANDBOX_BASE_URL/);
+});

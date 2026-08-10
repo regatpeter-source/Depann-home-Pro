@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { getPool } from "./database.js";
+import { getAccountOwnerId } from "./auth.js";
 import { deliverPartnerMissionOutbox, transitionPartnerMissionStatus } from "./partner-missions.js";
 import {
     decryptSandboxSecret, encryptSandboxSecret, redactSandboxValue, SANDBOX_FAULTS,
@@ -29,8 +30,24 @@ export async function initializePartnerApiSandbox() {
     await db.query("CREATE INDEX IF NOT EXISTS depannhome_partner_api_sandbox_logs_owner_idx ON depannhome_partner_api_sandbox_logs(owner_id,created_at DESC)");
 }
 
-export function registerPartnerApiSandboxRoutes(app, requireCreator) {
+export function registerPartnerApiSandboxRoutes(app, requireCreator, requireAuthentication) {
     app.post("/api/partner-sandbox/external-callback/:token", asyncHandler(receiveCallback));
+    app.use("/api/partner-api-sandbox/company", requireAuthentication, requireCompanySandboxAccess);
+    app.get("/api/partner-api-sandbox/company", asyncHandler(async (req, res) => {
+        const ownerId = getAccountOwnerId(req); const sandbox = await sandboxForOwner(ownerId);
+        if (!sandbox) return res.json({ available: false, partner: SANDBOX_PARTNER, missions: [], logs: [] });
+        res.json({ available: true, sandbox: await publicSandbox(sandbox, false), missions: await sandboxMissions(ownerId), logs: await sandboxLogs(ownerId) });
+    }));
+    app.post("/api/partner-api-sandbox/company/status", asyncHandler(async (req, res) => {
+        const ownerId = getAccountOwnerId(req); const sandbox = await sandboxForOwner(ownerId);
+        if (!sandbox) return res.status(404).json({ message: "Aucune Sandbox API n’est rattachée à cette entreprise." });
+        const missionId = positiveId(req.body?.missionId); const status = sandboxStatus(req.body?.status);
+        if (!missionId || !status) return res.status(400).json({ message: "Mission ou statut Sandbox invalide." });
+        if (!await sandboxMissionExists(ownerId, missionId)) return res.status(404).json({ message: "Mission Sandbox introuvable." });
+        const mission = await transitionPartnerMissionStatus({ ownerId, missionId, status, actorId: req.user.sub, actorRole: req.user.role, actorName: req.user.fullName || req.user.username, details: { sandbox: true, externalStatus: req.body.status, receiverAction: true }, ip: req.ip });
+        const delivery = await deliverPartnerMissionOutbox(ownerId, { sandboxOnly: true });
+        res.json({ mission, delivery });
+    }));
     app.use("/api/creator/partner-api-sandbox", requireCreator);
     app.get("/api/creator/partner-api-sandbox", asyncHandler(async (_req, res) => res.json({ sandboxes: await listSandboxes(), partner: SANDBOX_PARTNER })));
     app.post("/api/creator/partner-api-sandbox/provision", asyncHandler(async (req, res) => {
@@ -66,6 +83,18 @@ export function registerPartnerApiSandboxRoutes(app, requireCreator) {
         await getPool().query("UPDATE depannhome_partner_api_sandboxes SET api_key_cipher=$2,updated_at=NOW() WHERE id=$1", [sandbox.id, encryptSandboxSecret(apiKey, masterSecret())]);
         res.json({ apiKey, message: "Clé API Sandbox renouvelée. L’ancienne clé est immédiatement invalide." });
     }));
+    app.post("/api/creator/partner-api-sandbox/:ownerId/repair-webhook", asyncHandler(async (req, res) => {
+        const sandbox = await requiredSandbox(req.params.ownerId); const callbackToken = crypto.randomBytes(32).toString("base64url");
+        const callbackUrl = absoluteUrl(`/api/partner-sandbox/external-callback/${callbackToken}`);
+        const connection = await getPool().connect();
+        try {
+            await connection.query("BEGIN");
+            await connection.query("UPDATE depannhome_partner_api_sandboxes SET callback_token_hash=$2,updated_at=NOW() WHERE id=$1", [sandbox.id, sandboxHash(callbackToken)]);
+            await connection.query("UPDATE depannhome_partner_intakes SET callback_url=$2,updated_at=NOW() WHERE id=$1 AND owner_id=$3 AND is_sandbox=TRUE", [sandbox.intake_id, callbackUrl, sandbox.owner_id]);
+            await connection.query("COMMIT");
+            res.json({ message: "Webhook Sandbox régénéré avec l’URL publique configurée." });
+        } catch (error) { await connection.query("ROLLBACK"); throw error; } finally { connection.release(); }
+    }));
     app.post("/api/creator/partner-api-sandbox/:ownerId/send", asyncHandler(async (req, res) => {
         const sandbox = await requiredSandbox(req.params.ownerId);
         const scenario = SANDBOX_FAULTS.has(req.body?.scenario) ? req.body.scenario : "none";
@@ -76,8 +105,7 @@ export function registerPartnerApiSandboxRoutes(app, requireCreator) {
     app.post("/api/creator/partner-api-sandbox/:ownerId/status", asyncHandler(async (req, res) => {
         const sandbox = await requiredSandbox(req.params.ownerId); const missionId = positiveId(req.body?.missionId); const status = sandboxStatus(req.body?.status);
         if (!missionId || !status) return res.status(400).json({ message: "Mission ou statut Sandbox invalide." });
-        const allowed = await getPool().query("SELECT mission.id FROM depannhome_partner_missions mission JOIN depannhome_partner_intakes intake ON intake.id=mission.intake_id WHERE mission.id=$1 AND mission.owner_id=$2 AND intake.is_sandbox=TRUE", [missionId, sandbox.owner_id]);
-        if (!allowed.rowCount) return res.status(404).json({ message: "Mission Sandbox introuvable." });
+        if (!await sandboxMissionExists(sandbox.owner_id, missionId)) return res.status(404).json({ message: "Mission Sandbox introuvable." });
         const mission = await transitionPartnerMissionStatus({ ownerId: sandbox.owner_id, missionId, status, actorId: req.user.sub, actorRole: "creator", actorName: req.user.fullName || req.user.username, details: { sandbox: true, externalStatus: req.body.status }, ip: req.ip });
         const delivery = await deliverPartnerMissionOutbox(sandbox.owner_id, { sandboxOnly: true });
         res.json({ mission, delivery });
@@ -136,11 +164,12 @@ async function listSandboxes() {
 }
 async function sandboxForOwner(ownerId) { const { rows } = await getPool().query("SELECT sandbox.*,intake.partner_key,intake.callback_url,intake.enabled FROM depannhome_partner_api_sandboxes sandbox JOIN depannhome_partner_intakes intake ON intake.id=sandbox.intake_id WHERE sandbox.owner_id=$1", [ownerId]); return rows[0] || null; }
 async function requiredSandbox(ownerId) { const sandbox = await sandboxForOwner(positiveId(ownerId)); if (!sandbox) throw clientError(404, "Sandbox API introuvable pour cette organisation."); return sandbox; }
-async function publicSandbox(row, includeSecret) { const owner = row.ownerName || (await accountOwner(row.owner_id))?.name || "Organisation"; return { id: row.id, ownerId: row.owner_id, ownerName: owner, intakeId: row.intake_id, partner: SANDBOX_PARTNER, partnerKey: row.partner_key, endpoint: `/api/partner-intake/${row.partner_key}`, callbackUrl: row.callback_url, enabled: row.enabled !== false, faultMode: row.fault_mode || "none", apiKey: includeSecret ? decryptSandboxSecret(row.api_key_cipher, masterSecret()) : "", createdAt: row.created_at, updatedAt: row.updated_at }; }
+async function publicSandbox(row, includeSecret) { const owner = row.ownerName || (await accountOwner(row.owner_id))?.name || "Organisation"; return { id: row.id, ownerId: row.owner_id, ownerName: owner, intakeId: row.intake_id, partner: SANDBOX_PARTNER, partnerKey: row.partner_key, endpoint: `/api/partner-intake/${row.partner_key}`, callbackUrl: row.callback_url ? "[WEBHOOK GÉRÉ PAR LE SERVEUR]" : "", enabled: row.enabled !== false, faultMode: row.fault_mode || "none", apiKey: includeSecret ? decryptSandboxSecret(row.api_key_cipher, masterSecret()) : "", createdAt: row.created_at, updatedAt: row.updated_at }; }
 async function accountOwner(ownerId) { const { rows } = await getPool().query("SELECT id,COALESCE(NULLIF(company_name,''),full_name,username) AS name FROM depannhome_users WHERE id=$1 AND account_owner_id=id", [ownerId]); return rows[0] || null; }
 async function sandboxMissions(ownerId) { const { rows } = await getPool().query(`SELECT mission.id,mission.mission_number AS "internalMissionNumber",mission.external_mission_id AS "externalMissionId",mission.partner_reference AS "partnerReference",mission.status,mission.priority,mission.client_id AS "clientId",mission.mapped_data AS "mappedData",mission.created_at AS "createdAt",mission.updated_at AS "updatedAt" FROM depannhome_partner_missions mission JOIN depannhome_partner_intakes intake ON intake.id=mission.intake_id WHERE mission.owner_id=$1 AND intake.is_sandbox=TRUE ORDER BY mission.created_at DESC LIMIT 100`, [ownerId]); return rows; }
-async function sandboxLogs(ownerId) { const { rows } = await getPool().query(`SELECT id,direction,method,endpoint,http_status AS "httpStatus",event_type AS "eventType",request_payload AS "requestPayload",response_payload AS "responsePayload",error_message AS "errorMessage",created_at AS "createdAt" FROM depannhome_partner_api_sandbox_logs WHERE owner_id=$1 ORDER BY created_at DESC LIMIT 200`, [ownerId]); return rows; }
-async function logExchange(sandbox, direction, endpoint, status, requestPayload, responsePayload, errorMessage, eventType) { await getPool().query(`INSERT INTO depannhome_partner_api_sandbox_logs(sandbox_id,owner_id,direction,endpoint,http_status,event_type,request_payload,response_payload,error_message) VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb,$9)`, [sandbox.id, sandbox.owner_id, direction, String(endpoint).slice(0, 1000), status, String(eventType || "").slice(0, 80), JSON.stringify(redactSandboxValue(requestPayload || {})), JSON.stringify(redactSandboxValue(responsePayload || {})), String(errorMessage || "").slice(0, 1000)]); }
+async function sandboxMissionExists(ownerId, missionId) { const result = await getPool().query("SELECT mission.id FROM depannhome_partner_missions mission JOIN depannhome_partner_intakes intake ON intake.id=mission.intake_id WHERE mission.id=$1 AND mission.owner_id=$2 AND intake.is_sandbox=TRUE", [missionId, ownerId]); return Boolean(result.rowCount); }
+async function sandboxLogs(ownerId) { const { rows } = await getPool().query(`SELECT id,direction,method,endpoint,http_status AS "httpStatus",event_type AS "eventType",request_payload AS "requestPayload",response_payload AS "responsePayload",error_message AS "errorMessage",created_at AS "createdAt" FROM depannhome_partner_api_sandbox_logs WHERE owner_id=$1 ORDER BY created_at DESC LIMIT 200`, [ownerId]); return rows.map(row => ({ ...row, endpoint: String(row.endpoint || "").replace(/(\/external-callback\/)[^/?]+/i, "$1[REDACTED]") })); }
+async function logExchange(sandbox, direction, endpoint, status, requestPayload, responsePayload, errorMessage, eventType) { const safeEndpoint = String(endpoint).replace(/(\/external-callback\/)[^/?]+/i, "$1[REDACTED]").slice(0, 1000); await getPool().query(`INSERT INTO depannhome_partner_api_sandbox_logs(sandbox_id,owner_id,direction,endpoint,http_status,event_type,request_payload,response_payload,error_message) VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb,$9)`, [sandbox.id, sandbox.owner_id, direction, safeEndpoint, status, String(eventType || "").slice(0, 80), JSON.stringify(redactSandboxValue(requestPayload || {})), JSON.stringify(redactSandboxValue(responsePayload || {})), String(errorMessage || "").slice(0, 1000)]); }
 async function resetSandbox(sandbox) {
     const connection = await getPool().connect();
     try { await connection.query("BEGIN"); const clients = await connection.query("SELECT DISTINCT client_id FROM depannhome_partner_missions WHERE owner_id=$1 AND intake_id=$2 AND client_id<>''", [sandbox.owner_id, sandbox.intake_id]); await connection.query("DELETE FROM depannhome_partner_missions WHERE owner_id=$1 AND intake_id=$2", [sandbox.owner_id, sandbox.intake_id]); for (const row of clients.rows) await connection.query(`DELETE FROM depannhome_clients WHERE owner_id=$1 AND client_id=$2 AND client_data->>'isSandbox'='true'
@@ -149,8 +178,9 @@ async function resetSandbox(sandbox) {
         AND NOT EXISTS(SELECT 1 FROM depannhome_billing_documents WHERE owner_id=$1 AND client_id=$2)
         AND NOT EXISTS(SELECT 1 FROM depannhome_technical_reports WHERE owner_id=$1 AND client_id=$2)`, [sandbox.owner_id, row.client_id]); await connection.query("DELETE FROM depannhome_partner_api_sandboxes WHERE id=$1", [sandbox.id]); await connection.query("DELETE FROM depannhome_partner_intakes WHERE id=$1 AND owner_id=$2 AND is_sandbox=TRUE", [sandbox.intake_id, sandbox.owner_id]); await connection.query("COMMIT"); } catch (error) { await connection.query("ROLLBACK"); throw error; } finally { connection.release(); }
 }
-function absoluteUrl(pathname) { const base = String(process.env.PARTNER_SANDBOX_BASE_URL || `http://127.0.0.1:${Number(process.env.PORT || 3000)}`).replace(/\/+$/, ""); const url = new URL(pathname, `${base}/`); if (!/^https?:$/.test(url.protocol)) throw new Error("PARTNER_SANDBOX_BASE_URL doit utiliser HTTP ou HTTPS."); return url.toString(); }
+function absoluteUrl(pathname) { const base = String(process.env.PARTNER_SANDBOX_BASE_URL || `http://127.0.0.1:${Number(process.env.PORT || 3000)}`).replace(/\/+$/, ""); const url = new URL(pathname, `${base}/`); if (!/^https?:$/.test(url.protocol)) throw clientError(503, "PARTNER_SANDBOX_BASE_URL doit utiliser HTTP ou HTTPS."); if (/votre-service\.onrender\.com|example\.(com|invalid)$/i.test(url.hostname)) throw clientError(503, "Configurez PARTNER_SANDBOX_BASE_URL avec l’adresse Render réelle de l’application, puis régénérez le webhook."); return url.toString(); }
 function masterSecret() { const secret = process.env.SESSION_SECRET; if (!secret || secret.length < 32) throw new Error("SESSION_SECRET est requis pour chiffrer les identifiants Sandbox."); return secret; }
+function requireCompanySandboxAccess(req, res, next) { return ["admin", "pc_standard", "mobile_admin"].includes(req.user?.role) ? next() : res.status(403).json({ message: "La réception Sandbox est réservée à l’administration de l’entreprise." }); }
 function positiveId(value) { const id = Number(value); return Number.isSafeInteger(id) && id > 0 ? id : 0; }
 function clientError(status, message) { const error = new Error(message); error.status = status; return error; }
 function asyncHandler(handler) { return (req, res, next) => Promise.resolve(handler(req, res, next)).catch(error => error.status ? res.status(error.status).json({ message: error.message }) : next(error)); }

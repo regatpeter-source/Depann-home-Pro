@@ -19,9 +19,9 @@ export async function renderPartnerMissions(options = {}) {
     setPage("Missions partenaires", ROUTES.partnerMissions, "detail");
     const container = getContainer();
     container.innerHTML = '<section class="partner-mission-shell"><p class="muted">Chargement des missions partenaires…</p></section>';
-    const [result, sentResult, connectionsResult, alerts] = await Promise.all([api("/api/partner-missions"), api("/api/partner-connections/missions-sent"), canManagePartnerMissions() ? api("/api/partner-connections") : Promise.resolve({ ok: true, data: { connections: [] } }), loadPartnerNotifications()]);
+    const [result, sentResult, connectionsResult, sandboxResult, alerts] = await Promise.all([api("/api/partner-missions"), api("/api/partner-connections/missions-sent"), canManagePartnerMissions() ? api("/api/partner-connections") : Promise.resolve({ ok: true, data: { connections: [] } }), canManagePartnerMissions() ? api("/api/partner-api-sandbox/company") : Promise.resolve({ ok: true, data: { available: false } }), loadPartnerNotifications()]);
     if (!result.ok) { container.innerHTML = `<section class="client-panel"><p class="auth-message error">${escapeHtml(result.message || "Impossible de charger les missions.")}</p></section>`; return; }
-    dashboard = { ...result.data, sentMissions: sentResult.ok ? sentResult.data?.missions || [] : [], connections: connectionsResult.ok ? connectionsResult.data?.connections || [] : [] };
+    dashboard = { ...result.data, sentMissions: sentResult.ok ? sentResult.data?.missions || [] : [], connections: connectionsResult.ok ? connectionsResult.data?.connections || [] : [], apiSandbox: sandboxResult.ok ? sandboxResult.data : { available: false } };
     const shell = container.querySelector(".partner-mission-shell");
     const networkMissions = dashboard.missions.filter(mission => mission.sourceType === "depannhome_network");
     const externalMissions = dashboard.missions.filter(mission => mission.sourceType !== "depannhome_network");
@@ -29,6 +29,13 @@ export async function renderPartnerMissions(options = {}) {
     const networkTabs = `<button type="button" class="secondary-button" data-mission-tab="received">Missions reçues${pending ? ` (${pending})` : ""}</button><button type="button" class="secondary-button" data-mission-tab="sent">Missions envoyées</button>${canManagePartnerMissions() ? '<button type="button" class="secondary-button" data-mission-tab="new">Nouvelle mission</button>' : ""}<button type="button" class="secondary-button" data-mission-tab="messages">Messagerie</button>`;
     const externalTabs = '<button type="button" class="secondary-button" data-mission-tab="received">Missions reçues</button>';
     shell.innerHTML = `<header class="partner-mission-heading"><div><p class="eyebrow">Suivi opérationnel</p><h2>${activeMissionSpace === "network" ? "Réseau Depann’Home Pro" : "Connecteurs externes"}</h2><p class="muted">${activeMissionSpace === "network" ? "Missions, messagerie et documents entre entreprises utilisant Depann’Home Pro." : "Missions transmises directement par vos assurances, donneurs d’ordre, plateformes ou logiciels métiers via API."}</p></div><div class="partner-mission-actions"><button class="secondary-button" id="refreshPartnerMissions">Actualiser</button>${activeMissionSpace === "external" && canManagePartnerMissions() ? '<button class="secondary-button" id="retryPartnerOutbox">Relancer les retours API</button>' : ""}</div></header>${alerts.length ? `<section class="partner-mission-alerts"><h3>Notifications partenaires</h3>${alerts.slice(0, 10).map(alert => `<article class="${alert.readAt ? "read" : "unread"}"><strong>${escapeHtml(alert.title)}</strong><p>${escapeHtml(alert.body)}</p><small>${escapeHtml(formatMissionDate(alert.createdAt))}</small></article>`).join("")}</section>` : ""}<nav class="partner-network-tabs partner-mission-tabs" aria-label="Origine des missions"><button type="button" class="secondary-button${activeMissionSpace === "network" ? " active" : ""}" data-mission-space="network">Réseau Depann’Home Pro</button><button type="button" class="secondary-button${activeMissionSpace === "external" ? " active" : ""}" data-mission-space="external">Connecteurs externes</button></nav><nav class="partner-network-tabs partner-mission-tabs" aria-label="Sections des missions">${activeMissionSpace === "network" ? networkTabs : externalTabs}</nav><section class="partner-mission-counters"><article class="attention"><span>À valider</span><strong>${pending}</strong></article><article><span>${activeMissionSpace === "network" ? "Envoyées" : "Connexions API"}</span><strong>${activeMissionSpace === "network" ? dashboard.sentMissions.length : dashboard.intakes.length}</strong></article><article><span>${activeMissionSpace === "network" ? "Retours en échec" : "Missions reçues"}</span><strong>${activeMissionSpace === "network" ? dashboard.failedDeliveries : externalMissions.length}</strong></article></section><div id="partnerMissionContent"></div>`;
+    if (dashboard.apiSandbox?.available) {
+        const button = document.createElement("button");
+        button.type = "button"; button.className = "secondary-button sandbox-receiver-button";
+        button.textContent = `🧪 API Sandbox${dashboard.apiSandbox.missions?.length ? ` (${dashboard.apiSandbox.missions.length})` : ""}`;
+        button.addEventListener("click", openCompanyApiSandboxInbox);
+        shell.querySelector(".partner-mission-actions")?.prepend(button);
+    }
     await markPartnerNotificationsRead();
     enablePartnerNotificationDeletion(shell, alerts);
     shell.querySelector("#refreshPartnerMissions").addEventListener("click", renderPartnerMissions);
@@ -37,6 +44,22 @@ export async function renderPartnerMissions(options = {}) {
     shell.querySelectorAll("[data-mission-tab]").forEach(button => button.addEventListener("click", () => { activeMissionTab = button.dataset.missionTab; renderMissionTab(shell); }));
     renderMissionTab(shell);
     if (options.missionId) options.sourceDialogue ? await openPartnerDialogue(options.missionId, { sourceDialogue: true }) : await showDetail(options.missionId);
+}
+
+function openCompanyApiSandboxInbox() {
+    const receiver = dashboard?.apiSandbox;
+    if (!receiver?.available) return;
+    const missions = receiver.missions || [], logs = receiver.logs || [];
+    const content = `<div class="company-api-sandbox-inbox"><p class="eyebrow">🧪 MODE SANDBOX · Réception entreprise</p><h3>${escapeHtml(receiver.sandbox?.partner?.name || "Dépann'Home Test Services")}</h3><div class="sandbox-warning-banner"><strong>Données fictives isolées.</strong> Ces missions n’apparaissent pas dans les dossiers, clients ou statistiques de production.</div><h4>Missions reçues par API</h4><div class="partner-mission-list">${missions.length ? missions.map(mission => `<article class="partner-mission-card"><div class="partner-mission-card-title"><div><p class="eyebrow">${escapeHtml(mission.externalMissionId)}</p><h3>${escapeHtml(mission.mappedData?.clientName || "Client test")}</h3><p>${escapeHtml(mission.mappedData?.address || "Adresse test")}</p></div><span class="partner-mission-status ${escapeHtml(mission.status)}">${escapeHtml(labelStatus(mission.status))}</span></div><p>${escapeHtml(mission.mappedData?.interventionType || "Intervention test")}</p><div class="partner-mission-card-actions">${[["accepted","Accepter"],["in_progress","En cours"],["completed","Terminer"],["rejected","Refuser"]].map(([status,label]) => `<button type="button" class="secondary-button" data-company-sandbox-status="${status}" data-company-sandbox-mission="${mission.id}">${label}</button>`).join("")}</div></article>`).join("") : '<p class="muted">Aucune mission Sandbox reçue.</p>'}</div><h4>Échanges API expurgés</h4><div class="partner-sandbox-api-log">${logs.length ? logs.slice(0, 30).map(log => `<article><code>${escapeHtml(log.direction)} · ${escapeHtml(log.endpoint)}</code><span>HTTP ${escapeHtml(log.httpStatus ?? "—")}</span><p>${escapeHtml(log.errorMessage || log.eventType || "Échange traité")}</p><small>${escapeHtml(formatMissionDate(log.createdAt))}</small></article>`).join("") : '<p class="muted">Aucun échange enregistré.</p>'}</div></div>`;
+    const dialog = openDialog(content);
+    dialog.querySelectorAll("[data-company-sandbox-status]").forEach(button => button.addEventListener("click", async () => {
+        button.disabled = true;
+        const result = await api("/api/partner-api-sandbox/company/status", { method: "POST", body: JSON.stringify({ missionId: button.dataset.companySandboxMission, status: button.dataset.companySandboxStatus }) });
+        if (!result.ok) { button.disabled = false; return alert(result.message || "Mise à jour Sandbox impossible."); }
+        dialog.remove();
+        await renderPartnerMissions();
+        openCompanyApiSandboxInbox();
+    }));
 }
 
 function renderMissionTab(shell) {
