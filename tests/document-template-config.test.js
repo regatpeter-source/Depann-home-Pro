@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { createBillingPdf } from "../server/billing.js";
+import { createBillingDocumentOutput, createBillingPdf } from "../server/billing.js";
 import { createQuitusPdf } from "../server/calendar.js";
 import { PDFDocument } from "pdf-lib";
 import PizZip from "pizzip";
@@ -26,6 +26,7 @@ const quote = {
     notes: "Conditions de test"
 };
 const profile = { companyName: "Entreprise test", vatRegime: "standard" };
+const invoice = { ...quote, documentType: "invoice", documentNumber: "FAC-42", dueDate: "2026-09-10", quoteReference: "DEV-42" };
 const event = { id: "APERÇU", title: "Intervention", clientName: "Client test", location: "1 rue du Test", date: "2026-08-10", startTime: "09:00", endTime: "10:00", notes: "RAS" };
 const quitus = { signedBy: "Client test", signature: "" };
 
@@ -47,7 +48,7 @@ test("company settings retain external bases and provide previews for both docum
 
 test("quote and quitus settings expose report-like visual controls", () => {
     for (const field of ["primaryColor", "secondaryColor", "separatorColor", "font", "headerText", "footerText"]) assert.match(clientSource, new RegExp(`name="${field}"`));
-    assert.match(clientSource, /integratedTemplateFields\(profile\.quoteTemplateConfig, "devis"\)/);
+    assert.match(clientSource, /integratedTemplateFields\(profile\.quoteTemplateConfig, "devis et facture"\)/);
     assert.match(clientSource, /integratedTemplateFields\(profile\.quitusTemplate, "quitus"\)/);
 });
 
@@ -57,6 +58,33 @@ test("integrated quote PDF changes with its own template", async () => {
     assert.equal(first.subarray(0, 4).toString(), "%PDF");
     assert.equal(second.subarray(0, 4).toString(), "%PDF");
     assert.notDeepEqual(first, second);
+});
+
+test("an integrated invoice automatically inherits the quote presentation", async () => {
+    const first = await createBillingPdf(invoice, { ...profile, quoteTemplateConfig: { primaryColor: "#172033", headerText: "Présentation commune A" } });
+    const second = await createBillingPdf(invoice, { ...profile, quoteTemplateConfig: { primaryColor: "#7c2d12", headerText: "Présentation commune B" } });
+    assert.equal(first.subarray(0, 4).toString(), "%PDF");
+    assert.equal(second.subarray(0, 4).toString(), "%PDF");
+    assert.notDeepEqual(first, second);
+});
+
+test("an invoice automatically uses the external DOCX base selected for quotes", async () => {
+    const zip = new PizZip();
+    zip.file("[Content_Types].xml", '<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>');
+    zip.folder("_rels").file(".rels", '<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>');
+    zip.folder("word").file("document.xml", '<?xml version="1.0"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>{{type_document}} — {{numero}} — {{client_nom}}</w:t></w:r></w:p><w:sectPr/></w:body></w:document>');
+    const output = await createBillingDocumentOutput(invoice, { ...profile, quoteTemplatePolicy: "company_choice", quoteTemplateMode: "external", quoteTemplateData: zip.generate({ type: "nodebuffer" }), quoteTemplateFilename: "base-commune.docx", quoteTemplateMimeType: DOCX_MIME });
+    const xml = new PizZip(output.buffer).file("word/document.xml").asText();
+    assert.equal(output.mimeType, DOCX_MIME);
+    assert.match(xml, /Facture — FAC-42 — Client test/);
+});
+
+test("an invoice automatically preserves the external PDF base selected for quotes", async () => {
+    const base = await PDFDocument.create(); base.addPage();
+    const output = await createBillingDocumentOutput(invoice, { ...profile, quoteTemplatePolicy: "company_choice", quoteTemplateMode: "external", quoteTemplateData: Buffer.from(await base.save()), quoteTemplateFilename: "base-commune.pdf", quoteTemplateMimeType: PDF_MIME });
+    const merged = await PDFDocument.load(output.buffer);
+    assert.equal(output.mimeType, PDF_MIME);
+    assert.ok(merged.getPageCount() >= 2);
 });
 
 test("integrated quitus PDF changes with its own template", async () => {
@@ -100,6 +128,8 @@ test("official company outputs are retained across archives, emails, downloads a
     assert.match(technicalReportSource, /document_mime_type/);
     assert.match(partnerDialogueSource, /createBillingDocumentOutput/);
     assert.match(partnerConnectionsSource, /mimeType: report\.document_mime_type/);
+    assert.match(serverSource, /\["quote", "invoice"\]\.includes\(document\.documentType\)/);
+    assert.match(clientSource, /Toute facture reprend automatiquement cette présentation et cette base/);
 });
 
 test("template failures are actionable and quitus custom text is available to external templates", async () => {

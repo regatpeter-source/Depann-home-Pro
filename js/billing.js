@@ -131,7 +131,7 @@ function renderOverview(panel, profilePanel) {
             </div>
             <div class="billing-overview-actions">
                 ${!isAccountant() ? '<button type="button" class="secondary-button" data-billing-action="new-quote">+ Nouveau devis</button>' : ""}
-                ${usesExternalTemplate && !isAccountant() ? `<button type="button" class="secondary-button" data-billing-action="download-quote-template" ${profile.hasQuoteTemplate ? "" : "disabled"}>Télécharger le gabarit de devis</button>` : ""}
+                ${usesExternalTemplate && !isAccountant() ? `<button type="button" class="secondary-button" data-billing-action="download-quote-template" ${profile.hasQuoteTemplate ? "" : "disabled"}>Télécharger le gabarit devis / facture</button>` : ""}
                 ${usesExternalQuitusTemplate && !isAccountant() ? `<button type="button" class="secondary-button" data-billing-action="download-quitus-template" ${profile.hasQuitusTemplate ? "" : "disabled"}>Télécharger la base de quitus</button>` : ""}
                 ${usesExternalReportTemplate && !isAccountant() ? `<button type="button" class="secondary-button" data-billing-action="download-report-template" ${profile.hasReportFileTemplate ? "" : "disabled"}>Télécharger la base de rapport</button>` : ""}
                 <button type="button" class="secondary-button" data-billing-action="new-invoice">+ Nouvelle facture</button>
@@ -140,7 +140,7 @@ function renderOverview(panel, profilePanel) {
             </div>
         </div>
         <div class="billing-metrics"><span><strong>${quotes}</strong> devis</span><span><strong>${invoices}</strong> factures</span><span class="billing-base-template"><strong>✓</strong> ${usesExternalTemplate ? "gabarit PDF / DOCX externe" : "modèle Depann’Home intégré"}</span></div>
-        ${usesExternalTemplate && !profile.hasQuoteTemplate ? '<p class="auth-message error">Aucune base de devis n’est encore déposée. Un administrateur doit l’ajouter dans Paramètres → Modèles de documents.</p>' : ""}
+        ${usesExternalTemplate && !profile.hasQuoteTemplate ? '<p class="auth-message error">Aucune base commune aux devis et factures n’est encore déposée. Un administrateur doit l’ajouter dans Paramètres → Modèles de documents.</p>' : ""}
         ${usesExternalQuitusTemplate && !profile.hasQuitusTemplate ? '<p class="auth-message error">Aucune base officielle de quitus n’est déposée.</p>' : ""}
         ${usesExternalReportTemplate && !profile.hasReportFileTemplate ? '<p class="auth-message error">Aucune base officielle de rapport n’est déposée.</p>' : ""}
     `;
@@ -227,29 +227,30 @@ function renderQuoteTemplateSettings(panel, profile, focused = false, onTemplate
     const canUseExternalTemplate = policy !== "integrated_only";
     const canPreview = mode === "integrated" || profile.hasQuoteTemplate;
     const policyMessage = policy === "integrated_only"
-        ? "Le Créateur a imposé le modèle Depann’Home intégré pour cette entreprise."
+        ? "Le Créateur a imposé le modèle Depann’Home intégré aux devis et factures de cette entreprise."
         : policy === "external_only"
-            ? "Le Créateur a imposé une base de devis externe. Déposez un fichier avant de créer vos devis."
-            : "Votre entreprise peut utiliser le modèle intégré ou sa propre base de devis.";
+            ? "Le Créateur a imposé une base externe commune aux devis et factures. Déposez un fichier avant de créer ces documents."
+            : "Votre entreprise peut utiliser le modèle intégré ou sa propre base commune aux devis et factures.";
     panel.insertAdjacentHTML("beforeend", `
         <section class="billing-quote-template-settings">
-            <div class="form-heading"><div><p class="eyebrow">Base de devis</p><h2>Modèle intégré paramétrable ou fichier entreprise</h2><p class="muted">${escapeHtml(policyMessage)}</p></div><div class="calendar-form-actions"><button type="button" class="secondary-button" id="previewQuoteTemplate" ${canPreview ? "" : "disabled"}>Aperçu du devis</button>${profile.hasQuoteTemplate && canUseExternalTemplate ? '<button type="button" class="secondary-button" id="downloadQuoteTemplate">Télécharger la base actuelle</button>' : ""}</div></div>
+            <div class="form-heading"><div><p class="eyebrow">Base des devis et factures</p><h2>Modèle commun intégré ou fichier entreprise</h2><p class="muted">${escapeHtml(policyMessage)} Toute facture reprend automatiquement cette présentation et cette base.</p></div><div class="calendar-form-actions"><button type="button" class="secondary-button" id="previewQuoteTemplate" ${canPreview ? "" : "disabled"}>Aperçu du devis</button><button type="button" class="secondary-button" id="previewInvoiceTemplate" ${canPreview ? "" : "disabled"}>Aperçu de la facture</button>${profile.hasQuoteTemplate && canUseExternalTemplate ? '<button type="button" class="secondary-button" id="downloadQuoteTemplate">Télécharger la base actuelle</button>' : ""}</div></div>
             <form id="quoteTemplateForm" class="client-form" enctype="multipart/form-data">
                 <div class="form-grid">
                     <label>Base utilisée<select name="quoteTemplateMode" ${canChooseMode ? "" : "disabled"}><option value="integrated" ${mode === "integrated" ? "selected" : ""}>Modèle Depann’Home intégré</option><option value="external" ${mode === "external" ? "selected" : ""}>Gabarit PDF / DOCX de l’entreprise</option></select></label>
                     <label>Déposer ou remplacer le gabarit (PDF ou DOCX · 10 Mo max)<input name="quoteTemplate" type="file" accept="application/pdf,.pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx" ${canUseExternalTemplate ? "" : "disabled"}></label>
                     ${profile.hasQuoteTemplate && canUseExternalTemplate ? '<label class="billing-remove-logo"><input name="removeQuoteTemplate" type="checkbox" value="true"> Supprimer la base déposée</label>' : ""}
                     ${externalTemplateFieldsHelp("quote")}
-                    ${integratedTemplateFields(profile.quoteTemplateConfig, "devis")}
+                    ${integratedTemplateFields(profile.quoteTemplateConfig, "devis et facture")}
                 </div>
                 ${profile.hasQuoteTemplate ? `<p class="muted">Fichier actuel : ${escapeHtml(profile.quoteTemplateFilename || "base-devis")}</p>` : ""}
                 <p id="quoteTemplateMessage" class="auth-message" aria-live="polite"></p>
-                <div class="form-actions"><button type="submit" class="secondary-button">Enregistrer le modèle de devis</button></div>
+                <div class="form-actions"><button type="submit" class="secondary-button">Enregistrer le modèle commun</button></div>
             </form>
         </section>
     `);
     panel.querySelector("#downloadQuoteTemplate")?.addEventListener("click", openQuoteTemplateDownload);
-    panel.querySelector("#previewQuoteTemplate")?.addEventListener("click", openQuoteTemplatePreview);
+    panel.querySelector("#previewQuoteTemplate")?.addEventListener("click", () => openQuoteTemplatePreview("quote"));
+    panel.querySelector("#previewInvoiceTemplate")?.addEventListener("click", () => openQuoteTemplatePreview("invoice"));
     panel.querySelector("#quoteTemplateForm").addEventListener("submit", async event => {
         event.preventDefault();
         const form = event.currentTarget;
@@ -260,7 +261,7 @@ function renderQuoteTemplateSettings(panel, profile, focused = false, onTemplate
         message.classList.remove("error");
         const result = await apiRequest("/api/billing/quote-template", { method: "PUT", body: new FormData(form) });
         if (!result.ok) {
-            message.textContent = result.message || "Impossible d’enregistrer la base de devis.";
+            message.textContent = result.message || "Impossible d’enregistrer la base commune aux devis et factures.";
             message.classList.add("error");
             submit.disabled = false;
             return;
@@ -285,12 +286,12 @@ function renderAdditionalDocumentTemplateSettings(panel, profile, type, focused 
 function integratedTemplateFields(value, label) {
     const defaults = { primaryColor: label === "quitus" ? "#003b73" : "#172033", secondaryColor: "#0a5c36", separatorColor: "#d7dde3", font: "Helvetica", headerText: "", footerText: "" };
     const template = { ...defaults, ...(value || {}) };
-    return `<fieldset class="form-wide document-template-design"><legend>Présentation du modèle intégré de ${escapeHtml(label)}</legend><p class="muted form-wide">Ces réglages restent propres à ce document et sont visibles dans son aperçu PDF.</p><label>Couleur principale<input name="primaryColor" type="color" value="${escapeHtml(template.primaryColor)}"></label><label>Couleur secondaire<input name="secondaryColor" type="color" value="${escapeHtml(template.secondaryColor)}"></label><label>Couleur des séparateurs<input name="separatorColor" type="color" value="${escapeHtml(template.separatorColor)}"></label><label>Police<select name="font"><option value="Helvetica" ${template.font === "Helvetica" ? "selected" : ""}>Helvetica</option><option value="Times-Roman" ${template.font === "Times-Roman" ? "selected" : ""}>Times</option><option value="Courier" ${template.font === "Courier" ? "selected" : ""}>Courier</option></select></label><label class="form-wide">Texte d’en-tête<textarea name="headerText" rows="2" maxlength="500" placeholder="Texte facultatif propre au ${escapeHtml(label)}">${escapeHtml(template.headerText)}</textarea></label><label class="form-wide">Texte de pied de page<textarea name="footerText" rows="2" maxlength="500" placeholder="Texte facultatif propre au ${escapeHtml(label)}">${escapeHtml(template.footerText)}</textarea></label></fieldset>`;
+    return `<fieldset class="form-wide document-template-design"><legend>Présentation du modèle intégré de ${escapeHtml(label)}</legend><p class="muted form-wide">Ces réglages sont visibles dans chaque aperçu PDF concerné.</p><label>Couleur principale<input name="primaryColor" type="color" value="${escapeHtml(template.primaryColor)}"></label><label>Couleur secondaire<input name="secondaryColor" type="color" value="${escapeHtml(template.secondaryColor)}"></label><label>Couleur des séparateurs<input name="separatorColor" type="color" value="${escapeHtml(template.separatorColor)}"></label><label>Police<select name="font"><option value="Helvetica" ${template.font === "Helvetica" ? "selected" : ""}>Helvetica</option><option value="Times-Roman" ${template.font === "Times-Roman" ? "selected" : ""}>Times</option><option value="Courier" ${template.font === "Courier" ? "selected" : ""}>Courier</option></select></label><label class="form-wide">Texte d’en-tête<textarea name="headerText" rows="2" maxlength="500" placeholder="Texte facultatif propre au ${escapeHtml(label)}">${escapeHtml(template.headerText)}</textarea></label><label class="form-wide">Texte de pied de page<textarea name="footerText" rows="2" maxlength="500" placeholder="Texte facultatif propre au ${escapeHtml(label)}">${escapeHtml(template.footerText)}</textarea></label></fieldset>`;
 }
 
 function externalTemplateFieldsHelp(type) {
     const fields = type === "quote"
-        ? ["numero", "date", "echeance", "client_nom", "client_adresse", "entreprise_nom", "lignes", "total_ht", "total_tva", "total_ttc", "conditions"]
+        ? ["type_document", "numero", "date", "echeance", "client_nom", "client_adresse", "entreprise_nom", "lignes", "total_ht", "total_tva", "total_ttc", "conditions"]
         : type === "quitus"
             ? ["numero_intervention", "intervention", "date", "client_nom", "adresse_intervention", "observations", "signataire", "validation", "texte_entete", "texte_pied_page", "entreprise_nom"]
             : ["numero_rapport", "titre", "date", "client_nom", "client_adresse", "technicien", "entreprise_nom", "contenu"];
@@ -672,10 +673,10 @@ function openBlankQuotePreview() {
     popup.location.href = "/api/billing/blank-quote/pdf";
 }
 
-function openQuoteTemplatePreview() {
+function openQuoteTemplatePreview(type = "quote") {
     const popup = window.open("", "_blank");
-    if (!popup) { alert("Autorisez les fenêtres pop-up pour afficher l’aperçu du devis."); return; }
-    popup.location.href = "/api/billing/quote-template/preview";
+    if (!popup) { alert(`Autorisez les fenêtres pop-up pour afficher l’aperçu ${type === "invoice" ? "de la facture" : "du devis"}.`); return; }
+    popup.location.href = `/api/billing/quote-template/preview?type=${encodeURIComponent(type)}`;
 }
 
 function openQuoteTemplateDownload() {

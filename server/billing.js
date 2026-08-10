@@ -296,14 +296,14 @@ export function registerBillingRoutes(app, requireAuthentication) {
         const template = request.file;
         const templateConfig = sanitizeDocumentTemplate(request.body, { primaryColor: "#172033" });
         if (template) await validateCompanyTemplate(template.buffer, template.mimetype);
-        if (policy === "integrated_only" && template) return response.status(403).json({ message: "Le Créateur n’autorise pas de base de devis externe pour cette entreprise." });
+        if (policy === "integrated_only" && template) return response.status(403).json({ message: "Le Créateur n’autorise pas de base externe pour les devis et factures de cette entreprise." });
         const { rows } = await getPool().query(
             "SELECT quote_template_data IS NOT NULL AS \"hasQuoteTemplate\" FROM depannhome_billing_profiles WHERE owner_id = $1",
             [accountOwnerId]
         );
         const hasExistingTemplate = Boolean(rows[0]?.hasQuoteTemplate);
         if (mode === "external" && !template && (removeTemplate || !hasExistingTemplate)) {
-            return response.status(400).json({ message: "Déposez un gabarit de devis PDF ou DOCX avant d’activer ce mode." });
+            return response.status(400).json({ message: "Déposez un gabarit PDF ou DOCX commun aux devis et factures avant d’activer ce mode." });
         }
         await getPool().query(`
             INSERT INTO depannhome_billing_profiles (owner_id, quote_template_mode, quote_template_config, quote_template_filename, quote_template_data, quote_template_mime_type)
@@ -322,20 +322,21 @@ export function registerBillingRoutes(app, requireAuthentication) {
     app.get("/api/billing/quote-template/preview", requireAuthentication, requireBillingAdministration, asyncHandler(async (request, response) => {
         const ownerId = getAccountOwnerId(request);
         const profile = await loadBillingPdfProfile(ownerId);
-        const document = { documentType: "quote", documentNumber: "APERÇU", customerName: "Nom du client", customerAddress: "Adresse du client", issueDate: new Date().toISOString().slice(0, 10), dueDate: "", lines: [{ description: "Exemple de prestation", quantity: 1, unit: "forfait", unitPrice: 120, vatRate: 20 }], notes: profile.paymentTerms || "Conditions de règlement" };
+        const documentType = request.query.type === "invoice" ? "invoice" : "quote";
+        const document = { documentType, documentNumber: "APERÇU", customerName: "Nom du client", customerAddress: "Adresse du client", issueDate: new Date().toISOString().slice(0, 10), dueDate: documentType === "invoice" ? new Date().toISOString().slice(0, 10) : "", quoteReference: documentType === "invoice" ? "DEV-APERÇU" : "", lines: [{ description: "Exemple de prestation", quantity: 1, unit: "forfait", unitPrice: 120, vatRate: 20 }], notes: profile.paymentTerms || "Conditions de règlement" };
         const output = await createBillingDocumentOutput(document, profile);
         response.set({ "Content-Type": output.mimeType, "Content-Disposition": `${output.mimeType === PDF_MIME ? "inline" : "attachment"}; filename="${contentDispositionFileName(output.filename)}"`, "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" });
         response.send(output.buffer);
     }));
 
     app.get("/api/billing/quote-template/file", requireAuthentication, requireBillingAdministration, asyncHandler(async (request, response) => {
-        if (await getQuoteTemplatePolicy(getAccountOwnerId(request)) === "integrated_only") return response.status(403).json({ message: "Le téléchargement d’une base de devis externe n’est pas autorisé pour cette entreprise." });
+        if (await getQuoteTemplatePolicy(getAccountOwnerId(request)) === "integrated_only") return response.status(403).json({ message: "Le téléchargement de la base externe des devis et factures n’est pas autorisé pour cette entreprise." });
         const { rows } = await getPool().query(`
             SELECT quote_template_filename AS "filename", quote_template_data AS "data", quote_template_mime_type AS "mimeType"
             FROM depannhome_billing_profiles WHERE owner_id = $1
         `, [getAccountOwnerId(request)]);
         const template = rows[0];
-        if (!template?.data) return response.status(404).json({ message: "Aucune base de devis déposée." });
+        if (!template?.data) return response.status(404).json({ message: "Aucune base commune aux devis et factures n’est déposée." });
         response.set({
             "Content-Type": template.mimeType || "application/octet-stream",
             "Content-Disposition": `attachment; filename="${contentDispositionFileName(template.filename || "base-devis")}"`,
@@ -898,7 +899,7 @@ function billingPdfFileName(document) {
 export async function createBillingDocumentOutput(document, profile) {
     const generatedPdf = await createBillingPdf(document, profile);
     const policy = QUOTE_TEMPLATE_POLICIES.has(profile.quoteTemplatePolicy) ? profile.quoteTemplatePolicy : "company_choice";
-    const external = document.documentType === "quote" && (policy === "external_only" || (policy !== "integrated_only" && profile.quoteTemplateMode === "external"));
+    const external = ["quote", "invoice"].includes(document.documentType) && (policy === "external_only" || (policy !== "integrated_only" && profile.quoteTemplateMode === "external"));
     if (!external) return { buffer: generatedPdf, filename: billingPdfFileName(document), mimeType: PDF_MIME };
     return renderCompanyTemplate({ buffer: profile.quoteTemplateData, filename: profile.quoteTemplateFilename || billingPdfFileName(document), mimeType: profile.quoteTemplateMimeType, generatedPdf, values: billingTemplateValues(document, profile) });
 }
@@ -912,7 +913,7 @@ function billingTemplateValues(document, profile) {
 
 export function createBillingPdf(document, profile) {
     return new Promise((resolve, reject) => {
-        const template = document.documentType === "quote" ? sanitizeDocumentTemplate(profile.quoteTemplateConfig || {}) : { ...DEFAULT_DOCUMENT_TEMPLATE };
+        const template = ["quote", "invoice"].includes(document.documentType) ? sanitizeDocumentTemplate(profile.quoteTemplateConfig || {}) : { ...DEFAULT_DOCUMENT_TEMPLATE };
         const boldFont = template.font === "Times-Roman" ? "Times-Bold" : template.font === "Courier" ? "Courier-Bold" : "Helvetica-Bold";
         const pdf = new PDFDocument({ size: "A4", margin: 44, bufferPages: true, info: { Title: `${document.documentType === "invoice" ? "Facture" : "Devis"} ${document.documentNumber}`, Author: profile.companyName || "Depann'Home Pro" } });
         const chunks = [];
