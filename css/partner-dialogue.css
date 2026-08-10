@@ -250,10 +250,7 @@
 }
 
 .partner-dialogue .partner-dialogue-composer{
-    display:grid;
-    grid-template-columns:minmax(0,1fr) auto;
-    gap:12px 16px;
-    align-items:end;
+    display:block;
     min-height:0;
     position:relative;
     z-index:2;
@@ -276,11 +273,14 @@
 }
 
 .partner-dialogue .partner-composer-files{
-    grid-column:1/3;
     position:relative;
-    align-content:center;
-    min-height:86px;
-    padding:10px 12px;
+    display:flex;
+    flex-direction:column;
+    justify-content:center;
+    min-width:0;
+    height:44px;
+    min-height:44px;
+    padding:5px 12px;
     overflow:hidden;
     border:1px dashed #86b79a;
     border-radius:11px;
@@ -299,27 +299,23 @@
 }
 
 .partner-dialogue .partner-composer-files>strong,
-.partner-dialogue .partner-composer-files>span,
-.partner-dialogue .partner-composer-files>small,
-.partner-dialogue .partner-composer-files>output,
-.partner-dialogue .partner-composer-files>em{
+.partner-dialogue .partner-composer-files>span{
     display:block;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+}
+
+.partner-dialogue .partner-composer-files>strong{
+    font-size:.78rem;
+    line-height:1.1;
 }
 
 .partner-dialogue .partner-composer-files>span{
     color:#334155;
-    font-size:.8rem;
+    font-size:.7rem;
     font-weight:600;
-}
-
-.partner-dialogue .partner-composer-files b{
-    display:inline-block;
-    margin-left:3px;
-    padding:3px 7px;
-    border-radius:7px;
-    background:#14824b;
-    color:#fff;
-    font-size:.75rem;
+    line-height:1.1;
 }
 
 .partner-dialogue .partner-composer-files input{
@@ -331,33 +327,31 @@
     cursor:pointer;
 }
 
-.partner-dialogue .partner-composer-files small{
-    color:#64748b;
-    font-size:.72rem;
-    font-weight:600;
-}
-
 .partner-dialogue .partner-file-selection{
-    max-width:100%;
+    position:absolute;
+    width:1px;
+    height:1px;
+    padding:0;
     overflow:hidden;
-    color:#173b69;
-    font-size:.74rem;
-    font-weight:800;
-    text-overflow:ellipsis;
+    clip:rect(0,0,0,0);
     white-space:nowrap;
+    border:0;
 }
 
-.partner-dialogue .partner-composer-files em{
-    color:#47705b;
-    font-size:.7rem;
-    font-style:normal;
-    font-weight:600;
+.partner-dialogue .partner-composer-actions{
+    display:grid;
+    grid-template-columns:repeat(3,minmax(0,1fr));
+    gap:12px;
+    align-items:stretch;
+    margin-top:10px;
 }
 
 .partner-dialogue .journal-share-control{
     display:flex;
     align-items:center;
-    align-self:center;
+    margin:0;
+    box-sizing:border-box;
+    height:44px;
     min-height:44px;
     padding:9px 11px;
     border:1px solid #bfdbfe;
@@ -376,12 +370,13 @@
 .partner-dialogue .partner-dialogue-composer .form-actions{
     margin:0;
     padding:0;
-    align-self:stretch;
-    align-items:flex-end;
+    align-items:stretch;
 }
 
 .partner-dialogue .partner-dialogue-composer button[type="submit"]{
+    width:100%;
     min-height:44px;
+    height:44px;
     padding-inline:18px;
     border-color:#14824b;
     background:#14824b;
@@ -406,13 +401,6 @@
         border-bottom:1px solid #e2e8f0;
     }
 
-    .partner-dialogue .partner-dialogue-composer{
-        grid-template-columns:1fr;
-    }
-
-    .partner-dialogue .partner-dialogue-composer .form-actions{
-        justify-content:flex-end;
-    }
 }
 
 @media(max-width:760px){
@@ -493,15 +481,12 @@
         grid-template-columns:1fr;
     }
 
-    .partner-dialogue .partner-dialogue-composer .form-wide,
-    .partner-dialogue .journal-share-control{
-        grid-column:1;
+    .partner-dialogue .partner-composer-actions{
+        grid-template-columns:1fr;
     }
 
-    .partner-dialogue .partner-composer-files{
-        grid-column:1;
-    }
-
+    .partner-dialogue .partner-composer-files,
+    .partner-dialogue .journal-share-control,
     .partner-dialogue .partner-dialogue-composer button[type="submit"]{
         width:100%;
     }

@@ -42,15 +42,21 @@ test("source-side shared files use authenticated sent-mission download routes", 
     assert.match(serverSource, /const sourceBase = `\/api\/partner-dialogue\/sent-missions\/\$\{mission\.id\}`/);
 });
 
-test("the attachment area explains drop, PC selection and database persistence", () => {
+test("the compact attachment area aligns attach, share and send controls", () => {
+    assert.match(clientSource, /partner-composer-actions/);
+    assert.match(clientSource, /<strong>Joindre des documents ou photos<\/strong><span>Glissez-déposez vos fichiers ici<\/span>/);
     assert.match(clientSource, /Glissez-déposez vos fichiers ici/);
     assert.match(clientSource, /Parcourir le PC/);
-    assert.match(clientSource, /enregistrés dans la base sécurisée de la mission/);
+    assert.doesNotMatch(clientSource, /enregistrés dans la base sécurisée de la mission/);
     assert.match(clientSource, /setupAttachmentPicker\(form\)/);
     assert.match(clientSource, /event\.dataTransfer\?\.files/);
     assert.match(clientSource, /formData\.delete\("files"\)/);
     assert.match(clientSource, /attachmentFiles\(\)\.forEach\(file => formData\.append\("files", file, file\.name\)\)/);
-    assert.match(clientSource, /5 fichiers maximum/);
+    assert.match(clientSource, /const MAX_ATTACHMENT_FILES = 5/);
     assert.match(clientSource, /Les dossiers complets ne sont pas importés/);
     assert.match(styleSource, /\.partner-dialogue \.partner-composer-files\.drag-active/);
+    assert.match(styleSource, /\.partner-dialogue \.partner-composer-actions\{[\s\S]*?display:grid;[\s\S]*?grid-template-columns:repeat\(3,minmax\(0,1fr\)\);[\s\S]*?align-items:stretch;/);
+    assert.match(styleSource, /\.partner-dialogue \.partner-composer-files\{[\s\S]*?height:44px;/);
+    assert.match(styleSource, /\.partner-dialogue \.journal-share-control\{[\s\S]*?height:44px;/);
+    assert.match(styleSource, /\.partner-dialogue \.partner-dialogue-composer button\[type="submit"\]\{[\s\S]*?height:44px;/);
 });
