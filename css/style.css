@@ -1625,6 +1625,28 @@ body.desktop-device .nav-label-messages{
     grid-column:1/-1;
 }
 
+.document-template-fields{
+    padding:12px 14px;
+    border:1px dashed rgba(0,59,115,.25);
+    border-radius:12px;
+    background:#fff;
+}
+
+.document-template-fields summary{
+    cursor:pointer;
+    font-weight:700;
+    color:var(--primary);
+}
+
+.document-template-fields code{
+    display:inline-block;
+    margin:4px 4px 0 0;
+    padding:3px 6px;
+    border-radius:6px;
+    background:#eef5fb;
+    color:#17324d;
+}
+
 .document-template-design input[type="color"]{
     min-height:44px;
     padding:4px;

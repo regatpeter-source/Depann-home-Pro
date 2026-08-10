@@ -3,6 +3,7 @@ import { getAccountOwnerId } from "./auth.js";
 import { randomUUID } from "node:crypto";
 import PDFDocument from "pdfkit";
 import { synchronizeConnectedAppointment } from "./partner-connections.js";
+import { PDF_MIME, renderCompanyTemplate } from "./company-document-template.js";
 
 const EVENT_COLORS = new Set(["blue", "green", "orange", "red", "purple", "gray"]);
 const EVENT_TYPES = new Set(["appointment", "task", "vacation", "sick_leave", "unavailable"]);
@@ -350,16 +351,16 @@ export function registerCalendarRoutes(app, requireAuthentication) {
                 return response.status(400).json({ message: "Aucun dossier client correspondant : le quitus ne peut pas être validé." });
             }
 
-            const profileResult = await connection.query(`SELECT company_name AS "companyName",address,postal_code AS "postalCode",city,phone,email,registration_number AS "registrationNumber",logo_data AS "logoData",logo_mime_type AS "logoMimeType",quitus_template AS "quitusTemplate" FROM depannhome_billing_profiles WHERE owner_id=$1`, [accountOwnerId]);
-            const pdf = await createQuitusPdf(event, quitus, profileResult.rows[0] || {});
+            const profileResult = await connection.query(`SELECT profile.company_name AS "companyName",profile.address,profile.postal_code AS "postalCode",profile.city,profile.phone,profile.email,profile.registration_number AS "registrationNumber",profile.logo_data AS "logoData",profile.logo_mime_type AS "logoMimeType",profile.quitus_template AS "quitusTemplate",profile.quitus_template_mode AS "quitusTemplateMode",profile.quitus_template_filename AS "quitusTemplateFilename",profile.quitus_template_data AS "quitusTemplateData",profile.quitus_template_mime_type AS "quitusTemplateMimeType",owner.quitus_template_policy AS "quitusTemplatePolicy" FROM depannhome_users owner LEFT JOIN depannhome_billing_profiles profile ON profile.owner_id=owner.id WHERE owner.id=$1`, [accountOwnerId]);
+            const output = await createQuitusDocumentOutput(event, quitus, profileResult.rows[0] || {});
             const createdAt = new Date().toISOString();
             const attachment = {
                 id: `file-${randomUUID()}`,
                 type: "Quitus",
-                name: quitusPdfFileName(event),
-                mime: "application/pdf",
-                size: pdf.length,
-                dataUrl: `data:application/pdf;base64,${pdf.toString("base64")}`,
+                name: output.filename,
+                mime: output.mimeType,
+                size: output.buffer.length,
+                dataUrl: `data:${output.mimeType};base64,${output.buffer.toString("base64")}`,
                 createdAt
             };
             const client = clientRow.client || {};
@@ -400,7 +401,7 @@ export function registerCalendarRoutes(app, requireAuthentication) {
                     quitus_signature AS "quitusSignature", quitus_signed_at AS "quitusSignedAt"
             `, [id, accountOwnerId, quitus.signedBy, quitus.signature]);
             await connection.query("COMMIT");
-            response.json({ quitus: rows[0], message: "Quitus validé et PDF ajouté au dossier client." });
+            response.json({ quitus: rows[0], message: "Quitus validé et document officiel ajouté au dossier client." });
         } catch (error) {
             await connection.query("ROLLBACK");
             throw error;
@@ -475,6 +476,19 @@ function sanitizeQuitus(value) {
 
 function quitusPdfFileName(event) {
     return `quitus-intervention-${event.id}-${event.date}.pdf`;
+}
+
+export async function createQuitusDocumentOutput(event, quitus, profile = {}) {
+    const generatedPdf = await createQuitusPdf(event, quitus, profile);
+    const policy = ["integrated_only", "company_choice", "external_only"].includes(profile.quitusTemplatePolicy) ? profile.quitusTemplatePolicy : "company_choice";
+    const external = policy === "external_only" || (policy !== "integrated_only" && profile.quitusTemplateMode === "external");
+    if (!external) return { buffer: generatedPdf, filename: quitusPdfFileName(event), mimeType: PDF_MIME };
+    return renderCompanyTemplate({ buffer: profile.quitusTemplateData, filename: profile.quitusTemplateFilename || quitusPdfFileName(event), mimeType: profile.quitusTemplateMimeType, generatedPdf, values: quitusTemplateValues(event, quitus, profile) });
+}
+
+function quitusTemplateValues(event, quitus, profile) {
+    const template = normalizeQuitusTemplate(profile.quitusTemplate);
+    return { numero_intervention: event.id, intervention: event.title, date: event.date, heure_debut: event.startTime || "", heure_fin: event.endTime || "", client_nom: event.clientName, adresse_intervention: event.location, observations: event.notes, entreprise_nom: profile.companyName, entreprise_adresse: [profile.address, profile.postalCode, profile.city].filter(Boolean).join(" "), entreprise_telephone: profile.phone, entreprise_email: profile.email, siret: profile.registrationNumber, signataire: quitus.signedBy, validation: quitus.signature ? "Validé électroniquement avec signature du client" : "Aperçu avant signature", texte_entete: template.headerText, texte_pied_page: template.footerText };
 }
 
 export function createQuitusPdf(event, quitus, profile = {}) {

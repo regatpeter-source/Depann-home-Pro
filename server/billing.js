@@ -3,9 +3,11 @@ import PDFDocument from "pdfkit";
 import { getPool } from "./database.js";
 import { getAccountOwnerId } from "./auth.js";
 import { sendDocumentEmail } from "./email.js";
-import { createQuitusPdf } from "./calendar.js";
-import { createEmptyLeakContent, createLeakReportPdf } from "./leak-report-template.js";
+import { createQuitusDocumentOutput } from "./calendar.js";
+import { createEmptyLeakContent } from "./leak-report-template.js";
 import { postAccountingDocument } from "./accounting.js";
+import { DOCX_MIME, PDF_MIME, renderCompanyTemplate, validateCompanyTemplate } from "./company-document-template.js";
+import { createTechnicalReportOutput } from "./technical-reports.js";
 
 const MAX_LOGO_SIZE = 2 * 1024 * 1024;
 const MAX_QUOTE_TEMPLATE_SIZE = 10 * 1024 * 1024;
@@ -34,8 +36,8 @@ const quoteTemplateUpload = multer({
     storage: multer.memoryStorage(),
     limits: { fileSize: MAX_QUOTE_TEMPLATE_SIZE, files: 1 },
     fileFilter: (request, file, callback) => {
-        if (["application/pdf", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"].includes(file.mimetype)) return callback(null, true);
-        return callback(new Error("Seuls les fichiers PDF, DOC et DOCX sont acceptés."));
+        if ([PDF_MIME, DOCX_MIME].includes(file.mimetype)) return callback(null, true);
+        return callback(new Error("Seuls les gabarits PDF et DOCX sont acceptés. Convertissez les anciens fichiers DOC en DOCX."));
     }
 });
 
@@ -293,6 +295,7 @@ export function registerBillingRoutes(app, requireAuthentication) {
         const removeTemplate = String(request.body?.removeQuoteTemplate || "") === "true";
         const template = request.file;
         const templateConfig = sanitizeDocumentTemplate(request.body, { primaryColor: "#172033" });
+        if (template) await validateCompanyTemplate(template.buffer, template.mimetype);
         if (policy === "integrated_only" && template) return response.status(403).json({ message: "Le Créateur n’autorise pas de base de devis externe pour cette entreprise." });
         const { rows } = await getPool().query(
             "SELECT quote_template_data IS NOT NULL AS \"hasQuoteTemplate\" FROM depannhome_billing_profiles WHERE owner_id = $1",
@@ -300,7 +303,7 @@ export function registerBillingRoutes(app, requireAuthentication) {
         );
         const hasExistingTemplate = Boolean(rows[0]?.hasQuoteTemplate);
         if (mode === "external" && !template && (removeTemplate || !hasExistingTemplate)) {
-            return response.status(400).json({ message: "Déposez une base de devis PDF, DOC ou DOCX avant d’activer ce mode." });
+            return response.status(400).json({ message: "Déposez un gabarit de devis PDF ou DOCX avant d’activer ce mode." });
         }
         await getPool().query(`
             INSERT INTO depannhome_billing_profiles (owner_id, quote_template_mode, quote_template_config, quote_template_filename, quote_template_data, quote_template_mime_type)
@@ -318,12 +321,11 @@ export function registerBillingRoutes(app, requireAuthentication) {
 
     app.get("/api/billing/quote-template/preview", requireAuthentication, requireBillingAdministration, asyncHandler(async (request, response) => {
         const ownerId = getAccountOwnerId(request);
-        if (await usesExternalQuoteTemplate(ownerId)) return sendExternalQuoteTemplate(ownerId, response, true);
         const profile = await loadBillingPdfProfile(ownerId);
         const document = { documentType: "quote", documentNumber: "APERÇU", customerName: "Nom du client", customerAddress: "Adresse du client", issueDate: new Date().toISOString().slice(0, 10), dueDate: "", lines: [{ description: "Exemple de prestation", quantity: 1, unit: "forfait", unitPrice: 120, vatRate: 20 }], notes: profile.paymentTerms || "Conditions de règlement" };
-        const pdf = await createBillingPdf(document, profile);
-        response.set({ "Content-Type": "application/pdf", "Content-Disposition": 'inline; filename="apercu-devis.pdf"', "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" });
-        response.send(pdf);
+        const output = await createBillingDocumentOutput(document, profile);
+        response.set({ "Content-Type": output.mimeType, "Content-Disposition": `${output.mimeType === PDF_MIME ? "inline" : "attachment"}; filename="${contentDispositionFileName(output.filename)}"`, "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" });
+        response.send(output.buffer);
     }));
 
     app.get("/api/billing/quote-template/file", requireAuthentication, requireBillingAdministration, asyncHandler(async (request, response) => {
@@ -348,9 +350,10 @@ export function registerBillingRoutes(app, requireAuthentication) {
         if (!definition) return response.status(404).json({ message: "Type de base documentaire inconnu." });
         const ownerId = getAccountOwnerId(request); const policy = await getTemplatePolicy(ownerId, definition); const requestedMode = QUOTE_TEMPLATE_MODES.has(request.body?.templateMode) ? request.body.templateMode : "integrated";
         const mode = policy === "integrated_only" ? "integrated" : policy === "external_only" ? "external" : requestedMode; const removeTemplate = String(request.body?.removeTemplate || "") === "true"; const template = request.file; const templateConfig = sanitizeDocumentTemplate(request.body, request.params.templateType === "quitus" ? { primaryColor: "#003b73" } : {});
+        if (template) await validateCompanyTemplate(template.buffer, template.mimetype);
         if (policy === "integrated_only" && template) return response.status(403).json({ message: `Le Créateur n’autorise pas de base de ${definition.label} externe pour cette entreprise.` });
         const current = await getPool().query(`SELECT ${definition.dataColumn} IS NOT NULL AS "hasTemplate" FROM depannhome_billing_profiles WHERE owner_id=$1`, [ownerId]);
-        if (mode === "external" && !template && (removeTemplate || !current.rows[0]?.hasTemplate)) return response.status(400).json({ message: `Déposez une base de ${definition.label} PDF, DOC ou DOCX avant d’activer ce mode.` });
+        if (mode === "external" && !template && (removeTemplate || !current.rows[0]?.hasTemplate)) return response.status(400).json({ message: `Déposez un gabarit de ${definition.label} PDF ou DOCX avant d’activer ce mode.` });
         const configColumn = request.params.templateType === "quitus" ? "quitus_template" : "report_template";
         await getPool().query(`INSERT INTO depannhome_billing_profiles (owner_id,${definition.modeColumn},${configColumn},${definition.filenameColumn},${definition.dataColumn},${definition.mimeColumn}) VALUES ($1,$2,$3::jsonb,$4,$5,$6) ON CONFLICT(owner_id) DO UPDATE SET ${definition.modeColumn}=EXCLUDED.${definition.modeColumn},${configColumn}=CASE WHEN $9 THEN EXCLUDED.${configColumn} ELSE depannhome_billing_profiles.${configColumn} END,${definition.filenameColumn}=CASE WHEN $7 THEN '' WHEN $8 THEN EXCLUDED.${definition.filenameColumn} ELSE depannhome_billing_profiles.${definition.filenameColumn} END,${definition.dataColumn}=CASE WHEN $7 THEN NULL WHEN $8 THEN EXCLUDED.${definition.dataColumn} ELSE depannhome_billing_profiles.${definition.dataColumn} END,${definition.mimeColumn}=CASE WHEN $7 THEN '' WHEN $8 THEN EXCLUDED.${definition.mimeColumn} ELSE depannhome_billing_profiles.${definition.mimeColumn} END,updated_at=NOW()`, [ownerId, mode, JSON.stringify(templateConfig), cleanFileName(template?.originalname || `base-${definition.label}`), template?.buffer || null, template?.mimetype || "", removeTemplate, Boolean(template), request.params.templateType === "quitus"]);
         response.status(204).end();
@@ -369,48 +372,20 @@ export function registerBillingRoutes(app, requireAuthentication) {
         const definition = ADDITIONAL_TEMPLATE_TYPES[request.params.templateType];
         if (!definition) return response.status(404).json({ message: "Type de base documentaire inconnu." });
         const ownerId = getAccountOwnerId(request);
-        const policy = await getTemplatePolicy(ownerId, definition);
-        const { rows } = await getPool().query(`
-            SELECT ${definition.modeColumn} AS mode, ${definition.filenameColumn} AS filename,
-                ${definition.dataColumn} AS data, ${definition.mimeColumn} AS "mimeType"
-            FROM depannhome_billing_profiles WHERE owner_id = $1
-        `, [ownerId]);
-        const template = rows[0];
-        const usesExternal = policy === "external_only" || (policy !== "integrated_only" && template?.mode === "external");
-        if (usesExternal) {
-            if (!template?.data) return response.status(404).json({ message: `Aucune base de ${definition.label} déposée.` });
-            const mimeType = template.mimeType || "application/octet-stream";
-            response.set({
-                "Content-Type": mimeType,
-                "Content-Disposition": `${mimeType === "application/pdf" ? "inline" : "attachment"}; filename="${contentDispositionFileName(template.filename || `base-${definition.label}`)}"`,
-                "Cache-Control": "private, no-store",
-                "X-Content-Type-Options": "nosniff"
-            });
-            return response.send(template.data);
-        }
         const preview = request.params.templateType === "quitus"
             ? await createQuitusPreview(ownerId)
             : await createReportPreview(ownerId);
         response.set({
-            "Content-Type": "application/pdf",
-            "Content-Disposition": `inline; filename="apercu-${definition.label}.pdf"`,
+            "Content-Type": preview.mimeType,
+            "Content-Disposition": `${preview.mimeType === PDF_MIME ? "inline" : "attachment"}; filename="${contentDispositionFileName(preview.filename)}"`,
             "Cache-Control": "private, no-store",
             "X-Content-Type-Options": "nosniff"
         });
-        response.send(preview);
+        response.send(preview.buffer);
     }));
 
     app.get("/api/billing/blank-quote/pdf", requireAuthentication, requireBillingAdministration, asyncHandler(async (request, response) => {
-        if (await usesExternalQuoteTemplate(getAccountOwnerId(request))) {
-            return response.status(403).json({ message: "Cette entreprise utilise une base de devis PDF ou Word déposée dans son espace." });
-        }
-        const { rows } = await getPool().query(`
-            SELECT company_name AS "companyName", legal_form AS "legalForm", address, postal_code AS "postalCode", city, phone, email,
-                registration_number AS "registrationNumber", siren, tax_number AS "taxNumber", bank_iban AS "bankIban", bank_bic AS "bankBic", payment_terms AS "paymentTerms", deposit_terms AS "depositTerms",
-                footer_note AS "footerNote", logo_data AS "logoData", logo_mime_type AS "logoMimeType", quote_template_config AS "quoteTemplateConfig"
-            FROM depannhome_billing_profiles WHERE owner_id = $1
-        `, [getAccountOwnerId(request)]);
-        const profile = rows[0] || emptyProfile();
+        const profile = await loadBillingPdfProfile(getAccountOwnerId(request));
         const document = {
             documentType: "quote",
             documentNumber: "APERÇU",
@@ -421,14 +396,14 @@ export function registerBillingRoutes(app, requireAuthentication) {
             lines: [],
             notes: profile.paymentTerms || ""
         };
-        const pdf = await createBillingPdf(document, profile);
+        const output = await createBillingDocumentOutput(document, profile);
         response.set({
-            "Content-Type": "application/pdf",
-            "Content-Disposition": 'inline; filename="apercu-devis-vierge.pdf"',
+            "Content-Type": output.mimeType,
+            "Content-Disposition": `${output.mimeType === PDF_MIME ? "inline" : "attachment"}; filename="${contentDispositionFileName(output.filename)}"`,
             "Cache-Control": "private, no-store",
             "X-Content-Type-Options": "nosniff"
         });
-        response.send(pdf);
+        response.send(output.buffer);
     }));
 
     app.get("/api/billing/documents/:documentId", requireAuthentication, asyncHandler(async (request, response) => {
@@ -474,15 +449,14 @@ export function registerBillingRoutes(app, requireAuthentication) {
     app.get("/api/billing/documents/:documentId/pdf", requireAuthentication, asyncHandler(async (request, response) => {
         const billingExport = await getBillingExport(request);
         if (!billingExport) return response.status(404).json({ message: "Document introuvable." });
-        const pdf = await createBillingPdf(billingExport.document, billingExport.profile);
-        const fileName = billingPdfFileName(billingExport.document);
+        const output = await createBillingDocumentOutput(billingExport.document, billingExport.profile);
         response.set({
-            "Content-Type": "application/pdf",
-            "Content-Disposition": `inline; filename="${fileName}"`,
+            "Content-Type": output.mimeType,
+            "Content-Disposition": `${output.mimeType === PDF_MIME ? "inline" : "attachment"}; filename="${contentDispositionFileName(output.filename)}"`,
             "Cache-Control": "private, no-store",
             "X-Content-Type-Options": "nosniff"
         });
-        response.send(pdf);
+        response.send(output.buffer);
     }));
 
     app.post("/api/billing/documents/:documentId/email", requireAuthentication, requireTechnicianBillingAccess, asyncHandler(async (request, response) => {
@@ -491,13 +465,13 @@ export function registerBillingRoutes(app, requireAuthentication) {
         const billingExport = await getBillingExport(request);
         if (!billingExport) return response.status(404).json({ message: "Document introuvable." });
 
-        const pdf = await createBillingPdf(billingExport.document, billingExport.profile);
+        const output = await createBillingDocumentOutput(billingExport.document, billingExport.profile);
         const type = billingExport.document.documentType === "invoice" ? "Facture" : "Devis";
         await sendDocumentEmail({
             recipient,
             recipientName: billingExport.document.customerName,
             documentLabel: `${type} ${billingExport.document.documentNumber}`,
-            attachment: { filename: billingPdfFileName(billingExport.document), content: pdf, contentType: "application/pdf" }
+            attachment: { filename: output.filename, content: output.buffer, contentType: output.mimeType }
         });
         response.json({ message: `${type} envoyé(e) par e-mail.` });
     }));
@@ -537,9 +511,6 @@ export function registerBillingRoutes(app, requireAuthentication) {
     }));
 
     app.post("/api/billing/documents", requireAuthentication, requireTechnicianBillingAccess, asyncHandler(async (request, response) => {
-        if (request.body?.documentType === "quote" && await usesExternalQuoteTemplate(getAccountOwnerId(request))) {
-            return response.status(403).json({ message: "Cette entreprise utilise une base de devis PDF ou Word déposée dans son espace." });
-        }
         const document = sanitizeDocument(request.body);
         if (!document.ok) return response.status(400).json({ message: document.message });
         if (request.user?.role === "technician" && (document.documentType !== "quote" || !document.appointmentId)) {
@@ -583,9 +554,6 @@ export function registerBillingRoutes(app, requireAuthentication) {
         const document = sanitizeDocument(request.body);
         if (!id) return response.status(400).json({ message: "Document invalide." });
         if (!document.ok) return response.status(400).json({ message: document.message });
-        if (document.documentType === "quote" && await usesExternalQuoteTemplate(getAccountOwnerId(request))) {
-            return response.status(403).json({ message: "Cette entreprise utilise une base de devis PDF ou Word déposée dans son espace." });
-        }
         try {
             if (document.clientId && !await hasClient(getPool(), getAccountOwnerId(request), document.clientId)) {
                 return response.status(400).json({ message: "Le dossier client associé est introuvable." });
@@ -667,7 +635,7 @@ async function requireTechnicianBillingAccess(request, response, next) {
 export function billingUploadErrorHandler(error, request, response, next) {
     if (error instanceof multer.MulterError) return response.status(400).json({ message: ["quoteTemplate", "documentTemplate"].includes(error.field) ? "La base documentaire doit faire au maximum 10 Mo." : "Le logo doit faire au maximum 2 Mo." });
     if (error?.message === "Seules les images PNG, JPEG ou WebP sont acceptées.") return response.status(400).json({ message: error.message });
-    if (error?.message === "Seuls les fichiers PDF, DOC et DOCX sont acceptés.") return response.status(400).json({ message: error.message });
+    if (error?.message === "Seuls les gabarits PDF et DOCX sont acceptés. Convertissez les anciens fichiers DOC en DOCX.") return response.status(400).json({ message: error.message });
     return next(error);
 }
 
@@ -682,30 +650,13 @@ async function getQuoteTemplatePolicy(accountOwnerId) {
     return QUOTE_TEMPLATE_POLICIES.has(rows[0]?.quote_template_policy) ? rows[0].quote_template_policy : "company_choice";
 }
 
-async function usesExternalQuoteTemplate(accountOwnerId) {
-    const [policy, profile] = await Promise.all([
-        getQuoteTemplatePolicy(accountOwnerId),
-        getPool().query("SELECT quote_template_mode FROM depannhome_billing_profiles WHERE owner_id = $1", [accountOwnerId])
-    ]);
-    return policy === "external_only" || (policy !== "integrated_only" && profile.rows[0]?.quote_template_mode === "external");
-}
-
-async function sendExternalQuoteTemplate(ownerId, response, inlinePdf = false) {
-    const { rows } = await getPool().query(`SELECT quote_template_filename AS filename, quote_template_data AS data, quote_template_mime_type AS "mimeType" FROM depannhome_billing_profiles WHERE owner_id=$1`, [ownerId]);
-    const template = rows[0];
-    if (!template?.data) return response.status(404).json({ message: "Aucune base de devis déposée." });
-    const mimeType = template.mimeType || "application/octet-stream";
-    response.set({ "Content-Type": mimeType, "Content-Disposition": `${inlinePdf && mimeType === "application/pdf" ? "inline" : "attachment"}; filename="${contentDispositionFileName(template.filename || "base-devis")}"`, "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" });
-    return response.send(template.data);
-}
-
 async function loadBillingPdfProfile(ownerId) {
-    const { rows } = await getPool().query(`SELECT company_name AS "companyName",legal_form AS "legalForm",address,postal_code AS "postalCode",city,phone,email,registration_number AS "registrationNumber",siren,tax_number AS "taxNumber",vat_regime AS "vatRegime",bank_iban AS "bankIban",bank_bic AS "bankBic",payment_terms AS "paymentTerms",deposit_terms AS "depositTerms",footer_note AS "footerNote",logo_data AS "logoData",logo_mime_type AS "logoMimeType",quote_template_config AS "quoteTemplateConfig" FROM depannhome_billing_profiles WHERE owner_id=$1`, [ownerId]);
+    const { rows } = await getPool().query(`SELECT profile.company_name AS "companyName",profile.legal_form AS "legalForm",profile.address,profile.postal_code AS "postalCode",profile.city,profile.phone,profile.email,profile.registration_number AS "registrationNumber",profile.siren,profile.tax_number AS "taxNumber",profile.vat_regime AS "vatRegime",profile.bank_iban AS "bankIban",profile.bank_bic AS "bankBic",profile.payment_terms AS "paymentTerms",profile.deposit_terms AS "depositTerms",profile.footer_note AS "footerNote",profile.logo_data AS "logoData",profile.logo_mime_type AS "logoMimeType",profile.quote_template_config AS "quoteTemplateConfig",profile.quote_template_mode AS "quoteTemplateMode",profile.quote_template_filename AS "quoteTemplateFilename",profile.quote_template_data AS "quoteTemplateData",profile.quote_template_mime_type AS "quoteTemplateMimeType",owner.quote_template_policy AS "quoteTemplatePolicy" FROM depannhome_users owner LEFT JOIN depannhome_billing_profiles profile ON profile.owner_id=owner.id WHERE owner.id=$1`, [ownerId]);
     return { ...emptyProfile(), ...(rows[0] || {}) };
 }
 
 async function loadQuitusPdfProfile(ownerId) {
-    const { rows } = await getPool().query(`SELECT company_name AS "companyName",address,postal_code AS "postalCode",city,phone,email,registration_number AS "registrationNumber",logo_data AS "logoData",logo_mime_type AS "logoMimeType",quitus_template AS "quitusTemplate" FROM depannhome_billing_profiles WHERE owner_id=$1`, [ownerId]);
+    const { rows } = await getPool().query(`SELECT profile.company_name AS "companyName",profile.address,profile.postal_code AS "postalCode",profile.city,profile.phone,profile.email,profile.registration_number AS "registrationNumber",profile.logo_data AS "logoData",profile.logo_mime_type AS "logoMimeType",profile.quitus_template AS "quitusTemplate",profile.quitus_template_mode AS "quitusTemplateMode",profile.quitus_template_filename AS "quitusTemplateFilename",profile.quitus_template_data AS "quitusTemplateData",profile.quitus_template_mime_type AS "quitusTemplateMimeType",owner.quitus_template_policy AS "quitusTemplatePolicy" FROM depannhome_users owner LEFT JOIN depannhome_billing_profiles profile ON profile.owner_id=owner.id WHERE owner.id=$1`, [ownerId]);
     return { ...emptyProfile(), ...(rows[0] || {}) };
 }
 
@@ -721,7 +672,7 @@ function sanitizeDocumentTemplate(value, defaults = {}) {
 async function createQuitusPreview(ownerId) {
     const profile = await loadQuitusPdfProfile(ownerId);
     const date = new Date().toISOString().slice(0, 10);
-    return createQuitusPdf({
+    return createQuitusDocumentOutput({
         id: "APERÇU",
         title: "Intervention de démonstration",
         clientName: "Nom du client",
@@ -738,11 +689,14 @@ async function createQuitusPreview(ownerId) {
 
 async function createReportPreview(ownerId) {
     const { rows } = await getPool().query(`
-        SELECT company_name AS "companyName", address, postal_code AS "postalCode", city, phone, email,
-            registration_number AS "registrationNumber", tax_number AS "taxNumber", logo_data AS "logoData",
-            logo_mime_type AS "logoMimeType", report_template AS "reportTemplate",
-            report_secondary_logo_data AS "secondaryLogoData", report_secondary_logo_mime_type AS "secondaryLogoMimeType"
-        FROM depannhome_billing_profiles WHERE owner_id = $1
+        SELECT profile.company_name AS "companyName", profile.address, profile.postal_code AS "postalCode", profile.city, profile.phone, profile.email,
+            profile.registration_number AS "registrationNumber", profile.tax_number AS "taxNumber", profile.logo_data AS "logoData",
+            profile.logo_mime_type AS "logoMimeType", profile.report_template AS "reportTemplate",
+            profile.report_secondary_logo_data AS "secondaryLogoData", profile.report_secondary_logo_mime_type AS "secondaryLogoMimeType",
+            profile.report_file_template_mode AS "reportFileTemplateMode", profile.report_file_template_filename AS "reportFileTemplateFilename",
+            profile.report_file_template_data AS "reportFileTemplateData", profile.report_file_template_mime_type AS "reportFileTemplateMimeType",
+            owner.report_template_policy AS "reportTemplatePolicy"
+        FROM depannhome_users owner LEFT JOIN depannhome_billing_profiles profile ON profile.owner_id=owner.id WHERE owner.id = $1
     `, [ownerId]);
     const profile = rows[0] || emptyProfile();
     const date = new Date().toISOString().slice(0, 10);
@@ -755,7 +709,7 @@ async function createReportPreview(ownerId) {
         time: "09:00",
         technicianName: "Nom du technicien"
     };
-    return createLeakReportPdf({
+    return createTechnicalReportOutput({
         id: "APERÇU",
         title: "Rapport de recherche de fuite — Aperçu",
         reportDate: date,
@@ -924,10 +878,11 @@ async function getBillingExport(request) {
                                             ))
                 `, [id, getAccountOwnerId(request), request.user?.role || "", request.user?.sub || 0]),
         database.query(`
-            SELECT company_name AS "companyName", legal_form AS "legalForm", address, postal_code AS "postalCode", city, phone, email,
-                registration_number AS "registrationNumber", siren, tax_number AS "taxNumber", vat_regime AS "vatRegime", bank_iban AS "bankIban", bank_bic AS "bankBic", payment_terms AS "paymentTerms", deposit_terms AS "depositTerms",
-                footer_note AS "footerNote", logo_data AS "logoData", logo_mime_type AS "logoMimeType", quote_template_config AS "quoteTemplateConfig"
-            FROM depannhome_billing_profiles WHERE owner_id = $1
+            SELECT profile.company_name AS "companyName", profile.legal_form AS "legalForm", profile.address, profile.postal_code AS "postalCode", profile.city, profile.phone, profile.email,
+                profile.registration_number AS "registrationNumber", profile.siren, profile.tax_number AS "taxNumber", profile.vat_regime AS "vatRegime", profile.bank_iban AS "bankIban", profile.bank_bic AS "bankBic", profile.payment_terms AS "paymentTerms", profile.deposit_terms AS "depositTerms",
+                profile.footer_note AS "footerNote", profile.logo_data AS "logoData", profile.logo_mime_type AS "logoMimeType", profile.quote_template_config AS "quoteTemplateConfig",
+                profile.quote_template_mode AS "quoteTemplateMode", profile.quote_template_filename AS "quoteTemplateFilename", profile.quote_template_data AS "quoteTemplateData", profile.quote_template_mime_type AS "quoteTemplateMimeType", owner.quote_template_policy AS "quoteTemplatePolicy"
+            FROM depannhome_users owner LEFT JOIN depannhome_billing_profiles profile ON profile.owner_id=owner.id WHERE owner.id = $1
         `, [getAccountOwnerId(request)])
     ]);
     if (!documentResult.rows[0]) return null;
@@ -938,6 +893,21 @@ function billingPdfFileName(document) {
     const type = document.documentType === "invoice" ? "facture" : "devis";
     const number = String(document.documentNumber || "document").replace(/[^a-z0-9_-]+/gi, "-").replace(/^-+|-+$/g, "");
     return `${type}-${number || "document"}.pdf`;
+}
+
+export async function createBillingDocumentOutput(document, profile) {
+    const generatedPdf = await createBillingPdf(document, profile);
+    const policy = QUOTE_TEMPLATE_POLICIES.has(profile.quoteTemplatePolicy) ? profile.quoteTemplatePolicy : "company_choice";
+    const external = document.documentType === "quote" && (policy === "external_only" || (policy !== "integrated_only" && profile.quoteTemplateMode === "external"));
+    if (!external) return { buffer: generatedPdf, filename: billingPdfFileName(document), mimeType: PDF_MIME };
+    return renderCompanyTemplate({ buffer: profile.quoteTemplateData, filename: profile.quoteTemplateFilename || billingPdfFileName(document), mimeType: profile.quoteTemplateMimeType, generatedPdf, values: billingTemplateValues(document, profile) });
+}
+
+function billingTemplateValues(document, profile) {
+    const totalHt = (document.lines || []).reduce((sum, line) => sum + Number(line.quantity || 0) * Number(line.unitPrice || 0), 0);
+    const totalTva = (document.lines || []).reduce((sum, line) => sum + Number(line.quantity || 0) * Number(line.unitPrice || 0) * Number(line.vatRate || 0) / 100, 0);
+    const money = value => new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" }).format(value || 0);
+    return { type_document: document.documentType === "invoice" ? "Facture" : "Devis", numero: document.documentNumber, date: document.issueDate, echeance: document.dueDate || "", client_nom: document.customerName, client_adresse: document.customerAddress, entreprise_nom: profile.companyName, entreprise_adresse: [profile.address, profile.postalCode, profile.city].filter(Boolean).join(" "), entreprise_telephone: profile.phone, entreprise_email: profile.email, siret: profile.registrationNumber, siren: profile.siren, numero_tva: document.issuerTaxNumber || profile.taxNumber, conditions: document.notes || profile.paymentTerms, lignes: (document.lines || []).map(line => `${line.description} | ${line.quantity} ${line.unit} | ${money(Number(line.unitPrice))} HT | TVA ${line.vatRate || 0} %`).join("\n"), total_ht: money(totalHt), total_tva: money(totalTva), total_ttc: money(totalHt + totalTva) };
 }
 
 export function createBillingPdf(document, profile) {

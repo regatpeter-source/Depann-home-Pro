@@ -680,11 +680,12 @@ CREATE TABLE IF NOT EXISTS depannhome_technical_reports (
     validated_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
     proofread_at TIMESTAMPTZ, proofread_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
     proofread_fingerprint VARCHAR(64) NOT NULL DEFAULT '',
-    pdf_data BYTEA, pdf_filename VARCHAR(255) NOT NULL DEFAULT '', created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    pdf_data BYTEA, pdf_filename VARCHAR(255) NOT NULL DEFAULT '', document_mime_type VARCHAR(150) NOT NULL DEFAULT 'application/pdf', created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 ALTER TABLE depannhome_technical_reports ADD COLUMN IF NOT EXISTS proofread_at TIMESTAMPTZ;
 ALTER TABLE depannhome_technical_reports ADD COLUMN IF NOT EXISTS proofread_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL;
 ALTER TABLE depannhome_technical_reports ADD COLUMN IF NOT EXISTS proofread_fingerprint VARCHAR(64) NOT NULL DEFAULT '';
+ALTER TABLE depannhome_technical_reports ADD COLUMN IF NOT EXISTS document_mime_type VARCHAR(150) NOT NULL DEFAULT 'application/pdf';
 CREATE INDEX IF NOT EXISTS depannhome_technical_reports_owner_updated_idx ON depannhome_technical_reports (owner_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS depannhome_technical_reports_owner_appointment_idx ON depannhome_technical_reports (owner_id, appointment_id);
 

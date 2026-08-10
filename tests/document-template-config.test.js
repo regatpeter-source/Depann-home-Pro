@@ -3,11 +3,17 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createBillingPdf } from "../server/billing.js";
 import { createQuitusPdf } from "../server/calendar.js";
+import { PDFDocument } from "pdf-lib";
+import PizZip from "pizzip";
+import { DOCX_MIME, PDF_MIME, renderCompanyTemplate, validateCompanyTemplate } from "../server/company-document-template.js";
 
 const serverSource = readFileSync(new URL("../server/billing.js", import.meta.url), "utf8");
 const calendarSource = readFileSync(new URL("../server/calendar.js", import.meta.url), "utf8");
 const clientSource = readFileSync(new URL("../js/billing.js", import.meta.url), "utf8");
 const schemaSource = readFileSync(new URL("../database/schema.sql", import.meta.url), "utf8");
+const technicalReportSource = readFileSync(new URL("../server/technical-reports.js", import.meta.url), "utf8");
+const partnerDialogueSource = readFileSync(new URL("../server/partner-dialogue.js", import.meta.url), "utf8");
+const partnerConnectionsSource = readFileSync(new URL("../server/partner-connections.js", import.meta.url), "utf8");
 
 const quote = {
     documentType: "quote",
@@ -31,12 +37,12 @@ test("quote and quitus integrated templates have independent persistent settings
 });
 
 test("company settings retain external bases and provide previews for both documents", () => {
-    assert.match(clientSource, /Base PDF \/ Word de l’entreprise/);
-    assert.match(clientSource, /Base PDF \/ Word officielle de l’entreprise/);
+    assert.match(clientSource, /Gabarit PDF \/ DOCX de l’entreprise/);
+    assert.match(clientSource, /Gabarit PDF \/ DOCX officiel de l’entreprise/);
     assert.match(clientSource, /previewQuoteTemplate/);
     assert.match(serverSource, /\/api\/billing\/quote-template\/preview/);
     assert.match(serverSource, /document-templates\/:templateType\/preview/);
-    assert.match(serverSource, /sendExternalQuoteTemplate\(ownerId, response, true\)/);
+    assert.match(serverSource, /createBillingDocumentOutput\(document, profile\)/);
 });
 
 test("quote and quitus settings expose report-like visual controls", () => {
@@ -59,4 +65,47 @@ test("integrated quitus PDF changes with its own template", async () => {
     assert.equal(first.subarray(0, 4).toString(), "%PDF");
     assert.equal(second.subarray(0, 4).toString(), "%PDF");
     assert.notDeepEqual(first, second);
+});
+
+test("a DOCX company template replaces automatic fields without losing the original document", async () => {
+    const zip = new PizZip();
+    zip.file("[Content_Types].xml", '<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>');
+    zip.folder("_rels").file(".rels", '<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>');
+    zip.folder("word").file("document.xml", '<?xml version="1.0"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Base entreprise — {{client_nom}} — {{numero}}</w:t></w:r></w:p><w:sectPr/></w:body></w:document>');
+    const template = zip.generate({ type: "nodebuffer" });
+    const output = await renderCompanyTemplate({ buffer: template, filename: "devis.docx", mimeType: DOCX_MIME, values: { client_nom: "Camille Martin", numero: "DEV-42" }, generatedPdf: Buffer.alloc(0) });
+    const xml = new PizZip(output.buffer).file("word/document.xml").asText();
+    assert.equal(output.mimeType, DOCX_MIME);
+    assert.match(xml, /Base entreprise/);
+    assert.match(xml, /Camille Martin/);
+    assert.match(xml, /DEV-42/);
+    assert.doesNotMatch(xml, /client_nom|\{\{/);
+});
+
+test("a PDF company base is preserved before the generated business pages", async () => {
+    const base = await PDFDocument.create(); base.addPage();
+    const generated = await PDFDocument.create(); generated.addPage(); generated.addPage();
+    const output = await renderCompanyTemplate({ buffer: Buffer.from(await base.save()), filename: "base.pdf", mimeType: PDF_MIME, values: {}, generatedPdf: Buffer.from(await generated.save()) });
+    const merged = await PDFDocument.load(output.buffer);
+    assert.equal(output.mimeType, PDF_MIME);
+    assert.equal(merged.getPageCount(), 3);
+});
+
+test("official company outputs are retained across archives, emails, downloads and partner sharing", () => {
+    assert.match(serverSource, /createBillingDocumentOutput\(billingExport\.document, billingExport\.profile\)/);
+    assert.match(serverSource, /contentType: output\.mimeType/);
+    assert.match(calendarSource, /createQuitusDocumentOutput/);
+    assert.match(calendarSource, /data:\$\{output\.mimeType\}/);
+    assert.match(technicalReportSource, /createTechnicalReportOutput/);
+    assert.match(technicalReportSource, /document_mime_type/);
+    assert.match(partnerDialogueSource, /createBillingDocumentOutput/);
+    assert.match(partnerConnectionsSource, /mimeType: report\.document_mime_type/);
+});
+
+test("template failures are actionable and quitus custom text is available to external templates", async () => {
+    await assert.rejects(() => renderCompanyTemplate({ buffer: null, mimeType: PDF_MIME }), error => error.status === 409 && /introuvable/.test(error.message));
+    await assert.rejects(() => validateCompanyTemplate(Buffer.from("not-a-pdf"), PDF_MIME), error => error.status === 400 && /illisible ou corrompu/.test(error.message));
+    assert.match(calendarSource, /texte_entete: template\.headerText/);
+    assert.match(calendarSource, /texte_pied_page: template\.footerText/);
+    assert.match(clientSource, /"texte_entete", "texte_pied_page"/);
 });
