@@ -261,6 +261,8 @@ Ne remplissez pas toutes les sections pendant la démonstration. Montrez seuleme
 > La partie comptable propose un registre persistant et des contrôles destinés à structurer les écritures. Un export FEC peut être préparé avec des vérifications préalables. Comme pour tout export réglementaire, sa validation finale doit être réalisée avec le professionnel comptable de l’entreprise.
 >
 > Dépann’Home Pro prépare également le suivi nécessaire aux échanges de facturation électronique. Le choix et le contrat avec une plateforme agréée restent du ressort de l’entreprise.
+>
+> Le régime fiscal est configurable par entreprise. Une structure en franchise en base travaille automatiquement avec une TVA à 0 % et la mention « TVA non applicable, art. 293 B du CGI » apparaît sur les devis et factures intégrés. Une entreprise assujettie conserve ses taux par ligne et peut renseigner son numéro de TVA intracommunautaire.
 
 ### Messages clés
 

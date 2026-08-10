@@ -536,7 +536,8 @@ async function renderSubscriptionBillingProfile() {
                 <label>Raison sociale *<input name="companyName" maxlength="160" required value="${escapeHtml(profile.companyName || "")}"></label>
                 <label>Forme juridique<input name="legalForm" maxlength="100" value="${escapeHtml(profile.legalForm || "")}"></label>
                 <label>SIRET / immatriculation *<input name="registrationNumber" maxlength="100" required value="${escapeHtml(profile.registrationNumber || "")}"></label>
-                <label>N° TVA intracommunautaire<input name="taxNumber" maxlength="100" value="${escapeHtml(profile.taxNumber || "")}"></label>
+                <label>Régime de TVA<select name="vatRegime"><option value="standard" ${profile.vatRegime !== "franchise" ? "selected" : ""}>Assujetti à la TVA</option><option value="franchise" ${profile.vatRegime === "franchise" ? "selected" : ""}>Non assujetti / Franchise en base</option></select></label>
+                <label>N° TVA intracommunautaire<input name="taxNumber" maxlength="100" value="${escapeHtml(profile.taxNumber || "")}" placeholder="Ex. FR12345678901"></label>
                 <label class="form-wide">Adresse *<input name="address" maxlength="255" required value="${escapeHtml(profile.address || "")}"></label>
                 <label>Code postal *<input name="postalCode" maxlength="20" required value="${escapeHtml(profile.postalCode || "")}"></label>
                 <label>Ville *<input name="city" maxlength="100" required value="${escapeHtml(profile.city || "")}"></label>
@@ -545,12 +546,23 @@ async function renderSubscriptionBillingProfile() {
                 <label>IBAN *<input name="bankIban" maxlength="34" required value="${escapeHtml(profile.bankIban || "")}" placeholder="FR76…"></label>
                 <label>BIC *<input name="bankBic" maxlength="11" required value="${escapeHtml(profile.bankBic || "")}" placeholder="ABCDEFGHXXX"></label>
                 <label>Taux de TVA (%)<input name="vatRate" type="number" min="0" max="100" step="0.01" value="${escapeHtml(profile.vatRate ?? 20)}"></label>
+                <p class="muted form-wide" data-creator-vat-notice></p>
                 <label class="form-wide">Conditions de règlement<input name="paymentTerms" maxlength="500" value="${escapeHtml(profile.paymentTerms || "")}" placeholder="Paiement à réception de facture par virement bancaire."></label>
                 <label class="form-wide">Mention de bas de page<textarea name="footerNote" rows="3" maxlength="1000">${escapeHtml(profile.footerNote || "")}</textarea></label>
             </div>
             <div class="creator-form-actions"><button type="submit" class="secondary-button">Enregistrer les coordonnées</button><button type="button" class="secondary-button" id="creatorBackToAccounts">Retour aux entreprises</button></div>
         </form>
     `;
+    const billingForm = workspace.querySelector("#creatorSubscriptionBillingProfile");
+    const bindCreatorVatRegime = () => {
+        const franchise = billingForm.elements.vatRegime.value === "franchise";
+        billingForm.elements.vatRate.value = franchise ? "0" : (Number(billingForm.elements.vatRate.value) || 20);
+        billingForm.elements.vatRate.readOnly = franchise;
+        billingForm.elements.taxNumber.disabled = franchise;
+        billingForm.querySelector("[data-creator-vat-notice]").innerHTML = franchise ? "<strong>TVA non applicable, art. 293 B du CGI</strong><br>Cette mention apparaîtra automatiquement sur les factures d’abonnement." : "Le taux de TVA et le numéro intracommunautaire seront repris sur les factures d’abonnement.";
+    };
+    billingForm.elements.vatRegime.addEventListener("change", bindCreatorVatRegime);
+    bindCreatorVatRegime();
     workspace.querySelector("#creatorBackToAccounts").addEventListener("click", () => selectedAccountId ? renderAccountDetail(selectedAccountId) : workspace.replaceChildren());
     workspace.querySelector("#creatorSubscriptionBillingProfile").addEventListener("submit", async event => {
         event.preventDefault();

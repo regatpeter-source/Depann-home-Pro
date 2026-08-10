@@ -8,6 +8,7 @@ import { clearSearch, createInfo, getContainer, setPage } from "./ui.js?v=44";
 
 const CUSTOMER_TYPES = ["Particulier", "Professionnel", "Magasin", "Autre"];
 const DOCUMENT_TYPES = { quote: "Devis", invoice: "Facture", credit: "Avoir" };
+const VAT_FRANCHISE_MENTION = "TVA non applicable, art. 293 B du CGI";
 const BILLING_MONTHS = [
     { value: "01", label: "Janvier" }, { value: "02", label: "Février" }, { value: "03", label: "Mars" }, { value: "04", label: "Avril" },
     { value: "05", label: "Mai" }, { value: "06", label: "Juin" }, { value: "07", label: "Juillet" }, { value: "08", label: "Août" },
@@ -180,7 +181,9 @@ function renderProfile(panel) {
                 <label>Pays<input name="country" maxlength="100" value="${escapeHtml(profile.country || "France")}"></label>
                 <label>Immatriculation / SIRET<input name="registrationNumber" maxlength="100" value="${escapeHtml(profile.registrationNumber)}"></label>
                 <label>SIREN<input name="siren" maxlength="20" value="${escapeHtml(profile.siren || "")}"></label>
-                <label>N° TVA intracommunautaire<input name="taxNumber" maxlength="100" value="${escapeHtml(profile.taxNumber)}"></label>
+                <label>Régime de TVA<select name="vatRegime"><option value="standard" ${profile.vatRegime !== "franchise" ? "selected" : ""}>Assujetti à la TVA</option><option value="franchise" ${profile.vatRegime === "franchise" ? "selected" : ""}>Non assujetti / Franchise en base</option></select></label>
+                <label>N° TVA intracommunautaire<input name="taxNumber" maxlength="100" value="${escapeHtml(profile.taxNumber)}" placeholder="Ex. FR12345678901"></label>
+                <p class="muted form-wide" data-vat-regime-notice></p>
                 <label>IBAN<input name="bankIban" maxlength="80" value="${escapeHtml(profile.bankIban || "")}"></label>
                 <label>BIC<input name="bankBic" maxlength="40" value="${escapeHtml(profile.bankBic || "")}"></label>
                 <label>Acompte / condition de devis<input name="depositTerms" maxlength="500" placeholder="Ex. Acompte de 30 % à la commande" value="${escapeHtml(profile.depositTerms || "")}"></label>
@@ -194,6 +197,7 @@ function renderProfile(panel) {
         </form>
     `;
     panel.querySelector("#closeBillingProfile").addEventListener("click", () => { panel.hidden = true; });
+    bindVatRegimeForm(panel.querySelector("#billingProfileForm"));
     panel.querySelector("form").addEventListener("submit", async event => {
         event.preventDefault();
         const form = event.currentTarget;
@@ -284,7 +288,8 @@ function renderTemplates(panel) {
             <label>Prix unitaire HT *<input name="unitPrice" type="number" min="0" step="0.01" required placeholder="0,00"></label>
             <label>Description<textarea name="description" rows="2" maxlength="500" placeholder="Détail de la prestation"></textarea></label>
             <label>Unité<input name="unit" maxlength="40" value="unité" placeholder="heure, forfait, pièce…"></label>
-            <label>TVA %<input name="vatRate" type="number" min="0" max="100" step="0.01" value="20"></label>
+            <label>TVA %<input name="vatRate" type="number" min="0" max="100" step="0.01" value="${isVatFranchise() ? 0 : 20}" ${isVatFranchise() ? "readonly" : ""}></label>
+            ${isVatFranchise() ? `<p class="muted form-wide">${VAT_FRANCHISE_MENTION}</p>` : ""}
             <div class="form-actions"><button type="submit" class="secondary-button">Ajouter la ligne</button></div>
         </form>
         <p id="billingTemplateMessage" class="auth-message" aria-live="polite"></p>
@@ -295,7 +300,7 @@ function renderTemplates(panel) {
     billingData.templates.forEach(template => {
         const item = document.createElement("article");
         item.className = "billing-template-item";
-        item.innerHTML = `<div><strong>${escapeHtml(template.label)}</strong><p>${escapeHtml(template.description || template.unit)}</p><small>${formatMoney(template.unitPrice)} HT · TVA ${formatNumber(template.vatRate)} %</small></div><button type="button" class="danger-button" aria-label="Supprimer ${escapeHtml(template.label)}">Supprimer</button>`;
+        item.innerHTML = `<div><strong>${escapeHtml(template.label)}</strong><p>${escapeHtml(template.description || template.unit)}</p><small>${formatMoney(template.unitPrice)} HT · TVA ${formatNumber(isVatFranchise() ? 0 : template.vatRate)} %</small></div><button type="button" class="danger-button" aria-label="Supprimer ${escapeHtml(template.label)}">Supprimer</button>`;
         item.querySelector("button").addEventListener("click", async () => {
             if (!confirm(`Supprimer la ligne « ${template.label} » ?`)) return;
             const result = await apiRequest(`/api/billing/templates/${encodeURIComponent(template.id)}`, { method: "DELETE" });
@@ -339,7 +344,7 @@ function renderDocumentEditor(panel) {
                 <label>Statut<input name="status" maxlength="30" value="${escapeHtml(document.status || "draft")}" placeholder="Brouillon, envoyé, réglé…"></label>
                 ${document.documentType === "invoice" ? `<label class="billing-accounting-option"><input name="isAccounted" type="checkbox" ${document.isAccounted ? "checked" : ""}> Facture comptabilisée</label>` : ""}
             </div>
-            <section class="billing-lines-section"><div class="form-heading"><div><p class="eyebrow">Prestations</p><h3>Lignes du document</h3></div><button type="button" class="secondary-button" id="addBillingLine">+ Ligne libre</button></div><div id="billingLines" class="billing-lines"></div><div class="billing-totals" id="billingTotals"></div></section>
+            <section class="billing-lines-section"><div class="form-heading"><div><p class="eyebrow">Prestations</p><h3>Lignes du document</h3>${document.vatRegime === "franchise" ? `<p class="muted"><strong>${VAT_FRANCHISE_MENTION}</strong> — TVA automatiquement fixée à 0 %.</p>` : ""}</div><button type="button" class="secondary-button" id="addBillingLine">+ Ligne libre</button></div><div id="billingLines" class="billing-lines"></div><div class="billing-totals" id="billingTotals"></div></section>
             ${!isAccountant() ? '<section class="billing-aids-section" id="billingAids"></section>' : ""}
             <label>Notes / conditions<textarea name="notes" rows="3" maxlength="2000" placeholder="Informations complémentaires, conditions, validité du devis…">${escapeHtml(document.notes)}</textarea></label>
             <p id="billingDocumentMessage" class="auth-message" aria-live="polite"></p>
@@ -415,7 +420,7 @@ function createLineEditor(line, index, billingDocument, rerender) {
         <input data-field="quantity" aria-label="Quantité" type="number" min="0.001" step="0.001" value="${escapeHtml(line.quantity)}">
         <input data-field="unit" aria-label="Unité" maxlength="40" value="${escapeHtml(line.unit)}">
         <input data-field="unitPrice" aria-label="Prix unitaire HT" type="number" min="0" step="0.01" value="${escapeHtml(line.unitPrice)}">
-        <input data-field="vatRate" aria-label="TVA" type="number" min="0" max="100" step="0.01" value="${escapeHtml(line.vatRate)}">
+        <input data-field="vatRate" aria-label="TVA" type="number" min="0" max="100" step="0.01" value="${escapeHtml(billingDocument.vatRegime === "franchise" ? 0 : line.vatRate)}" ${billingDocument.vatRegime === "franchise" ? "readonly title=\"TVA neutralisée par le régime Franchise en base\"" : ""}>
         <strong class="billing-line-total">${formatMoney(lineTotal(line))}</strong>
         <button type="button" class="danger-button" aria-label="Supprimer la ligne">×</button>
     `;
@@ -429,7 +434,7 @@ function createLineEditor(line, index, billingDocument, rerender) {
     item.querySelector("select").addEventListener("change", event => {
         const template = billingData.templates.find(value => String(value.id) === event.target.value);
         if (!template) return;
-        Object.assign(line, { description: template.description ? `${template.label} — ${template.description}` : template.label, unit: template.unit, unitPrice: Number(template.unitPrice), vatRate: Number(template.vatRate) });
+        Object.assign(line, { description: template.description ? `${template.label} — ${template.description}` : template.label, unit: template.unit, unitPrice: Number(template.unitPrice), vatRate: billingDocument.vatRegime === "franchise" ? 0 : Number(template.vatRate) });
         rerender();
     });
     item.querySelector("button").addEventListener("click", () => {
@@ -546,6 +551,8 @@ function createInvoiceFromQuote(quote) {
         appointmentId: quote.appointmentId || "",
         sourceQuoteId: quote.id,
         quoteReference: quote.documentNumber,
+        vatRegime: quote.vatRegime || billingData.profile.vatRegime || "standard",
+        issuerTaxNumber: quote.issuerTaxNumber || billingData.profile.taxNumber || "",
         customerType: quote.customerType || "Particulier",
         customerName: quote.customerName || "",
         customerAddress: quote.customerAddress || "",
@@ -553,7 +560,7 @@ function createInvoiceFromQuote(quote) {
         dueDate: "",
         status: "draft",
         isAccounted: false,
-        lines: (quote.lines || []).map(line => ({ ...emptyLine(), ...line })),
+        lines: (quote.lines || []).map(line => ({ ...emptyLine(), ...line, vatRate: (quote.vatRegime || billingData.profile.vatRegime) === "franchise" ? 0 : Number(line.vatRate) || 0 })),
         financialData: normalizeFinancialData(quote.financialData),
         notes: quote.notes || ""
     };
@@ -568,6 +575,8 @@ function createNewDocument(type, client = null, appointmentId = "") {
         documentNumber: suggestNumber(type),
         clientId: client?.id || "",
         appointmentId,
+        vatRegime: billingData.profile.vatRegime || "standard",
+        issuerTaxNumber: billingData.profile.taxNumber || "",
         customerType: client ? getBillingCustomerType(client.type) : baseQuote?.customerType || "Particulier",
         customerName: client?.name || "",
         customerAddress: client ? [client.address, client.city].filter(Boolean).join(", ") : "",
@@ -575,7 +584,7 @@ function createNewDocument(type, client = null, appointmentId = "") {
         dueDate: "",
         status: baseQuote?.status || "draft",
         isAccounted: false,
-        lines: baseQuote?.lines || [emptyLine()],
+        lines: (baseQuote?.lines || [emptyLine()]).map(line => ({ ...line, vatRate: billingData.profile.vatRegime === "franchise" ? 0 : Number(line.vatRate) || 0 })),
         financialData: emptyFinancialData(),
         notes: baseQuote?.notes || billingData.profile.paymentTerms || ""
     };
@@ -590,8 +599,8 @@ function fillCustomerAddress(input, form, clients) {
     if (client) form.querySelector("[name=customerAddress]").value = [client.address, client.city].filter(Boolean).join(", ");
 }
 
-function emptyLine() { return { description: "", quantity: 1, unit: "unité", unitPrice: 0, vatRate: 20 }; }
-function normalizeDocument(document) { return { ...document, clientId: document.clientId || "", appointmentId: document.appointmentId || "", sourceQuoteId: document.sourceQuoteId || "", quoteReference: document.quoteReference || "", isAccounted: Boolean(document.isAccounted), financialData: normalizeFinancialData(document.financialData), lines: Array.isArray(document.lines) && document.lines.length ? document.lines.map(line => ({ ...emptyLine(), ...line })) : [emptyLine()] }; }
+function emptyLine() { return { description: "", quantity: 1, unit: "unité", unitPrice: 0, vatRate: isVatFranchise() ? 0 : 20 }; }
+function normalizeDocument(document) { const vatRegime = document.vatRegime || billingData?.profile?.vatRegime || "standard"; return { ...document, vatRegime, issuerTaxNumber: document.issuerTaxNumber || billingData?.profile?.taxNumber || "", clientId: document.clientId || "", appointmentId: document.appointmentId || "", sourceQuoteId: document.sourceQuoteId || "", quoteReference: document.quoteReference || "", isAccounted: Boolean(document.isAccounted), financialData: normalizeFinancialData(document.financialData), lines: Array.isArray(document.lines) && document.lines.length ? document.lines.map(line => ({ ...emptyLine(), ...line, vatRate: vatRegime === "franchise" ? 0 : Number(line.vatRate) || 0 })) : [emptyLine()] }; }
 function emptyFinancialData() { return { discountMode: "fixed", discountAmount: 0, depositAmount: 0, conditions: "", comments: "", aids: [] }; }
 function normalizeFinancialData(value) { return { ...emptyFinancialData(), discountMode: value?.discountMode === "percentage" ? "percentage" : "fixed", discountAmount: Number(value?.discountAmount) || 0, depositAmount: Number(value?.depositAmount) || 0, conditions: value?.conditions || "", comments: value?.comments || "", aids: Array.isArray(value?.aids) ? value.aids.filter(aid => aid?.name).map(toAidSnapshot) : [] }; }
 function normalizeQuoteTemplate(template) {
@@ -611,6 +620,13 @@ function formatBillingPeriod(value) {
 }
 function today() { const date = new Date(); return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`; }
 function formDataToObject(data) { return Object.fromEntries(data.entries()); }
+function isVatFranchise() { return billingData?.profile?.vatRegime === "franchise"; }
+function bindVatRegimeForm(form) {
+    const regime = form?.elements.vatRegime, taxNumber = form?.elements.taxNumber, notice = form?.querySelector("[data-vat-regime-notice]");
+    if (!regime || !taxNumber || !notice) return;
+    const update = () => { const franchise = regime.value === "franchise"; taxNumber.disabled = franchise; notice.innerHTML = franchise ? `<strong>${VAT_FRANCHISE_MENTION}</strong><br>Les nouvelles lignes de devis et factures seront automatiquement enregistrées avec une TVA à 0 %.` : "Renseignez le numéro de TVA intracommunautaire s’il a été attribué à l’entreprise."; };
+    regime.addEventListener("change", update); update();
+}
 
 function isTechnician() { return document.body.dataset.role === "technician"; }
 function isAccountant() { return document.body.dataset.role === "accountant"; }

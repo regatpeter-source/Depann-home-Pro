@@ -207,6 +207,7 @@ CREATE TABLE IF NOT EXISTS depannhome_billing_profiles (
     registration_number VARCHAR(100) NOT NULL DEFAULT '',
     siren VARCHAR(20) NOT NULL DEFAULT '',
     tax_number VARCHAR(100) NOT NULL DEFAULT '',
+    vat_regime VARCHAR(20) NOT NULL DEFAULT 'standard' CHECK (vat_regime IN ('standard','franchise')),
     bank_iban VARCHAR(80) NOT NULL DEFAULT '',
     bank_bic VARCHAR(40) NOT NULL DEFAULT '',
     payment_terms VARCHAR(500) NOT NULL DEFAULT '',
@@ -228,6 +229,7 @@ ALTER TABLE depannhome_billing_profiles
     ADD COLUMN IF NOT EXISTS country VARCHAR(100) NOT NULL DEFAULT 'France',
     ADD COLUMN IF NOT EXISTS deposit_terms VARCHAR(500) NOT NULL DEFAULT '',
     ADD COLUMN IF NOT EXISTS siren VARCHAR(20) NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS vat_regime VARCHAR(20) NOT NULL DEFAULT 'standard',
     ADD COLUMN IF NOT EXISTS bank_iban VARCHAR(80) NOT NULL DEFAULT '',
     ADD COLUMN IF NOT EXISTS bank_bic VARCHAR(40) NOT NULL DEFAULT '',
     ADD COLUMN IF NOT EXISTS quote_template_mode VARCHAR(20) NOT NULL DEFAULT 'integrated',
@@ -276,6 +278,8 @@ CREATE TABLE IF NOT EXISTS depannhome_billing_documents (
     appointment_id BIGINT,
     source_quote_id BIGINT,
     quote_reference VARCHAR(80) NOT NULL DEFAULT '',
+    vat_regime VARCHAR(20) NOT NULL DEFAULT 'standard' CHECK (vat_regime IN ('standard','franchise')),
+    issuer_tax_number VARCHAR(100) NOT NULL DEFAULT '',
     lines JSONB NOT NULL DEFAULT '[]'::jsonb,
     notes VARCHAR(2000) NOT NULL DEFAULT '',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -294,6 +298,9 @@ ALTER TABLE depannhome_billing_documents
     ADD COLUMN IF NOT EXISTS appointment_id BIGINT,
     ADD COLUMN IF NOT EXISTS source_quote_id BIGINT,
     ADD COLUMN IF NOT EXISTS quote_reference VARCHAR(80) NOT NULL DEFAULT '';
+ALTER TABLE depannhome_billing_documents
+    ADD COLUMN IF NOT EXISTS vat_regime VARCHAR(20) NOT NULL DEFAULT 'standard',
+    ADD COLUMN IF NOT EXISTS issuer_tax_number VARCHAR(100) NOT NULL DEFAULT '';
 
 CREATE INDEX IF NOT EXISTS depannhome_billing_documents_accounting_idx
     ON depannhome_billing_documents (owner_id, document_type, is_accounted, issue_date DESC);
@@ -435,6 +442,7 @@ CREATE TABLE IF NOT EXISTS depannhome_subscription_billing_profile (
     email VARCHAR(160) NOT NULL DEFAULT '',
     registration_number VARCHAR(100) NOT NULL DEFAULT '',
     tax_number VARCHAR(100) NOT NULL DEFAULT '',
+    vat_regime VARCHAR(20) NOT NULL DEFAULT 'standard' CHECK (vat_regime IN ('standard','franchise')),
     bank_iban VARCHAR(34) NOT NULL DEFAULT '',
     bank_bic VARCHAR(11) NOT NULL DEFAULT '',
     vat_rate NUMERIC(5,2) NOT NULL DEFAULT 20 CHECK (vat_rate >= 0 AND vat_rate <= 100),
@@ -442,6 +450,9 @@ CREATE TABLE IF NOT EXISTS depannhome_subscription_billing_profile (
     footer_note VARCHAR(1000) NOT NULL DEFAULT '',
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE depannhome_subscription_billing_profile
+    ADD COLUMN IF NOT EXISTS vat_regime VARCHAR(20) NOT NULL DEFAULT 'standard';
 
 CREATE TABLE IF NOT EXISTS depannhome_subscription_invoices (
     id BIGSERIAL PRIMARY KEY,

@@ -1,5 +1,5 @@
 import { getPool } from "./database.js";
-import { createBillingPdf } from "./billing.js";
+import { createBillingPdf, normalizeVatRegime } from "./billing.js";
 import { sendDocumentEmail } from "./email.js";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -21,6 +21,7 @@ export async function initializeSubscriptionInvoicing() {
             email VARCHAR(160) NOT NULL DEFAULT '',
             registration_number VARCHAR(100) NOT NULL DEFAULT '',
             tax_number VARCHAR(100) NOT NULL DEFAULT '',
+            vat_regime VARCHAR(20) NOT NULL DEFAULT 'standard' CHECK (vat_regime IN ('standard','franchise')),
             bank_iban VARCHAR(34) NOT NULL DEFAULT '',
             bank_bic VARCHAR(11) NOT NULL DEFAULT '',
             vat_rate NUMERIC(5,2) NOT NULL DEFAULT 20 CHECK (vat_rate >= 0 AND vat_rate <= 100),
@@ -29,6 +30,9 @@ export async function initializeSubscriptionInvoicing() {
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
     `);
+    await database.query("ALTER TABLE depannhome_subscription_billing_profile ADD COLUMN IF NOT EXISTS vat_regime VARCHAR(20) NOT NULL DEFAULT 'standard'");
+    await database.query("ALTER TABLE depannhome_subscription_billing_profile DROP CONSTRAINT IF EXISTS depannhome_subscription_billing_profile_vat_regime_check");
+    await database.query("ALTER TABLE depannhome_subscription_billing_profile ADD CONSTRAINT depannhome_subscription_billing_profile_vat_regime_check CHECK (vat_regime IN ('standard','franchise'))");
     await database.query(`
         CREATE TABLE IF NOT EXISTS depannhome_subscription_invoices (
             id BIGSERIAL PRIMARY KEY,
@@ -61,7 +65,7 @@ export function registerSubscriptionInvoicingRoutes(app, requireCreator) {
     app.get("/api/creator/subscription-billing-profile", requireCreator, asyncHandler(async (request, response) => {
         const { rows } = await getPool().query(`
             SELECT company_name AS "companyName", legal_form AS "legalForm", address, postal_code AS "postalCode", city, phone, email,
-                registration_number AS "registrationNumber", tax_number AS "taxNumber", bank_iban AS "bankIban", bank_bic AS "bankBic",
+                registration_number AS "registrationNumber", tax_number AS "taxNumber", vat_regime AS "vatRegime", bank_iban AS "bankIban", bank_bic AS "bankBic",
                 vat_rate::float AS "vatRate", payment_terms AS "paymentTerms", footer_note AS "footerNote"
             FROM depannhome_subscription_billing_profile WHERE id = TRUE
         `);
@@ -73,14 +77,14 @@ export function registerSubscriptionInvoicingRoutes(app, requireCreator) {
         if (!profile.ok) return response.status(400).json({ message: profile.message });
         await getPool().query(`
             INSERT INTO depannhome_subscription_billing_profile
-                (id, company_name, legal_form, address, postal_code, city, phone, email, registration_number, tax_number, bank_iban, bank_bic, vat_rate, payment_terms, footer_note)
-            VALUES (TRUE,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+                (id, company_name, legal_form, address, postal_code, city, phone, email, registration_number, tax_number, vat_regime, bank_iban, bank_bic, vat_rate, payment_terms, footer_note)
+            VALUES (TRUE,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
             ON CONFLICT (id) DO UPDATE SET company_name=EXCLUDED.company_name, legal_form=EXCLUDED.legal_form, address=EXCLUDED.address,
                 postal_code=EXCLUDED.postal_code, city=EXCLUDED.city, phone=EXCLUDED.phone, email=EXCLUDED.email,
-                registration_number=EXCLUDED.registration_number, tax_number=EXCLUDED.tax_number, bank_iban=EXCLUDED.bank_iban,
+                registration_number=EXCLUDED.registration_number, tax_number=EXCLUDED.tax_number, vat_regime=EXCLUDED.vat_regime, bank_iban=EXCLUDED.bank_iban,
                 bank_bic=EXCLUDED.bank_bic, vat_rate=EXCLUDED.vat_rate, payment_terms=EXCLUDED.payment_terms, footer_note=EXCLUDED.footer_note, updated_at=NOW()
         `, [profile.companyName, profile.legalForm, profile.address, profile.postalCode, profile.city, profile.phone, profile.email,
-            profile.registrationNumber, profile.taxNumber, profile.bankIban, profile.bankBic, profile.vatRate, profile.paymentTerms, profile.footerNote]);
+            profile.registrationNumber, profile.taxNumber, profile.vatRegime, profile.bankIban, profile.bankBic, profile.vatRate, profile.paymentTerms, profile.footerNote]);
         response.status(204).end();
     }));
 
@@ -189,7 +193,7 @@ async function createInvoiceIfNeeded(subscription, issuer) {
         ON CONFLICT (account_owner_id, billing_period) DO NOTHING
         RETURNING id
     `, [subscription.id, billingPeriod, invoiceNumber, recipientName, subscription.email, String(subscription.recipientAddress || "").slice(0, 500), subscription.subscriptionLabel || "Abonnement Depann’Home Pro",
-        subscription.monthlyPriceCents, issuer.vatRate, billingPeriod, dueDate, JSON.stringify(issuer)]);
+        subscription.monthlyPriceCents, issuer.vatRegime === "franchise" ? 0 : issuer.vatRate, billingPeriod, dueDate, JSON.stringify(issuer)]);
     return { created: Boolean(rows[0]) };
 }
 
@@ -236,7 +240,7 @@ async function deliverPendingInvoices() {
 async function getIssuerProfile() {
     const { rows } = await getPool().query(`
         SELECT company_name AS "companyName", legal_form AS "legalForm", address, postal_code AS "postalCode", city, phone, email,
-            registration_number AS "registrationNumber", tax_number AS "taxNumber", bank_iban AS "bankIban", bank_bic AS "bankBic",
+            registration_number AS "registrationNumber", tax_number AS "taxNumber", vat_regime AS "vatRegime", bank_iban AS "bankIban", bank_bic AS "bankBic",
             vat_rate::float AS "vatRate", payment_terms AS "paymentTerms", footer_note AS "footerNote"
         FROM depannhome_subscription_billing_profile WHERE id = TRUE
     `);
@@ -248,12 +252,13 @@ function sanitizeProfile(value) {
         companyName: cleanText(value?.companyName, 160), legalForm: cleanText(value?.legalForm, 100), address: cleanText(value?.address, 255),
         postalCode: cleanText(value?.postalCode, 20), city: cleanText(value?.city, 100), phone: cleanText(value?.phone, 50), email: cleanText(value?.email, 160).toLowerCase(),
         registrationNumber: cleanText(value?.registrationNumber, 100), taxNumber: cleanText(value?.taxNumber, 100),
-        bankIban: String(value?.bankIban || "").replace(/\s/g, "").toUpperCase().slice(0, 34), bankBic: String(value?.bankBic || "").replace(/\s/g, "").toUpperCase().slice(0, 11),
+        vatRegime: normalizeVatRegime(value?.vatRegime), bankIban: String(value?.bankIban || "").replace(/\s/g, "").toUpperCase().slice(0, 34), bankBic: String(value?.bankBic || "").replace(/\s/g, "").toUpperCase().slice(0, 11),
         vatRate: numberInRange(value?.vatRate, 0, 100), paymentTerms: cleanText(value?.paymentTerms, 500), footerNote: cleanText(value?.footerNote, 1000)
     };
     if (!profile.companyName || !profile.address || !profile.postalCode || !profile.city || !profile.registrationNumber || !EMAIL_PATTERN.test(profile.email)) return { ok: false, message: "Renseignez les coordonnées légales et l’e-mail de facturation de la plateforme." };
     if (!IBAN_PATTERN.test(profile.bankIban) || !BIC_PATTERN.test(profile.bankBic)) return { ok: false, message: "L’IBAN ou le BIC est invalide." };
     if (profile.vatRate === null) return { ok: false, message: "Le taux de TVA est invalide." };
+    if (profile.vatRegime === "franchise") profile.vatRate = 0;
     return { ok: true, ...profile };
 }
 
@@ -262,7 +267,7 @@ function isCompleteProfile(profile) {
 }
 
 function emptyProfile() {
-    return { companyName: "", legalForm: "", address: "", postalCode: "", city: "", phone: "", email: "", registrationNumber: "", taxNumber: "", bankIban: "", bankBic: "", vatRate: 20, paymentTerms: "", footerNote: "" };
+    return { companyName: "", legalForm: "", address: "", postalCode: "", city: "", phone: "", email: "", registrationNumber: "", taxNumber: "", vatRegime: "standard", bankIban: "", bankBic: "", vatRate: 20, paymentTerms: "", footerNote: "" };
 }
 
 function millisecondsUntilConfiguredRun() {
@@ -299,6 +304,8 @@ function subscriptionInvoiceDocument(invoice) {
         customerAddress: invoice.recipientAddress,
         issueDate: dateString(invoice.issueDate),
         dueDate: dateString(invoice.dueDate),
+        vatRegime: normalizeVatRegime(invoice.issuerProfile?.vatRegime),
+        issuerTaxNumber: invoice.issuerProfile?.taxNumber || "",
         lines: [{
             description: `${invoice.subscriptionLabel} — abonnement mensuel`,
             quantity: 1,
