@@ -11,6 +11,7 @@ test("the journal scrolls inside its grid row without overlapping the composer",
     assert.match(styleSource, /grid-template-rows:auto auto auto minmax\(0,1fr\) auto/);
     assert.match(styleSource, /\.partner-dialogue \.partner-dialogue-thread\{[\s\S]*?min-height:0;[\s\S]*?max-height:100%;[\s\S]*?overflow:auto;/);
     assert.match(styleSource, /\.partner-dialogue \.partner-dialogue-composer\{[\s\S]*?position:relative;[\s\S]*?z-index:2;/);
+    assert.doesNotMatch(styleSource, /@media\(max-width:760px\)[\s\S]*?\.partner-dialogue \.partner-dialogue-composer\{\s*position:sticky/);
 });
 
 test("source and receiver visibility are stored independently", () => {
@@ -39,4 +40,17 @@ test("source-side shared files use authenticated sent-mission download routes", 
     assert.match(serverSource, /sent-missions\/:missionId\/attachments\/:attachmentId/);
     assert.match(serverSource, /sent-missions\/:missionId\/items\/:itemId\/download/);
     assert.match(serverSource, /const sourceBase = `\/api\/partner-dialogue\/sent-missions\/\$\{mission\.id\}`/);
+});
+
+test("the attachment area explains drop, PC selection and database persistence", () => {
+    assert.match(clientSource, /Glissez-déposez vos fichiers ici/);
+    assert.match(clientSource, /Parcourir le PC/);
+    assert.match(clientSource, /enregistrés dans la base sécurisée de la mission/);
+    assert.match(clientSource, /setupAttachmentPicker\(form\)/);
+    assert.match(clientSource, /event\.dataTransfer\?\.files/);
+    assert.match(clientSource, /formData\.delete\("files"\)/);
+    assert.match(clientSource, /attachmentFiles\(\)\.forEach\(file => formData\.append\("files", file, file\.name\)\)/);
+    assert.match(clientSource, /5 fichiers maximum/);
+    assert.match(clientSource, /Les dossiers complets ne sont pas importés/);
+    assert.match(styleSource, /\.partner-dialogue \.partner-composer-files\.drag-active/);
 });

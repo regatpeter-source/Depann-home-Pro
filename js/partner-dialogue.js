@@ -1,6 +1,9 @@
 import { escapeHtml } from "./utils.js?v=44";
 
 const ISSUE_LABELS = { client_absent: "Client absent", access_impossible: "Accès impossible", information_missing: "Informations manquantes", material_unavailable: "Matériel indisponible", awaiting_authorization: "En attente d’autorisation", rescheduled: "Intervention reportée", information_requested: "Informations complémentaires demandées", other: "Autre difficulté" };
+const ATTACHMENT_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "application/pdf"]);
+const MAX_ATTACHMENT_FILES = 5;
+const MAX_ATTACHMENT_SIZE = 5 * 1024 * 1024;
 
 export async function openPartnerDialogue(missionId, options = {}) {
     const dialogueUrl = options.sourceDialogue ? `/api/partner-dialogue/sent-missions/${missionId}` : `/api/partner-dialogue/missions/${missionId}`;
@@ -52,9 +55,10 @@ function renderDialogue(dialog, data, close, dialogueUrl) {
     section.querySelectorAll("[data-attachment-visibility]").forEach(control => control.addEventListener("change", () => updateAttachmentVisibility(mission.id, control)));
     section.querySelectorAll("[data-source-attachment-visibility]").forEach(control => control.addEventListener("change", () => updateSourceAttachmentVisibility(mission.id, control)));
     const form = section.querySelector("form");
+    const attachmentFiles = form ? setupAttachmentPicker(form) : () => [];
     form?.addEventListener("submit", async event => {
         event.preventDefault();
-        const formData = new FormData(form); const submit = form.querySelector("button[type=submit]"); submit.disabled = true;
+        const formData = new FormData(form); formData.delete("files"); attachmentFiles().forEach(file => formData.append("files", file, file.name)); const submit = form.querySelector("button[type=submit]"); submit.disabled = true;
         const result = await fetch(`${dialogueUrl}/messages`, { method: "POST", credentials: "same-origin", body: formData });
         const payload = await result.json().catch(() => null); submit.disabled = false;
         if (!result.ok) return alert(payload?.message || "Message impossible à envoyer.");
@@ -63,9 +67,33 @@ function renderDialogue(dialog, data, close, dialogueUrl) {
 }
 
 function messageCard(message) { const system = message.kind === "system"; const issue = message.kind === "issue"; const attachments = Array.isArray(message.attachments) ? message.attachments : []; return `<article class="partner-dialogue-message journal-entry ${system ? "system" : ""} ${issue ? "issue" : ""}" data-journal-category="messages"><header><strong>${escapeHtml(system ? "Événement système" : message.organizationName || "Entreprise partenaire")}</strong><span>${escapeHtml(system ? "Depann’Home Pro" : message.senderName || "Participant")}${issue ? ` · ${escapeHtml(ISSUE_LABELS[message.issueType] || "Difficulté")}` : ""}</span><time>${escapeHtml(formatDate(message.createdAt))}</time></header>${message.body ? `<p>${escapeHtml(message.body)}</p>` : ""}${attachments.length ? `<div class="partner-dialogue-attachments">${attachments.map(attachment => `<div class="partner-dialogue-attachment-row">${attachment.mimeType.startsWith("image/") ? `<a class="partner-journal-photo" href="${escapeHtml(attachment.url)}" target="_blank" rel="noopener"><span>Photo</span><strong>${escapeHtml(attachment.filename)}</strong></a>` : `<a href="${escapeHtml(attachment.url)}" target="_blank" rel="noopener">${escapeHtml(documentLabel(attachment.attachmentType))} · ${escapeHtml(attachment.filename)} <small>${formatSize(attachment.fileSize)}</small></a>`}<label class="partner-visibility-toggle"><input type="checkbox" data-attachment-visibility="${attachment.id}" data-current-visible="${attachment.partnerVisible ? "true" : "false"}" ${attachment.partnerVisible ? "checked" : ""}> Visible au partenaire</label></div>`).join("")}</div>` : ""}<div class="partner-message-visibility"><span class="partner-visibility ${message.partnerVisible ? "shared" : "private"}">${message.partnerVisible ? "Visible au partenaire" : "Interne uniquement"}</span><label class="partner-visibility-toggle"><input type="checkbox" data-partner-visibility="${message.id}" data-current-visible="${message.partnerVisible ? "true" : "false"}" ${message.partnerVisible ? "checked" : ""}> Visible au partenaire</label></div></article>`; }
-function composer() { return `<form class="partner-dialogue-composer"><div class="form-grid"><label class="form-wide partner-composer-message">Message<textarea name="body" rows="3" maxlength="4000" placeholder="Écrire un message concernant cette intervention…"></textarea></label><label>Type<select name="kind"><option value="message">Message</option><option value="issue">Signaler une difficulté</option></select></label><label>Difficulté<select name="issueType"><option value="other">Autre</option>${Object.entries(ISSUE_LABELS).filter(([key]) => key !== "other").map(([key, label]) => `<option value="${key}">${escapeHtml(label)}</option>`).join("")}</select></label><label>Nature des fichiers<select name="attachmentType"><option value="document">Document</option><option value="photo">Photo</option><option value="quote">Devis</option><option value="report">Rapport</option><option value="invoice">Facture</option></select></label><label class="partner-composer-files"><span>Joindre des documents ou photos</span><input name="files" type="file" multiple accept="image/jpeg,image/png,image/webp,application/pdf"><small>PDF, JPEG, PNG ou WebP · 5 Mo maximum par fichier</small></label><label class="journal-share-control"><input type="checkbox" name="partnerVisible" value="true" checked> Partager avec le partenaire</label></div><div class="form-actions"><button class="secondary-button" type="submit">Envoyer le message</button></div></form>`; }
+function composer() { return `<form class="partner-dialogue-composer"><div class="form-grid"><label class="form-wide partner-composer-message">Message<textarea name="body" rows="3" maxlength="4000" placeholder="Écrire un message concernant cette intervention…"></textarea></label><label>Type<select name="kind"><option value="message">Message</option><option value="issue">Signaler une difficulté</option></select></label><label>Difficulté<select name="issueType"><option value="other">Autre</option>${Object.entries(ISSUE_LABELS).filter(([key]) => key !== "other").map(([key, label]) => `<option value="${key}">${escapeHtml(label)}</option>`).join("")}</select></label><label>Nature des fichiers<select name="attachmentType"><option value="document">Document</option><option value="photo">Photo</option><option value="quote">Devis</option><option value="report">Rapport</option><option value="invoice">Facture</option></select></label><label class="partner-composer-files"><strong>Joindre des documents ou photos</strong><span>Glissez-déposez vos fichiers ici ou cliquez sur <b>Parcourir le PC</b>.</span><input name="files" type="file" multiple accept="image/jpeg,image/png,image/webp,application/pdf" aria-label="Parcourir le PC pour joindre des documents ou photos"><small>PDF, JPEG, PNG ou WebP · 5 fichiers maximum · 5 Mo par fichier. Pour un dossier, ouvrez-le et sélectionnez les fichiers utiles.</small><output class="partner-file-selection" aria-live="polite">Aucun fichier sélectionné.</output><em>Les fichiers seront enregistrés dans la base sécurisée de la mission après « Envoyer le message ».</em></label><label class="journal-share-control"><input type="checkbox" name="partnerVisible" value="true" checked> Partager avec le partenaire</label></div><div class="form-actions"><button class="secondary-button" type="submit">Envoyer le message</button></div></form>`; }
 function filterButtons(filters) { return (filters || ["messages"]).map(filter => `<button type="button" class="text-button active" data-journal-filter="${escapeHtml(filter)}">Messages</button>`).join(""); }
 function applyFilter(section) { section.querySelectorAll("[data-journal-filter]").forEach(button => button.classList.add("active")); section.querySelectorAll("[data-journal-category]").forEach(entry => { entry.hidden = false; }); const linkedDocuments = section.querySelector(".partner-dialogue-links"); if (linkedDocuments) linkedDocuments.hidden = false; }
+function setupAttachmentPicker(form) {
+    const zone = form.querySelector(".partner-composer-files");
+    const input = zone?.querySelector('input[type="file"]');
+    const output = zone?.querySelector(".partner-file-selection");
+    if (!zone || !input || !output) return () => [];
+    let selectedFiles = [];
+    const showSelection = () => { output.textContent = selectedFiles.length ? `${selectedFiles.length} fichier${selectedFiles.length > 1 ? "s" : ""} sélectionné${selectedFiles.length > 1 ? "s" : ""} : ${selectedFiles.map(file => file.name).join(", ")}` : "Aucun fichier sélectionné."; };
+    const validate = files => {
+        if (files.length > MAX_ATTACHMENT_FILES) return `Sélectionnez au maximum ${MAX_ATTACHMENT_FILES} fichiers.`;
+        if (files.some(file => !ATTACHMENT_TYPES.has(file.type))) return "Sélectionnez des fichiers PDF, JPEG, PNG ou WebP. Les dossiers complets ne sont pas importés.";
+        if (files.some(file => file.size > MAX_ATTACHMENT_SIZE)) return "Chaque fichier doit être inférieur ou égal à 5 Mo.";
+        return "";
+    };
+    input.addEventListener("change", () => { const files = [...input.files]; const error = validate(files); selectedFiles = error ? [] : files; if (error) { input.value = ""; alert(error); } showSelection(); });
+    ["dragenter", "dragover"].forEach(type => zone.addEventListener(type, event => { event.preventDefault(); zone.classList.add("drag-active"); }));
+    ["dragleave", "dragend"].forEach(type => zone.addEventListener(type, () => zone.classList.remove("drag-active")));
+    zone.addEventListener("drop", event => {
+        event.preventDefault(); zone.classList.remove("drag-active");
+        const files = [...(event.dataTransfer?.files || [])]; const error = validate(files);
+        if (!files.length || error) return alert(error || "Aucun fichier exploitable n’a été déposé. Ouvrez le dossier puis sélectionnez les fichiers utiles.");
+        selectedFiles = files; input.value = ""; showSelection();
+    });
+    return () => selectedFiles;
+}
 function configureVisibilityControls(section, data) {
     const sourceDialogue = Boolean(data.sourceDialogue);
     const entries = [...section.querySelectorAll(".journal-entry")];
