@@ -104,6 +104,15 @@ test("sandbox mission IDs cannot enter legacy production mission routes", () => 
     assert.match(source, /intake\.is_sandbox=FALSE FOR UPDATE/);
 });
 
+test("static API intake listing is registered before the generic mission route", () => {
+    const source = readFileSync(new URL("../server/partner-missions.js", import.meta.url), "utf8");
+    const intakeRoute = source.indexOf('app.get("/api/partner-missions/intakes"');
+    const genericMissionRoute = source.indexOf('app.get("/api/partner-missions/:missionId"');
+    assert.ok(intakeRoute >= 0);
+    assert.ok(genericMissionRoute >= 0);
+    assert.ok(intakeRoute < genericMissionRoute, "the generic mission route must not intercept /intakes");
+});
+
 test("callback secrets are never returned and old callback log URLs are redacted", () => {
     const source = readFileSync(new URL("../server/partner-api-sandbox.js", import.meta.url), "utf8");
     assert.match(source, /callbackUrl: row\.callback_url \? "\[WEBHOOK GÉRÉ PAR LE SERVEUR\]"/);
