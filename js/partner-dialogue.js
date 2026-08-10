@@ -38,8 +38,14 @@ function renderDialogue(dialog, data, close, dialogueUrl) {
     section.querySelectorAll("[data-journal-filter]").forEach(button => button.addEventListener("click", () => applyFilter(section, button.dataset.journalFilter)));
     applyFilter(section, "messages");
     section.querySelectorAll("[data-partner-visibility]").forEach(control => control.addEventListener("change", () => updateVisibility(mission.id, control)));
-    const links = section.querySelector(".partner-dialogue-links");
+    let links = section.querySelector(".partner-dialogue-links");
+    if (!links) {
+        links = document.createElement("section");
+        links.className = "partner-dialogue-links";
+        section.insertBefore(links, section.querySelector(".partner-dialogue-thread"));
+    }
     if (links) links.innerHTML = `<strong>Documents liés au dossier</strong>${linkedDocuments.map(document => `<div class="partner-dialogue-document"><a href="${escapeHtml(document.url || internalDocumentUrl(mission.id, document))}" target="_blank" rel="noopener">${escapeHtml(documentLabel(document.sourceType))} · ${escapeHtml(document.label)}</a><span class="partner-visibility ${document.partnerVisible ? "shared" : "private"}">${document.partnerVisible ? "Visible au partenaire" : "Interne uniquement"}</span><label class="partner-visibility-toggle"><input type="checkbox" data-item-visibility="${document.id}" data-current-visible="${document.partnerVisible ? "true" : "false"}" ${document.partnerVisible ? "checked" : ""}> Visible au partenaire</label></div>`).join("")}`;
+    if (!linkedDocuments.length) links.insertAdjacentHTML("beforeend", '<p class="partner-dialogue-document-empty">Aucun document lié à cette mission pour le moment.</p>');
     section.querySelectorAll("[data-item-visibility]").forEach(control => control.addEventListener("change", () => updateItemVisibility(mission.id, control)));
     section.querySelectorAll("[data-attachment-visibility]").forEach(control => control.addEventListener("change", () => updateAttachmentVisibility(mission.id, control)));
     if (data.sourceDialogue) section.querySelectorAll(".partner-visibility-toggle").forEach(control => control.remove());
