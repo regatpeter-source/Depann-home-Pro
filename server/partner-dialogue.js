@@ -23,11 +23,12 @@ export async function initializePartnerDialogue() {
         sender_name VARCHAR(160) NOT NULL DEFAULT '', organization_name VARCHAR(160) NOT NULL DEFAULT '',
         kind VARCHAR(20) NOT NULL DEFAULT 'message', issue_type VARCHAR(60) NOT NULL DEFAULT '',
         body VARCHAR(${MAX_MESSAGE_LENGTH}) NOT NULL DEFAULT '', reply_to_id BIGINT REFERENCES depannhome_partner_dialogue_messages(id) ON DELETE SET NULL,
-        partner_visible BOOLEAN NOT NULL DEFAULT FALSE, event_type VARCHAR(80) NOT NULL DEFAULT '', immutable BOOLEAN NOT NULL DEFAULT FALSE,
+        partner_visible BOOLEAN NOT NULL DEFAULT FALSE, receiver_visible BOOLEAN NOT NULL DEFAULT TRUE,
+        event_type VARCHAR(80) NOT NULL DEFAULT '', immutable BOOLEAN NOT NULL DEFAULT FALSE,
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )`);
-    await db.query("ALTER TABLE depannhome_partner_dialogue_messages ADD COLUMN IF NOT EXISTS partner_visible BOOLEAN NOT NULL DEFAULT FALSE, ADD COLUMN IF NOT EXISTS event_type VARCHAR(80) NOT NULL DEFAULT '', ADD COLUMN IF NOT EXISTS immutable BOOLEAN NOT NULL DEFAULT FALSE, ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()");
+    await db.query("ALTER TABLE depannhome_partner_dialogue_messages ADD COLUMN IF NOT EXISTS partner_visible BOOLEAN NOT NULL DEFAULT FALSE, ADD COLUMN IF NOT EXISTS receiver_visible BOOLEAN NOT NULL DEFAULT TRUE, ADD COLUMN IF NOT EXISTS event_type VARCHAR(80) NOT NULL DEFAULT '', ADD COLUMN IF NOT EXISTS immutable BOOLEAN NOT NULL DEFAULT FALSE, ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()");
     await db.query("UPDATE depannhome_partner_dialogue_messages SET partner_visible=TRUE WHERE sender_type='partner'");
     await db.query(`UPDATE depannhome_partner_dialogue_messages message
         SET organization_name=COALESCE(NULLIF(profile.company_name,''),NULLIF(owner.company_name,''),NULLIF(owner.full_name,''),owner.username)
@@ -41,10 +42,11 @@ export async function initializePartnerDialogue() {
         mission_id BIGINT NOT NULL REFERENCES depannhome_partner_missions(id) ON DELETE CASCADE,
         message_id BIGINT NOT NULL REFERENCES depannhome_partner_dialogue_messages(id) ON DELETE CASCADE,
         attachment_type VARCHAR(40) NOT NULL DEFAULT 'document', filename VARCHAR(255) NOT NULL, mime_type VARCHAR(150) NOT NULL,
-        file_size INTEGER NOT NULL CHECK(file_size > 0 AND file_size <= ${MAX_ATTACHMENT_BYTES}), file_data BYTEA NOT NULL, partner_visible BOOLEAN NOT NULL DEFAULT FALSE,
+        file_size INTEGER NOT NULL CHECK(file_size > 0 AND file_size <= ${MAX_ATTACHMENT_BYTES}), file_data BYTEA NOT NULL,
+        partner_visible BOOLEAN NOT NULL DEFAULT FALSE, receiver_visible BOOLEAN NOT NULL DEFAULT TRUE,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )`);
-    await db.query("ALTER TABLE depannhome_partner_dialogue_attachments ADD COLUMN IF NOT EXISTS partner_visible BOOLEAN NOT NULL DEFAULT FALSE");
+    await db.query("ALTER TABLE depannhome_partner_dialogue_attachments ADD COLUMN IF NOT EXISTS partner_visible BOOLEAN NOT NULL DEFAULT FALSE, ADD COLUMN IF NOT EXISTS receiver_visible BOOLEAN NOT NULL DEFAULT TRUE");
     await db.query("CREATE INDEX IF NOT EXISTS depannhome_partner_dialogue_attachments_message_idx ON depannhome_partner_dialogue_attachments(message_id)");
     await db.query(`CREATE TABLE IF NOT EXISTS depannhome_partner_dialogue_audit (
         id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
@@ -92,6 +94,10 @@ export function registerPartnerDialogueRoutes(app, requireAuthentication) {
     app.post("/api/partner-dialogue/missions/:missionId/messages", upload.array("files", MAX_ATTACHMENTS), asyncHandler(internalMessage));
     app.get("/api/partner-dialogue/sent-missions/:missionId", asyncHandler(sourceDialogue));
     app.post("/api/partner-dialogue/sent-missions/:missionId/messages", upload.array("files", MAX_ATTACHMENTS), asyncHandler(sourceMessage));
+    app.patch("/api/partner-dialogue/sent-missions/:missionId/entries/:messageId/visibility", asyncHandler(updateSourceEntryVisibility));
+    app.patch("/api/partner-dialogue/sent-missions/:missionId/attachments/:attachmentId/visibility", asyncHandler(updateSourceAttachmentVisibility));
+    app.get("/api/partner-dialogue/sent-missions/:missionId/attachments/:attachmentId", asyncHandler(sourceAttachment));
+    app.get("/api/partner-dialogue/sent-missions/:missionId/items/:itemId/download", asyncHandler(sourceSharedItem));
     app.patch("/api/partner-dialogue/missions/:missionId/entries/:messageId/visibility", asyncHandler(updateEntryVisibility));
     app.patch("/api/partner-dialogue/missions/:missionId/attachments/:attachmentId/visibility", asyncHandler(updateAttachmentVisibility));
     app.patch("/api/partner-dialogue/missions/:missionId/items/:itemId/visibility", asyncHandler(updateItemVisibility));
@@ -168,7 +174,7 @@ async function internalDialogue(req, res) {
 async function sourceDialogue(req, res) {
     const mission = await accessibleSourceMission(getAccountOwnerId(req), positiveId(req.params.missionId));
     if (!mission) return res.status(404).json({ message: "Conversation partenaire introuvable ou non accessible." });
-    res.json({ ...(await dialoguePayload(mission, true)), sourceDialogue: true });
+    res.json({ ...(await dialoguePayload(mission, true, true)), sourceDialogue: true });
 }
 
 async function internalMessage(req, res) {
@@ -191,8 +197,9 @@ async function sourceMessage(req, res) {
     if (mission.status === "closed") return res.status(409).json({ message: "Ce dossier est clôturé : le fil est en lecture seule." });
     const input = messageInput(req.body, req.files); if (!input.ok) return res.status(400).json({ message: input.message });
     const source = await sourceCompany(sourceOwnerId);
-    const message = await createMessageWithAttachments({ ownerId: mission.owner_id, missionId: mission.id, senderType: "partner", senderUserId: req.user.sub, senderName: req.user.fullName || req.user.username || source.name, organizationName: source.name, partnerVisible: true, ...input });
-    await notifyInternalParticipants(mission.owner_id, mission, null, input.kind === "issue" ? "Problème signalé par le partenaire" : "Nouveau message partenaire", input.body || "Une pièce jointe a été ajoutée.", { missionId: mission.id, dialogueMessageId: message.id, kind: input.kind });
+    const receiverVisible = Boolean(req.body?.partnerVisible);
+    const message = await createMessageWithAttachments({ ownerId: mission.owner_id, missionId: mission.id, senderType: "partner", senderUserId: req.user.sub, senderName: req.user.fullName || req.user.username || source.name, organizationName: source.name, partnerVisible: true, receiverVisible, ...input });
+    if (receiverVisible) await notifyInternalParticipants(mission.owner_id, mission, null, input.kind === "issue" ? "Problème signalé par le partenaire" : "Nouveau message partenaire", input.body || "Une pièce jointe a été ajoutée.", { missionId: mission.id, dialogueMessageId: message.id, kind: input.kind });
     await broadcastJournalUpdate(mission.owner_id, mission.id, message.id, "created");
     res.status(201).json({ message });
 }
@@ -225,9 +232,21 @@ async function externalAttachment(req, res) {
     if (!mission) return res.status(404).json({ message: "Dossier introuvable." });
     return sendAttachment(res, mission.owner_id, mission.id, positiveId(req.params.attachmentId), true);
 }
+async function sourceAttachment(req, res) {
+    const mission = await accessibleSourceMission(getAccountOwnerId(req), positiveId(req.params.missionId));
+    if (!mission) return res.status(404).json({ message: "Pièce jointe introuvable." });
+    return sendAttachment(res, mission.owner_id, mission.id, positiveId(req.params.attachmentId), true);
+}
 
 async function externalSharedItem(req, res) {
     const mission = await externalMission(req);
+    if (!mission) return res.status(404).json({ message: "Document introuvable." });
+    const item = await findMissionItem(mission.owner_id, mission.id, positiveId(req.params.itemId), true);
+    if (!item) return res.status(404).json({ message: "Document introuvable." });
+    return sendMissionItem(res, mission.owner_id, item);
+}
+async function sourceSharedItem(req, res) {
+    const mission = await accessibleSourceMission(getAccountOwnerId(req), positiveId(req.params.missionId));
     if (!mission) return res.status(404).json({ message: "Document introuvable." });
     const item = await findMissionItem(mission.owner_id, mission.id, positiveId(req.params.itemId), true);
     if (!item) return res.status(404).json({ message: "Document introuvable." });
@@ -246,13 +265,28 @@ async function updateEntryVisibility(req, res) {
     const messageId = positiveId(req.params.messageId);
     if (!mission || !messageId) return res.status(404).json({ message: "Entrée introuvable ou non accessible." });
     if (typeof req.body?.partnerVisible !== "boolean") return res.status(400).json({ message: "Visibilité partenaire invalide." });
-    const { rows } = await getPool().query("SELECT id,partner_visible,immutable FROM depannhome_partner_dialogue_messages WHERE id=$1 AND owner_id=$2 AND mission_id=$3", [messageId, ownerId, mission.id]);
+    const { rows } = await getPool().query("SELECT id,partner_visible,immutable FROM depannhome_partner_dialogue_messages WHERE id=$1 AND owner_id=$2 AND mission_id=$3 AND sender_type<>'partner'", [messageId, ownerId, mission.id]);
     const entry = rows[0]; if (!entry) return res.status(404).json({ message: "Entrée introuvable." });
     const visible = req.body.partnerVisible;
     await getPool().query("UPDATE depannhome_partner_dialogue_messages SET partner_visible=$4,updated_at=NOW() WHERE id=$1 AND owner_id=$2 AND mission_id=$3", [messageId, ownerId, mission.id, visible]);
     await insertAudit(getPool(), { ownerId, missionId: mission.id, messageId, action: "visibility_changed", actorId: req.user.sub, actorName: req.user.fullName || req.user.username, oldValue: { partnerVisible: entry.partner_visible }, newValue: { partnerVisible: visible } });
     await queuePartnerEvent(ownerId, mission.id, "partner_dialogue_visibility_changed", { messageId, partnerVisible: visible });
     await broadcastJournalUpdate(ownerId, mission.id, messageId, "visibility_changed");
+    res.status(204).end();
+}
+
+async function updateSourceEntryVisibility(req, res) {
+    const sourceOwnerId = getAccountOwnerId(req); const mission = await accessibleSourceMission(sourceOwnerId, positiveId(req.params.missionId));
+    const messageId = positiveId(req.params.messageId);
+    if (!mission || !messageId) return res.status(404).json({ message: "Entrée introuvable ou non accessible." });
+    if (typeof req.body?.partnerVisible !== "boolean") return res.status(400).json({ message: "Visibilité partenaire invalide." });
+    const { rows } = await getPool().query("SELECT id,receiver_visible FROM depannhome_partner_dialogue_messages WHERE id=$1 AND owner_id=$2 AND mission_id=$3 AND sender_type='partner'", [messageId, mission.owner_id, mission.id]);
+    const entry = rows[0]; if (!entry) return res.status(404).json({ message: "Seuls les échanges envoyés par votre entreprise peuvent être modifiés." });
+    const visible = req.body.partnerVisible;
+    await getPool().query("UPDATE depannhome_partner_dialogue_messages SET receiver_visible=$4,updated_at=NOW() WHERE id=$1 AND owner_id=$2 AND mission_id=$3", [messageId, mission.owner_id, mission.id, visible]);
+    await insertAudit(getPool(), { ownerId: mission.owner_id, missionId: mission.id, messageId, action: "source_visibility_changed", actorId: req.user.sub, actorName: req.user.fullName || req.user.username, oldValue: { receiverVisible: entry.receiver_visible }, newValue: { receiverVisible: visible } });
+    if (visible && !entry.receiver_visible) await notifyInternalParticipants(mission.owner_id, mission, null, "Nouvel échange partagé par le partenaire", "Un échange précédemment interne vient d’être partagé.", { missionId: mission.id, dialogueMessageId: messageId, kind: "message" });
+    await broadcastJournalUpdate(mission.owner_id, mission.id, messageId, "source_visibility_changed");
     res.status(204).end();
 }
 
@@ -275,7 +309,7 @@ async function updateAttachmentVisibility(req, res) {
     const ownerId = getAccountOwnerId(req); const mission = await accessibleInternalMission(ownerId, positiveId(req.params.missionId), req);
     const attachmentId = positiveId(req.params.attachmentId); if (!mission || !attachmentId) return res.status(404).json({ message: "Pièce jointe introuvable." });
     if (typeof req.body?.partnerVisible !== "boolean") return res.status(400).json({ message: "Visibilité partenaire invalide." });
-    const { rows } = await getPool().query("SELECT attachment.id,attachment.partner_visible,message.id AS message_id,message.partner_visible AS message_visible FROM depannhome_partner_dialogue_attachments attachment JOIN depannhome_partner_dialogue_messages message ON message.id=attachment.message_id WHERE attachment.id=$1 AND attachment.owner_id=$2 AND attachment.mission_id=$3", [attachmentId, ownerId, mission.id]);
+    const { rows } = await getPool().query("SELECT attachment.id,attachment.partner_visible,message.id AS message_id,message.partner_visible AS message_visible FROM depannhome_partner_dialogue_attachments attachment JOIN depannhome_partner_dialogue_messages message ON message.id=attachment.message_id WHERE attachment.id=$1 AND attachment.owner_id=$2 AND attachment.mission_id=$3 AND message.sender_type<>'partner'", [attachmentId, ownerId, mission.id]);
     const attachment = rows[0]; if (!attachment) return res.status(404).json({ message: "Pièce jointe introuvable." });
     if (req.body.partnerVisible && !attachment.message_visible) return res.status(409).json({ message: "Partagez d’abord le message associé ou ajoutez cette pièce dans un message dédié." });
     await getPool().query("UPDATE depannhome_partner_dialogue_attachments SET partner_visible=$2 WHERE id=$1", [attachmentId, req.body.partnerVisible]);
@@ -283,12 +317,27 @@ async function updateAttachmentVisibility(req, res) {
     await broadcastJournalUpdate(ownerId, mission.id, attachment.message_id, "attachment_visibility_changed"); res.status(204).end();
 }
 
-async function dialoguePayload(mission, external) {
+async function updateSourceAttachmentVisibility(req, res) {
+    const sourceOwnerId = getAccountOwnerId(req); const mission = await accessibleSourceMission(sourceOwnerId, positiveId(req.params.missionId));
+    const attachmentId = positiveId(req.params.attachmentId);
+    if (!mission || !attachmentId) return res.status(404).json({ message: "Pièce jointe introuvable." });
+    if (typeof req.body?.partnerVisible !== "boolean") return res.status(400).json({ message: "Visibilité partenaire invalide." });
+    const { rows } = await getPool().query("SELECT attachment.id,attachment.receiver_visible,message.id AS message_id,message.receiver_visible AS message_visible FROM depannhome_partner_dialogue_attachments attachment JOIN depannhome_partner_dialogue_messages message ON message.id=attachment.message_id WHERE attachment.id=$1 AND attachment.owner_id=$2 AND attachment.mission_id=$3 AND message.sender_type='partner'", [attachmentId, mission.owner_id, mission.id]);
+    const attachment = rows[0]; if (!attachment) return res.status(404).json({ message: "Seules les pièces jointes envoyées par votre entreprise peuvent être modifiées." });
+    if (req.body.partnerVisible && !attachment.message_visible) return res.status(409).json({ message: "Partagez d’abord le message associé." });
+    await getPool().query("UPDATE depannhome_partner_dialogue_attachments SET receiver_visible=$2 WHERE id=$1", [attachmentId, req.body.partnerVisible]);
+    await insertAudit(getPool(), { ownerId: mission.owner_id, missionId: mission.id, messageId: attachment.message_id, action: "source_attachment_visibility_changed", actorId: req.user.sub, actorName: req.user.fullName || req.user.username, oldValue: { attachmentId, receiverVisible: attachment.receiver_visible }, newValue: { attachmentId, receiverVisible: req.body.partnerVisible } });
+    await broadcastJournalUpdate(mission.owner_id, mission.id, attachment.message_id, "source_attachment_visibility_changed");
+    res.status(204).end();
+}
+
+async function dialoguePayload(mission, external, sourceDialogue = false) {
     const [messages, documents] = await Promise.all([loadMessages(mission, external), linkedDocuments(mission.owner_id, mission, external)]);
-    return { mission: publicMissionSummary(mission), messages, linkedDocuments: documents, readOnly: mission.status === "closed", filters: ["messages"] };
+    const sourceBase = `/api/partner-dialogue/sent-missions/${mission.id}`;
+    return { mission: publicMissionSummary(mission), messages: sourceDialogue ? messages.map(message => ({ ...message, attachments: message.attachments.map(attachment => ({ ...attachment, url: `${sourceBase}/attachments/${attachment.id}` })) })) : messages, linkedDocuments: sourceDialogue ? documents.map(item => ({ ...item, url: `${sourceBase}/items/${item.id}/download` })) : documents, readOnly: mission.status === "closed", filters: ["messages"] };
 }
 async function loadMessages(mission, external) {
-    const { rows } = await getPool().query(`SELECT message.id, message.sender_type AS "senderType", message.sender_name AS "senderName", message.organization_name AS "organizationName", message.kind, message.issue_type AS "issueType", message.body, message.reply_to_id AS "replyToId", message.partner_visible AS "partnerVisible", message.event_type AS "eventType", message.immutable, message.created_at AS "createdAt", message.updated_at AS "updatedAt", COALESCE((SELECT json_agg(json_build_object('id', attachment.id, 'filename', attachment.filename, 'mimeType', attachment.mime_type, 'fileSize', attachment.file_size, 'attachmentType', attachment.attachment_type, 'partnerVisible', attachment.partner_visible) ORDER BY attachment.id) FROM depannhome_partner_dialogue_attachments attachment WHERE attachment.message_id=message.id AND ($3=FALSE OR attachment.partner_visible=TRUE)), '[]'::json) AS attachments FROM depannhome_partner_dialogue_messages message WHERE message.owner_id=$1 AND message.mission_id=$2 AND ($3=FALSE OR message.partner_visible=TRUE) ORDER BY message.created_at ASC, message.id ASC LIMIT 1000`, [mission.owner_id, mission.id, external]);
+    const { rows } = await getPool().query(`SELECT message.id, message.sender_type AS "senderType", message.sender_name AS "senderName", message.organization_name AS "organizationName", message.kind, message.issue_type AS "issueType", message.body, message.reply_to_id AS "replyToId", message.partner_visible AS "partnerVisible", message.receiver_visible AS "receiverVisible", message.event_type AS "eventType", message.immutable, message.created_at AS "createdAt", message.updated_at AS "updatedAt", COALESCE((SELECT json_agg(json_build_object('id', attachment.id, 'filename', attachment.filename, 'mimeType', attachment.mime_type, 'fileSize', attachment.file_size, 'attachmentType', attachment.attachment_type, 'partnerVisible', attachment.partner_visible, 'receiverVisible', attachment.receiver_visible) ORDER BY attachment.id) FROM depannhome_partner_dialogue_attachments attachment WHERE attachment.message_id=message.id AND (($3=TRUE AND attachment.partner_visible=TRUE) OR ($3=FALSE AND (message.sender_type<>'partner' OR attachment.receiver_visible=TRUE)))), '[]'::json) AS attachments FROM depannhome_partner_dialogue_messages message WHERE message.owner_id=$1 AND message.mission_id=$2 AND (($3=TRUE AND message.partner_visible=TRUE) OR ($3=FALSE AND (message.sender_type<>'partner' OR message.receiver_visible=TRUE))) ORDER BY message.created_at ASC, message.id ASC LIMIT 1000`, [mission.owner_id, mission.id, external]);
     return rows.map(message => ({ ...message, attachments: (message.attachments || []).map(attachment => ({ ...attachment, url: external ? `/api/partner-dialogue/external/missions/${encodeURIComponent(mission.external_mission_id)}/attachments/${attachment.id}` : `/api/partner-dialogue/missions/${mission.id}/attachments/${attachment.id}` })) }));
 }
 async function linkedDocuments(ownerId, mission, external) {
@@ -333,16 +382,16 @@ async function sendMissionItem(res, ownerId, item) {
     return res.status(404).json({ message: "Document introuvable." });
 }
 function publicMissionItem(item) { return { id: Number(item.id), sourceType: item.sourceType || item.source_type, sourceId: String(item.sourceId || item.source_id || ""), sourceItemId: String(item.sourceItemId || item.source_item_id || ""), label: item.label || "Document", details: item.details || {}, partnerVisible: Boolean(item.partnerVisible ?? item.partner_visible), createdAt: item.createdAt || item.created_at, updatedAt: item.updatedAt || item.updated_at }; }
-async function createMessageWithAttachments({ ownerId, missionId, senderType, senderUserId = null, senderName, organizationName, kind, issueType = "", body, replyToId = 0, partnerVisible = false, attachments = [] }) {
+async function createMessageWithAttachments({ ownerId, missionId, senderType, senderUserId = null, senderName, organizationName, kind, issueType = "", body, replyToId = 0, partnerVisible = false, receiverVisible = true, attachments = [] }) {
     const connection = await getPool().connect();
-    try { await connection.query("BEGIN"); const message = await insertMessage({ ownerId, missionId, senderType, senderUserId, senderName, organizationName, kind, issueType, body, replyToId, partnerVisible }, connection); const saved = []; for (const attachment of attachments) { const { rows } = await connection.query("INSERT INTO depannhome_partner_dialogue_attachments(owner_id,mission_id,message_id,attachment_type,filename,mime_type,file_size,file_data,partner_visible) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id,filename,mime_type AS \"mimeType\",file_size AS \"fileSize\",attachment_type AS \"attachmentType\",partner_visible AS \"partnerVisible\"", [ownerId, missionId, message.id, attachment.type, attachment.filename, attachment.mimeType, attachment.buffer.length, attachment.buffer, Boolean(partnerVisible)]); saved.push(rows[0]); } await insertAudit(connection, { ownerId, missionId, messageId: message.id, action: "created", actorId: senderUserId, actorName: senderName, newValue: { partnerVisible, kind, attachmentCount: saved.length } }); await connection.query("COMMIT"); return { ...message, attachments: saved }; } catch (error) { await connection.query("ROLLBACK"); throw error; } finally { connection.release(); }
+    try { await connection.query("BEGIN"); const message = await insertMessage({ ownerId, missionId, senderType, senderUserId, senderName, organizationName, kind, issueType, body, replyToId, partnerVisible, receiverVisible }, connection); const saved = []; for (const attachment of attachments) { const { rows } = await connection.query("INSERT INTO depannhome_partner_dialogue_attachments(owner_id,mission_id,message_id,attachment_type,filename,mime_type,file_size,file_data,partner_visible,receiver_visible) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id,filename,mime_type AS \"mimeType\",file_size AS \"fileSize\",attachment_type AS \"attachmentType\",partner_visible AS \"partnerVisible\",receiver_visible AS \"receiverVisible\"", [ownerId, missionId, message.id, attachment.type, attachment.filename, attachment.mimeType, attachment.buffer.length, attachment.buffer, Boolean(partnerVisible), Boolean(receiverVisible)]); saved.push(rows[0]); } await insertAudit(connection, { ownerId, missionId, messageId: message.id, action: "created", actorId: senderUserId, actorName: senderName, newValue: { partnerVisible, receiverVisible, kind, attachmentCount: saved.length } }); await connection.query("COMMIT"); return { ...message, attachments: saved }; } catch (error) { await connection.query("ROLLBACK"); throw error; } finally { connection.release(); }
 }
-async function insertMessage({ ownerId, missionId, senderType, senderUserId = null, senderName = "", organizationName = "", kind = "message", issueType = "", body = "", replyToId = 0, partnerVisible = false, eventType = "", immutable = false }, connection = getPool()) { const { rows } = await connection.query("INSERT INTO depannhome_partner_dialogue_messages(owner_id,mission_id,sender_type,sender_user_id,sender_name,organization_name,kind,issue_type,body,reply_to_id,partner_visible,event_type,immutable) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id,sender_type AS \"senderType\",sender_name AS \"senderName\",organization_name AS \"organizationName\",kind,issue_type AS \"issueType\",body,reply_to_id AS \"replyToId\",partner_visible AS \"partnerVisible\",event_type AS \"eventType\",immutable,created_at AS \"createdAt\"", [ownerId, missionId, senderType, senderUserId || null, clean(senderName, 160), clean(organizationName, 160), kind, issueType, body, replyToId || null, Boolean(partnerVisible), clean(eventType, 80), Boolean(immutable)]); return rows[0]; }
+async function insertMessage({ ownerId, missionId, senderType, senderUserId = null, senderName = "", organizationName = "", kind = "message", issueType = "", body = "", replyToId = 0, partnerVisible = false, receiverVisible = true, eventType = "", immutable = false }, connection = getPool()) { const { rows } = await connection.query("INSERT INTO depannhome_partner_dialogue_messages(owner_id,mission_id,sender_type,sender_user_id,sender_name,organization_name,kind,issue_type,body,reply_to_id,partner_visible,receiver_visible,event_type,immutable) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING id,sender_type AS \"senderType\",sender_name AS \"senderName\",organization_name AS \"organizationName\",kind,issue_type AS \"issueType\",body,reply_to_id AS \"replyToId\",partner_visible AS \"partnerVisible\",receiver_visible AS \"receiverVisible\",event_type AS \"eventType\",immutable,created_at AS \"createdAt\"", [ownerId, missionId, senderType, senderUserId || null, clean(senderName, 160), clean(organizationName, 160), kind, issueType, body, replyToId || null, Boolean(partnerVisible), Boolean(receiverVisible), clean(eventType, 80), Boolean(immutable)]); return rows[0]; }
 async function accessibleInternalMission(ownerId, id, req) { if (!id) return null; const { rows } = await getPool().query(`SELECT mission.*, intake.partner_name, COALESCE(technician.full_name, technician.username, '') AS technician_name, event.client_name, event.location, TO_CHAR(event.event_date,'YYYY-MM-DD') AS event_date, TO_CHAR(event.start_time,'HH24:MI') AS start_time FROM depannhome_partner_missions mission JOIN depannhome_partner_intakes intake ON intake.id=mission.intake_id LEFT JOIN depannhome_users technician ON technician.id=mission.assigned_technician_id LEFT JOIN depannhome_calendar_events event ON event.id=mission.calendar_event_id AND event.owner_id=mission.owner_id WHERE mission.id=$1 AND mission.owner_id=$2`, [id, ownerId]); return rows[0] || null; }
 async function accessibleSourceMission(sourceOwnerId, id) { if (!id) return null; const { rows } = await getPool().query(`SELECT mission.*, intake.partner_name, COALESCE(technician.full_name, technician.username, '') AS technician_name, event.client_name, event.location, TO_CHAR(event.event_date,'YYYY-MM-DD') AS event_date, TO_CHAR(event.start_time,'HH24:MI') AS start_time FROM depannhome_partner_connection_sync_log log JOIN depannhome_partner_connections connection ON connection.id=log.connection_id AND connection.status='connected' JOIN depannhome_partner_missions mission ON mission.id=log.target_mission_id AND mission.owner_id=log.target_owner_id JOIN depannhome_partner_intakes intake ON intake.id=mission.intake_id LEFT JOIN depannhome_users technician ON technician.id=mission.assigned_technician_id LEFT JOIN depannhome_calendar_events event ON event.id=mission.calendar_event_id AND event.owner_id=mission.owner_id WHERE log.target_mission_id=$1 AND log.source_owner_id=$2 AND (CASE WHEN connection.company_low_id=$2 THEN COALESCE((connection.permissions_for_low->>'canUseMessaging')::boolean,TRUE) ELSE COALESCE((connection.permissions_for_high->>'canUseMessaging')::boolean,TRUE) END) LIMIT 1`, [id, sourceOwnerId]); return rows[0] || null; }
 async function findMissionById(ownerId, id) { const { rows } = await getPool().query(`SELECT mission.*, intake.partner_name, COALESCE(technician.full_name, technician.username, '') AS technician_name, event.client_name, event.location, TO_CHAR(event.event_date,'YYYY-MM-DD') AS event_date, TO_CHAR(event.start_time,'HH24:MI') AS start_time FROM depannhome_partner_missions mission JOIN depannhome_partner_intakes intake ON intake.id=mission.intake_id LEFT JOIN depannhome_users technician ON technician.id=mission.assigned_technician_id LEFT JOIN depannhome_calendar_events event ON event.id=mission.calendar_event_id AND event.owner_id=mission.owner_id WHERE mission.id=$1 AND mission.owner_id=$2`, [id, ownerId]); return rows[0] || null; }
 async function externalMission(req) { const key = clean(req.get("X-API-Key"), 300); const externalId = clean(req.params.externalMissionId, 160); if (!key || !externalId) return null; const { rows } = await getPool().query(`SELECT mission.*, intake.partner_name, intake.api_key_hash, COALESCE(technician.full_name, technician.username, '') AS technician_name, event.client_name, event.location, TO_CHAR(event.event_date,'YYYY-MM-DD') AS event_date, TO_CHAR(event.start_time,'HH24:MI') AS start_time FROM depannhome_partner_missions mission JOIN depannhome_partner_intakes intake ON intake.id=mission.intake_id LEFT JOIN depannhome_users technician ON technician.id=mission.assigned_technician_id LEFT JOIN depannhome_calendar_events event ON event.id=mission.calendar_event_id AND event.owner_id=mission.owner_id WHERE mission.external_mission_id=$1 AND intake.enabled=TRUE`, [externalId]); const mission = rows.find(row => safeEqual(hash(key), row.api_key_hash)); return mission || null; }
-async function sendAttachment(res, ownerId, missionId, attachmentId, partnerOnly = false) { if (!attachmentId) return res.status(404).json({ message: "Pièce jointe introuvable." }); const { rows } = await getPool().query("SELECT attachment.filename,attachment.mime_type,attachment.file_data FROM depannhome_partner_dialogue_attachments attachment JOIN depannhome_partner_dialogue_messages message ON message.id=attachment.message_id WHERE attachment.id=$1 AND attachment.owner_id=$2 AND attachment.mission_id=$3 AND ($4=FALSE OR (message.partner_visible=TRUE AND attachment.partner_visible=TRUE))", [attachmentId, ownerId, missionId, partnerOnly]); const attachment = rows[0]; if (!attachment) return res.status(404).json({ message: "Pièce jointe introuvable." }); res.set({ "Content-Type": attachment.mime_type, "Content-Disposition": `inline; filename*=UTF-8''${encodeURIComponent(attachment.filename)}`, "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" }); return res.send(attachment.file_data); }
+async function sendAttachment(res, ownerId, missionId, attachmentId, partnerOnly = false) { if (!attachmentId) return res.status(404).json({ message: "Pièce jointe introuvable." }); const { rows } = await getPool().query("SELECT attachment.filename,attachment.mime_type,attachment.file_data FROM depannhome_partner_dialogue_attachments attachment JOIN depannhome_partner_dialogue_messages message ON message.id=attachment.message_id WHERE attachment.id=$1 AND attachment.owner_id=$2 AND attachment.mission_id=$3 AND (($4=TRUE AND message.partner_visible=TRUE AND attachment.partner_visible=TRUE) OR ($4=FALSE AND (message.sender_type<>'partner' OR (message.receiver_visible=TRUE AND attachment.receiver_visible=TRUE))))", [attachmentId, ownerId, missionId, partnerOnly]); const attachment = rows[0]; if (!attachment) return res.status(404).json({ message: "Pièce jointe introuvable." }); res.set({ "Content-Type": attachment.mime_type, "Content-Disposition": `inline; filename*=UTF-8''${encodeURIComponent(attachment.filename)}`, "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" }); return res.send(attachment.file_data); }
 async function notifyInternalParticipants(ownerId, mission, senderUserId, title, body, payload) { const { rows } = await getPool().query("SELECT id FROM depannhome_users WHERE account_owner_id=$1 AND is_active=TRUE AND role IN ('admin','pc_standard','mobile_admin')", [ownerId]); await Promise.all(rows.filter(row => String(row.id) !== String(senderUserId || "")).map(row => createNotification(ownerId, row.id, "partner_dialogue_updated", { entityType: "partner_mission", entityId: String(mission.id) }, title, clean(body, 2000), payload))); }
 async function notifyMissionSourceParticipants(targetOwnerId, missionId, title, body, messageId) { const { rows } = await getPool().query("SELECT DISTINCT source_owner_id FROM depannhome_partner_connection_sync_log WHERE target_owner_id=$1 AND target_mission_id=$2", [targetOwnerId, missionId]); for (const source of rows) { const recipients = await getPool().query("SELECT id FROM depannhome_users WHERE account_owner_id=$1 AND role IN ('admin','pc_standard','mobile_admin') AND is_active=TRUE", [source.source_owner_id]); await Promise.all(recipients.rows.map(user => createNotification(source.source_owner_id, user.id, "partner_dialogue_updated", { entityType: "partner_mission", entityId: String(missionId) }, title, clean(body, 2000), { missionId, dialogueMessageId: messageId, sourceDialogue: true }))); } }
 async function sourceCompany(ownerId) { const { rows } = await getPool().query("SELECT COALESCE(NULLIF(profile.company_name,''),NULLIF(user_account.company_name,''),NULLIF(user_account.full_name,''),user_account.username) AS name FROM depannhome_users user_account LEFT JOIN depannhome_billing_profiles profile ON profile.owner_id=user_account.id WHERE user_account.id=$1", [ownerId]); return rows[0] || { name: "Entreprise partenaire" }; }

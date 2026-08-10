@@ -810,12 +810,14 @@ CREATE TABLE IF NOT EXISTS depannhome_partner_dialogue_messages (
     sender_name VARCHAR(160) NOT NULL DEFAULT '', organization_name VARCHAR(160) NOT NULL DEFAULT '',
     kind VARCHAR(20) NOT NULL DEFAULT 'message', issue_type VARCHAR(60) NOT NULL DEFAULT '',
     body VARCHAR(4000) NOT NULL DEFAULT '', reply_to_id BIGINT REFERENCES depannhome_partner_dialogue_messages(id) ON DELETE SET NULL,
-    partner_visible BOOLEAN NOT NULL DEFAULT FALSE, event_type VARCHAR(80) NOT NULL DEFAULT '', immutable BOOLEAN NOT NULL DEFAULT FALSE,
+    partner_visible BOOLEAN NOT NULL DEFAULT FALSE, receiver_visible BOOLEAN NOT NULL DEFAULT TRUE,
+    event_type VARCHAR(80) NOT NULL DEFAULT '', immutable BOOLEAN NOT NULL DEFAULT FALSE,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 ALTER TABLE depannhome_partner_dialogue_messages
     ADD COLUMN IF NOT EXISTS partner_visible BOOLEAN NOT NULL DEFAULT FALSE,
+    ADD COLUMN IF NOT EXISTS receiver_visible BOOLEAN NOT NULL DEFAULT TRUE,
     ADD COLUMN IF NOT EXISTS event_type VARCHAR(80) NOT NULL DEFAULT '',
     ADD COLUMN IF NOT EXISTS immutable BOOLEAN NOT NULL DEFAULT FALSE,
     ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
@@ -831,11 +833,14 @@ CREATE TABLE IF NOT EXISTS depannhome_partner_dialogue_attachments (
     mission_id BIGINT NOT NULL REFERENCES depannhome_partner_missions(id) ON DELETE CASCADE,
     message_id BIGINT NOT NULL REFERENCES depannhome_partner_dialogue_messages(id) ON DELETE CASCADE,
     attachment_type VARCHAR(40) NOT NULL DEFAULT 'document', filename VARCHAR(255) NOT NULL, mime_type VARCHAR(150) NOT NULL,
-    file_size INTEGER NOT NULL CHECK (file_size > 0 AND file_size <= 5242880), file_data BYTEA NOT NULL, partner_visible BOOLEAN NOT NULL DEFAULT FALSE,
+    file_size INTEGER NOT NULL CHECK (file_size > 0 AND file_size <= 5242880), file_data BYTEA NOT NULL,
+    partner_visible BOOLEAN NOT NULL DEFAULT FALSE, receiver_visible BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS depannhome_partner_dialogue_attachments_message_idx ON depannhome_partner_dialogue_attachments(message_id);
-ALTER TABLE depannhome_partner_dialogue_attachments ADD COLUMN IF NOT EXISTS partner_visible BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE depannhome_partner_dialogue_attachments
+    ADD COLUMN IF NOT EXISTS partner_visible BOOLEAN NOT NULL DEFAULT FALSE,
+    ADD COLUMN IF NOT EXISTS receiver_visible BOOLEAN NOT NULL DEFAULT TRUE;
 -- Les entrées ne sont jamais supprimées par le journal : toute modification de
 -- visibilité est tracée avec l’auteur, l’horodatage et les valeurs avant/après.
 CREATE TABLE IF NOT EXISTS depannhome_partner_dialogue_audit (

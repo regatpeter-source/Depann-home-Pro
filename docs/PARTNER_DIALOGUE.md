@@ -17,7 +17,7 @@ Toutes les requêtes vérifient simultanément la clé, l’accès partenaire, l
 
 Chaque contenu de mission est **interne par défaut**. Le registre `depannhome_partner_mission_items` référence les devis, factures, rapports et photos sans dupliquer leurs données métier ; seul un élément dont `partner_visible` est activé apparaît dans l’espace externe, son historique et son téléchargement protégé. Le retrait de cette visibilité masque immédiatement l’élément et l’entrée de journal correspondante pour le partenaire.
 
-Les messages conservent leur contrôle de partage existant. Les pièces jointes (PDF et photos) possèdent également leur propre visibilité : elles restent privées même si le message parent est partagé, jusqu’à ce qu’un utilisateur les rende explicitement visibles. Un fichier ne peut pas être partagé depuis un message interne : il faut d’abord partager le message ou créer un message dédié, pour ne jamais révéler de commentaire interne.
+Les messages conservent un contrôle de partage bilatéral : chaque entreprise peut rendre internes ou partager uniquement les échanges dont elle est l’auteur. Elle ne peut jamais modifier la visibilité d’un message écrit par l’autre entreprise. Les pièces jointes (PDF et photos) suivent la même règle et possèdent leur propre visibilité. Un fichier ne peut pas être partagé si son message parent est interne : il faut d’abord partager ce message ou créer un message dédié, pour ne jamais révéler de commentaire interne.
 
 Chaque mission porte `billing_mode` :
 
