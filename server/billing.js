@@ -16,6 +16,8 @@ const CUSTOMER_TYPES = new Set(["Particulier", "Professionnel", "Magasin", "Autr
 const CLIENT_ID_PATTERN = /^client-[a-zA-Z0-9-]+$/;
 const QUOTE_TEMPLATE_POLICIES = new Set(["integrated_only", "company_choice", "external_only"]);
 const QUOTE_TEMPLATE_MODES = new Set(["integrated", "external"]);
+const DOCUMENT_TEMPLATE_FONTS = new Set(["Helvetica", "Times-Roman", "Courier"]);
+const DEFAULT_DOCUMENT_TEMPLATE = Object.freeze({ primaryColor: "#172033", secondaryColor: "#0a5c36", separatorColor: "#d7dde3", font: "Helvetica", headerText: "", footerText: "" });
 const ADDITIONAL_TEMPLATE_TYPES = Object.freeze({
     quitus: { label: "quitus", policyColumn: "quitus_template_policy", modeColumn: "quitus_template_mode", filenameColumn: "quitus_template_filename", dataColumn: "quitus_template_data", mimeColumn: "quitus_template_mime_type" },
     report: { label: "rapport", policyColumn: "report_template_policy", modeColumn: "report_file_template_mode", filenameColumn: "report_file_template_filename", dataColumn: "report_file_template_data", mimeColumn: "report_file_template_mime_type" }
@@ -61,11 +63,13 @@ export async function initializeBilling() {
             deposit_terms VARCHAR(500) NOT NULL DEFAULT '',
             footer_note VARCHAR(1000) NOT NULL DEFAULT '',
             default_quote JSONB,
+            quote_template_config JSONB NOT NULL DEFAULT '{}'::jsonb,
             quote_template_mode VARCHAR(20) NOT NULL DEFAULT 'integrated',
             quote_template_filename VARCHAR(255) NOT NULL DEFAULT '',
             quote_template_data BYTEA,
             quote_template_mime_type VARCHAR(150) NOT NULL DEFAULT '',
             quitus_template_mode VARCHAR(20) NOT NULL DEFAULT 'integrated',
+            quitus_template JSONB NOT NULL DEFAULT '{}'::jsonb,
             quitus_template_filename VARCHAR(255) NOT NULL DEFAULT '',
             quitus_template_data BYTEA,
             quitus_template_mime_type VARCHAR(150) NOT NULL DEFAULT '',
@@ -84,6 +88,7 @@ export async function initializeBilling() {
     await database.query(`
         ALTER TABLE depannhome_billing_profiles
         ADD COLUMN IF NOT EXISTS default_quote JSONB,
+        ADD COLUMN IF NOT EXISTS quote_template_config JSONB NOT NULL DEFAULT '{}'::jsonb,
         ADD COLUMN IF NOT EXISTS secondary_phone VARCHAR(50) NOT NULL DEFAULT '',
         ADD COLUMN IF NOT EXISTS country VARCHAR(100) NOT NULL DEFAULT 'France',
         ADD COLUMN IF NOT EXISTS siren VARCHAR(20) NOT NULL DEFAULT '',
@@ -96,6 +101,7 @@ export async function initializeBilling() {
         ADD COLUMN IF NOT EXISTS quote_template_data BYTEA,
         ADD COLUMN IF NOT EXISTS quote_template_mime_type VARCHAR(150) NOT NULL DEFAULT '',
         ADD COLUMN IF NOT EXISTS quitus_template_mode VARCHAR(20) NOT NULL DEFAULT 'integrated',
+        ADD COLUMN IF NOT EXISTS quitus_template JSONB NOT NULL DEFAULT '{}'::jsonb,
         ADD COLUMN IF NOT EXISTS quitus_template_filename VARCHAR(255) NOT NULL DEFAULT '',
         ADD COLUMN IF NOT EXISTS quitus_template_data BYTEA,
         ADD COLUMN IF NOT EXISTS quitus_template_mime_type VARCHAR(150) NOT NULL DEFAULT '',
@@ -195,6 +201,7 @@ export function registerBillingRoutes(app, requireAuthentication) {
                 SELECT profile.company_name AS "companyName", profile.legal_form AS "legalForm", profile.address, profile.postal_code AS "postalCode", profile.city,
                     profile.phone, profile.secondary_phone AS "secondaryPhone", profile.email, profile.country, profile.registration_number AS "registrationNumber", profile.siren, profile.tax_number AS "taxNumber", profile.vat_regime AS "vatRegime", profile.bank_iban AS "bankIban", profile.bank_bic AS "bankBic",
                     profile.payment_terms AS "paymentTerms", profile.deposit_terms AS "depositTerms", profile.footer_note AS "footerNote", profile.default_quote AS "defaultQuote",
+                    profile.quote_template_config AS "quoteTemplateConfig", profile.quitus_template AS "quitusTemplate",
                     profile.quote_template_mode AS "quoteTemplateMode", profile.quote_template_filename AS "quoteTemplateFilename",
                     (profile.quote_template_data IS NOT NULL) AS "hasQuoteTemplate", (profile.logo_data IS NOT NULL) AS "hasLogo",
                     profile.quitus_template_mode AS "quitusTemplateMode", profile.quitus_template_filename AS "quitusTemplateFilename", (profile.quitus_template_data IS NOT NULL) AS "hasQuitusTemplate",
@@ -285,6 +292,7 @@ export function registerBillingRoutes(app, requireAuthentication) {
         const mode = policy === "integrated_only" ? "integrated" : policy === "external_only" ? "external" : requestedMode;
         const removeTemplate = String(request.body?.removeQuoteTemplate || "") === "true";
         const template = request.file;
+        const templateConfig = sanitizeDocumentTemplate(request.body, { primaryColor: "#172033" });
         if (policy === "integrated_only" && template) return response.status(403).json({ message: "Le Créateur n’autorise pas de base de devis externe pour cette entreprise." });
         const { rows } = await getPool().query(
             "SELECT quote_template_data IS NOT NULL AS \"hasQuoteTemplate\" FROM depannhome_billing_profiles WHERE owner_id = $1",
@@ -295,16 +303,27 @@ export function registerBillingRoutes(app, requireAuthentication) {
             return response.status(400).json({ message: "Déposez une base de devis PDF, DOC ou DOCX avant d’activer ce mode." });
         }
         await getPool().query(`
-            INSERT INTO depannhome_billing_profiles (owner_id, quote_template_mode, quote_template_filename, quote_template_data, quote_template_mime_type)
-            VALUES ($1, $2, $3, $4, $5)
+            INSERT INTO depannhome_billing_profiles (owner_id, quote_template_mode, quote_template_config, quote_template_filename, quote_template_data, quote_template_mime_type)
+            VALUES ($1, $2, $3::jsonb, $4, $5, $6)
             ON CONFLICT (owner_id) DO UPDATE SET
                 quote_template_mode = EXCLUDED.quote_template_mode,
-                quote_template_filename = CASE WHEN $6 THEN '' WHEN $7 THEN EXCLUDED.quote_template_filename ELSE depannhome_billing_profiles.quote_template_filename END,
-                quote_template_data = CASE WHEN $6 THEN NULL WHEN $7 THEN EXCLUDED.quote_template_data ELSE depannhome_billing_profiles.quote_template_data END,
-                quote_template_mime_type = CASE WHEN $6 THEN '' WHEN $7 THEN EXCLUDED.quote_template_mime_type ELSE depannhome_billing_profiles.quote_template_mime_type END,
+                quote_template_config = EXCLUDED.quote_template_config,
+                quote_template_filename = CASE WHEN $7 THEN '' WHEN $8 THEN EXCLUDED.quote_template_filename ELSE depannhome_billing_profiles.quote_template_filename END,
+                quote_template_data = CASE WHEN $7 THEN NULL WHEN $8 THEN EXCLUDED.quote_template_data ELSE depannhome_billing_profiles.quote_template_data END,
+                quote_template_mime_type = CASE WHEN $7 THEN '' WHEN $8 THEN EXCLUDED.quote_template_mime_type ELSE depannhome_billing_profiles.quote_template_mime_type END,
                 updated_at = NOW()
-        `, [accountOwnerId, mode, cleanFileName(template?.originalname), template?.buffer || null, template?.mimetype || "", removeTemplate, Boolean(template)]);
+        `, [accountOwnerId, mode, JSON.stringify(templateConfig), cleanFileName(template?.originalname), template?.buffer || null, template?.mimetype || "", removeTemplate, Boolean(template)]);
         response.status(204).end();
+    }));
+
+    app.get("/api/billing/quote-template/preview", requireAuthentication, requireBillingAdministration, asyncHandler(async (request, response) => {
+        const ownerId = getAccountOwnerId(request);
+        if (await usesExternalQuoteTemplate(ownerId)) return sendExternalQuoteTemplate(ownerId, response, true);
+        const profile = await loadBillingPdfProfile(ownerId);
+        const document = { documentType: "quote", documentNumber: "APERÇU", customerName: "Nom du client", customerAddress: "Adresse du client", issueDate: new Date().toISOString().slice(0, 10), dueDate: "", lines: [{ description: "Exemple de prestation", quantity: 1, unit: "forfait", unitPrice: 120, vatRate: 20 }], notes: profile.paymentTerms || "Conditions de règlement" };
+        const pdf = await createBillingPdf(document, profile);
+        response.set({ "Content-Type": "application/pdf", "Content-Disposition": 'inline; filename="apercu-devis.pdf"', "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" });
+        response.send(pdf);
     }));
 
     app.get("/api/billing/quote-template/file", requireAuthentication, requireBillingAdministration, asyncHandler(async (request, response) => {
@@ -328,11 +347,12 @@ export function registerBillingRoutes(app, requireAuthentication) {
         const definition = ADDITIONAL_TEMPLATE_TYPES[request.params.templateType];
         if (!definition) return response.status(404).json({ message: "Type de base documentaire inconnu." });
         const ownerId = getAccountOwnerId(request); const policy = await getTemplatePolicy(ownerId, definition); const requestedMode = QUOTE_TEMPLATE_MODES.has(request.body?.templateMode) ? request.body.templateMode : "integrated";
-        const mode = policy === "integrated_only" ? "integrated" : policy === "external_only" ? "external" : requestedMode; const removeTemplate = String(request.body?.removeTemplate || "") === "true"; const template = request.file;
+        const mode = policy === "integrated_only" ? "integrated" : policy === "external_only" ? "external" : requestedMode; const removeTemplate = String(request.body?.removeTemplate || "") === "true"; const template = request.file; const templateConfig = sanitizeDocumentTemplate(request.body, request.params.templateType === "quitus" ? { primaryColor: "#003b73" } : {});
         if (policy === "integrated_only" && template) return response.status(403).json({ message: `Le Créateur n’autorise pas de base de ${definition.label} externe pour cette entreprise.` });
         const current = await getPool().query(`SELECT ${definition.dataColumn} IS NOT NULL AS "hasTemplate" FROM depannhome_billing_profiles WHERE owner_id=$1`, [ownerId]);
         if (mode === "external" && !template && (removeTemplate || !current.rows[0]?.hasTemplate)) return response.status(400).json({ message: `Déposez une base de ${definition.label} PDF, DOC ou DOCX avant d’activer ce mode.` });
-        await getPool().query(`INSERT INTO depannhome_billing_profiles (owner_id,${definition.modeColumn},${definition.filenameColumn},${definition.dataColumn},${definition.mimeColumn}) VALUES ($1,$2,$3,$4,$5) ON CONFLICT(owner_id) DO UPDATE SET ${definition.modeColumn}=EXCLUDED.${definition.modeColumn},${definition.filenameColumn}=CASE WHEN $6 THEN '' WHEN $7 THEN EXCLUDED.${definition.filenameColumn} ELSE depannhome_billing_profiles.${definition.filenameColumn} END,${definition.dataColumn}=CASE WHEN $6 THEN NULL WHEN $7 THEN EXCLUDED.${definition.dataColumn} ELSE depannhome_billing_profiles.${definition.dataColumn} END,${definition.mimeColumn}=CASE WHEN $6 THEN '' WHEN $7 THEN EXCLUDED.${definition.mimeColumn} ELSE depannhome_billing_profiles.${definition.mimeColumn} END,updated_at=NOW()`, [ownerId, mode, cleanFileName(template?.originalname || `base-${definition.label}`), template?.buffer || null, template?.mimetype || "", removeTemplate, Boolean(template)]);
+        const configColumn = request.params.templateType === "quitus" ? "quitus_template" : "report_template";
+        await getPool().query(`INSERT INTO depannhome_billing_profiles (owner_id,${definition.modeColumn},${configColumn},${definition.filenameColumn},${definition.dataColumn},${definition.mimeColumn}) VALUES ($1,$2,$3::jsonb,$4,$5,$6) ON CONFLICT(owner_id) DO UPDATE SET ${definition.modeColumn}=EXCLUDED.${definition.modeColumn},${configColumn}=CASE WHEN $9 THEN EXCLUDED.${configColumn} ELSE depannhome_billing_profiles.${configColumn} END,${definition.filenameColumn}=CASE WHEN $7 THEN '' WHEN $8 THEN EXCLUDED.${definition.filenameColumn} ELSE depannhome_billing_profiles.${definition.filenameColumn} END,${definition.dataColumn}=CASE WHEN $7 THEN NULL WHEN $8 THEN EXCLUDED.${definition.dataColumn} ELSE depannhome_billing_profiles.${definition.dataColumn} END,${definition.mimeColumn}=CASE WHEN $7 THEN '' WHEN $8 THEN EXCLUDED.${definition.mimeColumn} ELSE depannhome_billing_profiles.${definition.mimeColumn} END,updated_at=NOW()`, [ownerId, mode, JSON.stringify(templateConfig), cleanFileName(template?.originalname || `base-${definition.label}`), template?.buffer || null, template?.mimetype || "", removeTemplate, Boolean(template), request.params.templateType === "quitus"]);
         response.status(204).end();
     }));
 
@@ -369,7 +389,7 @@ export function registerBillingRoutes(app, requireAuthentication) {
             return response.send(template.data);
         }
         const preview = request.params.templateType === "quitus"
-            ? await createQuitusPreview()
+            ? await createQuitusPreview(ownerId)
             : await createReportPreview(ownerId);
         response.set({
             "Content-Type": "application/pdf",
@@ -387,7 +407,7 @@ export function registerBillingRoutes(app, requireAuthentication) {
         const { rows } = await getPool().query(`
             SELECT company_name AS "companyName", legal_form AS "legalForm", address, postal_code AS "postalCode", city, phone, email,
                 registration_number AS "registrationNumber", siren, tax_number AS "taxNumber", bank_iban AS "bankIban", bank_bic AS "bankBic", payment_terms AS "paymentTerms", deposit_terms AS "depositTerms",
-                footer_note AS "footerNote", logo_data AS "logoData", logo_mime_type AS "logoMimeType"
+                footer_note AS "footerNote", logo_data AS "logoData", logo_mime_type AS "logoMimeType", quote_template_config AS "quoteTemplateConfig"
             FROM depannhome_billing_profiles WHERE owner_id = $1
         `, [getAccountOwnerId(request)]);
         const profile = rows[0] || emptyProfile();
@@ -652,7 +672,7 @@ export function billingUploadErrorHandler(error, request, response, next) {
 }
 
 function emptyProfile() {
-    return { companyName: "", legalForm: "", address: "", postalCode: "", city: "", phone: "", secondaryPhone: "", email: "", country: "France", registrationNumber: "", siren: "", taxNumber: "", vatRegime: "standard", bankIban: "", bankBic: "", paymentTerms: "", depositTerms: "", footerNote: "", defaultQuote: null, quoteTemplateMode: "integrated", quoteTemplateFilename: "", hasQuoteTemplate: false, quoteTemplatePolicy: "company_choice", quitusTemplateMode: "integrated", quitusTemplateFilename: "", hasQuitusTemplate: false, quitusTemplatePolicy: "company_choice", reportFileTemplateMode: "integrated", reportFileTemplateFilename: "", hasReportFileTemplate: false, reportTemplatePolicy: "company_choice", hasLogo: false };
+    return { companyName: "", legalForm: "", address: "", postalCode: "", city: "", phone: "", secondaryPhone: "", email: "", country: "France", registrationNumber: "", siren: "", taxNumber: "", vatRegime: "standard", bankIban: "", bankBic: "", paymentTerms: "", depositTerms: "", footerNote: "", defaultQuote: null, quoteTemplateConfig: { ...DEFAULT_DOCUMENT_TEMPLATE }, quoteTemplateMode: "integrated", quoteTemplateFilename: "", hasQuoteTemplate: false, quoteTemplatePolicy: "company_choice", quitusTemplate: { ...DEFAULT_DOCUMENT_TEMPLATE, primaryColor: "#003b73" }, quitusTemplateMode: "integrated", quitusTemplateFilename: "", hasQuitusTemplate: false, quitusTemplatePolicy: "company_choice", reportFileTemplateMode: "integrated", reportFileTemplateFilename: "", hasReportFileTemplate: false, reportTemplatePolicy: "company_choice", hasLogo: false };
 }
 
 async function getTemplatePolicy(ownerId, definition) { const { rows } = await getPool().query(`SELECT ${definition.policyColumn} AS policy FROM depannhome_users WHERE id=$1`, [ownerId]); return QUOTE_TEMPLATE_POLICIES.has(rows[0]?.policy) ? rows[0].policy : "company_choice"; }
@@ -670,7 +690,36 @@ async function usesExternalQuoteTemplate(accountOwnerId) {
     return policy === "external_only" || (policy !== "integrated_only" && profile.rows[0]?.quote_template_mode === "external");
 }
 
-function createQuitusPreview() {
+async function sendExternalQuoteTemplate(ownerId, response, inlinePdf = false) {
+    const { rows } = await getPool().query(`SELECT quote_template_filename AS filename, quote_template_data AS data, quote_template_mime_type AS "mimeType" FROM depannhome_billing_profiles WHERE owner_id=$1`, [ownerId]);
+    const template = rows[0];
+    if (!template?.data) return response.status(404).json({ message: "Aucune base de devis déposée." });
+    const mimeType = template.mimeType || "application/octet-stream";
+    response.set({ "Content-Type": mimeType, "Content-Disposition": `${inlinePdf && mimeType === "application/pdf" ? "inline" : "attachment"}; filename="${contentDispositionFileName(template.filename || "base-devis")}"`, "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" });
+    return response.send(template.data);
+}
+
+async function loadBillingPdfProfile(ownerId) {
+    const { rows } = await getPool().query(`SELECT company_name AS "companyName",legal_form AS "legalForm",address,postal_code AS "postalCode",city,phone,email,registration_number AS "registrationNumber",siren,tax_number AS "taxNumber",vat_regime AS "vatRegime",bank_iban AS "bankIban",bank_bic AS "bankBic",payment_terms AS "paymentTerms",deposit_terms AS "depositTerms",footer_note AS "footerNote",logo_data AS "logoData",logo_mime_type AS "logoMimeType",quote_template_config AS "quoteTemplateConfig" FROM depannhome_billing_profiles WHERE owner_id=$1`, [ownerId]);
+    return { ...emptyProfile(), ...(rows[0] || {}) };
+}
+
+async function loadQuitusPdfProfile(ownerId) {
+    const { rows } = await getPool().query(`SELECT company_name AS "companyName",address,postal_code AS "postalCode",city,phone,email,registration_number AS "registrationNumber",logo_data AS "logoData",logo_mime_type AS "logoMimeType",quitus_template AS "quitusTemplate" FROM depannhome_billing_profiles WHERE owner_id=$1`, [ownerId]);
+    return { ...emptyProfile(), ...(rows[0] || {}) };
+}
+
+function sanitizeDocumentTemplate(value, defaults = {}) {
+    const template = { ...DEFAULT_DOCUMENT_TEMPLATE, ...defaults };
+    for (const key of ["primaryColor", "secondaryColor", "separatorColor"]) if (/^#[0-9a-fA-F]{6}$/.test(String(value?.[key] || ""))) template[key] = String(value[key]).toLowerCase();
+    template.font = DOCUMENT_TEMPLATE_FONTS.has(value?.font) ? value.font : template.font;
+    template.headerText = cleanText(value?.headerText, 500);
+    template.footerText = cleanText(value?.footerText, 500);
+    return template;
+}
+
+async function createQuitusPreview(ownerId) {
+    const profile = await loadQuitusPdfProfile(ownerId);
     const date = new Date().toISOString().slice(0, 10);
     return createQuitusPdf({
         id: "APERÇU",
@@ -684,7 +733,7 @@ function createQuitusPreview() {
     }, {
         signedBy: "Nom du client",
         signature: ""
-    });
+    }, profile);
 }
 
 async function createReportPreview(ownerId) {
@@ -877,7 +926,7 @@ async function getBillingExport(request) {
         database.query(`
             SELECT company_name AS "companyName", legal_form AS "legalForm", address, postal_code AS "postalCode", city, phone, email,
                 registration_number AS "registrationNumber", siren, tax_number AS "taxNumber", vat_regime AS "vatRegime", bank_iban AS "bankIban", bank_bic AS "bankBic", payment_terms AS "paymentTerms", deposit_terms AS "depositTerms",
-                footer_note AS "footerNote", logo_data AS "logoData", logo_mime_type AS "logoMimeType"
+                footer_note AS "footerNote", logo_data AS "logoData", logo_mime_type AS "logoMimeType", quote_template_config AS "quoteTemplateConfig"
             FROM depannhome_billing_profiles WHERE owner_id = $1
         `, [getAccountOwnerId(request)])
     ]);
@@ -893,6 +942,8 @@ function billingPdfFileName(document) {
 
 export function createBillingPdf(document, profile) {
     return new Promise((resolve, reject) => {
+        const template = document.documentType === "quote" ? sanitizeDocumentTemplate(profile.quoteTemplateConfig || {}) : { ...DEFAULT_DOCUMENT_TEMPLATE };
+        const boldFont = template.font === "Times-Roman" ? "Times-Bold" : template.font === "Courier" ? "Courier-Bold" : "Helvetica-Bold";
         const pdf = new PDFDocument({ size: "A4", margin: 44, bufferPages: true, info: { Title: `${document.documentType === "invoice" ? "Facture" : "Devis"} ${document.documentNumber}`, Author: profile.companyName || "Depann'Home Pro" } });
         const chunks = [];
         pdf.on("data", chunk => chunks.push(chunk));
@@ -907,8 +958,8 @@ export function createBillingPdf(document, profile) {
             pdf.addPage();
             pdf.y = margin;
         };
-        const line = (y, color = "#d7dde3") => pdf.moveTo(margin, y).lineTo(margin + contentWidth, y).lineWidth(1).strokeColor(color).stroke();
-        const text = (value, x, y, width, options = {}) => pdf.fillColor(options.color || "#172033").font(options.bold ? "Helvetica-Bold" : "Helvetica").fontSize(options.size || 9).text(String(value || ""), x, y, { width, ...options });
+        const line = (y, color = template.separatorColor) => pdf.moveTo(margin, y).lineTo(margin + contentWidth, y).lineWidth(1).strokeColor(color).stroke();
+        const text = (value, x, y, width, options = {}) => pdf.fillColor(options.color || template.primaryColor).font(options.bold ? boldFont : template.font).fontSize(options.size || 9).text(String(value || ""), x, y, { width, ...options });
         const formatMoney = value => new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" }).format(Number(value) || 0);
         const formatDate = value => value ? new Intl.DateTimeFormat("fr-FR").format(new Date(`${value}T12:00:00`)) : "Non renseignée";
         const financialData = document.financialData && typeof document.financialData === "object" ? document.financialData : {};
@@ -930,10 +981,11 @@ export function createBillingPdf(document, profile) {
         const companyX = profile.logoData ? margin + 68 : margin;
         const companyDetails = [profile.companyName || "Votre structure", profile.legalForm, profile.address, [profile.postalCode, profile.city].filter(Boolean).join(" "), profile.phone ? `Tél. ${profile.phone}` : "", profile.email].filter(Boolean).join("\n");
         text(companyDetails, companyX, margin, 250, { size: 9, lineGap: 2, bold: false });
-        text(title, margin + contentWidth - 145, margin, 145, { size: 25, bold: true, align: "right", color: "#172033" });
+        text(title, margin + contentWidth - 145, margin, 145, { size: 25, bold: true, align: "right", color: template.primaryColor });
         text(`N° ${document.documentNumber}${document.quoteReference ? `\nRéf. devis : ${document.quoteReference}` : ""}\nÉmis le ${formatDate(document.issueDate)}${document.dueDate ? `\nÉchéance : ${formatDate(document.dueDate)}` : ""}`, margin + contentWidth - 170, margin + 34, 170, { size: 9, align: "right", lineGap: 2 });
+        if (template.headerText) text(template.headerText, companyX, margin + 60, 300, { size: 7.5, color: template.secondaryColor });
         pdf.y = Math.max(margin + 74, pdf.y) + 15;
-        line(pdf.y, "#172033");
+        line(pdf.y, template.primaryColor);
         pdf.y += 20;
 
         const partyY = pdf.y;
@@ -951,7 +1003,7 @@ export function createBillingPdf(document, profile) {
         const columns = [margin, margin + 205, margin + 255, margin + 300, margin + 390, margin + 440];
         const drawTableHeader = () => {
             ensureSpace(28);
-            pdf.rect(margin, pdf.y, contentWidth, 22).fill("#172033");
+            pdf.rect(margin, pdf.y, contentWidth, 22).fill(template.primaryColor);
             const headerY = pdf.y + 7;
             [["Désignation", columns[0], 195], ["Qté", columns[1], 42], ["Unité", columns[2], 38], ["PU HT", columns[3], 80], ["TVA", columns[4], 42], ["Total HT", columns[5], 65]].forEach(([label, x, width]) => text(label, x + 5, headerY, width - 8, { size: 8, bold: true, color: "#ffffff", align: x === columns[0] || x === columns[2] ? "left" : "right" }));
             pdf.y += 22;
@@ -962,7 +1014,7 @@ export function createBillingPdf(document, profile) {
             if (pdf.y + rowHeight > bottom()) { pdf.addPage(); pdf.y = margin; drawTableHeader(); }
             const y = pdf.y;
             pdf.rect(margin, y, contentWidth, rowHeight).fill("#ffffff");
-            pdf.rect(margin, y, contentWidth, rowHeight).lineWidth(.5).strokeColor("#d7dde3").stroke();
+            pdf.rect(margin, y, contentWidth, rowHeight).lineWidth(.5).strokeColor(template.separatorColor).stroke();
             text(item.description, columns[0] + 5, y + 6, 190, { size: 8, lineGap: 2 });
             text(item.quantity, columns[1] + 3, y + 6, 40, { size: 8, align: "right" });
             text(item.unit, columns[2] + 4, y + 6, 34, { size: 8 });
@@ -983,7 +1035,7 @@ export function createBillingPdf(document, profile) {
         ].filter(Boolean).join("\n");
         text(conditions, margin, summaryY + 14, 260, { size: 8, lineGap: 2 });
         const totalX = margin + contentWidth - 180;
-        [["Total HT", totalHt, "#172033"], ["Total TVA", totalVat, "#172033"], ["Total TTC", totalTtc, "#172033"], [document.documentType === "quote" ? "Reste à charge" : "Net à payer", remainingAmount, "#0a5c36"]].forEach(([label, value, color], index) => {
+        [["Total HT", totalHt, template.primaryColor], ["Total TVA", totalVat, template.primaryColor], ["Total TTC", totalTtc, template.primaryColor], [document.documentType === "quote" ? "Reste à charge" : "Net à payer", remainingAmount, template.secondaryColor]].forEach(([label, value, color], index) => {
             const y = summaryY + index * 26;
             pdf.rect(totalX, y, 180, 24).fill(color);
             text(label, totalX + 9, y + 7, 92, { size: index === 2 ? 10 : 8, bold: true, color: "#ffffff" });
@@ -992,7 +1044,7 @@ export function createBillingPdf(document, profile) {
         pdf.y = Math.max(pdf.y, summaryY + 114);
         if (isVatFranchise) {
             ensureSpace(30);
-            text(VAT_FRANCHISE_MENTION, margin, pdf.y, contentWidth, { size: 9, bold: true, color: "#0a5c36", align: "center" });
+            text(VAT_FRANCHISE_MENTION, margin, pdf.y, contentWidth, { size: 9, bold: true, color: template.secondaryColor, align: "center" });
             pdf.y += 24;
         }
         if (discountAmount || aidAmount) {
@@ -1003,7 +1055,7 @@ export function createBillingPdf(document, profile) {
         }
         if (document.documentType === "quote") {
             ensureSpace(82);
-            pdf.rect(margin + contentWidth - 245, pdf.y, 245, 70).lineWidth(1).strokeColor("#d7dde3").stroke();
+            pdf.rect(margin + contentWidth - 245, pdf.y, 245, 70).lineWidth(1).strokeColor(template.separatorColor).stroke();
             text("BON POUR ACCORD", margin + contentWidth - 233, pdf.y + 10, 220, { size: 9, bold: true });
             text("Devis accepté avant le début de la prestation.\nDate et signature du client :", margin + contentWidth - 233, pdf.y + 25, 220, { size: 8, lineGap: 3 });
             pdf.y += 78;
@@ -1012,6 +1064,10 @@ export function createBillingPdf(document, profile) {
             ensureSpace(42);
             line(pdf.y, "#d7dde3");
             text(profile.footerNote, margin, pdf.y + 8, contentWidth, { size: 7, color: "#4b5563", align: "center" });
+        }
+        if (template.footerText) {
+            ensureSpace(34);
+            text(template.footerText, margin, pdf.y + 6, contentWidth, { size: 7, color: template.secondaryColor, align: "center" });
         }
         const pages = pdf.bufferedPageRange();
         for (let index = 0; index < pages.count; index += 1) {

@@ -1603,6 +1603,45 @@ body.desktop-device .nav-label-messages{
     border-top:1px solid var(--border);
 }
 
+.document-template-design{
+    display:grid;
+    grid-template-columns:repeat(4,minmax(0,1fr));
+    gap:12px;
+    min-width:0;
+    margin:8px 0 0;
+    padding:16px;
+    border:1px solid rgba(0,59,115,.16);
+    border-radius:14px;
+    background:#f8fbff;
+}
+
+.document-template-design legend{
+    padding:0 8px;
+    color:var(--primary);
+    font-weight:800;
+}
+
+.document-template-design .form-wide{
+    grid-column:1/-1;
+}
+
+.document-template-design input[type="color"]{
+    min-height:44px;
+    padding:4px;
+    cursor:pointer;
+}
+
+@media(max-width:760px){
+    .document-template-design{
+        grid-template-columns:1fr;
+        padding:13px;
+    }
+
+    .document-template-design .form-wide{
+        grid-column:1;
+    }
+}
+
 .creator-subscription-fields{
     display:grid;
     gap:12px;

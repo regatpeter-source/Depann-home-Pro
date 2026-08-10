@@ -150,11 +150,11 @@ function renderOverview(panel, profilePanel) {
     panel.querySelector("[data-billing-action=new-quote]")?.addEventListener("click", () => { if (!isAccountant()) openNewDocument("quote"); });
     panel.querySelector("[data-billing-action=new-invoice]").addEventListener("click", () => { if (!isAccountant()) openNewDocument("invoice"); });
     panel.querySelector("[data-billing-action=open-leak-reports]")?.addEventListener("click", async () => {
-        const { renderLeakReportWizard } = await import("./leak-report-wizard.js?v=22");
+        const { renderLeakReportWizard } = await import("./leak-report-wizard.js?v=23");
         renderLeakReportWizard();
     });
     panel.querySelector("[data-billing-action=new-leak-report]")?.addEventListener("click", async () => {
-        const { openLeakReportCreation } = await import("./leak-report-wizard.js?v=22");
+        const { openLeakReportCreation } = await import("./leak-report-wizard.js?v=23");
         openLeakReportCreation();
     });
     panel.querySelector("[data-billing-action=download-quote-template]")?.addEventListener("click", openQuoteTemplateDownload);
@@ -226,6 +226,7 @@ function renderQuoteTemplateSettings(panel, profile, focused = false, onTemplate
     const mode = policy === "integrated_only" ? "integrated" : policy === "external_only" ? "external" : profile.quoteTemplateMode || "integrated";
     const canChooseMode = policy === "company_choice";
     const canUseExternalTemplate = policy !== "integrated_only";
+    const canPreview = mode === "integrated" || profile.hasQuoteTemplate;
     const policyMessage = policy === "integrated_only"
         ? "Le Créateur a imposé le modèle Depann’Home intégré pour cette entreprise."
         : policy === "external_only"
@@ -233,20 +234,22 @@ function renderQuoteTemplateSettings(panel, profile, focused = false, onTemplate
             : "Votre entreprise peut utiliser le modèle intégré ou sa propre base de devis.";
     panel.insertAdjacentHTML("beforeend", `
         <section class="billing-quote-template-settings">
-            <div class="form-heading"><div><p class="eyebrow">Base de devis</p><h2>Modèle intégré ou fichier entreprise</h2><p class="muted">${escapeHtml(policyMessage)}</p></div>${profile.hasQuoteTemplate && canUseExternalTemplate ? '<button type="button" class="secondary-button" id="downloadQuoteTemplate">Télécharger la base actuelle</button>' : ""}</div>
+            <div class="form-heading"><div><p class="eyebrow">Base de devis</p><h2>Modèle intégré paramétrable ou fichier entreprise</h2><p class="muted">${escapeHtml(policyMessage)}</p></div><div class="calendar-form-actions"><button type="button" class="secondary-button" id="previewQuoteTemplate" ${canPreview ? "" : "disabled"}>Aperçu du devis</button>${profile.hasQuoteTemplate && canUseExternalTemplate ? '<button type="button" class="secondary-button" id="downloadQuoteTemplate">Télécharger la base actuelle</button>' : ""}</div></div>
             <form id="quoteTemplateForm" class="client-form" enctype="multipart/form-data">
                 <div class="form-grid">
                     <label>Base utilisée<select name="quoteTemplateMode" ${canChooseMode ? "" : "disabled"}><option value="integrated" ${mode === "integrated" ? "selected" : ""}>Modèle Depann’Home intégré</option><option value="external" ${mode === "external" ? "selected" : ""}>Base PDF / Word de l’entreprise</option></select></label>
                     <label>Déposer ou remplacer la base (PDF, DOC ou DOCX · 10 Mo max)<input name="quoteTemplate" type="file" accept="application/pdf,.pdf,application/msword,.doc,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx" ${canUseExternalTemplate ? "" : "disabled"}></label>
                     ${profile.hasQuoteTemplate && canUseExternalTemplate ? '<label class="billing-remove-logo"><input name="removeQuoteTemplate" type="checkbox" value="true"> Supprimer la base déposée</label>' : ""}
+                    ${integratedTemplateFields(profile.quoteTemplateConfig, "devis")}
                 </div>
                 ${profile.hasQuoteTemplate ? `<p class="muted">Fichier actuel : ${escapeHtml(profile.quoteTemplateFilename || "base-devis")}</p>` : ""}
                 <p id="quoteTemplateMessage" class="auth-message" aria-live="polite"></p>
-                <div class="form-actions"><button type="submit" class="secondary-button" ${canUseExternalTemplate ? "" : "disabled"}>Enregistrer la base de devis</button></div>
+                <div class="form-actions"><button type="submit" class="secondary-button">Enregistrer le modèle de devis</button></div>
             </form>
         </section>
     `);
     panel.querySelector("#downloadQuoteTemplate")?.addEventListener("click", openQuoteTemplateDownload);
+    panel.querySelector("#previewQuoteTemplate")?.addEventListener("click", openQuoteTemplatePreview);
     panel.querySelector("#quoteTemplateForm").addEventListener("submit", async event => {
         event.preventDefault();
         const form = event.currentTarget;
@@ -273,10 +276,16 @@ function renderAdditionalDocumentTemplateSettings(panel, profile, type, focused 
     const policy = definition.policy || "company_choice"; const mode = policy === "integrated_only" ? "integrated" : policy === "external_only" ? "external" : definition.mode || "integrated"; const canChoose = policy === "company_choice"; const canUseExternal = policy !== "integrated_only";
     const message = policy === "integrated_only" ? "Le Créateur autorise uniquement le modèle intégré." : policy === "external_only" ? `Le Créateur impose une base externe de ${definition.label}.` : `Votre entreprise choisit entre le modèle intégré et sa propre base de ${definition.label}.`;
     const canPreview = mode === "integrated" || definition.hasTemplate;
-    panel.insertAdjacentHTML("beforeend", `<section class="billing-quote-template-settings" id="${type}TemplateSettings"><div class="form-heading"><div><p class="eyebrow">Documents officiels</p><h2>${definition.title}</h2><p class="muted">${escapeHtml(message)} Une base externe activée devient la référence officielle à télécharger pour les rédactions futures.</p></div><div class="calendar-form-actions"><button type="button" class="secondary-button" data-preview-template="${type}" ${canPreview ? "" : "disabled"}>Aperçu de la base</button>${definition.hasTemplate && canUseExternal ? `<button type="button" class="secondary-button" data-download-template="${type}">Télécharger la base actuelle</button>` : ""}</div></div><form class="client-form" data-document-template-form="${type}" enctype="multipart/form-data"><div class="form-grid"><label>Base utilisée<select name="templateMode" ${canChoose ? "" : "disabled"}><option value="integrated" ${mode === "integrated" ? "selected" : ""}>Modèle Depann’Home intégré</option><option value="external" ${mode === "external" ? "selected" : ""}>Base PDF / Word officielle de l’entreprise</option></select></label><label>Déposer ou remplacer la base (PDF, DOC ou DOCX · 10 Mo max)<input name="documentTemplate" type="file" accept="application/pdf,.pdf,application/msword,.doc,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx" ${canUseExternal ? "" : "disabled"}></label>${definition.hasTemplate && canUseExternal ? '<label class="billing-remove-logo"><input name="removeTemplate" type="checkbox" value="true"> Supprimer la base déposée</label>' : ""}</div>${definition.hasTemplate ? `<p class="muted">Fichier officiel actuel : ${escapeHtml(definition.filename || `base-${definition.label}`)}</p>` : ""}<p class="auth-message" aria-live="polite"></p><div class="form-actions"><button type="submit" class="secondary-button" ${canUseExternal ? "" : "disabled"}>Enregistrer la base de ${definition.label}</button></div></form></section>`);
+    panel.insertAdjacentHTML("beforeend", `<section class="billing-quote-template-settings" id="${type}TemplateSettings"><div class="form-heading"><div><p class="eyebrow">Documents officiels</p><h2>${definition.title}</h2><p class="muted">${escapeHtml(message)} Une base externe activée devient la référence officielle à télécharger pour les rédactions futures.</p></div><div class="calendar-form-actions"><button type="button" class="secondary-button" data-preview-template="${type}" ${canPreview ? "" : "disabled"}>Aperçu de la base</button>${definition.hasTemplate && canUseExternal ? `<button type="button" class="secondary-button" data-download-template="${type}">Télécharger la base actuelle</button>` : ""}</div></div><form class="client-form" data-document-template-form="${type}" enctype="multipart/form-data"><div class="form-grid"><label>Base utilisée<select name="templateMode" ${canChoose ? "" : "disabled"}><option value="integrated" ${mode === "integrated" ? "selected" : ""}>Modèle Depann’Home intégré</option><option value="external" ${mode === "external" ? "selected" : ""}>Base PDF / Word officielle de l’entreprise</option></select></label><label>Déposer ou remplacer la base (PDF, DOC ou DOCX · 10 Mo max)<input name="documentTemplate" type="file" accept="application/pdf,.pdf,application/msword,.doc,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx" ${canUseExternal ? "" : "disabled"}></label>${definition.hasTemplate && canUseExternal ? '<label class="billing-remove-logo"><input name="removeTemplate" type="checkbox" value="true"> Supprimer la base déposée</label>' : ""}${type === "quitus" ? integratedTemplateFields(profile.quitusTemplate, "quitus") : ""}</div>${definition.hasTemplate ? `<p class="muted">Fichier officiel actuel : ${escapeHtml(definition.filename || `base-${definition.label}`)}</p>` : ""}<p class="auth-message" aria-live="polite"></p><div class="form-actions"><button type="submit" class="secondary-button">Enregistrer le modèle de ${definition.label}</button></div></form></section>`);
     panel.querySelector(`[data-preview-template="${type}"]`)?.addEventListener("click", () => openDocumentTemplatePreview(type));
     panel.querySelector(`[data-download-template="${type}"]`)?.addEventListener("click", () => openDocumentTemplateDownload(type));
     panel.querySelector(`[data-document-template-form="${type}"]`).addEventListener("submit", async event => { event.preventDefault(); const form = event.currentTarget; const feedback = form.querySelector(".auth-message"); const submit = form.querySelector('button[type="submit"]'); submit.disabled = true; feedback.textContent = "Enregistrement…"; feedback.classList.remove("error"); const result = await apiRequest(`/api/billing/document-templates/${type}`, { method: "PUT", body: new FormData(form) }); if (!result.ok) { feedback.textContent = result.message || `Impossible d’enregistrer la base de ${definition.label}.`; feedback.classList.add("error"); submit.disabled = false; return; } renderBilling(focused ? { profile: true, templateSection: type, onTemplateRendered } : { profile: true }); });
+}
+
+function integratedTemplateFields(value, label) {
+    const defaults = { primaryColor: label === "quitus" ? "#003b73" : "#172033", secondaryColor: "#0a5c36", separatorColor: "#d7dde3", font: "Helvetica", headerText: "", footerText: "" };
+    const template = { ...defaults, ...(value || {}) };
+    return `<fieldset class="form-wide document-template-design"><legend>Présentation du modèle intégré de ${escapeHtml(label)}</legend><p class="muted form-wide">Ces réglages restent propres à ce document et sont visibles dans son aperçu PDF.</p><label>Couleur principale<input name="primaryColor" type="color" value="${escapeHtml(template.primaryColor)}"></label><label>Couleur secondaire<input name="secondaryColor" type="color" value="${escapeHtml(template.secondaryColor)}"></label><label>Couleur des séparateurs<input name="separatorColor" type="color" value="${escapeHtml(template.separatorColor)}"></label><label>Police<select name="font"><option value="Helvetica" ${template.font === "Helvetica" ? "selected" : ""}>Helvetica</option><option value="Times-Roman" ${template.font === "Times-Roman" ? "selected" : ""}>Times</option><option value="Courier" ${template.font === "Courier" ? "selected" : ""}>Courier</option></select></label><label class="form-wide">Texte d’en-tête<textarea name="headerText" rows="2" maxlength="500" placeholder="Texte facultatif propre au ${escapeHtml(label)}">${escapeHtml(template.headerText)}</textarea></label><label class="form-wide">Texte de pied de page<textarea name="footerText" rows="2" maxlength="500" placeholder="Texte facultatif propre au ${escapeHtml(label)}">${escapeHtml(template.footerText)}</textarea></label></fieldset>`;
 }
 
 function renderTemplates(panel) {
@@ -652,6 +661,12 @@ function openBlankQuotePreview() {
     const popup = window.open("", "_blank");
     if (!popup) { alert("Autorisez les fenêtres pop-up pour afficher l’aperçu du devis."); return; }
     popup.location.href = "/api/billing/blank-quote/pdf";
+}
+
+function openQuoteTemplatePreview() {
+    const popup = window.open("", "_blank");
+    if (!popup) { alert("Autorisez les fenêtres pop-up pour afficher l’aperçu du devis."); return; }
+    popup.location.href = "/api/billing/quote-template/preview";
 }
 
 function openQuoteTemplateDownload() {

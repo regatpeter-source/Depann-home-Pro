@@ -350,7 +350,8 @@ export function registerCalendarRoutes(app, requireAuthentication) {
                 return response.status(400).json({ message: "Aucun dossier client correspondant : le quitus ne peut pas être validé." });
             }
 
-            const pdf = await createQuitusPdf(event, quitus);
+            const profileResult = await connection.query(`SELECT company_name AS "companyName",address,postal_code AS "postalCode",city,phone,email,registration_number AS "registrationNumber",logo_data AS "logoData",logo_mime_type AS "logoMimeType",quitus_template AS "quitusTemplate" FROM depannhome_billing_profiles WHERE owner_id=$1`, [accountOwnerId]);
+            const pdf = await createQuitusPdf(event, quitus, profileResult.rows[0] || {});
             const createdAt = new Date().toISOString();
             const attachment = {
                 id: `file-${randomUUID()}`,
@@ -476,19 +477,23 @@ function quitusPdfFileName(event) {
     return `quitus-intervention-${event.id}-${event.date}.pdf`;
 }
 
-export function createQuitusPdf(event, quitus) {
+export function createQuitusPdf(event, quitus, profile = {}) {
     return new Promise((resolve, reject) => {
-        const pdf = new PDFDocument({ size: "A4", margin: 48, info: { Title: `Quitus d’intervention ${event.id}`, Author: "Depann'Home Pro" } });
+        const template = normalizeQuitusTemplate(profile.quitusTemplate);
+        const boldFont = template.font === "Times-Roman" ? "Times-Bold" : template.font === "Courier" ? "Courier-Bold" : "Helvetica-Bold";
+        const pdf = new PDFDocument({ size: "A4", margin: 48, info: { Title: `Quitus d’intervention ${event.id}`, Author: profile.companyName || "Depann'Home Pro" } });
         const chunks = [];
         pdf.on("data", chunk => chunks.push(chunk));
         pdf.on("end", () => resolve(Buffer.concat(chunks)));
         pdf.on("error", reject);
-        const text = (value, x, y, width, options = {}) => pdf.fillColor(options.color || "#172033").font(options.bold ? "Helvetica-Bold" : "Helvetica").fontSize(options.size || 10).text(String(value || ""), x, y, { width, ...options });
+        const text = (value, x, y, width, options = {}) => pdf.fillColor(options.color || template.primaryColor).font(options.bold ? boldFont : template.font).fontSize(options.size || 10).text(String(value || ""), x, y, { width, ...options });
         const formatDate = value => new Intl.DateTimeFormat("fr-FR", { dateStyle: "long" }).format(new Date(`${value}T12:00:00`));
 
-        text("QUITUS D’INTERVENTION", 48, 48, 499, { size: 22, bold: true, color: "#003b73" });
-        text("Document validé", 48, 78, 499, { size: 11, bold: true, color: "#0a5c36" });
-        pdf.moveTo(48, 102).lineTo(547, 102).lineWidth(1).strokeColor("#d7dde3").stroke();
+        if (profile.logoData && ["image/png", "image/jpeg"].includes(profile.logoMimeType)) try { pdf.image(profile.logoData, 48, 44, { fit: [58, 48] }); } catch {}
+        const titleX = profile.logoData ? 120 : 48;
+        text("QUITUS D’INTERVENTION", titleX, 48, 547 - titleX, { size: 22, bold: true, color: template.primaryColor });
+        text(template.headerText || "Document validé", titleX, 78, 547 - titleX, { size: 10, bold: true, color: template.secondaryColor });
+        pdf.moveTo(48, 102).lineTo(547, 102).lineWidth(1).strokeColor(template.separatorColor).stroke();
         text("INTERVENTION", 48, 124, 220, { size: 9, bold: true });
         text([event.title, formatDate(event.date), [event.startTime, event.endTime].filter(Boolean).join(" – "), event.location].filter(Boolean).join("\n"), 48, 140, 220, { size: 10, lineGap: 4 });
         text("CLIENT", 315, 124, 232, { size: 9, bold: true });
@@ -498,7 +503,7 @@ export function createQuitusPdf(event, quitus) {
             text(event.notes, 48, 248, 499, { size: 10, lineGap: 4 });
         }
         const signatureY = event.notes ? 340 : 272;
-        pdf.rect(48, signatureY, 499, 190).lineWidth(1).strokeColor("#d7dde3").stroke();
+        pdf.rect(48, signatureY, 499, 190).lineWidth(1).strokeColor(template.separatorColor).stroke();
         text("VALIDATION DU CLIENT", 62, signatureY + 14, 250, { size: 9, bold: true });
         text(`Signé par : ${quitus.signedBy}`, 62, signatureY + 34, 300, { size: 10 });
         text(`Validé le : ${new Intl.DateTimeFormat("fr-FR", { dateStyle: "long", timeStyle: "short" }).format(new Date())}`, 62, signatureY + 52, 420, { size: 9, color: "#4b5563" });
@@ -508,9 +513,16 @@ export function createQuitusPdf(event, quitus) {
         } else {
             text("Emplacement réservé à la signature du client", 62, signatureY + 112, 300, { size: 9, color: "#6b7280", align: "center" });
         }
-        text(quitus.signature ? "Ce quitus a été validé électroniquement et ne peut plus être modifié." : "Aperçu du quitus avant validation et signature du client.", 48, 748, 499, { size: 8, color: "#4b5563", align: "center" });
+        const footer = template.footerText || (quitus.signature ? "Ce quitus a été validé électroniquement et ne peut plus être modifié." : "Aperçu du quitus avant validation et signature du client.");
+        text(footer, 48, 748, 499, { size: 8, color: template.secondaryColor, align: "center" });
         pdf.end();
     });
+}
+
+function normalizeQuitusTemplate(value) {
+    const input = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+    const color = (key, fallback) => /^#[0-9a-fA-F]{6}$/.test(String(input[key] || "")) ? String(input[key]).toLowerCase() : fallback;
+    return { primaryColor: color("primaryColor", "#003b73"), secondaryColor: color("secondaryColor", "#0a5c36"), separatorColor: color("separatorColor", "#d7dde3"), font: ["Helvetica", "Times-Roman", "Courier"].includes(input.font) ? input.font : "Helvetica", headerText: cleanText(input.headerText, 500), footerText: cleanText(input.footerText, 500) };
 }
 
 async function validateAssignedMembers(accountOwnerId, memberIds) {

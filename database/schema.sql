@@ -214,10 +214,23 @@ CREATE TABLE IF NOT EXISTS depannhome_billing_profiles (
     deposit_terms VARCHAR(500) NOT NULL DEFAULT '',
     footer_note VARCHAR(1000) NOT NULL DEFAULT '',
     default_quote JSONB,
+    quote_template_config JSONB NOT NULL DEFAULT '{}'::jsonb,
     quote_template_mode VARCHAR(20) NOT NULL DEFAULT 'integrated',
     quote_template_filename VARCHAR(255) NOT NULL DEFAULT '',
     quote_template_data BYTEA,
     quote_template_mime_type VARCHAR(150) NOT NULL DEFAULT '',
+    quitus_template_mode VARCHAR(20) NOT NULL DEFAULT 'integrated',
+    quitus_template JSONB NOT NULL DEFAULT '{}'::jsonb,
+    quitus_template_filename VARCHAR(255) NOT NULL DEFAULT '',
+    quitus_template_data BYTEA,
+    quitus_template_mime_type VARCHAR(150) NOT NULL DEFAULT '',
+    report_file_template_mode VARCHAR(20) NOT NULL DEFAULT 'integrated',
+    report_file_template_filename VARCHAR(255) NOT NULL DEFAULT '',
+    report_file_template_data BYTEA,
+    report_file_template_mime_type VARCHAR(150) NOT NULL DEFAULT '',
+    report_template JSONB NOT NULL DEFAULT '{}'::jsonb,
+    report_secondary_logo_data BYTEA,
+    report_secondary_logo_mime_type VARCHAR(50) NOT NULL DEFAULT '',
     logo_data BYTEA,
     logo_mime_type VARCHAR(50) NOT NULL DEFAULT '',
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -225,6 +238,7 @@ CREATE TABLE IF NOT EXISTS depannhome_billing_profiles (
 
 ALTER TABLE depannhome_billing_profiles
     ADD COLUMN IF NOT EXISTS default_quote JSONB,
+    ADD COLUMN IF NOT EXISTS quote_template_config JSONB NOT NULL DEFAULT '{}'::jsonb,
     ADD COLUMN IF NOT EXISTS secondary_phone VARCHAR(50) NOT NULL DEFAULT '',
     ADD COLUMN IF NOT EXISTS country VARCHAR(100) NOT NULL DEFAULT 'France',
     ADD COLUMN IF NOT EXISTS deposit_terms VARCHAR(500) NOT NULL DEFAULT '',
@@ -237,13 +251,17 @@ ALTER TABLE depannhome_billing_profiles
     ADD COLUMN IF NOT EXISTS quote_template_data BYTEA,
     ADD COLUMN IF NOT EXISTS quote_template_mime_type VARCHAR(150) NOT NULL DEFAULT '',
     ADD COLUMN IF NOT EXISTS quitus_template_mode VARCHAR(20) NOT NULL DEFAULT 'integrated',
+    ADD COLUMN IF NOT EXISTS quitus_template JSONB NOT NULL DEFAULT '{}'::jsonb,
     ADD COLUMN IF NOT EXISTS quitus_template_filename VARCHAR(255) NOT NULL DEFAULT '',
     ADD COLUMN IF NOT EXISTS quitus_template_data BYTEA,
     ADD COLUMN IF NOT EXISTS quitus_template_mime_type VARCHAR(150) NOT NULL DEFAULT '',
     ADD COLUMN IF NOT EXISTS report_file_template_mode VARCHAR(20) NOT NULL DEFAULT 'integrated',
     ADD COLUMN IF NOT EXISTS report_file_template_filename VARCHAR(255) NOT NULL DEFAULT '',
     ADD COLUMN IF NOT EXISTS report_file_template_data BYTEA,
-    ADD COLUMN IF NOT EXISTS report_file_template_mime_type VARCHAR(150) NOT NULL DEFAULT '';
+    ADD COLUMN IF NOT EXISTS report_file_template_mime_type VARCHAR(150) NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS report_template JSONB NOT NULL DEFAULT '{}'::jsonb,
+    ADD COLUMN IF NOT EXISTS report_secondary_logo_data BYTEA,
+    ADD COLUMN IF NOT EXISTS report_secondary_logo_mime_type VARCHAR(50) NOT NULL DEFAULT '';
 
 CREATE TABLE IF NOT EXISTS depannhome_billing_templates (
     id BIGSERIAL PRIMARY KEY,
