@@ -54,7 +54,9 @@ export async function renderLeakReportWizard(reportId = 0, appointmentId = 0) {
 
 function renderDirectory(shell) {
     shell.classList.add("report-directory");
-    shell.innerHTML = `<header class="report-directory-heading"><div><p class="eyebrow">Rapports terrain</p><h2>Rapports de recherche de fuite</h2><p class="muted">Chaque rapport est créé depuis une intervention rattachée à un dossier client.</p></div><button type="button" class="secondary-button" data-create-report>Nouveau rapport de recherche de fuite</button></header><section class="report-directory-list">${reports.length ? reports.map(report => `<article><div><strong>${escapeHtml(report.title)}</strong><p>${escapeHtml(statusLabel(report.status))} · ${report.appointmentId ? `Intervention n° ${escapeHtml(report.appointmentId)}` : "Rapport historique"} · ${escapeHtml(formatDate(report.reportDate))}</p></div><button class="secondary-button" data-open-report="${escapeHtml(report.id)}">${report.status === "validated" ? "Consulter" : "Ouvrir"}</button></article>`).join("") : '<p class="muted">Aucun rapport accessible. Créez votre premier rapport depuis une intervention.</p>'}</section>`;
+    const groups = [["À rédiger", ["draft", "in_correction"]], ["Terminés à corriger", ["submitted"]], ["À envoyer", ["ready_to_send"]], ["Envoyés", ["validated"]]];
+    const reportCard = report => `<article><div><strong>${escapeHtml(report.title)}</strong><p>${escapeHtml(statusLabel(report.status))} · ${report.appointmentId ? `Intervention n° ${escapeHtml(report.appointmentId)}` : "Rapport historique"} · ${escapeHtml(formatDate(report.reportDate))}</p></div><button class="secondary-button" data-open-report="${escapeHtml(report.id)}">${report.status === "validated" ? "Consulter" : "Ouvrir"}</button></article>`;
+    shell.innerHTML = `<header class="report-directory-heading"><div><p class="eyebrow">Rapports terrain</p><h2>Rapports de recherche de fuite</h2><p class="muted">Chaque rapport est créé depuis une intervention rattachée à un dossier client.</p></div><button type="button" class="secondary-button" data-create-report>Nouveau rapport de recherche de fuite</button></header><section class="report-directory-list">${reports.length ? groups.map(([title, statuses]) => { const items = reports.filter(report => statuses.includes(report.status)); return `<section class="report-directory-group"><h3>${title}</h3>${items.length ? items.map(reportCard).join("") : '<p class="muted">Aucun rapport dans cette section.</p>'}</section>`; }).join("") : '<p class="muted">Aucun rapport accessible. Créez votre premier rapport depuis une intervention.</p>'}</section>`;
     shell.querySelector("[data-create-report]").addEventListener("click", openLeakReportCreation);
     shell.querySelectorAll("[data-open-report]").forEach(button => button.addEventListener("click", () => renderLeakReportWizard(button.dataset.openReport)));
 }
@@ -111,7 +113,7 @@ function ensureModularContent() {
 }
 
 async function acquireLock() {
-    if (!current || current.status === "validated" || (current.status === "submitted" && !canValidate())) return;
+    if (!current || current.status === "validated" || (current.status === "submitted" && !canProofreadReport()) || (current.status === "ready_to_send" && !canFinalizeReport())) return;
     const result = await acquireReportLock(current.id);
     reportLock = result.data?.lock || reportLock;
 }
@@ -126,7 +128,6 @@ function renderEditor(shell) {
     const activeModule = moduleDefinition(activeKey);
     const activeMaterial = activeKey === "methods" && !activeModule.custom ? selectedMaterial() : null;
     const write = editable();
-    const proofread = Boolean(current.proofreadCurrent);
     const snapshot = current.content.snapshot || {};
     const sourceLabel = current.appointmentId ? "Intervention" : "Dossier";
     shell.className = "report-editor-shell report-editor-fullscreen";
@@ -147,11 +148,10 @@ function renderEditor(shell) {
         <footer class="report-editor-footer">
             <button type="button" class="secondary-button" data-previous-module ${moduleIndex(activeKey) <= 0 ? "disabled" : ""}>Page précédente</button>
             <button type="button" class="secondary-button" data-preview>Prévisualiser le rapport</button>
-            ${write && canProofreadReport() ? `<button type="button" class="secondary-button${proofread ? "" : " report-primary-action"}" data-proofread-report>${proofread ? "Corriger ou modifier à nouveau" : "Corriger et confirmer le rapport"}</button>` : ""}
-            ${write ? `<span class="report-proofreading-state ${proofread ? "confirmed" : "required"}" data-proofreading-state>${proofread ? "Rapport corrigé — prêt à être envoyé" : `Correction obligatoire avant envoi${canProofreadReport() ? "" : " — réservée à un poste PC autorisé"}`}</span>` : ""}
             ${write ? '<span class="report-autosave" data-save-state>Enregistré automatiquement</span>' : ""}
-            ${write && current.status !== "submitted" ? `<button type="button" class="secondary-button report-primary-action" data-submit-report ${proofread ? "" : "disabled"}>Envoyer pour validation</button>` : ""}
-            ${write && canValidate() && current.status === "submitted" ? `<button type="button" class="secondary-button report-primary-action" data-validate-report ${proofread ? "" : "disabled"}>Valider définitivement</button>` : ""}
+            ${write && ["draft", "in_correction"].includes(current.status) ? '<button type="button" class="secondary-button report-primary-action" data-submit-report>Terminer le rapport</button>' : ""}
+            ${write && current.status === "submitted" && canProofreadReport() ? '<button type="button" class="secondary-button report-primary-action" data-proofread-report>Corriger le rapport</button>' : ""}
+            ${ownsLock() && current.status === "ready_to_send" && canFinalizeReport() ? '<button type="button" class="secondary-button report-primary-action" data-validate-report>Valider définitivement et envoyer</button>' : ""}
             ${editable() && isAdministrator() && ["submitted", "in_correction"].includes(current.status) ? '<button type="button" class="secondary-button" data-request-correction>Demander une correction</button>' : ""}
             ${isAdministrator() && current.status === "validated" ? '<button type="button" class="secondary-button" data-reopen-report>Réouvrir le rapport</button>' : ""}
             <button type="button" class="secondary-button" data-next-module ${moduleIndex(activeKey) >= visibleSections().length - 1 ? "disabled" : ""}>Page suivante</button>
@@ -241,7 +241,7 @@ function bindEditor(shell, moduleKey) {
 
 function renderPreview(shell) {
     shell.className = "report-editor-shell report-preview-shell";
-    shell.innerHTML = `<header class="report-preview-header"><div><p class="eyebrow">Prévisualisation PDF intégrée</p><h2>${escapeHtml(current.title)}</h2><p class="muted">Cet aperçu reprend fidèlement le PDF qui sera archivé, sans téléchargement.</p></div><div class="report-preview-actions"><button class="secondary-button" data-modify-report>Modifier le rapport</button>${editable() && canValidate() ? `<button class="secondary-button report-primary-action" data-preview-validate ${current.proofreadCurrent ? "" : "disabled"}>Valider le rapport</button>` : ""}<button class="secondary-button" data-close-preview>Fermer la prévisualisation</button><button class="secondary-button" data-report-home>Accueil</button></div></header><iframe title="Prévisualisation intégrée du rapport PDF" src="/api/technical-reports/${encodeURIComponent(current.id)}/pdf?preview=${Date.now()}"></iframe>`;
+    shell.innerHTML = `<header class="report-preview-header"><div><p class="eyebrow">Prévisualisation PDF intégrée</p><h2>${escapeHtml(current.title)}</h2><p class="muted">Cet aperçu reprend fidèlement le PDF qui sera archivé, sans téléchargement.</p></div><div class="report-preview-actions"><button class="secondary-button" data-modify-report>Modifier le rapport</button>${ownsLock() && current.status === "ready_to_send" && canFinalizeReport() ? '<button class="secondary-button report-primary-action" data-preview-validate>Valider définitivement et envoyer</button>' : ""}<button class="secondary-button" data-close-preview>Fermer la prévisualisation</button><button class="secondary-button" data-report-home>Accueil</button></div></header><iframe title="Prévisualisation intégrée du rapport PDF" src="/api/technical-reports/${encodeURIComponent(current.id)}/pdf?preview=${Date.now()}"></iframe>`;
     const returnToEditor = () => { previewMode = false; renderEditor(shell); };
     shell.querySelector("[data-modify-report]").addEventListener("click", returnToEditor);
     shell.querySelector("[data-close-preview]").addEventListener("click", returnToEditor);
@@ -251,6 +251,7 @@ function renderPreview(shell) {
 
 function lockBanner() {
     if (current.status === "validated") return '<p class="report-editor-lock validated">Rapport validé : il est désormais en consultation seule.</p>';
+    if (current.status === "ready_to_send" && ownsLock()) return '<p class="report-editor-lock editable">Correction terminée : le rapport est prêt à être envoyé.</p>';
     if (editable()) return '<p class="report-editor-lock editable">Sauvegarde automatique active</p>';
     if (reportLock) return `<p class="report-editor-lock readonly">Lecture seule : ${escapeHtml(reportLock.userName || "un utilisateur")} modifie ce rapport.${isAdministrator() ? ' <button class="secondary-button" data-force-lock>Reprendre la main</button>' : ""}</p>`;
     return '<p class="report-editor-lock readonly">Lecture seule : verrou indisponible.</p>';
@@ -342,7 +343,7 @@ function openReportProofreading(shell) {
     if (!entries.length) return alert("Ajoutez au moins une observation avant de lancer la correction orthographique.");
     const dialog = document.createElement("section");
     dialog.className = "report-proofreading-dialog";
-    dialog.innerHTML = `<form><header><div><p class="eyebrow">Étape obligatoire avant envoi</p><h2>Corriger et confirmer le rapport</h2></div><button type="button" class="text-button" data-close-proofreading>Fermer</button></header><p class="report-proofreading-help">Relisez et modifiez toutes les observations ci-dessous. Les fautes sont soulignées par le correcteur français du navigateur : faites un clic droit sur un mot pour afficher ses suggestions. Cette confirmation sera annulée si le rapport ou ses photos sont ensuite modifiés.</p><div class="report-proofreading-list">${entries.map((entry, index) => `<article><label><span>${escapeHtml(entry.sectionTitle)}</span><strong>${escapeHtml(entry.observationLabel)}</strong><textarea rows="5" lang="fr" spellcheck="true" autocapitalize="sentences" data-proofreading-entry="${index}">${escapeHtml(entry.observation.text || "")}</textarea></label></article>`).join("")}</div><p class="auth-message" aria-live="polite"></p><div class="report-proofreading-actions"><button type="button" class="secondary-button" data-close-proofreading>Annuler</button><button type="submit" class="secondary-button report-primary-action">Confirmer les corrections et modifications</button></div></form>`;
+    dialog.innerHTML = `<form><header><div><p class="eyebrow">Correction sur poste PC</p><h2>Corriger le rapport</h2></div><button type="button" class="text-button" data-close-proofreading>Fermer</button></header><p class="report-proofreading-help">Relisez et modifiez toutes les observations ci-dessous. Les fautes sont soulignées par le correcteur français du navigateur : faites un clic droit sur un mot pour afficher ses suggestions. Le rapport sera ensuite placé dans la section « À envoyer ».</p><div class="report-proofreading-list">${entries.map((entry, index) => `<article><label><span>${escapeHtml(entry.sectionTitle)}</span><strong>${escapeHtml(entry.observationLabel)}</strong><textarea rows="5" lang="fr" spellcheck="true" autocapitalize="sentences" data-proofreading-entry="${index}">${escapeHtml(entry.observation.text || "")}</textarea></label></article>`).join("")}</div><p class="auth-message" aria-live="polite"></p><div class="report-proofreading-actions"><button type="button" class="secondary-button" data-close-proofreading>Annuler</button><button type="submit" class="secondary-button report-primary-action">Terminer la correction</button></div></form>`;
     document.body.append(dialog);
     const close = () => dialog.remove();
     dialog.querySelectorAll("[data-close-proofreading]").forEach(button => button.addEventListener("click", close));
@@ -359,7 +360,7 @@ function openReportProofreading(shell) {
         }
         submit.disabled = true;
         feedback.classList.remove("error");
-        feedback.textContent = "Enregistrement et confirmation du rapport…";
+        feedback.textContent = "Enregistrement de la correction…";
         const originalTexts = entries.map(entry => entry.observation.text || "");
         entries.forEach((entry, index) => { entry.observation.text = dialog.querySelector(`[data-proofreading-entry="${index}"]`)?.value || ""; });
         clearTimeout(saveTimer);
@@ -376,6 +377,7 @@ function openReportProofreading(shell) {
         }
         current.proofreadCurrent = true;
         current.proofreadAt = result.data?.proofreadAt || new Date().toISOString();
+        current.status = "ready_to_send";
         close();
         renderEditor(shell);
     });
@@ -497,18 +499,6 @@ function queueSave(shell, affectsReport = true) {
 function markReportModified(shell) {
     if (!current) return;
     current.proofreadCurrent = false;
-    const state = shell?.querySelector("[data-proofreading-state]");
-    if (state) {
-        state.classList.remove("confirmed");
-        state.classList.add("required");
-        state.textContent = `Correction obligatoire avant envoi${canProofreadReport() ? "" : " — réservée à un poste PC autorisé"}`;
-    }
-    shell?.querySelectorAll("[data-submit-report], [data-validate-report], [data-preview-validate]").forEach(button => { button.disabled = true; });
-    const proofreadButton = shell?.querySelector("[data-proofread-report]");
-    if (proofreadButton) {
-        proofreadButton.textContent = "Corriger et confirmer le rapport";
-        proofreadButton.classList.add("report-primary-action");
-    }
 }
 
 async function save(shell, silent = false) {
@@ -528,9 +518,8 @@ async function save(shell, silent = false) {
 }
 
 async function submitReport(shell) {
-    if (!current.proofreadCurrent) return alert("Corrigez et confirmez obligatoirement le rapport avec le bouton prévu avant de l’envoyer.");
     if (!await save(shell)) return;
-    if (!confirm("Envoyer ce rapport pour validation ?")) return;
+    if (!confirm("Terminer ce rapport et le transmettre au poste PC pour correction ?")) return;
     const result = await api(`/api/technical-reports/${encodeURIComponent(current.id)}/submit`, { method: "POST" });
     if (!result.ok) return alert(result.message || "Envoi impossible.");
     await loadReport(current.id);
@@ -538,8 +527,8 @@ async function submitReport(shell) {
 }
 
 async function validateReport(shell) {
-    if (!current.proofreadCurrent) return alert("Le rapport doit être corrigé et confirmé avant sa validation.");
-    if (!await save(shell) || !confirm("Valider définitivement le rapport et générer son PDF officiel ?")) return;
+    if (current.status !== "ready_to_send" || !canFinalizeReport()) return alert("Ce rapport doit d’abord être corrigé sur un poste PC.");
+    if (!confirm("Valider définitivement le rapport, générer son PDF officiel et l’envoyer ?")) return;
     const result = await api(`/api/technical-reports/${encodeURIComponent(current.id)}/validate`, { method: "POST" });
     if (!result.ok) return alert(result.message || "Validation impossible.");
     alert(result.data?.message || "Rapport corrigé et validé");
@@ -553,14 +542,8 @@ async function validateReport(shell) {
 }
 
 async function finalizePreview(shell) {
-    if (!current.proofreadCurrent) return alert("Le rapport doit être corrigé et confirmé avant sa validation.");
+    if (current.status !== "ready_to_send" || !canFinalizeReport()) return alert("Ce rapport doit d’abord être corrigé sur un poste PC.");
     if (!confirm("Valider définitivement ce rapport et archiver son PDF dans le dossier client ?")) return;
-    if (current.status !== "submitted") {
-        if (!await save(shell)) return;
-        const submitted = await api(`/api/technical-reports/${encodeURIComponent(current.id)}/submit`, { method: "POST" });
-        if (!submitted.ok) return alert(submitted.message || "Envoi pour validation impossible.");
-        await loadReport(current.id);
-    }
     const result = await api(`/api/technical-reports/${encodeURIComponent(current.id)}/validate`, { method: "POST" });
     if (!result.ok) return alert(result.message || "Validation impossible.");
     alert(result.data?.message || "Rapport corrigé et validé");
@@ -655,12 +638,12 @@ function openReportSummary(shell) { const dialog = document.createElement("secti
 function newObservationId() { return `observation-${Date.now()}-${Math.random().toString(16).slice(2)}`; }
 function newMaterialId() { return `material-${Date.now()}-${Math.random().toString(16).slice(2)}`; }
 function ownsLock() { return String(reportLock?.lockedBy || "") === String(document.body.dataset.userId || ""); }
-function editable() { return current?.status !== "validated" && ownsLock(); }
+function editable() { return Boolean(current && ownsLock() && (["draft", "in_correction"].includes(current.status) || current.status === "submitted" && canProofreadReport())); }
 function isAdministrator() { return document.body.dataset.role === "admin"; }
 function canAdjustPdfLayout() { return document.body.classList.contains("desktop-device"); }
 function canProofreadReport() { return canAdjustPdfLayout() && ["admin", "pc_standard"].includes(document.body.dataset.role); }
-function canValidate() { return ["admin", "mobile_admin", "team_lead", "technician"].includes(document.body.dataset.role); }
-function statusLabel(value) { return ({ draft: "Brouillon", submitted: "En cours de validation", in_correction: "En cours", validated: "Validé" })[value] || "En cours"; }
+function canFinalizeReport() { return canProofreadReport(); }
+function statusLabel(value) { return ({ draft: "Brouillon", submitted: "Rapport terminé à corriger", in_correction: "Correction demandée", ready_to_send: "À envoyer", validated: "Envoyé" })[value] || "En cours"; }
 function formatDate(value) { return value ? new Intl.DateTimeFormat("fr-FR").format(new Date(`${value}T12:00:00`)) : ""; }
 function showFailure(root, message) { root.innerHTML = `<section class="client-panel"><p class="auth-message error">${escapeHtml(message || "Impossible de charger les rapports.")}</p></section>`; }
 async function api(url, options = {}) { try { const response = await fetch(url, { credentials: "same-origin", headers: { "Content-Type": "application/json", ...(options.headers || {}) }, ...options }); const data = response.status === 204 ? null : await response.json().catch(() => null); return { ok: response.ok, data, message: data?.message }; } catch { return { ok: false, message: "Serveur indisponible." }; } }

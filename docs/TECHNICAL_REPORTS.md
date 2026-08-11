@@ -11,9 +11,11 @@ La première étape est un instantané **en lecture seule** généré lors de la
 ## Accès et cycle de vie
 
 - Un rapport est toujours créé depuis une intervention de planning rattachée à un dossier client. Il n’existe pas de création autonome ou de rapport sans client.
-- Un technicien ne peut consulter ou créer que les rapports d’une intervention qui lui est affectée. Il peut modifier son rapport tant qu’il n’est pas validé.
+- Un technicien ne peut consulter ou créer que les rapports d’une intervention qui lui est affectée. Il peut modifier son brouillon, puis le **terminer** depuis mobile sans étape de correction préalable.
+- La terminaison mobile place le rapport dans la section **Terminés à corriger** (`submitted`) et le verrouille pour le terrain. Seuls les rôles autorisés sur un poste PC peuvent le corriger.
+- La correction PC place ensuite le rapport dans la section **À envoyer** (`ready_to_send`). Un poste PC autorisé peut alors le valider définitivement et l’archiver comme document envoyé (`validated`).
 - L’administration accède à l’ensemble des rapports de l’entreprise, peut demander une correction par section, valider ou remettre un document validé en brouillon.
-- Le cycle est `draft`, `submitted`, `in_correction`, puis `validated`.
+- Le cycle principal est `draft → submitted → ready_to_send → validated`. Le statut `in_correction` reste utilisé pour les demandes de correction par section et réouvre le rapport au technicien concerné.
 - La validation génère un PDF et verrouille le rapport. Le retour en brouillon enlève le PDF courant afin que toute nouvelle validation génère une version à jour.
 
 ## Assistant, synchronisation et photos
@@ -34,7 +36,7 @@ Le PDF conserve toujours sa page d’informations générales. Les autres sectio
 
 Avant validation, le bouton **Prévisualiser le rapport** ouvre ce même PDF directement dans une visionneuse intégrée, sans téléchargement. Depuis cette visionneuse, l’utilisateur peut revenir à l’édition, fermer l’aperçu sans perdre ses modifications ou valider le rapport. La validation archive alors le PDF dans le dossier client.
 
-Les rapports créés avec l’ancien formulaire sont convertis à la lecture vers le nouveau contenu structuré. Les routes HTTP, le cycle `draft → submitted → in_correction → validated`, les verrous, les médias et les archives PDF restent inchangés.
+Les rapports créés avec l’ancien formulaire sont convertis à la lecture vers le nouveau contenu structuré. Les routes HTTP, les verrous, les médias et les archives PDF restent compatibles avec les rapports existants.
 
 ## Archivage
 

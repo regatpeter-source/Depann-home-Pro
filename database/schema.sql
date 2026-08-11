@@ -676,7 +676,8 @@ CREATE TABLE IF NOT EXISTS depannhome_technical_reports (
     client_id VARCHAR(100) NOT NULL DEFAULT '', report_type VARCHAR(40) NOT NULL DEFAULT 'leak_detection',
     title VARCHAR(160) NOT NULL DEFAULT 'Rapport de recherche de fuite', report_date DATE NOT NULL DEFAULT CURRENT_DATE,
     content JSONB NOT NULL DEFAULT '{}'::jsonb, media JSONB NOT NULL DEFAULT '[]'::jsonb,
-    status VARCHAR(30) NOT NULL DEFAULT 'draft', submitted_at TIMESTAMPTZ, validated_at TIMESTAMPTZ,
+    status VARCHAR(30) NOT NULL DEFAULT 'draft', -- draft, submitted (terminé à corriger), in_correction, ready_to_send, validated
+    submitted_at TIMESTAMPTZ, validated_at TIMESTAMPTZ,
     validated_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
     proofread_at TIMESTAMPTZ, proofread_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
     proofread_fingerprint VARCHAR(64) NOT NULL DEFAULT '',

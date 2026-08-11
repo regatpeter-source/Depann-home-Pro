@@ -12,7 +12,7 @@ import { canConfirmReportProofreading, isReportProofreadingCurrent, reportProofr
 import { PDF_MIME, renderCompanyTemplate } from "./company-document-template.js";
 
 const REPORT_TYPE = "leak_detection";
-const STATUSES = new Set(["draft", "submitted", "in_correction", "validated"]);
+const STATUSES = new Set(["draft", "submitted", "in_correction", "ready_to_send", "validated"]);
 const SECTIONS = REPORT_STEP_KEYS;
 const MAX_MEDIA_PER_REPORT = 40;
 const MAX_MEDIA_SIZE = 4 * 1024 * 1024;
@@ -102,7 +102,7 @@ export function registerTechnicalReportRoutes(app, requireAuthentication) {
         if (!report) return response.status(404).json({ message: "Rapport introuvable." });
         const input = sanitizeReport(request.body);
         if (!input.ok) return response.status(400).json({ message: input.message });
-        if (!canEdit(report, request)) return response.status(409).json({ message: "Ce rapport validé ne peut plus être modifié." });
+        if (!canEdit(report, request)) return response.status(409).json({ message: "Ce rapport ne peut pas être modifié dans son état actuel." });
         if (!await enforceReportLock(request, response, report.id)) return;
         await getPool().query("UPDATE depannhome_technical_reports SET title=$3, report_date=$4::date, content=$5::jsonb, status=CASE WHEN status='in_correction' THEN 'draft' ELSE status END, updated_at=NOW() WHERE id=$1 AND owner_id=$2", [report.id, ownerId, input.title, input.reportDate, JSON.stringify(input.content)]);
         await publishEvent(request, reportTarget(report.id), "report_saved", { status: report.status });
@@ -114,12 +114,13 @@ export function registerTechnicalReportRoutes(app, requireAuthentication) {
         if (!report) return response.status(404).json({ message: "Rapport introuvable." });
         const input = sanitizeReport(request.body);
         if (!input.ok) return response.status(400).json({ message: input.message });
-        if (!canEdit(report, request)) return response.status(409).json({ message: "Ce rapport validé ne peut plus être modifié." });
+        if (!canEdit(report, request)) return response.status(409).json({ message: "Ce rapport ne peut pas être modifié dans son état actuel." });
         if (!await enforceReportLock(request, response, report.id)) return;
+        if (report.status !== "submitted") return response.status(409).json({ message: "Terminez d’abord le rapport sur mobile avant de le corriger sur un poste PC." });
         const fingerprint = reportProofreadingFingerprint({ ...report, title: input.title, reportDate: input.reportDate, content: input.content });
-        const { rows } = await getPool().query("UPDATE depannhome_technical_reports SET title=$3, report_date=$4::date, content=$5::jsonb, status=CASE WHEN status='in_correction' THEN 'draft' ELSE status END, proofread_at=NOW(), proofread_by=$6, proofread_fingerprint=$7, updated_at=NOW() WHERE id=$1 AND owner_id=$2 RETURNING proofread_at AS \"proofreadAt\"", [report.id, ownerId, input.title, input.reportDate, JSON.stringify(input.content), request.user.sub, fingerprint]);
-        await publishEvent(request, reportTarget(report.id), "report_proofread", { status: report.status });
-        response.json({ message: "Rapport corrigé et prêt à être envoyé.", proofreadAt: rows[0]?.proofreadAt || null });
+        const { rows } = await getPool().query("UPDATE depannhome_technical_reports SET title=$3, report_date=$4::date, content=$5::jsonb, status='ready_to_send', proofread_at=NOW(), proofread_by=$6, proofread_fingerprint=$7, updated_at=NOW() WHERE id=$1 AND owner_id=$2 RETURNING proofread_at AS \"proofreadAt\"", [report.id, ownerId, input.title, input.reportDate, JSON.stringify(input.content), request.user.sub, fingerprint]);
+        await publishEvent(request, reportTarget(report.id), "report_proofread", { status: "ready_to_send" });
+        response.json({ message: "Rapport corrigé : il peut maintenant être envoyé.", proofreadAt: rows[0]?.proofreadAt || null });
     }));
     app.post("/api/technical-reports/:reportId/media", upload.array("files", 5), asyncHandler(async (request, response) => {
         const ownerId = getAccountOwnerId(request); const report = await findReport(ownerId, positiveId(request.params.reportId), request);
@@ -164,9 +165,9 @@ export function registerTechnicalReportRoutes(app, requireAuthentication) {
     }));
     app.post("/api/technical-reports/:reportId/submit", asyncHandler(async (request, response) => {
         const report = await findReport(getAccountOwnerId(request), positiveId(request.params.reportId), request); if (!report) return response.status(404).json({ message: "Rapport introuvable." }); if (!canEdit(report, request)) return response.status(409).json({ message: "Le rapport est verrouillé." }); if (!await enforceReportLock(request, response, report.id)) return;
-        if (!isReportProofreadingCurrent(report)) return response.status(409).json({ message: "La correction et la modification du rapport doivent être confirmées avec le bouton prévu avant son envoi." });
+        if (!["draft", "in_correction"].includes(report.status)) return response.status(409).json({ message: "Ce rapport a déjà été terminé." });
         await getPool().query("UPDATE depannhome_technical_reports SET status='submitted', submitted_at=NOW(), updated_at=NOW() WHERE id=$1 AND owner_id=$2", [report.id, getAccountOwnerId(request)]);
-        await publishEvent(request, reportTarget(report.id), "report_submitted", {}, await administrationNotifications(getAccountOwnerId(request), request.user.sub, "Rapport envoyé", `Le rapport #${report.id} attend votre validation.`));
+        await publishEvent(request, reportTarget(report.id), "report_submitted", {}, await administrationNotifications(getAccountOwnerId(request), request.user.sub, "Rapport terminé à corriger", `Le rapport #${report.id} est terminé et attend sa correction sur un poste PC.`));
         await releaseLock(request, "technical_report", String(report.id), "lock_released_after_submission"); response.status(204).end();
     }));
     app.post("/api/technical-reports/:reportId/corrections", requireReportAdministration, asyncHandler(async (request, response) => {
@@ -177,8 +178,8 @@ export function registerTechnicalReportRoutes(app, requireAuthentication) {
         await notifyTechnician(ownerId, report, request.user.sub, section, comment); await publishEvent(request, reportTarget(report.id), "report_correction_requested", { section }, report.createdBy ? [{ recipientId: report.createdBy, title: "Corrections demandées", body: `Le rapport #${report.id} requiert une correction dans « ${section} ».`, eventType: "report_correction_requested" }] : []); response.status(201).end();
     }));
     app.post("/api/technical-reports/:reportId/validate", requireReportValidationAccess, asyncHandler(async (request, response) => {
-        const ownerId = getAccountOwnerId(request); const report = await findReport(ownerId, positiveId(request.params.reportId), request); if (!report) return response.status(404).json({ message: "Rapport introuvable." }); if (report.status !== "submitted") return response.status(409).json({ message: "Soumettez le rapport avant validation." }); if (!await enforceReportLock(request, response, report.id)) return;
-        if (!isReportProofreadingCurrent(report)) return response.status(409).json({ message: "Le rapport doit être corrigé et confirmé avant sa validation." });
+        const ownerId = getAccountOwnerId(request); const report = await findReport(ownerId, positiveId(request.params.reportId), request); if (!report) return response.status(404).json({ message: "Rapport introuvable." }); if (report.status !== "ready_to_send") return response.status(409).json({ message: "Corrigez le rapport sur un poste PC avant son envoi définitif." }); if (!await enforceReportLock(request, response, report.id)) return;
+        if (!isReportProofreadingCurrent(report)) return response.status(409).json({ message: "La correction PC doit être enregistrée avant l’envoi définitif." });
         const profile = await loadProfile(ownerId); const output = await createTechnicalReportOutput(report, profile);
         const connection = await getPool().connect(); try { await connection.query("BEGIN"); await connection.query("UPDATE depannhome_technical_reports SET status='validated', validated_at=NOW(), validated_by=$3, pdf_data=$4, pdf_filename=$5, document_mime_type=$6, updated_at=NOW() WHERE id=$1 AND owner_id=$2", [report.id, ownerId, request.user.sub, output.buffer, output.filename, output.mimeType]); await archiveDocument(connection, ownerId, report, output, request); await connection.query("COMMIT"); } catch (error) { await connection.query("ROLLBACK"); throw error; } finally { connection.release(); }
         await synchronizeConnectedReport(ownerId, report.id);
@@ -196,7 +197,7 @@ export function registerTechnicalReportRoutes(app, requireAuthentication) {
 function requireReportAccess(request, response, next) { if (request.user?.role === "accountant") return response.status(403).json({ message: "L’espace comptabilité n’accède pas aux rapports techniques." }); return next(); }
 function requireReportAdministration(request, response, next) { if (!["admin", "mobile_admin"].includes(request.user?.role)) return response.status(403).json({ message: "Cette action est réservée au personnel administratif." }); return next(); }
 function requireReportProofreadingAccess(request, response, next) { if (!canConfirmReportProofreading(request.user?.role, request.user?.deviceType)) return response.status(403).json({ message: "La correction finale du rapport est réservée à un poste PC autorisé." }); return next(); }
-function requireReportValidationAccess(request, response, next) { if (!["admin", "mobile_admin", "team_lead", "technician"].includes(request.user?.role)) return response.status(403).json({ message: "La validation du rapport est réservée aux intervenants autorisés." }); return next(); }
+function requireReportValidationAccess(request, response, next) { if (!canConfirmReportProofreading(request.user?.role, request.user?.deviceType)) return response.status(403).json({ message: "L’envoi définitif du rapport est réservé à un poste PC autorisé." }); return next(); }
 async function enforceReportLock(request, response, reportId) { const result = await assertLockOwner(request, "technical_report", String(reportId)); if (result.ok) return true; response.status(409).json({ message: result.message, lock: result.lock || null }); return false; }
 function reportTarget(reportId) { return { entityType: "technical_report", entityId: String(reportId) }; }
 async function administrationNotifications(ownerId, senderId, title, body) { const { rows } = await getPool().query("SELECT id FROM depannhome_users WHERE account_owner_id=$1 AND role IN ('admin', 'mobile_admin') AND is_active=TRUE AND id<>$2", [ownerId, senderId]); return rows.map(row => ({ recipientId: row.id, title, body })); }
@@ -210,7 +211,7 @@ async function buildReportSnapshot(ownerId, appointment, clientId, request) { co
 async function findClientId(ownerId, requested, name) { const requestedId = CLIENT_ID.test(String(requested || "")) ? String(requested) : ""; const { rows } = await getPool().query("SELECT client_id FROM depannhome_clients WHERE owner_id=$1 AND client_status='active' AND (($2<>'' AND client_id=$2) OR ($2='' AND LOWER(BTRIM(client_data->>'name'))=LOWER(BTRIM($3)))) LIMIT 1", [ownerId, requestedId, name || ""]); return rows[0]?.client_id || ""; }
 async function loadCorrections(ownerId, reportId) { const { rows } = await getPool().query(`SELECT correction.id, correction.section_key AS section, correction.comment, correction.resolved_at AS "resolvedAt", correction.created_at AS "createdAt", user_account.full_name AS "requestedBy" FROM depannhome_technical_report_corrections correction LEFT JOIN depannhome_users user_account ON user_account.id=correction.requested_by WHERE correction.owner_id=$1 AND correction.report_id=$2 ORDER BY correction.created_at DESC`, [ownerId, reportId]); return rows; }
 async function loadLibrary(ownerId) { const { rows } = await getPool().query("SELECT id, category, label, content FROM depannhome_technical_report_library WHERE owner_id=$1 ORDER BY category, LOWER(label)", [ownerId]); return rows; }
-function canEdit(report, request) { return report.status !== "validated" && (["admin", "mobile_admin"].includes(request.user.role) || Number(report.createdBy) === Number(request.user.sub)); }
+function canEdit(report, request) { const isOwnerOrAdministration = ["admin", "mobile_admin"].includes(request.user.role) || Number(report.createdBy) === Number(request.user.sub); if (["draft", "in_correction"].includes(report.status)) return isOwnerOrAdministration; return report.status === "submitted" && canConfirmReportProofreading(request.user?.role, request.user?.deviceType); }
 async function notifyTechnician(ownerId, report, senderId, section, comment) { if (!report.createdBy || Number(report.createdBy) === Number(senderId)) return; await getPool().query("INSERT INTO depannhome_messages (sender_id, recipient_id, client_id, body) VALUES ($1,$2,$3,$4)", [senderId, report.createdBy, report.clientId || null, `Correction demandée — rapport fuite #${report.id}, section ${section} : ${comment}`.slice(0, 2000)]); }
 function sanitizeReport(value) { const appointmentId = positiveId(value?.appointmentId); const title = cleanText(value?.title, 160) || "Rapport de recherche de fuite"; const reportDate = validDate(value?.reportDate) || new Date().toISOString().slice(0, 10); return { ok: true, appointmentId, clientId: cleanText(value?.clientId, 100), title, reportDate, content: normalizeContent(value?.content) }; }
 function normalizeContent(value) { return normalizeLeakContent(value); }
