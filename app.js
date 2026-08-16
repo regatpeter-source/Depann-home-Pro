@@ -143,6 +143,7 @@ app.get(["/", "/index.html"], (request, response) => {
 });
 app.use("/css", express.static(path.join(rootDirectory, "css"), { index: false }));
 app.use("/js", express.static(path.join(rootDirectory, "js"), { index: false }));
+app.use("/vendor/pdfjs", express.static(path.join(rootDirectory, "node_modules", "pdfjs-dist"), { index: false, immutable: true, maxAge: "1y" }));
 app.get("/manifest.json", (request, response) => {
 	response.sendFile(path.join(rootDirectory, "manifest.json"));
 });

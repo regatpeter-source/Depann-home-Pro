@@ -3,6 +3,7 @@ import { clearSearch, getContainer, setPage } from "./ui.js?v=44";
 import { escapeHtml } from "./utils.js?v=44";
 import { acquireReportLock, forceReleaseReportLock, heartbeatReportLock, releaseReportLock } from "./collaboration.js?v=4";
 import { openDocumentDeliveryChoice } from "./document-delivery.js?v=1";
+import { renderLivePdfPreview } from "./pdf-live-preview.js?v=1";
 
 const MODULES = [
     ["general", "Informations générales", "Données récupérées automatiquement"],
@@ -350,20 +351,19 @@ function openReportProofreading(shell) {
     const dialog = document.createElement("section");
     dialog.className = "report-proofreading-dialog";
     const originalTexts = entries.map(entry => entry.observation.text || "");
-    dialog.innerHTML = `<form><header><div><p class="eyebrow">Correction sur poste PC</p><h2>Correction du rapport et aperçu PDF en direct</h2></div><button type="button" class="text-button" data-close-proofreading>Fermer</button></header><p class="report-proofreading-help">À gauche, corrigez les textes, ajoutez des lignes avec la touche Entrée et ajustez les photos. À droite, le PDF se remet à jour automatiquement après vos modifications.</p><div class="report-proofreading-workspace"><section class="report-proofreading-editor" aria-label="Contenu du rapport à corriger"><div class="report-proofreading-panel-heading"><strong>Rapport à corriger</strong><span>Orthographe, textes et photos</span></div><div class="report-proofreading-list"></div></section><section class="report-proofreading-live-preview" aria-label="Aperçu PDF en direct"><div class="report-proofreading-panel-heading"><strong>Aperçu PDF en direct</strong><span data-proofreading-preview-state>Génération de l’aperçu…</span></div><iframe title="Aperçu PDF en direct du rapport"></iframe></section></div><p class="auth-message" aria-live="polite"></p><div class="report-proofreading-actions"><button type="button" class="secondary-button" data-close-proofreading>Annuler</button><button type="submit" class="secondary-button report-primary-action">Enregistrer la correction et préparer l’envoi</button></div></form>`;
+    dialog.innerHTML = `<form><header><div><p class="eyebrow">Correction sur poste PC</p><h2>Correction du rapport et aperçu PDF en direct</h2></div><button type="button" class="text-button" data-close-proofreading>Fermer</button></header><p class="report-proofreading-help">À gauche, corrigez les textes, ajoutez des lignes avec la touche Entrée et ajustez les photos. À droite, le PDF se remet à jour automatiquement après vos modifications sans perdre la page consultée.</p><div class="report-proofreading-workspace"><section class="report-proofreading-editor" aria-label="Contenu du rapport à corriger"><div class="report-proofreading-panel-heading"><strong>Rapport à corriger</strong><span>Orthographe, textes et photos</span></div><div class="report-proofreading-list"></div></section><section class="report-proofreading-live-preview" aria-label="Aperçu PDF en direct"><div class="report-proofreading-panel-heading"><strong>Aperçu PDF en direct</strong><span data-proofreading-preview-state>Génération de l’aperçu…</span></div><div class="report-proofreading-pdf-pages" role="document" aria-label="Pages du rapport PDF"></div></section></div><p class="auth-message" aria-live="polite"></p><div class="report-proofreading-actions"><button type="button" class="secondary-button" data-close-proofreading>Annuler</button><button type="submit" class="secondary-button report-primary-action">Enregistrer la correction et préparer l’envoi</button></div></form>`;
     document.body.append(dialog);
     let previewTimer = null;
     let previewRequest = null;
-    let previewUrl = "";
     let previewSequence = 0;
-    const close = () => { clearTimeout(previewTimer); previewRequest?.abort(); if (previewUrl) URL.revokeObjectURL(previewUrl); dialog.remove(); };
+    const close = () => { clearTimeout(previewTimer); previewRequest?.abort(); dialog.remove(); };
     const cancel = async () => { entries.forEach((entry, index) => { entry.observation.text = originalTexts[index]; }); clearTimeout(saveTimer); close(); await save(shell, true); };
     const syncTexts = () => entries.forEach((entry, index) => { const input = dialog.querySelector(`[data-proofreading-entry="${index}"]`); if (input) entry.observation.text = input.value; });
     const refreshPdfPreview = async () => {
         if (!dialog.isConnected) return;
         syncTexts();
         const state = dialog.querySelector("[data-proofreading-preview-state]");
-        const iframe = dialog.querySelector(".report-proofreading-live-preview iframe");
+        const preview = dialog.querySelector(".report-proofreading-pdf-pages");
         const sequence = ++previewSequence;
         state.textContent = "Mise à jour…";
         previewRequest?.abort();
@@ -374,11 +374,8 @@ function openReportProofreading(shell) {
             if (!response.ok) { const error = await response.json().catch(() => null); throw new Error(error?.message || "Aperçu PDF indisponible."); }
             const blob = await response.blob();
             if (!dialog.isConnected || sequence !== previewSequence) return;
-            const nextUrl = URL.createObjectURL(blob);
-            const previousUrl = previewUrl;
-            previewUrl = nextUrl;
-            iframe.src = nextUrl;
-            if (previousUrl) iframe.addEventListener("load", () => URL.revokeObjectURL(previousUrl), { once: true });
+            await renderLivePdfPreview(blob, preview, previewRequest.signal);
+            if (!dialog.isConnected || sequence !== previewSequence) return;
             state.textContent = `Actualisé à ${new Intl.DateTimeFormat("fr-FR", { timeStyle: "short" }).format(new Date())}`;
         } catch (error) {
             if (error.name !== "AbortError" && dialog.isConnected && sequence === previewSequence) state.textContent = error.message || "Aperçu PDF indisponible.";

@@ -9,6 +9,7 @@ const editorSource = readFileSync(new URL("../js/leak-report-wizard.js", import.
 const deliverySource = readFileSync(new URL("../js/document-delivery.js", import.meta.url), "utf8");
 const clientsServerSource = readFileSync(new URL("../server/clients.js", import.meta.url), "utf8");
 const clientsEditorSource = readFileSync(new URL("../js/clients.js", import.meta.url), "utf8");
+const pdfPreviewSource = readFileSync(new URL("../js/pdf-live-preview.js", import.meta.url), "utf8");
 
 function report() {
     return {
@@ -100,10 +101,19 @@ test("PC proofreading uses a split editor with a live draft PDF preview", () => 
 test("live PDF refresh waits for photo saves and does not persist proofreading", () => {
     assert.match(editorSource, /await Promise\.all\(\[\.\.\.mediaSavePromises\]\);/);
     assert.match(editorSource, /response\.blob\(\)/);
-    assert.match(editorSource, /URL\.createObjectURL\(blob\)/);
+    assert.match(editorSource, /renderLivePdfPreview\(blob, preview, previewRequest\.signal\)/);
     const previewRoute = serverSource.slice(serverSource.indexOf('app.post("/api/technical-reports/:reportId/pdf-preview"'), serverSource.indexOf('app.post("/api/technical-reports/:reportId/media"'));
     assert.doesNotMatch(previewRoute, /UPDATE depannhome_technical_reports/);
     assert.doesNotMatch(previewRoute, /proofread_fingerprint/);
+});
+
+test("live PDF updates preserve the visible page and relative scroll position", () => {
+    assert.match(editorSource, /sans perdre la page consultée/);
+    assert.match(pdfPreviewSource, /const position = capturePdfPosition\(container\)/);
+    assert.match(pdfPreviewSource, /container\.replaceChildren\(documentNode\)/);
+    assert.match(pdfPreviewSource, /restorePdfPosition\(container, position\)/);
+    assert.match(pdfPreviewSource, /pageProgress/);
+    assert.match(pdfPreviewSource, /container\.scrollTop = page\.offsetTop/);
 });
 
 test("cancelling live proofreading restores the original report texts", () => {
