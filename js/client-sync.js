@@ -2,7 +2,6 @@ const CLIENTS_KEY_PREFIX = "depannHomePro:clients:";
 const QUEUE_KEY_PREFIX = "depannHomePro:clients-sync-queue:";
 const CURSOR_KEY_PREFIX = "depannHomePro:clients-sync-cursor:";
 const MAX_ACTIVITY_HISTORY = 150;
-const MAX_DELETED_ATTACHMENT_IDS = 500;
 const SILENT_SYNCHRONIZATION_INTERVAL = 90_000;
 const DESKTOP_SYNCHRONIZATION_DELAY = 1_500;
 const FOCUS_SYNCHRONIZATION_DELAY = 3_000;
@@ -195,13 +194,11 @@ function mergeClients(firstClients, secondClients) {
             return;
         }
         const newest = getTimestamp(client.updatedAt) > getTimestamp(existing.updatedAt) ? client : existing;
-        const deletedAttachmentIds = mergeDeletedAttachmentIds(existing.deletedAttachmentIds, client.deletedAttachmentIds);
-        const deletedAttachments = new Set(deletedAttachmentIds);
+        const attachments = new Map([...(Array.isArray(existing.attachments) ? existing.attachments : []), ...(Array.isArray(client.attachments) ? client.attachments : [])].filter(attachment => attachment?.id).map(attachment => [String(attachment.id), attachment]));
         merged.set(client.id, {
             ...newest,
-            attachments: (Array.isArray(newest.attachments) ? newest.attachments : [])
-                .filter(attachment => attachment && !deletedAttachments.has(String(attachment.id || ""))),
-            deletedAttachmentIds,
+            attachments: [...attachments.values()],
+            deletedAttachmentIds: [],
             activityHistory: mergeActivityHistory(existing.activityHistory, client.activityHistory)
         });
     });
@@ -296,17 +293,11 @@ function normalizeClient(client) {
         clientStatus: client?.clientStatus === "archived" ? "archived" : "active",
         archivedAt: client?.archivedAt || null,
         attachments: Array.isArray(client?.attachments) ? client.attachments.map(attachment => ({ ...attachment, cachedLocally: attachment?.cachedLocally !== false })) : [],
-        deletedAttachmentIds: mergeDeletedAttachmentIds(client?.deletedAttachmentIds),
+        deletedAttachmentIds: [],
         activityHistory: mergeActivityHistory(client?.activityHistory),
         createdAt: validDate(client?.createdAt) || now,
         updatedAt: validDate(client?.updatedAt) || now
     };
-}
-
-function mergeDeletedAttachmentIds(...collections) {
-    return [...new Set(collections.flatMap(collection => Array.isArray(collection) ? collection : [])
-        .map(id => String(id || "").slice(0, 100))
-        .filter(Boolean))].slice(-MAX_DELETED_ATTACHMENT_IDS);
 }
 
 function mergeActivityHistory(...histories) {

@@ -1,5 +1,5 @@
 import { ROUTES } from "./config.js?v=116";
-import { addClientActivity, getLocalClients, removeLocalClient, saveLocalClient, scheduleClientSynchronization, synchronizeClients } from "./client-sync.js?v=124";
+import { addClientActivity, getLocalClients, removeLocalClient, saveLocalClient, scheduleClientSynchronization, synchronizeClients } from "./client-sync.js?v=125";
 import { renderClientMessages } from "./messages.js?v=106";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
@@ -212,7 +212,7 @@ function renderClientForm(client, options = {}) {
                     <span class="file-count-badge">${client.attachments.length} fichier(s)</span>
                 </div>
 
-                ${client.attachments.length ? renderAttachmentsHtml(client.id, client.attachments, false) : "<p class=\"muted\">Aucun fichier enregistré pour ce client.</p>"}
+                ${client.attachments.length ? renderAttachmentsHtml(client.id, client.attachments) : "<p class=\"muted\">Aucun fichier enregistré pour ce client.</p>"}
 
                 <div class="file-input-grid">
                     <label>
@@ -439,7 +439,7 @@ function renderClientDetail(client, options = {}) {
     const archived = client.clientStatus === "archived";
     const navigationHref = getClientNavigationHref(client);
     const interventionPhotos = client.attachments.filter(isInterventionPhoto);
-    const clientFiles = client.attachments.filter(attachment => !isInterventionPhoto(attachment) && attachment.type !== "Quitus");
+    const clientFiles = client.attachments.filter(attachment => !isInterventionPhoto(attachment) && attachment.type !== "Quitus" && !isLeakReportAttachment(attachment));
     const panel = document.createElement("section");
     panel.className = "client-panel";
 
@@ -481,7 +481,7 @@ function renderClientDetail(client, options = {}) {
         ` : ""}
         <section class="procedure-section">
             <h3> Fichiers du client</h3>
-            ${clientFiles.length ? renderAttachmentsHtml(client.id, clientFiles, !readOnly, client.email) : "<p>Aucun autre fichier enregistré.</p>"}
+            ${clientFiles.length ? renderAttachmentsHtml(client.id, clientFiles, client.email) : "<p>Aucun autre fichier enregistré.</p>"}
         </section>
     `;
 
@@ -493,15 +493,6 @@ function renderClientDetail(client, options = {}) {
     panel.querySelector("#createClientInvoice")?.addEventListener("click", () => openClientBillingDocument("invoice", client));
     panel.querySelectorAll("[data-email-attachment]").forEach(button => {
         button.addEventListener("click", () => emailClientAttachment(client, button.dataset.emailAttachment));
-    });
-    panel.querySelectorAll("[data-delete-attachment]").forEach(button => {
-        button.addEventListener("click", async () => {
-            const attachmentId = button.dataset.deleteAttachment;
-
-            if (confirm("Supprimer ce fichier du dossier client ?")) {
-                await deleteClientAttachment(client.id, attachmentId);
-            }
-        });
     });
     loadClientFinancialHistory(panel.querySelector("#clientHistory"), client);
 
@@ -849,7 +840,7 @@ function normalizeAttachments(attachments = []) {
 }
 
 function renderClientActivityHistory(client, billingDocuments = [], purchases = [], appointments = []) {
-    const activityEntries = deduplicatePartnerMissionActivities(normalizeActivityHistory(client.activityHistory)).filter(entry => !["quote", "invoice"].includes(entry.type));
+    const activityEntries = deduplicatePartnerMissionActivities(normalizeActivityHistory(client.activityHistory)).filter(entry => !["quote", "invoice", "attachment"].includes(entry.type));
     const billingEntries = billingDocuments.map(document => {
         const type = document.documentType === "invoice" ? "Facture" : document.documentType === "credit" ? "Avoir" : "Devis";
         return {
@@ -886,20 +877,7 @@ function renderClientActivityHistory(client, billingDocuments = [], purchases = 
         actorName: String(appointment.assignedTechnicianName || ""),
         createdAt: `${appointment.date}T${appointment.startTime || "12:00"}:00`
     }));
-    const attachmentEntries = client.attachments.filter(attachment => !activityEntries.some(entry =>
-        String(entry.attachmentId || "") === String(attachment.id)
-        || (entry.type === "attachment" && String(entry.detail || "").includes(attachment.name))
-    )).map(attachment => ({
-        id: `attachment-${attachment.id}`,
-        type: isLeakReportAttachment(attachment) ? "technical_report" : "attachment",
-        label: isLeakReportAttachment(attachment) ? "Rapport de recherche de fuite validé" : `${attachment.type || "Fichier"} ajouté(e)`,
-        detail: attachment.name,
-        documentId: "",
-        attachmentId: attachment.id,
-        actorName: "",
-        createdAt: attachment.createdAt
-    }));
-    const entries = [...activityEntries, ...billingEntries, ...purchaseEntries, ...appointmentEntries, ...attachmentEntries]
+    const entries = [...activityEntries, ...billingEntries, ...purchaseEntries, ...appointmentEntries]
         .sort((first, second) => new Date(second.createdAt).getTime() - new Date(first.createdAt).getTime());
     if (!entries.length) return "<p class=\"muted\">Les rendez-vous, documents et actions de ce dossier apparaîtront ici.</p>";
     return `<div class="client-activity-list">${entries.map(entry => {
@@ -1101,7 +1079,7 @@ function readFileAsDataUrl(file) {
     });
 }
 
-function renderAttachmentsHtml(clientId, attachments, withActions, recipient) {
+function renderAttachmentsHtml(clientId, attachments, recipient) {
     return `
         <div class="attachment-list">
             ${normalizeAttachments(attachments).map(attachment => `
@@ -1116,7 +1094,6 @@ function renderAttachmentsHtml(clientId, attachments, withActions, recipient) {
                         <a class="secondary-button" href="/api/clients/${encodeURIComponent(clientId)}/attachments/${encodeURIComponent(attachment.id)}/open" target="_blank" rel="noopener">Ouvrir</a>
                         <a class="secondary-button" href="/api/clients/${encodeURIComponent(clientId)}/attachments/${encodeURIComponent(attachment.id)}/open" download="${escapeHtml(attachment.name)}">Télécharger</a>
                         <button type="button" class="secondary-button" data-email-attachment="${escapeHtml(attachment.id)}" ${recipient ? "" : "disabled title=\"Ajoutez l’e-mail du client pour envoyer ce fichier.\""}>Envoyer par e-mail</button>
-                        ${withActions ? `<button type="button" class="secondary-button danger-button" data-delete-attachment="${escapeHtml(attachment.id)}">Supprimer</button>` : ""}
                     </div>
                 </article>
             `).join("")}
@@ -1134,20 +1111,6 @@ function renderInterventionPhotoHtml(clientId, attachment) {
     return `<article class="client-intervention-photo"><a href="${url}" target="_blank" rel="noopener"><img src="${escapeHtml(attachment.dataUrl || url)}" alt="${escapeHtml(attachment.name)}"></a><div><strong>${escapeHtml(type)}</strong><span>${escapeHtml(attachment.name)}</span><small>${escapeHtml(formatDate(attachment.createdAt))}</small></div></article>`;
 }
 
-async function deleteClientAttachment(clientId, attachmentId) {
-    const client = getClientById(clientId);
-    if (!client || !attachmentId) return;
-    try {
-        const response = await fetch(`/api/clients/${encodeURIComponent(clientId)}/attachments/${encodeURIComponent(attachmentId)}`, { method: "DELETE", credentials: "same-origin" });
-        const data = await response.json().catch(() => null);
-        if (!response.ok) throw new Error(data?.message);
-        const result = await synchronizeClients();
-        if (!result.ok) throw new Error(result.message || "La suppression est enregistrée, mais l’actualisation du dossier a échoué.");
-        renderClients({ selectedId: clientId, ...clientScreenOptions });
-    } catch (error) {
-        alert(error.message || "Suppression impossible.");
-    }
-}
 
 function getAttachmentIcon(attachment) {
     if (attachment.type === "Photo" || attachment.mime.startsWith("image/")) return "";

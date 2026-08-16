@@ -69,6 +69,7 @@ export async function listClientsForOwner(ownerId, sinceParameter = "") {
     if (sinceParameter && !since) throw clientError(400, "Curseur de synchronisation invalide.");
     const database = getPool();
     await reconcilePartnerMissionClients(database, ownerId);
+    await reconcileValidatedReportAttachments(database, ownerId);
     const { rows: cursorRows } = await database.query("SELECT NOW() AS cursor");
     const cursor = cursorRows[0].cursor;
     const { rows } = await database.query(`
@@ -350,41 +351,7 @@ export function registerClientRoutes(app, requireAuthentication) {
         const clientId = String(request.params.clientId || "");
         const attachmentId = String(request.params.attachmentId || "").slice(0, 100);
         if (!CLIENT_ID_PATTERN.test(clientId) || !attachmentId) return response.status(400).json({ message: "Fichier invalide." });
-
-        const database = getPool();
-        const connection = await database.connect();
-        try {
-            await connection.query("BEGIN");
-            const result = await connection.query(`
-                SELECT client_data AS client FROM depannhome_clients
-                WHERE owner_id = $1 AND client_id = $2 FOR UPDATE
-            `, [getAccountOwnerId(request), clientId]);
-            const client = result.rows[0]?.client;
-            const attachments = Array.isArray(client?.attachments) ? client.attachments : [];
-            const attachment = attachments.find(item => String(item?.id) === attachmentId);
-            if (!client || !attachment) {
-                await connection.query("ROLLBACK");
-                return response.status(404).json({ message: "Fichier introuvable." });
-            }
-            const now = new Date().toISOString();
-            const updatedClient = mergeDeletedAttachments(client, {
-                ...client,
-                attachments: attachments.filter(item => String(item?.id) !== attachmentId),
-                deletedAttachmentIds: [...(Array.isArray(client.deletedAttachmentIds) ? client.deletedAttachmentIds : []), attachmentId],
-                updatedAt: now
-            });
-            await connection.query(`
-                UPDATE depannhome_clients SET client_data = $3::jsonb, updated_at = NOW()
-                WHERE owner_id = $1 AND client_id = $2
-            `, [getAccountOwnerId(request), clientId, JSON.stringify(updatedClient)]);
-            await connection.query("COMMIT");
-            response.json({ message: "Fichier supprimé définitivement du dossier." });
-        } catch (error) {
-            await connection.query("ROLLBACK");
-            throw error;
-        } finally {
-            connection.release();
-        }
+        response.status(409).json({ message: "Les fichiers du dossier client sont conservés et ne peuvent pas être supprimés." });
     }));
 
     app.get("/api/clients/:clientId/attachments/:attachmentId/open", requireAuthentication, asyncHandler(async (request, response) => {
@@ -539,17 +506,42 @@ function sanitizeDeletedAttachmentIds(value) {
 }
 
 function mergeDeletedAttachments(existingClient, nextClient) {
-    const deletedAttachmentIds = sanitizeDeletedAttachmentIds([
-        ...(Array.isArray(existingClient?.deletedAttachmentIds) ? existingClient.deletedAttachmentIds : []),
-        ...(Array.isArray(nextClient?.deletedAttachmentIds) ? nextClient.deletedAttachmentIds : [])
-    ]);
-    const deleted = new Set(deletedAttachmentIds);
     return {
         ...nextClient,
-        attachments: (Array.isArray(nextClient?.attachments) ? nextClient.attachments : [])
-            .filter(attachment => attachment && !deleted.has(String(attachment.id || ""))),
-        deletedAttachmentIds
+        attachments: Array.isArray(nextClient?.attachments) ? nextClient.attachments.filter(Boolean) : [],
+        deletedAttachmentIds: []
     };
+}
+
+async function reconcileValidatedReportAttachments(database, ownerId) {
+    const { rows } = await database.query(`
+        SELECT report.id, report.client_id AS "clientId", report.appointment_id AS "appointmentId",
+            report.pdf_filename AS filename, report.document_mime_type AS mime, OCTET_LENGTH(report.pdf_data)::int AS size,
+            report.validated_at AS "validatedAt", client.client_data AS client
+        FROM depannhome_technical_reports report
+        JOIN depannhome_clients client ON client.owner_id = report.owner_id AND client.client_id = report.client_id
+        WHERE report.owner_id = $1 AND report.status = 'validated' AND report.pdf_data IS NOT NULL AND report.client_id <> ''
+    `, [ownerId]);
+    for (const row of rows) {
+        const client = row.client || {};
+        const attachments = Array.isArray(client.attachments) ? client.attachments : [];
+        const history = Array.isArray(client.activityHistory) ? client.activityHistory : [];
+        const filename = safeFilename(row.filename || `rapport-recherche-fuite-${row.id}.pdf`);
+        const matchingHistory = history.find(entry => entry?.type === "technical_report" && (String(entry.detail || "") === filename || String(entry.attachmentId || "") && attachments.some(item => String(item?.id) === String(entry.attachmentId) && String(item?.reportId || "") === String(row.id))));
+        const matchingAttachments = attachments.filter(item => String(item?.reportId || "") === String(row.id) || isLegacyReportAttachment(item, filename));
+        const attachmentId = String(matchingAttachments[0]?.id || matchingHistory?.attachmentId || `file-${randomUUID()}`);
+        const attachment = { ...(matchingAttachments[0] || {}), id: attachmentId, type: "Rapport fuite", name: filename, mime: row.mime || "application/pdf", size: Number(row.size) || 0, reportId: String(row.id), appointmentId: row.appointmentId || undefined, createdAt: matchingAttachments[0]?.createdAt || row.validatedAt || new Date().toISOString() };
+        const nextAttachments = [...attachments.filter(item => !matchingAttachments.includes(item)), attachment];
+        const nextHistory = matchingHistory ? history.map(entry => entry === matchingHistory ? { ...entry, attachmentId } : entry) : [{ id: `activity-${randomUUID()}`, type: "technical_report", label: "Rapport de recherche de fuite validé", detail: filename, attachmentId, actorName: "Administration", createdAt: row.validatedAt || new Date().toISOString() }, ...history];
+        const deletedAttachmentIds = sanitizeDeletedAttachmentIds(client.deletedAttachmentIds).filter(id => id !== attachmentId);
+        const changed = matchingAttachments.length !== 1 || matchingAttachments[0]?.reportId !== String(row.id) || matchingHistory?.attachmentId !== attachmentId || deletedAttachmentIds.length !== sanitizeDeletedAttachmentIds(client.deletedAttachmentIds).length;
+        if (!changed) continue;
+        await database.query("UPDATE depannhome_clients SET client_data=$3::jsonb, updated_at=NOW() WHERE owner_id=$1 AND client_id=$2", [ownerId, row.clientId, JSON.stringify({ ...client, attachments: nextAttachments, activityHistory: nextHistory, deletedAttachmentIds })]);
+    }
+}
+
+function isLegacyReportAttachment(attachment, filename) {
+    return attachment?.type === "Rapport fuite" && String(attachment.name || "") === filename;
 }
 
 function mergeClientAttachments(existingAttachments, submittedAttachments) {

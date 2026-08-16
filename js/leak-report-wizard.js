@@ -72,7 +72,7 @@ export function openLeakReportCreation() {
     document.body.append(dialog);
     dialog.querySelector("[data-close-report-creation]").addEventListener("click", () => dialog.remove());
     dialog.querySelector("[data-report-from-appointment]").addEventListener("click", async () => { dialog.remove(); const { renderCalendar } = await import("./calendar.js?v=166"); renderCalendar(); });
-    dialog.querySelector("[data-create-client-first]").addEventListener("click", async () => { dialog.remove(); const { renderClients } = await import("./clients.js?v=144"); renderClients(); });
+    dialog.querySelector("[data-create-client-first]").addEventListener("click", async () => { dialog.remove(); const { renderClients } = await import("./clients.js?v=145"); renderClients(); });
 }
 
 async function openAppointmentReport(appointmentId) {
@@ -610,7 +610,7 @@ async function completeValidatedReport(validation) {
     const attachmentId = validation.attachmentId || "";
     const recipient = current.content?.snapshot?.clientEmail || "";
     await leaveReport();
-    const { synchronizeClients } = await import("./client-sync.js?v=124");
+    const { synchronizeClients } = await import("./client-sync.js?v=125");
     await synchronizeClients();
     window.dispatchEvent(new CustomEvent("depannhome:technical-report-validated", { detail: { reportId, clientId, suppressNavigation: true } }));
     if (clientId) window.dispatchEvent(new CustomEvent("depannhome:open-client", { detail: { clientId } }));

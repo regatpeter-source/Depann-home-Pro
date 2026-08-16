@@ -1,6 +1,6 @@
 import { ROUTES } from "./config.js?v=116";
-import { getSearchableClients } from "./clients.js?v=144";
-import { addClientActivityByName } from "./client-sync.js?v=124";
+import { getSearchableClients } from "./clients.js?v=145";
+import { addClientActivityByName } from "./client-sync.js?v=125";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { renderPlatformAnnouncement } from "./platform-announcement.js?v=1";
