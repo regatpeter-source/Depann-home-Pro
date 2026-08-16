@@ -2,6 +2,7 @@ import { ROUTES } from "./config.js?v=118";
 import { clearSearch, getContainer, setPage } from "./ui.js?v=44";
 import { escapeHtml } from "./utils.js?v=44";
 import { acquireReportLock, forceReleaseReportLock, heartbeatReportLock, releaseReportLock } from "./collaboration.js?v=4";
+import { openDocumentDeliveryChoice } from "./document-delivery.js?v=1";
 
 const MODULES = [
     ["general", "Informations générales", "Données récupérées automatiquement"],
@@ -57,7 +58,7 @@ export async function renderLeakReportWizard(reportId = 0, appointmentId = 0) {
 function renderDirectory(shell) {
     shell.classList.add("report-directory");
     const groups = [["À rédiger", ["draft", "in_correction"]], ["Terminés à corriger", ["submitted"]], ["À envoyer", ["ready_to_send"]], ["Envoyés", ["validated"]]];
-    const reportCard = report => `<article><div><strong>${escapeHtml(report.title)}</strong><p>${escapeHtml(statusLabel(report.status))} · ${report.appointmentId ? `Intervention n° ${escapeHtml(report.appointmentId)}` : "Rapport historique"} · ${escapeHtml(formatDate(report.reportDate))}</p></div><button class="secondary-button" data-open-report="${escapeHtml(report.id)}">${report.status === "validated" ? "Consulter" : "Ouvrir"}</button></article>`;
+    const reportCard = report => `<article><div><strong>${escapeHtml(report.title)}</strong><p class="report-directory-client"><b>${escapeHtml(report.clientName || "Client non renseigné")}</b>${report.claimNumber ? ` · Sinistre n° ${escapeHtml(report.claimNumber)}` : ""}${report.insurance ? ` · Assurance ${escapeHtml(report.insurance)}` : ""}</p><p>${escapeHtml(statusLabel(report.status))} · ${report.appointmentId ? `Intervention n° ${escapeHtml(report.appointmentId)}` : "Rapport historique"} · ${escapeHtml(formatDate(report.reportDate))}</p></div><button class="secondary-button" data-open-report="${escapeHtml(report.id)}">${report.status === "validated" ? "Consulter" : "Ouvrir"}</button></article>`;
     shell.innerHTML = `<header class="report-directory-heading"><div><p class="eyebrow">Rapports terrain</p><h2>Rapports de recherche de fuite</h2><p class="muted">Chaque rapport est créé depuis une intervention rattachée à un dossier client.</p></div><button type="button" class="secondary-button" data-create-report>Nouveau rapport de recherche de fuite</button></header><section class="report-directory-list">${reports.length ? groups.map(([title, statuses]) => { const items = reports.filter(report => statuses.includes(report.status)); return `<section class="report-directory-group"><h3>${title}</h3>${items.length ? items.map(reportCard).join("") : '<p class="muted">Aucun rapport dans cette section.</p>'}</section>`; }).join("") : '<p class="muted">Aucun rapport accessible. Créez votre premier rapport depuis une intervention.</p>'}</section>`;
     shell.querySelector("[data-create-report]").addEventListener("click", openLeakReportCreation);
     shell.querySelectorAll("[data-open-report]").forEach(button => button.addEventListener("click", () => renderLeakReportWizard(button.dataset.openReport)));
@@ -595,14 +596,7 @@ async function validateReport(shell) {
     if (!confirm("Valider définitivement le rapport, générer son PDF officiel et l’envoyer ?")) return;
     const result = await api(`/api/technical-reports/${encodeURIComponent(current.id)}/validate`, { method: "POST" });
     if (!result.ok) return alert(result.message || "Validation impossible.");
-    alert(result.data?.message || "Rapport corrigé et validé");
-    const appointmentId = current.appointmentId;
-    await leaveReport();
-    const { synchronizeClients } = await import("./client-sync.js?v=124");
-    await synchronizeClients();
-    window.dispatchEvent(new CustomEvent("depannhome:technical-report-validated", { detail: { appointmentId } }));
-    const { renderCalendar } = await import("./calendar.js?v=166");
-    renderCalendar();
+    await completeValidatedReport(result.data || {});
 }
 
 async function finalizePreview(shell) {
@@ -610,14 +604,30 @@ async function finalizePreview(shell) {
     if (!confirm("Valider définitivement ce rapport et archiver son PDF dans le dossier client ?")) return;
     const result = await api(`/api/technical-reports/${encodeURIComponent(current.id)}/validate`, { method: "POST" });
     if (!result.ok) return alert(result.message || "Validation impossible.");
-    alert(result.data?.message || "Rapport corrigé et validé");
-    const appointmentId = current.appointmentId;
+    await completeValidatedReport(result.data || {});
+}
+
+async function completeValidatedReport(validation) {
+    const reportId = validation.reportId || current.id;
+    const clientId = validation.clientId || current.clientId || "";
+    const attachmentId = validation.attachmentId || "";
+    const recipient = current.content?.snapshot?.clientEmail || "";
     await leaveReport();
     const { synchronizeClients } = await import("./client-sync.js?v=124");
     await synchronizeClients();
-    window.dispatchEvent(new CustomEvent("depannhome:technical-report-validated", { detail: { appointmentId } }));
-    const { renderCalendar } = await import("./calendar.js?v=166");
-    renderCalendar();
+    window.dispatchEvent(new CustomEvent("depannhome:technical-report-validated", { detail: { reportId, clientId, suppressNavigation: true } }));
+    if (clientId) window.dispatchEvent(new CustomEvent("depannhome:open-client", { detail: { clientId } }));
+    openDocumentDeliveryChoice({
+        label: `Rapport de recherche de fuite n° ${reportId}`,
+        recipient,
+        printUrl: `/api/technical-reports/${encodeURIComponent(reportId)}/pdf`,
+        sendEmail: async email => {
+            if (!clientId || !attachmentId) throw new Error("Le rapport n’est pas disponible dans la fiche client pour l’envoi.");
+            const response = await fetch(`/api/clients/${encodeURIComponent(clientId)}/attachments/${encodeURIComponent(attachmentId)}/email`, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ recipient: email }) });
+            const data = await response.json().catch(() => null);
+            if (!response.ok) throw new Error(data?.message || "Envoi du rapport impossible.");
+        }
+    });
 }
 
 async function requestCorrection(shell) {

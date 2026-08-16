@@ -1,9 +1,9 @@
 import { ROUTES } from "./config.js?v=106";
-import { createBillingDocumentForClient, viewBillingDocument } from "./billing.js?v=168";
+import { createBillingDocumentForClient, viewBillingDocument } from "./billing.js?v=169";
 import { getSearchableClients } from "./clients.js?v=143";
 import { addClientActivityByName, synchronizeClients } from "./client-sync.js?v=124";
 import { renderClientMessages } from "./messages.js?v=106";
-import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=27";
+import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=28";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { renderPlatformAnnouncement } from "./platform-announcement.js?v=1";
@@ -44,6 +44,7 @@ const MEMBERS_CACHE_DURATION = 15 * 60 * 1000;
 const EVENTS_CACHE_DURATION = 30 * 1000;
 
 window.addEventListener("depannhome:billing-document-saved", event => {
+    if (event.detail?.suppressNavigation) return;
     const appointmentId = String(event.detail?.appointmentId || "");
     const appointment = events.find(item => String(item.id) === appointmentId);
     if (!appointment) return;

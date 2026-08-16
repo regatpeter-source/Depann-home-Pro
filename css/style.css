@@ -4151,6 +4151,15 @@ body.desktop-device .billing-editor-panel.billing-editor-live-active{
 .billing-document-preview-heading strong{color:var(--primary)}
 .billing-document-preview-heading span{color:var(--muted);font-size:12px;text-align:right}
 .billing-document-live-preview iframe{width:100%;height:100%;min-height:0;border:0;background:#dfe5ec}
+.document-delivery-dialog{position:fixed;z-index:130;inset:0;display:grid;place-items:center;padding:16px;background:rgba(15,23,42,.72)}
+.document-delivery-dialog>div{width:min(620px,100%);padding:24px;border-radius:18px;background:#fff;box-shadow:0 28px 80px rgba(15,23,42,.42)}
+.document-delivery-dialog header{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}
+.document-delivery-dialog h2{margin:3px 0;color:var(--primary)}
+.document-delivery-dialog>div>p:not(.eyebrow){margin:16px 0;color:#475569}
+.document-delivery-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:10px;margin-top:18px;padding-top:16px;border-top:1px solid var(--border)}
+.report-directory-client{margin:5px 0;color:#334155}.report-directory-client b{color:var(--primary)}
+
+@media(max-width:700px){.document-delivery-actions{display:grid;grid-template-columns:1fr}.document-delivery-actions button{width:100%}}
 
 @media(max-width:1200px){
     .billing-document-workspace{grid-template-columns:minmax(500px,.95fr) minmax(460px,1.05fr)}

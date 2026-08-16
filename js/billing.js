@@ -5,6 +5,7 @@ import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { renderPlatformAnnouncement } from "./platform-announcement.js?v=1";
 import { clearSearch, createInfo, getContainer, setPage } from "./ui.js?v=44";
+import { openDocumentDeliveryChoice } from "./document-delivery.js?v=1";
 
 const CUSTOMER_TYPES = ["Particulier", "Professionnel", "Magasin", "Autre"];
 const DOCUMENT_TYPES = { quote: "Devis", invoice: "Facture", credit: "Avoir" };
@@ -152,11 +153,11 @@ function renderOverview(panel, profilePanel) {
     panel.querySelector("[data-billing-action=new-quote]")?.addEventListener("click", () => { if (!isAccountant()) openNewDocument("quote"); });
     panel.querySelector("[data-billing-action=new-invoice]").addEventListener("click", () => { if (!isAccountant()) openNewDocument("invoice"); });
     panel.querySelector("[data-billing-action=open-leak-reports]")?.addEventListener("click", async () => {
-        const { renderLeakReportWizard } = await import("./leak-report-wizard.js?v=27");
+        const { renderLeakReportWizard } = await import("./leak-report-wizard.js?v=28");
         renderLeakReportWizard();
     });
     panel.querySelector("[data-billing-action=new-leak-report]")?.addEventListener("click", async () => {
-        const { openLeakReportCreation } = await import("./leak-report-wizard.js?v=27");
+        const { openLeakReportCreation } = await import("./leak-report-wizard.js?v=28");
         openLeakReportCreation();
     });
     panel.querySelector("[data-billing-action=download-quote-template]")?.addEventListener("click", openQuoteTemplateDownload);
@@ -414,12 +415,22 @@ function renderDocumentEditor(panel) {
             documentId: result.data?.id
         });
         billingPreviewCleanup();
+        const savedDocumentId = result.data?.id || document.id;
+        const associatedClient = clients.find(client => String(client.id) === String(payload.clientId || document.clientId || "")) || clients.find(client => normalizeText(client.name) === normalizeText(payload.customerName));
         activeDocument = null;
-        if (!isEditing && payload.appointmentId) {
-            window.dispatchEvent(new CustomEvent("depannhome:billing-document-saved", { detail: { appointmentId: payload.appointmentId } }));
-            return;
-        }
-        renderBilling();
+        if (payload.appointmentId) window.dispatchEvent(new CustomEvent("depannhome:billing-document-saved", { detail: { appointmentId: payload.appointmentId, suppressNavigation: true } }));
+        if (associatedClient?.id) window.dispatchEvent(new CustomEvent("depannhome:open-client", { detail: { clientId: associatedClient.id } }));
+        else renderBilling();
+        openDocumentDeliveryChoice({
+            label: `${DOCUMENT_TYPES[payload.documentType]} ${payload.documentNumber}`,
+            recipient: associatedClient?.email || "",
+            printUrl: `/api/billing/documents/${encodeURIComponent(savedDocumentId)}/pdf`,
+            sendEmail: async email => {
+                const response = await fetch(`/api/billing/documents/${encodeURIComponent(savedDocumentId)}/email`, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ recipient: email }) });
+                const data = await response.json().catch(() => null);
+                if (!response.ok) throw new Error(data?.message || "Envoi du document impossible.");
+            }
+        });
     });
     form.querySelector("#deleteBillingDocument")?.addEventListener("click", async () => {
         if (!confirm("Supprimer ce document ?")) return;
@@ -668,6 +679,7 @@ function getInvoiceForQuote(quote) {
 }
 function fillCustomerAddress(input, form, clients) {
     const client = clients.find(item => normalizeText(item.name) === normalizeText(input.value));
+    form.querySelector("[name=clientId]").value = client?.id || "";
     if (client) form.querySelector("[name=customerAddress]").value = [client.address, client.city].filter(Boolean).join(", ");
 }
 

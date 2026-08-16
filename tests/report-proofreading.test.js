@@ -6,6 +6,7 @@ import { normalizeLeakContent } from "../server/leak-report-template.js";
 
 const serverSource = readFileSync(new URL("../server/technical-reports.js", import.meta.url), "utf8");
 const editorSource = readFileSync(new URL("../js/leak-report-wizard.js", import.meta.url), "utf8");
+const deliverySource = readFileSync(new URL("../js/document-delivery.js", import.meta.url), "utf8");
 
 function report() {
     return {
@@ -111,4 +112,24 @@ test("cancelling live proofreading restores the original report texts", () => {
 test("proofreading preserves intentional line breaks in report observations", () => {
     const content = normalizeLeakContent({ schemaVersion: 8, overview: { observations: [{ id: "observation-1", text: "Première ligne\nDeuxième ligne\n\nConclusion" }] } });
     assert.equal(content.overview.observations[0].text, "Première ligne\nDeuxième ligne\n\nConclusion");
+});
+
+test("report directory identifies correction work by client, insurer and claim", () => {
+    assert.match(serverSource, /AS "clientName"/);
+    assert.match(serverSource, /AS "claimNumber"/);
+    assert.match(serverSource, /AS insurance/);
+    assert.match(editorSource, /report\.clientName/);
+    assert.match(editorSource, /report\.claimNumber/);
+    assert.match(editorSource, /report\.insurance/);
+});
+
+test("validated reports return their client archive and open the client delivery workflow", () => {
+    assert.match(serverSource, /archivedAttachment = await archiveDocument/);
+    assert.match(serverSource, /attachmentId: archivedAttachment\?\.id/);
+    assert.match(serverSource, /return attachment/);
+    assert.match(editorSource, /depannhome:open-client/);
+    assert.match(editorSource, /attachments\/\$\{encodeURIComponent\(attachmentId\)\}\/email/);
+    assert.match(deliverySource, /Envoyer par e-mail/);
+    assert.match(deliverySource, /Imprimer \/ PDF/);
+    assert.match(deliverySource, /Plus tard/);
 });
