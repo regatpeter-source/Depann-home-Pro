@@ -18,6 +18,12 @@ La première étape est un instantané **en lecture seule** généré lors de la
 - Le cycle principal est `draft → submitted → ready_to_send → validated`. Le statut `in_correction` reste utilisé pour les demandes de correction par section et réouvre le rapport au technicien concerné.
 - La validation génère un PDF et verrouille le rapport. Le retour en brouillon enlève le PDF courant afin que toute nouvelle validation génère une version à jour.
 
+### Correction sur poste PC
+
+La vue d’ensemble de correction réunit toutes les observations et toutes les photos du rapport, y compris les photos générales, de présentation ou non rattachées à une observation. L’utilisateur autorisé peut y corriger les textes et légendes, remplacer une image, choisir sa taille dans le PDF, la déplacer ou la supprimer.
+
+Toutes les opérations média en cours sont terminées avant l’enregistrement de la correction. Le serveur calcule ensuite une empreinte privée du titre, de la date, du contenu et des médias. La validation définitive vérifie cette empreinte sans jamais l’exposer dans les réponses publiques : toute modification effectuée après la correction oblige donc à enregistrer une nouvelle correction, tandis qu’un rapport inchangé peut être validé normalement.
+
 ## Assistant, synchronisation et photos
 
 Une seule section est présentée à la fois sur téléphone. Une barre horizontale défilable permet d’ouvrir directement n’importe quelle section, tandis que les boutons **Section précédente** et **Section suivante** facilitent le parcours séquentiel. Les relevés d’humidité et de pression, ainsi que les matériels techniques, peuvent être ajoutés sans limite fonctionnelle raisonnable. Les modifications sont enregistrées après une courte temporisation, toutes les cinq secondes, lors du changement de section et à la mise en arrière-plan.

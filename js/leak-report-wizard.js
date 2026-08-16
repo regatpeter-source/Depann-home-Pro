@@ -197,10 +197,10 @@ function observationHtml(moduleKey, observation, index, write, materialId = "") 
     return `<article class="report-observation-card" data-observation-card="${escapeHtml(observation.id)}"><header><strong>Observation ${index + 1}</strong>${write ? `<div><button type="button" class="text-button" data-move-observation="up" data-observation-id="${escapeHtml(observation.id)}" data-material-id="${escapeHtml(materialId)}" ${index ? "" : "disabled"}>↑</button><button type="button" class="text-button" data-move-observation="down" data-observation-id="${escapeHtml(observation.id)}" data-material-id="${escapeHtml(materialId)}" ${index < observations.length - 1 ? "" : "disabled"}>↓</button><button type="button" class="text-button danger-text" data-delete-observation="${escapeHtml(observation.id)}" data-material-id="${escapeHtml(materialId)}">Supprimer</button></div>` : ""}</header><label>Constat<textarea data-observation-text="${escapeHtml(observation.id)}" data-material-id="${escapeHtml(materialId)}" rows="6" placeholder="Décrivez uniquement ce qui a été observé…" ${write ? "" : "disabled"}>${escapeHtml(observation.text || "")}</textarea></label>${desktopLayout ? `<fieldset class="report-pdf-layout-controls"><legend>Mise en page du PDF</legend><label><input type="checkbox" data-observation-keep-together="${escapeHtml(observation.id)}" data-material-id="${escapeHtml(materialId)}" ${observation.keepTogether !== false ? "checked" : ""}> Garder cette observation et ses photos ensemble si elles tiennent sur une page</label>${index ? `<label><input type="checkbox" data-observation-page-break="${escapeHtml(observation.id)}" data-material-id="${escapeHtml(materialId)}" ${observation.pageBreakBefore ? "checked" : ""}> Commencer cette observation sur une nouvelle page</label>` : ""}<small>Utilisez les flèches ci-dessus pour changer l’ordre des observations.</small></fieldset>` : ""}${photosHtml(moduleKey, observation.id, write, "Ajouter des photos", false, materialId)}</article>`;
 }
 
-function photosHtml(moduleKey, observationId, write, addLabel, singlePhoto = false, materialId = "", showAdd = true) {
+function photosHtml(moduleKey, observationId, write, addLabel, singlePhoto = false, materialId = "", showAdd = true, forceDesktopLayout = false) {
     const photos = orderedPhotos((current.media || []).filter(photo => photo.section === moduleKey && String(photo.observationId || "") === String(observationId) && String(photo.materialId || "") === String(materialId)));
     const source = `data-photo-source data-module-key="${escapeHtml(moduleKey)}" data-observation-id="${escapeHtml(observationId)}" data-material-id="${escapeHtml(materialId)}" ${singlePhoto ? 'data-single-photo="true"' : ""}`;
-    const desktopLayout = write && Boolean(observationId) && canAdjustPdfLayout();
+    const desktopLayout = write && (Boolean(observationId) || forceDesktopLayout) && canAdjustPdfLayout();
     return `<section class="report-observation-photos"><div class="report-photo-grid">${photos.map((photo, index) => `<article><button type="button" class="report-photo-preview" data-open-photo="${escapeHtml(photo.id)}"><img src="${escapeHtml(photo.dataUrl)}" alt="Agrandir la photo"></button>${write ? `<input value="${escapeHtml(photo.caption || "")}" maxlength="500" placeholder="Commentaire facultatif" data-photo-caption="${escapeHtml(photo.id)}">${desktopLayout ? `<label class="report-photo-pdf-size">Taille dans le PDF<select data-photo-pdf-size="${escapeHtml(photo.id)}"><option value="compact" ${photo.pdfSize === "compact" ? "selected" : ""}>Compacte — plusieurs photos par page</option><option value="medium" ${photo.pdfSize === "medium" ? "selected" : ""}>Moyenne</option><option value="large" ${!["compact", "medium"].includes(photo.pdfSize) ? "selected" : ""}>Grande — largeur de page</option></select></label>` : ""}<div class="report-photo-actions"><button type="button" class="text-button" data-replace-photo="${escapeHtml(photo.id)}" ${source}>Remplacer</button><button type="button" class="text-button" data-move-photo="up" data-photo-id="${escapeHtml(photo.id)}" ${index ? "" : "disabled"}>↑</button><button type="button" class="text-button" data-move-photo="down" data-photo-id="${escapeHtml(photo.id)}" ${index < photos.length - 1 ? "" : "disabled"}>↓</button><button type="button" class="text-button danger-text" data-delete-photo="${escapeHtml(photo.id)}">Supprimer</button></div>` : ""}</article>`).join("")}</div>${showAdd && write && (!singlePhoto || !photos.length) ? `<button type="button" class="report-photo-add" ${source}>${escapeHtml(addLabel)}</button>` : ""}</section>`;
 }
 
@@ -232,8 +232,8 @@ function bindEditor(shell, moduleKey) {
     shell.querySelectorAll("[data-open-photo]").forEach(button => button.addEventListener("click", () => openPhotoPreview(button.dataset.openPhoto)));
     shell.querySelectorAll("[data-photo-caption]").forEach(input => input.addEventListener("change", () => trackMediaSave(updatePhotoCaption(input, shell))));
     shell.querySelectorAll("[data-photo-pdf-size]").forEach(input => input.addEventListener("change", () => trackMediaSave(updatePhotoPdfSize(input, shell))));
-    shell.querySelectorAll("[data-delete-photo]").forEach(button => button.addEventListener("click", () => deletePhoto(button.dataset.deletePhoto, shell)));
-    shell.querySelectorAll("[data-move-photo]").forEach(button => button.addEventListener("click", () => movePhoto(button.dataset.photoId, button.dataset.movePhoto, shell)));
+    shell.querySelectorAll("[data-delete-photo]").forEach(button => button.addEventListener("click", () => trackMediaSave(deletePhoto(button.dataset.deletePhoto, shell))));
+    shell.querySelectorAll("[data-move-photo]").forEach(button => button.addEventListener("click", () => trackMediaSave(movePhoto(button.dataset.photoId, button.dataset.movePhoto, shell))));
     shell.querySelector("[data-preview]").addEventListener("click", async () => { await save(shell, true); previewMode = true; renderEditor(shell); });
     shell.querySelector("[data-proofread-report]")?.addEventListener("click", () => openReportProofreading(shell));
     shell.querySelector("[data-submit-report]")?.addEventListener("click", () => submitReport(shell));
@@ -348,9 +348,23 @@ function openReportProofreading(shell) {
     if (!entries.length) return alert("Ajoutez au moins une observation avant de lancer la correction orthographique.");
     const dialog = document.createElement("section");
     dialog.className = "report-proofreading-dialog";
-    dialog.innerHTML = `<form><header><div><p class="eyebrow">Correction sur poste PC</p><h2>Corriger le rapport</h2></div><button type="button" class="text-button" data-close-proofreading>Fermer</button></header><p class="report-proofreading-help">Relisez et modifiez toutes les observations ci-dessous. Les fautes sont soulignées par le correcteur français du navigateur : faites un clic droit sur un mot pour afficher ses suggestions. Le rapport sera ensuite placé dans la section « À envoyer ».</p><div class="report-proofreading-list">${entries.map((entry, index) => `<article><label><span>${escapeHtml(entry.sectionTitle)}</span><strong>${escapeHtml(entry.observationLabel)}</strong><textarea rows="5" lang="fr" spellcheck="true" autocapitalize="sentences" data-proofreading-entry="${index}">${escapeHtml(entry.observation.text || "")}</textarea></label></article>`).join("")}</div><p class="auth-message" aria-live="polite"></p><div class="report-proofreading-actions"><button type="button" class="secondary-button" data-close-proofreading>Annuler</button><button type="submit" class="secondary-button report-primary-action">Terminer la correction</button></div></form>`;
+    const originalTexts = entries.map(entry => entry.observation.text || "");
+    dialog.innerHTML = `<form><header><div><p class="eyebrow">Correction sur poste PC</p><h2>Vue d’ensemble et correction du rapport</h2></div><button type="button" class="text-button" data-close-proofreading>Fermer</button></header><p class="report-proofreading-help">Relisez les observations et contrôlez toutes les photos. Vous pouvez corriger les légendes, remplacer, redimensionner, déplacer ou supprimer une photo avant d’enregistrer la correction définitive.</p><div class="report-proofreading-list"></div><p class="auth-message" aria-live="polite"></p><div class="report-proofreading-actions"><button type="button" class="secondary-button" data-close-proofreading>Annuler</button><button type="submit" class="secondary-button report-primary-action">Enregistrer la correction et préparer l’envoi</button></div></form>`;
     document.body.append(dialog);
     const close = () => dialog.remove();
+    const syncTexts = () => entries.forEach((entry, index) => { const input = dialog.querySelector(`[data-proofreading-entry="${index}"]`); if (input) entry.observation.text = input.value; });
+    const renderList = () => {
+        const list = dialog.querySelector(".report-proofreading-list");
+        const additionalGroups = proofreadingAdditionalPhotoGroups(entries);
+        list.innerHTML = `${entries.map((entry, index) => `<article class="report-proofreading-entry"><label><span>${escapeHtml(entry.sectionTitle)}</span><strong>${escapeHtml(entry.observationLabel)}</strong><textarea rows="5" lang="fr" spellcheck="true" autocapitalize="sentences" data-proofreading-entry="${index}">${escapeHtml(entry.observation.text || "")}</textarea></label>${photosHtml(entry.sectionId, entry.observation.id, true, "", false, entry.materialId, false, true)}</article>`).join("")}${additionalGroups.map(group => `<article class="report-proofreading-entry report-proofreading-photo-group"><span>${escapeHtml(group.sectionTitle)}</span><strong>${escapeHtml(group.label)}</strong>${photosHtml(group.sectionId, group.observationId, true, "", false, group.materialId, false, true)}</article>`).join("")}`;
+        list.querySelectorAll("[data-open-photo]").forEach(button => button.addEventListener("click", () => openPhotoPreview(button.dataset.openPhoto)));
+        list.querySelectorAll("[data-photo-caption]").forEach(input => input.addEventListener("change", () => trackMediaSave(updatePhotoCaption(input, shell))));
+        list.querySelectorAll("[data-photo-pdf-size]").forEach(input => input.addEventListener("change", () => trackMediaSave(updatePhotoPdfSize(input, shell))));
+        list.querySelectorAll("[data-photo-source]").forEach(button => button.addEventListener("click", () => { syncTexts(); openPhotoSource(shell, { moduleKey: button.dataset.moduleKey, observationId: button.dataset.observationId, materialId: button.dataset.materialId, replacePhotoId: button.dataset.replacePhoto || "" }, renderList); }));
+        list.querySelectorAll("[data-delete-photo]").forEach(button => button.addEventListener("click", () => { syncTexts(); trackMediaSave(deletePhoto(button.dataset.deletePhoto, shell, renderList)); }));
+        list.querySelectorAll("[data-move-photo]").forEach(button => button.addEventListener("click", () => { syncTexts(); trackMediaSave(movePhoto(button.dataset.photoId, button.dataset.movePhoto, shell, renderList)); }));
+    };
+    renderList();
     dialog.querySelectorAll("[data-close-proofreading]").forEach(button => button.addEventListener("click", close));
     dialog.addEventListener("click", event => { if (event.target === dialog) close(); });
     dialog.querySelector("textarea")?.focus();
@@ -366,8 +380,7 @@ function openReportProofreading(shell) {
         submit.disabled = true;
         feedback.classList.remove("error");
         feedback.textContent = "Enregistrement de la correction…";
-        const originalTexts = entries.map(entry => entry.observation.text || "");
-        entries.forEach((entry, index) => { entry.observation.text = dialog.querySelector(`[data-proofreading-entry="${index}"]`)?.value || ""; });
+        syncTexts();
         clearTimeout(saveTimer);
         while (saving) await new Promise(resolve => window.setTimeout(resolve, 50));
         await Promise.all([...mediaSavePromises]);
@@ -394,13 +407,24 @@ function collectReportObservations() {
         if (isSkipped(section.id) || ["general", "presentation"].includes(section.id)) continue;
         if (section.id === "methods" && !section.custom) {
             for (const material of current.content.methods.materials || []) {
-                (material.observations || []).forEach((observation, index) => entries.push({ sectionTitle: `${section.title} — ${materialLabel(material)}`, observationLabel: `Observation ${index + 1}`, observation }));
+                (material.observations || []).forEach((observation, index) => entries.push({ sectionId: section.id, materialId: material.id, sectionTitle: `${section.title} — ${materialLabel(material)}`, observationLabel: `Observation ${index + 1}`, observation }));
             }
             continue;
         }
-        (sectionContent(section.id)?.observations || []).forEach((observation, index) => entries.push({ sectionTitle: section.title, observationLabel: `Observation ${index + 1}`, observation }));
+        (sectionContent(section.id)?.observations || []).forEach((observation, index) => entries.push({ sectionId: section.id, materialId: "", sectionTitle: section.title, observationLabel: `Observation ${index + 1}`, observation }));
     }
     return entries;
+}
+
+function proofreadingAdditionalPhotoGroups(entries) {
+    const covered = new Set(entries.map(entry => `${entry.sectionId}|${entry.observation.id}|${entry.materialId}`));
+    const groups = new Map();
+    for (const photo of current.media || []) {
+        const key = `${photo.section || ""}|${photo.observationId || ""}|${photo.materialId || ""}`;
+        if (covered.has(key)) continue;
+        if (!groups.has(key)) groups.set(key, { sectionId: photo.section || "general", observationId: photo.observationId || "", materialId: photo.materialId || "", sectionTitle: moduleDefinition(photo.section)?.[1] || "Photos du rapport", label: photo.section === "presentation" ? "Photo de présentation" : "Photos de la page" });
+    }
+    return [...groups.values()];
 }
 
 function openModule(shell, key) {
@@ -419,17 +443,17 @@ async function removeObservation(moduleKey, id, materialId = "") { const photos 
 async function removeMaterial(id) { const material = materialById(id); if (!material) return true; const photos = (current.media || []).filter(photo => String(photo.materialId || "") === String(id)); const deleted = await Promise.all(photos.map(photo => api(`/api/technical-reports/${encodeURIComponent(current.id)}/media/${encodeURIComponent(photo.id)}`, { method: "DELETE" }))); if (deleted.some(result => !result.ok)) { alert("Une ou plusieurs photos n’ont pas pu être supprimées."); return false; } current.content.methods.materials = current.content.methods.materials.filter(item => item.id !== id); current.media = (current.media || []).filter(photo => String(photo.materialId || "") !== String(id)); if (current.content.activeMaterialId === id) current.content.activeMaterialId = ""; return true; }
 function moveObservation(moduleKey, id, direction, materialId = "") { const material = materialById(materialId); const items = material ? material.observations : sectionContent(moduleKey).observations; const index = items.findIndex(observation => observation.id === id); const next = direction === "up" ? index - 1 : index + 1; if (index < 0 || next < 0 || next >= items.length) return; [items[index], items[next]] = [items[next], items[index]]; }
 
-function openPhotoSource(shell, context) {
+function openPhotoSource(shell, context, refresh = () => renderEditor(shell)) {
     const existing = document.querySelector(".report-photo-source-dialog"); if (existing) existing.remove();
     const dialog = document.createElement("section"); dialog.className = "report-photo-source-dialog";
     dialog.innerHTML = `<div><header><h3>${context.replacePhotoId ? "Remplacer la photo" : "Ajouter une photo"}</h3><button type="button" class="text-button" data-close-photo-source>Fermer</button></header><p>Choisissez la source de l’image.</p><div class="report-photo-source-actions"><label>Prendre une photo<input type="file" accept="image/*" capture="environment" data-camera-source></label><label>Choisir dans la galerie<input type="file" accept="image/*" ${context.singlePhoto || context.replacePhotoId ? "" : "multiple"} data-gallery-source></label></div></div>`;
     document.body.append(dialog); dialog.querySelector("[data-close-photo-source]").addEventListener("click", () => dialog.remove());
-    ["[data-camera-source]", "[data-gallery-source]"].forEach(selector => dialog.querySelector(selector).addEventListener("change", async event => { const files = [...event.target.files || []]; if (!files.length) return; dialog.remove(); if (context.replacePhotoId) await replacePhoto(context.replacePhotoId, files[0], shell); else await uploadPhotos(files, context, shell); }));
+    ["[data-camera-source]", "[data-gallery-source]"].forEach(selector => dialog.querySelector(selector).addEventListener("change", async event => { const files = [...event.target.files || []]; if (!files.length) return; dialog.remove(); const operation = context.replacePhotoId ? replacePhoto(context.replacePhotoId, files[0], shell, refresh) : uploadPhotos(files, context, shell, refresh); trackMediaSave(operation); await operation; }));
 }
 
 function openPhotoPreview(photoId) { const photo = (current.media || []).find(item => item.id === photoId); if (!photo) return; const dialog = document.createElement("section"); dialog.className = "report-photo-preview-dialog"; dialog.innerHTML = `<div><button type="button" class="text-button" data-close-photo-preview>Fermer</button><img src="${escapeHtml(photo.dataUrl)}" alt="Photo du rapport agrandie"></div>`; document.body.append(dialog); dialog.addEventListener("click", event => { if (event.target === dialog || event.target.matches("[data-close-photo-preview]")) dialog.remove(); }); }
 
-async function uploadPhotos(files, context, shell) {
+async function uploadPhotos(files, context, shell, refresh = () => renderEditor(shell)) {
     if (!files.length) return;
     const optimized = await optimizeImages(files);
     if (!optimized.length) return;
@@ -442,7 +466,7 @@ async function uploadPhotos(files, context, shell) {
     if (!result.ok) return alert(result.message || "Ajout des photos impossible.");
     current.media.push(...(result.data.media || []));
     markReportModified(shell);
-    renderEditor(shell);
+    refresh();
 }
 
 async function replacePresentationPhoto(file, shell) {
@@ -475,21 +499,22 @@ function trackMediaSave(promise) {
     promise.finally(() => mediaSavePromises.delete(promise));
 }
 
-async function replacePhoto(id, file, shell) { const photo = (current.media || []).find(item => item.id === id); if (!photo) return; const [optimized] = await optimizeImages([file]); if (!optimized) return; const result = await api(`/api/technical-reports/${encodeURIComponent(current.id)}/media/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify({ caption: photo.caption || "", annotation: photo.annotation || "", observationId: photo.observationId || "", materialId: photo.materialId || "", dataUrl: await fileDataUrl(optimized), name: optimized.name, mime: optimized.type, size: optimized.size }) }); if (!result.ok) return alert(result.message || "Remplacement impossible."); photo.dataUrl = await fileDataUrl(optimized); photo.name = optimized.name; photo.mime = optimized.type; photo.size = optimized.size; markReportModified(shell); renderEditor(shell); }
+async function replacePhoto(id, file, shell, refresh = () => renderEditor(shell)) { const photo = (current.media || []).find(item => item.id === id); if (!photo) return false; const [optimized] = await optimizeImages([file]); if (!optimized) return false; const dataUrl = await fileDataUrl(optimized); const result = await api(`/api/technical-reports/${encodeURIComponent(current.id)}/media/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify({ caption: photo.caption || "", annotation: photo.annotation || "", observationId: photo.observationId || "", materialId: photo.materialId || "", dataUrl, name: optimized.name, mime: optimized.type, size: optimized.size }) }); if (!result.ok) { alert(result.message || "Remplacement impossible."); return false; } photo.dataUrl = dataUrl; photo.name = optimized.name; photo.mime = optimized.type; photo.size = optimized.size; markReportModified(shell); refresh(); return true; }
 
-async function movePhoto(id, direction, shell) { const photo = (current.media || []).find(item => item.id === id); if (!photo) return; const siblings = orderedPhotos((current.media || []).filter(item => item.section === photo.section && String(item.observationId || "") === String(photo.observationId || "") && String(item.materialId || "") === String(photo.materialId || ""))); const index = siblings.findIndex(item => item.id === id); const other = siblings[direction === "up" ? index - 1 : index + 1]; if (!other) return; const photoOrder = Number(photo.sortOrder || index); photo.sortOrder = Number(other.sortOrder || (direction === "up" ? index - 1 : index + 1)); other.sortOrder = photoOrder; const results = await Promise.all([photo, other].map(item => api(`/api/technical-reports/${encodeURIComponent(current.id)}/media/${encodeURIComponent(item.id)}`, { method: "PATCH", body: JSON.stringify({ caption: item.caption || "", annotation: item.annotation || "", observationId: item.observationId || "", materialId: item.materialId || "", sortOrder: item.sortOrder }) }))); if (results.some(result => !result.ok)) return alert("Réorganisation impossible."); markReportModified(shell); renderEditor(shell); }
+async function movePhoto(id, direction, shell, refresh = () => renderEditor(shell)) { const photo = (current.media || []).find(item => item.id === id); if (!photo) return false; const siblings = orderedPhotos((current.media || []).filter(item => item.section === photo.section && String(item.observationId || "") === String(photo.observationId || "") && String(item.materialId || "") === String(photo.materialId || ""))); const index = siblings.findIndex(item => item.id === id); const other = siblings[direction === "up" ? index - 1 : index + 1]; if (!other) return false; const photoOrder = Number(photo.sortOrder || index); photo.sortOrder = Number(other.sortOrder || (direction === "up" ? index - 1 : index + 1)); other.sortOrder = photoOrder; const results = await Promise.all([photo, other].map(item => api(`/api/technical-reports/${encodeURIComponent(current.id)}/media/${encodeURIComponent(item.id)}`, { method: "PATCH", body: JSON.stringify({ caption: item.caption || "", annotation: item.annotation || "", observationId: item.observationId || "", materialId: item.materialId || "", sortOrder: item.sortOrder }) }))); if (results.some(result => !result.ok)) { alert("Réorganisation impossible."); return false; } markReportModified(shell); refresh(); return true; }
 
 async function optimizeImages(files) { const optimized = []; for (const file of files) { try { if (!file.type.startsWith("image/") || !window.createImageBitmap) { optimized.push(file); continue; } const bitmap = await createImageBitmap(file); const scale = Math.min(1, 1920 / Math.max(bitmap.width, bitmap.height)); const canvas = document.createElement("canvas"); canvas.width = Math.max(1, Math.round(bitmap.width * scale)); canvas.height = Math.max(1, Math.round(bitmap.height * scale)); canvas.getContext("2d", { alpha: false }).drawImage(bitmap, 0, 0, canvas.width, canvas.height); bitmap.close?.(); const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/jpeg", .84)); optimized.push(blob ? new File([blob], `${file.name.replace(/\.[^.]+$/, "") || "photo"}.jpg`, { type: "image/jpeg" }) : file); } catch { optimized.push(file); } } return optimized; }
 function fileDataUrl(file) { return new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result || "")); reader.onerror = reject; reader.readAsDataURL(file); }); }
 function orderedPhotos(photos) { return [...photos].sort((left, right) => Number(left.sortOrder || 0) - Number(right.sortOrder || 0) || String(left.createdAt || "").localeCompare(String(right.createdAt || ""))); }
 
-async function deletePhoto(id, shell) {
-    if (!confirm("Supprimer cette photo ?")) return;
+async function deletePhoto(id, shell, refresh = () => renderEditor(shell)) {
+    if (!confirm("Supprimer cette photo ?")) return false;
     const result = await api(`/api/technical-reports/${encodeURIComponent(current.id)}/media/${encodeURIComponent(id)}`, { method: "DELETE" });
-    if (!result.ok) return alert(result.message || "Suppression impossible.");
+    if (!result.ok) { alert(result.message || "Suppression impossible."); return false; }
     current.media = current.media.filter(photo => photo.id !== id);
     markReportModified(shell);
-    renderEditor(shell);
+    refresh();
+    return true;
 }
 
 function queueSave(shell, affectsReport = true) {

@@ -1,6 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { canConfirmReportProofreading, isReportProofreadingCurrent, reportProofreadingFingerprint } from "../server/report-proofreading.js";
+
+const serverSource = readFileSync(new URL("../server/technical-reports.js", import.meta.url), "utf8");
+const editorSource = readFileSync(new URL("../js/leak-report-wizard.js", import.meta.url), "utf8");
 
 function report() {
     return {
@@ -53,4 +57,28 @@ test("report text, media and PDF layout changes invalidate proofreading", () => 
         mutate(value);
         assert.equal(isReportProofreadingCurrent(value), false);
     }
+});
+
+test("final validation retains the private proofreading fingerprint for its server-side check", () => {
+    assert.match(serverSource, /findReport\(ownerId, positiveId\(request\.params\.reportId\), request, false, true\)/);
+    assert.match(serverSource, /if \(!includeProofreadingFingerprint\) delete value\.proofread_fingerprint/);
+    assert.match(serverSource, /if \(!isReportProofreadingCurrent\(report\)\)/);
+});
+
+test("PC proofreading overview includes every photo and all editing controls", () => {
+    assert.match(editorSource, /Vue d’ensemble et correction du rapport/);
+    assert.match(editorSource, /proofreadingAdditionalPhotoGroups\(entries\)/);
+    assert.match(editorSource, /photosHtml\(entry\.sectionId, entry\.observation\.id, true/);
+    assert.match(editorSource, /data-photo-caption/);
+    assert.match(editorSource, /data-photo-pdf-size/);
+    assert.match(editorSource, /data-replace-photo/);
+    assert.match(editorSource, /data-move-photo/);
+    assert.match(editorSource, /data-delete-photo/);
+});
+
+test("proofreading waits for every photo mutation before saving its fingerprint", () => {
+    assert.match(editorSource, /trackMediaSave\(deletePhoto/);
+    assert.match(editorSource, /trackMediaSave\(movePhoto/);
+    assert.match(editorSource, /trackMediaSave\(operation\)/);
+    assert.match(editorSource, /await Promise\.all\(\[\.\.\.mediaSavePromises\]\)/);
 });
