@@ -256,7 +256,7 @@ function renderSubscriptionSummary() {
     const activeAccounts = accounts.filter(account => !account.isArchived);
     const paidAccounts = activeAccounts.filter(account => account.subscriptionPlan === "paid");
     const activePaidAccounts = paidAccounts.filter(account => ["active", "trial", "past_due"].includes(account.subscriptionStatus));
-    const monthlyRevenue = activePaidAccounts.reduce((total, account) => total + Number(account.monthlyPriceCents || 0), 0);
+    const monthlyRevenue = activePaidAccounts.reduce((total, account) => total + subscriptionNetAmountCents(account), 0);
     const pastDue = activeAccounts.filter(account => account.subscriptionStatus === "past_due").length;
     summary.innerHTML = `
         <article><span>Entreprises actives</span><strong>${activeAccounts.length}</strong></article>
@@ -377,7 +377,7 @@ function renderAccountForm() {
                 <label>Techniciens autorisés<input name="maxTechnicians" type="number" min="0" max="500" required value="1"></label>
             </div>
             ${renderCompanyProfileFields()}
-            ${renderSubscriptionFields({ subscriptionPlan: "free", subscriptionLabel: "", monthlyPriceCents: 0, subscriptionStatus: "active", subscriptionRenewalDate: "", billingReference: "", creatorNote: "" })}
+            ${renderSubscriptionFields({ subscriptionPlan: "free", subscriptionLabel: "", monthlyPriceCents: 0, subscriptionDiscountLabel: "", subscriptionDiscountMode: "fixed", subscriptionDiscountValue: 0, subscriptionStatus: "active", subscriptionRenewalDate: "", billingReference: "", creatorNote: "" })}
             ${renderOrganizationFields()}
             ${renderDocumentTemplatePolicyFields({ quoteTemplatePolicy: "company_choice", quitusTemplatePolicy: "company_choice", reportTemplatePolicy: "company_choice" })}
             <div class="creator-form-actions"><button type="submit" class="secondary-button">Créer l’entreprise</button></div>
@@ -449,12 +449,16 @@ function fileAsDataUrl(file) {
 
 function renderSubscriptionFields(account) {
     const plan = account.subscriptionPlan === "paid" ? "paid" : "free";
+    const discountMode = account.subscriptionDiscountMode === "percentage" ? "percentage" : "fixed";
     return `
         <fieldset class="creator-subscription-fields"><legend>Abonnement et suivi commercial</legend>
             <div class="form-grid">
                 <label>Formule<select name="subscriptionPlan"><option value="free" ${plan === "free" ? "selected" : ""}>Abonnement mensuel gratuit</option><option value="paid" ${plan === "paid" ? "selected" : ""}>Abonnement mensuel payant</option></select></label>
                 <label>Nom de l’offre<input name="subscriptionLabel" maxlength="80" value="${escapeHtml(account.subscriptionLabel || "")}" placeholder="Ex. Pro équipe"></label>
                 <label>Tarif mensuel TTC (€)<input name="monthlyPrice" type="number" min="0" max="999999.99" step="0.01" value="${escapeHtml(centsToAmount(account.monthlyPriceCents))}" ${plan === "free" ? "disabled" : ""}></label>
+                <label>Libellé de la réduction<input name="subscriptionDiscountLabel" maxlength="160" value="${escapeHtml(account.subscriptionDiscountLabel || "")}" placeholder="Ex. Offre d’essai" ${plan === "free" ? "disabled" : ""}></label>
+                <label>Type de réduction<select name="subscriptionDiscountMode" ${plan === "free" ? "disabled" : ""}><option value="fixed" ${discountMode === "fixed" ? "selected" : ""}>Montant TTC (€)</option><option value="percentage" ${discountMode === "percentage" ? "selected" : ""}>Pourcentage (%)</option></select></label>
+                <label>Valeur de la réduction<input name="subscriptionDiscountValue" type="number" min="0" step="0.01" value="${escapeHtml(account.subscriptionDiscountValue || 0)}" ${plan === "free" ? "disabled" : ""}></label>
                 <label>Statut de l’abonnement<select name="subscriptionStatus">${["active", "trial", "past_due", "suspended", "cancelled"].map(status => `<option value="${status}" ${account.subscriptionStatus === status ? "selected" : ""}>${subscriptionStatusLabel(status)}</option>`).join("")}</select></label>
                 <label>Prochaine échéance<input name="subscriptionRenewalDate" type="date" value="${escapeHtml(account.subscriptionRenewalDate || "")}"></label>
                 <label>Référence de paiement / facture<input name="billingReference" maxlength="100" value="${escapeHtml(account.billingReference || "")}" placeholder="Ex. Virement juillet 2026"></label>
@@ -527,13 +531,19 @@ function bindSubscriptionPlan(form) {
     const plan = form.elements.subscriptionPlan;
     const price = form.elements.monthlyPrice;
     const billingEmail = form.elements.billingEmail;
+    const discountLabel = form.elements.subscriptionDiscountLabel;
+    const discountMode = form.elements.subscriptionDiscountMode;
+    const discountValue = form.elements.subscriptionDiscountValue;
     const update = () => {
         const isPaid = plan.value === "paid";
         price.disabled = !isPaid;
         billingEmail.required = isPaid;
+        [discountLabel, discountMode, discountValue].forEach(field => { field.disabled = !isPaid; });
         if (!isPaid) price.value = "0";
+        discountValue.max = discountMode.value === "percentage" ? "100" : "999999.99";
     };
     plan.addEventListener("change", update);
+    discountMode.addEventListener("change", update);
     update();
 }
 
@@ -632,10 +642,12 @@ function renderSubscriptionInvoice(invoice) {
     const status = subscriptionInvoiceStatus(invoice.status);
     const sentAt = invoice.sentAt ? `Envoyée le ${formatDateTime(invoice.sentAt)}` : invoice.status === "failed" ? "Envoi en échec" : "En attente d’envoi";
     const error = invoice.status === "failed" && invoice.lastError ? `<p class="auth-message error">${escapeHtml(invoice.lastError)}</p>` : "";
+    const discount = Number(invoice.baseAmountCents || 0) > Number(invoice.amountCents || 0)
+        ? `<small>${escapeHtml(invoice.financialData?.discountLabel || "Remise commerciale")} : −${formatCurrency(Number(invoice.baseAmountCents) - Number(invoice.amountCents))}</small>` : "";
     return `
         <article class="creator-subscription-invoice">
             <div><p class="eyebrow">${escapeHtml(invoice.subscriptionLabel || "Abonnement Depann’Home Pro")}</p><h4>${escapeHtml(invoice.invoiceNumber)}</h4><p>${escapeHtml(invoice.companyName || invoice.recipientName)} · ${escapeHtml(invoice.recipientEmail || "E-mail non renseigné")}</p></div>
-            <div class="creator-subscription-invoice-details"><span class="creator-subscription-badge ${escapeHtml(invoice.status || "pending")}">${status}</span><strong>${formatCurrency(invoice.amountCents)}</strong><small>Émise le ${formatDate(invoice.issueDate)} · Échéance ${formatDate(invoice.dueDate)}</small><small>${escapeHtml(sentAt)}</small>${error}</div>
+            <div class="creator-subscription-invoice-details"><span class="creator-subscription-badge ${escapeHtml(invoice.status || "pending")}">${status}</span><strong>${formatCurrency(invoice.amountCents)}</strong>${discount}<small>Émise le ${formatDate(invoice.issueDate)} · Échéance ${formatDate(invoice.dueDate)}</small><small>${escapeHtml(sentAt)}</small>${error}</div>
             <a class="secondary-button" href="/api/creator/subscription-invoices/${encodeURIComponent(invoice.id)}/pdf" download> Télécharger le PDF</a>
         </article>
     `;
@@ -643,6 +655,13 @@ function renderSubscriptionInvoice(invoice) {
 
 function subscriptionInvoiceStatus(status) {
     return ({ sent: "Envoyée", pending: "À envoyer", sending: "Envoi en cours", failed: "Échec d’envoi" })[status] || "À envoyer";
+}
+
+function subscriptionNetAmountCents(account) {
+    const amount = Math.max(0, Number(account.monthlyPriceCents || 0));
+    const value = Math.max(0, Number(account.subscriptionDiscountValue || 0));
+    const discount = account.subscriptionDiscountMode === "percentage" ? Math.round(amount * Math.min(100, value) / 100) : Math.round(value * 100);
+    return Math.max(0, amount - discount);
 }
 
 function formatDate(value) {

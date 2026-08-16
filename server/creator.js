@@ -85,6 +85,9 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
                 owner.subscription_plan AS "subscriptionPlan",
                 owner.subscription_label AS "subscriptionLabel",
                 owner.monthly_price_cents AS "monthlyPriceCents",
+                owner.subscription_discount_label AS "subscriptionDiscountLabel",
+                owner.subscription_discount_mode AS "subscriptionDiscountMode",
+                owner.subscription_discount_value::float AS "subscriptionDiscountValue",
                 owner.subscription_status AS "subscriptionStatus",
                 TO_CHAR(owner.subscription_renewal_date, 'YYYY-MM-DD') AS "subscriptionRenewalDate",
                 owner.billing_reference AS "billingReference",
@@ -127,11 +130,13 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
                 await connection.query("BEGIN");
                 const { rows } = await connection.query(`
                 INSERT INTO depannhome_users (username, password_hash, role, full_name, phone, email, company_name, max_pc_users, max_technicians,
-                    subscription_plan, subscription_label, monthly_price_cents, subscription_status, subscription_renewal_date, billing_reference, creator_note, quote_template_policy, quitus_template_policy, report_template_policy)
-                VALUES ($1, $2, 'admin', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::date, $14, $15, $16, $17, $18)
+                    subscription_plan, subscription_label, monthly_price_cents, subscription_discount_label, subscription_discount_mode, subscription_discount_value,
+                    subscription_status, subscription_renewal_date, billing_reference, creator_note, quote_template_policy, quitus_template_policy, report_template_policy)
+                VALUES ($1, $2, 'admin', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16::date, $17, $18, $19, $20, $21)
                 RETURNING id
             `, [credentials.username, await bcrypt.hash(credentials.password, 12), account.fullName, account.phone, account.billingEmail, account.companyName, account.maxPcUsers, account.maxTechnicians,
-                account.subscriptionPlan, account.subscriptionLabel, account.monthlyPriceCents, account.subscriptionStatus, account.subscriptionRenewalDate || null, account.billingReference, account.creatorNote, account.quoteTemplatePolicy, account.quitusTemplatePolicy, account.reportTemplatePolicy]);
+                account.subscriptionPlan, account.subscriptionLabel, account.monthlyPriceCents, account.subscriptionDiscountLabel, account.subscriptionDiscountMode, account.subscriptionDiscountValue,
+                account.subscriptionStatus, account.subscriptionRenewalDate || null, account.billingReference, account.creatorNote, account.quoteTemplatePolicy, account.quitusTemplatePolicy, account.reportTemplatePolicy]);
                 const id = rows[0].id;
                 await connection.query("UPDATE depannhome_users SET account_owner_id = id WHERE id = $1", [id]);
                 await synchronizeCompanyProfile(connection, id, account.companyProfile);
@@ -167,10 +172,12 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
             SET company_name = $2, full_name = $3, phone = $4, email = $5, max_pc_users = $6, max_technicians = $7, is_active = $8,
                 subscription_plan = $9, subscription_label = $10, monthly_price_cents = $11, subscription_status = $12,
                 subscription_renewal_date = $13::date, billing_reference = $14, creator_note = $15, quote_template_policy = $16,
-                quitus_template_policy = $17, report_template_policy = $18, updated_at = NOW()
+                quitus_template_policy = $17, report_template_policy = $18, subscription_discount_label = $19,
+                subscription_discount_mode = $20, subscription_discount_value = $21, updated_at = NOW()
             WHERE id = $1 AND account_owner_id = id
             `, [accountId, account.companyName, account.fullName, account.phone, account.billingEmail, account.maxPcUsers, account.maxTechnicians, owner.is_active,
-            account.subscriptionPlan, account.subscriptionLabel, account.monthlyPriceCents, account.subscriptionStatus, account.subscriptionRenewalDate || null, account.billingReference, account.creatorNote, account.quoteTemplatePolicy, account.quitusTemplatePolicy, account.reportTemplatePolicy]);
+            account.subscriptionPlan, account.subscriptionLabel, account.monthlyPriceCents, account.subscriptionStatus, account.subscriptionRenewalDate || null, account.billingReference, account.creatorNote, account.quoteTemplatePolicy, account.quitusTemplatePolicy, account.reportTemplatePolicy,
+            account.subscriptionDiscountLabel, account.subscriptionDiscountMode, account.subscriptionDiscountValue]);
             await synchronizeCompanyProfile(connection, accountId, account.companyProfile);
             await connection.query("COMMIT");
         } catch (error) { await connection.query("ROLLBACK"); throw error; } finally { connection.release(); }
@@ -395,6 +402,9 @@ function sanitizeAccount(value, requireCompleteProfile = false) {
     const subscriptionPlan = SUBSCRIPTION_PLANS.has(value?.subscriptionPlan) ? value.subscriptionPlan : "free";
     const subscriptionLabel = cleanText(value?.subscriptionLabel, 80);
     const monthlyPriceCents = moneyToCents(value?.monthlyPrice);
+    const subscriptionDiscountLabel = cleanText(value?.subscriptionDiscountLabel, 160);
+    const subscriptionDiscountMode = value?.subscriptionDiscountMode === "percentage" ? "percentage" : "fixed";
+    const subscriptionDiscountValue = decimalInRange(value?.subscriptionDiscountValue, 0, subscriptionDiscountMode === "percentage" ? 100 : 999999.99);
     const subscriptionStatus = SUBSCRIPTION_STATUSES.has(value?.subscriptionStatus) ? value.subscriptionStatus : "active";
     const subscriptionRenewalDate = sanitizeDate(value?.subscriptionRenewalDate);
     const billingReference = cleanText(value?.billingReference, 100);
@@ -408,13 +418,17 @@ function sanitizeAccount(value, requireCompleteProfile = false) {
     if (!maxPcUsers) return { ok: false, message: "Indiquez au moins un poste PC." };
     if (maxTechnicians === null) return { ok: false, message: "Le nombre de techniciens est invalide." };
     if (monthlyPriceCents === null) return { ok: false, message: "Le tarif mensuel est invalide." };
+    if (subscriptionDiscountValue === null) return { ok: false, message: "La réduction commerciale est invalide." };
     if (subscriptionPlan === "paid" && monthlyPriceCents <= 0) return { ok: false, message: "Indiquez un tarif mensuel supérieur à zéro pour un abonnement payant." };
+    if (subscriptionPlan === "paid" && subscriptionDiscountMode === "fixed" && Math.round(subscriptionDiscountValue * 100) > monthlyPriceCents) return { ok: false, message: "La réduction fixe ne peut pas dépasser le tarif mensuel." };
     if (billingEmail && !EMAIL_PATTERN.test(billingEmail)) return { ok: false, message: "L’e-mail de facturation est invalide." };
     if (subscriptionPlan === "paid" && !billingEmail) return { ok: false, message: "L’e-mail de facturation est obligatoire pour un abonnement payant." };
     const companyProfile = sanitizeCompanyProfile(value, { companyName, billingEmail, phone, requireCompleteProfile });
     if (!companyProfile.ok) return companyProfile;
     return { ok: true, companyName, fullName, phone, billingEmail, maxPcUsers, maxTechnicians, subscriptionPlan, subscriptionLabel,
         monthlyPriceCents: subscriptionPlan === "free" ? 0 : monthlyPriceCents, subscriptionStatus, subscriptionRenewalDate,
+        subscriptionDiscountLabel: subscriptionPlan === "free" ? "" : subscriptionDiscountLabel,
+        subscriptionDiscountMode, subscriptionDiscountValue: subscriptionPlan === "free" ? 0 : subscriptionDiscountValue,
         billingReference, creatorNote, quoteTemplatePolicy, quitusTemplatePolicy, reportTemplatePolicy, isActive, companyProfile };
 }
 
@@ -497,6 +511,14 @@ function moneyToCents(value) {
     if (!/^\d{1,6}(?:\.\d{1,2})?$/.test(amount)) return null;
     const cents = Math.round(Number(amount) * 100);
     return Number.isSafeInteger(cents) && cents >= 0 && cents <= 99999999 ? cents : null;
+}
+
+function decimalInRange(value, minimum, maximum) {
+    const normalized = String(value ?? "").trim().replace(",", ".");
+    if (!normalized) return 0;
+    if (!/^\d{1,6}(?:\.\d{1,2})?$/.test(normalized)) return null;
+    const number = Number(normalized);
+    return Number.isFinite(number) && number >= minimum && number <= maximum ? Math.round(number * 100) / 100 : null;
 }
 
 function sanitizeDate(value) {

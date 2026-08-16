@@ -786,6 +786,7 @@ function sanitizeFinancialData(value) {
     return {
         discountMode: data.discountMode === "percentage" ? "percentage" : "fixed",
         discountAmount: nonNegativeNumber(data.discountAmount) || 0,
+        discountLabel: cleanText(data.discountLabel, 160),
         depositAmount: nonNegativeNumber(data.depositAmount) || 0,
         conditions: cleanText(data.conditions, 2000),
         comments: cleanText(data.comments, 2000),
@@ -1021,7 +1022,8 @@ export function createBillingPdf(document, profile) {
         if (discountAmount || aidAmount) {
             ensureSpace(44);
             const aidLines = (Array.isArray(financialData.aids) ? financialData.aids : []).map(aid => `${aid.name || "Aide"} : ${aid.calculationMode === "percentage" ? `${aid.amount || 0} %` : formatMoney(aid.amount)}`).join(" · ");
-            text([discountAmount ? `Remise : ${formatMoney(discountAmount)}` : "", aidLines, aidAmount ? `Total des aides : ${formatMoney(aidAmount)}` : ""].filter(Boolean).join("\n"), margin, pdf.y, contentWidth, { size: 8, color: "#475569", lineGap: 2 });
+            const discountRate = financialData.discountMode === "percentage" ? ` (${Number(financialData.discountAmount || 0)} %)` : "";
+            text([discountAmount ? `${financialData.discountLabel || "Remise"}${discountRate} : −${formatMoney(discountAmount)} HT` : "", aidLines, aidAmount ? `Total des aides : ${formatMoney(aidAmount)}` : ""].filter(Boolean).join("\n"), margin, pdf.y, contentWidth, { size: 8, color: "#475569", lineGap: 2 });
             pdf.y += 38;
         }
         if (document.documentType === "quote") {

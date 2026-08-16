@@ -44,7 +44,10 @@ export async function initializeSubscriptionInvoicing() {
             recipient_address VARCHAR(500) NOT NULL DEFAULT '',
             subscription_label VARCHAR(80) NOT NULL DEFAULT '',
             amount_cents INTEGER NOT NULL CHECK (amount_cents > 0),
+            net_amount_cents INTEGER NOT NULL DEFAULT 0 CHECK (net_amount_cents >= 0),
             vat_rate NUMERIC(5,2) NOT NULL CHECK (vat_rate >= 0 AND vat_rate <= 100),
+            lines JSONB NOT NULL DEFAULT '[]'::jsonb,
+            financial_data JSONB NOT NULL DEFAULT '{}'::jsonb,
             issue_date DATE NOT NULL,
             due_date DATE NOT NULL,
             issuer_profile JSONB NOT NULL,
@@ -58,6 +61,11 @@ export async function initializeSubscriptionInvoicing() {
     `);
     await database.query(`ALTER TABLE depannhome_subscription_invoices ADD COLUMN IF NOT EXISTS recipient_address VARCHAR(500) NOT NULL DEFAULT ''`);
     await database.query(`ALTER TABLE depannhome_subscription_invoices ADD COLUMN IF NOT EXISTS issue_date DATE NOT NULL DEFAULT CURRENT_DATE`);
+    await database.query(`ALTER TABLE depannhome_subscription_invoices ADD COLUMN IF NOT EXISTS net_amount_cents INTEGER`);
+    await database.query(`UPDATE depannhome_subscription_invoices SET net_amount_cents=amount_cents WHERE net_amount_cents IS NULL`);
+    await database.query(`ALTER TABLE depannhome_subscription_invoices ALTER COLUMN net_amount_cents SET DEFAULT 0, ALTER COLUMN net_amount_cents SET NOT NULL`);
+    await database.query(`ALTER TABLE depannhome_subscription_invoices ADD COLUMN IF NOT EXISTS lines JSONB NOT NULL DEFAULT '[]'::jsonb`);
+    await database.query(`ALTER TABLE depannhome_subscription_invoices ADD COLUMN IF NOT EXISTS financial_data JSONB NOT NULL DEFAULT '{}'::jsonb`);
     await database.query(`CREATE INDEX IF NOT EXISTS depannhome_subscription_invoices_status_idx ON depannhome_subscription_invoices (status, created_at)`);
 }
 
@@ -91,7 +99,8 @@ export function registerSubscriptionInvoicingRoutes(app, requireCreator) {
     app.get("/api/creator/subscription-invoices", requireCreator, asyncHandler(async (request, response) => {
         const { rows } = await getPool().query(`
             SELECT invoice.id, invoice.invoice_number AS "invoiceNumber", invoice.recipient_name AS "recipientName", invoice.recipient_email AS "recipientEmail",
-                invoice.subscription_label AS "subscriptionLabel", invoice.amount_cents AS "amountCents", invoice.vat_rate::float AS "vatRate",
+                invoice.subscription_label AS "subscriptionLabel", invoice.net_amount_cents AS "amountCents", invoice.amount_cents AS "baseAmountCents",
+                invoice.financial_data AS "financialData", invoice.vat_rate::float AS "vatRate",
                 TO_CHAR(invoice.issue_date, 'YYYY-MM-DD') AS "issueDate", TO_CHAR(invoice.due_date, 'YYYY-MM-DD') AS "dueDate",
                 invoice.status, invoice.sent_at AS "sentAt", invoice.last_error AS "lastError", invoice.created_at AS "createdAt",
                 owner.company_name AS "companyName"
@@ -117,7 +126,8 @@ export function registerSubscriptionInvoicingRoutes(app, requireCreator) {
         const { rows } = await getPool().query(`
             SELECT id, invoice_number AS "invoiceNumber", recipient_name AS "recipientName", recipient_address AS "recipientAddress",
                 subscription_label AS "subscriptionLabel", amount_cents AS "amountCents", vat_rate::float AS "vatRate",
-                TO_CHAR(issue_date, 'YYYY-MM-DD') AS "issueDate", TO_CHAR(due_date, 'YYYY-MM-DD') AS "dueDate", issuer_profile AS "issuerProfile"
+                TO_CHAR(issue_date, 'YYYY-MM-DD') AS "issueDate", TO_CHAR(due_date, 'YYYY-MM-DD') AS "dueDate", issuer_profile AS "issuerProfile",
+                lines, financial_data AS "financialData"
             FROM depannhome_subscription_invoices WHERE id = $1
         `, [invoiceId]);
         const invoice = rows[0];
@@ -169,6 +179,8 @@ export async function processDueSubscriptionInvoices() {
         const { rows: subscriptions } = await database.query(`
             SELECT owner.id, owner.company_name AS "companyName", owner.full_name AS "fullName", owner.email, owner.subscription_label AS "subscriptionLabel",
                 owner.monthly_price_cents AS "monthlyPriceCents", owner.subscription_renewal_date AS "renewalDate", owner.billing_reference AS "billingReference",
+                owner.max_pc_users AS "maxPcUsers", owner.max_technicians AS "maxTechnicians", owner.subscription_discount_label AS "discountLabel",
+                owner.subscription_discount_mode AS "discountMode", owner.subscription_discount_value::float AS "discountValue",
                 COALESCE(NULLIF(profile.address, ''), '') || CASE WHEN COALESCE(profile.postal_code, '') <> '' OR COALESCE(profile.city, '') <> ''
                     THEN CASE WHEN COALESCE(profile.address, '') <> '' THEN E'\n' ELSE '' END || TRIM(CONCAT_WS(' ', profile.postal_code, profile.city)) ELSE '' END AS "recipientAddress"
             FROM depannhome_users owner
@@ -206,14 +218,16 @@ async function createInvoiceIfNeeded(subscription, issuer) {
     const invoiceNumber = `DHP-${billingPeriod.slice(0, 7).replace("-", "")}-${String(subscription.id).padStart(5, "0")}`;
     const dueDate = addDays(billingPeriod, 30);
     const recipientName = String(subscription.companyName || subscription.fullName || "Entreprise").trim();
+    const vatRate = issuer.vatRegime === "franchise" ? 0 : issuer.vatRate;
+    const snapshot = buildSubscriptionInvoiceSnapshot(subscription, vatRate);
     const { rows } = await database.query(`
         INSERT INTO depannhome_subscription_invoices
-            (account_owner_id, billing_period, invoice_number, recipient_name, recipient_email, recipient_address, subscription_label, amount_cents, vat_rate, issue_date, due_date, issuer_profile)
-        VALUES ($1,$2::date,$3,$4,$5,$6,$7,$8,$9,$10::date,$11::date,$12::jsonb)
+            (account_owner_id, billing_period, invoice_number, recipient_name, recipient_email, recipient_address, subscription_label, amount_cents, net_amount_cents, vat_rate, issue_date, due_date, issuer_profile, lines, financial_data)
+        VALUES ($1,$2::date,$3,$4,$5,$6,$7,$8,$9,$10,$11::date,$12::date,$13::jsonb,$14::jsonb,$15::jsonb)
         ON CONFLICT (account_owner_id, billing_period) DO NOTHING
         RETURNING id
     `, [subscription.id, billingPeriod, invoiceNumber, recipientName, subscription.email, String(subscription.recipientAddress || "").slice(0, 500), subscription.subscriptionLabel || "Abonnement Depann’Home Pro",
-        subscription.monthlyPriceCents, issuer.vatRegime === "franchise" ? 0 : issuer.vatRate, billingPeriod, dueDate, JSON.stringify(issuer)]);
+        subscription.monthlyPriceCents, snapshot.netAmountCents, vatRate, billingPeriod, dueDate, JSON.stringify(issuer), JSON.stringify(snapshot.lines), JSON.stringify(snapshot.financialData)]);
     return { created: Boolean(rows[0]) };
 }
 
@@ -223,7 +237,8 @@ async function deliverPendingInvoices() {
     const { rows: invoices } = await database.query(`
         SELECT invoice.id, invoice.invoice_number AS "invoiceNumber", invoice.recipient_name AS "recipientName", invoice.recipient_email AS "recipientEmail",
             invoice.recipient_address AS "recipientAddress", invoice.subscription_label AS "subscriptionLabel", invoice.amount_cents AS "amountCents",
-            invoice.vat_rate::float AS "vatRate", invoice.issue_date AS "issueDate", invoice.due_date AS "dueDate", invoice.issuer_profile AS "issuerProfile"
+            invoice.vat_rate::float AS "vatRate", invoice.issue_date AS "issueDate", invoice.due_date AS "dueDate", invoice.issuer_profile AS "issuerProfile",
+            invoice.lines, invoice.financial_data AS "financialData"
         FROM depannhome_subscription_invoices invoice
         JOIN depannhome_users owner ON owner.id = invoice.account_owner_id
         WHERE invoice.status IN ('pending', 'failed') AND owner.is_active = TRUE AND owner.is_archived = FALSE
@@ -352,6 +367,33 @@ function amountExcludingVat(amountCents, vatRate) {
     return Math.round(Number(amountCents) * 100 / (100 + Number(vatRate || 0))) / 100;
 }
 
+export function buildSubscriptionInvoiceSnapshot(subscription, vatRate) {
+    const amountCents = Math.max(0, Number(subscription.monthlyPriceCents) || 0);
+    const discountMode = subscription.discountMode === "percentage" ? "percentage" : "fixed";
+    const discountValue = Math.max(0, Number(subscription.discountValue) || 0);
+    const discountCents = discountMode === "percentage"
+        ? Math.min(amountCents, Math.round(amountCents * Math.min(100, discountValue) / 100))
+        : Math.min(amountCents, Math.round(discountValue * 100));
+    const lines = [{
+        description: `${subscription.subscriptionLabel || "Abonnement Depann’Home Pro"} — abonnement mensuel`,
+        quantity: 1,
+        unit: "mois",
+        unitPrice: amountExcludingVat(amountCents, vatRate),
+        vatRate
+    }];
+    if (Number(subscription.maxPcUsers) > 0) lines.push({ description: "Postes PC inclus", quantity: Number(subscription.maxPcUsers), unit: "poste", unitPrice: 0, vatRate });
+    if (Number(subscription.maxTechnicians) > 0) lines.push({ description: "Postes mobiles inclus", quantity: Number(subscription.maxTechnicians), unit: "poste", unitPrice: 0, vatRate });
+    return {
+        lines,
+        financialData: {
+            discountLabel: cleanText(subscription.discountLabel, 160) || "Remise commerciale",
+            discountMode,
+            discountAmount: discountMode === "percentage" ? Math.min(100, discountValue) : amountExcludingVat(discountCents, vatRate)
+        },
+        netAmountCents: amountCents - discountCents
+    };
+}
+
 function subscriptionInvoiceDocument(invoice) {
     return {
         documentType: "invoice",
@@ -362,13 +404,14 @@ function subscriptionInvoiceDocument(invoice) {
         dueDate: dateString(invoice.dueDate),
         vatRegime: normalizeVatRegime(invoice.issuerProfile?.vatRegime),
         issuerTaxNumber: invoice.issuerProfile?.taxNumber || "",
-        lines: [{
+        lines: Array.isArray(invoice.lines) && invoice.lines.length ? invoice.lines : [{
             description: `${invoice.subscriptionLabel} — abonnement mensuel`,
             quantity: 1,
             unit: "mois",
             unitPrice: amountExcludingVat(invoice.amountCents, invoice.vatRate),
             vatRate: invoice.vatRate
         }],
+        financialData: invoice.financialData || {},
         notes: invoice.issuerProfile?.paymentTerms || "Paiement à réception de facture par virement bancaire."
     };
 }
