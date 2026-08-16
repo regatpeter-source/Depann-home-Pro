@@ -122,6 +122,17 @@ export function registerTechnicalReportRoutes(app, requireAuthentication) {
         await publishEvent(request, reportTarget(report.id), "report_proofread", { status: "ready_to_send" });
         response.json({ message: "Rapport corrigé : il peut maintenant être envoyé.", proofreadAt: rows[0]?.proofreadAt || null });
     }));
+    app.post("/api/technical-reports/:reportId/pdf-preview", requireReportProofreadingAccess, asyncHandler(async (request, response) => {
+        const ownerId = getAccountOwnerId(request); const report = await findReport(ownerId, positiveId(request.params.reportId), request);
+        if (!report) return response.status(404).json({ message: "Rapport introuvable." });
+        const input = sanitizeReport(request.body);
+        if (!input.ok) return response.status(400).json({ message: input.message });
+        if (!canEdit(report, request)) return response.status(409).json({ message: "Ce rapport ne peut pas être prévisualisé dans son état actuel." });
+        if (!await enforceReportLock(request, response, report.id)) return;
+        const buffer = await createWizardLeakReportPdf({ ...report, title: input.title, reportDate: input.reportDate, content: input.content }, await loadProfile(ownerId));
+        response.set({ "Content-Type": PDF_MIME, "Content-Disposition": "inline", "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" });
+        response.send(buffer);
+    }));
     app.post("/api/technical-reports/:reportId/media", upload.array("files", 5), asyncHandler(async (request, response) => {
         const ownerId = getAccountOwnerId(request); const report = await findReport(ownerId, positiveId(request.params.reportId), request);
         const section = allowedSection(report, request.body?.section) ? String(request.body.section) : ""; const files = Array.isArray(request.files) ? request.files : [];

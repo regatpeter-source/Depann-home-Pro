@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { canConfirmReportProofreading, isReportProofreadingCurrent, reportProofreadingFingerprint } from "../server/report-proofreading.js";
+import { normalizeLeakContent } from "../server/leak-report-template.js";
 
 const serverSource = readFileSync(new URL("../server/technical-reports.js", import.meta.url), "utf8");
 const editorSource = readFileSync(new URL("../js/leak-report-wizard.js", import.meta.url), "utf8");
@@ -66,7 +67,7 @@ test("final validation retains the private proofreading fingerprint for its serv
 });
 
 test("PC proofreading overview includes every photo and all editing controls", () => {
-    assert.match(editorSource, /Vue d’ensemble et correction du rapport/);
+    assert.match(editorSource, /Correction du rapport et aperçu PDF en direct/);
     assert.match(editorSource, /proofreadingAdditionalPhotoGroups\(entries\)/);
     assert.match(editorSource, /photosHtml\(entry\.sectionId, entry\.observation\.id, true/);
     assert.match(editorSource, /data-photo-caption/);
@@ -81,4 +82,33 @@ test("proofreading waits for every photo mutation before saving its fingerprint"
     assert.match(editorSource, /trackMediaSave\(movePhoto/);
     assert.match(editorSource, /trackMediaSave\(operation\)/);
     assert.match(editorSource, /await Promise\.all\(\[\.\.\.mediaSavePromises\]\)/);
+});
+
+test("PC proofreading uses a split editor with a live draft PDF preview", () => {
+    assert.match(editorSource, /report-proofreading-workspace/);
+    assert.match(editorSource, /report-proofreading-live-preview/);
+    assert.match(editorSource, /\/pdf-preview/);
+    assert.match(editorSource, /queuePdfPreview/);
+    assert.match(editorSource, /spellcheck="true"/);
+    assert.match(serverSource, /app\.post\("\/api\/technical-reports\/:reportId\/pdf-preview", requireReportProofreadingAccess/);
+    assert.match(serverSource, /createWizardLeakReportPdf\(\{ \.\.\.report, title: input\.title, reportDate: input\.reportDate, content: input\.content \}/);
+});
+
+test("live PDF refresh waits for photo saves and does not persist proofreading", () => {
+    assert.match(editorSource, /await Promise\.all\(\[\.\.\.mediaSavePromises\]\);/);
+    assert.match(editorSource, /response\.blob\(\)/);
+    assert.match(editorSource, /URL\.createObjectURL\(blob\)/);
+    const previewRoute = serverSource.slice(serverSource.indexOf('app.post("/api/technical-reports/:reportId/pdf-preview"'), serverSource.indexOf('app.post("/api/technical-reports/:reportId/media"'));
+    assert.doesNotMatch(previewRoute, /UPDATE depannhome_technical_reports/);
+    assert.doesNotMatch(previewRoute, /proofread_fingerprint/);
+});
+
+test("cancelling live proofreading restores the original report texts", () => {
+    assert.match(editorSource, /const cancel = async \(\) => \{ entries\.forEach\(\(entry, index\) => \{ entry\.observation\.text = originalTexts\[index\]; \}\); clearTimeout\(saveTimer\); close\(\); await save\(shell, true\); \}/);
+    assert.match(editorSource, /data-close-proofreading[^\n]+cancel\(\)/);
+});
+
+test("proofreading preserves intentional line breaks in report observations", () => {
+    const content = normalizeLeakContent({ schemaVersion: 8, overview: { observations: [{ id: "observation-1", text: "Première ligne\nDeuxième ligne\n\nConclusion" }] } });
+    assert.equal(content.overview.observations[0].text, "Première ligne\nDeuxième ligne\n\nConclusion");
 });

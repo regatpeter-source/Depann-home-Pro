@@ -20,9 +20,9 @@ La première étape est un instantané **en lecture seule** généré lors de la
 
 ### Correction sur poste PC
 
-La vue d’ensemble de correction réunit toutes les observations et toutes les photos du rapport, y compris les photos générales, de présentation ou non rattachées à une observation. L’utilisateur autorisé peut y corriger les textes et légendes, remplacer une image, choisir sa taille dans le PDF, la déplacer ou la supprimer.
+La vue d’ensemble de correction est divisée en deux volets sur poste PC. À gauche, elle réunit toutes les observations et toutes les photos du rapport, y compris les photos générales, de présentation ou non rattachées à une observation. L’utilisateur autorisé peut y corriger l’orthographe et les textes, ajouter des lignes, modifier les légendes, remplacer une image, choisir sa taille dans le PDF, la déplacer ou la supprimer. À droite, un aperçu PDF se régénère automatiquement après chaque série de modifications.
 
-Toutes les opérations média en cours sont terminées avant l’enregistrement de la correction. Le serveur calcule ensuite une empreinte privée du titre, de la date, du contenu et des médias. La validation définitive vérifie cette empreinte sans jamais l’exposer dans les réponses publiques : toute modification effectuée après la correction oblige donc à enregistrer une nouvelle correction, tandis qu’un rapport inchangé peut être validé normalement.
+L’aperçu est produit en mémoire à partir des textes en cours et des médias enregistrés : il ne modifie ni le statut ni l’empreinte de correction. Toutes les opérations média en cours sont terminées avant son rafraîchissement et avant l’enregistrement de la correction. Le serveur calcule ensuite une empreinte privée du titre, de la date, du contenu et des médias. La validation définitive vérifie cette empreinte sans jamais l’exposer dans les réponses publiques : toute modification effectuée après la correction oblige donc à enregistrer une nouvelle correction, tandis qu’un rapport inchangé peut être validé normalement.
 
 ## Assistant, synchronisation et photos
 

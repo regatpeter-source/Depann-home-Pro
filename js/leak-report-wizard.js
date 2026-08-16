@@ -349,24 +349,58 @@ function openReportProofreading(shell) {
     const dialog = document.createElement("section");
     dialog.className = "report-proofreading-dialog";
     const originalTexts = entries.map(entry => entry.observation.text || "");
-    dialog.innerHTML = `<form><header><div><p class="eyebrow">Correction sur poste PC</p><h2>Vue d’ensemble et correction du rapport</h2></div><button type="button" class="text-button" data-close-proofreading>Fermer</button></header><p class="report-proofreading-help">Relisez les observations et contrôlez toutes les photos. Vous pouvez corriger les légendes, remplacer, redimensionner, déplacer ou supprimer une photo avant d’enregistrer la correction définitive.</p><div class="report-proofreading-list"></div><p class="auth-message" aria-live="polite"></p><div class="report-proofreading-actions"><button type="button" class="secondary-button" data-close-proofreading>Annuler</button><button type="submit" class="secondary-button report-primary-action">Enregistrer la correction et préparer l’envoi</button></div></form>`;
+    dialog.innerHTML = `<form><header><div><p class="eyebrow">Correction sur poste PC</p><h2>Correction du rapport et aperçu PDF en direct</h2></div><button type="button" class="text-button" data-close-proofreading>Fermer</button></header><p class="report-proofreading-help">À gauche, corrigez les textes, ajoutez des lignes avec la touche Entrée et ajustez les photos. À droite, le PDF se remet à jour automatiquement après vos modifications.</p><div class="report-proofreading-workspace"><section class="report-proofreading-editor" aria-label="Contenu du rapport à corriger"><div class="report-proofreading-panel-heading"><strong>Rapport à corriger</strong><span>Orthographe, textes et photos</span></div><div class="report-proofreading-list"></div></section><section class="report-proofreading-live-preview" aria-label="Aperçu PDF en direct"><div class="report-proofreading-panel-heading"><strong>Aperçu PDF en direct</strong><span data-proofreading-preview-state>Génération de l’aperçu…</span></div><iframe title="Aperçu PDF en direct du rapport"></iframe></section></div><p class="auth-message" aria-live="polite"></p><div class="report-proofreading-actions"><button type="button" class="secondary-button" data-close-proofreading>Annuler</button><button type="submit" class="secondary-button report-primary-action">Enregistrer la correction et préparer l’envoi</button></div></form>`;
     document.body.append(dialog);
-    const close = () => dialog.remove();
+    let previewTimer = null;
+    let previewRequest = null;
+    let previewUrl = "";
+    let previewSequence = 0;
+    const close = () => { clearTimeout(previewTimer); previewRequest?.abort(); if (previewUrl) URL.revokeObjectURL(previewUrl); dialog.remove(); };
+    const cancel = async () => { entries.forEach((entry, index) => { entry.observation.text = originalTexts[index]; }); clearTimeout(saveTimer); close(); await save(shell, true); };
     const syncTexts = () => entries.forEach((entry, index) => { const input = dialog.querySelector(`[data-proofreading-entry="${index}"]`); if (input) entry.observation.text = input.value; });
+    const refreshPdfPreview = async () => {
+        if (!dialog.isConnected) return;
+        syncTexts();
+        const state = dialog.querySelector("[data-proofreading-preview-state]");
+        const iframe = dialog.querySelector(".report-proofreading-live-preview iframe");
+        const sequence = ++previewSequence;
+        state.textContent = "Mise à jour…";
+        previewRequest?.abort();
+        previewRequest = new AbortController();
+        try {
+            await Promise.all([...mediaSavePromises]);
+            const response = await fetch(`/api/technical-reports/${encodeURIComponent(current.id)}/pdf-preview`, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ appointmentId: current.appointmentId, clientId: current.clientId, title: current.title, reportDate: current.reportDate, content: current.content }), signal: previewRequest.signal });
+            if (!response.ok) { const error = await response.json().catch(() => null); throw new Error(error?.message || "Aperçu PDF indisponible."); }
+            const blob = await response.blob();
+            if (!dialog.isConnected || sequence !== previewSequence) return;
+            const nextUrl = URL.createObjectURL(blob);
+            const previousUrl = previewUrl;
+            previewUrl = nextUrl;
+            iframe.src = nextUrl;
+            if (previousUrl) iframe.addEventListener("load", () => URL.revokeObjectURL(previousUrl), { once: true });
+            state.textContent = `Actualisé à ${new Intl.DateTimeFormat("fr-FR", { timeStyle: "short" }).format(new Date())}`;
+        } catch (error) {
+            if (error.name !== "AbortError" && dialog.isConnected && sequence === previewSequence) state.textContent = error.message || "Aperçu PDF indisponible.";
+        }
+    };
+    const queuePdfPreview = (delay = 500) => { clearTimeout(previewTimer); const sequence = ++previewSequence; previewTimer = window.setTimeout(() => { if (sequence === previewSequence) refreshPdfPreview(); }, delay); };
     const renderList = () => {
         const list = dialog.querySelector(".report-proofreading-list");
         const additionalGroups = proofreadingAdditionalPhotoGroups(entries);
         list.innerHTML = `${entries.map((entry, index) => `<article class="report-proofreading-entry"><label><span>${escapeHtml(entry.sectionTitle)}</span><strong>${escapeHtml(entry.observationLabel)}</strong><textarea rows="5" lang="fr" spellcheck="true" autocapitalize="sentences" data-proofreading-entry="${index}">${escapeHtml(entry.observation.text || "")}</textarea></label>${photosHtml(entry.sectionId, entry.observation.id, true, "", false, entry.materialId, false, true)}</article>`).join("")}${additionalGroups.map(group => `<article class="report-proofreading-entry report-proofreading-photo-group"><span>${escapeHtml(group.sectionTitle)}</span><strong>${escapeHtml(group.label)}</strong>${photosHtml(group.sectionId, group.observationId, true, "", false, group.materialId, false, true)}</article>`).join("")}`;
+        list.querySelectorAll("[data-proofreading-entry]").forEach(input => input.addEventListener("input", () => { syncTexts(); markReportModified(shell); queuePdfPreview(); }));
         list.querySelectorAll("[data-open-photo]").forEach(button => button.addEventListener("click", () => openPhotoPreview(button.dataset.openPhoto)));
-        list.querySelectorAll("[data-photo-caption]").forEach(input => input.addEventListener("change", () => trackMediaSave(updatePhotoCaption(input, shell))));
-        list.querySelectorAll("[data-photo-pdf-size]").forEach(input => input.addEventListener("change", () => trackMediaSave(updatePhotoPdfSize(input, shell))));
-        list.querySelectorAll("[data-photo-source]").forEach(button => button.addEventListener("click", () => { syncTexts(); openPhotoSource(shell, { moduleKey: button.dataset.moduleKey, observationId: button.dataset.observationId, materialId: button.dataset.materialId, replacePhotoId: button.dataset.replacePhoto || "" }, renderList); }));
-        list.querySelectorAll("[data-delete-photo]").forEach(button => button.addEventListener("click", () => { syncTexts(); trackMediaSave(deletePhoto(button.dataset.deletePhoto, shell, renderList)); }));
-        list.querySelectorAll("[data-move-photo]").forEach(button => button.addEventListener("click", () => { syncTexts(); trackMediaSave(movePhoto(button.dataset.photoId, button.dataset.movePhoto, shell, renderList)); }));
+        list.querySelectorAll("[data-photo-caption]").forEach(input => input.addEventListener("change", async () => { const operation = updatePhotoCaption(input, shell); trackMediaSave(operation); await operation; queuePdfPreview(0); }));
+        list.querySelectorAll("[data-photo-pdf-size]").forEach(input => input.addEventListener("change", async () => { const operation = updatePhotoPdfSize(input, shell); trackMediaSave(operation); await operation; queuePdfPreview(0); }));
+        const refreshMedia = () => { renderList(); queuePdfPreview(0); };
+        list.querySelectorAll("[data-photo-source]").forEach(button => button.addEventListener("click", () => { syncTexts(); openPhotoSource(shell, { moduleKey: button.dataset.moduleKey, observationId: button.dataset.observationId, materialId: button.dataset.materialId, replacePhotoId: button.dataset.replacePhoto || "" }, refreshMedia); }));
+        list.querySelectorAll("[data-delete-photo]").forEach(button => button.addEventListener("click", () => { syncTexts(); trackMediaSave(deletePhoto(button.dataset.deletePhoto, shell, refreshMedia)); }));
+        list.querySelectorAll("[data-move-photo]").forEach(button => button.addEventListener("click", () => { syncTexts(); trackMediaSave(movePhoto(button.dataset.photoId, button.dataset.movePhoto, shell, refreshMedia)); }));
     };
     renderList();
-    dialog.querySelectorAll("[data-close-proofreading]").forEach(button => button.addEventListener("click", close));
-    dialog.addEventListener("click", event => { if (event.target === dialog) close(); });
+    queuePdfPreview(0);
+    dialog.querySelectorAll("[data-close-proofreading]").forEach(button => button.addEventListener("click", () => cancel()));
+    dialog.addEventListener("click", event => { if (event.target === dialog) cancel(); });
     dialog.querySelector("textarea")?.focus();
     dialog.querySelector("form").addEventListener("submit", async event => {
         event.preventDefault();
