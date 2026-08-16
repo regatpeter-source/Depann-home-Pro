@@ -29,6 +29,8 @@ let saveTimer = null;
 let heartbeatTimer = null;
 let periodicTimer = null;
 let saving = false;
+let heartbeatRunning = false;
+let lockRecoveryPromise = null;
 const mediaSavePromises = new Set();
 let eventsBound = false;
 let moduleNavScrollLeft = 0;
@@ -113,9 +115,12 @@ function ensureModularContent() {
 }
 
 async function acquireLock() {
-    if (!current || current.status === "validated" || (current.status === "submitted" && !canProofreadReport()) || (current.status === "ready_to_send" && !canFinalizeReport())) return;
-    const result = await acquireReportLock(current.id);
+    if (!current || current.status === "validated" || (current.status === "submitted" && !canProofreadReport()) || (current.status === "ready_to_send" && !canFinalizeReport())) return null;
+    const reportId = current.id;
+    const result = await acquireReportLock(reportId);
+    if (!current || String(current.id) !== String(reportId)) return null;
     reportLock = result.data?.lock || reportLock;
+    return result;
 }
 
 function renderEditor(shell) {
@@ -146,15 +151,15 @@ function renderEditor(shell) {
             ${activeKey === "general" && !activeModule.custom ? generalModuleHtml(write) : activeKey === "presentation" && !activeModule.custom ? presentationModuleHtml(write) : activeKey === "methods" && !activeModule.custom ? materialsModuleHtml(write, activeMaterial) : observationsModuleHtml(activeKey, write)}
         </main>
         <footer class="report-editor-footer">
-            <button type="button" class="secondary-button" data-previous-module ${moduleIndex(activeKey) <= 0 ? "disabled" : ""}>Page précédente</button>
-            <button type="button" class="secondary-button" data-preview>Prévisualiser le rapport</button>
+            <button type="button" class="secondary-button" data-previous-module ${moduleIndex(activeKey) <= 0 ? "disabled" : ""}>Précédente</button>
+            <button type="button" class="secondary-button" data-preview>Aperçu</button>
             ${write ? '<span class="report-autosave" data-save-state>Enregistré automatiquement</span>' : ""}
-            ${write && ["draft", "in_correction"].includes(current.status) ? '<button type="button" class="secondary-button report-primary-action" data-submit-report>Terminer le rapport</button>' : ""}
-            ${write && current.status === "submitted" && canProofreadReport() ? '<button type="button" class="secondary-button report-primary-action" data-proofread-report>Corriger le rapport</button>' : ""}
+            ${write && ["draft", "in_correction"].includes(current.status) ? '<button type="button" class="secondary-button report-primary-action" data-submit-report>Terminer</button>' : ""}
+            ${write && current.status === "submitted" && canProofreadReport() ? '<button type="button" class="secondary-button report-primary-action" data-proofread-report>Corriger</button>' : ""}
             ${ownsLock() && current.status === "ready_to_send" && canFinalizeReport() ? '<button type="button" class="secondary-button report-primary-action" data-validate-report>Valider définitivement et envoyer</button>' : ""}
             ${editable() && isAdministrator() && ["submitted", "in_correction"].includes(current.status) ? '<button type="button" class="secondary-button" data-request-correction>Demander une correction</button>' : ""}
             ${isAdministrator() && current.status === "validated" ? '<button type="button" class="secondary-button" data-reopen-report>Réouvrir le rapport</button>' : ""}
-            <button type="button" class="secondary-button" data-next-module ${moduleIndex(activeKey) >= visibleSections().length - 1 ? "disabled" : ""}>Page suivante</button>
+            <button type="button" class="secondary-button" data-next-module ${moduleIndex(activeKey) >= visibleSections().length - 1 ? "disabled" : ""}>Suivante</button>
         </footer>
     `;
     bindEditor(shell, activeKey);
@@ -593,7 +598,31 @@ async function exitReportToHome(shell) {
 function startTimers(shell) {
     stopTimers();
     if (!ownsLock()) return;
-    heartbeatTimer = window.setInterval(async () => { const result = await heartbeatReportLock(current.id); if (!result.ok) { reportLock = result.data?.lock || null; stopTimers(); renderEditor(shell); } }, 30000);
+    const heartbeatDelay = document.body.classList.contains("mobile-device") ? 20000 : 30000;
+    heartbeatTimer = window.setInterval(async () => {
+        if (heartbeatRunning || !current) return;
+        heartbeatRunning = true;
+        const reportId = current.id;
+        try {
+            const result = await heartbeatReportLock(reportId);
+            if (!current || String(current.id) !== String(reportId)) return;
+            if (result.ok) {
+                reportLock = result.data?.lock || reportLock;
+                return;
+            }
+            const recovery = await acquireLock();
+            if (recovery?.ok && recovery.data?.acquired) {
+                startTimers(shell);
+                return;
+            }
+            if (recovery?.data?.lock) {
+                stopTimers();
+                renderEditor(shell);
+            }
+        } finally {
+            heartbeatRunning = false;
+        }
+    }, heartbeatDelay);
     if (editable()) periodicTimer = window.setInterval(() => save(shell, true), 5000);
 }
 
@@ -601,12 +630,35 @@ function stopTimers() { clearTimeout(saveTimer); clearInterval(heartbeatTimer); 
 async function leaveReport() { stopTimers(); if (current && ownsLock()) await releaseReportLock(current.id); current = null; reportLock = null; previewMode = false; document.body.classList.remove("report-writing-active"); }
 async function forceTakeover() { if (!isAdministrator() || !confirm("Reprendre la main sur ce rapport ?")) return; const result = await forceReleaseReportLock(current.id, "Reprise de l’édition du rapport"); if (!result.ok) return alert(result.message || "Reprise impossible."); await acquireLock(); const shell = document.querySelector(".report-editor-shell"); if (shell) renderEditor(shell); }
 
+async function recoverReportLock() {
+    if (lockRecoveryPromise || document.visibilityState === "hidden" || !current) return lockRecoveryPromise;
+    const shell = document.querySelector(".report-editor-shell");
+    if (!shell) return null;
+    const reportId = current.id;
+    lockRecoveryPromise = (async () => {
+        while (saving) await new Promise(resolve => window.setTimeout(resolve, 50));
+        const result = await acquireLock();
+        if (!current || String(current.id) !== String(reportId)) return;
+        if (result?.ok && result.data?.acquired) {
+            startTimers(shell);
+            await save(shell, true);
+            renderEditor(shell);
+        } else if (result?.data?.lock) {
+            stopTimers();
+            renderEditor(shell);
+        }
+    })().finally(() => { lockRecoveryPromise = null; });
+    return lockRecoveryPromise;
+}
+
 function bindCollaborationEvents() {
     if (eventsBound) return;
     eventsBound = true;
     const saveOnExit = () => { const shell = document.querySelector(".report-editor-shell"); if (shell && editable()) save(shell, true); };
     window.addEventListener("pagehide", saveOnExit);
-    document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") saveOnExit(); });
+    window.addEventListener("pageshow", () => recoverReportLock());
+    window.addEventListener("online", () => recoverReportLock());
+    document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") saveOnExit(); else recoverReportLock(); });
     window.addEventListener("depannhome:collaboration-event", async event => {
         const detail = event.detail || {};
         if (!current || detail.entityType !== "technical_report" || String(detail.entityId) !== String(current.id) || ownsLock()) return;
