@@ -148,10 +148,14 @@ export async function initializeBilling() {
             issue_date DATE NOT NULL,
             due_date DATE,
             status VARCHAR(30) NOT NULL DEFAULT 'draft',
+            is_email_sent BOOLEAN NOT NULL DEFAULT FALSE,
+            sent_at TIMESTAMPTZ,
             is_accounted BOOLEAN NOT NULL DEFAULT FALSE,
             accounted_at DATE,
             appointment_id BIGINT,
             source_quote_id BIGINT,
+            correction_source_id BIGINT,
+            correction_kind VARCHAR(20) NOT NULL DEFAULT 'none' CHECK (correction_kind IN ('none', 'replacement', 'amendment')),
             quote_reference VARCHAR(80) NOT NULL DEFAULT '',
             vat_regime VARCHAR(20) NOT NULL DEFAULT 'standard' CHECK (vat_regime IN ('standard','franchise')),
             issuer_tax_number VARCHAR(100) NOT NULL DEFAULT '',
@@ -174,12 +178,18 @@ export async function initializeBilling() {
         ADD COLUMN IF NOT EXISTS client_id VARCHAR(100),
         ADD COLUMN IF NOT EXISTS appointment_id BIGINT,
         ADD COLUMN IF NOT EXISTS source_quote_id BIGINT,
+        ADD COLUMN IF NOT EXISTS is_email_sent BOOLEAN NOT NULL DEFAULT FALSE,
+        ADD COLUMN IF NOT EXISTS sent_at TIMESTAMPTZ,
+        ADD COLUMN IF NOT EXISTS correction_source_id BIGINT,
+        ADD COLUMN IF NOT EXISTS correction_kind VARCHAR(20) NOT NULL DEFAULT 'none',
         ADD COLUMN IF NOT EXISTS quote_reference VARCHAR(80) NOT NULL DEFAULT ''
         ,ADD COLUMN IF NOT EXISTS vat_regime VARCHAR(20) NOT NULL DEFAULT 'standard'
         ,ADD COLUMN IF NOT EXISTS issuer_tax_number VARCHAR(100) NOT NULL DEFAULT ''
     `);
     await database.query("ALTER TABLE depannhome_billing_documents DROP CONSTRAINT IF EXISTS depannhome_billing_documents_vat_regime_check");
     await database.query("ALTER TABLE depannhome_billing_documents ADD CONSTRAINT depannhome_billing_documents_vat_regime_check CHECK (vat_regime IN ('standard','franchise'))");
+    await database.query("ALTER TABLE depannhome_billing_documents DROP CONSTRAINT IF EXISTS depannhome_billing_documents_correction_kind_check");
+    await database.query("ALTER TABLE depannhome_billing_documents ADD CONSTRAINT depannhome_billing_documents_correction_kind_check CHECK (correction_kind IN ('none','replacement','amendment'))");
     await database.query(`
         CREATE INDEX IF NOT EXISTS depannhome_billing_documents_accounting_idx
         ON depannhome_billing_documents (owner_id, document_type, is_accounted, issue_date DESC)
@@ -191,6 +201,10 @@ export async function initializeBilling() {
     await database.query(`
         CREATE INDEX IF NOT EXISTS depannhome_billing_documents_client_idx
         ON depannhome_billing_documents (owner_id, client_id)
+    `);
+    await database.query(`
+        CREATE INDEX IF NOT EXISTS depannhome_billing_documents_correction_idx
+        ON depannhome_billing_documents (owner_id, correction_source_id)
     `);
 }
 
@@ -220,8 +234,8 @@ export function registerBillingRoutes(app, requireAuthentication) {
             database.query(`
                 SELECT depannhome_billing_documents.id, document_type AS "documentType", document_number AS "documentNumber", client_id AS "clientId", customer_type AS "customerType",
                     customer_name AS "customerName", customer_address AS "customerAddress", TO_CHAR(issue_date, 'YYYY-MM-DD') AS "issueDate",
-                    TO_CHAR(due_date, 'YYYY-MM-DD') AS "dueDate", status, is_accounted AS "isAccounted",
-                    TO_CHAR(accounted_at, 'YYYY-MM-DD') AS "accountedAt", appointment_id AS "appointmentId", source_quote_id AS "sourceQuoteId", quote_reference AS "quoteReference", vat_regime AS "vatRegime", issuer_tax_number AS "issuerTaxNumber", lines, notes, financial_data AS "financialData",
+                    TO_CHAR(due_date, 'YYYY-MM-DD') AS "dueDate", status, is_email_sent AS "isEmailSent", sent_at AS "sentAt", is_accounted AS "isAccounted",
+                    TO_CHAR(accounted_at, 'YYYY-MM-DD') AS "accountedAt", appointment_id AS "appointmentId", source_quote_id AS "sourceQuoteId", correction_source_id AS "correctionSourceId", correction_kind AS "correctionKind", (SELECT source.document_number FROM depannhome_billing_documents source WHERE source.id=depannhome_billing_documents.correction_source_id) AS "correctionSourceNumber", quote_reference AS "quoteReference", vat_regime AS "vatRegime", issuer_tax_number AS "issuerTaxNumber", lines, notes, financial_data AS "financialData",
                     depannhome_billing_documents.created_at AS "createdAt", depannhome_billing_documents.updated_at AS "updatedAt",
                     COALESCE(NULLIF(creator.full_name, ''), creator.username, '') AS "creatorName"
                 FROM depannhome_billing_documents
@@ -415,8 +429,8 @@ export function registerBillingRoutes(app, requireAuthentication) {
             database.query(`
                 SELECT id, document_type AS "documentType", document_number AS "documentNumber", client_id AS "clientId", customer_type AS "customerType",
                     customer_name AS "customerName", customer_address AS "customerAddress", TO_CHAR(issue_date, 'YYYY-MM-DD') AS "issueDate",
-                    TO_CHAR(due_date, 'YYYY-MM-DD') AS "dueDate", status, is_accounted AS "isAccounted",
-                    TO_CHAR(accounted_at, 'YYYY-MM-DD') AS "accountedAt", appointment_id AS "appointmentId", source_quote_id AS "sourceQuoteId", quote_reference AS "quoteReference", vat_regime AS "vatRegime", issuer_tax_number AS "issuerTaxNumber", lines, notes, financial_data AS "financialData"
+                    TO_CHAR(due_date, 'YYYY-MM-DD') AS "dueDate", status, is_email_sent AS "isEmailSent", sent_at AS "sentAt", is_accounted AS "isAccounted",
+                    TO_CHAR(accounted_at, 'YYYY-MM-DD') AS "accountedAt", appointment_id AS "appointmentId", source_quote_id AS "sourceQuoteId", correction_source_id AS "correctionSourceId", correction_kind AS "correctionKind", (SELECT source.document_number FROM depannhome_billing_documents source WHERE source.id=depannhome_billing_documents.correction_source_id) AS "correctionSourceNumber", quote_reference AS "quoteReference", vat_regime AS "vatRegime", issuer_tax_number AS "issuerTaxNumber", lines, notes, financial_data AS "financialData"
                                 FROM depannhome_billing_documents
                                 WHERE id = $1 AND owner_id = $2
                                     AND ($3 <> 'technician'
@@ -483,13 +497,21 @@ export function registerBillingRoutes(app, requireAuthentication) {
 
         const output = await createBillingDocumentOutput(billingExport.document, billingExport.profile);
         const type = billingExport.document.documentType === "invoice" ? "Facture" : "Devis";
-        await sendDocumentEmail({
-            recipient,
-            recipientName: billingExport.document.customerName,
-            documentLabel: `${type} ${billingExport.document.documentNumber}`,
-            attachment: { filename: output.filename, content: output.buffer, contentType: output.mimeType }
-        });
-        response.json({ message: `${type} envoyé(e) par e-mail.` });
+        const database = await getPool().connect();
+        try {
+            await database.query("BEGIN");
+            const locked = await database.query("SELECT document_type AS \"documentType\" FROM depannhome_billing_documents WHERE id=$1 AND owner_id=$2 FOR UPDATE", [billingExport.document.id, getAccountOwnerId(request)]);
+            if (!locked.rows[0]) { await database.query("ROLLBACK"); return response.status(404).json({ message: "Document introuvable." }); }
+            await sendDocumentEmail({ recipient, recipientName: billingExport.document.customerName, documentLabel: `${type} ${billingExport.document.documentNumber}`, attachment: { filename: output.filename, content: output.buffer, contentType: output.mimeType } });
+            if (locked.rows[0].documentType === "invoice") await database.query("UPDATE depannhome_billing_documents SET is_email_sent=TRUE, sent_at=COALESCE(sent_at,NOW()), status=CASE WHEN LOWER(status)='draft' THEN 'sent' ELSE status END, updated_at=NOW() WHERE id=$1", [billingExport.document.id]);
+            await database.query("COMMIT");
+        } catch (error) {
+            await database.query("ROLLBACK");
+            throw error;
+        } finally {
+            database.release();
+        }
+        response.json({ message: `${type} envoyé(e) par e-mail.`, isEmailSent: billingExport.document.documentType === "invoice" });
     }));
 
     app.put("/api/billing/default-quote", requireAuthentication, requireBillingAdministration, asyncHandler(async (request, response) => {
@@ -574,26 +596,26 @@ export function registerBillingRoutes(app, requireAuthentication) {
             if (document.clientId && !await hasClient(getPool(), getAccountOwnerId(request), document.clientId)) {
                 return response.status(400).json({ message: "Le dossier client associé est introuvable." });
             }
+            const storedTaxIdentity = await documentTaxIdentity(getAccountOwnerId(request), id);
+            if (!storedTaxIdentity) return response.status(404).json({ message: "Document introuvable." });
             const appointment = await findAccessibleAppointment(getPool(), getAccountOwnerId(request), document.appointmentId, request);
             if (document.appointmentId && !appointment) return response.status(400).json({ message: "Le rendez-vous associé est introuvable ou n’est pas accessible." });
             const sourceQuote = await findSourceQuote(getPool(), getAccountOwnerId(request), document.sourceQuoteId, request);
             if (document.sourceQuoteId && !sourceQuote) return response.status(400).json({ message: "Le devis de référence est introuvable." });
-            if (document.documentType === "invoice" && sourceQuote && await hasInvoiceForQuote(getPool(), getAccountOwnerId(request), sourceQuote.id, id)) {
+            if (document.documentType === "invoice" && !storedTaxIdentity.correctionSourceId && sourceQuote && await hasInvoiceForQuote(getPool(), getAccountOwnerId(request), sourceQuote.id, id)) {
                 return response.status(409).json({ message: "Une facture existe déjà pour ce devis." });
             }
-            const storedTaxIdentity = await documentTaxIdentity(getAccountOwnerId(request), id);
-            if (!storedTaxIdentity) return response.status(404).json({ message: "Document introuvable." });
             document.lines = applyVatRegime(document.lines, storedTaxIdentity.vatRegime);
             const result = await getPool().query(`
                 UPDATE depannhome_billing_documents SET document_type=$3, document_number=$4, client_id=$5, customer_type=$6, customer_name=$7,
                     customer_address=$8, issue_date=$9::date, due_date=$10::date, status=$11, is_accounted=$12,
                     accounted_at=CASE WHEN $12 THEN COALESCE(accounted_at, CURRENT_DATE) ELSE NULL END, appointment_id=$13,
                     source_quote_id=$14, quote_reference=$15, lines=$16::jsonb, notes=$17, financial_data=$18::jsonb, updated_at=NOW()
-                WHERE id=$1 AND owner_id=$2 AND is_accounted=FALSE
+                WHERE id=$1 AND owner_id=$2 AND is_accounted=FALSE AND NOT (document_type='invoice' AND is_email_sent=TRUE)
                     AND NOT EXISTS (SELECT 1 FROM depannhome_accounting_entries entry WHERE entry.owner_id=$2 AND entry.source_type IN ('invoice','credit') AND entry.source_id=id::text)
             `, [id, getAccountOwnerId(request), document.documentType, document.documentNumber, document.clientId || null, document.customerType, document.customerName,
                 document.customerAddress, document.issueDate, document.dueDate || null, document.status, document.isAccounted, appointment?.id || null, sourceQuote?.id || null, sourceQuote?.documentNumber || "", JSON.stringify(document.lines), document.notes, JSON.stringify(document.financialData)]);
-            if (!result.rowCount) return response.status(409).json({ message: "Un document comptabilisé est immuable. Utilisez un avoir pour le corriger." });
+            if (!result.rowCount) return response.status(409).json({ message: "Une facture envoyée ou un document comptabilisé est immuable. Créez une facture rectificative, un avenant ou un avoir." });
             await (await import("./partner-connections.js")).synchronizeConnectedBillingDocument(getAccountOwnerId(request), id);
             const { registerMissionSourceItem } = await import("./partner-dialogue.js"); await registerMissionSourceItem({ ownerId: getAccountOwnerId(request), appointmentId: appointment?.id, sourceType: document.documentType, sourceId: id, label: document.documentNumber, details: { status: document.status, issueDate: document.issueDate } });
             const { recordMissionEventForSource } = await import("./partner-dialogue.js"); await recordMissionEventForSource({ ownerId: getAccountOwnerId(request), sourceType: "appointment", sourceId: appointment?.id, status: document.documentType === "invoice" ? "invoice_sent" : "quote_sent", action: "billing_document_updated", details: { documentId: id, documentType: document.documentType, status: document.status }, actorName: request.user.fullName || request.user.username });
@@ -601,6 +623,44 @@ export function registerBillingRoutes(app, requireAuthentication) {
         } catch (error) {
             if (error.code === "23505") return response.status(409).json({ message: "Ce numéro de document existe déjà dans votre compte." });
             throw error;
+        }
+    }));
+
+    app.post("/api/billing/documents/:documentId/corrections", requireAuthentication, requireBillingDocumentAdministration, asyncHandler(async (request, response) => {
+        const id = positiveId(request.params.documentId);
+        const kind = request.body?.kind === "replacement" || request.body?.kind === "amendment" ? request.body.kind : "";
+        if (!id || !kind) return response.status(400).json({ message: "Type de correction invalide." });
+        const database = await getPool().connect();
+        try {
+            await database.query("BEGIN");
+            const { rows } = await database.query(`
+                SELECT document.*, EXISTS (SELECT 1 FROM depannhome_accounting_entries entry WHERE entry.owner_id=document.owner_id AND entry.source_type IN ('invoice','credit') AND entry.source_id=document.id::text) AS has_entry,
+                    EXISTS (SELECT 1 FROM depannhome_accounting_settlements settlement WHERE settlement.owner_id=document.owner_id AND settlement.document_id=document.id) AS has_settlement
+                FROM depannhome_billing_documents document WHERE document.id=$1 AND document.owner_id=$2 FOR UPDATE
+            `, [id, getAccountOwnerId(request)]);
+            const source = rows[0];
+            if (!source) { await database.query("ROLLBACK"); return response.status(404).json({ message: "Facture introuvable." }); }
+            if (source.document_type !== "invoice" || !source.is_email_sent) { await database.query("ROLLBACK"); return response.status(409).json({ message: "Seule une facture déjà envoyée peut servir de base à cette correction." }); }
+            if (source.is_accounted || source.has_entry || source.has_settlement) { await database.query("ROLLBACK"); return response.status(409).json({ message: "Cette facture est comptabilisée ou réglée. Créez obligatoirement un avoir comptable." }); }
+            if (String(source.status).toLowerCase() === "cancelled") { await database.query("ROLLBACK"); return response.status(409).json({ message: "Cette facture a déjà été annulée et remplacée." }); }
+            const count = await database.query("SELECT COUNT(*)::int AS total FROM depannhome_billing_documents WHERE owner_id=$1 AND correction_source_id=$2 AND correction_kind=$3", [source.owner_id, source.id, kind]);
+            const suffix = kind === "replacement" ? "RECT" : "AVN";
+            const documentNumber = `${source.document_number}-${suffix}-${String(count.rows[0].total + 1).padStart(2, "0")}`.slice(0, 80);
+            const created = await database.query(`
+                INSERT INTO depannhome_billing_documents
+                    (owner_id,created_by,document_type,document_number,client_id,customer_type,customer_name,customer_address,issue_date,due_date,status,is_email_sent,sent_at,is_accounted,accounted_at,appointment_id,source_quote_id,correction_source_id,correction_kind,quote_reference,vat_regime,issuer_tax_number,lines,notes,financial_data)
+                VALUES ($1,$2,'invoice',$3,$4,$5,$6,$7,CURRENT_DATE,$8,'draft',FALSE,NULL,FALSE,NULL,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+                RETURNING id
+            `, [source.owner_id, request.user.sub, documentNumber, source.client_id, source.customer_type, source.customer_name, source.customer_address, source.due_date, source.appointment_id, source.source_quote_id, source.id, kind, source.quote_reference, source.vat_regime, source.issuer_tax_number, source.lines, source.notes, source.financial_data]);
+            await database.query("UPDATE depannhome_billing_documents SET status='cancelled', updated_at=NOW() WHERE id=$1", [source.id]);
+            await database.query("COMMIT");
+            response.status(201).json({ id: created.rows[0].id, documentNumber });
+        } catch (error) {
+            await database.query("ROLLBACK");
+            if (error.code === "23505") return response.status(409).json({ message: "Le numéro de correction existe déjà. Rechargez le registre puis réessayez." });
+            throw error;
+        } finally {
+            database.release();
         }
     }));
 
@@ -846,7 +906,7 @@ function sanitizeLines(value) {
 export function normalizeVatRegime(value) { return VAT_REGIMES.has(value) ? value : "standard"; }
 export function applyVatRegime(lines, vatRegime) { return (Array.isArray(lines) ? lines : []).map(line => ({ ...line, vatRate: normalizeVatRegime(vatRegime) === "franchise" ? 0 : Number(line.vatRate) || 0 })); }
 async function billingTaxIdentity(ownerId) { const { rows } = await getPool().query("SELECT vat_regime AS \"vatRegime\",tax_number AS \"taxNumber\" FROM depannhome_billing_profiles WHERE owner_id=$1", [ownerId]); return { vatRegime: normalizeVatRegime(rows[0]?.vatRegime), taxNumber: cleanText(rows[0]?.taxNumber, 100) }; }
-async function documentTaxIdentity(ownerId, documentId) { const { rows } = await getPool().query("SELECT vat_regime AS \"vatRegime\",issuer_tax_number AS \"taxNumber\" FROM depannhome_billing_documents WHERE owner_id=$1 AND id=$2", [ownerId, documentId]); return rows[0] ? { vatRegime: normalizeVatRegime(rows[0].vatRegime), taxNumber: cleanText(rows[0].taxNumber, 100) } : null; }
+async function documentTaxIdentity(ownerId, documentId) { const { rows } = await getPool().query("SELECT vat_regime AS \"vatRegime\",issuer_tax_number AS \"taxNumber\",correction_source_id AS \"correctionSourceId\" FROM depannhome_billing_documents WHERE owner_id=$1 AND id=$2", [ownerId, documentId]); return rows[0] ? { vatRegime: normalizeVatRegime(rows[0].vatRegime), taxNumber: cleanText(rows[0].taxNumber, 100), correctionSourceId: rows[0].correctionSourceId || null } : null; }
 
 function sanitizeDate(value) {
     const date = String(value || "");
@@ -885,7 +945,7 @@ async function getBillingExport(request) {
         database.query(`
             SELECT id, document_type AS "documentType", document_number AS "documentNumber", customer_type AS "customerType",
                 customer_name AS "customerName", customer_address AS "customerAddress", TO_CHAR(issue_date, 'YYYY-MM-DD') AS "issueDate",
-                TO_CHAR(due_date, 'YYYY-MM-DD') AS "dueDate", quote_reference AS "quoteReference", vat_regime AS "vatRegime", issuer_tax_number AS "issuerTaxNumber", lines, notes, financial_data AS "financialData"
+                TO_CHAR(due_date, 'YYYY-MM-DD') AS "dueDate", status, is_email_sent AS "isEmailSent", sent_at AS "sentAt", correction_source_id AS "correctionSourceId", correction_kind AS "correctionKind", (SELECT source.document_number FROM depannhome_billing_documents source WHERE source.id=depannhome_billing_documents.correction_source_id) AS "correctionSourceNumber", quote_reference AS "quoteReference", vat_regime AS "vatRegime", issuer_tax_number AS "issuerTaxNumber", lines, notes, financial_data AS "financialData"
                         FROM depannhome_billing_documents
                         WHERE id = $1 AND owner_id = $2
                             AND ($3 <> 'technician'
@@ -971,7 +1031,7 @@ export function createBillingPdf(document, profile) {
         const totalTtc = totalHt - discountAmount + totalVat;
         const aidAmount = Math.min(totalTtc, (Array.isArray(financialData.aids) ? financialData.aids : []).reduce((sum, aid) => sum + (aid.calculationMode === "percentage" ? (totalHt - discountAmount) * Number(aid.amount || 0) / 100 : Number(aid.amount || 0)), 0));
         const remainingAmount = Math.max(0, totalTtc - aidAmount);
-        const title = document.documentType === "invoice" ? "FACTURE" : "DEVIS";
+        const title = document.correctionKind === "replacement" ? "FACTURE RECTIFICATIVE" : document.correctionKind === "amendment" ? "AVENANT À FACTURE" : document.documentType === "invoice" ? "FACTURE" : "DEVIS";
 
         if (profile.logoData && ["image/png", "image/jpeg"].includes(profile.logoMimeType)) {
             try { pdf.image(profile.logoData, margin, margin, { fit: [56, 56] }); } catch { /* Le PDF reste disponible même si le logo est illisible. */ }
@@ -980,7 +1040,7 @@ export function createBillingPdf(document, profile) {
         const companyDetails = [profile.companyName || "Votre structure", profile.legalForm, profile.address, [profile.postalCode, profile.city].filter(Boolean).join(" "), profile.phone ? `Tél. ${profile.phone}` : "", profile.email].filter(Boolean).join("\n");
         text(companyDetails, companyX, margin, 250, { size: 9, lineGap: 2, bold: false });
         text(title, margin + contentWidth - 145, margin, 145, { size: 25, bold: true, align: "right", color: template.primaryColor });
-        text(`N° ${document.documentNumber}${document.quoteReference ? `\nRéf. devis : ${document.quoteReference}` : ""}\nÉmis le ${formatDate(document.issueDate)}${document.dueDate ? `\nÉchéance : ${formatDate(document.dueDate)}` : ""}`, margin + contentWidth - 170, margin + 34, 170, { size: 9, align: "right", lineGap: 2 });
+        text(`N° ${document.documentNumber}${document.correctionSourceNumber ? `\nCorrige : ${document.correctionSourceNumber}` : ""}${document.quoteReference ? `\nRéf. devis : ${document.quoteReference}` : ""}\nÉmis le ${formatDate(document.issueDate)}${document.dueDate ? `\nÉchéance : ${formatDate(document.dueDate)}` : ""}`, margin + contentWidth - 170, margin + 34, 170, { size: 9, align: "right", lineGap: 2 });
         if (template.headerText) text(template.headerText, companyX, margin + 60, 300, { size: 7.5, color: template.secondaryColor });
         pdf.y = Math.max(margin + 74, pdf.y) + 15;
         line(pdf.y, template.primaryColor);

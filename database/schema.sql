@@ -314,10 +314,14 @@ CREATE TABLE IF NOT EXISTS depannhome_billing_documents (
     issue_date DATE NOT NULL,
     due_date DATE,
     status VARCHAR(30) NOT NULL DEFAULT 'draft',
+    is_email_sent BOOLEAN NOT NULL DEFAULT FALSE,
+    sent_at TIMESTAMPTZ,
     is_accounted BOOLEAN NOT NULL DEFAULT FALSE,
     accounted_at DATE,
     appointment_id BIGINT,
     source_quote_id BIGINT,
+    correction_source_id BIGINT,
+    correction_kind VARCHAR(20) NOT NULL DEFAULT 'none' CHECK (correction_kind IN ('none', 'replacement', 'amendment')),
     quote_reference VARCHAR(80) NOT NULL DEFAULT '',
     vat_regime VARCHAR(20) NOT NULL DEFAULT 'standard' CHECK (vat_regime IN ('standard','franchise')),
     issuer_tax_number VARCHAR(100) NOT NULL DEFAULT '',
@@ -338,6 +342,10 @@ ALTER TABLE depannhome_billing_documents
     ADD COLUMN IF NOT EXISTS client_id VARCHAR(100),
     ADD COLUMN IF NOT EXISTS appointment_id BIGINT,
     ADD COLUMN IF NOT EXISTS source_quote_id BIGINT,
+    ADD COLUMN IF NOT EXISTS is_email_sent BOOLEAN NOT NULL DEFAULT FALSE,
+    ADD COLUMN IF NOT EXISTS sent_at TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS correction_source_id BIGINT,
+    ADD COLUMN IF NOT EXISTS correction_kind VARCHAR(20) NOT NULL DEFAULT 'none',
     ADD COLUMN IF NOT EXISTS quote_reference VARCHAR(80) NOT NULL DEFAULT '';
 ALTER TABLE depannhome_billing_documents
     ADD COLUMN IF NOT EXISTS vat_regime VARCHAR(20) NOT NULL DEFAULT 'standard',
@@ -351,6 +359,9 @@ CREATE INDEX IF NOT EXISTS depannhome_billing_documents_appointment_idx
 
 CREATE INDEX IF NOT EXISTS depannhome_billing_documents_client_idx
     ON depannhome_billing_documents (owner_id, client_id);
+
+CREATE INDEX IF NOT EXISTS depannhome_billing_documents_correction_idx
+    ON depannhome_billing_documents (owner_id, correction_source_id);
 
 -- Comptabilité et facturation électronique compatible PDP : préparation et transmission via le connecteur choisi par l'entreprise, données isolées par owner_id.
 ALTER TABLE depannhome_billing_documents ADD COLUMN IF NOT EXISTS financial_data JSONB NOT NULL DEFAULT '{}'::jsonb;

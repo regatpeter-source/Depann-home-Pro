@@ -30,3 +30,22 @@ test("quotes, invoices and credits cannot be deleted from the UI or API", () => 
     assert.match(deleteRoute, /devis, factures et avoirs sont conservés/);
     assert.doesNotMatch(deleteRoute, /DELETE FROM depannhome_billing_documents/);
 });
+
+test("emailing an invoice persists its sent state and makes later updates immutable", () => {
+    assert.match(billingServerSource, /SET is_email_sent=TRUE, sent_at=COALESCE\(sent_at,NOW\(\)\)/);
+    assert.match(billingServerSource, /NOT \(document_type='invoice' AND is_email_sent=TRUE\)/);
+    assert.match(billingSource, /document\.documentType === "invoice" && document\.isEmailSent/);
+    assert.match(billingSource, /enregistrement immuable/);
+});
+
+test("sent invoices expose linked corrective invoice and amendment workflows", () => {
+    const correctionRoute = billingServerSource.slice(billingServerSource.indexOf('app.post("/api/billing/documents/:documentId/corrections"'), billingServerSource.indexOf('app.patch("/api/billing/documents/:documentId/accounting"'));
+    assert.match(correctionRoute, /correction_source_id/);
+    assert.match(correctionRoute, /correction_kind/);
+    assert.match(correctionRoute, /status='cancelled'/);
+    assert.match(correctionRoute, /has_entry/);
+    assert.match(correctionRoute, /has_settlement/);
+    assert.match(correctionRoute, /Créez obligatoirement un avoir comptable/);
+    assert.match(billingSource, /Créer une facture rectificative/);
+    assert.match(billingSource, /Créer un avenant/);
+});
