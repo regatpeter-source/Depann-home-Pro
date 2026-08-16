@@ -374,7 +374,7 @@ function renderDocumentEditor(panel) {
             ${!isAccountant() ? '<section class="billing-aids-section" id="billingAids"></section>' : ""}
             <label>Notes / conditions<textarea name="notes" rows="3" maxlength="2000" placeholder="Informations complémentaires, conditions, validité du devis…">${escapeHtml(document.notes)}</textarea></label>
             <p id="billingDocumentMessage" class="auth-message" aria-live="polite"></p>
-            <div class="calendar-form-actions"><button type="submit" class="secondary-button">${isEditing ? "Enregistrer les modifications" : "Enregistrer le document"}</button>${isEditing ? '<button type="button" class="danger-button" id="deleteBillingDocument">Supprimer</button>' : ""}</div>
+            <div class="calendar-form-actions"><button type="submit" class="secondary-button">${isEditing ? "Enregistrer les modifications" : "Enregistrer le document"}</button></div>
         </form>
         </section>${livePreview ? '<section class="billing-document-live-preview" aria-label="Aperçu PDF en direct"><div class="billing-document-preview-heading"><strong>Aperçu PDF final en direct</strong><span data-billing-preview-state>Génération…</span></div><iframe title="Aperçu PDF en direct du devis ou de la facture"></iframe></section>' : ""}</div>
     `;
@@ -431,13 +431,6 @@ function renderDocumentEditor(panel) {
                 if (!response.ok) throw new Error(data?.message || "Envoi du document impossible.");
             }
         });
-    });
-    form.querySelector("#deleteBillingDocument")?.addEventListener("click", async () => {
-        if (!confirm("Supprimer ce document ?")) return;
-        const result = await apiRequest(`/api/billing/documents/${encodeURIComponent(document.id)}`, { method: "DELETE" });
-        if (!result.ok) { alert(result.message || "Suppression impossible."); return; }
-        activeDocument = null;
-        renderBilling();
     });
 }
 

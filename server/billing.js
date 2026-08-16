@@ -615,9 +615,7 @@ export function registerBillingRoutes(app, requireAuthentication) {
     app.delete("/api/billing/documents/:documentId", requireAuthentication, requireBillingAdministration, asyncHandler(async (request, response) => {
         const id = positiveId(request.params.documentId);
         if (!id) return response.status(400).json({ message: "Document invalide." });
-        const result = await getPool().query(`DELETE FROM depannhome_billing_documents document WHERE id=$1 AND owner_id=$2 AND is_accounted=FALSE AND NOT EXISTS(SELECT 1 FROM depannhome_accounting_entries entry WHERE entry.owner_id=$2 AND entry.source_type IN ('invoice','credit') AND entry.source_id=document.id::text)`, [id, getAccountOwnerId(request)]);
-        if (!result.rowCount) return response.status(409).json({ message: "Une pièce comptabilisée ou liée à un règlement ne peut pas être supprimée." });
-        response.status(204).end();
+        response.status(409).json({ message: "Les devis, factures et avoirs sont conservés et ne peuvent pas être supprimés." });
     }));
 }
 
