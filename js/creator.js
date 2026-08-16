@@ -596,14 +596,35 @@ async function renderSubscriptionInvoices() {
     const result = await api("/api/creator/subscription-invoices");
     if (!result.ok) return showFeedback(result.message || "Impossible de charger les factures d’abonnement.", true);
     const invoices = result.data.invoices || [];
+    const processing = result.data.processing || {};
+    const profileWarning = processing.profileComplete ? "" : `<p class="auth-message error">Profil de facturation incomplet : ${escapeHtml((processing.missingProfileFields || []).join(", ") || "coordonnées manquantes")}.</p>`;
     workspace.innerHTML = `
         <section class="creator-form creator-subscription-invoices-panel">
             <div class="form-heading"><div><p class="eyebrow">Facturation plateforme</p><h3>Factures d’abonnement envoyées</h3></div><span class="creator-state">${invoices.length} facture${invoices.length > 1 ? "s" : ""}</span></div>
             <p class="muted">Chaque PDF reprend les informations légales, bancaires et tarifaires enregistrées au moment de son émission.</p>
+            <div class="creator-subscription-processing"><strong>${Number(processing.dueAccounts || 0)} abonnement(s) arrivé(s) à échéance</strong><span>${Number(processing.pending || 0)} en attente · ${Number(processing.failed || 0)} en échec · ${Number(processing.sending || 0)} en cours</span></div>
+            ${profileWarning}
+            <p class="auth-message" id="creatorSubscriptionProcessingFeedback" aria-live="polite"></p>
             <div class="creator-subscription-invoice-list">${invoices.length ? invoices.map(renderSubscriptionInvoice).join("") : '<p class="muted">Aucune facture d’abonnement n’a encore été créée.</p>'}</div>
-            <div class="creator-form-actions"><button type="button" class="secondary-button" id="creatorSubscriptionInvoicesBack">Retour aux entreprises</button></div>
+            <div class="creator-form-actions"><button type="button" class="primary-button" id="creatorSubscriptionInvoicesProcess" ${processing.profileComplete ? "" : "disabled"}>Créer et envoyer maintenant</button><button type="button" class="secondary-button" id="creatorSubscriptionInvoicesBack">Retour aux entreprises</button></div>
         </section>
     `;
+    workspace.querySelector("#creatorSubscriptionInvoicesProcess").addEventListener("click", async event => {
+        const button = event.currentTarget;
+        const feedback = workspace.querySelector("#creatorSubscriptionProcessingFeedback");
+        button.disabled = true;
+        feedback.classList.remove("error");
+        feedback.textContent = "Création et envoi des factures en cours…";
+        const process = await api("/api/creator/subscription-invoices/process", { method: "POST", body: "{}", timeoutMs: 60_000 });
+        if (!process.ok) {
+            button.disabled = false;
+            feedback.classList.add("error");
+            feedback.textContent = process.message || "Le traitement des factures a échoué.";
+            return;
+        }
+        showFeedback(process.message || "Traitement des factures terminé.", Boolean(process.data?.failed));
+        await renderSubscriptionInvoices();
+    });
     workspace.querySelector("#creatorSubscriptionInvoicesBack").addEventListener("click", () => selectedAccountId ? renderAccountDetail(selectedAccountId) : workspace.replaceChildren());
 }
 
@@ -844,10 +865,11 @@ function bindPasswordVisibilityToggle(container) {
 }
 
 async function api(url, options = {}) {
+    const { timeoutMs = 12_000, ...fetchOptions } = options;
     const controller = new AbortController();
-    const timeout = window.setTimeout(() => controller.abort(), 12_000);
+    const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
     try {
-        const response = await fetch(url, { credentials: "same-origin", headers: { "Content-Type": "application/json", ...(options.headers || {}) }, ...options, signal: controller.signal });
+        const response = await fetch(url, { credentials: "same-origin", headers: { "Content-Type": "application/json", ...(fetchOptions.headers || {}) }, ...fetchOptions, signal: controller.signal });
         const data = response.status === 204 ? null : await response.json().catch(() => null);
         return { ok: response.ok, data, message: data?.message };
     } catch (error) {

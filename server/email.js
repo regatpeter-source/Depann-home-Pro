@@ -8,7 +8,7 @@ function smtpConfigured() {
 }
 
 export async function sendDeviceVerificationCode({ recipient, name, code }) {
-    await sendEmail({
+    return sendEmail({
         recipient,
         subject: "Code de connexion Depann'Home Pro",
         text: `Bonjour ${name || ""},\n\nVotre code de validation Depann'Home Pro est : ${code}\n\nIl expire dans 10 minutes. Ne le communiquez à personne.\n`,
@@ -18,7 +18,7 @@ export async function sendDeviceVerificationCode({ recipient, name, code }) {
 
 export async function sendDocumentEmail({ recipient, recipientName, documentLabel, attachment }) {
     const greeting = recipientName ? `Bonjour ${recipientName},` : "Bonjour,";
-    await sendEmail({
+    return sendEmail({
         recipient,
         subject: `${documentLabel} - Depann'Home Pro`,
         text: `${greeting}\n\nVeuillez trouver ${documentLabel.toLowerCase()} en pièce jointe.\n\nCordialement,`,
@@ -57,9 +57,12 @@ async function sendEmail({ recipient, subject, text, html, attachments = [] }) {
         host: process.env.BREVO_SMTP_HOST,
         port: Number(process.env.BREVO_SMTP_PORT || 587),
         secure: process.env.BREVO_SMTP_SECURE === "true",
-        auth: { user: process.env.BREVO_SMTP_USER, pass: process.env.BREVO_SMTP_PASSWORD }
+        auth: { user: process.env.BREVO_SMTP_USER, pass: process.env.BREVO_SMTP_PASSWORD },
+        connectionTimeout: 15_000,
+        greetingTimeout: 15_000,
+        socketTimeout: 30_000
     });
-    await transporter.sendMail({
+    return transporter.sendMail({
         from: process.env.BREVO_SMTP_FROM,
         to: recipient,
         subject,

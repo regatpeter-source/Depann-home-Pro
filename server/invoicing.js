@@ -99,7 +99,16 @@ export function registerSubscriptionInvoicingRoutes(app, requireCreator) {
             JOIN depannhome_users owner ON owner.id = invoice.account_owner_id
             ORDER BY invoice.issue_date DESC, invoice.id DESC
         `);
-        response.json({ invoices: rows });
+        response.json({ invoices: rows, processing: await subscriptionInvoicingStatus() });
+    }));
+
+    app.post("/api/creator/subscription-invoices/process", requireCreator, asyncHandler(async (request, response) => {
+        const result = await processDueSubscriptionInvoices();
+        if (result.skippedReason === "incomplete_profile") {
+            return response.status(409).json({ ...result, message: `Complétez le profil de facturation de la plateforme : ${result.missingProfileFields.join(", ")}.` });
+        }
+        if (result.skippedReason === "already_running") return response.status(409).json({ ...result, message: "Un traitement de facturation est déjà en cours. Réessayez dans quelques instants." });
+        response.json({ ...result, message: processingMessage(result) });
     }));
 
     app.get("/api/creator/subscription-invoices/:invoiceId/pdf", requireCreator, asyncHandler(async (request, response) => {
@@ -126,31 +135,36 @@ export function registerSubscriptionInvoicingRoutes(app, requireCreator) {
 
 export function startSubscriptionInvoicingScheduler() {
     if (schedulerTimer) return;
-    const check = async () => {
+    const check = async source => {
         try {
             const result = await processDueSubscriptionInvoices();
-            if (result.created || result.sent || result.failed) console.info("[subscription-invoicing] completed", result);
+            console.info("[subscription-invoicing] completed", { source, ...result });
         } catch (error) {
-            console.error("[subscription-invoicing] failed", error.message);
+            console.error("[subscription-invoicing] failed", { source, error: error.message });
         }
     };
-    const delay = millisecondsUntilConfiguredRun();
-    schedulerTimer = setTimeout(() => {
-        check();
-        schedulerTimer = setInterval(check, 24 * 60 * 60 * 1000);
-    }, delay);
-    console.info(`[subscription-invoicing] scheduled daily run in ${Math.round(delay / 60000)} minute(s).`);
+    const scheduleNext = () => {
+        const delay = millisecondsUntilConfiguredRun();
+        schedulerTimer = setTimeout(async () => { await check("scheduled"); schedulerTimer = null; scheduleNext(); }, delay);
+        console.info(`[subscription-invoicing] scheduled daily run in ${Math.round(delay / 60000)} minute(s).`);
+    };
+    void check("startup");
+    scheduleNext();
 }
 
 export async function processDueSubscriptionInvoices() {
     const database = getPool();
-    const lock = await database.query("SELECT pg_try_advisory_lock(842301) AS acquired");
-    if (!lock.rows[0]?.acquired) return { skipped: true, created: 0, sent: 0, failed: 0 };
+    const lockConnection = await database.connect();
+    let lockAcquired = false;
     try {
+        const lock = await lockConnection.query("SELECT pg_try_advisory_lock(842301) AS acquired");
+        lockAcquired = Boolean(lock.rows[0]?.acquired);
+        if (!lockAcquired) return { skipped: true, skippedReason: "already_running", created: 0, sent: 0, failed: 0 };
         const issuer = await getIssuerProfile();
         if (!isCompleteProfile(issuer)) {
-            console.warn("[subscription-invoicing] skipped: platform billing profile is incomplete.");
-            return { skipped: true, created: 0, sent: 0, failed: 0 };
+            const missingProfileFields = incompleteProfileFields(issuer);
+            console.warn("[subscription-invoicing] skipped: platform billing profile is incomplete", { missingProfileFields });
+            return { skipped: true, skippedReason: "incomplete_profile", missingProfileFields, created: 0, sent: 0, failed: 0 };
         }
         const { rows: subscriptions } = await database.query(`
             SELECT owner.id, owner.company_name AS "companyName", owner.full_name AS "fullName", owner.email, owner.subscription_label AS "subscriptionLabel",
@@ -159,24 +173,30 @@ export async function processDueSubscriptionInvoices() {
                     THEN CASE WHEN COALESCE(profile.address, '') <> '' THEN E'\n' ELSE '' END || TRIM(CONCAT_WS(' ', profile.postal_code, profile.city)) ELSE '' END AS "recipientAddress"
             FROM depannhome_users owner
             LEFT JOIN depannhome_billing_profiles profile ON profile.owner_id = owner.id
-            WHERE owner.account_owner_id = owner.id AND owner.is_active = TRUE AND owner.subscription_plan = 'paid'
+            WHERE owner.account_owner_id = owner.id AND owner.is_active = TRUE AND owner.is_archived = FALSE AND owner.subscription_plan = 'paid'
                 AND owner.subscription_status = 'active' AND owner.monthly_price_cents > 0
                 AND owner.subscription_renewal_date IS NOT NULL AND owner.subscription_renewal_date <= CURRENT_DATE
             ORDER BY owner.subscription_renewal_date, owner.id
         `);
         let created = 0;
+        let skippedAccounts = 0;
         for (const subscription of subscriptions) {
             if (!EMAIL_PATTERN.test(String(subscription.email || ""))) {
                 console.warn("[subscription-invoicing] skipped account without billing email", { accountId: subscription.id });
+                skippedAccounts += 1;
                 continue;
             }
             const invoice = await createInvoiceIfNeeded(subscription, issuer);
             if (invoice.created) created += 1;
         }
         const delivery = await deliverPendingInvoices();
-        return { skipped: false, created, ...delivery };
+        return { skipped: false, dueAccounts: subscriptions.length, skippedAccounts, created, ...delivery };
     } finally {
-        await database.query("SELECT pg_advisory_unlock(842301)");
+        try {
+            if (lockAcquired) await lockConnection.query("SELECT pg_advisory_unlock(842301)");
+        } finally {
+            lockConnection.release();
+        }
     }
 }
 
@@ -199,12 +219,13 @@ async function createInvoiceIfNeeded(subscription, issuer) {
 
 async function deliverPendingInvoices() {
     const database = getPool();
+    await database.query(`UPDATE depannhome_subscription_invoices SET status='failed',last_error='Traitement interrompu avant confirmation de l’envoi ; nouvelle tentative autorisée.',updated_at=NOW() WHERE status='sending' AND updated_at<NOW()-INTERVAL '15 minutes'`);
     const { rows: invoices } = await database.query(`
         SELECT invoice.id, invoice_number AS "invoiceNumber", recipient_name AS "recipientName", recipient_email AS "recipientEmail", recipient_address AS "recipientAddress", subscription_label AS "subscriptionLabel",
             amount_cents AS "amountCents", vat_rate::float AS "vatRate", issue_date AS "issueDate", due_date AS "dueDate", issuer_profile AS "issuerProfile"
         FROM depannhome_subscription_invoices invoice
         JOIN depannhome_users owner ON owner.id = invoice.account_owner_id
-        WHERE invoice.status IN ('pending', 'failed') AND owner.is_active = TRUE
+        WHERE invoice.status IN ('pending', 'failed') AND owner.is_active = TRUE AND owner.is_archived = FALSE
             AND owner.subscription_plan = 'paid' AND owner.subscription_status = 'active'
         ORDER BY invoice.created_at
     `);
@@ -216,7 +237,7 @@ async function deliverPendingInvoices() {
         try {
             const document = subscriptionInvoiceDocument(invoice);
             const pdf = await createBillingPdf(document, invoice.issuerProfile);
-            await sendDocumentEmail({
+            const delivery = await sendDocumentEmail({
                 recipient: invoice.recipientEmail, recipientName: invoice.recipientName, documentLabel: `Facture d’abonnement ${invoice.invoiceNumber}`,
                 attachment: { filename: `facture-abonnement-${invoice.invoiceNumber}.pdf`, content: pdf, contentType: "application/pdf" }
             });
@@ -227,6 +248,7 @@ async function deliverPendingInvoices() {
                 UPDATE depannhome_users SET subscription_renewal_date = subscription_renewal_date + INTERVAL '1 month', updated_at=NOW()
                 WHERE id=(SELECT account_owner_id FROM depannhome_subscription_invoices WHERE id=$1)
             `, [invoice.id]);
+            console.info("[subscription-invoicing] invoice accepted by SMTP", { invoiceId: invoice.id, messageId: delivery?.messageId || "" });
             sent += 1;
         } catch (error) {
             await database.query(`UPDATE depannhome_subscription_invoices SET status='failed', last_error=$2, updated_at=NOW() WHERE id=$1`, [invoice.id, String(error.message || "Échec d’envoi").slice(0, 1000)]);
@@ -247,6 +269,19 @@ async function getIssuerProfile() {
     return rows[0] || emptyProfile();
 }
 
+async function subscriptionInvoicingStatus() {
+    const issuer = await getIssuerProfile();
+    const { rows } = await getPool().query(`
+        SELECT
+            COUNT(*) FILTER (WHERE owner.account_owner_id=owner.id AND owner.is_active AND NOT owner.is_archived AND owner.subscription_plan='paid' AND owner.subscription_status='active' AND owner.monthly_price_cents>0 AND owner.subscription_renewal_date IS NOT NULL AND owner.subscription_renewal_date<=CURRENT_DATE)::int AS "dueAccounts",
+            (SELECT COUNT(*)::int FROM depannhome_subscription_invoices WHERE status='pending') AS pending,
+            (SELECT COUNT(*)::int FROM depannhome_subscription_invoices WHERE status='failed') AS failed,
+            (SELECT COUNT(*)::int FROM depannhome_subscription_invoices WHERE status='sending') AS sending
+        FROM depannhome_users owner
+    `);
+    return { profileComplete: isCompleteProfile(issuer), missingProfileFields: incompleteProfileFields(issuer), dueAccounts: rows[0]?.dueAccounts || 0, pending: rows[0]?.pending || 0, failed: rows[0]?.failed || 0, sending: rows[0]?.sending || 0 };
+}
+
 function sanitizeProfile(value) {
     const profile = {
         companyName: cleanText(value?.companyName, 160), legalForm: cleanText(value?.legalForm, 100), address: cleanText(value?.address, 255),
@@ -264,6 +299,26 @@ function sanitizeProfile(value) {
 
 function isCompleteProfile(profile) {
     return Boolean(profile.companyName && profile.address && profile.postalCode && profile.city && profile.registrationNumber && EMAIL_PATTERN.test(profile.email || "") && IBAN_PATTERN.test(profile.bankIban || "") && BIC_PATTERN.test(profile.bankBic || ""));
+}
+
+function incompleteProfileFields(profile) {
+    const missing = [];
+    if (!profile.companyName) missing.push("raison sociale");
+    if (!profile.address) missing.push("adresse");
+    if (!profile.postalCode) missing.push("code postal");
+    if (!profile.city) missing.push("ville");
+    if (!profile.registrationNumber) missing.push("SIRET / immatriculation");
+    if (!EMAIL_PATTERN.test(profile.email || "")) missing.push("e-mail");
+    if (!IBAN_PATTERN.test(profile.bankIban || "")) missing.push("IBAN");
+    if (!BIC_PATTERN.test(profile.bankBic || "")) missing.push("BIC");
+    return missing;
+}
+
+function processingMessage(result) {
+    if (result.failed) return `${result.sent} facture(s) envoyée(s), ${result.failed} en échec. Consultez le détail ci-dessous.`;
+    if (result.sent) return `${result.sent} facture(s) envoyée(s) avec succès par Brevo.`;
+    if (result.skippedAccounts) return `${result.skippedAccounts} entreprise(s) ignorée(s) car leur e-mail de facturation est absent ou invalide.`;
+    return "Aucune facture arrivée à échéance ni en attente d’envoi.";
 }
 
 function emptyProfile() {

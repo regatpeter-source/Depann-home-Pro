@@ -1527,6 +1527,23 @@ body.desktop-device .nav-label-messages{
     gap:12px;
 }
 
+.creator-subscription-processing{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+    padding:12px 14px;
+    border:1px solid #bfdbfe;
+    border-radius:12px;
+    background:#eff6ff;
+    color:var(--primary);
+}
+
+.creator-subscription-processing span{
+    color:var(--muted);
+    font-size:13px;
+}
+
 .creator-subscription-invoice{
     display:grid;
     grid-template-columns:minmax(210px, 1fr) minmax(180px, auto) auto;
