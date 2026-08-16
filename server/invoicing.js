@@ -221,8 +221,9 @@ async function deliverPendingInvoices() {
     const database = getPool();
     await database.query(`UPDATE depannhome_subscription_invoices SET status='failed',last_error='Traitement interrompu avant confirmation de l’envoi ; nouvelle tentative autorisée.',updated_at=NOW() WHERE status='sending' AND updated_at<NOW()-INTERVAL '15 minutes'`);
     const { rows: invoices } = await database.query(`
-        SELECT invoice.id, invoice_number AS "invoiceNumber", recipient_name AS "recipientName", recipient_email AS "recipientEmail", recipient_address AS "recipientAddress", subscription_label AS "subscriptionLabel",
-            amount_cents AS "amountCents", vat_rate::float AS "vatRate", issue_date AS "issueDate", due_date AS "dueDate", issuer_profile AS "issuerProfile"
+        SELECT invoice.id, invoice.invoice_number AS "invoiceNumber", invoice.recipient_name AS "recipientName", invoice.recipient_email AS "recipientEmail",
+            invoice.recipient_address AS "recipientAddress", invoice.subscription_label AS "subscriptionLabel", invoice.amount_cents AS "amountCents",
+            invoice.vat_rate::float AS "vatRate", invoice.issue_date AS "issueDate", invoice.due_date AS "dueDate", invoice.issuer_profile AS "issuerProfile"
         FROM depannhome_subscription_invoices invoice
         JOIN depannhome_users owner ON owner.id = invoice.account_owner_id
         WHERE invoice.status IN ('pending', 'failed') AND owner.is_active = TRUE AND owner.is_archived = FALSE
