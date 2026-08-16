@@ -399,10 +399,10 @@ export function registerClientRoutes(app, requireAuthentication) {
         `, [getAccountOwnerId(request), clientId]);
         const attachments = Array.isArray(rows[0]?.client?.attachments) ? rows[0].client.attachments : [];
         const attachment = attachments.find(item => String(item?.id) === attachmentId);
-        const content = attachment ? decodeAttachmentDataUrl(attachment.dataUrl) : null;
+        const content = attachment ? await loadClientAttachmentContent(getPool(), getAccountOwnerId(request), clientId, attachment) : null;
         if (!attachment || !content) return response.status(404).json({ message: "Fichier introuvable." });
 
-        response.type(attachmentMimeType(attachment.name));
+        response.type(content.mime || attachmentMimeType(attachment.name));
         response.setHeader("Content-Disposition", `inline; filename*=UTF-8''${encodeURIComponent(safeFilename(attachment.name))}`);
         response.send(content.buffer);
     }));
@@ -422,14 +422,14 @@ export function registerClientRoutes(app, requireAuthentication) {
         const client = rows[0]?.client;
         const attachments = Array.isArray(client?.attachments) ? client.attachments : [];
         const attachment = attachments.find(item => String(item?.id) === attachmentId);
-        const content = attachment ? decodeAttachmentDataUrl(attachment.dataUrl) : null;
+        const content = attachment ? await loadClientAttachmentContent(getPool(), getAccountOwnerId(request), clientId, attachment) : null;
         if (!attachment || !content) return response.status(404).json({ message: "Fichier introuvable." });
 
         await sendDocumentEmail({
             recipient,
             recipientName: String(client?.name || ""),
             documentLabel: `${String(attachment.type || "Document")} ${safeFilename(attachment.name)}`,
-            attachment: { filename: safeFilename(attachment.name), content: content.buffer, contentType: attachmentMimeType(attachment.name) }
+            attachment: { filename: safeFilename(attachment.name), content: content.buffer, contentType: content.mime || attachmentMimeType(attachment.name) }
         });
         response.json({ message: "Document envoyé par e-mail." });
     }));
@@ -604,6 +604,20 @@ function decodeAttachmentDataUrl(value) {
     } catch {
         return null;
     }
+}
+
+async function loadClientAttachmentContent(database, ownerId, clientId, attachment) {
+    const embedded = decodeAttachmentDataUrl(attachment?.dataUrl);
+    if (embedded) return embedded;
+    const reportId = positiveId(attachment?.reportId);
+    if (!reportId) return null;
+    const { rows } = await database.query(`
+        SELECT pdf_data AS "pdfData", document_mime_type AS "mimeType"
+        FROM depannhome_technical_reports
+        WHERE id = $1 AND owner_id = $2 AND client_id = $3 AND status = 'validated'
+    `, [reportId, ownerId, clientId]);
+    const report = rows[0];
+    return report?.pdfData ? { buffer: report.pdfData, mime: report.mimeType || attachment.mime || attachmentMimeType(attachment.name) } : null;
 }
 
 function sanitizeEmailRecipient(value) {

@@ -1,6 +1,6 @@
 import { ROUTES } from "./config.js?v=106";
 import { createBillingDocumentForClient, viewBillingDocument } from "./billing.js?v=169";
-import { getSearchableClients } from "./clients.js?v=143";
+import { getSearchableClients } from "./clients.js?v=144";
 import { addClientActivityByName, synchronizeClients } from "./client-sync.js?v=124";
 import { renderClientMessages } from "./messages.js?v=106";
 import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=28";

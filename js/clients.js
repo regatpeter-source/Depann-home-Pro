@@ -809,6 +809,7 @@ export function getSearchableClients() {
             type: attachment.type,
             name: attachment.name,
             dataUrl: attachment.dataUrl,
+            reportId: attachment.reportId || "",
             appointmentId: attachment.appointmentId || "",
             createdAt: attachment.createdAt
         }))
@@ -840,6 +841,7 @@ function normalizeAttachments(attachments = []) {
             mime: attachment.mime || "application/octet-stream",
             size: Number(attachment.size) || 0,
             dataUrl: attachment.dataUrl || "",
+            reportId: String(attachment.reportId || "").replace(/[^0-9]/g, ""),
             cachedLocally: attachment.cachedLocally !== false,
             appointmentId: String(attachment.appointmentId || "").replace(/[^0-9]/g, ""),
             createdAt: attachment.createdAt || new Date().toISOString()

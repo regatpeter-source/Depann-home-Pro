@@ -7,6 +7,8 @@ import { normalizeLeakContent } from "../server/leak-report-template.js";
 const serverSource = readFileSync(new URL("../server/technical-reports.js", import.meta.url), "utf8");
 const editorSource = readFileSync(new URL("../js/leak-report-wizard.js", import.meta.url), "utf8");
 const deliverySource = readFileSync(new URL("../js/document-delivery.js", import.meta.url), "utf8");
+const clientsServerSource = readFileSync(new URL("../server/clients.js", import.meta.url), "utf8");
+const clientsEditorSource = readFileSync(new URL("../js/clients.js", import.meta.url), "utf8");
 
 function report() {
     return {
@@ -132,4 +134,18 @@ test("validated reports return their client archive and open the client delivery
     assert.match(deliverySource, /Envoyer par e-mail/);
     assert.match(deliverySource, /Imprimer \/ PDF/);
     assert.match(deliverySource, /Plus tard/);
+});
+
+test("validated report attachments reference the canonical PDF without duplicating base64 in the client", () => {
+    const archiveSource = serverSource.slice(serverSource.indexOf("async function archiveDocument"), serverSource.indexOf("export async function createTechnicalReportOutput"));
+    assert.match(archiveSource, /reportId: String\(report\.id\)/);
+    assert.doesNotMatch(archiveSource, /output\.buffer\.toString\("base64"\)/);
+    assert.doesNotMatch(archiveSource, /dossier client est trop volumineux/);
+});
+
+test("client attachment delivery supports referenced reports and legacy embedded files", () => {
+    assert.match(clientsServerSource, /const embedded = decodeAttachmentDataUrl\(attachment\?\.dataUrl\)/);
+    assert.match(clientsServerSource, /client_id = \$3 AND status = 'validated'/);
+    assert.match(clientsServerSource, /loadClientAttachmentContent/);
+    assert.match(clientsEditorSource, /reportId: String\(attachment\.reportId \|\| ""\)/);
 });
