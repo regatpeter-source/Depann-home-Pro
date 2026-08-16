@@ -16,8 +16,11 @@ const BILLING_MONTHS = [
 ];
 let activeDocument = null;
 let billingData = null;
+let billingPreviewCleanup = () => {};
 
 export async function renderBilling(options = {}) {
+    billingPreviewCleanup();
+    billingPreviewCleanup = () => {};
     if (options.document) activeDocument = options.document;
     clearSearch();
     resetSelection("all");
@@ -346,7 +349,10 @@ function renderDocumentEditor(panel) {
     const linkedInvoice = document.documentType === "quote" ? getInvoiceForQuote(document) : null;
     if (isEditing && (isTechnician() || isAccountant() || document.documentType === "credit")) return renderReadOnlyDocument(panel, document);
     const clients = getSearchableClients().sort((a, b) => a.name.localeCompare(b.name, "fr"));
+    const livePreview = globalThis.document.body.classList.contains("desktop-device") && ["quote", "invoice"].includes(document.documentType);
+    panel.classList.toggle("billing-editor-live-active", livePreview);
     panel.innerHTML = `
+        <div class="${livePreview ? "billing-document-workspace" : ""}"><section class="${livePreview ? "billing-document-writing" : ""}">
         <form id="billingDocumentForm" class="client-form">
             <div class="form-heading"><div><p class="eyebrow">${isEditing ? "Modification" : "Nouveau document"}</p><h2>${isEditing ? "Modifier le document" : `Créer un ${DOCUMENT_TYPES[document.documentType].toLowerCase()}`}</h2></div><div class="calendar-form-actions">${isEditing && document.documentType === "quote" ? linkedInvoice ? `<button type="button" class="secondary-button" data-view-linked-invoice="${escapeHtml(linkedInvoice.id)}">Voir la facture</button>` : '<button type="button" class="secondary-button" id="createInvoiceFromQuote">Créer la facture</button>' : ""}<button type="button" class="secondary-button" id="cancelBillingDocument">Annuler</button></div></div>
             <div class="form-grid">
@@ -369,13 +375,16 @@ function renderDocumentEditor(panel) {
             <p id="billingDocumentMessage" class="auth-message" aria-live="polite"></p>
             <div class="calendar-form-actions"><button type="submit" class="secondary-button">${isEditing ? "Enregistrer les modifications" : "Enregistrer le document"}</button>${isEditing ? '<button type="button" class="danger-button" id="deleteBillingDocument">Supprimer</button>' : ""}</div>
         </form>
+        </section>${livePreview ? '<section class="billing-document-live-preview" aria-label="Aperçu PDF en direct"><div class="billing-document-preview-heading"><strong>Aperçu PDF final en direct</strong><span data-billing-preview-state>Génération…</span></div><iframe title="Aperçu PDF en direct du devis ou de la facture"></iframe></section>' : ""}</div>
     `;
     const form = panel.querySelector("form");
     const linesNode = panel.querySelector("#billingLines");
+    let queuePreview = () => {};
     const renderLines = () => {
         linesNode.innerHTML = "";
         document.lines.forEach((line, index) => linesNode.appendChild(createLineEditor(line, index, document, renderLines)));
         renderTotals(panel.querySelector("#billingTotals"), document.lines, document.financialData);
+        queuePreview();
     };
     renderLines();
     renderDocumentAids(panel.querySelector("#billingAids"), document, renderLines);
@@ -386,6 +395,12 @@ function renderDocumentEditor(panel) {
     const customerInput = form.querySelector("[name=customerName]");
     customerInput.addEventListener("change", () => fillCustomerAddress(customerInput, form, clients));
     customerInput.addEventListener("input", () => fillCustomerAddress(customerInput, form, clients));
+    const live = bindBillingDocumentPreview(panel, form, document);
+    queuePreview = live.queue;
+    billingPreviewCleanup = live.dispose;
+    form.addEventListener("input", () => queuePreview());
+    form.addEventListener("change", () => queuePreview());
+    queuePreview(0);
     form.addEventListener("submit", async event => {
         event.preventDefault();
         const payload = { ...formDataToObject(new FormData(form)), lines: document.lines, financialData: document.financialData };
@@ -398,6 +413,7 @@ function renderDocumentEditor(panel) {
             detail: payload.documentNumber,
             documentId: result.data?.id
         });
+        billingPreviewCleanup();
         activeDocument = null;
         if (!isEditing && payload.appointmentId) {
             window.dispatchEvent(new CustomEvent("depannhome:billing-document-saved", { detail: { appointmentId: payload.appointmentId } }));
@@ -412,6 +428,43 @@ function renderDocumentEditor(panel) {
         activeDocument = null;
         renderBilling();
     });
+}
+
+function bindBillingDocumentPreview(panel, form, billingDocument) {
+    const iframe = panel.querySelector(".billing-document-live-preview iframe");
+    const state = panel.querySelector("[data-billing-preview-state]");
+    if (!iframe || !state) return { queue: () => {}, dispose: () => {} };
+    let timer = null;
+    let request = null;
+    let previewUrl = "";
+    let sequence = 0;
+    let disposed = false;
+    const dispose = () => { if (disposed) return; disposed = true; clearTimeout(timer); request?.abort(); observer.disconnect(); if (previewUrl) URL.revokeObjectURL(previewUrl); };
+    const refresh = async currentSequence => {
+        if (disposed || !iframe.isConnected || currentSequence !== sequence) return;
+        state.textContent = "Mise à jour…";
+        request?.abort();
+        request = new AbortController();
+        const payload = { ...formDataToObject(new FormData(form)), lines: billingDocument.lines, financialData: billingDocument.financialData, vatRegime: billingDocument.vatRegime, issuerTaxNumber: billingDocument.issuerTaxNumber, quoteReference: billingDocument.quoteReference || "" };
+        try {
+            const response = await fetch("/api/billing/documents/preview", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload), signal: request.signal });
+            if (!response.ok) { const error = await response.json().catch(() => null); throw new Error(error?.message || "Aperçu PDF indisponible."); }
+            const blob = await response.blob();
+            if (disposed || currentSequence !== sequence) return;
+            const nextUrl = URL.createObjectURL(blob);
+            const previousUrl = previewUrl;
+            previewUrl = nextUrl;
+            iframe.src = nextUrl;
+            if (previousUrl) iframe.addEventListener("load", () => URL.revokeObjectURL(previousUrl), { once: true });
+            state.textContent = response.headers.get("X-Billing-Preview-Mode") === "business-pages" ? "Gabarit DOCX : aperçu des pages métier" : `Actualisé à ${new Intl.DateTimeFormat("fr-FR", { timeStyle: "short" }).format(new Date())}`;
+        } catch (error) {
+            if (error.name !== "AbortError" && !disposed && currentSequence === sequence) state.textContent = error.message || "Aperçu PDF indisponible.";
+        }
+    };
+    const queue = (delay = 650) => { clearTimeout(timer); const currentSequence = ++sequence; timer = window.setTimeout(() => refresh(currentSequence), delay); };
+    const observer = new MutationObserver(() => { if (!panel.isConnected) dispose(); });
+    observer.observe(document.body, { childList: true, subtree: true });
+    return { queue, dispose };
 }
 
 function renderReadOnlyDocument(panel, document) {

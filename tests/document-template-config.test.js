@@ -139,3 +139,28 @@ test("template failures are actionable and quitus custom text is available to ex
     assert.match(calendarSource, /texte_pied_page: template\.footerText/);
     assert.match(clientSource, /"texte_entete", "texte_pied_page"/);
 });
+
+test("desktop quote and invoice editing uses a split form with live final PDF preview", () => {
+    assert.match(clientSource, /globalThis\.document\.body\.classList\.contains\("desktop-device"\)/);
+    assert.match(clientSource, /billing-document-workspace/);
+    assert.match(clientSource, /billing-document-live-preview/);
+    assert.match(clientSource, /bindBillingDocumentPreview/);
+    assert.match(clientSource, /\/api\/billing\/documents\/preview/);
+    assert.match(serverSource, /app\.post\("\/api\/billing\/documents\/preview", requireAuthentication, requireTechnicianBillingAccess, requireDesktopBillingPreview/);
+    assert.match(serverSource, /createBillingDocumentOutput\(document, profile\)/);
+});
+
+test("billing live preview is desktop-only, accepts incomplete drafts and never stores them", () => {
+    assert.match(serverSource, /request\.user\?\.deviceType === "desktop"/);
+    assert.match(serverSource, /function sanitizeDocumentPreview/);
+    assert.match(serverSource, /"Client à renseigner"/);
+    const previewRoute = serverSource.slice(serverSource.indexOf('app.post("/api/billing/documents/preview"'), serverSource.indexOf('app.post("/api/billing/documents/:documentId/email"'));
+    assert.doesNotMatch(previewRoute, /INSERT INTO depannhome_billing_documents|UPDATE depannhome_billing_documents/);
+    assert.match(previewRoute, /profile\.quoteTemplateMimeType === DOCX_MIME/);
+});
+
+test("billing live preview revokes old PDF blobs and cancels stale generations", () => {
+    assert.match(clientSource, /request\?\.abort\(\)/);
+    assert.match(clientSource, /URL\.revokeObjectURL\(previousUrl\)/);
+    assert.match(clientSource, /MutationObserver/);
+});

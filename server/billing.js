@@ -460,6 +460,21 @@ export function registerBillingRoutes(app, requireAuthentication) {
         response.send(output.buffer);
     }));
 
+    app.post("/api/billing/documents/preview", requireAuthentication, requireTechnicianBillingAccess, requireDesktopBillingPreview, asyncHandler(async (request, response) => {
+        const document = sanitizeDocumentPreview(request.body);
+        if (!document.ok) return response.status(400).json({ message: document.message });
+        const profile = await loadBillingPdfProfile(getAccountOwnerId(request));
+        document.vatRegime = normalizeVatRegime(request.body?.vatRegime || profile.vatRegime);
+        document.issuerTaxNumber = cleanText(request.body?.issuerTaxNumber, 100) || profile.taxNumber || "";
+        document.quoteReference = cleanText(request.body?.quoteReference, 80);
+        document.lines = applyVatRegime(document.lines, document.vatRegime);
+        const policy = QUOTE_TEMPLATE_POLICIES.has(profile.quoteTemplatePolicy) ? profile.quoteTemplatePolicy : "company_choice";
+        const externalDocx = profile.quoteTemplateMimeType === DOCX_MIME && (policy === "external_only" || (policy !== "integrated_only" && profile.quoteTemplateMode === "external"));
+        const output = externalDocx ? { buffer: await createBillingPdf(document, profile), mimeType: PDF_MIME } : await createBillingDocumentOutput(document, profile);
+        response.set({ "Content-Type": PDF_MIME, "Content-Disposition": "inline", "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff", "X-Billing-Preview-Mode": externalDocx ? "business-pages" : "final" });
+        response.send(output.buffer);
+    }));
+
     app.post("/api/billing/documents/:documentId/email", requireAuthentication, requireTechnicianBillingAccess, asyncHandler(async (request, response) => {
         const recipient = sanitizeEmailRecipient(request.body?.recipient);
         if (!recipient) return response.status(400).json({ message: "L’adresse e-mail du destinataire est invalide." });
@@ -633,6 +648,11 @@ async function requireTechnicianBillingAccess(request, response, next) {
     return next();
 }
 
+function requireDesktopBillingPreview(request, response, next) {
+    if (request.user?.deviceType === "desktop") return next();
+    return response.status(403).json({ message: "L’aperçu PDF en direct des devis et factures est réservé à un poste PC." });
+}
+
 export function billingUploadErrorHandler(error, request, response, next) {
     if (error instanceof multer.MulterError) return response.status(400).json({ message: ["quoteTemplate", "documentTemplate"].includes(error.field) ? "La base documentaire doit faire au maximum 10 Mo." : "Le logo doit faire au maximum 2 Mo." });
     if (error?.message === "Seules les images PNG, JPEG ou WebP sont acceptées.") return response.status(400).json({ message: error.message });
@@ -771,6 +791,14 @@ function sanitizeDocument(value) {
     if (!lines.length) return { ok: false, message: "Ajoutez au moins une ligne." };
     if (value?.dueDate && !dueDate) return { ok: false, message: "La date d'échéance est invalide." };
     return { ok: true, documentType, documentNumber, clientId, customerType, customerName, customerAddress, issueDate, dueDate, status, isAccounted, appointmentId, sourceQuoteId, lines, notes, financialData };
+}
+
+function sanitizeDocumentPreview(value) {
+    const documentType = DOCUMENT_TYPES.has(value?.documentType) ? value.documentType : "";
+    if (!documentType) return { ok: false, message: "L’aperçu est disponible uniquement pour un devis ou une facture." };
+    const sourceLines = Array.isArray(value?.lines) && value.lines.length ? value.lines : [{}];
+    const lines = sourceLines.slice(0, 100).map((line, index) => ({ description: cleanText(line?.description, 500) || `Prestation ${index + 1} à renseigner`, quantity: positiveNumber(line?.quantity) ?? 1, unit: cleanText(line?.unit, 40) || "unité", unitPrice: nonNegativeNumber(line?.unitPrice) ?? 0, vatRate: Math.min(100, nonNegativeNumber(line?.vatRate) ?? 0) }));
+    return sanitizeDocument({ ...value, documentType, documentNumber: cleanText(value?.documentNumber, 80) || "BROUILLON", customerName: cleanText(value?.customerName, 160) || "Client à renseigner", issueDate: sanitizeDate(value?.issueDate) || new Date().toISOString().slice(0, 10), dueDate: sanitizeDate(value?.dueDate), lines });
 }
 
 function sanitizeFinancialData(value) {
