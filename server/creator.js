@@ -49,14 +49,23 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
         const accountId = positiveId(request.params.accountId);
         const owner = accountId && await findAccountOwner(getPool(), accountId);
         if (!canManageAccount(owner, request)) return response.status(404).json({ message: "Entreprise introuvable dans le Réseau DepannHomePro." });
+        if (owner.is_archived) return response.status(409).json({ message: "Réactivez d’abord cette entreprise pour modifier sa fiche Réseau." });
         await updateCreatorNetworkDirectory(accountId, request.body);
+        response.status(204).end();
+    }));
+    app.patch("/api/creator/network-directory/:accountId/restore", requireCreator, asyncHandler(async (request, response) => {
+        const accountId = positiveId(request.params.accountId);
+        const owner = accountId && await findAccountOwner(getPool(), accountId);
+        if (!canManageAccount(owner, request)) return response.status(404).json({ message: "Entreprise introuvable dans le Réseau DepannHomePro." });
+        if (owner.is_archived) return response.status(409).json({ message: "Réactivez d’abord l’entreprise avant de restaurer sa fiche Réseau." });
+        await getPool().query("UPDATE depannhome_partner_directory SET is_listed=TRUE, creator_suspended=FALSE, updated_at=NOW() WHERE owner_id=$1", [accountId]);
         response.status(204).end();
     }));
     app.delete("/api/creator/network-directory/:accountId", requireCreator, asyncHandler(async (request, response) => {
         const accountId = positiveId(request.params.accountId);
         const owner = accountId && await findAccountOwner(getPool(), accountId);
         if (!canManageAccount(owner, request)) return response.status(404).json({ message: "Entreprise introuvable dans le Réseau DepannHomePro." });
-        await getPool().query("DELETE FROM depannhome_partner_directory WHERE owner_id=$1", [accountId]);
+        await getPool().query("UPDATE depannhome_partner_directory SET is_listed=FALSE, creator_suspended=TRUE, updated_at=NOW() WHERE owner_id=$1", [accountId]);
         response.status(204).end();
     }));
     app.get("/api/creator/accounts", requireCreator, asyncHandler(async (request, response) => {
@@ -69,6 +78,8 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
                 owner.phone AS "ownerPhone",
                 owner.email AS "billingEmail",
                 owner.is_active AS "isActive",
+                owner.is_archived AS "isArchived",
+                owner.archived_at AS "archivedAt",
                 owner.max_pc_users AS "maxPcUsers",
                 owner.max_technicians AS "maxTechnicians",
                 owner.subscription_plan AS "subscriptionPlan",
@@ -143,6 +154,7 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
         const database = getPool();
         const owner = await findAccountOwner(database, accountId);
         if (!canManageAccount(owner, request)) return response.status(404).json({ message: "Compte entreprise introuvable." });
+        if (owner.is_archived) return response.status(409).json({ message: "Réactivez cette entreprise avant de modifier ses informations." });
         const counts = await countActiveSeats(database, accountId);
         if (account.maxPcUsers < counts.activePcUsers || account.maxTechnicians < counts.activeTechnicians) {
             return response.status(400).json({ message: "Les limites ne peuvent pas être inférieures aux accès actifs existants." });
@@ -173,6 +185,7 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
         const owner = await findAccountOwner(database, accountId);
         if (!canManageAccount(owner, request)) return response.status(404).json({ message: "Compte entreprise introuvable." });
         if (isOwnCreatorAccount(owner, request)) return response.status(403).json({ message: "Le compte Créateur ne peut pas être suspendu." });
+        if (owner.is_archived) return response.status(409).json({ message: "Utilisez la réactivation d’archive pour remettre cette entreprise en service." });
         const { rows } = await database.query(`
             UPDATE depannhome_users
             SET is_active = $2, updated_at = NOW()
@@ -189,9 +202,34 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
         const database = getPool();
         const owner = await findAccountOwner(database, accountId);
         if (!owner || isCreatorUsername(owner.username)) return response.status(404).json({ message: "Compte entreprise introuvable." });
-        const result = await database.query("DELETE FROM depannhome_users WHERE id = $1 AND account_owner_id = id", [accountId]);
-        if (!result.rowCount) return response.status(404).json({ message: "Compte entreprise introuvable." });
-        response.status(204).end();
+        if (owner.is_archived) return response.status(409).json({ message: "Cette entreprise est déjà archivée." });
+        const connection = await database.connect();
+        try {
+            await connection.query("BEGIN");
+            const result = await connection.query(`UPDATE depannhome_users SET is_archived=TRUE,is_active=FALSE,archived_at=NOW(),archived_by=$2,updated_at=NOW() WHERE id=$1 AND account_owner_id=id AND is_archived=FALSE RETURNING id,archived_at AS "archivedAt"`, [accountId, request.user.sub]);
+            if (!result.rowCount) { await connection.query("ROLLBACK"); return response.status(404).json({ message: "Compte entreprise introuvable." }); }
+            await connection.query("INSERT INTO depannhome_account_lifecycle_audit(account_owner_id,actor_id,action,reason) VALUES($1,$2,'archived',$3)", [accountId, request.user.sub, cleanText(request.body?.reason, 500)]);
+            await connection.query("COMMIT");
+            response.json({ archived: true, archivedAt: result.rows[0].archivedAt });
+        } catch (error) { await connection.query("ROLLBACK"); throw error; } finally { connection.release(); }
+    }));
+
+    app.patch("/api/creator/accounts/:accountId/restore", requireCreator, asyncHandler(async (request, response) => {
+        const accountId = positiveId(request.params.accountId);
+        if (!accountId) return response.status(400).json({ message: "Compte entreprise invalide." });
+        const database = getPool();
+        const owner = await findAccountOwner(database, accountId);
+        if (!canManageAccount(owner, request) || isCreatorUsername(owner.username)) return response.status(404).json({ message: "Compte entreprise introuvable." });
+        if (!owner.is_archived) return response.status(409).json({ message: "Cette entreprise n’est pas archivée." });
+        const connection = await database.connect();
+        try {
+            await connection.query("BEGIN");
+            const result = await connection.query(`UPDATE depannhome_users SET is_archived=FALSE,is_active=TRUE,archived_at=NULL,archived_by=NULL,updated_at=NOW() WHERE id=$1 AND account_owner_id=id AND is_archived=TRUE RETURNING id`, [accountId]);
+            if (!result.rowCount) { await connection.query("ROLLBACK"); return response.status(404).json({ message: "Archive introuvable." }); }
+            await connection.query("INSERT INTO depannhome_account_lifecycle_audit(account_owner_id,actor_id,action) VALUES($1,$2,'restored')", [accountId, request.user.sub]);
+            await connection.query("COMMIT");
+            response.json({ restored: true });
+        } catch (error) { await connection.query("ROLLBACK"); throw error; } finally { connection.release(); }
     }));
 
     app.get("/api/creator/accounts/:accountId/members", requireCreator, asyncHandler(async (request, response) => {
@@ -220,6 +258,7 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
         const database = getPool();
         const owner = accountId && await findAccountOwner(database, accountId);
         if (!canManageAccount(owner, request)) return response.status(404).json({ message: "Compte entreprise introuvable." });
+        if (owner.is_archived) return response.status(409).json({ message: "Réactivez d’abord l’entreprise pour créer un accès." });
         if (!role) return response.status(400).json({ message: "Choisissez le type d’accès." });
         if (!profile.ok) return response.status(400).json({ message: profile.message });
         if (!credentials.ok) return response.status(400).json({ message: credentials.message });
@@ -251,6 +290,7 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
         const database = getPool();
         const owner = accountId && await findAccountOwner(database, accountId);
         if (!canManageAccount(owner, request)) return response.status(404).json({ message: "Compte entreprise introuvable." });
+        if (owner.is_archived) return response.status(409).json({ message: "Réactivez d’abord l’entreprise pour modifier ses accès." });
         const member = await findMember(database, accountId, memberId);
         if (!member) return response.status(404).json({ message: "Accès introuvable." });
         const profile = sanitizeMemberProfile(request.body, member.role);
@@ -290,6 +330,7 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
         if (accountId === memberId) return response.status(400).json({ message: "Supprimez l’entreprise entière pour retirer son compte d’ancrage technique." });
         const owner = await findAccountOwner(getPool(), accountId);
         if (!canManageAccount(owner, request)) return response.status(404).json({ message: "Compte entreprise introuvable." });
+        if (owner.is_archived) return response.status(409).json({ message: "Réactivez d’abord l’entreprise pour modifier ses accès." });
         const result = await getPool().query("DELETE FROM depannhome_users WHERE id = $1 AND account_owner_id = $2", [memberId, accountId]);
         if (!result.rowCount) return response.status(404).json({ message: "Accès introuvable." });
         response.status(204).end();
@@ -298,7 +339,7 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
 
 async function findAccountOwner(database, id) {
     const { rows } = await database.query(`
-        SELECT id, username, is_active, max_pc_users AS "maxPcUsers", max_technicians AS "maxTechnicians",
+        SELECT id, username, is_active, is_archived, max_pc_users AS "maxPcUsers", max_technicians AS "maxTechnicians",
             subscription_plan AS "subscriptionPlan", subscription_status AS "subscriptionStatus"
         FROM depannhome_users WHERE id = $1 AND account_owner_id = id
     `, [id]);

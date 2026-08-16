@@ -5,6 +5,7 @@ import { renderCreatorConnectors } from "./connectors.js?v=1";
 
 let accounts = [];
 let selectedAccountId = "";
+let accountListMode = "active";
 
 export async function renderCreatorConsole() {
     clearSearch();
@@ -157,15 +158,15 @@ async function renderNetworkDirectory() {
     const result = await api("/api/creator/network-directory");
     if (!result.ok) return showFeedback(result.message || "Impossible de charger le réseau.", true);
     const companies = result.data.companies || []; const stats = result.data.statistics || {};
-    workspace.innerHTML = `<section class="creator-form creator-network-directory"><div class="form-heading"><div><p class="eyebrow">Répertoire officiel</p><h3>Réseau DepanHomePro</h3></div></div><div class="creator-network-stats"><article><span>Inscrites</span><strong>${stats.registeredCompanies || 0}</strong></article><article><span>Visibles</span><strong>${stats.visibleCompanies || 0}</strong></article><article><span>Suspensions</span><strong>${stats.suspendedCompanies || 0}</strong></article><article><span>Connexions actives</span><strong>${stats.connectedPairs || 0}</strong></article></div><form data-network-filter class="group-filter"><input name="q" type="search" placeholder="Entreprise, ville ou code postal"><button class="secondary-button">Rechercher</button></form><div class="creator-network-list">${companies.length ? companies.map(networkRow).join("") : '<p class="muted">Aucune entreprise inscrite.</p>'}</div><div class="creator-form-actions"><button type="button" class="secondary-button" data-network-back>Retour aux entreprises</button></div></section>`;
+    workspace.innerHTML = `<section class="creator-form creator-network-directory"><div class="form-heading"><div><p class="eyebrow">Répertoire officiel</p><h3>Réseau DepanHomePro</h3></div></div><div class="creator-network-stats"><article><span>Inscrites</span><strong>${stats.registeredCompanies || 0}</strong></article><article><span>Visibles</span><strong>${stats.visibleCompanies || 0}</strong></article><article><span>Fiches suspendues</span><strong>${stats.suspendedCompanies || 0}</strong></article><article><span>Entreprises archivées</span><strong>${stats.archivedCompanies || 0}</strong></article><article><span>Connexions actives</span><strong>${stats.connectedPairs || 0}</strong></article></div><form data-network-filter class="group-filter"><input name="q" type="search" placeholder="Entreprise, ville ou code postal"><button class="secondary-button">Rechercher</button></form><div class="creator-network-list">${companies.length ? companies.map(networkRow).join("") : '<p class="muted">Aucune entreprise inscrite.</p>'}</div><div class="creator-form-actions"><button type="button" class="secondary-button" data-network-back>Retour aux entreprises</button></div></section>`;
     workspace.querySelector("[data-network-back]").addEventListener("click", () => selectedAccountId ? renderAccountDetail(selectedAccountId) : workspace.replaceChildren());
     workspace.querySelector("[data-network-filter]").addEventListener("submit", async event => { event.preventDefault(); const query = new URLSearchParams(new FormData(event.currentTarget)); const refreshed = await api(`/api/creator/network-directory?${query}`); if (!refreshed.ok) return showFeedback(refreshed.message || "Recherche impossible.", true); const list = workspace.querySelector(".creator-network-list"); list.innerHTML = (refreshed.data.companies || []).map(networkRow).join("") || '<p class="muted">Aucune entreprise trouvée.</p>'; bindNetworkActions(list); });
     bindNetworkActions(workspace);
 }
 
-function networkRow(company) { return `<article class="creator-network-company"><div><strong>${escapeHtml(company.companyName || "Organisation")}</strong><p>${escapeHtml(company.organizationBadge || "Organisation")}</p><p>${escapeHtml([company.city, company.postalCode].filter(Boolean).join(" · ") || "Coordonnées non renseignées")}</p><small>${company.isListed ? "Visible" : "Interne"}${company.creatorSuspended ? " · Suspendue" : ""}${company.acceptsPartnerMissions ? " · Missions acceptées" : ""}</small></div><div class="creator-form-actions"><button type="button" class="secondary-button" data-network-manage="${escapeHtml(company.id)}">Gérer</button><button type="button" class="secondary-button danger-button" data-network-delete="${escapeHtml(company.id)}">Retirer du réseau</button></div></article>`; }
+function networkRow(company) { const directoryArchived = company.creatorSuspended && !company.isListed; return `<article class="creator-network-company${company.isArchived || directoryArchived ? " archived" : ""}"><div><strong>${escapeHtml(company.companyName || "Organisation")}</strong><p>${escapeHtml(company.organizationBadge || "Organisation")}</p><p>${escapeHtml([company.city, company.postalCode].filter(Boolean).join(" · ") || "Coordonnées non renseignées")}</p><small>${company.isArchived ? "Entreprise archivée · Données conservées" : directoryArchived ? "Fiche Réseau archivée · Données conservées" : `${company.isListed ? "Visible" : "Interne"}${company.creatorSuspended ? " · Suspendue" : ""}${company.acceptsPartnerMissions ? " · Missions acceptées" : ""}`}</small></div><div class="creator-form-actions">${company.isArchived ? `<button type="button" class="secondary-button" data-network-restore="${escapeHtml(company.id)}">Réactiver l’entreprise</button>` : directoryArchived ? `<button type="button" class="secondary-button" data-network-directory-restore="${escapeHtml(company.id)}">Restaurer la fiche</button>` : `<button type="button" class="secondary-button" data-network-manage="${escapeHtml(company.id)}">Gérer</button><button type="button" class="secondary-button danger-button" data-network-delete="${escapeHtml(company.id)}">Archiver la fiche</button>`}</div></article>`; }
 
-function bindNetworkActions(container) { container.querySelectorAll("[data-network-manage]").forEach(button => button.addEventListener("click", async () => { const company = (await api("/api/creator/network-directory")).data?.companies?.find(item => String(item.id) === button.dataset.networkManage); if (company) renderNetworkCompanyForm(company); })); container.querySelectorAll("[data-network-delete]").forEach(button => button.addEventListener("click", async () => { if (!confirm("Retirer cette fiche du Réseau DepanHomePro ? Le compte et les partenariats existants restent inchangés.")) return; const deleted = await api(`/api/creator/network-directory/${encodeURIComponent(button.dataset.networkDelete)}`, { method: "DELETE" }); if (!deleted.ok) return showFeedback(deleted.message || "Suppression impossible.", true); showFeedback("Fiche retirée du réseau."); renderNetworkDirectory(); })); }
+function bindNetworkActions(container) { container.querySelectorAll("[data-network-manage]").forEach(button => button.addEventListener("click", async () => { const company = (await api("/api/creator/network-directory")).data?.companies?.find(item => String(item.id) === button.dataset.networkManage); if (company) renderNetworkCompanyForm(company); })); container.querySelectorAll("[data-network-delete]").forEach(button => button.addEventListener("click", async () => { if (!confirm("Archiver cette fiche du Réseau DepannHomePro ? Ses informations et ses partenariats seront conservés.")) return; const deleted = await api(`/api/creator/network-directory/${encodeURIComponent(button.dataset.networkDelete)}`, { method: "DELETE" }); if (!deleted.ok) return showFeedback(deleted.message || "Archivage impossible.", true); showFeedback("Fiche Réseau archivée sans perte de données."); renderNetworkDirectory(); })); container.querySelectorAll("[data-network-directory-restore]").forEach(button => button.addEventListener("click", async () => { const restored = await api(`/api/creator/network-directory/${encodeURIComponent(button.dataset.networkDirectoryRestore)}/restore`, { method: "PATCH" }); if (!restored.ok) return showFeedback(restored.message || "Restauration impossible.", true); showFeedback("Fiche Réseau restaurée avec toutes ses informations."); renderNetworkDirectory(); })); container.querySelectorAll("[data-network-restore]").forEach(button => button.addEventListener("click", async () => { if (!confirm("Réactiver cette entreprise et ses accès ?")) return; const restored = await api(`/api/creator/accounts/${encodeURIComponent(button.dataset.networkRestore)}/restore`, { method: "PATCH" }); if (!restored.ok) return showFeedback(restored.message || "Réactivation impossible.", true); await loadAccounts(button.dataset.networkRestore); showFeedback("Entreprise réactivée avec toutes ses données."); renderNetworkDirectory(); })); }
 
 function renderNetworkCompanyForm(company) { const workspace = document.querySelector("#creatorWorkspace"); workspace.innerHTML = `<form class="creator-form" data-network-company-form><div class="form-heading"><div><p class="eyebrow">Fiche Réseau</p><h3>${escapeHtml(company.companyName || "Entreprise")}</h3></div></div><p class="muted">Le Créateur peut corriger les informations professionnelles et suspendre la fiche. Les coordonnées publiées restent sous le contrôle de l’entreprise.</p><div class="form-grid"><label class="creator-switch">Visible<input name="isListed" type="checkbox" ${company.isListed ? "checked" : ""}><span>Apparaît dans les recherches</span></label><label class="creator-switch">Suspendre<input name="creatorSuspended" type="checkbox" ${company.creatorSuspended ? "checked" : ""}><span>Masquer en cas d’abus</span></label><label class="form-wide">Description<textarea name="description" rows="3" maxlength="1000">${escapeHtml(company.description || "")}</textarea></label><label>Métiers<input name="trades" value="${escapeHtml(listText(company.trades))}"></label><label>Marques<input name="supportedBrands" value="${escapeHtml(listText(company.supportedBrands))}"></label><label>Spécialités<input name="specialties" value="${escapeHtml(listText(company.specialties))}"></label><label>Zone<input name="serviceArea" value="${escapeHtml(company.serviceArea || "")}"></label><label>Rayon (km)<input name="serviceRadiusKm" type="number" min="0" max="500" value="${Number(company.serviceRadiusKm) || 0}"></label><label>Départements<input name="departments" value="${escapeHtml(listText(company.departments))}"></label><label>Horaires<textarea name="openingHours" rows="2" maxlength="1000">${escapeHtml(company.openingHours || "")}</textarea></label><label>Site internet<input name="website" type="url" value="${escapeHtml(company.website || "")}"></label><label class="creator-switch">Accepte les missions<input name="acceptsPartnerMissions" type="checkbox" ${company.acceptsPartnerMissions ? "checked" : ""}><span>Indication du réseau</span></label><label class="form-wide">Note interne Créateur<textarea name="creatorNote" rows="3" maxlength="1000">${escapeHtml(company.creatorNote || "")}</textarea></label></div><p class="auth-message" aria-live="polite"></p><div class="creator-form-actions"><button class="secondary-button">Enregistrer la fiche</button><button type="button" class="secondary-button" data-network-back>Retour au réseau</button></div></form>`; const form = workspace.querySelector("form"); workspace.querySelector("[data-network-back]").addEventListener("click", renderNetworkDirectory); form.addEventListener("submit", async event => { event.preventDefault(); const values = Object.fromEntries(new FormData(form)); ["isListed", "creatorSuspended", "acceptsPartnerMissions"].forEach(key => { values[key] = form.elements[key].checked; }); const saved = await api(`/api/creator/network-directory/${encodeURIComponent(company.id)}`, { method: "PATCH", body: JSON.stringify(values) }); if (!saved.ok) { form.querySelector(".auth-message").textContent = saved.message || "Enregistrement impossible."; return; } showFeedback("Fiche Réseau mise à jour."); renderNetworkDirectory(); }); }
 
@@ -241,6 +242,8 @@ async function loadAccounts(preferredId = selectedAccountId) {
     if (!result.ok) return showFeedback(result.message || "Impossible de charger les entreprises.", true);
     accounts = result.data.accounts || [];
     selectedAccountId = accounts.some(account => String(account.id) === String(preferredId)) ? String(preferredId) : "";
+    const selected = accounts.find(account => String(account.id) === selectedAccountId);
+    if (selected) accountListMode = selected.isArchived ? "archived" : "active";
     renderSubscriptionSummary();
     renderAccountList();
     if (selectedAccountId) await renderAccountDetail(selectedAccountId);
@@ -250,13 +253,14 @@ async function loadAccounts(preferredId = selectedAccountId) {
 function renderSubscriptionSummary() {
     const summary = document.querySelector("#creatorSubscriptionSummary");
     if (!summary) return;
-    const paidAccounts = accounts.filter(account => account.subscriptionPlan === "paid");
+    const activeAccounts = accounts.filter(account => !account.isArchived);
+    const paidAccounts = activeAccounts.filter(account => account.subscriptionPlan === "paid");
     const activePaidAccounts = paidAccounts.filter(account => ["active", "trial", "past_due"].includes(account.subscriptionStatus));
     const monthlyRevenue = activePaidAccounts.reduce((total, account) => total + Number(account.monthlyPriceCents || 0), 0);
-    const pastDue = accounts.filter(account => account.subscriptionStatus === "past_due").length;
+    const pastDue = activeAccounts.filter(account => account.subscriptionStatus === "past_due").length;
     summary.innerHTML = `
-        <article><span>Entreprises</span><strong>${accounts.length}</strong></article>
-        <article><span>Abonnements payants</span><strong>${paidAccounts.length}</strong></article>
+        <article><span>Entreprises actives</span><strong>${activeAccounts.length}</strong></article>
+        <article><span>Archives conservées</span><strong>${accounts.length - activeAccounts.length}</strong></article>
         <article><span>Mensuel estimé</span><strong>${formatCurrency(monthlyRevenue)}</strong></article>
         <article class="${pastDue ? "attention" : ""}"><span>Paiements à suivre</span><strong>${pastDue}</strong></article>
     `;
@@ -264,14 +268,18 @@ function renderSubscriptionSummary() {
 
 function renderAccountList() {
     const list = document.querySelector("#creatorAccounts");
-    list.innerHTML = accounts.length ? accounts.map(account => `
-        <button type="button" class="creator-account${String(account.id) === selectedAccountId ? " selected" : ""}" data-account-id="${escapeHtml(account.id)}">
+    const activeAccounts = accounts.filter(account => !account.isArchived);
+    const archivedAccounts = accounts.filter(account => account.isArchived);
+    const displayedAccounts = accountListMode === "archived" ? archivedAccounts : activeAccounts;
+    list.innerHTML = `<div class="creator-account-filters"><button type="button" class="${accountListMode === "active" ? "active" : ""}" data-account-mode="active">Actives (${activeAccounts.length})</button><button type="button" class="${accountListMode === "archived" ? "active" : ""}" data-account-mode="archived">Archivées (${archivedAccounts.length})</button></div>${displayedAccounts.length ? displayedAccounts.map(account => `
+        <button type="button" class="creator-account${account.isArchived ? " archived" : ""}${String(account.id) === selectedAccountId ? " selected" : ""}" data-account-id="${escapeHtml(account.id)}">
             <strong>${escapeHtml(account.companyName || account.ownerFullName || account.ownerUsername)}</strong>
-            <span>${escapeHtml(account.ownerUsername)} · ${account.isActive ? "Active" : "Suspendue"}</span>
+            <span>${escapeHtml(account.ownerUsername)} · ${account.isArchived ? "Archivée" : account.isActive ? "Active" : "Suspendue"}</span>
             <em class="creator-subscription-badge ${escapeHtml(account.subscriptionStatus || "active")}">${escapeHtml(subscriptionPlanLabel(account))} · ${escapeHtml(subscriptionStatusLabel(account.subscriptionStatus))}</em>
             <small>${account.activePcUsers}/${account.maxPcUsers} PC · ${account.activeTechnicians}/${account.maxTechnicians} techniciens</small>
         </button>
-    `).join("") : '<p class="muted">Aucune entreprise.</p>';
+    `).join("") : `<p class="muted">Aucune entreprise ${accountListMode === "archived" ? "archivée" : "active"}.</p>`}`;
+    list.querySelectorAll("[data-account-mode]").forEach(button => button.addEventListener("click", () => { accountListMode = button.dataset.accountMode; selectedAccountId = ""; renderAccountList(); document.querySelector("#creatorWorkspace").innerHTML = '<p class="muted">Sélectionnez une organisation.</p>'; }));
     list.querySelectorAll("[data-account-id]").forEach(button => button.addEventListener("click", async () => {
         selectedAccountId = button.dataset.accountId;
         renderAccountList();
@@ -283,10 +291,11 @@ async function renderAccountDetail(accountId) {
     const account = accounts.find(item => String(item.id) === String(accountId));
     if (!account) return;
     const isOwnCreatorAccount = String(account.id) === String(document.body.dataset.userId);
+    const accountState = account.isArchived ? "Archivée" : account.isActive ? "Active" : "Suspendue";
     const workspace = document.querySelector("#creatorWorkspace");
     workspace.innerHTML = `
         <form id="creatorAccountForm" class="creator-form">
-            <div class="form-heading"><div><p class="eyebrow">${escapeHtml(account.organization?.badge || "Entreprise Depann’Home Pro")}</p><h3>${escapeHtml(account.companyName)}</h3></div><span class="creator-state${account.isActive ? "" : " suspended"}">${account.isActive ? "Active" : "Suspendue"}</span></div>
+            <div class="form-heading"><div><p class="eyebrow">${escapeHtml(account.organization?.badge || "Entreprise Depann’Home Pro")}</p><h3>${escapeHtml(account.companyName)}</h3></div><span class="creator-state${account.isArchived ? " archived" : account.isActive ? "" : " suspended"}">${accountState}</span></div>
             <div class="form-grid">
                 <label>Raison sociale<input name="companyName" maxlength="160" required value="${escapeHtml(account.companyName)}"></label>
                 <label>Responsable principal<input name="fullName" maxlength="100" required value="${escapeHtml(account.ownerFullName)}"></label>
@@ -299,12 +308,13 @@ async function renderAccountDetail(accountId) {
             ${renderSubscriptionFields(account)}
             ${renderOrganizationFields(account.organization)}
             ${renderDocumentTemplatePolicyFields(account)}
-            ${isOwnCreatorAccount ? '<p class="creator-account-status-note">Le compte Créateur reste actif en permanence.</p>' : `<section class="creator-account-status-panel ${account.isActive ? "active" : "suspended"}"><div><strong>${account.isActive ? "Entreprise active" : "Entreprise suspendue"}</strong><p>${account.isActive ? "Les membres peuvent se connecter et utiliser leur espace." : "Les connexions et les sessions en cours sont bloquées. Les données restent conservées."}</p></div><button type="button" class="secondary-button ${account.isActive ? "danger-button" : ""}" id="creatorToggleAccountStatus">${account.isActive ? "Suspendre l’entreprise" : "Réactiver l’entreprise"}</button></section>`}
-            <div class="creator-form-actions"><button type="submit" class="secondary-button">Enregistrer l’entreprise</button>${isOwnCreatorAccount ? "" : '<button type="button" class="secondary-button danger-button" id="creatorDeleteAccount">Supprimer l’entreprise</button>'}</div>
+            ${isOwnCreatorAccount ? '<p class="creator-account-status-note">Le compte Créateur reste actif en permanence.</p>' : account.isArchived ? `<section class="creator-account-status-panel archived"><div><strong>Entreprise archivée</strong><p>Tous les accès sont bloqués, mais les clients, interventions, rapports, documents, écritures et partenariats sont intégralement conservés.${account.archivedAt ? ` Archive créée le ${escapeHtml(formatDateTime(account.archivedAt))}.` : ""}</p></div><button type="button" class="secondary-button" id="creatorRestoreAccount">Réactiver l’entreprise</button></section>` : `<section class="creator-account-status-panel ${account.isActive ? "active" : "suspended"}"><div><strong>${account.isActive ? "Entreprise active" : "Entreprise suspendue"}</strong><p>${account.isActive ? "Les membres peuvent se connecter et utiliser leur espace." : "Les connexions et les sessions en cours sont bloquées. Les données restent conservées."}</p></div><button type="button" class="secondary-button ${account.isActive ? "danger-button" : ""}" id="creatorToggleAccountStatus">${account.isActive ? "Suspendre l’entreprise" : "Réactiver l’entreprise"}</button></section>`}
+            <div class="creator-form-actions">${account.isArchived ? "" : '<button type="submit" class="secondary-button">Enregistrer l’entreprise</button>'}${isOwnCreatorAccount || account.isArchived ? "" : '<button type="button" class="secondary-button danger-button" id="creatorDeleteAccount">Archiver l’entreprise</button>'}</div>
         </form>
         <section class="creator-members-section"><div class="form-heading"><div><p class="eyebrow">Traçabilité</p><h3>Historique de l’organisation</h3></div></div><div id="creatorOrganizationHistory"><p class="muted">Chargement de l’historique…</p></div></section>
-        <section class="creator-members-section"><div class="form-heading"><div><p class="eyebrow">Accès</p><h3>Postes PC et techniciens</h3></div><div class="creator-form-actions"><button type="button" class="secondary-button auth-outline-button" id="creatorNewPcMember">+ Poste PC</button><button type="button" class="secondary-button" id="creatorNewTechnician">+ Technicien</button></div></div><div id="creatorMembers"><p class="muted">Chargement des accès…</p></div></section>
+        <section class="creator-members-section"><div class="form-heading"><div><p class="eyebrow">Accès</p><h3>Postes PC et techniciens</h3></div>${account.isArchived ? "" : '<div class="creator-form-actions"><button type="button" class="secondary-button auth-outline-button" id="creatorNewPcMember">+ Poste PC</button><button type="button" class="secondary-button" id="creatorNewTechnician">+ Technicien</button></div>'}</div><div id="creatorMembers"><p class="muted">Chargement des accès…</p></div></section>
     `;
+    if (account.isArchived) workspace.querySelectorAll("#creatorAccountForm [name]").forEach(field => { field.disabled = true; });
     workspace.querySelector("#creatorAccountForm").addEventListener("submit", async event => {
         event.preventDefault();
         const button = event.currentTarget.querySelector('button[type="submit"]');
@@ -330,17 +340,22 @@ async function renderAccountDetail(accountId) {
         await loadAccounts(accountId);
     });
     workspace.querySelector("#creatorDeleteAccount")?.addEventListener("click", async () => {
-        if (!confirm(`Supprimer définitivement ${account.companyName}, ses accès et toutes ses données ?`)) return;
-        const result = await api(`/api/creator/accounts/${encodeURIComponent(accountId)}`, { method: "DELETE" });
-        if (!result.ok) return showFeedback(result.message || "Suppression impossible.", true);
-        selectedAccountId = "";
-        showFeedback("Entreprise supprimée.");
-        await loadAccounts();
+        if (!confirm(`Archiver ${account.companyName} ? Tous les accès seront bloqués, mais aucune donnée ne sera supprimée.`)) return;
+        const reason = prompt("Motif de l’archivage (facultatif) :", "");
+        if (reason === null) return;
+        const result = await api(`/api/creator/accounts/${encodeURIComponent(accountId)}`, { method: "DELETE", body: JSON.stringify({ reason }) });
+        if (!result.ok) return showFeedback(result.message || "Archivage impossible.", true);
+        accountListMode = "archived";
+        showFeedback("Entreprise archivée. Toutes ses données sont conservées et peuvent être réactivées.");
+        await loadAccounts(accountId);
     });
-    workspace.querySelector("#creatorNewPcMember").addEventListener("click", () => renderMemberForm(account, null, "admin"));
-    workspace.querySelector("#creatorNewTechnician").addEventListener("click", () => renderMemberForm(account, null, "technician"));
-    bindSubscriptionPlan(workspace.querySelector("#creatorAccountForm"));
-    bindOrganizationInterface(workspace.querySelector("#creatorAccountForm"));
+    workspace.querySelector("#creatorRestoreAccount")?.addEventListener("click", async () => { if (!confirm(`Réactiver ${account.companyName} avec tous ses accès et ses données ?`)) return; const result = await api(`/api/creator/accounts/${encodeURIComponent(accountId)}/restore`, { method: "PATCH" }); if (!result.ok) return showFeedback(result.message || "Réactivation impossible.", true); accountListMode = "active"; showFeedback("Entreprise réactivée avec toutes ses données."); await loadAccounts(accountId); });
+    workspace.querySelector("#creatorNewPcMember")?.addEventListener("click", () => renderMemberForm(account, null, "admin"));
+    workspace.querySelector("#creatorNewTechnician")?.addEventListener("click", () => renderMemberForm(account, null, "technician"));
+    if (!account.isArchived) {
+        bindSubscriptionPlan(workspace.querySelector("#creatorAccountForm"));
+        bindOrganizationInterface(workspace.querySelector("#creatorAccountForm"));
+    }
     await loadOrganizationHistory(accountId);
     await loadMembers(accountId);
 }
@@ -730,10 +745,11 @@ async function loadMembers(accountId) {
         return;
     }
     const members = result.data.members || [];
+    const accountArchived = Boolean(accounts.find(account => String(account.id) === String(accountId))?.isArchived);
     container.innerHTML = members.length ? `<div class="creator-members">${members.map(member => `
         <article class="creator-member">
             <div><strong>${escapeHtml(member.fullName || member.username)}</strong><span>${member.role === "admin" ? "Poste PC" : "Technicien"} · ${escapeHtml(member.username)}${member.phone ? ` · ${escapeHtml(member.phone)}` : ""}${member.email ? ` · ${escapeHtml(member.email)}` : ""}</span></div>
-            <div class="creator-member-actions"><span class="creator-state${member.isActive ? "" : " suspended"}">${member.isActive ? "Actif" : "Désactivé"}</span><button type="button" class="secondary-button" data-edit-member="${escapeHtml(member.id)}">Gérer</button></div>
+            <div class="creator-member-actions"><span class="creator-state${member.isActive ? "" : " suspended"}">${member.isActive ? "Actif" : "Désactivé"}</span>${accountArchived ? "" : `<button type="button" class="secondary-button" data-edit-member="${escapeHtml(member.id)}">Gérer</button>`}</div>
         </article>
     `).join("")}</div>` : '<p class="muted">Aucun accès pour le moment.</p>';
     container.querySelectorAll("[data-edit-member]").forEach(button => button.addEventListener("click", () => {

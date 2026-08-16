@@ -1444,6 +1444,8 @@ body.desktop-device .nav-label-messages{
     gap:9px;
 }
 
+.creator-account-filters{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;padding:4px;border:1px solid var(--border);border-radius:12px;background:#f8fafc}.creator-account-filters button{min-height:38px;border:0;border-radius:9px;background:transparent;color:var(--muted);font-weight:800;cursor:pointer}.creator-account-filters button.active{background:var(--primary);color:#fff}.creator-account.archived{border-style:dashed;background:#f8fafc;opacity:.88}.creator-network-company.archived{border-style:dashed;background:#f8fafc}
+
 .creator-account{
     display:grid;
     gap:3px;
@@ -1709,6 +1711,7 @@ body.desktop-device .nav-label-messages{
 }
 
 .creator-account-status-panel{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:15px 16px;border:1px solid #86efac;border-radius:13px;background:#f0fdf4}.creator-account-status-panel.suspended{border-color:#fecaca;background:#fef2f2}.creator-account-status-panel strong{color:#166534}.creator-account-status-panel.suspended strong{color:#b42318}.creator-account-status-panel p{margin:3px 0 0;color:#475569;font-size:.9rem}.creator-account-status-note{margin:0;padding:12px;border:1px solid #bfdbfe;border-radius:10px;background:#eff6ff;color:#075985;font-size:.9rem;font-weight:700}
+.creator-account-status-panel.archived{border-color:#cbd5e1;background:#f8fafc}.creator-account-status-panel.archived strong{color:#334155}
 
 .creator-state{
     display:inline-flex;
@@ -1726,6 +1729,8 @@ body.desktop-device .nav-label-messages{
     background:#fee2e2;
     color:#b42318;
 }
+
+.creator-state.archived{background:#e2e8f0;color:#334155}
 
 .creator-members-section{
     display:grid;

@@ -60,6 +60,9 @@ export async function initializeDatabase() {
             quitus_template_policy VARCHAR(30) NOT NULL DEFAULT 'company_choice',
             report_template_policy VARCHAR(30) NOT NULL DEFAULT 'company_choice',
             is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            is_archived BOOLEAN NOT NULL DEFAULT FALSE,
+            archived_at TIMESTAMPTZ,
+            archived_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             CONSTRAINT depannhome_users_username_unique UNIQUE (username)
@@ -87,7 +90,10 @@ export async function initializeDatabase() {
         ADD COLUMN IF NOT EXISTS quote_template_policy VARCHAR(30) NOT NULL DEFAULT 'company_choice',
         ADD COLUMN IF NOT EXISTS quitus_template_policy VARCHAR(30) NOT NULL DEFAULT 'company_choice',
         ADD COLUMN IF NOT EXISTS report_template_policy VARCHAR(30) NOT NULL DEFAULT 'company_choice',
-        ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE
+        ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE,
+        ADD COLUMN IF NOT EXISTS is_archived BOOLEAN NOT NULL DEFAULT FALSE,
+        ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ,
+        ADD COLUMN IF NOT EXISTS archived_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL
     `);
     if (!billingPermissionColumn.length) {
         await database.query(`
@@ -127,6 +133,18 @@ export async function initializeDatabase() {
         )
     `);
     await database.query("CREATE INDEX IF NOT EXISTS depannhome_organization_audit_owner_created_idx ON depannhome_organization_audit(account_owner_id, created_at DESC)");
+    await database.query("CREATE INDEX IF NOT EXISTS depannhome_users_owner_archive_idx ON depannhome_users(account_owner_id, is_archived, updated_at DESC)");
+    await database.query(`
+        CREATE TABLE IF NOT EXISTS depannhome_account_lifecycle_audit (
+            id BIGSERIAL PRIMARY KEY,
+            account_owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+            actor_id BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+            action VARCHAR(30) NOT NULL CHECK (action IN ('archived', 'restored')),
+            reason VARCHAR(500) NOT NULL DEFAULT '',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+    `);
+    await database.query("CREATE INDEX IF NOT EXISTS depannhome_account_lifecycle_audit_owner_idx ON depannhome_account_lifecycle_audit(account_owner_id, created_at DESC)");
 
     await database.query(`
         CREATE INDEX IF NOT EXISTS depannhome_users_username_lookup_idx
