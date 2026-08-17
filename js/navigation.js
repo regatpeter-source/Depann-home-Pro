@@ -1312,6 +1312,7 @@ function renderSettingsWorkspace(options = {}) {
         const grid = document.createElement("div");
         grid.className = "settings-subsection-grid";
         grid.append(
+            createSettingsNavigationCard("Identité et modèles intégrés", "Logo, coordonnées, couleurs, polices, en-têtes et pieds de page Depann’Home Pro", "appearance", openIntegratedDocumentSettings),
             createSettingsNavigationCard("Modèle de devis", "Paramétrer uniquement les devis", "document", () => openDocumentTemplateSettings("quote")),
             createSettingsNavigationCard("Modèle de facture", "Paramétrer uniquement les factures", "document", () => openDocumentTemplateSettings("invoice")),
             createSettingsNavigationCard("Modèle de quitus", "Paramétrer uniquement les quitus", "document", () => openDocumentTemplateSettings("quitus")),
@@ -1354,6 +1355,11 @@ function renderSettingsWorkspace(options = {}) {
 
 async function openDocumentTemplateSettings(type) {
     await renderDocumentTemplateEditor(type, () => renderSettings({ section: "documents" }));
+}
+
+async function openIntegratedDocumentSettings() {
+    await renderBilling({ profile: true });
+    renderReportTemplateSettings(getContainer());
 }
 
 function createSettingsIntro(title, description) {

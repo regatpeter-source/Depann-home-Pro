@@ -30,6 +30,8 @@ test("templates are versioned, isolated by owner and uniquely active per documen
 });
 
 test("quote and invoice have independent settings cards and API types", () => {
+    assert.match(navigation, /Identité et modèles intégrés/);
+    assert.match(navigation, /openIntegratedDocumentSettings/);
     assert.match(navigation, /Modèle de devis/);
     assert.match(navigation, /Modèle de facture/);
     assert.match(server, /new Set\(\["quote", "invoice", "quitus", "report"\]\)/);
