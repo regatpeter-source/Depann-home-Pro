@@ -25,6 +25,8 @@ test("templates are versioned, isolated by owner and uniquely active per documen
     assert.match(schema, /document_type IN \('quote','invoice','quitus','report'\)/);
     assert.match(schema, /WHERE status='active'/);
     assert.match(server, /WHERE owner_id=\$1 AND document_type=\$2/);
+    assert.match(server, /\$1::bigint,\$2::varchar/);
+    assert.match(server, /ON CONFLICT\(owner_id,document_type,version\) DO NOTHING/);
 });
 
 test("quote and invoice have independent settings cards and API types", () => {

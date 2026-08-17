@@ -57,7 +57,7 @@ async function migrateLegacyTemplates(database) {
         for (const row of rows) {
             if (!Buffer.isBuffer(row.data) || !row.data.length) continue;
             try { await inspectSource(row.data, row.mime); } catch { console.warn(`Ancien modèle ${type} ignoré pour l’entreprise ${row.owner_id} : fichier illisible.`); continue; }
-            await database.query("INSERT INTO depannhome_document_templates(owner_id,document_type,version,status,name,source_filename,source_mime_type,source_data,source_hash,definition) SELECT $1,$2,1,'draft',$3,$4,$5,$6,$7,'{}'::jsonb WHERE NOT EXISTS(SELECT 1 FROM depannhome_document_templates WHERE owner_id=$1 AND document_type=$2)", [row.owner_id, type, `Ancien modèle ${label(type)} à configurer`, row.filename, row.mime, row.data, crypto.createHash("sha256").update(row.data).digest("hex")]);
+            await database.query("INSERT INTO depannhome_document_templates(owner_id,document_type,version,status,name,source_filename,source_mime_type,source_data,source_hash,definition) VALUES($1::bigint,$2::varchar,1,'draft',$3::varchar,$4::varchar,$5::varchar,$6::bytea,$7::varchar,'{}'::jsonb) ON CONFLICT(owner_id,document_type,version) DO NOTHING", [row.owner_id, type, `Ancien modèle ${label(type)} à configurer`, row.filename, row.mime, row.data, crypto.createHash("sha256").update(row.data).digest("hex")]);
         }
     }
 }
