@@ -55,7 +55,8 @@ export async function renderBilling(options = {}) {
         listPanel.hidden = true;
         profilePanel.hidden = false;
         profilePanel.innerHTML = "";
-        if (templateSection === "quote") renderQuoteTemplateSettings(profilePanel, billingData.profile, true, options.onTemplateRendered);
+        if (options.integratedOnly) renderProfile(profilePanel, { onlyType: templateSection, integratedOnly: true, onTemplateRendered: options.onTemplateRendered });
+        else if (templateSection === "quote") renderQuoteTemplateSettings(profilePanel, billingData.profile, true, options.onTemplateRendered);
         else renderAdditionalDocumentTemplateSettings(profilePanel, billingData.profile, templateSection, true, options.onTemplateRendered);
         if (typeof options.onTemplateRendered === "function") await options.onTemplateRendered();
         return;
@@ -166,10 +167,11 @@ function renderOverview(panel, profilePanel) {
     panel.querySelector("[data-billing-action=preview-blank-quote]")?.addEventListener("click", openBlankQuotePreview);
 }
 
-function renderProfile(panel) {
+function renderProfile(panel, options = {}) {
     panel.hidden = false;
     const profile = billingData.profile;
     panel.innerHTML = `
+        ${options.onlyType ? `<section class="integrated-template-choice"><div><p class="eyebrow">Modèle Depann’Home Pro</p><h2>Informations et présentation intégrées</h2><p class="muted">Enregistrez vos informations et votre logo, puis activez ce modèle pour remplacer toute base personnalisée active.</p></div><div class="calendar-form-actions"><button type="button" class="secondary-button" data-activate-integrated>Utiliser ce modèle intégré</button><button type="button" class="secondary-button" data-open-custom-template>Importer / configurer ma propre base</button></div><p class="auth-message" data-integrated-message></p></section>` : ""}
         <form id="billingProfileForm" class="client-form" enctype="multipart/form-data">
             <div class="form-heading"><div><p class="eyebrow">Informations entreprise</p><h2>Coordonnées, mentions et logo</h2><p class="muted">Ces informations sont reprises sur vos devis et factures. Le modèle du document reste inchangé.</p></div><button type="button" class="secondary-button" id="closeBillingProfile">Fermer</button></div>
             <div class="form-grid">
@@ -200,6 +202,12 @@ function renderProfile(panel) {
         </form>
     `;
     panel.querySelector("#closeBillingProfile").addEventListener("click", () => { panel.hidden = true; });
+    panel.querySelector("[data-activate-integrated]")?.addEventListener("click", async event => {
+        const button = event.currentTarget; const feedback = panel.querySelector("[data-integrated-message]"); button.disabled = true; feedback.textContent = "Activation…"; feedback.classList.remove("error");
+        const result = await apiRequest(`/api/document-templates/${options.onlyType}/native`, { method: "POST", body: "{}" });
+        feedback.textContent = result.ok ? "Le modèle Depann’Home Pro intégré est maintenant actif." : result.message || "Activation impossible."; feedback.classList.toggle("error", !result.ok); button.disabled = false;
+    });
+    panel.querySelector("[data-open-custom-template]")?.addEventListener("click", () => window.dispatchEvent(new CustomEvent("depannhome:open-document-template", { detail: { type: options.onlyType } })));
     bindVatRegimeForm(panel.querySelector("#billingProfileForm"));
     panel.querySelector("form").addEventListener("submit", async event => {
         event.preventDefault();
@@ -217,14 +225,18 @@ function renderProfile(panel) {
             submit.disabled = false;
             return;
         }
-        renderBilling();
+        renderBilling(options.onlyType ? { profile: true, templateSection: options.onlyType, integratedOnly: true, onTemplateRendered: options.onTemplateRendered } : {});
     });
-    renderQuoteTemplateSettings(panel, profile);
-    renderAdditionalDocumentTemplateSettings(panel, profile, "quitus");
-    renderAdditionalDocumentTemplateSettings(panel, profile, "report");
+    if (options.onlyType === "quote") renderQuoteTemplateSettings(panel, profile, true, options.onTemplateRendered, true);
+    else if (options.onlyType === "quitus") renderAdditionalDocumentTemplateSettings(panel, profile, "quitus", true, options.onTemplateRendered, true);
+    else if (!options.onlyType) {
+        renderQuoteTemplateSettings(panel, profile);
+        renderAdditionalDocumentTemplateSettings(panel, profile, "quitus");
+        renderAdditionalDocumentTemplateSettings(panel, profile, "report");
+    }
 }
 
-function renderQuoteTemplateSettings(panel, profile, focused = false, onTemplateRendered = null) {
+function renderQuoteTemplateSettings(panel, profile, focused = false, onTemplateRendered = null, integratedOnly = false) {
     const policy = profile.quoteTemplatePolicy || "company_choice";
     const mode = policy === "integrated_only" ? "integrated" : policy === "external_only" ? "external" : profile.quoteTemplateMode || "integrated";
     const canChooseMode = policy === "company_choice";
@@ -237,18 +249,15 @@ function renderQuoteTemplateSettings(panel, profile, focused = false, onTemplate
             : "Votre entreprise peut utiliser le modèle intégré ou sa propre base commune aux devis et factures.";
     panel.insertAdjacentHTML("beforeend", `
         <section class="billing-quote-template-settings">
-            <div class="form-heading"><div><p class="eyebrow">Base des devis et factures</p><h2>Modèle commun intégré ou fichier entreprise</h2><p class="muted">${escapeHtml(policyMessage)} Toute facture reprend automatiquement cette présentation et cette base.</p></div><div class="calendar-form-actions"><button type="button" class="secondary-button" id="previewQuoteTemplate" ${canPreview ? "" : "disabled"}>Aperçu du devis</button><button type="button" class="secondary-button" id="previewInvoiceTemplate" ${canPreview ? "" : "disabled"}>Aperçu de la facture</button>${profile.hasQuoteTemplate && canUseExternalTemplate ? '<button type="button" class="secondary-button" id="downloadQuoteTemplate">Télécharger la base actuelle</button>' : ""}</div></div>
+            <div class="form-heading"><div><p class="eyebrow">Base des devis et factures</p><h2>${integratedOnly ? "Personnaliser le modèle Depann’Home Pro intégré" : "Modèle commun intégré ou fichier entreprise"}</h2><p class="muted">${integratedOnly ? "Votre logo, vos informations, vos couleurs et vos textes sont appliqués au devis ; la facture reprend automatiquement cette présentation." : `${escapeHtml(policyMessage)} Toute facture reprend automatiquement cette présentation et cette base.`}</p></div><div class="calendar-form-actions"><button type="button" class="secondary-button" id="previewQuoteTemplate">Aperçu du devis</button><button type="button" class="secondary-button" id="previewInvoiceTemplate">Aperçu de la facture</button>${!integratedOnly && profile.hasQuoteTemplate && canUseExternalTemplate ? '<button type="button" class="secondary-button" id="downloadQuoteTemplate">Télécharger la base actuelle</button>' : ""}</div></div>
             <form id="quoteTemplateForm" class="client-form" enctype="multipart/form-data">
                 <div class="form-grid">
-                    <label>Base utilisée<select name="quoteTemplateMode" ${canChooseMode ? "" : "disabled"}><option value="integrated" ${mode === "integrated" ? "selected" : ""}>Modèle Depann’Home intégré</option><option value="external" ${mode === "external" ? "selected" : ""}>Gabarit PDF / DOCX de l’entreprise</option></select></label>
-                    <label>Déposer ou remplacer le gabarit (PDF ou DOCX · 10 Mo max)<input name="quoteTemplate" type="file" accept="application/pdf,.pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx" ${canUseExternalTemplate ? "" : "disabled"}></label>
-                    ${profile.hasQuoteTemplate && canUseExternalTemplate ? '<label class="billing-remove-logo"><input name="removeQuoteTemplate" type="checkbox" value="true"> Supprimer la base déposée</label>' : ""}
-                    ${externalTemplateFieldsHelp("quote")}
+                    ${integratedOnly ? '<input name="quoteTemplateMode" type="hidden" value="integrated">' : `<label>Base utilisée<select name="quoteTemplateMode" ${canChooseMode ? "" : "disabled"}><option value="integrated" ${mode === "integrated" ? "selected" : ""}>Modèle Depann’Home intégré</option><option value="external" ${mode === "external" ? "selected" : ""}>Gabarit PDF / DOCX de l’entreprise</option></select></label><label>Déposer ou remplacer le gabarit (PDF ou DOCX · 10 Mo max)<input name="quoteTemplate" type="file" accept="application/pdf,.pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx" ${canUseExternalTemplate ? "" : "disabled"}></label>${profile.hasQuoteTemplate && canUseExternalTemplate ? '<label class="billing-remove-logo"><input name="removeQuoteTemplate" type="checkbox" value="true"> Supprimer la base déposée</label>' : ""}${externalTemplateFieldsHelp("quote")}`}
                     ${integratedTemplateFields(profile.quoteTemplateConfig, "devis et facture")}
                 </div>
-                ${profile.hasQuoteTemplate ? `<p class="muted">Fichier actuel : ${escapeHtml(profile.quoteTemplateFilename || "base-devis")}</p>` : ""}
+                ${!integratedOnly && profile.hasQuoteTemplate ? `<p class="muted">Fichier actuel : ${escapeHtml(profile.quoteTemplateFilename || "base-devis")}</p>` : ""}
                 <p id="quoteTemplateMessage" class="auth-message" aria-live="polite"></p>
-                <div class="form-actions"><button type="submit" class="secondary-button">Enregistrer le modèle commun</button></div>
+                <div class="form-actions"><button type="submit" class="secondary-button">Enregistrer le modèle intégré</button></div>
             </form>
         </section>
     `);
@@ -270,18 +279,33 @@ function renderQuoteTemplateSettings(panel, profile, focused = false, onTemplate
             submit.disabled = false;
             return;
         }
-        renderBilling(focused ? { profile: true, templateSection: "quote", onTemplateRendered } : {});
+        renderBilling(focused ? { profile: true, templateSection: "quote", integratedOnly, onTemplateRendered } : {});
     });
 }
 
-function renderAdditionalDocumentTemplateSettings(panel, profile, type, focused = false, onTemplateRendered = null) {
+function renderAdditionalDocumentTemplateSettings(panel, profile, type, focused = false, onTemplateRendered = null, integratedOnly = false) {
     const definition = type === "quitus"
-        ? { label: "quitus", title: "Base officielle de quitus", policy: profile.quitusTemplatePolicy, mode: profile.quitusTemplateMode, hasTemplate: profile.hasQuitusTemplate, filename: profile.quitusTemplateFilename }
-        : { label: "rapport", title: "Base officielle de rapport", policy: profile.reportTemplatePolicy, mode: profile.reportFileTemplateMode, hasTemplate: profile.hasReportFileTemplate, filename: profile.reportFileTemplateFilename };
-    const policy = definition.policy || "company_choice"; const mode = policy === "integrated_only" ? "integrated" : policy === "external_only" ? "external" : definition.mode || "integrated"; const canChoose = policy === "company_choice"; const canUseExternal = policy !== "integrated_only";
-    const message = policy === "integrated_only" ? "Le Créateur autorise uniquement le modèle intégré." : policy === "external_only" ? `Le Créateur impose une base externe de ${definition.label}.` : `Votre entreprise choisit entre le modèle intégré et sa propre base de ${definition.label}.`;
-    const canPreview = mode === "integrated" || definition.hasTemplate;
-    panel.insertAdjacentHTML("beforeend", `<section class="billing-quote-template-settings" id="${type}TemplateSettings"><div class="form-heading"><div><p class="eyebrow">Documents officiels</p><h2>${definition.title}</h2><p class="muted">${escapeHtml(message)} Le gabarit externe sélectionné est fusionné avec les données puis utilisé pour l’aperçu, l’archive, le téléchargement et le partage.</p></div><div class="calendar-form-actions"><button type="button" class="secondary-button" data-preview-template="${type}" ${canPreview ? "" : "disabled"}>Aperçu du document</button>${definition.hasTemplate && canUseExternal ? `<button type="button" class="secondary-button" data-download-template="${type}">Télécharger le gabarit d’origine</button>` : ""}</div></div><form class="client-form" data-document-template-form="${type}" enctype="multipart/form-data"><div class="form-grid"><label>Base utilisée<select name="templateMode" ${canChoose ? "" : "disabled"}><option value="integrated" ${mode === "integrated" ? "selected" : ""}>Modèle Depann’Home intégré</option><option value="external" ${mode === "external" ? "selected" : ""}>Gabarit PDF / DOCX officiel de l’entreprise</option></select></label><label>Déposer ou remplacer le gabarit (PDF ou DOCX · 10 Mo max)<input name="documentTemplate" type="file" accept="application/pdf,.pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx" ${canUseExternal ? "" : "disabled"}></label>${definition.hasTemplate && canUseExternal ? '<label class="billing-remove-logo"><input name="removeTemplate" type="checkbox" value="true"> Supprimer la base déposée</label>' : ""}${externalTemplateFieldsHelp(type)}${type === "quitus" ? integratedTemplateFields(profile.quitusTemplate, "quitus") : ""}</div>${definition.hasTemplate ? `<p class="muted">Gabarit officiel actuel : ${escapeHtml(definition.filename || `base-${definition.label}`)}</p>` : ""}<p class="auth-message" aria-live="polite"></p><div class="form-actions"><button type="submit" class="secondary-button">Enregistrer le modèle de ${definition.label}</button></div></form></section>`);
+            ? { label: "quitus", title: "Base officielle de quitus", policy: profile.quitusTemplatePolicy, mode: profile.quitusTemplateMode, hasTemplate: profile.hasQuitusTemplate, filename: profile.quitusTemplateFilename }
+            : { label: "rapport", title: "Base officielle de rapport", policy: profile.reportTemplatePolicy, mode: profile.reportFileTemplateMode, hasTemplate: profile.hasReportFileTemplate, filename: profile.reportFileTemplateFilename };
+    if (integratedOnly) {
+        panel.insertAdjacentHTML("beforeend", `<section class="billing-quote-template-settings" id="${type}TemplateSettings"><div class="form-heading"><div><p class="eyebrow">Modèle intégré</p><h2>Personnaliser le ${definition.label} Depann’Home Pro</h2><p class="muted">Votre logo et vos coordonnées ci-dessus, ainsi que les couleurs et textes ci-dessous, sont appliqués au document intégré.</p></div><button type="button" class="secondary-button" data-preview-template="${type}">Aperçu du document</button></div><form class="client-form" data-document-template-form="${type}"><input name="templateMode" type="hidden" value="integrated"><div class="form-grid">${type === "quitus" ? integratedTemplateFields(profile.quitusTemplate, "quitus") : ""}</div><p class="auth-message" aria-live="polite"></p><div class="form-actions"><button type="submit" class="secondary-button">Enregistrer le modèle intégré</button></div></form></section>`);
+        panel.querySelector(`[data-preview-template="${type}"]`)?.addEventListener("click", () => openDocumentTemplatePreview(type));
+        panel.querySelector(`[data-document-template-form="${type}"]`).addEventListener("submit", async event => {
+            event.preventDefault(); const form = event.currentTarget; const feedback = form.querySelector(".auth-message"); const submit = form.querySelector('button[type="submit"]');
+            submit.disabled = true; feedback.textContent = "Enregistrement…"; feedback.classList.remove("error");
+            const result = await apiRequest(`/api/billing/document-templates/${type}`, { method: "PUT", body: new FormData(form) });
+            if (!result.ok) { feedback.textContent = result.message || `Impossible d’enregistrer le modèle intégré de ${definition.label}.`; feedback.classList.add("error"); submit.disabled = false; return; }
+            renderBilling({ profile: true, templateSection: type, integratedOnly: true, onTemplateRendered });
+        });
+        return;
+    }
+        const policy = definition.policy || "company_choice";
+        const mode = policy === "integrated_only" ? "integrated" : policy === "external_only" ? "external" : definition.mode || "integrated";
+        const canChoose = policy === "company_choice";
+        const canUseExternal = policy !== "integrated_only";
+        const message = policy === "integrated_only" ? "Le Créateur autorise uniquement le modèle intégré." : policy === "external_only" ? `Le Créateur impose une base externe de ${definition.label}.` : `Votre entreprise choisit entre le modèle intégré et sa propre base de ${definition.label}.`;
+        const canPreview = mode === "integrated" || definition.hasTemplate;
+        panel.insertAdjacentHTML("beforeend", `<section class="billing-quote-template-settings" id="${type}TemplateSettings"><div class="form-heading"><div><p class="eyebrow">Documents officiels</p><h2>${definition.title}</h2><p class="muted">${escapeHtml(message)} Le gabarit externe sélectionné est fusionné avec les données puis utilisé pour l’aperçu, l’archive, le téléchargement et le partage.</p></div><div class="calendar-form-actions"><button type="button" class="secondary-button" data-preview-template="${type}" ${canPreview ? "" : "disabled"}>Aperçu du document</button>${definition.hasTemplate && canUseExternal ? `<button type="button" class="secondary-button" data-download-template="${type}">Télécharger le gabarit d’origine</button>` : ""}</div></div><form class="client-form" data-document-template-form="${type}" enctype="multipart/form-data"><div class="form-grid"><label>Base utilisée<select name="templateMode" ${canChoose ? "" : "disabled"}><option value="integrated" ${mode === "integrated" ? "selected" : ""}>Modèle Depann’Home intégré</option><option value="external" ${mode === "external" ? "selected" : ""}>Gabarit PDF / DOCX officiel de l’entreprise</option></select></label><label>Déposer ou remplacer le gabarit (PDF ou DOCX · 10 Mo max)<input name="documentTemplate" type="file" accept="application/pdf,.pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx" ${canUseExternal ? "" : "disabled"}></label>${definition.hasTemplate && canUseExternal ? '<label class="billing-remove-logo"><input name="removeTemplate" type="checkbox" value="true"> Supprimer la base déposée</label>' : ""}${externalTemplateFieldsHelp(type)}${type === "quitus" ? integratedTemplateFields(profile.quitusTemplate, "quitus") : ""}</div>${definition.hasTemplate ? `<p class="muted">Gabarit officiel actuel : ${escapeHtml(definition.filename || `base-${definition.label}`)}</p>` : ""}<p class="auth-message" aria-live="polite"></p><div class="form-actions"><button type="submit" class="secondary-button">Enregistrer le modèle de ${definition.label}</button></div></form></section>`);
     panel.querySelector(`[data-preview-template="${type}"]`)?.addEventListener("click", () => openDocumentTemplatePreview(type));
     panel.querySelector(`[data-download-template="${type}"]`)?.addEventListener("click", () => openDocumentTemplateDownload(type));
     panel.querySelector(`[data-document-template-form="${type}"]`).addEventListener("submit", async event => { event.preventDefault(); const form = event.currentTarget; const feedback = form.querySelector(".auth-message"); const submit = form.querySelector('button[type="submit"]'); submit.disabled = true; feedback.textContent = "Enregistrement…"; feedback.classList.remove("error"); const result = await apiRequest(`/api/billing/document-templates/${type}`, { method: "PUT", body: new FormData(form) }); if (!result.ok) { feedback.textContent = result.message || `Impossible d’enregistrer la base de ${definition.label}.`; feedback.classList.add("error"); submit.disabled = false; return; } renderBilling(focused ? { profile: true, templateSection: type, onTemplateRendered } : { profile: true }); });

@@ -1,7 +1,7 @@
 import { ROUTES, STORAGE_KEYS, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=123";
 import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=166";
 import { openCreatorPartnerRequest, renderCreatorConsole } from "./creator.js?v=128";
-import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=171";
+import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=173";
 import { renderAccounting } from "./accounting.js?v=7";
 import { renderAccountingSandbox } from "./accounting-sandbox.js?v=2";
 import { renderGroupActivation, renderGroupWorkspace } from "./groups.js?v=3";
@@ -24,7 +24,7 @@ import {
 } from "./storage.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { renderPlatformAnnouncement } from "./platform-announcement.js?v=1";
-import { renderDocumentTemplateEditor } from "./document-template-editor.js?v=2";
+import { renderDocumentTemplateEditor } from "./document-template-editor.js?v=3";
 import {
     clearSearch,
     createBackCard,
@@ -67,6 +67,10 @@ export function initializeNavigation(loadedDatabase) {
     window.addEventListener("depannhome:edit-report-template", () => {
         if (document.body.dataset.role !== "admin" || !document.body.classList.contains("desktop-device")) return;
         openDocumentTemplateSettings("report");
+    });
+    window.addEventListener("depannhome:open-document-template", event => {
+        const type = String(event.detail?.type || "");
+        if (["quote", "quitus", "report"].includes(type)) openDocumentTemplateSettings(type);
     });
     window.addEventListener("depannhome:clients-synchronized", () => refreshClientMessageAlert());
     window.addEventListener("depannhome:partner-client-provisioned", event => {
@@ -1312,11 +1316,9 @@ function renderSettingsWorkspace(options = {}) {
         const grid = document.createElement("div");
         grid.className = "settings-subsection-grid";
         grid.append(
-            createSettingsNavigationCard("Identité et modèles intégrés", "Logo, coordonnées, couleurs, polices, en-têtes et pieds de page Depann’Home Pro", "appearance", openIntegratedDocumentSettings),
-            createSettingsNavigationCard("Modèle de devis", "Paramétrer uniquement les devis", "document", () => openDocumentTemplateSettings("quote")),
-            createSettingsNavigationCard("Modèle de facture", "Paramétrer uniquement les factures", "document", () => openDocumentTemplateSettings("invoice")),
-            createSettingsNavigationCard("Modèle de quitus", "Paramétrer uniquement les quitus", "document", () => openDocumentTemplateSettings("quitus")),
-            createSettingsNavigationCard("Modèle de rapport", "Paramétrer uniquement les rapports", "document", () => openDocumentTemplateSettings("report"))
+            createSettingsNavigationCard("Modèle de devis et facture", "Modifier le modèle intégré ou importer la base devis de l’entreprise ; la facture hérite automatiquement du devis", "document", () => openDocumentTemplateSettings("quote")),
+            createSettingsNavigationCard("Modèle de quitus", "Modifier le modèle intégré ou importer la base quitus de l’entreprise", "document", () => openDocumentTemplateSettings("quitus")),
+            createSettingsNavigationCard("Modèle de rapport", "Modifier le modèle intégré ou importer la base rapport de l’entreprise", "document", () => openDocumentTemplateSettings("report"))
         );
         intro.appendChild(grid);
         container.appendChild(intro);
@@ -1354,12 +1356,11 @@ function renderSettingsWorkspace(options = {}) {
 }
 
 async function openDocumentTemplateSettings(type) {
-    await renderDocumentTemplateEditor(type, () => renderSettings({ section: "documents" }));
+    await renderDocumentTemplateEditor(type, () => renderSettings({ section: "documents" }), () => openIntegratedDocumentSettings(type));
 }
 
-async function openIntegratedDocumentSettings() {
-    await renderBilling({ profile: true });
-    renderReportTemplateSettings(getContainer());
+async function openIntegratedDocumentSettings(type) {
+    await renderBilling({ profile: true, templateSection: type, integratedOnly: true, onTemplateRendered: type === "report" ? () => renderReportTemplateSettings(getContainer()) : null });
 }
 
 function createSettingsIntro(title, description) {

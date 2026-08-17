@@ -7,6 +7,7 @@ import { buildBillingCustomModel, buildQuitusCustomModel, buildReportCustomModel
 const schema = readFileSync(new URL("../database/schema.sql", import.meta.url), "utf8");
 const server = readFileSync(new URL("../server/document-templates.js", import.meta.url), "utf8");
 const billing = readFileSync(new URL("../server/billing.js", import.meta.url), "utf8");
+const billingClient = readFileSync(new URL("../js/billing.js", import.meta.url), "utf8");
 const calendar = readFileSync(new URL("../server/calendar.js", import.meta.url), "utf8");
 const reports = readFileSync(new URL("../server/technical-reports.js", import.meta.url), "utf8");
 const navigation = readFileSync(new URL("../js/navigation.js", import.meta.url), "utf8");
@@ -29,11 +30,13 @@ test("templates are versioned, isolated by owner and uniquely active per documen
     assert.match(server, /ON CONFLICT\(owner_id,document_type,version\) DO NOTHING/);
 });
 
-test("quote and invoice have independent settings cards and API types", () => {
-    assert.match(navigation, /Identité et modèles intégrés/);
-    assert.match(navigation, /openIntegratedDocumentSettings/);
-    assert.match(navigation, /Modèle de devis/);
-    assert.match(navigation, /Modèle de facture/);
+test("document settings expose quote, quitus and report while invoice inherits quote", () => {
+    assert.doesNotMatch(navigation, /Identité et modèles intégrés/);
+    assert.doesNotMatch(navigation, /createSettingsNavigationCard\("Modèle de facture"/);
+    assert.match(navigation, /Modèle de devis et facture/);
+    assert.match(navigation, /openIntegratedDocumentSettings\(type\)/);
+    assert.match(navigation, /Modèle de quitus/);
+    assert.match(navigation, /Modèle de rapport/);
     assert.match(server, /new Set\(\["quote", "invoice", "quitus", "report"\]\)/);
 });
 
@@ -128,4 +131,6 @@ test("the visual editor supports import, drag, resize, preview, stress test and 
     assert.match(editor, /Activer comme modèle par défaut/);
     assert.match(editor, /application\/pdf,image\/png,image\/jpeg/);
     assert.match(editor, /Héritage automatique/);
+    assert.match(editor, /Modifier le modèle intégré/);
+    assert.match(billingClient, /Utiliser ce modèle intégré/);
 });
