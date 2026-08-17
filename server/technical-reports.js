@@ -129,9 +129,15 @@ export function registerTechnicalReportRoutes(app, requireAuthentication) {
         if (!input.ok) return response.status(400).json({ message: input.message });
         if (!canEdit(report, request)) return response.status(409).json({ message: "Ce rapport ne peut pas être prévisualisé dans son état actuel." });
         if (!await enforceReportLock(request, response, report.id)) return;
-        const buffer = await createWizardLeakReportPdf({ ...report, title: input.title, reportDate: input.reportDate, content: input.content }, await loadProfile(ownerId));
-        response.set({ "Content-Type": PDF_MIME, "Content-Disposition": "inline", "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" });
-        response.send(buffer);
+        const profile = await loadProfile(ownerId);
+        const draft = { ...report, title: input.title, reportDate: input.reportDate, content: input.content };
+        const policy = ["integrated_only", "company_choice", "external_only"].includes(profile.reportTemplatePolicy) ? profile.reportTemplatePolicy : "company_choice";
+        const externalDocx = profile.reportFileTemplateMimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" && (policy === "external_only" || (policy !== "integrated_only" && profile.reportFileTemplateMode === "external"));
+        const output = externalDocx
+            ? { buffer: await createWizardLeakReportPdf(draft, profile), mimeType: PDF_MIME }
+            : await createTechnicalReportOutput(draft, profile);
+        response.set({ "Content-Type": PDF_MIME, "Content-Disposition": "inline", "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff", "X-Report-Preview-Mode": externalDocx ? "business-pages" : "final" });
+        response.send(output.buffer);
     }));
     app.post("/api/technical-reports/:reportId/media", upload.array("files", 5), asyncHandler(async (request, response) => {
         const ownerId = getAccountOwnerId(request); const report = await findReport(ownerId, positiveId(request.params.reportId), request);

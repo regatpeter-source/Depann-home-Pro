@@ -95,7 +95,8 @@ test("PC proofreading uses a split editor with a live draft PDF preview", () => 
     assert.match(editorSource, /queuePdfPreview/);
     assert.match(editorSource, /spellcheck="true"/);
     assert.match(serverSource, /app\.post\("\/api\/technical-reports\/:reportId\/pdf-preview", requireReportProofreadingAccess/);
-    assert.match(serverSource, /createWizardLeakReportPdf\(\{ \.\.\.report, title: input\.title, reportDate: input\.reportDate, content: input\.content \}/);
+    assert.match(serverSource, /createTechnicalReportOutput\(draft, profile\)/);
+    assert.match(serverSource, /X-Report-Preview-Mode/);
 });
 
 test("live PDF refresh waits for photo saves and does not persist proofreading", () => {

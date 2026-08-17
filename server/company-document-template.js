@@ -38,9 +38,16 @@ export async function renderCompanyTemplate({ buffer, filename, mimeType, values
             const companyBase = await PDFDocument.load(buffer);
             const businessDocument = await PDFDocument.load(generatedPdf);
             const output = await PDFDocument.create();
-            const basePages = await output.copyPages(companyBase, companyBase.getPageIndices());
-            const businessPages = await output.copyPages(businessDocument, businessDocument.getPageIndices());
-            [...basePages, ...businessPages].forEach(page => output.addPage(page));
+            const basePageCount = companyBase.getPageCount();
+            if (!basePageCount) throw templateError(409, "La base PDF de l’entreprise ne contient aucune page.");
+            const businessPages = businessDocument.getPages();
+            const basePages = await output.copyPages(companyBase, businessPages.map((page, index) => Math.min(index, basePageCount - 1)));
+            for (const [index, businessPage] of businessPages.entries()) {
+                const page = output.addPage(basePages[index]);
+                const { width, height } = page.getSize();
+                const embeddedBusiness = await output.embedPage(businessPage);
+                page.drawPage(embeddedBusiness, { x: 0, y: 0, width, height });
+            }
             return { buffer: Buffer.from(await output.save()), filename: outputFilename(filename, ".pdf"), mimeType: PDF_MIME };
         }
     } catch (error) {

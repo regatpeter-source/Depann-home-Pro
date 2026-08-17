@@ -110,13 +110,24 @@ test("a DOCX company template replaces automatic fields without losing the origi
     assert.doesNotMatch(xml, /client_nom|\{\{/);
 });
 
-test("a PDF company base is preserved before the generated business pages", async () => {
+test("a PDF company base becomes the background of generated business pages", async () => {
     const base = await PDFDocument.create(); base.addPage();
-    const generated = await PDFDocument.create(); generated.addPage(); generated.addPage();
+    const generated = await PDFDocument.create(); generated.addPage().drawText("Page métier 1"); generated.addPage().drawText("Page métier 2");
     const output = await renderCompanyTemplate({ buffer: Buffer.from(await base.save()), filename: "base.pdf", mimeType: PDF_MIME, values: {}, generatedPdf: Buffer.from(await generated.save()) });
     const merged = await PDFDocument.load(output.buffer);
     assert.equal(output.mimeType, PDF_MIME);
+    assert.equal(merged.getPageCount(), 2);
+});
+
+test("a multi-page PDF company base uses its last page for continuations", async () => {
+    const base = await PDFDocument.create(); base.addPage([400, 500]); base.addPage([420, 520]);
+    const generated = await PDFDocument.create(); generated.addPage().drawText("Page métier 1"); generated.addPage().drawText("Page métier 2"); generated.addPage().drawText("Page métier 3");
+    const output = await renderCompanyTemplate({ buffer: Buffer.from(await base.save()), filename: "base.pdf", mimeType: PDF_MIME, values: {}, generatedPdf: Buffer.from(await generated.save()) });
+    const merged = await PDFDocument.load(output.buffer);
     assert.equal(merged.getPageCount(), 3);
+    assert.deepEqual(merged.getPage(0).getSize(), { width: 400, height: 500 });
+    assert.deepEqual(merged.getPage(1).getSize(), { width: 420, height: 520 });
+    assert.deepEqual(merged.getPage(2).getSize(), { width: 420, height: 520 });
 });
 
 test("official company outputs are retained across archives, emails, downloads and partner sharing", () => {
@@ -148,6 +159,12 @@ test("desktop quote and invoice editing uses a split form with live final PDF pr
     assert.match(clientSource, /\/api\/billing\/documents\/preview/);
     assert.match(serverSource, /app\.post\("\/api\/billing\/documents\/preview", requireAuthentication, requireTechnicianBillingAccess, requireDesktopBillingPreview/);
     assert.match(serverSource, /createBillingDocumentOutput\(document, profile\)/);
+});
+
+test("technical report proofreading previews the selected official company output", () => {
+    const previewRoute = technicalReportSource.slice(technicalReportSource.indexOf('app.post("/api/technical-reports/:reportId/pdf-preview"'), technicalReportSource.indexOf('app.post("/api/technical-reports/:reportId/media"'));
+    assert.match(previewRoute, /createTechnicalReportOutput\(draft, profile\)/);
+    assert.match(previewRoute, /X-Report-Preview-Mode/);
 });
 
 test("billing live preview is desktop-only, accepts incomplete drafts and never stores them", () => {

@@ -299,7 +299,7 @@ function externalTemplateFieldsHelp(type) {
         : type === "quitus"
             ? ["numero_intervention", "intervention", "date", "client_nom", "adresse_intervention", "observations", "signataire", "validation", "texte_entete", "texte_pied_page", "entreprise_nom"]
             : ["numero_rapport", "titre", "date", "client_nom", "client_adresse", "technicien", "entreprise_nom", "contenu"];
-    return `<details class="form-wide document-template-fields"><summary>Champs automatiques du gabarit DOCX</summary><p class="muted">Insérez les repères avec deux accolades, par exemple <code>{{client_nom}}</code>. Un PDF conserve ses pages d’origine et reçoit les pages métier complétées à la suite.</p><div>${fields.map(field => `<code>{{${field}}}</code>`).join(" ")}</div></details>`;
+    return `<details class="form-wide document-template-fields"><summary>Champs automatiques du gabarit DOCX</summary><p class="muted">Insérez les repères avec deux accolades, par exemple <code>{{client_nom}}</code>. Un PDF sert de fond aux pages métier complétées ; sa dernière page est répétée si le document est plus long.</p><div>${fields.map(field => `<code>{{${field}}}</code>`).join(" ")}</div></details>`;
 }
 
 function renderTemplates(panel) {
