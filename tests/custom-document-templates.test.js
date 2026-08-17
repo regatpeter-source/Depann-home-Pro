@@ -107,8 +107,14 @@ test("dynamic zones erase example content before drawing real values", async () 
     const output = await renderCustomDocumentTemplate(template, buildBillingCustomModel(quote, profile));
     assert.equal(source.subarray(0, 4).toString(), "%PDF");
     assert.notDeepEqual(output.buffer, source);
-    assert.match(server, /if \(zone\.style\.eraseSource\) page\.drawRectangle/);
+    assert.match(server, /if \(zone\.style\.eraseSource\) drawEraseBox\(page, zone, size\)/);
     assert.match(editor, /Masquer l’exemple du PDF dans cette zone/);
+});
+
+test("flowing totals erase their original template position before moving", () => {
+    assert.match(server, /effectiveZone\.y !== zone\.y && zone\.style\.eraseSource/);
+    assert.match(server, /drawEraseBox\(page, zone, pageSize\)/);
+    assert.match(editor, /Marge d’effacement/);
 });
 
 test("the visual editor supports import, drag, resize, preview, stress test and activation", () => {
