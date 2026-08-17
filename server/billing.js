@@ -942,9 +942,10 @@ async function getBillingExport(request) {
     const database = getPool();
     const [documentResult, profileResult] = await Promise.all([
         database.query(`
-            SELECT id, document_type AS "documentType", document_number AS "documentNumber", customer_type AS "customerType",
+            SELECT id, document_type AS "documentType", document_number AS "documentNumber", client_id AS "clientId", customer_type AS "customerType",
                 customer_name AS "customerName", customer_address AS "customerAddress", TO_CHAR(issue_date, 'YYYY-MM-DD') AS "issueDate",
-                TO_CHAR(due_date, 'YYYY-MM-DD') AS "dueDate", status, is_email_sent AS "isEmailSent", sent_at AS "sentAt", correction_source_id AS "correctionSourceId", correction_kind AS "correctionKind", (SELECT source.document_number FROM depannhome_billing_documents source WHERE source.id=depannhome_billing_documents.correction_source_id) AS "correctionSourceNumber", quote_reference AS "quoteReference", vat_regime AS "vatRegime", issuer_tax_number AS "issuerTaxNumber", lines, notes, financial_data AS "financialData"
+                TO_CHAR(due_date, 'YYYY-MM-DD') AS "dueDate", status, is_email_sent AS "isEmailSent", sent_at AS "sentAt", correction_source_id AS "correctionSourceId", correction_kind AS "correctionKind", (SELECT source.document_number FROM depannhome_billing_documents source WHERE source.id=depannhome_billing_documents.correction_source_id) AS "correctionSourceNumber", quote_reference AS "quoteReference", vat_regime AS "vatRegime", issuer_tax_number AS "issuerTaxNumber", lines, notes, financial_data AS "financialData",
+                (SELECT client.client_data FROM depannhome_clients client WHERE client.owner_id=depannhome_billing_documents.owner_id AND client.client_id=depannhome_billing_documents.client_id) AS "clientData"
                         FROM depannhome_billing_documents
                         WHERE id = $1 AND owner_id = $2
                             AND ($3 <> 'technician'

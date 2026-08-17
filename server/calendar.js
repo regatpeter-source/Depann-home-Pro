@@ -316,7 +316,7 @@ export function registerCalendarRoutes(app, requireAuthentication) {
         try {
             await connection.query("BEGIN");
             const eventResult = await connection.query(`
-                SELECT id, title, client_name AS "clientName", location,
+                SELECT id, client_id AS "clientId", title, client_name AS "clientName", location,
                     TO_CHAR(event_date, 'YYYY-MM-DD') AS date,
                     TO_CHAR(start_time, 'HH24:MI') AS "startTime", TO_CHAR(end_time, 'HH24:MI') AS "endTime",
                     notes, quitus_status AS "quitusStatus"
@@ -341,11 +341,11 @@ export function registerCalendarRoutes(app, requireAuthentication) {
             const clientResult = await connection.query(`
                 SELECT client_id AS "clientId", client_data AS client
                 FROM depannhome_clients
-                WHERE owner_id = $1 AND LOWER(BTRIM(client_data->>'name')) = LOWER(BTRIM($2))
+                WHERE owner_id = $1 AND (($2 <> '' AND client_id = $2) OR ($2 = '' AND LOWER(BTRIM(client_data->>'name')) = LOWER(BTRIM($3))))
                 ORDER BY updated_at DESC
                 LIMIT 1
                 FOR UPDATE
-            `, [accountOwnerId, event.clientName]);
+            `, [accountOwnerId, event.clientId || "", event.clientName]);
             const clientRow = clientResult.rows[0];
             if (!clientRow) {
                 await connection.query("ROLLBACK");
@@ -353,6 +353,7 @@ export function registerCalendarRoutes(app, requireAuthentication) {
             }
 
             const profileResult = await connection.query(`SELECT owner.id AS "ownerId",profile.company_name AS "companyName",profile.address,profile.postal_code AS "postalCode",profile.city,profile.phone,profile.email,profile.registration_number AS "registrationNumber",profile.logo_data AS "logoData",profile.logo_mime_type AS "logoMimeType",profile.quitus_template AS "quitusTemplate",profile.quitus_template_mode AS "quitusTemplateMode",profile.quitus_template_filename AS "quitusTemplateFilename",profile.quitus_template_data AS "quitusTemplateData",profile.quitus_template_mime_type AS "quitusTemplateMimeType",owner.quitus_template_policy AS "quitusTemplatePolicy" FROM depannhome_users owner LEFT JOIN depannhome_billing_profiles profile ON profile.owner_id=owner.id WHERE owner.id=$1`, [accountOwnerId]);
+            event.clientData = clientRow.client || {};
             const output = await createQuitusDocumentOutput(event, quitus, profileResult.rows[0] || {});
             const createdAt = new Date().toISOString();
             const attachment = {
@@ -409,6 +410,25 @@ export function registerCalendarRoutes(app, requireAuthentication) {
         } finally {
             connection.release();
         }
+    }));
+
+    app.get("/api/calendar/events/:eventId/quitus/pdf", requireAuthentication, asyncHandler(async (request, response) => {
+        const id = positiveId(request.params.eventId); const ownerId = getAccountOwnerId(request);
+        if (!id) return response.status(400).json({ message: "Intervention invalide." });
+        const eventResult = await getPool().query(`
+            SELECT event.id,event.title,event.client_name AS "clientName",event.location,TO_CHAR(event.event_date,'YYYY-MM-DD') AS date,
+                TO_CHAR(event.start_time,'HH24:MI') AS "startTime",TO_CHAR(event.end_time,'HH24:MI') AS "endTime",event.notes,
+                event.quitus_signed_by AS "signedBy",event.quitus_signature AS signature,client.client_data AS "clientData"
+            FROM depannhome_calendar_events event
+            LEFT JOIN depannhome_clients client ON client.owner_id=event.owner_id AND client.client_id=event.client_id
+            WHERE event.id=$1 AND event.owner_id=$2 AND event.event_type='appointment' AND event.quitus_status='validated'
+              AND ($3 NOT IN ('technician','accountant') OR EXISTS (SELECT 1 FROM depannhome_calendar_assignments assignment WHERE assignment.event_id=event.id AND assignment.technician_id=$4::bigint))
+        `, [id, ownerId, request.user.role, request.user.sub]);
+        const event = eventResult.rows[0]; if (!event) return response.status(404).json({ message: "Quitus validé introuvable." });
+        const profileResult = await getPool().query(`SELECT owner.id AS "ownerId",profile.company_name AS "companyName",profile.address,profile.postal_code AS "postalCode",profile.city,profile.phone,profile.email,profile.registration_number AS "registrationNumber",profile.logo_data AS "logoData",profile.logo_mime_type AS "logoMimeType",profile.quitus_template AS "quitusTemplate",owner.quitus_template_policy AS "quitusTemplatePolicy" FROM depannhome_users owner LEFT JOIN depannhome_billing_profiles profile ON profile.owner_id=owner.id WHERE owner.id=$1`, [ownerId]);
+        const output = await createQuitusDocumentOutput(event, { signedBy: event.signedBy, signature: event.signature }, profileResult.rows[0] || {});
+        response.set({ "Content-Type": output.mimeType, "Content-Disposition": `inline; filename="${output.filename.replace(/"/g, "_")}"`, "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" });
+        response.send(output.buffer);
     }));
 }
 

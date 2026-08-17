@@ -2,7 +2,7 @@ const CACHE_NAME = "depann-home-pro-v324";
 const ASSETS = [
     "./",
     "./index.html",
-    "./css/style.css?v=185",
+    "./css/style.css?v=186",
     "./css/partner-dialogue.css?v=5",
     "./css/report-editor.css?v=7",
     "./js/app.js?v=269",

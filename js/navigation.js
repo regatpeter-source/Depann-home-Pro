@@ -24,7 +24,7 @@ import {
 } from "./storage.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { renderPlatformAnnouncement } from "./platform-announcement.js?v=1";
-import { renderDocumentTemplateEditor } from "./document-template-editor.js?v=1";
+import { renderDocumentTemplateEditor } from "./document-template-editor.js?v=2";
 import {
     clearSearch,
     createBackCard,
