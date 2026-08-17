@@ -36,18 +36,18 @@ export async function renderCompanyTemplate({ buffer, filename, mimeType, values
         if (mimeType === PDF_MIME) {
             if (!Buffer.isBuffer(generatedPdf) || !generatedPdf.length) throw templateError(409, "Le contenu métier à joindre à la base PDF est introuvable.");
             const companyBase = await PDFDocument.load(buffer);
-            const businessDocument = await PDFDocument.load(generatedPdf);
-            const output = await PDFDocument.create();
             const basePageCount = companyBase.getPageCount();
             if (!basePageCount) throw templateError(409, "La base PDF de l’entreprise ne contient aucune page.");
-            const businessPages = businessDocument.getPages();
-            const basePages = await output.copyPages(companyBase, businessPages.map((page, index) => Math.min(index, basePageCount - 1)));
-            for (const [index, businessPage] of businessPages.entries()) {
-                const page = output.addPage(basePages[index]);
-                const { width, height } = page.getSize();
-                const embeddedBusiness = await output.embedPage(businessPage);
-                page.drawPage(embeddedBusiness, { x: 0, y: 0, width, height });
+            if (fillPdfForm(companyBase, values)) {
+                return { buffer: Buffer.from(await companyBase.save()), filename: outputFilename(filename, ".pdf"), mimeType: PDF_MIME };
             }
+            const businessDocument = await PDFDocument.load(generatedPdf);
+            const output = await PDFDocument.create();
+            const [basePages, businessPages] = await Promise.all([
+                output.copyPages(companyBase, companyBase.getPageIndices()),
+                output.copyPages(businessDocument, businessDocument.getPageIndices())
+            ]);
+            [...basePages, ...businessPages].forEach(page => output.addPage(page));
             return { buffer: Buffer.from(await output.save()), filename: outputFilename(filename, ".pdf"), mimeType: PDF_MIME };
         }
     } catch (error) {
@@ -70,6 +70,41 @@ function renderDocxTemplate(buffer, values) {
     });
     document.render(values);
     return document.getZip().generate({ type: "nodebuffer", compression: "DEFLATE" });
+}
+
+function fillPdfForm(document, values) {
+    const form = document.getForm();
+    const normalizedValues = normalizeTemplateValues(values);
+    const fields = form.getFields();
+    const fieldKeys = new Set(fields.map(field => String(field.getName() || "").trim().replace(/^\{\{\s*|\s*\}\}$/g, "")));
+    const requiredFields = Object.hasOwn(normalizedValues, "type_document")
+        ? ["type_document", "numero", "client_nom", "lignes", "total_ttc"]
+        : Object.hasOwn(normalizedValues, "numero_intervention")
+            ? ["numero_intervention", "client_nom", "signataire", "validation"]
+            : Object.hasOwn(normalizedValues, "numero_rapport")
+                ? ["numero_rapport", "titre", "client_nom", "contenu"]
+                : [];
+    if (!requiredFields.length || !requiredFields.every(key => fieldKeys.has(key))) return false;
+    const filledFields = new Set();
+    for (const field of fields) {
+        const key = String(field.getName() || "").trim().replace(/^\{\{\s*|\s*\}\}$/g, "");
+        if (!Object.hasOwn(normalizedValues, key)) continue;
+        const value = normalizedValues[key];
+        try {
+            if (typeof field.setText === "function") field.setText(value);
+            else if (typeof field.check === "function" && typeof field.uncheck === "function") isTruthyTemplateValue(value) ? field.check() : field.uncheck();
+            else if (typeof field.select === "function") field.select(value);
+            else continue;
+            filledFields.add(key);
+        } catch {
+            // Un champ PDF incompatible reste intact ; les autres champs reconnus sont conservés.
+        }
+    }
+    return requiredFields.every(key => filledFields.has(key));
+}
+
+function isTruthyTemplateValue(value) {
+    return !["", "0", "false", "non", "no"].includes(String(value || "").trim().toLowerCase());
 }
 
 function normalizeTemplateValues(value) {
