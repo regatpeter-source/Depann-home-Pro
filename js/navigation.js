@@ -24,6 +24,7 @@ import {
 } from "./storage.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { renderPlatformAnnouncement } from "./platform-announcement.js?v=1";
+import { renderDocumentTemplateEditor } from "./document-template-editor.js?v=1";
 import {
     clearSearch,
     createBackCard,
@@ -1312,6 +1313,7 @@ function renderSettingsWorkspace(options = {}) {
         grid.className = "settings-subsection-grid";
         grid.append(
             createSettingsNavigationCard("Modèle de devis", "Paramétrer uniquement les devis", "document", () => openDocumentTemplateSettings("quote")),
+            createSettingsNavigationCard("Modèle de facture", "Paramétrer uniquement les factures", "document", () => openDocumentTemplateSettings("invoice")),
             createSettingsNavigationCard("Modèle de quitus", "Paramétrer uniquement les quitus", "document", () => openDocumentTemplateSettings("quitus")),
             createSettingsNavigationCard("Modèle de rapport", "Paramétrer uniquement les rapports", "document", () => openDocumentTemplateSettings("report"))
         );
@@ -1351,7 +1353,7 @@ function renderSettingsWorkspace(options = {}) {
 }
 
 async function openDocumentTemplateSettings(type) {
-    await renderBilling({ profile: true, templateSection: type, onTemplateRendered: type === "report" ? () => renderReportTemplateSettings(getContainer()) : null });
+    await renderDocumentTemplateEditor(type, () => renderSettings({ section: "documents" }));
 }
 
 function createSettingsIntro(title, description) {

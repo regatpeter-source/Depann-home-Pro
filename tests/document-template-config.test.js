@@ -68,15 +68,14 @@ test("an integrated invoice automatically inherits the quote presentation", asyn
     assert.notDeepEqual(first, second);
 });
 
-test("an invoice automatically uses the external DOCX base selected for quotes", async () => {
+test("a legacy shared DOCX is no longer applied without an active custom invoice template", async () => {
     const zip = new PizZip();
     zip.file("[Content_Types].xml", '<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>');
     zip.folder("_rels").file(".rels", '<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>');
     zip.folder("word").file("document.xml", '<?xml version="1.0"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>{{type_document}} — {{numero}} — {{client_nom}}</w:t></w:r></w:p><w:sectPr/></w:body></w:document>');
     const output = await createBillingDocumentOutput(invoice, { ...profile, quoteTemplatePolicy: "company_choice", quoteTemplateMode: "external", quoteTemplateData: zip.generate({ type: "nodebuffer" }), quoteTemplateFilename: "base-commune.docx", quoteTemplateMimeType: DOCX_MIME });
-    const xml = new PizZip(output.buffer).file("word/document.xml").asText();
-    assert.equal(output.mimeType, DOCX_MIME);
-    assert.match(xml, /Facture — FAC-42 — Client test/);
+    assert.equal(output.mimeType, PDF_MIME);
+    assert.equal(output.buffer.subarray(0, 4).toString(), "%PDF");
 });
 
 test("an invoice automatically preserves the external PDF base selected for quotes", async () => {
@@ -199,7 +198,8 @@ test("billing live preview is desktop-only, accepts incomplete drafts and never 
     assert.match(serverSource, /"Client à renseigner"/);
     const previewRoute = serverSource.slice(serverSource.indexOf('app.post("/api/billing/documents/preview"'), serverSource.indexOf('app.post("/api/billing/documents/:documentId/email"'));
     assert.doesNotMatch(previewRoute, /INSERT INTO depannhome_billing_documents|UPDATE depannhome_billing_documents/);
-    assert.match(previewRoute, /profile\.quoteTemplateMimeType === DOCX_MIME/);
+    assert.match(previewRoute, /createBillingDocumentOutput\(document, profile\)/);
+    assert.match(previewRoute, /X-Billing-Preview-Mode": "final"/);
 });
 
 test("billing live preview revokes old PDF blobs and cancels stale generations", () => {

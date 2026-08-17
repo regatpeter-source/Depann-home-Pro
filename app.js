@@ -19,6 +19,7 @@ import { initializeDatabase } from "./server/database.js";
 import { initializeOrganizations, requireOrganizationFeature } from "./server/organizations.js";
 import { registerCreatorRoutes } from "./server/creator.js";
 import { billingUploadErrorHandler, initializeBilling, registerBillingRoutes } from "./server/billing.js";
+import { documentTemplateUploadErrorHandler, initializeDocumentTemplates, registerDocumentTemplateRoutes } from "./server/document-templates.js";
 import { initializeSubscriptionInvoicing, registerSubscriptionInvoicingRoutes, startSubscriptionInvoicingScheduler } from "./server/invoicing.js";
 import { initializeAccounting, registerAccountingRoutes } from "./server/accounting.js";
 import { initializeConnectors, registerConnectorRoutes } from "./server/connectors.js";
@@ -120,6 +121,7 @@ registerPartnerSandboxRoutes(app, requireAuthentication);
 registerAccountingSandboxRoutes(app, requireAuthentication);
 registerGroupRoutes(app, requireAuthentication);
 registerBillingRoutes(app, requireAuthentication);
+registerDocumentTemplateRoutes(app, requireAuthentication);
 registerPurchaseRoutes(app, requireAuthentication);
 registerMessageRoutes(app, requireAuthentication);
 registerCalendarRoutes(app, requireAuthentication);
@@ -152,6 +154,7 @@ app.get("/service-worker.js", (request, response) => {
 });
 
 app.use(billingUploadErrorHandler);
+app.use(documentTemplateUploadErrorHandler);
 app.use(clientUploadErrorHandler);
 app.use(technicalReportUploadErrorHandler);
 app.use(dataImportUploadErrorHandler);
@@ -170,6 +173,7 @@ async function start() {
 	await initializeOrganizations();
 	await initializeGroups();
 	await initializeBilling();
+	await initializeDocumentTemplates();
 	await initializeAccounting();
 	await initializeConnectors();
 	await initializeSubscriptionInvoicing();

@@ -3,7 +3,8 @@ import { getAccountOwnerId } from "./auth.js";
 import { randomUUID } from "node:crypto";
 import PDFDocument from "pdfkit";
 import { synchronizeConnectedAppointment } from "./partner-connections.js";
-import { PDF_MIME, renderCompanyTemplate } from "./company-document-template.js";
+import { PDF_MIME } from "./company-document-template.js";
+import { buildQuitusCustomModel, renderActiveCustomTemplate } from "./document-templates.js";
 
 const EVENT_COLORS = new Set(["blue", "green", "orange", "red", "purple", "gray"]);
 const EVENT_TYPES = new Set(["appointment", "task", "vacation", "sick_leave", "unavailable"]);
@@ -351,7 +352,7 @@ export function registerCalendarRoutes(app, requireAuthentication) {
                 return response.status(400).json({ message: "Aucun dossier client correspondant : le quitus ne peut pas être validé." });
             }
 
-            const profileResult = await connection.query(`SELECT profile.company_name AS "companyName",profile.address,profile.postal_code AS "postalCode",profile.city,profile.phone,profile.email,profile.registration_number AS "registrationNumber",profile.logo_data AS "logoData",profile.logo_mime_type AS "logoMimeType",profile.quitus_template AS "quitusTemplate",profile.quitus_template_mode AS "quitusTemplateMode",profile.quitus_template_filename AS "quitusTemplateFilename",profile.quitus_template_data AS "quitusTemplateData",profile.quitus_template_mime_type AS "quitusTemplateMimeType",owner.quitus_template_policy AS "quitusTemplatePolicy" FROM depannhome_users owner LEFT JOIN depannhome_billing_profiles profile ON profile.owner_id=owner.id WHERE owner.id=$1`, [accountOwnerId]);
+            const profileResult = await connection.query(`SELECT owner.id AS "ownerId",profile.company_name AS "companyName",profile.address,profile.postal_code AS "postalCode",profile.city,profile.phone,profile.email,profile.registration_number AS "registrationNumber",profile.logo_data AS "logoData",profile.logo_mime_type AS "logoMimeType",profile.quitus_template AS "quitusTemplate",profile.quitus_template_mode AS "quitusTemplateMode",profile.quitus_template_filename AS "quitusTemplateFilename",profile.quitus_template_data AS "quitusTemplateData",profile.quitus_template_mime_type AS "quitusTemplateMimeType",owner.quitus_template_policy AS "quitusTemplatePolicy" FROM depannhome_users owner LEFT JOIN depannhome_billing_profiles profile ON profile.owner_id=owner.id WHERE owner.id=$1`, [accountOwnerId]);
             const output = await createQuitusDocumentOutput(event, quitus, profileResult.rows[0] || {});
             const createdAt = new Date().toISOString();
             const attachment = {
@@ -479,11 +480,9 @@ function quitusPdfFileName(event) {
 }
 
 export async function createQuitusDocumentOutput(event, quitus, profile = {}) {
-    const generatedPdf = await createQuitusPdf(event, quitus, profile);
-    const policy = ["integrated_only", "company_choice", "external_only"].includes(profile.quitusTemplatePolicy) ? profile.quitusTemplatePolicy : "company_choice";
-    const external = policy === "external_only" || (policy !== "integrated_only" && profile.quitusTemplateMode === "external");
-    if (!external) return { buffer: generatedPdf, filename: quitusPdfFileName(event), mimeType: PDF_MIME };
-    return renderCompanyTemplate({ buffer: profile.quitusTemplateData, filename: profile.quitusTemplateFilename || quitusPdfFileName(event), mimeType: profile.quitusTemplateMimeType, generatedPdf, values: quitusTemplateValues(event, quitus, profile) });
+    const custom = await renderActiveCustomTemplate(profile.ownerId, "quitus", buildQuitusCustomModel(event, quitus, profile));
+    if (custom) return custom;
+    return { buffer: await createQuitusPdf(event, quitus, profile), filename: quitusPdfFileName(event), mimeType: PDF_MIME };
 }
 
 function quitusTemplateValues(event, quitus, profile) {

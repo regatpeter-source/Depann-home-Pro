@@ -8,6 +8,7 @@ import { createEmptyLeakContent } from "./leak-report-template.js";
 import { postAccountingDocument } from "./accounting.js";
 import { DOCX_MIME, PDF_MIME, renderCompanyTemplate, validateCompanyTemplate } from "./company-document-template.js";
 import { createTechnicalReportOutput } from "./technical-reports.js";
+import { buildBillingCustomModel, renderActiveCustomTemplate } from "./document-templates.js";
 
 const MAX_LOGO_SIZE = 2 * 1024 * 1024;
 const MAX_QUOTE_TEMPLATE_SIZE = 10 * 1024 * 1024;
@@ -482,10 +483,8 @@ export function registerBillingRoutes(app, requireAuthentication) {
         document.issuerTaxNumber = cleanText(request.body?.issuerTaxNumber, 100) || profile.taxNumber || "";
         document.quoteReference = cleanText(request.body?.quoteReference, 80);
         document.lines = applyVatRegime(document.lines, document.vatRegime);
-        const policy = QUOTE_TEMPLATE_POLICIES.has(profile.quoteTemplatePolicy) ? profile.quoteTemplatePolicy : "company_choice";
-        const externalDocx = profile.quoteTemplateMimeType === DOCX_MIME && (policy === "external_only" || (policy !== "integrated_only" && profile.quoteTemplateMode === "external"));
-        const output = externalDocx ? { buffer: await createBillingPdf(document, profile), mimeType: PDF_MIME } : await createBillingDocumentOutput(document, profile);
-        response.set({ "Content-Type": PDF_MIME, "Content-Disposition": "inline", "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff", "X-Billing-Preview-Mode": externalDocx ? "business-pages" : "final" });
+        const output = await createBillingDocumentOutput(document, profile);
+        response.set({ "Content-Type": PDF_MIME, "Content-Disposition": "inline", "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff", "X-Billing-Preview-Mode": "final" });
         response.send(output.buffer);
     }));
 
@@ -730,12 +729,12 @@ async function getQuoteTemplatePolicy(accountOwnerId) {
 }
 
 async function loadBillingPdfProfile(ownerId) {
-    const { rows } = await getPool().query(`SELECT profile.company_name AS "companyName",profile.legal_form AS "legalForm",profile.address,profile.postal_code AS "postalCode",profile.city,profile.phone,profile.email,profile.registration_number AS "registrationNumber",profile.siren,profile.tax_number AS "taxNumber",profile.vat_regime AS "vatRegime",profile.bank_iban AS "bankIban",profile.bank_bic AS "bankBic",profile.payment_terms AS "paymentTerms",profile.deposit_terms AS "depositTerms",profile.footer_note AS "footerNote",profile.logo_data AS "logoData",profile.logo_mime_type AS "logoMimeType",profile.quote_template_config AS "quoteTemplateConfig",profile.quote_template_mode AS "quoteTemplateMode",profile.quote_template_filename AS "quoteTemplateFilename",profile.quote_template_data AS "quoteTemplateData",profile.quote_template_mime_type AS "quoteTemplateMimeType",owner.quote_template_policy AS "quoteTemplatePolicy" FROM depannhome_users owner LEFT JOIN depannhome_billing_profiles profile ON profile.owner_id=owner.id WHERE owner.id=$1`, [ownerId]);
+    const { rows } = await getPool().query(`SELECT owner.id AS "ownerId",profile.company_name AS "companyName",profile.legal_form AS "legalForm",profile.address,profile.postal_code AS "postalCode",profile.city,profile.phone,profile.email,profile.registration_number AS "registrationNumber",profile.siren,profile.tax_number AS "taxNumber",profile.vat_regime AS "vatRegime",profile.bank_iban AS "bankIban",profile.bank_bic AS "bankBic",profile.payment_terms AS "paymentTerms",profile.deposit_terms AS "depositTerms",profile.footer_note AS "footerNote",profile.logo_data AS "logoData",profile.logo_mime_type AS "logoMimeType",profile.quote_template_config AS "quoteTemplateConfig",profile.quote_template_mode AS "quoteTemplateMode",profile.quote_template_filename AS "quoteTemplateFilename",profile.quote_template_data AS "quoteTemplateData",profile.quote_template_mime_type AS "quoteTemplateMimeType",owner.quote_template_policy AS "quoteTemplatePolicy" FROM depannhome_users owner LEFT JOIN depannhome_billing_profiles profile ON profile.owner_id=owner.id WHERE owner.id=$1`, [ownerId]);
     return { ...emptyProfile(), ...(rows[0] || {}) };
 }
 
 async function loadQuitusPdfProfile(ownerId) {
-    const { rows } = await getPool().query(`SELECT profile.company_name AS "companyName",profile.address,profile.postal_code AS "postalCode",profile.city,profile.phone,profile.email,profile.registration_number AS "registrationNumber",profile.logo_data AS "logoData",profile.logo_mime_type AS "logoMimeType",profile.quitus_template AS "quitusTemplate",profile.quitus_template_mode AS "quitusTemplateMode",profile.quitus_template_filename AS "quitusTemplateFilename",profile.quitus_template_data AS "quitusTemplateData",profile.quitus_template_mime_type AS "quitusTemplateMimeType",owner.quitus_template_policy AS "quitusTemplatePolicy" FROM depannhome_users owner LEFT JOIN depannhome_billing_profiles profile ON profile.owner_id=owner.id WHERE owner.id=$1`, [ownerId]);
+    const { rows } = await getPool().query(`SELECT owner.id AS "ownerId",profile.company_name AS "companyName",profile.address,profile.postal_code AS "postalCode",profile.city,profile.phone,profile.email,profile.registration_number AS "registrationNumber",profile.logo_data AS "logoData",profile.logo_mime_type AS "logoMimeType",profile.quitus_template AS "quitusTemplate",profile.quitus_template_mode AS "quitusTemplateMode",profile.quitus_template_filename AS "quitusTemplateFilename",profile.quitus_template_data AS "quitusTemplateData",profile.quitus_template_mime_type AS "quitusTemplateMimeType",owner.quitus_template_policy AS "quitusTemplatePolicy" FROM depannhome_users owner LEFT JOIN depannhome_billing_profiles profile ON profile.owner_id=owner.id WHERE owner.id=$1`, [ownerId]);
     return { ...emptyProfile(), ...(rows[0] || {}) };
 }
 
@@ -768,7 +767,7 @@ async function createQuitusPreview(ownerId) {
 
 async function createReportPreview(ownerId) {
     const { rows } = await getPool().query(`
-        SELECT profile.company_name AS "companyName", profile.address, profile.postal_code AS "postalCode", profile.city, profile.phone, profile.email,
+        SELECT owner.id AS "ownerId", profile.company_name AS "companyName", profile.address, profile.postal_code AS "postalCode", profile.city, profile.phone, profile.email,
             profile.registration_number AS "registrationNumber", profile.tax_number AS "taxNumber", profile.logo_data AS "logoData",
             profile.logo_mime_type AS "logoMimeType", profile.report_template AS "reportTemplate",
             profile.report_secondary_logo_data AS "secondaryLogoData", profile.report_secondary_logo_mime_type AS "secondaryLogoMimeType",
@@ -966,7 +965,7 @@ async function getBillingExport(request) {
                                             ))
                 `, [id, getAccountOwnerId(request), request.user?.role || "", request.user?.sub || 0]),
         database.query(`
-            SELECT profile.company_name AS "companyName", profile.legal_form AS "legalForm", profile.address, profile.postal_code AS "postalCode", profile.city, profile.phone, profile.email,
+            SELECT owner.id AS "ownerId", profile.company_name AS "companyName", profile.legal_form AS "legalForm", profile.address, profile.postal_code AS "postalCode", profile.city, profile.phone, profile.email,
                 profile.registration_number AS "registrationNumber", profile.siren, profile.tax_number AS "taxNumber", profile.vat_regime AS "vatRegime", profile.bank_iban AS "bankIban", profile.bank_bic AS "bankBic", profile.payment_terms AS "paymentTerms", profile.deposit_terms AS "depositTerms",
                 profile.footer_note AS "footerNote", profile.logo_data AS "logoData", profile.logo_mime_type AS "logoMimeType", profile.quote_template_config AS "quoteTemplateConfig",
                 profile.quote_template_mode AS "quoteTemplateMode", profile.quote_template_filename AS "quoteTemplateFilename", profile.quote_template_data AS "quoteTemplateData", profile.quote_template_mime_type AS "quoteTemplateMimeType", owner.quote_template_policy AS "quoteTemplatePolicy"
@@ -984,11 +983,9 @@ function billingPdfFileName(document) {
 }
 
 export async function createBillingDocumentOutput(document, profile) {
-    const generatedPdf = await createBillingPdf(document, profile);
-    const policy = QUOTE_TEMPLATE_POLICIES.has(profile.quoteTemplatePolicy) ? profile.quoteTemplatePolicy : "company_choice";
-    const external = ["quote", "invoice"].includes(document.documentType) && (policy === "external_only" || (policy !== "integrated_only" && profile.quoteTemplateMode === "external"));
-    if (!external) return { buffer: generatedPdf, filename: billingPdfFileName(document), mimeType: PDF_MIME };
-    return renderCompanyTemplate({ buffer: profile.quoteTemplateData, filename: profile.quoteTemplateFilename || billingPdfFileName(document), mimeType: profile.quoteTemplateMimeType, generatedPdf, values: billingTemplateValues(document, profile) });
+    const custom = await renderActiveCustomTemplate(profile.ownerId, document.documentType, buildBillingCustomModel(document, profile));
+    if (custom) return custom;
+    return { buffer: await createBillingPdf(document, profile), filename: billingPdfFileName(document), mimeType: PDF_MIME };
 }
 
 function billingTemplateValues(document, profile) {

@@ -298,6 +298,31 @@ CREATE TABLE IF NOT EXISTS depannhome_billing_templates (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Modèles personnalisés versionnés. Une seule version peut être active par
+-- entreprise et type de document ; les anciens fichiers restent conservés.
+CREATE TABLE IF NOT EXISTS depannhome_document_templates (
+    id BIGSERIAL PRIMARY KEY,
+    owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    document_type VARCHAR(20) NOT NULL CHECK (document_type IN ('quote','invoice','quitus','report')),
+    version INTEGER NOT NULL CHECK (version > 0),
+    status VARCHAR(20) NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','active','archived')),
+    name VARCHAR(160) NOT NULL DEFAULT '',
+    source_filename VARCHAR(255) NOT NULL DEFAULT '',
+    source_mime_type VARCHAR(100) NOT NULL DEFAULT '',
+    source_data BYTEA NOT NULL,
+    source_hash VARCHAR(64) NOT NULL,
+    definition JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+    activated_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(owner_id, document_type, version)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS depannhome_document_templates_active_idx
+    ON depannhome_document_templates(owner_id, document_type) WHERE status='active';
+CREATE INDEX IF NOT EXISTS depannhome_document_templates_owner_idx
+    ON depannhome_document_templates(owner_id, document_type, version DESC);
+
 CREATE INDEX IF NOT EXISTS depannhome_billing_templates_owner_idx
     ON depannhome_billing_templates (owner_id, LOWER(label));
 
