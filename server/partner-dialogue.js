@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import multer from "multer";
 import path from "node:path";
 import { getPool } from "./database.js";
+import { getOrganization, isFeatureEnabled } from "./organizations.js";
 import { getAccountOwnerId } from "./auth.js";
 import { broadcastOwnerEvent, createNotification } from "./collaboration.js";
 
@@ -130,6 +131,7 @@ export async function recordMissionDialogueDocument({ ownerId, missionId, actorN
 }
 
 export async function recordMissionEventForSource({ ownerId, sourceType, sourceId, status, action, details = {}, actorName = "" }) {
+    if (!isFeatureEnabled(await getOrganization(ownerId), "partnerMissions")) return null;
     const column = sourceType === "report" ? "technical_report_id" : sourceType === "appointment" ? "calendar_event_id" : "";
     if (!ownerId || !sourceId || !column) return null;
     const { rows } = await getPool().query(`SELECT id FROM depannhome_partner_missions WHERE owner_id=$1 AND ${column}=$2 ORDER BY id DESC LIMIT 1`, [ownerId, sourceId]);
@@ -137,6 +139,7 @@ export async function recordMissionEventForSource({ ownerId, sourceType, sourceI
 }
 
 export async function registerMissionSourceItem({ ownerId, appointmentId, sourceType, sourceId, sourceItemId = "", label = "", details = {} }) {
+    if (!isFeatureEnabled(await getOrganization(ownerId), "partnerMissions")) return null;
     if (!ownerId || !appointmentId || !sourceType || !sourceId) return null;
     const { rows: missions } = await getPool().query("SELECT id,billing_mode FROM depannhome_partner_missions WHERE owner_id=$1 AND calendar_event_id=$2 ORDER BY id DESC LIMIT 1", [ownerId, appointmentId]);
     const mission = missions[0];

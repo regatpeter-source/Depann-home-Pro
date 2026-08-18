@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { getPool } from "./database.js";
+import { getOrganization, isFeatureEnabled } from "./organizations.js";
 import { getAccountOwnerId } from "./auth.js";
 import { createNotification } from "./collaboration.js";
 import { recordMissionDialogueDocument, recordMissionDialogueEvent } from "./partner-dialogue.js";
@@ -119,6 +120,7 @@ export function registerPartnerConnectionRoutes(app, requireAuthentication) {
 }
 
 export async function synchronizeConnectedAppointment(ownerId, eventId, connectionId = 0) {
+    if (!isFeatureEnabled(await getOrganization(ownerId), "partnerConnections")) return;
     if (!ownerId || !eventId) return;
     const db = getPool();
     const { rows: sourceRows } = await db.query("SELECT id,title,client_name,location,TO_CHAR(event_date,'YYYY-MM-DD') AS date,TO_CHAR(start_time,'HH24:MI') AS \"startTime\",TO_CHAR(end_time,'HH24:MI') AS \"endTime\",notes,event_type,event_origin,partner_connection_id FROM depannhome_calendar_events WHERE id=$1 AND owner_id=$2", [eventId, ownerId]);
@@ -331,6 +333,7 @@ function partnerMissionAttachments(value, selectedIds = []) {
 function attachmentIds(value) { return [...new Set((Array.isArray(value) ? value : []).map(item => clean(item, 100)).filter(item => /^[A-Za-z0-9_-]+$/.test(item)))].slice(0, 30); }
 
 export async function synchronizeConnectedReport(ownerId, reportId) {
+    if (!isFeatureEnabled(await getOrganization(ownerId), "partnerConnections")) return;
     const db = getPool(); const { rows } = await db.query("SELECT id,appointment_id,title,pdf_data,pdf_filename,document_mime_type FROM depannhome_technical_reports WHERE id=$1 AND owner_id=$2 AND status='validated'", [reportId, ownerId]); const report = rows[0]; if (!report?.appointment_id) return;
     for (const connection of await activeConnections(ownerId)) {
         if (!ownPermissions(connection, ownerId).canViewReports) continue;
@@ -343,6 +346,7 @@ export async function synchronizeConnectedReport(ownerId, reportId) {
 }
 
 export async function synchronizeConnectedBillingDocument(ownerId, documentId) {
+    if (!isFeatureEnabled(await getOrganization(ownerId), "partnerConnections")) return;
     const db = getPool(); const { rows } = await db.query("SELECT * FROM depannhome_billing_documents WHERE id=$1 AND owner_id=$2", [documentId, ownerId]); const document = rows[0]; if (!document?.appointment_id || !["quote", "invoice"].includes(document.document_type)) return;
     const permission = document.document_type === "invoice" ? "canViewInvoices" : "canViewQuotes"; const profile = await loadBillingProfile(ownerId); const source = await companyIdentity(ownerId);
     for (const connection of await activeConnections(ownerId)) {

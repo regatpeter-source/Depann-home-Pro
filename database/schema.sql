@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS depannhome_users (
     max_pc_users INTEGER NOT NULL DEFAULT 1,
     max_technicians INTEGER NOT NULL DEFAULT 5,
     subscription_plan VARCHAR(20) NOT NULL DEFAULT 'free',
+    subscription_tier VARCHAR(20) NOT NULL DEFAULT 'pro' CHECK (subscription_tier IN ('basic','basic_plus','pro')),
     subscription_label VARCHAR(80) NOT NULL DEFAULT '',
     monthly_price_cents INTEGER NOT NULL DEFAULT 0,
     subscription_discount_label VARCHAR(160) NOT NULL DEFAULT '',
@@ -103,6 +104,7 @@ ALTER TABLE depannhome_users
     ADD COLUMN IF NOT EXISTS max_pc_users INTEGER NOT NULL DEFAULT 1,
     ADD COLUMN IF NOT EXISTS max_technicians INTEGER NOT NULL DEFAULT 5,
     ADD COLUMN IF NOT EXISTS subscription_plan VARCHAR(20) NOT NULL DEFAULT 'free',
+    ADD COLUMN IF NOT EXISTS subscription_tier VARCHAR(20) NOT NULL DEFAULT 'pro',
     ADD COLUMN IF NOT EXISTS subscription_label VARCHAR(80) NOT NULL DEFAULT '',
     ADD COLUMN IF NOT EXISTS monthly_price_cents INTEGER NOT NULL DEFAULT 0,
     ADD COLUMN IF NOT EXISTS subscription_discount_label VARCHAR(160) NOT NULL DEFAULT '',
@@ -118,6 +120,9 @@ ALTER TABLE depannhome_users
     ADD COLUMN IF NOT EXISTS is_archived BOOLEAN NOT NULL DEFAULT FALSE,
     ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ,
     ADD COLUMN IF NOT EXISTS archived_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL;
+UPDATE depannhome_users SET subscription_tier='pro' WHERE subscription_tier IS NULL OR subscription_tier NOT IN ('basic','basic_plus','pro');
+ALTER TABLE depannhome_users DROP CONSTRAINT IF EXISTS depannhome_users_subscription_tier_check;
+ALTER TABLE depannhome_users ADD CONSTRAINT depannhome_users_subscription_tier_check CHECK(subscription_tier IN ('basic','basic_plus','pro'));
 CREATE INDEX IF NOT EXISTS depannhome_users_owner_archive_idx ON depannhome_users(account_owner_id, is_archived, updated_at DESC);
 
 CREATE TABLE IF NOT EXISTS depannhome_account_lifecycle_audit (

@@ -50,6 +50,7 @@ export async function initializeDatabase() {
             technician_billing_enabled BOOLEAN NOT NULL DEFAULT TRUE,
             can_create_billing BOOLEAN NOT NULL DEFAULT TRUE,
             subscription_plan VARCHAR(20) NOT NULL DEFAULT 'free',
+            subscription_tier VARCHAR(20) NOT NULL DEFAULT 'pro' CHECK (subscription_tier IN ('basic','basic_plus','pro')),
             subscription_label VARCHAR(80) NOT NULL DEFAULT '',
             monthly_price_cents INTEGER NOT NULL DEFAULT 0,
             subscription_discount_label VARCHAR(160) NOT NULL DEFAULT '',
@@ -84,6 +85,7 @@ export async function initializeDatabase() {
         ADD COLUMN IF NOT EXISTS technician_billing_enabled BOOLEAN NOT NULL DEFAULT TRUE,
         ADD COLUMN IF NOT EXISTS can_create_billing BOOLEAN NOT NULL DEFAULT TRUE,
         ADD COLUMN IF NOT EXISTS subscription_plan VARCHAR(20) NOT NULL DEFAULT 'free',
+        ADD COLUMN IF NOT EXISTS subscription_tier VARCHAR(20) NOT NULL DEFAULT 'pro',
         ADD COLUMN IF NOT EXISTS subscription_label VARCHAR(80) NOT NULL DEFAULT '',
         ADD COLUMN IF NOT EXISTS monthly_price_cents INTEGER NOT NULL DEFAULT 0,
         ADD COLUMN IF NOT EXISTS subscription_discount_label VARCHAR(160) NOT NULL DEFAULT '',
@@ -101,6 +103,10 @@ export async function initializeDatabase() {
         ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ,
         ADD COLUMN IF NOT EXISTS archived_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL
     `);
+    const tierMigration = await database.query("UPDATE depannhome_users SET subscription_tier='pro' WHERE subscription_tier IS NULL OR subscription_tier NOT IN ('basic','basic_plus','pro')");
+    if (tierMigration.rowCount) console.info(`[database] ${tierMigration.rowCount} compte(s) migré(s) vers l’offre Pro.`);
+    await database.query("ALTER TABLE depannhome_users DROP CONSTRAINT IF EXISTS depannhome_users_subscription_tier_check");
+    await database.query("ALTER TABLE depannhome_users ADD CONSTRAINT depannhome_users_subscription_tier_check CHECK(subscription_tier IN ('basic','basic_plus','pro'))");
     if (!billingPermissionColumn.length) {
         await database.query(`
             UPDATE depannhome_users technician

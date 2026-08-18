@@ -1,4 +1,5 @@
 import { getPool } from "./database.js";
+import { normalizeSubscriptionTier, subscriptionTierConfig } from "./subscription-tiers.js";
 
 export const INTERFACE_TYPES = Object.freeze(["partner", "standard", "group"]);
 export const ORGANIZATION_TYPES = Object.freeze([
@@ -10,12 +11,12 @@ export const LICENSE_TYPES = Object.freeze(["partner_portal", "depannhome_standa
 const ALL_FEATURES = Object.freeze({
     clients: true, calendar: true, library: true, billing: true, accounting: true, technicalReports: true,
     partnerMissions: true, partnerConnections: true, messages: true, settings: true, imports: true, groups: true,
-    photo: true, favorites: true
+    purchases: true, connectors: true, photo: true, favorites: true
 });
 const PARTNER_FEATURES = Object.freeze({
     clients: true, calendar: true, library: false, billing: true, accounting: false, technicalReports: false,
     partnerMissions: true, partnerConnections: true, messages: true, settings: true, imports: false, groups: false,
-    photo: false, favorites: false
+    purchases: false, connectors: false, photo: false, favorites: false
 });
 
 export async function initializeOrganizations() {
@@ -29,7 +30,7 @@ export async function initializeOrganizations() {
 
 export async function getOrganization(ownerId) {
     if (!ownerId) return defaultOrganization();
-    const { rows } = await getPool().query(`SELECT id,account_owner_id AS "accountOwnerId",interface_type AS "interfaceType",organization_type AS "organizationType",license_type AS "licenseType",license_features AS "licenseFeatures",created_at AS "createdAt",updated_at AS "updatedAt" FROM depannhome_organizations WHERE account_owner_id=$1`, [ownerId]);
+    const { rows } = await getPool().query(`SELECT organization.id,organization.account_owner_id AS "accountOwnerId",organization.interface_type AS "interfaceType",organization.organization_type AS "organizationType",organization.license_type AS "licenseType",organization.license_features AS "licenseFeatures",owner.subscription_tier AS "subscriptionTier",organization.created_at AS "createdAt",organization.updated_at AS "updatedAt" FROM depannhome_organizations organization JOIN depannhome_users owner ON owner.id=organization.account_owner_id WHERE organization.account_owner_id=$1`, [ownerId]);
     return rows[0] ? publicOrganization(rows[0]) : defaultOrganization(ownerId);
 }
 
@@ -39,7 +40,8 @@ export async function createOrganization(ownerId, values = {}, actorId = null) {
     const { rows } = await getPool().query(`INSERT INTO depannhome_organizations(account_owner_id,interface_type,organization_type,license_type,license_features)
         VALUES($1,$2,$3,$4,$5::jsonb) ON CONFLICT(account_owner_id) DO UPDATE SET interface_type=EXCLUDED.interface_type,organization_type=EXCLUDED.organization_type,license_type=EXCLUDED.license_type,license_features=EXCLUDED.license_features,updated_at=NOW()
         RETURNING id,account_owner_id AS "accountOwnerId",interface_type AS "interfaceType",organization_type AS "organizationType",license_type AS "licenseType",license_features AS "licenseFeatures",created_at AS "createdAt",updated_at AS "updatedAt"`, [ownerId, organization.interfaceType, organization.organizationType, organization.licenseType, JSON.stringify(organization.licenseFeatures)]);
-    const created = publicOrganization(rows[0]);
+    const tierResult = await getPool().query("SELECT subscription_tier AS \"subscriptionTier\" FROM depannhome_users WHERE id=$1", [ownerId]);
+    const created = publicOrganization({ ...rows[0], subscriptionTier: tierResult.rows[0]?.subscriptionTier });
     if (actorId) await writeOrganizationAudit(ownerId, actorId, "created", {}, auditSnapshot(created));
     return created;
 }
@@ -76,7 +78,7 @@ export function requireOrganizationFeature(feature) {
     return async (request, response, next) => {
         try {
             if (request.user?.isCreator) return next();
-            const organization = request.user?.organization || await getOrganization(request.user?.accountOwnerId);
+            const organization = await getOrganization(request.user?.accountOwnerId);
             if (!isFeatureEnabled(organization, feature)) return response.status(403).json({ message: "Cette fonctionnalité n’est pas incluse dans l’interface de votre organisation." });
             return next();
         } catch (error) {
@@ -87,8 +89,10 @@ export function requireOrganizationFeature(feature) {
 
 export function isFeatureEnabled(organization, feature) {
     if (!feature) return true;
-    const defaults = organization?.interfaceType === "partner" ? PARTNER_FEATURES : ALL_FEATURES;
+    if (organization?.features && typeof organization.features[feature] === "boolean") return organization.features[feature];
+    const defaults = organizationDefaults(organization?.interfaceType, organization?.subscriptionTier);
     const overrides = organization?.licenseFeatures && typeof organization.licenseFeatures === "object" ? organization.licenseFeatures : {};
+    if (organization?.interfaceType === "standard") return Boolean(defaults[feature]) && overrides[feature] !== false;
     return typeof overrides[feature] === "boolean" ? overrides[feature] : Boolean(defaults[feature]);
 }
 
@@ -97,16 +101,24 @@ export function publicOrganization(row) {
     const organizationType = ORGANIZATION_TYPES.includes(row?.organizationType) ? row.organizationType : "other";
     const licenseType = LICENSE_TYPES.includes(row?.licenseType) ? row.licenseType : interfaceType === "partner" ? "partner_portal" : interfaceType === "group" ? "depannhome_group" : "depannhome_standard";
     const licenseFeatures = row?.licenseFeatures && typeof row.licenseFeatures === "object" && !Array.isArray(row.licenseFeatures) ? row.licenseFeatures : {};
-    return { id: String(row?.id || ""), accountOwnerId: String(row?.accountOwnerId || ""), interfaceType, organizationType, licenseType, licenseFeatures, features: resolvedFeatures(interfaceType, licenseFeatures), badge: organizationBadge(interfaceType), createdAt: row?.createdAt || null, updatedAt: row?.updatedAt || null };
+    const subscriptionTier = normalizeSubscriptionTier(row?.subscriptionTier, "pro");
+    return { id: String(row?.id || ""), accountOwnerId: String(row?.accountOwnerId || ""), interfaceType, organizationType, licenseType, subscriptionTier, licenseFeatures, features: resolvedFeatures(interfaceType, subscriptionTier, licenseFeatures), badge: organizationBadge(interfaceType), createdAt: row?.createdAt || null, updatedAt: row?.updatedAt || null };
 }
 
 export function organizationBadge(interfaceType) {
     return ({ standard: "Entreprise Depann’Home Pro", partner: "Partenaire", group: "Groupe" })[interfaceType] || "Organisation";
 }
 
-function resolvedFeatures(interfaceType, overrides) {
-    const defaults = interfaceType === "partner" ? PARTNER_FEATURES : ALL_FEATURES;
-    return { ...defaults, ...overrides };
+function resolvedFeatures(interfaceType, subscriptionTier, overrides) {
+    const defaults = organizationDefaults(interfaceType, subscriptionTier);
+    if (interfaceType !== "standard") return { ...defaults, ...overrides };
+    return Object.fromEntries(Object.keys(ALL_FEATURES).map(feature => [feature, Boolean(defaults[feature]) && overrides[feature] !== false]));
+}
+
+function organizationDefaults(interfaceType, subscriptionTier) {
+    if (interfaceType === "partner") return PARTNER_FEATURES;
+    if (interfaceType === "group") return ALL_FEATURES;
+    return subscriptionTierConfig(subscriptionTier).features;
 }
 
 function sanitizeOrganization(values) {
@@ -123,7 +135,7 @@ function sanitizeOrganization(values) {
 }
 
 function defaultOrganization(ownerId = "") {
-    return publicOrganization({ accountOwnerId: ownerId, interfaceType: "standard", organizationType: "troubleshooting_company", licenseType: "depannhome_standard", licenseFeatures: {} });
+    return publicOrganization({ accountOwnerId: ownerId, interfaceType: "standard", organizationType: "troubleshooting_company", licenseType: "depannhome_standard", subscriptionTier: "pro", licenseFeatures: {} });
 }
 
 function auditSnapshot(organization) {

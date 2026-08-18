@@ -1713,6 +1713,8 @@ body.desktop-device .nav-label-messages{
     font-size:13px;
 }
 
+.subscription-tier-summary{display:grid;gap:5px;padding:14px;border:1px solid #bfdbfe;border-radius:12px;background:linear-gradient(135deg,#eff6ff,#f0fdf4)}.subscription-tier-summary strong{color:#003b73;font-size:1.05rem}.subscription-tier-summary span{color:#166534;font-weight:700}.subscription-tier-summary small{color:#64748b;line-height:1.45}
+
 .creator-form-actions{
     flex-wrap:wrap;
     justify-content:flex-end;

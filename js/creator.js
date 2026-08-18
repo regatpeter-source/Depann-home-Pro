@@ -276,7 +276,7 @@ function renderAccountList() {
             <strong>${escapeHtml(account.companyName || account.ownerFullName || account.ownerUsername)}</strong>
             <span>${escapeHtml(account.ownerUsername)} · ${account.isArchived ? "Archivée" : account.isActive ? "Active" : "Suspendue"}</span>
             <em class="creator-subscription-badge ${escapeHtml(account.subscriptionStatus || "active")}">${escapeHtml(subscriptionPlanLabel(account))} · ${escapeHtml(subscriptionStatusLabel(account.subscriptionStatus))}</em>
-            <small>${account.activePcUsers}/${account.maxPcUsers} PC · ${account.activeTechnicians}/${account.maxTechnicians} techniciens</small>
+            <small>${account.activePcUsers}/${account.maxPcUsers} PC · ${account.activeTechnicians}/${account.maxTechnicians} mobiles</small>
         </button>
     `).join("") : `<p class="muted">Aucune entreprise ${accountListMode === "archived" ? "archivée" : "active"}.</p>`}`;
     list.querySelectorAll("[data-account-mode]").forEach(button => button.addEventListener("click", () => { accountListMode = button.dataset.accountMode; selectedAccountId = ""; renderAccountList(); document.querySelector("#creatorWorkspace").innerHTML = '<p class="muted">Sélectionnez une organisation.</p>'; }));
@@ -302,7 +302,7 @@ async function renderAccountDetail(accountId) {
                 <label>Téléphone responsable<input name="phone" maxlength="30" value="${escapeHtml(account.ownerPhone)}"></label>
                 <label>E-mail de facturation<input name="billingEmail" type="email" maxlength="160" value="${escapeHtml(account.billingEmail || "")}" placeholder="comptabilite@entreprise.fr"></label>
                 <label>Postes PC autorisés<input name="maxPcUsers" type="number" min="1" max="100" required value="${escapeHtml(account.maxPcUsers)}"></label>
-                <label>Techniciens autorisés<input name="maxTechnicians" type="number" min="0" max="500" required value="${escapeHtml(account.maxTechnicians)}"></label>
+                <label>Postes mobiles autorisés<input name="maxTechnicians" type="number" min="0" max="500" required value="${escapeHtml(account.maxTechnicians)}"></label>
             </div>
             ${renderCompanyProfileFields(account.companyProfile)}
             ${renderSubscriptionFields(account)}
@@ -312,7 +312,7 @@ async function renderAccountDetail(accountId) {
             <div class="creator-form-actions">${account.isArchived ? "" : '<button type="submit" class="secondary-button">Enregistrer l’entreprise</button>'}${isOwnCreatorAccount || account.isArchived ? "" : '<button type="button" class="secondary-button danger-button" id="creatorDeleteAccount">Archiver l’entreprise</button>'}</div>
         </form>
         <section class="creator-members-section"><div class="form-heading"><div><p class="eyebrow">Traçabilité</p><h3>Historique de l’organisation</h3></div></div><div id="creatorOrganizationHistory"><p class="muted">Chargement de l’historique…</p></div></section>
-        <section class="creator-members-section"><div class="form-heading"><div><p class="eyebrow">Accès</p><h3>Postes PC et techniciens</h3></div>${account.isArchived ? "" : '<div class="creator-form-actions"><button type="button" class="secondary-button auth-outline-button" id="creatorNewPcMember">+ Poste PC</button><button type="button" class="secondary-button" id="creatorNewTechnician">+ Technicien</button></div>'}</div><div id="creatorMembers"><p class="muted">Chargement des accès…</p></div></section>
+        <section class="creator-members-section"><div class="form-heading"><div><p class="eyebrow">Accès</p><h3>Postes PC et mobiles</h3></div>${account.isArchived ? "" : '<div class="creator-form-actions"><button type="button" class="secondary-button auth-outline-button" id="creatorNewPcMember">+ Poste PC</button><button type="button" class="secondary-button" id="creatorNewTechnician">+ Poste mobile</button></div>'}</div><div id="creatorMembers"><p class="muted">Chargement des accès…</p></div></section>
     `;
     if (account.isArchived) workspace.querySelectorAll("#creatorAccountForm [name]").forEach(field => { field.disabled = true; });
     workspace.querySelector("#creatorAccountForm").addEventListener("submit", async event => {
@@ -353,7 +353,7 @@ async function renderAccountDetail(accountId) {
     workspace.querySelector("#creatorNewPcMember")?.addEventListener("click", () => renderMemberForm(account, null, "admin"));
     workspace.querySelector("#creatorNewTechnician")?.addEventListener("click", () => renderMemberForm(account, null, "technician"));
     if (!account.isArchived) {
-        bindSubscriptionPlan(workspace.querySelector("#creatorAccountForm"));
+        bindSubscriptionTier(workspace.querySelector("#creatorAccountForm"));
         bindOrganizationInterface(workspace.querySelector("#creatorAccountForm"));
     }
     await loadOrganizationHistory(accountId);
@@ -374,16 +374,16 @@ function renderAccountForm() {
                 <label>Identifiant administrateur<input name="username" minlength="3" maxlength="32" required placeholder="minuscules, chiffres, . _ -"></label>
                 <label>Mot de passe initial<input name="password" type="password" minlength="12" required autocomplete="new-password"></label>
                 <label>Postes PC autorisés<input name="maxPcUsers" type="number" min="1" max="100" required value="1"></label>
-                <label>Techniciens autorisés<input name="maxTechnicians" type="number" min="0" max="500" required value="1"></label>
+                <label>Postes mobiles autorisés<input name="maxTechnicians" type="number" min="0" max="500" required value="1"></label>
             </div>
             ${renderCompanyProfileFields()}
-            ${renderSubscriptionFields({ subscriptionPlan: "free", subscriptionLabel: "", monthlyPriceCents: 0, subscriptionDiscountLabel: "", subscriptionDiscountMode: "fixed", subscriptionDiscountValue: 0, subscriptionStatus: "active", subscriptionRenewalDate: "", billingReference: "", creatorNote: "" })}
+            ${renderSubscriptionFields({ subscriptionTier: "basic", subscriptionPlan: "paid", subscriptionLabel: "Basic", monthlyPriceCents: 2500, subscriptionDiscountLabel: "", subscriptionDiscountMode: "fixed", subscriptionDiscountValue: 0, subscriptionStatus: "active", subscriptionRenewalDate: "", billingReference: "", creatorNote: "" })}
             ${renderOrganizationFields()}
             ${renderDocumentTemplatePolicyFields({ quoteTemplatePolicy: "company_choice", quitusTemplatePolicy: "company_choice", reportTemplatePolicy: "company_choice" })}
             <div class="creator-form-actions"><button type="submit" class="secondary-button">Créer l’entreprise</button></div>
         </form>
     `;
-    bindSubscriptionPlan(document.querySelector("#creatorNewAccountForm"));
+    bindSubscriptionTier(document.querySelector("#creatorNewAccountForm"));
     bindOrganizationInterface(document.querySelector("#creatorNewAccountForm"));
     document.querySelector("#creatorNewAccountForm").addEventListener("submit", async event => {
         event.preventDefault();
@@ -448,17 +448,18 @@ function fileAsDataUrl(file) {
 }
 
 function renderSubscriptionFields(account) {
-    const plan = account.subscriptionPlan === "paid" ? "paid" : "free";
+    const tier = ["basic", "basic_plus", "pro"].includes(account.subscriptionTier) ? account.subscriptionTier : "pro";
     const discountMode = account.subscriptionDiscountMode === "percentage" ? "percentage" : "fixed";
     return `
         <fieldset class="creator-subscription-fields"><legend>Abonnement et suivi commercial</legend>
             <div class="form-grid">
-                <label>Formule<select name="subscriptionPlan"><option value="free" ${plan === "free" ? "selected" : ""}>Abonnement mensuel gratuit</option><option value="paid" ${plan === "paid" ? "selected" : ""}>Abonnement mensuel payant</option></select></label>
-                <label>Nom de l’offre<input name="subscriptionLabel" maxlength="80" value="${escapeHtml(account.subscriptionLabel || "")}" placeholder="Ex. Pro équipe"></label>
-                <label>Tarif mensuel TTC (€)<input name="monthlyPrice" type="number" min="0" max="999999.99" step="0.01" value="${escapeHtml(centsToAmount(account.monthlyPriceCents))}" ${plan === "free" ? "disabled" : ""}></label>
-                <label>Libellé de la réduction<input name="subscriptionDiscountLabel" maxlength="160" value="${escapeHtml(account.subscriptionDiscountLabel || "")}" placeholder="Ex. Offre d’essai" ${plan === "free" ? "disabled" : ""}></label>
-                <label>Type de réduction<select name="subscriptionDiscountMode" ${plan === "free" ? "disabled" : ""}><option value="fixed" ${discountMode === "fixed" ? "selected" : ""}>Montant TTC (€)</option><option value="percentage" ${discountMode === "percentage" ? "selected" : ""}>Pourcentage (%)</option></select></label>
-                <label>Valeur de la réduction<input name="subscriptionDiscountValue" type="number" min="0" step="0.01" value="${escapeHtml(account.subscriptionDiscountValue || 0)}" ${plan === "free" ? "disabled" : ""}></label>
+                <input name="subscriptionPlan" type="hidden" value="paid">
+                <label>Offre Depann’Home Pro<select name="subscriptionTier"><option value="basic" ${tier === "basic" ? "selected" : ""}>Basic — 20 € / PC + 5 € / mobile</option><option value="basic_plus" ${tier === "basic_plus" ? "selected" : ""}>Basic+ — 35 € / PC + 8 € / mobile</option><option value="pro" ${tier === "pro" ? "selected" : ""}>Pro — 70 € / PC + 15 € / mobile</option></select></label>
+                <label>Tarif mensuel calculé TTC<input name="monthlyPrice" type="text" value="${escapeHtml(centsToAmount(account.monthlyPriceCents))} €" readonly></label>
+                <article class="subscription-tier-summary form-wide" data-tier-summary></article>
+                <label>Libellé de la réduction<input name="subscriptionDiscountLabel" maxlength="160" value="${escapeHtml(account.subscriptionDiscountLabel || "")}" placeholder="Ex. Offre d’essai"></label>
+                <label>Type de réduction<select name="subscriptionDiscountMode"><option value="fixed" ${discountMode === "fixed" ? "selected" : ""}>Montant TTC (€)</option><option value="percentage" ${discountMode === "percentage" ? "selected" : ""}>Pourcentage (%)</option></select></label>
+                <label>Valeur de la réduction<input name="subscriptionDiscountValue" type="number" min="0" step="0.01" value="${escapeHtml(account.subscriptionDiscountValue || 0)}"></label>
                 <label>Statut de l’abonnement<select name="subscriptionStatus">${["active", "trial", "past_due", "suspended", "cancelled"].map(status => `<option value="${status}" ${account.subscriptionStatus === status ? "selected" : ""}>${subscriptionStatusLabel(status)}</option>`).join("")}</select></label>
                 <label>Prochaine échéance<input name="subscriptionRenewalDate" type="date" value="${escapeHtml(account.subscriptionRenewalDate || "")}"></label>
                 <label>Référence de paiement / facture<input name="billingReference" maxlength="100" value="${escapeHtml(account.billingReference || "")}" placeholder="Ex. Virement juillet 2026"></label>
@@ -476,7 +477,7 @@ function renderOrganizationFields(organization = {}) {
         <fieldset class="creator-subscription-fields"><legend>Organisation et interface</legend>
             <p class="muted">L’organisation conserve toujours le même compte, ses utilisateurs et toutes ses données. Modifier cette interface active simplement les modules correspondants.</p>
             <div class="form-grid">
-                <label>Type d’interface<select name="organizationInterfaceType"><option value="partner" ${interfaceType === "partner" ? "selected" : ""}>Interface Partenaire</option><option value="standard" ${interfaceType === "standard" ? "selected" : ""}>Interface Standard Depann’Home Pro</option><option value="group" ${interfaceType === "group" ? "selected" : ""}>Interface Groupe / Multi-entreprises</option></select></label>
+                <label>Type d’interface<select name="organizationInterfaceType"><option value="partner" ${interfaceType === "partner" ? "selected" : ""}>Interface Partenaire — Pro requis</option><option value="standard" ${interfaceType === "standard" ? "selected" : ""}>Interface Standard — modules selon Basic / Basic+ / Pro</option><option value="group" ${interfaceType === "group" ? "selected" : ""}>Interface Groupe / Multi-entreprises — Pro requis</option></select></label>
                 <label>Type d’organisation<select name="organizationType"><option value="troubleshooting_company" ${organizationType === "troubleshooting_company" ? "selected" : ""}>Entreprise de dépannage</option><option value="leak_detection_company" ${organizationType === "leak_detection_company" ? "selected" : ""}>Recherche de fuite</option><option value="locksmith" ${organizationType === "locksmith" ? "selected" : ""}>Serrurier</option><option value="plumber" ${organizationType === "plumber" ? "selected" : ""}>Plombier</option><option value="property_manager" ${organizationType === "property_manager" ? "selected" : ""}>Syndic</option><option value="real_estate_agency" ${organizationType === "real_estate_agency" ? "selected" : ""}>Agence immobilière</option><option value="insurance" ${organizationType === "insurance" ? "selected" : ""}>Assurance</option><option value="expert" ${organizationType === "expert" ? "selected" : ""}>Expert</option><option value="principal" ${organizationType === "principal" ? "selected" : ""}>Donneur d’ordre</option><option value="partner_platform" ${organizationType === "partner_platform" ? "selected" : ""}>Plateforme partenaire</option><option value="other" ${organizationType === "other" ? "selected" : ""}>Autre</option></select></label>
                 <label>Licence<select name="organizationLicenseType"><option value="partner_portal" ${licenseType === "partner_portal" ? "selected" : ""}>Portail Partenaire</option><option value="depannhome_standard" ${licenseType === "depannhome_standard" ? "selected" : ""}>Depann’Home Pro Standard</option><option value="depannhome_group" ${licenseType === "depannhome_group" ? "selected" : ""}>Depann’Home Pro Groupe</option></select></label>
             </div>
@@ -491,12 +492,17 @@ function organizationFromForm(form) {
 function bindOrganizationInterface(form) {
     const interfaceType = form.elements.organizationInterfaceType;
     const licenseType = form.elements.organizationLicenseType;
+    const subscriptionTier = form.elements.subscriptionTier;
     if (!interfaceType || !licenseType) return;
     const syncLicense = () => {
+        const isPro = !subscriptionTier || subscriptionTier.value === "pro";
+        [...interfaceType.options].forEach(option => { if (["partner", "group"].includes(option.value)) option.disabled = !isPro; });
+        if (!isPro && interfaceType.value !== "standard") interfaceType.value = "standard";
         const expected = interfaceType.value === "partner" ? "partner_portal" : interfaceType.value === "group" ? "depannhome_group" : "depannhome_standard";
         licenseType.value = expected;
     };
     interfaceType.addEventListener("change", syncLicense);
+    subscriptionTier?.addEventListener("change", syncLicense);
     syncLicense();
 }
 
@@ -527,22 +533,33 @@ function renderTemplatePolicySelect(name, label, value) {
     return `<label>Base de ${escapeHtml(label)}<select name="${name}"><option value="integrated_only" ${policy === "integrated_only" ? "selected" : ""}>Modèle intégré uniquement</option><option value="company_choice" ${policy === "company_choice" ? "selected" : ""}>L’entreprise choisit</option><option value="external_only" ${policy === "external_only" ? "selected" : ""}>Base externe obligatoire</option></select></label>`;
 }
 
-function bindSubscriptionPlan(form) {
-    const plan = form.elements.subscriptionPlan;
+function bindSubscriptionTier(form) {
+    const tier = form.elements.subscriptionTier;
     const price = form.elements.monthlyPrice;
     const billingEmail = form.elements.billingEmail;
-    const discountLabel = form.elements.subscriptionDiscountLabel;
     const discountMode = form.elements.subscriptionDiscountMode;
     const discountValue = form.elements.subscriptionDiscountValue;
-    const update = () => {
-        const isPaid = plan.value === "paid";
-        price.disabled = !isPaid;
-        billingEmail.required = isPaid;
-        [discountLabel, discountMode, discountValue].forEach(field => { field.disabled = !isPaid; });
-        if (!isPaid) price.value = "0";
-        discountValue.max = discountMode.value === "percentage" ? "100" : "999999.99";
+    const pcSeats = form.elements.maxPcUsers;
+    const mobileSeats = form.elements.maxTechnicians;
+    const summary = form.querySelector("[data-tier-summary]");
+    const tiers = {
+        basic: { label: "Basic", pc: 20, mobile: 5, access: "Clients, devis, factures et tableau de facturation." },
+        basic_plus: { label: "Basic+", pc: 35, mobile: 8, access: "Basic avec planning et gestion des interventions." },
+        pro: { label: "Pro", pc: 70, mobile: 15, access: "Accès complet : rapports, comptabilité, achats, bibliothèque, Réseau Depann’Home Pro, missions partenaires, connexions API, imports et groupes." }
     };
-    plan.addEventListener("change", update);
+    const update = () => {
+        const selected = tiers[tier.value] || tiers.basic;
+        const pc = Math.max(1, Number(pcSeats.value) || 1);
+        const mobile = Math.max(0, Number(mobileSeats.value) || 0);
+        const total = pc * selected.pc + mobile * selected.mobile;
+        price.value = `${total.toFixed(2)} €`;
+        billingEmail.required = true;
+        discountValue.max = discountMode.value === "percentage" ? "100" : "999999.99";
+        summary.innerHTML = `<strong>${selected.label} · ${total.toFixed(2)} € TTC / mois</strong><span>${pc} poste(s) PC × ${selected.pc} € + ${mobile} poste(s) mobile × ${selected.mobile} €</span><small>${selected.access}</small>`;
+    };
+    tier.addEventListener("change", update);
+    pcSeats.addEventListener("input", update);
+    mobileSeats.addEventListener("input", update);
     discountMode.addEventListener("change", update);
     update();
 }

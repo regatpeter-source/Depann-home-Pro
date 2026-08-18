@@ -1,6 +1,8 @@
 import { getPool } from "./database.js";
 import { createBillingPdf, normalizeVatRegime } from "./billing.js";
 import { sendDocumentEmail } from "./email.js";
+import { subscriptionTierConfig } from "./subscription-tiers.js";
+import { calculateSubscriptionPriceCents } from "./subscription-tiers.js";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const IBAN_PATTERN = /^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$/;
@@ -178,7 +180,7 @@ export async function processDueSubscriptionInvoices() {
         }
         const { rows: subscriptions } = await database.query(`
             SELECT owner.id, owner.company_name AS "companyName", owner.full_name AS "fullName", owner.email, owner.subscription_label AS "subscriptionLabel",
-                owner.monthly_price_cents AS "monthlyPriceCents", owner.subscription_renewal_date AS "renewalDate", owner.billing_reference AS "billingReference",
+                owner.subscription_tier AS "subscriptionTier", owner.monthly_price_cents AS "monthlyPriceCents", owner.subscription_renewal_date AS "renewalDate", owner.billing_reference AS "billingReference",
                 owner.max_pc_users AS "maxPcUsers", owner.max_technicians AS "maxTechnicians", owner.subscription_discount_label AS "discountLabel",
                 owner.subscription_discount_mode AS "discountMode", owner.subscription_discount_value::float AS "discountValue",
                 COALESCE(NULLIF(profile.address, ''), '') || CASE WHEN COALESCE(profile.postal_code, '') <> '' OR COALESCE(profile.city, '') <> ''
@@ -374,15 +376,17 @@ export function buildSubscriptionInvoiceSnapshot(subscription, vatRate) {
     const discountCents = discountMode === "percentage"
         ? Math.min(amountCents, Math.round(amountCents * Math.min(100, discountValue) / 100))
         : Math.min(amountCents, Math.round(discountValue * 100));
-    const lines = [{
-        description: `${subscription.subscriptionLabel || "Abonnement Depann’Home Pro"} — abonnement mensuel`,
-        quantity: 1,
-        unit: "mois",
-        unitPrice: amountExcludingVat(amountCents, vatRate),
-        vatRate
-    }];
-    if (Number(subscription.maxPcUsers) > 0) lines.push({ description: "Postes PC inclus", quantity: Number(subscription.maxPcUsers), unit: "poste", unitPrice: 0, vatRate });
-    if (Number(subscription.maxTechnicians) > 0) lines.push({ description: "Postes mobiles inclus", quantity: Number(subscription.maxTechnicians), unit: "poste", unitPrice: 0, vatRate });
+    const tier = subscriptionTierConfig(subscription.subscriptionTier);
+    const lines = [];
+    const tierAmountCents = calculateSubscriptionPriceCents(subscription.subscriptionTier, subscription.maxPcUsers, subscription.maxTechnicians);
+    if (subscription.subscriptionTier && amountCents === tierAmountCents) {
+        if (Number(subscription.maxPcUsers) > 0) lines.push({ description: `${tier.label} — poste PC`, quantity: Number(subscription.maxPcUsers), unit: "poste/mois", unitPrice: amountExcludingVat(tier.pcRateCents, vatRate), vatRate });
+        if (Number(subscription.maxTechnicians) > 0) lines.push({ description: `${tier.label} — poste mobile`, quantity: Number(subscription.maxTechnicians), unit: "poste/mois", unitPrice: amountExcludingVat(tier.mobileRateCents, vatRate), vatRate });
+    } else {
+        lines.push({ description: `${subscription.subscriptionLabel || "Abonnement Depann’Home Pro"} — abonnement mensuel`, quantity: 1, unit: "mois", unitPrice: amountExcludingVat(amountCents, vatRate), vatRate });
+        if (Number(subscription.maxPcUsers) > 0) lines.push({ description: "Postes PC inclus", quantity: Number(subscription.maxPcUsers), unit: "poste", unitPrice: 0, vatRate });
+        if (Number(subscription.maxTechnicians) > 0) lines.push({ description: "Postes mobiles inclus", quantity: Number(subscription.maxTechnicians), unit: "poste", unitPrice: 0, vatRate });
+    }
     return {
         lines,
         financialData: {

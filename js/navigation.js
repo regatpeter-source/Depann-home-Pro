@@ -1,6 +1,6 @@
 import { ROUTES, STORAGE_KEYS, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=123";
 import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=166";
-import { openCreatorPartnerRequest, renderCreatorConsole } from "./creator.js?v=128";
+import { openCreatorPartnerRequest, renderCreatorConsole } from "./creator.js?v=129";
 import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=174";
 import { renderAccounting } from "./accounting.js?v=7";
 import { renderAccountingSandbox } from "./accounting-sandbox.js?v=2";
@@ -94,7 +94,8 @@ export function initializeNavigation(loadedDatabase) {
         }, isTechnician() ? 30_000 : 90_000);
     }
     if (isAccountant()) renderBilling();
-    else if (isTechnician()) renderCalendarOverview();
+    else if (isTechnician() && canAccessRoute(ROUTES.calendar)) renderCalendarOverview();
+    else if (isTechnician()) renderHome();
     else if (isMobileAdministrator()) renderHome();
     else if (document.body.classList.contains("desktop-device")) renderHome();
     else renderBrands();
@@ -107,7 +108,7 @@ export async function refreshSharedData(options = {}) {
             : sharedSynchronizationPromise;
     }
     const requests = [synchronizeBillingDocuments({ refreshView: !options.silent, force: Boolean(options.forceBilling) })];
-    if (isTechnician()) requests.unshift(refreshTechnicianCalendarAlert());
+    if (isTechnician() && canAccessRoute(ROUTES.calendar)) requests.unshift(refreshTechnicianCalendarAlert());
     if (!isAccountant()) requests.unshift(refreshVisibleClientMessages());
     if (options.includeClients && !isAccountant()) requests.push(synchronizeClients());
     sharedSynchronizationPromise = Promise.all(requests).finally(() => {
@@ -284,21 +285,29 @@ function canAccessRoute(route) {
 }
 
 function canAccessSettingsSection(section) {
+    if (document.body.dataset.creator === "true") return true;
+    const featureBySection = { documents: "billing", network: "partnerConnections", users: "settings", security: "settings", groups: "groups", personalization: "settings", imports: "imports" };
+    const feature = featureBySection[section];
+    if (feature && !organizationFeatureEnabled(feature)) return false;
     if (document.body.dataset.role === "admin") return true;
     return ["network", "personalization"].includes(section);
 }
 
 function isOrganizationRouteEnabled(route) {
     if (document.body.dataset.creator === "true") return true;
+    const featureByRoute = { [ROUTES.search]: "library", [ROUTES.store]: "library", [ROUTES.clients]: "clients", [ROUTES.calendar]: "calendar", [ROUTES.library]: "library", [ROUTES.billing]: "billing", [ROUTES.accounting]: "accounting", [ROUTES.purchases]: "purchases", [ROUTES.messages]: "messages", [ROUTES.technicalReports]: "technicalReports", [ROUTES.partnerMissions]: "partnerMissions", [ROUTES.groups]: "groups", [ROUTES.photo]: "photo", [ROUTES.favorites]: "favorites", [ROUTES.history]: "favorites", [ROUTES.settings]: "settings" };
+    const feature = featureByRoute[route];
+    return !feature || organizationFeatureEnabled(feature);
+}
+
+function organizationFeatureEnabled(feature) {
     let features = {};
     try { features = JSON.parse(document.body.dataset.organizationFeatures || "{}"); } catch { features = {}; }
-    const featureByRoute = { [ROUTES.library]: "library", [ROUTES.billing]: "billing", [ROUTES.accounting]: "accounting", [ROUTES.technicalReports]: "technicalReports", [ROUTES.partnerMissions]: "partnerMissions", [ROUTES.groups]: "groups", [ROUTES.photo]: "photo", [ROUTES.favorites]: "favorites", [ROUTES.settings]: "settings" };
-    const feature = featureByRoute[route];
-    return !feature || features[feature] !== false;
+    return features[feature] !== false;
 }
 
 function menuRoute(menu) {
-    return ({ calendar: ROUTES.calendar, library: ROUTES.library, billing: ROUTES.billing, accounting: ROUTES.accounting, groups: ROUTES.groups, partnerMissions: ROUTES.partnerMissions, partnerSandbox: ROUTES.partnerSandbox, photo: ROUTES.photo, favorites: ROUTES.favorites, settings: ROUTES.settings })[menu] || "";
+    return ({ clients: ROUTES.clients, calendar: ROUTES.calendar, library: ROUTES.library, billing: ROUTES.billing, accounting: ROUTES.accounting, groups: ROUTES.groups, partnerMissions: ROUTES.partnerMissions, partnerSandbox: ROUTES.partnerSandbox, photo: ROUTES.photo, favorites: ROUTES.favorites, settings: ROUTES.settings })[menu] || "";
 }
 
 function openHome() {
@@ -662,6 +671,13 @@ async function renderHome() {
     const container = getContainer();
     const panel = document.createElement("section");
     panel.className = "client-panel home-panel dashboard-panel";
+    if (!canAccessRoute(ROUTES.calendar)) {
+        panel.innerHTML = `<div class="dashboard-heading"><div><p class="eyebrow">Depann’Home Pro Basic</p><h2>Tableau de bord</h2><p class="muted">Accédez directement à vos clients, devis, factures et indicateurs de facturation.</p></div></div><div class="settings-card-grid"><button type="button" class="settings-navigation-card" data-basic-home="clients"><span class="settings-navigation-icon">👥</span><span><strong>Clients</strong><small>Dossiers, coordonnées et historique commercial</small></span></button><button type="button" class="settings-navigation-card" data-basic-home="billing"><span class="settings-navigation-icon">€</span><span><strong>Devis, factures et facturation</strong><small>Documents, encaissements, avoirs et tableau financier</small></span></button></div>`;
+        container.appendChild(panel); renderPlatformAnnouncement(container);
+        panel.querySelector('[data-basic-home="clients"]').addEventListener("click", () => openClients());
+        panel.querySelector('[data-basic-home="billing"]').addEventListener("click", () => renderBilling());
+        return;
+    }
     panel.innerHTML = `
         <div class="dashboard-heading"><div><p class="eyebrow">Depann’Home Pro</p><h2>Tableau de bord</h2></div><button type="button" class="secondary-button" data-dashboard-action="calendar">Voir le planning complet</button></div>
         <div class="dashboard-grid">
@@ -1298,7 +1314,7 @@ function renderSettingsWorkspace(options = {}) {
             ...(document.body.dataset.role === "admin" && document.body.classList.contains("desktop-device") ? [["imports", "Importation de données", "Importez vos clients, devis, factures et rapports depuis Excel ou CSV.", "import"]] : []),
             ...(document.body.dataset.role === "admin" && document.body.dataset.creator === "true" && document.body.dataset.deviceType === "desktop" ? [["creator", "Console Créateur", "Pilotage des entreprises, abonnements et services de la plateforme.", "creator"]] : [])
         ];
-        cards.forEach(([id, title, description, icon]) => grid.appendChild(createSettingsNavigationCard(title, description, icon, () => renderSettings({ section: id }))));
+        cards.filter(([id]) => canAccessSettingsSection(id)).forEach(([id, title, description, icon]) => grid.appendChild(createSettingsNavigationCard(title, description, icon, () => renderSettings({ section: id }))));
         hub.appendChild(grid);
         container.appendChild(hub);
         return;

@@ -3,12 +3,12 @@ import { getPool } from "./database.js";
 import { isCreatorUsername } from "./auth.js";
 import { creatorNetworkDirectory, creatorNetworkStatistics, updateCreatorNetworkDirectory } from "./partner-connections.js";
 import { createOrganization, getOrganization, getOrganizationHistory, updateOrganization } from "./organizations.js";
+import { calculateSubscriptionPriceCents, normalizeSubscriptionTier, subscriptionTierConfig } from "./subscription-tiers.js";
 
 const USERNAME_PATTERN = /^[a-z0-9._-]{3,32}$/;
 const MIN_PASSWORD_LENGTH = 12;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MEMBER_ROLES = new Set(["admin", "technician"]);
-const SUBSCRIPTION_PLANS = new Set(["free", "paid"]);
 const SUBSCRIPTION_STATUSES = new Set(["active", "trial", "past_due", "suspended", "cancelled"]);
 const QUOTE_TEMPLATE_POLICIES = new Set(["integrated_only", "company_choice", "external_only"]);
 
@@ -83,6 +83,7 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
                 owner.max_pc_users AS "maxPcUsers",
                 owner.max_technicians AS "maxTechnicians",
                 owner.subscription_plan AS "subscriptionPlan",
+                owner.subscription_tier AS "subscriptionTier",
                 owner.subscription_label AS "subscriptionLabel",
                 owner.monthly_price_cents AS "monthlyPriceCents",
                 owner.subscription_discount_label AS "subscriptionDiscountLabel",
@@ -96,8 +97,8 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
                 owner.quitus_template_policy AS "quitusTemplatePolicy",
                 owner.report_template_policy AS "reportTemplatePolicy",
                 owner.created_at AS "createdAt",
-                COUNT(member.id) FILTER (WHERE member.role = 'admin' AND member.is_active)::int AS "activePcUsers",
-                COUNT(member.id) FILTER (WHERE member.role = 'technician' AND member.is_active)::int AS "activeTechnicians",
+                COUNT(member.id) FILTER (WHERE member.role IN ('admin','pc_standard','accountant') AND member.is_active)::int AS "activePcUsers",
+                COUNT(member.id) FILTER (WHERE member.role IN ('mobile_admin','team_lead','technician') AND member.is_active)::int AS "activeTechnicians",
                 COUNT(member.id)::int AS "memberCount"
             FROM depannhome_users owner
             LEFT JOIN depannhome_users member ON member.account_owner_id = owner.id
@@ -130,16 +131,16 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
                 await connection.query("BEGIN");
                 const { rows } = await connection.query(`
                 INSERT INTO depannhome_users (username, password_hash, role, full_name, phone, email, company_name, max_pc_users, max_technicians,
-                    subscription_plan, subscription_label, monthly_price_cents, subscription_discount_label, subscription_discount_mode, subscription_discount_value,
+                    subscription_plan, subscription_tier, subscription_label, monthly_price_cents, subscription_discount_label, subscription_discount_mode, subscription_discount_value,
                     subscription_status, subscription_renewal_date, billing_reference, creator_note, quote_template_policy, quitus_template_policy, report_template_policy)
-                VALUES ($1, $2, 'admin', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16::date, $17, $18, $19, $20, $21)
+                VALUES ($1, $2, 'admin', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17::date, $18, $19, $20, $21, $22)
                 RETURNING id
             `, [credentials.username, await bcrypt.hash(credentials.password, 12), account.fullName, account.phone, account.billingEmail, account.companyName, account.maxPcUsers, account.maxTechnicians,
-                account.subscriptionPlan, account.subscriptionLabel, account.monthlyPriceCents, account.subscriptionDiscountLabel, account.subscriptionDiscountMode, account.subscriptionDiscountValue,
+                account.subscriptionPlan, account.subscriptionTier, account.subscriptionLabel, account.monthlyPriceCents, account.subscriptionDiscountLabel, account.subscriptionDiscountMode, account.subscriptionDiscountValue,
                 account.subscriptionStatus, account.subscriptionRenewalDate || null, account.billingReference, account.creatorNote, account.quoteTemplatePolicy, account.quitusTemplatePolicy, account.reportTemplatePolicy]);
                 const id = rows[0].id;
                 await connection.query("UPDATE depannhome_users SET account_owner_id = id WHERE id = $1", [id]);
-                await synchronizeCompanyProfile(connection, id, account.companyProfile);
+                await synchronizeCompanyProfile(connection, id, account.companyProfile, account.subscriptionTier);
                 await connection.query("COMMIT");
             await createOrganization(id, request.body?.organization, request.user.sub);
             response.status(201).json({ id: String(id) });
@@ -170,15 +171,15 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
             await connection.query(`
             UPDATE depannhome_users
             SET company_name = $2, full_name = $3, phone = $4, email = $5, max_pc_users = $6, max_technicians = $7, is_active = $8,
-                subscription_plan = $9, subscription_label = $10, monthly_price_cents = $11, subscription_status = $12,
-                subscription_renewal_date = $13::date, billing_reference = $14, creator_note = $15, quote_template_policy = $16,
-                quitus_template_policy = $17, report_template_policy = $18, subscription_discount_label = $19,
-                subscription_discount_mode = $20, subscription_discount_value = $21, updated_at = NOW()
+                subscription_plan = $9, subscription_tier = $10, subscription_label = $11, monthly_price_cents = $12, subscription_status = $13,
+                subscription_renewal_date = $14::date, billing_reference = $15, creator_note = $16, quote_template_policy = $17,
+                quitus_template_policy = $18, report_template_policy = $19, subscription_discount_label = $20,
+                subscription_discount_mode = $21, subscription_discount_value = $22, updated_at = NOW()
             WHERE id = $1 AND account_owner_id = id
             `, [accountId, account.companyName, account.fullName, account.phone, account.billingEmail, account.maxPcUsers, account.maxTechnicians, owner.is_active,
-            account.subscriptionPlan, account.subscriptionLabel, account.monthlyPriceCents, account.subscriptionStatus, account.subscriptionRenewalDate || null, account.billingReference, account.creatorNote, account.quoteTemplatePolicy, account.quitusTemplatePolicy, account.reportTemplatePolicy,
+            account.subscriptionPlan, account.subscriptionTier, account.subscriptionLabel, account.monthlyPriceCents, account.subscriptionStatus, account.subscriptionRenewalDate || null, account.billingReference, account.creatorNote, account.quoteTemplatePolicy, account.quitusTemplatePolicy, account.reportTemplatePolicy,
             account.subscriptionDiscountLabel, account.subscriptionDiscountMode, account.subscriptionDiscountValue]);
-            await synchronizeCompanyProfile(connection, accountId, account.companyProfile);
+            await synchronizeCompanyProfile(connection, accountId, account.companyProfile, account.subscriptionTier);
             await connection.query("COMMIT");
         } catch (error) { await connection.query("ROLLBACK"); throw error; } finally { connection.release(); }
         await updateOrganization(accountId, request.body?.organization, request.user.sub);
@@ -347,7 +348,7 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
 async function findAccountOwner(database, id) {
     const { rows } = await database.query(`
         SELECT id, username, is_active, is_archived, max_pc_users AS "maxPcUsers", max_technicians AS "maxTechnicians",
-            subscription_plan AS "subscriptionPlan", subscription_status AS "subscriptionStatus"
+            subscription_plan AS "subscriptionPlan", subscription_tier AS "subscriptionTier", subscription_status AS "subscriptionStatus"
         FROM depannhome_users WHERE id = $1 AND account_owner_id = id
     `, [id]);
     return rows[0] || null;
@@ -372,24 +373,24 @@ async function findMember(database, accountId, memberId) {
 async function countActiveSeats(database, accountId) {
     const { rows } = await database.query(`
         SELECT
-            COUNT(*) FILTER (WHERE role = 'admin' AND is_active)::int AS "activePcUsers",
-            COUNT(*) FILTER (WHERE role = 'technician' AND is_active)::int AS "activeTechnicians"
+            COUNT(*) FILTER (WHERE role IN ('admin','pc_standard','accountant') AND is_active)::int AS "activePcUsers",
+            COUNT(*) FILTER (WHERE role IN ('mobile_admin','team_lead','technician') AND is_active)::int AS "activeTechnicians"
         FROM depannhome_users WHERE account_owner_id = $1
     `, [accountId]);
     return rows[0];
 }
 
 async function ensureSeatAvailable(database, accountId, role) {
-    if (role === "accountant") return;
     const { rows: owners } = await database.query(`
         SELECT max_pc_users AS "maxPcUsers", max_technicians AS "maxTechnicians"
         FROM depannhome_users WHERE id = $1 AND account_owner_id = id FOR UPDATE
     `, [accountId]);
     if (!owners[0]) throw new Error("LIMIT:Compte entreprise introuvable.");
     const counts = await countActiveSeats(database, accountId);
-    const maximum = role === "admin" ? owners[0].maxPcUsers : owners[0].maxTechnicians;
-    const active = role === "admin" ? counts.activePcUsers : counts.activeTechnicians;
-    if (active >= maximum) throw new Error(`LIMIT:La limite de ${role === "admin" ? "postes PC" : "techniciens"} est atteinte.`);
+    const isPcRole = ["admin", "pc_standard", "accountant"].includes(role);
+    const maximum = isPcRole ? owners[0].maxPcUsers : owners[0].maxTechnicians;
+    const active = isPcRole ? counts.activePcUsers : counts.activeTechnicians;
+    if (active >= maximum) throw new Error(`LIMIT:La limite de ${isPcRole ? "postes PC" : "postes mobiles"} est atteinte.`);
 }
 
 function sanitizeAccount(value, requireCompleteProfile = false) {
@@ -399,9 +400,12 @@ function sanitizeAccount(value, requireCompleteProfile = false) {
     const billingEmail = cleanText(value?.billingEmail, 160).toLowerCase();
     const maxPcUsers = positiveLimit(value?.maxPcUsers, 1, 100);
     const maxTechnicians = positiveLimit(value?.maxTechnicians, 0, 500);
-    const subscriptionPlan = SUBSCRIPTION_PLANS.has(value?.subscriptionPlan) ? value.subscriptionPlan : "free";
-    const subscriptionLabel = cleanText(value?.subscriptionLabel, 80);
-    const monthlyPriceCents = moneyToCents(value?.monthlyPrice);
+    const subscriptionTier = normalizeSubscriptionTier(value?.subscriptionTier, "basic");
+    const tierConfig = subscriptionTierConfig(subscriptionTier);
+    const requestedInterface = value?.organization?.interfaceType || "standard";
+    const subscriptionPlan = "paid";
+    const subscriptionLabel = tierConfig.label;
+    const monthlyPriceCents = calculateSubscriptionPriceCents(subscriptionTier, maxPcUsers, maxTechnicians);
     const subscriptionDiscountLabel = cleanText(value?.subscriptionDiscountLabel, 160);
     const subscriptionDiscountMode = value?.subscriptionDiscountMode === "percentage" ? "percentage" : "fixed";
     const subscriptionDiscountValue = decimalInRange(value?.subscriptionDiscountValue, 0, subscriptionDiscountMode === "percentage" ? 100 : 999999.99);
@@ -417,18 +421,17 @@ function sanitizeAccount(value, requireCompleteProfile = false) {
     if (!fullName) return { ok: false, message: "Le nom du responsable est obligatoire." };
     if (!maxPcUsers) return { ok: false, message: "Indiquez au moins un poste PC." };
     if (maxTechnicians === null) return { ok: false, message: "Le nombre de techniciens est invalide." };
-    if (monthlyPriceCents === null) return { ok: false, message: "Le tarif mensuel est invalide." };
     if (subscriptionDiscountValue === null) return { ok: false, message: "La réduction commerciale est invalide." };
     if (subscriptionPlan === "paid" && monthlyPriceCents <= 0) return { ok: false, message: "Indiquez un tarif mensuel supérieur à zéro pour un abonnement payant." };
     if (subscriptionPlan === "paid" && subscriptionDiscountMode === "fixed" && Math.round(subscriptionDiscountValue * 100) > monthlyPriceCents) return { ok: false, message: "La réduction fixe ne peut pas dépasser le tarif mensuel." };
     if (billingEmail && !EMAIL_PATTERN.test(billingEmail)) return { ok: false, message: "L’e-mail de facturation est invalide." };
     if (subscriptionPlan === "paid" && !billingEmail) return { ok: false, message: "L’e-mail de facturation est obligatoire pour un abonnement payant." };
+    if (subscriptionTier !== "pro" && requestedInterface !== "standard") return { ok: false, message: "Les interfaces Partenaire et Groupe nécessitent l’abonnement Pro." };
     const companyProfile = sanitizeCompanyProfile(value, { companyName, billingEmail, phone, requireCompleteProfile });
     if (!companyProfile.ok) return companyProfile;
-    return { ok: true, companyName, fullName, phone, billingEmail, maxPcUsers, maxTechnicians, subscriptionPlan, subscriptionLabel,
-        monthlyPriceCents: subscriptionPlan === "free" ? 0 : monthlyPriceCents, subscriptionStatus, subscriptionRenewalDate,
-        subscriptionDiscountLabel: subscriptionPlan === "free" ? "" : subscriptionDiscountLabel,
-        subscriptionDiscountMode, subscriptionDiscountValue: subscriptionPlan === "free" ? 0 : subscriptionDiscountValue,
+    return { ok: true, companyName, fullName, phone, billingEmail, maxPcUsers, maxTechnicians, subscriptionPlan, subscriptionTier, subscriptionLabel,
+        monthlyPriceCents, subscriptionStatus, subscriptionRenewalDate,
+        subscriptionDiscountLabel, subscriptionDiscountMode, subscriptionDiscountValue,
         billingReference, creatorNote, quoteTemplatePolicy, quitusTemplatePolicy, reportTemplatePolicy, isActive, companyProfile };
 }
 
@@ -458,9 +461,11 @@ function sanitizeCompanyProfile(value, defaults) {
 
 function parseLogo(value) { if (!value) return {}; const match = /^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=]+)$/.exec(String(value)); if (!match) return { error: "Le logo doit être une image PNG, JPEG ou WebP." }; const buffer = Buffer.from(match[2], "base64"); return buffer.length > 2 * 1024 * 1024 ? { error: "Le logo ne doit pas dépasser 2 Mo." } : { buffer, mimeType: match[1] }; }
 
-async function synchronizeCompanyProfile(connection, ownerId, profile) {
+async function synchronizeCompanyProfile(connection, ownerId, profile, subscriptionTier = "pro") {
     await connection.query(`INSERT INTO depannhome_billing_profiles(owner_id,company_name,address,postal_code,city,phone,secondary_phone,email,registration_number,siren,country,logo_data,logo_mime_type) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) ON CONFLICT(owner_id) DO UPDATE SET company_name=EXCLUDED.company_name,address=EXCLUDED.address,postal_code=EXCLUDED.postal_code,city=EXCLUDED.city,phone=EXCLUDED.phone,secondary_phone=EXCLUDED.secondary_phone,email=EXCLUDED.email,registration_number=EXCLUDED.registration_number,siren=EXCLUDED.siren,country=EXCLUDED.country,logo_data=CASE WHEN $14 THEN EXCLUDED.logo_data ELSE depannhome_billing_profiles.logo_data END,logo_mime_type=CASE WHEN $14 THEN EXCLUDED.logo_mime_type ELSE depannhome_billing_profiles.logo_mime_type END,updated_at=NOW()`, [ownerId, profile.legalName, profile.address, profile.postalCode, profile.city, profile.phone, profile.secondaryPhone, profile.email, profile.siret, profile.siret.slice(0, 9), profile.country, profile.logoBuffer || null, profile.logoMimeType || "", Boolean(profile.logoBuffer)]);
-    await connection.query(`INSERT INTO depannhome_partner_directory(owner_id,is_listed,visibility_explicit,description,trades,specialties,service_area,service_radius_km,departments,website,accepts_partner_missions,availability_status,commercial_name,region,regions,coverage_mode,share_phone,share_email,updated_at) VALUES($1,TRUE,TRUE,$2,'[]'::jsonb,$3::jsonb,$4,$5,$6::jsonb,$7,$8,$9,$10,$11,$12::jsonb,$13,TRUE,TRUE,NOW()) ON CONFLICT(owner_id) DO UPDATE SET is_listed=TRUE,visibility_explicit=TRUE,description=EXCLUDED.description,specialties=EXCLUDED.specialties,service_area=EXCLUDED.service_area,service_radius_km=EXCLUDED.service_radius_km,departments=EXCLUDED.departments,website=EXCLUDED.website,accepts_partner_missions=EXCLUDED.accepts_partner_missions,availability_status=EXCLUDED.availability_status,commercial_name=EXCLUDED.commercial_name,region=EXCLUDED.region,regions=EXCLUDED.regions,coverage_mode=EXCLUDED.coverage_mode,share_phone=TRUE,share_email=TRUE,updated_at=NOW()`, [ownerId, profile.description, JSON.stringify(profile.specialties), profile.serviceArea, profile.serviceRadiusKm, JSON.stringify(profile.departments), profile.website, profile.acceptsPartnerMissions, profile.availabilityStatus, profile.commercialName, profile.regions[0] || "", JSON.stringify(profile.regions), profile.coverageMode]);
+    const networkEnabled = subscriptionTier === "pro";
+    const acceptsPartnerMissions = networkEnabled && profile.acceptsPartnerMissions;
+    await connection.query(`INSERT INTO depannhome_partner_directory(owner_id,is_listed,visibility_explicit,description,trades,specialties,service_area,service_radius_km,departments,website,accepts_partner_missions,availability_status,commercial_name,region,regions,coverage_mode,share_phone,share_email,updated_at) VALUES($1,$14,TRUE,$2,'[]'::jsonb,$3::jsonb,$4,$5,$6::jsonb,$7,$8,$9,$10,$11,$12::jsonb,$13,TRUE,TRUE,NOW()) ON CONFLICT(owner_id) DO UPDATE SET is_listed=$14,visibility_explicit=TRUE,description=EXCLUDED.description,specialties=EXCLUDED.specialties,service_area=EXCLUDED.service_area,service_radius_km=EXCLUDED.service_radius_km,departments=EXCLUDED.departments,website=EXCLUDED.website,accepts_partner_missions=EXCLUDED.accepts_partner_missions,availability_status=EXCLUDED.availability_status,commercial_name=EXCLUDED.commercial_name,region=EXCLUDED.region,regions=EXCLUDED.regions,coverage_mode=EXCLUDED.coverage_mode,share_phone=TRUE,share_email=TRUE,updated_at=NOW()`, [ownerId, profile.description, JSON.stringify(profile.specialties), profile.serviceArea, profile.serviceRadiusKm, JSON.stringify(profile.departments), profile.website, acceptsPartnerMissions, acceptsPartnerMissions ? profile.availabilityStatus : "temporarily_unavailable", profile.commercialName, profile.regions[0] || "", JSON.stringify(profile.regions), profile.coverageMode, networkEnabled]);
 }
 
 function cleanList(value, maximumItems, maximumLength) { const items = Array.isArray(value) ? value : String(value || "").split(/[,;\n|]/); return [...new Set(items.map(item => cleanText(item, maximumLength)).filter(Boolean))].slice(0, maximumItems); }
@@ -503,14 +508,6 @@ function positiveId(value) {
 function positiveLimit(value, minimum, maximum) {
     const limit = Number(value);
     return Number.isSafeInteger(limit) && limit >= minimum && limit <= maximum ? limit : null;
-}
-
-function moneyToCents(value) {
-    const amount = String(value ?? "").trim().replace(",", ".");
-    if (!amount) return 0;
-    if (!/^\d{1,6}(?:\.\d{1,2})?$/.test(amount)) return null;
-    const cents = Math.round(Number(amount) * 100);
-    return Number.isSafeInteger(cents) && cents >= 0 && cents <= 99999999 ? cents : null;
 }
 
 function decimalInRange(value, minimum, maximum) {

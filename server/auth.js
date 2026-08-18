@@ -34,6 +34,29 @@ export function registerAuthRoutes(app) {
             });
         }
 
+function memberSeatFamily(role) {
+    if (["admin", STANDARD_PC_ROLE, "accountant"].includes(role)) return "pc";
+    if ([MOBILE_ADMIN_ROLE, TEAM_LEAD_ROLE, "technician"].includes(role)) return "mobile";
+    return "";
+}
+
+async function memberSeatError(ownerId, role, excludedMemberId = 0) {
+    const family = memberSeatFamily(role);
+    if (!family) return "";
+    const { rows } = await getPool().query(`
+        SELECT owner.max_pc_users AS "maxPcUsers",owner.max_technicians AS "maxMobileUsers",
+            COUNT(member.id) FILTER (WHERE member.role IN ('admin','pc_standard','accountant') AND member.is_active AND member.id<>$2)::int AS "activePcUsers",
+            COUNT(member.id) FILTER (WHERE member.role IN ('mobile_admin','team_lead','technician') AND member.is_active AND member.id<>$2)::int AS "activeMobileUsers"
+        FROM depannhome_users owner LEFT JOIN depannhome_users member ON member.account_owner_id=owner.id
+        WHERE owner.id=$1 GROUP BY owner.id
+    `, [ownerId, excludedMemberId]);
+    const seats = rows[0];
+    if (!seats) return "Compte entreprise introuvable.";
+    if (family === "pc" && seats.activePcUsers >= seats.maxPcUsers) return "La limite de postes PC de votre entreprise est atteinte.";
+    if (family === "mobile" && seats.activeMobileUsers >= seats.maxMobileUsers) return "La limite de postes mobiles de votre entreprise est atteinte.";
+    return "";
+}
+
         return response.json({
             authenticated: true,
             registrationEnabled: isPublicRegistrationEnabled(),
@@ -351,17 +374,8 @@ export function registerAuthRoutes(app) {
             || (["technician", TEAM_LEAD_ROLE, MOBILE_ADMIN_ROLE].includes(role) && !EMAIL_PATTERN.test(email) ? "L’e-mail professionnel est obligatoire pour l’activation." : "");
         if (validationError) return response.status(400).json({ message: validationError });
 
-        if (["technician", TEAM_LEAD_ROLE].includes(role)) {
-            const seats = await getPool().query(`
-            SELECT owner.max_technicians, COUNT(member.id) FILTER (WHERE member.role IN ('technician', 'team_lead') AND member.is_active)::int AS active_technicians
-                FROM depannhome_users owner
-                LEFT JOIN depannhome_users member ON member.account_owner_id = owner.id
-                WHERE owner.id = $1 GROUP BY owner.id
-            `, [getAccountOwnerId(request)]);
-            if (seats.rows[0]?.active_technicians >= seats.rows[0]?.max_technicians) {
-                return response.status(400).json({ message: "La limite de techniciens de votre entreprise est atteinte." });
-            }
-        }
+        const seatError = await memberSeatError(getAccountOwnerId(request), role);
+        if (seatError) return response.status(400).json({ message: seatError });
         try {
             const member = await createUser({ username, passwordHash: await bcrypt.hash(password, 12), role, accountOwnerId: getAccountOwnerId(request), fullName, phone, email, department: ["technician", TEAM_LEAD_ROLE].includes(role) ? department : "" });
             await recordMemberAudit(getAccountOwnerId(request), request.user.sub, member, role === "admin" ? "administrator_created" : "member_created", { role });
@@ -391,16 +405,9 @@ export function registerAuthRoutes(app) {
         if (member.role === "admin" && member.isActive && !isActive) {
             await ensureActiveAdministratorRemains(getAccountOwnerId(request), memberId);
         }
-        if (["technician", TEAM_LEAD_ROLE].includes(member.role) && isActive && !member.isActive) {
-            const seats = await getPool().query(`
-            SELECT owner.max_technicians, COUNT(member.id) FILTER (WHERE member.role IN ('technician', 'team_lead') AND member.is_active AND member.id <> $2)::int AS active_technicians
-                FROM depannhome_users owner
-                LEFT JOIN depannhome_users member ON member.account_owner_id = owner.id
-                WHERE owner.id = $1 GROUP BY owner.id
-            `, [getAccountOwnerId(request), memberId]);
-            if (seats.rows[0]?.active_technicians >= seats.rows[0]?.max_technicians) {
-                return response.status(400).json({ message: "La limite de techniciens de votre entreprise est atteinte." });
-            }
+        if (isActive && !member.isActive) {
+            const seatError = await memberSeatError(getAccountOwnerId(request), member.role, memberId);
+            if (seatError) return response.status(400).json({ message: seatError });
         }
         await getPool().query("UPDATE depannhome_users SET is_active = $3, can_create_billing = $4, department = $5, updated_at = NOW() WHERE id = $1 AND account_owner_id = $2", [memberId, getAccountOwnerId(request), isActive, canCreateBilling, department]);
         await recordMemberAudit(getAccountOwnerId(request), request.user.sub, member, member.role === "admin" ? (isActive ? "administrator_activated" : "administrator_deactivated") : "member_updated", { isActive, canCreateBilling, department });
@@ -420,6 +427,10 @@ export function registerAuthRoutes(app) {
         if (member.role === nextRole) return response.status(204).end();
         if (member.role === "admin" && member.isActive && nextRole !== "admin") {
             await ensureActiveAdministratorRemains(getAccountOwnerId(request), memberId);
+        }
+        if (member.isActive && memberSeatFamily(member.role) !== memberSeatFamily(nextRole)) {
+            const seatError = await memberSeatError(getAccountOwnerId(request), nextRole, memberId);
+            if (seatError) return response.status(400).json({ message: seatError });
         }
         await getPool().query(`
             UPDATE depannhome_users
@@ -488,15 +499,8 @@ export function registerAuthRoutes(app) {
         const department = cleanText(request.body?.department, 80);
         const validationError = validateCredentials(username, password) || (!fullName ? "Le nom du technicien est obligatoire." : "") || (!phone ? "Le téléphone du technicien est obligatoire." : "") || (!EMAIL_PATTERN.test(email) ? "L’e-mail professionnel du technicien est obligatoire." : "");
         if (validationError) return response.status(400).json({ message: validationError });
-        const seats = await getPool().query(`
-            SELECT owner.max_technicians, COUNT(member.id) FILTER (WHERE member.role = 'technician' AND member.is_active)::int AS active_technicians
-            FROM depannhome_users owner
-            LEFT JOIN depannhome_users member ON member.account_owner_id = owner.id
-            WHERE owner.id = $1 GROUP BY owner.id
-        `, [getAccountOwnerId(request)]);
-        if (seats.rows[0]?.active_technicians >= seats.rows[0]?.max_technicians) {
-            return response.status(400).json({ message: "La limite de techniciens de votre entreprise est atteinte." });
-        }
+        const seatError = await memberSeatError(getAccountOwnerId(request), "technician");
+        if (seatError) return response.status(400).json({ message: seatError });
         try {
             const user = await createUser({ username, passwordHash: await bcrypt.hash(password, 12), role: "technician", accountOwnerId: getAccountOwnerId(request), fullName, phone, email, department });
             response.status(201).json({ technician: publicUser(user) });
@@ -512,16 +516,8 @@ export function registerAuthRoutes(app) {
         const isActive = Boolean(request.body?.isActive);
         const department = cleanText(request.body?.department, 80);
         if (isActive) {
-            const seats = await getPool().query(`
-                SELECT owner.max_technicians,
-                    COUNT(member.id) FILTER (WHERE member.role = 'technician' AND member.is_active AND member.id <> $2)::int AS active_technicians
-                FROM depannhome_users owner
-                LEFT JOIN depannhome_users member ON member.account_owner_id = owner.id
-                WHERE owner.id = $1 GROUP BY owner.id
-            `, [getAccountOwnerId(request), technicianId]);
-            if (seats.rows[0]?.active_technicians >= seats.rows[0]?.max_technicians) {
-                return response.status(400).json({ message: "La limite de techniciens de votre entreprise est atteinte." });
-            }
+            const seatError = await memberSeatError(getAccountOwnerId(request), "technician", technicianId);
+            if (seatError) return response.status(400).json({ message: seatError });
         }
         const result = await getPool().query(`
             UPDATE depannhome_users SET is_active = $3, department = $4, updated_at = NOW()
