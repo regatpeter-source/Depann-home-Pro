@@ -145,6 +145,7 @@ function renderOverview(panel, profilePanel) {
             </div>
         </div>
         <div class="billing-metrics"><span><strong>${quotes}</strong> devis</span><span><strong>${invoices}</strong> factures</span><span class="billing-base-template"><strong>✓</strong> ${usesExternalTemplate ? "gabarit PDF / DOCX externe" : "modèle Depann’Home intégré"}</span></div>
+        ${renderBillingFinancialOverview(billingData.financialDashboard)}
         ${usesExternalTemplate && !profile.hasQuoteTemplate ? '<p class="auth-message error">Aucune base commune aux devis et factures n’est encore déposée. Un administrateur doit l’ajouter dans Paramètres → Modèles de documents.</p>' : ""}
         ${usesExternalQuitusTemplate && !profile.hasQuitusTemplate ? '<p class="auth-message error">Aucune base officielle de quitus n’est déposée.</p>' : ""}
         ${usesExternalReportTemplate && !profile.hasReportFileTemplate ? '<p class="auth-message error">Aucune base officielle de rapport n’est déposée.</p>' : ""}
@@ -165,6 +166,21 @@ function renderOverview(panel, profilePanel) {
     panel.querySelector("[data-billing-action=download-quitus-template]")?.addEventListener("click", () => openDocumentTemplateDownload("quitus"));
     panel.querySelector("[data-billing-action=download-report-template]")?.addEventListener("click", () => openDocumentTemplateDownload("report"));
     panel.querySelector("[data-billing-action=preview-blank-quote]")?.addEventListener("click", openBlankQuotePreview);
+}
+
+function renderBillingFinancialOverview(value = {}) {
+    const data = { turnoverHt: 0, creditsHt: 0, purchasesHt: 0, grossProfitEstimateHt: 0, collected: 0, outstanding: 0, invoicesCount: 0, creditsCount: 0, ...value };
+    const marginIsNegative = Number(data.grossProfitEstimateHt) < 0;
+    const segments = [
+        { label: "Chiffre d’affaires net HT", value: Math.max(0, Number(data.turnoverHt) || 0), color: "#003b73" },
+        { label: "Avoirs HT", value: Math.max(0, Number(data.creditsHt) || 0), color: "#dc2626" },
+        { label: "Achats HT", value: Math.max(0, Number(data.purchasesHt) || 0), color: "#f59e0b" },
+        { label: marginIsNegative ? "Marge négative estimée" : "Marge brute estimée HT", value: Math.abs(Number(data.grossProfitEstimateHt) || 0), color: marginIsNegative ? "#7f1d1d" : "#16a34a" }
+    ];
+    const total = segments.reduce((sum, item) => sum + item.value, 0);
+    let cursor = 0;
+    const gradient = total > 0 ? `conic-gradient(${segments.filter(item => item.value > 0).map(item => { const start = cursor; cursor += item.value / total * 100; return `${item.color} ${start.toFixed(2)}% ${cursor.toFixed(2)}%`; }).join(",")})` : "conic-gradient(#e2e8f0 0 100%)";
+    return `<section class="billing-financial-dashboard"><div class="billing-financial-heading"><div><p class="eyebrow">Pilotage financier</p><h3>Chiffre d’affaires, avoirs et marge</h3><p class="muted">Vue comparative des factures émises. La marge brute estimée correspond au chiffre d’affaires HT, diminué des avoirs et des achats HT enregistrés.</p></div></div><div class="billing-financial-layout"><figure class="billing-financial-chart"><div class="billing-donut" style="--billing-chart:${gradient}" role="img" aria-label="Répartition comparative du chiffre d’affaires, des avoirs, des achats et de la marge"><span><strong>${formatMoney(data.turnoverHt)}</strong><small>CA net HT</small></span></div><figcaption>${segments.map(item => `<span><i style="--segment-color:${item.color}"></i><span>${escapeHtml(item.label)}</span><strong>${formatMoney(item.value)}</strong></span>`).join("")}</figcaption></figure><div class="billing-financial-cards"><article><span>Chiffre d’affaires net HT</span><strong>${formatMoney(data.turnoverHt)}</strong><small>${Number(data.invoicesCount) || 0} facture(s) émise(s)</small></article><article class="credits"><span>Avoirs HT</span><strong>${formatMoney(data.creditsHt)}</strong><small>${Number(data.creditsCount) || 0} avoir(s)</small></article><article><span>Encaissements TTC</span><strong>${formatMoney(data.collected)}</strong><small>Règlements enregistrés</small></article><article class="${Number(data.outstanding) > 0 ? "attention" : ""}"><span>Reste à encaisser TTC</span><strong>${formatMoney(data.outstanding)}</strong><small>Factures non soldées</small></article><article><span>Achats enregistrés HT</span><strong>${formatMoney(data.purchasesHt)}</strong><small>Charges saisies dans Achats</small></article><article class="${marginIsNegative ? "negative" : "profit"}"><span>Marge brute estimée HT</span><strong>${formatMoney(data.grossProfitEstimateHt)}</strong><small>Estimation avant salaires, cotisations et autres charges</small></article></div></div></section>`;
 }
 
 function renderProfile(panel, options = {}) {

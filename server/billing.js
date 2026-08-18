@@ -9,6 +9,7 @@ import { postAccountingDocument } from "./accounting.js";
 import { DOCX_MIME, PDF_MIME, renderCompanyTemplate, validateCompanyTemplate } from "./company-document-template.js";
 import { createTechnicalReportOutput } from "./technical-reports.js";
 import { buildBillingCustomModel, renderActiveCustomTemplate } from "./document-templates.js";
+import { calculateDocumentAccountingTotals } from "./accounting-ledger.js";
 
 const MAX_LOGO_SIZE = 2 * 1024 * 1024;
 const MAX_QUOTE_TEMPLATE_SIZE = 10 * 1024 * 1024;
@@ -213,7 +214,7 @@ export function registerBillingRoutes(app, requireAuthentication) {
     app.get("/api/billing", requireAuthentication, asyncHandler(async (request, response) => {
         const database = getPool();
         const accountOwnerId = getAccountOwnerId(request);
-        const [profileResult, templatesResult, documentsResult, aidsResult] = await Promise.all([
+        const [profileResult, templatesResult, documentsResult, aidsResult, settlementsResult, purchasesResult] = await Promise.all([
             database.query(`
                 SELECT profile.company_name AS "companyName", profile.legal_form AS "legalForm", profile.address, profile.postal_code AS "postalCode", profile.city,
                     profile.phone, profile.secondary_phone AS "secondaryPhone", profile.email, profile.country, profile.registration_number AS "registrationNumber", profile.siren, profile.tax_number AS "taxNumber", profile.vat_regime AS "vatRegime", profile.bank_iban AS "bankIban", profile.bank_bic AS "bankBic",
@@ -265,9 +266,21 @@ export function registerBillingRoutes(app, requireAuthentication) {
                 FROM depannhome_accounting_aids
                 WHERE owner_id = $1
                 ORDER BY auto_apply DESC, LOWER(name)
+            `, [accountOwnerId]),
+            database.query(`
+                SELECT document_id AS "documentId", COALESCE(SUM(amount),0)::float AS amount
+                FROM depannhome_accounting_settlements
+                WHERE owner_id = $1
+                GROUP BY document_id
+            `, [accountOwnerId]),
+            database.query(`
+                SELECT COALESCE(SUM(amount_ht),0)::float AS "purchasesHt"
+                FROM depannhome_purchases
+                WHERE owner_id = $1
             `, [accountOwnerId])
         ]);
-        response.json({ profile: { ...emptyProfile(), ...(profileResult.rows[0] || {}) }, templates: templatesResult.rows, documents: documentsResult.rows, aids: aidsResult.rows });
+        const financialDashboard = buildBillingFinancialDashboard(documentsResult.rows, settlementsResult.rows, purchasesResult.rows[0]?.purchasesHt);
+        response.json({ profile: { ...emptyProfile(), ...(profileResult.rows[0] || {}) }, templates: templatesResult.rows, documents: documentsResult.rows, aids: aidsResult.rows, financialDashboard });
     }));
 
     app.put("/api/billing/profile", requireAuthentication, requireBillingAdministration, upload.single("logo"), asyncHandler(async (request, response) => {
@@ -904,6 +917,27 @@ function sanitizeLines(value) {
 
 export function normalizeVatRegime(value) { return VAT_REGIMES.has(value) ? value : "standard"; }
 export function applyVatRegime(lines, vatRegime) { return (Array.isArray(lines) ? lines : []).map(line => ({ ...line, vatRate: normalizeVatRegime(vatRegime) === "franchise" ? 0 : Number(line.vatRate) || 0 })); }
+export function buildBillingFinancialDashboard(documents, settlements = [], purchasesHtValue = 0) {
+    const excludedStatuses = new Set(["draft", "cancelled", "rejected"]);
+    const settledByDocument = new Map((Array.isArray(settlements) ? settlements : []).map(item => [String(item.documentId), Number(item.amount) || 0]));
+    let invoicesHt = 0; let invoicesTtc = 0; let creditsHt = 0; let creditsTtc = 0; let outstanding = 0; let invoicesCount = 0; let creditsCount = 0;
+    for (const document of Array.isArray(documents) ? documents : []) {
+        if (excludedStatuses.has(String(document.status || "").toLowerCase()) || !["invoice", "credit"].includes(document.documentType)) continue;
+        const sourceLines = document.documentType === "credit" ? (document.lines || []).map(line => ({ ...line, quantity: Math.abs(Number(line.quantity) || 0), unitPrice: Math.abs(Number(line.unitPrice ?? line.unit_price) || 0) })) : document.lines;
+        const totals = calculateDocumentAccountingTotals(sourceLines, document.financialData || {});
+        if (document.documentType === "credit") { creditsHt += Math.abs(totals.ht); creditsTtc += Math.abs(totals.ttc); creditsCount += 1; continue; }
+        invoicesHt += totals.ht; invoicesTtc += totals.ttc; invoicesCount += 1;
+        const aids = Array.isArray(document.financialData?.aids) ? document.financialData.aids : [];
+        const aidAmount = Math.min(totals.ttc, aids.reduce((sum, aid) => sum + (aid.calculationMode === "percentage" ? totals.ht * Number(aid.amount || 0) / 100 : Number(aid.amount || 0)), 0));
+        outstanding += Math.max(0, totals.ttc - aidAmount - (settledByDocument.get(String(document.id)) || 0));
+    }
+    const purchasesHt = Math.max(0, Number(purchasesHtValue) || 0);
+    const turnoverHt = Math.max(0, invoicesHt - creditsHt);
+    const grossProfitEstimateHt = turnoverHt - purchasesHt;
+    const collected = [...settledByDocument.values()].reduce((sum, amount) => sum + amount, 0);
+    return { invoicesHt: roundFinancial(invoicesHt), invoicesTtc: roundFinancial(invoicesTtc), turnoverHt: roundFinancial(turnoverHt), creditsHt: roundFinancial(creditsHt), creditsTtc: roundFinancial(creditsTtc), purchasesHt: roundFinancial(purchasesHt), grossProfitEstimateHt: roundFinancial(grossProfitEstimateHt), collected: roundFinancial(collected), outstanding: roundFinancial(outstanding), invoicesCount, creditsCount };
+}
+function roundFinancial(value) { return Math.round((Number(value) || 0) * 100) / 100; }
 async function billingTaxIdentity(ownerId) { const { rows } = await getPool().query("SELECT vat_regime AS \"vatRegime\",tax_number AS \"taxNumber\" FROM depannhome_billing_profiles WHERE owner_id=$1", [ownerId]); return { vatRegime: normalizeVatRegime(rows[0]?.vatRegime), taxNumber: cleanText(rows[0]?.taxNumber, 100) }; }
 async function documentTaxIdentity(ownerId, documentId) { const { rows } = await getPool().query("SELECT vat_regime AS \"vatRegime\",issuer_tax_number AS \"taxNumber\",correction_source_id AS \"correctionSourceId\" FROM depannhome_billing_documents WHERE owner_id=$1 AND id=$2", [ownerId, documentId]); return rows[0] ? { vatRegime: normalizeVatRegime(rows[0].vatRegime), taxNumber: cleanText(rows[0].taxNumber, 100), correctionSourceId: rows[0].correctionSourceId || null } : null; }
 

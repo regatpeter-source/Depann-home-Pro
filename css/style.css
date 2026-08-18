@@ -3856,6 +3856,15 @@ body.mobile-device[data-role="technician"] .calendar-list-day{
     font-weight:700;
 }
 
+.billing-financial-dashboard{margin-top:20px;padding:20px;border:1px solid #dbe4ee;border-radius:16px;background:linear-gradient(145deg,#fff,#f8fbff);box-shadow:0 5px 18px rgba(15,23,42,.06)}
+.billing-financial-heading h3{margin:3px 0;color:var(--primary);font-size:21px}.billing-financial-heading .muted{max-width:850px;margin:4px 0 0}
+.billing-financial-layout{display:grid;grid-template-columns:minmax(250px,330px) minmax(0,1fr);gap:24px;align-items:center;margin-top:18px}
+.billing-financial-chart{display:grid;grid-template-columns:180px minmax(0,1fr);gap:16px;align-items:center;margin:0}.billing-donut{position:relative;display:grid;place-items:center;width:180px;aspect-ratio:1;border-radius:50%;background:var(--billing-chart);box-shadow:inset 0 0 0 1px rgba(15,23,42,.06)}.billing-donut::after{content:"";position:absolute;width:58%;aspect-ratio:1;border-radius:50%;background:#fff;box-shadow:0 2px 10px rgba(15,23,42,.08)}.billing-donut>span{position:relative;z-index:1;display:grid;max-width:100px;text-align:center}.billing-donut strong{color:#003b73;font-size:1rem}.billing-donut small{color:#64748b;font-size:.7rem;font-weight:700}
+.billing-financial-chart figcaption{display:grid;gap:9px}.billing-financial-chart figcaption>span{display:grid;grid-template-columns:10px minmax(0,1fr);gap:1px 7px;align-items:center;color:#475569;font-size:.78rem}.billing-financial-chart figcaption i{grid-row:1/3;width:10px;height:10px;border-radius:50%;background:var(--segment-color)}.billing-financial-chart figcaption strong{color:#172033;font-size:.82rem}
+.billing-financial-cards{display:grid;grid-template-columns:repeat(3,minmax(145px,1fr));gap:10px}.billing-financial-cards article{padding:14px;border:1px solid #dbe4ee;border-radius:12px;background:#fff}.billing-financial-cards span,.billing-financial-cards small{display:block;color:#64748b;font-size:.78rem}.billing-financial-cards strong{display:block;margin:5px 0;color:#003b73;font-size:1.15rem}.billing-financial-cards article.credits{border-color:#fecaca;background:#fff7f7}.billing-financial-cards article.credits strong,.billing-financial-cards article.negative strong{color:#b42318}.billing-financial-cards article.attention{border-color:#fde68a;background:#fffbeb}.billing-financial-cards article.profit{border-color:#86efac;background:#f0fdf4}.billing-financial-cards article.profit strong{color:#15803d}.billing-financial-cards article.negative{border-color:#fecaca;background:#fef2f2}
+@media(max-width:950px){.billing-financial-layout{grid-template-columns:1fr}.billing-financial-chart{grid-template-columns:180px minmax(180px,1fr);justify-content:center}.billing-financial-cards{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:600px){.billing-financial-dashboard{padding:15px}.billing-financial-chart{grid-template-columns:1fr;justify-items:center}.billing-financial-chart figcaption{width:100%}.billing-financial-cards{grid-template-columns:1fr}.billing-donut{width:165px}}
+
 .billing-accounted-metric{
     background:#effaf3 !important;
 }
