@@ -9,6 +9,13 @@ const sourcePath = path.join(root, "docs", "PRESENTATION_COMMERCIALE_PARTENAIRES
 const outputPath = path.join(root, "docs", "PRESENTATION_COMMERCIALE_PARTENAIRES.pdf");
 const desktopPath = path.join(os.homedir(), "Desktop", "DepannHome-Pro-Presentation-Entreprises-Partenaires.pdf");
 const logoPath = path.join(root, "assets", "logo.png.png");
+const illustrations = new Map([
+    ["1. Gestion complète des clients", "client.png"],
+    ["2. Planning et organisation des interventions", "planning.png"],
+    ["4. Tableau de bord financier dans Facturation", "billing.png"],
+    ["7. Rapports de recherche de fuite", "report.png"],
+    ["11. Missions partenaires", "partner.png"]
+]);
 const markdown = fs.readFileSync(sourcePath, "utf8");
 
 const colors = { primary: "#003B73", secondary: "#0A5C36", text: "#172033", muted: "#64748B", paleBlue: "#EEF6FF", paleGreen: "#EFFAF3", border: "#D7DDE3", white: "#FFFFFF" };
@@ -49,6 +56,7 @@ function addHeading(value, level) {
         document.moveDown(.25);
         document.fillColor(colors.primary).fontSize(22).text(text, { lineGap: 2 });
         addRule(colors.secondary);
+        addIllustration(text);
         return;
     }
     if (level === 2) {
@@ -59,6 +67,19 @@ function addHeading(value, level) {
     ensureSpace(40); document.moveDown(.2);
     document.fillColor(colors.secondary).font("Helvetica-Bold").fontSize(11).text(text);
     document.moveDown(.18);
+}
+
+function addIllustration(heading) {
+    const filename = illustrations.get(heading); if (!filename) return;
+    const imagePath = path.join(root, "assets", "commercial", filename); if (!fs.existsSync(imagePath)) return;
+    ensureSpace(315);
+    const width = document.page.width - 104;
+    const height = width * 720 / 1280;
+    document.roundedRect(52, document.y, width, height, 9).fill(colors.white);
+    document.image(imagePath, 52, document.y, { fit: [width, height], align: "center", valign: "center" });
+    document.y += height + 7;
+    document.fillColor(colors.muted).font("Helvetica-Oblique").fontSize(7.8).text("Illustration de l’interface Depann’Home Pro — données de démonstration fictives.", 52, document.y, { width, align: "center" });
+    document.moveDown(.7);
 }
 
 function addBullet(value) {
