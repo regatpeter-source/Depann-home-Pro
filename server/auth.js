@@ -194,7 +194,7 @@ export function registerAuthRoutes(app) {
         const code = String(request.body?.code || "").replace(/\s/g, "");
         if (!deviceId || !/^\d{6}$/.test(code)) return response.status(400).json({ message: "Code de validation invalide." });
         const { rows } = await getPool().query(`
-            SELECT device.*, account.id AS user_id, account.username, account.role, account.account_owner_id, account.full_name, account.phone, account.email, account.is_active, account.can_create_billing, owner.is_active AS account_is_active, owner.max_pc_users
+            SELECT device.*, account.id AS user_id, account.username, account.role, account.account_owner_id, account.full_name, account.phone, account.email, account.is_active, account.can_create_billing, owner.is_active AS account_is_active, owner.max_pc_users, owner.max_technicians, owner.monthly_price_cents
             FROM depannhome_auth_devices device JOIN depannhome_users account ON account.id = device.user_id JOIN depannhome_users owner ON owner.id = account.account_owner_id WHERE device.id = $1
         `, [deviceId]);
         const device = rows[0];
@@ -1112,6 +1112,8 @@ function publicUser(user) {
         email: user.email || "",
         technicianBillingEnabled: (user.can_create_billing ?? user.technicianBillingEnabled) !== false,
         maxPcUsers: Number(user.max_pc_users ?? user.maxPcUsers) || 1,
+        maxMobileUsers: Number(user.max_technicians ?? user.maxMobileUsers) || 0,
+        monthlyPriceCents: Number(user.monthly_price_cents ?? user.monthlyPriceCents) || 0,
         organization: user.organization || null,
         isActive: user.is_active !== false,
         isCreator: Boolean(user.isCreator || isCreatorUsername(user.username)),

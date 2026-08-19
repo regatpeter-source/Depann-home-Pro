@@ -109,7 +109,11 @@ test("migration preserves existing accounts as Pro and creator defaults new acco
     assert.match(database, /subscription_tier VARCHAR\(20\) NOT NULL DEFAULT 'pro'/);
     assert.match(creatorClient, /subscriptionTier: "basic"/);
     assert.match(creatorServer, /calculateSubscriptionPriceCents\(subscriptionTier, maxPcUsers, maxTechnicians\)/);
-    for (const source of [schema, database]) assert.match(source, /CREATE TABLE IF NOT EXISTS depannhome_subscription_change_requests/);
+    for (const source of [schema, database]) {
+        assert.match(source, /CREATE TABLE IF NOT EXISTS depannhome_subscription_change_requests/);
+        assert.match(source, /requested_pc_seats INTEGER/);
+        assert.match(source, /requested_mobile_seats INTEGER/);
+    }
 });
 
 test("companies request offer changes from Settings without changing the active tier", () => {
@@ -117,13 +121,21 @@ test("companies request offer changes from Settings without changing the active 
     assert.doesNotMatch(navigation, /data-basic-home=/);
     assert.match(navigation, /\["subscription", "Offre & abonnement"/);
     assert.match(navigation, /\/api\/subscription-change-requests/);
+    assert.match(navigation, /Postes PC autorisés/);
+    assert.match(navigation, /Postes mobiles autorisés/);
+    assert.match(navigation, /Tarif total actuel/);
+    assert.match(navigation, /data-seat-request/);
     assert.match(creatorServer, /app\.post\("\/api\/subscription-change-requests"/);
     assert.match(creatorServer, /app\.get\("\/api\/creator\/subscription-change-requests"/);
     assert.match(creatorServer, /app\.patch\("\/api\/creator\/subscription-change-requests\/:requestId"/);
     const requestRoutes = creatorServer.slice(creatorServer.indexOf('app.get("/api/subscription-change-requests"'), creatorServer.indexOf('app.get("/api/creator/platform-announcement/current"'));
     assert.doesNotMatch(requestRoutes, /UPDATE depannhome_users/);
+    assert.match(requestRoutes, /requested_pc_seats/);
+    assert.match(requestRoutes, /requested_mobile_seats/);
     assert.match(creatorClient, /id="creatorSubscriptionRequests"/);
     assert.match(creatorClient, /renderSubscriptionChangeRequests/);
+    assert.match(creatorClient, /requestedPcSeats/);
+    assert.match(creatorClient, /requestedMobileSeats/);
 });
 
 test("tier features are protected on both API and navigation layers", () => {

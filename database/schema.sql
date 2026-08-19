@@ -52,6 +52,8 @@ CREATE TABLE IF NOT EXISTS depannhome_subscription_change_requests (
     requested_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
     current_tier VARCHAR(20) NOT NULL CHECK (current_tier IN ('basic','basic_plus','pro')),
     requested_tier VARCHAR(20) NOT NULL CHECK (requested_tier IN ('basic','basic_plus','pro')),
+    requested_pc_seats INTEGER CHECK (requested_pc_seats IS NULL OR requested_pc_seats BETWEEN 1 AND 100),
+    requested_mobile_seats INTEGER CHECK (requested_mobile_seats IS NULL OR requested_mobile_seats BETWEEN 0 AND 500),
     status VARCHAR(20) NOT NULL DEFAULT 'new' CHECK (status IN ('new','under_review','accepted','refused','cancelled')),
     company_message VARCHAR(1000) NOT NULL DEFAULT '',
     creator_note VARCHAR(2000) NOT NULL DEFAULT '',

@@ -1401,28 +1401,43 @@ function renderSettingsWorkspace(options = {}) {
 
 async function renderSubscriptionSettings(container) {
     const currentTier = document.body.dataset.subscriptionTier || "pro";
+    const currentPcSeats = Math.max(1, Number(document.body.dataset.maxPcUsers) || 1);
+    const currentMobileSeats = Math.max(0, Number(document.body.dataset.maxMobileUsers) || 0);
+    const storedMonthlyPriceCents = Math.max(0, Number(document.body.dataset.monthlyPriceCents) || 0);
     const tiers = [
         { id: "basic", label: "Basic", pc: 20, mobile: 5, description: "Postes PC et Administrateur Mobile. Clients, devis, factures, comptabilité, facturation électronique et PDP." },
         { id: "basic_plus", label: "Basic+", pc: 35, mobile: 8, description: "Tous postes PC et mobiles. Basic avec planning et gestion des interventions." },
         { id: "pro", label: "Pro", pc: 70, mobile: 15, description: "Tous postes PC et mobiles. Accès complet : Quitus, rapports, achats, bibliothèque, Réseau, API, imports et groupes." }
     ];
     const rank = { basic: 0, basic_plus: 1, pro: 2 };
+    const currentOffer = tiers.find(tier => tier.id === currentTier) || tiers[2];
+    const totalCents = storedMonthlyPriceCents || (currentPcSeats * currentOffer.pc + currentMobileSeats * currentOffer.mobile) * 100;
     const result = await fetch("/api/subscription-change-requests", { credentials: "same-origin" });
     const data = await result.json().catch(() => ({}));
     const requests = result.ok ? data.requests || [] : [];
     const section = document.createElement("section");
     section.className = "creator-form subscription-company-panel";
-    section.innerHTML = `<div class="form-heading"><div><p class="eyebrow">Offre actuelle : ${escapeHtml(tiers.find(tier => tier.id === currentTier)?.label || "Pro")}</p><h2>Offres Depann’Home Pro</h2></div></div><p class="muted">Les tarifs mensuels sont calculés par poste. Une demande n’altère aucune donnée et ne change pas automatiquement votre offre : elle est transmise au Créateur pour étude.</p><div class="settings-card-grid">${tiers.map(tier => `<article class="settings-navigation-card subscription-offer-card${tier.id === currentTier ? " active" : ""}"><span><strong>${tier.label}</strong><small>${tier.pc} € TTC / poste PC / mois<br>${tier.mobile} € TTC / poste mobile / mois</small><small>${tier.description}</small></span>${tier.id === currentTier ? '<span class="creator-state">Offre actuelle</span>' : `<button type="button" class="secondary-button" data-request-tier="${tier.id}">Demander ${rank[tier.id] > rank[currentTier] ? "l’évolution" : "la rétrogradation"}</button>`}</article>`).join("")}</div><label class="form-wide">Message facultatif au Créateur<textarea rows="4" maxlength="1000" data-subscription-request-message placeholder="Précisez votre besoin, la date souhaitée ou le nombre de postes envisagé."></textarea></label><p class="auth-message" data-subscription-request-feedback aria-live="polite"></p><section><h3>Demandes envoyées</h3><div class="creator-network-list">${requests.length ? requests.map(item => `<article class="creator-network-company"><div><strong>${escapeHtml(tiers.find(tier => tier.id === item.requestedTier)?.label || item.requestedTier)}</strong><p>${escapeHtml(subscriptionRequestStatusLabel(item.status))}</p><small>${escapeHtml(formatSubscriptionRequestDate(item.createdAt))}</small></div></article>`).join("") : '<p class="muted">Aucune demande envoyée.</p>'}</div></section>`;
+    section.innerHTML = `<div class="form-heading"><div><p class="eyebrow">Offre actuelle : ${escapeHtml(currentOffer.label)}</p><h2>Offres Depann’Home Pro</h2></div></div><div class="creator-subscription-summary"><article><span>Postes PC autorisés</span><strong>${currentPcSeats}</strong></article><article><span>Postes mobiles autorisés</span><strong>${currentMobileSeats}</strong></article><article><span>Tarif total actuel</span><strong>${(totalCents / 100).toLocaleString("fr-FR", { style: "currency", currency: "EUR" })} TTC / mois</strong></article></div><p class="muted">Les tarifs mensuels sont calculés par poste. Une demande n’altère aucune donnée et ne change pas automatiquement votre offre : elle est transmise au Créateur pour étude.</p><div class="settings-card-grid">${tiers.map(tier => `<article class="settings-navigation-card subscription-offer-card${tier.id === currentTier ? " active" : ""}"><span><strong>${tier.label}</strong><small>${tier.pc} € TTC / poste PC / mois<br>${tier.mobile} € TTC / poste mobile / mois</small><small>${tier.description}</small></span>${tier.id === currentTier ? '<span class="creator-state">Offre actuelle</span>' : `<button type="button" class="secondary-button" data-request-tier="${tier.id}">Demander ${rank[tier.id] > rank[currentTier] ? "l’évolution" : "la rétrogradation"}</button>`}</article>`).join("")}</div><form data-seat-request class="creator-subscription-fields"><h3>Demander des postes supplémentaires</h3><div class="form-grid"><label>Postes PC souhaités<input name="requestedPcSeats" type="number" min="${currentPcSeats}" max="100" value="${currentPcSeats}" required></label><label>Postes mobiles souhaités<input name="requestedMobileSeats" type="number" min="${currentMobileSeats}" max="500" value="${currentMobileSeats}" required></label></div><button class="secondary-button">Transmettre la demande au Créateur</button></form><label class="form-wide">Message facultatif au Créateur<textarea rows="4" maxlength="1000" data-subscription-request-message placeholder="Précisez votre besoin ou la date souhaitée."></textarea></label><p class="auth-message" data-subscription-request-feedback aria-live="polite"></p><section><h3>Demandes envoyées</h3><div class="creator-network-list">${requests.length ? requests.map(item => `<article class="creator-network-company"><div><strong>${escapeHtml(tiers.find(tier => tier.id === item.requestedTier)?.label || item.requestedTier)}</strong><p>${escapeHtml(subscriptionRequestStatusLabel(item.status))}${item.requestedPcSeats != null ? ` · ${item.requestedPcSeats} PC / ${item.requestedMobileSeats} mobile(s)` : ""}</p><small>${escapeHtml(formatSubscriptionRequestDate(item.createdAt))}</small></div></article>`).join("") : '<p class="muted">Aucune demande envoyée.</p>'}</div></section>`;
     container.appendChild(section);
     section.querySelectorAll("[data-request-tier]").forEach(button => button.addEventListener("click", async () => {
         const feedback = section.querySelector("[data-subscription-request-feedback]");
         button.disabled = true;
-        const response = await fetch("/api/subscription-change-requests", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ requestedTier: button.dataset.requestTier, companyMessage: section.querySelector("[data-subscription-request-message]").value }) });
+        const response = await fetch("/api/subscription-change-requests", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ requestedTier: button.dataset.requestTier, requestedPcSeats: currentPcSeats, requestedMobileSeats: currentMobileSeats, companyMessage: section.querySelector("[data-subscription-request-message]").value }) });
         const payload = await response.json().catch(() => ({}));
         if (!response.ok) { button.disabled = false; feedback.textContent = payload.message || "Demande impossible."; feedback.classList.add("error"); return; }
         feedback.textContent = payload.message; feedback.classList.remove("error");
         renderSettings({ section: "subscription" });
     }));
+    section.querySelector("[data-seat-request]").addEventListener("submit", async event => {
+        event.preventDefault();
+        const feedback = section.querySelector("[data-subscription-request-feedback]");
+        const values = Object.fromEntries(new FormData(event.currentTarget));
+        const response = await fetch("/api/subscription-change-requests", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ requestedTier: currentTier, requestedPcSeats: Number(values.requestedPcSeats), requestedMobileSeats: Number(values.requestedMobileSeats), companyMessage: section.querySelector("[data-subscription-request-message]").value }) });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) { feedback.textContent = payload.message || "Demande impossible."; feedback.classList.add("error"); return; }
+        feedback.textContent = payload.message; feedback.classList.remove("error");
+        renderSettings({ section: "subscription" });
+    });
 }
 
 function subscriptionRequestStatusLabel(status) {

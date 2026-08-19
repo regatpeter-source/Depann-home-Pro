@@ -296,6 +296,8 @@ export async function initializeDatabase() {
             requested_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
             current_tier VARCHAR(20) NOT NULL CHECK (current_tier IN ('basic','basic_plus','pro')),
             requested_tier VARCHAR(20) NOT NULL CHECK (requested_tier IN ('basic','basic_plus','pro')),
+            requested_pc_seats INTEGER CHECK (requested_pc_seats IS NULL OR requested_pc_seats BETWEEN 1 AND 100),
+            requested_mobile_seats INTEGER CHECK (requested_mobile_seats IS NULL OR requested_mobile_seats BETWEEN 0 AND 500),
             status VARCHAR(20) NOT NULL DEFAULT 'new' CHECK (status IN ('new','under_review','accepted','refused','cancelled')),
             company_message VARCHAR(1000) NOT NULL DEFAULT '',
             creator_note VARCHAR(2000) NOT NULL DEFAULT '',
@@ -305,6 +307,9 @@ export async function initializeDatabase() {
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
     `);
+    await database.query(`ALTER TABLE depannhome_subscription_change_requests
+        ADD COLUMN IF NOT EXISTS requested_pc_seats INTEGER,
+        ADD COLUMN IF NOT EXISTS requested_mobile_seats INTEGER`);
     await database.query("CREATE INDEX IF NOT EXISTS depannhome_subscription_change_requests_owner_idx ON depannhome_subscription_change_requests(owner_id, created_at DESC)");
 }
 
@@ -312,7 +317,7 @@ export async function findUserByUsername(username) {
     const { rows } = await getPool().query(
         `SELECT user_account.id, user_account.username, user_account.password_hash, user_account.role, user_account.account_owner_id,
             user_account.full_name, user_account.phone, user_account.email, user_account.is_active, owner.is_active AS account_is_active,
-            user_account.can_create_billing, owner.max_pc_users AS max_pc_users
+            user_account.can_create_billing, owner.max_pc_users AS max_pc_users, owner.max_technicians AS max_technicians, owner.monthly_price_cents AS monthly_price_cents
          FROM depannhome_users user_account
          JOIN depannhome_users owner ON owner.id = user_account.account_owner_id
          WHERE user_account.username = $1`,
@@ -326,7 +331,7 @@ export async function findUserById(id) {
     const { rows } = await getPool().query(
         `SELECT user_account.id, user_account.username, user_account.password_hash, user_account.role, user_account.account_owner_id,
             user_account.full_name, user_account.phone, user_account.email, user_account.is_active, owner.is_active AS account_is_active,
-            user_account.can_create_billing, owner.max_pc_users AS max_pc_users
+            user_account.can_create_billing, owner.max_pc_users AS max_pc_users, owner.max_technicians AS max_technicians, owner.monthly_price_cents AS monthly_price_cents
          FROM depannhome_users user_account
          JOIN depannhome_users owner ON owner.id = user_account.account_owner_id
          WHERE user_account.id = $1`,
