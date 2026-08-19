@@ -5,6 +5,7 @@ import { calculateSubscriptionPriceCents, isRoleAllowedForSubscription, subscrip
 import { isFeatureEnabled, isFeatureEnabledForRole, publicOrganization } from "../server/organizations.js";
 import { MENU_ACCESS, ROUTES } from "../js/config.js";
 import { buildSubscriptionInvoiceSnapshot } from "../server/invoicing.js";
+import { memberRoleAccessError, memberSeatError, memberSeatFamily } from "../server/auth.js";
 
 const schema = readFileSync(new URL("../database/schema.sql", import.meta.url), "utf8");
 const database = readFileSync(new URL("../server/database.js", import.meta.url), "utf8");
@@ -34,6 +35,10 @@ test("subscription tiers restrict mobile post roles as specified", () => {
         for (const role of ["admin", "pc_standard", "accountant", "mobile_admin", "team_lead", "technician"]) assert.equal(isRoleAllowedForSubscription(tier, role), true, `${tier}:${role}`);
     }
     assert.match(subscriptionRoleAccessMessage("basic", "technician"), /Basic\+/);
+    assert.equal(memberSeatFamily("admin"), "pc");
+    assert.equal(memberSeatFamily("mobile_admin"), "mobile");
+    assert.equal(typeof memberSeatError, "function");
+    assert.equal(typeof memberRoleAccessError, "function");
 });
 
 test("Basic exposes clients, billing and accounting while Basic+ adds planning", () => {
@@ -71,7 +76,8 @@ test("every mobile post keeps Home and Library access regardless of subscription
     assert.match(style, /mobile-device:not\(\.report-writing-active\) #authRoot > footer/);
     assert.match(style, /@media\(max-width:700px\), \(pointer:coarse\)/);
     assert.match(style, /footer \.nav-button\[data-nav="home"\]/);
-    assert.match(navigation, /isTechnician\(\) && canAccessRoute\(ROUTES\.calendar\)/);
+    assert.match(navigation, /isMobileDeviceContext\(\) && canAccessRoute\(ROUTES\.calendar\)/);
+    assert.match(navigation, /if \(isMobileDeviceContext\(\)\) \{\s*panel\.innerHTML = '<div class="dashboard-heading"/);
     assert.match(navigation, /if \(isMobileDeviceContext\(\) \|\| document\.body\.classList\.contains\("desktop-device"\)/);
     assert.match(navigation, /data-basic-home="library"/);
     assert.match(navigation, /canTechnicianAccessBilling\(\)/);
@@ -119,6 +125,7 @@ test("tier features are protected on both API and navigation layers", () => {
     assert.match(auth, /'admin','pc_standard','accountant'/);
     assert.match(auth, /'mobile_admin','team_lead','technician'/);
     assert.match(auth, /subscriptionRoleAccessMessage\(organization\.subscriptionTier, role\)/);
+    assert.match(auth, /const targetUserId = action\.endsWith\("_deleted"\) \? null/);
     assert.match(auth, /isRoleAllowedForSubscription\(organization\.subscriptionTier, user\.role\)/);
     assert.match(auth, /subscriptionRoleAccessMessage\(organization\.subscriptionTier, user\.role\)/);
     assert.match(partnerConnections, /isFeatureEnabled\(await getOrganization\(ownerId\), "partnerConnections"\)/);

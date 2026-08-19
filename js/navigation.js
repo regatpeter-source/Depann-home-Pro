@@ -345,8 +345,8 @@ function openHome() {
         renderBilling();
         return;
     }
-    if (isTechnician() && canAccessRoute(ROUTES.calendar)) {
-        renderCalendarOverview();
+    if (isMobileDeviceContext() && canAccessRoute(ROUTES.calendar)) {
+        openCalendar();
         return;
     }
     if (isMobileDeviceContext() || document.body.classList.contains("desktop-device") || isMobileAdministrator()) {
@@ -702,6 +702,12 @@ async function renderHome() {
     const panel = document.createElement("section");
     panel.className = "client-panel home-panel dashboard-panel";
     if (!canAccessRoute(ROUTES.calendar)) {
+        if (isMobileDeviceContext()) {
+            panel.innerHTML = '<div class="dashboard-heading"><div><p class="eyebrow">Depann’Home Pro Basic</p><h2>Tableau de bord</h2></div></div>';
+            container.appendChild(panel);
+            renderPlatformAnnouncement(container);
+            return;
+        }
         const cards = [];
         if (canAccessRoute(ROUTES.clients)) cards.push('<button type="button" class="settings-navigation-card" data-basic-home="clients"><span class="settings-navigation-icon">👥</span><span><strong>Clients</strong><small>Dossiers, coordonnées et historique commercial</small></span></button>');
         if (canAccessRoute(ROUTES.billing) || canTechnicianAccessBilling()) cards.push('<button type="button" class="settings-navigation-card" data-basic-home="billing"><span class="settings-navigation-icon">€</span><span><strong>Devis, factures et facturation</strong><small>Documents, encaissements, avoirs et tableau financier</small></span></button>');

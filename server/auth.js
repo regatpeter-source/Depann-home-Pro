@@ -25,23 +25,13 @@ const STANDARD_PC_ROLE = "pc_standard";
 const TEAM_LEAD_ROLE = "team_lead";
 const MEMBER_ROLES = new Set(["admin", STANDARD_PC_ROLE, MOBILE_ADMIN_ROLE, TEAM_LEAD_ROLE, "technician", "accountant"]);
 
-export function registerAuthRoutes(app) {
-    app.get("/api/auth/session", (request, response) => {
-        const user = request.user;
-        if (!user) {
-            return response.status(401).json({
-                authenticated: false,
-                registrationEnabled: isPublicRegistrationEnabled()
-            });
-        }
-
-function memberSeatFamily(role) {
+export function memberSeatFamily(role) {
     if (["admin", STANDARD_PC_ROLE, "accountant"].includes(role)) return "pc";
     if ([MOBILE_ADMIN_ROLE, TEAM_LEAD_ROLE, "technician"].includes(role)) return "mobile";
     return "";
 }
 
-async function memberSeatError(ownerId, role, excludedMemberId = 0) {
+export async function memberSeatError(ownerId, role, excludedMemberId = 0) {
     const family = memberSeatFamily(role);
     if (!family) return "";
     const roleAccessError = await memberRoleAccessError(ownerId, role);
@@ -60,10 +50,20 @@ async function memberSeatError(ownerId, role, excludedMemberId = 0) {
     return "";
 }
 
-async function memberRoleAccessError(ownerId, role) {
+export async function memberRoleAccessError(ownerId, role) {
     const organization = await getOrganization(ownerId);
     return subscriptionRoleAccessMessage(organization.subscriptionTier, role);
 }
+
+export function registerAuthRoutes(app) {
+    app.get("/api/auth/session", (request, response) => {
+        const user = request.user;
+        if (!user) {
+            return response.status(401).json({
+                authenticated: false,
+                registrationEnabled: isPublicRegistrationEnabled()
+            });
+        }
 
         return response.json({
             authenticated: true,
@@ -739,10 +739,11 @@ async function ensureActiveAdministratorRemains(ownerId, targetId) {
 }
 
 async function recordMemberAudit(ownerId, actorId, member, action, details = {}) {
+    const targetUserId = action.endsWith("_deleted") ? null : member?.id || null;
     await getPool().query(`
         INSERT INTO depannhome_member_audit (owner_id, actor_id, target_user_id, target_username, target_full_name, action, details)
         VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
-    `, [ownerId, actorId || null, member?.id || null, cleanText(member?.username, 32), cleanText(member?.fullName || member?.full_name, 100), action, JSON.stringify(details)]);
+    `, [ownerId, actorId || null, targetUserId, cleanText(member?.username, 32), cleanText(member?.fullName || member?.full_name, 100), action, JSON.stringify(details)]);
 }
 
 function requireTechnicianDirectoryAccess(request, response, next) {
