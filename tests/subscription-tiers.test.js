@@ -155,6 +155,8 @@ test("companies request offer changes from Settings without changing the active 
     assert.match(creatorServer, /transmise au Support/);
     assert.match(creatorServer, /app\.get\("\/api\/creator\/subscription-change-requests"/);
     assert.match(creatorServer, /app\.patch\("\/api\/creator\/subscription-change-requests\/:requestId"/);
+    assert.match(creatorServer, /resolved_by=CASE WHEN \$4::boolean THEN \$5::bigint ELSE NULL::bigint END/);
+    assert.match(creatorServer, /resolved_at=CASE WHEN \$4::boolean THEN NOW\(\) ELSE NULL::timestamptz END/);
     const requestRoutes = creatorServer.slice(creatorServer.indexOf('app.get("/api/subscription-change-requests"'), creatorServer.indexOf('app.get("/api/creator/platform-announcement/current"'));
     assert.doesNotMatch(requestRoutes, /UPDATE depannhome_users/);
     assert.match(requestRoutes, /requested_pc_seats/);

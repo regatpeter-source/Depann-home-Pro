@@ -46,7 +46,7 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
         const creatorNote = cleanMultilineText(request.body?.creatorNote, 2000);
         if (!requestId || !status) return response.status(400).json({ message: "Suivi de demande invalide." });
         const terminal = ["accepted", "refused", "cancelled"].includes(status);
-        const { rows } = await getPool().query(`UPDATE depannhome_subscription_change_requests SET status=$2,creator_note=$3,resolved_by=CASE WHEN $4 THEN $5 ELSE NULL END,resolved_at=CASE WHEN $4 THEN NOW() ELSE NULL END,updated_at=NOW() WHERE id=$1 RETURNING id,status,creator_note AS "creatorNote",updated_at AS "updatedAt"`, [requestId, status, creatorNote, terminal, request.user.sub]);
+        const { rows } = await getPool().query(`UPDATE depannhome_subscription_change_requests SET status=$2,creator_note=$3,resolved_by=CASE WHEN $4::boolean THEN $5::bigint ELSE NULL::bigint END,resolved_at=CASE WHEN $4::boolean THEN NOW() ELSE NULL::timestamptz END,updated_at=NOW() WHERE id=$1 RETURNING id,status,creator_note AS "creatorNote",updated_at AS "updatedAt"`, [requestId, status, creatorNote, terminal, request.user.sub]);
         if (!rows[0]) return response.status(404).json({ message: "Demande introuvable." });
         response.json({ request: rows[0] });
     }));
