@@ -8,6 +8,7 @@ import { sendDeviceVerificationCode } from "./email.js";
 import { releaseLocksForUser } from "./collaboration.js";
 import { resolveGroupCompany } from "./group-context.js";
 import { getOrganization } from "./organizations.js";
+import { isRoleAllowedForSubscription, subscriptionRoleAccessMessage } from "./subscription-tiers.js";
 
 const COOKIE_NAME = "depann_home_session";
 const USERNAME_PATTERN = /^[a-z0-9._-]{3,32}$/;
@@ -43,6 +44,8 @@ function memberSeatFamily(role) {
 async function memberSeatError(ownerId, role, excludedMemberId = 0) {
     const family = memberSeatFamily(role);
     if (!family) return "";
+    const roleAccessError = await memberRoleAccessError(ownerId, role);
+    if (roleAccessError) return roleAccessError;
     const { rows } = await getPool().query(`
         SELECT owner.max_pc_users AS "maxPcUsers",owner.max_technicians AS "maxMobileUsers",
             COUNT(member.id) FILTER (WHERE member.role IN ('admin','pc_standard','accountant') AND member.is_active AND member.id<>$2)::int AS "activePcUsers",
@@ -55,6 +58,11 @@ async function memberSeatError(ownerId, role, excludedMemberId = 0) {
     if (family === "pc" && seats.activePcUsers >= seats.maxPcUsers) return "La limite de postes PC de votre entreprise est atteinte.";
     if (family === "mobile" && seats.activeMobileUsers >= seats.maxMobileUsers) return "La limite de postes mobiles de votre entreprise est atteinte.";
     return "";
+}
+
+async function memberRoleAccessError(ownerId, role) {
+    const organization = await getOrganization(ownerId);
+    return subscriptionRoleAccessMessage(organization.subscriptionTier, role);
 }
 
         return response.json({
@@ -196,6 +204,9 @@ async function memberSeatError(ownerId, role, excludedMemberId = 0) {
             await getPool().query("UPDATE depannhome_auth_devices SET verification_attempts = verification_attempts + 1 WHERE id = $1", [deviceId]);
             return response.status(401).json({ message: "Code incorrect." });
         }
+        const organization = await getOrganization(device.account_owner_id || device.user_id);
+        const roleAccessError = subscriptionRoleAccessMessage(organization.subscriptionTier, device.role);
+        if (!isCreatorUsername(device.username) && roleAccessError) return response.status(403).json({ message: roleAccessError });
         await getPool().query("UPDATE depannhome_auth_devices SET status = 'approved', verified_at = NOW(), verification_code_hash = '', verification_code_expires_at = NULL, verification_attempts = 0 WHERE id = $1", [deviceId]);
         const sessionId = device.role === "admin" && device.device_type === "desktop"
             ? await issueAdministratorPcSession(device.user_id, deviceId)
@@ -425,6 +436,8 @@ async function memberSeatError(ownerId, role, excludedMemberId = 0) {
         const member = rows[0];
         if (!member) return response.status(404).json({ message: "Accès introuvable." });
         if (member.role === nextRole) return response.status(204).end();
+        const roleAccessError = await memberRoleAccessError(getAccountOwnerId(request), nextRole);
+        if (roleAccessError) return response.status(400).json({ message: roleAccessError });
         if (member.role === "admin" && member.isActive && nextRole !== "admin") {
             await ensureActiveAdministratorRemains(getAccountOwnerId(request), memberId);
         }
@@ -647,6 +660,7 @@ export async function authenticateRequest(request, response, next) {
         const groupCompany = user.role === "admin" ? await resolveGroupCompany(user.id, session.activeCompanyId) : null;
         const accountOwnerId = String(groupCompany?.companyId || user.account_owner_id || user.id);
         const organization = await getOrganization(accountOwnerId);
+        if (!isCreatorUsername(user.username) && !isRoleAllowedForSubscription(organization.subscriptionTier, user.role)) throw new Error("Rôle exclu de l’offre");
         request.user = {
             sub: String(user.id),
             username: user.username,
@@ -805,6 +819,9 @@ export async function recoverCreatorTotp() {
 }
 
 async function completeLogin(user, device, response) {
+    const organization = await getOrganization(user.account_owner_id || user.id);
+    const roleAccessError = subscriptionRoleAccessMessage(organization.subscriptionTier, user.role);
+    if (!isCreatorUsername(user.username) && roleAccessError) return response.status(403).json({ message: roleAccessError });
     const isDedicatedMobileAdministrator = user.role === MOBILE_ADMIN_ROLE;
     if (user.role === MOBILE_ADMIN_ROLE && device.type !== "mobile") {
         return response.status(403).json({ message: "Le poste Administrateur Mobile doit être activé depuis un téléphone ou une tablette." });

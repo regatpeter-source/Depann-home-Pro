@@ -351,7 +351,7 @@ async function renderAccountDetail(accountId) {
     });
     workspace.querySelector("#creatorRestoreAccount")?.addEventListener("click", async () => { if (!confirm(`Réactiver ${account.companyName} avec tous ses accès et ses données ?`)) return; const result = await api(`/api/creator/accounts/${encodeURIComponent(accountId)}/restore`, { method: "PATCH" }); if (!result.ok) return showFeedback(result.message || "Réactivation impossible.", true); accountListMode = "active"; showFeedback("Entreprise réactivée avec toutes ses données."); await loadAccounts(accountId); });
     workspace.querySelector("#creatorNewPcMember")?.addEventListener("click", () => renderMemberForm(account, null, "admin"));
-    workspace.querySelector("#creatorNewTechnician")?.addEventListener("click", () => renderMemberForm(account, null, "technician"));
+    workspace.querySelector("#creatorNewTechnician")?.addEventListener("click", () => renderMemberForm(account, null, account.subscriptionTier === "basic" ? "mobile_admin" : "technician"));
     if (!account.isArchived) {
         bindSubscriptionTier(workspace.querySelector("#creatorAccountForm"));
         bindOrganizationInterface(workspace.querySelector("#creatorAccountForm"));
@@ -543,9 +543,9 @@ function bindSubscriptionTier(form) {
     const mobileSeats = form.elements.maxTechnicians;
     const summary = form.querySelector("[data-tier-summary]");
     const tiers = {
-        basic: { label: "Basic", pc: 20, mobile: 5, access: "Clients, devis, factures, comptabilité, facturation électronique et PDP." },
-        basic_plus: { label: "Basic+", pc: 35, mobile: 8, access: "Basic avec planning et gestion des interventions." },
-        pro: { label: "Pro", pc: 70, mobile: 15, access: "Accès complet : rapports, achats, bibliothèque, Réseau Depann’Home Pro, missions partenaires, connexions API, imports et groupes." }
+        basic: { label: "Basic", pc: 20, mobile: 5, access: "Postes PC et Administrateur Mobile uniquement · clients, facturation, comptabilité, facturation électronique et PDP." },
+        basic_plus: { label: "Basic+", pc: 35, mobile: 8, access: "Tous postes PC et mobiles · Basic avec planning et gestion des interventions." },
+        pro: { label: "Pro", pc: 70, mobile: 15, access: "Tous postes PC et mobiles · accès complet : rapports, achats, bibliothèque, Réseau Depann’Home Pro, missions partenaires, connexions API, imports et groupes." }
     };
     const update = () => {
         const selected = tiers[tier.value] || tiers.basic;
@@ -805,7 +805,7 @@ async function loadMembers(accountId) {
     const accountArchived = Boolean(accounts.find(account => String(account.id) === String(accountId))?.isArchived);
     container.innerHTML = members.length ? `<div class="creator-members">${members.map(member => `
         <article class="creator-member">
-            <div><strong>${escapeHtml(member.fullName || member.username)}</strong><span>${member.role === "admin" ? "Poste PC" : "Technicien"} · ${escapeHtml(member.username)}${member.phone ? ` · ${escapeHtml(member.phone)}` : ""}${member.email ? ` · ${escapeHtml(member.email)}` : ""}</span></div>
+            <div><strong>${escapeHtml(member.fullName || member.username)}</strong><span>${escapeHtml(creatorMemberRoleLabel(member.role))} · ${escapeHtml(member.username)}${member.phone ? ` · ${escapeHtml(member.phone)}` : ""}${member.email ? ` · ${escapeHtml(member.email)}` : ""}</span></div>
             <div class="creator-member-actions"><span class="creator-state${member.isActive ? "" : " suspended"}">${member.isActive ? "Actif" : "Désactivé"}</span>${accountArchived ? "" : `<button type="button" class="secondary-button" data-edit-member="${escapeHtml(member.id)}">Gérer</button>`}</div>
         </article>
     `).join("")}</div>` : '<p class="muted">Aucun accès pour le moment.</p>';
@@ -822,9 +822,9 @@ function renderMemberForm(account, member = null, initialRole = "admin") {
     const workspace = document.querySelector("#creatorWorkspace");
     workspace.innerHTML = `
         <form id="creatorMemberForm" class="creator-form">
-            <div class="form-heading"><div><p class="eyebrow">${editing ? "Modifier l’accès" : "Nouvel accès"}</p><h3>${editing ? escapeHtml(member.fullName || member.username) : role === "technician" ? "Créer un poste technicien" : "Créer un poste PC"}</h3></div></div>
+            <div class="form-heading"><div><p class="eyebrow">${editing ? "Modifier l’accès" : "Nouvel accès"}</p><h3>${editing ? escapeHtml(member.fullName || member.username) : `Créer : ${escapeHtml(creatorMemberRoleLabel(role))}`}</h3></div></div>
             <div class="form-grid">
-                ${editing ? `<label>Type d’accès<input value="${member.role === "admin" ? "Poste PC" : "Technicien"}" disabled></label>` : `<label>Type d’accès<select name="role"><option value="admin" ${role === "admin" ? "selected" : ""}>Poste PC</option><option value="technician" ${role === "technician" ? "selected" : ""}>Technicien</option></select></label>`}
+                ${editing ? `<label>Type d’accès<input value="${escapeHtml(creatorMemberRoleLabel(member.role))}" disabled></label>` : `<label>Type d’accès<select name="role">${creatorMemberRoleOptions(account.subscriptionTier, role)}</select></label>`}
                 <label>Nom et prénom<input name="fullName" maxlength="100" required value="${escapeHtml(member?.fullName || "")}"></label>
                 <label data-member-phone>Téléphone<input name="phone" type="tel" maxlength="30" value="${escapeHtml(member?.phone || "")}" placeholder="06 12 34 56 78"></label>
                 <label data-member-email>E-mail professionnel<input name="email" type="email" maxlength="160" value="${escapeHtml(member?.email || "")}" placeholder="technicien@entreprise.fr"></label>
@@ -868,17 +868,28 @@ function bindMemberRoleForm(form, editing, initialRole) {
     const email = form.elements.email;
     const hint = form.querySelector("#creatorMemberRoleHint");
     const update = () => {
-        const isTechnician = (roleInput?.value || initialRole) === "technician";
-        phone.required = isTechnician;
-        email.required = isTechnician;
-        form.querySelector("[data-member-phone]").firstChild.textContent = isTechnician ? "Téléphone du technicien *" : "Téléphone";
-        form.querySelector("[data-member-email]").firstChild.textContent = isTechnician ? "E-mail professionnel du technicien *" : "E-mail professionnel";
-        hint.textContent = isTechnician
-            ? "Le téléphone, l’e-mail professionnel, l’identifiant et le mot de passe sont nécessaires pour créer un poste technicien."
+        const isMobile = ["mobile_admin", "team_lead", "technician"].includes(roleInput?.value || initialRole);
+        phone.required = isMobile;
+        email.required = isMobile;
+        form.querySelector("[data-member-phone]").firstChild.textContent = isMobile ? "Téléphone du poste mobile *" : "Téléphone";
+        form.querySelector("[data-member-email]").firstChild.textContent = isMobile ? "E-mail professionnel du poste mobile *" : "E-mail professionnel";
+        hint.textContent = isMobile
+            ? "Le téléphone, l’e-mail professionnel, l’identifiant et le mot de passe sont nécessaires pour créer un poste mobile."
             : "L’identifiant et le mot de passe permettent la connexion au poste PC.";
     };
     roleInput?.addEventListener("change", update);
     update();
+}
+
+function creatorMemberRoleOptions(tier, selectedRole) {
+    const roles = tier === "basic"
+        ? ["admin", "pc_standard", "accountant", "mobile_admin"]
+        : ["admin", "pc_standard", "accountant", "mobile_admin", "team_lead", "technician"];
+    return roles.map(role => `<option value="${role}" ${role === selectedRole ? "selected" : ""}>${escapeHtml(creatorMemberRoleLabel(role))}</option>`).join("");
+}
+
+function creatorMemberRoleLabel(role) {
+    return ({ admin: "Administrateur (PC)", pc_standard: "Poste PC standard", accountant: "Comptable", mobile_admin: "Administrateur Mobile", team_lead: "Chef d’équipe mobile", technician: "Technicien mobile" })[role] || "Accès";
 }
 
 function showFeedback(message, isError = false) {

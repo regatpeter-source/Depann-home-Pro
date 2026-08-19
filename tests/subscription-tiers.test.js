@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { calculateSubscriptionPriceCents, subscriptionTierConfig } from "../server/subscription-tiers.js";
+import { calculateSubscriptionPriceCents, isRoleAllowedForSubscription, subscriptionRoleAccessMessage, subscriptionTierConfig } from "../server/subscription-tiers.js";
 import { isFeatureEnabled, isFeatureEnabledForRole, publicOrganization } from "../server/organizations.js";
 import { MENU_ACCESS, ROUTES } from "../js/config.js";
 import { buildSubscriptionInvoiceSnapshot } from "../server/invoicing.js";
@@ -25,6 +25,15 @@ test("Basic, Basic+ and Pro prices are calculated per PC and mobile seat", () =>
     assert.equal(calculateSubscriptionPriceCents("pro", 2, 4), 20000);
     assert.deepEqual([subscriptionTierConfig("basic").pcRateCents, subscriptionTierConfig("basic_plus").pcRateCents, subscriptionTierConfig("pro").pcRateCents], [2000, 3500, 7000]);
     assert.deepEqual([subscriptionTierConfig("basic").mobileRateCents, subscriptionTierConfig("basic_plus").mobileRateCents, subscriptionTierConfig("pro").mobileRateCents], [500, 800, 1500]);
+});
+
+test("subscription tiers restrict mobile post roles as specified", () => {
+    for (const role of ["admin", "pc_standard", "accountant", "mobile_admin"]) assert.equal(isRoleAllowedForSubscription("basic", role), true, `basic:${role}`);
+    for (const role of ["team_lead", "technician"]) assert.equal(isRoleAllowedForSubscription("basic", role), false, `basic:${role}`);
+    for (const tier of ["basic_plus", "pro"]) {
+        for (const role of ["admin", "pc_standard", "accountant", "mobile_admin", "team_lead", "technician"]) assert.equal(isRoleAllowedForSubscription(tier, role), true, `${tier}:${role}`);
+    }
+    assert.match(subscriptionRoleAccessMessage("basic", "technician"), /Basic\+/);
 });
 
 test("Basic exposes clients, billing and accounting while Basic+ adds planning", () => {
@@ -109,9 +118,14 @@ test("tier features are protected on both API and navigation layers", () => {
     assert.match(auth, /La limite de postes mobiles/);
     assert.match(auth, /'admin','pc_standard','accountant'/);
     assert.match(auth, /'mobile_admin','team_lead','technician'/);
+    assert.match(auth, /subscriptionRoleAccessMessage\(organization\.subscriptionTier, role\)/);
+    assert.match(auth, /isRoleAllowedForSubscription\(organization\.subscriptionTier, user\.role\)/);
+    assert.match(auth, /subscriptionRoleAccessMessage\(organization\.subscriptionTier, user\.role\)/);
     assert.match(partnerConnections, /isFeatureEnabled\(await getOrganization\(ownerId\), "partnerConnections"\)/);
     assert.match(partnerDialogue, /isFeatureEnabled\(await getOrganization\(ownerId\), "partnerMissions"\)/);
     assert.match(creatorServer, /const networkEnabled = subscriptionTier === "pro"/);
     assert.match(creatorServer, /Les interfaces Partenaire et Groupe nécessitent l’abonnement Pro/);
+    assert.match(creatorServer, /role IN \('team_lead','technician'\) AND is_active=TRUE/);
+    assert.match(creatorServer, /subscriptionRoleAccessMessage\(owners\[0\]\.subscriptionTier, role\)/);
     assert.match(creatorClient, /option\.disabled = !isPro/);
 });

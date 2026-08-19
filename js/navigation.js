@@ -1,6 +1,6 @@
 import { ROUTES, STORAGE_KEYS, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=124";
 import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=166";
-import { openCreatorPartnerRequest, renderCreatorConsole } from "./creator.js?v=130";
+import { openCreatorPartnerRequest, renderCreatorConsole } from "./creator.js?v=131";
 import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=174";
 import { renderAccounting } from "./accounting.js?v=7";
 import { renderAccountingSandbox } from "./accounting-sandbox.js?v=2";
@@ -1638,7 +1638,11 @@ async function renderTeamManagement(container) {
     roleField.textContent = "Type de poste";
     const roleInput = document.createElement("select");
     roleInput.name = "role";
-    roleInput.innerHTML = '<option value="technician">Technicien</option><option value="team_lead">Technicien référent / Chef d’équipe</option><option value="pc_standard">Poste PC standard</option><option value="admin">Administrateur (PC)</option><option value="mobile_admin">Administrateur Mobile</option>';
+    const tier = document.body.dataset.subscriptionTier || "pro";
+    const roleOptions = tier === "basic"
+        ? [["pc_standard", "Poste PC standard"], ["admin", "Administrateur (PC)"], ["mobile_admin", "Administrateur Mobile"]]
+        : [["technician", "Technicien"], ["team_lead", "Technicien référent / Chef d’équipe"], ["pc_standard", "Poste PC standard"], ["admin", "Administrateur (PC)"], ["mobile_admin", "Administrateur Mobile"]];
+    roleInput.innerHTML = roleOptions.map(([value, label]) => `<option value="${value}">${label}</option>`).join("");
     roleField.appendChild(roleInput);
     formFields.appendChild(roleField);
     const departmentSuggestions = document.createElement("datalist");

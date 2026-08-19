@@ -36,6 +36,7 @@ Chaque offre est calculée selon le nombre de postes réellement autorisés dans
 - Tableau de bord Facturation : chiffre d’affaires, encaissements, avoirs et reste à encaisser.
 - Comptabilité, facturation électronique et préparation des échanges avec la PDP choisie par l’entreprise.
 - Personnalisation des documents et informations de l’entreprise.
+- Accès par postes PC et par un poste Administrateur Mobile ; les comptes Technicien et Chef d’équipe nécessitent Basic+.
 
 L’offre Basic est adaptée aux petites structures qui souhaitent centraliser leur relation client et leur facturation sans module de planning.
 
@@ -48,6 +49,7 @@ L’offre Basic est adaptée aux petites structures qui souhaitent centraliser l
 - Gestion et affectation des interventions.
 - Consultation terrain des rendez-vous autorisés.
 - Détection des conflits de planning et recherche de disponibilités.
+- Accès à tous les postes mobiles : Administrateur Mobile, Chef d’équipe et Technicien.
 
 L’offre Basic+ convient aux entreprises qui souhaitent coordonner le bureau et les équipes terrain autour d’un planning commun.
 

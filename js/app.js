@@ -2,7 +2,7 @@ import { initializeAuthentication, restoreApplicationShell, signOut } from "./au
 import { initializeClientSynchronization } from "./client-sync.js?v=125";
 import { initializeCollaboration } from "./collaboration.js?v=4";
 import { loadDatabase } from "./data.js?v=59";
-import { initializeNavigation, refreshApplication } from "./navigation.js?v=299";
+import { initializeNavigation, refreshApplication } from "./navigation.js?v=300";
 import { renderError } from "./ui.js?v=44";
 import { getSettings } from "./storage.js?v=44";
 import { FONT_OPTIONS } from "./config.js?v=121";
@@ -112,6 +112,7 @@ function showAuthenticatedUser(user) {
     document.body.dataset.organizationInterface = user.organization?.interfaceType || "standard";
     document.body.dataset.organizationType = user.organization?.organizationType || "troubleshooting_company";
     document.body.dataset.organizationLicense = user.organization?.licenseType || "depannhome_standard";
+    document.body.dataset.subscriptionTier = user.organization?.subscriptionTier || "pro";
     document.body.dataset.organizationFeatures = JSON.stringify(user.organization?.features || {});
     updateDeviceMode();
     window.addEventListener("resize", updateDeviceMode);

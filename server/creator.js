@@ -3,12 +3,12 @@ import { getPool } from "./database.js";
 import { isCreatorUsername } from "./auth.js";
 import { creatorNetworkDirectory, creatorNetworkStatistics, updateCreatorNetworkDirectory } from "./partner-connections.js";
 import { createOrganization, getOrganization, getOrganizationHistory, updateOrganization } from "./organizations.js";
-import { calculateSubscriptionPriceCents, normalizeSubscriptionTier, subscriptionTierConfig } from "./subscription-tiers.js";
+import { calculateSubscriptionPriceCents, normalizeSubscriptionTier, subscriptionRoleAccessMessage, subscriptionTierConfig } from "./subscription-tiers.js";
 
 const USERNAME_PATTERN = /^[a-z0-9._-]{3,32}$/;
 const MIN_PASSWORD_LENGTH = 12;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const MEMBER_ROLES = new Set(["admin", "technician"]);
+const MEMBER_ROLES = new Set(["admin", "pc_standard", "accountant", "mobile_admin", "team_lead", "technician"]);
 const SUBSCRIPTION_STATUSES = new Set(["active", "trial", "past_due", "suspended", "cancelled"]);
 const QUOTE_TEMPLATE_POLICIES = new Set(["integrated_only", "company_choice", "external_only"]);
 
@@ -164,6 +164,10 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
         const counts = await countActiveSeats(database, accountId);
         if (account.maxPcUsers < counts.activePcUsers || account.maxTechnicians < counts.activeTechnicians) {
             return response.status(400).json({ message: "Les limites ne peuvent pas être inférieures aux accès actifs existants." });
+        }
+        if (account.subscriptionTier === "basic") {
+            const unsupported = await database.query("SELECT COUNT(*)::int AS count FROM depannhome_users WHERE account_owner_id=$1 AND role IN ('team_lead','technician') AND is_active=TRUE", [accountId]);
+            if (unsupported.rows[0]?.count) return response.status(400).json({ message: "Désactivez les comptes Technicien et Chef d’équipe avant de passer l’entreprise à l’offre Basic." });
         }
         const connection = await database.connect();
         try {
@@ -382,10 +386,12 @@ async function countActiveSeats(database, accountId) {
 
 async function ensureSeatAvailable(database, accountId, role) {
     const { rows: owners } = await database.query(`
-        SELECT max_pc_users AS "maxPcUsers", max_technicians AS "maxTechnicians"
+        SELECT max_pc_users AS "maxPcUsers", max_technicians AS "maxTechnicians", subscription_tier AS "subscriptionTier"
         FROM depannhome_users WHERE id = $1 AND account_owner_id = id FOR UPDATE
     `, [accountId]);
     if (!owners[0]) throw new Error("LIMIT:Compte entreprise introuvable.");
+    const roleAccessError = subscriptionRoleAccessMessage(owners[0].subscriptionTier, role);
+    if (roleAccessError) throw new Error(`LIMIT:${roleAccessError}`);
     const counts = await countActiveSeats(database, accountId);
     const isPcRole = ["admin", "pc_standard", "accountant"].includes(role);
     const maximum = isPcRole ? owners[0].maxPcUsers : owners[0].maxTechnicians;
@@ -475,8 +481,8 @@ function sanitizeMemberProfile(value, role) {
     const phone = cleanText(value?.phone, 30);
     const email = cleanText(value?.email, 160).toLowerCase();
     if (!fullName) return { ok: false, message: "Le nom est obligatoire." };
-    if (role === "technician" && !phone) return { ok: false, message: "Le téléphone du technicien est obligatoire." };
-    if (role === "technician" && !EMAIL_PATTERN.test(email)) return { ok: false, message: "L’e-mail professionnel du technicien est obligatoire." };
+    if (["mobile_admin", "team_lead", "technician"].includes(role) && !phone) return { ok: false, message: "Le téléphone du poste mobile est obligatoire." };
+    if (["mobile_admin", "team_lead", "technician"].includes(role) && !EMAIL_PATTERN.test(email)) return { ok: false, message: "L’e-mail professionnel du poste mobile est obligatoire." };
     return { ok: true, fullName, phone, email };
 }
 
