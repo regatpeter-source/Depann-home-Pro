@@ -46,6 +46,7 @@ test("Basic exposes clients, billing and accounting while Basic+ adds planning",
     assert.equal(isFeatureEnabled(basic, "clients"), true);
     assert.equal(isFeatureEnabled(basic, "billing"), true);
     assert.equal(isFeatureEnabled(basic, "accounting"), true);
+    assert.equal(isFeatureEnabled(basic, "purchases"), true);
     assert.equal(isFeatureEnabled(basic, "quitus"), false);
     assert.equal(isFeatureEnabled(basic, "calendar"), false);
     assert.equal(isFeatureEnabled(basic, "technicalReports"), false);
@@ -54,6 +55,7 @@ test("Basic exposes clients, billing and accounting while Basic+ adds planning",
     assert.equal(isFeatureEnabled(plus, "clients"), true);
     assert.equal(isFeatureEnabled(plus, "billing"), true);
     assert.equal(isFeatureEnabled(plus, "accounting"), true);
+    assert.equal(isFeatureEnabled(plus, "purchases"), true);
     assert.equal(isFeatureEnabled(plus, "calendar"), true);
     assert.equal(isFeatureEnabled(plus, "quitus"), false);
     assert.equal(isFeatureEnabled(plus, "technicalReports"), false);
@@ -84,6 +86,18 @@ test("every mobile post keeps Home and Library access regardless of subscription
     assert.match(style, /body\[data-page-mode="basic-home"\] #pageTitle/);
     assert.match(navigation, /if \(isMobileDeviceContext\(\) \|\| document\.body\.classList\.contains\("desktop-device"\)/);
     assert.doesNotMatch(navigation, /data-basic-home=/);
+});
+
+test("Library is mobile-only and Purchases are administrator-only in every tier", () => {
+    for (const subscriptionTier of ["basic", "basic_plus", "pro"]) {
+        const organization = publicOrganization({ interfaceType: "standard", licenseType: "depannhome_standard", subscriptionTier });
+        for (const role of ["mobile_admin", "team_lead", "technician"]) assert.equal(isFeatureEnabledForRole(organization, "library", role), true, `${subscriptionTier}:${role}:library`);
+        for (const role of ["admin", "pc_standard", "accountant"]) assert.equal(isFeatureEnabledForRole(organization, "library", role), false, `${subscriptionTier}:${role}:library-pc`);
+        for (const role of ["admin", "mobile_admin"]) assert.equal(isFeatureEnabledForRole(organization, "purchases", role), true, `${subscriptionTier}:${role}:purchases`);
+        for (const role of ["pc_standard", "accountant", "team_lead", "technician"]) assert.equal(isFeatureEnabledForRole(organization, "purchases", role), false, `${subscriptionTier}:${role}:purchases`);
+    }
+    assert.deepEqual(MENU_ACCESS.quick.purchases, ["admin", "mobile_admin"]);
+    assert.deepEqual(MENU_ACCESS.navigation[ROUTES.purchases], ["admin", "mobile_admin"]);
 });
 
 test("Pro enables every product feature", () => {
@@ -157,6 +171,7 @@ test("tier features are protected on both API and navigation layers", () => {
     assert.match(app, /app\.use\("\/api\/billing\/document-templates\/quitus", requireAuthentication, requireOrganizationFeature\("quitus"\)\)/);
     assert.match(app, /app\.use\("\/api\/document-templates\/quitus", requireAuthentication, requireOrganizationFeature\("quitus"\)\)/);
     assert.match(app, /app\.use\("\/api\/document-templates\/report", requireAuthentication, requireOrganizationFeature\("technicalReports"\)\)/);
+    assert.match(app, /app\.use\("\/api\/purchases", requireAuthentication, requireOrganizationFeature\("purchases"\)\)/);
     assert.match(billing, /isAccountant\(\) \|\| !canAccessTechnicalReports\(\)/);
     assert.match(billing, /canAccessQuitus\(\) && usesExternalDocumentTemplate\("quitus"\)/);
     assert.match(billing, /if \(canAccessQuitus\(\)\) renderAdditionalDocumentTemplateSettings\(panel, profile, "quitus"\)/);

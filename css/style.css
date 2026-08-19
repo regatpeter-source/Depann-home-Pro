@@ -426,9 +426,7 @@ body[data-role="accountant"] .nav-button[data-nav="partner-missions"]{
 
 /* Administrateur Mobile : accès métier sur smartphone, sans administration avancée. */
 body[data-role="mobile_admin"] #partnerMissionsBtn,
-body[data-role="mobile_admin"] #purchasesBtn,
-body[data-role="mobile_admin"] .nav-button[data-nav="partner-missions"],
-body[data-role="mobile_admin"] .nav-button[data-nav="purchases"]{display:none;}
+body[data-role="mobile_admin"] .nav-button[data-nav="partner-missions"]{display:none;}
 .team-role-badge.is-mobile-admin{background:#e0f2fe;color:#075985;}
 body[data-role="mobile_admin"].mobile-device .quick-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:16px 0;}
 body[data-role="mobile_admin"].mobile-device .quick-actions button{padding:13px 10px;font-size:.9rem;}
@@ -465,13 +463,12 @@ body[data-role="mobile_admin"].mobile-device footer .nav-button:not([data-nav="h
 @media(max-width:700px){.wizard-progress{display:flex;padding-bottom:4px}.wizard-progress button{flex:0 0 36px}.wizard-fields,.report-summary{grid-template-columns:1fr}.wizard-row{grid-template-columns:1fr 1fr auto}.wizard-row input:first-child{grid-column:1/-1}.wizard-actions{bottom:6px}.wizard-actions .secondary-button{flex:1;padding:13px 9px}.report-wizard-header{top:0}.wizard-step{min-height:0}.text-button{margin-left:0}.wizard-step-title{flex-wrap:wrap}}
 
 body[data-role="accountant"] .search-section,
-body[data-role="accountant"] .quick-actions > :not(#billingBtn):not(#purchasesBtn),
-body[data-role="accountant"] .nav-button:not([data-nav="billing"]):not([data-nav="purchases"]){
+body[data-role="accountant"] .quick-actions > :not(#billingBtn),
+body[data-role="accountant"] .nav-button:not([data-nav="billing"]){
     display:none;
 }
 
-body.desktop-device[data-role="accountant"] footer .nav-button[data-nav="billing"],
-body.desktop-device[data-role="accountant"] footer .nav-button[data-nav="purchases"]{
+body.desktop-device[data-role="accountant"] footer .nav-button[data-nav="billing"]{
     display:flex;
 }
 
@@ -5310,11 +5307,6 @@ footer{
 
     .billing-document-actions{
         width:100%;
-    }
-
-    body.mobile-device #purchasesBtn,
-    body.mobile-device .nav-button[data-nav="purchases"]{
-        display:none;
     }
 
     .client-billing-item{

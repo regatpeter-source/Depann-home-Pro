@@ -1,9 +1,10 @@
-import { ROUTES, STORAGE_KEYS, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=124";
+import { ROUTES, STORAGE_KEYS, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=125";
 import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=167";
 import { openCreatorPartnerRequest, renderCreatorConsole } from "./creator.js?v=132";
 import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=175";
 import { renderAccounting } from "./accounting.js?v=7";
 import { renderAccountingSandbox } from "./accounting-sandbox.js?v=2";
+import { renderPurchases } from "./purchases.js?v=117";
 import { renderGroupActivation, renderGroupWorkspace } from "./groups.js?v=3";
 import { renderPartnerMissions } from "./partner-missions.js?v=42";
 import { renderPartnerSandbox } from "./partner-sandbox.js?v=3";
@@ -161,6 +162,8 @@ export async function refreshApplication() {
         renderPartnerSandbox();
     } else if (activeRoute === ROUTES.accountingSandbox && document.body.dataset.role === "admin") {
         renderAccountingSandbox();
+    } else if (activeRoute === ROUTES.purchases && ["admin", "mobile_admin"].includes(document.body.dataset.role)) {
+        renderPurchases();
     } else if (activeRoute === ROUTES.groups && document.body.dataset.groupAdmin === "true") {
         renderGroupWorkspace();
     } else if (activeRoute === ROUTES.settings && canAccessRoute(ROUTES.settings)) {
@@ -176,6 +179,7 @@ function bindEvents() {
     const clientsBtn = document.getElementById("clientsBtn");
     const billingBtn = document.getElementById("billingBtn");
     const accountingBtn = document.getElementById("accountingBtn");
+    const purchasesBtn = document.getElementById("purchasesBtn");
     const groupsBtn = document.getElementById("groupsBtn");
     const partnerMissionsBtn = document.getElementById("partnerMissionsBtn");
     const partnerSandboxBtn = document.getElementById("partnerSandboxBtn");
@@ -205,6 +209,7 @@ function bindEvents() {
         else renderBilling();
     });
     accountingBtn?.addEventListener("click", () => { if (canAccessQuick("accounting")) renderAccounting(); });
+    purchasesBtn?.addEventListener("click", () => { if (canAccessQuick("purchases")) renderPurchases(); });
     groupsBtn?.addEventListener("click", () => { if (canAccessQuick("groups")) renderGroupWorkspace(); });
     partnerMissionsBtn?.addEventListener("click", () => { if (canAccessQuick("partnerMissions")) renderPartnerMissions(); });
     partnerSandboxBtn?.addEventListener("click", () => { if (canAccessQuick("partnerSandbox")) renderPartnerSandbox(); });
@@ -235,6 +240,7 @@ function bindEvents() {
                 else renderBilling();
             }
             if (nav === ROUTES.accounting && document.body.dataset.role === "admin") renderAccounting();
+            if (nav === ROUTES.purchases) renderPurchases();
             if (nav === ROUTES.groups && document.body.dataset.groupAdmin === "true") renderGroupWorkspace();
             if (nav === ROUTES.accountingSandbox && document.body.dataset.role === "admin") renderAccountingSandbox();
             if (nav === ROUTES.partnerMissions) renderPartnerMissions();
@@ -249,7 +255,7 @@ function bindEvents() {
 
 function applyRoleBasedMenus() {
     const quickSelectors = {
-        clients: "#clientsBtn", calendar: "#calendarBtn", library: "#libraryBtn", billing: "#billingBtn",
+        clients: "#clientsBtn", calendar: "#calendarBtn", library: "#libraryBtn", billing: "#billingBtn", purchases: "#purchasesBtn",
         accounting: "#accountingBtn", groups: "#groupsBtn", partnerMissions: "#partnerMissionsBtn",
         partnerSandbox: "#partnerSandboxBtn", photo: "#photoBtn",
         favorites: "#favoritesBtn", settings: "#settingsBtn"
@@ -337,7 +343,7 @@ function isMobilePostRole() {
 }
 
 function menuRoute(menu) {
-    return ({ clients: ROUTES.clients, calendar: ROUTES.calendar, library: ROUTES.library, billing: ROUTES.billing, accounting: ROUTES.accounting, groups: ROUTES.groups, partnerMissions: ROUTES.partnerMissions, partnerSandbox: ROUTES.partnerSandbox, photo: ROUTES.photo, favorites: ROUTES.favorites, settings: ROUTES.settings })[menu] || "";
+    return ({ clients: ROUTES.clients, calendar: ROUTES.calendar, library: ROUTES.library, billing: ROUTES.billing, accounting: ROUTES.accounting, purchases: ROUTES.purchases, groups: ROUTES.groups, partnerMissions: ROUTES.partnerMissions, partnerSandbox: ROUTES.partnerSandbox, photo: ROUTES.photo, favorites: ROUTES.favorites, settings: ROUTES.settings })[menu] || "";
 }
 
 function openHome() {
@@ -1405,9 +1411,9 @@ async function renderSubscriptionSettings(container) {
     const currentMobileSeats = Math.max(0, Number(document.body.dataset.maxMobileUsers) || 0);
     const storedMonthlyPriceCents = Math.max(0, Number(document.body.dataset.monthlyPriceCents) || 0);
     const tiers = [
-        { id: "basic", label: "Basic", pc: 20, mobile: 5, description: "Postes PC et Administrateur Mobile. Clients, devis, factures, comptabilité, facturation électronique et PDP." },
-        { id: "basic_plus", label: "Basic+", pc: 35, mobile: 8, description: "Tous postes PC et mobiles. Basic avec planning et gestion des interventions." },
-        { id: "pro", label: "Pro", pc: 70, mobile: 15, description: "Tous postes PC et mobiles. Accès complet : Quitus, rapports, achats, bibliothèque, Réseau, API, imports et groupes." }
+        { id: "basic", label: "Basic", pc: 20, mobile: 5, description: "Postes PC et Administrateur Mobile. Clients, facturation, comptabilité et PDP. Bibliothèque sur mobile ; Achats pour Administrateurs PC/Mobile." },
+        { id: "basic_plus", label: "Basic+", pc: 35, mobile: 8, description: "Tous postes PC et mobiles. Basic avec planning. Bibliothèque sur mobile ; Achats pour Administrateurs PC/Mobile." },
+        { id: "pro", label: "Pro", pc: 70, mobile: 15, description: "Tous postes et accès complet. Bibliothèque sur mobile ; Achats pour Administrateurs PC/Mobile ; Quitus, rapports, Réseau, API, imports et groupes." }
     ];
     const rank = { basic: 0, basic_plus: 1, pro: 2 };
     const currentOffer = tiers.find(tier => tier.id === currentTier) || tiers[2];

@@ -65,6 +65,7 @@ const CALENDAR_USERS = TERRAIN.concat("accountant");
 const PARTNER_MISSION_USERS = OPERATIONAL_MOBILE;
 const LIBRARY_USERS = ["mobile_admin", "team_lead", "technician"];
 const MOBILE_POST_USERS = ["mobile_admin", "team_lead", "technician"];
+const PURCHASE_USERS = ["admin", "mobile_admin"];
 
 // Toute nouvelle entrée de navigation doit être déclarée ici. Les éléments
 // hors rôle sont retirés du DOM avant l’affichage de l’application.
@@ -73,6 +74,7 @@ export const MENU_ACCESS = Object.freeze({
         clients: OPERATIONAL_MOBILE,
         calendar: CALENDAR_USERS,
         library: LIBRARY_USERS,
+        purchases: PURCHASE_USERS,
         billing: OPERATIONAL_MOBILE.concat("accountant"),
         accounting: ADMINISTRATORS,
         groups: ADMINISTRATORS,
@@ -89,6 +91,7 @@ export const MENU_ACCESS = Object.freeze({
         [ROUTES.photo]: OPERATIONAL_MOBILE,
         [ROUTES.clients]: OPERATIONAL_MOBILE,
         [ROUTES.billing]: OPERATIONAL_MOBILE.concat("accountant"),
+        [ROUTES.purchases]: PURCHASE_USERS,
         [ROUTES.accounting]: ADMINISTRATORS,
         [ROUTES.accountingSandbox]: ADMINISTRATORS,
         [ROUTES.groups]: ADMINISTRATORS,

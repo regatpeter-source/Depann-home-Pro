@@ -10,17 +10,17 @@ Au démarrage, `applyRoleBasedMenus()` dans `js/navigation.js` supprime du DOM l
 
 Toute nouvelle entrée de menu doit être ajoutée à `MENU_ACCESS` avant son utilisation dans l’interface. Une route client est également vérifiée par `canAccessRoute()` avant son rendu.
 
-Les rôles de poste mobile (`mobile_admin`, `team_lead`, `technician`) conservent toujours les boutons **Accueil** et **Bibliothèque**, indépendamment des fonctionnalités incluses dans l’offre de l’organisation. La même exception est appliquée côté serveur aux routes de consultation de la bibliothèque.
+Les rôles de poste mobile (`mobile_admin`, `team_lead`, `technician`) conservent toujours les boutons **Accueil** et **Bibliothèque**, indépendamment des fonctionnalités incluses dans l’offre de l’organisation. Aucun poste PC n’accède à la Bibliothèque. Les **Achats** sont disponibles dans toutes les offres mais uniquement pour `admin` et `mobile_admin`, avec le même contrôle côté serveur.
 
 ## Matrice actuelle
 
 | Rôle | Navigation visible |
 | --- | --- |
-| `admin` — Administrateur (PC) | Toutes les fonctions opérationnelles et administratives compatibles avec les capacités activées, hors bibliothèque technique : paramètres, comptabilité, groupe, réseau, sandbox, postes et importation de données. |
-| `pc_standard` — Poste PC standard | Clients, planning, devis/factures, missions partenaires, achats, recherche, photo, favoris et historique. Aucun réglage, outil d’administration ou accès à la bibliothèque technique. |
-| `mobile_admin` — Administrateur Mobile | Fonctions opérationnelles mobiles : clients, planning, bibliothèque, devis/factures, recherche, photo, favoris et historique. Aucun paramètre ni sécurité d’entreprise. |
+| `admin` — Administrateur (PC) | Toutes les fonctions opérationnelles et administratives compatibles avec les capacités activées, dont les Achats, hors bibliothèque technique : paramètres, comptabilité, groupe, réseau, sandbox, postes et importation de données. |
+| `pc_standard` — Poste PC standard | Clients, planning, devis/factures, missions partenaires, recherche, photo, favoris et historique. Aucun achat, réglage, outil d’administration ou accès à la bibliothèque technique. |
+| `mobile_admin` — Administrateur Mobile | Fonctions opérationnelles mobiles : clients, planning, bibliothèque, achats, devis/factures, recherche, photo, favoris et historique. Aucun paramètre ni sécurité d’entreprise. |
 | `team_lead` / `technician` | Navigation terrain : planning et bibliothèque. Les rapports nécessaires restent accessibles dans le parcours d’intervention existant. |
-| `accountant` | Devis/factures et achats, conformément à l’espace comptable existant. |
+| `accountant` | Devis/factures selon son espace comptable, sans accès direct aux Achats. |
 
 Les entrées Groupe et Sandbox exigent en plus leurs capacités existantes (`groupAdmin` et sandbox activée). Elles sont accessibles depuis les Paramètres et restent absentes même pour un administrateur lorsque ces capacités ne sont pas disponibles.
 

@@ -9,12 +9,13 @@ Les niveaux d’abonnement s’appliquent aux organisations utilisant l’interf
 - Accès aux clients.
 - Accès aux devis, factures, avoirs et au tableau de facturation.
 - Accès au module Comptabilité, facturation électronique et PDP.
-- Sur chaque poste mobile autorisé par l’offre : accès permanent à l’Accueil et à la Bibliothèque technique.
+- Bibliothèque technique incluse sur les postes mobiles autorisés par l’offre (`mobile_admin`, `team_lead`, `technician`) ; aucun accès Bibliothèque sur poste PC.
+- Achats inclus pour l’Administrateur PC et l’Administrateur Mobile uniquement.
 - Postes autorisés : Administrateur PC, poste PC standard, Comptable et Administrateur Mobile.
 - Les comptes Technicien et Chef d’équipe mobile nécessitent au minimum Basic+.
 - Pas d’accès au Quitus d’intervention, réservé à Pro.
 - Accès aux réglages nécessaires du compte et des documents.
-- Pas d’accès au planning, aux rapports techniques, aux achats, à la bibliothèque sur poste PC, au Réseau ou aux API.
+- Pas d’accès au planning, aux rapports techniques, à la bibliothèque sur poste PC, au Réseau ou aux API.
 
 ## Basic+
 
@@ -24,13 +25,13 @@ Les niveaux d’abonnement s’appliquent aux organisations utilisant l’interf
 - Planning et gestion des interventions.
 - Accès à tous les postes mobiles : Administrateur Mobile, Chef d’équipe et Technicien.
 - Pas d’accès au Quitus d’intervention, réservé à Pro.
-- Pas d’accès aux rapports techniques, aux achats, à la bibliothèque sur poste PC, au Réseau ou aux API.
+- Pas d’accès aux rapports techniques, à la bibliothèque sur poste PC, au Réseau ou aux API.
 
 ## Pro
 
 - 70 € TTC par poste PC et par mois.
 - 15 € TTC par poste mobile et par mois.
-- Accès complet aux modules disponibles : clients, planning, devis, factures, facturation, comptabilité, achats, rapports de recherche de fuite, bibliothèque, photos, imports, groupes, missions partenaires, Réseau Depann’Home Pro et connexions API.
+- Accès complet aux modules disponibles selon le rôle : clients, planning, devis, factures, facturation, comptabilité, achats administrateurs, rapports de recherche de fuite, bibliothèque mobile, photos, imports, groupes, missions partenaires, Réseau Depann’Home Pro et connexions API.
 - Accès au Quitus d’intervention : signature, validation, PDF et modèles personnalisés.
 - Accès complet à tous les types de postes PC et mobiles.
 

@@ -7,23 +7,23 @@ export const SUBSCRIPTION_TIER_CONFIG = Object.freeze({
         label: "Basic",
         pcRateCents: 2000,
         mobileRateCents: 500,
-        description: "Postes PC et Administrateur Mobile avec clients, facturation, comptabilité, facturation électronique et PDP",
+        description: "Postes PC et Administrateur Mobile, bibliothèque mobile et achats administrateurs",
         allowedRoles: Object.freeze([...PC_ROLES, "mobile_admin"]),
-        features: Object.freeze({ clients: true, calendar: false, library: false, billing: true, accounting: true, quitus: false, technicalReports: false, partnerMissions: false, partnerConnections: false, messages: true, settings: true, imports: false, groups: false, purchases: false, connectors: false, photo: false, favorites: false })
+        features: Object.freeze({ clients: true, calendar: false, library: false, billing: true, accounting: true, quitus: false, technicalReports: false, partnerMissions: false, partnerConnections: false, messages: true, settings: true, imports: false, groups: false, purchases: true, connectors: false, photo: false, favorites: false })
     }),
     basic_plus: Object.freeze({
         label: "Basic+",
         pcRateCents: 3500,
         mobileRateCents: 800,
-        description: "Tous postes PC et mobiles avec planning et gestion des interventions",
+        description: "Tous postes PC et mobiles, planning, bibliothèque mobile et achats administrateurs",
         allowedRoles: Object.freeze([...PC_ROLES, ...ALL_MOBILE_ROLES]),
-        features: Object.freeze({ clients: true, calendar: true, library: false, billing: true, accounting: true, quitus: false, technicalReports: false, partnerMissions: false, partnerConnections: false, messages: true, settings: true, imports: false, groups: false, purchases: false, connectors: false, photo: false, favorites: false })
+        features: Object.freeze({ clients: true, calendar: true, library: false, billing: true, accounting: true, quitus: false, technicalReports: false, partnerMissions: false, partnerConnections: false, messages: true, settings: true, imports: false, groups: false, purchases: true, connectors: false, photo: false, favorites: false })
     }),
     pro: Object.freeze({
         label: "Pro",
         pcRateCents: 7000,
         mobileRateCents: 1500,
-        description: "Tous postes PC et mobiles avec accès complet à Depann’Home Pro, au Réseau et aux connexions API",
+        description: "Tous postes avec accès complet, bibliothèque mobile et achats administrateurs",
         allowedRoles: Object.freeze([...PC_ROLES, ...ALL_MOBILE_ROLES]),
         features: Object.freeze({ clients: true, calendar: true, library: true, billing: true, accounting: true, quitus: true, technicalReports: true, partnerMissions: true, partnerConnections: true, messages: true, settings: true, imports: true, groups: true, purchases: true, connectors: true, photo: true, favorites: true })
     })
