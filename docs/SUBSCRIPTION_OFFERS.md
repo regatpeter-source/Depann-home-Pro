@@ -47,3 +47,5 @@ Les remises commerciales existantes peuvent toujours être appliquées au total 
 ## Migration
 
 Les comptes existants sont migrés vers Pro afin de ne perdre aucun accès. Lorsqu’un compte est ensuite enregistré depuis la Console Créateur, son tarif est recalculé selon son offre et ses quotas de postes.
+
+Une évolution ou une rétrogradation d’offre ne supprime et ne réinitialise aucune donnée : clients, documents, planning, comptabilité, modèles, profils, comptes utilisateurs et réglages Réseau sont conservés. Seuls les droits d’accès changent. Les capacités masquées redeviennent disponibles avec leurs données lors d’un retour vers l’offre correspondante.

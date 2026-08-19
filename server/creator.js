@@ -140,7 +140,7 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
                 account.subscriptionStatus, account.subscriptionRenewalDate || null, account.billingReference, account.creatorNote, account.quoteTemplatePolicy, account.quitusTemplatePolicy, account.reportTemplatePolicy]);
                 const id = rows[0].id;
                 await connection.query("UPDATE depannhome_users SET account_owner_id = id WHERE id = $1", [id]);
-                await synchronizeCompanyProfile(connection, id, account.companyProfile, account.subscriptionTier);
+                await synchronizeCompanyProfile(connection, id, account.companyProfile, { initializeNetwork: account.subscriptionTier === "pro" });
                 await connection.query("COMMIT");
             await createOrganization(id, request.body?.organization, request.user.sub);
             response.status(201).json({ id: String(id) });
@@ -165,10 +165,6 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
         if (account.maxPcUsers < counts.activePcUsers || account.maxTechnicians < counts.activeTechnicians) {
             return response.status(400).json({ message: "Les limites ne peuvent pas être inférieures aux accès actifs existants." });
         }
-        if (account.subscriptionTier === "basic") {
-            const unsupported = await database.query("SELECT COUNT(*)::int AS count FROM depannhome_users WHERE account_owner_id=$1 AND role IN ('team_lead','technician') AND is_active=TRUE", [accountId]);
-            if (unsupported.rows[0]?.count) return response.status(400).json({ message: "Désactivez les comptes Technicien et Chef d’équipe avant de passer l’entreprise à l’offre Basic." });
-        }
         const connection = await database.connect();
         try {
             await connection.query("BEGIN");
@@ -183,7 +179,7 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
             `, [accountId, account.companyName, account.fullName, account.phone, account.billingEmail, account.maxPcUsers, account.maxTechnicians, owner.is_active,
             account.subscriptionPlan, account.subscriptionTier, account.subscriptionLabel, account.monthlyPriceCents, account.subscriptionStatus, account.subscriptionRenewalDate || null, account.billingReference, account.creatorNote, account.quoteTemplatePolicy, account.quitusTemplatePolicy, account.reportTemplatePolicy,
             account.subscriptionDiscountLabel, account.subscriptionDiscountMode, account.subscriptionDiscountValue]);
-            await synchronizeCompanyProfile(connection, accountId, account.companyProfile, account.subscriptionTier);
+            await synchronizeCompanyProfile(connection, accountId, account.companyProfile, { initializeNetwork: account.subscriptionTier === "pro" });
             await connection.query("COMMIT");
         } catch (error) { await connection.query("ROLLBACK"); throw error; } finally { connection.release(); }
         await updateOrganization(accountId, request.body?.organization, request.user.sub);
@@ -467,11 +463,10 @@ function sanitizeCompanyProfile(value, defaults) {
 
 function parseLogo(value) { if (!value) return {}; const match = /^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=]+)$/.exec(String(value)); if (!match) return { error: "Le logo doit être une image PNG, JPEG ou WebP." }; const buffer = Buffer.from(match[2], "base64"); return buffer.length > 2 * 1024 * 1024 ? { error: "Le logo ne doit pas dépasser 2 Mo." } : { buffer, mimeType: match[1] }; }
 
-async function synchronizeCompanyProfile(connection, ownerId, profile, subscriptionTier = "pro") {
+async function synchronizeCompanyProfile(connection, ownerId, profile, options = {}) {
     await connection.query(`INSERT INTO depannhome_billing_profiles(owner_id,company_name,address,postal_code,city,phone,secondary_phone,email,registration_number,siren,country,logo_data,logo_mime_type) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) ON CONFLICT(owner_id) DO UPDATE SET company_name=EXCLUDED.company_name,address=EXCLUDED.address,postal_code=EXCLUDED.postal_code,city=EXCLUDED.city,phone=EXCLUDED.phone,secondary_phone=EXCLUDED.secondary_phone,email=EXCLUDED.email,registration_number=EXCLUDED.registration_number,siren=EXCLUDED.siren,country=EXCLUDED.country,logo_data=CASE WHEN $14 THEN EXCLUDED.logo_data ELSE depannhome_billing_profiles.logo_data END,logo_mime_type=CASE WHEN $14 THEN EXCLUDED.logo_mime_type ELSE depannhome_billing_profiles.logo_mime_type END,updated_at=NOW()`, [ownerId, profile.legalName, profile.address, profile.postalCode, profile.city, profile.phone, profile.secondaryPhone, profile.email, profile.siret, profile.siret.slice(0, 9), profile.country, profile.logoBuffer || null, profile.logoMimeType || "", Boolean(profile.logoBuffer)]);
-    const networkEnabled = subscriptionTier === "pro";
-    const acceptsPartnerMissions = networkEnabled && profile.acceptsPartnerMissions;
-    await connection.query(`INSERT INTO depannhome_partner_directory(owner_id,is_listed,visibility_explicit,description,trades,specialties,service_area,service_radius_km,departments,website,accepts_partner_missions,availability_status,commercial_name,region,regions,coverage_mode,share_phone,share_email,updated_at) VALUES($1,$14,TRUE,$2,'[]'::jsonb,$3::jsonb,$4,$5,$6::jsonb,$7,$8,$9,$10,$11,$12::jsonb,$13,TRUE,TRUE,NOW()) ON CONFLICT(owner_id) DO UPDATE SET is_listed=$14,visibility_explicit=TRUE,description=EXCLUDED.description,specialties=EXCLUDED.specialties,service_area=EXCLUDED.service_area,service_radius_km=EXCLUDED.service_radius_km,departments=EXCLUDED.departments,website=EXCLUDED.website,accepts_partner_missions=EXCLUDED.accepts_partner_missions,availability_status=EXCLUDED.availability_status,commercial_name=EXCLUDED.commercial_name,region=EXCLUDED.region,regions=EXCLUDED.regions,coverage_mode=EXCLUDED.coverage_mode,share_phone=TRUE,share_email=TRUE,updated_at=NOW()`, [ownerId, profile.description, JSON.stringify(profile.specialties), profile.serviceArea, profile.serviceRadiusKm, JSON.stringify(profile.departments), profile.website, acceptsPartnerMissions, acceptsPartnerMissions ? profile.availabilityStatus : "temporarily_unavailable", profile.commercialName, profile.regions[0] || "", JSON.stringify(profile.regions), profile.coverageMode, networkEnabled]);
+    const initializeNetwork = options.initializeNetwork === true;
+    await connection.query(`INSERT INTO depannhome_partner_directory(owner_id,is_listed,visibility_explicit,description,trades,specialties,service_area,service_radius_km,departments,website,accepts_partner_missions,availability_status,commercial_name,region,regions,coverage_mode,share_phone,share_email,updated_at) VALUES($1,$14,$14,$2,'[]'::jsonb,$3::jsonb,$4,$5,$6::jsonb,$7,$8,$9,$10,$11,$12::jsonb,$13,TRUE,TRUE,NOW()) ON CONFLICT(owner_id) DO UPDATE SET description=EXCLUDED.description,specialties=EXCLUDED.specialties,service_area=EXCLUDED.service_area,service_radius_km=EXCLUDED.service_radius_km,departments=EXCLUDED.departments,website=EXCLUDED.website,commercial_name=EXCLUDED.commercial_name,region=EXCLUDED.region,regions=EXCLUDED.regions,coverage_mode=EXCLUDED.coverage_mode,share_phone=TRUE,share_email=TRUE,updated_at=NOW()`, [ownerId, profile.description, JSON.stringify(profile.specialties), profile.serviceArea, profile.serviceRadiusKm, JSON.stringify(profile.departments), profile.website, profile.acceptsPartnerMissions, profile.acceptsPartnerMissions ? profile.availabilityStatus : "temporarily_unavailable", profile.commercialName, profile.regions[0] || "", JSON.stringify(profile.regions), profile.coverageMode, initializeNetwork]);
 }
 
 function cleanList(value, maximumItems, maximumLength) { const items = Array.isArray(value) ? value : String(value || "").split(/[,;\n|]/); return [...new Set(items.map(item => cleanText(item, maximumLength)).filter(Boolean))].slice(0, maximumItems); }

@@ -79,10 +79,9 @@ test("every mobile post keeps Home and Library access regardless of subscription
     assert.match(style, /@media\(max-width:700px\), \(pointer:coarse\)/);
     assert.match(style, /footer \.nav-button\[data-nav="home"\]/);
     assert.match(navigation, /isMobileDeviceContext\(\) && canAccessRoute\(ROUTES\.calendar\)/);
-    assert.match(navigation, /if \(isMobileDeviceContext\(\)\) \{\s*panel\.innerHTML = '<div class="dashboard-heading"/);
+    assert.match(navigation, /if \(!canAccessRoute\(ROUTES\.calendar\)\) \{\s*panel\.innerHTML = '<div class="dashboard-heading"/);
     assert.match(navigation, /if \(isMobileDeviceContext\(\) \|\| document\.body\.classList\.contains\("desktop-device"\)/);
-    assert.match(navigation, /data-basic-home="library"/);
-    assert.match(navigation, /canTechnicianAccessBilling\(\)/);
+    assert.doesNotMatch(navigation, /data-basic-home=/);
 });
 
 test("Pro enables every product feature", () => {
@@ -137,9 +136,13 @@ test("tier features are protected on both API and navigation layers", () => {
     assert.match(auth, /subscriptionRoleAccessMessage\(organization\.subscriptionTier, user\.role\)/);
     assert.match(partnerConnections, /isFeatureEnabled\(await getOrganization\(ownerId\), "partnerConnections"\)/);
     assert.match(partnerDialogue, /isFeatureEnabled\(await getOrganization\(ownerId\), "partnerMissions"\)/);
-    assert.match(creatorServer, /const networkEnabled = subscriptionTier === "pro"/);
+    const companyProfileSync = creatorServer.slice(creatorServer.indexOf("async function synchronizeCompanyProfile"), creatorServer.indexOf("function cleanList"));
+    assert.doesNotMatch(companyProfileSync, /DO UPDATE SET is_listed=/);
+    assert.doesNotMatch(companyProfileSync, /DO UPDATE SET[^`]*accepts_partner_missions=/);
+    assert.doesNotMatch(companyProfileSync, /DO UPDATE SET[^`]*availability_status=/);
     assert.match(creatorServer, /Les interfaces Partenaire et Groupe nécessitent l’abonnement Pro/);
-    assert.match(creatorServer, /role IN \('team_lead','technician'\) AND is_active=TRUE/);
+    assert.doesNotMatch(creatorServer, /Désactivez les comptes Technicien et Chef d’équipe avant de passer/);
     assert.match(creatorServer, /subscriptionRoleAccessMessage\(owners\[0\]\.subscriptionTier, role\)/);
+    assert.match(partnerConnections, /owner\.subscription_tier='pro'/);
     assert.match(creatorClient, /option\.disabled = !isPro/);
 });
