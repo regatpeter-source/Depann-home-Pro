@@ -23,6 +23,60 @@ La plateforme s’adresse aux entreprises de dépannage, maintenance, plomberie,
 
 ---
 
+# Les forfaits Depann’Home Pro
+
+Chaque offre est calculée selon le nombre de postes réellement autorisés dans l’entreprise : postes informatiques pour l’administration et postes mobiles pour les équipes terrain.
+
+## Basic
+
+- **20 € TTC par poste PC et par mois.**
+- **5 € TTC par poste mobile et par mois.**
+- Gestion des clients.
+- Création et suivi des devis, factures et avoirs.
+- Tableau de bord Facturation : chiffre d’affaires, encaissements, avoirs et reste à encaisser.
+- Personnalisation des documents et informations de l’entreprise.
+
+L’offre Basic est adaptée aux petites structures qui souhaitent centraliser leur relation client et leur facturation sans module de planning.
+
+## Basic+
+
+- **35 € TTC par poste PC et par mois.**
+- **8 € TTC par poste mobile et par mois.**
+- Toutes les fonctionnalités de Basic.
+- Planning partagé.
+- Gestion et affectation des interventions.
+- Consultation terrain des rendez-vous autorisés.
+- Détection des conflits de planning et recherche de disponibilités.
+
+L’offre Basic+ convient aux entreprises qui souhaitent coordonner le bureau et les équipes terrain autour d’un planning commun.
+
+## Pro
+
+- **70 € TTC par poste PC et par mois.**
+- **15 € TTC par poste mobile et par mois.**
+- Accès complet aux fonctions Depann’Home Pro.
+- Clients, planning, devis, factures, avoirs et facturation.
+- Rapports de recherche de fuite, photos, corrections et signatures.
+- Quitus d’intervention.
+- Comptabilité, règlements, achats et préparation des exports.
+- Bibliothèque et ressources techniques.
+- Réseau Depann’Home Pro et missions partenaires.
+- Dialogue collaboratif et partage contrôlé des documents.
+- Connexions API, connecteurs et environnements de recette.
+- Imports de données et fonctions Groupe / Multi-entreprises selon l’interface activée.
+
+L’offre Pro est destinée aux entreprises qui veulent piloter l’ensemble de leur activité et développer des échanges structurés avec leurs partenaires.
+
+## Exemple de calcul mensuel
+
+- Basic avec 1 poste PC et 1 poste mobile : **25 € TTC par mois**.
+- Basic+ avec 2 postes PC et 3 postes mobiles : **94 € TTC par mois**.
+- Pro avec 2 postes PC et 4 postes mobiles : **200 € TTC par mois**.
+
+Les remises commerciales éventuellement accordées sont appliquées au total mensuel calculé. Les interfaces Partenaire et Groupe nécessitent l’offre Pro.
+
+---
+
 # 1. Gestion complète des clients
 
 Chaque entreprise dispose de son propre espace client, strictement isolé de celui des autres sociétés.

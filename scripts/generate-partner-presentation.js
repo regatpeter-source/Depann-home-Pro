@@ -56,6 +56,7 @@ function addHeading(value, level) {
         document.moveDown(.25);
         document.fillColor(colors.primary).fontSize(22).text(text, { lineGap: 2 });
         addRule(colors.secondary);
+        if (text === "Les forfaits Depann’Home Pro") addPricingPanel();
         addIllustration(text);
         return;
     }
@@ -67,6 +68,27 @@ function addHeading(value, level) {
     ensureSpace(40); document.moveDown(.2);
     document.fillColor(colors.secondary).font("Helvetica-Bold").fontSize(11).text(text);
     document.moveDown(.18);
+}
+
+function addPricingPanel() {
+    ensureSpace(245);
+    const offers = [
+        { name: "BASIC", pc: "20 € / PC", mobile: "5 € / mobile", detail: "Clients, devis, factures et tableau de facturation", color: "#2563EB", pale: "#EFF6FF" },
+        { name: "BASIC+", pc: "35 € / PC", mobile: "8 € / mobile", detail: "Basic avec planning et gestion des interventions", color: colors.secondary, pale: colors.paleGreen },
+        { name: "PRO", pc: "70 € / PC", mobile: "15 € / mobile", detail: "Accès complet, rapports, Réseau et connexions API", color: "#7C3AED", pale: "#F5F3FF" }
+    ];
+    const gap = 10; const totalWidth = document.page.width - 104; const cardWidth = (totalWidth - gap * 2) / 3; const y = document.y;
+    offers.forEach((offer, index) => {
+        const x = 52 + index * (cardWidth + gap);
+        document.roundedRect(x, y, cardWidth, 205, 12).fillAndStroke(offer.pale, offer.color);
+        document.roundedRect(x, y, cardWidth, 42, 12).fill(offer.color);
+        document.fillColor(colors.white).font("Helvetica-Bold").fontSize(13).text(offer.name, x + 10, y + 14, { width: cardWidth - 20, align: "center", lineBreak: false });
+        document.fillColor(offer.color).font("Helvetica-Bold").fontSize(12).text(offer.pc, x + 10, y + 61, { width: cardWidth - 20, align: "center" });
+        document.fontSize(10).text("+", x + 10, y + 88, { width: cardWidth - 20, align: "center" });
+        document.fontSize(12).text(offer.mobile, x + 10, y + 105, { width: cardWidth - 20, align: "center" });
+        document.fillColor(colors.text).font("Helvetica").fontSize(8.2).text(offer.detail, x + 13, y + 145, { width: cardWidth - 26, align: "center", lineGap: 3 });
+    });
+    document.y = y + 220;
 }
 
 function addIllustration(heading) {
