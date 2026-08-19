@@ -284,7 +284,9 @@ function ensureMobileHomeNavigationButton() {
 }
 
 function isMobileDeviceContext() {
-    return document.body.dataset.deviceType === "mobile" || document.body.classList.contains("mobile-device");
+    return document.body.dataset.deviceType === "mobile"
+        || document.body.classList.contains("mobile-device")
+        || window.matchMedia("(max-width: 700px), (pointer: coarse)").matches;
 }
 
 function isMenuAllowed(roles, route = "") {

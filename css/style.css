@@ -4753,7 +4753,7 @@ body[data-role="technician"] .nav-button[data-nav="purchases"]{
 }
 
 body.desktop-device[data-role="technician"] .quick-actions > :not(#calendarBtn):not(#libraryBtn),
-body.desktop-device[data-role="technician"] .nav-button:not([data-nav="calendar"]):not([data-nav="library"]){
+body.desktop-device[data-role="technician"] .nav-button:not([data-nav="home"]):not([data-nav="calendar"]):not([data-nav="library"]){
     display:none;
 }
 
@@ -4787,6 +4787,25 @@ body.mobile-device:not(.report-writing-active) #authRoot > footer .nav-button[da
     display:flex!important;
     visibility:visible!important;
     opacity:1!important;
+}
+
+@media(max-width:700px), (pointer:coarse){
+    body:not(.report-writing-active) #authRoot > footer{
+        position:fixed!important;
+        right:0!important;
+        bottom:0!important;
+        left:0!important;
+        display:flex!important;
+        visibility:visible!important;
+        opacity:1!important;
+        z-index:1000!important;
+    }
+
+    body:not(.report-writing-active) #authRoot > footer .nav-button[data-nav="home"]{
+        display:flex!important;
+        visibility:visible!important;
+        opacity:1!important;
+    }
 }
 
 .message-alert[hidden]{
