@@ -1,4 +1,4 @@
-import { ROUTES, STORAGE_KEYS, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=123";
+import { ROUTES, STORAGE_KEYS, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=124";
 import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=166";
 import { openCreatorPartnerRequest, renderCreatorConsole } from "./creator.js?v=130";
 import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=174";
@@ -306,9 +306,14 @@ function isOrganizationRouteEnabled(route) {
 }
 
 function organizationFeatureEnabled(feature) {
+    if (feature === "library" && isMobilePostRole()) return true;
     let features = {};
     try { features = JSON.parse(document.body.dataset.organizationFeatures || "{}"); } catch { features = {}; }
     return features[feature] !== false;
+}
+
+function isMobilePostRole() {
+    return ["mobile_admin", "team_lead", "technician"].includes(document.body.dataset.role);
 }
 
 function menuRoute(menu) {

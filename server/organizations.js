@@ -18,6 +18,7 @@ const PARTNER_FEATURES = Object.freeze({
     partnerMissions: true, partnerConnections: true, messages: true, settings: true, imports: false, groups: false,
     purchases: false, connectors: false, photo: false, favorites: false
 });
+const MOBILE_ROLES = Object.freeze(["mobile_admin", "team_lead", "technician"]);
 
 export async function initializeOrganizations() {
     const db = getPool();
@@ -79,12 +80,17 @@ export function requireOrganizationFeature(feature) {
         try {
             if (request.user?.isCreator) return next();
             const organization = await getOrganization(request.user?.accountOwnerId);
-            if (!isFeatureEnabled(organization, feature)) return response.status(403).json({ message: "Cette fonctionnalité n’est pas incluse dans l’interface de votre organisation." });
+            if (!isFeatureEnabledForRole(organization, feature, request.user?.role)) return response.status(403).json({ message: "Cette fonctionnalité n’est pas incluse dans l’interface de votre organisation." });
             return next();
         } catch (error) {
             return next(error);
         }
     };
+}
+
+export function isFeatureEnabledForRole(organization, feature, role) {
+    if (feature === "library" && MOBILE_ROLES.includes(role)) return true;
+    return isFeatureEnabled(organization, feature);
 }
 
 export function isFeatureEnabled(organization, feature) {

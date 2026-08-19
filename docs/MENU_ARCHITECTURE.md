@@ -10,6 +10,8 @@ Au démarrage, `applyRoleBasedMenus()` dans `js/navigation.js` supprime du DOM l
 
 Toute nouvelle entrée de menu doit être ajoutée à `MENU_ACCESS` avant son utilisation dans l’interface. Une route client est également vérifiée par `canAccessRoute()` avant son rendu.
 
+Les rôles de poste mobile (`mobile_admin`, `team_lead`, `technician`) conservent toujours les boutons **Accueil** et **Bibliothèque**, indépendamment des fonctionnalités incluses dans l’offre de l’organisation. La même exception est appliquée côté serveur aux routes de consultation de la bibliothèque.
+
 ## Matrice actuelle
 
 | Rôle | Navigation visible |

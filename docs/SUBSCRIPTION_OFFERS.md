@@ -9,8 +9,9 @@ Les niveaux d’abonnement s’appliquent aux organisations utilisant l’interf
 - Accès aux clients.
 - Accès aux devis, factures, avoirs et au tableau de facturation.
 - Accès au module Comptabilité, facturation électronique et PDP.
+- Sur chaque poste mobile : accès permanent à l’Accueil et à la Bibliothèque technique, quelle que soit l’offre.
 - Accès aux réglages nécessaires du compte et des documents.
-- Pas d’accès au planning, aux rapports techniques, aux achats, à la bibliothèque, au Réseau ou aux API.
+- Pas d’accès au planning, aux rapports techniques, aux achats, à la bibliothèque sur poste PC, au Réseau ou aux API.
 
 ## Basic+
 
@@ -18,7 +19,7 @@ Les niveaux d’abonnement s’appliquent aux organisations utilisant l’interf
 - 8 € TTC par poste mobile et par mois.
 - Toutes les fonctions Basic.
 - Planning et gestion des interventions.
-- Pas d’accès aux rapports techniques, aux achats, à la bibliothèque, au Réseau ou aux API.
+- Pas d’accès aux rapports techniques, aux achats, à la bibliothèque sur poste PC, au Réseau ou aux API.
 
 ## Pro
 

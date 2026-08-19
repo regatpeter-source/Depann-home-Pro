@@ -2,7 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { calculateSubscriptionPriceCents, subscriptionTierConfig } from "../server/subscription-tiers.js";
-import { isFeatureEnabled, publicOrganization } from "../server/organizations.js";
+import { isFeatureEnabled, isFeatureEnabledForRole, publicOrganization } from "../server/organizations.js";
+import { MENU_ACCESS, ROUTES } from "../js/config.js";
 import { buildSubscriptionInvoiceSnapshot } from "../server/invoicing.js";
 
 const schema = readFileSync(new URL("../database/schema.sql", import.meta.url), "utf8");
@@ -39,6 +40,19 @@ test("Basic exposes clients, billing and accounting while Basic+ adds planning",
     assert.equal(isFeatureEnabled(plus, "accounting"), true);
     assert.equal(isFeatureEnabled(plus, "calendar"), true);
     assert.equal(isFeatureEnabled(plus, "technicalReports"), false);
+});
+
+test("every mobile post keeps Home and Library access regardless of subscription tier", () => {
+    const mobileRoles = ["mobile_admin", "team_lead", "technician"];
+    for (const subscriptionTier of ["basic", "basic_plus", "pro"]) {
+        const organization = publicOrganization({ interfaceType: "standard", licenseType: "depannhome_standard", subscriptionTier });
+        for (const role of mobileRoles) assert.equal(isFeatureEnabledForRole(organization, "library", role), true, `${subscriptionTier}:${role}:library`);
+    }
+    for (const role of mobileRoles) {
+        assert.equal(MENU_ACCESS.navigation[ROUTES.home].includes(role), true, `${role}:home`);
+        assert.equal(MENU_ACCESS.navigation[ROUTES.library].includes(role), true, `${role}:library-route`);
+        assert.equal(MENU_ACCESS.quick.library.includes(role), true, `${role}:library-button`);
+    }
 });
 
 test("Pro enables every product feature", () => {
