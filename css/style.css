@@ -4772,6 +4772,12 @@ body.mobile-device[data-role="technician"] footer{
     justify-content:center;
 }
 
+body.mobile-device[data-role="mobile_admin"] footer .nav-button[data-nav="home"],
+body.mobile-device[data-role="team_lead"] footer .nav-button[data-nav="home"],
+body.mobile-device[data-role="technician"] footer .nav-button[data-nav="home"]{
+    display:flex!important;
+}
+
 .message-alert[hidden]{
     display:none;
 }

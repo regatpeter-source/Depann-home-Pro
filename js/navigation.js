@@ -53,6 +53,7 @@ let searchEventsPromise = null;
 
 export function initializeNavigation(loadedDatabase) {
     database = loadedDatabase;
+    ensureMobileHomeNavigationButton();
     configureLibrary({
         openCatalog: renderBrands,
         openStore: renderStore,
@@ -258,6 +259,7 @@ function applyRoleBasedMenus() {
         if ((menu === "photo" && isDesktopDevice()) || !isMenuAllowed(MENU_ACCESS.quick[menu], menuRoute(menu))) button?.remove();
     });
     document.querySelectorAll(".nav-button").forEach(button => {
+        if (button.dataset.nav === ROUTES.home && isMobilePostRole()) return;
         if (!canAccessRoute(button.dataset.nav)) button.remove();
     });
     if (isMobileAdministrator()) {
@@ -267,6 +269,18 @@ function applyRoleBasedMenus() {
         const navigationLabel = document.querySelector('.nav-button[data-nav="calendar"] span');
         if (navigationLabel) navigationLabel.textContent = "Interventions";
     }
+}
+
+function ensureMobileHomeNavigationButton() {
+    if (!isMobilePostRole() || document.querySelector('.nav-button[data-nav="home"]')) return;
+    const footer = document.querySelector("#authRoot > footer") || document.querySelector("footer");
+    if (!footer) return;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "nav-button active";
+    button.dataset.nav = ROUTES.home;
+    button.innerHTML = "<span>Accueil</span>";
+    footer.prepend(button);
 }
 
 function isMenuAllowed(roles, route = "") {

@@ -55,6 +55,9 @@ test("every mobile post keeps Home and Library access regardless of subscription
         assert.equal(MENU_ACCESS.quick.library.includes(role), true, `${role}:library-button`);
     }
     assert.match(style, /mobile-device\[data-role="technician"\] \.nav-button:not\(\[data-nav="home"\]\):not\(\[data-nav="calendar"\]\):not\(\[data-nav="library"\]\)/);
+    assert.match(navigation, /ensureMobileHomeNavigationButton\(\)/);
+    assert.match(navigation, /button\.dataset\.nav === ROUTES\.home && isMobilePostRole\(\)/);
+    assert.match(style, /mobile-device\[data-role="team_lead"\] footer \.nav-button\[data-nav="home"\]/);
 });
 
 test("Pro enables every product feature", () => {
