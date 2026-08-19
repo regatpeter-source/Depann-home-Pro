@@ -4759,7 +4759,7 @@ body.desktop-device[data-role="technician"] .nav-button:not([data-nav="calendar"
 
 /* Un téléphone tactile garde la même navigation technicien en portrait et paysage. */
 body.mobile-device[data-role="technician"] .quick-actions > :not(#calendarBtn):not(#libraryBtn),
-body.mobile-device[data-role="technician"] .nav-button:not([data-nav="calendar"]):not([data-nav="library"]){
+body.mobile-device[data-role="technician"] .nav-button:not([data-nav="home"]):not([data-nav="calendar"]):not([data-nav="library"]){
     display:none;
 }
 

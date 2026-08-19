@@ -17,6 +17,7 @@ const calendar = readFileSync(new URL("../js/calendar.js", import.meta.url), "ut
 const auth = readFileSync(new URL("../server/auth.js", import.meta.url), "utf8");
 const partnerConnections = readFileSync(new URL("../server/partner-connections.js", import.meta.url), "utf8");
 const partnerDialogue = readFileSync(new URL("../server/partner-dialogue.js", import.meta.url), "utf8");
+const style = readFileSync(new URL("../css/style.css", import.meta.url), "utf8");
 
 test("Basic, Basic+ and Pro prices are calculated per PC and mobile seat", () => {
     assert.equal(calculateSubscriptionPriceCents("basic", 1, 1), 2500);
@@ -53,6 +54,7 @@ test("every mobile post keeps Home and Library access regardless of subscription
         assert.equal(MENU_ACCESS.navigation[ROUTES.library].includes(role), true, `${role}:library-route`);
         assert.equal(MENU_ACCESS.quick.library.includes(role), true, `${role}:library-button`);
     }
+    assert.match(style, /mobile-device\[data-role="technician"\] \.nav-button:not\(\[data-nav="home"\]\):not\(\[data-nav="calendar"\]\):not\(\[data-nav="library"\]\)/);
 });
 
 test("Pro enables every product feature", () => {
