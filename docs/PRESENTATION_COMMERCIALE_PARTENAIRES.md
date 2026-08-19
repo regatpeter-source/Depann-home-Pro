@@ -34,6 +34,7 @@ Chaque offre est calculée selon le nombre de postes réellement autorisés dans
 - Gestion des clients.
 - Création et suivi des devis, factures et avoirs.
 - Tableau de bord Facturation : chiffre d’affaires, encaissements, avoirs et reste à encaisser.
+- Comptabilité, facturation électronique et préparation des échanges avec la PDP choisie par l’entreprise.
 - Personnalisation des documents et informations de l’entreprise.
 
 L’offre Basic est adaptée aux petites structures qui souhaitent centraliser leur relation client et leur facturation sans module de planning.
@@ -58,7 +59,7 @@ L’offre Basic+ convient aux entreprises qui souhaitent coordonner le bureau et
 - Clients, planning, devis, factures, avoirs et facturation.
 - Rapports de recherche de fuite, photos, corrections et signatures.
 - Quitus d’intervention.
-- Comptabilité, règlements, achats et préparation des exports.
+- Achats et fonctions métier avancées.
 - Bibliothèque et ressources techniques.
 - Réseau Depann’Home Pro et missions partenaires.
 - Dialogue collaboratif et partage contrôlé des documents.

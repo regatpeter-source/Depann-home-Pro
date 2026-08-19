@@ -25,16 +25,18 @@ test("Basic, Basic+ and Pro prices are calculated per PC and mobile seat", () =>
     assert.deepEqual([subscriptionTierConfig("basic").mobileRateCents, subscriptionTierConfig("basic_plus").mobileRateCents, subscriptionTierConfig("pro").mobileRateCents], [500, 800, 1500]);
 });
 
-test("Basic only exposes clients and billing while Basic+ adds planning", () => {
+test("Basic exposes clients, billing and accounting while Basic+ adds planning", () => {
     const basic = publicOrganization({ interfaceType: "standard", licenseType: "depannhome_standard", subscriptionTier: "basic" });
     assert.equal(isFeatureEnabled(basic, "clients"), true);
     assert.equal(isFeatureEnabled(basic, "billing"), true);
+    assert.equal(isFeatureEnabled(basic, "accounting"), true);
     assert.equal(isFeatureEnabled(basic, "calendar"), false);
     assert.equal(isFeatureEnabled(basic, "technicalReports"), false);
     assert.equal(isFeatureEnabled(basic, "partnerConnections"), false);
     const plus = publicOrganization({ interfaceType: "standard", licenseType: "depannhome_standard", subscriptionTier: "basic_plus" });
     assert.equal(isFeatureEnabled(plus, "clients"), true);
     assert.equal(isFeatureEnabled(plus, "billing"), true);
+    assert.equal(isFeatureEnabled(plus, "accounting"), true);
     assert.equal(isFeatureEnabled(plus, "calendar"), true);
     assert.equal(isFeatureEnabled(plus, "technicalReports"), false);
 });
@@ -67,7 +69,7 @@ test("migration preserves existing accounts as Pro and creator defaults new acco
 });
 
 test("tier features are protected on both API and navigation layers", () => {
-    for (const feature of ["clients", "calendar", "billing", "purchases", "messages", "partnerConnections", "connectors", "imports", "groups"]) assert.match(app, new RegExp(`requireOrganizationFeature\\("${feature}"\\)`));
+    for (const feature of ["clients", "calendar", "billing", "accounting", "purchases", "messages", "partnerConnections", "connectors", "imports", "groups"]) assert.match(app, new RegExp(`requireOrganizationFeature\\("${feature}"\\)`));
     assert.match(navigation, /\[ROUTES\.clients\]: "clients"/);
     assert.match(navigation, /\[ROUTES\.calendar\]: "calendar"/);
     assert.match(navigation, /\[ROUTES\.purchases\]: "purchases"/);

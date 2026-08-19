@@ -5,15 +5,15 @@ export const SUBSCRIPTION_TIER_CONFIG = Object.freeze({
         label: "Basic",
         pcRateCents: 2000,
         mobileRateCents: 500,
-        description: "Clients, devis, factures et pilotage de la facturation",
-        features: Object.freeze({ clients: true, calendar: false, library: false, billing: true, accounting: false, technicalReports: false, partnerMissions: false, partnerConnections: false, messages: true, settings: true, imports: false, groups: false, purchases: false, connectors: false, photo: false, favorites: false })
+        description: "Clients, facturation, comptabilité, facturation électronique et PDP",
+        features: Object.freeze({ clients: true, calendar: false, library: false, billing: true, accounting: true, technicalReports: false, partnerMissions: false, partnerConnections: false, messages: true, settings: true, imports: false, groups: false, purchases: false, connectors: false, photo: false, favorites: false })
     }),
     basic_plus: Object.freeze({
         label: "Basic+",
         pcRateCents: 3500,
         mobileRateCents: 800,
         description: "Basic avec planning et gestion des interventions",
-        features: Object.freeze({ clients: true, calendar: true, library: false, billing: true, accounting: false, technicalReports: false, partnerMissions: false, partnerConnections: false, messages: true, settings: true, imports: false, groups: false, purchases: false, connectors: false, photo: false, favorites: false })
+        features: Object.freeze({ clients: true, calendar: true, library: false, billing: true, accounting: true, technicalReports: false, partnerMissions: false, partnerConnections: false, messages: true, settings: true, imports: false, groups: false, purchases: false, connectors: false, photo: false, favorites: false })
     }),
     pro: Object.freeze({
         label: "Pro",

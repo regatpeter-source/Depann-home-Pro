@@ -543,9 +543,9 @@ function bindSubscriptionTier(form) {
     const mobileSeats = form.elements.maxTechnicians;
     const summary = form.querySelector("[data-tier-summary]");
     const tiers = {
-        basic: { label: "Basic", pc: 20, mobile: 5, access: "Clients, devis, factures et tableau de facturation." },
+        basic: { label: "Basic", pc: 20, mobile: 5, access: "Clients, devis, factures, comptabilité, facturation électronique et PDP." },
         basic_plus: { label: "Basic+", pc: 35, mobile: 8, access: "Basic avec planning et gestion des interventions." },
-        pro: { label: "Pro", pc: 70, mobile: 15, access: "Accès complet : rapports, comptabilité, achats, bibliothèque, Réseau Depann’Home Pro, missions partenaires, connexions API, imports et groupes." }
+        pro: { label: "Pro", pc: 70, mobile: 15, access: "Accès complet : rapports, achats, bibliothèque, Réseau Depann’Home Pro, missions partenaires, connexions API, imports et groupes." }
     };
     const update = () => {
         const selected = tiers[tier.value] || tiers.basic;
