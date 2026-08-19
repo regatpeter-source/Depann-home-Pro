@@ -19,6 +19,8 @@ const auth = readFileSync(new URL("../server/auth.js", import.meta.url), "utf8")
 const partnerConnections = readFileSync(new URL("../server/partner-connections.js", import.meta.url), "utf8");
 const partnerDialogue = readFileSync(new URL("../server/partner-dialogue.js", import.meta.url), "utf8");
 const purchasesServer = readFileSync(new URL("../server/purchases.js", import.meta.url), "utf8");
+const supportServer = readFileSync(new URL("../server/support.js", import.meta.url), "utf8");
+const partnerRequestsServer = readFileSync(new URL("../server/partner-requests.js", import.meta.url), "utf8");
 const style = readFileSync(new URL("../css/style.css", import.meta.url), "utf8");
 
 test("Basic, Basic+ and Pro prices are calculated per PC and mobile seat", () => {
@@ -165,6 +167,24 @@ test("companies request offer changes from Settings without changing the active 
     assert.match(creatorClient, /renderSubscriptionChangeRequests/);
     assert.match(creatorClient, /requestedPcSeats/);
     assert.match(creatorClient, /requestedMobileSeats/);
+});
+
+test("Creator console notifies every internal and external request", () => {
+    assert.match(app, /initializeSupport\(\)/);
+    assert.match(schema, /CREATE TABLE IF NOT EXISTS depannhome_support_requests/);
+    assert.match(supportServer, /INSERT INTO depannhome_support_requests/);
+    assert.match(supportServer, /support_request_received/);
+    assert.match(creatorServer, /subscription_request_received/);
+    assert.match(partnerRequestsServer, /partner_request_received/);
+    assert.match(creatorServer, /app\.get\("\/api\/creator\/request-notifications"/);
+    for (const table of ["depannhome_subscription_change_requests", "depannhome_support_requests", "depannhome_partner_requests"]) assert.match(creatorServer, new RegExp(table));
+    assert.match(creatorClient, /id = "creatorRequestNotifications"/);
+    assert.match(creatorClient, /creator-request-alert/);
+    assert.match(creatorClient, /renderCreatorRequestNotifications/);
+    assert.match(creatorClient, /renderCreatorSupportRequests/);
+    assert.match(style, /\.creator-request-alert/);
+    assert.match(navigation, /openCreatorRequestNotification\("subscription"\)/);
+    assert.match(navigation, /openCreatorRequestNotification\("support"\)/);
 });
 
 test("tier features are protected on both API and navigation layers", () => {

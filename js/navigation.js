@@ -1,6 +1,6 @@
 import { ROUTES, STORAGE_KEYS, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=125";
 import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=167";
-import { openCreatorPartnerRequest, renderCreatorConsole } from "./creator.js?v=132";
+import { openCreatorPartnerRequest, openCreatorRequestNotification, renderCreatorConsole } from "./creator.js?v=134";
 import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=176";
 import { renderAccounting } from "./accounting.js?v=7";
 import { renderAccountingSandbox } from "./accounting-sandbox.js?v=2";
@@ -382,6 +382,8 @@ function openNotificationDestination(notification) {
     const entityType = notification?.entityType || "";
     const entityId = String(notification?.entityId || notification?.payload?.partnerRequestId || "");
     if (entityType === "partner_request" && document.body.dataset.creator === "true") return openCreatorPartnerRequest(entityId);
+    if (entityType === "subscription_request" && document.body.dataset.creator === "true") return openCreatorRequestNotification("subscription");
+    if (entityType === "support_request" && document.body.dataset.creator === "true") return openCreatorRequestNotification("support");
     if (entityType === "partner_mission") return renderPartnerMissions({ missionId: entityId, sourceDialogue: Boolean(notification?.payload?.sourceDialogue) });
     if (entityType === "partner_connection") return renderSettings({ section: "network" });
     if (entityType === "technical_report") return organizationFeatureEnabled("technicalReports") ? renderTechnicalReports(Number(entityId) || 0) : openHome();

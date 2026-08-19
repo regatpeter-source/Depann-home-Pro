@@ -1530,6 +1530,22 @@ body[data-page-mode="basic-home"] #pageTitle{
     background:#fff8e8;
 }
 
+.creator-request-alert{
+    display:inline-grid;
+    min-width:20px;
+    height:20px;
+    place-items:center;
+    margin-left:6px;
+    padding:0 6px;
+    border-radius:999px;
+    background:#dc2626;
+    color:#fff;
+    font-size:11px;
+    line-height:1;
+}
+.creator-request-alert[hidden]{display:none;}
+#creatorRequestNotifications.has-notifications{border-color:#dc2626;color:#b91c1c;background:#fff7f7;}
+
 .creator-subscription-badge{
     width:max-content;
     max-width:100%;

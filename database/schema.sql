@@ -64,6 +64,19 @@ CREATE TABLE IF NOT EXISTS depannhome_subscription_change_requests (
 );
 CREATE INDEX IF NOT EXISTS depannhome_subscription_change_requests_owner_idx ON depannhome_subscription_change_requests(owner_id, created_at DESC);
 
+CREATE TABLE IF NOT EXISTS depannhome_support_requests (
+    id BIGSERIAL PRIMARY KEY,
+    owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    requested_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+    sender_name VARCHAR(100) NOT NULL DEFAULT '', sender_email VARCHAR(160) NOT NULL DEFAULT '', sender_username VARCHAR(32) NOT NULL DEFAULT '',
+    message VARCHAR(4000) NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'new' CHECK (status IN ('new','under_review','answered','closed')),
+    creator_note VARCHAR(2000) NOT NULL DEFAULT '',
+    handled_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL, handled_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS depannhome_support_requests_status_created_idx ON depannhome_support_requests(status,created_at DESC);
+
 -- Gestion des accès : les journaux restent conservés après suppression d’un
 -- membre, grâce aux références d’auteur et de cible annulables.
 CREATE TABLE IF NOT EXISTS depannhome_member_audit (

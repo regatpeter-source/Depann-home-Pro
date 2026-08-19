@@ -4,6 +4,8 @@
 
 Une entreprise peut disposer de plusieurs comptes **Administrateur (PC)**. Tous utilisent le rôle applicatif `admin` et ont exactement les mêmes droits métier et d’administration dans leur entreprise : paramètres, accès, partenaires, facturation électronique & PDP et outils réservés à l’administration.
 
+La Console Créateur dispose d’une boîte **Notifications** persistante avec compteur. Elle agrège les demandes d’offre ou de postes et les messages Support provenant des entreprises internes, ainsi que les demandes de partenariat provenant d’organisations externes. Chaque notification ouvre directement le panneau de traitement correspondant et reste comptabilisée tant que son suivi est nouveau ou en cours d’étude.
+
 Il n’existe pas de rôle d’« administrateur principal » ni d’administrateur secondaire dans l’interface ou dans les autorisations. Le premier enregistrement utilisateur de l’entreprise reste une ancre technique de tenancy (`account_owner_id`) pour préserver l’architecture historique et l’isolation des données ; cette ancre ne confère aucun droit supplémentaire à son titulaire.
 
 Le compte Créateur est distinct : sa capacité provient uniquement de `CREATOR_USERNAMES` et reste protégée par `requireCreator`. Un administrateur d’entreprise ne peut pas accéder aux routes ni à la console Créateur.

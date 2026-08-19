@@ -4,6 +4,7 @@ import { isCreatorUsername } from "./auth.js";
 import { creatorNetworkDirectory, creatorNetworkStatistics, updateCreatorNetworkDirectory } from "./partner-connections.js";
 import { createOrganization, getOrganization, getOrganizationHistory, updateOrganization } from "./organizations.js";
 import { calculateSubscriptionPriceCents, normalizeSubscriptionTier, subscriptionRoleAccessMessage, subscriptionTierConfig } from "./subscription-tiers.js";
+import { createNotification } from "./collaboration.js";
 
 const USERNAME_PATTERN = /^[a-z0-9._-]{3,32}$/;
 const MIN_PASSWORD_LENGTH = 12;
@@ -14,6 +15,15 @@ const SUBSCRIPTION_REQUEST_STATUSES = new Set(["new", "under_review", "accepted"
 const QUOTE_TEMPLATE_POLICIES = new Set(["integrated_only", "company_choice", "external_only"]);
 
 export function registerCreatorRoutes(app, requireCreator, requireAuthentication) {
+    app.get("/api/creator/request-notifications", requireCreator, asyncHandler(async (_request, response) => {
+        const [subscriptions, support, partners] = await Promise.all([
+            getPool().query(`SELECT change.id,'subscription' AS source,COALESCE(NULLIF(profile.company_name,''),NULLIF(owner.company_name,''),owner.full_name,owner.username) AS "senderName",'Demande d’offre ou de postes' AS title,change.status,change.created_at AS "createdAt" FROM depannhome_subscription_change_requests change JOIN depannhome_users owner ON owner.id=change.owner_id LEFT JOIN depannhome_billing_profiles profile ON profile.owner_id=owner.id WHERE change.status IN ('new','under_review') ORDER BY change.created_at DESC LIMIT 50`),
+            getPool().query(`SELECT support.id,'support' AS source,COALESCE(NULLIF(profile.company_name,''),NULLIF(owner.company_name,''),support.sender_name,support.sender_username) AS "senderName",'Message Support interne' AS title,support.status,support.created_at AS "createdAt" FROM depannhome_support_requests support JOIN depannhome_users owner ON owner.id=support.owner_id LEFT JOIN depannhome_billing_profiles profile ON profile.owner_id=owner.id WHERE support.status IN ('new','under_review') ORDER BY support.created_at DESC LIMIT 50`),
+            getPool().query(`SELECT id,'partner' AS source,company_name AS "senderName",'Demande de partenariat externe' AS title,status,created_at AS "createdAt" FROM depannhome_partner_requests WHERE status IN ('new','under_review') ORDER BY created_at DESC LIMIT 50`)
+        ]);
+        const items = [...subscriptions.rows, ...support.rows, ...partners.rows].sort((first, second) => new Date(second.createdAt) - new Date(first.createdAt)).slice(0, 100);
+        response.json({ total: items.length, counts: { subscriptions: subscriptions.rowCount, support: support.rowCount, partners: partners.rowCount }, items });
+    }));
     app.get("/api/subscription-change-requests", requireAuthentication, asyncHandler(async (request, response) => {
         if (request.user?.role !== "admin") return response.status(403).json({ message: "La gestion de l’offre est réservée à l’Administrateur de l’entreprise." });
         const { rows } = await getPool().query(`SELECT id,current_tier AS "currentTier",requested_tier AS "requestedTier",requested_pc_seats AS "requestedPcSeats",requested_mobile_seats AS "requestedMobileSeats",status,company_message AS "companyMessage",created_at AS "createdAt",updated_at AS "updatedAt" FROM depannhome_subscription_change_requests WHERE owner_id=$1 ORDER BY created_at DESC LIMIT 20`, [request.user.accountOwnerId]);
@@ -34,6 +44,7 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
         const duplicate = await getPool().query("SELECT id FROM depannhome_subscription_change_requests WHERE owner_id=$1 AND status IN ('new','under_review') LIMIT 1", [owner.id]);
         if (duplicate.rowCount) return response.status(409).json({ message: "Une demande de changement d’offre est déjà en cours de traitement." });
         const { rows } = await getPool().query(`INSERT INTO depannhome_subscription_change_requests(owner_id,requested_by,current_tier,requested_tier,requested_pc_seats,requested_mobile_seats,company_message) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id,current_tier AS "currentTier",requested_tier AS "requestedTier",requested_pc_seats AS "requestedPcSeats",requested_mobile_seats AS "requestedMobileSeats",status,company_message AS "companyMessage",created_at AS "createdAt"`, [owner.id, request.user.sub, owner.subscriptionTier, requestedTier, requestedPcSeats, requestedMobileSeats, companyMessage]);
+        await notifyCreatorsOfSubscriptionRequest(rows[0], owner);
         response.status(201).json({ request: rows[0], message: "Votre demande a été transmise au Support. Votre offre actuelle reste inchangée pendant son étude." });
     }));
     app.get("/api/creator/subscription-change-requests", requireCreator, asyncHandler(async (_request, response) => {
@@ -383,6 +394,12 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
         if (!result.rowCount) return response.status(404).json({ message: "Accès introuvable." });
         response.status(204).end();
     }));
+}
+
+async function notifyCreatorsOfSubscriptionRequest(changeRequest, owner) {
+    const { rows } = await getPool().query("SELECT id,account_owner_id AS \"ownerId\",username FROM depannhome_users WHERE is_active=TRUE");
+    const creators = rows.filter(account => isCreatorUsername(account.username));
+    await Promise.all(creators.map(account => createNotification(account.ownerId || account.id, account.id, "subscription_request_received", { entityType: "subscription_request", entityId: String(changeRequest.id) }, "Nouvelle demande d’offre ou de postes", `${owner.company_name || owner.full_name || owner.username} · ${changeRequest.currentTier} → ${changeRequest.requestedTier}`, { requestId: String(changeRequest.id), companyOwnerId: String(owner.id), requestedTier: changeRequest.requestedTier })));
 }
 
 async function findAccountOwner(database, id) {

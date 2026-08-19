@@ -6,6 +6,7 @@ import { renderCreatorConnectors } from "./connectors.js?v=1";
 let accounts = [];
 let selectedAccountId = "";
 let accountListMode = "active";
+let creatorNotificationsBound = false;
 
 export async function renderCreatorConsole() {
     clearSearch();
@@ -30,10 +31,17 @@ export async function renderCreatorConsole() {
     networkButton.className = "secondary-button auth-outline-button";
     networkButton.textContent = "Réseau Depann'Home Pro";
     document.querySelector(".creator-heading .creator-form-actions").prepend(networkButton);
+    const notificationsButton = document.createElement("button");
+    notificationsButton.type = "button";
+    notificationsButton.id = "creatorRequestNotifications";
+    notificationsButton.className = "secondary-button auth-outline-button";
+    notificationsButton.innerHTML = 'Notifications <b class="creator-request-alert" hidden>0</b>';
+    document.querySelector(".creator-heading .creator-form-actions").prepend(notificationsButton);
     container.querySelector("#creatorNewAccount").addEventListener("click", () => renderAccountForm());
     container.querySelector("#creatorSubscriptionRequests").addEventListener("click", renderSubscriptionChangeRequests);
     container.querySelector("#creatorPartnerApiSandbox").addEventListener("click", renderPartnerApiSandbox);
     networkButton.addEventListener("click", renderNetworkDirectory);
+    notificationsButton.addEventListener("click", renderCreatorRequestNotifications);
     container.querySelector("#creatorPlatformAnnouncement").addEventListener("click", renderPlatformAnnouncementSettings);
     container.querySelector("#creatorPartnerRequests").addEventListener("click", renderPartnerRequests);
     container.querySelector("#creatorOfficialPartners").addEventListener("click", renderOfficialPartners);
@@ -41,8 +49,67 @@ export async function renderCreatorConsole() {
     container.querySelector("#creatorSecurity").addEventListener("click", renderCreatorSecurity);
     container.querySelector("#creatorSubscriptionInvoices").addEventListener("click", renderSubscriptionInvoices);
     container.querySelector("#creatorExternalProviders").addEventListener("click", renderCreatorConnectors);
-    await loadAccounts();
+    await Promise.all([loadAccounts(), refreshCreatorRequestNotifications()]);
+    if (!creatorNotificationsBound) {
+        creatorNotificationsBound = true;
+        window.addEventListener("depannhome:collaboration-event", () => {
+            if (document.querySelector("#creatorRequestNotifications")) refreshCreatorRequestNotifications();
+        });
+    }
 }
+
+export async function openCreatorRequestNotification(source = "") {
+    await renderCreatorConsole();
+    if (source === "subscription") return renderSubscriptionChangeRequests();
+    if (source === "support") return renderCreatorSupportRequests();
+    return renderCreatorRequestNotifications();
+}
+
+async function refreshCreatorRequestNotifications() {
+    const button = document.querySelector("#creatorRequestNotifications");
+    if (!button) return;
+    const result = await api("/api/creator/request-notifications");
+    if (!result.ok) return;
+    const total = Number(result.data.total) || 0;
+    const badge = button.querySelector(".creator-request-alert");
+    badge.hidden = total === 0;
+    badge.textContent = total > 99 ? "99+" : String(total);
+    button.classList.toggle("has-notifications", total > 0);
+    button.title = `${total} demande${total > 1 ? "s" : ""} à traiter`;
+}
+
+async function renderCreatorRequestNotifications() {
+    const workspace = document.querySelector("#creatorWorkspace");
+    workspace.innerHTML = '<p class="muted">Chargement des notifications…</p>';
+    const result = await api("/api/creator/request-notifications");
+    if (!result.ok) return showFeedback(result.message || "Impossible de charger les notifications.", true);
+    const { items = [], counts = {} } = result.data;
+    workspace.innerHTML = `<section class="creator-form creator-request-notifications"><div class="form-heading"><div><p class="eyebrow">Demandes internes et externes</p><h3>Notifications</h3></div><span class="creator-state">${items.length} à traiter</span></div><div class="creator-network-stats"><article><span>Offres / postes</span><strong>${Number(counts.subscriptions) || 0}</strong></article><article><span>Support interne</span><strong>${Number(counts.support) || 0}</strong></article><article><span>Partenariats externes</span><strong>${Number(counts.partners) || 0}</strong></article></div><div class="creator-network-list">${items.length ? items.map(item => `<article class="creator-network-company"><div><strong>${escapeHtml(item.title)}</strong><p>${escapeHtml(item.senderName || "Demandeur")}</p><small>${escapeHtml(formatDateTime(item.createdAt))} · ${escapeHtml(subscriptionChangeStatusLabel(item.status))}</small></div><button type="button" class="secondary-button" data-open-request-source="${escapeHtml(item.source)}">Traiter</button></article>`).join("") : '<p class="muted">Aucune nouvelle demande.</p>'}</div></section>`;
+    workspace.querySelectorAll("[data-open-request-source]").forEach(button => button.addEventListener("click", () => {
+        if (button.dataset.openRequestSource === "subscription") return renderSubscriptionChangeRequests();
+        if (button.dataset.openRequestSource === "support") return renderCreatorSupportRequests();
+        return renderPartnerRequests();
+    }));
+}
+
+async function renderCreatorSupportRequests() {
+    const workspace = document.querySelector("#creatorWorkspace");
+    workspace.innerHTML = '<p class="muted">Chargement des demandes Support…</p>';
+    const result = await api("/api/creator/support-requests");
+    if (!result.ok) return showFeedback(result.message || "Impossible de charger les demandes Support.", true);
+    const requests = result.data.requests || [];
+    workspace.innerHTML = `<section class="creator-form"><div class="form-heading"><div><p class="eyebrow">Entreprises internes</p><h3>Demandes Support</h3></div><span class="creator-state">${requests.length} demande${requests.length > 1 ? "s" : ""}</span></div><div class="creator-network-list">${requests.length ? requests.map(item => `<form class="creator-network-company" data-support-request="${escapeHtml(item.id)}"><div><strong>${escapeHtml(item.companyName || item.senderName || item.senderUsername)}</strong><p>${escapeHtml(item.message)}</p><small>${escapeHtml(formatDateTime(item.createdAt))}${item.senderEmail ? ` · ${escapeHtml(item.senderEmail)}` : ""}</small></div><div class="creator-form-actions"><select name="status">${["new", "under_review", "answered", "closed"].map(status => `<option value="${status}" ${item.status === status ? "selected" : ""}>${supportRequestStatusLabel(status)}</option>`).join("")}</select><input name="creatorNote" maxlength="2000" value="${escapeHtml(item.creatorNote || "")}" placeholder="Note interne"><button class="secondary-button">Enregistrer</button></div></form>`).join("") : '<p class="muted">Aucune demande Support.</p>'}</div></section>`;
+    workspace.querySelectorAll("[data-support-request]").forEach(form => form.addEventListener("submit", async event => {
+        event.preventDefault();
+        const update = await api(`/api/creator/support-requests/${encodeURIComponent(form.dataset.supportRequest)}`, { method: "PATCH", body: JSON.stringify(Object.fromEntries(new FormData(form))) });
+        if (!update.ok) return showFeedback(update.message || "Mise à jour impossible.", true);
+        showFeedback("Suivi Support enregistré.");
+        await refreshCreatorRequestNotifications();
+        renderCreatorSupportRequests();
+    }));
+}
+
+function supportRequestStatusLabel(status) { return ({ new: "Nouvelle", under_review: "En cours d’étude", answered: "Répondue", closed: "Clôturée" })[status] || "Nouvelle"; }
 
 async function renderSubscriptionChangeRequests() {
     const workspace = document.querySelector("#creatorWorkspace");
@@ -57,6 +124,7 @@ async function renderSubscriptionChangeRequests() {
         const update = await api(`/api/creator/subscription-change-requests/${encodeURIComponent(form.dataset.subscriptionRequest)}`, { method: "PATCH", body: JSON.stringify(values) });
         if (!update.ok) return showFeedback(update.message || "Mise à jour impossible.", true);
         showFeedback("Suivi de la demande enregistré.");
+        await refreshCreatorRequestNotifications();
         renderSubscriptionChangeRequests();
     }));
 }
@@ -244,6 +312,7 @@ async function renderPartnerRequestDetail(requestId) {
         if (!update.ok) { feedback.textContent = update.message || "Enregistrement impossible."; feedback.classList.add("error"); return; }
         feedback.textContent = update.data.request.officialPartnerId ? "Suivi enregistré. La fiche partenaire officielle est prête à être configurée." : "Suivi enregistré.";
         feedback.classList.remove("error");
+        await refreshCreatorRequestNotifications();
         renderPartnerRequestDetail(requestId);
     });
     workspace.querySelector("#creatorDeletePartnerRequest").addEventListener("click", async () => {

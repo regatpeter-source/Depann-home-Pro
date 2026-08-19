@@ -37,7 +37,7 @@ import { initializePartnerSandbox, registerPartnerSandboxRoutes } from "./server
 import { initializePartnerApiSandbox, registerPartnerApiSandboxRoutes } from "./server/partner-api-sandbox.js";
 import { initializeAccountingSandbox, registerAccountingSandboxRoutes } from "./server/accounting-sandbox.js";
 import { initializeGroups, registerGroupRoutes } from "./server/groups.js";
-import { registerSupportRoutes } from "./server/support.js";
+import { initializeSupport, registerSupportRoutes } from "./server/support.js";
 import { dataImportUploadErrorHandler, initializeDataImports, registerDataImportRoutes } from "./server/data-imports.js";
 import {
 	libraryUploadErrorHandler,
@@ -207,6 +207,7 @@ async function start() {
 	await initializePartnerApiSandbox();
 	await initializeAccountingSandbox();
 	await initializePartnerRequests();
+	await initializeSupport();
 	await initializeClients();
 	await initializeDataImports();
 	await initializeLibrary();
