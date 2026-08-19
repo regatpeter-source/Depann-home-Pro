@@ -59,6 +59,7 @@ L’offre Basic+ convient aux entreprises qui souhaitent coordonner le bureau et
 - **15 € TTC par poste mobile et par mois.**
 - Accès complet aux fonctions Depann’Home Pro.
 - Clients, planning, devis, factures, avoirs et facturation.
+- Quitus d’intervention avec signature, validation et archivage PDF.
 - Rapports de recherche de fuite, photos, corrections et signatures.
 - Quitus d’intervention.
 - Achats et fonctions métier avancées.

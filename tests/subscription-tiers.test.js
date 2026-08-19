@@ -46,6 +46,7 @@ test("Basic exposes clients, billing and accounting while Basic+ adds planning",
     assert.equal(isFeatureEnabled(basic, "clients"), true);
     assert.equal(isFeatureEnabled(basic, "billing"), true);
     assert.equal(isFeatureEnabled(basic, "accounting"), true);
+    assert.equal(isFeatureEnabled(basic, "quitus"), false);
     assert.equal(isFeatureEnabled(basic, "calendar"), false);
     assert.equal(isFeatureEnabled(basic, "technicalReports"), false);
     assert.equal(isFeatureEnabled(basic, "partnerConnections"), false);
@@ -54,6 +55,7 @@ test("Basic exposes clients, billing and accounting while Basic+ adds planning",
     assert.equal(isFeatureEnabled(plus, "billing"), true);
     assert.equal(isFeatureEnabled(plus, "accounting"), true);
     assert.equal(isFeatureEnabled(plus, "calendar"), true);
+    assert.equal(isFeatureEnabled(plus, "quitus"), false);
     assert.equal(isFeatureEnabled(plus, "technicalReports"), false);
 });
 
@@ -85,7 +87,7 @@ test("every mobile post keeps Home and Library access regardless of subscription
 
 test("Pro enables every product feature", () => {
     const pro = publicOrganization({ interfaceType: "standard", licenseType: "depannhome_standard", subscriptionTier: "pro" });
-    for (const feature of ["clients", "calendar", "library", "billing", "accounting", "technicalReports", "partnerMissions", "partnerConnections", "messages", "settings", "imports", "groups", "purchases", "connectors", "photo", "favorites"]) assert.equal(isFeatureEnabled(pro, feature), true, feature);
+    for (const feature of ["clients", "calendar", "library", "billing", "accounting", "quitus", "technicalReports", "partnerMissions", "partnerConnections", "messages", "settings", "imports", "groups", "purchases", "connectors", "photo", "favorites"]) assert.equal(isFeatureEnabled(pro, feature), true, feature);
 });
 
 test("a Standard license override cannot unlock a feature outside its tier", () => {
@@ -116,8 +118,13 @@ test("tier features are protected on both API and navigation layers", () => {
     assert.match(navigation, /\[ROUTES\.calendar\]: "calendar"/);
     assert.match(navigation, /\[ROUTES\.purchases\]: "purchases"/);
     assert.match(app, /app\.use\("\/api\/billing\/document-templates\/report", requireAuthentication, requireOrganizationFeature\("technicalReports"\)\)/);
+    assert.match(app, /app\.use\("\/api\/calendar\/events\/:eventId\/quitus", requireAuthentication, requireOrganizationFeature\("quitus"\)\)/);
+    assert.match(app, /app\.use\("\/api\/billing\/document-templates\/quitus", requireAuthentication, requireOrganizationFeature\("quitus"\)\)/);
+    assert.match(app, /app\.use\("\/api\/document-templates\/quitus", requireAuthentication, requireOrganizationFeature\("quitus"\)\)/);
     assert.match(app, /app\.use\("\/api\/document-templates\/report", requireAuthentication, requireOrganizationFeature\("technicalReports"\)\)/);
     assert.match(billing, /isAccountant\(\) \|\| !canAccessTechnicalReports\(\)/);
+    assert.match(billing, /canAccessQuitus\(\) && usesExternalDocumentTemplate\("quitus"\)/);
+    assert.match(billing, /if \(canAccessQuitus\(\)\) renderAdditionalDocumentTemplateSettings\(panel, profile, "quitus"\)/);
     assert.match(calendar, /canAccessTechnicalReports\(\) \? `<section class="calendar-billing-actions report-entry-point">/);
     assert.match(navigation, /isTechnician\(\) && organizationFeatureEnabled\("technicalReports"\)/);
     assert.match(auth, /memberSeatFamily/);

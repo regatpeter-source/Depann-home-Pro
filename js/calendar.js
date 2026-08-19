@@ -334,7 +334,7 @@ function renderEventForm(panel) {
                         <div><p class="eyebrow">Fin d’intervention</p><h3>${isReadOnlyCalendar() ? "Devis" : "Devis et facture"}</h3><p class="muted">${isReadOnlyCalendar() ? "Créez le devis de cette intervention." : "Créez le document adapté après avoir renseigné l’intervention."}</p></div>
                         <div><button type="button" class="secondary-button" data-client-action="quote">Créer un devis</button>${isReadOnlyCalendar() ? "" : '<button type="button" class="secondary-button" data-client-action="invoice">Créer une facture</button>'}</div>
                     </section>` : ""}
-                    ${event.eventType === "appointment" ? renderQuitusHtml(event) : ""}
+                    ${event.eventType === "appointment" && canAccessQuitus() ? renderQuitusHtml(event) : ""}
                     <div class="calendar-client-messages-slot"></div>
                     <form id="calendarClientUpload" class="calendar-client-upload">
                         <div><p class="eyebrow">Dossier d’intervention</p><h3>Ajouter une photo ou un fichier</h3></div>
@@ -346,7 +346,7 @@ function renderEventForm(panel) {
                     </form>` : `<p class="auth-message error">Aucun dossier client correspondant à ce rendez-vous. Demandez à l’administrateur d’associer le rendez-vous à un client existant.</p>`}
             </div>`;
         panel.querySelector(".calendar-client-messages-slot")?.append(renderClientMessages(client));
-        if (event.eventType === "appointment" && client) initializeQuitusForm(panel, event);
+        if (event.eventType === "appointment" && client && canAccessQuitus()) initializeQuitusForm(panel, event);
         loadLinkedBillingDocuments(panel.querySelector("#calendarLinkedDocuments"), event);
         panel.querySelector('[data-client-action="quote"]')?.addEventListener("click", () => createBillingDocumentForClient("quote", client, event.id));
         panel.querySelector('[data-client-action="invoice"]')?.addEventListener("click", () => createBillingDocumentForClient("invoice", client, event.id));
@@ -1242,6 +1242,11 @@ function isTechnicianBillingAllowed() {
 
 function canAccessTechnicalReports() {
     try { return JSON.parse(document.body.dataset.organizationFeatures || "{}").technicalReports !== false; }
+    catch { return false; }
+}
+
+function canAccessQuitus() {
+    try { return JSON.parse(document.body.dataset.organizationFeatures || "{}").quitus === true; }
     catch { return false; }
 }
 

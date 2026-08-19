@@ -12,6 +12,7 @@ Les niveaux d’abonnement s’appliquent aux organisations utilisant l’interf
 - Sur chaque poste mobile autorisé par l’offre : accès permanent à l’Accueil et à la Bibliothèque technique.
 - Postes autorisés : Administrateur PC, poste PC standard, Comptable et Administrateur Mobile.
 - Les comptes Technicien et Chef d’équipe mobile nécessitent au minimum Basic+.
+- Pas d’accès au Quitus d’intervention, réservé à Pro.
 - Accès aux réglages nécessaires du compte et des documents.
 - Pas d’accès au planning, aux rapports techniques, aux achats, à la bibliothèque sur poste PC, au Réseau ou aux API.
 
@@ -22,6 +23,7 @@ Les niveaux d’abonnement s’appliquent aux organisations utilisant l’interf
 - Toutes les fonctions Basic.
 - Planning et gestion des interventions.
 - Accès à tous les postes mobiles : Administrateur Mobile, Chef d’équipe et Technicien.
+- Pas d’accès au Quitus d’intervention, réservé à Pro.
 - Pas d’accès aux rapports techniques, aux achats, à la bibliothèque sur poste PC, au Réseau ou aux API.
 
 ## Pro
@@ -29,6 +31,7 @@ Les niveaux d’abonnement s’appliquent aux organisations utilisant l’interf
 - 70 € TTC par poste PC et par mois.
 - 15 € TTC par poste mobile et par mois.
 - Accès complet aux modules disponibles : clients, planning, devis, factures, facturation, comptabilité, achats, rapports de recherche de fuite, bibliothèque, photos, imports, groupes, missions partenaires, Réseau Depann’Home Pro et connexions API.
+- Accès au Quitus d’intervention : signature, validation, PDF et modèles personnalisés.
 - Accès complet à tous les types de postes PC et mobiles.
 
 ## Calcul et quotas

@@ -25,7 +25,7 @@ export async function renderBilling(options = {}) {
     if (options.document) activeDocument = options.document;
     clearSearch();
     resetSelection("all");
-    const templateSection = ["quote", "quitus", ...(canAccessTechnicalReports() ? ["report"] : [])].includes(options.templateSection) ? options.templateSection : "";
+    const templateSection = ["quote", ...(canAccessQuitus() ? ["quitus"] : []), ...(canAccessTechnicalReports() ? ["report"] : [])].includes(options.templateSection) ? options.templateSection : "";
     const templateTitle = ({ quote: "Modèle de devis", quitus: "Modèle de quitus", report: "Modèle de rapport" })[templateSection];
     setPage(templateTitle ? `Paramètres · ${templateTitle}` : canAccessTechnicalReports() ? "Devis, factures & rapports de fuite" : "Devis, factures & facturation", templateTitle ? ROUTES.settings : ROUTES.billing, "detail");
 
@@ -126,7 +126,7 @@ function renderOverview(panel, profilePanel) {
     const quotes = documents.filter(document => document.documentType === "quote").length;
     const invoices = documents.filter(document => document.documentType === "invoice").length;
     const usesExternalTemplate = usesExternalQuoteTemplate();
-    const usesExternalQuitusTemplate = usesExternalDocumentTemplate("quitus");
+    const usesExternalQuitusTemplate = canAccessQuitus() && usesExternalDocumentTemplate("quitus");
     const usesExternalReportTemplate = canAccessTechnicalReports() && usesExternalDocumentTemplate("report");
     panel.innerHTML = `
         <div class="billing-overview">
@@ -244,10 +244,10 @@ function renderProfile(panel, options = {}) {
         renderBilling(options.onlyType ? { profile: true, templateSection: options.onlyType, integratedOnly: true, onTemplateRendered: options.onTemplateRendered } : {});
     });
     if (options.onlyType === "quote") renderQuoteTemplateSettings(panel, profile, true, options.onTemplateRendered, true);
-    else if (options.onlyType === "quitus") renderAdditionalDocumentTemplateSettings(panel, profile, "quitus", true, options.onTemplateRendered, true);
+    else if (options.onlyType === "quitus" && canAccessQuitus()) renderAdditionalDocumentTemplateSettings(panel, profile, "quitus", true, options.onTemplateRendered, true);
     else if (!options.onlyType) {
         renderQuoteTemplateSettings(panel, profile);
-        renderAdditionalDocumentTemplateSettings(panel, profile, "quitus");
+        if (canAccessQuitus()) renderAdditionalDocumentTemplateSettings(panel, profile, "quitus");
         if (canAccessTechnicalReports()) renderAdditionalDocumentTemplateSettings(panel, profile, "report");
     }
 }
@@ -764,6 +764,10 @@ function isFullAdministrator() { return document.body.dataset.role === "admin"; 
 function isTechnicianBillingAllowed() { return !isTechnician() || document.body.dataset.technicianBillingEnabled !== "false"; }
 function canAccessTechnicalReports() {
     try { return JSON.parse(document.body.dataset.organizationFeatures || "{}").technicalReports !== false; }
+    catch { return false; }
+}
+function canAccessQuitus() {
+    try { return JSON.parse(document.body.dataset.organizationFeatures || "{}").quitus === true; }
     catch { return false; }
 }
 function usesExternalQuoteTemplate() {

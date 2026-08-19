@@ -1,7 +1,7 @@
 import { ROUTES, STORAGE_KEYS, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=124";
-import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=166";
+import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=167";
 import { openCreatorPartnerRequest, renderCreatorConsole } from "./creator.js?v=131";
-import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=174";
+import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=175";
 import { renderAccounting } from "./accounting.js?v=7";
 import { renderAccountingSandbox } from "./accounting-sandbox.js?v=2";
 import { renderGroupActivation, renderGroupWorkspace } from "./groups.js?v=3";
@@ -71,7 +71,7 @@ export function initializeNavigation(loadedDatabase) {
     });
     window.addEventListener("depannhome:open-document-template", event => {
         const type = String(event.detail?.type || "");
-        if (["quote", "quitus"].includes(type) || (type === "report" && organizationFeatureEnabled("technicalReports"))) openDocumentTemplateSettings(type);
+        if (type === "quote" || (type === "quitus" && organizationFeatureEnabled("quitus")) || (type === "report" && organizationFeatureEnabled("technicalReports"))) openDocumentTemplateSettings(type);
     });
     window.addEventListener("depannhome:clients-synchronized", () => refreshClientMessageAlert());
     window.addEventListener("depannhome:partner-client-provisioned", event => {
@@ -1356,7 +1356,7 @@ function renderSettingsWorkspace(options = {}) {
         const grid = document.createElement("div");
         grid.className = "settings-card-grid";
         const cards = [
-            ...(document.body.dataset.role === "admin" ? [["documents", "Modèles de documents", "Identité, présentation et modèles des devis, quitus et rapports.", "document"]] : []),
+            ...(document.body.dataset.role === "admin" ? [["documents", "Modèles de documents", `Identité, présentation et modèles des devis${organizationFeatureEnabled("quitus") ? ", quitus" : ""} et rapports.`, "document"]] : []),
             ["network", "Réseau & connecteurs", "Deux espaces distincts : le réseau collaboratif Depann’Home Pro et les connecteurs API externes.", "network"],
             ...(document.body.dataset.role === "admin" ? [["users", "Utilisateurs", "Accès, postes, techniciens et chefs d’équipe.", "users"], ["security", "Sécurité", "Double authentification et protection des accès.", "security"], ["groups", "Groupe / Multi-entreprises", "Sociétés, bascule de contexte et indicateurs consolidés.", "group"]] : []),
             ["personalization", "Personnalisation", "Langue, thème, police et préférences d’affichage.", "appearance"],
@@ -1380,10 +1380,8 @@ function renderSettingsWorkspace(options = {}) {
         const intro = createSettingsIntro("Modèles de documents");
         const grid = document.createElement("div");
         grid.className = "settings-subsection-grid";
-        grid.append(
-            createSettingsNavigationCard("Modèle de devis et facture", "Modifier le modèle intégré ou importer la base devis de l’entreprise ; la facture hérite automatiquement du devis", "document", () => openDocumentTemplateSettings("quote")),
-            createSettingsNavigationCard("Modèle de quitus", "Modifier le modèle intégré ou importer la base quitus de l’entreprise", "document", () => openDocumentTemplateSettings("quitus"))
-        );
+        grid.append(createSettingsNavigationCard("Modèle de devis et facture", "Modifier le modèle intégré ou importer la base devis de l’entreprise ; la facture hérite automatiquement du devis", "document", () => openDocumentTemplateSettings("quote")));
+        if (organizationFeatureEnabled("quitus")) grid.append(createSettingsNavigationCard("Modèle de quitus", "Modifier le modèle intégré ou importer la base quitus de l’entreprise", "document", () => openDocumentTemplateSettings("quitus")));
         if (organizationFeatureEnabled("technicalReports")) grid.append(createSettingsNavigationCard("Modèle de rapport", "Modifier le modèle intégré ou importer la base rapport de l’entreprise", "document", () => openDocumentTemplateSettings("report")));
         intro.appendChild(grid);
         container.appendChild(intro);
