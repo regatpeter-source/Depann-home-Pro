@@ -10,9 +10,42 @@ const MIN_PASSWORD_LENGTH = 12;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MEMBER_ROLES = new Set(["admin", "pc_standard", "accountant", "mobile_admin", "team_lead", "technician"]);
 const SUBSCRIPTION_STATUSES = new Set(["active", "trial", "past_due", "suspended", "cancelled"]);
+const SUBSCRIPTION_REQUEST_STATUSES = new Set(["new", "under_review", "accepted", "refused", "cancelled"]);
 const QUOTE_TEMPLATE_POLICIES = new Set(["integrated_only", "company_choice", "external_only"]);
 
 export function registerCreatorRoutes(app, requireCreator, requireAuthentication) {
+    app.get("/api/subscription-change-requests", requireAuthentication, asyncHandler(async (request, response) => {
+        if (request.user?.role !== "admin") return response.status(403).json({ message: "La gestion de l’offre est réservée à l’Administrateur de l’entreprise." });
+        const { rows } = await getPool().query(`SELECT id,current_tier AS "currentTier",requested_tier AS "requestedTier",status,company_message AS "companyMessage",created_at AS "createdAt",updated_at AS "updatedAt" FROM depannhome_subscription_change_requests WHERE owner_id=$1 ORDER BY created_at DESC LIMIT 20`, [request.user.accountOwnerId]);
+        response.json({ requests: rows });
+    }));
+    app.post("/api/subscription-change-requests", requireAuthentication, asyncHandler(async (request, response) => {
+        if (request.user?.role !== "admin") return response.status(403).json({ message: "La demande de changement d’offre est réservée à l’Administrateur de l’entreprise." });
+        const requestedTier = normalizeSubscriptionTier(request.body?.requestedTier, "");
+        const companyMessage = cleanMultilineText(request.body?.companyMessage, 1000);
+        const owner = await findAccountOwner(getPool(), positiveId(request.user.accountOwnerId));
+        if (!owner) return response.status(404).json({ message: "Entreprise introuvable." });
+        if (!requestedTier) return response.status(400).json({ message: "Choisissez une offre valide." });
+        if (requestedTier === owner.subscriptionTier) return response.status(400).json({ message: "Cette offre est déjà active pour votre entreprise." });
+        const duplicate = await getPool().query("SELECT id FROM depannhome_subscription_change_requests WHERE owner_id=$1 AND status IN ('new','under_review') LIMIT 1", [owner.id]);
+        if (duplicate.rowCount) return response.status(409).json({ message: "Une demande de changement d’offre est déjà en cours de traitement." });
+        const { rows } = await getPool().query(`INSERT INTO depannhome_subscription_change_requests(owner_id,requested_by,current_tier,requested_tier,company_message) VALUES($1,$2,$3,$4,$5) RETURNING id,current_tier AS "currentTier",requested_tier AS "requestedTier",status,company_message AS "companyMessage",created_at AS "createdAt"`, [owner.id, request.user.sub, owner.subscriptionTier, requestedTier, companyMessage]);
+        response.status(201).json({ request: rows[0], message: "Votre demande a été transmise au Créateur. Votre offre actuelle reste inchangée pendant son étude." });
+    }));
+    app.get("/api/creator/subscription-change-requests", requireCreator, asyncHandler(async (_request, response) => {
+        const { rows } = await getPool().query(`SELECT change.id,change.owner_id AS "ownerId",COALESCE(NULLIF(profile.company_name,''),NULLIF(owner.company_name,''),owner.full_name,owner.username) AS "companyName",change.current_tier AS "currentTier",change.requested_tier AS "requestedTier",change.status,change.company_message AS "companyMessage",change.creator_note AS "creatorNote",change.created_at AS "createdAt",change.updated_at AS "updatedAt" FROM depannhome_subscription_change_requests change JOIN depannhome_users owner ON owner.id=change.owner_id LEFT JOIN depannhome_billing_profiles profile ON profile.owner_id=owner.id ORDER BY CASE change.status WHEN 'new' THEN 0 WHEN 'under_review' THEN 1 ELSE 2 END,change.created_at DESC LIMIT 200`);
+        response.json({ requests: rows });
+    }));
+    app.patch("/api/creator/subscription-change-requests/:requestId", requireCreator, asyncHandler(async (request, response) => {
+        const requestId = positiveId(request.params.requestId);
+        const status = SUBSCRIPTION_REQUEST_STATUSES.has(request.body?.status) ? request.body.status : "";
+        const creatorNote = cleanMultilineText(request.body?.creatorNote, 2000);
+        if (!requestId || !status) return response.status(400).json({ message: "Suivi de demande invalide." });
+        const terminal = ["accepted", "refused", "cancelled"].includes(status);
+        const { rows } = await getPool().query(`UPDATE depannhome_subscription_change_requests SET status=$2,creator_note=$3,resolved_by=CASE WHEN $4 THEN $5 ELSE NULL END,resolved_at=CASE WHEN $4 THEN NOW() ELSE NULL END,updated_at=NOW() WHERE id=$1 RETURNING id,status,creator_note AS "creatorNote",updated_at AS "updatedAt"`, [requestId, status, creatorNote, terminal, request.user.sub]);
+        if (!rows[0]) return response.status(404).json({ message: "Demande introuvable." });
+        response.json({ request: rows[0] });
+    }));
     app.get("/api/creator/platform-announcement/current", requireAuthentication, asyncHandler(async (request, response) => {
         const { rows } = await getPool().query(`
             SELECT message, updated_at AS "updatedAt"

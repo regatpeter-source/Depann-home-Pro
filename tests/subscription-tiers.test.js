@@ -79,7 +79,7 @@ test("every mobile post keeps Home and Library access regardless of subscription
     assert.match(style, /@media\(max-width:700px\), \(pointer:coarse\)/);
     assert.match(style, /footer \.nav-button\[data-nav="home"\]/);
     assert.match(navigation, /isMobileDeviceContext\(\) && canAccessRoute\(ROUTES\.calendar\)/);
-    assert.match(navigation, /if \(!canAccessRoute\(ROUTES\.calendar\)\) \{\s*panel\.innerHTML = '<div class="dashboard-heading"/);
+    assert.match(navigation, /if \(!canAccessRoute\(ROUTES\.calendar\)\) \{\s*container\.removeChild\(panel\)/);
     assert.match(navigation, /if \(isMobileDeviceContext\(\) \|\| document\.body\.classList\.contains\("desktop-device"\)/);
     assert.doesNotMatch(navigation, /data-basic-home=/);
 });
@@ -109,6 +109,21 @@ test("migration preserves existing accounts as Pro and creator defaults new acco
     assert.match(database, /subscription_tier VARCHAR\(20\) NOT NULL DEFAULT 'pro'/);
     assert.match(creatorClient, /subscriptionTier: "basic"/);
     assert.match(creatorServer, /calculateSubscriptionPriceCents\(subscriptionTier, maxPcUsers, maxTechnicians\)/);
+    for (const source of [schema, database]) assert.match(source, /CREATE TABLE IF NOT EXISTS depannhome_subscription_change_requests/);
+});
+
+test("companies request offer changes from Settings without changing the active tier", () => {
+    assert.doesNotMatch(navigation, /Depann’Home Pro Basic/);
+    assert.doesNotMatch(navigation, /data-basic-home=/);
+    assert.match(navigation, /\["subscription", "Offre & abonnement"/);
+    assert.match(navigation, /\/api\/subscription-change-requests/);
+    assert.match(creatorServer, /app\.post\("\/api\/subscription-change-requests"/);
+    assert.match(creatorServer, /app\.get\("\/api\/creator\/subscription-change-requests"/);
+    assert.match(creatorServer, /app\.patch\("\/api\/creator\/subscription-change-requests\/:requestId"/);
+    const requestRoutes = creatorServer.slice(creatorServer.indexOf('app.get("/api/subscription-change-requests"'), creatorServer.indexOf('app.get("/api/creator/platform-announcement/current"'));
+    assert.doesNotMatch(requestRoutes, /UPDATE depannhome_users/);
+    assert.match(creatorClient, /id="creatorSubscriptionRequests"/);
+    assert.match(creatorClient, /renderSubscriptionChangeRequests/);
 });
 
 test("tier features are protected on both API and navigation layers", () => {

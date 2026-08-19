@@ -15,7 +15,7 @@ export async function renderCreatorConsole() {
         <section class="creator-console">
             <header class="creator-heading">
                 <div><p class="eyebrow">Administration plateforme</p><h2>Console Créateur</h2></div>
-                <div class="creator-form-actions"><button type="button" class="secondary-button auth-outline-button" id="creatorPartnerApiSandbox">🧪 Sandbox API partenaire</button><button type="button" class="secondary-button auth-outline-button" id="creatorPlatformAnnouncement">Affichage général</button><button type="button" class="secondary-button auth-outline-button" id="creatorPartnerRequests">Demandes de partenariat</button><button type="button" class="secondary-button auth-outline-button" id="creatorOfficialPartners">Partenaires officiels</button><button type="button" class="secondary-button auth-outline-button" id="creatorSecurity">Sécurité du compte</button><button type="button" class="secondary-button auth-outline-button" id="creatorSubscriptionInvoices">Factures abonnements</button><button type="button" class="secondary-button auth-outline-button" id="creatorBillingProfile">Facturation plateforme</button><button type="button" class="secondary-button auth-outline-button" id="creatorExternalProviders">Prestataires externes</button><button type="button" class="secondary-button" id="creatorNewAccount">+ Nouvelle organisation</button></div>
+                <div class="creator-form-actions"><button type="button" class="secondary-button auth-outline-button" id="creatorSubscriptionRequests">Demandes d’offres</button><button type="button" class="secondary-button auth-outline-button" id="creatorPartnerApiSandbox">🧪 Sandbox API partenaire</button><button type="button" class="secondary-button auth-outline-button" id="creatorPlatformAnnouncement">Affichage général</button><button type="button" class="secondary-button auth-outline-button" id="creatorPartnerRequests">Demandes de partenariat</button><button type="button" class="secondary-button auth-outline-button" id="creatorOfficialPartners">Partenaires officiels</button><button type="button" class="secondary-button auth-outline-button" id="creatorSecurity">Sécurité du compte</button><button type="button" class="secondary-button auth-outline-button" id="creatorSubscriptionInvoices">Factures abonnements</button><button type="button" class="secondary-button auth-outline-button" id="creatorBillingProfile">Facturation plateforme</button><button type="button" class="secondary-button auth-outline-button" id="creatorExternalProviders">Prestataires externes</button><button type="button" class="secondary-button" id="creatorNewAccount">+ Nouvelle organisation</button></div>
             </header>
             <p id="creatorFeedback" class="auth-message" aria-live="polite"></p>
             <section class="creator-subscription-summary" id="creatorSubscriptionSummary" aria-label="Synthèse des abonnements"></section>
@@ -31,6 +31,7 @@ export async function renderCreatorConsole() {
     networkButton.textContent = "Réseau Depann'Home Pro";
     document.querySelector(".creator-heading .creator-form-actions").prepend(networkButton);
     container.querySelector("#creatorNewAccount").addEventListener("click", () => renderAccountForm());
+    container.querySelector("#creatorSubscriptionRequests").addEventListener("click", renderSubscriptionChangeRequests);
     container.querySelector("#creatorPartnerApiSandbox").addEventListener("click", renderPartnerApiSandbox);
     networkButton.addEventListener("click", renderNetworkDirectory);
     container.querySelector("#creatorPlatformAnnouncement").addEventListener("click", renderPlatformAnnouncementSettings);
@@ -42,6 +43,26 @@ export async function renderCreatorConsole() {
     container.querySelector("#creatorExternalProviders").addEventListener("click", renderCreatorConnectors);
     await loadAccounts();
 }
+
+async function renderSubscriptionChangeRequests() {
+    const workspace = document.querySelector("#creatorWorkspace");
+    workspace.innerHTML = '<p class="muted">Chargement des demandes d’offres…</p>';
+    const result = await api("/api/creator/subscription-change-requests");
+    if (!result.ok) return showFeedback(result.message || "Impossible de charger les demandes d’offres.", true);
+    const requests = result.data.requests || [];
+    workspace.innerHTML = `<section class="creator-form"><div class="form-heading"><div><p class="eyebrow">Évolutions et rétrogradations</p><h3>Demandes d’offres</h3></div><span class="creator-state">${requests.length} demande${requests.length > 1 ? "s" : ""}</span></div><div class="creator-network-list">${requests.length ? requests.map(item => `<form class="creator-network-company" data-subscription-request="${escapeHtml(item.id)}"><div><strong>${escapeHtml(item.companyName)}</strong><p>${escapeHtml(subscriptionTierLabel(item.currentTier))} → ${escapeHtml(subscriptionTierLabel(item.requestedTier))}</p><small>${escapeHtml(formatDateTime(item.createdAt))}${item.companyMessage ? ` · ${escapeHtml(item.companyMessage)}` : ""}</small></div><div class="creator-form-actions"><select name="status">${["new", "under_review", "accepted", "refused", "cancelled"].map(status => `<option value="${status}" ${item.status === status ? "selected" : ""}>${subscriptionChangeStatusLabel(status)}</option>`).join("")}</select><input name="creatorNote" maxlength="2000" value="${escapeHtml(item.creatorNote || "")}" placeholder="Note interne"><button class="secondary-button">Enregistrer</button></div></form>`).join("") : '<p class="muted">Aucune demande d’offre.</p>'}</div></section>`;
+    workspace.querySelectorAll("[data-subscription-request]").forEach(form => form.addEventListener("submit", async event => {
+        event.preventDefault();
+        const values = Object.fromEntries(new FormData(form));
+        const update = await api(`/api/creator/subscription-change-requests/${encodeURIComponent(form.dataset.subscriptionRequest)}`, { method: "PATCH", body: JSON.stringify(values) });
+        if (!update.ok) return showFeedback(update.message || "Mise à jour impossible.", true);
+        showFeedback("Suivi de la demande enregistré.");
+        renderSubscriptionChangeRequests();
+    }));
+}
+
+function subscriptionTierLabel(tier) { return ({ basic: "Basic", basic_plus: "Basic+", pro: "Pro" })[tier] || tier; }
+function subscriptionChangeStatusLabel(status) { return ({ new: "Nouvelle", under_review: "En cours d’étude", accepted: "Acceptée", refused: "Refusée", cancelled: "Annulée" })[status] || "Nouvelle"; }
 
 async function renderPartnerApiSandbox() {
     const workspace = document.querySelector("#creatorWorkspace");

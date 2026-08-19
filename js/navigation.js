@@ -1,6 +1,6 @@
 import { ROUTES, STORAGE_KEYS, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=124";
 import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=167";
-import { openCreatorPartnerRequest, renderCreatorConsole } from "./creator.js?v=131";
+import { openCreatorPartnerRequest, renderCreatorConsole } from "./creator.js?v=132";
 import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=175";
 import { renderAccounting } from "./accounting.js?v=7";
 import { renderAccountingSandbox } from "./accounting-sandbox.js?v=2";
@@ -702,8 +702,7 @@ async function renderHome() {
     const panel = document.createElement("section");
     panel.className = "client-panel home-panel dashboard-panel";
     if (!canAccessRoute(ROUTES.calendar)) {
-        panel.innerHTML = '<div class="dashboard-heading"><div><p class="eyebrow">Depann’Home Pro Basic</p><h2>Tableau de bord</h2></div></div>';
-        container.appendChild(panel);
+        container.removeChild(panel);
         renderPlatformAnnouncement(container);
         return;
     }
@@ -1336,6 +1335,7 @@ function renderSettingsWorkspace(options = {}) {
         const grid = document.createElement("div");
         grid.className = "settings-card-grid";
         const cards = [
+            ...(document.body.dataset.role === "admin" ? [["subscription", "Offre & abonnement", "Consultez les tarifs et demandez une évolution ou une rétrogradation au Créateur.", "subscription"]] : []),
             ...(document.body.dataset.role === "admin" ? [["documents", "Modèles de documents", `Identité, présentation et modèles des devis${organizationFeatureEnabled("quitus") ? ", quitus" : ""} et rapports.`, "document"]] : []),
             ["network", "Réseau & connecteurs", "Deux espaces distincts : le réseau collaboratif Depann’Home Pro et les connecteurs API externes.", "network"],
             ...(document.body.dataset.role === "admin" ? [["users", "Utilisateurs", "Accès, postes, techniciens et chefs d’équipe.", "users"], ["security", "Sécurité", "Double authentification et protection des accès.", "security"], ["groups", "Groupe / Multi-entreprises", "Sociétés, bascule de contexte et indicateurs consolidés.", "group"]] : []),
@@ -1351,11 +1351,12 @@ function renderSettingsWorkspace(options = {}) {
 
     clearSearch();
     resetSelection("all");
-    const titles = { documents: "Modèles de documents", network: "Réseau & connecteurs", users: "Utilisateurs", security: "Sécurité", groups: "Groupe / Multi-entreprises", personalization: "Personnalisation", imports: "Importation de données", creator: "Console Créateur" };
+    const titles = { subscription: "Offre & abonnement", documents: "Modèles de documents", network: "Réseau & connecteurs", users: "Utilisateurs", security: "Sécurité", groups: "Groupe / Multi-entreprises", personalization: "Personnalisation", imports: "Importation de données", creator: "Console Créateur" };
     setPage(`Paramètres · ${titles[section] || "Configuration"}`, ROUTES.settings, "detail");
     const container = getContainer();
     container.appendChild(createBackCard("Retour aux Paramètres", () => renderSettings()));
 
+    if (section === "subscription") return renderSubscriptionSettings(container);
     if (section === "documents") {
         const intro = createSettingsIntro("Modèles de documents");
         const grid = document.createElement("div");
@@ -1396,6 +1397,41 @@ function renderSettingsWorkspace(options = {}) {
         return;
     }
     renderSettings({ legacy: true, personalizationOnly: true });
+}
+
+async function renderSubscriptionSettings(container) {
+    const currentTier = document.body.dataset.subscriptionTier || "pro";
+    const tiers = [
+        { id: "basic", label: "Basic", pc: 20, mobile: 5, description: "Postes PC et Administrateur Mobile. Clients, devis, factures, comptabilité, facturation électronique et PDP." },
+        { id: "basic_plus", label: "Basic+", pc: 35, mobile: 8, description: "Tous postes PC et mobiles. Basic avec planning et gestion des interventions." },
+        { id: "pro", label: "Pro", pc: 70, mobile: 15, description: "Tous postes PC et mobiles. Accès complet : Quitus, rapports, achats, bibliothèque, Réseau, API, imports et groupes." }
+    ];
+    const rank = { basic: 0, basic_plus: 1, pro: 2 };
+    const result = await fetch("/api/subscription-change-requests", { credentials: "same-origin" });
+    const data = await result.json().catch(() => ({}));
+    const requests = result.ok ? data.requests || [] : [];
+    const section = document.createElement("section");
+    section.className = "creator-form subscription-company-panel";
+    section.innerHTML = `<div class="form-heading"><div><p class="eyebrow">Offre actuelle : ${escapeHtml(tiers.find(tier => tier.id === currentTier)?.label || "Pro")}</p><h2>Offres Depann’Home Pro</h2></div></div><p class="muted">Les tarifs mensuels sont calculés par poste. Une demande n’altère aucune donnée et ne change pas automatiquement votre offre : elle est transmise au Créateur pour étude.</p><div class="settings-card-grid">${tiers.map(tier => `<article class="settings-navigation-card subscription-offer-card${tier.id === currentTier ? " active" : ""}"><span><strong>${tier.label}</strong><small>${tier.pc} € TTC / poste PC / mois<br>${tier.mobile} € TTC / poste mobile / mois</small><small>${tier.description}</small></span>${tier.id === currentTier ? '<span class="creator-state">Offre actuelle</span>' : `<button type="button" class="secondary-button" data-request-tier="${tier.id}">Demander ${rank[tier.id] > rank[currentTier] ? "l’évolution" : "la rétrogradation"}</button>`}</article>`).join("")}</div><label class="form-wide">Message facultatif au Créateur<textarea rows="4" maxlength="1000" data-subscription-request-message placeholder="Précisez votre besoin, la date souhaitée ou le nombre de postes envisagé."></textarea></label><p class="auth-message" data-subscription-request-feedback aria-live="polite"></p><section><h3>Demandes envoyées</h3><div class="creator-network-list">${requests.length ? requests.map(item => `<article class="creator-network-company"><div><strong>${escapeHtml(tiers.find(tier => tier.id === item.requestedTier)?.label || item.requestedTier)}</strong><p>${escapeHtml(subscriptionRequestStatusLabel(item.status))}</p><small>${escapeHtml(formatSubscriptionRequestDate(item.createdAt))}</small></div></article>`).join("") : '<p class="muted">Aucune demande envoyée.</p>'}</div></section>`;
+    container.appendChild(section);
+    section.querySelectorAll("[data-request-tier]").forEach(button => button.addEventListener("click", async () => {
+        const feedback = section.querySelector("[data-subscription-request-feedback]");
+        button.disabled = true;
+        const response = await fetch("/api/subscription-change-requests", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ requestedTier: button.dataset.requestTier, companyMessage: section.querySelector("[data-subscription-request-message]").value }) });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) { button.disabled = false; feedback.textContent = payload.message || "Demande impossible."; feedback.classList.add("error"); return; }
+        feedback.textContent = payload.message; feedback.classList.remove("error");
+        renderSettings({ section: "subscription" });
+    }));
+}
+
+function subscriptionRequestStatusLabel(status) {
+    return ({ new: "Nouvelle", under_review: "En cours d’étude", accepted: "Acceptée", refused: "Refusée", cancelled: "Annulée" })[status] || "Nouvelle";
+}
+
+function formatSubscriptionRequestDate(value) {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? "" : new Intl.DateTimeFormat("fr-FR", { dateStyle: "short", timeStyle: "short" }).format(date);
 }
 
 async function openDocumentTemplateSettings(type) {

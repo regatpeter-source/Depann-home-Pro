@@ -44,6 +44,24 @@ CREATE TABLE IF NOT EXISTS depannhome_platform_announcements (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Demandes d'évolution ou de rétrogradation : l'entreprise propose, le
+-- Créateur traite. Le forfait actif n'est jamais modifié automatiquement.
+CREATE TABLE IF NOT EXISTS depannhome_subscription_change_requests (
+    id BIGSERIAL PRIMARY KEY,
+    owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    requested_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+    current_tier VARCHAR(20) NOT NULL CHECK (current_tier IN ('basic','basic_plus','pro')),
+    requested_tier VARCHAR(20) NOT NULL CHECK (requested_tier IN ('basic','basic_plus','pro')),
+    status VARCHAR(20) NOT NULL DEFAULT 'new' CHECK (status IN ('new','under_review','accepted','refused','cancelled')),
+    company_message VARCHAR(1000) NOT NULL DEFAULT '',
+    creator_note VARCHAR(2000) NOT NULL DEFAULT '',
+    resolved_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+    resolved_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS depannhome_subscription_change_requests_owner_idx ON depannhome_subscription_change_requests(owner_id, created_at DESC);
+
 -- Gestion des accès : les journaux restent conservés après suppression d’un
 -- membre, grâce aux références d’auteur et de cible annulables.
 CREATE TABLE IF NOT EXISTS depannhome_member_audit (
