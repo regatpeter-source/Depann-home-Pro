@@ -702,7 +702,7 @@ async function renderHome() {
     const panel = document.createElement("section");
     panel.className = "client-panel home-panel dashboard-panel";
     if (!canAccessRoute(ROUTES.calendar)) {
-        container.removeChild(panel);
+        document.body.dataset.pageMode = "basic-home";
         renderPlatformAnnouncement(container);
         return;
     }

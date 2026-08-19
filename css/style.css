@@ -591,6 +591,10 @@ body.desktop-device .nav-label-messages{
     margin-bottom:20px;
 }
 
+body[data-page-mode="basic-home"] #pageTitle{
+    display:none;
+}
+
 /* ==========================
    CARTES
 ========================== */
