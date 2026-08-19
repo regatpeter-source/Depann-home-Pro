@@ -25,9 +25,9 @@ export async function renderBilling(options = {}) {
     if (options.document) activeDocument = options.document;
     clearSearch();
     resetSelection("all");
-    const templateSection = ["quote", "quitus", "report"].includes(options.templateSection) ? options.templateSection : "";
+    const templateSection = ["quote", "quitus", ...(canAccessTechnicalReports() ? ["report"] : [])].includes(options.templateSection) ? options.templateSection : "";
     const templateTitle = ({ quote: "Modèle de devis", quitus: "Modèle de quitus", report: "Modèle de rapport" })[templateSection];
-    setPage(templateTitle ? `Paramètres · ${templateTitle}` : "Devis, factures & rapports de fuite", templateTitle ? ROUTES.settings : ROUTES.billing, "detail");
+    setPage(templateTitle ? `Paramètres · ${templateTitle}` : canAccessTechnicalReports() ? "Devis, factures & rapports de fuite" : "Devis, factures & facturation", templateTitle ? ROUTES.settings : ROUTES.billing, "detail");
 
     const container = getContainer();
     const overviewPanel = createPanel("billing-overview-panel");
@@ -127,7 +127,7 @@ function renderOverview(panel, profilePanel) {
     const invoices = documents.filter(document => document.documentType === "invoice").length;
     const usesExternalTemplate = usesExternalQuoteTemplate();
     const usesExternalQuitusTemplate = usesExternalDocumentTemplate("quitus");
-    const usesExternalReportTemplate = usesExternalDocumentTemplate("report");
+    const usesExternalReportTemplate = canAccessTechnicalReports() && usesExternalDocumentTemplate("report");
     panel.innerHTML = `
         <div class="billing-overview">
             <div class="billing-branding">
@@ -140,7 +140,7 @@ function renderOverview(panel, profilePanel) {
                 ${usesExternalQuitusTemplate && !isAccountant() ? `<button type="button" class="secondary-button" data-billing-action="download-quitus-template" ${profile.hasQuitusTemplate ? "" : "disabled"}>Télécharger la base de quitus</button>` : ""}
                 ${usesExternalReportTemplate && !isAccountant() ? `<button type="button" class="secondary-button" data-billing-action="download-report-template" ${profile.hasReportFileTemplate ? "" : "disabled"}>Télécharger la base de rapport</button>` : ""}
                 <button type="button" class="secondary-button" data-billing-action="new-invoice">+ Nouvelle facture</button>
-                ${isAccountant() ? "" : '<button type="button" class="secondary-button" data-billing-action="open-leak-reports">Rapports de fuite</button><button type="button" class="secondary-button" data-billing-action="new-leak-report">Nouveau rapport de recherche de fuite</button>'}
+                ${isAccountant() || !canAccessTechnicalReports() ? "" : '<button type="button" class="secondary-button" data-billing-action="open-leak-reports">Rapports de fuite</button><button type="button" class="secondary-button" data-billing-action="new-leak-report">Nouveau rapport de recherche de fuite</button>'}
                 ${isFullAdministrator() ? '<button type="button" class="secondary-button" data-billing-action="preview-blank-quote">Aperçu du devis vierge</button>' : ""}
             </div>
         </div>
@@ -248,7 +248,7 @@ function renderProfile(panel, options = {}) {
     else if (!options.onlyType) {
         renderQuoteTemplateSettings(panel, profile);
         renderAdditionalDocumentTemplateSettings(panel, profile, "quitus");
-        renderAdditionalDocumentTemplateSettings(panel, profile, "report");
+        if (canAccessTechnicalReports()) renderAdditionalDocumentTemplateSettings(panel, profile, "report");
     }
 }
 
@@ -762,6 +762,10 @@ function isTechnician() { return document.body.dataset.role === "technician"; }
 function isAccountant() { return document.body.dataset.role === "accountant"; }
 function isFullAdministrator() { return document.body.dataset.role === "admin"; }
 function isTechnicianBillingAllowed() { return !isTechnician() || document.body.dataset.technicianBillingEnabled !== "false"; }
+function canAccessTechnicalReports() {
+    try { return JSON.parse(document.body.dataset.organizationFeatures || "{}").technicalReports !== false; }
+    catch { return false; }
+}
 function usesExternalQuoteTemplate() {
     const policy = billingData?.profile?.quoteTemplatePolicy;
     return policy === "external_only" || (policy !== "integrated_only" && billingData?.profile?.quoteTemplateMode === "external");

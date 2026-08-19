@@ -11,6 +11,8 @@ const creatorServer = readFileSync(new URL("../server/creator.js", import.meta.u
 const creatorClient = readFileSync(new URL("../js/creator.js", import.meta.url), "utf8");
 const app = readFileSync(new URL("../app.js", import.meta.url), "utf8");
 const navigation = readFileSync(new URL("../js/navigation.js", import.meta.url), "utf8");
+const billing = readFileSync(new URL("../js/billing.js", import.meta.url), "utf8");
+const calendar = readFileSync(new URL("../js/calendar.js", import.meta.url), "utf8");
 const auth = readFileSync(new URL("../server/auth.js", import.meta.url), "utf8");
 const partnerConnections = readFileSync(new URL("../server/partner-connections.js", import.meta.url), "utf8");
 const partnerDialogue = readFileSync(new URL("../server/partner-dialogue.js", import.meta.url), "utf8");
@@ -69,6 +71,11 @@ test("tier features are protected on both API and navigation layers", () => {
     assert.match(navigation, /\[ROUTES\.clients\]: "clients"/);
     assert.match(navigation, /\[ROUTES\.calendar\]: "calendar"/);
     assert.match(navigation, /\[ROUTES\.purchases\]: "purchases"/);
+    assert.match(app, /app\.use\("\/api\/billing\/document-templates\/report", requireAuthentication, requireOrganizationFeature\("technicalReports"\)\)/);
+    assert.match(app, /app\.use\("\/api\/document-templates\/report", requireAuthentication, requireOrganizationFeature\("technicalReports"\)\)/);
+    assert.match(billing, /isAccountant\(\) \|\| !canAccessTechnicalReports\(\)/);
+    assert.match(calendar, /canAccessTechnicalReports\(\) \? `<section class="calendar-billing-actions report-entry-point">/);
+    assert.match(navigation, /isTechnician\(\) && organizationFeatureEnabled\("technicalReports"\)/);
     assert.match(auth, /memberSeatFamily/);
     assert.match(auth, /La limite de postes mobiles/);
     assert.match(auth, /'admin','pc_standard','accountant'/);

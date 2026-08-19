@@ -65,12 +65,12 @@ export function initializeNavigation(loadedDatabase) {
     updateSearchPlaceholder();
     window.addEventListener("depannhome:open-client", event => openClients(String(event.detail?.clientId || "")));
     window.addEventListener("depannhome:edit-report-template", () => {
-        if (document.body.dataset.role !== "admin" || !document.body.classList.contains("desktop-device")) return;
+        if (!organizationFeatureEnabled("technicalReports") || document.body.dataset.role !== "admin" || !document.body.classList.contains("desktop-device")) return;
         openDocumentTemplateSettings("report");
     });
     window.addEventListener("depannhome:open-document-template", event => {
         const type = String(event.detail?.type || "");
-        if (["quote", "quitus", "report"].includes(type)) openDocumentTemplateSettings(type);
+        if (["quote", "quitus"].includes(type) || (type === "report" && organizationFeatureEnabled("technicalReports"))) openDocumentTemplateSettings(type);
     });
     window.addEventListener("depannhome:clients-synchronized", () => refreshClientMessageAlert());
     window.addEventListener("depannhome:partner-client-provisioned", event => {
@@ -150,7 +150,7 @@ export async function refreshApplication() {
     } else if (activeRoute === ROUTES.calendar) {
         renderCalendar();
     } else if (activeRoute === ROUTES.billing) {
-        if (isTechnician()) renderTechnicalReports();
+        if (isTechnician() && organizationFeatureEnabled("technicalReports")) renderTechnicalReports();
         else renderBilling();
     } else if (activeRoute === ROUTES.technicalReports) {
         renderTechnicalReports();
@@ -200,7 +200,7 @@ function bindEvents() {
     clientsBtn.addEventListener("click", () => { if (canAccessQuick("clients")) openClients(); });
     billingBtn?.addEventListener("click", () => {
         if (!canAccessQuick("billing")) return;
-        if (isTechnician()) renderTechnicalReports();
+        if (isTechnician() && organizationFeatureEnabled("technicalReports")) renderTechnicalReports();
         else renderBilling();
     });
     accountingBtn?.addEventListener("click", () => { if (canAccessQuick("accounting")) renderAccounting(); });
@@ -230,7 +230,7 @@ function bindEvents() {
             if (nav === ROUTES.photo) renderPhotoRecognition(database, navigateToRef);
             if (nav === ROUTES.clients) openClients();
             if (nav === ROUTES.billing) {
-                if (isTechnician()) renderTechnicalReports();
+                if (isTechnician() && organizationFeatureEnabled("technicalReports")) renderTechnicalReports();
                 else renderBilling();
             }
             if (nav === ROUTES.accounting && document.body.dataset.role === "admin") renderAccounting();
@@ -353,7 +353,7 @@ function openNotificationDestination(notification) {
     if (entityType === "partner_request" && document.body.dataset.creator === "true") return openCreatorPartnerRequest(entityId);
     if (entityType === "partner_mission") return renderPartnerMissions({ missionId: entityId, sourceDialogue: Boolean(notification?.payload?.sourceDialogue) });
     if (entityType === "partner_connection") return renderSettings({ section: "network" });
-    if (entityType === "technical_report") return renderTechnicalReports(Number(entityId) || 0);
+    if (entityType === "technical_report") return organizationFeatureEnabled("technicalReports") ? renderTechnicalReports(Number(entityId) || 0) : openHome();
     if (entityType === "billing_document") return renderBilling();
     if (entityType === "client") return openClients(entityId);
     if (entityType === "calendar_event") return renderCalendar();
@@ -1288,7 +1288,7 @@ function renderSettings(options = {}) {
         container.appendChild(creatorCard);
     }
     if (!options.personalizationOnly && document.body.dataset.role === "admin" && document.body.classList.contains("desktop-device")) {
-        renderReportTemplateSettings(container);
+        if (organizationFeatureEnabled("technicalReports")) renderReportTemplateSettings(container);
         renderDataImportTool(container);
         renderSupportContact(container);
         if (options.focusReportTemplate) window.requestAnimationFrame(() => document.getElementById("reportTemplateSettings")?.scrollIntoView({ behavior: "smooth", block: "start" }));
@@ -1338,9 +1338,9 @@ function renderSettingsWorkspace(options = {}) {
         grid.className = "settings-subsection-grid";
         grid.append(
             createSettingsNavigationCard("Modèle de devis et facture", "Modifier le modèle intégré ou importer la base devis de l’entreprise ; la facture hérite automatiquement du devis", "document", () => openDocumentTemplateSettings("quote")),
-            createSettingsNavigationCard("Modèle de quitus", "Modifier le modèle intégré ou importer la base quitus de l’entreprise", "document", () => openDocumentTemplateSettings("quitus")),
-            createSettingsNavigationCard("Modèle de rapport", "Modifier le modèle intégré ou importer la base rapport de l’entreprise", "document", () => openDocumentTemplateSettings("report"))
+            createSettingsNavigationCard("Modèle de quitus", "Modifier le modèle intégré ou importer la base quitus de l’entreprise", "document", () => openDocumentTemplateSettings("quitus"))
         );
+        if (organizationFeatureEnabled("technicalReports")) grid.append(createSettingsNavigationCard("Modèle de rapport", "Modifier le modèle intégré ou importer la base rapport de l’entreprise", "document", () => openDocumentTemplateSettings("report")));
         intro.appendChild(grid);
         container.appendChild(intro);
         return;
@@ -1377,10 +1377,12 @@ function renderSettingsWorkspace(options = {}) {
 }
 
 async function openDocumentTemplateSettings(type) {
+    if (type === "report" && !organizationFeatureEnabled("technicalReports")) return renderSettings({ section: "documents" });
     await renderDocumentTemplateEditor(type, () => renderSettings({ section: "documents" }), () => openIntegratedDocumentSettings(type));
 }
 
 async function openIntegratedDocumentSettings(type) {
+    if (type === "report" && !organizationFeatureEnabled("technicalReports")) return renderSettings({ section: "documents" });
     await renderBilling({ profile: true, templateSection: type, integratedOnly: true, onTemplateRendered: type === "report" ? () => renderReportTemplateSettings(getContainer()) : null });
 }
 

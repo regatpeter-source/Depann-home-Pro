@@ -325,10 +325,10 @@ function renderEventForm(panel) {
                         <dl><dt>Date</dt><dd>${escapeHtml(formatActivityDate(event.date, event.startTime))}${event.endTime ? ` — ${escapeHtml(event.endTime)}` : ""}</dd>${renderAssignedTechniciansDetail(event)}${event.notes ? `<dt>Notes</dt><dd>${escapeHtml(event.notes)}</dd>` : ""}</dl>
                     </section>
                     ${renderInterventionPhotosHtml(client, event)}
-                    <section class="calendar-billing-actions report-entry-point">
+                    ${canAccessTechnicalReports() ? `<section class="calendar-billing-actions report-entry-point">
                         <div><p class="eyebrow">Rapport technique</p><h3>Recherche de fuite</h3><p class="muted">Rédigez le rapport terrain, joignez les photos et transmettez-le à l’administration.</p></div>
                         <div><button type="button" class="secondary-button" id="openTechnicalReport">Ouvrir le rapport</button></div>
-                    </section>
+                    </section>` : ""}
                     <section class="calendar-linked-documents" id="calendarLinkedDocuments"><p class="muted">Chargement des devis et factures de cette intervention…</p></section>
                     ${isTechnicianBillingAllowed() ? `<section class="calendar-billing-actions">
                         <div><p class="eyebrow">Fin d’intervention</p><h3>${isReadOnlyCalendar() ? "Devis" : "Devis et facture"}</h3><p class="muted">${isReadOnlyCalendar() ? "Créez le devis de cette intervention." : "Créez le document adapté après avoir renseigné l’intervention."}</p></div>
@@ -1238,6 +1238,11 @@ async function loadCalendarMembers() {
 
 function isTechnicianBillingAllowed() {
     return document.body.dataset.role !== "technician" || document.body.dataset.technicianBillingEnabled !== "false";
+}
+
+function canAccessTechnicalReports() {
+    try { return JSON.parse(document.body.dataset.organizationFeatures || "{}").technicalReports !== false; }
+    catch { return false; }
 }
 
 function isReadOnlyCalendar() {
