@@ -259,7 +259,7 @@ function applyRoleBasedMenus() {
         if ((menu === "photo" && isDesktopDevice()) || !isMenuAllowed(MENU_ACCESS.quick[menu], menuRoute(menu))) button?.remove();
     });
     document.querySelectorAll(".nav-button").forEach(button => {
-        if (button.dataset.nav === ROUTES.home && isMobilePostRole()) return;
+        if (button.dataset.nav === ROUTES.home && isMobileDeviceContext()) return;
         if (!canAccessRoute(button.dataset.nav)) button.remove();
     });
     if (isMobileAdministrator()) {
@@ -272,7 +272,7 @@ function applyRoleBasedMenus() {
 }
 
 function ensureMobileHomeNavigationButton() {
-    if (!isMobilePostRole() || document.querySelector('.nav-button[data-nav="home"]')) return;
+    if (!isMobileDeviceContext() || document.querySelector('.nav-button[data-nav="home"]')) return;
     const footer = document.querySelector("#authRoot > footer") || document.querySelector("footer");
     if (!footer) return;
     const button = document.createElement("button");
@@ -281,6 +281,10 @@ function ensureMobileHomeNavigationButton() {
     button.dataset.nav = ROUTES.home;
     button.innerHTML = "<span>Accueil</span>";
     footer.prepend(button);
+}
+
+function isMobileDeviceContext() {
+    return document.body.dataset.deviceType === "mobile" || document.body.classList.contains("mobile-device");
 }
 
 function isMenuAllowed(roles, route = "") {
