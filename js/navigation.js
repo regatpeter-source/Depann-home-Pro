@@ -345,11 +345,11 @@ function openHome() {
         renderBilling();
         return;
     }
-    if (isTechnician()) {
+    if (isTechnician() && canAccessRoute(ROUTES.calendar)) {
         renderCalendarOverview();
         return;
     }
-    if (document.body.classList.contains("desktop-device") || isMobileAdministrator()) {
+    if (isMobileDeviceContext() || document.body.classList.contains("desktop-device") || isMobileAdministrator()) {
         renderHome();
         return;
     }
@@ -702,10 +702,17 @@ async function renderHome() {
     const panel = document.createElement("section");
     panel.className = "client-panel home-panel dashboard-panel";
     if (!canAccessRoute(ROUTES.calendar)) {
-        panel.innerHTML = `<div class="dashboard-heading"><div><p class="eyebrow">Depann’Home Pro Basic</p><h2>Tableau de bord</h2><p class="muted">Accédez directement à vos clients, devis, factures et indicateurs de facturation.</p></div></div><div class="settings-card-grid"><button type="button" class="settings-navigation-card" data-basic-home="clients"><span class="settings-navigation-icon">👥</span><span><strong>Clients</strong><small>Dossiers, coordonnées et historique commercial</small></span></button><button type="button" class="settings-navigation-card" data-basic-home="billing"><span class="settings-navigation-icon">€</span><span><strong>Devis, factures et facturation</strong><small>Documents, encaissements, avoirs et tableau financier</small></span></button></div>`;
+        const cards = [];
+        if (canAccessRoute(ROUTES.clients)) cards.push('<button type="button" class="settings-navigation-card" data-basic-home="clients"><span class="settings-navigation-icon">👥</span><span><strong>Clients</strong><small>Dossiers, coordonnées et historique commercial</small></span></button>');
+        if (canAccessRoute(ROUTES.billing) || canTechnicianAccessBilling()) cards.push('<button type="button" class="settings-navigation-card" data-basic-home="billing"><span class="settings-navigation-icon">€</span><span><strong>Devis, factures et facturation</strong><small>Documents, encaissements, avoirs et tableau financier</small></span></button>');
+        if (canAccessRoute(ROUTES.accounting)) cards.push('<button type="button" class="settings-navigation-card" data-basic-home="accounting"><span class="settings-navigation-icon">📊</span><span><strong>Comptabilité</strong><small>Facturation électronique et préparation PDP</small></span></button>');
+        if (canAccessRoute(ROUTES.library)) cards.push('<button type="button" class="settings-navigation-card" data-basic-home="library"><span class="settings-navigation-icon">📚</span><span><strong>Bibliothèque</strong><small>Notices, procédures et ressources techniques</small></span></button>');
+        panel.innerHTML = `<div class="dashboard-heading"><div><p class="eyebrow">Depann’Home Pro Basic</p><h2>Tableau de bord</h2><p class="muted">Accédez aux fonctions disponibles pour votre poste dans l’offre en cours.</p></div></div><div class="settings-card-grid">${cards.join("")}</div>`;
         container.appendChild(panel); renderPlatformAnnouncement(container);
-        panel.querySelector('[data-basic-home="clients"]').addEventListener("click", () => openClients());
-        panel.querySelector('[data-basic-home="billing"]').addEventListener("click", () => renderBilling());
+        panel.querySelector('[data-basic-home="clients"]')?.addEventListener("click", () => openClients());
+        panel.querySelector('[data-basic-home="billing"]')?.addEventListener("click", () => renderBilling());
+        panel.querySelector('[data-basic-home="accounting"]')?.addEventListener("click", () => renderAccounting());
+        panel.querySelector('[data-basic-home="library"]')?.addEventListener("click", () => renderLibrary());
         return;
     }
     panel.innerHTML = `
@@ -735,6 +742,12 @@ async function renderHome() {
     const upcomingEvents = result.events.filter(event => event.date > today && event.date <= upcomingEnd);
     renderDashboardEvents(panel.querySelector('[data-dashboard-events="today"]'), todayEvents, "Aucun rendez-vous aujourd’hui.");
     renderDashboardEvents(panel.querySelector('[data-dashboard-events="upcoming"]'), upcomingEvents, "Aucun rendez-vous prévu dans les 7 prochains jours.");
+}
+
+function canTechnicianAccessBilling() {
+    return isTechnician()
+        && document.body.dataset.technicianBillingEnabled !== "false"
+        && organizationFeatureEnabled("billing");
 }
 
 async function loadDashboardEvents() {

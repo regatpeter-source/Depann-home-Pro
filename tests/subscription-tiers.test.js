@@ -62,6 +62,10 @@ test("every mobile post keeps Home and Library access regardless of subscription
     assert.match(style, /mobile-device:not\(\.report-writing-active\) #authRoot > footer/);
     assert.match(style, /@media\(max-width:700px\), \(pointer:coarse\)/);
     assert.match(style, /footer \.nav-button\[data-nav="home"\]/);
+    assert.match(navigation, /isTechnician\(\) && canAccessRoute\(ROUTES\.calendar\)/);
+    assert.match(navigation, /if \(isMobileDeviceContext\(\) \|\| document\.body\.classList\.contains\("desktop-device"\)/);
+    assert.match(navigation, /data-basic-home="library"/);
+    assert.match(navigation, /canTechnicianAccessBilling\(\)/);
 });
 
 test("Pro enables every product feature", () => {
