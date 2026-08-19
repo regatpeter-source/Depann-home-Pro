@@ -114,7 +114,7 @@ export function registerPurchaseRoutes(app, requireAuthentication) {
 }
 
 function requirePurchaseAdministration(request, response, next) {
-    if (!["admin", "mobile_admin"].includes(request.user?.role)) return response.status(403).json({ message: "Les achats sont réservés à l’Administrateur PC et à l’Administrateur Mobile." });
+    if (!["admin", "pc_standard", "accountant", "mobile_admin"].includes(request.user?.role)) return response.status(403).json({ message: "Les achats sont réservés aux postes PC et à l’Administrateur Mobile." });
     return next();
 }
 

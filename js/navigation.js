@@ -1,10 +1,10 @@
 import { ROUTES, STORAGE_KEYS, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=125";
 import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=167";
 import { openCreatorPartnerRequest, renderCreatorConsole } from "./creator.js?v=132";
-import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=175";
+import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=176";
 import { renderAccounting } from "./accounting.js?v=7";
 import { renderAccountingSandbox } from "./accounting-sandbox.js?v=2";
-import { renderPurchases } from "./purchases.js?v=117";
+import { renderPurchases } from "./purchases.js?v=118";
 import { renderGroupActivation, renderGroupWorkspace } from "./groups.js?v=3";
 import { renderPartnerMissions } from "./partner-missions.js?v=42";
 import { renderPartnerSandbox } from "./partner-sandbox.js?v=3";
@@ -162,7 +162,7 @@ export async function refreshApplication() {
         renderPartnerSandbox();
     } else if (activeRoute === ROUTES.accountingSandbox && document.body.dataset.role === "admin") {
         renderAccountingSandbox();
-    } else if (activeRoute === ROUTES.purchases && ["admin", "mobile_admin"].includes(document.body.dataset.role)) {
+    } else if (activeRoute === ROUTES.purchases && ["admin", "pc_standard", "accountant", "mobile_admin"].includes(document.body.dataset.role)) {
         renderPurchases();
     } else if (activeRoute === ROUTES.groups && document.body.dataset.groupAdmin === "true") {
         renderGroupWorkspace();
@@ -1411,9 +1411,9 @@ async function renderSubscriptionSettings(container) {
     const currentMobileSeats = Math.max(0, Number(document.body.dataset.maxMobileUsers) || 0);
     const storedMonthlyPriceCents = Math.max(0, Number(document.body.dataset.monthlyPriceCents) || 0);
     const tiers = [
-        { id: "basic", label: "Basic", pc: 20, mobile: 5, description: "Postes PC et Administrateur Mobile. Clients, facturation, comptabilité et PDP. Bibliothèque sur mobile ; Achats pour Administrateurs PC/Mobile." },
-        { id: "basic_plus", label: "Basic+", pc: 35, mobile: 8, description: "Tous postes PC et mobiles. Basic avec planning. Bibliothèque sur mobile ; Achats pour Administrateurs PC/Mobile." },
-        { id: "pro", label: "Pro", pc: 70, mobile: 15, description: "Tous postes et accès complet. Bibliothèque sur mobile ; Achats pour Administrateurs PC/Mobile ; Quitus, rapports, Réseau, API, imports et groupes." }
+        { id: "basic", label: "Basic", pc: 20, mobile: 5, description: "Postes PC et Administrateur Mobile. Clients, facturation, comptabilité et PDP. Bibliothèque sur mobile ; Achats sur tous les PC et l’Administrateur Mobile." },
+        { id: "basic_plus", label: "Basic+", pc: 35, mobile: 8, description: "Tous postes PC et mobiles. Basic avec planning. Bibliothèque sur mobile ; Achats sur tous les PC et l’Administrateur Mobile." },
+        { id: "pro", label: "Pro", pc: 70, mobile: 15, description: "Tous postes et accès complet. Bibliothèque sur mobile ; Achats sur tous les PC et l’Administrateur Mobile ; Quitus, rapports, Réseau, API, imports et groupes." }
     ];
     const rank = { basic: 0, basic_plus: 1, pro: 2 };
     const currentOffer = tiers.find(tier => tier.id === currentTier) || tiers[2];

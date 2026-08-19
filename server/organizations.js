@@ -90,7 +90,7 @@ export function requireOrganizationFeature(feature) {
 
 export function isFeatureEnabledForRole(organization, feature, role) {
     if (feature === "library") return MOBILE_ROLES.includes(role);
-    if (feature === "purchases" && !["admin", "mobile_admin"].includes(role)) return false;
+    if (feature === "purchases" && !["admin", "pc_standard", "accountant", "mobile_admin"].includes(role)) return false;
     return isFeatureEnabled(organization, feature);
 }
 

@@ -65,7 +65,7 @@ const CALENDAR_USERS = TERRAIN.concat("accountant");
 const PARTNER_MISSION_USERS = OPERATIONAL_MOBILE;
 const LIBRARY_USERS = ["mobile_admin", "team_lead", "technician"];
 const MOBILE_POST_USERS = ["mobile_admin", "team_lead", "technician"];
-const PURCHASE_USERS = ["admin", "mobile_admin"];
+const PURCHASE_USERS = ["admin", "pc_standard", "accountant", "mobile_admin"];
 
 // Toute nouvelle entrée de navigation doit être déclarée ici. Les éléments
 // hors rôle sont retirés du DOM avant l’affichage de l’application.

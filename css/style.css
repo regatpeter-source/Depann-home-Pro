@@ -463,12 +463,13 @@ body[data-role="mobile_admin"].mobile-device footer .nav-button:not([data-nav="h
 @media(max-width:700px){.wizard-progress{display:flex;padding-bottom:4px}.wizard-progress button{flex:0 0 36px}.wizard-fields,.report-summary{grid-template-columns:1fr}.wizard-row{grid-template-columns:1fr 1fr auto}.wizard-row input:first-child{grid-column:1/-1}.wizard-actions{bottom:6px}.wizard-actions .secondary-button{flex:1;padding:13px 9px}.report-wizard-header{top:0}.wizard-step{min-height:0}.text-button{margin-left:0}.wizard-step-title{flex-wrap:wrap}}
 
 body[data-role="accountant"] .search-section,
-body[data-role="accountant"] .quick-actions > :not(#billingBtn),
-body[data-role="accountant"] .nav-button:not([data-nav="billing"]){
+body[data-role="accountant"] .quick-actions > :not(#billingBtn):not(#purchasesBtn),
+body[data-role="accountant"] .nav-button:not([data-nav="billing"]):not([data-nav="purchases"]){
     display:none;
 }
 
-body.desktop-device[data-role="accountant"] footer .nav-button[data-nav="billing"]{
+body.desktop-device[data-role="accountant"] footer .nav-button[data-nav="billing"],
+body.desktop-device[data-role="accountant"] footer .nav-button[data-nav="purchases"]{
     display:flex;
 }
 

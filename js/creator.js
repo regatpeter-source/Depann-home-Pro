@@ -564,9 +564,9 @@ function bindSubscriptionTier(form) {
     const mobileSeats = form.elements.maxTechnicians;
     const summary = form.querySelector("[data-tier-summary]");
     const tiers = {
-        basic: { label: "Basic", pc: 20, mobile: 5, access: "Postes PC et Administrateur Mobile · bibliothèque sur mobile · achats Administrateur PC/Mobile." },
-        basic_plus: { label: "Basic+", pc: 35, mobile: 8, access: "Tous postes PC et mobiles · planning · bibliothèque mobile · achats Administrateur PC/Mobile." },
-        pro: { label: "Pro", pc: 70, mobile: 15, access: "Tous postes · accès complet · bibliothèque mobile · achats Administrateur PC/Mobile." }
+        basic: { label: "Basic", pc: 20, mobile: 5, access: "Postes PC et Administrateur Mobile · bibliothèque mobile · achats sur tous les PC et l’Administrateur Mobile." },
+        basic_plus: { label: "Basic+", pc: 35, mobile: 8, access: "Tous postes · planning · bibliothèque mobile · achats sur tous les PC et l’Administrateur Mobile." },
+        pro: { label: "Pro", pc: 70, mobile: 15, access: "Tous postes · accès complet · bibliothèque mobile · achats sur tous les PC et l’Administrateur Mobile." }
     };
     const update = () => {
         const selected = tiers[tier.value] || tiers.basic;

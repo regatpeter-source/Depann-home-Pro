@@ -18,6 +18,7 @@ const calendar = readFileSync(new URL("../js/calendar.js", import.meta.url), "ut
 const auth = readFileSync(new URL("../server/auth.js", import.meta.url), "utf8");
 const partnerConnections = readFileSync(new URL("../server/partner-connections.js", import.meta.url), "utf8");
 const partnerDialogue = readFileSync(new URL("../server/partner-dialogue.js", import.meta.url), "utf8");
+const purchasesServer = readFileSync(new URL("../server/purchases.js", import.meta.url), "utf8");
 const style = readFileSync(new URL("../css/style.css", import.meta.url), "utf8");
 
 test("Basic, Basic+ and Pro prices are calculated per PC and mobile seat", () => {
@@ -88,16 +89,18 @@ test("every mobile post keeps Home and Library access regardless of subscription
     assert.doesNotMatch(navigation, /data-basic-home=/);
 });
 
-test("Library is mobile-only and Purchases are administrator-only in every tier", () => {
+test("Library is mobile-only and Purchases are available on every PC plus Mobile Administrator", () => {
     for (const subscriptionTier of ["basic", "basic_plus", "pro"]) {
         const organization = publicOrganization({ interfaceType: "standard", licenseType: "depannhome_standard", subscriptionTier });
         for (const role of ["mobile_admin", "team_lead", "technician"]) assert.equal(isFeatureEnabledForRole(organization, "library", role), true, `${subscriptionTier}:${role}:library`);
         for (const role of ["admin", "pc_standard", "accountant"]) assert.equal(isFeatureEnabledForRole(organization, "library", role), false, `${subscriptionTier}:${role}:library-pc`);
-        for (const role of ["admin", "mobile_admin"]) assert.equal(isFeatureEnabledForRole(organization, "purchases", role), true, `${subscriptionTier}:${role}:purchases`);
-        for (const role of ["pc_standard", "accountant", "team_lead", "technician"]) assert.equal(isFeatureEnabledForRole(organization, "purchases", role), false, `${subscriptionTier}:${role}:purchases`);
+        for (const role of ["admin", "pc_standard", "accountant", "mobile_admin"]) assert.equal(isFeatureEnabledForRole(organization, "purchases", role), true, `${subscriptionTier}:${role}:purchases`);
+        for (const role of ["team_lead", "technician"]) assert.equal(isFeatureEnabledForRole(organization, "purchases", role), false, `${subscriptionTier}:${role}:purchases`);
     }
-    assert.deepEqual(MENU_ACCESS.quick.purchases, ["admin", "mobile_admin"]);
-    assert.deepEqual(MENU_ACCESS.navigation[ROUTES.purchases], ["admin", "mobile_admin"]);
+    assert.deepEqual(MENU_ACCESS.quick.purchases, ["admin", "pc_standard", "accountant", "mobile_admin"]);
+    assert.deepEqual(MENU_ACCESS.navigation[ROUTES.purchases], ["admin", "pc_standard", "accountant", "mobile_admin"]);
+    assert.match(purchasesServer, /\["admin", "pc_standard", "accountant", "mobile_admin"\]\.includes\(request\.user\?\.role\)/);
+    assert.match(billing, /data-billing-action="open-purchases"/);
 });
 
 test("Pro enables every product feature", () => {
@@ -175,6 +178,7 @@ test("tier features are protected on both API and navigation layers", () => {
     assert.match(billing, /isAccountant\(\) \|\| !canAccessTechnicalReports\(\)/);
     assert.match(billing, /canAccessQuitus\(\) && usesExternalDocumentTemplate\("quitus"\)/);
     assert.match(billing, /if \(canAccessQuitus\(\)\) renderAdditionalDocumentTemplateSettings\(panel, profile, "quitus"\)/);
+    assert.match(billing, /data-billing-action="open-purchases"/);
     assert.match(calendar, /canAccessTechnicalReports\(\) \? `<section class="calendar-billing-actions report-entry-point">/);
     assert.match(navigation, /isTechnician\(\) && organizationFeatureEnabled\("technicalReports"\)/);
     assert.match(auth, /memberSeatFamily/);

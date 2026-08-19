@@ -142,6 +142,7 @@ function renderOverview(panel, profilePanel) {
                 <button type="button" class="secondary-button" data-billing-action="new-invoice">+ Nouvelle facture</button>
                 ${isAccountant() || !canAccessTechnicalReports() ? "" : '<button type="button" class="secondary-button" data-billing-action="open-leak-reports">Rapports de fuite</button><button type="button" class="secondary-button" data-billing-action="new-leak-report">Nouveau rapport de recherche de fuite</button>'}
                 ${isFullAdministrator() ? '<button type="button" class="secondary-button" data-billing-action="preview-blank-quote">Aperçu du devis vierge</button>' : ""}
+                <button type="button" class="secondary-button" data-billing-action="open-purchases">Achats</button>
             </div>
         </div>
         <div class="billing-metrics"><span><strong>${quotes}</strong> devis</span><span><strong>${invoices}</strong> factures</span><span class="billing-base-template"><strong>✓</strong> ${usesExternalTemplate ? "gabarit PDF / DOCX externe" : "modèle Depann’Home intégré"}</span></div>
@@ -166,6 +167,10 @@ function renderOverview(panel, profilePanel) {
     panel.querySelector("[data-billing-action=download-quitus-template]")?.addEventListener("click", () => openDocumentTemplateDownload("quitus"));
     panel.querySelector("[data-billing-action=download-report-template]")?.addEventListener("click", () => openDocumentTemplateDownload("report"));
     panel.querySelector("[data-billing-action=preview-blank-quote]")?.addEventListener("click", openBlankQuotePreview);
+    panel.querySelector("[data-billing-action=open-purchases]")?.addEventListener("click", async () => {
+        const { renderPurchases } = await import("./purchases.js?v=118");
+        renderPurchases();
+    });
 }
 
 function renderBillingFinancialOverview(value = {}) {

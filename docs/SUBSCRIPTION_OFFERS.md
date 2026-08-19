@@ -10,7 +10,7 @@ Les niveaux d’abonnement s’appliquent aux organisations utilisant l’interf
 - Accès aux devis, factures, avoirs et au tableau de facturation.
 - Accès au module Comptabilité, facturation électronique et PDP.
 - Bibliothèque technique incluse sur les postes mobiles autorisés par l’offre (`mobile_admin`, `team_lead`, `technician`) ; aucun accès Bibliothèque sur poste PC.
-- Achats inclus pour l’Administrateur PC et l’Administrateur Mobile uniquement.
+- Achats inclus sur tous les postes PC (`admin`, `pc_standard`, `accountant`) et sur l’Administrateur Mobile. Le registre reste également accessible depuis la section Facturation.
 - Postes autorisés : Administrateur PC, poste PC standard, Comptable et Administrateur Mobile.
 - Les comptes Technicien et Chef d’équipe mobile nécessitent au minimum Basic+.
 - Pas d’accès au Quitus d’intervention, réservé à Pro.

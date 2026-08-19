@@ -48,7 +48,7 @@ function renderOverview(panel) {
     panel.innerHTML = `
         <div class="purchases-overview">
             <div><p class="eyebrow">Base de données fournisseurs</p><h2>Achats & dépenses</h2></div>
-            ${isAccountant() ? "" : '<button type="button" class="secondary-button" id="newPurchase">+ Nouvel achat</button>'}
+            <button type="button" class="secondary-button" id="newPurchase">+ Nouvel achat</button>
         </div>
         <div class="billing-metrics purchases-metrics"><span><strong>${purchases.length}</strong> achat(s)</span><span><strong>${formatMoney(totals.ttc)}</strong> achats TTC</span><span><strong>${formatMoney(totals.vat)}</strong> TVA déductible</span><span class="billing-accounted-metric"><strong>${formatMoney(accountedTotals.ttc)}</strong> comptabilisé TTC</span></div>
     `;
@@ -62,11 +62,6 @@ function renderPurchaseEditor(panel) {
     if (!activePurchase) { panel.hidden = true; panel.innerHTML = ""; return; }
     panel.hidden = false;
     const purchase = activePurchase;
-    if (isAccountant()) {
-        panel.innerHTML = `<section class="billing-read-only-document"><div class="form-heading"><div><p class="eyebrow">Consultation uniquement</p><h2>${escapeHtml(purchase.description)}</h2></div><button type="button" class="secondary-button" id="closePurchase">Fermer</button></div><div class="procedure-meta"><span>${escapeHtml(formatDate(purchase.purchaseDate))}</span><span>${escapeHtml(purchase.category)}</span><span>${escapeHtml(purchase.supplier || "Fournisseur non renseigné")}</span><span>${purchase.isAccounted ? `Comptabilisé le ${escapeHtml(formatDate(purchase.accountedAt))}` : "À comptabiliser"}</span></div><div class="billing-metrics"><span><strong>${formatMoney(purchase.amountHt)}</strong> HT</span><span><strong>${formatMoney(Number(purchase.amountHt) * (1 + Number(purchase.vatRate) / 100))}</strong> TTC</span></div>${purchase.reference ? `<p><strong>Référence :</strong> ${escapeHtml(purchase.reference)}</p>` : ""}${purchase.notes ? `<section class="procedure-section"><h3>Notes</h3><p>${escapeHtml(purchase.notes)}</p></section>` : ""}</section>`;
-        panel.querySelector("#closePurchase").addEventListener("click", () => { activePurchase = null; renderPurchases(presentation); });
-        return;
-    }
     const isEditing = Boolean(purchase.id);
     const clients = getSearchableClients().sort((first, second) => first.name.localeCompare(second.name, "fr"));
     const selectedClient = clients.find(client => client.id === purchase.clientId);
@@ -149,7 +144,7 @@ function renderPurchaseList(panel) {
             item.className = "purchase-item";
             const totals = calculateTotals([purchase]);
             const accountingLabel = purchase.isAccounted ? `Comptabilisé le ${formatDate(purchase.accountedAt)}` : "À comptabiliser";
-            item.innerHTML = `<div><p class="eyebrow">${escapeHtml(purchase.category)}${purchase.clientName ? ` · Client : ${escapeHtml(purchase.clientName)}` : ""}</p><h3>${escapeHtml(purchase.description)}</h3><p>${escapeHtml(purchase.supplier || "Fournisseur non renseigné")}${purchase.reference ? ` · ${escapeHtml(purchase.reference)}` : ""}</p><small>${escapeHtml(formatDate(purchase.purchaseDate))} · <span class="billing-accounting-status ${purchase.isAccounted ? "is-accounted" : ""}">${escapeHtml(accountingLabel)}</span></small></div><div class="billing-document-amount"><strong>${formatMoney(totals.ttc)}</strong><small>${formatMoney(totals.ht)} HT · TVA ${formatMoney(totals.vat)}</small></div><div class="billing-document-actions">${isAccountant() ? "" : `<button type="button" class="secondary-button" data-accounting="${purchase.isAccounted ? "false" : "true"}">${purchase.isAccounted ? "Décomptabiliser" : "Comptabiliser"}</button>`}<button type="button" class="secondary-button" data-open-purchase>${isAccountant() ? "Consulter" : "Ouvrir"}</button></div>`;
+            item.innerHTML = `<div><p class="eyebrow">${escapeHtml(purchase.category)}${purchase.clientName ? ` · Client : ${escapeHtml(purchase.clientName)}` : ""}</p><h3>${escapeHtml(purchase.description)}</h3><p>${escapeHtml(purchase.supplier || "Fournisseur non renseigné")}${purchase.reference ? ` · ${escapeHtml(purchase.reference)}` : ""}</p><small>${escapeHtml(formatDate(purchase.purchaseDate))} · <span class="billing-accounting-status ${purchase.isAccounted ? "is-accounted" : ""}">${escapeHtml(accountingLabel)}</span></small></div><div class="billing-document-amount"><strong>${formatMoney(totals.ttc)}</strong><small>${formatMoney(totals.ht)} HT · TVA ${formatMoney(totals.vat)}</small></div><div class="billing-document-actions"><button type="button" class="secondary-button" data-accounting="${purchase.isAccounted ? "false" : "true"}">${purchase.isAccounted ? "Décomptabiliser" : "Comptabiliser"}</button><button type="button" class="secondary-button" data-open-purchase>Ouvrir</button></div>`;
             item.querySelector("[data-open-purchase]").addEventListener("click", () => { activePurchase = normalizePurchase(purchase); renderPurchases(presentation); });
             item.querySelector("[data-accounting]")?.addEventListener("click", async event => {
                 const result = await apiRequest(`/api/purchases/${encodeURIComponent(purchase.id)}/accounting`, { method: "PATCH", body: JSON.stringify({ isAccounted: event.currentTarget.dataset.accounting === "true" }) });
@@ -183,8 +178,6 @@ function formatMoney(value) { return new Intl.NumberFormat("fr-FR", { style: "cu
 function formatDate(value) { return value ? new Intl.DateTimeFormat("fr-FR").format(new Date(`${value}T12:00:00`)) : "Date non renseignée"; }
 function today() { const date = new Date(); return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`; }
 function formDataToObject(data) { return Object.fromEntries(data.entries()); }
-function isAccountant() { return document.body.dataset.role === "accountant"; }
-
 async function apiRequest(url, options = {}) {
     try {
         const response = await fetch(url, { credentials: "same-origin", ...options, headers: { "Content-Type": "application/json", ...(options.headers || {}) } });
