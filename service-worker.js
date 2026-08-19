@@ -1,4 +1,4 @@
-const CACHE_NAME = "depann-home-pro-v328";
+const CACHE_NAME = "depann-home-pro-v329";
 const ASSETS = [
     "./",
     "./index.html",
@@ -22,7 +22,7 @@ const ASSETS = [
     "./vendor/pdfjs/build/pdf.min.mjs?v=5.4.54",
     "./vendor/pdfjs/build/pdf.worker.min.mjs?v=5.4.54",
     "./js/calendar.js",
-    "./js/clients.js?v=145",
+    "./js/clients.js?v=146",
     "./js/client-sync.js?v=125",
     "./js/collaboration.js",
     "./js/leak-report-wizard.js",

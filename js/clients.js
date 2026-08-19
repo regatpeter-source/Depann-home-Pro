@@ -233,11 +233,11 @@ function renderClientForm(client, options = {}) {
                     </label>
                 </div>
 
-                <section class="procedure-section photo-recognition-inline">
+                ${document.body.classList.contains("desktop-device") ? "" : `<section class="procedure-section photo-recognition-inline">
                     <h3> Détection visuelle</h3>
                     <div name="photoRecognitionStatus" class="muted">Prenez une photo pour détecter automatiquement la gamme ou le dossier probable.</div>
                     <div name="photoRecognitionResult"></div>
-                </section>
+                </section>`}
 
                 <p class="muted small-note">Les fichiers sont stockés localement sur cet appareil. Taille conseillée : moins de 4 Mo par fichier.</p>
             </section>
@@ -275,7 +275,7 @@ function renderClientForm(client, options = {}) {
     const recognitionStatus = panel.querySelector('[name="photoRecognitionStatus"]');
     const recognitionResult = panel.querySelector('[name="photoRecognitionResult"]');
 
-    cameraInput?.addEventListener("change", async event => {
+    if (cameraInput && recognitionStatus && recognitionResult) cameraInput.addEventListener("change", async event => {
         const file = event.target.files?.[0] || null;
 
         if (!file) {

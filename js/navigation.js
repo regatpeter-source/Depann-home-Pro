@@ -11,10 +11,10 @@ import { renderPartnerConnections } from "./partner-connections.js?v=19";
 import { renderDataImportTool } from "./data-imports.js?v=3";
 import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=29";
 import { getFirstUnreadClientId, refreshClientMessageAlert, refreshVisibleClientMessages } from "./messages.js?v=106";
-import { getSearchableClients, renderClients } from "./clients.js?v=145";
+import { getSearchableClients, renderClients } from "./clients.js?v=146";
 import { synchronizeClients } from "./client-sync.js?v=125";
 import { configureLibrary, openLibrarySection, renderLibrary, searchPersonalLibrary } from "./library.js?v=122";
-import { renderPhotoRecognition } from "./photo-recognition.js?v=107";
+import { renderPhotoRecognition } from "./photo-recognition.js?v=108";
 import { getContextualSearchResults } from "./search.js?v=67";
 import { state, resetSelection } from "./state.js?v=44";
 import {
@@ -255,7 +255,7 @@ function applyRoleBasedMenus() {
     };
     Object.entries(quickSelectors).forEach(([menu, selector]) => {
         const button = document.querySelector(selector);
-        if (!isMenuAllowed(MENU_ACCESS.quick[menu], menuRoute(menu))) button?.remove();
+        if ((menu === "photo" && isDesktopDevice()) || !isMenuAllowed(MENU_ACCESS.quick[menu], menuRoute(menu))) button?.remove();
     });
     document.querySelectorAll(".nav-button").forEach(button => {
         if (!canAccessRoute(button.dataset.nav)) button.remove();
@@ -281,7 +281,12 @@ function canAccessQuick(menu) {
 }
 
 function canAccessRoute(route) {
+    if (route === ROUTES.photo && isDesktopDevice()) return false;
     return isMenuAllowed(MENU_ACCESS.navigation[route], route) && isOrganizationRouteEnabled(route);
+}
+
+function isDesktopDevice() {
+    return document.body.classList.contains("desktop-device") || document.body.dataset.deviceType === "desktop";
 }
 
 function canAccessSettingsSection(section) {

@@ -31,6 +31,7 @@ export function isPhotoRecognitionConfident(predictions, bestResult) {
 }
 
 export function renderPhotoRecognition(database, navigateToRef) {
+    if (document.body.classList.contains("desktop-device") || document.body.dataset.deviceType === "desktop") return;
     clearSearch();
     resetSelection("all");
     setPage("Reconnaissance visuelle", ROUTES.photo, "detail");
