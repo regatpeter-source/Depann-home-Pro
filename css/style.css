@@ -1213,6 +1213,25 @@ body[data-page-mode="basic-home"] #pageTitle{
     stroke-linejoin:round;
 }
 
+/* Offre & abonnement : cartes tarifaires distinctes des boutons de navigation. */
+.subscription-company-panel{display:grid;gap:22px;min-width:0;}
+.subscription-company-panel .creator-subscription-summary{grid-template-columns:repeat(3,minmax(0,1fr));}
+.subscription-offers-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;min-width:0;}
+.subscription-offer-card{display:flex;min-width:0;min-height:280px;flex-direction:column;gap:14px;padding:22px;overflow:hidden;border:1px solid #dbe4ee;border-radius:16px;background:var(--surface);box-shadow:0 5px 18px rgba(15,23,42,.06);}
+.subscription-offer-card.active{border-color:#86b99b;background:linear-gradient(145deg,#fff,#f0fdf4);}
+.subscription-offer-card header{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;flex-wrap:wrap;}
+.subscription-offer-card strong{color:var(--primary);font-size:20px;}
+.subscription-offer-card p{margin:0;overflow-wrap:anywhere;color:var(--muted);line-height:1.55;}
+.subscription-offer-card .subscription-offer-price{color:var(--text);}
+.subscription-offer-card .subscription-offer-price b{color:var(--primary);}
+.subscription-offer-card>.secondary-button{width:100%;margin-top:auto;white-space:normal;}
+.subscription-seat-request,.subscription-support-message,.subscription-request-history{min-width:0;}
+.subscription-seat-request .secondary-button{width:100%;margin-top:14px;}
+.subscription-support-message{display:grid;gap:7px;color:var(--primary);font-weight:700;}
+.subscription-support-message textarea{width:100%;min-height:100px;padding:12px;border:1px solid #cbd5e1;border-radius:10px;resize:vertical;}
+@media(max-width:1000px){.subscription-offers-grid{grid-template-columns:1fr}.subscription-offer-card{min-height:0}}
+@media(max-width:700px){.subscription-company-panel .creator-subscription-summary{grid-template-columns:1fr}.subscription-offer-card{padding:18px}}
+
 .settings-navigation-arrow{
     color:var(--secondary);
     font-size:30px;

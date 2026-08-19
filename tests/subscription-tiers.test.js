@@ -127,7 +127,14 @@ test("companies request offer changes from Settings without changing the active 
     assert.match(navigation, /Postes mobiles autorisés/);
     assert.match(navigation, /Tarif total actuel/);
     assert.match(navigation, /data-seat-request/);
+    const subscriptionSettings = navigation.slice(navigation.indexOf("async function renderSubscriptionSettings"), navigation.indexOf("function subscriptionRequestStatusLabel"));
+    assert.doesNotMatch(subscriptionSettings, /Créateur/);
+    assert.match(subscriptionSettings, /Support/);
+    assert.match(style, /\.subscription-offers-grid\{display:grid;grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/);
+    assert.match(style, /@media\(max-width:1000px\)\{\.subscription-offers-grid\{grid-template-columns:1fr\}/);
+    assert.match(style, /\.subscription-offer-card>\.secondary-button\{width:100%;margin-top:auto/);
     assert.match(creatorServer, /app\.post\("\/api\/subscription-change-requests"/);
+    assert.match(creatorServer, /transmise au Support/);
     assert.match(creatorServer, /app\.get\("\/api\/creator\/subscription-change-requests"/);
     assert.match(creatorServer, /app\.patch\("\/api\/creator\/subscription-change-requests\/:requestId"/);
     const requestRoutes = creatorServer.slice(creatorServer.indexOf('app.get("/api/subscription-change-requests"'), creatorServer.indexOf('app.get("/api/creator/platform-announcement/current"'));

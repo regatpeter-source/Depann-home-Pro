@@ -50,6 +50,6 @@ Les comptes existants sont migrés vers Pro afin de ne perdre aucun accès. Lors
 
 Une évolution ou une rétrogradation d’offre ne supprime et ne réinitialise aucune donnée : clients, documents, planning, comptabilité, modèles, profils, comptes utilisateurs et réglages Réseau sont conservés. Seuls les droits d’accès changent. Les capacités masquées redeviennent disponibles avec leurs données lors d’un retour vers l’offre correspondante.
 
-L’offre active, les tarifs et les descriptions sont présentés uniquement dans **Paramètres > Offre & abonnement**. L’entreprise y transmet une demande d’évolution ou de rétrogradation au Créateur. Cette demande est enregistrée pour suivi mais ne modifie jamais automatiquement le forfait actif.
+L’offre active, les tarifs et les descriptions sont présentés uniquement dans **Paramètres > Offre & abonnement**. L’entreprise y transmet une demande d’évolution ou de rétrogradation au Support. Cette demande est enregistrée pour suivi mais ne modifie jamais automatiquement le forfait actif.
 
-Cette section rappelle aussi le nombre de postes PC et mobiles autorisés ainsi que le tarif total mensuel actuel. L’entreprise peut y demander des postes supplémentaires ; les nouvelles quantités sont adressées au Créateur dans la même demande suivie, sans modification automatique des quotas.
+Cette section rappelle aussi le nombre de postes PC et mobiles autorisés ainsi que le tarif total mensuel actuel. L’entreprise peut y demander des postes supplémentaires ; les nouvelles quantités sont adressées au Support dans la même demande suivie, sans modification automatique des quotas.
