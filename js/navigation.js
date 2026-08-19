@@ -1842,20 +1842,21 @@ async function renderTeamManagement(container) {
             const deviceResponse = await teamRequest("/api/auth/devices");
             const devicePayload = await deviceResponse.json();
             if (!deviceResponse.ok) throw new Error(devicePayload.message || "Impossible de charger les appareils.");
-            const pcSeats = devicePayload.pcSeats || { maxPcUsers: Number(document.body.dataset.maxPcUsers || 1), activePcUsers: 0 };
-            devices.innerHTML = `<div class="team-section-heading"><div><p class="eyebrow">Sécurité des connexions</p><h3>Appareils et postes PC</h3></div><span class="team-seat-badge">${escapeHtml(pcSeats.activePcUsers)} / ${escapeHtml(pcSeats.maxPcUsers)} postes PC</span></div><p class="muted team-section-description">Les téléphones et tablettes d’administrateurs ne consomment pas de poste PC. Après sa première connexion, le technicien crée ici une demande : le bouton « Autoriser et envoyer le code » apparaît alors.</p>`;
+            const pcSeats = devicePayload.pcSeats || { maxPcUsers: Number(document.body.dataset.maxPcUsers || 1), activePcUsers: 0, maxMobileUsers: Number(document.body.dataset.maxMobileUsers || 0), activeMobileUsers: 0 };
+            devices.innerHTML = `<div class="team-section-heading"><div><p class="eyebrow">Sécurité des connexions</p><h3>Appareils et postes</h3></div><div class="creator-form-actions"><span class="team-seat-badge">${escapeHtml(pcSeats.activePcUsers)} / ${escapeHtml(pcSeats.maxPcUsers)} postes PC</span><span class="team-seat-badge">${escapeHtml(pcSeats.activeMobileUsers)} / ${escapeHtml(pcSeats.maxMobileUsers)} postes mobiles</span></div></div><p class="muted team-section-description">Chaque téléphone ou tablette d’un Administrateur consomme un poste mobile, sans consommer de poste PC. Les comptes Administrateur Mobile, Chef d’équipe et Technicien consomment également chacun un poste mobile.</p>`;
             const managedDevices = devicePayload.devices || [];
             if (!managedDevices.length) devices.insertAdjacentHTML("beforeend", "<p class=\"muted\">Aucun appareil enregistré.</p>");
             managedDevices.forEach(device => {
                 const isPc = ["admin", "pc_standard"].includes(device.userRole) && device.deviceType !== "mobile";
                 const isMobile = device.deviceType === "mobile";
                 const pcSeatAvailable = Number(pcSeats.activePcUsers) < Number(pcSeats.maxPcUsers);
+                const mobileSeatAvailable = Number(pcSeats.activeMobileUsers) < Number(pcSeats.maxMobileUsers);
                 const item = document.createElement("div");
                 item.className = "team-member";
                 const deviceTypeLabel = isPc ? device.userRole === "admin" ? "Poste Administrateur (PC)" : "Poste PC standard" : isMobile && ["admin", "mobile_admin"].includes(device.userRole) ? "Administrateur Mobile" : isMobile ? "Appareil mobile" : "Appareil technicien";
                 const assigneeName = device.fullName || device.username || "Titulaire non renseigné";
                 const statusLabel = device.status === "approved" ? "Activé" : device.status === "rejected" ? "Refusé" : device.status === "code_pending" ? "Code e-mail envoyé" : "En attente d’autorisation";
-                item.innerHTML = `<div class="team-member-summary"><div class="team-member-title"><strong>${escapeHtml(deviceTypeLabel)} — ${escapeHtml(assigneeName)}</strong><span class="team-role-badge ${isPc ? "is-admin" : "is-technician"}">${isPc ? "PC" : "Mobile"}</span><span class="team-state-badge ${device.status === "approved" ? "is-active" : device.status === "rejected" ? "is-inactive" : "is-pending"}">${statusLabel}</span></div><span class="team-member-meta">Attribué à ${escapeHtml(assigneeName)}${device.username ? ` · ${escapeHtml(device.username)}` : ""} · ${escapeHtml(device.label)}${isMobile && device.userRole === "admin" ? " · Sans poste PC" : ""}</span></div>`;
+                item.innerHTML = `<div class="team-member-summary"><div class="team-member-title"><strong>${escapeHtml(deviceTypeLabel)} — ${escapeHtml(assigneeName)}</strong><span class="team-role-badge ${isPc ? "is-admin" : "is-technician"}">${isPc ? "PC" : "Mobile"}</span><span class="team-state-badge ${device.status === "approved" ? "is-active" : device.status === "rejected" ? "is-inactive" : "is-pending"}">${statusLabel}</span></div><span class="team-member-meta">Attribué à ${escapeHtml(assigneeName)}${device.username ? ` · ${escapeHtml(device.username)}` : ""} · ${escapeHtml(device.label)}${isMobile && device.userRole === "admin" ? " · Consomme un poste mobile" : ""}</span></div>`;
                 const actions = document.createElement("div");
                 actions.className = "team-member-actions";
                 if (device.status === "approval_pending" || device.status === "code_pending") {
@@ -1866,6 +1867,7 @@ async function renderTeamManagement(container) {
                         await load();
                     });
                     if (isPc && !pcSeatAvailable) approve.disabled = true;
+                    if (isMobile && device.userRole === "admin" && !mobileSeatAvailable) approve.disabled = true;
                     const reject = createButton("Refuser", "secondary-button", async () => {
                         const result = await fetch(`/api/auth/devices/${encodeURIComponent(device.id)}/reject`, { method: "POST", credentials: "same-origin" });
                         if (!result.ok) feedback.textContent = (await result.json().catch(() => ({}))).message || "Refus impossible.";

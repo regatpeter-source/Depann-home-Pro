@@ -38,9 +38,12 @@ export async function memberSeatError(ownerId, role, excludedMemberId = 0) {
     if (roleAccessError) return roleAccessError;
     const { rows } = await getPool().query(`
         SELECT owner.max_pc_users AS "maxPcUsers",owner.max_technicians AS "maxMobileUsers",
-            COUNT(member.id) FILTER (WHERE member.role IN ('admin','pc_standard','accountant') AND member.is_active AND member.id<>$2)::int AS "activePcUsers",
-            COUNT(member.id) FILTER (WHERE member.role IN ('mobile_admin','team_lead','technician') AND member.is_active AND member.id<>$2)::int AS "activeMobileUsers"
+            COUNT(DISTINCT member.id) FILTER (WHERE member.role IN ('admin','pc_standard','accountant') AND member.is_active AND member.id<>$2)::int AS "activePcUsers",
+            COUNT(DISTINCT member.id) FILTER (WHERE member.role IN ('mobile_admin','team_lead','technician') AND member.is_active AND member.id<>$2)::int
+                + COUNT(DISTINCT admin_mobile.id) FILTER (WHERE admin_mobile.status='approved')::int AS "activeMobileUsers"
         FROM depannhome_users owner LEFT JOIN depannhome_users member ON member.account_owner_id=owner.id
+        LEFT JOIN depannhome_users admin_account ON admin_account.account_owner_id=owner.id AND admin_account.role='admin' AND admin_account.is_active
+        LEFT JOIN depannhome_auth_devices admin_mobile ON admin_mobile.user_id=admin_account.id AND admin_mobile.device_type='mobile'
         WHERE owner.id=$1 GROUP BY owner.id
     `, [ownerId, excludedMemberId]);
     const seats = rows[0];
@@ -53,6 +56,24 @@ export async function memberSeatError(ownerId, role, excludedMemberId = 0) {
 export async function memberRoleAccessError(ownerId, role) {
     const organization = await getOrganization(ownerId);
     return subscriptionRoleAccessMessage(organization.subscriptionTier, role);
+}
+
+export async function mobileAdministratorSeatError(ownerId, excludedDeviceId = "") {
+    const { rows } = await getPool().query(`
+        SELECT owner.max_technicians AS "maxMobileUsers",
+            COUNT(DISTINCT mobile_member.id) FILTER (WHERE mobile_member.is_active)::int
+                + COUNT(DISTINCT admin_mobile.id) FILTER (WHERE admin_mobile.status='approved' AND admin_mobile.id<>$2)::int AS "activeMobileUsers"
+        FROM depannhome_users owner
+        LEFT JOIN depannhome_users mobile_member ON mobile_member.account_owner_id=owner.id AND mobile_member.role IN ('mobile_admin','team_lead','technician')
+        LEFT JOIN depannhome_users admin_account ON admin_account.account_owner_id=owner.id AND admin_account.role='admin' AND admin_account.is_active
+        LEFT JOIN depannhome_auth_devices admin_mobile ON admin_mobile.user_id=admin_account.id AND admin_mobile.device_type='mobile'
+        WHERE owner.id=$1 GROUP BY owner.id
+    `, [ownerId, excludedDeviceId]);
+    const seats = rows[0];
+    if (!seats) return "Compte entreprise introuvable.";
+    return seats.activeMobileUsers >= seats.maxMobileUsers
+        ? "Aucun poste mobile supplémentaire n’est inclus dans votre offre. Demandez un poste mobile supplémentaire au Support."
+        : "";
 }
 
 export function registerAuthRoutes(app) {
@@ -562,15 +583,20 @@ export function registerAuthRoutes(app) {
             ORDER BY CASE device.status WHEN 'approval_pending' THEN 0 WHEN 'code_pending' THEN 1 ELSE 2 END, device.created_at DESC
             `, [getAccountOwnerId(request)]),
             database.query(`
-                SELECT owner.max_pc_users AS "maxPcUsers",
-                    COUNT(device.id) FILTER (WHERE device.status = 'approved' AND device.device_type = 'desktop')::int AS "activePcUsers"
+                SELECT owner.max_pc_users AS "maxPcUsers",owner.max_technicians AS "maxMobileUsers",
+                    COUNT(DISTINCT device.id) FILTER (WHERE device.status = 'approved' AND device.device_type = 'desktop')::int AS "activePcUsers",
+                    COUNT(DISTINCT mobile_member.id) FILTER (WHERE mobile_member.is_active)::int
+                        + COUNT(DISTINCT admin_mobile.id) FILTER (WHERE admin_mobile.status='approved')::int AS "activeMobileUsers"
                 FROM depannhome_users owner
                 LEFT JOIN depannhome_users account ON account.account_owner_id = owner.id AND account.role IN ('admin', 'pc_standard')
                 LEFT JOIN depannhome_auth_devices device ON device.user_id = account.id
+                LEFT JOIN depannhome_users mobile_member ON mobile_member.account_owner_id=owner.id AND mobile_member.role IN ('mobile_admin','team_lead','technician')
+                LEFT JOIN depannhome_users admin_account ON admin_account.account_owner_id=owner.id AND admin_account.role='admin' AND admin_account.is_active
+                LEFT JOIN depannhome_auth_devices admin_mobile ON admin_mobile.user_id=admin_account.id AND admin_mobile.device_type='mobile'
                 WHERE owner.id = $1 GROUP BY owner.id
             `, [getAccountOwnerId(request)])
         ]);
-        response.json({ devices: devicesResult.rows, pcSeats: seatsResult.rows[0] || { maxPcUsers: 1, activePcUsers: 0 } });
+        response.json({ devices: devicesResult.rows, pcSeats: seatsResult.rows[0] || { maxPcUsers: 1, activePcUsers: 0, maxMobileUsers: 0, activeMobileUsers: 0 } });
     }));
 
     app.post("/api/auth/devices/:deviceId/approve", requireAccountAdministrator, asyncHandler(async (request, response) => {
@@ -585,6 +611,8 @@ export function registerAuthRoutes(app) {
         if (!device) return response.status(404).json({ message: "Appareil introuvable." });
         if (["admin", STANDARD_PC_ROLE].includes(device.role)) {
             if (device.deviceType === "mobile") {
+                const seatError = await mobileAdministratorSeatError(getAccountOwnerId(request), deviceId);
+                if (seatError) return response.status(400).json({ message: seatError });
                 await getPool().query("UPDATE depannhome_auth_devices SET status = 'approved', approved_at = NOW(), approved_by = $2 WHERE id = $1", [deviceId, request.user.sub]);
                 return response.status(204).end();
             }
@@ -838,6 +866,10 @@ async function completeLogin(user, device, response) {
     // qu’il ne puisse jamais conserver deux sessions simultanées.
     const automaticallyApproved = isAccountant;
     let authDevice = await findAuthDevice(user.id, device.id);
+    if (user.role === "admin" && device.type === "mobile" && authDevice?.status !== "approved") {
+        const seatError = await mobileAdministratorSeatError(user.account_owner_id || user.id, authDevice?.id || device.id);
+        if (seatError) return response.status(400).json({ message: seatError });
+    }
     if (isCompanyAdministratorPc && authDevice?.status !== "approved" && await userHasApprovedDesktopDevice(user.id)) {
         authDevice = await replaceAdministratorDesktopDevice(user.id, authDevice?.id || device.id, authDeviceDetails);
     }

@@ -41,7 +41,7 @@ Le tarif mensuel est calculé automatiquement :
 
 `nombre de postes PC × tarif PC + nombre de postes mobiles × tarif mobile`
 
-Les rôles Administrateur, Poste PC standard et Comptable consomment un poste PC. Les rôles Administrateur mobile, Chef d’équipe et Technicien consomment un poste mobile.
+Les rôles Administrateur, Poste PC standard et Comptable consomment un poste PC. Le rôle Administrateur Mobile, chaque appareil mobile approuvé d’un compte Administrateur, les Chefs d’équipe et les Techniciens consomment chacun un poste mobile.
 
 Les remises commerciales existantes peuvent toujours être appliquées au total mensuel calculé.
 

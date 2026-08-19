@@ -134,11 +134,14 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
                 owner.quitus_template_policy AS "quitusTemplatePolicy",
                 owner.report_template_policy AS "reportTemplatePolicy",
                 owner.created_at AS "createdAt",
-                COUNT(member.id) FILTER (WHERE member.role IN ('admin','pc_standard','accountant') AND member.is_active)::int AS "activePcUsers",
-                COUNT(member.id) FILTER (WHERE member.role IN ('mobile_admin','team_lead','technician') AND member.is_active)::int AS "activeTechnicians",
-                COUNT(member.id)::int AS "memberCount"
+                COUNT(DISTINCT member.id) FILTER (WHERE member.role IN ('admin','pc_standard','accountant') AND member.is_active)::int AS "activePcUsers",
+                COUNT(DISTINCT member.id) FILTER (WHERE member.role IN ('mobile_admin','team_lead','technician') AND member.is_active)::int
+                    + COUNT(DISTINCT admin_mobile.id) FILTER (WHERE admin_mobile.status='approved')::int AS "activeTechnicians",
+                COUNT(DISTINCT member.id)::int AS "memberCount"
             FROM depannhome_users owner
             LEFT JOIN depannhome_users member ON member.account_owner_id = owner.id
+            LEFT JOIN depannhome_users admin_account ON admin_account.account_owner_id=owner.id AND admin_account.role='admin' AND admin_account.is_active
+            LEFT JOIN depannhome_auth_devices admin_mobile ON admin_mobile.user_id=admin_account.id AND admin_mobile.device_type='mobile'
             WHERE owner.account_owner_id = owner.id
             GROUP BY owner.id
             ORDER BY LOWER(COALESCE(NULLIF(owner.company_name, ''), owner.full_name, owner.username))
@@ -410,9 +413,13 @@ async function findMember(database, accountId, memberId) {
 async function countActiveSeats(database, accountId) {
     const { rows } = await database.query(`
         SELECT
-            COUNT(*) FILTER (WHERE role IN ('admin','pc_standard','accountant') AND is_active)::int AS "activePcUsers",
-            COUNT(*) FILTER (WHERE role IN ('mobile_admin','team_lead','technician') AND is_active)::int AS "activeTechnicians"
-        FROM depannhome_users WHERE account_owner_id = $1
+            COUNT(DISTINCT member.id) FILTER (WHERE member.role IN ('admin','pc_standard','accountant') AND member.is_active)::int AS "activePcUsers",
+            COUNT(DISTINCT member.id) FILTER (WHERE member.role IN ('mobile_admin','team_lead','technician') AND member.is_active)::int
+                + COUNT(DISTINCT admin_mobile.id) FILTER (WHERE admin_mobile.status='approved')::int AS "activeTechnicians"
+        FROM depannhome_users member
+        LEFT JOIN depannhome_users admin_account ON admin_account.account_owner_id=$1 AND admin_account.role='admin' AND admin_account.is_active
+        LEFT JOIN depannhome_auth_devices admin_mobile ON admin_mobile.user_id=admin_account.id AND admin_mobile.device_type='mobile'
+        WHERE member.account_owner_id = $1
     `, [accountId]);
     return rows[0];
 }

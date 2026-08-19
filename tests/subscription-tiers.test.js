@@ -5,7 +5,7 @@ import { calculateSubscriptionPriceCents, isRoleAllowedForSubscription, subscrip
 import { isFeatureEnabled, isFeatureEnabledForRole, publicOrganization } from "../server/organizations.js";
 import { MENU_ACCESS, ROUTES } from "../js/config.js";
 import { buildSubscriptionInvoiceSnapshot } from "../server/invoicing.js";
-import { memberRoleAccessError, memberSeatError, memberSeatFamily } from "../server/auth.js";
+import { memberRoleAccessError, memberSeatError, memberSeatFamily, mobileAdministratorSeatError } from "../server/auth.js";
 
 const schema = readFileSync(new URL("../database/schema.sql", import.meta.url), "utf8");
 const database = readFileSync(new URL("../server/database.js", import.meta.url), "utf8");
@@ -40,6 +40,7 @@ test("subscription tiers restrict mobile post roles as specified", () => {
     assert.equal(memberSeatFamily("mobile_admin"), "mobile");
     assert.equal(typeof memberSeatError, "function");
     assert.equal(typeof memberRoleAccessError, "function");
+    assert.equal(typeof mobileAdministratorSeatError, "function");
 });
 
 test("Basic exposes clients, billing and accounting while Basic+ adds planning", () => {
@@ -183,6 +184,10 @@ test("tier features are protected on both API and navigation layers", () => {
     assert.match(navigation, /isTechnician\(\) && organizationFeatureEnabled\("technicalReports"\)/);
     assert.match(auth, /memberSeatFamily/);
     assert.match(auth, /La limite de postes mobiles/);
+    assert.match(auth, /mobileAdministratorSeatError\(getAccountOwnerId\(request\), deviceId\)/);
+    assert.match(auth, /mobileAdministratorSeatError\(user\.account_owner_id \|\| user\.id, authDevice\?\.id \|\| device\.id\)/);
+    assert.match(auth, /COUNT\(DISTINCT admin_mobile\.id\) FILTER \(WHERE admin_mobile\.status='approved'\)/);
+    assert.match(navigation, /Consomme un poste mobile/);
     assert.match(auth, /'admin','pc_standard','accountant'/);
     assert.match(auth, /'mobile_admin','team_lead','technician'/);
     assert.match(auth, /subscriptionRoleAccessMessage\(organization\.subscriptionTier, role\)/);

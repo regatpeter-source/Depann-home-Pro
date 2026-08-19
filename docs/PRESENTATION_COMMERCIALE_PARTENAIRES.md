@@ -27,6 +27,8 @@ La plateforme s’adresse aux entreprises de dépannage, maintenance, plomberie,
 
 Chaque offre est calculée selon le nombre de postes réellement autorisés dans l’entreprise : postes informatiques pour l’administration et postes mobiles pour les équipes terrain.
 
+Chaque Administrateur Mobile — rôle dédié ou téléphone/tablette approuvé d’un compte Administrateur — consomme un poste mobile inclus dans l’offre, sans consommer de poste PC supplémentaire.
+
 ## Basic
 
 - **20 € TTC par poste PC et par mois.**

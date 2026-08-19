@@ -8,7 +8,7 @@ Il n’existe pas de rôle d’« administrateur principal » ni d’administrat
 
 Le compte Créateur est distinct : sa capacité provient uniquement de `CREATOR_USERNAMES` et reste protégée par `requireCreator`. Un administrateur d’entreprise ne peut pas accéder aux routes ni à la console Créateur.
 
-Le même compte peut également être utilisé sur un smartphone comme Administrateur Mobile opérationnel. Son appareil mobile suit alors le circuit normal d’autorisation des appareils administrateurs. La console Créateur et toutes ses routes restent toutefois strictement réservées à un appareil déclaré **poste PC** : elles sont absentes de l’interface mobile et refusées côté serveur.
+Le même compte peut également être utilisé sur un smartphone comme Administrateur Mobile opérationnel. Chaque téléphone ou tablette Administrateur approuvé consomme un **poste mobile** inclus dans l’offre, sans consommer de poste PC. Le rôle dédié `mobile_admin` consomme lui aussi un poste mobile. L’appareil suit le circuit normal d’autorisation des appareils administrateurs. La console Créateur et toutes ses routes restent toutefois strictement réservées à un appareil déclaré **poste PC** : elles sont absentes de l’interface mobile et refusées côté serveur.
 
 Chaque compte Administrateur (PC), y compris le compte Créateur, peut se connecter depuis n’importe quel ordinateur, puis revenir sur son PC initial. Une seule session PC est conservée par compte : après chaque authentification réussie, le serveur attribue une nouvelle session PC et révoque immédiatement toutes les précédentes, y compris celles qui utiliseraient le même identifiant d’appareil. Le smartphone Administrateur Mobile reste indépendant de cette règle.
 
