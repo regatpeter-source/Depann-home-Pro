@@ -2,7 +2,7 @@
 
 Les niveaux d’abonnement s’appliquent aux organisations utilisant l’interface Standard Depann’Home Pro. Les interfaces Partenaire et Groupe conservent leurs règles spécifiques.
 
-L’interface **Partenaire** utilise le niveau technique Pro, mais son portail est **gratuit** : tarif mensuel à 0 €, aucune échéance et aucune facture d’abonnement. Elle comprend exactement **un poste Administrateur PC et aucun poste mobile**. Son espace métier est limité à **Clients**, **Missions partenaires** et au **Réseau Depann’Home Pro** pour rechercher une entreprise et établir une connexion interne ; la messagerie contextuelle reste rattachée à ces dossiers. Les connecteurs, accès API externes et environnements de recette, réservés aux donneurs d’ordre comme les assurances, ne sont pas disponibles. Lors d’une conversion, les accès supplémentaires sont désactivés sans suppression de leurs données. L’interface Groupe reste soumise à sa règle commerciale propre.
+L’interface **Partenaire** utilise le niveau technique Pro, mais son portail est **gratuit** : tarif mensuel à 0 €, aucune échéance et aucune facture d’abonnement. Elle comprend exactement **un poste Administrateur PC et aucun poste mobile**. Son espace métier est limité à **Clients**, **Missions partenaires**, au **Réseau Depann’Home Pro** pour rechercher une entreprise et établir une connexion interne, ainsi qu’au **Support** ; la messagerie contextuelle reste rattachée aux dossiers clients. Les connecteurs, accès API externes et environnements de recette, réservés aux donneurs d’ordre comme les assurances, ne sont pas disponibles. Lors d’une conversion, les accès supplémentaires sont désactivés sans suppression de leurs données. L’interface Groupe reste soumise à sa règle commerciale propre.
 
 ## Basic
 
@@ -40,7 +40,7 @@ L’interface **Partenaire** utilise le niveau technique Pro, mais son portail e
 
 ### Licence Partenaire gratuite
 
-La licence Portail Partenaire est gratuite et distincte de l’abonnement Pro payant. Son niveau technique Pro garantit les échanges nécessaires, sans abonnement mensuel, échéance ni facture. Elle inclut un poste Administrateur PC, aucun poste mobile, les espaces Clients et Missions partenaires avec leur messagerie contextuelle, ainsi que la recherche d’entreprises dans le Réseau Depann’Home Pro. Elle n’inclut aucun connecteur ni accès API externe.
+La licence Portail Partenaire est gratuite et distincte de l’abonnement Pro payant. Son niveau technique Pro garantit les échanges nécessaires, sans abonnement mensuel, échéance ni facture. Elle inclut un poste Administrateur PC, aucun poste mobile, les espaces Clients et Missions partenaires avec leur messagerie contextuelle, la recherche d’entreprises dans le Réseau Depann’Home Pro et un formulaire Support relié à la Console Créateur. Elle n’inclut aucun connecteur ni accès API externe.
 
 ## Calcul et quotas
 

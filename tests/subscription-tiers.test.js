@@ -175,8 +175,10 @@ test("the free Partner interface exposes the internal network without external c
     assert.match(navigation, /return features\[feature\] === true/);
     assert.match(navigation, /refreshOrganizationAccess\(\)/);
     assert.match(navigation, /organizationInterface === "partner"/);
-    assert.match(navigation, /section === "network" && organizationFeatureEnabled\("partnerConnections"\)/);
+    assert.match(navigation, /section === "support" \|\| \(section === "network" && organizationFeatureEnabled\("partnerConnections"\)\)/);
     assert.match(navigation, /internalNetworkOnly \? "Réseau Depann’Home Pro" : "Réseau & connecteurs"/);
+    assert.match(navigation, /\["support", "Support", "Envoyez une demande à l’équipe Depann’Home Pro depuis votre compte partenaire\./);
+    assert.match(navigation, /if \(section === "support"\) return renderSupportContact\(container\)/);
     assert.match(app, /app\.use\("\/api\/official-partners", requireAuthentication, requireOrganizationFeature\("connectors"\)\)/);
     assert.match(app, /app\.use\("\/api\/partner-missions\/intakes", requireAuthentication, requireOrganizationFeature\("connectors"\)\)/);
     assert.match(app, /app\.use\("\/api\/partner-sandbox", requireAuthentication, requireOrganizationFeature\("connectors"\)\)/);

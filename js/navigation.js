@@ -334,7 +334,7 @@ function isDesktopDevice() {
 
 function canAccessSettingsSection(section) {
     if (document.body.dataset.creator === "true") return true;
-    if (document.body.dataset.organizationInterface === "partner") return section === "network" && organizationFeatureEnabled("partnerConnections");
+    if (document.body.dataset.organizationInterface === "partner") return section === "support" || (section === "network" && organizationFeatureEnabled("partnerConnections"));
     const featureBySection = { documents: "billing", network: "partnerConnections", users: "settings", security: "settings", groups: "groups", personalization: "settings", imports: "imports" };
     const feature = featureBySection[section];
     if (feature && !organizationFeatureEnabled(feature)) return false;
@@ -1325,14 +1325,15 @@ function renderSettingsWorkspace(options = {}) {
         const container = getContainer();
         const hub = document.createElement("section");
         hub.className = "settings-hub";
-        hub.innerHTML = '<header class="settings-hub-heading"><div><p class="eyebrow">Configuration de l’entreprise</p><h2>Paramètres</h2><p class="muted">Toutes les configurations sont regroupées ici. Le menu principal reste dédié aux opérations quotidiennes.</p></div></header>';
+        const internalNetworkOnly = document.body.dataset.organizationInterface === "partner";
+        hub.innerHTML = `<header class="settings-hub-heading"><div><p class="eyebrow">${internalNetworkOnly ? "Réseau et assistance" : "Configuration de l’entreprise"}</p><h2>Paramètres</h2><p class="muted">${internalNetworkOnly ? "Retrouvez le Réseau Depann’Home Pro et contactez directement le Support." : "Toutes les configurations sont regroupées ici. Le menu principal reste dédié aux opérations quotidiennes."}</p></div></header>`;
         const grid = document.createElement("div");
         grid.className = "settings-card-grid";
-        const internalNetworkOnly = document.body.dataset.organizationInterface === "partner";
         const cards = [
             ...(document.body.dataset.role === "admin" ? [["subscription", "Offre & abonnement", "Consultez les tarifs et demandez une évolution ou une rétrogradation au Support.", "subscription"]] : []),
             ...(document.body.dataset.role === "admin" ? [["documents", "Modèles de documents", `Identité, présentation et modèles des devis${organizationFeatureEnabled("quitus") ? ", quitus" : ""} et rapports.`, "document"]] : []),
             ["network", internalNetworkOnly ? "Réseau Depann’Home Pro" : "Réseau & connecteurs", internalNetworkOnly ? "Recherchez des entreprises utilisatrices et gérez vos connexions internes." : "Deux espaces distincts : le réseau collaboratif Depann’Home Pro et les connecteurs API externes.", "network"],
+            ...(internalNetworkOnly ? [["support", "Support", "Envoyez une demande à l’équipe Depann’Home Pro depuis votre compte partenaire.", "support"]] : []),
             ...(document.body.dataset.role === "admin" ? [["users", "Utilisateurs", "Accès, postes, techniciens et chefs d’équipe.", "users"], ["security", "Sécurité", "Double authentification et protection des accès.", "security"], ["groups", "Groupe / Multi-entreprises", "Sociétés, bascule de contexte et indicateurs consolidés.", "group"]] : []),
             ["personalization", "Personnalisation", "Langue, thème, police et préférences d’affichage.", "appearance"],
             ...(document.body.dataset.role === "admin" && document.body.classList.contains("desktop-device") ? [["imports", "Importation de données", "Importez vos clients, devis, factures et rapports depuis Excel ou CSV.", "import"]] : []),
@@ -1346,7 +1347,7 @@ function renderSettingsWorkspace(options = {}) {
 
     clearSearch();
     resetSelection("all");
-    const titles = { subscription: "Offre & abonnement", documents: "Modèles de documents", network: document.body.dataset.organizationInterface === "partner" ? "Réseau Depann’Home Pro" : "Réseau & connecteurs", users: "Utilisateurs", security: "Sécurité", groups: "Groupe / Multi-entreprises", personalization: "Personnalisation", imports: "Importation de données", creator: "Console Créateur" };
+    const titles = { subscription: "Offre & abonnement", documents: "Modèles de documents", network: document.body.dataset.organizationInterface === "partner" ? "Réseau Depann’Home Pro" : "Réseau & connecteurs", support: "Support", users: "Utilisateurs", security: "Sécurité", groups: "Groupe / Multi-entreprises", personalization: "Personnalisation", imports: "Importation de données", creator: "Console Créateur" };
     setPage(`Paramètres · ${titles[section] || "Configuration"}`, ROUTES.settings, "detail");
     const container = getContainer();
     container.appendChild(createBackCard("Retour aux Paramètres", () => renderSettings()));
@@ -1370,6 +1371,7 @@ function renderSettingsWorkspace(options = {}) {
         if (!internalNetworkOnly && document.body.classList.contains("partner-sandbox-enabled")) container.appendChild(createButton("Ouvrir l’environnement de recette partenaire", "secondary-button settings-inline-action", renderPartnerSandbox));
         return;
     }
+    if (section === "support") return renderSupportContact(container);
     if (section === "users") return renderTeamManagement(container);
     if (section === "security") {
         renderCompanyTwoFactorSecurity(container);
@@ -1525,7 +1527,8 @@ function settingsIcon(icon) {
         group: '<path d="M4 20V9l8-5 8 5v11M8 20v-6h8v6M4 9h16"/>',
         creator: '<circle cx="12" cy="8" r="3"/><path d="M5 21c.5-4.2 3.1-6.5 7-6.5s6.5 2.3 7 6.5M18 5l1 1 2-1M18 5l1-2"/>',
         appearance: '<circle cx="12" cy="12" r="8"/><path d="M12 4v16M4 12h16"/>',
-        import: '<path d="M12 3v12M7 10l5 5 5-5M5 20h14"/>'
+        import: '<path d="M12 3v12M7 10l5 5 5-5M5 20h14"/>',
+        support: '<path d="M4 13a8 8 0 0116 0v5M4 13h3v6H5a1 1 0 01-1-1zM20 13h-3v6h2a1 1 0 001-1zM17 19c0 2-2 2-5 2"/>'
     };
     return `<svg viewBox="0 0 24 24" focusable="false">${paths[icon] || paths.help}</svg>`;
 }
