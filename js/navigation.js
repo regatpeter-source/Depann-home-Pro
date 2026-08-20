@@ -96,9 +96,7 @@ export function initializeNavigation(loadedDatabase) {
         }, isTechnician() ? 30_000 : 90_000);
     }
     if (isAccountant()) renderBilling();
-    else if (isTechnician() && canAccessRoute(ROUTES.calendar)) renderCalendarOverview();
-    else if (isTechnician()) renderHome();
-    else if (isMobileAdministrator()) renderHome();
+    else if (isMobileDeviceContext()) openHome();
     else if (document.body.classList.contains("desktop-device")) renderHome();
     else renderBrands();
 }
@@ -351,15 +349,22 @@ function openHome() {
         renderBilling();
         return;
     }
-    if (isMobileDeviceContext() && canAccessRoute(ROUTES.calendar)) {
-        openCalendar();
+    if (isMobileDeviceContext()) {
+        if (activeSubscriptionTier() === "basic") renderHome();
+        else if (canAccessRoute(ROUTES.calendar)) openCalendar();
+        else renderHome();
         return;
     }
-    if (isMobileDeviceContext() || document.body.classList.contains("desktop-device") || isMobileAdministrator()) {
+    if (document.body.classList.contains("desktop-device") || isMobileAdministrator()) {
         renderHome();
         return;
     }
     renderBrands();
+}
+
+function activeSubscriptionTier() {
+    const tier = document.body.dataset.subscriptionTier;
+    return ["basic", "basic_plus", "pro"].includes(tier) ? tier : "pro";
 }
 
 function openCalendar() {
