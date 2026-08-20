@@ -298,6 +298,9 @@ test("tier features are protected on both API and navigation layers", () => {
     assert.match(auth, /La limite de postes mobiles/);
     assert.match(auth, /mobileAdministratorSeatError\(getAccountOwnerId\(request\), deviceId\)/);
     assert.match(auth, /mobileAdministratorSeatError\(user\.account_owner_id \|\| user\.id, authDevice\?\.id \|\| device\.id\)/);
+    assert.match(navigation, /\["approval_pending", "code_pending", "rejected"\]\.includes\(device\.status\)/);
+    assert.match(navigation, /Réactiver ce poste mobile/);
+    assert.match(navigation, /\/api\/auth\/devices\/\$\{encodeURIComponent\(device\.id\)\}\/approve/);
     assert.match(auth, /COUNT\(DISTINCT admin_mobile\.id\) FILTER \(WHERE admin_mobile\.status='approved'\)/);
     assert.match(navigation, /Consomme un poste mobile/);
     assert.match(auth, /'admin','pc_standard','accountant'/);

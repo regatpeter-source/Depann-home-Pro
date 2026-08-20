@@ -1896,8 +1896,13 @@ async function renderTeamManagement(container) {
                 item.innerHTML = `<div class="team-member-summary"><div class="team-member-title"><strong>${escapeHtml(deviceTypeLabel)} — ${escapeHtml(assigneeName)}</strong><span class="team-role-badge ${isPc ? "is-admin" : "is-technician"}">${isPc ? "PC" : "Mobile"}</span><span class="team-state-badge ${device.status === "approved" ? "is-active" : device.status === "rejected" ? "is-inactive" : "is-pending"}">${statusLabel}</span></div><span class="team-member-meta">Attribué à ${escapeHtml(assigneeName)}${device.username ? ` · ${escapeHtml(device.username)}` : ""} · ${escapeHtml(device.label)}${isMobile && device.userRole === "admin" ? " · Consomme un poste mobile" : ""}</span></div>`;
                 const actions = document.createElement("div");
                 actions.className = "team-member-actions";
-                if (device.status === "approval_pending" || device.status === "code_pending") {
-                    const approve = createButton(isPc ? "Activer ce poste PC" : isMobile && device.userRole === "admin" ? "Autoriser cet appareil mobile" : (device.status === "code_pending" ? "Renvoyer le code" : "Autoriser et envoyer le code"), "secondary-button", async () => {
+                if (["approval_pending", "code_pending", "rejected"].includes(device.status)) {
+                    const approveLabel = device.status === "rejected"
+                        ? (isPc ? "Réactiver ce poste PC" : "Réactiver ce poste mobile")
+                        : isPc ? "Activer ce poste PC"
+                            : isMobile && device.userRole === "admin" ? "Autoriser cet appareil mobile"
+                                : device.status === "code_pending" ? "Renvoyer le code" : "Autoriser et envoyer le code";
+                    const approve = createButton(approveLabel, "secondary-button", async () => {
                         approve.disabled = true;
                         const result = await fetch(`/api/auth/devices/${encodeURIComponent(device.id)}/approve`, { method: "POST", credentials: "same-origin" });
                         if (!result.ok) feedback.textContent = (await result.json().catch(() => ({}))).message || "Autorisation impossible.";
@@ -1905,12 +1910,15 @@ async function renderTeamManagement(container) {
                     });
                     if (isPc && !pcSeatAvailable) approve.disabled = true;
                     if (isMobile && device.userRole === "admin" && !mobileSeatAvailable) approve.disabled = true;
-                    const reject = createButton("Refuser", "secondary-button", async () => {
-                        const result = await fetch(`/api/auth/devices/${encodeURIComponent(device.id)}/reject`, { method: "POST", credentials: "same-origin" });
-                        if (!result.ok) feedback.textContent = (await result.json().catch(() => ({}))).message || "Refus impossible.";
-                        await load();
-                    });
-                    actions.append(approve, reject);
+                    actions.appendChild(approve);
+                    if (device.status !== "rejected") {
+                        const reject = createButton("Refuser", "secondary-button", async () => {
+                            const result = await fetch(`/api/auth/devices/${encodeURIComponent(device.id)}/reject`, { method: "POST", credentials: "same-origin" });
+                            if (!result.ok) feedback.textContent = (await result.json().catch(() => ({}))).message || "Refus impossible.";
+                            await load();
+                        });
+                        actions.appendChild(reject);
+                    }
                 }
                 const manage = createButton("Gérer", "secondary-button", () => openDeviceManagement(device));
                 manage.title = `Gérer ${isPc ? "ce poste PC" : "cet appareil"}`;
