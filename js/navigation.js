@@ -133,6 +133,7 @@ function bindSilentInteractionSynchronization() {
 }
 
 export async function refreshApplication() {
+    if (await refreshOrganizationAccess()) return { refreshed: true, accessChanged: true };
     const activeRoute = document.querySelector(".nav-button.active")?.dataset.nav || "";
     await refreshSharedData({ includeClients: true, forceBilling: true });
 
@@ -169,6 +170,29 @@ export async function refreshApplication() {
         openHome();
     }
     return { refreshed: true };
+}
+
+async function refreshOrganizationAccess() {
+    try {
+        const response = await fetch("/api/auth/session", { credentials: "same-origin", cache: "no-store" });
+        if (!response.ok) return false;
+        const session = await response.json();
+        const organization = session.user?.organization;
+        if (!organization?.features) return false;
+        const previous = `${document.body.dataset.organizationInterface || ""}:${document.body.dataset.subscriptionTier || ""}:${document.body.dataset.organizationFeatures || ""}`;
+        const nextFeatures = JSON.stringify(organization.features);
+        const next = `${organization.interfaceType || "standard"}:${organization.subscriptionTier || "pro"}:${nextFeatures}`;
+        if (previous === next) return false;
+        document.body.dataset.organizationInterface = organization.interfaceType || "standard";
+        document.body.dataset.organizationType = organization.organizationType || "troubleshooting_company";
+        document.body.dataset.organizationLicense = organization.licenseType || "depannhome_standard";
+        document.body.dataset.subscriptionTier = organization.subscriptionTier || "pro";
+        document.body.dataset.organizationFeatures = nextFeatures;
+        window.location.reload();
+        return true;
+    } catch {
+        return false;
+    }
 }
 
 function bindEvents() {
@@ -325,10 +349,10 @@ function isOrganizationRouteEnabled(route) {
 }
 
 function organizationFeatureEnabled(feature) {
-    if (feature === "library" && isMobilePostRole()) return true;
+    if (feature === "library" && isMobilePostRole() && document.body.dataset.organizationInterface === "standard") return true;
     let features = {};
     try { features = JSON.parse(document.body.dataset.organizationFeatures || "{}"); } catch { features = {}; }
-    return features[feature] !== false;
+    return features[feature] === true;
 }
 
 function isMobilePostRole() {

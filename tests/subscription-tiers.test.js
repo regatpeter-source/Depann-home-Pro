@@ -139,6 +139,19 @@ test("organization interfaces remain compatible with subscription tiers", () => 
     assert.match(organizationsServer, /subscription_renewal_date=NULL/);
 });
 
+test("the free Partner interface only exposes Clients and Partner Missions", () => {
+    const partner = publicOrganization({ interfaceType: "partner", licenseType: "partner_portal", subscriptionTier: "pro" });
+    for (const feature of ["clients", "partnerMissions", "messages"]) assert.equal(isFeatureEnabled(partner, feature), true, feature);
+    for (const feature of ["calendar", "library", "billing", "accounting", "technicalReports", "partnerConnections", "settings", "imports", "groups", "purchases", "connectors", "photo"]) {
+        assert.equal(isFeatureEnabled(partner, feature), false, feature);
+    }
+    assert.equal(isFeatureEnabledForRole(partner, "library", "technician"), false);
+    assert.match(auth, /getOrganization\(accountOwnerId\)/);
+    assert.match(auth, /publicUser\(\{ \.\.\.user, accountOwnerId, activeCompanyId: accountOwnerId, organization \}\)/);
+    assert.match(navigation, /return features\[feature\] === true/);
+    assert.match(navigation, /refreshOrganizationAccess\(\)/);
+});
+
 test("subscription invoices detail charged PC and mobile seats", () => {
     const snapshot = buildSubscriptionInvoiceSnapshot({ subscriptionTier: "basic_plus", monthlyPriceCents: 7800, maxPcUsers: 2, maxTechnicians: 1, discountMode: "fixed", discountValue: 0 }, 20);
     assert.equal(snapshot.lines.length, 2);

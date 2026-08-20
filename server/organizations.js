@@ -14,8 +14,8 @@ const ALL_FEATURES = Object.freeze({
     purchases: true, connectors: true, photo: true
 });
 const PARTNER_FEATURES = Object.freeze({
-    clients: true, calendar: true, library: false, billing: true, accounting: false, quitus: false, technicalReports: false,
-    partnerMissions: true, partnerConnections: true, messages: true, settings: true, imports: false, groups: false,
+    clients: true, calendar: false, library: false, billing: false, accounting: false, quitus: false, technicalReports: false,
+    partnerMissions: true, partnerConnections: false, messages: true, settings: false, imports: false, groups: false,
     purchases: false, connectors: false, photo: false
 });
 const MOBILE_ROLES = Object.freeze(["mobile_admin", "team_lead", "technician"]);
@@ -95,7 +95,7 @@ export function requireOrganizationFeature(feature) {
 }
 
 export function isFeatureEnabledForRole(organization, feature, role) {
-    if (feature === "library") return MOBILE_ROLES.includes(role);
+    if (feature === "library") return MOBILE_ROLES.includes(role) && (organization?.interfaceType === "standard" || isFeatureEnabled(organization, feature));
     if (feature === "purchases" && !["admin", "pc_standard", "accountant", "mobile_admin"].includes(role)) return false;
     return isFeatureEnabled(organization, feature);
 }

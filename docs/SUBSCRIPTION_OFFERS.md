@@ -2,7 +2,7 @@
 
 Les niveaux d’abonnement s’appliquent aux organisations utilisant l’interface Standard Depann’Home Pro. Les interfaces Partenaire et Groupe conservent leurs règles spécifiques.
 
-L’interface **Partenaire** utilise le niveau fonctionnel Pro afin d’accéder à ses outils dédiés, mais son portail est **gratuit** : tarif mensuel à 0 €, aucune échéance et aucune facture d’abonnement. L’interface Groupe reste soumise à sa règle commerciale propre.
+L’interface **Partenaire** utilise le niveau technique Pro, mais son portail est **gratuit** : tarif mensuel à 0 €, aucune échéance et aucune facture d’abonnement. Son espace métier est volontairement limité à **Clients** et **Missions partenaires** ; la messagerie contextuelle reste rattachée à ces dossiers. L’interface Groupe reste soumise à sa règle commerciale propre.
 
 ## Basic
 

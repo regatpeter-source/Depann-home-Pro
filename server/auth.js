@@ -77,7 +77,7 @@ export async function mobileAdministratorSeatError(ownerId, excludedDeviceId = "
 }
 
 export function registerAuthRoutes(app) {
-    app.get("/api/auth/session", (request, response) => {
+    app.get("/api/auth/session", asyncHandler(async (request, response) => {
         const user = request.user;
         if (!user) {
             return response.status(401).json({
@@ -85,13 +85,15 @@ export function registerAuthRoutes(app) {
                 registrationEnabled: isPublicRegistrationEnabled()
             });
         }
+        const accountOwnerId = String(user.activeCompanyId || user.accountOwnerId || user.account_owner_id || user.id || user.sub);
+        const organization = await getOrganization(accountOwnerId);
 
         return response.json({
             authenticated: true,
             registrationEnabled: isPublicRegistrationEnabled(),
-            user: publicUser(user)
+            user: publicUser({ ...user, accountOwnerId, activeCompanyId: accountOwnerId, organization })
         });
-    });
+    }));
 
     app.post("/api/auth/login", asyncHandler(async (request, response) => {
         const username = normalizeUsername(request.body?.username);
