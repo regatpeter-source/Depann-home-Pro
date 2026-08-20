@@ -23,7 +23,7 @@ export const SUBSCRIPTION_TIER_CONFIG = Object.freeze({
         label: "Pro",
         pcRateCents: 7000,
         mobileRateCents: 1500,
-        description: "Tous postes avec accès complet, bibliothèque mobile et achats sur tous les PC",
+        description: "Tous postes avec accès complet et licences Groupe d’entreprise incluses",
         allowedRoles: Object.freeze([...PC_ROLES, ...ALL_MOBILE_ROLES]),
         features: Object.freeze({ clients: true, calendar: true, library: true, billing: true, accounting: true, quitus: true, technicalReports: true, partnerMissions: true, partnerConnections: true, messages: true, settings: true, imports: true, groups: true, purchases: true, connectors: true, photo: true })
     })

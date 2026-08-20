@@ -36,6 +36,11 @@ L’interface **Partenaire** utilise le niveau technique Pro, mais son portail e
 - Accès complet aux modules disponibles selon le rôle : clients, planning, devis, factures, facturation, comptabilité, achats administrateurs, rapports de recherche de fuite, bibliothèque mobile, photos, imports, groupes, missions partenaires, Réseau Depann’Home Pro et connexions API.
 - Accès au Quitus d’intervention : signature, validation, PDF et modèles personnalisés.
 - Accès complet à tous les types de postes PC et mobiles.
+- Licences Groupe d’entreprise / Multi-entreprises incluses, sans supplément de licence, pour activer le pilotage de plusieurs sociétés selon l’interface configurée.
+
+### Licence Partenaire gratuite
+
+La licence Portail Partenaire est gratuite et distincte de l’abonnement Pro payant. Son niveau technique Pro garantit les échanges nécessaires, sans abonnement mensuel, échéance ni facture. Elle inclut un poste Administrateur PC, aucun poste mobile et les seuls espaces Clients et Missions partenaires avec leur messagerie contextuelle.
 
 ## Calcul et quotas
 

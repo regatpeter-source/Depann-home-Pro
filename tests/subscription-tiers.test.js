@@ -23,6 +23,9 @@ const purchasesServer = readFileSync(new URL("../server/purchases.js", import.me
 const supportServer = readFileSync(new URL("../server/support.js", import.meta.url), "utf8");
 const partnerRequestsServer = readFileSync(new URL("../server/partner-requests.js", import.meta.url), "utf8");
 const style = readFileSync(new URL("../css/style.css", import.meta.url), "utf8");
+const subscriptionOffers = readFileSync(new URL("../docs/SUBSCRIPTION_OFFERS.md", import.meta.url), "utf8");
+const commercialPresentation = readFileSync(new URL("../docs/PRESENTATION_COMMERCIALE_PARTENAIRES.md", import.meta.url), "utf8");
+const presentationGenerator = readFileSync(new URL("../scripts/generate-partner-presentation.js", import.meta.url), "utf8");
 
 test("Basic, Basic+ and Pro prices are calculated per PC and mobile seat", () => {
     assert.equal(calculateSubscriptionPriceCents("basic", 1, 1), 2500);
@@ -113,6 +116,18 @@ test("Library is mobile-only and Purchases are available on every PC plus Mobile
 test("Pro enables every product feature", () => {
     const pro = publicOrganization({ interfaceType: "standard", licenseType: "depannhome_standard", subscriptionTier: "pro" });
     for (const feature of ["clients", "calendar", "library", "billing", "accounting", "quitus", "technicalReports", "partnerMissions", "partnerConnections", "messages", "settings", "imports", "groups", "purchases", "connectors", "photo"]) assert.equal(isFeatureEnabled(pro, feature), true, feature);
+});
+
+test("Pro materials include Group licenses and explain the free Partner license", () => {
+    assert.match(subscriptionTierConfig("pro").description, /licences Groupe d’entreprise incluses/);
+    assert.match(navigation, /Licences Groupe d’entreprise \/ Multi-entreprises incluses sans supplément de licence/);
+    assert.match(navigation, /Licence Partenaire gratuite/);
+    for (const document of [subscriptionOffers, commercialPresentation]) {
+        assert.match(document, /Groupe d’entreprise \/ Multi-entreprises incluses/);
+        assert.match(document, /Licence Partenaire gratuite/);
+        assert.match(document, /aucun poste mobile/i);
+    }
+    assert.match(presentationGenerator, /licences Groupe d’entreprise incluses sans supplément/);
 });
 
 test("a Standard license override cannot unlock a feature outside its tier", () => {

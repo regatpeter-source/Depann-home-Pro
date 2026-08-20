@@ -72,9 +72,14 @@ L’offre Basic+ convient aux entreprises qui souhaitent coordonner le bureau et
 - Réseau Depann’Home Pro et missions partenaires.
 - Dialogue collaboratif et partage contrôlé des documents.
 - Connexions API, connecteurs et environnements de recette.
-- Imports de données et fonctions Groupe / Multi-entreprises selon l’interface activée.
+- Imports de données.
+- Licences Groupe d’entreprise / Multi-entreprises incluses, sans supplément de licence, selon l’interface activée.
 
 L’offre Pro est destinée aux entreprises qui veulent piloter l’ensemble de leur activité et développer des échanges structurés avec leurs partenaires.
+
+### Licence Partenaire gratuite
+
+La licence Portail Partenaire est gratuite : elle ne comporte ni abonnement mensuel, ni échéance, ni facture. Elle utilise le niveau technique Pro pour sécuriser les échanges, mais reste un accès dédié comprenant un poste Administrateur PC, aucun poste mobile et uniquement les espaces Clients et Missions partenaires avec leur messagerie contextuelle. Elle permet ainsi à un partenaire de recevoir et suivre les missions qui lui sont confiées sans souscrire une offre Pro payante.
 
 ## Exemple de calcul mensuel
 
@@ -82,7 +87,7 @@ L’offre Pro est destinée aux entreprises qui veulent piloter l’ensemble de 
 - Basic+ avec 2 postes PC et 3 postes mobiles : **94 € TTC par mois**.
 - Pro avec 2 postes PC et 4 postes mobiles : **200 € TTC par mois**.
 
-Les remises commerciales éventuellement accordées sont appliquées au total mensuel calculé. Les interfaces Partenaire et Groupe nécessitent l’offre Pro.
+Les remises commerciales éventuellement accordées sont appliquées au total mensuel calculé. La licence Groupe d’entreprise est incluse dans Pro sans supplément de licence. La licence Partenaire utilise le niveau technique Pro, mais demeure entièrement gratuite.
 
 ---
 

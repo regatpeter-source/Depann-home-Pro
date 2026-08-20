@@ -75,7 +75,7 @@ function addPricingPanel() {
     const offers = [
         { name: "BASIC", pc: "20 € / PC", mobile: "5 € / mobile", detail: "PC + Admin Mobile · bibliothèque mobile · achats tous PC", color: "#2563EB", pale: "#EFF6FF" },
         { name: "BASIC+", pc: "35 € / PC", mobile: "8 € / mobile", detail: "Tous postes · planning · bibliothèque mobile · achats tous PC", color: colors.secondary, pale: colors.paleGreen },
-        { name: "PRO", pc: "70 € / PC", mobile: "15 € / mobile", detail: "Tous postes · accès complet · bibliothèque mobile · achats tous PC", color: "#7C3AED", pale: "#F5F3FF" }
+        { name: "PRO", pc: "70 € / PC", mobile: "15 € / mobile", detail: "Accès complet · licences Groupe d’entreprise incluses sans supplément", color: "#7C3AED", pale: "#F5F3FF" }
     ];
     const gap = 10; const totalWidth = document.page.width - 104; const cardWidth = (totalWidth - gap * 2) / 3; const y = document.y;
     offers.forEach((offer, index) => {
