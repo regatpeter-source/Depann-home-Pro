@@ -78,6 +78,11 @@ export async function initializeSubscriptionInvoicing() {
     await database.query(`ALTER TABLE depannhome_subscription_invoices ADD COLUMN IF NOT EXISTS financial_data JSONB NOT NULL DEFAULT '{}'::jsonb`);
     await database.query(`ALTER TABLE depannhome_subscription_invoices ADD COLUMN IF NOT EXISTS payment_status VARCHAR(20) NOT NULL DEFAULT 'unpaid' CHECK (payment_status IN ('unpaid','paid')), ADD COLUMN IF NOT EXISTS paid_date DATE, ADD COLUMN IF NOT EXISTS paid_at TIMESTAMPTZ, ADD COLUMN IF NOT EXISTS paid_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL, ADD COLUMN IF NOT EXISTS payment_reference VARCHAR(160) NOT NULL DEFAULT '', ADD COLUMN IF NOT EXISTS receipt_delivery_status VARCHAR(20) NOT NULL DEFAULT 'not_sent' CHECK (receipt_delivery_status IN ('not_sent','pending','sending','sent','failed')), ADD COLUMN IF NOT EXISTS receipt_sent_at TIMESTAMPTZ, ADD COLUMN IF NOT EXISTS receipt_last_error VARCHAR(1000) NOT NULL DEFAULT ''`);
     await database.query(`CREATE INDEX IF NOT EXISTS depannhome_subscription_invoices_status_idx ON depannhome_subscription_invoices (status, created_at)`);
+    await database.query(`CREATE TABLE IF NOT EXISTS depannhome_subscription_invoice_sequences (series_year INTEGER PRIMARY KEY CHECK (series_year >= 2020), last_number BIGINT NOT NULL DEFAULT 0 CHECK (last_number >= 0), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
+    await database.query(`INSERT INTO depannhome_subscription_invoice_sequences (series_year,last_number)
+        SELECT parts[1]::integer,MAX(parts[2]::bigint) FROM depannhome_subscription_invoices
+        CROSS JOIN LATERAL regexp_match(invoice_number,'^DHP-([0-9]{4})-([0-9]{6})$') AS parsed(parts) GROUP BY parts[1]
+        ON CONFLICT (series_year) DO UPDATE SET last_number=GREATEST(depannhome_subscription_invoice_sequences.last_number,EXCLUDED.last_number),updated_at=NOW()`);
     await database.query(`CREATE TABLE IF NOT EXISTS depannhome_subscription_invoice_audit (id BIGSERIAL PRIMARY KEY, invoice_id BIGINT NOT NULL REFERENCES depannhome_subscription_invoices(id) ON DELETE CASCADE, account_owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE, actor_id BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL, action VARCHAR(40) NOT NULL, details JSONB NOT NULL DEFAULT '{}'::jsonb, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
     await database.query(`CREATE INDEX IF NOT EXISTS depannhome_subscription_invoice_audit_invoice_idx ON depannhome_subscription_invoice_audit (invoice_id, created_at DESC)`);
 }
@@ -267,20 +272,46 @@ export async function processDueSubscriptionInvoices() {
 async function createInvoiceIfNeeded(subscription, issuer) {
     const database = getPool();
     const billingPeriod = dateString(subscription.renewalDate);
-    const invoiceNumber = `DHP-${billingPeriod.slice(0, 7).replace("-", "")}-${String(subscription.id).padStart(5, "0")}`;
-    const dueDate = addDays(billingPeriod, 30);
     const recipientName = String(subscription.companyName || subscription.fullName || "Entreprise").trim();
     const vatRate = issuer.vatRegime === "franchise" ? 0 : issuer.vatRate;
     const snapshot = buildSubscriptionInvoiceSnapshot(subscription, vatRate);
-    const { rows } = await database.query(`
-        INSERT INTO depannhome_subscription_invoices
-            (account_owner_id, billing_period, invoice_number, recipient_name, recipient_email, recipient_address, subscription_label, amount_cents, net_amount_cents, vat_rate, issue_date, due_date, issuer_profile, lines, financial_data)
-        VALUES ($1,$2::date,$3,$4,$5,$6,$7,$8,$9,$10,$11::date,$12::date,$13::jsonb,$14::jsonb,$15::jsonb)
-        ON CONFLICT (account_owner_id, billing_period) DO NOTHING
-        RETURNING id
-    `, [subscription.id, billingPeriod, invoiceNumber, recipientName, subscription.email, String(subscription.recipientAddress || "").slice(0, 500), subscription.subscriptionLabel || "Abonnement Depann’Home Pro",
-        subscription.monthlyPriceCents, snapshot.netAmountCents, vatRate, billingPeriod, dueDate, JSON.stringify(issuer), JSON.stringify(snapshot.lines), JSON.stringify(snapshot.financialData)]);
-    return { created: Boolean(rows[0]) };
+    const connection = await database.connect();
+    try {
+        await connection.query("BEGIN");
+        const existing = await connection.query(`SELECT id FROM depannhome_subscription_invoices WHERE account_owner_id=$1 AND billing_period=$2::date`, [subscription.id, billingPeriod]);
+        if (existing.rowCount) {
+            await connection.query("COMMIT");
+            return { created: false };
+        }
+        const { rows: dates } = await connection.query(`SELECT TO_CHAR(CURRENT_DATE,'YYYY-MM-DD') AS "issueDate",EXTRACT(YEAR FROM CURRENT_DATE)::integer AS "seriesYear"`);
+        const { issueDate, seriesYear } = dates[0];
+        const dueDate = addDays(issueDate, 30);
+        const { rows: sequences } = await connection.query(`
+            INSERT INTO depannhome_subscription_invoice_sequences (series_year,last_number) VALUES ($1,1)
+            ON CONFLICT (series_year) DO UPDATE SET last_number=depannhome_subscription_invoice_sequences.last_number+1,updated_at=NOW()
+            RETURNING last_number AS "lastNumber"
+        `, [seriesYear]);
+        const invoiceNumber = `DHP-${seriesYear}-${String(sequences[0].lastNumber).padStart(6, "0")}`;
+        const { rows } = await connection.query(`
+            INSERT INTO depannhome_subscription_invoices
+                (account_owner_id, billing_period, invoice_number, recipient_name, recipient_email, recipient_address, subscription_label, amount_cents, net_amount_cents, vat_rate, issue_date, due_date, issuer_profile, lines, financial_data)
+            VALUES ($1,$2::date,$3,$4,$5,$6,$7,$8,$9,$10,$11::date,$12::date,$13::jsonb,$14::jsonb,$15::jsonb)
+            ON CONFLICT (account_owner_id, billing_period) DO NOTHING
+            RETURNING id
+        `, [subscription.id, billingPeriod, invoiceNumber, recipientName, subscription.email, String(subscription.recipientAddress || "").slice(0, 500), subscription.subscriptionLabel || "Abonnement Depann’Home Pro",
+            subscription.monthlyPriceCents, snapshot.netAmountCents, vatRate, issueDate, dueDate, JSON.stringify(issuer), JSON.stringify(snapshot.lines), JSON.stringify(snapshot.financialData)]);
+        if (!rows[0]) {
+            await connection.query("ROLLBACK");
+            return { created: false };
+        }
+        await connection.query("COMMIT");
+        return { created: true, invoiceNumber };
+    } catch (error) {
+        await connection.query("ROLLBACK");
+        throw error;
+    } finally {
+        connection.release();
+    }
 }
 
 async function deliverPendingInvoices() {

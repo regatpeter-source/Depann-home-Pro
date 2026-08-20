@@ -116,3 +116,22 @@ test("la facture acquittée porte la date de règlement et son envoi peut être 
     assert.match(creatorSource, /Renvoyer la facture acquittée/);
     assert.match(creatorSource, /data-subscription-payment-form/);
 });
+
+test("les nouvelles factures utilisent une série annuelle continue et transactionnelle", () => {
+    for (const source of [schemaSource, invoicingSource]) {
+        assert.match(source, /depannhome_subscription_invoice_sequences/);
+        assert.match(source, /series_year INTEGER PRIMARY KEY/);
+        assert.match(source, /last_number BIGINT NOT NULL DEFAULT 0/);
+    }
+    assert.match(invoicingSource, /INSERT INTO depannhome_subscription_invoice_sequences \(series_year,last_number\) VALUES \(\$1,1\)/);
+    assert.match(invoicingSource, /last_number=depannhome_subscription_invoice_sequences\.last_number\+1/);
+    assert.match(invoicingSource, /regexp_match\(invoice_number,'\^DHP-\(\[0-9\]\{4\}\)-\(\[0-9\]\{6\}\)\$'\)/);
+    assert.match(invoicingSource, /DHP-\$\{seriesYear\}-\$\{String\(sequences\[0\]\.lastNumber\)\.padStart\(6, "0"\)\}/);
+    assert.match(invoicingSource, /SELECT TO_CHAR\(CURRENT_DATE,'YYYY-MM-DD'\) AS "issueDate"/);
+    assert.doesNotMatch(invoicingSource, /DHP-\$\{billingPeriod\.slice/);
+});
+
+test("la référence demandée dans la Console est explicitement celle du paiement", () => {
+    assert.match(creatorSource, /Référence du paiement \(facultative\)/);
+    assert.match(creatorSource, /N° de virement, transaction ou chèque/);
+});
