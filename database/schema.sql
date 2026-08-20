@@ -589,6 +589,14 @@ CREATE TABLE IF NOT EXISTS depannhome_subscription_invoices (
     status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'sending', 'sent', 'failed')),
     sent_at TIMESTAMPTZ,
     last_error VARCHAR(1000) NOT NULL DEFAULT '',
+    payment_status VARCHAR(20) NOT NULL DEFAULT 'unpaid' CHECK (payment_status IN ('unpaid', 'paid')),
+    paid_date DATE,
+    paid_at TIMESTAMPTZ,
+    paid_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+    payment_reference VARCHAR(160) NOT NULL DEFAULT '',
+    receipt_delivery_status VARCHAR(20) NOT NULL DEFAULT 'not_sent' CHECK (receipt_delivery_status IN ('not_sent', 'pending', 'sending', 'sent', 'failed')),
+    receipt_sent_at TIMESTAMPTZ,
+    receipt_last_error VARCHAR(1000) NOT NULL DEFAULT '',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT depannhome_subscription_invoices_owner_period_unique UNIQUE (account_owner_id, billing_period)
@@ -596,6 +604,19 @@ CREATE TABLE IF NOT EXISTS depannhome_subscription_invoices (
 
 CREATE INDEX IF NOT EXISTS depannhome_subscription_invoices_status_idx
     ON depannhome_subscription_invoices (status, created_at);
+
+CREATE TABLE IF NOT EXISTS depannhome_subscription_invoice_audit (
+    id BIGSERIAL PRIMARY KEY,
+    invoice_id BIGINT NOT NULL REFERENCES depannhome_subscription_invoices(id) ON DELETE CASCADE,
+    account_owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    actor_id BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+    action VARCHAR(40) NOT NULL,
+    details JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS depannhome_subscription_invoice_audit_invoice_idx
+    ON depannhome_subscription_invoice_audit (invoice_id, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS depannhome_purchases (
     id BIGSERIAL PRIMARY KEY,

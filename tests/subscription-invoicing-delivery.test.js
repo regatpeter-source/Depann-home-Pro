@@ -8,6 +8,7 @@ const creatorSource = readFileSync(new URL("../js/creator.js", import.meta.url),
 const emailSource = readFileSync(new URL("../server/email.js", import.meta.url), "utf8");
 const databaseSource = readFileSync(new URL("../server/database.js", import.meta.url), "utf8");
 const billingSource = readFileSync(new URL("../server/billing.js", import.meta.url), "utf8");
+const schemaSource = readFileSync(new URL("../database/schema.sql", import.meta.url), "utf8");
 
 test("le verrou de facturation est détenu et libéré par la même connexion PostgreSQL", () => {
     assert.match(invoicingSource, /const lockConnection = await database\.connect\(\)/);
@@ -81,4 +82,37 @@ test("les paramètres commerciaux et l’instantané détaillé sont migrés en 
 
 test("le PDF utilise le libellé personnalisé de la réduction", () => {
     assert.match(billingSource, /financialData\.discountLabel \|\| "Remise"/);
+});
+
+test("la réception du paiement est historisée séparément de l’envoi initial", () => {
+    for (const source of [schemaSource, invoicingSource]) {
+        assert.match(source, /payment_status VARCHAR\(20\) NOT NULL DEFAULT 'unpaid'/);
+        assert.match(source, /paid_date DATE/);
+        assert.match(source, /paid_by BIGINT REFERENCES depannhome_users\(id\) ON DELETE SET NULL/);
+        assert.match(source, /payment_reference VARCHAR\(160\)/);
+        assert.match(source, /receipt_delivery_status VARCHAR\(20\) NOT NULL DEFAULT 'not_sent'/);
+        assert.match(source, /depannhome_subscription_invoice_audit/);
+    }
+});
+
+test("seul le Créateur peut accuser réception une fois sur une facture envoyée", () => {
+    assert.match(invoicingSource, /app\.post\("\/api\/creator\/subscription-invoices\/:invoiceId\/payment", requireCreator/);
+    assert.match(invoicingSource, /SELECT id,account_owner_id[\s\S]*FROM depannhome_subscription_invoices WHERE id=\$1 FOR UPDATE/);
+    assert.match(invoicingSource, /if \(invoice\.status !== "sent"\)/);
+    assert.match(invoicingSource, /if \(invoice\.paymentStatus === "paid"\)/);
+    assert.match(invoicingSource, /if \(paidDate < invoice\.issueDate\)/);
+    assert.match(invoicingSource, /dateString\(parsed\) !== date/);
+    assert.match(invoicingSource, /payment_status='paid',paid_date=\$2::date,paid_at=NOW\(\),paid_by=\$3/);
+    assert.match(invoicingSource, /'payment_acknowledged'/);
+});
+
+test("la facture acquittée porte la date de règlement et son envoi peut être relancé", () => {
+    assert.match(invoicingSource, /app\.post\("\/api\/creator\/subscription-invoices\/:invoiceId\/payment-receipt\/send", requireCreator/);
+    assert.match(invoicingSource, /receipt_delivery_status IN \('pending','failed'\)/);
+    assert.match(invoicingSource, /Facture d’abonnement acquittée/);
+    assert.match(invoicingSource, /paidDate: invoice\.paidDate \? dateString\(invoice\.paidDate\) : ""/);
+    assert.match(billingSource, /RÉGLÉE LE \$\{formatDate\(document\.paidDate\)\.toUpperCase\(\)\}/);
+    assert.match(creatorSource, /Accuser réception du paiement/);
+    assert.match(creatorSource, /Renvoyer la facture acquittée/);
+    assert.match(creatorSource, /data-subscription-payment-form/);
 });

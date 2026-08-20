@@ -1,6 +1,6 @@
 import { ROUTES, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=126";
 import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=167";
-import { openCreatorPartnerRequest, openCreatorRequestNotification, renderCreatorConsole } from "./creator.js?v=134";
+import { openCreatorPartnerRequest, openCreatorRequestNotification, renderCreatorConsole } from "./creator.js?v=135";
 import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=176";
 import { renderAccounting } from "./accounting.js?v=7";
 import { renderAccountingSandbox } from "./accounting-sandbox.js?v=2";
@@ -1401,7 +1401,7 @@ async function renderSubscriptionSettings(container) {
         <div class="form-heading"><div><p class="eyebrow">Facturation de l’abonnement</p><h3>Échéances et dernière facture</h3></div><span class="subscription-billing-status ${escapeHtml(subscriptionStatus.className)}">${escapeHtml(subscriptionStatus.label)}</span></div>
         <div class="subscription-billing-grid">
             <article><span>Prochaine facturation</span><strong>${escapeHtml(renewalDate || "Date à confirmer")}</strong><small>${account.subscriptionPlan === "paid" ? "Échéance mensuelle programmée" : "Aucune facturation automatique programmée"}</small></article>
-            <article><span>Dernière facture</span><strong>${escapeHtml(latestInvoice?.invoiceNumber || "Aucune facture émise")}</strong><small>${latestInvoice ? `${escapeHtml(formatSubscriptionBillingDate(latestInvoice.issueDate))} · ${escapeHtml(subscriptionInvoiceStatus(latestInvoice.status))}` : "La première facture apparaîtra ici après son émission."}</small></article>
+            <article><span>Dernière facture</span><strong>${escapeHtml(latestInvoice?.invoiceNumber || "Aucune facture émise")}</strong><small>${latestInvoice ? `${escapeHtml(formatSubscriptionBillingDate(latestInvoice.issueDate))} · ${latestInvoice.paymentStatus === "paid" ? `Réglée le ${escapeHtml(formatSubscriptionBillingDate(latestInvoice.paidDate))}` : escapeHtml(subscriptionInvoiceStatus(latestInvoice.status))}` : "La première facture apparaîtra ici après son émission."}</small></article>
             <article><span>Échéance de paiement</span><strong>${escapeHtml(latestInvoice ? formatSubscriptionBillingDate(latestInvoice.dueDate) : "—")}</strong><small>${invoiceAmount ? `${escapeHtml(invoiceAmount)} TTC après remise éventuelle` : "Aucun montant facturé à ce jour"}</small></article>
             <article><span>Référence de facturation</span><strong>${escapeHtml(account.billingReference || "Non renseignée")}</strong><small>${escapeHtml(account.subscriptionLabel || currentOffer.label)}${account.discountLabel ? ` · ${escapeHtml(account.discountLabel)}` : ""}</small></article>
         </div>

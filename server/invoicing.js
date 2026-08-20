@@ -56,6 +56,14 @@ export async function initializeSubscriptionInvoicing() {
             status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'sending', 'sent', 'failed')),
             sent_at TIMESTAMPTZ,
             last_error VARCHAR(1000) NOT NULL DEFAULT '',
+            payment_status VARCHAR(20) NOT NULL DEFAULT 'unpaid' CHECK (payment_status IN ('unpaid', 'paid')),
+            paid_date DATE,
+            paid_at TIMESTAMPTZ,
+            paid_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+            payment_reference VARCHAR(160) NOT NULL DEFAULT '',
+            receipt_delivery_status VARCHAR(20) NOT NULL DEFAULT 'not_sent' CHECK (receipt_delivery_status IN ('not_sent', 'pending', 'sending', 'sent', 'failed')),
+            receipt_sent_at TIMESTAMPTZ,
+            receipt_last_error VARCHAR(1000) NOT NULL DEFAULT '',
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             CONSTRAINT depannhome_subscription_invoices_owner_period_unique UNIQUE (account_owner_id, billing_period)
@@ -68,7 +76,10 @@ export async function initializeSubscriptionInvoicing() {
     await database.query(`ALTER TABLE depannhome_subscription_invoices ALTER COLUMN net_amount_cents SET DEFAULT 0, ALTER COLUMN net_amount_cents SET NOT NULL`);
     await database.query(`ALTER TABLE depannhome_subscription_invoices ADD COLUMN IF NOT EXISTS lines JSONB NOT NULL DEFAULT '[]'::jsonb`);
     await database.query(`ALTER TABLE depannhome_subscription_invoices ADD COLUMN IF NOT EXISTS financial_data JSONB NOT NULL DEFAULT '{}'::jsonb`);
+    await database.query(`ALTER TABLE depannhome_subscription_invoices ADD COLUMN IF NOT EXISTS payment_status VARCHAR(20) NOT NULL DEFAULT 'unpaid' CHECK (payment_status IN ('unpaid','paid')), ADD COLUMN IF NOT EXISTS paid_date DATE, ADD COLUMN IF NOT EXISTS paid_at TIMESTAMPTZ, ADD COLUMN IF NOT EXISTS paid_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL, ADD COLUMN IF NOT EXISTS payment_reference VARCHAR(160) NOT NULL DEFAULT '', ADD COLUMN IF NOT EXISTS receipt_delivery_status VARCHAR(20) NOT NULL DEFAULT 'not_sent' CHECK (receipt_delivery_status IN ('not_sent','pending','sending','sent','failed')), ADD COLUMN IF NOT EXISTS receipt_sent_at TIMESTAMPTZ, ADD COLUMN IF NOT EXISTS receipt_last_error VARCHAR(1000) NOT NULL DEFAULT ''`);
     await database.query(`CREATE INDEX IF NOT EXISTS depannhome_subscription_invoices_status_idx ON depannhome_subscription_invoices (status, created_at)`);
+    await database.query(`CREATE TABLE IF NOT EXISTS depannhome_subscription_invoice_audit (id BIGSERIAL PRIMARY KEY, invoice_id BIGINT NOT NULL REFERENCES depannhome_subscription_invoices(id) ON DELETE CASCADE, account_owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE, actor_id BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL, action VARCHAR(40) NOT NULL, details JSONB NOT NULL DEFAULT '{}'::jsonb, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
+    await database.query(`CREATE INDEX IF NOT EXISTS depannhome_subscription_invoice_audit_invoice_idx ON depannhome_subscription_invoice_audit (invoice_id, created_at DESC)`);
 }
 
 export function registerSubscriptionInvoicingRoutes(app, requireCreator) {
@@ -105,6 +116,9 @@ export function registerSubscriptionInvoicingRoutes(app, requireCreator) {
                 invoice.financial_data AS "financialData", invoice.vat_rate::float AS "vatRate",
                 TO_CHAR(invoice.issue_date, 'YYYY-MM-DD') AS "issueDate", TO_CHAR(invoice.due_date, 'YYYY-MM-DD') AS "dueDate",
                 invoice.status, invoice.sent_at AS "sentAt", invoice.last_error AS "lastError", invoice.created_at AS "createdAt",
+                invoice.payment_status AS "paymentStatus", TO_CHAR(invoice.paid_date, 'YYYY-MM-DD') AS "paidDate", invoice.paid_at AS "paidAt",
+                invoice.payment_reference AS "paymentReference", invoice.receipt_delivery_status AS "receiptDeliveryStatus",
+                invoice.receipt_sent_at AS "receiptSentAt", invoice.receipt_last_error AS "receiptLastError",
                 owner.company_name AS "companyName"
             FROM depannhome_subscription_invoices invoice
             JOIN depannhome_users owner ON owner.id = invoice.account_owner_id
@@ -122,6 +136,42 @@ export function registerSubscriptionInvoicingRoutes(app, requireCreator) {
         response.json({ ...result, message: processingMessage(result) });
     }));
 
+    app.post("/api/creator/subscription-invoices/:invoiceId/payment", requireCreator, asyncHandler(async (request, response) => {
+        const invoiceId = positiveId(request.params.invoiceId);
+        const paidDate = validPaymentDate(request.body?.paidDate);
+        const paymentReference = cleanText(request.body?.paymentReference, 160);
+        if (!invoiceId || !paidDate) return response.status(400).json({ message: "Renseignez une date de règlement valide, non future." });
+        const connection = await getPool().connect();
+        try {
+            await connection.query("BEGIN");
+            const { rows } = await connection.query(`SELECT id,account_owner_id AS "accountOwnerId",status,payment_status AS "paymentStatus",TO_CHAR(issue_date,'YYYY-MM-DD') AS "issueDate" FROM depannhome_subscription_invoices WHERE id=$1 FOR UPDATE`, [invoiceId]);
+            const invoice = rows[0];
+            if (!invoice) { await connection.query("ROLLBACK"); return response.status(404).json({ message: "Facture introuvable." }); }
+            if (invoice.status !== "sent") { await connection.query("ROLLBACK"); return response.status(409).json({ message: "La facture initiale doit être envoyée avant de pouvoir accuser réception de son paiement." }); }
+            if (invoice.paymentStatus === "paid") { await connection.query("ROLLBACK"); return response.status(409).json({ message: "Le paiement de cette facture a déjà été enregistré." }); }
+            if (paidDate < invoice.issueDate) { await connection.query("ROLLBACK"); return response.status(400).json({ message: "La date de règlement ne peut pas précéder la date d’émission." }); }
+            await connection.query(`UPDATE depannhome_subscription_invoices SET payment_status='paid',paid_date=$2::date,paid_at=NOW(),paid_by=$3,payment_reference=$4,receipt_delivery_status='pending',receipt_sent_at=NULL,receipt_last_error='',updated_at=NOW() WHERE id=$1`, [invoiceId, paidDate, request.user.sub, paymentReference]);
+            await connection.query(`INSERT INTO depannhome_subscription_invoice_audit (invoice_id,account_owner_id,actor_id,action,details) VALUES ($1,$2,$3,'payment_acknowledged',$4::jsonb)`, [invoiceId, invoice.accountOwnerId, request.user.sub, JSON.stringify({ paidDate, paymentReference })]);
+            await connection.query("COMMIT");
+        } catch (error) {
+            await connection.query("ROLLBACK");
+            throw error;
+        } finally {
+            connection.release();
+        }
+        const delivery = await sendPaidSubscriptionInvoice(invoiceId, request.user.sub);
+        return response.status(delivery.sent ? 200 : 202).json({ paymentRecorded: true, receiptSent: delivery.sent, message: delivery.sent ? "Paiement enregistré et facture acquittée envoyée à l’entreprise." : `Paiement enregistré. L’envoi de la facture acquittée a échoué : ${delivery.message}` });
+    }));
+
+    app.post("/api/creator/subscription-invoices/:invoiceId/payment-receipt/send", requireCreator, asyncHandler(async (request, response) => {
+        const invoiceId = positiveId(request.params.invoiceId);
+        if (!invoiceId) return response.status(400).json({ message: "Facture invalide." });
+        const delivery = await sendPaidSubscriptionInvoice(invoiceId, request.user.sub);
+        if (delivery.alreadySent) return response.status(409).json({ message: "La facture acquittée a déjà été envoyée." });
+        if (!delivery.sent) return response.status(502).json({ message: delivery.message || "L’envoi de la facture acquittée a échoué." });
+        response.json({ receiptSent: true, message: "Facture acquittée renvoyée avec succès." });
+    }));
+
     app.get("/api/creator/subscription-invoices/:invoiceId/pdf", requireCreator, asyncHandler(async (request, response) => {
         const invoiceId = positiveId(request.params.invoiceId);
         if (!invoiceId) return response.status(400).json({ message: "Facture invalide." });
@@ -129,7 +179,7 @@ export function registerSubscriptionInvoicingRoutes(app, requireCreator) {
             SELECT id, invoice_number AS "invoiceNumber", recipient_name AS "recipientName", recipient_address AS "recipientAddress",
                 subscription_label AS "subscriptionLabel", amount_cents AS "amountCents", vat_rate::float AS "vatRate",
                 TO_CHAR(issue_date, 'YYYY-MM-DD') AS "issueDate", TO_CHAR(due_date, 'YYYY-MM-DD') AS "dueDate", issuer_profile AS "issuerProfile",
-                lines, financial_data AS "financialData"
+                lines, financial_data AS "financialData", TO_CHAR(paid_date, 'YYYY-MM-DD') AS "paidDate"
             FROM depannhome_subscription_invoices WHERE id = $1
         `, [invoiceId]);
         const invoice = rows[0];
@@ -277,6 +327,46 @@ async function deliverPendingInvoices() {
     return { sent, failed };
 }
 
+async function sendPaidSubscriptionInvoice(invoiceId, actorId) {
+    const database = getPool();
+    await database.query(`UPDATE depannhome_subscription_invoices SET receipt_delivery_status='failed',receipt_last_error='Envoi interrompu avant confirmation ; une nouvelle tentative est autorisée.',updated_at=NOW() WHERE id=$1 AND receipt_delivery_status='sending' AND updated_at<NOW()-INTERVAL '15 minutes'`, [invoiceId]);
+    const { rows } = await database.query(`
+        UPDATE depannhome_subscription_invoices
+        SET receipt_delivery_status='sending',receipt_last_error='',updated_at=NOW()
+        WHERE id=$1 AND payment_status='paid' AND receipt_delivery_status IN ('pending','failed')
+        RETURNING id,account_owner_id AS "accountOwnerId",invoice_number AS "invoiceNumber",recipient_name AS "recipientName",recipient_email AS "recipientEmail",
+            recipient_address AS "recipientAddress",subscription_label AS "subscriptionLabel",amount_cents AS "amountCents",vat_rate::float AS "vatRate",
+            TO_CHAR(issue_date,'YYYY-MM-DD') AS "issueDate",TO_CHAR(due_date,'YYYY-MM-DD') AS "dueDate",issuer_profile AS "issuerProfile",
+            lines,financial_data AS "financialData",TO_CHAR(paid_date,'YYYY-MM-DD') AS "paidDate"
+    `, [invoiceId]);
+    const invoice = rows[0];
+    if (!invoice) {
+        const current = await database.query(`SELECT payment_status AS "paymentStatus",receipt_delivery_status AS "receiptDeliveryStatus" FROM depannhome_subscription_invoices WHERE id=$1`, [invoiceId]);
+        if (!current.rows[0]) return { sent: false, message: "Facture introuvable." };
+        if (current.rows[0].paymentStatus !== "paid") return { sent: false, message: "Le paiement doit d’abord être enregistré." };
+        if (current.rows[0].receiptDeliveryStatus === "sent") return { sent: false, alreadySent: true, message: "La facture acquittée a déjà été envoyée." };
+        return { sent: false, message: "Un envoi de la facture acquittée est déjà en cours." };
+    }
+    try {
+        if (!EMAIL_PATTERN.test(String(invoice.recipientEmail || ""))) throw new Error("L’e-mail de facturation de l’entreprise est absent ou invalide.");
+        const pdf = await createBillingPdf(subscriptionInvoiceDocument(invoice), invoice.issuerProfile || emptyProfile());
+        await sendDocumentEmail({
+            recipient: invoice.recipientEmail,
+            recipientName: invoice.recipientName,
+            documentLabel: `Facture d’abonnement acquittée ${invoice.invoiceNumber}`,
+            attachment: { filename: subscriptionInvoicePdfFileName(invoice), content: pdf, contentType: "application/pdf" }
+        });
+        await database.query(`UPDATE depannhome_subscription_invoices SET receipt_delivery_status='sent',receipt_sent_at=NOW(),receipt_last_error='',updated_at=NOW() WHERE id=$1`, [invoiceId]);
+        await database.query(`INSERT INTO depannhome_subscription_invoice_audit (invoice_id,account_owner_id,actor_id,action,details) VALUES ($1,$2,$3,'paid_receipt_sent',$4::jsonb)`, [invoiceId, invoice.accountOwnerId, actorId, JSON.stringify({ paidDate: invoice.paidDate, recipientEmail: invoice.recipientEmail })]);
+        return { sent: true };
+    } catch (error) {
+        const message = String(error.message || "Échec d’envoi").slice(0, 1000);
+        await database.query(`UPDATE depannhome_subscription_invoices SET receipt_delivery_status='failed',receipt_last_error=$2,updated_at=NOW() WHERE id=$1`, [invoiceId, message]);
+        await database.query(`INSERT INTO depannhome_subscription_invoice_audit (invoice_id,account_owner_id,actor_id,action,details) VALUES ($1,$2,$3,'paid_receipt_failed',$4::jsonb)`, [invoiceId, invoice.accountOwnerId, actorId, JSON.stringify({ paidDate: invoice.paidDate, error: message })]);
+        return { sent: false, message };
+    }
+}
+
 async function getIssuerProfile() {
     const { rows } = await getPool().query(`
         SELECT company_name AS "companyName", legal_form AS "legalForm", address, postal_code AS "postalCode", city, phone, email,
@@ -406,6 +496,7 @@ function subscriptionInvoiceDocument(invoice) {
         customerAddress: invoice.recipientAddress,
         issueDate: dateString(invoice.issueDate),
         dueDate: dateString(invoice.dueDate),
+        paidDate: invoice.paidDate ? dateString(invoice.paidDate) : "",
         vatRegime: normalizeVatRegime(invoice.issuerProfile?.vatRegime),
         issuerTaxNumber: invoice.issuerProfile?.taxNumber || "",
         lines: Array.isArray(invoice.lines) && invoice.lines.length ? invoice.lines : [{
@@ -428,6 +519,13 @@ function subscriptionInvoicePdfFileName(invoice) {
 function positiveId(value) {
     const id = Number(value);
     return Number.isSafeInteger(id) && id > 0 ? id : 0;
+}
+
+function validPaymentDate(value) {
+    const date = String(value || "");
+    const parsed = new Date(`${date}T12:00:00`);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(parsed.getTime()) || dateString(parsed) !== date) return "";
+    return date <= new Date().toISOString().slice(0, 10) ? date : "";
 }
 
 function numberInRange(value, minimum, maximum) {

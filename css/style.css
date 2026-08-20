@@ -1602,7 +1602,7 @@ body[data-page-mode="basic-home"] #pageTitle{
 
 .creator-subscription-invoice{
     display:grid;
-    grid-template-columns:minmax(210px, 1fr) minmax(180px, auto) auto;
+    grid-template-columns:minmax(210px, 1fr) minmax(180px, auto) minmax(230px,auto);
     align-items:center;
     gap:16px;
     padding:16px;
@@ -1639,6 +1639,15 @@ body[data-page-mode="basic-home"] #pageTitle{
 .creator-subscription-invoice .secondary-button{
     white-space:nowrap;
 }
+
+.creator-subscription-invoice-actions{display:grid;gap:10px;justify-items:stretch;}
+.creator-subscription-invoice-actions>.secondary-button{text-align:center;}
+.creator-subscription-payment-form{display:grid;gap:8px;padding:10px;border:1px solid #bbf7d0;border-radius:10px;background:#f0fdf4;}
+.creator-subscription-payment-form label{display:grid;gap:4px;color:#166534;font-size:12px;font-weight:800;}
+.creator-subscription-payment-form input{min-width:0;padding:8px;border:1px solid #a7f3d0;border-radius:7px;background:#fff;}
+.creator-subscription-payment-form button{white-space:normal;}
+.creator-payment-confirmed{color:#166534!important;font-weight:800;}
+.creator-subscription-badge.paid{background:#dcfce7;color:#166534!important;}
 
 .creator-partner-request-list{display:grid;gap:11px}.creator-partner-request{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:16px;border:1px solid #dbe4ee;border-radius:14px;background:#f8fbff}.creator-partner-request h4,.creator-partner-request p{margin:3px 0}.creator-partner-request small{color:var(--muted)}.creator-partner-request-actions{display:flex;align-items:center;justify-content:flex-end;gap:9px;flex-wrap:wrap}.creator-partner-request-summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;padding:16px;border:1px solid #dbe4ee;border-radius:14px;background:#f8fbff}.creator-partner-request-summary div{display:grid;gap:3px}.creator-partner-request-summary dt{color:var(--muted);font-size:.78rem;font-weight:800;text-transform:uppercase}.creator-partner-request-summary dd{margin:0;overflow-wrap:anywhere}.creator-partner-request-summary a{color:#075985}.creator-partner-request-message{padding:16px;border:1px solid #dbe4ee;border-radius:14px;background:#fff}.creator-partner-request-message h4{margin:0 0 8px;color:#003b73}.creator-partner-request-message p{margin:0;overflow-wrap:anywhere}.creator-subscription-badge.new{background:#dbeafe;color:#075985!important}.creator-subscription-badge.under_review{background:#fff4d8;color:#9a6700!important}.creator-subscription-badge.contacted{background:#ede9fe;color:#6d28d9!important}.creator-subscription-badge.accepted{background:#dcfce7;color:#166534!important}.creator-subscription-badge.refused{background:#fee2e2;color:#b42318!important}
 

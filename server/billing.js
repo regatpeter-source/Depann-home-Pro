@@ -1078,6 +1078,14 @@ export function createBillingPdf(document, profile) {
         line(pdf.y, template.primaryColor);
         pdf.y += 20;
 
+        if (document.documentType === "invoice" && document.paidDate) {
+            const stampWidth = 210;
+            const stampX = margin + contentWidth - stampWidth;
+            pdf.roundedRect(stampX, pdf.y, stampWidth, 30, 6).fill(template.secondaryColor);
+            text(`RÉGLÉE LE ${formatDate(document.paidDate).toUpperCase()}`, stampX + 10, pdf.y + 9, stampWidth - 20, { size: 10, bold: true, color: "#ffffff", align: "center" });
+            pdf.y += 42;
+        }
+
         const partyY = pdf.y;
         pdf.rect(margin, partyY, 225, 82).fill("#f0f2f4");
         pdf.rect(margin + contentWidth - 225, partyY, 225, 82).fill("#f0f2f4");

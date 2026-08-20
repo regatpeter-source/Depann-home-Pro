@@ -742,6 +742,25 @@ async function renderSubscriptionInvoices() {
         showFeedback(process.message || "Traitement des factures terminé.", Boolean(process.data?.failed));
         await renderSubscriptionInvoices();
     });
+    workspace.querySelectorAll("[data-subscription-payment-form]").forEach(form => form.addEventListener("submit", async event => {
+        event.preventDefault();
+        const invoiceNumber = form.dataset.invoiceNumber || "cette facture";
+        if (!confirm(`Confirmer la réception du paiement de ${invoiceNumber} ? La facture acquittée sera envoyée automatiquement à l’entreprise.`)) return;
+        const button = form.querySelector('button[type="submit"]');
+        button.disabled = true;
+        const values = Object.fromEntries(new FormData(form));
+        const result = await api(`/api/creator/subscription-invoices/${encodeURIComponent(form.dataset.subscriptionPaymentForm)}/payment`, { method: "POST", body: JSON.stringify(values), timeoutMs: 60_000 });
+        if (!result.ok) { button.disabled = false; return showFeedback(result.message || "Impossible d’enregistrer le paiement.", true); }
+        showFeedback(result.message || "Paiement enregistré.", !result.data?.receiptSent);
+        await renderSubscriptionInvoices();
+    }));
+    workspace.querySelectorAll("[data-resend-paid-invoice]").forEach(button => button.addEventListener("click", async () => {
+        button.disabled = true;
+        const result = await api(`/api/creator/subscription-invoices/${encodeURIComponent(button.dataset.resendPaidInvoice)}/payment-receipt/send`, { method: "POST", body: "{}", timeoutMs: 60_000 });
+        if (!result.ok) { button.disabled = false; return showFeedback(result.message || "Impossible de renvoyer la facture acquittée.", true); }
+        showFeedback(result.message || "Facture acquittée renvoyée.");
+        await renderSubscriptionInvoices();
+    }));
     workspace.querySelector("#creatorSubscriptionInvoicesBack").addEventListener("click", () => selectedAccountId ? renderAccountDetail(selectedAccountId) : workspace.replaceChildren());
 }
 
@@ -751,17 +770,25 @@ function renderSubscriptionInvoice(invoice) {
     const error = invoice.status === "failed" && invoice.lastError ? `<p class="auth-message error">${escapeHtml(invoice.lastError)}</p>` : "";
     const discount = Number(invoice.baseAmountCents || 0) > Number(invoice.amountCents || 0)
         ? `<small>${escapeHtml(invoice.financialData?.discountLabel || "Remise commerciale")} : −${formatCurrency(Number(invoice.baseAmountCents) - Number(invoice.amountCents))}</small>` : "";
+    const paid = invoice.paymentStatus === "paid";
+    const receiptStatus = paid ? paidReceiptStatus(invoice.receiptDeliveryStatus) : null;
+    const paymentDetails = paid ? `<small class="creator-payment-confirmed">Paiement reçu le ${formatDate(invoice.paidDate)}${invoice.paymentReference ? ` · Réf. ${escapeHtml(invoice.paymentReference)}` : ""}</small><small>Facture acquittée : ${escapeHtml(receiptStatus.label)}${invoice.receiptSentAt ? ` le ${escapeHtml(formatDateTime(invoice.receiptSentAt))}` : ""}</small>${invoice.receiptDeliveryStatus === "failed" && invoice.receiptLastError ? `<p class="auth-message error">${escapeHtml(invoice.receiptLastError)}</p>` : ""}` : "";
+    const paymentAction = !paid && invoice.status === "sent" ? `<form class="creator-subscription-payment-form" data-subscription-payment-form="${escapeHtml(invoice.id)}" data-invoice-number="${escapeHtml(invoice.invoiceNumber)}"><label>Date du règlement<input name="paidDate" type="date" max="${new Date().toISOString().slice(0, 10)}" value="${new Date().toISOString().slice(0, 10)}" required></label><label>Référence (facultative)<input name="paymentReference" maxlength="160" placeholder="Virement, transaction…"></label><button type="submit" class="primary-button">Accuser réception du paiement</button></form>` : paid && invoice.receiptDeliveryStatus === "failed" ? `<button type="button" class="secondary-button" data-resend-paid-invoice="${escapeHtml(invoice.id)}">Renvoyer la facture acquittée</button>` : !paid ? '<small class="muted">L’accusé de paiement sera disponible après l’envoi initial.</small>' : "";
     return `
         <article class="creator-subscription-invoice">
             <div><p class="eyebrow">${escapeHtml(invoice.subscriptionLabel || "Abonnement Depann’Home Pro")}</p><h4>${escapeHtml(invoice.invoiceNumber)}</h4><p>${escapeHtml(invoice.companyName || invoice.recipientName)} · ${escapeHtml(invoice.recipientEmail || "E-mail non renseigné")}</p></div>
-            <div class="creator-subscription-invoice-details"><span class="creator-subscription-badge ${escapeHtml(invoice.status || "pending")}">${status}</span><strong>${formatCurrency(invoice.amountCents)}</strong>${discount}<small>Émise le ${formatDate(invoice.issueDate)} · Échéance ${formatDate(invoice.dueDate)}</small><small>${escapeHtml(sentAt)}</small>${error}</div>
-            <a class="secondary-button" href="/api/creator/subscription-invoices/${encodeURIComponent(invoice.id)}/pdf" download> Télécharger le PDF</a>
+            <div class="creator-subscription-invoice-details"><span class="creator-subscription-badge ${escapeHtml(invoice.status || "pending")}">${status}</span>${paid ? '<span class="creator-subscription-badge paid">Réglée</span>' : ""}<strong>${formatCurrency(invoice.amountCents)}</strong>${discount}<small>Émise le ${formatDate(invoice.issueDate)} · Échéance ${formatDate(invoice.dueDate)}</small><small>${escapeHtml(sentAt)}</small>${paymentDetails}${error}</div>
+            <div class="creator-subscription-invoice-actions"><a class="secondary-button" href="/api/creator/subscription-invoices/${encodeURIComponent(invoice.id)}/pdf" download>Télécharger le PDF</a>${paymentAction}</div>
         </article>
     `;
 }
 
 function subscriptionInvoiceStatus(status) {
     return ({ sent: "Envoyée", pending: "À envoyer", sending: "Envoi en cours", failed: "Échec d’envoi" })[status] || "À envoyer";
+}
+
+function paidReceiptStatus(status) {
+    return ({ pending: { label: "En attente d’envoi" }, sending: { label: "Envoi en cours" }, sent: { label: "Envoyée" }, failed: { label: "Échec d’envoi" } })[status] || { label: "Non envoyée" };
 }
 
 function subscriptionNetAmountCents(account) {
