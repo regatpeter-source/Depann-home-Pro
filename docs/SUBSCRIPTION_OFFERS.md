@@ -2,6 +2,8 @@
 
 Les niveaux d’abonnement s’appliquent aux organisations utilisant l’interface Standard Depann’Home Pro. Les interfaces Partenaire et Groupe conservent leurs règles spécifiques.
 
+L’interface **Partenaire** utilise le niveau fonctionnel Pro afin d’accéder à ses outils dédiés, mais son portail est **gratuit** : tarif mensuel à 0 €, aucune échéance et aucune facture d’abonnement. L’interface Groupe reste soumise à sa règle commerciale propre.
+
 ## Basic
 
 - 20 € TTC par poste PC et par mois.

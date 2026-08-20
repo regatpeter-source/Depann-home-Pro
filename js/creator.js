@@ -567,7 +567,7 @@ function renderOrganizationFields(organization = {}) {
         <fieldset class="creator-subscription-fields"><legend>Organisation et interface</legend>
             <p class="muted">L’organisation conserve toujours le même compte, ses utilisateurs et toutes ses données. Modifier cette interface active simplement les modules correspondants.</p>
             <div class="form-grid">
-                <label>Type d’interface<select name="organizationInterfaceType"><option value="partner" ${interfaceType === "partner" ? "selected" : ""}>Interface Partenaire — Pro requis</option><option value="standard" ${interfaceType === "standard" ? "selected" : ""}>Interface Standard — modules selon Basic / Basic+ / Pro</option><option value="group" ${interfaceType === "group" ? "selected" : ""}>Interface Groupe / Multi-entreprises — Pro requis</option></select></label>
+                <label>Type d’interface<select name="organizationInterfaceType"><option value="partner" ${interfaceType === "partner" ? "selected" : ""}>Interface Partenaire — accès Pro gratuit</option><option value="standard" ${interfaceType === "standard" ? "selected" : ""}>Interface Standard — modules selon Basic / Basic+ / Pro</option><option value="group" ${interfaceType === "group" ? "selected" : ""}>Interface Groupe / Multi-entreprises — Pro requis</option></select></label>
                 <label>Type d’organisation<select name="organizationType"><option value="troubleshooting_company" ${organizationType === "troubleshooting_company" ? "selected" : ""}>Entreprise de dépannage</option><option value="leak_detection_company" ${organizationType === "leak_detection_company" ? "selected" : ""}>Recherche de fuite</option><option value="locksmith" ${organizationType === "locksmith" ? "selected" : ""}>Serrurier</option><option value="plumber" ${organizationType === "plumber" ? "selected" : ""}>Plombier</option><option value="property_manager" ${organizationType === "property_manager" ? "selected" : ""}>Syndic</option><option value="real_estate_agency" ${organizationType === "real_estate_agency" ? "selected" : ""}>Agence immobilière</option><option value="insurance" ${organizationType === "insurance" ? "selected" : ""}>Assurance</option><option value="expert" ${organizationType === "expert" ? "selected" : ""}>Expert</option><option value="principal" ${organizationType === "principal" ? "selected" : ""}>Donneur d’ordre</option><option value="partner_platform" ${organizationType === "partner_platform" ? "selected" : ""}>Plateforme partenaire</option><option value="other" ${organizationType === "other" ? "selected" : ""}>Autre</option></select></label>
                 <label>Licence<select name="organizationLicenseType"><option value="partner_portal" ${licenseType === "partner_portal" ? "selected" : ""}>Portail Partenaire</option><option value="depannhome_standard" ${licenseType === "depannhome_standard" ? "selected" : ""}>Depann’Home Pro Standard</option><option value="depannhome_group" ${licenseType === "depannhome_group" ? "selected" : ""}>Depann’Home Pro Groupe</option></select></label>
             </div>
@@ -590,6 +590,7 @@ function bindOrganizationInterface(form) {
         if (!isPro && interfaceType.value !== "standard") interfaceType.value = "standard";
         const expected = interfaceType.value === "partner" ? "partner_portal" : interfaceType.value === "group" ? "depannhome_group" : "depannhome_standard";
         licenseType.value = expected;
+        form.dispatchEvent(new Event("subscription-context-change"));
     };
     interfaceType.addEventListener("change", syncLicense);
     subscriptionTier?.addEventListener("change", syncLicense);
@@ -641,16 +642,20 @@ function bindSubscriptionTier(form) {
         const selected = tiers[tier.value] || tiers.basic;
         const pc = Math.max(1, Number(pcSeats.value) || 1);
         const mobile = Math.max(0, Number(mobileSeats.value) || 0);
+        const isFreePartner = form.elements.organizationInterfaceType?.value === "partner";
         const total = pc * selected.pc + mobile * selected.mobile;
-        price.value = `${total.toFixed(2)} €`;
-        billingEmail.required = true;
+        price.value = `${isFreePartner ? "0.00" : total.toFixed(2)} €`;
+        billingEmail.required = !isFreePartner;
         discountValue.max = discountMode.value === "percentage" ? "100" : "999999.99";
-        summary.innerHTML = `<strong>${selected.label} · ${total.toFixed(2)} € TTC / mois</strong><span>${pc} poste(s) PC × ${selected.pc} € + ${mobile} poste(s) mobile × ${selected.mobile} €</span><small>${selected.access}</small>`;
+        summary.innerHTML = isFreePartner
+            ? `<strong>Portail Partenaire · Gratuit</strong><span>Accès fonctionnel Pro sans abonnement mensuel.</span><small>Ce compte partenaire ne reçoit aucune facture d’abonnement.</small>`
+            : `<strong>${selected.label} · ${total.toFixed(2)} € TTC / mois</strong><span>${pc} poste(s) PC × ${selected.pc} € + ${mobile} poste(s) mobile × ${selected.mobile} €</span><small>${selected.access}</small>`;
     };
     tier.addEventListener("change", update);
     pcSeats.addEventListener("input", update);
     mobileSeats.addEventListener("input", update);
     discountMode.addEventListener("change", update);
+    form.addEventListener("subscription-context-change", update);
     update();
 }
 

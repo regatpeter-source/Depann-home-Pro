@@ -10,6 +10,7 @@ import { memberRoleAccessError, memberSeatError, memberSeatFamily, mobileAdminis
 const schema = readFileSync(new URL("../database/schema.sql", import.meta.url), "utf8");
 const database = readFileSync(new URL("../server/database.js", import.meta.url), "utf8");
 const creatorServer = readFileSync(new URL("../server/creator.js", import.meta.url), "utf8");
+const organizationsServer = readFileSync(new URL("../server/organizations.js", import.meta.url), "utf8");
 const creatorClient = readFileSync(new URL("../js/creator.js", import.meta.url), "utf8");
 const app = readFileSync(new URL("../app.js", import.meta.url), "utf8");
 const navigation = readFileSync(new URL("../js/navigation.js", import.meta.url), "utf8");
@@ -130,6 +131,12 @@ test("organization interfaces remain compatible with subscription tiers", () => 
         assert.equal(organizationInterfaceAccessMessage("pro", interfaceType), "", `pro:${interfaceType}`);
     }
     assert.match(creatorServer, /organizationInterfaceAccessMessage\(subscriptionTier, requestedInterface\)/);
+    assert.match(creatorServer, /isFreePartner \? "free" : "paid"/);
+    assert.match(creatorServer, /isFreePartner \? 0 : calculateSubscriptionPriceCents/);
+    assert.match(creatorClient, /Portail Partenaire · Gratuit/);
+    assert.match(organizationsServer, /SET subscription_plan='free',subscription_tier='pro',subscription_label='Portail Partenaire gratuit',monthly_price_cents=0/);
+    assert.match(organizationsServer, /organization\.interface_type='partner'/);
+    assert.match(organizationsServer, /subscription_renewal_date=NULL/);
 });
 
 test("subscription invoices detail charged PC and mobile seats", () => {

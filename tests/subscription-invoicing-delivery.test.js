@@ -136,3 +136,10 @@ test("la référence demandée dans la Console est explicitement celle du paieme
     assert.match(creatorSource, /Référence du paiement \(facultative\)/);
     assert.match(creatorSource, /N° de virement, transaction ou chèque/);
 });
+
+test("les portails Partenaire gratuits sont exclus de toute facturation d’abonnement", () => {
+    assert.match(invoicingSource, /LEFT JOIN depannhome_organizations organization ON organization\.account_owner_id = owner\.id/);
+    assert.match(invoicingSource, /COALESCE\(organization\.interface_type, 'standard'\) <> 'partner'/);
+    assert.match(invoicingSource, /invoice_owner\.subscription_plan='paid'/);
+    assert.match(invoicingSource, /COALESCE\(invoice_organization\.interface_type,'standard'\)<>'partner'/);
+});

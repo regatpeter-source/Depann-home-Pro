@@ -242,7 +242,9 @@ export async function processDueSubscriptionInvoices() {
                     THEN CASE WHEN COALESCE(profile.address, '') <> '' THEN E'\n' ELSE '' END || TRIM(CONCAT_WS(' ', profile.postal_code, profile.city)) ELSE '' END AS "recipientAddress"
             FROM depannhome_users owner
             LEFT JOIN depannhome_billing_profiles profile ON profile.owner_id = owner.id
+            LEFT JOIN depannhome_organizations organization ON organization.account_owner_id = owner.id
             WHERE owner.account_owner_id = owner.id AND owner.is_active = TRUE AND owner.is_archived = FALSE AND owner.subscription_plan = 'paid'
+                AND COALESCE(organization.interface_type, 'standard') <> 'partner'
                 AND owner.subscription_status = 'active' AND owner.monthly_price_cents > 0
                 AND owner.subscription_renewal_date IS NOT NULL AND owner.subscription_renewal_date <= CURRENT_DATE
             ORDER BY owner.subscription_renewal_date, owner.id
@@ -324,8 +326,10 @@ async function deliverPendingInvoices() {
             invoice.lines, invoice.financial_data AS "financialData"
         FROM depannhome_subscription_invoices invoice
         JOIN depannhome_users owner ON owner.id = invoice.account_owner_id
+        LEFT JOIN depannhome_organizations organization ON organization.account_owner_id = owner.id
         WHERE invoice.status IN ('pending', 'failed') AND owner.is_active = TRUE AND owner.is_archived = FALSE
             AND owner.subscription_plan = 'paid' AND owner.subscription_status = 'active'
+            AND COALESCE(organization.interface_type, 'standard') <> 'partner'
         ORDER BY invoice.created_at
     `);
     let sent = 0;
@@ -412,11 +416,12 @@ async function subscriptionInvoicingStatus() {
     const issuer = await getIssuerProfile();
     const { rows } = await getPool().query(`
         SELECT
-            COUNT(*) FILTER (WHERE owner.account_owner_id=owner.id AND owner.is_active AND NOT owner.is_archived AND owner.subscription_plan='paid' AND owner.subscription_status='active' AND owner.monthly_price_cents>0 AND owner.subscription_renewal_date IS NOT NULL AND owner.subscription_renewal_date<=CURRENT_DATE)::int AS "dueAccounts",
-            (SELECT COUNT(*)::int FROM depannhome_subscription_invoices WHERE status='pending') AS pending,
-            (SELECT COUNT(*)::int FROM depannhome_subscription_invoices WHERE status='failed') AS failed,
-            (SELECT COUNT(*)::int FROM depannhome_subscription_invoices WHERE status='sending') AS sending
+            COUNT(*) FILTER (WHERE owner.account_owner_id=owner.id AND owner.is_active AND NOT owner.is_archived AND owner.subscription_plan='paid' AND owner.subscription_status='active' AND owner.monthly_price_cents>0 AND owner.subscription_renewal_date IS NOT NULL AND owner.subscription_renewal_date<=CURRENT_DATE AND COALESCE(organization.interface_type,'standard')<>'partner')::int AS "dueAccounts",
+            (SELECT COUNT(*)::int FROM depannhome_subscription_invoices invoice JOIN depannhome_users invoice_owner ON invoice_owner.id=invoice.account_owner_id LEFT JOIN depannhome_organizations invoice_organization ON invoice_organization.account_owner_id=invoice_owner.id WHERE invoice.status='pending' AND invoice_owner.subscription_plan='paid' AND COALESCE(invoice_organization.interface_type,'standard')<>'partner') AS pending,
+            (SELECT COUNT(*)::int FROM depannhome_subscription_invoices invoice JOIN depannhome_users invoice_owner ON invoice_owner.id=invoice.account_owner_id LEFT JOIN depannhome_organizations invoice_organization ON invoice_organization.account_owner_id=invoice_owner.id WHERE invoice.status='failed' AND invoice_owner.subscription_plan='paid' AND COALESCE(invoice_organization.interface_type,'standard')<>'partner') AS failed,
+            (SELECT COUNT(*)::int FROM depannhome_subscription_invoices invoice JOIN depannhome_users invoice_owner ON invoice_owner.id=invoice.account_owner_id LEFT JOIN depannhome_organizations invoice_organization ON invoice_organization.account_owner_id=invoice_owner.id WHERE invoice.status='sending' AND invoice_owner.subscription_plan='paid' AND COALESCE(invoice_organization.interface_type,'standard')<>'partner') AS sending
         FROM depannhome_users owner
+        LEFT JOIN depannhome_organizations organization ON organization.account_owner_id=owner.id
     `);
     return { profileComplete: isCompleteProfile(issuer), missingProfileFields: incompleteProfileFields(issuer), dueAccounts: rows[0]?.dueAccounts || 0, pending: rows[0]?.pending || 0, failed: rows[0]?.failed || 0, sending: rows[0]?.sending || 0 };
 }

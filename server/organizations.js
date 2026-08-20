@@ -26,6 +26,12 @@ export async function initializeOrganizations() {
         SELECT id,'standard','troubleshooting_company','depannhome_standard','{}'::jsonb
         FROM depannhome_users WHERE account_owner_id=id
         ON CONFLICT(account_owner_id) DO NOTHING`);
+    await db.query(`UPDATE depannhome_users owner
+        SET subscription_plan='free',subscription_tier='pro',subscription_label='Portail Partenaire gratuit',monthly_price_cents=0,
+            subscription_discount_label='',subscription_discount_mode='fixed',subscription_discount_value=0,subscription_renewal_date=NULL,updated_at=NOW()
+        FROM depannhome_organizations organization
+        WHERE organization.account_owner_id=owner.id AND owner.account_owner_id=owner.id AND organization.interface_type='partner'
+            AND (owner.subscription_plan<>'free' OR owner.subscription_tier<>'pro' OR owner.monthly_price_cents<>0 OR owner.subscription_renewal_date IS NOT NULL)`);
     await db.query("CREATE INDEX IF NOT EXISTS depannhome_organizations_interface_idx ON depannhome_organizations(interface_type,license_type)");
 }
 
