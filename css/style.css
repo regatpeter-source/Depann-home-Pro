@@ -379,7 +379,6 @@ textarea{
 }
 
 body.desktop-device #photoBtn,
-body.desktop-device #favoritesBtn,
 body.desktop-device footer .nav-button:not([data-nav="home"]){
     display:none;
 }

@@ -11,12 +11,12 @@ export const LICENSE_TYPES = Object.freeze(["partner_portal", "depannhome_standa
 const ALL_FEATURES = Object.freeze({
     clients: true, calendar: true, library: true, billing: true, accounting: true, quitus: true, technicalReports: true,
     partnerMissions: true, partnerConnections: true, messages: true, settings: true, imports: true, groups: true,
-    purchases: true, connectors: true, photo: true, favorites: true
+    purchases: true, connectors: true, photo: true
 });
 const PARTNER_FEATURES = Object.freeze({
     clients: true, calendar: true, library: false, billing: true, accounting: false, quitus: false, technicalReports: false,
     partnerMissions: true, partnerConnections: true, messages: true, settings: true, imports: false, groups: false,
-    purchases: false, connectors: false, photo: false, favorites: false
+    purchases: false, connectors: false, photo: false
 });
 const MOBILE_ROLES = Object.freeze(["mobile_admin", "team_lead", "technician"]);
 

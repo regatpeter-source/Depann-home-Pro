@@ -2,7 +2,6 @@ export const APP_VERSION = "1.15.3 Facture depuis devis";
 export const DATA_VERSION = "2026-07-20-35";
 
 export const STORAGE_KEYS = {
-    favorites: "depannHomePro:favorites",
     history: "depannHomePro:history",
     clients: "depannHomePro:clients"
 };
@@ -51,7 +50,6 @@ export const ROUTES = {
         messages: "messages",
     calendar: "calendar",
     library: "library",
-    favorites: "favorites",
     history: "history",
     settings: "settings",
     creator: "creator"
@@ -81,7 +79,6 @@ export const MENU_ACCESS = Object.freeze({
         partnerMissions: PARTNER_MISSION_USERS,
         partnerSandbox: ADMINISTRATORS,
         photo: OPERATIONAL_MOBILE,
-        favorites: OPERATIONAL_MOBILE,
         settings: OPERATIONAL_PC
     }),
     navigation: Object.freeze({
@@ -100,7 +97,6 @@ export const MENU_ACCESS = Object.freeze({
         [ROUTES.technicalReports]: TERRAIN,
         [ROUTES.calendar]: CALENDAR_USERS,
         [ROUTES.library]: LIBRARY_USERS,
-        [ROUTES.favorites]: OPERATIONAL_MOBILE,
         [ROUTES.settings]: OPERATIONAL_PC
     })
 });

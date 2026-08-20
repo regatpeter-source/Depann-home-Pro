@@ -631,7 +631,7 @@ CREATE TABLE IF NOT EXISTS depannhome_messages (
     id BIGSERIAL PRIMARY KEY,
     sender_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
     recipient_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
-    client_id VARCHAR(100),
+    client_id VARCHAR(100) NOT NULL,
     body VARCHAR(2000) NOT NULL,
     read_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -644,6 +644,12 @@ ALTER TABLE depannhome_messages
 ALTER TABLE depannhome_messages
     ADD COLUMN IF NOT EXISTS client_id VARCHAR(100),
     ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+DELETE FROM depannhome_messages
+WHERE client_id IS NULL OR BTRIM(client_id) = '';
+
+ALTER TABLE depannhome_messages
+    ALTER COLUMN client_id SET NOT NULL;
 
 CREATE INDEX IF NOT EXISTS depannhome_messages_recipient_idx
     ON depannhome_messages (recipient_id, created_at DESC);

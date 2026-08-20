@@ -1,4 +1,4 @@
-import { ROUTES, STORAGE_KEYS, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=125";
+import { ROUTES, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=126";
 import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=167";
 import { openCreatorPartnerRequest, openCreatorRequestNotification, renderCreatorConsole } from "./creator.js?v=134";
 import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=176";
@@ -19,7 +19,6 @@ import { renderPhotoRecognition } from "./photo-recognition.js?v=108";
 import { getContextualSearchResults } from "./search.js?v=67";
 import { state, resetSelection } from "./state.js?v=44";
 import {
-    getStoredRefs,
     getSettings,
     saveSettings
 } from "./storage.js?v=44";
@@ -184,7 +183,6 @@ function bindEvents() {
     const calendarBtn = document.getElementById("calendarBtn");
     const libraryBtn = document.getElementById("libraryBtn");
     const photoBtn = document.getElementById("photoBtn");
-    const favoritesBtn = document.getElementById("favoritesBtn");
     const settingsBtn = document.getElementById("settingsBtn");
 
     search.addEventListener("input", event => {
@@ -214,7 +212,6 @@ function bindEvents() {
     calendarBtn?.addEventListener("click", () => { if (canAccessQuick("calendar")) openCalendar(); });
     libraryBtn?.addEventListener("click", () => { if (canAccessQuick("library")) renderLibrary(); });
     photoBtn?.addEventListener("click", () => { if (canAccessQuick("photo")) renderPhotoRecognition(database, navigateToRef); });
-    favoritesBtn.addEventListener("click", () => { if (canAccessQuick("favorites")) renderFavorites(); });
     settingsBtn?.addEventListener("click", () => { if (canAccessQuick("settings")) renderSettings(); });
 
     document.querySelectorAll(".nav-button").forEach(button => {
@@ -245,7 +242,6 @@ function bindEvents() {
             if (nav === ROUTES.partnerSandbox && document.body.dataset.role === "admin") renderPartnerSandbox();
             if (nav === ROUTES.calendar) openCalendar();
             if (nav === ROUTES.library) renderLibrary();
-            if (nav === ROUTES.favorites) renderFavorites();
             if (nav === ROUTES.settings) renderSettings();
         });
     });
@@ -255,8 +251,7 @@ function applyRoleBasedMenus() {
     const quickSelectors = {
         clients: "#clientsBtn", calendar: "#calendarBtn", library: "#libraryBtn", billing: "#billingBtn", purchases: "#purchasesBtn",
         accounting: "#accountingBtn", groups: "#groupsBtn", partnerMissions: "#partnerMissionsBtn",
-        partnerSandbox: "#partnerSandboxBtn", photo: "#photoBtn",
-        favorites: "#favoritesBtn", settings: "#settingsBtn"
+        partnerSandbox: "#partnerSandboxBtn", photo: "#photoBtn", settings: "#settingsBtn"
     };
     Object.entries(quickSelectors).forEach(([menu, selector]) => {
         const button = document.querySelector(selector);
@@ -324,7 +319,7 @@ function canAccessSettingsSection(section) {
 
 function isOrganizationRouteEnabled(route) {
     if (document.body.dataset.creator === "true") return true;
-    const featureByRoute = { [ROUTES.search]: "library", [ROUTES.store]: "library", [ROUTES.clients]: "clients", [ROUTES.calendar]: "calendar", [ROUTES.library]: "library", [ROUTES.billing]: "billing", [ROUTES.accounting]: "accounting", [ROUTES.purchases]: "purchases", [ROUTES.messages]: "messages", [ROUTES.technicalReports]: "technicalReports", [ROUTES.partnerMissions]: "partnerMissions", [ROUTES.groups]: "groups", [ROUTES.photo]: "photo", [ROUTES.favorites]: "favorites", [ROUTES.history]: "favorites", [ROUTES.settings]: "settings" };
+    const featureByRoute = { [ROUTES.search]: "library", [ROUTES.store]: "library", [ROUTES.clients]: "clients", [ROUTES.calendar]: "calendar", [ROUTES.library]: "library", [ROUTES.billing]: "billing", [ROUTES.accounting]: "accounting", [ROUTES.purchases]: "purchases", [ROUTES.messages]: "messages", [ROUTES.technicalReports]: "technicalReports", [ROUTES.partnerMissions]: "partnerMissions", [ROUTES.groups]: "groups", [ROUTES.photo]: "photo", [ROUTES.settings]: "settings" };
     const feature = featureByRoute[route];
     return !feature || organizationFeatureEnabled(feature);
 }
@@ -341,7 +336,7 @@ function isMobilePostRole() {
 }
 
 function menuRoute(menu) {
-    return ({ clients: ROUTES.clients, calendar: ROUTES.calendar, library: ROUTES.library, billing: ROUTES.billing, accounting: ROUTES.accounting, purchases: ROUTES.purchases, groups: ROUTES.groups, partnerMissions: ROUTES.partnerMissions, partnerSandbox: ROUTES.partnerSandbox, photo: ROUTES.photo, favorites: ROUTES.favorites, settings: ROUTES.settings })[menu] || "";
+    return ({ clients: ROUTES.clients, calendar: ROUTES.calendar, library: ROUTES.library, billing: ROUTES.billing, accounting: ROUTES.accounting, purchases: ROUTES.purchases, groups: ROUTES.groups, partnerMissions: ROUTES.partnerMissions, partnerSandbox: ROUTES.partnerSandbox, photo: ROUTES.photo, settings: ROUTES.settings })[menu] || "";
 }
 
 function openHome() {
@@ -386,7 +381,7 @@ function openNotificationDestination(notification) {
     if (entityType === "partner_connection") return renderSettings({ section: "network" });
     if (entityType === "technical_report") return organizationFeatureEnabled("technicalReports") ? renderTechnicalReports(Number(entityId) || 0) : openHome();
     if (entityType === "billing_document") return renderBilling();
-    if (entityType === "client") return openClients(entityId);
+    if (entityType === "client") return openClients(entityId || String(notification?.payload?.clientId || ""));
     if (entityType === "calendar_event") return renderCalendar();
 }
 
@@ -1113,39 +1108,6 @@ function getRefPhoto(ref) {
     return Array.isArray(product?.photos) && product.photos.length ? product.photos[0] : "";
 }
 
-function renderFavorites() {
-    clearSearch();
-    resetSelection("all");
-    setPage("Favoris", ROUTES.favorites);
-
-    const container = getContainer();
-    const favorites = getStoredRefs(STORAGE_KEYS.favorites);
-
-    if (!favorites.length) {
-        container.appendChild(createInfo("Aucun favori pour le moment. Ouvrez une procédure puis cliquez sur ☆ Favori."));
-        return;
-    }
-
-    renderRefList(favorites, container, "");
-}
-
-function renderRefList(refs, container, icon) {
-    refs.forEach(ref => {
-        const target = resolveRef(ref);
-        if (!target?.product) return;
-
-        container.appendChild(
-            createCard(
-                "",
-                target.product.name,
-                `${target.brand.name} · ${target.category.name}`,
-                () => navigateToRef(ref),
-                { image: getRefPhoto(ref) }
-            )
-        );
-    });
-}
-
 function renderSettings(options = {}) {
     if (!canAccessRoute(ROUTES.settings)) {
         openHome();
@@ -1264,8 +1226,8 @@ function renderSettings(options = {}) {
         if (headerP) headerP.textContent = subtitle;
         const search = document.getElementById('search'); if (search) search.placeholder = searchPlaceholder;
         const texts = lang === "en"
-            ? { home: "Home", search: "Search", store: "Store", photo: "Photo", clients: "Clients", billing: "Quotes", purchases: "Purchases", calendar: "Planning", library: "Library", favorites: "Favorites", settings: "Settings" }
-            : { home: "Accueil", search: "Recherche", store: "Magasin", photo: "Photo", clients: "Clients", billing: "Devis", purchases: "Achats", calendar: "Planning", library: "Bibliothèque", favorites: "Favoris", settings: "Paramètres" };
+            ? { home: "Home", search: "Search", store: "Store", photo: "Photo", clients: "Clients", billing: "Quotes", purchases: "Purchases", calendar: "Planning", library: "Library", settings: "Settings" }
+            : { home: "Accueil", search: "Recherche", store: "Magasin", photo: "Photo", clients: "Clients", billing: "Devis", purchases: "Achats", calendar: "Planning", library: "Bibliothèque", settings: "Paramètres" };
         document.querySelectorAll("footer .nav-button").forEach(button => {
             const label = button.querySelector(".nav-label-clients") || button.querySelector("span");
             if (label) label.textContent = texts[button.dataset.nav] || label.textContent;

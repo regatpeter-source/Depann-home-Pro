@@ -9,7 +9,7 @@ export const SUBSCRIPTION_TIER_CONFIG = Object.freeze({
         mobileRateCents: 500,
         description: "Postes PC et Administrateur Mobile, bibliothèque mobile et achats sur tous les PC",
         allowedRoles: Object.freeze([...PC_ROLES, "mobile_admin"]),
-        features: Object.freeze({ clients: true, calendar: false, library: false, billing: true, accounting: true, quitus: false, technicalReports: false, partnerMissions: false, partnerConnections: false, messages: true, settings: true, imports: false, groups: false, purchases: true, connectors: false, photo: false, favorites: false })
+        features: Object.freeze({ clients: true, calendar: false, library: false, billing: true, accounting: true, quitus: false, technicalReports: false, partnerMissions: false, partnerConnections: false, messages: true, settings: true, imports: false, groups: false, purchases: true, connectors: false, photo: false })
     }),
     basic_plus: Object.freeze({
         label: "Basic+",
@@ -17,7 +17,7 @@ export const SUBSCRIPTION_TIER_CONFIG = Object.freeze({
         mobileRateCents: 800,
         description: "Tous postes, planning, bibliothèque mobile et achats sur tous les PC",
         allowedRoles: Object.freeze([...PC_ROLES, ...ALL_MOBILE_ROLES]),
-        features: Object.freeze({ clients: true, calendar: true, library: false, billing: true, accounting: true, quitus: false, technicalReports: false, partnerMissions: false, partnerConnections: false, messages: true, settings: true, imports: false, groups: false, purchases: true, connectors: false, photo: false, favorites: false })
+        features: Object.freeze({ clients: true, calendar: true, library: false, billing: true, accounting: true, quitus: false, technicalReports: false, partnerMissions: false, partnerConnections: false, messages: true, settings: true, imports: false, groups: false, purchases: true, connectors: false, photo: false })
     }),
     pro: Object.freeze({
         label: "Pro",
@@ -25,7 +25,7 @@ export const SUBSCRIPTION_TIER_CONFIG = Object.freeze({
         mobileRateCents: 1500,
         description: "Tous postes avec accès complet, bibliothèque mobile et achats sur tous les PC",
         allowedRoles: Object.freeze([...PC_ROLES, ...ALL_MOBILE_ROLES]),
-        features: Object.freeze({ clients: true, calendar: true, library: true, billing: true, accounting: true, quitus: true, technicalReports: true, partnerMissions: true, partnerConnections: true, messages: true, settings: true, imports: true, groups: true, purchases: true, connectors: true, photo: true, favorites: true })
+        features: Object.freeze({ clients: true, calendar: true, library: true, billing: true, accounting: true, quitus: true, technicalReports: true, partnerMissions: true, partnerConnections: true, messages: true, settings: true, imports: true, groups: true, purchases: true, connectors: true, photo: true })
     })
 });
 

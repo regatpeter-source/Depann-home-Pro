@@ -44,23 +44,6 @@ export function saveSettings(settings) {
     return toSave;
 }
 
-export function isFavorite(ref) {
-    return getStoredRefs(STORAGE_KEYS.favorites).some(item => sameRef(item, ref));
-}
-
-export function toggleFavorite(ref) {
-    const favorites = getStoredRefs(STORAGE_KEYS.favorites);
-
-    if (favorites.some(item => sameRef(item, ref))) {
-        setStoredRefs(STORAGE_KEYS.favorites, favorites.filter(item => !sameRef(item, ref)));
-        return false;
-    }
-
-    favorites.unshift(ref);
-    setStoredRefs(STORAGE_KEYS.favorites, favorites);
-    return true;
-}
-
 export function clearHistory() {
     localStorage.removeItem(STORAGE_KEYS.history);
 }

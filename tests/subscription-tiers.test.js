@@ -111,7 +111,7 @@ test("Library is mobile-only and Purchases are available on every PC plus Mobile
 
 test("Pro enables every product feature", () => {
     const pro = publicOrganization({ interfaceType: "standard", licenseType: "depannhome_standard", subscriptionTier: "pro" });
-    for (const feature of ["clients", "calendar", "library", "billing", "accounting", "quitus", "technicalReports", "partnerMissions", "partnerConnections", "messages", "settings", "imports", "groups", "purchases", "connectors", "photo", "favorites"]) assert.equal(isFeatureEnabled(pro, feature), true, feature);
+    for (const feature of ["clients", "calendar", "library", "billing", "accounting", "quitus", "technicalReports", "partnerMissions", "partnerConnections", "messages", "settings", "imports", "groups", "purchases", "connectors", "photo"]) assert.equal(isFeatureEnabled(pro, feature), true, feature);
 });
 
 test("a Standard license override cannot unlock a feature outside its tier", () => {

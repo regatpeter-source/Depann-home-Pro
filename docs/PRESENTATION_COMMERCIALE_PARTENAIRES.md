@@ -387,7 +387,7 @@ Les équipes terrain peuvent organiser leurs ressources métier.
 - Documents PDF, bureautiques, textes et images.
 - Notices et ressources constructeur référencées.
 - Recherche dans le catalogue technique.
-- Favoris et historique de consultation.
+- Historique de consultation.
 - Reconnaissance photo assistée lorsque le navigateur et les ressources disponibles le permettent.
 
 ---
