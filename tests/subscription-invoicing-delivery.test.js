@@ -125,7 +125,8 @@ test("les nouvelles factures utilisent une série annuelle continue et transacti
     }
     assert.match(invoicingSource, /INSERT INTO depannhome_subscription_invoice_sequences \(series_year,last_number\) VALUES \(\$1,1\)/);
     assert.match(invoicingSource, /last_number=depannhome_subscription_invoice_sequences\.last_number\+1/);
-    assert.match(invoicingSource, /regexp_match\(invoice_number,'\^DHP-\(\[0-9\]\{4\}\)-\(\[0-9\]\{6\}\)\$'\)/);
+    assert.match(invoicingSource, /regexp_matches\(invoice_number,'\^DHP-\(\[0-9\]\{4\}\)-\(\[0-9\]\{6\}\)\$'\)/);
+    assert.doesNotMatch(invoicingSource, /regexp_match\(invoice_number/);
     assert.match(invoicingSource, /DHP-\$\{seriesYear\}-\$\{String\(sequences\[0\]\.lastNumber\)\.padStart\(6, "0"\)\}/);
     assert.match(invoicingSource, /SELECT TO_CHAR\(CURRENT_DATE,'YYYY-MM-DD'\) AS "issueDate"/);
     assert.doesNotMatch(invoicingSource, /DHP-\$\{billingPeriod\.slice/);

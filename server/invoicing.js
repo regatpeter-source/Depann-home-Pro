@@ -81,7 +81,7 @@ export async function initializeSubscriptionInvoicing() {
     await database.query(`CREATE TABLE IF NOT EXISTS depannhome_subscription_invoice_sequences (series_year INTEGER PRIMARY KEY CHECK (series_year >= 2020), last_number BIGINT NOT NULL DEFAULT 0 CHECK (last_number >= 0), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
     await database.query(`INSERT INTO depannhome_subscription_invoice_sequences (series_year,last_number)
         SELECT parts[1]::integer,MAX(parts[2]::bigint) FROM depannhome_subscription_invoices
-        CROSS JOIN LATERAL regexp_match(invoice_number,'^DHP-([0-9]{4})-([0-9]{6})$') AS parsed(parts) GROUP BY parts[1]
+        CROSS JOIN LATERAL regexp_matches(invoice_number,'^DHP-([0-9]{4})-([0-9]{6})$') AS parsed(parts) GROUP BY parts[1]
         ON CONFLICT (series_year) DO UPDATE SET last_number=GREATEST(depannhome_subscription_invoice_sequences.last_number,EXCLUDED.last_number),updated_at=NOW()`);
     await database.query(`CREATE TABLE IF NOT EXISTS depannhome_subscription_invoice_audit (id BIGSERIAL PRIMARY KEY, invoice_id BIGINT NOT NULL REFERENCES depannhome_subscription_invoices(id) ON DELETE CASCADE, account_owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE, actor_id BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL, action VARCHAR(40) NOT NULL, details JSONB NOT NULL DEFAULT '{}'::jsonb, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
     await database.query(`CREATE INDEX IF NOT EXISTS depannhome_subscription_invoice_audit_invoice_idx ON depannhome_subscription_invoice_audit (invoice_id, created_at DESC)`);

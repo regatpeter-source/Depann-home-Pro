@@ -616,7 +616,7 @@ CREATE TABLE IF NOT EXISTS depannhome_subscription_invoice_sequences (
 INSERT INTO depannhome_subscription_invoice_sequences (series_year, last_number)
 SELECT parts[1]::INTEGER, MAX(parts[2]::BIGINT)
 FROM depannhome_subscription_invoices
-CROSS JOIN LATERAL regexp_match(invoice_number, '^DHP-([0-9]{4})-([0-9]{6})$') AS parsed(parts)
+CROSS JOIN LATERAL regexp_matches(invoice_number, '^DHP-([0-9]{4})-([0-9]{6})$') AS parsed(parts)
 GROUP BY parts[1]
 ON CONFLICT (series_year) DO UPDATE
 SET last_number = GREATEST(depannhome_subscription_invoice_sequences.last_number, EXCLUDED.last_number),
