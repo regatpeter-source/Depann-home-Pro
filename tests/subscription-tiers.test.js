@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { calculateSubscriptionPriceCents, isRoleAllowedForSubscription, subscriptionRoleAccessMessage, subscriptionTierConfig } from "../server/subscription-tiers.js";
-import { isFeatureEnabled, isFeatureEnabledForRole, publicOrganization } from "../server/organizations.js";
+import { isFeatureEnabled, isFeatureEnabledForRole, organizationInterfaceAccessMessage, publicOrganization } from "../server/organizations.js";
 import { MENU_ACCESS, ROUTES } from "../js/config.js";
 import { buildSubscriptionInvoiceSnapshot } from "../server/invoicing.js";
 import { memberRoleAccessError, memberSeatError, memberSeatFamily, mobileAdministratorSeatError } from "../server/auth.js";
@@ -117,6 +117,19 @@ test("Pro enables every product feature", () => {
 test("a Standard license override cannot unlock a feature outside its tier", () => {
     const basic = publicOrganization({ interfaceType: "standard", licenseType: "depannhome_standard", subscriptionTier: "basic", licenseFeatures: { technicalReports: true } });
     assert.equal(isFeatureEnabled(basic, "technicalReports"), false);
+});
+
+test("organization interfaces remain compatible with subscription tiers", () => {
+    for (const tier of ["basic", "basic_plus"]) {
+        assert.equal(organizationInterfaceAccessMessage(tier, "standard"), "", `${tier}:standard`);
+        for (const interfaceType of ["partner", "group"]) {
+            assert.match(organizationInterfaceAccessMessage(tier, interfaceType), /nécessitent l’abonnement Pro/, `${tier}:${interfaceType}`);
+        }
+    }
+    for (const interfaceType of ["standard", "partner", "group"]) {
+        assert.equal(organizationInterfaceAccessMessage("pro", interfaceType), "", `pro:${interfaceType}`);
+    }
+    assert.match(creatorServer, /organizationInterfaceAccessMessage\(subscriptionTier, requestedInterface\)/);
 });
 
 test("subscription invoices detail charged PC and mobile seats", () => {
@@ -241,7 +254,7 @@ test("tier features are protected on both API and navigation layers", () => {
     assert.doesNotMatch(companyProfileSync, /DO UPDATE SET is_listed=/);
     assert.doesNotMatch(companyProfileSync, /DO UPDATE SET[^`]*accepts_partner_missions=/);
     assert.doesNotMatch(companyProfileSync, /DO UPDATE SET[^`]*availability_status=/);
-    assert.match(creatorServer, /Les interfaces Partenaire et Groupe nécessitent l’abonnement Pro/);
+    assert.match(creatorServer, /organizationInterfaceAccessMessage\(subscriptionTier, requestedInterface\)/);
     assert.doesNotMatch(creatorServer, /Désactivez les comptes Technicien et Chef d’équipe avant de passer/);
     assert.match(creatorServer, /subscriptionRoleAccessMessage\(owners\[0\]\.subscriptionTier, role\)/);
     assert.match(partnerConnections, /owner\.subscription_tier='pro'/);

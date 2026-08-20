@@ -2,7 +2,7 @@ import bcrypt from "bcrypt";
 import { getPool } from "./database.js";
 import { isCreatorUsername } from "./auth.js";
 import { creatorNetworkDirectory, creatorNetworkStatistics, updateCreatorNetworkDirectory } from "./partner-connections.js";
-import { createOrganization, getOrganization, getOrganizationHistory, updateOrganization } from "./organizations.js";
+import { createOrganization, getOrganization, getOrganizationHistory, organizationInterfaceAccessMessage, updateOrganization } from "./organizations.js";
 import { calculateSubscriptionPriceCents, normalizeSubscriptionTier, subscriptionRoleAccessMessage, subscriptionTierConfig } from "./subscription-tiers.js";
 import { createNotification } from "./collaboration.js";
 
@@ -495,7 +495,8 @@ function sanitizeAccount(value, requireCompleteProfile = false) {
     if (subscriptionPlan === "paid" && subscriptionDiscountMode === "fixed" && Math.round(subscriptionDiscountValue * 100) > monthlyPriceCents) return { ok: false, message: "La réduction fixe ne peut pas dépasser le tarif mensuel." };
     if (billingEmail && !EMAIL_PATTERN.test(billingEmail)) return { ok: false, message: "L’e-mail de facturation est invalide." };
     if (subscriptionPlan === "paid" && !billingEmail) return { ok: false, message: "L’e-mail de facturation est obligatoire pour un abonnement payant." };
-    if (subscriptionTier !== "pro" && requestedInterface !== "standard") return { ok: false, message: "Les interfaces Partenaire et Groupe nécessitent l’abonnement Pro." };
+    const interfaceAccessError = organizationInterfaceAccessMessage(subscriptionTier, requestedInterface);
+    if (interfaceAccessError) return { ok: false, message: interfaceAccessError };
     const companyProfile = sanitizeCompanyProfile(value, { companyName, billingEmail, phone, requireCompleteProfile });
     if (!companyProfile.ok) return companyProfile;
     return { ok: true, companyName, fullName, phone, billingEmail, maxPcUsers, maxTechnicians, subscriptionPlan, subscriptionTier, subscriptionLabel,

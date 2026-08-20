@@ -116,6 +116,14 @@ export function organizationBadge(interfaceType) {
     return ({ standard: "Entreprise Depann’Home Pro", partner: "Partenaire", group: "Groupe" })[interfaceType] || "Organisation";
 }
 
+export function organizationInterfaceAccessMessage(subscriptionTier, interfaceType) {
+    const tier = normalizeSubscriptionTier(subscriptionTier, "basic");
+    const requestedInterface = INTERFACE_TYPES.includes(interfaceType) ? interfaceType : "standard";
+    return tier !== "pro" && requestedInterface !== "standard"
+        ? "Les interfaces Partenaire et Groupe nécessitent l’abonnement Pro."
+        : "";
+}
+
 function resolvedFeatures(interfaceType, subscriptionTier, overrides) {
     const defaults = organizationDefaults(interfaceType, subscriptionTier);
     if (interfaceType !== "standard") return { ...defaults, ...overrides };
