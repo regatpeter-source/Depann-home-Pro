@@ -594,6 +594,7 @@ CREATE TABLE IF NOT EXISTS depannhome_subscription_invoices (
     paid_date DATE,
     paid_at TIMESTAMPTZ,
     paid_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+    paid_amount_cents INTEGER NOT NULL DEFAULT 0 CHECK (paid_amount_cents >= 0),
     payment_reference VARCHAR(160) NOT NULL DEFAULT '',
     receipt_delivery_status VARCHAR(20) NOT NULL DEFAULT 'not_sent' CHECK (receipt_delivery_status IN ('not_sent', 'pending', 'sending', 'sent', 'failed')),
     receipt_sent_at TIMESTAMPTZ,
@@ -640,6 +641,51 @@ CREATE TABLE IF NOT EXISTS depannhome_subscription_invoice_audit (
 
 CREATE INDEX IF NOT EXISTS depannhome_subscription_invoice_audit_invoice_idx
     ON depannhome_subscription_invoice_audit (invoice_id, created_at DESC);
+
+ALTER TABLE depannhome_subscription_invoices ADD COLUMN IF NOT EXISTS paid_amount_cents INTEGER NOT NULL DEFAULT 0 CHECK (paid_amount_cents >= 0);
+UPDATE depannhome_subscription_invoices SET paid_amount_cents=net_amount_cents WHERE payment_status='paid' AND paid_amount_cents=0;
+
+CREATE TABLE IF NOT EXISTS depannhome_subscription_credit_note_sequences (
+    series_year INTEGER PRIMARY KEY CHECK (series_year >= 2020), last_number BIGINT NOT NULL DEFAULT 0 CHECK (last_number >= 0), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE TABLE IF NOT EXISTS depannhome_subscription_credit_notes (
+    id BIGSERIAL PRIMARY KEY,
+    source_invoice_id BIGINT NOT NULL REFERENCES depannhome_subscription_invoices(id) ON DELETE RESTRICT,
+    account_owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE RESTRICT,
+    credit_number VARCHAR(80) NOT NULL UNIQUE, source_invoice_number VARCHAR(80) NOT NULL, source_invoice_date DATE NOT NULL, issue_date DATE NOT NULL,
+    credit_kind VARCHAR(20) NOT NULL CHECK (credit_kind IN ('full','partial')), reason VARCHAR(1000) NOT NULL CHECK (CHAR_LENGTH(reason) >= 10),
+    amount_cents INTEGER NOT NULL CHECK (amount_cents > 0), tax_base_cents INTEGER NOT NULL CHECK (tax_base_cents >= 0),
+    vat_amount_cents INTEGER NOT NULL CHECK (vat_amount_cents >= 0), vat_rate NUMERIC(5,2) NOT NULL CHECK (vat_rate >= 0 AND vat_rate <= 100),
+    recipient_name VARCHAR(160) NOT NULL, recipient_email VARCHAR(160) NOT NULL, recipient_address VARCHAR(500) NOT NULL DEFAULT '',
+    issuer_profile JSONB NOT NULL, lines JSONB NOT NULL DEFAULT '[]'::jsonb, financial_data JSONB NOT NULL DEFAULT '{}'::jsonb,
+    pdf_data BYTEA NOT NULL, pdf_sha256 CHAR(64) NOT NULL, created_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+    delivery_status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (delivery_status IN ('pending','sending','sent','failed')),
+    sent_at TIMESTAMPTZ, last_error VARCHAR(1000) NOT NULL DEFAULT '',
+    refund_status VARCHAR(20) NOT NULL DEFAULT 'not_required' CHECK (refund_status IN ('not_required','pending','refunded')),
+    refunded_date DATE, refunded_at TIMESTAMPTZ, refunded_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+    refund_reference VARCHAR(160) NOT NULL DEFAULT '', created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS depannhome_subscription_credit_notes_invoice_idx ON depannhome_subscription_credit_notes(source_invoice_id,issue_date,id);
+ALTER TABLE depannhome_subscription_credit_notes ADD COLUMN IF NOT EXISTS source_invoice_date DATE;
+UPDATE depannhome_subscription_credit_notes credit SET source_invoice_date=invoice.issue_date FROM depannhome_subscription_invoices invoice WHERE credit.source_invoice_id=invoice.id AND credit.source_invoice_date IS NULL;
+ALTER TABLE depannhome_subscription_credit_notes ALTER COLUMN source_invoice_date SET NOT NULL;
+INSERT INTO depannhome_subscription_credit_note_sequences(series_year,last_number)
+SELECT parts[1]::INTEGER,MAX(parts[2]::BIGINT) FROM depannhome_subscription_credit_notes
+CROSS JOIN LATERAL regexp_matches(credit_number,'^AVO-DHP-([0-9]{4})-([0-9]{6})$') AS parsed(parts) GROUP BY parts[1]
+ON CONFLICT(series_year) DO UPDATE SET last_number=GREATEST(depannhome_subscription_credit_note_sequences.last_number,EXCLUDED.last_number),updated_at=NOW();
+CREATE TABLE IF NOT EXISTS depannhome_subscription_credit_note_audit (
+    id BIGSERIAL PRIMARY KEY, credit_note_id BIGINT NOT NULL REFERENCES depannhome_subscription_credit_notes(id) ON DELETE RESTRICT,
+    account_owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE RESTRICT, actor_id BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+    action VARCHAR(50) NOT NULL, details JSONB NOT NULL DEFAULT '{}'::jsonb, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS depannhome_subscription_credit_note_audit_credit_idx ON depannhome_subscription_credit_note_audit(credit_note_id,created_at DESC);
+CREATE OR REPLACE FUNCTION depannhome_protect_subscription_credit_note() RETURNS trigger AS $$ BEGIN
+    IF TG_OP='DELETE' THEN RAISE EXCEPTION 'Un avoir émis ne peut pas être supprimé.'; END IF;
+     IF ROW(NEW.source_invoice_id,NEW.account_owner_id,NEW.credit_number,NEW.source_invoice_number,NEW.source_invoice_date,NEW.issue_date,NEW.credit_kind,NEW.reason,NEW.amount_cents,NEW.tax_base_cents,NEW.vat_amount_cents,NEW.vat_rate,NEW.recipient_name,NEW.recipient_email,NEW.recipient_address,NEW.issuer_profile,NEW.lines,NEW.financial_data,NEW.pdf_data,NEW.pdf_sha256,NEW.created_by,NEW.created_at)
+         IS DISTINCT FROM ROW(OLD.source_invoice_id,OLD.account_owner_id,OLD.credit_number,OLD.source_invoice_number,OLD.source_invoice_date,OLD.issue_date,OLD.credit_kind,OLD.reason,OLD.amount_cents,OLD.tax_base_cents,OLD.vat_amount_cents,OLD.vat_rate,OLD.recipient_name,OLD.recipient_email,OLD.recipient_address,OLD.issuer_profile,OLD.lines,OLD.financial_data,OLD.pdf_data,OLD.pdf_sha256,OLD.created_by,OLD.created_at)
+    THEN RAISE EXCEPTION 'Les données légales d’un avoir émis sont immuables.'; END IF; RETURN NEW; END; $$ LANGUAGE plpgsql;
+DROP TRIGGER IF EXISTS depannhome_subscription_credit_note_immutable ON depannhome_subscription_credit_notes;
+CREATE TRIGGER depannhome_subscription_credit_note_immutable BEFORE UPDATE OR DELETE ON depannhome_subscription_credit_notes FOR EACH ROW EXECUTE FUNCTION depannhome_protect_subscription_credit_note();
 
 CREATE TABLE IF NOT EXISTS depannhome_purchases (
     id BIGSERIAL PRIMARY KEY,

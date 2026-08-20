@@ -90,6 +90,7 @@ test("la réception du paiement est historisée séparément de l’envoi initia
         assert.match(source, /payment_status VARCHAR\(20\) NOT NULL DEFAULT 'unpaid'/);
         assert.match(source, /paid_date DATE/);
         assert.match(source, /paid_by BIGINT REFERENCES depannhome_users\(id\) ON DELETE SET NULL/);
+        assert.match(source, /paid_amount_cents INTEGER NOT NULL DEFAULT 0/);
         assert.match(source, /payment_reference VARCHAR\(160\)/);
         assert.match(source, /receipt_delivery_status VARCHAR\(20\) NOT NULL DEFAULT 'not_sent'/);
         assert.match(source, /depannhome_subscription_invoice_audit/);
@@ -103,7 +104,7 @@ test("seul le Créateur peut accuser réception une fois sur une facture envoyé
     assert.match(invoicingSource, /if \(invoice\.paymentStatus === "paid"\)/);
     assert.match(invoicingSource, /if \(paidDate < invoice\.issueDate\)/);
     assert.match(invoicingSource, /dateString\(parsed\) !== date/);
-    assert.match(invoicingSource, /payment_status='paid',paid_date=\$2::date,paid_at=NOW\(\),paid_by=\$3/);
+    assert.match(invoicingSource, /payment_status='paid',paid_amount_cents=\$2,paid_date=\$3::date,paid_at=NOW\(\),paid_by=\$4/);
     assert.match(invoicingSource, /'payment_acknowledged'/);
 });
 

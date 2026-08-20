@@ -3,6 +3,7 @@ import { createBillingPdf, normalizeVatRegime } from "./billing.js";
 import { sendDocumentEmail } from "./email.js";
 import { subscriptionTierConfig } from "./subscription-tiers.js";
 import { calculateSubscriptionPriceCents } from "./subscription-tiers.js";
+import { createHash } from "node:crypto";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const IBAN_PATTERN = /^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$/;
@@ -82,6 +83,8 @@ export async function initializeSubscriptionInvoicing() {
     await database.query(`ALTER TABLE depannhome_subscription_invoices DROP CONSTRAINT IF EXISTS depannhome_subscription_invoices_owner_period_unique`);
     await database.query(`CREATE UNIQUE INDEX IF NOT EXISTS depannhome_subscription_invoices_active_owner_period_idx ON depannhome_subscription_invoices (account_owner_id,billing_period) WHERE status<>'cancelled'`);
     await database.query(`ALTER TABLE depannhome_subscription_invoices ADD COLUMN IF NOT EXISTS payment_status VARCHAR(20) NOT NULL DEFAULT 'unpaid' CHECK (payment_status IN ('unpaid','paid')), ADD COLUMN IF NOT EXISTS paid_date DATE, ADD COLUMN IF NOT EXISTS paid_at TIMESTAMPTZ, ADD COLUMN IF NOT EXISTS paid_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL, ADD COLUMN IF NOT EXISTS payment_reference VARCHAR(160) NOT NULL DEFAULT '', ADD COLUMN IF NOT EXISTS receipt_delivery_status VARCHAR(20) NOT NULL DEFAULT 'not_sent' CHECK (receipt_delivery_status IN ('not_sent','pending','sending','sent','failed')), ADD COLUMN IF NOT EXISTS receipt_sent_at TIMESTAMPTZ, ADD COLUMN IF NOT EXISTS receipt_last_error VARCHAR(1000) NOT NULL DEFAULT ''`);
+    await database.query(`ALTER TABLE depannhome_subscription_invoices ADD COLUMN IF NOT EXISTS paid_amount_cents INTEGER NOT NULL DEFAULT 0 CHECK (paid_amount_cents >= 0)`);
+    await database.query(`UPDATE depannhome_subscription_invoices SET paid_amount_cents=net_amount_cents WHERE payment_status='paid' AND paid_amount_cents=0`);
     await database.query(`CREATE INDEX IF NOT EXISTS depannhome_subscription_invoices_status_idx ON depannhome_subscription_invoices (status, created_at)`);
     await database.query(`CREATE TABLE IF NOT EXISTS depannhome_subscription_invoice_sequences (series_year INTEGER PRIMARY KEY CHECK (series_year >= 2020), last_number BIGINT NOT NULL DEFAULT 0 CHECK (last_number >= 0), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
     await database.query(`INSERT INTO depannhome_subscription_invoice_sequences (series_year,last_number)
@@ -90,6 +93,39 @@ export async function initializeSubscriptionInvoicing() {
         ON CONFLICT (series_year) DO UPDATE SET last_number=GREATEST(depannhome_subscription_invoice_sequences.last_number,EXCLUDED.last_number),updated_at=NOW()`);
     await database.query(`CREATE TABLE IF NOT EXISTS depannhome_subscription_invoice_audit (id BIGSERIAL PRIMARY KEY, invoice_id BIGINT NOT NULL REFERENCES depannhome_subscription_invoices(id) ON DELETE CASCADE, account_owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE, actor_id BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL, action VARCHAR(40) NOT NULL, details JSONB NOT NULL DEFAULT '{}'::jsonb, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
     await database.query(`CREATE INDEX IF NOT EXISTS depannhome_subscription_invoice_audit_invoice_idx ON depannhome_subscription_invoice_audit (invoice_id, created_at DESC)`);
+    await database.query(`CREATE TABLE IF NOT EXISTS depannhome_subscription_credit_note_sequences (series_year INTEGER PRIMARY KEY CHECK (series_year >= 2020), last_number BIGINT NOT NULL DEFAULT 0 CHECK (last_number >= 0), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
+    await database.query(`CREATE TABLE IF NOT EXISTS depannhome_subscription_credit_notes (
+        id BIGSERIAL PRIMARY KEY, source_invoice_id BIGINT NOT NULL REFERENCES depannhome_subscription_invoices(id) ON DELETE RESTRICT,
+        account_owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE RESTRICT, credit_number VARCHAR(80) NOT NULL UNIQUE,
+        source_invoice_number VARCHAR(80) NOT NULL, source_invoice_date DATE NOT NULL, issue_date DATE NOT NULL, credit_kind VARCHAR(20) NOT NULL CHECK (credit_kind IN ('full','partial')),
+        reason VARCHAR(1000) NOT NULL CHECK (CHAR_LENGTH(reason) >= 10), amount_cents INTEGER NOT NULL CHECK (amount_cents > 0),
+        tax_base_cents INTEGER NOT NULL CHECK (tax_base_cents >= 0), vat_amount_cents INTEGER NOT NULL CHECK (vat_amount_cents >= 0),
+        vat_rate NUMERIC(5,2) NOT NULL CHECK (vat_rate >= 0 AND vat_rate <= 100), recipient_name VARCHAR(160) NOT NULL,
+        recipient_email VARCHAR(160) NOT NULL, recipient_address VARCHAR(500) NOT NULL DEFAULT '', issuer_profile JSONB NOT NULL,
+        lines JSONB NOT NULL DEFAULT '[]'::jsonb, financial_data JSONB NOT NULL DEFAULT '{}'::jsonb, pdf_data BYTEA NOT NULL,
+        pdf_sha256 CHAR(64) NOT NULL, created_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+        delivery_status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (delivery_status IN ('pending','sending','sent','failed')),
+        sent_at TIMESTAMPTZ, last_error VARCHAR(1000) NOT NULL DEFAULT '', refund_status VARCHAR(20) NOT NULL DEFAULT 'not_required' CHECK (refund_status IN ('not_required','pending','refunded')),
+        refunded_date DATE, refunded_at TIMESTAMPTZ, refunded_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+        refund_reference VARCHAR(160) NOT NULL DEFAULT '', created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`);
+    await database.query(`ALTER TABLE depannhome_subscription_credit_notes ADD COLUMN IF NOT EXISTS source_invoice_date DATE`);
+    await database.query(`UPDATE depannhome_subscription_credit_notes credit SET source_invoice_date=invoice.issue_date FROM depannhome_subscription_invoices invoice WHERE credit.source_invoice_id=invoice.id AND credit.source_invoice_date IS NULL`);
+    await database.query(`ALTER TABLE depannhome_subscription_credit_notes ALTER COLUMN source_invoice_date SET NOT NULL`);
+    await database.query(`CREATE INDEX IF NOT EXISTS depannhome_subscription_credit_notes_invoice_idx ON depannhome_subscription_credit_notes(source_invoice_id,issue_date,id)`);
+    await database.query(`INSERT INTO depannhome_subscription_credit_note_sequences (series_year,last_number)
+        SELECT parts[1]::integer,MAX(parts[2]::bigint) FROM depannhome_subscription_credit_notes
+        CROSS JOIN LATERAL regexp_matches(credit_number,'^AVO-DHP-([0-9]{4})-([0-9]{6})$') AS parsed(parts) GROUP BY parts[1]
+        ON CONFLICT (series_year) DO UPDATE SET last_number=GREATEST(depannhome_subscription_credit_note_sequences.last_number,EXCLUDED.last_number),updated_at=NOW()`);
+    await database.query(`CREATE TABLE IF NOT EXISTS depannhome_subscription_credit_note_audit (id BIGSERIAL PRIMARY KEY, credit_note_id BIGINT NOT NULL REFERENCES depannhome_subscription_credit_notes(id) ON DELETE RESTRICT, account_owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE RESTRICT, actor_id BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL, action VARCHAR(50) NOT NULL, details JSONB NOT NULL DEFAULT '{}'::jsonb, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
+    await database.query(`CREATE INDEX IF NOT EXISTS depannhome_subscription_credit_note_audit_credit_idx ON depannhome_subscription_credit_note_audit(credit_note_id,created_at DESC)`);
+    await database.query(`CREATE OR REPLACE FUNCTION depannhome_protect_subscription_credit_note() RETURNS trigger AS $$ BEGIN
+        IF TG_OP='DELETE' THEN RAISE EXCEPTION 'Un avoir émis ne peut pas être supprimé.'; END IF;
+          IF ROW(NEW.source_invoice_id,NEW.account_owner_id,NEW.credit_number,NEW.source_invoice_number,NEW.source_invoice_date,NEW.issue_date,NEW.credit_kind,NEW.reason,NEW.amount_cents,NEW.tax_base_cents,NEW.vat_amount_cents,NEW.vat_rate,NEW.recipient_name,NEW.recipient_email,NEW.recipient_address,NEW.issuer_profile,NEW.lines,NEW.financial_data,NEW.pdf_data,NEW.pdf_sha256,NEW.created_by,NEW.created_at)
+              IS DISTINCT FROM ROW(OLD.source_invoice_id,OLD.account_owner_id,OLD.credit_number,OLD.source_invoice_number,OLD.source_invoice_date,OLD.issue_date,OLD.credit_kind,OLD.reason,OLD.amount_cents,OLD.tax_base_cents,OLD.vat_amount_cents,OLD.vat_rate,OLD.recipient_name,OLD.recipient_email,OLD.recipient_address,OLD.issuer_profile,OLD.lines,OLD.financial_data,OLD.pdf_data,OLD.pdf_sha256,OLD.created_by,OLD.created_at)
+        THEN RAISE EXCEPTION 'Les données légales d’un avoir émis sont immuables.'; END IF; RETURN NEW; END; $$ LANGUAGE plpgsql`);
+    await database.query(`DROP TRIGGER IF EXISTS depannhome_subscription_credit_note_immutable ON depannhome_subscription_credit_notes`);
+    await database.query(`CREATE TRIGGER depannhome_subscription_credit_note_immutable BEFORE UPDATE OR DELETE ON depannhome_subscription_credit_notes FOR EACH ROW EXECUTE FUNCTION depannhome_protect_subscription_credit_note()`);
 }
 
 export function registerSubscriptionInvoicingRoutes(app, requireCreator) {
@@ -120,13 +156,14 @@ export function registerSubscriptionInvoicingRoutes(app, requireCreator) {
     }));
 
     app.get("/api/creator/subscription-invoices", requireCreator, asyncHandler(async (request, response) => {
-        const { rows } = await getPool().query(`
+        const database = getPool();
+        const { rows } = await database.query(`
             SELECT invoice.id, invoice.invoice_number AS "invoiceNumber", invoice.recipient_name AS "recipientName", invoice.recipient_email AS "recipientEmail",
                 invoice.subscription_label AS "subscriptionLabel", invoice.net_amount_cents AS "amountCents", invoice.amount_cents AS "baseAmountCents",
             invoice.financial_data AS "financialData", invoice.subscription_snapshot AS "subscriptionSnapshot", invoice.vat_rate::float AS "vatRate",
                 TO_CHAR(invoice.issue_date, 'YYYY-MM-DD') AS "issueDate", TO_CHAR(invoice.due_date, 'YYYY-MM-DD') AS "dueDate",
                 invoice.status, invoice.sent_at AS "sentAt", invoice.last_error AS "lastError", invoice.created_at AS "createdAt",
-                invoice.payment_status AS "paymentStatus", TO_CHAR(invoice.paid_date, 'YYYY-MM-DD') AS "paidDate", invoice.paid_at AS "paidAt",
+                invoice.payment_status AS "paymentStatus", invoice.paid_amount_cents AS "paidAmountCents", TO_CHAR(invoice.paid_date, 'YYYY-MM-DD') AS "paidDate", invoice.paid_at AS "paidAt",
                 invoice.payment_reference AS "paymentReference", invoice.receipt_delivery_status AS "receiptDeliveryStatus",
                 invoice.receipt_sent_at AS "receiptSentAt", invoice.receipt_last_error AS "receiptLastError",
                 owner.company_name AS "companyName", owner.subscription_plan AS "subscriptionPlan", owner.subscription_tier AS "subscriptionTier",
@@ -139,11 +176,23 @@ export function registerSubscriptionInvoicingRoutes(app, requireCreator) {
             LEFT JOIN depannhome_organizations organization ON organization.account_owner_id=owner.id
             ORDER BY invoice.issue_date DESC, invoice.id DESC
         `);
-        response.json({ invoices: rows.map(invoice => ({
+        const { rows: credits } = await database.query(`SELECT id,source_invoice_id AS "sourceInvoiceId",credit_number AS "creditNumber",source_invoice_number AS "sourceInvoiceNumber",TO_CHAR(issue_date,'YYYY-MM-DD') AS "issueDate",credit_kind AS "creditKind",reason,amount_cents AS "amountCents",tax_base_cents AS "taxBaseCents",vat_amount_cents AS "vatAmountCents",delivery_status AS "deliveryStatus",sent_at AS "sentAt",last_error AS "lastError",refund_status AS "refundStatus",TO_CHAR(refunded_date,'YYYY-MM-DD') AS "refundedDate",refund_reference AS "refundReference" FROM depannhome_subscription_credit_notes ORDER BY issue_date,id`);
+        const creditsByInvoice = new Map();
+        for (const credit of credits) creditsByInvoice.set(String(credit.sourceInvoiceId), [...(creditsByInvoice.get(String(credit.sourceInvoiceId)) || []), credit]);
+        const invoices = rows.map(invoice => {
+            const invoiceCredits = creditsByInvoice.get(String(invoice.id)) || [];
+            const creditedAmountCents = invoiceCredits.reduce((sum, credit) => sum + Number(credit.amountCents || 0), 0);
+            const balances = subscriptionInvoiceBalances(invoice.amountCents, creditedAmountCents, invoice.paidAmountCents);
+            return {
             ...invoice,
+            credits: invoiceCredits,
+            creditedAmountCents,
+            creditableAmountCents: Math.max(0, Number(invoice.amountCents) - creditedAmountCents),
+            ...balances,
             matchesCurrentSubscription: subscriptionInvoiceMatchesCurrentSubscription(invoice, currentSubscriptionFromInvoiceRow(invoice)),
             currentSubscriptionAmountCents: buildSubscriptionInvoiceSnapshot(currentSubscriptionFromInvoiceRow(invoice), invoice.vatRate).netAmountCents
-        })), processing: await subscriptionInvoicingStatus() });
+        }; });
+        response.json({ invoices, summary: subscriptionInvoiceSummary(invoices), processing: await subscriptionInvoicingStatus() });
     }));
 
     app.post("/api/creator/subscription-invoices/process", requireCreator, asyncHandler(async (request, response) => {
@@ -163,14 +212,17 @@ export function registerSubscriptionInvoicingRoutes(app, requireCreator) {
         const connection = await getPool().connect();
         try {
             await connection.query("BEGIN");
-            const { rows } = await connection.query(`SELECT id,account_owner_id AS "accountOwnerId",status,payment_status AS "paymentStatus",TO_CHAR(issue_date,'YYYY-MM-DD') AS "issueDate" FROM depannhome_subscription_invoices WHERE id=$1 FOR UPDATE`, [invoiceId]);
+            const { rows } = await connection.query(`SELECT id,account_owner_id AS "accountOwnerId",status,payment_status AS "paymentStatus",net_amount_cents AS "netAmountCents",TO_CHAR(issue_date,'YYYY-MM-DD') AS "issueDate" FROM depannhome_subscription_invoices WHERE id=$1 FOR UPDATE`, [invoiceId]);
             const invoice = rows[0];
             if (!invoice) { await connection.query("ROLLBACK"); return response.status(404).json({ message: "Facture introuvable." }); }
             if (invoice.status !== "sent") { await connection.query("ROLLBACK"); return response.status(409).json({ message: "La facture initiale doit être envoyée avant de pouvoir accuser réception de son paiement." }); }
             if (invoice.paymentStatus === "paid") { await connection.query("ROLLBACK"); return response.status(409).json({ message: "Le paiement de cette facture a déjà été enregistré." }); }
             if (paidDate < invoice.issueDate) { await connection.query("ROLLBACK"); return response.status(400).json({ message: "La date de règlement ne peut pas précéder la date d’émission." }); }
-            await connection.query(`UPDATE depannhome_subscription_invoices SET payment_status='paid',paid_date=$2::date,paid_at=NOW(),paid_by=$3,payment_reference=$4,receipt_delivery_status='pending',receipt_sent_at=NULL,receipt_last_error='',updated_at=NOW() WHERE id=$1`, [invoiceId, paidDate, request.user.sub, paymentReference]);
-            await connection.query(`INSERT INTO depannhome_subscription_invoice_audit (invoice_id,account_owner_id,actor_id,action,details) VALUES ($1,$2,$3,'payment_acknowledged',$4::jsonb)`, [invoiceId, invoice.accountOwnerId, request.user.sub, JSON.stringify({ paidDate, paymentReference })]);
+            const creditResult = await connection.query(`SELECT COALESCE(SUM(amount_cents),0)::integer AS total FROM depannhome_subscription_credit_notes WHERE source_invoice_id=$1`, [invoiceId]);
+            const paidAmountCents = Math.max(0, Number(invoice.netAmountCents) - Number(creditResult.rows[0].total));
+            if (!paidAmountCents) { await connection.query("ROLLBACK"); return response.status(409).json({ message: "Cette facture est intégralement créditée et ne peut plus être marquée comme réglée." }); }
+            await connection.query(`UPDATE depannhome_subscription_invoices SET payment_status='paid',paid_amount_cents=$2,paid_date=$3::date,paid_at=NOW(),paid_by=$4,payment_reference=$5,receipt_delivery_status='pending',receipt_sent_at=NULL,receipt_last_error='',updated_at=NOW() WHERE id=$1`, [invoiceId, paidAmountCents, paidDate, request.user.sub, paymentReference]);
+            await connection.query(`INSERT INTO depannhome_subscription_invoice_audit (invoice_id,account_owner_id,actor_id,action,details) VALUES ($1,$2,$3,'payment_acknowledged',$4::jsonb)`, [invoiceId, invoice.accountOwnerId, request.user.sub, JSON.stringify({ paidDate, paymentReference, paidAmountCents })]);
             await connection.query("COMMIT");
         } catch (error) {
             await connection.query("ROLLBACK");
@@ -211,6 +263,71 @@ export function registerSubscriptionInvoicingRoutes(app, requireCreator) {
             "X-Content-Type-Options": "nosniff"
         });
         response.send(pdf);
+    }));
+
+    app.post("/api/creator/subscription-invoices/:invoiceId/credit-notes", requireCreator, asyncHandler(async (request, response) => {
+        const invoiceId = positiveId(request.params.invoiceId);
+        const reason = cleanText(request.body?.reason, 1000);
+        const requestedKind = request.body?.creditKind === "partial" ? "partial" : "full";
+        const requestedAmount = Number(request.body?.amountCents);
+        if (!invoiceId || reason.length < 10) return response.status(400).json({ message: "Renseignez un motif précis d’au moins 10 caractères." });
+        if (requestedKind === "partial" && (!Number.isSafeInteger(requestedAmount) || requestedAmount <= 0)) return response.status(400).json({ message: "Le montant partiel de l’avoir est invalide." });
+        const connection = await getPool().connect();
+        let creditNoteId;
+        try {
+            await connection.query("BEGIN");
+            const { rows } = await connection.query(`SELECT id,account_owner_id AS "accountOwnerId",invoice_number AS "invoiceNumber",recipient_name AS "recipientName",recipient_email AS "recipientEmail",recipient_address AS "recipientAddress",net_amount_cents AS "netAmountCents",vat_rate::float AS "vatRate",TO_CHAR(issue_date,'YYYY-MM-DD') AS "issueDate",issuer_profile AS "issuerProfile",status,payment_status AS "paymentStatus",paid_amount_cents AS "paidAmountCents" FROM depannhome_subscription_invoices WHERE id=$1 FOR UPDATE`, [invoiceId]);
+            const invoice = rows[0];
+            if (!invoice) { await connection.query("ROLLBACK"); return response.status(404).json({ message: "Facture introuvable." }); }
+            if (invoice.status !== "sent") { await connection.query("ROLLBACK"); return response.status(409).json({ message: "Seule une facture envoyée peut faire l’objet d’un avoir." }); }
+            const existing = await connection.query(`SELECT COALESCE(SUM(amount_cents),0)::integer AS total FROM depannhome_subscription_credit_notes WHERE source_invoice_id=$1`, [invoiceId]);
+            const creditableAmountCents = Math.max(0, Number(invoice.netAmountCents) - Number(existing.rows[0].total));
+            if (!creditableAmountCents) { await connection.query("ROLLBACK"); return response.status(409).json({ message: "Cette facture est déjà intégralement créditée." }); }
+            const amountCents = requestedKind === "full" ? creditableAmountCents : requestedAmount;
+            if (amountCents > creditableAmountCents) { await connection.query("ROLLBACK"); return response.status(409).json({ message: `Le montant dépasse le solde créditable de ${(creditableAmountCents / 100).toFixed(2)} €.` }); }
+            const creditKind = amountCents === creditableAmountCents ? "full" : "partial";
+            const { rows: dates } = await connection.query(`SELECT TO_CHAR(CURRENT_DATE,'YYYY-MM-DD') AS "issueDate",EXTRACT(YEAR FROM CURRENT_DATE)::integer AS "seriesYear"`);
+            if (dates[0].issueDate < invoice.issueDate) { await connection.query("ROLLBACK"); return response.status(409).json({ message: "La date de l’avoir ne peut pas précéder celle de la facture." }); }
+            const sequence = await connection.query(`INSERT INTO depannhome_subscription_credit_note_sequences(series_year,last_number) VALUES($1,1) ON CONFLICT(series_year) DO UPDATE SET last_number=depannhome_subscription_credit_note_sequences.last_number+1,updated_at=NOW() RETURNING last_number AS "lastNumber"`, [dates[0].seriesYear]);
+            const creditNumber = `AVO-DHP-${dates[0].seriesYear}-${String(sequence.rows[0].lastNumber).padStart(6, "0")}`;
+            const totals = calculateSubscriptionCreditTotals(amountCents, invoice.vatRate);
+            const lines = [{ description: `Avoir sur facture ${invoice.invoiceNumber}`, quantity: 1, unit: "avoir", unitPrice: totals.taxBaseCents / 100, vatRate: Number(invoice.vatRate) || 0 }];
+            const document = subscriptionCreditNoteDocument({ creditNumber, sourceInvoiceNumber: invoice.invoiceNumber, sourceInvoiceDate: invoice.issueDate, issueDate: dates[0].issueDate, reason, recipientName: invoice.recipientName, recipientAddress: invoice.recipientAddress, issuerProfile: invoice.issuerProfile, lines, ...totals });
+            const pdf = await createBillingPdf(document, invoice.issuerProfile || emptyProfile());
+            const refundStatus = Number(invoice.paidAmountCents) > 0 ? "pending" : "not_required";
+            const inserted = await connection.query(`INSERT INTO depannhome_subscription_credit_notes(source_invoice_id,account_owner_id,credit_number,source_invoice_number,source_invoice_date,issue_date,credit_kind,reason,amount_cents,tax_base_cents,vat_amount_cents,vat_rate,recipient_name,recipient_email,recipient_address,issuer_profile,lines,financial_data,pdf_data,pdf_sha256,created_by,refund_status) VALUES($1,$2,$3,$4,$5::date,$6::date,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16::jsonb,$17::jsonb,'{}'::jsonb,$18,$19,$20,$21) RETURNING id`, [invoice.id,invoice.accountOwnerId,creditNumber,invoice.invoiceNumber,invoice.issueDate,dates[0].issueDate,creditKind,reason,amountCents,totals.taxBaseCents,totals.vatAmountCents,invoice.vatRate,invoice.recipientName,invoice.recipientEmail,invoice.recipientAddress,JSON.stringify(invoice.issuerProfile),JSON.stringify(lines),pdf,createHash("sha256").update(pdf).digest("hex"),request.user.sub,refundStatus]);
+            creditNoteId = inserted.rows[0].id;
+            await connection.query(`INSERT INTO depannhome_subscription_credit_note_audit(credit_note_id,account_owner_id,actor_id,action,details) VALUES($1,$2,$3,'credit_note_issued',$4::jsonb)`, [creditNoteId,invoice.accountOwnerId,request.user.sub,JSON.stringify({ creditNumber, sourceInvoiceNumber: invoice.invoiceNumber, amountCents, reason, refundStatus })]);
+            await connection.query(`INSERT INTO depannhome_subscription_invoice_audit(invoice_id,account_owner_id,actor_id,action,details) VALUES($1,$2,$3,'credit_note_issued',$4::jsonb)`, [invoice.id,invoice.accountOwnerId,request.user.sub,JSON.stringify({ creditNoteId, creditNumber, amountCents })]);
+            await connection.query("COMMIT");
+        } catch (error) { await connection.query("ROLLBACK"); throw error; } finally { connection.release(); }
+        const delivery = await sendSubscriptionCreditNote(creditNoteId, request.user.sub);
+        response.status(delivery.sent ? 201 : 202).json({ creditNoteId, sent: delivery.sent, message: delivery.sent ? "Avoir émis et envoyé à l’entreprise." : `Avoir émis et conservé. L’envoi a échoué : ${delivery.message}` });
+    }));
+
+    app.get("/api/creator/subscription-credit-notes/:creditNoteId/pdf", requireCreator, asyncHandler(async (request, response) => {
+        const id = positiveId(request.params.creditNoteId);
+        const { rows } = await getPool().query(`SELECT credit_number AS "creditNumber",pdf_data AS pdf FROM depannhome_subscription_credit_notes WHERE id=$1`, [id]);
+        if (!rows[0]) return response.status(404).json({ message: "Avoir introuvable." });
+        response.set({ "Content-Type": "application/pdf", "Content-Disposition": `attachment; filename="avoir-abonnement-${rows[0].creditNumber}.pdf"`, "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" });
+        response.send(rows[0].pdf);
+    }));
+
+    app.post("/api/creator/subscription-credit-notes/:creditNoteId/send", requireCreator, asyncHandler(async (request, response) => {
+        const delivery = await sendSubscriptionCreditNote(positiveId(request.params.creditNoteId), request.user.sub);
+        if (!delivery.sent) return response.status(delivery.alreadySent ? 409 : 502).json({ message: delivery.message });
+        response.json({ message: "Avoir renvoyé avec succès." });
+    }));
+
+    app.post("/api/creator/subscription-credit-notes/:creditNoteId/refund", requireCreator, asyncHandler(async (request, response) => {
+        const id = positiveId(request.params.creditNoteId);
+        const refundedDate = validPaymentDate(request.body?.refundedDate);
+        const refundReference = cleanText(request.body?.refundReference, 160);
+        if (!id || !refundedDate || !refundReference) return response.status(400).json({ message: "Renseignez une date et une référence de remboursement valides." });
+        const { rows } = await getPool().query(`UPDATE depannhome_subscription_credit_notes SET refund_status='refunded',refunded_date=$2::date,refunded_at=NOW(),refunded_by=$3,refund_reference=$4,updated_at=NOW() WHERE id=$1 AND refund_status='pending' AND issue_date<=$2::date RETURNING account_owner_id AS "accountOwnerId",credit_number AS "creditNumber",amount_cents AS "amountCents"`, [id,refundedDate,request.user.sub,refundReference]);
+        if (!rows[0]) return response.status(409).json({ message: "Cet avoir n’attend aucun remboursement ou la date est antérieure à son émission." });
+        await getPool().query(`INSERT INTO depannhome_subscription_credit_note_audit(credit_note_id,account_owner_id,actor_id,action,details) VALUES($1,$2,$3,'credit_note_refund_acknowledged',$4::jsonb)`, [id,rows[0].accountOwnerId,request.user.sub,JSON.stringify({ refundedDate, refundReference, amountCents: rows[0].amountCents })]);
+        response.json({ message: `Remboursement de l’avoir ${rows[0].creditNumber} enregistré.` });
     }));
 }
 
@@ -414,6 +531,33 @@ async function sendPaidSubscriptionInvoice(invoiceId, actorId) {
         const message = String(error.message || "Échec d’envoi").slice(0, 1000);
         await database.query(`UPDATE depannhome_subscription_invoices SET receipt_delivery_status='failed',receipt_last_error=$2,updated_at=NOW() WHERE id=$1`, [invoiceId, message]);
         await database.query(`INSERT INTO depannhome_subscription_invoice_audit (invoice_id,account_owner_id,actor_id,action,details) VALUES ($1,$2,$3,'paid_receipt_failed',$4::jsonb)`, [invoiceId, invoice.accountOwnerId, actorId, JSON.stringify({ paidDate: invoice.paidDate, error: message })]);
+        return { sent: false, message };
+    }
+}
+
+async function sendSubscriptionCreditNote(creditNoteId, actorId) {
+    if (!creditNoteId) return { sent: false, message: "Avoir invalide." };
+    const database = getPool();
+    await database.query(`UPDATE depannhome_subscription_credit_notes SET delivery_status='failed',last_error='Envoi interrompu avant confirmation ; une nouvelle tentative est autorisée.',updated_at=NOW() WHERE id=$1 AND delivery_status='sending' AND updated_at<NOW()-INTERVAL '15 minutes'`, [creditNoteId]);
+    const { rows } = await database.query(`UPDATE depannhome_subscription_credit_notes SET delivery_status='sending',last_error='',updated_at=NOW() WHERE id=$1 AND delivery_status IN ('pending','failed') RETURNING id,account_owner_id AS "accountOwnerId",credit_number AS "creditNumber",recipient_name AS "recipientName",recipient_email AS "recipientEmail",pdf_data AS pdf`, [creditNoteId]);
+    const credit = rows[0];
+    if (!credit) {
+        const current = await database.query(`SELECT delivery_status AS "deliveryStatus" FROM depannhome_subscription_credit_notes WHERE id=$1`, [creditNoteId]);
+        if (!current.rows[0]) return { sent: false, message: "Avoir introuvable." };
+        if (current.rows[0].deliveryStatus === "sent") return { sent: false, alreadySent: true, message: "L’avoir a déjà été envoyé." };
+        return { sent: false, message: "Un envoi de l’avoir est déjà en cours." };
+    }
+    await database.query(`INSERT INTO depannhome_subscription_credit_note_audit(credit_note_id,account_owner_id,actor_id,action,details) VALUES($1,$2,$3,'credit_note_delivery_started',$4::jsonb)`, [credit.id,credit.accountOwnerId,actorId,JSON.stringify({ recipientEmail: credit.recipientEmail })]);
+    try {
+        if (!EMAIL_PATTERN.test(String(credit.recipientEmail || ""))) throw new Error("L’e-mail de facturation de l’entreprise est absent ou invalide.");
+        const delivery = await sendDocumentEmail({ recipient: credit.recipientEmail, recipientName: credit.recipientName, documentLabel: `Avoir d’abonnement ${credit.creditNumber}`, attachment: { filename: `avoir-abonnement-${credit.creditNumber}.pdf`, content: credit.pdf, contentType: "application/pdf" } });
+        await database.query(`UPDATE depannhome_subscription_credit_notes SET delivery_status='sent',sent_at=NOW(),last_error='',updated_at=NOW() WHERE id=$1`, [credit.id]);
+        await database.query(`INSERT INTO depannhome_subscription_credit_note_audit(credit_note_id,account_owner_id,actor_id,action,details) VALUES($1,$2,$3,'credit_note_sent',$4::jsonb)`, [credit.id,credit.accountOwnerId,actorId,JSON.stringify({ recipientEmail: credit.recipientEmail, messageId: delivery?.messageId || "" })]);
+        return { sent: true };
+    } catch (error) {
+        const message = String(error.message || "Échec d’envoi").slice(0, 1000);
+        await database.query(`UPDATE depannhome_subscription_credit_notes SET delivery_status='failed',last_error=$2,updated_at=NOW() WHERE id=$1`, [credit.id,message]);
+        await database.query(`INSERT INTO depannhome_subscription_credit_note_audit(credit_note_id,account_owner_id,actor_id,action,details) VALUES($1,$2,$3,'credit_note_delivery_failed',$4::jsonb)`, [credit.id,credit.accountOwnerId,actorId,JSON.stringify({ recipientEmail: credit.recipientEmail, error: message })]);
         return { sent: false, message };
     }
 }
@@ -629,6 +773,44 @@ function subscriptionInvoiceDocument(invoice) {
         }],
         financialData: invoice.financialData || {},
         notes: invoice.issuerProfile?.paymentTerms || "Paiement à réception de facture par virement bancaire."
+    };
+}
+
+export function calculateSubscriptionCreditTotals(amountCents, vatRate) {
+    const amount = Number(amountCents);
+    const rate = Number(vatRate) || 0;
+    if (!Number.isSafeInteger(amount) || amount <= 0 || rate < 0 || rate > 100) throw new TypeError("Montant ou taux de TVA invalide.");
+    const taxBaseCents = Math.round(amount * 100 / (100 + rate));
+    return { amountCents: amount, taxBaseCents, vatAmountCents: amount - taxBaseCents };
+}
+
+export function subscriptionInvoiceBalances(netAmountCents, creditedAmountCents = 0, paidAmountCents = 0) {
+    const net = Math.max(0, Number(netAmountCents) || 0);
+    const credits = Math.max(0, Number(creditedAmountCents) || 0);
+    const paid = Math.max(0, Number(paidAmountCents) || 0);
+    return { outstandingAmountCents: Math.max(net - credits - paid, 0), refundDueCents: Math.max(paid + credits - net, 0) };
+}
+
+function subscriptionInvoiceSummary(invoices) {
+    return invoices.reduce((summary, invoice) => {
+        if (invoice.status === "cancelled") return summary;
+        summary.grossInvoicedCents += Number(invoice.amountCents) || 0;
+        summary.creditedCents += Number(invoice.creditedAmountCents) || 0;
+        summary.collectedCents += Number(invoice.paidAmountCents) || 0;
+        summary.outstandingCents += Number(invoice.outstandingAmountCents) || 0;
+        summary.refundsPendingCents += (invoice.credits || []).filter(credit => credit.refundStatus === "pending").reduce((sum, credit) => sum + Number(credit.amountCents || 0), 0);
+        summary.netBilledCents = summary.grossInvoicedCents - summary.creditedCents;
+        return summary;
+    }, { grossInvoicedCents: 0, creditedCents: 0, netBilledCents: 0, collectedCents: 0, outstandingCents: 0, refundsPendingCents: 0 });
+}
+
+function subscriptionCreditNoteDocument(credit) {
+    return {
+        documentType: "credit", documentNumber: credit.creditNumber, sourceInvoiceNumber: credit.sourceInvoiceNumber, sourceInvoiceDate: credit.sourceInvoiceDate,
+        customerName: credit.recipientName, customerAddress: credit.recipientAddress, issueDate: credit.issueDate,
+        reason: credit.reason, notes: credit.reason, vatRegime: normalizeVatRegime(credit.issuerProfile?.vatRegime),
+        issuerTaxNumber: credit.issuerProfile?.taxNumber || "", lines: credit.lines, financialData: {},
+        exactTotals: { amountCents: credit.amountCents, taxBaseCents: credit.taxBaseCents, vatAmountCents: credit.vatAmountCents }
     };
 }
 

@@ -1032,9 +1032,11 @@ function billingTemplateValues(document, profile) {
 
 export function createBillingPdf(document, profile) {
     return new Promise((resolve, reject) => {
+        const isCredit = document.documentType === "credit";
         const template = ["quote", "invoice"].includes(document.documentType) ? sanitizeDocumentTemplate(profile.quoteTemplateConfig || {}) : { ...DEFAULT_DOCUMENT_TEMPLATE };
         const boldFont = template.font === "Times-Roman" ? "Times-Bold" : template.font === "Courier" ? "Courier-Bold" : "Helvetica-Bold";
-        const pdf = new PDFDocument({ size: "A4", margin: 44, bufferPages: true, info: { Title: `${document.documentType === "invoice" ? "Facture" : "Devis"} ${document.documentNumber}`, Author: profile.companyName || "Depann'Home Pro" } });
+        const documentLabel = isCredit ? "Avoir" : document.documentType === "invoice" ? "Facture" : "Devis";
+        const pdf = new PDFDocument({ size: "A4", margin: 44, bufferPages: true, info: { Title: `${documentLabel} ${document.documentNumber}`, Author: profile.companyName || "Depann'Home Pro" } });
         const chunks = [];
         pdf.on("data", chunk => chunks.push(chunk));
         pdf.on("end", () => resolve(Buffer.concat(chunks)));
@@ -1056,14 +1058,16 @@ export function createBillingPdf(document, profile) {
         const vatRegime = normalizeVatRegime(document.vatRegime || profile.vatRegime);
         const isVatFranchise = vatRegime === "franchise";
         const issuerTaxNumber = document.issuerTaxNumber || profile.taxNumber || "";
-        const totalHt = (document.lines || []).reduce((sum, item) => sum + Number(item.quantity || 0) * Number(item.unitPrice || 0), 0);
-        const grossVat = isVatFranchise ? 0 : (document.lines || []).reduce((sum, item) => sum + Number(item.quantity || 0) * Number(item.unitPrice || 0) * Number(item.vatRate || 0) / 100, 0);
+        const exactTotals = document.exactTotals && typeof document.exactTotals === "object" ? document.exactTotals : null;
+        const totalHt = exactTotals ? Number(exactTotals.taxBaseCents || 0) / 100 : (document.lines || []).reduce((sum, item) => sum + Number(item.quantity || 0) * Number(item.unitPrice || 0), 0);
+        let grossVat = isVatFranchise ? 0 : (document.lines || []).reduce((sum, item) => sum + Number(item.quantity || 0) * Number(item.unitPrice || 0) * Number(item.vatRate || 0) / 100, 0);
+        if (exactTotals) grossVat = Number(exactTotals.vatAmountCents || 0) / 100;
         const discountAmount = Math.min(totalHt, financialData.discountMode === "percentage" ? totalHt * Number(financialData.discountAmount || 0) / 100 : Number(financialData.discountAmount || 0));
         const totalVat = totalHt ? grossVat * (totalHt - discountAmount) / totalHt : 0;
-        const totalTtc = totalHt - discountAmount + totalVat;
+        const totalTtc = exactTotals ? Number(exactTotals.amountCents || 0) / 100 : totalHt - discountAmount + totalVat;
         const aidAmount = Math.min(totalTtc, (Array.isArray(financialData.aids) ? financialData.aids : []).reduce((sum, aid) => sum + (aid.calculationMode === "percentage" ? (totalHt - discountAmount) * Number(aid.amount || 0) / 100 : Number(aid.amount || 0)), 0));
         const remainingAmount = Math.max(0, totalTtc - aidAmount);
-        const title = document.correctionKind === "replacement" ? "FACTURE RECTIFICATIVE" : document.correctionKind === "amendment" ? "AVENANT À FACTURE" : document.documentType === "invoice" ? "FACTURE" : "DEVIS";
+        const title = isCredit ? "AVOIR" : document.correctionKind === "replacement" ? "FACTURE RECTIFICATIVE" : document.correctionKind === "amendment" ? "AVENANT À FACTURE" : document.documentType === "invoice" ? "FACTURE" : "DEVIS";
 
         if (profile.logoData && ["image/png", "image/jpeg"].includes(profile.logoMimeType)) {
             try { pdf.image(profile.logoData, margin, margin, { fit: [56, 56] }); } catch { /* Le PDF reste disponible même si le logo est illisible. */ }
@@ -1072,7 +1076,7 @@ export function createBillingPdf(document, profile) {
         const companyDetails = [profile.companyName || "Votre structure", profile.legalForm, profile.address, [profile.postalCode, profile.city].filter(Boolean).join(" "), profile.phone ? `Tél. ${profile.phone}` : "", profile.email].filter(Boolean).join("\n");
         text(companyDetails, companyX, margin, 250, { size: 9, lineGap: 2, bold: false });
         text(title, margin + contentWidth - 145, margin, 145, { size: 25, bold: true, align: "right", color: template.primaryColor });
-        text(`N° ${document.documentNumber}${document.correctionSourceNumber ? `\nCorrige : ${document.correctionSourceNumber}` : ""}${document.quoteReference ? `\nRéf. devis : ${document.quoteReference}` : ""}\nÉmis le ${formatDate(document.issueDate)}${document.dueDate ? `\nÉchéance : ${formatDate(document.dueDate)}` : ""}`, margin + contentWidth - 170, margin + 34, 170, { size: 9, align: "right", lineGap: 2 });
+        text(`N° ${document.documentNumber}${document.sourceInvoiceNumber ? `\nFacture liée : ${document.sourceInvoiceNumber}` : document.correctionSourceNumber ? `\nCorrige : ${document.correctionSourceNumber}` : ""}${document.quoteReference ? `\nRéf. devis : ${document.quoteReference}` : ""}\nÉmis le ${formatDate(document.issueDate)}${document.dueDate ? `\nÉchéance : ${formatDate(document.dueDate)}` : ""}`, margin + contentWidth - 170, margin + 34, 170, { size: 9, align: "right", lineGap: 2 });
         if (template.headerText) text(template.headerText, companyX, margin + 60, 300, { size: 7.5, color: template.secondaryColor });
         pdf.y = Math.max(margin + 74, pdf.y) + 15;
         line(pdf.y, template.primaryColor);
@@ -1095,7 +1099,7 @@ export function createBillingPdf(document, profile) {
         text([document.customerName, document.customerAddress].filter(Boolean).join("\n"), margin + contentWidth - 213, partyY + 24, 200, { size: 9, lineGap: 2 });
         pdf.y = partyY + 100;
         text("OBJET / PRESTATION", margin, pdf.y, contentWidth, { size: 8, bold: true });
-        text(document.documentType === "invoice" ? "Prestation facturée" : "Proposition de prestation", margin, pdf.y + 12, contentWidth, { size: 9 });
+        text(isCredit ? `Avoir relatif à la facture ${document.sourceInvoiceNumber || "d’origine"}${document.sourceInvoiceDate ? ` du ${formatDate(document.sourceInvoiceDate)}` : ""}${document.reason ? ` · ${document.reason}` : ""}` : document.documentType === "invoice" ? "Prestation facturée" : "Proposition de prestation", margin, pdf.y + 12, contentWidth, { size: 9 });
         pdf.y += 32;
 
         const columns = [margin, margin + 205, margin + 255, margin + 300, margin + 390, margin + 440];
@@ -1127,13 +1131,13 @@ export function createBillingPdf(document, profile) {
         const summaryY = pdf.y;
         text("CONDITIONS DE RÈGLEMENT", margin, summaryY, 260, { size: 9, bold: true });
         const conditions = [
-            financialData.conditions || financialData.comments || document.notes || profile.paymentTerms || "Conditions de règlement non renseignées.",
+            isCredit ? `Motif : ${document.reason || document.notes || "Correction de facturation"}` : financialData.conditions || financialData.comments || document.notes || profile.paymentTerms || "Conditions de règlement non renseignées.",
             document.documentType === "quote" && profile.depositTerms ? `Acompte : ${profile.depositTerms}` : "",
             document.documentType === "invoice" && profile.bankIban ? `Règlement par virement · IBAN : ${profile.bankIban}${profile.bankBic ? ` · BIC : ${profile.bankBic}` : ""}` : ""
         ].filter(Boolean).join("\n");
         text(conditions, margin, summaryY + 14, 260, { size: 8, lineGap: 2 });
         const totalX = margin + contentWidth - 180;
-        [["Total HT", totalHt, template.primaryColor], ["Total TVA", totalVat, template.primaryColor], ["Total TTC", totalTtc, template.primaryColor], [document.documentType === "quote" ? "Reste à charge" : "Net à payer", remainingAmount, template.secondaryColor]].forEach(([label, value, color], index) => {
+        [[isCredit ? "Avoir HT" : "Total HT", totalHt, template.primaryColor], ["Total TVA", totalVat, template.primaryColor], [isCredit ? "Avoir TTC" : "Total TTC", totalTtc, template.primaryColor], [isCredit ? "À déduire / rembourser" : document.documentType === "quote" ? "Reste à charge" : "Net à payer", isCredit ? totalTtc : remainingAmount, template.secondaryColor]].forEach(([label, value, color], index) => {
             const y = summaryY + index * 26;
             pdf.rect(totalX, y, 180, 24).fill(color);
             text(label, totalX + 9, y + 7, 92, { size: index === 2 ? 10 : 8, bold: true, color: "#ffffff" });

@@ -724,12 +724,14 @@ async function renderSubscriptionInvoices() {
     const result = await api("/api/creator/subscription-invoices");
     if (!result.ok) return showFeedback(result.message || "Impossible de charger les factures d’abonnement.", true);
     const invoices = result.data.invoices || [];
+    const summary = result.data.summary || {};
     const processing = result.data.processing || {};
     const profileWarning = processing.profileComplete ? "" : `<p class="auth-message error">Profil de facturation incomplet : ${escapeHtml((processing.missingProfileFields || []).join(", ") || "coordonnées manquantes")}.</p>`;
     workspace.innerHTML = `
         <section class="creator-form creator-subscription-invoices-panel">
             <div class="form-heading"><div><p class="eyebrow">Facturation plateforme</p><h3>Factures d’abonnement</h3></div><span class="creator-state">${invoices.length} facture${invoices.length > 1 ? "s" : ""}</span></div>
             <p class="muted">Chaque PDF reprend les informations légales, bancaires et tarifaires enregistrées au moment de son émission.</p>
+            <div class="creator-subscription-summary creator-billing-summary"><article><span>Facturé brut</span><strong>${formatCurrency(summary.grossInvoicedCents)}</strong></article><article><span>Avoirs émis</span><strong>−${formatCurrency(summary.creditedCents)}</strong></article><article><span>Facturé net</span><strong>${formatCurrency(summary.netBilledCents)}</strong></article><article><span>Encaissé</span><strong>${formatCurrency(summary.collectedCents)}</strong></article><article><span>À encaisser</span><strong>${formatCurrency(summary.outstandingCents)}</strong></article><article class="${Number(summary.refundsPendingCents) ? "attention" : ""}"><span>À rembourser</span><strong>${formatCurrency(summary.refundsPendingCents)}</strong></article></div>
             <div class="creator-subscription-processing"><strong>${Number(processing.dueAccounts || 0)} abonnement(s) arrivé(s) à échéance</strong><span>${Number(processing.pending || 0)} en attente · ${Number(processing.failed || 0)} en échec · ${Number(processing.sending || 0)} en cours</span></div>
             ${profileWarning}
             <p class="auth-message" id="creatorSubscriptionProcessingFeedback" aria-live="polite"></p>
@@ -772,6 +774,36 @@ async function renderSubscriptionInvoices() {
         showFeedback(result.message || "Facture acquittée renvoyée.");
         await renderSubscriptionInvoices();
     }));
+    workspace.querySelectorAll("[data-credit-kind]").forEach(select => select.addEventListener("change", () => {
+        const amount = select.form?.querySelector("[data-credit-amount]");
+        if (amount) amount.hidden = select.value !== "partial";
+    }));
+    workspace.querySelectorAll("[data-subscription-credit-form]").forEach(form => form.addEventListener("submit", async event => {
+        event.preventDefault();
+        const values = Object.fromEntries(new FormData(form));
+        const amountCents = values.creditKind === "partial" ? Math.round(Number(values.amount) * 100) : undefined;
+        const wording = values.creditKind === "partial" ? `un avoir de ${formatCurrency(amountCents)}` : `un avoir total de ${formatCurrency(form.dataset.creditableAmount)}`;
+        if (!confirm(`Émettre ${wording} sur ${form.dataset.invoiceNumber} ? Ce document légal sera définitif et ne pourra être ni modifié ni supprimé.`)) return;
+        const button = form.querySelector('button[type="submit"]'); button.disabled = true;
+        const result = await api(`/api/creator/subscription-invoices/${encodeURIComponent(form.dataset.subscriptionCreditForm)}/credit-notes`, { method: "POST", body: JSON.stringify({ creditKind: values.creditKind, amountCents, reason: values.reason }), timeoutMs: 60_000 });
+        if (!result.ok) { button.disabled = false; return showFeedback(result.message || "Impossible d’émettre l’avoir.", true); }
+        showFeedback(result.message || "Avoir émis.", !result.data?.sent);
+        await renderSubscriptionInvoices();
+    }));
+    workspace.querySelectorAll("[data-resend-credit]").forEach(button => button.addEventListener("click", async () => {
+        button.disabled = true;
+        const result = await api(`/api/creator/subscription-credit-notes/${encodeURIComponent(button.dataset.resendCredit)}/send`, { method: "POST", body: "{}", timeoutMs: 60_000 });
+        if (!result.ok) { button.disabled = false; return showFeedback(result.message || "Impossible de renvoyer l’avoir.", true); }
+        showFeedback(result.message || "Avoir renvoyé."); await renderSubscriptionInvoices();
+    }));
+    workspace.querySelectorAll("[data-credit-refund-form]").forEach(form => form.addEventListener("submit", async event => {
+        event.preventDefault();
+        if (!confirm(`Confirmer le remboursement de ${form.dataset.creditNumber} ?`)) return;
+        const button = form.querySelector('button[type="submit"]'); button.disabled = true;
+        const result = await api(`/api/creator/subscription-credit-notes/${encodeURIComponent(form.dataset.creditRefundForm)}/refund`, { method: "POST", body: JSON.stringify(Object.fromEntries(new FormData(form))) });
+        if (!result.ok) { button.disabled = false; return showFeedback(result.message || "Impossible d’enregistrer le remboursement.", true); }
+        showFeedback(result.message || "Remboursement enregistré."); await renderSubscriptionInvoices();
+    }));
     workspace.querySelector("#creatorSubscriptionInvoicesBack").addEventListener("click", () => selectedAccountId ? renderAccountDetail(selectedAccountId) : workspace.replaceChildren());
 }
 
@@ -787,14 +819,23 @@ function renderSubscriptionInvoice(invoice) {
     const paid = invoice.paymentStatus === "paid";
     const receiptStatus = paid ? paidReceiptStatus(invoice.receiptDeliveryStatus) : null;
     const paymentDetails = paid ? `<small class="creator-payment-confirmed">Paiement reçu le ${formatDate(invoice.paidDate)}${invoice.paymentReference ? ` · Réf. ${escapeHtml(invoice.paymentReference)}` : ""}</small><small>Facture acquittée : ${escapeHtml(receiptStatus.label)}${invoice.receiptSentAt ? ` le ${escapeHtml(formatDateTime(invoice.receiptSentAt))}` : ""}</small>${invoice.receiptDeliveryStatus === "failed" && invoice.receiptLastError ? `<p class="auth-message error">${escapeHtml(invoice.receiptLastError)}</p>` : ""}` : "";
-    const paymentAction = !paid && invoice.status === "sent" ? `<form class="creator-subscription-payment-form" data-subscription-payment-form="${escapeHtml(invoice.id)}" data-invoice-number="${escapeHtml(invoice.invoiceNumber)}"><label>Date du règlement<input name="paidDate" type="date" max="${new Date().toISOString().slice(0, 10)}" value="${new Date().toISOString().slice(0, 10)}" required></label><label>Référence du paiement (facultative)<input name="paymentReference" maxlength="160" placeholder="N° de virement, transaction ou chèque"></label><button type="submit" class="primary-button">Accuser réception du paiement</button></form>` : paid && invoice.receiptDeliveryStatus === "failed" ? `<button type="button" class="secondary-button" data-resend-paid-invoice="${escapeHtml(invoice.id)}">Renvoyer la facture acquittée</button>` : !paid && invoice.status !== "cancelled" ? '<small class="muted">L’accusé de paiement sera disponible après l’envoi initial.</small>' : "";
+    const paymentAction = !paid && invoice.status === "sent" && Number(invoice.outstandingAmountCents) > 0 ? `<form class="creator-subscription-payment-form" data-subscription-payment-form="${escapeHtml(invoice.id)}" data-invoice-number="${escapeHtml(invoice.invoiceNumber)}"><strong>Montant attendu : ${formatCurrency(invoice.outstandingAmountCents)}</strong><label>Date du règlement<input name="paidDate" type="date" max="${new Date().toISOString().slice(0, 10)}" value="${new Date().toISOString().slice(0, 10)}" required></label><label>Référence du paiement (facultative)<input name="paymentReference" maxlength="160" placeholder="N° de virement, transaction ou chèque"></label><button type="submit" class="primary-button">Accuser réception du paiement</button></form>` : paid && invoice.receiptDeliveryStatus === "failed" ? `<button type="button" class="secondary-button" data-resend-paid-invoice="${escapeHtml(invoice.id)}">Renvoyer la facture acquittée</button>` : !paid && invoice.status === "sent" && !Number(invoice.outstandingAmountCents) ? '<small class="creator-payment-confirmed">Facture intégralement créditée · aucun paiement attendu.</small>' : !paid && invoice.status !== "cancelled" ? '<small class="muted">L’accusé de paiement sera disponible après l’envoi initial.</small>' : "";
+    const creditForm = invoice.status === "sent" && Number(invoice.creditableAmountCents) > 0 ? `<details class="creator-credit-create"><summary>Créer un avoir · solde ${formatCurrency(invoice.creditableAmountCents)}</summary><form data-subscription-credit-form="${escapeHtml(invoice.id)}" data-invoice-number="${escapeHtml(invoice.invoiceNumber)}" data-creditable-amount="${escapeHtml(invoice.creditableAmountCents)}"><label>Type d’avoir<select name="creditKind" data-credit-kind><option value="full">Total du solde créditable</option><option value="partial">Montant partiel</option></select></label><label data-credit-amount hidden>Montant TTC (€)<input name="amount" type="number" min="0.01" max="${(Number(invoice.creditableAmountCents) / 100).toFixed(2)}" step="0.01"></label><label>Motif détaillé *<textarea name="reason" minlength="10" maxlength="1000" rows="3" required placeholder="Motif comptable de la correction"></textarea></label><p class="muted">Après confirmation, l’avoir sera définitif et envoyé à l’entreprise.</p><button type="submit" class="secondary-button">Émettre l’avoir</button></form></details>` : "";
+    const credits = (invoice.credits || []).length ? `<div class="creator-credit-list">${invoice.credits.map(renderSubscriptionCredit).join("")}</div>` : "";
     return `
         <article class="creator-subscription-invoice">
             <div><p class="eyebrow">${escapeHtml(invoice.subscriptionLabel || "Abonnement Depann’Home Pro")}</p><h4>${escapeHtml(invoice.invoiceNumber)}</h4><p>${escapeHtml(invoice.companyName || invoice.recipientName)} · ${escapeHtml(invoice.recipientEmail || "E-mail non renseigné")}</p></div>
             <div class="creator-subscription-invoice-details"><span class="creator-subscription-badge ${escapeHtml(invoice.status || "pending")}">${status}</span>${paid ? '<span class="creator-subscription-badge paid">Réglée</span>' : ""}<strong>${formatCurrency(invoice.amountCents)}</strong>${discount}<small>Émise le ${formatDate(invoice.issueDate)} · Échéance ${formatDate(invoice.dueDate)}</small><small>${escapeHtml(sentAt)}</small>${historical}${cancelled}${paymentDetails}${error}</div>
-            <div class="creator-subscription-invoice-actions"><a class="secondary-button" href="/api/creator/subscription-invoices/${encodeURIComponent(invoice.id)}/pdf" download>Télécharger le PDF</a>${paymentAction}</div>
+            <div class="creator-subscription-invoice-actions"><a class="secondary-button" href="/api/creator/subscription-invoices/${encodeURIComponent(invoice.id)}/pdf" download>Télécharger le PDF</a>${paymentAction}${creditForm}</div>
+            ${credits}
         </article>
     `;
+}
+
+function renderSubscriptionCredit(credit) {
+    const delivery = ({ pending: "À envoyer", sending: "Envoi en cours", sent: "Envoyé", failed: "Échec d’envoi" })[credit.deliveryStatus] || "À envoyer";
+    const refund = credit.refundStatus === "pending" ? `<form class="creator-credit-refund-form" data-credit-refund-form="${escapeHtml(credit.id)}" data-credit-number="${escapeHtml(credit.creditNumber)}"><strong>Remboursement à effectuer</strong><label>Date<input name="refundedDate" type="date" max="${new Date().toISOString().slice(0, 10)}" value="${new Date().toISOString().slice(0, 10)}" required></label><label>Référence *<input name="refundReference" maxlength="160" required placeholder="N° de virement"></label><button type="submit" class="secondary-button">Enregistrer le remboursement</button></form>` : credit.refundStatus === "refunded" ? `<small class="creator-payment-confirmed">Remboursé le ${formatDate(credit.refundedDate)} · Réf. ${escapeHtml(credit.refundReference)}</small>` : '<small>Aucun remboursement requis : l’avoir réduit le montant à encaisser.</small>';
+    return `<article class="creator-subscription-credit"><div><span class="creator-subscription-badge credit">Avoir ${escapeHtml(credit.creditKind === "full" ? "total" : "partiel")}</span><h5>${escapeHtml(credit.creditNumber)}</h5><strong>−${formatCurrency(credit.amountCents)}</strong><p>${escapeHtml(credit.reason)}</p><small>Émis le ${formatDate(credit.issueDate)} · ${escapeHtml(delivery)}</small>${credit.lastError ? `<p class="auth-message error">${escapeHtml(credit.lastError)}</p>` : ""}</div><div class="creator-subscription-invoice-actions"><a class="secondary-button" href="/api/creator/subscription-credit-notes/${encodeURIComponent(credit.id)}/pdf" download>Télécharger l’avoir</a>${credit.deliveryStatus === "failed" ? `<button type="button" class="secondary-button" data-resend-credit="${escapeHtml(credit.id)}">Renvoyer l’avoir</button>` : ""}${refund}</div></article>`;
 }
 
 function subscriptionInvoiceStatus(status) {
