@@ -7,16 +7,17 @@ const RIGHTS = [["canSendInterventions", "Peut envoyer des interventions"], ["ca
 let sandboxScenario = null;
 
 export async function renderPartnerConnections(container) {
+    const internalNetworkOnly = document.body.dataset.organizationInterface === "partner";
     const card = document.createElement("article"); card.className = "brand-card full-card procedure-card partner-connections-card";
-    card.innerHTML = '<header class="partner-connections-heading"><div><p class="eyebrow">Partenariats & intégrations</p><h2>Réseau et connecteurs</h2><p class="muted">Le réseau Depann\'Home Pro relie les entreprises utilisatrices. Les connecteurs externes reçoivent leurs missions directement par API.</p></div></header><nav class="partner-network-tabs" aria-label="Espaces partenaires"><button type="button" class="secondary-button active" data-partner-space="network">Réseau Depann\'Home Pro</button><button type="button" class="secondary-button" data-partner-space="external">Connecteurs externes</button></nav><div data-partner-connections><p class="muted">Chargement des espaces partenaires…</p></div>';
+    card.innerHTML = `<header class="partner-connections-heading"><div><p class="eyebrow">${internalNetworkOnly ? "Réseau professionnel" : "Partenariats & intégrations"}</p><h2>${internalNetworkOnly ? "Réseau Depann’Home Pro" : "Réseau et connecteurs"}</h2><p class="muted">${internalNetworkOnly ? "Recherchez des entreprises utilisatrices et établissez des partenariats internes, sans connecteur ni accès API externe." : "Le réseau Depann’Home Pro relie les entreprises utilisatrices. Les connecteurs externes reçoivent leurs missions directement par API."}</p></div></header>${internalNetworkOnly ? "" : '<nav class="partner-network-tabs" aria-label="Espaces partenaires"><button type="button" class="secondary-button active" data-partner-space="network">Réseau Depann\'Home Pro</button><button type="button" class="secondary-button" data-partner-space="external">Connecteurs externes</button></nav>'}<div data-partner-connections><p class="muted">Chargement du Réseau Depann’Home Pro…</p></div>`;
     container.appendChild(card);
     let activeSpace = "network";
     let activeTab = "partners";
     let activeExternalTab = "available";
     card.querySelectorAll("[data-partner-space]").forEach(button => button.addEventListener("click", () => { activeSpace = button.dataset.partnerSpace; render(); }));
     async function load() {
-        const sandboxAvailable = document.body.classList.contains("partner-sandbox-enabled");
-        const [connectionsResult, scenarioResult, officialPartnersResult, intakesResult] = await Promise.all([api("/api/partner-connections"), sandboxAvailable ? api("/api/partner-sandbox/connection-scenario") : Promise.resolve({ ok: false }), api("/api/official-partners"), api("/api/partner-missions/intakes")]);
+        const sandboxAvailable = !internalNetworkOnly && document.body.classList.contains("partner-sandbox-enabled");
+        const [connectionsResult, scenarioResult, officialPartnersResult, intakesResult] = await Promise.all([api("/api/partner-connections"), sandboxAvailable ? api("/api/partner-sandbox/connection-scenario") : Promise.resolve({ ok: false }), internalNetworkOnly ? Promise.resolve({ ok: false }) : api("/api/official-partners"), internalNetworkOnly ? Promise.resolve({ ok: false }) : api("/api/partner-missions/intakes")]);
         if (!connectionsResult.ok) { card.querySelector("[data-partner-connections]").innerHTML = `<p class="auth-message error">${escapeHtml(connectionsResult.message)}</p>`; return; }
         sandboxScenario = scenarioResult.ok ? scenarioResult.data.scenario : null;
         card._workspace = { ...connectionsResult.data, officialPartners: officialPartnersResult.ok ? officialPartnersResult.data?.partners || [] : [], officialConnections: officialPartnersResult.ok ? officialPartnersResult.data?.connections || [] : [], intakes: intakesResult.ok ? intakesResult.data?.intakes || [] : [] };
@@ -26,7 +27,7 @@ export async function renderPartnerConnections(container) {
         const data = card._workspace; if (!data) return;
         const target = card.querySelector("[data-partner-connections]");
         card.querySelectorAll("[data-partner-space]").forEach(button => button.classList.toggle("active", button.dataset.partnerSpace === activeSpace));
-        if (activeSpace === "external") return renderExternalConnectors(target, data, activeExternalTab, tab => { activeExternalTab = tab; render(); }, load);
+        if (!internalNetworkOnly && activeSpace === "external") return renderExternalConnectors(target, data, activeExternalTab, tab => { activeExternalTab = tab; render(); }, load);
         target.innerHTML = '<nav class="partner-network-tabs" aria-label="Réseau Depann\'Home Pro"><button type="button" class="secondary-button" data-network-tab="partners">Mes partenaires</button><button type="button" class="secondary-button" data-network-tab="directory">Annuaire Depann\'Home Pro</button></nav><div data-network-content></div>';
         target.querySelectorAll("[data-network-tab]").forEach(button => button.addEventListener("click", () => { activeTab = button.dataset.networkTab; render(); }));
         const networkTarget = target.querySelector("[data-network-content]");

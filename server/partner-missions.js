@@ -116,7 +116,7 @@ async function receiveMission(req, res) {
     if (!body || Buffer.byteLength(JSON.stringify(body)) > MAX_PAYLOAD_BYTES) return res.status(400).json({ message: "Mission invalide ou trop volumineuse." });
     const key = clean(req.headers["x-api-key"], 300); const partnerKey = clean(req.params.partnerKey, 64).toLowerCase();
     if (!key) return res.status(401).json({ message: "Clé API partenaire manquante." });
-    const { rows } = await getPool().query("SELECT intake.* FROM depannhome_partner_intakes intake JOIN depannhome_users owner ON owner.id=intake.owner_id WHERE intake.partner_key=$1 AND intake.enabled=TRUE AND owner.is_active=TRUE AND owner.is_archived=FALSE", [partnerKey]); const intake = rows[0];
+    const { rows } = await getPool().query("SELECT intake.* FROM depannhome_partner_intakes intake JOIN depannhome_users owner ON owner.id=intake.owner_id LEFT JOIN depannhome_organizations organization ON organization.account_owner_id=owner.id WHERE intake.partner_key=$1 AND intake.enabled=TRUE AND owner.is_active=TRUE AND owner.is_archived=FALSE AND COALESCE(organization.interface_type,'standard')<>'partner'", [partnerKey]); const intake = rows[0];
     if (!intake || !safeEqual(hash(key), intake.api_key_hash)) return res.status(401).json({ message: "Partenaire ou clé API invalide." });
     if (intake.is_sandbox) {
         const fault = clean(req.headers["x-partner-sandbox-fault"], 30);

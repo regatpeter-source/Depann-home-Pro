@@ -18,6 +18,8 @@ Dans **Paramètres → Réseau Depann'Home Pro**, l’onglet **Annuaire Depann'H
 
 L’onglet **Mes partenaires** regroupe aussi les accès API externes : création, modification, activation, suppression lorsqu’aucune mission n’est attachée, renouvellement de clé et contrôle de préparation de l’endpoint. Les clés restent affichées uniquement lors de leur création ou renouvellement. Les partenaires Depann'Home Pro ne nécessitent aucun paramétrage technique.
 
+Le **Portail Partenaire gratuit** accède uniquement au Réseau Depann’Home Pro : annuaire, recherche, demandes et connexions entre entreprises utilisatrices. Il ne charge ni n’affiche les partenaires officiels, les accès API, les connecteurs externes ou le sandbox associé. Ces intégrations sont réservées aux donneurs d’ordre, par exemple les assurances et plateformes externes, et sont également refusées par les routes serveur.
+
 ## Droits et synchronisation
 
 Chaque côté de la relation gère ses propres droits : envoi/réception d’interventions, consultation des rapports, devis et factures, messagerie et statuts. La relation peut être modifiée ou interrompue à tout moment.

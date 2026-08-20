@@ -122,6 +122,9 @@ app.use("/api/purchases", requireAuthentication, requireOrganizationFeature("pur
 app.use("/api/messages", requireAuthentication, requireOrganizationFeature("messages"));
 app.use("/api/partner-connections", requireAuthentication, requireOrganizationFeature("partnerConnections"));
 app.use("/api/partner-dialogue", requireAuthentication, requireOrganizationFeature("partnerMissions"));
+app.use("/api/official-partners", requireAuthentication, requireOrganizationFeature("connectors"));
+app.use("/api/partner-missions/intakes", requireAuthentication, requireOrganizationFeature("connectors"));
+app.use("/api/partner-sandbox", requireAuthentication, requireOrganizationFeature("connectors"));
 app.use("/api/connectors", requireAuthentication, requireOrganizationFeature("connectors"));
 app.use("/api/data-imports", requireAuthentication, requireOrganizationFeature("imports"));
 app.use("/api/groups", requireAuthentication, requireOrganizationFeature("groups"));

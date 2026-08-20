@@ -15,7 +15,7 @@ const ALL_FEATURES = Object.freeze({
 });
 const PARTNER_FEATURES = Object.freeze({
     clients: true, calendar: false, library: false, billing: false, accounting: false, quitus: false, technicalReports: false,
-    partnerMissions: true, partnerConnections: false, messages: true, settings: false, imports: false, groups: false,
+    partnerMissions: true, partnerConnections: true, messages: true, settings: false, imports: false, groups: false,
     purchases: false, connectors: false, photo: false
 });
 const MOBILE_ROLES = Object.freeze(["mobile_admin", "team_lead", "technician"]);
@@ -138,6 +138,7 @@ export function organizationInterfaceAccessMessage(subscriptionTier, interfaceTy
 
 function resolvedFeatures(interfaceType, subscriptionTier, overrides) {
     const defaults = organizationDefaults(interfaceType, subscriptionTier);
+    if (interfaceType === "partner") return { ...defaults, ...overrides, partnerConnections: true, connectors: false };
     if (interfaceType !== "standard") return { ...defaults, ...overrides };
     return Object.fromEntries(Object.keys(ALL_FEATURES).map(feature => [feature, Boolean(defaults[feature]) && overrides[feature] !== false]));
 }

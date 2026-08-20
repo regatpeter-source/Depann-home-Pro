@@ -17,7 +17,7 @@ const navigation = readFileSync(new URL("../js/navigation.js", import.meta.url),
 const billing = readFileSync(new URL("../js/billing.js", import.meta.url), "utf8");
 const calendar = readFileSync(new URL("../js/calendar.js", import.meta.url), "utf8");
 const auth = readFileSync(new URL("../server/auth.js", import.meta.url), "utf8");
-const partnerConnections = readFileSync(new URL("../server/partner-connections.js", import.meta.url), "utf8");
+const partnerConnectionsServer = readFileSync(new URL("../server/partner-connections.js", import.meta.url), "utf8");
 const partnerDialogue = readFileSync(new URL("../server/partner-dialogue.js", import.meta.url), "utf8");
 const purchasesServer = readFileSync(new URL("../server/purchases.js", import.meta.url), "utf8");
 const supportServer = readFileSync(new URL("../server/support.js", import.meta.url), "utf8");
@@ -26,6 +26,8 @@ const style = readFileSync(new URL("../css/style.css", import.meta.url), "utf8")
 const subscriptionOffers = readFileSync(new URL("../docs/SUBSCRIPTION_OFFERS.md", import.meta.url), "utf8");
 const commercialPresentation = readFileSync(new URL("../docs/PRESENTATION_COMMERCIALE_PARTENAIRES.md", import.meta.url), "utf8");
 const presentationGenerator = readFileSync(new URL("../scripts/generate-partner-presentation.js", import.meta.url), "utf8");
+const partnerConnectionsClient = readFileSync(new URL("../js/partner-connections.js", import.meta.url), "utf8");
+const partnerMissionsServer = readFileSync(new URL("../server/partner-missions.js", import.meta.url), "utf8");
 
 test("Basic, Basic+ and Pro prices are calculated per PC and mobile seat", () => {
     assert.equal(calculateSubscriptionPriceCents("basic", 1, 1), 2500);
@@ -161,10 +163,10 @@ test("organization interfaces remain compatible with subscription tiers", () => 
     assert.match(creatorClient, /mobileSeats\.readOnly = isPartner/);
 });
 
-test("the free Partner interface only exposes Clients and Partner Missions", () => {
+test("the free Partner interface exposes the internal network without external connectors", () => {
     const partner = publicOrganization({ interfaceType: "partner", licenseType: "partner_portal", subscriptionTier: "pro" });
-    for (const feature of ["clients", "partnerMissions", "messages"]) assert.equal(isFeatureEnabled(partner, feature), true, feature);
-    for (const feature of ["calendar", "library", "billing", "accounting", "technicalReports", "partnerConnections", "settings", "imports", "groups", "purchases", "connectors", "photo"]) {
+    for (const feature of ["clients", "partnerMissions", "partnerConnections", "messages"]) assert.equal(isFeatureEnabled(partner, feature), true, feature);
+    for (const feature of ["calendar", "library", "billing", "accounting", "technicalReports", "settings", "imports", "groups", "purchases", "connectors", "photo"]) {
         assert.equal(isFeatureEnabled(partner, feature), false, feature);
     }
     assert.equal(isFeatureEnabledForRole(partner, "library", "technician"), false);
@@ -172,6 +174,18 @@ test("the free Partner interface only exposes Clients and Partner Missions", () 
     assert.match(auth, /publicUser\(\{ \.\.\.user, accountOwnerId, activeCompanyId: accountOwnerId, organization \}\)/);
     assert.match(navigation, /return features\[feature\] === true/);
     assert.match(navigation, /refreshOrganizationAccess\(\)/);
+    assert.match(navigation, /organizationInterface === "partner"/);
+    assert.match(navigation, /section === "network" && organizationFeatureEnabled\("partnerConnections"\)/);
+    assert.match(navigation, /internalNetworkOnly \? "Réseau Depann’Home Pro" : "Réseau & connecteurs"/);
+    assert.match(app, /app\.use\("\/api\/official-partners", requireAuthentication, requireOrganizationFeature\("connectors"\)\)/);
+    assert.match(app, /app\.use\("\/api\/partner-missions\/intakes", requireAuthentication, requireOrganizationFeature\("connectors"\)\)/);
+    assert.match(app, /app\.use\("\/api\/partner-sandbox", requireAuthentication, requireOrganizationFeature\("connectors"\)\)/);
+    assert.match(partnerConnectionsClient, /const internalNetworkOnly = document\.body\.dataset\.organizationInterface === "partner"/);
+    assert.match(partnerConnectionsClient, /internalNetworkOnly \? Promise\.resolve\(\{ ok: false \}\) : api\("\/api\/official-partners"\)/);
+    assert.match(partnerMissionsServer, /COALESCE\(organization\.interface_type,'standard'\)<>'partner'/);
+    const overriddenPartner = publicOrganization({ interfaceType: "partner", subscriptionTier: "pro", licenseFeatures: { partnerConnections: false, connectors: true } });
+    assert.equal(isFeatureEnabled(overriddenPartner, "partnerConnections"), true);
+    assert.equal(isFeatureEnabled(overriddenPartner, "connectors"), false);
 });
 
 test("subscription invoices detail charged PC and mobile seats", () => {
@@ -290,7 +304,7 @@ test("tier features are protected on both API and navigation layers", () => {
     assert.match(auth, /const targetUserId = action\.endsWith\("_deleted"\) \? null/);
     assert.match(auth, /isRoleAllowedForSubscription\(organization\.subscriptionTier, user\.role\)/);
     assert.match(auth, /subscriptionRoleAccessMessage\(organization\.subscriptionTier, user\.role\)/);
-    assert.match(partnerConnections, /isFeatureEnabled\(await getOrganization\(ownerId\), "partnerConnections"\)/);
+    assert.match(partnerConnectionsServer, /isFeatureEnabled\(await getOrganization\(ownerId\), "partnerConnections"\)/);
     assert.match(partnerDialogue, /isFeatureEnabled\(await getOrganization\(ownerId\), "partnerMissions"\)/);
     const companyProfileSync = creatorServer.slice(creatorServer.indexOf("async function synchronizeCompanyProfile"), creatorServer.indexOf("function cleanList"));
     assert.doesNotMatch(companyProfileSync, /DO UPDATE SET is_listed=/);
@@ -299,6 +313,6 @@ test("tier features are protected on both API and navigation layers", () => {
     assert.match(creatorServer, /organizationInterfaceAccessMessage\(subscriptionTier, requestedInterface\)/);
     assert.doesNotMatch(creatorServer, /Désactivez les comptes Technicien et Chef d’équipe avant de passer/);
     assert.match(creatorServer, /subscriptionRoleAccessMessage\(owners\[0\]\.subscriptionTier, role\)/);
-    assert.match(partnerConnections, /owner\.subscription_tier='pro'/);
+    assert.match(partnerConnectionsServer, /owner\.subscription_tier='pro'/);
     assert.match(creatorClient, /option\.disabled = !isPro/);
 });

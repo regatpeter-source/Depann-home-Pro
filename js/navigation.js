@@ -8,7 +8,7 @@ import { renderPurchases } from "./purchases.js?v=118";
 import { renderGroupActivation, renderGroupWorkspace } from "./groups.js?v=3";
 import { renderPartnerMissions } from "./partner-missions.js?v=42";
 import { renderPartnerSandbox } from "./partner-sandbox.js?v=3";
-import { renderPartnerConnections } from "./partner-connections.js?v=19";
+import { renderPartnerConnections } from "./partner-connections.js?v=20";
 import { renderDataImportTool } from "./data-imports.js?v=3";
 import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=29";
 import { getFirstUnreadClientId, refreshClientMessageAlert, refreshVisibleClientMessages } from "./messages.js?v=106";
@@ -334,6 +334,7 @@ function isDesktopDevice() {
 
 function canAccessSettingsSection(section) {
     if (document.body.dataset.creator === "true") return true;
+    if (document.body.dataset.organizationInterface === "partner") return section === "network" && organizationFeatureEnabled("partnerConnections");
     const featureBySection = { documents: "billing", network: "partnerConnections", users: "settings", security: "settings", groups: "groups", personalization: "settings", imports: "imports" };
     const feature = featureBySection[section];
     if (feature && !organizationFeatureEnabled(feature)) return false;
@@ -343,6 +344,7 @@ function canAccessSettingsSection(section) {
 
 function isOrganizationRouteEnabled(route) {
     if (document.body.dataset.creator === "true") return true;
+    if (route === ROUTES.settings && organizationFeatureEnabled("partnerConnections")) return true;
     const featureByRoute = { [ROUTES.search]: "library", [ROUTES.store]: "library", [ROUTES.clients]: "clients", [ROUTES.calendar]: "calendar", [ROUTES.library]: "library", [ROUTES.billing]: "billing", [ROUTES.accounting]: "accounting", [ROUTES.purchases]: "purchases", [ROUTES.messages]: "messages", [ROUTES.technicalReports]: "technicalReports", [ROUTES.partnerMissions]: "partnerMissions", [ROUTES.groups]: "groups", [ROUTES.photo]: "photo", [ROUTES.settings]: "settings" };
     const feature = featureByRoute[route];
     return !feature || organizationFeatureEnabled(feature);
@@ -1326,10 +1328,11 @@ function renderSettingsWorkspace(options = {}) {
         hub.innerHTML = '<header class="settings-hub-heading"><div><p class="eyebrow">Configuration de l’entreprise</p><h2>Paramètres</h2><p class="muted">Toutes les configurations sont regroupées ici. Le menu principal reste dédié aux opérations quotidiennes.</p></div></header>';
         const grid = document.createElement("div");
         grid.className = "settings-card-grid";
+        const internalNetworkOnly = document.body.dataset.organizationInterface === "partner";
         const cards = [
             ...(document.body.dataset.role === "admin" ? [["subscription", "Offre & abonnement", "Consultez les tarifs et demandez une évolution ou une rétrogradation au Support.", "subscription"]] : []),
             ...(document.body.dataset.role === "admin" ? [["documents", "Modèles de documents", `Identité, présentation et modèles des devis${organizationFeatureEnabled("quitus") ? ", quitus" : ""} et rapports.`, "document"]] : []),
-            ["network", "Réseau & connecteurs", "Deux espaces distincts : le réseau collaboratif Depann’Home Pro et les connecteurs API externes.", "network"],
+            ["network", internalNetworkOnly ? "Réseau Depann’Home Pro" : "Réseau & connecteurs", internalNetworkOnly ? "Recherchez des entreprises utilisatrices et gérez vos connexions internes." : "Deux espaces distincts : le réseau collaboratif Depann’Home Pro et les connecteurs API externes.", "network"],
             ...(document.body.dataset.role === "admin" ? [["users", "Utilisateurs", "Accès, postes, techniciens et chefs d’équipe.", "users"], ["security", "Sécurité", "Double authentification et protection des accès.", "security"], ["groups", "Groupe / Multi-entreprises", "Sociétés, bascule de contexte et indicateurs consolidés.", "group"]] : []),
             ["personalization", "Personnalisation", "Langue, thème, police et préférences d’affichage.", "appearance"],
             ...(document.body.dataset.role === "admin" && document.body.classList.contains("desktop-device") ? [["imports", "Importation de données", "Importez vos clients, devis, factures et rapports depuis Excel ou CSV.", "import"]] : []),
@@ -1343,7 +1346,7 @@ function renderSettingsWorkspace(options = {}) {
 
     clearSearch();
     resetSelection("all");
-    const titles = { subscription: "Offre & abonnement", documents: "Modèles de documents", network: "Réseau & connecteurs", users: "Utilisateurs", security: "Sécurité", groups: "Groupe / Multi-entreprises", personalization: "Personnalisation", imports: "Importation de données", creator: "Console Créateur" };
+    const titles = { subscription: "Offre & abonnement", documents: "Modèles de documents", network: document.body.dataset.organizationInterface === "partner" ? "Réseau Depann’Home Pro" : "Réseau & connecteurs", users: "Utilisateurs", security: "Sécurité", groups: "Groupe / Multi-entreprises", personalization: "Personnalisation", imports: "Importation de données", creator: "Console Créateur" };
     setPage(`Paramètres · ${titles[section] || "Configuration"}`, ROUTES.settings, "detail");
     const container = getContainer();
     container.appendChild(createBackCard("Retour aux Paramètres", () => renderSettings()));
@@ -1361,9 +1364,10 @@ function renderSettingsWorkspace(options = {}) {
         return;
     }
     if (section === "network") {
-        container.appendChild(createSettingsIntro("Réseau & connecteurs", "Le Réseau Depann’Home Pro relie uniquement les entreprises utilisatrices. Les connecteurs externes sont configurés séparément pour les échanges API avec les organismes tiers."));
+        const internalNetworkOnly = document.body.dataset.organizationInterface === "partner";
+        container.appendChild(createSettingsIntro(internalNetworkOnly ? "Réseau Depann’Home Pro" : "Réseau & connecteurs", internalNetworkOnly ? "Recherchez une entreprise utilisatrice, consultez sa fiche et demandez une connexion. Les connecteurs externes sont réservés aux donneurs d’ordre et ne sont pas disponibles sur le portail Partenaire." : "Le Réseau Depann’Home Pro relie uniquement les entreprises utilisatrices. Les connecteurs externes sont configurés séparément pour les échanges API avec les organismes tiers."));
         renderPartnerConnections(container);
-        if (document.body.classList.contains("partner-sandbox-enabled")) container.appendChild(createButton("Ouvrir l’environnement de recette partenaire", "secondary-button settings-inline-action", renderPartnerSandbox));
+        if (!internalNetworkOnly && document.body.classList.contains("partner-sandbox-enabled")) container.appendChild(createButton("Ouvrir l’environnement de recette partenaire", "secondary-button settings-inline-action", renderPartnerSandbox));
         return;
     }
     if (section === "users") return renderTeamManagement(container);

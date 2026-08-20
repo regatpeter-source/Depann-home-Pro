@@ -79,7 +79,7 @@ L’offre Pro est destinée aux entreprises qui veulent piloter l’ensemble de 
 
 ### Licence Partenaire gratuite
 
-La licence Portail Partenaire est gratuite : elle ne comporte ni abonnement mensuel, ni échéance, ni facture. Elle utilise le niveau technique Pro pour sécuriser les échanges, mais reste un accès dédié comprenant un poste Administrateur PC, aucun poste mobile et uniquement les espaces Clients et Missions partenaires avec leur messagerie contextuelle. Elle permet ainsi à un partenaire de recevoir et suivre les missions qui lui sont confiées sans souscrire une offre Pro payante.
+La licence Portail Partenaire est gratuite : elle ne comporte ni abonnement mensuel, ni échéance, ni facture. Elle utilise le niveau technique Pro pour sécuriser les échanges, mais reste un accès dédié comprenant un poste Administrateur PC, aucun poste mobile, les espaces Clients et Missions partenaires avec leur messagerie contextuelle, ainsi que la recherche d’entreprises dans le Réseau Depann’Home Pro. Elle ne donne accès à aucun connecteur ni accès API externe, ces outils étant réservés aux donneurs d’ordre tels que les assurances. Elle permet ainsi à un partenaire de recevoir et suivre les missions qui lui sont confiées sans souscrire une offre Pro payante.
 
 ## Exemple de calcul mensuel
 
