@@ -148,6 +148,8 @@ test("companies request offer changes from Settings without changing the active 
     assert.match(navigation, /Postes PC autorisés/);
     assert.match(navigation, /Postes mobiles autorisés/);
     assert.match(navigation, /Tarif total actuel/);
+    assert.match(navigation, /account\.maxMobileUsers \?\? document\.body\.dataset\.maxMobileUsers/);
+    assert.match(navigation, /document\.body\.dataset\.maxMobileUsers = String\(currentMobileSeats\)/);
     assert.match(navigation, /data-seat-request/);
     const subscriptionSettings = navigation.slice(navigation.indexOf("async function renderSubscriptionSettings"), navigation.indexOf("function subscriptionRequestStatusLabel"));
     assert.doesNotMatch(subscriptionSettings, /Créateur/);
@@ -156,6 +158,8 @@ test("companies request offer changes from Settings without changing the active 
     assert.match(style, /@media\(max-width:1000px\)\{\.subscription-offers-grid\{grid-template-columns:1fr\}/);
     assert.match(style, /\.subscription-offer-card>\.secondary-button\{width:100%;margin-top:auto/);
     assert.match(creatorServer, /app\.post\("\/api\/subscription-change-requests"/);
+    assert.match(creatorServer, /max_technicians AS "maxMobileUsers"/);
+    assert.match(creatorServer, /monthlyPriceCents: calculateSubscriptionPriceCents\(account\.subscriptionTier, account\.maxPcUsers, account\.maxMobileUsers\)/);
     assert.match(creatorServer, /transmise au Support/);
     assert.match(creatorServer, /app\.get\("\/api\/creator\/subscription-change-requests"/);
     assert.match(creatorServer, /app\.patch\("\/api\/creator\/subscription-change-requests\/:requestId"/);

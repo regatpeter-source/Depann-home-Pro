@@ -705,6 +705,8 @@ export async function authenticateRequest(request, response, next) {
             email: user.email || "",
             technicianBillingEnabled: user.can_create_billing !== false,
             maxPcUsers: Number(user.max_pc_users) || 1,
+            maxMobileUsers: Number(user.max_technicians) || 0,
+            monthlyPriceCents: Number(user.monthly_price_cents) || 0,
             deviceId: device.id,
             deviceType: device.device_type || "desktop",
             organization,

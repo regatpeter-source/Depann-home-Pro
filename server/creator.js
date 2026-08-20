@@ -26,8 +26,13 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
     }));
     app.get("/api/subscription-change-requests", requireAuthentication, asyncHandler(async (request, response) => {
         if (request.user?.role !== "admin") return response.status(403).json({ message: "La gestion de l’offre est réservée à l’Administrateur de l’entreprise." });
-        const { rows } = await getPool().query(`SELECT id,current_tier AS "currentTier",requested_tier AS "requestedTier",requested_pc_seats AS "requestedPcSeats",requested_mobile_seats AS "requestedMobileSeats",status,company_message AS "companyMessage",created_at AS "createdAt",updated_at AS "updatedAt" FROM depannhome_subscription_change_requests WHERE owner_id=$1 ORDER BY created_at DESC LIMIT 20`, [request.user.accountOwnerId]);
-        response.json({ requests: rows });
+        const [requestsResult, accountResult] = await Promise.all([
+            getPool().query(`SELECT id,current_tier AS "currentTier",requested_tier AS "requestedTier",requested_pc_seats AS "requestedPcSeats",requested_mobile_seats AS "requestedMobileSeats",status,company_message AS "companyMessage",created_at AS "createdAt",updated_at AS "updatedAt" FROM depannhome_subscription_change_requests WHERE owner_id=$1 ORDER BY created_at DESC LIMIT 20`, [request.user.accountOwnerId]),
+            getPool().query(`SELECT subscription_tier AS "subscriptionTier",max_pc_users AS "maxPcUsers",max_technicians AS "maxMobileUsers" FROM depannhome_users WHERE id=$1 AND account_owner_id=id`, [request.user.accountOwnerId])
+        ]);
+        const account = accountResult.rows[0];
+        if (!account) return response.status(404).json({ message: "Entreprise introuvable." });
+        response.json({ requests: requestsResult.rows, account: { ...account, monthlyPriceCents: calculateSubscriptionPriceCents(account.subscriptionTier, account.maxPcUsers, account.maxMobileUsers) } });
     }));
     app.post("/api/subscription-change-requests", requireAuthentication, asyncHandler(async (request, response) => {
         if (request.user?.role !== "admin") return response.status(403).json({ message: "La demande de changement d’offre est réservée à l’Administrateur de l’entreprise." });
