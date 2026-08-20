@@ -1,9 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { buildSubscriptionInvoiceSnapshot } from "../server/invoicing.js";
+import { buildSubscriptionInvoiceSnapshot, subscriptionInvoiceMatchesCurrentSubscription } from "../server/invoicing.js";
 
 const invoicingSource = readFileSync(new URL("../server/invoicing.js", import.meta.url), "utf8");
+const creatorServerSource = readFileSync(new URL("../server/creator.js", import.meta.url), "utf8");
 const creatorSource = readFileSync(new URL("../js/creator.js", import.meta.url), "utf8");
 const emailSource = readFileSync(new URL("../server/email.js", import.meta.url), "utf8");
 const databaseSource = readFileSync(new URL("../server/database.js", import.meta.url), "utf8");
@@ -142,4 +143,18 @@ test("les portails Partenaire gratuits sont exclus de toute facturation d’abon
     assert.match(invoicingSource, /COALESCE\(organization\.interface_type, 'standard'\) <> 'partner'/);
     assert.match(invoicingSource, /invoice_owner\.subscription_plan='paid'/);
     assert.match(invoicingSource, /COALESCE\(invoice_organization\.interface_type,'standard'\)<>'partner'/);
+});
+
+test("une facture non envoyée devenue obsolète est annulée avant toute livraison", () => {
+    const current = { subscriptionPlan: "paid", interfaceType: "standard", subscriptionTier: "basic_plus", subscriptionLabel: "Basic+", monthlyPriceCents: 4300, maxPcUsers: 1, maxTechnicians: 1, discountMode: "fixed", discountValue: 0 };
+    assert.equal(subscriptionInvoiceMatchesCurrentSubscription({ subscriptionLabel: "Pro Standard", baseAmountCents: 7500, amountCents: 7500, vatRate: 20 }, current), false);
+    assert.equal(subscriptionInvoiceMatchesCurrentSubscription({ subscriptionLabel: "Basic+", baseAmountCents: 4300, amountCents: 4300, vatRate: 20 }, current), true);
+    assert.equal(subscriptionInvoiceMatchesCurrentSubscription({ subscriptionLabel: "Basic+", baseAmountCents: 4300, amountCents: 4300, vatRate: 20 }, { ...current, interfaceType: "partner", subscriptionPlan: "free" }), false);
+    assert.equal(subscriptionInvoiceMatchesCurrentSubscription({ subscriptionSnapshot: { netAmountCents: 4300, amountCents: 4300, maxTechnicians: 1, maxPcUsers: 1, subscriptionLabel: "Basic+", subscriptionTier: "basic_plus", interfaceType: "standard", subscriptionPlan: "paid", discountValue: 0, discountMode: "fixed", discountLabel: "" }, vatRate: 20 }, current), true);
+    assert.match(invoicingSource, /status='cancelled',last_error='Annulée automatiquement : l’abonnement a changé avant l’envoi\.'/);
+    assert.match(invoicingSource, /'superseded_before_sending'/);
+    assert.match(invoicingSource, /WHERE status<>'cancelled'/);
+    assert.match(schemaSource, /status IN \('pending','sending','sent','failed','cancelled'\)/);
+    assert.match(creatorSource, /Facture historique : l’abonnement actuel est désormais de/);
+    assert.match(creatorServerSource, /FROM depannhome_subscription_invoices WHERE account_owner_id=\$1 AND status<>'cancelled'/);
 });

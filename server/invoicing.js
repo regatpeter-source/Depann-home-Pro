@@ -50,10 +50,11 @@ export async function initializeSubscriptionInvoicing() {
             vat_rate NUMERIC(5,2) NOT NULL CHECK (vat_rate >= 0 AND vat_rate <= 100),
             lines JSONB NOT NULL DEFAULT '[]'::jsonb,
             financial_data JSONB NOT NULL DEFAULT '{}'::jsonb,
+            subscription_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
             issue_date DATE NOT NULL,
             due_date DATE NOT NULL,
             issuer_profile JSONB NOT NULL,
-            status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'sending', 'sent', 'failed')),
+            status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'sending', 'sent', 'failed', 'cancelled')),
             sent_at TIMESTAMPTZ,
             last_error VARCHAR(1000) NOT NULL DEFAULT '',
             payment_status VARCHAR(20) NOT NULL DEFAULT 'unpaid' CHECK (payment_status IN ('unpaid', 'paid')),
@@ -65,8 +66,7 @@ export async function initializeSubscriptionInvoicing() {
             receipt_sent_at TIMESTAMPTZ,
             receipt_last_error VARCHAR(1000) NOT NULL DEFAULT '',
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            CONSTRAINT depannhome_subscription_invoices_owner_period_unique UNIQUE (account_owner_id, billing_period)
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
     `);
     await database.query(`ALTER TABLE depannhome_subscription_invoices ADD COLUMN IF NOT EXISTS recipient_address VARCHAR(500) NOT NULL DEFAULT ''`);
@@ -76,6 +76,11 @@ export async function initializeSubscriptionInvoicing() {
     await database.query(`ALTER TABLE depannhome_subscription_invoices ALTER COLUMN net_amount_cents SET DEFAULT 0, ALTER COLUMN net_amount_cents SET NOT NULL`);
     await database.query(`ALTER TABLE depannhome_subscription_invoices ADD COLUMN IF NOT EXISTS lines JSONB NOT NULL DEFAULT '[]'::jsonb`);
     await database.query(`ALTER TABLE depannhome_subscription_invoices ADD COLUMN IF NOT EXISTS financial_data JSONB NOT NULL DEFAULT '{}'::jsonb`);
+    await database.query(`ALTER TABLE depannhome_subscription_invoices ADD COLUMN IF NOT EXISTS subscription_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb`);
+    await database.query(`ALTER TABLE depannhome_subscription_invoices DROP CONSTRAINT IF EXISTS depannhome_subscription_invoices_status_check`);
+    await database.query(`ALTER TABLE depannhome_subscription_invoices ADD CONSTRAINT depannhome_subscription_invoices_status_check CHECK (status IN ('pending','sending','sent','failed','cancelled'))`);
+    await database.query(`ALTER TABLE depannhome_subscription_invoices DROP CONSTRAINT IF EXISTS depannhome_subscription_invoices_owner_period_unique`);
+    await database.query(`CREATE UNIQUE INDEX IF NOT EXISTS depannhome_subscription_invoices_active_owner_period_idx ON depannhome_subscription_invoices (account_owner_id,billing_period) WHERE status<>'cancelled'`);
     await database.query(`ALTER TABLE depannhome_subscription_invoices ADD COLUMN IF NOT EXISTS payment_status VARCHAR(20) NOT NULL DEFAULT 'unpaid' CHECK (payment_status IN ('unpaid','paid')), ADD COLUMN IF NOT EXISTS paid_date DATE, ADD COLUMN IF NOT EXISTS paid_at TIMESTAMPTZ, ADD COLUMN IF NOT EXISTS paid_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL, ADD COLUMN IF NOT EXISTS payment_reference VARCHAR(160) NOT NULL DEFAULT '', ADD COLUMN IF NOT EXISTS receipt_delivery_status VARCHAR(20) NOT NULL DEFAULT 'not_sent' CHECK (receipt_delivery_status IN ('not_sent','pending','sending','sent','failed')), ADD COLUMN IF NOT EXISTS receipt_sent_at TIMESTAMPTZ, ADD COLUMN IF NOT EXISTS receipt_last_error VARCHAR(1000) NOT NULL DEFAULT ''`);
     await database.query(`CREATE INDEX IF NOT EXISTS depannhome_subscription_invoices_status_idx ON depannhome_subscription_invoices (status, created_at)`);
     await database.query(`CREATE TABLE IF NOT EXISTS depannhome_subscription_invoice_sequences (series_year INTEGER PRIMARY KEY CHECK (series_year >= 2020), last_number BIGINT NOT NULL DEFAULT 0 CHECK (last_number >= 0), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
@@ -118,18 +123,27 @@ export function registerSubscriptionInvoicingRoutes(app, requireCreator) {
         const { rows } = await getPool().query(`
             SELECT invoice.id, invoice.invoice_number AS "invoiceNumber", invoice.recipient_name AS "recipientName", invoice.recipient_email AS "recipientEmail",
                 invoice.subscription_label AS "subscriptionLabel", invoice.net_amount_cents AS "amountCents", invoice.amount_cents AS "baseAmountCents",
-                invoice.financial_data AS "financialData", invoice.vat_rate::float AS "vatRate",
+            invoice.financial_data AS "financialData", invoice.subscription_snapshot AS "subscriptionSnapshot", invoice.vat_rate::float AS "vatRate",
                 TO_CHAR(invoice.issue_date, 'YYYY-MM-DD') AS "issueDate", TO_CHAR(invoice.due_date, 'YYYY-MM-DD') AS "dueDate",
                 invoice.status, invoice.sent_at AS "sentAt", invoice.last_error AS "lastError", invoice.created_at AS "createdAt",
                 invoice.payment_status AS "paymentStatus", TO_CHAR(invoice.paid_date, 'YYYY-MM-DD') AS "paidDate", invoice.paid_at AS "paidAt",
                 invoice.payment_reference AS "paymentReference", invoice.receipt_delivery_status AS "receiptDeliveryStatus",
                 invoice.receipt_sent_at AS "receiptSentAt", invoice.receipt_last_error AS "receiptLastError",
-                owner.company_name AS "companyName"
+                owner.company_name AS "companyName", owner.subscription_plan AS "subscriptionPlan", owner.subscription_tier AS "subscriptionTier",
+                owner.subscription_label AS "currentSubscriptionLabel", owner.monthly_price_cents AS "monthlyPriceCents",
+                owner.max_pc_users AS "maxPcUsers", owner.max_technicians AS "maxTechnicians",
+                owner.subscription_discount_label AS "discountLabel", owner.subscription_discount_mode AS "discountMode",
+                owner.subscription_discount_value::float AS "discountValue", COALESCE(organization.interface_type,'standard') AS "interfaceType"
             FROM depannhome_subscription_invoices invoice
             JOIN depannhome_users owner ON owner.id = invoice.account_owner_id
+            LEFT JOIN depannhome_organizations organization ON organization.account_owner_id=owner.id
             ORDER BY invoice.issue_date DESC, invoice.id DESC
         `);
-        response.json({ invoices: rows, processing: await subscriptionInvoicingStatus() });
+        response.json({ invoices: rows.map(invoice => ({
+            ...invoice,
+            matchesCurrentSubscription: subscriptionInvoiceMatchesCurrentSubscription(invoice, currentSubscriptionFromInvoiceRow(invoice)),
+            currentSubscriptionAmountCents: buildSubscriptionInvoiceSnapshot(currentSubscriptionFromInvoiceRow(invoice), invoice.vatRate).netAmountCents
+        })), processing: await subscriptionInvoicingStatus() });
     }));
 
     app.post("/api/creator/subscription-invoices/process", requireCreator, asyncHandler(async (request, response) => {
@@ -233,11 +247,12 @@ export async function processDueSubscriptionInvoices() {
             console.warn("[subscription-invoicing] skipped: platform billing profile is incomplete", { missingProfileFields });
             return { skipped: true, skippedReason: "incomplete_profile", missingProfileFields, created: 0, sent: 0, failed: 0 };
         }
+        await cancelSupersededSubscriptionInvoices();
         const { rows: subscriptions } = await database.query(`
             SELECT owner.id, owner.company_name AS "companyName", owner.full_name AS "fullName", owner.email, owner.subscription_label AS "subscriptionLabel",
-                owner.subscription_tier AS "subscriptionTier", owner.monthly_price_cents AS "monthlyPriceCents", owner.subscription_renewal_date AS "renewalDate", owner.billing_reference AS "billingReference",
+                owner.subscription_plan AS "subscriptionPlan", owner.subscription_tier AS "subscriptionTier", owner.monthly_price_cents AS "monthlyPriceCents", owner.subscription_renewal_date AS "renewalDate", owner.billing_reference AS "billingReference",
                 owner.max_pc_users AS "maxPcUsers", owner.max_technicians AS "maxTechnicians", owner.subscription_discount_label AS "discountLabel",
-                owner.subscription_discount_mode AS "discountMode", owner.subscription_discount_value::float AS "discountValue",
+                owner.subscription_discount_mode AS "discountMode", owner.subscription_discount_value::float AS "discountValue", COALESCE(organization.interface_type,'standard') AS "interfaceType",
                 COALESCE(NULLIF(profile.address, ''), '') || CASE WHEN COALESCE(profile.postal_code, '') <> '' OR COALESCE(profile.city, '') <> ''
                     THEN CASE WHEN COALESCE(profile.address, '') <> '' THEN E'\n' ELSE '' END || TRIM(CONCAT_WS(' ', profile.postal_code, profile.city)) ELSE '' END AS "recipientAddress"
             FROM depannhome_users owner
@@ -280,7 +295,7 @@ async function createInvoiceIfNeeded(subscription, issuer) {
     const connection = await database.connect();
     try {
         await connection.query("BEGIN");
-        const existing = await connection.query(`SELECT id FROM depannhome_subscription_invoices WHERE account_owner_id=$1 AND billing_period=$2::date`, [subscription.id, billingPeriod]);
+        const existing = await connection.query(`SELECT id FROM depannhome_subscription_invoices WHERE account_owner_id=$1 AND billing_period=$2::date AND status<>'cancelled'`, [subscription.id, billingPeriod]);
         if (existing.rowCount) {
             await connection.query("COMMIT");
             return { created: false };
@@ -296,12 +311,12 @@ async function createInvoiceIfNeeded(subscription, issuer) {
         const invoiceNumber = `DHP-${seriesYear}-${String(sequences[0].lastNumber).padStart(6, "0")}`;
         const { rows } = await connection.query(`
             INSERT INTO depannhome_subscription_invoices
-                (account_owner_id, billing_period, invoice_number, recipient_name, recipient_email, recipient_address, subscription_label, amount_cents, net_amount_cents, vat_rate, issue_date, due_date, issuer_profile, lines, financial_data)
-            VALUES ($1,$2::date,$3,$4,$5,$6,$7,$8,$9,$10,$11::date,$12::date,$13::jsonb,$14::jsonb,$15::jsonb)
-            ON CONFLICT (account_owner_id, billing_period) DO NOTHING
+                (account_owner_id, billing_period, invoice_number, recipient_name, recipient_email, recipient_address, subscription_label, amount_cents, net_amount_cents, vat_rate, issue_date, due_date, issuer_profile, lines, financial_data, subscription_snapshot)
+            VALUES ($1,$2::date,$3,$4,$5,$6,$7,$8,$9,$10,$11::date,$12::date,$13::jsonb,$14::jsonb,$15::jsonb,$16::jsonb)
+            ON CONFLICT (account_owner_id, billing_period) WHERE status<>'cancelled' DO NOTHING
             RETURNING id
         `, [subscription.id, billingPeriod, invoiceNumber, recipientName, subscription.email, String(subscription.recipientAddress || "").slice(0, 500), subscription.subscriptionLabel || "Abonnement Depann’Home Pro",
-            subscription.monthlyPriceCents, snapshot.netAmountCents, vatRate, issueDate, dueDate, JSON.stringify(issuer), JSON.stringify(snapshot.lines), JSON.stringify(snapshot.financialData)]);
+            subscription.monthlyPriceCents, snapshot.netAmountCents, vatRate, issueDate, dueDate, JSON.stringify(issuer), JSON.stringify(snapshot.lines), JSON.stringify(snapshot.financialData), JSON.stringify(subscriptionSnapshot(subscription, snapshot))]);
         if (!rows[0]) {
             await connection.query("ROLLBACK");
             return { created: false };
@@ -319,6 +334,7 @@ async function createInvoiceIfNeeded(subscription, issuer) {
 async function deliverPendingInvoices() {
     const database = getPool();
     await database.query(`UPDATE depannhome_subscription_invoices SET status='failed',last_error='Traitement interrompu avant confirmation de l’envoi ; nouvelle tentative autorisée.',updated_at=NOW() WHERE status='sending' AND updated_at<NOW()-INTERVAL '15 minutes'`);
+    await cancelSupersededSubscriptionInvoices();
     const { rows: invoices } = await database.query(`
         SELECT invoice.id, invoice.invoice_number AS "invoiceNumber", invoice.recipient_name AS "recipientName", invoice.recipient_email AS "recipientEmail",
             invoice.recipient_address AS "recipientAddress", invoice.subscription_label AS "subscriptionLabel", invoice.amount_cents AS "amountCents",
@@ -493,6 +509,75 @@ function addDays(date, days) {
 
 function amountExcludingVat(amountCents, vatRate) {
     return Math.round(Number(amountCents) * 100 / (100 + Number(vatRate || 0))) / 100;
+}
+
+function subscriptionSnapshot(subscription, snapshot = buildSubscriptionInvoiceSnapshot(subscription, 0)) {
+    return {
+        subscriptionPlan: subscription.subscriptionPlan || "paid",
+        interfaceType: subscription.interfaceType || "standard",
+        subscriptionTier: subscription.subscriptionTier || "",
+        subscriptionLabel: subscription.subscriptionLabel || subscription.currentSubscriptionLabel || "",
+        maxPcUsers: Number(subscription.maxPcUsers) || 0,
+        maxTechnicians: Number(subscription.maxTechnicians) || 0,
+        amountCents: Math.max(0, Number(subscription.monthlyPriceCents) || 0),
+        netAmountCents: Math.max(0, Number(snapshot.netAmountCents) || 0),
+        discountLabel: subscription.discountLabel || "",
+        discountMode: subscription.discountMode === "percentage" ? "percentage" : "fixed",
+        discountValue: Math.max(0, Number(subscription.discountValue) || 0)
+    };
+}
+
+export function subscriptionInvoiceMatchesCurrentSubscription(invoice, subscription) {
+    if (subscription.subscriptionPlan !== "paid" || subscription.interfaceType === "partner") return false;
+    const expectedSnapshot = buildSubscriptionInvoiceSnapshot(subscription, Number(invoice.vatRate) || 0);
+    const expected = subscriptionSnapshot(subscription, expectedSnapshot);
+    const saved = invoice.subscriptionSnapshot && Object.keys(invoice.subscriptionSnapshot).length ? invoice.subscriptionSnapshot : null;
+    if (saved) return Object.keys(expected).every(key => String(saved[key] ?? "") === String(expected[key] ?? ""));
+    return Number(invoice.baseAmountCents ?? invoice.amountCents) === expected.amountCents
+        && Number(invoice.amountCents ?? invoice.netAmountCents) === expected.netAmountCents
+        && String(invoice.subscriptionLabel || "") === expected.subscriptionLabel;
+}
+
+function currentSubscriptionFromInvoiceRow(row) {
+    return {
+        subscriptionPlan: row.subscriptionPlan,
+        interfaceType: row.interfaceType,
+        subscriptionTier: row.subscriptionTier,
+        subscriptionLabel: row.currentSubscriptionLabel,
+        monthlyPriceCents: row.monthlyPriceCents,
+        maxPcUsers: row.maxPcUsers,
+        maxTechnicians: row.maxTechnicians,
+        discountLabel: row.discountLabel,
+        discountMode: row.discountMode,
+        discountValue: row.discountValue
+    };
+}
+
+async function cancelSupersededSubscriptionInvoices() {
+    const database = getPool();
+    const { rows } = await database.query(`
+        SELECT invoice.id,invoice.account_owner_id AS "accountOwnerId",invoice.subscription_label AS "subscriptionLabel",
+            invoice.amount_cents AS "baseAmountCents",invoice.net_amount_cents AS "amountCents",invoice.vat_rate::float AS "vatRate",
+            invoice.subscription_snapshot AS "subscriptionSnapshot",owner.subscription_plan AS "subscriptionPlan",
+            owner.subscription_tier AS "subscriptionTier",owner.subscription_label AS "currentSubscriptionLabel",
+            owner.monthly_price_cents AS "monthlyPriceCents",owner.max_pc_users AS "maxPcUsers",owner.max_technicians AS "maxTechnicians",
+            owner.subscription_discount_label AS "discountLabel",owner.subscription_discount_mode AS "discountMode",
+            owner.subscription_discount_value::float AS "discountValue",COALESCE(organization.interface_type,'standard') AS "interfaceType"
+        FROM depannhome_subscription_invoices invoice
+        JOIN depannhome_users owner ON owner.id=invoice.account_owner_id
+        LEFT JOIN depannhome_organizations organization ON organization.account_owner_id=owner.id
+        WHERE invoice.status IN ('pending','failed')
+    `);
+    let cancelled = 0;
+    for (const invoice of rows) {
+        const current = currentSubscriptionFromInvoiceRow(invoice);
+        if (subscriptionInvoiceMatchesCurrentSubscription(invoice, current)) continue;
+        const result = await database.query(`UPDATE depannhome_subscription_invoices SET status='cancelled',last_error='Annulée automatiquement : l’abonnement a changé avant l’envoi.',updated_at=NOW() WHERE id=$1 AND status IN ('pending','failed') RETURNING id`, [invoice.id]);
+        if (!result.rowCount) continue;
+        await database.query(`INSERT INTO depannhome_subscription_invoice_audit (invoice_id,account_owner_id,action,details) VALUES ($1,$2,'superseded_before_sending',$3::jsonb)`, [invoice.id, invoice.accountOwnerId, JSON.stringify({ currentSubscription: subscriptionSnapshot(current) })]);
+        cancelled += 1;
+    }
+    return cancelled;
 }
 
 export function buildSubscriptionInvoiceSnapshot(subscription, vatRate) {

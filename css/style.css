@@ -1635,6 +1635,7 @@ body[data-page-mode="basic-home"] #pageTitle{
 .creator-subscription-invoice-details small{
     color:var(--muted);
 }
+.creator-invoice-history-notice{background:#fff7ed;border:1px solid #fdba74;color:#9a3412;padding:8px 10px;border-radius:10px;}
 
 .creator-subscription-invoice .secondary-button{
     white-space:nowrap;

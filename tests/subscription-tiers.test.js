@@ -224,7 +224,7 @@ test("companies request offer changes from Settings without changing the active 
     assert.match(navigation, /document\.body\.dataset\.maxMobileUsers = String\(currentMobileSeats\)/);
     assert.match(navigation, /data-seat-request/);
     assert.match(creatorServer, /subscription_renewal_date,'YYYY-MM-DD'\) AS "subscriptionRenewalDate"/);
-    assert.match(creatorServer, /FROM depannhome_subscription_invoices WHERE account_owner_id=\$1 ORDER BY billing_period DESC,id DESC LIMIT 1/);
+    assert.match(creatorServer, /FROM depannhome_subscription_invoices WHERE account_owner_id=\$1 AND status<>'cancelled' ORDER BY billing_period DESC,id DESC LIMIT 1/);
     assert.match(creatorServer, /latestInvoice: invoiceResult\.rows\[0\] \|\| null/);
     assert.match(navigation, /Facturation de l’abonnement/);
     assert.match(navigation, /Prochaine facturation/);

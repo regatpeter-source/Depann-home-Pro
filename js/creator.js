@@ -728,7 +728,7 @@ async function renderSubscriptionInvoices() {
     const profileWarning = processing.profileComplete ? "" : `<p class="auth-message error">Profil de facturation incomplet : ${escapeHtml((processing.missingProfileFields || []).join(", ") || "coordonnées manquantes")}.</p>`;
     workspace.innerHTML = `
         <section class="creator-form creator-subscription-invoices-panel">
-            <div class="form-heading"><div><p class="eyebrow">Facturation plateforme</p><h3>Factures d’abonnement envoyées</h3></div><span class="creator-state">${invoices.length} facture${invoices.length > 1 ? "s" : ""}</span></div>
+            <div class="form-heading"><div><p class="eyebrow">Facturation plateforme</p><h3>Factures d’abonnement</h3></div><span class="creator-state">${invoices.length} facture${invoices.length > 1 ? "s" : ""}</span></div>
             <p class="muted">Chaque PDF reprend les informations légales, bancaires et tarifaires enregistrées au moment de son émission.</p>
             <div class="creator-subscription-processing"><strong>${Number(processing.dueAccounts || 0)} abonnement(s) arrivé(s) à échéance</strong><span>${Number(processing.pending || 0)} en attente · ${Number(processing.failed || 0)} en échec · ${Number(processing.sending || 0)} en cours</span></div>
             ${profileWarning}
@@ -777,25 +777,28 @@ async function renderSubscriptionInvoices() {
 
 function renderSubscriptionInvoice(invoice) {
     const status = subscriptionInvoiceStatus(invoice.status);
-    const sentAt = invoice.sentAt ? `Envoyée le ${formatDateTime(invoice.sentAt)}` : invoice.status === "failed" ? "Envoi en échec" : "En attente d’envoi";
+    const sentAt = invoice.sentAt ? `Envoyée le ${formatDateTime(invoice.sentAt)}` : invoice.status === "cancelled" ? "Annulée avant envoi" : invoice.status === "failed" ? "Envoi en échec" : "En attente d’envoi";
     const error = invoice.status === "failed" && invoice.lastError ? `<p class="auth-message error">${escapeHtml(invoice.lastError)}</p>` : "";
+    const historical = invoice.status === "sent" && invoice.matchesCurrentSubscription === false
+        ? `<p class="auth-message creator-invoice-history-notice">Facture historique : l’abonnement actuel est désormais de ${formatCurrency(invoice.currentSubscriptionAmountCents)} / mois.</p>` : "";
+    const cancelled = invoice.status === "cancelled" ? `<p class="muted">${escapeHtml(invoice.lastError || "Annulée avant envoi car l’abonnement a changé.")}</p>` : "";
     const discount = Number(invoice.baseAmountCents || 0) > Number(invoice.amountCents || 0)
         ? `<small>${escapeHtml(invoice.financialData?.discountLabel || "Remise commerciale")} : −${formatCurrency(Number(invoice.baseAmountCents) - Number(invoice.amountCents))}</small>` : "";
     const paid = invoice.paymentStatus === "paid";
     const receiptStatus = paid ? paidReceiptStatus(invoice.receiptDeliveryStatus) : null;
     const paymentDetails = paid ? `<small class="creator-payment-confirmed">Paiement reçu le ${formatDate(invoice.paidDate)}${invoice.paymentReference ? ` · Réf. ${escapeHtml(invoice.paymentReference)}` : ""}</small><small>Facture acquittée : ${escapeHtml(receiptStatus.label)}${invoice.receiptSentAt ? ` le ${escapeHtml(formatDateTime(invoice.receiptSentAt))}` : ""}</small>${invoice.receiptDeliveryStatus === "failed" && invoice.receiptLastError ? `<p class="auth-message error">${escapeHtml(invoice.receiptLastError)}</p>` : ""}` : "";
-    const paymentAction = !paid && invoice.status === "sent" ? `<form class="creator-subscription-payment-form" data-subscription-payment-form="${escapeHtml(invoice.id)}" data-invoice-number="${escapeHtml(invoice.invoiceNumber)}"><label>Date du règlement<input name="paidDate" type="date" max="${new Date().toISOString().slice(0, 10)}" value="${new Date().toISOString().slice(0, 10)}" required></label><label>Référence du paiement (facultative)<input name="paymentReference" maxlength="160" placeholder="N° de virement, transaction ou chèque"></label><button type="submit" class="primary-button">Accuser réception du paiement</button></form>` : paid && invoice.receiptDeliveryStatus === "failed" ? `<button type="button" class="secondary-button" data-resend-paid-invoice="${escapeHtml(invoice.id)}">Renvoyer la facture acquittée</button>` : !paid ? '<small class="muted">L’accusé de paiement sera disponible après l’envoi initial.</small>' : "";
+    const paymentAction = !paid && invoice.status === "sent" ? `<form class="creator-subscription-payment-form" data-subscription-payment-form="${escapeHtml(invoice.id)}" data-invoice-number="${escapeHtml(invoice.invoiceNumber)}"><label>Date du règlement<input name="paidDate" type="date" max="${new Date().toISOString().slice(0, 10)}" value="${new Date().toISOString().slice(0, 10)}" required></label><label>Référence du paiement (facultative)<input name="paymentReference" maxlength="160" placeholder="N° de virement, transaction ou chèque"></label><button type="submit" class="primary-button">Accuser réception du paiement</button></form>` : paid && invoice.receiptDeliveryStatus === "failed" ? `<button type="button" class="secondary-button" data-resend-paid-invoice="${escapeHtml(invoice.id)}">Renvoyer la facture acquittée</button>` : !paid && invoice.status !== "cancelled" ? '<small class="muted">L’accusé de paiement sera disponible après l’envoi initial.</small>' : "";
     return `
         <article class="creator-subscription-invoice">
             <div><p class="eyebrow">${escapeHtml(invoice.subscriptionLabel || "Abonnement Depann’Home Pro")}</p><h4>${escapeHtml(invoice.invoiceNumber)}</h4><p>${escapeHtml(invoice.companyName || invoice.recipientName)} · ${escapeHtml(invoice.recipientEmail || "E-mail non renseigné")}</p></div>
-            <div class="creator-subscription-invoice-details"><span class="creator-subscription-badge ${escapeHtml(invoice.status || "pending")}">${status}</span>${paid ? '<span class="creator-subscription-badge paid">Réglée</span>' : ""}<strong>${formatCurrency(invoice.amountCents)}</strong>${discount}<small>Émise le ${formatDate(invoice.issueDate)} · Échéance ${formatDate(invoice.dueDate)}</small><small>${escapeHtml(sentAt)}</small>${paymentDetails}${error}</div>
+            <div class="creator-subscription-invoice-details"><span class="creator-subscription-badge ${escapeHtml(invoice.status || "pending")}">${status}</span>${paid ? '<span class="creator-subscription-badge paid">Réglée</span>' : ""}<strong>${formatCurrency(invoice.amountCents)}</strong>${discount}<small>Émise le ${formatDate(invoice.issueDate)} · Échéance ${formatDate(invoice.dueDate)}</small><small>${escapeHtml(sentAt)}</small>${historical}${cancelled}${paymentDetails}${error}</div>
             <div class="creator-subscription-invoice-actions"><a class="secondary-button" href="/api/creator/subscription-invoices/${encodeURIComponent(invoice.id)}/pdf" download>Télécharger le PDF</a>${paymentAction}</div>
         </article>
     `;
 }
 
 function subscriptionInvoiceStatus(status) {
-    return ({ sent: "Envoyée", pending: "À envoyer", sending: "Envoi en cours", failed: "Échec d’envoi" })[status] || "À envoyer";
+    return ({ sent: "Envoyée", pending: "À envoyer", sending: "Envoi en cours", failed: "Échec d’envoi", cancelled: "Annulée" })[status] || "À envoyer";
 }
 
 function paidReceiptStatus(status) {

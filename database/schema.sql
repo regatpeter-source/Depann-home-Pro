@@ -583,10 +583,11 @@ CREATE TABLE IF NOT EXISTS depannhome_subscription_invoices (
     vat_rate NUMERIC(5,2) NOT NULL CHECK (vat_rate >= 0 AND vat_rate <= 100),
     lines JSONB NOT NULL DEFAULT '[]'::jsonb,
     financial_data JSONB NOT NULL DEFAULT '{}'::jsonb,
+    subscription_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
     issue_date DATE NOT NULL,
     due_date DATE NOT NULL,
     issuer_profile JSONB NOT NULL,
-    status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'sending', 'sent', 'failed')),
+    status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'sending', 'sent', 'failed', 'cancelled')),
     sent_at TIMESTAMPTZ,
     last_error VARCHAR(1000) NOT NULL DEFAULT '',
     payment_status VARCHAR(20) NOT NULL DEFAULT 'unpaid' CHECK (payment_status IN ('unpaid', 'paid')),
@@ -598,9 +599,14 @@ CREATE TABLE IF NOT EXISTS depannhome_subscription_invoices (
     receipt_sent_at TIMESTAMPTZ,
     receipt_last_error VARCHAR(1000) NOT NULL DEFAULT '',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT depannhome_subscription_invoices_owner_period_unique UNIQUE (account_owner_id, billing_period)
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE depannhome_subscription_invoices ADD COLUMN IF NOT EXISTS subscription_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE depannhome_subscription_invoices DROP CONSTRAINT IF EXISTS depannhome_subscription_invoices_status_check;
+ALTER TABLE depannhome_subscription_invoices ADD CONSTRAINT depannhome_subscription_invoices_status_check CHECK (status IN ('pending','sending','sent','failed','cancelled'));
+ALTER TABLE depannhome_subscription_invoices DROP CONSTRAINT IF EXISTS depannhome_subscription_invoices_owner_period_unique;
+CREATE UNIQUE INDEX IF NOT EXISTS depannhome_subscription_invoices_active_owner_period_idx ON depannhome_subscription_invoices(account_owner_id,billing_period) WHERE status<>'cancelled';
 
 CREATE INDEX IF NOT EXISTS depannhome_subscription_invoices_status_idx
     ON depannhome_subscription_invoices (status, created_at);
