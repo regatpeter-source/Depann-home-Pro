@@ -1383,6 +1383,11 @@ async function renderSubscriptionSettings(container) {
     const currentMobileSeats = Math.max(0, Number(account.maxMobileUsers ?? document.body.dataset.maxMobileUsers) || 0);
     const currentOffer = tiers.find(tier => tier.id === currentTier) || tiers[2];
     const totalCents = Math.max(0, Number(account.monthlyPriceCents) || 0) || (currentPcSeats * currentOffer.pc + currentMobileSeats * currentOffer.mobile) * 100;
+    const latestInvoice = account.latestInvoice || null;
+    const subscriptionStatus = subscriptionBillingStatus(account.subscriptionStatus);
+    const renewalDate = formatSubscriptionBillingDate(account.subscriptionRenewalDate);
+    const invoiceAmountCents = Math.max(0, Number(latestInvoice?.netAmountCents ?? latestInvoice?.amountCents) || 0);
+    const invoiceAmount = invoiceAmountCents ? (invoiceAmountCents / 100).toLocaleString("fr-FR", { style: "currency", currency: "EUR" }) : "";
     document.body.dataset.subscriptionTier = currentTier;
     document.body.dataset.maxPcUsers = String(currentPcSeats);
     document.body.dataset.maxMobileUsers = String(currentMobileSeats);
@@ -1390,6 +1395,19 @@ async function renderSubscriptionSettings(container) {
     const section = document.createElement("section");
     section.className = "creator-form subscription-company-panel";
     section.innerHTML = `<div class="form-heading"><div><p class="eyebrow">Offre actuelle : ${escapeHtml(currentOffer.label)}</p><h2>Offres Depann’Home Pro</h2></div></div><div class="creator-subscription-summary"><article><span>Postes PC autorisés</span><strong>${currentPcSeats}</strong></article><article><span>Postes mobiles autorisés</span><strong>${currentMobileSeats}</strong></article><article><span>Tarif total actuel</span><strong>${(totalCents / 100).toLocaleString("fr-FR", { style: "currency", currency: "EUR" })} TTC / mois</strong></article></div><p class="muted">Les tarifs mensuels sont calculés par poste. Une demande n’altère aucune donnée et ne change pas automatiquement votre offre : elle est transmise au Support pour étude.</p><div class="subscription-offers-grid">${tiers.map(tier => `<article class="subscription-offer-card${tier.id === currentTier ? " active" : ""}"><header><strong>${tier.label}</strong>${tier.id === currentTier ? '<span class="creator-state">Offre actuelle</span>' : ""}</header><p class="subscription-offer-price"><b>${tier.pc} € TTC</b> / poste PC / mois<br><b>${tier.mobile} € TTC</b> / poste mobile / mois</p><p>${tier.description}</p>${tier.id === currentTier ? "" : `<button type="button" class="secondary-button" data-request-tier="${tier.id}">Demander ${rank[tier.id] > rank[currentTier] ? "l’évolution" : "la rétrogradation"}</button>`}</article>`).join("")}</div><form data-seat-request class="creator-subscription-fields subscription-seat-request"><h3>Demander des postes supplémentaires</h3><div class="form-grid"><label>Postes PC souhaités<input name="requestedPcSeats" type="number" min="${currentPcSeats}" max="100" value="${currentPcSeats}" required></label><label>Postes mobiles souhaités<input name="requestedMobileSeats" type="number" min="${currentMobileSeats}" max="500" value="${currentMobileSeats}" required></label></div><button class="secondary-button">Transmettre la demande au Support</button></form><label class="form-wide subscription-support-message">Message facultatif au Support<textarea rows="4" maxlength="1000" data-subscription-request-message placeholder="Précisez votre besoin ou la date souhaitée."></textarea></label><p class="auth-message" data-subscription-request-feedback aria-live="polite"></p><section class="subscription-request-history"><h3>Demandes envoyées</h3><div class="creator-network-list">${requests.length ? requests.map(item => `<article class="creator-network-company"><div><strong>${escapeHtml(tiers.find(tier => tier.id === item.requestedTier)?.label || item.requestedTier)}</strong><p>${escapeHtml(subscriptionRequestStatusLabel(item.status))}${item.requestedPcSeats != null ? ` · ${item.requestedPcSeats} PC / ${item.requestedMobileSeats} mobile(s)` : ""}</p><small>${escapeHtml(formatSubscriptionRequestDate(item.createdAt))}</small></div></article>`).join("") : '<p class="muted">Aucune demande envoyée.</p>'}</div></section>`;
+    const billingPanel = document.createElement("section");
+    billingPanel.className = "subscription-billing-panel";
+    billingPanel.innerHTML = `
+        <div class="form-heading"><div><p class="eyebrow">Facturation de l’abonnement</p><h3>Échéances et dernière facture</h3></div><span class="subscription-billing-status ${escapeHtml(subscriptionStatus.className)}">${escapeHtml(subscriptionStatus.label)}</span></div>
+        <div class="subscription-billing-grid">
+            <article><span>Prochaine facturation</span><strong>${escapeHtml(renewalDate || "Date à confirmer")}</strong><small>${account.subscriptionPlan === "paid" ? "Échéance mensuelle programmée" : "Aucune facturation automatique programmée"}</small></article>
+            <article><span>Dernière facture</span><strong>${escapeHtml(latestInvoice?.invoiceNumber || "Aucune facture émise")}</strong><small>${latestInvoice ? `${escapeHtml(formatSubscriptionBillingDate(latestInvoice.issueDate))} · ${escapeHtml(subscriptionInvoiceStatus(latestInvoice.status))}` : "La première facture apparaîtra ici après son émission."}</small></article>
+            <article><span>Échéance de paiement</span><strong>${escapeHtml(latestInvoice ? formatSubscriptionBillingDate(latestInvoice.dueDate) : "—")}</strong><small>${invoiceAmount ? `${escapeHtml(invoiceAmount)} TTC après remise éventuelle` : "Aucun montant facturé à ce jour"}</small></article>
+            <article><span>Référence de facturation</span><strong>${escapeHtml(account.billingReference || "Non renseignée")}</strong><small>${escapeHtml(account.subscriptionLabel || currentOffer.label)}${account.discountLabel ? ` · ${escapeHtml(account.discountLabel)}` : ""}</small></article>
+        </div>
+        <p class="muted subscription-billing-note">Les informations sont synchronisées avec la facturation de l’entreprise. Après l’envoi d’une facture, la prochaine échéance est automatiquement reportée d’un mois.</p>
+    `;
+    section.querySelector(".creator-subscription-summary")?.after(billingPanel);
     container.appendChild(section);
     section.querySelectorAll("[data-request-tier]").forEach(button => button.addEventListener("click", async () => {
         const feedback = section.querySelector("[data-subscription-request-feedback]");
@@ -1419,6 +1437,27 @@ function subscriptionRequestStatusLabel(status) {
 function formatSubscriptionRequestDate(value) {
     const date = new Date(value);
     return Number.isNaN(date.getTime()) ? "" : new Intl.DateTimeFormat("fr-FR", { dateStyle: "short", timeStyle: "short" }).format(date);
+}
+
+function formatSubscriptionBillingDate(value) {
+    const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(value || ""));
+    if (!match) return "";
+    const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 12);
+    return Number.isNaN(date.getTime()) ? "" : new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "long", year: "numeric" }).format(date);
+}
+
+function subscriptionBillingStatus(status) {
+    return ({
+        active: { label: "À jour", className: "is-current" },
+        trial: { label: "Période d’essai", className: "is-trial" },
+        past_due: { label: "Paiement à suivre", className: "is-warning" },
+        suspended: { label: "Abonnement suspendu", className: "is-warning" },
+        cancelled: { label: "Abonnement résilié", className: "is-inactive" }
+    })[status] || { label: "Statut à confirmer", className: "is-inactive" };
+}
+
+function subscriptionInvoiceStatus(status) {
+    return ({ pending: "À envoyer", sending: "Envoi en cours", sent: "Envoyée", failed: "Échec d’envoi" })[status] || "État inconnu";
 }
 
 async function openDocumentTemplateSettings(type) {

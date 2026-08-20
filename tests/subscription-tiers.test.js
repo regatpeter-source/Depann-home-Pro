@@ -152,6 +152,18 @@ test("companies request offer changes from Settings without changing the active 
     assert.match(navigation, /account\.maxMobileUsers \?\? document\.body\.dataset\.maxMobileUsers/);
     assert.match(navigation, /document\.body\.dataset\.maxMobileUsers = String\(currentMobileSeats\)/);
     assert.match(navigation, /data-seat-request/);
+    assert.match(creatorServer, /subscription_renewal_date,'YYYY-MM-DD'\) AS "subscriptionRenewalDate"/);
+    assert.match(creatorServer, /FROM depannhome_subscription_invoices WHERE account_owner_id=\$1 ORDER BY billing_period DESC,id DESC LIMIT 1/);
+    assert.match(creatorServer, /latestInvoice: invoiceResult\.rows\[0\] \|\| null/);
+    assert.match(navigation, /Facturation de l’abonnement/);
+    assert.match(navigation, /Prochaine facturation/);
+    assert.match(navigation, /Dernière facture/);
+    assert.match(navigation, /Échéance de paiement/);
+    assert.match(navigation, /Référence de facturation/);
+    assert.match(navigation, /function subscriptionBillingStatus/);
+    assert.match(navigation, /function subscriptionInvoiceStatus/);
+    assert.match(style, /\.subscription-billing-grid\{display:grid;grid-template-columns:repeat\(4,minmax\(0,1fr\)\)/);
+    assert.match(style, /\.subscription-company-panel \.creator-subscription-summary,\.subscription-billing-grid\{grid-template-columns:1fr\}/);
     const subscriptionSettings = navigation.slice(navigation.indexOf("async function renderSubscriptionSettings"), navigation.indexOf("function subscriptionRequestStatusLabel"));
     assert.doesNotMatch(subscriptionSettings, /Créateur/);
     assert.match(subscriptionSettings, /Support/);

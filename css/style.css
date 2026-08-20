@@ -1213,6 +1213,17 @@ body[data-page-mode="basic-home"] #pageTitle{
 /* Offre & abonnement : cartes tarifaires distinctes des boutons de navigation. */
 .subscription-company-panel{display:grid;gap:22px;min-width:0;}
 .subscription-company-panel .creator-subscription-summary{grid-template-columns:repeat(3,minmax(0,1fr));}
+.subscription-billing-panel{display:grid;gap:14px;padding:18px;border:1px solid #bfdbfe;border-radius:16px;background:linear-gradient(145deg,#f8fbff,#fff);}
+.subscription-billing-panel .form-heading{align-items:center;margin:0;}
+.subscription-billing-panel h3{margin:3px 0;color:var(--primary);}
+.subscription-billing-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;}
+.subscription-billing-grid article{display:grid;gap:5px;min-width:0;padding:14px;border:1px solid #dbe4ee;border-radius:12px;background:var(--surface);}
+.subscription-billing-grid span,.subscription-billing-grid small{color:var(--muted);font-size:12px;}
+.subscription-billing-grid span{font-weight:800;text-transform:uppercase;letter-spacing:.03em;}
+.subscription-billing-grid strong{overflow-wrap:anywhere;color:var(--primary);font-size:17px;}
+.subscription-billing-status{padding:7px 11px;border-radius:999px;background:#e2e8f0;color:#475569;font-size:12px;font-weight:800;}
+.subscription-billing-status.is-current{background:#dcfce7;color:#166534;}.subscription-billing-status.is-trial{background:#dbeafe;color:#1d4ed8;}.subscription-billing-status.is-warning{background:#fef3c7;color:#92400e;}.subscription-billing-status.is-inactive{background:#fee2e2;color:#991b1b;}
+.subscription-billing-note{margin:0;}
 .subscription-offers-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;min-width:0;}
 .subscription-offer-card{display:flex;min-width:0;min-height:280px;flex-direction:column;gap:14px;padding:22px;overflow:hidden;border:1px solid #dbe4ee;border-radius:16px;background:var(--surface);box-shadow:0 5px 18px rgba(15,23,42,.06);}
 .subscription-offer-card.active{border-color:#86b99b;background:linear-gradient(145deg,#fff,#f0fdf4);}
@@ -1226,8 +1237,8 @@ body[data-page-mode="basic-home"] #pageTitle{
 .subscription-seat-request .secondary-button{width:100%;margin-top:14px;}
 .subscription-support-message{display:grid;gap:7px;color:var(--primary);font-weight:700;}
 .subscription-support-message textarea{width:100%;min-height:100px;padding:12px;border:1px solid #cbd5e1;border-radius:10px;resize:vertical;}
-@media(max-width:1000px){.subscription-offers-grid{grid-template-columns:1fr}.subscription-offer-card{min-height:0}}
-@media(max-width:700px){.subscription-company-panel .creator-subscription-summary{grid-template-columns:1fr}.subscription-offer-card{padding:18px}}
+@media(max-width:1000px){.subscription-offers-grid{grid-template-columns:1fr}.subscription-offer-card{min-height:0}.subscription-billing-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:700px){.subscription-company-panel .creator-subscription-summary,.subscription-billing-grid{grid-template-columns:1fr}.subscription-offer-card{padding:18px}.subscription-billing-panel{padding:14px}}
 
 .settings-navigation-arrow{
     color:var(--secondary);
