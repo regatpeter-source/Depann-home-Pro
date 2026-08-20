@@ -350,9 +350,7 @@ function openHome() {
         return;
     }
     if (isMobileDeviceContext()) {
-        if (activeSubscriptionTier() === "basic") renderHome();
-        else if (canAccessRoute(ROUTES.calendar)) openCalendar();
-        else renderHome();
+        renderHome();
         return;
     }
     if (document.body.classList.contains("desktop-device") || isMobileAdministrator()) {
@@ -360,11 +358,6 @@ function openHome() {
         return;
     }
     renderBrands();
-}
-
-function activeSubscriptionTier() {
-    const tier = document.body.dataset.subscriptionTier;
-    return ["basic", "basic_plus", "pro"].includes(tier) ? tier : "pro";
 }
 
 function openCalendar() {
