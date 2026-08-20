@@ -135,8 +135,15 @@ test("organization interfaces remain compatible with subscription tiers", () => 
     assert.match(creatorServer, /isFreePartner \? 0 : calculateSubscriptionPriceCents/);
     assert.match(creatorClient, /Portail Partenaire · Gratuit/);
     assert.match(organizationsServer, /SET subscription_plan='free',subscription_tier='pro',subscription_label='Portail Partenaire gratuit',monthly_price_cents=0/);
+    assert.match(organizationsServer, /max_pc_users=1,max_technicians=0/);
     assert.match(organizationsServer, /organization\.interface_type='partner'/);
     assert.match(organizationsServer, /subscription_renewal_date=NULL/);
+    assert.match(organizationsServer, /member\.id<>member\.account_owner_id AND member\.is_active=TRUE/);
+    assert.match(organizationsServer, /device\.device_type='mobile'/);
+    assert.match(creatorServer, /const maxPcUsers = isFreePartner \? 1 : requestedMaxPcUsers/);
+    assert.match(creatorServer, /const maxTechnicians = isFreePartner \? 0 : requestedMaxTechnicians/);
+    assert.match(creatorClient, /pcSeats\.readOnly = isPartner/);
+    assert.match(creatorClient, /mobileSeats\.readOnly = isPartner/);
 });
 
 test("the free Partner interface only exposes Clients and Partner Missions", () => {

@@ -219,7 +219,8 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
         if (!canManageAccount(owner, request)) return response.status(404).json({ message: "Compte entreprise introuvable." });
         if (owner.is_archived) return response.status(409).json({ message: "Réactivez cette entreprise avant de modifier ses informations." });
         const counts = await countActiveSeats(database, accountId);
-        if (account.maxPcUsers < counts.activePcUsers || account.maxTechnicians < counts.activeTechnicians) {
+        const convertsToPartner = request.body?.organization?.interfaceType === "partner";
+        if (!convertsToPartner && (account.maxPcUsers < counts.activePcUsers || account.maxTechnicians < counts.activeTechnicians)) {
             return response.status(400).json({ message: "Les limites ne peuvent pas être inférieures aux accès actifs existants." });
         }
         const connection = await database.connect();
@@ -236,6 +237,10 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
             `, [accountId, account.companyName, account.fullName, account.phone, account.billingEmail, account.maxPcUsers, account.maxTechnicians, owner.is_active,
             account.subscriptionPlan, account.subscriptionTier, account.subscriptionLabel, account.monthlyPriceCents, account.subscriptionStatus, account.subscriptionRenewalDate || null, account.billingReference, account.creatorNote, account.quoteTemplatePolicy, account.quitusTemplatePolicy, account.reportTemplatePolicy,
             account.subscriptionDiscountLabel, account.subscriptionDiscountMode, account.subscriptionDiscountValue]);
+            if (convertsToPartner) {
+                await connection.query("UPDATE depannhome_users SET is_active=FALSE,updated_at=NOW() WHERE account_owner_id=$1 AND id<>$1 AND is_active=TRUE", [accountId]);
+                await connection.query(`UPDATE depannhome_auth_devices device SET status='rejected',session_id=NULL FROM depannhome_users member WHERE device.user_id=member.id AND member.account_owner_id=$1 AND device.device_type='mobile' AND device.status<>'rejected'`, [accountId]);
+            }
             await synchronizeCompanyProfile(connection, accountId, account.companyProfile, { initializeNetwork: account.subscriptionTier === "pro" });
             await connection.query("COMMIT");
         } catch (error) { await connection.query("ROLLBACK"); throw error; } finally { connection.release(); }
@@ -467,12 +472,14 @@ function sanitizeAccount(value, requireCompleteProfile = false) {
     const fullName = cleanText(value?.fullName, 100);
     const phone = cleanText(value?.phone, 30);
     const billingEmail = cleanText(value?.billingEmail, 160).toLowerCase();
-    const maxPcUsers = positiveLimit(value?.maxPcUsers, 1, 100);
-    const maxTechnicians = positiveLimit(value?.maxTechnicians, 0, 500);
+    const requestedMaxPcUsers = positiveLimit(value?.maxPcUsers, 1, 100);
+    const requestedMaxTechnicians = positiveLimit(value?.maxTechnicians, 0, 500);
     const subscriptionTier = normalizeSubscriptionTier(value?.subscriptionTier, "basic");
     const tierConfig = subscriptionTierConfig(subscriptionTier);
     const requestedInterface = value?.organization?.interfaceType || "standard";
     const isFreePartner = requestedInterface === "partner";
+    const maxPcUsers = isFreePartner ? 1 : requestedMaxPcUsers;
+    const maxTechnicians = isFreePartner ? 0 : requestedMaxTechnicians;
     const subscriptionPlan = isFreePartner ? "free" : "paid";
     const subscriptionLabel = isFreePartner ? "Portail Partenaire gratuit" : tierConfig.label;
     const monthlyPriceCents = isFreePartner ? 0 : calculateSubscriptionPriceCents(subscriptionTier, maxPcUsers, maxTechnicians);
@@ -489,8 +496,8 @@ function sanitizeAccount(value, requireCompleteProfile = false) {
     const isActive = value?.isActive !== false;
     if (!companyName) return { ok: false, message: "Le nom de l’entreprise est obligatoire." };
     if (!fullName) return { ok: false, message: "Le nom du responsable est obligatoire." };
-    if (!maxPcUsers) return { ok: false, message: "Indiquez au moins un poste PC." };
-    if (maxTechnicians === null) return { ok: false, message: "Le nombre de techniciens est invalide." };
+    if (!isFreePartner && !maxPcUsers) return { ok: false, message: "Indiquez au moins un poste PC." };
+    if (!isFreePartner && maxTechnicians === null) return { ok: false, message: "Le nombre de techniciens est invalide." };
     if (subscriptionDiscountValue === null) return { ok: false, message: "La réduction commerciale est invalide." };
     if (subscriptionPlan === "paid" && monthlyPriceCents <= 0) return { ok: false, message: "Indiquez un tarif mensuel supérieur à zéro pour un abonnement payant." };
     if (subscriptionPlan === "paid" && subscriptionDiscountMode === "fixed" && Math.round(subscriptionDiscountValue * 100) > monthlyPriceCents) return { ok: false, message: "La réduction fixe ne peut pas dépasser le tarif mensuel." };

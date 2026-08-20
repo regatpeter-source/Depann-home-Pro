@@ -27,11 +27,17 @@ export async function initializeOrganizations() {
         FROM depannhome_users WHERE account_owner_id=id
         ON CONFLICT(account_owner_id) DO NOTHING`);
     await db.query(`UPDATE depannhome_users owner
-        SET subscription_plan='free',subscription_tier='pro',subscription_label='Portail Partenaire gratuit',monthly_price_cents=0,
+        SET subscription_plan='free',subscription_tier='pro',subscription_label='Portail Partenaire gratuit',monthly_price_cents=0,max_pc_users=1,max_technicians=0,
             subscription_discount_label='',subscription_discount_mode='fixed',subscription_discount_value=0,subscription_renewal_date=NULL,updated_at=NOW()
         FROM depannhome_organizations organization
         WHERE organization.account_owner_id=owner.id AND owner.account_owner_id=owner.id AND organization.interface_type='partner'
-            AND (owner.subscription_plan<>'free' OR owner.subscription_tier<>'pro' OR owner.monthly_price_cents<>0 OR owner.subscription_renewal_date IS NOT NULL)`);
+            AND (owner.subscription_plan<>'free' OR owner.subscription_tier<>'pro' OR owner.monthly_price_cents<>0 OR owner.max_pc_users<>1 OR owner.max_technicians<>0 OR owner.subscription_renewal_date IS NOT NULL)`);
+    await db.query(`UPDATE depannhome_users member SET is_active=FALSE,updated_at=NOW()
+        FROM depannhome_organizations organization
+        WHERE organization.account_owner_id=member.account_owner_id AND organization.interface_type='partner' AND member.id<>member.account_owner_id AND member.is_active=TRUE`);
+    await db.query(`UPDATE depannhome_auth_devices device SET status='rejected',session_id=NULL
+        FROM depannhome_users member JOIN depannhome_organizations organization ON organization.account_owner_id=member.account_owner_id
+        WHERE device.user_id=member.id AND organization.interface_type='partner' AND device.device_type='mobile' AND device.status<>'rejected'`);
     await db.query("CREATE INDEX IF NOT EXISTS depannhome_organizations_interface_idx ON depannhome_organizations(interface_type,license_type)");
 }
 

@@ -583,13 +583,19 @@ function bindOrganizationInterface(form) {
     const interfaceType = form.elements.organizationInterfaceType;
     const licenseType = form.elements.organizationLicenseType;
     const subscriptionTier = form.elements.subscriptionTier;
+    const pcSeats = form.elements.maxPcUsers;
+    const mobileSeats = form.elements.maxTechnicians;
     if (!interfaceType || !licenseType) return;
     const syncLicense = () => {
+        const isPartner = interfaceType.value === "partner";
+        if (isPartner && subscriptionTier) subscriptionTier.value = "pro";
         const isPro = !subscriptionTier || subscriptionTier.value === "pro";
-        [...interfaceType.options].forEach(option => { if (["partner", "group"].includes(option.value)) option.disabled = !isPro; });
-        if (!isPro && interfaceType.value !== "standard") interfaceType.value = "standard";
+        [...interfaceType.options].forEach(option => { if (option.value === "group") option.disabled = !isPro; });
+        if (!isPro && interfaceType.value === "group") interfaceType.value = "standard";
         const expected = interfaceType.value === "partner" ? "partner_portal" : interfaceType.value === "group" ? "depannhome_group" : "depannhome_standard";
         licenseType.value = expected;
+        if (pcSeats) { if (isPartner) pcSeats.value = "1"; pcSeats.readOnly = isPartner; }
+        if (mobileSeats) { if (isPartner) mobileSeats.value = "0"; mobileSeats.readOnly = isPartner; }
         form.dispatchEvent(new Event("subscription-context-change"));
     };
     interfaceType.addEventListener("change", syncLicense);
