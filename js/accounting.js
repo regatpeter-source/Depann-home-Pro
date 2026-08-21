@@ -1,7 +1,6 @@
 import { clearSearch, getContainer, setPage } from "./ui.js?v=44";
-import { ROUTES } from "./config.js?v=116";
+import { ROUTES } from "./config.js?v=127";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
-import { renderAccountingSandbox } from "./accounting-sandbox.js?v=2";
 import { renderPurchases } from "./purchases.js?v=116";
 
 const SECTIONS = [
@@ -20,9 +19,8 @@ export async function renderAccounting(section = activeSection) {
     if (!result.ok) { container.innerHTML = `<section class="client-panel"><p class="auth-message error">${escapeHtml(result.message || "Impossible de charger le module comptable.")}</p></section>`; return; }
     accounting = result.data;
     const shell = container.querySelector(".accounting-shell");
-    shell.innerHTML = `<header class="accounting-heading"><div><p class="eyebrow">Préparation comptable</p><h2>Comptabilité & facturation électronique</h2><p class="muted">Journal persistant isolé pour votre entreprise, contrôles et exports destinés à votre cabinet comptable.</p></div><button type="button" class="secondary-button accounting-sandbox-launch" id="openAccountingSandbox">Ouvrir la Sandbox comptable</button></header><aside class="accounting-pdp-notice">Depann’Home Pro prépare des écritures et fichiers à faire valider par un professionnel de la comptabilité. Ce module n’est pas un logiciel comptable certifié et ne garantit pas, à lui seul, la conformité d’un FEC.</aside><nav class="accounting-tabs" aria-label="Sections comptables">${SECTIONS.map(([id, label]) => `<button type="button" class="secondary-button${id === activeSection ? " active" : ""}" data-accounting-section="${id}">${label}</button>`).join("")}</nav><section id="accountingContent"></section>`;
+    shell.innerHTML = `<header class="accounting-heading"><div><p class="eyebrow">Données réelles de l’entreprise</p><h2>Comptabilité & facturation électronique</h2><p class="muted">Journal persistant isolé pour votre entreprise, contrôles et exports destinés à votre cabinet comptable.</p></div></header><aside class="accounting-pdp-notice">Depann’Home Pro prépare des écritures et fichiers à faire valider par un professionnel de la comptabilité. Ce module n’est pas un logiciel comptable certifié et ne garantit pas, à lui seul, la conformité d’un FEC.</aside><nav class="accounting-tabs" aria-label="Sections comptables">${SECTIONS.map(([id, label]) => `<button type="button" class="secondary-button${id === activeSection ? " active" : ""}" data-accounting-section="${id}">${label}</button>`).join("")}</nav><section id="accountingContent"></section>`;
     shell.querySelectorAll("[data-accounting-section]").forEach(button => button.addEventListener("click", () => renderAccounting(button.dataset.accountingSection)));
-    shell.querySelector("#openAccountingSandbox").addEventListener("click", () => renderAccountingSandbox());
     const content = shell.querySelector("#accountingContent");
     ({ dashboard: renderDashboard, salesJournal: renderSalesJournal, settlements: renderSettlements, credits: () => renderDocuments(content, "credit"), vat: renderVat, purchases: () => renderPurchases({ container: content, embedded: true }), export: renderExports, fec: renderFecExport, control: renderAccountingControl, electronic: renderElectronic, settings: renderSettings })[activeSection](content);
 }
@@ -119,12 +117,12 @@ function renderLedgerEntries(entries) {
 function renderAnomalies(anomalies = []) { return anomalies.length ? `<ul class="auth-message error">${anomalies.map(item => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : '<p class="auth-message success">Aucune anomalie détectée sur les écritures sélectionnées.</p>'; }
 function fecPayload(form) { const data = new FormData(form); return { start: data.get("start"), end: data.get("end"), openingEntriesConfirmed: data.get("openingEntriesConfirmed") === "on", inventoryEntriesConfirmed: data.get("inventoryEntriesConfirmed") === "on", completeLedgerConfirmed: data.get("completeLedgerConfirmed") === "on" }; }
 
-function renderElectronic(node) {
+function renderLegacyElectronic(node) {
     node.innerHTML = `<section class="accounting-panel"><div class="form-heading"><div><p class="eyebrow">Préparation et transmission</p><h3>Facturation électronique & PDP</h3><p class="muted">Préparez vos factures électroniques, suivez les échanges et renvoyez-les via le connecteur de la PDP choisie par votre entreprise.</p></div></div><aside class="accounting-pdp-notice">Depann'Home Pro est un logiciel métier compatible avec la facturation électronique. Il prépare les factures électroniques et permet leur transmission via une Plateforme de Dématérialisation Partenaire (PDP) choisie par votre entreprise. Depann'Home Pro n'est pas une PDP agréée par l'État.</aside><div class="accounting-transmission-list">${accounting.transmissions.length ? accounting.transmissions.map(item => `<article><div><strong>${escapeHtml(item.documentNumber)}</strong><p>${escapeHtml(item.provider)} · ${escapeHtml(transmissionStatusLabel(item.status))}</p><small>${escapeHtml(item.message || "Aucun message")}</small></div><button type="button" class="secondary-button" data-transmit="${item.documentId}">Renvoyer</button></article>`).join("") : '<p class="muted">Aucune transmission pour le moment.</p>'}</div><h4>Factures prêtes à transmettre</h4><div class="accounting-transmission-list">${accounting.documents.filter(item => item.documentType === "invoice").map(item => `<article><div><strong>${escapeHtml(item.documentNumber)}</strong><p>${escapeHtml(item.customerName)} · ${money(item.totals.netPayable)}</p></div><button type="button" class="secondary-button" data-transmit="${item.id}">Transmettre</button></article>`).join("") || '<p class="muted">Aucune facture disponible.</p>'}</div></section>`;
     node.querySelectorAll("[data-transmit]").forEach(button => button.addEventListener("click", async () => { button.disabled = true; const result = await api(`/api/accounting/e-invoices/${button.dataset.transmit}/transmit`, { method: "POST" }); if (!result.ok) alert(result.message || "Transmission impossible."); renderAccounting("electronic"); }));
 }
 
-function renderSettings(node) {
+function renderLegacySettings(node) {
     const settings = accounting.settings;
     node.innerHTML = `<section class="accounting-panel"><div class="form-heading"><div><p class="eyebrow">Paramètres entreprise et PDP</p><h3>Paramètres comptables</h3><p class="muted">Les coordonnées société, SIREN/SIRET, TVA, IBAN, logo et mentions légales restent configurés dans « Devis & factures ».</p></div></div><form id="accountingSettingsForm" class="form-grid"><fieldset class="accounting-rules form-wide"><legend>Plan comptable</legend><label>Compte ventes<input name="salesAccount" value="${escapeHtml(settings.chartConfig.salesAccount || "706000")}"></label><label>Compte clients<input name="customerAccount" value="${escapeHtml(settings.chartConfig.customerAccount || "411000")}"></label><label>Compte banque<input name="bankAccount" value="${escapeHtml(settings.chartConfig.bankAccount || "512000")}"></label><label>TVA collectée<input name="vatCollectedAccount" value="${escapeHtml(settings.chartConfig.vatCollectedAccount || "445710")}"></label><label>Compte achats<input name="purchaseAccount" value="${escapeHtml(settings.chartConfig.purchaseAccount || "606000")}"></label><label>Compte fournisseurs<input name="supplierAccount" value="${escapeHtml(settings.chartConfig.supplierAccount || "401000")}"></label></fieldset><fieldset class="accounting-rules form-wide"><legend>Plateforme de dématérialisation partenaire</legend><label>Connecteur<select name="provider">${accounting.connectors.map(connector => `<option value="${connector.id}" ${settings.pdpProvider === connector.id ? "selected" : ""}>${escapeHtml(connector.label)}</option>`).join("")}</select></label><label>Identifiant PDP<input name="identifier" value="${escapeHtml(settings.pdpIdentifier || "")}" maxlength="160"></label><label>Clé API${settings.hasApiKey ? " (laisser vide pour conserver)" : ""}<input name="apiKey" type="password" autocomplete="new-password"></label><label class="accounting-switch"><input name="enabled" type="checkbox" ${settings.pdpEnabled ? "checked" : ""}> Activer le connecteur PDP</label></fieldset><fieldset class="accounting-rules form-wide"><legend>Moteur d’aides</legend><label class="accounting-switch"><input name="aidEngineEnabled" type="checkbox" ${settings.aidEngineConfig.enabled ? "checked" : ""}> Préparer la suggestion automatique</label><label>Source de règles future<input name="aidEngineSource" value="${escapeHtml(settings.aidEngineConfig.source || "")}" maxlength="160" placeholder="API nationale, référentiel régional…"></label></fieldset><p class="auth-message"></p><div class="form-actions"><button class="secondary-button">Enregistrer les paramètres comptables</button></div></form></section>`;
     const planFieldset = node.querySelectorAll(".accounting-rules")[0];
@@ -137,6 +135,77 @@ function renderSettings(node) {
         pdpFieldset.querySelector("legend").insertAdjacentHTML("afterend", '<p class="muted form-wide">Sélectionnez la PDP choisie par votre entreprise parmi les connecteurs disponibles. Depann\'Home Pro prépare les factures et les transmet via ce connecteur lorsqu’il est disponible.</p>');
     }
     node.querySelector("form").addEventListener("submit", async event => { event.preventDefault(); const form = new FormData(event.currentTarget); const payload = { provider: form.get("provider"), identifier: form.get("identifier"), apiKey: form.get("apiKey"), enabled: form.get("enabled") === "on", chartConfig: Object.fromEntries(["salesAccount", "customerAccount", "bankAccount", "vatCollectedAccount", "purchaseAccount", "supplierAccount"].map(key => [key, form.get(key)])), journalConfig: { sales: { code: form.get("salesJournalCode"), label: form.get("salesJournalLabel"), active: true }, bank: { code: form.get("bankJournalCode"), label: form.get("bankJournalLabel"), active: true }, general: { code: form.get("generalJournalCode"), label: form.get("generalJournalLabel"), active: true } }, fecConfig: { fiscalYearStart: form.get("fiscalYearStart"), fiscalYearEnd: form.get("fiscalYearEnd") }, aidEngineConfig: { enabled: form.get("aidEngineEnabled") === "on", source: form.get("aidEngineSource") } }; const result = await api("/api/accounting/settings", { method: "PUT", body: JSON.stringify(payload) }); if (!result.ok) return alert(result.message || "Enregistrement impossible."); renderAccounting("settings"); });
+}
+
+function renderElectronic(node) {
+    const settings = accounting.settings;
+    const ready = settings.pdpEnabled && settings.pdpPlatformName && settings.pdpApiUrl && settings.pdpIdentifier && settings.hasApiKey;
+    node.innerHTML = `<section class="accounting-panel">
+        <div class="form-heading"><div><p class="eyebrow">Échanges réels</p><h3>Facturation électronique</h3><p class="muted">Chaque entreprise utilise la plateforme agréée qu’elle a choisie et configurée dans ses paramètres.</p></div></div>
+        <aside class="accounting-pdp-notice">${ready ? `Connexion active vers <strong>${escapeHtml(settings.pdpPlatformName)}</strong>. Les envois ci-dessous transmettent réellement l’archive UBL à ${escapeHtml(settings.pdpApiUrl)}.` : "Aucune plateforme réelle n’est active. Configurez votre plateforme avant toute transmission."}</aside>
+        <div class="accounting-transmission-list">${accounting.transmissions.length ? accounting.transmissions.map(item => `<article><div><strong>${escapeHtml(item.documentNumber)}</strong><p>${escapeHtml(item.provider)} · ${escapeHtml(transmissionStatusLabel(item.status))}</p><small>${escapeHtml(item.message || "Aucun message")}</small></div><button type="button" class="secondary-button" data-transmit="${item.documentId}" ${ready ? "" : "disabled"}>Renvoyer</button></article>`).join("") : '<p class="muted">Aucune transmission réelle enregistrée.</p>'}</div>
+        <h4>Factures et avoirs émis prêts à transmettre</h4>
+        <div class="accounting-transmission-list">${accounting.documents.filter(item => ["invoice", "credit"].includes(item.documentType)).map(item => `<article><div><strong>${escapeHtml(item.documentNumber)}</strong><p>${item.documentType === "credit" ? "Avoir" : "Facture"} · ${escapeHtml(item.customerName)} · ${money(Math.abs(item.totals.netPayable))}</p></div><button type="button" class="secondary-button" data-transmit="${item.id}" ${ready ? "" : "disabled"}>Transmettre réellement</button></article>`).join("") || '<p class="muted">Aucune facture ni aucun avoir disponible.</p>'}</div>
+    </section>`;
+    node.querySelectorAll("[data-transmit]:not([disabled])").forEach(button => button.addEventListener("click", async () => {
+        if (!window.confirm(`Transmettre réellement cette facture à ${settings.pdpPlatformName} ?`)) return;
+        button.disabled = true;
+        const result = await api(`/api/accounting/e-invoices/${button.dataset.transmit}/transmit`, { method: "POST" });
+        if (!result.ok) alert(result.message || "Transmission impossible.");
+        renderAccounting("electronic");
+    }));
+}
+
+function renderSettings(node) {
+    const settings = accounting.settings;
+    const accounts = settings.chartConfig || {};
+    const journals = settings.journalConfig || {};
+    node.innerHTML = `<section class="accounting-panel">
+        <div class="form-heading"><div><p class="eyebrow">Configuration propre à l’entreprise</p><h3>Comptabilité et plateforme de facturation électronique</h3><p class="muted">Chaque entreprise choisit librement sa plateforme et utilise ses propres identifiants contractuels.</p></div></div>
+        <form id="accountingSettingsForm" class="form-grid">
+            <fieldset class="accounting-rules form-wide"><legend>Plan comptable</legend>
+                <label>Compte ventes<input name="salesAccount" value="${escapeHtml(accounts.salesAccount || "706000")}"></label>
+                <label>Compte clients<input name="customerAccount" value="${escapeHtml(accounts.customerAccount || "411000")}"></label>
+                <label>Compte banque<input name="bankAccount" value="${escapeHtml(accounts.bankAccount || "512000")}"></label>
+                <label>TVA collectée<input name="vatCollectedAccount" value="${escapeHtml(accounts.vatCollectedAccount || "445710")}"></label>
+                <label>Compte achats<input name="purchaseAccount" value="${escapeHtml(accounts.purchaseAccount || "606000")}"></label>
+                <label>Compte fournisseurs<input name="supplierAccount" value="${escapeHtml(accounts.supplierAccount || "401000")}"></label>
+            </fieldset>
+            <fieldset class="accounting-rules form-wide"><legend>Journaux et exercice</legend>
+                <label>Code journal des ventes<input name="salesJournalCode" maxlength="10" value="${escapeHtml(journals.sales?.code || "VE")}"></label>
+                <label>Libellé ventes<input name="salesJournalLabel" maxlength="100" value="${escapeHtml(journals.sales?.label || "Ventes")}"></label>
+                <label>Code journal de banque<input name="bankJournalCode" maxlength="10" value="${escapeHtml(journals.bank?.code || "BQ")}"></label>
+                <label>Libellé banque<input name="bankJournalLabel" maxlength="100" value="${escapeHtml(journals.bank?.label || "Banque")}"></label>
+                <label>Code opérations diverses<input name="generalJournalCode" maxlength="10" value="${escapeHtml(journals.general?.code || "OD")}"></label>
+                <label>Libellé opérations diverses<input name="generalJournalLabel" maxlength="100" value="${escapeHtml(journals.general?.label || "Opérations diverses")}"></label>
+                <label>Début d’exercice<input name="fiscalYearStart" type="date" value="${escapeHtml(settings.fecConfig?.fiscalYearStart || "")}"></label>
+                <label>Clôture d’exercice<input name="fiscalYearEnd" type="date" value="${escapeHtml(settings.fecConfig?.fiscalYearEnd || "")}"></label>
+            </fieldset>
+            <fieldset class="accounting-rules form-wide"><legend>Plateforme choisie par cette entreprise</legend>
+                <p class="muted form-wide">Renseignez l’endpoint de dépôt fourni par votre plateforme agréée. Il doit accepter une facture UBL XML par requête HTTPS avec authentification Bearer.</p>
+                <label>Nom de la plateforme<input name="platformName" maxlength="160" value="${escapeHtml(settings.pdpPlatformName || "")}" placeholder="Nom de votre plateforme agréée"></label>
+                <label class="form-wide">URL API réelle de dépôt UBL<input name="apiUrl" type="url" maxlength="1000" value="${escapeHtml(settings.pdpApiUrl || "")}" placeholder="https://api.plateforme.fr/v1/invoices"></label>
+                <label>Identifiant entreprise sur la plateforme<input name="identifier" maxlength="160" value="${escapeHtml(settings.pdpIdentifier || "")}"></label>
+                <label>Clé API${settings.hasApiKey ? " (laisser vide pour conserver)" : ""}<input name="apiKey" type="password" autocomplete="new-password"></label>
+                <label class="accounting-switch"><input name="enabled" type="checkbox" ${settings.pdpEnabled ? "checked" : ""}> Activer les transmissions réelles</label>
+            </fieldset>
+            <p class="auth-message" id="accountingSettingsMessage"></p>
+            <div class="form-actions"><button class="secondary-button">Enregistrer les paramètres</button></div>
+        </form>
+    </section>`;
+    node.querySelector("form").addEventListener("submit", async event => {
+        event.preventDefault();
+        const form = new FormData(event.currentTarget);
+        const payload = {
+            platformName: form.get("platformName"), apiUrl: form.get("apiUrl"), identifier: form.get("identifier"), apiKey: form.get("apiKey"), enabled: form.get("enabled") === "on",
+            chartConfig: Object.fromEntries(["salesAccount", "customerAccount", "bankAccount", "vatCollectedAccount", "purchaseAccount", "supplierAccount"].map(key => [key, form.get(key)])),
+            journalConfig: { sales: { code: form.get("salesJournalCode"), label: form.get("salesJournalLabel"), active: true }, bank: { code: form.get("bankJournalCode"), label: form.get("bankJournalLabel"), active: true }, general: { code: form.get("generalJournalCode"), label: form.get("generalJournalLabel"), active: true } },
+            fecConfig: { fiscalYearStart: form.get("fiscalYearStart"), fiscalYearEnd: form.get("fiscalYearEnd") }, aidEngineConfig: settings.aidEngineConfig || {}
+        };
+        const result = await api("/api/accounting/settings", { method: "PUT", body: JSON.stringify(payload) });
+        if (!result.ok) return alert(result.message || "Enregistrement impossible.");
+        renderAccounting("settings");
+    });
 }
 
 function renderPaymentRows(documents) { return documents.length ? `<div class="accounting-document-list">${documents.map(item => `<article class="accounting-document"><div><strong>${escapeHtml(item.documentNumber)}</strong><p>${escapeHtml(item.customerName)}</p></div><div class="accounting-document-totals"><strong>${money(item.remainingAmount)}</strong><small>${escapeHtml(paymentLabel(item))}</small></div></article>`).join("")}</div>` : '<p class="muted">Aucun impayé ni règlement en attente.</p>'; }

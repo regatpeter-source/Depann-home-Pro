@@ -1,4 +1,6 @@
 import crypto from "node:crypto";
+import { lookup } from "node:dns/promises";
+import { isIP } from "node:net";
 import ExcelJS from "exceljs";
 import PDFDocument from "pdfkit";
 import { getPool } from "./database.js";
@@ -19,13 +21,34 @@ const AID_MODES = new Set(["fixed", "percentage"]);
 const PDP_STATUSES = new Set(["configured", "draft", "queued", "sent", "accepted", "rejected", "failed"]);
 const EXPORT_SCOPES = new Set(["invoices", "quotes", "credits", "settlements", "clients", "overdue", "all"]);
 
-// Depann'Home Pro prépare les factures et délègue leur transmission aux connecteurs PDP choisis par chaque entreprise.
+// Chaque entreprise choisit sa plateforme agréée et configure son propre endpoint de dépôt UBL.
 const pdpConnectors = new Map([
-    ["sandbox", {
-        label: "Transmission de test (Bac à sable Depann’Home Pro)",
-        async transmit(document) {
-            if (!document.customerName) throw new Error("Le destinataire de la facture est obligatoire.");
-            return { remoteId: `sandbox-${document.id}-${Date.now()}`, status: "sent", message: "Facture placée dans le bac à sable PDP." };
+    ["ubl_api", {
+        label: "API UBL de la plateforme choisie",
+        async transmit(document, settings) {
+            await assertSafeExternalHttpsUrl(settings.pdpApiUrl);
+            const headers = {
+                "Content-Type": document.structuredMimeType || "application/xml; charset=utf-8",
+                Accept: "application/json",
+                "X-Company-Identifier": settings.pdpIdentifier,
+                "X-Document-Number": document.documentNumber,
+                "X-Document-SHA256": document.structuredSha256,
+                "Idempotency-Key": document.structuredSha256
+            };
+            const apiKey = decryptSecret(settings.pdpApiSecret);
+            if (!apiKey) throw new Error("La clé API de la plateforme est absente ou illisible.");
+            headers.Authorization = `Bearer ${apiKey}`;
+            const response = await fetch(settings.pdpApiUrl, { method: "POST", headers, body: document.structuredData, signal: AbortSignal.timeout(20000), redirect: "error" });
+            const raw = await response.text();
+            let payload = {};
+            try { const parsed = raw ? JSON.parse(raw) : {}; payload = parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {}; } catch { payload = {}; }
+            if (!response.ok) throw new Error(cleanText(payload.message || raw || `Réponse HTTP ${response.status}`, 500));
+            const providerStatus = cleanText(payload.status, 30);
+            return {
+                remoteId: cleanText(payload.transmissionId || payload.id || response.headers.get("x-request-id"), 160),
+                status: PDP_STATUSES.has(providerStatus) ? providerStatus : response.status === 202 ? "queued" : "sent",
+                message: cleanText(payload.message, 1000) || `Facture transmise à ${settings.pdpPlatformName}.`
+            };
         }
     }]
 ]);
@@ -84,7 +107,9 @@ export async function initializeAccounting() {
             owner_id BIGINT PRIMARY KEY REFERENCES depannhome_users(id) ON DELETE CASCADE,
             chart_config JSONB NOT NULL DEFAULT '{}'::jsonb,
             aid_engine_config JSONB NOT NULL DEFAULT '{}'::jsonb,
-            pdp_provider VARCHAR(60) NOT NULL DEFAULT 'sandbox',
+            pdp_provider VARCHAR(60) NOT NULL DEFAULT '',
+            pdp_platform_name VARCHAR(160) NOT NULL DEFAULT '',
+            pdp_api_url VARCHAR(1000) NOT NULL DEFAULT '',
             pdp_identifier VARCHAR(160) NOT NULL DEFAULT '',
             pdp_api_secret TEXT NOT NULL DEFAULT '',
             pdp_enabled BOOLEAN NOT NULL DEFAULT FALSE,
@@ -94,8 +119,13 @@ export async function initializeAccounting() {
     await database.query(`
         ALTER TABLE depannhome_accounting_settings
         ADD COLUMN IF NOT EXISTS journal_config JSONB NOT NULL DEFAULT '{}'::jsonb,
-        ADD COLUMN IF NOT EXISTS fec_config JSONB NOT NULL DEFAULT '{}'::jsonb
+        ADD COLUMN IF NOT EXISTS fec_config JSONB NOT NULL DEFAULT '{}'::jsonb,
+        ADD COLUMN IF NOT EXISTS pdp_platform_name VARCHAR(160) NOT NULL DEFAULT '',
+        ADD COLUMN IF NOT EXISTS pdp_api_url VARCHAR(1000) NOT NULL DEFAULT ''
     `);
+    await database.query("ALTER TABLE depannhome_accounting_settings ALTER COLUMN pdp_provider SET DEFAULT ''");
+    await database.query("UPDATE depannhome_accounting_settings SET pdp_provider='',pdp_enabled=FALSE,pdp_api_secret='' WHERE pdp_provider='sandbox'");
+    await database.query("DROP TABLE IF EXISTS depannhome_accounting_sandbox_sessions");
     await database.query(`
         CREATE TABLE IF NOT EXISTS depannhome_accounting_journals (
             id BIGSERIAL PRIMARY KEY,
@@ -224,7 +254,9 @@ export async function initializeAccounting() {
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
     `);
+    await database.query("ALTER TABLE depannhome_einvoice_transmissions ALTER COLUMN provider TYPE VARCHAR(160)");
     await database.query("CREATE INDEX IF NOT EXISTS depannhome_einvoice_transmissions_owner_idx ON depannhome_einvoice_transmissions (owner_id, status, updated_at DESC)");
+    await database.query("DELETE FROM depannhome_einvoice_transmissions WHERE provider='sandbox' OR remote_id LIKE 'sandbox-%'");
 }
 
 export function registerAccountingRoutes(app, requireAuthentication) {
@@ -369,13 +401,16 @@ export function registerAccountingRoutes(app, requireAuthentication) {
         const ownerId = getAccountOwnerId(request);
         const previous = await loadSettings(ownerId);
         const secret = settings.apiKey ? encryptSecret(settings.apiKey) : previous.pdpApiSecret || "";
+        if (settings.enabled && !secret) return response.status(400).json({ message: "La clé API de la plateforme est obligatoire pour activer la transmission." });
         await getPool().query(`
-            INSERT INTO depannhome_accounting_settings (owner_id, chart_config, aid_engine_config, pdp_provider, pdp_identifier, pdp_api_secret, pdp_enabled, journal_config, fec_config)
-            VALUES ($1,$2::jsonb,$3::jsonb,$4,$5,$6,$7,$8::jsonb,$9::jsonb)
+            INSERT INTO depannhome_accounting_settings (owner_id, chart_config, aid_engine_config, pdp_provider, pdp_platform_name, pdp_api_url, pdp_identifier, pdp_api_secret, pdp_enabled, journal_config, fec_config)
+            VALUES ($1,$2::jsonb,$3::jsonb,$4,$5,$6,$7,$8,$9,$10::jsonb,$11::jsonb)
             ON CONFLICT (owner_id) DO UPDATE SET chart_config=EXCLUDED.chart_config, aid_engine_config=EXCLUDED.aid_engine_config,
-                pdp_provider=EXCLUDED.pdp_provider, pdp_identifier=EXCLUDED.pdp_identifier, pdp_api_secret=EXCLUDED.pdp_api_secret,
+                pdp_provider=EXCLUDED.pdp_provider, pdp_platform_name=EXCLUDED.pdp_platform_name, pdp_api_url=EXCLUDED.pdp_api_url,
+                pdp_identifier=EXCLUDED.pdp_identifier, pdp_api_secret=EXCLUDED.pdp_api_secret,
                 pdp_enabled=EXCLUDED.pdp_enabled, journal_config=EXCLUDED.journal_config, fec_config=EXCLUDED.fec_config, updated_at=NOW()
-        `, [ownerId, JSON.stringify(settings.chartConfig), JSON.stringify(settings.aidEngineConfig), settings.provider, settings.identifier, secret, settings.enabled, JSON.stringify(settings.journalConfig), JSON.stringify(settings.fecConfig)]);
+        `, [ownerId, JSON.stringify(settings.chartConfig), JSON.stringify(settings.aidEngineConfig), settings.provider, settings.platformName, settings.apiUrl,
+            settings.identifier, secret, settings.enabled, JSON.stringify(settings.journalConfig), JSON.stringify(settings.fecConfig)]);
         await ensureAccountingJournals(getPool(), ownerId, settings.journalConfig, true);
         response.status(204).end();
     }));
@@ -438,17 +473,18 @@ export function registerAccountingRoutes(app, requireAuthentication) {
         const id = positiveId(request.params.documentId);
         const ownerId = getAccountOwnerId(request);
         const settings = await loadSettings(ownerId);
-        const { rows } = await getPool().query("SELECT id, document_number AS \"documentNumber\", customer_name AS \"customerName\", document_type AS \"documentType\", (structured_data IS NOT NULL) AS \"hasStructuredData\" FROM depannhome_billing_documents WHERE id=$1 AND owner_id=$2 AND issued_at IS NOT NULL", [id, ownerId]);
+        const { rows } = await getPool().query("SELECT id, document_number AS \"documentNumber\", customer_name AS \"customerName\", document_type AS \"documentType\", structured_data AS \"structuredData\", structured_mime_type AS \"structuredMimeType\", structured_sha256 AS \"structuredSha256\" FROM depannhome_billing_documents WHERE id=$1 AND owner_id=$2 AND issued_at IS NOT NULL", [id, ownerId]);
         const document = rows[0];
-        if (!document || document.documentType !== "invoice") return response.status(404).json({ message: "Facture introuvable." });
-        if (!document.hasStructuredData) return response.status(409).json({ message: "L’archive UBL de cette facture émise est indisponible. La transmission est bloquée." });
-        const provider = settings.pdpProvider || "sandbox";
+        if (!document || !["invoice", "credit"].includes(document.documentType)) return response.status(404).json({ message: "Facture ou avoir introuvable." });
+        if (!document.structuredData) return response.status(409).json({ message: "L’archive UBL de cette facture ou de cet avoir est indisponible. La transmission est bloquée." });
+        if (!settings.pdpEnabled) return response.status(409).json({ message: "Configurez et activez d’abord la plateforme choisie par votre entreprise." });
+        const provider = settings.pdpProvider;
         const connector = pdpConnectors.get(provider);
-        if (!connector) return response.status(400).json({ message: "Le connecteur PDP sélectionné n’est pas disponible." });
-        const transmission = await createTransmission(ownerId, id, provider);
+        if (!connector) return response.status(400).json({ message: "Aucun connecteur réel n’est configuré pour cette entreprise." });
+        if (!settings.pdpPlatformName || !settings.pdpApiUrl || !settings.pdpIdentifier || !settings.pdpApiSecret) return response.status(409).json({ message: "Le nom, l’URL API, l’identifiant et la clé de la plateforme sont obligatoires." });
+        const transmission = await createTransmission(ownerId, id, settings.pdpPlatformName);
         try {
-            if (settings.pdpEnabled && provider !== "sandbox" && !settings.pdpApiSecret) throw new Error("La clé API PDP n’est pas configurée.");
-            const result = await connector.transmit(document, { apiKey: decryptSecret(settings.pdpApiSecret) });
+            const result = await connector.transmit(document, settings);
             await updateTransmission(transmission.id, result.status, result.message, result.remoteId);
             response.json({ message: result.message, transmission: { id: transmission.id, status: result.status } });
         } catch (error) {
@@ -646,8 +682,8 @@ async function loadAids(ownerId) {
 }
 
 async function loadSettings(ownerId, database = getPool()) {
-    const { rows } = await database.query("SELECT chart_config AS \"chartConfig\", aid_engine_config AS \"aidEngineConfig\", journal_config AS \"journalConfig\", fec_config AS \"fecConfig\", pdp_provider AS \"pdpProvider\", pdp_identifier AS \"pdpIdentifier\", pdp_api_secret AS \"pdpApiSecret\", pdp_enabled AS \"pdpEnabled\" FROM depannhome_accounting_settings WHERE owner_id=$1", [ownerId]);
-    return rows[0] || { chartConfig: {}, aidEngineConfig: {}, journalConfig: {}, fecConfig: {}, pdpProvider: "sandbox", pdpIdentifier: "", pdpApiSecret: "", pdpEnabled: false };
+    const { rows } = await database.query("SELECT chart_config AS \"chartConfig\", aid_engine_config AS \"aidEngineConfig\", journal_config AS \"journalConfig\", fec_config AS \"fecConfig\", pdp_provider AS \"pdpProvider\", pdp_platform_name AS \"pdpPlatformName\", pdp_api_url AS \"pdpApiUrl\", pdp_identifier AS \"pdpIdentifier\", pdp_api_secret AS \"pdpApiSecret\", pdp_enabled AS \"pdpEnabled\" FROM depannhome_accounting_settings WHERE owner_id=$1", [ownerId]);
+    return rows[0] || { chartConfig: {}, aidEngineConfig: {}, journalConfig: {}, fecConfig: {}, pdpProvider: "", pdpPlatformName: "", pdpApiUrl: "", pdpIdentifier: "", pdpApiSecret: "", pdpEnabled: false };
 }
 
 async function loadTransmissions(ownerId) {
@@ -662,7 +698,7 @@ async function loadTransmissions(ownerId) {
 
 function publicSettings(settings) {
     const normalized = normalizeAccountingConfig(settings.chartConfig, settings.journalConfig);
-    return { chartConfig: normalized.accounts, journalConfig: normalized.journals, fecConfig: settings.fecConfig || {}, aidEngineConfig: settings.aidEngineConfig || {}, pdpProvider: settings.pdpProvider || "sandbox", pdpIdentifier: settings.pdpIdentifier || "", pdpEnabled: Boolean(settings.pdpEnabled), hasApiKey: Boolean(settings.pdpApiSecret) };
+    return { chartConfig: normalized.accounts, journalConfig: normalized.journals, fecConfig: settings.fecConfig || {}, aidEngineConfig: settings.aidEngineConfig || {}, pdpProvider: settings.pdpProvider || "", pdpPlatformName: settings.pdpPlatformName || "", pdpApiUrl: settings.pdpApiUrl || "", pdpIdentifier: settings.pdpIdentifier || "", pdpEnabled: Boolean(settings.pdpEnabled), hasApiKey: Boolean(settings.pdpApiSecret) };
 }
 
 function buildDashboard(documents, settlements, purchases) {
@@ -729,11 +765,48 @@ function sanitizeSettlement(value) {
 }
 
 function sanitizeSettings(value) {
-    const provider = pdpConnectors.has(value?.provider) ? value.provider : "sandbox";
+    const platformName = cleanText(value?.platformName, 160);
+    const apiUrl = sanitizePdpApiUrl(value?.apiUrl);
+    const identifier = cleanText(value?.identifier, 160);
+    const enabled = Boolean(value?.enabled);
+    if (value?.apiUrl && !apiUrl) return { ok: false, message: "L’URL de la plateforme doit être une adresse HTTPS publique valide." };
+    if (enabled && (!platformName || !apiUrl || !identifier)) return { ok: false, message: "Le nom de la plateforme, son URL API HTTPS et l’identifiant entreprise sont obligatoires." };
+    const provider = platformName || apiUrl || identifier || enabled ? "ubl_api" : "";
     const normalized = normalizeAccountingConfig(value?.chartConfig, value?.journalConfig);
     const journalCodes = Object.values(normalized.journals).map(journal => journal.code);
     if (new Set(journalCodes).size !== journalCodes.length) return { ok: false, message: "Chaque journal doit avoir un code distinct." };
-    return { ok: true, provider, identifier: cleanText(value?.identifier, 160), apiKey: String(value?.apiKey || "").trim().slice(0, 1000), enabled: Boolean(value?.enabled), chartConfig: normalized.accounts, journalConfig: normalized.journals, fecConfig: { fiscalYearStart: sanitizeDate(value?.fecConfig?.fiscalYearStart), fiscalYearEnd: sanitizeDate(value?.fecConfig?.fiscalYearEnd) }, aidEngineConfig: { enabled: Boolean(value?.aidEngineConfig?.enabled), mode: cleanText(value?.aidEngineConfig?.mode, 40) || "manual", source: cleanText(value?.aidEngineConfig?.source, 160) } };
+    return { ok: true, provider, platformName, apiUrl, identifier, apiKey: String(value?.apiKey || "").trim().slice(0, 1000), enabled, chartConfig: normalized.accounts, journalConfig: normalized.journals, fecConfig: { fiscalYearStart: sanitizeDate(value?.fecConfig?.fiscalYearStart), fiscalYearEnd: sanitizeDate(value?.fecConfig?.fiscalYearEnd) }, aidEngineConfig: { enabled: Boolean(value?.aidEngineConfig?.enabled), mode: cleanText(value?.aidEngineConfig?.mode, 40) || "manual", source: cleanText(value?.aidEngineConfig?.source, 160) } };
+}
+
+export function sanitizePdpApiUrl(value) {
+    const raw = cleanText(value, 1000);
+    if (!raw) return "";
+    try {
+        const url = new URL(raw);
+        if (url.protocol !== "https:" || url.username || url.password || isForbiddenHostname(url.hostname)) return "";
+        return url.toString();
+    } catch { return ""; }
+}
+
+async function assertSafeExternalHttpsUrl(value) {
+    const sanitized = sanitizePdpApiUrl(value);
+    if (!sanitized) throw new Error("L’URL API HTTPS de la plateforme est invalide ou interdite.");
+    const url = new URL(sanitized);
+    const addresses = isIP(url.hostname) ? [{ address: url.hostname }] : await lookup(url.hostname, { all: true, verbatim: true });
+    if (!addresses.length || addresses.some(item => isPrivateIp(item.address))) throw new Error("L’URL API de la plateforme ne peut pas cibler un réseau privé.");
+}
+
+function isForbiddenHostname(hostname) {
+    const host = String(hostname || "").toLowerCase().replace(/^\[|\]$/g, "");
+    return !host || host === "localhost" || host.endsWith(".localhost") || (isIP(host) && isPrivateIp(host));
+}
+
+export function isPrivateIp(value) {
+    const ip = String(value || "").toLowerCase().replace(/^\[|\]$/g, "");
+    if (ip.includes(":")) return ip === "::" || ip === "::1" || ip.startsWith("fc") || ip.startsWith("fd") || ip.startsWith("fe8") || ip.startsWith("fe9") || ip.startsWith("fea") || ip.startsWith("feb") || (ip.startsWith("::ffff:") && isPrivateIp(ip.slice(7)));
+    const parts = ip.split(".").map(Number);
+    if (parts.length !== 4 || parts.some(part => !Number.isInteger(part) || part < 0 || part > 255)) return true;
+    return parts[0] === 0 || parts[0] === 10 || parts[0] === 127 || parts[0] >= 224 || (parts[0] === 169 && parts[1] === 254) || (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) || (parts[0] === 192 && parts[1] === 168) || (parts[0] === 100 && parts[1] >= 64 && parts[1] <= 127);
 }
 
 function sanitizeLedgerPeriod(value, required = false) {

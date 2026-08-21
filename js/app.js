@@ -2,10 +2,10 @@ import { initializeAuthentication, restoreApplicationShell, signOut } from "./au
 import { initializeClientSynchronization } from "./client-sync.js?v=125";
 import { initializeCollaboration } from "./collaboration.js?v=5";
 import { loadDatabase } from "./data.js?v=59";
-import { initializeNavigation, refreshApplication } from "./navigation.js?v=335";
+import { initializeNavigation, refreshApplication } from "./navigation.js?v=336";
 import { renderError } from "./ui.js?v=44";
 import { getSettings } from "./storage.js?v=44";
-import { FONT_OPTIONS } from "./config.js?v=121";
+import { FONT_OPTIONS } from "./config.js?v=127";
 import { installClientSessionGuard, onClientSessionReplaced } from "./client-session.js?v=2";
 
 let applicationStarted = false;
@@ -95,19 +95,11 @@ function enforceOfficialProductName() {
 
 async function initializeSandboxCapabilities() {
     try {
-        const [partnerResponse, accountingResponse] = await Promise.all([
-            fetch("/api/partner-sandbox", { credentials: "same-origin" }),
-            fetch("/api/accounting-sandbox", { credentials: "same-origin" })
-        ]);
-        const [partner, accounting] = await Promise.all([
-            partnerResponse.ok ? partnerResponse.json() : null,
-            accountingResponse.ok ? accountingResponse.json() : null
-        ]);
+        const partnerResponse = await fetch("/api/partner-sandbox", { credentials: "same-origin" });
+        const partner = partnerResponse.ok ? await partnerResponse.json() : null;
         document.body.classList.toggle("partner-sandbox-enabled", Boolean(partner?.available));
-        document.body.classList.toggle("accounting-sandbox-enabled", Boolean(accounting?.available));
     } catch {
         document.body.classList.remove("partner-sandbox-enabled");
-        document.body.classList.remove("accounting-sandbox-enabled");
     }
 }
 

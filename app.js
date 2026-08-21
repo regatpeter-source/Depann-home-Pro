@@ -35,7 +35,6 @@ import { initializePartnerConnections, registerPartnerConnectionRoutes } from ".
 import { initializePartnerRequests, registerPartnerRequestRoutes } from "./server/partner-requests.js";
 import { initializePartnerSandbox, registerPartnerSandboxRoutes } from "./server/partner-sandbox.js";
 import { initializePartnerApiSandbox, registerPartnerApiSandboxRoutes } from "./server/partner-api-sandbox.js";
-import { initializeAccountingSandbox, registerAccountingSandboxRoutes } from "./server/accounting-sandbox.js";
 import { initializeGroups, registerGroupRoutes } from "./server/groups.js";
 import { initializeSupport, registerSupportRoutes } from "./server/support.js";
 import { dataImportUploadErrorHandler, initializeDataImports, registerDataImportRoutes } from "./server/data-imports.js";
@@ -139,7 +138,6 @@ registerPartnerDialogueRoutes(app, requireAuthentication);
 registerPartnerConnectionRoutes(app, requireAuthentication);
 registerPartnerApiSandboxRoutes(app, requireCreator, requireAuthentication);
 registerPartnerSandboxRoutes(app, requireAuthentication);
-registerAccountingSandboxRoutes(app, requireAuthentication);
 registerGroupRoutes(app, requireAuthentication);
 registerBillingRoutes(app, requireAuthentication);
 registerDocumentTemplateRoutes(app, requireAuthentication);
@@ -208,7 +206,6 @@ async function start() {
 	await initializePartnerConnections();
 	await initializePartnerSandbox();
 	await initializePartnerApiSandbox();
-	await initializeAccountingSandbox();
 	await initializePartnerRequests();
 	await initializeSupport();
 	await initializeClients();

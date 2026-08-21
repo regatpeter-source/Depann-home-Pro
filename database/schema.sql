@@ -501,12 +501,16 @@ ALTER TABLE depannhome_accounting_settlements ADD CONSTRAINT depannhome_accounti
 CREATE TABLE IF NOT EXISTS depannhome_accounting_settings (
     owner_id BIGINT PRIMARY KEY REFERENCES depannhome_users(id) ON DELETE CASCADE,
     chart_config JSONB NOT NULL DEFAULT '{}'::jsonb, aid_engine_config JSONB NOT NULL DEFAULT '{}'::jsonb,
-    pdp_provider VARCHAR(60) NOT NULL DEFAULT 'sandbox', pdp_identifier VARCHAR(160) NOT NULL DEFAULT '',
+    pdp_provider VARCHAR(60) NOT NULL DEFAULT '', pdp_platform_name VARCHAR(160) NOT NULL DEFAULT '',
+    pdp_api_url VARCHAR(1000) NOT NULL DEFAULT '', pdp_identifier VARCHAR(160) NOT NULL DEFAULT '',
     pdp_api_secret TEXT NOT NULL DEFAULT '', pdp_enabled BOOLEAN NOT NULL DEFAULT FALSE,
     journal_config JSONB NOT NULL DEFAULT '{}'::jsonb, fec_config JSONB NOT NULL DEFAULT '{}'::jsonb,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-ALTER TABLE depannhome_accounting_settings ADD COLUMN IF NOT EXISTS journal_config JSONB NOT NULL DEFAULT '{}'::jsonb, ADD COLUMN IF NOT EXISTS fec_config JSONB NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE depannhome_accounting_settings ADD COLUMN IF NOT EXISTS journal_config JSONB NOT NULL DEFAULT '{}'::jsonb, ADD COLUMN IF NOT EXISTS fec_config JSONB NOT NULL DEFAULT '{}'::jsonb, ADD COLUMN IF NOT EXISTS pdp_platform_name VARCHAR(160) NOT NULL DEFAULT '', ADD COLUMN IF NOT EXISTS pdp_api_url VARCHAR(1000) NOT NULL DEFAULT '';
+ALTER TABLE depannhome_accounting_settings ALTER COLUMN pdp_provider SET DEFAULT '';
+UPDATE depannhome_accounting_settings SET pdp_provider='',pdp_enabled=FALSE,pdp_api_secret='' WHERE pdp_provider='sandbox';
+DROP TABLE IF EXISTS depannhome_accounting_sandbox_sessions;
 
 -- Grand livre persistant : les pièces métier restent les sources uniques ; les
 -- écritures validées en sont des instantanés numérotés, isolés par owner_id.
@@ -566,11 +570,13 @@ CREATE INDEX IF NOT EXISTS depannhome_accounting_exports_owner_created_idx ON de
 
 CREATE TABLE IF NOT EXISTS depannhome_einvoice_transmissions (
     id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
-    document_id BIGINT NOT NULL REFERENCES depannhome_billing_documents(id) ON DELETE CASCADE, provider VARCHAR(60) NOT NULL,
+    document_id BIGINT NOT NULL REFERENCES depannhome_billing_documents(id) ON DELETE CASCADE, provider VARCHAR(160) NOT NULL,
     remote_id VARCHAR(160) NOT NULL DEFAULT '', status VARCHAR(30) NOT NULL DEFAULT 'draft', message VARCHAR(1000) NOT NULL DEFAULT '',
     attempts INTEGER NOT NULL DEFAULT 0, last_attempt_at TIMESTAMPTZ, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+ALTER TABLE depannhome_einvoice_transmissions ALTER COLUMN provider TYPE VARCHAR(160);
 CREATE INDEX IF NOT EXISTS depannhome_einvoice_transmissions_owner_idx ON depannhome_einvoice_transmissions (owner_id, status, updated_at DESC);
+DELETE FROM depannhome_einvoice_transmissions WHERE provider='sandbox' OR remote_id LIKE 'sandbox-%';
 
 -- Assistant Connecteurs API : plugins déclaratifs isolés par entreprise, sans exécution de code tiers.
 CREATE TABLE IF NOT EXISTS depannhome_api_connectors (

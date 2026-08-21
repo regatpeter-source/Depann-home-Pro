@@ -1,4 +1,4 @@
-export const APP_VERSION = "1.15.3 Facture depuis devis";
+export const APP_VERSION = "1.16.0 Facturation réelle";
 export const DATA_VERSION = "2026-07-20-35";
 
 export const STORAGE_KEYS = {
@@ -41,7 +41,6 @@ export const ROUTES = {
     clients: "clients",
     billing: "billing",
     accounting: "accounting",
-    accountingSandbox: "accounting-sandbox",
     groups: "groups",
     partnerMissions: "partner-missions",
     partnerSandbox: "partner-sandbox",
