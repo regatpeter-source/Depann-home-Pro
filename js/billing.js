@@ -32,12 +32,13 @@ export async function renderBilling(options = {}) {
     const container = getContainer();
     const overviewPanel = createPanel("billing-overview-panel");
     const profilePanel = createPanel("billing-profile-panel");
+    const templatesPanel = createPanel("billing-templates-panel");
     const editorPanel = createPanel("billing-editor-panel");
     const listPanel = createPanel("billing-list-panel");
-    container.append(overviewPanel, profilePanel, editorPanel, listPanel);
+    container.append(overviewPanel, profilePanel, templatesPanel, editorPanel, listPanel);
     if (isAccountant()) renderPlatformAnnouncement(container);
     overviewPanel.innerHTML = "<p class=\"muted\">Chargement de l’espace devis, factures et rapports…</p>";
-    [profilePanel, editorPanel, listPanel].forEach(panel => panel.hidden = true);
+    [profilePanel, templatesPanel, editorPanel, listPanel].forEach(panel => panel.hidden = true);
 
     if (options.data) {
         billingData = options.data;
@@ -59,6 +60,14 @@ export async function renderBilling(options = {}) {
         else if (templateSection === "quote") renderQuoteTemplateSettings(profilePanel, billingData.profile, true, options.onTemplateRendered);
         else renderAdditionalDocumentTemplateSettings(profilePanel, billingData.profile, templateSection, true, options.onTemplateRendered);
         if (typeof options.onTemplateRendered === "function") await options.onTemplateRendered();
+        return;
+    }
+    if (options.templates && isFullAdministrator()) {
+        overviewPanel.hidden = true;
+        profilePanel.hidden = true;
+        editorPanel.hidden = true;
+        listPanel.hidden = true;
+        renderTemplates(templatesPanel);
         return;
     }
     if (options.newDocument) {
@@ -142,6 +151,7 @@ function renderOverview(panel, profilePanel) {
                 <button type="button" class="secondary-button" data-billing-action="new-invoice">+ Nouvelle facture</button>
                 ${isAccountant() || !canAccessTechnicalReports() ? "" : '<button type="button" class="secondary-button" data-billing-action="open-leak-reports">Rapports de fuite</button><button type="button" class="secondary-button" data-billing-action="new-leak-report">Nouveau rapport de recherche de fuite</button>'}
                 ${isFullAdministrator() ? '<button type="button" class="secondary-button" data-billing-action="preview-blank-quote">Aperçu du devis vierge</button>' : ""}
+                ${isFullAdministrator() ? '<button type="button" class="secondary-button" data-billing-action="manage-line-templates">Gérer les lignes préenregistrées</button>' : ""}
                 <button type="button" class="secondary-button" data-billing-action="open-purchases">Achats</button>
             </div>
         </div>
@@ -167,6 +177,7 @@ function renderOverview(panel, profilePanel) {
     panel.querySelector("[data-billing-action=download-quitus-template]")?.addEventListener("click", () => openDocumentTemplateDownload("quitus"));
     panel.querySelector("[data-billing-action=download-report-template]")?.addEventListener("click", () => openDocumentTemplateDownload("report"));
     panel.querySelector("[data-billing-action=preview-blank-quote]")?.addEventListener("click", openBlankQuotePreview);
+    panel.querySelector("[data-billing-action=manage-line-templates]")?.addEventListener("click", () => renderBilling({ templates: true }));
     panel.querySelector("[data-billing-action=open-purchases]")?.addEventListener("click", async () => {
         const { renderPurchases } = await import("./purchases.js?v=118");
         renderPurchases();
@@ -350,7 +361,7 @@ function externalTemplateFieldsHelp(type) {
 function renderTemplates(panel) {
     panel.hidden = false;
     panel.innerHTML = `
-        <div class="form-heading"><div><p class="eyebrow">Lignes préenregistrées</p><h2>Vos prestations et fournitures</h2></div></div>
+        <div class="form-heading"><div><p class="eyebrow">Lignes préenregistrées</p><h2>Vos prestations et fournitures</h2><p class="muted">Créez ici les lignes réutilisables proposées dans vos devis et factures.</p></div><button type="button" class="secondary-button" id="closeBillingTemplates">Fermer</button></div>
         <form id="billingTemplateForm" class="form-grid billing-template-form">
             <label>Libellé *<input name="label" maxlength="160" required placeholder="Ex. Déplacement et diagnostic"></label>
             <label>Prix unitaire HT *<input name="unitPrice" type="number" min="0" step="0.01" required placeholder="0,00"></label>
@@ -364,6 +375,7 @@ function renderTemplates(panel) {
         <div class="billing-template-list" id="billingTemplateList"></div>
     `;
     const list = panel.querySelector("#billingTemplateList");
+    panel.querySelector("#closeBillingTemplates").addEventListener("click", () => renderBilling());
     if (!billingData.templates.length) list.innerHTML = "<p class=\"muted\">Aucune ligne préenregistrée pour le moment.</p>";
     billingData.templates.forEach(template => {
         const item = document.createElement("article");
@@ -373,7 +385,7 @@ function renderTemplates(panel) {
             if (!confirm(`Supprimer la ligne « ${template.label} » ?`)) return;
             const result = await apiRequest(`/api/billing/templates/${encodeURIComponent(template.id)}`, { method: "DELETE" });
             if (!result.ok) alert(result.message || "Suppression impossible.");
-            else renderBilling();
+            else renderBilling({ templates: true });
         });
         list.appendChild(item);
     });
@@ -383,7 +395,7 @@ function renderTemplates(panel) {
         const message = panel.querySelector("#billingTemplateMessage");
         const result = await apiRequest("/api/billing/templates", { method: "POST", body: JSON.stringify(formDataToObject(new FormData(form))) });
         if (!result.ok) { message.textContent = result.message || "Impossible d’ajouter la ligne."; message.classList.add("error"); return; }
-        renderBilling();
+        renderBilling({ templates: true });
     });
 }
 

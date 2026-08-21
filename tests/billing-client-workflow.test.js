@@ -10,6 +10,13 @@ test("selecting a known billing customer stores its client id", () => {
     assert.match(billingSource, /form\.querySelector\("\[name=clientId\]"\)\.value = client\?\.id \|\| ""/);
 });
 
+test("administrators can open and close the saved billing line manager", () => {
+    assert.match(billingSource, /data-billing-action="manage-line-templates"/);
+    assert.match(billingSource, /renderBilling\(\{ templates: true \}\)/);
+    assert.match(billingSource, /if \(options\.templates && isFullAdministrator\(\)\)/);
+    assert.match(billingSource, /id="closeBillingTemplates"/);
+});
+
 test("saved quotes and invoices open the client before offering email or print", () => {
     assert.match(billingSource, /const savedDocumentId = result\.data\?\.id \|\| document\.id/);
     assert.match(billingSource, /depannhome:open-client/);
