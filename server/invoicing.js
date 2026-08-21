@@ -52,6 +52,8 @@ export async function initializeSubscriptionInvoicing() {
             lines JSONB NOT NULL DEFAULT '[]'::jsonb,
             financial_data JSONB NOT NULL DEFAULT '{}'::jsonb,
             subscription_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
+            invoice_kind VARCHAR(30) NOT NULL DEFAULT 'cycle' CHECK (invoice_kind IN ('cycle','proration_debit')),
+            proration_context JSONB NOT NULL DEFAULT '{}'::jsonb,
             issue_date DATE NOT NULL,
             due_date DATE NOT NULL,
             issuer_profile JSONB NOT NULL,
@@ -78,10 +80,14 @@ export async function initializeSubscriptionInvoicing() {
     await database.query(`ALTER TABLE depannhome_subscription_invoices ADD COLUMN IF NOT EXISTS lines JSONB NOT NULL DEFAULT '[]'::jsonb`);
     await database.query(`ALTER TABLE depannhome_subscription_invoices ADD COLUMN IF NOT EXISTS financial_data JSONB NOT NULL DEFAULT '{}'::jsonb`);
     await database.query(`ALTER TABLE depannhome_subscription_invoices ADD COLUMN IF NOT EXISTS subscription_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb`);
+    await database.query(`ALTER TABLE depannhome_subscription_invoices ADD COLUMN IF NOT EXISTS invoice_kind VARCHAR(30) NOT NULL DEFAULT 'cycle', ADD COLUMN IF NOT EXISTS proration_context JSONB NOT NULL DEFAULT '{}'::jsonb`);
+    await database.query(`ALTER TABLE depannhome_subscription_invoices DROP CONSTRAINT IF EXISTS depannhome_subscription_invoices_kind_check`);
+    await database.query(`ALTER TABLE depannhome_subscription_invoices ADD CONSTRAINT depannhome_subscription_invoices_kind_check CHECK (invoice_kind IN ('cycle','proration_debit'))`);
     await database.query(`ALTER TABLE depannhome_subscription_invoices DROP CONSTRAINT IF EXISTS depannhome_subscription_invoices_status_check`);
     await database.query(`ALTER TABLE depannhome_subscription_invoices ADD CONSTRAINT depannhome_subscription_invoices_status_check CHECK (status IN ('pending','sending','sent','failed','cancelled'))`);
     await database.query(`ALTER TABLE depannhome_subscription_invoices DROP CONSTRAINT IF EXISTS depannhome_subscription_invoices_owner_period_unique`);
-    await database.query(`CREATE UNIQUE INDEX IF NOT EXISTS depannhome_subscription_invoices_active_owner_period_idx ON depannhome_subscription_invoices (account_owner_id,billing_period) WHERE status<>'cancelled'`);
+    await database.query(`DROP INDEX IF EXISTS depannhome_subscription_invoices_active_owner_period_idx`);
+    await database.query(`CREATE UNIQUE INDEX depannhome_subscription_invoices_active_owner_period_idx ON depannhome_subscription_invoices (account_owner_id,billing_period) WHERE status<>'cancelled' AND invoice_kind='cycle'`);
     await database.query(`ALTER TABLE depannhome_subscription_invoices ADD COLUMN IF NOT EXISTS payment_status VARCHAR(20) NOT NULL DEFAULT 'unpaid' CHECK (payment_status IN ('unpaid','paid')), ADD COLUMN IF NOT EXISTS paid_date DATE, ADD COLUMN IF NOT EXISTS paid_at TIMESTAMPTZ, ADD COLUMN IF NOT EXISTS paid_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL, ADD COLUMN IF NOT EXISTS payment_reference VARCHAR(160) NOT NULL DEFAULT '', ADD COLUMN IF NOT EXISTS receipt_delivery_status VARCHAR(20) NOT NULL DEFAULT 'not_sent' CHECK (receipt_delivery_status IN ('not_sent','pending','sending','sent','failed')), ADD COLUMN IF NOT EXISTS receipt_sent_at TIMESTAMPTZ, ADD COLUMN IF NOT EXISTS receipt_last_error VARCHAR(1000) NOT NULL DEFAULT ''`);
     await database.query(`ALTER TABLE depannhome_subscription_invoices ADD COLUMN IF NOT EXISTS paid_amount_cents INTEGER NOT NULL DEFAULT 0 CHECK (paid_amount_cents >= 0)`);
     await database.query(`UPDATE depannhome_subscription_invoices SET paid_amount_cents=net_amount_cents WHERE payment_status='paid' AND paid_amount_cents=0`);
@@ -126,6 +132,19 @@ export async function initializeSubscriptionInvoicing() {
         THEN RAISE EXCEPTION 'Les données légales d’un avoir émis sont immuables.'; END IF; RETURN NEW; END; $$ LANGUAGE plpgsql`);
     await database.query(`DROP TRIGGER IF EXISTS depannhome_subscription_credit_note_immutable ON depannhome_subscription_credit_notes`);
     await database.query(`CREATE TRIGGER depannhome_subscription_credit_note_immutable BEFORE UPDATE OR DELETE ON depannhome_subscription_credit_notes FOR EACH ROW EXECUTE FUNCTION depannhome_protect_subscription_credit_note()`);
+    await database.query(`CREATE TABLE IF NOT EXISTS depannhome_subscription_proration_events (
+        id BIGSERIAL PRIMARY KEY, account_owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE RESTRICT,
+        change_fingerprint CHAR(64) NOT NULL UNIQUE, effective_date DATE NOT NULL, cycle_start_date DATE NOT NULL, cycle_end_date DATE NOT NULL,
+        total_days INTEGER NOT NULL CHECK (total_days > 0), remaining_days INTEGER NOT NULL CHECK (remaining_days >= 0),
+        old_net_amount_cents INTEGER NOT NULL CHECK (old_net_amount_cents >= 0), new_net_amount_cents INTEGER NOT NULL CHECK (new_net_amount_cents >= 0),
+        prorata_delta_cents INTEGER NOT NULL, source_invoice_id BIGINT REFERENCES depannhome_subscription_invoices(id) ON DELETE RESTRICT,
+        generated_invoice_id BIGINT REFERENCES depannhome_subscription_invoices(id) ON DELETE RESTRICT,
+        generated_credit_note_id BIGINT REFERENCES depannhome_subscription_credit_notes(id) ON DELETE RESTRICT,
+        status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','created','skipped')),
+        actor_id BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL, details JSONB NOT NULL DEFAULT '{}'::jsonb,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`);
+    await database.query(`CREATE INDEX IF NOT EXISTS depannhome_subscription_proration_events_owner_idx ON depannhome_subscription_proration_events(account_owner_id,effective_date DESC,id DESC)`);
 }
 
 export function registerSubscriptionInvoicingRoutes(app, requireCreator) {
@@ -160,7 +179,8 @@ export function registerSubscriptionInvoicingRoutes(app, requireCreator) {
         const { rows } = await database.query(`
             SELECT invoice.id, invoice.invoice_number AS "invoiceNumber", invoice.recipient_name AS "recipientName", invoice.recipient_email AS "recipientEmail",
                 invoice.subscription_label AS "subscriptionLabel", invoice.net_amount_cents AS "amountCents", invoice.amount_cents AS "baseAmountCents",
-            invoice.financial_data AS "financialData", invoice.subscription_snapshot AS "subscriptionSnapshot", invoice.vat_rate::float AS "vatRate",
+            invoice.financial_data AS "financialData", invoice.subscription_snapshot AS "subscriptionSnapshot",invoice.invoice_kind AS "invoiceKind",
+                invoice.proration_context AS "prorationContext",invoice.vat_rate::float AS "vatRate",
                 TO_CHAR(invoice.issue_date, 'YYYY-MM-DD') AS "issueDate", TO_CHAR(invoice.due_date, 'YYYY-MM-DD') AS "dueDate",
                 invoice.status, invoice.sent_at AS "sentAt", invoice.last_error AS "lastError", invoice.created_at AS "createdAt",
                 invoice.payment_status AS "paymentStatus", invoice.paid_amount_cents AS "paidAmountCents", TO_CHAR(invoice.paid_date, 'YYYY-MM-DD') AS "paidDate", invoice.paid_at AS "paidAt",
@@ -189,7 +209,7 @@ export function registerSubscriptionInvoicingRoutes(app, requireCreator) {
             creditedAmountCents,
             creditableAmountCents: Math.max(0, Number(invoice.amountCents) - creditedAmountCents),
             ...balances,
-            matchesCurrentSubscription: subscriptionInvoiceMatchesCurrentSubscription(invoice, currentSubscriptionFromInvoiceRow(invoice)),
+            matchesCurrentSubscription: invoice.invoiceKind === "cycle" ? subscriptionInvoiceMatchesCurrentSubscription(invoice, currentSubscriptionFromInvoiceRow(invoice)) : true,
             currentSubscriptionAmountCents: buildSubscriptionInvoiceSnapshot(currentSubscriptionFromInvoiceRow(invoice), invoice.vatRate).netAmountCents
         }; });
         response.json({ invoices, summary: subscriptionInvoiceSummary(invoices), processing: await subscriptionInvoicingStatus() });
@@ -331,6 +351,106 @@ export function registerSubscriptionInvoicingRoutes(app, requireCreator) {
     }));
 }
 
+export function calculateSubscriptionProration(oldNetAmountCents, newNetAmountCents, totalDays, remainingDays) {
+    const oldAmount = Math.max(0, Number(oldNetAmountCents) || 0);
+    const newAmount = Math.max(0, Number(newNetAmountCents) || 0);
+    const cycleDays = Number(totalDays);
+    const daysRemaining = Number(remainingDays);
+    if (!Number.isSafeInteger(oldAmount) || !Number.isSafeInteger(newAmount) || !Number.isInteger(cycleDays) || cycleDays <= 0
+        || !Number.isInteger(daysRemaining) || daysRemaining < 0 || daysRemaining > cycleDays) {
+        throw new TypeError("Données de prorata invalides.");
+    }
+    const difference = newAmount - oldAmount;
+    return Math.sign(difference) * Math.round(Math.abs(difference) * daysRemaining / cycleDays);
+}
+
+export async function prepareSubscriptionProration(connection, { ownerBefore, ownerAfter, actorId }) {
+    if (!ownerBefore?.id) return null;
+    const { rows: sources } = await connection.query(`
+        SELECT id,invoice_number AS "invoiceNumber",recipient_name AS "recipientName",recipient_email AS "recipientEmail",
+            recipient_address AS "recipientAddress",net_amount_cents AS "netAmountCents",paid_amount_cents AS "paidAmountCents",
+            vat_rate::float AS "vatRate",TO_CHAR(issue_date,'YYYY-MM-DD') AS "issueDate",TO_CHAR(billing_period,'YYYY-MM-DD') AS "billingPeriod",
+            issuer_profile AS "issuerProfile"
+        FROM depannhome_subscription_invoices
+        WHERE account_owner_id=$1 AND invoice_kind='cycle' AND status='sent'
+            AND billing_period<=CURRENT_DATE AND CURRENT_DATE<(billing_period+INTERVAL '1 month')::date
+        ORDER BY billing_period DESC,id DESC LIMIT 1 FOR UPDATE
+    `, [ownerBefore.id]);
+    const source = sources[0];
+    if (!source) return null;
+    const { rows: periods } = await connection.query(`
+        SELECT TO_CHAR(CURRENT_DATE,'YYYY-MM-DD') AS "effectiveDate",$1 AS "cycleStartDate",
+            TO_CHAR(($1::date+INTERVAL '1 month')::date,'YYYY-MM-DD') AS "cycleEndDate",
+            (($1::date+INTERVAL '1 month')::date-$1::date)::integer AS "totalDays",
+            GREATEST((($1::date+INTERVAL '1 month')::date-CURRENT_DATE),0)::integer AS "remainingDays"
+    `, [source.billingPeriod]);
+    const period = periods[0];
+    if (!period || period.remainingDays <= 0) return null;
+    const oldNetAmountCents = ownerBefore.subscriptionPlan === "paid" ? buildSubscriptionInvoiceSnapshot(ownerBefore, source.vatRate).netAmountCents : 0;
+    const newNetAmountCents = ownerAfter.subscriptionPlan === "paid" ? buildSubscriptionInvoiceSnapshot(ownerAfter, source.vatRate).netAmountCents : 0;
+    const prorataDeltaCents = calculateSubscriptionProration(oldNetAmountCents, newNetAmountCents, period.totalDays, period.remainingDays);
+    if (!prorataDeltaCents) return null;
+    const details = {
+        previous: subscriptionSnapshot(ownerBefore, { netAmountCents: oldNetAmountCents }),
+        next: subscriptionSnapshot(ownerAfter, { netAmountCents: newNetAmountCents }),
+        calculation: { ...period, oldNetAmountCents, newNetAmountCents, prorataDeltaCents }
+    };
+    const fingerprint = createHash("sha256").update(JSON.stringify({ accountOwnerId: ownerBefore.id, ...details.calculation, previous: details.previous, next: details.next })).digest("hex");
+    const { rows: events } = await connection.query(`
+        INSERT INTO depannhome_subscription_proration_events(account_owner_id,change_fingerprint,effective_date,cycle_start_date,cycle_end_date,total_days,remaining_days,old_net_amount_cents,new_net_amount_cents,prorata_delta_cents,source_invoice_id,actor_id,details)
+        VALUES($1,$2,$3::date,$4::date,$5::date,$6,$7,$8,$9,$10,$11,$12,$13::jsonb)
+        ON CONFLICT(change_fingerprint) DO NOTHING RETURNING id
+    `, [ownerBefore.id,fingerprint,period.effectiveDate,period.cycleStartDate,period.cycleEndDate,period.totalDays,period.remainingDays,oldNetAmountCents,newNetAmountCents,prorataDeltaCents,source.id,actorId,JSON.stringify(details)]);
+    const event = events[0];
+    if (!event) return null;
+    const reason = `Prorata du ${period.effectiveDate} au ${period.cycleEndDate} (${period.remainingDays}/${period.totalDays} jours) — passage de ${ownerBefore.subscriptionLabel || ownerBefore.subscriptionTier} à ${ownerAfter.subscriptionLabel || ownerAfter.subscriptionTier}.`;
+    if (prorataDeltaCents < 0) {
+        const existing = await connection.query(`SELECT COALESCE(SUM(amount_cents),0)::integer AS total FROM depannhome_subscription_credit_notes WHERE source_invoice_id=$1`, [source.id]);
+        const amountCents = Math.min(Math.abs(prorataDeltaCents), Math.max(0, Number(source.netAmountCents) - Number(existing.rows[0].total)));
+        if (!amountCents) {
+            await connection.query(`UPDATE depannhome_subscription_proration_events SET status='skipped',details=details||$2::jsonb,updated_at=NOW() WHERE id=$1`, [event.id, JSON.stringify({ skippedReason: "source_invoice_fully_credited" })]);
+            return { eventId: event.id, skipped: true };
+        }
+        const sequence = await nextSubscriptionDocumentNumber(connection, "credit", period.effectiveDate);
+        const creditKind = amountCents === Math.max(0, Number(source.netAmountCents) - Number(existing.rows[0].total)) ? "full" : "partial";
+        const totals = calculateSubscriptionCreditTotals(amountCents, source.vatRate);
+        const lines = [{ description: reason, quantity: 1, unit: "prorata", unitPrice: totals.taxBaseCents / 100, vatRate: Number(source.vatRate) || 0 }];
+        const document = subscriptionCreditNoteDocument({ creditNumber: sequence.number, sourceInvoiceNumber: source.invoiceNumber, sourceInvoiceDate: source.issueDate, issueDate: period.effectiveDate, reason, recipientName: source.recipientName, recipientAddress: source.recipientAddress, issuerProfile: source.issuerProfile, lines, ...totals });
+        const pdf = await createBillingPdf(document, source.issuerProfile || emptyProfile());
+        const refundStatus = Number(source.paidAmountCents) > 0 ? "pending" : "not_required";
+        const inserted = await connection.query(`INSERT INTO depannhome_subscription_credit_notes(source_invoice_id,account_owner_id,credit_number,source_invoice_number,source_invoice_date,issue_date,credit_kind,reason,amount_cents,tax_base_cents,vat_amount_cents,vat_rate,recipient_name,recipient_email,recipient_address,issuer_profile,lines,financial_data,pdf_data,pdf_sha256,created_by,refund_status) VALUES($1,$2,$3,$4,$5::date,$6::date,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16::jsonb,$17::jsonb,'{}'::jsonb,$18,$19,$20,$21) RETURNING id`, [source.id,ownerBefore.id,sequence.number,source.invoiceNumber,source.issueDate,period.effectiveDate,creditKind,reason,amountCents,totals.taxBaseCents,totals.vatAmountCents,source.vatRate,source.recipientName,source.recipientEmail,source.recipientAddress,JSON.stringify(source.issuerProfile),JSON.stringify(lines),pdf,createHash("sha256").update(pdf).digest("hex"),actorId,refundStatus]);
+        const creditNoteId = inserted.rows[0].id;
+        await connection.query(`INSERT INTO depannhome_subscription_credit_note_audit(credit_note_id,account_owner_id,actor_id,action,details) VALUES($1,$2,$3,'subscription_proration_credit_created',$4::jsonb)`, [creditNoteId,ownerBefore.id,actorId,JSON.stringify(details.calculation)]);
+        await connection.query(`UPDATE depannhome_subscription_proration_events SET status='created',generated_credit_note_id=$2,updated_at=NOW() WHERE id=$1`, [event.id,creditNoteId]);
+        return { eventId: event.id, creditNoteId };
+    }
+    const amountCents = prorataDeltaCents;
+    const sequence = await nextSubscriptionDocumentNumber(connection, "invoice", period.effectiveDate);
+    const taxBaseCents = Math.round(amountCents * 100 / (100 + Number(source.vatRate || 0)));
+    const lines = [{ description: reason, quantity: 1, unit: "prorata", unitPrice: taxBaseCents / 100, vatRate: Number(source.vatRate) || 0 }];
+    const dueDate = addDays(period.effectiveDate, 30);
+    const inserted = await connection.query(`INSERT INTO depannhome_subscription_invoices(account_owner_id,billing_period,invoice_number,recipient_name,recipient_email,recipient_address,subscription_label,amount_cents,net_amount_cents,vat_rate,issue_date,due_date,issuer_profile,lines,financial_data,subscription_snapshot,invoice_kind,proration_context) VALUES($1,$2::date,$3,$4,$5,$6,$7,$8,$8,$9,$10::date,$11::date,$12::jsonb,$13::jsonb,'{}'::jsonb,$14::jsonb,'proration_debit',$15::jsonb) RETURNING id`, [ownerBefore.id,period.effectiveDate,sequence.number,source.recipientName,source.recipientEmail,source.recipientAddress,`Complément prorata — ${ownerAfter.subscriptionLabel || ownerAfter.subscriptionTier}`,amountCents,source.vatRate,period.effectiveDate,dueDate,JSON.stringify(source.issuerProfile),JSON.stringify(lines),JSON.stringify(details.next),JSON.stringify(details.calculation)]);
+    const invoiceId = inserted.rows[0].id;
+    await connection.query(`INSERT INTO depannhome_subscription_invoice_audit(invoice_id,account_owner_id,actor_id,action,details) VALUES($1,$2,$3,'subscription_proration_invoice_created',$4::jsonb)`, [invoiceId,ownerBefore.id,actorId,JSON.stringify(details.calculation)]);
+    await connection.query(`UPDATE depannhome_subscription_proration_events SET status='created',generated_invoice_id=$2,updated_at=NOW() WHERE id=$1`, [event.id,invoiceId]);
+    return { eventId: event.id, invoiceId };
+}
+
+export async function deliverSubscriptionProration(proration, actorId) {
+    if (!proration || proration.skipped) return { sent: false, skipped: true };
+    if (proration.creditNoteId) return sendSubscriptionCreditNote(proration.creditNoteId, actorId);
+    if (proration.invoiceId) return deliverPendingInvoices(proration.invoiceId);
+    return { sent: false, skipped: true };
+}
+
+async function nextSubscriptionDocumentNumber(connection, type, issueDate) {
+    const year = Number(String(issueDate).slice(0, 4));
+    const isCredit = type === "credit";
+    const table = isCredit ? "depannhome_subscription_credit_note_sequences" : "depannhome_subscription_invoice_sequences";
+    const { rows } = await connection.query(`INSERT INTO ${table}(series_year,last_number) VALUES($1,1) ON CONFLICT(series_year) DO UPDATE SET last_number=${table}.last_number+1,updated_at=NOW() RETURNING last_number AS "lastNumber"`, [year]);
+    return { number: `${isCredit ? "AVO-DHP" : "DHP"}-${year}-${String(rows[0].lastNumber).padStart(6, "0")}` };
+}
+
 export function startSubscriptionInvoicingScheduler() {
     if (schedulerTimer) return;
     const check = async source => {
@@ -412,7 +532,7 @@ async function createInvoiceIfNeeded(subscription, issuer) {
     const connection = await database.connect();
     try {
         await connection.query("BEGIN");
-        const existing = await connection.query(`SELECT id FROM depannhome_subscription_invoices WHERE account_owner_id=$1 AND billing_period=$2::date AND status<>'cancelled'`, [subscription.id, billingPeriod]);
+        const existing = await connection.query(`SELECT id FROM depannhome_subscription_invoices WHERE account_owner_id=$1 AND billing_period=$2::date AND status<>'cancelled' AND invoice_kind='cycle'`, [subscription.id, billingPeriod]);
         if (existing.rowCount) {
             await connection.query("COMMIT");
             return { created: false };
@@ -430,7 +550,7 @@ async function createInvoiceIfNeeded(subscription, issuer) {
             INSERT INTO depannhome_subscription_invoices
                 (account_owner_id, billing_period, invoice_number, recipient_name, recipient_email, recipient_address, subscription_label, amount_cents, net_amount_cents, vat_rate, issue_date, due_date, issuer_profile, lines, financial_data, subscription_snapshot)
             VALUES ($1,$2::date,$3,$4,$5,$6,$7,$8,$9,$10,$11::date,$12::date,$13::jsonb,$14::jsonb,$15::jsonb,$16::jsonb)
-            ON CONFLICT (account_owner_id, billing_period) WHERE status<>'cancelled' DO NOTHING
+            ON CONFLICT (account_owner_id, billing_period) WHERE status<>'cancelled' AND invoice_kind='cycle' DO NOTHING
             RETURNING id
         `, [subscription.id, billingPeriod, invoiceNumber, recipientName, subscription.email, String(subscription.recipientAddress || "").slice(0, 500), subscription.subscriptionLabel || "Abonnement Depann’Home Pro",
             subscription.monthlyPriceCents, snapshot.netAmountCents, vatRate, issueDate, dueDate, JSON.stringify(issuer), JSON.stringify(snapshot.lines), JSON.stringify(snapshot.financialData), JSON.stringify(subscriptionSnapshot(subscription, snapshot))]);
@@ -448,7 +568,7 @@ async function createInvoiceIfNeeded(subscription, issuer) {
     }
 }
 
-async function deliverPendingInvoices() {
+async function deliverPendingInvoices(invoiceId = null) {
     const database = getPool();
     await database.query(`UPDATE depannhome_subscription_invoices SET status='failed',last_error='Traitement interrompu avant confirmation de l’envoi ; nouvelle tentative autorisée.',updated_at=NOW() WHERE status='sending' AND updated_at<NOW()-INTERVAL '15 minutes'`);
     await cancelSupersededSubscriptionInvoices();
@@ -456,15 +576,16 @@ async function deliverPendingInvoices() {
         SELECT invoice.id, invoice.invoice_number AS "invoiceNumber", invoice.recipient_name AS "recipientName", invoice.recipient_email AS "recipientEmail",
             invoice.recipient_address AS "recipientAddress", invoice.subscription_label AS "subscriptionLabel", invoice.amount_cents AS "amountCents",
             invoice.vat_rate::float AS "vatRate", invoice.issue_date AS "issueDate", invoice.due_date AS "dueDate", invoice.issuer_profile AS "issuerProfile",
-            invoice.lines, invoice.financial_data AS "financialData"
+            invoice.lines, invoice.financial_data AS "financialData",invoice.invoice_kind AS "invoiceKind"
         FROM depannhome_subscription_invoices invoice
         JOIN depannhome_users owner ON owner.id = invoice.account_owner_id
         LEFT JOIN depannhome_organizations organization ON organization.account_owner_id = owner.id
         WHERE invoice.status IN ('pending', 'failed') AND owner.is_active = TRUE AND owner.is_archived = FALSE
-            AND owner.subscription_plan = 'paid' AND owner.subscription_status = 'active'
-            AND COALESCE(organization.interface_type, 'standard') <> 'partner'
+            AND ($1::bigint IS NULL OR invoice.id=$1)
+            AND (invoice.invoice_kind='proration_debit' OR (owner.subscription_plan='paid' AND owner.subscription_status='active'
+                AND COALESCE(organization.interface_type, 'standard') <> 'partner'))
         ORDER BY invoice.created_at
-    `);
+    `, [invoiceId]);
     let sent = 0;
     let failed = 0;
     for (const invoice of invoices) {
@@ -480,10 +601,12 @@ async function deliverPendingInvoices() {
             await database.query(`
                 UPDATE depannhome_subscription_invoices SET status='sent', sent_at=NOW(), last_error='', updated_at=NOW() WHERE id=$1
             `, [invoice.id]);
-            await database.query(`
-                UPDATE depannhome_users SET subscription_renewal_date = subscription_renewal_date + INTERVAL '1 month', updated_at=NOW()
-                WHERE id=(SELECT account_owner_id FROM depannhome_subscription_invoices WHERE id=$1)
-            `, [invoice.id]);
+            if (invoice.invoiceKind === "cycle") {
+                await database.query(`
+                    UPDATE depannhome_users SET subscription_renewal_date = subscription_renewal_date + INTERVAL '1 month', updated_at=NOW()
+                    WHERE id=(SELECT account_owner_id FROM depannhome_subscription_invoices WHERE id=$1)
+                `, [invoice.id]);
+            }
             console.info("[subscription-invoicing] invoice accepted by SMTP", { invoiceId: invoice.id, messageId: delivery?.messageId || "" });
             sent += 1;
         } catch (error) {
@@ -710,7 +833,7 @@ async function cancelSupersededSubscriptionInvoices() {
         FROM depannhome_subscription_invoices invoice
         JOIN depannhome_users owner ON owner.id=invoice.account_owner_id
         LEFT JOIN depannhome_organizations organization ON organization.account_owner_id=owner.id
-        WHERE invoice.status IN ('pending','failed')
+        WHERE invoice.status IN ('pending','failed') AND invoice.invoice_kind='cycle'
     `);
     let cancelled = 0;
     for (const invoice of rows) {

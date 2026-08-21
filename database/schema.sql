@@ -584,6 +584,8 @@ CREATE TABLE IF NOT EXISTS depannhome_subscription_invoices (
     lines JSONB NOT NULL DEFAULT '[]'::jsonb,
     financial_data JSONB NOT NULL DEFAULT '{}'::jsonb,
     subscription_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
+    invoice_kind VARCHAR(30) NOT NULL DEFAULT 'cycle' CHECK (invoice_kind IN ('cycle','proration_debit')),
+    proration_context JSONB NOT NULL DEFAULT '{}'::jsonb,
     issue_date DATE NOT NULL,
     due_date DATE NOT NULL,
     issuer_profile JSONB NOT NULL,
@@ -604,10 +606,15 @@ CREATE TABLE IF NOT EXISTS depannhome_subscription_invoices (
 );
 
 ALTER TABLE depannhome_subscription_invoices ADD COLUMN IF NOT EXISTS subscription_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE depannhome_subscription_invoices ADD COLUMN IF NOT EXISTS invoice_kind VARCHAR(30) NOT NULL DEFAULT 'cycle';
+ALTER TABLE depannhome_subscription_invoices ADD COLUMN IF NOT EXISTS proration_context JSONB NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE depannhome_subscription_invoices DROP CONSTRAINT IF EXISTS depannhome_subscription_invoices_kind_check;
+ALTER TABLE depannhome_subscription_invoices ADD CONSTRAINT depannhome_subscription_invoices_kind_check CHECK (invoice_kind IN ('cycle','proration_debit'));
 ALTER TABLE depannhome_subscription_invoices DROP CONSTRAINT IF EXISTS depannhome_subscription_invoices_status_check;
 ALTER TABLE depannhome_subscription_invoices ADD CONSTRAINT depannhome_subscription_invoices_status_check CHECK (status IN ('pending','sending','sent','failed','cancelled'));
 ALTER TABLE depannhome_subscription_invoices DROP CONSTRAINT IF EXISTS depannhome_subscription_invoices_owner_period_unique;
-CREATE UNIQUE INDEX IF NOT EXISTS depannhome_subscription_invoices_active_owner_period_idx ON depannhome_subscription_invoices(account_owner_id,billing_period) WHERE status<>'cancelled';
+DROP INDEX IF EXISTS depannhome_subscription_invoices_active_owner_period_idx;
+CREATE UNIQUE INDEX depannhome_subscription_invoices_active_owner_period_idx ON depannhome_subscription_invoices(account_owner_id,billing_period) WHERE status<>'cancelled' AND invoice_kind='cycle';
 
 CREATE INDEX IF NOT EXISTS depannhome_subscription_invoices_status_idx
     ON depannhome_subscription_invoices (status, created_at);
@@ -686,6 +693,29 @@ CREATE OR REPLACE FUNCTION depannhome_protect_subscription_credit_note() RETURNS
     THEN RAISE EXCEPTION 'Les données légales d’un avoir émis sont immuables.'; END IF; RETURN NEW; END; $$ LANGUAGE plpgsql;
 DROP TRIGGER IF EXISTS depannhome_subscription_credit_note_immutable ON depannhome_subscription_credit_notes;
 CREATE TRIGGER depannhome_subscription_credit_note_immutable BEFORE UPDATE OR DELETE ON depannhome_subscription_credit_notes FOR EACH ROW EXECUTE FUNCTION depannhome_protect_subscription_credit_note();
+
+CREATE TABLE IF NOT EXISTS depannhome_subscription_proration_events (
+    id BIGSERIAL PRIMARY KEY,
+    account_owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE RESTRICT,
+    change_fingerprint CHAR(64) NOT NULL UNIQUE,
+    effective_date DATE NOT NULL,
+    cycle_start_date DATE NOT NULL,
+    cycle_end_date DATE NOT NULL,
+    total_days INTEGER NOT NULL CHECK (total_days > 0),
+    remaining_days INTEGER NOT NULL CHECK (remaining_days >= 0),
+    old_net_amount_cents INTEGER NOT NULL CHECK (old_net_amount_cents >= 0),
+    new_net_amount_cents INTEGER NOT NULL CHECK (new_net_amount_cents >= 0),
+    prorata_delta_cents INTEGER NOT NULL,
+    source_invoice_id BIGINT REFERENCES depannhome_subscription_invoices(id) ON DELETE RESTRICT,
+    generated_invoice_id BIGINT REFERENCES depannhome_subscription_invoices(id) ON DELETE RESTRICT,
+    generated_credit_note_id BIGINT REFERENCES depannhome_subscription_credit_notes(id) ON DELETE RESTRICT,
+    status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','created','skipped')),
+    actor_id BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+    details JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS depannhome_subscription_proration_events_owner_idx ON depannhome_subscription_proration_events(account_owner_id,effective_date DESC,id DESC);
 
 CREATE TABLE IF NOT EXISTS depannhome_purchases (
     id BIGSERIAL PRIMARY KEY,

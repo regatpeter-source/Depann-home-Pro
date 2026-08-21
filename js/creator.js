@@ -809,6 +809,7 @@ async function renderSubscriptionInvoices() {
 
 function renderSubscriptionInvoice(invoice) {
     const status = subscriptionInvoiceStatus(invoice.status);
+    const prorationBadge = invoice.invoiceKind === "proration_debit" ? '<span class="creator-subscription-badge attention">Complément prorata</span>' : "";
     const sentAt = invoice.sentAt ? `Envoyée le ${formatDateTime(invoice.sentAt)}` : invoice.status === "cancelled" ? "Annulée avant envoi" : invoice.status === "failed" ? "Envoi en échec" : "En attente d’envoi";
     const error = invoice.status === "failed" && invoice.lastError ? `<p class="auth-message error">${escapeHtml(invoice.lastError)}</p>` : "";
     const historical = invoice.status === "sent" && invoice.matchesCurrentSubscription === false
@@ -825,7 +826,7 @@ function renderSubscriptionInvoice(invoice) {
     return `
         <article class="creator-subscription-invoice">
             <div><p class="eyebrow">${escapeHtml(invoice.subscriptionLabel || "Abonnement Depann’Home Pro")}</p><h4>${escapeHtml(invoice.invoiceNumber)}</h4><p>${escapeHtml(invoice.companyName || invoice.recipientName)} · ${escapeHtml(invoice.recipientEmail || "E-mail non renseigné")}</p></div>
-            <div class="creator-subscription-invoice-details"><span class="creator-subscription-badge ${escapeHtml(invoice.status || "pending")}">${status}</span>${paid ? '<span class="creator-subscription-badge paid">Réglée</span>' : ""}<strong>${formatCurrency(invoice.amountCents)}</strong>${discount}<small>Émise le ${formatDate(invoice.issueDate)} · Échéance ${formatDate(invoice.dueDate)}</small><small>${escapeHtml(sentAt)}</small>${historical}${cancelled}${paymentDetails}${error}</div>
+            <div class="creator-subscription-invoice-details"><span class="creator-subscription-badge ${escapeHtml(invoice.status || "pending")}">${status}</span>${prorationBadge}${paid ? '<span class="creator-subscription-badge paid">Réglée</span>' : ""}<strong>${formatCurrency(invoice.amountCents)}</strong>${discount}<small>Émise le ${formatDate(invoice.issueDate)} · Échéance ${formatDate(invoice.dueDate)}</small><small>${escapeHtml(sentAt)}</small>${historical}${cancelled}${paymentDetails}${error}</div>
             <div class="creator-subscription-invoice-actions"><a class="secondary-button" href="/api/creator/subscription-invoices/${encodeURIComponent(invoice.id)}/pdf" download>Télécharger le PDF</a>${paymentAction}${creditForm}</div>
             ${credits}
         </article>

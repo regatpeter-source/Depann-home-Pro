@@ -5,6 +5,7 @@ import { creatorNetworkDirectory, creatorNetworkStatistics, updateCreatorNetwork
 import { createOrganization, getOrganization, getOrganizationHistory, organizationInterfaceAccessMessage, updateOrganization } from "./organizations.js";
 import { calculateSubscriptionPriceCents, normalizeSubscriptionTier, subscriptionRoleAccessMessage, subscriptionTierConfig } from "./subscription-tiers.js";
 import { createNotification } from "./collaboration.js";
+import { deliverSubscriptionProration, prepareSubscriptionProration } from "./invoicing.js";
 
 const USERNAME_PATTERN = /^[a-z0-9._-]{3,32}$/;
 const MIN_PASSWORD_LENGTH = 12;
@@ -224,8 +225,18 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
             return response.status(400).json({ message: "Les limites ne peuvent pas être inférieures aux accès actifs existants." });
         }
         const connection = await database.connect();
+        let proration = null;
         try {
             await connection.query("BEGIN");
+            const { rows: lockedOwners } = await connection.query(`
+                SELECT id,subscription_plan AS "subscriptionPlan",subscription_tier AS "subscriptionTier",subscription_label AS "subscriptionLabel",
+                    monthly_price_cents AS "monthlyPriceCents",max_pc_users AS "maxPcUsers",max_technicians AS "maxTechnicians",
+                    subscription_discount_label AS "discountLabel",subscription_discount_mode AS "discountMode",
+                    subscription_discount_value::float AS "discountValue",TO_CHAR(subscription_renewal_date,'YYYY-MM-DD') AS "subscriptionRenewalDate"
+                FROM depannhome_users WHERE id=$1 AND account_owner_id=id FOR UPDATE
+            `, [accountId]);
+            const ownerBefore = lockedOwners[0];
+            if (!ownerBefore) throw new Error("Compte entreprise introuvable.");
             await connection.query(`
             UPDATE depannhome_users
             SET company_name = $2, full_name = $3, phone = $4, email = $5, max_pc_users = $6, max_technicians = $7, is_active = $8,
@@ -242,9 +253,24 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
                 await connection.query(`UPDATE depannhome_auth_devices device SET status='rejected',session_id=NULL FROM depannhome_users member WHERE device.user_id=member.id AND member.account_owner_id=$1 AND device.device_type='mobile' AND device.status<>'rejected'`, [accountId]);
             }
             await synchronizeCompanyProfile(connection, accountId, account.companyProfile, { initializeNetwork: account.subscriptionTier === "pro" });
+            proration = await prepareSubscriptionProration(connection, {
+                ownerBefore,
+                ownerAfter: {
+                    id: accountId, subscriptionPlan: account.subscriptionPlan, subscriptionTier: account.subscriptionTier,
+                    subscriptionLabel: account.subscriptionLabel, monthlyPriceCents: account.monthlyPriceCents,
+                    maxPcUsers: account.maxPcUsers, maxTechnicians: account.maxTechnicians,
+                    discountLabel: account.subscriptionDiscountLabel, discountMode: account.subscriptionDiscountMode,
+                    discountValue: account.subscriptionDiscountValue, subscriptionRenewalDate: account.subscriptionRenewalDate
+                },
+                actorId: request.user.sub
+            });
             await connection.query("COMMIT");
         } catch (error) { await connection.query("ROLLBACK"); throw error; } finally { connection.release(); }
         await updateOrganization(accountId, request.body?.organization, request.user.sub);
+        if (proration) {
+            const delivery = await deliverSubscriptionProration(proration, request.user.sub);
+            if (!delivery.sent && !delivery.skipped) console.warn("[subscription-proration] document created but delivery failed", { accountId, proration, message: delivery.message || "Échec d’envoi" });
+        }
         response.status(204).end();
     }));
 

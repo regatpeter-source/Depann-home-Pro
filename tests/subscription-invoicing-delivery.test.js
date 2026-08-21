@@ -31,7 +31,7 @@ test("les envois interrompus sont récupérés et les entreprises archivées res
 });
 
 test("la reprise des factures qualifie les colonnes communes de la jointure", () => {
-    const deliveryQuery = invoicingSource.match(/const \{ rows: invoices \} = await database\.query\(`([\s\S]*?)`\);/)?.[1] || "";
+    const deliveryQuery = invoicingSource.match(/const \{ rows: invoices \} = await database\.query\(`([\s\S]*?)`, \[invoiceId\]\);/)?.[1] || "";
     assert.match(deliveryQuery, /invoice\.subscription_label AS "subscriptionLabel"/);
     assert.doesNotMatch(deliveryQuery, /(?:SELECT|,)\s*subscription_label AS "subscriptionLabel"/);
 });
