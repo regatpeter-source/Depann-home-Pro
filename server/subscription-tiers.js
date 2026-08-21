@@ -17,7 +17,7 @@ export const SUBSCRIPTION_TIER_CONFIG = Object.freeze({
         mobileRateCents: 800,
         description: "Tous postes, planning, imports de données, Réseau Depann’Home Pro, bibliothèque mobile et achats sur tous les PC",
         allowedRoles: Object.freeze([...PC_ROLES, ...ALL_MOBILE_ROLES]),
-        features: Object.freeze({ clients: true, calendar: true, library: false, billing: true, accounting: true, quitus: false, technicalReports: false, partnerMissions: false, partnerConnections: true, messages: true, settings: true, imports: true, groups: false, purchases: true, connectors: false, photo: false })
+        features: Object.freeze({ clients: true, calendar: true, library: false, billing: true, accounting: true, quitus: false, technicalReports: false, partnerMissions: true, partnerConnections: true, messages: true, settings: true, imports: true, groups: false, purchases: true, connectors: false, photo: false })
     }),
     pro: Object.freeze({
         label: "Pro",

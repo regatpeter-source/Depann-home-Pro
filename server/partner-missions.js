@@ -5,6 +5,7 @@ import { listClientsForOwner } from "./clients.js";
 import { createEmptyLeakContent } from "./leak-report-template.js";
 import { createNotification } from "./collaboration.js";
 import { recordMissionDialogueEvent } from "./partner-dialogue.js";
+import { getOrganization, isFeatureEnabled } from "./organizations.js";
 
 const PRIORITIES = new Set(["low", "normal", "high", "urgent"]);
 const STATUSES = new Set(["received", "pending_validation", "accepted", "rejected", "assigned", "scheduled", "en_route", "on_site", "report_in_progress", "report_completed", "report_validated", "quote_sent", "quote_accepted", "work_completed", "invoice_sent", "closed", "cancelled"]);
@@ -103,7 +104,7 @@ export function registerPartnerMissionRoutes(app, requireAuthentication) {
     app.patch("/api/partner-missions/:missionId/billing-mode", requireAdministration, asyncHandler(async (req, res) => { const billingMode = BILLING_MODES.has(req.body?.billingMode) ? req.body.billingMode : ""; if (!billingMode) return res.status(400).json({ message: "Type de facturation invalide." }); const mission = await updateBillingMode(req, positiveId(req.params.missionId), billingMode); res.json({ mission }); }));
     app.post("/api/partner-missions/:missionId/status", requireMissionAccess, asyncHandler(async (req, res) => { const status = String(req.body?.status || ""); if (!STATUSES.has(status)) return res.status(400).json({ message: "Statut de mission invalide." }); const mission = await changeStatus(req, positiveId(req.params.missionId), status, { note: clean(req.body?.note, 1000) }); res.json({ mission }); }));
     app.post("/api/partner-missions/archive-terminal", requireAdministration, asyncHandler(async (req, res) => res.json(await archiveTerminalMissions(req))));
-    app.post("/api/partner-missions/outbox/retry", requireAdministration, asyncHandler(async (req, res) => res.json(await deliverOutbox(getAccountOwnerId(req)))));
+    app.post("/api/partner-missions/outbox/retry", requireAdministration, asyncHandler(async (req, res) => { const ownerId = getAccountOwnerId(req); if (!isFeatureEnabled(await getOrganization(ownerId), "connectors")) return res.status(403).json({ message: "Les connexions API externes ne sont pas incluses dans cette offre." }); res.json(await deliverOutbox(ownerId)); }));
     app.post("/api/partner-missions/intakes", requireAdministration, asyncHandler(async (req, res) => { const intake = sanitizeIntake(req.body); if (!intake.ok) return res.status(400).json({ message: intake.message }); const key = crypto.randomBytes(32).toString("base64url"); const { rows } = await getPool().query("INSERT INTO depannhome_partner_intakes(owner_id,partner_key,partner_name,api_key_hash,callback_url,assignment_mode,rules,created_by) VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,$8) RETURNING id", [getAccountOwnerId(req), intake.key, intake.name, hash(key), intake.callbackUrl, intake.assignmentMode, JSON.stringify(intake.rules), req.user.sub]); res.status(201).json({ id: rows[0].id, partnerKey: intake.key, apiKey: key, endpoint: `/api/partner-intake/${intake.key}` }); }));
     app.patch("/api/partner-missions/intakes/:intakeId", requireAdministration, asyncHandler(async (req, res) => { const intake = sanitizeIntake(req.body); if (!intake.ok) return res.status(400).json({ message: intake.message }); const result = await getPool().query("UPDATE depannhome_partner_intakes SET partner_key=$3,partner_name=$4,callback_url=$5,assignment_mode=$6,rules=$7::jsonb,enabled=$8,updated_at=NOW() WHERE id=$1 AND owner_id=$2", [positiveId(req.params.intakeId), getAccountOwnerId(req), intake.key, intake.name, intake.callbackUrl, intake.assignmentMode, JSON.stringify(intake.rules), req.body?.enabled !== false]); if (!result.rowCount) return res.status(404).json({ message: "Partenaire introuvable." }); res.json({ message: "Connexion API enregistrée." }); }));
     app.delete("/api/partner-missions/intakes/:intakeId", requireAdministration, asyncHandler(async (req, res) => { const result = await getPool().query("DELETE FROM depannhome_partner_intakes intake WHERE intake.id=$1 AND intake.owner_id=$2 AND NOT EXISTS(SELECT 1 FROM depannhome_partner_missions mission WHERE mission.intake_id=intake.id)", [positiveId(req.params.intakeId), getAccountOwnerId(req)]); if (!result.rowCount) return res.status(409).json({ message: "Cette connexion est introuvable ou possède déjà des missions. Désactivez-la dans ce cas pour préserver l’historique." }); res.status(204).end(); }));
@@ -117,6 +118,7 @@ async function receiveMission(req, res) {
     const key = clean(req.headers["x-api-key"], 300); const partnerKey = clean(req.params.partnerKey, 64).toLowerCase();
     if (!key) return res.status(401).json({ message: "Clé API partenaire manquante." });
     const { rows } = await getPool().query("SELECT intake.* FROM depannhome_partner_intakes intake JOIN depannhome_users owner ON owner.id=intake.owner_id LEFT JOIN depannhome_organizations organization ON organization.account_owner_id=owner.id WHERE intake.partner_key=$1 AND intake.enabled=TRUE AND owner.is_active=TRUE AND owner.is_archived=FALSE AND COALESCE(organization.interface_type,'standard')<>'partner'", [partnerKey]); const intake = rows[0];
+    if (intake && !isFeatureEnabled(await getOrganization(intake.owner_id), "connectors")) return res.status(403).json({ message: "Les connexions API externes ne sont pas incluses dans cette offre." });
     if (!intake || !safeEqual(hash(key), intake.api_key_hash)) return res.status(401).json({ message: "Partenaire ou clé API invalide." });
     if (intake.is_sandbox) {
         const fault = clean(req.headers["x-partner-sandbox-fault"], 30);
@@ -188,14 +190,26 @@ async function archiveClosedMission(req, id) {
 async function archiveTerminalMissions(req) {
     const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(positiveId).filter(Boolean).slice(0, 100) : [];
     if (!ids.length) throw clientError(400, "Sélectionnez au moins une mission à supprimer.");
-    const result = await getPool().query("UPDATE depannhome_partner_missions SET deleted_at=NOW(),updated_at=NOW() WHERE owner_id=$1 AND id=ANY($2::bigint[]) AND deleted_at IS NULL AND status IN ('rejected','cancelled')", [getAccountOwnerId(req), ids]);
+    const ownerId = getAccountOwnerId(req); const internalNetworkOnly = !isFeatureEnabled(await getOrganization(ownerId), "connectors");
+    const result = await getPool().query("UPDATE depannhome_partner_missions mission SET deleted_at=NOW(),updated_at=NOW() FROM depannhome_partner_intakes intake WHERE mission.intake_id=intake.id AND mission.owner_id=$1 AND mission.id=ANY($2::bigint[]) AND mission.deleted_at IS NULL AND mission.status IN ('rejected','cancelled') AND ($3::boolean=FALSE OR intake.partner_key LIKE 'connection-%')", [ownerId, ids, internalNetworkOnly]);
     return { deletedCount: result.rowCount || 0 };
 }
 
 async function updateBillingMode(req, id, billingMode) { const ownerId = getAccountOwnerId(req); if (!id) throw clientError(400, "Mission invalide."); const { rows } = await getPool().query("UPDATE depannhome_partner_missions SET billing_mode=$3,updated_at=NOW() WHERE id=$1 AND owner_id=$2 RETURNING *", [id, ownerId, billingMode]); if (!rows[0]) throw clientError(404, "Mission introuvable."); await writeHistory(getPool(), ownerId, id, rows[0].status, "billing_mode_changed", req.user.sub, req.user.role, { billingMode }, req.ip); if (billingMode === "principal") { const { sharePrincipalBillingDocuments } = await import("./partner-dialogue.js"); await sharePrincipalBillingDocuments(ownerId, id); } else { const { hideDirectClientBillingDocuments } = await import("./partner-dialogue.js"); await hideDirectClientBillingDocuments(ownerId, id); } return publicMission(rows[0]); }
 
-async function missionDashboard(ownerId, request) { await reconcileMissionClients(ownerId, request); const [missionRows, intakeRows, techRows, outbox] = await Promise.all([getPool().query(`SELECT mission.*, intake.partner_name AS "partnerName", intake.partner_key AS "partnerKey", intake.is_sandbox AS "isSandbox", technician.full_name AS "technicianName" FROM depannhome_partner_missions mission JOIN depannhome_partner_intakes intake ON intake.id=mission.intake_id LEFT JOIN depannhome_users technician ON technician.id=mission.assigned_technician_id WHERE mission.owner_id=$1 AND mission.deleted_at IS NULL AND intake.is_sandbox=FALSE ORDER BY mission.updated_at DESC LIMIT 200`, [ownerId]), intakes(ownerId), canManagePartnerMissions(request) ? technicians(ownerId) : Promise.resolve([]), getPool().query("SELECT count(*)::int AS count FROM depannhome_partner_mission_outbox outbox JOIN depannhome_partner_missions mission ON mission.id=outbox.mission_id JOIN depannhome_partner_intakes intake ON intake.id=mission.intake_id WHERE outbox.owner_id=$1 AND outbox.status='failed' AND intake.is_sandbox=FALSE", [ownerId])]); return { missions: missionRows.rows.map(publicMission), intakes: intakeRows, technicians: techRows, failedDeliveries: outbox.rows[0].count, statuses: [...STATUSES] }; }
-async function reconcileMissionClients(ownerId, request) {
+async function missionDashboard(ownerId, request) {
+    const internalNetworkOnly = !isFeatureEnabled(await getOrganization(ownerId), "connectors");
+    await reconcileMissionClients(ownerId, request, internalNetworkOnly);
+    const sourceFilter = internalNetworkOnly ? " AND intake.partner_key LIKE 'connection-%'" : "";
+    const [missionRows, intakeRows, techRows, outbox] = await Promise.all([
+        getPool().query(`SELECT mission.*, intake.partner_name AS "partnerName", intake.partner_key AS "partnerKey", intake.is_sandbox AS "isSandbox", technician.full_name AS "technicianName" FROM depannhome_partner_missions mission JOIN depannhome_partner_intakes intake ON intake.id=mission.intake_id LEFT JOIN depannhome_users technician ON technician.id=mission.assigned_technician_id WHERE mission.owner_id=$1 AND mission.deleted_at IS NULL AND intake.is_sandbox=FALSE${sourceFilter} ORDER BY mission.updated_at DESC LIMIT 200`, [ownerId]),
+        internalNetworkOnly ? Promise.resolve([]) : intakes(ownerId),
+        canManagePartnerMissions(request) ? technicians(ownerId) : Promise.resolve([]),
+        getPool().query(`SELECT count(*)::int AS count FROM depannhome_partner_mission_outbox outbox JOIN depannhome_partner_missions mission ON mission.id=outbox.mission_id JOIN depannhome_partner_intakes intake ON intake.id=mission.intake_id WHERE outbox.owner_id=$1 AND outbox.status='failed' AND intake.is_sandbox=FALSE${sourceFilter}`, [ownerId])
+    ]);
+    return { missions: missionRows.rows.map(publicMission), intakes: intakeRows, technicians: techRows, failedDeliveries: outbox.rows[0].count, statuses: [...STATUSES], internalNetworkOnly };
+}
+async function reconcileMissionClients(ownerId, request, internalNetworkOnly = false) {
     const database = getPool(); const connection = await database.connect();
     try {
         await connection.query("BEGIN");
@@ -205,9 +219,10 @@ async function reconcileMissionClients(ownerId, request) {
             JOIN depannhome_partner_intakes intake ON intake.id=mission.intake_id
             LEFT JOIN depannhome_clients client ON client.owner_id=mission.owner_id AND client.client_id=mission.client_id
             WHERE mission.owner_id=$1 AND mission.deleted_at IS NULL AND intake.is_sandbox=FALSE
+                AND ($2::boolean=FALSE OR intake.partner_key LIKE 'connection-%')
                 AND (mission.client_id='' OR client.client_id IS NULL)
             FOR UPDATE OF mission
-        `, [ownerId]);
+        `, [ownerId, internalNetworkOnly]);
         for (const mission of missions) {
             const client = await provisionPartnerMissionClient(connection, ownerId, mission.mapped_data || {}, request, mission.client_id);
             await connection.query("UPDATE depannhome_partner_missions SET client_id=$3,updated_at=NOW() WHERE id=$1 AND owner_id=$2", [mission.id, ownerId, client.id]);
@@ -299,7 +314,7 @@ function publicMission(row) { const year = new Date(row.created_at || Date.now()
 function isFieldUser(req) { return false; }
 function canManagePartnerMissions(req) { return PARTNER_MANAGEMENT_ROLES.has(req?.user?.role); }
 function requireMissionAccess(req, res, next) { if (canManagePartnerMissions(req)) return next(); return res.status(403).json({ message: "Les missions partenaires sont réservées à l’administration." }); }
-async function requireProductionMission(req, res, next) { const missionId = positiveId(req.params.missionId); if (!missionId) return next(); const result = await getPool().query("SELECT mission.id FROM depannhome_partner_missions mission JOIN depannhome_partner_intakes intake ON intake.id=mission.intake_id WHERE mission.id=$1 AND mission.owner_id=$2 AND intake.is_sandbox=FALSE", [missionId, getAccountOwnerId(req)]); return result.rowCount ? next() : res.status(404).json({ message: "Mission introuvable." }); }
+async function requireProductionMission(req, res, next) { const missionId = positiveId(req.params.missionId); if (!missionId) return next(); const ownerId = getAccountOwnerId(req); const internalNetworkOnly = !isFeatureEnabled(await getOrganization(ownerId), "connectors"); const result = await getPool().query("SELECT mission.id FROM depannhome_partner_missions mission JOIN depannhome_partner_intakes intake ON intake.id=mission.intake_id WHERE mission.id=$1 AND mission.owner_id=$2 AND intake.is_sandbox=FALSE AND ($3::boolean=FALSE OR intake.partner_key LIKE 'connection-%')", [missionId, ownerId, internalNetworkOnly]); return result.rowCount ? next() : res.status(404).json({ message: "Mission introuvable." }); }
 function requireAdministration(req, res, next) { if (canManagePartnerMissions(req)) return next(); return res.status(403).json({ message: "Cette action est réservée aux postes PC autorisés." }); }
 function mergeAttachments(existing, incoming) { const base = Array.isArray(existing) ? existing : []; const added = (Array.isArray(incoming) ? incoming : []).filter(item => /^data:(image\/(jpeg|png|webp)|application\/(pdf|msword|vnd\.openxmlformats-officedocument\.wordprocessingml\.document|vnd\.ms-excel|vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet)|text\/plain);base64,[A-Za-z0-9+/=]+$/.test(String(item?.dataUrl || ""))).map(item => ({ id: `file-${crypto.randomUUID()}`, type: "Document partenaire", name: clean(item.name, 255) || "document-partenaire", mime: clean(item.mime, 150), size: Number(item.size) || 0, dataUrl: item.dataUrl, createdAt: new Date().toISOString() })); return [...base, ...added].slice(0, 30); }
 function mergePartnerMissionActivityHistory(history, data, req, createdAt) {

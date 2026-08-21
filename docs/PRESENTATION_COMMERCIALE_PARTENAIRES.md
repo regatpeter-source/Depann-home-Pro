@@ -55,11 +55,12 @@ L’offre Basic est adaptée aux petites structures qui souhaitent centraliser l
 - Détection des conflits de planning et recherche de disponibilités.
 - Imports de données Excel et CSV.
 - Réseau Depann’Home Pro interne : annuaire, fiche réseau et connexions entre entreprises utilisatrices.
+- Envoi et réception de missions, messagerie et dossiers partagés entre entreprises connectées du réseau.
 - Aucun connecteur externe ni connexion API partenaire.
 - Accès à tous les postes mobiles : Administrateur Mobile, Chef d’équipe et Technicien.
 - Bibliothèque technique pour ces postes mobiles ; Achats sur tous les postes PC et sur l’Administrateur Mobile.
 
-L’offre Basic+ convient aux entreprises qui souhaitent coordonner le bureau et les équipes terrain autour d’un planning commun.
+L’offre Basic+ convient aux entreprises qui souhaitent coordonner le bureau, les équipes terrain et leurs partenaires du réseau autour d’un planning et de dossiers communs.
 
 ## Pro
 

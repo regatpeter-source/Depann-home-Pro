@@ -28,6 +28,7 @@ const commercialPresentation = readFileSync(new URL("../docs/PRESENTATION_COMMER
 const presentationGenerator = readFileSync(new URL("../scripts/generate-partner-presentation.js", import.meta.url), "utf8");
 const partnerConnectionsClient = readFileSync(new URL("../js/partner-connections.js", import.meta.url), "utf8");
 const partnerMissionsServer = readFileSync(new URL("../server/partner-missions.js", import.meta.url), "utf8");
+const partnerMissionsClient = readFileSync(new URL("../js/partner-missions.js", import.meta.url), "utf8");
 
 test("Basic, Basic+ and Pro prices are calculated per PC and mobile seat", () => {
     assert.equal(calculateSubscriptionPriceCents("basic", 1, 1), 2500);
@@ -51,7 +52,7 @@ test("subscription tiers restrict mobile post roles as specified", () => {
     assert.equal(typeof mobileAdministratorSeatError, "function");
 });
 
-test("Basic exposes clients, billing and accounting while Basic+ adds planning, imports and the internal network", () => {
+test("Basic exposes clients, billing and accounting while Basic+ adds planning, imports and internal network missions", () => {
     const basic = publicOrganization({ interfaceType: "standard", licenseType: "depannhome_standard", subscriptionTier: "basic" });
     assert.equal(isFeatureEnabled(basic, "clients"), true);
     assert.equal(isFeatureEnabled(basic, "billing"), true);
@@ -70,17 +71,22 @@ test("Basic exposes clients, billing and accounting while Basic+ adds planning, 
     assert.equal(isFeatureEnabled(plus, "imports"), true);
     assert.equal(isFeatureEnabled(plus, "partnerConnections"), true);
     assert.equal(isFeatureEnabled(plus, "connectors"), false);
-    assert.equal(isFeatureEnabled(plus, "partnerMissions"), false);
+    assert.equal(isFeatureEnabled(plus, "partnerMissions"), true);
     assert.equal(isFeatureEnabled(plus, "quitus"), false);
     assert.equal(isFeatureEnabled(plus, "technicalReports"), false);
     assert.match(partnerConnectionsClient, /!organizationFeatureEnabled\("connectors"\)/);
     assert.match(partnerConnectionsClient, /!organizationFeatureEnabled\("partnerMissions"\)/);
+    assert.match(partnerMissionsClient, /if \(!externalConnectorsEnabled\) activeMissionSpace = "network"/);
+    assert.match(partnerMissionsServer, /intake\.partner_key LIKE 'connection-%'/);
+    assert.match(partnerDialogue, /intake\.partner_key LIKE 'connection-%'/);
+    assert.match(partnerMissionsServer, /Les connexions API externes ne sont pas incluses dans cette offre/);
     assert.match(navigation, /organizationInterface === "partner" \|\| !organizationFeatureEnabled\("connectors"\)/);
     assert.ok((partnerConnectionsServer.match(/subscription_tier IN \('basic_plus','pro'\)/g) || []).length >= 6);
     assert.match(subscriptionOffers, /Importation de données Excel et CSV/);
+    assert.match(subscriptionOffers, /missions, messagerie contextuelle et dossiers partagés/);
     assert.match(subscriptionOffers, /Aucun connecteur externe, aucune connexion API partenaire/);
     assert.match(commercialPresentation, /Réseau Depann’Home Pro interne/);
-    assert.match(presentationGenerator, /planning · imports · Réseau interne · sans API externe/);
+    assert.match(presentationGenerator, /missions et dossiers Réseau · sans API externe/);
 });
 
 test("every mobile post keeps Home and Library access regardless of subscription tier", () => {
@@ -331,6 +337,6 @@ test("tier features are protected on both API and navigation layers", () => {
     assert.match(creatorServer, /organizationInterfaceAccessMessage\(subscriptionTier, requestedInterface\)/);
     assert.doesNotMatch(creatorServer, /Désactivez les comptes Technicien et Chef d’équipe avant de passer/);
     assert.match(creatorServer, /subscriptionRoleAccessMessage\(owners\[0\]\.subscriptionTier, role\)/);
-    assert.match(partnerConnectionsServer, /owner\.subscription_tier='pro'/);
+    assert.match(partnerConnectionsServer, /owner\.subscription_tier IN \('basic_plus','pro'\)/);
     assert.match(creatorClient, /option\.disabled = !isPro/);
 });

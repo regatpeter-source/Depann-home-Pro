@@ -6,7 +6,7 @@ import { renderAccounting } from "./accounting.js?v=7";
 import { renderAccountingSandbox } from "./accounting-sandbox.js?v=2";
 import { renderPurchases } from "./purchases.js?v=118";
 import { renderGroupActivation, renderGroupWorkspace } from "./groups.js?v=3";
-import { renderPartnerMissions } from "./partner-missions.js?v=42";
+import { renderPartnerMissions } from "./partner-missions.js?v=43";
 import { renderPartnerSandbox } from "./partner-sandbox.js?v=3";
 import { renderPartnerConnections } from "./partner-connections.js?v=21";
 import { renderDataImportTool } from "./data-imports.js?v=3";
@@ -1400,7 +1400,7 @@ function renderSettingsWorkspace(options = {}) {
 async function renderSubscriptionSettings(container) {
     const tiers = [
         { id: "basic", label: "Basic", pc: 20, mobile: 5, description: "Postes PC et Administrateur Mobile. Clients, facturation, comptabilité et PDP. Bibliothèque sur mobile ; Achats sur tous les PC et l’Administrateur Mobile." },
-        { id: "basic_plus", label: "Basic+", pc: 35, mobile: 8, description: "Tous postes PC et mobiles. Basic avec planning, imports de données et Réseau Depann’Home Pro interne. Bibliothèque sur mobile ; Achats sur tous les PC et l’Administrateur Mobile. Sans connecteurs ni connexions API externes." },
+        { id: "basic_plus", label: "Basic+", pc: 35, mobile: 8, description: "Tous postes PC et mobiles. Basic avec planning, imports de données, missions, messagerie et dossiers du Réseau Depann’Home Pro interne. Bibliothèque sur mobile ; Achats sur tous les PC et l’Administrateur Mobile. Sans connecteurs ni connexions API externes." },
         { id: "pro", label: "Pro", pc: 70, mobile: 15, description: "Tous postes et accès complet. Bibliothèque sur mobile ; Achats sur tous les PC et l’Administrateur Mobile ; Quitus, rapports, Réseau, API et imports. Licences Groupe d’entreprise / Multi-entreprises incluses sans supplément de licence." }
     ];
     const rank = { basic: 0, basic_plus: 1, pro: 2 };

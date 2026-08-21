@@ -27,6 +27,7 @@ L’interface **Partenaire** utilise le niveau technique Pro, mais son portail e
 - Planning et gestion des interventions.
 - Importation de données Excel et CSV.
 - Accès au Réseau Depann’Home Pro interne : annuaire, fiche réseau et connexions entre entreprises utilisatrices.
+- Envoi et réception de missions, messagerie contextuelle et dossiers partagés entre entreprises connectées du réseau.
 - Accès à tous les postes mobiles : Administrateur Mobile, Chef d’équipe et Technicien.
 - Pas d’accès au Quitus d’intervention, réservé à Pro.
 - Pas d’accès aux rapports techniques ni à la bibliothèque sur poste PC.
