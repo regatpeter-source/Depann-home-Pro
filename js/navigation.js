@@ -1670,6 +1670,7 @@ function renderSupportContact(container) {
 }
 
 async function renderTeamManagement(container) {
+    const DEVICE_REFRESH_INTERVAL_MS = 3_000;
     const card = document.createElement("article");
     card.className = "brand-card full-card procedure-card team-management";
     card.innerHTML = '<div class="team-heading"><div><p class="eyebrow">Gestion des accès</p><h2>Équipe et postes PC</h2><p class="muted">Créez les accès de vos techniciens et les postes PC inclus dans votre offre.</p></div><span class="team-heading-badge">Administration</span></div>';
@@ -1819,8 +1820,11 @@ async function renderTeamManagement(container) {
         document.body.appendChild(dialog);
         dialog.showModal();
     };
-    const load = async () => {
-        list.textContent = "Chargement de l’équipe…";
+    let loadingTeam = false;
+    const load = async ({ silent = false } = {}) => {
+        if (loadingTeam || !card.isConnected) return;
+        loadingTeam = true;
+        if (!silent) list.textContent = "Chargement de l’équipe…";
         try {
             const response = await teamRequest("/api/auth/members");
             const payload = await response.json();
@@ -1927,12 +1931,15 @@ async function renderTeamManagement(container) {
                 devices.appendChild(item);
             });
         } catch (error) {
+            if (silent) return;
             list.replaceChildren();
             const message = document.createElement("p");
             message.className = "auth-message error";
             message.textContent = error.message || "Impossible de charger les accès.";
             const retry = createButton("Réessayer", "secondary-button", load);
             list.append(message, retry);
+        } finally {
+            loadingTeam = false;
         }
     };
     form.addEventListener("submit", async event => {
@@ -1952,6 +1959,12 @@ async function renderTeamManagement(container) {
         finally { submit.disabled = false; }
     });
     await load();
+    const refreshDevicesWhileVisible = async () => {
+        if (!card.isConnected) return;
+        if (document.visibilityState === "visible") await load({ silent: true });
+        if (card.isConnected) window.setTimeout(refreshDevicesWhileVisible, DEVICE_REFRESH_INTERVAL_MS);
+    };
+    window.setTimeout(refreshDevicesWhileVisible, DEVICE_REFRESH_INTERVAL_MS);
 }
 
 async function teamRequest(url, options = {}) {
