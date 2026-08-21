@@ -12,7 +12,9 @@ export async function initializeAuthentication({ onAuthenticated }) {
     renderAuthentication({
         onAuthenticated,
         registrationEnabled: Boolean(session.data?.registrationEnabled),
-        message: session.networkError ? "Impossible de joindre le serveur." : ""
+        message: session.data?.sessionReplaced
+            ? "Cette session Administrateur PC a été fermée car une connexion plus récente a été ouverte."
+            : session.networkError ? "Impossible de joindre le serveur." : ""
     });
 }
 

@@ -80,9 +80,11 @@ export function registerAuthRoutes(app) {
     app.get("/api/auth/session", asyncHandler(async (request, response) => {
         const user = request.user;
         if (!user) {
+            if (request.sessionWindowReplaced) response.set("X-DepannHome-Session-Replaced", "true");
             return response.status(401).json({
                 authenticated: false,
-                registrationEnabled: isPublicRegistrationEnabled()
+                registrationEnabled: isPublicRegistrationEnabled(),
+                sessionReplaced: Boolean(request.sessionWindowReplaced)
             });
         }
         const accountOwnerId = String(user.activeCompanyId || user.accountOwnerId || user.account_owner_id || user.id || user.sub);
@@ -132,7 +134,7 @@ export function registerAuthRoutes(app) {
                     : "La double authentification de votre entreprise doit être configurée avant votre première connexion."
             });
         }
-        return completeLogin(user, device, response);
+        return completeLogin(user, device, response, request);
     }));
 
     app.post("/api/auth/verify-creator-totp", asyncHandler(async (request, response) => {
@@ -149,7 +151,7 @@ export function registerAuthRoutes(app) {
         }
         const device = getDeviceDetails({ deviceId: challenge.device?.id, deviceLabel: challenge.device?.label, deviceType: challenge.device?.type });
         if (!device) return response.status(401).json({ message: "Cet appareil ne peut pas être identifié. Recommencez la connexion." });
-        return completeLogin(user, device, response);
+        return completeLogin(user, device, response, request);
     }));
 
     app.post("/api/auth/company-2fa/enrollment", asyncHandler(async (request, response) => {
@@ -198,7 +200,7 @@ export function registerAuthRoutes(app) {
         await recordMemberAudit(user.account_owner_id, user.id, user, "company_2fa_login_succeeded", { purpose: challenge.purpose });
         const device = getDeviceDetails({ deviceId: challenge.device?.id, deviceLabel: challenge.device?.label, deviceType: challenge.device?.type });
         if (!device) return response.status(401).json({ message: "Cet appareil ne peut pas être identifié. Recommencez la connexion." });
-        return completeLogin(user, device, response);
+        return completeLogin(user, device, response, request);
     }));
 
     app.post("/api/auth/device-validation-status", asyncHandler(async (request, response) => {
@@ -232,7 +234,7 @@ export function registerAuthRoutes(app) {
         if (!isCreatorUsername(device.username) && roleAccessError) return response.status(403).json({ message: roleAccessError });
         await getPool().query("UPDATE depannhome_auth_devices SET status = 'approved', verified_at = NOW(), verification_code_hash = '', verification_code_expires_at = NULL, verification_attempts = 0 WHERE id = $1", [deviceId]);
         const sessionId = device.role === "admin" && device.device_type === "desktop"
-            ? await issueAdministratorPcSession(device.user_id, deviceId)
+            ? await issueAdministratorPcSession(device.user_id, deviceId, clientWindowSessionId(request))
             : "";
         setSessionCookie(response, device, deviceId, "", sessionId);
         return response.json({ user: publicUser(device) });
@@ -256,7 +258,7 @@ export function registerAuthRoutes(app) {
             if (!authDevice) {
                 return response.status(409).json({ message: "Cet appareil est déjà associé à un autre compte. Utilisez un autre navigateur ou contactez l’administrateur." });
             }
-            const sessionId = device.type === "desktop" ? await issueAdministratorPcSession(user.id, authDevice.id) : "";
+            const sessionId = device.type === "desktop" ? await issueAdministratorPcSession(user.id, authDevice.id, clientWindowSessionId(request)) : "";
             setSessionCookie(response, user, authDevice.id, "", sessionId);
             return response.status(201).json({ user: publicUser({ ...user, deviceType: device.type }) });
         } catch (error) {
@@ -687,6 +689,10 @@ export async function authenticateRequest(request, response, next) {
         if (user.role === "admin" && device.device_type === "desktop" && (!session.sessionId || session.sessionId !== device.session_id)) {
             throw new Error("Session PC remplacée");
         }
+        if (user.role === "admin" && device.device_type === "desktop" && String(session.sessionId).startsWith("window:")
+            && session.sessionId !== clientWindowSessionId(request)) {
+            throw new Error("Fenêtre PC remplacée");
+        }
         const groupCompany = user.role === "admin" ? await resolveGroupCompany(user.id, session.activeCompanyId) : null;
         const accountOwnerId = String(groupCompany?.companyId || user.account_owner_id || user.id);
         const organization = await getOrganization(accountOwnerId);
@@ -714,8 +720,9 @@ export async function authenticateRequest(request, response, next) {
             organization,
             isCreator: isCreatorUsername(user.username)
         };
-    } catch {
-        response.clearCookie(COOKIE_NAME, cookieOptions());
+    } catch (error) {
+        if (["Session PC remplacée", "Fenêtre PC remplacée"].includes(error.message)) request.sessionWindowReplaced = true;
+        if (error.message !== "Fenêtre PC remplacée") response.clearCookie(COOKIE_NAME, cookieOptions());
     }
 
     return next();
@@ -723,7 +730,8 @@ export async function authenticateRequest(request, response, next) {
 
 export function requireAuthentication(request, response, next) {
     if (!request.user) {
-        return response.status(401).json({ message: "Connexion requise." });
+        if (request.sessionWindowReplaced) response.set("X-DepannHome-Session-Replaced", "true");
+        return response.status(401).json({ message: request.sessionWindowReplaced ? "Cette session Administrateur PC a été remplacée par une connexion plus récente." : "Connexion requise.", sessionReplaced: Boolean(request.sessionWindowReplaced) });
     }
 
     return next();
@@ -851,7 +859,7 @@ export async function recoverCreatorTotp() {
     console.log(`Google Authenticator réinitialisé pour « ${username} » (${result.rowCount ? "configuration supprimée" : "aucune configuration active"}). Retirez immédiatement les variables CREATOR_TOTP_RECOVERY_* après redémarrage.`);
 }
 
-async function completeLogin(user, device, response) {
+async function completeLogin(user, device, response, request) {
     const organization = await getOrganization(user.account_owner_id || user.id);
     const roleAccessError = subscriptionRoleAccessMessage(organization.subscriptionTier, user.role);
     if (!isCreatorUsername(user.username) && roleAccessError) return response.status(403).json({ message: roleAccessError });
@@ -910,7 +918,7 @@ async function completeLogin(user, device, response) {
         const groupCompany = user.role === "admin" ? await resolveGroupCompany(user.id, null) : null;
         const accountOwnerId = String(groupCompany?.companyId || user.account_owner_id || user.id);
         const organization = await getOrganization(accountOwnerId);
-        const sessionId = isCompanyAdministratorPc ? await issueAdministratorPcSession(user.id, authDevice.id) : "";
+        const sessionId = isCompanyAdministratorPc ? await issueAdministratorPcSession(user.id, authDevice.id, clientWindowSessionId(request)) : "";
         setSessionCookie(response, user, authDevice.id, groupCompany?.companyId, sessionId);
         return response.json({ user: publicUser({ ...user, accountOwnerId, activeCompanyId: accountOwnerId, groupId: groupCompany?.groupId, groupName: groupCompany?.groupName, activeCompanyName: groupCompany?.companyName, isGroupAdministrator: Boolean(groupCompany), role: user.role, principalRole: groupCompany ? "group_admin" : user.role, deviceType: authDevice.device_type, organization }) });
     }
@@ -1095,8 +1103,8 @@ function getCompanyTotpEncryptionKey() {
     return crypto.createHash("sha256").update(`${getSessionSecret()}:company-totp:v1`).digest();
 }
 
-async function issueAdministratorPcSession(userId, deviceId) {
-    const sessionId = crypto.randomUUID();
+async function issueAdministratorPcSession(userId, deviceId, clientSessionId = "") {
+    const sessionId = clientSessionId || `legacy:${crypto.randomUUID()}`;
     const { rows } = await getPool().query(`
         UPDATE depannhome_auth_devices
         SET session_id = $3, last_seen_at = NOW()
@@ -1105,6 +1113,11 @@ async function issueAdministratorPcSession(userId, deviceId) {
     `, [deviceId, userId, sessionId]);
     if (!rows[0]?.session_id) throw new Error("Session Administrateur PC introuvable.");
     return rows[0].session_id;
+}
+
+function clientWindowSessionId(request) {
+    const value = String(request.get?.("X-DepannHome-Client-Session") || "");
+    return DEVICE_ID_PATTERN.test(value) ? `window:${value}` : "";
 }
 
 function setSessionCookie(response, user, deviceId, activeCompanyId = "", sessionId = "") {

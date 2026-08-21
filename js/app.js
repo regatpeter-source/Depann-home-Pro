@@ -1,4 +1,4 @@
-import { initializeAuthentication, restoreApplicationShell, signOut } from "./auth.js?v=120";
+import { initializeAuthentication, restoreApplicationShell, signOut } from "./auth.js?v=121";
 import { initializeClientSynchronization } from "./client-sync.js?v=125";
 import { initializeCollaboration } from "./collaboration.js?v=4";
 import { loadDatabase } from "./data.js?v=59";
@@ -6,8 +6,19 @@ import { initializeNavigation, refreshApplication } from "./navigation.js?v=328"
 import { renderError } from "./ui.js?v=44";
 import { getSettings } from "./storage.js?v=44";
 import { FONT_OPTIONS } from "./config.js?v=121";
+import { installClientSessionGuard, onClientSessionReplaced } from "./client-session.js?v=1";
 
 let applicationStarted = false;
+let sessionReplacementHandled = false;
+let administratorSessionMonitor = null;
+
+installClientSessionGuard();
+onClientSessionReplaced(() => {
+    if (sessionReplacementHandled || document.body.classList.contains("auth-pending")) return;
+    sessionReplacementHandled = true;
+    document.body.classList.add("auth-pending");
+    window.location.replace("/?session=replaced");
+});
 
 if (document.readyState === "loading") window.addEventListener("DOMContentLoaded", initializeApp, { once: true });
 else initializeApp();
@@ -22,6 +33,7 @@ async function initializeApp() {
                 }
 
                 showAuthenticatedUser(user);
+                startAdministratorSessionMonitor(user);
                 initializeGroupCompanySelector(user);
                 startApplication();
             }
@@ -31,6 +43,14 @@ async function initializeApp() {
         document.getElementById("authRoot").innerHTML = `<main class="auth-page"><section class="auth-card"><h1>Depann'Home Pro</h1><p class="auth-message error">Impossible de joindre le serveur. Vérifiez votre connexion puis actualisez la page.</p></section></main>`;
         console.error("Impossible d’initialiser l’application.", error);
     }
+}
+
+function startAdministratorSessionMonitor(user) {
+    if (administratorSessionMonitor || user.role !== "admin" || user.deviceType === "mobile") return;
+    const check = async () => {
+        if (document.visibilityState === "visible") await fetch("/api/auth/session", { credentials: "same-origin", cache: "no-store" }).catch(() => null);
+    };
+    administratorSessionMonitor = window.setInterval(check, 3_000);
 }
 
 async function startApplication() {
