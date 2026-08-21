@@ -1,8 +1,7 @@
 import { getPool } from "./database.js";
 import { createBillingPdf, normalizeVatRegime } from "./billing.js";
 import { sendDocumentEmail } from "./email.js";
-import { subscriptionTierConfig } from "./subscription-tiers.js";
-import { calculateSubscriptionPriceCents } from "./subscription-tiers.js";
+import { calculateSubscriptionPriceCents, subscriptionTierConfig } from "./subscription-tiers.js";
 import { createHash } from "node:crypto";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -364,6 +363,34 @@ export function calculateSubscriptionProration(oldNetAmountCents, newNetAmountCe
     return Math.sign(difference) * Math.round(Math.abs(difference) * daysRemaining / cycleDays);
 }
 
+export function calculateSubscriptionChangeProration(ownerBefore, ownerAfter, vatRate, totalDays, remainingDays) {
+    const previousPcSeats = Math.max(0, Number(ownerBefore?.maxPcUsers) || 0);
+    const nextPcSeats = Math.max(0, Number(ownerAfter?.maxPcUsers) || 0);
+    const previousMobileSeats = Math.max(0, Number(ownerBefore?.maxTechnicians) || 0);
+    const nextMobileSeats = Math.max(0, Number(ownerAfter?.maxTechnicians) || 0);
+    const oldMonthlyAmountCents = ownerBefore?.subscriptionPlan === "paid"
+        ? calculateSubscriptionPriceCents(ownerBefore.subscriptionTier, previousPcSeats, previousMobileSeats) : 0;
+    const newMonthlyAmountCents = ownerAfter?.subscriptionPlan === "paid"
+        ? calculateSubscriptionPriceCents(ownerAfter.subscriptionTier, nextPcSeats, nextMobileSeats) : 0;
+    const oldNetAmountCents = ownerBefore?.subscriptionPlan === "paid"
+        ? buildSubscriptionInvoiceSnapshot({ ...ownerBefore, monthlyPriceCents: oldMonthlyAmountCents }, vatRate).netAmountCents : 0;
+    const newNetAmountCents = ownerAfter?.subscriptionPlan === "paid"
+        ? buildSubscriptionInvoiceSnapshot({ ...ownerAfter, monthlyPriceCents: newMonthlyAmountCents }, vatRate).netAmountCents : 0;
+    return {
+        oldMonthlyAmountCents,
+        newMonthlyAmountCents,
+        oldNetAmountCents,
+        newNetAmountCents,
+        previousPcSeats,
+        nextPcSeats,
+        pcSeatDelta: nextPcSeats - previousPcSeats,
+        previousMobileSeats,
+        nextMobileSeats,
+        mobileSeatDelta: nextMobileSeats - previousMobileSeats,
+        prorataDeltaCents: calculateSubscriptionProration(oldNetAmountCents, newNetAmountCents, totalDays, remainingDays)
+    };
+}
+
 export async function prepareSubscriptionProration(connection, { ownerBefore, ownerAfter, actorId }) {
     if (!ownerBefore?.id) return null;
     const { rows: sources } = await connection.query(`
@@ -386,16 +413,15 @@ export async function prepareSubscriptionProration(connection, { ownerBefore, ow
     `, [source.billingPeriod]);
     const period = periods[0];
     if (!period || period.remainingDays <= 0) return null;
-    const oldNetAmountCents = ownerBefore.subscriptionPlan === "paid" ? buildSubscriptionInvoiceSnapshot(ownerBefore, source.vatRate).netAmountCents : 0;
-    const newNetAmountCents = ownerAfter.subscriptionPlan === "paid" ? buildSubscriptionInvoiceSnapshot(ownerAfter, source.vatRate).netAmountCents : 0;
-    const prorataDeltaCents = calculateSubscriptionProration(oldNetAmountCents, newNetAmountCents, period.totalDays, period.remainingDays);
+    const calculation = calculateSubscriptionChangeProration(ownerBefore, ownerAfter, source.vatRate, period.totalDays, period.remainingDays);
+    const { oldNetAmountCents, newNetAmountCents, prorataDeltaCents } = calculation;
     if (!prorataDeltaCents) return null;
     const details = {
-        previous: subscriptionSnapshot(ownerBefore, { netAmountCents: oldNetAmountCents }),
-        next: subscriptionSnapshot(ownerAfter, { netAmountCents: newNetAmountCents }),
-        calculation: { ...period, oldNetAmountCents, newNetAmountCents, prorataDeltaCents }
+        previous: subscriptionSnapshot({ ...ownerBefore, monthlyPriceCents: calculation.oldMonthlyAmountCents }, { netAmountCents: oldNetAmountCents }),
+        next: subscriptionSnapshot({ ...ownerAfter, monthlyPriceCents: calculation.newMonthlyAmountCents }, { netAmountCents: newNetAmountCents }),
+        calculation: { ...period, ...calculation }
     };
-    const fingerprint = createHash("sha256").update(JSON.stringify({ accountOwnerId: ownerBefore.id, ...details.calculation, previous: details.previous, next: details.next })).digest("hex");
+    const fingerprint = createHash("sha256").update(JSON.stringify({ accountOwnerId: ownerBefore.id, changeVersion: ownerBefore.changeVersion, ...details.calculation, previous: details.previous, next: details.next })).digest("hex");
     const { rows: events } = await connection.query(`
         INSERT INTO depannhome_subscription_proration_events(account_owner_id,change_fingerprint,effective_date,cycle_start_date,cycle_end_date,total_days,remaining_days,old_net_amount_cents,new_net_amount_cents,prorata_delta_cents,source_invoice_id,actor_id,details)
         VALUES($1,$2,$3::date,$4::date,$5::date,$6,$7,$8,$9,$10,$11,$12,$13::jsonb)
@@ -403,7 +429,11 @@ export async function prepareSubscriptionProration(connection, { ownerBefore, ow
     `, [ownerBefore.id,fingerprint,period.effectiveDate,period.cycleStartDate,period.cycleEndDate,period.totalDays,period.remainingDays,oldNetAmountCents,newNetAmountCents,prorataDeltaCents,source.id,actorId,JSON.stringify(details)]);
     const event = events[0];
     if (!event) return null;
-    const reason = `Prorata du ${period.effectiveDate} au ${period.cycleEndDate} (${period.remainingDays}/${period.totalDays} jours) — passage de ${ownerBefore.subscriptionLabel || ownerBefore.subscriptionTier} à ${ownerAfter.subscriptionLabel || ownerAfter.subscriptionTier}.`;
+    const seatChanges = [
+        calculation.pcSeatDelta ? `${calculation.pcSeatDelta > 0 ? "+" : ""}${calculation.pcSeatDelta} poste(s) PC (${calculation.previousPcSeats} → ${calculation.nextPcSeats})` : "",
+        calculation.mobileSeatDelta ? `${calculation.mobileSeatDelta > 0 ? "+" : ""}${calculation.mobileSeatDelta} poste(s) mobile(s) (${calculation.previousMobileSeats} → ${calculation.nextMobileSeats})` : ""
+    ].filter(Boolean);
+    const reason = `Prorata du ${period.effectiveDate} au ${period.cycleEndDate} (${period.remainingDays}/${period.totalDays} jours) — passage de ${ownerBefore.subscriptionLabel || ownerBefore.subscriptionTier} à ${ownerAfter.subscriptionLabel || ownerAfter.subscriptionTier}${seatChanges.length ? ` · ${seatChanges.join(" · ")}` : ""}.`;
     if (prorataDeltaCents < 0) {
         const existing = await connection.query(`SELECT COALESCE(SUM(amount_cents),0)::integer AS total FROM depannhome_subscription_credit_notes WHERE source_invoice_id=$1`, [source.id]);
         const amountCents = Math.min(Math.abs(prorataDeltaCents), Math.max(0, Number(source.netAmountCents) - Number(existing.rows[0].total)));

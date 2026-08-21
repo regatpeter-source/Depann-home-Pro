@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { calculateSubscriptionProration } from "../server/invoicing.js";
+import { calculateSubscriptionChangeProration, calculateSubscriptionProration } from "../server/invoicing.js";
 
 const invoicingSource = readFileSync(new URL("../server/invoicing.js", import.meta.url), "utf8");
 const creatorSource = readFileSync(new URL("../server/creator.js", import.meta.url), "utf8");
@@ -19,6 +19,55 @@ test("le prorata utilise les jours calendaires et arrondit au centime", () => {
     assert.throws(() => calculateSubscriptionProration(2500, 4300, 30, 31), TypeError);
 });
 
+test("l’ajout ou le retrait de postes PC et mobiles réévalue le prorata de l’offre actuelle", () => {
+    const base = { subscriptionPlan: "paid", subscriptionTier: "basic_plus", discountMode: "fixed", discountValue: 0 };
+    const addedMobile = calculateSubscriptionChangeProration(
+        { ...base, maxPcUsers: 1, maxTechnicians: 1, monthlyPriceCents: 1 },
+        { ...base, maxPcUsers: 1, maxTechnicians: 2, monthlyPriceCents: 1 },
+        20, 30, 15
+    );
+    assert.equal(addedMobile.oldMonthlyAmountCents, 4300);
+    assert.equal(addedMobile.newMonthlyAmountCents, 5100);
+    assert.equal(addedMobile.mobileSeatDelta, 1);
+    assert.equal(addedMobile.prorataDeltaCents, 400);
+
+    const removedPc = calculateSubscriptionChangeProration(
+        { ...base, maxPcUsers: 2, maxTechnicians: 2 },
+        { ...base, maxPcUsers: 1, maxTechnicians: 2 },
+        20, 30, 15
+    );
+    assert.equal(removedPc.pcSeatDelta, -1);
+    assert.equal(removedPc.prorataDeltaCents, -1750);
+
+    const addedPc = calculateSubscriptionChangeProration(
+        { subscriptionPlan: "paid", subscriptionTier: "basic", maxPcUsers: 1, maxTechnicians: 1, discountMode: "fixed", discountValue: 0 },
+        { subscriptionPlan: "paid", subscriptionTier: "basic", maxPcUsers: 2, maxTechnicians: 1, discountMode: "fixed", discountValue: 0 },
+        20, 30, 15
+    );
+    assert.equal(addedPc.pcSeatDelta, 1);
+    assert.equal(addedPc.prorataDeltaCents, 1000);
+
+    const removedMobile = calculateSubscriptionChangeProration(
+        { subscriptionPlan: "paid", subscriptionTier: "basic", maxPcUsers: 1, maxTechnicians: 1, discountMode: "fixed", discountValue: 0 },
+        { subscriptionPlan: "paid", subscriptionTier: "basic", maxPcUsers: 1, maxTechnicians: 0, discountMode: "fixed", discountValue: 0 },
+        20, 30, 15
+    );
+    assert.equal(removedMobile.mobileSeatDelta, -1);
+    assert.equal(removedMobile.prorataDeltaCents, -250);
+});
+
+test("la remise est réappliquée après la réévaluation du nombre de postes", () => {
+    const base = { subscriptionPlan: "paid", subscriptionTier: "pro", maxPcUsers: 1, discountMode: "percentage", discountValue: 20 };
+    const result = calculateSubscriptionChangeProration(
+        { ...base, maxTechnicians: 1 },
+        { ...base, maxTechnicians: 2 },
+        20, 31, 10
+    );
+    assert.equal(result.oldNetAmountCents, 6800);
+    assert.equal(result.newNetAmountCents, 8000);
+    assert.equal(result.prorataDeltaCents, 387);
+});
+
 test("une modification effective du compte prépare puis envoie le prorata", () => {
     const accountPatch = creatorSource.slice(creatorSource.indexOf('app.patch("/api/creator/accounts/:accountId"'), creatorSource.indexOf('app.patch("/api/creator/accounts/:accountId/activation"'));
     assert.match(accountPatch, /FOR UPDATE/);
@@ -34,6 +83,8 @@ test("la baisse crée un avoir et la hausse une facture complémentaire", () => 
     assert.match(invoicingSource, /'proration_debit'/);
     assert.match(invoicingSource, /subscription_proration_invoice_created/);
     assert.match(invoicingSource, /Prorata du/);
+    assert.match(invoicingSource, /poste\(s\) PC/);
+    assert.match(invoicingSource, /poste\(s\) mobile\(s\)/);
     assert.match(creatorClientSource, /Complément prorata/);
 });
 
@@ -45,6 +96,8 @@ test("les proratas sont idempotents et traçables", () => {
         assert.match(source, /generated_credit_note_id/);
     }
     assert.match(invoicingSource, /ON CONFLICT\(change_fingerprint\) DO NOTHING/);
+    assert.match(invoicingSource, /changeVersion: ownerBefore\.changeVersion/);
+    assert.match(creatorSource, /updated_at AS "changeVersion"/);
 });
 
 test("une facture complémentaire ne déplace jamais l’échéance du cycle", () => {

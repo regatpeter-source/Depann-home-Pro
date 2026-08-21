@@ -232,7 +232,8 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
                 SELECT id,subscription_plan AS "subscriptionPlan",subscription_tier AS "subscriptionTier",subscription_label AS "subscriptionLabel",
                     monthly_price_cents AS "monthlyPriceCents",max_pc_users AS "maxPcUsers",max_technicians AS "maxTechnicians",
                     subscription_discount_label AS "discountLabel",subscription_discount_mode AS "discountMode",
-                    subscription_discount_value::float AS "discountValue",TO_CHAR(subscription_renewal_date,'YYYY-MM-DD') AS "subscriptionRenewalDate"
+                    subscription_discount_value::float AS "discountValue",TO_CHAR(subscription_renewal_date,'YYYY-MM-DD') AS "subscriptionRenewalDate",
+                    updated_at AS "changeVersion"
                 FROM depannhome_users WHERE id=$1 AND account_owner_id=id FOR UPDATE
             `, [accountId]);
             const ownerBefore = lockedOwners[0];
