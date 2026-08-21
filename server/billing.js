@@ -10,6 +10,9 @@ import { DOCX_MIME, PDF_MIME, renderCompanyTemplate, validateCompanyTemplate } f
 import { createTechnicalReportOutput } from "./technical-reports.js";
 import { buildBillingCustomModel, renderActiveCustomTemplate } from "./document-templates.js";
 import { calculateDocumentAccountingTotals } from "./accounting-ledger.js";
+import crypto from "node:crypto";
+import { generateUblInvoice } from "./einvoice-ubl.js";
+import { allocateBillingNumber } from "./billing-numbering.js";
 
 const MAX_LOGO_SIZE = 2 * 1024 * 1024;
 const MAX_QUOTE_TEMPLATE_SIZE = 10 * 1024 * 1024;
@@ -21,6 +24,9 @@ const CLIENT_ID_PATTERN = /^client-[a-zA-Z0-9-]+$/;
 const QUOTE_TEMPLATE_POLICIES = new Set(["integrated_only", "company_choice", "external_only"]);
 const QUOTE_TEMPLATE_MODES = new Set(["integrated", "external"]);
 const DOCUMENT_TEMPLATE_FONTS = new Set(["Helvetica", "Times-Roman", "Courier"]);
+const OPERATION_CATEGORIES = new Set(["goods", "services", "mixed"]);
+const DEFAULT_EARLY_PAYMENT_DISCOUNT_TERMS = "Aucun escompte pour paiement anticipé.";
+const DEFAULT_LATE_PAYMENT_PENALTY_TERMS = "Pénalités de retard exigibles au taux de trois fois le taux d’intérêt légal à compter du jour suivant la date d’échéance.";
 const DEFAULT_DOCUMENT_TEMPLATE = Object.freeze({ primaryColor: "#172033", secondaryColor: "#0a5c36", separatorColor: "#d7dde3", font: "Helvetica", headerText: "", footerText: "" });
 const ADDITIONAL_TEMPLATE_TYPES = Object.freeze({
     quitus: { label: "quitus", policyColumn: "quitus_template_policy", modeColumn: "quitus_template_mode", filenameColumn: "quitus_template_filename", dataColumn: "quitus_template_data", mimeColumn: "quitus_template_mime_type" },
@@ -65,6 +71,10 @@ export async function initializeBilling() {
             bank_bic VARCHAR(40) NOT NULL DEFAULT '',
             payment_terms VARCHAR(500) NOT NULL DEFAULT '',
             deposit_terms VARCHAR(500) NOT NULL DEFAULT '',
+            early_payment_discount_terms VARCHAR(500) NOT NULL DEFAULT 'Aucun escompte pour paiement anticipé.',
+            late_payment_penalty_terms VARCHAR(1000) NOT NULL DEFAULT 'Pénalités de retard exigibles au taux de trois fois le taux d’intérêt légal à compter du jour suivant la date d’échéance.',
+            recovery_indemnity_cents INTEGER NOT NULL DEFAULT 4000 CHECK (recovery_indemnity_cents >= 0),
+            vat_on_debits BOOLEAN NOT NULL DEFAULT FALSE,
             footer_note VARCHAR(1000) NOT NULL DEFAULT '',
             default_quote JSONB,
             quote_template_config JSONB NOT NULL DEFAULT '{}'::jsonb,
@@ -100,6 +110,10 @@ export async function initializeBilling() {
         ADD COLUMN IF NOT EXISTS bank_iban VARCHAR(80) NOT NULL DEFAULT '',
         ADD COLUMN IF NOT EXISTS bank_bic VARCHAR(40) NOT NULL DEFAULT '',
         ADD COLUMN IF NOT EXISTS deposit_terms VARCHAR(500) NOT NULL DEFAULT '',
+        ADD COLUMN IF NOT EXISTS early_payment_discount_terms VARCHAR(500) NOT NULL DEFAULT 'Aucun escompte pour paiement anticipé.',
+        ADD COLUMN IF NOT EXISTS late_payment_penalty_terms VARCHAR(1000) NOT NULL DEFAULT 'Pénalités de retard exigibles au taux de trois fois le taux d’intérêt légal à compter du jour suivant la date d’échéance.',
+        ADD COLUMN IF NOT EXISTS recovery_indemnity_cents INTEGER NOT NULL DEFAULT 4000,
+        ADD COLUMN IF NOT EXISTS vat_on_debits BOOLEAN NOT NULL DEFAULT FALSE,
         ADD COLUMN IF NOT EXISTS quote_template_mode VARCHAR(20) NOT NULL DEFAULT 'integrated',
         ADD COLUMN IF NOT EXISTS quote_template_filename VARCHAR(255) NOT NULL DEFAULT '',
         ADD COLUMN IF NOT EXISTS quote_template_data BYTEA,
@@ -161,6 +175,15 @@ export async function initializeBilling() {
             quote_reference VARCHAR(80) NOT NULL DEFAULT '',
             vat_regime VARCHAR(20) NOT NULL DEFAULT 'standard' CHECK (vat_regime IN ('standard','franchise')),
             issuer_tax_number VARCHAR(100) NOT NULL DEFAULT '',
+            legal_data JSONB NOT NULL DEFAULT '{}'::jsonb,
+            issued_at TIMESTAMPTZ,
+            finalized_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+            legal_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
+            structured_data BYTEA,
+            structured_mime_type VARCHAR(150) NOT NULL DEFAULT '',
+            structured_sha256 CHAR(64),
+            pdf_data BYTEA,
+            pdf_sha256 VARCHAR(64),
             lines JSONB NOT NULL DEFAULT '[]'::jsonb,
             notes VARCHAR(2000) NOT NULL DEFAULT '',
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -187,6 +210,15 @@ export async function initializeBilling() {
         ADD COLUMN IF NOT EXISTS quote_reference VARCHAR(80) NOT NULL DEFAULT ''
         ,ADD COLUMN IF NOT EXISTS vat_regime VARCHAR(20) NOT NULL DEFAULT 'standard'
         ,ADD COLUMN IF NOT EXISTS issuer_tax_number VARCHAR(100) NOT NULL DEFAULT ''
+        ,ADD COLUMN IF NOT EXISTS legal_data JSONB NOT NULL DEFAULT '{}'::jsonb
+        ,ADD COLUMN IF NOT EXISTS issued_at TIMESTAMPTZ
+        ,ADD COLUMN IF NOT EXISTS finalized_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL
+        ,ADD COLUMN IF NOT EXISTS legal_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb
+        ,ADD COLUMN IF NOT EXISTS structured_data BYTEA
+        ,ADD COLUMN IF NOT EXISTS structured_mime_type VARCHAR(150) NOT NULL DEFAULT ''
+        ,ADD COLUMN IF NOT EXISTS structured_sha256 CHAR(64)
+        ,ADD COLUMN IF NOT EXISTS pdf_data BYTEA
+        ,ADD COLUMN IF NOT EXISTS pdf_sha256 VARCHAR(64)
     `);
     await database.query("ALTER TABLE depannhome_billing_documents DROP CONSTRAINT IF EXISTS depannhome_billing_documents_vat_regime_check");
     await database.query("ALTER TABLE depannhome_billing_documents ADD CONSTRAINT depannhome_billing_documents_vat_regime_check CHECK (vat_regime IN ('standard','franchise'))");
@@ -208,6 +240,28 @@ export async function initializeBilling() {
         CREATE INDEX IF NOT EXISTS depannhome_billing_documents_correction_idx
         ON depannhome_billing_documents (owner_id, correction_source_id)
     `);
+    await database.query(`
+        CREATE TABLE IF NOT EXISTS depannhome_billing_sequences (
+            owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+            series_type VARCHAR(10) NOT NULL CHECK (series_type IN ('invoice','credit')),
+            series_year INTEGER NOT NULL CHECK (series_year >= 2000),
+            last_number BIGINT NOT NULL DEFAULT 0 CHECK (last_number >= 0),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            PRIMARY KEY (owner_id, series_type, series_year)
+        )
+    `);
+    await database.query(`
+        CREATE OR REPLACE FUNCTION depannhome_protect_issued_billing_document() RETURNS trigger AS $$
+        BEGIN
+            IF TG_OP='DELETE' AND OLD.issued_at IS NOT NULL THEN RAISE EXCEPTION 'Un document émis ne peut pas être supprimé.'; END IF;
+            IF TG_OP='UPDATE' AND OLD.issued_at IS NOT NULL AND ROW(NEW.owner_id,NEW.created_by,NEW.document_type,NEW.document_number,NEW.client_id,NEW.customer_type,NEW.customer_name,NEW.customer_address,NEW.issue_date,NEW.due_date,NEW.appointment_id,NEW.source_quote_id,NEW.correction_source_id,NEW.correction_kind,NEW.quote_reference,NEW.vat_regime,NEW.issuer_tax_number,NEW.legal_data,NEW.issued_at,NEW.finalized_by,NEW.legal_snapshot,NEW.structured_data,NEW.structured_mime_type,NEW.structured_sha256,NEW.pdf_data,NEW.pdf_sha256,NEW.lines,NEW.notes,NEW.financial_data,NEW.created_at)
+                IS DISTINCT FROM ROW(OLD.owner_id,OLD.created_by,OLD.document_type,OLD.document_number,OLD.client_id,OLD.customer_type,OLD.customer_name,OLD.customer_address,OLD.issue_date,OLD.due_date,OLD.appointment_id,OLD.source_quote_id,OLD.correction_source_id,OLD.correction_kind,OLD.quote_reference,OLD.vat_regime,OLD.issuer_tax_number,OLD.legal_data,OLD.issued_at,OLD.finalized_by,OLD.legal_snapshot,OLD.structured_data,OLD.structured_mime_type,OLD.structured_sha256,OLD.pdf_data,OLD.pdf_sha256,OLD.lines,OLD.notes,OLD.financial_data,OLD.created_at)
+            THEN RAISE EXCEPTION 'Les données légales d’un document émis sont immuables.'; END IF;
+            RETURN CASE WHEN TG_OP='DELETE' THEN OLD ELSE NEW END;
+        END; $$ LANGUAGE plpgsql
+    `);
+    await database.query("DROP TRIGGER IF EXISTS depannhome_billing_document_immutable ON depannhome_billing_documents");
+    await database.query("CREATE TRIGGER depannhome_billing_document_immutable BEFORE UPDATE OR DELETE ON depannhome_billing_documents FOR EACH ROW EXECUTE FUNCTION depannhome_protect_issued_billing_document()");
 }
 
 export function registerBillingRoutes(app, requireAuthentication) {
@@ -218,7 +272,7 @@ export function registerBillingRoutes(app, requireAuthentication) {
             database.query(`
                 SELECT profile.company_name AS "companyName", profile.legal_form AS "legalForm", profile.address, profile.postal_code AS "postalCode", profile.city,
                     profile.phone, profile.secondary_phone AS "secondaryPhone", profile.email, profile.country, profile.registration_number AS "registrationNumber", profile.siren, profile.tax_number AS "taxNumber", profile.vat_regime AS "vatRegime", profile.bank_iban AS "bankIban", profile.bank_bic AS "bankBic",
-                    profile.payment_terms AS "paymentTerms", profile.deposit_terms AS "depositTerms", profile.footer_note AS "footerNote", profile.default_quote AS "defaultQuote",
+                    profile.payment_terms AS "paymentTerms", profile.deposit_terms AS "depositTerms", profile.early_payment_discount_terms AS "earlyPaymentDiscountTerms", profile.late_payment_penalty_terms AS "latePaymentPenaltyTerms", profile.recovery_indemnity_cents AS "recoveryIndemnityCents", profile.vat_on_debits AS "vatOnDebits", profile.footer_note AS "footerNote", profile.default_quote AS "defaultQuote",
                     profile.quote_template_config AS "quoteTemplateConfig", profile.quitus_template AS "quitusTemplate",
                     profile.quote_template_mode AS "quoteTemplateMode", profile.quote_template_filename AS "quoteTemplateFilename",
                     (profile.quote_template_data IS NOT NULL) AS "hasQuoteTemplate", (profile.logo_data IS NOT NULL) AS "hasLogo",
@@ -237,7 +291,7 @@ export function registerBillingRoutes(app, requireAuthentication) {
                 SELECT depannhome_billing_documents.id, document_type AS "documentType", document_number AS "documentNumber", client_id AS "clientId", customer_type AS "customerType",
                     customer_name AS "customerName", customer_address AS "customerAddress", TO_CHAR(issue_date, 'YYYY-MM-DD') AS "issueDate",
                     TO_CHAR(due_date, 'YYYY-MM-DD') AS "dueDate", status, is_email_sent AS "isEmailSent", sent_at AS "sentAt", is_accounted AS "isAccounted",
-                    TO_CHAR(accounted_at, 'YYYY-MM-DD') AS "accountedAt", appointment_id AS "appointmentId", source_quote_id AS "sourceQuoteId", correction_source_id AS "correctionSourceId", correction_kind AS "correctionKind", (SELECT source.document_number FROM depannhome_billing_documents source WHERE source.id=depannhome_billing_documents.correction_source_id) AS "correctionSourceNumber", quote_reference AS "quoteReference", vat_regime AS "vatRegime", issuer_tax_number AS "issuerTaxNumber", lines, notes, financial_data AS "financialData",
+                    TO_CHAR(accounted_at, 'YYYY-MM-DD') AS "accountedAt", appointment_id AS "appointmentId", source_quote_id AS "sourceQuoteId", correction_source_id AS "correctionSourceId", correction_kind AS "correctionKind", (SELECT source.document_number FROM depannhome_billing_documents source WHERE source.id=depannhome_billing_documents.correction_source_id) AS "correctionSourceNumber", quote_reference AS "quoteReference", vat_regime AS "vatRegime", issuer_tax_number AS "issuerTaxNumber", legal_data AS "legalData", issued_at AS "issuedAt", (structured_data IS NOT NULL) AS "hasStructuredData", lines, notes, financial_data AS "financialData",
                     depannhome_billing_documents.created_at AS "createdAt", depannhome_billing_documents.updated_at AS "updatedAt",
                     COALESCE(NULLIF(creator.full_name, ''), creator.username, '') AS "creatorName"
                 FROM depannhome_billing_documents
@@ -290,18 +344,20 @@ export function registerBillingRoutes(app, requireAuthentication) {
         const database = getPool();
         await database.query(`
             INSERT INTO depannhome_billing_profiles
-                (owner_id, company_name, legal_form, address, postal_code, city, phone, secondary_phone, email, country, registration_number, siren, tax_number, vat_regime, bank_iban, bank_bic, payment_terms, deposit_terms, footer_note, logo_data, logo_mime_type)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
+                (owner_id, company_name, legal_form, address, postal_code, city, phone, secondary_phone, email, country, registration_number, siren, tax_number, vat_regime, bank_iban, bank_bic, payment_terms, deposit_terms, early_payment_discount_terms, late_payment_penalty_terms, recovery_indemnity_cents, vat_on_debits, footer_note, logo_data, logo_mime_type)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25)
             ON CONFLICT (owner_id) DO UPDATE SET
                 company_name = EXCLUDED.company_name, legal_form = EXCLUDED.legal_form, address = EXCLUDED.address,
                 postal_code = EXCLUDED.postal_code, city = EXCLUDED.city, phone = EXCLUDED.phone, secondary_phone = EXCLUDED.secondary_phone, email = EXCLUDED.email, country = EXCLUDED.country,
                 registration_number = EXCLUDED.registration_number, siren = EXCLUDED.siren, tax_number = EXCLUDED.tax_number, vat_regime = EXCLUDED.vat_regime, bank_iban = EXCLUDED.bank_iban, bank_bic = EXCLUDED.bank_bic,
-                payment_terms = EXCLUDED.payment_terms, deposit_terms = EXCLUDED.deposit_terms, footer_note = EXCLUDED.footer_note,
-                logo_data = CASE WHEN $22 THEN NULL WHEN $23 THEN EXCLUDED.logo_data ELSE depannhome_billing_profiles.logo_data END,
-                logo_mime_type = CASE WHEN $22 THEN '' WHEN $23 THEN EXCLUDED.logo_mime_type ELSE depannhome_billing_profiles.logo_mime_type END,
+                payment_terms = EXCLUDED.payment_terms, deposit_terms = EXCLUDED.deposit_terms, early_payment_discount_terms = EXCLUDED.early_payment_discount_terms,
+                late_payment_penalty_terms = EXCLUDED.late_payment_penalty_terms, recovery_indemnity_cents = EXCLUDED.recovery_indemnity_cents, vat_on_debits = EXCLUDED.vat_on_debits, footer_note = EXCLUDED.footer_note,
+                logo_data = CASE WHEN $26 THEN NULL WHEN $27 THEN EXCLUDED.logo_data ELSE depannhome_billing_profiles.logo_data END,
+                logo_mime_type = CASE WHEN $26 THEN '' WHEN $27 THEN EXCLUDED.logo_mime_type ELSE depannhome_billing_profiles.logo_mime_type END,
                 updated_at = NOW()
         `, [getAccountOwnerId(request), profile.companyName, profile.legalForm, profile.address, profile.postalCode, profile.city, profile.phone, profile.secondaryPhone,
-            profile.email, profile.country, profile.registrationNumber, profile.siren, profile.taxNumber, profile.vatRegime, profile.bankIban, profile.bankBic, profile.paymentTerms, profile.depositTerms, profile.footerNote,
+            profile.email, profile.country, profile.registrationNumber, profile.siren, profile.taxNumber, profile.vatRegime, profile.bankIban, profile.bankBic, profile.paymentTerms, profile.depositTerms,
+            profile.earlyPaymentDiscountTerms, profile.latePaymentPenaltyTerms, profile.recoveryIndemnityCents, profile.vatOnDebits, profile.footerNote,
             logo?.buffer || null, logo?.mimetype || "", removeLogo, Boolean(logo)]);
         response.status(204).end();
     }));
@@ -444,7 +500,7 @@ export function registerBillingRoutes(app, requireAuthentication) {
                 SELECT id, document_type AS "documentType", document_number AS "documentNumber", client_id AS "clientId", customer_type AS "customerType",
                     customer_name AS "customerName", customer_address AS "customerAddress", TO_CHAR(issue_date, 'YYYY-MM-DD') AS "issueDate",
                     TO_CHAR(due_date, 'YYYY-MM-DD') AS "dueDate", status, is_email_sent AS "isEmailSent", sent_at AS "sentAt", is_accounted AS "isAccounted",
-                    TO_CHAR(accounted_at, 'YYYY-MM-DD') AS "accountedAt", appointment_id AS "appointmentId", source_quote_id AS "sourceQuoteId", correction_source_id AS "correctionSourceId", correction_kind AS "correctionKind", (SELECT source.document_number FROM depannhome_billing_documents source WHERE source.id=depannhome_billing_documents.correction_source_id) AS "correctionSourceNumber", quote_reference AS "quoteReference", vat_regime AS "vatRegime", issuer_tax_number AS "issuerTaxNumber", lines, notes, financial_data AS "financialData"
+                    TO_CHAR(accounted_at, 'YYYY-MM-DD') AS "accountedAt", appointment_id AS "appointmentId", source_quote_id AS "sourceQuoteId", correction_source_id AS "correctionSourceId", correction_kind AS "correctionKind", (SELECT source.document_number FROM depannhome_billing_documents source WHERE source.id=depannhome_billing_documents.correction_source_id) AS "correctionSourceNumber", quote_reference AS "quoteReference", vat_regime AS "vatRegime", issuer_tax_number AS "issuerTaxNumber", legal_data AS "legalData", issued_at AS "issuedAt", (structured_data IS NOT NULL) AS "hasStructuredData", lines, notes, financial_data AS "financialData"
                                 FROM depannhome_billing_documents
                                 WHERE id = $1 AND owner_id = $2
                                     AND ($3 <> 'technician'
@@ -467,7 +523,7 @@ export function registerBillingRoutes(app, requireAuthentication) {
             database.query(`
                 SELECT company_name AS "companyName", legal_form AS "legalForm", address, postal_code AS "postalCode", city, phone, email,
                     registration_number AS "registrationNumber", siren, tax_number AS "taxNumber", vat_regime AS "vatRegime", bank_iban AS "bankIban", bank_bic AS "bankBic", payment_terms AS "paymentTerms",
-                    deposit_terms AS "depositTerms", footer_note AS "footerNote", (logo_data IS NOT NULL) AS "hasLogo"
+                    deposit_terms AS "depositTerms", early_payment_discount_terms AS "earlyPaymentDiscountTerms", late_payment_penalty_terms AS "latePaymentPenaltyTerms", recovery_indemnity_cents AS "recoveryIndemnityCents", vat_on_debits AS "vatOnDebits", footer_note AS "footerNote", (logo_data IS NOT NULL) AS "hasLogo"
                 FROM depannhome_billing_profiles WHERE owner_id = $1
             `, [getAccountOwnerId(request)])
         ]);
@@ -478,7 +534,12 @@ export function registerBillingRoutes(app, requireAuthentication) {
     app.get("/api/billing/documents/:documentId/pdf", requireAuthentication, asyncHandler(async (request, response) => {
         const billingExport = await getBillingExport(request);
         if (!billingExport) return response.status(404).json({ message: "Document introuvable." });
-        const output = await createBillingDocumentOutput(billingExport.document, billingExport.profile);
+        let output;
+        if (billingExport.document.issuedAt) {
+            const archived = await getPool().query("SELECT pdf_data AS data FROM depannhome_billing_documents WHERE id=$1 AND owner_id=$2", [billingExport.document.id, getAccountOwnerId(request)]);
+            if (!archived.rows[0]?.data) return response.status(409).json({ message: "L’archive PDF de ce document émis est indisponible. Aucune régénération depuis des données mutables n’est autorisée." });
+            output = { buffer: archived.rows[0].data, filename: billingPdfFileName(billingExport.document), mimeType: PDF_MIME };
+        } else output = await createBillingDocumentOutput(billingExport.document, billingExport.profile);
         response.set({
             "Content-Type": output.mimeType,
             "Content-Disposition": `${output.mimeType === PDF_MIME ? "inline" : "attachment"}; filename="${contentDispositionFileName(output.filename)}"`,
@@ -486,6 +547,26 @@ export function registerBillingRoutes(app, requireAuthentication) {
             "X-Content-Type-Options": "nosniff"
         });
         response.send(output.buffer);
+    }));
+
+    app.get("/api/billing/documents/:documentId/ubl", requireAuthentication, asyncHandler(async (request, response) => {
+        const billingExport = await getBillingExport(request);
+        if (!billingExport) return response.status(404).json({ message: "Document introuvable." });
+        const document = billingExport.document;
+        if (!["invoice", "credit"].includes(document.documentType) || !document.issuedAt) {
+            return response.status(409).json({ message: "L’export UBL est réservé aux factures et avoirs émis, hors brouillon." });
+        }
+        const archived = await getPool().query("SELECT structured_data AS data, structured_mime_type AS \"mimeType\" FROM depannhome_billing_documents WHERE id=$1 AND owner_id=$2", [document.id, getAccountOwnerId(request)]);
+        const data = archived.rows[0]?.data;
+        if (!data) return response.status(409).json({ message: "L’archive UBL de ce document émis est indisponible." });
+        response.set({
+            "Content-Type": archived.rows[0]?.mimeType || "application/xml; charset=utf-8",
+            "Content-Disposition": `attachment; filename="${contentDispositionFileName(ublFileName(document))}"`,
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+            "X-Structured-Invoice-Source": "archived"
+        });
+        response.send(data);
     }));
 
     app.post("/api/billing/documents/preview", requireAuthentication, requireTechnicianBillingAccess, requireDesktopBillingPreview, asyncHandler(async (request, response) => {
@@ -504,10 +585,19 @@ export function registerBillingRoutes(app, requireAuthentication) {
     app.post("/api/billing/documents/:documentId/email", requireAuthentication, requireTechnicianBillingAccess, asyncHandler(async (request, response) => {
         const recipient = sanitizeEmailRecipient(request.body?.recipient);
         if (!recipient) return response.status(400).json({ message: "L’adresse e-mail du destinataire est invalide." });
-        const billingExport = await getBillingExport(request);
+        let billingExport = await getBillingExport(request);
         if (!billingExport) return response.status(404).json({ message: "Document introuvable." });
-
-        const output = await createBillingDocumentOutput(billingExport.document, billingExport.profile);
+        if (billingExport.document.documentType === "invoice" && !billingExport.document.issuedAt) {
+            if (request.user?.role !== "admin") return response.status(409).json({ message: "Cette facture est encore un brouillon. Un administrateur doit d’abord l’émettre définitivement." });
+            await issueDocument({ ownerId: getAccountOwnerId(request), documentId: billingExport.document.id, actorId: request.user.sub });
+            billingExport = await getBillingExport(request);
+        }
+        let output;
+        if (billingExport.document.issuedAt) {
+            const archived = await getPool().query("SELECT pdf_data AS data FROM depannhome_billing_documents WHERE id=$1 AND owner_id=$2", [billingExport.document.id, getAccountOwnerId(request)]);
+            if (!archived.rows[0]?.data) return response.status(409).json({ message: "L’archive PDF de cette facture émise est indisponible." });
+            output = { buffer: archived.rows[0].data, filename: billingPdfFileName(billingExport.document), mimeType: PDF_MIME };
+        } else output = await createBillingDocumentOutput(billingExport.document, billingExport.profile);
         const type = billingExport.document.documentType === "invoice" ? "Facture" : "Devis";
         const database = await getPool().connect();
         try {
@@ -515,8 +605,7 @@ export function registerBillingRoutes(app, requireAuthentication) {
             const locked = await database.query("SELECT document_type AS \"documentType\" FROM depannhome_billing_documents WHERE id=$1 AND owner_id=$2 FOR UPDATE", [billingExport.document.id, getAccountOwnerId(request)]);
             if (!locked.rows[0]) { await database.query("ROLLBACK"); return response.status(404).json({ message: "Document introuvable." }); }
             await sendDocumentEmail({ recipient, recipientName: billingExport.document.customerName, documentLabel: `${type} ${billingExport.document.documentNumber}`, attachment: { filename: output.filename, content: output.buffer, contentType: output.mimeType } });
-            if (locked.rows[0].documentType === "invoice") await database.query("UPDATE depannhome_billing_documents SET is_email_sent=TRUE, sent_at=COALESCE(sent_at,NOW()), status=CASE WHEN LOWER(status)='draft' THEN 'sent' ELSE status END, updated_at=NOW() WHERE id=$1", [billingExport.document.id]);
-            await database.query("COMMIT");
+            if (locked.rows[0].documentType === "invoice") await database.query("UPDATE depannhome_billing_documents SET is_email_sent=TRUE, sent_at=COALESCE(sent_at,NOW()), status='sent', updated_at=NOW() WHERE id=$1", [billingExport.document.id]);
         } catch (error) {
             await database.query("ROLLBACK");
             throw error;
@@ -524,6 +613,13 @@ export function registerBillingRoutes(app, requireAuthentication) {
             database.release();
         }
         response.json({ message: `${type} envoyé(e) par e-mail.`, isEmailSent: billingExport.document.documentType === "invoice" });
+    }));
+
+    app.post("/api/billing/documents/:documentId/issue", requireAuthentication, requireBillingAdministration, asyncHandler(async (request, response) => {
+        const documentId = positiveId(request.params.documentId);
+        if (!documentId) return response.status(400).json({ message: "Document invalide." });
+        const result = await issueDocument({ ownerId: getAccountOwnerId(request), documentId, actorId: request.user.sub });
+        response.status(result.alreadyIssued ? 200 : 201).json(result);
     }));
 
     app.put("/api/billing/default-quote", requireAuthentication, requireBillingAdministration, asyncHandler(async (request, response) => {
@@ -578,21 +674,20 @@ export function registerBillingRoutes(app, requireAuthentication) {
                 return response.status(409).json({ message: "Une facture existe déjà pour ce devis." });
             }
             const taxIdentity = sourceQuote?.vatRegime ? { vatRegime: normalizeVatRegime(sourceQuote.vatRegime), taxNumber: sourceQuote.issuerTaxNumber || "" } : await billingTaxIdentity(getAccountOwnerId(request));
+            const documentNumber = document.documentType === "invoice" ? draftInvoiceReference() : document.documentNumber;
+            const status = document.documentType === "invoice" ? "draft" : document.status;
             document.lines = applyVatRegime(document.lines, taxIdentity.vatRegime);
             const { rows } = await getPool().query(`
                 INSERT INTO depannhome_billing_documents
-                    (owner_id, created_by, document_type, document_number, client_id, customer_type, customer_name, customer_address, issue_date, due_date, status, is_accounted, accounted_at, appointment_id, source_quote_id, quote_reference, vat_regime, issuer_tax_number, lines, notes, financial_data)
-                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::date,$10::date,$11,$12,CASE WHEN $12 THEN CURRENT_DATE ELSE NULL END,$13,$14,$15,$16,$17,$18::jsonb,$19,$20::jsonb)
-                RETURNING id
-            `, [getAccountOwnerId(request), request.user.sub, document.documentType, document.documentNumber, document.clientId || null, document.customerType, document.customerName,
-                document.customerAddress, document.issueDate, document.dueDate || null, document.status, document.isAccounted, appointment?.id || null, sourceQuote?.id || null, sourceQuote?.documentNumber || "", taxIdentity.vatRegime, taxIdentity.taxNumber, JSON.stringify(document.lines), document.notes, JSON.stringify(document.financialData)]);
+                    (owner_id, created_by, document_type, document_number, client_id, customer_type, customer_name, customer_address, issue_date, due_date, status, is_accounted, accounted_at, appointment_id, source_quote_id, quote_reference, vat_regime, issuer_tax_number, lines, legal_data, issued_at, notes, financial_data)
+                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::date,$10::date,$11,FALSE,NULL,$12,$13,$14,$15,$16,$17::jsonb,$18::jsonb,NULL,$19,$20::jsonb)
+                RETURNING id, document_number AS "documentNumber"
+            `, [getAccountOwnerId(request), request.user.sub, document.documentType, documentNumber, document.clientId || null, document.customerType, document.customerName,
+                document.customerAddress, document.issueDate, document.dueDate || null, status, appointment?.id || null, sourceQuote?.id || null, sourceQuote?.documentNumber || "", taxIdentity.vatRegime, taxIdentity.taxNumber, JSON.stringify(document.lines), JSON.stringify(document.legalData), document.notes, JSON.stringify(document.financialData)]);
             await (await import("./partner-connections.js")).synchronizeConnectedBillingDocument(getAccountOwnerId(request), rows[0].id);
-            const { registerMissionSourceItem } = await import("./partner-dialogue.js"); await registerMissionSourceItem({ ownerId: getAccountOwnerId(request), appointmentId: appointment?.id, sourceType: document.documentType, sourceId: rows[0].id, label: document.documentNumber, details: { status: document.status, issueDate: document.issueDate } });
-            const { recordMissionEventForSource } = await import("./partner-dialogue.js"); await recordMissionEventForSource({ ownerId: getAccountOwnerId(request), sourceType: "appointment", sourceId: appointment?.id, status: document.documentType === "invoice" ? "invoice_created" : "quote_created", action: "billing_document_created", details: { documentId: rows[0].id, documentType: document.documentType, status: document.status }, actorName: request.user.fullName || request.user.username });
-            const posting = document.isAccounted
-                ? await postAccountingDocument({ ownerId: getAccountOwnerId(request), documentId: rows[0].id, actorId: request.user.sub })
-                : null;
-            response.status(201).json({ id: rows[0].id, posting });
+            const { registerMissionSourceItem } = await import("./partner-dialogue.js"); await registerMissionSourceItem({ ownerId: getAccountOwnerId(request), appointmentId: appointment?.id, sourceType: document.documentType, sourceId: rows[0].id, label: rows[0].documentNumber, details: { status, issueDate: document.issueDate } });
+            const { recordMissionEventForSource } = await import("./partner-dialogue.js"); await recordMissionEventForSource({ ownerId: getAccountOwnerId(request), sourceType: "appointment", sourceId: appointment?.id, status: document.documentType === "invoice" ? "invoice_created" : "quote_created", action: "billing_document_created", details: { documentId: rows[0].id, documentType: document.documentType, status }, actorName: request.user.fullName || request.user.username });
+            response.status(201).json({ id: rows[0].id, documentNumber: rows[0].documentNumber });
         } catch (error) {
             if (error.code === "23505") return response.status(409).json({ message: "Ce numéro de document existe déjà dans votre compte." });
             throw error;
@@ -618,19 +713,21 @@ export function registerBillingRoutes(app, requireAuthentication) {
                 return response.status(409).json({ message: "Une facture existe déjà pour ce devis." });
             }
             document.lines = applyVatRegime(document.lines, storedTaxIdentity.vatRegime);
+            const documentNumber = document.documentType === "invoice" ? (storedTaxIdentity.documentType === "invoice" ? storedTaxIdentity.documentNumber : draftInvoiceReference()) : document.documentNumber;
+            const status = document.documentType === "invoice" ? "draft" : document.status;
             const result = await getPool().query(`
                 UPDATE depannhome_billing_documents SET document_type=$3, document_number=$4, client_id=$5, customer_type=$6, customer_name=$7,
-                    customer_address=$8, issue_date=$9::date, due_date=$10::date, status=$11, is_accounted=$12,
-                    accounted_at=CASE WHEN $12 THEN COALESCE(accounted_at, CURRENT_DATE) ELSE NULL END, appointment_id=$13,
-                    source_quote_id=$14, quote_reference=$15, lines=$16::jsonb, notes=$17, financial_data=$18::jsonb, updated_at=NOW()
-                WHERE id=$1 AND owner_id=$2 AND is_accounted=FALSE AND NOT (document_type='invoice' AND is_email_sent=TRUE)
+                    customer_address=$8, issue_date=$9::date, due_date=$10::date, status=$11, is_accounted=FALSE,
+                    accounted_at=NULL, appointment_id=$12, source_quote_id=$13, quote_reference=$14, legal_data=$15::jsonb,
+                    lines=$16::jsonb, notes=$17, financial_data=$18::jsonb, updated_at=NOW()
+                WHERE id=$1 AND owner_id=$2 AND issued_at IS NULL AND is_accounted=FALSE
                     AND NOT EXISTS (SELECT 1 FROM depannhome_accounting_entries entry WHERE entry.owner_id=$2 AND entry.source_type IN ('invoice','credit') AND entry.source_id=id::text)
-            `, [id, getAccountOwnerId(request), document.documentType, document.documentNumber, document.clientId || null, document.customerType, document.customerName,
-                document.customerAddress, document.issueDate, document.dueDate || null, document.status, document.isAccounted, appointment?.id || null, sourceQuote?.id || null, sourceQuote?.documentNumber || "", JSON.stringify(document.lines), document.notes, JSON.stringify(document.financialData)]);
-            if (!result.rowCount) return response.status(409).json({ message: "Une facture envoyée ou un document comptabilisé est immuable. Créez une facture rectificative, un avenant ou un avoir." });
+            `, [id, getAccountOwnerId(request), document.documentType, documentNumber, document.clientId || null, document.customerType, document.customerName,
+                document.customerAddress, document.issueDate, document.dueDate || null, status, appointment?.id || null, sourceQuote?.id || null, sourceQuote?.documentNumber || "", JSON.stringify(document.legalData), JSON.stringify(document.lines), document.notes, JSON.stringify(document.financialData)]);
+            if (!result.rowCount) return response.status(409).json({ message: "Un document émis ou comptabilisé est immuable. Créez une facture rectificative, un avenant ou un avoir." });
             await (await import("./partner-connections.js")).synchronizeConnectedBillingDocument(getAccountOwnerId(request), id);
-            const { registerMissionSourceItem } = await import("./partner-dialogue.js"); await registerMissionSourceItem({ ownerId: getAccountOwnerId(request), appointmentId: appointment?.id, sourceType: document.documentType, sourceId: id, label: document.documentNumber, details: { status: document.status, issueDate: document.issueDate } });
-            const { recordMissionEventForSource } = await import("./partner-dialogue.js"); await recordMissionEventForSource({ ownerId: getAccountOwnerId(request), sourceType: "appointment", sourceId: appointment?.id, status: document.documentType === "invoice" ? "invoice_sent" : "quote_sent", action: "billing_document_updated", details: { documentId: id, documentType: document.documentType, status: document.status }, actorName: request.user.fullName || request.user.username });
+            const { registerMissionSourceItem } = await import("./partner-dialogue.js"); await registerMissionSourceItem({ ownerId: getAccountOwnerId(request), appointmentId: appointment?.id, sourceType: document.documentType, sourceId: id, label: documentNumber, details: { status, issueDate: document.issueDate } });
+            const { recordMissionEventForSource } = await import("./partner-dialogue.js"); await recordMissionEventForSource({ ownerId: getAccountOwnerId(request), sourceType: "appointment", sourceId: appointment?.id, status: document.documentType === "invoice" ? "invoice_created" : "quote_sent", action: "billing_document_updated", details: { documentId: id, documentType: document.documentType, status }, actorName: request.user.fullName || request.user.username });
             response.status(204).end();
         } catch (error) {
             if (error.code === "23505") return response.status(409).json({ message: "Ce numéro de document existe déjà dans votre compte." });
@@ -652,18 +749,16 @@ export function registerBillingRoutes(app, requireAuthentication) {
             `, [id, getAccountOwnerId(request)]);
             const source = rows[0];
             if (!source) { await database.query("ROLLBACK"); return response.status(404).json({ message: "Facture introuvable." }); }
-            if (source.document_type !== "invoice" || !source.is_email_sent) { await database.query("ROLLBACK"); return response.status(409).json({ message: "Seule une facture déjà envoyée peut servir de base à cette correction." }); }
+            if (source.document_type !== "invoice" || !source.issued_at) { await database.query("ROLLBACK"); return response.status(409).json({ message: "Seule une facture définitivement émise peut servir de base à cette correction." }); }
             if (source.is_accounted || source.has_entry || source.has_settlement) { await database.query("ROLLBACK"); return response.status(409).json({ message: "Cette facture est comptabilisée ou réglée. Créez obligatoirement un avoir comptable." }); }
             if (String(source.status).toLowerCase() === "cancelled") { await database.query("ROLLBACK"); return response.status(409).json({ message: "Cette facture a déjà été annulée et remplacée." }); }
-            const count = await database.query("SELECT COUNT(*)::int AS total FROM depannhome_billing_documents WHERE owner_id=$1 AND correction_source_id=$2 AND correction_kind=$3", [source.owner_id, source.id, kind]);
-            const suffix = kind === "replacement" ? "RECT" : "AVN";
-            const documentNumber = `${source.document_number}-${suffix}-${String(count.rows[0].total + 1).padStart(2, "0")}`.slice(0, 80);
+            const documentNumber = draftInvoiceReference();
             const created = await database.query(`
                 INSERT INTO depannhome_billing_documents
-                    (owner_id,created_by,document_type,document_number,client_id,customer_type,customer_name,customer_address,issue_date,due_date,status,is_email_sent,sent_at,is_accounted,accounted_at,appointment_id,source_quote_id,correction_source_id,correction_kind,quote_reference,vat_regime,issuer_tax_number,lines,notes,financial_data)
-                VALUES ($1,$2,'invoice',$3,$4,$5,$6,$7,CURRENT_DATE,$8,'draft',FALSE,NULL,FALSE,NULL,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+                    (owner_id,created_by,document_type,document_number,client_id,customer_type,customer_name,customer_address,issue_date,due_date,status,is_email_sent,sent_at,is_accounted,accounted_at,appointment_id,source_quote_id,correction_source_id,correction_kind,quote_reference,vat_regime,issuer_tax_number,lines,legal_data,notes,financial_data)
+                VALUES ($1,$2,'invoice',$3,$4,$5,$6,$7,CURRENT_DATE,$8,'draft',FALSE,NULL,FALSE,NULL,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
                 RETURNING id
-            `, [source.owner_id, request.user.sub, documentNumber, source.client_id, source.customer_type, source.customer_name, source.customer_address, source.due_date, source.appointment_id, source.source_quote_id, source.id, kind, source.quote_reference, source.vat_regime, source.issuer_tax_number, source.lines, source.notes, source.financial_data]);
+            `, [source.owner_id, request.user.sub, documentNumber, source.client_id, source.customer_type, source.customer_name, source.customer_address, source.due_date, source.appointment_id, source.source_quote_id, source.id, kind, source.quote_reference, source.vat_regime, source.issuer_tax_number, source.lines, source.legal_data, source.notes, source.financial_data]);
             await database.query("UPDATE depannhome_billing_documents SET status='cancelled', updated_at=NOW() WHERE id=$1", [source.id]);
             await database.query("COMMIT");
             response.status(201).json({ id: created.rows[0].id, documentNumber });
@@ -689,6 +784,103 @@ export function registerBillingRoutes(app, requireAuthentication) {
         if (!id) return response.status(400).json({ message: "Document invalide." });
         response.status(409).json({ message: "Les devis, factures et avoirs sont conservés et ne peuvent pas être supprimés." });
     }));
+}
+
+export async function issueDocument({ ownerId, documentId, actorId, pool = getPool() }) {
+    const database = await pool.connect();
+    try {
+        await database.query("BEGIN");
+        const { rows } = await database.query(`
+            SELECT document.id, document.owner_id AS "ownerId", document.document_type AS "documentType", document.document_number AS "documentNumber",
+                document.client_id AS "clientId", document.customer_type AS "customerType", document.customer_name AS "customerName", document.customer_address AS "customerAddress",
+                TO_CHAR(document.issue_date,'YYYY-MM-DD') AS "issueDate", TO_CHAR(document.due_date,'YYYY-MM-DD') AS "dueDate", document.status,
+                document.appointment_id AS "appointmentId", document.source_quote_id AS "sourceQuoteId", document.correction_source_id AS "correctionSourceId",
+                document.correction_kind AS "correctionKind", document.quote_reference AS "quoteReference", document.vat_regime AS "vatRegime",
+                document.issuer_tax_number AS "issuerTaxNumber", document.legal_data AS "legalData", document.issued_at AS "issuedAt",
+                document.lines, document.notes, document.financial_data AS "financialData",
+                (SELECT client.client_data FROM depannhome_clients client WHERE client.owner_id=document.owner_id AND client.client_id=document.client_id) AS "clientData"
+            FROM depannhome_billing_documents document
+            WHERE document.id=$1 AND document.owner_id=$2
+            FOR UPDATE
+        `, [documentId, ownerId]);
+        const document = rows[0];
+        if (!document) throw billingError(404, "Facture introuvable.");
+        if (document.documentType !== "invoice") throw billingError(409, "Seule une facture brouillon peut être émise définitivement.");
+        if (document.issuedAt) {
+            await database.query("COMMIT");
+            return { id: document.id, documentNumber: document.documentNumber, issuedAt: document.issuedAt, alreadyIssued: true };
+        }
+        if (String(document.status || "").toLowerCase() !== "draft") throw billingError(409, "La facture doit être enregistrée comme brouillon avant son émission définitive.");
+
+        const profile = await loadBillingPdfProfile(ownerId, database);
+        validateInvoiceForIssue(document, profile);
+        const seriesYear = Number(String(document.issueDate).slice(0, 4));
+        const documentNumber = await allocateBillingNumber(database, ownerId, "invoice", seriesYear);
+        const finalDocument = { ...document, documentNumber, status: "issued" };
+        const { structuredData, structuredSha256, pdfData, pdfSha256, legalSnapshot } = await buildBillingLegalArchive(finalDocument, { profile });
+        const issued = await database.query(`
+            UPDATE depannhome_billing_documents SET
+                document_number=$3, status='issued', issued_at=NOW(), finalized_by=$4, legal_snapshot=$5::jsonb,
+                structured_data=$6, structured_mime_type='application/xml; charset=utf-8', structured_sha256=$7,
+                pdf_data=$8, pdf_sha256=$9, updated_at=NOW()
+            WHERE id=$1 AND owner_id=$2 AND issued_at IS NULL
+            RETURNING document_number AS "documentNumber", issued_at AS "issuedAt"
+        `, [documentId, ownerId, documentNumber, actorId, JSON.stringify(legalSnapshot), structuredData, structuredSha256, pdfData, pdfSha256]);
+        await database.query("COMMIT");
+        return { id: documentId, documentNumber: issued.rows[0].documentNumber, issuedAt: issued.rows[0].issuedAt, alreadyIssued: false, hasStructuredData: true, hasPdfArchive: true };
+    } catch (error) {
+        await database.query("ROLLBACK");
+        throw error;
+    } finally {
+        database.release();
+    }
+}
+
+export async function buildBillingLegalArchive(document, { ownerId, database, profile } = {}) {
+    const resolvedProfile = profile || await loadBillingPdfProfile(ownerId, database || getPool());
+    const structuredData = generateUblInvoice(document, resolvedProfile);
+    const pdfData = await createBillingPdf(document, resolvedProfile);
+    return {
+        legalSnapshot: buildLegalSnapshot(document, resolvedProfile),
+        structuredData,
+        structuredMimeType: "application/xml; charset=utf-8",
+        structuredSha256: sha256(structuredData),
+        pdfData,
+        pdfSha256: sha256(pdfData)
+    };
+}
+
+function validateInvoiceForIssue(document, profile) {
+    const missing = [];
+    const legal = document.legalData || {};
+    if (!cleanText(profile.companyName, 160)) missing.push("nom de l’entreprise émettrice");
+    if (!cleanText(profile.address, 255)) missing.push("adresse de l’entreprise émettrice");
+    if (!cleanIdentifier(profile.registrationNumber, 20, true) && !cleanIdentifier(profile.siren, 20, true)) missing.push("SIRET ou SIREN de l’entreprise émettrice");
+    if (!cleanText(document.customerName, 160)) missing.push("nom du client");
+    if (!cleanText(legal.billingAddress || document.customerAddress, 500)) missing.push("adresse de facturation du client");
+    if (!sanitizeDate(legal.serviceDate)) missing.push("date de livraison ou de prestation");
+    if (!OPERATION_CATEGORIES.has(legal.operationCategory)) missing.push("catégorie d’opération");
+    if (document.customerType === "Professionnel" && !cleanIdentifier(legal.customerSiren, 20, true)) missing.push("SIREN du client professionnel");
+    if (missing.length) throw billingError(409, `Émission impossible : renseignez ${missing.join(", ")}.`);
+}
+
+function buildLegalSnapshot(document, profile) {
+    return {
+        document: {
+            id: document.id, documentType: document.documentType, documentNumber: document.documentNumber, clientId: document.clientId,
+            customerType: document.customerType, customerName: document.customerName, customerAddress: document.customerAddress,
+            issueDate: document.issueDate, dueDate: document.dueDate, quoteReference: document.quoteReference, vatRegime: document.vatRegime,
+            issuerTaxNumber: document.issuerTaxNumber, legalData: document.legalData, lines: document.lines, notes: document.notes,
+            financialData: document.financialData, sourceInvoiceId: document.sourceInvoiceId, sourceInvoiceNumber: document.sourceInvoiceNumber,
+            sourceInvoiceDate: document.sourceInvoiceDate, reason: document.reason
+        },
+        seller: {
+            companyName: profile.companyName, legalForm: profile.legalForm, address: profile.address, postalCode: profile.postalCode, city: profile.city,
+            country: profile.country, registrationNumber: profile.registrationNumber, siren: profile.siren, taxNumber: profile.taxNumber,
+            vatRegime: profile.vatRegime, paymentTerms: profile.paymentTerms, earlyPaymentDiscountTerms: profile.earlyPaymentDiscountTerms,
+            latePaymentPenaltyTerms: profile.latePaymentPenaltyTerms, recoveryIndemnityCents: profile.recoveryIndemnityCents, vatOnDebits: profile.vatOnDebits
+        }
+    };
 }
 
 function requireBillingAdministration(request, response, next) {
@@ -731,7 +923,7 @@ export function billingUploadErrorHandler(error, request, response, next) {
 }
 
 function emptyProfile() {
-    return { companyName: "", legalForm: "", address: "", postalCode: "", city: "", phone: "", secondaryPhone: "", email: "", country: "France", registrationNumber: "", siren: "", taxNumber: "", vatRegime: "standard", bankIban: "", bankBic: "", paymentTerms: "", depositTerms: "", footerNote: "", defaultQuote: null, quoteTemplateConfig: { ...DEFAULT_DOCUMENT_TEMPLATE }, quoteTemplateMode: "integrated", quoteTemplateFilename: "", hasQuoteTemplate: false, quoteTemplatePolicy: "company_choice", quitusTemplate: { ...DEFAULT_DOCUMENT_TEMPLATE, primaryColor: "#003b73" }, quitusTemplateMode: "integrated", quitusTemplateFilename: "", hasQuitusTemplate: false, quitusTemplatePolicy: "company_choice", reportFileTemplateMode: "integrated", reportFileTemplateFilename: "", hasReportFileTemplate: false, reportTemplatePolicy: "company_choice", hasLogo: false };
+    return { companyName: "", legalForm: "", address: "", postalCode: "", city: "", phone: "", secondaryPhone: "", email: "", country: "France", registrationNumber: "", siren: "", taxNumber: "", vatRegime: "standard", bankIban: "", bankBic: "", paymentTerms: "", depositTerms: "", earlyPaymentDiscountTerms: DEFAULT_EARLY_PAYMENT_DISCOUNT_TERMS, latePaymentPenaltyTerms: DEFAULT_LATE_PAYMENT_PENALTY_TERMS, recoveryIndemnityCents: 4000, vatOnDebits: false, footerNote: "", defaultQuote: null, quoteTemplateConfig: { ...DEFAULT_DOCUMENT_TEMPLATE }, quoteTemplateMode: "integrated", quoteTemplateFilename: "", hasQuoteTemplate: false, quoteTemplatePolicy: "company_choice", quitusTemplate: { ...DEFAULT_DOCUMENT_TEMPLATE, primaryColor: "#003b73" }, quitusTemplateMode: "integrated", quitusTemplateFilename: "", hasQuitusTemplate: false, quitusTemplatePolicy: "company_choice", reportFileTemplateMode: "integrated", reportFileTemplateFilename: "", hasReportFileTemplate: false, reportTemplatePolicy: "company_choice", hasLogo: false };
 }
 
 async function getTemplatePolicy(ownerId, definition) { const { rows } = await getPool().query(`SELECT ${definition.policyColumn} AS policy FROM depannhome_users WHERE id=$1`, [ownerId]); return QUOTE_TEMPLATE_POLICIES.has(rows[0]?.policy) ? rows[0].policy : "company_choice"; }
@@ -741,8 +933,8 @@ async function getQuoteTemplatePolicy(accountOwnerId) {
     return QUOTE_TEMPLATE_POLICIES.has(rows[0]?.quote_template_policy) ? rows[0].quote_template_policy : "company_choice";
 }
 
-async function loadBillingPdfProfile(ownerId) {
-    const { rows } = await getPool().query(`SELECT owner.id AS "ownerId",profile.company_name AS "companyName",profile.legal_form AS "legalForm",profile.address,profile.postal_code AS "postalCode",profile.city,profile.phone,profile.email,profile.registration_number AS "registrationNumber",profile.siren,profile.tax_number AS "taxNumber",profile.vat_regime AS "vatRegime",profile.bank_iban AS "bankIban",profile.bank_bic AS "bankBic",profile.payment_terms AS "paymentTerms",profile.deposit_terms AS "depositTerms",profile.footer_note AS "footerNote",profile.logo_data AS "logoData",profile.logo_mime_type AS "logoMimeType",profile.quote_template_config AS "quoteTemplateConfig",profile.quote_template_mode AS "quoteTemplateMode",profile.quote_template_filename AS "quoteTemplateFilename",profile.quote_template_data AS "quoteTemplateData",profile.quote_template_mime_type AS "quoteTemplateMimeType",owner.quote_template_policy AS "quoteTemplatePolicy" FROM depannhome_users owner LEFT JOIN depannhome_billing_profiles profile ON profile.owner_id=owner.id WHERE owner.id=$1`, [ownerId]);
+async function loadBillingPdfProfile(ownerId, database = getPool()) {
+    const { rows } = await database.query(`SELECT owner.id AS "ownerId",profile.company_name AS "companyName",profile.legal_form AS "legalForm",profile.address,profile.postal_code AS "postalCode",profile.city,profile.phone,profile.email,profile.country,profile.registration_number AS "registrationNumber",profile.siren,profile.tax_number AS "taxNumber",profile.vat_regime AS "vatRegime",profile.bank_iban AS "bankIban",profile.bank_bic AS "bankBic",profile.payment_terms AS "paymentTerms",profile.deposit_terms AS "depositTerms",profile.early_payment_discount_terms AS "earlyPaymentDiscountTerms",profile.late_payment_penalty_terms AS "latePaymentPenaltyTerms",profile.recovery_indemnity_cents AS "recoveryIndemnityCents",profile.vat_on_debits AS "vatOnDebits",profile.footer_note AS "footerNote",profile.logo_data AS "logoData",profile.logo_mime_type AS "logoMimeType",profile.quote_template_config AS "quoteTemplateConfig",profile.quote_template_mode AS "quoteTemplateMode",profile.quote_template_filename AS "quoteTemplateFilename",profile.quote_template_data AS "quoteTemplateData",profile.quote_template_mime_type AS "quoteTemplateMimeType",owner.quote_template_policy AS "quoteTemplatePolicy" FROM depannhome_users owner LEFT JOIN depannhome_billing_profiles profile ON profile.owner_id=owner.id WHERE owner.id=$1`, [ownerId]);
     return { ...emptyProfile(), ...(rows[0] || {}) };
 }
 
@@ -825,7 +1017,11 @@ function sanitizeProfile(value) {
         companyName: cleanText(value?.companyName, 160), legalForm: cleanText(value?.legalForm, 100), address: cleanText(value?.address, 255),
         postalCode: cleanText(value?.postalCode, 20), city: cleanText(value?.city, 100), phone: cleanText(value?.phone, 50), secondaryPhone: cleanText(value?.secondaryPhone, 50),
         email: cleanText(value?.email, 160), country: cleanText(value?.country, 100) || "France", registrationNumber: cleanText(value?.registrationNumber, 100), siren: cleanText(value?.siren, 20), taxNumber: cleanText(value?.taxNumber, 100), vatRegime: normalizeVatRegime(value?.vatRegime), bankIban: cleanText(value?.bankIban, 80), bankBic: cleanText(value?.bankBic, 40),
-        paymentTerms: cleanText(value?.paymentTerms, 500), depositTerms: cleanText(value?.depositTerms, 500), footerNote: cleanText(value?.footerNote, 1000)
+        paymentTerms: cleanText(value?.paymentTerms, 500), depositTerms: cleanText(value?.depositTerms, 500),
+        earlyPaymentDiscountTerms: cleanText(value?.earlyPaymentDiscountTerms, 500) || DEFAULT_EARLY_PAYMENT_DISCOUNT_TERMS,
+        latePaymentPenaltyTerms: cleanText(value?.latePaymentPenaltyTerms, 1000) || DEFAULT_LATE_PAYMENT_PENALTY_TERMS,
+        recoveryIndemnityCents: Math.round(nonNegativeNumber(value?.recoveryIndemnityCents) ?? 4000), vatOnDebits: value?.vatOnDebits === true || value?.vatOnDebits === "true" || value?.vatOnDebits === "on",
+        footerNote: cleanText(value?.footerNote, 1000)
     };
 }
 
@@ -849,18 +1045,33 @@ function sanitizeDocument(value) {
     const customerAddress = cleanText(value?.customerAddress, 500);
     const issueDate = sanitizeDate(value?.issueDate);
     const dueDate = value?.dueDate ? sanitizeDate(value.dueDate) : "";
-    const status = cleanText(value?.status, 30) || "draft";
-    const isAccounted = documentType === "invoice" && value?.isAccounted === "on" && !["draft", "cancelled", "rejected"].includes(status.toLowerCase());
+    const status = documentType === "invoice" ? "draft" : cleanText(value?.status, 30) || "draft";
+    const isAccounted = false;
     const appointmentId = positiveId(value?.appointmentId);
     const sourceQuoteId = documentType === "invoice" ? positiveId(value?.sourceQuoteId) : 0;
     const notes = cleanText(value?.notes, 2000);
     const lines = sanitizeLines(value?.lines);
     const financialData = sanitizeFinancialData(value?.financialData);
-    if (!documentType || !documentNumber || !issueDate) return { ok: false, message: "Le type, le numéro et la date sont obligatoires." };
+    const legalData = sanitizeLegalData(value?.legalData, customerAddress);
+    if (!documentType || (documentType === "quote" && !documentNumber) || !issueDate) return { ok: false, message: "Le type, le numéro du devis et la date sont obligatoires." };
     if (!customerName) return { ok: false, message: "Le nom du client est obligatoire." };
     if (!lines.length) return { ok: false, message: "Ajoutez au moins une ligne." };
     if (value?.dueDate && !dueDate) return { ok: false, message: "La date d'échéance est invalide." };
-    return { ok: true, documentType, documentNumber, clientId, customerType, customerName, customerAddress, issueDate, dueDate, status, isAccounted, appointmentId, sourceQuoteId, lines, notes, financialData };
+    return { ok: true, documentType, documentNumber, clientId, customerType, customerName, customerAddress, issueDate, dueDate, status, isAccounted, appointmentId, sourceQuoteId, lines, notes, financialData, legalData };
+}
+
+function sanitizeLegalData(value, customerAddress = "") {
+    const input = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+    const serviceDate = input.serviceDate ? sanitizeDate(input.serviceDate) : "";
+    return {
+        customerSiren: cleanIdentifier(input.customerSiren, 20, true),
+        customerVatNumber: cleanIdentifier(input.customerVatNumber, 40),
+        billingAddress: cleanText(input.billingAddress, 500) || customerAddress,
+        deliveryAddress: cleanText(input.deliveryAddress, 500),
+        serviceDate,
+        purchaseOrderReference: cleanText(input.purchaseOrderReference, 80),
+        operationCategory: OPERATION_CATEGORIES.has(input.operationCategory) ? input.operationCategory : "services"
+    };
 }
 
 function sanitizeDocumentPreview(value) {
@@ -939,7 +1150,11 @@ export function buildBillingFinancialDashboard(documents, settlements = [], purc
 }
 function roundFinancial(value) { return Math.round((Number(value) || 0) * 100) / 100; }
 async function billingTaxIdentity(ownerId) { const { rows } = await getPool().query("SELECT vat_regime AS \"vatRegime\",tax_number AS \"taxNumber\" FROM depannhome_billing_profiles WHERE owner_id=$1", [ownerId]); return { vatRegime: normalizeVatRegime(rows[0]?.vatRegime), taxNumber: cleanText(rows[0]?.taxNumber, 100) }; }
-async function documentTaxIdentity(ownerId, documentId) { const { rows } = await getPool().query("SELECT vat_regime AS \"vatRegime\",issuer_tax_number AS \"taxNumber\",correction_source_id AS \"correctionSourceId\" FROM depannhome_billing_documents WHERE owner_id=$1 AND id=$2", [ownerId, documentId]); return rows[0] ? { vatRegime: normalizeVatRegime(rows[0].vatRegime), taxNumber: cleanText(rows[0].taxNumber, 100), correctionSourceId: rows[0].correctionSourceId || null } : null; }
+async function documentTaxIdentity(ownerId, documentId) { const { rows } = await getPool().query("SELECT document_type AS \"documentType\",document_number AS \"documentNumber\",vat_regime AS \"vatRegime\",issuer_tax_number AS \"taxNumber\",correction_source_id AS \"correctionSourceId\" FROM depannhome_billing_documents WHERE owner_id=$1 AND id=$2", [ownerId, documentId]); return rows[0] ? { documentType: rows[0].documentType, documentNumber: rows[0].documentNumber, vatRegime: normalizeVatRegime(rows[0].vatRegime), taxNumber: cleanText(rows[0].taxNumber, 100), correctionSourceId: rows[0].correctionSourceId || null } : null; }
+
+function draftInvoiceReference() { return `BROUILLON-FAC-${crypto.randomUUID()}`; }
+function sha256(value) { return crypto.createHash("sha256").update(value).digest("hex"); }
+function billingError(status, message) { const error = new Error(message); error.status = status; return error; }
 
 function sanitizeDate(value) {
     const date = String(value || "");
@@ -965,6 +1180,15 @@ function cleanText(value, maximumLength) {
     return String(value || "").replace(/\s+/g, " ").trim().slice(0, maximumLength);
 }
 
+function cleanIdentifier(value, maximumLength, digitsOnly = false) {
+    const pattern = digitsOnly ? /[^0-9]/g : /[^A-Za-z0-9]/g;
+    return String(value || "").replace(pattern, "").toUpperCase().slice(0, maximumLength);
+}
+
+function normalizeAddress(value) {
+    return String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/gi, "").toLowerCase();
+}
+
 function sanitizeEmailRecipient(value) {
     const recipient = String(value || "").trim().slice(0, 254);
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient) ? recipient : "";
@@ -978,7 +1202,7 @@ async function getBillingExport(request) {
         database.query(`
             SELECT id, document_type AS "documentType", document_number AS "documentNumber", client_id AS "clientId", customer_type AS "customerType",
                 customer_name AS "customerName", customer_address AS "customerAddress", TO_CHAR(issue_date, 'YYYY-MM-DD') AS "issueDate",
-                TO_CHAR(due_date, 'YYYY-MM-DD') AS "dueDate", status, is_email_sent AS "isEmailSent", sent_at AS "sentAt", correction_source_id AS "correctionSourceId", correction_kind AS "correctionKind", (SELECT source.document_number FROM depannhome_billing_documents source WHERE source.id=depannhome_billing_documents.correction_source_id) AS "correctionSourceNumber", quote_reference AS "quoteReference", vat_regime AS "vatRegime", issuer_tax_number AS "issuerTaxNumber", lines, notes, financial_data AS "financialData",
+                TO_CHAR(due_date, 'YYYY-MM-DD') AS "dueDate", status, is_email_sent AS "isEmailSent", sent_at AS "sentAt", issued_at AS "issuedAt", correction_source_id AS "correctionSourceId", correction_kind AS "correctionKind", (SELECT source.document_number FROM depannhome_billing_documents source WHERE source.id=depannhome_billing_documents.correction_source_id) AS "correctionSourceNumber", quote_reference AS "quoteReference", vat_regime AS "vatRegime", issuer_tax_number AS "issuerTaxNumber", legal_data AS "legalData", lines, notes, financial_data AS "financialData",
                 (SELECT client.client_data FROM depannhome_clients client WHERE client.owner_id=depannhome_billing_documents.owner_id AND client.client_id=depannhome_billing_documents.client_id) AS "clientData"
                         FROM depannhome_billing_documents
                         WHERE id = $1 AND owner_id = $2
@@ -1001,7 +1225,7 @@ async function getBillingExport(request) {
                 `, [id, getAccountOwnerId(request), request.user?.role || "", request.user?.sub || 0]),
         database.query(`
             SELECT owner.id AS "ownerId", profile.company_name AS "companyName", profile.legal_form AS "legalForm", profile.address, profile.postal_code AS "postalCode", profile.city, profile.phone, profile.email,
-                profile.registration_number AS "registrationNumber", profile.siren, profile.tax_number AS "taxNumber", profile.vat_regime AS "vatRegime", profile.bank_iban AS "bankIban", profile.bank_bic AS "bankBic", profile.payment_terms AS "paymentTerms", profile.deposit_terms AS "depositTerms",
+                profile.registration_number AS "registrationNumber", profile.siren, profile.tax_number AS "taxNumber", profile.vat_regime AS "vatRegime", profile.bank_iban AS "bankIban", profile.bank_bic AS "bankBic", profile.payment_terms AS "paymentTerms", profile.deposit_terms AS "depositTerms", profile.early_payment_discount_terms AS "earlyPaymentDiscountTerms", profile.late_payment_penalty_terms AS "latePaymentPenaltyTerms", profile.recovery_indemnity_cents AS "recoveryIndemnityCents", profile.vat_on_debits AS "vatOnDebits",
                 profile.footer_note AS "footerNote", profile.logo_data AS "logoData", profile.logo_mime_type AS "logoMimeType", profile.quote_template_config AS "quoteTemplateConfig",
                 profile.quote_template_mode AS "quoteTemplateMode", profile.quote_template_filename AS "quoteTemplateFilename", profile.quote_template_data AS "quoteTemplateData", profile.quote_template_mime_type AS "quoteTemplateMimeType", owner.quote_template_policy AS "quoteTemplatePolicy"
             FROM depannhome_users owner LEFT JOIN depannhome_billing_profiles profile ON profile.owner_id=owner.id WHERE owner.id = $1
@@ -1012,9 +1236,15 @@ async function getBillingExport(request) {
 }
 
 function billingPdfFileName(document) {
-    const type = document.documentType === "invoice" ? "facture" : "devis";
+    const type = document.documentType === "credit" ? "avoir" : document.documentType === "invoice" ? "facture" : "devis";
     const number = String(document.documentNumber || "document").replace(/[^a-z0-9_-]+/gi, "-").replace(/^-+|-+$/g, "");
     return `${type}-${number || "document"}.pdf`;
+}
+
+function ublFileName(document) {
+    const type = document.documentType === "credit" ? "avoir" : "facture";
+    const number = String(document.documentNumber || "document").replace(/[^a-z0-9_-]+/gi, "-").replace(/^-+|-+$/g, "");
+    return `${type}-${number || "document"}-ubl.xml`;
 }
 
 export async function createBillingDocumentOutput(document, profile) {
@@ -1027,7 +1257,8 @@ function billingTemplateValues(document, profile) {
     const totalHt = (document.lines || []).reduce((sum, line) => sum + Number(line.quantity || 0) * Number(line.unitPrice || 0), 0);
     const totalTva = (document.lines || []).reduce((sum, line) => sum + Number(line.quantity || 0) * Number(line.unitPrice || 0) * Number(line.vatRate || 0) / 100, 0);
     const money = value => new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" }).format(value || 0);
-    return { type_document: document.documentType === "invoice" ? "Facture" : "Devis", numero: document.documentNumber, date: document.issueDate, echeance: document.dueDate || "", client_nom: document.customerName, client_adresse: document.customerAddress, entreprise_nom: profile.companyName, entreprise_adresse: [profile.address, profile.postalCode, profile.city].filter(Boolean).join(" "), entreprise_telephone: profile.phone, entreprise_email: profile.email, siret: profile.registrationNumber, siren: profile.siren, numero_tva: document.issuerTaxNumber || profile.taxNumber, conditions: document.notes || profile.paymentTerms, lignes: (document.lines || []).map(line => `${line.description} | ${line.quantity} ${line.unit} | ${money(Number(line.unitPrice))} HT | TVA ${line.vatRate || 0} %`).join("\n"), total_ht: money(totalHt), total_tva: money(totalTva), total_ttc: money(totalHt + totalTva) };
+    const legal = document.legalData && typeof document.legalData === "object" ? document.legalData : {};
+    return { type_document: document.documentType === "invoice" ? "Facture" : "Devis", numero: document.documentNumber, date: document.issueDate, echeance: document.dueDate || "", client_nom: document.customerName, client_adresse: legal.billingAddress || document.customerAddress, client_siren: legal.customerSiren || "", client_tva: legal.customerVatNumber || "", adresse_livraison: legal.deliveryAddress || "", date_prestation: legal.serviceDate || "", reference_commande: legal.purchaseOrderReference || "", categorie_operation: ({ goods: "Livraison de biens", services: "Prestation de services", mixed: "Livraison de biens et prestation de services" })[legal.operationCategory] || "Prestation de services", entreprise_nom: profile.companyName, entreprise_adresse: [profile.address, profile.postalCode, profile.city].filter(Boolean).join(" "), entreprise_telephone: profile.phone, entreprise_email: profile.email, siret: profile.registrationNumber, siren: profile.siren, numero_tva: document.issuerTaxNumber || profile.taxNumber, conditions: document.notes || profile.paymentTerms, lignes: (document.lines || []).map(line => `${line.description} | ${line.quantity} ${line.unit} | ${money(Number(line.unitPrice))} HT | TVA ${line.vatRate || 0} %`).join("\n"), total_ht: money(totalHt), total_tva: money(totalTva), total_ttc: money(totalHt + totalTva) };
 }
 
 export function createBillingPdf(document, profile) {
@@ -1058,9 +1289,11 @@ export function createBillingPdf(document, profile) {
         const vatRegime = normalizeVatRegime(document.vatRegime || profile.vatRegime);
         const isVatFranchise = vatRegime === "franchise";
         const issuerTaxNumber = document.issuerTaxNumber || profile.taxNumber || "";
+        const legalData = document.legalData && typeof document.legalData === "object" ? document.legalData : {};
         const exactTotals = document.exactTotals && typeof document.exactTotals === "object" ? document.exactTotals : null;
-        const totalHt = exactTotals ? Number(exactTotals.taxBaseCents || 0) / 100 : (document.lines || []).reduce((sum, item) => sum + Number(item.quantity || 0) * Number(item.unitPrice || 0), 0);
-        let grossVat = isVatFranchise ? 0 : (document.lines || []).reduce((sum, item) => sum + Number(item.quantity || 0) * Number(item.unitPrice || 0) * Number(item.vatRate || 0) / 100, 0);
+        const lineAmount = item => Number(item.quantity || 0) * Number(item.unitPrice || 0);
+        const totalHt = exactTotals ? Number(exactTotals.taxBaseCents || 0) / 100 : (document.lines || []).reduce((sum, item) => sum + (isCredit ? Math.abs(lineAmount(item)) : lineAmount(item)), 0);
+        let grossVat = isVatFranchise ? 0 : (document.lines || []).reduce((sum, item) => sum + (isCredit ? Math.abs(lineAmount(item)) : lineAmount(item)) * Number(item.vatRate || 0) / 100, 0);
         if (exactTotals) grossVat = Number(exactTotals.vatAmountCents || 0) / 100;
         const discountAmount = Math.min(totalHt, financialData.discountMode === "percentage" ? totalHt * Number(financialData.discountAmount || 0) / 100 : Number(financialData.discountAmount || 0));
         const totalVat = totalHt ? grossVat * (totalHt - discountAmount) / totalHt : 0;
@@ -1091,16 +1324,19 @@ export function createBillingPdf(document, profile) {
         }
 
         const partyY = pdf.y;
-        pdf.rect(margin, partyY, 225, 82).fill("#f0f2f4");
-        pdf.rect(margin + contentWidth - 225, partyY, 225, 82).fill("#f0f2f4");
+        const partyHeight = 112;
+        pdf.rect(margin, partyY, 225, partyHeight).fill("#f0f2f4");
+        pdf.rect(margin + contentWidth - 225, partyY, 225, partyHeight).fill("#f0f2f4");
         text("ÉMETTEUR", margin + 12, partyY + 10, 200, { size: 8, bold: true });
         text([profile.companyName || "Votre structure", profile.registrationNumber ? `SIRET ${profile.registrationNumber}` : "", !isVatFranchise && issuerTaxNumber ? `TVA intracom. ${issuerTaxNumber}` : "", isVatFranchise ? VAT_FRANCHISE_MENTION : ""].filter(Boolean).join("\n"), margin + 12, partyY + 24, 200, { size: 9, lineGap: 2 });
         text("CLIENT", margin + contentWidth - 213, partyY + 10, 200, { size: 8, bold: true });
-        text([document.customerName, document.customerAddress].filter(Boolean).join("\n"), margin + contentWidth - 213, partyY + 24, 200, { size: 9, lineGap: 2 });
-        pdf.y = partyY + 100;
+        text([document.customerName, legalData.billingAddress || document.customerAddress, legalData.customerSiren ? `SIREN ${legalData.customerSiren}` : "", legalData.customerVatNumber ? `TVA intracom. ${legalData.customerVatNumber}` : ""].filter(Boolean).join("\n"), margin + contentWidth - 213, partyY + 24, 200, { size: 9, lineGap: 2 });
+        pdf.y = partyY + partyHeight + 18;
         text("OBJET / PRESTATION", margin, pdf.y, contentWidth, { size: 8, bold: true });
-        text(isCredit ? `Avoir relatif à la facture ${document.sourceInvoiceNumber || "d’origine"}${document.sourceInvoiceDate ? ` du ${formatDate(document.sourceInvoiceDate)}` : ""}${document.reason ? ` · ${document.reason}` : ""}` : document.documentType === "invoice" ? "Prestation facturée" : "Proposition de prestation", margin, pdf.y + 12, contentWidth, { size: 9 });
-        pdf.y += 32;
+        const operationLabel = ({ goods: "Livraison de biens", services: "Prestation de services", mixed: "Livraison de biens et prestation de services" })[legalData.operationCategory] || "Prestation de services";
+        const objectDetails = [isCredit ? `Avoir relatif à la facture ${document.sourceInvoiceNumber || "d’origine"}${document.sourceInvoiceDate ? ` du ${formatDate(document.sourceInvoiceDate)}` : ""}${document.reason ? ` · ${document.reason}` : ""}` : operationLabel, legalData.serviceDate ? `Date de livraison / prestation : ${formatDate(legalData.serviceDate)}` : "", legalData.purchaseOrderReference ? `Bon de commande : ${legalData.purchaseOrderReference}` : "", legalData.deliveryAddress && normalizeAddress(legalData.deliveryAddress) !== normalizeAddress(legalData.billingAddress || document.customerAddress) ? `Adresse de livraison : ${legalData.deliveryAddress}` : ""].filter(Boolean).join("\n");
+        text(objectDetails, margin, pdf.y + 12, contentWidth, { size: 9, lineGap: 2 });
+        pdf.y += Math.max(32, pdf.heightOfString(objectDetails, { width: contentWidth, fontSize: 9, lineGap: 2 }) + 22);
 
         const columns = [margin, margin + 205, margin + 255, margin + 300, margin + 390, margin + 440];
         const drawTableHeader = () => {
@@ -1120,9 +1356,9 @@ export function createBillingPdf(document, profile) {
             text(item.description, columns[0] + 5, y + 6, 190, { size: 8, lineGap: 2 });
             text(item.quantity, columns[1] + 3, y + 6, 40, { size: 8, align: "right" });
             text(item.unit, columns[2] + 4, y + 6, 34, { size: 8 });
-            text(formatMoney(item.unitPrice), columns[3] + 3, y + 6, 76, { size: 8, align: "right" });
+            text(formatMoney(isCredit ? Math.abs(Number(item.unitPrice || 0)) : item.unitPrice), columns[3] + 3, y + 6, 76, { size: 8, align: "right" });
             text(`${isVatFranchise ? 0 : item.vatRate || 0} %`, columns[4] + 3, y + 6, 38, { size: 8, align: "right" });
-            text(formatMoney(Number(item.quantity || 0) * Number(item.unitPrice || 0)), columns[5] + 3, y + 6, 60, { size: 8, align: "right" });
+            text(formatMoney(isCredit ? Math.abs(lineAmount(item)) : lineAmount(item)), columns[5] + 3, y + 6, 60, { size: 8, align: "right" });
             pdf.y += rowHeight;
         });
 
@@ -1133,7 +1369,11 @@ export function createBillingPdf(document, profile) {
         const conditions = [
             isCredit ? `Motif : ${document.reason || document.notes || "Correction de facturation"}` : financialData.conditions || financialData.comments || document.notes || profile.paymentTerms || "Conditions de règlement non renseignées.",
             document.documentType === "quote" && profile.depositTerms ? `Acompte : ${profile.depositTerms}` : "",
-            document.documentType === "invoice" && profile.bankIban ? `Règlement par virement · IBAN : ${profile.bankIban}${profile.bankBic ? ` · BIC : ${profile.bankBic}` : ""}` : ""
+            document.documentType === "invoice" && profile.bankIban ? `Règlement par virement · IBAN : ${profile.bankIban}${profile.bankBic ? ` · BIC : ${profile.bankBic}` : ""}` : "",
+            ["invoice", "credit"].includes(document.documentType) ? profile.earlyPaymentDiscountTerms || DEFAULT_EARLY_PAYMENT_DISCOUNT_TERMS : "",
+            ["invoice", "credit"].includes(document.documentType) ? profile.latePaymentPenaltyTerms || DEFAULT_LATE_PAYMENT_PENALTY_TERMS : "",
+            ["invoice", "credit"].includes(document.documentType) ? `Indemnité forfaitaire pour frais de recouvrement : ${formatMoney(Number(profile.recoveryIndemnityCents ?? 4000) / 100)}.` : "",
+            ["invoice", "credit"].includes(document.documentType) && profile.vatOnDebits && !isVatFranchise ? "TVA acquittée sur les débits." : ""
         ].filter(Boolean).join("\n");
         text(conditions, margin, summaryY + 14, 260, { size: 8, lineGap: 2 });
         const totalX = margin + contentWidth - 180;

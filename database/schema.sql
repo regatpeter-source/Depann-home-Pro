@@ -273,6 +273,10 @@ CREATE TABLE IF NOT EXISTS depannhome_billing_profiles (
     bank_bic VARCHAR(40) NOT NULL DEFAULT '',
     payment_terms VARCHAR(500) NOT NULL DEFAULT '',
     deposit_terms VARCHAR(500) NOT NULL DEFAULT '',
+    early_payment_discount_terms VARCHAR(500) NOT NULL DEFAULT 'Aucun escompte pour paiement anticipé.',
+    late_payment_penalty_terms VARCHAR(1000) NOT NULL DEFAULT 'Pénalités de retard exigibles au taux de trois fois le taux d’intérêt légal à compter du jour suivant la date d’échéance.',
+    recovery_indemnity_cents INTEGER NOT NULL DEFAULT 4000 CHECK (recovery_indemnity_cents >= 0),
+    vat_on_debits BOOLEAN NOT NULL DEFAULT FALSE,
     footer_note VARCHAR(1000) NOT NULL DEFAULT '',
     default_quote JSONB,
     quote_template_config JSONB NOT NULL DEFAULT '{}'::jsonb,
@@ -307,6 +311,10 @@ ALTER TABLE depannhome_billing_profiles
     ADD COLUMN IF NOT EXISTS vat_regime VARCHAR(20) NOT NULL DEFAULT 'standard',
     ADD COLUMN IF NOT EXISTS bank_iban VARCHAR(80) NOT NULL DEFAULT '',
     ADD COLUMN IF NOT EXISTS bank_bic VARCHAR(40) NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS early_payment_discount_terms VARCHAR(500) NOT NULL DEFAULT 'Aucun escompte pour paiement anticipé.',
+    ADD COLUMN IF NOT EXISTS late_payment_penalty_terms VARCHAR(1000) NOT NULL DEFAULT 'Pénalités de retard exigibles au taux de trois fois le taux d’intérêt légal à compter du jour suivant la date d’échéance.',
+    ADD COLUMN IF NOT EXISTS recovery_indemnity_cents INTEGER NOT NULL DEFAULT 4000,
+    ADD COLUMN IF NOT EXISTS vat_on_debits BOOLEAN NOT NULL DEFAULT FALSE,
     ADD COLUMN IF NOT EXISTS quote_template_mode VARCHAR(20) NOT NULL DEFAULT 'integrated',
     ADD COLUMN IF NOT EXISTS quote_template_filename VARCHAR(255) NOT NULL DEFAULT '',
     ADD COLUMN IF NOT EXISTS quote_template_data BYTEA,
@@ -388,6 +396,15 @@ CREATE TABLE IF NOT EXISTS depannhome_billing_documents (
     quote_reference VARCHAR(80) NOT NULL DEFAULT '',
     vat_regime VARCHAR(20) NOT NULL DEFAULT 'standard' CHECK (vat_regime IN ('standard','franchise')),
     issuer_tax_number VARCHAR(100) NOT NULL DEFAULT '',
+    legal_data JSONB NOT NULL DEFAULT '{}'::jsonb,
+    issued_at TIMESTAMPTZ,
+    finalized_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+    legal_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
+    structured_data BYTEA,
+    structured_mime_type VARCHAR(150) NOT NULL DEFAULT '',
+    structured_sha256 CHAR(64),
+    pdf_data BYTEA,
+    pdf_sha256 VARCHAR(64),
     lines JSONB NOT NULL DEFAULT '[]'::jsonb,
     notes VARCHAR(2000) NOT NULL DEFAULT '',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -412,7 +429,16 @@ ALTER TABLE depannhome_billing_documents
     ADD COLUMN IF NOT EXISTS quote_reference VARCHAR(80) NOT NULL DEFAULT '';
 ALTER TABLE depannhome_billing_documents
     ADD COLUMN IF NOT EXISTS vat_regime VARCHAR(20) NOT NULL DEFAULT 'standard',
-    ADD COLUMN IF NOT EXISTS issuer_tax_number VARCHAR(100) NOT NULL DEFAULT '';
+    ADD COLUMN IF NOT EXISTS issuer_tax_number VARCHAR(100) NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS legal_data JSONB NOT NULL DEFAULT '{}'::jsonb,
+    ADD COLUMN IF NOT EXISTS issued_at TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS finalized_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+    ADD COLUMN IF NOT EXISTS legal_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
+    ADD COLUMN IF NOT EXISTS structured_data BYTEA,
+    ADD COLUMN IF NOT EXISTS structured_mime_type VARCHAR(150) NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS structured_sha256 CHAR(64),
+    ADD COLUMN IF NOT EXISTS pdf_data BYTEA,
+    ADD COLUMN IF NOT EXISTS pdf_sha256 VARCHAR(64);
 
 CREATE INDEX IF NOT EXISTS depannhome_billing_documents_accounting_idx
     ON depannhome_billing_documents (owner_id, document_type, is_accounted, issue_date DESC);
@@ -430,6 +456,26 @@ CREATE INDEX IF NOT EXISTS depannhome_billing_documents_correction_idx
 ALTER TABLE depannhome_billing_documents ADD COLUMN IF NOT EXISTS financial_data JSONB NOT NULL DEFAULT '{}'::jsonb;
 ALTER TABLE depannhome_billing_documents DROP CONSTRAINT IF EXISTS depannhome_billing_documents_document_type_check;
 ALTER TABLE depannhome_billing_documents ADD CONSTRAINT depannhome_billing_documents_document_type_check CHECK (document_type IN ('quote', 'invoice', 'credit'));
+
+CREATE TABLE IF NOT EXISTS depannhome_billing_sequences (
+    owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    series_type VARCHAR(10) NOT NULL CHECK (series_type IN ('invoice','credit')),
+    series_year INTEGER NOT NULL CHECK (series_year >= 2000),
+    last_number BIGINT NOT NULL DEFAULT 0 CHECK (last_number >= 0),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (owner_id, series_type, series_year)
+);
+
+CREATE OR REPLACE FUNCTION depannhome_protect_issued_billing_document() RETURNS trigger AS $$
+BEGIN
+    IF TG_OP='DELETE' AND OLD.issued_at IS NOT NULL THEN RAISE EXCEPTION 'Un document émis ne peut pas être supprimé.'; END IF;
+    IF TG_OP='UPDATE' AND OLD.issued_at IS NOT NULL AND ROW(NEW.owner_id,NEW.created_by,NEW.document_type,NEW.document_number,NEW.client_id,NEW.customer_type,NEW.customer_name,NEW.customer_address,NEW.issue_date,NEW.due_date,NEW.appointment_id,NEW.source_quote_id,NEW.correction_source_id,NEW.correction_kind,NEW.quote_reference,NEW.vat_regime,NEW.issuer_tax_number,NEW.legal_data,NEW.issued_at,NEW.finalized_by,NEW.legal_snapshot,NEW.structured_data,NEW.structured_mime_type,NEW.structured_sha256,NEW.pdf_data,NEW.pdf_sha256,NEW.lines,NEW.notes,NEW.financial_data,NEW.created_at)
+        IS DISTINCT FROM ROW(OLD.owner_id,OLD.created_by,OLD.document_type,OLD.document_number,OLD.client_id,OLD.customer_type,OLD.customer_name,OLD.customer_address,OLD.issue_date,OLD.due_date,OLD.appointment_id,OLD.source_quote_id,OLD.correction_source_id,OLD.correction_kind,OLD.quote_reference,OLD.vat_regime,OLD.issuer_tax_number,OLD.legal_data,OLD.issued_at,OLD.finalized_by,OLD.legal_snapshot,OLD.structured_data,OLD.structured_mime_type,OLD.structured_sha256,OLD.pdf_data,OLD.pdf_sha256,OLD.lines,OLD.notes,OLD.financial_data,OLD.created_at)
+    THEN RAISE EXCEPTION 'Les données légales d’un document émis sont immuables.'; END IF;
+    RETURN CASE WHEN TG_OP='DELETE' THEN OLD ELSE NEW END;
+END; $$ LANGUAGE plpgsql;
+DROP TRIGGER IF EXISTS depannhome_billing_document_immutable ON depannhome_billing_documents;
+CREATE TRIGGER depannhome_billing_document_immutable BEFORE UPDATE OR DELETE ON depannhome_billing_documents FOR EACH ROW EXECUTE FUNCTION depannhome_protect_issued_billing_document();
 
 CREATE TABLE IF NOT EXISTS depannhome_accounting_aids (
     id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,

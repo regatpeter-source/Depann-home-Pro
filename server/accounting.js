@@ -12,6 +12,7 @@ import {
     normalizeAccountingConfig,
     validateLedger
 } from "./accounting-ledger.js";
+import { allocateBillingNumber } from "./billing-numbering.js";
 
 const AID_TYPES = new Set(["cee", "maprimerenov", "coup_de_pouce", "eco_ptz", "regional", "departmental", "supplier", "manufacturer", "custom"]);
 const AID_MODES = new Set(["fixed", "percentage"]);
@@ -279,7 +280,7 @@ export function registerAccountingRoutes(app, requireAuthentication) {
         if (!id || !financialData.ok) return response.status(400).json({ message: financialData.message || "Données financières invalides." });
         const result = await getPool().query(`
             UPDATE depannhome_billing_documents SET financial_data=$3::jsonb, updated_at=NOW()
-            WHERE id=$1 AND owner_id=$2 AND is_accounted=FALSE
+            WHERE id=$1 AND owner_id=$2 AND issued_at IS NULL AND is_accounted=FALSE
         `, [id, getAccountOwnerId(request), JSON.stringify(financialData.value)]);
         if (!result.rowCount) return response.status(409).json({ message: "Un document comptabilisé est immuable. Créez un avoir ou une écriture corrective." });
         response.status(204).end();
@@ -298,23 +299,38 @@ export function registerAccountingRoutes(app, requireAuthentication) {
         const client = await getPool().connect();
         try {
             await client.query("BEGIN");
-            const { rows } = await client.query(`SELECT * FROM depannhome_billing_documents WHERE id=$1 AND owner_id=$2 AND document_type='invoice' FOR UPDATE`, [sourceId, ownerId]);
+            const { rows } = await client.query(`SELECT * FROM depannhome_billing_documents WHERE id=$1 AND owner_id=$2 AND document_type='invoice' AND issued_at IS NOT NULL FOR UPDATE`, [sourceId, ownerId]);
             const invoice = rows[0];
             if (!invoice) { await client.query("ROLLBACK"); return response.status(404).json({ message: "Facture introuvable." }); }
             const amount = positiveMoney(request.body?.amount);
             const total = calculateDocumentTotals(invoice.lines, invoice.financial_data).netPayable;
             if (amount === null || amount > total) { await client.query("ROLLBACK"); return response.status(400).json({ message: "Le montant de l’avoir doit être positif et ne pas dépasser le montant facturé." }); }
             await postAccountingDocument({ ownerId, documentId: sourceId, actorId: request.user.sub, database: client });
-            const number = `AVO-${String(invoice.document_number).replace(/^FAC-?/i, "")}-${Date.now().toString().slice(-5)}`.slice(0, 80);
+            const issueDate = today();
+            const number = await allocateBillingNumber(client, ownerId, "credit", Number(issueDate.slice(0, 4)));
             const vatRate = weightedVatRate(invoice.lines);
             const lines = [{ description: `Avoir sur facture ${invoice.document_number}`, quantity: 1, unit: "forfait", unitPrice: roundMoney(-amount / (1 + vatRate / 100)), vatRate }];
+            const notes = cleanText(request.body?.notes, 2000);
+            const creditDocument = {
+                documentType: "credit", documentNumber: number, sourceInvoiceId: invoice.id, sourceInvoiceNumber: invoice.document_number,
+                sourceInvoiceDate: invoice.issue_date, clientId: invoice.client_id, customerType: invoice.customer_type, customerName: invoice.customer_name,
+                customerAddress: invoice.customer_address, issueDate, quoteReference: invoice.document_number, vatRegime: invoice.vat_regime,
+                issuerTaxNumber: invoice.issuer_tax_number, legalData: invoice.legal_data || {}, lines, notes,
+                reason: notes || `Avoir sur facture ${invoice.document_number}`, financialData: { sourceInvoiceId: invoice.id }
+            };
+            const { buildBillingLegalArchive } = await import("./billing.js");
+            const archive = await buildBillingLegalArchive(creditDocument, { ownerId, database: client });
             const { rows: created } = await client.query(`
-                INSERT INTO depannhome_billing_documents (owner_id, created_by, document_type, document_number, client_id, customer_type, customer_name, customer_address, issue_date, status, source_quote_id, quote_reference, lines, notes, financial_data)
-                VALUES ($1,$2,'credit',$3,$4,$5,$6,$7,CURRENT_DATE,'issued',$8,$9,$10::jsonb,$11,$12::jsonb) RETURNING id
-            `, [ownerId, request.user.sub, number, invoice.client_id, invoice.customer_type, invoice.customer_name, invoice.customer_address, invoice.source_quote_id, invoice.document_number, JSON.stringify(lines), cleanText(request.body?.notes, 2000), JSON.stringify({ sourceInvoiceId: invoice.id })]);
+                INSERT INTO depannhome_billing_documents (owner_id, created_by, document_type, document_number, client_id, customer_type, customer_name, customer_address, issue_date, status, issued_at, finalized_by, legal_snapshot, structured_data, structured_mime_type, structured_sha256, pdf_data, pdf_sha256, source_quote_id, quote_reference, vat_regime, issuer_tax_number, legal_data, lines, notes, financial_data)
+                VALUES ($1,$2,'credit',$3,$4,$5,$6,$7,$8::date,'issued',NOW(),$2,$9::jsonb,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19::jsonb,$20::jsonb,$21,$22::jsonb) RETURNING id
+            `, [ownerId, request.user.sub, number, invoice.client_id, invoice.customer_type, invoice.customer_name, invoice.customer_address, issueDate,
+                JSON.stringify({ ...archive.legalSnapshot, sourceInvoiceLegalSnapshot: invoice.legal_snapshot || {} }), archive.structuredData,
+                archive.structuredMimeType, archive.structuredSha256, archive.pdfData, archive.pdfSha256, invoice.source_quote_id,
+                invoice.document_number, invoice.vat_regime, invoice.issuer_tax_number, JSON.stringify(invoice.legal_data || {}), JSON.stringify(lines), notes,
+                JSON.stringify({ sourceInvoiceId: invoice.id })]);
             const posting = await postAccountingDocument({ ownerId, documentId: created[0].id, actorId: request.user.sub, database: client });
             await client.query("COMMIT");
-            response.status(201).json({ id: created[0].id, posting });
+            response.status(201).json({ id: created[0].id, documentNumber: number, posting });
         } catch (error) {
             await client.query("ROLLBACK");
             throw error;
@@ -328,7 +344,7 @@ export function registerAccountingRoutes(app, requireAuthentication) {
         const client = await getPool().connect();
         try {
             await client.query("BEGIN");
-            const { rows } = await client.query(`SELECT id,owner_id AS "ownerId",document_type AS "documentType",document_number AS "documentNumber",client_id AS "clientId",customer_name AS "customerName",TO_CHAR(issue_date,'YYYY-MM-DD') AS "issueDate",status,lines,financial_data AS "financialData",appointment_id AS "appointmentId" FROM depannhome_billing_documents WHERE id=$1 AND owner_id=$2 AND document_type='invoice' FOR UPDATE`, [settlement.documentId, ownerId]);
+            const { rows } = await client.query(`SELECT id,owner_id AS "ownerId",document_type AS "documentType",document_number AS "documentNumber",client_id AS "clientId",customer_name AS "customerName",TO_CHAR(issue_date,'YYYY-MM-DD') AS "issueDate",status,lines,financial_data AS "financialData",appointment_id AS "appointmentId" FROM depannhome_billing_documents WHERE id=$1 AND owner_id=$2 AND document_type='invoice' AND issued_at IS NOT NULL FOR UPDATE`, [settlement.documentId, ownerId]);
             const document = rows[0];
             if (!document) { await client.query("ROLLBACK"); return response.status(404).json({ message: "Facture introuvable." }); }
             const settled = await client.query("SELECT COALESCE(SUM(amount),0)::float AS total FROM depannhome_accounting_settlements WHERE owner_id=$1 AND document_id=$2", [ownerId, document.id]);
@@ -422,9 +438,10 @@ export function registerAccountingRoutes(app, requireAuthentication) {
         const id = positiveId(request.params.documentId);
         const ownerId = getAccountOwnerId(request);
         const settings = await loadSettings(ownerId);
-        const { rows } = await getPool().query("SELECT id, document_number AS \"documentNumber\", customer_name AS \"customerName\", document_type AS \"documentType\" FROM depannhome_billing_documents WHERE id=$1 AND owner_id=$2", [id, ownerId]);
+        const { rows } = await getPool().query("SELECT id, document_number AS \"documentNumber\", customer_name AS \"customerName\", document_type AS \"documentType\", (structured_data IS NOT NULL) AS \"hasStructuredData\" FROM depannhome_billing_documents WHERE id=$1 AND owner_id=$2 AND issued_at IS NOT NULL", [id, ownerId]);
         const document = rows[0];
         if (!document || document.documentType !== "invoice") return response.status(404).json({ message: "Facture introuvable." });
+        if (!document.hasStructuredData) return response.status(409).json({ message: "L’archive UBL de cette facture émise est indisponible. La transmission est bloquée." });
         const provider = settings.pdpProvider || "sandbox";
         const connector = pdpConnectors.get(provider);
         if (!connector) return response.status(400).json({ message: "Le connecteur PDP sélectionné n’est pas disponible." });
@@ -476,12 +493,13 @@ export async function postAccountingDocument({ ownerId, documentId, actorId, dat
         const { rows } = await client.query(`
             SELECT id, owner_id AS "ownerId", document_type AS "documentType", document_number AS "documentNumber",
                 client_id AS "clientId", customer_name AS "customerName", TO_CHAR(issue_date,'YYYY-MM-DD') AS "issueDate",
-                status, lines, financial_data AS "financialData", appointment_id AS "appointmentId"
+                status, issued_at AS "issuedAt", lines, financial_data AS "financialData", appointment_id AS "appointmentId"
             FROM depannhome_billing_documents WHERE id=$1 AND owner_id=$2 FOR UPDATE
         `, [documentId, ownerId]);
         const document = rows[0];
         if (!document) throw accountingError(404, "Document introuvable.");
         if (!['invoice', 'credit'].includes(document.documentType)) throw accountingError(400, "Seules les factures et les avoirs peuvent être comptabilisés.");
+        if (!document.issuedAt) throw accountingError(409, "Émettez définitivement la pièce avant sa comptabilisation.");
         if (['draft', 'cancelled', 'rejected'].includes(String(document.status).toLowerCase())) throw accountingError(409, "Validez ou émettez la pièce avant sa comptabilisation.");
         const settings = await loadSettings(ownerId, client);
         const journals = await ensureAccountingJournals(client, ownerId, settings.journalConfig);
@@ -594,9 +612,11 @@ async function loadDocuments(ownerId) {
     const { rows } = await getPool().query(`
         SELECT document.id, document_type AS "documentType", document_number AS "documentNumber", client_id AS "clientId", customer_name AS "customerName",
             customer_address AS "customerAddress", TO_CHAR(issue_date, 'YYYY-MM-DD') AS "issueDate", TO_CHAR(due_date, 'YYYY-MM-DD') AS "dueDate", status,
-            lines, notes, financial_data AS "financialData", is_accounted AS "isAccounted", quote_reference AS "quoteReference",
+            issued_at AS "issuedAt", (structured_data IS NOT NULL) AS "hasStructuredData", lines, notes, financial_data AS "financialData", is_accounted AS "isAccounted", quote_reference AS "quoteReference",
             COALESCE((SELECT SUM(amount) FROM depannhome_accounting_settlements settlement WHERE settlement.owner_id=document.owner_id AND settlement.document_id=document.id), 0)::float AS "settledAmount"
-        FROM depannhome_billing_documents document WHERE owner_id=$1 ORDER BY issue_date DESC, id DESC
+        FROM depannhome_billing_documents document
+        WHERE owner_id=$1 AND (document_type <> 'invoice' OR issued_at IS NOT NULL)
+        ORDER BY issue_date DESC, id DESC
     `, [ownerId]);
     return rows.map(document => {
         const totals = calculateDocumentTotals(document.lines, document.financialData);

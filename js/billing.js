@@ -226,6 +226,10 @@ function renderProfile(panel, options = {}) {
                 <label>BIC<input name="bankBic" maxlength="40" value="${escapeHtml(profile.bankBic || "")}"></label>
                 <label>Acompte / condition de devis<input name="depositTerms" maxlength="500" placeholder="Ex. Acompte de 30 % à la commande" value="${escapeHtml(profile.depositTerms || "")}"></label>
                 <label class="form-wide">Conditions de règlement<input name="paymentTerms" maxlength="500" placeholder="Ex. Paiement à réception par virement ou chèque" value="${escapeHtml(profile.paymentTerms)}"></label>
+                <label class="form-wide">Escompte pour paiement anticipé<input name="earlyPaymentDiscountTerms" maxlength="500" value="${escapeHtml(profile.earlyPaymentDiscountTerms || "Aucun escompte pour paiement anticipé.")}"></label>
+                <label class="form-wide">Pénalités de retard<textarea name="latePaymentPenaltyTerms" rows="2" maxlength="1000">${escapeHtml(profile.latePaymentPenaltyTerms || "Pénalités de retard exigibles au taux de trois fois le taux d’intérêt légal à compter du jour suivant la date d’échéance.")}</textarea></label>
+                <label>Indemnité de recouvrement (centimes)<input name="recoveryIndemnityCents" type="number" min="0" step="1" value="${escapeHtml(profile.recoveryIndemnityCents ?? 4000)}"><small>40 € = 4000 centimes</small></label>
+                <label class="billing-accounting-option"><input name="vatOnDebits" type="checkbox" ${profile.vatOnDebits ? "checked" : ""}> TVA acquittée sur les débits</label>
                 <label class="form-wide">Mention de bas de page<textarea name="footerNote" rows="2" maxlength="1000" placeholder="Mentions légales, pénalités de retard, assurance…">${escapeHtml(profile.footerNote)}</textarea></label>
                 <label>Logo (PNG, JPEG ou WebP, 2 Mo maximum)<input name="logo" type="file" accept="image/png,image/jpeg,image/webp"></label>
                 ${profile.hasLogo ? '<label class="billing-remove-logo"><input name="removeLogo" type="checkbox" value="true"> Supprimer le logo actuel</label>' : ""}
@@ -352,7 +356,7 @@ function integratedTemplateFields(value, label) {
 
 function externalTemplateFieldsHelp(type) {
     const fields = type === "quote"
-        ? ["type_document", "numero", "date", "echeance", "client_nom", "client_adresse", "entreprise_nom", "lignes", "total_ht", "total_tva", "total_ttc", "conditions"]
+        ? ["type_document", "numero", "date", "echeance", "client_nom", "client_adresse", "client_siren", "client_tva", "adresse_livraison", "date_prestation", "reference_commande", "categorie_operation", "entreprise_nom", "lignes", "total_ht", "total_tva", "total_ttc", "conditions"]
         : type === "quitus"
             ? ["numero_intervention", "intervention", "date", "client_nom", "adresse_intervention", "observations", "signataire", "validation", "texte_entete", "texte_pied_page", "entreprise_nom"]
             : ["numero_rapport", "titre", "date", "client_nom", "client_adresse", "technicien", "entreprise_nom", "contenu"];
@@ -428,27 +432,32 @@ function renderDocumentEditor(panel) {
     const document = activeDocument;
     const isEditing = Boolean(document.id);
     const linkedInvoice = document.documentType === "quote" ? getInvoiceForQuote(document) : null;
-    if (isEditing && (isTechnician() || isAccountant() || document.documentType === "credit" || (document.documentType === "invoice" && document.isEmailSent))) return renderReadOnlyDocument(panel, document);
+    if (isEditing && (isTechnician() || isAccountant() || document.documentType === "credit" || (document.documentType === "invoice" && document.issuedAt))) return renderReadOnlyDocument(panel, document);
     const clients = getSearchableClients().sort((a, b) => a.name.localeCompare(b.name, "fr"));
     const livePreview = globalThis.document.body.classList.contains("desktop-device") && ["quote", "invoice"].includes(document.documentType);
     panel.classList.toggle("billing-editor-live-active", livePreview);
     panel.innerHTML = `
         <div class="${livePreview ? "billing-document-workspace" : ""}"><section class="${livePreview ? "billing-document-writing" : ""}">
         <form id="billingDocumentForm" class="client-form">
-            <div class="form-heading"><div><p class="eyebrow">${isEditing ? "Modification" : "Nouveau document"}</p><h2>${isEditing ? "Modifier le document" : `Créer un ${DOCUMENT_TYPES[document.documentType].toLowerCase()}`}</h2></div><div class="calendar-form-actions">${isEditing && document.documentType === "quote" ? linkedInvoice ? `<button type="button" class="secondary-button" data-view-linked-invoice="${escapeHtml(linkedInvoice.id)}">Voir la facture</button>` : '<button type="button" class="secondary-button" id="createInvoiceFromQuote">Créer la facture</button>' : ""}<button type="button" class="secondary-button" id="cancelBillingDocument">Annuler</button></div></div>
+            <div class="form-heading"><div><p class="eyebrow">${isEditing ? "Modification" : "Nouveau document"}</p><h2>${isEditing ? "Modifier le document" : `Créer un ${DOCUMENT_TYPES[document.documentType].toLowerCase()}`}</h2></div><div class="calendar-form-actions">${isEditing && document.documentType === "invoice" && !document.issuedAt && isFullAdministrator() ? '<button type="button" class="secondary-button" id="issueBillingDocument">Émettre définitivement</button>' : ""}${isEditing && document.documentType === "quote" ? linkedInvoice ? `<button type="button" class="secondary-button" data-view-linked-invoice="${escapeHtml(linkedInvoice.id)}">Voir la facture</button>` : '<button type="button" class="secondary-button" id="createInvoiceFromQuote">Créer la facture</button>' : ""}<button type="button" class="secondary-button" id="cancelBillingDocument">Annuler</button></div></div>
             <div class="form-grid">
                 ${isTechnician() ? '<input name="documentType" type="hidden" value="quote"><p class="billing-quote-reference">Type : <strong>Devis</strong></p>' : `<label>Type *<select name="documentType">${Object.entries(DOCUMENT_TYPES).filter(([id]) => id !== "credit").map(([id, label]) => `<option value="${id}" ${document.documentType === id ? "selected" : ""}>${label}</option>`).join("")}</select></label>`}
-                <label>Numéro *<input name="documentNumber" maxlength="80" required placeholder="Ex. DEV-2026-001" value="${escapeHtml(document.documentNumber)}"></label>
+                ${document.documentType === "invoice" ? '<label>Numéro de facture<input name="documentNumber" readonly value="" placeholder="Attribué automatiquement à l’émission"><small>Le numéro fiscal définitif sera attribué par le serveur.</small></label>' : `<label>Numéro *<input name="documentNumber" maxlength="80" required placeholder="Ex. DEV-2026-001" value="${escapeHtml(document.documentNumber)}"></label>`}
                 <input name="clientId" type="hidden" value="${escapeHtml(document.clientId || "")}">
                 <input name="appointmentId" type="hidden" value="${escapeHtml(document.appointmentId || "")}">
                 ${document.documentType === "invoice" ? `<input name="sourceQuoteId" type="hidden" value="${escapeHtml(document.sourceQuoteId || "")}"><p class="billing-quote-reference">${document.quoteReference ? `Référence devis : <strong>${escapeHtml(document.quoteReference)}</strong>` : "Facture sans devis associé"}</p>` : ""}
                 <label>Catégorie client<select name="customerType">${CUSTOMER_TYPES.map(type => `<option ${document.customerType === type ? "selected" : ""}>${type}</option>`).join("")}</select></label>
                 <label>Client / destinataire *<input name="customerName" list="billingClients" maxlength="160" required value="${escapeHtml(document.customerName)}"><datalist id="billingClients">${clients.map(client => `<option value="${escapeHtml(client.name)}">${escapeHtml([client.address, client.city].filter(Boolean).join(", "))}</option>`).join("")}</datalist></label>
-                <label class="form-wide">Adresse du destinataire<textarea name="customerAddress" rows="2" maxlength="500" placeholder="Adresse de facturation">${escapeHtml(document.customerAddress)}</textarea></label>
+                <label class="form-wide">Adresse de facturation<textarea name="customerAddress" rows="2" maxlength="500" placeholder="Adresse de facturation">${escapeHtml(document.customerAddress)}</textarea></label>
+                <label>SIREN du client<input name="customerSiren" inputmode="numeric" maxlength="20" value="${escapeHtml(document.legalData.customerSiren)}"></label>
+                <label>N° TVA du client<input name="customerVatNumber" maxlength="40" value="${escapeHtml(document.legalData.customerVatNumber)}"></label>
+                <label class="form-wide">Adresse de livraison<textarea name="deliveryAddress" rows="2" maxlength="500" placeholder="Uniquement si différente de l’adresse de facturation">${escapeHtml(document.legalData.deliveryAddress)}</textarea></label>
+                <label>Date de livraison / prestation<input name="serviceDate" type="date" value="${escapeHtml(document.legalData.serviceDate)}"></label>
+                <label>Référence du bon de commande<input name="purchaseOrderReference" maxlength="80" value="${escapeHtml(document.legalData.purchaseOrderReference)}"></label>
+                <label>Catégorie d’opération<select name="operationCategory"><option value="goods" ${document.legalData.operationCategory === "goods" ? "selected" : ""}>Livraison de biens</option><option value="services" ${document.legalData.operationCategory === "services" ? "selected" : ""}>Prestation de services</option><option value="mixed" ${document.legalData.operationCategory === "mixed" ? "selected" : ""}>Biens et services</option></select></label>
                 <label>Date *<input name="issueDate" type="date" required value="${escapeHtml(document.issueDate)}"></label>
                 <label>Échéance<input name="dueDate" type="date" value="${escapeHtml(document.dueDate || "")}"></label>
-                <label>Statut<input name="status" maxlength="30" value="${escapeHtml(document.status || "draft")}" placeholder="Brouillon, envoyé, réglé…"></label>
-                ${document.documentType === "invoice" ? `<label class="billing-accounting-option"><input name="isAccounted" type="checkbox" ${document.isAccounted ? "checked" : ""}> Facture comptabilisée</label>` : ""}
+                ${document.documentType === "invoice" ? '<input name="status" type="hidden" value="draft"><p class="billing-quote-reference">Statut : <strong>Brouillon</strong></p>' : `<label>Statut<input name="status" maxlength="30" value="${escapeHtml(document.status || "draft")}" placeholder="Brouillon, envoyé, réglé…"></label>`}
             </div>
             <section class="billing-lines-section"><div class="form-heading"><div><p class="eyebrow">Prestations</p><h3>Lignes du document</h3>${document.vatRegime === "franchise" ? `<p class="muted"><strong>${VAT_FRANCHISE_MENTION}</strong> — TVA automatiquement fixée à 0 %.</p>` : ""}</div><button type="button" class="secondary-button" id="addBillingLine">+ Ligne libre</button></div><div id="billingLines" class="billing-lines"></div><div class="billing-totals" id="billingTotals"></div></section>
             ${!isAccountant() ? '<section class="billing-aids-section" id="billingAids"></section>' : ""}
@@ -472,6 +481,7 @@ function renderDocumentEditor(panel) {
     form.querySelector("#addBillingLine").addEventListener("click", () => { document.lines.push(emptyLine()); renderLines(); });
     form.querySelector("#cancelBillingDocument").addEventListener("click", () => { activeDocument = null; renderBilling(); });
     form.querySelector("#createInvoiceFromQuote")?.addEventListener("click", () => createInvoiceFromQuote(document));
+    form.querySelector("#issueBillingDocument")?.addEventListener("click", () => issueBillingInvoice(document, clients, form));
     form.querySelector("[data-view-linked-invoice]")?.addEventListener("click", event => viewBillingDocument(event.currentTarget.dataset.viewLinkedInvoice));
     const customerInput = form.querySelector("[name=customerName]");
     customerInput.addEventListener("change", () => fillCustomerAddress(customerInput, form, clients));
@@ -484,14 +494,15 @@ function renderDocumentEditor(panel) {
     queuePreview(0);
     form.addEventListener("submit", async event => {
         event.preventDefault();
-        const payload = { ...formDataToObject(new FormData(form)), lines: document.lines, financialData: document.financialData };
+        const payload = billingDocumentPayload(form, document);
         const message = panel.querySelector("#billingDocumentMessage");
         const result = await apiRequest(isEditing ? `/api/billing/documents/${encodeURIComponent(document.id)}` : "/api/billing/documents", { method: isEditing ? "PUT" : "POST", body: JSON.stringify(payload) });
         if (!result.ok) { message.textContent = result.message || "Impossible d’enregistrer le document."; message.classList.add("error"); return; }
+        const savedDocumentNumber = result.data?.documentNumber || document.documentNumber || payload.documentNumber;
         if (!isEditing) addClientActivityByName(payload.customerName, {
             type: payload.documentType,
             label: `${DOCUMENT_TYPES[payload.documentType]} créé`,
-            detail: payload.documentNumber,
+            detail: savedDocumentNumber,
             documentId: result.data?.id
         });
         billingPreviewCleanup();
@@ -499,10 +510,14 @@ function renderDocumentEditor(panel) {
         const associatedClient = clients.find(client => String(client.id) === String(payload.clientId || document.clientId || "")) || clients.find(client => normalizeText(client.name) === normalizeText(payload.customerName));
         activeDocument = null;
         if (payload.appointmentId) window.dispatchEvent(new CustomEvent("depannhome:billing-document-saved", { detail: { appointmentId: payload.appointmentId, suppressNavigation: true } }));
+        if (payload.documentType === "invoice") {
+            await renderBilling({ documentId: savedDocumentId });
+            return;
+        }
         if (associatedClient?.id) window.dispatchEvent(new CustomEvent("depannhome:open-client", { detail: { clientId: associatedClient.id } }));
         else renderBilling();
         openDocumentDeliveryChoice({
-            label: `${DOCUMENT_TYPES[payload.documentType]} ${payload.documentNumber}`,
+            label: `${DOCUMENT_TYPES[payload.documentType]} ${savedDocumentNumber}`,
             recipient: associatedClient?.email || "",
             printUrl: `/api/billing/documents/${encodeURIComponent(savedDocumentId)}/pdf`,
             sendEmail: async email => {
@@ -529,7 +544,7 @@ function bindBillingDocumentPreview(panel, form, billingDocument) {
         state.textContent = "Mise à jour…";
         request?.abort();
         request = new AbortController();
-        const payload = { ...formDataToObject(new FormData(form)), lines: billingDocument.lines, financialData: billingDocument.financialData, vatRegime: billingDocument.vatRegime, issuerTaxNumber: billingDocument.issuerTaxNumber, quoteReference: billingDocument.quoteReference || "" };
+        const payload = { ...billingDocumentPayload(form, billingDocument), vatRegime: billingDocument.vatRegime, issuerTaxNumber: billingDocument.issuerTaxNumber, quoteReference: billingDocument.quoteReference || "" };
         try {
             const response = await fetch("/api/billing/documents/preview", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload), signal: request.signal });
             if (!response.ok) { const error = await response.json().catch(() => null); throw new Error(error?.message || "Aperçu PDF indisponible."); }
@@ -553,11 +568,11 @@ function bindBillingDocumentPreview(panel, form, billingDocument) {
 
 function renderReadOnlyDocument(panel, document) {
     const linkedInvoice = document.documentType === "quote" ? getInvoiceForQuote(document) : null;
-    const canCorrect = document.documentType === "invoice" && document.isEmailSent && document.status !== "cancelled" && !isAccountant() && !isTechnician();
+    const canCorrect = document.documentType === "invoice" && document.issuedAt && document.status !== "cancelled" && !isAccountant() && !isTechnician();
     panel.innerHTML = `
         <div class="billing-read-only-document">
             <div class="form-heading"><div><p class="eyebrow">Consultation uniquement</p><h2>${escapeHtml(DOCUMENT_TYPES[document.documentType])} ${escapeHtml(document.documentNumber)}</h2></div><div class="calendar-form-actions">${canCorrect ? '<button type="button" class="secondary-button" data-create-correction="replacement">Créer une facture rectificative</button><button type="button" class="secondary-button" data-create-correction="amendment">Créer un avenant</button>' : ""}${document.documentType === "quote" && (linkedInvoice || !isAccountant()) ? linkedInvoice ? `<button type="button" class="secondary-button" data-view-linked-invoice="${escapeHtml(linkedInvoice.id)}">Voir la facture</button>` : '<button type="button" class="secondary-button" id="createInvoiceFromQuote">Créer la facture</button>' : ""}<button type="button" class="secondary-button" id="closeBillingDocument">Fermer</button></div></div>
-            ${document.isEmailSent ? '<p class="auth-message">Cette facture a été envoyée au client et constitue désormais un enregistrement immuable. Toute modification doit passer par une facture rectificative, un avenant ou un avoir comptable.</p>' : ""}
+            ${document.issuedAt ? '<p class="auth-message">Cette facture a été émise définitivement et constitue désormais un enregistrement immuable. Toute modification doit passer par une facture rectificative, un avenant ou un avoir comptable.</p>' : ""}
             <div class="procedure-meta"><span>${escapeHtml(document.customerName)}</span><span>${escapeHtml(formatDate(document.issueDate))}</span><span>${escapeHtml(documentStatusLabel(document.status))}</span>${document.documentType === "invoice" ? `<span>${document.quoteReference ? `Réf. devis ${escapeHtml(document.quoteReference)}` : "Sans devis associé"}</span><span>${document.isAccounted ? `Comptabilisée le ${escapeHtml(formatDate(document.accountedAt))}` : "Non comptabilisée"}</span>${document.sentAt ? `<span>Envoyée le ${escapeHtml(formatDate(document.sentAt))}</span>` : ""}${document.correctionSourceNumber ? `<span>${escapeHtml(correctionKindLabel(document.correctionKind))} de ${escapeHtml(document.correctionSourceNumber)}</span>` : ""}` : ""}</div>
             <div class="billing-read-only-lines">${document.lines.map(line => `<div><span>${escapeHtml(line.description)}</span><strong>${escapeHtml(String(line.quantity))} × ${escapeHtml(formatMoney(line.unitPrice))}</strong><b>${escapeHtml(formatMoney(lineTotal(line)))}</b></div>`).join("")}</div>
             <div class="billing-totals" id="billingReadOnlyTotals"></div>
@@ -576,6 +591,31 @@ async function createInvoiceCorrection(document, kind) {
     const result = await apiRequest(`/api/billing/documents/${encodeURIComponent(document.id)}/corrections`, { method: "POST", body: JSON.stringify({ kind }) });
     if (!result.ok) { alert(result.message || "Impossible de créer la correction."); return; }
     await viewBillingDocument(result.data.id);
+}
+
+async function issueBillingInvoice(document, clients = [], form = null) {
+    if (!document?.id || document.documentType !== "invoice") return;
+    if (!confirm("Émettre définitivement cette facture ? Un numéro légal sera attribué et les données, le PDF et l’UBL deviendront immuables. Cette action est irréversible.")) return;
+    if (form) {
+        const saved = await apiRequest(`/api/billing/documents/${encodeURIComponent(document.id)}`, { method: "PUT", body: JSON.stringify(billingDocumentPayload(form, document)) });
+        if (!saved.ok) return alert(saved.message || "Enregistrez un brouillon valide avant son émission définitive.");
+    }
+    const result = await apiRequest(`/api/billing/documents/${encodeURIComponent(document.id)}/issue`, { method: "POST", body: "{}" });
+    if (!result.ok) return alert(result.message || "Émission définitive impossible.");
+    const documentNumber = result.data?.documentNumber || document.documentNumber;
+    const client = clients.find(item => String(item.id) === String(document.clientId || "")) || clients.find(item => normalizeText(item.name) === normalizeText(document.customerName));
+    addClientActivityByName(document.customerName, { type: "invoice", label: "Facture émise", detail: documentNumber, documentId: document.id });
+    await renderBilling({ documentId: document.id });
+    openDocumentDeliveryChoice({
+        label: `Facture ${documentNumber}`,
+        recipient: client?.email || "",
+        printUrl: `/api/billing/documents/${encodeURIComponent(document.id)}/pdf`,
+        sendEmail: async email => {
+            const response = await fetch(`/api/billing/documents/${encodeURIComponent(document.id)}/email`, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ recipient: email }) });
+            const data = await response.json().catch(() => null);
+            if (!response.ok) throw new Error(data?.message || "Envoi de la facture impossible.");
+        }
+    });
 }
 
 function correctionKindLabel(kind) { return kind === "amendment" ? "Avenant" : kind === "replacement" ? "Facture rectificative" : "Correction"; }
@@ -642,7 +682,7 @@ function renderDocumentList(panel) {
     const quotes = documents.filter(document => document.documentType === "quote");
     const invoices = documents.filter(document => document.documentType === "invoice");
     const years = [...new Set(documents.map(document => String(document.issueDate || "").slice(0, 4)).filter(Boolean))].sort((first, second) => second.localeCompare(first));
-    const invoicedTotal = invoices.reduce((total, document) => total + calculateTotals(document.lines || []).ttc, 0);
+    const invoicedTotal = invoices.filter(document => document.issuedAt).reduce((total, document) => total + calculateTotals(document.lines || []).ttc, 0);
     const accountedTotal = invoices.filter(document => document.isAccounted).reduce((total, document) => total + calculateTotals(document.lines || []).ttc, 0);
     panel.innerHTML = `
         <div class="form-heading"><div><p class="eyebrow">Base de données commerciale</p><h2>Registre des devis & factures</h2></div></div>
@@ -682,7 +722,7 @@ function renderDocumentList(panel) {
             item.className = "billing-document-item";
             const linkedInvoice = billingDocument.documentType === "quote" ? getInvoiceForQuote(billingDocument) : null;
             const totals = calculateTotals(billingDocument.lines || []);
-            const accountingLabel = billingDocument.documentType === "invoice" ? (billingDocument.isAccounted ? `Comptabilisée le ${formatDate(billingDocument.accountedAt)}` : "À comptabiliser") : "Non concerné";
+            const accountingLabel = billingDocument.documentType === "invoice" ? (billingDocument.isAccounted ? `Comptabilisée le ${formatDate(billingDocument.accountedAt)}` : billingDocument.issuedAt ? "À comptabiliser" : "Brouillon non comptabilisable") : "Non concerné";
             const client = getSearchableClients().find(item => normalizeText(item.name) === normalizeText(billingDocument.customerName));
             const recipient = client?.email || "";
             item.innerHTML = `<div><p class="eyebrow">${billingDocument.correctionKind && billingDocument.correctionKind !== "none" ? escapeHtml(correctionKindLabel(billingDocument.correctionKind)) : DOCUMENT_TYPES[billingDocument.documentType]} · ${escapeHtml(billingDocument.customerType)}</p><h3>${escapeHtml(billingDocument.documentNumber)}</h3><p>${escapeHtml(billingDocument.customerName)}</p><small>${escapeHtml(formatDate(billingDocument.issueDate))} · ${escapeHtml(documentStatusLabel(billingDocument.status))}${billingDocument.isEmailSent ? " · Envoyée / immuable" : ""}${billingDocument.correctionSourceNumber ? ` · Corrige ${escapeHtml(billingDocument.correctionSourceNumber)}` : ""}${billingDocument.quoteReference ? ` · Réf. devis ${escapeHtml(billingDocument.quoteReference)}` : ""} · <span class="billing-accounting-status ${billingDocument.isAccounted ? "is-accounted" : ""}">${escapeHtml(accountingLabel)}</span></small></div><div class="billing-document-amount"><strong>${formatMoney(totals.ttc)}</strong><small>TTC</small></div><div class="billing-document-actions">${billingDocument.documentType === "invoice" && !isTechnician() && !isAccountant() ? `<button type="button" class="secondary-button" data-accounting="${billingDocument.isAccounted ? "false" : "true"}">${billingDocument.isAccounted ? "Décomptabiliser" : "Comptabiliser"}</button>` : ""}${billingDocument.documentType === "quote" && !isAccountant() ? linkedInvoice ? `<button type="button" class="secondary-button" data-view-linked-invoice="${escapeHtml(linkedInvoice.id)}">Voir la facture</button>` : '<button type="button" class="secondary-button" data-create-invoice>Créer la facture</button>' : ""}<button type="button" class="secondary-button" data-open-document>${isTechnician() || isAccountant() || billingDocument.isEmailSent ? "Consulter" : "Ouvrir"}</button><button type="button" class="secondary-button" data-pdf>PDF / Imprimer</button>${isAccountant() ? "" : `<button type="button" class="secondary-button" data-email ${recipient ? "" : "disabled title=\"Ajoutez l’e-mail du client dans sa fiche pour envoyer le document.\""}>Envoyer par e-mail</button>`}</div>`;
@@ -715,7 +755,7 @@ function createInvoiceFromQuote(quote) {
     activeDocument = {
         id: null,
         documentType: "invoice",
-        documentNumber: suggestNumber("invoice"),
+        documentNumber: "",
         clientId: quote.clientId || "",
         appointmentId: quote.appointmentId || "",
         sourceQuoteId: quote.id,
@@ -725,6 +765,7 @@ function createInvoiceFromQuote(quote) {
         customerType: quote.customerType || "Particulier",
         customerName: quote.customerName || "",
         customerAddress: quote.customerAddress || "",
+        legalData: normalizeLegalData(quote.legalData, quote.customerAddress || ""),
         issueDate: today(),
         dueDate: "",
         status: "draft",
@@ -741,7 +782,7 @@ function createNewDocument(type, client = null, appointmentId = "") {
     return {
         id: null,
         documentType: type,
-        documentNumber: suggestNumber(type),
+        documentNumber: type === "invoice" ? "" : suggestNumber(type),
         clientId: client?.id || "",
         appointmentId,
         vatRegime: billingData.profile.vatRegime || "standard",
@@ -749,6 +790,7 @@ function createNewDocument(type, client = null, appointmentId = "") {
         customerType: client ? getBillingCustomerType(client.type) : baseQuote?.customerType || "Particulier",
         customerName: client?.name || "",
         customerAddress: client ? [client.address, client.city].filter(Boolean).join(", ") : "",
+        legalData: legalDataFromClient(client),
         issueDate: today(),
         dueDate: "",
         status: baseQuote?.status || "draft",
@@ -766,11 +808,20 @@ function getInvoiceForQuote(quote) {
 function fillCustomerAddress(input, form, clients) {
     const client = clients.find(item => normalizeText(item.name) === normalizeText(input.value));
     form.querySelector("[name=clientId]").value = client?.id || "";
-    if (client) form.querySelector("[name=customerAddress]").value = [client.address, client.city].filter(Boolean).join(", ");
+    if (!client) return;
+    const values = legalDataFromClient(client);
+    if (values.billingAddress) form.querySelector("[name=customerAddress]").value = values.billingAddress;
+    for (const field of ["customerSiren", "customerVatNumber", "deliveryAddress", "serviceDate", "purchaseOrderReference", "operationCategory"]) {
+        if (field === "operationCategory" && !client.operationCategory) continue;
+        if (values[field] && form.elements[field]) form.elements[field].value = values[field];
+    }
 }
 
 function emptyLine() { return { description: "", quantity: 1, unit: "unité", unitPrice: 0, vatRate: isVatFranchise() ? 0 : 20 }; }
-function normalizeDocument(document) { const vatRegime = document.vatRegime || billingData?.profile?.vatRegime || "standard"; return { ...document, vatRegime, issuerTaxNumber: document.issuerTaxNumber || billingData?.profile?.taxNumber || "", clientId: document.clientId || "", appointmentId: document.appointmentId || "", sourceQuoteId: document.sourceQuoteId || "", correctionSourceId: document.correctionSourceId || "", correctionKind: document.correctionKind || "none", correctionSourceNumber: document.correctionSourceNumber || "", quoteReference: document.quoteReference || "", isEmailSent: Boolean(document.isEmailSent), isAccounted: Boolean(document.isAccounted), financialData: normalizeFinancialData(document.financialData), lines: Array.isArray(document.lines) && document.lines.length ? document.lines.map(line => ({ ...emptyLine(), ...line, vatRate: vatRegime === "franchise" ? 0 : Number(line.vatRate) || 0 })) : [emptyLine()] }; }
+function normalizeDocument(document) { const vatRegime = document.vatRegime || billingData?.profile?.vatRegime || "standard"; return { ...document, vatRegime, issuerTaxNumber: document.issuerTaxNumber || billingData?.profile?.taxNumber || "", clientId: document.clientId || "", appointmentId: document.appointmentId || "", sourceQuoteId: document.sourceQuoteId || "", correctionSourceId: document.correctionSourceId || "", correctionKind: document.correctionKind || "none", correctionSourceNumber: document.correctionSourceNumber || "", quoteReference: document.quoteReference || "", isEmailSent: Boolean(document.isEmailSent), isAccounted: Boolean(document.isAccounted), legalData: normalizeLegalData(document.legalData, document.customerAddress || ""), financialData: normalizeFinancialData(document.financialData), lines: Array.isArray(document.lines) && document.lines.length ? document.lines.map(line => ({ ...emptyLine(), ...line, vatRate: vatRegime === "franchise" ? 0 : Number(line.vatRate) || 0 })) : [emptyLine()] }; }
+function normalizeLegalData(value, billingAddress = "") { return { customerSiren: value?.customerSiren || "", customerVatNumber: value?.customerVatNumber || "", billingAddress: value?.billingAddress || billingAddress, deliveryAddress: value?.deliveryAddress || "", serviceDate: value?.serviceDate || "", purchaseOrderReference: value?.purchaseOrderReference || "", operationCategory: ["goods", "services", "mixed"].includes(value?.operationCategory) ? value.operationCategory : "services" }; }
+function legalDataFromClient(client) { if (!client) return normalizeLegalData(); const billingAddress = [client.billingAddress || client.address, client.postalCode, client.city].filter(Boolean).join(", "); return normalizeLegalData({ customerSiren: client.siren || client.companySiren || "", customerVatNumber: client.vatNumber || client.taxNumber || client.companyVatNumber || "", billingAddress, deliveryAddress: client.deliveryAddress || "", serviceDate: client.serviceDate || "", purchaseOrderReference: client.purchaseOrderReference || "", operationCategory: client.operationCategory || "services" }, billingAddress); }
+function billingDocumentPayload(form, billingDocument) { const values = formDataToObject(new FormData(form)); const legalData = normalizeLegalData({ customerSiren: values.customerSiren, customerVatNumber: values.customerVatNumber, billingAddress: values.customerAddress, deliveryAddress: values.deliveryAddress, serviceDate: values.serviceDate, purchaseOrderReference: values.purchaseOrderReference, operationCategory: values.operationCategory }, values.customerAddress); for (const key of ["customerSiren", "customerVatNumber", "deliveryAddress", "serviceDate", "purchaseOrderReference", "operationCategory"]) delete values[key]; return { ...values, legalData, lines: billingDocument.lines, financialData: billingDocument.financialData }; }
 function emptyFinancialData() { return { discountMode: "fixed", discountAmount: 0, depositAmount: 0, conditions: "", comments: "", aids: [] }; }
 function normalizeFinancialData(value) { return { ...emptyFinancialData(), discountMode: value?.discountMode === "percentage" ? "percentage" : "fixed", discountAmount: Number(value?.discountAmount) || 0, depositAmount: Number(value?.depositAmount) || 0, conditions: value?.conditions || "", comments: value?.comments || "", aids: Array.isArray(value?.aids) ? value.aids.filter(aid => aid?.name).map(toAidSnapshot) : [] }; }
 function normalizeQuoteTemplate(template) {

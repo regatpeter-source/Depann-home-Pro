@@ -1,11 +1,11 @@
-const CACHE_NAME = "depann-home-pro-v375";
+const CACHE_NAME = "depann-home-pro-v376";
 const ASSETS = [
     "./",
     "./index.html",
     "./css/style.css?v=203",
     "./css/partner-dialogue.css?v=5",
     "./css/report-editor.css?v=7",
-    "./js/app.js?v=312",
+    "./js/app.js?v=313",
     "./js/client-session.js?v=2",
     "./js/accounting.js?v=8",
     "./js/accounting-sandbox.js",
@@ -17,7 +17,7 @@ const ASSETS = [
     "./js/partner-connections.js",
     "./js/technical-reports.js",
     "./js/auth.js",
-    "./js/billing.js?v=178",
+    "./js/billing.js?v=179",
     "./js/document-delivery.js?v=1",
     "./js/pdf-live-preview.js?v=1",
     "./vendor/pdfjs/build/pdf.min.mjs?v=5.4.54",
@@ -30,7 +30,7 @@ const ASSETS = [
     "./js/config.js",
     "./js/data.js",
     "./js/data-imports.js",
-    "./js/navigation.js",
+    "./js/navigation.js?v=335",
     "./js/library.js",
     "./js/local-library.js",
     "./js/messages.js",
