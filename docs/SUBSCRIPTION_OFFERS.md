@@ -25,9 +25,12 @@ L’interface **Partenaire** utilise le niveau technique Pro, mais son portail e
 - 8 € TTC par poste mobile et par mois.
 - Toutes les fonctions Basic.
 - Planning et gestion des interventions.
+- Importation de données Excel et CSV.
+- Accès au Réseau Depann’Home Pro interne : annuaire, fiche réseau et connexions entre entreprises utilisatrices.
 - Accès à tous les postes mobiles : Administrateur Mobile, Chef d’équipe et Technicien.
 - Pas d’accès au Quitus d’intervention, réservé à Pro.
-- Pas d’accès aux rapports techniques, à la bibliothèque sur poste PC, au Réseau ou aux API.
+- Pas d’accès aux rapports techniques ni à la bibliothèque sur poste PC.
+- Aucun connecteur externe, aucune connexion API partenaire et aucun environnement de recette API.
 
 ## Pro
 

@@ -1,6 +1,6 @@
 import { ROUTES, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=126";
 import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=167";
-import { openCreatorPartnerRequest, openCreatorRequestNotification, renderCreatorConsole } from "./creator.js?v=141";
+import { openCreatorPartnerRequest, openCreatorRequestNotification, renderCreatorConsole } from "./creator.js?v=142";
 import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=176";
 import { renderAccounting } from "./accounting.js?v=7";
 import { renderAccountingSandbox } from "./accounting-sandbox.js?v=2";
@@ -8,7 +8,7 @@ import { renderPurchases } from "./purchases.js?v=118";
 import { renderGroupActivation, renderGroupWorkspace } from "./groups.js?v=3";
 import { renderPartnerMissions } from "./partner-missions.js?v=42";
 import { renderPartnerSandbox } from "./partner-sandbox.js?v=3";
-import { renderPartnerConnections } from "./partner-connections.js?v=20";
+import { renderPartnerConnections } from "./partner-connections.js?v=21";
 import { renderDataImportTool } from "./data-imports.js?v=3";
 import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=29";
 import { getFirstUnreadClientId, refreshClientMessageAlert, refreshVisibleClientMessages } from "./messages.js?v=106";
@@ -1325,7 +1325,7 @@ function renderSettingsWorkspace(options = {}) {
         const container = getContainer();
         const hub = document.createElement("section");
         hub.className = "settings-hub";
-        const internalNetworkOnly = document.body.dataset.organizationInterface === "partner";
+        const internalNetworkOnly = document.body.dataset.organizationInterface === "partner" || !organizationFeatureEnabled("connectors");
         hub.innerHTML = `<header class="settings-hub-heading"><div><p class="eyebrow">${internalNetworkOnly ? "Réseau et assistance" : "Configuration de l’entreprise"}</p><h2>Paramètres</h2><p class="muted">${internalNetworkOnly ? "Retrouvez le Réseau Depann’Home Pro et contactez directement le Support." : "Toutes les configurations sont regroupées ici. Le menu principal reste dédié aux opérations quotidiennes."}</p></div></header>`;
         const grid = document.createElement("div");
         grid.className = "settings-card-grid";
@@ -1347,7 +1347,7 @@ function renderSettingsWorkspace(options = {}) {
 
     clearSearch();
     resetSelection("all");
-    const titles = { subscription: "Offre & abonnement", documents: "Modèles de documents", network: document.body.dataset.organizationInterface === "partner" ? "Réseau Depann’Home Pro" : "Réseau & connecteurs", support: "Support", users: "Utilisateurs", security: "Sécurité", groups: "Groupe / Multi-entreprises", personalization: "Personnalisation", imports: "Importation de données", creator: "Console Créateur" };
+    const titles = { subscription: "Offre & abonnement", documents: "Modèles de documents", network: document.body.dataset.organizationInterface === "partner" || !organizationFeatureEnabled("connectors") ? "Réseau Depann’Home Pro" : "Réseau & connecteurs", support: "Support", users: "Utilisateurs", security: "Sécurité", groups: "Groupe / Multi-entreprises", personalization: "Personnalisation", imports: "Importation de données", creator: "Console Créateur" };
     setPage(`Paramètres · ${titles[section] || "Configuration"}`, ROUTES.settings, "detail");
     const container = getContainer();
     container.appendChild(createBackCard("Retour aux Paramètres", () => renderSettings()));
@@ -1365,7 +1365,7 @@ function renderSettingsWorkspace(options = {}) {
         return;
     }
     if (section === "network") {
-        const internalNetworkOnly = document.body.dataset.organizationInterface === "partner";
+        const internalNetworkOnly = document.body.dataset.organizationInterface === "partner" || !organizationFeatureEnabled("connectors");
         container.appendChild(createSettingsIntro(internalNetworkOnly ? "Réseau Depann’Home Pro" : "Réseau & connecteurs", internalNetworkOnly ? "Recherchez une entreprise utilisatrice, consultez sa fiche et demandez une connexion. Les connecteurs externes sont réservés aux donneurs d’ordre et ne sont pas disponibles sur le portail Partenaire." : "Le Réseau Depann’Home Pro relie uniquement les entreprises utilisatrices. Les connecteurs externes sont configurés séparément pour les échanges API avec les organismes tiers."));
         renderPartnerConnections(container);
         if (!internalNetworkOnly && document.body.classList.contains("partner-sandbox-enabled")) container.appendChild(createButton("Ouvrir l’environnement de recette partenaire", "secondary-button settings-inline-action", renderPartnerSandbox));
@@ -1400,7 +1400,7 @@ function renderSettingsWorkspace(options = {}) {
 async function renderSubscriptionSettings(container) {
     const tiers = [
         { id: "basic", label: "Basic", pc: 20, mobile: 5, description: "Postes PC et Administrateur Mobile. Clients, facturation, comptabilité et PDP. Bibliothèque sur mobile ; Achats sur tous les PC et l’Administrateur Mobile." },
-        { id: "basic_plus", label: "Basic+", pc: 35, mobile: 8, description: "Tous postes PC et mobiles. Basic avec planning. Bibliothèque sur mobile ; Achats sur tous les PC et l’Administrateur Mobile." },
+        { id: "basic_plus", label: "Basic+", pc: 35, mobile: 8, description: "Tous postes PC et mobiles. Basic avec planning, imports de données et Réseau Depann’Home Pro interne. Bibliothèque sur mobile ; Achats sur tous les PC et l’Administrateur Mobile. Sans connecteurs ni connexions API externes." },
         { id: "pro", label: "Pro", pc: 70, mobile: 15, description: "Tous postes et accès complet. Bibliothèque sur mobile ; Achats sur tous les PC et l’Administrateur Mobile ; Quitus, rapports, Réseau, API et imports. Licences Groupe d’entreprise / Multi-entreprises incluses sans supplément de licence." }
     ];
     const rank = { basic: 0, basic_plus: 1, pro: 2 };

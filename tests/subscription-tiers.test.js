@@ -51,7 +51,7 @@ test("subscription tiers restrict mobile post roles as specified", () => {
     assert.equal(typeof mobileAdministratorSeatError, "function");
 });
 
-test("Basic exposes clients, billing and accounting while Basic+ adds planning", () => {
+test("Basic exposes clients, billing and accounting while Basic+ adds planning, imports and the internal network", () => {
     const basic = publicOrganization({ interfaceType: "standard", licenseType: "depannhome_standard", subscriptionTier: "basic" });
     assert.equal(isFeatureEnabled(basic, "clients"), true);
     assert.equal(isFeatureEnabled(basic, "billing"), true);
@@ -67,8 +67,20 @@ test("Basic exposes clients, billing and accounting while Basic+ adds planning",
     assert.equal(isFeatureEnabled(plus, "accounting"), true);
     assert.equal(isFeatureEnabled(plus, "purchases"), true);
     assert.equal(isFeatureEnabled(plus, "calendar"), true);
+    assert.equal(isFeatureEnabled(plus, "imports"), true);
+    assert.equal(isFeatureEnabled(plus, "partnerConnections"), true);
+    assert.equal(isFeatureEnabled(plus, "connectors"), false);
+    assert.equal(isFeatureEnabled(plus, "partnerMissions"), false);
     assert.equal(isFeatureEnabled(plus, "quitus"), false);
     assert.equal(isFeatureEnabled(plus, "technicalReports"), false);
+    assert.match(partnerConnectionsClient, /!organizationFeatureEnabled\("connectors"\)/);
+    assert.match(partnerConnectionsClient, /!organizationFeatureEnabled\("partnerMissions"\)/);
+    assert.match(navigation, /organizationInterface === "partner" \|\| !organizationFeatureEnabled\("connectors"\)/);
+    assert.ok((partnerConnectionsServer.match(/subscription_tier IN \('basic_plus','pro'\)/g) || []).length >= 6);
+    assert.match(subscriptionOffers, /Importation de données Excel et CSV/);
+    assert.match(subscriptionOffers, /Aucun connecteur externe, aucune connexion API partenaire/);
+    assert.match(commercialPresentation, /Réseau Depann’Home Pro interne/);
+    assert.match(presentationGenerator, /planning · imports · Réseau interne · sans API externe/);
 });
 
 test("every mobile post keeps Home and Library access regardless of subscription tier", () => {

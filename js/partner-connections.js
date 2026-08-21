@@ -7,7 +7,7 @@ const RIGHTS = [["canSendInterventions", "Peut envoyer des interventions"], ["ca
 let sandboxScenario = null;
 
 export async function renderPartnerConnections(container) {
-    const internalNetworkOnly = document.body.dataset.organizationInterface === "partner";
+    const internalNetworkOnly = document.body.dataset.organizationInterface === "partner" || !organizationFeatureEnabled("connectors");
     const card = document.createElement("article"); card.className = "brand-card full-card procedure-card partner-connections-card";
     card.innerHTML = `<header class="partner-connections-heading"><div><p class="eyebrow">${internalNetworkOnly ? "Réseau professionnel" : "Partenariats & intégrations"}</p><h2>${internalNetworkOnly ? "Réseau Depann’Home Pro" : "Réseau et connecteurs"}</h2><p class="muted">${internalNetworkOnly ? "Recherchez des entreprises utilisatrices et établissez des partenariats internes, sans connecteur ni accès API externe." : "Le réseau Depann’Home Pro relie les entreprises utilisatrices. Les connecteurs externes reçoivent leurs missions directement par API."}</p></div></header>${internalNetworkOnly ? "" : '<nav class="partner-network-tabs" aria-label="Espaces partenaires"><button type="button" class="secondary-button active" data-partner-space="network">Réseau Depann\'Home Pro</button><button type="button" class="secondary-button" data-partner-space="external">Connecteurs externes</button></nav>'}<div data-partner-connections><p class="muted">Chargement du Réseau Depann’Home Pro…</p></div>`;
     container.appendChild(card);
@@ -34,6 +34,9 @@ export async function renderPartnerConnections(container) {
         target.querySelectorAll("[data-network-tab]").forEach(button => button.classList.toggle("active", button.dataset.networkTab === activeTab));
         if (activeTab === "directory") return renderDirectoryTab(networkTarget, data, load);
         renderPartnersTab(networkTarget, data, load);
+        if (!organizationFeatureEnabled("partnerMissions")) {
+            networkTarget.querySelectorAll("[data-new-partner-mission],[data-open-partner-messaging]").forEach(button => button.remove());
+        }
     }
     await load();
 }
@@ -177,3 +180,7 @@ function modal(content) { const dialog = document.createElement("div"); dialog.c
 function statusLabel(status) { return ({ connected: "Connecté", pending: "En attente", refused: "Refusé", disconnected: "Déconnecté" })[status] || "Statut non renseigné"; }
 function relativeDate(value) { if (!value) return "—"; const seconds = Math.max(0, Math.round((Date.now() - new Date(value).getTime()) / 1000)); if (seconds < 15) return "À l’instant"; if (seconds < 60) return `Il y a ${seconds} s`; const minutes = Math.round(seconds / 60); if (minutes < 60) return `Il y a ${minutes} min`; const hours = Math.round(minutes / 60); if (hours < 24) return `Il y a ${hours} h`; return new Intl.DateTimeFormat("fr-FR", { dateStyle: "short", timeStyle: "short" }).format(new Date(value)); }
 async function api(url, options = {}) { try { const response = await fetch(url, { credentials: "same-origin", headers: { "Content-Type": "application/json", ...(options.headers || {}) }, ...options }); const data = response.status === 204 ? null : await response.json().catch(() => null); return { ok: response.ok, data, message: data?.message || "Serveur indisponible." }; } catch { return { ok: false, message: "Serveur indisponible." }; } }
+
+function organizationFeatureEnabled(feature) {
+    try { return JSON.parse(document.body.dataset.organizationFeatures || "{}")[feature] === true; } catch { return false; }
+}

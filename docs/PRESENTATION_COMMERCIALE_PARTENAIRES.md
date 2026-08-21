@@ -53,6 +53,9 @@ L’offre Basic est adaptée aux petites structures qui souhaitent centraliser l
 - Gestion et affectation des interventions.
 - Consultation terrain des rendez-vous autorisés.
 - Détection des conflits de planning et recherche de disponibilités.
+- Imports de données Excel et CSV.
+- Réseau Depann’Home Pro interne : annuaire, fiche réseau et connexions entre entreprises utilisatrices.
+- Aucun connecteur externe ni connexion API partenaire.
 - Accès à tous les postes mobiles : Administrateur Mobile, Chef d’équipe et Technicien.
 - Bibliothèque technique pour ces postes mobiles ; Achats sur tous les postes PC et sur l’Administrateur Mobile.
 
@@ -69,10 +72,9 @@ L’offre Basic+ convient aux entreprises qui souhaitent coordonner le bureau et
 - Quitus d’intervention.
 - Achats et fonctions métier avancées.
 - Bibliothèque et ressources techniques.
-- Réseau Depann’Home Pro et missions partenaires.
+- Missions partenaires.
 - Dialogue collaboratif et partage contrôlé des documents.
 - Connexions API, connecteurs et environnements de recette.
-- Imports de données.
 - Licences Groupe d’entreprise / Multi-entreprises incluses, sans supplément de licence, selon l’interface activée.
 
 L’offre Pro est destinée aux entreprises qui veulent piloter l’ensemble de leur activité et développer des échanges structurés avec leurs partenaires.
