@@ -1,4 +1,4 @@
-import { initializeAuthentication, restoreApplicationShell, signOut } from "./auth.js?v=121";
+import { initializeAuthentication, restoreApplicationShell, signOut } from "./auth.js?v=122";
 import { initializeClientSynchronization } from "./client-sync.js?v=125";
 import { initializeCollaboration } from "./collaboration.js?v=4";
 import { loadDatabase } from "./data.js?v=59";

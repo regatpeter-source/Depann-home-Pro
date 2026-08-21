@@ -93,19 +93,19 @@ function renderAuthentication({ onAuthenticated, registrationEnabled, message = 
             method: "POST",
             body: JSON.stringify({ username: form.get("username"), password: form.get("password"), ...getDeviceIdentity() })
         });
+        if (result.data?.companyTotpEnrollmentRequired) {
+            renderCompanyTotpEnrollment({ onAuthenticated, registrationEnabled, challenge: result.data.challenge, message: result.data.message });
+            return;
+        }
+        if (result.data?.companyTotpRequired) {
+            renderCompanyTotpVerification({ onAuthenticated, registrationEnabled, challenge: result.data.challenge, message: result.data.message });
+            return;
+        }
+        if (result.data?.totpRequired) {
+            renderCreatorTotpVerification({ onAuthenticated, registrationEnabled, challenge: result.data.challenge, message: result.data.message });
+            return;
+        }
         if (!result.ok) {
-            if (result.data?.companyTotpEnrollmentRequired) {
-                renderCompanyTotpEnrollment({ onAuthenticated, registrationEnabled, challenge: result.data.challenge, message: result.data.message });
-                return;
-            }
-            if (result.data?.companyTotpRequired) {
-                renderCompanyTotpVerification({ onAuthenticated, registrationEnabled, challenge: result.data.challenge, message: result.data.message });
-                return;
-            }
-            if (result.data?.totpRequired) {
-                renderCreatorTotpVerification({ onAuthenticated, registrationEnabled, challenge: result.data.challenge, message: result.data.message });
-                return;
-            }
             if (result.data?.codeRequired) {
                 renderCodeVerification({ onAuthenticated, deviceId: result.data.deviceId, message: result.data.message });
                 return;
@@ -262,14 +262,15 @@ function renderCreatorTotpVerification({ onAuthenticated, registrationEnabled, c
     app.querySelector("#backToAuthentication").addEventListener("click", () => renderAuthentication({ onAuthenticated, registrationEnabled }));
     app.querySelector("#creatorTotpForm").addEventListener("submit", async event => {
         event.preventDefault();
+        const submittedForm = event.currentTarget;
         status.textContent = "Vérification du code…";
         status.classList.remove("error");
-        const code = new FormData(event.currentTarget).get("code");
+        const code = new FormData(submittedForm).get("code");
         const result = await request("/api/auth/verify-creator-totp", { method: "POST", body: JSON.stringify({ challenge, code }) });
         if (!result.ok) {
             status.textContent = result.data?.message || "Impossible de vérifier le code de sécurité.";
             status.classList.add("error");
-            event.currentTarget.elements.code.select();
+            submittedForm.elements.code.select();
             return;
         }
         onAuthenticated(result.data.user);
@@ -293,14 +294,15 @@ function renderCompanyTotpVerification({ onAuthenticated, registrationEnabled, c
     app.querySelector("#backToAuthentication").addEventListener("click", () => renderAuthentication({ onAuthenticated, registrationEnabled }));
     app.querySelector("#companyTotpForm").addEventListener("submit", async event => {
         event.preventDefault();
+        const submittedForm = event.currentTarget;
         status.textContent = "Vérification du code…";
         status.classList.remove("error");
-        const code = new FormData(event.currentTarget).get("code");
+        const code = new FormData(submittedForm).get("code");
         const result = await request("/api/auth/verify-company-totp", { method: "POST", body: JSON.stringify({ challenge, code }) });
         if (!result.ok) {
             status.textContent = result.data?.message || "Impossible de vérifier le code de sécurité.";
             status.classList.add("error");
-            event.currentTarget.elements.code.select();
+            submittedForm.elements.code.select();
             return;
         }
         onAuthenticated(result.data.user);
@@ -330,14 +332,15 @@ async function renderCompanyTotpEnrollment({ onAuthenticated, registrationEnable
     app.querySelector("#backToAuthentication").addEventListener("click", () => renderAuthentication({ onAuthenticated, registrationEnabled }));
     app.querySelector("#companyTotpEnrollmentForm").addEventListener("submit", async event => {
         event.preventDefault();
+        const submittedForm = event.currentTarget;
         status.textContent = "Vérification du code…";
         status.classList.remove("error");
-        const code = new FormData(event.currentTarget).get("code");
+        const code = new FormData(submittedForm).get("code");
         const result = await request("/api/auth/verify-company-totp", { method: "POST", body: JSON.stringify({ challenge, code }) });
         if (!result.ok) {
             status.textContent = result.data?.message || "Impossible de vérifier le code de sécurité.";
             status.classList.add("error");
-            event.currentTarget.elements.code.select();
+            submittedForm.elements.code.select();
             return;
         }
         onAuthenticated(result.data.user);

@@ -81,7 +81,7 @@ export function registerAuthRoutes(app) {
         const user = request.user;
         if (!user) {
             if (request.sessionWindowReplaced) response.set("X-DepannHome-Session-Replaced", "true");
-            return response.status(401).json({
+            return response.json({
                 authenticated: false,
                 registrationEnabled: isPublicRegistrationEnabled(),
                 sessionReplaced: Boolean(request.sessionWindowReplaced)
@@ -117,7 +117,7 @@ export function registerAuthRoutes(app) {
         }
 
         if (isCreatorUsername(user.username) && await isCreatorTotpEnabled(user.id)) {
-            return response.status(401).json({
+            return response.status(202).json({
                 totpRequired: true,
                 challenge: createCreatorTotpChallenge(user, device),
                 message: "Saisissez le code affiché dans Google Authenticator."
@@ -125,7 +125,7 @@ export function registerAuthRoutes(app) {
         }
         if (user.role === "admin" && !isCreatorUsername(user.username) && await isCompanyTotpEnabled(user.account_owner_id)) {
             const purpose = await hasCompanyTotpAuthenticator(user.id) ? "login" : "enrollment";
-            return response.status(401).json({
+            return response.status(202).json({
                 companyTotpRequired: purpose === "login",
                 companyTotpEnrollmentRequired: purpose === "enrollment",
                 challenge: await createCompanyTotpChallenge(user, device, purpose),
@@ -689,8 +689,7 @@ export async function authenticateRequest(request, response, next) {
         if (user.role === "admin" && device.device_type === "desktop" && (!session.sessionId || session.sessionId !== device.session_id)) {
             throw new Error("Session PC remplacée");
         }
-        if (user.role === "admin" && device.device_type === "desktop" && String(session.sessionId).startsWith("window:")
-            && session.sessionId !== clientWindowSessionId(request)) {
+        if (user.role === "admin" && device.device_type === "desktop" && session.sessionId !== clientWindowSessionId(request)) {
             throw new Error("Fenêtre PC remplacée");
         }
         const groupCompany = user.role === "admin" ? await resolveGroupCompany(user.id, session.activeCompanyId) : null;
@@ -1104,7 +1103,7 @@ function getCompanyTotpEncryptionKey() {
 }
 
 async function issueAdministratorPcSession(userId, deviceId, clientSessionId = "") {
-    const sessionId = clientSessionId || `legacy:${crypto.randomUUID()}`;
+    const sessionId = clientSessionId || crypto.randomUUID();
     const { rows } = await getPool().query(`
         UPDATE depannhome_auth_devices
         SET session_id = $3, last_seen_at = NOW()
@@ -1117,7 +1116,7 @@ async function issueAdministratorPcSession(userId, deviceId, clientSessionId = "
 
 function clientWindowSessionId(request) {
     const value = String(request.get?.("X-DepannHome-Client-Session") || "");
-    return DEVICE_ID_PATTERN.test(value) ? `window:${value}` : "";
+    return DEVICE_ID_PATTERN.test(value) ? value : "";
 }
 
 function setSessionCookie(response, user, deviceId, activeCompanyId = "", sessionId = "") {

@@ -16,9 +16,21 @@ test("chaque fenêtre Web ou PWA possède une session cliente distincte", () => 
 
 test("la session Administrateur PC est liée à la fenêtre la plus récemment connectée", () => {
     assert.match(authServer, /clientWindowSessionId\(request\)/);
-    assert.match(authServer, /String\(session\.sessionId\)\.startsWith\("window:"\)/);
     assert.match(authServer, /session\.sessionId !== clientWindowSessionId\(request\)/);
     assert.match(authServer, /throw new Error\("Fenêtre PC remplacée"\)/);
+    assert.match(authServer, /const sessionId = clientSessionId \|\| crypto\.randomUUID\(\)/);
+    assert.doesNotMatch(authServer, /`window:\$\{value\}`|`legacy:\$\{crypto\.randomUUID\(\)\}`/);
+});
+
+test("la vérification TOTP conserve le formulaire après une attente asynchrone", () => {
+    assert.match(authServer, /response\.status\(202\)\.json\(\{\s*totpRequired: true/);
+    assert.match(authClient, /const submittedForm = event\.currentTarget/);
+    assert.match(authClient, /submittedForm\.elements\.code\.select\(\)/);
+    assert.doesNotMatch(authClient, /event\.currentTarget\.elements\.code/);
+});
+
+test("la sonde de session non connectée ne génère pas de faux 401", () => {
+    assert.match(authServer, /if \(!user\) \{[\s\S]*?return response\.json\(\{\s*authenticated: false/);
 });
 
 test("l’ancienne fenêtre est avertie sans supprimer le cookie partagé de la nouvelle", () => {
