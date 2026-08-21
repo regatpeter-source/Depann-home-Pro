@@ -157,5 +157,6 @@ test("une facture non envoyée devenue obsolète est annulée avant toute livrai
     assert.match(invoicingSource, /WHERE status<>'cancelled'/);
     assert.match(schemaSource, /status IN \('pending','sending','sent','failed','cancelled'\)/);
     assert.match(creatorSource, /Facture historique : l’abonnement actuel est désormais de/);
-    assert.match(creatorServerSource, /FROM depannhome_subscription_invoices WHERE account_owner_id=\$1 AND status<>'cancelled'/);
+    assert.match(creatorServerSource, /FROM depannhome_subscription_invoices invoice LEFT JOIN LATERAL/);
+    assert.match(creatorServerSource, /WHERE invoice\.account_owner_id=\$1 AND invoice\.status<>'cancelled'/);
 });

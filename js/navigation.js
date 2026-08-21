@@ -1417,7 +1417,24 @@ async function renderSubscriptionSettings(container) {
     const subscriptionStatus = subscriptionBillingStatus(account.subscriptionStatus);
     const renewalDate = formatSubscriptionBillingDate(account.subscriptionRenewalDate);
     const invoiceAmountCents = Math.max(0, Number(latestInvoice?.netAmountCents ?? latestInvoice?.amountCents) || 0);
-    const invoiceAmount = invoiceAmountCents ? (invoiceAmountCents / 100).toLocaleString("fr-FR", { style: "currency", currency: "EUR" }) : "";
+    const creditedAmountCents = Math.max(0, Number(latestInvoice?.creditedAmountCents) || 0);
+    const paidAmountCents = Math.max(0, Number(latestInvoice?.paidAmountCents) || 0);
+    const pendingRefundCents = Math.max(0, Number(latestInvoice?.pendingRefundCents) || 0);
+    const outstandingAmountCents = Math.max(0, Number(latestInvoice?.outstandingAmountCents ?? invoiceAmountCents) || 0);
+    const formatSubscriptionAmount = amountCents => (amountCents / 100).toLocaleString("fr-FR", { style: "currency", currency: "EUR" });
+    const invoiceBalanceLabel = !latestInvoice
+        ? "Aucun montant facturé à ce jour"
+        : pendingRefundCents
+            ? `0 € restant à payer · remboursement de ${formatSubscriptionAmount(pendingRefundCents)} à recevoir`
+            : latestInvoice.paymentStatus === "paid"
+                ? creditedAmountCents
+                    ? `0 € restant à payer · ${formatSubscriptionAmount(paidAmountCents)} réglés et avoir de ${formatSubscriptionAmount(creditedAmountCents)} déduit`
+                    : `0 € restant à payer · ${formatSubscriptionAmount(paidAmountCents || invoiceAmountCents)} réglés`
+            : creditedAmountCents
+                ? outstandingAmountCents
+                    ? `${formatSubscriptionAmount(outstandingAmountCents)} restant à payer · avoir de ${formatSubscriptionAmount(creditedAmountCents)} déduit`
+                    : `0 € restant à payer · facture couverte par un avoir de ${formatSubscriptionAmount(creditedAmountCents)}`
+                : `${formatSubscriptionAmount(outstandingAmountCents)} TTC restant à payer`;
     document.body.dataset.subscriptionTier = currentTier;
     document.body.dataset.maxPcUsers = String(currentPcSeats);
     document.body.dataset.maxMobileUsers = String(currentMobileSeats);
@@ -1433,7 +1450,7 @@ async function renderSubscriptionSettings(container) {
         <div class="subscription-billing-grid">
             <article><span>Prochaine facturation</span><strong>${escapeHtml(renewalDate || "Date à confirmer")}</strong><small>${account.subscriptionPlan === "paid" ? "Échéance mensuelle programmée" : "Aucune facturation automatique programmée"}</small></article>
             <article><span>Dernière facture</span><strong>${escapeHtml(latestInvoice?.invoiceNumber || "Aucune facture émise")}</strong><small>${latestInvoice ? `${escapeHtml(formatSubscriptionBillingDate(latestInvoice.issueDate))} · ${latestInvoice.paymentStatus === "paid" ? `Réglée le ${escapeHtml(formatSubscriptionBillingDate(latestInvoice.paidDate))}` : escapeHtml(subscriptionInvoiceStatus(latestInvoice.status))}` : "La première facture apparaîtra ici après son émission."}</small></article>
-            <article><span>Échéance de paiement</span><strong>${escapeHtml(latestInvoice ? formatSubscriptionBillingDate(latestInvoice.dueDate) : "—")}</strong><small>${invoiceAmount ? `${escapeHtml(invoiceAmount)} TTC après remise éventuelle` : "Aucun montant facturé à ce jour"}</small></article>
+            <article><span>Échéance de paiement</span><strong>${escapeHtml(latestInvoice ? formatSubscriptionBillingDate(latestInvoice.dueDate) : "—")}</strong><small>${escapeHtml(invoiceBalanceLabel)}</small></article>
             <article><span>Référence de facturation</span><strong>${escapeHtml(account.billingReference || "Non renseignée")}</strong><small>${escapeHtml(account.subscriptionLabel || currentOffer.label)}${account.discountLabel ? ` · ${escapeHtml(account.discountLabel)}` : ""}</small></article>
         </div>
         <p class="muted subscription-billing-note">Les informations sont synchronisées avec la facturation de l’entreprise. Après l’envoi d’une facture, la prochaine échéance est automatiquement reportée d’un mois.</p>

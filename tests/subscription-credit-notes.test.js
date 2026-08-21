@@ -7,6 +7,8 @@ import { createBillingPdf } from "../server/billing.js";
 const invoicingSource = readFileSync(new URL("../server/invoicing.js", import.meta.url), "utf8");
 const schemaSource = readFileSync(new URL("../database/schema.sql", import.meta.url), "utf8");
 const creatorSource = readFileSync(new URL("../js/creator.js", import.meta.url), "utf8");
+const creatorServerSource = readFileSync(new URL("../server/creator.js", import.meta.url), "utf8");
+const navigationSource = readFileSync(new URL("../js/navigation.js", import.meta.url), "utf8");
 const billingSource = readFileSync(new URL("../server/billing.js", import.meta.url), "utf8");
 
 test("les montants d’avoir sont ventilés en centimes sans dérive", () => {
@@ -58,6 +60,17 @@ test("un paiement après avoir porte uniquement sur le net restant", () => {
     assert.match(invoicingSource, /paid_amount_cents=\$2/);
     assert.match(invoicingSource, /intégralement créditée et ne peut plus être marquée comme réglée/);
     assert.match(creatorSource, /Montant attendu/);
+});
+
+test("l’entreprise voit le solde de sa facture après déduction des avoirs", () => {
+    assert.match(creatorServerSource, /COALESCE\(credits\.total,0\)::integer AS "creditedAmountCents"/);
+    assert.match(creatorServerSource, /COALESCE\(credits\.pending_refund,0\)::integer AS "pendingRefundCents"/);
+    assert.match(creatorServerSource, /GREATEST\(invoice\.net_amount_cents-COALESCE\(credits\.total,0\)-invoice\.paid_amount_cents,0\)::integer AS "outstandingAmountCents"/);
+    assert.match(navigationSource, /outstandingAmountCents/);
+    assert.match(navigationSource, /restant à payer · avoir de/);
+    assert.match(navigationSource, /facture couverte par un avoir de/);
+    assert.match(navigationSource, /remboursement de.*à recevoir/);
+    assert.doesNotMatch(navigationSource, /TTC après remise éventuelle/);
 });
 
 test("le PDF d’avoir est généré avec son identité et ses totaux exacts", async () => {
