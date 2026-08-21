@@ -1,9 +1,8 @@
-import { ROUTES, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=127";
+import { ROUTES, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=128";
 import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=167";
 import { openCreatorPartnerRequest, openCreatorRequestNotification, renderCreatorConsole } from "./creator.js?v=142";
 import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=179";
 import { renderAccounting } from "./accounting.js?v=9";
-import { renderAccountingSandbox } from "./accounting-sandbox.js?v=2";
 import { renderPurchases } from "./purchases.js?v=118";
 import { renderGroupActivation, renderGroupWorkspace } from "./groups.js?v=3";
 import { renderPartnerMissions } from "./partner-missions.js?v=43";
@@ -158,8 +157,6 @@ export async function refreshApplication() {
         renderPartnerMissions();
     } else if (activeRoute === ROUTES.partnerSandbox && document.body.dataset.role === "admin") {
         renderPartnerSandbox();
-    } else if (activeRoute === ROUTES.accountingSandbox && document.body.dataset.role === "admin") {
-        renderAccountingSandbox();
     } else if (activeRoute === ROUTES.purchases && ["admin", "pc_standard", "accountant", "mobile_admin"].includes(document.body.dataset.role)) {
         renderPurchases();
     } else if (activeRoute === ROUTES.groups && document.body.dataset.groupAdmin === "true") {
@@ -261,7 +258,6 @@ function bindEvents() {
             if (nav === ROUTES.accounting && document.body.dataset.role === "admin") renderAccounting();
             if (nav === ROUTES.purchases) renderPurchases();
             if (nav === ROUTES.groups && document.body.dataset.groupAdmin === "true") renderGroupWorkspace();
-            if (nav === ROUTES.accountingSandbox && document.body.dataset.role === "admin") renderAccountingSandbox();
             if (nav === ROUTES.partnerMissions) renderPartnerMissions();
             if (nav === ROUTES.partnerSandbox && document.body.dataset.role === "admin") renderPartnerSandbox();
             if (nav === ROUTES.calendar) openCalendar();

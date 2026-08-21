@@ -1,5 +1,5 @@
 import { clearSearch, getContainer, setPage } from "./ui.js?v=44";
-import { ROUTES } from "./config.js?v=127";
+import { ROUTES } from "./config.js?v=128";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { renderPurchases } from "./purchases.js?v=116";
 

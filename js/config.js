@@ -89,7 +89,6 @@ export const MENU_ACCESS = Object.freeze({
         [ROUTES.billing]: OPERATIONAL_MOBILE.concat("accountant"),
         [ROUTES.purchases]: PURCHASE_USERS,
         [ROUTES.accounting]: ADMINISTRATORS,
-        [ROUTES.accountingSandbox]: ADMINISTRATORS,
         [ROUTES.groups]: ADMINISTRATORS,
         [ROUTES.partnerMissions]: PARTNER_MISSION_USERS,
         [ROUTES.partnerSandbox]: ADMINISTRATORS,
