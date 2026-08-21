@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 const billingSource = readFileSync(new URL("../js/billing.js", import.meta.url), "utf8");
 const calendarSource = readFileSync(new URL("../js/calendar.js", import.meta.url), "utf8");
 const billingServerSource = readFileSync(new URL("../server/billing.js", import.meta.url), "utf8");
+const accountingSource = readFileSync(new URL("../js/accounting.js", import.meta.url), "utf8");
 
 test("selecting a known billing customer stores its client id", () => {
     assert.match(billingSource, /form\.querySelector\("\[name=clientId\]"\)\.value = client\?\.id \|\| ""/);
@@ -15,6 +16,10 @@ test("administrators can open and close the saved billing line manager", () => {
     assert.match(billingSource, /renderBilling\(\{ templates: true \}\)/);
     assert.match(billingSource, /if \(options\.templates && isFullAdministrator\(\)\)/);
     assert.match(billingSource, /id="closeBillingTemplates"/);
+    assert.match(billingSource, /id="billingAidForm"/);
+    assert.match(billingSource, /\/api\/accounting\/aids/);
+    assert.match(billingSource, /Gérer les lignes et aides/);
+    assert.doesNotMatch(accountingSource, /\["aids", "Aides financières"\]/);
 });
 
 test("saved quotes and invoices open the client before offering email or print", () => {

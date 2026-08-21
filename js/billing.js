@@ -9,6 +9,7 @@ import { openDocumentDeliveryChoice } from "./document-delivery.js?v=1";
 
 const CUSTOMER_TYPES = ["Particulier", "Professionnel", "Magasin", "Autre"];
 const DOCUMENT_TYPES = { quote: "Devis", invoice: "Facture", credit: "Avoir" };
+const AID_TYPES = { cee: "CEE", maprimerenov: "MaPrimeRénov'", coup_de_pouce: "Prime Coup de Pouce", eco_ptz: "Éco-PTZ", regional: "Aide régionale", departmental: "Aide départementale", supplier: "Participation fournisseur", manufacturer: "Participation constructeur", custom: "Autre aide" };
 const VAT_FRANCHISE_MENTION = "TVA non applicable, art. 293 B du CGI";
 const BILLING_MONTHS = [
     { value: "01", label: "Janvier" }, { value: "02", label: "Février" }, { value: "03", label: "Mars" }, { value: "04", label: "Avril" },
@@ -151,7 +152,7 @@ function renderOverview(panel, profilePanel) {
                 <button type="button" class="secondary-button" data-billing-action="new-invoice">+ Nouvelle facture</button>
                 ${isAccountant() || !canAccessTechnicalReports() ? "" : '<button type="button" class="secondary-button" data-billing-action="open-leak-reports">Rapports de fuite</button><button type="button" class="secondary-button" data-billing-action="new-leak-report">Nouveau rapport de recherche de fuite</button>'}
                 ${isFullAdministrator() ? '<button type="button" class="secondary-button" data-billing-action="preview-blank-quote">Aperçu du devis vierge</button>' : ""}
-                ${isFullAdministrator() ? '<button type="button" class="secondary-button" data-billing-action="manage-line-templates">Gérer les lignes préenregistrées</button>' : ""}
+                ${isFullAdministrator() ? '<button type="button" class="secondary-button" data-billing-action="manage-line-templates">Gérer les lignes et aides</button>' : ""}
                 <button type="button" class="secondary-button" data-billing-action="open-purchases">Achats</button>
             </div>
         </div>
@@ -361,7 +362,8 @@ function externalTemplateFieldsHelp(type) {
 function renderTemplates(panel) {
     panel.hidden = false;
     panel.innerHTML = `
-        <div class="form-heading"><div><p class="eyebrow">Lignes préenregistrées</p><h2>Vos prestations et fournitures</h2><p class="muted">Créez ici les lignes réutilisables proposées dans vos devis et factures.</p></div><button type="button" class="secondary-button" id="closeBillingTemplates">Fermer</button></div>
+        <div class="form-heading"><div><p class="eyebrow">Configuration commerciale</p><h2>Éléments réutilisables des devis et factures</h2><p class="muted">Gérez au même endroit vos prestations, fournitures, primes et aides financières.</p></div><button type="button" class="secondary-button" id="closeBillingTemplates">Fermer</button></div>
+        <div class="form-heading"><div><p class="eyebrow">Lignes préenregistrées</p><h3>Vos prestations et fournitures</h3></div></div>
         <form id="billingTemplateForm" class="form-grid billing-template-form">
             <label>Libellé *<input name="label" maxlength="160" required placeholder="Ex. Déplacement et diagnostic"></label>
             <label>Prix unitaire HT *<input name="unitPrice" type="number" min="0" step="0.01" required placeholder="0,00"></label>
@@ -373,6 +375,7 @@ function renderTemplates(panel) {
         </form>
         <p id="billingTemplateMessage" class="auth-message" aria-live="polite"></p>
         <div class="billing-template-list" id="billingTemplateList"></div>
+        <section class="billing-aids-management" id="billingAidsManagement"></section>
     `;
     const list = panel.querySelector("#billingTemplateList");
     panel.querySelector("#closeBillingTemplates").addEventListener("click", () => renderBilling());
@@ -397,6 +400,26 @@ function renderTemplates(panel) {
         if (!result.ok) { message.textContent = result.message || "Impossible d’ajouter la ligne."; message.classList.add("error"); return; }
         renderBilling({ templates: true });
     });
+    renderBillingAidsManagement(panel.querySelector("#billingAidsManagement"));
+}
+
+function renderBillingAidsManagement(node) {
+    const aids = billingData.aids || [];
+    node.innerHTML = `<div class="form-heading"><div><p class="eyebrow">Primes et aides</p><h3>Aides financières</h3><p class="muted">Ces aides sont proposées dans chaque devis et ne sont jamais appliquées automatiquement.</p></div></div><form id="billingAidForm" class="form-grid"><label>Nom *<input name="name" required maxlength="160" placeholder="Ex. Certificats d’Économies d’Énergie"></label><label>Type<select name="aidType">${Object.entries(AID_TYPES).map(([id, label]) => `<option value="${id}">${escapeHtml(label)}</option>`).join("")}</select></label><label>Calcul<select name="calculationMode"><option value="fixed">Montant fixe (€)</option><option value="percentage">Pourcentage (%)</option></select></label><label>Montant *<input name="amount" type="number" min="0" step="0.01" required></label><label class="form-wide">Description<textarea name="description" rows="2" maxlength="1000"></textarea></label><fieldset class="accounting-rules form-wide"><legend>Critères indicatifs</legend><label>Type de travaux<input name="workType" maxlength="120"></label><label>Matériel installé<input name="equipment" maxlength="120"></label><label>Catégorie client<input name="customerCategory" maxlength="120"></label><label>Localisation<input name="location" maxlength="120"></label></fieldset><div class="form-actions"><button class="secondary-button">Ajouter l’aide</button></div></form><div class="accounting-aid-list">${aids.map(aid => `<article><div><strong>${escapeHtml(aid.name)}</strong><p>${escapeHtml(AID_TYPES[aid.aidType] || "Autre aide")} · ${aid.calculationMode === "percentage" ? `${formatNumber(aid.amount)} %` : formatMoney(aid.amount)}</p><small>${escapeHtml(aid.description || "Sans description")}</small></div><button type="button" class="danger-button" data-delete-billing-aid="${aid.id}">Supprimer</button></article>`).join("") || '<p class="muted">Aucune aide configurée.</p>'}</div>`;
+    node.querySelector("#billingAidForm").addEventListener("submit", async event => {
+        event.preventDefault();
+        const form = new FormData(event.currentTarget);
+        const payload = { ...Object.fromEntries(form), rules: { workType: form.get("workType"), equipment: form.get("equipment"), customerCategory: form.get("customerCategory"), location: form.get("location") } };
+        const result = await apiRequest("/api/accounting/aids", { method: "POST", body: JSON.stringify(payload) });
+        if (!result.ok) return alert(result.message || "Ajout impossible.");
+        renderBilling({ templates: true });
+    });
+    node.querySelectorAll("[data-delete-billing-aid]").forEach(button => button.addEventListener("click", async () => {
+        if (!confirm("Supprimer cette aide ?")) return;
+        const result = await apiRequest(`/api/accounting/aids/${button.dataset.deleteBillingAid}`, { method: "DELETE" });
+        if (!result.ok) return alert(result.message || "Suppression impossible.");
+        renderBilling({ templates: true });
+    }));
 }
 
 function renderDocumentEditor(panel) {
@@ -596,7 +619,7 @@ function renderDocumentAids(panel, billingDocument, rerender) {
     if (!panel) return;
     const aids = billingData.aids || [];
     const selectedAids = billingDocument.financialData.aids;
-    panel.innerHTML = `<div class="form-heading"><div><p class="eyebrow">Primes et aides</p><h3>Déduites du reste à charge</h3><p class="muted">Aucune aide n’est ajoutée automatiquement : sélectionnez uniquement celles applicables à ce devis. Elles restent affichées sur le PDF.</p></div></div>${aids.length ? `<fieldset class="accounting-aid-fieldset">${aids.map(aid => `<label><input type="checkbox" value="${escapeHtml(aid.id)}" ${selectedAids.some(item => item.name === aid.name) ? "checked" : ""}> ${escapeHtml(aid.name)} · ${aid.calculationMode === "percentage" ? `${formatNumber(aid.amount)} %` : formatMoney(aid.amount)}</label>`).join("")}</fieldset>` : '<p class="muted">Aucune prime configurée. Ajoutez-les dans Comptabilité → Aides financières.</p>'}`;
+    panel.innerHTML = `<div class="form-heading"><div><p class="eyebrow">Primes et aides</p><h3>Déduites du reste à charge</h3><p class="muted">Aucune aide n’est ajoutée automatiquement : sélectionnez uniquement celles applicables à ce devis. Elles restent affichées sur le PDF.</p></div></div>${aids.length ? `<fieldset class="accounting-aid-fieldset">${aids.map(aid => `<label><input type="checkbox" value="${escapeHtml(aid.id)}" ${selectedAids.some(item => item.name === aid.name) ? "checked" : ""}> ${escapeHtml(aid.name)} · ${aid.calculationMode === "percentage" ? `${formatNumber(aid.amount)} %` : formatMoney(aid.amount)}</label>`).join("")}</fieldset>` : '<p class="muted">Aucune prime configurée. Ajoutez-les depuis « Gérer les lignes et aides ».</p>'}`;
     panel.querySelectorAll("input[type=checkbox]").forEach(input => input.addEventListener("change", () => {
         billingDocument.financialData.aids = [...panel.querySelectorAll("input:checked")].map(field => aids.find(aid => String(aid.id) === field.value)).filter(Boolean).map(toAidSnapshot);
         rerender();

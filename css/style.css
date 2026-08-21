@@ -4021,6 +4021,12 @@ body.mobile-device[data-role="technician"] .calendar-list-day{
     margin-top:16px;
 }
 
+.billing-aids-management{
+    margin-top:28px;
+    padding-top:24px;
+    border-top:1px solid var(--border);
+}
+
 .billing-document-period{
     grid-column:1 / -1;
     margin:14px 0 0;
