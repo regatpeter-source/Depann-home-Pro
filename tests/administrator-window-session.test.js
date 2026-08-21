@@ -6,6 +6,7 @@ const authServer = readFileSync(new URL("../server/auth.js", import.meta.url), "
 const appSource = readFileSync(new URL("../js/app.js", import.meta.url), "utf8");
 const clientSessionSource = readFileSync(new URL("../js/client-session.js", import.meta.url), "utf8");
 const authClient = readFileSync(new URL("../js/auth.js", import.meta.url), "utf8");
+const collaborationClient = readFileSync(new URL("../js/collaboration.js", import.meta.url), "utf8");
 
 test("chaque fenêtre Web ou PWA possède une session cliente distincte", () => {
     assert.match(clientSessionSource, /sessionStorage\.getItem\(STORAGE_KEY\)/);
@@ -16,6 +17,7 @@ test("chaque fenêtre Web ou PWA possède une session cliente distincte", () => 
 
 test("la session Administrateur PC est liée à la fenêtre la plus récemment connectée", () => {
     assert.match(authServer, /clientWindowSessionId\(request\)/);
+    assert.match(authServer, /requiresClientWindowProof\(request\)/);
     assert.match(authServer, /session\.sessionId !== clientWindowSessionId\(request\)/);
     assert.match(authServer, /throw new Error\("Fenêtre PC remplacée"\)/);
     assert.match(authServer, /const sessionId = clientSessionId \|\| crypto\.randomUUID\(\)/);
@@ -31,6 +33,15 @@ test("la vérification TOTP conserve le formulaire après une attente asynchrone
 
 test("la sonde de session non connectée ne génère pas de faux 401", () => {
     assert.match(authServer, /if \(!user\) \{[\s\S]*?return response\.json\(\{\s*authenticated: false/);
+});
+
+test("les ressources natives restent accessibles et les transports API prouvent leur fenêtre", () => {
+    assert.match(authServer, /if \(!String\(request\.path \|\| ""\)\.startsWith\("\/api\/"\)\) return false/);
+    assert.match(authServer, /destination === "empty"/);
+    assert.match(authServer, /request\.query\?\.clientSession/);
+    assert.match(clientSessionSource, /export function clientSessionUrl/);
+    assert.match(collaborationClient, /new EventSource\(clientSessionUrl\("\/api\/collaboration\/stream"\)\)/);
+    assert.match(collaborationClient, /sendBeacon\(clientSessionUrl\("\/api\/collaboration\/release-session-locks"\)/);
 });
 
 test("l’ancienne fenêtre est avertie sans supprimer le cookie partagé de la nouvelle", () => {

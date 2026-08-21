@@ -689,7 +689,8 @@ export async function authenticateRequest(request, response, next) {
         if (user.role === "admin" && device.device_type === "desktop" && (!session.sessionId || session.sessionId !== device.session_id)) {
             throw new Error("Session PC remplacée");
         }
-        if (user.role === "admin" && device.device_type === "desktop" && session.sessionId !== clientWindowSessionId(request)) {
+        if (user.role === "admin" && device.device_type === "desktop" && requiresClientWindowProof(request)
+            && session.sessionId !== clientWindowSessionId(request)) {
             throw new Error("Fenêtre PC remplacée");
         }
         const groupCompany = user.role === "admin" ? await resolveGroupCompany(user.id, session.activeCompanyId) : null;
@@ -1115,8 +1116,14 @@ async function issueAdministratorPcSession(userId, deviceId, clientSessionId = "
 }
 
 function clientWindowSessionId(request) {
-    const value = String(request.get?.("X-DepannHome-Client-Session") || "");
+    const value = String(request.get?.("X-DepannHome-Client-Session") || request.query?.clientSession || "");
     return DEVICE_ID_PATTERN.test(value) ? value : "";
+}
+
+function requiresClientWindowProof(request) {
+    if (!String(request.path || "").startsWith("/api/")) return false;
+    const destination = String(request.get?.("Sec-Fetch-Dest") || "").toLowerCase();
+    return !destination || destination === "empty";
 }
 
 function setSessionCookie(response, user, deviceId, activeCompanyId = "", sessionId = "") {

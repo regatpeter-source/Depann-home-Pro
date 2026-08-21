@@ -18,7 +18,13 @@ export function onClientSessionReplaced(handler) {
     window.addEventListener(REPLACED_EVENT, handler);
 }
 
-function getClientSessionId() {
+export function clientSessionUrl(path) {
+    const url = new URL(path, window.location.href);
+    if (url.origin === window.location.origin) url.searchParams.set("clientSession", getClientSessionId());
+    return `${url.pathname}${url.search}${url.hash}`;
+}
+
+export function getClientSessionId() {
     let value = sessionStorage.getItem(STORAGE_KEY);
     if (!value || !/^[0-9a-f-]{36}$/i.test(value)) {
         value = crypto.randomUUID();

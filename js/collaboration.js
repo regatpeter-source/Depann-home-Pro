@@ -1,3 +1,5 @@
+import { clientSessionUrl } from "./client-session.js?v=2";
+
 let stream = null;
 let notifications = [];
 let partnerNotifications = [];
@@ -9,7 +11,7 @@ export function initializeCollaboration() {
     notificationButton?.addEventListener("click", openNotificationCenter);
     loadNotifications();
     loadPartnerNotifications();
-    stream = new EventSource("/api/collaboration/stream");
+    stream = new EventSource(clientSessionUrl("/api/collaboration/stream"));
     stream.addEventListener("notification", event => handleEvent("notification", event));
     ["lock_acquired", "lock_released", "lock_force_released", "report_started", "report_saved", "report_media_added", "report_media_updated", "report_media_deleted", "report_submitted", "report_correction_requested", "report_validated", "report_reopened", "mission_journal_updated"].forEach(type => stream.addEventListener(type, event => handleEvent(type, event)));
     stream.onerror = () => updateSyncIndicator("syncing", "Reconnexion en cours");
@@ -47,7 +49,7 @@ function deduplicatePartnerNotifications(items) {
         return true;
     });
 }
-function releaseSessionLocks() { if (!navigator.sendBeacon) return; navigator.sendBeacon("/api/collaboration/release-session-locks", new Blob(["{}"], { type: "application/json" })); }
+function releaseSessionLocks() { if (!navigator.sendBeacon) return; navigator.sendBeacon(clientSessionUrl("/api/collaboration/release-session-locks"), new Blob(["{}"], { type: "application/json" })); }
 function updateSyncIndicator(state, label) { document.querySelectorAll("[data-collaboration-sync]").forEach(element => { element.dataset.collaborationSync = state; element.title = label; element.setAttribute("aria-label", label); }); }
 async function request(url, options = {}) { try { const response = await fetch(url, { credentials: "same-origin", headers: { "Content-Type": "application/json", ...(options.headers || {}) }, ...options }); const data = response.status === 204 ? null : await response.json().catch(() => null); return { ok: response.ok, data, message: data?.message }; } catch { return { ok: false, message: "Serveur indisponible." }; } }
 function escapeHtml(value) { return String(value || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;"); }
