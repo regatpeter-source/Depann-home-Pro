@@ -578,6 +578,54 @@ ALTER TABLE depannhome_einvoice_transmissions ALTER COLUMN provider TYPE VARCHAR
 CREATE INDEX IF NOT EXISTS depannhome_einvoice_transmissions_owner_idx ON depannhome_einvoice_transmissions (owner_id, status, updated_at DESC);
 DELETE FROM depannhome_einvoice_transmissions WHERE provider='sandbox' OR remote_id LIKE 'sandbox-%';
 
+-- Connexions de facturation électronique propres à chaque entreprise. Une
+-- connexion conserve son fournisseur historique même lorsqu'elle est désactivée.
+CREATE TABLE IF NOT EXISTS depannhome_einvoice_connections (
+    id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    platform_code VARCHAR(60) NOT NULL, platform_label VARCHAR(160) NOT NULL,
+    environment VARCHAR(20) NOT NULL DEFAULT 'production' CHECK(environment IN ('sandbox','production')),
+    status VARCHAR(30) NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','connected','invalid','expired','disconnected','action_required')),
+    active BOOLEAN NOT NULL DEFAULT FALSE, encrypted_credentials TEXT NOT NULL DEFAULT '',
+    connection_metadata JSONB NOT NULL DEFAULT '{}'::jsonb, external_account_id VARCHAR(200) NOT NULL DEFAULT '',
+    external_account_label VARCHAR(200) NOT NULL DEFAULT '', token_expires_at TIMESTAMPTZ,
+    refresh_metadata JSONB NOT NULL DEFAULT '{}'::jsonb, webhook_token_hash CHAR(64),
+    last_connected_at TIMESTAMPTZ, last_checked_at TIMESTAMPTZ, disconnected_at TIMESTAMPTZ,
+    created_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS depannhome_einvoice_connections_owner_idx ON depannhome_einvoice_connections(owner_id,updated_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS depannhome_einvoice_connections_owner_active_unique ON depannhome_einvoice_connections(owner_id) WHERE active=TRUE;
+CREATE UNIQUE INDEX IF NOT EXISTS depannhome_einvoice_connections_webhook_unique ON depannhome_einvoice_connections(webhook_token_hash) WHERE webhook_token_hash IS NOT NULL;
+ALTER TABLE depannhome_einvoice_transmissions
+    ADD COLUMN IF NOT EXISTS connection_id BIGINT REFERENCES depannhome_einvoice_connections(id) ON DELETE SET NULL,
+    ADD COLUMN IF NOT EXISTS platform_code VARCHAR(60) NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS document_type VARCHAR(20) NOT NULL DEFAULT 'invoice',
+    ADD COLUMN IF NOT EXISTS external_status VARCHAR(80) NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS transmitted_at TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS status_checked_at TIMESTAMPTZ;
+CREATE INDEX IF NOT EXISTS depannhome_einvoice_transmissions_owner_document_idx ON depannhome_einvoice_transmissions(owner_id,document_id,updated_at DESC);
+CREATE INDEX IF NOT EXISTS depannhome_einvoice_transmissions_external_idx ON depannhome_einvoice_transmissions(platform_code,remote_id) WHERE remote_id<>'';
+CREATE TABLE IF NOT EXISTS depannhome_einvoice_events (
+    id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    connection_id BIGINT REFERENCES depannhome_einvoice_connections(id) ON DELETE SET NULL,
+    transmission_id BIGINT REFERENCES depannhome_einvoice_transmissions(id) ON DELETE SET NULL,
+    actor_id BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL, event_type VARCHAR(60) NOT NULL,
+    status VARCHAR(30) NOT NULL DEFAULT '', message VARCHAR(1000) NOT NULL DEFAULT '',
+    details JSONB NOT NULL DEFAULT '{}'::jsonb, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS depannhome_einvoice_events_owner_idx ON depannhome_einvoice_events(owner_id,created_at DESC);
+
+-- L'ancien transport UBL universel n'est pas considéré comme une intégration.
+-- Ses données sont conservées une seule fois pour permettre une reconnexion.
+INSERT INTO depannhome_einvoice_connections(owner_id,platform_code,platform_label,environment,status,active,encrypted_credentials,connection_metadata,external_account_id)
+SELECT settings.owner_id,'legacy_ubl_api',COALESCE(NULLIF(settings.pdp_platform_name,''),'Ancienne configuration UBL'),'production','action_required',FALSE,
+       settings.pdp_api_secret,jsonb_build_object('legacyApiUrl',settings.pdp_api_url,'migration','depannhome_accounting_settings'),settings.pdp_identifier
+FROM depannhome_accounting_settings settings
+WHERE (settings.pdp_platform_name<>'' OR settings.pdp_api_url<>'' OR settings.pdp_identifier<>'' OR settings.pdp_api_secret<>'')
+  AND NOT EXISTS (SELECT 1 FROM depannhome_einvoice_connections connection WHERE connection.owner_id=settings.owner_id AND connection.platform_code='legacy_ubl_api');
+UPDATE depannhome_accounting_settings settings SET pdp_provider='',pdp_platform_name='',pdp_api_url='',pdp_identifier='',pdp_api_secret='',pdp_enabled=FALSE
+WHERE EXISTS (SELECT 1 FROM depannhome_einvoice_connections connection WHERE connection.owner_id=settings.owner_id AND connection.platform_code='legacy_ubl_api');
+
 -- Assistant Connecteurs API : plugins déclaratifs isolés par entreprise, sans exécution de code tiers.
 CREATE TABLE IF NOT EXISTS depannhome_api_connectors (
     id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,

@@ -1,6 +1,4 @@
 import crypto from "node:crypto";
-import { lookup } from "node:dns/promises";
-import { isIP } from "node:net";
 import ExcelJS from "exceljs";
 import PDFDocument from "pdfkit";
 import { getPool } from "./database.js";
@@ -15,43 +13,11 @@ import {
     validateLedger
 } from "./accounting-ledger.js";
 import { allocateBillingNumber } from "./billing-numbering.js";
+import { transmitElectronicDocument } from "./electronic-invoicing.js";
 
 const AID_TYPES = new Set(["cee", "maprimerenov", "coup_de_pouce", "eco_ptz", "regional", "departmental", "supplier", "manufacturer", "custom"]);
 const AID_MODES = new Set(["fixed", "percentage"]);
-const PDP_STATUSES = new Set(["configured", "draft", "queued", "sent", "accepted", "rejected", "failed"]);
 const EXPORT_SCOPES = new Set(["invoices", "quotes", "credits", "settlements", "clients", "overdue", "all"]);
-
-// Chaque entreprise choisit sa plateforme agréée et configure son propre endpoint de dépôt UBL.
-const pdpConnectors = new Map([
-    ["ubl_api", {
-        label: "API UBL de la plateforme choisie",
-        async transmit(document, settings) {
-            await assertSafeExternalHttpsUrl(settings.pdpApiUrl);
-            const headers = {
-                "Content-Type": document.structuredMimeType || "application/xml; charset=utf-8",
-                Accept: "application/json",
-                "X-Company-Identifier": settings.pdpIdentifier,
-                "X-Document-Number": document.documentNumber,
-                "X-Document-SHA256": document.structuredSha256,
-                "Idempotency-Key": document.structuredSha256
-            };
-            const apiKey = decryptSecret(settings.pdpApiSecret);
-            if (!apiKey) throw new Error("La clé API de la plateforme est absente ou illisible.");
-            headers.Authorization = `Bearer ${apiKey}`;
-            const response = await fetch(settings.pdpApiUrl, { method: "POST", headers, body: document.structuredData, signal: AbortSignal.timeout(20000), redirect: "error" });
-            const raw = await response.text();
-            let payload = {};
-            try { const parsed = raw ? JSON.parse(raw) : {}; payload = parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {}; } catch { payload = {}; }
-            if (!response.ok) throw new Error(cleanText(payload.message || raw || `Réponse HTTP ${response.status}`, 500));
-            const providerStatus = cleanText(payload.status, 30);
-            return {
-                remoteId: cleanText(payload.transmissionId || payload.id || response.headers.get("x-request-id"), 160),
-                status: PDP_STATUSES.has(providerStatus) ? providerStatus : response.status === 202 ? "queued" : "sent",
-                message: cleanText(payload.message, 1000) || `Facture transmise à ${settings.pdpPlatformName}.`
-            };
-        }
-    }]
-]);
 
 export async function initializeAccounting() {
     const database = getPool();
@@ -273,8 +239,7 @@ export function registerAccountingRoutes(app, requireAuthentication) {
             settings: publicSettings(settings),
             ledger: { entries, control: validateLedger(entries, { ownerId }) },
             accountingProfile: profile,
-            transmissions,
-            connectors: [...pdpConnectors.entries()].map(([id, connector]) => ({ id, label: connector.label }))
+            transmissions
         });
     }));
 
@@ -399,18 +364,12 @@ export function registerAccountingRoutes(app, requireAuthentication) {
         const settings = sanitizeSettings(request.body);
         if (!settings.ok) return response.status(400).json({ message: settings.message });
         const ownerId = getAccountOwnerId(request);
-        const previous = await loadSettings(ownerId);
-        const secret = settings.apiKey ? encryptSecret(settings.apiKey) : previous.pdpApiSecret || "";
-        if (settings.enabled && !secret) return response.status(400).json({ message: "La clé API de la plateforme est obligatoire pour activer la transmission." });
         await getPool().query(`
-            INSERT INTO depannhome_accounting_settings (owner_id, chart_config, aid_engine_config, pdp_provider, pdp_platform_name, pdp_api_url, pdp_identifier, pdp_api_secret, pdp_enabled, journal_config, fec_config)
-            VALUES ($1,$2::jsonb,$3::jsonb,$4,$5,$6,$7,$8,$9,$10::jsonb,$11::jsonb)
+            INSERT INTO depannhome_accounting_settings (owner_id, chart_config, aid_engine_config, journal_config, fec_config)
+            VALUES ($1,$2::jsonb,$3::jsonb,$4::jsonb,$5::jsonb)
             ON CONFLICT (owner_id) DO UPDATE SET chart_config=EXCLUDED.chart_config, aid_engine_config=EXCLUDED.aid_engine_config,
-                pdp_provider=EXCLUDED.pdp_provider, pdp_platform_name=EXCLUDED.pdp_platform_name, pdp_api_url=EXCLUDED.pdp_api_url,
-                pdp_identifier=EXCLUDED.pdp_identifier, pdp_api_secret=EXCLUDED.pdp_api_secret,
-                pdp_enabled=EXCLUDED.pdp_enabled, journal_config=EXCLUDED.journal_config, fec_config=EXCLUDED.fec_config, updated_at=NOW()
-        `, [ownerId, JSON.stringify(settings.chartConfig), JSON.stringify(settings.aidEngineConfig), settings.provider, settings.platformName, settings.apiUrl,
-            settings.identifier, secret, settings.enabled, JSON.stringify(settings.journalConfig), JSON.stringify(settings.fecConfig)]);
+                journal_config=EXCLUDED.journal_config, fec_config=EXCLUDED.fec_config, updated_at=NOW()
+        `, [ownerId, JSON.stringify(settings.chartConfig), JSON.stringify(settings.aidEngineConfig), JSON.stringify(settings.journalConfig), JSON.stringify(settings.fecConfig)]);
         await ensureAccountingJournals(getPool(), ownerId, settings.journalConfig, true);
         response.status(204).end();
     }));
@@ -470,27 +429,8 @@ export function registerAccountingRoutes(app, requireAuthentication) {
     }));
 
     app.post("/api/accounting/e-invoices/:documentId/transmit", asyncHandler(async (request, response) => {
-        const id = positiveId(request.params.documentId);
-        const ownerId = getAccountOwnerId(request);
-        const settings = await loadSettings(ownerId);
-        const { rows } = await getPool().query("SELECT id, document_number AS \"documentNumber\", customer_name AS \"customerName\", document_type AS \"documentType\", structured_data AS \"structuredData\", structured_mime_type AS \"structuredMimeType\", structured_sha256 AS \"structuredSha256\" FROM depannhome_billing_documents WHERE id=$1 AND owner_id=$2 AND issued_at IS NOT NULL", [id, ownerId]);
-        const document = rows[0];
-        if (!document || !["invoice", "credit"].includes(document.documentType)) return response.status(404).json({ message: "Facture ou avoir introuvable." });
-        if (!document.structuredData) return response.status(409).json({ message: "L’archive UBL de cette facture ou de cet avoir est indisponible. La transmission est bloquée." });
-        if (!settings.pdpEnabled) return response.status(409).json({ message: "Configurez et activez d’abord la plateforme choisie par votre entreprise." });
-        const provider = settings.pdpProvider;
-        const connector = pdpConnectors.get(provider);
-        if (!connector) return response.status(400).json({ message: "Aucun connecteur réel n’est configuré pour cette entreprise." });
-        if (!settings.pdpPlatformName || !settings.pdpApiUrl || !settings.pdpIdentifier || !settings.pdpApiSecret) return response.status(409).json({ message: "Le nom, l’URL API, l’identifiant et la clé de la plateforme sont obligatoires." });
-        const transmission = await createTransmission(ownerId, id, settings.pdpPlatformName);
-        try {
-            const result = await connector.transmit(document, settings);
-            await updateTransmission(transmission.id, result.status, result.message, result.remoteId);
-            response.json({ message: result.message, transmission: { id: transmission.id, status: result.status } });
-        } catch (error) {
-            await updateTransmission(transmission.id, "failed", String(error.message || "Transmission impossible"), "");
-            response.status(502).json({ message: "Transmission PDP en échec. Elle est journalisée et peut être renvoyée." });
-        }
+        const result = await transmitElectronicDocument({ ownerId: getAccountOwnerId(request), documentId: request.params.documentId, actorId: request.user.sub });
+        response.status(201).json(result);
     }));
 
     app.get("/api/accounting/export", asyncHandler(async (request, response) => {
@@ -690,7 +630,7 @@ async function loadTransmissions(ownerId) {
     const { rows } = await getPool().query(`
         SELECT transmission.id, transmission.document_id AS "documentId", document.document_number AS "documentNumber", transmission.provider, transmission.remote_id AS "remoteId",
             transmission.status, transmission.message, transmission.attempts, transmission.last_attempt_at AS "lastAttemptAt", transmission.updated_at AS "updatedAt"
-        FROM depannhome_einvoice_transmissions transmission JOIN depannhome_billing_documents document ON document.id=transmission.document_id
+        FROM depannhome_einvoice_transmissions transmission JOIN depannhome_billing_documents document ON document.id=transmission.document_id AND document.owner_id=transmission.owner_id
         WHERE transmission.owner_id=$1 ORDER BY transmission.updated_at DESC LIMIT 100
     `, [ownerId]);
     return rows;
@@ -698,7 +638,7 @@ async function loadTransmissions(ownerId) {
 
 function publicSettings(settings) {
     const normalized = normalizeAccountingConfig(settings.chartConfig, settings.journalConfig);
-    return { chartConfig: normalized.accounts, journalConfig: normalized.journals, fecConfig: settings.fecConfig || {}, aidEngineConfig: settings.aidEngineConfig || {}, pdpProvider: settings.pdpProvider || "", pdpPlatformName: settings.pdpPlatformName || "", pdpApiUrl: settings.pdpApiUrl || "", pdpIdentifier: settings.pdpIdentifier || "", pdpEnabled: Boolean(settings.pdpEnabled), hasApiKey: Boolean(settings.pdpApiSecret) };
+    return { chartConfig: normalized.accounts, journalConfig: normalized.journals, fecConfig: settings.fecConfig || {}, aidEngineConfig: settings.aidEngineConfig || {} };
 }
 
 function buildDashboard(documents, settlements, purchases) {
@@ -765,48 +705,10 @@ function sanitizeSettlement(value) {
 }
 
 function sanitizeSettings(value) {
-    const platformName = cleanText(value?.platformName, 160);
-    const apiUrl = sanitizePdpApiUrl(value?.apiUrl);
-    const identifier = cleanText(value?.identifier, 160);
-    const enabled = Boolean(value?.enabled);
-    if (value?.apiUrl && !apiUrl) return { ok: false, message: "L’URL de la plateforme doit être une adresse HTTPS publique valide." };
-    if (enabled && (!platformName || !apiUrl || !identifier)) return { ok: false, message: "Le nom de la plateforme, son URL API HTTPS et l’identifiant entreprise sont obligatoires." };
-    const provider = platformName || apiUrl || identifier || enabled ? "ubl_api" : "";
     const normalized = normalizeAccountingConfig(value?.chartConfig, value?.journalConfig);
     const journalCodes = Object.values(normalized.journals).map(journal => journal.code);
     if (new Set(journalCodes).size !== journalCodes.length) return { ok: false, message: "Chaque journal doit avoir un code distinct." };
-    return { ok: true, provider, platformName, apiUrl, identifier, apiKey: String(value?.apiKey || "").trim().slice(0, 1000), enabled, chartConfig: normalized.accounts, journalConfig: normalized.journals, fecConfig: { fiscalYearStart: sanitizeDate(value?.fecConfig?.fiscalYearStart), fiscalYearEnd: sanitizeDate(value?.fecConfig?.fiscalYearEnd) }, aidEngineConfig: { enabled: Boolean(value?.aidEngineConfig?.enabled), mode: cleanText(value?.aidEngineConfig?.mode, 40) || "manual", source: cleanText(value?.aidEngineConfig?.source, 160) } };
-}
-
-export function sanitizePdpApiUrl(value) {
-    const raw = cleanText(value, 1000);
-    if (!raw) return "";
-    try {
-        const url = new URL(raw);
-        if (url.protocol !== "https:" || url.username || url.password || isForbiddenHostname(url.hostname)) return "";
-        return url.toString();
-    } catch { return ""; }
-}
-
-async function assertSafeExternalHttpsUrl(value) {
-    const sanitized = sanitizePdpApiUrl(value);
-    if (!sanitized) throw new Error("L’URL API HTTPS de la plateforme est invalide ou interdite.");
-    const url = new URL(sanitized);
-    const addresses = isIP(url.hostname) ? [{ address: url.hostname }] : await lookup(url.hostname, { all: true, verbatim: true });
-    if (!addresses.length || addresses.some(item => isPrivateIp(item.address))) throw new Error("L’URL API de la plateforme ne peut pas cibler un réseau privé.");
-}
-
-function isForbiddenHostname(hostname) {
-    const host = String(hostname || "").toLowerCase().replace(/^\[|\]$/g, "");
-    return !host || host === "localhost" || host.endsWith(".localhost") || (isIP(host) && isPrivateIp(host));
-}
-
-export function isPrivateIp(value) {
-    const ip = String(value || "").toLowerCase().replace(/^\[|\]$/g, "");
-    if (ip.includes(":")) return ip === "::" || ip === "::1" || ip.startsWith("fc") || ip.startsWith("fd") || ip.startsWith("fe8") || ip.startsWith("fe9") || ip.startsWith("fea") || ip.startsWith("feb") || (ip.startsWith("::ffff:") && isPrivateIp(ip.slice(7)));
-    const parts = ip.split(".").map(Number);
-    if (parts.length !== 4 || parts.some(part => !Number.isInteger(part) || part < 0 || part > 255)) return true;
-    return parts[0] === 0 || parts[0] === 10 || parts[0] === 127 || parts[0] >= 224 || (parts[0] === 169 && parts[1] === 254) || (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) || (parts[0] === 192 && parts[1] === 168) || (parts[0] === 100 && parts[1] >= 64 && parts[1] <= 127);
+    return { ok: true, chartConfig: normalized.accounts, journalConfig: normalized.journals, fecConfig: { fiscalYearStart: sanitizeDate(value?.fecConfig?.fiscalYearStart), fiscalYearEnd: sanitizeDate(value?.fecConfig?.fiscalYearEnd) }, aidEngineConfig: { enabled: Boolean(value?.aidEngineConfig?.enabled), mode: cleanText(value?.aidEngineConfig?.mode, 40) || "manual", source: cleanText(value?.aidEngineConfig?.source, 160) } };
 }
 
 function sanitizeLedgerPeriod(value, required = false) {
@@ -942,15 +844,6 @@ function buildExportPdf(data, options) {
     });
 }
 
-async function createTransmission(ownerId, documentId, provider) {
-    const { rows } = await getPool().query(`INSERT INTO depannhome_einvoice_transmissions (owner_id, document_id, provider, status, attempts, last_attempt_at) VALUES ($1,$2,$3,'queued',1,NOW()) RETURNING id`, [ownerId, documentId, provider]);
-    return rows[0];
-}
-
-async function updateTransmission(id, status, message, remoteId) {
-    await getPool().query("UPDATE depannhome_einvoice_transmissions SET status=$2, message=$3, remote_id=$4, updated_at=NOW() WHERE id=$1", [id, status, cleanText(message, 1000), cleanText(remoteId, 160)]);
-}
-
 function paymentStatus(document, total, settled) {
     if (settled >= total - 0.01) return "paid";
     if (document.dueDate && document.dueDate < today()) return "overdue";
@@ -966,7 +859,4 @@ function positiveMoney(value) { const number = safeMoney(value); return number !
 function positiveId(value) { const id = Number(value); return Number.isSafeInteger(id) && id > 0 ? id : 0; }
 function cleanText(value, max) { return String(value || "").replace(/\s+/g, " ").trim().slice(0, max); }
 function sanitizeDate(value) { const date = String(value || ""); return /^\d{4}-\d{2}-\d{2}$/.test(date) && !Number.isNaN(new Date(`${date}T12:00:00`).getTime()) ? date : ""; }
-function encryptionKey() { return crypto.createHash("sha256").update(String(process.env.SESSION_SECRET || "development-accounting-key")).digest(); }
-function encryptSecret(value) { if (!value) return ""; const iv = crypto.randomBytes(12); const cipher = crypto.createCipheriv("aes-256-gcm", encryptionKey(), iv); const encrypted = Buffer.concat([cipher.update(value, "utf8"), cipher.final()]); return `${iv.toString("base64url")}.${cipher.getAuthTag().toString("base64url")}.${encrypted.toString("base64url")}`; }
-function decryptSecret(value) { try { if (!value) return ""; const [iv, tag, encrypted] = String(value).split(".").map(item => Buffer.from(item, "base64url")); const decipher = crypto.createDecipheriv("aes-256-gcm", encryptionKey(), iv); decipher.setAuthTag(tag); return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString("utf8"); } catch { return ""; } }
 function asyncHandler(handler) { return (request, response, next) => Promise.resolve(handler(request, response, next)).catch(next); }

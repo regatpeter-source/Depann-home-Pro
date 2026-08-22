@@ -22,6 +22,7 @@ import { billingUploadErrorHandler, initializeBilling, registerBillingRoutes } f
 import { documentTemplateUploadErrorHandler, initializeDocumentTemplates, registerDocumentTemplateRoutes } from "./server/document-templates.js";
 import { initializeSubscriptionInvoicing, registerSubscriptionInvoicingRoutes, startSubscriptionInvoicingScheduler } from "./server/invoicing.js";
 import { initializeAccounting, registerAccountingRoutes } from "./server/accounting.js";
+import { initializeElectronicInvoicing, registerElectronicInvoicingRoutes } from "./server/electronic-invoicing.js";
 import { initializeConnectors, registerConnectorRoutes } from "./server/connectors.js";
 import { initializePurchases, registerPurchaseRoutes } from "./server/purchases.js";
 import { initializeMessages, registerMessageRoutes } from "./server/messages.js";
@@ -95,6 +96,13 @@ app.use("/api/partner-dialogue/external", rateLimit({
 	legacyHeaders: false,
 	message: { message: "Trop de requêtes partenaire. Réessayez dans quelques minutes." }
 }));
+app.use("/api/e-invoicing/webhooks", rateLimit({
+	windowMs: 15 * 60 * 1000,
+	limit: 600,
+	standardHeaders: "draft-7",
+	legacyHeaders: false,
+	message: { message: "Trop de notifications de facturation électronique." }
+}));
 app.use("/api/partner-requests", rateLimit({
 	windowMs: 15 * 60 * 1000,
 	limit: 8,
@@ -132,6 +140,7 @@ registerCreatorRoutes(app, requireCreator, requireAuthentication);
 registerPartnerRequestRoutes(app, requireCreator, requireAuthentication);
 registerSubscriptionInvoicingRoutes(app, requireCreator);
 registerAccountingRoutes(app, requireAuthentication);
+registerElectronicInvoicingRoutes(app, requireAuthentication);
 registerConnectorRoutes(app, requireAuthentication, requireCreator);
 registerPartnerMissionRoutes(app, requireAuthentication);
 registerPartnerDialogueRoutes(app, requireAuthentication);
@@ -194,6 +203,7 @@ async function start() {
 	await initializeBilling();
 	await initializeDocumentTemplates();
 	await initializeAccounting();
+	await initializeElectronicInvoicing();
 	await initializeConnectors();
 	await initializeSubscriptionInvoicing();
 	await initializePurchases();

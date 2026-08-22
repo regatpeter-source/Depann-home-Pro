@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 
 const billing = readFileSync(new URL("../server/billing.js", import.meta.url), "utf8");
 const accounting = readFileSync(new URL("../server/accounting.js", import.meta.url), "utf8");
+const electronicInvoicing = readFileSync(new URL("../server/electronic-invoicing.js", import.meta.url), "utf8");
 const schema = readFileSync(new URL("../database/schema.sql", import.meta.url), "utf8");
 const client = readFileSync(new URL("../js/billing.js", import.meta.url), "utf8");
 
@@ -50,7 +51,7 @@ test("la comptabilité exige l’émission et les avoirs utilisent la série lé
     assert.match(accounting, /document_type='invoice' AND issued_at IS NOT NULL FOR UPDATE/);
     assert.match(accounting, /if \(!document\.issuedAt\) throw accountingError/);
     assert.match(accounting, /\(structured_data IS NOT NULL\) AS "hasStructuredData"/);
-    assert.match(accounting, /L’archive UBL de cette facture ou de cet avoir est indisponible/);
+    assert.match(electronicInvoicing, /L’archive UBL de cette facture ou de cet avoir est indisponible/);
     assert.match(accounting, /finalized_by, legal_snapshot/);
     const creditRoute = accounting.slice(accounting.indexOf('app.post("/api/accounting/documents/:documentId/credits"'), accounting.indexOf('app.post("/api/accounting/settlements"'));
     assert.match(creditRoute, /buildBillingLegalArchive\(creditDocument, \{ ownerId, database: client \}\)/);

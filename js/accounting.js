@@ -137,23 +137,25 @@ function renderLegacySettings(node) {
     node.querySelector("form").addEventListener("submit", async event => { event.preventDefault(); const form = new FormData(event.currentTarget); const payload = { provider: form.get("provider"), identifier: form.get("identifier"), apiKey: form.get("apiKey"), enabled: form.get("enabled") === "on", chartConfig: Object.fromEntries(["salesAccount", "customerAccount", "bankAccount", "vatCollectedAccount", "purchaseAccount", "supplierAccount"].map(key => [key, form.get(key)])), journalConfig: { sales: { code: form.get("salesJournalCode"), label: form.get("salesJournalLabel"), active: true }, bank: { code: form.get("bankJournalCode"), label: form.get("bankJournalLabel"), active: true }, general: { code: form.get("generalJournalCode"), label: form.get("generalJournalLabel"), active: true } }, fecConfig: { fiscalYearStart: form.get("fiscalYearStart"), fiscalYearEnd: form.get("fiscalYearEnd") }, aidEngineConfig: { enabled: form.get("aidEngineEnabled") === "on", source: form.get("aidEngineSource") } }; const result = await api("/api/accounting/settings", { method: "PUT", body: JSON.stringify(payload) }); if (!result.ok) return alert(result.message || "Enregistrement impossible."); renderAccounting("settings"); });
 }
 
-function renderElectronic(node) {
-    const settings = accounting.settings;
-    const ready = settings.pdpEnabled && settings.pdpPlatformName && settings.pdpApiUrl && settings.pdpIdentifier && settings.hasApiKey;
+async function renderElectronic(node) {
+    node.innerHTML = '<section class="accounting-panel"><p class="muted">Chargement des connexions de facturation électronique…</p></section>';
+    const result = await api("/api/accounting/e-invoicing");
+    if (!result.ok) { node.innerHTML = `<section class="accounting-panel"><p class="auth-message error">${escapeHtml(result.message || "Connexions indisponibles.")}</p></section>`; return; }
+    const electronic = result.data || { providers: [], connections: [], activeConnection: null };
+    const active = electronic.activeConnection;
+    const ready = active?.status === "connected" && active?.integrated;
+    const connectionRows = electronic.connections.map(connection => `<article><div><strong>${escapeHtml(connection.platformLabel)}</strong><p>${escapeHtml(connectionStatusLabel(connection.status))} · ${connection.environment === "production" ? "Production" : "Bac à sable fournisseur"}</p><small>${connection.externalAccountLabel ? `Compte ${escapeHtml(connection.externalAccountLabel)} · ` : ""}${connection.lastCheckedAt ? `Vérifiée le ${escapeHtml(dateTime(connection.lastCheckedAt))}` : "Jamais vérifiée"}${connection.integrated ? "" : " · Reconnexion requise"}</small></div>${connection.active ? `<button type="button" class="secondary-button" data-disconnect="${connection.id}">Déconnecter</button>` : ""}</article>`).join("");
     node.innerHTML = `<section class="accounting-panel">
-        <div class="form-heading"><div><p class="eyebrow">Échanges réels</p><h3>Facturation électronique</h3><p class="muted">Chaque entreprise utilise la plateforme agréée qu’elle a choisie et configurée dans ses paramètres.</p></div></div>
-        <aside class="accounting-pdp-notice">${ready ? `Connexion active vers <strong>${escapeHtml(settings.pdpPlatformName)}</strong>. Les envois ci-dessous transmettent réellement l’archive UBL à ${escapeHtml(settings.pdpApiUrl)}.` : "Aucune plateforme réelle n’est active. Configurez votre plateforme avant toute transmission."}</aside>
-        <div class="accounting-transmission-list">${accounting.transmissions.length ? accounting.transmissions.map(item => `<article><div><strong>${escapeHtml(item.documentNumber)}</strong><p>${escapeHtml(item.provider)} · ${escapeHtml(transmissionStatusLabel(item.status))}</p><small>${escapeHtml(item.message || "Aucun message")}</small></div><button type="button" class="secondary-button" data-transmit="${item.documentId}" ${ready ? "" : "disabled"}>Renvoyer</button></article>`).join("") : '<p class="muted">Aucune transmission réelle enregistrée.</p>'}</div>
-        <h4>Factures et avoirs émis prêts à transmettre</h4>
-        <div class="accounting-transmission-list">${accounting.documents.filter(item => ["invoice", "credit"].includes(item.documentType)).map(item => `<article><div><strong>${escapeHtml(item.documentNumber)}</strong><p>${item.documentType === "credit" ? "Avoir" : "Facture"} · ${escapeHtml(item.customerName)} · ${money(Math.abs(item.totals.netPayable))}</p></div><button type="button" class="secondary-button" data-transmit="${item.id}" ${ready ? "" : "disabled"}>Transmettre réellement</button></article>`).join("") || '<p class="muted">Aucune facture ni aucun avoir disponible.</p>'}</div>
+        <div class="form-heading"><div><p class="eyebrow">Plateforme de facturation électronique</p><h3>Choisissez la plateforme utilisée par votre entreprise.</h3></div></div>
+        <aside class="accounting-pdp-notice">Depann’Home Pro n'est pas une plateforme agréée de facturation électronique. Vous choisissez et connectez la plateforme utilisée par votre entreprise.</aside>
+        <h4>Connexion de l’entreprise</h4><div class="accounting-transmission-list">${connectionRows || '<p class="muted">Aucune plateforme connectée.</p>'}</div>
+        <h4>Plateformes intégrées</h4><div class="accounting-transmission-list">${electronic.providers.map(provider => `<article><div><strong>${escapeHtml(provider.label)}</strong><p>Adaptateur dédié disponible</p></div><button type="button" class="secondary-button" data-connect="${escapeHtml(provider.code)}">Connecter</button></article>`).join("") || '<p class="auth-message">Cette plateforme n\'est pas encore intégrée à Depan’Home Pro. Aucun connecteur ne sera présenté comme opérationnel sans API fournisseur documentée.</p>'}</div>
+        <h4>Historique des transmissions</h4><div class="accounting-transmission-list">${accounting.transmissions.length ? accounting.transmissions.map(item => `<article><div><strong>${escapeHtml(item.documentNumber)}</strong><p>${escapeHtml(item.provider)} · ${escapeHtml(transmissionStatusLabel(item.status))}</p><small>${escapeHtml(item.remoteId || "Sans référence externe")} · ${escapeHtml(item.message || "Aucun message")}</small></div></article>`).join("") : '<p class="muted">Aucune transmission enregistrée.</p>'}</div>
+        <h4>Factures et avoirs émis</h4><div class="accounting-transmission-list">${accounting.documents.filter(item => ["invoice", "credit"].includes(item.documentType)).map(item => `<article><div><strong>${escapeHtml(item.documentNumber)}</strong><p>${item.documentType === "credit" ? "Avoir" : "Facture"} · ${escapeHtml(item.customerName)} · ${money(Math.abs(item.totals.netPayable))}</p></div><button type="button" class="secondary-button" data-transmit="${item.id}" ${ready ? "" : "disabled"}>Transmettre</button></article>`).join("") || '<p class="muted">Aucun document disponible.</p>'}</div>
     </section>`;
-    node.querySelectorAll("[data-transmit]:not([disabled])").forEach(button => button.addEventListener("click", async () => {
-        if (!window.confirm(`Transmettre réellement cette facture à ${settings.pdpPlatformName} ?`)) return;
-        button.disabled = true;
-        const result = await api(`/api/accounting/e-invoices/${button.dataset.transmit}/transmit`, { method: "POST" });
-        if (!result.ok) alert(result.message || "Transmission impossible.");
-        renderAccounting("electronic");
-    }));
+    node.querySelectorAll("[data-connect]").forEach(button => button.addEventListener("click", () => alert("L’authentification est propre à chaque plateforme. Le formulaire dédié sera affiché lorsque son adaptateur documenté sera livré.")));
+    node.querySelectorAll("[data-disconnect]").forEach(button => button.addEventListener("click", async () => { if (!window.confirm("Déconnecter cette plateforme ? L’historique des transmissions sera conservé.")) return; const answer = await api(`/api/accounting/e-invoicing/connections/${button.dataset.disconnect}`, { method: "DELETE" }); if (!answer.ok) alert(answer.message || "Déconnexion impossible."); renderAccounting("electronic"); }));
+    node.querySelectorAll("[data-transmit]:not([disabled])").forEach(button => button.addEventListener("click", async () => { if (!window.confirm(`Transmettre ce document à ${active.platformLabel} ?`)) return; button.disabled = true; const answer = await api(`/api/accounting/e-invoicing/documents/${button.dataset.transmit}/transmit`, { method: "POST" }); if (!answer.ok) alert(answer.message || "Transmission impossible."); renderAccounting("electronic"); }));
 }
 
 function renderSettings(node) {
@@ -161,7 +163,7 @@ function renderSettings(node) {
     const accounts = settings.chartConfig || {};
     const journals = settings.journalConfig || {};
     node.innerHTML = `<section class="accounting-panel">
-        <div class="form-heading"><div><p class="eyebrow">Configuration propre à l’entreprise</p><h3>Comptabilité et plateforme de facturation électronique</h3><p class="muted">Chaque entreprise choisit librement sa plateforme et utilise ses propres identifiants contractuels.</p></div></div>
+        <div class="form-heading"><div><p class="eyebrow">Configuration propre à l’entreprise</p><h3>Paramètres comptables</h3><p class="muted">La connexion à une plateforme est gérée séparément dans « Facturation électronique ».</p></div></div>
         <form id="accountingSettingsForm" class="form-grid">
             <fieldset class="accounting-rules form-wide"><legend>Plan comptable</legend>
                 <label>Compte ventes<input name="salesAccount" value="${escapeHtml(accounts.salesAccount || "706000")}"></label>
@@ -181,14 +183,6 @@ function renderSettings(node) {
                 <label>Début d’exercice<input name="fiscalYearStart" type="date" value="${escapeHtml(settings.fecConfig?.fiscalYearStart || "")}"></label>
                 <label>Clôture d’exercice<input name="fiscalYearEnd" type="date" value="${escapeHtml(settings.fecConfig?.fiscalYearEnd || "")}"></label>
             </fieldset>
-            <fieldset class="accounting-rules form-wide"><legend>Plateforme choisie par cette entreprise</legend>
-                <p class="muted form-wide">Renseignez l’endpoint de dépôt fourni par votre plateforme agréée. Il doit accepter une facture UBL XML par requête HTTPS avec authentification Bearer.</p>
-                <label>Nom de la plateforme<input name="platformName" maxlength="160" value="${escapeHtml(settings.pdpPlatformName || "")}" placeholder="Nom de votre plateforme agréée"></label>
-                <label class="form-wide">URL API réelle de dépôt UBL<input name="apiUrl" type="url" maxlength="1000" value="${escapeHtml(settings.pdpApiUrl || "")}" placeholder="https://api.plateforme.fr/v1/invoices"></label>
-                <label>Identifiant entreprise sur la plateforme<input name="identifier" maxlength="160" value="${escapeHtml(settings.pdpIdentifier || "")}"></label>
-                <label>Clé API${settings.hasApiKey ? " (laisser vide pour conserver)" : ""}<input name="apiKey" type="password" autocomplete="new-password"></label>
-                <label class="accounting-switch"><input name="enabled" type="checkbox" ${settings.pdpEnabled ? "checked" : ""}> Activer les transmissions réelles</label>
-            </fieldset>
             <p class="auth-message" id="accountingSettingsMessage"></p>
             <div class="form-actions"><button class="secondary-button">Enregistrer les paramètres</button></div>
         </form>
@@ -197,7 +191,6 @@ function renderSettings(node) {
         event.preventDefault();
         const form = new FormData(event.currentTarget);
         const payload = {
-            platformName: form.get("platformName"), apiUrl: form.get("apiUrl"), identifier: form.get("identifier"), apiKey: form.get("apiKey"), enabled: form.get("enabled") === "on",
             chartConfig: Object.fromEntries(["salesAccount", "customerAccount", "bankAccount", "vatCollectedAccount", "purchaseAccount", "supplierAccount"].map(key => [key, form.get(key)])),
             journalConfig: { sales: { code: form.get("salesJournalCode"), label: form.get("salesJournalLabel"), active: true }, bank: { code: form.get("bankJournalCode"), label: form.get("bankJournalLabel"), active: true }, general: { code: form.get("generalJournalCode"), label: form.get("generalJournalLabel"), active: true } },
             fecConfig: { fiscalYearStart: form.get("fiscalYearStart"), fiscalYearEnd: form.get("fiscalYearEnd") }, aidEngineConfig: settings.aidEngineConfig || {}
@@ -212,8 +205,10 @@ function renderPaymentRows(documents) { return documents.length ? `<div class="a
 function paymentLabel(item) { return ({ paid: "Réglée", partial: "Partiellement réglée", overdue: "Impayée / échue", unpaid: "À encaisser" })[item.paymentStatus] || "Non concerné"; }
 function documentStatusLabel(value) { return ({ draft: "Brouillon", sent: "Envoyé", validated: "Validé", paid: "Réglé", issued: "Émis", cancelled: "Annulé", accepted: "Accepté", rejected: "Refusé", pending: "En attente" })[String(value || "").toLowerCase()] || "Non renseigné"; }
 function transmissionStatusLabel(value) { return ({ configured: "Configurée", draft: "Brouillon", queued: "En attente d’envoi", sent: "Envoyée", accepted: "Acceptée", rejected: "Refusée", failed: "Échec d’envoi" })[String(value || "").toLowerCase()] || "Non renseigné"; }
+function connectionStatusLabel(value) { return ({ pending: "Connexion en cours", connected: "Connectée", invalid: "Connexion invalide", expired: "Authentification expirée", disconnected: "Déconnectée", action_required: "Reconnexion requise" })[String(value || "").toLowerCase()] || "État inconnu"; }
 function money(value) { return new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" }).format(Number(value) || 0); }
 function date(value) { return value ? new Intl.DateTimeFormat("fr-FR").format(new Date(`${value}T12:00:00`)) : "Non renseignée"; }
+function dateTime(value) { return value ? new Intl.DateTimeFormat("fr-FR", { dateStyle: "short", timeStyle: "short" }).format(new Date(value)) : "Non renseignée"; }
 function today() { return new Date().toISOString().slice(0, 10); }
 async function api(url, options = {}) { try { const response = await fetch(url, { credentials: "same-origin", headers: { "Content-Type": "application/json", ...(options.headers || {}) }, ...options }); const data = response.status === 204 ? null : await response.json().catch(() => null); return { ok: response.ok, data, message: data?.message }; } catch { return { ok: false, message: "Serveur indisponible." }; } }
 async function downloadAccountingFile(url, options = {}) { try { const response = await fetch(url, { credentials: "same-origin", headers: { ...(options.body ? { "Content-Type": "application/json" } : {}), ...(options.headers || {}) }, ...options }); if (!response.ok) { const data = await response.json().catch(() => null); return { ok: false, message: data?.message || "Téléchargement impossible." }; } const blob = await response.blob(); const disposition = response.headers.get("Content-Disposition") || ""; const filename = disposition.match(/filename="?([^";]+)"?/i)?.[1] || "export-comptable"; const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = filename; document.body.append(link); link.click(); link.remove(); URL.revokeObjectURL(link.href); return { ok: true }; } catch { return { ok: false, message: "Serveur indisponible." }; } }

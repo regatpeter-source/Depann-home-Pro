@@ -1,31 +1,39 @@
-# Connexion réelle à une plateforme de facturation électronique
+# Architecture multi-plateformes de facturation électronique
 
-## Choix par entreprise
+Depann’Home Pro n’est ni une plateforme agréée, ni une PDP, ni une plateforme certifiée de transmission. Chaque entreprise choisit son prestataire, souscrit directement auprès de lui et possède sa connexion.
 
-Chaque entreprise configure sa propre connexion dans **Comptabilité → Paramètres → Plateforme choisie par cette entreprise** :
+## Isolation et stockage
 
-- nom de la plateforme agréée ou de l’opérateur contractuel ;
-- URL HTTPS réelle de dépôt des factures UBL ;
-- identifiant attribué à l’entreprise par cette plateforme ;
-- clé API propre à l’entreprise, chiffrée en base ;
-- activation explicite des transmissions.
+`depannhome_einvoice_connections` contient des connexions versionnées et strictement rattachées à `owner_id`. Une seule connexion peut être active par entreprise. Les credentials sont chiffrés en AES-256-GCM avec `SESSION_SECRET` et ne sont jamais renvoyés au navigateur. Aucun secret global de facturation électronique n’existe.
 
-Les réglages sont stockés par `owner_id`. Une entreprise ne peut ni consulter ni utiliser la connexion d’une autre entreprise. Aucun fournisseur fictif, environnement de simulation ou succès artificiel n’est disponible dans le module comptable.
+La déconnexion efface les credentials actifs mais ne supprime ni la connexion historique, ni les transmissions, ni les événements d’audit. Changer de plateforme conserve donc les références et statuts précédents.
 
-## Contrat HTTP utilisé
+Les anciennes configurations du transport UBL universel sont migrées vers `legacy_ubl_api`, désactivées et marquées `action_required`. Le secret chiffré est préservé pendant la migration, mais cette configuration ne peut plus transmettre : son protocole n’était pas celui d’une API fournisseur documentée.
 
-Pour chaque facture ou avoir définitivement émis, Depann'Home Pro envoie une requête `POST` dont le corps est l’archive UBL XML immuable. La requête contient :
+## Adaptateurs
 
-- `Content-Type: application/xml; charset=utf-8` ;
-- `Authorization: Bearer <clé API>` ;
-- `X-Company-Identifier` avec l’identifiant contractuel ;
-- `X-Document-Number` avec le numéro légal de facture ;
-- `X-Document-SHA256` et `Idempotency-Key` avec l’empreinte de l’UBL.
+Chaque intégration étend `ElectronicInvoicingProvider` et implémente les opérations réellement documentées par son fournisseur :
 
-Une réponse JSON peut fournir `transmissionId` ou `id`, `status` et `message`. Sans statut reconnu, une réponse HTTP `202` est journalisée comme « en attente » et une autre réponse `2xx` comme « envoyée ». Toute réponse non `2xx`, erreur réseau ou expiration après 20 secondes est enregistrée comme un échec réel.
+- `connect` et `disconnect` ;
+- `testConnection` ;
+- `sendInvoice` et `sendCreditNote` ;
+- `getTransmissionStatus` ;
+- `refreshAuthentication` ;
+- `getAccountInformation` ;
+- `verifyWebhook` lorsque le fournisseur propose des notifications signées.
 
-## Sécurité et compatibilité
+Le registre ne rend connectables que les adaptateurs effectivement enregistrés. Il n’existe plus de formulaire universel URL/clé API et aucun protocole fournisseur n’est deviné. En l’absence d’adaptateur documenté, l’interface indique : « Cette plateforme n'est pas encore intégrée à Depan’Home Pro. »
 
-Seules les URL HTTPS publiques sont acceptées. Les hôtes locaux, adresses privées, identifiants intégrés à l’URL et redirections sont refusés. La clé API n’est jamais renvoyée au navigateur.
+## Routes et webhooks
 
-Ce transport fonctionne avec une plateforme qui accepte directement ce contrat UBL avec authentification Bearer. Si la plateforme choisie impose OAuth 2, une enveloppe JSON, des pièces jointes Factur-X, une signature particulière, des callbacks ou un protocole différent, un adaptateur dédié à son API doit être développé avant activation. Le raccordement doit aussi couvrir, selon le contrat fournisseur, la réception, les statuts réglementaires et l’e-reporting.
+Les routes administratives sont sous `/api/accounting/e-invoicing`. Le serveur déduit toujours l’entreprise avec `getAccountOwnerId(request)` et filtre chaque connexion, document et transmission avec cet identifiant.
+
+Un webhook public ne reçoit jamais de `owner_id` utilisable. Il résout la connexion par le code plateforme et le hachage SHA-256 d’un jeton opaque, puis l’adaptateur vérifie la notification fournisseur. La transmission est retrouvée avec le triplet de confiance `owner_id` résolu, `platform_code` et référence externe.
+
+## Périmètres indépendants
+
+La production des factures/avoirs et de leurs archives UBL/PDF reste indépendante du transport. Le grand livre, les exports comptables et la préparation FEC ne dépendent d’aucune connexion de facturation électronique.
+
+## État des intégrations
+
+Aucune API officielle de plateforme n’est documentée dans ce dépôt à ce jour. Par conséquent, aucun fournisseur n’est présenté comme connecté ou opérationnel. Un adaptateur ne doit être ajouté qu’avec la documentation officielle, les credentials propres à l’entreprise et des tests réels adaptés au contrat fournisseur.
