@@ -28,6 +28,12 @@ Le changement de société émet un nouveau cookie de session HTTP-only, puis l�
 
 Le serveur conserve toujours le rôle réel du compte pendant cette bascule. Un `pc_standard` reste `pc_standard` et un `accountant` reste `accountant` ; leurs droits Facturation et Comptabilité continuent donc de s’appliquer dans l’entreprise sélectionnée. L’entreprise cible doit être active, appartenir au même groupe et disposer d’une offre compatible pour un poste non administrateur.
 
+## Rattachement des postes mobiles
+
+Un poste mobile reste toujours rattaché à son `account_owner_id` d’origine. Les rôles `mobile_admin`, `team_lead` et `technician` ne reçoivent jamais de contexte multi-entreprises. Cette règle s’applique aussi à un compte `admin` utilisé depuis un téléphone ou une tablette : sur mobile, il reste dans sa propre entreprise et ne peut pas utiliser le sélecteur Groupe.
+
+Lorsqu’un poste PC affecte un membre à une intervention, un planning ou une mission partenaire, l’API vérifie que ce membre est actif et appartient à l’entreprise actuellement sélectionnée. Les missions partenaires limitent en plus l’affectation aux rôles mobiles prévus. Des déclencheurs PostgreSQL répètent cette validation pour empêcher toute liaison inter-entreprises issue d’une requête contournée ou d’une future évolution. Les anciennes liaisons incohérentes sont retirées au démarrage sans déplacer le compte mobile ni ses données.
+
 ## Annuler le mode Groupe
 
 Depuis **Groupe & entreprises**, l’Administrateur Groupe peut choisir **Désactiver le mode Groupe**. L’action est confirmée deux fois, puis elle supprime le groupe, ses membres administrateurs et ses liaisons de sociétés.

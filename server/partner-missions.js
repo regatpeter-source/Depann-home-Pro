@@ -6,6 +6,7 @@ import { createEmptyLeakContent } from "./leak-report-template.js";
 import { createNotification } from "./collaboration.js";
 import { recordMissionDialogueEvent } from "./partner-dialogue.js";
 import { getOrganization, isFeatureEnabled } from "./organizations.js";
+import { PARTNER_MISSION_ASSIGNMENT_ROLES, validateAssignedCompanyMembers } from "./member-assignment.js";
 
 const PRIORITIES = new Set(["low", "normal", "high", "urgent"]);
 const STATUSES = new Set(["received", "pending_validation", "accepted", "rejected", "assigned", "scheduled", "en_route", "on_site", "report_in_progress", "report_completed", "report_validated", "quote_sent", "quote_accepted", "work_completed", "invoice_sent", "closed", "cancelled"]);
@@ -53,6 +54,29 @@ export async function initializePartnerMissions() {
     await db.query("ALTER TABLE depannhome_partner_missions DROP CONSTRAINT IF EXISTS depannhome_partner_missions_billing_mode_check");
     await db.query("ALTER TABLE depannhome_partner_missions ADD CONSTRAINT depannhome_partner_missions_billing_mode_check CHECK (billing_mode IN ('direct_client','principal'))");
     await db.query("CREATE INDEX IF NOT EXISTS depannhome_partner_missions_owner_status_idx ON depannhome_partner_missions(owner_id, status, created_at DESC)");
+    await db.query(`
+        UPDATE depannhome_partner_missions mission
+        SET assigned_technician_id = NULL
+        FROM depannhome_users member
+        WHERE member.id = mission.assigned_technician_id
+            AND (member.account_owner_id <> mission.owner_id OR member.role NOT IN ('mobile_admin','team_lead','technician'))
+    `);
+    await db.query(`
+        CREATE OR REPLACE FUNCTION depannhome_validate_partner_mission_assignment() RETURNS trigger AS $$
+        BEGIN
+            IF NEW.assigned_technician_id IS NOT NULL AND NOT EXISTS (
+                SELECT 1 FROM depannhome_users member
+                WHERE member.id = NEW.assigned_technician_id AND member.account_owner_id = NEW.owner_id
+                    AND member.is_active = TRUE AND member.role IN ('mobile_admin','team_lead','technician')
+            ) THEN
+                RAISE EXCEPTION 'Le membre affecté à la mission doit être un poste mobile actif de la même entreprise.' USING ERRCODE = '23514';
+            END IF;
+            RETURN NEW;
+        END;
+        $$ LANGUAGE plpgsql
+    `);
+    await db.query("DROP TRIGGER IF EXISTS depannhome_partner_mission_assignment_company ON depannhome_partner_missions");
+    await db.query("CREATE TRIGGER depannhome_partner_mission_assignment_company BEFORE INSERT OR UPDATE OF owner_id, assigned_technician_id ON depannhome_partner_missions FOR EACH ROW EXECUTE FUNCTION depannhome_validate_partner_mission_assignment()");
     await db.query("UPDATE depannhome_calendar_events event SET client_id=mission.client_id FROM depannhome_partner_missions mission WHERE mission.calendar_event_id=event.id AND mission.owner_id=event.owner_id AND event.client_id='' AND mission.client_id<>''");
     await db.query(`CREATE TABLE IF NOT EXISTS depannhome_partner_mission_history (
         id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
@@ -94,8 +118,8 @@ export function registerPartnerMissionRoutes(app, requireAuthentication) {
         if (draft.startTime && draft.endTime && draft.endTime <= draft.startTime) return res.status(400).json({ message: "L’heure de fin doit être postérieure à l’heure de début." });
         const ownerId = getAccountOwnerId(req);
         if (draft.assignedTechnicianIds.length) {
-            const members = await getPool().query("SELECT id FROM depannhome_users WHERE account_owner_id=$1 AND is_active=TRUE AND id=ANY($2::bigint[])", [ownerId, draft.assignedTechnicianIds]);
-            if (members.rowCount !== draft.assignedTechnicianIds.length) return res.status(400).json({ message: "Un membre sélectionné ne fait plus partie de l’entreprise." });
+            const assignmentError = await validateAssignedCompanyMembers(getPool(), ownerId, draft.assignedTechnicianIds, PARTNER_MISSION_ASSIGNMENT_ROLES);
+            if (assignmentError) return res.status(400).json({ message: assignmentError });
         }
         const { rows } = await getPool().query("UPDATE depannhome_partner_missions SET planning_draft=$3::jsonb,updated_at=NOW() WHERE id=$1 AND owner_id=$2 AND status IN ('received','pending_validation') RETURNING status", [id, ownerId, JSON.stringify(draft)]);
         if (!rows[0]) return res.status(409).json({ message: "Cette mission ne peut plus être mise en pause." });
@@ -150,7 +174,50 @@ async function receiveMission(req, res) {
     } catch (error) { tracePartnerClient("transaction_failed", { flow: "partner_intake", ownerId: intake?.owner_id || null, error: error.message }); try { await connection.query("ROLLBACK"); tracePartnerClient("transaction_rolled_back", { flow: "partner_intake", ownerId: intake?.owner_id || null }); } catch (rollbackError) { tracePartnerClient("transaction_rollback_failed", { flow: "partner_intake", ownerId: intake?.owner_id || null, error: rollbackError.message }); } throw error; } finally { connection.release(); }
 }
 
-async function acceptMission(req, id) { const ownerId = getAccountOwnerId(req); const db = getPool(), connection = await db.connect(); try { await connection.query("BEGIN"); tracePartnerClient("transaction_started", { flow: "mission_acceptance", ownerId, missionId: id, persistenceMode: "transaction" }); const mission = await lockMission(connection, ownerId, id); if (!mission) throw clientError(404, "Mission introuvable."); if (!["received", "pending_validation", "accepted"].includes(mission.status)) throw clientError(409, "Cette mission ne peut plus être acceptée."); const values = mission.mappedData; const technicianId = optionalId(req.body?.technicianId) || mission.assignedTechnicianId || (await selectTechnician(connection, ownerId, mission, mission.assignmentMode)); const clientId = await upsertClient(connection, ownerId, values, req, mission.client_id); tracePartnerClient("provision_completed", { flow: "mission_acceptance", ownerId, missionId: id, clientId, operation: mission.client_id ? "repaired_or_updated_linked_client" : "created_or_matched_client" }); const schedule = scheduleValues(req.body, mission); const eventId = await upsertCalendar(connection, ownerId, mission, values, technicianId, schedule, clientId); const reportId = await ensureLeakReport(connection, ownerId, mission, values, clientId, eventId, technicianId); const status = technicianId ? "scheduled" : "accepted"; const { rows } = await connection.query("UPDATE depannhome_partner_missions SET status=$3,client_id=$4,calendar_event_id=$5,technical_report_id=$6,assigned_technician_id=$7,scheduled_date=$8::date,scheduled_start_time=$9::time,scheduled_end_time=$10::time,updated_at=NOW() WHERE id=$1 AND owner_id=$2 RETURNING *", [id, ownerId, status, clientId, eventId, reportId || null, technicianId || null, schedule.date || null, schedule.startTime || null, schedule.endTime || null]); await writeHistory(connection, ownerId, id, status, "accepted", req.user.sub, req.user.role, { clientId, eventId, reportId, technicianId }, req.ip); await enqueue(connection, ownerId, id, "mission_accepted", { status, clientId, eventId, reportId }); await connection.query("COMMIT"); tracePartnerClient("transaction_committed", { flow: "mission_acceptance", ownerId, missionId: id, clientId }); await traceCommittedPartnerClient(ownerId, clientId, { flow: "mission_acceptance", missionId: id }); const actorName = req.user.fullName || req.user.username; await recordMissionDialogueEvent({ ownerId, missionId: id, status: "accepted", action: "accepted", details: { clientId, eventId, reportId }, actorName }); if (technicianId) await recordMissionDialogueEvent({ ownerId, missionId: id, status: "assigned", action: "assigned", details: { technicianId }, actorName }); if (schedule.date) await recordMissionDialogueEvent({ ownerId, missionId: id, status: "scheduled", action: "scheduled", details: { clientId, eventId, startTime: schedule.startTime }, actorName }); await notifyUsers(ownerId, rows[0], values, technicianId, "Mission acceptée"); return publicMission(rows[0]); } catch (error) { tracePartnerClient("transaction_failed", { flow: "mission_acceptance", ownerId, missionId: id, error: error.message }); try { await connection.query("ROLLBACK"); tracePartnerClient("transaction_rolled_back", { flow: "mission_acceptance", ownerId, missionId: id }); } catch (rollbackError) { tracePartnerClient("transaction_rollback_failed", { flow: "mission_acceptance", ownerId, missionId: id, error: rollbackError.message }); } throw error; } finally { connection.release(); } }
+async function acceptMission(req, id) {
+    const ownerId = getAccountOwnerId(req);
+    const connection = await getPool().connect();
+    try {
+        await connection.query("BEGIN");
+        tracePartnerClient("transaction_started", { flow: "mission_acceptance", ownerId, missionId: id, persistenceMode: "transaction" });
+        const mission = await lockMission(connection, ownerId, id);
+        if (!mission) throw clientError(404, "Mission introuvable.");
+        if (!["received", "pending_validation", "accepted"].includes(mission.status)) throw clientError(409, "Cette mission ne peut plus être acceptée.");
+        const values = mission.mappedData;
+        const technicianId = optionalId(req.body?.technicianId) || mission.assignedTechnicianId || (await selectTechnician(connection, ownerId, mission, mission.assignmentMode));
+        const assignmentError = await validateAssignedCompanyMembers(connection, ownerId, technicianId ? [technicianId] : [], PARTNER_MISSION_ASSIGNMENT_ROLES);
+        if (assignmentError) throw clientError(400, assignmentError);
+        const clientId = await upsertClient(connection, ownerId, values, req, mission.client_id);
+        tracePartnerClient("provision_completed", { flow: "mission_acceptance", ownerId, missionId: id, clientId, operation: mission.client_id ? "repaired_or_updated_linked_client" : "created_or_matched_client" });
+        const schedule = scheduleValues(req.body, mission);
+        const eventId = await upsertCalendar(connection, ownerId, mission, values, technicianId, schedule, clientId);
+        const reportId = await ensureLeakReport(connection, ownerId, mission, values, clientId, eventId, technicianId);
+        const status = technicianId ? "scheduled" : "accepted";
+        const { rows } = await connection.query("UPDATE depannhome_partner_missions SET status=$3,client_id=$4,calendar_event_id=$5,technical_report_id=$6,assigned_technician_id=$7,scheduled_date=$8::date,scheduled_start_time=$9::time,scheduled_end_time=$10::time,updated_at=NOW() WHERE id=$1 AND owner_id=$2 RETURNING *", [id, ownerId, status, clientId, eventId, reportId || null, technicianId || null, schedule.date || null, schedule.startTime || null, schedule.endTime || null]);
+        await writeHistory(connection, ownerId, id, status, "accepted", req.user.sub, req.user.role, { clientId, eventId, reportId, technicianId }, req.ip);
+        await enqueue(connection, ownerId, id, "mission_accepted", { status, clientId, eventId, reportId });
+        await connection.query("COMMIT");
+        tracePartnerClient("transaction_committed", { flow: "mission_acceptance", ownerId, missionId: id, clientId });
+        await traceCommittedPartnerClient(ownerId, clientId, { flow: "mission_acceptance", missionId: id });
+        const actorName = req.user.fullName || req.user.username;
+        await recordMissionDialogueEvent({ ownerId, missionId: id, status: "accepted", action: "accepted", details: { clientId, eventId, reportId }, actorName });
+        if (technicianId) await recordMissionDialogueEvent({ ownerId, missionId: id, status: "assigned", action: "assigned", details: { technicianId }, actorName });
+        if (schedule.date) await recordMissionDialogueEvent({ ownerId, missionId: id, status: "scheduled", action: "scheduled", details: { clientId, eventId, startTime: schedule.startTime }, actorName });
+        await notifyUsers(ownerId, rows[0], values, technicianId, "Mission acceptée");
+        return publicMission(rows[0]);
+    } catch (error) {
+        tracePartnerClient("transaction_failed", { flow: "mission_acceptance", ownerId, missionId: id, error: error.message });
+        try {
+            await connection.query("ROLLBACK");
+            tracePartnerClient("transaction_rolled_back", { flow: "mission_acceptance", ownerId, missionId: id });
+        } catch (rollbackError) {
+            tracePartnerClient("transaction_rollback_failed", { flow: "mission_acceptance", ownerId, missionId: id, error: rollbackError.message });
+        }
+        throw error;
+    } finally {
+        connection.release();
+    }
+}
 async function assignMission(req, id) { const mission = await findMission(getAccountOwnerId(req), id); if (!mission) throw clientError(404, "Mission introuvable."); return acceptMission({ ...req, body: { ...req.body, technicianId: req.body?.technicianId || mission.assignedTechnicianId } }, id); }
 async function changeStatus(req, id, status, details) { const ownerId = getAccountOwnerId(req); if (!id) throw clientError(400, "Mission invalide."); const allowedTechnicianStatuses = new Set(["en_route", "on_site", "report_in_progress", "report_completed", "work_completed"]); if (isFieldUser(req) && !allowedTechnicianStatuses.has(status)) throw clientError(403, "Ce statut est réservé à l’administration."); return transitionPartnerMissionStatus({ ownerId, missionId: id, status, actorId: req.user.sub, actorRole: req.user.role, actorName: req.user.fullName || req.user.username, details, ip: req.ip, assignedTechnicianId: isFieldUser(req) ? req.user.sub : null }); }
 

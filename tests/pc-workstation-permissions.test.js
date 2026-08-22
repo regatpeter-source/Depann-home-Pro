@@ -25,7 +25,7 @@ test("les autorisations configurables sont limitées aux postes PC Basic+ et Pro
 });
 
 test("un Administrateur PC conserve tous les accès sans dépendre des cases", () => {
-    const administrator = user("admin", "basic", { canAccessBilling: false, canAccessAccounting: false, groupId: "7", canSwitchGroupCompanies: false });
+    const administrator = user("admin", "basic", { deviceType: "desktop", canAccessBilling: false, canAccessAccounting: false, groupId: "7", canSwitchGroupCompanies: false });
     assert.equal(hasBillingWorkspaceAccess(administrator), true);
     assert.equal(hasAccountingWorkspaceAccess(administrator), true);
     assert.equal(hasGroupCompanySwitchAccess(administrator), true);
@@ -48,9 +48,10 @@ test("les cases contrôlent séparément Facturation et Comptabilité en Basic+ 
 });
 
 test("l’accès Groupe exige la case, un groupe actif et une offre compatible", () => {
-    assert.equal(hasGroupCompanySwitchAccess(user("pc_standard", "pro", { groupId: "", canSwitchGroupCompanies: true })), false);
-    assert.equal(hasGroupCompanySwitchAccess(user("pc_standard", "pro", { groupId: "3", canSwitchGroupCompanies: false })), false);
-    assert.equal(hasGroupCompanySwitchAccess(user("pc_standard", "basic_plus", { groupId: "3", canSwitchGroupCompanies: true })), true);
+    assert.equal(hasGroupCompanySwitchAccess(user("pc_standard", "pro", { deviceType: "desktop", groupId: "", canSwitchGroupCompanies: true })), false);
+    assert.equal(hasGroupCompanySwitchAccess(user("pc_standard", "pro", { deviceType: "desktop", groupId: "3", canSwitchGroupCompanies: false })), false);
+    assert.equal(hasGroupCompanySwitchAccess(user("pc_standard", "basic_plus", { deviceType: "desktop", groupId: "3", canSwitchGroupCompanies: true })), true);
+    assert.equal(hasGroupCompanySwitchAccess(user("admin", "pro", { deviceType: "mobile", groupId: "3", canSwitchGroupCompanies: true })), false);
 });
 
 test("la bascule Groupe conserve le rôle réel et sépare administration et sélection", () => {

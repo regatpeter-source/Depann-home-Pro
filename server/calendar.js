@@ -5,6 +5,7 @@ import PDFDocument from "pdfkit";
 import { synchronizeConnectedAppointment } from "./partner-connections.js";
 import { PDF_MIME } from "./company-document-template.js";
 import { buildQuitusCustomModel, renderActiveCustomTemplate } from "./document-templates.js";
+import { validateAssignedCompanyMembers } from "./member-assignment.js";
 
 const EVENT_COLORS = new Set(["blue", "green", "orange", "red", "purple", "gray"]);
 const EVENT_TYPES = new Set(["appointment", "task", "vacation", "sick_leave", "unavailable"]);
@@ -94,12 +95,58 @@ export async function initializeCalendar() {
         ON depannhome_calendar_assignments (technician_id, event_id)
     `);
     await database.query(`
+        UPDATE depannhome_calendar_events event
+        SET assigned_technician_id = NULL
+        FROM depannhome_users member
+        WHERE member.id = event.assigned_technician_id
+            AND member.account_owner_id <> event.owner_id
+    `);
+    await database.query(`
+        DELETE FROM depannhome_calendar_assignments assignment
+        USING depannhome_calendar_events event, depannhome_users member
+        WHERE event.id = assignment.event_id AND member.id = assignment.technician_id
+            AND member.account_owner_id <> event.owner_id
+    `);
+    await database.query(`
         INSERT INTO depannhome_calendar_assignments (event_id, technician_id, is_primary)
         SELECT id, assigned_technician_id, TRUE
         FROM depannhome_calendar_events
         WHERE assigned_technician_id IS NOT NULL
         ON CONFLICT (event_id, technician_id) DO NOTHING
     `);
+    await database.query(`
+        CREATE OR REPLACE FUNCTION depannhome_validate_calendar_event_assignment() RETURNS trigger AS $$
+        BEGIN
+            IF NEW.assigned_technician_id IS NOT NULL AND NOT EXISTS (
+                SELECT 1 FROM depannhome_users member
+                WHERE member.id = NEW.assigned_technician_id AND member.account_owner_id = NEW.owner_id
+                    AND member.is_active = TRUE
+            ) THEN
+                RAISE EXCEPTION 'Le membre affecté doit être actif et rattaché à la même entreprise.' USING ERRCODE = '23514';
+            END IF;
+            RETURN NEW;
+        END;
+        $$ LANGUAGE plpgsql
+    `);
+    await database.query("DROP TRIGGER IF EXISTS depannhome_calendar_event_assignment_company ON depannhome_calendar_events");
+    await database.query("CREATE TRIGGER depannhome_calendar_event_assignment_company BEFORE INSERT OR UPDATE OF owner_id, assigned_technician_id ON depannhome_calendar_events FOR EACH ROW EXECUTE FUNCTION depannhome_validate_calendar_event_assignment()");
+    await database.query(`
+        CREATE OR REPLACE FUNCTION depannhome_validate_calendar_assignment_company() RETURNS trigger AS $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM depannhome_calendar_events event
+                JOIN depannhome_users member ON member.id = NEW.technician_id
+                WHERE event.id = NEW.event_id AND member.account_owner_id = event.owner_id
+                    AND member.is_active = TRUE
+            ) THEN
+                RAISE EXCEPTION 'Le membre affecté doit être actif et rattaché à la même entreprise.' USING ERRCODE = '23514';
+            END IF;
+            RETURN NEW;
+        END;
+        $$ LANGUAGE plpgsql
+    `);
+    await database.query("DROP TRIGGER IF EXISTS depannhome_calendar_assignment_company ON depannhome_calendar_assignments");
+    await database.query("CREATE TRIGGER depannhome_calendar_assignment_company BEFORE INSERT OR UPDATE ON depannhome_calendar_assignments FOR EACH ROW EXECUTE FUNCTION depannhome_validate_calendar_assignment_company()");
 }
 
 export function registerCalendarRoutes(app, requireAuthentication) {
@@ -559,12 +606,7 @@ function normalizeQuitusTemplate(value) {
 }
 
 async function validateAssignedMembers(accountOwnerId, memberIds) {
-    if (!memberIds.length) return "";
-    const { rowCount } = await getPool().query(`
-        SELECT 1 FROM depannhome_users
-        WHERE id = ANY($1::bigint[]) AND account_owner_id = $2 AND is_active = TRUE
-    `, [memberIds, accountOwnerId]);
-    return rowCount === memberIds.length ? "" : "Un des membres sélectionnés est introuvable ou inactif.";
+    return validateAssignedCompanyMembers(getPool(), accountOwnerId, memberIds);
 }
 
 async function findCalendarConflict(accountOwnerId, event, excludedEventId = 0) {

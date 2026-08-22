@@ -972,11 +972,53 @@ CREATE TABLE IF NOT EXISTS depannhome_calendar_assignments (
 CREATE INDEX IF NOT EXISTS depannhome_calendar_assignments_technician_idx
     ON depannhome_calendar_assignments (technician_id, event_id);
 
+UPDATE depannhome_calendar_events event
+SET assigned_technician_id = NULL
+FROM depannhome_users member
+WHERE member.id = event.assigned_technician_id
+    AND member.account_owner_id <> event.owner_id;
+
+DELETE FROM depannhome_calendar_assignments assignment
+USING depannhome_calendar_events event, depannhome_users member
+WHERE event.id = assignment.event_id AND member.id = assignment.technician_id
+    AND member.account_owner_id <> event.owner_id;
+
 INSERT INTO depannhome_calendar_assignments (event_id, technician_id, is_primary)
 SELECT id, assigned_technician_id, TRUE
 FROM depannhome_calendar_events
 WHERE assigned_technician_id IS NOT NULL
 ON CONFLICT (event_id, technician_id) DO NOTHING;
+
+CREATE OR REPLACE FUNCTION depannhome_validate_calendar_event_assignment() RETURNS trigger AS $$
+BEGIN
+    IF NEW.assigned_technician_id IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM depannhome_users member
+        WHERE member.id = NEW.assigned_technician_id AND member.account_owner_id = NEW.owner_id
+            AND member.is_active = TRUE
+    ) THEN
+        RAISE EXCEPTION 'Le membre affecté doit être actif et rattaché à la même entreprise.' USING ERRCODE = '23514';
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+DROP TRIGGER IF EXISTS depannhome_calendar_event_assignment_company ON depannhome_calendar_events;
+CREATE TRIGGER depannhome_calendar_event_assignment_company BEFORE INSERT OR UPDATE OF owner_id, assigned_technician_id ON depannhome_calendar_events FOR EACH ROW EXECUTE FUNCTION depannhome_validate_calendar_event_assignment();
+
+CREATE OR REPLACE FUNCTION depannhome_validate_calendar_assignment_company() RETURNS trigger AS $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM depannhome_calendar_events event
+        JOIN depannhome_users member ON member.id = NEW.technician_id
+        WHERE event.id = NEW.event_id AND member.account_owner_id = event.owner_id
+            AND member.is_active = TRUE
+    ) THEN
+        RAISE EXCEPTION 'Le membre affecté doit être actif et rattaché à la même entreprise.' USING ERRCODE = '23514';
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+DROP TRIGGER IF EXISTS depannhome_calendar_assignment_company ON depannhome_calendar_assignments;
+CREATE TRIGGER depannhome_calendar_assignment_company BEFORE INSERT OR UPDATE ON depannhome_calendar_assignments FOR EACH ROW EXECUTE FUNCTION depannhome_validate_calendar_assignment_company();
 
 CREATE TABLE IF NOT EXISTS depannhome_library_sections (
     id BIGSERIAL PRIMARY KEY,
@@ -1128,6 +1170,25 @@ CREATE TABLE IF NOT EXISTS depannhome_partner_missions (
     CONSTRAINT depannhome_partner_missions_unique UNIQUE(owner_id, intake_id, external_mission_id)
 );
 CREATE INDEX IF NOT EXISTS depannhome_partner_missions_owner_status_idx ON depannhome_partner_missions(owner_id, status, created_at DESC);
+UPDATE depannhome_partner_missions mission
+SET assigned_technician_id = NULL
+FROM depannhome_users member
+WHERE member.id = mission.assigned_technician_id
+    AND (member.account_owner_id <> mission.owner_id OR member.role NOT IN ('mobile_admin','team_lead','technician'));
+CREATE OR REPLACE FUNCTION depannhome_validate_partner_mission_assignment() RETURNS trigger AS $$
+BEGIN
+    IF NEW.assigned_technician_id IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM depannhome_users member
+        WHERE member.id = NEW.assigned_technician_id AND member.account_owner_id = NEW.owner_id
+            AND member.is_active = TRUE AND member.role IN ('mobile_admin','team_lead','technician')
+    ) THEN
+        RAISE EXCEPTION 'Le membre affecté à la mission doit être un poste mobile actif de la même entreprise.' USING ERRCODE = '23514';
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+DROP TRIGGER IF EXISTS depannhome_partner_mission_assignment_company ON depannhome_partner_missions;
+CREATE TRIGGER depannhome_partner_mission_assignment_company BEFORE INSERT OR UPDATE OF owner_id, assigned_technician_id ON depannhome_partner_missions FOR EACH ROW EXECUTE FUNCTION depannhome_validate_partner_mission_assignment();
 ALTER TABLE depannhome_partner_missions ADD COLUMN IF NOT EXISTS planning_draft JSONB NOT NULL DEFAULT '{}'::jsonb;
 ALTER TABLE depannhome_partner_missions ADD COLUMN IF NOT EXISTS source_mission_number VARCHAR(64) NOT NULL DEFAULT '', ADD COLUMN IF NOT EXISTS intervention_number VARCHAR(64) NOT NULL DEFAULT '';
 UPDATE depannhome_partner_missions SET source_mission_number=CASE WHEN source_mission_number='' THEN mission_number ELSE source_mission_number END, intervention_number=CASE WHEN intervention_number='' THEN 'INT-' || TO_CHAR(created_at AT TIME ZONE 'Europe/Paris','YYYY') || '-' || LPAD(id::text,6,'0') ELSE intervention_number END WHERE source_mission_number='' OR intervention_number='';

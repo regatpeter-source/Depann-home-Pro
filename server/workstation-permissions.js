@@ -19,7 +19,7 @@ export function hasAccountingWorkspaceAccess(user) {
 }
 
 export function hasGroupCompanySwitchAccess(user) {
-    if (!user?.groupId) return false;
+    if (!user?.groupId || user.deviceType !== "desktop") return false;
     if (user.role === "admin") return true;
     return CONFIGURABLE_PC_ROLES.has(user.role)
         && hasAdvancedWorkstationTier(user)

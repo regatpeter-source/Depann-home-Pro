@@ -714,7 +714,7 @@ export async function authenticateRequest(request, response, next) {
             && session.sessionId !== clientWindowSessionId(request)) {
             throw new Error("Fenêtre PC remplacée");
         }
-        const groupCompany = await resolveGroupCompany(user.id, session.activeCompanyId);
+        const groupCompany = device.device_type === "desktop" ? await resolveGroupCompany(user.id, session.activeCompanyId) : null;
         const accountOwnerId = String(groupCompany?.companyId || user.account_owner_id || user.id);
         const organization = await getOrganization(accountOwnerId);
         if (!isCreatorUsername(user.username) && !isRoleAllowedForSubscription(organization.subscriptionTier, user.role)) throw new Error("Rôle exclu de l’offre");
@@ -939,7 +939,7 @@ async function completeLogin(user, device, response, request) {
         authDevice = rows[0];
     }
     if (authDevice.status === "approved") {
-        const groupCompany = await resolveGroupCompany(user.id, null);
+        const groupCompany = authDevice.device_type === "desktop" ? await resolveGroupCompany(user.id, null) : null;
         const accountOwnerId = String(groupCompany?.companyId || user.account_owner_id || user.id);
         const organization = await getOrganization(accountOwnerId);
         const sessionId = isCompanyAdministratorPc ? await issueAdministratorPcSession(user.id, authDevice.id, clientWindowSessionId(request)) : "";
