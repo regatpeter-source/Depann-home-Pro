@@ -135,7 +135,7 @@ test("Library is mobile-only and Purchases are available on every PC plus Mobile
 
 test("Pro enables every product feature", () => {
     const pro = publicOrganization({ interfaceType: "standard", licenseType: "depannhome_standard", subscriptionTier: "pro" });
-    for (const feature of ["clients", "calendar", "library", "billing", "accounting", "quitus", "technicalReports", "partnerMissions", "partnerConnections", "messages", "settings", "imports", "groups", "purchases", "connectors", "photo"]) assert.equal(isFeatureEnabled(pro, feature), true, feature);
+    for (const feature of ["clients", "calendar", "library", "billing", "accounting", "quitus", "technicalReports", "partnerMissions", "partnerConnections", "messages", "settings", "imports", "groups", "purchases", "connectors"]) assert.equal(isFeatureEnabled(pro, feature), true, feature);
 });
 
 test("Pro materials include Group licenses and explain the free Partner license", () => {
@@ -184,7 +184,7 @@ test("organization interfaces remain compatible with subscription tiers", () => 
 test("the free Partner interface exposes the internal network without external connectors", () => {
     const partner = publicOrganization({ interfaceType: "partner", licenseType: "partner_portal", subscriptionTier: "pro" });
     for (const feature of ["clients", "partnerMissions", "partnerConnections", "messages"]) assert.equal(isFeatureEnabled(partner, feature), true, feature);
-    for (const feature of ["calendar", "library", "billing", "accounting", "technicalReports", "settings", "imports", "groups", "purchases", "connectors", "photo"]) {
+    for (const feature of ["calendar", "library", "billing", "accounting", "technicalReports", "settings", "imports", "groups", "purchases", "connectors"]) {
         assert.equal(isFeatureEnabled(partner, feature), false, feature);
     }
     assert.equal(isFeatureEnabledForRole(partner, "library", "technician"), false);

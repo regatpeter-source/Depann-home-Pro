@@ -37,7 +37,6 @@ export const ROUTES = {
     home: "home",
     search: "search",
     store: "store",
-    photo: "photo",
     clients: "clients",
     billing: "billing",
     accounting: "accounting",
@@ -77,14 +76,12 @@ export const MENU_ACCESS = Object.freeze({
         groups: ADMINISTRATORS,
         partnerMissions: PARTNER_MISSION_USERS,
         partnerSandbox: ADMINISTRATORS,
-        photo: OPERATIONAL_MOBILE,
         settings: OPERATIONAL_PC
     }),
     navigation: Object.freeze({
         [ROUTES.home]: Array.from(new Set(OPERATIONAL_MOBILE.concat(MOBILE_POST_USERS))),
         [ROUTES.search]: OPERATIONAL_MOBILE,
         [ROUTES.store]: OPERATIONAL_MOBILE,
-        [ROUTES.photo]: OPERATIONAL_MOBILE,
         [ROUTES.clients]: OPERATIONAL_MOBILE,
         [ROUTES.billing]: OPERATIONAL_MOBILE.concat("accountant"),
         [ROUTES.purchases]: PURCHASE_USERS,

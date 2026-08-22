@@ -2,7 +2,7 @@ import { initializeAuthentication, restoreApplicationShell, signOut } from "./au
 import { initializeClientSynchronization } from "./client-sync.js?v=125";
 import { initializeCollaboration } from "./collaboration.js?v=5";
 import { loadDatabase } from "./data.js?v=59";
-import { initializeNavigation, refreshApplication } from "./navigation.js?v=341";
+import { initializeNavigation, refreshApplication } from "./navigation.js?v=342";
 import { renderError } from "./ui.js?v=44";
 import { getSettings } from "./storage.js?v=44";
 import { FONT_OPTIONS } from "./config.js?v=128";
@@ -217,8 +217,8 @@ function applyLanguage() {
         if (search) search.placeholder = searchPlaceholder;
 
         const texts = lang === "en"
-            ? { home: "Home", search: "Search", store: "Store", photo: "Photo", clients: "Clients", billing: "Quotes", calendar: "Planning", library: "Library", settings: "Settings" }
-            : { home: "Accueil", search: "Recherche", store: "Magasin", photo: "Photo", clients: "Clients", billing: "Devis", calendar: "Planning", library: "Bibliothèque", settings: "Paramètres" };
+            ? { home: "Home", search: "Search", store: "Store", clients: "Clients", billing: "Quotes", calendar: "Planning", library: "Library", settings: "Settings" }
+            : { home: "Accueil", search: "Recherche", store: "Magasin", clients: "Clients", billing: "Devis", calendar: "Planning", library: "Bibliothèque", settings: "Paramètres" };
         document.querySelectorAll("footer .nav-button").forEach(button => {
             const label = button.querySelector(".nav-label-clients") || button.querySelector("span");
             if (label) label.textContent = texts[button.dataset.nav] || label.textContent;

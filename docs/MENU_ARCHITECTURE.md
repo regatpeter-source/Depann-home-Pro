@@ -17,8 +17,8 @@ Les rôles de poste mobile (`mobile_admin`, `team_lead`, `technician`) conserven
 | Rôle | Navigation visible |
 | --- | --- |
 | `admin` — Administrateur (PC) | Toutes les fonctions opérationnelles et administratives compatibles avec les capacités activées, dont les Achats, hors bibliothèque technique : paramètres, comptabilité, groupe, réseau, sandbox, postes et importation de données. |
-| `pc_standard` — Poste PC standard | Clients, planning, devis/factures, achats, missions partenaires, recherche, photo et historique. Aucun réglage, outil d’administration ou accès à la bibliothèque technique. |
-| `mobile_admin` — Administrateur Mobile | Fonctions opérationnelles mobiles : clients, planning, bibliothèque, achats, devis/factures, recherche, photo et historique. Aucun paramètre ni sécurité d’entreprise. |
+| `pc_standard` — Poste PC standard | Clients, planning, devis/factures, achats, missions partenaires, recherche et historique. Aucun réglage, outil d’administration ou accès à la bibliothèque technique. |
+| `mobile_admin` — Administrateur Mobile | Fonctions opérationnelles mobiles : clients, planning, bibliothèque, achats, devis/factures, recherche et historique. Aucun paramètre ni sécurité d’entreprise. |
 | `team_lead` / `technician` | Navigation terrain : planning et bibliothèque. Les rapports nécessaires restent accessibles dans le parcours d’intervention existant. |
 | `accountant` | Devis/factures et gestion des Achats depuis Facturation ou l’entrée dédiée. |
 

@@ -378,7 +378,6 @@ textarea{
     outline-offset:2px;
 }
 
-body.desktop-device #photoBtn,
 body.desktop-device footer .nav-button:not([data-nav="home"]){
     display:none;
 }
@@ -506,58 +505,6 @@ body.desktop-device .nav-label-clients{
 
 body.desktop-device .nav-label-messages{
     display:inline;
-}
-
-.photo-recognition-actions{
-    display:flex;
-    flex-wrap:wrap;
-    gap:14px;
-    align-items:flex-end;
-}
-
-.photo-recognition-panel .procedure-section{
-    text-align:left;
-}
-
-.photo-recognition-preview{
-    margin:18px 0;
-    padding:16px;
-    border:1px solid var(--border);
-    border-radius:16px;
-    background:#f8fbfe;
-}
-
-.photo-recognition-preview img{
-    width:100%;
-    max-height:280px;
-    object-fit:contain;
-    border-radius:12px;
-    display:block;
-    background:#fff;
-}
-
-.photo-recognition-preview figcaption{
-    margin-top:10px;
-    color:var(--muted);
-    font-size:14px;
-}
-
-.photo-recognition-best{
-    margin-top:14px;
-    padding:16px;
-    border-radius:16px;
-    background:#eef7f1;
-    border:1px solid rgba(10,92,54,.15);
-}
-
-.photo-recognition-suggestions{
-    margin-top:16px;
-    display:grid;
-    gap:14px;
-}
-
-.photo-recognition-suggestions h4{
-    color:var(--primary);
 }
 
 .resource-image-link{

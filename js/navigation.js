@@ -1,4 +1,4 @@
-import { ROUTES, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=128";
+import { ROUTES, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=129";
 import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=167";
 import { openCreatorPartnerRequest, openCreatorRequestNotification, renderCreatorConsole } from "./creator.js?v=143";
 import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=179";
@@ -11,10 +11,9 @@ import { renderPartnerConnections } from "./partner-connections.js?v=21";
 import { renderDataImportTool } from "./data-imports.js?v=3";
 import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=29";
 import { getFirstUnreadClientId, refreshClientMessageAlert, refreshVisibleClientMessages } from "./messages.js?v=106";
-import { getSearchableClients, renderClients } from "./clients.js?v=146";
+import { getSearchableClients, renderClients } from "./clients.js?v=147";
 import { synchronizeClients } from "./client-sync.js?v=125";
 import { configureLibrary, openLibrarySection, renderLibrary, searchPersonalLibrary } from "./library.js?v=122";
-import { renderPhotoRecognition } from "./photo-recognition.js?v=108";
 import { getContextualSearchResults } from "./search.js?v=67";
 import { state, resetSelection } from "./state.js?v=44";
 import {
@@ -203,7 +202,6 @@ function bindEvents() {
     const partnerSandboxBtn = document.getElementById("partnerSandboxBtn");
     const calendarBtn = document.getElementById("calendarBtn");
     const libraryBtn = document.getElementById("libraryBtn");
-    const photoBtn = document.getElementById("photoBtn");
     const settingsBtn = document.getElementById("settingsBtn");
 
     search.addEventListener("input", event => {
@@ -232,7 +230,6 @@ function bindEvents() {
     partnerSandboxBtn?.addEventListener("click", () => { if (canAccessQuick("partnerSandbox")) renderPartnerSandbox(); });
     calendarBtn?.addEventListener("click", () => { if (canAccessQuick("calendar")) openCalendar(); });
     libraryBtn?.addEventListener("click", () => { if (canAccessQuick("library")) renderLibrary(); });
-    photoBtn?.addEventListener("click", () => { if (canAccessQuick("photo")) renderPhotoRecognition(database, navigateToRef); });
     settingsBtn?.addEventListener("click", () => { if (canAccessQuick("settings")) renderSettings(); });
 
     document.querySelectorAll(".nav-button").forEach(button => {
@@ -249,7 +246,6 @@ function bindEvents() {
             if (nav === ROUTES.home) openHome();
             if (nav === ROUTES.search) focusSearch();
             if (nav === ROUTES.store) renderStore();
-            if (nav === ROUTES.photo) renderPhotoRecognition(database, navigateToRef);
             if (nav === ROUTES.clients) openClients();
             if (nav === ROUTES.billing) {
                 if (isTechnician() && organizationFeatureEnabled("technicalReports")) renderTechnicalReports();
@@ -271,11 +267,11 @@ function applyRoleBasedMenus() {
     const quickSelectors = {
         clients: "#clientsBtn", calendar: "#calendarBtn", library: "#libraryBtn", billing: "#billingBtn", purchases: "#purchasesBtn",
         accounting: "#accountingBtn", groups: "#groupsBtn", partnerMissions: "#partnerMissionsBtn",
-        partnerSandbox: "#partnerSandboxBtn", photo: "#photoBtn", settings: "#settingsBtn"
+        partnerSandbox: "#partnerSandboxBtn", settings: "#settingsBtn"
     };
     Object.entries(quickSelectors).forEach(([menu, selector]) => {
         const button = document.querySelector(selector);
-        if ((menu === "photo" && isDesktopDevice()) || !isMenuAllowed(MENU_ACCESS.quick[menu], menuRoute(menu))) button?.remove();
+        if (!isMenuAllowed(MENU_ACCESS.quick[menu], menuRoute(menu))) button?.remove();
     });
     document.querySelectorAll(".nav-button").forEach(button => {
         if (button.dataset.nav === ROUTES.home && isMobileDeviceContext()) return;
@@ -320,7 +316,6 @@ function canAccessQuick(menu) {
 }
 
 function canAccessRoute(route) {
-    if (route === ROUTES.photo && isDesktopDevice()) return false;
     return isMenuAllowed(MENU_ACCESS.navigation[route], route) && isOrganizationRouteEnabled(route);
 }
 
@@ -341,7 +336,7 @@ function canAccessSettingsSection(section) {
 function isOrganizationRouteEnabled(route) {
     if (document.body.dataset.creator === "true") return true;
     if (route === ROUTES.settings && organizationFeatureEnabled("partnerConnections")) return true;
-    const featureByRoute = { [ROUTES.search]: "library", [ROUTES.store]: "library", [ROUTES.clients]: "clients", [ROUTES.calendar]: "calendar", [ROUTES.library]: "library", [ROUTES.billing]: "billing", [ROUTES.accounting]: "accounting", [ROUTES.purchases]: "purchases", [ROUTES.messages]: "messages", [ROUTES.technicalReports]: "technicalReports", [ROUTES.partnerMissions]: "partnerMissions", [ROUTES.groups]: "groups", [ROUTES.photo]: "photo", [ROUTES.settings]: "settings" };
+    const featureByRoute = { [ROUTES.search]: "library", [ROUTES.store]: "library", [ROUTES.clients]: "clients", [ROUTES.calendar]: "calendar", [ROUTES.library]: "library", [ROUTES.billing]: "billing", [ROUTES.accounting]: "accounting", [ROUTES.purchases]: "purchases", [ROUTES.messages]: "messages", [ROUTES.technicalReports]: "technicalReports", [ROUTES.partnerMissions]: "partnerMissions", [ROUTES.groups]: "groups", [ROUTES.settings]: "settings" };
     const feature = featureByRoute[route];
     return !feature || organizationFeatureEnabled(feature);
 }
@@ -358,7 +353,7 @@ function isMobilePostRole() {
 }
 
 function menuRoute(menu) {
-    return ({ clients: ROUTES.clients, calendar: ROUTES.calendar, library: ROUTES.library, billing: ROUTES.billing, accounting: ROUTES.accounting, purchases: ROUTES.purchases, groups: ROUTES.groups, partnerMissions: ROUTES.partnerMissions, partnerSandbox: ROUTES.partnerSandbox, photo: ROUTES.photo, settings: ROUTES.settings })[menu] || "";
+    return ({ clients: ROUTES.clients, calendar: ROUTES.calendar, library: ROUTES.library, billing: ROUTES.billing, accounting: ROUTES.accounting, purchases: ROUTES.purchases, groups: ROUTES.groups, partnerMissions: ROUTES.partnerMissions, partnerSandbox: ROUTES.partnerSandbox, settings: ROUTES.settings })[menu] || "";
 }
 
 function openHome() {
