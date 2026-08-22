@@ -24,6 +24,12 @@ Chaque intégration étend `ElectronicInvoicingProvider` et implémente les opé
 
 Le registre ne rend connectables que les adaptateurs effectivement enregistrés. Il n’existe plus de formulaire universel URL/clé API et aucun protocole fournisseur n’est deviné. En l’absence d’adaptateur documenté, l’interface indique : « Cette plateforme n'est pas encore intégrée à Depan’Home Pro. »
 
+## Catalogue Créateur
+
+La console Créateur contient un catalogue distinct des connexions d’entreprise. Il permet de suivre le code technique d’une plateforme, sa documentation API officielle HTTPS, son authentification, les capacités prévues et le cycle de développement de son adaptateur.
+
+Une fiche de catalogue ne contient aucun credential d’entreprise, n’exécute aucun appel externe et ne génère aucun code. Le statut « Déployé » est refusé tant qu’un adaptateur portant le même code n’est pas réellement enregistré dans le serveur. Les entreprises continuent de fournir séparément leurs propres identifiants chiffrés.
+
 ## Routes et webhooks
 
 Les routes administratives sont sous `/api/accounting/e-invoicing`. Le serveur déduit toujours l’entreprise avec `getAccountOwnerId(request)` et filtre chaque connexion, document et transmission avec cet identifiant.

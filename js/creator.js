@@ -16,7 +16,7 @@ export async function renderCreatorConsole() {
         <section class="creator-console">
             <header class="creator-heading">
                 <div><p class="eyebrow">Administration plateforme</p><h2>Console Créateur</h2></div>
-                <div class="creator-form-actions"><button type="button" class="secondary-button auth-outline-button" id="creatorSubscriptionRequests">Demandes d’offres</button><button type="button" class="secondary-button auth-outline-button" id="creatorPartnerApiSandbox">🧪 Sandbox API partenaire</button><button type="button" class="secondary-button auth-outline-button" id="creatorPlatformAnnouncement">Affichage général</button><button type="button" class="secondary-button auth-outline-button" id="creatorPartnerRequests">Demandes de partenariat</button><button type="button" class="secondary-button auth-outline-button" id="creatorOfficialPartners">Partenaires officiels</button><button type="button" class="secondary-button auth-outline-button" id="creatorSecurity">Sécurité du compte</button><button type="button" class="secondary-button auth-outline-button" id="creatorSubscriptionInvoices">Factures abonnements</button><button type="button" class="secondary-button auth-outline-button" id="creatorBillingProfile">Facturation plateforme</button><button type="button" class="secondary-button auth-outline-button" id="creatorExternalProviders">Prestataires externes</button><button type="button" class="secondary-button" id="creatorNewAccount">+ Nouvelle organisation</button></div>
+                <div class="creator-form-actions"><button type="button" class="secondary-button auth-outline-button" id="creatorSubscriptionRequests">Demandes d’offres</button><button type="button" class="secondary-button auth-outline-button" id="creatorPartnerApiSandbox">🧪 Sandbox API partenaire</button><button type="button" class="secondary-button auth-outline-button" id="creatorElectronicInvoicingPlatforms">Plateformes e-facturation</button><button type="button" class="secondary-button auth-outline-button" id="creatorPlatformAnnouncement">Affichage général</button><button type="button" class="secondary-button auth-outline-button" id="creatorPartnerRequests">Demandes de partenariat</button><button type="button" class="secondary-button auth-outline-button" id="creatorOfficialPartners">Partenaires officiels</button><button type="button" class="secondary-button auth-outline-button" id="creatorSecurity">Sécurité du compte</button><button type="button" class="secondary-button auth-outline-button" id="creatorSubscriptionInvoices">Factures abonnements</button><button type="button" class="secondary-button auth-outline-button" id="creatorBillingProfile">Facturation plateforme</button><button type="button" class="secondary-button auth-outline-button" id="creatorExternalProviders">Prestataires externes</button><button type="button" class="secondary-button" id="creatorNewAccount">+ Nouvelle organisation</button></div>
             </header>
             <p id="creatorFeedback" class="auth-message" aria-live="polite"></p>
             <section class="creator-subscription-summary" id="creatorSubscriptionSummary" aria-label="Synthèse des abonnements"></section>
@@ -40,6 +40,7 @@ export async function renderCreatorConsole() {
     container.querySelector("#creatorNewAccount").addEventListener("click", () => renderAccountForm());
     container.querySelector("#creatorSubscriptionRequests").addEventListener("click", renderSubscriptionChangeRequests);
     container.querySelector("#creatorPartnerApiSandbox").addEventListener("click", renderPartnerApiSandbox);
+    container.querySelector("#creatorElectronicInvoicingPlatforms").addEventListener("click", renderCreatorEInvoicingPlatforms);
     networkButton.addEventListener("click", renderNetworkDirectory);
     notificationsButton.addEventListener("click", renderCreatorRequestNotifications);
     container.querySelector("#creatorPlatformAnnouncement").addEventListener("click", renderPlatformAnnouncementSettings);
@@ -131,6 +132,43 @@ async function renderSubscriptionChangeRequests() {
 
 function subscriptionTierLabel(tier) { return ({ basic: "Basic", basic_plus: "Basic+", pro: "Pro" })[tier] || tier; }
 function subscriptionChangeStatusLabel(status) { return ({ new: "Nouvelle", under_review: "En cours d’étude", accepted: "Acceptée", refused: "Refusée", cancelled: "Annulée" })[status] || "Nouvelle"; }
+
+async function renderCreatorEInvoicingPlatforms() {
+    const workspace = document.querySelector("#creatorWorkspace");
+    workspace.innerHTML = '<p class="muted">Chargement du catalogue de facturation électronique…</p>';
+    const result = await api("/api/creator/e-invoicing-platforms");
+    if (!result.ok) return showFeedback(result.message || "Impossible de charger les plateformes.", true);
+    const platforms = result.data?.platforms || [];
+    workspace.innerHTML = `<section class="creator-form"><div class="form-heading"><div><p class="eyebrow">Intégrations réglementées</p><h3>Plateformes de facturation électronique</h3></div><button type="button" class="secondary-button" data-create-einvoice-platform>+ Nouvelle plateforme</button></div><aside class="accounting-pdp-notice">Ce catalogue prépare et suit les intégrations. Une fiche, une URL ou des identifiants ne génèrent jamais un connecteur. Seul un adaptateur déployé côté serveur rend les échanges opérationnels.</aside><div class="creator-network-list">${platforms.length ? platforms.map(creatorEInvoicingPlatformRow).join("") : '<p class="muted">Aucune plateforme suivie.</p>'}</div></section>`;
+    workspace.querySelector("[data-create-einvoice-platform]").addEventListener("click", () => renderCreatorEInvoicingPlatformForm());
+    workspace.querySelectorAll("[data-edit-einvoice-platform]").forEach(button => button.addEventListener("click", () => renderCreatorEInvoicingPlatformForm(platforms.find(platform => String(platform.id) === button.dataset.editEinvoicePlatform))));
+}
+
+function creatorEInvoicingPlatformRow(platform) {
+    const capabilities = Object.entries({ invoices: "Factures", creditNotes: "Avoirs", status: "Statuts", refresh: "Renouvellement", webhooks: "Webhooks" }).filter(([key]) => platform.plannedCapabilities?.[key]).map(([, label]) => label).join(" · ");
+    return `<article class="creator-network-company"><div><strong>${escapeHtml(platform.platformLabel)}</strong><p><code>${escapeHtml(platform.platformCode)}</code> · ${escapeHtml(creatorEInvoicingLifecycleLabel(platform.lifecycleStatus))}</p><small>${platform.runtimeIntegrated ? "Adaptateur serveur détecté" : "Adaptateur serveur absent"}${capabilities ? ` · ${escapeHtml(capabilities)}` : ""}</small>${platform.documentationUrl ? `<p><a href="${escapeHtml(platform.documentationUrl)}" target="_blank" rel="noopener noreferrer">Documentation officielle</a></p>` : ""}</div><div class="creator-form-actions"><span class="creator-state${platform.runtimeIntegrated ? "" : " suspended"}">${platform.runtimeIntegrated ? "Opérationnel dans le code" : "Non intégré"}</span><button type="button" class="secondary-button" data-edit-einvoice-platform="${escapeHtml(platform.id)}">Gérer</button></div></article>`;
+}
+
+function renderCreatorEInvoicingPlatformForm(platform = null) {
+    const workspace = document.querySelector("#creatorWorkspace");
+    const value = platform || { authenticationType: "provider_specific", lifecycleStatus: "documentation_required", plannedCapabilities: {} };
+    const authenticationTypes = [["provider_specific", "Propre à la plateforme"], ["api_key", "Clé API"], ["oauth_client", "OAuth — Client ID et secret"], ["access_token", "Token d’accès"], ["identifier_secret", "Identifiant et secret"], ["custom_secret", "Informations personnalisées"]];
+    const lifecycleStatuses = [["documentation_required", "Documentation requise"], ["specification_review", "Documentation en cours d’étude"], ["development", "Développement"], ["validation", "Validation"], ["deployed", "Déployé — adaptateur serveur obligatoire"], ["suspended", "Suspendu"]];
+    workspace.innerHTML = `<form class="creator-form" data-einvoice-platform-form><div class="form-heading"><div><p class="eyebrow">Catalogue Créateur</p><h3>${platform ? "Gérer la plateforme" : "Ajouter une plateforme"}</h3></div></div><aside class="accounting-pdp-notice">Aucun appel externe ni test de connexion n’est effectué ici. Le statut « Déployé » est refusé si le serveur ne contient pas un adaptateur portant exactement le même code.</aside><div class="form-grid"><label>Code technique *<input name="platformCode" required pattern="[a-z0-9][a-z0-9_-]{1,59}" ${platform ? "readonly" : ""} value="${escapeHtml(value.platformCode || "")}" placeholder="ex. fournisseur_officiel"></label><label>Nom de la plateforme *<input name="platformLabel" required maxlength="160" value="${escapeHtml(value.platformLabel || "")}"></label><label class="form-wide">Documentation API officielle HTTPS<input name="documentationUrl" type="url" maxlength="1000" value="${escapeHtml(value.documentationUrl || "")}" placeholder="https://..."></label><label>Authentification prévue<select name="authenticationType">${authenticationTypes.map(([id, label]) => `<option value="${id}" ${value.authenticationType === id ? "selected" : ""}>${escapeHtml(label)}</option>`).join("")}</select></label><label>État du projet<select name="lifecycleStatus">${lifecycleStatuses.map(([id, label]) => `<option value="${id}" ${value.lifecycleStatus === id ? "selected" : ""}>${escapeHtml(label)}</option>`).join("")}</select></label><fieldset class="accounting-rules form-wide"><legend>Capacités prévues</legend>${[["invoices", "Envoi des factures"], ["creditNotes", "Envoi des avoirs"], ["status", "Suivi des statuts"], ["refresh", "Renouvellement d’authentification"], ["webhooks", "Webhooks signés"]].map(([name, label]) => `<label><input type="checkbox" name="${name}" ${value.plannedCapabilities?.[name] ? "checked" : ""}> ${escapeHtml(label)}</label>`).join("")}</fieldset><label class="form-wide">Notes internes<textarea name="notes" rows="5" maxlength="4000">${escapeHtml(value.notes || "")}</textarea></label></div><p class="auth-message" aria-live="polite"></p><div class="creator-form-actions"><button type="submit" class="secondary-button">Enregistrer la fiche</button><button type="button" class="secondary-button" data-cancel-einvoice-platform>Annuler</button></div></form>`;
+    workspace.querySelector("[data-cancel-einvoice-platform]").addEventListener("click", renderCreatorEInvoicingPlatforms);
+    workspace.querySelector("[data-einvoice-platform-form]").addEventListener("submit", async event => {
+        event.preventDefault();
+        const form = event.currentTarget; const submit = form.querySelector('button[type="submit"]'); const message = form.querySelector(".auth-message");
+        submit.disabled = true;
+        const saved = await api(platform ? `/api/creator/e-invoicing-platforms/${encodeURIComponent(platform.id)}` : "/api/creator/e-invoicing-platforms", { method: platform ? "PATCH" : "POST", body: JSON.stringify(Object.fromEntries(new FormData(form))) });
+        submit.disabled = false;
+        if (!saved.ok) { message.textContent = saved.message || "Enregistrement impossible."; message.classList.add("error"); return; }
+        showFeedback(platform ? "Fiche d’intégration mise à jour." : "Plateforme ajoutée au catalogue.");
+        renderCreatorEInvoicingPlatforms();
+    });
+}
+
+function creatorEInvoicingLifecycleLabel(status) { return ({ documentation_required: "Documentation requise", specification_review: "Documentation en étude", development: "Développement", validation: "Validation", deployed: "Déployé", suspended: "Suspendu" })[status] || "État inconnu"; }
 
 async function renderPartnerApiSandbox() {
     const workspace = document.querySelector("#creatorWorkspace");

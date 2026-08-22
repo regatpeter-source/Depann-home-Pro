@@ -578,6 +578,18 @@ ALTER TABLE depannhome_einvoice_transmissions ALTER COLUMN provider TYPE VARCHAR
 CREATE INDEX IF NOT EXISTS depannhome_einvoice_transmissions_owner_idx ON depannhome_einvoice_transmissions (owner_id, status, updated_at DESC);
 DELETE FROM depannhome_einvoice_transmissions WHERE provider='sandbox' OR remote_id LIKE 'sandbox-%';
 
+-- Catalogue Créateur des projets d'intégration. Ces fiches documentaires ne
+-- rendent jamais une plateforme opérationnelle sans adaptateur serveur enregistré.
+CREATE TABLE IF NOT EXISTS depannhome_einvoice_platform_catalog (
+    id BIGSERIAL PRIMARY KEY, platform_code VARCHAR(60) NOT NULL UNIQUE, platform_label VARCHAR(160) NOT NULL,
+    documentation_url VARCHAR(1000) NOT NULL DEFAULT '', authentication_type VARCHAR(40) NOT NULL DEFAULT 'provider_specific',
+    lifecycle_status VARCHAR(40) NOT NULL DEFAULT 'documentation_required' CHECK(lifecycle_status IN ('documentation_required','specification_review','development','validation','deployed','suspended')),
+    planned_capabilities JSONB NOT NULL DEFAULT '{}'::jsonb, notes VARCHAR(4000) NOT NULL DEFAULT '',
+    created_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL, updated_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS depannhome_einvoice_platform_catalog_status_idx ON depannhome_einvoice_platform_catalog(lifecycle_status,platform_label);
+
 -- Connexions de facturation électronique propres à chaque entreprise. Une
 -- connexion conserve son fournisseur historique même lorsqu'elle est désactivée.
 CREATE TABLE IF NOT EXISTS depannhome_einvoice_connections (

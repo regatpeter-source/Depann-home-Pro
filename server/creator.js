@@ -6,6 +6,7 @@ import { createOrganization, getOrganization, getOrganizationHistory, organizati
 import { calculateSubscriptionPriceCents, normalizeSubscriptionTier, subscriptionRoleAccessMessage, subscriptionTierConfig } from "./subscription-tiers.js";
 import { createNotification } from "./collaboration.js";
 import { deliverSubscriptionProration, prepareSubscriptionProration } from "./invoicing.js";
+import { getElectronicInvoicingProvider } from "./electronic-invoicing.js";
 
 const USERNAME_PATTERN = /^[a-z0-9._-]{3,32}$/;
 const MIN_PASSWORD_LENGTH = 12;
@@ -14,6 +15,9 @@ const MEMBER_ROLES = new Set(["admin", "pc_standard", "accountant", "mobile_admi
 const SUBSCRIPTION_STATUSES = new Set(["active", "trial", "past_due", "suspended", "cancelled"]);
 const SUBSCRIPTION_REQUEST_STATUSES = new Set(["new", "under_review", "accepted", "refused", "cancelled"]);
 const QUOTE_TEMPLATE_POLICIES = new Set(["integrated_only", "company_choice", "external_only"]);
+const EINVOICE_PLATFORM_CODE_PATTERN = /^[a-z0-9][a-z0-9_-]{1,59}$/;
+const EINVOICE_AUTHENTICATION_TYPES = new Set(["api_key", "oauth_client", "access_token", "identifier_secret", "custom_secret", "provider_specific"]);
+const EINVOICE_LIFECYCLE_STATUSES = new Set(["documentation_required", "specification_review", "development", "validation", "deployed", "suspended"]);
 
 export function registerCreatorRoutes(app, requireCreator, requireAuthentication) {
     app.get("/api/creator/request-notifications", requireCreator, asyncHandler(async (_request, response) => {
@@ -96,6 +100,30 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
             RETURNING message, is_active AS "isActive", updated_at AS "updatedAt"
         `, [message, isActive, request.user.sub]);
         response.json({ announcement: rows[0] });
+    }));
+    app.get("/api/creator/e-invoicing-platforms", requireCreator, asyncHandler(async (_request, response) => {
+        const { rows } = await getPool().query(`SELECT id,platform_code AS "platformCode",platform_label AS "platformLabel",documentation_url AS "documentationUrl",authentication_type AS "authenticationType",lifecycle_status AS "lifecycleStatus",planned_capabilities AS "plannedCapabilities",notes,created_at AS "createdAt",updated_at AS "updatedAt" FROM depannhome_einvoice_platform_catalog ORDER BY CASE lifecycle_status WHEN 'deployed' THEN 0 WHEN 'validation' THEN 1 WHEN 'development' THEN 2 WHEN 'specification_review' THEN 3 WHEN 'documentation_required' THEN 4 ELSE 5 END,LOWER(platform_label)`);
+        response.json({ platforms: rows.map(publicCreatorEInvoicingPlatform) });
+    }));
+    app.post("/api/creator/e-invoicing-platforms", requireCreator, asyncHandler(async (request, response) => {
+        const platform = sanitizeCreatorEInvoicingPlatform(request.body);
+        if (!platform.ok) return response.status(400).json({ message: platform.message });
+        try {
+            const { rows } = await getPool().query(`INSERT INTO depannhome_einvoice_platform_catalog(platform_code,platform_label,documentation_url,authentication_type,lifecycle_status,planned_capabilities,notes,created_by,updated_by) VALUES($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$8) RETURNING id,platform_code AS "platformCode",platform_label AS "platformLabel",documentation_url AS "documentationUrl",authentication_type AS "authenticationType",lifecycle_status AS "lifecycleStatus",planned_capabilities AS "plannedCapabilities",notes,created_at AS "createdAt",updated_at AS "updatedAt"`, [platform.platformCode, platform.platformLabel, platform.documentationUrl, platform.authenticationType, platform.lifecycleStatus, JSON.stringify(platform.plannedCapabilities), platform.notes, request.user.sub]);
+            response.status(201).json({ platform: publicCreatorEInvoicingPlatform(rows[0]) });
+        } catch (error) {
+            if (error.code === "23505") return response.status(409).json({ message: "Ce code de plateforme existe déjà." });
+            throw error;
+        }
+    }));
+    app.patch("/api/creator/e-invoicing-platforms/:platformId", requireCreator, asyncHandler(async (request, response) => {
+        const platformId = positiveId(request.params.platformId);
+        const existing = platformId && (await getPool().query("SELECT platform_code FROM depannhome_einvoice_platform_catalog WHERE id=$1", [platformId])).rows[0];
+        if (!existing) return response.status(404).json({ message: "Plateforme introuvable." });
+        const platform = sanitizeCreatorEInvoicingPlatform({ ...request.body, platformCode: existing.platform_code });
+        if (!platform.ok) return response.status(400).json({ message: platform.message });
+        const { rows } = await getPool().query(`UPDATE depannhome_einvoice_platform_catalog SET platform_label=$2,documentation_url=$3,authentication_type=$4,lifecycle_status=$5,planned_capabilities=$6::jsonb,notes=$7,updated_by=$8,updated_at=NOW() WHERE id=$1 RETURNING id,platform_code AS "platformCode",platform_label AS "platformLabel",documentation_url AS "documentationUrl",authentication_type AS "authenticationType",lifecycle_status AS "lifecycleStatus",planned_capabilities AS "plannedCapabilities",notes,created_at AS "createdAt",updated_at AS "updatedAt"`, [platformId, platform.platformLabel, platform.documentationUrl, platform.authenticationType, platform.lifecycleStatus, JSON.stringify(platform.plannedCapabilities), platform.notes, request.user.sub]);
+        response.json({ platform: publicCreatorEInvoicingPlatform(rows[0]) });
     }));
     app.get("/api/creator/network-directory", requireCreator, asyncHandler(async (request, response) => {
         response.json({ companies: await creatorNetworkDirectory(request.query?.q), statistics: await creatorNetworkStatistics() });
@@ -602,6 +630,29 @@ function cleanText(value, maximumLength) {
 
 function cleanMultilineText(value, maximumLength) {
     return String(value || "").replace(/\r\n?/g, "\n").replace(/[ \t]+\n/g, "\n").trim().slice(0, maximumLength);
+}
+
+function sanitizeCreatorEInvoicingPlatform(value) {
+    const platformCode = cleanText(value?.platformCode, 60).toLowerCase();
+    const platformLabel = cleanText(value?.platformLabel, 160);
+    const documentationUrl = cleanText(value?.documentationUrl, 1000);
+    const authenticationType = EINVOICE_AUTHENTICATION_TYPES.has(value?.authenticationType) ? value.authenticationType : "";
+    const lifecycleStatus = EINVOICE_LIFECYCLE_STATUSES.has(value?.lifecycleStatus) ? value.lifecycleStatus : "";
+    if (!EINVOICE_PLATFORM_CODE_PATTERN.test(platformCode)) return { ok: false, message: "Le code doit contenir 2 à 60 caractères minuscules, chiffres, tirets ou soulignés." };
+    if (!platformLabel || !authenticationType || !lifecycleStatus) return { ok: false, message: "Le nom, l’authentification et l’état du projet sont obligatoires." };
+    if (documentationUrl && !/^https:\/\/[^\s]+$/i.test(documentationUrl)) return { ok: false, message: "La documentation officielle doit utiliser une adresse HTTPS." };
+    if (["development", "validation", "deployed"].includes(lifecycleStatus) && !documentationUrl) return { ok: false, message: "La documentation officielle est obligatoire avant le développement de l’adaptateur." };
+    if (lifecycleStatus === "deployed" && !getElectronicInvoicingProvider(platformCode)) return { ok: false, message: "Impossible de déclarer cette plateforme déployée : aucun adaptateur serveur correspondant n’est enregistré." };
+    return {
+        ok: true, platformCode, platformLabel, documentationUrl, authenticationType, lifecycleStatus,
+        plannedCapabilities: { invoices: Boolean(value?.invoices), creditNotes: Boolean(value?.creditNotes), status: Boolean(value?.status), refresh: Boolean(value?.refresh), webhooks: Boolean(value?.webhooks) },
+        notes: cleanMultilineText(value?.notes, 4000)
+    };
+}
+
+function publicCreatorEInvoicingPlatform(row) {
+    const adapter = getElectronicInvoicingProvider(row.platformCode);
+    return { ...row, plannedCapabilities: row.plannedCapabilities && typeof row.plannedCapabilities === "object" ? row.plannedCapabilities : {}, runtimeIntegrated: Boolean(adapter), runtimeDefinition: adapter?.publicDefinition() || null };
 }
 
 function positiveId(value) {
