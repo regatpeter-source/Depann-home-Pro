@@ -1749,9 +1749,9 @@ async function renderTeamManagement(container) {
     permissionsField.className = "team-permissions-fieldset";
     permissionsField.innerHTML = `
         <legend>Autorisations du poste PC</legend>
-        <p class="muted" data-pc-permission-help>Choisissez uniquement les espaces nécessaires à ce poste.</p>
-        <label class="settings-toggle"><span><strong>Facturation</strong><small>Devis, factures et paramètres de facturation</small></span><input type="checkbox" name="canAccessBilling"></label>
-        <label class="settings-toggle"><span><strong>Comptabilité</strong><small>Comptabilité, facturation électronique et PDP</small></span><input type="checkbox" name="canAccessAccounting"></label>
+        <p class="muted" data-pc-permission-help>Ces deux accès sont indépendants : cochez l’un, l’autre ou les deux selon les missions du poste.</p>
+        <label class="settings-toggle"><span><strong>Devis et factures</strong><small>Créer et gérer les devis, factures, modèles et paramètres commerciaux</small></span><input type="checkbox" name="canAccessBilling"></label>
+        <label class="settings-toggle"><span><strong>Comptabilité et e-facturation</strong><small>Journaux, règlements, TVA, FEC, facturation électronique et PDP — sans création de devis ni facture</small></span><input type="checkbox" name="canAccessAccounting"></label>
         ${groupCompanyPermissionAvailable ? '<label class="settings-toggle" data-group-company-permission><span><strong>Entreprises du même groupe</strong><small>Changer de société active sans partager leurs données</small></span><input type="checkbox" name="canSwitchGroupCompanies"></label>' : ""}
     `;
     permissionsField.hidden = true;
@@ -1916,8 +1916,8 @@ async function renderTeamManagement(container) {
                         });
                         permissionButtons.push(button);
                     };
-                    addPermissionButton("canAccessBilling", "Retirer Facturation", "Autoriser Facturation");
-                    addPermissionButton("canAccessAccounting", "Retirer Comptabilité", "Autoriser Comptabilité");
+                    addPermissionButton("canAccessBilling", "Retirer Devis et factures", "Autoriser Devis et factures");
+                    addPermissionButton("canAccessAccounting", "Retirer Comptabilité et e-facturation", "Autoriser Comptabilité et e-facturation");
                     if (groupCompanyPermissionAvailable) addPermissionButton("canSwitchGroupCompanies", "Retirer accès Groupe", "Autoriser accès Groupe");
                 }
                 if (["technician", "team_lead"].includes(member.role)) {

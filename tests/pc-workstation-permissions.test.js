@@ -81,3 +81,11 @@ test("le stockage et l’interface déclarent les trois permissions", () => {
     assert.match(auth, /organization\.subscriptionTier === "pro"/);
     assert.match(navigation, /L’Administrateur \(PC\) dispose automatiquement de tous les accès/);
 });
+
+test("l’interface distingue clairement devis et factures de la comptabilité", () => {
+    const navigation = read("js/navigation.js");
+    assert.match(navigation, /Ces deux accès sont indépendants/);
+    assert.match(navigation, /<strong>Devis et factures<\/strong>/);
+    assert.match(navigation, /<strong>Comptabilité et e-facturation<\/strong>/);
+    assert.match(navigation, /sans création de devis ni facture/);
+});
