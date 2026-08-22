@@ -117,6 +117,60 @@ function renderLedgerEntries(entries) {
 function renderAnomalies(anomalies = []) { return anomalies.length ? `<ul class="auth-message error">${anomalies.map(item => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : '<p class="auth-message success">Aucune anomalie détectée sur les écritures sélectionnées.</p>'; }
 function fecPayload(form) { const data = new FormData(form); return { start: data.get("start"), end: data.get("end"), openingEntriesConfirmed: data.get("openingEntriesConfirmed") === "on", inventoryEntriesConfirmed: data.get("inventoryEntriesConfirmed") === "on", completeLedgerConfirmed: data.get("completeLedgerConfirmed") === "on" }; }
 
+export async function renderElectronicInvoicingConfiguration(node) {
+    const panel = document.createElement("section");
+    panel.className = "accounting-panel";
+    panel.innerHTML = '<p class="muted">Chargement de la configuration…</p>';
+    node.appendChild(panel);
+    const result = await api("/api/accounting/e-invoicing");
+    if (!result.ok) { panel.innerHTML = `<p class="auth-message error">${escapeHtml(result.message || "Configuration indisponible.")}</p>`; return; }
+    const connection = result.data?.activeConnection;
+    const configured = connection?.active && connection?.platformCode === "manual_configuration";
+    const authLabels = { api_key: "Clé API", oauth_client: "OAuth — Client ID et Client Secret", access_token: "Token d’accès", identifier_secret: "Identifiant et secret", custom_secret: "Informations prévues par la plateforme" };
+    const renderForm = () => {
+        panel.innerHTML = `<div class="form-heading"><div><p class="eyebrow">Facturation électronique</p><h2>Plateforme de l’entreprise</h2><p class="muted">Enregistrez uniquement les informations fournies par la plateforme choisie par votre entreprise. Aucun test ni appel externe n’est effectué.</p></div></div>
+            <aside class="accounting-pdp-notice">Cette configuration est indépendante de la codification et de la numérotation des documents Depann’Home Pro.</aside>
+            <form id="electronicInvoicingConfigurationForm" class="form-grid">
+                <label class="form-wide">Plateforme de facturation électronique<select name="platformChoice" required><option value="">Choisir une plateforme</option><option value="company_platform" selected>Plateforme choisie par mon entreprise</option></select></label>
+                <label class="form-wide">Nom de la plateforme<input name="platformName" maxlength="160" required value="${escapeHtml(configured ? connection.platformLabel : "")}" placeholder="Nom contractuel de la plateforme"></label>
+                <label>Compte / identifiant non sensible<input name="accountIdentifier" maxlength="200" required value="${escapeHtml(configured ? connection.externalAccountId : "")}"></label>
+                <label>Mode d’authentification<select name="authenticationType" required><option value="">Choisir selon la documentation de la plateforme</option>${Object.entries(authLabels).map(([value, label]) => `<option value="${value}" ${configured && connection.authenticationType === value ? "selected" : ""}>${escapeHtml(label)}</option>`).join("")}</select></label>
+                <div class="form-wide form-grid" data-authentication-fields></div>
+                <p class="muted form-wide">Les champs sensibles sont chiffrés côté serveur et ne sont jamais réaffichés. En modification, laissez-les vides pour conserver les secrets existants si le mode d’authentification ne change pas.</p>
+                <p class="auth-message form-wide" data-configuration-message></p>
+                <div class="form-actions"><button class="secondary-button">Enregistrer la connexion</button>${configured ? '<button type="button" class="secondary-button" data-cancel-configuration>Annuler</button>' : ""}</div>
+            </form>`;
+        const form = panel.querySelector("form");
+        const authentication = form.elements.authenticationType;
+        const fields = form.querySelector("[data-authentication-fields]");
+        const updateFields = () => {
+            const optional = configured && connection.authenticationType === authentication.value ? "" : "required";
+            fields.innerHTML = authentication.value === "api_key" ? `<label class="form-wide">Clé API<input name="apiKey" type="password" autocomplete="new-password" ${optional}></label>`
+                : authentication.value === "oauth_client" ? `<label>Client ID<input name="clientId" autocomplete="off" ${optional}></label><label>Client Secret<input name="clientSecret" type="password" autocomplete="new-password" ${optional}></label>`
+                    : authentication.value === "access_token" ? `<label class="form-wide">Token d’accès<input name="accessToken" type="password" autocomplete="new-password" ${optional}></label>`
+                        : authentication.value === "identifier_secret" ? `<label>Identifiant d’authentification<input name="identifier" autocomplete="off" ${optional}></label><label>Secret<input name="secret" type="password" autocomplete="new-password" ${optional}></label>`
+                            : authentication.value === "custom_secret" ? `<label>Nom de l’information fourni par la plateforme<input name="credentialName" maxlength="160" ${optional}></label><label>Valeur sensible<input name="credentialValue" type="password" autocomplete="new-password" ${optional}></label>` : "";
+        };
+        authentication.addEventListener("change", updateFields); updateFields();
+        form.querySelector("[data-cancel-configuration]")?.addEventListener("click", () => renderSummary());
+        form.addEventListener("submit", async event => {
+            event.preventDefault();
+            const submit = form.querySelector("button[type=submit]"); const message = form.querySelector("[data-configuration-message]"); submit.disabled = true;
+            const payload = Object.fromEntries(new FormData(form)); delete payload.platformChoice;
+            const answer = await api("/api/accounting/e-invoicing/configuration", { method: "PUT", body: JSON.stringify(payload) });
+            if (!answer.ok) { message.textContent = answer.message || "Enregistrement impossible."; message.classList.add("error"); submit.disabled = false; return; }
+            panel.remove();
+            renderElectronicInvoicingConfiguration(node);
+        });
+    };
+    const renderSummary = () => {
+        panel.innerHTML = `<div class="form-heading"><div><p class="eyebrow">Facturation électronique</p><h2>Plateforme configurée</h2></div><span class="auth-message success">● Plateforme configurée</span></div><div class="accounting-transmission-list"><article><div><strong>${escapeHtml(connection.platformLabel)}</strong><p>Compte / identifiant : ${escapeHtml(connection.externalAccountId || "Non renseigné")}</p><small>Authentification : ${escapeHtml(authLabels[connection.authenticationType] || "Configuration propre à la plateforme")}</small></div></article></div><div class="form-actions"><button type="button" class="secondary-button" data-edit-configuration>Modifier</button><button type="button" class="danger-button" data-disconnect-configuration>Déconnecter</button></div>`;
+        panel.querySelector("[data-edit-configuration]").addEventListener("click", renderForm);
+        panel.querySelector("[data-disconnect-configuration]").addEventListener("click", async () => { if (!window.confirm("Déconnecter cette plateforme ?")) return; const answer = await api(`/api/accounting/e-invoicing/connections/${connection.id}`, { method: "DELETE" }); if (!answer.ok) return alert(answer.message || "Déconnexion impossible."); panel.remove(); renderElectronicInvoicingConfiguration(node); });
+    };
+    if (configured) renderSummary(); else renderForm();
+}
+
 function renderLegacyElectronic(node) {
     node.innerHTML = `<section class="accounting-panel"><div class="form-heading"><div><p class="eyebrow">Préparation et transmission</p><h3>Facturation électronique & PDP</h3><p class="muted">Préparez vos factures électroniques, suivez les échanges et renvoyez-les via le connecteur de la PDP choisie par votre entreprise.</p></div></div><aside class="accounting-pdp-notice">Depann'Home Pro est un logiciel métier compatible avec la facturation électronique. Il prépare les factures électroniques et permet leur transmission via une Plateforme de Dématérialisation Partenaire (PDP) choisie par votre entreprise. Depann'Home Pro n'est pas une PDP agréée par l'État.</aside><div class="accounting-transmission-list">${accounting.transmissions.length ? accounting.transmissions.map(item => `<article><div><strong>${escapeHtml(item.documentNumber)}</strong><p>${escapeHtml(item.provider)} · ${escapeHtml(transmissionStatusLabel(item.status))}</p><small>${escapeHtml(item.message || "Aucun message")}</small></div><button type="button" class="secondary-button" data-transmit="${item.documentId}">Renvoyer</button></article>`).join("") : '<p class="muted">Aucune transmission pour le moment.</p>'}</div><h4>Factures prêtes à transmettre</h4><div class="accounting-transmission-list">${accounting.documents.filter(item => item.documentType === "invoice").map(item => `<article><div><strong>${escapeHtml(item.documentNumber)}</strong><p>${escapeHtml(item.customerName)} · ${money(item.totals.netPayable)}</p></div><button type="button" class="secondary-button" data-transmit="${item.id}">Transmettre</button></article>`).join("") || '<p class="muted">Aucune facture disponible.</p>'}</div></section>`;
     node.querySelectorAll("[data-transmit]").forEach(button => button.addEventListener("click", async () => { button.disabled = true; const result = await api(`/api/accounting/e-invoices/${button.dataset.transmit}/transmit`, { method: "POST" }); if (!result.ok) alert(result.message || "Transmission impossible."); renderAccounting("electronic"); }));
@@ -144,7 +198,7 @@ async function renderElectronic(node) {
     const electronic = result.data || { providers: [], connections: [], activeConnection: null };
     const active = electronic.activeConnection;
     const ready = active?.status === "connected" && active?.integrated;
-    const connectionRows = electronic.connections.map(connection => `<article><div><strong>${escapeHtml(connection.platformLabel)}</strong><p>${escapeHtml(connectionStatusLabel(connection.status))} · ${connection.environment === "production" ? "Production" : "Bac à sable fournisseur"}</p><small>${connection.externalAccountLabel ? `Compte ${escapeHtml(connection.externalAccountLabel)} · ` : ""}${connection.lastCheckedAt ? `Vérifiée le ${escapeHtml(dateTime(connection.lastCheckedAt))}` : "Jamais vérifiée"}${connection.integrated ? "" : " · Reconnexion requise"}</small></div>${connection.active ? `<button type="button" class="secondary-button" data-disconnect="${connection.id}">Déconnecter</button>` : ""}</article>`).join("");
+    const connectionRows = electronic.connections.map(connection => `<article><div><strong>${escapeHtml(connection.platformLabel)}</strong><p>${escapeHtml(connectionStatusLabel(connection.status))} · ${connection.environment === "production" ? "Production" : "Bac à sable fournisseur"}</p><small>${connection.externalAccountLabel ? `Compte ${escapeHtml(connection.externalAccountLabel)} · ` : ""}${connection.lastCheckedAt ? `Vérifiée le ${escapeHtml(dateTime(connection.lastCheckedAt))}` : "Aucun test effectué"}${connection.integrated ? "" : connection.platformCode === "manual_configuration" ? " · Adaptateur documenté requis pour transmettre" : " · Reconnexion requise"}</small></div>${connection.active ? `<button type="button" class="secondary-button" data-disconnect="${connection.id}">Déconnecter</button>` : ""}</article>`).join("");
     node.innerHTML = `<section class="accounting-panel">
         <div class="form-heading"><div><p class="eyebrow">Plateforme de facturation électronique</p><h3>Choisissez la plateforme utilisée par votre entreprise.</h3></div></div>
         <aside class="accounting-pdp-notice">Depann’Home Pro n'est pas une plateforme agréée de facturation électronique. Vous choisissez et connectez la plateforme utilisée par votre entreprise.</aside>
@@ -205,7 +259,7 @@ function renderPaymentRows(documents) { return documents.length ? `<div class="a
 function paymentLabel(item) { return ({ paid: "Réglée", partial: "Partiellement réglée", overdue: "Impayée / échue", unpaid: "À encaisser" })[item.paymentStatus] || "Non concerné"; }
 function documentStatusLabel(value) { return ({ draft: "Brouillon", sent: "Envoyé", validated: "Validé", paid: "Réglé", issued: "Émis", cancelled: "Annulé", accepted: "Accepté", rejected: "Refusé", pending: "En attente" })[String(value || "").toLowerCase()] || "Non renseigné"; }
 function transmissionStatusLabel(value) { return ({ configured: "Configurée", draft: "Brouillon", queued: "En attente d’envoi", sent: "Envoyée", accepted: "Acceptée", rejected: "Refusée", failed: "Échec d’envoi" })[String(value || "").toLowerCase()] || "Non renseigné"; }
-function connectionStatusLabel(value) { return ({ pending: "Connexion en cours", connected: "Connectée", invalid: "Connexion invalide", expired: "Authentification expirée", disconnected: "Déconnectée", action_required: "Reconnexion requise" })[String(value || "").toLowerCase()] || "État inconnu"; }
+function connectionStatusLabel(value) { return ({ pending: "Configuration enregistrée", connected: "Connectée", invalid: "Connexion invalide", expired: "Authentification expirée", disconnected: "Déconnectée", action_required: "Reconnexion requise" })[String(value || "").toLowerCase()] || "État inconnu"; }
 function money(value) { return new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" }).format(Number(value) || 0); }
 function date(value) { return value ? new Intl.DateTimeFormat("fr-FR").format(new Date(`${value}T12:00:00`)) : "Non renseignée"; }
 function dateTime(value) { return value ? new Intl.DateTimeFormat("fr-FR", { dateStyle: "short", timeStyle: "short" }).format(new Date(value)) : "Non renseignée"; }

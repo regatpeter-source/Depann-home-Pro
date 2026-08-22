@@ -2,7 +2,7 @@ import { ROUTES, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } fro
 import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=167";
 import { openCreatorPartnerRequest, openCreatorRequestNotification, renderCreatorConsole } from "./creator.js?v=142";
 import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=179";
-import { renderAccounting } from "./accounting.js?v=10";
+import { renderAccounting, renderElectronicInvoicingConfiguration } from "./accounting.js?v=11";
 import { renderPurchases } from "./purchases.js?v=118";
 import { renderGroupActivation, renderGroupWorkspace } from "./groups.js?v=3";
 import { renderPartnerMissions } from "./partner-missions.js?v=43";
@@ -331,7 +331,7 @@ function isDesktopDevice() {
 function canAccessSettingsSection(section) {
     if (document.body.dataset.creator === "true") return true;
     if (document.body.dataset.organizationInterface === "partner") return section === "support" || (section === "network" && organizationFeatureEnabled("partnerConnections"));
-    const featureBySection = { documents: "billing", network: "partnerConnections", users: "settings", security: "settings", groups: "groups", personalization: "settings", imports: "imports" };
+    const featureBySection = { documents: "billing", electronicInvoicing: "accounting", network: "partnerConnections", users: "settings", security: "settings", groups: "groups", personalization: "settings", imports: "imports" };
     const feature = featureBySection[section];
     if (feature && !organizationFeatureEnabled(feature)) return false;
     if (document.body.dataset.role === "admin") return true;
@@ -1328,6 +1328,7 @@ function renderSettingsWorkspace(options = {}) {
         const cards = [
             ...(document.body.dataset.role === "admin" ? [["subscription", "Offre & abonnement", "Consultez les tarifs et demandez une évolution ou une rétrogradation au Support.", "subscription"]] : []),
             ...(document.body.dataset.role === "admin" ? [["documents", "Modèles de documents", `Identité, présentation et modèles des devis${organizationFeatureEnabled("quitus") ? ", quitus" : ""} et rapports.`, "document"]] : []),
+            ...(document.body.dataset.role === "admin" && organizationFeatureEnabled("accounting") ? [["electronicInvoicing", "Facturation électronique", "Choisissez et configurez la plateforme propre à votre entreprise.", "document"]] : []),
             ["network", internalNetworkOnly ? "Réseau Depann’Home Pro" : "Réseau & connecteurs", internalNetworkOnly ? "Recherchez des entreprises utilisatrices et gérez vos connexions internes." : "Deux espaces distincts : le réseau collaboratif Depann’Home Pro et les connecteurs API externes.", "network"],
             ...(internalNetworkOnly ? [["support", "Support", "Envoyez une demande à l’équipe Depann’Home Pro depuis votre compte partenaire.", "support"]] : []),
             ...(document.body.dataset.role === "admin" ? [["users", "Utilisateurs", "Accès, postes, techniciens et chefs d’équipe.", "users"], ["security", "Sécurité", "Double authentification et protection des accès.", "security"], ["groups", "Groupe / Multi-entreprises", "Sociétés, bascule de contexte et indicateurs consolidés.", "group"]] : []),
@@ -1343,12 +1344,13 @@ function renderSettingsWorkspace(options = {}) {
 
     clearSearch();
     resetSelection("all");
-    const titles = { subscription: "Offre & abonnement", documents: "Modèles de documents", network: document.body.dataset.organizationInterface === "partner" || !organizationFeatureEnabled("connectors") ? "Réseau Depann’Home Pro" : "Réseau & connecteurs", support: "Support", users: "Utilisateurs", security: "Sécurité", groups: "Groupe / Multi-entreprises", personalization: "Personnalisation", imports: "Importation de données", creator: "Console Créateur" };
+    const titles = { subscription: "Offre & abonnement", documents: "Modèles de documents", electronicInvoicing: "Facturation électronique", network: document.body.dataset.organizationInterface === "partner" || !organizationFeatureEnabled("connectors") ? "Réseau Depann’Home Pro" : "Réseau & connecteurs", support: "Support", users: "Utilisateurs", security: "Sécurité", groups: "Groupe / Multi-entreprises", personalization: "Personnalisation", imports: "Importation de données", creator: "Console Créateur" };
     setPage(`Paramètres · ${titles[section] || "Configuration"}`, ROUTES.settings, "detail");
     const container = getContainer();
     container.appendChild(createBackCard("Retour aux Paramètres", () => renderSettings()));
 
     if (section === "subscription") return renderSubscriptionSettings(container);
+    if (section === "electronicInvoicing") return renderElectronicInvoicingConfiguration(container);
     if (section === "documents") {
         const intro = createSettingsIntro("Modèles de documents");
         const grid = document.createElement("div");

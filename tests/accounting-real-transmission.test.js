@@ -13,6 +13,7 @@ import {
 const accountingServer = readFileSync(new URL("../server/accounting.js", import.meta.url), "utf8");
 const electronicServer = readFileSync(new URL("../server/electronic-invoicing.js", import.meta.url), "utf8");
 const accountingClient = readFileSync(new URL("../js/accounting.js", import.meta.url), "utf8");
+const navigationClient = readFileSync(new URL("../js/navigation.js", import.meta.url), "utf8");
 const app = readFileSync(new URL("../app.js", import.meta.url), "utf8");
 const schema = readFileSync(new URL("../database/schema.sql", import.meta.url), "utf8");
 const serviceWorker = readFileSync(new URL("../service-worker.js", import.meta.url), "utf8");
@@ -76,4 +77,29 @@ test("les webhooks résolvent le tenant depuis un jeton opaque et une référenc
 test("la comptabilité et le FEC restent indépendants des connexions", () => {
     assert.doesNotMatch(accountingServer.slice(accountingServer.indexOf('app.post("\/api\/accounting\/export\/control'), accountingServer.indexOf('app.get("\/api\/accounting\/export"')), /einvoice_connections|activeConnection|platform_code/);
     assert.match(app, /initializeAccounting\(\);[\s\S]*initializeElectronicInvoicing\(\)/);
+});
+
+test("Paramètres expose la configuration manuelle propre à l’entreprise", () => {
+    assert.match(navigationClient, /\["electronicInvoicing", "Facturation électronique"/);
+    assert.match(navigationClient, /section === "electronicInvoicing"\) return renderElectronicInvoicingConfiguration\(container\)/);
+    assert.match(accountingClient, /export async function renderElectronicInvoicingConfiguration/);
+    assert.match(accountingClient, /Choisir une plateforme/);
+    assert.match(accountingClient, /Enregistrer la connexion/);
+    assert.match(accountingClient, /data-edit-configuration/);
+    assert.match(accountingClient, /data-disconnect-configuration/);
+});
+
+test("la configuration manuelle chiffre les secrets sans test de connexion", () => {
+    const route = electronicServer.slice(electronicServer.indexOf('app.put("/api/accounting/e-invoicing/configuration"'), electronicServer.indexOf('app.post("/api/accounting/e-invoicing/connections/:platformCode"'));
+    assert.match(route, /const ownerId = getAccountOwnerId\(request\)/);
+    assert.match(route, /WHERE owner_id=\$1 AND active=TRUE/);
+    assert.match(route, /encryptCredentials\(configuration.credentials\)/);
+    assert.match(route, /'manual_configuration'/);
+    assert.doesNotMatch(route, /testConnection|fetch\(|request\.body.*ownerId/);
+    assert.doesNotMatch(accountingClient.slice(accountingClient.indexOf("export async function renderElectronicInvoicingConfiguration"), accountingClient.indexOf("function renderLegacyElectronic")), /\/test|Tester la connexion/);
+});
+
+test("la restauration ne lie jamais la plateforme à la numérotation", () => {
+    assert.doesNotMatch(electronicServer, /billing_sequences|allocateBillingNumber|document_number\s*=/);
+    assert.doesNotMatch(navigationClient, /billing_sequences|allocateBillingNumber/);
 });

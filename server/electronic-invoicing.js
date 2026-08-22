@@ -5,6 +5,7 @@ import { getAccountOwnerId } from "./auth.js";
 const CONNECTION_STATUSES = new Set(["pending", "connected", "invalid", "expired", "disconnected", "action_required"]);
 const TRANSMISSION_STATUSES = new Set(["queued", "sent", "accepted", "rejected", "failed", "cancelled"]);
 const ENVIRONMENTS = new Set(["sandbox", "production"]);
+const MANUAL_AUTHENTICATION_TYPES = new Set(["api_key", "oauth_client", "access_token", "identifier_secret", "custom_secret"]);
 const providers = new Map();
 
 export class ElectronicInvoicingProvider {
@@ -143,6 +144,36 @@ export function registerElectronicInvoicingRoutes(app, requireAuthentication) {
         const ownerId = getAccountOwnerId(request);
         response.json({ providers: listElectronicInvoicingProviders(), connections: await loadPublicConnections(ownerId), activeConnection: await loadPublicActiveConnection(ownerId) });
     }));
+    app.put("/api/accounting/e-invoicing/configuration", asyncHandler(async (request, response) => {
+        const ownerId = getAccountOwnerId(request);
+        const configuration = sanitizeManualConfiguration(request.body);
+        if (!configuration.ok) return response.status(400).json({ message: configuration.message });
+        const { rows: currentRows } = await getPool().query("SELECT * FROM depannhome_einvoice_connections WHERE owner_id=$1 AND active=TRUE ORDER BY updated_at DESC LIMIT 1", [ownerId]);
+        const current = currentRows[0];
+        const credentials = configuration.credentialsComplete
+            ? encryptCredentials(configuration.credentials)
+            : current?.platform_code === "manual_configuration" && current.encrypted_credentials && safeObject(current.connection_metadata).authenticationType === configuration.authenticationType
+                ? current.encrypted_credentials
+                : "";
+        if (!credentials) return response.status(400).json({ message: "Renseignez les informations sensibles requises par le mode d’authentification sélectionné." });
+        const metadata = { authenticationType: configuration.authenticationType };
+        const client = await getPool().connect();
+        try {
+            await client.query("BEGIN");
+            let saved;
+            if (current?.platform_code === "manual_configuration") {
+                const { rows } = await client.query(`UPDATE depannhome_einvoice_connections SET platform_label=$3,status='pending',active=TRUE,encrypted_credentials=$4,connection_metadata=$5::jsonb,external_account_id=$6,external_account_label=$6,disconnected_at=NULL,updated_at=NOW() WHERE id=$1 AND owner_id=$2 RETURNING *`, [current.id, ownerId, configuration.platformName, credentials, JSON.stringify(metadata), configuration.accountIdentifier]);
+                saved = rows[0];
+            } else {
+                await client.query("UPDATE depannhome_einvoice_connections SET active=FALSE,status=CASE WHEN status='connected' THEN 'disconnected' ELSE status END,disconnected_at=CASE WHEN active THEN NOW() ELSE disconnected_at END,updated_at=NOW() WHERE owner_id=$1 AND active=TRUE", [ownerId]);
+                const { rows } = await client.query(`INSERT INTO depannhome_einvoice_connections(owner_id,platform_code,platform_label,environment,status,active,encrypted_credentials,connection_metadata,external_account_id,external_account_label,created_by) VALUES($1,'manual_configuration',$2,'production','pending',TRUE,$3,$4::jsonb,$5,$5,$6) RETURNING *`, [ownerId, configuration.platformName, credentials, JSON.stringify(metadata), configuration.accountIdentifier, request.user.sub]);
+                saved = rows[0];
+            }
+            await recordEvent(client, ownerId, saved.id, null, request.user.sub, "configuration_saved", "pending", "Configuration de plateforme enregistrée.");
+            await client.query("COMMIT");
+            response.json({ message: "Configuration enregistrée.", connection: publicConnection(saved) });
+        } catch (error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }
+    }));
     app.post("/api/accounting/e-invoicing/connections/:platformCode", asyncHandler(async (request, response) => {
         const ownerId = getAccountOwnerId(request);
         const platform = getElectronicInvoicingProvider(request.params.platformCode);
@@ -260,7 +291,7 @@ async function loadDocumentHistory(ownerId, documentId) {
     return rows;
 }
 function publicConnection(row) {
-    return { id: row.id, platformCode: row.platform_code, platformLabel: row.platform_label, environment: row.environment, status: row.status, active: row.active, externalAccountId: row.external_account_id, externalAccountLabel: row.external_account_label, tokenExpiresAt: row.token_expires_at, lastConnectedAt: row.last_connected_at, lastCheckedAt: row.last_checked_at, disconnectedAt: row.disconnected_at, createdAt: row.created_at, updatedAt: row.updated_at, integrated: providers.has(row.platform_code), hasCredentials: Boolean(row.encrypted_credentials) };
+    return { id: row.id, platformCode: row.platform_code, platformLabel: row.platform_label, environment: row.environment, status: row.status, active: row.active, authenticationType: clean(safeObject(row.connection_metadata).authenticationType, 40), externalAccountId: row.external_account_id, externalAccountLabel: row.external_account_label, tokenExpiresAt: row.token_expires_at, lastConnectedAt: row.last_connected_at, lastCheckedAt: row.last_checked_at, disconnectedAt: row.disconnected_at, createdAt: row.created_at, updatedAt: row.updated_at, integrated: providers.has(row.platform_code), hasCredentials: Boolean(row.encrypted_credentials) };
 }
 function connectionContext(row) { return { id: row.id, ownerId: row.owner_id, platformCode: row.platform_code, environment: row.environment, metadata: safeObject(row.connection_metadata), externalAccountId: row.external_account_id }; }
 async function requireOwnerConnection(ownerId, value) { const id = positiveId(value); const { rows } = await getPool().query("SELECT * FROM depannhome_einvoice_connections WHERE id=$1 AND owner_id=$2", [id, ownerId]); if (!rows[0]) throw httpError(404, "Connexion introuvable."); return rows[0]; }
@@ -274,7 +305,20 @@ const encryptCredentials = encryptElectronicInvoicingCredentials;
 const decryptCredentials = decryptElectronicInvoicingCredentials;
 function sha256(value) { return crypto.createHash("sha256").update(String(value || "")).digest("hex"); }
 function safeObject(value) { return value && typeof value === "object" && !Array.isArray(value) ? value : {}; }
+function sanitizeManualConfiguration(value) {
+    const platformName = clean(value?.platformName, 160);
+    const accountIdentifier = clean(value?.accountIdentifier, 200);
+    const authenticationType = MANUAL_AUTHENTICATION_TYPES.has(value?.authenticationType) ? value.authenticationType : "";
+    if (!platformName || !accountIdentifier || !authenticationType) return { ok: false, message: "La plateforme, le compte et le mode d’authentification sont obligatoires." };
+    const credentials = authenticationType === "api_key" ? { apiKey: secret(value?.apiKey, 4000) }
+        : authenticationType === "oauth_client" ? { clientId: clean(value?.clientId, 500), clientSecret: secret(value?.clientSecret, 4000) }
+            : authenticationType === "access_token" ? { accessToken: secret(value?.accessToken, 8000) }
+                : authenticationType === "identifier_secret" ? { identifier: clean(value?.identifier, 500), secret: secret(value?.secret, 4000) }
+                    : { credentialName: clean(value?.credentialName, 160), credentialValue: secret(value?.credentialValue, 8000) };
+    return { ok: true, platformName, accountIdentifier, authenticationType, credentials, credentialsComplete: Object.values(credentials).every(Boolean) };
+}
 function clean(value, max) { return String(value || "").replace(/\s+/g, " ").trim().slice(0, max); }
+function secret(value, max) { return String(value || "").trim().slice(0, max); }
 function positiveId(value) { const id = Number(value); return Number.isSafeInteger(id) && id > 0 ? id : 0; }
 function safeError(error) { const status = Number(error?.status); if (status === 401 || status === 403) return "Authentification refusée par la plateforme."; if (status === 408 || error?.name === "AbortError" || error?.name === "TimeoutError") return "La plateforme n’a pas répondu dans le délai prévu."; return clean(error?.publicMessage || error?.message || "Erreur de communication avec la plateforme.", 500).replace(/(?:bearer|token|secret|api[_ -]?key|password)\s*[:=]\s*\S+/gi, "Identifiant sensible [masqué]"); }
 function httpError(status, message) { const error = new Error(message); error.status = status; return error; }
