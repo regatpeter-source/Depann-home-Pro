@@ -421,7 +421,8 @@ export function registerAuthRoutes(app) {
             const configurablePermissions = isAdvancedWorkstationTier(organization.subscriptionTier) && supportsConfigurablePcPermissions(role);
             const canAccessBilling = configurablePermissions && request.body?.canAccessBilling === true;
             const canAccessAccounting = configurablePermissions && request.body?.canAccessAccounting === true;
-            const canSwitchGroupCompanies = configurablePermissions && Boolean(request.user.groupId) && request.body?.canSwitchGroupCompanies === true;
+            const canSwitchGroupCompanies = configurablePermissions && organization.subscriptionTier === "pro"
+                && Boolean(request.user.groupId) && request.body?.canSwitchGroupCompanies === true;
             const member = await createUser({ username, passwordHash: await bcrypt.hash(password, 12), role, accountOwnerId: getAccountOwnerId(request), fullName, phone, email, department: ["technician", TEAM_LEAD_ROLE].includes(role) ? department : "", canAccessBilling, canAccessAccounting, canSwitchGroupCompanies });
             await recordMemberAudit(getAccountOwnerId(request), request.user.sub, member, role === "admin" ? "administrator_created" : "member_created", { role, canAccessBilling, canAccessAccounting, canSwitchGroupCompanies });
             response.status(201).json({ member: publicUser(member) });
@@ -450,7 +451,7 @@ export function registerAuthRoutes(app) {
         const configurablePermissions = isAdvancedWorkstationTier(organization.subscriptionTier) && supportsConfigurablePcPermissions(member.role);
         const canAccessBilling = configurablePermissions && (typeof request.body?.canAccessBilling === "boolean" ? request.body.canAccessBilling : member.canAccessBilling);
         const canAccessAccounting = configurablePermissions && (typeof request.body?.canAccessAccounting === "boolean" ? request.body.canAccessAccounting : member.canAccessAccounting);
-        const canSwitchGroupCompanies = configurablePermissions && Boolean(request.user.groupId)
+        const canSwitchGroupCompanies = configurablePermissions && organization.subscriptionTier === "pro" && Boolean(request.user.groupId)
             && (typeof request.body?.canSwitchGroupCompanies === "boolean" ? request.body.canSwitchGroupCompanies : member.canSwitchGroupCompanies);
         const department = ["technician", TEAM_LEAD_ROLE].includes(member.role) && typeof request.body?.department === "string"
             ? cleanText(request.body.department, 80)

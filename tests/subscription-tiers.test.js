@@ -72,6 +72,7 @@ test("Basic exposes clients, billing and accounting while Basic+ adds planning, 
     assert.equal(isFeatureEnabled(plus, "partnerConnections"), true);
     assert.equal(isFeatureEnabled(plus, "connectors"), false);
     assert.equal(isFeatureEnabled(plus, "partnerMissions"), true);
+    assert.equal(isFeatureEnabled(plus, "groups"), false);
     assert.equal(isFeatureEnabled(plus, "quitus"), false);
     assert.equal(isFeatureEnabled(plus, "technicalReports"), false);
     assert.match(partnerConnectionsClient, /!organizationFeatureEnabled\("connectors"\)/);

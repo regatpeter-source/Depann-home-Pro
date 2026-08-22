@@ -1744,6 +1744,7 @@ async function renderTeamManagement(container) {
     roleField.appendChild(roleInput);
     formFields.appendChild(roleField);
     const advancedPcPermissions = ["basic_plus", "pro"].includes(tier);
+    const groupCompanyPermissionAvailable = tier === "pro" && Boolean(document.body.dataset.groupId);
     const permissionsField = document.createElement("fieldset");
     permissionsField.className = "team-permissions-fieldset";
     permissionsField.innerHTML = `
@@ -1751,7 +1752,7 @@ async function renderTeamManagement(container) {
         <p class="muted" data-pc-permission-help>Choisissez uniquement les espaces nécessaires à ce poste.</p>
         <label class="settings-toggle"><span><strong>Facturation</strong><small>Devis, factures et paramètres de facturation</small></span><input type="checkbox" name="canAccessBilling"></label>
         <label class="settings-toggle"><span><strong>Comptabilité</strong><small>Comptabilité, facturation électronique et PDP</small></span><input type="checkbox" name="canAccessAccounting"></label>
-        ${document.body.dataset.groupId ? '<label class="settings-toggle" data-group-company-permission><span><strong>Entreprises du même groupe</strong><small>Changer de société active sans partager leurs données</small></span><input type="checkbox" name="canSwitchGroupCompanies"></label>' : ""}
+        ${groupCompanyPermissionAvailable ? '<label class="settings-toggle" data-group-company-permission><span><strong>Entreprises du même groupe</strong><small>Changer de société active sans partager leurs données</small></span><input type="checkbox" name="canSwitchGroupCompanies"></label>' : ""}
     `;
     permissionsField.hidden = true;
     formFields.appendChild(permissionsField);
@@ -1877,7 +1878,7 @@ async function renderTeamManagement(container) {
                 const permissionSummary = member.role === "admin"
                     ? " · Tous les accès"
                     : ["pc_standard", "accountant"].includes(member.role) && advancedPcPermissions
-                        ? ` · Facturation : ${member.canAccessBilling ? "oui" : "non"} · Comptabilité : ${member.canAccessAccounting ? "oui" : "non"}${document.body.dataset.groupId ? ` · Groupe : ${member.canSwitchGroupCompanies ? "oui" : "non"}` : ""}`
+                        ? ` · Facturation : ${member.canAccessBilling ? "oui" : "non"} · Comptabilité : ${member.canAccessAccounting ? "oui" : "non"}${groupCompanyPermissionAvailable ? ` · Groupe : ${member.canSwitchGroupCompanies ? "oui" : "non"}` : ""}`
                         : "";
                 item.innerHTML = `<div class="team-member-summary"><div class="team-member-title"><strong>${escapeHtml(member.fullName || member.username)}</strong><span class="team-role-badge ${member.role === "admin" ? "is-admin" : member.role === "mobile_admin" ? "is-mobile-admin" : member.role === "accountant" ? "is-accountant" : "is-technician"}">${memberType}</span>${["technician", "team_lead"].includes(member.role) ? `<span class="team-department-badge">${escapeHtml(member.department || "Non classé")}</span>` : ""}<span class="team-state-badge ${member.isActive ? "is-active" : "is-inactive"}">${member.isActive ? "Actif" : "Désactivé"}</span></div><span class="team-member-meta">${escapeHtml(member.phone || "Téléphone non renseigné")}<span aria-hidden="true">·</span>${escapeHtml(member.email || "E-mail non renseigné")}<span aria-hidden="true">·</span>${escapeHtml(member.username)}${member.role === "mobile_admin" ? " · Activation par code e-mail sur smartphone" : ""}${permissionSummary}</span></div>`;
                 const actions = document.createElement("div");
@@ -1917,7 +1918,7 @@ async function renderTeamManagement(container) {
                     };
                     addPermissionButton("canAccessBilling", "Retirer Facturation", "Autoriser Facturation");
                     addPermissionButton("canAccessAccounting", "Retirer Comptabilité", "Autoriser Comptabilité");
-                    if (document.body.dataset.groupId) addPermissionButton("canSwitchGroupCompanies", "Retirer accès Groupe", "Autoriser accès Groupe");
+                    if (groupCompanyPermissionAvailable) addPermissionButton("canSwitchGroupCompanies", "Retirer accès Groupe", "Autoriser accès Groupe");
                 }
                 if (["technician", "team_lead"].includes(member.role)) {
                     const editDepartment = createButton("Modifier le pôle", "secondary-button", async () => {

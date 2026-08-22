@@ -29,6 +29,7 @@ L’interface **Partenaire** utilise le niveau technique Pro, mais son portail e
 - Accès au Réseau Depann’Home Pro interne : annuaire, fiche réseau et connexions entre entreprises utilisatrices.
 - Envoi et réception de missions, messagerie contextuelle et dossiers partagés entre entreprises connectées du réseau.
 - Accès à tous les postes mobiles : Administrateur Mobile, Chef d’équipe et Technicien.
+- Aucun mode Groupe, aucune bascule multi-entreprises et aucune autorisation inter-entreprises à la création d’un poste PC ; ces fonctions sont réservées à Pro.
 - Pas d’accès au Quitus d’intervention, réservé à Pro.
 - Pas d’accès aux rapports techniques ni à la bibliothèque sur poste PC.
 - Aucun connecteur externe, aucune connexion API partenaire et aucun environnement de recette API.

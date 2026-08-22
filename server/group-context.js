@@ -15,13 +15,13 @@ export async function resolveGroupCompany(userId, activeCompanyId) {
         JOIN depannhome_users owner ON owner.id = company.company_owner_id AND owner.is_active = TRUE
         JOIN depannhome_users home_owner ON home_owner.id = principal.account_owner_id AND home_owner.is_active = TRUE
         WHERE principal.id = $1
+            AND home_owner.subscription_tier = 'pro'
+            AND owner.subscription_tier = 'pro'
             AND (
                 principal.role = 'admin'
                 OR (
                     principal.role IN ('pc_standard', 'accountant')
                     AND principal.can_switch_group_companies = TRUE
-                    AND home_owner.subscription_tier IN ('basic_plus', 'pro')
-                    AND owner.subscription_tier IN ('basic_plus', 'pro')
                 )
             )
         ORDER BY CASE WHEN company.company_owner_id = $2::bigint THEN 0 WHEN company.company_owner_id = principal.account_owner_id THEN 1 ELSE 2 END, company.company_owner_id
