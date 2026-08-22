@@ -2920,7 +2920,8 @@ body[data-role="mobile_admin"].mobile-device .store-match{min-height:72px;paddin
     font-weight:700;
 }
 
-.calendar-quitus input,
+.calendar-quitus input:not([type="checkbox"]),
+.calendar-quitus textarea,
 .calendar-intervention-photos input{
     width:100%;
     min-width:0;
@@ -2928,6 +2929,64 @@ body[data-role="mobile_admin"].mobile-device .store-match{min-height:72px;paddin
     border:1px solid var(--border);
     border-radius:10px;
     background:#fff;
+}
+
+.calendar-quitus textarea{
+    resize:vertical;
+    min-height:120px;
+    font:inherit;
+}
+
+.quitus-legal-declaration{
+    padding:14px;
+    border-left:4px solid var(--primary);
+    border-radius:10px;
+    background:#fff;
+    color:#243447;
+    font-size:14px;
+    line-height:1.55;
+}
+
+.quitus-legal-declaration p{
+    margin:0 0 10px;
+}
+
+.quitus-legal-declaration p:last-child{
+    margin-bottom:0;
+}
+
+.calendar-quitus .quitus-approval{
+    display:flex;
+    grid-template-columns:none;
+    align-items:flex-start;
+    gap:10px;
+    padding:13px;
+    border:1px solid var(--secondary);
+    border-radius:10px;
+    background:#f0fdf4;
+    line-height:1.4;
+}
+
+.quitus-approval input{
+    flex:0 0 auto;
+    width:22px;
+    height:22px;
+    margin:0;
+    accent-color:var(--secondary);
+}
+
+.quitus-approval-confirmation{
+    color:#15803d;
+    font-weight:800;
+}
+
+.quitus-signature-mention{
+    margin:0;
+    color:var(--primary);
+}
+
+.quitus-stored-observations{
+    white-space:pre-wrap;
 }
 
 .quitus-status{

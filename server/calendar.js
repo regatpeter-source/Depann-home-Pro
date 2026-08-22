@@ -38,6 +38,8 @@ export async function initializeCalendar() {
             quitus_status VARCHAR(20) NOT NULL DEFAULT 'pending',
             quitus_signed_by VARCHAR(160) NOT NULL DEFAULT '',
             quitus_signature TEXT NOT NULL DEFAULT '',
+            quitus_observations VARCHAR(2000) NOT NULL DEFAULT '',
+            quitus_approved BOOLEAN NOT NULL DEFAULT FALSE,
             quitus_signed_at TIMESTAMPTZ,
             notes VARCHAR(2000) NOT NULL DEFAULT '',
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -70,6 +72,8 @@ export async function initializeCalendar() {
         ADD COLUMN IF NOT EXISTS quitus_status VARCHAR(20) NOT NULL DEFAULT 'pending',
         ADD COLUMN IF NOT EXISTS quitus_signed_by VARCHAR(160) NOT NULL DEFAULT '',
         ADD COLUMN IF NOT EXISTS quitus_signature TEXT NOT NULL DEFAULT '',
+        ADD COLUMN IF NOT EXISTS quitus_observations VARCHAR(2000) NOT NULL DEFAULT '',
+        ADD COLUMN IF NOT EXISTS quitus_approved BOOLEAN NOT NULL DEFAULT FALSE,
         ADD COLUMN IF NOT EXISTS quitus_signed_at TIMESTAMPTZ
     `);
     await database.query(`
@@ -211,13 +215,20 @@ export function registerCalendarRoutes(app, requireAuthentication) {
                 event.quitus_status AS "quitusStatus",
                 event.quitus_signed_by AS "quitusSignedBy",
                 event.quitus_signature AS "quitusSignature",
+                event.quitus_observations AS "quitusObservations",
+                event.quitus_approved AS "quitusApproved",
                 event.quitus_signed_at AS "quitusSignedAt",
+                COALESCE(profile.company_name, owner.full_name, owner.username, '') AS "quitusCompanyName",
+                COALESCE(client.client_data->>'city', '') AS "quitusClientCity",
                 (event.event_type = 'appointment' AND event.event_date < (CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Paris')::date) AS "isCompleted",
                 event.notes,
                 event.created_at AS "createdAt",
                 event.updated_at AS "updatedAt"
             FROM depannhome_calendar_events event
             LEFT JOIN depannhome_users technician ON technician.id = event.assigned_technician_id
+            JOIN depannhome_users owner ON owner.id = event.owner_id
+            LEFT JOIN depannhome_billing_profiles profile ON profile.owner_id = event.owner_id
+            LEFT JOIN depannhome_clients client ON client.owner_id = event.owner_id AND client.client_id = event.client_id
                         WHERE event.owner_id = $1
                             AND event_date BETWEEN $2::date AND $3::date
                             AND ($4 NOT IN ('technician', 'accountant') OR EXISTS (
@@ -371,7 +382,7 @@ export function registerCalendarRoutes(app, requireAuthentication) {
                 SELECT id, client_id AS "clientId", title, client_name AS "clientName", location,
                     TO_CHAR(event_date, 'YYYY-MM-DD') AS date,
                     TO_CHAR(start_time, 'HH24:MI') AS "startTime", TO_CHAR(end_time, 'HH24:MI') AS "endTime",
-                    notes, quitus_status AS "quitusStatus",
+                    notes, quitus_status AS "quitusStatus", quitus_observations AS "quitusObservations", quitus_approved AS "quitusApproved",
                     (event_date < (CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Paris')::date) AS "isCompleted"
                 FROM depannhome_calendar_events
                                 WHERE id = $1 AND owner_id = $2 AND event_type = 'appointment' AND client_name <> ''
@@ -456,11 +467,12 @@ export function registerCalendarRoutes(app, requireAuthentication) {
             const { rows } = await connection.query(`
                 UPDATE depannhome_calendar_events
                 SET quitus_status = 'validated', quitus_signed_by = $3, quitus_signature = $4,
-                    quitus_signed_at = NOW(), updated_at = NOW()
+                    quitus_observations = $5, quitus_approved = $6, quitus_signed_at = NOW(), updated_at = NOW()
                 WHERE id = $1 AND owner_id = $2
                 RETURNING quitus_status AS "quitusStatus", quitus_signed_by AS "quitusSignedBy",
-                    quitus_signature AS "quitusSignature", quitus_signed_at AS "quitusSignedAt"
-            `, [id, accountOwnerId, quitus.signedBy, quitus.signature]);
+                    quitus_signature AS "quitusSignature", quitus_observations AS "quitusObservations",
+                    quitus_approved AS "quitusApproved", quitus_signed_at AS "quitusSignedAt"
+            `, [id, accountOwnerId, quitus.signedBy, quitus.signature, quitus.observations, quitus.approved]);
             await connection.query("COMMIT");
             response.json({ quitus: rows[0], message: "Quitus validé et document officiel ajouté au dossier client." });
         } catch (error) {
@@ -477,7 +489,8 @@ export function registerCalendarRoutes(app, requireAuthentication) {
         const eventResult = await getPool().query(`
             SELECT event.id,event.title,event.client_name AS "clientName",event.location,TO_CHAR(event.event_date,'YYYY-MM-DD') AS date,
                 TO_CHAR(event.start_time,'HH24:MI') AS "startTime",TO_CHAR(event.end_time,'HH24:MI') AS "endTime",event.notes,
-                event.quitus_signed_by AS "signedBy",event.quitus_signature AS signature,client.client_data AS "clientData"
+                event.quitus_signed_by AS "signedBy",event.quitus_signature AS signature,event.quitus_observations AS observations,
+                event.quitus_approved AS approved,client.client_data AS "clientData"
             FROM depannhome_calendar_events event
             LEFT JOIN depannhome_clients client ON client.owner_id=event.owner_id AND client.client_id=event.client_id
             WHERE event.id=$1 AND event.owner_id=$2 AND event.event_type='appointment' AND event.quitus_status='validated'
@@ -546,13 +559,16 @@ function sanitizeEventDates(value, fallbackDate) {
 function sanitizeQuitus(value) {
     const status = QUITUS_STATUS.has(value?.status) ? value.status : "pending";
     const signedBy = cleanText(value?.signedBy, 160);
+    const observations = cleanMultilineText(value?.observations, 2000);
+    const approved = value?.approved === true;
     const signature = String(value?.signature || "");
     if (status !== "validated") return { ok: false, message: "Le quitus doit être validé avec la signature du client." };
     if (!signedBy) return { ok: false, message: "Indiquez le nom du client signataire." };
+    if (!approved) return { ok: false, message: "Le client doit cocher « Lu et approuvé » avant de signer." };
     if (!/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(signature) || Buffer.byteLength(signature, "utf8") > 700000) {
         return { ok: false, message: "La signature est invalide ou trop volumineuse." };
     }
-    return { ok: true, status, signedBy, signature };
+    return { ok: true, status, signedBy, observations, approved, signature };
 }
 
 function quitusPdfFileName(event) {
@@ -567,7 +583,7 @@ export async function createQuitusDocumentOutput(event, quitus, profile = {}) {
 
 function quitusTemplateValues(event, quitus, profile) {
     const template = normalizeQuitusTemplate(profile.quitusTemplate);
-    return { numero_intervention: event.id, intervention: event.title, date: event.date, heure_debut: event.startTime || "", heure_fin: event.endTime || "", client_nom: event.clientName, adresse_intervention: event.location, observations: event.notes, entreprise_nom: profile.companyName, entreprise_adresse: [profile.address, profile.postalCode, profile.city].filter(Boolean).join(" "), entreprise_telephone: profile.phone, entreprise_email: profile.email, siret: profile.registrationNumber, signataire: quitus.signedBy, validation: quitus.signature ? "Validé électroniquement avec signature du client" : "Aperçu avant signature", texte_entete: template.headerText, texte_pied_page: template.footerText };
+    return { numero_intervention: event.id, intervention: event.title, date: event.date, heure_debut: event.startTime || "", heure_fin: event.endTime || "", client_nom: event.clientName, adresse_intervention: event.location, observations: quitus.observations || "Aucune observation ni réserve.", entreprise_nom: profile.companyName, entreprise_adresse: [profile.address, profile.postalCode, profile.city].filter(Boolean).join(" "), entreprise_telephone: profile.phone, entreprise_email: profile.email, siret: profile.registrationNumber, signataire: quitus.signedBy, validation: quitus.approved ? "Lu et approuvé – Travaux réalisés et intervention acceptée" : "Aperçu avant signature", texte_entete: template.headerText, texte_pied_page: template.footerText };
 }
 
 export function createQuitusPdf(event, quitus, profile = {}) {
@@ -591,11 +607,39 @@ export function createQuitusPdf(event, quitus, profile = {}) {
         text([event.title, formatDate(event.date), [event.startTime, event.endTime].filter(Boolean).join(" – "), event.location].filter(Boolean).join("\n"), 48, 140, 220, { size: 10, lineGap: 4 });
         text("CLIENT", 315, 124, 232, { size: 9, bold: true });
         text(event.clientName, 315, 140, 232, { size: 10, lineGap: 4 });
-        if (event.notes) {
-            text("NOTES D’INTERVENTION", 48, 232, 499, { size: 9, bold: true });
-            text(event.notes, 48, 248, 499, { size: 10, lineGap: 4 });
+        const client = event.clientData && typeof event.clientData === "object" ? event.clientData : {};
+        const clientAddress = event.location || [client.address, client.postalCode, client.city].filter(Boolean).join(", ") || "Adresse non renseignée";
+        const city = client.city || "Ville non renseignée";
+        const companyName = profile.companyName || "l’entreprise";
+        const approval = "Lu et approuvé – Travaux réalisés et intervention acceptée";
+        let cursorY = 218;
+        text("TRAVAUX ET PRESTATIONS RÉALISÉS", 48, cursorY, 499, { size: 9, bold: true });
+        cursorY += 16;
+        text([event.title, event.notes].filter(Boolean).join("\n") || "Intervention réalisée", 48, cursorY, 499, { size: 9, lineGap: 3 });
+        cursorY = pdf.y + 12;
+        const legalParagraphs = [
+            `Je soussigné(e), ${quitus.signedBy}, reconnais que le technicien de ${companyName} est intervenu à mon domicile / dans les locaux situés ${clientAddress}, le ${formatDate(event.date)}, afin de réaliser les travaux et prestations décrits dans le présent document.`,
+            "Je reconnais que l’intervention s’est déroulée conformément aux travaux convenus et que les prestations indiquées ci-dessus ont été réalisées.",
+            "Je déclare avoir pris connaissance des travaux réalisés et les accepter.",
+            "Les éventuelles observations ou réserves sont indiquées dans le présent document.",
+            `Fait le ${formatDate(event.date)}, à ${city}.`
+        ];
+        legalParagraphs.forEach((paragraph, index) => {
+            text(paragraph, 48, cursorY, 499, { size: 8.5, bold: index === 2 || index === 4, lineGap: 2 });
+            cursorY = pdf.y + 7;
+        });
+        text("OBSERVATIONS OU RÉSERVES DU CLIENT", 48, cursorY, 499, { size: 9, bold: true });
+        cursorY += 15;
+        text(quitus.observations || "Aucune observation ni réserve.", 48, cursorY, 499, { size: 9, lineGap: 3 });
+        cursorY = pdf.y + 10;
+        if (cursorY > 530) {
+            pdf.addPage();
+            cursorY = 52;
         }
-        const signatureY = event.notes ? 340 : 272;
+        text("SIGNATURE DU CLIENT PRÉCÉDÉE DE LA MENTION :", 48, cursorY, 499, { size: 9, bold: true });
+        cursorY += 17;
+        text(quitus.approved ? `[X] « ${approval} »` : "Validation électronique effectuée avant l’ajout de cette mention.", 48, cursorY, 499, { size: 10, bold: true, color: template.secondaryColor });
+        const signatureY = cursorY + 30;
         pdf.rect(48, signatureY, 499, 190).lineWidth(1).strokeColor(template.separatorColor).stroke();
         text("VALIDATION DU CLIENT", 62, signatureY + 14, 250, { size: 9, bold: true });
         text(`Signé par : ${quitus.signedBy}`, 62, signatureY + 34, 300, { size: 10 });
@@ -715,6 +759,10 @@ function dateString(date) {
 
 function cleanText(value, maximumLength) {
     return String(value || "").replace(/\s+/g, " ").trim().slice(0, maximumLength);
+}
+
+function cleanMultilineText(value, maximumLength) {
+    return String(value || "").replace(/\r\n?/g, "\n").replace(/[^\S\n]+/g, " ").replace(/\n{3,}/g, "\n\n").trim().slice(0, maximumLength);
 }
 
 function positiveId(value) {

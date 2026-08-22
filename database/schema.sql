@@ -917,6 +917,8 @@ CREATE TABLE IF NOT EXISTS depannhome_calendar_events (
     quitus_status VARCHAR(20) NOT NULL DEFAULT 'pending',
     quitus_signed_by VARCHAR(160) NOT NULL DEFAULT '',
     quitus_signature TEXT NOT NULL DEFAULT '',
+    quitus_observations VARCHAR(2000) NOT NULL DEFAULT '',
+    quitus_approved BOOLEAN NOT NULL DEFAULT FALSE,
     quitus_signed_at TIMESTAMPTZ,
     notes VARCHAR(2000) NOT NULL DEFAULT '',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -957,6 +959,8 @@ ALTER TABLE depannhome_calendar_events
 ADD COLUMN IF NOT EXISTS quitus_status VARCHAR(20) NOT NULL DEFAULT 'pending',
 ADD COLUMN IF NOT EXISTS quitus_signed_by VARCHAR(160) NOT NULL DEFAULT '',
 ADD COLUMN IF NOT EXISTS quitus_signature TEXT NOT NULL DEFAULT '',
+ADD COLUMN IF NOT EXISTS quitus_observations VARCHAR(2000) NOT NULL DEFAULT '',
+ADD COLUMN IF NOT EXISTS quitus_approved BOOLEAN NOT NULL DEFAULT FALSE,
 ADD COLUMN IF NOT EXISTS quitus_signed_at TIMESTAMPTZ;
 
 -- Un élément du planning peut réunir plusieurs membres. Les noms de colonnes

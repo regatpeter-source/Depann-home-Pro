@@ -919,19 +919,31 @@ async function uploadClientAttachments(event, client, appointment) {
 function renderQuitusHtml(event) {
     if (event.isCompleted) return "";
     const validated = event.quitusStatus === "validated" || event.quitusStatus === "signed";
+    const approval = "Lu et approuvé – Travaux réalisés et intervention acceptée";
     if (validated) {
         return `
             <section class="calendar-quitus" aria-label="Quitus validé">
                 <div class="form-heading"><div><p class="eyebrow">Quitus d’intervention</p><h3>Quitus validé</h3></div><span class="quitus-status signed">Validé</span></div>
                 <p><strong>Signé par :</strong> ${escapeHtml(event.quitusSignedBy || event.clientName || "Client")}</p>
+                <p class="quitus-stored-observations"><strong>Observations ou réserves :</strong> ${escapeHtml(event.quitusObservations || "Aucune observation ni réserve.")}</p>
+                <p class="quitus-approval-confirmation">${event.quitusApproved ? `✓ ${escapeHtml(approval)}` : "Validation antérieure à l’ajout de la case d’approbation."}</p>
                 <p class="muted">Validé le ${escapeHtml(formatQuitusValidationDate(event.quitusSignedAt))}. La signature et le quitus sont définitivement verrouillés ; le PDF est disponible dans le dossier client.</p>
             </section>
         `;
     }
+    const clientName = event.quitusSignedBy || event.clientName || "Nom du client";
+    const companyName = event.quitusCompanyName || "l’entreprise";
+    const address = event.location || "adresse de l’intervention";
+    const city = event.quitusClientCity || "ville non renseignée";
+    const date = formatQuitusLegalDate(event.date);
     return `
         <form id="calendarQuitusForm" class="calendar-quitus">
             <div class="form-heading"><div><p class="eyebrow">Quitus d’intervention</p><h3>Quitus à faire signer</h3></div><span class="quitus-status">En attente</span></div>
             <label>Nom du client signataire<input name="signedBy" maxlength="160" required value="${escapeHtml(event.quitusSignedBy || event.clientName || "")}" placeholder="Nom et prénom"></label>
+            <section class="quitus-legal-declaration" aria-label="Déclaration du client" data-client-name="${escapeHtml(clientName)}" data-company-name="${escapeHtml(companyName)}" data-address="${escapeHtml(address)}" data-date="${escapeHtml(date)}" data-city="${escapeHtml(city)}"></section>
+            <label>Observations ou réserves du client<textarea name="observations" maxlength="2000" rows="5" enterkeyhint="done" placeholder="Indiquez ici toute observation ou réserve. Laissez vide si aucune.">${escapeHtml(event.quitusObservations || "")}</textarea></label>
+            <p class="quitus-signature-mention"><strong>Signature du client précédée de la mention :</strong></p>
+            <label class="quitus-approval"><input name="approved" type="checkbox" required> <span>${escapeHtml(approval)}</span></label>
             <label>Signature du client<canvas class="quitus-signature-canvas" width="640" height="220" aria-label="Zone de signature tactile"></canvas></label>
             <div class="calendar-form-actions"><button type="button" class="secondary-button" data-quitus-action="clear">Effacer la signature</button><button type="submit" class="secondary-button">Valider le quitus</button></div>
             <p class="auth-message" aria-live="polite"></p>
@@ -942,6 +954,20 @@ function renderQuitusHtml(event) {
 function initializeQuitusForm(panel, event) {
     const form = panel.querySelector("#calendarQuitusForm");
     if (!form) return;
+    const declaration = form.querySelector(".quitus-legal-declaration");
+    const signedByInput = form.elements.signedBy;
+    const renderDeclaration = () => {
+        const clientName = signedByInput.value.trim() || declaration.dataset.clientName;
+        declaration.innerHTML = `
+            <p>Je soussigné(e), <strong>${escapeHtml(clientName)}</strong>, reconnais que le technicien de <strong>${escapeHtml(declaration.dataset.companyName)}</strong> est intervenu à mon domicile / dans les locaux situés <strong>${escapeHtml(declaration.dataset.address)}</strong>, le <strong>${escapeHtml(declaration.dataset.date)}</strong>, afin de réaliser les travaux et prestations décrits dans le présent document.</p>
+            <p>Je reconnais que l’intervention s’est déroulée conformément aux travaux convenus et que les prestations indiquées ci-dessus ont été réalisées.</p>
+            <p>Je déclare avoir pris connaissance des travaux réalisés et les accepter.</p>
+            <p>Les éventuelles observations ou réserves sont indiquées dans le présent document.</p>
+            <p><strong>Fait le ${escapeHtml(declaration.dataset.date)}, à ${escapeHtml(declaration.dataset.city)}.</strong></p>
+        `;
+    };
+    signedByInput.addEventListener("input", renderDeclaration);
+    renderDeclaration();
     const signature = initializeSignatureCanvas(form.querySelector("canvas"), event.quitusSignature || "");
     form.querySelector('[data-quitus-action="clear"]').addEventListener("click", () => {
         if (confirm("Effacer définitivement la signature en cours ?")) signature.clear();
@@ -951,6 +977,12 @@ function initializeQuitusForm(panel, event) {
         const button = form.querySelector('button[type="submit"]');
         const feedback = form.querySelector(".auth-message");
         const signatureValue = signature.value();
+        const formData = new FormData(form);
+        if (!form.elements.approved.checked) {
+            feedback.textContent = "Le client doit cocher « Lu et approuvé » avant de signer.";
+            feedback.classList.add("error");
+            return;
+        }
         if (!signatureValue) {
             feedback.textContent = "Le client doit signer le quitus.";
             feedback.classList.add("error");
@@ -961,7 +993,7 @@ function initializeQuitusForm(panel, event) {
         feedback.textContent = "Validation du quitus…";
         const result = await request(`/api/calendar/events/${encodeURIComponent(event.id)}/quitus`, {
             method: "PATCH",
-            body: JSON.stringify({ status: "validated", signedBy: new FormData(form).get("signedBy"), signature: signatureValue })
+            body: JSON.stringify({ status: "validated", signedBy: formData.get("signedBy"), observations: formData.get("observations"), approved: true, signature: signatureValue })
         });
         if (!result.ok) {
             feedback.textContent = result.message || "Validation du quitus impossible.";
@@ -979,6 +1011,11 @@ function initializeQuitusForm(panel, event) {
 function formatQuitusValidationDate(value) {
     if (!value || Number.isNaN(new Date(value).getTime())) return "à l’instant";
     return new Intl.DateTimeFormat("fr-FR", { dateStyle: "long", timeStyle: "short" }).format(new Date(value));
+}
+
+function formatQuitusLegalDate(value) {
+    if (!value || Number.isNaN(new Date(`${value}T12:00:00`).getTime())) return "date indiquée";
+    return new Intl.DateTimeFormat("fr-FR", { dateStyle: "long" }).format(new Date(`${value}T12:00:00`));
 }
 
 function initializeSignatureCanvas(canvas, existingSignature = "") {
