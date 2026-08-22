@@ -99,6 +99,7 @@ function renderClientToolbar(clients, readOnly, directory) {
         </form>
         <div class="client-toolbar-actions">
             <button type="button" class="secondary-button" id="syncClientsBtn">${readOnly ? "Actualiser" : "Synchroniser"}</button>
+            ${!readOnly && canImportGroupClient() ? '<button type="button" class="secondary-button" id="importGroupClientBtn">Prendre un client du groupe</button>' : ""}
             ${readOnly ? "" : '<button type="button" class="secondary-button" id="newClientBtn">+ Nouveau client</button>'}
         </div>
         <p id="clientSearchHint" class="client-search-hint">Les dossiers ne sont affichés qu’après une recherche. Vous pouvez combiner le mode de recherche, les dates et la période année/mois.</p>
@@ -106,6 +107,7 @@ function renderClientToolbar(clients, readOnly, directory) {
     `;
 
     panel.querySelector("#newClientBtn")?.addEventListener("click", () => renderClients());
+    panel.querySelector("#importGroupClientBtn")?.addEventListener("click", openGroupClientImportDialog);
     panel.querySelector("#syncClientsBtn").addEventListener("click", async event => {
         const button = event.currentTarget;
         const message = panel.querySelector("#clientSyncMessage");
@@ -137,6 +139,112 @@ function renderClientToolbar(clients, readOnly, directory) {
     });
 
     return panel;
+}
+
+function canImportGroupClient() {
+    return document.body.dataset.groupAdmin === "true" && Boolean(document.body.dataset.groupId);
+}
+
+async function openGroupClientImportDialog() {
+    document.querySelector(".group-client-import-dialog")?.remove();
+    const dialog = document.createElement("section");
+    dialog.className = "client-lifecycle-dialog group-client-import-dialog";
+    dialog.setAttribute("role", "dialog");
+    dialog.setAttribute("aria-modal", "true");
+    dialog.setAttribute("aria-labelledby", "groupClientImportTitle");
+    dialog.innerHTML = `
+        <div>
+            <header><div><p class="eyebrow">Groupe / Multi-entreprises</p><h2 id="groupClientImportTitle">Prendre un client d’une autre entreprise</h2></div><button type="button" class="text-button" data-close-group-import>Fermer</button></header>
+            <p>Choisissez l’entreprise puis le client à reprendre dans <strong>${escapeHtml(document.body.dataset.activeCompanyName || "l’entreprise active")}</strong>.</p>
+            <p class="muted">Une nouvelle fiche indépendante sera créée. Les devis, factures, rapports, rendez-vous, messages, historiques et fichiers resteront uniquement dans l’entreprise source.</p>
+            <form class="form-grid" id="groupClientImportForm">
+                <label class="form-wide">Entreprise source<select name="sourceCompanyId" required disabled><option value="">Chargement…</option></select></label>
+                <label class="form-wide">Client à reprendre<select name="clientId" required disabled><option value="">Sélectionnez d’abord une entreprise</option></select></label>
+                <div class="form-wide procedure-meta" data-group-client-preview hidden></div>
+                <div class="form-wide client-lifecycle-actions"><button type="button" class="secondary-button" data-close-group-import>Annuler</button><button type="submit" class="secondary-button" disabled>Créer la fiche dans l’entreprise active</button></div>
+                <p class="form-wide auth-message" data-group-import-feedback aria-live="polite"></p>
+            </form>
+        </div>`;
+    document.body.appendChild(dialog);
+    const form = dialog.querySelector("form");
+    const companySelect = form.elements.sourceCompanyId;
+    const clientSelect = form.elements.clientId;
+    const submit = form.querySelector('[type="submit"]');
+    const feedback = dialog.querySelector("[data-group-import-feedback]");
+    const preview = dialog.querySelector("[data-group-client-preview]");
+    let sourceClients = [];
+    const close = () => dialog.remove();
+    dialog.querySelectorAll("[data-close-group-import]").forEach(button => button.addEventListener("click", close));
+    dialog.addEventListener("click", event => { if (event.target === dialog) close(); });
+    try {
+        const payload = await groupClientImportRequest("/api/clients/group-import");
+        const companies = Array.isArray(payload.companies) ? payload.companies : [];
+        companySelect.innerHTML = `<option value="">Sélectionner une entreprise</option>${companies.map(company => `<option value="${escapeHtml(company.id)}">${escapeHtml(company.companyName)}</option>`).join("")}`;
+        companySelect.disabled = !companies.length;
+        if (!companies.length) feedback.textContent = "Ajoutez au moins une autre entreprise active au groupe pour reprendre un client.";
+    } catch (error) {
+        feedback.textContent = error.message || "Impossible de charger les entreprises du groupe.";
+        feedback.classList.add("error");
+    }
+    companySelect.addEventListener("change", async () => {
+        sourceClients = [];
+        preview.hidden = true;
+        submit.disabled = true;
+        clientSelect.disabled = true;
+        clientSelect.innerHTML = '<option value="">Chargement des clients…</option>';
+        feedback.textContent = "";
+        feedback.classList.remove("error");
+        if (!companySelect.value) {
+            clientSelect.innerHTML = '<option value="">Sélectionnez d’abord une entreprise</option>';
+            return;
+        }
+        try {
+            const payload = await groupClientImportRequest(`/api/clients/group-import?sourceCompanyId=${encodeURIComponent(companySelect.value)}`);
+            sourceClients = Array.isArray(payload.clients) ? payload.clients : [];
+            clientSelect.innerHTML = `<option value="">Sélectionner un client</option>${sourceClients.map(client => `<option value="${escapeHtml(client.id)}">${escapeHtml(client.name)}${client.city ? ` · ${escapeHtml(client.city)}` : ""}</option>`).join("")}`;
+            clientSelect.disabled = !sourceClients.length;
+            if (!sourceClients.length) feedback.textContent = "Cette entreprise ne possède aucun client actif à reprendre.";
+        } catch (error) {
+            clientSelect.innerHTML = '<option value="">Chargement impossible</option>';
+            feedback.textContent = error.message || "Impossible de charger les clients de cette entreprise.";
+            feedback.classList.add("error");
+        }
+    });
+    clientSelect.addEventListener("change", () => {
+        const client = sourceClients.find(item => String(item.id) === String(clientSelect.value));
+        submit.disabled = !client;
+        preview.hidden = !client;
+        preview.innerHTML = client ? `<span><strong>${escapeHtml(client.type)}</strong></span><span>${escapeHtml(client.phone || "Téléphone non renseigné")}</span><span>${escapeHtml(client.email || "E-mail non renseigné")}</span><span>${escapeHtml([client.address, client.city].filter(Boolean).join(", ") || "Adresse non renseignée")}</span>` : "";
+    });
+    form.addEventListener("submit", async event => {
+        event.preventDefault();
+        submit.disabled = true;
+        companySelect.disabled = true;
+        clientSelect.disabled = true;
+        feedback.textContent = "Création de la fiche dans l’entreprise active…";
+        feedback.classList.remove("error");
+        try {
+            const payload = await groupClientImportRequest("/api/clients/group-import", { method: "POST", body: JSON.stringify({ sourceCompanyId: companySelect.value, clientId: clientSelect.value }) });
+            feedback.textContent = payload.message || "Client repris dans l’entreprise active.";
+            await synchronizeClients({ forceFull: true });
+            dialog.remove();
+            renderClients({ ...clientScreenOptions, selectedId: payload.client?.id || "" });
+        } catch (error) {
+            feedback.textContent = error.message || "Impossible de reprendre ce client.";
+            feedback.classList.add("error");
+            companySelect.disabled = false;
+            clientSelect.disabled = false;
+            submit.disabled = false;
+        }
+    });
+    companySelect.focus();
+}
+
+async function groupClientImportRequest(url, options = {}) {
+    const response = await fetch(url, { credentials: "same-origin", headers: { "Content-Type": "application/json", ...(options.headers || {}) }, ...options });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) throw new Error(payload?.message || "Action Groupe impossible.");
+    return payload || {};
 }
 
 function renderClientForm(client, options = {}) {

@@ -150,6 +150,75 @@ export function registerClientRoutes(app, requireAuthentication) {
         response.json(await listClientsForOwner(getAccountOwnerId(request), String(request.query?.since || "")));
     }));
 
+    app.get("/api/clients/group-import", requireAuthentication, requireGroupClientImportAccess, asyncHandler(async (request, response) => {
+        const targetCompanyId = getAccountOwnerId(request);
+        const sourceCompanyId = positiveId(request.query?.sourceCompanyId);
+        const companies = await groupImportCompanies(request.user.groupId, targetCompanyId);
+        if (!sourceCompanyId) return response.json({ companies, clients: [] });
+        const sourceCompany = companies.find(company => String(company.id) === String(sourceCompanyId));
+        if (!sourceCompany) return response.status(404).json({ message: "Entreprise source inactive ou non autorisée dans ce groupe." });
+        const { rows } = await getPool().query(`
+            SELECT client_id AS id, client_data AS client
+            FROM depannhome_clients
+            WHERE owner_id=$1 AND client_status='active' AND COALESCE(client_data->>'isSandbox','false')<>'true'
+            ORDER BY LOWER(COALESCE(client_data->>'name','')), client_id
+            LIMIT 1000
+        `, [sourceCompanyId]);
+        response.json({ companies, sourceCompany, clients: rows.map(groupImportClientSummary) });
+    }));
+
+    app.post("/api/clients/group-import", requireAuthentication, requireClientWriteAccess, requireGroupClientImportAccess, asyncHandler(async (request, response) => {
+        const targetCompanyId = getAccountOwnerId(request);
+        const sourceCompanyId = positiveId(request.body?.sourceCompanyId);
+        const sourceClientId = String(request.body?.clientId || "");
+        if (!sourceCompanyId || !CLIENT_ID_PATTERN.test(sourceClientId)) return response.status(400).json({ message: "Entreprise ou client source invalide." });
+        const sourceCompany = (await groupImportCompanies(request.user.groupId, targetCompanyId)).find(company => String(company.id) === String(sourceCompanyId));
+        if (!sourceCompany) return response.status(404).json({ message: "Entreprise source inactive ou non autorisée dans ce groupe." });
+
+        const connection = await getPool().connect();
+        try {
+            await connection.query("BEGIN");
+            const sourceResult = await connection.query(`
+                                SELECT source_client.client_data AS client
+                                FROM depannhome_clients source_client
+                                JOIN depannhome_group_companies company ON company.company_owner_id=source_client.owner_id
+                                        AND company.group_id=$3 AND company.is_active=TRUE
+                                JOIN depannhome_groups group_data ON group_data.id=company.group_id AND group_data.is_active=TRUE
+                                WHERE source_client.owner_id=$1 AND source_client.client_id=$2 AND source_client.client_status='active'
+                                    AND COALESCE(source_client.client_data->>'isSandbox','false')<>'true'
+                                FOR SHARE OF source_client,company
+                        `, [sourceCompanyId, sourceClientId, request.user.groupId]);
+            const sourceClient = sourceResult.rows[0]?.client;
+            if (!sourceClient) {
+                await connection.query("ROLLBACK");
+                return response.status(404).json({ message: "Client source introuvable ou archivé." });
+            }
+            await connection.query("SELECT pg_advisory_xact_lock($1::bigint)", [targetCompanyId]);
+            const targetClients = await connection.query("SELECT client_id AS id,client_data AS client FROM depannhome_clients WHERE owner_id=$1 AND client_status='active' FOR UPDATE", [targetCompanyId]);
+            const duplicate = targetClients.rows.find(row => isSameGroupClientIdentity(row.client, sourceClient, { sourceCompanyId, sourceClientId }));
+            if (duplicate) {
+                await connection.query("ROLLBACK");
+                return response.status(409).json({ message: "Ce client existe déjà dans l’entreprise active.", existingClientId: duplicate.id });
+            }
+            const client = createGroupClientCopy(sourceClient, {
+                sourceCompanyId,
+                sourceClientId,
+                sourceCompanyName: sourceCompany.companyName,
+                actorName: request.user.fullName || request.user.username
+            });
+            await connection.query("INSERT INTO depannhome_clients(owner_id,client_id,client_data,updated_at) VALUES($1,$2,$3::jsonb,NOW())", [targetCompanyId, client.id, JSON.stringify(client)]);
+            await connection.query("INSERT INTO depannhome_client_lifecycle_audit(owner_id,client_id,action,actor_id,actor_name,details) VALUES($1,$2,'group_imported',$3,$4,$5::jsonb)", [targetCompanyId, client.id, request.user.sub, String(request.user.fullName || request.user.username || "").slice(0, 160), JSON.stringify({ sourceCompanyId: String(sourceCompanyId), sourceCompanyName: sourceCompany.companyName, sourceClientId })]);
+            await connection.query("INSERT INTO depannhome_group_audit(group_id,company_owner_id,actor_id,action,details,ip_address) VALUES($1,$2,$3,'client_imported',$4::jsonb,$5)", [request.user.groupId, targetCompanyId, request.user.sub, JSON.stringify({ sourceCompanyId: String(sourceCompanyId), sourceCompanyName: sourceCompany.companyName, sourceClientId, targetClientId: client.id, clientName: client.name }), String(request.ip || "").slice(0, 100)]);
+            await connection.query("COMMIT");
+            response.status(201).json({ client: { ...client, clientStatus: "active" }, message: `Client repris depuis ${sourceCompany.companyName}. Les documents de l’entreprise source n’ont pas été copiés.` });
+        } catch (error) {
+            await connection.query("ROLLBACK");
+            throw error;
+        } finally {
+            connection.release();
+        }
+    }));
+
     app.put("/api/clients/:clientId", requireAuthentication, requireClientWriteAccess, asyncHandler(async (request, response) => {
         const clientId = String(request.params.clientId || "");
         const submittedClient = sanitizeClient(request.body?.client, clientId);
@@ -456,6 +525,109 @@ function requirePermanentClientDeletion(request, response, next) {
 function requireClientReadAccess(request, response, next) {
     if (request.user?.role === "accountant") return response.status(403).json({ message: "L’espace comptabilité ne donne pas accès aux dossiers clients." });
     return next();
+}
+
+function requireGroupClientImportAccess(request, response, next) {
+    if (request.user?.role !== "admin" || !request.user?.isGroupAdministrator || !request.user?.groupId) {
+        return response.status(403).json({ message: "La reprise d’un client est réservée à l’administrateur d’un groupe d’entreprises." });
+    }
+    return next();
+}
+
+async function groupImportCompanies(groupId, targetCompanyId) {
+    const { rows } = await getPool().query(`
+        SELECT company.company_owner_id AS id, COALESCE(owner.company_name,owner.full_name,'Entreprise') AS "companyName"
+        FROM depannhome_group_companies company
+        JOIN depannhome_groups group_data ON group_data.id=company.group_id AND group_data.is_active=TRUE
+        JOIN depannhome_users owner ON owner.id=company.company_owner_id AND owner.is_active=TRUE
+        WHERE company.group_id=$1 AND company.is_active=TRUE AND company.company_owner_id<>$2
+        ORDER BY LOWER(COALESCE(owner.company_name,owner.full_name,'Entreprise')), company.company_owner_id
+    `, [groupId, targetCompanyId]);
+    return rows.map(row => ({ id: String(row.id), companyName: row.companyName }));
+}
+
+function groupImportClientSummary(row) {
+    const client = row.client || {};
+    return {
+        id: String(row.id || client.id || ""),
+        type: String(client.type || "Particulier").slice(0, 50),
+        name: String(client.name || "Client sans nom").slice(0, 160),
+        phone: String(client.phone || "").slice(0, 50),
+        email: String(client.email || "").slice(0, 160),
+        address: String(client.address || "").slice(0, 255),
+        city: String(client.city || "").slice(0, 100)
+    };
+}
+
+export function createGroupClientCopy(sourceClient, context, options = {}) {
+    const now = validDate(options.now) || new Date().toISOString();
+    const clientId = options.clientId || `client-${randomUUID()}`;
+    const copy = {
+        id: clientId,
+        type: String(sourceClient?.type || "Particulier").slice(0, 50),
+        name: String(sourceClient?.name || "Client sans nom").slice(0, 160),
+        firstName: String(sourceClient?.firstName || "").slice(0, 100),
+        lastName: String(sourceClient?.lastName || "").slice(0, 100),
+        phone: String(sourceClient?.phone || "").slice(0, 50),
+        email: String(sourceClient?.email || "").slice(0, 160),
+        address: String(sourceClient?.address || "").slice(0, 255),
+        interventionAddress: String(sourceClient?.interventionAddress || "").slice(0, 255),
+        city: String(sourceClient?.city || "").slice(0, 100),
+        insurance: String(sourceClient?.insurance || "").slice(0, 160),
+        principal: String(sourceClient?.principal || "").slice(0, 160),
+        claimNumber: String(sourceClient?.claimNumber || "").slice(0, 160),
+        expert: String(sourceClient?.expert || "").slice(0, 160),
+        manager: String(sourceClient?.manager || "").slice(0, 160),
+        equipment: String(sourceClient?.equipment || "").slice(0, 4000),
+        notes: String(sourceClient?.notes || "").slice(0, 4000),
+        attachments: [],
+        deletedAttachmentIds: [],
+        activityHistory: [{
+            id: `activity-group-import-${randomUUID()}`,
+            type: "group_import",
+            label: `Client importé depuis ${String(context.sourceCompanyName || "une entreprise du groupe").slice(0, 160)}`,
+            detail: "Coordonnées reprises sans les documents ni l’historique de l’entreprise source.",
+            actorName: String(context.actorName || "Administrateur Groupe").slice(0, 100),
+            createdAt: now
+        }],
+        groupImport: {
+            sourceCompanyId: String(context.sourceCompanyId || ""),
+            sourceCompanyName: String(context.sourceCompanyName || "").slice(0, 160),
+            sourceClientId: String(context.sourceClientId || "").slice(0, 100),
+            importedAt: now
+        },
+        createdAt: now,
+        updatedAt: now
+    };
+    return sanitizeClient(copy, clientId);
+}
+
+export function isSameGroupClientIdentity(targetClient, sourceClient, source = {}) {
+    const hasSourceOrigin = Boolean(source.sourceCompanyId && source.sourceClientId);
+    const importedFromSameClient = hasSourceOrigin
+        && String(targetClient?.groupImport?.sourceCompanyId || "") === String(source.sourceCompanyId)
+        && String(targetClient?.groupImport?.sourceClientId || "") === String(source.sourceClientId || "");
+    if (importedFromSameClient) return true;
+    const targetEmail = normalizeIdentityText(targetClient?.email);
+    const sourceEmail = normalizeIdentityText(sourceClient?.email);
+    if (targetEmail && sourceEmail && targetEmail === sourceEmail) return true;
+    const targetPhone = normalizeIdentityPhone(targetClient?.phone);
+    const sourcePhone = normalizeIdentityPhone(sourceClient?.phone);
+    if (targetPhone.length >= 6 && sourcePhone.length >= 6 && targetPhone === sourcePhone) return true;
+    const targetName = normalizeIdentityText(targetClient?.name);
+    const sourceName = normalizeIdentityText(sourceClient?.name);
+    const targetAddress = normalizeIdentityText([targetClient?.address, targetClient?.city].filter(Boolean).join(" "));
+    const sourceAddress = normalizeIdentityText([sourceClient?.address, sourceClient?.city].filter(Boolean).join(" "));
+    return Boolean(targetName && sourceName && targetAddress && sourceAddress && targetName === sourceName && targetAddress === sourceAddress);
+}
+
+function normalizeIdentityText(value) {
+    return String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function normalizeIdentityPhone(value) {
+    const digits = String(value || "").replace(/\D/g, "");
+    return digits.length === 11 && digits.startsWith("33") ? `0${digits.slice(2)}` : digits;
 }
 
 function sanitizeClient(value, expectedId) {
