@@ -421,10 +421,11 @@ export function registerAuthRoutes(app) {
             const configurablePermissions = isAdvancedWorkstationTier(organization.subscriptionTier) && supportsConfigurablePcPermissions(role);
             const canAccessBilling = configurablePermissions && request.body?.canAccessBilling === true;
             const canAccessAccounting = configurablePermissions && request.body?.canAccessAccounting === true;
+            const canCreateBilling = role === "technician" && request.body?.canCreateBilling === true;
             const canSwitchGroupCompanies = configurablePermissions && organization.subscriptionTier === "pro"
                 && Boolean(request.user.groupId) && request.body?.canSwitchGroupCompanies === true;
-            const member = await createUser({ username, passwordHash: await bcrypt.hash(password, 12), role, accountOwnerId: getAccountOwnerId(request), fullName, phone, email, department: ["technician", TEAM_LEAD_ROLE].includes(role) ? department : "", canAccessBilling, canAccessAccounting, canSwitchGroupCompanies });
-            await recordMemberAudit(getAccountOwnerId(request), request.user.sub, member, role === "admin" ? "administrator_created" : "member_created", { role, canAccessBilling, canAccessAccounting, canSwitchGroupCompanies });
+            const member = await createUser({ username, passwordHash: await bcrypt.hash(password, 12), role, accountOwnerId: getAccountOwnerId(request), fullName, phone, email, department: ["technician", TEAM_LEAD_ROLE].includes(role) ? department : "", canCreateBilling, canAccessBilling, canAccessAccounting, canSwitchGroupCompanies });
+            await recordMemberAudit(getAccountOwnerId(request), request.user.sub, member, role === "admin" ? "administrator_created" : "member_created", { role, canCreateBilling, canAccessBilling, canAccessAccounting, canSwitchGroupCompanies });
             response.status(201).json({ member: publicUser(member) });
         } catch (error) {
             if (error.code === "23505") return response.status(409).json({ message: "Ce nom d’utilisateur est déjà utilisé." });
@@ -557,12 +558,13 @@ export function registerAuthRoutes(app) {
         const phone = cleanText(request.body?.phone, 30);
         const email = cleanText(request.body?.email, 160).toLowerCase();
         const department = cleanText(request.body?.department, 80);
+        const canCreateBilling = request.body?.canCreateBilling === true;
         const validationError = validateCredentials(username, password) || (!fullName ? "Le nom du technicien est obligatoire." : "") || (!phone ? "Le téléphone du technicien est obligatoire." : "") || (!EMAIL_PATTERN.test(email) ? "L’e-mail professionnel du technicien est obligatoire." : "");
         if (validationError) return response.status(400).json({ message: validationError });
         const seatError = await memberSeatError(getAccountOwnerId(request), "technician");
         if (seatError) return response.status(400).json({ message: seatError });
         try {
-            const user = await createUser({ username, passwordHash: await bcrypt.hash(password, 12), role: "technician", accountOwnerId: getAccountOwnerId(request), fullName, phone, email, department });
+            const user = await createUser({ username, passwordHash: await bcrypt.hash(password, 12), role: "technician", accountOwnerId: getAccountOwnerId(request), fullName, phone, email, department, canCreateBilling });
             response.status(201).json({ technician: publicUser(user) });
         } catch (error) {
             if (error.code === "23505") return response.status(409).json({ message: "Ce nom d’utilisateur est déjà utilisé." });

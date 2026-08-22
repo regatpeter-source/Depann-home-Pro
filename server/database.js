@@ -355,17 +355,17 @@ export async function findUserById(id) {
     return rows[0] || null;
 }
 
-export async function createUser({ username, passwordHash, role = "admin", accountOwnerId, fullName = "", phone = "", email = "", department = "", canAccessBilling = false, canAccessAccounting = false, canSwitchGroupCompanies = false }) {
+export async function createUser({ username, passwordHash, role = "admin", accountOwnerId, fullName = "", phone = "", email = "", department = "", canCreateBilling = false, canAccessBilling = false, canAccessAccounting = false, canSwitchGroupCompanies = false }) {
     const { rows } = await getPool().query(
-        `INSERT INTO depannhome_users (username, password_hash, role, account_owner_id, full_name, phone, email, department, can_access_billing, can_access_accounting, can_switch_group_companies)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-         RETURNING id, username, role, account_owner_id, full_name, phone, email, department, can_access_billing, can_access_accounting, can_switch_group_companies, is_active`,
-        [username, passwordHash, role, accountOwnerId || null, fullName, phone, email, department, canAccessBilling, canAccessAccounting, canSwitchGroupCompanies]
+        `INSERT INTO depannhome_users (username, password_hash, role, account_owner_id, full_name, phone, email, department, can_create_billing, can_access_billing, can_access_accounting, can_switch_group_companies)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+         RETURNING id, username, role, account_owner_id, full_name, phone, email, department, can_create_billing, can_access_billing, can_access_accounting, can_switch_group_companies, is_active`,
+        [username, passwordHash, role, accountOwnerId || null, fullName, phone, email, department, canCreateBilling, canAccessBilling, canAccessAccounting, canSwitchGroupCompanies]
     );
     const user = rows[0];
     if (!user.account_owner_id) {
         const { rows: updatedRows } = await getPool().query(
-            "UPDATE depannhome_users SET account_owner_id = id WHERE id = $1 RETURNING id, username, role, account_owner_id, full_name, phone, email, department, can_access_billing, can_access_accounting, can_switch_group_companies, is_active",
+            "UPDATE depannhome_users SET account_owner_id = id WHERE id = $1 RETURNING id, username, role, account_owner_id, full_name, phone, email, department, can_create_billing, can_access_billing, can_access_accounting, can_switch_group_companies, is_active",
             [user.id]
         );
         return updatedRows[0];

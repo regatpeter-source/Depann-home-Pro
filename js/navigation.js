@@ -1756,6 +1756,15 @@ async function renderTeamManagement(container) {
     `;
     permissionsField.hidden = true;
     formFields.appendChild(permissionsField);
+    const mobileBillingPermissionField = document.createElement("fieldset");
+    mobileBillingPermissionField.className = "team-permissions-fieldset";
+    mobileBillingPermissionField.innerHTML = `
+        <legend>Autorisation du technicien mobile</legend>
+        <p class="muted">Ce droit permet au technicien de créer des documents commerciaux depuis les interventions qui lui sont affectées.</p>
+        <label class="settings-toggle"><span><strong>Créer des devis et factures</strong><small>Autoriser ce technicien à créer des devis et factures pour ses interventions</small></span><input type="checkbox" name="canCreateBilling"></label>
+    `;
+    mobileBillingPermissionField.hidden = true;
+    formFields.appendChild(mobileBillingPermissionField);
     const departmentSuggestions = document.createElement("datalist");
     departmentSuggestions.id = "teamDepartmentSuggestions";
     departmentSuggestions.innerHTML = ["Dépannage", "Chantiers", "Métrés", "Maintenance", "Pose", "SAV"].map(value => `<option value="${value}"></option>`).join("");
@@ -1799,6 +1808,8 @@ async function renderTeamManagement(container) {
         permissionsField.querySelector("[data-pc-permission-help]").textContent = isAdministratorPc
             ? "L’Administrateur (PC) dispose automatiquement de tous les accès, sans restriction."
             : "Choisissez uniquement les espaces nécessaires à ce poste. Ces droits sont contrôlés côté serveur.";
+        mobileBillingPermissionField.hidden = roleInput.value !== "technician";
+        form.elements.canCreateBilling.disabled = roleInput.value !== "technician";
         feedback.textContent = isMobileAdmin ? "Ce poste s’active uniquement depuis un smartphone ou une tablette : l’appareil devra être autorisé, puis confirmé avec le code envoyé par e-mail." : "";
     };
     roleInput.addEventListener("change", updateRoleFields);
@@ -2008,6 +2019,7 @@ async function renderTeamManagement(container) {
         feedback.textContent = "";
         try {
             const values = Object.fromEntries(new FormData(form));
+            values.canCreateBilling = roleInput.value === "technician" && Boolean(form.elements.canCreateBilling.checked);
             values.canAccessBilling = Boolean(form.elements.canAccessBilling?.checked);
             values.canAccessAccounting = Boolean(form.elements.canAccessAccounting?.checked);
             values.canSwitchGroupCompanies = Boolean(form.elements.canSwitchGroupCompanies?.checked);
