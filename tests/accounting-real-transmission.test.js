@@ -84,14 +84,16 @@ test("Paramètres expose la configuration manuelle propre à l’entreprise", ()
     assert.match(navigationClient, /section === "electronicInvoicing"\) return renderElectronicInvoicingConfiguration\(container\)/);
     assert.match(accountingClient, /export async function renderElectronicInvoicingConfiguration/);
     assert.match(accountingClient, /Choisir une plateforme/);
-    assert.match(accountingClient, /Enregistrer la connexion/);
+    assert.match(accountingClient, /Enregistrer les identifiants/);
+    assert.match(accountingClient, /Plateforme non intégrée/);
+    assert.match(accountingClient, /aucun échange automatique/);
     assert.match(accountingClient, /data-edit-configuration/);
     assert.match(accountingClient, /data-disconnect-configuration/);
 });
 
 test("le bouton d’enregistrement de la plateforme est un submit explicite et protégé", () => {
     const configuration = accountingClient.slice(accountingClient.indexOf("export async function renderElectronicInvoicingConfiguration"), accountingClient.indexOf("function renderLegacyElectronic"));
-    assert.match(configuration, /<button type="submit" class="secondary-button">Enregistrer la connexion<\/button>/);
+    assert.match(configuration, /<button type="submit" class="secondary-button">Enregistrer les identifiants<\/button>/);
     assert.match(configuration, /if \(submit\) submit\.disabled = true/);
     assert.match(configuration, /if \(submit\) submit\.disabled = false/);
 });
