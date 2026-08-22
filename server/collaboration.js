@@ -29,6 +29,7 @@ export async function initializeCollaboration() {
         )
     `);
     await database.query("CREATE INDEX IF NOT EXISTS depannhome_collaboration_notifications_recipient_idx ON depannhome_collaboration_notifications (recipient_id, read_at, created_at DESC)");
+    await database.query("CREATE INDEX IF NOT EXISTS depannhome_collaboration_notifications_owner_recipient_idx ON depannhome_collaboration_notifications (owner_id, recipient_id, read_at, created_at DESC)");
     await database.query(`
         CREATE TABLE IF NOT EXISTS depannhome_collaboration_audit (
             id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
@@ -54,29 +55,30 @@ export function registerCollaborationRoutes(app, requireAuthentication) {
         request.on("close", () => { clearInterval(heartbeat); streamsByOwner.get(ownerId)?.delete(stream); if (!streamsByOwner.get(ownerId)?.size) streamsByOwner.delete(ownerId); });
     });
     app.get("/api/collaboration/notifications", requireAuthentication, asyncHandler(async (request, response) => {
-        const { rows } = await getPool().query(`SELECT id, event_type AS "eventType", entity_type AS "entityType", entity_id AS "entityId", title, body, payload, read_at AS "readAt", created_at AS "createdAt" FROM depannhome_collaboration_notifications WHERE recipient_id=$1 AND event_type <> 'report_started' AND NOT (entity_type IN ('partner_mission','partner_connection','partner_request') OR event_type LIKE 'partner_mission_%' OR event_type LIKE 'partner_connection_%' OR event_type LIKE 'partner_request_%' OR event_type='partner_dialogue_updated') ORDER BY created_at DESC LIMIT 100`, [request.user.sub]);
+        const { rows } = await getPool().query(`SELECT id, event_type AS "eventType", entity_type AS "entityType", entity_id AS "entityId", title, body, payload, read_at AS "readAt", created_at AS "createdAt" FROM depannhome_collaboration_notifications WHERE recipient_id=$1 AND owner_id=$2 AND event_type <> 'report_started' AND NOT (entity_type IN ('partner_mission','partner_connection','partner_request') OR event_type LIKE 'partner_mission_%' OR event_type LIKE 'partner_connection_%' OR event_type LIKE 'partner_request_%' OR event_type='partner_dialogue_updated') ORDER BY created_at DESC LIMIT 100`, [request.user.sub, getAccountOwnerId(request)]);
         response.json({ notifications: rows });
     }));
     app.get("/api/collaboration/partner-notifications", requireAuthentication, requirePartnerNotificationAccess, asyncHandler(async (request, response) => {
-        const { rows } = await getPool().query(`SELECT id, event_type AS "eventType", entity_type AS "entityType", entity_id AS "entityId", title, body, payload, read_at AS "readAt", created_at AS "createdAt" FROM depannhome_collaboration_notifications WHERE recipient_id=$1 AND (entity_type IN ('partner_mission','partner_connection','partner_request') OR event_type LIKE 'partner_mission_%' OR event_type LIKE 'partner_connection_%' OR event_type LIKE 'partner_request_%' OR event_type='partner_dialogue_updated') ORDER BY created_at DESC LIMIT 100`, [request.user.sub]);
+        const { rows } = await getPool().query(`SELECT id, event_type AS "eventType", entity_type AS "entityType", entity_id AS "entityId", title, body, payload, read_at AS "readAt", created_at AS "createdAt" FROM depannhome_collaboration_notifications WHERE recipient_id=$1 AND owner_id=$2 AND (entity_type IN ('partner_mission','partner_connection','partner_request') OR event_type LIKE 'partner_mission_%' OR event_type LIKE 'partner_connection_%' OR event_type LIKE 'partner_request_%' OR event_type='partner_dialogue_updated') ORDER BY created_at DESC LIMIT 100`, [request.user.sub, getAccountOwnerId(request)]);
         response.json({ notifications: rows });
     }));
     app.post("/api/collaboration/notifications/read", requireAuthentication, asyncHandler(async (request, response) => {
         const ids = Array.isArray(request.body?.ids) ? request.body.ids.map(positiveId).filter(Boolean).slice(0, 100) : [];
         const partnerOnly = request.body?.scope === "partner";
         const partnerCondition = "(entity_type IN ('partner_mission','partner_connection','partner_request') OR event_type LIKE 'partner_mission_%' OR event_type LIKE 'partner_connection_%' OR event_type LIKE 'partner_request_%' OR event_type='partner_dialogue_updated')";
-        await getPool().query(ids.length ? `UPDATE depannhome_collaboration_notifications SET read_at=NOW() WHERE recipient_id=$1 AND id=ANY($2::bigint[]) AND read_at IS NULL${partnerOnly ? ` AND ${partnerCondition}` : ""}` : `UPDATE depannhome_collaboration_notifications SET read_at=NOW() WHERE recipient_id=$1 AND read_at IS NULL${partnerOnly ? ` AND ${partnerCondition}` : ""}`, ids.length ? [request.user.sub, ids] : [request.user.sub]);
+        const ownerId = getAccountOwnerId(request);
+        await getPool().query(ids.length ? `UPDATE depannhome_collaboration_notifications SET read_at=NOW() WHERE recipient_id=$1 AND owner_id=$2 AND id=ANY($3::bigint[]) AND read_at IS NULL${partnerOnly ? ` AND ${partnerCondition}` : ""}` : `UPDATE depannhome_collaboration_notifications SET read_at=NOW() WHERE recipient_id=$1 AND owner_id=$2 AND read_at IS NULL${partnerOnly ? ` AND ${partnerCondition}` : ""}`, ids.length ? [request.user.sub, ownerId, ids] : [request.user.sub, ownerId]);
         response.status(204).end();
     }));
     app.delete("/api/collaboration/notifications/read", requireAuthentication, asyncHandler(async (request, response) => {
-        const result = await getPool().query("DELETE FROM depannhome_collaboration_notifications WHERE recipient_id=$1 AND read_at IS NOT NULL", [request.user.sub]);
+        const result = await getPool().query("DELETE FROM depannhome_collaboration_notifications WHERE recipient_id=$1 AND owner_id=$2 AND read_at IS NOT NULL", [request.user.sub, getAccountOwnerId(request)]);
         response.json({ deletedCount: result.rowCount || 0 });
     }));
     app.delete("/api/collaboration/partner-notifications", requireAuthentication, requirePartnerNotificationAccess, asyncHandler(async (request, response) => {
         const ids = Array.isArray(request.body?.ids) ? request.body.ids.map(positiveId).filter(Boolean).slice(0, 100) : [];
         if (!ids.length) return response.status(400).json({ message: "Sélectionnez au moins une notification partenaire." });
         const partnerCondition = "(entity_type IN ('partner_mission','partner_connection','partner_request') OR event_type LIKE 'partner_mission_%' OR event_type LIKE 'partner_connection_%' OR event_type LIKE 'partner_request_%' OR event_type='partner_dialogue_updated')";
-        const result = await getPool().query(`DELETE FROM depannhome_collaboration_notifications WHERE recipient_id=$1 AND id=ANY($2::bigint[]) AND ${partnerCondition}`, [request.user.sub, ids]);
+        const result = await getPool().query(`DELETE FROM depannhome_collaboration_notifications WHERE recipient_id=$1 AND owner_id=$2 AND id=ANY($3::bigint[]) AND ${partnerCondition}`, [request.user.sub, getAccountOwnerId(request), ids]);
         response.json({ deletedCount: result.rowCount || 0 });
     }));
     app.post("/api/collaboration/locks/:entityType/:entityId/acquire", requireAuthentication, asyncHandler(async (request, response) => {

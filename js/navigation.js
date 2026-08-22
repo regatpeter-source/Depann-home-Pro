@@ -10,7 +10,7 @@ import { renderPartnerSandbox } from "./partner-sandbox.js?v=3";
 import { renderPartnerConnections } from "./partner-connections.js?v=21";
 import { renderDataImportTool } from "./data-imports.js?v=3";
 import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=29";
-import { getFirstUnreadClientId, refreshClientMessageAlert, refreshVisibleClientMessages } from "./messages.js?v=106";
+import { getFirstUnreadClientId, refreshClientMessageAlert, refreshVisibleClientMessages } from "./messages.js?v=107";
 import { getSearchableClients, renderClients } from "./clients.js?v=148";
 import { synchronizeClients } from "./client-sync.js?v=125";
 import { configureLibrary, openLibrarySection, renderLibrary, searchPersonalLibrary } from "./library.js?v=122";
@@ -464,7 +464,7 @@ function getViewedTechnicianCalendarEvents(date) {
 }
 
 function getTechnicianCalendarAlertKey(date) {
-    return `${TECHNICIAN_CALENDAR_ALERT_KEY_PREFIX}${document.body.dataset.userId || "anonymous"}:${date}`;
+    return `${TECHNICIAN_CALENDAR_ALERT_KEY_PREFIX}${document.body.dataset.accountId || "anonymous"}:${document.body.dataset.userId || "anonymous"}:${date}`;
 }
 
 function calendarEventVersion(event) {

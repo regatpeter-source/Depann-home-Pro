@@ -164,7 +164,7 @@ function getClientLastRead(clientId) {
 }
 
 function getClientLastReadKey(clientId) {
-    return `${CLIENT_LAST_READ_KEY_PREFIX}${document.body.dataset.userId || "anonymous"}:${clientId}`;
+    return `${CLIENT_LAST_READ_KEY_PREFIX}${document.body.dataset.accountId || "anonymous"}:${document.body.dataset.userId || "anonymous"}:${clientId}`;
 }
 
 async function request(url, options = {}) {

@@ -130,7 +130,7 @@ export function registerDocumentTemplateRoutes(app, requireAuthentication) {
             const validation = validateActivation(target.rows[0].definition, type);
             if (validation.length) { await connection.query("ROLLBACK"); return response.status(409).json({ message: validation.join(" "), warnings: validation }); }
             await connection.query("UPDATE depannhome_document_templates SET status='draft',activated_at=NULL,updated_at=NOW() WHERE owner_id=$1 AND document_type=$2 AND status='active'", [ownerId, type]);
-            await connection.query("UPDATE depannhome_document_templates SET status='active',activated_at=NOW(),updated_at=NOW() WHERE id=$1", [id]);
+            await connection.query("UPDATE depannhome_document_templates SET status='active',activated_at=NOW(),updated_at=NOW() WHERE id=$1 AND owner_id=$2 AND document_type=$3", [id, ownerId, type]);
             await connection.query("COMMIT");
             response.status(204).end();
         } catch (error) { await connection.query("ROLLBACK"); throw error; } finally { connection.release(); }
