@@ -18,7 +18,7 @@
 
     <link rel="icon" href="assets/logo.png.png" type="image/png">
 
-    <link rel="stylesheet" href="css/style.css?v=204">
+    <link rel="stylesheet" href="css/style.css?v=205">
     <link rel="stylesheet" href="css/partner-dialogue.css?v=5">
     <link rel="stylesheet" href="css/report-editor.css?v=7">
 
@@ -46,7 +46,10 @@
             </div>
 
             <div class="user-session" id="userSession" hidden>
-                <span id="userEmail"></span>
+                <span class="active-work-context">
+                    <span class="pc-workstation-name">Poste PC · <strong id="userEmail"></strong></span>
+                    <span id="activeCompanyBadge" class="active-company-badge" hidden>Entreprise active · <strong id="activeCompanyName"></strong></span>
+                </span>
                 <label id="groupCompanySelector" class="group-company-selector" hidden>Entreprise <select aria-label="Entreprise active"></select></label>
                 <span class="collaboration-sync" data-collaboration-sync="syncing" title="Connexion en temps réel" aria-label="Connexion en temps réel">●</span>
                 <button type="button" id="notificationsBtn" class="refresh-button" aria-label="Notifications">Notifications</button>
@@ -175,7 +178,7 @@
 
     </div>
 
-    <script type="module" src="js/app.js?v=316"></script>
+    <script type="module" src="js/app.js?v=317"></script>
 
 </body>
 

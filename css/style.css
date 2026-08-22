@@ -74,6 +74,37 @@ textarea{
     font-size:14px;
 }
 
+.active-work-context{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    padding:6px 9px;
+    border:1px solid var(--border);
+    border-radius:10px;
+    background:var(--surface);
+}
+
+.pc-workstation-name{
+    color:var(--muted);
+    white-space:nowrap;
+}
+
+.pc-workstation-name strong{
+    color:var(--primary);
+}
+
+.active-company-badge{
+    padding:5px 8px;
+    border-radius:8px;
+    background:#e8f5ee;
+    color:#166534;
+    white-space:nowrap;
+}
+
+.active-company-badge strong{
+    color:#075985;
+}
+
 .logout-button,
 .refresh-button{
     border:1px solid var(--border);
@@ -4972,6 +5003,12 @@ footer{
 
     .user-session{
         margin-left:0;
+        justify-content:center;
+    }
+
+    .active-work-context{
+        width:100%;
+        flex-wrap:wrap;
         justify-content:center;
     }
 

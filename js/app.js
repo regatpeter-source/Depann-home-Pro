@@ -106,13 +106,19 @@ async function initializeSandboxCapabilities() {
 function showAuthenticatedUser(user) {
     const session = document.getElementById("userSession");
     const email = document.getElementById("userEmail");
+    const activeCompanyBadge = document.getElementById("activeCompanyBadge");
+    const activeCompanyName = document.getElementById("activeCompanyName");
     const refreshButton = document.getElementById("refreshBtn");
     const logoutButton = document.getElementById("logoutBtn");
 
     if (session) session.hidden = false;
     if (email) email.textContent = user.fullName || user.username || "Utilisateur connecté";
+    if (activeCompanyName) activeCompanyName.textContent = user.activeCompanyName || "";
+    if (activeCompanyBadge) activeCompanyBadge.hidden = !user.isGroupAdministrator || !user.activeCompanyName;
     document.body.dataset.userId = user.id || "";
     document.body.dataset.accountId = user.accountOwnerId || user.id || "";
+    document.body.dataset.activeCompanyId = user.activeCompanyId || user.accountOwnerId || user.id || "";
+    document.body.dataset.activeCompanyName = user.activeCompanyName || "";
     document.body.dataset.role = user.role || "";
     document.body.dataset.userName = user.fullName || user.username || "";
     document.body.dataset.creator = user.isCreator ? "true" : "false";
