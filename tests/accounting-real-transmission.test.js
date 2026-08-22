@@ -89,6 +89,13 @@ test("Paramètres expose la configuration manuelle propre à l’entreprise", ()
     assert.match(accountingClient, /data-disconnect-configuration/);
 });
 
+test("le bouton d’enregistrement de la plateforme est un submit explicite et protégé", () => {
+    const configuration = accountingClient.slice(accountingClient.indexOf("export async function renderElectronicInvoicingConfiguration"), accountingClient.indexOf("function renderLegacyElectronic"));
+    assert.match(configuration, /<button type="submit" class="secondary-button">Enregistrer la connexion<\/button>/);
+    assert.match(configuration, /if \(submit\) submit\.disabled = true/);
+    assert.match(configuration, /if \(submit\) submit\.disabled = false/);
+});
+
 test("la configuration manuelle chiffre les secrets sans test de connexion", () => {
     const route = electronicServer.slice(electronicServer.indexOf('app.put("/api/accounting/e-invoicing/configuration"'), electronicServer.indexOf('app.post("/api/accounting/e-invoicing/connections/:platformCode"'));
     assert.match(route, /const ownerId = getAccountOwnerId\(request\)/);

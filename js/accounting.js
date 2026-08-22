@@ -138,7 +138,7 @@ export async function renderElectronicInvoicingConfiguration(node) {
                 <div class="form-wide form-grid" data-authentication-fields></div>
                 <p class="muted form-wide">Les champs sensibles sont chiffrés côté serveur et ne sont jamais réaffichés. En modification, laissez-les vides pour conserver les secrets existants si le mode d’authentification ne change pas.</p>
                 <p class="auth-message form-wide" data-configuration-message></p>
-                <div class="form-actions"><button class="secondary-button">Enregistrer la connexion</button>${configured ? '<button type="button" class="secondary-button" data-cancel-configuration>Annuler</button>' : ""}</div>
+                <div class="form-actions"><button type="submit" class="secondary-button">Enregistrer la connexion</button>${configured ? '<button type="button" class="secondary-button" data-cancel-configuration>Annuler</button>' : ""}</div>
             </form>`;
         const form = panel.querySelector("form");
         const authentication = form.elements.authenticationType;
@@ -155,10 +155,11 @@ export async function renderElectronicInvoicingConfiguration(node) {
         form.querySelector("[data-cancel-configuration]")?.addEventListener("click", () => renderSummary());
         form.addEventListener("submit", async event => {
             event.preventDefault();
-            const submit = form.querySelector("button[type=submit]"); const message = form.querySelector("[data-configuration-message]"); submit.disabled = true;
+            const submit = form.querySelector('button[type="submit"]'); const message = form.querySelector("[data-configuration-message]");
+            if (submit) submit.disabled = true;
             const payload = Object.fromEntries(new FormData(form)); delete payload.platformChoice;
             const answer = await api("/api/accounting/e-invoicing/configuration", { method: "PUT", body: JSON.stringify(payload) });
-            if (!answer.ok) { message.textContent = answer.message || "Enregistrement impossible."; message.classList.add("error"); submit.disabled = false; return; }
+            if (!answer.ok) { message.textContent = answer.message || "Enregistrement impossible."; message.classList.add("error"); if (submit) submit.disabled = false; return; }
             panel.remove();
             renderElectronicInvoicingConfiguration(node);
         });
