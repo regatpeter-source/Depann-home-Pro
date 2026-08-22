@@ -13,6 +13,7 @@ import {
     validateLedger
 } from "./accounting-ledger.js";
 import { allocateBillingNumber } from "./billing-numbering.js";
+import { hasAccountingWorkspaceAccess } from "./workstation-permissions.js";
 import { transmitElectronicDocument } from "./electronic-invoicing.js";
 
 const AID_TYPES = new Set(["cee", "maprimerenov", "coup_de_pouce", "eco_ptz", "regional", "departmental", "supplier", "manufacturer", "custom"]);
@@ -452,8 +453,8 @@ export function registerAccountingRoutes(app, requireAuthentication) {
 }
 
 function requireAccountingAdministration(request, response, next) {
-    if (request.user?.role !== "admin") return response.status(403).json({ message: "Le module Comptabilité · Facturation électronique & PDP est réservé à l’administrateur de l’entreprise." });
-    return next();
+    if (hasAccountingWorkspaceAccess(request.user)) return next();
+    return response.status(403).json({ message: "L’accès à l’espace Comptabilité n’est pas autorisé pour ce poste PC ou n’est pas inclus dans l’offre active." });
 }
 
 export async function postAccountingDocument({ ownerId, documentId, actorId, database = getPool() }) {

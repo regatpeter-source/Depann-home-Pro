@@ -13,6 +13,7 @@ import { calculateDocumentAccountingTotals } from "./accounting-ledger.js";
 import crypto from "node:crypto";
 import { generateUblInvoice } from "./einvoice-ubl.js";
 import { allocateBillingNumber } from "./billing-numbering.js";
+import { hasBillingWorkspaceAccess } from "./workstation-permissions.js";
 
 const MAX_LOGO_SIZE = 2 * 1024 * 1024;
 const MAX_QUOTE_TEMPLATE_SIZE = 10 * 1024 * 1024;
@@ -265,6 +266,7 @@ export async function initializeBilling() {
 }
 
 export function registerBillingRoutes(app, requireAuthentication) {
+    app.use("/api/billing", requireBillingWorkspaceAccess);
     app.get("/api/billing", requireAuthentication, asyncHandler(async (request, response) => {
         const database = getPool();
         const accountOwnerId = getAccountOwnerId(request);
@@ -884,15 +886,18 @@ function buildLegalSnapshot(document, profile) {
 }
 
 function requireBillingAdministration(request, response, next) {
-    if (request.user?.role !== "admin") {
-        return response.status(403).json({ message: request.user?.role === "accountant" ? "L’espace comptabilité est en consultation uniquement." : "Les techniciens peuvent créer des devis et factures, sans modifier les documents ou paramètres existants." });
-    }
-    return next();
+    if (request.user?.role === "admin") return next();
+    return response.status(403).json({ message: request.user?.role === "accountant" ? "L’espace Facturation du comptable est en consultation uniquement." : "La modification des documents et paramètres de facturation n’est pas autorisée pour ce poste." });
 }
 
 function requireBillingDocumentAdministration(request, response, next) {
     if (["admin", "mobile_admin"].includes(request.user?.role)) return next();
     return response.status(403).json({ message: request.user?.role === "accountant" ? "L’espace comptabilité est en consultation uniquement." : "Les techniciens peuvent créer des devis et factures, sans modifier les documents existants." });
+}
+
+export function requireBillingWorkspaceAccess(request, response, next) {
+    if (hasBillingWorkspaceAccess(request.user)) return next();
+    return response.status(403).json({ message: "L’accès à l’espace Facturation n’est pas autorisé pour ce poste PC ou n’est pas inclus dans l’offre active." });
 }
 
 async function requireTechnicianBillingAccess(request, response, next) {

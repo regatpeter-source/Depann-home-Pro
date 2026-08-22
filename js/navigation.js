@@ -1,4 +1,4 @@
-import { ROUTES, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=129";
+import { ROUTES, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=130";
 import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=167";
 import { openCreatorPartnerRequest, openCreatorRequestNotification, renderCreatorConsole } from "./creator.js?v=143";
 import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=179";
@@ -92,7 +92,8 @@ export function initializeNavigation(loadedDatabase) {
             if (document.visibilityState === "visible") refreshSharedData({ silent: true });
         }, isTechnician() ? 30_000 : 90_000);
     }
-    if (isAccountant()) renderBilling();
+    if (isAccountant() && canAccessRoute(ROUTES.billing)) renderBilling();
+    else if (isAccountant() && canAccessRoute(ROUTES.accounting)) renderAccounting();
     else if (isMobileDeviceContext()) openHome();
     else if (document.body.classList.contains("desktop-device")) renderHome();
     else renderBrands();
@@ -104,7 +105,7 @@ export async function refreshSharedData(options = {}) {
             ? Promise.all([sharedSynchronizationPromise, synchronizeClients()])
             : sharedSynchronizationPromise;
     }
-    const requests = [synchronizeBillingDocuments({ refreshView: !options.silent, force: Boolean(options.forceBilling) })];
+    const requests = canAccessRoute(ROUTES.billing) ? [synchronizeBillingDocuments({ refreshView: !options.silent, force: Boolean(options.forceBilling) })] : [];
     if (isTechnician() && canAccessRoute(ROUTES.calendar)) requests.unshift(refreshTechnicianCalendarAlert());
     if (!isAccountant()) requests.unshift(refreshVisibleClientMessages());
     if (options.includeClients && !isAccountant()) requests.push(synchronizeClients());
@@ -141,7 +142,8 @@ export async function refreshApplication() {
     }
 
     if (isAccountant()) {
-        renderBilling();
+        if (canAccessRoute(ROUTES.billing)) renderBilling();
+        else if (canAccessRoute(ROUTES.accounting)) renderAccounting();
     } else if (activeRoute === ROUTES.clients) {
         const selectedId = document.querySelector(".client-messages-panel")?.dataset.clientId || "";
         renderClients({ database, navigateToRef, createBillingDocument: createBillingDocumentForClient, viewBillingDocument, createCalendarEvent: createCalendarEventForClient, ...(selectedId ? { selectedId } : {}) });
@@ -240,6 +242,7 @@ function bindEvents() {
 
             if (isAccountant()) {
                 if (nav === ROUTES.billing) renderBilling();
+                if (nav === ROUTES.accounting) renderAccounting();
                 return;
             }
 
@@ -251,7 +254,7 @@ function bindEvents() {
                 if (isTechnician() && organizationFeatureEnabled("technicalReports")) renderTechnicalReports();
                 else renderBilling();
             }
-            if (nav === ROUTES.accounting && document.body.dataset.role === "admin") renderAccounting();
+            if (nav === ROUTES.accounting) renderAccounting();
             if (nav === ROUTES.purchases) renderPurchases();
             if (nav === ROUTES.groups && document.body.dataset.groupAdmin === "true") renderGroupWorkspace();
             if (nav === ROUTES.partnerMissions) renderPartnerMissions();
@@ -306,6 +309,8 @@ function isMobileDeviceContext() {
 
 function isMenuAllowed(roles, route = "") {
     if (!Array.isArray(roles) || !roles.includes(document.body.dataset.role)) return false;
+    if (route === ROUTES.billing && ["pc_standard", "accountant"].includes(document.body.dataset.role) && document.body.dataset.canAccessBilling !== "true") return false;
+    if (route === ROUTES.accounting && ["pc_standard", "accountant"].includes(document.body.dataset.role) && document.body.dataset.canAccessAccounting !== "true") return false;
     if (route === ROUTES.groups) return document.body.dataset.groupAdmin === "true";
     if (route === ROUTES.partnerSandbox) return document.body.classList.contains("partner-sandbox-enabled");
     return !route || isOrganizationRouteEnabled(route);
@@ -330,6 +335,8 @@ function canAccessSettingsSection(section) {
     const feature = featureBySection[section];
     if (feature && !organizationFeatureEnabled(feature)) return false;
     if (document.body.dataset.role === "admin") return true;
+    if (section === "documents" && document.body.dataset.canAccessBilling === "true") return true;
+    if (section === "electronicInvoicing" && document.body.dataset.canAccessAccounting === "true") return true;
     return ["network", "personalization"].includes(section);
 }
 
@@ -358,7 +365,9 @@ function menuRoute(menu) {
 
 function openHome() {
     if (isAccountant()) {
-        renderBilling();
+        if (canAccessRoute(ROUTES.billing)) renderBilling();
+        else if (canAccessRoute(ROUTES.accounting)) renderAccounting();
+        else renderPurchases();
         return;
     }
     if (isMobileDeviceContext()) {
@@ -1730,10 +1739,22 @@ async function renderTeamManagement(container) {
     const tier = document.body.dataset.subscriptionTier || "pro";
     const roleOptions = tier === "basic"
         ? [["pc_standard", "Poste PC standard"], ["admin", "Administrateur (PC)"], ["mobile_admin", "Administrateur Mobile"]]
-        : [["technician", "Technicien"], ["team_lead", "Technicien référent / Chef d’équipe"], ["pc_standard", "Poste PC standard"], ["admin", "Administrateur (PC)"], ["mobile_admin", "Administrateur Mobile"]];
+        : [["technician", "Technicien"], ["team_lead", "Technicien référent / Chef d’équipe"], ["pc_standard", "Poste PC standard"], ["accountant", "Comptable (PC)"], ["admin", "Administrateur (PC)"], ["mobile_admin", "Administrateur Mobile"]];
     roleInput.innerHTML = roleOptions.map(([value, label]) => `<option value="${value}">${label}</option>`).join("");
     roleField.appendChild(roleInput);
     formFields.appendChild(roleField);
+    const advancedPcPermissions = ["basic_plus", "pro"].includes(tier);
+    const permissionsField = document.createElement("fieldset");
+    permissionsField.className = "team-permissions-fieldset";
+    permissionsField.innerHTML = `
+        <legend>Autorisations du poste PC</legend>
+        <p class="muted" data-pc-permission-help>Choisissez uniquement les espaces nécessaires à ce poste.</p>
+        <label class="settings-toggle"><span><strong>Facturation</strong><small>Devis, factures et paramètres de facturation</small></span><input type="checkbox" name="canAccessBilling"></label>
+        <label class="settings-toggle"><span><strong>Comptabilité</strong><small>Comptabilité, facturation électronique et PDP</small></span><input type="checkbox" name="canAccessAccounting"></label>
+        ${document.body.dataset.groupId ? '<label class="settings-toggle" data-group-company-permission><span><strong>Entreprises du même groupe</strong><small>Changer de société active sans partager leurs données</small></span><input type="checkbox" name="canSwitchGroupCompanies"></label>' : ""}
+    `;
+    permissionsField.hidden = true;
+    formFields.appendChild(permissionsField);
     const departmentSuggestions = document.createElement("datalist");
     departmentSuggestions.id = "teamDepartmentSuggestions";
     departmentSuggestions.innerHTML = ["Dépannage", "Chantiers", "Métrés", "Maintenance", "Pose", "SAV"].map(value => `<option value="${value}"></option>`).join("");
@@ -1764,11 +1785,19 @@ async function renderTeamManagement(container) {
     const updateRoleFields = () => {
         const isTechnician = ["technician", "team_lead"].includes(roleInput.value);
         const isMobileAdmin = roleInput.value === "mobile_admin";
+        const isConfigurablePc = ["pc_standard", "accountant"].includes(roleInput.value);
+        const isAdministratorPc = roleInput.value === "admin";
         form.elements.phone.required = isTechnician || isMobileAdmin;
         form.elements.email.required = isTechnician || isMobileAdmin;
         form.elements.department.disabled = !isTechnician;
-        submit.textContent = isTechnician ? (roleInput.value === "team_lead" ? "Créer le chef d’équipe" : "Créer le technicien") : isMobileAdmin ? "Créer l’Administrateur Mobile" : roleInput.value === "admin" ? "Créer l’Administrateur (PC)" : "Créer le poste PC standard";
+        submit.textContent = isTechnician ? (roleInput.value === "team_lead" ? "Créer le chef d’équipe" : "Créer le technicien") : isMobileAdmin ? "Créer l’Administrateur Mobile" : isAdministratorPc ? "Créer l’Administrateur (PC)" : roleInput.value === "accountant" ? "Créer le Comptable (PC)" : "Créer le poste PC standard";
         roleField.dataset.role = roleInput.value;
+        permissionsField.hidden = !advancedPcPermissions || (!isConfigurablePc && !isAdministratorPc);
+        permissionsField.querySelectorAll("input").forEach(input => { input.disabled = !isConfigurablePc; });
+        permissionsField.querySelectorAll(".settings-toggle").forEach(label => { label.hidden = isAdministratorPc; });
+        permissionsField.querySelector("[data-pc-permission-help]").textContent = isAdministratorPc
+            ? "L’Administrateur (PC) dispose automatiquement de tous les accès, sans restriction."
+            : "Choisissez uniquement les espaces nécessaires à ce poste. Ces droits sont contrôlés côté serveur.";
         feedback.textContent = isMobileAdmin ? "Ce poste s’active uniquement depuis un smartphone ou une tablette : l’appareil devra être autorisé, puis confirmé avec le code envoyé par e-mail." : "";
     };
     roleInput.addEventListener("change", updateRoleFields);
@@ -1845,7 +1874,12 @@ async function renderTeamManagement(container) {
                 const item = document.createElement("div");
                 item.className = "team-member";
                 const memberType = member.role === "admin" ? "Administrateur (PC)" : member.role === "pc_standard" ? "Poste PC standard" : member.role === "mobile_admin" ? "Administrateur Mobile" : member.role === "team_lead" ? "Technicien référent / Chef d’équipe" : member.role === "accountant" ? "Comptable" : "Technicien";
-                item.innerHTML = `<div class="team-member-summary"><div class="team-member-title"><strong>${escapeHtml(member.fullName || member.username)}</strong><span class="team-role-badge ${member.role === "admin" ? "is-admin" : member.role === "mobile_admin" ? "is-mobile-admin" : member.role === "accountant" ? "is-accountant" : "is-technician"}">${memberType}</span>${["technician", "team_lead"].includes(member.role) ? `<span class="team-department-badge">${escapeHtml(member.department || "Non classé")}</span>` : ""}<span class="team-state-badge ${member.isActive ? "is-active" : "is-inactive"}">${member.isActive ? "Actif" : "Désactivé"}</span></div><span class="team-member-meta">${escapeHtml(member.phone || "Téléphone non renseigné")}<span aria-hidden="true">·</span>${escapeHtml(member.email || "E-mail non renseigné")}<span aria-hidden="true">·</span>${escapeHtml(member.username)}${member.role === "mobile_admin" ? " · Activation par code e-mail sur smartphone" : member.role === "accountant" ? " · Espace comptabilité, sans limite de poste PC" : ""}</span></div>`;
+                const permissionSummary = member.role === "admin"
+                    ? " · Tous les accès"
+                    : ["pc_standard", "accountant"].includes(member.role) && advancedPcPermissions
+                        ? ` · Facturation : ${member.canAccessBilling ? "oui" : "non"} · Comptabilité : ${member.canAccessAccounting ? "oui" : "non"}${document.body.dataset.groupId ? ` · Groupe : ${member.canSwitchGroupCompanies ? "oui" : "non"}` : ""}`
+                        : "";
+                item.innerHTML = `<div class="team-member-summary"><div class="team-member-title"><strong>${escapeHtml(member.fullName || member.username)}</strong><span class="team-role-badge ${member.role === "admin" ? "is-admin" : member.role === "mobile_admin" ? "is-mobile-admin" : member.role === "accountant" ? "is-accountant" : "is-technician"}">${memberType}</span>${["technician", "team_lead"].includes(member.role) ? `<span class="team-department-badge">${escapeHtml(member.department || "Non classé")}</span>` : ""}<span class="team-state-badge ${member.isActive ? "is-active" : "is-inactive"}">${member.isActive ? "Actif" : "Désactivé"}</span></div><span class="team-member-meta">${escapeHtml(member.phone || "Téléphone non renseigné")}<span aria-hidden="true">·</span>${escapeHtml(member.email || "E-mail non renseigné")}<span aria-hidden="true">·</span>${escapeHtml(member.username)}${member.role === "mobile_admin" ? " · Activation par code e-mail sur smartphone" : ""}${permissionSummary}</span></div>`;
                 const actions = document.createElement("div");
                 actions.className = "team-member-actions";
                 const toggle = createButton(member.isActive ? "Désactiver" : "Réactiver", "secondary-button", async () => {
@@ -1870,6 +1904,21 @@ async function renderTeamManagement(container) {
                     if (!response.ok) feedback.textContent = (await response.json().catch(() => ({}))).message || "Le changement de rôle a échoué.";
                     await load();
                 });
+                const permissionButtons = [];
+                if (advancedPcPermissions && ["pc_standard", "accountant"].includes(member.role)) {
+                    const addPermissionButton = (property, enabledLabel, disabledLabel) => {
+                        const button = createButton(member[property] ? enabledLabel : disabledLabel, "secondary-button", async () => {
+                            button.disabled = true;
+                            const response = await fetch(`/api/auth/members/${encodeURIComponent(member.id)}`, { method: "PATCH", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ isActive: member.isActive, [property]: !member[property] }) });
+                            if (!response.ok) feedback.textContent = (await response.json().catch(() => ({}))).message || "La mise à jour de l’autorisation a échoué.";
+                            await load();
+                        });
+                        permissionButtons.push(button);
+                    };
+                    addPermissionButton("canAccessBilling", "Retirer Facturation", "Autoriser Facturation");
+                    addPermissionButton("canAccessAccounting", "Retirer Comptabilité", "Autoriser Comptabilité");
+                    if (document.body.dataset.groupId) addPermissionButton("canSwitchGroupCompanies", "Retirer accès Groupe", "Autoriser accès Groupe");
+                }
                 if (["technician", "team_lead"].includes(member.role)) {
                     const editDepartment = createButton("Modifier le pôle", "secondary-button", async () => {
                         const department = window.prompt(`Pôle de ${member.fullName || member.username} :`, member.department || "");
@@ -1886,7 +1935,7 @@ async function renderTeamManagement(container) {
                         await load();
                     });
                     actions.append(toggle, changeRole, editDepartment, billingPermission, remove);
-                } else actions.append(toggle, changeRole, remove);
+                } else actions.append(toggle, changeRole, ...permissionButtons, remove);
                 item.appendChild(actions);
                 list.appendChild(item);
             });
@@ -1958,6 +2007,9 @@ async function renderTeamManagement(container) {
         feedback.textContent = "";
         try {
             const values = Object.fromEntries(new FormData(form));
+            values.canAccessBilling = Boolean(form.elements.canAccessBilling?.checked);
+            values.canAccessAccounting = Boolean(form.elements.canAccessAccounting?.checked);
+            values.canSwitchGroupCompanies = Boolean(form.elements.canSwitchGroupCompanies?.checked);
             const response = await fetch("/api/auth/members", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify(values) });
             const payload = await response.json();
             if (!response.ok) throw new Error(payload.message || "Création impossible.");

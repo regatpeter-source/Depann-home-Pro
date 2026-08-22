@@ -9,8 +9,7 @@ L’interface **Partenaire** utilise le niveau technique Pro, mais son portail e
 - 20 € TTC par poste PC et par mois.
 - 5 € TTC par poste mobile et par mois.
 - Accès aux clients.
-- Accès aux devis, factures, avoirs et au tableau de facturation.
-- Accès au module Comptabilité, facturation électronique et PDP.
+- Accès Administrateur PC aux devis, factures, avoirs, au tableau de facturation et au module Comptabilité, facturation électronique et PDP.
 - Bibliothèque technique incluse sur les postes mobiles autorisés par l’offre (`mobile_admin`, `team_lead`, `technician`) ; aucun accès Bibliothèque sur poste PC.
 - Achats inclus sur tous les postes PC (`admin`, `pc_standard`, `accountant`) et sur l’Administrateur Mobile. Le registre reste également accessible depuis la section Facturation.
 - Postes autorisés : Administrateur PC, poste PC standard, Comptable et Administrateur Mobile.
@@ -24,6 +23,7 @@ L’interface **Partenaire** utilise le niveau technique Pro, mais son portail e
 - 35 € TTC par poste PC et par mois.
 - 8 € TTC par poste mobile et par mois.
 - Toutes les fonctions Basic.
+- Autorisations individuelles **Facturation** et **Comptabilité** pour les Postes PC standard et Comptables.
 - Planning et gestion des interventions.
 - Importation de données Excel et CSV.
 - Accès au Réseau Depann’Home Pro interne : annuaire, fiche réseau et connexions entre entreprises utilisatrices.
@@ -40,6 +40,7 @@ L’interface **Partenaire** utilise le niveau technique Pro, mais son portail e
 - Accès complet aux modules disponibles selon le rôle : clients, planning, devis, factures, facturation, comptabilité, achats administrateurs, rapports de recherche de fuite, bibliothèque mobile, photos, imports, groupes, missions partenaires, Réseau Depann’Home Pro et connexions API.
 - Accès au Quitus d’intervention : signature, validation, PDF et modèles personnalisés.
 - Accès complet à tous les types de postes PC et mobiles.
+- Autorisations individuelles **Facturation**, **Comptabilité** et, lorsqu’un groupe existe, **Entreprises du même groupe** pour les postes PC non administrateurs. Les Administrateurs PC conservent tous les accès.
 - Licences Groupe d’entreprise / Multi-entreprises incluses, sans supplément de licence, pour activer le pilotage de plusieurs sociétés selon l’interface configurée.
 
 ### Licence Partenaire gratuite

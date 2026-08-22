@@ -4398,6 +4398,34 @@ body.desktop-device .billing-editor-panel.billing-editor-live-active{
     gap:12px;
 }
 
+.team-permissions-fieldset{
+    display:grid;
+    grid-column:1 / -1;
+    gap:10px;
+    margin:4px 0 0;
+    padding:14px;
+    border:1px solid var(--border);
+    border-radius:14px;
+    background:#fff;
+}
+
+.team-permissions-fieldset[hidden]{
+    display:none;
+}
+
+.team-permissions-fieldset legend{
+    padding:0 6px;
+    color:var(--primary);
+    font-weight:900;
+}
+
+.team-permissions-fieldset p,
+.team-permissions-fieldset small{
+    display:block;
+    margin:0;
+    font-weight:500;
+}
+
 .team-form-fields > label:nth-child(3),
 .team-form-fields > label:nth-child(4),
 .team-form-fields > label:nth-child(5){

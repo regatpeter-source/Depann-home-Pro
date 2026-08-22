@@ -9,6 +9,7 @@ import { releaseLocksForUser } from "./collaboration.js";
 import { resolveGroupCompany } from "./group-context.js";
 import { getOrganization } from "./organizations.js";
 import { isRoleAllowedForSubscription, subscriptionRoleAccessMessage } from "./subscription-tiers.js";
+import { isAdvancedWorkstationTier, supportsConfigurablePcPermissions } from "./workstation-permissions.js";
 
 const COOKIE_NAME = "depann_home_session";
 const USERNAME_PATTERN = /^[a-z0-9._-]{3,32}$/;
@@ -219,7 +220,9 @@ export function registerAuthRoutes(app) {
         const code = String(request.body?.code || "").replace(/\s/g, "");
         if (!deviceId || !/^\d{6}$/.test(code)) return response.status(400).json({ message: "Code de validation invalide." });
         const { rows } = await getPool().query(`
-            SELECT device.*, account.id AS user_id, account.username, account.role, account.account_owner_id, account.full_name, account.phone, account.email, account.is_active, account.can_create_billing, owner.is_active AS account_is_active, owner.max_pc_users, owner.max_technicians, owner.monthly_price_cents
+            SELECT device.*, account.id AS user_id, account.username, account.role, account.account_owner_id, account.full_name, account.phone, account.email, account.is_active,
+                account.can_create_billing, account.can_access_billing, account.can_access_accounting, account.can_switch_group_companies,
+                owner.is_active AS account_is_active, owner.max_pc_users, owner.max_technicians, owner.monthly_price_cents
             FROM depannhome_auth_devices device JOIN depannhome_users account ON account.id = device.user_id JOIN depannhome_users owner ON owner.id = account.account_owner_id WHERE device.id = $1
         `, [deviceId]);
         const device = rows[0];
@@ -373,7 +376,8 @@ export function registerAuthRoutes(app) {
 
     app.get("/api/auth/members", requireAccountAdministrator, asyncHandler(async (request, response) => {
         const { rows } = await getPool().query(`
-            SELECT id, username, role, full_name AS "fullName", phone, email, department, is_active AS "isActive", can_create_billing AS "canCreateBilling", created_at AS "createdAt"
+            SELECT id, username, role, full_name AS "fullName", phone, email, department, is_active AS "isActive", can_create_billing AS "canCreateBilling",
+                can_access_billing AS "canAccessBilling", can_access_accounting AS "canAccessAccounting", can_switch_group_companies AS "canSwitchGroupCompanies", created_at AS "createdAt"
             FROM depannhome_users
             WHERE account_owner_id = $1 AND id <> $1
             ORDER BY role, LOWER(full_name), username
@@ -413,8 +417,13 @@ export function registerAuthRoutes(app) {
         const seatError = await memberSeatError(getAccountOwnerId(request), role);
         if (seatError) return response.status(400).json({ message: seatError });
         try {
-            const member = await createUser({ username, passwordHash: await bcrypt.hash(password, 12), role, accountOwnerId: getAccountOwnerId(request), fullName, phone, email, department: ["technician", TEAM_LEAD_ROLE].includes(role) ? department : "" });
-            await recordMemberAudit(getAccountOwnerId(request), request.user.sub, member, role === "admin" ? "administrator_created" : "member_created", { role });
+            const organization = await getOrganization(getAccountOwnerId(request));
+            const configurablePermissions = isAdvancedWorkstationTier(organization.subscriptionTier) && supportsConfigurablePcPermissions(role);
+            const canAccessBilling = configurablePermissions && request.body?.canAccessBilling === true;
+            const canAccessAccounting = configurablePermissions && request.body?.canAccessAccounting === true;
+            const canSwitchGroupCompanies = configurablePermissions && Boolean(request.user.groupId) && request.body?.canSwitchGroupCompanies === true;
+            const member = await createUser({ username, passwordHash: await bcrypt.hash(password, 12), role, accountOwnerId: getAccountOwnerId(request), fullName, phone, email, department: ["technician", TEAM_LEAD_ROLE].includes(role) ? department : "", canAccessBilling, canAccessAccounting, canSwitchGroupCompanies });
+            await recordMemberAudit(getAccountOwnerId(request), request.user.sub, member, role === "admin" ? "administrator_created" : "member_created", { role, canAccessBilling, canAccessAccounting, canSwitchGroupCompanies });
             response.status(201).json({ member: publicUser(member) });
         } catch (error) {
             if (error.code === "23505") return response.status(409).json({ message: "Ce nom d’utilisateur est déjà utilisé." });
@@ -426,7 +435,9 @@ export function registerAuthRoutes(app) {
         const memberId = positiveId(request.params.memberId);
         if (!memberId) return response.status(400).json({ message: "Accès invalide." });
         const { rows } = await getPool().query(`
-            SELECT id, username, full_name AS "fullName", role, department, is_active AS "isActive", can_create_billing AS "canCreateBilling" FROM depannhome_users
+            SELECT id, username, full_name AS "fullName", role, department, is_active AS "isActive", can_create_billing AS "canCreateBilling",
+                can_access_billing AS "canAccessBilling", can_access_accounting AS "canAccessAccounting", can_switch_group_companies AS "canSwitchGroupCompanies"
+            FROM depannhome_users
             WHERE id = $1 AND account_owner_id = $2 AND id <> $2
         `, [memberId, getAccountOwnerId(request)]);
         const member = rows[0];
@@ -435,6 +446,12 @@ export function registerAuthRoutes(app) {
         const canCreateBilling = member.role === "technician" && typeof request.body?.canCreateBilling === "boolean"
             ? request.body.canCreateBilling
             : member.canCreateBilling;
+        const organization = await getOrganization(getAccountOwnerId(request));
+        const configurablePermissions = isAdvancedWorkstationTier(organization.subscriptionTier) && supportsConfigurablePcPermissions(member.role);
+        const canAccessBilling = configurablePermissions && (typeof request.body?.canAccessBilling === "boolean" ? request.body.canAccessBilling : member.canAccessBilling);
+        const canAccessAccounting = configurablePermissions && (typeof request.body?.canAccessAccounting === "boolean" ? request.body.canAccessAccounting : member.canAccessAccounting);
+        const canSwitchGroupCompanies = configurablePermissions && Boolean(request.user.groupId)
+            && (typeof request.body?.canSwitchGroupCompanies === "boolean" ? request.body.canSwitchGroupCompanies : member.canSwitchGroupCompanies);
         const department = ["technician", TEAM_LEAD_ROLE].includes(member.role) && typeof request.body?.department === "string"
             ? cleanText(request.body.department, 80)
             : member.department;
@@ -445,8 +462,8 @@ export function registerAuthRoutes(app) {
             const seatError = await memberSeatError(getAccountOwnerId(request), member.role, memberId);
             if (seatError) return response.status(400).json({ message: seatError });
         }
-        await getPool().query("UPDATE depannhome_users SET is_active = $3, can_create_billing = $4, department = $5, updated_at = NOW() WHERE id = $1 AND account_owner_id = $2", [memberId, getAccountOwnerId(request), isActive, canCreateBilling, department]);
-        await recordMemberAudit(getAccountOwnerId(request), request.user.sub, member, member.role === "admin" ? (isActive ? "administrator_activated" : "administrator_deactivated") : "member_updated", { isActive, canCreateBilling, department });
+        await getPool().query("UPDATE depannhome_users SET is_active = $3, can_create_billing = $4, can_access_billing = $5, can_access_accounting = $6, can_switch_group_companies = $7, department = $8, updated_at = NOW() WHERE id = $1 AND account_owner_id = $2", [memberId, getAccountOwnerId(request), isActive, canCreateBilling, canAccessBilling, canAccessAccounting, canSwitchGroupCompanies, department]);
+        await recordMemberAudit(getAccountOwnerId(request), request.user.sub, member, member.role === "admin" ? (isActive ? "administrator_activated" : "administrator_deactivated") : "member_updated", { isActive, canCreateBilling, canAccessBilling, canAccessAccounting, canSwitchGroupCompanies, department });
         response.status(204).end();
     }));
 
@@ -472,7 +489,11 @@ export function registerAuthRoutes(app) {
         }
         await getPool().query(`
             UPDATE depannhome_users
-            SET role = $3, department = CASE WHEN $3 IN ('technician', 'team_lead') THEN department ELSE '' END, updated_at = NOW()
+            SET role = $3, department = CASE WHEN $3 IN ('technician', 'team_lead') THEN department ELSE '' END,
+                can_access_billing = CASE WHEN $3 IN ('pc_standard', 'accountant') THEN can_access_billing ELSE FALSE END,
+                can_access_accounting = CASE WHEN $3 IN ('pc_standard', 'accountant') THEN can_access_accounting ELSE FALSE END,
+                can_switch_group_companies = CASE WHEN $3 IN ('pc_standard', 'accountant') THEN can_switch_group_companies ELSE FALSE END,
+                updated_at = NOW()
             WHERE id = $1 AND account_owner_id = $2
         `, [memberId, getAccountOwnerId(request), nextRole]);
         await recordMemberAudit(getAccountOwnerId(request), request.user.sub, member, "role_changed", { previousRole: member.role, nextRole });
@@ -693,25 +714,28 @@ export async function authenticateRequest(request, response, next) {
             && session.sessionId !== clientWindowSessionId(request)) {
             throw new Error("Fenêtre PC remplacée");
         }
-        const groupCompany = user.role === "admin" ? await resolveGroupCompany(user.id, session.activeCompanyId) : null;
+        const groupCompany = await resolveGroupCompany(user.id, session.activeCompanyId);
         const accountOwnerId = String(groupCompany?.companyId || user.account_owner_id || user.id);
         const organization = await getOrganization(accountOwnerId);
         if (!isCreatorUsername(user.username) && !isRoleAllowedForSubscription(organization.subscriptionTier, user.role)) throw new Error("Rôle exclu de l’offre");
         request.user = {
             sub: String(user.id),
             username: user.username,
-            role: groupCompany ? "admin" : user.role,
-            principalRole: groupCompany ? "group_admin" : user.role,
+            role: user.role,
+            principalRole: groupCompany?.isGroupAdministrator ? "group_admin" : user.role,
             accountOwnerId,
             activeCompanyId: accountOwnerId,
             groupId: groupCompany ? String(groupCompany.groupId) : "",
             groupName: groupCompany?.groupName || "",
             activeCompanyName: groupCompany?.companyName || "",
-            isGroupAdministrator: Boolean(groupCompany),
+            isGroupAdministrator: Boolean(groupCompany?.isGroupAdministrator),
             fullName: user.full_name || "",
             phone: user.phone || "",
             email: user.email || "",
             technicianBillingEnabled: user.can_create_billing !== false,
+            canAccessBilling: user.role === "admin" || user.can_access_billing === true,
+            canAccessAccounting: user.role === "admin" || user.can_access_accounting === true,
+            canSwitchGroupCompanies: Boolean(groupCompany) && (user.role === "admin" || user.can_switch_group_companies === true),
             maxPcUsers: Number(user.max_pc_users) || 1,
             maxMobileUsers: Number(user.max_technicians) || 0,
             monthlyPriceCents: Number(user.monthly_price_cents) || 0,
@@ -915,12 +939,12 @@ async function completeLogin(user, device, response, request) {
         authDevice = rows[0];
     }
     if (authDevice.status === "approved") {
-        const groupCompany = user.role === "admin" ? await resolveGroupCompany(user.id, null) : null;
+        const groupCompany = await resolveGroupCompany(user.id, null);
         const accountOwnerId = String(groupCompany?.companyId || user.account_owner_id || user.id);
         const organization = await getOrganization(accountOwnerId);
         const sessionId = isCompanyAdministratorPc ? await issueAdministratorPcSession(user.id, authDevice.id, clientWindowSessionId(request)) : "";
         setSessionCookie(response, user, authDevice.id, groupCompany?.companyId, sessionId);
-        return response.json({ user: publicUser({ ...user, accountOwnerId, activeCompanyId: accountOwnerId, groupId: groupCompany?.groupId, groupName: groupCompany?.groupName, activeCompanyName: groupCompany?.companyName, isGroupAdministrator: Boolean(groupCompany), role: user.role, principalRole: groupCompany ? "group_admin" : user.role, deviceType: authDevice.device_type, organization }) });
+        return response.json({ user: publicUser({ ...user, accountOwnerId, activeCompanyId: accountOwnerId, groupId: groupCompany?.groupId, groupName: groupCompany?.groupName, activeCompanyName: groupCompany?.companyName, isGroupAdministrator: Boolean(groupCompany?.isGroupAdministrator), role: user.role, principalRole: groupCompany?.isGroupAdministrator ? "group_admin" : user.role, deviceType: authDevice.device_type, organization }) });
     }
     if (authDevice.status === "code_pending") {
         return response.status(403).json({ codeRequired: true, deviceId: authDevice.id, message: "Saisissez le code envoyé à votre e-mail professionnel." });
@@ -1166,6 +1190,9 @@ function publicUser(user) {
         phone: user.phone || "",
         email: user.email || "",
         technicianBillingEnabled: (user.can_create_billing ?? user.technicianBillingEnabled) !== false,
+        canAccessBilling: user.role === "admin" || (user.can_access_billing ?? user.canAccessBilling) === true,
+        canAccessAccounting: user.role === "admin" || (user.can_access_accounting ?? user.canAccessAccounting) === true,
+        canSwitchGroupCompanies: Boolean(user.groupId) && (user.role === "admin" || (user.can_switch_group_companies ?? user.canSwitchGroupCompanies) === true),
         maxPcUsers: Number(user.max_pc_users ?? user.maxPcUsers) || 1,
         maxMobileUsers: Number(user.max_technicians ?? user.maxMobileUsers) || 0,
         monthlyPriceCents: Number(user.monthly_price_cents ?? user.monthlyPriceCents) || 0,

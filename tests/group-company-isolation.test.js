@@ -19,7 +19,8 @@ test("la session Groupe résout exclusivement une entreprise active autorisée",
     assert.match(auth, /activeCompanyId: accountOwnerId/);
     assert.match(auth, /activeCompanyName: groupCompany\?\.companyName \|\| ""/);
     assert.match(auth, /return String\(request\.user\?\.accountOwnerId \|\| request\.user\?\.sub \|\| ""\)/);
-    assert.match(groupContext, /administrator\.user_id = \$1/);
+    assert.match(groupContext, /principal\.id = \$1/);
+    assert.match(groupContext, /principal\.role IN \('pc_standard', 'accountant'\)/);
     assert.match(groupContext, /company\.is_active = TRUE/);
     assert.match(groupContext, /owner\.is_active = TRUE/);
 });
@@ -45,7 +46,7 @@ test("le poste PC affiche en permanence l’entreprise active du groupe", () => 
     assert.match(html, /class="pc-workstation-name">Poste PC · <strong id="userEmail"><\/strong>/);
     assert.match(html, /id="activeCompanyBadge"[^>]*>Entreprise active · <strong id="activeCompanyName"><\/strong>/);
     assert.match(appClient, /activeCompanyName\.textContent = user\.activeCompanyName \|\| ""/);
-    assert.match(appClient, /activeCompanyBadge\.hidden = !user\.isGroupAdministrator \|\| !user\.activeCompanyName/);
+    assert.match(appClient, /activeCompanyBadge\.hidden = !user\.canSwitchGroupCompanies \|\| !user\.activeCompanyName/);
     assert.match(appClient, /document\.body\.dataset\.activeCompanyId = user\.activeCompanyId/);
     assert.match(appClient, /document\.body\.dataset\.activeCompanyName = user\.activeCompanyName/);
 });

@@ -2,10 +2,10 @@ import { initializeAuthentication, restoreApplicationShell, signOut } from "./au
 import { initializeClientSynchronization } from "./client-sync.js?v=125";
 import { initializeCollaboration } from "./collaboration.js?v=5";
 import { loadDatabase } from "./data.js?v=59";
-import { initializeNavigation, refreshApplication } from "./navigation.js?v=344";
+import { initializeNavigation, refreshApplication } from "./navigation.js?v=345";
 import { renderError } from "./ui.js?v=44";
 import { getSettings } from "./storage.js?v=44";
-import { FONT_OPTIONS } from "./config.js?v=128";
+import { FONT_OPTIONS } from "./config.js?v=130";
 import { installClientSessionGuard, onClientSessionReplaced } from "./client-session.js?v=2";
 
 let applicationStarted = false;
@@ -114,7 +114,7 @@ function showAuthenticatedUser(user) {
     if (session) session.hidden = false;
     if (email) email.textContent = user.fullName || user.username || "Utilisateur connecté";
     if (activeCompanyName) activeCompanyName.textContent = user.activeCompanyName || "";
-    if (activeCompanyBadge) activeCompanyBadge.hidden = !user.isGroupAdministrator || !user.activeCompanyName;
+    if (activeCompanyBadge) activeCompanyBadge.hidden = !user.canSwitchGroupCompanies || !user.activeCompanyName;
     document.body.dataset.userId = user.id || "";
     document.body.dataset.accountId = user.accountOwnerId || user.id || "";
     document.body.dataset.activeCompanyId = user.activeCompanyId || user.accountOwnerId || user.id || "";
@@ -124,6 +124,9 @@ function showAuthenticatedUser(user) {
     document.body.dataset.creator = user.isCreator ? "true" : "false";
     document.body.dataset.deviceType = user.deviceType || "desktop";
     document.body.dataset.technicianBillingEnabled = user.technicianBillingEnabled === false ? "false" : "true";
+    document.body.dataset.canAccessBilling = user.canAccessBilling ? "true" : "false";
+    document.body.dataset.canAccessAccounting = user.canAccessAccounting ? "true" : "false";
+    document.body.dataset.canSwitchGroupCompanies = user.canSwitchGroupCompanies ? "true" : "false";
     document.body.dataset.maxPcUsers = String(user.maxPcUsers || 1);
     document.body.dataset.maxMobileUsers = String(user.maxMobileUsers || 0);
     document.body.dataset.monthlyPriceCents = String(user.monthlyPriceCents || 0);
@@ -158,7 +161,7 @@ function showAuthenticatedUser(user) {
 async function initializeGroupCompanySelector(user) {
     const field = document.getElementById("groupCompanySelector");
     const select = field?.querySelector("select");
-    if (!field || !select || user.role !== "admin" || !user.isGroupAdministrator) { if (field) field.hidden = true; return; }
+    if (!field || !select || !user.canSwitchGroupCompanies) { if (field) field.hidden = true; return; }
     try {
         const response = await fetch("/api/groups/context", { credentials: "same-origin" });
         const data = response.ok ? await response.json() : null;

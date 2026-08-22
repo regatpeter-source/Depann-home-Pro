@@ -134,7 +134,11 @@ app.use("/api/partner-missions/intakes", requireAuthentication, requireOrganizat
 app.use("/api/partner-sandbox", requireAuthentication, requireOrganizationFeature("connectors"));
 app.use("/api/connectors", requireAuthentication, requireOrganizationFeature("connectors"));
 app.use("/api/data-imports", requireAuthentication, requireOrganizationFeature("imports"));
-app.use("/api/groups", requireAuthentication, requireOrganizationFeature("groups"));
+const requireGroupsFeature = requireOrganizationFeature("groups");
+app.use("/api/groups", requireAuthentication, (request, response, next) => {
+	if (["/context", "/active-company"].includes(request.path)) return next();
+	return requireGroupsFeature(request, response, next);
+});
 registerAuthRoutes(app);
 registerCreatorRoutes(app, requireCreator, requireAuthentication);
 registerPartnerRequestRoutes(app, requireCreator, requireAuthentication);

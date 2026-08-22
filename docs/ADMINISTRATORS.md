@@ -23,10 +23,23 @@ Chaque compte Administrateur (PC), y compris le compte Créateur, peut se connec
 | Administrateur Mobile | `mobile_admin` | Non |
 | Technicien référent / Chef d’équipe | `team_lead` | Non |
 | Technicien | `technician` | Non |
+| Comptable (PC) | `accountant` | Non |
 
 Les Administrateurs (PC) sont les seuls à pouvoir créer ou promouvoir un Administrateur (PC). Les autres rôles ne peuvent pas appeler les routes de création, suppression, activation, désactivation ou changement de rôle des membres.
 
 Les Administrateurs (PC) peuvent donc remplacer leur poste actif après leur authentification habituelle (mot de passe et 2FA d’entreprise si elle est activée), sans validation manuelle du nouvel ordinateur. Les mécanismes de validation d’appareil et de code e-mail restent inchangés pour les autres profils concernés. Les postes PC administrateur et standard sont comptabilisés dans le quota de postes PC de l’entreprise ; les chefs d’équipe comptent dans le quota technique.
+
+## Autorisations des postes PC
+
+Avec une offre **Basic+** ou **Pro**, la création d’un Poste PC standard ou d’un Comptable (PC) propose trois autorisations indépendantes :
+
+- **Facturation** : accès à l’espace des devis et factures selon les opérations prévues pour le rôle ; les paramètres et actions strictement administrateurs restent réservés aux Administrateurs PC, et le Comptable conserve une consultation sans modification des pièces ;
+- **Comptabilité** : accès au module Comptabilité, à la facturation électronique et aux PDP ;
+- **Entreprises du même groupe** : affichée uniquement lorsque l’entreprise appartient à un groupe, elle permet de changer de société active.
+
+Ces autorisations sont stockées sur le compte, vérifiées par les API et modifiables depuis **Paramètres > Utilisateurs**. Sur l’offre Basic, elles ne sont ni proposées ni honorées pour un poste non administrateur. Les Administrateurs (PC) disposent toujours de tous les accès disponibles dans l’offre active et, lorsqu’ils appartiennent à un groupe, de la sélection de ses entreprises sans case restrictive.
+
+Une sélection d’entreprise ne transforme jamais un Poste PC standard ou un Comptable en administrateur. Son rôle et ses autorisations restent identiques ; seul l’`account_owner_id` actif change après validation de l’appartenance au groupe.
 
 ## Continuité administrative
 
