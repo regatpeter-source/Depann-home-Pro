@@ -1,5 +1,5 @@
 import { ROUTES, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=130";
-import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=167";
+import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=168";
 import { openCreatorPartnerRequest, openCreatorRequestNotification, renderCreatorConsole } from "./creator.js?v=143";
 import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=179";
 import { renderAccounting, renderElectronicInvoicingConfiguration } from "./accounting.js?v=13";
@@ -11,7 +11,7 @@ import { renderPartnerConnections } from "./partner-connections.js?v=21";
 import { renderDataImportTool } from "./data-imports.js?v=3";
 import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=29";
 import { getFirstUnreadClientId, refreshClientMessageAlert, refreshVisibleClientMessages } from "./messages.js?v=107";
-import { getSearchableClients, renderClients } from "./clients.js?v=148";
+import { getSearchableClients, renderClients } from "./clients.js?v=149";
 import { synchronizeClients } from "./client-sync.js?v=125";
 import { configureLibrary, openLibrarySection, renderLibrary, searchPersonalLibrary } from "./library.js?v=122";
 import { getContextualSearchResults } from "./search.js?v=67";

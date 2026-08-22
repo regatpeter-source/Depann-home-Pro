@@ -161,6 +161,7 @@ export function registerCalendarRoutes(app, requireAuthentication) {
             SELECT event.id, event.title, event.client_name AS "clientName", event.location, TO_CHAR(event.event_date, 'YYYY-MM-DD') AS date,
                 TO_CHAR(event.start_time, 'HH24:MI') AS "startTime", TO_CHAR(event.end_time, 'HH24:MI') AS "endTime", event.event_type AS "eventType",
                 event.quitus_status AS "quitusStatus", event.created_at AS "createdAt", event.updated_at AS "updatedAt",
+                (event.event_type = 'appointment' AND event.event_date < (CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Paris')::date) AS "isCompleted",
                 COALESCE(technician.full_name, technician.username, '') AS "assignedTechnicianName"
             FROM depannhome_calendar_events event
             LEFT JOIN depannhome_users technician ON technician.id = event.assigned_technician_id
@@ -211,6 +212,7 @@ export function registerCalendarRoutes(app, requireAuthentication) {
                 event.quitus_signed_by AS "quitusSignedBy",
                 event.quitus_signature AS "quitusSignature",
                 event.quitus_signed_at AS "quitusSignedAt",
+                (event.event_type = 'appointment' AND event.event_date < (CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Paris')::date) AS "isCompleted",
                 event.notes,
                 event.created_at AS "createdAt",
                 event.updated_at AS "updatedAt"
@@ -310,6 +312,7 @@ export function registerCalendarRoutes(app, requireAuthentication) {
         const event = sanitizeEvent(request.body);
         if (!id) return response.status(400).json({ message: "Rendez-vous invalide." });
         if (!event.ok) return response.status(400).json({ message: event.message });
+        if (await isCompletedIntervention(getAccountOwnerId(request), id)) return response.status(409).json({ message: "Cette intervention est terminée et conservée dans l’historique. Créez une nouvelle intervention pour ce client." });
         const assignmentError = await validateAssignedMembers(getAccountOwnerId(request), event.assignedTechnicianIds);
         if (assignmentError) return response.status(400).json({ message: assignmentError });
         const conflict = await findCalendarConflict(getAccountOwnerId(request), event, id);
@@ -323,6 +326,7 @@ export function registerCalendarRoutes(app, requireAuthentication) {
                 SET assigned_technician_id = $3, title = $4, client_id = $5, client_name = $6, location = $7, event_date = $8::date,
                     start_time = $9::time, end_time = $10::time, color = $11, event_type = $12, notes = $13, updated_at = NOW()
                 WHERE id = $1 AND owner_id = $2
+                    AND NOT (event_type = 'appointment' AND event_date < (CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Paris')::date)
             `, [id, getAccountOwnerId(request), event.assignedTechnicianId || null, event.title, await resolveClientId(connection, getAccountOwnerId(request), event.clientName), event.clientName, event.location, event.date, optionalTime(event.startTime), optionalTime(event.endTime), event.color, event.eventType, event.notes]);
             if (!rowCount) {
                 await connection.query("ROLLBACK");
@@ -343,8 +347,9 @@ export function registerCalendarRoutes(app, requireAuthentication) {
     app.delete("/api/calendar/events/:eventId", requireAuthentication, requireCalendarWriteAccess, asyncHandler(async (request, response) => {
         const id = positiveId(request.params.eventId);
         if (!id) return response.status(400).json({ message: "Rendez-vous invalide." });
+        if (await isCompletedIntervention(getAccountOwnerId(request), id)) return response.status(409).json({ message: "Cette intervention terminée doit rester dans l’historique du client." });
         const { rowCount } = await getPool().query(
-            "DELETE FROM depannhome_calendar_events WHERE id = $1 AND owner_id = $2",
+            "DELETE FROM depannhome_calendar_events WHERE id = $1 AND owner_id = $2 AND NOT (event_type = 'appointment' AND event_date < (CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Paris')::date)",
             [id, getAccountOwnerId(request)]
         );
         if (!rowCount) return response.status(404).json({ message: "Rendez-vous introuvable." });
@@ -366,7 +371,8 @@ export function registerCalendarRoutes(app, requireAuthentication) {
                 SELECT id, client_id AS "clientId", title, client_name AS "clientName", location,
                     TO_CHAR(event_date, 'YYYY-MM-DD') AS date,
                     TO_CHAR(start_time, 'HH24:MI') AS "startTime", TO_CHAR(end_time, 'HH24:MI') AS "endTime",
-                    notes, quitus_status AS "quitusStatus"
+                    notes, quitus_status AS "quitusStatus",
+                    (event_date < (CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Paris')::date) AS "isCompleted"
                 FROM depannhome_calendar_events
                                 WHERE id = $1 AND owner_id = $2 AND event_type = 'appointment' AND client_name <> ''
                                     AND ($3 NOT IN ('technician', 'accountant') OR EXISTS (
@@ -379,6 +385,10 @@ export function registerCalendarRoutes(app, requireAuthentication) {
             if (!event) {
                 await connection.query("ROLLBACK");
                 return response.status(404).json({ message: "Rendez-vous introuvable." });
+            }
+            if (event.isCompleted) {
+                await connection.query("ROLLBACK");
+                return response.status(409).json({ message: "Cette intervention est terminée : son quitus n’est plus accessible." });
             }
             if (event.quitusStatus !== "pending") {
                 await connection.query("ROLLBACK");
@@ -410,6 +420,7 @@ export function registerCalendarRoutes(app, requireAuthentication) {
                 mime: output.mimeType,
                 size: output.buffer.length,
                 dataUrl: `data:${output.mimeType};base64,${output.buffer.toString("base64")}`,
+                appointmentId: id,
                 createdAt
             };
             const client = clientRow.client || {};
@@ -428,6 +439,7 @@ export function registerCalendarRoutes(app, requireAuthentication) {
                     label: "Quitus validé",
                     detail: attachment.name,
                     attachmentId: attachment.id,
+                    appointmentId: id,
                     actorName: String(request.user.fullName || request.user.username || "Technicien").slice(0, 100),
                     createdAt
                 }, ...activityHistory].slice(0, MAX_ACTIVITY_HISTORY),
@@ -469,9 +481,10 @@ export function registerCalendarRoutes(app, requireAuthentication) {
             FROM depannhome_calendar_events event
             LEFT JOIN depannhome_clients client ON client.owner_id=event.owner_id AND client.client_id=event.client_id
             WHERE event.id=$1 AND event.owner_id=$2 AND event.event_type='appointment' AND event.quitus_status='validated'
+                            AND event.event_date >= (CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Paris')::date
               AND ($3 NOT IN ('technician','accountant') OR EXISTS (SELECT 1 FROM depannhome_calendar_assignments assignment WHERE assignment.event_id=event.id AND assignment.technician_id=$4::bigint))
         `, [id, ownerId, request.user.role, request.user.sub]);
-        const event = eventResult.rows[0]; if (!event) return response.status(404).json({ message: "Quitus validé introuvable." });
+        const event = eventResult.rows[0]; if (!event) return response.status(404).json({ message: "Quitus introuvable ou intervention déjà terminée." });
         const profileResult = await getPool().query(`SELECT owner.id AS "ownerId",profile.company_name AS "companyName",profile.address,profile.postal_code AS "postalCode",profile.city,profile.phone,profile.email,profile.registration_number AS "registrationNumber",profile.logo_data AS "logoData",profile.logo_mime_type AS "logoMimeType",profile.quitus_template AS "quitusTemplate",owner.quitus_template_policy AS "quitusTemplatePolicy" FROM depannhome_users owner LEFT JOIN depannhome_billing_profiles profile ON profile.owner_id=owner.id WHERE owner.id=$1`, [ownerId]);
         const output = await createQuitusDocumentOutput(event, { signedBy: event.signedBy, signature: event.signature }, profileResult.rows[0] || {});
         response.set({ "Content-Type": output.mimeType, "Content-Disposition": `inline; filename="${output.filename.replace(/"/g, "_")}"`, "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" });
@@ -607,6 +620,16 @@ function normalizeQuitusTemplate(value) {
 
 async function validateAssignedMembers(accountOwnerId, memberIds) {
     return validateAssignedCompanyMembers(getPool(), accountOwnerId, memberIds);
+}
+
+async function isCompletedIntervention(accountOwnerId, eventId) {
+    const { rowCount } = await getPool().query(`
+        SELECT 1
+        FROM depannhome_calendar_events
+        WHERE id = $1 AND owner_id = $2 AND event_type = 'appointment'
+            AND event_date < (CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Paris')::date
+    `, [eventId, accountOwnerId]);
+    return Boolean(rowCount);
 }
 
 async function findCalendarConflict(accountOwnerId, event, excludedEventId = 0) {

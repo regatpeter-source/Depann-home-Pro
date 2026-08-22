@@ -48,6 +48,10 @@ Après validation administrative, une transaction rapproche le client, planifie 
 
 Le catalogue de partenaires officiels, administré depuis la Console Créateur, ajoute les types **Entreprise Depann’Home Pro**, **Authentification classique** et **OAuth / autorisation sécurisée**. Le type choisit le parcours sans demander de détail technique à l’entreprise : les entreprises Depann’Home Pro utilisent l’annuaire et l’acceptation bilatérale ; les partenaires classiques affichent les seules informations d’identification demandées ; les partenaires OAuth ouvrent leur page officielle d’autorisation. Les informations d’identification et jetons sont chiffrés côté serveur, isolés par entreprise et ne sont jamais renvoyés au navigateur.
 
+## Cycle des interventions client
+
+Un client peut posséder plusieurs interventions de calendrier, chacune conservant son identifiant, sa date et son historique propres. Une intervention devient automatiquement **Terminée** uniquement lorsque sa date civile est antérieure à la date courante en Europe/Paris ; l’heure de fin n’intervient jamais dans cette décision. Elle devient alors non modifiable et non supprimable. Son quitus n’est plus consultable, téléchargeable, validable ou envoyable, tandis que sa trace textuelle reste dans l’historique. Toute intervention suivante crée une nouvelle entrée **Intervention créée**, accompagnée de son numéro, de sa date prévue et de son état Planifiée ou Terminée.
+
 ## Rapports techniques
 
 `server/technical-reports.js` fournit un moteur de rapports extensible lié aux interventions du planning. Le premier modèle, `leak_detection`, est édité par `js/leak-report-wizard.js` sous la forme d’un éditeur plein écran, optimisé pour le smartphone. Les informations client, intervention et technicien sont générées automatiquement ; chaque module métier peut contenir autant d’observations libres et de photos que nécessaire dans les limites globales de sécurité du rapport. Les données et médias du rapport sont isolés par `owner_id`; les techniciens n’accèdent qu’aux interventions qui leur sont affectées.

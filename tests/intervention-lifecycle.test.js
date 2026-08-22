@@ -1,0 +1,44 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const read = relativePath => fs.readFileSync(path.join(root, relativePath), "utf8");
+
+test("une intervention est terminée seulement lorsque sa date est passée à Paris", () => {
+    const calendar = read("server/calendar.js");
+    const completionRules = calendar.match(/event_date < \(CURRENT_TIMESTAMP AT TIME ZONE 'Europe\/Paris'\)::date/g) || [];
+    assert.ok(completionRules.length >= 4);
+    assert.doesNotMatch(calendar, /end_time\s*<\s*(?:CURRENT_TIME|LOCALTIME)/);
+    assert.match(calendar, /AS "isCompleted"/);
+});
+
+test("une intervention terminée reste dans l’historique et devient non modifiable", () => {
+    const calendar = read("server/calendar.js");
+    const clients = read("js/clients.js");
+    const historyRoute = calendar.slice(calendar.indexOf('app.get("/api/calendar/client-history/:clientId"'), calendar.indexOf('app.get("/api/calendar/events"'));
+    assert.match(historyRoute, /WHERE event\.owner_id = \$1[\s\S]*event\.client_id = \$2/);
+    assert.doesNotMatch(historyRoute, /LIMIT\s+1/);
+    assert.match(calendar, /Cette intervention est terminée et conservée dans l’historique/);
+    assert.match(calendar, /Cette intervention terminée doit rester dans l’historique/);
+    assert.match(clients, /label: appointment\.eventType === "appointment" \? "Intervention créée"/);
+    assert.match(clients, /`Intervention n°\$\{appointment\.id\}`/);
+    assert.match(clients, /appointment\.isCompleted \? "Terminée" : "Planifiée"/);
+    assert.doesNotMatch(clients, /"Intervention planifiée"/);
+});
+
+test("le quitus devient inaccessible après la date de l’intervention", () => {
+    const calendarServer = read("server/calendar.js");
+    const clientsServer = read("server/clients.js");
+    const calendarClient = read("js/calendar.js");
+    const clientsClient = read("js/clients.js");
+    assert.match(calendarServer, /if \(event\.isCompleted\)[\s\S]*son quitus n’est plus accessible/);
+    assert.match(calendarServer, /event\.event_date >= \(CURRENT_TIMESTAMP AT TIME ZONE 'Europe\/Paris'\)::date/);
+    assert.match(clientsServer, /isCompletedInterventionQuitus/);
+    assert.match(calendarClient, /event\.eventType === "appointment" && event\.isCompleted/);
+    assert.match(calendarClient, /son quitus n’est plus accessible/);
+    assert.match(clientsClient, /Quitus archivé et inaccessible/);
+    assert.match(clientsClient, /!completedAppointmentIds\.has\(quitusAppointmentId\)/);
+});

@@ -886,7 +886,9 @@ function normalizeAttachments(attachments = []) {
 }
 
 function renderClientActivityHistory(client, billingDocuments = [], purchases = [], appointments = []) {
-    const activityEntries = deduplicatePartnerMissionActivities(normalizeActivityHistory(client.activityHistory)).filter(entry => !["quote", "invoice", "attachment"].includes(entry.type));
+    const activityEntries = deduplicatePartnerMissionActivities(normalizeActivityHistory(client.activityHistory)).filter(entry =>
+        !["quote", "invoice", "attachment"].includes(entry.type) && (entry.type !== "appointment" || !appointments.length)
+    );
     const billingEntries = billingDocuments.map(document => {
         const type = document.documentType === "invoice" ? "Facture" : document.documentType === "credit" ? "Avoir" : "Devis";
         return {
@@ -913,16 +915,20 @@ function renderClientActivityHistory(client, billingDocuments = [], purchases = 
             createdAt: purchase.createdAt || purchase.updatedAt || `${purchase.purchaseDate}T12:00:00`
         };
     });
-    const appointmentEntries = appointments.map(appointment => ({
-        id: `appointment-${appointment.id}`,
-        type: "appointment",
-        label: appointment.eventType === "appointment" ? "Intervention planifiée" : "Événement client",
-        detail: [appointment.title, appointment.location, appointment.startTime, appointment.quitusStatus === "validated" ? "Quitus validé" : ""].filter(Boolean).join(" · "),
-        documentId: "",
-        attachmentId: "",
-        actorName: String(appointment.assignedTechnicianName || ""),
-        createdAt: `${appointment.date}T${appointment.startTime || "12:00"}:00`
-    }));
+    const appointmentEntries = appointments.map(appointment => {
+        const interventionDate = new Intl.DateTimeFormat("fr-FR", { dateStyle: "short" }).format(new Date(`${appointment.date}T12:00:00`));
+        return {
+            id: `appointment-${appointment.id}`,
+            type: "appointment",
+            label: appointment.eventType === "appointment" ? "Intervention créée" : "Événement client créé",
+            detail: [appointment.eventType === "appointment" ? `Intervention n°${appointment.id}` : `Événement n°${appointment.id}`, appointment.isCompleted ? "Terminée" : "Planifiée", `${interventionDate}${appointment.startTime ? ` à ${appointment.startTime}` : ""}`, appointment.title, appointment.location, appointment.quitusStatus === "validated" ? (appointment.isCompleted ? "Quitus archivé et inaccessible" : "Quitus validé") : ""].filter(Boolean).join(" · "),
+            documentId: "",
+            attachmentId: "",
+            actorName: String(appointment.assignedTechnicianName || ""),
+            createdAt: appointment.createdAt || `${appointment.date}T${appointment.startTime || "12:00"}:00`
+        };
+    });
+    const completedAppointmentIds = new Set(appointments.filter(appointment => appointment.isCompleted).map(appointment => String(appointment.id)));
     const entries = [...activityEntries, ...billingEntries, ...purchaseEntries, ...appointmentEntries]
         .sort((first, second) => new Date(second.createdAt).getTime() - new Date(first.createdAt).getTime());
     if (!entries.length) return "<p class=\"muted\">Les rendez-vous, documents et actions de ce dossier apparaîtront ici.</p>";
@@ -930,7 +936,8 @@ function renderClientActivityHistory(client, billingDocuments = [], purchases = 
         const isBillingDocument = ["quote", "invoice", "credit"].includes(entry.type) && entry.detail;
         const quitusAttachment = entry.type === "quitus" ? client.attachments.find(attachment => String(attachment.id) === entry.attachmentId || attachment.type === "Quitus" && attachment.name === entry.detail) : null;
         const reportAttachment = entry.type === "technical_report" ? client.attachments.find(attachment => String(attachment.id) === entry.attachmentId || isLeakReportAttachment(attachment) && attachment.name === entry.detail) : null;
-        const quitusActions = quitusAttachment ? `<div class="client-card-actions client-activity-actions"><button type="button" class="secondary-button" data-view-quituses="${escapeHtml(quitusAttachment.id)}">Visualiser</button><button type="button" class="secondary-button" data-print-quituses="${escapeHtml(quitusAttachment.id)}">Imprimer / PDF</button><button type="button" class="secondary-button" data-email-quituses="${escapeHtml(quitusAttachment.id)}" ${client.email ? "" : "disabled title=\"Ajoutez l’e-mail du client pour préparer un envoi.\""}>Envoyer par e-mail</button></div>` : "";
+        const quitusAppointmentId = String(entry.appointmentId || quitusAttachment?.appointmentId || String(quitusAttachment?.name || "").match(/^quitus-intervention-(\d+)-/i)?.[1] || "");
+        const quitusActions = quitusAttachment && !completedAppointmentIds.has(quitusAppointmentId) ? `<div class="client-card-actions client-activity-actions"><button type="button" class="secondary-button" data-view-quituses="${escapeHtml(quitusAttachment.id)}">Visualiser</button><button type="button" class="secondary-button" data-print-quituses="${escapeHtml(quitusAttachment.id)}">Imprimer / PDF</button><button type="button" class="secondary-button" data-email-quituses="${escapeHtml(quitusAttachment.id)}" ${client.email ? "" : "disabled title=\"Ajoutez l’e-mail du client pour préparer un envoi.\""}>Envoyer par e-mail</button></div>` : "";
         const reportActions = reportAttachment ? `<div class="client-card-actions client-activity-actions"><button type="button" class="secondary-button" data-view-report="${escapeHtml(reportAttachment.id)}">Visualiser</button><button type="button" class="secondary-button" data-print-report="${escapeHtml(reportAttachment.id)}">Imprimer / PDF</button><button type="button" class="secondary-button" data-email-report="${escapeHtml(reportAttachment.id)}" ${client.email ? "" : "disabled title=\"Ajoutez l’e-mail du client pour préparer un envoi.\""}>Envoyer par e-mail</button></div>` : "";
         const actions = isBillingDocument ? `<div class="client-card-actions client-activity-actions"><button type="button" class="secondary-button" data-view-billing-document data-document-id="${escapeHtml(entry.documentId)}" data-document-number="${escapeHtml(entry.detail)}">Visualiser</button><button type="button" class="secondary-button" data-print-billing-document data-document-id="${escapeHtml(entry.documentId)}" data-document-number="${escapeHtml(entry.detail)}">Imprimer / PDF</button><button type="button" class="secondary-button" data-email-billing-document data-document-id="${escapeHtml(entry.documentId)}" data-document-number="${escapeHtml(entry.detail)}" ${client.email ? "" : "disabled title=\"Ajoutez l’e-mail du client pour préparer un envoi.\""}>Envoyer par e-mail</button></div>` : quitusActions || reportActions;
         return `<article class="client-activity-item"><div><strong>${escapeHtml(entry.label)}</strong>${entry.detail ? `<p>${escapeHtml(entry.detail)}</p>` : ""}${entry.actorName ? `<p class="muted">Par ${escapeHtml(entry.actorName)}</p>` : ""}${actions}</div><time datetime="${escapeHtml(entry.createdAt)}">${escapeHtml(formatActivityDate(entry.createdAt))}</time></article>`;
@@ -974,7 +981,7 @@ function isLeakReportAttachment(attachment) {
 function normalizeActivityHistory(history) {
     return (Array.isArray(history) ? history : [])
         .filter(entry => entry && entry.id && entry.label)
-        .map(entry => ({ id: String(entry.id), type: String(entry.type || "other"), label: String(entry.label), detail: String(entry.detail || ""), documentId: String(entry.documentId || ""), attachmentId: String(entry.attachmentId || ""), actorName: String(entry.actorName || ""), createdAt: entry.createdAt || new Date().toISOString() }))
+        .map(entry => ({ id: String(entry.id), type: String(entry.type || "other"), label: String(entry.label), detail: String(entry.detail || ""), documentId: String(entry.documentId || ""), attachmentId: String(entry.attachmentId || ""), appointmentId: String(entry.appointmentId || ""), actorName: String(entry.actorName || ""), createdAt: entry.createdAt || new Date().toISOString() }))
         .sort((first, second) => new Date(second.createdAt).getTime() - new Date(first.createdAt).getTime());
 }
 

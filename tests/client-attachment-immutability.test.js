@@ -21,6 +21,7 @@ test("client screens expose no attachment deletion action", () => {
 test("reports and quitus stay in history while generic files stay in the files section", () => {
     assert.match(clientsSource, /attachment\.type !== "Quitus" && !isLeakReportAttachment\(attachment\)/);
     assert.match(clientsSource, /!\["quote", "invoice", "attachment"\]\.includes\(entry\.type\)/);
+    assert.match(clientsSource, /entry\.type !== "appointment" \|\| !appointments\.length/);
     assert.doesNotMatch(clientsSource, /const attachmentEntries =/);
 });
 

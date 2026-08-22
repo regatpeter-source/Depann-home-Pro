@@ -435,6 +435,9 @@ export function registerClientRoutes(app, requireAuthentication) {
         `, [getAccountOwnerId(request), clientId]);
         const attachments = Array.isArray(rows[0]?.client?.attachments) ? rows[0].client.attachments : [];
         const attachment = attachments.find(item => String(item?.id) === attachmentId);
+        if (attachment && await isCompletedInterventionQuitus(getAccountOwnerId(request), clientId, attachment)) {
+            return response.status(409).json({ message: "Cette intervention est terminée : son quitus n’est plus accessible." });
+        }
         const content = attachment ? await loadClientAttachmentContent(getPool(), getAccountOwnerId(request), clientId, attachment) : null;
         if (!attachment || !content) return response.status(404).json({ message: "Fichier introuvable." });
 
@@ -458,6 +461,9 @@ export function registerClientRoutes(app, requireAuthentication) {
         const client = rows[0]?.client;
         const attachments = Array.isArray(client?.attachments) ? client.attachments : [];
         const attachment = attachments.find(item => String(item?.id) === attachmentId);
+        if (attachment && await isCompletedInterventionQuitus(getAccountOwnerId(request), clientId, attachment)) {
+            return response.status(409).json({ message: "Cette intervention est terminée : son quitus ne peut plus être envoyé." });
+        }
         const content = attachment ? await loadClientAttachmentContent(getPool(), getAccountOwnerId(request), clientId, attachment) : null;
         if (!attachment || !content) return response.status(404).json({ message: "Fichier introuvable." });
 
@@ -737,6 +743,20 @@ async function hasAccessibleAppointment(ownerId, appointmentId, request) {
         WHERE id = $1 AND owner_id = $2 AND event_type = 'appointment'
           AND ($3 <> 'technician' OR EXISTS (SELECT 1 FROM depannhome_calendar_assignments assignment WHERE assignment.event_id = depannhome_calendar_events.id AND assignment.technician_id = $4::bigint))
     `, [appointmentId, ownerId, request.user?.role || "", request.user?.sub || 0]);
+    return Boolean(rowCount);
+}
+
+async function isCompletedInterventionQuitus(ownerId, clientId, attachment) {
+    if (attachment?.type !== "Quitus") return false;
+    const filenameAppointmentId = String(attachment.name || "").match(/^quitus-intervention-(\d+)-/i)?.[1];
+    const appointmentId = positiveId(attachment.appointmentId || filenameAppointmentId);
+    if (!appointmentId) return false;
+    const { rowCount } = await getPool().query(`
+        SELECT 1
+        FROM depannhome_calendar_events
+        WHERE id = $1 AND owner_id = $2 AND client_id = $3 AND event_type = 'appointment'
+            AND event_date < (CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Paris')::date
+    `, [appointmentId, ownerId, clientId]);
     return Boolean(rowCount);
 }
 

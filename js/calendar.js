@@ -1,6 +1,6 @@
 import { ROUTES } from "./config.js?v=106";
 import { createBillingDocumentForClient, viewBillingDocument } from "./billing.js?v=178";
-import { getSearchableClients } from "./clients.js?v=145";
+import { getSearchableClients } from "./clients.js?v=149";
 import { addClientActivityByName, synchronizeClients } from "./client-sync.js?v=125";
 import { renderClientMessages } from "./messages.js?v=107";
 import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=29";
@@ -290,6 +290,22 @@ function renderEventForm(panel) {
 
     panel.hidden = false;
     const event = selectedEvent;
+    if (event.eventType === "appointment" && event.isCompleted) {
+        panel.innerHTML = `
+            <div class="calendar-event-detail">
+                <div class="form-heading"><div><p class="eyebrow">Intervention terminée</p><h2>${escapeHtml(event.title)}</h2></div><span class="quitus-status signed">Terminée</span></div>
+                <section class="calendar-appointment-information">
+                    <p class="muted">Cette intervention est conservée dans l’historique du client. Elle ne peut plus être modifiée ou supprimée et son quitus n’est plus accessible.</p>
+                    <dl><dt>Intervention</dt><dd>N° ${escapeHtml(event.id)}</dd><dt>Client</dt><dd>${escapeHtml(event.clientName || "Non renseigné")}</dd><dt>Date</dt><dd>${escapeHtml(formatActivityDate(event.date, event.startTime))}${event.endTime ? ` — ${escapeHtml(event.endTime)}` : ""}</dd>${renderAssignedTechniciansDetail(event)}${event.location ? `<dt>Lieu</dt><dd>${escapeHtml(event.location)}</dd>` : ""}${event.notes ? `<dt>Notes</dt><dd>${escapeHtml(event.notes)}</dd>` : ""}</dl>
+                </section>
+                <div class="calendar-form-actions"><button type="button" class="secondary-button" id="closeCalendarDetail">Fermer</button></div>
+            </div>`;
+        panel.querySelector("#closeCalendarDetail").addEventListener("click", () => {
+            selectedEvent = null;
+            refreshCalendarDetail();
+        });
+        return;
+    }
     if (usesTerrainInterventionView(event)) {
         if (event.eventType !== "appointment") {
             panel.innerHTML = `
@@ -551,7 +567,7 @@ function renderEventForm(panel) {
         }
         if (!isEditing && payload.clientName) addClientActivityByName(payload.clientName, {
             type: "appointment",
-            label: (result.data?.count || payload.dates?.length || 1) > 1 ? `${result.data?.count || payload.dates.length} rendez-vous créés` : "Rendez-vous créé",
+            label: (result.data?.count || payload.dates?.length || 1) > 1 ? `${result.data?.count || payload.dates.length} interventions créées` : "Intervention créée",
             detail: [payload.title, formatActivityDate(payload.date, payload.startTime)].filter(Boolean).join(" · ")
         });
         mobileAdminEditingEvents.delete(String(event.id || ""));
@@ -901,6 +917,7 @@ async function uploadClientAttachments(event, client, appointment) {
 }
 
 function renderQuitusHtml(event) {
+    if (event.isCompleted) return "";
     const validated = event.quitusStatus === "validated" || event.quitusStatus === "signed";
     if (validated) {
         return `
