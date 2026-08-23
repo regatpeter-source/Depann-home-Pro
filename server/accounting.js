@@ -309,23 +309,24 @@ export function registerAccountingRoutes(app, requireAuthentication) {
             const vatRate = weightedVatRate(invoice.lines);
             const lines = [{ description: `Avoir sur facture ${invoice.document_number}`, quantity: 1, unit: "forfait", unitPrice: roundMoney(-amount / (1 + vatRate / 100)), vatRate }];
             const notes = cleanText(request.body?.notes, 2000);
+            const creatorName = cleanText(request.user.fullName || request.user.username, 160);
             const creditDocument = {
                 documentType: "credit", documentNumber: number, sourceInvoiceId: invoice.id, sourceInvoiceNumber: invoice.document_number,
                 sourceInvoiceDate: invoice.issue_date, clientId: invoice.client_id, customerType: invoice.customer_type, customerName: invoice.customer_name,
                 customerAddress: invoice.customer_address, issueDate, quoteReference: invoice.document_number, vatRegime: invoice.vat_regime,
                 issuerTaxNumber: invoice.issuer_tax_number, legalData: invoice.legal_data || {}, lines, notes,
-                reason: notes || `Avoir sur facture ${invoice.document_number}`, financialData: { sourceInvoiceId: invoice.id }
+                creatorName, reason: notes || `Avoir sur facture ${invoice.document_number}`, financialData: { sourceInvoiceId: invoice.id }
             };
             const { buildBillingLegalArchive } = await import("./billing.js");
             const archive = await buildBillingLegalArchive(creditDocument, { ownerId, database: client });
             const { rows: created } = await client.query(`
-                INSERT INTO depannhome_billing_documents (owner_id, created_by, document_type, document_number, client_id, customer_type, customer_name, customer_address, issue_date, status, issued_at, finalized_by, legal_snapshot, structured_data, structured_mime_type, structured_sha256, pdf_data, pdf_sha256, source_quote_id, quote_reference, vat_regime, issuer_tax_number, legal_data, lines, notes, financial_data)
-                VALUES ($1,$2,'credit',$3,$4,$5,$6,$7,$8::date,'issued',NOW(),$2,$9::jsonb,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19::jsonb,$20::jsonb,$21,$22::jsonb) RETURNING id
+                INSERT INTO depannhome_billing_documents (owner_id, created_by, document_type, document_number, client_id, customer_type, customer_name, customer_address, issue_date, status, issued_at, finalized_by, legal_snapshot, structured_data, structured_mime_type, structured_sha256, pdf_data, pdf_sha256, source_quote_id, quote_reference, vat_regime, issuer_tax_number, legal_data, lines, notes, financial_data, created_by_name)
+                VALUES ($1,$2,'credit',$3,$4,$5,$6,$7,$8::date,'issued',NOW(),$2,$9::jsonb,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19::jsonb,$20::jsonb,$21,$22::jsonb,$23) RETURNING id
             `, [ownerId, request.user.sub, number, invoice.client_id, invoice.customer_type, invoice.customer_name, invoice.customer_address, issueDate,
                 JSON.stringify({ ...archive.legalSnapshot, sourceInvoiceLegalSnapshot: invoice.legal_snapshot || {} }), archive.structuredData,
                 archive.structuredMimeType, archive.structuredSha256, archive.pdfData, archive.pdfSha256, invoice.source_quote_id,
                 invoice.document_number, invoice.vat_regime, invoice.issuer_tax_number, JSON.stringify(invoice.legal_data || {}), JSON.stringify(lines), notes,
-                JSON.stringify({ sourceInvoiceId: invoice.id })]);
+                JSON.stringify({ sourceInvoiceId: invoice.id }), creatorName]);
             const posting = await postAccountingDocument({ ownerId, documentId: created[0].id, actorId: request.user.sub, database: client });
             await client.query("COMMIT");
             response.status(201).json({ id: created[0].id, documentNumber: number, posting });

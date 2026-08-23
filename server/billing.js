@@ -156,6 +156,7 @@ export async function initializeBilling() {
             id BIGSERIAL PRIMARY KEY,
             owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
             created_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+            created_by_name VARCHAR(160) NOT NULL DEFAULT '',
             document_type VARCHAR(10) NOT NULL CHECK (document_type IN ('quote', 'invoice')),
             document_number VARCHAR(80) NOT NULL,
             client_id VARCHAR(100),
@@ -201,6 +202,7 @@ export async function initializeBilling() {
         ADD COLUMN IF NOT EXISTS is_accounted BOOLEAN NOT NULL DEFAULT FALSE,
         ADD COLUMN IF NOT EXISTS accounted_at DATE,
         ADD COLUMN IF NOT EXISTS created_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+        ADD COLUMN IF NOT EXISTS created_by_name VARCHAR(160) NOT NULL DEFAULT '',
         ADD COLUMN IF NOT EXISTS client_id VARCHAR(100),
         ADD COLUMN IF NOT EXISTS appointment_id BIGINT,
         ADD COLUMN IF NOT EXISTS source_quote_id BIGINT,
@@ -225,6 +227,12 @@ export async function initializeBilling() {
     await database.query("ALTER TABLE depannhome_billing_documents ADD CONSTRAINT depannhome_billing_documents_vat_regime_check CHECK (vat_regime IN ('standard','franchise'))");
     await database.query("ALTER TABLE depannhome_billing_documents DROP CONSTRAINT IF EXISTS depannhome_billing_documents_correction_kind_check");
     await database.query("ALTER TABLE depannhome_billing_documents ADD CONSTRAINT depannhome_billing_documents_correction_kind_check CHECK (correction_kind IN ('none','replacement','amendment'))");
+    await database.query(`
+        UPDATE depannhome_billing_documents document
+        SET created_by_name = COALESCE(NULLIF(creator.full_name, ''), creator.username, '')
+        FROM depannhome_users creator
+        WHERE document.created_by = creator.id AND document.created_by_name = ''
+    `);
     await database.query(`
         CREATE INDEX IF NOT EXISTS depannhome_billing_documents_accounting_idx
         ON depannhome_billing_documents (owner_id, document_type, is_accounted, issue_date DESC)
@@ -255,8 +263,8 @@ export async function initializeBilling() {
         CREATE OR REPLACE FUNCTION depannhome_protect_issued_billing_document() RETURNS trigger AS $$
         BEGIN
             IF TG_OP='DELETE' AND OLD.issued_at IS NOT NULL THEN RAISE EXCEPTION 'Un document émis ne peut pas être supprimé.'; END IF;
-            IF TG_OP='UPDATE' AND OLD.issued_at IS NOT NULL AND ROW(NEW.owner_id,NEW.created_by,NEW.document_type,NEW.document_number,NEW.client_id,NEW.customer_type,NEW.customer_name,NEW.customer_address,NEW.issue_date,NEW.due_date,NEW.appointment_id,NEW.source_quote_id,NEW.correction_source_id,NEW.correction_kind,NEW.quote_reference,NEW.vat_regime,NEW.issuer_tax_number,NEW.legal_data,NEW.issued_at,NEW.finalized_by,NEW.legal_snapshot,NEW.structured_data,NEW.structured_mime_type,NEW.structured_sha256,NEW.pdf_data,NEW.pdf_sha256,NEW.lines,NEW.notes,NEW.financial_data,NEW.created_at)
-                IS DISTINCT FROM ROW(OLD.owner_id,OLD.created_by,OLD.document_type,OLD.document_number,OLD.client_id,OLD.customer_type,OLD.customer_name,OLD.customer_address,OLD.issue_date,OLD.due_date,OLD.appointment_id,OLD.source_quote_id,OLD.correction_source_id,OLD.correction_kind,OLD.quote_reference,OLD.vat_regime,OLD.issuer_tax_number,OLD.legal_data,OLD.issued_at,OLD.finalized_by,OLD.legal_snapshot,OLD.structured_data,OLD.structured_mime_type,OLD.structured_sha256,OLD.pdf_data,OLD.pdf_sha256,OLD.lines,OLD.notes,OLD.financial_data,OLD.created_at)
+            IF TG_OP='UPDATE' AND OLD.issued_at IS NOT NULL AND ROW(NEW.owner_id,NEW.created_by,NEW.created_by_name,NEW.document_type,NEW.document_number,NEW.client_id,NEW.customer_type,NEW.customer_name,NEW.customer_address,NEW.issue_date,NEW.due_date,NEW.appointment_id,NEW.source_quote_id,NEW.correction_source_id,NEW.correction_kind,NEW.quote_reference,NEW.vat_regime,NEW.issuer_tax_number,NEW.legal_data,NEW.issued_at,NEW.finalized_by,NEW.legal_snapshot,NEW.structured_data,NEW.structured_mime_type,NEW.structured_sha256,NEW.pdf_data,NEW.pdf_sha256,NEW.lines,NEW.notes,NEW.financial_data,NEW.created_at)
+                IS DISTINCT FROM ROW(OLD.owner_id,OLD.created_by,OLD.created_by_name,OLD.document_type,OLD.document_number,OLD.client_id,OLD.customer_type,OLD.customer_name,OLD.customer_address,OLD.issue_date,OLD.due_date,OLD.appointment_id,OLD.source_quote_id,OLD.correction_source_id,OLD.correction_kind,OLD.quote_reference,OLD.vat_regime,OLD.issuer_tax_number,OLD.legal_data,OLD.issued_at,OLD.finalized_by,OLD.legal_snapshot,OLD.structured_data,OLD.structured_mime_type,OLD.structured_sha256,OLD.pdf_data,OLD.pdf_sha256,OLD.lines,OLD.notes,OLD.financial_data,OLD.created_at)
             THEN RAISE EXCEPTION 'Les données légales d’un document émis sont immuables.'; END IF;
             RETURN CASE WHEN TG_OP='DELETE' THEN OLD ELSE NEW END;
         END; $$ LANGUAGE plpgsql
@@ -295,7 +303,7 @@ export function registerBillingRoutes(app, requireAuthentication) {
                     TO_CHAR(due_date, 'YYYY-MM-DD') AS "dueDate", status, is_email_sent AS "isEmailSent", sent_at AS "sentAt", is_accounted AS "isAccounted",
                     TO_CHAR(accounted_at, 'YYYY-MM-DD') AS "accountedAt", appointment_id AS "appointmentId", source_quote_id AS "sourceQuoteId", correction_source_id AS "correctionSourceId", correction_kind AS "correctionKind", (SELECT source.document_number FROM depannhome_billing_documents source WHERE source.id=depannhome_billing_documents.correction_source_id) AS "correctionSourceNumber", quote_reference AS "quoteReference", vat_regime AS "vatRegime", issuer_tax_number AS "issuerTaxNumber", legal_data AS "legalData", issued_at AS "issuedAt", (structured_data IS NOT NULL) AS "hasStructuredData", lines, notes, financial_data AS "financialData",
                     depannhome_billing_documents.created_at AS "createdAt", depannhome_billing_documents.updated_at AS "updatedAt",
-                    COALESCE(NULLIF(creator.full_name, ''), creator.username, '') AS "creatorName"
+                    COALESCE(NULLIF(depannhome_billing_documents.created_by_name, ''), NULLIF(creator.full_name, ''), creator.username, '') AS "creatorName"
                 FROM depannhome_billing_documents
                 LEFT JOIN depannhome_users creator ON creator.id = depannhome_billing_documents.created_by
                                 WHERE depannhome_billing_documents.owner_id = $1
@@ -409,7 +417,7 @@ export function registerBillingRoutes(app, requireAuthentication) {
         const ownerId = getAccountOwnerId(request);
         const profile = await loadBillingPdfProfile(ownerId);
         const documentType = request.query.type === "invoice" ? "invoice" : "quote";
-        const document = { documentType, documentNumber: "APERÇU", customerName: "Nom du client", customerAddress: "Adresse du client", issueDate: new Date().toISOString().slice(0, 10), dueDate: documentType === "invoice" ? new Date().toISOString().slice(0, 10) : "", quoteReference: documentType === "invoice" ? "DEV-APERÇU" : "", lines: [{ description: "Exemple de prestation", quantity: 1, unit: "forfait", unitPrice: 120, vatRate: 20 }], notes: profile.paymentTerms || "Conditions de règlement" };
+        const document = { documentType, documentNumber: "APERÇU", creatorName: request.user.fullName || request.user.username || "Nom du collaborateur", customerName: "Nom du client", customerAddress: "Adresse du client", issueDate: new Date().toISOString().slice(0, 10), dueDate: documentType === "invoice" ? new Date().toISOString().slice(0, 10) : "", quoteReference: documentType === "invoice" ? "DEV-APERÇU" : "", lines: [{ description: "Exemple de prestation", quantity: 1, unit: "forfait", unitPrice: 120, vatRate: 20 }], notes: profile.paymentTerms || "Conditions de règlement" };
         const output = await createBillingDocumentOutput(document, profile);
         response.set({ "Content-Type": output.mimeType, "Content-Disposition": `${output.mimeType === PDF_MIME ? "inline" : "attachment"}; filename="${contentDispositionFileName(output.filename)}"`, "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" });
         response.send(output.buffer);
@@ -476,6 +484,7 @@ export function registerBillingRoutes(app, requireAuthentication) {
         const document = {
             documentType: "quote",
             documentNumber: "APERÇU",
+            creatorName: request.user.fullName || request.user.username || "Nom du collaborateur",
             customerName: "",
             customerAddress: "",
             issueDate: new Date().toISOString().slice(0, 10),
@@ -500,7 +509,7 @@ export function registerBillingRoutes(app, requireAuthentication) {
         const [documentResult, profileResult] = await Promise.all([
             database.query(`
                 SELECT id, document_type AS "documentType", document_number AS "documentNumber", client_id AS "clientId", customer_type AS "customerType",
-                    customer_name AS "customerName", customer_address AS "customerAddress", TO_CHAR(issue_date, 'YYYY-MM-DD') AS "issueDate",
+                    customer_name AS "customerName", customer_address AS "customerAddress", created_by_name AS "creatorName", TO_CHAR(issue_date, 'YYYY-MM-DD') AS "issueDate",
                     TO_CHAR(due_date, 'YYYY-MM-DD') AS "dueDate", status, is_email_sent AS "isEmailSent", sent_at AS "sentAt", is_accounted AS "isAccounted",
                     TO_CHAR(accounted_at, 'YYYY-MM-DD') AS "accountedAt", appointment_id AS "appointmentId", source_quote_id AS "sourceQuoteId", correction_source_id AS "correctionSourceId", correction_kind AS "correctionKind", (SELECT source.document_number FROM depannhome_billing_documents source WHERE source.id=depannhome_billing_documents.correction_source_id) AS "correctionSourceNumber", quote_reference AS "quoteReference", vat_regime AS "vatRegime", issuer_tax_number AS "issuerTaxNumber", legal_data AS "legalData", issued_at AS "issuedAt", (structured_data IS NOT NULL) AS "hasStructuredData", lines, notes, financial_data AS "financialData"
                                 FROM depannhome_billing_documents
@@ -578,6 +587,7 @@ export function registerBillingRoutes(app, requireAuthentication) {
         document.vatRegime = normalizeVatRegime(request.body?.vatRegime || profile.vatRegime);
         document.issuerTaxNumber = cleanText(request.body?.issuerTaxNumber, 100) || profile.taxNumber || "";
         document.quoteReference = cleanText(request.body?.quoteReference, 80);
+        document.creatorName = cleanText(request.user.fullName || request.user.username, 160);
         document.lines = applyVatRegime(document.lines, document.vatRegime);
         const output = await createBillingDocumentOutput(document, profile);
         response.set({ "Content-Type": PDF_MIME, "Content-Disposition": "inline", "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff", "X-Billing-Preview-Mode": "final" });
@@ -681,11 +691,11 @@ export function registerBillingRoutes(app, requireAuthentication) {
             document.lines = applyVatRegime(document.lines, taxIdentity.vatRegime);
             const { rows } = await getPool().query(`
                 INSERT INTO depannhome_billing_documents
-                    (owner_id, created_by, document_type, document_number, client_id, customer_type, customer_name, customer_address, issue_date, due_date, status, is_accounted, accounted_at, appointment_id, source_quote_id, quote_reference, vat_regime, issuer_tax_number, lines, legal_data, issued_at, notes, financial_data)
-                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::date,$10::date,$11,FALSE,NULL,$12,$13,$14,$15,$16,$17::jsonb,$18::jsonb,NULL,$19,$20::jsonb)
+                    (owner_id, created_by, document_type, document_number, client_id, customer_type, customer_name, customer_address, issue_date, due_date, status, is_accounted, accounted_at, appointment_id, source_quote_id, quote_reference, vat_regime, issuer_tax_number, lines, legal_data, issued_at, notes, financial_data, created_by_name)
+                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::date,$10::date,$11,FALSE,NULL,$12,$13,$14,$15,$16,$17::jsonb,$18::jsonb,NULL,$19,$20::jsonb,$21)
                 RETURNING id, document_number AS "documentNumber"
             `, [getAccountOwnerId(request), request.user.sub, document.documentType, documentNumber, document.clientId || null, document.customerType, document.customerName,
-                document.customerAddress, document.issueDate, document.dueDate || null, status, appointment?.id || null, sourceQuote?.id || null, sourceQuote?.documentNumber || "", taxIdentity.vatRegime, taxIdentity.taxNumber, JSON.stringify(document.lines), JSON.stringify(document.legalData), document.notes, JSON.stringify(document.financialData)]);
+                document.customerAddress, document.issueDate, document.dueDate || null, status, appointment?.id || null, sourceQuote?.id || null, sourceQuote?.documentNumber || "", taxIdentity.vatRegime, taxIdentity.taxNumber, JSON.stringify(document.lines), JSON.stringify(document.legalData), document.notes, JSON.stringify(document.financialData), cleanText(request.user.fullName || request.user.username, 160)]);
             await (await import("./partner-connections.js")).synchronizeConnectedBillingDocument(getAccountOwnerId(request), rows[0].id);
             const { registerMissionSourceItem } = await import("./partner-dialogue.js"); await registerMissionSourceItem({ ownerId: getAccountOwnerId(request), appointmentId: appointment?.id, sourceType: document.documentType, sourceId: rows[0].id, label: rows[0].documentNumber, details: { status, issueDate: document.issueDate } });
             const { recordMissionEventForSource } = await import("./partner-dialogue.js"); await recordMissionEventForSource({ ownerId: getAccountOwnerId(request), sourceType: "appointment", sourceId: appointment?.id, status: document.documentType === "invoice" ? "invoice_created" : "quote_created", action: "billing_document_created", details: { documentId: rows[0].id, documentType: document.documentType, status }, actorName: request.user.fullName || request.user.username });
@@ -757,10 +767,10 @@ export function registerBillingRoutes(app, requireAuthentication) {
             const documentNumber = draftInvoiceReference();
             const created = await database.query(`
                 INSERT INTO depannhome_billing_documents
-                    (owner_id,created_by,document_type,document_number,client_id,customer_type,customer_name,customer_address,issue_date,due_date,status,is_email_sent,sent_at,is_accounted,accounted_at,appointment_id,source_quote_id,correction_source_id,correction_kind,quote_reference,vat_regime,issuer_tax_number,lines,legal_data,notes,financial_data)
-                VALUES ($1,$2,'invoice',$3,$4,$5,$6,$7,CURRENT_DATE,$8,'draft',FALSE,NULL,FALSE,NULL,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+                    (owner_id,created_by,document_type,document_number,client_id,customer_type,customer_name,customer_address,issue_date,due_date,status,is_email_sent,sent_at,is_accounted,accounted_at,appointment_id,source_quote_id,correction_source_id,correction_kind,quote_reference,vat_regime,issuer_tax_number,lines,legal_data,notes,financial_data,created_by_name)
+                VALUES ($1,$2,'invoice',$3,$4,$5,$6,$7,CURRENT_DATE,$8,'draft',FALSE,NULL,FALSE,NULL,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
                 RETURNING id
-            `, [source.owner_id, request.user.sub, documentNumber, source.client_id, source.customer_type, source.customer_name, source.customer_address, source.due_date, source.appointment_id, source.source_quote_id, source.id, kind, source.quote_reference, source.vat_regime, source.issuer_tax_number, source.lines, source.legal_data, source.notes, source.financial_data]);
+            `, [source.owner_id, request.user.sub, documentNumber, source.client_id, source.customer_type, source.customer_name, source.customer_address, source.due_date, source.appointment_id, source.source_quote_id, source.id, kind, source.quote_reference, source.vat_regime, source.issuer_tax_number, source.lines, source.legal_data, source.notes, source.financial_data, cleanText(request.user.fullName || request.user.username, 160)]);
             await database.query("UPDATE depannhome_billing_documents SET status='cancelled', updated_at=NOW() WHERE id=$1", [source.id]);
             await database.query("COMMIT");
             response.status(201).json({ id: created.rows[0].id, documentNumber });
@@ -799,6 +809,7 @@ export async function issueDocument({ ownerId, documentId, actorId, pool = getPo
                 document.appointment_id AS "appointmentId", document.source_quote_id AS "sourceQuoteId", document.correction_source_id AS "correctionSourceId",
                 document.correction_kind AS "correctionKind", document.quote_reference AS "quoteReference", document.vat_regime AS "vatRegime",
                 document.issuer_tax_number AS "issuerTaxNumber", document.legal_data AS "legalData", document.issued_at AS "issuedAt",
+                document.created_by_name AS "creatorName",
                 document.lines, document.notes, document.financial_data AS "financialData",
                 (SELECT client.client_data FROM depannhome_clients client WHERE client.owner_id=document.owner_id AND client.client_id=document.client_id) AS "clientData"
             FROM depannhome_billing_documents document
@@ -873,6 +884,7 @@ function buildLegalSnapshot(document, profile) {
             customerType: document.customerType, customerName: document.customerName, customerAddress: document.customerAddress,
             issueDate: document.issueDate, dueDate: document.dueDate, quoteReference: document.quoteReference, vatRegime: document.vatRegime,
             issuerTaxNumber: document.issuerTaxNumber, legalData: document.legalData, lines: document.lines, notes: document.notes,
+            creatorName: document.creatorName,
             financialData: document.financialData, sourceInvoiceId: document.sourceInvoiceId, sourceInvoiceNumber: document.sourceInvoiceNumber,
             sourceInvoiceDate: document.sourceInvoiceDate, reason: document.reason
         },
@@ -971,6 +983,7 @@ async function createQuitusPreview(ownerId) {
         notes: "Compte rendu et observations de l’intervention."
     }, {
         signedBy: "Nom du client",
+        performedByName: "Nom du technicien",
         signature: ""
     }, profile);
 }
@@ -1206,7 +1219,7 @@ async function getBillingExport(request) {
     const [documentResult, profileResult] = await Promise.all([
         database.query(`
             SELECT id, document_type AS "documentType", document_number AS "documentNumber", client_id AS "clientId", customer_type AS "customerType",
-                customer_name AS "customerName", customer_address AS "customerAddress", TO_CHAR(issue_date, 'YYYY-MM-DD') AS "issueDate",
+                customer_name AS "customerName", customer_address AS "customerAddress", created_by_name AS "creatorName", TO_CHAR(issue_date, 'YYYY-MM-DD') AS "issueDate",
                 TO_CHAR(due_date, 'YYYY-MM-DD') AS "dueDate", status, is_email_sent AS "isEmailSent", sent_at AS "sentAt", issued_at AS "issuedAt", correction_source_id AS "correctionSourceId", correction_kind AS "correctionKind", (SELECT source.document_number FROM depannhome_billing_documents source WHERE source.id=depannhome_billing_documents.correction_source_id) AS "correctionSourceNumber", quote_reference AS "quoteReference", vat_regime AS "vatRegime", issuer_tax_number AS "issuerTaxNumber", legal_data AS "legalData", lines, notes, financial_data AS "financialData",
                 (SELECT client.client_data FROM depannhome_clients client WHERE client.owner_id=depannhome_billing_documents.owner_id AND client.client_id=depannhome_billing_documents.client_id) AS "clientData"
                         FROM depannhome_billing_documents
@@ -1263,7 +1276,7 @@ function billingTemplateValues(document, profile) {
     const totalTva = (document.lines || []).reduce((sum, line) => sum + Number(line.quantity || 0) * Number(line.unitPrice || 0) * Number(line.vatRate || 0) / 100, 0);
     const money = value => new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" }).format(value || 0);
     const legal = document.legalData && typeof document.legalData === "object" ? document.legalData : {};
-    return { type_document: document.documentType === "invoice" ? "Facture" : "Devis", numero: document.documentNumber, date: document.issueDate, echeance: document.dueDate || "", client_nom: document.customerName, client_adresse: legal.billingAddress || document.customerAddress, client_siren: legal.customerSiren || "", client_tva: legal.customerVatNumber || "", adresse_livraison: legal.deliveryAddress || "", date_prestation: legal.serviceDate || "", reference_commande: legal.purchaseOrderReference || "", categorie_operation: ({ goods: "Livraison de biens", services: "Prestation de services", mixed: "Livraison de biens et prestation de services" })[legal.operationCategory] || "Prestation de services", entreprise_nom: profile.companyName, entreprise_adresse: [profile.address, profile.postalCode, profile.city].filter(Boolean).join(" "), entreprise_telephone: profile.phone, entreprise_email: profile.email, siret: profile.registrationNumber, siren: profile.siren, numero_tva: document.issuerTaxNumber || profile.taxNumber, conditions: document.notes || profile.paymentTerms, lignes: (document.lines || []).map(line => `${line.description} | ${line.quantity} ${line.unit} | ${money(Number(line.unitPrice))} HT | TVA ${line.vatRate || 0} %`).join("\n"), total_ht: money(totalHt), total_tva: money(totalTva), total_ttc: money(totalHt + totalTva) };
+    return { type_document: document.documentType === "invoice" ? "Facture" : "Devis", numero: document.documentNumber, date: document.issueDate, echeance: document.dueDate || "", etabli_par: document.creatorName || "", client_nom: document.customerName, client_adresse: legal.billingAddress || document.customerAddress, client_siren: legal.customerSiren || "", client_tva: legal.customerVatNumber || "", adresse_livraison: legal.deliveryAddress || "", date_prestation: legal.serviceDate || "", reference_commande: legal.purchaseOrderReference || "", categorie_operation: ({ goods: "Livraison de biens", services: "Prestation de services", mixed: "Livraison de biens et prestation de services" })[legal.operationCategory] || "Prestation de services", entreprise_nom: profile.companyName, entreprise_adresse: [profile.address, profile.postalCode, profile.city].filter(Boolean).join(" "), entreprise_telephone: profile.phone, entreprise_email: profile.email, siret: profile.registrationNumber, siren: profile.siren, numero_tva: document.issuerTaxNumber || profile.taxNumber, conditions: document.notes || profile.paymentTerms, lignes: (document.lines || []).map(line => `${line.description} | ${line.quantity} ${line.unit} | ${money(Number(line.unitPrice))} HT | TVA ${line.vatRate || 0} %`).join("\n"), total_ht: money(totalHt), total_tva: money(totalTva), total_ttc: money(totalHt + totalTva) };
 }
 
 export function createBillingPdf(document, profile) {
@@ -1333,7 +1346,7 @@ export function createBillingPdf(document, profile) {
         pdf.rect(margin, partyY, 225, partyHeight).fill("#f0f2f4");
         pdf.rect(margin + contentWidth - 225, partyY, 225, partyHeight).fill("#f0f2f4");
         text("ÉMETTEUR", margin + 12, partyY + 10, 200, { size: 8, bold: true });
-        text([profile.companyName || "Votre structure", profile.registrationNumber ? `SIRET ${profile.registrationNumber}` : "", !isVatFranchise && issuerTaxNumber ? `TVA intracom. ${issuerTaxNumber}` : "", isVatFranchise ? VAT_FRANCHISE_MENTION : ""].filter(Boolean).join("\n"), margin + 12, partyY + 24, 200, { size: 9, lineGap: 2 });
+        text([profile.companyName || "Votre structure", document.creatorName ? `Établi par : ${document.creatorName}` : "", profile.registrationNumber ? `SIRET ${profile.registrationNumber}` : "", !isVatFranchise && issuerTaxNumber ? `TVA intracom. ${issuerTaxNumber}` : "", isVatFranchise ? VAT_FRANCHISE_MENTION : ""].filter(Boolean).join("\n"), margin + 12, partyY + 24, 200, { size: 9, lineGap: 2 });
         text("CLIENT", margin + contentWidth - 213, partyY + 10, 200, { size: 8, bold: true });
         text([document.customerName, legalData.billingAddress || document.customerAddress, legalData.customerSiren ? `SIREN ${legalData.customerSiren}` : "", legalData.customerVatNumber ? `TVA intracom. ${legalData.customerVatNumber}` : ""].filter(Boolean).join("\n"), margin + contentWidth - 213, partyY + 24, 200, { size: 9, lineGap: 2 });
         pdf.y = partyY + partyHeight + 18;

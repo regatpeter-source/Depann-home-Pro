@@ -382,6 +382,7 @@ CREATE TABLE IF NOT EXISTS depannhome_billing_documents (
     id BIGSERIAL PRIMARY KEY,
     owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
     created_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+    created_by_name VARCHAR(160) NOT NULL DEFAULT '',
     document_type VARCHAR(10) NOT NULL CHECK (document_type IN ('quote', 'invoice')),
     document_number VARCHAR(80) NOT NULL,
     client_id VARCHAR(100),
@@ -425,6 +426,7 @@ ALTER TABLE depannhome_billing_documents
     ADD COLUMN IF NOT EXISTS is_accounted BOOLEAN NOT NULL DEFAULT FALSE,
     ADD COLUMN IF NOT EXISTS accounted_at DATE,
     ADD COLUMN IF NOT EXISTS created_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+    ADD COLUMN IF NOT EXISTS created_by_name VARCHAR(160) NOT NULL DEFAULT '',
     ADD COLUMN IF NOT EXISTS client_id VARCHAR(100),
     ADD COLUMN IF NOT EXISTS appointment_id BIGINT,
     ADD COLUMN IF NOT EXISTS source_quote_id BIGINT,
@@ -458,6 +460,11 @@ CREATE INDEX IF NOT EXISTS depannhome_billing_documents_client_idx
 CREATE INDEX IF NOT EXISTS depannhome_billing_documents_correction_idx
     ON depannhome_billing_documents (owner_id, correction_source_id);
 
+UPDATE depannhome_billing_documents document
+SET created_by_name = COALESCE(NULLIF(creator.full_name, ''), creator.username, '')
+FROM depannhome_users creator
+WHERE document.created_by = creator.id AND document.created_by_name = '';
+
 -- Comptabilité et facturation électronique compatible PDP : préparation et transmission via le connecteur choisi par l'entreprise, données isolées par owner_id.
 ALTER TABLE depannhome_billing_documents ADD COLUMN IF NOT EXISTS financial_data JSONB NOT NULL DEFAULT '{}'::jsonb;
 ALTER TABLE depannhome_billing_documents DROP CONSTRAINT IF EXISTS depannhome_billing_documents_document_type_check;
@@ -475,8 +482,8 @@ CREATE TABLE IF NOT EXISTS depannhome_billing_sequences (
 CREATE OR REPLACE FUNCTION depannhome_protect_issued_billing_document() RETURNS trigger AS $$
 BEGIN
     IF TG_OP='DELETE' AND OLD.issued_at IS NOT NULL THEN RAISE EXCEPTION 'Un document émis ne peut pas être supprimé.'; END IF;
-    IF TG_OP='UPDATE' AND OLD.issued_at IS NOT NULL AND ROW(NEW.owner_id,NEW.created_by,NEW.document_type,NEW.document_number,NEW.client_id,NEW.customer_type,NEW.customer_name,NEW.customer_address,NEW.issue_date,NEW.due_date,NEW.appointment_id,NEW.source_quote_id,NEW.correction_source_id,NEW.correction_kind,NEW.quote_reference,NEW.vat_regime,NEW.issuer_tax_number,NEW.legal_data,NEW.issued_at,NEW.finalized_by,NEW.legal_snapshot,NEW.structured_data,NEW.structured_mime_type,NEW.structured_sha256,NEW.pdf_data,NEW.pdf_sha256,NEW.lines,NEW.notes,NEW.financial_data,NEW.created_at)
-        IS DISTINCT FROM ROW(OLD.owner_id,OLD.created_by,OLD.document_type,OLD.document_number,OLD.client_id,OLD.customer_type,OLD.customer_name,OLD.customer_address,OLD.issue_date,OLD.due_date,OLD.appointment_id,OLD.source_quote_id,OLD.correction_source_id,OLD.correction_kind,OLD.quote_reference,OLD.vat_regime,OLD.issuer_tax_number,OLD.legal_data,OLD.issued_at,OLD.finalized_by,OLD.legal_snapshot,OLD.structured_data,OLD.structured_mime_type,OLD.structured_sha256,OLD.pdf_data,OLD.pdf_sha256,OLD.lines,OLD.notes,OLD.financial_data,OLD.created_at)
+    IF TG_OP='UPDATE' AND OLD.issued_at IS NOT NULL AND ROW(NEW.owner_id,NEW.created_by,NEW.created_by_name,NEW.document_type,NEW.document_number,NEW.client_id,NEW.customer_type,NEW.customer_name,NEW.customer_address,NEW.issue_date,NEW.due_date,NEW.appointment_id,NEW.source_quote_id,NEW.correction_source_id,NEW.correction_kind,NEW.quote_reference,NEW.vat_regime,NEW.issuer_tax_number,NEW.legal_data,NEW.issued_at,NEW.finalized_by,NEW.legal_snapshot,NEW.structured_data,NEW.structured_mime_type,NEW.structured_sha256,NEW.pdf_data,NEW.pdf_sha256,NEW.lines,NEW.notes,NEW.financial_data,NEW.created_at)
+        IS DISTINCT FROM ROW(OLD.owner_id,OLD.created_by,OLD.created_by_name,OLD.document_type,OLD.document_number,OLD.client_id,OLD.customer_type,OLD.customer_name,OLD.customer_address,OLD.issue_date,OLD.due_date,OLD.appointment_id,OLD.source_quote_id,OLD.correction_source_id,OLD.correction_kind,OLD.quote_reference,OLD.vat_regime,OLD.issuer_tax_number,OLD.legal_data,OLD.issued_at,OLD.finalized_by,OLD.legal_snapshot,OLD.structured_data,OLD.structured_mime_type,OLD.structured_sha256,OLD.pdf_data,OLD.pdf_sha256,OLD.lines,OLD.notes,OLD.financial_data,OLD.created_at)
     THEN RAISE EXCEPTION 'Les données légales d’un document émis sont immuables.'; END IF;
     RETURN CASE WHEN TG_OP='DELETE' THEN OLD ELSE NEW END;
 END; $$ LANGUAGE plpgsql;
@@ -920,6 +927,8 @@ CREATE TABLE IF NOT EXISTS depannhome_calendar_events (
     quitus_observations VARCHAR(2000) NOT NULL DEFAULT '',
     quitus_approved BOOLEAN NOT NULL DEFAULT FALSE,
     quitus_signed_at TIMESTAMPTZ,
+    quitus_performed_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+    quitus_performed_by_name VARCHAR(160) NOT NULL DEFAULT '',
     notes VARCHAR(2000) NOT NULL DEFAULT '',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -961,7 +970,26 @@ ADD COLUMN IF NOT EXISTS quitus_signed_by VARCHAR(160) NOT NULL DEFAULT '',
 ADD COLUMN IF NOT EXISTS quitus_signature TEXT NOT NULL DEFAULT '',
 ADD COLUMN IF NOT EXISTS quitus_observations VARCHAR(2000) NOT NULL DEFAULT '',
 ADD COLUMN IF NOT EXISTS quitus_approved BOOLEAN NOT NULL DEFAULT FALSE,
-ADD COLUMN IF NOT EXISTS quitus_signed_at TIMESTAMPTZ;
+ADD COLUMN IF NOT EXISTS quitus_signed_at TIMESTAMPTZ,
+ADD COLUMN IF NOT EXISTS quitus_performed_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+ADD COLUMN IF NOT EXISTS quitus_performed_by_name VARCHAR(160) NOT NULL DEFAULT '';
+
+UPDATE depannhome_calendar_events event
+SET quitus_performed_by = COALESCE(event.quitus_performed_by, event.assigned_technician_id),
+    quitus_performed_by_name = COALESCE(NULLIF(event.quitus_performed_by_name, ''), NULLIF(member.full_name, ''), member.username, '')
+FROM depannhome_users member
+WHERE event.quitus_status = 'validated' AND event.assigned_technician_id = member.id
+    AND event.quitus_performed_by_name = '';
+
+CREATE OR REPLACE FUNCTION depannhome_protect_validated_quitus() RETURNS trigger AS $$
+BEGIN
+    IF OLD.quitus_signed_at IS NOT NULL AND ROW(NEW.quitus_status,NEW.quitus_signed_by,NEW.quitus_signature,NEW.quitus_observations,NEW.quitus_approved,NEW.quitus_signed_at,NEW.quitus_performed_by,NEW.quitus_performed_by_name)
+        IS DISTINCT FROM ROW(OLD.quitus_status,OLD.quitus_signed_by,OLD.quitus_signature,OLD.quitus_observations,OLD.quitus_approved,OLD.quitus_signed_at,OLD.quitus_performed_by,OLD.quitus_performed_by_name)
+    THEN RAISE EXCEPTION 'Un quitus validé est immuable.'; END IF;
+    RETURN NEW;
+END; $$ LANGUAGE plpgsql;
+DROP TRIGGER IF EXISTS depannhome_validated_quitus_immutable ON depannhome_calendar_events;
+CREATE TRIGGER depannhome_validated_quitus_immutable BEFORE UPDATE ON depannhome_calendar_events FOR EACH ROW EXECUTE FUNCTION depannhome_protect_validated_quitus();
 
 -- Un élément du planning peut réunir plusieurs membres. Les noms de colonnes
 -- historiques restent conservés pour compatibilité, mais acceptent tout utilisateur actif de l’entreprise.
@@ -1062,6 +1090,7 @@ CREATE INDEX IF NOT EXISTS depannhome_library_documents_section_idx
 CREATE TABLE IF NOT EXISTS depannhome_technical_reports (
     id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
     created_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+    created_by_name VARCHAR(160) NOT NULL DEFAULT '',
     appointment_id BIGINT REFERENCES depannhome_calendar_events(id) ON DELETE SET NULL,
     client_id VARCHAR(100) NOT NULL DEFAULT '', report_type VARCHAR(40) NOT NULL DEFAULT 'leak_detection',
     title VARCHAR(160) NOT NULL DEFAULT 'Rapport de recherche de fuite', report_date DATE NOT NULL DEFAULT CURRENT_DATE,
@@ -1073,10 +1102,18 @@ CREATE TABLE IF NOT EXISTS depannhome_technical_reports (
     proofread_fingerprint VARCHAR(64) NOT NULL DEFAULT '',
     pdf_data BYTEA, pdf_filename VARCHAR(255) NOT NULL DEFAULT '', document_mime_type VARCHAR(150) NOT NULL DEFAULT 'application/pdf', created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+ALTER TABLE depannhome_technical_reports ADD COLUMN IF NOT EXISTS created_by_name VARCHAR(160) NOT NULL DEFAULT '';
 ALTER TABLE depannhome_technical_reports ADD COLUMN IF NOT EXISTS proofread_at TIMESTAMPTZ;
 ALTER TABLE depannhome_technical_reports ADD COLUMN IF NOT EXISTS proofread_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL;
 ALTER TABLE depannhome_technical_reports ADD COLUMN IF NOT EXISTS proofread_fingerprint VARCHAR(64) NOT NULL DEFAULT '';
 ALTER TABLE depannhome_technical_reports ADD COLUMN IF NOT EXISTS document_mime_type VARCHAR(150) NOT NULL DEFAULT 'application/pdf';
+UPDATE depannhome_technical_reports report
+SET created_by_name=COALESCE(
+    NULLIF(report.content->'snapshot'->>'technicianName',''),
+    (SELECT COALESCE(NULLIF(creator.full_name,''),creator.username,'') FROM depannhome_users creator WHERE creator.id=report.created_by),
+    ''
+)
+WHERE report.created_by_name='';
 CREATE INDEX IF NOT EXISTS depannhome_technical_reports_owner_updated_idx ON depannhome_technical_reports (owner_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS depannhome_technical_reports_owner_appointment_idx ON depannhome_technical_reports (owner_id, appointment_id);
 

@@ -85,7 +85,7 @@ export function createLeakReportPdf(report, profile = {}) {
             if (section.id === "methods" && !section.custom) {
                 for (const material of content.methods.materials || []) addSection(pdf, materialLabel(material), { observations: material.observations }, media.filter(photo => photo.section === "methods" && photo.materialId === material.id), profile, template);
             } else if (sectionHasContent(content, media, section.id) || ["conclusion", "recommendations"].includes(section.id)) {
-                addSection(pdf, section.title, section.content, media.filter(photo => photo.section === section.id), profile, template, section.id === "recommendations", snapshot.technicianName || report.technicianName || "");
+                addSection(pdf, section.title, section.content, media.filter(photo => photo.section === section.id), profile, template, section.id === "recommendations", report.createdByName || snapshot.technicianName || report.technicianName || "");
             }
         }
         decoratePages(pdf, profile, template); pdf.end();
@@ -105,7 +105,7 @@ function addCover(pdf, report, profile, template, snapshot, photos) {
         ["Lieu d’intervention", location],
         ["Sinistre / assurance", [snapshot.claimNumber, snapshot.insurance].filter(Boolean).join(" · ") || "Non renseigné"],
         ["Le", interventionDate],
-        ["Technicien", snapshot.technicianName || report.technicianName || "Non renseigné"]
+        ["Réalisé par", report.createdByName || snapshot.technicianName || report.technicianName || "Non renseigné"]
     ];
     const factsBottom = addCoverFacts(pdf, facts, 118, template);
     const titleY = factsBottom + 18;

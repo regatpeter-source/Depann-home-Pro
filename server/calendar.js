@@ -41,6 +41,8 @@ export async function initializeCalendar() {
             quitus_observations VARCHAR(2000) NOT NULL DEFAULT '',
             quitus_approved BOOLEAN NOT NULL DEFAULT FALSE,
             quitus_signed_at TIMESTAMPTZ,
+            quitus_performed_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+            quitus_performed_by_name VARCHAR(160) NOT NULL DEFAULT '',
             notes VARCHAR(2000) NOT NULL DEFAULT '',
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -74,13 +76,34 @@ export async function initializeCalendar() {
         ADD COLUMN IF NOT EXISTS quitus_signature TEXT NOT NULL DEFAULT '',
         ADD COLUMN IF NOT EXISTS quitus_observations VARCHAR(2000) NOT NULL DEFAULT '',
         ADD COLUMN IF NOT EXISTS quitus_approved BOOLEAN NOT NULL DEFAULT FALSE,
-        ADD COLUMN IF NOT EXISTS quitus_signed_at TIMESTAMPTZ
+        ADD COLUMN IF NOT EXISTS quitus_signed_at TIMESTAMPTZ,
+        ADD COLUMN IF NOT EXISTS quitus_performed_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+        ADD COLUMN IF NOT EXISTS quitus_performed_by_name VARCHAR(160) NOT NULL DEFAULT ''
     `);
     await database.query(`
         UPDATE depannhome_calendar_events
         SET quitus_status = 'validated'
         WHERE quitus_status = 'signed'
     `);
+    await database.query(`
+        UPDATE depannhome_calendar_events event
+        SET quitus_performed_by = COALESCE(event.quitus_performed_by, event.assigned_technician_id),
+            quitus_performed_by_name = COALESCE(NULLIF(event.quitus_performed_by_name, ''), NULLIF(member.full_name, ''), member.username, '')
+        FROM depannhome_users member
+        WHERE event.quitus_status = 'validated' AND event.assigned_technician_id = member.id
+            AND event.quitus_performed_by_name = ''
+    `);
+    await database.query(`
+        CREATE OR REPLACE FUNCTION depannhome_protect_validated_quitus() RETURNS trigger AS $$
+        BEGIN
+            IF OLD.quitus_signed_at IS NOT NULL AND ROW(NEW.quitus_status,NEW.quitus_signed_by,NEW.quitus_signature,NEW.quitus_observations,NEW.quitus_approved,NEW.quitus_signed_at,NEW.quitus_performed_by,NEW.quitus_performed_by_name)
+                IS DISTINCT FROM ROW(OLD.quitus_status,OLD.quitus_signed_by,OLD.quitus_signature,OLD.quitus_observations,OLD.quitus_approved,OLD.quitus_signed_at,OLD.quitus_performed_by,OLD.quitus_performed_by_name)
+            THEN RAISE EXCEPTION 'Un quitus validé est immuable.'; END IF;
+            RETURN NEW;
+        END; $$ LANGUAGE plpgsql
+    `);
+    await database.query("DROP TRIGGER IF EXISTS depannhome_validated_quitus_immutable ON depannhome_calendar_events");
+    await database.query("CREATE TRIGGER depannhome_validated_quitus_immutable BEFORE UPDATE ON depannhome_calendar_events FOR EACH ROW EXECUTE FUNCTION depannhome_protect_validated_quitus()");
     await database.query(`
         CREATE INDEX IF NOT EXISTS depannhome_calendar_events_owner_date_idx
         ON depannhome_calendar_events (owner_id, event_date, start_time)
@@ -218,6 +241,8 @@ export function registerCalendarRoutes(app, requireAuthentication) {
                 event.quitus_observations AS "quitusObservations",
                 event.quitus_approved AS "quitusApproved",
                 event.quitus_signed_at AS "quitusSignedAt",
+                event.quitus_performed_by AS "quitusPerformedBy",
+                event.quitus_performed_by_name AS "quitusPerformedByName",
                 COALESCE(profile.company_name, owner.full_name, owner.username, '') AS "quitusCompanyName",
                 COALESCE(client.client_data->>'city', '') AS "quitusClientCity",
                 (event.event_type = 'appointment' AND event.event_date < (CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Paris')::date) AS "isCompleted",
@@ -422,7 +447,9 @@ export function registerCalendarRoutes(app, requireAuthentication) {
 
             const profileResult = await connection.query(`SELECT owner.id AS "ownerId",profile.company_name AS "companyName",profile.address,profile.postal_code AS "postalCode",profile.city,profile.phone,profile.email,profile.registration_number AS "registrationNumber",profile.logo_data AS "logoData",profile.logo_mime_type AS "logoMimeType",profile.quitus_template AS "quitusTemplate",profile.quitus_template_mode AS "quitusTemplateMode",profile.quitus_template_filename AS "quitusTemplateFilename",profile.quitus_template_data AS "quitusTemplateData",profile.quitus_template_mime_type AS "quitusTemplateMimeType",owner.quitus_template_policy AS "quitusTemplatePolicy" FROM depannhome_users owner LEFT JOIN depannhome_billing_profiles profile ON profile.owner_id=owner.id WHERE owner.id=$1`, [accountOwnerId]);
             event.clientData = clientRow.client || {};
-            const output = await createQuitusDocumentOutput(event, quitus, profileResult.rows[0] || {});
+            const performedByName = cleanText(request.user.fullName || request.user.username || "Technicien", 160);
+            const attributedQuitus = { ...quitus, performedByName };
+            const output = await createQuitusDocumentOutput(event, attributedQuitus, profileResult.rows[0] || {});
             const createdAt = new Date().toISOString();
             const attachment = {
                 id: `file-${randomUUID()}`,
@@ -467,12 +494,14 @@ export function registerCalendarRoutes(app, requireAuthentication) {
             const { rows } = await connection.query(`
                 UPDATE depannhome_calendar_events
                 SET quitus_status = 'validated', quitus_signed_by = $3, quitus_signature = $4,
-                    quitus_observations = $5, quitus_approved = $6, quitus_signed_at = NOW(), updated_at = NOW()
+                    quitus_observations = $5, quitus_approved = $6, quitus_signed_at = NOW(),
+                    quitus_performed_by = $7, quitus_performed_by_name = $8, updated_at = NOW()
                 WHERE id = $1 AND owner_id = $2
                 RETURNING quitus_status AS "quitusStatus", quitus_signed_by AS "quitusSignedBy",
                     quitus_signature AS "quitusSignature", quitus_observations AS "quitusObservations",
-                    quitus_approved AS "quitusApproved", quitus_signed_at AS "quitusSignedAt"
-            `, [id, accountOwnerId, quitus.signedBy, quitus.signature, quitus.observations, quitus.approved]);
+                    quitus_approved AS "quitusApproved", quitus_signed_at AS "quitusSignedAt",
+                    quitus_performed_by AS "quitusPerformedBy", quitus_performed_by_name AS "quitusPerformedByName"
+            `, [id, accountOwnerId, quitus.signedBy, quitus.signature, quitus.observations, quitus.approved, request.user.sub, performedByName]);
             await connection.query("COMMIT");
             response.json({ quitus: rows[0], message: "Quitus validé et document officiel ajouté au dossier client." });
         } catch (error) {
@@ -490,7 +519,7 @@ export function registerCalendarRoutes(app, requireAuthentication) {
             SELECT event.id,event.title,event.client_name AS "clientName",event.location,TO_CHAR(event.event_date,'YYYY-MM-DD') AS date,
                 TO_CHAR(event.start_time,'HH24:MI') AS "startTime",TO_CHAR(event.end_time,'HH24:MI') AS "endTime",event.notes,
                 event.quitus_signed_by AS "signedBy",event.quitus_signature AS signature,event.quitus_observations AS observations,
-                event.quitus_approved AS approved,client.client_data AS "clientData"
+                event.quitus_approved AS approved,event.quitus_performed_by_name AS "performedByName",client.client_data AS "clientData"
             FROM depannhome_calendar_events event
             LEFT JOIN depannhome_clients client ON client.owner_id=event.owner_id AND client.client_id=event.client_id
             WHERE event.id=$1 AND event.owner_id=$2 AND event.event_type='appointment' AND event.quitus_status='validated'
@@ -499,7 +528,7 @@ export function registerCalendarRoutes(app, requireAuthentication) {
         `, [id, ownerId, request.user.role, request.user.sub]);
         const event = eventResult.rows[0]; if (!event) return response.status(404).json({ message: "Quitus introuvable ou intervention déjà terminée." });
         const profileResult = await getPool().query(`SELECT owner.id AS "ownerId",profile.company_name AS "companyName",profile.address,profile.postal_code AS "postalCode",profile.city,profile.phone,profile.email,profile.registration_number AS "registrationNumber",profile.logo_data AS "logoData",profile.logo_mime_type AS "logoMimeType",profile.quitus_template AS "quitusTemplate",owner.quitus_template_policy AS "quitusTemplatePolicy" FROM depannhome_users owner LEFT JOIN depannhome_billing_profiles profile ON profile.owner_id=owner.id WHERE owner.id=$1`, [ownerId]);
-        const output = await createQuitusDocumentOutput(event, { signedBy: event.signedBy, signature: event.signature }, profileResult.rows[0] || {});
+        const output = await createQuitusDocumentOutput(event, { signedBy: event.signedBy, signature: event.signature, observations: event.observations, approved: event.approved, performedByName: event.performedByName }, profileResult.rows[0] || {});
         response.set({ "Content-Type": output.mimeType, "Content-Disposition": `inline; filename="${output.filename.replace(/"/g, "_")}"`, "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" });
         response.send(output.buffer);
     }));
@@ -583,7 +612,7 @@ export async function createQuitusDocumentOutput(event, quitus, profile = {}) {
 
 function quitusTemplateValues(event, quitus, profile) {
     const template = normalizeQuitusTemplate(profile.quitusTemplate);
-    return { numero_intervention: event.id, intervention: event.title, date: event.date, heure_debut: event.startTime || "", heure_fin: event.endTime || "", client_nom: event.clientName, adresse_intervention: event.location, observations: quitus.observations || "Aucune observation ni réserve.", entreprise_nom: profile.companyName, entreprise_adresse: [profile.address, profile.postalCode, profile.city].filter(Boolean).join(" "), entreprise_telephone: profile.phone, entreprise_email: profile.email, siret: profile.registrationNumber, signataire: quitus.signedBy, validation: quitus.approved ? "Lu et approuvé – Travaux réalisés et intervention acceptée" : "Aperçu avant signature", texte_entete: template.headerText, texte_pied_page: template.footerText };
+    return { numero_intervention: event.id, intervention: event.title, date: event.date, heure_debut: event.startTime || "", heure_fin: event.endTime || "", client_nom: event.clientName, adresse_intervention: event.location, observations: quitus.observations || "Aucune observation ni réserve.", entreprise_nom: profile.companyName, entreprise_adresse: [profile.address, profile.postalCode, profile.city].filter(Boolean).join(" "), entreprise_telephone: profile.phone, entreprise_email: profile.email, siret: profile.registrationNumber, realise_par: quitus.performedByName || "", signataire: quitus.signedBy, validation: quitus.approved ? "Lu et approuvé – Travaux réalisés et intervention acceptée" : "Aperçu avant signature", texte_entete: template.headerText, texte_pied_page: template.footerText };
 }
 
 export function createQuitusPdf(event, quitus, profile = {}) {
@@ -617,6 +646,8 @@ export function createQuitusPdf(event, quitus, profile = {}) {
         cursorY += 16;
         text([event.title, event.notes].filter(Boolean).join("\n") || "Intervention réalisée", 48, cursorY, 499, { size: 9, lineGap: 3 });
         cursorY = pdf.y + 12;
+        text(`Intervention réalisée par : ${quitus.performedByName || "Professionnel non renseigné"}`, 48, cursorY, 499, { size: 9, bold: true, color: template.secondaryColor });
+        cursorY = pdf.y + 10;
         const legalParagraphs = [
             `Je soussigné(e), ${quitus.signedBy}, reconnais que le technicien de ${companyName} est intervenu à mon domicile / dans les locaux situés ${clientAddress}, le ${formatDate(event.date)}, afin de réaliser les travaux et prestations décrits dans le présent document.`,
             "Je reconnais que l’intervention s’est déroulée conformément aux travaux convenus et que les prestations indiquées ci-dessus ont été réalisées.",
