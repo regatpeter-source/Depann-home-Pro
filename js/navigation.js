@@ -1908,12 +1908,15 @@ async function renderTeamManagement(container) {
                     await load();
                 });
                 const changeRole = createButton("Changer le rôle", "secondary-button", async () => {
-                    const choices = "admin = Administrateur (PC)\npc_standard = Poste PC standard\nmobile_admin = Administrateur Mobile\nteam_lead = Technicien référent / Chef d’équipe\ntechnician = Technicien\naccountant = Comptable";
-                    const nextRole = window.prompt(`Nouveau rôle pour ${member.fullName || member.username} :\n\n${choices}`, member.role);
-                    if (nextRole === null || nextRole === member.role) return;
+                    const availableRoles = tier === "basic"
+                        ? [["admin", "Administrateur (PC)"], ["pc_standard", "Poste PC standard"], ["accountant", "Comptable (PC)"], ["mobile_admin", "Administrateur Mobile"]]
+                        : [["admin", "Administrateur (PC)"], ["pc_standard", "Poste PC standard"], ["accountant", "Comptable (PC)"], ["mobile_admin", "Administrateur Mobile"], ["team_lead", "Technicien référent / Chef d’équipe"], ["technician", "Technicien"]];
+                    const nextRole = await chooseMemberRole(member, availableRoles);
+                    if (!nextRole || nextRole === member.role) return;
                     changeRole.disabled = true;
-                    const response = await fetch(`/api/auth/members/${encodeURIComponent(member.id)}/role`, { method: "PATCH", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ role: nextRole.trim() }) });
-                    if (!response.ok) feedback.textContent = (await response.json().catch(() => ({}))).message || "Le changement de rôle a échoué.";
+                    const response = await fetch(`/api/auth/members/${encodeURIComponent(member.id)}/role`, { method: "PATCH", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ role: nextRole }) });
+                    if (!response.ok) { feedback.textContent = (await response.json().catch(() => ({}))).message || "Le changement de rôle a échoué."; changeRole.disabled = false; return; }
+                    feedback.textContent = "Le rôle a été modifié.";
                     await load();
                 });
                 const permissionButtons = [];
@@ -2058,6 +2061,22 @@ async function teamRequest(url, options = {}) {
     } finally {
         window.clearTimeout(timeout);
     }
+}
+
+function chooseMemberRole(member, roles) {
+    return new Promise(resolve => {
+        const dialog = document.createElement("dialog");
+        dialog.className = "device-management-dialog";
+        dialog.innerHTML = `<form method="dialog"><div class="device-management-heading"><div><p class="eyebrow">Gestion des accès</p><h2>Changer le rôle</h2><p class="muted">${escapeHtml(member.fullName || member.username)}</p></div><button type="button" class="secondary-button" data-cancel-role>Fermer</button></div><label>Nouveau rôle<select name="role">${roles.map(([value, label]) => `<option value="${value}" ${value === member.role ? "selected" : ""}>${escapeHtml(label)}</option>`).join("")}</select></label><div class="form-actions"><button type="submit" class="secondary-button">Confirmer</button></div></form>`;
+        let settled = false;
+        const finish = value => { if (settled) return; settled = true; resolve(value); dialog.close(); };
+        dialog.querySelector("[data-cancel-role]").addEventListener("click", () => finish(""));
+        dialog.querySelector("form").addEventListener("submit", event => { event.preventDefault(); finish(event.currentTarget.elements.role.value); });
+        dialog.addEventListener("cancel", event => { event.preventDefault(); finish(""); });
+        dialog.addEventListener("close", () => { dialog.remove(); if (!settled) resolve(""); }, { once: true });
+        document.body.appendChild(dialog);
+        dialog.showModal();
+    });
 }
 
 function getCurrentRef() {

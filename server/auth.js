@@ -474,33 +474,48 @@ export function registerAuthRoutes(app) {
         const memberId = positiveId(request.params.memberId);
         const nextRole = MEMBER_ROLES.has(request.body?.role) ? request.body.role : "";
         if (!memberId || !nextRole) return response.status(400).json({ message: "Rôle invalide." });
-        const { rows } = await getPool().query(`
-            SELECT id, username, full_name AS "fullName", role, is_active AS "isActive"
-            FROM depannhome_users WHERE id = $1 AND account_owner_id = $2 AND id <> $2
-        `, [memberId, getAccountOwnerId(request)]);
-        const member = rows[0];
-        if (!member) return response.status(404).json({ message: "Accès introuvable." });
-        if (member.role === nextRole) return response.status(204).end();
-        const roleAccessError = await memberRoleAccessError(getAccountOwnerId(request), nextRole);
+        const ownerId = getAccountOwnerId(request);
+        const roleAccessError = await memberRoleAccessError(ownerId, nextRole);
         if (roleAccessError) return response.status(400).json({ message: roleAccessError });
-        if (member.role === "admin" && member.isActive && nextRole !== "admin") {
-            await ensureActiveAdministratorRemains(getAccountOwnerId(request), memberId);
+        const database = await getPool().connect();
+        try {
+            await database.query("BEGIN");
+            const { rows } = await database.query(`
+                SELECT id, username, full_name AS "fullName", role, is_active AS "isActive"
+                FROM depannhome_users WHERE id = $1 AND account_owner_id = $2 AND id <> $2
+                FOR UPDATE
+            `, [memberId, ownerId]);
+            const member = rows[0];
+            if (!member) { await database.query("ROLLBACK"); return response.status(404).json({ message: "Accès introuvable." }); }
+            if (member.role === nextRole) { await database.query("COMMIT"); return response.status(204).end(); }
+            if (member.role === "admin" && member.isActive && nextRole !== "admin") {
+                const administrators = await database.query("SELECT COUNT(*)::int AS count FROM depannhome_users WHERE account_owner_id=$1 AND role='admin' AND is_active=TRUE AND id<>$2", [ownerId, memberId]);
+                if (!administrators.rows[0]?.count) { await database.query("ROLLBACK"); return response.status(409).json({ message: "Cette opération est refusée : chaque entreprise doit conserver au moins un Administrateur (PC) actif." }); }
+            }
+            if (member.isActive && memberSeatFamily(member.role) !== memberSeatFamily(nextRole)) {
+                const seatError = await memberSeatError(ownerId, nextRole, memberId);
+                if (seatError) { await database.query("ROLLBACK"); return response.status(400).json({ message: seatError }); }
+            }
+            await database.query(`
+                UPDATE depannhome_users
+                SET role = $3, department = CASE WHEN $3 IN ('technician', 'team_lead') THEN department ELSE '' END,
+                    can_create_billing = CASE WHEN $3 = 'technician' THEN FALSE ELSE can_create_billing END,
+                    can_access_billing = CASE WHEN $3 IN ('pc_standard', 'accountant') THEN can_access_billing ELSE FALSE END,
+                    can_access_accounting = CASE WHEN $3 IN ('pc_standard', 'accountant') THEN can_access_accounting ELSE FALSE END,
+                    can_switch_group_companies = CASE WHEN $3 IN ('pc_standard', 'accountant') THEN can_switch_group_companies ELSE FALSE END,
+                    updated_at = NOW()
+                WHERE id = $1 AND account_owner_id = $2
+            `, [memberId, ownerId, nextRole]);
+            await recordMemberAudit(ownerId, request.user.sub, member, "role_changed", { previousRole: member.role, nextRole }, database);
+            await database.query("COMMIT");
+            response.status(204).end();
+        } catch (error) {
+            await database.query("ROLLBACK").catch(() => {});
+            console.error("[member-role-change] failed", { ownerId, memberId, nextRole, code: error.code, message: error.message });
+            response.status(409).json({ message: "Le rôle n’a pas été modifié. Rechargez l’équipe puis réessayez." });
+        } finally {
+            database.release();
         }
-        if (member.isActive && memberSeatFamily(member.role) !== memberSeatFamily(nextRole)) {
-            const seatError = await memberSeatError(getAccountOwnerId(request), nextRole, memberId);
-            if (seatError) return response.status(400).json({ message: seatError });
-        }
-        await getPool().query(`
-            UPDATE depannhome_users
-            SET role = $3, department = CASE WHEN $3 IN ('technician', 'team_lead') THEN department ELSE '' END,
-                can_access_billing = CASE WHEN $3 IN ('pc_standard', 'accountant') THEN can_access_billing ELSE FALSE END,
-                can_access_accounting = CASE WHEN $3 IN ('pc_standard', 'accountant') THEN can_access_accounting ELSE FALSE END,
-                can_switch_group_companies = CASE WHEN $3 IN ('pc_standard', 'accountant') THEN can_switch_group_companies ELSE FALSE END,
-                updated_at = NOW()
-            WHERE id = $1 AND account_owner_id = $2
-        `, [memberId, getAccountOwnerId(request), nextRole]);
-        await recordMemberAudit(getAccountOwnerId(request), request.user.sub, member, "role_changed", { previousRole: member.role, nextRole });
-        response.status(204).end();
     }));
 
     app.post("/api/auth/members/:memberId/reset-password", requireAccountAdministrator, asyncHandler(async (request, response) => {
@@ -810,9 +825,9 @@ async function ensureActiveAdministratorRemains(ownerId, targetId) {
     }
 }
 
-async function recordMemberAudit(ownerId, actorId, member, action, details = {}) {
+async function recordMemberAudit(ownerId, actorId, member, action, details = {}, database = getPool()) {
     const targetUserId = action.endsWith("_deleted") ? null : member?.id || null;
-    await getPool().query(`
+    await database.query(`
         INSERT INTO depannhome_member_audit (owner_id, actor_id, target_user_id, target_username, target_full_name, action, details)
         VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
     `, [ownerId, actorId || null, targetUserId, cleanText(member?.username, 32), cleanText(member?.fullName || member?.full_name, 100), action, JSON.stringify(details)]);
