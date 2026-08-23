@@ -1,6 +1,6 @@
 import { getPool } from "./database.js";
 import { createBillingPdf, normalizeVatRegime } from "./billing.js";
-import { sendDocumentEmail } from "./email.js";
+import { isEmailDeliveryConfigured, sendDocumentEmail } from "./email.js";
 import { calculateSubscriptionPriceCents, subscriptionTierConfig } from "./subscription-tiers.js";
 import { createHash } from "node:crypto";
 
@@ -219,6 +219,7 @@ export function registerSubscriptionInvoicingRoutes(app, requireCreator) {
         if (result.skippedReason === "incomplete_profile") {
             return response.status(409).json({ ...result, message: `Complétez le profil de facturation de la plateforme : ${result.missingProfileFields.join(", ")}.` });
         }
+        if (result.skippedReason === "smtp_not_configured") return response.status(503).json({ ...result, message: "Configurez Brevo SMTP avant de créer ou d’envoyer les factures d’abonnement." });
         if (result.skippedReason === "already_running") return response.status(409).json({ ...result, message: "Un traitement de facturation est déjà en cours. Réessayez dans quelques instants." });
         response.json({ ...result, message: processingMessage(result) });
     }));
@@ -514,6 +515,10 @@ export async function processDueSubscriptionInvoices() {
             console.warn("[subscription-invoicing] skipped: platform billing profile is incomplete", { missingProfileFields });
             return { skipped: true, skippedReason: "incomplete_profile", missingProfileFields, created: 0, sent: 0, failed: 0 };
         }
+        if (!isEmailDeliveryConfigured()) {
+            console.warn("[subscription-invoicing] skipped: Brevo SMTP is not configured");
+            return { skipped: true, skippedReason: "smtp_not_configured", created: 0, sent: 0, failed: 0 };
+        }
         await cancelSupersededSubscriptionInvoices();
         const { rows: subscriptions } = await database.query(`
             SELECT owner.id, owner.company_name AS "companyName", owner.full_name AS "fullName", owner.email, owner.subscription_label AS "subscriptionLabel",
@@ -736,7 +741,7 @@ async function subscriptionInvoicingStatus() {
         FROM depannhome_users owner
         LEFT JOIN depannhome_organizations organization ON organization.account_owner_id=owner.id
     `);
-    return { profileComplete: isCompleteProfile(issuer), missingProfileFields: incompleteProfileFields(issuer), dueAccounts: rows[0]?.dueAccounts || 0, pending: rows[0]?.pending || 0, failed: rows[0]?.failed || 0, sending: rows[0]?.sending || 0 };
+    return { profileComplete: isCompleteProfile(issuer), missingProfileFields: incompleteProfileFields(issuer), smtpConfigured: isEmailDeliveryConfigured(), dueAccounts: rows[0]?.dueAccounts || 0, pending: rows[0]?.pending || 0, failed: rows[0]?.failed || 0, sending: rows[0]?.sending || 0 };
 }
 
 function sanitizeProfile(value) {

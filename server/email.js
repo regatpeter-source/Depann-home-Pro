@@ -1,6 +1,6 @@
 import nodemailer from "nodemailer";
 
-function smtpConfigured() {
+export function isEmailDeliveryConfigured() {
     return ["BREVO_SMTP_HOST", "BREVO_SMTP_USER", "BREVO_SMTP_PASSWORD", "BREVO_SMTP_FROM"].every(name => {
         const value = String(process.env[name] || "");
         return value && !/votre|remplacez|choisissez/i.test(value);
@@ -47,7 +47,7 @@ export async function sendSupportRequestEmail({ senderName, senderEmail, senderU
 }
 
 async function sendEmail({ recipient, subject, text, html, attachments = [] }) {
-    if (!smtpConfigured()) {
+    if (!isEmailDeliveryConfigured()) {
         const error = new Error("L’envoi d’e-mails n’est pas configuré. Renseignez Brevo SMTP dans les variables d’environnement.");
         error.code = "SMTP_NOT_CONFIGURED";
         throw error;

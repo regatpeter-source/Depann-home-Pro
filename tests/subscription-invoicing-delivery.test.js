@@ -43,9 +43,19 @@ test("la Console Créateur permet un traitement immédiat avec un délai SMTP ad
 });
 
 test("Brevo dispose de délais bornés et retourne l’identifiant SMTP", () => {
+    assert.match(emailSource, /export function isEmailDeliveryConfigured\(\)/);
     assert.match(emailSource, /connectionTimeout: 15_000/);
     assert.match(emailSource, /socketTimeout: 30_000/);
     assert.match(emailSource, /return transporter\.sendMail/);
+});
+
+test("les traitements manuel et automatique refusent de créer des factures sans SMTP", () => {
+    assert.match(invoicingSource, /if \(!isEmailDeliveryConfigured\(\)\)/);
+    assert.match(invoicingSource, /skippedReason: "smtp_not_configured"/);
+    assert.match(invoicingSource, /result\.skippedReason === "smtp_not_configured"/);
+    assert.match(invoicingSource, /smtpConfigured: isEmailDeliveryConfigured\(\)/);
+    assert.match(creatorSource, /processing\.profileComplete && processing\.smtpConfigured/);
+    assert.match(creatorSource, /configurez les variables Brevo SMTP du serveur/);
 });
 
 test("la facture détaille la formule et les postes PC et mobiles inclus", () => {

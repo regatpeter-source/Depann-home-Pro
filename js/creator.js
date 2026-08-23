@@ -765,6 +765,7 @@ async function renderSubscriptionInvoices() {
     const summary = result.data.summary || {};
     const processing = result.data.processing || {};
     const profileWarning = processing.profileComplete ? "" : `<p class="auth-message error">Profil de facturation incomplet : ${escapeHtml((processing.missingProfileFields || []).join(", ") || "coordonnées manquantes")}.</p>`;
+    const smtpWarning = processing.smtpConfigured ? "" : '<p class="auth-message error">Envoi indisponible : configurez les variables Brevo SMTP du serveur avant de créer ou d’envoyer les factures.</p>';
     workspace.innerHTML = `
         <section class="creator-form creator-subscription-invoices-panel">
             <div class="form-heading"><div><p class="eyebrow">Facturation plateforme</p><h3>Factures d’abonnement</h3></div><span class="creator-state">${invoices.length} facture${invoices.length > 1 ? "s" : ""}</span></div>
@@ -772,9 +773,10 @@ async function renderSubscriptionInvoices() {
             <div class="creator-subscription-summary creator-billing-summary"><article><span>Facturé brut</span><strong>${formatCurrency(summary.grossInvoicedCents)}</strong></article><article><span>Avoirs émis</span><strong>−${formatCurrency(summary.creditedCents)}</strong></article><article><span>Facturé net</span><strong>${formatCurrency(summary.netBilledCents)}</strong></article><article><span>Encaissé</span><strong>${formatCurrency(summary.collectedCents)}</strong></article><article><span>À encaisser</span><strong>${formatCurrency(summary.outstandingCents)}</strong></article><article class="${Number(summary.refundsPendingCents) ? "attention" : ""}"><span>À rembourser</span><strong>${formatCurrency(summary.refundsPendingCents)}</strong></article></div>
             <div class="creator-subscription-processing"><strong>${Number(processing.dueAccounts || 0)} abonnement(s) arrivé(s) à échéance</strong><span>${Number(processing.pending || 0)} en attente · ${Number(processing.failed || 0)} en échec · ${Number(processing.sending || 0)} en cours</span></div>
             ${profileWarning}
+            ${smtpWarning}
             <p class="auth-message" id="creatorSubscriptionProcessingFeedback" aria-live="polite"></p>
             <div class="creator-subscription-invoice-list">${invoices.length ? invoices.map(renderSubscriptionInvoice).join("") : '<p class="muted">Aucune facture d’abonnement n’a encore été créée.</p>'}</div>
-            <div class="creator-form-actions"><button type="button" class="primary-button" id="creatorSubscriptionInvoicesProcess" ${processing.profileComplete ? "" : "disabled"}>Créer et envoyer maintenant</button><button type="button" class="secondary-button" id="creatorSubscriptionInvoicesBack">Retour aux entreprises</button></div>
+            <div class="creator-form-actions"><button type="button" class="primary-button" id="creatorSubscriptionInvoicesProcess" ${processing.profileComplete && processing.smtpConfigured ? "" : "disabled"}>Créer et envoyer maintenant</button><button type="button" class="secondary-button" id="creatorSubscriptionInvoicesBack">Retour aux entreprises</button></div>
         </section>
     `;
     workspace.querySelector("#creatorSubscriptionInvoicesProcess").addEventListener("click", async event => {
