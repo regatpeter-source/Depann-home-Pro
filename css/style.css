@@ -4368,6 +4368,11 @@ body.desktop-device .billing-editor-panel.billing-editor-live-active{
     font-weight:800;
 }
 
+.team-department-field small{
+    color:var(--muted);
+    font-weight:500;
+}
+
 .settings-field input,
 .settings-field select,
 .team-form-fields input,
@@ -4537,6 +4542,25 @@ body.desktop-device .billing-editor-panel.billing-editor-live-active{
     display:grid;
     gap:10px;
 }
+
+.team-department-groups{
+    display:grid;
+    grid-template-columns:repeat(auto-fit, minmax(210px, 1fr));
+    gap:10px;
+}
+
+.team-department-group{
+    display:grid;
+    gap:5px;
+    padding:13px;
+    border:1px solid rgba(10,92,54,.2);
+    border-radius:13px;
+    background:#effaf3;
+}
+
+.team-department-group strong{ color:var(--primary); }
+.team-department-group span{ color:var(--secondary); font-size:13px; font-weight:800; }
+.team-department-group small{ color:var(--muted); }
 
 .team-member{
     display:flex;

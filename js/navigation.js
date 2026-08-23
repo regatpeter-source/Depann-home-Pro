@@ -1710,6 +1710,10 @@ async function renderTeamManagement(container) {
         if (name === "department") {
             input.setAttribute("list", "teamDepartmentSuggestions");
             input.dataset.technicianOnly = "true";
+            field.className = "team-department-field";
+            const help = document.createElement("small");
+            help.textContent = "Ce pôle regroupe le technicien ou chef d’équipe dans le planning.";
+            field.append(input, help);
         }
         if (name === "password") {
             const wrapper = document.createElement("span");
@@ -1727,7 +1731,7 @@ async function renderTeamManagement(container) {
             toggle.setAttribute("aria-pressed", "false");
             wrapper.append(input, toggle);
             field.appendChild(wrapper);
-        } else {
+        } else if (name !== "department") {
             field.appendChild(input);
         }
         formFields.appendChild(field);
@@ -1780,10 +1784,12 @@ async function renderTeamManagement(container) {
     card.appendChild(form);
     const membersSection = document.createElement("section");
     membersSection.className = "team-section";
-    membersSection.innerHTML = '<div class="team-section-heading"><div><p class="eyebrow">Accès créés</p><h3>Membres de l’équipe</h3></div></div>';
+    membersSection.innerHTML = '<div class="team-section-heading"><div><p class="eyebrow">Organisation</p><h3>Pôles et équipes</h3><p class="muted">Les techniciens et chefs d’équipe sont regroupés ici et dans le planning.</p></div></div>';
+    const departments = document.createElement("div");
+    departments.className = "team-department-groups";
     const list = document.createElement("div");
     list.className = "team-list";
-    membersSection.appendChild(list);
+    membersSection.append(departments, list);
     card.appendChild(membersSection);
     const devicesSection = document.createElement("section");
     devicesSection.className = "team-section";
@@ -1800,6 +1806,7 @@ async function renderTeamManagement(container) {
         form.elements.phone.required = isTechnician || isMobileAdmin;
         form.elements.email.required = isTechnician || isMobileAdmin;
         form.elements.department.disabled = !isTechnician;
+        form.elements.department.closest("label").hidden = !isTechnician;
         submit.textContent = isTechnician ? (roleInput.value === "team_lead" ? "Créer le chef d’équipe" : "Créer le technicien") : isMobileAdmin ? "Créer l’Administrateur Mobile" : isAdministratorPc ? "Créer l’Administrateur (PC)" : roleInput.value === "accountant" ? "Créer le Comptable (PC)" : "Créer le poste PC standard";
         roleField.dataset.role = roleInput.value;
         permissionsField.hidden = !advancedPcPermissions || (!isConfigurablePc && !isAdministratorPc);
@@ -1881,6 +1888,17 @@ async function renderTeamManagement(container) {
             const payload = await response.json();
             if (!response.ok) throw new Error(payload.message || "Impossible de charger l’équipe.");
             list.innerHTML = "";
+            const fieldMembers = (payload.members || []).filter(member => ["technician", "team_lead"].includes(member.role));
+            const departmentGroups = new Map();
+            fieldMembers.forEach(member => {
+                const department = String(member.department || "Non classé").trim() || "Non classé";
+                if (!departmentGroups.has(department)) departmentGroups.set(department, []);
+                departmentGroups.get(department).push(member);
+            });
+            departments.innerHTML = [...departmentGroups.entries()]
+                .sort(([first], [second]) => first.localeCompare(second, "fr"))
+                .map(([department, groupMembers]) => `<article class="team-department-group"><strong>${escapeHtml(department)}</strong><span>${groupMembers.length} membre${groupMembers.length > 1 ? "s" : ""}</span><small>${escapeHtml(groupMembers.map(member => member.fullName || member.username).join(" · "))}</small></article>`)
+                .join("") || '<p class="muted">Aucun technicien ou chef d’équipe n’est encore affecté à un pôle.</p>';
             if (!payload.members?.length) list.textContent = "Aucun accès créé pour le moment.";
             (payload.members || []).forEach(member => {
                 const item = document.createElement("div");
@@ -1915,8 +1933,11 @@ async function renderTeamManagement(container) {
                     if (!nextRole || nextRole === member.role) return;
                     changeRole.disabled = true;
                     const response = await fetch(`/api/auth/members/${encodeURIComponent(member.id)}/role`, { method: "PATCH", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ role: nextRole }) });
-                    if (!response.ok) { feedback.textContent = (await response.json().catch(() => ({}))).message || "Le changement de rôle a échoué."; changeRole.disabled = false; return; }
-                    feedback.textContent = "Le rôle a été modifié.";
+                    const payload = await response.json().catch(() => ({}));
+                    if (!response.ok) { feedback.textContent = payload.message || "Le changement de rôle a échoué."; changeRole.disabled = false; return; }
+                    feedback.textContent = payload.deviceActivationRequired
+                        ? "Le rôle a été modifié. L’ancien appareil incompatible a été révoqué : activez ce compte sur le nouveau type de poste."
+                        : "Le rôle a été modifié. L’appareil actuel reste autorisé.";
                     await load();
                 });
                 const permissionButtons = [];

@@ -23,12 +23,15 @@ test("le serveur limite et persiste ce droit au rôle technicien", () => {
 });
 
 test("la rétrogradation Administrateur Mobile vers Technicien conserve un appareil mobile cohérent", () => {
-    assert.match(database, /account\.role NOT IN \('admin', 'mobile_admin', 'team_lead', 'technician'\)/);
+    assert.match(database, /account\.role IN \('mobile_admin', 'team_lead', 'technician'\) AND device\.device_type <> 'mobile'/);
+    assert.match(database, /account\.role IN \('pc_standard', 'accountant'\) AND device\.device_type <> 'desktop'/);
     assert.match(database, /account\.role IN \('mobile_admin', 'team_lead', 'technician'\)\)\s+AND device\.status <> 'rejected'/);
-    assert.match(database, /SET device_type = 'mobile'[\s\S]*account\.role IN \('mobile_admin', 'team_lead', 'technician'\)/);
+    assert.doesNotMatch(database, /SET device_type = '(?:mobile|desktop)'/);
     assert.match(auth, /SELECT id, username, full_name AS "fullName", role, is_active AS "isActive"[\s\S]*FOR UPDATE/);
     assert.match(auth, /can_create_billing = CASE WHEN \$3 = 'technician' THEN FALSE ELSE can_create_billing END/);
-    assert.match(auth, /recordMemberAudit\(ownerId, request\.user\.sub, member, "role_changed", \{ previousRole: member\.role, nextRole \}, database\)/);
+    assert.match(auth, /const incompatibleDeviceType = \[MOBILE_ADMIN_ROLE, TEAM_LEAD_ROLE, "technician"\]\.includes\(nextRole\)/);
+    assert.match(auth, /SET status='rejected', session_id=NULL/);
+    assert.match(auth, /deviceActivationRequired, rejectedDeviceIds/);
     assert.match(auth, /\[member-role-change\] failed/);
 });
 

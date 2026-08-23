@@ -506,9 +506,19 @@ export function registerAuthRoutes(app) {
                     updated_at = NOW()
                 WHERE id = $1 AND account_owner_id = $2
             `, [memberId, ownerId, nextRole]);
-            await recordMemberAudit(ownerId, request.user.sub, member, "role_changed", { previousRole: member.role, nextRole }, database);
+            const incompatibleDeviceType = [MOBILE_ADMIN_ROLE, TEAM_LEAD_ROLE, "technician"].includes(nextRole)
+                ? "desktop"
+                : [STANDARD_PC_ROLE, "accountant"].includes(nextRole) ? "mobile" : "";
+            const rejectedDevices = incompatibleDeviceType ? await database.query(`
+                UPDATE depannhome_auth_devices
+                SET status='rejected', session_id=NULL, verification_code_hash='', verification_code_expires_at=NULL
+                WHERE user_id=$1 AND device_type=$2 AND status<>'rejected'
+                RETURNING id
+            `, [memberId, incompatibleDeviceType]) : { rows: [] };
+            const deviceActivationRequired = rejectedDevices.rows.length > 0;
+            await recordMemberAudit(ownerId, request.user.sub, member, "role_changed", { previousRole: member.role, nextRole, deviceActivationRequired, rejectedDeviceIds: rejectedDevices.rows.map(device => device.id) }, database);
             await database.query("COMMIT");
-            response.status(204).end();
+            response.json({ role: nextRole, deviceActivationRequired });
         } catch (error) {
             await database.query("ROLLBACK").catch(() => {});
             console.error("[member-role-change] failed", { ownerId, memberId, nextRole, code: error.code, message: error.message });

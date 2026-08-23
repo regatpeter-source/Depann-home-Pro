@@ -58,7 +58,17 @@ test("le serveur revalide toutes les affectations et les protège aussi par déc
     assert.match(auth, /WHERE account_owner_id = \$1 AND is_active = TRUE/);
     assert.equal(missions.match(/async function acceptMission\(/g)?.length, 1);
     const calendarMembersSql = auth.match(/app\.get\("\/api\/auth\/calendar-members"[\s\S]*?response\.json\(\{ members: rows \}\);/u)?.[0] || "";
+    assert.match(calendarMembersSql, /department, role, is_active AS "isActive"/);
+    assert.doesNotMatch(calendarMembersSql, /role\s+IN\s*\(/);
     assert.doesNotMatch(calendarMembersSql, /const groupCompany/);
+});
+
+test("le chef d’équipe reste visible et dispose d’une vue globale du planning", () => {
+    const calendar = read("server/calendar.js");
+    const client = read("js/calendar.js");
+    assert.match(calendar, /\$4 NOT IN \('technician', 'accountant'\)/);
+    assert.match(client, /groupTechniciansByDepartment\(members\)/);
+    assert.match(client, /team_lead: "Responsable"/);
 });
 
 test("même un Administrateur mobile ne reçoit jamais le contexte multi-entreprises", () => {
