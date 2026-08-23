@@ -631,7 +631,8 @@ function createLineEditor(line, index, billingDocument, rerender) {
         <input data-field="unitPrice" aria-label="Prix unitaire HT" type="number" min="0" step="0.01" value="${escapeHtml(line.unitPrice)}">
         <input data-field="vatRate" aria-label="TVA" type="number" min="0" max="100" step="0.01" value="${escapeHtml(billingDocument.vatRegime === "franchise" ? 0 : line.vatRate)}" ${billingDocument.vatRegime === "franchise" ? "readonly title=\"TVA neutralisée par le régime Franchise en base\"" : ""}>
         <strong class="billing-line-total">${formatMoney(lineTotal(line))}</strong>
-        <button type="button" class="danger-button" aria-label="Supprimer la ligne">×</button>
+        ${canCreateSavedBillingLine() ? '<button type="button" class="secondary-button billing-line-save" data-save-billing-template>Préenregistrer</button>' : ""}
+        <button type="button" class="danger-button" data-remove-billing-line aria-label="Supprimer la ligne">×</button>
     `;
     const inputs = item.querySelectorAll("[data-field]");
     inputs.forEach(input => input.addEventListener("input", () => {
@@ -646,7 +647,28 @@ function createLineEditor(line, index, billingDocument, rerender) {
         Object.assign(line, { description: template.description ? `${template.label} — ${template.description}` : template.label, unit: template.unit, unitPrice: Number(template.unitPrice), vatRate: billingDocument.vatRegime === "franchise" ? 0 : Number(template.vatRate) });
         rerender();
     });
-    item.querySelector("button").addEventListener("click", () => {
+    item.querySelector("[data-save-billing-template]")?.addEventListener("click", async event => {
+        const description = String(line.description || "").trim();
+        if (!description) return alert("Renseignez la description de la ligne avant de la préenregistrer.");
+        const label = window.prompt("Nom de la ligne préenregistrée :", description.slice(0, 160));
+        if (label === null) return;
+        const normalizedLabel = label.trim();
+        if (!normalizedLabel) return alert("Le nom de la ligne préenregistrée est obligatoire.");
+        const button = event.currentTarget;
+        button.disabled = true;
+        const result = await apiRequest("/api/billing/templates", { method: "POST", body: JSON.stringify({
+            label: normalizedLabel,
+            description: normalizedLabel === description ? "" : description,
+            unit: line.unit,
+            unitPrice: line.unitPrice,
+            vatRate: billingDocument.vatRegime === "franchise" ? 0 : line.vatRate
+        }) });
+        if (!result.ok) { button.disabled = false; return alert(result.message || "Impossible de préenregistrer cette ligne."); }
+        if (result.data?.template) billingData.templates = [...billingData.templates, result.data.template].sort((first, second) => first.label.localeCompare(second.label, "fr"));
+        alert(`La ligne « ${normalizedLabel} » est maintenant disponible dans les lignes préenregistrées.`);
+        rerender();
+    });
+    item.querySelector("[data-remove-billing-line]").addEventListener("click", () => {
         if (!confirm("Supprimer cette ligne du document en cours ?")) return;
         billingDocument.lines.splice(index, 1);
         if (!billingDocument.lines.length) billingDocument.lines.push(emptyLine());
@@ -853,6 +875,7 @@ function isTechnician() { return document.body.dataset.role === "technician"; }
 function isAccountant() { return document.body.dataset.role === "accountant"; }
 function isFullAdministrator() { return document.body.dataset.role === "admin"; }
 function isTechnicianBillingAllowed() { return !isTechnician() || document.body.dataset.technicianBillingEnabled !== "false"; }
+function canCreateSavedBillingLine() { return !isAccountant() && isTechnicianBillingAllowed(); }
 function canAccessTechnicalReports() {
     try { return JSON.parse(document.body.dataset.organizationFeatures || "{}").technicalReports !== false; }
     catch { return false; }

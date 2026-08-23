@@ -4123,7 +4123,7 @@ body.mobile-device[data-role="technician"] .calendar-list-day{
 
 .billing-line{
     display:grid;
-    grid-template-columns:1.2fr 2fr .65fr .8fr 1fr .75fr 1fr auto;
+    grid-template-columns:1.2fr 2fr .65fr .8fr 1fr .75fr 1fr auto auto;
     gap:8px;
     align-items:center;
     padding:10px;
@@ -4154,6 +4154,10 @@ body.mobile-device[data-role="technician"] .calendar-list-day{
     padding:7px 10px;
     cursor:pointer;
     font-size:18px;
+}
+
+.billing-line-save{
+    white-space:nowrap;
 }
 
 .billing-totals{

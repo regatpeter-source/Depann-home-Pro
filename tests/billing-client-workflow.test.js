@@ -22,6 +22,15 @@ test("administrators can open and close the saved billing line manager", () => {
     assert.doesNotMatch(accountingSource, /\["aids", "Aides financières"\]/);
 });
 
+test("authorized mobile workstations can save a quote line into the reusable library", () => {
+    assert.match(billingSource, /data-save-billing-template>Préenregistrer/);
+    assert.match(billingSource, /function canCreateSavedBillingLine\(\) \{ return !isAccountant\(\) && isTechnicianBillingAllowed\(\); \}/);
+    assert.match(billingSource, /apiRequest\("\/api\/billing\/templates", \{ method: "POST"/);
+    assert.match(billingSource, /billingData\.templates = \[\.\.\.billingData\.templates, result\.data\.template\]/);
+    assert.match(billingServerSource, /app\.post\("\/api\/billing\/templates", requireAuthentication, requireTechnicianBillingAccess/);
+    assert.match(billingServerSource, /app\.delete\("\/api\/billing\/templates\/:templateId", requireAuthentication, requireBillingAdministration/);
+});
+
 test("saved quotes and invoices open the client before offering email or print", () => {
     assert.match(billingSource, /const savedDocumentId = result\.data\?\.id \|\| document\.id/);
     assert.match(billingSource, /depannhome:open-client/);

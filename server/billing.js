@@ -647,7 +647,7 @@ export function registerBillingRoutes(app, requireAuthentication) {
         response.status(204).end();
     }));
 
-    app.post("/api/billing/templates", requireAuthentication, requireBillingAdministration, asyncHandler(async (request, response) => {
+    app.post("/api/billing/templates", requireAuthentication, requireTechnicianBillingAccess, asyncHandler(async (request, response) => {
         const template = sanitizeTemplate(request.body);
         if (!template.ok) return response.status(400).json({ message: template.message });
         const taxIdentity = await billingTaxIdentity(getAccountOwnerId(request));
