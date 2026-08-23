@@ -875,7 +875,7 @@ function isTechnician() { return document.body.dataset.role === "technician"; }
 function isAccountant() { return document.body.dataset.role === "accountant"; }
 function isFullAdministrator() { return document.body.dataset.role === "admin"; }
 function isTechnicianBillingAllowed() { return !isTechnician() || document.body.dataset.technicianBillingEnabled !== "false"; }
-function canCreateSavedBillingLine() { return !isAccountant() && isTechnicianBillingAllowed(); }
+function canCreateSavedBillingLine() { const role = document.body.dataset.role; return role !== "accountant" && (document.body.dataset.deviceType === "desktop" || ["admin", "mobile_admin"].includes(role)); }
 function canAccessTechnicalReports() {
     try { return JSON.parse(document.body.dataset.organizationFeatures || "{}").technicalReports !== false; }
     catch { return false; }

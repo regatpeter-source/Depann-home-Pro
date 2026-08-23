@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { canCreateBillingTemplates } from "../server/billing.js";
 
 const billingSource = readFileSync(new URL("../js/billing.js", import.meta.url), "utf8");
 const calendarSource = readFileSync(new URL("../js/calendar.js", import.meta.url), "utf8");
@@ -22,13 +23,21 @@ test("administrators can open and close the saved billing line manager", () => {
     assert.doesNotMatch(accountingSource, /\["aids", "Aides financières"\]/);
 });
 
-test("authorized mobile workstations can save a quote line into the reusable library", () => {
+test("only PC and Mobile Administrator workstations can save reusable billing lines", () => {
     assert.match(billingSource, /data-save-billing-template>Préenregistrer/);
-    assert.match(billingSource, /function canCreateSavedBillingLine\(\) \{ return !isAccountant\(\) && isTechnicianBillingAllowed\(\); \}/);
+    assert.match(billingSource, /document\.body\.dataset\.deviceType === "desktop" \|\| \["admin", "mobile_admin"\]\.includes\(role\)/);
     assert.match(billingSource, /apiRequest\("\/api\/billing\/templates", \{ method: "POST"/);
     assert.match(billingSource, /billingData\.templates = \[\.\.\.billingData\.templates, result\.data\.template\]/);
-    assert.match(billingServerSource, /app\.post\("\/api\/billing\/templates", requireAuthentication, requireTechnicianBillingAccess/);
+    assert.match(billingServerSource, /app\.post\("\/api\/billing\/templates", requireAuthentication, requireBillingTemplateCreation/);
     assert.match(billingServerSource, /app\.delete\("\/api\/billing\/templates\/:templateId", requireAuthentication, requireBillingAdministration/);
+    assert.equal(canCreateBillingTemplates({ role: "pc_standard", deviceType: "desktop" }), true);
+    assert.equal(canCreateBillingTemplates({ role: "admin", deviceType: "mobile" }), true);
+    assert.equal(canCreateBillingTemplates({ role: "mobile_admin", deviceType: "mobile" }), true);
+    assert.equal(canCreateBillingTemplates({ role: "technician", deviceType: "mobile" }), false);
+    assert.equal(canCreateBillingTemplates({ role: "team_lead", deviceType: "mobile" }), false);
+    assert.equal(canCreateBillingTemplates({ role: "accountant", deviceType: "desktop" }), false);
+    assert.match(billingSource, /<select aria-label="Ligne préenregistrée"/);
+    assert.match(billingSource, /id="addBillingLine">\+ Ligne libre/);
 });
 
 test("saved quotes and invoices open the client before offering email or print", () => {

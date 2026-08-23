@@ -647,7 +647,7 @@ export function registerBillingRoutes(app, requireAuthentication) {
         response.status(204).end();
     }));
 
-    app.post("/api/billing/templates", requireAuthentication, requireTechnicianBillingAccess, asyncHandler(async (request, response) => {
+    app.post("/api/billing/templates", requireAuthentication, requireBillingTemplateCreation, asyncHandler(async (request, response) => {
         const template = sanitizeTemplate(request.body);
         if (!template.ok) return response.status(400).json({ message: template.message });
         const taxIdentity = await billingTaxIdentity(getAccountOwnerId(request));
@@ -900,6 +900,15 @@ function buildLegalSnapshot(document, profile) {
 function requireBillingAdministration(request, response, next) {
     if (request.user?.role === "admin") return next();
     return response.status(403).json({ message: request.user?.role === "accountant" ? "L’espace Facturation du comptable est en consultation uniquement." : "La modification des documents et paramètres de facturation n’est pas autorisée pour ce poste." });
+}
+
+export function canCreateBillingTemplates(user) {
+    return user?.role !== "accountant" && (user?.deviceType === "desktop" || ["admin", "mobile_admin"].includes(user?.role));
+}
+
+function requireBillingTemplateCreation(request, response, next) {
+    if (canCreateBillingTemplates(request.user)) return next();
+    return response.status(403).json({ message: "Le préenregistrement des lignes est réservé aux postes PC et aux Administrateurs Mobile." });
 }
 
 function requireBillingDocumentAdministration(request, response, next) {
