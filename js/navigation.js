@@ -1959,13 +1959,18 @@ async function renderTeamManagement(container) {
             const managedDevices = devicePayload.devices || [];
             if (!managedDevices.length) devices.insertAdjacentHTML("beforeend", "<p class=\"muted\">Aucun appareil enregistré.</p>");
             managedDevices.forEach(device => {
-                const isPc = ["admin", "pc_standard"].includes(device.userRole) && device.deviceType !== "mobile";
+                const isPc = ["admin", "pc_standard", "accountant"].includes(device.userRole) && device.deviceType !== "mobile";
                 const isMobile = device.deviceType === "mobile";
                 const pcSeatAvailable = Number(pcSeats.activePcUsers) < Number(pcSeats.maxPcUsers);
                 const mobileSeatAvailable = Number(pcSeats.activeMobileUsers) < Number(pcSeats.maxMobileUsers);
                 const item = document.createElement("div");
                 item.className = "team-member";
-                const deviceTypeLabel = isPc ? device.userRole === "admin" ? "Poste Administrateur (PC)" : "Poste PC standard" : isMobile && ["admin", "mobile_admin"].includes(device.userRole) ? "Administrateur Mobile" : isMobile ? "Appareil mobile" : "Appareil technicien";
+                const deviceTypeLabel = isPc
+                    ? device.userRole === "admin" ? "Poste Administrateur (PC)" : device.userRole === "accountant" ? "Poste comptable (PC)" : "Poste PC standard"
+                    : isMobile && ["admin", "mobile_admin"].includes(device.userRole) ? "Administrateur Mobile"
+                        : isMobile && device.userRole === "team_lead" ? "Chef d’équipe mobile"
+                            : isMobile && device.userRole === "technician" ? "Technicien mobile"
+                                : isMobile ? "Appareil mobile" : "Appareil non conforme";
                 const assigneeName = device.fullName || device.username || "Titulaire non renseigné";
                 const statusLabel = device.status === "approved" ? "Activé" : device.status === "rejected" ? "Refusé" : device.status === "code_pending" ? "Code e-mail envoyé" : "En attente d’autorisation";
                 item.innerHTML = `<div class="team-member-summary"><div class="team-member-title"><strong>${escapeHtml(deviceTypeLabel)} — ${escapeHtml(assigneeName)}</strong><span class="team-role-badge ${isPc ? "is-admin" : "is-technician"}">${isPc ? "PC" : "Mobile"}</span><span class="team-state-badge ${device.status === "approved" ? "is-active" : device.status === "rejected" ? "is-inactive" : "is-pending"}">${statusLabel}</span></div><span class="team-member-meta">Attribué à ${escapeHtml(assigneeName)}${device.username ? ` · ${escapeHtml(device.username)}` : ""} · ${escapeHtml(device.label)}${isMobile && device.userRole === "admin" ? " · Consomme un poste mobile" : ""}</span></div>`;

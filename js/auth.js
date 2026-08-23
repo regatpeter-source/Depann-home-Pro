@@ -14,6 +14,8 @@ export async function initializeAuthentication({ onAuthenticated }) {
         registrationEnabled: Boolean(session.data?.registrationEnabled),
         message: session.data?.sessionReplaced
             ? "Cette session Administrateur PC a été fermée car une connexion plus récente a été ouverte."
+            : session.data?.deviceIdentityChanged
+                ? "Le type de cet appareil a changé. Reconnectez-vous pour activer l’interface adaptée sans modifier silencieusement vos postes."
             : session.networkError ? "Impossible de joindre le serveur." : ""
     });
 }
@@ -353,7 +355,7 @@ function stopDeviceValidationPolling() {
     deviceValidationTimer = null;
 }
 
-function getDeviceIdentity() {
+export function getDeviceIdentity() {
     const key = "depannHomePro:deviceId";
     let deviceId = localStorage.getItem(key);
     if (!deviceId || !/^[0-9a-f-]{36}$/i.test(deviceId)) {

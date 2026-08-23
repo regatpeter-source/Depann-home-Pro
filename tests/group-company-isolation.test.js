@@ -42,8 +42,9 @@ test("les principales données métier sont filtrées par le owner_id actif", ()
     assert.match(clientSync, /`\$\{QUEUE_KEY_PREFIX\}\$\{accountId\}`/);
 });
 
-test("le poste PC affiche en permanence l’entreprise active du groupe", () => {
-    assert.match(html, /class="pc-workstation-name">Poste PC · <strong id="userEmail"><\/strong>/);
+test("le poste actif affiche en permanence l’entreprise active du groupe", () => {
+    assert.match(html, /class="pc-workstation-name"><span id="workstationLabel">Poste<\/span> · <strong id="userEmail"><\/strong>/);
+    assert.match(appClient, /workstationLabel\.textContent = activeWorkstationLabel\(user\.role, user\.deviceType\)/);
     assert.match(html, /id="activeCompanyBadge"[^>]*>Entreprise active · <strong id="activeCompanyName"><\/strong>/);
     assert.match(appClient, /activeCompanyName\.textContent = user\.activeCompanyName \|\| ""/);
     assert.match(appClient, /activeCompanyBadge\.hidden = !user\.canSwitchGroupCompanies \|\| !user\.activeCompanyName/);

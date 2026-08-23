@@ -1,4 +1,4 @@
-import { initializeAuthentication, restoreApplicationShell, signOut } from "./auth.js?v=122";
+import { initializeAuthentication, restoreApplicationShell, signOut } from "./auth.js?v=123";
 import { initializeClientSynchronization } from "./client-sync.js?v=125";
 import { initializeCollaboration } from "./collaboration.js?v=5";
 import { loadDatabase } from "./data.js?v=59";
@@ -6,7 +6,7 @@ import { initializeNavigation, refreshApplication } from "./navigation.js?v=351"
 import { renderError } from "./ui.js?v=44";
 import { getSettings } from "./storage.js?v=44";
 import { FONT_OPTIONS } from "./config.js?v=130";
-import { installClientSessionGuard, onClientSessionReplaced } from "./client-session.js?v=2";
+import { installClientSessionGuard, onClientSessionReplaced } from "./client-session.js?v=3";
 
 let applicationStarted = false;
 let sessionReplacementHandled = false;
@@ -106,6 +106,7 @@ async function initializeSandboxCapabilities() {
 function showAuthenticatedUser(user) {
     const session = document.getElementById("userSession");
     const email = document.getElementById("userEmail");
+    const workstationLabel = document.getElementById("workstationLabel");
     const activeCompanyBadge = document.getElementById("activeCompanyBadge");
     const activeCompanyName = document.getElementById("activeCompanyName");
     const refreshButton = document.getElementById("refreshBtn");
@@ -113,6 +114,7 @@ function showAuthenticatedUser(user) {
 
     if (session) session.hidden = false;
     if (email) email.textContent = user.fullName || user.username || "Utilisateur connecté";
+    if (workstationLabel) workstationLabel.textContent = activeWorkstationLabel(user.role, user.deviceType);
     if (activeCompanyName) activeCompanyName.textContent = user.activeCompanyName || "";
     if (activeCompanyBadge) activeCompanyBadge.hidden = !user.canSwitchGroupCompanies || !user.activeCompanyName;
     document.body.dataset.userId = user.id || "";
@@ -156,6 +158,19 @@ function showAuthenticatedUser(user) {
         await signOut();
         window.location.replace("/");
     }, { once: true });
+}
+
+function activeWorkstationLabel(role, deviceType) {
+    if (deviceType === "mobile") {
+        if (["admin", "mobile_admin"].includes(role)) return "Administrateur Mobile";
+        if (role === "team_lead") return "Chef d’équipe mobile";
+        if (role === "technician") return "Technicien mobile";
+        return "Poste mobile";
+    }
+    if (role === "admin") return "Administrateur PC";
+    if (role === "pc_standard") return "Poste PC standard";
+    if (role === "accountant") return "Poste comptable (PC)";
+    return "Poste PC";
 }
 
 async function initializeGroupCompanySelector(user) {

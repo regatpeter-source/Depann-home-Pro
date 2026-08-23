@@ -85,7 +85,8 @@ export function registerAuthRoutes(app) {
             return response.json({
                 authenticated: false,
                 registrationEnabled: isPublicRegistrationEnabled(),
-                sessionReplaced: Boolean(request.sessionWindowReplaced)
+                sessionReplaced: Boolean(request.sessionWindowReplaced),
+                deviceIdentityChanged: Boolean(request.deviceIdentityChanged)
             });
         }
         const accountOwnerId = String(user.activeCompanyId || user.accountOwnerId || user.account_owner_id || user.id || user.sub);
@@ -612,12 +613,11 @@ export function registerAuthRoutes(app) {
             `, [getAccountOwnerId(request)]),
             database.query(`
                 SELECT owner.max_pc_users AS "maxPcUsers",owner.max_technicians AS "maxMobileUsers",
-                    COUNT(DISTINCT device.id) FILTER (WHERE device.status = 'approved' AND device.device_type = 'desktop')::int AS "activePcUsers",
+                    COUNT(DISTINCT account.id) FILTER (WHERE account.is_active AND account.role IN ('admin','pc_standard','accountant'))::int AS "activePcUsers",
                     COUNT(DISTINCT mobile_member.id) FILTER (WHERE mobile_member.is_active)::int
                         + COUNT(DISTINCT admin_mobile.id) FILTER (WHERE admin_mobile.status='approved')::int AS "activeMobileUsers"
                 FROM depannhome_users owner
-                LEFT JOIN depannhome_users account ON account.account_owner_id = owner.id AND account.role IN ('admin', 'pc_standard')
-                LEFT JOIN depannhome_auth_devices device ON device.user_id = account.id
+                LEFT JOIN depannhome_users account ON account.account_owner_id = owner.id
                 LEFT JOIN depannhome_users mobile_member ON mobile_member.account_owner_id=owner.id AND mobile_member.role IN ('mobile_admin','team_lead','technician')
                 LEFT JOIN depannhome_users admin_account ON admin_account.account_owner_id=owner.id AND admin_account.role='admin' AND admin_account.is_active
                 LEFT JOIN depannhome_auth_devices admin_mobile ON admin_mobile.user_id=admin_account.id AND admin_mobile.device_type='mobile'
@@ -710,6 +710,10 @@ export async function authenticateRequest(request, response, next) {
         const user = await findUserById(session.sub);
         const device = user && await findAuthDevice(user.id, session.deviceId);
         if (!user?.is_active || !user.account_is_active || device?.status !== "approved") throw new Error("Session inactive");
+        const currentDevice = requestDeviceIdentity(request);
+        if (currentDevice && (currentDevice.id !== device.id || currentDevice.type !== device.device_type)) {
+            throw new Error("Identité appareil modifiée");
+        }
         if (user.role === "admin" && device.device_type === "desktop" && (!session.sessionId || session.sessionId !== device.session_id)) {
             throw new Error("Session PC remplacée");
         }
@@ -749,6 +753,7 @@ export async function authenticateRequest(request, response, next) {
         };
     } catch (error) {
         if (["Session PC remplacée", "Fenêtre PC remplacée"].includes(error.message)) request.sessionWindowReplaced = true;
+        if (error.message === "Identité appareil modifiée") request.deviceIdentityChanged = true;
         if (error.message !== "Fenêtre PC remplacée") response.clearCookie(COOKIE_NAME, cookieOptions());
     }
 
@@ -891,13 +896,17 @@ async function completeLogin(user, device, response, request) {
     const roleAccessError = subscriptionRoleAccessMessage(organization.subscriptionTier, user.role);
     if (!isCreatorUsername(user.username) && roleAccessError) return response.status(403).json({ message: roleAccessError });
     const isDedicatedMobileAdministrator = user.role === MOBILE_ADMIN_ROLE;
-    if (user.role === MOBILE_ADMIN_ROLE && device.type !== "mobile") {
-        return response.status(403).json({ message: "Le poste Administrateur Mobile doit être activé depuis un téléphone ou une tablette." });
+    const isDedicatedMobileRole = [MOBILE_ADMIN_ROLE, TEAM_LEAD_ROLE, "technician"].includes(user.role);
+    if (isDedicatedMobileRole && device.type !== "mobile") {
+        return response.status(403).json({ message: "Ce poste mobile doit être activé depuis un téléphone ou une tablette." });
+    }
+    if ([STANDARD_PC_ROLE, "accountant"].includes(user.role) && device.type !== "desktop") {
+        return response.status(403).json({ message: "Ce poste doit être activé depuis un ordinateur." });
     }
     const isMobileAdministrator = (user.role === "admin" && device.type === "mobile") || isDedicatedMobileAdministrator;
     const isCompanyAdministratorPc = user.role === "admin" && device.type === "desktop";
     const isAccountant = user.role === "accountant";
-    const authDeviceDetails = { ...device, type: isMobileAdministrator || isAccountant ? device.type : "desktop" };
+    const authDeviceDetails = { ...device };
     // Un nouveau navigateur privé possède un identifiant local distinct. Il ne
     // doit donc jamais remplacer ni approuver automatiquement un poste PC déjà
     // comptabilisé d’un autre utilisateur. Pour un même administrateur, une
@@ -1145,6 +1154,12 @@ async function issueAdministratorPcSession(userId, deviceId, clientSessionId = "
 function clientWindowSessionId(request) {
     const value = String(request.get?.("X-DepannHome-Client-Session") || request.query?.clientSession || "");
     return DEVICE_ID_PATTERN.test(value) ? value : "";
+}
+
+function requestDeviceIdentity(request) {
+    const id = validDeviceId(request.get?.("X-DepannHome-Device-Id"));
+    const type = String(request.get?.("X-DepannHome-Device-Type") || "");
+    return id && ["desktop", "mobile"].includes(type) ? { id, type } : null;
 }
 
 function requiresClientWindowProof(request) {
