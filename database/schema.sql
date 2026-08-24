@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS depannhome_users (
     phone VARCHAR(30) NOT NULL DEFAULT '',
     email VARCHAR(160) NOT NULL DEFAULT '',
     department VARCHAR(80) NOT NULL DEFAULT '',
+    departments JSONB NOT NULL DEFAULT '[]'::jsonb,
     company_name VARCHAR(160) NOT NULL DEFAULT '',
     max_pc_users INTEGER NOT NULL DEFAULT 1,
     max_technicians INTEGER NOT NULL DEFAULT 5,
@@ -137,6 +138,7 @@ ALTER TABLE depannhome_users
     ADD COLUMN IF NOT EXISTS company_name VARCHAR(160) NOT NULL DEFAULT '',
     ADD COLUMN IF NOT EXISTS email VARCHAR(160) NOT NULL DEFAULT '',
     ADD COLUMN IF NOT EXISTS department VARCHAR(80) NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS departments JSONB NOT NULL DEFAULT '[]'::jsonb,
     ADD COLUMN IF NOT EXISTS max_pc_users INTEGER NOT NULL DEFAULT 1,
     ADD COLUMN IF NOT EXISTS max_technicians INTEGER NOT NULL DEFAULT 5,
     ADD COLUMN IF NOT EXISTS can_access_billing BOOLEAN NOT NULL DEFAULT FALSE,
@@ -159,6 +161,8 @@ ALTER TABLE depannhome_users
     ADD COLUMN IF NOT EXISTS is_archived BOOLEAN NOT NULL DEFAULT FALSE,
     ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ,
     ADD COLUMN IF NOT EXISTS archived_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL;
+UPDATE depannhome_users SET departments = jsonb_build_array(department)
+WHERE department <> '' AND jsonb_array_length(departments) = 0;
 UPDATE depannhome_users SET subscription_tier='pro' WHERE subscription_tier IS NULL OR subscription_tier NOT IN ('basic','basic_plus','pro');
 ALTER TABLE depannhome_users DROP CONSTRAINT IF EXISTS depannhome_users_subscription_tier_check;
 ALTER TABLE depannhome_users ADD CONSTRAINT depannhome_users_subscription_tier_check CHECK(subscription_tier IN ('basic','basic_plus','pro'));

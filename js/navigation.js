@@ -1,5 +1,5 @@
 import { ROUTES, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=130";
-import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=171";
+import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=172";
 import { openCreatorPartnerRequest, openCreatorRequestNotification, renderCreatorConsole } from "./creator.js?v=144";
 import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=181";
 import { renderAccounting, renderElectronicInvoicingConfiguration } from "./accounting.js?v=13";
@@ -34,6 +34,8 @@ import {
     renderError,
     setPage
 } from "./ui.js?v=44";
+
+const TEAM_SECTION_OPTIONS = ["Dépannage", "Plomberie", "Électricité", "Menuiserie", "Serrurerie", "Chauffage", "Climatisation", "Couverture", "Vitrerie", "Maçonnerie", "Peinture", "Carrelage", "Interphonie", "Alarme", "Électroménager", "Chantiers", "Métrés", "Maintenance", "Pose", "SAV"];
 
 let database = { brands: [] };
 let searchRequestId = 0;
@@ -1698,7 +1700,7 @@ async function renderTeamManagement(container) {
     form.innerHTML = '<div class="team-form-heading"><div><h3>Créer un accès</h3><p class="muted">Choisissez le type de poste, puis renseignez les informations de la personne.</p></div></div>';
     const formFields = document.createElement("div");
     formFields.className = "team-form-fields";
-    [["fullName", "Nom et prénom", "text", "Ex. Léa Martin"], ["phone", "Téléphone", "tel", "Ex. 06 12 34 56 78"], ["email", "E-mail professionnel", "email", "lea@entreprise.fr"], ["department", "Pôle / équipe", "text", "Ex. Dépannage, Chantiers, Métrés"], ["username", "Identifiant", "text", "minuscules, chiffres, . _ -"], ["password", "Mot de passe initial", "password", "12 caractères minimum"]].forEach(([name, label, type, placeholder]) => {
+    [["fullName", "Nom et prénom", "text", "Ex. Léa Martin"], ["phone", "Téléphone", "tel", "Ex. 06 12 34 56 78"], ["email", "E-mail professionnel", "email", "lea@entreprise.fr"], ["username", "Identifiant", "text", "minuscules, chiffres, . _ -"], ["password", "Mot de passe initial", "password", "12 caractères minimum"]].forEach(([name, label, type, placeholder]) => {
         const field = document.createElement("label");
         field.textContent = label;
         const input = document.createElement("input");
@@ -1707,14 +1709,6 @@ async function renderTeamManagement(container) {
         input.required = true;
         input.placeholder = placeholder;
         input.autocomplete = name === "password" ? "new-password" : "off";
-        if (name === "department") {
-            input.setAttribute("list", "teamDepartmentSuggestions");
-            input.dataset.technicianOnly = "true";
-            field.className = "team-department-field";
-            const help = document.createElement("small");
-            help.textContent = "Ce pôle regroupe le technicien ou chef d’équipe dans le planning.";
-            field.append(input, help);
-        }
         if (name === "password") {
             const wrapper = document.createElement("span");
             wrapper.className = "password-input";
@@ -1731,11 +1725,15 @@ async function renderTeamManagement(container) {
             toggle.setAttribute("aria-pressed", "false");
             wrapper.append(input, toggle);
             field.appendChild(wrapper);
-        } else if (name !== "department") {
+        } else {
             field.appendChild(input);
         }
         formFields.appendChild(field);
     });
+    const departmentsField = document.createElement("fieldset");
+    departmentsField.className = "team-departments-field";
+    departmentsField.innerHTML = `<legend>Sections métier</legend><p class="muted">Sélectionnez une ou plusieurs sections. Elles seront proposées dans le planning.</p><div>${TEAM_SECTION_OPTIONS.map(section => `<label><input type="checkbox" name="departments" value="${escapeHtml(section)}"><span>${escapeHtml(section)}</span></label>`).join("")}</div>`;
+    formFields.appendChild(departmentsField);
     const roleField = document.createElement("label");
     roleField.textContent = "Type de poste";
     const roleInput = document.createElement("select");
@@ -1769,10 +1767,6 @@ async function renderTeamManagement(container) {
     `;
     mobileBillingPermissionField.hidden = true;
     formFields.appendChild(mobileBillingPermissionField);
-    const departmentSuggestions = document.createElement("datalist");
-    departmentSuggestions.id = "teamDepartmentSuggestions";
-    departmentSuggestions.innerHTML = ["Dépannage", "Chantiers", "Métrés", "Maintenance", "Pose", "SAV"].map(value => `<option value="${value}"></option>`).join("");
-    form.appendChild(departmentSuggestions);
     const submit = createButton("Créer le technicien", "secondary-button", () => {});
     submit.type = "submit";
     const formActions = document.createElement("div");
@@ -1805,8 +1799,8 @@ async function renderTeamManagement(container) {
         const isAdministratorPc = roleInput.value === "admin";
         form.elements.phone.required = isTechnician || isMobileAdmin;
         form.elements.email.required = isTechnician || isMobileAdmin;
-        form.elements.department.disabled = !isTechnician;
-        form.elements.department.closest("label").hidden = !isTechnician;
+        departmentsField.hidden = !isTechnician;
+        departmentsField.querySelectorAll("input").forEach(input => { input.disabled = !isTechnician; });
         submit.textContent = isTechnician ? (roleInput.value === "team_lead" ? "Créer le chef d’équipe" : "Créer le technicien") : isMobileAdmin ? "Créer l’Administrateur Mobile" : isAdministratorPc ? "Créer l’Administrateur (PC)" : roleInput.value === "accountant" ? "Créer le Comptable (PC)" : "Créer le poste PC standard";
         roleField.dataset.role = roleInput.value;
         permissionsField.hidden = !advancedPcPermissions || (!isConfigurablePc && !isAdministratorPc);
@@ -1891,9 +1885,10 @@ async function renderTeamManagement(container) {
             const fieldMembers = (payload.members || []).filter(member => ["technician", "team_lead"].includes(member.role));
             const departmentGroups = new Map();
             fieldMembers.forEach(member => {
-                const department = String(member.department || "Non classé").trim() || "Non classé";
-                if (!departmentGroups.has(department)) departmentGroups.set(department, []);
-                departmentGroups.get(department).push(member);
+                memberDepartments(member).forEach(department => {
+                    if (!departmentGroups.has(department)) departmentGroups.set(department, []);
+                    departmentGroups.get(department).push(member);
+                });
             });
             departments.innerHTML = [...departmentGroups.entries()]
                 .sort(([first], [second]) => first.localeCompare(second, "fr"))
@@ -1909,7 +1904,8 @@ async function renderTeamManagement(container) {
                     : ["pc_standard", "accountant"].includes(member.role) && advancedPcPermissions
                         ? ` · Facturation : ${member.canAccessBilling ? "oui" : "non"} · Comptabilité : ${member.canAccessAccounting ? "oui" : "non"}${groupCompanyPermissionAvailable ? ` · Groupe : ${member.canSwitchGroupCompanies ? "oui" : "non"}` : ""}`
                         : "";
-                item.innerHTML = `<div class="team-member-summary"><div class="team-member-title"><strong>${escapeHtml(member.fullName || member.username)}</strong><span class="team-role-badge ${member.role === "admin" ? "is-admin" : member.role === "mobile_admin" ? "is-mobile-admin" : member.role === "accountant" ? "is-accountant" : "is-technician"}">${memberType}</span>${["technician", "team_lead"].includes(member.role) ? `<span class="team-department-badge">${escapeHtml(member.department || "Non classé")}</span>` : ""}<span class="team-state-badge ${member.isActive ? "is-active" : "is-inactive"}">${member.isActive ? "Actif" : "Désactivé"}</span></div><span class="team-member-meta">${escapeHtml(member.phone || "Téléphone non renseigné")}<span aria-hidden="true">·</span>${escapeHtml(member.email || "E-mail non renseigné")}<span aria-hidden="true">·</span>${escapeHtml(member.username)}${member.role === "mobile_admin" ? " · Activation par code e-mail sur smartphone" : ""}${permissionSummary}</span></div>`;
+                const sectionBadges = ["technician", "team_lead"].includes(member.role) ? memberDepartments(member).map(section => `<span class="team-department-badge">${escapeHtml(section)}</span>`).join("") : "";
+                item.innerHTML = `<div class="team-member-summary"><div class="team-member-title"><strong>${escapeHtml(member.fullName || member.username)}</strong><span class="team-role-badge ${member.role === "admin" ? "is-admin" : member.role === "mobile_admin" ? "is-mobile-admin" : member.role === "accountant" ? "is-accountant" : "is-technician"}">${memberType}</span>${sectionBadges}<span class="team-state-badge ${member.isActive ? "is-active" : "is-inactive"}">${member.isActive ? "Actif" : "Désactivé"}</span></div><span class="team-member-meta">${escapeHtml(member.phone || "Téléphone non renseigné")}<span aria-hidden="true">·</span>${escapeHtml(member.email || "E-mail non renseigné")}<span aria-hidden="true">·</span>${escapeHtml(member.username)}${member.role === "mobile_admin" ? " · Activation par code e-mail sur smartphone" : ""}${permissionSummary}</span></div>`;
                 const actions = document.createElement("div");
                 actions.className = "team-member-actions";
                 const toggle = createButton(member.isActive ? "Désactiver" : "Réactiver", "secondary-button", async () => {
@@ -1956,12 +1952,12 @@ async function renderTeamManagement(container) {
                     if (groupCompanyPermissionAvailable) addPermissionButton("canSwitchGroupCompanies", "Retirer accès Groupe", "Autoriser accès Groupe");
                 }
                 if (["technician", "team_lead"].includes(member.role)) {
-                    const editDepartment = createButton("Modifier le pôle", "secondary-button", async () => {
-                        const department = window.prompt(`Pôle de ${member.fullName || member.username} :`, member.department || "");
-                        if (department === null) return;
+                    const editDepartment = createButton("Modifier les sections", "secondary-button", async () => {
+                        const selectedDepartments = await chooseMemberDepartments(member);
+                        if (!selectedDepartments) return;
                         editDepartment.disabled = true;
-                        const response = await fetch(`/api/auth/members/${encodeURIComponent(member.id)}`, { method: "PATCH", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ isActive: member.isActive, canCreateBilling: member.canCreateBilling, department }) });
-                        if (!response.ok) feedback.textContent = (await response.json().catch(() => ({}))).message || "La mise à jour du pôle a échoué.";
+                        const response = await fetch(`/api/auth/members/${encodeURIComponent(member.id)}`, { method: "PATCH", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ isActive: member.isActive, canCreateBilling: member.canCreateBilling, departments: selectedDepartments }) });
+                        if (!response.ok) feedback.textContent = (await response.json().catch(() => ({}))).message || "La mise à jour des sections a échoué.";
                         await load();
                     });
                     const billingPermission = createButton(member.canCreateBilling ? "Retirer le droit devis/factures" : "Autoriser devis/factures", "secondary-button", async () => {
@@ -2048,6 +2044,8 @@ async function renderTeamManagement(container) {
         feedback.textContent = "";
         try {
             const values = Object.fromEntries(new FormData(form));
+            values.departments = [...departmentsField.querySelectorAll('input[name="departments"]:checked')].map(input => input.value);
+            if (["technician", "team_lead"].includes(roleInput.value) && !values.departments.length) throw new Error("Choisissez au moins une section métier.");
             values.canCreateBilling = roleInput.value === "technician" && Boolean(form.elements.canCreateBilling.checked);
             values.canAccessBilling = Boolean(form.elements.canAccessBilling?.checked);
             values.canAccessAccounting = Boolean(form.elements.canAccessAccounting?.checked);
@@ -2095,6 +2093,34 @@ function chooseMemberRole(member, roles) {
         dialog.querySelector("form").addEventListener("submit", event => { event.preventDefault(); finish(event.currentTarget.elements.role.value); });
         dialog.addEventListener("cancel", event => { event.preventDefault(); finish(""); });
         dialog.addEventListener("close", () => { dialog.remove(); if (!settled) resolve(""); }, { once: true });
+        document.body.appendChild(dialog);
+        dialog.showModal();
+    });
+}
+
+function memberDepartments(member) {
+    const values = Array.isArray(member?.departments) ? member.departments : [member?.department];
+    const departments = [...new Set(values.map(value => String(value || "").trim()).filter(Boolean))];
+    return departments.length ? departments : ["Non classé"];
+}
+
+function chooseMemberDepartments(member) {
+    return new Promise(resolve => {
+        const selected = new Set(memberDepartments(member).filter(section => section !== "Non classé"));
+        const dialog = document.createElement("dialog");
+        dialog.className = "device-management-dialog";
+        dialog.innerHTML = `<form method="dialog"><div class="device-management-heading"><div><p class="eyebrow">Organisation</p><h2>Sections métier</h2><p class="muted">${escapeHtml(member.fullName || member.username)}</p></div><button type="button" class="secondary-button" data-cancel-sections>Fermer</button></div><fieldset class="team-departments-field"><legend>Sélection multiple</legend><div>${TEAM_SECTION_OPTIONS.map(section => `<label><input type="checkbox" name="departments" value="${escapeHtml(section)}" ${selected.has(section) ? "checked" : ""}><span>${escapeHtml(section)}</span></label>`).join("")}</div></fieldset><p class="auth-message" aria-live="polite"></p><div class="form-actions"><button type="submit" class="secondary-button">Enregistrer</button></div></form>`;
+        let settled = false;
+        const finish = value => { if (settled) return; settled = true; resolve(value); dialog.close(); };
+        dialog.querySelector("[data-cancel-sections]").addEventListener("click", () => finish(null));
+        dialog.querySelector("form").addEventListener("submit", event => {
+            event.preventDefault();
+            const departments = [...event.currentTarget.querySelectorAll('input[name="departments"]:checked')].map(input => input.value);
+            if (!departments.length) { event.currentTarget.querySelector(".auth-message").textContent = "Sélectionnez au moins une section."; return; }
+            finish(departments);
+        });
+        dialog.addEventListener("cancel", event => { event.preventDefault(); finish(null); });
+        dialog.addEventListener("close", () => { dialog.remove(); if (!settled) resolve(null); }, { once: true });
         document.body.appendChild(dialog);
         dialog.showModal();
     });

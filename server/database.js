@@ -48,6 +48,7 @@ export async function initializeDatabase() {
             phone VARCHAR(30) NOT NULL DEFAULT '',
             email VARCHAR(160) NOT NULL DEFAULT '',
             department VARCHAR(80) NOT NULL DEFAULT '',
+            departments JSONB NOT NULL DEFAULT '[]'::jsonb,
             company_name VARCHAR(160) NOT NULL DEFAULT '',
             max_pc_users INTEGER NOT NULL DEFAULT 1,
             max_technicians INTEGER NOT NULL DEFAULT 5,
@@ -86,6 +87,7 @@ export async function initializeDatabase() {
         ADD COLUMN IF NOT EXISTS phone VARCHAR(30) NOT NULL DEFAULT '',
         ADD COLUMN IF NOT EXISTS email VARCHAR(160) NOT NULL DEFAULT '',
         ADD COLUMN IF NOT EXISTS department VARCHAR(80) NOT NULL DEFAULT '',
+        ADD COLUMN IF NOT EXISTS departments JSONB NOT NULL DEFAULT '[]'::jsonb,
         ADD COLUMN IF NOT EXISTS company_name VARCHAR(160) NOT NULL DEFAULT '',
         ADD COLUMN IF NOT EXISTS max_pc_users INTEGER NOT NULL DEFAULT 1,
         ADD COLUMN IF NOT EXISTS max_technicians INTEGER NOT NULL DEFAULT 5,
@@ -130,6 +132,11 @@ export async function initializeDatabase() {
     }
     await database.query("UPDATE depannhome_users SET account_owner_id = id WHERE account_owner_id IS NULL");
     await database.query("UPDATE depannhome_users SET role = 'admin' WHERE role = 'user' AND account_owner_id = id");
+    await database.query(`
+        UPDATE depannhome_users
+        SET departments = jsonb_build_array(department)
+        WHERE department <> '' AND (jsonb_typeof(departments) <> 'array' OR jsonb_array_length(departments) = 0)
+    `);
 
     await database.query(`
         CREATE TABLE IF NOT EXISTS depannhome_organizations (
@@ -359,17 +366,17 @@ export async function findUserById(id) {
     return rows[0] || null;
 }
 
-export async function createUser({ username, passwordHash, role = "admin", accountOwnerId, fullName = "", phone = "", email = "", department = "", canCreateBilling = false, canAccessBilling = false, canAccessAccounting = false, canSwitchGroupCompanies = false }) {
+export async function createUser({ username, passwordHash, role = "admin", accountOwnerId, fullName = "", phone = "", email = "", department = "", departments = [], canCreateBilling = false, canAccessBilling = false, canAccessAccounting = false, canSwitchGroupCompanies = false }) {
     const { rows } = await getPool().query(
-        `INSERT INTO depannhome_users (username, password_hash, role, account_owner_id, full_name, phone, email, department, can_create_billing, can_access_billing, can_access_accounting, can_switch_group_companies)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-         RETURNING id, username, role, account_owner_id, full_name, phone, email, department, can_create_billing, can_access_billing, can_access_accounting, can_switch_group_companies, is_active`,
-        [username, passwordHash, role, accountOwnerId || null, fullName, phone, email, department, canCreateBilling, canAccessBilling, canAccessAccounting, canSwitchGroupCompanies]
+        `INSERT INTO depannhome_users (username, password_hash, role, account_owner_id, full_name, phone, email, department, departments, can_create_billing, can_access_billing, can_access_accounting, can_switch_group_companies)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11, $12, $13)
+         RETURNING id, username, role, account_owner_id, full_name, phone, email, department, departments, can_create_billing, can_access_billing, can_access_accounting, can_switch_group_companies, is_active`,
+        [username, passwordHash, role, accountOwnerId || null, fullName, phone, email, department, JSON.stringify(departments), canCreateBilling, canAccessBilling, canAccessAccounting, canSwitchGroupCompanies]
     );
     const user = rows[0];
     if (!user.account_owner_id) {
         const { rows: updatedRows } = await getPool().query(
-            "UPDATE depannhome_users SET account_owner_id = id WHERE id = $1 RETURNING id, username, role, account_owner_id, full_name, phone, email, department, can_create_billing, can_access_billing, can_access_accounting, can_switch_group_companies, is_active",
+            "UPDATE depannhome_users SET account_owner_id = id WHERE id = $1 RETURNING id, username, role, account_owner_id, full_name, phone, email, department, departments, can_create_billing, can_access_billing, can_access_accounting, can_switch_group_companies, is_active",
             [user.id]
         );
         return updatedRows[0];

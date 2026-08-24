@@ -218,6 +218,7 @@ export function registerCalendarRoutes(app, requireAuthentication) {
                         'id', assignment.technician_id,
                         'fullName', COALESCE(assigned.full_name, assigned.username, ''),
                         'department', assigned.department,
+                        'departments', assigned.departments,
                         'role', assigned.role,
                         'isPrimary', assignment.is_primary
                     ) ORDER BY assignment.is_primary DESC, LOWER(COALESCE(assigned.full_name, assigned.username, '')))

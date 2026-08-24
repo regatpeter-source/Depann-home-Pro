@@ -19,7 +19,7 @@ test("le serveur limite et persiste ce droit au rôle technicien", () => {
     assert.match(auth, /member_created", \{ role, canCreateBilling,/);
     assert.match(database, /canCreateBilling = false/);
     assert.match(database, /can_create_billing, can_access_billing/);
-    assert.match(database, /department, canCreateBilling, canAccessBilling/);
+    assert.match(database, /department = "", departments = \[\], canCreateBilling/);
 });
 
 test("la rétrogradation Administrateur Mobile vers Technicien conserve un appareil mobile cohérent", () => {

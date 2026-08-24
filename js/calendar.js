@@ -853,9 +853,12 @@ function renderTechnicianAssignmentField(event) {
 function groupTechniciansByDepartment(items) {
     const groups = new Map();
     items.forEach(technician => {
-        const department = String(technician.department || "Non classé").trim() || "Non classé";
-        if (!groups.has(department)) groups.set(department, []);
-        groups.get(department).push(technician);
+        const values = Array.isArray(technician.departments) ? technician.departments : [technician.department];
+        const departments = [...new Set(values.map(value => String(value || "").trim()).filter(Boolean))];
+        (departments.length ? departments : ["Non classé"]).forEach(department => {
+            if (!groups.has(department)) groups.set(department, []);
+            groups.get(department).push(technician);
+        });
     });
     return [...groups.entries()].sort(([first], [second]) => first.localeCompare(second, "fr"));
 }

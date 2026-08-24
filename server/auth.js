@@ -377,7 +377,7 @@ export function registerAuthRoutes(app) {
 
     app.get("/api/auth/members", requireAccountAdministrator, asyncHandler(async (request, response) => {
         const { rows } = await getPool().query(`
-            SELECT id, username, role, full_name AS "fullName", phone, email, department, is_active AS "isActive", can_create_billing AS "canCreateBilling",
+            SELECT id, username, role, full_name AS "fullName", phone, email, department, departments, is_active AS "isActive", can_create_billing AS "canCreateBilling",
                 can_access_billing AS "canAccessBilling", can_access_accounting AS "canAccessAccounting", can_switch_group_companies AS "canSwitchGroupCompanies", created_at AS "createdAt"
             FROM depannhome_users
             WHERE account_owner_id = $1 AND id <> $1
@@ -406,11 +406,13 @@ export function registerAuthRoutes(app) {
         const fullName = cleanText(request.body?.fullName, 100);
         const phone = cleanText(request.body?.phone, 30);
         const email = cleanText(request.body?.email, 160).toLowerCase();
-        const department = cleanText(request.body?.department, 80);
+        const departments = cleanDepartments(request.body?.departments, request.body?.department);
+        const department = departments[0] || "";
         const validationError = validateCredentials(username, password)
             || (!role ? "Choisissez le type de poste." : "")
             || (!fullName ? "Le nom de l’utilisateur est obligatoire." : "")
             || (["technician", TEAM_LEAD_ROLE].includes(role) && !phone ? "Le téléphone du technicien est obligatoire." : "")
+            || (["technician", TEAM_LEAD_ROLE].includes(role) && !departments.length ? "Choisissez au moins une section métier." : "")
             || (role === MOBILE_ADMIN_ROLE && !phone ? "Le téléphone de l’Administrateur Mobile est obligatoire." : "")
             || (["technician", TEAM_LEAD_ROLE, MOBILE_ADMIN_ROLE].includes(role) && !EMAIL_PATTERN.test(email) ? "L’e-mail professionnel est obligatoire pour l’activation." : "");
         if (validationError) return response.status(400).json({ message: validationError });
@@ -425,7 +427,8 @@ export function registerAuthRoutes(app) {
             const canCreateBilling = role === "technician" && request.body?.canCreateBilling === true;
             const canSwitchGroupCompanies = configurablePermissions && organization.subscriptionTier === "pro"
                 && Boolean(request.user.groupId) && request.body?.canSwitchGroupCompanies === true;
-            const member = await createUser({ username, passwordHash: await bcrypt.hash(password, 12), role, accountOwnerId: getAccountOwnerId(request), fullName, phone, email, department: ["technician", TEAM_LEAD_ROLE].includes(role) ? department : "", canCreateBilling, canAccessBilling, canAccessAccounting, canSwitchGroupCompanies });
+            const memberDepartments = ["technician", TEAM_LEAD_ROLE].includes(role) ? departments : [];
+            const member = await createUser({ username, passwordHash: await bcrypt.hash(password, 12), role, accountOwnerId: getAccountOwnerId(request), fullName, phone, email, department: memberDepartments[0] || "", departments: memberDepartments, canCreateBilling, canAccessBilling, canAccessAccounting, canSwitchGroupCompanies });
             await recordMemberAudit(getAccountOwnerId(request), request.user.sub, member, role === "admin" ? "administrator_created" : "member_created", { role, canCreateBilling, canAccessBilling, canAccessAccounting, canSwitchGroupCompanies });
             response.status(201).json({ member: publicUser(member) });
         } catch (error) {
@@ -438,7 +441,7 @@ export function registerAuthRoutes(app) {
         const memberId = positiveId(request.params.memberId);
         if (!memberId) return response.status(400).json({ message: "Accès invalide." });
         const { rows } = await getPool().query(`
-            SELECT id, username, full_name AS "fullName", role, department, is_active AS "isActive", can_create_billing AS "canCreateBilling",
+            SELECT id, username, full_name AS "fullName", role, department, departments, is_active AS "isActive", can_create_billing AS "canCreateBilling",
                 can_access_billing AS "canAccessBilling", can_access_accounting AS "canAccessAccounting", can_switch_group_companies AS "canSwitchGroupCompanies"
             FROM depannhome_users
             WHERE id = $1 AND account_owner_id = $2 AND id <> $2
@@ -455,9 +458,10 @@ export function registerAuthRoutes(app) {
         const canAccessAccounting = configurablePermissions && (typeof request.body?.canAccessAccounting === "boolean" ? request.body.canAccessAccounting : member.canAccessAccounting);
         const canSwitchGroupCompanies = configurablePermissions && organization.subscriptionTier === "pro" && Boolean(request.user.groupId)
             && (typeof request.body?.canSwitchGroupCompanies === "boolean" ? request.body.canSwitchGroupCompanies : member.canSwitchGroupCompanies);
-        const department = ["technician", TEAM_LEAD_ROLE].includes(member.role) && typeof request.body?.department === "string"
-            ? cleanText(request.body.department, 80)
-            : member.department;
+        const departments = ["technician", TEAM_LEAD_ROLE].includes(member.role) && (Array.isArray(request.body?.departments) || typeof request.body?.department === "string")
+            ? cleanDepartments(request.body.departments, request.body.department)
+            : cleanDepartments(member.departments, member.department);
+        const department = departments[0] || "";
         if (member.role === "admin" && member.isActive && !isActive) {
             await ensureActiveAdministratorRemains(getAccountOwnerId(request), memberId);
         }
@@ -465,8 +469,8 @@ export function registerAuthRoutes(app) {
             const seatError = await memberSeatError(getAccountOwnerId(request), member.role, memberId);
             if (seatError) return response.status(400).json({ message: seatError });
         }
-        await getPool().query("UPDATE depannhome_users SET is_active = $3, can_create_billing = $4, can_access_billing = $5, can_access_accounting = $6, can_switch_group_companies = $7, department = $8, updated_at = NOW() WHERE id = $1 AND account_owner_id = $2", [memberId, getAccountOwnerId(request), isActive, canCreateBilling, canAccessBilling, canAccessAccounting, canSwitchGroupCompanies, department]);
-        await recordMemberAudit(getAccountOwnerId(request), request.user.sub, member, member.role === "admin" ? (isActive ? "administrator_activated" : "administrator_deactivated") : "member_updated", { isActive, canCreateBilling, canAccessBilling, canAccessAccounting, canSwitchGroupCompanies, department });
+        await getPool().query("UPDATE depannhome_users SET is_active = $3, can_create_billing = $4, can_access_billing = $5, can_access_accounting = $6, can_switch_group_companies = $7, department = $8, departments = $9::jsonb, updated_at = NOW() WHERE id = $1 AND account_owner_id = $2", [memberId, getAccountOwnerId(request), isActive, canCreateBilling, canAccessBilling, canAccessAccounting, canSwitchGroupCompanies, department, JSON.stringify(departments)]);
+        await recordMemberAudit(getAccountOwnerId(request), request.user.sub, member, member.role === "admin" ? (isActive ? "administrator_activated" : "administrator_deactivated") : "member_updated", { isActive, canCreateBilling, canAccessBilling, canAccessAccounting, canSwitchGroupCompanies, departments });
         response.status(204).end();
     }));
 
@@ -503,6 +507,7 @@ export function registerAuthRoutes(app) {
             await database.query(`
                 UPDATE depannhome_users
                 SET role = $3, department = CASE WHEN $3 IN ('technician', 'team_lead') THEN department ELSE '' END,
+                    departments = CASE WHEN $3 IN ('technician', 'team_lead') THEN departments ELSE '[]'::jsonb END,
                     can_create_billing = CASE WHEN $3 = 'technician' THEN FALSE ELSE can_create_billing END,
                     can_access_billing = CASE WHEN $3 IN ('pc_standard', 'accountant') THEN can_access_billing ELSE FALSE END,
                     can_access_accounting = CASE WHEN $3 IN ('pc_standard', 'accountant') THEN can_access_accounting ELSE FALSE END,
@@ -575,7 +580,7 @@ export function registerAuthRoutes(app) {
 
     app.get("/api/auth/technicians", requireTechnicianDirectoryAccess, asyncHandler(async (request, response) => {
         const { rows } = await getPool().query(`
-            SELECT id, username, full_name AS "fullName", phone, email, department, is_active AS "isActive", created_at AS "createdAt"
+            SELECT id, username, full_name AS "fullName", phone, email, department, departments, is_active AS "isActive", created_at AS "createdAt"
             FROM depannhome_users
             WHERE account_owner_id = $1 AND id <> $1 AND role = 'technician'
             ORDER BY LOWER(full_name), username
@@ -585,7 +590,7 @@ export function registerAuthRoutes(app) {
 
     app.get("/api/auth/calendar-members", requireCalendarMemberDirectoryAccess, asyncHandler(async (request, response) => {
         const { rows } = await getPool().query(`
-            SELECT id, username, full_name AS "fullName", phone, email, department, role, is_active AS "isActive"
+            SELECT id, username, full_name AS "fullName", phone, email, department, departments, role, is_active AS "isActive"
             FROM depannhome_users
             WHERE account_owner_id = $1 AND is_active = TRUE
             ORDER BY LOWER(COALESCE(NULLIF(full_name, ''), username)), username
@@ -599,14 +604,15 @@ export function registerAuthRoutes(app) {
         const fullName = cleanText(request.body?.fullName, 100);
         const phone = cleanText(request.body?.phone, 30);
         const email = cleanText(request.body?.email, 160).toLowerCase();
-        const department = cleanText(request.body?.department, 80);
+        const departments = cleanDepartments(request.body?.departments, request.body?.department);
+        const department = departments[0] || "";
         const canCreateBilling = request.body?.canCreateBilling === true;
         const validationError = validateCredentials(username, password) || (!fullName ? "Le nom du technicien est obligatoire." : "") || (!phone ? "Le téléphone du technicien est obligatoire." : "") || (!EMAIL_PATTERN.test(email) ? "L’e-mail professionnel du technicien est obligatoire." : "");
         if (validationError) return response.status(400).json({ message: validationError });
         const seatError = await memberSeatError(getAccountOwnerId(request), "technician");
         if (seatError) return response.status(400).json({ message: seatError });
         try {
-            const user = await createUser({ username, passwordHash: await bcrypt.hash(password, 12), role: "technician", accountOwnerId: getAccountOwnerId(request), fullName, phone, email, department, canCreateBilling });
+            const user = await createUser({ username, passwordHash: await bcrypt.hash(password, 12), role: "technician", accountOwnerId: getAccountOwnerId(request), fullName, phone, email, department, departments, canCreateBilling });
             response.status(201).json({ technician: publicUser(user) });
         } catch (error) {
             if (error.code === "23505") return response.status(409).json({ message: "Ce nom d’utilisateur est déjà utilisé." });
@@ -618,15 +624,16 @@ export function registerAuthRoutes(app) {
         const technicianId = positiveId(request.params.technicianId);
         if (!technicianId) return response.status(400).json({ message: "Technicien invalide." });
         const isActive = Boolean(request.body?.isActive);
-        const department = cleanText(request.body?.department, 80);
+        const departments = cleanDepartments(request.body?.departments, request.body?.department);
+        const department = departments[0] || "";
         if (isActive) {
             const seatError = await memberSeatError(getAccountOwnerId(request), "technician", technicianId);
             if (seatError) return response.status(400).json({ message: seatError });
         }
         const result = await getPool().query(`
-            UPDATE depannhome_users SET is_active = $3, department = $4, updated_at = NOW()
+            UPDATE depannhome_users SET is_active = $3, department = $4, departments = $5::jsonb, updated_at = NOW()
             WHERE id = $1 AND account_owner_id = $2 AND id <> $2 AND role = 'technician'
-        `, [technicianId, getAccountOwnerId(request), isActive, department]);
+        `, [technicianId, getAccountOwnerId(request), isActive, department, JSON.stringify(departments)]);
         if (!result.rowCount) return response.status(404).json({ message: "Technicien introuvable." });
         response.status(204).end();
     }));
@@ -1350,6 +1357,11 @@ function normalizeUsername(value) {
 
 function cleanText(value, maximumLength) {
     return String(value || "").replace(/\s+/g, " ").trim().slice(0, maximumLength);
+}
+
+function cleanDepartments(value, legacyValue = "") {
+    const source = Array.isArray(value) ? value : String(value || legacyValue || "").split(",");
+    return [...new Set(source.map(item => cleanText(item, 80)).filter(Boolean))].slice(0, 12);
 }
 
 function positiveId(value) {

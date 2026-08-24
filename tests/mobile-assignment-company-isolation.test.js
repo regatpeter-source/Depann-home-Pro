@@ -58,7 +58,7 @@ test("le serveur revalide toutes les affectations et les protège aussi par déc
     assert.match(auth, /WHERE account_owner_id = \$1 AND is_active = TRUE/);
     assert.equal(missions.match(/async function acceptMission\(/g)?.length, 1);
     const calendarMembersSql = auth.match(/app\.get\("\/api\/auth\/calendar-members"[\s\S]*?response\.json\(\{ members: rows \}\);/u)?.[0] || "";
-    assert.match(calendarMembersSql, /department, role, is_active AS "isActive"/);
+    assert.match(calendarMembersSql, /department, departments, role, is_active AS "isActive"/);
     assert.doesNotMatch(calendarMembersSql, /role\s+IN\s*\(/);
     assert.doesNotMatch(calendarMembersSql, /const groupCompany/);
 });
