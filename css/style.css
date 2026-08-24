@@ -93,6 +93,28 @@ textarea{
     color:var(--primary);
 }
 
+.mobile-user-sections,
+.mobile-dashboard-sections{
+    display:flex;
+    flex-wrap:wrap;
+    align-items:center;
+    gap:6px;
+}
+
+.mobile-user-sections[hidden]{ display:none; }
+.mobile-user-sections span,
+.mobile-dashboard-sections span{
+    padding:4px 8px;
+    border-radius:999px;
+    background:#dcfce7;
+    color:#166534;
+    font-size:12px;
+    font-weight:800;
+}
+
+.mobile-dashboard-sections{ margin-top:8px; }
+.mobile-dashboard-sections strong{ color:var(--muted); font-size:13px; }
+
 .active-company-badge{
     padding:5px 8px;
     border-radius:8px;

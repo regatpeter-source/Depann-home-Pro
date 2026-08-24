@@ -221,7 +221,7 @@ export function registerAuthRoutes(app) {
         const code = String(request.body?.code || "").replace(/\s/g, "");
         if (!deviceId || !/^\d{6}$/.test(code)) return response.status(400).json({ message: "Code de validation invalide." });
         const { rows } = await getPool().query(`
-            SELECT device.*, account.id AS user_id, account.username, account.role, account.account_owner_id, account.full_name, account.phone, account.email, account.is_active,
+            SELECT device.*, account.id AS user_id, account.username, account.role, account.account_owner_id, account.full_name, account.phone, account.email, account.department, account.departments, account.is_active,
                 account.can_create_billing, account.can_access_billing, account.can_access_accounting, account.can_switch_group_companies,
                 owner.is_active AS account_is_active, owner.max_pc_users, owner.max_technicians, owner.monthly_price_cents
             FROM depannhome_auth_devices device JOIN depannhome_users account ON account.id = device.user_id JOIN depannhome_users owner ON owner.id = account.account_owner_id WHERE device.id = $1
@@ -787,6 +787,8 @@ export async function authenticateRequest(request, response, next) {
             fullName: user.full_name || "",
             phone: user.phone || "",
             email: user.email || "",
+            department: user.department || "",
+            departments: cleanDepartments(user.departments, user.department),
             technicianBillingEnabled: user.can_create_billing !== false,
             canAccessBilling: user.role === "admin" || user.can_access_billing === true,
             canAccessAccounting: user.role === "admin" || user.can_access_accounting === true,
@@ -1255,6 +1257,8 @@ function publicUser(user) {
         fullName: user.full_name || user.fullName || "",
         phone: user.phone || "",
         email: user.email || "",
+        department: user.department || "",
+        departments: cleanDepartments(user.departments, user.department),
         technicianBillingEnabled: (user.can_create_billing ?? user.technicianBillingEnabled) !== false,
         canAccessBilling: user.role === "admin" || (user.can_access_billing ?? user.canAccessBilling) === true,
         canAccessAccounting: user.role === "admin" || (user.can_access_accounting ?? user.canAccessAccounting) === true,

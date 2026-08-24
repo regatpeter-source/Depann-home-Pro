@@ -736,7 +736,7 @@ async function renderHome() {
         return;
     }
     panel.innerHTML = `
-        <div class="dashboard-heading"><div><p class="eyebrow">Depann’Home Pro</p><h2>Tableau de bord</h2></div><button type="button" class="secondary-button" data-dashboard-action="calendar">Voir le planning complet</button></div>
+        <div class="dashboard-heading"><div><p class="eyebrow">Depann’Home Pro</p><h2>Tableau de bord</h2>${renderMobileUserSections()}</div><button type="button" class="secondary-button" data-dashboard-action="calendar">Voir le planning complet</button></div>
         <div class="dashboard-grid">
             <section class="dashboard-card"><p class="eyebrow">Aujourd’hui</p><h3>${escapeHtml(formatDashboardDate(new Date()))}</h3><div class="dashboard-events" data-dashboard-events="today"><p class="muted">Chargement des rendez-vous…</p></div></section>
             <section class="dashboard-card"><p class="eyebrow">À venir</p><h3>Les 7 prochains jours</h3><div class="dashboard-events" data-dashboard-events="upcoming"><p class="muted">Chargement des rendez-vous…</p></div></section>
@@ -774,6 +774,13 @@ async function loadDashboardEvents() {
     } catch {
         return { ok: false, events: [], message: "Serveur indisponible." };
     }
+}
+
+function renderMobileUserSections() {
+    if (!isMobileDeviceContext() || !["technician", "team_lead"].includes(document.body.dataset.role)) return "";
+    let sections = [];
+    try { sections = JSON.parse(document.body.dataset.userDepartments || "[]"); } catch { sections = []; }
+    return sections.length ? `<div class="mobile-dashboard-sections"><strong>Sections métier</strong>${sections.map(section => `<span>${escapeHtml(section)}</span>`).join("")}</div>` : "";
 }
 
 function renderDashboardEvents(container, events, emptyMessage) {

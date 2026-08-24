@@ -2,7 +2,7 @@ import { initializeAuthentication, restoreApplicationShell, signOut } from "./au
 import { initializeClientSynchronization } from "./client-sync.js?v=125";
 import { initializeCollaboration } from "./collaboration.js?v=5";
 import { loadDatabase } from "./data.js?v=59";
-import { initializeNavigation, refreshApplication } from "./navigation.js?v=358";
+import { initializeNavigation, refreshApplication } from "./navigation.js?v=359";
 import { renderError } from "./ui.js?v=44";
 import { getSettings } from "./storage.js?v=44";
 import { FONT_OPTIONS } from "./config.js?v=130";
@@ -107,6 +107,7 @@ function showAuthenticatedUser(user) {
     const session = document.getElementById("userSession");
     const email = document.getElementById("userEmail");
     const workstationLabel = document.getElementById("workstationLabel");
+    const mobileUserSections = document.getElementById("mobileUserSections");
     const activeCompanyBadge = document.getElementById("activeCompanyBadge");
     const activeCompanyName = document.getElementById("activeCompanyName");
     const refreshButton = document.getElementById("refreshBtn");
@@ -115,6 +116,11 @@ function showAuthenticatedUser(user) {
     if (session) session.hidden = false;
     if (email) email.textContent = user.fullName || user.username || "Utilisateur connecté";
     if (workstationLabel) workstationLabel.textContent = activeWorkstationLabel(user.role, user.deviceType);
+    const sections = Array.isArray(user.departments) ? user.departments.filter(Boolean) : user.department ? [user.department] : [];
+    if (mobileUserSections) {
+        mobileUserSections.replaceChildren(...sections.map(section => Object.assign(document.createElement("span"), { textContent: section })));
+        mobileUserSections.hidden = user.deviceType !== "mobile" || !["technician", "team_lead"].includes(user.role) || !sections.length;
+    }
     if (activeCompanyName) activeCompanyName.textContent = user.activeCompanyName || "";
     if (activeCompanyBadge) activeCompanyBadge.hidden = !user.canSwitchGroupCompanies || !user.activeCompanyName;
     document.body.dataset.userId = user.id || "";
@@ -126,6 +132,7 @@ function showAuthenticatedUser(user) {
     document.body.dataset.creator = user.isCreator ? "true" : "false";
     document.body.dataset.deviceType = user.deviceType || "desktop";
     document.body.dataset.technicianBillingEnabled = user.technicianBillingEnabled === false ? "false" : "true";
+    document.body.dataset.userDepartments = JSON.stringify(sections);
     document.body.dataset.canAccessBilling = user.canAccessBilling ? "true" : "false";
     document.body.dataset.canAccessAccounting = user.canAccessAccounting ? "true" : "false";
     document.body.dataset.canSwitchGroupCompanies = user.canSwitchGroupCompanies ? "true" : "false";
