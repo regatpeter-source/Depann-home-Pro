@@ -32,6 +32,10 @@ test("la rétrogradation Administrateur Mobile vers Technicien conserve un appar
     assert.match(auth, /const incompatibleDeviceType = \[MOBILE_ADMIN_ROLE, TEAM_LEAD_ROLE, "technician"\]\.includes\(nextRole\)/);
     assert.match(auth, /SET status='rejected', session_id=NULL/);
     assert.match(auth, /deviceActivationRequired, rejectedDeviceIds/);
+    assert.match(auth, /memberSeatError\(ownerId, nextRole, memberId, database, false\)/);
+    assert.match(auth, /SAVEPOINT member_role_audit/);
+    assert.match(auth, /ROLLBACK TO SAVEPOINT member_role_audit/);
+    assert.match(auth, /response\.json\(\{ role: nextRole, deviceActivationRequired, auditRecorded \}\)/);
     assert.match(auth, /\[member-role-change\] failed/);
 });
 

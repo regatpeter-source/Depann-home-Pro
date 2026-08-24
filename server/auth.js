@@ -32,12 +32,12 @@ export function memberSeatFamily(role) {
     return "";
 }
 
-export async function memberSeatError(ownerId, role, excludedMemberId = 0) {
+export async function memberSeatError(ownerId, role, excludedMemberId = 0, database = getPool(), checkRoleAccess = true) {
     const family = memberSeatFamily(role);
     if (!family) return "";
-    const roleAccessError = await memberRoleAccessError(ownerId, role);
+    const roleAccessError = checkRoleAccess ? await memberRoleAccessError(ownerId, role) : "";
     if (roleAccessError) return roleAccessError;
-    const { rows } = await getPool().query(`
+    const { rows } = await database.query(`
         SELECT owner.max_pc_users AS "maxPcUsers",owner.max_technicians AS "maxMobileUsers",
             COUNT(DISTINCT member.id) FILTER (WHERE member.role IN ('admin','pc_standard','accountant') AND member.is_active AND member.id<>$2)::int AS "activePcUsers",
             COUNT(DISTINCT member.id) FILTER (WHERE member.role IN ('mobile_admin','team_lead','technician') AND member.is_active AND member.id<>$2)::int
@@ -478,7 +478,9 @@ export function registerAuthRoutes(app) {
         const roleAccessError = await memberRoleAccessError(ownerId, nextRole);
         if (roleAccessError) return response.status(400).json({ message: roleAccessError });
         const database = await getPool().connect();
+        let failedStep = "initialisation";
         try {
+            failedStep = "verrouillage du membre";
             await database.query("BEGIN");
             const { rows } = await database.query(`
                 SELECT id, username, full_name AS "fullName", role, is_active AS "isActive"
@@ -493,9 +495,11 @@ export function registerAuthRoutes(app) {
                 if (!administrators.rows[0]?.count) { await database.query("ROLLBACK"); return response.status(409).json({ message: "Cette opération est refusée : chaque entreprise doit conserver au moins un Administrateur (PC) actif." }); }
             }
             if (member.isActive && memberSeatFamily(member.role) !== memberSeatFamily(nextRole)) {
-                const seatError = await memberSeatError(ownerId, nextRole, memberId);
+                failedStep = "contrôle du quota de postes";
+                const seatError = await memberSeatError(ownerId, nextRole, memberId, database, false);
                 if (seatError) { await database.query("ROLLBACK"); return response.status(400).json({ message: seatError }); }
             }
+            failedStep = "mise à jour du rôle";
             await database.query(`
                 UPDATE depannhome_users
                 SET role = $3, department = CASE WHEN $3 IN ('technician', 'team_lead') THEN department ELSE '' END,
@@ -509,6 +513,7 @@ export function registerAuthRoutes(app) {
             const incompatibleDeviceType = [MOBILE_ADMIN_ROLE, TEAM_LEAD_ROLE, "technician"].includes(nextRole)
                 ? "desktop"
                 : [STANDARD_PC_ROLE, "accountant"].includes(nextRole) ? "mobile" : "";
+            failedStep = "mise en conformité des appareils";
             const rejectedDevices = incompatibleDeviceType ? await database.query(`
                 UPDATE depannhome_auth_devices
                 SET status='rejected', session_id=NULL, verification_code_hash='', verification_code_expires_at=NULL
@@ -516,13 +521,24 @@ export function registerAuthRoutes(app) {
                 RETURNING id
             `, [memberId, incompatibleDeviceType]) : { rows: [] };
             const deviceActivationRequired = rejectedDevices.rows.length > 0;
-            await recordMemberAudit(ownerId, request.user.sub, member, "role_changed", { previousRole: member.role, nextRole, deviceActivationRequired, rejectedDeviceIds: rejectedDevices.rows.map(device => device.id) }, database);
+            let auditRecorded = true;
+            await database.query("SAVEPOINT member_role_audit");
+            try {
+                await recordMemberAudit(ownerId, request.user.sub, member, "role_changed", { previousRole: member.role, nextRole, deviceActivationRequired, rejectedDeviceIds: rejectedDevices.rows.map(device => device.id) }, database);
+                await database.query("RELEASE SAVEPOINT member_role_audit");
+            } catch (auditError) {
+                auditRecorded = false;
+                await database.query("ROLLBACK TO SAVEPOINT member_role_audit");
+                await database.query("RELEASE SAVEPOINT member_role_audit");
+                console.error("[member-role-change] audit failed", { ownerId, memberId, nextRole, code: auditError.code, message: auditError.message });
+            }
+            failedStep = "validation de la transaction";
             await database.query("COMMIT");
-            response.json({ role: nextRole, deviceActivationRequired });
+            response.json({ role: nextRole, deviceActivationRequired, auditRecorded });
         } catch (error) {
             await database.query("ROLLBACK").catch(() => {});
-            console.error("[member-role-change] failed", { ownerId, memberId, nextRole, code: error.code, message: error.message });
-            response.status(409).json({ message: "Le rôle n’a pas été modifié. Rechargez l’équipe puis réessayez." });
+            console.error("[member-role-change] failed", { ownerId, memberId, nextRole, failedStep, code: error.code, message: error.message });
+            response.status(409).json({ message: `Le rôle n’a pas été modifié pendant l’étape « ${failedStep} ». Réessayez après avoir rechargé la page.` });
         } finally {
             database.release();
         }
