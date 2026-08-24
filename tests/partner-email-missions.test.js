@@ -101,6 +101,13 @@ test("les erreurs IMAP et SMTP attendues ne remontent pas en erreur serveur 500"
     assert.match(serverSource, /Le serveur de messagerie ne répond pas/);
 });
 
+test("un timeout ImapFlow ne peut pas arrêter le processus Node", () => {
+    assert.equal((serverSource.match(/new ImapFlow/g) || []).length, 1);
+    assert.match(serverSource, /function createImapClient\(options\)/);
+    assert.match(serverSource, /client\.on\("error", error => console\.warn/);
+    assert.equal((serverSource.match(/createImapClient\(/g) || []).length, 3);
+});
+
 test("Missions partenaires rappelle la configuration uniquement sans boîte connectée", () => {
     assert.match(missionClientSource, /!dashboard\.partnerEmail\.connections\.length/);
     assert.match(missionClientSource, /Aucune boîte mail professionnelle n’est configurée/);
