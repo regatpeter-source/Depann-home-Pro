@@ -80,12 +80,22 @@ test("les missions e-mail utilisent la même interface que les missions internes
 test("la boîte professionnelle se configure dans Paramètres Réseau", () => {
     assert.match(navigationSource, /renderPartnerEmailSettings\(container\)/);
     assert.match(navigationSource, /depannhome:open-partner-email-settings/);
+    assert.match(navigationSource, /ROUTES\.settings && organizationFeatureEnabled\("partnerMissions"\)/);
+    assert.match(navigationSource, /organizationFeatureEnabled\("partnerConnections"\)\) renderPartnerConnections\(container\)/);
     assert.match(emailSettingsSource, /id="partnerEmailImapForm"/);
     assert.match(emailSettingsSource, /\/api\/partner-email\/configuration/);
     assert.match(emailSettingsSource, /data-email-oauth="microsoft"/);
     assert.doesNotMatch(missionClientSource, /id="partnerEmailImapForm"/);
     assert.doesNotMatch(missionClientSource, /activeMissionTab === "email-settings"/);
     assert.doesNotMatch(missionClientSource, /id="configurePartnerEmail"/);
+});
+
+test("les erreurs IMAP et SMTP attendues ne remontent pas en erreur serveur 500", () => {
+    const configurationRoute = serverSource.slice(serverSource.indexOf('app.put("/api/partner-email/configuration"'), serverSource.indexOf('app.post("/api/partner-email/oauth/:provider/authorize"'));
+    assert.match(configurationRoute, /throw httpError\(422, publicMailError\(error, \{ configuration: true \}\)\)/);
+    assert.match(configurationRoute, /L’ancien mot de passe enregistré n’est plus lisible/);
+    assert.match(serverSource, /connectionTimeout: 15000/);
+    assert.match(serverSource, /Le serveur de messagerie ne répond pas/);
 });
 
 test("Missions partenaires rappelle la configuration uniquement sans boîte connectée", () => {

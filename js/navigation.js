@@ -349,6 +349,7 @@ function canAccessSettingsSection(section) {
 function isOrganizationRouteEnabled(route) {
     if (document.body.dataset.creator === "true") return true;
     if (route === ROUTES.settings && organizationFeatureEnabled("partnerConnections")) return true;
+    if (route === ROUTES.settings && organizationFeatureEnabled("partnerMissions")) return true;
     const featureByRoute = { [ROUTES.search]: "library", [ROUTES.store]: "library", [ROUTES.clients]: "clients", [ROUTES.calendar]: "calendar", [ROUTES.library]: "library", [ROUTES.billing]: "billing", [ROUTES.accounting]: "accounting", [ROUTES.purchases]: "purchases", [ROUTES.messages]: "messages", [ROUTES.technicalReports]: "technicalReports", [ROUTES.partnerMissions]: "partnerMissions", [ROUTES.groups]: "groups", [ROUTES.settings]: "settings" };
     const feature = featureByRoute[route];
     return !feature || organizationFeatureEnabled(feature);
@@ -1302,7 +1303,7 @@ function renderSettings(options = {}) {
         renderTeamManagement(container);
         renderCompanyTwoFactorSecurity(container);
     }
-    if (!options.personalizationOnly && document.body.dataset.role === "admin") renderPartnerConnections(container);
+    if (!options.personalizationOnly && document.body.dataset.role === "admin" && organizationFeatureEnabled("partnerConnections")) renderPartnerConnections(container);
     if (!options.personalizationOnly && document.body.dataset.groupAdmin === "true") {
         const groupCard = document.createElement("article");
         groupCard.className = "brand-card full-card procedure-card creator-entry-card";
