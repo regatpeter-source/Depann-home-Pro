@@ -208,9 +208,9 @@ export function extractMissionPayload(email, documentText = "") {
     const documentFields = extractMissionFields(documentText);
     const value = key => emailFields[key] || documentFields[key] || "";
     const firstName = value("firstName"), lastName = value("lastName");
-    let name = value("name");
+    let name = emailFields.insuredName || documentFields.insuredName || value("name");
     if (firstName && lastName && (!name || name.toLowerCase() === lastName.toLowerCase())) name = `${firstName} ${lastName}`;
-    name ||= [firstName, lastName].filter(Boolean).join(" ") || clean(email.sender_name, 160) || "Client à identifier";
+    name ||= [firstName, lastName].filter(Boolean).join(" ") || "Client à identifier";
     const postalCode = value("postalCode");
     let address = value("address");
     if (postalCode && address && !address.includes(postalCode)) address = `${address}, ${postalCode}`;
@@ -236,9 +236,10 @@ export function extractMissionPayload(email, documentText = "") {
 function extractMissionFields(text) {
     const field = pattern => clean(pattern.exec(String(text || ""))?.[1], 255);
     return {
-        name: field(/^(?:client|assuré(?:e)?|bénéficiaire|occupant|nom(?:\s+(?:et\s+prénom|du\s+client|de\s+l['’]assuré(?:e)?))?)\s*[:\-]\s*([^\n\r]+)/im),
-        firstName: field(/^pr[ée]nom\s*[:\-]\s*([^\n\r]+)/im),
-        lastName: field(/^nom(?:\s+de\s+famille)?\s*[:\-]\s*([^\n\r]+)/im),
+        insuredName: field(/^(?:assuré(?:e)?|nom(?:\s+et\s+pr[ée]nom)?\s+(?:de\s+l['’])?assuré(?:e)?)\s*[:\-]\s*([^\n\r]+)/im),
+        name: field(/^(?:client|bénéficiaire|occupant|nom(?:\s+(?:et\s+pr[ée]nom|du\s+client))?)\s*[:\-]\s*([^\n\r]+)/im),
+        firstName: field(/^pr[ée]nom(?:\s+(?:de\s+l['’])?assuré(?:e)?)?\s*[:\-]\s*([^\n\r]+)/im),
+        lastName: field(/^nom(?:\s+de\s+famille)?(?:\s+(?:de\s+l['’])?assuré(?:e)?)?\s*[:\-]\s*([^\n\r]+)/im),
         phone: field(/^(?:t[ée]l(?:[ée]phone)?|portable|mobile)\s*[:\-]\s*([+\d .()\/-]{8,})/im),
         email: field(/^(?:e-?mail|courriel)\s*[:\-]\s*([^\s<>]+@[^\s<>]+)/im).replace(/[.,;:)]+$/, ""),
         address: field(/^(?:adresse(?:\s+(?:client|du\s+client))?|lieu\s+d['’]intervention|adresse\s+d['’]intervention)\s*[:\-]\s*([^\n\r]+)/im),

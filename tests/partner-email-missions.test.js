@@ -106,6 +106,18 @@ test("le mail garde la priorité et les documents complètent les champs manquan
     assert.equal(payload.insurance, "Exemple Assurance");
 });
 
+test("l’assuré est toujours l’identité de la fiche client", () => {
+    const payload = extractMissionPayload(
+        { id: 43, subject: "Mission", body_text: "Client : Plateforme prestataire", sender_name: "Cabinet Dupont", message_id: "mail-43" },
+        "Nom et prénom de l’assurée : Marie Martin\nAdresse : 8 rue des Assurés\nTéléphone : 0612345678"
+    );
+    assert.equal(payload.client.name, "Marie Martin");
+    assert.notEqual(payload.client.name, "Plateforme prestataire");
+
+    const unidentified = extractMissionPayload({ id: 44, subject: "Mission", body_text: "", sender_name: "Cabinet Dupont", message_id: "mail-44" });
+    assert.equal(unidentified.client.name, "Client à identifier");
+});
+
 test("une pièce illisible ou une image sans OCR ne bloque pas l’import", async () => {
     const text = await extractPartnerDocumentText([
         { mime: "application/pdf", buffer: Buffer.from("PDF corrompu") },
