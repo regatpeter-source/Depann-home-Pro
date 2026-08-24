@@ -102,6 +102,13 @@ test("les erreurs IMAP et SMTP attendues ne remontent pas en erreur serveur 500"
     assert.match(serverSource, /Le serveur de messagerie ne répond pas/);
 });
 
+test("les comptes Microsoft personnels sont orientés vers OAuth et non vers le mot de passe IMAP", () => {
+    assert.match(serverSource, /isMicrosoftMailbox\(input\.emailAddress\)/);
+    assert.match(serverSource, /Outlook, Hotmail, Live et MSN exigent la connexion OAuth Microsoft/);
+    assert.match(emailSettingsSource, /Connecter Microsoft \(Outlook, Hotmail, Microsoft 365\)/);
+    assert.match(emailSettingsSource, /Microsoft refuse l’authentification IMAP classique/);
+});
+
 test("un timeout ImapFlow ne peut pas arrêter le processus Node", () => {
     assert.equal((serverSource.match(/new ImapFlow/g) || []).length, 1);
     assert.match(serverSource, /function createImapClient\(options\)/);

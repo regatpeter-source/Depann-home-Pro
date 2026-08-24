@@ -4,11 +4,13 @@ La **Boîte mail professionnelle** transforme les demandes d’intervention reç
 
 ## Fournisseurs et authentification
 
-- **Microsoft 365 / Outlook** : OAuth 2.0 avec PKCE ;
-- **Google Workspace / Gmail** : OAuth 2.0 avec PKCE ;
+- **Microsoft 365, Outlook, Hotmail, Live et MSN**, y compris les comptes personnels : OAuth 2.0 avec PKCE ;
+- **Google Workspace / Gmail**, y compris les comptes personnels : OAuth 2.0 avec PKCE ;
 - **OVH et autres hébergeurs** : IMAP/SMTP sécurisé avec un mot de passe d’application.
 
 Les jetons et mots de passe d’application sont chiffrés côté serveur en AES-256-GCM avec la clé dérivée de `SESSION_SECRET`. Ils ne sont jamais renvoyés au navigateur. Pour OAuth, déclarer les six variables `GOOGLE_MAIL_*` et `MICROSOFT_MAIL_*` documentées dans `.env.example`, avec des URI de retour strictement identiques chez les fournisseurs.
+
+Le « mot de passe d’application » n’est jamais le mot de passe habituel de la boîte : il s’agit d’un secret distinct généré dans les réglages de sécurité du fournisseur. Outlook.com et Hotmail imposent désormais OAuth2/Modern Auth et ne doivent donc pas être configurés dans le formulaire IMAP/SMTP manuel. Pour accepter les comptes Microsoft personnels, l’application Microsoft Entra doit autoriser « les comptes dans un annuaire d’organisation et les comptes Microsoft personnels ».
 
 ## Deux modes de traitement
 
