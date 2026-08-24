@@ -70,6 +70,13 @@ test("le parcours OAuth est lié au tenant, à l’administrateur et consommé u
     assert.match(schema, /depannhome_einvoice_oauth_states/);
 });
 
+test("SUPER PDP explique simplement la connexion à l’entreprise", () => {
+    assert.match(accountingClient, /Vous serez redirigé vers SUPER PDP pour vous connecter et autoriser Depann’Home Pro/);
+    assert.match(accountingClient, /Aucun identifiant technique n’est à saisir ici/);
+    const explanation = accountingClient.slice(accountingClient.indexOf("Vous serez redirigé vers SUPER PDP"), accountingClient.indexOf("Vous serez redirigé vers SUPER PDP") + 220);
+    assert.doesNotMatch(explanation, /Render|Client Secret|variable d’environnement/);
+});
+
 test("la migration préserve l’ancienne configuration sans l’activer", () => {
     for (const source of [electronicServer, schema]) {
         assert.match(source, /legacy_ubl_api/);
