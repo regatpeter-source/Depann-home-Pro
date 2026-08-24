@@ -10,6 +10,8 @@ import { extractPartnerDocumentText } from "../server/partner-email-document-ext
 const serverSource = readFileSync(new URL("../server/partner-email.js", import.meta.url), "utf8");
 const missionSource = readFileSync(new URL("../server/partner-missions.js", import.meta.url), "utf8");
 const missionClientSource = readFileSync(new URL("../js/partner-missions.js", import.meta.url), "utf8");
+const emailSettingsSource = readFileSync(new URL("../js/partner-email-settings.js", import.meta.url), "utf8");
+const navigationSource = readFileSync(new URL("../js/navigation.js", import.meta.url), "utf8");
 const schemaSource = readFileSync(new URL("../database/schema.sql", import.meta.url), "utf8");
 const appSource = readFileSync(new URL("../app.js", import.meta.url), "utf8");
 
@@ -70,10 +72,27 @@ test("les missions e-mail utilisent la même interface que les missions internes
     assert.match(missionClientSource, /emailCandidates[\s\S]*\.map\(emailCandidateMission\)/);
     assert.match(missionClientSource, /class="partner-mission-card priority-/);
     assert.match(missionClientSource, /status: "email_candidate"/);
-    assert.match(missionClientSource, /id="configurePartnerEmail"/);
     assert.match(missionClientSource, /id="syncPartnerEmail"/);
     assert.doesNotMatch(missionClientSource, /data-mission-tab="email-inbox"/);
     assert.doesNotMatch(missionClientSource, /partner-email-candidate(?:-heading|-select)?/);
+});
+
+test("la boîte professionnelle se configure dans Paramètres Réseau", () => {
+    assert.match(navigationSource, /renderPartnerEmailSettings\(container\)/);
+    assert.match(navigationSource, /depannhome:open-partner-email-settings/);
+    assert.match(emailSettingsSource, /id="partnerEmailImapForm"/);
+    assert.match(emailSettingsSource, /\/api\/partner-email\/configuration/);
+    assert.match(emailSettingsSource, /data-email-oauth="microsoft"/);
+    assert.doesNotMatch(missionClientSource, /id="partnerEmailImapForm"/);
+    assert.doesNotMatch(missionClientSource, /activeMissionTab === "email-settings"/);
+    assert.doesNotMatch(missionClientSource, /id="configurePartnerEmail"/);
+});
+
+test("Missions partenaires rappelle la configuration uniquement sans boîte connectée", () => {
+    assert.match(missionClientSource, /!dashboard\.partnerEmail\.connections\.length/);
+    assert.match(missionClientSource, /Aucune boîte mail professionnelle n’est configurée/);
+    assert.match(missionClientSource, /id="openPartnerEmailSettings"/);
+    assert.match(missionClientSource, /new CustomEvent\("depannhome:open-partner-email-settings"\)/);
 });
 
 test("les coordonnées client sont extraites des pièces TXT, PDF, DOCX et XLSX", async () => {

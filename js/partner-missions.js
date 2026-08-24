@@ -37,6 +37,9 @@ export async function renderPartnerMissions(options = {}) {
     const networkTabs = `<button type="button" class="secondary-button" data-mission-tab="received">Missions reçues${pending ? ` (${pending})` : ""}</button><button type="button" class="secondary-button" data-mission-tab="sent">Missions envoyées</button>${canManagePartnerMissions() ? '<button type="button" class="secondary-button" data-mission-tab="new">Nouvelle mission</button>' : ""}<button type="button" class="secondary-button" data-mission-tab="messages">Messagerie</button>`;
     const externalTabs = '<button type="button" class="secondary-button" data-mission-tab="received">Missions reçues</button><button type="button" class="secondary-button" data-mission-tab="messages">Messagerie</button>';
     shell.innerHTML = `<header class="partner-mission-heading"><div><p class="eyebrow">Suivi opérationnel</p><h2>${activeMissionSpace === "network" ? "Réseau Depann’Home Pro" : "Connecteurs externes"}</h2><p class="muted">${activeMissionSpace === "network" ? "Missions, messagerie et documents entre entreprises utilisant Depann’Home Pro." : "Missions transmises directement par vos assurances, donneurs d’ordre, plateformes ou logiciels métiers via API."}</p></div><div class="partner-mission-actions"><button class="secondary-button" id="refreshPartnerMissions">Actualiser</button>${activeMissionSpace === "external" && canManagePartnerMissions() ? '<button class="secondary-button" id="retryPartnerOutbox">Relancer les retours API</button>' : ""}</div></header>${alerts.length ? `<section class="partner-mission-alerts"><h3>Notifications partenaires</h3>${alerts.slice(0, 10).map(alert => `<article class="${alert.readAt ? "read" : "unread"}"><strong>${escapeHtml(alert.title)}</strong><p>${escapeHtml(alert.body)}</p><small>${escapeHtml(formatMissionDate(alert.createdAt))}</small></article>`).join("")}</section>` : ""}<nav class="partner-network-tabs partner-mission-tabs" aria-label="Origine des missions"><button type="button" class="secondary-button${activeMissionSpace === "network" ? " active" : ""}" data-mission-space="network">Réseau Depann’Home Pro</button><button type="button" class="secondary-button${activeMissionSpace === "external" ? " active" : ""}" data-mission-space="external">Connecteurs externes</button></nav><nav class="partner-network-tabs partner-mission-tabs" aria-label="Sections des missions">${activeMissionSpace === "network" ? networkTabs : externalTabs}</nav><section class="partner-mission-counters"><article class="attention"><span>À valider</span><strong>${pending}</strong></article><article><span>${activeMissionSpace === "network" ? "Envoyées" : "Connexions API"}</span><strong>${activeMissionSpace === "network" ? dashboard.sentMissions.length : dashboard.intakes.length}</strong></article><article><span>${activeMissionSpace === "network" ? "Retours en échec" : "Missions reçues"}</span><strong>${activeMissionSpace === "network" ? dashboard.failedDeliveries : externalMissions.length}</strong></article></section><div id="partnerMissionContent"></div>`;
+    if (canManagePartnerMissions() && !dashboard.partnerEmail.connections.length) {
+        shell.querySelector(".partner-mission-heading")?.insertAdjacentHTML("afterend", '<section class="client-panel partner-email-reminder"><p class="eyebrow">Réception par e-mail inactive</p><h3>Aucune boîte mail professionnelle n’est configurée</h3><p class="muted">Ajoutez votre boîte dans Paramètres → Réseau pour recevoir et transformer automatiquement les e-mails prestataires en missions partenaires.</p><div class="form-actions"><button type="button" class="secondary-button" id="openPartnerEmailSettings">Configurer une boîte professionnelle</button></div></section>');
+    }
     if (!externalConnectorsEnabled) {
         shell.querySelector('[data-mission-space="external"]')?.remove();
         shell.querySelector("#retryPartnerOutbox")?.remove();
@@ -48,13 +51,13 @@ export async function renderPartnerMissions(options = {}) {
         shell.querySelector(".partner-mission-heading .muted").textContent = "Même suivi, mêmes cartes et même Centre de mission ; seule la connexion à la source passe par votre boîte professionnelle.";
         shell.querySelectorAll('[data-mission-space]').forEach(button => button.classList.toggle("active", button.dataset.missionSpace === "email"));
         shell.querySelectorAll('.partner-mission-tabs')[1].innerHTML = externalTabs;
-        shell.querySelector(".partner-mission-actions")?.insertAdjacentHTML("afterbegin", `<button class="secondary-button${activeMissionTab === "email-settings" ? " active" : ""}" id="configurePartnerEmail">Connexion</button>${dashboard.partnerEmail.connections.length ? '<button class="secondary-button" id="syncPartnerEmail">Synchroniser</button>' : ""}`);
+        if (dashboard.partnerEmail.connections.length) shell.querySelector(".partner-mission-actions")?.insertAdjacentHTML("afterbegin", '<button class="secondary-button" id="syncPartnerEmail">Synchroniser</button>');
         const counters = [...shell.querySelectorAll(".partner-mission-counters article")];
         const emailMissions = dashboard.missions.filter(mission => mission.sourceType === "professional_email");
         if (counters[0]) { counters[0].querySelector("span").textContent = "À valider"; counters[0].querySelector("strong").textContent = dashboard.partnerEmail.candidates.length + emailMissions.filter(mission => ["received", "pending_validation"].includes(mission.status)).length; }
         if (counters[1]) { counters[1].querySelector("span").textContent = "Boîtes connectées"; counters[1].querySelector("strong").textContent = dashboard.partnerEmail.connections.length; }
         if (counters[2]) { counters[2].querySelector("span").textContent = "Missions reçues"; counters[2].querySelector("strong").textContent = emailMissions.length; }
-        if (!["received", "messages", "email-settings"].includes(activeMissionTab)) activeMissionTab = "received";
+        if (!["received", "messages"].includes(activeMissionTab)) activeMissionTab = "received";
     }
     if (dashboard.apiSandbox?.available) {
         const button = document.createElement("button");
@@ -66,7 +69,7 @@ export async function renderPartnerMissions(options = {}) {
     await markPartnerNotificationsRead();
     enablePartnerNotificationDeletion(shell, alerts);
     shell.querySelector("#refreshPartnerMissions").addEventListener("click", renderPartnerMissions);
-    shell.querySelector("#configurePartnerEmail")?.addEventListener("click", () => { activeMissionTab = "email-settings"; renderMissionTab(shell); });
+    shell.querySelector("#openPartnerEmailSettings")?.addEventListener("click", () => window.dispatchEvent(new CustomEvent("depannhome:open-partner-email-settings")));
     shell.querySelector("#syncPartnerEmail")?.addEventListener("click", () => synchronizePartnerMailboxes(shell));
     shell.querySelector("#retryPartnerOutbox")?.addEventListener("click", async () => { const result = await api("/api/partner-missions/outbox/retry", { method: "POST" }); alert(result.ok ? `${result.data.delivered} retour(s) transmis.` : result.message); renderPartnerMissions(); });
     shell.querySelectorAll("[data-mission-space]").forEach(button => button.addEventListener("click", () => { activeMissionSpace = button.dataset.missionSpace; activeMissionTab = "received"; renderPartnerMissions(); }));
@@ -93,10 +96,8 @@ function openCompanyApiSandboxInbox() {
 
 function renderMissionTab(shell) {
     shell.querySelectorAll("[data-mission-tab]").forEach(button => button.classList.toggle("active", button.dataset.missionTab === activeMissionTab));
-    shell.querySelector("#configurePartnerEmail")?.classList.toggle("active", activeMissionSpace === "email" && activeMissionTab === "email-settings");
     const content = shell.querySelector("#partnerMissionContent");
     if (activeMissionTab === "new") return renderNewMissionEntry(content);
-    if (activeMissionSpace === "email" && activeMissionTab === "email-settings") return renderPartnerEmailTab(content);
     const sent = activeMissionSpace === "network" && activeMissionTab === "sent";
     const messages = activeMissionTab === "messages";
     const received = dashboard.missions.filter(mission => activeMissionSpace === "network" ? mission.sourceType === "depannhome_network" : activeMissionSpace === "email" ? mission.sourceType === "professional_email" : mission.sourceType === "external_connector");
@@ -289,27 +290,6 @@ function enableTerminalMissionSelection(node, missions, options) {
     updateButton();
 }
 
-function renderPartnerEmailTab(node) {
-    const mailbox = dashboard.partnerEmail || { connections: [], candidates: [], oauth: {} };
-    if (activeMissionTab === "email-settings") {
-        node.innerHTML = `<section class="client-panel partner-email-panel"><div class="form-heading"><div><p class="eyebrow">Connexion sécurisée</p><h3>Boîte mail professionnelle</h3></div></div><p class="muted">Microsoft 365 et Google utilisent OAuth : Depann’Home Pro ne connaît jamais votre mot de passe. Pour OVH ou un autre hébergeur, créez un mot de passe d’application IMAP/SMTP.</p><div class="partner-email-provider-actions"><button class="secondary-button" data-email-oauth="microsoft" ${mailbox.oauth?.microsoft ? "" : "disabled"}>Connecter Microsoft 365</button><button class="secondary-button" data-email-oauth="google" ${mailbox.oauth?.google ? "" : "disabled"}>Connecter Google Workspace</button></div>${!mailbox.oauth?.microsoft || !mailbox.oauth?.google ? '<p class="auth-message">Les boutons désactivés nécessitent la configuration OAuth correspondante sur le serveur.</p>' : ""}<form class="client-form" id="partnerEmailImapForm"><h4>OVH ou serveur IMAP/SMTP</h4><div class="form-grid"><label>Nom affiché<input name="displayName" maxlength="160" placeholder="Service missions"></label><label>Adresse e-mail *<input name="emailAddress" type="email" required></label><label>Utilisateur IMAP/SMTP *<input name="username" required></label><label>Mot de passe d’application *<input name="password" type="password" required autocomplete="new-password"></label><label>Serveur IMAP *<input name="imapHost" required placeholder="ssl0.ovh.net"></label><label>Port IMAP<input name="imapPort" type="number" min="1" max="65535" value="993"></label><label>Serveur SMTP *<input name="smtpHost" required placeholder="ssl0.ovh.net"></label><label>Port SMTP<input name="smtpPort" type="number" min="1" max="65535" value="465"></label><label>Détection<select name="selectionMode"><option value="manual">Sélection manuelle</option><option value="automatic">Automatique stricte</option></select></label><label>Seuil automatique<input name="automaticThreshold" type="number" min="70" max="100" value="80"></label><label class="form-wide">Expéditeurs ou domaines autorisés<textarea name="allowedSenders" rows="3" placeholder="missions@partenaire.fr, partenaire.fr"></textarea><small>Un expéditeur autorisé renforce le score ; il ne suffit jamais à lui seul à créer une mission.</small></label><label class="creator-switch form-wide"><input name="sendStatusUpdates" type="checkbox"><span>Répondre automatiquement au fil d’origine lors des changements de statut.</span></label></div><div class="form-actions"><button class="secondary-button">Tester et connecter</button></div><p class="auth-message" aria-live="polite"></p></form><section class="partner-email-connections"><h4>Boîtes connectées</h4>${mailbox.connections.length ? mailbox.connections.map(emailConnectionCard).join("") : '<p class="muted">Aucune boîte connectée.</p>'}</section></section>`;
-        const providerActions = node.querySelector(".partner-email-provider-actions");
-        providerActions?.insertAdjacentHTML("beforebegin", '<div class="form-grid partner-email-oauth-options"><label>Détection après connexion<select id="partnerEmailOauthMode"><option value="manual">Sélection manuelle</option><option value="automatic">Automatique stricte</option></select></label><label class="form-wide">Expéditeurs ou domaines autorisés<textarea id="partnerEmailOauthSenders" rows="2" placeholder="missions@partenaire.fr, partenaire.fr"></textarea></label><label class="creator-switch form-wide"><input id="partnerEmailOauthStatuses" type="checkbox"><span>Envoyer les changements de statut dans le fil d’origine.</span></label></div>');
-        node.querySelectorAll("[data-email-oauth]").forEach(button => button.addEventListener("click", () => beginMailboxOauth(button.dataset.emailOauth, { selectionMode: node.querySelector("#partnerEmailOauthMode")?.value, allowedSenders: node.querySelector("#partnerEmailOauthSenders")?.value, sendStatusUpdates: node.querySelector("#partnerEmailOauthStatuses")?.checked })));
-        const smtpPortLabel = node.querySelector('#partnerEmailImapForm [name="smtpPort"]')?.closest("label");
-        smtpPortLabel?.insertAdjacentHTML("afterend", '<label>Sécurité SMTP<select name="smtpSecure"><option value="true">TLS direct (souvent port 465)</option><option value="false">STARTTLS obligatoire (souvent port 587)</option></select></label>');
-        node.querySelector("#partnerEmailImapForm")?.addEventListener("submit", async event => {
-            event.preventDefault(); const form = event.currentTarget; const button = event.submitter; button.disabled = true;
-            const values = Object.fromEntries(new FormData(form)); values.sendStatusUpdates = form.elements.sendStatusUpdates.checked;
-            const result = await api("/api/partner-email/configuration", { method: "PUT", body: JSON.stringify(values) });
-            const message = form.querySelector(".auth-message"); message.textContent = result.ok ? result.data.message : result.message; message.classList.toggle("error", !result.ok); button.disabled = false;
-            if (result.ok) await renderPartnerMissions();
-        });
-        enableMailboxConnectionActions(node);
-        return;
-    }
-}
-
 function openEmailReply(missionId) {
     const dialog = openDialog(`<form class="client-form" data-email-reply-form><h3>Répondre dans le fil d’origine</h3><p class="muted">La réponse partira de votre boîte professionnelle. Vous pouvez joindre jusqu’à cinq documents de 5 Mo chacun.</p><label>Message<textarea name="body" rows="7" maxlength="4000" required></textarea></label><label>Documents<input name="files" type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx,.txt"></label><div class="form-actions"><button class="secondary-button">Envoyer par e-mail</button></div><p class="auth-message" aria-live="polite"></p></form>`);
     dialog.querySelector("[data-email-reply-form]").addEventListener("submit", async event => {
@@ -329,11 +309,6 @@ function fileToEmailAttachment(file) {
     return new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve({ name: file.name, dataUrl: reader.result }); reader.onerror = () => reject(new Error("Lecture du document impossible.")); reader.readAsDataURL(file); });
 }
 
-function emailConnectionCard(connection) {
-    const mode = connection.selectionMode === "automatic" ? `Automatique · seuil ${connection.automaticThreshold}` : "Sélection manuelle";
-    return `<article class="partner-email-connection"><div><strong>${escapeHtml(connection.displayName || connection.emailAddress)}</strong><p>${escapeHtml(connection.emailAddress)} · ${escapeHtml(mode)}</p><small>${connection.lastError ? escapeHtml(connection.lastError) : connection.lastSyncAt ? `Dernière synchronisation : ${escapeHtml(formatMissionDate(connection.lastSyncAt))}` : "Jamais synchronisée"}</small></div><div class="partner-card-actions"><button class="secondary-button" data-email-sync="${connection.id}">Synchroniser</button><button class="danger-button" data-email-disconnect="${connection.id}">Déconnecter</button></div></article>`;
-}
-
 function enableEmailCandidateSelection(node) {
     const inputs = [...node.querySelectorAll("[data-email-candidate]")], selectAll = node.querySelector("[data-email-select-all]"), importButton = node.querySelector("[data-email-import]"), ignoreButton = node.querySelector("[data-email-ignore]");
     if (!inputs.length) return;
@@ -344,23 +319,6 @@ function enableEmailCandidateSelection(node) {
     ignoreButton.addEventListener("click", async () => { if (!confirm("Ignorer les e-mails sélectionnés ? Ils ne créeront aucune mission.")) return; const result = await api("/api/partner-email/candidates/ignore", { method: "POST", body: JSON.stringify({ ids: ids() }) }); if (!result.ok) return alert(result.message); renderPartnerMissions(); });
     refresh();
 }
-
-function enableMailboxConnectionActions(node) {
-    node.querySelectorAll("[data-email-sync]").forEach(button => button.addEventListener("click", async () => { button.disabled = true; const result = await api(`/api/partner-email/${button.dataset.emailSync}/sync`, { method: "POST" }); alert(result.ok ? "Synchronisation terminée." : result.message); renderPartnerMissions(); }));
-    node.querySelectorAll("[data-email-disconnect]").forEach(button => button.addEventListener("click", async () => { if (!confirm("Déconnecter cette boîte ? Les missions déjà créées et leur historique seront conservés.")) return; const result = await api(`/api/partner-email/${button.dataset.emailDisconnect}`, { method: "DELETE" }); if (!result.ok) return alert(result.message); renderPartnerMissions(); }));
-}
-
-async function beginMailboxOauth(provider, settings = {}) {
-    const result = await api(`/api/partner-email/oauth/${provider}/authorize`, { method: "POST", body: JSON.stringify({ selectionMode: settings.selectionMode || "manual", sendStatusUpdates: Boolean(settings.sendStatusUpdates), allowedSenders: settings.allowedSenders || "" }) });
-    if (!result.ok) return alert(result.message);
-    const popup = window.open(result.data.authorizationUrl, "depannhome-mail-oauth", "popup,width=620,height=760");
-    if (!popup) alert("Autorisez les fenêtres contextuelles pour connecter la boîte professionnelle.");
-}
-
-window.addEventListener("message", event => {
-    if (event.origin !== window.location.origin || event.data?.type !== "depannhome:partner-email-oauth") return;
-    alert(event.data.message); if (event.data.success) renderPartnerMissions();
-});
 
 function renderNewMissionEntry(node) {
     const connections = dashboard.connections.filter(connection => connection.status === "connected" && connection.permissions?.canSendInterventions);

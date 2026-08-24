@@ -12,7 +12,9 @@ Les jetons et mots de passe d’application sont chiffrés côté serveur en AES
 
 ## Deux modes de traitement
 
-La source e-mail utilise la même interface métier que les missions internes du réseau et les missions externes reçues par API : mêmes onglets **Missions reçues** et **Messagerie**, mêmes cartes, filtres, statuts, actions de validation, planification et Centre de mission. Les e-mails détectés mais non encore importés apparaissent dans cette liste commune avec le statut **À confirmer**. Seuls les boutons **Connexion** et **Synchroniser** diffèrent, car ils configurent OAuth ou IMAP/SMTP au lieu d’une connexion réseau/API.
+La source e-mail utilise la même interface métier que les missions internes du réseau et les missions externes reçues par API : mêmes onglets **Missions reçues** et **Messagerie**, mêmes cartes, filtres, statuts, actions de validation, planification et Centre de mission. Les e-mails détectés mais non encore importés apparaissent dans cette liste commune avec le statut **À confirmer**.
+
+La configuration OAuth ou IMAP/SMTP d’une boîte professionnelle se trouve exclusivement dans **Paramètres → Réseau**. Si aucune boîte n’est connectée, **Missions partenaires** affiche un rappel avec un accès direct à cette section. Dès qu’une boîte existe, le rappel disparaît et seule l’action opérationnelle **Synchroniser** reste proposée dans les missions.
 
 ### Sélection manuelle
 

@@ -5,9 +5,10 @@ import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocume
 import { renderAccounting, renderElectronicInvoicingConfiguration } from "./accounting.js?v=15";
 import { renderPurchases } from "./purchases.js?v=118";
 import { renderGroupActivation, renderGroupWorkspace } from "./groups.js?v=3";
-import { renderPartnerMissions } from "./partner-missions.js?v=45";
+import { renderPartnerMissions } from "./partner-missions.js?v=46";
 import { renderPartnerSandbox } from "./partner-sandbox.js?v=3";
-import { renderPartnerConnections } from "./partner-connections.js?v=22";
+import { renderPartnerConnections } from "./partner-connections.js?v=23";
+import { renderPartnerEmailSettings } from "./partner-email-settings.js?v=1";
 import { renderDataImportTool } from "./data-imports.js?v=3";
 import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=29";
 import { getFirstUnreadClientId, refreshClientMessageAlert, refreshVisibleClientMessages } from "./messages.js?v=107";
@@ -65,6 +66,7 @@ export function initializeNavigation(loadedDatabase) {
     applyRoleBasedMenus();
     updateSearchPlaceholder();
     window.addEventListener("depannhome:open-client", event => openClients(String(event.detail?.clientId || "")));
+    window.addEventListener("depannhome:open-partner-email-settings", () => renderSettings({ section: "network", focusPartnerEmail: true }));
     window.addEventListener("depannhome:edit-report-template", () => {
         if (!organizationFeatureEnabled("technicalReports") || document.body.dataset.role !== "admin" || !document.body.classList.contains("desktop-device")) return;
         openDocumentTemplateSettings("report");
@@ -333,7 +335,8 @@ function isDesktopDevice() {
 
 function canAccessSettingsSection(section) {
     if (document.body.dataset.creator === "true") return true;
-    if (document.body.dataset.organizationInterface === "partner") return section === "support" || (section === "network" && organizationFeatureEnabled("partnerConnections"));
+    if (document.body.dataset.organizationInterface === "partner") return section === "support" || (section === "network" && organizationFeatureEnabled("partnerConnections")) || (section === "network" && organizationFeatureEnabled("partnerMissions"));
+    if (section === "network" && (organizationFeatureEnabled("partnerConnections") || organizationFeatureEnabled("partnerMissions"))) return true;
     const featureBySection = { documents: "billing", electronicInvoicing: "accounting", network: "partnerConnections", users: "settings", security: "settings", groups: "groups", personalization: "settings", imports: "imports" };
     const feature = featureBySection[section];
     if (feature && !organizationFeatureEnabled(feature)) return false;
@@ -1379,8 +1382,10 @@ function renderSettingsWorkspace(options = {}) {
     if (section === "network") {
         const internalNetworkOnly = document.body.dataset.organizationInterface === "partner" || !organizationFeatureEnabled("connectors");
         container.appendChild(createSettingsIntro(internalNetworkOnly ? "Réseau Depann’Home Pro" : "Réseau & connecteurs", internalNetworkOnly ? "Recherchez une entreprise utilisatrice, consultez sa fiche et demandez une connexion. Les connecteurs externes sont réservés aux donneurs d’ordre et ne sont pas disponibles sur le portail Partenaire." : "Le Réseau Depann’Home Pro relie uniquement les entreprises utilisatrices. Les connecteurs externes sont configurés séparément pour les échanges API avec les organismes tiers."));
-        renderPartnerConnections(container);
+        if (organizationFeatureEnabled("partnerConnections")) renderPartnerConnections(container);
+        if (["admin", "pc_standard", "mobile_admin"].includes(document.body.dataset.role) && organizationFeatureEnabled("partnerMissions")) renderPartnerEmailSettings(container);
         if (!internalNetworkOnly && document.body.classList.contains("partner-sandbox-enabled")) container.appendChild(createButton("Ouvrir l’environnement de recette partenaire", "secondary-button settings-inline-action", renderPartnerSandbox));
+        if (options.focusPartnerEmail) window.requestAnimationFrame(() => document.querySelector(".partner-email-settings-card")?.scrollIntoView({ behavior: "smooth", block: "start" }));
         return;
     }
     if (section === "support") return renderSupportContact(container);
