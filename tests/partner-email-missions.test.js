@@ -14,6 +14,7 @@ const emailSettingsSource = readFileSync(new URL("../js/partner-email-settings.j
 const navigationSource = readFileSync(new URL("../js/navigation.js", import.meta.url), "utf8");
 const schemaSource = readFileSync(new URL("../database/schema.sql", import.meta.url), "utf8");
 const appSource = readFileSync(new URL("../app.js", import.meta.url), "utf8");
+const appClientSource = readFileSync(new URL("../js/app.js", import.meta.url), "utf8");
 
 const pdf = [{ contentType: "application/pdf", size: 1200 }];
 
@@ -113,6 +114,12 @@ test("Missions partenaires rappelle la configuration uniquement sans boîte conn
     assert.match(missionClientSource, /Aucune boîte mail professionnelle n’est configurée/);
     assert.match(missionClientSource, /id="openPartnerEmailSettings"/);
     assert.match(missionClientSource, /new CustomEvent\("depannhome:open-partner-email-settings"\)/);
+});
+
+test("la détection Sandbox ne provoque pas de 403 sans connecteurs", () => {
+    assert.match(appClientSource, /features\.connectors !== true\) return/);
+    assert.match(appSource, /request\.method === "GET" && request\.path === "\/"/);
+    assert.match(appSource, /return requirePartnerSandboxFeature\(request, response, next\)/);
 });
 
 test("les coordonnées client sont extraites des pièces TXT, PDF, DOCX et XLSX", async () => {

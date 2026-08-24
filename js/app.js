@@ -94,13 +94,15 @@ function enforceOfficialProductName() {
 }
 
 async function initializeSandboxCapabilities() {
+    document.body.classList.remove("partner-sandbox-enabled");
+    let features = {};
+    try { features = JSON.parse(document.body.dataset.organizationFeatures || "{}"); } catch {}
+    if (document.body.dataset.creator !== "true" && features.connectors !== true) return;
     try {
         const partnerResponse = await fetch("/api/partner-sandbox", { credentials: "same-origin" });
         const partner = partnerResponse.ok ? await partnerResponse.json() : null;
         document.body.classList.toggle("partner-sandbox-enabled", Boolean(partner?.available));
-    } catch {
-        document.body.classList.remove("partner-sandbox-enabled");
-    }
+    } catch {}
 }
 
 function showAuthenticatedUser(user) {

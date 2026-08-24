@@ -201,7 +201,9 @@ test("the free Partner interface exposes the internal network without external c
     assert.match(navigation, /if \(section === "support"\) return renderSupportContact\(container\)/);
     assert.match(app, /app\.use\("\/api\/official-partners", requireAuthentication, requireOrganizationFeature\("connectors"\)\)/);
     assert.match(app, /app\.use\("\/api\/partner-missions\/intakes", requireAuthentication, requireOrganizationFeature\("connectors"\)\)/);
-    assert.match(app, /app\.use\("\/api\/partner-sandbox", requireAuthentication, requireOrganizationFeature\("connectors"\)\)/);
+    assert.match(app, /const requirePartnerSandboxFeature = requireOrganizationFeature\("connectors"\)/);
+    assert.match(app, /request\.method === "GET" && request\.path === "\/"/);
+    assert.match(app, /return requirePartnerSandboxFeature\(request, response, next\)/);
     assert.match(partnerConnectionsClient, /const internalNetworkOnly = document\.body\.dataset\.organizationInterface === "partner"/);
     assert.match(partnerConnectionsClient, /internalNetworkOnly \? Promise\.resolve\(\{ ok: false \}\) : api\("\/api\/official-partners"\)/);
     assert.match(partnerMissionsServer, /COALESCE\(organization\.interface_type,'standard'\)<>'partner'/);
