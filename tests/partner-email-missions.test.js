@@ -85,6 +85,9 @@ test("la boîte professionnelle se configure dans Paramètres Réseau", () => {
     assert.match(emailSettingsSource, /id="partnerEmailImapForm"/);
     assert.match(emailSettingsSource, /\/api\/partner-email\/configuration/);
     assert.match(emailSettingsSource, /data-email-oauth="microsoft"/);
+    assert.match(emailSettingsSource, /emailPasswordToggle/);
+    assert.match(emailSettingsSource, /password\.type = visible \? "text" : "password"/);
+    assert.match(emailSettingsSource, /aria-pressed/);
     assert.doesNotMatch(missionClientSource, /id="partnerEmailImapForm"/);
     assert.doesNotMatch(missionClientSource, /activeMissionTab === "email-settings"/);
     assert.doesNotMatch(missionClientSource, /id="configurePartnerEmail"/);

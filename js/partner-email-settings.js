@@ -23,6 +23,30 @@ async function loadPartnerEmailSettings(card) {
 function renderSettings(card, mailbox) {
     card.innerHTML = `<section class="partner-email-panel"><div class="form-heading"><div><p class="eyebrow">Réception de missions par e-mail</p><h2>Boîte mail professionnelle</h2></div></div><p class="muted">Microsoft 365 et Google utilisent OAuth : Depann’Home Pro ne connaît jamais votre mot de passe. Pour OVH ou un autre hébergeur, créez un mot de passe d’application IMAP/SMTP.</p><div class="form-grid partner-email-oauth-options"><label>Détection après connexion<select id="partnerEmailOauthMode"><option value="manual">Sélection manuelle</option><option value="automatic">Automatique stricte</option></select></label><label class="form-wide">Expéditeurs ou domaines autorisés<textarea id="partnerEmailOauthSenders" rows="2" placeholder="missions@partenaire.fr, partenaire.fr"></textarea></label><label class="creator-switch form-wide"><input id="partnerEmailOauthStatuses" type="checkbox"><span>Envoyer les changements de statut dans le fil d’origine.</span></label></div><div class="partner-email-provider-actions"><button class="secondary-button" data-email-oauth="microsoft" ${mailbox.oauth?.microsoft ? "" : "disabled"}>Connecter Microsoft 365</button><button class="secondary-button" data-email-oauth="google" ${mailbox.oauth?.google ? "" : "disabled"}>Connecter Google Workspace</button></div>${!mailbox.oauth?.microsoft || !mailbox.oauth?.google ? '<p class="auth-message">Les boutons désactivés nécessitent la configuration OAuth correspondante sur le serveur.</p>' : ""}<form class="client-form" id="partnerEmailImapForm"><h3>OVH ou serveur IMAP/SMTP</h3><div class="form-grid"><label>Nom affiché<input name="displayName" maxlength="160" placeholder="Service missions"></label><label>Adresse e-mail *<input name="emailAddress" type="email" required></label><label>Utilisateur IMAP/SMTP *<input name="username" required></label><label>Mot de passe d’application *<input name="password" type="password" required autocomplete="new-password"></label><label>Serveur IMAP *<input name="imapHost" required placeholder="ssl0.ovh.net"></label><label>Port IMAP<input name="imapPort" type="number" min="1" max="65535" value="993"></label><label>Serveur SMTP *<input name="smtpHost" required placeholder="ssl0.ovh.net"></label><label>Port SMTP<input name="smtpPort" type="number" min="1" max="65535" value="465"></label><label>Sécurité SMTP<select name="smtpSecure"><option value="true">TLS direct (souvent port 465)</option><option value="false">STARTTLS obligatoire (souvent port 587)</option></select></label><label>Détection<select name="selectionMode"><option value="manual">Sélection manuelle</option><option value="automatic">Automatique stricte</option></select></label><label>Seuil automatique<input name="automaticThreshold" type="number" min="70" max="100" value="80"></label><label class="form-wide">Expéditeurs ou domaines autorisés<textarea name="allowedSenders" rows="3" placeholder="missions@partenaire.fr, partenaire.fr"></textarea><small>Un expéditeur autorisé renforce le score ; il ne suffit jamais à lui seul à créer une mission.</small></label><label class="creator-switch form-wide"><input name="sendStatusUpdates" type="checkbox"><span>Répondre automatiquement au fil d’origine lors des changements de statut.</span></label></div><div class="form-actions"><button class="secondary-button">Tester et connecter</button></div><p class="auth-message" aria-live="polite"></p></form><section class="partner-email-connections"><h3>Boîtes connectées</h3>${mailbox.connections?.length ? mailbox.connections.map(emailConnectionCard).join("") : '<p class="muted">Aucune boîte professionnelle connectée.</p>'}</section></section>`;
 
+    const password = card.querySelector('#partnerEmailImapForm [name="password"]');
+    if (password) {
+        const wrapper = document.createElement("span");
+        wrapper.className = "password-input";
+        password.before(wrapper);
+        wrapper.append(password);
+        const toggle = document.createElement("button");
+        toggle.type = "button";
+        toggle.className = "password-toggle";
+        toggle.dataset.emailPasswordToggle = "";
+        toggle.textContent = "Afficher";
+        toggle.setAttribute("aria-label", "Afficher le mot de passe d’application");
+        toggle.setAttribute("aria-pressed", "false");
+        wrapper.append(toggle);
+        toggle.addEventListener("click", () => {
+            const visible = password.type === "password";
+            password.type = visible ? "text" : "password";
+            toggle.textContent = visible ? "Masquer" : "Afficher";
+            toggle.setAttribute("aria-label", `${visible ? "Masquer" : "Afficher"} le mot de passe d’application`);
+            toggle.setAttribute("aria-pressed", String(visible));
+            password.focus();
+        });
+    }
+
     card.querySelectorAll("[data-email-oauth]").forEach(button => button.addEventListener("click", () => beginMailboxOauth(button.dataset.emailOauth, {
         selectionMode: card.querySelector("#partnerEmailOauthMode")?.value,
         allowedSenders: card.querySelector("#partnerEmailOauthSenders")?.value,
