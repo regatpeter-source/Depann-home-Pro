@@ -17,7 +17,7 @@ test("la création et la modification acceptent plusieurs sections métier", () 
     assert.match(auth, /cleanDepartments\(request\.body\?\.departments, request\.body\?\.department\)/);
     assert.match(auth, /Choisissez au moins une section métier/);
     assert.match(auth, /departments = \$9::jsonb/);
-    assert.match(navigation, /const TEAM_SECTION_OPTIONS = \["Dépannage", "Plomberie", "Électricité", "Menuiserie"/);
+    assert.match(navigation, /const TEAM_SECTION_OPTIONS = \["Dépannage", "Recherche de fuite", "Plomberie", "Électricité", "Menuiserie"/);
     assert.match(navigation, /input type="checkbox" name="departments"/);
     assert.match(navigation, /Modifier les sections/);
     assert.doesNotMatch(navigation, /window\.prompt\(`Pôle de/);

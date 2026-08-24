@@ -35,7 +35,7 @@ import {
     setPage
 } from "./ui.js?v=44";
 
-const TEAM_SECTION_OPTIONS = ["Dépannage", "Plomberie", "Électricité", "Menuiserie", "Serrurerie", "Chauffage", "Climatisation", "Couverture", "Vitrerie", "Maçonnerie", "Peinture", "Carrelage", "Interphonie", "Alarme", "Électroménager", "Chantiers", "Métrés", "Maintenance", "Pose", "SAV"];
+const TEAM_SECTION_OPTIONS = ["Dépannage", "Recherche de fuite", "Plomberie", "Électricité", "Menuiserie", "Serrurerie", "Chauffage", "Climatisation", "Couverture", "Vitrerie", "Maçonnerie", "Peinture", "Carrelage", "Interphonie", "Alarme", "Électroménager", "Chantiers", "Métrés", "Maintenance", "Pose", "SAV"];
 
 let database = { brands: [] };
 let searchRequestId = 0;
