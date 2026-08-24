@@ -1,7 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { classifyPartnerEmail } from "../server/partner-email.js";
+import ExcelJS from "exceljs";
+import PizZip from "pizzip";
+import { PDFDocument, StandardFonts } from "pdf-lib";
+import { classifyPartnerEmail, extractMissionPayload } from "../server/partner-email.js";
+import { extractPartnerDocumentText } from "../server/partner-email-document-extractor.js";
 
 const serverSource = readFileSync(new URL("../server/partner-email.js", import.meta.url), "utf8");
 const missionSource = readFileSync(new URL("../server/partner-missions.js", import.meta.url), "utf8");
@@ -58,4 +62,55 @@ test("la boîte mail dépend de Missions partenaires et non des connecteurs Pro"
     assert.match(appSource, /app\.use\("\/api\/partner-email", requireAuthentication, requireOrganizationFeature\("partnerMissions"\)\)/);
     assert.match(missionSource, /intake\.partner_key LIKE 'email-%'/);
     assert.match(missionSource, /sourceType: partnerKey\.startsWith\("connection-"\) \? "depannhome_network" : partnerKey\.startsWith\("email-"\) \? "professional_email"/);
+});
+
+test("les coordonnées client sont extraites des pièces TXT, PDF, DOCX et XLSX", async () => {
+    const pdfDocument = await PDFDocument.create();
+    const page = pdfDocument.addPage();
+    const font = await pdfDocument.embedFont(StandardFonts.Helvetica);
+    page.drawText("Client : Alice PDF", { x: 40, y: 780, font, size: 12 });
+    page.drawText("Adresse : 4 rue du PDF", { x: 40, y: 760, font, size: 12 });
+    const pdfBuffer = Buffer.from(await pdfDocument.save());
+
+    const docx = new PizZip();
+    docx.file("word/document.xml", "<w:document xmlns:w=\"x\"><w:body><w:p><w:r><w:t>Client : Alice DOCX</w:t></w:r></w:p><w:p><w:r><w:t>Ville : Nantes</w:t></w:r></w:p></w:body></w:document>");
+    const docxBuffer = docx.generate({ type: "nodebuffer" });
+
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet("Mission");
+    sheet.addRow(["Client", "Alice XLSX"]);
+    sheet.addRow(["Téléphone", "06 11 22 33 44"]);
+    const xlsxBuffer = Buffer.from(await workbook.xlsx.writeBuffer());
+
+    const fixtures = [
+        { mime: "text/plain", buffer: Buffer.from("Client : Alice TXT\nE-mail : alice@example.test") },
+        { mime: "application/pdf", buffer: pdfBuffer },
+        { mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", buffer: docxBuffer },
+        { mime: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", buffer: xlsxBuffer }
+    ];
+    const texts = await Promise.all(fixtures.map(attachment => extractPartnerDocumentText([attachment])));
+    assert.match(texts[0], /Alice TXT/);
+    assert.match(texts[1], /Alice PDF/);
+    assert.match(texts[2], /Alice DOCX/);
+    assert.match(texts[3], /Alice XLSX/);
+});
+
+test("le mail garde la priorité et les documents complètent les champs manquants", () => {
+    const payload = extractMissionPayload({ id: 42, subject: "Mission", body_text: "Client : Camille Mail\nTéléphone : 0600000000", sender_name: "Assureur", message_id: "mail-42" }, "Client : Alice Document\nTéléphone : 0711111111\nE-mail : alice@example.test\nAdresse : 12 rue des Lilas\nCode postal : 44000\nVille : Nantes\nSinistre : SIN-42\nAssureur : Exemple Assurance");
+    assert.equal(payload.client.name, "Camille Mail");
+    assert.equal(payload.client.phone, "0600000000");
+    assert.equal(payload.client.email, "alice@example.test");
+    assert.equal(payload.client.address, "12 rue des Lilas, 44000");
+    assert.equal(payload.client.city, "Nantes");
+    assert.equal(payload.claimNumber, "SIN-42");
+    assert.equal(payload.insurance, "Exemple Assurance");
+});
+
+test("une pièce illisible ou une image sans OCR ne bloque pas l’import", async () => {
+    const text = await extractPartnerDocumentText([
+        { mime: "application/pdf", buffer: Buffer.from("PDF corrompu") },
+        { mime: "image/png", buffer: Buffer.from("image non OCRisée") },
+        { mime: "text/plain", buffer: Buffer.from("Client : Client Valide") }
+    ]);
+    assert.match(text, /Client Valide/);
 });

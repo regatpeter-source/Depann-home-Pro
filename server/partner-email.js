@@ -8,6 +8,7 @@ import { getOrganization, isFeatureEnabled } from "./organizations.js";
 import { decryptElectronicInvoicingCredentials, encryptElectronicInvoicingCredentials } from "./electronic-invoicing.js";
 import { ingestEmailPartnerMission } from "./partner-missions.js";
 import { recordMissionDialogueDocument, recordMissionDialogueEvent } from "./partner-dialogue.js";
+import { extractPartnerDocumentText } from "./partner-email-document-extractor.js";
 
 const ADMIN_ROLES = new Set(["admin", "pc_standard", "mobile_admin"]);
 const PROVIDERS = new Set(["google", "microsoft", "imap"]);
@@ -188,7 +189,8 @@ async function importCandidate(ownerId, emailId, actorId) {
     const claimed = await getPool().query("UPDATE depannhome_partner_email_messages SET status='processing' WHERE id=$1 AND owner_id=$2 AND status='candidate' RETURNING id", [email.id, ownerId]);
     if (!claimed.rowCount) throw httpError(409, "Cet e-mail est déjà en cours de traitement.");
     try {
-        const payload = extractMissionPayload(email);
+        const documentText = await extractPartnerDocumentText(email.attachments);
+        const payload = extractMissionPayload(email, documentText);
         const result = await ingestEmailPartnerMission({ ownerId, connectionId: email.email_connection_id, emailId: email.id, partnerName: email.display_name || email.sender_address, actorId, payload });
         for (const attachment of email.attachments || []) {
             const match = /^data:([^;]+);base64,([A-Za-z0-9+/=]+)$/.exec(String(attachment.dataUrl || ""));
@@ -200,10 +202,56 @@ async function importCandidate(ownerId, emailId, actorId) {
     } catch (error) { await getPool().query("UPDATE depannhome_partner_email_messages SET status='candidate' WHERE id=$1 AND owner_id=$2 AND status='processing'", [email.id, ownerId]); throw error; }
 }
 
-function extractMissionPayload(email) {
-    const text = `${email.subject || ""}\n${email.body_text || ""}`; const field = pattern => clean(pattern.exec(text)?.[1], 255);
-    const name = field(/(?:client|assuré|nom)\s*[:\-]\s*([^\n\r]+)/i) || clean(email.sender_name, 160) || "Client à identifier";
-    return { id: `email-${email.id}`, missionNumber: field(/(?:mission|dossier|référence|ref)\s*(?:n°|no|numéro)?\s*[:#\-]?\s*([A-Z0-9/_-]{3,})/i) || `MAIL-${email.id}`, partnerReference: clean(email.message_id, 160), subject: email.subject, interventionType: field(/(?:intervention|objet|nature)\s*[:\-]\s*([^\n\r]+)/i) || clean(email.subject, 160), description: clean(email.body_text, 2000), client: { name, phone: field(/(?:tél|téléphone|portable)\s*[:\-]\s*([+\d .()-]{8,})/i), email: field(/(?:e-?mail|courriel)\s*[:\-]\s*([^\s]+@[^\s]+)/i), address: field(/(?:adresse|lieu d'intervention)\s*[:\-]\s*([^\n\r]+)/i) }, claimNumber: field(/(?:sinistre)\s*(?:n°|no|numéro)?\s*[:#\-]?\s*([A-Z0-9/_-]+)/i), priority: /urgent/i.test(text) ? "urgent" : "normal", attachments: email.attachments || [], sourceEmail: { from: email.sender_address, subject: email.subject, receivedAt: email.received_at } };
+export function extractMissionPayload(email, documentText = "") {
+    const emailText = `${email.subject || ""}\n${email.body_text || ""}`;
+    const emailFields = extractMissionFields(emailText);
+    const documentFields = extractMissionFields(documentText);
+    const value = key => emailFields[key] || documentFields[key] || "";
+    const firstName = value("firstName"), lastName = value("lastName");
+    let name = value("name");
+    if (firstName && lastName && (!name || name.toLowerCase() === lastName.toLowerCase())) name = `${firstName} ${lastName}`;
+    name ||= [firstName, lastName].filter(Boolean).join(" ") || clean(email.sender_name, 160) || "Client à identifier";
+    const postalCode = value("postalCode");
+    let address = value("address");
+    if (postalCode && address && !address.includes(postalCode)) address = `${address}, ${postalCode}`;
+    return {
+        id: `email-${email.id}`,
+        missionNumber: value("missionNumber") || `MAIL-${email.id}`,
+        partnerReference: clean(email.message_id, 160),
+        subject: email.subject,
+        interventionType: value("interventionType") || clean(email.subject, 160),
+        description: clean(email.body_text, 2000),
+        client: { name, firstName, lastName, phone: value("phone"), email: value("email"), address, city: value("city") },
+        claimNumber: value("claimNumber"),
+        insurance: value("insurance"),
+        expert: value("expert"),
+        manager: value("manager"),
+        principal: value("principal"),
+        priority: /urgent|urgence|prioritaire/i.test(`${emailText}\n${documentText}`) ? "urgent" : "normal",
+        attachments: email.attachments || [],
+        sourceEmail: { from: email.sender_address, subject: email.subject, receivedAt: email.received_at }
+    };
+}
+
+function extractMissionFields(text) {
+    const field = pattern => clean(pattern.exec(String(text || ""))?.[1], 255);
+    return {
+        name: field(/^(?:client|assuré(?:e)?|bénéficiaire|occupant|nom(?:\s+(?:et\s+prénom|du\s+client|de\s+l['’]assuré(?:e)?))?)\s*[:\-]\s*([^\n\r]+)/im),
+        firstName: field(/^pr[ée]nom\s*[:\-]\s*([^\n\r]+)/im),
+        lastName: field(/^nom(?:\s+de\s+famille)?\s*[:\-]\s*([^\n\r]+)/im),
+        phone: field(/^(?:t[ée]l(?:[ée]phone)?|portable|mobile)\s*[:\-]\s*([+\d .()\/-]{8,})/im),
+        email: field(/^(?:e-?mail|courriel)\s*[:\-]\s*([^\s<>]+@[^\s<>]+)/im).replace(/[.,;:)]+$/, ""),
+        address: field(/^(?:adresse(?:\s+(?:client|du\s+client))?|lieu\s+d['’]intervention|adresse\s+d['’]intervention)\s*[:\-]\s*([^\n\r]+)/im),
+        postalCode: field(/^(?:code\s+postal|cp)\s*[:\-]\s*(\d{5})/im),
+        city: field(/^(?:ville|commune)\s*[:\-]\s*([^\n\r]+)/im),
+        missionNumber: field(/^(?:mission|dossier|référence|ref)\s*(?:n°|no|numéro)?\s*[:#\-]?\s*([A-Z0-9][A-Z0-9/_-]{2,})/im),
+        interventionType: field(/^(?:intervention|objet|nature|type\s+d['’]intervention)\s*[:\-]\s*([^\n\r]+)/im),
+        claimNumber: field(/^(?:sinistre|n°\s+de\s+sinistre)\s*(?:n°|no|numéro)?\s*[:#\-]?\s*([A-Z0-9][A-Z0-9/_-]*)/im),
+        insurance: field(/^(?:assurance|assureur|compagnie)\s*[:\-]\s*([^\n\r]+)/im),
+        expert: field(/^expert\s*[:\-]\s*([^\n\r]+)/im),
+        manager: field(/^(?:gestionnaire|chargé(?:e)?\s+de\s+dossier)\s*[:\-]\s*([^\n\r]+)/im),
+        principal: field(/^(?:donneur\s+d['’]ordre|mandant)\s*[:\-]\s*([^\n\r]+)/im)
+    };
 }
 
 export async function notifyEmailMissionStatus(ownerId, missionId, status, details = {}) {

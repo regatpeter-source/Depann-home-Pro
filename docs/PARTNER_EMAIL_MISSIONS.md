@@ -40,6 +40,10 @@ Il diminue fortement pour les relances de paiement, newsletters, réponses autom
 
 Les formats admis sont PDF, JPEG, PNG, WebP, Word, Excel et texte brut, avec une limite de 5 Mo par fichier, 10 fichiers et 20 Mo cumulés par message. Les logos et pièces non conformes sont ignorés. Les documents retenus sont ajoutés à la fiche client et au journal de mission avec une visibilité **interne** par défaut.
 
+Lors de l’import, Depann’Home Pro lit le texte brut, les PDF contenant une couche texte, les documents DOCX et les classeurs XLSX. Il recherche les coordonnées du client (nom, prénom, téléphone, e-mail, adresse, code postal et ville) ainsi que les références utiles du dossier (mission, sinistre, assureur, expert et gestionnaire). Les valeurs clairement indiquées dans l’e-mail restent prioritaires ; les pièces jointes complètent uniquement les champs manquants. La fiche est ensuite rapprochée d’un client existant par e-mail, téléphone ou couple nom/adresse, puis créée automatiquement si aucun client ne correspond.
+
+Les anciens fichiers DOC/XLS restent conservés comme pièces mais leur contenu n’est pas interprété. Les images et PDF scannés sans couche texte ne font pas l’objet d’un OCR : ils sont archivés normalement et l’import continue avec les informations disponibles. Une pièce corrompue ou illisible ne bloque jamais la création de la mission. Les volumes décompressés, pages PDF, cellules et caractères analysés sont bornés côté serveur.
+
 Un e-mail est dédupliqué avec son identifiant RFC `Message-ID` dans la boîte concernée. Depann’Home Pro ne supprime et ne marque pas automatiquement le message sur le serveur d’origine.
 
 ## Réponses et statuts
