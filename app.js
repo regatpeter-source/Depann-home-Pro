@@ -23,6 +23,7 @@ import { documentTemplateUploadErrorHandler, initializeDocumentTemplates, regist
 import { initializeSubscriptionInvoicing, registerSubscriptionInvoicingRoutes, startSubscriptionInvoicingScheduler } from "./server/invoicing.js";
 import { initializeAccounting, registerAccountingRoutes } from "./server/accounting.js";
 import { initializeElectronicInvoicing, registerElectronicInvoicingRoutes } from "./server/electronic-invoicing.js";
+import "./server/einvoice-providers/super-pdp.js";
 import { initializeConnectors, registerConnectorRoutes } from "./server/connectors.js";
 import { initializePurchases, registerPurchaseRoutes } from "./server/purchases.js";
 import { initializeMessages, registerMessageRoutes } from "./server/messages.js";

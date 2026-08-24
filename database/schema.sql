@@ -625,6 +625,17 @@ CREATE TABLE IF NOT EXISTS depannhome_einvoice_connections (
 CREATE INDEX IF NOT EXISTS depannhome_einvoice_connections_owner_idx ON depannhome_einvoice_connections(owner_id,updated_at DESC);
 CREATE UNIQUE INDEX IF NOT EXISTS depannhome_einvoice_connections_owner_active_unique ON depannhome_einvoice_connections(owner_id) WHERE active=TRUE;
 CREATE UNIQUE INDEX IF NOT EXISTS depannhome_einvoice_connections_webhook_unique ON depannhome_einvoice_connections(webhook_token_hash) WHERE webhook_token_hash IS NOT NULL;
+-- Les états OAuth sont opaques, temporaires, liés à l'entreprise et à
+-- l'administrateur initiateur. DELETE ... RETURNING garantit leur usage unique.
+CREATE TABLE IF NOT EXISTS depannhome_einvoice_oauth_states (
+    id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    created_by BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    platform_code VARCHAR(60) NOT NULL, state_hash CHAR(64) NOT NULL UNIQUE,
+    encrypted_context TEXT NOT NULL, expires_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS depannhome_einvoice_oauth_states_owner_idx ON depannhome_einvoice_oauth_states(owner_id,platform_code,expires_at);
+DELETE FROM depannhome_einvoice_oauth_states WHERE expires_at<=NOW();
 ALTER TABLE depannhome_einvoice_transmissions
     ADD COLUMN IF NOT EXISTS connection_id BIGINT REFERENCES depannhome_einvoice_connections(id) ON DELETE SET NULL,
     ADD COLUMN IF NOT EXISTS platform_code VARCHAR(60) NOT NULL DEFAULT '',

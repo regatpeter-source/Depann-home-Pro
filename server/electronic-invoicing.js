@@ -94,6 +94,20 @@ export async function initializeElectronicInvoicing(database = getPool()) {
     await database.query("CREATE UNIQUE INDEX IF NOT EXISTS depannhome_einvoice_connections_owner_active_unique ON depannhome_einvoice_connections(owner_id) WHERE active=TRUE");
     await database.query("CREATE UNIQUE INDEX IF NOT EXISTS depannhome_einvoice_connections_webhook_unique ON depannhome_einvoice_connections(webhook_token_hash) WHERE webhook_token_hash IS NOT NULL");
     await database.query(`
+        CREATE TABLE IF NOT EXISTS depannhome_einvoice_oauth_states (
+            id BIGSERIAL PRIMARY KEY,
+            owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+            created_by BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+            platform_code VARCHAR(60) NOT NULL,
+            state_hash CHAR(64) NOT NULL UNIQUE,
+            encrypted_context TEXT NOT NULL,
+            expires_at TIMESTAMPTZ NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+    `);
+    await database.query("CREATE INDEX IF NOT EXISTS depannhome_einvoice_oauth_states_owner_idx ON depannhome_einvoice_oauth_states(owner_id,platform_code,expires_at)");
+    await database.query("DELETE FROM depannhome_einvoice_oauth_states WHERE expires_at<=NOW()");
+    await database.query(`
         ALTER TABLE depannhome_einvoice_transmissions
         ADD COLUMN IF NOT EXISTS connection_id BIGINT REFERENCES depannhome_einvoice_connections(id) ON DELETE SET NULL,
         ADD COLUMN IF NOT EXISTS platform_code VARCHAR(60) NOT NULL DEFAULT '',
@@ -161,6 +175,49 @@ export function registerElectronicInvoicingRoutes(app, requireAuthentication) {
         const ownerId = getAccountOwnerId(request);
         response.json({ providers: listElectronicInvoicingProviders(), connections: await loadPublicConnections(ownerId), activeConnection: await loadPublicActiveConnection(ownerId) });
     }));
+    app.post("/api/accounting/e-invoicing/connections/:platformCode/authorize", asyncHandler(async (request, response) => {
+        const ownerId = getAccountOwnerId(request);
+        const platform = getElectronicInvoicingProvider(request.params.platformCode);
+        if (!platform || typeof platform.authorizationUrl !== "function" || typeof platform.exchangeAuthorizationCode !== "function") return response.status(409).json({ message: "Cette plateforme ne propose pas de parcours d’autorisation intégré." });
+        const redirectUri = String(process.env.SUPERPDP_REDIRECT_URI || "").trim();
+        const state = crypto.randomBytes(32).toString("base64url");
+        const codeVerifier = crypto.randomBytes(64).toString("base64url");
+        const codeChallenge = crypto.createHash("sha256").update(codeVerifier).digest("base64url");
+        const { rows } = await getPool().query(`SELECT profile.email,REGEXP_REPLACE(COALESCE(profile.siren,''),'[^0-9]','','g') AS siren FROM depannhome_users owner LEFT JOIN depannhome_billing_profiles profile ON profile.owner_id=owner.id WHERE owner.id=$1`, [ownerId]);
+        const profile = rows[0] || {};
+        const authorizationUrl = platform.authorizationUrl({ state, codeChallenge, redirectUri, loginHint: clean(profile.email, 160), companyNumber: clean(profile.siren, 9) });
+        await getPool().query("DELETE FROM depannhome_einvoice_oauth_states WHERE expires_at<=NOW() OR (owner_id=$1 AND created_by=$2 AND platform_code=$3)", [ownerId, request.user.sub, platform.code]);
+        await getPool().query("INSERT INTO depannhome_einvoice_oauth_states(owner_id,created_by,platform_code,state_hash,encrypted_context,expires_at) VALUES($1,$2,$3,$4,$5,NOW()+INTERVAL '10 minutes')", [ownerId, request.user.sub, platform.code, sha256(state), encryptCredentials({ codeVerifier, redirectUri })]);
+        response.json({ authorizationUrl });
+    }));
+    app.get("/api/accounting/e-invoicing/oauth/callback", asyncHandler(async (request, response) => {
+        const ownerId = getAccountOwnerId(request);
+        const state = secret(request.query?.state, 500);
+        const { rows } = await getPool().query("DELETE FROM depannhome_einvoice_oauth_states WHERE state_hash=$1 AND owner_id=$2 AND created_by=$3 AND expires_at>NOW() RETURNING *", [sha256(state), ownerId, request.user.sub]);
+        const pending = state && rows[0];
+        if (!pending) return response.status(400).send(oauthCallbackPage(false, "Autorisation expirée ou déjà utilisée."));
+        if (request.query?.error) return response.status(400).send(oauthCallbackPage(false, clean(request.query.error_description || request.query.error, 400)));
+        const platform = getElectronicInvoicingProvider(pending.platform_code);
+        const code = secret(request.query?.code, 4000);
+        if (!platform || typeof platform.exchangeAuthorizationCode !== "function" || !code) return response.status(400).send(oauthCallbackPage(false, "Réponse d’autorisation incomplète."));
+        try {
+            const context = decryptCredentials(pending.encrypted_context);
+            const result = await platform.exchangeAuthorizationCode({ code, codeVerifier: context.codeVerifier, redirectUri: context.redirectUri });
+            if (!result?.credentials || typeof result.credentials !== "object") throw new Error("Jetons OAuth absents.");
+            const status = CONNECTION_STATUSES.has(result.status) ? result.status : "connected";
+            const client = await getPool().connect();
+            try {
+                await client.query("BEGIN");
+                await client.query("UPDATE depannhome_einvoice_connections SET active=FALSE,status=CASE WHEN status='connected' THEN 'disconnected' ELSE status END,disconnected_at=CASE WHEN active THEN NOW() ELSE disconnected_at END,updated_at=NOW() WHERE owner_id=$1 AND active=TRUE", [ownerId]);
+                const { rows: saved } = await client.query(`INSERT INTO depannhome_einvoice_connections(owner_id,platform_code,platform_label,environment,status,active,encrypted_credentials,connection_metadata,external_account_id,external_account_label,token_expires_at,refresh_metadata,last_connected_at,last_checked_at,created_by) VALUES($1,$2,$3,$4,$5,TRUE,$6,$7::jsonb,$8,$9,$10,$11::jsonb,NOW(),NOW(),$12) RETURNING *`, [ownerId, platform.code, platform.label, safeObject(result.metadata).companyEnvironment === "production" ? "production" : "sandbox", status, encryptCredentials(result.credentials), JSON.stringify(safeObject(result.metadata)), clean(result.externalAccountId, 200), clean(result.externalAccountLabel, 200), result.tokenExpiresAt || null, JSON.stringify(safeObject(result.refreshMetadata)), request.user.sub]);
+                await recordEvent(client, ownerId, saved[0].id, null, request.user.sub, "oauth_authorized", status, result.message || "Autorisation SUPER PDP enregistrée.");
+                await client.query("COMMIT");
+            } catch (error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }
+            response.send(oauthCallbackPage(true, result.message || "SUPER PDP est connecté."));
+        } catch (error) {
+            response.status(502).send(oauthCallbackPage(false, safeError(error)));
+        }
+    }));
     app.put("/api/accounting/e-invoicing/configuration", asyncHandler(async (request, response) => {
         const ownerId = getAccountOwnerId(request);
         const configuration = sanitizeManualConfiguration(request.body);
@@ -214,10 +271,14 @@ export function registerElectronicInvoicingRoutes(app, requireAuthentication) {
         const platform = getElectronicInvoicingProvider(connection.platform_code);
         if (!platform) return response.status(409).json({ message: "Cette plateforme n'est pas encore intégrée à Depan’Home Pro. Reconnectez-la lorsqu’un adaptateur officiel sera disponible." });
         try {
-            const result = await platform.testConnection({ credentials: decryptCredentials(connection.encrypted_credentials), connection: connectionContext(connection) });
-            await getPool().query("UPDATE depannhome_einvoice_connections SET status='connected',last_checked_at=NOW(),last_connected_at=COALESCE(last_connected_at,NOW()),external_account_id=COALESCE(NULLIF($3,''),external_account_id),external_account_label=COALESCE(NULLIF($4,''),external_account_label),updated_at=NOW() WHERE id=$1 AND owner_id=$2", [connection.id, ownerId, clean(result?.externalAccountId, 200), clean(result?.externalAccountLabel, 200)]);
-            await recordEvent(getPool(), ownerId, connection.id, null, request.user.sub, "connection_tested", "connected", "Connexion réussie.");
-            response.json({ message: "Connexion réussie." });
+            const credentials = await usableCredentials(ownerId, connection, platform);
+            const result = await platform.testConnection({ credentials, connection: connectionContext(connection) });
+            const status = CONNECTION_STATUSES.has(result?.status) ? result.status : "connected";
+            const message = clean(result?.message, 1000) || (status === "connected" ? "Connexion réussie." : "Une action est requise sur la plateforme.");
+            const environment = ["sandbox", "production"].includes(result?.metadata?.companyEnvironment) ? result.metadata.companyEnvironment : connection.environment;
+            await getPool().query("UPDATE depannhome_einvoice_connections SET status=$3,last_checked_at=NOW(),last_connected_at=COALESCE(last_connected_at,NOW()),external_account_id=COALESCE(NULLIF($4,''),external_account_id),external_account_label=COALESCE(NULLIF($5,''),external_account_label),connection_metadata=connection_metadata || $6::jsonb,environment=$7,updated_at=NOW() WHERE id=$1 AND owner_id=$2", [connection.id, ownerId, status, clean(result?.externalAccountId, 200), clean(result?.externalAccountLabel, 200), JSON.stringify(safeObject(result?.metadata)), environment]);
+            await recordEvent(getPool(), ownerId, connection.id, null, request.user.sub, "connection_tested", status, message);
+            response.json({ message, status });
         } catch (error) {
             await getPool().query("UPDATE depannhome_einvoice_connections SET status='invalid',last_checked_at=NOW(),updated_at=NOW() WHERE id=$1 AND owner_id=$2", [connection.id, ownerId]);
             await recordEvent(getPool(), ownerId, connection.id, null, request.user.sub, "connection_test_failed", "invalid", safeError(error));
@@ -228,8 +289,7 @@ export function registerElectronicInvoicingRoutes(app, requireAuthentication) {
         const ownerId = getAccountOwnerId(request); const connection = await requireOwnerConnection(ownerId, request.params.connectionId);
         const platform = getElectronicInvoicingProvider(connection.platform_code);
         if (!platform?.supports.refresh) return response.status(409).json({ message: "Le renouvellement automatique n’est pas disponible pour cette plateforme." });
-        const result = await platform.refreshAuthentication({ credentials: decryptCredentials(connection.encrypted_credentials), connection: connectionContext(connection) });
-        await getPool().query("UPDATE depannhome_einvoice_connections SET encrypted_credentials=$3,token_expires_at=$4,status='connected',last_checked_at=NOW(),updated_at=NOW() WHERE id=$1 AND owner_id=$2", [connection.id, ownerId, encryptCredentials(result.credentials), result.tokenExpiresAt || null]);
+        await rotateCredentials(ownerId, connection.id, platform, true);
         await recordEvent(getPool(), ownerId, connection.id, null, request.user.sub, "authentication_refreshed", "connected", "Authentification renouvelée.");
         response.json({ message: "Authentification renouvelée." });
     }));
@@ -257,7 +317,8 @@ export function registerElectronicInvoicingRoutes(app, requireAuthentication) {
         const connection = transmission.connection_id ? await requireOwnerConnection(ownerId, transmission.connection_id) : null;
         const platform = connection && getElectronicInvoicingProvider(connection.platform_code);
         if (!platform?.supports.status || !transmission.remote_id) return response.status(409).json({ message: "Le suivi distant n’est pas disponible pour cette transmission." });
-        const result = await platform.getTransmissionStatus({ externalId: transmission.remote_id, credentials: decryptCredentials(connection.encrypted_credentials), connection: connectionContext(connection) });
+        const credentials = await usableCredentials(ownerId, connection, platform);
+        const result = await platform.getTransmissionStatus({ externalId: transmission.remote_id, credentials, connection: connectionContext(connection) });
         const status = TRANSMISSION_STATUSES.has(result?.status) ? result.status : transmission.status;
         await getPool().query("UPDATE depannhome_einvoice_transmissions SET status=$3,external_status=$4,message=$5,status_checked_at=NOW(),updated_at=NOW() WHERE id=$1 AND owner_id=$2", [transmission.id, ownerId, status, clean(result?.externalStatus, 80), clean(result?.message, 1000)]);
         await recordEvent(getPool(), ownerId, connection.id, transmission.id, request.user.sub, "status_checked", status, result?.message);
@@ -283,7 +344,7 @@ export async function transmitElectronicDocument({ ownerId, documentId, actorId,
     const transmission = created[0];
     await recordEvent(database, ownerId, connection.id, transmission.id, actorId, "transmission_queued", "queued", "Transmission préparée.");
     try {
-        const credentials = decryptCredentials(connection.encrypted_credentials);
+        const credentials = await usableCredentials(ownerId, connection, platform);
         const sender = document.documentType === "credit" ? platform.sendCreditNote.bind(platform) : platform.sendInvoice.bind(platform);
         const result = await sender({ document, credentials, connection: connectionContext(connection) });
         const status = TRANSMISSION_STATUSES.has(result?.status) ? result.status : "sent";
@@ -313,6 +374,28 @@ function publicConnection(row) {
 function connectionContext(row) { return { id: row.id, ownerId: row.owner_id, platformCode: row.platform_code, environment: row.environment, metadata: safeObject(row.connection_metadata), externalAccountId: row.external_account_id }; }
 async function requireOwnerConnection(ownerId, value) { const id = positiveId(value); const { rows } = await getPool().query("SELECT * FROM depannhome_einvoice_connections WHERE id=$1 AND owner_id=$2", [id, ownerId]); if (!rows[0]) throw httpError(404, "Connexion introuvable."); return rows[0]; }
 async function requireOwnerTransmission(ownerId, value) { const id = positiveId(value); const { rows } = await getPool().query("SELECT * FROM depannhome_einvoice_transmissions WHERE id=$1 AND owner_id=$2", [id, ownerId]); if (!rows[0]) throw httpError(404, "Transmission introuvable."); return rows[0]; }
+async function usableCredentials(ownerId, connection, platform) {
+    if (!platform?.supports.refresh || !connection.token_expires_at || new Date(connection.token_expires_at).getTime() > Date.now() + 60_000) return decryptCredentials(connection.encrypted_credentials);
+    return rotateCredentials(ownerId, connection.id, platform);
+}
+async function rotateCredentials(ownerId, connectionId, platform, force = false) {
+    const client = await getPool().connect();
+    try {
+        await client.query("BEGIN");
+        const { rows } = await client.query("SELECT * FROM depannhome_einvoice_connections WHERE id=$1 AND owner_id=$2 FOR UPDATE", [connectionId, ownerId]);
+        const current = rows[0];
+        if (!current) throw httpError(404, "Connexion introuvable.");
+        if (!force && current.token_expires_at && new Date(current.token_expires_at).getTime() > Date.now() + 60_000) {
+            await client.query("COMMIT");
+            return decryptCredentials(current.encrypted_credentials);
+        }
+        const result = await platform.refreshAuthentication({ credentials: decryptCredentials(current.encrypted_credentials), connection: connectionContext(current) });
+        if (!result?.credentials) throw new Error("La plateforme n’a pas retourné de nouveaux jetons.");
+        await client.query("UPDATE depannhome_einvoice_connections SET encrypted_credentials=$3,token_expires_at=$4,status='connected',last_checked_at=NOW(),refresh_metadata=refresh_metadata || $5::jsonb,updated_at=NOW() WHERE id=$1 AND owner_id=$2", [current.id, ownerId, encryptCredentials(result.credentials), result.tokenExpiresAt || null, JSON.stringify({ rotatedAt: new Date().toISOString() })]);
+        await client.query("COMMIT");
+        return result.credentials;
+    } catch (error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }
+}
 async function recordEvent(database, ownerId, connectionId, transmissionId, actorId, eventType, status, message, details = {}) { await database.query("INSERT INTO depannhome_einvoice_events(owner_id,connection_id,transmission_id,actor_id,event_type,status,message,details) VALUES($1,$2,$3,$4,$5,$6,$7,$8::jsonb)", [ownerId, connectionId || null, transmissionId || null, actorId || null, eventType, clean(status, 30), clean(message, 1000), JSON.stringify(safeObject(details))]); }
 function requireCompanyAdministrator(request, response, next) { if (request.user?.role !== "admin") return response.status(403).json({ message: "La facturation électronique est réservée à l’administrateur de l’entreprise." }); return next(); }
 function encryptionKey() { const secret = String(process.env.SESSION_SECRET || ""); if (process.env.NODE_ENV === "production" && secret.length < 32) throw new Error("SESSION_SECRET doit protéger les connexions de facturation électronique."); return crypto.createHash("sha256").update(secret || "development-electronic-invoicing-key").digest(); }
@@ -339,4 +422,10 @@ function secret(value, max) { return String(value || "").trim().slice(0, max); }
 function positiveId(value) { const id = Number(value); return Number.isSafeInteger(id) && id > 0 ? id : 0; }
 function safeError(error) { const status = Number(error?.status); if (status === 401 || status === 403) return "Authentification refusée par la plateforme."; if (status === 408 || error?.name === "AbortError" || error?.name === "TimeoutError") return "La plateforme n’a pas répondu dans le délai prévu."; return clean(error?.publicMessage || error?.message || "Erreur de communication avec la plateforme.", 500).replace(/(?:bearer|token|secret|api[_ -]?key|password)\s*[:=]\s*\S+/gi, "Identifiant sensible [masqué]"); }
 function httpError(status, message) { const error = new Error(message); error.status = status; return error; }
+function oauthCallbackPage(success, message) {
+    const payload = JSON.stringify({ type: "depannhome:einvoice-oauth", success: Boolean(success), message: clean(message, 500) }).replace(/</g, "\\u003c");
+    const title = success ? "Connexion enregistrée" : "Connexion impossible";
+    return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${title}</title></head><body><main><h1>${title}</h1><p>${escapeHtml(message)}</p><p>Vous pouvez fermer cette fenêtre.</p></main><script>if(window.opener){window.opener.postMessage(${payload},window.location.origin);window.close();}</script></body></html>`;
+}
+function escapeHtml(value) { return String(value || "").replace(/[&<>"']/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]); }
 function asyncHandler(handler) { return (request, response, next) => Promise.resolve(handler(request, response, next)).catch(next); }

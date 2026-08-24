@@ -4,7 +4,7 @@ Depann’Home Pro n’est ni une plateforme agréée, ni une PDP, ni une platefo
 
 ## Isolation et stockage
 
-`depannhome_einvoice_connections` contient des connexions versionnées et strictement rattachées à `owner_id`. Une seule connexion peut être active par entreprise. Les credentials sont chiffrés en AES-256-GCM avec `SESSION_SECRET` et ne sont jamais renvoyés au navigateur. Aucun secret global de facturation électronique n’existe.
+`depannhome_einvoice_connections` contient des connexions versionnées et strictement rattachées à `owner_id`. Une seule connexion peut être active par entreprise. Les jetons délégués sont chiffrés en AES-256-GCM avec `SESSION_SECRET` et ne sont jamais renvoyés au navigateur. Le `client_secret` de l’application OAuth Depann’Home Pro reste exclusivement dans les variables d’environnement du serveur.
 
 La déconnexion efface les credentials actifs mais ne supprime ni la connexion historique, ni les transmissions, ni les événements d’audit. Changer de plateforme conserve donc les références et statuts précédents.
 
@@ -24,6 +24,27 @@ Chaque intégration étend `ElectronicInvoicingProvider` et implémente les opé
 
 Le registre ne rend connectables que les adaptateurs effectivement enregistrés. Il n’existe plus de formulaire universel URL/clé API et aucun protocole fournisseur n’est deviné. En l’absence d’adaptateur documenté, l’interface indique : « Cette plateforme n'est pas encore intégrée à Depan’Home Pro. »
 
+## SUPER PDP
+
+SUPER PDP (`super_pdp`) est la première intégration enregistrée. Elle repose exclusivement sur les contrats officiels :
+
+- OAuth 2.1 Authorization Code pour la délégation multi-entreprises ;
+- `state` opaque lié à l’entreprise et à l’administrateur, valable dix minutes et consommé atomiquement une seule fois ;
+- PKCE S256, callback exact configuré par `SUPERPDP_REDIRECT_URI` et HTTPS obligatoire en production ;
+- access token et refresh token stockés uniquement sous forme chiffrée côté serveur ;
+- rotation du refresh token sous verrou PostgreSQL `FOR UPDATE`, afin que deux requêtes concurrentes ne réutilisent jamais le même jeton ;
+- révocation RFC 7009 lors de la déconnexion.
+
+Le serveur consulte d’abord `/v1.beta/oauth2_sessions/me`. Une session `needs_review` est conservée en `action_required` et ne peut transmettre aucun document. Le bouton « Vérifier » permet de constater ultérieurement le passage à `verified`, puis `/v1.beta/companies/me` identifie le compte et son environnement.
+
+Les variables suivantes doivent être renseignées dans Render ou dans un `.env` local non versionné : `SUPERPDP_CLIENT_ID`, `SUPERPDP_CLIENT_SECRET` et `SUPERPDP_REDIRECT_URI`. Le callback à déclarer est `/api/accounting/e-invoicing/oauth/callback` sur l’origine publique de l’application.
+
+### Transmission et suivi
+
+Les archives UBL émises par Depann’Home Pro sont déposées telles quelles avec `POST /v1.beta/invoices` en `application/xml`. La référence `id` renvoyée est conservée dans la transmission. Le dépôt `200` ne signifie pas que la facture est acceptée : SUPER PDP la traite de façon asynchrone.
+
+L’état est relu avec `GET /v1.beta/invoices/{id}`. Les `events[]` sont cumulatifs et ne constituent pas une machine à états exclusive. Depann’Home Pro conserve le dernier code externe et traduit les événements officiels en états locaux `sent`, `accepted` ou `rejected`. SUPER PDP ne proposant pas actuellement de webhook sur cette API, l’interface utilise une interrogation explicite ; aucun webhook fournisseur n’est simulé.
+
 ## Catalogue Créateur
 
 La console Créateur contient un catalogue distinct des connexions d’entreprise. Il permet de suivre le code technique d’une plateforme, sa documentation API officielle HTTPS, son authentification, les capacités prévues et le cycle de développement de son adaptateur.
@@ -42,4 +63,4 @@ La production des factures/avoirs et de leurs archives UBL/PDF reste indépendan
 
 ## État des intégrations
 
-Aucune API officielle de plateforme n’est documentée dans ce dépôt à ce jour. Par conséquent, aucun fournisseur n’est présenté comme connecté ou opérationnel. Un adaptateur ne doit être ajouté qu’avec la documentation officielle, les credentials propres à l’entreprise et des tests réels adaptés au contrat fournisseur.
+SUPER PDP est intégrée à partir de sa documentation officielle et de sa spécification OpenAPI `v1.beta`. Elle devient utilisable uniquement après configuration de l’application OAuth serveur et autorisation réussie de l’entreprise. Les autres fournisseurs restent non opérationnels tant qu’un adaptateur fondé sur leur propre API officielle n’a pas été développé et testé.
