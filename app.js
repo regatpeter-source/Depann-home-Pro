@@ -32,6 +32,7 @@ import { clientUploadErrorHandler, initializeClients, registerClientRoutes } fro
 import { initializeTechnicalReports, registerTechnicalReportRoutes, technicalReportUploadErrorHandler } from "./server/technical-reports.js";
 import { initializeCollaboration, registerCollaborationRoutes } from "./server/collaboration.js";
 import { initializePartnerMissions, registerPartnerMissionRoutes } from "./server/partner-missions.js";
+import { initializePartnerEmail, registerPartnerEmailRoutes, startPartnerEmailScheduler } from "./server/partner-email.js";
 import { initializePartnerDialogue, partnerDialogueUploadErrorHandler, registerPartnerDialogueRoutes } from "./server/partner-dialogue.js";
 import { initializePartnerConnections, registerPartnerConnectionRoutes } from "./server/partner-connections.js";
 import { initializePartnerRequests, registerPartnerRequestRoutes } from "./server/partner-requests.js";
@@ -115,6 +116,7 @@ app.use("/api/accounting", requireAuthentication, requireOrganizationFeature("ac
 app.use("/api/library", requireAuthentication, requireOrganizationFeature("library"));
 app.use("/api/technical-reports", requireAuthentication, requireOrganizationFeature("technicalReports"));
 app.use("/api/partner-missions", requireAuthentication, requireOrganizationFeature("partnerMissions"));
+app.use("/api/partner-email", requireAuthentication, requireOrganizationFeature("partnerMissions"));
 app.use("/api/clients", requireAuthentication, requireOrganizationFeature("clients"));
 const requireCalendarFeature = requireOrganizationFeature("calendar");
 const requireClientFeature = requireOrganizationFeature("clients");
@@ -148,6 +150,7 @@ registerAccountingRoutes(app, requireAuthentication);
 registerElectronicInvoicingRoutes(app, requireAuthentication);
 registerConnectorRoutes(app, requireAuthentication, requireCreator);
 registerPartnerMissionRoutes(app, requireAuthentication);
+registerPartnerEmailRoutes(app, requireAuthentication);
 registerPartnerDialogueRoutes(app, requireAuthentication);
 registerPartnerConnectionRoutes(app, requireAuthentication);
 registerPartnerApiSandboxRoutes(app, requireCreator, requireAuthentication);
@@ -217,6 +220,7 @@ async function start() {
 	await initializeCollaboration();
 	await initializeTechnicalReports();
 	await initializePartnerMissions();
+	await initializePartnerEmail();
 	await initializePartnerDialogue();
 	await initializePartnerConnections();
 	await initializePartnerSandbox();
@@ -232,6 +236,7 @@ async function start() {
 	app.listen(port, () => {
 		console.log(`Depann'Home Pro écoute sur le port ${port}.`);
 		startSubscriptionInvoicingScheduler();
+		startPartnerEmailScheduler();
 	});
 }
 

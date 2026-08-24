@@ -1275,6 +1275,44 @@ CREATE TABLE IF NOT EXISTS depannhome_partner_mission_outbox (
 );
 CREATE INDEX IF NOT EXISTS depannhome_partner_mission_outbox_pending_idx ON depannhome_partner_mission_outbox(status, next_attempt_at);
 
+-- Boîtes professionnelles rattachées à Missions partenaires. Les jetons OAuth
+-- et mots de passe d'application sont chiffrés en AES-256-GCM côté serveur.
+CREATE TABLE IF NOT EXISTS depannhome_partner_email_connections (
+    id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    provider VARCHAR(20) NOT NULL CHECK(provider IN ('google','microsoft','imap')), email_address VARCHAR(254) NOT NULL,
+    display_name VARCHAR(160) NOT NULL DEFAULT '', encrypted_credentials TEXT NOT NULL,
+    server_configuration JSONB NOT NULL DEFAULT '{}'::jsonb, selection_mode VARCHAR(20) NOT NULL DEFAULT 'manual' CHECK(selection_mode IN ('manual','automatic')),
+    allowed_senders JSONB NOT NULL DEFAULT '[]'::jsonb, automatic_threshold INTEGER NOT NULL DEFAULT 80 CHECK(automatic_threshold BETWEEN 70 AND 100),
+    send_status_updates BOOLEAN NOT NULL DEFAULT FALSE, enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    last_uid BIGINT NOT NULL DEFAULT 0, last_sync_at TIMESTAMPTZ, last_error VARCHAR(500) NOT NULL DEFAULT '',
+    created_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT depannhome_partner_email_owner_address_unique UNIQUE(owner_id,email_address)
+);
+CREATE INDEX IF NOT EXISTS depannhome_partner_email_connections_sync_idx ON depannhome_partner_email_connections(enabled,last_sync_at);
+CREATE TABLE IF NOT EXISTS depannhome_partner_email_messages (
+    id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    connection_id BIGINT NOT NULL REFERENCES depannhome_partner_email_connections(id) ON DELETE CASCADE,
+    uid BIGINT NOT NULL, message_id VARCHAR(500) NOT NULL, in_reply_to VARCHAR(500) NOT NULL DEFAULT '', references_header TEXT NOT NULL DEFAULT '',
+    sender_address VARCHAR(254) NOT NULL, sender_name VARCHAR(160) NOT NULL DEFAULT '', recipients JSONB NOT NULL DEFAULT '[]'::jsonb,
+    subject VARCHAR(500) NOT NULL DEFAULT '', body_text TEXT NOT NULL DEFAULT '', received_at TIMESTAMPTZ NOT NULL,
+    classification_score INTEGER NOT NULL DEFAULT 0, classification_reasons JSONB NOT NULL DEFAULT '[]'::jsonb,
+    status VARCHAR(20) NOT NULL DEFAULT 'candidate' CHECK(status IN ('candidate','processing','imported','ignored','rejected')),
+    mission_id BIGINT REFERENCES depannhome_partner_missions(id) ON DELETE SET NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), processed_at TIMESTAMPTZ,
+    CONSTRAINT depannhome_partner_email_message_unique UNIQUE(owner_id,connection_id,message_id)
+);
+CREATE INDEX IF NOT EXISTS depannhome_partner_email_messages_queue_idx ON depannhome_partner_email_messages(owner_id,status,received_at DESC);
+CREATE TABLE IF NOT EXISTS depannhome_partner_email_attachments (
+    id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    email_message_id BIGINT NOT NULL REFERENCES depannhome_partner_email_messages(id) ON DELETE CASCADE,
+    filename VARCHAR(255) NOT NULL, mime_type VARCHAR(150) NOT NULL, file_size INTEGER NOT NULL CHECK(file_size>0 AND file_size<=5242880),
+    content_id VARCHAR(255) NOT NULL DEFAULT '', file_data BYTEA NOT NULL, selected BOOLEAN NOT NULL DEFAULT TRUE, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE TABLE IF NOT EXISTS depannhome_partner_email_oauth_states (
+    state_hash CHAR(64) PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    actor_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE, provider VARCHAR(20) NOT NULL,
+    encrypted_context TEXT NOT NULL, expires_at TIMESTAMPTZ NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- Partenaire API fictif géré par le Créateur. Le secret d'appel est chiffré,
 -- sa copie d'authentification reste hachée dans l'intake et les journaux sont expurgés.
 CREATE TABLE IF NOT EXISTS depannhome_partner_api_sandboxes (

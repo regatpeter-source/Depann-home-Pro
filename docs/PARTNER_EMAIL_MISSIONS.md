@@ -1,0 +1,51 @@
+# Missions partenaires reçues par e-mail
+
+La **Boîte mail professionnelle** transforme les demandes d’intervention reçues par e-mail en missions partenaires à valider. Elle utilise la même capacité d’abonnement `partnerMissions` que le reste du module (Basic+ et Pro), sans exiger l’option Pro des connecteurs API.
+
+## Fournisseurs et authentification
+
+- **Microsoft 365 / Outlook** : OAuth 2.0 avec PKCE ;
+- **Google Workspace / Gmail** : OAuth 2.0 avec PKCE ;
+- **OVH et autres hébergeurs** : IMAP/SMTP sécurisé avec un mot de passe d’application.
+
+Les jetons et mots de passe d’application sont chiffrés côté serveur en AES-256-GCM avec la clé dérivée de `SESSION_SECRET`. Ils ne sont jamais renvoyés au navigateur. Pour OAuth, déclarer les six variables `GOOGLE_MAIL_*` et `MICROSOFT_MAIL_*` documentées dans `.env.example`, avec des URI de retour strictement identiques chez les fournisseurs.
+
+## Deux modes de traitement
+
+### Sélection manuelle
+
+Chaque nouvel e-mail apparaît dans **E-mails à vérifier** avec son expéditeur, un extrait, ses pièces, un score et les raisons du classement. L’entreprise choisit explicitement les messages à transformer en missions ou à ignorer.
+
+### Détection automatique stricte
+
+Un message n’est importé automatiquement que s’il remplit les deux conditions suivantes :
+
+1. son score atteint le seuil configuré, compris entre 70 et 100 ;
+2. son adresse ou son domaine appartient à la liste des expéditeurs autorisés par l’entreprise.
+
+Même dans ce mode, la mission est créée avec le statut `pending_validation`. Elle doit donc suivre la validation métier habituelle avant planification.
+
+## Classification explicable
+
+Le score augmente notamment avec :
+
+- les termes mission, intervention, sinistre, dossier ou ordre de service ;
+- la présence de coordonnées client, d’une adresse ou d’une référence ;
+- une pièce métier autorisée ;
+- un expéditeur autorisé.
+
+Il diminue fortement pour les relances de paiement, newsletters, réponses automatiques, absences, listes de diffusion et adresses `no-reply`. Un expéditeur inconnu ne peut jamais franchir automatiquement le seuil : le motif « Validation humaine requise » reste visible.
+
+## Documents et confidentialité
+
+Les formats admis sont PDF, JPEG, PNG, WebP, Word, Excel et texte brut, avec une limite de 5 Mo par fichier, 10 fichiers et 20 Mo cumulés par message. Les logos et pièces non conformes sont ignorés. Les documents retenus sont ajoutés à la fiche client et au journal de mission avec une visibilité **interne** par défaut.
+
+Un e-mail est dédupliqué avec son identifiant RFC `Message-ID` dans la boîte concernée. Depann’Home Pro ne supprime et ne marque pas automatiquement le message sur le serveur d’origine.
+
+## Réponses et statuts
+
+Une mission importée conserve `Message-ID`, `In-Reply-To` et `References`. L’entreprise peut répondre depuis la carte de mission ; le message est envoyé avec sa propre boîte dans le fil d’origine. Si elle active les retours automatiques, les changements de statut sont envoyés de la même façon. Une panne SMTP ne bloque jamais la mise à jour du statut dans Depann’Home Pro.
+
+## Exploitation
+
+Le planificateur contrôle au maximum 20 connexions dues toutes les cinq minutes, chaque connexion étant synchronisée au plus toutes les dix minutes. Une synchronisation manuelle est disponible dans l’interface. Les erreurs exposées à l’utilisateur sont volontairement génériques afin de ne révéler ni serveur interne ni identifiant secret.

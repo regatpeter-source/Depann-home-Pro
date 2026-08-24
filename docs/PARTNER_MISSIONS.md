@@ -46,3 +46,7 @@ Les administrateurs reçoivent une notification persistante à chaque réception
 Les changements importants ajoutent une ligne dans `depannhome_partner_mission_outbox`. **Relancer les retours** transmet les callbacks HTTPS en attente. Un échec est conservé avec son erreur et une date de nouvelle tentative exponentielle ; après cinq essais il reste visible comme échec pour une reprise manuelle. Aucune URL de retour ne provoque de perte de mission : l'événement est marqué comme ignoré avec le motif conservé.
 
 Les tables `depannhome_partner_mission_history` et `depannhome_partner_mission_outbox` assurent l'audit durable des traitements et des échanges, y compris après une reconnexion ou un redémarrage de l'application.
+
+## Réception depuis une boîte professionnelle
+
+Les entreprises disposant de Missions partenaires peuvent également connecter Microsoft 365, Google Workspace, OVH ou un serveur IMAP/SMTP. Les e-mails sont classés avec un score et des raisons visibles, puis sélectionnés manuellement ou importés automatiquement sous conditions strictes. La configuration, les règles de sécurité et les retours dans le fil d’origine sont détaillés dans [PARTNER_EMAIL_MISSIONS.md](PARTNER_EMAIL_MISSIONS.md).
