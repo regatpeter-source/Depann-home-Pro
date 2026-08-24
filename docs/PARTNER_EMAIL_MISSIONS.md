@@ -12,6 +12,8 @@ Les jetons et mots de passe d’application sont chiffrés côté serveur en AES
 
 ## Deux modes de traitement
 
+La source e-mail utilise la même interface métier que les missions internes du réseau et les missions externes reçues par API : mêmes onglets **Missions reçues** et **Messagerie**, mêmes cartes, filtres, statuts, actions de validation, planification et Centre de mission. Les e-mails détectés mais non encore importés apparaissent dans cette liste commune avec le statut **À confirmer**. Seuls les boutons **Connexion** et **Synchroniser** diffèrent, car ils configurent OAuth ou IMAP/SMTP au lieu d’une connexion réseau/API.
+
 ### Sélection manuelle
 
 Chaque nouvel e-mail apparaît dans **E-mails à vérifier** avec son expéditeur, un extrait, ses pièces, un score et les raisons du classement. L’entreprise choisit explicitement les messages à transformer en missions ou à ignorer.

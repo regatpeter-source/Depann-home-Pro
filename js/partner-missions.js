@@ -32,7 +32,7 @@ export async function renderPartnerMissions(options = {}) {
     dashboard = { ...result.data, sentMissions: sentResult.ok ? sentResult.data?.missions || [] : [], connections: connectionsResult.ok ? connectionsResult.data?.connections || [] : [], apiSandbox: sandboxResult.ok ? sandboxResult.data : { available: false }, partnerEmail: emailResult.ok ? emailResult.data : { connections: [], candidates: [], oauth: {} } };
     const shell = container.querySelector(".partner-mission-shell");
     const networkMissions = dashboard.missions.filter(mission => mission.sourceType === "depannhome_network");
-    const externalMissions = dashboard.missions.filter(mission => mission.sourceType !== "depannhome_network");
+    const externalMissions = dashboard.missions.filter(mission => mission.sourceType === "external_connector");
     const pending = (activeMissionSpace === "network" ? networkMissions : externalMissions).filter(mission => ["received", "pending_validation"].includes(mission.status)).length;
     const networkTabs = `<button type="button" class="secondary-button" data-mission-tab="received">Missions reçues${pending ? ` (${pending})` : ""}</button><button type="button" class="secondary-button" data-mission-tab="sent">Missions envoyées</button>${canManagePartnerMissions() ? '<button type="button" class="secondary-button" data-mission-tab="new">Nouvelle mission</button>' : ""}<button type="button" class="secondary-button" data-mission-tab="messages">Messagerie</button>`;
     const externalTabs = '<button type="button" class="secondary-button" data-mission-tab="received">Missions reçues</button><button type="button" class="secondary-button" data-mission-tab="messages">Messagerie</button>';
@@ -44,16 +44,17 @@ export async function renderPartnerMissions(options = {}) {
     const spaces = shell.querySelector('[aria-label="Origine des missions"]');
     spaces?.insertAdjacentHTML("beforeend", `<button type="button" class="secondary-button${activeMissionSpace === "email" ? " active" : ""}" data-mission-space="email">Boîte mail professionnelle${dashboard.partnerEmail.candidates.length ? ` (${dashboard.partnerEmail.candidates.length})` : ""}</button>`);
     if (activeMissionSpace === "email") {
-        shell.querySelector(".partner-mission-heading h2").textContent = "Boîte mail professionnelle";
-        shell.querySelector(".partner-mission-heading .muted").textContent = "Détectez les vraies missions reçues par e-mail, contrôlez les raisons du classement et importez les pièces dans le dossier client.";
+        shell.querySelector(".partner-mission-heading h2").textContent = "Missions partenaires par e-mail";
+        shell.querySelector(".partner-mission-heading .muted").textContent = "Même suivi, mêmes cartes et même Centre de mission ; seule la connexion à la source passe par votre boîte professionnelle.";
         shell.querySelectorAll('[data-mission-space]').forEach(button => button.classList.toggle("active", button.dataset.missionSpace === "email"));
-        shell.querySelectorAll('.partner-mission-tabs')[1].innerHTML = '<button type="button" class="secondary-button" data-mission-tab="email-inbox">E-mails à vérifier</button><button type="button" class="secondary-button" data-mission-tab="received">Missions importées</button><button type="button" class="secondary-button" data-mission-tab="messages">Réponses</button><button type="button" class="secondary-button" data-mission-tab="email-settings">Connexion</button>';
+        shell.querySelectorAll('.partner-mission-tabs')[1].innerHTML = externalTabs;
+        shell.querySelector(".partner-mission-actions")?.insertAdjacentHTML("afterbegin", `<button class="secondary-button${activeMissionTab === "email-settings" ? " active" : ""}" id="configurePartnerEmail">Connexion</button>${dashboard.partnerEmail.connections.length ? '<button class="secondary-button" id="syncPartnerEmail">Synchroniser</button>' : ""}`);
         const counters = [...shell.querySelectorAll(".partner-mission-counters article")];
         const emailMissions = dashboard.missions.filter(mission => mission.sourceType === "professional_email");
-        if (counters[0]) { counters[0].querySelector("span").textContent = "E-mails à vérifier"; counters[0].querySelector("strong").textContent = dashboard.partnerEmail.candidates.length; }
+        if (counters[0]) { counters[0].querySelector("span").textContent = "À valider"; counters[0].querySelector("strong").textContent = dashboard.partnerEmail.candidates.length + emailMissions.filter(mission => ["received", "pending_validation"].includes(mission.status)).length; }
         if (counters[1]) { counters[1].querySelector("span").textContent = "Boîtes connectées"; counters[1].querySelector("strong").textContent = dashboard.partnerEmail.connections.length; }
-        if (counters[2]) { counters[2].querySelector("span").textContent = "Missions importées"; counters[2].querySelector("strong").textContent = emailMissions.length; }
-        if (!["email-inbox", "received", "messages", "email-settings"].includes(activeMissionTab)) activeMissionTab = "email-inbox";
+        if (counters[2]) { counters[2].querySelector("span").textContent = "Missions reçues"; counters[2].querySelector("strong").textContent = emailMissions.length; }
+        if (!["received", "messages", "email-settings"].includes(activeMissionTab)) activeMissionTab = "received";
     }
     if (dashboard.apiSandbox?.available) {
         const button = document.createElement("button");
@@ -65,8 +66,10 @@ export async function renderPartnerMissions(options = {}) {
     await markPartnerNotificationsRead();
     enablePartnerNotificationDeletion(shell, alerts);
     shell.querySelector("#refreshPartnerMissions").addEventListener("click", renderPartnerMissions);
+    shell.querySelector("#configurePartnerEmail")?.addEventListener("click", () => { activeMissionTab = "email-settings"; renderMissionTab(shell); });
+    shell.querySelector("#syncPartnerEmail")?.addEventListener("click", () => synchronizePartnerMailboxes(shell));
     shell.querySelector("#retryPartnerOutbox")?.addEventListener("click", async () => { const result = await api("/api/partner-missions/outbox/retry", { method: "POST" }); alert(result.ok ? `${result.data.delivered} retour(s) transmis.` : result.message); renderPartnerMissions(); });
-    shell.querySelectorAll("[data-mission-space]").forEach(button => button.addEventListener("click", () => { activeMissionSpace = button.dataset.missionSpace; activeMissionTab = activeMissionSpace === "email" ? "email-inbox" : "received"; renderPartnerMissions(); }));
+    shell.querySelectorAll("[data-mission-space]").forEach(button => button.addEventListener("click", () => { activeMissionSpace = button.dataset.missionSpace; activeMissionTab = "received"; renderPartnerMissions(); }));
     shell.querySelectorAll("[data-mission-tab]").forEach(button => button.addEventListener("click", () => { activeMissionTab = button.dataset.missionTab; renderMissionTab(shell); }));
     renderMissionTab(shell);
     if (options.missionId) options.sourceDialogue ? await openPartnerDialogue(options.missionId, { sourceDialogue: true }) : await showDetail(options.missionId);
@@ -90,15 +93,18 @@ function openCompanyApiSandboxInbox() {
 
 function renderMissionTab(shell) {
     shell.querySelectorAll("[data-mission-tab]").forEach(button => button.classList.toggle("active", button.dataset.missionTab === activeMissionTab));
+    shell.querySelector("#configurePartnerEmail")?.classList.toggle("active", activeMissionSpace === "email" && activeMissionTab === "email-settings");
     const content = shell.querySelector("#partnerMissionContent");
     if (activeMissionTab === "new") return renderNewMissionEntry(content);
-    if (activeMissionSpace === "email" && ["email-inbox", "email-settings"].includes(activeMissionTab)) return renderPartnerEmailTab(content);
+    if (activeMissionSpace === "email" && activeMissionTab === "email-settings") return renderPartnerEmailTab(content);
     const sent = activeMissionSpace === "network" && activeMissionTab === "sent";
     const messages = activeMissionTab === "messages";
     const received = dashboard.missions.filter(mission => activeMissionSpace === "network" ? mission.sourceType === "depannhome_network" : activeMissionSpace === "email" ? mission.sourceType === "professional_email" : mission.sourceType === "external_connector");
-    const source = messages && activeMissionSpace === "network" ? [...received.map(mission => ({ ...mission, conversationSide: "received" })), ...dashboard.sentMissions.map(mission => ({ ...mission, conversationSide: "sent" }))] : sent ? dashboard.sentMissions : received;
+    const emailCandidates = activeMissionSpace === "email" && !messages ? (dashboard.partnerEmail.candidates || []).map(emailCandidateMission) : [];
+    const source = messages && activeMissionSpace === "network" ? [...received.map(mission => ({ ...mission, conversationSide: "received" })), ...dashboard.sentMissions.map(mission => ({ ...mission, conversationSide: "sent" }))] : sent ? dashboard.sentMissions : [...emailCandidates, ...received];
     const externalIntro = activeMissionSpace === "external" ? '<p class="muted">Ces missions proviennent de connecteurs API. Leur Centre de mission utilise la même interface professionnelle, le même journal et les mêmes échanges de documents que les missions du réseau. Le partenaire externe consulte et alimente ces échanges depuis son propre logiciel via API.</p>' : "";
-    content.innerHTML = `${externalIntro}${messages ? '<p class="muted">Une conversation est disponible pour chaque mission. Ouvrez-la pour écrire directement à l’autre entreprise et consulter les informations partagées.</p>' : `<div class="partner-mission-filters"><label>Statut <select id="partnerMissionStatus"><option value="">Tous les statuts</option>${dashboard.statuses.map(status => `<option value="${escapeHtml(status)}">${escapeHtml(labelStatus(status))}</option>`).join("")}</select></label><label>Recherche <input id="partnerMissionSearch" type="search" placeholder="Client, référence, adresse"></label></div>`}<section class="partner-mission-list" id="partnerMissionList"></section>`;
+    const statuses = activeMissionSpace === "email" ? ["email_candidate", ...dashboard.statuses] : dashboard.statuses;
+    content.innerHTML = `${externalIntro}${messages ? '<p class="muted">Une conversation est disponible pour chaque mission. Ouvrez-la pour écrire directement à l’autre entreprise et consulter les informations partagées.</p>' : `<div class="partner-mission-filters"><label>Statut <select id="partnerMissionStatus"><option value="">Tous les statuts</option>${statuses.map(status => `<option value="${escapeHtml(status)}">${escapeHtml(labelStatus(status))}</option>`).join("")}</select></label><label>Recherche <input id="partnerMissionSearch" type="search" placeholder="Client, référence, adresse"></label></div>`}<section class="partner-mission-list" id="partnerMissionList"></section>`;
     const renderList = () => {
         const status = content.querySelector("#partnerMissionStatus")?.value || "";
         const query = content.querySelector("#partnerMissionSearch")?.value.trim().toLowerCase() || "";
@@ -114,6 +120,19 @@ function renderMissionTab(shell) {
 }
 
 function renderMissions(node, missions, options = {}) { node.innerHTML = missions.length ? missions.map(mission => `<article class="partner-mission-card priority-${escapeHtml(mission.priority)}"><div class="partner-mission-card-title"><div><p class="eyebrow">${escapeHtml(mission.partnerName || "Partenaire")} · ${escapeHtml(mission.missionNumber || "Mission partenaire")}</p><h3>${escapeHtml(mission.mappedData?.clientName || "Client non renseigné")}</h3><p>${escapeHtml(mission.mappedData?.address || "Adresse non renseignée")}</p></div><span class="partner-mission-status ${escapeHtml(mission.status)}">${escapeHtml(labelStatus(mission.status))}</span></div><div class="partner-mission-meta"><span>${escapeHtml(mission.mappedData?.interventionType || "Intervention")}</span><span>${mission.scheduledDate ? escapeHtml(mission.scheduledDate) : "À planifier"}</span><span class="priority">${escapeHtml(labelPriority(mission.priority))}</span></div><p>${escapeHtml(mission.mappedData?.description || mission.mappedData?.comments || "Aucun descriptif transmis.")}</p><div class="partner-mission-card-actions">${options.sent || mission.conversationSide === "sent" ? `<span class="muted">Envoyée le ${escapeHtml(formatMissionDate(mission.sentAt))}</span><button class="secondary-button" data-open-sent-dialogue="${mission.id}">Ouvrir la conversation</button>${["received", "pending_validation"].includes(mission.status) ? `<button class="danger-button" data-delete-sent="${mission.id}">Supprimer</button>` : !["closed", "cancelled", "rejected"].includes(mission.status) ? `<button class="danger-button" data-cancel-sent="${mission.id}">Clôturer / Annuler</button>` : ""}` : `<span class="muted">Reçue le ${escapeHtml(formatMissionDate(mission.createdAt))}</span><button class="secondary-button" data-open="${mission.id}">Détail</button><button class="secondary-button" data-open-dialogue="${mission.id}">Ouvrir la conversation</button>${canManagePartnerMissions() && ["received", "pending_validation"].includes(mission.status) ? `<button class="secondary-button" data-accept="${mission.id}">Accepter et planifier</button><button class="danger-button" data-reject="${mission.id}">Refuser</button>` : canManagePartnerMissions() && !["closed", "cancelled", "rejected"].includes(mission.status) ? `<button class="secondary-button" data-close="${mission.id}">Clôturer la mission</button>` : ""}`}</div></article>`).join("") : '<p class="muted">Aucune mission ne correspond à ce filtre.</p>';
+    missions.forEach((mission, index) => {
+        if (!mission.emailCandidate) return;
+        const card = node.children[index];
+        if (!card) return;
+        card.dataset.emailCandidateCard = String(mission.emailCandidate.id);
+        card.querySelector(".partner-mission-status")?.classList.replace("email_candidate", "pending_validation");
+        const meta = card.querySelector(".partner-mission-meta");
+        if (meta) meta.innerHTML = `<span>${mission.emailCandidate.attachments?.length || 0} pièce(s)</span><span>Fiabilité ${escapeHtml(mission.emailCandidate.classificationScore)}/100</span><span>Import à confirmer</span>`;
+        const reasons = Array.isArray(mission.emailCandidate.classificationReasons) ? mission.emailCandidate.classificationReasons : [];
+        if (reasons.length) card.querySelector(".partner-mission-card-actions")?.insertAdjacentHTML("beforebegin", `<p class="muted">${reasons.map(reason => escapeHtml(reason)).join(" · ")}</p>`);
+        const actions = card.querySelector(".partner-mission-card-actions");
+        if (actions) actions.innerHTML = `<span class="muted">Reçue le ${escapeHtml(formatMissionDate(mission.createdAt))}</span><label><input type="checkbox" data-email-candidate="${mission.emailCandidate.id}"> Sélectionner cette mission</label>`;
+    });
     if (!options.sent) missions.forEach((mission, index) => {
         if (mission.sourceType !== "professional_email") return;
         node.children[index]?.querySelector(".partner-mission-card-actions")?.insertAdjacentHTML("beforeend", `<button class="secondary-button" data-email-reply="${mission.id}">Répondre à l’e-mail</button>`);
@@ -144,6 +163,48 @@ function renderMissions(node, missions, options = {}) { node.innerHTML = mission
     node.querySelectorAll("[data-delete-sent]").forEach(button => button.addEventListener("click", async () => { if (!confirm("Êtes-vous certain de vouloir supprimer cette mission ?\n\nCette action est irréversible.")) return; const result = await api(`/api/partner-connections/missions/${button.dataset.deleteSent}`, { method: "DELETE" }); if (!result.ok) return alert(result.message); renderPartnerMissions(); }));
     node.querySelectorAll("[data-cancel-sent]").forEach(button => button.addEventListener("click", async () => { if (!confirm("Annuler cette mission acceptée ? L’historique sera conservé chez les deux entreprises.")) return; const reason = prompt("Motif de l’annulation (facultatif) :"); if (reason === null) return; const result = await api(`/api/partner-connections/missions/${button.dataset.cancelSent}/cancel`, { method: "POST", body: JSON.stringify({ reason }) }); if (!result.ok) return alert(result.message); renderPartnerMissions(); }));
     node.querySelectorAll("[data-close]").forEach(button => button.addEventListener("click", async () => { if (!confirm("Clôturer cette mission ? Le journal sera conservé et la conversation deviendra en lecture seule.")) return; const result = await api(`/api/partner-missions/${button.dataset.close}/close`, { method: "POST" }); if (!result.ok) return alert(result.message); renderPartnerMissions(); }));
+    if (node.querySelector("[data-email-candidate]")) {
+        const toolbar = document.createElement("div");
+        toolbar.className = "form-actions partner-mission-selection";
+        toolbar.innerHTML = '<label><input type="checkbox" data-email-select-all> Tout sélectionner</label><button class="secondary-button" data-email-import disabled>Créer les missions</button><button class="danger-button" data-email-ignore disabled>Ignorer</button>';
+        node.prepend(toolbar);
+        enableEmailCandidateSelection(node);
+    }
+}
+
+function emailCandidateMission(message) {
+    const score = Number(message.classificationScore) || 0;
+    return {
+        id: `email-candidate-${message.id}`,
+        emailCandidate: message,
+        sourceType: "professional_email_candidate",
+        status: "email_candidate",
+        priority: /urgent|urgence|prioritaire/i.test(`${message.subject || ""} ${message.bodyText || ""}`) ? "urgent" : "normal",
+        partnerName: message.senderName || message.senderAddress || "Partenaire e-mail",
+        missionNumber: "E-mail à confirmer",
+        createdAt: message.receivedAt,
+        mappedData: {
+            clientName: message.subject || "Mission reçue par e-mail",
+            address: message.senderAddress || "Expéditeur non renseigné",
+            interventionType: score >= 80 ? "Mission détectée avec forte fiabilité" : "Mission à contrôler",
+            description: String(message.bodyText || "Aucun descriptif transmis.").slice(0, 600)
+        }
+    };
+}
+
+async function synchronizePartnerMailboxes(shell) {
+    const button = shell.querySelector("#syncPartnerEmail");
+    if (button) button.disabled = true;
+    let fetched = 0, candidates = 0, imported = 0;
+    for (const connection of dashboard.partnerEmail.connections || []) {
+        const result = await api(`/api/partner-email/${connection.id}/sync`, { method: "POST" });
+        if (!result.ok) { if (button) button.disabled = false; return alert(result.message); }
+        fetched += Number(result.data?.fetched) || 0;
+        candidates += Number(result.data?.candidates) || 0;
+        imported += Number(result.data?.imported) || 0;
+    }
+    alert(`${fetched} e-mail(s) lu(s), ${candidates} mission(s) à confirmer, ${imported} mission(s) importée(s).`);
+    await renderPartnerMissions();
 }
 
 function enableClosedMissionCorrection(node, missions, options) {
@@ -247,10 +308,6 @@ function renderPartnerEmailTab(node) {
         enableMailboxConnectionActions(node);
         return;
     }
-    const candidates = mailbox.candidates || [];
-    node.innerHTML = `<section class="partner-email-review"><div class="partner-network-tab-heading"><div><h3>E-mails à vérifier</h3><p class="muted">Le score est une aide explicable. En sélection manuelle, aucune mission n’est créée sans votre décision. En automatique, seuls les messages fiables dépassant le seuil deviennent des missions à valider.</p></div><div class="partner-network-actions">${mailbox.connections.map(connection => `<button class="secondary-button" data-email-sync="${connection.id}">Synchroniser ${escapeHtml(connection.emailAddress)}</button>`).join("")}</div></div>${candidates.length ? `<div class="form-actions"><label><input type="checkbox" data-email-select-all> Tout sélectionner</label><button class="secondary-button" data-email-import disabled>Créer les missions</button><button class="danger-button" data-email-ignore disabled>Ignorer</button></div><div class="partner-email-candidates">${candidates.map(emailCandidateCard).join("")}</div>` : '<section class="client-panel"><p class="muted">Aucun e-mail en attente. Synchronisez une boîte ou consultez les missions déjà importées.</p></section>'}</section>`;
-    node.querySelectorAll("[data-email-sync]").forEach(button => button.addEventListener("click", async () => { button.disabled = true; const result = await api(`/api/partner-email/${button.dataset.emailSync}/sync`, { method: "POST" }); if (!result.ok) alert(result.message); else alert(`${result.data.fetched} e-mail(s) lu(s), ${result.data.candidates} candidat(s), ${result.data.imported} mission(s) importée(s).`); await renderPartnerMissions(); }));
-    enableEmailCandidateSelection(node);
 }
 
 function openEmailReply(missionId) {
@@ -275,11 +332,6 @@ function fileToEmailAttachment(file) {
 function emailConnectionCard(connection) {
     const mode = connection.selectionMode === "automatic" ? `Automatique · seuil ${connection.automaticThreshold}` : "Sélection manuelle";
     return `<article class="partner-email-connection"><div><strong>${escapeHtml(connection.displayName || connection.emailAddress)}</strong><p>${escapeHtml(connection.emailAddress)} · ${escapeHtml(mode)}</p><small>${connection.lastError ? escapeHtml(connection.lastError) : connection.lastSyncAt ? `Dernière synchronisation : ${escapeHtml(formatMissionDate(connection.lastSyncAt))}` : "Jamais synchronisée"}</small></div><div class="partner-card-actions"><button class="secondary-button" data-email-sync="${connection.id}">Synchroniser</button><button class="danger-button" data-email-disconnect="${connection.id}">Déconnecter</button></div></article>`;
-}
-
-function emailCandidateCard(message) {
-    const reasons = Array.isArray(message.classificationReasons) && message.classificationReasons.length ? message.classificationReasons : ["Aucun indice métier suffisant"];
-    return `<article class="partner-email-candidate"><label class="partner-email-candidate-select"><input type="checkbox" data-email-candidate="${message.id}"> Sélectionner</label><div class="partner-email-candidate-heading"><div><strong>${escapeHtml(message.subject || "Sans objet")}</strong><p>${escapeHtml(message.senderName || message.senderAddress)} · ${escapeHtml(message.senderAddress)}</p></div><span class="partner-email-score${message.classificationScore >= 80 ? " high" : message.classificationScore >= 50 ? " medium" : " low"}">${message.classificationScore}/100</span></div><p class="partner-email-excerpt">${escapeHtml(String(message.bodyText || "").slice(0, 600))}</p><ul>${reasons.map(reason => `<li>${escapeHtml(reason)}</li>`).join("")}</ul>${message.attachments?.length ? `<div class="partner-mission-meta">${message.attachments.map(file => `<span>${escapeHtml(file.filename)} · ${escapeHtml(formatAttachmentSize(file.fileSize))}</span>`).join("")}</div>` : '<p class="muted">Aucune pièce métier importable.</p>'}<small>Reçu le ${escapeHtml(formatMissionDate(message.receivedAt))}</small></article>`;
 }
 
 function enableEmailCandidateSelection(node) {
@@ -439,7 +491,7 @@ async function openNetworkMissionPlanning(mission) {
 }
 function showAccept(id) { const mission = dashboard.missions.find(item => Number(item.id) === Number(id)); if (!mission) return; const options = dashboard.technicians.map(technician => `<option value="${technician.id}">${escapeHtml(technician.fullName)}</option>`).join(""); const dialog = openDialog(`<form id="acceptPartnerMission"><h3>Accepter et planifier</h3><p>${escapeHtml(mission.mappedData.clientName || "Client")}</p><div class="form-grid"><label>Date <input name="date" type="date" value="${escapeHtml(htmlDateValue(mission.scheduledDate || mission.mappedData.date))}"></label><label>Début <input name="startTime" type="time" value="${escapeHtml(mission.scheduledStartTime || mission.mappedData.startTime || "")}"></label><label>Fin <input name="endTime" type="time" value="${escapeHtml(mission.scheduledEndTime || mission.mappedData.endTime || "")}"></label><label>Technicien <select name="technicianId"><option value="">Affectation ultérieure</option>${options}</select></label><label>Mode <select name="assignmentMode"><option value="manual">Manuel</option><option value="automatic">Automatique selon la charge</option></select></label><label class="form-wide">Type de facturation<select name="billingMode"><option value="direct_client" ${mission.billingMode !== "principal" ? "selected" : ""}>Facturation directe au client final — devis, factures et comptabilité restent privés</option><option value="principal" ${mission.billingMode === "principal" ? "selected" : ""}>Facturation destinée à l’entreprise donneuse d’ordre — devis et factures partagés</option></select></label></div><p class="muted">Les documents restent internes par défaut. En mode donneur d’ordre, les devis et factures liés à cette mission sont partagés automatiquement.</p><div class="form-actions"><button class="secondary-button">Confirmer</button></div></form>`); dialog.querySelector("form").addEventListener("submit", async event => { event.preventDefault(); const values = Object.fromEntries(new FormData(event.currentTarget)); const mode = await api(`/api/partner-missions/${id}/billing-mode`, { method: "PATCH", body: JSON.stringify({ billingMode: values.billingMode }) }); if (!mode.ok) return alert(mode.message); const result = await api(`/api/partner-missions/${id}/accept`, { method: "POST", body: JSON.stringify(values) }); if (!result.ok) return alert(result.message); dialog.remove(); renderPartnerMissions(); }); }
 function openDialog(content) { const dialog = document.createElement("div"); dialog.className = "partner-mission-dialog"; dialog.innerHTML = `<section><button class="text-button partner-dialog-close" aria-label="Fermer">Fermer</button>${content}</section>`; dialog.querySelector(".partner-dialog-close").addEventListener("click", () => dialog.remove()); document.body.appendChild(dialog); return dialog; }
-function labelStatus(value) { return ({ received: "Reçue", pending_validation: "À valider", accepted: "Acceptée", rejected: "Refusée", assigned: "Affectée", scheduled: "Planifiée", en_route: "En route", on_site: "Sur site", report_in_progress: "Rapport en cours", report_completed: "Rapport terminé", report_validated: "Rapport validé", quote_sent: "Devis envoyé", quote_accepted: "Devis accepté", work_completed: "Travaux terminés", invoice_sent: "Facture envoyée", closed: "Clôturée", cancelled: "Annulée" })[value] || "Statut non renseigné"; }
+function labelStatus(value) { return ({ email_candidate: "À confirmer", received: "Reçue", pending_validation: "À valider", accepted: "Acceptée", rejected: "Refusée", assigned: "Affectée", scheduled: "Planifiée", en_route: "En route", on_site: "Sur site", report_in_progress: "Rapport en cours", report_completed: "Rapport terminé", report_validated: "Rapport validé", quote_sent: "Devis envoyé", quote_accepted: "Devis accepté", work_completed: "Travaux terminés", invoice_sent: "Facture envoyée", closed: "Clôturée", cancelled: "Annulée" })[value] || "Statut non renseigné"; }
 function labelPriority(value) { return ({ low: "Faible", normal: "Normale", high: "Haute", urgent: "Urgente" })[value] || value; }
 function labelField(value) { return ({ clientName: "Client", address: "Adresse", interventionType: "Intervention", partnerReference: "Référence", claimNumber: "Sinistre", phone: "Téléphone", email: "E-mail", description: "Description", comments: "Commentaires", insurance: "Assureur", expert: "Expert", manager: "Gestionnaire", date: "Date", startTime: "Début", endTime: "Fin", gps: "GPS" })[value] || value; }
 function formatDate(value) { return value ? new Intl.DateTimeFormat("fr-FR", { dateStyle: "short", timeStyle: "short" }).format(new Date(value)) : ""; }

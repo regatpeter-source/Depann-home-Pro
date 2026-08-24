@@ -9,6 +9,7 @@ import { extractPartnerDocumentText } from "../server/partner-email-document-ext
 
 const serverSource = readFileSync(new URL("../server/partner-email.js", import.meta.url), "utf8");
 const missionSource = readFileSync(new URL("../server/partner-missions.js", import.meta.url), "utf8");
+const missionClientSource = readFileSync(new URL("../js/partner-missions.js", import.meta.url), "utf8");
 const schemaSource = readFileSync(new URL("../database/schema.sql", import.meta.url), "utf8");
 const appSource = readFileSync(new URL("../app.js", import.meta.url), "utf8");
 
@@ -62,6 +63,17 @@ test("la boîte mail dépend de Missions partenaires et non des connecteurs Pro"
     assert.match(appSource, /app\.use\("\/api\/partner-email", requireAuthentication, requireOrganizationFeature\("partnerMissions"\)\)/);
     assert.match(missionSource, /intake\.partner_key LIKE 'email-%'/);
     assert.match(missionSource, /sourceType: partnerKey\.startsWith\("connection-"\) \? "depannhome_network" : partnerKey\.startsWith\("email-"\) \? "professional_email"/);
+});
+
+test("les missions e-mail utilisent la même interface que les missions internes et externes", () => {
+    assert.match(missionClientSource, /shell\.querySelectorAll\('\.partner-mission-tabs'\)\[1\]\.innerHTML = externalTabs/);
+    assert.match(missionClientSource, /emailCandidates[\s\S]*\.map\(emailCandidateMission\)/);
+    assert.match(missionClientSource, /class="partner-mission-card priority-/);
+    assert.match(missionClientSource, /status: "email_candidate"/);
+    assert.match(missionClientSource, /id="configurePartnerEmail"/);
+    assert.match(missionClientSource, /id="syncPartnerEmail"/);
+    assert.doesNotMatch(missionClientSource, /data-mission-tab="email-inbox"/);
+    assert.doesNotMatch(missionClientSource, /partner-email-candidate(?:-heading|-select)?/);
 });
 
 test("les coordonnées client sont extraites des pièces TXT, PDF, DOCX et XLSX", async () => {
