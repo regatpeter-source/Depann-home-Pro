@@ -4983,20 +4983,12 @@ body.desktop-device[data-role="technician"] .nav-button:not([data-nav="home"]):n
     display:none;
 }
 
-/* Un téléphone tactile garde la même navigation technicien en portrait et paysage. */
-body.mobile-device[data-role="technician"] .quick-actions > :not(#calendarBtn):not(#libraryBtn),
-body.mobile-device[data-role="technician"] .nav-button:not([data-nav="home"]):not([data-nav="calendar"]):not([data-nav="library"]){
+/* La barre inférieure d’un poste mobile reste volontairement limitée à Accueil. */
+body.mobile-device #authRoot > footer .nav-button:not([data-nav="home"]){
     display:none;
 }
 
-body.mobile-device[data-role="technician"] .quick-actions{
-    display:grid;
-    grid-template-columns:repeat(2, minmax(0, 1fr));
-}
-
-body.mobile-device[data-role="technician"] footer{
-    justify-content:center;
-}
+body.mobile-device #authRoot > footer{ justify-content:center; }
 
 body.mobile-device:not(.report-writing-active) #authRoot > footer{
     position:fixed!important;

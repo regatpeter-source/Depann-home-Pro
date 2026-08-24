@@ -101,10 +101,11 @@ test("every mobile post keeps Home and Library access regardless of subscription
         assert.equal(MENU_ACCESS.navigation[ROUTES.library].includes(role), true, `${role}:library-route`);
         assert.equal(MENU_ACCESS.quick.library.includes(role), true, `${role}:library-button`);
     }
-    assert.match(style, /mobile-device\[data-role="technician"\] \.nav-button:not\(\[data-nav="home"\]\):not\(\[data-nav="calendar"\]\):not\(\[data-nav="library"\]\)/);
+    assert.match(style, /body\.mobile-device #authRoot > footer \.nav-button:not\(\[data-nav="home"\]\)/);
     assert.match(style, /desktop-device\[data-role="technician"\] \.nav-button:not\(\[data-nav="home"\]\):not\(\[data-nav="calendar"\]\):not\(\[data-nav="library"\]\)/);
     assert.match(navigation, /ensureMobileHomeNavigationButton\(\)/);
     assert.match(navigation, /button\.dataset\.nav === ROUTES\.home && isMobileDeviceContext\(\)/);
+    assert.match(navigation, /if \(isMobileDeviceContext\(\)\) \{ button\.remove\(\); return; \}/);
     assert.match(navigation, /matchMedia\("\(max-width: 700px\), \(pointer: coarse\)"\)\.matches/);
     assert.match(style, /mobile-device:not\(\.report-writing-active\) #authRoot > footer/);
     assert.match(style, /@media\(max-width:700px\), \(pointer:coarse\)/);

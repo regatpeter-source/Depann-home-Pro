@@ -280,6 +280,7 @@ function applyRoleBasedMenus() {
     });
     document.querySelectorAll(".nav-button").forEach(button => {
         if (button.dataset.nav === ROUTES.home && isMobileDeviceContext()) return;
+        if (isMobileDeviceContext()) { button.remove(); return; }
         if (!canAccessRoute(button.dataset.nav)) button.remove();
     });
     if (isMobileAdministrator()) {
