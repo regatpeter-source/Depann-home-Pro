@@ -94,6 +94,17 @@ export async function initializeElectronicInvoicing(database = getPool()) {
     await database.query("CREATE UNIQUE INDEX IF NOT EXISTS depannhome_einvoice_connections_owner_active_unique ON depannhome_einvoice_connections(owner_id) WHERE active=TRUE");
     await database.query("CREATE UNIQUE INDEX IF NOT EXISTS depannhome_einvoice_connections_webhook_unique ON depannhome_einvoice_connections(webhook_token_hash) WHERE webhook_token_hash IS NOT NULL");
     await database.query(`
+        CREATE TABLE IF NOT EXISTS depannhome_creator_super_pdp_sandbox (
+            creator_id BIGINT PRIMARY KEY REFERENCES depannhome_users(id) ON DELETE CASCADE,
+            encrypted_credentials TEXT NOT NULL,
+            test_status VARCHAR(20) NOT NULL DEFAULT 'configured' CHECK (test_status IN ('configured','running','passed','failed')),
+            last_test_result JSONB NOT NULL DEFAULT '{}'::jsonb,
+            last_tested_at TIMESTAMPTZ,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+    `);
+    await database.query(`
         CREATE TABLE IF NOT EXISTS depannhome_einvoice_oauth_states (
             id BIGSERIAL PRIMARY KEY,
             owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,

@@ -16,7 +16,7 @@ export async function renderCreatorConsole() {
         <section class="creator-console">
             <header class="creator-heading">
                 <div><p class="eyebrow">Administration plateforme</p><h2>Console Créateur</h2></div>
-                <div class="creator-form-actions"><button type="button" class="secondary-button auth-outline-button" id="creatorSubscriptionRequests">Demandes d’offres</button><button type="button" class="secondary-button auth-outline-button" id="creatorPartnerApiSandbox">🧪 Sandbox API partenaire</button><button type="button" class="secondary-button auth-outline-button" id="creatorElectronicInvoicingPlatforms">Plateformes e-facturation</button><button type="button" class="secondary-button auth-outline-button" id="creatorPlatformAnnouncement">Affichage général</button><button type="button" class="secondary-button auth-outline-button" id="creatorPartnerRequests">Demandes de partenariat</button><button type="button" class="secondary-button auth-outline-button" id="creatorOfficialPartners">Partenaires officiels</button><button type="button" class="secondary-button auth-outline-button" id="creatorSecurity">Sécurité du compte</button><button type="button" class="secondary-button auth-outline-button" id="creatorSubscriptionInvoices">Factures abonnements</button><button type="button" class="secondary-button auth-outline-button" id="creatorBillingProfile">Facturation plateforme</button><button type="button" class="secondary-button auth-outline-button" id="creatorExternalProviders">Prestataires externes</button><button type="button" class="secondary-button" id="creatorNewAccount">+ Nouvelle organisation</button></div>
+                <div class="creator-form-actions"><button type="button" class="secondary-button auth-outline-button" id="creatorSubscriptionRequests">Demandes d’offres</button><button type="button" class="secondary-button auth-outline-button" id="creatorPartnerApiSandbox">🧪 Sandbox API partenaire</button><button type="button" class="secondary-button auth-outline-button" id="creatorSuperPdpSandbox">🧪 Sandbox SUPER PDP</button><button type="button" class="secondary-button auth-outline-button" id="creatorElectronicInvoicingPlatforms">Plateformes e-facturation</button><button type="button" class="secondary-button auth-outline-button" id="creatorPlatformAnnouncement">Affichage général</button><button type="button" class="secondary-button auth-outline-button" id="creatorPartnerRequests">Demandes de partenariat</button><button type="button" class="secondary-button auth-outline-button" id="creatorOfficialPartners">Partenaires officiels</button><button type="button" class="secondary-button auth-outline-button" id="creatorSecurity">Sécurité du compte</button><button type="button" class="secondary-button auth-outline-button" id="creatorSubscriptionInvoices">Factures abonnements</button><button type="button" class="secondary-button auth-outline-button" id="creatorBillingProfile">Facturation plateforme</button><button type="button" class="secondary-button auth-outline-button" id="creatorExternalProviders">Prestataires externes</button><button type="button" class="secondary-button" id="creatorNewAccount">+ Nouvelle organisation</button></div>
             </header>
             <p id="creatorFeedback" class="auth-message" aria-live="polite"></p>
             <section class="creator-subscription-summary" id="creatorSubscriptionSummary" aria-label="Synthèse des abonnements"></section>
@@ -40,6 +40,7 @@ export async function renderCreatorConsole() {
     container.querySelector("#creatorNewAccount").addEventListener("click", () => renderAccountForm());
     container.querySelector("#creatorSubscriptionRequests").addEventListener("click", renderSubscriptionChangeRequests);
     container.querySelector("#creatorPartnerApiSandbox").addEventListener("click", renderPartnerApiSandbox);
+    container.querySelector("#creatorSuperPdpSandbox").addEventListener("click", renderSuperPdpSandbox);
     container.querySelector("#creatorElectronicInvoicingPlatforms").addEventListener("click", renderCreatorEInvoicingPlatforms);
     networkButton.addEventListener("click", renderNetworkDirectory);
     notificationsButton.addEventListener("click", renderCreatorRequestNotifications);
@@ -169,6 +170,40 @@ function renderCreatorEInvoicingPlatformForm(platform = null) {
 }
 
 function creatorEInvoicingLifecycleLabel(status) { return ({ documentation_required: "Documentation requise", specification_review: "Documentation en étude", development: "Développement", validation: "Validation", deployed: "Déployé", suspended: "Suspendu" })[status] || "État inconnu"; }
+
+async function renderSuperPdpSandbox() {
+    const workspace = document.querySelector("#creatorWorkspace");
+    workspace.innerHTML = '<p class="muted">Chargement du sandbox SUPER PDP…</p>';
+    const loaded = await api("/api/creator/super-pdp-sandbox");
+    if (!loaded.ok) return showFeedback(loaded.message || "Impossible de charger le sandbox SUPER PDP.", true);
+    const sandbox = loaded.data?.sandbox || {};
+    const result = sandbox.lastTestResult || {};
+    workspace.innerHTML = `<section class="creator-form"><div class="form-heading"><div><p class="eyebrow">🧪 Client Credentials · entreprises fictives</p><h3>Sandbox officiel SUPER PDP</h3></div><span class="creator-state${sandbox.testStatus === "failed" ? " suspended" : ""}">${sandbox.configured ? superPdpSandboxStatusLabel(sandbox.testStatus) : "Non configuré"}</span></div><aside class="accounting-pdp-notice"><strong>Réservé au compte Créateur.</strong> Ces identifiants sont chiffrés dans un coffre séparé et ne sont jamais utilisés par les connexions OAuth des entreprises clientes. Le serveur refuse le test si SUPER PDP ne déclare pas les deux comptes en environnement <code>sandbox</code>.</aside><form data-super-pdp-sandbox-form><div class="form-grid"><label>Client ID vendeur ${sandbox.configured ? "(laisser vide pour conserver)" : "*"}<input name="sellerClientId" maxlength="500" autocomplete="off" ${sandbox.configured ? "" : "required"}></label><label>Client Secret vendeur ${sandbox.configured ? "(laisser vide pour conserver)" : "*"}<input name="sellerClientSecret" type="password" maxlength="4000" autocomplete="new-password" ${sandbox.configured ? "" : "required"}></label><label>Client ID acheteur ${sandbox.configured ? "(laisser vide pour conserver)" : "*"}<input name="buyerClientId" maxlength="500" autocomplete="off" ${sandbox.configured ? "" : "required"}></label><label>Client Secret acheteur ${sandbox.configured ? "(laisser vide pour conserver)" : "*"}<input name="buyerClientSecret" type="password" maxlength="4000" autocomplete="new-password" ${sandbox.configured ? "" : "required"}></label></div><p class="muted">Après l’enregistrement, aucun identifiant ni secret n’est renvoyé au navigateur.</p><div class="creator-form-actions"><button class="secondary-button" type="submit">Chiffrer et enregistrer</button>${sandbox.configured ? '<button class="secondary-button" type="button" data-super-pdp-test>Lancer le test officiel</button><button class="secondary-button danger-button" type="button" data-super-pdp-clear>Effacer les identifiants</button>' : ""}</div><p class="auth-message" data-super-pdp-feedback aria-live="polite"></p></form>${sandbox.lastTestedAt ? `<section class="accounting-rules"><h4>Dernier essai · ${escapeHtml(formatDateTime(sandbox.lastTestedAt))}</h4>${result.seller ? `<p><strong>Vendeur :</strong> ${escapeHtml(result.seller.formalName || result.seller.number || result.seller.id)} · <strong>Acheteur :</strong> ${escapeHtml(result.buyer?.formalName || result.buyer?.number || result.buyer?.id || "")}</p><p><strong>Facture SUPER PDP :</strong> ${escapeHtml(result.invoiceId || "—")} · UBL ${result.validationPassed ? "validé" : "non validé"} · ${result.received ? "reçue par l’acheteur" : "réception acheteur en attente"}</p><p>${escapeHtml(result.transmission?.message || "")}</p>` : `<p class="auth-message error">${escapeHtml(result.message || "Le test a échoué.")}</p>`}</section>` : ""}</section>`;
+    const form = workspace.querySelector("[data-super-pdp-sandbox-form]");
+    const feedback = workspace.querySelector("[data-super-pdp-feedback]");
+    form.addEventListener("submit", async event => {
+        event.preventDefault();
+        const button = form.querySelector('button[type="submit"]'); button.disabled = true;
+        const saved = await api("/api/creator/super-pdp-sandbox", { method: "PUT", body: JSON.stringify(Object.fromEntries(new FormData(form))) });
+        button.disabled = false;
+        if (!saved.ok) { feedback.textContent = saved.message || "Enregistrement impossible."; feedback.classList.add("error"); return; }
+        showFeedback(saved.data?.message || "Sandbox SUPER PDP configuré."); renderSuperPdpSandbox();
+    });
+    workspace.querySelector("[data-super-pdp-test]")?.addEventListener("click", async event => {
+        event.currentTarget.disabled = true; feedback.classList.remove("error"); feedback.textContent = "Authentification des deux entreprises, validation et envoi de la facture test…";
+        const tested = await api("/api/creator/super-pdp-sandbox/test", { method: "POST", body: "{}", timeoutMs: 45_000 });
+        if (!tested.ok) { feedback.textContent = tested.message || "Test impossible."; feedback.classList.add("error"); event.currentTarget.disabled = false; return; }
+        showFeedback(tested.data?.message || "Test SUPER PDP terminé."); renderSuperPdpSandbox();
+    });
+    workspace.querySelector("[data-super-pdp-clear]")?.addEventListener("click", async () => {
+        if (!confirm("Effacer les quatre identifiants fictifs SUPER PDP et le dernier résultat ?")) return;
+        const removed = await api("/api/creator/super-pdp-sandbox", { method: "DELETE" });
+        if (!removed.ok) return showFeedback(removed.message || "Suppression impossible.", true);
+        showFeedback("Identifiants sandbox SUPER PDP supprimés."); renderSuperPdpSandbox();
+    });
+}
+
+function superPdpSandboxStatusLabel(status) { return ({ configured: "Configuré", running: "Test en cours", passed: "Dernier test réussi", failed: "Dernier test échoué" })[status] || "Configuré"; }
 
 async function renderPartnerApiSandbox() {
     const workspace = document.querySelector("#creatorWorkspace");

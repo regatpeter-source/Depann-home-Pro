@@ -625,6 +625,17 @@ CREATE TABLE IF NOT EXISTS depannhome_einvoice_connections (
 CREATE INDEX IF NOT EXISTS depannhome_einvoice_connections_owner_idx ON depannhome_einvoice_connections(owner_id,updated_at DESC);
 CREATE UNIQUE INDEX IF NOT EXISTS depannhome_einvoice_connections_owner_active_unique ON depannhome_einvoice_connections(owner_id) WHERE active=TRUE;
 CREATE UNIQUE INDEX IF NOT EXISTS depannhome_einvoice_connections_webhook_unique ON depannhome_einvoice_connections(webhook_token_hash) WHERE webhook_token_hash IS NOT NULL;
+
+-- Identifiants des deux entreprises fictives du test officiel SUPER PDP.
+-- Ce coffre est réservé au Créateur et totalement distinct des connexions OAuth des entreprises clientes.
+CREATE TABLE IF NOT EXISTS depannhome_creator_super_pdp_sandbox (
+    creator_id BIGINT PRIMARY KEY REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    encrypted_credentials TEXT NOT NULL,
+    test_status VARCHAR(20) NOT NULL DEFAULT 'configured' CHECK(test_status IN ('configured','running','passed','failed')),
+    last_test_result JSONB NOT NULL DEFAULT '{}'::jsonb,
+    last_tested_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 -- Les états OAuth sont opaques, temporaires, liés à l'entreprise et à
 -- l'administrateur initiateur. DELETE ... RETURNING garantit leur usage unique.
 CREATE TABLE IF NOT EXISTS depannhome_einvoice_oauth_states (

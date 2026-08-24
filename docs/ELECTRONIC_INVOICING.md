@@ -51,6 +51,14 @@ La console Créateur contient un catalogue distinct des connexions d’entrepris
 
 Une fiche de catalogue ne contient aucun credential d’entreprise, n’exécute aucun appel externe et ne génère aucun code. Le statut « Déployé » est refusé tant qu’un adaptateur portant le même code n’est pas réellement enregistré dans le serveur. Les entreprises continuent de fournir séparément leurs propres identifiants chiffrés.
 
+### Sandbox SUPER PDP réservé au Créateur
+
+La Console Créateur propose un banc de test distinct fondé sur le `quick_start.js` officiel de SUPER PDP. Il reçoit les deux couples Client Credentials des entreprises fictives vendeur et acheteur, les chiffre avec `SESSION_SECRET` dans `depannhome_creator_super_pdp_sandbox` et ne les renvoie jamais au navigateur. Cette table n’est pas une connexion d’entreprise et n’est jamais consultée par les routes comptables.
+
+Le scénario obtient deux jetons courts, vérifie les deux sociétés avec `/v1.beta/companies/me`, exige que chacune déclare `env: sandbox`, génère le fichier UBL officiel, le valide avec `/v1.beta/validation_reports`, l’envoie puis vérifie son traitement vendeur et sa réception acheteur. Il n’émet volontairement pas l’événement de paiement `fr:212`. Le test est borné dans le temps et un verrou empêche deux exécutions concurrentes pour le même Créateur.
+
+Ce banc de test ne remplace pas l’application Authorization Code multi-tenant configurée par les variables `SUPERPDP_*`. Ses Client Credentials fictifs ne peuvent donc jamais connecter ni représenter une entreprise cliente de Depann’Home Pro.
+
 ## Routes et webhooks
 
 Les routes administratives sont sous `/api/accounting/e-invoicing`. Le serveur déduit toujours l’entreprise avec `getAccountOwnerId(request)` et filtre chaque connexion, document et transmission avec cet identifiant.

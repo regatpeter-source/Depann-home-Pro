@@ -28,6 +28,6 @@ test("le catalogue persiste seulement des métadonnées d’intégration", () =>
 test("une fiche ne peut pas déclarer un adaptateur absent comme déployé", () => {
     assert.match(creatorServer, /lifecycleStatus === "deployed" && !getElectronicInvoicingProvider\(platformCode\)/);
     assert.match(creatorServer, /aucun adaptateur serveur correspondant n’est enregistré/);
-    const routes = creatorServer.slice(creatorServer.indexOf('app.get("/api/creator/e-invoicing-platforms"'), creatorServer.indexOf('app.get("/api/creator/network-directory"'));
+    const routes = creatorServer.slice(creatorServer.indexOf('app.get("/api/creator/e-invoicing-platforms"'), creatorServer.indexOf('app.get("/api/creator/super-pdp-sandbox"'));
     assert.doesNotMatch(routes, /fetch\(|testConnection|encrypted_credentials/);
 });

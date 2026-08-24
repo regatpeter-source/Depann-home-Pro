@@ -51,6 +51,76 @@ export class SuperPdpProvider extends ElectronicInvoicingProvider {
         return connectionResult(credentials, account);
     }
 
+    async runClientCredentialsSandboxTest({ seller, buyer }) {
+        const sellerToken = await this.clientCredentialsToken(seller);
+        const buyerToken = await this.clientCredentialsToken(buyer);
+        const [sellerCompany, buyerCompany] = await Promise.all([
+            this.request("/v1.beta/companies/me", { headers: bearerHeaders(sellerToken) }),
+            this.request("/v1.beta/companies/me", { headers: bearerHeaders(buyerToken) })
+        ]);
+        if (sellerCompany?.env !== "sandbox" || buyerCompany?.env !== "sandbox") throw providerError(403, "Le banc de test Créateur refuse tout compte SUPER PDP qui n’est pas explicitement en environnement sandbox.");
+        if (String(sellerCompany?.id || "") === String(buyerCompany?.id || "")) throw providerError(400, "Le vendeur et l’acheteur sandbox doivent être deux entreprises SUPER PDP distinctes.");
+
+        const buyerCursor = await this.request("/v1.beta/invoices?order=desc&limit=1", { headers: bearerHeaders(buyerToken) });
+        const buyerLastId = Number(buyerCursor?.data?.[0]?.id || 0);
+        const invoiceXml = await this.requestText("/v1.beta/invoices/generate_test_invoice?format=ubl", { headers: bearerHeaders(sellerToken) });
+        const validation = await this.validateInvoice(invoiceXml);
+        if (!validation?.data?.[0]?.is_valid) throw providerError(422, "La facture UBL générée par SUPER PDP n’a pas passé son propre validateur.");
+        const externalId = `creator-test-${crypto.randomUUID()}`.slice(0, 36);
+        const uploaded = await this.request(`/v1.beta/invoices?external_id=${encodeURIComponent(externalId)}`, {
+            method: "POST",
+            headers: bearerHeaders(sellerToken, { "Content-Type": "application/xml" }),
+            body: invoiceXml
+        });
+        if (!uploaded?.id) throw providerError(502, "SUPER PDP n’a pas retourné la référence de la facture test.");
+
+        let senderInvoice = uploaded;
+        let receivedInvoice = null;
+        for (let attempt = 0; attempt < 12; attempt += 1) {
+            [senderInvoice, receivedInvoice] = await Promise.all([
+                this.request(`/v1.beta/invoices/${encodeURIComponent(uploaded.id)}`, { headers: bearerHeaders(sellerToken) }),
+                this.findReceivedInvoice(buyerToken, buyerLastId)
+            ]);
+            if (receivedInvoice || mapInvoiceStatus(senderInvoice).status === "rejected") break;
+            await delay(500);
+        }
+        const transmission = mapInvoiceStatus(senderInvoice);
+        return {
+            seller: publicSandboxCompany(sellerCompany),
+            buyer: publicSandboxCompany(buyerCompany),
+            invoiceId: String(uploaded.id),
+            validationPassed: true,
+            transmission,
+            received: Boolean(receivedInvoice),
+            receivedInvoiceId: receivedInvoice?.id ? String(receivedInvoice.id) : ""
+        };
+    }
+
+    async clientCredentialsToken(credentials) {
+        const clientId = String(credentials?.clientId || "").trim();
+        const clientSecret = String(credentials?.clientSecret || "").trim();
+        if (!clientId || !clientSecret) throw providerError(400, "Les identifiants Client Credentials SUPER PDP sont incomplets.");
+        const tokens = await this.request("/oauth2/token", {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: new URLSearchParams({ grant_type: "client_credentials", client_id: clientId, client_secret: clientSecret }).toString()
+        }, { authenticated: false });
+        if (!tokens?.access_token) throw providerError(502, "SUPER PDP n’a pas retourné de jeton d’accès sandbox.");
+        return String(tokens.access_token);
+    }
+
+    async validateInvoice(invoiceXml) {
+        const form = new FormData();
+        form.append("file", invoiceXml);
+        return this.request("/v1.beta/validation_reports", { method: "POST", body: form }, { authenticated: false });
+    }
+
+    async findReceivedInvoice(accessToken, startingAfterId) {
+        const query = startingAfterId > 0 ? `?starting_after_id=${startingAfterId}&limit=100` : "?limit=100";
+        const list = await this.request(`/v1.beta/invoices${query}`, { headers: bearerHeaders(accessToken) });
+        return (Array.isArray(list?.data) ? list.data : [])[0] || null;
+    }
+
     async connect() {
         throw providerError(409, "Utilisez le parcours d’autorisation SUPER PDP.");
     }
@@ -161,6 +231,24 @@ export class SuperPdpProvider extends ElectronicInvoicingProvider {
         if (payload === null) throw providerError(502, "Réponse SUPER PDP illisible.");
         return payload;
     }
+
+    async requestText(path, options = {}) {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 15_000);
+        let response;
+        try {
+            response = await this.fetchImplementation(new URL(path, API_ORIGIN), { ...options, signal: controller.signal });
+        } catch (error) {
+            if (error?.name === "AbortError") throw providerError(408, "SUPER PDP n’a pas répondu dans le délai prévu.");
+            throw providerError(502, "Communication impossible avec SUPER PDP.");
+        } finally {
+            clearTimeout(timeout);
+        }
+        const text = await response.text();
+        if (!response.ok) throw providerError(response.status, `SUPER PDP : erreur HTTP ${response.status}`);
+        if (!text) throw providerError(502, "SUPER PDP a retourné une facture test vide.");
+        return text;
+    }
 }
 
 export function mapInvoiceStatus(invoice) {
@@ -218,6 +306,8 @@ function bearerHeaders(accessToken, headers = {}) {
 }
 function parseJson(value) { try { return JSON.parse(value); } catch { return null; } }
 function providerError(status, publicMessage) { const error = new Error(publicMessage); error.status = status; error.publicMessage = publicMessage; return error; }
+function publicSandboxCompany(company) { return { id: String(company?.id || ""), formalName: String(company?.formal_name || ""), number: String(company?.number || ""), environment: String(company?.env || "") }; }
+function delay(milliseconds) { return new Promise(resolve => setTimeout(resolve, milliseconds)); }
 export function createPkceChallenge(verifier) { return crypto.createHash("sha256").update(verifier).digest("base64url"); }
 
 export const superPdpProvider = registerElectronicInvoicingProvider(new SuperPdpProvider());

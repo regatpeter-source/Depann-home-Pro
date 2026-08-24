@@ -6,7 +6,7 @@ import { createOrganization, getOrganization, getOrganizationHistory, organizati
 import { calculateSubscriptionPriceCents, normalizeSubscriptionTier, subscriptionRoleAccessMessage, subscriptionTierConfig } from "./subscription-tiers.js";
 import { createNotification } from "./collaboration.js";
 import { deliverSubscriptionProration, prepareSubscriptionProration } from "./invoicing.js";
-import { getElectronicInvoicingProvider } from "./electronic-invoicing.js";
+import { decryptElectronicInvoicingCredentials, encryptElectronicInvoicingCredentials, getElectronicInvoicingProvider } from "./electronic-invoicing.js";
 
 const USERNAME_PATTERN = /^[a-z0-9._-]{3,32}$/;
 const MIN_PASSWORD_LENGTH = 12;
@@ -124,6 +124,40 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
         if (!platform.ok) return response.status(400).json({ message: platform.message });
         const { rows } = await getPool().query(`UPDATE depannhome_einvoice_platform_catalog SET platform_label=$2,documentation_url=$3,authentication_type=$4,lifecycle_status=$5,planned_capabilities=$6::jsonb,notes=$7,updated_by=$8,updated_at=NOW() WHERE id=$1 RETURNING id,platform_code AS "platformCode",platform_label AS "platformLabel",documentation_url AS "documentationUrl",authentication_type AS "authenticationType",lifecycle_status AS "lifecycleStatus",planned_capabilities AS "plannedCapabilities",notes,created_at AS "createdAt",updated_at AS "updatedAt"`, [platformId, platform.platformLabel, platform.documentationUrl, platform.authenticationType, platform.lifecycleStatus, JSON.stringify(platform.plannedCapabilities), platform.notes, request.user.sub]);
         response.json({ platform: publicCreatorEInvoicingPlatform(rows[0]) });
+    }));
+    app.get("/api/creator/super-pdp-sandbox", requireCreator, asyncHandler(async (request, response) => {
+        const { rows } = await getPool().query(`SELECT test_status AS "testStatus",last_test_result AS "lastTestResult",last_tested_at AS "lastTestedAt",updated_at AS "updatedAt" FROM depannhome_creator_super_pdp_sandbox WHERE creator_id=$1`, [request.user.sub]);
+        response.json({ sandbox: rows[0] ? { configured: true, ...rows[0] } : { configured: false, testStatus: "", lastTestResult: {}, lastTestedAt: null, updatedAt: null } });
+    }));
+    app.put("/api/creator/super-pdp-sandbox", requireCreator, asyncHandler(async (request, response) => {
+        const { rows } = await getPool().query("SELECT encrypted_credentials FROM depannhome_creator_super_pdp_sandbox WHERE creator_id=$1", [request.user.sub]);
+        const existing = rows[0]?.encrypted_credentials ? decryptElectronicInvoicingCredentials(rows[0].encrypted_credentials) : {};
+        const credentials = sanitizeSuperPdpSandboxCredentials(request.body, existing);
+        if (!credentials.ok) return response.status(400).json({ message: credentials.message });
+        await getPool().query(`INSERT INTO depannhome_creator_super_pdp_sandbox(creator_id,encrypted_credentials,test_status,last_test_result) VALUES($1,$2,'configured','{}'::jsonb) ON CONFLICT(creator_id) DO UPDATE SET encrypted_credentials=EXCLUDED.encrypted_credentials,test_status='configured',last_test_result='{}'::jsonb,last_tested_at=NULL,updated_at=NOW()`, [request.user.sub, encryptElectronicInvoicingCredentials(credentials.value)]);
+        response.json({ message: "Identifiants sandbox SUPER PDP chiffrés et enregistrés." });
+    }));
+    app.post("/api/creator/super-pdp-sandbox/test", requireCreator, asyncHandler(async (request, response) => {
+        const provider = getElectronicInvoicingProvider("super_pdp");
+        if (!provider || typeof provider.runClientCredentialsSandboxTest !== "function") return response.status(503).json({ message: "L’adaptateur sandbox SUPER PDP est indisponible." });
+        const { rows } = await getPool().query(`UPDATE depannhome_creator_super_pdp_sandbox SET test_status='running',updated_at=NOW() WHERE creator_id=$1 AND (test_status<>'running' OR updated_at<NOW()-INTERVAL '2 minutes') RETURNING encrypted_credentials`, [request.user.sub]);
+        if (!rows[0]) {
+            const exists = await getPool().query("SELECT 1 FROM depannhome_creator_super_pdp_sandbox WHERE creator_id=$1", [request.user.sub]);
+            return response.status(exists.rowCount ? 409 : 404).json({ message: exists.rowCount ? "Un test SUPER PDP est déjà en cours." : "Enregistrez d’abord les deux couples d’identifiants sandbox." });
+        }
+        try {
+            const result = await provider.runClientCredentialsSandboxTest(decryptElectronicInvoicingCredentials(rows[0].encrypted_credentials));
+            await getPool().query("UPDATE depannhome_creator_super_pdp_sandbox SET test_status='passed',last_test_result=$2::jsonb,last_tested_at=NOW(),updated_at=NOW() WHERE creator_id=$1", [request.user.sub, JSON.stringify(result)]);
+            response.json({ message: result.received ? "Test réussi : facture reçue par l’entreprise fictive acheteuse." : "Dépôt et validation réussis ; la réception acheteur reste en traitement asynchrone.", result });
+        } catch (error) {
+            const message = safeSuperPdpSandboxError(error);
+            await getPool().query("UPDATE depannhome_creator_super_pdp_sandbox SET test_status='failed',last_test_result=$2::jsonb,last_tested_at=NOW(),updated_at=NOW() WHERE creator_id=$1", [request.user.sub, JSON.stringify({ message })]);
+            response.status(502).json({ message });
+        }
+    }));
+    app.delete("/api/creator/super-pdp-sandbox", requireCreator, asyncHandler(async (request, response) => {
+        await getPool().query("DELETE FROM depannhome_creator_super_pdp_sandbox WHERE creator_id=$1", [request.user.sub]);
+        response.status(204).end();
     }));
     app.get("/api/creator/network-directory", requireCreator, asyncHandler(async (request, response) => {
         response.json({ companies: await creatorNetworkDirectory(request.query?.q), statistics: await creatorNetworkStatistics() });
@@ -653,6 +687,30 @@ function sanitizeCreatorEInvoicingPlatform(value) {
 function publicCreatorEInvoicingPlatform(row) {
     const adapter = getElectronicInvoicingProvider(row.platformCode);
     return { ...row, plannedCapabilities: row.plannedCapabilities && typeof row.plannedCapabilities === "object" ? row.plannedCapabilities : {}, runtimeIntegrated: Boolean(adapter), runtimeDefinition: adapter?.publicDefinition() || null };
+}
+
+function sanitizeSuperPdpSandboxCredentials(value, existing = {}) {
+    const fields = {
+        seller: {
+            clientId: cleanText(value?.sellerClientId, 500) || cleanText(existing?.seller?.clientId, 500),
+            clientSecret: String(value?.sellerClientSecret || "").trim().slice(0, 4000) || String(existing?.seller?.clientSecret || "").trim().slice(0, 4000)
+        },
+        buyer: {
+            clientId: cleanText(value?.buyerClientId, 500) || cleanText(existing?.buyer?.clientId, 500),
+            clientSecret: String(value?.buyerClientSecret || "").trim().slice(0, 4000) || String(existing?.buyer?.clientSecret || "").trim().slice(0, 4000)
+        }
+    };
+    if (Object.values(fields).some(credentials => !credentials.clientId || !credentials.clientSecret)) return { ok: false, message: "Renseignez le Client ID et le Client Secret des deux entreprises fictives SUPER PDP." };
+    if (fields.seller.clientId === fields.buyer.clientId) return { ok: false, message: "Le vendeur et l’acheteur doivent utiliser deux applications SUPER PDP distinctes." };
+    return { ok: true, value: fields };
+}
+
+function safeSuperPdpSandboxError(error) {
+    const status = Number(error?.status);
+    if (status === 401 || status === 403) return status === 403 && /environnement sandbox/i.test(String(error?.publicMessage || error?.message)) ? cleanText(error.publicMessage || error.message, 500) : "SUPER PDP a refusé les identifiants sandbox ou leur autorisation.";
+    if (status === 408 || error?.name === "AbortError") return "SUPER PDP n’a pas répondu dans le délai prévu.";
+    if (status >= 400 && /^SUPER PDP\s*:/i.test(String(error?.publicMessage || error?.message))) return `SUPER PDP a refusé une étape du test (HTTP ${status}).`;
+    return cleanText(error?.publicMessage || error?.message || "Le test SUPER PDP a échoué.", 500).replace(/(?:bearer|token|secret|client_secret|password)\s*[:=]\s*\S+/gi, "Identifiant sensible [masqué]");
 }
 
 function positiveId(value) {
