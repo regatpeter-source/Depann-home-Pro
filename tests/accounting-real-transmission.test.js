@@ -66,6 +66,7 @@ test("le parcours OAuth est lié au tenant, à l’administrateur et consommé u
     assert.match(electronicServer, /codeChallenge/);
     assert.match(electronicServer, /encrypted_context/);
     assert.match(electronicServer, /FOR UPDATE/);
+    assert.match(electronicServer, /status\(503\)\.json\(\{ message: safeError\(error\) \}\)/);
     assert.match(schema, /depannhome_einvoice_oauth_states/);
 });
 

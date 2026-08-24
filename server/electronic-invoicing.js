@@ -185,7 +185,13 @@ export function registerElectronicInvoicingRoutes(app, requireAuthentication) {
         const codeChallenge = crypto.createHash("sha256").update(codeVerifier).digest("base64url");
         const { rows } = await getPool().query(`SELECT profile.email,REGEXP_REPLACE(COALESCE(profile.siren,''),'[^0-9]','','g') AS siren FROM depannhome_users owner LEFT JOIN depannhome_billing_profiles profile ON profile.owner_id=owner.id WHERE owner.id=$1`, [ownerId]);
         const profile = rows[0] || {};
-        const authorizationUrl = platform.authorizationUrl({ state, codeChallenge, redirectUri, loginHint: clean(profile.email, 160), companyNumber: clean(profile.siren, 9) });
+        let authorizationUrl;
+        try {
+            authorizationUrl = platform.authorizationUrl({ state, codeChallenge, redirectUri, loginHint: clean(profile.email, 160), companyNumber: clean(profile.siren, 9) });
+        } catch (error) {
+            if (Number(error?.status) === 503) return response.status(503).json({ message: safeError(error) });
+            throw error;
+        }
         await getPool().query("DELETE FROM depannhome_einvoice_oauth_states WHERE expires_at<=NOW() OR (owner_id=$1 AND created_by=$2 AND platform_code=$3)", [ownerId, request.user.sub, platform.code]);
         await getPool().query("INSERT INTO depannhome_einvoice_oauth_states(owner_id,created_by,platform_code,state_hash,encrypted_context,expires_at) VALUES($1,$2,$3,$4,$5,NOW()+INTERVAL '10 minutes')", [ownerId, request.user.sub, platform.code, sha256(state), encryptCredentials({ codeVerifier, redirectUri })]);
         response.json({ authorizationUrl });
