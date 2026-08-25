@@ -45,6 +45,7 @@ offerForm?.addEventListener("submit", async event => {
   try {
     const response = await fetch("/api/public/offer-requests", {
       method: "POST",
+      credentials: "omit",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload)
     });

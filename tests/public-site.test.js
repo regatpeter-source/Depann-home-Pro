@@ -6,6 +6,7 @@ const appSource = readFileSync(new URL("../app.js", import.meta.url), "utf8");
 const landing = readFileSync(new URL("../public/landing.html", import.meta.url), "utf8");
 const privacy = readFileSync(new URL("../public/privacy.html", import.meta.url), "utf8");
 const terms = readFileSync(new URL("../public/terms.html", import.meta.url), "utf8");
+const siteScript = readFileSync(new URL("../public/site.js", import.meta.url), "utf8");
 
 test("la vitrine publique conserve un accès explicite au logiciel et aux pages légales", () => {
     assert.match(appSource, /app\.get\(\["\/confidentialite"[\s\S]*?privacy\.html/);
@@ -56,4 +57,6 @@ test("la vitrine propose une demande d’offre transmise au support", () => {
     assert.match(landing, /name="privacyConsent"/);
     assert.match(appSource, /\/api\/public\/offer-requests/);
     assert.match(appSource, /registerPublicOfferRoutes\(app\)/);
+    assert.match(siteScript, /fetch\("\/api\/public\/offer-requests"/);
+    assert.match(siteScript, /credentials: "omit"/);
 });
