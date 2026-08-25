@@ -142,7 +142,7 @@ function renderMissions(node, missions, options = {}) { node.innerHTML = mission
         const reasons = Array.isArray(mission.emailCandidate.classificationReasons) ? mission.emailCandidate.classificationReasons : [];
         if (reasons.length) card.querySelector(".partner-mission-card-actions")?.insertAdjacentHTML("beforebegin", `<p class="muted">${reasons.map(reason => escapeHtml(reason)).join(" · ")}</p>`);
         const actions = card.querySelector(".partner-mission-card-actions");
-        if (actions) actions.innerHTML = `<span class="muted">Reçue le ${escapeHtml(formatMissionDate(mission.createdAt))}</span><label><input type="checkbox" data-email-candidate="${mission.emailCandidate.id}"> Sélectionner cette mission</label>`;
+        if (actions) actions.innerHTML = `<label class="partner-mission-choice"><input type="checkbox" data-email-candidate="${mission.emailCandidate.id}"> Sélectionner</label><span class="muted">Reçue le ${escapeHtml(formatMissionDate(mission.createdAt))}</span><button type="button" class="secondary-button" data-email-confirm-one="${mission.emailCandidate.id}">Confirmer</button><button type="button" class="danger-button" data-email-delete-one="${mission.emailCandidate.id}">Supprimer</button>`;
     });
     if (!options.sent) missions.forEach((mission, index) => {
         if (mission.sourceType !== "professional_email") return;
@@ -177,7 +177,7 @@ function renderMissions(node, missions, options = {}) { node.innerHTML = mission
     if (node.querySelector("[data-email-candidate]")) {
         const toolbar = document.createElement("div");
         toolbar.className = "form-actions partner-mission-selection";
-        toolbar.innerHTML = '<label><input type="checkbox" data-email-select-all> Tout sélectionner</label><button class="secondary-button" data-email-import disabled>Créer les missions</button><button class="danger-button" data-email-ignore disabled>Ignorer</button>';
+        toolbar.innerHTML = '<label><input type="checkbox" data-email-select-all> Tout sélectionner</label><button class="secondary-button" data-email-import disabled>Confirmer la sélection</button><button class="danger-button" data-email-ignore disabled>Supprimer la sélection</button><small>Supprimer retire uniquement la proposition : l’e-mail reste dans la boîte connectée.</small>';
         node.prepend(toolbar);
         enableEmailCandidateSelection(node);
     }
@@ -340,10 +340,14 @@ function enableEmailCandidateSelection(node) {
     const inputs = [...node.querySelectorAll("[data-email-candidate]")], selectAll = node.querySelector("[data-email-select-all]"), importButton = node.querySelector("[data-email-import]"), ignoreButton = node.querySelector("[data-email-ignore]");
     if (!inputs.length) return;
     const ids = () => inputs.filter(input => input.checked).map(input => Number(input.dataset.emailCandidate));
-    const refresh = () => { const count = ids().length; importButton.disabled = !count; ignoreButton.disabled = !count; importButton.textContent = count ? `Créer les missions (${count})` : "Créer les missions"; selectAll.checked = count === inputs.length; selectAll.indeterminate = count > 0 && count < inputs.length; };
+    const refresh = () => { const count = ids().length; importButton.disabled = !count; ignoreButton.disabled = !count; importButton.textContent = count ? `Confirmer la sélection (${count})` : "Confirmer la sélection"; ignoreButton.textContent = count ? `Supprimer la sélection (${count})` : "Supprimer la sélection"; selectAll.checked = count === inputs.length; selectAll.indeterminate = count > 0 && count < inputs.length; };
+    const confirmCandidates = async selectedIds => { if (!selectedIds.length || !confirm(`Confirmer ${selectedIds.length} proposition${selectedIds.length > 1 ? "s" : ""} et créer ${selectedIds.length} mission${selectedIds.length > 1 ? "s" : ""} à valider ?`)) return; const result = await api("/api/partner-email/candidates/import", { method: "POST", body: JSON.stringify({ ids: selectedIds }) }); if (!result.ok) return alert(result.message); await synchronizeClients({ forceFull: true }).catch(() => {}); activeMissionTab = "received"; renderPartnerMissions(); };
+    const deleteCandidates = async selectedIds => { if (!selectedIds.length || !confirm(`Supprimer ${selectedIds.length} proposition${selectedIds.length > 1 ? "s" : ""} ? Les e-mails resteront dans la boîte connectée et aucune mission ne sera créée.`)) return; const result = await api("/api/partner-email/candidates/ignore", { method: "POST", body: JSON.stringify({ ids: selectedIds }) }); if (!result.ok) return alert(result.message); renderPartnerMissions(); };
     inputs.forEach(input => input.addEventListener("change", refresh)); selectAll.addEventListener("change", () => { inputs.forEach(input => { input.checked = selectAll.checked; }); refresh(); });
-    importButton.addEventListener("click", async () => { if (!confirm("Créer une mission à valider pour chaque e-mail sélectionné et intégrer ses documents à la fiche client ?")) return; const result = await api("/api/partner-email/candidates/import", { method: "POST", body: JSON.stringify({ ids: ids() }) }); if (!result.ok) return alert(result.message); await synchronizeClients({ forceFull: true }).catch(() => {}); activeMissionTab = "received"; renderPartnerMissions(); });
-    ignoreButton.addEventListener("click", async () => { if (!confirm("Ignorer les e-mails sélectionnés ? Ils ne créeront aucune mission.")) return; const result = await api("/api/partner-email/candidates/ignore", { method: "POST", body: JSON.stringify({ ids: ids() }) }); if (!result.ok) return alert(result.message); renderPartnerMissions(); });
+    importButton.addEventListener("click", () => confirmCandidates(ids()));
+    ignoreButton.addEventListener("click", () => deleteCandidates(ids()));
+    node.querySelectorAll("[data-email-confirm-one]").forEach(button => button.addEventListener("click", () => confirmCandidates([Number(button.dataset.emailConfirmOne)])));
+    node.querySelectorAll("[data-email-delete-one]").forEach(button => button.addEventListener("click", () => deleteCandidates([Number(button.dataset.emailDeleteOne)])));
     refresh();
 }
 

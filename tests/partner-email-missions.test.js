@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import ExcelJS from "exceljs";
 import PizZip from "pizzip";
 import { PDFDocument, StandardFonts } from "pdf-lib";
-import { classifyPartnerEmail, extractMissionPayload, inspectMailboxStructure, mailboxReplyBody, oauthErrorMessage, parseMailboxPage, parseMailboxSyncPeriod, parseMicrosoftRetryAfter, publicMailError, replySubject } from "../server/partner-email.js";
+import { classifyPartnerEmail, extractMissionPayload, inspectMailboxStructure, mailboxReplyBody, oauthErrorMessage, parseMailboxPage, parseMailboxSyncPeriod, parseMicrosoftRetryAfter, publicMailError, replySubject, sanitizeRequiredKeywords, stripQuotedEmailText } from "../server/partner-email.js";
 import { extractPartnerDocumentText } from "../server/partner-email-document-extractor.js";
 
 const serverSource = readFileSync(new URL("../server/partner-email.js", import.meta.url), "utf8");
@@ -53,6 +53,21 @@ test("les relances et réponses automatiques ne deviennent pas des missions", ()
     assert.ok(automatic.reasons.some(reason => /automatique/.test(reason)));
     assert.match(serverSource, /CANDIDATE_THRESHOLD = 35/);
     assert.match(serverSource, /classification\.score < CANDIDATE_THRESHOLD\) return null/);
+});
+
+test("les mots-clés obligatoires écartent les faux positifs et les réponses citées", () => {
+    assert.deepEqual(sanitizeRequiredKeywords("mission partenaire IMH, sinistre urgent\nmission partenaire IMH"), ["mission partenaire IMH", "sinistre urgent"]);
+    const matching = classifyPartnerEmail({ subject: "Mission intervention IMH", text: "Demande du partenaire pour le client", from: "missions@imh.test", allowedSenders: ["imh.test"], requiredKeywords: ["mission partenaire IMH"] });
+    assert.equal(matching.keywordMatch, true);
+    assert.ok(matching.score >= 80);
+    const unrelated = classifyPartnerEmail({ subject: "Réservation M Regat", text: "Client : Peter\nAdresse : Nantes", from: "admin@example.test", attachments: pdf, requiredKeywords: ["mission partenaire IMH"] });
+    assert.equal(unrelated.score, 0);
+    assert.match(unrelated.reasons[0], /Aucun mot-clé/);
+    const quoted = "Bien reçu, merci.\n\n----- Message d’origine -----\nMission partenaire IMH\nClient : Peter";
+    assert.equal(stripQuotedEmailText(quoted), "Bien reçu, merci.");
+    const reply = classifyPartnerEmail({ subject: "RE: Mission partenaire IMH", text: quoted, from: "admin@example.test", requiredKeywords: ["mission partenaire IMH"], reply: true });
+    assert.equal(reply.score, 0);
+    assert.match(reply.reasons[0], /fil existant/);
 });
 
 test("les secrets, dédoublonnages et pièces privées sont définis côté serveur", () => {
@@ -206,14 +221,35 @@ test("une boîte rattachée s’actualise immédiatement et expose toutes les co
 
 test("les réglages d’une boîte existante sont enregistrés côté serveur par un Administrateur PC", () => {
     assert.match(serverSource, /:connectionId\/settings", requireEmailConfigurationAccess/);
-    assert.match(serverSource, /SET selection_mode=\$3, allowed_senders=\$4::jsonb, automatic_threshold=\$5/);
-    assert.match(serverSource, /auto_search_enabled=\$7/);
+    assert.match(serverSource, /SET selection_mode=\$3, allowed_senders=\$4::jsonb, required_keywords=\$5::jsonb, automatic_threshold=\$6/);
+    assert.match(serverSource, /auto_search_enabled=\$8/);
     assert.match(serverSource, /req\.user\?\.role !== "admin"/);
     assert.match(serverSource, /req\.user\?\.deviceType !== "desktop"/);
     assert.match(emailSettingsSource, /function canConfigureMailbox\(\)/);
     assert.match(emailSettingsSource, /selectionMode: row\.querySelector\("\[data-email-selection-mode\]"\)\.value/);
     assert.match(emailSettingsSource, /automaticThreshold: Number/);
     assert.match(emailSettingsSource, /allowedSenders: row\.querySelector/);
+});
+
+test("les critères e-mail sont enregistrés et nettoient immédiatement les propositions hors sujet", () => {
+    assert.match(schemaSource, /required_keywords JSONB NOT NULL DEFAULT '\[\]'::jsonb/);
+    assert.match(serverSource, /ADD COLUMN IF NOT EXISTS required_keywords/);
+    assert.match(serverSource, /required_keywords AS "requiredKeywords"/);
+    assert.match(serverSource, /reclassifyPendingCandidates/);
+    assert.match(serverSource, /status='ignored'.*classification_score/s);
+    assert.match(emailSettingsSource, /Mots-clés obligatoires pour une mission/);
+    assert.match(emailSettingsSource, /data-email-required-keywords/);
+    assert.match(emailSettingsSource, /requiredKeywords: row\.querySelector/);
+});
+
+test("les propositions de mission peuvent être confirmées ou supprimées seules ou en sélection", () => {
+    assert.match(missionClientSource, /data-email-confirm-one/);
+    assert.match(missionClientSource, /data-email-delete-one/);
+    assert.match(missionClientSource, /Confirmer la sélection/);
+    assert.match(missionClientSource, /Supprimer la sélection/);
+    assert.match(missionClientSource, /l’e-mail reste dans la boîte connectée/);
+    assert.match(missionClientSource, /\/api\/partner-email\/candidates\/import/);
+    assert.match(missionClientSource, /\/api\/partner-email\/candidates\/ignore/);
 });
 
 test("la boîte complète se consulte à la demande sans stockage ni déplacement du curseur de missions", () => {

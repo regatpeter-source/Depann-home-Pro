@@ -36,6 +36,8 @@ L’entreprise peut également ouvrir **Consulter les e-mails** pour parcourir t
 
 Chaque nouvel e-mail apparaît dans **E-mails à vérifier** avec son expéditeur, un extrait, ses pièces, un score et les raisons du classement. L’entreprise choisit explicitement les messages à transformer en missions ou à ignorer.
 
+Chaque proposition dispose d’actions **Confirmer** et **Supprimer**. Les cases permettent d’en sélectionner plusieurs, puis de confirmer ou supprimer toute la sélection. Supprimer une proposition empêche uniquement la création de la mission dans Depann’Home Pro : l’e-mail reste intact dans la boîte connectée.
+
 ### Détection automatique stricte
 
 Un message n’est importé automatiquement que s’il remplit les deux conditions suivantes :
@@ -46,6 +48,10 @@ Un message n’est importé automatiquement que s’il remplit les deux conditio
 Même dans ce mode, la mission est créée avec le statut `pending_validation`. Elle doit donc suivre la validation métier habituelle avant planification.
 
 ## Classification explicable
+
+Chaque boîte peut définir des **mots-clés obligatoires**. Les expressions alternatives sont séparées par une virgule ou une ligne ; tous les mots d’une expression doivent être présents dans l’objet ou le nouveau contenu du message. Par exemple, `mission partenaire IMH` exige la présence des trois mots, sans tenir compte des majuscules ni des accents. Lors de l’enregistrement, les propositions encore en attente qui ne correspondent plus sont retirées automatiquement.
+
+Les réponses à un fil existant et leur historique cité ne créent jamais une nouvelle proposition de mission. Une signature, une adresse, un numéro de téléphone ou une pièce jointe ne suffisent donc plus à faire remonter une réponse « Bien reçu » contenant une ancienne mission en citation.
 
 Le score augmente notamment avec :
 

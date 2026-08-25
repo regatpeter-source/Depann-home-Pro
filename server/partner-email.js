@@ -37,13 +37,15 @@ export async function initializePartnerEmail() {
         provider VARCHAR(20) NOT NULL CHECK(provider IN ('google','microsoft','imap')), email_address VARCHAR(254) NOT NULL,
         display_name VARCHAR(160) NOT NULL DEFAULT '', encrypted_credentials TEXT NOT NULL,
         server_configuration JSONB NOT NULL DEFAULT '{}'::jsonb, selection_mode VARCHAR(20) NOT NULL DEFAULT 'manual' CHECK(selection_mode IN ('manual','automatic')),
-        allowed_senders JSONB NOT NULL DEFAULT '[]'::jsonb, automatic_threshold INTEGER NOT NULL DEFAULT 80 CHECK(automatic_threshold BETWEEN 70 AND 100),
+        allowed_senders JSONB NOT NULL DEFAULT '[]'::jsonb, required_keywords JSONB NOT NULL DEFAULT '[]'::jsonb,
+        automatic_threshold INTEGER NOT NULL DEFAULT 80 CHECK(automatic_threshold BETWEEN 70 AND 100),
         send_status_updates BOOLEAN NOT NULL DEFAULT FALSE, auto_search_enabled BOOLEAN NOT NULL DEFAULT FALSE, enabled BOOLEAN NOT NULL DEFAULT TRUE,
         last_uid BIGINT NOT NULL DEFAULT 0, last_sync_at TIMESTAMPTZ, last_error VARCHAR(500) NOT NULL DEFAULT '',
         created_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         CONSTRAINT depannhome_partner_email_owner_address_unique UNIQUE(owner_id,email_address)
     )`);
     await db.query("ALTER TABLE depannhome_partner_email_connections ADD COLUMN IF NOT EXISTS auto_search_enabled BOOLEAN NOT NULL DEFAULT FALSE");
+    await db.query("ALTER TABLE depannhome_partner_email_connections ADD COLUMN IF NOT EXISTS required_keywords JSONB NOT NULL DEFAULT '[]'::jsonb");
     await db.query("CREATE INDEX IF NOT EXISTS depannhome_partner_email_connections_auto_search_idx ON depannhome_partner_email_connections(auto_search_enabled,enabled,last_sync_at)");
     await db.query(`CREATE TABLE IF NOT EXISTS depannhome_partner_email_messages (
         id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
@@ -87,7 +89,7 @@ export function registerPartnerEmailRoutes(app, requireAuthentication) {
             const identity = await oauthIdentity(provider, identityTokens.access_token);
             const mailboxTokens = identityTokens;
             const encrypted = encryptElectronicInvoicingCredentials({ accessToken: mailboxTokens.access_token, refreshToken: mailboxTokens.refresh_token || identityTokens.refresh_token, expiresAt: new Date(Date.now() + Number(mailboxTokens.expires_in || 3600) * 1000).toISOString() });
-            await getPool().query(`INSERT INTO depannhome_partner_email_connections(owner_id,provider,email_address,display_name,encrypted_credentials,server_configuration,selection_mode,allowed_senders,send_status_updates,auto_search_enabled,created_by,last_error) VALUES($1,$2,$3,$4,$5,'{}'::jsonb,$6,$7::jsonb,$8,$9,$10,'') ON CONFLICT(owner_id,email_address) DO UPDATE SET provider=EXCLUDED.provider,display_name=EXCLUDED.display_name,encrypted_credentials=EXCLUDED.encrypted_credentials,selection_mode=EXCLUDED.selection_mode,allowed_senders=EXCLUDED.allowed_senders,send_status_updates=EXCLUDED.send_status_updates,auto_search_enabled=EXCLUDED.auto_search_enabled,enabled=TRUE,last_error='',updated_at=NOW()`, [pending.owner_id, provider, identity.email, identity.name, encrypted, context.selectionMode, JSON.stringify(context.allowedSenders), context.sendStatusUpdates, context.autoSearchEnabled, pending.actor_id]);
+            await getPool().query(`INSERT INTO depannhome_partner_email_connections(owner_id,provider,email_address,display_name,encrypted_credentials,server_configuration,selection_mode,allowed_senders,required_keywords,send_status_updates,auto_search_enabled,created_by,last_error) VALUES($1,$2,$3,$4,$5,'{}'::jsonb,$6,$7::jsonb,$8::jsonb,$9,$10,$11,'') ON CONFLICT(owner_id,email_address) DO UPDATE SET provider=EXCLUDED.provider,display_name=EXCLUDED.display_name,encrypted_credentials=EXCLUDED.encrypted_credentials,selection_mode=EXCLUDED.selection_mode,allowed_senders=EXCLUDED.allowed_senders,required_keywords=EXCLUDED.required_keywords,send_status_updates=EXCLUDED.send_status_updates,auto_search_enabled=EXCLUDED.auto_search_enabled,enabled=TRUE,last_error='',updated_at=NOW()`, [pending.owner_id, provider, identity.email, identity.name, encrypted, context.selectionMode, JSON.stringify(context.allowedSenders || []), JSON.stringify(context.requiredKeywords || []), context.sendStatusUpdates, context.autoSearchEnabled, pending.actor_id]);
             return oauthPopup(res, true, "Boîte professionnelle connectée.");
         } catch (error) {
             console.warn("[partner-email-oauth] authorization rejected", oauthErrorLog(error, provider));
@@ -98,7 +100,7 @@ export function registerPartnerEmailRoutes(app, requireAuthentication) {
     app.get("/api/partner-email", asyncHandler(async (req, res) => {
         const ownerId = getAccountOwnerId(req);
         const [connections, messages] = await Promise.all([
-            getPool().query(`SELECT id,provider,email_address AS "emailAddress",display_name AS "displayName",selection_mode AS "selectionMode",allowed_senders AS "allowedSenders",automatic_threshold AS "automaticThreshold",send_status_updates AS "sendStatusUpdates",auto_search_enabled AS "autoSearchEnabled",enabled,last_sync_at AS "lastSyncAt",last_error AS "lastError",updated_at AS "updatedAt" FROM depannhome_partner_email_connections WHERE owner_id=$1 ORDER BY updated_at DESC`, [ownerId]),
+            getPool().query(`SELECT id,provider,email_address AS "emailAddress",display_name AS "displayName",selection_mode AS "selectionMode",allowed_senders AS "allowedSenders",required_keywords AS "requiredKeywords",automatic_threshold AS "automaticThreshold",send_status_updates AS "sendStatusUpdates",auto_search_enabled AS "autoSearchEnabled",enabled,last_sync_at AS "lastSyncAt",last_error AS "lastError",updated_at AS "updatedAt" FROM depannhome_partner_email_connections WHERE owner_id=$1 ORDER BY updated_at DESC`, [ownerId]),
             getPool().query(`SELECT message.id,message.connection_id AS "connectionId",message.sender_address AS "senderAddress",message.sender_name AS "senderName",message.subject,message.body_text AS "bodyText",message.received_at AS "receivedAt",message.classification_score AS "classificationScore",message.classification_reasons AS "classificationReasons",message.status,message.mission_id AS "missionId",COALESCE(json_agg(json_build_object('id',attachment.id,'filename',attachment.filename,'mimeType',attachment.mime_type,'fileSize',attachment.file_size,'selected',attachment.selected) ORDER BY attachment.id) FILTER(WHERE attachment.id IS NOT NULL),'[]'::json) AS attachments FROM depannhome_partner_email_messages message LEFT JOIN depannhome_partner_email_attachments attachment ON attachment.email_message_id=message.id WHERE message.owner_id=$1 AND message.status='candidate' GROUP BY message.id ORDER BY message.received_at DESC LIMIT 200`, [ownerId])
         ]);
         res.json({ connections: connections.rows, candidates: messages.rows, oauth: { google: oauthConfigured("google"), microsoft: oauthConfigured("microsoft") } });
@@ -119,14 +121,14 @@ export function registerPartnerEmailRoutes(app, requireAuthentication) {
         try { await testMailbox({ provider: "imap", emailAddress: input.emailAddress, credentials, server: input.server }); }
         catch (error) { throw httpError(422, publicMailError(error, { configuration: true })); }
         const encrypted = encryptElectronicInvoicingCredentials(credentials);
-        const { rows } = await getPool().query(`INSERT INTO depannhome_partner_email_connections(owner_id,provider,email_address,display_name,encrypted_credentials,server_configuration,selection_mode,allowed_senders,automatic_threshold,send_status_updates,auto_search_enabled,created_by,last_error) VALUES($1,'imap',$2,$3,$4,$5::jsonb,$6,$7::jsonb,$8,$9,$10,$11,'') ON CONFLICT(owner_id,email_address) DO UPDATE SET provider='imap',display_name=EXCLUDED.display_name,encrypted_credentials=EXCLUDED.encrypted_credentials,server_configuration=EXCLUDED.server_configuration,selection_mode=EXCLUDED.selection_mode,allowed_senders=EXCLUDED.allowed_senders,automatic_threshold=EXCLUDED.automatic_threshold,send_status_updates=EXCLUDED.send_status_updates,auto_search_enabled=EXCLUDED.auto_search_enabled,enabled=TRUE,last_error='',updated_at=NOW() RETURNING id`, [ownerId, input.emailAddress, input.displayName, encrypted, JSON.stringify(input.server), input.selectionMode, JSON.stringify(input.allowedSenders), input.automaticThreshold, input.sendStatusUpdates, Boolean(req.body?.autoSearchEnabled), req.user.sub]);
+        const { rows } = await getPool().query(`INSERT INTO depannhome_partner_email_connections(owner_id,provider,email_address,display_name,encrypted_credentials,server_configuration,selection_mode,allowed_senders,required_keywords,automatic_threshold,send_status_updates,auto_search_enabled,created_by,last_error) VALUES($1,'imap',$2,$3,$4,$5::jsonb,$6,$7::jsonb,$8::jsonb,$9,$10,$11,$12,'') ON CONFLICT(owner_id,email_address) DO UPDATE SET provider='imap',display_name=EXCLUDED.display_name,encrypted_credentials=EXCLUDED.encrypted_credentials,server_configuration=EXCLUDED.server_configuration,selection_mode=EXCLUDED.selection_mode,allowed_senders=EXCLUDED.allowed_senders,required_keywords=EXCLUDED.required_keywords,automatic_threshold=EXCLUDED.automatic_threshold,send_status_updates=EXCLUDED.send_status_updates,auto_search_enabled=EXCLUDED.auto_search_enabled,enabled=TRUE,last_error='',updated_at=NOW() RETURNING id`, [ownerId, input.emailAddress, input.displayName, encrypted, JSON.stringify(input.server), input.selectionMode, JSON.stringify(input.allowedSenders), JSON.stringify(input.requiredKeywords), input.automaticThreshold, input.sendStatusUpdates, Boolean(req.body?.autoSearchEnabled), req.user.sub]);
         res.json({ id: rows[0].id, message: "Boîte professionnelle connectée et vérifiée." });
     }));
     app.post("/api/partner-email/oauth/:provider/authorize", requireEmailConfigurationAccess, asyncHandler(async (req, res) => {
         const provider = String(req.params.provider || "");
         if (!oauthConfigured(provider)) return res.status(503).json({ message: `La connexion ${provider === "google" ? "Google" : "Microsoft"} n’est pas encore configurée sur le serveur.` });
         const state = crypto.randomBytes(32).toString("base64url"); const verifier = crypto.randomBytes(48).toString("base64url");
-        const context = { verifier, selectionMode: MODES.has(req.body?.selectionMode) ? req.body.selectionMode : "manual", sendStatusUpdates: Boolean(req.body?.sendStatusUpdates), autoSearchEnabled: Boolean(req.body?.autoSearchEnabled), allowedSenders: sanitizeSenders(req.body?.allowedSenders) };
+        const context = { verifier, selectionMode: MODES.has(req.body?.selectionMode) ? req.body.selectionMode : "manual", sendStatusUpdates: Boolean(req.body?.sendStatusUpdates), autoSearchEnabled: Boolean(req.body?.autoSearchEnabled), allowedSenders: sanitizeSenders(req.body?.allowedSenders), requiredKeywords: sanitizeRequiredKeywords(req.body?.requiredKeywords) };
         await getPool().query("INSERT INTO depannhome_partner_email_oauth_states(state_hash,owner_id,actor_id,provider,encrypted_context,expires_at) VALUES($1,$2,$3,$4,$5,NOW()+INTERVAL '10 minutes')", [hash(state), getAccountOwnerId(req), req.user.sub, provider, encryptElectronicInvoicingCredentials(context)]);
         res.json({ authorizationUrl: oauthAuthorizationUrl(provider, state, verifier) });
     }));
@@ -157,18 +159,20 @@ export function registerPartnerEmailRoutes(app, requireAuthentication) {
         const selectionMode = MODES.has(req.body?.selectionMode) ? req.body.selectionMode : "";
         if (!selectionMode) return res.status(400).json({ message: "Choisissez un mode de recherche valide." });
         const allowedSenders = sanitizeSenders(req.body?.allowedSenders);
+        const requiredKeywords = sanitizeRequiredKeywords(req.body?.requiredKeywords);
         const automaticThreshold = Math.max(70, Math.min(100, Number(req.body?.automaticThreshold) || AUTO_THRESHOLD));
         const { rows } = await getPool().query(`
             UPDATE depannhome_partner_email_connections
-            SET selection_mode=$3, allowed_senders=$4::jsonb, automatic_threshold=$5,
-                send_status_updates=$6, auto_search_enabled=$7, updated_at=NOW()
+            SET selection_mode=$3, allowed_senders=$4::jsonb, required_keywords=$5::jsonb, automatic_threshold=$6,
+                send_status_updates=$7, auto_search_enabled=$8, updated_at=NOW()
             WHERE id=$1 AND owner_id=$2 AND enabled=TRUE
             RETURNING selection_mode AS "selectionMode", allowed_senders AS "allowedSenders",
-                automatic_threshold AS "automaticThreshold", send_status_updates AS "sendStatusUpdates",
+                required_keywords AS "requiredKeywords", automatic_threshold AS "automaticThreshold", send_status_updates AS "sendStatusUpdates",
                 auto_search_enabled AS "autoSearchEnabled"
-        `, [positiveId(req.params.connectionId), getAccountOwnerId(req), selectionMode, JSON.stringify(allowedSenders), automaticThreshold, Boolean(req.body?.sendStatusUpdates), Boolean(req.body?.autoSearchEnabled)]);
+        `, [positiveId(req.params.connectionId), getAccountOwnerId(req), selectionMode, JSON.stringify(allowedSenders), JSON.stringify(requiredKeywords), automaticThreshold, Boolean(req.body?.sendStatusUpdates), Boolean(req.body?.autoSearchEnabled)]);
         if (!rows[0]) return res.status(404).json({ message: "Boîte professionnelle introuvable." });
-        res.json({ ...rows[0], message: "Réglages de recherche enregistrés." });
+        const removedCandidates = await reclassifyPendingCandidates(getAccountOwnerId(req), positiveId(req.params.connectionId), { allowedSenders, requiredKeywords });
+        res.json({ ...rows[0], removedCandidates, message: `Réglages de recherche enregistrés.${removedCandidates ? ` ${removedCandidates} proposition(s) hors critères supprimée(s).` : ""}` });
     }));
     app.patch("/api/partner-email/:connectionId/automatic-search", requireEmailConfigurationAccess, asyncHandler(async (req, res) => {
         const { rows } = await getPool().query("UPDATE depannhome_partner_email_connections SET auto_search_enabled=$3,updated_at=NOW() WHERE id=$1 AND owner_id=$2 RETURNING auto_search_enabled AS \"autoSearchEnabled\"", [positiveId(req.params.connectionId), getAccountOwnerId(req), Boolean(req.body?.enabled)]);
@@ -206,9 +210,14 @@ export async function synchronizeDueConnections() {
     }
 }
 
-export function classifyPartnerEmail({ subject = "", text = "", from = "", attachments = [], allowedSenders = [], automatic = false, listMail = false }) {
-    const haystack = `${subject}\n${text}`.toLowerCase(); const sender = String(from).toLowerCase(); let score = 0; const reasons = [];
+export function classifyPartnerEmail({ subject = "", text = "", from = "", attachments = [], allowedSenders = [], requiredKeywords = [], automatic = false, listMail = false, reply = false }) {
+    if (reply || /^\s*(?:re|rép)\s*:/i.test(subject)) return { score: 0, reasons: ["Réponse à un fil existant ignorée"], trustedSender: false, likelyMission: false, keywordMatch: false };
+    const haystack = `${subject}\n${stripQuotedEmailText(text)}`.toLowerCase(); const sender = String(from).toLowerCase(); let score = 0; const reasons = [];
     const add = (points, reason) => { score += points; reasons.push(reason); };
+    const keywords = sanitizeRequiredKeywords(requiredKeywords);
+    const matches = keywords.filter(expression => keywordExpressionMatches(expression, haystack));
+    if (keywords.length && !matches.length) return { score: 0, reasons: ["Aucun mot-clé obligatoire détecté"], trustedSender: false, likelyMission: false, keywordMatch: false };
+    if (matches.length) add(45, `Mots-clés détectés : ${matches.join(", ")}`);
     if (/mission|intervention|ordre de service|bon de commande|sinistre|dossier|mandat|affectation/.test(haystack)) add(35, "Objet ou contenu associé à une mission");
     if (/client|assuré|adresse|téléphone|portable|lieu d'intervention|référence|n°\s*(?:de\s*)?sinistre/.test(haystack)) add(20, "Coordonnées ou référence de dossier détectées");
     if (attachments.some(item => ALLOWED_MIME.has(item.contentType))) add(20, "Document métier joint");
@@ -219,7 +228,7 @@ export function classifyPartnerEmail({ subject = "", text = "", from = "", attac
     if (/no-?reply|noreply|nepasrepondre/.test(sender)) add(-25, "Adresse automatique");
     if (automatic || listMail) add(-70, "Réponse automatique ou message de liste détecté");
     if (!trustedSender && score >= AUTO_THRESHOLD) { score = AUTO_THRESHOLD - 1; reasons.push("Validation humaine requise : expéditeur non autorisé"); }
-    return { score: Math.max(0, Math.min(100, score)), reasons, trustedSender, likelyMission: trustedSender && score >= AUTO_THRESHOLD };
+    return { score: Math.max(0, Math.min(100, score)), reasons, trustedSender, likelyMission: trustedSender && score >= AUTO_THRESHOLD, keywordMatch: true };
 }
 
 async function syncConnection(ownerId, connectionId, actorId, syncPeriod = null) {
@@ -427,7 +436,7 @@ async function saveParsedEmail(connection, uid, parsed) {
     const from = parsed.from?.value?.[0] || {}; const messageId = clean(parsed.messageId || `uid-${uid}@${connection.email_address}`, 500);
     let totalAttachmentBytes = 0;
     const attachments = (parsed.attachments || []).filter(item => { const allowed = ALLOWED_MIME.has(item.contentType) && item.size > 0 && item.size <= MAX_ATTACHMENT_BYTES && totalAttachmentBytes + item.size <= 20 * 1024 * 1024; if (allowed) totalAttachmentBytes += item.size; return allowed; }).slice(0, MAX_ATTACHMENTS);
-    const classification = classifyPartnerEmail({ subject: parsed.subject, text: parsed.text, from: from.address, attachments, allowedSenders: connection.allowed_senders || [], automatic: Boolean(parsed.headers?.get("auto-submitted")) || /^\s*(?:re|tr)?\s*:\s*(?:réponse automatique|automatic reply|out of office)/i.test(parsed.subject || ""), listMail: Boolean(parsed.headers?.get("list-unsubscribe") || parsed.headers?.get("list-id")) });
+    const classification = classifyPartnerEmail({ subject: parsed.subject, text: parsed.text, from: from.address, attachments, allowedSenders: connection.allowed_senders || [], requiredKeywords: connection.required_keywords || [], reply: Boolean(parsed.inReplyTo) || /^\s*(?:re|rép)\s*:/i.test(parsed.subject || ""), automatic: Boolean(parsed.headers?.get("auto-submitted")) || /^\s*(?:re|tr)?\s*:\s*(?:réponse automatique|automatic reply|out of office)/i.test(parsed.subject || ""), listMail: Boolean(parsed.headers?.get("list-unsubscribe") || parsed.headers?.get("list-id")) });
     if (classification.score < CANDIDATE_THRESHOLD) return null;
     const { rows } = await getPool().query(`INSERT INTO depannhome_partner_email_messages(owner_id,connection_id,uid,message_id,in_reply_to,references_header,sender_address,sender_name,recipients,subject,body_text,received_at,classification_score,classification_reasons) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12,$13,$14::jsonb) ON CONFLICT(owner_id,connection_id,message_id) DO NOTHING RETURNING id`, [connection.owner_id, connection.id, uid, messageId, clean(parsed.inReplyTo, 500), clean((parsed.references || []).join(" "), 4000), clean(from.address, 254), clean(from.name, 160), JSON.stringify(parsed.to?.value?.map(item => item.address).filter(Boolean) || []), clean(parsed.subject, 500), String(parsed.text || "").slice(0, 20000), parsed.date || new Date(), classification.score, JSON.stringify(classification.reasons)]);
     if (!rows[0]) return null;
@@ -622,9 +631,24 @@ export function parseMailboxSyncPeriod(value) {
     return { from, to, since, before: new Date(until.getTime() + 86400000) };
 }
 
-function sanitizeImapConfiguration(value) { const emailAddress = clean(value?.emailAddress, 254).toLowerCase(), username = clean(value?.username || emailAddress, 254), password = String(value?.password || "").trim().slice(0, 1000), selectionMode = MODES.has(value?.selectionMode) ? value.selectionMode : "manual"; const imapHost = host(value?.imapHost), smtpHost = host(value?.smtpHost), imapPort = port(value?.imapPort, 993), smtpPort = port(value?.smtpPort, 465); if (!/^\S+@\S+\.\S+$/.test(emailAddress) || !imapHost || !smtpHost || !username) return { ok: false, message: "Renseignez l’adresse, l’utilisateur et les serveurs IMAP/SMTP de la boîte professionnelle." }; return { ok: true, emailAddress, username, password, displayName: clean(value?.displayName, 160), selectionMode, allowedSenders: sanitizeSenders(value?.allowedSenders), automaticThreshold: Math.max(70, Math.min(100, Number(value?.automaticThreshold) || AUTO_THRESHOLD)), sendStatusUpdates: Boolean(value?.sendStatusUpdates), server: { imap: { host: imapHost, port: imapPort, secure: value?.imapSecure !== false }, smtp: { host: smtpHost, port: smtpPort, secure: !(value?.smtpSecure === false || String(value?.smtpSecure) === "false") } } }; }
+function sanitizeImapConfiguration(value) { const emailAddress = clean(value?.emailAddress, 254).toLowerCase(), username = clean(value?.username || emailAddress, 254), password = String(value?.password || "").trim().slice(0, 1000), selectionMode = MODES.has(value?.selectionMode) ? value.selectionMode : "manual"; const imapHost = host(value?.imapHost), smtpHost = host(value?.smtpHost), imapPort = port(value?.imapPort, 993), smtpPort = port(value?.smtpPort, 465); if (!/^\S+@\S+\.\S+$/.test(emailAddress) || !imapHost || !smtpHost || !username) return { ok: false, message: "Renseignez l’adresse, l’utilisateur et les serveurs IMAP/SMTP de la boîte professionnelle." }; return { ok: true, emailAddress, username, password, displayName: clean(value?.displayName, 160), selectionMode, allowedSenders: sanitizeSenders(value?.allowedSenders), requiredKeywords: sanitizeRequiredKeywords(value?.requiredKeywords), automaticThreshold: Math.max(70, Math.min(100, Number(value?.automaticThreshold) || AUTO_THRESHOLD)), sendStatusUpdates: Boolean(value?.sendStatusUpdates), server: { imap: { host: imapHost, port: imapPort, secure: value?.imapSecure !== false }, smtp: { host: smtpHost, port: smtpPort, secure: !(value?.smtpSecure === false || String(value?.smtpSecure) === "false") } } }; }
 function outgoingAttachments(value) { let total = 0; const result = []; for (const item of Array.isArray(value) ? value.slice(0, 5) : []) { const match = /^data:([^;]+);base64,([A-Za-z0-9+/=]+)$/.exec(String(item?.dataUrl || "")); if (!match || !ALLOWED_MIME.has(match[1])) throw httpError(400, "Un document à envoyer possède un format non autorisé."); const content = Buffer.from(match[2], "base64"); if (!content.length || content.length > MAX_ATTACHMENT_BYTES || total + content.length > 20 * 1024 * 1024) throw httpError(400, "Les documents à envoyer dépassent la limite autorisée."); total += content.length; result.push({ filename: safeFilename(item?.name), contentType: match[1], content }); } return result; }
 function sanitizeSenders(value) { return [...new Set((Array.isArray(value) ? value : String(value || "").split(/[,;\n]/)).map(item => clean(item, 254).toLowerCase().replace(/^@/, "")).filter(item => /^\S+@\S+\.\S+$/.test(item) || /^[a-z0-9.-]+\.[a-z]{2,}$/i.test(item)))].slice(0, 100); }
+export function sanitizeRequiredKeywords(value) { return [...new Set((Array.isArray(value) ? value : String(value || "").split(/[,;\n]/)).map(item => clean(item, 120)).filter(item => normalizeKeywordText(item).split(" ").some(token => token.length >= 2)))].slice(0, 20); }
+export function stripQuotedEmailText(value) { const lines = String(value || "").replace(/\r/g, "").split("\n"); const kept = []; for (const line of lines) { if (/^\s*(?:-{2,}\s*)?(?:message d['’]origine|original message|forwarded message)|^\s*(?:on .{0,200} wrote|le .{0,200} a écrit)\s*:|^\s*--\s*$/i.test(line)) break; if (!/^\s*>/.test(line)) kept.push(line); } return kept.join("\n").trim(); }
+function normalizeKeywordText(value) { return String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim().replace(/\s+/g, " "); }
+function keywordExpressionMatches(expression, value) { const content = ` ${normalizeKeywordText(value)} `; const tokens = normalizeKeywordText(expression).split(" ").filter(token => token.length >= 2); return tokens.length > 0 && tokens.every(token => content.includes(` ${token} `)); }
+
+async function reclassifyPendingCandidates(ownerId, connectionId, { allowedSenders, requiredKeywords }) {
+    const { rows } = await getPool().query(`SELECT message.id,message.subject,message.body_text,message.sender_address,message.in_reply_to,EXISTS(SELECT 1 FROM depannhome_partner_email_attachments attachment WHERE attachment.email_message_id=message.id) AS has_attachment FROM depannhome_partner_email_messages message WHERE message.owner_id=$1 AND message.connection_id=$2 AND message.status='candidate'`, [ownerId, connectionId]);
+    let removed = 0;
+    for (const message of rows) {
+        const classification = classifyPartnerEmail({ subject: message.subject, text: message.body_text, from: message.sender_address, attachments: message.has_attachment ? [{ contentType: "application/pdf" }] : [], allowedSenders, requiredKeywords, reply: Boolean(message.in_reply_to) });
+        if (classification.score < CANDIDATE_THRESHOLD) { await getPool().query("UPDATE depannhome_partner_email_messages SET status='ignored',classification_score=$3,classification_reasons=$4::jsonb,processed_at=NOW() WHERE id=$1 AND owner_id=$2 AND status='candidate'", [message.id, ownerId, classification.score, JSON.stringify(classification.reasons)]); removed += 1; }
+        else await getPool().query("UPDATE depannhome_partner_email_messages SET classification_score=$3,classification_reasons=$4::jsonb WHERE id=$1 AND owner_id=$2 AND status='candidate'", [message.id, ownerId, classification.score, JSON.stringify(classification.reasons)]);
+    }
+    return removed;
+}
 function isMicrosoftMailbox(value) { const domain = String(value || "").toLowerCase().split("@").pop(); return /^(?:(?:outlook|hotmail|live)\.[a-z.]+|msn\.com)$/.test(domain); }
 function normalizeMailboxPassword(emailAddress, value) { const password = String(value || "").trim(); return String(emailAddress || "").toLowerCase().endsWith("@gmail.com") ? password.replace(/\s+/g, "") : password; }
 function oauthConfigured(provider) { const prefix = provider === "google" ? "GOOGLE_MAIL" : provider === "microsoft" ? "MICROSOFT_MAIL" : ""; return Boolean(prefix && process.env[`${prefix}_CLIENT_ID`] && process.env[`${prefix}_CLIENT_SECRET`] && process.env[`${prefix}_REDIRECT_URI`]); }
