@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import ExcelJS from "exceljs";
 import PizZip from "pizzip";
 import { PDFDocument, StandardFonts } from "pdf-lib";
-import { classifyPartnerEmail, extractMissionPayload, oauthErrorMessage, parseMailboxSyncPeriod, publicMailError } from "../server/partner-email.js";
+import { classifyPartnerEmail, extractMissionPayload, inspectMailboxStructure, oauthErrorMessage, parseMailboxPage, parseMailboxSyncPeriod, publicMailError } from "../server/partner-email.js";
 import { extractPartnerDocumentText } from "../server/partner-email-document-extractor.js";
 
 const serverSource = readFileSync(new URL("../server/partner-email.js", import.meta.url), "utf8");
@@ -163,6 +163,45 @@ test("la recherche automatique des missions est une option explicite indépendan
     assert.doesNotMatch(manualSyncRoute, /auto_search_enabled/);
 });
 
+test("la boîte complète se consulte à la demande sans stockage ni déplacement du curseur de missions", () => {
+    assert.deepEqual(parseMailboxPage({}), { offset: 0, limit: 30 });
+    assert.deepEqual(parseMailboxPage({ offset: "42", limit: "500" }), { offset: 42, limit: 50 });
+    assert.deepEqual(parseMailboxPage({ offset: "-8", limit: "0" }), { offset: 0, limit: 30 });
+    const routes = serverSource.slice(serverSource.indexOf('app.get("/api/partner-email/:connectionId/inbox"'), serverSource.indexOf('app.post("/api/partner-email/:connectionId/sync"'));
+    assert.match(routes, /listLiveInbox/);
+    assert.match(routes, /readLiveMessage/);
+    assert.match(routes, /downloadLiveAttachment/);
+    assert.match(routes, /setLiveMailboxHeaders\(res\)/);
+    assert.match(routes, /X-Content-Type-Options.*nosniff/);
+    assert.doesNotMatch(routes, /INSERT INTO|last_uid|last_sync_at|saveParsedEmail|completeSync/);
+    assert.match(serverSource, /Cache-Control": "private, no-store"/);
+    assert.match(serverSource, /Pragma: "no-cache"/);
+    assert.match(appSource, /partner-email\/:connectionId\/inbox/);
+    assert.match(appSource, /Trop de consultations de la boîte mail/);
+    assert.match(serverSource, /LIVE_MAILBOX_DEFAULT_LIMIT = 30/);
+    assert.match(serverSource, /LIVE_MAILBOX_MAX_LIMIT = 50/);
+    assert.match(serverSource, /LIVE_MAILBOX_BODY_BYTES = 512 \* 1024/);
+    assert.match(serverSource, /client\.download\(String\(uid\), structure\.body\.part/);
+    assert.match(serverSource, /maxBytes: MAX_ATTACHMENT_BYTES \+ 1/);
+    const graphAttachmentDownload = serverSource.slice(serverSource.indexOf("async function downloadLiveAttachment"), serverSource.indexOf("async function graphMessageAttachments"));
+    assert.match(graphAttachmentDownload, /streamBuffer\(response\.body, MAX_ATTACHMENT_BYTES\)/);
+    assert.doesNotMatch(graphAttachmentDownload, /arrayBuffer\(\)/);
+});
+
+test("la structure IMAP sépare le corps du message des pièces téléchargées sur demande", () => {
+    const structure = inspectMailboxStructure({ type: "multipart/mixed", childNodes: [
+        { part: "1", type: "text/html", size: 400 },
+        { part: "2", type: "text/plain", size: 200 },
+        { part: "3", type: "application/pdf", size: 1200, disposition: "attachment", dispositionParameters: { filename: "mission.pdf" } }
+    ] });
+    assert.deepEqual(structure.body, { part: "2", contentType: "text/plain", size: 200 });
+    assert.deepEqual(structure.attachments, [{ part: "3", filename: "mission.pdf", contentType: "application/pdf", size: 1200 }]);
+    assert.match(emailSettingsSource, /Consulter les e-mails/);
+    assert.match(emailSettingsSource, /Lecture directe, sans copie permanente/);
+    assert.match(emailSettingsSource, /data-mailbox-page/);
+    assert.match(emailSettingsSource, /Les fichiers sont téléchargés uniquement lorsque vous cliquez dessus/);
+});
+
 test("les erreurs IMAP et SMTP attendues ne remontent pas en erreur serveur 500", () => {
     const configurationRoute = serverSource.slice(serverSource.indexOf('app.put("/api/partner-email/configuration"'), serverSource.indexOf('app.post("/api/partner-email/oauth/:provider/authorize"'));
     assert.match(configurationRoute, /throw httpError\(422, publicMailError\(error, \{ configuration: true \}\)\)/);
@@ -192,7 +231,8 @@ test("un timeout ImapFlow ne peut pas arrêter le processus Node", () => {
     assert.equal((serverSource.match(/new ImapFlow/g) || []).length, 1);
     assert.match(serverSource, /function createImapClient\(options\)/);
     assert.match(serverSource, /client\.on\("error", error => console\.warn/);
-    assert.equal((serverSource.match(/createImapClient\(/g) || []).length, 3);
+    assert.equal((serverSource.match(/createImapClient\(/g) || []).length, 4);
+    assert.match(serverSource, /async function withImapInbox/);
 });
 
 test("Missions partenaires rappelle la configuration uniquement sans boîte connectée", () => {

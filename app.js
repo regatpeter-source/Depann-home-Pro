@@ -132,6 +132,13 @@ app.use("/api/partner-email", (request, response, next) => {
 	if (isPartnerEmailOAuthCallback(request)) return next();
 	return requirePartnerEmailFeature(request, response, next);
 });
+app.use(["/api/partner-email/:connectionId/inbox", "/api/partner-email/:connectionId/messages"], rateLimit({
+	windowMs: 15 * 60 * 1000,
+	limit: 300,
+	standardHeaders: "draft-7",
+	legacyHeaders: false,
+	message: { message: "Trop de consultations de la boîte mail. Réessayez dans quelques minutes." }
+}));
 app.use("/api/clients", requireAuthentication, requireOrganizationFeature("clients"));
 const requireCalendarFeature = requireOrganizationFeature("calendar");
 const requireClientFeature = requireOrganizationFeature("clients");

@@ -20,6 +20,9 @@ const AUTO_THRESHOLD = 80;
 const CANDIDATE_THRESHOLD = 35;
 const FETCH_LIMIT = 100;
 const PERIOD_FETCH_LIMIT = 500;
+const LIVE_MAILBOX_DEFAULT_LIMIT = 30;
+const LIVE_MAILBOX_MAX_LIMIT = 50;
+const LIVE_MAILBOX_BODY_BYTES = 512 * 1024;
 const MICROSOFT_IDENTITY_SCOPES = "openid email profile offline_access User.Read";
 const MICROSOFT_MAIL_SCOPES = "Mail.Read Mail.Send";
 let scheduler = null;
@@ -124,6 +127,21 @@ export function registerPartnerEmailRoutes(app, requireAuthentication) {
         await getPool().query("INSERT INTO depannhome_partner_email_oauth_states(state_hash,owner_id,actor_id,provider,encrypted_context,expires_at) VALUES($1,$2,$3,$4,$5,NOW()+INTERVAL '10 minutes')", [hash(state), getAccountOwnerId(req), req.user.sub, provider, encryptElectronicInvoicingCredentials(context)]);
         res.json({ authorizationUrl: oauthAuthorizationUrl(provider, state, verifier) });
     }));
+    app.get("/api/partner-email/:connectionId/inbox", asyncHandler(async (req, res) => {
+        const connection = await requiredConnection(getAccountOwnerId(req), positiveId(req.params.connectionId));
+        const result = await liveMailboxOperation(connection, () => listLiveInbox(connection, parseMailboxPage(req.query)));
+        setLiveMailboxHeaders(res).json(result);
+    }));
+    app.get("/api/partner-email/:connectionId/messages/:messageRef", asyncHandler(async (req, res) => {
+        const connection = await requiredConnection(getAccountOwnerId(req), positiveId(req.params.connectionId));
+        const result = await liveMailboxOperation(connection, () => readLiveMessage(connection, decodeMailboxReference(req.params.messageRef)));
+        setLiveMailboxHeaders(res).json(result);
+    }));
+    app.get("/api/partner-email/:connectionId/messages/:messageRef/attachments/:attachmentRef", asyncHandler(async (req, res) => {
+        const connection = await requiredConnection(getAccountOwnerId(req), positiveId(req.params.connectionId));
+        const attachment = await liveMailboxOperation(connection, () => downloadLiveAttachment(connection, decodeMailboxReference(req.params.messageRef), decodeMailboxReference(req.params.attachmentRef)));
+        setLiveMailboxHeaders(res).set({ "Content-Type": attachment.contentType, "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(attachment.filename)}`, "Content-Length": String(attachment.content.length), "X-Content-Type-Options": "nosniff" }).send(attachment.content);
+    }));
     app.post("/api/partner-email/:connectionId/sync", asyncHandler(async (req, res) => res.json(await syncConnection(getAccountOwnerId(req), positiveId(req.params.connectionId), req.user.sub, parseMailboxSyncPeriod(req.body)))));
     app.patch("/api/partner-email/:connectionId/automatic-search", asyncHandler(async (req, res) => {
         const { rows } = await getPool().query("UPDATE depannhome_partner_email_connections SET auto_search_enabled=$3,updated_at=NOW() WHERE id=$1 AND owner_id=$2 RETURNING auto_search_enabled AS \"autoSearchEnabled\"", [positiveId(req.params.connectionId), getAccountOwnerId(req), Boolean(req.body?.enabled)]);
@@ -224,6 +242,134 @@ async function syncMicrosoftConnection(connection, actorId, syncPeriod) {
     }
     return completeSync(connection.id, { fetched, candidates, imported, maxUid: Number(connection.last_uid || 0), limited: search.limited, period: syncPeriod ? { from: syncPeriod.from, to: syncPeriod.to } : null }, { advanceCursor: false });
 }
+
+async function listLiveInbox(connection, page) {
+    if (connection.provider === "microsoft") {
+        const access = await mailboxAccess(connection);
+        const query = new URLSearchParams({ "$select": "id,subject,from,receivedDateTime,isRead,hasAttachments,bodyPreview", "$orderby": "receivedDateTime desc", "$top": String(page.limit + 1), "$skip": String(page.offset) });
+        const payload = await graphJson(access.graphToken, `https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages?${query}`);
+        const values = Array.isArray(payload.value) ? payload.value.filter(message => message?.id) : [];
+        return mailboxPageResult(page, values.slice(0, page.limit).map(message => ({ id: encodeMailboxReference(message.id), subject: clean(message.subject || "Sans objet", 500), from: graphAddress(message.from?.emailAddress), receivedAt: message.receivedDateTime || null, isRead: Boolean(message.isRead), hasAttachments: Boolean(message.hasAttachments), preview: clean(message.bodyPreview, 280) })), values.length > page.limit);
+    }
+    return withImapInbox(connection, async client => {
+        const total = Number(client.mailbox?.exists || 0);
+        const end = Math.max(0, total - page.offset);
+        if (!end) return mailboxPageResult(page, [], false, total);
+        const start = Math.max(1, end - page.limit + 1);
+        const messages = [];
+        // start:end désigne volontairement des numéros de séquence ; uid:true demande seulement le véritable UID dans la réponse.
+        for await (const item of client.fetch(`${start}:${end}`, { uid: true, envelope: true, flags: true, bodyStructure: true, internalDate: true })) {
+            messages.push({ id: encodeMailboxReference(item.uid), subject: clean(item.envelope?.subject || "Sans objet", 500), from: mailboxAddress(item.envelope?.from?.[0]), receivedAt: item.envelope?.date || item.internalDate || null, isRead: Boolean(item.flags?.has("\\Seen")), hasAttachments: inspectMailboxStructure(item.bodyStructure).attachments.length > 0, preview: "", sequence: Number(item.seq || 0) });
+        }
+        messages.sort((left, right) => right.sequence - left.sequence).forEach(message => delete message.sequence);
+        return mailboxPageResult(page, messages, page.offset + messages.length < total, total);
+    });
+}
+
+async function readLiveMessage(connection, messageId) {
+    if (connection.provider === "microsoft") {
+        const access = await mailboxAccess(connection);
+        const query = new URLSearchParams({ "$select": "id,subject,from,toRecipients,ccRecipients,receivedDateTime,isRead,body" });
+        const [message, attachments] = await Promise.all([
+            graphJson(access.graphToken, `https://graph.microsoft.com/v1.0/me/messages/${encodeURIComponent(messageId)}?${query}`, { headers: { Prefer: 'outlook.body-content-type="text"' } }),
+            graphMessageAttachments(access.graphToken, messageId)
+        ]);
+        const body = limitMailboxBody(message.body?.content);
+        return { id: encodeMailboxReference(messageId), subject: clean(message.subject || "Sans objet", 500), from: graphAddress(message.from?.emailAddress), to: (message.toRecipients || []).map(item => graphAddress(item.emailAddress)).filter(item => item.address), cc: (message.ccRecipients || []).map(item => graphAddress(item.emailAddress)).filter(item => item.address), receivedAt: message.receivedDateTime || null, isRead: Boolean(message.isRead), bodyText: body.text, bodyTruncated: body.truncated, attachments: attachments.map(attachment => liveAttachmentMetadata(attachment, attachment.id)) };
+    }
+    const uid = mailboxUid(messageId);
+    return withImapInbox(connection, async client => {
+        const message = await client.fetchOne(String(uid), { uid: true, envelope: true, flags: true, bodyStructure: true, internalDate: true }, { uid: true });
+        if (!message) throw httpError(404, "E-mail introuvable dans la boîte de réception.");
+        const structure = inspectMailboxStructure(message.bodyStructure);
+        let bodyText = "", bodyTruncated = false;
+        if (structure.body?.part) {
+            const downloaded = await client.download(String(uid), structure.body.part, { uid: true, maxBytes: LIVE_MAILBOX_BODY_BYTES });
+            const content = await streamBuffer(downloaded.content, LIVE_MAILBOX_BODY_BYTES);
+            const body = limitMailboxBody(structure.body.contentType === "text/html" ? htmlToText(content.toString("utf8")) : content.toString("utf8"));
+            bodyText = body.text; bodyTruncated = body.truncated || Number(downloaded.meta?.expectedSize || structure.body.size || 0) > content.length;
+        }
+        return { id: encodeMailboxReference(uid), subject: clean(message.envelope?.subject || "Sans objet", 500), from: mailboxAddress(message.envelope?.from?.[0]), to: (message.envelope?.to || []).map(mailboxAddress).filter(item => item.address), cc: (message.envelope?.cc || []).map(mailboxAddress).filter(item => item.address), receivedAt: message.envelope?.date || message.internalDate || null, isRead: Boolean(message.flags?.has("\\Seen")), bodyText, bodyTruncated, attachments: structure.attachments.map(attachment => liveAttachmentMetadata(attachment, attachment.part)) };
+    });
+}
+
+async function downloadLiveAttachment(connection, messageId, attachmentId) {
+    if (connection.provider === "microsoft") {
+        const access = await mailboxAccess(connection);
+        const metadata = await graphJson(access.graphToken, `https://graph.microsoft.com/v1.0/me/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(attachmentId)}?$select=id,name,contentType,size,isInline`);
+        const safe = validatedLiveAttachment(metadata);
+        const response = await graphFetch(access.graphToken, `https://graph.microsoft.com/v1.0/me/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(attachmentId)}/$value`, { headers: { Accept: safe.contentType } });
+        const declaredSize = Number(response.headers.get("content-length") || 0);
+        if (declaredSize > MAX_ATTACHMENT_BYTES) throw httpError(413, "Cette pièce jointe dépasse la limite de 5 Mo.");
+        const content = await streamBuffer(response.body, MAX_ATTACHMENT_BYTES);
+        if (!content.length) throw httpError(404, "Pièce jointe vide ou introuvable.");
+        return { ...safe, content };
+    }
+    const uid = mailboxUid(messageId);
+    return withImapInbox(connection, async client => {
+        const message = await client.fetchOne(String(uid), { uid: true, bodyStructure: true }, { uid: true });
+        if (!message) throw httpError(404, "E-mail introuvable dans la boîte de réception.");
+        const attachment = inspectMailboxStructure(message.bodyStructure).attachments.find(item => item.part === attachmentId);
+        if (!attachment) throw httpError(404, "Pièce jointe introuvable.");
+        const safe = validatedLiveAttachment(attachment);
+        const downloaded = await client.download(String(uid), attachment.part, { uid: true, maxBytes: MAX_ATTACHMENT_BYTES + 1 });
+        const content = await streamBuffer(downloaded.content, MAX_ATTACHMENT_BYTES);
+        if (!content.length) throw httpError(404, "Pièce jointe vide ou introuvable.");
+        return { ...safe, content };
+    });
+}
+
+async function graphMessageAttachments(accessToken, messageId) {
+    const query = new URLSearchParams({ "$select": "id,name,contentType,size,isInline", "$top": "100" });
+    let url = `https://graph.microsoft.com/v1.0/me/messages/${encodeURIComponent(messageId)}/attachments?${query}`;
+    const attachments = [];
+    while (url && attachments.length < 100) {
+        const payload = await graphJson(accessToken, url);
+        attachments.push(...(Array.isArray(payload.value) ? payload.value.filter(item => item?.id) : []));
+        url = typeof payload["@odata.nextLink"] === "string" && payload["@odata.nextLink"].startsWith("https://graph.microsoft.com/") ? payload["@odata.nextLink"] : "";
+    }
+    return attachments.slice(0, 100);
+}
+
+async function withImapInbox(connection, operation) {
+    const access = await mailboxAccess(connection);
+    const client = createImapClient({ host: access.imap.host, port: access.imap.port, secure: access.imap.secure, auth: access.auth, disableAutoIdle: true });
+    await client.connect(); const lock = await client.getMailboxLock("INBOX");
+    try { return await operation(client); }
+    finally { lock.release(); await client.logout().catch(() => {}); }
+}
+
+export function inspectMailboxStructure(root) {
+    const nodes = [];
+    const visit = node => { if (!node) return; nodes.push(node); (node.childNodes || []).forEach(visit); };
+    visit(root);
+    const attachments = nodes.filter(node => node.part && node.type && (node.disposition === "attachment" || node.dispositionParameters?.filename || node.parameters?.name)).map(node => ({ part: String(node.part), filename: safeFilename(node.dispositionParameters?.filename || node.parameters?.name || "document"), contentType: String(node.type || "application/octet-stream").toLowerCase(), size: Math.max(0, Number(node.size) || 0) }));
+    const bodyNodes = nodes.filter(node => /^text\/(?:plain|html)$/i.test(node.type || "") && node.disposition !== "attachment" && !node.dispositionParameters?.filename && !node.parameters?.name);
+    const selected = bodyNodes.find(node => String(node.type).toLowerCase() === "text/plain") || bodyNodes.find(node => String(node.type).toLowerCase() === "text/html");
+    return { body: selected ? { part: String(selected.part || "1"), contentType: String(selected.type).toLowerCase(), size: Math.max(0, Number(selected.size) || 0) } : null, attachments };
+}
+
+export function parseMailboxPage(value) {
+    const offset = Math.max(0, Math.min(10000, Number.parseInt(value?.offset, 10) || 0));
+    const limit = Math.max(1, Math.min(LIVE_MAILBOX_MAX_LIMIT, Number.parseInt(value?.limit, 10) || LIVE_MAILBOX_DEFAULT_LIMIT));
+    return { offset, limit };
+}
+
+function mailboxPageResult(page, messages, hasMore, total = null) { return { messages, offset: page.offset, limit: page.limit, hasMore: Boolean(hasMore), hasPrevious: page.offset > 0, total }; }
+function mailboxAddress(value) { return { name: clean(value?.name, 160), address: clean(value?.address, 254).toLowerCase() }; }
+function graphAddress(value) { return mailboxAddress(value); }
+function liveAttachmentMetadata(value, reference) { const metadata = { filename: safeFilename(value.name || value.filename), contentType: String(value.contentType || "application/octet-stream").toLowerCase(), size: Math.max(0, Number(value.size) || 0) }; return { ...metadata, id: encodeMailboxReference(reference), downloadable: ALLOWED_MIME.has(metadata.contentType) && metadata.size > 0 && metadata.size <= MAX_ATTACHMENT_BYTES }; }
+function validatedLiveAttachment(value) { const metadata = liveAttachmentMetadata(value, value.id || value.part); if (!ALLOWED_MIME.has(metadata.contentType)) throw httpError(415, "Le format de cette pièce jointe n’est pas autorisé."); if (!metadata.size || metadata.size > MAX_ATTACHMENT_BYTES) throw httpError(413, "Cette pièce jointe dépasse la limite de 5 Mo."); return metadata; }
+function limitMailboxBody(value) { const text = String(value || "").replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, ""); return { text: text.slice(0, LIVE_MAILBOX_BODY_BYTES), truncated: text.length > LIVE_MAILBOX_BODY_BYTES }; }
+function htmlToText(value) { return String(value || "").replace(/<\s*(?:script|style)[^>]*>[\s\S]*?<\s*\/\s*(?:script|style)\s*>/gi, " ").replace(/<\s*br\s*\/?>/gi, "\n").replace(/<\s*\/\s*(?:p|div|li|tr|h[1-6])\s*>/gi, "\n").replace(/<[^>]+>/g, " ").replace(/&nbsp;/gi, " ").replace(/&amp;/gi, "&").replace(/&lt;/gi, "<").replace(/&gt;/gi, ">").replace(/&quot;/gi, '"').replace(/&#39;|&apos;/gi, "'").replace(/&#x([0-9a-f]+);/gi, (match, value) => htmlCodePoint(value, 16, match)).replace(/&#(\d+);/g, (match, value) => htmlCodePoint(value, 10, match)).replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim(); }
+function htmlCodePoint(value, radix, fallback) { const code = Number.parseInt(value, radix); try { return Number.isSafeInteger(code) && code >= 0 && code <= 0x10FFFF ? String.fromCodePoint(code) : fallback; } catch { return fallback; } }
+async function streamBuffer(stream, maxBytes) { const chunks = []; let size = 0; if (!stream) return Buffer.alloc(0); for await (const chunk of stream) { const buffer = Buffer.from(chunk); size += buffer.length; if (size > maxBytes) { stream.destroy?.(); await stream.cancel?.().catch(() => {}); throw httpError(413, "Le contenu demandé dépasse la limite autorisée."); } chunks.push(buffer); } return Buffer.concat(chunks, size); }
+function encodeMailboxReference(value) { return Buffer.from(String(value || ""), "utf8").toString("base64url"); }
+function decodeMailboxReference(value) { const token = String(value || ""); if (!token || token.length > 2000 || !/^[A-Za-z0-9_-]+$/.test(token)) throw httpError(400, "Référence d’e-mail invalide."); const decoded = Buffer.from(token, "base64url").toString("utf8"); if (!decoded || decoded.length > 1000) throw httpError(400, "Référence d’e-mail invalide."); return decoded; }
+function mailboxUid(value) { const uid = positiveId(value); if (!uid) throw httpError(400, "Référence d’e-mail invalide."); return uid; }
+async function requiredConnection(ownerId, connectionId) { const connection = await findConnection(ownerId, connectionId); if (!connection) throw httpError(404, "Boîte professionnelle introuvable."); return connection; }
+async function liveMailboxOperation(connection, operation) { try { return await operation(); } catch (error) { if (error?.status) throw error; console.warn("[partner-email] live mailbox rejected", mailErrorLog(error, connection.provider)); throw httpError(502, publicMailError(error, { provider: connection.provider })); } }
+function setLiveMailboxHeaders(response) { return response.set({ "Cache-Control": "private, no-store", Pragma: "no-cache", Expires: "0" }); }
 
 async function saveParsedEmail(connection, uid, parsed) {
     const from = parsed.from?.value?.[0] || {}; const messageId = clean(parsed.messageId || `uid-${uid}@${connection.email_address}`, 500);
