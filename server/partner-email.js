@@ -473,17 +473,16 @@ export function extractMissionPayload(email, documentText = "") {
     let name = emailFields.insuredName || documentFields.insuredName || value("name");
     if (firstName && lastName && (!name || name.toLowerCase() === lastName.toLowerCase())) name = `${firstName} ${lastName}`;
     name ||= [firstName, lastName].filter(Boolean).join(" ") || "Client à identifier";
-    const postalCode = value("postalCode");
-    let address = value("address");
-    if (postalCode && address && !address.includes(postalCode)) address = `${address}, ${postalCode}`;
+    const postalAddress = normalizeMissionPostalAddress(value("address"), value("postalCode"), value("city"));
+    const missionNumber = value("missionNumber") || `MAIL-${email.id}`;
     return {
         id: `email-${email.id}`,
-        missionNumber: value("missionNumber") || `MAIL-${email.id}`,
-        partnerReference: clean(email.message_id, 160),
+        missionNumber,
+        partnerReference: missionNumber,
         subject: email.subject,
         interventionType: value("interventionType") || clean(email.subject, 160),
         description: clean(email.body_text, 2000),
-        client: { name, firstName, lastName, phone: value("phone"), email: value("email"), address, city: value("city") },
+        client: { name, firstName, lastName, phone: value("phone"), email: value("email"), address: postalAddress.address, postalCode: postalAddress.postalCode, city: postalAddress.city },
         claimNumber: value("claimNumber"),
         insurance: value("insurance"),
         expert: value("expert"),
@@ -496,18 +495,18 @@ export function extractMissionPayload(email, documentText = "") {
 }
 
 function extractMissionFields(text) {
-    const field = pattern => clean(pattern.exec(String(text || ""))?.[1], 255);
+    const field = pattern => trimFollowingMissionField(clean(pattern.exec(String(text || ""))?.[1], 255));
     return {
-        insuredName: field(/^(?:assuré(?:e)?|nom(?:\s+et\s+pr[ée]nom)?\s+(?:de\s+l['’])?assuré(?:e)?)\s*[:\-]\s*([^\n\r]+)/im),
-        name: field(/^(?:client|bénéficiaire|occupant|nom(?:\s+(?:et\s+pr[ée]nom|du\s+client))?)\s*[:\-]\s*([^\n\r]+)/im),
-        firstName: field(/^pr[ée]nom(?:\s+(?:de\s+l['’])?assuré(?:e)?)?\s*[:\-]\s*([^\n\r]+)/im),
-        lastName: field(/^nom(?:\s+de\s+famille)?(?:\s+(?:de\s+l['’])?assuré(?:e)?)?\s*[:\-]\s*([^\n\r]+)/im),
-        phone: field(/^(?:t[ée]l(?:[ée]phone)?|portable|mobile)\s*[:\-]\s*([+\d .()\/-]{8,})/im),
-        email: field(/^(?:e-?mail|courriel)\s*[:\-]\s*([^\s<>]+@[^\s<>]+)/im).replace(/[.,;:)]+$/, ""),
-        address: field(/^(?:adresse(?:\s+(?:client|du\s+client))?|lieu\s+d['’]intervention|adresse\s+d['’]intervention)\s*[:\-]\s*([^\n\r]+)/im),
-        postalCode: field(/^(?:code\s+postal|cp)\s*[:\-]\s*(\d{5})/im),
-        city: field(/^(?:ville|commune)\s*[:\-]\s*([^\n\r]+)/im),
-        missionNumber: field(/^(?:mission|dossier|référence|ref)\s*(?:n°|no|numéro)?\s*[:#\-]?\s*([A-Z0-9][A-Z0-9/_-]{2,})/im),
+        insuredName: field(/(?:^|\s)(?:assuré(?:e)?|nom(?:\s+et\s+pr[ée]nom)?\s+(?:de\s+l['’])?assuré(?:e)?)\s*[:\-]\s*([^\n\r]+)/im),
+        name: field(/(?:^|\s)(?:client|bénéficiaire|occupant|nom(?:\s+(?:et\s+pr[ée]nom|du\s+client))?)\s*[:\-]\s*([^\n\r]+)/im),
+        firstName: field(/(?:^|\s)pr[ée]nom(?:\s+(?:de\s+l['’])?assuré(?:e)?)?\s*[:\-]\s*([^\n\r]+)/im),
+        lastName: field(/(?:^|\s)nom(?:\s+de\s+famille)?(?:\s+(?:de\s+l['’])?assuré(?:e)?)?\s*[:\-]\s*([^\n\r]+)/im),
+        phone: field(/(?:^|\s)(?:t[ée]l(?:[ée]phone)?|portable|mobile)\s*[:\-]\s*([+\d .()\/-]{8,})/im),
+        email: field(/(?:^|\s)(?:e-?mail|courriel)\s*[:\-]\s*([^\s<>]+@[^\s<>]+)/im).replace(/[.,;:)]+$/, ""),
+        address: field(/(?:^|\s)(?:adresse(?:\s+(?:client|du\s+client))?|lieu\s+d['’]intervention|adresse\s+d['’]intervention)\s*[:\-]\s*([^\n\r]+)/im),
+        postalCode: field(/(?:^|\s)(?:code\s+postal|cp)\s*[:\-]\s*(\d{5})/im),
+        city: field(/(?:^|\s)(?:ville|commune)\s*[:\-]\s*([^\n\r]+)/im),
+        missionNumber: field(/^(?:mission|dossier|référence|ref)\s*(?:(?:n°|no|numéro)\s*[:#\-]?|[:#\-]\s*)([A-Z0-9][A-Z0-9/_-]{2,})/im),
         interventionType: field(/^(?:intervention|objet|nature|type\s+d['’]intervention)\s*[:\-]\s*([^\n\r]+)/im),
         claimNumber: field(/^(?:sinistre|n°\s+de\s+sinistre)\s*(?:n°|no|numéro)?\s*[:#\-]?\s*([A-Z0-9][A-Z0-9/_-]*)/im),
         insurance: field(/^(?:assurance|assureur|compagnie)\s*[:\-]\s*([^\n\r]+)/im),
@@ -515,6 +514,15 @@ function extractMissionFields(text) {
         manager: field(/^(?:gestionnaire|chargé(?:e)?\s+de\s+dossier)\s*[:\-]\s*([^\n\r]+)/im),
         principal: field(/^(?:donneur\s+d['’]ordre|mandant)\s*[:\-]\s*([^\n\r]+)/im)
     };
+}
+
+function trimFollowingMissionField(value) { return clean(String(value || "").split(/\s+(?=(?:assuré(?:e)?|client|bénéficiaire|occupant|nom|pr[ée]nom|adresse|lieu\s+d['’]intervention|t[ée]l(?:[ée]phone)?|portable|mobile|e-?mail|courriel|code\s+postal|cp|ville|commune|mission|dossier|référence|ref|intervention|objet|nature|sinistre|assurance|assureur|compagnie|expert|gestionnaire|donneur\s+d['’]ordre|mandant)\s*[:#\-])/i)[0], 255); }
+export function normalizeMissionPostalAddress(addressValue, postalCodeValue = "", cityValue = "") {
+    let address = clean(addressValue, 255); let postalCode = clean(postalCodeValue, 10); let city = clean(cityValue, 100);
+    const inline = /^(.*?)[,\s]+(\d{5})\s+([^,;]+)$/i.exec(address);
+    if (inline) { address = clean(inline[1], 255); postalCode ||= inline[2]; city ||= clean(inline[3], 100); }
+    if (postalCode) address = clean(address.replace(new RegExp(`[,\\s]+${postalCode}(?:\\s+${escapeRegExp(city)})?$`, "i"), ""), 255);
+    return { address: [address, postalCode].filter(Boolean).join(", "), postalCode, city };
 }
 
 export async function notifyEmailMissionStatus(ownerId, missionId, status, details = {}) {
@@ -701,6 +709,7 @@ function port(value, fallback) { const number = Number(value || fallback); retur
 function isoDate(value) { const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value || "")); if (!match) return null; const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]))); return date.getUTCFullYear() === Number(match[1]) && date.getUTCMonth() === Number(match[2]) - 1 && date.getUTCDate() === Number(match[3]) ? date : null; }
 function positiveId(value) { const id = Number(value); return Number.isSafeInteger(id) && id > 0 ? id : 0; }
 function safeFilename(value) { return String(value || "document").replace(/^.*[\\/]/, "").replace(/[\r\n]/g, " ").slice(0, 255) || "document"; }
+function escapeRegExp(value) { return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
 function clean(value, max) { return String(value || "").replace(/\s+/g, " ").trim().slice(0, max); }
 function hash(value) { return crypto.createHash("sha256").update(String(value || "")).digest("hex"); }
 function escapeHtml(value) { return String(value || "").replace(/[&<>"']/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]); }

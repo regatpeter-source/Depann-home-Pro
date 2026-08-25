@@ -4,7 +4,8 @@ import { readFileSync } from "node:fs";
 import ExcelJS from "exceljs";
 import PizZip from "pizzip";
 import { PDFDocument, StandardFonts } from "pdf-lib";
-import { classifyPartnerEmail, extractMissionPayload, inspectMailboxStructure, mailboxReplyBody, oauthErrorMessage, parseMailboxPage, parseMailboxSyncPeriod, parseMicrosoftRetryAfter, publicMailError, replySubject, sanitizeRequiredKeywords, senderMatchesAllowed, stripQuotedEmailText } from "../server/partner-email.js";
+import { classifyPartnerEmail, extractMissionPayload, inspectMailboxStructure, mailboxReplyBody, normalizeMissionPostalAddress, oauthErrorMessage, parseMailboxPage, parseMailboxSyncPeriod, parseMicrosoftRetryAfter, publicMailError, replySubject, sanitizeRequiredKeywords, senderMatchesAllowed, stripQuotedEmailText } from "../server/partner-email.js";
+import { mapPayload, readableEmailMissionReference } from "../server/partner-missions.js";
 import { extractPartnerDocumentText } from "../server/partner-email-document-extractor.js";
 
 const serverSource = readFileSync(new URL("../server/partner-email.js", import.meta.url), "utf8");
@@ -419,6 +420,42 @@ test("le mail garde la priorité et les documents complètent les champs manquan
     assert.equal(payload.client.city, "Nantes");
     assert.equal(payload.claimNumber, "SIN-42");
     assert.equal(payload.insurance, "Exemple Assurance");
+});
+
+test("les coordonnées inline créent une fiche client complète avec une référence lisible", () => {
+    const payload = extractMissionPayload({
+        id: 40,
+        subject: "Mission intervention IMH",
+        body_text: "Assuré : M. le Charue Adresse : 17 allée des fleurs 44420 Herbignac Tel : 0777767512",
+        sender_name: "Peter Regat",
+        message_id: "<CA+MfGwK_technique@mail.gmail.com>"
+    });
+    assert.equal(payload.client.name, "M. le Charue");
+    assert.equal(payload.client.address, "17 allée des fleurs, 44420");
+    assert.equal(payload.client.postalCode, "44420");
+    assert.equal(payload.client.city, "Herbignac");
+    assert.equal(payload.client.phone, "0777767512");
+    assert.equal(payload.missionNumber, "MAIL-40");
+    assert.equal(payload.partnerReference, "MAIL-40");
+    const mapped = mapPayload(payload);
+    assert.equal(mapped.address, "17 allée des fleurs, 44420");
+    assert.equal(mapped.interventionAddress, "17 allée des fleurs, 44420");
+    assert.equal(mapped.postalCode, "44420");
+    assert.equal(mapped.city, "Herbignac");
+    assert.equal(mapped.clientName, "M. le Charue");
+    assert.equal(readableEmailMissionReference(payload, 40), "MAIL-40");
+    assert.equal(readableEmailMissionReference({ id: "email-40", missionNumber: "intervention", partnerReference: "<technical@gmail.com>" }, 40), "MAIL-40");
+    assert.deepEqual(normalizeMissionPostalAddress("17 allée des fleurs 44420 Herbignac"), { address: "17 allée des fleurs, 44420", postalCode: "44420", city: "Herbignac" });
+});
+
+test("les anciennes missions e-mail sont réparées avec leur fiche client liée", () => {
+    assert.match(missionSource, /repairImportedEmailMissionClients/);
+    assert.match(missionSource, /source_data#>>'\{client,address\}'/);
+    assert.match(missionSource, /partner_reference ~ '\^<\.\*@\.\*>\$'/);
+    assert.match(missionSource, /mapped_data=\$4::jsonb,client_id=\$5/);
+    assert.match(missionSource, /client_created" : "client_matched/);
+    assert.match(emailSettingsSource, /synchronizeClients\(\{ forceFull: true \}\)/);
+    assert.match(emailSettingsSource, /depannhome:partner-client-provisioned/);
 });
 
 test("l’assuré est toujours l’identité de la fiche client", () => {

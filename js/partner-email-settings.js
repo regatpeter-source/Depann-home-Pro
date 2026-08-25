@@ -1,4 +1,5 @@
 import { escapeHtml } from "./utils.js?v=44";
+import { synchronizeClients } from "./client-sync.js?v=125";
 
 let activeSettingsCard = null;
 const mailboxSearchDate = new Date();
@@ -253,6 +254,10 @@ async function processEmailCandidateSelection(card, connectionId, results, butto
     const result = await api(`/api/partner-email/candidates/${action}`, { method: "POST", body: JSON.stringify({ ids }) });
     button.disabled = false;
     if (!result.ok) { feedback.textContent = result.message; feedback.classList.add("error"); return; }
+    if (action === "import") {
+        await synchronizeClients({ forceFull: true }).catch(() => {});
+        (result.data?.results || []).forEach(item => { if (item?.clientId) window.dispatchEvent(new CustomEvent("depannhome:partner-client-provisioned", { detail: { clientId: item.clientId } })); });
+    }
     dispatchMailboxChanged(action === "import" ? "candidate-import" : "candidate-ignore", { connectionId, ids });
     await refreshEmailSearchResults(card, connectionId);
     const row = card.querySelector(`[data-email-connection-card="${connectionId}"]`);

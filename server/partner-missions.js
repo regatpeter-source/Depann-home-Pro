@@ -253,11 +253,13 @@ export async function ingestEmailPartnerMission({ ownerId, connectionId, emailId
         const matchedClientId = mission.client_id || await matchEmailMissionClient(database, ownerId, mapped);
         const client = await provisionPartnerMissionClient(database, ownerId, mapped, { user: { sub: actorId, fullName: "Import boîte mail" } }, matchedClientId);
         await database.query("UPDATE depannhome_partner_missions SET client_id=$3,updated_at=NOW() WHERE id=$1 AND owner_id=$2", [mission.id, ownerId, client.id]);
-        await writeHistory(database, ownerId, mission.id, "pending_validation", mission.inserted ? "email_received" : "email_updated", actorId, "email", { emailId, connectionId, clientId: client.id }, "");
+        await writeHistory(database, ownerId, mission.id, "pending_validation", mission.inserted ? "email_received" : "email_updated", actorId, "email", { emailId, connectionId, clientId: client.id, clientCreated: client.created }, "");
         await database.query("COMMIT");
+        await traceCommittedPartnerClient(ownerId, client.id, { flow: "email_import", missionId: mission.id });
         await recordMissionDialogueEvent({ ownerId, missionId: mission.id, status: "received", action: "received", details: { summary: `Mission détectée dans la boîte professionnelle · ${clean(payload.subject, 300)}` }, actorName: clean(partnerName, 160) || "Boîte mail professionnelle" });
+        if (mission.inserted) await recordMissionDialogueEvent({ ownerId, missionId: mission.id, status: "pending_validation", action: client.created ? "client_created" : "client_matched", details: { clientId: client.id }, actorName: "Import boîte mail" });
         if (mission.inserted) await notifyReceptionAdmins(ownerId, mission.id, mapped, client.created, true);
-        return { missionId: mission.id, clientId: client.id, created: Boolean(mission.inserted) };
+        return { missionId: mission.id, clientId: client.id, clientCreated: client.created, created: Boolean(mission.inserted) };
     } catch (error) {
         await database.query("ROLLBACK");
         throw error;
@@ -312,6 +314,7 @@ async function reconcileMissionClients(ownerId, request, internalNetworkOnly = f
     const database = getPool(); const connection = await database.connect();
     try {
         await connection.query("BEGIN");
+        await repairImportedEmailMissionClients(connection, ownerId, request);
         const { rows: missions } = await connection.query(`
             SELECT mission.id,mission.client_id,mission.mapped_data
             FROM depannhome_partner_missions mission
@@ -333,6 +336,30 @@ async function reconcileMissionClients(ownerId, request, internalNetworkOnly = f
         throw error;
     } finally { connection.release(); }
 }
+
+async function repairImportedEmailMissionClients(connection, ownerId, request) {
+    const { rows } = await connection.query(`
+        SELECT mission.id,mission.client_id,mission.external_mission_id,mission.partner_reference,mission.source_data,mission.mapped_data
+        FROM depannhome_partner_missions mission
+        JOIN depannhome_partner_intakes intake ON intake.id=mission.intake_id
+        WHERE mission.owner_id=$1 AND mission.deleted_at IS NULL AND intake.partner_key LIKE 'email-%'
+            AND ((COALESCE(mission.mapped_data->>'address','')='' AND COALESCE(mission.source_data#>>'{client,address}','')<>'')
+                OR mission.partner_reference ~ '^<.*@.*>$'
+                OR LOWER(mission.external_mission_id) IN ('mission','intervention','dossier'))
+        ORDER BY mission.id
+        LIMIT 100
+        FOR UPDATE OF mission
+    `, [ownerId]);
+    for (const mission of rows) {
+        const mapped = mapPayload(mission.source_data || {});
+        const reference = readableEmailMissionReference(mission.source_data, mission.id);
+        mapped.externalMissionId = reference; mapped.partnerReference = reference;
+        const matchedClientId = mission.client_id || await matchEmailMissionClient(connection, ownerId, mapped);
+        const client = await provisionPartnerMissionClient(connection, ownerId, mapped, request, matchedClientId);
+        await connection.query("UPDATE depannhome_partner_missions SET external_mission_id=$3,partner_reference=$3,mapped_data=$4::jsonb,client_id=$5,updated_at=NOW() WHERE id=$1 AND owner_id=$2", [mission.id, ownerId, reference, JSON.stringify(mapped), client.id]);
+        await connection.query("UPDATE depannhome_calendar_events SET client_id=$3,client_name=$4,location=$5,updated_at=NOW() WHERE owner_id=$1 AND partner_mission_id=$2", [ownerId, mission.id, client.id, mapped.clientName, mapped.interventionAddress || mapped.address]);
+    }
+}
 async function intakes(ownerId) { const { rows } = await getPool().query("SELECT id,partner_key AS \"partnerKey\",partner_name AS \"partnerName\",callback_url AS \"callbackUrl\",assignment_mode AS \"assignmentMode\",rules,enabled,created_at AS \"createdAt\",updated_at AS \"updatedAt\" FROM depannhome_partner_intakes WHERE owner_id=$1 AND is_sandbox=FALSE AND partner_key NOT LIKE 'email-%' ORDER BY partner_name", [ownerId]); return rows; }
 async function findMission(ownerId, id, request = null) { if (!id) return null; const { rows } = await getPool().query("SELECT mission.*, intake.partner_name AS \"partnerName\", intake.partner_key AS \"partnerKey\", intake.assignment_mode AS \"assignmentMode\", intake.is_sandbox AS \"isSandbox\", technician.full_name AS \"technicianName\" FROM depannhome_partner_missions mission JOIN depannhome_partner_intakes intake ON intake.id=mission.intake_id LEFT JOIN depannhome_users technician ON technician.id=mission.assigned_technician_id WHERE mission.id=$1 AND mission.owner_id=$2 AND intake.is_sandbox=FALSE", [id, ownerId]); return rows[0] ? publicMission(rows[0]) : null; }
 async function lockMission(connection, ownerId, id) { const { rows } = await connection.query("SELECT mission.*, intake.assignment_mode AS \"assignmentMode\" FROM depannhome_partner_missions mission JOIN depannhome_partner_intakes intake ON intake.id=mission.intake_id WHERE mission.id=$1 AND mission.owner_id=$2 AND intake.is_sandbox=FALSE FOR UPDATE", [id, ownerId]); return rows[0] ? { ...rows[0], mappedData: rows[0].mapped_data || {} } : null; }
@@ -350,7 +377,7 @@ export async function provisionPartnerMissionClient(connection, ownerId, data, r
     const old = row?.client_data || {};
     const attachments = mergeAttachments(old.attachments, data.attachments);
     const activity = mergePartnerMissionActivityHistory(old.activityHistory, data, req, now);
-    const client = { ...old, id: clientId, isSandbox: Boolean(data.isSandbox || old.isSandbox), name: data.clientName || old.name || "Client partenaire", firstName: data.firstName || old.firstName || "", lastName: data.lastName || old.lastName || "", address: data.address || old.address || "", interventionAddress: data.interventionAddress || old.interventionAddress || data.address || "", city: data.city || old.city || "", phone: data.phone || old.phone || "", email: data.email || old.email || "", insurance: data.insurance || old.insurance || "", principal: data.principal || old.principal || "", claimNumber: data.claimNumber || old.claimNumber || "", expert: data.expert || old.expert || "", manager: data.manager || old.manager || "", gps: data.gps || old.gps || "", notes: mergeText(old.notes, data.description, data.comments), attachments, activityHistory: activity, createdAt: old.createdAt || now, updatedAt: now };
+    const client = { ...old, id: clientId, isSandbox: Boolean(data.isSandbox || old.isSandbox), name: data.clientName || old.name || "Client partenaire", firstName: data.firstName || old.firstName || "", lastName: data.lastName || old.lastName || "", address: data.address || old.address || "", interventionAddress: data.interventionAddress || old.interventionAddress || data.address || "", postalCode: data.postalCode || old.postalCode || "", city: data.city || old.city || "", phone: data.phone || old.phone || "", email: data.email || old.email || "", insurance: data.insurance || old.insurance || "", principal: data.principal || old.principal || "", claimNumber: data.claimNumber || old.claimNumber || "", expert: data.expert || old.expert || "", manager: data.manager || old.manager || "", gps: data.gps || old.gps || "", notes: mergeText(old.notes, data.description, data.comments), attachments, activityHistory: activity, createdAt: old.createdAt || now, updatedAt: now };
     const saved = await connection.query("INSERT INTO depannhome_clients(owner_id,client_id,client_data,updated_at) VALUES($1,$2,$3::jsonb,NOW()) ON CONFLICT(owner_id,client_id) DO UPDATE SET client_data=EXCLUDED.client_data,updated_at=NOW() RETURNING client_id", [ownerId, clientId, JSON.stringify(client)]);
     if (saved.rows[0]?.client_id !== clientId) throw new Error("La fiche client partenaire n’a pas pu être enregistrée.");
     tracePartnerClient("upsert_succeeded", { ownerId, clientId, operation: row ? "update_existing_match" : "insert_new", rowCount: saved.rowCount });
@@ -388,7 +415,33 @@ async function enqueue(connection, ownerId, missionId, type, payload) { await co
 async function deliverOutbox(ownerId, sandboxOnly = false) { const { rows } = await getPool().query(`SELECT outbox.*, intake.callback_url AS "callbackUrl", mission.external_mission_id AS "externalMissionId" FROM depannhome_partner_mission_outbox outbox JOIN depannhome_partner_missions mission ON mission.id=outbox.mission_id JOIN depannhome_partner_intakes intake ON intake.id=mission.intake_id JOIN depannhome_users owner ON owner.id=outbox.owner_id WHERE outbox.owner_id=$1 AND owner.is_active=TRUE AND owner.is_archived=FALSE AND intake.is_sandbox=$2 AND outbox.status IN ('pending','failed') AND outbox.next_attempt_at<=NOW() ORDER BY outbox.created_at LIMIT 30`, [ownerId, sandboxOnly]); let delivered = 0; for (const item of rows) { if (!item.callbackUrl) { await getPool().query("UPDATE depannhome_partner_mission_outbox SET status='skipped',last_error='Aucune URL de retour configurée.' WHERE id=$1", [item.id]); continue; } try { const response = await fetch(item.callbackUrl, { method: "POST", headers: { "Content-Type": "application/json", "X-DepannHome-Event": item.event_type }, body: JSON.stringify({ event: item.event_type, missionId: item.externalMissionId, ...item.payload }), signal: AbortSignal.timeout(15000) }); if (!response.ok) throw new Error(`HTTP ${response.status}`); await getPool().query("UPDATE depannhome_partner_mission_outbox SET status='delivered',attempts=attempts+1,delivered_at=NOW(),last_error='' WHERE id=$1", [item.id]); delivered += 1; } catch (error) { const attempts = item.attempts + 1, status = attempts >= MAX_RETRY_ATTEMPTS ? "failed" : "pending"; await getPool().query("UPDATE depannhome_partner_mission_outbox SET status=$2,attempts=$3,last_error=$4,next_attempt_at=NOW()+($5::text || ' minutes')::interval WHERE id=$1", [item.id, status, attempts, clean(error.message, 1000), String(Math.min(60, 2 ** attempts))]); } } return { processed: rows.length, delivered }; }
 export async function deliverPartnerMissionOutbox(ownerId, options = {}) { return deliverOutbox(ownerId, options.sandboxOnly === true); }
 async function writeHistory(connection, ownerId, missionId, status, action, actorId, actorRole, details, ip) { await connection.query("INSERT INTO depannhome_partner_mission_history(owner_id,mission_id,status,action,actor_id,actor_role,details,ip_address) VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,$8)", [ownerId, missionId, status, action, actorId || null, actorRole || "", JSON.stringify(details || {}), String(ip || "").slice(0, 100)]); }
-function mapPayload(value) { const client = value.client && typeof value.client === "object" ? value.client : value.customer && typeof value.customer === "object" ? value.customer : {}; const address = value.address && typeof value.address === "object" ? value.address : {}; const source = { ...value, ...client }; const date = validDate(value.scheduledDate || value.date || value.requestedWindow?.date || ""); const priority = priorityOf(value.urgency || value.priority); const firstName = clean(source.firstName || source.firstname || source.prenom || source["prénom"], 100); const lastName = clean(source.lastName || source.lastname || source.nom, 100); return { externalMissionId: clean(value.missionNumber || value.missionId || value.id || value.reference, 160), partnerReference: clean(value.partnerReference || value.caseNumber || value.reference, 160), date, startTime: validTime(value.startTime || value.requestedWindow?.startTime), endTime: validTime(value.endTime || value.requestedWindow?.endTime), priority, interventionType: clean(value.interventionType || value.type || value.serviceType, 160), clientName: clean(source.name || source.fullName || [firstName, lastName].filter(Boolean).join(" "), 160), firstName, lastName, address: clean(typeof value.address === "string" ? value.address : address.street || value.location, 255), interventionAddress: clean(value.interventionAddress || value.workAddress || value.location, 255), city: clean(source.city || address.city, 100), phone: clean(source.phone || source.mobile, 50), email: clean(source.email, 160), insurance: clean(value.insurance || value.insurer, 160), principal: clean(value.principal || value.orderingParty || value.donor || value.manager, 160), claimNumber: clean(value.claimNumber || value.claim || value.sinisterNumber, 160), expert: clean(value.expert, 160), manager: clean(value.manager || value.caseManager, 160), description: clean(value.description || value.problemDescription || value.breakdownDescription, 2000), comments: clean(value.comments || value.notes, 2000), gps: value.gps && typeof value.gps === "object" ? { latitude: clean(value.gps.latitude, 30), longitude: clean(value.gps.longitude, 30) } : {}, attachments: Array.isArray(value.attachments) ? value.attachments.slice(0, 5) : [], errors: [] }; }
+export function readableEmailMissionReference(value, fallbackId = "") {
+    const source = value && typeof value === "object" ? value : {};
+    const missionNumber = clean(source.missionNumber, 160);
+    if (missionNumber && !/^(?:mission|intervention|dossier)$/i.test(missionNumber) && !/^<.*@.*>$/.test(missionNumber)) return missionNumber;
+    const emailId = clean(source.id, 160);
+    if (/^email-[a-z0-9_-]+$/i.test(emailId)) return `MAIL-${emailId.slice(6)}`;
+    return `MAIL-${positiveId(fallbackId) || "MISSION"}`;
+}
+export function mapPayload(value) {
+    const client = value.client && typeof value.client === "object" ? value.client : value.customer && typeof value.customer === "object" ? value.customer : {};
+    const address = value.address && typeof value.address === "object" ? value.address : {};
+    const source = { ...value, ...client };
+    const date = validDate(value.scheduledDate || value.date || value.requestedWindow?.date || "");
+    const priority = priorityOf(value.urgency || value.priority);
+    const firstName = clean(source.firstName || source.firstname || source.prenom || source["prénom"], 100);
+    const lastName = clean(source.lastName || source.lastname || source.nom, 100);
+    const clientAddress = clean(typeof value.address === "string" ? value.address : source.address || address.street || value.location, 255);
+    return {
+        externalMissionId: clean(value.missionNumber || value.missionId || value.id || value.reference, 160), partnerReference: clean(value.partnerReference || value.caseNumber || value.reference, 160),
+        date, startTime: validTime(value.startTime || value.requestedWindow?.startTime), endTime: validTime(value.endTime || value.requestedWindow?.endTime), priority,
+        interventionType: clean(value.interventionType || value.type || value.serviceType, 160), clientName: clean(source.name || source.fullName || [firstName, lastName].filter(Boolean).join(" "), 160), firstName, lastName,
+        address: clientAddress, interventionAddress: clean(value.interventionAddress || source.interventionAddress || value.workAddress || clientAddress || value.location, 255),
+        postalCode: clean(source.postalCode || source.zipCode || address.postalCode || address.zipCode, 10), city: clean(source.city || address.city, 100), phone: clean(source.phone || source.mobile, 50), email: clean(source.email, 160),
+        insurance: clean(value.insurance || value.insurer, 160), principal: clean(value.principal || value.orderingParty || value.donor || value.manager, 160), claimNumber: clean(value.claimNumber || value.claim || value.sinisterNumber, 160), expert: clean(value.expert, 160), manager: clean(value.manager || value.caseManager, 160),
+        description: clean(value.description || value.problemDescription || value.breakdownDescription, 2000), comments: clean(value.comments || value.notes, 2000), gps: value.gps && typeof value.gps === "object" ? { latitude: clean(value.gps.latitude, 30), longitude: clean(value.gps.longitude, 30) } : {}, attachments: Array.isArray(value.attachments) ? value.attachments.slice(0, 5) : [], errors: []
+    };
+}
 function sanitizeIntake(value) { const name = clean(value?.partnerName, 160), key = slug(value?.partnerKey || name), callbackUrl = safeUrl(value?.callbackUrl); const assignmentMode = ASSIGNMENT_MODES.has(value?.assignmentMode) ? value.assignmentMode : "manual"; return name && key ? { ok: true, name, key, callbackUrl, assignmentMode, rules: value?.rules && typeof value.rules === "object" ? value.rules : {} } : { ok: false, message: "Nom et identifiant partenaire obligatoires." }; }
 function sanitizePlanningDraft(value) {
     const assignedTechnicianIds = [...new Set((Array.isArray(value?.assignedTechnicianIds) ? value.assignedTechnicianIds : []).map(optionalId).filter(Boolean))].slice(0, 30);
