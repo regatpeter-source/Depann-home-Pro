@@ -4,4 +4,4 @@ Disallow: /api/
 Disallow: /app
 Disallow: /connexion
 
-Sitemap: https://depann-home-pro.onrender.com/sitemap.xml
+Sitemap: https://depannhomepro.com/sitemap.xml

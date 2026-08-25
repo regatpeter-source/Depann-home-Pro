@@ -16,6 +16,8 @@ test("la vitrine publique conserve un accès explicite au logiciel et aux pages 
     assert.match(landing, /href="\/confidentialite"/);
     assert.match(landing, /href="\/conditions-utilisation"/);
     assert.match(landing, /assets\/logo\.png\.png/);
+    assert.match(landing, /https:\/\/depannhomepro\.com\//);
+    assert.doesNotMatch(landing, /depann-home-pro\.onrender\.com/);
 });
 
 test("la politique de confidentialité décrit explicitement l'usage limité des données Google", () => {
