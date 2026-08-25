@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import ExcelJS from "exceljs";
 import PizZip from "pizzip";
 import { PDFDocument, StandardFonts } from "pdf-lib";
-import { classifyPartnerEmail, extractMissionPayload, inspectMailboxStructure, oauthErrorMessage, parseMailboxPage, parseMailboxSyncPeriod, parseMicrosoftRetryAfter, publicMailError } from "../server/partner-email.js";
+import { classifyPartnerEmail, extractMissionPayload, inspectMailboxStructure, mailboxReplyBody, oauthErrorMessage, parseMailboxPage, parseMailboxSyncPeriod, parseMicrosoftRetryAfter, publicMailError, replySubject } from "../server/partner-email.js";
 import { extractPartnerDocumentText } from "../server/partner-email-document-extractor.js";
 
 const serverSource = readFileSync(new URL("../server/partner-email.js", import.meta.url), "utf8");
@@ -239,6 +239,26 @@ test("la boîte complète se consulte à la demande sans stockage ni déplacemen
     const graphAttachmentDownload = serverSource.slice(serverSource.indexOf("async function downloadLiveAttachment"), serverSource.indexOf("async function graphMessageAttachments"));
     assert.match(graphAttachmentDownload, /streamBuffer\(response\.body, MAX_ATTACHMENT_BYTES\)/);
     assert.doesNotMatch(graphAttachmentDownload, /arrayBuffer\(\)/);
+});
+
+test("l’entreprise répond directement depuis la boîte connectée dans le fil d’origine", () => {
+    assert.equal(replySubject("Demande d’intervention"), "Re: Demande d’intervention");
+    assert.equal(replySubject("RE: Demande d’intervention"), "RE: Demande d’intervention");
+    assert.equal(mailboxReplyBody("  Bonjour\u0000\nMerci  "), "Bonjour\nMerci");
+    assert.equal(mailboxReplyBody("x".repeat(12000)).length, 10000);
+    const replyRoute = serverSource.slice(serverSource.indexOf('app.post("/api/partner-email/:connectionId/messages/:messageRef/reply"'), serverSource.indexOf('app.get("/api/partner-email/:connectionId/messages/:messageRef/attachments'));
+    assert.match(replyRoute, /requiredConnection/);
+    assert.match(replyRoute, /sendLiveMailboxReply/);
+    assert.doesNotMatch(replyRoute, /req\.body\?\.(?:to|recipient|subject)/);
+    assert.match(serverSource, /graph\.microsoft\.com\/v1\.0\/me\/messages\/\$\{encodeURIComponent\(messageId\)\}\/reply/);
+    assert.match(serverSource, /message\.envelope\.replyTo\?\.\[0\] \|\| message\.envelope\.from\?\.\[0\]/);
+    assert.match(serverSource, /inReplyTo: source\.messageId/);
+    assert.match(serverSource, /references: \[source\.inReplyTo, source\.messageId\]/);
+    assert.match(publicMailError(new Error("SMTP rejected"), { provider: "imap", sending: true }), /réponse n’a pas pu être envoyée/);
+    assert.match(appSource, /Trop de réponses ont été envoyées/);
+    assert.match(emailSettingsSource, /data-mailbox-reply/);
+    assert.match(emailSettingsSource, /La réponse partira de la boîte connectée et restera dans le fil d’origine/);
+    assert.match(emailSettingsSource, /dispatchMailboxChanged\("reply"/);
 });
 
 test("la structure IMAP sépare le corps du message des pièces téléchargées sur demande", () => {

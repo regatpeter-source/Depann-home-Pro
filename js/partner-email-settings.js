@@ -252,7 +252,26 @@ async function loadMailboxMessage(browser, connectionId, messageRef, selectedBut
     const attachments = (message.attachments || []).map(attachment => attachment.downloadable
         ? `<a class="secondary-button" href="/api/partner-email/${connectionId}/messages/${encodeURIComponent(message.id)}/attachments/${encodeURIComponent(attachment.id)}" download>${escapeHtml(attachment.filename)} · ${escapeHtml(formatBytes(attachment.size))}</a>`
         : `<span class="partner-mailbox-attachment-disabled">${escapeHtml(attachment.filename)} · ${escapeHtml(formatBytes(attachment.size))} — format ou taille non autorisé</span>`).join("");
-    panel.innerHTML = `<header><p class="eyebrow">Message reçu le ${escapeHtml(formatDate(message.receivedAt))}</p><h3>${escapeHtml(message.subject || "Sans objet")}</h3><dl><dt>De</dt><dd>${escapeHtml(mailboxAddressLabel(message.from) || "Expéditeur inconnu")}</dd><dt>À</dt><dd>${escapeHtml(recipients || "Destinataire non indiqué")}</dd>${copies ? `<dt>Copie</dt><dd>${escapeHtml(copies)}</dd>` : ""}</dl></header><pre class="partner-mailbox-body">${escapeHtml(message.bodyText || "Ce message ne contient pas de texte consultable.")}</pre>${message.bodyTruncated ? '<p class="auth-message">Le corps de ce message très volumineux a été limité à 512 Ko.</p>' : ""}${attachments ? `<div class="partner-mailbox-attachments"><strong>Pièces jointes</strong><div>${attachments}</div><small>Les fichiers sont téléchargés uniquement lorsque vous cliquez dessus.</small></div>` : ""}`;
+    const replyRecipient = mailboxAddressLabel(message.from);
+    panel.innerHTML = `<header><p class="eyebrow">Message reçu le ${escapeHtml(formatDate(message.receivedAt))}</p><h3>${escapeHtml(message.subject || "Sans objet")}</h3><dl><dt>De</dt><dd>${escapeHtml(replyRecipient || "Expéditeur inconnu")}</dd><dt>À</dt><dd>${escapeHtml(recipients || "Destinataire non indiqué")}</dd>${copies ? `<dt>Copie</dt><dd>${escapeHtml(copies)}</dd>` : ""}</dl></header><pre class="partner-mailbox-body">${escapeHtml(message.bodyText || "Ce message ne contient pas de texte consultable.")}</pre>${message.bodyTruncated ? '<p class="auth-message">Le corps de ce message très volumineux a été limité à 512 Ko.</p>' : ""}${attachments ? `<div class="partner-mailbox-attachments"><strong>Pièces jointes</strong><div>${attachments}</div><small>Les fichiers sont téléchargés uniquement lorsque vous cliquez dessus.</small></div>` : ""}${replyRecipient ? `<form class="partner-mailbox-reply" data-mailbox-reply><h4>Répondre à cet e-mail</h4><p class="muted">À : ${escapeHtml(replyRecipient)} · La réponse partira de la boîte connectée et restera dans le fil d’origine.</p><label>Votre réponse<textarea name="body" rows="6" maxlength="10000" required placeholder="Rédigez votre réponse…"></textarea></label><div class="form-actions"><button type="submit" class="primary-button">Envoyer la réponse</button></div><p class="auth-message" data-mailbox-reply-feedback aria-live="polite"></p></form>` : '<p class="auth-message">Cet e-mail ne contient aucune adresse permettant d’y répondre.</p>'}`;
+    panel.querySelector("[data-mailbox-reply]")?.addEventListener("submit", event => submitMailboxReply(event, connectionId, message.id));
+}
+
+async function submitMailboxReply(event, connectionId, messageRef) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const button = event.submitter || form.querySelector('[type="submit"]');
+    const feedback = form.querySelector("[data-mailbox-reply-feedback]");
+    const body = form.elements.body.value.trim();
+    if (!body) return;
+    button.disabled = true;
+    feedback.textContent = "Envoi de la réponse…";
+    feedback.classList.remove("error");
+    const result = await api(`/api/partner-email/${connectionId}/messages/${encodeURIComponent(messageRef)}/reply`, { method: "POST", body: JSON.stringify({ body }) });
+    button.disabled = false;
+    feedback.textContent = result.ok ? result.data.message : result.message;
+    feedback.classList.toggle("error", !result.ok);
+    if (result.ok) { form.elements.body.value = ""; dispatchMailboxChanged("reply", { connectionId }); }
 }
 
 function bindMailboxClose(browser) {

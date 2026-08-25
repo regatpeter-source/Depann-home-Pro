@@ -140,6 +140,13 @@ export function registerPartnerEmailRoutes(app, requireAuthentication) {
         const result = await liveMailboxOperation(connection, () => readLiveMessage(connection, decodeMailboxReference(req.params.messageRef)));
         setLiveMailboxHeaders(res).json(result);
     }));
+    app.post("/api/partner-email/:connectionId/messages/:messageRef/reply", asyncHandler(async (req, res) => {
+        const connection = await requiredConnection(getAccountOwnerId(req), positiveId(req.params.connectionId));
+        const body = mailboxReplyBody(req.body?.body);
+        if (!body) return res.status(400).json({ message: "Saisissez une réponse." });
+        await liveMailboxOperation(connection, () => sendLiveMailboxReply(connection, decodeMailboxReference(req.params.messageRef), body), { sending: true });
+        setLiveMailboxHeaders(res).json({ message: "Réponse envoyée depuis la boîte professionnelle." });
+    }));
     app.get("/api/partner-email/:connectionId/messages/:messageRef/attachments/:attachmentRef", asyncHandler(async (req, res) => {
         const connection = await requiredConnection(getAccountOwnerId(req), positiveId(req.params.connectionId));
         const attachment = await liveMailboxOperation(connection, () => downloadLiveAttachment(connection, decodeMailboxReference(req.params.messageRef), decodeMailboxReference(req.params.attachmentRef)));
@@ -319,6 +326,23 @@ async function readLiveMessage(connection, messageId) {
     });
 }
 
+async function sendLiveMailboxReply(connection, messageId, body) {
+    const access = await mailboxAccess(connection);
+    if (connection.provider === "microsoft") {
+        await graphJson(access.graphToken, `https://graph.microsoft.com/v1.0/me/messages/${encodeURIComponent(messageId)}/reply`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ comment: body }) }, { allowEmpty: true });
+        return;
+    }
+    const source = await withImapInbox(connection, async client => {
+        const message = await client.fetchOne(String(mailboxUid(messageId)), { envelope: true }, { uid: true });
+        if (!message?.envelope) throw httpError(404, "E-mail introuvable dans la boîte de réception.");
+        const recipient = mailboxAddress(message.envelope.replyTo?.[0] || message.envelope.from?.[0]);
+        if (!/^\S+@\S+\.\S+$/.test(recipient.address)) throw httpError(422, "Cet e-mail ne contient aucune adresse de réponse valide.");
+        return { recipient, subject: replySubject(message.envelope.subject), messageId: clean(message.envelope.messageId, 500), inReplyTo: clean(message.envelope.inReplyTo, 500) };
+    });
+    const transporter = nodemailer.createTransport({ host: access.smtp.host, port: access.smtp.port, secure: access.smtp.secure, requireTLS: !access.smtp.secure, auth: access.smtpAuth, connectionTimeout: 15000, greetingTimeout: 15000, socketTimeout: 20000 });
+    await transporter.sendMail({ from: { name: connection.display_name || connection.email_address, address: connection.email_address }, to: source.recipient, subject: source.subject, text: body, inReplyTo: source.messageId || undefined, references: [source.inReplyTo, source.messageId].filter(Boolean).join(" ") || undefined });
+}
+
 async function downloadLiveAttachment(connection, messageId, attachmentId) {
     if (connection.provider === "microsoft") {
         const access = await mailboxAccess(connection);
@@ -384,6 +408,8 @@ export function parseMailboxPage(value) {
 function mailboxPageResult(page, messages, hasMore, total = null) { return { messages, offset: page.offset, limit: page.limit, hasMore: Boolean(hasMore), hasPrevious: page.offset > 0, total }; }
 function mailboxAddress(value) { return { name: clean(value?.name, 160), address: clean(value?.address, 254).toLowerCase() }; }
 function graphAddress(value) { return mailboxAddress(value); }
+export function mailboxReplyBody(value) { return String(value || "").replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "").trim().slice(0, 10000); }
+export function replySubject(value) { const subject = clean(value || "Sans objet", 500); return /^\s*re\s*:/i.test(subject) ? subject : `Re: ${subject}`; }
 function liveAttachmentMetadata(value, reference) { const metadata = { filename: safeFilename(value.name || value.filename), contentType: String(value.contentType || "application/octet-stream").toLowerCase(), size: Math.max(0, Number(value.size) || 0) }; return { ...metadata, id: encodeMailboxReference(reference), downloadable: ALLOWED_MIME.has(metadata.contentType) && metadata.size > 0 && metadata.size <= MAX_ATTACHMENT_BYTES }; }
 function validatedLiveAttachment(value) { const metadata = liveAttachmentMetadata(value, value.id || value.part); if (!ALLOWED_MIME.has(metadata.contentType)) throw httpError(415, "Le format de cette pièce jointe n’est pas autorisé."); if (!metadata.size || metadata.size > MAX_ATTACHMENT_BYTES) throw httpError(413, "Cette pièce jointe dépasse la limite de 5 Mo."); return metadata; }
 function limitMailboxBody(value) { const text = String(value || "").replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, ""); return { text: text.slice(0, LIVE_MAILBOX_BODY_BYTES), truncated: text.length > LIVE_MAILBOX_BODY_BYTES }; }
@@ -394,7 +420,7 @@ function encodeMailboxReference(value) { return Buffer.from(String(value || ""),
 function decodeMailboxReference(value) { const token = String(value || ""); if (!token || token.length > 2000 || !/^[A-Za-z0-9_-]+$/.test(token)) throw httpError(400, "Référence d’e-mail invalide."); const decoded = Buffer.from(token, "base64url").toString("utf8"); if (!decoded || decoded.length > 1000) throw httpError(400, "Référence d’e-mail invalide."); return decoded; }
 function mailboxUid(value) { const uid = positiveId(value); if (!uid) throw httpError(400, "Référence d’e-mail invalide."); return uid; }
 async function requiredConnection(ownerId, connectionId) { const connection = await findConnection(ownerId, connectionId); if (!connection) throw httpError(404, "Boîte professionnelle introuvable."); return connection; }
-async function liveMailboxOperation(connection, operation) { try { return await operation(); } catch (error) { if (error?.status) throw error; console.warn("[partner-email] live mailbox rejected", mailErrorLog(error, connection.provider)); throw httpError(502, publicMailError(error, { provider: connection.provider })); } }
+async function liveMailboxOperation(connection, operation, { sending = false } = {}) { try { return await operation(); } catch (error) { if (error?.status) throw error; console.warn("[partner-email] live mailbox rejected", mailErrorLog(error, connection.provider)); const status = error?.statusCode === 429 ? 429 : error?.statusCode === 503 ? 503 : 502; throw httpError(status, publicMailError(error, { provider: connection.provider, sending }), { retryAfterSeconds: error?.retryAfterSeconds }); } }
 function setLiveMailboxHeaders(response) { return response.set({ "Cache-Control": "private, no-store", Pragma: "no-cache", Expires: "0" }); }
 
 async function saveParsedEmail(connection, uid, parsed) {
@@ -632,16 +658,16 @@ function oauthPopup(res, success, message) { res.type("html").send(`<!doctype ht
 function requireEmailAccess(req, res, next) { if (!hasCompanyEmailWorkspaceAccess(req.user)) return res.status(403).json({ message: "L’espace e-mail de l’entreprise n’est pas autorisé sur ce poste." }); return next(); }
 function requireEmailConfigurationAccess(req, res, next) { if (req.user?.role !== "admin" || req.user?.deviceType !== "desktop") return res.status(403).json({ message: "Seul un Administrateur PC peut modifier les réglages de la boîte professionnelle." }); return next(); }
 function selectedIds(value) { return [...new Set((Array.isArray(value) ? value : []).map(positiveId).filter(Boolean))].slice(0, 100); }
-export function publicMailError(error, { configuration = false, provider = "" } = {}) {
+export function publicMailError(error, { configuration = false, provider = "", sending = false } = {}) {
     if (error?.oauthCode || error?.oauthProvider) return oauthErrorMessage(error, provider || error.oauthProvider);
     const message = String(error?.message || "");
     const authenticationFailed = Boolean(error?.authenticationFailed) || /auth|credential|login|password|invalid credentials|authentication failed|authenticate failed/i.test(message);
-    if (provider === "microsoft" && (error?.throttled || error?.statusCode === 429 || error?.code === "ApplicationThrottled")) return `Microsoft limite temporairement la lecture de cette boîte. ${error?.retryAfterSeconds ? `Réessayez dans environ ${error.retryAfterSeconds} seconde(s)` : "Patientez quelques instants"}, puis relancez une période plus courte.`;
+    if (provider === "microsoft" && (error?.throttled || error?.statusCode === 429 || error?.code === "ApplicationThrottled")) return `Microsoft limite temporairement l’accès à cette boîte. ${error?.retryAfterSeconds ? `Réessayez dans environ ${error.retryAfterSeconds} seconde(s)` : "Patientez quelques instants"}${sending ? "." : ", puis relancez une période plus courte."}`;
     if (provider === "microsoft" && authenticationFailed) return "Microsoft refuse l’accès à cette boîte. Déconnectez-la puis utilisez de nouveau « Connecter Microsoft » afin de renouveler les autorisations Mail.Read et Mail.Send.";
     if (authenticationFailed) return "La boîte a refusé l’authentification. Vérifiez son autorisation ou son mot de passe d’application.";
     if (/certificate|tls|ssl|self[- ]signed/i.test(message)) return "La connexion sécurisée au serveur de messagerie a échoué.";
     if (/timeout|timed out|etimedout|econnrefused|enotfound|getaddrinfo/i.test(message)) return "Le serveur de messagerie ne répond pas. Vérifiez les adresses, les ports et la disponibilité d’IMAP/SMTP.";
-    return configuration ? "La vérification IMAP/SMTP a échoué. Vérifiez les serveurs, les ports et le mode de sécurité." : "La boîte professionnelle n’a pas pu être synchronisée.";
+    return configuration ? "La vérification IMAP/SMTP a échoué. Vérifiez les serveurs, les ports et le mode de sécurité." : sending ? "La réponse n’a pas pu être envoyée depuis la boîte professionnelle." : "La boîte professionnelle n’a pas pu être synchronisée.";
 }
 function statusLabel(value) { return ({ pending_validation: "en attente de validation", accepted: "acceptée", rejected: "refusée", scheduled: "planifiée", en_route: "technicien en route", on_site: "technicien sur site", report_completed: "rapport terminé", report_validated: "rapport validé", quote_sent: "devis envoyé", work_completed: "travaux terminés", invoice_sent: "facture envoyée", closed: "clôturée", cancelled: "annulée" })[value] || value; }
 function host(value) { const text = clean(value, 255).toLowerCase(); return /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(text) ? text : ""; }
