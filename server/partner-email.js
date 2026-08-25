@@ -188,7 +188,12 @@ async function syncConnection(ownerId, connectionId, actorId) {
             }
         } finally { lock.release(); await client.logout(); }
         return completeSync(connectionId, { fetched, candidates, imported, maxUid });
-    } catch (error) { await getPool().query("UPDATE depannhome_partner_email_connections SET last_error=$3,last_sync_at=NOW(),updated_at=NOW() WHERE id=$1 AND owner_id=$2", [connectionId, ownerId, clean(publicMailError(error), 500)]); throw httpError(502, publicMailError(error)); }
+    } catch (error) {
+        const publicError = publicMailError(error, { provider: connection.provider });
+        console.warn("[partner-email] mailbox synchronization rejected", mailErrorLog(error, connection.provider));
+        await getPool().query("UPDATE depannhome_partner_email_connections SET last_error=$3,last_sync_at=NOW(),updated_at=NOW() WHERE id=$1 AND owner_id=$2", [connectionId, ownerId, clean(publicError, 500)]);
+        throw httpError(502, publicError);
+    }
 }
 
 async function saveParsedEmail(connection, uid, parsed) {
@@ -335,10 +340,20 @@ export function oauthErrorMessage(error, provider = "") {
     return "Microsoft a refusé l’autorisation. Vérifiez le type de comptes accepté, l’URI Web, le secret client et les autorisations IMAP/SMTP dans Microsoft Entra.";
 }
 function oauthErrorLog(error, provider) { return { provider, code: clean(error?.oauthCode || "provider_error", 80), errorCodes: Array.isArray(error?.oauthErrorCodes) ? error.oauthErrorCodes : [], status: Number(error?.oauthStatus) || 0, correlationId: clean(error?.oauthCorrelationId, 80) }; }
+function mailErrorLog(error, provider) { return { provider, code: clean(error?.oauthCode || error?.code || error?.responseCode || "mailbox_error", 80), errorCodes: Array.isArray(error?.oauthErrorCodes) ? error.oauthErrorCodes : [], status: Number(error?.oauthStatus || error?.statusCode) || 0, authenticationFailed: Boolean(error?.authenticationFailed) }; }
 function oauthPopup(res, success, message) { res.type("html").send(`<!doctype html><meta charset="utf-8"><title>Connexion boîte mail</title><p>${escapeHtml(message)}</p><script>window.opener?.postMessage(${JSON.stringify({ type: "depannhome:partner-email-oauth", success, message })},window.location.origin);window.close();</script>`); }
 function requireEmailAccess(req, res, next) { if (!ADMIN_ROLES.has(req.user?.role)) return res.status(403).json({ message: "La boîte de missions est réservée aux postes autorisés." }); return next(); }
 function selectedIds(value) { return [...new Set((Array.isArray(value) ? value : []).map(positiveId).filter(Boolean))].slice(0, 100); }
-function publicMailError(error, { configuration = false } = {}) { const message = String(error?.message || ""); if (/auth|credential|login|password|invalid credentials|authentication failed/i.test(message)) return "La boîte a refusé l’authentification. Vérifiez son autorisation ou son mot de passe d’application."; if (/certificate|tls|ssl|self[- ]signed/i.test(message)) return "La connexion sécurisée au serveur de messagerie a échoué."; if (/timeout|timed out|etimedout|econnrefused|enotfound|getaddrinfo/i.test(message)) return "Le serveur de messagerie ne répond pas. Vérifiez les adresses, les ports et la disponibilité d’IMAP/SMTP."; return configuration ? "La vérification IMAP/SMTP a échoué. Vérifiez les serveurs, les ports et le mode de sécurité." : "La boîte professionnelle n’a pas pu être synchronisée."; }
+export function publicMailError(error, { configuration = false, provider = "" } = {}) {
+    if (error?.oauthCode || error?.oauthProvider) return oauthErrorMessage(error, provider || error.oauthProvider);
+    const message = String(error?.message || "");
+    const authenticationFailed = Boolean(error?.authenticationFailed) || /auth|credential|login|password|invalid credentials|authentication failed|authenticate failed/i.test(message);
+    if (provider === "microsoft" && authenticationFailed) return "Microsoft refuse l’accès IMAP à cette boîte. Dans Microsoft 365, activez IMAP pour l’utilisateur, puis déconnectez et reconnectez la boîte afin de renouveler le consentement.";
+    if (authenticationFailed) return "La boîte a refusé l’authentification. Vérifiez son autorisation ou son mot de passe d’application.";
+    if (/certificate|tls|ssl|self[- ]signed/i.test(message)) return "La connexion sécurisée au serveur de messagerie a échoué.";
+    if (/timeout|timed out|etimedout|econnrefused|enotfound|getaddrinfo/i.test(message)) return "Le serveur de messagerie ne répond pas. Vérifiez les adresses, les ports et la disponibilité d’IMAP/SMTP.";
+    return configuration ? "La vérification IMAP/SMTP a échoué. Vérifiez les serveurs, les ports et le mode de sécurité." : "La boîte professionnelle n’a pas pu être synchronisée.";
+}
 function statusLabel(value) { return ({ pending_validation: "en attente de validation", accepted: "acceptée", rejected: "refusée", scheduled: "planifiée", en_route: "technicien en route", on_site: "technicien sur site", report_completed: "rapport terminé", report_validated: "rapport validé", quote_sent: "devis envoyé", work_completed: "travaux terminés", invoice_sent: "facture envoyée", closed: "clôturée", cancelled: "annulée" })[value] || value; }
 function host(value) { const text = clean(value, 255).toLowerCase(); return /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(text) ? text : ""; }
 function port(value, fallback) { const number = Number(value || fallback); return Number.isSafeInteger(number) && number > 0 && number <= 65535 ? number : fallback; }

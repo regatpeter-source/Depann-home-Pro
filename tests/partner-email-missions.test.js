@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import ExcelJS from "exceljs";
 import PizZip from "pizzip";
 import { PDFDocument, StandardFonts } from "pdf-lib";
-import { classifyPartnerEmail, extractMissionPayload, oauthErrorMessage } from "../server/partner-email.js";
+import { classifyPartnerEmail, extractMissionPayload, oauthErrorMessage, publicMailError } from "../server/partner-email.js";
 import { extractPartnerDocumentText } from "../server/partner-email-document-extractor.js";
 
 const serverSource = readFileSync(new URL("../server/partner-email.js", import.meta.url), "utf8");
@@ -88,6 +88,15 @@ test("Microsoft sépare le jeton Graph du jeton Outlook et explique les refus sa
     assert.match(oauthErrorMessage({ oauthCode: "invalid_client", oauthErrorCodes: [7000215] }, "microsoft"), /valeur du secret client/);
     assert.match(oauthErrorMessage({ oauthCode: "invalid_grant" }, "microsoft"), /expiré/);
     assert.match(oauthErrorMessage({ oauthErrorCodes: [50011] }, "microsoft"), /redirection/);
+});
+
+test("la synchronisation distingue un refus OAuth d’un accès IMAP Microsoft désactivé", () => {
+    const mailErrorLogSource = serverSource.slice(serverSource.indexOf("function mailErrorLog"), serverSource.indexOf("function oauthPopup"));
+    assert.match(publicMailError({ oauthProvider: "microsoft", oauthCode: "consent_required" }, { provider: "microsoft" }), /autorisations déléguées IMAP et SMTP/);
+    assert.match(publicMailError({ authenticationFailed: true }, { provider: "microsoft" }), /activez IMAP/);
+    assert.match(publicMailError(new Error("Authentication failed"), { provider: "google" }), /refusé l’authentification/);
+    assert.match(serverSource, /mailbox synchronization rejected/);
+    assert.doesNotMatch(mailErrorLogSource, /accessToken|refreshToken|clientSecret/);
 });
 
 test("les missions e-mail utilisent la même interface que les missions internes et externes", () => {
