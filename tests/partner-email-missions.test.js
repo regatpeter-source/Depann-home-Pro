@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import ExcelJS from "exceljs";
 import PizZip from "pizzip";
 import { PDFDocument, StandardFonts } from "pdf-lib";
-import { classifyPartnerEmail, extractMissionPayload, inspectMailboxStructure, oauthErrorMessage, parseMailboxPage, parseMailboxSyncPeriod, publicMailError } from "../server/partner-email.js";
+import { classifyPartnerEmail, extractMissionPayload, inspectMailboxStructure, oauthErrorMessage, parseMailboxPage, parseMailboxSyncPeriod, parseMicrosoftRetryAfter, publicMailError } from "../server/partner-email.js";
 import { extractPartnerDocumentText } from "../server/partner-email-document-extractor.js";
 
 const serverSource = readFileSync(new URL("../server/partner-email.js", import.meta.url), "utf8");
@@ -102,6 +102,31 @@ test("la synchronisation distingue un refus OAuth d’un accès Microsoft Graph 
     assert.match(publicMailError(new Error("Authentication failed"), { provider: "google" }), /refusé l’authentification/);
     assert.match(serverSource, /mailbox synchronization rejected/);
     assert.doesNotMatch(mailErrorLogSource, /accessToken|refreshToken|clientSecret/);
+});
+
+test("Microsoft Graph respecte Retry-After et limite les reprises en cas de quota", () => {
+    const now = Date.parse("2026-08-25T12:00:00Z");
+    assert.equal(parseMicrosoftRetryAfter("7", now), 7);
+    assert.equal(parseMicrosoftRetryAfter("Tue, 25 Aug 2026 12:00:12 GMT", now), 12);
+    assert.equal(parseMicrosoftRetryAfter("date invalide", now), 0);
+    assert.equal(parseMicrosoftRetryAfter("99999", now), 3600);
+    assert.match(serverSource, /MICROSOFT_GRAPH_MAX_RETRIES = 2/);
+    assert.match(serverSource, /response\.status === 429 \|\| response\.status === 503/);
+    assert.match(serverSource, /response\.headers\.get\("retry-after"\)/);
+    assert.match(serverSource, /await delay\(retryDelay\)/);
+    assert.match(serverSource, /res\.set\("Retry-After"/);
+    assert.match(publicMailError({ statusCode: 429, code: "ApplicationThrottled", throttled: true, retryAfterSeconds: 15 }, { provider: "microsoft" }), /Réessayez dans environ 15 seconde/);
+});
+
+test("la synchronisation Microsoft est séquentielle et reprend sans perdre de messages", () => {
+    const microsoftSync = serverSource.slice(serverSource.indexOf("async function syncMicrosoftConnection"), serverSource.indexOf("async function listLiveInbox"));
+    assert.match(microsoftSync, /for \(const message of search\.messages\)/);
+    assert.doesNotMatch(microsoftSync, /Promise\.all/);
+    assert.match(serverSource, /activeMailboxSynchronizations/);
+    assert.match(serverSource, /Une synchronisation de cette boîte est déjà en cours/);
+    const failureHandler = serverSource.slice(serverSource.indexOf("mailbox synchronization rejected"), serverSource.indexOf("async function syncMicrosoftConnection"));
+    assert.doesNotMatch(failureHandler, /last_sync_at=NOW/);
+    assert.match(failureHandler, /error\?\.statusCode === 429 \? 429/);
 });
 
 test("les missions e-mail utilisent la même interface que les missions internes et externes", () => {

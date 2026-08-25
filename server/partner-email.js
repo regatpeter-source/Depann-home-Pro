@@ -25,7 +25,10 @@ const LIVE_MAILBOX_MAX_LIMIT = 50;
 const LIVE_MAILBOX_BODY_BYTES = 512 * 1024;
 const MICROSOFT_IDENTITY_SCOPES = "openid email profile offline_access User.Read";
 const MICROSOFT_MAIL_SCOPES = "Mail.Read Mail.Send";
+const MICROSOFT_GRAPH_MAX_RETRIES = 2;
+const MICROSOFT_GRAPH_MAX_RETRY_DELAY_MS = 10_000;
 let scheduler = null;
+const activeMailboxSynchronizations = new Set();
 
 export async function initializePartnerEmail() {
     const db = getPool();
@@ -213,6 +216,14 @@ export function classifyPartnerEmail({ subject = "", text = "", from = "", attac
 }
 
 async function syncConnection(ownerId, connectionId, actorId, syncPeriod = null) {
+    const synchronizationKey = `${ownerId}:${connectionId}`;
+    if (activeMailboxSynchronizations.has(synchronizationKey)) throw httpError(409, "Une synchronisation de cette boîte est déjà en cours. Patientez quelques instants avant de relancer la recherche.");
+    activeMailboxSynchronizations.add(synchronizationKey);
+    try { return await performConnectionSync(ownerId, connectionId, actorId, syncPeriod); }
+    finally { activeMailboxSynchronizations.delete(synchronizationKey); }
+}
+
+async function performConnectionSync(ownerId, connectionId, actorId, syncPeriod = null) {
     const connection = await findConnection(ownerId, connectionId); if (!connection) throw httpError(404, "Boîte professionnelle introuvable.");
     try {
         if (connection.provider === "microsoft") return await syncMicrosoftConnection(connection, actorId, syncPeriod);
@@ -237,8 +248,9 @@ async function syncConnection(ownerId, connectionId, actorId, syncPeriod = null)
     } catch (error) {
         const publicError = publicMailError(error, { provider: connection.provider });
         console.warn("[partner-email] mailbox synchronization rejected", mailErrorLog(error, connection.provider));
-        await getPool().query("UPDATE depannhome_partner_email_connections SET last_error=$3,last_sync_at=NOW(),updated_at=NOW() WHERE id=$1 AND owner_id=$2", [connectionId, ownerId, clean(publicError, 500)]);
-        throw httpError(502, publicError);
+        await getPool().query("UPDATE depannhome_partner_email_connections SET last_error=$3,updated_at=NOW() WHERE id=$1 AND owner_id=$2", [connectionId, ownerId, clean(publicError, 500)]);
+        const status = error?.statusCode === 429 ? 429 : error?.statusCode === 503 ? 503 : 502;
+        throw httpError(status, publicError, { retryAfterSeconds: error?.retryAfterSeconds });
     }
 }
 
@@ -246,16 +258,13 @@ async function syncMicrosoftConnection(connection, actorId, syncPeriod) {
     const access = await mailboxAccess(connection);
     const search = await graphInboxMessages(access.graphToken, connection, syncPeriod);
     let fetched = 0, candidates = 0, imported = 0;
-    for (let offset = 0; offset < search.messages.length; offset += 5) {
-        const messages = search.messages.slice(offset, offset + 5);
-        const sources = await Promise.all(messages.map(message => graphMessageMime(access.graphToken, message.id)));
-        for (let index = 0; index < messages.length; index += 1) {
-            const parsed = await simpleParser(sources[index], { skipHtmlToText: false, maxHtmlLengthToParse: 2 * 1024 * 1024 });
-            fetched += 1;
-            const saved = await saveParsedEmail(connection, graphMessageUid(messages[index].id), parsed); if (!saved) continue;
-            candidates += 1;
-            if (connection.selection_mode === "automatic" && saved.trustedSender && saved.score >= Number(connection.automatic_threshold || AUTO_THRESHOLD)) { await importCandidate(connection.owner_id, saved.id, actorId); imported += 1; }
-        }
+    for (const message of search.messages) {
+        const source = await graphMessageMime(access.graphToken, message.id);
+        const parsed = await simpleParser(source, { skipHtmlToText: false, maxHtmlLengthToParse: 2 * 1024 * 1024 });
+        fetched += 1;
+        const saved = await saveParsedEmail(connection, graphMessageUid(message.id), parsed); if (!saved) continue;
+        candidates += 1;
+        if (connection.selection_mode === "automatic" && saved.trustedSender && saved.score >= Number(connection.automatic_threshold || AUTO_THRESHOLD)) { await importCandidate(connection.owner_id, saved.id, actorId); imported += 1; }
     }
     return completeSync(connection.id, { fetched, candidates, imported, maxUid: Number(connection.last_uid || 0), limited: search.limited, period: syncPeriod ? { from: syncPeriod.from, to: syncPeriod.to } : null }, { advanceCursor: false });
 }
@@ -542,15 +551,37 @@ async function graphJson(accessToken, url, options = {}, { allowEmpty = false } 
 }
 
 async function graphFetch(accessToken, url, options = {}) {
-    let response;
-    try { response = await fetch(url, { ...options, headers: { Authorization: `Bearer ${accessToken}`, ...(options.headers || {}) }, signal: AbortSignal.timeout(20000) }); }
-    catch (error) { if (error?.name === "TimeoutError") throw new Error("Microsoft Graph timed out."); throw error; }
-    if (response.ok) return response;
-    const payload = await response.json().catch(() => ({}));
-    const error = new Error(response.status === 401 || response.status === 403 ? "Microsoft Graph authentication failed." : "Microsoft Graph request failed.");
-    error.code = clean(payload?.error?.code, 80); error.statusCode = response.status; error.authenticationFailed = response.status === 401 || response.status === 403;
-    throw error;
+    for (let attempt = 0; attempt <= MICROSOFT_GRAPH_MAX_RETRIES; attempt += 1) {
+        let response;
+        try { response = await fetch(url, { ...options, headers: { Authorization: `Bearer ${accessToken}`, ...(options.headers || {}) }, signal: AbortSignal.timeout(20000) }); }
+        catch (error) { if (error?.name === "TimeoutError") throw new Error("Microsoft Graph timed out."); throw error; }
+        if (response.ok) return response;
+        const payload = await response.json().catch(() => ({}));
+        const retryAfterSeconds = parseMicrosoftRetryAfter(response.headers.get("retry-after"));
+        const retryable = response.status === 429 || response.status === 503;
+        const retryDelay = retryAfterSeconds ? retryAfterSeconds * 1000 : 1000 * (2 ** attempt);
+        if (retryable && attempt < MICROSOFT_GRAPH_MAX_RETRIES && retryDelay <= MICROSOFT_GRAPH_MAX_RETRY_DELAY_MS) {
+            console.warn("[partner-email-graph] Microsoft Graph temporairement limité", { status: response.status, code: clean(payload?.error?.code, 80) || "temporary_limit", retryAfterSeconds: Math.ceil(retryDelay / 1000), attempt: attempt + 1 });
+            await delay(retryDelay);
+            continue;
+        }
+        const error = new Error(response.status === 401 || response.status === 403 ? "Microsoft Graph authentication failed." : response.status === 429 ? "Microsoft Graph throttled." : "Microsoft Graph request failed.");
+        error.code = clean(payload?.error?.code, 80); error.statusCode = response.status; error.authenticationFailed = response.status === 401 || response.status === 403;
+        error.throttled = response.status === 429; error.retryAfterSeconds = retryAfterSeconds;
+        throw error;
+    }
+    throw new Error("Microsoft Graph request failed.");
 }
+
+export function parseMicrosoftRetryAfter(value, now = Date.now()) {
+    const text = String(value || "").trim();
+    if (!text) return 0;
+    if (/^\d+$/.test(text)) return Math.max(1, Math.min(3600, Number(text)));
+    const date = Date.parse(text);
+    return Number.isFinite(date) && date > now ? Math.max(1, Math.min(3600, Math.ceil((date - now) / 1000))) : 0;
+}
+
+function delay(milliseconds) { return new Promise(resolve => setTimeout(resolve, milliseconds)); }
 
 function graphMessageUid(messageId) { return Number.parseInt(hash(messageId).slice(0, 13), 16); }
 
@@ -605,6 +636,7 @@ export function publicMailError(error, { configuration = false, provider = "" } 
     if (error?.oauthCode || error?.oauthProvider) return oauthErrorMessage(error, provider || error.oauthProvider);
     const message = String(error?.message || "");
     const authenticationFailed = Boolean(error?.authenticationFailed) || /auth|credential|login|password|invalid credentials|authentication failed|authenticate failed/i.test(message);
+    if (provider === "microsoft" && (error?.throttled || error?.statusCode === 429 || error?.code === "ApplicationThrottled")) return `Microsoft limite temporairement la lecture de cette boîte. ${error?.retryAfterSeconds ? `Réessayez dans environ ${error.retryAfterSeconds} seconde(s)` : "Patientez quelques instants"}, puis relancez une période plus courte.`;
     if (provider === "microsoft" && authenticationFailed) return "Microsoft refuse l’accès à cette boîte. Déconnectez-la puis utilisez de nouveau « Connecter Microsoft » afin de renouveler les autorisations Mail.Read et Mail.Send.";
     if (authenticationFailed) return "La boîte a refusé l’authentification. Vérifiez son autorisation ou son mot de passe d’application.";
     if (/certificate|tls|ssl|self[- ]signed/i.test(message)) return "La connexion sécurisée au serveur de messagerie a échoué.";
@@ -620,5 +652,5 @@ function safeFilename(value) { return String(value || "document").replace(/^.*[\
 function clean(value, max) { return String(value || "").replace(/\s+/g, " ").trim().slice(0, max); }
 function hash(value) { return crypto.createHash("sha256").update(String(value || "")).digest("hex"); }
 function escapeHtml(value) { return String(value || "").replace(/[&<>"']/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]); }
-function httpError(status, message) { const error = new Error(message); error.status = status; return error; }
-function asyncHandler(handler) { return (req, res, next) => Promise.resolve(handler(req, res, next)).catch(error => error.status ? res.status(error.status).json({ message: error.message }) : next(error)); }
+function httpError(status, message, details = {}) { const error = new Error(message); error.status = status; Object.assign(error, details); return error; }
+function asyncHandler(handler) { return (req, res, next) => Promise.resolve(handler(req, res, next)).catch(error => { if (!error.status) return next(error); if (error.retryAfterSeconds) res.set("Retry-After", String(error.retryAfterSeconds)); return res.status(error.status).json({ message: error.message, ...(error.retryAfterSeconds ? { retryAfterSeconds: error.retryAfterSeconds } : {}) }); }); }
