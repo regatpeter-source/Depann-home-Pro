@@ -36,3 +36,12 @@ test("les conditions encadrent les comptes, les services connectés et les donn�
     assert.match(terms, /droit français/);
     assert.match(terms, /href="\/confidentialite"/);
 });
+
+test("la vitrine présente la grille tarifaire commerciale complète", () => {
+    assert.match(landing, /id="tarifs"/);
+    assert.match(landing, /Basic[\s\S]*?20 €[\s\S]*?5 €/);
+    assert.match(landing, /Basic\+[\s\S]*?35 €[\s\S]*?8 €/);
+    assert.match(landing, /Pro[\s\S]*?70 €[\s\S]*?15 €/);
+    assert.match(landing, /Licence Portail Partenaire[\s\S]*?gratuitement/);
+    assert.match(landing, /25 € TTC \/ mois[\s\S]*?94 € TTC \/ mois[\s\S]*?200 € TTC \/ mois/);
+});
