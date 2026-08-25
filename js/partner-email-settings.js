@@ -11,6 +11,33 @@ export async function renderPartnerEmailSettings(container) {
     await loadPartnerEmailSettings(card);
 }
 
+export async function renderCompanyEmailWorkspace(container) {
+    const card = document.createElement("article");
+    card.className = "brand-card full-card procedure-card partner-email-settings-card";
+    card.innerHTML = '<section class="partner-email-panel"><p class="muted">Chargement de l’espace e-mail de l’entreprise…</p></section>';
+    container.appendChild(card);
+    const result = await api("/api/partner-email");
+    if (!result.ok) {
+        card.innerHTML = `<section class="partner-email-panel"><p class="auth-message error">${escapeHtml(result.message || "Impossible de charger l’espace e-mail de l’entreprise.")}</p></section>`;
+        return;
+    }
+    const connections = Array.isArray(result.data?.connections) ? result.data.connections : [];
+    const panel = card.querySelector(".partner-email-panel");
+    panel.innerHTML = `<div class="form-heading"><div><p class="eyebrow">Messagerie professionnelle</p><h2>Espace e-mail de l’entreprise</h2></div></div><p class="muted">Consultez directement les boîtes connectées. Les messages ordinaires restent chez leur fournisseur et ne sont pas enregistrés dans Depann’Home Pro.</p><div class="partner-email-connections"></div>`;
+    const list = panel.querySelector(".partner-email-connections");
+    if (!connections.length) {
+        list.innerHTML = '<p class="auth-message">Aucune boîte n’est encore connectée. Un Administrateur PC peut la configurer dans Paramètres &gt; Entreprise · Boîte mail.</p>';
+        return;
+    }
+    connections.forEach(connection => {
+        const item = document.createElement("article");
+        item.className = "partner-email-connection";
+        item.innerHTML = `<div><strong>${escapeHtml(connection.displayName || connection.emailAddress)}</strong><p>${escapeHtml(connection.emailAddress)}</p><small>${connection.lastError ? escapeHtml(connection.lastError) : connection.lastSyncAt ? `Dernière synchronisation des missions : ${escapeHtml(formatDate(connection.lastSyncAt))}` : "Boîte prête à être consultée"}</small></div><div class="partner-card-actions"><button type="button" class="secondary-button">Consulter les e-mails</button></div>`;
+        item.querySelector("button").addEventListener("click", () => openMailboxBrowser(card, connection));
+        list.appendChild(item);
+    });
+}
+
 async function loadPartnerEmailSettings(card) {
     const result = await api("/api/partner-email");
     if (!result.ok) {

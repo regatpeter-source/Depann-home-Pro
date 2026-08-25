@@ -64,8 +64,8 @@ test("les secrets, dédoublonnages et pièces privées sont définis côté serv
     assert.match(schemaSource, /depannhome_partner_email_messages[\s\S]*?status IN \('candidate','processing','imported','ignored','rejected'\)/);
 });
 
-test("la boîte mail dépend de Missions partenaires et non des connecteurs Pro", () => {
-    assert.match(appSource, /const requirePartnerEmailFeature = requireOrganizationFeature\("partnerMissions"\)/);
+test("la boîte mail dépend de la capacité E-mail Basic+/Pro et non des connecteurs", () => {
+    assert.match(appSource, /const requirePartnerEmailFeature = requireOrganizationFeature\("companyEmail"\)/);
     assert.match(appSource, /if \(isPartnerEmailOAuthCallback\(request\)\) return next\(\)/);
     assert.match(missionSource, /intake\.partner_key LIKE 'email-%'/);
     assert.match(missionSource, /sourceType: partnerKey\.startsWith\("connection-"\) \? "depannhome_network" : partnerKey\.startsWith\("email-"\) \? "professional_email"/);

@@ -9,8 +9,8 @@ import { decryptElectronicInvoicingCredentials, encryptElectronicInvoicingCreden
 import { ingestEmailPartnerMission } from "./partner-missions.js";
 import { recordMissionDialogueDocument, recordMissionDialogueEvent } from "./partner-dialogue.js";
 import { extractPartnerDocumentText } from "./partner-email-document-extractor.js";
+import { hasCompanyEmailWorkspaceAccess } from "./workstation-permissions.js";
 
-const ADMIN_ROLES = new Set(["admin", "pc_standard", "mobile_admin"]);
 const PROVIDERS = new Set(["google", "microsoft", "imap"]);
 const MODES = new Set(["manual", "automatic"]);
 const ALLOWED_MIME = new Set(["application/pdf", "image/jpeg", "image/png", "image/webp", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "text/plain"]);
@@ -581,7 +581,7 @@ export function oauthErrorMessage(error, provider = "") {
 function oauthErrorLog(error, provider) { return { provider, code: clean(error?.oauthCode || "provider_error", 80), errorCodes: Array.isArray(error?.oauthErrorCodes) ? error.oauthErrorCodes : [], status: Number(error?.oauthStatus) || 0, correlationId: clean(error?.oauthCorrelationId, 80) }; }
 function mailErrorLog(error, provider) { return { provider, code: clean(error?.oauthCode || error?.code || error?.responseCode || "mailbox_error", 80), errorCodes: Array.isArray(error?.oauthErrorCodes) ? error.oauthErrorCodes : [], status: Number(error?.oauthStatus || error?.statusCode) || 0, authenticationFailed: Boolean(error?.authenticationFailed) }; }
 function oauthPopup(res, success, message) { res.type("html").send(`<!doctype html><meta charset="utf-8"><title>Connexion boîte mail</title><p>${escapeHtml(message)}</p><script>window.opener?.postMessage(${JSON.stringify({ type: "depannhome:partner-email-oauth", success, message })},window.location.origin);window.close();</script>`); }
-function requireEmailAccess(req, res, next) { if (!ADMIN_ROLES.has(req.user?.role)) return res.status(403).json({ message: "La boîte de missions est réservée aux postes autorisés." }); return next(); }
+function requireEmailAccess(req, res, next) { if (!hasCompanyEmailWorkspaceAccess(req.user)) return res.status(403).json({ message: "L’espace e-mail de l’entreprise n’est pas autorisé sur ce poste." }); return next(); }
 function selectedIds(value) { return [...new Set((Array.isArray(value) ? value : []).map(positiveId).filter(Boolean))].slice(0, 100); }
 export function publicMailError(error, { configuration = false, provider = "" } = {}) {
     if (error?.oauthCode || error?.oauthProvider) return oauthErrorMessage(error, provider || error.oauthProvider);

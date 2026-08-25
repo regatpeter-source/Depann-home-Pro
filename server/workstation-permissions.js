@@ -33,3 +33,11 @@ export function supportsConfigurablePcPermissions(role) {
 export function isAdvancedWorkstationTier(tier) {
     return ADVANCED_TIERS.has(tier);
 }
+
+export function hasCompanyEmailWorkspaceAccess(user) {
+    if (!hasAdvancedWorkstationTier(user)) return false;
+    if (["admin", "mobile_admin"].includes(user?.role)) return true;
+    return user?.deviceType === "desktop"
+        && CONFIGURABLE_PC_ROLES.has(user?.role)
+        && user?.canAccessCompanyEmail === true;
+}

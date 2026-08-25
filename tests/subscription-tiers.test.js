@@ -29,6 +29,7 @@ const presentationGenerator = readFileSync(new URL("../scripts/generate-partner-
 const partnerConnectionsClient = readFileSync(new URL("../js/partner-connections.js", import.meta.url), "utf8");
 const partnerMissionsServer = readFileSync(new URL("../server/partner-missions.js", import.meta.url), "utf8");
 const partnerMissionsClient = readFileSync(new URL("../js/partner-missions.js", import.meta.url), "utf8");
+const partnerEmailServer = readFileSync(new URL("../server/partner-email.js", import.meta.url), "utf8");
 
 test("Basic, Basic+ and Pro prices are calculated per PC and mobile seat", () => {
     assert.equal(calculateSubscriptionPriceCents("basic", 1, 1), 2500);
@@ -62,6 +63,7 @@ test("Basic exposes clients, billing and accounting while Basic+ adds planning, 
     assert.equal(isFeatureEnabled(basic, "calendar"), false);
     assert.equal(isFeatureEnabled(basic, "technicalReports"), false);
     assert.equal(isFeatureEnabled(basic, "partnerConnections"), false);
+    assert.equal(isFeatureEnabled(basic, "companyEmail"), false);
     const plus = publicOrganization({ interfaceType: "standard", licenseType: "depannhome_standard", subscriptionTier: "basic_plus" });
     assert.equal(isFeatureEnabled(plus, "clients"), true);
     assert.equal(isFeatureEnabled(plus, "billing"), true);
@@ -72,6 +74,7 @@ test("Basic exposes clients, billing and accounting while Basic+ adds planning, 
     assert.equal(isFeatureEnabled(plus, "partnerConnections"), true);
     assert.equal(isFeatureEnabled(plus, "connectors"), false);
     assert.equal(isFeatureEnabled(plus, "partnerMissions"), true);
+    assert.equal(isFeatureEnabled(plus, "companyEmail"), true);
     assert.equal(isFeatureEnabled(plus, "groups"), false);
     assert.equal(isFeatureEnabled(plus, "quitus"), false);
     assert.equal(isFeatureEnabled(plus, "technicalReports"), false);
@@ -137,7 +140,7 @@ test("Library is mobile-only and Purchases are available on every PC plus Mobile
 
 test("Pro enables every product feature", () => {
     const pro = publicOrganization({ interfaceType: "standard", licenseType: "depannhome_standard", subscriptionTier: "pro" });
-    for (const feature of ["clients", "calendar", "library", "billing", "accounting", "quitus", "technicalReports", "partnerMissions", "partnerConnections", "messages", "settings", "imports", "groups", "purchases", "connectors"]) assert.equal(isFeatureEnabled(pro, feature), true, feature);
+    for (const feature of ["clients", "calendar", "library", "billing", "accounting", "quitus", "technicalReports", "partnerMissions", "companyEmail", "partnerConnections", "messages", "settings", "imports", "groups", "purchases", "connectors"]) assert.equal(isFeatureEnabled(pro, feature), true, feature);
 });
 
 test("Pro materials include Group licenses and explain the free Partner license", () => {
@@ -189,6 +192,7 @@ test("the free Partner interface exposes the internal network without external c
     for (const feature of ["calendar", "library", "billing", "accounting", "technicalReports", "settings", "imports", "groups", "purchases", "connectors"]) {
         assert.equal(isFeatureEnabled(partner, feature), false, feature);
     }
+    assert.equal(isFeatureEnabled(partner, "companyEmail"), false);
     assert.equal(isFeatureEnabledForRole(partner, "library", "technician"), false);
     assert.match(auth, /getOrganization\(accountOwnerId\)/);
     assert.match(auth, /publicUser\(\{ \.\.\.user, accountOwnerId, activeCompanyId: accountOwnerId, organization \}\)/);
@@ -301,10 +305,12 @@ test("Creator console notifies every internal and external request", () => {
 });
 
 test("tier features are protected on both API and navigation layers", () => {
-    for (const feature of ["clients", "calendar", "billing", "accounting", "purchases", "messages", "partnerConnections", "connectors", "imports", "groups"]) assert.match(app, new RegExp(`requireOrganizationFeature\\("${feature}"\\)`));
+    for (const feature of ["clients", "calendar", "billing", "accounting", "purchases", "messages", "partnerConnections", "companyEmail", "connectors", "imports", "groups"]) assert.match(app, new RegExp(`requireOrganizationFeature\\("${feature}"\\)`));
     assert.match(navigation, /\[ROUTES\.clients\]: "clients"/);
     assert.match(navigation, /\[ROUTES\.calendar\]: "calendar"/);
     assert.match(navigation, /\[ROUTES\.purchases\]: "purchases"/);
+    assert.match(navigation, /\[ROUTES\.companyEmail\]: "companyEmail"/);
+    assert.match(partnerEmailServer, /hasCompanyEmailWorkspaceAccess\(req\.user\)/);
     assert.match(app, /app\.use\("\/api\/billing\/document-templates\/report", requireAuthentication, requireOrganizationFeature\("technicalReports"\)\)/);
     assert.match(app, /app\.use\("\/api\/calendar\/events\/:eventId\/quitus", requireAuthentication, requireOrganizationFeature\("quitus"\)\)/);
     assert.match(app, /app\.use\("\/api\/billing\/document-templates\/quitus", requireAuthentication, requireOrganizationFeature\("quitus"\)\)/);

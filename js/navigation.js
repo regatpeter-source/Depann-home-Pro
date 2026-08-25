@@ -1,4 +1,4 @@
-import { ROUTES, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=130";
+import { ROUTES, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=131";
 import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=172";
 import { openCreatorPartnerRequest, openCreatorRequestNotification, renderCreatorConsole } from "./creator.js?v=145";
 import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=181";
@@ -8,7 +8,7 @@ import { renderGroupActivation, renderGroupWorkspace } from "./groups.js?v=3";
 import { renderPartnerMissions } from "./partner-missions.js?v=47";
 import { renderPartnerSandbox } from "./partner-sandbox.js?v=3";
 import { renderPartnerConnections } from "./partner-connections.js?v=23";
-import { renderPartnerEmailSettings } from "./partner-email-settings.js?v=6";
+import { renderCompanyEmailWorkspace, renderPartnerEmailSettings } from "./partner-email-settings.js?v=7";
 import { renderDataImportTool } from "./data-imports.js?v=3";
 import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=29";
 import { getFirstUnreadClientId, refreshClientMessageAlert, refreshVisibleClientMessages } from "./messages.js?v=107";
@@ -160,6 +160,8 @@ export async function refreshApplication() {
         renderTechnicalReports();
     } else if (activeRoute === ROUTES.partnerMissions && !isAccountant()) {
         renderPartnerMissions();
+    } else if (activeRoute === ROUTES.companyEmail) {
+        renderCompanyEmail();
     } else if (activeRoute === ROUTES.partnerSandbox && document.body.dataset.role === "admin") {
         renderPartnerSandbox();
     } else if (activeRoute === ROUTES.purchases && ["admin", "pc_standard", "accountant", "mobile_admin"].includes(document.body.dataset.role)) {
@@ -181,9 +183,9 @@ async function refreshOrganizationAccess() {
         const session = await response.json();
         const organization = session.user?.organization;
         if (!organization?.features) return false;
-        const previous = `${document.body.dataset.organizationInterface || ""}:${document.body.dataset.subscriptionTier || ""}:${document.body.dataset.organizationFeatures || ""}`;
+        const previous = `${document.body.dataset.organizationInterface || ""}:${document.body.dataset.subscriptionTier || ""}:${document.body.dataset.organizationFeatures || ""}:${document.body.dataset.canAccessBilling || "false"}:${document.body.dataset.canAccessAccounting || "false"}:${document.body.dataset.canAccessCompanyEmail || "false"}`;
         const nextFeatures = JSON.stringify(organization.features);
-        const next = `${organization.interfaceType || "standard"}:${organization.subscriptionTier || "pro"}:${nextFeatures}`;
+        const next = `${organization.interfaceType || "standard"}:${organization.subscriptionTier || "pro"}:${nextFeatures}:${session.user.canAccessBilling ? "true" : "false"}:${session.user.canAccessAccounting ? "true" : "false"}:${session.user.canAccessCompanyEmail ? "true" : "false"}`;
         if (previous === next) return false;
         document.body.dataset.organizationInterface = organization.interfaceType || "standard";
         document.body.dataset.organizationType = organization.organizationType || "troubleshooting_company";
@@ -205,6 +207,7 @@ function bindEvents() {
     const purchasesBtn = document.getElementById("purchasesBtn");
     const groupsBtn = document.getElementById("groupsBtn");
     const partnerMissionsBtn = document.getElementById("partnerMissionsBtn");
+    const companyEmailBtn = document.getElementById("companyEmailBtn");
     const partnerSandboxBtn = document.getElementById("partnerSandboxBtn");
     const calendarBtn = document.getElementById("calendarBtn");
     const libraryBtn = document.getElementById("libraryBtn");
@@ -233,6 +236,7 @@ function bindEvents() {
     purchasesBtn?.addEventListener("click", () => { if (canAccessQuick("purchases")) renderPurchases(); });
     groupsBtn?.addEventListener("click", () => { if (canAccessQuick("groups")) renderGroupWorkspace(); });
     partnerMissionsBtn?.addEventListener("click", () => { if (canAccessQuick("partnerMissions")) renderPartnerMissions(); });
+    companyEmailBtn?.addEventListener("click", () => { if (canAccessQuick("companyEmail")) renderCompanyEmail(); });
     partnerSandboxBtn?.addEventListener("click", () => { if (canAccessQuick("partnerSandbox")) renderPartnerSandbox(); });
     calendarBtn?.addEventListener("click", () => { if (canAccessQuick("calendar")) openCalendar(); });
     libraryBtn?.addEventListener("click", () => { if (canAccessQuick("library")) renderLibrary(); });
@@ -247,6 +251,7 @@ function bindEvents() {
             if (isAccountant()) {
                 if (nav === ROUTES.billing) renderBilling();
                 if (nav === ROUTES.accounting) renderAccounting();
+                if (nav === ROUTES.companyEmail) renderCompanyEmail();
                 return;
             }
 
@@ -262,6 +267,7 @@ function bindEvents() {
             if (nav === ROUTES.purchases) renderPurchases();
             if (nav === ROUTES.groups && document.body.dataset.groupAdmin === "true") renderGroupWorkspace();
             if (nav === ROUTES.partnerMissions) renderPartnerMissions();
+            if (nav === ROUTES.companyEmail) renderCompanyEmail();
             if (nav === ROUTES.partnerSandbox && document.body.dataset.role === "admin") renderPartnerSandbox();
             if (nav === ROUTES.calendar) openCalendar();
             if (nav === ROUTES.library) renderLibrary();
@@ -273,7 +279,7 @@ function bindEvents() {
 function applyRoleBasedMenus() {
     const quickSelectors = {
         clients: "#clientsBtn", calendar: "#calendarBtn", library: "#libraryBtn", billing: "#billingBtn", purchases: "#purchasesBtn",
-        accounting: "#accountingBtn", groups: "#groupsBtn", partnerMissions: "#partnerMissionsBtn",
+        accounting: "#accountingBtn", groups: "#groupsBtn", partnerMissions: "#partnerMissionsBtn", companyEmail: "#companyEmailBtn",
         partnerSandbox: "#partnerSandboxBtn", settings: "#settingsBtn"
     };
     Object.entries(quickSelectors).forEach(([menu, selector]) => {
@@ -316,6 +322,7 @@ function isMenuAllowed(roles, route = "") {
     if (!Array.isArray(roles) || !roles.includes(document.body.dataset.role)) return false;
     if (route === ROUTES.billing && ["pc_standard", "accountant"].includes(document.body.dataset.role) && document.body.dataset.canAccessBilling !== "true") return false;
     if (route === ROUTES.accounting && ["pc_standard", "accountant"].includes(document.body.dataset.role) && document.body.dataset.canAccessAccounting !== "true") return false;
+    if (route === ROUTES.companyEmail && document.body.dataset.canAccessCompanyEmail !== "true") return false;
     if (route === ROUTES.groups) return document.body.dataset.groupAdmin === "true";
     if (route === ROUTES.partnerSandbox) return document.body.classList.contains("partner-sandbox-enabled");
     return !route || isOrganizationRouteEnabled(route);
@@ -336,7 +343,7 @@ function isDesktopDevice() {
 function canAccessSettingsSection(section) {
     if (document.body.dataset.creator === "true") return true;
     if (document.body.dataset.organizationInterface === "partner") return section === "support" || (section === "network" && organizationFeatureEnabled("partnerConnections")) || (section === "company" && organizationFeatureEnabled("partnerMissions"));
-    if (section === "company" && organizationFeatureEnabled("partnerMissions")) return ["admin", "pc_standard", "mobile_admin"].includes(document.body.dataset.role);
+    if (section === "company" && organizationFeatureEnabled("companyEmail")) return document.body.dataset.role === "admin";
     if (section === "network" && (organizationFeatureEnabled("partnerConnections") || organizationFeatureEnabled("partnerMissions"))) return true;
     const featureBySection = { documents: "billing", electronicInvoicing: "accounting", network: "partnerConnections", users: "settings", security: "settings", groups: "groups", personalization: "settings", imports: "imports" };
     const feature = featureBySection[section];
@@ -351,7 +358,7 @@ function isOrganizationRouteEnabled(route) {
     if (document.body.dataset.creator === "true") return true;
     if (route === ROUTES.settings && organizationFeatureEnabled("partnerConnections")) return true;
     if (route === ROUTES.settings && organizationFeatureEnabled("partnerMissions")) return true;
-    const featureByRoute = { [ROUTES.search]: "library", [ROUTES.store]: "library", [ROUTES.clients]: "clients", [ROUTES.calendar]: "calendar", [ROUTES.library]: "library", [ROUTES.billing]: "billing", [ROUTES.accounting]: "accounting", [ROUTES.purchases]: "purchases", [ROUTES.messages]: "messages", [ROUTES.technicalReports]: "technicalReports", [ROUTES.partnerMissions]: "partnerMissions", [ROUTES.groups]: "groups", [ROUTES.settings]: "settings" };
+    const featureByRoute = { [ROUTES.search]: "library", [ROUTES.store]: "library", [ROUTES.clients]: "clients", [ROUTES.calendar]: "calendar", [ROUTES.library]: "library", [ROUTES.billing]: "billing", [ROUTES.accounting]: "accounting", [ROUTES.purchases]: "purchases", [ROUTES.messages]: "messages", [ROUTES.technicalReports]: "technicalReports", [ROUTES.partnerMissions]: "partnerMissions", [ROUTES.companyEmail]: "companyEmail", [ROUTES.groups]: "groups", [ROUTES.settings]: "settings" };
     const feature = featureByRoute[route];
     return !feature || organizationFeatureEnabled(feature);
 }
@@ -368,7 +375,7 @@ function isMobilePostRole() {
 }
 
 function menuRoute(menu) {
-    return ({ clients: ROUTES.clients, calendar: ROUTES.calendar, library: ROUTES.library, billing: ROUTES.billing, accounting: ROUTES.accounting, purchases: ROUTES.purchases, groups: ROUTES.groups, partnerMissions: ROUTES.partnerMissions, partnerSandbox: ROUTES.partnerSandbox, settings: ROUTES.settings })[menu] || "";
+    return ({ clients: ROUTES.clients, calendar: ROUTES.calendar, library: ROUTES.library, billing: ROUTES.billing, accounting: ROUTES.accounting, purchases: ROUTES.purchases, groups: ROUTES.groups, partnerMissions: ROUTES.partnerMissions, companyEmail: ROUTES.companyEmail, partnerSandbox: ROUTES.partnerSandbox, settings: ROUTES.settings })[menu] || "";
 }
 
 function openHome() {
@@ -395,6 +402,14 @@ function openCalendar() {
         return;
     }
     renderCalendar();
+}
+
+function renderCompanyEmail() {
+    if (!canAccessRoute(ROUTES.companyEmail)) return;
+    clearSearch();
+    resetSelection("all");
+    setPage("Espace e-mail de l’entreprise", ROUTES.companyEmail, "detail");
+    renderCompanyEmailWorkspace(getContainer());
 }
 
 async function openClients(clientId = "") {
@@ -1104,6 +1119,7 @@ function getSearchModules() {
     if (document.body.dataset.technicianBillingEnabled !== "false") add("Devis et factures", "devis facture document commercial facturation", ROUTES.billing, renderBilling);
     add("Rapports de recherche de fuite", "rapport rapports fuite technique intervention", ROUTES.technicalReports, renderTechnicalReports);
     add("Missions partenaires", "mission partenaire réseau intervention externe", ROUTES.partnerMissions, renderPartnerMissions);
+    add("Espace e-mail de l’entreprise", "email e-mail mail messagerie boîte professionnelle", ROUTES.companyEmail, renderCompanyEmail);
     add("Bibliothèque technique", "bibliothèque notice procédure moteur automatisme télécommande schéma diagnostic portail volet roulant porte garage serrure pièce détachée", ROUTES.library, renderLibrary);
     add("Comptabilité et facturation électronique & PDP", "comptabilité facturation électronique pdp export comptable facture", ROUTES.accounting, renderAccounting);
     add("Réseau Depann'Home Pro", "réseau partenaire partenaires api connexion annuaire", ROUTES.settings, () => renderSettings({ section: "network" }));
@@ -1349,7 +1365,7 @@ function renderSettingsWorkspace(options = {}) {
             ...(document.body.dataset.role === "admin" ? [["subscription", "Offre & abonnement", "Consultez les tarifs et demandez une évolution ou une rétrogradation au Support.", "subscription"]] : []),
             ...(document.body.dataset.role === "admin" ? [["documents", "Modèles de documents", `Identité, présentation et modèles des devis${organizationFeatureEnabled("quitus") ? ", quitus" : ""} et rapports.`, "document"]] : []),
             ...(document.body.dataset.role === "admin" && organizationFeatureEnabled("accounting") ? [["electronicInvoicing", "Facturation électronique", "Choisissez et configurez la plateforme propre à votre entreprise.", "document"]] : []),
-            ...(organizationFeatureEnabled("partnerMissions") && ["admin", "pc_standard", "mobile_admin"].includes(document.body.dataset.role) ? [["company", "Entreprise · Boîte mail", "Connectez la boîte de l’entreprise et choisissez si elle recherche automatiquement les missions.", "company"]] : []),
+            ...(organizationFeatureEnabled("companyEmail") && document.body.dataset.role === "admin" ? [["company", "Entreprise · Boîte mail", "Connectez la boîte de l’entreprise et choisissez si elle recherche automatiquement les missions.", "company"]] : []),
             ["network", internalNetworkOnly ? "Réseau Depann’Home Pro" : "Réseau & connecteurs", internalNetworkOnly ? "Recherchez des entreprises utilisatrices et gérez vos connexions internes." : "Deux espaces distincts : le réseau collaboratif Depann’Home Pro et les connecteurs API externes.", "network"],
             ...(internalNetworkOnly ? [["support", "Support", "Envoyez une demande à l’équipe Depann’Home Pro depuis votre compte partenaire.", "support"]] : []),
             ...(document.body.dataset.role === "admin" ? [["users", "Utilisateurs", "Accès, postes, techniciens et chefs d’équipe.", "users"], ["security", "Sécurité", "Double authentification et protection des accès.", "security"], ["groups", "Groupe / Multi-entreprises", "Sociétés, bascule de contexte et indicateurs consolidés.", "group"]] : []),
@@ -1775,6 +1791,7 @@ async function renderTeamManagement(container) {
         <p class="muted" data-pc-permission-help>Ces deux accès sont indépendants : cochez l’un, l’autre ou les deux selon les missions du poste.</p>
         <label class="settings-toggle"><span><strong>Devis et factures</strong><small>Créer et gérer les devis, factures, modèles et paramètres commerciaux</small></span><input type="checkbox" name="canAccessBilling"></label>
         <label class="settings-toggle"><span><strong>Comptabilité et e-facturation</strong><small>Journaux, règlements, TVA, FEC, facturation électronique et PDP — sans création de devis ni facture</small></span><input type="checkbox" name="canAccessAccounting"></label>
+        <label class="settings-toggle"><span><strong>Espace e-mail de l’entreprise</strong><small>Consulter la boîte professionnelle connectée, ses messages et ses pièces jointes</small></span><input type="checkbox" name="canAccessCompanyEmail"></label>
         ${groupCompanyPermissionAvailable ? '<label class="settings-toggle" data-group-company-permission><span><strong>Entreprises du même groupe</strong><small>Changer de société active sans partager leurs données</small></span><input type="checkbox" name="canSwitchGroupCompanies"></label>' : ""}
     `;
     permissionsField.hidden = true;
@@ -1923,7 +1940,7 @@ async function renderTeamManagement(container) {
                 const permissionSummary = member.role === "admin"
                     ? " · Tous les accès"
                     : ["pc_standard", "accountant"].includes(member.role) && advancedPcPermissions
-                        ? ` · Facturation : ${member.canAccessBilling ? "oui" : "non"} · Comptabilité : ${member.canAccessAccounting ? "oui" : "non"}${groupCompanyPermissionAvailable ? ` · Groupe : ${member.canSwitchGroupCompanies ? "oui" : "non"}` : ""}`
+                        ? ` · Facturation : ${member.canAccessBilling ? "oui" : "non"} · Comptabilité : ${member.canAccessAccounting ? "oui" : "non"} · E-mail : ${member.canAccessCompanyEmail ? "oui" : "non"}${groupCompanyPermissionAvailable ? ` · Groupe : ${member.canSwitchGroupCompanies ? "oui" : "non"}` : ""}`
                         : "";
                 const sectionBadges = ["technician", "team_lead"].includes(member.role) ? memberDepartments(member).map(section => `<span class="team-department-badge">${escapeHtml(section)}</span>`).join("") : "";
                 item.innerHTML = `<div class="team-member-summary"><div class="team-member-title"><strong>${escapeHtml(member.fullName || member.username)}</strong><span class="team-role-badge ${member.role === "admin" ? "is-admin" : member.role === "mobile_admin" ? "is-mobile-admin" : member.role === "accountant" ? "is-accountant" : "is-technician"}">${memberType}</span>${sectionBadges}<span class="team-state-badge ${member.isActive ? "is-active" : "is-inactive"}">${member.isActive ? "Actif" : "Désactivé"}</span></div><span class="team-member-meta">${escapeHtml(member.phone || "Téléphone non renseigné")}<span aria-hidden="true">·</span>${escapeHtml(member.email || "E-mail non renseigné")}<span aria-hidden="true">·</span>${escapeHtml(member.username)}${member.role === "mobile_admin" ? " · Activation par code e-mail sur smartphone" : ""}${permissionSummary}</span></div>`;
@@ -1970,6 +1987,7 @@ async function renderTeamManagement(container) {
                     };
                     addPermissionButton("canAccessBilling", "Retirer Devis et factures", "Autoriser Devis et factures");
                     addPermissionButton("canAccessAccounting", "Retirer Comptabilité et e-facturation", "Autoriser Comptabilité et e-facturation");
+                    addPermissionButton("canAccessCompanyEmail", "Retirer Espace e-mail", "Autoriser Espace e-mail");
                     if (groupCompanyPermissionAvailable) addPermissionButton("canSwitchGroupCompanies", "Retirer accès Groupe", "Autoriser accès Groupe");
                 }
                 if (["technician", "team_lead"].includes(member.role)) {
@@ -2070,6 +2088,7 @@ async function renderTeamManagement(container) {
             values.canCreateBilling = roleInput.value === "technician" && Boolean(form.elements.canCreateBilling.checked);
             values.canAccessBilling = Boolean(form.elements.canAccessBilling?.checked);
             values.canAccessAccounting = Boolean(form.elements.canAccessAccounting?.checked);
+            values.canAccessCompanyEmail = Boolean(form.elements.canAccessCompanyEmail?.checked);
             values.canSwitchGroupCompanies = Boolean(form.elements.canSwitchGroupCompanies?.checked);
             const response = await fetch("/api/auth/members", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify(values) });
             const payload = await response.json();

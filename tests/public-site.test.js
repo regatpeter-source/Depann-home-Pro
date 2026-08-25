@@ -49,6 +49,10 @@ test("la vitrine présente la grille tarifaire commerciale complète", () => {
     assert.match(landing, /25 € TTC \/ mois[\s\S]*?94 € TTC \/ mois[\s\S]*?200 € TTC \/ mois/);
     assert.match(landing, /Inclus dans toutes les offres[\s\S]*?connexion directe à une plateforme de facturation électronique compatible/);
     assert.equal((landing.match(/Connexion directe à une plateforme de facturation électronique incluse/g) || []).length, 3);
+    assert.equal((landing.match(/Espace e-mail de l’entreprise/g) || []).length, 2);
+    assert.match(landing, /Administrateurs PC et mobiles/);
+    const basicOffer = landing.slice(landing.indexOf('<p class="pricing-name">Basic</p>'), landing.indexOf('<p class="pricing-name">Basic+</p>'));
+    assert.doesNotMatch(basicOffer, /Espace e-mail de l’entreprise/);
 });
 
 test("la vitrine propose une demande d’offre transmise au support", () => {

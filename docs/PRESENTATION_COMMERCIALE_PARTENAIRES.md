@@ -59,6 +59,7 @@ L’offre Basic est adaptée aux petites structures qui souhaitent centraliser l
 - Imports de données Excel et CSV.
 - Réseau Depann’Home Pro interne : annuaire, fiche réseau et connexions entre entreprises utilisatrices.
 - Envoi et réception de missions, messagerie et dossiers partagés entre entreprises connectées du réseau.
+- Espace e-mail de l’entreprise dans le menu principal. Les Administrateurs PC et mobiles y accèdent automatiquement ; chaque Poste PC standard ou Comptable peut être autorisé individuellement.
 - Aucun connecteur externe ni connexion API partenaire.
 - Accès à tous les postes mobiles : Administrateur Mobile, Chef d’équipe et Technicien.
 - Bibliothèque technique pour ces postes mobiles ; Achats sur tous les postes PC et sur l’Administrateur Mobile.
@@ -78,6 +79,7 @@ L’offre Basic+ convient aux entreprises qui souhaitent coordonner le bureau, l
 - Achats et fonctions métier avancées.
 - Bibliothèque et ressources techniques.
 - Missions partenaires.
+- Espace e-mail de l’entreprise dans le menu principal, avec autorisations individuelles pour les postes PC non administrateurs.
 - Dialogue collaboratif et partage contrôlé des documents.
 - Connexions API, connecteurs et environnements de recette.
 - Licences Groupe d’entreprise / Multi-entreprises incluses, sans supplément de licence, selon l’interface activée.
@@ -314,7 +316,22 @@ Depann’Home Pro n’est pas lui-même une plateforme agréée par l’État : 
 
 ---
 
-# 10. Réseau Depann’Home Pro
+# 10. Espace e-mail de l’entreprise
+
+Inclus dans les offres Basic+ et Pro, cet espace permet de consulter la messagerie professionnelle directement depuis le menu principal, indépendamment des Paramètres.
+
+- Connexion Microsoft, Google ou IMAP/SMTP configurée par un Administrateur PC.
+- Consultation à la demande des messages et pièces jointes.
+- Messages ordinaires conservés chez le fournisseur, sans copie permanente dans Depann’Home Pro.
+- Accès automatique pour les Administrateurs PC et les Administrateurs Mobiles.
+- Accès individuel autorisable par l’administrateur pour chaque Poste PC standard ou Comptable.
+- Aucun accès pour les Techniciens et Chefs d’équipe.
+
+La configuration de la connexion reste centralisée dans les Paramètres, tandis que la consultation quotidienne dispose de son propre accès dans le logiciel.
+
+---
+
+# 11. Réseau Depann’Home Pro
 
 Le réseau permet aux entreprises inscrites de trouver des partenaires et de collaborer de manière encadrée.
 
@@ -340,7 +357,7 @@ La visibilité dans l’annuaire est volontaire. Les clients, documents, donnée
 
 ---
 
-# 11. Missions partenaires
+# 12. Missions partenaires
 
 Depann’Home Pro peut recevoir et traiter des missions provenant d’organismes ou d’entreprises partenaires.
 
@@ -359,7 +376,7 @@ Depann’Home Pro peut recevoir et traiter des missions provenant d’organismes
 
 ---
 
-# 12. Dialogue collaboratif par mission
+# 13. Dialogue collaboratif par mission
 
 Chaque mission partenaire peut disposer d’un fil d’échange dédié.
 
@@ -375,7 +392,7 @@ Ce fil partenaire reste séparé des notes internes du dossier client.
 
 ---
 
-# 13. API, connecteurs et environnement de recette
+# 14. API, connecteurs et environnement de recette
 
 La plateforme prévoit des échanges sécurisés avec des organismes tiers.
 
@@ -392,7 +409,7 @@ Aucun code JavaScript externe fourni par un partenaire n’est exécuté dans le
 
 ---
 
-# 14. Bibliothèque et ressources techniques
+# 15. Bibliothèque et ressources techniques
 
 Les équipes terrain peuvent organiser leurs ressources métier.
 
@@ -404,7 +421,7 @@ Les équipes terrain peuvent organiser leurs ressources métier.
 
 ---
 
-# 15. Importation de données
+# 16. Importation de données
 
 L’assistant d’import facilite la reprise d’un historique existant.
 
@@ -418,7 +435,7 @@ L’assistant d’import facilite la reprise d’un historique existant.
 
 ---
 
-# 16. Groupes et multi-entreprises
+# 17. Groupes et multi-entreprises
 
 Le mode Groupe permet de piloter plusieurs sociétés tout en conservant leur cloisonnement.
 
@@ -431,7 +448,7 @@ Le mode Groupe permet de piloter plusieurs sociétés tout en conservant leur cl
 
 ---
 
-# 17. Collaboration et notifications
+# 18. Collaboration et notifications
 
 - Notifications persistantes.
 - Indicateur d’état de synchronisation.
@@ -443,7 +460,7 @@ Le mode Groupe permet de piloter plusieurs sociétés tout en conservant leur cl
 
 ---
 
-# 18. Rôles et accès
+# 19. Rôles et accès
 
 Les droits s’adaptent à l’organisation de l’entreprise.
 
@@ -458,7 +475,7 @@ Chaque rôle dispose d’un périmètre métier spécifique. Les autorisations s
 
 ---
 
-# 19. Sécurité et isolation
+# 20. Sécurité et isolation
 
 - Données filtrées par identifiant d’entreprise (`owner_id`).
 - Cookies de session HTTP-only.
@@ -475,7 +492,7 @@ Une entreprise ne peut pas consulter les données d’une autre entreprise sans 
 
 ---
 
-# 20. Accès web et mobilité
+# 21. Accès web et mobilité
 
 Depann’Home Pro est une application web installable de type PWA.
 

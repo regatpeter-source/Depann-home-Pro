@@ -2,7 +2,7 @@ import { initializeAuthentication, restoreApplicationShell, signOut } from "./au
 import { initializeClientSynchronization } from "./client-sync.js?v=125";
 import { initializeCollaboration } from "./collaboration.js?v=5";
 import { loadDatabase } from "./data.js?v=59";
-import { initializeNavigation, refreshApplication } from "./navigation.js?v=367";
+import { initializeNavigation, refreshApplication } from "./navigation.js?v=369";
 import { renderError } from "./ui.js?v=44";
 import { getSettings } from "./storage.js?v=44";
 import { FONT_OPTIONS } from "./config.js?v=130";
@@ -137,6 +137,7 @@ function showAuthenticatedUser(user) {
     document.body.dataset.userDepartments = JSON.stringify(sections);
     document.body.dataset.canAccessBilling = user.canAccessBilling ? "true" : "false";
     document.body.dataset.canAccessAccounting = user.canAccessAccounting ? "true" : "false";
+    document.body.dataset.canAccessCompanyEmail = user.canAccessCompanyEmail ? "true" : "false";
     document.body.dataset.canSwitchGroupCompanies = user.canSwitchGroupCompanies ? "true" : "false";
     document.body.dataset.maxPcUsers = String(user.maxPcUsers || 1);
     document.body.dataset.maxMobileUsers = String(user.maxMobileUsers || 0);

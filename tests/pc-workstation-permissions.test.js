@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import {
     hasAccountingWorkspaceAccess,
     hasBillingWorkspaceAccess,
+    hasCompanyEmailWorkspaceAccess,
     hasGroupCompanySwitchAccess,
     isAdvancedWorkstationTier,
     supportsConfigurablePcPermissions
@@ -49,6 +50,16 @@ test("les cases contrôlent séparément Facturation et Comptabilité en Basic+ 
     assert.equal(hasAccountingWorkspaceAccess(accountingOnly), true);
 });
 
+test("l’espace e-mail est automatique pour les administrateurs et configurable sur les autres postes PC Basic+ et Pro", () => {
+    assert.equal(hasCompanyEmailWorkspaceAccess(user("admin", "basic_plus", { deviceType: "desktop" })), true);
+    assert.equal(hasCompanyEmailWorkspaceAccess(user("mobile_admin", "pro", { deviceType: "mobile" })), true);
+    assert.equal(hasCompanyEmailWorkspaceAccess(user("admin", "basic", { deviceType: "desktop" })), false);
+    assert.equal(hasCompanyEmailWorkspaceAccess(user("pc_standard", "basic_plus", { deviceType: "desktop", canAccessCompanyEmail: true })), true);
+    assert.equal(hasCompanyEmailWorkspaceAccess(user("accountant", "pro", { deviceType: "desktop", canAccessCompanyEmail: false })), false);
+    assert.equal(hasCompanyEmailWorkspaceAccess(user("technician", "pro", { deviceType: "mobile", canAccessCompanyEmail: true })), false);
+    assert.equal(hasCompanyEmailWorkspaceAccess(user("team_lead", "pro", { deviceType: "mobile", canAccessCompanyEmail: true })), false);
+});
+
 test("l’accès Groupe exige la case, un groupe actif et une offre compatible", () => {
     assert.equal(hasGroupCompanySwitchAccess(user("pc_standard", "pro", { deviceType: "desktop", groupId: "", canSwitchGroupCompanies: true })), false);
     assert.equal(hasGroupCompanySwitchAccess(user("pc_standard", "pro", { deviceType: "desktop", groupId: "3", canSwitchGroupCompanies: false })), false);
@@ -75,8 +86,8 @@ test("le stockage et l’interface déclarent les trois permissions", () => {
     const database = read("server/database.js");
     const auth = read("server/auth.js");
     const navigation = read("js/navigation.js");
-    for (const column of ["can_access_billing", "can_access_accounting", "can_switch_group_companies"]) assert.match(database, new RegExp(column));
-    for (const field of ["canAccessBilling", "canAccessAccounting", "canSwitchGroupCompanies"]) assert.match(navigation, new RegExp(field));
+    for (const column of ["can_access_billing", "can_access_accounting", "can_access_company_email", "can_switch_group_companies"]) assert.match(database, new RegExp(column));
+    for (const field of ["canAccessBilling", "canAccessAccounting", "canAccessCompanyEmail", "canSwitchGroupCompanies"]) assert.match(navigation, new RegExp(field));
     assert.match(navigation, /groupCompanyPermissionAvailable = tier === "pro"/);
     assert.match(auth, /organization\.subscriptionTier === "pro"/);
     assert.match(navigation, /L’Administrateur \(PC\) dispose automatiquement de tous les accès/);

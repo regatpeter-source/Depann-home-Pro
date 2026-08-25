@@ -124,7 +124,7 @@ app.use("/api/accounting", requireAuthentication, requireOrganizationFeature("ac
 app.use("/api/library", requireAuthentication, requireOrganizationFeature("library"));
 app.use("/api/technical-reports", requireAuthentication, requireOrganizationFeature("technicalReports"));
 app.use("/api/partner-missions", requireAuthentication, requireOrganizationFeature("partnerMissions"));
-const requirePartnerEmailFeature = requireOrganizationFeature("partnerMissions");
+const requirePartnerEmailFeature = requireOrganizationFeature("companyEmail");
 app.use("/api/partner-email", (request, response, next) => {
 	if (isPartnerEmailOAuthCallback(request)) return next();
 	return requireAuthentication(request, response, next);

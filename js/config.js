@@ -42,6 +42,7 @@ export const ROUTES = {
     accounting: "accounting",
     groups: "groups",
     partnerMissions: "partner-missions",
+    companyEmail: "company-email",
     partnerSandbox: "partner-sandbox",
     purchases: "purchases",
     technicalReports: "technical-reports",
@@ -59,6 +60,7 @@ const OPERATIONAL_MOBILE = ["admin", "pc_standard", "mobile_admin"];
 const TERRAIN = ["admin", "pc_standard", "mobile_admin", "team_lead", "technician"];
 const CALENDAR_USERS = TERRAIN.concat("accountant");
 const PARTNER_MISSION_USERS = OPERATIONAL_MOBILE;
+const COMPANY_EMAIL_USERS = ["admin", "pc_standard", "accountant", "mobile_admin"];
 const LIBRARY_USERS = ["mobile_admin", "team_lead", "technician"];
 const MOBILE_POST_USERS = ["mobile_admin", "team_lead", "technician"];
 const PURCHASE_USERS = ["admin", "pc_standard", "accountant", "mobile_admin"];
@@ -75,6 +77,7 @@ export const MENU_ACCESS = Object.freeze({
         accounting: ADMINISTRATORS.concat("pc_standard", "accountant"),
         groups: ADMINISTRATORS,
         partnerMissions: PARTNER_MISSION_USERS,
+        companyEmail: COMPANY_EMAIL_USERS,
         partnerSandbox: ADMINISTRATORS,
         settings: OPERATIONAL_PC
     }),
@@ -88,6 +91,7 @@ export const MENU_ACCESS = Object.freeze({
         [ROUTES.accounting]: ADMINISTRATORS.concat("pc_standard", "accountant"),
         [ROUTES.groups]: ADMINISTRATORS,
         [ROUTES.partnerMissions]: PARTNER_MISSION_USERS,
+        [ROUTES.companyEmail]: COMPANY_EMAIL_USERS,
         [ROUTES.partnerSandbox]: ADMINISTRATORS,
         [ROUTES.technicalReports]: TERRAIN,
         [ROUTES.calendar]: CALENDAR_USERS,

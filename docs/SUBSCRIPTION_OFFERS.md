@@ -28,6 +28,7 @@ L’interface **Partenaire** utilise le niveau technique Pro, mais son portail e
 - Importation de données Excel et CSV.
 - Accès au Réseau Depann’Home Pro interne : annuaire, fiche réseau et connexions entre entreprises utilisatrices.
 - Envoi et réception de missions, messagerie contextuelle et dossiers partagés entre entreprises connectées du réseau.
+- Espace e-mail de l’entreprise dans le menu principal : consultation directe des boîtes connectées sans conservation des messages ordinaires. Accès automatique pour les Administrateurs PC et mobiles ; autorisation individuelle pour chaque Poste PC standard ou Comptable.
 - Accès à tous les postes mobiles : Administrateur Mobile, Chef d’équipe et Technicien.
 - Aucun mode Groupe, aucune bascule multi-entreprises et aucune autorisation inter-entreprises à la création d’un poste PC ; ces fonctions sont réservées à Pro.
 - Pas d’accès au Quitus d’intervention, réservé à Pro.
@@ -39,6 +40,7 @@ L’interface **Partenaire** utilise le niveau technique Pro, mais son portail e
 - 70 € TTC par poste PC et par mois.
 - 15 € TTC par poste mobile et par mois.
 - Accès complet aux modules disponibles selon le rôle : clients, planning, devis, factures, facturation, comptabilité, achats administrateurs, rapports de recherche de fuite, bibliothèque mobile, photos, imports, groupes, missions partenaires, Réseau Depann’Home Pro et connexions API.
+- Espace e-mail de l’entreprise dans le menu principal, avec accès automatique pour les Administrateurs PC et mobiles et autorisation individuelle pour chaque Poste PC standard ou Comptable.
 - Accès au Quitus d’intervention : signature, validation, PDF et modèles personnalisés.
 - Accès complet à tous les types de postes PC et mobiles.
 - Autorisations individuelles **Facturation**, **Comptabilité** et, lorsqu’un groupe existe, **Entreprises du même groupe** pour les postes PC non administrateurs. Les Administrateurs PC conservent tous les accès.

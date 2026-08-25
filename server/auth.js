@@ -9,7 +9,7 @@ import { releaseLocksForUser } from "./collaboration.js";
 import { resolveGroupCompany } from "./group-context.js";
 import { getOrganization } from "./organizations.js";
 import { isRoleAllowedForSubscription, subscriptionRoleAccessMessage } from "./subscription-tiers.js";
-import { isAdvancedWorkstationTier, supportsConfigurablePcPermissions } from "./workstation-permissions.js";
+import { hasCompanyEmailWorkspaceAccess, isAdvancedWorkstationTier, supportsConfigurablePcPermissions } from "./workstation-permissions.js";
 
 const COOKIE_NAME = "depann_home_session";
 const USERNAME_PATTERN = /^[a-z0-9._-]{3,32}$/;
@@ -222,8 +222,8 @@ export function registerAuthRoutes(app) {
         if (!deviceId || !/^\d{6}$/.test(code)) return response.status(400).json({ message: "Code de validation invalide." });
         const { rows } = await getPool().query(`
             SELECT device.*, account.id AS user_id, account.username, account.role, account.account_owner_id, account.full_name, account.phone, account.email, account.department, account.departments, account.is_active,
-                account.can_create_billing, account.can_access_billing, account.can_access_accounting, account.can_switch_group_companies,
-                owner.is_active AS account_is_active, owner.max_pc_users, owner.max_technicians, owner.monthly_price_cents
+                account.can_create_billing, account.can_access_billing, account.can_access_accounting, account.can_access_company_email, account.can_switch_group_companies,
+                owner.is_active AS account_is_active, owner.max_pc_users, owner.max_technicians, owner.monthly_price_cents, owner.subscription_tier
             FROM depannhome_auth_devices device JOIN depannhome_users account ON account.id = device.user_id JOIN depannhome_users owner ON owner.id = account.account_owner_id WHERE device.id = $1
         `, [deviceId]);
         const device = rows[0];
@@ -378,7 +378,7 @@ export function registerAuthRoutes(app) {
     app.get("/api/auth/members", requireAccountAdministrator, asyncHandler(async (request, response) => {
         const { rows } = await getPool().query(`
             SELECT id, username, role, full_name AS "fullName", phone, email, department, departments, is_active AS "isActive", can_create_billing AS "canCreateBilling",
-                can_access_billing AS "canAccessBilling", can_access_accounting AS "canAccessAccounting", can_switch_group_companies AS "canSwitchGroupCompanies", created_at AS "createdAt"
+                can_access_billing AS "canAccessBilling", can_access_accounting AS "canAccessAccounting", can_access_company_email AS "canAccessCompanyEmail", can_switch_group_companies AS "canSwitchGroupCompanies", created_at AS "createdAt"
             FROM depannhome_users
             WHERE account_owner_id = $1 AND id <> $1
             ORDER BY role, LOWER(full_name), username
@@ -424,12 +424,13 @@ export function registerAuthRoutes(app) {
             const configurablePermissions = isAdvancedWorkstationTier(organization.subscriptionTier) && supportsConfigurablePcPermissions(role);
             const canAccessBilling = configurablePermissions && request.body?.canAccessBilling === true;
             const canAccessAccounting = configurablePermissions && request.body?.canAccessAccounting === true;
+            const canAccessCompanyEmail = configurablePermissions && request.body?.canAccessCompanyEmail === true;
             const canCreateBilling = role === "technician" && request.body?.canCreateBilling === true;
             const canSwitchGroupCompanies = configurablePermissions && organization.subscriptionTier === "pro"
                 && Boolean(request.user.groupId) && request.body?.canSwitchGroupCompanies === true;
             const memberDepartments = ["technician", TEAM_LEAD_ROLE].includes(role) ? departments : [];
-            const member = await createUser({ username, passwordHash: await bcrypt.hash(password, 12), role, accountOwnerId: getAccountOwnerId(request), fullName, phone, email, department: memberDepartments[0] || "", departments: memberDepartments, canCreateBilling, canAccessBilling, canAccessAccounting, canSwitchGroupCompanies });
-            await recordMemberAudit(getAccountOwnerId(request), request.user.sub, member, role === "admin" ? "administrator_created" : "member_created", { role, canCreateBilling, canAccessBilling, canAccessAccounting, canSwitchGroupCompanies });
+            const member = await createUser({ username, passwordHash: await bcrypt.hash(password, 12), role, accountOwnerId: getAccountOwnerId(request), fullName, phone, email, department: memberDepartments[0] || "", departments: memberDepartments, canCreateBilling, canAccessBilling, canAccessAccounting, canAccessCompanyEmail, canSwitchGroupCompanies });
+            await recordMemberAudit(getAccountOwnerId(request), request.user.sub, member, role === "admin" ? "administrator_created" : "member_created", { role, canCreateBilling, canAccessBilling, canAccessAccounting, canAccessCompanyEmail, canSwitchGroupCompanies });
             response.status(201).json({ member: publicUser(member) });
         } catch (error) {
             if (error.code === "23505") return response.status(409).json({ message: "Ce nom d’utilisateur est déjà utilisé." });
@@ -442,7 +443,7 @@ export function registerAuthRoutes(app) {
         if (!memberId) return response.status(400).json({ message: "Accès invalide." });
         const { rows } = await getPool().query(`
             SELECT id, username, full_name AS "fullName", role, department, departments, is_active AS "isActive", can_create_billing AS "canCreateBilling",
-                can_access_billing AS "canAccessBilling", can_access_accounting AS "canAccessAccounting", can_switch_group_companies AS "canSwitchGroupCompanies"
+                can_access_billing AS "canAccessBilling", can_access_accounting AS "canAccessAccounting", can_access_company_email AS "canAccessCompanyEmail", can_switch_group_companies AS "canSwitchGroupCompanies"
             FROM depannhome_users
             WHERE id = $1 AND account_owner_id = $2 AND id <> $2
         `, [memberId, getAccountOwnerId(request)]);
@@ -456,6 +457,7 @@ export function registerAuthRoutes(app) {
         const configurablePermissions = isAdvancedWorkstationTier(organization.subscriptionTier) && supportsConfigurablePcPermissions(member.role);
         const canAccessBilling = configurablePermissions && (typeof request.body?.canAccessBilling === "boolean" ? request.body.canAccessBilling : member.canAccessBilling);
         const canAccessAccounting = configurablePermissions && (typeof request.body?.canAccessAccounting === "boolean" ? request.body.canAccessAccounting : member.canAccessAccounting);
+        const canAccessCompanyEmail = configurablePermissions && (typeof request.body?.canAccessCompanyEmail === "boolean" ? request.body.canAccessCompanyEmail : member.canAccessCompanyEmail);
         const canSwitchGroupCompanies = configurablePermissions && organization.subscriptionTier === "pro" && Boolean(request.user.groupId)
             && (typeof request.body?.canSwitchGroupCompanies === "boolean" ? request.body.canSwitchGroupCompanies : member.canSwitchGroupCompanies);
         const departments = ["technician", TEAM_LEAD_ROLE].includes(member.role) && (Array.isArray(request.body?.departments) || typeof request.body?.department === "string")
@@ -469,8 +471,8 @@ export function registerAuthRoutes(app) {
             const seatError = await memberSeatError(getAccountOwnerId(request), member.role, memberId);
             if (seatError) return response.status(400).json({ message: seatError });
         }
-        await getPool().query("UPDATE depannhome_users SET is_active = $3, can_create_billing = $4, can_access_billing = $5, can_access_accounting = $6, can_switch_group_companies = $7, department = $8, departments = $9::jsonb, updated_at = NOW() WHERE id = $1 AND account_owner_id = $2", [memberId, getAccountOwnerId(request), isActive, canCreateBilling, canAccessBilling, canAccessAccounting, canSwitchGroupCompanies, department, JSON.stringify(departments)]);
-        await recordMemberAudit(getAccountOwnerId(request), request.user.sub, member, member.role === "admin" ? (isActive ? "administrator_activated" : "administrator_deactivated") : "member_updated", { isActive, canCreateBilling, canAccessBilling, canAccessAccounting, canSwitchGroupCompanies, departments });
+        await getPool().query("UPDATE depannhome_users SET is_active = $3, can_create_billing = $4, can_access_billing = $5, can_access_accounting = $6, can_access_company_email = $7, can_switch_group_companies = $8, department = $9, departments = $10::jsonb, updated_at = NOW() WHERE id = $1 AND account_owner_id = $2", [memberId, getAccountOwnerId(request), isActive, canCreateBilling, canAccessBilling, canAccessAccounting, canAccessCompanyEmail, canSwitchGroupCompanies, department, JSON.stringify(departments)]);
+        await recordMemberAudit(getAccountOwnerId(request), request.user.sub, member, member.role === "admin" ? (isActive ? "administrator_activated" : "administrator_deactivated") : "member_updated", { isActive, canCreateBilling, canAccessBilling, canAccessAccounting, canAccessCompanyEmail, canSwitchGroupCompanies, departments });
         response.status(204).end();
     }));
 
@@ -511,6 +513,7 @@ export function registerAuthRoutes(app) {
                     can_create_billing = CASE WHEN $3 = 'technician' THEN FALSE ELSE can_create_billing END,
                     can_access_billing = CASE WHEN $3 IN ('pc_standard', 'accountant') THEN can_access_billing ELSE FALSE END,
                     can_access_accounting = CASE WHEN $3 IN ('pc_standard', 'accountant') THEN can_access_accounting ELSE FALSE END,
+                    can_access_company_email = CASE WHEN $3 IN ('pc_standard', 'accountant') THEN can_access_company_email ELSE FALSE END,
                     can_switch_group_companies = CASE WHEN $3 IN ('pc_standard', 'accountant') THEN can_switch_group_companies ELSE FALSE END,
                     updated_at = NOW()
                 WHERE id = $1 AND account_owner_id = $2
@@ -792,6 +795,7 @@ export async function authenticateRequest(request, response, next) {
             technicianBillingEnabled: user.can_create_billing !== false,
             canAccessBilling: user.role === "admin" || user.can_access_billing === true,
             canAccessAccounting: user.role === "admin" || user.can_access_accounting === true,
+            canAccessCompanyEmail: hasCompanyEmailWorkspaceAccess({ ...user, organization, deviceType: device.device_type }),
             canSwitchGroupCompanies: Boolean(groupCompany) && (user.role === "admin" || user.can_switch_group_companies === true),
             maxPcUsers: Number(user.max_pc_users) || 1,
             maxMobileUsers: Number(user.max_technicians) || 0,
@@ -1262,6 +1266,7 @@ function publicUser(user) {
         technicianBillingEnabled: (user.can_create_billing ?? user.technicianBillingEnabled) !== false,
         canAccessBilling: user.role === "admin" || (user.can_access_billing ?? user.canAccessBilling) === true,
         canAccessAccounting: user.role === "admin" || (user.can_access_accounting ?? user.canAccessAccounting) === true,
+        canAccessCompanyEmail: (user.can_access_company_email ?? user.canAccessCompanyEmail) === true || ["admin", "mobile_admin"].includes(user.role) && ["basic_plus", "pro"].includes(user.organization?.subscriptionTier || user.subscription_tier),
         canSwitchGroupCompanies: Boolean(user.groupId) && (user.role === "admin" || (user.can_switch_group_companies ?? user.canSwitchGroupCompanies) === true),
         maxPcUsers: Number(user.max_pc_users ?? user.maxPcUsers) || 1,
         maxMobileUsers: Number(user.max_technicians ?? user.maxMobileUsers) || 0,
