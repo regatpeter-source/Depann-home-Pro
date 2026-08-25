@@ -20,7 +20,7 @@ const AUTO_THRESHOLD = 80;
 const FETCH_LIMIT = 100;
 const PERIOD_FETCH_LIMIT = 500;
 const MICROSOFT_IDENTITY_SCOPES = "openid email profile offline_access User.Read";
-const MICROSOFT_MAIL_SCOPES = "offline_access https://outlook.office.com/IMAP.AccessAsUser.All https://outlook.office.com/SMTP.Send";
+const MICROSOFT_MAIL_SCOPES = "Mail.Read Mail.Send";
 let scheduler = null;
 
 export async function initializePartnerEmail() {
@@ -77,9 +77,7 @@ export function registerPartnerEmailRoutes(app, requireAuthentication) {
             const context = decryptElectronicInvoicingCredentials(pending.encrypted_context);
             const identityTokens = await exchangeOauthCode(provider, String(req.query.code), context.verifier);
             const identity = await oauthIdentity(provider, identityTokens.access_token);
-            const mailboxTokens = provider === "microsoft"
-                ? await refreshOauth(provider, identityTokens.refresh_token)
-                : identityTokens;
+            const mailboxTokens = identityTokens;
             const encrypted = encryptElectronicInvoicingCredentials({ accessToken: mailboxTokens.access_token, refreshToken: mailboxTokens.refresh_token || identityTokens.refresh_token, expiresAt: new Date(Date.now() + Number(mailboxTokens.expires_in || 3600) * 1000).toISOString() });
             await getPool().query(`INSERT INTO depannhome_partner_email_connections(owner_id,provider,email_address,display_name,encrypted_credentials,server_configuration,selection_mode,allowed_senders,send_status_updates,created_by,last_error) VALUES($1,$2,$3,$4,$5,'{}'::jsonb,$6,$7::jsonb,$8,$9,'') ON CONFLICT(owner_id,email_address) DO UPDATE SET provider=EXCLUDED.provider,display_name=EXCLUDED.display_name,encrypted_credentials=EXCLUDED.encrypted_credentials,selection_mode=EXCLUDED.selection_mode,allowed_senders=EXCLUDED.allowed_senders,send_status_updates=EXCLUDED.send_status_updates,enabled=TRUE,last_error='',updated_at=NOW()`, [pending.owner_id, provider, identity.email, identity.name, encrypted, context.selectionMode, JSON.stringify(context.allowedSenders), context.sendStatusUpdates, pending.actor_id]);
             return oauthPopup(res, true, "Boîte professionnelle connectée.");
@@ -175,6 +173,7 @@ export function classifyPartnerEmail({ subject = "", text = "", from = "", attac
 async function syncConnection(ownerId, connectionId, actorId, syncPeriod = null) {
     const connection = await findConnection(ownerId, connectionId); if (!connection) throw httpError(404, "Boîte professionnelle introuvable.");
     try {
+        if (connection.provider === "microsoft") return await syncMicrosoftConnection(connection, actorId, syncPeriod);
         const access = await mailboxAccess(connection); const client = createImapClient({ host: access.imap.host, port: access.imap.port, secure: access.imap.secure, auth: access.auth, disableAutoIdle: true });
         await client.connect(); const lock = await client.getMailboxLock("INBOX"); let fetched = 0, candidates = 0, imported = 0, maxUid = Number(connection.last_uid || 0), limited = false;
         try {
@@ -199,6 +198,24 @@ async function syncConnection(ownerId, connectionId, actorId, syncPeriod = null)
         await getPool().query("UPDATE depannhome_partner_email_connections SET last_error=$3,last_sync_at=NOW(),updated_at=NOW() WHERE id=$1 AND owner_id=$2", [connectionId, ownerId, clean(publicError, 500)]);
         throw httpError(502, publicError);
     }
+}
+
+async function syncMicrosoftConnection(connection, actorId, syncPeriod) {
+    const access = await mailboxAccess(connection);
+    const search = await graphInboxMessages(access.graphToken, connection, syncPeriod);
+    let fetched = 0, candidates = 0, imported = 0;
+    for (let offset = 0; offset < search.messages.length; offset += 5) {
+        const messages = search.messages.slice(offset, offset + 5);
+        const sources = await Promise.all(messages.map(message => graphMessageMime(access.graphToken, message.id)));
+        for (let index = 0; index < messages.length; index += 1) {
+            const parsed = await simpleParser(sources[index], { skipHtmlToText: false, maxHtmlLengthToParse: 2 * 1024 * 1024 });
+            fetched += 1;
+            const saved = await saveParsedEmail(connection, graphMessageUid(messages[index].id), parsed); if (!saved) continue;
+            candidates += 1;
+            if (connection.selection_mode === "automatic" && saved.trustedSender && saved.score >= Number(connection.automatic_threshold || AUTO_THRESHOLD)) { await importCandidate(connection.owner_id, saved.id, actorId); imported += 1; }
+        }
+    }
+    return completeSync(connection.id, { fetched, candidates, imported, maxUid: Number(connection.last_uid || 0), limited: search.limited, period: syncPeriod ? { from: syncPeriod.from, to: syncPeriod.to } : null }, { advanceCursor: false });
 }
 
 async function saveParsedEmail(connection, uid, parsed) {
@@ -293,7 +310,9 @@ export async function notifyEmailMissionStatus(ownerId, missionId, status, detai
 async function sendMissionEmail(ownerId, missionId, body, { statusUpdate, attachments = [] }) {
     const { rows } = await getPool().query(`SELECT message.sender_address,message.subject,message.message_id,message.references_header,connection.* FROM depannhome_partner_email_messages message JOIN depannhome_partner_email_connections connection ON connection.id=message.connection_id WHERE message.owner_id=$1 AND message.mission_id=$2 AND message.status='imported' ORDER BY message.id LIMIT 1`, [ownerId, missionId]);
     const source = rows[0]; if (!source) throw httpError(404, "Aucun e-mail source n’est lié à cette mission.");
-    const access = await mailboxAccess(source); const transporter = nodemailer.createTransport({ host: access.smtp.host, port: access.smtp.port, secure: access.smtp.secure, requireTLS: !access.smtp.secure, auth: access.smtpAuth });
+    const access = await mailboxAccess(source);
+    if (source.provider === "microsoft") return sendMicrosoftGraphMail(access.graphToken, { source, body, attachments, statusUpdate });
+    const transporter = nodemailer.createTransport({ host: access.smtp.host, port: access.smtp.port, secure: access.smtp.secure, requireTLS: !access.smtp.secure, auth: access.smtpAuth });
     await transporter.sendMail({ from: { name: source.display_name || source.email_address, address: source.email_address }, to: source.sender_address, subject: `${/^re:/i.test(source.subject) ? "" : "Re: "}${source.subject}`, text: body, attachments, inReplyTo: source.message_id, references: [source.references_header, source.message_id].filter(Boolean).join(" "), headers: { "X-DepannHome-Mission": String(missionId), "X-DepannHome-Status-Update": statusUpdate ? "true" : "false" } });
 }
 
@@ -305,7 +324,7 @@ async function mailboxAccess(connection) {
     }
     const server = connection.server_configuration || {};
     if (connection.provider === "google") return { imap: { host: "imap.gmail.com", port: 993, secure: true }, smtp: { host: "smtp.gmail.com", port: 465, secure: true }, auth: { user: connection.email_address, accessToken: credentials.accessToken }, smtpAuth: { type: "OAuth2", user: connection.email_address, accessToken: credentials.accessToken } };
-    if (connection.provider === "microsoft") return { imap: { host: "outlook.office365.com", port: 993, secure: true }, smtp: { host: "smtp.office365.com", port: 587, secure: false }, auth: { user: connection.email_address, accessToken: credentials.accessToken }, smtpAuth: { type: "OAuth2", user: connection.email_address, accessToken: credentials.accessToken } };
+    if (connection.provider === "microsoft") return { graphToken: credentials.accessToken };
     return { imap: server.imap, smtp: server.smtp, auth: { user: credentials.username, pass: credentials.password }, smtpAuth: { user: credentials.username, pass: credentials.password } };
 }
 
@@ -315,6 +334,54 @@ async function findConnection(ownerId, id) { const { rows } = await getPool().qu
 async function recentUids(client) { const ids = await client.search({ since: new Date(Date.now() - 14 * 86400000) }, { uid: true }); return ids.slice(-FETCH_LIMIT); }
 async function periodUids(client, period) { const ids = await client.search({ since: period.since, before: period.before }, { uid: true }); return { ids: ids.slice(-PERIOD_FETCH_LIMIT), limited: ids.length > PERIOD_FETCH_LIMIT }; }
 async function completeSync(connectionId, stats, { advanceCursor = true } = {}) { if (advanceCursor) await getPool().query("UPDATE depannhome_partner_email_connections SET last_uid=GREATEST(last_uid,$2),last_sync_at=NOW(),last_error='',updated_at=NOW() WHERE id=$1", [connectionId, stats.maxUid]); else await getPool().query("UPDATE depannhome_partner_email_connections SET last_sync_at=NOW(),last_error='',updated_at=NOW() WHERE id=$1", [connectionId]); return stats; }
+
+async function graphInboxMessages(accessToken, connection, syncPeriod) {
+    const since = syncPeriod?.since || new Date(Math.max(new Date(connection.last_sync_at || 0).getTime() - 5 * 60000, Date.now() - 14 * 86400000));
+    const filters = [`receivedDateTime ge ${since.toISOString()}`];
+    if (syncPeriod?.before) filters.push(`receivedDateTime lt ${syncPeriod.before.toISOString()}`);
+    const query = new URLSearchParams({ "$select": "id,receivedDateTime", "$filter": filters.join(" and "), "$orderby": "receivedDateTime asc", "$top": "50" });
+    let url = `https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages?${query}`;
+    const messages = [];
+    while (url && messages.length <= PERIOD_FETCH_LIMIT) {
+        const payload = await graphJson(accessToken, url);
+        messages.push(...(Array.isArray(payload.value) ? payload.value.filter(message => message?.id) : []));
+        url = typeof payload["@odata.nextLink"] === "string" && payload["@odata.nextLink"].startsWith("https://graph.microsoft.com/") ? payload["@odata.nextLink"] : "";
+    }
+    const limit = syncPeriod ? PERIOD_FETCH_LIMIT : FETCH_LIMIT;
+    return { messages: messages.slice(-limit), limited: messages.length > limit };
+}
+
+async function graphMessageMime(accessToken, messageId) {
+    const response = await graphFetch(accessToken, `https://graph.microsoft.com/v1.0/me/messages/${encodeURIComponent(messageId)}/$value`, { headers: { Accept: "application/octet-stream" } });
+    return Buffer.from(await response.arrayBuffer());
+}
+
+async function sendMicrosoftGraphMail(accessToken, { source, body, attachments, statusUpdate }) {
+    await graphJson(accessToken, "https://graph.microsoft.com/v1.0/me/sendMail", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: { subject: `${/^re:/i.test(source.subject) ? "" : "Re: "}${source.subject}`, body: { contentType: "Text", content: body }, toRecipients: [{ emailAddress: { address: source.sender_address } }], internetMessageHeaders: [{ name: "X-DepannHome-Mission", value: String(source.mission_id || "") }, { name: "X-DepannHome-Status-Update", value: statusUpdate ? "true" : "false" }], attachments: attachments.map(attachment => ({ "@odata.type": "#microsoft.graph.fileAttachment", name: attachment.filename, contentType: attachment.contentType, contentBytes: Buffer.from(attachment.content).toString("base64") })) }, saveToSentItems: true })
+    }, { allowEmpty: true });
+}
+
+async function graphJson(accessToken, url, options = {}, { allowEmpty = false } = {}) {
+    const response = await graphFetch(accessToken, url, options);
+    if (allowEmpty && response.status === 202) return {};
+    return response.json().catch(() => ({}));
+}
+
+async function graphFetch(accessToken, url, options = {}) {
+    let response;
+    try { response = await fetch(url, { ...options, headers: { Authorization: `Bearer ${accessToken}`, ...(options.headers || {}) }, signal: AbortSignal.timeout(20000) }); }
+    catch (error) { if (error?.name === "TimeoutError") throw new Error("Microsoft Graph timed out."); throw error; }
+    if (response.ok) return response;
+    const payload = await response.json().catch(() => ({}));
+    const error = new Error(response.status === 401 || response.status === 403 ? "Microsoft Graph authentication failed." : "Microsoft Graph request failed.");
+    error.code = clean(payload?.error?.code, 80); error.statusCode = response.status; error.authenticationFailed = response.status === 401 || response.status === 403;
+    throw error;
+}
+
+function graphMessageUid(messageId) { return Number.parseInt(hash(messageId).slice(0, 13), 16); }
 
 export function parseMailboxSyncPeriod(value) {
     const from = clean(value?.from, 10), to = clean(value?.to, 10);
@@ -334,8 +401,8 @@ function isMicrosoftMailbox(value) { const domain = String(value || "").toLowerC
 function oauthConfigured(provider) { const prefix = provider === "google" ? "GOOGLE_MAIL" : provider === "microsoft" ? "MICROSOFT_MAIL" : ""; return Boolean(prefix && process.env[`${prefix}_CLIENT_ID`] && process.env[`${prefix}_CLIENT_SECRET`] && process.env[`${prefix}_REDIRECT_URI`]); }
 function oauthSettings(provider) { const prefix = provider === "google" ? "GOOGLE_MAIL" : "MICROSOFT_MAIL"; return { clientId: process.env[`${prefix}_CLIENT_ID`], clientSecret: process.env[`${prefix}_CLIENT_SECRET`], redirectUri: process.env[`${prefix}_REDIRECT_URI`] }; }
 function oauthAuthorizationUrl(provider, state, verifier) { const settings = oauthSettings(provider), challenge = crypto.createHash("sha256").update(verifier).digest("base64url"); const url = new URL(provider === "google" ? "https://accounts.google.com/o/oauth2/v2/auth" : "https://login.microsoftonline.com/common/oauth2/v2.0/authorize"); url.search = new URLSearchParams({ client_id: settings.clientId, redirect_uri: settings.redirectUri, response_type: "code", state, code_challenge: challenge, code_challenge_method: "S256", access_type: "offline", prompt: "consent", scope: provider === "google" ? "openid email profile https://mail.google.com/" : `${MICROSOFT_IDENTITY_SCOPES} ${MICROSOFT_MAIL_SCOPES}` }).toString(); return url.toString(); }
-async function exchangeOauthCode(provider, code, verifier) { return oauthToken(provider, { grant_type: "authorization_code", code, redirect_uri: oauthSettings(provider).redirectUri, code_verifier: verifier, ...(provider === "microsoft" ? { scope: MICROSOFT_IDENTITY_SCOPES } : {}) }); }
-async function refreshOauth(provider, refreshToken) { if (!refreshToken) throw oauthProviderError(provider, { error: "missing_refresh_token" }, 400); return oauthToken(provider, { grant_type: "refresh_token", refresh_token: refreshToken, ...(provider === "microsoft" ? { scope: MICROSOFT_MAIL_SCOPES } : {}) }); }
+async function exchangeOauthCode(provider, code, verifier) { return oauthToken(provider, { grant_type: "authorization_code", code, redirect_uri: oauthSettings(provider).redirectUri, code_verifier: verifier, ...(provider === "microsoft" ? { scope: `${MICROSOFT_IDENTITY_SCOPES} ${MICROSOFT_MAIL_SCOPES}` } : {}) }); }
+async function refreshOauth(provider, refreshToken) { if (!refreshToken) throw oauthProviderError(provider, { error: "missing_refresh_token" }, 400); return oauthToken(provider, { grant_type: "refresh_token", refresh_token: refreshToken, ...(provider === "microsoft" ? { scope: `${MICROSOFT_IDENTITY_SCOPES} ${MICROSOFT_MAIL_SCOPES}` } : {}) }); }
 async function oauthToken(provider, values) {
     const settings = oauthSettings(provider);
     const response = await fetch(provider === "google" ? "https://oauth2.googleapis.com/token" : "https://login.microsoftonline.com/common/oauth2/v2.0/token", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ ...values, client_id: settings.clientId, client_secret: settings.clientSecret }), signal: AbortSignal.timeout(15000) });
@@ -352,9 +419,9 @@ export function oauthErrorMessage(error, provider = "") {
     if (errorCodes.has(700016)) return "L’application Microsoft est introuvable pour cet identifiant client ou ce type de compte.";
     if (errorCodes.has(50011)) return "L’adresse de redirection Microsoft ne correspond pas exactement à celle configurée dans Microsoft Entra.";
     if (code === "invalid_grant") return "Le code Microsoft est invalide ou a expiré. Fermez cette fenêtre puis relancez immédiatement « Connecter Microsoft ».";
-    if (["invalid_scope", "consent_required", "unauthorized_client"].includes(code)) return "L’application Microsoft ne dispose pas des autorisations déléguées IMAP et SMTP requises, ou le consentement est manquant.";
+    if (["invalid_scope", "consent_required", "unauthorized_client"].includes(code)) return "L’application Microsoft ne dispose pas des autorisations déléguées Mail.Read et Mail.Send requises, ou le consentement est manquant.";
     if (code === "missing_refresh_token") return "Microsoft n’a pas fourni l’autorisation hors ligne nécessaire. Relancez la connexion et acceptez toutes les autorisations demandées.";
-    return "Microsoft a refusé l’autorisation. Vérifiez le type de comptes accepté, l’URI Web, le secret client et les autorisations IMAP/SMTP dans Microsoft Entra.";
+    return "Microsoft a refusé l’autorisation. Vérifiez le type de comptes accepté, l’URI Web, le secret client et les autorisations Graph Mail.Read/Mail.Send dans Microsoft Entra.";
 }
 function oauthErrorLog(error, provider) { return { provider, code: clean(error?.oauthCode || "provider_error", 80), errorCodes: Array.isArray(error?.oauthErrorCodes) ? error.oauthErrorCodes : [], status: Number(error?.oauthStatus) || 0, correlationId: clean(error?.oauthCorrelationId, 80) }; }
 function mailErrorLog(error, provider) { return { provider, code: clean(error?.oauthCode || error?.code || error?.responseCode || "mailbox_error", 80), errorCodes: Array.isArray(error?.oauthErrorCodes) ? error.oauthErrorCodes : [], status: Number(error?.oauthStatus || error?.statusCode) || 0, authenticationFailed: Boolean(error?.authenticationFailed) }; }
@@ -365,7 +432,7 @@ export function publicMailError(error, { configuration = false, provider = "" } 
     if (error?.oauthCode || error?.oauthProvider) return oauthErrorMessage(error, provider || error.oauthProvider);
     const message = String(error?.message || "");
     const authenticationFailed = Boolean(error?.authenticationFailed) || /auth|credential|login|password|invalid credentials|authentication failed|authenticate failed/i.test(message);
-    if (provider === "microsoft" && authenticationFailed) return "Microsoft refuse l’accès IMAP à cette boîte. Dans Microsoft 365, activez IMAP pour l’utilisateur, puis déconnectez et reconnectez la boîte afin de renouveler le consentement.";
+    if (provider === "microsoft" && authenticationFailed) return "Microsoft refuse l’accès à cette boîte. Déconnectez-la puis utilisez de nouveau « Connecter Microsoft » afin de renouveler les autorisations Mail.Read et Mail.Send.";
     if (authenticationFailed) return "La boîte a refusé l’authentification. Vérifiez son autorisation ou son mot de passe d’application.";
     if (/certificate|tls|ssl|self[- ]signed/i.test(message)) return "La connexion sécurisée au serveur de messagerie a échoué.";
     if (/timeout|timed out|etimedout|econnrefused|enotfound|getaddrinfo/i.test(message)) return "Le serveur de messagerie ne répond pas. Vérifiez les adresses, les ports et la disponibilité d’IMAP/SMTP.";

@@ -79,10 +79,13 @@ test("les callbacks OAuth mail utilisent l’état temporaire sans exiger le coo
     assert.match(appSource, /function isPartnerEmailOAuthCallback\(request\)[\s\S]*?request\.method === "GET"[\s\S]*?google\|microsoft/);
 });
 
-test("Microsoft sépare le jeton Graph du jeton Outlook et explique les refus sans exposer les secrets", () => {
+test("Microsoft utilise Graph pour les comptes personnels et explique les refus sans exposer les secrets", () => {
     assert.match(serverSource, /MICROSOFT_IDENTITY_SCOPES/);
-    assert.match(serverSource, /MICROSOFT_MAIL_SCOPES/);
-    assert.match(serverSource, /provider === "microsoft"[\s\S]*?refreshOauth\(provider, identityTokens\.refresh_token\)/);
+    assert.match(serverSource, /MICROSOFT_MAIL_SCOPES = "Mail\.Read Mail\.Send"/);
+    assert.match(serverSource, /graph\.microsoft\.com\/v1\.0\/me\/mailFolders\/inbox\/messages/);
+    assert.match(serverSource, /graph\.microsoft\.com\/v1\.0\/me\/messages\/\$\{encodeURIComponent\(messageId\)\}\/\$value/);
+    assert.match(serverSource, /graph\.microsoft\.com\/v1\.0\/me\/sendMail/);
+    assert.doesNotMatch(serverSource, /outlook\.office365\.com|smtp\.office365\.com|IMAP\.AccessAsUser\.All|SMTP\.Send/);
     assert.match(serverSource, /console\.warn\("\[partner-email-oauth\] authorization rejected", oauthErrorLog/);
     assert.doesNotMatch(serverSource, /console\.(?:warn|error)\([^\n]*clientSecret/);
     assert.match(oauthErrorMessage({ oauthCode: "invalid_client", oauthErrorCodes: [7000215] }, "microsoft"), /valeur du secret client/);
@@ -90,10 +93,10 @@ test("Microsoft sépare le jeton Graph du jeton Outlook et explique les refus sa
     assert.match(oauthErrorMessage({ oauthErrorCodes: [50011] }, "microsoft"), /redirection/);
 });
 
-test("la synchronisation distingue un refus OAuth d’un accès IMAP Microsoft désactivé", () => {
+test("la synchronisation distingue un refus OAuth d’un accès Microsoft Graph refusé", () => {
     const mailErrorLogSource = serverSource.slice(serverSource.indexOf("function mailErrorLog"), serverSource.indexOf("function oauthPopup"));
-    assert.match(publicMailError({ oauthProvider: "microsoft", oauthCode: "consent_required" }, { provider: "microsoft" }), /autorisations déléguées IMAP et SMTP/);
-    assert.match(publicMailError({ authenticationFailed: true }, { provider: "microsoft" }), /activez IMAP/);
+    assert.match(publicMailError({ oauthProvider: "microsoft", oauthCode: "consent_required" }, { provider: "microsoft" }), /Mail\.Read et Mail\.Send/);
+    assert.match(publicMailError({ authenticationFailed: true }, { provider: "microsoft" }), /Connecter Microsoft/);
     assert.match(publicMailError(new Error("Authentication failed"), { provider: "google" }), /refusé l’authentification/);
     assert.match(serverSource, /mailbox synchronization rejected/);
     assert.doesNotMatch(mailErrorLogSource, /accessToken|refreshToken|clientSecret/);

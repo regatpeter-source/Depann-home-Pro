@@ -4,7 +4,7 @@ La **Boîte mail professionnelle** transforme les demandes d’intervention reç
 
 ## Fournisseurs et authentification
 
-- **Microsoft 365, Outlook, Hotmail, Live et MSN**, y compris les comptes personnels : OAuth 2.0 avec PKCE ;
+- **Microsoft 365, Outlook, Hotmail, Live et MSN**, y compris les comptes personnels : OAuth 2.0 avec PKCE et Microsoft Graph, sans IMAP/SMTP ;
 - **Google Workspace / Gmail**, y compris les comptes personnels : OAuth 2.0 avec PKCE ;
 - **OVH et autres hébergeurs** : IMAP/SMTP sécurisé avec un mot de passe d’application.
 
@@ -16,7 +16,7 @@ Le « mot de passe d’application » n’est jamais le mot de passe habituel de
 
 - Type de compte : **Comptes dans un annuaire d’organisation et comptes Microsoft personnels**.
 - Plateforme d’authentification : **Web**, avec l’URI exacte `https://depannhomepro.com/api/partner-email/oauth/microsoft/callback`.
-- Autorisations déléguées : `User.Read`, `IMAP.AccessAsUser.All` et `SMTP.Send`, avec consentement accordé lorsque l’organisation l’exige.
+- Autorisations Microsoft Graph déléguées : `User.Read`, `Mail.Read` et `Mail.Send`, avec consentement accordé lorsque l’organisation l’exige. Les anciennes permissions `IMAP.AccessAsUser.All` et `SMTP.Send` ne sont plus utilisées.
 - `MICROSOFT_MAIL_CLIENT_ID` : **ID d’application (client)** de l’inscription Entra.
 - `MICROSOFT_MAIL_CLIENT_SECRET` : colonne **Valeur** du secret client, jamais son « ID du secret ». Cette valeur n’est visible qu’à la création du secret.
 - `MICROSOFT_MAIL_REDIRECT_URI` : `https://depannhomepro.com/api/partner-email/oauth/microsoft/callback`, strictement identique à l’URI Web Entra.
@@ -65,7 +65,7 @@ Un e-mail est dédupliqué avec son identifiant RFC `Message-ID` dans la boîte 
 
 ## Réponses et statuts
 
-Une mission importée conserve `Message-ID`, `In-Reply-To` et `References`. L’entreprise peut répondre depuis la carte de mission ; le message est envoyé avec sa propre boîte dans le fil d’origine. Si elle active les retours automatiques, les changements de statut sont envoyés de la même façon. Une panne SMTP ne bloque jamais la mise à jour du statut dans Depann’Home Pro.
+Une mission importée conserve `Message-ID`, `In-Reply-To` et `References`. L’entreprise peut répondre depuis la carte de mission ; le message est envoyé avec sa propre boîte. Microsoft utilise Graph, tandis que Google, OVH et les autres hébergeurs utilisent SMTP. Si elle active les retours automatiques, les changements de statut sont envoyés de la même façon. Une panne d’envoi ne bloque jamais la mise à jour du statut dans Depann’Home Pro.
 
 ## Exploitation
 
