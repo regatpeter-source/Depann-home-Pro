@@ -177,11 +177,24 @@ registerSupportRoutes(app, requireAuthentication);
 app.get("/assets/logo.png.png", (request, response) => {
 	response.sendFile(path.join(rootDirectory, "assets", "logo.png.png"));
 });
+app.use("/site-assets", express.static(path.join(rootDirectory, "public"), { index: false, maxAge: "1d" }));
+app.get(["/confidentialite", "/politique-de-confidentialite", "/privacy"], (request, response) => {
+	response.sendFile(path.join(rootDirectory, "public", "privacy.html"), { headers: { "Cache-Control": "public, max-age=3600" } });
+});
+app.get(["/conditions-utilisation", "/conditions-d-utilisation", "/terms"], (request, response) => {
+	response.sendFile(path.join(rootDirectory, "public", "terms.html"), { headers: { "Cache-Control": "public, max-age=3600" } });
+});
+app.get("/robots.txt", (request, response) => response.sendFile(path.join(rootDirectory, "public", "robots.txt")));
+app.get("/sitemap.xml", (request, response) => response.sendFile(path.join(rootDirectory, "public", "sitemap.xml")));
 app.use("/data", requireAuthentication, requireTechnicalWorkspaceAccess, express.static(path.join(rootDirectory, "data"), { index: false }));
 app.use("/assets", requireAuthentication, requireTechnicalWorkspaceAccess, express.static(path.join(rootDirectory, "assets"), { index: false }));
 
-app.get(["/", "/index.html"], (request, response) => {
+app.get(["/connexion", "/app", "/index.html"], (request, response) => {
 	response.sendFile(path.join(rootDirectory, "index.html"), { headers: { "Cache-Control": "no-store" } });
+});
+app.get("/", (request, response) => {
+	const page = request.user ? "index.html" : path.join("public", "landing.html");
+	response.sendFile(path.join(rootDirectory, page), { headers: { "Cache-Control": "no-store" } });
 });
 app.use("/css", express.static(path.join(rootDirectory, "css"), { index: false }));
 app.use("/js", express.static(path.join(rootDirectory, "js"), { index: false }));
