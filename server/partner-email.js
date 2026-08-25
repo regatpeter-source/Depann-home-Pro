@@ -18,6 +18,8 @@ const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
 const MAX_ATTACHMENTS = 10;
 const AUTO_THRESHOLD = 80;
 const FETCH_LIMIT = 100;
+const MICROSOFT_IDENTITY_SCOPES = "openid email profile offline_access User.Read";
+const MICROSOFT_MAIL_SCOPES = "offline_access https://outlook.office.com/IMAP.AccessAsUser.All https://outlook.office.com/SMTP.Send";
 let scheduler = null;
 
 export async function initializePartnerEmail() {
@@ -70,12 +72,20 @@ export function registerPartnerEmailRoutes(app, requireAuthentication) {
         const { rows } = await getPool().query("DELETE FROM depannhome_partner_email_oauth_states WHERE state_hash=$1 AND provider=$2 AND expires_at>NOW() RETURNING owner_id,actor_id,encrypted_context", [hash(state), provider]);
         const pending = rows[0];
         if (!pending || req.query?.error || !req.query?.code) return oauthPopup(res, false, "Autorisation de la boîte refusée ou expirée.");
-        const context = decryptElectronicInvoicingCredentials(pending.encrypted_context);
-        const tokens = await exchangeOauthCode(provider, String(req.query.code), context.verifier);
-        const identity = await oauthIdentity(provider, tokens.access_token);
-        const encrypted = encryptElectronicInvoicingCredentials({ accessToken: tokens.access_token, refreshToken: tokens.refresh_token, expiresAt: new Date(Date.now() + Number(tokens.expires_in || 3600) * 1000).toISOString() });
-        await getPool().query(`INSERT INTO depannhome_partner_email_connections(owner_id,provider,email_address,display_name,encrypted_credentials,server_configuration,selection_mode,allowed_senders,send_status_updates,created_by,last_error) VALUES($1,$2,$3,$4,$5,'{}'::jsonb,$6,$7::jsonb,$8,$9,'') ON CONFLICT(owner_id,email_address) DO UPDATE SET provider=EXCLUDED.provider,display_name=EXCLUDED.display_name,encrypted_credentials=EXCLUDED.encrypted_credentials,selection_mode=EXCLUDED.selection_mode,allowed_senders=EXCLUDED.allowed_senders,send_status_updates=EXCLUDED.send_status_updates,enabled=TRUE,last_error='',updated_at=NOW()`, [pending.owner_id, provider, identity.email, identity.name, encrypted, context.selectionMode, JSON.stringify(context.allowedSenders), context.sendStatusUpdates, pending.actor_id]);
-        oauthPopup(res, true, "Boîte professionnelle connectée.");
+        try {
+            const context = decryptElectronicInvoicingCredentials(pending.encrypted_context);
+            const identityTokens = await exchangeOauthCode(provider, String(req.query.code), context.verifier);
+            const identity = await oauthIdentity(provider, identityTokens.access_token);
+            const mailboxTokens = provider === "microsoft"
+                ? await refreshOauth(provider, identityTokens.refresh_token)
+                : identityTokens;
+            const encrypted = encryptElectronicInvoicingCredentials({ accessToken: mailboxTokens.access_token, refreshToken: mailboxTokens.refresh_token || identityTokens.refresh_token, expiresAt: new Date(Date.now() + Number(mailboxTokens.expires_in || 3600) * 1000).toISOString() });
+            await getPool().query(`INSERT INTO depannhome_partner_email_connections(owner_id,provider,email_address,display_name,encrypted_credentials,server_configuration,selection_mode,allowed_senders,send_status_updates,created_by,last_error) VALUES($1,$2,$3,$4,$5,'{}'::jsonb,$6,$7::jsonb,$8,$9,'') ON CONFLICT(owner_id,email_address) DO UPDATE SET provider=EXCLUDED.provider,display_name=EXCLUDED.display_name,encrypted_credentials=EXCLUDED.encrypted_credentials,selection_mode=EXCLUDED.selection_mode,allowed_senders=EXCLUDED.allowed_senders,send_status_updates=EXCLUDED.send_status_updates,enabled=TRUE,last_error='',updated_at=NOW()`, [pending.owner_id, provider, identity.email, identity.name, encrypted, context.selectionMode, JSON.stringify(context.allowedSenders), context.sendStatusUpdates, pending.actor_id]);
+            return oauthPopup(res, true, "Boîte professionnelle connectée.");
+        } catch (error) {
+            console.warn("[partner-email-oauth] authorization rejected", oauthErrorLog(error, provider));
+            return oauthPopup(res, false, oauthErrorMessage(error, provider));
+        }
     }));
     app.use("/api/partner-email", requireAuthentication, requireEmailAccess);
     app.get("/api/partner-email", asyncHandler(async (req, res) => {
@@ -301,11 +311,30 @@ function sanitizeSenders(value) { return [...new Set((Array.isArray(value) ? val
 function isMicrosoftMailbox(value) { const domain = String(value || "").toLowerCase().split("@").pop(); return /^(?:(?:outlook|hotmail|live)\.[a-z.]+|msn\.com)$/.test(domain); }
 function oauthConfigured(provider) { const prefix = provider === "google" ? "GOOGLE_MAIL" : provider === "microsoft" ? "MICROSOFT_MAIL" : ""; return Boolean(prefix && process.env[`${prefix}_CLIENT_ID`] && process.env[`${prefix}_CLIENT_SECRET`] && process.env[`${prefix}_REDIRECT_URI`]); }
 function oauthSettings(provider) { const prefix = provider === "google" ? "GOOGLE_MAIL" : "MICROSOFT_MAIL"; return { clientId: process.env[`${prefix}_CLIENT_ID`], clientSecret: process.env[`${prefix}_CLIENT_SECRET`], redirectUri: process.env[`${prefix}_REDIRECT_URI`] }; }
-function oauthAuthorizationUrl(provider, state, verifier) { const settings = oauthSettings(provider), challenge = crypto.createHash("sha256").update(verifier).digest("base64url"); const url = new URL(provider === "google" ? "https://accounts.google.com/o/oauth2/v2/auth" : "https://login.microsoftonline.com/common/oauth2/v2.0/authorize"); url.search = new URLSearchParams({ client_id: settings.clientId, redirect_uri: settings.redirectUri, response_type: "code", state, code_challenge: challenge, code_challenge_method: "S256", access_type: "offline", prompt: "consent", scope: provider === "google" ? "openid email profile https://mail.google.com/" : "openid email profile offline_access User.Read https://outlook.office.com/IMAP.AccessAsUser.All https://outlook.office.com/SMTP.Send" }).toString(); return url.toString(); }
-async function exchangeOauthCode(provider, code, verifier) { return oauthToken(provider, { grant_type: "authorization_code", code, redirect_uri: oauthSettings(provider).redirectUri, code_verifier: verifier }); }
-async function refreshOauth(provider, refreshToken) { if (!refreshToken) throw new Error("Autorisation expirée : reconnectez la boîte."); return oauthToken(provider, { grant_type: "refresh_token", refresh_token: refreshToken }); }
-async function oauthToken(provider, values) { const settings = oauthSettings(provider); const response = await fetch(provider === "google" ? "https://oauth2.googleapis.com/token" : "https://login.microsoftonline.com/common/oauth2/v2.0/token", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ ...values, client_id: settings.clientId, client_secret: settings.clientSecret }), signal: AbortSignal.timeout(15000) }); const payload = await response.json().catch(() => ({})); if (!response.ok || !payload.access_token) throw new Error("Le fournisseur de messagerie a refusé l’autorisation."); return payload; }
+function oauthAuthorizationUrl(provider, state, verifier) { const settings = oauthSettings(provider), challenge = crypto.createHash("sha256").update(verifier).digest("base64url"); const url = new URL(provider === "google" ? "https://accounts.google.com/o/oauth2/v2/auth" : "https://login.microsoftonline.com/common/oauth2/v2.0/authorize"); url.search = new URLSearchParams({ client_id: settings.clientId, redirect_uri: settings.redirectUri, response_type: "code", state, code_challenge: challenge, code_challenge_method: "S256", access_type: "offline", prompt: "consent", scope: provider === "google" ? "openid email profile https://mail.google.com/" : `${MICROSOFT_IDENTITY_SCOPES} ${MICROSOFT_MAIL_SCOPES}` }).toString(); return url.toString(); }
+async function exchangeOauthCode(provider, code, verifier) { return oauthToken(provider, { grant_type: "authorization_code", code, redirect_uri: oauthSettings(provider).redirectUri, code_verifier: verifier, ...(provider === "microsoft" ? { scope: MICROSOFT_IDENTITY_SCOPES } : {}) }); }
+async function refreshOauth(provider, refreshToken) { if (!refreshToken) throw oauthProviderError(provider, { error: "missing_refresh_token" }, 400); return oauthToken(provider, { grant_type: "refresh_token", refresh_token: refreshToken, ...(provider === "microsoft" ? { scope: MICROSOFT_MAIL_SCOPES } : {}) }); }
+async function oauthToken(provider, values) {
+    const settings = oauthSettings(provider);
+    const response = await fetch(provider === "google" ? "https://oauth2.googleapis.com/token" : "https://login.microsoftonline.com/common/oauth2/v2.0/token", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ ...values, client_id: settings.clientId, client_secret: settings.clientSecret }), signal: AbortSignal.timeout(15000) });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload.access_token) throw oauthProviderError(provider, payload, response.status);
+    return payload;
+}
 async function oauthIdentity(provider, accessToken) { const response = await fetch(provider === "google" ? "https://openidconnect.googleapis.com/v1/userinfo" : "https://graph.microsoft.com/v1.0/me?$select=displayName,mail,userPrincipalName", { headers: { Authorization: `Bearer ${accessToken}` }, signal: AbortSignal.timeout(15000) }); const value = await response.json(); const email = clean(value.email || value.mail || value.userPrincipalName, 254).toLowerCase(); if (!response.ok || !email) throw new Error("Impossible d’identifier la boîte autorisée."); return { email, name: clean(value.name || value.displayName, 160) }; }
+function oauthProviderError(provider, payload, status) { const error = new Error("Le fournisseur de messagerie a refusé l’autorisation."); error.oauthProvider = provider; error.oauthCode = clean(payload?.error, 80); error.oauthErrorCodes = (Array.isArray(payload?.error_codes) ? payload.error_codes : []).map(value => Number(value)).filter(Number.isFinite).slice(0, 5); error.oauthStatus = Number(status) || 0; error.oauthCorrelationId = clean(payload?.correlation_id, 80); return error; }
+export function oauthErrorMessage(error, provider = "") {
+    const code = String(error?.oauthCode || ""); const errorCodes = new Set(error?.oauthErrorCodes || []);
+    if (code === "invalid_client" || errorCodes.has(7000215)) return `La configuration ${provider === "microsoft" ? "Microsoft Entra" : "OAuth"} est refusée : vérifiez l’identifiant client et surtout la valeur du secret client (pas son identifiant).`;
+    if (errorCodes.has(7000222)) return "Le secret client Microsoft a expiré. Créez un nouveau secret dans Microsoft Entra puis remplacez sa valeur sur Render.";
+    if (errorCodes.has(700016)) return "L’application Microsoft est introuvable pour cet identifiant client ou ce type de compte.";
+    if (errorCodes.has(50011)) return "L’adresse de redirection Microsoft ne correspond pas exactement à celle configurée dans Microsoft Entra.";
+    if (code === "invalid_grant") return "Le code Microsoft est invalide ou a expiré. Fermez cette fenêtre puis relancez immédiatement « Connecter Microsoft ».";
+    if (["invalid_scope", "consent_required", "unauthorized_client"].includes(code)) return "L’application Microsoft ne dispose pas des autorisations déléguées IMAP et SMTP requises, ou le consentement est manquant.";
+    if (code === "missing_refresh_token") return "Microsoft n’a pas fourni l’autorisation hors ligne nécessaire. Relancez la connexion et acceptez toutes les autorisations demandées.";
+    return "Microsoft a refusé l’autorisation. Vérifiez le type de comptes accepté, l’URI Web, le secret client et les autorisations IMAP/SMTP dans Microsoft Entra.";
+}
+function oauthErrorLog(error, provider) { return { provider, code: clean(error?.oauthCode || "provider_error", 80), errorCodes: Array.isArray(error?.oauthErrorCodes) ? error.oauthErrorCodes : [], status: Number(error?.oauthStatus) || 0, correlationId: clean(error?.oauthCorrelationId, 80) }; }
 function oauthPopup(res, success, message) { res.type("html").send(`<!doctype html><meta charset="utf-8"><title>Connexion boîte mail</title><p>${escapeHtml(message)}</p><script>window.opener?.postMessage(${JSON.stringify({ type: "depannhome:partner-email-oauth", success, message })},window.location.origin);window.close();</script>`); }
 function requireEmailAccess(req, res, next) { if (!ADMIN_ROLES.has(req.user?.role)) return res.status(403).json({ message: "La boîte de missions est réservée aux postes autorisés." }); return next(); }
 function selectedIds(value) { return [...new Set((Array.isArray(value) ? value : []).map(positiveId).filter(Boolean))].slice(0, 100); }

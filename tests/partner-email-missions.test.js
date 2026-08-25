@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import ExcelJS from "exceljs";
 import PizZip from "pizzip";
 import { PDFDocument, StandardFonts } from "pdf-lib";
-import { classifyPartnerEmail, extractMissionPayload } from "../server/partner-email.js";
+import { classifyPartnerEmail, extractMissionPayload, oauthErrorMessage } from "../server/partner-email.js";
 import { extractPartnerDocumentText } from "../server/partner-email-document-extractor.js";
 
 const serverSource = readFileSync(new URL("../server/partner-email.js", import.meta.url), "utf8");
@@ -77,6 +77,17 @@ test("les callbacks OAuth mail utilisent l’état temporaire sans exiger le coo
     assert.match(serverSource, /\[pending\.owner_id, provider,[\s\S]*?pending\.actor_id\]/);
     assert.doesNotMatch(serverSource.slice(callback, protection), /req\.user|getAccountOwnerId\(req\)/);
     assert.match(appSource, /function isPartnerEmailOAuthCallback\(request\)[\s\S]*?request\.method === "GET"[\s\S]*?google\|microsoft/);
+});
+
+test("Microsoft sépare le jeton Graph du jeton Outlook et explique les refus sans exposer les secrets", () => {
+    assert.match(serverSource, /MICROSOFT_IDENTITY_SCOPES/);
+    assert.match(serverSource, /MICROSOFT_MAIL_SCOPES/);
+    assert.match(serverSource, /provider === "microsoft"[\s\S]*?refreshOauth\(provider, identityTokens\.refresh_token\)/);
+    assert.match(serverSource, /console\.warn\("\[partner-email-oauth\] authorization rejected", oauthErrorLog/);
+    assert.doesNotMatch(serverSource, /console\.(?:warn|error)\([^\n]*clientSecret/);
+    assert.match(oauthErrorMessage({ oauthCode: "invalid_client", oauthErrorCodes: [7000215] }, "microsoft"), /valeur du secret client/);
+    assert.match(oauthErrorMessage({ oauthCode: "invalid_grant" }, "microsoft"), /expiré/);
+    assert.match(oauthErrorMessage({ oauthErrorCodes: [50011] }, "microsoft"), /redirection/);
 });
 
 test("les missions e-mail utilisent la même interface que les missions internes et externes", () => {

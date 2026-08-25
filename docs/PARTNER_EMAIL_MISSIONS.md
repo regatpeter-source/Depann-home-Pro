@@ -12,6 +12,17 @@ Les jetons et mots de passe d’application sont chiffrés côté serveur en AES
 
 Le « mot de passe d’application » n’est jamais le mot de passe habituel de la boîte : il s’agit d’un secret distinct généré dans les réglages de sécurité du fournisseur. Outlook.com et Hotmail imposent désormais OAuth2/Modern Auth et ne doivent donc pas être configurés dans le formulaire IMAP/SMTP manuel. Pour accepter les comptes Microsoft personnels, l’application Microsoft Entra doit autoriser « les comptes dans un annuaire d’organisation et les comptes Microsoft personnels ».
 
+### Configuration Microsoft Entra et Render
+
+- Type de compte : **Comptes dans un annuaire d’organisation et comptes Microsoft personnels**.
+- Plateforme d’authentification : **Web**, avec l’URI exacte `https://depannhomepro.com/api/partner-email/oauth/microsoft/callback`.
+- Autorisations déléguées : `User.Read`, `IMAP.AccessAsUser.All` et `SMTP.Send`, avec consentement accordé lorsque l’organisation l’exige.
+- `MICROSOFT_MAIL_CLIENT_ID` : **ID d’application (client)** de l’inscription Entra.
+- `MICROSOFT_MAIL_CLIENT_SECRET` : colonne **Valeur** du secret client, jamais son « ID du secret ». Cette valeur n’est visible qu’à la création du secret.
+- `MICROSOFT_MAIL_REDIRECT_URI` : `https://depannhomepro.com/api/partner-email/oauth/microsoft/callback`, strictement identique à l’URI Web Entra.
+
+Après toute modification d’une variable Render, redéployer le service puis lancer une nouvelle connexion : un code d’autorisation Microsoft est à usage unique et expire rapidement.
+
 ## Deux modes de traitement
 
 La source e-mail utilise la même interface métier que les missions internes du réseau et les missions externes reçues par API : mêmes onglets **Missions reçues** et **Messagerie**, mêmes cartes, filtres, statuts, actions de validation, planification et Centre de mission. Les e-mails détectés mais non encore importés apparaissent dans cette liste commune avec le statut **À confirmer**.
