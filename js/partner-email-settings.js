@@ -1,6 +1,9 @@
 import { escapeHtml } from "./utils.js?v=44";
 
 let activeSettingsCard = null;
+const mailboxSearchDate = new Date();
+let mailboxSearchFrom = localDateValue(new Date(mailboxSearchDate.getFullYear(), mailboxSearchDate.getMonth(), 1));
+let mailboxSearchTo = localDateValue(mailboxSearchDate);
 
 export async function renderPartnerEmailSettings(container) {
     const card = document.createElement("article");
@@ -29,13 +32,9 @@ export async function renderCompanyEmailWorkspace(container) {
         list.innerHTML = '<p class="auth-message">Aucune boîte n’est encore connectée. Un Administrateur PC peut la configurer dans Paramètres &gt; Entreprise · Boîte mail.</p>';
         return;
     }
-    connections.forEach(connection => {
-        const item = document.createElement("article");
-        item.className = "partner-email-connection";
-        item.innerHTML = `<div><strong>${escapeHtml(connection.displayName || connection.emailAddress)}</strong><p>${escapeHtml(connection.emailAddress)}</p><small>${connection.lastError ? escapeHtml(connection.lastError) : connection.lastSyncAt ? `Dernière synchronisation des missions : ${escapeHtml(formatDate(connection.lastSyncAt))}` : "Boîte prête à être consultée"}</small></div><div class="partner-card-actions"><button type="button" class="secondary-button">Consulter les e-mails</button></div>`;
-        item.querySelector("button").addEventListener("click", () => openMailboxBrowser(card, connection));
-        list.appendChild(item);
-    });
+    const configuration = canConfigureMailbox();
+    list.innerHTML = connections.map(connection => emailConnectionCard(connection, { configuration })).join("");
+    bindMailboxConnectionControls(card, result.data, { configuration });
 }
 
 async function loadPartnerEmailSettings(card) {
@@ -135,36 +134,72 @@ function renderSettings(card, mailbox) {
         message.textContent = result.ok ? result.data.message : result.message;
         message.classList.toggle("error", !result.ok);
         button.disabled = false;
-        if (result.ok) await loadPartnerEmailSettings(card);
+        if (result.ok) {
+            await loadPartnerEmailSettings(card);
+            dispatchMailboxChanged("connection");
+        }
     });
-    card.querySelectorAll("[data-email-sync]").forEach(button => button.addEventListener("click", async () => {
-        button.disabled = true;
-        const result = await api(`/api/partner-email/${button.dataset.emailSync}/sync`, { method: "POST" });
-        alert(result.ok ? "Synchronisation terminée." : result.message);
-        await loadPartnerEmailSettings(card);
-    }));
+    bindMailboxConnectionControls(card, mailbox, { configuration: true, reload: () => loadPartnerEmailSettings(card) });
+}
+
+function emailConnectionCard(connection, { configuration = true } = {}) {
+    const mode = connection.selectionMode === "automatic" ? `Automatique · seuil ${connection.automaticThreshold}` : "Sélection manuelle";
+    const settings = configuration ? `<details class="partner-email-connection-settings"><summary>Mode et recherche automatique</summary><div class="form-grid"><label>Mode de traitement<select data-email-selection-mode><option value="manual" ${connection.selectionMode !== "automatic" ? "selected" : ""}>Sélection manuelle dans Missions partenaires</option><option value="automatic" ${connection.selectionMode === "automatic" ? "selected" : ""}>Création automatique stricte</option></select></label><label>Seuil automatique<input type="number" min="70" max="100" data-email-automatic-threshold value="${escapeHtml(connection.automaticThreshold || 80)}"></label><label class="form-wide">Expéditeurs ou domaines autorisés<textarea rows="2" data-email-allowed-senders placeholder="missions@partenaire.fr, partenaire.fr">${escapeHtml((connection.allowedSenders || []).join(", "))}</textarea></label><label class="creator-switch form-wide"><input type="checkbox" data-email-send-statuses ${connection.sendStatusUpdates ? "checked" : ""}><span>Envoyer les changements de statut dans le fil d’origine</span></label><label class="creator-switch form-wide"><input type="checkbox" data-email-auto-search ${connection.autoSearchEnabled ? "checked" : ""}><span>Rechercher automatiquement les nouvelles missions toutes les 10 minutes</span></label><div class="form-actions form-wide"><button type="button" class="secondary-button" data-email-save-settings="${connection.id}">Enregistrer le mode de recherche</button></div></div></details>` : `<p class="partner-email-mode-summary">Mode : ${escapeHtml(mode)} · Recherche automatique : <strong>${connection.autoSearchEnabled ? "activée" : "désactivée"}</strong></p>`;
+    return `<article class="partner-email-connection" data-email-connection-card="${connection.id}"><div class="partner-email-connection-main"><strong>${escapeHtml(connection.displayName || connection.emailAddress)}</strong><p>${escapeHtml(connection.emailAddress)} · ${escapeHtml(mode)}</p><small>${connection.lastError ? escapeHtml(connection.lastError) : connection.lastSyncAt ? `Dernière synchronisation : ${escapeHtml(formatDate(connection.lastSyncAt))}` : "Jamais synchronisée"}</small>${settings}<div class="partner-email-sync-period"><label>Du<input type="date" data-email-sync-from value="${escapeHtml(mailboxSearchFrom)}"></label><label>Au<input type="date" data-email-sync-to value="${escapeHtml(mailboxSearchTo)}"></label><button type="button" class="secondary-button" data-email-sync="${connection.id}">Rechercher les missions</button></div><p class="auth-message" data-email-feedback aria-live="polite"></p></div><div class="partner-card-actions"><button type="button" class="secondary-button" data-email-browse="${connection.id}">Consulter les e-mails</button>${canOpenPartnerMissions() ? '<button type="button" class="secondary-button" data-email-open-missions>Voir les missions détectées</button>' : ""}${configuration ? `<button type="button" class="danger-button" data-email-disconnect="${connection.id}">Déconnecter</button>` : ""}</div></article>`;
+}
+
+function bindMailboxConnectionControls(card, mailbox, { configuration = false, reload = null } = {}) {
+    const connections = Array.isArray(mailbox?.connections) ? mailbox.connections : [];
     card.querySelectorAll("[data-email-browse]").forEach(button => button.addEventListener("click", () => {
-        const connection = (mailbox.connections || []).find(item => String(item.id) === button.dataset.emailBrowse);
+        const connection = connections.find(item => String(item.id) === button.dataset.emailBrowse);
         if (connection) openMailboxBrowser(card, connection);
     }));
-    card.querySelectorAll("[data-email-auto-search]").forEach(input => input.addEventListener("change", async () => {
-        input.disabled = true;
-        const result = await api(`/api/partner-email/${input.dataset.emailAutoSearch}/automatic-search`, { method: "PATCH", body: JSON.stringify({ enabled: input.checked }) });
-        if (!result.ok) { input.checked = !input.checked; alert(result.message); }
-        input.disabled = false;
+    card.querySelectorAll("[data-email-open-missions]").forEach(button => button.addEventListener("click", () => window.dispatchEvent(new CustomEvent("depannhome:open-partner-email-missions"))));
+    card.querySelectorAll("[data-email-sync]").forEach(button => button.addEventListener("click", async () => {
+        const row = button.closest("[data-email-connection-card]");
+        const from = row?.querySelector("[data-email-sync-from]")?.value || "";
+        const to = row?.querySelector("[data-email-sync-to]")?.value || "";
+        const periodError = validateMailboxSearchPeriod(from, to);
+        if (periodError) return showMailboxFeedback(row, periodError, true);
+        mailboxSearchFrom = from; mailboxSearchTo = to; button.disabled = true;
+        showMailboxFeedback(row, "Recherche des missions en cours…");
+        const result = await api(`/api/partner-email/${button.dataset.emailSync}/sync`, { method: "POST", body: JSON.stringify({ from, to }) });
+        button.disabled = false;
+        if (!result.ok) return showMailboxFeedback(row, result.message, true);
+        const summary = mailboxSyncSummary(result.data, from, to);
+        showMailboxFeedback(row, summary);
+        dispatchMailboxChanged("sync", { connectionId: button.dataset.emailSync, stats: result.data });
+        if (reload) window.setTimeout(reload, 1200);
+    }));
+    if (!configuration) return;
+    card.querySelectorAll("[data-email-save-settings]").forEach(button => button.addEventListener("click", async () => {
+        const row = button.closest("[data-email-connection-card]");
+        const payload = {
+            selectionMode: row.querySelector("[data-email-selection-mode]").value,
+            automaticThreshold: Number(row.querySelector("[data-email-automatic-threshold]").value),
+            allowedSenders: row.querySelector("[data-email-allowed-senders]").value,
+            sendStatusUpdates: row.querySelector("[data-email-send-statuses]").checked,
+            autoSearchEnabled: row.querySelector("[data-email-auto-search]").checked
+        };
+        button.disabled = true;
+        const result = await api(`/api/partner-email/${button.dataset.emailSaveSettings}/settings`, { method: "PATCH", body: JSON.stringify(payload) });
+        button.disabled = false;
+        showMailboxFeedback(row, result.ok ? result.data.message : result.message, !result.ok);
+        if (result.ok) { dispatchMailboxChanged("settings"); if (reload) window.setTimeout(reload, 800); }
     }));
     card.querySelectorAll("[data-email-disconnect]").forEach(button => button.addEventListener("click", async () => {
         if (!confirm("Déconnecter cette boîte ? Les missions déjà créées et leur historique seront conservés.")) return;
         const result = await api(`/api/partner-email/${button.dataset.emailDisconnect}`, { method: "DELETE" });
         if (!result.ok) return alert(result.message);
-        await loadPartnerEmailSettings(card);
+        dispatchMailboxChanged("connection");
+        if (reload) await reload();
     }));
 }
 
-function emailConnectionCard(connection) {
-    const mode = connection.selectionMode === "automatic" ? `Automatique · seuil ${connection.automaticThreshold}` : "Sélection manuelle";
-    return `<article class="partner-email-connection"><div><strong>${escapeHtml(connection.displayName || connection.emailAddress)}</strong><p>${escapeHtml(connection.emailAddress)} · ${escapeHtml(mode)}</p><small>${connection.lastError ? escapeHtml(connection.lastError) : connection.lastSyncAt ? `Dernière synchronisation : ${escapeHtml(formatDate(connection.lastSyncAt))}` : "Jamais synchronisée"}</small><label class="creator-switch"><input type="checkbox" data-email-auto-search="${connection.id}" ${connection.autoSearchEnabled ? "checked" : ""}><span>Recherche automatique des missions</span></label></div><div class="partner-card-actions"><button class="secondary-button" data-email-browse="${connection.id}">Consulter les e-mails</button><button class="secondary-button" data-email-sync="${connection.id}">Synchroniser</button><button class="danger-button" data-email-disconnect="${connection.id}">Déconnecter</button></div></article>`;
-}
+function showMailboxFeedback(row, message, error = false) { const target = row?.querySelector("[data-email-feedback]"); if (!target) return; target.textContent = message; target.classList.toggle("error", error); }
+function mailboxSyncSummary(stats, from, to) { return `${Number(stats?.fetched) || 0} e-mail(s) lu(s) du ${formatShortDate(from)} au ${formatShortDate(to)} · ${Number(stats?.candidates) || 0} mission(s) à confirmer · ${Number(stats?.imported) || 0} créée(s) automatiquement.${stats?.limited ? " Plus de 500 e-mails ont été trouvés : réduisez la période." : ""}`; }
+function validateMailboxSearchPeriod(from, to) { if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) return "Sélectionnez une date de début et une date de fin."; const days = (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86400000; if (days < 0) return "La date de fin doit être postérieure ou égale à la date de début."; return days > 30 ? "Sélectionnez une période maximale de 31 jours." : ""; }
+function dispatchMailboxChanged(reason, detail = {}) { window.dispatchEvent(new CustomEvent("depannhome:partner-email-changed", { detail: { reason, ...detail } })); }
 
 async function openMailboxBrowser(card, connection, offset = 0) {
     let browser = card.querySelector(".partner-mailbox-browser");
@@ -243,10 +278,12 @@ async function beginMailboxOauth(provider, settings) {
     if (!popup) alert("Autorisez les fenêtres contextuelles pour connecter la boîte professionnelle.");
 }
 
-window.addEventListener("message", event => {
+window.addEventListener("message", async event => {
     if (event.origin !== window.location.origin || event.data?.type !== "depannhome:partner-email-oauth") return;
     alert(event.data.message);
-    if (event.data.success && activeSettingsCard?.isConnected) loadPartnerEmailSettings(activeSettingsCard);
+    if (!event.data.success) return;
+    if (activeSettingsCard?.isConnected) await loadPartnerEmailSettings(activeSettingsCard);
+    dispatchMailboxChanged("connection");
 });
 
 function formatDate(value) {
@@ -261,6 +298,11 @@ function isMicrosoftMailbox(value) {
 function isGmailMailbox(value) {
     return String(value || "").trim().toLowerCase().endsWith("@gmail.com");
 }
+
+function canOpenPartnerMissions() { return ["admin", "pc_standard", "mobile_admin"].includes(document.body.dataset.role); }
+function canConfigureMailbox() { return document.body.dataset.role === "admin" && document.body.dataset.deviceType === "desktop"; }
+function localDateValue(value) { const offset = value.getTimezoneOffset() * 60000; return new Date(value.getTime() - offset).toISOString().slice(0, 10); }
+function formatShortDate(value) { return new Intl.DateTimeFormat("fr-FR").format(new Date(`${value}T12:00:00`)); }
 
 async function api(url, options = {}) {
     try {

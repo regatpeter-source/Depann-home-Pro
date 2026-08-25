@@ -5,10 +5,10 @@ import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocume
 import { renderAccounting, renderElectronicInvoicingConfiguration } from "./accounting.js?v=15";
 import { renderPurchases } from "./purchases.js?v=118";
 import { renderGroupActivation, renderGroupWorkspace } from "./groups.js?v=3";
-import { renderPartnerMissions } from "./partner-missions.js?v=47";
+import { renderPartnerMissions } from "./partner-missions.js?v=48";
 import { renderPartnerSandbox } from "./partner-sandbox.js?v=3";
-import { renderPartnerConnections } from "./partner-connections.js?v=23";
-import { renderCompanyEmailWorkspace, renderPartnerEmailSettings } from "./partner-email-settings.js?v=7";
+import { renderPartnerConnections } from "./partner-connections.js?v=24";
+import { renderCompanyEmailWorkspace, renderPartnerEmailSettings } from "./partner-email-settings.js?v=9";
 import { renderDataImportTool } from "./data-imports.js?v=3";
 import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=29";
 import { getFirstUnreadClientId, refreshClientMessageAlert, refreshVisibleClientMessages } from "./messages.js?v=107";
@@ -67,6 +67,18 @@ export function initializeNavigation(loadedDatabase) {
     updateSearchPlaceholder();
     window.addEventListener("depannhome:open-client", event => openClients(String(event.detail?.clientId || "")));
     window.addEventListener("depannhome:open-partner-email-settings", () => renderSettings({ section: "company", focusPartnerEmail: true }));
+    window.addEventListener("depannhome:open-partner-email-missions", () => {
+        if (canAccessRoute(ROUTES.partnerMissions) && document.body.dataset.canAccessCompanyEmail === "true") {
+            window.dispatchEvent(new CustomEvent("depannhome:show-partner-email-missions"));
+            renderPartnerMissions();
+        }
+    });
+    window.addEventListener("depannhome:partner-email-changed", event => {
+        const activeRoute = document.querySelector(".nav-button.active")?.dataset.nav;
+        if (activeRoute !== ROUTES.companyEmail) return;
+        if (event.detail?.reason === "sync") window.setTimeout(renderCompanyEmail, 2200);
+        else renderCompanyEmail();
+    });
     window.addEventListener("depannhome:edit-report-template", () => {
         if (!organizationFeatureEnabled("technicalReports") || document.body.dataset.role !== "admin" || !document.body.classList.contains("desktop-device")) return;
         openDocumentTemplateSettings("report");

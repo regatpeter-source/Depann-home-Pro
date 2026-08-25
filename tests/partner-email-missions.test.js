@@ -159,8 +159,36 @@ test("la recherche automatique des missions est une option explicite indépendan
     assert.match(emailSettingsSource, /partnerEmailOauthAutoSearch/);
     assert.match(emailSettingsSource, /data-email-auto-search/);
     assert.match(emailSettingsSource, /Activer la recherche automatique des missions/);
-    const manualSyncRoute = serverSource.slice(serverSource.indexOf('app.post("/api/partner-email/:connectionId/sync"'), serverSource.indexOf('app.patch("/api/partner-email/:connectionId/automatic-search"'));
+    const manualSyncRoute = serverSource.slice(serverSource.indexOf('app.post("/api/partner-email/:connectionId/sync"'), serverSource.indexOf('app.patch("/api/partner-email/:connectionId/settings"'));
     assert.doesNotMatch(manualSyncRoute, /auto_search_enabled/);
+});
+
+test("une boîte rattachée s’actualise immédiatement et expose toutes les commandes de recherche", () => {
+    assert.match(emailSettingsSource, /depannhome:partner-email-changed/);
+    assert.match(emailSettingsSource, /dispatchMailboxChanged\("connection"\)/);
+    assert.match(emailSettingsSource, /dispatchMailboxChanged\("sync"/);
+    assert.match(emailSettingsSource, /data-email-sync-from/);
+    assert.match(emailSettingsSource, /data-email-sync-to/);
+    assert.match(emailSettingsSource, /data-email-selection-mode/);
+    assert.match(emailSettingsSource, /data-email-auto-search/);
+    assert.match(emailSettingsSource, /data-email-save-settings/);
+    assert.match(emailSettingsSource, /Voir les missions détectées/);
+    assert.match(emailSettingsSource, /mission\(s\) à confirmer/);
+    assert.match(navigationSource, /depannhome:open-partner-email-missions/);
+    assert.match(missionClientSource, /depannhome:show-partner-email-missions/);
+    assert.match(missionClientSource, /depannhome:partner-email-changed/);
+});
+
+test("les réglages d’une boîte existante sont enregistrés côté serveur par un Administrateur PC", () => {
+    assert.match(serverSource, /:connectionId\/settings", requireEmailConfigurationAccess/);
+    assert.match(serverSource, /SET selection_mode=\$3, allowed_senders=\$4::jsonb, automatic_threshold=\$5/);
+    assert.match(serverSource, /auto_search_enabled=\$7/);
+    assert.match(serverSource, /req\.user\?\.role !== "admin"/);
+    assert.match(serverSource, /req\.user\?\.deviceType !== "desktop"/);
+    assert.match(emailSettingsSource, /function canConfigureMailbox\(\)/);
+    assert.match(emailSettingsSource, /selectionMode: row\.querySelector\("\[data-email-selection-mode\]"\)\.value/);
+    assert.match(emailSettingsSource, /automaticThreshold: Number/);
+    assert.match(emailSettingsSource, /allowedSenders: row\.querySelector/);
 });
 
 test("la boîte complète se consulte à la demande sans stockage ni déplacement du curseur de missions", () => {

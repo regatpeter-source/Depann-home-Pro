@@ -100,7 +100,7 @@ export function registerPartnerEmailRoutes(app, requireAuthentication) {
         ]);
         res.json({ connections: connections.rows, candidates: messages.rows, oauth: { google: oauthConfigured("google"), microsoft: oauthConfigured("microsoft") } });
     }));
-    app.put("/api/partner-email/configuration", asyncHandler(async (req, res) => {
+    app.put("/api/partner-email/configuration", requireEmailConfigurationAccess, asyncHandler(async (req, res) => {
         const input = sanitizeImapConfiguration(req.body);
         if (!input.ok) return res.status(400).json({ message: input.message });
         if (isMicrosoftMailbox(input.emailAddress)) return res.status(400).json({ message: "Les adresses Outlook, Hotmail, Live et MSN exigent la connexion OAuth Microsoft. Utilisez le bouton « Connecter Microsoft » ; le mot de passe habituel ou un mot de passe d’application ne convient pas à ce formulaire." });
@@ -119,7 +119,7 @@ export function registerPartnerEmailRoutes(app, requireAuthentication) {
         const { rows } = await getPool().query(`INSERT INTO depannhome_partner_email_connections(owner_id,provider,email_address,display_name,encrypted_credentials,server_configuration,selection_mode,allowed_senders,automatic_threshold,send_status_updates,auto_search_enabled,created_by,last_error) VALUES($1,'imap',$2,$3,$4,$5::jsonb,$6,$7::jsonb,$8,$9,$10,$11,'') ON CONFLICT(owner_id,email_address) DO UPDATE SET provider='imap',display_name=EXCLUDED.display_name,encrypted_credentials=EXCLUDED.encrypted_credentials,server_configuration=EXCLUDED.server_configuration,selection_mode=EXCLUDED.selection_mode,allowed_senders=EXCLUDED.allowed_senders,automatic_threshold=EXCLUDED.automatic_threshold,send_status_updates=EXCLUDED.send_status_updates,auto_search_enabled=EXCLUDED.auto_search_enabled,enabled=TRUE,last_error='',updated_at=NOW() RETURNING id`, [ownerId, input.emailAddress, input.displayName, encrypted, JSON.stringify(input.server), input.selectionMode, JSON.stringify(input.allowedSenders), input.automaticThreshold, input.sendStatusUpdates, Boolean(req.body?.autoSearchEnabled), req.user.sub]);
         res.json({ id: rows[0].id, message: "Boîte professionnelle connectée et vérifiée." });
     }));
-    app.post("/api/partner-email/oauth/:provider/authorize", asyncHandler(async (req, res) => {
+    app.post("/api/partner-email/oauth/:provider/authorize", requireEmailConfigurationAccess, asyncHandler(async (req, res) => {
         const provider = String(req.params.provider || "");
         if (!oauthConfigured(provider)) return res.status(503).json({ message: `La connexion ${provider === "google" ? "Google" : "Microsoft"} n’est pas encore configurée sur le serveur.` });
         const state = crypto.randomBytes(32).toString("base64url"); const verifier = crypto.randomBytes(48).toString("base64url");
@@ -143,7 +143,24 @@ export function registerPartnerEmailRoutes(app, requireAuthentication) {
         setLiveMailboxHeaders(res).set({ "Content-Type": attachment.contentType, "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(attachment.filename)}`, "Content-Length": String(attachment.content.length), "X-Content-Type-Options": "nosniff" }).send(attachment.content);
     }));
     app.post("/api/partner-email/:connectionId/sync", asyncHandler(async (req, res) => res.json(await syncConnection(getAccountOwnerId(req), positiveId(req.params.connectionId), req.user.sub, parseMailboxSyncPeriod(req.body)))));
-    app.patch("/api/partner-email/:connectionId/automatic-search", asyncHandler(async (req, res) => {
+    app.patch("/api/partner-email/:connectionId/settings", requireEmailConfigurationAccess, asyncHandler(async (req, res) => {
+        const selectionMode = MODES.has(req.body?.selectionMode) ? req.body.selectionMode : "";
+        if (!selectionMode) return res.status(400).json({ message: "Choisissez un mode de recherche valide." });
+        const allowedSenders = sanitizeSenders(req.body?.allowedSenders);
+        const automaticThreshold = Math.max(70, Math.min(100, Number(req.body?.automaticThreshold) || AUTO_THRESHOLD));
+        const { rows } = await getPool().query(`
+            UPDATE depannhome_partner_email_connections
+            SET selection_mode=$3, allowed_senders=$4::jsonb, automatic_threshold=$5,
+                send_status_updates=$6, auto_search_enabled=$7, updated_at=NOW()
+            WHERE id=$1 AND owner_id=$2 AND enabled=TRUE
+            RETURNING selection_mode AS "selectionMode", allowed_senders AS "allowedSenders",
+                automatic_threshold AS "automaticThreshold", send_status_updates AS "sendStatusUpdates",
+                auto_search_enabled AS "autoSearchEnabled"
+        `, [positiveId(req.params.connectionId), getAccountOwnerId(req), selectionMode, JSON.stringify(allowedSenders), automaticThreshold, Boolean(req.body?.sendStatusUpdates), Boolean(req.body?.autoSearchEnabled)]);
+        if (!rows[0]) return res.status(404).json({ message: "Boîte professionnelle introuvable." });
+        res.json({ ...rows[0], message: "Réglages de recherche enregistrés." });
+    }));
+    app.patch("/api/partner-email/:connectionId/automatic-search", requireEmailConfigurationAccess, asyncHandler(async (req, res) => {
         const { rows } = await getPool().query("UPDATE depannhome_partner_email_connections SET auto_search_enabled=$3,updated_at=NOW() WHERE id=$1 AND owner_id=$2 RETURNING auto_search_enabled AS \"autoSearchEnabled\"", [positiveId(req.params.connectionId), getAccountOwnerId(req), Boolean(req.body?.enabled)]);
         if (!rows[0]) return res.status(404).json({ message: "Boîte professionnelle introuvable." });
         res.json(rows[0]);
@@ -161,7 +178,7 @@ export function registerPartnerEmailRoutes(app, requireAuthentication) {
         await recordMissionDialogueEvent({ ownerId: getAccountOwnerId(req), missionId: positiveId(req.params.missionId), status: "email_reply_sent", action: "email_reply_sent", details: { summary: `Réponse envoyée par e-mail${attachments.length ? ` avec ${attachments.length} document(s)` : ""}.` }, actorName: req.user.fullName || req.user.username, partnerVisible: false });
         res.json({ message: "Réponse et documents envoyés depuis la boîte professionnelle." });
     }));
-    app.delete("/api/partner-email/:connectionId", asyncHandler(async (req, res) => { await getPool().query("DELETE FROM depannhome_partner_email_connections WHERE id=$1 AND owner_id=$2", [positiveId(req.params.connectionId), getAccountOwnerId(req)]); res.status(204).end(); }));
+    app.delete("/api/partner-email/:connectionId", requireEmailConfigurationAccess, asyncHandler(async (req, res) => { await getPool().query("DELETE FROM depannhome_partner_email_connections WHERE id=$1 AND owner_id=$2", [positiveId(req.params.connectionId), getAccountOwnerId(req)]); res.status(204).end(); }));
 }
 
 export function startPartnerEmailScheduler() {
@@ -582,6 +599,7 @@ function oauthErrorLog(error, provider) { return { provider, code: clean(error?.
 function mailErrorLog(error, provider) { return { provider, code: clean(error?.oauthCode || error?.code || error?.responseCode || "mailbox_error", 80), errorCodes: Array.isArray(error?.oauthErrorCodes) ? error.oauthErrorCodes : [], status: Number(error?.oauthStatus || error?.statusCode) || 0, authenticationFailed: Boolean(error?.authenticationFailed) }; }
 function oauthPopup(res, success, message) { res.type("html").send(`<!doctype html><meta charset="utf-8"><title>Connexion boîte mail</title><p>${escapeHtml(message)}</p><script>window.opener?.postMessage(${JSON.stringify({ type: "depannhome:partner-email-oauth", success, message })},window.location.origin);window.close();</script>`); }
 function requireEmailAccess(req, res, next) { if (!hasCompanyEmailWorkspaceAccess(req.user)) return res.status(403).json({ message: "L’espace e-mail de l’entreprise n’est pas autorisé sur ce poste." }); return next(); }
+function requireEmailConfigurationAccess(req, res, next) { if (req.user?.role !== "admin" || req.user?.deviceType !== "desktop") return res.status(403).json({ message: "Seul un Administrateur PC peut modifier les réglages de la boîte professionnelle." }); return next(); }
 function selectedIds(value) { return [...new Set((Array.isArray(value) ? value : []).map(positiveId).filter(Boolean))].slice(0, 100); }
 export function publicMailError(error, { configuration = false, provider = "" } = {}) {
     if (error?.oauthCode || error?.oauthProvider) return oauthErrorMessage(error, provider || error.oauthProvider);
