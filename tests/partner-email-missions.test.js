@@ -160,6 +160,16 @@ test("les comptes Microsoft personnels sont orientés vers OAuth et non vers le 
     assert.match(emailSettingsSource, /Microsoft refuse l’authentification IMAP classique/);
 });
 
+test("Gmail personnel dispose d’un parcours par mot de passe d’application sans OAuth obligatoire", () => {
+    assert.match(emailSettingsSource, /isGmailMailbox/);
+    assert.match(emailSettingsSource, /imap\.gmail\.com/);
+    assert.match(emailSettingsSource, /smtp\.gmail\.com/);
+    assert.match(emailSettingsSource, /myaccount\.google\.com\/apppasswords/);
+    assert.match(emailSettingsSource, /jamais votre mot de passe Gmail habituel/);
+    assert.match(serverSource, /normalizeMailboxPassword/);
+    assert.match(serverSource, /password\.replace\(\/\\s\+\/g, ""\)/);
+});
+
 test("un timeout ImapFlow ne peut pas arrêter le processus Node", () => {
     assert.equal((serverSource.match(/new ImapFlow/g) || []).length, 1);
     assert.match(serverSource, /function createImapClient\(options\)/);

@@ -27,15 +27,30 @@ function renderSettings(card, mailbox) {
     if (microsoftButton) microsoftButton.textContent = "Connecter Microsoft (Outlook, Hotmail, Microsoft 365)";
     const emailInput = card.querySelector('#partnerEmailImapForm [name="emailAddress"]');
     if (emailInput) {
+        const form = emailInput.form;
         const guidance = document.createElement("p");
         guidance.className = "auth-message form-wide";
         guidance.hidden = true;
         emailInput.closest("label")?.after(guidance);
         const refreshGuidance = () => {
-            guidance.hidden = !isMicrosoftMailbox(emailInput.value);
-            guidance.textContent = microsoftButton?.disabled
+            const microsoft = isMicrosoftMailbox(emailInput.value), gmail = isGmailMailbox(emailInput.value);
+            guidance.hidden = !microsoft && !gmail;
+            if (microsoft) guidance.textContent = microsoftButton?.disabled
                 ? "Cette adresse Outlook/Hotmail personnelle est compatible, mais uniquement par OAuth. La connexion Microsoft doit d’abord être activée sur le serveur par l’administrateur."
                 : "Cette adresse Outlook/Hotmail personnelle doit être connectée avec le bouton Microsoft ci-dessus, sans saisir son mot de passe ici.";
+            if (gmail) {
+                guidance.innerHTML = 'Gmail personnel : activez la validation en deux étapes puis créez un <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener noreferrer">mot de passe d’application Google</a>. Utilisez ce code de 16 caractères ici, jamais votre mot de passe Gmail habituel.';
+                if (form?.dataset.emailPreset !== "gmail") {
+                    form.elements.username.value = emailInput.value.trim();
+                    form.elements.imapHost.value = "imap.gmail.com";
+                    form.elements.imapPort.value = "993";
+                    form.elements.imapSecure.value = "true";
+                    form.elements.smtpHost.value = "smtp.gmail.com";
+                    form.elements.smtpPort.value = "465";
+                    form.elements.smtpSecure.value = "true";
+                    form.dataset.emailPreset = "gmail";
+                }
+            } else if (form?.dataset.emailPreset === "gmail") form.dataset.emailPreset = "";
         };
         emailInput.addEventListener("input", refreshGuidance);
         refreshGuidance();
@@ -127,6 +142,10 @@ function formatDate(value) {
 function isMicrosoftMailbox(value) {
     const domain = String(value || "").toLowerCase().split("@").pop();
     return /^(?:(?:outlook|hotmail|live)\.[a-z.]+|msn\.com)$/.test(domain);
+}
+
+function isGmailMailbox(value) {
+    return String(value || "").trim().toLowerCase().endsWith("@gmail.com");
 }
 
 async function api(url, options = {}) {
