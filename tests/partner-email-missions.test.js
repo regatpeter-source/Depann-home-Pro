@@ -63,9 +63,20 @@ test("les secrets, dédoublonnages et pièces privées sont définis côté serv
 });
 
 test("la boîte mail dépend de Missions partenaires et non des connecteurs Pro", () => {
-    assert.match(appSource, /app\.use\("\/api\/partner-email", requireAuthentication, requireOrganizationFeature\("partnerMissions"\)\)/);
+    assert.match(appSource, /const requirePartnerEmailFeature = requireOrganizationFeature\("partnerMissions"\)/);
+    assert.match(appSource, /if \(isPartnerEmailOAuthCallback\(request\)\) return next\(\)/);
     assert.match(missionSource, /intake\.partner_key LIKE 'email-%'/);
     assert.match(missionSource, /sourceType: partnerKey\.startsWith\("connection-"\) \? "depannhome_network" : partnerKey\.startsWith\("email-"\) \? "professional_email"/);
+});
+
+test("les callbacks OAuth mail utilisent l’état temporaire sans exiger le cookie de session", () => {
+    const callback = serverSource.indexOf('app.get("/api/partner-email/oauth/:provider/callback"');
+    const protection = serverSource.indexOf('app.use("/api/partner-email", requireAuthentication');
+    assert.ok(callback >= 0 && callback < protection);
+    assert.match(serverSource, /RETURNING owner_id,actor_id,encrypted_context/);
+    assert.match(serverSource, /\[pending\.owner_id, provider,[\s\S]*?pending\.actor_id\]/);
+    assert.doesNotMatch(serverSource.slice(callback, protection), /req\.user|getAccountOwnerId\(req\)/);
+    assert.match(appSource, /function isPartnerEmailOAuthCallback\(request\)[\s\S]*?request\.method === "GET"[\s\S]*?google\|microsoft/);
 });
 
 test("les missions e-mail utilisent la même interface que les missions internes et externes", () => {

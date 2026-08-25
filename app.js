@@ -124,7 +124,14 @@ app.use("/api/accounting", requireAuthentication, requireOrganizationFeature("ac
 app.use("/api/library", requireAuthentication, requireOrganizationFeature("library"));
 app.use("/api/technical-reports", requireAuthentication, requireOrganizationFeature("technicalReports"));
 app.use("/api/partner-missions", requireAuthentication, requireOrganizationFeature("partnerMissions"));
-app.use("/api/partner-email", requireAuthentication, requireOrganizationFeature("partnerMissions"));
+const requirePartnerEmailFeature = requireOrganizationFeature("partnerMissions");
+app.use("/api/partner-email", (request, response, next) => {
+	if (isPartnerEmailOAuthCallback(request)) return next();
+	return requireAuthentication(request, response, next);
+}, (request, response, next) => {
+	if (isPartnerEmailOAuthCallback(request)) return next();
+	return requirePartnerEmailFeature(request, response, next);
+});
 app.use("/api/clients", requireAuthentication, requireOrganizationFeature("clients"));
 const requireCalendarFeature = requireOrganizationFeature("calendar");
 const requireClientFeature = requireOrganizationFeature("clients");
@@ -274,4 +281,8 @@ start().catch(error => {
 function requireTechnicalWorkspaceAccess(request, response, next) {
 	if (request.user?.role === "accountant") return response.status(403).json({ message: "L’espace comptabilité ne donne pas accès aux ressources techniques." });
 	return next();
+}
+
+function isPartnerEmailOAuthCallback(request) {
+	return request.method === "GET" && /^\/oauth\/(?:google|microsoft)\/callback$/.test(request.path);
 }

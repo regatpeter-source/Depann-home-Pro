@@ -63,6 +63,20 @@ export async function initializePartnerEmail() {
 }
 
 export function registerPartnerEmailRoutes(app, requireAuthentication) {
+    app.get("/api/partner-email/oauth/:provider/callback", asyncHandler(async (req, res) => {
+        const provider = String(req.params.provider || "");
+        const state = String(req.query?.state || "");
+        if (!["google", "microsoft"].includes(provider) || !state) return oauthPopup(res, false, "Autorisation de la boîte refusée ou expirée.");
+        const { rows } = await getPool().query("DELETE FROM depannhome_partner_email_oauth_states WHERE state_hash=$1 AND provider=$2 AND expires_at>NOW() RETURNING owner_id,actor_id,encrypted_context", [hash(state), provider]);
+        const pending = rows[0];
+        if (!pending || req.query?.error || !req.query?.code) return oauthPopup(res, false, "Autorisation de la boîte refusée ou expirée.");
+        const context = decryptElectronicInvoicingCredentials(pending.encrypted_context);
+        const tokens = await exchangeOauthCode(provider, String(req.query.code), context.verifier);
+        const identity = await oauthIdentity(provider, tokens.access_token);
+        const encrypted = encryptElectronicInvoicingCredentials({ accessToken: tokens.access_token, refreshToken: tokens.refresh_token, expiresAt: new Date(Date.now() + Number(tokens.expires_in || 3600) * 1000).toISOString() });
+        await getPool().query(`INSERT INTO depannhome_partner_email_connections(owner_id,provider,email_address,display_name,encrypted_credentials,server_configuration,selection_mode,allowed_senders,send_status_updates,created_by,last_error) VALUES($1,$2,$3,$4,$5,'{}'::jsonb,$6,$7::jsonb,$8,$9,'') ON CONFLICT(owner_id,email_address) DO UPDATE SET provider=EXCLUDED.provider,display_name=EXCLUDED.display_name,encrypted_credentials=EXCLUDED.encrypted_credentials,selection_mode=EXCLUDED.selection_mode,allowed_senders=EXCLUDED.allowed_senders,send_status_updates=EXCLUDED.send_status_updates,enabled=TRUE,last_error='',updated_at=NOW()`, [pending.owner_id, provider, identity.email, identity.name, encrypted, context.selectionMode, JSON.stringify(context.allowedSenders), context.sendStatusUpdates, pending.actor_id]);
+        oauthPopup(res, true, "Boîte professionnelle connectée.");
+    }));
     app.use("/api/partner-email", requireAuthentication, requireEmailAccess);
     app.get("/api/partner-email", asyncHandler(async (req, res) => {
         const ownerId = getAccountOwnerId(req);
@@ -98,17 +112,6 @@ export function registerPartnerEmailRoutes(app, requireAuthentication) {
         const context = { verifier, selectionMode: MODES.has(req.body?.selectionMode) ? req.body.selectionMode : "manual", sendStatusUpdates: Boolean(req.body?.sendStatusUpdates), allowedSenders: sanitizeSenders(req.body?.allowedSenders) };
         await getPool().query("INSERT INTO depannhome_partner_email_oauth_states(state_hash,owner_id,actor_id,provider,encrypted_context,expires_at) VALUES($1,$2,$3,$4,$5,NOW()+INTERVAL '10 minutes')", [hash(state), getAccountOwnerId(req), req.user.sub, provider, encryptElectronicInvoicingCredentials(context)]);
         res.json({ authorizationUrl: oauthAuthorizationUrl(provider, state, verifier) });
-    }));
-    app.get("/api/partner-email/oauth/:provider/callback", asyncHandler(async (req, res) => {
-        const provider = String(req.params.provider || ""); const ownerId = getAccountOwnerId(req); const state = String(req.query?.state || "");
-        const { rows } = await getPool().query("DELETE FROM depannhome_partner_email_oauth_states WHERE state_hash=$1 AND owner_id=$2 AND actor_id=$3 AND provider=$4 AND expires_at>NOW() RETURNING encrypted_context", [hash(state), ownerId, req.user.sub, provider]);
-        if (!rows[0] || req.query?.error || !req.query?.code) return oauthPopup(res, false, "Autorisation de la boîte refusée ou expirée.");
-        const context = decryptElectronicInvoicingCredentials(rows[0].encrypted_context);
-        const tokens = await exchangeOauthCode(provider, String(req.query.code), context.verifier);
-        const identity = await oauthIdentity(provider, tokens.access_token);
-        const encrypted = encryptElectronicInvoicingCredentials({ accessToken: tokens.access_token, refreshToken: tokens.refresh_token, expiresAt: new Date(Date.now() + Number(tokens.expires_in || 3600) * 1000).toISOString() });
-        await getPool().query(`INSERT INTO depannhome_partner_email_connections(owner_id,provider,email_address,display_name,encrypted_credentials,server_configuration,selection_mode,allowed_senders,send_status_updates,created_by,last_error) VALUES($1,$2,$3,$4,$5,'{}'::jsonb,$6,$7::jsonb,$8,$9,'') ON CONFLICT(owner_id,email_address) DO UPDATE SET provider=EXCLUDED.provider,display_name=EXCLUDED.display_name,encrypted_credentials=EXCLUDED.encrypted_credentials,selection_mode=EXCLUDED.selection_mode,allowed_senders=EXCLUDED.allowed_senders,send_status_updates=EXCLUDED.send_status_updates,enabled=TRUE,last_error='',updated_at=NOW()`, [ownerId, provider, identity.email, identity.name, encrypted, context.selectionMode, JSON.stringify(context.allowedSenders), context.sendStatusUpdates, req.user.sub]);
-        oauthPopup(res, true, "Boîte professionnelle connectée.");
     }));
     app.post("/api/partner-email/:connectionId/sync", asyncHandler(async (req, res) => res.json(await syncConnection(getAccountOwnerId(req), positiveId(req.params.connectionId), req.user.sub))));
     app.post("/api/partner-email/candidates/import", asyncHandler(async (req, res) => {
