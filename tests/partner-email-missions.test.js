@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import ExcelJS from "exceljs";
 import PizZip from "pizzip";
 import { PDFDocument, StandardFonts } from "pdf-lib";
-import { classifyPartnerEmail, extractMissionPayload, oauthErrorMessage, publicMailError } from "../server/partner-email.js";
+import { classifyPartnerEmail, extractMissionPayload, oauthErrorMessage, parseMailboxSyncPeriod, publicMailError } from "../server/partner-email.js";
 import { extractPartnerDocumentText } from "../server/partner-email-document-extractor.js";
 
 const serverSource = readFileSync(new URL("../server/partner-email.js", import.meta.url), "utf8");
@@ -105,8 +105,25 @@ test("les missions e-mail utilisent la même interface que les missions internes
     assert.match(missionClientSource, /class="partner-mission-card priority-/);
     assert.match(missionClientSource, /status: "email_candidate"/);
     assert.match(missionClientSource, /id="syncPartnerEmail"/);
+    assert.match(missionClientSource, /id="partnerEmailSyncFrom"/);
+    assert.match(missionClientSource, /id="partnerEmailSyncTo"/);
+    assert.match(missionClientSource, /JSON\.stringify\(\{ from, to \}\)/);
     assert.doesNotMatch(missionClientSource, /data-mission-tab="email-inbox"/);
     assert.doesNotMatch(missionClientSource, /partner-email-candidate(?:-heading|-select)?/);
+});
+
+test("la recherche manuelle accepte une période inclusive de 31 jours sans déplacer le curseur automatique", () => {
+    const period = parseMailboxSyncPeriod({ from: "2026-08-01", to: "2026-08-31" });
+    assert.equal(period.from, "2026-08-01");
+    assert.equal(period.to, "2026-08-31");
+    assert.equal(period.since.toISOString(), "2026-08-01T00:00:00.000Z");
+    assert.equal(period.before.toISOString(), "2026-09-01T00:00:00.000Z");
+    assert.throws(() => parseMailboxSyncPeriod({ from: "2026-08-01", to: "2026-09-01" }), /31 jours/);
+    assert.throws(() => parseMailboxSyncPeriod({ from: "2026-08-31", to: "2026-08-01" }), /postérieure/);
+    assert.throws(() => parseMailboxSyncPeriod({ from: "2026-02-30", to: "2026-02-30" }), /valides/);
+    assert.match(serverSource, /periodUids\(client, syncPeriod\)/);
+    assert.match(serverSource, /advanceCursor: !syncPeriod/);
+    assert.match(serverSource, /PERIOD_FETCH_LIMIT = 500/);
 });
 
 test("la boîte professionnelle se configure dans Paramètres Réseau", () => {

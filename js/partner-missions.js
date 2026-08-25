@@ -10,6 +10,9 @@ let dashboard = null;
 let activeMissionTab = "received";
 let activeMissionSpace = "network";
 let preferredConnectionId = "";
+const initialEmailSyncDate = new Date();
+let emailSyncFrom = localDateValue(new Date(initialEmailSyncDate.getFullYear(), initialEmailSyncDate.getMonth(), 1));
+let emailSyncTo = localDateValue(initialEmailSyncDate);
 
 function organizationFeatureEnabled(feature) {
     try { return JSON.parse(document.body.dataset.organizationFeatures || "{}")[feature] === true; } catch { return false; }
@@ -51,7 +54,7 @@ export async function renderPartnerMissions(options = {}) {
         shell.querySelector(".partner-mission-heading .muted").textContent = "Même suivi, mêmes cartes et même Centre de mission ; seule la connexion à la source passe par votre boîte professionnelle.";
         shell.querySelectorAll('[data-mission-space]').forEach(button => button.classList.toggle("active", button.dataset.missionSpace === "email"));
         shell.querySelectorAll('.partner-mission-tabs')[1].innerHTML = externalTabs;
-        if (dashboard.partnerEmail.connections.length) shell.querySelector(".partner-mission-actions")?.insertAdjacentHTML("afterbegin", '<button class="secondary-button" id="syncPartnerEmail">Synchroniser</button>');
+        if (dashboard.partnerEmail.connections.length) shell.querySelector(".partner-mission-actions")?.insertAdjacentHTML("afterbegin", `<div class="partner-email-sync-period"><label>Du<input type="date" id="partnerEmailSyncFrom" value="${escapeHtml(emailSyncFrom)}"></label><label>Au<input type="date" id="partnerEmailSyncTo" value="${escapeHtml(emailSyncTo)}"></label><button class="secondary-button" id="syncPartnerEmail">Rechercher les e-mails</button></div>`);
         const counters = [...shell.querySelectorAll(".partner-mission-counters article")];
         const emailMissions = dashboard.missions.filter(mission => mission.sourceType === "professional_email");
         if (counters[0]) { counters[0].querySelector("span").textContent = "À valider"; counters[0].querySelector("strong").textContent = dashboard.partnerEmail.candidates.length + emailMissions.filter(mission => ["received", "pending_validation"].includes(mission.status)).length; }
@@ -71,6 +74,8 @@ export async function renderPartnerMissions(options = {}) {
     shell.querySelector("#refreshPartnerMissions").addEventListener("click", renderPartnerMissions);
     shell.querySelector("#openPartnerEmailSettings")?.addEventListener("click", () => window.dispatchEvent(new CustomEvent("depannhome:open-partner-email-settings")));
     shell.querySelector("#syncPartnerEmail")?.addEventListener("click", () => synchronizePartnerMailboxes(shell));
+    shell.querySelector("#partnerEmailSyncFrom")?.addEventListener("change", event => { emailSyncFrom = event.currentTarget.value; });
+    shell.querySelector("#partnerEmailSyncTo")?.addEventListener("change", event => { emailSyncTo = event.currentTarget.value; });
     shell.querySelector("#retryPartnerOutbox")?.addEventListener("click", async () => { const result = await api("/api/partner-missions/outbox/retry", { method: "POST" }); alert(result.ok ? `${result.data.delivered} retour(s) transmis.` : result.message); renderPartnerMissions(); });
     shell.querySelectorAll("[data-mission-space]").forEach(button => button.addEventListener("click", () => { activeMissionSpace = button.dataset.missionSpace; activeMissionTab = "received"; renderPartnerMissions(); }));
     shell.querySelectorAll("[data-mission-tab]").forEach(button => button.addEventListener("click", () => { activeMissionTab = button.dataset.missionTab; renderMissionTab(shell); }));
@@ -195,18 +200,35 @@ function emailCandidateMission(message) {
 
 async function synchronizePartnerMailboxes(shell) {
     const button = shell.querySelector("#syncPartnerEmail");
+    const from = shell.querySelector("#partnerEmailSyncFrom")?.value || "";
+    const to = shell.querySelector("#partnerEmailSyncTo")?.value || "";
+    const periodError = validateEmailSyncPeriod(from, to);
+    if (periodError) return alert(periodError);
+    emailSyncFrom = from; emailSyncTo = to;
     if (button) button.disabled = true;
-    let fetched = 0, candidates = 0, imported = 0;
+    let fetched = 0, candidates = 0, imported = 0, limited = false;
     for (const connection of dashboard.partnerEmail.connections || []) {
-        const result = await api(`/api/partner-email/${connection.id}/sync`, { method: "POST" });
+        const result = await api(`/api/partner-email/${connection.id}/sync`, { method: "POST", body: JSON.stringify({ from, to }) });
         if (!result.ok) { if (button) button.disabled = false; return alert(result.message); }
         fetched += Number(result.data?.fetched) || 0;
         candidates += Number(result.data?.candidates) || 0;
         imported += Number(result.data?.imported) || 0;
+        limited ||= result.data?.limited === true;
     }
-    alert(`${fetched} e-mail(s) lu(s), ${candidates} mission(s) à confirmer, ${imported} mission(s) importée(s).`);
+    alert(`${fetched} e-mail(s) lu(s) du ${formatShortDate(from)} au ${formatShortDate(to)}, ${candidates} mission(s) à confirmer, ${imported} mission(s) importée(s).${limited ? " Plus de 500 e-mails ont été trouvés dans une boîte : réduisez la période pour consulter les autres." : ""}`);
     await renderPartnerMissions();
 }
+
+function validateEmailSyncPeriod(from, to) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) return "Sélectionnez une date de début et une date de fin.";
+    const days = (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86400000;
+    if (days < 0) return "La date de fin doit être postérieure ou égale à la date de début.";
+    if (days > 30) return "Sélectionnez une période maximale de 31 jours.";
+    return "";
+}
+
+function localDateValue(value) { const offset = value.getTimezoneOffset() * 60000; return new Date(value.getTime() - offset).toISOString().slice(0, 10); }
+function formatShortDate(value) { return new Intl.DateTimeFormat("fr-FR").format(new Date(`${value}T12:00:00`)); }
 
 function enableClosedMissionCorrection(node, missions, options) {
     if (!canManagePartnerMissions() || options.sent || options.messages) return;

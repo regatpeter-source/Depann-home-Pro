@@ -18,6 +18,7 @@ const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
 const MAX_ATTACHMENTS = 10;
 const AUTO_THRESHOLD = 80;
 const FETCH_LIMIT = 100;
+const PERIOD_FETCH_LIMIT = 500;
 const MICROSOFT_IDENTITY_SCOPES = "openid email profile offline_access User.Read";
 const MICROSOFT_MAIL_SCOPES = "offline_access https://outlook.office.com/IMAP.AccessAsUser.All https://outlook.office.com/SMTP.Send";
 let scheduler = null;
@@ -123,7 +124,7 @@ export function registerPartnerEmailRoutes(app, requireAuthentication) {
         await getPool().query("INSERT INTO depannhome_partner_email_oauth_states(state_hash,owner_id,actor_id,provider,encrypted_context,expires_at) VALUES($1,$2,$3,$4,$5,NOW()+INTERVAL '10 minutes')", [hash(state), getAccountOwnerId(req), req.user.sub, provider, encryptElectronicInvoicingCredentials(context)]);
         res.json({ authorizationUrl: oauthAuthorizationUrl(provider, state, verifier) });
     }));
-    app.post("/api/partner-email/:connectionId/sync", asyncHandler(async (req, res) => res.json(await syncConnection(getAccountOwnerId(req), positiveId(req.params.connectionId), req.user.sub))));
+    app.post("/api/partner-email/:connectionId/sync", asyncHandler(async (req, res) => res.json(await syncConnection(getAccountOwnerId(req), positiveId(req.params.connectionId), req.user.sub, parseMailboxSyncPeriod(req.body)))));
     app.post("/api/partner-email/candidates/import", asyncHandler(async (req, res) => {
         const ids = selectedIds(req.body?.ids); if (!ids.length) return res.status(400).json({ message: "Sélectionnez au moins un e-mail." });
         const results = []; for (const id of ids) results.push(await importCandidate(getAccountOwnerId(req), id, req.user.sub));
@@ -171,23 +172,27 @@ export function classifyPartnerEmail({ subject = "", text = "", from = "", attac
     return { score: Math.max(0, Math.min(100, score)), reasons, trustedSender, likelyMission: trustedSender && score >= AUTO_THRESHOLD };
 }
 
-async function syncConnection(ownerId, connectionId, actorId) {
+async function syncConnection(ownerId, connectionId, actorId, syncPeriod = null) {
     const connection = await findConnection(ownerId, connectionId); if (!connection) throw httpError(404, "Boîte professionnelle introuvable.");
     try {
         const access = await mailboxAccess(connection); const client = createImapClient({ host: access.imap.host, port: access.imap.port, secure: access.imap.secure, auth: access.auth, disableAutoIdle: true });
-        await client.connect(); const lock = await client.getMailboxLock("INBOX"); let fetched = 0, candidates = 0, imported = 0, maxUid = Number(connection.last_uid || 0);
+        await client.connect(); const lock = await client.getMailboxLock("INBOX"); let fetched = 0, candidates = 0, imported = 0, maxUid = Number(connection.last_uid || 0), limited = false;
         try {
-            const range = maxUid > 0 ? `${maxUid + 1}:*` : await recentUids(client);
-            if (Array.isArray(range) && !range.length) return await completeSync(connectionId, { fetched, candidates, imported, maxUid });
+            let range;
+            if (syncPeriod) {
+                const search = await periodUids(client, syncPeriod); range = search.ids; limited = search.limited;
+            } else range = maxUid > 0 ? `${maxUid + 1}:*` : await recentUids(client);
+            if (Array.isArray(range) && !range.length) return await completeSync(connectionId, { fetched, candidates, imported, maxUid, limited, period: syncPeriod ? { from: syncPeriod.from, to: syncPeriod.to } : null }, { advanceCursor: !syncPeriod });
             for await (const item of client.fetch(range, { uid: true, source: true }, { uid: true })) {
-                if (!item.source || Number(item.uid) <= maxUid) continue; maxUid = Math.max(maxUid, Number(item.uid)); fetched += 1;
+                if (!item.source || (!syncPeriod && Number(item.uid) <= maxUid)) continue;
+                if (!syncPeriod) maxUid = Math.max(maxUid, Number(item.uid)); fetched += 1;
                 const parsed = await simpleParser(item.source, { skipHtmlToText: false, maxHtmlLengthToParse: 2 * 1024 * 1024 });
                 const saved = await saveParsedEmail(connection, item.uid, parsed); if (!saved) continue;
                 candidates += 1;
                 if (connection.selection_mode === "automatic" && saved.trustedSender && saved.score >= Number(connection.automatic_threshold || AUTO_THRESHOLD)) { await importCandidate(ownerId, saved.id, actorId); imported += 1; }
             }
         } finally { lock.release(); await client.logout(); }
-        return completeSync(connectionId, { fetched, candidates, imported, maxUid });
+        return completeSync(connectionId, { fetched, candidates, imported, maxUid, limited, period: syncPeriod ? { from: syncPeriod.from, to: syncPeriod.to } : null }, { advanceCursor: !syncPeriod });
     } catch (error) {
         const publicError = publicMailError(error, { provider: connection.provider });
         console.warn("[partner-email] mailbox synchronization rejected", mailErrorLog(error, connection.provider));
@@ -308,7 +313,19 @@ async function testMailbox(connection) { const access = await mailboxAccess({ ..
 function createImapClient(options) { const client = new ImapFlow({ ...options, logger: false, connectionTimeout: 15000, greetingTimeout: 15000, socketTimeout: 20000 }); client.on("error", error => console.warn("[partner-email] erreur IMAP contrôlée :", publicMailError(error))); return client; }
 async function findConnection(ownerId, id) { const { rows } = await getPool().query("SELECT * FROM depannhome_partner_email_connections WHERE id=$1 AND owner_id=$2 AND enabled=TRUE", [id, ownerId]); return rows[0] || null; }
 async function recentUids(client) { const ids = await client.search({ since: new Date(Date.now() - 14 * 86400000) }, { uid: true }); return ids.slice(-FETCH_LIMIT); }
-async function completeSync(connectionId, stats) { await getPool().query("UPDATE depannhome_partner_email_connections SET last_uid=GREATEST(last_uid,$2),last_sync_at=NOW(),last_error='',updated_at=NOW() WHERE id=$1", [connectionId, stats.maxUid]); return stats; }
+async function periodUids(client, period) { const ids = await client.search({ since: period.since, before: period.before }, { uid: true }); return { ids: ids.slice(-PERIOD_FETCH_LIMIT), limited: ids.length > PERIOD_FETCH_LIMIT }; }
+async function completeSync(connectionId, stats, { advanceCursor = true } = {}) { if (advanceCursor) await getPool().query("UPDATE depannhome_partner_email_connections SET last_uid=GREATEST(last_uid,$2),last_sync_at=NOW(),last_error='',updated_at=NOW() WHERE id=$1", [connectionId, stats.maxUid]); else await getPool().query("UPDATE depannhome_partner_email_connections SET last_sync_at=NOW(),last_error='',updated_at=NOW() WHERE id=$1", [connectionId]); return stats; }
+
+export function parseMailboxSyncPeriod(value) {
+    const from = clean(value?.from, 10), to = clean(value?.to, 10);
+    if (!from && !to) return null;
+    const since = isoDate(from), until = isoDate(to);
+    if (!since || !until) throw httpError(400, "Sélectionnez une date de début et une date de fin valides.");
+    const days = Math.round((until.getTime() - since.getTime()) / 86400000);
+    if (days < 0) throw httpError(400, "La date de fin doit être postérieure ou égale à la date de début.");
+    if (days > 30) throw httpError(400, "La recherche des e-mails est limitée à une période de 31 jours.");
+    return { from, to, since, before: new Date(until.getTime() + 86400000) };
+}
 
 function sanitizeImapConfiguration(value) { const emailAddress = clean(value?.emailAddress, 254).toLowerCase(), username = clean(value?.username || emailAddress, 254), password = String(value?.password || "").trim().slice(0, 1000), selectionMode = MODES.has(value?.selectionMode) ? value.selectionMode : "manual"; const imapHost = host(value?.imapHost), smtpHost = host(value?.smtpHost), imapPort = port(value?.imapPort, 993), smtpPort = port(value?.smtpPort, 465); if (!/^\S+@\S+\.\S+$/.test(emailAddress) || !imapHost || !smtpHost || !username) return { ok: false, message: "Renseignez l’adresse, l’utilisateur et les serveurs IMAP/SMTP de la boîte professionnelle." }; return { ok: true, emailAddress, username, password, displayName: clean(value?.displayName, 160), selectionMode, allowedSenders: sanitizeSenders(value?.allowedSenders), automaticThreshold: Math.max(70, Math.min(100, Number(value?.automaticThreshold) || AUTO_THRESHOLD)), sendStatusUpdates: Boolean(value?.sendStatusUpdates), server: { imap: { host: imapHost, port: imapPort, secure: value?.imapSecure !== false }, smtp: { host: smtpHost, port: smtpPort, secure: !(value?.smtpSecure === false || String(value?.smtpSecure) === "false") } } }; }
 function outgoingAttachments(value) { let total = 0; const result = []; for (const item of Array.isArray(value) ? value.slice(0, 5) : []) { const match = /^data:([^;]+);base64,([A-Za-z0-9+/=]+)$/.exec(String(item?.dataUrl || "")); if (!match || !ALLOWED_MIME.has(match[1])) throw httpError(400, "Un document à envoyer possède un format non autorisé."); const content = Buffer.from(match[2], "base64"); if (!content.length || content.length > MAX_ATTACHMENT_BYTES || total + content.length > 20 * 1024 * 1024) throw httpError(400, "Les documents à envoyer dépassent la limite autorisée."); total += content.length; result.push({ filename: safeFilename(item?.name), contentType: match[1], content }); } return result; }
@@ -357,6 +374,7 @@ export function publicMailError(error, { configuration = false, provider = "" } 
 function statusLabel(value) { return ({ pending_validation: "en attente de validation", accepted: "acceptée", rejected: "refusée", scheduled: "planifiée", en_route: "technicien en route", on_site: "technicien sur site", report_completed: "rapport terminé", report_validated: "rapport validé", quote_sent: "devis envoyé", work_completed: "travaux terminés", invoice_sent: "facture envoyée", closed: "clôturée", cancelled: "annulée" })[value] || value; }
 function host(value) { const text = clean(value, 255).toLowerCase(); return /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(text) ? text : ""; }
 function port(value, fallback) { const number = Number(value || fallback); return Number.isSafeInteger(number) && number > 0 && number <= 65535 ? number : fallback; }
+function isoDate(value) { const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value || "")); if (!match) return null; const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]))); return date.getUTCFullYear() === Number(match[1]) && date.getUTCMonth() === Number(match[2]) - 1 && date.getUTCDate() === Number(match[3]) ? date : null; }
 function positiveId(value) { const id = Number(value); return Number.isSafeInteger(id) && id > 0 ? id : 0; }
 function safeFilename(value) { return String(value || "document").replace(/^.*[\\/]/, "").replace(/[\r\n]/g, " ").slice(0, 255) || "document"; }
 function clean(value, max) { return String(value || "").replace(/\s+/g, " ").trim().slice(0, max); }
