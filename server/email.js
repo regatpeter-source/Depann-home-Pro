@@ -46,7 +46,19 @@ export async function sendSupportRequestEmail({ senderName, senderEmail, senderU
     });
 }
 
-async function sendEmail({ recipient, subject, text, html, attachments = [] }) {
+export async function sendCommercialOfferRequestEmail({ companyName, contactName, email, phone, teamSize, offer, message }) {
+    const offerLabel = ({ basic: "Basic", "basic-plus": "Basic+", pro: "Pro", unsure: "À conseiller" })[offer] || "À conseiller";
+    const teamSizeLabel = ({ "1": "1 personne", "2-5": "2 à 5 personnes", "6-10": "6 à 10 personnes", "11-25": "11 à 25 personnes", "26-plus": "26 personnes ou plus" })[teamSize] || "Non renseigné";
+    await sendEmail({
+        recipient: "support@depannhomepro.com",
+        replyTo: email,
+        subject: `Demande d’offre Depann'Home Pro — ${companyName}`,
+        text: `Nouvelle demande d’offre depuis depannhomepro.com\n\nEntreprise : ${companyName}\nContact : ${contactName}\nE-mail : ${email}\nTéléphone : ${phone}\nTaille de l’équipe : ${teamSizeLabel}\nOffre envisagée : ${offerLabel}\n\nBesoin :\n${message}`,
+        html: `<p><strong>Nouvelle demande d’offre depuis depannhomepro.com</strong></p><p><strong>Entreprise :</strong> ${escapeHtml(companyName)}<br><strong>Contact :</strong> ${escapeHtml(contactName)}<br><strong>E-mail :</strong> ${escapeHtml(email)}<br><strong>Téléphone :</strong> ${escapeHtml(phone)}<br><strong>Taille de l’équipe :</strong> ${escapeHtml(teamSizeLabel)}<br><strong>Offre envisagée :</strong> ${escapeHtml(offerLabel)}</p><p><strong>Besoin :</strong><br>${escapeHtml(message).replace(/\n/g, "<br>")}</p>`
+    });
+}
+
+async function sendEmail({ recipient, replyTo, subject, text, html, attachments = [] }) {
     if (!isEmailDeliveryConfigured()) {
         const error = new Error("L’envoi d’e-mails n’est pas configuré. Renseignez Brevo SMTP dans les variables d’environnement.");
         error.code = "SMTP_NOT_CONFIGURED";
@@ -65,6 +77,7 @@ async function sendEmail({ recipient, subject, text, html, attachments = [] }) {
     return transporter.sendMail({
         from: process.env.BREVO_SMTP_FROM,
         to: recipient,
+        ...(replyTo ? { replyTo } : {}),
         subject,
         text,
         html,

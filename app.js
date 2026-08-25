@@ -40,6 +40,7 @@ import { initializePartnerSandbox, registerPartnerSandboxRoutes } from "./server
 import { initializePartnerApiSandbox, registerPartnerApiSandboxRoutes } from "./server/partner-api-sandbox.js";
 import { initializeGroups, registerGroupRoutes } from "./server/groups.js";
 import { initializeSupport, registerSupportRoutes } from "./server/support.js";
+import { registerPublicOfferRoutes } from "./server/public-offers.js";
 import { dataImportUploadErrorHandler, initializeDataImports, registerDataImportRoutes } from "./server/data-imports.js";
 import {
 	libraryUploadErrorHandler,
@@ -112,6 +113,13 @@ app.use("/api/partner-requests", rateLimit({
 	legacyHeaders: false,
 	message: { message: "Trop de demandes ont été envoyées. Réessayez dans quelques minutes." }
 }));
+app.use("/api/public/offer-requests", rateLimit({
+	windowMs: 15 * 60 * 1000,
+	limit: 5,
+	standardHeaders: "draft-7",
+	legacyHeaders: false,
+	message: { message: "Trop de demandes ont été envoyées. Réessayez dans quelques minutes." }
+}));
 app.use("/api/accounting", requireAuthentication, requireOrganizationFeature("accounting"));
 app.use("/api/library", requireAuthentication, requireOrganizationFeature("library"));
 app.use("/api/technical-reports", requireAuthentication, requireOrganizationFeature("technicalReports"));
@@ -171,6 +179,7 @@ registerClientRoutes(app, requireAuthentication);
 registerDataImportRoutes(app, requireAuthentication);
 registerLibraryRoutes(app, requireAuthentication);
 registerSupportRoutes(app, requireAuthentication);
+registerPublicOfferRoutes(app);
 
 // Seul le logo est nécessaire avant connexion. Le catalogue et les notices sont servis
 // uniquement après validation du cookie de session HTTP-only.

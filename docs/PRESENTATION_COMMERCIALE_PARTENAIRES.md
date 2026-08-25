@@ -29,6 +29,8 @@ Chaque offre est calculée selon le nombre de postes réellement autorisés dans
 
 Chaque Administrateur Mobile — rôle dédié ou téléphone/tablette approuvé d’un compte Administrateur — consomme un poste mobile inclus dans l’offre, sans consommer de poste PC supplémentaire.
 
+> **Inclus dans toutes les offres Basic, Basic+ et Pro :** une connexion directe à une plateforme de facturation électronique compatible permet de transmettre les factures depuis Depann’Home Pro, sans double saisie. Depann’Home Pro reste distinct de la plateforme agréée choisie par l’entreprise.
+
 ## Basic
 
 - **20 € TTC par poste PC et par mois.**
@@ -36,7 +38,7 @@ Chaque Administrateur Mobile — rôle dédié ou téléphone/tablette approuvé
 - Gestion des clients.
 - Création et suivi des devis, factures et avoirs.
 - Tableau de bord Facturation : chiffre d’affaires, encaissements, avoirs et reste à encaisser.
-- Comptabilité, facturation électronique et préparation des échanges avec la PDP choisie par l’entreprise.
+- Comptabilité et connexion directe incluse à une plateforme de facturation électronique compatible choisie par l’entreprise.
 - Personnalisation des documents et informations de l’entreprise.
 - Accès par postes PC et par un poste Administrateur Mobile ; les comptes Technicien et Chef d’équipe nécessitent Basic+.
 - Bibliothèque technique sur les postes mobiles uniquement.
@@ -49,6 +51,7 @@ L’offre Basic est adaptée aux petites structures qui souhaitent centraliser l
 - **35 € TTC par poste PC et par mois.**
 - **8 € TTC par poste mobile et par mois.**
 - Toutes les fonctionnalités de Basic.
+- Connexion directe à une plateforme de facturation électronique incluse.
 - Planning partagé.
 - Gestion et affectation des interventions.
 - Consultation terrain des rendez-vous autorisés.
@@ -67,6 +70,7 @@ L’offre Basic+ convient aux entreprises qui souhaitent coordonner le bureau, l
 - **70 € TTC par poste PC et par mois.**
 - **15 € TTC par poste mobile et par mois.**
 - Accès complet aux fonctions Depann’Home Pro.
+- Connexion directe à une plateforme de facturation électronique incluse.
 - Clients, planning, devis, factures, avoirs et facturation.
 - Quitus d’intervention avec signature, validation et archivage PDF.
 - Rapports de recherche de fuite, photos, corrections et signatures.
@@ -300,12 +304,13 @@ Le module Comptabilité regroupe les données nécessaires au suivi et à la pr�
 - Exports CSV et Excel.
 - Préparation d’un fichier FEC sous conditions de contrôle.
 - Aides financières.
-- Préparation de la facturation électronique.
+- Connexion directe incluse à une plateforme de facturation électronique compatible.
+- Transmission des factures depuis Depann’Home Pro vers la plateforme connectée, sans double saisie.
 - Connecteurs déclaratifs vers des services externes.
 
 ### Information importante
 
-Depann’Home Pro prépare les données et les documents mais n’est pas une Plateforme de Dématérialisation Partenaire agréée par l’État. Les réglages comptables, exports FEC et transmissions réglementaires doivent être vérifiés par le cabinet comptable et, le cas échéant, transmis via la plateforme agréée choisie par l’entreprise.
+Depann’Home Pro n’est pas lui-même une plateforme agréée par l’État : il se connecte à une plateforme de facturation électronique compatible choisie par l’entreprise. Les réglages comptables, exports FEC et transmissions réglementaires restent à vérifier avec le cabinet comptable et la plateforme connectée.
 
 ---
 
@@ -510,10 +515,9 @@ Depann’Home Pro ne se limite pas à la facturation. La plateforme relie les é
 
 Une démonstration peut être organisée pour présenter les parcours adaptés à votre activité, à vos équipes et à vos besoins de collaboration.
 
-**Contact commercial :** à compléter  
-**Téléphone :** à compléter  
-**E-mail :** à compléter  
-**Site internet :** à compléter
+- **Demande d’offre :** [depannhomepro.com/#demande-offre](https://depannhomepro.com/#demande-offre)
+- **E-mail :** support@depannhomepro.com
+- **Site internet :** [depannhomepro.com](https://depannhomepro.com/)
 
 ---
 

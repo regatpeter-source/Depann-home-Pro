@@ -27,6 +27,8 @@ test("la politique de confidentialité décrit explicitement l'usage limité des
     assert.match(privacy, /Connexions tierces du compte Google/);
     assert.match(privacy, /support@depannhomepro\.com/);
     assert.match(privacy, /CNIL/);
+    assert.match(privacy, /Demandes commerciales/);
+    assert.match(privacy, /demande d’offre/);
 });
 
 test("les conditions encadrent les comptes, les services connectés et les données métier", () => {
@@ -44,4 +46,14 @@ test("la vitrine présente la grille tarifaire commerciale complète", () => {
     assert.match(landing, /Pro[\s\S]*?70 €[\s\S]*?15 €/);
     assert.match(landing, /Licence Portail Partenaire[\s\S]*?gratuitement/);
     assert.match(landing, /25 € TTC \/ mois[\s\S]*?94 € TTC \/ mois[\s\S]*?200 € TTC \/ mois/);
+    assert.match(landing, /Inclus dans toutes les offres[\s\S]*?connexion directe à une plateforme de facturation électronique compatible/);
+    assert.equal((landing.match(/Connexion directe à une plateforme de facturation électronique incluse/g) || []).length, 3);
+});
+
+test("la vitrine propose une demande d’offre transmise au support", () => {
+    assert.match(landing, /id="demande-offre"/);
+    assert.match(landing, /data-offer-form/);
+    assert.match(landing, /name="privacyConsent"/);
+    assert.match(appSource, /\/api\/public\/offer-requests/);
+    assert.match(appSource, /registerPublicOfferRoutes\(app\)/);
 });
