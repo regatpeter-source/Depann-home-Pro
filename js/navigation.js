@@ -8,7 +8,7 @@ import { renderGroupActivation, renderGroupWorkspace } from "./groups.js?v=3";
 import { renderPartnerMissions } from "./partner-missions.js?v=47";
 import { renderPartnerSandbox } from "./partner-sandbox.js?v=3";
 import { renderPartnerConnections } from "./partner-connections.js?v=23";
-import { renderPartnerEmailSettings } from "./partner-email-settings.js?v=4";
+import { renderPartnerEmailSettings } from "./partner-email-settings.js?v=5";
 import { renderDataImportTool } from "./data-imports.js?v=3";
 import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=29";
 import { getFirstUnreadClientId, refreshClientMessageAlert, refreshVisibleClientMessages } from "./messages.js?v=107";
@@ -66,7 +66,7 @@ export function initializeNavigation(loadedDatabase) {
     applyRoleBasedMenus();
     updateSearchPlaceholder();
     window.addEventListener("depannhome:open-client", event => openClients(String(event.detail?.clientId || "")));
-    window.addEventListener("depannhome:open-partner-email-settings", () => renderSettings({ section: "network", focusPartnerEmail: true }));
+    window.addEventListener("depannhome:open-partner-email-settings", () => renderSettings({ section: "company", focusPartnerEmail: true }));
     window.addEventListener("depannhome:edit-report-template", () => {
         if (!organizationFeatureEnabled("technicalReports") || document.body.dataset.role !== "admin" || !document.body.classList.contains("desktop-device")) return;
         openDocumentTemplateSettings("report");
@@ -335,7 +335,8 @@ function isDesktopDevice() {
 
 function canAccessSettingsSection(section) {
     if (document.body.dataset.creator === "true") return true;
-    if (document.body.dataset.organizationInterface === "partner") return section === "support" || (section === "network" && organizationFeatureEnabled("partnerConnections")) || (section === "network" && organizationFeatureEnabled("partnerMissions"));
+    if (document.body.dataset.organizationInterface === "partner") return section === "support" || (section === "network" && organizationFeatureEnabled("partnerConnections")) || (section === "company" && organizationFeatureEnabled("partnerMissions"));
+    if (section === "company" && organizationFeatureEnabled("partnerMissions")) return ["admin", "pc_standard", "mobile_admin"].includes(document.body.dataset.role);
     if (section === "network" && (organizationFeatureEnabled("partnerConnections") || organizationFeatureEnabled("partnerMissions"))) return true;
     const featureBySection = { documents: "billing", electronicInvoicing: "accounting", network: "partnerConnections", users: "settings", security: "settings", groups: "groups", personalization: "settings", imports: "imports" };
     const feature = featureBySection[section];
@@ -343,7 +344,7 @@ function canAccessSettingsSection(section) {
     if (document.body.dataset.role === "admin") return true;
     if (section === "documents" && document.body.dataset.canAccessBilling === "true") return true;
     if (section === "electronicInvoicing" && document.body.dataset.canAccessAccounting === "true") return true;
-    return ["network", "personalization"].includes(section);
+    return ["network", "company", "personalization"].includes(section);
 }
 
 function isOrganizationRouteEnabled(route) {
@@ -1106,6 +1107,7 @@ function getSearchModules() {
     add("Bibliothèque technique", "bibliothèque notice procédure moteur automatisme télécommande schéma diagnostic portail volet roulant porte garage serrure pièce détachée", ROUTES.library, renderLibrary);
     add("Comptabilité et facturation électronique & PDP", "comptabilité facturation électronique pdp export comptable facture", ROUTES.accounting, renderAccounting);
     add("Réseau Depann'Home Pro", "réseau partenaire partenaires api connexion annuaire", ROUTES.settings, () => renderSettings({ section: "network" }));
+    if (organizationFeatureEnabled("partnerMissions")) add("Boîte mail de l’entreprise", "entreprise boîte mail email missions connexion imap smtp", ROUTES.settings, () => renderSettings({ section: "company" }));
     add("Modèles de documents", "modèle devis rapport quitus document logo", ROUTES.settings, () => renderSettings({ section: "documents" }));
     add("Utilisateurs", "utilisateur équipe technicien chef équipe poste pc droit accès", ROUTES.settings, () => renderSettings({ section: "users" }));
     add("Sécurité", "sécurité double authentification 2fa sms accès", ROUTES.settings, () => renderSettings({ section: "security" }));
@@ -1347,6 +1349,7 @@ function renderSettingsWorkspace(options = {}) {
             ...(document.body.dataset.role === "admin" ? [["subscription", "Offre & abonnement", "Consultez les tarifs et demandez une évolution ou une rétrogradation au Support.", "subscription"]] : []),
             ...(document.body.dataset.role === "admin" ? [["documents", "Modèles de documents", `Identité, présentation et modèles des devis${organizationFeatureEnabled("quitus") ? ", quitus" : ""} et rapports.`, "document"]] : []),
             ...(document.body.dataset.role === "admin" && organizationFeatureEnabled("accounting") ? [["electronicInvoicing", "Facturation électronique", "Choisissez et configurez la plateforme propre à votre entreprise.", "document"]] : []),
+            ...(organizationFeatureEnabled("partnerMissions") && ["admin", "pc_standard", "mobile_admin"].includes(document.body.dataset.role) ? [["company", "Entreprise · Boîte mail", "Connectez la boîte de l’entreprise et choisissez si elle recherche automatiquement les missions.", "company"]] : []),
             ["network", internalNetworkOnly ? "Réseau Depann’Home Pro" : "Réseau & connecteurs", internalNetworkOnly ? "Recherchez des entreprises utilisatrices et gérez vos connexions internes." : "Deux espaces distincts : le réseau collaboratif Depann’Home Pro et les connecteurs API externes.", "network"],
             ...(internalNetworkOnly ? [["support", "Support", "Envoyez une demande à l’équipe Depann’Home Pro depuis votre compte partenaire.", "support"]] : []),
             ...(document.body.dataset.role === "admin" ? [["users", "Utilisateurs", "Accès, postes, techniciens et chefs d’équipe.", "users"], ["security", "Sécurité", "Double authentification et protection des accès.", "security"], ["groups", "Groupe / Multi-entreprises", "Sociétés, bascule de contexte et indicateurs consolidés.", "group"]] : []),
@@ -1362,7 +1365,7 @@ function renderSettingsWorkspace(options = {}) {
 
     clearSearch();
     resetSelection("all");
-    const titles = { subscription: "Offre & abonnement", documents: "Modèles de documents", electronicInvoicing: "Facturation électronique", network: document.body.dataset.organizationInterface === "partner" || !organizationFeatureEnabled("connectors") ? "Réseau Depann’Home Pro" : "Réseau & connecteurs", support: "Support", users: "Utilisateurs", security: "Sécurité", groups: "Groupe / Multi-entreprises", personalization: "Personnalisation", imports: "Importation de données", creator: "Console Créateur" };
+    const titles = { subscription: "Offre & abonnement", documents: "Modèles de documents", electronicInvoicing: "Facturation électronique", company: "Entreprise · Boîte mail", network: document.body.dataset.organizationInterface === "partner" || !organizationFeatureEnabled("connectors") ? "Réseau Depann’Home Pro" : "Réseau & connecteurs", support: "Support", users: "Utilisateurs", security: "Sécurité", groups: "Groupe / Multi-entreprises", personalization: "Personnalisation", imports: "Importation de données", creator: "Console Créateur" };
     setPage(`Paramètres · ${titles[section] || "Configuration"}`, ROUTES.settings, "detail");
     const container = getContainer();
     container.appendChild(createBackCard("Retour aux Paramètres", () => renderSettings()));
@@ -1380,13 +1383,17 @@ function renderSettingsWorkspace(options = {}) {
         container.appendChild(intro);
         return;
     }
+    if (section === "company") {
+        container.appendChild(createSettingsIntro("Boîte mail de l’entreprise", "Connectez une boîte dédiée aux demandes d’intervention. Seuls les e-mails détectés comme missions apparaissent dans Missions partenaires ; les autres messages restent privés."));
+        renderPartnerEmailSettings(container);
+        if (options.focusPartnerEmail) window.requestAnimationFrame(() => document.querySelector(".partner-email-settings-card")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+        return;
+    }
     if (section === "network") {
         const internalNetworkOnly = document.body.dataset.organizationInterface === "partner" || !organizationFeatureEnabled("connectors");
         container.appendChild(createSettingsIntro(internalNetworkOnly ? "Réseau Depann’Home Pro" : "Réseau & connecteurs", internalNetworkOnly ? "Recherchez une entreprise utilisatrice, consultez sa fiche et demandez une connexion. Les connecteurs externes sont réservés aux donneurs d’ordre et ne sont pas disponibles sur le portail Partenaire." : "Le Réseau Depann’Home Pro relie uniquement les entreprises utilisatrices. Les connecteurs externes sont configurés séparément pour les échanges API avec les organismes tiers."));
         if (organizationFeatureEnabled("partnerConnections")) renderPartnerConnections(container);
-        if (["admin", "pc_standard", "mobile_admin"].includes(document.body.dataset.role) && organizationFeatureEnabled("partnerMissions")) renderPartnerEmailSettings(container);
         if (!internalNetworkOnly && document.body.classList.contains("partner-sandbox-enabled")) container.appendChild(createButton("Ouvrir l’environnement de recette partenaire", "secondary-button settings-inline-action", renderPartnerSandbox));
-        if (options.focusPartnerEmail) window.requestAnimationFrame(() => document.querySelector(".partner-email-settings-card")?.scrollIntoView({ behavior: "smooth", block: "start" }));
         return;
     }
     if (section === "support") return renderSupportContact(container);

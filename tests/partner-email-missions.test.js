@@ -51,6 +51,8 @@ test("les relances et réponses automatiques ne deviennent pas des missions", ()
     assert.equal(reminder.likelyMission, false);
     assert.equal(automatic.likelyMission, false);
     assert.ok(automatic.reasons.some(reason => /automatique/.test(reason)));
+    assert.match(serverSource, /CANDIDATE_THRESHOLD = 35/);
+    assert.match(serverSource, /classification\.score < CANDIDATE_THRESHOLD\) return null/);
 });
 
 test("les secrets, dédoublonnages et pièces privées sont définis côté serveur", () => {
@@ -129,10 +131,13 @@ test("la recherche manuelle accepte une période inclusive de 31 jours sans dép
     assert.match(serverSource, /PERIOD_FETCH_LIMIT = 500/);
 });
 
-test("la boîte professionnelle se configure dans Paramètres Réseau", () => {
+test("la boîte professionnelle se configure dans l’espace Entreprise dédié", () => {
     assert.match(navigationSource, /renderPartnerEmailSettings\(container\)/);
     assert.match(navigationSource, /depannhome:open-partner-email-settings/);
-    assert.match(navigationSource, /ROUTES\.settings && organizationFeatureEnabled\("partnerMissions"\)/);
+    assert.match(navigationSource, /section: "company", focusPartnerEmail: true/);
+    assert.match(navigationSource, /Entreprise · Boîte mail/);
+    const networkSection = navigationSource.slice(navigationSource.indexOf('if (section === "network")'), navigationSource.indexOf('if (section === "support")'));
+    assert.doesNotMatch(networkSection, /renderPartnerEmailSettings/);
     assert.match(navigationSource, /organizationFeatureEnabled\("partnerConnections"\)\) renderPartnerConnections\(container\)/);
     assert.match(emailSettingsSource, /id="partnerEmailImapForm"/);
     assert.match(emailSettingsSource, /\/api\/partner-email\/configuration/);
@@ -143,6 +148,19 @@ test("la boîte professionnelle se configure dans Paramètres Réseau", () => {
     assert.doesNotMatch(missionClientSource, /id="partnerEmailImapForm"/);
     assert.doesNotMatch(missionClientSource, /activeMissionTab === "email-settings"/);
     assert.doesNotMatch(missionClientSource, /id="configurePartnerEmail"/);
+});
+
+test("la recherche automatique des missions est une option explicite indépendante de la recherche manuelle", () => {
+    assert.match(schemaSource, /auto_search_enabled BOOLEAN NOT NULL DEFAULT FALSE/);
+    assert.match(serverSource, /ADD COLUMN IF NOT EXISTS auto_search_enabled BOOLEAN NOT NULL DEFAULT FALSE/);
+    assert.match(serverSource, /connection\.enabled=TRUE AND connection\.auto_search_enabled=TRUE/);
+    assert.match(serverSource, /auto_search_enabled AS "autoSearchEnabled"/);
+    assert.match(serverSource, /:connectionId\/automatic-search/);
+    assert.match(emailSettingsSource, /partnerEmailOauthAutoSearch/);
+    assert.match(emailSettingsSource, /data-email-auto-search/);
+    assert.match(emailSettingsSource, /Activer la recherche automatique des missions/);
+    const manualSyncRoute = serverSource.slice(serverSource.indexOf('app.post("/api/partner-email/:connectionId/sync"'), serverSource.indexOf('app.patch("/api/partner-email/:connectionId/automatic-search"'));
+    assert.doesNotMatch(manualSyncRoute, /auto_search_enabled/);
 });
 
 test("les erreurs IMAP et SMTP attendues ne remontent pas en erreur serveur 500", () => {

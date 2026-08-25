@@ -28,7 +28,7 @@ Après toute modification d’une variable Render, redéployer le service puis l
 
 La source e-mail utilise la même interface métier que les missions internes du réseau et les missions externes reçues par API : mêmes onglets **Missions reçues** et **Messagerie**, mêmes cartes, filtres, statuts, actions de validation, planification et Centre de mission. Les e-mails détectés mais non encore importés apparaissent dans cette liste commune avec le statut **À confirmer**.
 
-La configuration OAuth ou IMAP/SMTP d’une boîte professionnelle se trouve exclusivement dans **Paramètres → Réseau**. Si aucune boîte n’est connectée, **Missions partenaires** affiche un rappel avec un accès direct à cette section. Dès qu’une boîte existe, le rappel disparaît et seule l’action opérationnelle **Synchroniser** reste proposée dans les missions.
+La configuration OAuth ou IMAP/SMTP d’une boîte professionnelle se trouve exclusivement dans **Paramètres → Entreprise · Boîte mail**. Cet espace permet d’activer, pour chaque connexion, la **recherche automatique des missions**. Lorsque cette case est décochée, Depann’Home Pro ne consulte pas périodiquement la boîte ; la recherche manuelle par dates reste disponible dans **Missions partenaires → Boîte mail professionnelle**. Seuls les messages détectés comme missions sont affichés : les autres e-mails restent privés. Si aucune boîte n’est connectée, **Missions partenaires** affiche un rappel avec un accès direct à cette section.
 
 ### Sélection manuelle
 

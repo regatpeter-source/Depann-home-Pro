@@ -17,6 +17,7 @@ const ALLOWED_MIME = new Set(["application/pdf", "image/jpeg", "image/png", "ima
 const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
 const MAX_ATTACHMENTS = 10;
 const AUTO_THRESHOLD = 80;
+const CANDIDATE_THRESHOLD = 35;
 const FETCH_LIMIT = 100;
 const PERIOD_FETCH_LIMIT = 500;
 const MICROSOFT_IDENTITY_SCOPES = "openid email profile offline_access User.Read";
@@ -31,12 +32,13 @@ export async function initializePartnerEmail() {
         display_name VARCHAR(160) NOT NULL DEFAULT '', encrypted_credentials TEXT NOT NULL,
         server_configuration JSONB NOT NULL DEFAULT '{}'::jsonb, selection_mode VARCHAR(20) NOT NULL DEFAULT 'manual' CHECK(selection_mode IN ('manual','automatic')),
         allowed_senders JSONB NOT NULL DEFAULT '[]'::jsonb, automatic_threshold INTEGER NOT NULL DEFAULT 80 CHECK(automatic_threshold BETWEEN 70 AND 100),
-        send_status_updates BOOLEAN NOT NULL DEFAULT FALSE, enabled BOOLEAN NOT NULL DEFAULT TRUE,
+        send_status_updates BOOLEAN NOT NULL DEFAULT FALSE, auto_search_enabled BOOLEAN NOT NULL DEFAULT FALSE, enabled BOOLEAN NOT NULL DEFAULT TRUE,
         last_uid BIGINT NOT NULL DEFAULT 0, last_sync_at TIMESTAMPTZ, last_error VARCHAR(500) NOT NULL DEFAULT '',
         created_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         CONSTRAINT depannhome_partner_email_owner_address_unique UNIQUE(owner_id,email_address)
     )`);
-    await db.query("CREATE INDEX IF NOT EXISTS depannhome_partner_email_connections_sync_idx ON depannhome_partner_email_connections(enabled,last_sync_at)");
+    await db.query("ALTER TABLE depannhome_partner_email_connections ADD COLUMN IF NOT EXISTS auto_search_enabled BOOLEAN NOT NULL DEFAULT FALSE");
+    await db.query("CREATE INDEX IF NOT EXISTS depannhome_partner_email_connections_auto_search_idx ON depannhome_partner_email_connections(auto_search_enabled,enabled,last_sync_at)");
     await db.query(`CREATE TABLE IF NOT EXISTS depannhome_partner_email_messages (
         id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
         connection_id BIGINT NOT NULL REFERENCES depannhome_partner_email_connections(id) ON DELETE CASCADE,
@@ -79,7 +81,7 @@ export function registerPartnerEmailRoutes(app, requireAuthentication) {
             const identity = await oauthIdentity(provider, identityTokens.access_token);
             const mailboxTokens = identityTokens;
             const encrypted = encryptElectronicInvoicingCredentials({ accessToken: mailboxTokens.access_token, refreshToken: mailboxTokens.refresh_token || identityTokens.refresh_token, expiresAt: new Date(Date.now() + Number(mailboxTokens.expires_in || 3600) * 1000).toISOString() });
-            await getPool().query(`INSERT INTO depannhome_partner_email_connections(owner_id,provider,email_address,display_name,encrypted_credentials,server_configuration,selection_mode,allowed_senders,send_status_updates,created_by,last_error) VALUES($1,$2,$3,$4,$5,'{}'::jsonb,$6,$7::jsonb,$8,$9,'') ON CONFLICT(owner_id,email_address) DO UPDATE SET provider=EXCLUDED.provider,display_name=EXCLUDED.display_name,encrypted_credentials=EXCLUDED.encrypted_credentials,selection_mode=EXCLUDED.selection_mode,allowed_senders=EXCLUDED.allowed_senders,send_status_updates=EXCLUDED.send_status_updates,enabled=TRUE,last_error='',updated_at=NOW()`, [pending.owner_id, provider, identity.email, identity.name, encrypted, context.selectionMode, JSON.stringify(context.allowedSenders), context.sendStatusUpdates, pending.actor_id]);
+            await getPool().query(`INSERT INTO depannhome_partner_email_connections(owner_id,provider,email_address,display_name,encrypted_credentials,server_configuration,selection_mode,allowed_senders,send_status_updates,auto_search_enabled,created_by,last_error) VALUES($1,$2,$3,$4,$5,'{}'::jsonb,$6,$7::jsonb,$8,$9,$10,'') ON CONFLICT(owner_id,email_address) DO UPDATE SET provider=EXCLUDED.provider,display_name=EXCLUDED.display_name,encrypted_credentials=EXCLUDED.encrypted_credentials,selection_mode=EXCLUDED.selection_mode,allowed_senders=EXCLUDED.allowed_senders,send_status_updates=EXCLUDED.send_status_updates,auto_search_enabled=EXCLUDED.auto_search_enabled,enabled=TRUE,last_error='',updated_at=NOW()`, [pending.owner_id, provider, identity.email, identity.name, encrypted, context.selectionMode, JSON.stringify(context.allowedSenders), context.sendStatusUpdates, context.autoSearchEnabled, pending.actor_id]);
             return oauthPopup(res, true, "Boîte professionnelle connectée.");
         } catch (error) {
             console.warn("[partner-email-oauth] authorization rejected", oauthErrorLog(error, provider));
@@ -90,7 +92,7 @@ export function registerPartnerEmailRoutes(app, requireAuthentication) {
     app.get("/api/partner-email", asyncHandler(async (req, res) => {
         const ownerId = getAccountOwnerId(req);
         const [connections, messages] = await Promise.all([
-            getPool().query(`SELECT id,provider,email_address AS "emailAddress",display_name AS "displayName",selection_mode AS "selectionMode",allowed_senders AS "allowedSenders",automatic_threshold AS "automaticThreshold",send_status_updates AS "sendStatusUpdates",enabled,last_sync_at AS "lastSyncAt",last_error AS "lastError",updated_at AS "updatedAt" FROM depannhome_partner_email_connections WHERE owner_id=$1 ORDER BY updated_at DESC`, [ownerId]),
+            getPool().query(`SELECT id,provider,email_address AS "emailAddress",display_name AS "displayName",selection_mode AS "selectionMode",allowed_senders AS "allowedSenders",automatic_threshold AS "automaticThreshold",send_status_updates AS "sendStatusUpdates",auto_search_enabled AS "autoSearchEnabled",enabled,last_sync_at AS "lastSyncAt",last_error AS "lastError",updated_at AS "updatedAt" FROM depannhome_partner_email_connections WHERE owner_id=$1 ORDER BY updated_at DESC`, [ownerId]),
             getPool().query(`SELECT message.id,message.connection_id AS "connectionId",message.sender_address AS "senderAddress",message.sender_name AS "senderName",message.subject,message.body_text AS "bodyText",message.received_at AS "receivedAt",message.classification_score AS "classificationScore",message.classification_reasons AS "classificationReasons",message.status,message.mission_id AS "missionId",COALESCE(json_agg(json_build_object('id',attachment.id,'filename',attachment.filename,'mimeType',attachment.mime_type,'fileSize',attachment.file_size,'selected',attachment.selected) ORDER BY attachment.id) FILTER(WHERE attachment.id IS NOT NULL),'[]'::json) AS attachments FROM depannhome_partner_email_messages message LEFT JOIN depannhome_partner_email_attachments attachment ON attachment.email_message_id=message.id WHERE message.owner_id=$1 AND message.status='candidate' GROUP BY message.id ORDER BY message.received_at DESC LIMIT 200`, [ownerId])
         ]);
         res.json({ connections: connections.rows, candidates: messages.rows, oauth: { google: oauthConfigured("google"), microsoft: oauthConfigured("microsoft") } });
@@ -111,18 +113,23 @@ export function registerPartnerEmailRoutes(app, requireAuthentication) {
         try { await testMailbox({ provider: "imap", emailAddress: input.emailAddress, credentials, server: input.server }); }
         catch (error) { throw httpError(422, publicMailError(error, { configuration: true })); }
         const encrypted = encryptElectronicInvoicingCredentials(credentials);
-        const { rows } = await getPool().query(`INSERT INTO depannhome_partner_email_connections(owner_id,provider,email_address,display_name,encrypted_credentials,server_configuration,selection_mode,allowed_senders,automatic_threshold,send_status_updates,created_by,last_error) VALUES($1,'imap',$2,$3,$4,$5::jsonb,$6,$7::jsonb,$8,$9,$10,'') ON CONFLICT(owner_id,email_address) DO UPDATE SET provider='imap',display_name=EXCLUDED.display_name,encrypted_credentials=EXCLUDED.encrypted_credentials,server_configuration=EXCLUDED.server_configuration,selection_mode=EXCLUDED.selection_mode,allowed_senders=EXCLUDED.allowed_senders,automatic_threshold=EXCLUDED.automatic_threshold,send_status_updates=EXCLUDED.send_status_updates,enabled=TRUE,last_error='',updated_at=NOW() RETURNING id`, [ownerId, input.emailAddress, input.displayName, encrypted, JSON.stringify(input.server), input.selectionMode, JSON.stringify(input.allowedSenders), input.automaticThreshold, input.sendStatusUpdates, req.user.sub]);
+        const { rows } = await getPool().query(`INSERT INTO depannhome_partner_email_connections(owner_id,provider,email_address,display_name,encrypted_credentials,server_configuration,selection_mode,allowed_senders,automatic_threshold,send_status_updates,auto_search_enabled,created_by,last_error) VALUES($1,'imap',$2,$3,$4,$5::jsonb,$6,$7::jsonb,$8,$9,$10,$11,'') ON CONFLICT(owner_id,email_address) DO UPDATE SET provider='imap',display_name=EXCLUDED.display_name,encrypted_credentials=EXCLUDED.encrypted_credentials,server_configuration=EXCLUDED.server_configuration,selection_mode=EXCLUDED.selection_mode,allowed_senders=EXCLUDED.allowed_senders,automatic_threshold=EXCLUDED.automatic_threshold,send_status_updates=EXCLUDED.send_status_updates,auto_search_enabled=EXCLUDED.auto_search_enabled,enabled=TRUE,last_error='',updated_at=NOW() RETURNING id`, [ownerId, input.emailAddress, input.displayName, encrypted, JSON.stringify(input.server), input.selectionMode, JSON.stringify(input.allowedSenders), input.automaticThreshold, input.sendStatusUpdates, Boolean(req.body?.autoSearchEnabled), req.user.sub]);
         res.json({ id: rows[0].id, message: "Boîte professionnelle connectée et vérifiée." });
     }));
     app.post("/api/partner-email/oauth/:provider/authorize", asyncHandler(async (req, res) => {
         const provider = String(req.params.provider || "");
         if (!oauthConfigured(provider)) return res.status(503).json({ message: `La connexion ${provider === "google" ? "Google" : "Microsoft"} n’est pas encore configurée sur le serveur.` });
         const state = crypto.randomBytes(32).toString("base64url"); const verifier = crypto.randomBytes(48).toString("base64url");
-        const context = { verifier, selectionMode: MODES.has(req.body?.selectionMode) ? req.body.selectionMode : "manual", sendStatusUpdates: Boolean(req.body?.sendStatusUpdates), allowedSenders: sanitizeSenders(req.body?.allowedSenders) };
+        const context = { verifier, selectionMode: MODES.has(req.body?.selectionMode) ? req.body.selectionMode : "manual", sendStatusUpdates: Boolean(req.body?.sendStatusUpdates), autoSearchEnabled: Boolean(req.body?.autoSearchEnabled), allowedSenders: sanitizeSenders(req.body?.allowedSenders) };
         await getPool().query("INSERT INTO depannhome_partner_email_oauth_states(state_hash,owner_id,actor_id,provider,encrypted_context,expires_at) VALUES($1,$2,$3,$4,$5,NOW()+INTERVAL '10 minutes')", [hash(state), getAccountOwnerId(req), req.user.sub, provider, encryptElectronicInvoicingCredentials(context)]);
         res.json({ authorizationUrl: oauthAuthorizationUrl(provider, state, verifier) });
     }));
     app.post("/api/partner-email/:connectionId/sync", asyncHandler(async (req, res) => res.json(await syncConnection(getAccountOwnerId(req), positiveId(req.params.connectionId), req.user.sub, parseMailboxSyncPeriod(req.body)))));
+    app.patch("/api/partner-email/:connectionId/automatic-search", asyncHandler(async (req, res) => {
+        const { rows } = await getPool().query("UPDATE depannhome_partner_email_connections SET auto_search_enabled=$3,updated_at=NOW() WHERE id=$1 AND owner_id=$2 RETURNING auto_search_enabled AS \"autoSearchEnabled\"", [positiveId(req.params.connectionId), getAccountOwnerId(req), Boolean(req.body?.enabled)]);
+        if (!rows[0]) return res.status(404).json({ message: "Boîte professionnelle introuvable." });
+        res.json(rows[0]);
+    }));
     app.post("/api/partner-email/candidates/import", asyncHandler(async (req, res) => {
         const ids = selectedIds(req.body?.ids); if (!ids.length) return res.status(400).json({ message: "Sélectionnez au moins un e-mail." });
         const results = []; for (const id of ids) results.push(await importCandidate(getAccountOwnerId(req), id, req.user.sub));
@@ -147,7 +154,7 @@ export function startPartnerEmailScheduler() {
 }
 
 export async function synchronizeDueConnections() {
-    const { rows } = await getPool().query("SELECT connection.id,connection.owner_id FROM depannhome_partner_email_connections connection JOIN depannhome_users owner ON owner.id=connection.owner_id WHERE connection.enabled=TRUE AND owner.is_active=TRUE AND owner.is_archived=FALSE AND (connection.last_sync_at IS NULL OR connection.last_sync_at<NOW()-INTERVAL '10 minutes') ORDER BY connection.last_sync_at NULLS FIRST LIMIT 20");
+    const { rows } = await getPool().query("SELECT connection.id,connection.owner_id FROM depannhome_partner_email_connections connection JOIN depannhome_users owner ON owner.id=connection.owner_id WHERE connection.enabled=TRUE AND connection.auto_search_enabled=TRUE AND owner.is_active=TRUE AND owner.is_archived=FALSE AND (connection.last_sync_at IS NULL OR connection.last_sync_at<NOW()-INTERVAL '10 minutes') ORDER BY connection.last_sync_at NULLS FIRST LIMIT 20");
     for (const row of rows) {
         if (!isFeatureEnabled(await getOrganization(row.owner_id), "partnerMissions")) continue;
         await syncConnection(row.owner_id, row.id, null).catch(() => {});
@@ -223,6 +230,7 @@ async function saveParsedEmail(connection, uid, parsed) {
     let totalAttachmentBytes = 0;
     const attachments = (parsed.attachments || []).filter(item => { const allowed = ALLOWED_MIME.has(item.contentType) && item.size > 0 && item.size <= MAX_ATTACHMENT_BYTES && totalAttachmentBytes + item.size <= 20 * 1024 * 1024; if (allowed) totalAttachmentBytes += item.size; return allowed; }).slice(0, MAX_ATTACHMENTS);
     const classification = classifyPartnerEmail({ subject: parsed.subject, text: parsed.text, from: from.address, attachments, allowedSenders: connection.allowed_senders || [], automatic: Boolean(parsed.headers?.get("auto-submitted")) || /^\s*(?:re|tr)?\s*:\s*(?:réponse automatique|automatic reply|out of office)/i.test(parsed.subject || ""), listMail: Boolean(parsed.headers?.get("list-unsubscribe") || parsed.headers?.get("list-id")) });
+    if (classification.score < CANDIDATE_THRESHOLD) return null;
     const { rows } = await getPool().query(`INSERT INTO depannhome_partner_email_messages(owner_id,connection_id,uid,message_id,in_reply_to,references_header,sender_address,sender_name,recipients,subject,body_text,received_at,classification_score,classification_reasons) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12,$13,$14::jsonb) ON CONFLICT(owner_id,connection_id,message_id) DO NOTHING RETURNING id`, [connection.owner_id, connection.id, uid, messageId, clean(parsed.inReplyTo, 500), clean((parsed.references || []).join(" "), 4000), clean(from.address, 254), clean(from.name, 160), JSON.stringify(parsed.to?.value?.map(item => item.address).filter(Boolean) || []), clean(parsed.subject, 500), String(parsed.text || "").slice(0, 20000), parsed.date || new Date(), classification.score, JSON.stringify(classification.reasons)]);
     if (!rows[0]) return null;
     for (const attachment of attachments) await getPool().query("INSERT INTO depannhome_partner_email_attachments(owner_id,email_message_id,filename,mime_type,file_size,content_id,file_data) VALUES($1,$2,$3,$4,$5,$6,$7)", [connection.owner_id, rows[0].id, safeFilename(attachment.filename), attachment.contentType, attachment.size, clean(attachment.contentId, 255), attachment.content]);
