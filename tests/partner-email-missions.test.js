@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import ExcelJS from "exceljs";
 import PizZip from "pizzip";
 import { PDFDocument, StandardFonts } from "pdf-lib";
-import { classifyPartnerEmail, extractMissionPayload, inspectMailboxStructure, mailboxReplyBody, oauthErrorMessage, parseMailboxPage, parseMailboxSyncPeriod, parseMicrosoftRetryAfter, publicMailError, replySubject, sanitizeRequiredKeywords, stripQuotedEmailText } from "../server/partner-email.js";
+import { classifyPartnerEmail, extractMissionPayload, inspectMailboxStructure, mailboxReplyBody, oauthErrorMessage, parseMailboxPage, parseMailboxSyncPeriod, parseMicrosoftRetryAfter, publicMailError, replySubject, sanitizeRequiredKeywords, senderMatchesAllowed, stripQuotedEmailText } from "../server/partner-email.js";
 import { extractPartnerDocumentText } from "../server/partner-email-document-extractor.js";
 
 const serverSource = readFileSync(new URL("../server/partner-email.js", import.meta.url), "utf8");
@@ -43,6 +43,18 @@ test("un expéditeur inconnu reste en validation humaine même avec de forts ind
     assert.equal(result.likelyMission, false);
     assert.ok(result.score < 80);
     assert.ok(result.reasons.some(reason => /Validation humaine/.test(reason)));
+});
+
+test("une liste de partenaires filtre strictement les expéditeurs tandis qu’une liste vide reste ouverte", () => {
+    assert.equal(senderMatchesAllowed("missions@partenaire.fr", ["partenaire.fr"]), true);
+    assert.equal(senderMatchesAllowed("missions@partenaire.fr", ["missions@partenaire.fr"]), true);
+    assert.equal(senderMatchesAllowed("autre@example.test", ["partenaire.fr"]), false);
+    assert.equal(senderMatchesAllowed("autre@example.test", []), true);
+    const rejected = classifyPartnerEmail({ subject: "Mission urgente", text: "Client et adresse", from: "autre@example.test", allowedSenders: ["partenaire.fr"], attachments: pdf });
+    assert.equal(rejected.score, 0);
+    assert.match(rejected.reasons[0], /absent des adresses partenaires/);
+    const unrestricted = classifyPartnerEmail({ subject: "Mission urgente", text: "Client et adresse", from: "autre@example.test", allowedSenders: [], attachments: pdf });
+    assert.ok(unrestricted.score >= 35);
 });
 
 test("les relances et réponses automatiques ne deviennent pas des missions", () => {
@@ -250,6 +262,16 @@ test("les propositions de mission peuvent être confirmées ou supprimées seule
     assert.match(missionClientSource, /l’e-mail reste dans la boîte connectée/);
     assert.match(missionClientSource, /\/api\/partner-email\/candidates\/import/);
     assert.match(missionClientSource, /\/api\/partner-email\/candidates\/ignore/);
+});
+
+test("l’espace e-mail affiche et présélectionne les missions trouvées pour leur validation", () => {
+    assert.match(emailSettingsSource, /data-email-search-results/);
+    assert.match(emailSettingsSource, /String\(candidate\.connectionId\) === String\(connection\.id\)/);
+    assert.match(emailSettingsSource, /connection\.selectionMode === "manual" \? "checked"/);
+    assert.match(emailSettingsSource, /Valider la sélection vers Missions partenaires/);
+    assert.match(emailSettingsSource, /\/api\/partner-email\/candidates\/\$\{action\}/);
+    assert.match(emailSettingsSource, /await refreshEmailSearchResults\(card, button\.dataset\.emailSync, true\)/);
+    assert.match(emailSettingsSource, /candidate-import/);
 });
 
 test("la boîte complète se consulte à la demande sans stockage ni déplacement du curseur de missions", () => {

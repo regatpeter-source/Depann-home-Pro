@@ -33,8 +33,8 @@ export async function renderCompanyEmailWorkspace(container) {
         return;
     }
     const configuration = canConfigureMailbox();
-    list.innerHTML = connections.map(connection => emailConnectionCard(connection, { configuration })).join("");
-    bindMailboxConnectionControls(card, result.data, { configuration });
+    list.innerHTML = connections.map(connection => emailConnectionCard(connection, { configuration, candidateReview: true })).join("");
+    bindMailboxConnectionControls(card, result.data, { configuration, candidateReview: true });
 }
 
 async function loadPartnerEmailSettings(card) {
@@ -49,8 +49,10 @@ async function loadPartnerEmailSettings(card) {
 function renderSettings(card, mailbox) {
     card.innerHTML = `<section class="partner-email-panel"><div class="form-heading"><div><p class="eyebrow">Réception de missions par e-mail</p><h2>Boîte mail professionnelle</h2></div></div><p class="muted">Microsoft 365 et Google utilisent OAuth : Depann’Home Pro ne connaît jamais votre mot de passe. Pour OVH ou un autre hébergeur, créez un mot de passe d’application IMAP/SMTP.</p><div class="form-grid partner-email-oauth-options"><label>Détection après connexion<select id="partnerEmailOauthMode"><option value="manual">Sélection manuelle</option><option value="automatic">Automatique stricte</option></select></label><label class="form-wide">Expéditeurs ou domaines autorisés<textarea id="partnerEmailOauthSenders" rows="2" placeholder="missions@partenaire.fr, partenaire.fr"></textarea></label><label class="creator-switch form-wide"><input id="partnerEmailOauthStatuses" type="checkbox"><span>Envoyer les changements de statut dans le fil d’origine.</span></label></div><div class="partner-email-provider-actions"><button class="secondary-button" data-email-oauth="microsoft" ${mailbox.oauth?.microsoft ? "" : "disabled"}>Connecter Microsoft 365</button><button class="secondary-button" data-email-oauth="google" ${mailbox.oauth?.google ? "" : "disabled"}>Connecter Google Workspace</button></div>${!mailbox.oauth?.microsoft || !mailbox.oauth?.google ? '<p class="auth-message">Les boutons désactivés nécessitent la configuration OAuth correspondante sur le serveur.</p>' : ""}<form class="client-form" id="partnerEmailImapForm"><h3>OVH ou serveur IMAP/SMTP</h3><div class="form-grid"><label>Nom affiché<input name="displayName" maxlength="160" placeholder="Service missions"></label><label>Adresse e-mail *<input name="emailAddress" type="email" required></label><label>Utilisateur IMAP/SMTP *<input name="username" required></label><label>Mot de passe d’application *<input name="password" type="password" required autocomplete="new-password"></label><label>Serveur IMAP *<input name="imapHost" required placeholder="ssl0.ovh.net"></label><label>Port IMAP<input name="imapPort" type="number" min="1" max="65535" value="993"></label><label>Serveur SMTP *<input name="smtpHost" required placeholder="ssl0.ovh.net"></label><label>Port SMTP<input name="smtpPort" type="number" min="1" max="65535" value="465"></label><label>Sécurité SMTP<select name="smtpSecure"><option value="true">TLS direct (souvent port 465)</option><option value="false">STARTTLS obligatoire (souvent port 587)</option></select></label><label>Détection<select name="selectionMode"><option value="manual">Sélection manuelle</option><option value="automatic">Automatique stricte</option></select></label><label>Seuil automatique<input name="automaticThreshold" type="number" min="70" max="100" value="80"></label><label class="form-wide">Expéditeurs ou domaines autorisés<textarea name="allowedSenders" rows="3" placeholder="missions@partenaire.fr, partenaire.fr"></textarea><small>Un expéditeur autorisé renforce le score ; il ne suffit jamais à lui seul à créer une mission.</small></label><label class="creator-switch form-wide"><input name="sendStatusUpdates" type="checkbox"><span>Répondre automatiquement au fil d’origine lors des changements de statut.</span></label></div><div class="form-actions"><button class="secondary-button">Tester et connecter</button></div><p class="auth-message" aria-live="polite"></p></form><section class="partner-email-connections"><h3>Boîtes connectées</h3>${mailbox.connections?.length ? mailbox.connections.map(emailConnectionCard).join("") : '<p class="muted">Aucune boîte professionnelle connectée.</p>'}</section></section>`;
     card.querySelector(".partner-email-oauth-options")?.insertAdjacentHTML("beforeend", '<label class="creator-switch form-wide"><input id="partnerEmailOauthAutoSearch" type="checkbox"><span>Activer la recherche automatique des missions sur cette boîte.</span></label>');
+    card.querySelector("#partnerEmailOauthSenders")?.closest("label")?.insertAdjacentHTML("beforeend", "<small>Si la liste est renseignée, seuls ces expéditeurs seront recherchés, en mode manuel comme automatique. Laissez vide pour rechercher tous les expéditeurs.</small>");
     card.querySelector("#partnerEmailOauthSenders")?.closest("label")?.insertAdjacentHTML("afterend", '<label class="form-wide">Mots-clés obligatoires pour une mission<textarea id="partnerEmailOauthKeywords" rows="2" placeholder="mission partenaire IMH"></textarea><small>Séparez les expressions alternatives par une virgule ou une ligne. Sans correspondance, l’e-mail ne sera pas proposé.</small></label>');
     card.querySelector("#partnerEmailImapForm .form-grid")?.insertAdjacentHTML("beforeend", '<label class="creator-switch form-wide"><input name="autoSearchEnabled" type="checkbox"><span>Activer la recherche automatique des missions sur cette boîte.</span></label>');
+    card.querySelector('#partnerEmailImapForm [name="allowedSenders"]')?.closest("label")?.insertAdjacentHTML("beforeend", "<small>Liste facultative mais stricte dans les recherches manuelles et automatiques.</small>");
     card.querySelector('#partnerEmailImapForm [name="allowedSenders"]')?.closest("label")?.insertAdjacentHTML("afterend", '<label class="form-wide">Mots-clés obligatoires pour une mission<textarea name="requiredKeywords" rows="2" placeholder="mission partenaire IMH"></textarea><small>Séparez les expressions alternatives par une virgule ou une ligne.</small></label>');
     const providerHelp = card.querySelector(".partner-email-panel > .muted");
     if (providerHelp) providerHelp.textContent = "Microsoft 365 et Google Workspace utilisent OAuth. Gmail personnel utilise un mot de passe d’application. OVH, Zimbra, Namecheap et les autres hébergeurs se connectent avec leurs paramètres IMAP/SMTP sécurisés.";
@@ -145,14 +147,15 @@ function renderSettings(card, mailbox) {
     bindMailboxConnectionControls(card, mailbox, { configuration: true, reload: () => loadPartnerEmailSettings(card) });
 }
 
-function emailConnectionCard(connection, { configuration = true } = {}) {
+function emailConnectionCard(connection, { configuration = true, candidateReview = false } = {}) {
     const mode = connection.selectionMode === "automatic" ? `Automatique · seuil ${connection.automaticThreshold}` : "Sélection manuelle";
     const settings = configuration ? `<details class="partner-email-connection-settings"><summary>Critères, mode et recherche automatique</summary><div class="form-grid"><label>Mode de traitement<select data-email-selection-mode><option value="manual" ${connection.selectionMode !== "automatic" ? "selected" : ""}>Sélection manuelle dans Missions partenaires</option><option value="automatic" ${connection.selectionMode === "automatic" ? "selected" : ""}>Création automatique stricte</option></select></label><label>Seuil automatique<input type="number" min="70" max="100" data-email-automatic-threshold value="${escapeHtml(connection.automaticThreshold || 80)}"></label><label class="form-wide">Expéditeurs ou domaines autorisés<textarea rows="2" data-email-allowed-senders placeholder="missions@partenaire.fr, partenaire.fr">${escapeHtml((connection.allowedSenders || []).join(", "))}</textarea></label><label class="form-wide">Mots-clés obligatoires pour une mission<textarea rows="2" data-email-required-keywords placeholder="mission partenaire IMH">${escapeHtml((connection.requiredKeywords || []).join(", "))}</textarea><small>Chaque expression peut contenir plusieurs mots. Séparez les alternatives par une virgule ou une ligne.</small></label><label class="creator-switch form-wide"><input type="checkbox" data-email-send-statuses ${connection.sendStatusUpdates ? "checked" : ""}><span>Envoyer les changements de statut dans le fil d’origine</span></label><label class="creator-switch form-wide"><input type="checkbox" data-email-auto-search ${connection.autoSearchEnabled ? "checked" : ""}><span>Rechercher automatiquement les nouvelles missions toutes les 10 minutes</span></label><div class="form-actions form-wide"><button type="button" class="secondary-button" data-email-save-settings="${connection.id}">Enregistrer les critères de recherche</button></div></div></details>` : `<p class="partner-email-mode-summary">Mode : ${escapeHtml(mode)} · Mots-clés : <strong>${escapeHtml((connection.requiredKeywords || []).join(", ") || "aucun filtre")}</strong> · Recherche automatique : <strong>${connection.autoSearchEnabled ? "activée" : "désactivée"}</strong></p>`;
-    return `<article class="partner-email-connection" data-email-connection-card="${connection.id}"><div class="partner-email-connection-main"><strong>${escapeHtml(connection.displayName || connection.emailAddress)}</strong><p>${escapeHtml(connection.emailAddress)} · ${escapeHtml(mode)}</p><small>${connection.lastError ? escapeHtml(connection.lastError) : connection.lastSyncAt ? `Dernière synchronisation : ${escapeHtml(formatDate(connection.lastSyncAt))}` : "Jamais synchronisée"}</small>${settings}<div class="partner-email-sync-period"><label>Du<input type="date" data-email-sync-from value="${escapeHtml(mailboxSearchFrom)}"></label><label>Au<input type="date" data-email-sync-to value="${escapeHtml(mailboxSearchTo)}"></label><button type="button" class="secondary-button" data-email-sync="${connection.id}">Rechercher les missions</button></div><p class="auth-message" data-email-feedback aria-live="polite"></p></div><div class="partner-card-actions"><button type="button" class="secondary-button" data-email-browse="${connection.id}">Consulter les e-mails</button>${canOpenPartnerMissions() ? '<button type="button" class="secondary-button" data-email-open-missions>Voir les missions détectées</button>' : ""}${configuration ? `<button type="button" class="danger-button" data-email-disconnect="${connection.id}">Déconnecter</button>` : ""}</div></article>`;
+    return `<article class="partner-email-connection" data-email-connection-card="${connection.id}"><div class="partner-email-connection-main"><strong>${escapeHtml(connection.displayName || connection.emailAddress)}</strong><p>${escapeHtml(connection.emailAddress)} · ${escapeHtml(mode)}</p><small>${connection.lastError ? escapeHtml(connection.lastError) : connection.lastSyncAt ? `Dernière synchronisation : ${escapeHtml(formatDate(connection.lastSyncAt))}` : "Jamais synchronisée"}</small>${settings}<div class="partner-email-sync-period"><label>Du<input type="date" data-email-sync-from value="${escapeHtml(mailboxSearchFrom)}"></label><label>Au<input type="date" data-email-sync-to value="${escapeHtml(mailboxSearchTo)}"></label><button type="button" class="secondary-button" data-email-sync="${connection.id}">Rechercher les missions</button></div><p class="auth-message" data-email-feedback aria-live="polite"></p>${candidateReview ? `<section class="partner-email-search-results" data-email-search-results="${connection.id}"></section>` : ""}</div><div class="partner-card-actions"><button type="button" class="secondary-button" data-email-browse="${connection.id}">Consulter les e-mails</button>${canOpenPartnerMissions() ? '<button type="button" class="secondary-button" data-email-open-missions>Voir les missions détectées</button>' : ""}${configuration ? `<button type="button" class="danger-button" data-email-disconnect="${connection.id}">Déconnecter</button>` : ""}</div></article>`;
 }
 
-function bindMailboxConnectionControls(card, mailbox, { configuration = false, reload = null } = {}) {
+function bindMailboxConnectionControls(card, mailbox, { configuration = false, candidateReview = false, reload = null } = {}) {
     const connections = Array.isArray(mailbox?.connections) ? mailbox.connections : [];
+    if (candidateReview) connections.forEach(connection => renderEmailSearchResults(card, connection, mailbox?.candidates || []));
     card.querySelectorAll("[data-email-browse]").forEach(button => button.addEventListener("click", () => {
         const connection = connections.find(item => String(item.id) === button.dataset.emailBrowse);
         if (connection) openMailboxBrowser(card, connection);
@@ -172,6 +175,7 @@ function bindMailboxConnectionControls(card, mailbox, { configuration = false, r
         const summary = mailboxSyncSummary(result.data, from, to);
         showMailboxFeedback(row, summary);
         dispatchMailboxChanged("sync", { connectionId: button.dataset.emailSync, stats: result.data });
+        if (candidateReview) await refreshEmailSearchResults(card, button.dataset.emailSync, true);
         if (reload) window.setTimeout(reload, 1200);
     }));
     if (!configuration) return;
@@ -204,6 +208,56 @@ function showMailboxFeedback(row, message, error = false) { const target = row?.
 function mailboxSyncSummary(stats, from, to) { return `${Number(stats?.fetched) || 0} e-mail(s) lu(s) du ${formatShortDate(from)} au ${formatShortDate(to)} · ${Number(stats?.candidates) || 0} mission(s) à confirmer · ${Number(stats?.imported) || 0} créée(s) automatiquement.${stats?.limited ? " Plus de 500 e-mails ont été trouvés : réduisez la période." : ""}`; }
 function validateMailboxSearchPeriod(from, to) { if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) return "Sélectionnez une date de début et une date de fin."; const days = (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86400000; if (days < 0) return "La date de fin doit être postérieure ou égale à la date de début."; return days > 30 ? "Sélectionnez une période maximale de 31 jours." : ""; }
 function dispatchMailboxChanged(reason, detail = {}) { window.dispatchEvent(new CustomEvent("depannhome:partner-email-changed", { detail: { reason, ...detail } })); }
+
+async function refreshEmailSearchResults(card, connectionId, focus = false) {
+    const result = await api("/api/partner-email");
+    if (!result.ok) return showMailboxFeedback(card.querySelector(`[data-email-connection-card="${connectionId}"]`), result.message, true);
+    const connection = (result.data?.connections || []).find(item => String(item.id) === String(connectionId));
+    if (!connection) return;
+    const results = renderEmailSearchResults(card, connection, result.data?.candidates || []);
+    if (focus) results?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+function renderEmailSearchResults(card, connection, candidates) {
+    const results = card.querySelector(`[data-email-search-results="${connection.id}"]`);
+    if (!results) return null;
+    const matching = (Array.isArray(candidates) ? candidates : []).filter(candidate => String(candidate.connectionId) === String(connection.id));
+    if (!matching.length) {
+        results.innerHTML = '<p class="auth-message">Aucune mission en attente pour cette boîte. En mode automatique, les missions conformes sont envoyées directement dans Missions partenaires.</p>';
+        return results;
+    }
+    const checked = connection.selectionMode === "manual" ? "checked" : "";
+    results.innerHTML = `<div class="partner-email-search-heading"><div><p class="eyebrow">Missions trouvées</p><h3>${matching.length} proposition(s) à valider</h3></div><label><input type="checkbox" data-email-select-all ${checked}> Tout sélectionner</label></div><div class="partner-email-search-list">${matching.map(candidate => emailSearchCandidate(candidate, checked)).join("")}</div><div class="form-actions partner-email-search-actions"><button type="button" class="primary-button" data-email-import-selection>Valider la sélection vers Missions partenaires</button><button type="button" class="danger-button" data-email-ignore-selection>Supprimer la sélection</button></div><p class="auth-message" data-email-results-feedback aria-live="polite"></p>`;
+    const choices = () => [...results.querySelectorAll("[data-email-candidate-choice]")];
+    results.querySelector("[data-email-select-all]")?.addEventListener("change", event => choices().forEach(choice => { choice.checked = event.currentTarget.checked; }));
+    choices().forEach(choice => choice.addEventListener("change", () => { const selectAll = results.querySelector("[data-email-select-all]"); selectAll.checked = choices().every(item => item.checked); selectAll.indeterminate = !selectAll.checked && choices().some(item => item.checked); }));
+    results.querySelector("[data-email-import-selection]")?.addEventListener("click", event => processEmailCandidateSelection(card, connection.id, results, event.currentTarget, "import"));
+    results.querySelector("[data-email-ignore-selection]")?.addEventListener("click", event => processEmailCandidateSelection(card, connection.id, results, event.currentTarget, "ignore"));
+    return results;
+}
+
+function emailSearchCandidate(candidate, checked) {
+    const sender = candidate.senderName ? `${candidate.senderName} <${candidate.senderAddress}>` : candidate.senderAddress || "Expéditeur inconnu";
+    const excerpt = String(candidate.bodyText || "").replace(/\s+/g, " ").trim().slice(0, 240);
+    const reasons = Array.isArray(candidate.classificationReasons) ? candidate.classificationReasons.join(" · ") : "";
+    return `<label class="partner-email-search-candidate"><input type="checkbox" data-email-candidate-choice value="${escapeHtml(candidate.id)}" ${checked}><span><strong>${escapeHtml(candidate.subject || "Sans objet")}</strong><small>${escapeHtml(sender)} · ${escapeHtml(formatDate(candidate.receivedAt))} · score ${escapeHtml(candidate.classificationScore || 0)}/100</small>${excerpt ? `<p>${escapeHtml(excerpt)}${String(candidate.bodyText || "").length > 240 ? "…" : ""}</p>` : ""}${reasons ? `<small>${escapeHtml(reasons)}</small>` : ""}${candidate.attachments?.length ? `<small>📎 ${candidate.attachments.length} pièce(s) jointe(s)</small>` : ""}</span></label>`;
+}
+
+async function processEmailCandidateSelection(card, connectionId, results, button, action) {
+    const ids = [...results.querySelectorAll("[data-email-candidate-choice]:checked")].map(choice => Number(choice.value)).filter(Number.isSafeInteger);
+    const feedback = results.querySelector("[data-email-results-feedback]");
+    if (!ids.length) { feedback.textContent = "Sélectionnez au moins une proposition."; feedback.classList.add("error"); return; }
+    button.disabled = true;
+    feedback.textContent = action === "import" ? "Validation vers Missions partenaires…" : "Suppression des propositions…";
+    feedback.classList.remove("error");
+    const result = await api(`/api/partner-email/candidates/${action}`, { method: "POST", body: JSON.stringify({ ids }) });
+    button.disabled = false;
+    if (!result.ok) { feedback.textContent = result.message; feedback.classList.add("error"); return; }
+    dispatchMailboxChanged(action === "import" ? "candidate-import" : "candidate-ignore", { connectionId, ids });
+    await refreshEmailSearchResults(card, connectionId);
+    const row = card.querySelector(`[data-email-connection-card="${connectionId}"]`);
+    showMailboxFeedback(row, action === "import" ? `${ids.length} mission(s) envoyée(s) dans Missions partenaires → E-mail.` : `${ids.length} proposition(s) supprimée(s).`);
+}
 
 async function openMailboxBrowser(card, connection, offset = 0) {
     let browser = card.querySelector(".partner-mailbox-browser");

@@ -34,9 +34,11 @@ L’entreprise peut également ouvrir **Consulter les e-mails** pour parcourir t
 
 ### Sélection manuelle
 
-Chaque nouvel e-mail apparaît dans **E-mails à vérifier** avec son expéditeur, un extrait, ses pièces, un score et les raisons du classement. L’entreprise choisit explicitement les messages à transformer en missions ou à ignorer.
+Après **Rechercher les missions**, les propositions de la boîte concernée apparaissent immédiatement sous celle-ci dans **Espace e-mail** avec leur expéditeur, un extrait, leurs pièces, leur score et les raisons du classement. Elles sont cochées par défaut en mode manuel. L’entreprise peut valider la sélection vers **Missions partenaires → E-mail** ou la supprimer.
 
 Chaque proposition dispose d’actions **Confirmer** et **Supprimer**. Les cases permettent d’en sélectionner plusieurs, puis de confirmer ou supprimer toute la sélection. Supprimer une proposition empêche uniquement la création de la mission dans Depann’Home Pro : l’e-mail reste intact dans la boîte connectée.
+
+La liste facultative des **adresses ou domaines partenaires recherchés** est un filtre strict dans les deux modes. Dès qu’elle contient une valeur, les messages des autres expéditeurs sont écartés. Lorsqu’elle est vide, la recherche reste ouverte à tous les expéditeurs et la sélection manuelle s’appuie sur les autres critères.
 
 ### Détection automatique stricte
 
@@ -60,7 +62,7 @@ Le score augmente notamment avec :
 - une pièce métier autorisée ;
 - un expéditeur autorisé.
 
-Il diminue fortement pour les relances de paiement, newsletters, réponses automatiques, absences, listes de diffusion et adresses `no-reply`. Un expéditeur inconnu ne peut jamais franchir automatiquement le seuil : le motif « Validation humaine requise » reste visible.
+Il diminue fortement pour les relances de paiement, newsletters, réponses automatiques, absences, listes de diffusion et adresses `no-reply`. Sans filtre d’expéditeur configuré, un expéditeur inconnu ne peut jamais franchir automatiquement le seuil et reste soumis à la validation humaine. Avec un filtre configuré, tout expéditeur absent de la liste est directement écarté.
 
 ## Documents et confidentialité
 

@@ -214,6 +214,8 @@ export function classifyPartnerEmail({ subject = "", text = "", from = "", attac
     if (reply || /^\s*(?:re|rép)\s*:/i.test(subject)) return { score: 0, reasons: ["Réponse à un fil existant ignorée"], trustedSender: false, likelyMission: false, keywordMatch: false };
     const haystack = `${subject}\n${stripQuotedEmailText(text)}`.toLowerCase(); const sender = String(from).toLowerCase(); let score = 0; const reasons = [];
     const add = (points, reason) => { score += points; reasons.push(reason); };
+    const senderFilters = sanitizeSenders(allowedSenders); const trustedSender = senderFilters.length > 0 && senderMatchesAllowed(sender, senderFilters);
+    if (senderFilters.length && !trustedSender) return { score: 0, reasons: ["Expéditeur absent des adresses partenaires recherchées"], trustedSender: false, likelyMission: false, keywordMatch: false };
     const keywords = sanitizeRequiredKeywords(requiredKeywords);
     const matches = keywords.filter(expression => keywordExpressionMatches(expression, haystack));
     if (keywords.length && !matches.length) return { score: 0, reasons: ["Aucun mot-clé obligatoire détecté"], trustedSender: false, likelyMission: false, keywordMatch: false };
@@ -222,7 +224,6 @@ export function classifyPartnerEmail({ subject = "", text = "", from = "", attac
     if (/client|assuré|adresse|téléphone|portable|lieu d'intervention|référence|n°\s*(?:de\s*)?sinistre/.test(haystack)) add(20, "Coordonnées ou référence de dossier détectées");
     if (attachments.some(item => ALLOWED_MIME.has(item.contentType))) add(20, "Document métier joint");
     if (/urgent|urgence|prioritaire|sous 24|délai/.test(haystack)) add(10, "Caractère opérationnel ou urgent");
-    const trustedSender = allowedSenders.some(value => sender === value || sender.endsWith(`@${value.replace(/^@/, "")}`));
     if (trustedSender) add(25, "Expéditeur autorisé par l’entreprise");
     if (/relance|newsletter|publicité|promotion|facture impayée|règlement|paiement|relevé|notification automatique/.test(haystack)) add(-55, "Message assimilé à une relance ou information non opérationnelle");
     if (/no-?reply|noreply|nepasrepondre/.test(sender)) add(-25, "Adresse automatique");
@@ -554,16 +555,16 @@ async function graphInboxMessages(accessToken, connection, syncPeriod) {
     const since = syncPeriod?.since || new Date(Math.max(new Date(connection.last_sync_at || 0).getTime() - 5 * 60000, Date.now() - 14 * 86400000));
     const filters = [`receivedDateTime ge ${since.toISOString()}`];
     if (syncPeriod?.before) filters.push(`receivedDateTime lt ${syncPeriod.before.toISOString()}`);
-    const query = new URLSearchParams({ "$select": "id,receivedDateTime", "$filter": filters.join(" and "), "$orderby": "receivedDateTime asc", "$top": "50" });
+    const query = new URLSearchParams({ "$select": "id,receivedDateTime,from", "$filter": filters.join(" and "), "$orderby": "receivedDateTime asc", "$top": "50" });
     let url = `https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages?${query}`;
-    const messages = [];
-    while (url && messages.length <= PERIOD_FETCH_LIMIT) {
+    const messages = []; let scanned = 0; const limit = syncPeriod ? PERIOD_FETCH_LIMIT : FETCH_LIMIT;
+    while (url && scanned < limit) {
         const payload = await graphJson(accessToken, url);
-        messages.push(...(Array.isArray(payload.value) ? payload.value.filter(message => message?.id) : []));
+        const page = Array.isArray(payload.value) ? payload.value : []; scanned += page.length;
+        messages.push(...page.filter(message => message?.id && senderMatchesAllowed(message.from?.emailAddress?.address, connection.allowed_senders || [])));
         url = typeof payload["@odata.nextLink"] === "string" && payload["@odata.nextLink"].startsWith("https://graph.microsoft.com/") ? payload["@odata.nextLink"] : "";
     }
-    const limit = syncPeriod ? PERIOD_FETCH_LIMIT : FETCH_LIMIT;
-    return { messages: messages.slice(-limit), limited: messages.length > limit };
+    return { messages: messages.slice(-limit), limited: Boolean(url) };
 }
 
 async function graphMessageMime(accessToken, messageId) {
@@ -634,6 +635,7 @@ export function parseMailboxSyncPeriod(value) {
 function sanitizeImapConfiguration(value) { const emailAddress = clean(value?.emailAddress, 254).toLowerCase(), username = clean(value?.username || emailAddress, 254), password = String(value?.password || "").trim().slice(0, 1000), selectionMode = MODES.has(value?.selectionMode) ? value.selectionMode : "manual"; const imapHost = host(value?.imapHost), smtpHost = host(value?.smtpHost), imapPort = port(value?.imapPort, 993), smtpPort = port(value?.smtpPort, 465); if (!/^\S+@\S+\.\S+$/.test(emailAddress) || !imapHost || !smtpHost || !username) return { ok: false, message: "Renseignez l’adresse, l’utilisateur et les serveurs IMAP/SMTP de la boîte professionnelle." }; return { ok: true, emailAddress, username, password, displayName: clean(value?.displayName, 160), selectionMode, allowedSenders: sanitizeSenders(value?.allowedSenders), requiredKeywords: sanitizeRequiredKeywords(value?.requiredKeywords), automaticThreshold: Math.max(70, Math.min(100, Number(value?.automaticThreshold) || AUTO_THRESHOLD)), sendStatusUpdates: Boolean(value?.sendStatusUpdates), server: { imap: { host: imapHost, port: imapPort, secure: value?.imapSecure !== false }, smtp: { host: smtpHost, port: smtpPort, secure: !(value?.smtpSecure === false || String(value?.smtpSecure) === "false") } } }; }
 function outgoingAttachments(value) { let total = 0; const result = []; for (const item of Array.isArray(value) ? value.slice(0, 5) : []) { const match = /^data:([^;]+);base64,([A-Za-z0-9+/=]+)$/.exec(String(item?.dataUrl || "")); if (!match || !ALLOWED_MIME.has(match[1])) throw httpError(400, "Un document à envoyer possède un format non autorisé."); const content = Buffer.from(match[2], "base64"); if (!content.length || content.length > MAX_ATTACHMENT_BYTES || total + content.length > 20 * 1024 * 1024) throw httpError(400, "Les documents à envoyer dépassent la limite autorisée."); total += content.length; result.push({ filename: safeFilename(item?.name), contentType: match[1], content }); } return result; }
 function sanitizeSenders(value) { return [...new Set((Array.isArray(value) ? value : String(value || "").split(/[,;\n]/)).map(item => clean(item, 254).toLowerCase().replace(/^@/, "")).filter(item => /^\S+@\S+\.\S+$/.test(item) || /^[a-z0-9.-]+\.[a-z]{2,}$/i.test(item)))].slice(0, 100); }
+export function senderMatchesAllowed(sender, allowedSenders = []) { const address = String(sender || "").trim().toLowerCase(); const filters = sanitizeSenders(allowedSenders); return !filters.length || filters.some(value => address === value || address.endsWith(`@${value}`)); }
 export function sanitizeRequiredKeywords(value) { return [...new Set((Array.isArray(value) ? value : String(value || "").split(/[,;\n]/)).map(item => clean(item, 120)).filter(item => normalizeKeywordText(item).split(" ").some(token => token.length >= 2)))].slice(0, 20); }
 export function stripQuotedEmailText(value) { const lines = String(value || "").replace(/\r/g, "").split("\n"); const kept = []; for (const line of lines) { if (/^\s*(?:-{2,}\s*)?(?:message d['’]origine|original message|forwarded message)|^\s*(?:on .{0,200} wrote|le .{0,200} a écrit)\s*:|^\s*--\s*$/i.test(line)) break; if (!/^\s*>/.test(line)) kept.push(line); } return kept.join("\n").trim(); }
 function normalizeKeywordText(value) { return String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim().replace(/\s+/g, " "); }
