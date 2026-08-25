@@ -358,10 +358,10 @@ async function downloadLiveAttachment(connection, messageId, attachmentId) {
         const access = await mailboxAccess(connection);
         const metadata = await graphJson(access.graphToken, `https://graph.microsoft.com/v1.0/me/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(attachmentId)}?$select=id,name,contentType,size,isInline`);
         const safe = validatedLiveAttachment(metadata);
-        const response = await graphFetch(access.graphToken, `https://graph.microsoft.com/v1.0/me/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(attachmentId)}/$value`, { headers: { Accept: safe.contentType } });
-        const declaredSize = Number(response.headers.get("content-length") || 0);
-        if (declaredSize > MAX_ATTACHMENT_BYTES) throw httpError(413, "Cette pièce jointe dépasse la limite de 5 Mo.");
-        const content = await streamBuffer(response.body, MAX_ATTACHMENT_BYTES);
+        const file = await graphJson(access.graphToken, `https://graph.microsoft.com/v1.0/me/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(attachmentId)}?$select=contentBytes`);
+        if (typeof file.contentBytes !== "string" || !/^[A-Za-z0-9+/=]+$/.test(file.contentBytes)) throw httpError(422, "Microsoft n’a pas fourni le contenu de cette pièce jointe.");
+        const content = Buffer.from(file.contentBytes, "base64");
+        if (content.length > MAX_ATTACHMENT_BYTES) throw httpError(413, "Cette pièce jointe dépasse la limite de 5 Mo.");
         if (!content.length) throw httpError(404, "Pièce jointe vide ou introuvable.");
         return { ...safe, content };
     }
@@ -497,10 +497,10 @@ export function extractMissionPayload(email, documentText = "") {
 function extractMissionFields(text) {
     const field = pattern => trimFollowingMissionField(clean(pattern.exec(String(text || ""))?.[1], 255));
     return {
-        insuredName: field(/(?:^|\s)(?:assuré(?:e)?|nom(?:\s+et\s+pr[ée]nom)?\s+(?:de\s+l['’])?assuré(?:e)?)\s*[:\-]\s*([^\n\r]+)/im),
+        insuredName: field(/(?:^|\s)(?:assur[ée]e?|nom(?:\s+et\s+pr[ée]nom)?\s+(?:de\s+l['’])?assur[ée]e?)\s*[:\-]\s*([^\n\r]+)/im),
         name: field(/(?:^|\s)(?:client|bénéficiaire|occupant|nom(?:\s+(?:et\s+pr[ée]nom|du\s+client))?)\s*[:\-]\s*([^\n\r]+)/im),
-        firstName: field(/(?:^|\s)pr[ée]nom(?:\s+(?:de\s+l['’])?assuré(?:e)?)?\s*[:\-]\s*([^\n\r]+)/im),
-        lastName: field(/(?:^|\s)nom(?:\s+de\s+famille)?(?:\s+(?:de\s+l['’])?assuré(?:e)?)?\s*[:\-]\s*([^\n\r]+)/im),
+        firstName: field(/(?:^|\s)pr[ée]nom(?:\s+(?:de\s+l['’])?assur[ée]e?)?\s*[:\-]\s*([^\n\r]+)/im),
+        lastName: field(/(?:^|\s)nom(?:\s+de\s+famille)?(?:\s+(?:de\s+l['’])?assur[ée]e?)?\s*[:\-]\s*([^\n\r]+)/im),
         phone: field(/(?:^|\s)(?:t[ée]l(?:[ée]phone)?|portable|mobile)\s*[:\-]\s*([+\d .()\/-]{8,})/im),
         email: field(/(?:^|\s)(?:e-?mail|courriel)\s*[:\-]\s*([^\s<>]+@[^\s<>]+)/im).replace(/[.,;:)]+$/, ""),
         address: field(/(?:^|\s)(?:adresse(?:\s+(?:client|du\s+client))?|lieu\s+d['’]intervention|adresse\s+d['’]intervention)\s*[:\-]\s*([^\n\r]+)/im),
@@ -516,7 +516,7 @@ function extractMissionFields(text) {
     };
 }
 
-function trimFollowingMissionField(value) { return clean(String(value || "").split(/\s+(?=(?:assuré(?:e)?|client|bénéficiaire|occupant|nom|pr[ée]nom|adresse|lieu\s+d['’]intervention|t[ée]l(?:[ée]phone)?|portable|mobile|e-?mail|courriel|code\s+postal|cp|ville|commune|mission|dossier|référence|ref|intervention|objet|nature|sinistre|assurance|assureur|compagnie|expert|gestionnaire|donneur\s+d['’]ordre|mandant)\s*[:#\-])/i)[0], 255); }
+function trimFollowingMissionField(value) { return clean(String(value || "").split(/\s+(?=(?:assur[ée]e?|client|bénéficiaire|occupant|nom|pr[ée]nom|adresse|lieu\s+d['’]intervention|t[ée]l(?:[ée]phone)?|portable|mobile|e-?mail|courriel|code\s+postal|cp|ville|commune|mission|dossier|référence|ref|intervention|objet|nature|sinistre|assurance|assureur|compagnie|expert|gestionnaire|donneur\s+d['’]ordre|mandant)\s*[:#\-])/i)[0], 255); }
 export function normalizeMissionPostalAddress(addressValue, postalCodeValue = "", cityValue = "") {
     let address = clean(addressValue, 255); let postalCode = clean(postalCodeValue, 10); let city = clean(cityValue, 100);
     const inline = /^(.*?)[,\s]+(\d{5})\s+([^,;]+)$/i.exec(address);

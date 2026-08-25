@@ -318,16 +318,19 @@ function enableTerminalMissionSelection(node, missions, options) {
 }
 
 function openEmailReply(missionId) {
-    const dialog = openDialog(`<form class="client-form" data-email-reply-form><h3>Répondre dans le fil d’origine</h3><p class="muted">La réponse partira de votre boîte professionnelle. Vous pouvez joindre jusqu’à cinq documents de 5 Mo chacun.</p><label>Message<textarea name="body" rows="7" maxlength="4000" required></textarea></label><label>Documents<input name="files" type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx,.txt"></label><div class="form-actions"><button class="secondary-button">Envoyer par e-mail</button></div><p class="auth-message" aria-live="polite"></p></form>`);
-    dialog.querySelector("[data-email-reply-form]").addEventListener("submit", async event => {
+    const dialog = openDialog(`<form class="client-form partner-email-reply-dialog" data-email-reply-form><header><span class="partner-email-reply-icon" aria-hidden="true">↩</span><div><p class="eyebrow">Mission e-mail</p><h3>Répondre dans le fil d’origine</h3></div></header><p class="partner-email-reply-notice">La réponse partira de votre boîte professionnelle connectée et restera associée à cette mission.</p><label class="partner-email-reply-message">Message<textarea name="body" rows="7" maxlength="4000" required placeholder="Bonjour,&#10;&#10;Rédigez votre réponse au partenaire…"></textarea><small data-email-reply-count>0 / 4 000 caractères</small></label><label class="partner-email-reply-files"><strong>Documents à joindre</strong><span>PDF, images ou documents bureautiques · 5 fichiers maximum · 5 Mo par fichier</span><input name="files" type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx,.txt"><output data-email-reply-files>Aucun document sélectionné.</output></label><div class="form-actions partner-email-reply-actions"><button type="submit" class="primary-button">Envoyer par e-mail</button></div><p class="auth-message" aria-live="polite"></p></form>`);
+    const form = dialog.querySelector("[data-email-reply-form]");
+    form.elements.body.addEventListener("input", () => { form.querySelector("[data-email-reply-count]").textContent = `${form.elements.body.value.length.toLocaleString("fr-FR")} / 4 000 caractères`; });
+    form.elements.files.addEventListener("change", () => { const files = [...form.elements.files.files]; form.querySelector("[data-email-reply-files]").textContent = files.length ? `${files.length} document${files.length > 1 ? "s" : ""} : ${files.map(file => file.name).join(", ")}` : "Aucun document sélectionné."; });
+    form.addEventListener("submit", async event => {
         event.preventDefault(); const form = event.currentTarget; const button = event.submitter; const files = [...form.elements.files.files];
         if (files.length > 5 || files.some(file => file.size > 5 * 1024 * 1024)) return showWizardMessage(dialog, "Maximum : 5 documents de 5 Mo chacun.");
-        button.disabled = true;
+        button.disabled = true; const originalLabel = button.textContent; button.textContent = "Envoi en cours…";
         let attachments;
         try { attachments = await Promise.all(files.map(file => fileToEmailAttachment(file))); }
-        catch (error) { button.disabled = false; return showWizardMessage(dialog, error.message); }
+        catch (error) { button.disabled = false; button.textContent = originalLabel; return showWizardMessage(dialog, error.message); }
         const result = await api(`/api/partner-email/missions/${missionId}/reply`, { method: "POST", body: JSON.stringify({ body: form.elements.body.value, attachments }) });
-        if (!result.ok) { button.disabled = false; return showWizardMessage(dialog, result.message); }
+        if (!result.ok) { button.disabled = false; button.textContent = originalLabel; return showWizardMessage(dialog, result.message); }
         dialog.remove(); alert(result.data.message);
     });
 }

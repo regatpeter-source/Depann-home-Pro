@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import ExcelJS from "exceljs";
 import PizZip from "pizzip";
 import { PDFDocument, StandardFonts } from "pdf-lib";
+import { createCanvas } from "@napi-rs/canvas";
 import { classifyPartnerEmail, extractMissionPayload, inspectMailboxStructure, mailboxReplyBody, normalizeMissionPostalAddress, oauthErrorMessage, parseMailboxPage, parseMailboxSyncPeriod, parseMicrosoftRetryAfter, publicMailError, replySubject, sanitizeRequiredKeywords, senderMatchesAllowed, stripQuotedEmailText } from "../server/partner-email.js";
 import { mapPayload, readableEmailMissionReference } from "../server/partner-missions.js";
 import { extractPartnerDocumentText } from "../server/partner-email-document-extractor.js";
@@ -296,8 +297,9 @@ test("la boîte complète se consulte à la demande sans stockage ni déplacemen
     assert.match(serverSource, /client\.download\(String\(uid\), structure\.body\.part/);
     assert.match(serverSource, /maxBytes: MAX_ATTACHMENT_BYTES \+ 1/);
     const graphAttachmentDownload = serverSource.slice(serverSource.indexOf("async function downloadLiveAttachment"), serverSource.indexOf("async function graphMessageAttachments"));
-    assert.match(graphAttachmentDownload, /streamBuffer\(response\.body, MAX_ATTACHMENT_BYTES\)/);
-    assert.doesNotMatch(graphAttachmentDownload, /arrayBuffer\(\)/);
+    assert.match(graphAttachmentDownload, /contentBytes/);
+    assert.match(graphAttachmentDownload, /Buffer\.from\(file\.contentBytes, "base64"\)/);
+    assert.doesNotMatch(graphAttachmentDownload, /\/\$value/);
 });
 
 test("l’entreprise répond directement depuis la boîte connectée dans le fil d’origine", () => {
@@ -316,7 +318,8 @@ test("l’entreprise répond directement depuis la boîte connectée dans le fil
     assert.match(publicMailError(new Error("SMTP rejected"), { provider: "imap", sending: true }), /réponse n’a pas pu être envoyée/);
     assert.match(appSource, /Trop de réponses ont été envoyées/);
     assert.match(emailSettingsSource, /data-mailbox-reply/);
-    assert.match(emailSettingsSource, /La réponse partira de la boîte connectée et restera dans le fil d’origine/);
+    assert.match(emailSettingsSource, /Répondre dans le fil d’origine/);
+    assert.match(emailSettingsSource, /Envoyé depuis la boîte connectée/);
     assert.match(emailSettingsSource, /dispatchMailboxChanged\("reply"/);
 });
 
@@ -331,7 +334,7 @@ test("la structure IMAP sépare le corps du message des pièces téléchargées 
     assert.match(emailSettingsSource, /Consulter les e-mails/);
     assert.match(emailSettingsSource, /Lecture directe, sans copie permanente/);
     assert.match(emailSettingsSource, /data-mailbox-page/);
-    assert.match(emailSettingsSource, /Les fichiers sont téléchargés uniquement lorsque vous cliquez dessus/);
+    assert.match(emailSettingsSource, /Cliquez sur un document pour le télécharger avec son nom d’origine/);
 });
 
 test("les erreurs IMAP et SMTP attendues ne remontent pas en erreur serveur 500", () => {
@@ -477,4 +480,31 @@ test("une pièce illisible ou une image sans OCR ne bloque pas l’import", asyn
         { mime: "text/plain", buffer: Buffer.from("Client : Client Valide") }
     ]);
     assert.match(text, /Client Valide/);
+});
+
+test("un PDF scanné sans couche texte est lu localement par OCR", async () => {
+    const canvas = createCanvas(1200, 500); const context = canvas.getContext("2d");
+    context.fillStyle = "white"; context.fillRect(0, 0, 1200, 500); context.fillStyle = "black"; context.font = "bold 44px Arial";
+    context.fillText("Assure : Marie Martin", 50, 100); context.fillText("Adresse : 12 rue des Lilas 44000 Nantes", 50, 180); context.fillText("Telephone : 0612345678", 50, 260);
+    const document = await PDFDocument.create(); const image = await document.embedPng(canvas.toBuffer("image/png")); const page = document.addPage([600, 250]); page.drawImage(image, { x: 0, y: 0, width: 600, height: 250 });
+    const text = await extractPartnerDocumentText([{ mime: "application/pdf", buffer: Buffer.from(await document.save()) }]);
+    assert.match(text, /Marie Martin/i); assert.match(text.replace(/\s/g, ""), /0612345678/);
+    const payload = extractMissionPayload({ id: 51, subject: "Mission partenaire", body_text: "" }, text);
+    assert.equal(payload.client.name, "Marie Martin"); assert.equal(payload.client.phone, "0612345678"); assert.equal(payload.client.city, "Nantes");
+});
+
+test("les PDF reçus sont téléchargeables et liés au dossier de mission", () => {
+    assert.match(emailSettingsSource, /downloadMailboxAttachment/);
+    assert.match(emailSettingsSource, /URL\.createObjectURL/);
+    assert.match(emailSettingsSource, /data-mailbox-attachment-name/);
+    assert.match(readFileSync(new URL("../server/partner-dialogue.js", import.meta.url), "utf8"), /source_type[\s\S]*?'email_attachment'/);
+    assert.match(readFileSync(new URL("../server/partner-dialogue.js", import.meta.url), "utf8"), /message\.event_type='email_attachment_received'/);
+});
+
+test("les réponses e-mail affichent le contexte, les compteurs et l’état d’envoi", () => {
+    assert.match(emailSettingsSource, /Réponse sécurisée/);
+    assert.match(emailSettingsSource, /data-mailbox-reply-count/);
+    assert.match(emailSettingsSource, /Envoi en cours/);
+    assert.match(missionClientSource, /data-email-reply-count/);
+    assert.match(missionClientSource, /data-email-reply-files/);
 });

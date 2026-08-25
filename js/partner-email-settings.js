@@ -313,11 +313,28 @@ async function loadMailboxMessage(browser, connectionId, messageRef, selectedBut
     const recipients = (message.to || []).map(mailboxAddressLabel).filter(Boolean).join(", ");
     const copies = (message.cc || []).map(mailboxAddressLabel).filter(Boolean).join(", ");
     const attachments = (message.attachments || []).map(attachment => attachment.downloadable
-        ? `<a class="secondary-button" href="/api/partner-email/${connectionId}/messages/${encodeURIComponent(message.id)}/attachments/${encodeURIComponent(attachment.id)}" download>${escapeHtml(attachment.filename)} · ${escapeHtml(formatBytes(attachment.size))}</a>`
+        ? `<button type="button" class="secondary-button" data-mailbox-attachment="${escapeHtml(attachment.id)}" data-mailbox-attachment-name="${escapeHtml(attachment.filename)}">${escapeHtml(attachment.filename)} · ${escapeHtml(formatBytes(attachment.size))}</button>`
         : `<span class="partner-mailbox-attachment-disabled">${escapeHtml(attachment.filename)} · ${escapeHtml(formatBytes(attachment.size))} — format ou taille non autorisé</span>`).join("");
     const replyRecipient = mailboxAddressLabel(message.from);
-    panel.innerHTML = `<header><p class="eyebrow">Message reçu le ${escapeHtml(formatDate(message.receivedAt))}</p><h3>${escapeHtml(message.subject || "Sans objet")}</h3><dl><dt>De</dt><dd>${escapeHtml(replyRecipient || "Expéditeur inconnu")}</dd><dt>À</dt><dd>${escapeHtml(recipients || "Destinataire non indiqué")}</dd>${copies ? `<dt>Copie</dt><dd>${escapeHtml(copies)}</dd>` : ""}</dl></header><pre class="partner-mailbox-body">${escapeHtml(message.bodyText || "Ce message ne contient pas de texte consultable.")}</pre>${message.bodyTruncated ? '<p class="auth-message">Le corps de ce message très volumineux a été limité à 512 Ko.</p>' : ""}${attachments ? `<div class="partner-mailbox-attachments"><strong>Pièces jointes</strong><div>${attachments}</div><small>Les fichiers sont téléchargés uniquement lorsque vous cliquez dessus.</small></div>` : ""}${replyRecipient ? `<form class="partner-mailbox-reply" data-mailbox-reply><h4>Répondre à cet e-mail</h4><p class="muted">À : ${escapeHtml(replyRecipient)} · La réponse partira de la boîte connectée et restera dans le fil d’origine.</p><label>Votre réponse<textarea name="body" rows="6" maxlength="10000" required placeholder="Rédigez votre réponse…"></textarea></label><div class="form-actions"><button type="submit" class="primary-button">Envoyer la réponse</button></div><p class="auth-message" data-mailbox-reply-feedback aria-live="polite"></p></form>` : '<p class="auth-message">Cet e-mail ne contient aucune adresse permettant d’y répondre.</p>'}`;
-    panel.querySelector("[data-mailbox-reply]")?.addEventListener("submit", event => submitMailboxReply(event, connectionId, message.id));
+    panel.innerHTML = `<header><p class="eyebrow">Message reçu le ${escapeHtml(formatDate(message.receivedAt))}</p><h3>${escapeHtml(message.subject || "Sans objet")}</h3><dl><dt>De</dt><dd>${escapeHtml(replyRecipient || "Expéditeur inconnu")}</dd><dt>À</dt><dd>${escapeHtml(recipients || "Destinataire non indiqué")}</dd>${copies ? `<dt>Copie</dt><dd>${escapeHtml(copies)}</dd>` : ""}</dl></header><pre class="partner-mailbox-body">${escapeHtml(message.bodyText || "Ce message ne contient pas de texte consultable.")}</pre>${message.bodyTruncated ? '<p class="auth-message">Le corps de ce message très volumineux a été limité à 512 Ko.</p>' : ""}${attachments ? `<div class="partner-mailbox-attachments"><strong>Pièces jointes</strong><div>${attachments}</div><small>Cliquez sur un document pour le télécharger avec son nom d’origine.</small></div>` : ""}${replyRecipient ? `<form class="partner-mailbox-reply" data-mailbox-reply><header><span class="partner-email-reply-icon" aria-hidden="true">↩</span><div><p class="eyebrow">Réponse sécurisée</p><h4>Répondre dans le fil d’origine</h4></div></header><p class="partner-email-reply-recipient"><strong>Destinataire</strong><span>${escapeHtml(replyRecipient)}</span></p><label>Votre message<textarea name="body" rows="6" maxlength="10000" required placeholder="Bonjour,&#10;&#10;Rédigez votre réponse…"></textarea><small data-mailbox-reply-count>0 / 10 000 caractères</small></label><div class="form-actions partner-email-reply-actions"><span>Envoyé depuis la boîte connectée</span><button type="submit" class="primary-button">Envoyer la réponse</button></div><p class="auth-message" data-mailbox-reply-feedback aria-live="polite"></p></form>` : '<p class="auth-message">Cet e-mail ne contient aucune adresse permettant d’y répondre.</p>'}`;
+    panel.querySelectorAll("[data-mailbox-attachment]").forEach(button => button.addEventListener("click", () => downloadMailboxAttachment(button, connectionId, message.id)));
+    const replyForm = panel.querySelector("[data-mailbox-reply]");
+    replyForm?.elements.body.addEventListener("input", () => { replyForm.querySelector("[data-mailbox-reply-count]").textContent = `${replyForm.elements.body.value.length.toLocaleString("fr-FR")} / 10 000 caractères`; });
+    replyForm?.addEventListener("submit", event => submitMailboxReply(event, connectionId, message.id));
+}
+
+async function downloadMailboxAttachment(button, connectionId, messageRef) {
+    const filename = button.dataset.mailboxAttachmentName || "document";
+    const originalLabel = button.textContent;
+    button.disabled = true; button.textContent = "Téléchargement…";
+    try {
+        const response = await fetch(`/api/partner-email/${connectionId}/messages/${encodeURIComponent(messageRef)}/attachments/${encodeURIComponent(button.dataset.mailboxAttachment)}`, { credentials: "same-origin" });
+        if (!response.ok) { const error = await response.json().catch(() => null); throw new Error(error?.message || "Cette pièce jointe est momentanément indisponible."); }
+        const url = URL.createObjectURL(await response.blob());
+        const link = document.createElement("a"); link.href = url; link.download = filename; document.body.append(link); link.click(); link.remove();
+        window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (error) { alert(error.message); }
+    finally { button.disabled = false; button.textContent = originalLabel; }
 }
 
 async function submitMailboxReply(event, connectionId, messageRef) {
@@ -328,10 +345,12 @@ async function submitMailboxReply(event, connectionId, messageRef) {
     const body = form.elements.body.value.trim();
     if (!body) return;
     button.disabled = true;
+    const originalLabel = button.textContent; button.textContent = "Envoi en cours…";
     feedback.textContent = "Envoi de la réponse…";
     feedback.classList.remove("error");
     const result = await api(`/api/partner-email/${connectionId}/messages/${encodeURIComponent(messageRef)}/reply`, { method: "POST", body: JSON.stringify({ body }) });
     button.disabled = false;
+    button.textContent = originalLabel;
     feedback.textContent = result.ok ? result.data.message : result.message;
     feedback.classList.toggle("error", !result.ok);
     if (result.ok) { form.elements.body.value = ""; dispatchMailboxChanged("reply", { connectionId }); }

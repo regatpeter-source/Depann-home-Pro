@@ -1,6 +1,9 @@
 import ExcelJS from "exceljs";
 import PizZip from "pizzip";
-import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
+import { createRequire } from "node:module";
+import { createCanvas } from "@napi-rs/canvas";
+import { getDocument, OPS } from "pdfjs-dist/legacy/build/pdf.mjs";
+import { createWorker, OEM } from "tesseract.js";
 
 const PDF_MIME = "application/pdf";
 const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
@@ -9,9 +12,15 @@ const TEXT_MIME = "text/plain";
 const MAX_SOURCE_BYTES = 5 * 1024 * 1024;
 const MAX_EXTRACTED_CHARACTERS = 50_000;
 const MAX_PDF_PAGES = 50;
+const MAX_OCR_PAGES = 5;
+const MAX_OCR_IMAGES = 5;
+const MAX_OCR_PIXELS = 4_000_000;
+const MIN_USEFUL_PDF_TEXT = 30;
 const MAX_ZIP_ENTRIES = 2_000;
 const MAX_UNCOMPRESSED_BYTES = 40 * 1024 * 1024;
 const MAX_SPREADSHEET_CELLS = 20_000;
+const require = createRequire(import.meta.url);
+const FRENCH_OCR_DATA = require("@tesseract.js-data/fra");
 
 export async function extractPartnerDocumentText(attachments) {
     let output = "";
@@ -22,7 +31,8 @@ export async function extractPartnerDocumentText(attachments) {
             if (!buffer.length || buffer.length > MAX_SOURCE_BYTES) continue;
             const text = await extractText(buffer, String(attachment.mime || attachment.mimeType || "").toLowerCase());
             if (text) output += `${output ? "\n" : ""}${text}`;
-        } catch {
+        } catch (error) {
+            console.warn("[partner-email-document] Pièce jointe non lisible :", error?.message || "erreur d’extraction");
             // Une pièce illisible ou non textuelle ne doit jamais empêcher l’import de la mission.
         }
     }
@@ -67,10 +77,57 @@ async function extractPdfText(buffer) {
             page.cleanup();
             output += "\n";
         }
+        if (normalizeText(output).replace(/[^\p{L}\p{N}]/gu, "").length < MIN_USEFUL_PDF_TEXT) output = await extractScannedPdfText(document);
     } finally {
         await document.destroy();
     }
     return output;
+}
+
+async function extractScannedPdfText(document) {
+    let worker;
+    try {
+        worker = await createWorker(FRENCH_OCR_DATA.code, OEM.LSTM_ONLY, { langPath: FRENCH_OCR_DATA.langPath, gzip: FRENCH_OCR_DATA.gzip, cacheMethod: "none", logger: () => {} });
+        await worker.setParameters({ preserve_interword_spaces: "1" });
+        let output = "";
+        const pageCount = Math.min(document.numPages, MAX_OCR_PAGES);
+        let imageCount = 0;
+        for (let pageNumber = 1; pageNumber <= pageCount && output.length < MAX_EXTRACTED_CHARACTERS && imageCount < MAX_OCR_IMAGES; pageNumber += 1) {
+            const page = await document.getPage(pageNumber);
+            const images = await embeddedPdfImages(page, MAX_OCR_IMAGES - imageCount); imageCount += images.length;
+            for (const image of images) {
+                const result = await worker.recognize(image);
+                if (result.data?.text) output += `${output ? "\n" : ""}${result.data.text}`;
+                if (output.length >= MAX_EXTRACTED_CHARACTERS) break;
+            }
+            page.cleanup();
+        }
+        return output;
+    } catch (error) {
+        console.warn("[partner-email-ocr] PDF scanné non lisible :", error?.message || "erreur OCR");
+        return "";
+    } finally {
+        await worker?.terminate().catch(() => {});
+    }
+}
+
+async function embeddedPdfImages(page, limit) {
+    const operators = await page.getOperatorList();
+    const images = [];
+    for (let index = 0; index < operators.fnArray.length && images.length < limit; index += 1) {
+        if (![OPS.paintImageXObject, OPS.paintInlineImageXObject].includes(operators.fnArray[index])) continue;
+        const reference = operators.argsArray[index]?.[0];
+        const image = typeof reference === "string" ? await new Promise(resolve => page.objs.get(reference, resolve)) : reference;
+        if (!image?.data || !image.width || !image.height || image.width * image.height > MAX_OCR_PIXELS) continue;
+        const canvas = createCanvas(image.width, image.height); const context = canvas.getContext("2d");
+        const pixels = context.createImageData(image.width, image.height); const source = image.data;
+        if (image.kind === 3 || source.length === pixels.data.length) pixels.data.set(source);
+        else if (image.kind === 2 || source.length === image.width * image.height * 3) for (let sourceIndex = 0, targetIndex = 0; sourceIndex < source.length; sourceIndex += 3, targetIndex += 4) { pixels.data[targetIndex] = source[sourceIndex]; pixels.data[targetIndex + 1] = source[sourceIndex + 1]; pixels.data[targetIndex + 2] = source[sourceIndex + 2]; pixels.data[targetIndex + 3] = 255; }
+        else if (image.kind === 1 || source.length === image.width * image.height) for (let sourceIndex = 0, targetIndex = 0; sourceIndex < source.length; sourceIndex += 1, targetIndex += 4) { pixels.data[targetIndex] = source[sourceIndex]; pixels.data[targetIndex + 1] = source[sourceIndex]; pixels.data[targetIndex + 2] = source[sourceIndex]; pixels.data[targetIndex + 3] = 255; }
+        else continue;
+        context.putImageData(pixels, 0, 0); images.push(canvas.toBuffer("image/png"));
+    }
+    return images;
 }
 
 function extractDocxText(buffer) {
