@@ -63,7 +63,12 @@ function escapeXml(value) {
 function wordParagraph(text, { bold = false, size = 18, spacingAfter = 35 } = {}) {
     const properties = `<w:pPr><w:spacing w:before="0" w:after="${spacingAfter}" w:line="200" w:lineRule="auto"/></w:pPr>`;
     const runProperties = `<w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/>${bold ? "<w:b/>" : ""}<w:sz w:val="${size}"/><w:szCs w:val="${size}"/></w:rPr>`;
-    return `<w:p>${properties}<w:r>${runProperties}<w:t xml:space="preserve">${escapeXml(text)}</w:t></w:r></w:p>`;
+    // Wingdings F0A8 est la case vide rendue de façon fiable par Word et LibreOffice.
+    const runs = text.split("☐").map((part, index) => {
+        const checkbox = index ? `<w:r>${runProperties}<w:sym w:font="Wingdings" w:char="F0A8"/></w:r>` : "";
+        return part ? `${checkbox}<w:r>${runProperties}<w:t xml:space="preserve">${escapeXml(part)}</w:t></w:r>` : checkbox;
+    }).join("");
+    return `<w:p>${properties}${runs}</w:p>`;
 }
 
 function createDocx() {
@@ -91,19 +96,21 @@ function writePdfLine(document, line, nextCheckboxName) {
         document.text(line, { indent: 5, paragraphGap: 0, lineGap: 0 });
         return;
     }
+    const startX = document.x;
     const y = document.y;
-    let x = document.x + 5;
+    let x = startX + 5;
     line.split("☐").forEach((part, index) => {
         if (index) {
             document.save().lineWidth(0.7).strokeColor("#172033").rect(x, y + 1, 6.5, 6.5).stroke().restore();
             document.formCheckbox(nextCheckboxName(), x, y + 1, 6.5, 6.5, { borderColor: "#172033" });
             x += 10;
         }
-        const text = part.trimStart();
+        const text = part.trim();
         if (!text) return;
         document.text(text, x, y, { lineBreak: false });
-        x += document.widthOfString(text);
+        x += document.widthOfString(text) + 4;
     });
+    document.x = startX;
     document.y = y + 10;
 }
 

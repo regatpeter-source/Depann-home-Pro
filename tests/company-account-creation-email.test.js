@@ -23,9 +23,13 @@ test("le modèle de création de compte entreprise est générable en PDF et Wor
     assert.match(document, /Configuration souhaitée/);
     assert.match(document, /w:ascii="Arial"/);
     assert.match(document, /w:pgMar w:top="600" w:right="650" w:bottom="600" w:left="650"/);
+    assert.match(document, /<w:sym w:font="Wingdings" w:char="F0A8"\/>/);
+    assert.match(document, /Logo de l’entreprise joint/);
+    assert.match(document, /nous créerons votre espace/);
     const generator = readFileSync(script, "utf8");
     assert.match(generator, /function writePdfLine/);
     assert.match(generator, /\.rect\(x, y \+ 1, 6\.5, 6\.5\)\.stroke\(\)/);
     assert.match(generator, /document\.initForm\(\)/);
     assert.match(generator, /document\.formCheckbox\(/);
+    assert.match(generator, /document\.x = startX/);
 });
