@@ -60,24 +60,24 @@ function escapeXml(value) {
     return String(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\"/g, "&quot;");
 }
 
-function wordParagraph(text, { bold = false, size = 22, spacingAfter = 120 } = {}) {
-    const properties = `<w:pPr><w:spacing w:after="${spacingAfter}"/></w:pPr>`;
-    const runProperties = `<w:rPr>${bold ? "<w:b/>" : ""}<w:sz w:val="${size}"/><w:szCs w:val="${size}"/></w:rPr>`;
+function wordParagraph(text, { bold = false, size = 18, spacingAfter = 35 } = {}) {
+    const properties = `<w:pPr><w:spacing w:before="0" w:after="${spacingAfter}" w:line="200" w:lineRule="auto"/></w:pPr>`;
+    const runProperties = `<w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/>${bold ? "<w:b/>" : ""}<w:sz w:val="${size}"/><w:szCs w:val="${size}"/></w:rPr>`;
     return `<w:p>${properties}<w:r>${runProperties}<w:t xml:space="preserve">${escapeXml(text)}</w:t></w:r></w:p>`;
 }
 
 function createDocx() {
     const body = [
-        wordParagraph("Depann’Home Pro", { bold: true, size: 34, spacingAfter: 70 }),
-        wordParagraph("Informations nécessaires à la création de votre compte entreprise", { bold: true, size: 28, spacingAfter: 280 }),
-        ...introduction.map(line => wordParagraph(line, { spacingAfter: 150 })),
+        wordParagraph("Depann’Home Pro", { bold: true, size: 30, spacingAfter: 25 }),
+        wordParagraph("Informations nécessaires à la création de votre compte entreprise", { bold: true, size: 22, spacingAfter: 100 }),
+        ...introduction.map(line => wordParagraph(line, { size: 18, spacingAfter: 35 })),
         ...sections.flatMap(([heading, lines]) => [
-            wordParagraph(heading, { bold: true, size: 25, spacingAfter: 150 }),
-            ...lines.map(line => wordParagraph(line, { spacingAfter: 100 })),
-            wordParagraph("", { spacingAfter: 80 })
+            wordParagraph(heading, { bold: true, size: 20, spacingAfter: 35 }),
+            ...lines.map(line => wordParagraph(line, { size: 17, spacingAfter: 15 })),
+            wordParagraph("", { spacingAfter: 20 })
         ]),
-        ...closing.map(line => wordParagraph(line, { spacingAfter: 150 })),
-        '<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1000" w:right="1100" w:bottom="1000" w:left="1100"/></w:sectPr>'
+        ...closing.map(line => wordParagraph(line, { size: 17, spacingAfter: 25 })),
+        '<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="600" w:right="650" w:bottom="600" w:left="650"/></w:sectPr>'
     ].join("");
     const zip = new PizZip();
     zip.file("[Content_Types].xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>`);
@@ -88,42 +88,42 @@ function createDocx() {
 
 function writePdfLine(document, line) {
     if (!line.includes("☐")) {
-        document.text(line, { indent: 8, paragraphGap: 4 });
+        document.text(line, { indent: 5, paragraphGap: 0, lineGap: 0 });
         return;
     }
     const y = document.y;
-    let x = document.x + 8;
+    let x = document.x + 5;
     line.split("☐").forEach((part, index) => {
         if (index) {
-            document.save().lineWidth(0.8).strokeColor("#172033").rect(x, y + 1, 8, 8).stroke().restore();
-            x += 13;
+            document.save().lineWidth(0.7).strokeColor("#172033").rect(x, y + 1, 6.5, 6.5).stroke().restore();
+            x += 10;
         }
         const text = part.trimStart();
         if (!text) return;
         document.text(text, x, y, { lineBreak: false });
         x += document.widthOfString(text);
     });
-    document.y = y + 14;
+    document.y = y + 10;
 }
 
 async function createPdf() {
     await new Promise((resolveDocument, rejectDocument) => {
-        const document = new PDFDocument({ size: "A4", margin: 50, info: { Title: "Création de compte entreprise — Depann’Home Pro" } });
+        const document = new PDFDocument({ size: "A4", margin: 30, info: { Title: "Création de compte entreprise — Depann’Home Pro" } });
         const chunks = [];
         document.on("data", chunk => chunks.push(chunk));
         document.on("end", () => writeFile(pdfPath, Buffer.concat(chunks)).then(resolveDocument, rejectDocument));
         document.on("error", rejectDocument);
-        document.fillColor("#0A5C36").font("Helvetica-Bold").fontSize(20).text("Depann’Home Pro");
-        document.fillColor("#003B73").fontSize(15).text("Informations nécessaires à la création de votre compte entreprise", { paragraphGap: 18 });
-        document.fillColor("#172033").font("Helvetica").fontSize(10.5);
-        introduction.forEach(line => document.text(line, { paragraphGap: 8 }));
+        document.fillColor("#0A5C36").font("Helvetica-Bold").fontSize(14).text("Depann’Home Pro");
+        document.fillColor("#003B73").fontSize(10).text("Informations nécessaires à la création de votre compte entreprise", { paragraphGap: 4 });
+        document.fillColor("#172033").font("Helvetica").fontSize(8);
+        introduction.forEach(line => document.text(line, { paragraphGap: 1, lineGap: 0 }));
         sections.forEach(([heading, lines]) => {
-            document.moveDown(0.7).fillColor("#0A5C36").font("Helvetica-Bold").fontSize(12).text(heading);
-            document.fillColor("#172033").font("Helvetica").fontSize(10);
+            document.moveDown(0.15).fillColor("#0A5C36").font("Helvetica-Bold").fontSize(9).text(heading, { paragraphGap: 1 });
+            document.fillColor("#172033").font("Helvetica").fontSize(7.5);
             lines.forEach(line => writePdfLine(document, line));
         });
-        document.moveDown(1);
-        closing.forEach(line => document.text(line, { paragraphGap: 7 }));
+        document.moveDown(0.15);
+        closing.forEach(line => document.text(line, { paragraphGap: 1, lineGap: 0 }));
         document.end();
     });
 }
