@@ -18,6 +18,7 @@ test("une intervention est terminée seulement lorsque sa date est passée à Pa
 test("une intervention terminée reste dans l’historique et devient non modifiable", () => {
     const calendar = read("server/calendar.js");
     const clients = read("js/clients.js");
+    const calendarClient = read("js/calendar.js");
     const historyRoute = calendar.slice(calendar.indexOf('app.get("/api/calendar/client-history/:clientId"'), calendar.indexOf('app.get("/api/calendar/events"'));
     assert.match(historyRoute, /WHERE event\.owner_id = \$1[\s\S]*event\.client_id = \$2/);
     assert.doesNotMatch(historyRoute, /LIMIT\s+1/);
@@ -27,6 +28,10 @@ test("une intervention terminée reste dans l’historique et devient non modifi
     assert.match(clients, /`Intervention n°\$\{appointment\.id\}`/);
     assert.match(clients, /appointment\.isCompleted \? "Terminée" : "Planifiée"/);
     assert.doesNotMatch(clients, /"Intervention planifiée"/);
+    assert.match(calendarClient, /id="openCompletedAppointmentClient">Aller sur la fiche client/);
+    assert.match(calendarClient, /id="scheduleCompletedAppointmentFollowUp">Planifier un nouveau rendez-vous/);
+    assert.match(calendarClient, /newEventForDate\(date\)/);
+    assert.match(calendarClient, /depannhome:open-client/);
 });
 
 test("le quitus devient inaccessible après la date de l’intervention", () => {

@@ -291,15 +291,37 @@ function renderEventForm(panel) {
     panel.hidden = false;
     const event = selectedEvent;
     if (event.eventType === "appointment" && event.isCompleted) {
+        const client = findClientForEvent(event);
         panel.innerHTML = `
             <div class="calendar-event-detail">
                 <div class="form-heading"><div><p class="eyebrow">Intervention terminée</p><h2>${escapeHtml(event.title)}</h2></div><span class="quitus-status signed">Terminée</span></div>
                 <section class="calendar-appointment-information">
-                    <p class="muted">Cette intervention est conservée dans l’historique du client. Elle ne peut plus être modifiée ou supprimée et son quitus n’est plus accessible.</p>
+                    <p class="muted">Cette intervention est conservée dans l’historique du client. Elle ne peut plus être modifiée ou supprimée. Consultez la fiche client ou créez un nouveau rendez-vous à partir de ses informations.</p>
                     <dl><dt>Intervention</dt><dd>N° ${escapeHtml(event.id)}</dd><dt>Client</dt><dd>${escapeHtml(event.clientName || "Non renseigné")}</dd><dt>Date</dt><dd>${escapeHtml(formatActivityDate(event.date, event.startTime))}${event.endTime ? ` — ${escapeHtml(event.endTime)}` : ""}</dd>${renderAssignedTechniciansDetail(event)}${event.location ? `<dt>Lieu</dt><dd>${escapeHtml(event.location)}</dd>` : ""}${event.notes ? `<dt>Notes</dt><dd>${escapeHtml(event.notes)}</dd>` : ""}</dl>
                 </section>
-                <div class="calendar-form-actions"><button type="button" class="secondary-button" id="closeCalendarDetail">Fermer</button></div>
+                <div class="calendar-form-actions">${client ? `<button type="button" class="secondary-button" id="openCompletedAppointmentClient">Aller sur la fiche client</button><button type="button" class="secondary-button" id="scheduleCompletedAppointmentFollowUp">Planifier un nouveau rendez-vous</button>` : '<p class="auth-message">Aucune fiche client associée : l’intervention historique reste consultable.</p>'}<button type="button" class="secondary-button" id="closeCalendarDetail">Fermer</button></div>
             </div>`;
+        panel.querySelector("#openCompletedAppointmentClient")?.addEventListener("click", () => {
+            window.dispatchEvent(new CustomEvent("depannhome:open-client", { detail: { clientId: client.id } }));
+        });
+        panel.querySelector("#scheduleCompletedAppointmentFollowUp")?.addEventListener("click", () => {
+            const date = toDateString(new Date());
+            selectedEvent = {
+                ...newEventForDate(date),
+                title: event.title || "Intervention",
+                clientName: client.name || event.clientName || "",
+                location: formatClientAddress(client) || event.location || "",
+                notes: event.notes || "",
+                startTime: event.startTime || "",
+                endTime: event.endTime || "",
+                color: event.color || "blue",
+                assignedTechnicianId: event.assignedTechnicianId || "",
+                assignedTechnicianName: event.assignedTechnicianName || "",
+                assignedTechnicianIds: getAssignedTechnicianIds(event)
+            };
+            displayedMonth = firstDayOfMonth(new Date(`${date}T12:00:00`));
+            refreshCalendarDetail();
+        });
         panel.querySelector("#closeCalendarDetail").addEventListener("click", () => {
             selectedEvent = null;
             refreshCalendarDetail();
