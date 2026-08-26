@@ -1,5 +1,5 @@
 import { mkdir, writeFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { resolve } from "node:path";
 import PDFDocument from "pdfkit";
 import PizZip from "pizzip";
 
@@ -86,6 +86,26 @@ function createDocx() {
     return zip.generate({ type: "nodebuffer", compression: "DEFLATE" });
 }
 
+function writePdfLine(document, line) {
+    if (!line.includes("☐")) {
+        document.text(line, { indent: 8, paragraphGap: 4 });
+        return;
+    }
+    const y = document.y;
+    let x = document.x + 8;
+    line.split("☐").forEach((part, index) => {
+        if (index) {
+            document.save().lineWidth(0.8).strokeColor("#172033").rect(x, y + 1, 8, 8).stroke().restore();
+            x += 13;
+        }
+        const text = part.trimStart();
+        if (!text) return;
+        document.text(text, x, y, { lineBreak: false });
+        x += document.widthOfString(text);
+    });
+    document.y = y + 14;
+}
+
 async function createPdf() {
     await new Promise((resolveDocument, rejectDocument) => {
         const document = new PDFDocument({ size: "A4", margin: 50, info: { Title: "Création de compte entreprise — Depann’Home Pro" } });
@@ -100,7 +120,7 @@ async function createPdf() {
         sections.forEach(([heading, lines]) => {
             document.moveDown(0.7).fillColor("#0A5C36").font("Helvetica-Bold").fontSize(12).text(heading);
             document.fillColor("#172033").font("Helvetica").fontSize(10);
-            lines.forEach(line => document.text(line, { indent: 8, paragraphGap: 4 }));
+            lines.forEach(line => writePdfLine(document, line));
         });
         document.moveDown(1);
         closing.forEach(line => document.text(line, { paragraphGap: 7 }));

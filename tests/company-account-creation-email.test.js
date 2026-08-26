@@ -18,4 +18,7 @@ test("le modèle de création de compte entreprise est générable en PDF et Wor
     assert.match(document, /SIRET/);
     assert.match(document, /Administrateur principal du compte/);
     assert.match(document, /Configuration souhaitée/);
+    const generator = readFileSync(script, "utf8");
+    assert.match(generator, /function writePdfLine/);
+    assert.match(generator, /\.rect\(x, y \+ 1, 8, 8\)\.stroke\(\)/);
 });
