@@ -597,7 +597,7 @@ function renderMultiDatePlanning(event) {
             <div class="calendar-multi-date-heading"><div><p class="eyebrow">Planification étendue</p><h3>Proposer ou sélectionner plusieurs dates</h3></div><span class="calendar-multi-date-count" id="calendarMultiDateCount">1 date</span></div>
             <p class="muted">Une occurrence du ${escapeHtml(event.eventType === "task" ? "travail" : "rendez-vous")} sera créée pour chaque date sélectionnée, avec les mêmes membres affectés et horaires.</p>
             <section class="calendar-date-range" aria-label="Sélectionner une période">
-                <div><p class="eyebrow">Rendez-vous longue durée</p><h4>Sélectionner une période</h4><p class="muted">Cliquez et faites glisser jusqu’au dernier jour, puis relâchez ou cliquez pour valider la période. Recommencez pour ajouter une autre période au même rendez-vous.</p></div>
+                <div><p class="eyebrow">Rendez-vous longue durée</p><h4>Sélectionner une période</h4><p class="muted">Cliquez sur le premier jour, survolez jusqu’au dernier, puis cliquez une seconde fois pour valider la période. Recommencez pour ajouter une autre période au même rendez-vous.</p></div>
                 <div class="calendar-date-range-inputs"><label>Date de début<input type="date" id="calendarRangeStart" value="${escapeHtml(event.date)}"></label><label>Date de fin<input type="date" id="calendarRangeEnd" value="${escapeHtml(event.date)}"></label></div>
                 <div class="calendar-range-picker" id="calendarRangePicker" aria-label="Calendrier de sélection de période"></div>
             </section>
@@ -617,7 +617,7 @@ function initializeMultiDatePlanning(form, event) {
     let availableDates = [];
     let requestVersion = 0;
     let rangeMonth = firstDayOfMonth(new Date(`${primaryDate}T12:00:00`));
-    let draggingRange = false;
+    let selectingRange = false;
     let rangeAnchor = primaryDate;
     let pendingRangeDates = new Set();
     const displayedDates = () => [...new Set([...selectedDates, ...pendingRangeDates])].filter(Boolean).sort();
@@ -658,14 +658,20 @@ function initializeMultiDatePlanning(form, event) {
         if (!first || !last) return;
         datesBetween(first <= last ? first : last, first <= last ? last : first).slice(0, 30).forEach(date => selectedDates.add(date));
         pendingRangeDates.clear();
-        draggingRange = false;
+        selectingRange = false;
         render();
     };
     const commitPendingRange = () => {
-        if (!draggingRange && !pendingRangeDates.size) return;
+        if (!selectingRange || !pendingRangeDates.size) return;
         pendingRangeDates.forEach(date => selectedDates.add(date));
         pendingRangeDates.clear();
-        draggingRange = false;
+        selectingRange = false;
+        render();
+    };
+    const cancelPendingRange = () => {
+        if (!selectingRange) return;
+        pendingRangeDates.clear();
+        selectingRange = false;
         render();
     };
     const renderRangePicker = () => {
@@ -678,22 +684,16 @@ function initializeMultiDatePlanning(form, event) {
         picker.querySelector("[data-range-month=previous]").addEventListener("click", () => { rangeMonth = addMonths(rangeMonth, -1); renderRangePicker(); });
         picker.querySelector("[data-range-month=next]").addEventListener("click", () => { rangeMonth = addMonths(rangeMonth, 1); renderRangePicker(); });
         picker.querySelectorAll("[data-range-date]").forEach(button => {
-            button.addEventListener("pointerdown", pointer => {
-                pointer.preventDefault();
-                draggingRange = true;
-                rangeAnchor = button.dataset.rangeDate;
-                previewDateRange(rangeAnchor, rangeAnchor);
-            });
             button.addEventListener("pointerenter", () => {
-                if (draggingRange) previewDateRange(rangeAnchor, button.dataset.rangeDate);
+                if (selectingRange) previewDateRange(rangeAnchor, button.dataset.rangeDate);
             });
             button.addEventListener("click", eventClick => {
                 eventClick.preventDefault();
-                if (draggingRange || pendingRangeDates.size) return commitPendingRange();
+                if (selectingRange) return commitPendingRange();
                 rangeAnchor = button.dataset.rangeDate;
-                addDateRange(rangeAnchor, rangeAnchor);
+                selectingRange = true;
+                previewDateRange(rangeAnchor, rangeAnchor);
             });
-            button.addEventListener("pointercancel", commitPendingRange);
         });
     };
     const refresh = async () => {
@@ -728,7 +728,11 @@ function initializeMultiDatePlanning(form, event) {
         const start = section.querySelector("#calendarRangeStart").value || section.querySelector("#calendarRangeEnd").value;
         addDateRange(start, section.querySelector("#calendarRangeEnd").value);
     });
-    document.addEventListener("pointerup", commitPendingRange, { once: false });
+    section.addEventListener("keydown", eventKey => {
+        if (eventKey.key !== "Escape") return;
+        eventKey.preventDefault();
+        cancelPendingRange();
+    });
     render();
     refresh();
     return {

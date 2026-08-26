@@ -42,3 +42,15 @@ test("le quitus devient inaccessible après la date de l’intervention", () => 
     assert.match(clientsClient, /Quitus archivé et inaccessible/);
     assert.match(clientsClient, /!completedAppointmentIds\.has\(quitusAppointmentId\)/);
 });
+
+test("la sélection étendue du planning est confirmée au second clic, jamais au relâchement", () => {
+    const calendarClient = read("js/calendar.js");
+    const rangeSelection = calendarClient.slice(calendarClient.indexOf("function initializeMultiDatePlanning"), calendarClient.indexOf("function renderRangeMonth"));
+    assert.match(rangeSelection, /let selectingRange = false/);
+    assert.match(rangeSelection, /if \(selectingRange\) previewDateRange/);
+    assert.match(rangeSelection, /if \(selectingRange\) return commitPendingRange\(\)/);
+    assert.match(rangeSelection, /selectingRange = true;\s*previewDateRange\(rangeAnchor, rangeAnchor\)/);
+    assert.match(rangeSelection, /eventKey\.key !== "Escape"/);
+    assert.doesNotMatch(rangeSelection, /document\.addEventListener\("pointerup"/);
+    assert.doesNotMatch(rangeSelection, /addEventListener\("pointerdown"/);
+});
