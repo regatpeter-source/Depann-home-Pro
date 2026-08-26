@@ -54,3 +54,15 @@ test("la sélection étendue du planning est confirmée au second clic, jamais a
     assert.doesNotMatch(rangeSelection, /document\.addEventListener\("pointerup"/);
     assert.doesNotMatch(rangeSelection, /addEventListener\("pointerdown"/);
 });
+
+test("une nouvelle version PWA active immédiatement les correctifs du planning", () => {
+    const application = read("js/app.js");
+    const worker = read("service-worker.js");
+    assert.match(application, /updateViaCache: "none"/);
+    assert.match(application, /addEventListener\("controllerchange"/);
+    assert.match(application, /depannhome:service-worker-reloaded/);
+    assert.match(application, /\.then\(registration => registration\.update\(\)\)/);
+    assert.match(worker, /self\.skipWaiting\(\)/);
+    assert.match(worker, /self\.clients\.claim\(\)/);
+    assert.match(worker, /\.\/js\/calendar\.js\?v=174/);
+});

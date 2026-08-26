@@ -2,7 +2,7 @@ import { initializeAuthentication, restoreApplicationShell, signOut } from "./au
 import { initializeClientSynchronization } from "./client-sync.js?v=125";
 import { initializeCollaboration } from "./collaboration.js?v=5";
 import { loadDatabase } from "./data.js?v=59";
-import { initializeNavigation, refreshApplication } from "./navigation.js?v=378";
+import { initializeNavigation, refreshApplication } from "./navigation.js?v=379";
 import { renderError } from "./ui.js?v=44";
 import { getSettings } from "./storage.js?v=44";
 import { FONT_OPTIONS } from "./config.js?v=130";
@@ -264,8 +264,15 @@ function applyLanguage() {
 
 function registerServiceWorker() {
     if ("serviceWorker" in navigator) {
-        navigator.serviceWorker.register("service-worker.js").catch(() => {
-            // L'application reste utilisable même si le cache hors-ligne n'est pas disponible.
-        });
+        navigator.serviceWorker.addEventListener("controllerchange", () => {
+            if (sessionStorage.getItem("depannhome:service-worker-reloaded")) return;
+            sessionStorage.setItem("depannhome:service-worker-reloaded", "true");
+            window.location.reload();
+        }, { once: true });
+        navigator.serviceWorker.register("service-worker.js", { updateViaCache: "none" })
+            .then(registration => registration.update())
+            .catch(() => {
+                // L'application reste utilisable même si le cache hors-ligne n'est pas disponible.
+            });
     }
 }
