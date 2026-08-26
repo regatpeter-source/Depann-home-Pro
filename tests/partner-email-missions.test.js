@@ -254,6 +254,10 @@ test("les critères e-mail sont enregistrés et nettoient immédiatement les pro
     assert.match(emailSettingsSource, /Mots-clés obligatoires pour une mission/);
     assert.match(emailSettingsSource, /data-email-required-keywords/);
     assert.match(emailSettingsSource, /requiredKeywords: row\.querySelector/);
+    assert.match(emailSettingsSource, /Critères enregistrés pour cette boîte/);
+    assert.match(emailSettingsSource, /Expéditeurs \/ domaines/);
+    assert.match(emailSettingsSource, /Les critères enregistrés s’appliquent aux prochaines recherches manuelles et automatiques/);
+    assert.match(emailSettingsSource, /reload: \(\) => loadCompanyEmailWorkspace\(card\)/);
 });
 
 test("les propositions de mission peuvent être confirmées ou supprimées seules ou en sélection", () => {

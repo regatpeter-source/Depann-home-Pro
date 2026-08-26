@@ -38,7 +38,7 @@ Après **Rechercher les missions**, les propositions de la boîte concernée app
 
 Chaque proposition dispose d’actions **Confirmer** et **Supprimer**. Les cases permettent d’en sélectionner plusieurs, puis de confirmer ou supprimer toute la sélection. Supprimer une proposition empêche uniquement la création de la mission dans Depann’Home Pro : l’e-mail reste intact dans la boîte connectée.
 
-La liste facultative des **adresses ou domaines partenaires recherchés** est un filtre strict dans les deux modes. Dès qu’elle contient une valeur, les messages des autres expéditeurs sont écartés. Lorsqu’elle est vide, la recherche reste ouverte à tous les expéditeurs et la sélection manuelle s’appuie sur les autres critères.
+La liste facultative des **adresses ou domaines partenaires recherchés** est un filtre strict dans les deux modes. Dès qu’elle contient une valeur, les messages des autres expéditeurs sont écartés. Lorsqu’elle est vide, la recherche reste ouverte à tous les expéditeurs et la sélection manuelle s’appuie sur les autres critères. Dans **Missions partenaires → Espace e-mail**, chaque boîte affiche ses critères enregistrés ; un Administrateur PC peut y modifier à tout moment les expéditeurs, domaines et mots-clés, puis les enregistrer directement pour cette boîte.
 
 ### Détection automatique stricte
 

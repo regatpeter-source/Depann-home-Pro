@@ -20,6 +20,10 @@ export async function renderCompanyEmailWorkspace(container) {
     card.className = "brand-card full-card procedure-card partner-email-settings-card";
     card.innerHTML = '<section class="partner-email-panel"><p class="muted">Chargement de l’espace e-mail de l’entreprise…</p></section>';
     container.appendChild(card);
+    await loadCompanyEmailWorkspace(card);
+}
+
+async function loadCompanyEmailWorkspace(card) {
     const result = await api("/api/partner-email");
     if (!result.ok) {
         card.innerHTML = `<section class="partner-email-panel"><p class="auth-message error">${escapeHtml(result.message || "Impossible de charger l’espace e-mail de l’entreprise.")}</p></section>`;
@@ -35,7 +39,25 @@ export async function renderCompanyEmailWorkspace(container) {
     }
     const configuration = canConfigureMailbox();
     list.innerHTML = connections.map(connection => emailConnectionCard(connection, { configuration, candidateReview: true })).join("");
-    bindMailboxConnectionControls(card, result.data, { configuration, candidateReview: true });
+    connections.forEach(connection => {
+        const row = list.querySelector(`[data-email-connection-card="${connection.id}"]`);
+        const status = row?.querySelector("small");
+        const settings = row?.querySelector(".partner-email-connection-settings");
+        const criteria = document.createElement("section");
+        criteria.className = "partner-email-criteria-summary";
+        criteria.innerHTML = `<strong>Critères enregistrés pour cette boîte</strong><span><b>Expéditeurs / domaines :</b> ${escapeHtml((connection.allowedSenders || []).join(", ") || "Tous les expéditeurs")}</span><span><b>Mots-clés :</b> ${escapeHtml((connection.requiredKeywords || []).join(", ") || "Aucun")}</span>`;
+        status?.after(criteria);
+        if (settings) {
+            settings.open = true;
+            const summary = settings.querySelector("summary");
+            if (summary) summary.textContent = "Modifier les critères enregistrés, le mode et la recherche automatique";
+            const help = document.createElement("p");
+            help.className = "muted";
+            help.textContent = "Les critères enregistrés s’appliquent aux prochaines recherches manuelles et automatiques de cette boîte.";
+            settings.querySelector("summary")?.after(help);
+        }
+    });
+    bindMailboxConnectionControls(card, result.data, { configuration, candidateReview: true, reload: () => loadCompanyEmailWorkspace(card) });
 }
 
 async function loadPartnerEmailSettings(card) {
