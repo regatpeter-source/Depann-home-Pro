@@ -86,7 +86,7 @@ function createDocx() {
     return zip.generate({ type: "nodebuffer", compression: "DEFLATE" });
 }
 
-function writePdfLine(document, line) {
+function writePdfLine(document, line, nextCheckboxName) {
     if (!line.includes("☐")) {
         document.text(line, { indent: 5, paragraphGap: 0, lineGap: 0 });
         return;
@@ -96,6 +96,7 @@ function writePdfLine(document, line) {
     line.split("☐").forEach((part, index) => {
         if (index) {
             document.save().lineWidth(0.7).strokeColor("#172033").rect(x, y + 1, 6.5, 6.5).stroke().restore();
+            document.formCheckbox(nextCheckboxName(), x, y + 1, 6.5, 6.5, { borderColor: "#172033" });
             x += 10;
         }
         const text = part.trimStart();
@@ -114,13 +115,16 @@ async function createPdf() {
         document.on("end", () => writeFile(pdfPath, Buffer.concat(chunks)).then(resolveDocument, rejectDocument));
         document.on("error", rejectDocument);
         document.fillColor("#0A5C36").font("Helvetica-Bold").fontSize(14).text("Depann’Home Pro");
+        document.initForm();
+        let checkboxNumber = 0;
+        const nextCheckboxName = () => `creation_compte_option_${++checkboxNumber}`;
         document.fillColor("#003B73").fontSize(10).text("Informations nécessaires à la création de votre compte entreprise", { paragraphGap: 4 });
         document.fillColor("#172033").font("Helvetica").fontSize(8);
         introduction.forEach(line => document.text(line, { paragraphGap: 1, lineGap: 0 }));
         sections.forEach(([heading, lines]) => {
             document.moveDown(0.15).fillColor("#0A5C36").font("Helvetica-Bold").fontSize(9).text(heading, { paragraphGap: 1 });
             document.fillColor("#172033").font("Helvetica").fontSize(7.5);
-            lines.forEach(line => writePdfLine(document, line));
+            lines.forEach(line => writePdfLine(document, line, nextCheckboxName));
         });
         document.moveDown(0.15);
         closing.forEach(line => document.text(line, { paragraphGap: 1, lineGap: 0 }));

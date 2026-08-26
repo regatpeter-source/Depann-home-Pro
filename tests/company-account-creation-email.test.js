@@ -15,6 +15,7 @@ test("le modèle de création de compte entreprise est générable en PDF et Wor
     const pdfContent = readFileSync(pdf);
     assert.match(pdfContent.subarray(0, 8).toString("ascii"), /^%PDF-/);
     assert.equal((pdfContent.toString("latin1").match(/\/Type \/Page\b/g) || []).length, 1);
+    assert.match(pdfContent.toString("latin1"), /\/AcroForm/);
     const document = new PizZip(readFileSync(docx)).file("word/document.xml")?.asText() || "";
     assert.match(document, /Informations nécessaires à la création de votre compte entreprise/);
     assert.match(document, /SIRET/);
@@ -25,4 +26,6 @@ test("le modèle de création de compte entreprise est générable en PDF et Wor
     const generator = readFileSync(script, "utf8");
     assert.match(generator, /function writePdfLine/);
     assert.match(generator, /\.rect\(x, y \+ 1, 6\.5, 6\.5\)\.stroke\(\)/);
+    assert.match(generator, /document\.initForm\(\)/);
+    assert.match(generator, /document\.formCheckbox\(/);
 });
