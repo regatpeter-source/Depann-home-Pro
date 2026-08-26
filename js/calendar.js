@@ -597,7 +597,7 @@ function renderMultiDatePlanning(event) {
             <div class="calendar-multi-date-heading"><div><p class="eyebrow">Planification étendue</p><h3>Proposer ou sélectionner plusieurs dates</h3></div><span class="calendar-multi-date-count" id="calendarMultiDateCount">1 date</span></div>
             <p class="muted">Une occurrence du ${escapeHtml(event.eventType === "task" ? "travail" : "rendez-vous")} sera créée pour chaque date sélectionnée, avec les mêmes membres affectés et horaires.</p>
             <section class="calendar-date-range" aria-label="Sélectionner une période">
-                <div><p class="eyebrow">Rendez-vous longue durée</p><h4>Sélectionner une période</h4><p class="muted">Cliquez sur le premier jour, survolez jusqu’au dernier, puis cliquez une seconde fois pour valider la période. Recommencez pour ajouter une autre période au même rendez-vous.</p></div>
+                <div><p class="eyebrow">Rendez-vous longue durée</p><h4>Sélectionner une période</h4><p class="muted">Cliquez sur le premier jour, puis sur le dernier jour pour valider la période. Le survol de la souris ne sélectionne aucune date. Recommencez pour ajouter une autre période au même rendez-vous.</p></div>
                 <div class="calendar-date-range-inputs"><label>Date de début<input type="date" id="calendarRangeStart" value="${escapeHtml(event.date)}"></label><label>Date de fin<input type="date" id="calendarRangeEnd" value="${escapeHtml(event.date)}"></label></div>
                 <div class="calendar-range-picker" id="calendarRangePicker" aria-label="Calendrier de sélection de période"></div>
             </section>
@@ -619,16 +619,14 @@ function initializeMultiDatePlanning(form, event) {
     let rangeMonth = firstDayOfMonth(new Date(`${primaryDate}T12:00:00`));
     let selectingRange = false;
     let rangeAnchor = primaryDate;
-    let pendingRangeDates = new Set();
-    const displayedDates = () => [...new Set([...selectedDates, ...pendingRangeDates])].filter(Boolean).sort();
+    const displayedDates = () => [...selectedDates].filter(Boolean).sort();
     const render = () => {
         const dates = displayedDates();
         section.querySelector("#calendarMultiDateCount").textContent = `${dates.length} date${dates.length > 1 ? "s" : ""}`;
         section.querySelector("#calendarSelectedDateInputs").innerHTML = dates.map(date => `<input type="hidden" name="dates" value="${escapeHtml(date)}">`).join("");
         section.querySelector("#calendarSelectedDates").innerHTML = dates.map(date => `<span class="calendar-selected-date"><time>${escapeHtml(formatPlanningDate(date))}</time>${date === primaryDate ? '<em>Date principale</em>' : `<button type="button" data-remove-planning-date="${escapeHtml(date)}" aria-label="Retirer le ${escapeHtml(formatPlanningDate(date))}">×</button>`}</span>`).join("");
-        const pendingDates = [...pendingRangeDates].sort();
-        section.querySelector("#calendarRangeStart").value = pendingDates[0] || rangeAnchor || primaryDate;
-        section.querySelector("#calendarRangeEnd").value = pendingDates.at(-1) || rangeAnchor || primaryDate;
+        section.querySelector("#calendarRangeStart").value = rangeAnchor || primaryDate;
+        section.querySelector("#calendarRangeEnd").value = rangeAnchor || primaryDate;
         renderRangePicker();
         section.querySelector("#calendarDateProposals").innerHTML = availableDates.length ? `
             <div class="calendar-date-proposals-heading"><strong>Créneaux disponibles proposés</strong><span>Cliquez pour ${dates.length > 1 ? "ajouter ou retirer" : "sélectionner plusieurs dates"}.</span></div>
@@ -645,32 +643,15 @@ function initializeMultiDatePlanning(form, event) {
             render();
         }));
     };
-    const previewDateRange = (first, last) => {
-        if (!first || !last) return;
-        const start = first <= last ? first : last;
-        const end = first <= last ? last : first;
-        const dates = datesBetween(start, end).slice(0, 30);
-        pendingRangeDates = new Set(dates);
-        section.querySelector("#calendarAdditionalDate").value = dates.at(-1);
-        render();
-    };
     const addDateRange = (first, last) => {
         if (!first || !last) return;
         datesBetween(first <= last ? first : last, first <= last ? last : first).slice(0, 30).forEach(date => selectedDates.add(date));
-        pendingRangeDates.clear();
         selectingRange = false;
-        render();
-    };
-    const commitPendingRange = () => {
-        if (!selectingRange || !pendingRangeDates.size) return;
-        pendingRangeDates.forEach(date => selectedDates.add(date));
-        pendingRangeDates.clear();
-        selectingRange = false;
+        section.querySelector("#calendarAdditionalDate").value = last;
         render();
     };
     const cancelPendingRange = () => {
         if (!selectingRange) return;
-        pendingRangeDates.clear();
         selectingRange = false;
         render();
     };
@@ -679,20 +660,17 @@ function initializeMultiDatePlanning(form, event) {
         const months = [rangeMonth, addMonths(rangeMonth, 1)];
         picker.innerHTML = `
             <div class="calendar-range-picker-toolbar"><button type="button" class="secondary-button" data-range-month="previous" aria-label="Mois précédent">←</button><strong>${escapeHtml(formatRangeMonth(rangeMonth))} — ${escapeHtml(formatRangeMonth(months[1]))}</strong><button type="button" class="secondary-button" data-range-month="next" aria-label="Mois suivant">→</button></div>
-            <div class="calendar-range-months">${months.map(month => renderRangeMonth(month, selectedDates, pendingRangeDates, rangeAnchor)).join("")}</div>
+            <div class="calendar-range-months">${months.map(month => renderRangeMonth(month, selectedDates, new Set(), rangeAnchor)).join("")}</div>
         `;
         picker.querySelector("[data-range-month=previous]").addEventListener("click", () => { rangeMonth = addMonths(rangeMonth, -1); renderRangePicker(); });
         picker.querySelector("[data-range-month=next]").addEventListener("click", () => { rangeMonth = addMonths(rangeMonth, 1); renderRangePicker(); });
         picker.querySelectorAll("[data-range-date]").forEach(button => {
-            button.addEventListener("pointerenter", () => {
-                if (selectingRange) previewDateRange(rangeAnchor, button.dataset.rangeDate);
-            });
             button.addEventListener("click", eventClick => {
                 eventClick.preventDefault();
-                if (selectingRange) return commitPendingRange();
+                if (selectingRange) return addDateRange(rangeAnchor, button.dataset.rangeDate);
                 rangeAnchor = button.dataset.rangeDate;
                 selectingRange = true;
-                previewDateRange(rangeAnchor, rangeAnchor);
+                render();
             });
         });
     };

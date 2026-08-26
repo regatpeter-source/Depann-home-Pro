@@ -43,16 +43,16 @@ test("le quitus devient inaccessible après la date de l’intervention", () => 
     assert.match(clientsClient, /!completedAppointmentIds\.has\(quitusAppointmentId\)/);
 });
 
-test("la sélection étendue du planning est confirmée au second clic, jamais au relâchement", () => {
+test("la sélection étendue du planning est déterminée par deux clics, sans sélection au survol", () => {
     const calendarClient = read("js/calendar.js");
     const rangeSelection = calendarClient.slice(calendarClient.indexOf("function initializeMultiDatePlanning"), calendarClient.indexOf("function renderRangeMonth"));
     assert.match(rangeSelection, /let selectingRange = false/);
-    assert.match(rangeSelection, /if \(selectingRange\) previewDateRange/);
-    assert.match(rangeSelection, /if \(selectingRange\) return commitPendingRange\(\)/);
-    assert.match(rangeSelection, /selectingRange = true;\s*previewDateRange\(rangeAnchor, rangeAnchor\)/);
+    assert.match(rangeSelection, /if \(selectingRange\) return addDateRange\(rangeAnchor, button\.dataset\.rangeDate\)/);
+    assert.match(rangeSelection, /selectingRange = true;\s*render\(\)/);
     assert.match(rangeSelection, /eventKey\.key !== "Escape"/);
     assert.doesNotMatch(rangeSelection, /document\.addEventListener\("pointerup"/);
     assert.doesNotMatch(rangeSelection, /addEventListener\("pointerdown"/);
+    assert.doesNotMatch(rangeSelection, /addEventListener\("pointerenter"/);
 });
 
 test("une nouvelle version PWA active immédiatement les correctifs du planning", () => {
@@ -64,5 +64,5 @@ test("une nouvelle version PWA active immédiatement les correctifs du planning"
     assert.match(application, /\.then\(registration => registration\.update\(\)\)/);
     assert.match(worker, /self\.skipWaiting\(\)/);
     assert.match(worker, /self\.clients\.claim\(\)/);
-    assert.match(worker, /\.\/js\/calendar\.js\?v=174/);
+    assert.match(worker, /\.\/js\/calendar\.js\?v=175/);
 });
