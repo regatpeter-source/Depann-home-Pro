@@ -12,6 +12,7 @@ import { extractPartnerDocumentText, normalizePartnerDocumentMime } from "../ser
 const serverSource = readFileSync(new URL("../server/partner-email.js", import.meta.url), "utf8");
 const missionSource = readFileSync(new URL("../server/partner-missions.js", import.meta.url), "utf8");
 const missionClientSource = readFileSync(new URL("../js/partner-missions.js", import.meta.url), "utf8");
+const clientsSource = readFileSync(new URL("../js/clients.js", import.meta.url), "utf8");
 const emailSettingsSource = readFileSync(new URL("../js/partner-email-settings.js", import.meta.url), "utf8");
 const navigationSource = readFileSync(new URL("../js/navigation.js", import.meta.url), "utf8");
 const schemaSource = readFileSync(new URL("../database/schema.sql", import.meta.url), "utf8");
@@ -572,6 +573,21 @@ test("les PDF reçus sont téléchargeables et liés au dossier de mission", () 
     assert.match(emailSettingsSource, /data-mailbox-attachment-name/);
     assert.match(readFileSync(new URL("../server/partner-dialogue.js", import.meta.url), "utf8"), /source_type[\s\S]*?'email_attachment'/);
     assert.match(readFileSync(new URL("../server/partner-dialogue.js", import.meta.url), "utf8"), /message\.event_type='email_attachment_received'/);
+});
+
+test("les pièces e-mail disposent de rubriques dédiées dans la mission et la fiche client", () => {
+    const attachments = Array.from({ length: 12 }, (_, index) => ({ name: `document-${index}.pdf` }));
+    assert.equal(mapPayload({ attachments }).attachments.length, 10);
+    assert.match(missionSource, /emailAttachments: await missionEmailAttachments/);
+    assert.match(missionSource, /source_type='email_attachment'/);
+    assert.match(missionSource, /Mission partenaire · E-mail/);
+    assert.match(missionSource, /source: "partner_email"/);
+    assert.match(missionSource, /attachmentSignature/);
+    assert.match(missionClientSource, /Pièces jointes reçues par e-mail/);
+    assert.match(missionClientSource, /attachment\.url/);
+    assert.match(clientsSource, /Mission partenaire · E-mail/);
+    assert.match(clientsSource, /isPartnerEmailAttachment/);
+    assert.match(clientsSource, /renderAttachmentsHtml\(client\.id, emailMissionFiles/);
 });
 
 test("les réponses e-mail affichent le contexte, les compteurs et l’état d’envoi", () => {

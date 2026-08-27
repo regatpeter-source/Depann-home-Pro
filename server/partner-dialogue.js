@@ -376,7 +376,8 @@ async function sendMissionItem(res, ownerId, item) {
     if (item.sourceType === "email_attachment") {
         const { rows } = await getPool().query("SELECT filename,mime_type AS \"mimeType\",file_data AS data FROM depannhome_partner_dialogue_attachments WHERE id=$1 AND owner_id=$2 AND mission_id=$3", [item.sourceId, ownerId, item.missionId || item.mission_id]);
         if (!rows[0]?.data) return res.status(404).json({ message: "Document e-mail introuvable." });
-        res.set({ "Content-Type": rows[0].mimeType || "application/octet-stream", "Content-Disposition": `${rows[0].mimeType === "application/pdf" ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(rows[0].filename || item.label || "document")}`, "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" });
+        const previewable = rows[0].mimeType === "application/pdf" || rows[0].mimeType === "text/plain" || String(rows[0].mimeType || "").startsWith("image/");
+        res.set({ "Content-Type": rows[0].mimeType || "application/octet-stream", "Content-Disposition": `${previewable ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(rows[0].filename || item.label || "document")}`, "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" });
         return res.send(rows[0].data);
     }
     if (["quote", "invoice"].includes(item.sourceType)) {

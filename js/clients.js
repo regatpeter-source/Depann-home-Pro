@@ -25,7 +25,7 @@ const EMPTY_CLIENT = {
     activityHistory: []
 };
 
-const ATTACHMENT_TYPES = ["Devis", "Facture", "Quitus", "Rapport fuite", "Photo", "Photo avant", "Photo après", "Autre"];
+const ATTACHMENT_TYPES = ["Devis", "Facture", "Quitus", "Rapport fuite", "Photo", "Photo avant", "Photo après", "Mission partenaire · E-mail", "Autre"];
 const MAX_ATTACHMENT_SIZE = 4 * 1024 * 1024;
 let clientScreenOptions = {};
 let clientDirectoryFilters = createEmptyDirectoryFilters();
@@ -485,7 +485,8 @@ function renderClientDetail(client, options = {}) {
     const archived = client.clientStatus === "archived";
     const navigationHref = getClientNavigationHref(client);
     const interventionPhotos = client.attachments.filter(isInterventionPhoto);
-    const clientFiles = client.attachments.filter(attachment => !isInterventionPhoto(attachment) && attachment.type !== "Quitus" && !isLeakReportAttachment(attachment));
+    const emailMissionFiles = client.attachments.filter(isPartnerEmailAttachment);
+    const clientFiles = client.attachments.filter(attachment => !isInterventionPhoto(attachment) && !isPartnerEmailAttachment(attachment) && attachment.type !== "Quitus" && !isLeakReportAttachment(attachment));
     const panel = document.createElement("section");
     panel.className = "client-panel";
 
@@ -523,6 +524,13 @@ function renderClientDetail(client, options = {}) {
             <section class="procedure-section client-intervention-photos">
                 <div class="form-heading"><div><p class="eyebrow">Interventions terrain</p><h3>Photos ajoutées par les techniciens</h3></div><span class="file-count-badge">${interventionPhotos.length} photo(s)</span></div>
                 <div class="client-intervention-photo-gallery">${interventionPhotos.map(attachment => renderInterventionPhotoHtml(client.id, attachment)).join("")}</div>
+            </section>
+        ` : ""}
+        ${emailMissionFiles.length ? `
+            <section class="procedure-section client-partner-email-files">
+                <div class="form-heading"><div><p class="eyebrow">Missions partenaires</p><h3>Pièces jointes reçues par e-mail</h3></div><span class="file-count-badge">${emailMissionFiles.length} fichier(s)</span></div>
+                <p class="muted">Documents d’origine reçus avec les demandes de mission associées à ce client.</p>
+                ${renderAttachmentsHtml(client.id, emailMissionFiles, client.email)}
             </section>
         ` : ""}
         <section class="procedure-section">
@@ -879,6 +887,9 @@ function normalizeAttachments(attachments = []) {
             size: Number(attachment.size) || 0,
             dataUrl: attachment.dataUrl || "",
             reportId: String(attachment.reportId || "").replace(/[^0-9]/g, ""),
+            source: attachment.source === "partner_email" ? "partner_email" : "",
+            sourceAttachmentId: String(attachment.sourceAttachmentId || "").replace(/[^0-9]/g, ""),
+            missionId: String(attachment.missionId || "").replace(/[^0-9]/g, ""),
             cachedLocally: attachment.cachedLocally !== false,
             appointmentId: String(attachment.appointmentId || "").replace(/[^0-9]/g, ""),
             createdAt: attachment.createdAt || new Date().toISOString()
@@ -1161,6 +1172,10 @@ function renderAttachmentsHtml(clientId, attachments, recipient) {
 
 function isInterventionPhoto(attachment) {
     return Boolean(attachment?.appointmentId) && ["Photo", "Photo avant", "Photo après"].includes(attachment.type);
+}
+
+function isPartnerEmailAttachment(attachment) {
+    return attachment?.source === "partner_email" || attachment?.type === "Mission partenaire · E-mail";
 }
 
 function renderInterventionPhotoHtml(clientId, attachment) {
