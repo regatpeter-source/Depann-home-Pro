@@ -43,6 +43,7 @@ test("les diagnostics détaillés et la résolution sont réservés au Créateur
     assert.match(server, /app\.post\("\/api\/creator\/health\/diagnostics", requireCreator/);
     assert.match(server, /app\.patch\("\/api\/creator\/health\/incidents\/:incidentId", requireCreator/);
     assert.match(server, /app\.get\("\/healthz"/);
+    assert.match(server, /version: deploymentVersion\(\)/);
     assert.doesNotMatch(server, /app\.get\("\/healthz"[\s\S]{0,300}(?:incidents|technicalMessage|details)/);
 });
 

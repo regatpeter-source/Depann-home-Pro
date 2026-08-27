@@ -315,5 +315,5 @@ function isPartnerEmailOAuthCallback(request) {
 }
 
 function isElectronicInvoicingOAuthCallback(request) {
-	return request.method === "GET" && request.path === "/e-invoicing/oauth/callback";
+	return request.method === "GET" && String(request.originalUrl || "").split("?", 1)[0] === "/api/accounting/e-invoicing/oauth/callback";
 }

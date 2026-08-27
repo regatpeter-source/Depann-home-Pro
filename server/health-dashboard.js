@@ -83,7 +83,7 @@ export function registerHealthDashboardRoutes(app, requireCreator) {
     app.get("/healthz", (_request, response) => {
         const stale = !lastCheckTimestamp || Date.now() - lastCheckTimestamp > CHECK_INTERVAL_MS * 2;
         const status = stale ? "unavailable" : lastPublicStatus.status;
-        response.status(status === "unavailable" ? 503 : 200).json({ status, checkedAt: lastPublicStatus.checkedAt });
+        response.status(status === "unavailable" ? 503 : 200).json({ status, checkedAt: lastPublicStatus.checkedAt, version: deploymentVersion() });
     });
     app.get("/api/creator/health", requireCreator, asyncHandler(async (_request, response) => {
         response.json(await loadHealthDashboard());

@@ -70,6 +70,7 @@ test("l’espace SUPER PDP Créateur possède un coffre et un OAuth distincts de
 
 test("le callback SUPER PDP survit au retour sans cookie grâce à l’état serveur", () => {
     assert.match(appServer, /if \(isElectronicInvoicingOAuthCallback\(request\)\) return next\(\)/);
+    assert.match(appServer, /request\.originalUrl[\s\S]*\/api\/accounting\/e-invoicing\/oauth\/callback/);
     assert.match(electronicServer, /if \(isOAuthCallback\(request\)\) return next\(\)/);
     const callback = electronicServer.slice(electronicServer.indexOf('app.get("/api/accounting/e-invoicing/oauth/callback"'), electronicServer.indexOf('app.put("/api/accounting/e-invoicing/configuration"'));
     assert.match(callback, /DELETE FROM depannhome_creator_super_pdp_oauth_states WHERE state_hash=\$1 AND expires_at>NOW\(\) RETURNING/);
