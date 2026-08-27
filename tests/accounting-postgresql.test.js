@@ -93,3 +93,16 @@ test("PostgreSQL : les migrations sont checksumées et idempotentes", { skip: !e
     assert.equal(second.applied.length, 0);
     assert.equal((await migrationStatus(database)).every(item => item.status === "applied"), true);
 });
+
+test("PostgreSQL : la lecture du technicien affecté reste non ambiguë avec une mission jointe", { skip: !enabled }, async () => {
+    await database.query("CREATE TEMP TABLE calendar_events_regression(id BIGINT, assigned_technician_id BIGINT)");
+    await database.query("CREATE TEMP TABLE partner_missions_regression(calendar_event_id BIGINT, assigned_technician_id BIGINT)");
+    await database.query("INSERT INTO calendar_events_regression VALUES(1,42)");
+    await database.query("INSERT INTO partner_missions_regression VALUES(1,84)");
+    const result = await database.query(`
+        SELECT event.assigned_technician_id AS "assignedTechnicianId"
+        FROM calendar_events_regression event
+        LEFT JOIN partner_missions_regression mission ON mission.calendar_event_id=event.id
+    `);
+    assert.deepEqual(result.rows, [{ assignedTechnicianId: "42" }]);
+});

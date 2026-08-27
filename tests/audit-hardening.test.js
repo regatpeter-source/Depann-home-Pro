@@ -4,6 +4,12 @@ import { readFileSync } from "node:fs";
 
 const source = path => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 
+test("la lecture du planning qualifie l’affectation malgré la jointure des missions", () => {
+    const calendar = source("server/calendar.js");
+    assert.match(calendar, /event\.assigned_technician_id AS "assignedTechnicianId"/);
+    assert.doesNotMatch(calendar, /\n\s+assigned_technician_id AS "assignedTechnicianId"/);
+});
+
 test("l’envoi d’une facture valide sa transaction après la mise à jour", () => {
     const billing = source("server/billing.js");
     const route = billing.slice(billing.indexOf('app.post("/api/billing/documents/:documentId/email"'), billing.indexOf('app.get("/api/billing/documents/:documentId/export"'));

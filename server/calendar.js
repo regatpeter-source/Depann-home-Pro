@@ -262,7 +262,7 @@ export function registerCalendarRoutes(app, requireAuthentication) {
             SELECT
                 event.id,
                 event.title,
-                assigned_technician_id AS "assignedTechnicianId",
+                event.assigned_technician_id AS "assignedTechnicianId",
                 COALESCE(technician.full_name, technician.username, '') AS "assignedTechnicianName",
                 COALESCE((
                     SELECT json_agg(json_build_object(
