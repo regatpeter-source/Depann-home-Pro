@@ -51,6 +51,7 @@ test("la migration e-mail reste applicable avant la création optionnelle de sa 
     const runner = readFileSync(new URL("../server/database-migrations.js", import.meta.url), "utf8");
     assert.match(migration, /to_regclass\('depannhome_partner_email_messages'\) IS NOT NULL/);
     assert.match(runner, /LEGACY_MIGRATION_CHECKSUMS/);
+    assert.match(runner, /478913d3dc6bca68eff852079ccc0d80b49cdf2ee6e701a492e03da1bd2dc514/);
     assert.match(runner, /5f741958ac796af6863d52488751a08129a8c6992ad73efd43a6af75ff2413dc/);
 });
 

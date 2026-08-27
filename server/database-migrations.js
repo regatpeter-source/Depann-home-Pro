@@ -8,7 +8,10 @@ const MIGRATION_PATTERN = /^(\d{4})_([a-z0-9_-]+)\.sql$/i;
 const MIGRATION_LOCK = 734_290_117;
 const defaultDirectory = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "database", "migrations");
 const LEGACY_MIGRATION_CHECKSUMS = new Map([
-    [2, new Set(["5f741958ac796af6863d52488751a08129a8c6992ad73efd43a6af75ff2413dc"])]
+    [2, new Set([
+        "478913d3dc6bca68eff852079ccc0d80b49cdf2ee6e701a492e03da1bd2dc514",
+        "5f741958ac796af6863d52488751a08129a8c6992ad73efd43a6af75ff2413dc"
+    ])]
 ]);
 
 export async function loadMigrations(directory = defaultDirectory) {
