@@ -16,6 +16,7 @@ import {
 	validateAuthenticationConfiguration
 } from "./server/auth.js";
 import { initializeDatabase } from "./server/database.js";
+import { createHealthRequestMonitor, initializeHealthDashboard, recordHealthError, registerHealthDashboardRoutes, startHealthMonitoring } from "./server/health-dashboard.js";
 import { initializeOrganizations, requireOrganizationFeature } from "./server/organizations.js";
 import { registerCreatorRoutes } from "./server/creator.js";
 import { billingUploadErrorHandler, initializeBilling, registerBillingRoutes } from "./server/billing.js";
@@ -57,6 +58,7 @@ app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false 
 app.use(express.json({ limit: "25mb" }));
 app.use(cookieParser());
 app.use(authenticateRequest);
+app.use(createHealthRequestMonitor());
 
 const authenticationRateLimit = rateLimit({
 	windowMs: 15 * 60 * 1000,
@@ -176,6 +178,7 @@ app.use("/api/groups", requireAuthentication, (request, response, next) => {
 	return requireGroupsFeature(request, response, next);
 });
 registerAuthRoutes(app);
+registerHealthDashboardRoutes(app, requireCreator);
 registerCreatorRoutes(app, requireCreator, requireAuthentication);
 registerPartnerRequestRoutes(app, requireCreator, requireAuthentication);
 registerSubscriptionInvoicingRoutes(app, requireCreator);
@@ -245,6 +248,7 @@ app.use(libraryUploadErrorHandler);
 app.use(partnerDialogueUploadErrorHandler);
 app.use((error, request, response, next) => {
 	console.error(error);
+	void recordHealthError(error, request).catch(healthError => console.warn("[health] error observation unavailable", healthError.code || healthError.name || "ERROR"));
 	if (response.headersSent) return next(error);
 	const status = Number.isInteger(error?.status) && error.status >= 400 && error.status < 500 ? error.status : 500;
 	return response.status(status).json({ message: status === 500 ? "Erreur interne du serveur." : String(error.message || "Requête invalide.") });
@@ -277,6 +281,7 @@ async function start() {
 	await initializeClients();
 	await initializeDataImports();
 	await initializeLibrary();
+	await initializeHealthDashboard();
 	await createInitialAdministrator();
 	await recoverCreatorPassword();
 	await recoverCreatorTotp();
@@ -284,6 +289,7 @@ async function start() {
 		console.log(`Depann'Home Pro écoute sur le port ${port}.`);
 		startSubscriptionInvoicingScheduler();
 		startPartnerEmailScheduler();
+		startHealthMonitoring();
 	});
 }
 

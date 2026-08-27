@@ -3,6 +3,7 @@ import nodemailer from "nodemailer";
 import { ImapFlow } from "imapflow";
 import { simpleParser } from "mailparser";
 import { getPool } from "./database.js";
+import { recordHealthSchedulerRun } from "./health-dashboard.js";
 import { getAccountOwnerId } from "./auth.js";
 import { getOrganization, isFeatureEnabled } from "./organizations.js";
 import { decryptElectronicInvoicingCredentials, encryptElectronicInvoicingCredentials } from "./electronic-invoicing.js";
@@ -197,9 +198,21 @@ export function registerPartnerEmailRoutes(app, requireAuthentication) {
 
 export function startPartnerEmailScheduler() {
     if (scheduler) return;
-    scheduler = setInterval(() => synchronizeDueConnections().catch(error => console.error("[partner-email] synchronisation :", error.message)), 5 * 60 * 1000);
+    scheduler = setInterval(() => runPartnerEmailScheduler("scheduled"), 5 * 60 * 1000);
     scheduler.unref?.();
-    synchronizeDueConnections().catch(error => console.error("[partner-email] synchronisation initiale :", error.message));
+    void runPartnerEmailScheduler("startup");
+}
+
+async function runPartnerEmailScheduler(source) {
+    const startedAt = new Date();
+    await recordHealthSchedulerRun("partner_email", source, "started", {}, startedAt);
+    try {
+        const result = await synchronizeDueConnections();
+        await recordHealthSchedulerRun("partner_email", source, "completed", result, startedAt);
+    } catch (error) {
+        await recordHealthSchedulerRun("partner_email", source, "failed", { errorCode: error.code || error.name || "ERROR" }, startedAt);
+        console.error(`[partner-email] synchronisation ${source} :`, error.message);
+    }
 }
 
 export async function synchronizeDueConnections() {
@@ -208,6 +221,7 @@ export async function synchronizeDueConnections() {
         if (!isFeatureEnabled(await getOrganization(row.owner_id), "partnerMissions")) continue;
         await syncConnection(row.owner_id, row.id, null).catch(() => {});
     }
+    return { selectedConnections: rows.length };
 }
 
 export function classifyPartnerEmail({ subject = "", text = "", from = "", attachments = [], allowedSenders = [], requiredKeywords = [], automatic = false, listMail = false, reply = false }) {

@@ -870,6 +870,44 @@ CREATE TABLE IF NOT EXISTS depannhome_subscription_proration_events (
 );
 CREATE INDEX IF NOT EXISTS depannhome_subscription_proration_events_owner_idx ON depannhome_subscription_proration_events(account_owner_id,effective_date DESC,id DESC);
 
+-- Observabilité interne réservée au Créateur, sans corps de requête, secret,
+-- coordonnée client ni donnée bancaire.
+CREATE TABLE IF NOT EXISTS depannhome_health_incidents (
+    id BIGSERIAL PRIMARY KEY, fingerprint CHAR(64) NOT NULL UNIQUE, module VARCHAR(60) NOT NULL,
+    severity VARCHAR(20) NOT NULL CHECK(severity IN ('information','warning','important','critical')),
+    error_type VARCHAR(100) NOT NULL DEFAULT '', route VARCHAR(240) NOT NULL DEFAULT '', technical_message VARCHAR(500) NOT NULL DEFAULT '',
+    status VARCHAR(20) NOT NULL DEFAULT 'open' CHECK(status IN ('open','monitoring','resolved')),
+    occurrence_count INTEGER NOT NULL DEFAULT 1, affected_scope_hashes JSONB NOT NULL DEFAULT '[]'::jsonb CHECK(jsonb_array_length(affected_scope_hashes)<=100),
+    deployment_version VARCHAR(120) NOT NULL DEFAULT '', first_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    resolved_at TIMESTAMPTZ, resolution_note VARCHAR(1000) NOT NULL DEFAULT '', updated_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS depannhome_health_incidents_status_idx ON depannhome_health_incidents(status,severity,last_seen_at DESC);
+CREATE TABLE IF NOT EXISTS depannhome_health_check_results (
+    id BIGSERIAL PRIMARY KEY, check_key VARCHAR(100) NOT NULL, module VARCHAR(60) NOT NULL,
+    status VARCHAR(20) NOT NULL CHECK(status IN ('pass','warning','fail','unavailable')),
+    severity VARCHAR(20) NOT NULL CHECK(severity IN ('information','warning','important','critical')),
+    message VARCHAR(500) NOT NULL DEFAULT '', latency_ms INTEGER, details JSONB NOT NULL DEFAULT '{}'::jsonb, checked_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS depannhome_health_checks_key_time_idx ON depannhome_health_check_results(check_key,checked_at DESC);
+CREATE TABLE IF NOT EXISTS depannhome_health_http_metrics (
+    bucket_start TIMESTAMPTZ NOT NULL, module VARCHAR(60) NOT NULL, route VARCHAR(240) NOT NULL, method VARCHAR(10) NOT NULL,
+    request_count INTEGER NOT NULL DEFAULT 0, server_error_count INTEGER NOT NULL DEFAULT 0,
+    duration_total_ms BIGINT NOT NULL DEFAULT 0, duration_max_ms INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY(bucket_start,module,route,method)
+);
+CREATE INDEX IF NOT EXISTS depannhome_health_http_metrics_time_idx ON depannhome_health_http_metrics(bucket_start DESC);
+CREATE TABLE IF NOT EXISTS depannhome_health_scheduler_runs (
+    id BIGSERIAL PRIMARY KEY, scheduler_key VARCHAR(100) NOT NULL, source VARCHAR(30) NOT NULL DEFAULT 'scheduled',
+    status VARCHAR(20) NOT NULL CHECK(status IN ('started','completed','failed','skipped')), duration_ms INTEGER,
+    summary JSONB NOT NULL DEFAULT '{}'::jsonb, started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), completed_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS depannhome_health_scheduler_runs_key_time_idx ON depannhome_health_scheduler_runs(scheduler_key,started_at DESC);
+CREATE TABLE IF NOT EXISTS depannhome_health_deployments (
+    id BIGSERIAL PRIMARY KEY, version VARCHAR(120) NOT NULL UNIQUE, commit_sha VARCHAR(80) NOT NULL DEFAULT '',
+    environment VARCHAR(30) NOT NULL DEFAULT 'production', test_status VARCHAR(20) NOT NULL DEFAULT 'unknown' CHECK(test_status IN ('unknown','passed','failed')),
+    tests_passed INTEGER NOT NULL DEFAULT 0, tests_failed INTEGER NOT NULL DEFAULT 0, deployed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS depannhome_purchases (
     id BIGSERIAL PRIMARY KEY,
     owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,

@@ -3,6 +3,7 @@ import { createBillingPdf, normalizeVatRegime } from "./billing.js";
 import { isEmailDeliveryConfigured, sendDocumentEmail } from "./email.js";
 import { calculateSubscriptionPriceCents, subscriptionTierConfig } from "./subscription-tiers.js";
 import { createHash } from "node:crypto";
+import { recordHealthSchedulerRun } from "./health-dashboard.js";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const IBAN_PATTERN = /^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$/;
@@ -487,10 +488,14 @@ async function nextSubscriptionDocumentNumber(connection, type, issueDate) {
 export function startSubscriptionInvoicingScheduler() {
     if (schedulerTimer) return;
     const check = async source => {
+        const startedAt = new Date();
+        await recordHealthSchedulerRun("subscription_invoicing", source, "started", {}, startedAt);
         try {
             const result = await processDueSubscriptionInvoices();
+            await recordHealthSchedulerRun("subscription_invoicing", source, result.skipped ? "skipped" : "completed", result, startedAt);
             console.info("[subscription-invoicing] completed", { source, ...result });
         } catch (error) {
+            await recordHealthSchedulerRun("subscription_invoicing", source, "failed", { errorCode: error.code || error.name || "ERROR" }, startedAt);
             console.error("[subscription-invoicing] failed", { source, error: error.message });
         }
     };

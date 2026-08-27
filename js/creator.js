@@ -2,6 +2,7 @@ import { ROUTES } from "./config.js?v=105";
 import { clearSearch, getContainer, setPage } from "./ui.js?v=44";
 import { escapeHtml } from "./utils.js?v=44";
 import { renderCreatorConnectors } from "./connectors.js?v=1";
+import { renderHealthDashboard } from "./health-dashboard.js?v=1";
 
 let accounts = [];
 let selectedAccountId = "";
@@ -16,7 +17,7 @@ export async function renderCreatorConsole() {
         <section class="creator-console">
             <header class="creator-heading">
                 <div><p class="eyebrow">Administration plateforme</p><h2>Console Créateur</h2></div>
-                <div class="creator-form-actions"><button type="button" class="secondary-button auth-outline-button" id="creatorSubscriptionRequests">Demandes d’offres</button><button type="button" class="secondary-button auth-outline-button" id="creatorPartnerApiSandbox">🧪 Sandbox API partenaire</button><button type="button" class="secondary-button auth-outline-button" id="creatorSuperPdpSandbox">🧪 Sandbox SUPER PDP</button><button type="button" class="secondary-button auth-outline-button" id="creatorElectronicInvoicingMonitoring">Suivi e-facturation</button><button type="button" class="secondary-button auth-outline-button" id="creatorElectronicInvoicingPlatforms">Plateformes e-facturation</button><button type="button" class="secondary-button auth-outline-button" id="creatorPlatformAnnouncement">Affichage général</button><button type="button" class="secondary-button auth-outline-button" id="creatorPartnerRequests">Demandes de partenariat</button><button type="button" class="secondary-button auth-outline-button" id="creatorOfficialPartners">Partenaires officiels</button><button type="button" class="secondary-button auth-outline-button" id="creatorSecurity">Sécurité du compte</button><button type="button" class="secondary-button auth-outline-button" id="creatorSubscriptionInvoices">Factures abonnements</button><button type="button" class="secondary-button auth-outline-button" id="creatorBillingProfile">Facturation plateforme</button><button type="button" class="secondary-button auth-outline-button" id="creatorExternalProviders">Prestataires externes</button><button type="button" class="secondary-button" id="creatorNewAccount">+ Nouvelle organisation</button></div>
+                <div class="creator-form-actions"><button type="button" class="secondary-button auth-outline-button" id="creatorHealthDashboard">🩺 Santé du système <b class="creator-request-alert" data-health-alert hidden>0</b></button><button type="button" class="secondary-button auth-outline-button" id="creatorSubscriptionRequests">Demandes d’offres</button><button type="button" class="secondary-button auth-outline-button" id="creatorPartnerApiSandbox">🧪 Sandbox API partenaire</button><button type="button" class="secondary-button auth-outline-button" id="creatorSuperPdpSandbox">🧪 Sandbox SUPER PDP</button><button type="button" class="secondary-button auth-outline-button" id="creatorElectronicInvoicingMonitoring">Suivi e-facturation</button><button type="button" class="secondary-button auth-outline-button" id="creatorElectronicInvoicingPlatforms">Plateformes e-facturation</button><button type="button" class="secondary-button auth-outline-button" id="creatorPlatformAnnouncement">Affichage général</button><button type="button" class="secondary-button auth-outline-button" id="creatorPartnerRequests">Demandes de partenariat</button><button type="button" class="secondary-button auth-outline-button" id="creatorOfficialPartners">Partenaires officiels</button><button type="button" class="secondary-button auth-outline-button" id="creatorSecurity">Sécurité du compte</button><button type="button" class="secondary-button auth-outline-button" id="creatorSubscriptionInvoices">Factures abonnements</button><button type="button" class="secondary-button auth-outline-button" id="creatorBillingProfile">Facturation plateforme</button><button type="button" class="secondary-button auth-outline-button" id="creatorExternalProviders">Prestataires externes</button><button type="button" class="secondary-button" id="creatorNewAccount">+ Nouvelle organisation</button></div>
             </header>
             <p id="creatorFeedback" class="auth-message" aria-live="polite"></p>
             <section class="creator-subscription-summary" id="creatorSubscriptionSummary" aria-label="Synthèse des abonnements"></section>
@@ -38,6 +39,7 @@ export async function renderCreatorConsole() {
     notificationsButton.innerHTML = 'Notifications <b class="creator-request-alert" hidden>0</b>';
     document.querySelector(".creator-heading .creator-form-actions").prepend(notificationsButton);
     container.querySelector("#creatorNewAccount").addEventListener("click", () => renderAccountForm());
+    container.querySelector("#creatorHealthDashboard").addEventListener("click", () => renderHealthDashboard(container.querySelector("#creatorWorkspace")));
     container.querySelector("#creatorSubscriptionRequests").addEventListener("click", renderSubscriptionChangeRequests);
     container.querySelector("#creatorPartnerApiSandbox").addEventListener("click", renderPartnerApiSandbox);
     container.querySelector("#creatorSuperPdpSandbox").addEventListener("click", renderSuperPdpSandbox);
@@ -52,13 +54,29 @@ export async function renderCreatorConsole() {
     container.querySelector("#creatorSecurity").addEventListener("click", renderCreatorSecurity);
     container.querySelector("#creatorSubscriptionInvoices").addEventListener("click", renderSubscriptionInvoices);
     container.querySelector("#creatorExternalProviders").addEventListener("click", renderCreatorConnectors);
-    await Promise.all([loadAccounts(), refreshCreatorRequestNotifications()]);
+    await Promise.all([loadAccounts(), refreshCreatorRequestNotifications(), refreshCreatorHealthAlert()]);
     if (!creatorNotificationsBound) {
         creatorNotificationsBound = true;
         window.addEventListener("depannhome:collaboration-event", () => {
             if (document.querySelector("#creatorRequestNotifications")) refreshCreatorRequestNotifications();
         });
     }
+}
+
+async function refreshCreatorHealthAlert() {
+    const button = document.querySelector("#creatorHealthDashboard");
+    if (!button) return;
+    try {
+        const response = await fetch("/api/creator/health", { credentials: "same-origin" });
+        if (!response.ok) return;
+        const health = await response.json();
+        const active = (health.incidents || []).filter(item => item.status !== "resolved" && ["critical", "important", "warning"].includes(item.severity));
+        const badge = button.querySelector("[data-health-alert]");
+        badge.hidden = active.length === 0;
+        badge.textContent = active.length > 99 ? "99+" : String(active.length);
+        button.classList.toggle("has-notifications", active.length > 0);
+        button.title = active.length ? `${active.length} alerte(s) Santé à examiner` : "Tous les contrôles Santé sont disponibles";
+    } catch { /* Le tableau détaillé signalera une éventuelle indisponibilité. */ }
 }
 
 export async function openCreatorRequestNotification(source = "") {
