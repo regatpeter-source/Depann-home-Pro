@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { calculateSubscriptionCreditTotals, subscriptionInvoiceBalances } from "../server/invoicing.js";
+import { calculateSubscriptionCreditTotals, subscriptionCreditRefundDue, subscriptionInvoiceBalances } from "../server/invoicing.js";
 import { createBillingPdf } from "../server/billing.js";
 
 const invoicingSource = readFileSync(new URL("../server/invoicing.js", import.meta.url), "utf8");
@@ -21,6 +21,15 @@ test("les soldes distinguent encaissement, reste dû et remboursement", () => {
     assert.deepEqual(subscriptionInvoiceBalances(7500, 2000, 0), { outstandingAmountCents: 5500, refundDueCents: 0 });
     assert.deepEqual(subscriptionInvoiceBalances(7500, 2000, 7500), { outstandingAmountCents: 0, refundDueCents: 2000 });
     assert.deepEqual(subscriptionInvoiceBalances(7500, 7500, 0), { outstandingAmountCents: 0, refundDueCents: 0 });
+});
+
+test("un avoir postérieur au paiement calcule exactement le remboursement créé", () => {
+    assert.equal(subscriptionCreditRefundDue(7500, 0, 7500, 3200), 3200);
+    assert.equal(subscriptionCreditRefundDue(7500, 0, 0, 3200), 0);
+    assert.equal(subscriptionCreditRefundDue(7500, 3200, 4300, 1000), 1000);
+    assert.match(invoicingSource, /const refundDueCents = subscriptionCreditRefundDue/);
+    assert.match(creatorSource, /Remboursement à effectuer :/);
+    assert.match(creatorSource, /cet avoir a été imputé avant l’encaissement du solde/);
 });
 
 test("la création verrouille la facture et plafonne le cumul des avoirs", () => {
@@ -53,6 +62,15 @@ test("l’envoi et le remboursement disposent d’états et d’un audit sépar�
     assert.match(invoicingSource, /refund_status='refunded'/);
     assert.match(creatorSource, /Remboursement à effectuer/);
     assert.match(creatorSource, /Renvoyer l’avoir/);
+});
+
+test("la console distingue le suivi électronique des abonnements du catalogue technique", () => {
+    assert.match(creatorServerSource, /app\.get\("\/api\/creator\/e-invoicing-monitoring", requireCreator/);
+    assert.match(creatorServerSource, /subscriptionChannel: "email_pdf"/);
+    assert.match(creatorServerSource, /elles ne sont pas encore transmises par une plateforme agréée/);
+    assert.match(creatorSource, /id="creatorElectronicInvoicingMonitoring"/);
+    assert.match(creatorSource, /Transmissions électroniques abonnements/);
+    assert.match(creatorSource, /E-mail seulement/);
 });
 
 test("un paiement après avoir porte uniquement sur le net restant", () => {

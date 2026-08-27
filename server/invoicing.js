@@ -204,7 +204,7 @@ export function registerSubscriptionInvoicingRoutes(app, requireCreator) {
             const balances = subscriptionInvoiceBalances(invoice.amountCents, creditedAmountCents, invoice.paidAmountCents);
             return {
             ...invoice,
-            credits: invoiceCredits,
+            credits: invoiceCredits.map(credit => ({ ...credit, refundDueCents: credit.refundStatus === "pending" ? Number(credit.amountCents) || 0 : 0 })),
             creditedAmountCents,
             creditableAmountCents: Math.max(0, Number(invoice.amountCents) - creditedAmountCents),
             ...balances,
@@ -314,10 +314,11 @@ export function registerSubscriptionInvoicingRoutes(app, requireCreator) {
             const lines = [{ description: `Avoir sur facture ${invoice.invoiceNumber}`, quantity: 1, unit: "avoir", unitPrice: totals.taxBaseCents / 100, vatRate: Number(invoice.vatRate) || 0 }];
             const document = subscriptionCreditNoteDocument({ creditNumber, sourceInvoiceNumber: invoice.invoiceNumber, sourceInvoiceDate: invoice.issueDate, issueDate: dates[0].issueDate, reason, recipientName: invoice.recipientName, recipientAddress: invoice.recipientAddress, issuerProfile: invoice.issuerProfile, lines, ...totals });
             const pdf = await createBillingPdf(document, invoice.issuerProfile || emptyProfile());
-            const refundStatus = Number(invoice.paidAmountCents) > 0 ? "pending" : "not_required";
+            const refundDueCents = subscriptionCreditRefundDue(invoice.netAmountCents, Number(existing.rows[0].total), invoice.paidAmountCents, amountCents);
+            const refundStatus = refundDueCents > 0 ? "pending" : "not_required";
             const inserted = await connection.query(`INSERT INTO depannhome_subscription_credit_notes(source_invoice_id,account_owner_id,credit_number,source_invoice_number,source_invoice_date,issue_date,credit_kind,reason,amount_cents,tax_base_cents,vat_amount_cents,vat_rate,recipient_name,recipient_email,recipient_address,issuer_profile,lines,financial_data,pdf_data,pdf_sha256,created_by,refund_status) VALUES($1,$2,$3,$4,$5::date,$6::date,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16::jsonb,$17::jsonb,'{}'::jsonb,$18,$19,$20,$21) RETURNING id`, [invoice.id,invoice.accountOwnerId,creditNumber,invoice.invoiceNumber,invoice.issueDate,dates[0].issueDate,creditKind,reason,amountCents,totals.taxBaseCents,totals.vatAmountCents,invoice.vatRate,invoice.recipientName,invoice.recipientEmail,invoice.recipientAddress,JSON.stringify(invoice.issuerProfile),JSON.stringify(lines),pdf,createHash("sha256").update(pdf).digest("hex"),request.user.sub,refundStatus]);
             creditNoteId = inserted.rows[0].id;
-            await connection.query(`INSERT INTO depannhome_subscription_credit_note_audit(credit_note_id,account_owner_id,actor_id,action,details) VALUES($1,$2,$3,'credit_note_issued',$4::jsonb)`, [creditNoteId,invoice.accountOwnerId,request.user.sub,JSON.stringify({ creditNumber, sourceInvoiceNumber: invoice.invoiceNumber, amountCents, reason, refundStatus })]);
+            await connection.query(`INSERT INTO depannhome_subscription_credit_note_audit(credit_note_id,account_owner_id,actor_id,action,details) VALUES($1,$2,$3,'credit_note_issued',$4::jsonb)`, [creditNoteId,invoice.accountOwnerId,request.user.sub,JSON.stringify({ creditNumber, sourceInvoiceNumber: invoice.invoiceNumber, amountCents, reason, refundStatus, refundDueCents })]);
             await connection.query(`INSERT INTO depannhome_subscription_invoice_audit(invoice_id,account_owner_id,actor_id,action,details) VALUES($1,$2,$3,'credit_note_issued',$4::jsonb)`, [invoice.id,invoice.accountOwnerId,request.user.sub,JSON.stringify({ creditNoteId, creditNumber, amountCents })]);
             await connection.query("COMMIT");
         } catch (error) { await connection.query("ROLLBACK"); throw error; } finally { connection.release(); }
@@ -448,7 +449,8 @@ export async function prepareSubscriptionProration(connection, { ownerBefore, ow
         const lines = [{ description: reason, quantity: 1, unit: "prorata", unitPrice: totals.taxBaseCents / 100, vatRate: Number(source.vatRate) || 0 }];
         const document = subscriptionCreditNoteDocument({ creditNumber: sequence.number, sourceInvoiceNumber: source.invoiceNumber, sourceInvoiceDate: source.issueDate, issueDate: period.effectiveDate, reason, recipientName: source.recipientName, recipientAddress: source.recipientAddress, issuerProfile: source.issuerProfile, lines, ...totals });
         const pdf = await createBillingPdf(document, source.issuerProfile || emptyProfile());
-        const refundStatus = Number(source.paidAmountCents) > 0 ? "pending" : "not_required";
+        const refundDueCents = subscriptionCreditRefundDue(source.netAmountCents, Number(existing.rows[0].total), source.paidAmountCents, amountCents);
+        const refundStatus = refundDueCents > 0 ? "pending" : "not_required";
         const inserted = await connection.query(`INSERT INTO depannhome_subscription_credit_notes(source_invoice_id,account_owner_id,credit_number,source_invoice_number,source_invoice_date,issue_date,credit_kind,reason,amount_cents,tax_base_cents,vat_amount_cents,vat_rate,recipient_name,recipient_email,recipient_address,issuer_profile,lines,financial_data,pdf_data,pdf_sha256,created_by,refund_status) VALUES($1,$2,$3,$4,$5::date,$6::date,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16::jsonb,$17::jsonb,'{}'::jsonb,$18,$19,$20,$21) RETURNING id`, [source.id,ownerBefore.id,sequence.number,source.invoiceNumber,source.issueDate,period.effectiveDate,creditKind,reason,amountCents,totals.taxBaseCents,totals.vatAmountCents,source.vatRate,source.recipientName,source.recipientEmail,source.recipientAddress,JSON.stringify(source.issuerProfile),JSON.stringify(lines),pdf,createHash("sha256").update(pdf).digest("hex"),actorId,refundStatus]);
         const creditNoteId = inserted.rows[0].id;
         await connection.query(`INSERT INTO depannhome_subscription_credit_note_audit(credit_note_id,account_owner_id,actor_id,action,details) VALUES($1,$2,$3,'subscription_proration_credit_created',$4::jsonb)`, [creditNoteId,ownerBefore.id,actorId,JSON.stringify(details.calculation)]);
@@ -949,6 +951,12 @@ export function subscriptionInvoiceBalances(netAmountCents, creditedAmountCents 
     return { outstandingAmountCents: Math.max(net - credits - paid, 0), refundDueCents: Math.max(paid + credits - net, 0) };
 }
 
+export function subscriptionCreditRefundDue(netAmountCents, priorCreditedAmountCents, paidAmountCents, newCreditAmountCents) {
+    const before = subscriptionInvoiceBalances(netAmountCents, priorCreditedAmountCents, paidAmountCents).refundDueCents;
+    const after = subscriptionInvoiceBalances(netAmountCents, Number(priorCreditedAmountCents || 0) + Number(newCreditAmountCents || 0), paidAmountCents).refundDueCents;
+    return Math.max(0, after - before);
+}
+
 function subscriptionInvoiceSummary(invoices) {
     return invoices.reduce((summary, invoice) => {
         if (invoice.status === "cancelled") return summary;
@@ -956,7 +964,7 @@ function subscriptionInvoiceSummary(invoices) {
         summary.creditedCents += Number(invoice.creditedAmountCents) || 0;
         summary.collectedCents += Number(invoice.paidAmountCents) || 0;
         summary.outstandingCents += Number(invoice.outstandingAmountCents) || 0;
-        summary.refundsPendingCents += (invoice.credits || []).filter(credit => credit.refundStatus === "pending").reduce((sum, credit) => sum + Number(credit.amountCents || 0), 0);
+        summary.refundsPendingCents += (invoice.credits || []).reduce((sum, credit) => sum + Number(credit.refundDueCents || 0), 0);
         summary.netBilledCents = summary.grossInvoicedCents - summary.creditedCents;
         return summary;
     }, { grossInvoicedCents: 0, creditedCents: 0, netBilledCents: 0, collectedCents: 0, outstandingCents: 0, refundsPendingCents: 0 });

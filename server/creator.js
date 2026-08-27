@@ -105,6 +105,33 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
         const { rows } = await getPool().query(`SELECT id,platform_code AS "platformCode",platform_label AS "platformLabel",documentation_url AS "documentationUrl",authentication_type AS "authenticationType",lifecycle_status AS "lifecycleStatus",planned_capabilities AS "plannedCapabilities",notes,created_at AS "createdAt",updated_at AS "updatedAt" FROM depannhome_einvoice_platform_catalog ORDER BY CASE lifecycle_status WHEN 'deployed' THEN 0 WHEN 'validation' THEN 1 WHEN 'development' THEN 2 WHEN 'specification_review' THEN 3 WHEN 'documentation_required' THEN 4 ELSE 5 END,LOWER(platform_label)`);
         response.json({ platforms: rows.map(publicCreatorEInvoicingPlatform) });
     }));
+    app.get("/api/creator/e-invoicing-monitoring", requireCreator, asyncHandler(async (request, response) => {
+        const database = getPool();
+        const [connections, transmissions, subscriptions, profile] = await Promise.all([
+            database.query(`SELECT owner_id AS "ownerId",environment,status,active,platform_code AS "platformCode",platform_label AS "platformLabel",last_checked_at AS "lastCheckedAt" FROM depannhome_einvoice_connections ORDER BY active DESC,updated_at DESC`),
+            database.query(`SELECT status,COUNT(*)::integer AS count FROM depannhome_einvoice_transmissions GROUP BY status ORDER BY status`),
+            database.query(`SELECT COUNT(*) FILTER (WHERE status='sent')::integer AS sent,COUNT(*) FILTER (WHERE status IN ('pending','sending'))::integer AS pending,COUNT(*) FILTER (WHERE status='failed')::integer AS failed,COUNT(*) FILTER (WHERE payment_status='unpaid' AND status='sent')::integer AS unpaid FROM depannhome_subscription_invoices WHERE status<>'cancelled'`),
+            database.query(`SELECT company_name,address,postal_code,city,email,registration_number,tax_number,vat_regime FROM depannhome_subscription_billing_profile WHERE id=TRUE`)
+        ]);
+        const senderConnection = connections.rows.find(connection => Number(connection.ownerId) === Number(request.user.sub) && connection.active && connection.environment === "production" && connection.status === "connected") || null;
+        const billingProfile = profile.rows[0] || {};
+        const requiredProfileFields = ["company_name", "address", "postal_code", "city", "email", "registration_number"];
+        const missingProfileFields = requiredProfileFields.filter(field => !String(billingProfile[field] || "").trim());
+        response.json({
+            compliance: {
+                operational: false,
+                subscriptionChannel: "email_pdf",
+                profileComplete: missingProfileFields.length === 0,
+                missingProfileFields,
+                productionSenderConnected: Boolean(senderConnection),
+                message: "Les factures d’abonnement sont archivées et suivies, mais elles ne sont pas encore transmises par une plateforme agréée. L’envoi PDF par e-mail ne vaut pas facturation électronique structurée."
+            },
+            subscriptions: subscriptions.rows[0] || { sent: 0, pending: 0, failed: 0, unpaid: 0 },
+            connections: connections.rows,
+            transmissionStatuses: transmissions.rows,
+            senderConnection
+        });
+    }));
     app.post("/api/creator/e-invoicing-platforms", requireCreator, asyncHandler(async (request, response) => {
         const platform = sanitizeCreatorEInvoicingPlatform(request.body);
         if (!platform.ok) return response.status(400).json({ message: platform.message });

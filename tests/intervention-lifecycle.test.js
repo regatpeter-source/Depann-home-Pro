@@ -43,7 +43,7 @@ test("le quitus devient inaccessible après la date de l’intervention", () => 
     assert.match(calendarServer, /event\.event_date >= \(CURRENT_TIMESTAMP AT TIME ZONE 'Europe\/Paris'\)::date/);
     assert.match(clientsServer, /isCompletedInterventionQuitus/);
     assert.match(calendarClient, /event\.eventType === "appointment" && event\.isCompleted/);
-    assert.match(calendarClient, /son quitus n’est plus accessible/);
+    assert.match(calendarClient, /function renderQuitusHtml\(event\) \{\s*if \(event\.isCompleted\) return ""/);
     assert.match(clientsClient, /Quitus archivé et inaccessible/);
     assert.match(clientsClient, /!completedAppointmentIds\.has\(quitusAppointmentId\)/);
 });
@@ -69,5 +69,5 @@ test("une nouvelle version PWA active immédiatement les correctifs du planning"
     assert.match(application, /\.then\(registration => registration\.update\(\)\)/);
     assert.match(worker, /self\.skipWaiting\(\)/);
     assert.match(worker, /self\.clients\.claim\(\)/);
-    assert.match(worker, /\.\/js\/calendar\.js\?v=175/);
+    assert.match(worker, /\.\/js\/calendar\.js\?v=176/);
 });
