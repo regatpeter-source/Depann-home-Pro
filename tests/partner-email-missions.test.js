@@ -582,6 +582,7 @@ test("les pièces e-mail disposent de rubriques dédiées dans la mission et la 
     assert.match(missionSource, /source_type='email_attachment'/);
     assert.match(missionSource, /Mission partenaire · E-mail/);
     assert.match(missionSource, /source: "partner_email"/);
+    assert.match(missionSource, /fromEmail \? "Mission partenaire · E-mail" : "Document partenaire"/);
     assert.match(missionSource, /attachmentSignature/);
     assert.match(missionClientSource, /Pièces jointes reçues par e-mail/);
     assert.match(missionClientSource, /attachment\.url/);
