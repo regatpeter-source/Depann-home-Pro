@@ -9,7 +9,7 @@ import { getOrganization, isFeatureEnabled } from "./organizations.js";
 import { decryptElectronicInvoicingCredentials, encryptElectronicInvoicingCredentials } from "./electronic-invoicing.js";
 import { ingestEmailPartnerMission } from "./partner-missions.js";
 import { recordMissionDialogueDocument, recordMissionDialogueEvent } from "./partner-dialogue.js";
-import { extractPartnerDocumentText } from "./partner-email-document-extractor.js";
+import { extractPartnerDocumentText, normalizePartnerDocumentMime } from "./partner-email-document-extractor.js";
 import { hasCompanyEmailWorkspaceAccess } from "./workstation-permissions.js";
 
 const PROVIDERS = new Set(["google", "microsoft", "imap"]);
@@ -161,7 +161,8 @@ export function registerPartnerEmailRoutes(app, requireAuthentication) {
         const ownerId = getAccountOwnerId(req);
         const connection = await requiredConnection(ownerId, positiveId(req.params.connectionId));
         const result = await importLiveMailboxMessage(connection, decodeMailboxReference(req.params.messageRef), req.body?.attachmentIds, req.user.sub);
-        res.status(result.created ? 201 : 200).json({ ...result, message: result.created ? "Mission partenaire et fiche client créées depuis cet e-mail." : "Cet e-mail est déjà rattaché à une mission partenaire." });
+        const message = result.created ? "Mission partenaire et fiche client créées depuis cet e-mail." : result.reanalyzed ? "Mission partenaire et fiche client actualisées après relecture des pièces jointes." : "Cet e-mail est déjà rattaché à une mission partenaire.";
+        res.status(result.created ? 201 : 200).json({ ...result, message });
     }));
     app.post("/api/partner-email/:connectionId/sync", asyncHandler(async (req, res) => res.json(await syncConnection(getAccountOwnerId(req), positiveId(req.params.connectionId), req.user.sub, parseMailboxSyncPeriod(req.body)))));
     app.patch("/api/partner-email/:connectionId/settings", requireEmailConfigurationAccess, asyncHandler(async (req, res) => {
@@ -440,7 +441,7 @@ function mailboxAddress(value) { return { name: clean(value?.name, 160), address
 function graphAddress(value) { return mailboxAddress(value); }
 export function mailboxReplyBody(value) { return String(value || "").replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "").trim().slice(0, 10000); }
 export function replySubject(value) { const subject = clean(value || "Sans objet", 500); return /^\s*re\s*:/i.test(subject) ? subject : `Re: ${subject}`; }
-function liveAttachmentMetadata(value, reference) { const metadata = { filename: safeFilename(value.name || value.filename), contentType: String(value.contentType || "application/octet-stream").toLowerCase(), size: Math.max(0, Number(value.size) || 0) }; return { ...metadata, id: encodeMailboxReference(reference), downloadable: ALLOWED_MIME.has(metadata.contentType) && metadata.size > 0 && metadata.size <= MAX_ATTACHMENT_BYTES }; }
+function liveAttachmentMetadata(value, reference) { const filename = safeFilename(value.name || value.filename); const metadata = { filename, contentType: normalizePartnerDocumentMime({ filename, contentType: value.contentType }), size: Math.max(0, Number(value.size) || 0) }; return { ...metadata, id: encodeMailboxReference(reference), downloadable: ALLOWED_MIME.has(metadata.contentType) && metadata.size > 0 && metadata.size <= MAX_ATTACHMENT_BYTES }; }
 function validatedLiveAttachment(value) { const metadata = liveAttachmentMetadata(value, value.id || value.part); if (!ALLOWED_MIME.has(metadata.contentType)) throw httpError(415, "Le format de cette pièce jointe n’est pas autorisé."); if (!metadata.size || metadata.size > MAX_ATTACHMENT_BYTES) throw httpError(413, "Cette pièce jointe dépasse la limite de 5 Mo."); return metadata; }
 function limitMailboxBody(value) { const text = String(value || "").replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, ""); return { text: text.slice(0, LIVE_MAILBOX_BODY_BYTES), truncated: text.length > LIVE_MAILBOX_BODY_BYTES }; }
 function htmlToText(value) { return String(value || "").replace(/<\s*(?:script|style)[^>]*>[\s\S]*?<\s*\/\s*(?:script|style)\s*>/gi, " ").replace(/<\s*br\s*\/?>/gi, "\n").replace(/<\s*\/\s*(?:p|div|li|tr|h[1-6])\s*>/gi, "\n").replace(/<[^>]+>/g, " ").replace(/&nbsp;/gi, " ").replace(/&amp;/gi, "&").replace(/&lt;/gi, "<").replace(/&gt;/gi, ">").replace(/&quot;/gi, '"').replace(/&#39;|&apos;/gi, "'").replace(/&#x([0-9a-f]+);/gi, (match, value) => htmlCodePoint(value, 16, match)).replace(/&#(\d+);/g, (match, value) => htmlCodePoint(value, 10, match)).replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim(); }
@@ -456,7 +457,7 @@ function setLiveMailboxHeaders(response) { return response.set({ "Cache-Control"
 async function saveParsedEmail(connection, uid, parsed, { forceCandidate = false, messageId: forcedMessageId = "" } = {}) {
     const from = parsed.from?.value?.[0] || {}; const messageId = clean(parsed.messageId || `uid-${uid}@${connection.email_address}`, 500);
     let totalAttachmentBytes = 0;
-    const attachments = (parsed.attachments || []).filter(item => { const allowed = ALLOWED_MIME.has(item.contentType) && item.size > 0 && item.size <= MAX_ATTACHMENT_BYTES && totalAttachmentBytes + item.size <= 20 * 1024 * 1024; if (allowed) totalAttachmentBytes += item.size; return allowed; }).slice(0, MAX_ATTACHMENTS);
+    const attachments = (parsed.attachments || []).map(item => ({ ...item, contentType: normalizePartnerDocumentMime({ filename: item.filename, contentType: item.contentType }) })).filter(item => { const allowed = ALLOWED_MIME.has(item.contentType) && item.size > 0 && item.size <= MAX_ATTACHMENT_BYTES && totalAttachmentBytes + item.size <= 20 * 1024 * 1024; if (allowed) totalAttachmentBytes += item.size; return allowed; }).slice(0, MAX_ATTACHMENTS);
     const documentText = await extractPartnerDocumentText(attachments.map(item => ({ name: item.filename, mime: item.contentType, size: item.size, buffer: item.content })));
     const classification = classifyPartnerEmail({ subject: parsed.subject, text: `${parsed.text || ""}\n${documentText}`, from: from.address, attachments, allowedSenders: forceCandidate ? [] : connection.allowed_senders || [], requiredKeywords: forceCandidate ? [] : connection.required_keywords || [], reply: forceCandidate ? false : Boolean(parsed.inReplyTo) || /^\s*(?:re|rép)\s*:/i.test(parsed.subject || ""), automatic: forceCandidate ? false : Boolean(parsed.headers?.get("auto-submitted")) || /^\s*(?:re|tr)?\s*:\s*(?:réponse automatique|automatic reply|out of office)/i.test(parsed.subject || ""), listMail: forceCandidate ? false : Boolean(parsed.headers?.get("list-unsubscribe") || parsed.headers?.get("list-id")) });
     if (!forceCandidate && classification.score < CANDIDATE_THRESHOLD) return null;
@@ -478,26 +479,19 @@ async function importLiveMailboxMessage(connection, messageId, requestedAttachme
     if (requested.some(id => !available.some(item => item.id === id))) throw httpError(400, "Une pièce jointe sélectionnée est invalide ou indisponible.");
     const selected = available.filter(item => requested.includes(item.id));
     const uid = connection.provider === "microsoft" ? graphMessageUid(messageId) : mailboxUid(messageId);
-    const existing = await getPool().query("SELECT id,status,mission_id AS \"missionId\" FROM depannhome_partner_email_messages WHERE owner_id=$1 AND connection_id=$2 AND uid=$3 ORDER BY id DESC LIMIT 1", [connection.owner_id, connection.id, uid]);
-    if (existing.rows[0]) {
-        const saved = existing.rows[0];
-        if (saved.status === "processing") throw httpError(409, "Cet e-mail est déjà en cours de traitement.");
-        if (saved.status === "imported" && saved.missionId) return existingEmailMission(connection.owner_id, saved.missionId);
-        const stored = await getPool().query("SELECT id,filename,mime_type,file_size FROM depannhome_partner_email_attachments WHERE email_message_id=$1 AND owner_id=$2 ORDER BY id", [saved.id, connection.owner_id]);
-        const selectedStoredIds = [];
-        for (const item of selected) {
-            const match = stored.rows.find(row => !selectedStoredIds.includes(row.id) && row.filename === safeFilename(item.filename) && row.mime_type === item.contentType && Number(row.file_size) === Number(item.size));
-            if (match) selectedStoredIds.push(match.id);
-        }
-        if (selectedStoredIds.length !== selected.length) throw httpError(409, "Les pièces jointes de cet e-mail ont changé. Relancez la recherche avant l’import.");
-        await getPool().query("UPDATE depannhome_partner_email_attachments SET selected=(id=ANY($2::bigint[])) WHERE email_message_id=$1 AND owner_id=$3", [saved.id, selectedStoredIds, connection.owner_id]);
-        if (["ignored", "rejected"].includes(saved.status)) await getPool().query("UPDATE depannhome_partner_email_messages SET status='candidate',processed_at=NULL WHERE id=$1 AND owner_id=$2", [saved.id, connection.owner_id]);
-        return importCandidate(connection.owner_id, saved.id, actorId);
-    }
     const attachments = [];
     for (const item of selected) {
         const downloaded = await liveMailboxOperation(connection, () => downloadLiveAttachment(connection, messageId, decodeMailboxReference(item.id)));
         attachments.push({ filename: downloaded.filename, contentType: downloaded.contentType, size: downloaded.content.length, content: downloaded.content });
+    }
+    const existing = await getPool().query("SELECT id,status,mission_id AS \"missionId\" FROM depannhome_partner_email_messages WHERE owner_id=$1 AND connection_id=$2 AND uid=$3 ORDER BY id DESC LIMIT 1", [connection.owner_id, connection.id, uid]);
+    if (existing.rows[0]) {
+        const saved = existing.rows[0];
+        if (saved.status === "processing") throw httpError(409, "Cet e-mail est déjà en cours de traitement.");
+        const wasImported = saved.status === "imported" && Boolean(saved.missionId);
+        await refreshStoredLiveEmail(connection, saved.id, message, attachments);
+        const result = await importCandidate(connection.owner_id, saved.id, actorId);
+        return { ...result, reanalyzed: wasImported };
     }
     const manualMessageId = `manual-${hash(`${connection.provider}:${messageId}`)}@depannhome.local`;
     const saved = await saveParsedEmail(connection, uid, {
@@ -519,6 +513,26 @@ async function importLiveMailboxMessage(connection, messageId, requestedAttachme
     return importCandidate(connection.owner_id, saved.id, actorId);
 }
 
+async function refreshStoredLiveEmail(connection, emailId, message, attachments) {
+    const documentText = await extractPartnerDocumentText(attachments.map(item => ({ name: item.filename, mime: item.contentType, size: item.size, buffer: item.content })));
+    const database = await getPool().connect();
+    try {
+        await database.query("BEGIN");
+        const locked = await database.query("SELECT status FROM depannhome_partner_email_messages WHERE id=$1 AND owner_id=$2 FOR UPDATE", [emailId, connection.owner_id]);
+        if (!locked.rows[0]) throw httpError(404, "E-mail introuvable.");
+        if (locked.rows[0].status === "processing") throw httpError(409, "Cet e-mail est déjà en cours de traitement.");
+        await database.query("DELETE FROM depannhome_partner_email_attachments WHERE email_message_id=$1 AND owner_id=$2", [emailId, connection.owner_id]);
+        for (const attachment of attachments) await database.query("INSERT INTO depannhome_partner_email_attachments(owner_id,email_message_id,filename,mime_type,file_size,content_id,file_data) VALUES($1,$2,$3,$4,$5,'',$6)", [connection.owner_id, emailId, safeFilename(attachment.filename), attachment.contentType, attachment.size, attachment.content]);
+        await database.query("UPDATE depannhome_partner_email_messages SET sender_address=$3,sender_name=$4,recipients=$5::jsonb,subject=$6,body_text=$7,document_text=$8,received_at=$9,status='candidate',processed_at=NULL WHERE id=$1 AND owner_id=$2", [emailId, connection.owner_id, clean(message.from?.address, 254), clean(message.from?.name, 160), JSON.stringify((message.to || []).map(item => item.address).filter(Boolean)), clean(message.subject, 500), String(message.bodyText || "").slice(0, 20000), documentText.slice(0, 50000), message.receivedAt || new Date()]);
+        await database.query("COMMIT");
+    } catch (error) {
+        await database.query("ROLLBACK");
+        throw error;
+    } finally {
+        database.release();
+    }
+}
+
 async function existingEmailMission(ownerId, missionId) {
     const { rows } = await getPool().query("SELECT id AS \"missionId\",client_id AS \"clientId\" FROM depannhome_partner_missions WHERE id=$1 AND owner_id=$2 AND deleted_at IS NULL", [missionId, ownerId]);
     if (!rows[0]) throw httpError(409, "La mission liée à cet e-mail n’est plus disponible.");
@@ -537,7 +551,10 @@ async function importCandidate(ownerId, emailId, actorId) {
         for (const attachment of email.attachments || []) {
             const match = /^data:([^;]+);base64,([A-Za-z0-9+/=]+)$/.exec(String(attachment.dataUrl || ""));
             if (!match) continue;
-            await recordMissionDialogueDocument({ ownerId, missionId: result.missionId, actorName: email.sender_name || email.sender_address, body: `Document reçu par e-mail : ${attachment.name}`, attachment: { filename: attachment.name, mimeType: match[1], buffer: Buffer.from(match[2], "base64"), type: match[1].startsWith("image/") ? "photo" : "document" }, partnerVisible: false, eventType: "email_attachment_received" });
+            const content = Buffer.from(match[2], "base64");
+            const duplicate = await getPool().query("SELECT 1 FROM depannhome_partner_dialogue_attachments WHERE owner_id=$1 AND mission_id=$2 AND filename=$3 AND mime_type=$4 AND file_size=$5 AND file_data=$6 LIMIT 1", [ownerId, result.missionId, attachment.name, match[1], content.length, content]);
+            if (duplicate.rowCount) continue;
+            await recordMissionDialogueDocument({ ownerId, missionId: result.missionId, actorName: email.sender_name || email.sender_address, body: `Document reçu par e-mail : ${attachment.name}`, attachment: { filename: attachment.name, mimeType: match[1], buffer: content, type: match[1].startsWith("image/") ? "photo" : "document" }, partnerVisible: false, eventType: "email_attachment_received" });
         }
         await getPool().query("UPDATE depannhome_partner_email_messages SET status='imported',mission_id=$3,processed_at=NOW() WHERE id=$1 AND owner_id=$2 AND status='processing'", [email.id, ownerId, result.missionId]);
         return result;

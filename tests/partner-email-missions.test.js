@@ -7,7 +7,7 @@ import { PDFDocument, StandardFonts } from "pdf-lib";
 import { createCanvas } from "@napi-rs/canvas";
 import { classifyPartnerEmail, extractMissionPayload, inspectMailboxStructure, mailboxReplyBody, normalizeMissionPostalAddress, oauthErrorMessage, parseMailboxPage, parseMailboxSyncPeriod, parseMicrosoftRetryAfter, publicMailError, replySubject, sanitizeRequiredKeywords, senderMatchesAllowed, stripQuotedEmailText } from "../server/partner-email.js";
 import { mapPayload, readableEmailMissionReference } from "../server/partner-missions.js";
-import { extractPartnerDocumentText } from "../server/partner-email-document-extractor.js";
+import { extractPartnerDocumentText, normalizePartnerDocumentMime } from "../server/partner-email-document-extractor.js";
 
 const serverSource = readFileSync(new URL("../server/partner-email.js", import.meta.url), "utf8");
 const missionSource = readFileSync(new URL("../server/partner-missions.js", import.meta.url), "utf8");
@@ -326,10 +326,11 @@ test("un e-mail ouvert peut créer directement une mission avec les seules pièc
     assert.match(importRoute, /importLiveMailboxMessage/);
     assert.match(importRoute, /req\.body\?\.attachmentIds/);
     assert.match(serverSource, /requestedAttachmentIds\.map\(String\)\.slice\(0, MAX_ATTACHMENTS\)/);
-    assert.match(serverSource, /selected=\(id=ANY\(\$2::bigint\[\]\)\)/);
-    assert.match(serverSource, /selectedStoredIds\.length !== selected\.length/);
+    assert.match(serverSource, /refreshStoredLiveEmail/);
+    assert.match(serverSource, /DELETE FROM depannhome_partner_email_attachments WHERE email_message_id=\$1/);
     assert.match(serverSource, /WHERE owner_id=\$1 AND connection_id=\$2 AND uid=\$3/);
-    assert.match(serverSource, /return existingEmailMission\(connection\.owner_id, saved\.missionId\)/);
+    assert.match(serverSource, /reanalyzed: wasImported/);
+    assert.match(serverSource, /depannhome_partner_dialogue_attachments WHERE owner_id=\$1 AND mission_id=\$2[\s\S]*?file_data=\$6/);
     assert.match(appSource, /messages\/:messageRef\/import[\s\S]*?limit: 30/);
     assert.match(emailSettingsSource, /data-mailbox-mission-attachment/);
     assert.match(emailSettingsSource, /data-mailbox-import-mission/);
@@ -351,6 +352,7 @@ test("l’import manuel actualise la fiche client et les missions visibles", () 
     assert.match(emailSettingsSource, /depannhome:partner-client-provisioned/);
     assert.match(emailSettingsSource, /dispatchMailboxChanged\("mailbox-import"/);
     assert.match(emailSettingsSource, /Mission partenaire créée/);
+    assert.match(emailSettingsSource, /Mission partenaire actualisée/);
 });
 
 test("l’entreprise répond directement depuis la boîte connectée dans le fil d’origine", () => {
@@ -465,6 +467,14 @@ test("les coordonnées client sont extraites des pièces TXT, PDF, DOCX et XLSX"
     assert.match(texts[3], /Alice XLSX/);
 });
 
+test("les documents Outlook au type générique sont reconnus grâce à leur extension", async () => {
+    assert.equal(normalizePartnerDocumentMime({ filename: "ordre-mission.pdf", contentType: "application/octet-stream" }), "application/pdf");
+    assert.equal(normalizePartnerDocumentMime({ name: "CLIENT.JPEG", mime: "binary/octet-stream" }), "image/jpeg");
+    assert.equal(normalizePartnerDocumentMime({ filename: "mission.docx", contentType: "application/octet-stream; name=mission.docx" }), "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+    const text = await extractPartnerDocumentText([{ filename: "client.txt", mime: "application/octet-stream", buffer: Buffer.from("Client : Alice Outlook\nTéléphone : 0611223344") }]);
+    assert.match(text, /Alice Outlook/);
+});
+
 test("le mail garde la priorité et les documents complètent les champs manquants", () => {
     const payload = extractMissionPayload({ id: 42, subject: "Mission", body_text: "Client : Camille Mail\nTéléphone : 0600000000", sender_name: "Assureur", message_id: "mail-42" }, "Client : Alice Document\nTéléphone : 0711111111\nE-mail : alice@example.test\nAdresse : 12 rue des Lilas\nCode postal : 44000\nVille : Nantes\nSinistre : SIN-42\nAssureur : Exemple Assurance");
     assert.equal(payload.client.name, "Camille Mail");
@@ -542,6 +552,18 @@ test("un PDF scanné sans couche texte est lu localement par OCR", async () => {
     assert.match(text, /Marie Martin/i); assert.match(text.replace(/\s/g, ""), /0612345678/);
     const payload = extractMissionPayload({ id: 51, subject: "Mission partenaire", body_text: "" }, text);
     assert.equal(payload.client.name, "Marie Martin"); assert.equal(payload.client.phone, "0612345678"); assert.equal(payload.client.city, "Nantes");
+});
+
+test("une photo jointe contenant la fiche d’intervention est lue par OCR", async () => {
+    const canvas = createCanvas(1400, 600); const context = canvas.getContext("2d");
+    context.fillStyle = "white"; context.fillRect(0, 0, 1400, 600); context.fillStyle = "black"; context.font = "bold 48px Arial";
+    context.fillText("Client : Alice Martin", 50, 110); context.fillText("Adresse : 18 rue des Fleurs 44000 Nantes", 50, 220); context.fillText("Telephone : 0611223344", 50, 330);
+    const text = await extractPartnerDocumentText([{ filename: "fiche-client.png", mime: "application/octet-stream", buffer: canvas.toBuffer("image/png") }]);
+    assert.match(text, /Alice Martin/i);
+    assert.match(text.replace(/\s/g, ""), /0611223344/);
+    const payload = extractMissionPayload({ id: 52, subject: "Mission partenaire", body_text: "" }, text);
+    assert.equal(payload.client.name, "Alice Martin");
+    assert.equal(payload.client.phone, "0611223344");
 });
 
 test("les PDF reçus sont téléchargeables et liés au dossier de mission", () => {

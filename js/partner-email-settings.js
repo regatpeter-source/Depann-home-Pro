@@ -369,7 +369,7 @@ async function importMailboxMission(button, connectionId, message) {
     await synchronizeClients({ forceFull: true }).catch(() => {});
     if (result.data?.clientId) window.dispatchEvent(new CustomEvent("depannhome:partner-client-provisioned", { detail: { clientId: result.data.clientId } }));
     dispatchMailboxChanged("mailbox-import", { connectionId, missionId: result.data?.missionId, clientId: result.data?.clientId });
-    button.textContent = "Mission partenaire créée";
+    button.textContent = result.data?.reanalyzed ? "Mission partenaire actualisée" : "Mission partenaire créée";
     feedback.textContent = result.data.message;
 }
 
