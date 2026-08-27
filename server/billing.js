@@ -278,7 +278,7 @@ export function registerBillingRoutes(app, requireAuthentication) {
     app.get("/api/billing", requireAuthentication, asyncHandler(async (request, response) => {
         const database = getPool();
         const accountOwnerId = getAccountOwnerId(request);
-        const [profileResult, templatesResult, documentsResult, aidsResult, settlementsResult, purchasesResult] = await Promise.all([
+        const [profileResult, templatesResult, documentsResult, aidsResult, settlementsResult, purchasesResult, deductibleResult] = await Promise.all([
             database.query(`
                 SELECT profile.company_name AS "companyName", profile.legal_form AS "legalForm", profile.address, profile.postal_code AS "postalCode", profile.city,
                     profile.phone, profile.secondary_phone AS "secondaryPhone", profile.email, profile.country, profile.registration_number AS "registrationNumber", profile.siren, profile.tax_number AS "taxNumber", profile.vat_regime AS "vatRegime", profile.bank_iban AS "bankIban", profile.bank_bic AS "bankBic",
@@ -343,12 +343,29 @@ export function registerBillingRoutes(app, requireAuthentication) {
                 SELECT COALESCE(SUM(amount_ht),0)::float AS "purchasesHt"
                 FROM depannhome_purchases
                 WHERE owner_id = $1
-            `, [accountOwnerId])
+            `, [accountOwnerId]),
+            database.query(`
+                SELECT event.id AS "appointmentId",event.deductible_amount_cents AS "amountCents",
+                    event.deductible_payment_method AS "paymentMethod",event.deductible_reviewed_at AS "validatedAt",
+                    mission.mapped_data->>'principal' AS principal,mission.mapped_data->>'insurance' AS insurance,
+                    mission.mapped_data->>'claimNumber' AS "claimNumber",
+                    (SELECT document.id FROM depannhome_billing_documents document
+                     WHERE document.owner_id=event.owner_id AND document.document_type='invoice' AND document.issued_at IS NOT NULL
+                       AND EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(document.financial_data->'aids','[]'::jsonb)) aid
+                           WHERE aid->>'aidType'='insurance_deductible' AND aid->>'sourceAppointmentId'=event.id::text)
+                     ORDER BY document.issued_at DESC LIMIT 1) AS "deductedDocumentId"
+                FROM depannhome_calendar_events event
+                JOIN depannhome_partner_missions mission ON mission.id=event.partner_mission_id AND mission.owner_id=event.owner_id AND mission.deleted_at IS NULL
+                WHERE event.owner_id=$1 AND event.deductible_status='validated' AND event.deductible_amount_cents>0
+                    AND mission.billing_mode='principal' AND COALESCE(BTRIM(mission.mapped_data->>'principal'),'')<>''
+                    AND ($2<>'technician' OR EXISTS (SELECT 1 FROM depannhome_calendar_assignments assignment WHERE assignment.event_id=event.id AND assignment.technician_id=$3::bigint))
+                ORDER BY event.deductible_reviewed_at DESC
+            `, [accountOwnerId, request.user?.role || "", request.user?.sub || 0])
         ]);
         const financialDashboard = buildBillingFinancialDashboard(documentsResult.rows, settlementsResult.rows, purchasesResult.rows[0]?.purchasesHt);
         const settlementsByDocument = new Map(settlementsResult.rows.map(item => [String(item.documentId), item]));
         const documents = documentsResult.rows.map(document => ({ ...document, settledAmount: Number(settlementsByDocument.get(String(document.id))?.amount) || 0, latestPaymentMethod: settlementsByDocument.get(String(document.id))?.latestPaymentMethod || "", latestPaymentDate: settlementsByDocument.get(String(document.id))?.latestPaymentDate || "" }));
-        response.json({ profile: { ...emptyProfile(), ...(profileResult.rows[0] || {}) }, templates: templatesResult.rows, documents, aids: aidsResult.rows, financialDashboard });
+        response.json({ profile: { ...emptyProfile(), ...(profileResult.rows[0] || {}) }, templates: templatesResult.rows, documents, aids: aidsResult.rows, insuranceDeductibles: deductibleResult.rows, financialDashboard });
     }));
 
     app.put("/api/billing/profile", requireAuthentication, requireBillingAdministration, upload.single("logo"), asyncHandler(async (request, response) => {
@@ -694,6 +711,7 @@ export function registerBillingRoutes(app, requireAuthentication) {
             }
             const appointment = await findAccessibleAppointment(getPool(), getAccountOwnerId(request), document.appointmentId, request);
             if (document.appointmentId && !appointment) return response.status(400).json({ message: "Le rendez-vous associé est introuvable ou n’est pas accessible." });
+            document.financialData = await canonicalizeInsuranceDeductible(getPool(), getAccountOwnerId(request), document, { appointment });
             const sourceQuote = await findSourceQuote(getPool(), getAccountOwnerId(request), document.sourceQuoteId, request);
             if (document.sourceQuoteId && !sourceQuote) return response.status(400).json({ message: "Le devis de référence est introuvable." });
             if (document.documentType === "invoice" && sourceQuote && await hasInvoiceForQuote(getPool(), getAccountOwnerId(request), sourceQuote.id)) {
@@ -734,6 +752,7 @@ export function registerBillingRoutes(app, requireAuthentication) {
             if (!storedTaxIdentity) return response.status(404).json({ message: "Document introuvable." });
             const appointment = await findAccessibleAppointment(getPool(), getAccountOwnerId(request), document.appointmentId, request);
             if (document.appointmentId && !appointment) return response.status(400).json({ message: "Le rendez-vous associé est introuvable ou n’est pas accessible." });
+            document.financialData = await canonicalizeInsuranceDeductible(getPool(), getAccountOwnerId(request), document, { appointment, excludedDocumentId: id });
             const sourceQuote = await findSourceQuote(getPool(), getAccountOwnerId(request), document.sourceQuoteId, request);
             if (document.sourceQuoteId && !sourceQuote) return response.status(400).json({ message: "Le devis de référence est introuvable." });
             if (document.documentType === "invoice" && !storedTaxIdentity.correctionSourceId && sourceQuote && await hasInvoiceForQuote(getPool(), getAccountOwnerId(request), sourceQuote.id, id)) {
@@ -841,6 +860,7 @@ export async function issueDocument({ ownerId, documentId, actorId, pool = getPo
         if (String(document.status || "").toLowerCase() !== "draft") throw billingError(409, "La facture doit être enregistrée comme brouillon avant son émission définitive.");
 
         const profile = await loadBillingPdfProfile(ownerId, database);
+        document.financialData = await canonicalizeInsuranceDeductible(database, ownerId, document, { lockAppointment: true, excludedDocumentId: document.id, rejectPreviouslyIssued: true });
         validateInvoiceForIssue(document, profile);
         const seriesYear = Number(String(document.issueDate).slice(0, 4));
         const documentNumber = await allocateBillingNumber(database, ownerId, "invoice", seriesYear);
@@ -850,10 +870,10 @@ export async function issueDocument({ ownerId, documentId, actorId, pool = getPo
             UPDATE depannhome_billing_documents SET
                 document_number=$3, status='issued', issued_at=NOW(), finalized_by=$4, legal_snapshot=$5::jsonb,
                 structured_data=$6, structured_mime_type='application/xml; charset=utf-8', structured_sha256=$7,
-                pdf_data=$8, pdf_sha256=$9, updated_at=NOW()
+                pdf_data=$8, pdf_sha256=$9, financial_data=$10::jsonb, updated_at=NOW()
             WHERE id=$1 AND owner_id=$2 AND issued_at IS NULL
             RETURNING document_number AS "documentNumber", issued_at AS "issuedAt"
-        `, [documentId, ownerId, documentNumber, actorId, JSON.stringify(legalSnapshot), structuredData, structuredSha256, pdfData, pdfSha256]);
+        `, [documentId, ownerId, documentNumber, actorId, JSON.stringify(legalSnapshot), structuredData, structuredSha256, pdfData, pdfSha256, JSON.stringify(document.financialData)]);
         await database.query("COMMIT");
         return { id: documentId, documentNumber: issued.rows[0].documentNumber, issuedAt: issued.rows[0].issuedAt, alreadyIssued: false, hasStructuredData: true, hasPdfArchive: true };
     } catch (error) {
@@ -1147,7 +1167,7 @@ function sanitizeFinancialData(value) {
         const amount = nonNegativeNumber(aid?.amount);
         const calculationMode = aid?.calculationMode === "percentage" ? "percentage" : "fixed";
         return name && amount !== null
-            ? { name, amount, calculationMode, aidType: cleanText(aid?.aidType, 40) || "custom", description: cleanText(aid?.description, 1000) }
+            ? { name, amount, calculationMode, aidType: cleanText(aid?.aidType, 40) || "custom", description: cleanText(aid?.description, 1000), sourceAppointmentId: positiveId(aid?.sourceAppointmentId) || undefined, sourceValidatedAt: cleanText(aid?.sourceValidatedAt, 50) || undefined, principal: cleanText(aid?.principal, 160) || undefined }
             : null;
     }).filter(Boolean).slice(0, 30) : [];
     return {
@@ -1449,9 +1469,9 @@ export function createBillingPdf(document, profile) {
         }
         if (discountAmount || aidAmount) {
             ensureSpace(44);
-            const aidLines = (Array.isArray(financialData.aids) ? financialData.aids : []).map(aid => `${aid.name || "Aide"} : ${aid.calculationMode === "percentage" ? `${aid.amount || 0} %` : formatMoney(aid.amount)}`).join(" · ");
+            const aidLines = (Array.isArray(financialData.aids) ? financialData.aids : []).map(aid => `${aid.name || "Aide"} : −${aid.calculationMode === "percentage" ? `${aid.amount || 0} %` : formatMoney(aid.amount)}${aid.description ? ` · ${aid.description}` : ""}`).join("\n");
             const discountRate = financialData.discountMode === "percentage" ? ` (${Number(financialData.discountAmount || 0)} %)` : "";
-            text([discountAmount ? `${financialData.discountLabel || "Remise"}${discountRate} : −${formatMoney(discountAmount)} HT` : "", aidLines, aidAmount ? `Total des aides : ${formatMoney(aidAmount)}` : ""].filter(Boolean).join("\n"), margin, pdf.y, contentWidth, { size: 8, color: "#475569", lineGap: 2 });
+            text([discountAmount ? `${financialData.discountLabel || "Remise"}${discountRate} : −${formatMoney(discountAmount)} HT` : "", aidLines, aidAmount ? `Total des primes, aides et franchises déduites : −${formatMoney(aidAmount)}` : ""].filter(Boolean).join("\n"), margin, pdf.y, contentWidth, { size: 8, color: "#475569", lineGap: 2 });
             pdf.y += 38;
         }
         if (document.documentType === "quote") {
@@ -1525,6 +1545,54 @@ async function findAccessibleAppointment(database, ownerId, appointmentId, reque
           AND ($3 <> 'technician' OR EXISTS (SELECT 1 FROM depannhome_calendar_assignments assignment WHERE assignment.event_id = depannhome_calendar_events.id AND assignment.technician_id = $4::bigint))
     `, [appointmentId, ownerId, request.user?.role || "", request.user?.sub || 0]);
     return rows[0] || null;
+}
+
+async function canonicalizeInsuranceDeductible(database, ownerId, document, options = {}) {
+    const aids = Array.isArray(document?.financialData?.aids) ? document.financialData.aids : [];
+    const deductibleAids = aids.filter(aid => aid?.aidType === "insurance_deductible");
+    if (!deductibleAids.length) return document.financialData;
+    if (document.documentType !== "invoice" || !document.appointmentId || deductibleAids.length !== 1) throw billingError(409, "La franchise ne peut être déduite qu’une seule fois sur la facture liée à l’intervention.");
+    const query = `
+        SELECT event.id,event.deductible_amount_cents AS "amountCents",event.deductible_reviewed_at AS "validatedAt",
+            mission.mapped_data->>'principal' AS principal,mission.mapped_data->>'insurance' AS insurance,
+            mission.mapped_data->>'claimNumber' AS "claimNumber"
+        FROM depannhome_calendar_events event
+        JOIN depannhome_partner_missions mission ON mission.id=event.partner_mission_id AND mission.owner_id=event.owner_id AND mission.deleted_at IS NULL
+        WHERE event.id=$1 AND event.owner_id=$2 AND event.deductible_status='validated' AND event.deductible_amount_cents>0
+            AND mission.billing_mode='principal' AND COALESCE(BTRIM(mission.mapped_data->>'principal'),'')<>''
+        ${options.lockAppointment ? "FOR UPDATE OF event" : ""}
+    `;
+    const { rows } = await database.query(query, [document.appointmentId, ownerId]);
+    const deductible = rows[0];
+    if (!deductible) throw billingError(409, "La franchise doit être validée et la mission configurée en facturation au donneur d’ordre avant sa déduction.");
+    if (normalizePartyName(document.customerName) !== normalizePartyName(deductible.principal)) throw billingError(409, `Cette déduction est réservée à la facture adressée au donneur d’ordre « ${deductible.principal} ».`);
+    const requested = deductibleAids[0];
+    if (Number(requested.sourceAppointmentId) !== Number(document.appointmentId)) throw billingError(409, "La franchise sélectionnée ne correspond pas à cette intervention.");
+    if (options.rejectPreviouslyIssued) {
+        const duplicate = await database.query(`
+            SELECT document_number AS "documentNumber" FROM depannhome_billing_documents document
+            WHERE owner_id=$1 AND document_type='invoice' AND issued_at IS NOT NULL AND id<>$2
+              AND EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(document.financial_data->'aids','[]'::jsonb)) aid
+                  WHERE aid->>'aidType'='insurance_deductible' AND aid->>'sourceAppointmentId'=$3)
+            LIMIT 1
+        `, [ownerId, options.excludedDocumentId || 0, String(document.appointmentId)]);
+        if (duplicate.rows[0]) throw billingError(409, `Cette franchise est déjà déduite sur la facture ${duplicate.rows[0].documentNumber}.`);
+    }
+    const canonicalAid = {
+        name: "Franchise client encaissée",
+        amount: Number(deductible.amountCents) / 100,
+        calculationMode: "fixed",
+        aidType: "insurance_deductible",
+        description: [deductible.insurance, deductible.claimNumber ? `Sinistre ${deductible.claimNumber}` : "", `Intervention n°${deductible.id}`].filter(Boolean).join(" · "),
+        sourceAppointmentId: Number(deductible.id),
+        sourceValidatedAt: new Date(deductible.validatedAt).toISOString(),
+        principal: deductible.principal
+    };
+    return { ...document.financialData, aids: [...aids.filter(aid => aid?.aidType !== "insurance_deductible"), canonicalAid] };
+}
+
+function normalizePartyName(value) {
+    return cleanText(value, 160).normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/gi, "").toLowerCase();
 }
 
 async function findAccessibleBillingDocument(database, ownerId, documentId, request) {

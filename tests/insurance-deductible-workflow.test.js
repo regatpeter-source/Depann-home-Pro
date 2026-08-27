@@ -6,6 +6,8 @@ const schema = readFileSync(new URL("../database/schema.sql", import.meta.url), 
 const server = readFileSync(new URL("../server/calendar.js", import.meta.url), "utf8");
 const calendar = readFileSync(new URL("../js/calendar.js", import.meta.url), "utf8");
 const clients = readFileSync(new URL("../js/clients.js", import.meta.url), "utf8");
+const billingServer = readFileSync(new URL("../server/billing.js", import.meta.url), "utf8");
+const billingClient = readFileSync(new URL("../js/billing.js", import.meta.url), "utf8");
 
 test("la franchise est conservée avec collecte, contrôle PC et verrouillage", () => {
 	assert.match(schema, /deductible_status VARCHAR\(20\) NOT NULL DEFAULT 'none'/);
@@ -51,4 +53,14 @@ test("la validation écrit le montant, le paiement et la photo dans l’historiq
 	assert.match(server, /attachmentId: appointment\.attachmentId/);
 	assert.match(clients, /data-view-deductible/);
 	assert.match(clients, /Voir la photo de preuve/);
+});
+
+test("la franchise validée est proposée en soustraction sur la facture du donneur d’ordre", () => {
+	assert.match(billingServer, /mission\.billing_mode='principal'/);
+	assert.match(billingServer, /deductible_status='validated'/);
+	assert.match(billingServer, /Franchise client encaissée/);
+	assert.match(billingServer, /Cette déduction est réservée à la facture adressée au donneur d’ordre/);
+	assert.match(billingServer, /Cette franchise est déjà déduite sur la facture/);
+	assert.match(billingClient, /data-insurance-deductible/);
+	assert.match(billingClient, /Primes \/ aides \/ franchise/);
 });

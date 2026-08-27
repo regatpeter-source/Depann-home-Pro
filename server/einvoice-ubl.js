@@ -22,6 +22,7 @@ export function generateUblInvoice(document, profile = {}) {
     const vatCents = taxes.reduce((sum, tax) => sum + tax.amountCents, 0);
     const totalCents = netHtCents + vatCents;
     const aidsCents = Math.min(totalCents, Array.isArray(financial.aids) ? financial.aids.reduce((sum, aid) => sum + (aid?.calculationMode === "percentage" ? cents(netHtCents / 100 * number(aid.amount)) : cents(number(aid?.amount))), 0) : 0);
+    const deductible = Array.isArray(financial.aids) ? financial.aids.find(aid => aid?.aidType === "insurance_deductible") : null;
     const prepaidCents = Math.min(totalCents, aidsCents + cents(number(financial.depositAmount)));
     const payableCents = Math.max(0, totalCents - prepaidCents);
     const root = isCredit ? "CreditNote" : "Invoice";
@@ -47,6 +48,7 @@ export function generateUblInvoice(document, profile = {}) {
         tag("cbc:Note", [operationLabel, document.notes].filter(Boolean).join(" — ")),
         tag("cbc:DocumentCurrencyCode", "EUR"),
         legal.purchaseOrderReference ? `<cac:OrderReference>${tag("cbc:ID", legal.purchaseOrderReference)}</cac:OrderReference>` : "",
+        deductible ? `<cac:AdditionalDocumentReference>${tag("cbc:ID", `INTERVENTION-${identifier(deductible.sourceAppointmentId)}`)}${tag("cbc:DocumentDescription", [deductible.name || "Franchise client encaissée", deductible.description].filter(Boolean).join(" — "))}</cac:AdditionalDocumentReference>` : "",
         party("AccountingSupplierParty", { name: profile.companyName, identifier: supplierId, vat: supplierVat, address: [profile.address, profile.postalCode, profile.city].filter(Boolean).join("\n"), postalCode: profile.postalCode, city: profile.city }),
         party("AccountingCustomerParty", { name: document.customerName, identifier: customerId, vat: customerVat, address: billingAddress }),
         legal.serviceDate || deliveryAddress ? `<cac:Delivery>${legal.serviceDate ? tag("cbc:ActualDeliveryDate", legal.serviceDate) : ""}${deliveryAddress ? `<cac:DeliveryLocation>${addressXml(deliveryAddress)}</cac:DeliveryLocation>` : ""}</cac:Delivery>` : "",

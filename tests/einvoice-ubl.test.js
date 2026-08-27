@@ -67,6 +67,14 @@ test("UBL Invoice calcule des totaux déterministes en EUR", () => {
     assert.match(xml, /<cbc:PayableAmount currencyID="EUR">121\.60<\/cbc:PayableAmount>/);
 });
 
+test("UBL déduit et trace la franchise assurance comme montant prépayé", () => {
+    const xml = generateUblInvoice({ ...invoice, financialData: { aids: [{ name: "Franchise client encaissée", amount: 75, calculationMode: "fixed", aidType: "insurance_deductible", sourceAppointmentId: 42, description: "Assurance Exemple · Sinistre SIN-9 · Intervention n°42" }] } }, profile).toString("utf8");
+    assert.match(xml, /<cbc:PrepaidAmount currencyID="EUR">75\.00<\/cbc:PrepaidAmount>/);
+    assert.match(xml, /<cbc:PayableAmount currencyID="EUR">72\.50<\/cbc:PayableAmount>/);
+    assert.match(xml, /<cbc:ID>INTERVENTION-42<\/cbc:ID>/);
+    assert.match(xml, /Franchise client encaissée — Assurance Exemple · Sinistre SIN-9 · Intervention n°42/);
+});
+
 test("UBL CreditNote utilise les balises d’avoir et des montants positifs", () => {
     const credit = { ...invoice, documentType: "credit", documentNumber: "AVO-2026-001", dueDate: "", lines: [{ description: "Avoir sur facture", quantity: 1, unit: "forfait", unitPrice: -50, vatRate: 20 }], financialData: {} };
     const xml = generateUblInvoice(credit, profile).toString("utf8");
