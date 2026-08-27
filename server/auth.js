@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 import jwt from "jsonwebtoken";
 import * as OTPAuth from "otpauth";
 import QRCode from "qrcode";
+import { recordSecurityEvent } from "./security-hardening.js";
 import { createUser, findUserById, findUserByUsername, getPool } from "./database.js";
 import { sendDeviceVerificationCode } from "./email.js";
 import { releaseLocksForUser } from "./collaboration.js";
@@ -121,7 +122,7 @@ export function registerAuthRoutes(app) {
         if (isCreatorUsername(user.username) && await isCreatorTotpEnabled(user.id)) {
             return response.status(202).json({
                 totpRequired: true,
-                challenge: createCreatorTotpChallenge(user, device),
+                challenge: await createCreatorTotpChallenge(user, device),
                 message: "Saisissez le code affiché dans Google Authenticator."
             });
         }
@@ -140,7 +141,7 @@ export function registerAuthRoutes(app) {
     }));
 
     app.post("/api/auth/verify-creator-totp", asyncHandler(async (request, response) => {
-        const challenge = verifyCreatorTotpChallenge(request.body?.challenge);
+        const challenge = await verifyCreatorTotpChallenge(request.body?.challenge);
         const code = normalizeTotpCode(request.body?.code);
         if (!challenge || !code) return response.status(401).json({ message: "Le code de sécurité est invalide ou a expiré." });
         const user = await findUserById(challenge.sub);
@@ -149,10 +150,15 @@ export function registerAuthRoutes(app) {
         }
         const secret = await getCreatorTotpSecret(user.id);
         if (!secret || !isValidTotpCode(secret, code, user.username)) {
+            const attempts = await recordCreatorTotpFailure(challenge.id);
+            await recordSecurityEvent({ request, eventType: "creator_totp_validation", outcome: "failure", userId: user.id, details: { attempts } });
             return response.status(401).json({ message: "Le code Google Authenticator est incorrect." });
         }
         const device = getDeviceDetails({ deviceId: challenge.device?.id, deviceLabel: challenge.device?.label, deviceType: challenge.device?.type });
         if (!device) return response.status(401).json({ message: "Cet appareil ne peut pas être identifié. Recommencez la connexion." });
+        const consumed = await getPool().query("UPDATE depannhome_creator_totp_challenges SET consumed_at=NOW() WHERE id=$1 AND consumed_at IS NULL AND expires_at>NOW() RETURNING id", [challenge.id]);
+        if (!consumed.rowCount) return response.status(401).json({ message: "Cette demande a déjà été utilisée. Recommencez la connexion." });
+        await recordSecurityEvent({ request, eventType: "creator_totp_validation", outcome: "success", userId: user.id });
         return completeLogin(user, device, response, request);
     }));
 
@@ -187,6 +193,7 @@ export function registerAuthRoutes(app) {
         const secret = authenticator?.secret_ciphertext ? decryptCompanyTotpSecret(authenticator.secret_ciphertext) : "";
         if (!secret || !isValidTotpCode(secret, code, user.username)) {
             const attempts = await recordCompanyTotpFailure(challenge, user);
+            await recordSecurityEvent({ request, eventType: "company_totp_validation", outcome: "failure", ownerId: user.account_owner_id, userId: user.id, details: { purpose: challenge.purpose, attempts } });
             return response.status(401).json({ message: attempts >= COMPANY_TOTP_MAX_ATTEMPTS ? "Trop de codes incorrects. Recommencez la connexion." : "Le code de votre application d’authentification est incorrect." });
         }
         const consumed = await getPool().query("UPDATE depannhome_company_totp_challenges SET consumed_at = NOW() WHERE id = $1 AND consumed_at IS NULL RETURNING id", [challenge.id]);
@@ -200,6 +207,7 @@ export function registerAuthRoutes(app) {
             await recordMemberAudit(user.account_owner_id, user.id, user, "company_2fa_configured", { authenticator: "totp" });
         }
         await recordMemberAudit(user.account_owner_id, user.id, user, "company_2fa_login_succeeded", { purpose: challenge.purpose });
+        await recordSecurityEvent({ request, eventType: "company_totp_validation", outcome: "success", ownerId: user.account_owner_id, userId: user.id, details: { purpose: challenge.purpose } });
         const device = getDeviceDetails({ deviceId: challenge.device?.id, deviceLabel: challenge.device?.label, deviceType: challenge.device?.type });
         if (!device) return response.status(401).json({ message: "Cet appareil ne peut pas être identifié. Recommencez la connexion." });
         return completeLogin(user, device, response, request);
@@ -1106,21 +1114,31 @@ async function recordCompanyTotpFailure(challenge, user) {
     return attempts;
 }
 
-function createCreatorTotpChallenge(user, device) {
+async function createCreatorTotpChallenge(user, device) {
+    const id = crypto.randomUUID();
+    await getPool().query("DELETE FROM depannhome_creator_totp_challenges WHERE user_id=$1 AND (expires_at<=NOW() OR consumed_at IS NOT NULL)", [user.id]);
+    await getPool().query("INSERT INTO depannhome_creator_totp_challenges(id,user_id,device,expires_at) VALUES($1,$2,$3::jsonb,NOW()+($4::text||' seconds')::interval)", [id, user.id, JSON.stringify(device), String(CREATOR_TOTP_CHALLENGE_DURATION_SECONDS)]);
     return jwt.sign(
-        { purpose: "creator-totp", sub: String(user.id), device },
+        { purpose: "creator-totp", challengeId: id, sub: String(user.id), device },
         getSessionSecret(),
         { expiresIn: CREATOR_TOTP_CHALLENGE_DURATION_SECONDS }
     );
 }
 
-function verifyCreatorTotpChallenge(value) {
+async function verifyCreatorTotpChallenge(value) {
     try {
-        const challenge = jwt.verify(String(value || ""), getSessionSecret());
-        return challenge?.purpose === "creator-totp" && validDeviceId(challenge.device?.id) ? challenge : null;
+        const token = jwt.verify(String(value || ""), getSessionSecret());
+        if (token?.purpose !== "creator-totp" || !token.challengeId || !validDeviceId(token.device?.id)) return null;
+        const { rows } = await getPool().query("SELECT id,user_id AS sub,device,attempts FROM depannhome_creator_totp_challenges WHERE id=$1 AND user_id=$2 AND expires_at>NOW() AND consumed_at IS NULL AND attempts<$3", [token.challengeId, token.sub, COMPANY_TOTP_MAX_ATTEMPTS]);
+        return rows[0] || null;
     } catch {
         return null;
     }
+}
+
+async function recordCreatorTotpFailure(challengeId) {
+    const { rows } = await getPool().query("UPDATE depannhome_creator_totp_challenges SET attempts=attempts+1 WHERE id=$1 AND consumed_at IS NULL RETURNING attempts", [challengeId]);
+    return Number(rows[0]?.attempts || COMPANY_TOTP_MAX_ATTEMPTS);
 }
 
 function createTotp(secret, username) {

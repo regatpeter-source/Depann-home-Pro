@@ -16,6 +16,8 @@ import {
 	validateAuthenticationConfiguration
 } from "./server/auth.js";
 import { initializeDatabase } from "./server/database.js";
+import { runMigrations } from "./server/database-migrations.js";
+import { contentSecurityPolicy, createOriginProtection, validateSecurityConfiguration } from "./server/security-hardening.js";
 import { createHealthRequestMonitor, initializeHealthDashboard, recordHealthError, registerHealthDashboardRoutes, startHealthMonitoring } from "./server/health-dashboard.js";
 import { initializeOrganizations, requireOrganizationFeature } from "./server/organizations.js";
 import { registerCreatorRoutes } from "./server/creator.js";
@@ -54,9 +56,10 @@ const app = express();
 const port = Number(process.env.PORT || 3000);
 
 app.set("trust proxy", 1);
-app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false }));
+app.use(helmet({ contentSecurityPolicy: contentSecurityPolicy(), crossOriginEmbedderPolicy: false }));
 app.use(express.json({ limit: "25mb" }));
 app.use(cookieParser());
+app.use(createOriginProtection());
 app.use(authenticateRequest);
 app.use(createHealthRequestMonitor());
 
@@ -263,7 +266,9 @@ app.use((error, request, response, next) => {
 
 async function start() {
 	validateAuthenticationConfiguration();
+	validateSecurityConfiguration();
 	await initializeDatabase();
+	await runMigrations();
 	await initializeOrganizations();
 	await initializeGroups();
 	await initializeBilling();

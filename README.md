@@ -32,3 +32,9 @@ Le manifeste contient des entrées de la forme :
 ```
 
 Le script de surveillance le met à jour automatiquement.
+
+## Exploitation et qualité
+
+- `docs/DATABASE_OPERATIONS.md` : migrations, sauvegarde, restauration et test de reprise.
+- `docs/SECURITY_OPERATIONS.md` : secrets, TOTP, CSRF, CSP, supervision et réponse aux incidents.
+- `docs/TESTING.md` : tests unitaires, API/PostgreSQL, CI et charge autorisée.

@@ -1,5 +1,6 @@
 import { createHash, createHmac } from "node:crypto";
 import { getPool } from "./database.js";
+import { migrationStatus } from "./database-migrations.js";
 
 const CHECK_INTERVAL_MS = 5 * 60 * 1000;
 const METRIC_FLUSH_INTERVAL_MS = 60 * 1000;
@@ -174,6 +175,12 @@ export async function runHealthChecks(database = getPool()) {
     const sessionConfigured = String(process.env.SESSION_SECRET || "").length >= 32;
     const creatorConfigured = Boolean(String(process.env.CREATOR_USERNAMES || "").trim());
     add({ key: "authentication", module: "authentication", status: sessionConfigured && creatorConfigured ? "pass" : "fail", severity: "critical", message: sessionConfigured && creatorConfigured ? "Configuration d’authentification présente." : "Configuration d’authentification incomplète.", details: { sessionSecretConfigured: sessionConfigured, creatorAccessConfigured: creatorConfigured } });
+    const migrations = await migrationStatus(database);
+    const pendingMigrations = migrations.filter(item => item.status === "pending").length;
+    add({ key: "database_migrations", module: "database", status: pendingMigrations ? "fail" : "pass", severity: "critical", message: pendingMigrations ? `${pendingMigrations} migration(s) en attente.` : "Schéma versionné à jour.", details: { currentVersion: migrations.filter(item => item.status === "applied").at(-1)?.version || 0, pendingMigrations } });
+    const backup = await database.query("SELECT created_at AS \"createdAt\" FROM depannhome_backup_history WHERE status='verified' ORDER BY created_at DESC LIMIT 1");
+    const backupAgeHours = backup.rows[0] ? Math.round((Date.now() - new Date(backup.rows[0].createdAt).getTime()) / 3_600_000) : null;
+    add({ key: "database_backup", module: "database", status: backupAgeHours !== null && backupAgeHours <= 48 ? "pass" : "warning", severity: "important", message: backupAgeHours === null ? "Aucune sauvegarde vérifiée enregistrée." : backupAgeHours <= 48 ? `Dernière sauvegarde vérifiée il y a ${backupAgeHours} h.` : `Dernière sauvegarde trop ancienne (${backupAgeHours} h).`, details: { backupAgeHours } });
     const queues = await database.query(`SELECT
         (SELECT COUNT(*)::int FROM depannhome_subscription_invoices WHERE status='failed') AS subscription_failed,
         (SELECT COUNT(*)::int FROM depannhome_subscription_credit_notes WHERE delivery_status='failed') AS credit_failed,
@@ -290,6 +297,8 @@ async function autoResolveStaleIncidents(database) {
     await database.query("DELETE FROM depannhome_health_http_metrics WHERE bucket_start<NOW()-INTERVAL '30 days'");
     await database.query("DELETE FROM depannhome_health_check_results WHERE checked_at<NOW()-INTERVAL '90 days'");
     await database.query("DELETE FROM depannhome_health_scheduler_runs WHERE started_at<NOW()-INTERVAL '90 days'");
+    await database.query("DELETE FROM depannhome_security_events WHERE created_at<NOW()-INTERVAL '365 days'");
+    await database.query("DELETE FROM depannhome_creator_totp_challenges WHERE expires_at<NOW()-INTERVAL '1 day' OR consumed_at<NOW()-INTERVAL '1 day'");
 }
 
 async function registerCurrentDeployment(database) {
