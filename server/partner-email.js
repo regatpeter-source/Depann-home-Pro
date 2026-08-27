@@ -325,14 +325,13 @@ async function listLiveInbox(connection, page) {
 
 async function readLiveMessage(connection, messageId) {
     if (connection.provider === "microsoft") {
-        const access = await mailboxAccess(connection);
         const query = new URLSearchParams({ "$select": "id,subject,from,toRecipients,ccRecipients,receivedDateTime,isRead,body" });
-        const [message, attachments] = await Promise.all([
-            graphJson(access.graphToken, `https://graph.microsoft.com/v1.0/me/messages/${encodeURIComponent(messageId)}?${query}`, { headers: { Prefer: 'outlook.body-content-type="text"' } }),
-            graphMessageAttachments(access.graphToken, messageId)
-        ]);
+        const message = await withMicrosoftGraphAccess(connection, accessToken => graphJson(accessToken, `https://graph.microsoft.com/v1.0/me/messages/${encodeURIComponent(messageId)}?${query}`, { headers: { Prefer: 'outlook.body-content-type="text"' } }));
+        let attachments = [], attachmentsUnavailable = false;
+        try { attachments = await withMicrosoftGraphAccess(connection, accessToken => graphMessageAttachments(accessToken, messageId)); }
+        catch (error) { attachmentsUnavailable = true; console.warn("[partner-email] Microsoft attachment metadata unavailable", mailErrorLog(error, "microsoft")); }
         const body = limitMailboxBody(message.body?.content);
-        return { id: encodeMailboxReference(messageId), subject: clean(message.subject || "Sans objet", 500), from: graphAddress(message.from?.emailAddress), to: (message.toRecipients || []).map(item => graphAddress(item.emailAddress)).filter(item => item.address), cc: (message.ccRecipients || []).map(item => graphAddress(item.emailAddress)).filter(item => item.address), receivedAt: message.receivedDateTime || null, isRead: Boolean(message.isRead), bodyText: body.text, bodyTruncated: body.truncated, attachments: attachments.map(attachment => liveAttachmentMetadata(attachment, attachment.id)) };
+        return { id: encodeMailboxReference(messageId), subject: clean(message.subject || "Sans objet", 500), from: graphAddress(message.from?.emailAddress), to: (message.toRecipients || []).map(item => graphAddress(item.emailAddress)).filter(item => item.address), cc: (message.ccRecipients || []).map(item => graphAddress(item.emailAddress)).filter(item => item.address), receivedAt: message.receivedDateTime || null, isRead: Boolean(message.isRead), bodyText: body.text, bodyTruncated: body.truncated, attachmentsUnavailable, attachments: attachments.map(attachment => liveAttachmentMetadata(attachment, attachment.id)) };
     }
     const uid = mailboxUid(messageId);
     return withImapInbox(connection, async client => {
@@ -369,11 +368,9 @@ async function sendLiveMailboxReply(connection, messageId, body) {
 
 async function downloadLiveAttachment(connection, messageId, attachmentId) {
     if (connection.provider === "microsoft") {
-        const access = await mailboxAccess(connection);
-        const metadata = await graphJson(access.graphToken, `https://graph.microsoft.com/v1.0/me/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(attachmentId)}?$select=id,name,contentType,size,isInline`);
-        const safe = validatedLiveAttachment(metadata);
-        const file = await graphJson(access.graphToken, `https://graph.microsoft.com/v1.0/me/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(attachmentId)}?$select=contentBytes`);
-        if (typeof file.contentBytes !== "string" || !/^[A-Za-z0-9+/=]+$/.test(file.contentBytes)) throw httpError(422, "Microsoft n’a pas fourni le contenu de cette pièce jointe.");
+        const file = await withMicrosoftGraphAccess(connection, accessToken => graphJson(accessToken, `https://graph.microsoft.com/v1.0/me/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(attachmentId)}?$select=id,name,contentType,size,isInline,contentBytes`));
+        const safe = validatedLiveAttachment(file);
+        if (typeof file.contentBytes !== "string" || !/^[A-Za-z0-9+/=]+$/.test(file.contentBytes)) throw httpError(422, "Cette pièce jointe Microsoft n’est pas un fichier téléchargeable ou son contenu est indisponible.");
         const content = Buffer.from(file.contentBytes, "base64");
         if (content.length > MAX_ATTACHMENT_BYTES) throw httpError(413, "Cette pièce jointe dépasse la limite de 5 Mo.");
         if (!content.length) throw httpError(404, "Pièce jointe vide ou introuvable.");
@@ -444,7 +441,7 @@ function encodeMailboxReference(value) { return Buffer.from(String(value || ""),
 function decodeMailboxReference(value) { const token = String(value || ""); if (!token || token.length > 2000 || !/^[A-Za-z0-9_-]+$/.test(token)) throw httpError(400, "Référence d’e-mail invalide."); const decoded = Buffer.from(token, "base64url").toString("utf8"); if (!decoded || decoded.length > 1000) throw httpError(400, "Référence d’e-mail invalide."); return decoded; }
 function mailboxUid(value) { const uid = positiveId(value); if (!uid) throw httpError(400, "Référence d’e-mail invalide."); return uid; }
 async function requiredConnection(ownerId, connectionId) { const connection = await findConnection(ownerId, connectionId); if (!connection) throw httpError(404, "Boîte professionnelle introuvable."); return connection; }
-async function liveMailboxOperation(connection, operation, { sending = false } = {}) { try { return await operation(); } catch (error) { if (error?.status) throw error; console.warn("[partner-email] live mailbox rejected", mailErrorLog(error, connection.provider)); const status = error?.statusCode === 429 ? 429 : error?.statusCode === 503 ? 503 : 502; throw httpError(status, publicMailError(error, { provider: connection.provider, sending }), { retryAfterSeconds: error?.retryAfterSeconds }); } }
+async function liveMailboxOperation(connection, operation, { sending = false } = {}) { try { return await operation(); } catch (error) { if (error?.status) throw error; console.warn("[partner-email] live mailbox rejected", mailErrorLog(error, connection.provider)); const status = error?.statusCode === 404 ? 404 : error?.statusCode === 429 ? 429 : error?.statusCode === 503 ? 503 : 502; throw httpError(status, publicMailError(error, { provider: connection.provider, sending }), { retryAfterSeconds: error?.retryAfterSeconds }); } }
 function setLiveMailboxHeaders(response) { return response.set({ "Cache-Control": "private, no-store", Pragma: "no-cache", Expires: "0" }); }
 
 async function saveParsedEmail(connection, uid, parsed) {
@@ -554,16 +551,28 @@ async function sendMissionEmail(ownerId, missionId, body, { statusUpdate, attach
     await transporter.sendMail({ from: { name: source.display_name || source.email_address, address: source.email_address }, to: source.sender_address, subject: `${/^re:/i.test(source.subject) ? "" : "Re: "}${source.subject}`, text: body, attachments, inReplyTo: source.message_id, references: [source.references_header, source.message_id].filter(Boolean).join(" "), headers: { "X-DepannHome-Mission": String(missionId), "X-DepannHome-Status-Update": statusUpdate ? "true" : "false" } });
 }
 
-async function mailboxAccess(connection) {
+async function mailboxAccess(connection, { forceRefresh = false } = {}) {
     let credentials = decryptElectronicInvoicingCredentials(connection.encrypted_credentials);
-    if (["google", "microsoft"].includes(connection.provider) && (!credentials.accessToken || new Date(credentials.expiresAt || 0).getTime() < Date.now() + 60000)) {
+    if (["google", "microsoft"].includes(connection.provider) && (forceRefresh || !credentials.accessToken || new Date(credentials.expiresAt || 0).getTime() < Date.now() + 60000)) {
         const tokens = await refreshOauth(connection.provider, credentials.refreshToken); credentials = { ...credentials, accessToken: tokens.access_token, refreshToken: tokens.refresh_token || credentials.refreshToken, expiresAt: new Date(Date.now() + Number(tokens.expires_in || 3600) * 1000).toISOString() };
-        await getPool().query("UPDATE depannhome_partner_email_connections SET encrypted_credentials=$2,updated_at=NOW() WHERE id=$1", [connection.id, encryptElectronicInvoicingCredentials(credentials)]);
+        const encryptedCredentials = encryptElectronicInvoicingCredentials(credentials);
+        await getPool().query("UPDATE depannhome_partner_email_connections SET encrypted_credentials=$2,updated_at=NOW() WHERE id=$1", [connection.id, encryptedCredentials]);
+        connection.encrypted_credentials = encryptedCredentials;
     }
     const server = connection.server_configuration || {};
     if (connection.provider === "google") return { imap: { host: "imap.gmail.com", port: 993, secure: true }, smtp: { host: "smtp.gmail.com", port: 465, secure: true }, auth: { user: connection.email_address, accessToken: credentials.accessToken }, smtpAuth: { type: "OAuth2", user: connection.email_address, accessToken: credentials.accessToken } };
     if (connection.provider === "microsoft") return { graphToken: credentials.accessToken };
     return { imap: server.imap, smtp: server.smtp, auth: { user: credentials.username, pass: credentials.password }, smtpAuth: { user: credentials.username, pass: credentials.password } };
+}
+
+async function withMicrosoftGraphAccess(connection, operation) {
+    let access = await mailboxAccess(connection);
+    try { return await operation(access.graphToken); }
+    catch (error) {
+        if (!error?.authenticationFailed) throw error;
+        access = await mailboxAccess(connection, { forceRefresh: true });
+        return operation(access.graphToken);
+    }
 }
 
 async function testMailbox(connection) { const access = await mailboxAccess({ ...connection, id: 0, encrypted_credentials: encryptElectronicInvoicingCredentials(connection.credentials), server_configuration: connection.server }); const client = createImapClient({ host: access.imap.host, port: access.imap.port, secure: access.imap.secure, auth: access.auth }); await client.connect(); await client.logout(); const smtp = nodemailer.createTransport({ host: access.smtp.host, port: access.smtp.port, secure: access.smtp.secure, requireTLS: !access.smtp.secure, auth: access.smtpAuth, connectionTimeout: 15000, greetingTimeout: 15000, socketTimeout: 20000 }); await smtp.verify(); }
@@ -710,8 +719,10 @@ export function publicMailError(error, { configuration = false, provider = "", s
     if (error?.oauthCode || error?.oauthProvider) return oauthErrorMessage(error, provider || error.oauthProvider);
     const message = String(error?.message || "");
     const authenticationFailed = Boolean(error?.authenticationFailed) || /auth|credential|login|password|invalid credentials|authentication failed|authenticate failed/i.test(message);
+    if (provider === "microsoft" && error?.statusCode === 404) return sending ? "L’e-mail d’origine n’est plus disponible dans la boîte Microsoft." : "Cet e-mail ou cette pièce jointe n’est plus disponible dans la boîte Microsoft. Actualisez la boîte de réception.";
     if (provider === "microsoft" && (error?.throttled || error?.statusCode === 429 || error?.code === "ApplicationThrottled")) return `Microsoft limite temporairement l’accès à cette boîte. ${error?.retryAfterSeconds ? `Réessayez dans environ ${error.retryAfterSeconds} seconde(s)` : "Patientez quelques instants"}${sending ? "." : ", puis relancez une période plus courte."}`;
     if (provider === "microsoft" && authenticationFailed) return "Microsoft refuse l’accès à cette boîte. Déconnectez-la puis utilisez de nouveau « Connecter Microsoft » afin de renouveler les autorisations Mail.Read et Mail.Send.";
+    if (provider === "microsoft" && error?.statusCode === 503) return "Microsoft Graph est temporairement indisponible. Patientez quelques instants puis réessayez.";
     if (authenticationFailed) return "La boîte a refusé l’authentification. Vérifiez son autorisation ou son mot de passe d’application.";
     if (/certificate|tls|ssl|self[- ]signed/i.test(message)) return "La connexion sécurisée au serveur de messagerie a échoué.";
     if (/timeout|timed out|etimedout|econnrefused|enotfound|getaddrinfo/i.test(message)) return "Le serveur de messagerie ne répond pas. Vérifiez les adresses, les ports et la disponibilité d’IMAP/SMTP.";

@@ -131,6 +131,10 @@ test("la synchronisation distingue un refus OAuth d’un accès Microsoft Graph 
     assert.match(publicMailError(new Error("Authentication failed"), { provider: "google" }), /refusé l’authentification/);
     assert.match(serverSource, /mailbox synchronization rejected/);
     assert.doesNotMatch(mailErrorLogSource, /accessToken|refreshToken|clientSecret/);
+    assert.match(publicMailError({ statusCode: 404 }, { provider: "microsoft" }), /n’est plus disponible/);
+    assert.match(publicMailError({ statusCode: 503 }, { provider: "microsoft" }), /temporairement indisponible/);
+    const liveFailureHandler = serverSource.slice(serverSource.indexOf("async function liveMailboxOperation"), serverSource.indexOf("function setLiveMailboxHeaders"));
+    assert.match(liveFailureHandler, /error\?\.statusCode === 404 \? 404/);
 });
 
 test("Microsoft Graph respecte Retry-After et limite les reprises en cas de quota", () => {
@@ -303,7 +307,14 @@ test("la boîte complète se consulte à la demande sans stockage ni déplacemen
     const graphAttachmentDownload = serverSource.slice(serverSource.indexOf("async function downloadLiveAttachment"), serverSource.indexOf("async function graphMessageAttachments"));
     assert.match(graphAttachmentDownload, /contentBytes/);
     assert.match(graphAttachmentDownload, /Buffer\.from\(file\.contentBytes, "base64"\)/);
+    assert.equal((graphAttachmentDownload.match(/graphJson\(/g) || []).length, 1);
+    assert.match(graphAttachmentDownload, /id,name,contentType,size,isInline,contentBytes/);
     assert.doesNotMatch(graphAttachmentDownload, /\/\$value/);
+    const graphMessageRead = serverSource.slice(serverSource.indexOf("async function readLiveMessage"), serverSource.indexOf("async function sendLiveMailboxReply"));
+    assert.match(graphMessageRead, /attachmentsUnavailable/);
+    assert.match(graphMessageRead, /Microsoft attachment metadata unavailable/);
+    assert.match(serverSource, /withMicrosoftGraphAccess[\s\S]*forceRefresh: true/);
+    assert.match(emailSettingsSource, /Microsoft n’a pas permis de charger ses pièces jointes/);
 });
 
 test("l’entreprise répond directement depuis la boîte connectée dans le fil d’origine", () => {
