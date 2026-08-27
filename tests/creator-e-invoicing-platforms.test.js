@@ -42,3 +42,8 @@ test("le Créateur consulte la même intégration par entreprise sans recevoir l
     assert.match(creatorClient, /Configurer et utiliser SUPER PDP/);
     assert.match(creatorClient, /renderAccounting\("electronic"\)/);
 });
+
+test("SUPER PDP production est directement visible dans l’en-tête Créateur", () => {
+    assert.match(creatorClient, /id="creatorSuperPdpProduction"[^>]*>SUPER PDP<\/button>/);
+    assert.match(creatorClient, /#creatorSuperPdpProduction"\)\.addEventListener\("click", \(\) => renderAccounting\("electronic"\)\)/);
+});
