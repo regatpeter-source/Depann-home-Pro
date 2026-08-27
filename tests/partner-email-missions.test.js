@@ -133,7 +133,9 @@ test("la synchronisation distingue un refus OAuth d’un accès Microsoft Graph 
     assert.doesNotMatch(mailErrorLogSource, /accessToken|refreshToken|clientSecret/);
     assert.match(publicMailError({ statusCode: 404 }, { provider: "microsoft" }), /n’est plus disponible/);
     assert.match(publicMailError({ statusCode: 503 }, { provider: "microsoft" }), /temporairement indisponible/);
+    assert.match(publicMailError({ statusCode: 400, code: "BadRequest" }, { provider: "microsoft" }), /n’a pas pu fournir cette pièce jointe/);
     const liveFailureHandler = serverSource.slice(serverSource.indexOf("async function liveMailboxOperation"), serverSource.indexOf("function setLiveMailboxHeaders"));
+    assert.match(liveFailureHandler, /error\?\.statusCode === 400 \? 422/);
     assert.match(liveFailureHandler, /error\?\.statusCode === 404 \? 404/);
 });
 
@@ -308,7 +310,8 @@ test("la boîte complète se consulte à la demande sans stockage ni déplacemen
     assert.match(graphAttachmentDownload, /contentBytes/);
     assert.match(graphAttachmentDownload, /Buffer\.from\(file\.contentBytes, "base64"\)/);
     assert.equal((graphAttachmentDownload.match(/graphJson\(/g) || []).length, 1);
-    assert.match(graphAttachmentDownload, /id,name,contentType,size,isInline,contentBytes/);
+    assert.doesNotMatch(graphAttachmentDownload, /\?\$select=/);
+    assert.match(graphAttachmentDownload, /#microsoft\.graph\.fileAttachment/);
     assert.doesNotMatch(graphAttachmentDownload, /\/\$value/);
     const graphMessageRead = serverSource.slice(serverSource.indexOf("async function readLiveMessage"), serverSource.indexOf("async function sendLiveMailboxReply"));
     assert.match(graphMessageRead, /attachmentsUnavailable/);

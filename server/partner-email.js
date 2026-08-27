@@ -368,7 +368,8 @@ async function sendLiveMailboxReply(connection, messageId, body) {
 
 async function downloadLiveAttachment(connection, messageId, attachmentId) {
     if (connection.provider === "microsoft") {
-        const file = await withMicrosoftGraphAccess(connection, accessToken => graphJson(accessToken, `https://graph.microsoft.com/v1.0/me/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(attachmentId)}?$select=id,name,contentType,size,isInline,contentBytes`));
+        const file = await withMicrosoftGraphAccess(connection, accessToken => graphJson(accessToken, `https://graph.microsoft.com/v1.0/me/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(attachmentId)}`));
+        if (file["@odata.type"] && file["@odata.type"] !== "#microsoft.graph.fileAttachment") throw httpError(422, "Cette pièce jointe Microsoft n’est pas un fichier téléchargeable.");
         const safe = validatedLiveAttachment(file);
         if (typeof file.contentBytes !== "string" || !/^[A-Za-z0-9+/=]+$/.test(file.contentBytes)) throw httpError(422, "Cette pièce jointe Microsoft n’est pas un fichier téléchargeable ou son contenu est indisponible.");
         const content = Buffer.from(file.contentBytes, "base64");
@@ -441,7 +442,7 @@ function encodeMailboxReference(value) { return Buffer.from(String(value || ""),
 function decodeMailboxReference(value) { const token = String(value || ""); if (!token || token.length > 2000 || !/^[A-Za-z0-9_-]+$/.test(token)) throw httpError(400, "Référence d’e-mail invalide."); const decoded = Buffer.from(token, "base64url").toString("utf8"); if (!decoded || decoded.length > 1000) throw httpError(400, "Référence d’e-mail invalide."); return decoded; }
 function mailboxUid(value) { const uid = positiveId(value); if (!uid) throw httpError(400, "Référence d’e-mail invalide."); return uid; }
 async function requiredConnection(ownerId, connectionId) { const connection = await findConnection(ownerId, connectionId); if (!connection) throw httpError(404, "Boîte professionnelle introuvable."); return connection; }
-async function liveMailboxOperation(connection, operation, { sending = false } = {}) { try { return await operation(); } catch (error) { if (error?.status) throw error; console.warn("[partner-email] live mailbox rejected", mailErrorLog(error, connection.provider)); const status = error?.statusCode === 404 ? 404 : error?.statusCode === 429 ? 429 : error?.statusCode === 503 ? 503 : 502; throw httpError(status, publicMailError(error, { provider: connection.provider, sending }), { retryAfterSeconds: error?.retryAfterSeconds }); } }
+async function liveMailboxOperation(connection, operation, { sending = false } = {}) { try { return await operation(); } catch (error) { if (error?.status) throw error; console.warn("[partner-email] live mailbox rejected", mailErrorLog(error, connection.provider)); const status = error?.statusCode === 400 ? 422 : error?.statusCode === 404 ? 404 : error?.statusCode === 429 ? 429 : error?.statusCode === 503 ? 503 : 502; throw httpError(status, publicMailError(error, { provider: connection.provider, sending }), { retryAfterSeconds: error?.retryAfterSeconds }); } }
 function setLiveMailboxHeaders(response) { return response.set({ "Cache-Control": "private, no-store", Pragma: "no-cache", Expires: "0" }); }
 
 async function saveParsedEmail(connection, uid, parsed) {
@@ -719,6 +720,7 @@ export function publicMailError(error, { configuration = false, provider = "", s
     if (error?.oauthCode || error?.oauthProvider) return oauthErrorMessage(error, provider || error.oauthProvider);
     const message = String(error?.message || "");
     const authenticationFailed = Boolean(error?.authenticationFailed) || /auth|credential|login|password|invalid credentials|authentication failed|authenticate failed/i.test(message);
+    if (provider === "microsoft" && error?.statusCode === 400) return "Microsoft n’a pas pu fournir cette pièce jointe. Actualisez la boîte de réception puis réessayez.";
     if (provider === "microsoft" && error?.statusCode === 404) return sending ? "L’e-mail d’origine n’est plus disponible dans la boîte Microsoft." : "Cet e-mail ou cette pièce jointe n’est plus disponible dans la boîte Microsoft. Actualisez la boîte de réception.";
     if (provider === "microsoft" && (error?.throttled || error?.statusCode === 429 || error?.code === "ApplicationThrottled")) return `Microsoft limite temporairement l’accès à cette boîte. ${error?.retryAfterSeconds ? `Réessayez dans environ ${error.retryAfterSeconds} seconde(s)` : "Patientez quelques instants"}${sending ? "." : ", puis relancez une période plus courte."}`;
     if (provider === "microsoft" && authenticationFailed) return "Microsoft refuse l’accès à cette boîte. Déconnectez-la puis utilisez de nouveau « Connecter Microsoft » afin de renouveler les autorisations Mail.Read et Mail.Send.";
