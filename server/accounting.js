@@ -19,6 +19,7 @@ import { isElectronicInvoicingOAuthCallback, transmitElectronicDocument } from "
 const AID_TYPES = new Set(["cee", "maprimerenov", "coup_de_pouce", "eco_ptz", "regional", "departmental", "supplier", "manufacturer", "custom"]);
 const AID_MODES = new Set(["fixed", "percentage"]);
 const EXPORT_SCOPES = new Set(["invoices", "quotes", "credits", "settlements", "clients", "overdue", "all"]);
+export const INVOICE_PAYMENT_METHODS = new Set(["Chèque", "Espèces", "Virement", "Carte bancaire"]);
 
 export async function initializeAccounting() {
     const database = getPool();
@@ -97,7 +98,7 @@ export async function initializeAccounting() {
         CREATE TABLE IF NOT EXISTS depannhome_accounting_journals (
             id BIGSERIAL PRIMARY KEY,
             owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
-            journal_type VARCHAR(30) NOT NULL CHECK (journal_type IN ('sales','bank','general','purchase')),
+            journal_type VARCHAR(30) NOT NULL CHECK (journal_type IN ('sales','bank','cash','general','purchase')),
             code VARCHAR(10) NOT NULL,
             label VARCHAR(100) NOT NULL,
             description VARCHAR(300) NOT NULL DEFAULT '',
@@ -110,6 +111,8 @@ export async function initializeAccounting() {
             CONSTRAINT depannhome_accounting_journals_owner_id_unique UNIQUE (owner_id, id)
         )
     `);
+    await database.query("ALTER TABLE depannhome_accounting_journals DROP CONSTRAINT IF EXISTS depannhome_accounting_journals_journal_type_check");
+    await database.query("ALTER TABLE depannhome_accounting_journals ADD CONSTRAINT depannhome_accounting_journals_journal_type_check CHECK (journal_type IN ('sales','bank','cash','general','purchase'))");
     await database.query(`
         CREATE TABLE IF NOT EXISTS depannhome_accounting_entries (
             id BIGSERIAL PRIMARY KEY,
@@ -343,32 +346,8 @@ export function registerAccountingRoutes(app, requireAuthentication) {
     }));
 
     app.post("/api/accounting/settlements", asyncHandler(async (request, response) => {
-        const settlement = sanitizeSettlement(request.body);
-        if (!settlement.ok) return response.status(400).json({ message: settlement.message });
-        const ownerId = getAccountOwnerId(request);
-        const client = await getPool().connect();
-        try {
-            await client.query("BEGIN");
-            const { rows } = await client.query(`SELECT id,owner_id AS "ownerId",document_type AS "documentType",document_number AS "documentNumber",client_id AS "clientId",customer_name AS "customerName",TO_CHAR(issue_date,'YYYY-MM-DD') AS "issueDate",status,lines,financial_data AS "financialData",appointment_id AS "appointmentId" FROM depannhome_billing_documents WHERE id=$1 AND owner_id=$2 AND document_type='invoice' AND issued_at IS NOT NULL FOR UPDATE`, [settlement.documentId, ownerId]);
-            const document = rows[0];
-            if (!document) { await client.query("ROLLBACK"); return response.status(404).json({ message: "Facture introuvable." }); }
-            const settled = await client.query("SELECT COALESCE(SUM(amount),0)::float AS total FROM depannhome_accounting_settlements WHERE owner_id=$1 AND document_id=$2", [ownerId, document.id]);
-            const remainingAmount = roundMoney(calculateDocumentTotals(document.lines, document.financialData).netPayable - Number(settled.rows[0].total));
-            if (settlement.amount > remainingAmount + 0.01) { await client.query("ROLLBACK"); return response.status(400).json({ message: "Le règlement dépasse le solde restant de la facture." }); }
-            await postAccountingDocument({ ownerId, documentId: document.id, actorId: request.user.sub, database: client });
-            const { rows: created } = await client.query(`INSERT INTO depannhome_accounting_settlements(owner_id,document_id,settlement_date,amount,method,reference,notes,created_by) VALUES($1,$2,$3::date,$4,$5,$6,$7,$8) RETURNING id,owner_id AS "ownerId",TO_CHAR(settlement_date,'YYYY-MM-DD') AS date,amount::float AS amount,reference`, [ownerId, document.id, settlement.date, settlement.amount, settlement.method, settlement.reference, settlement.notes, request.user.sub]);
-            const settings = await loadSettings(ownerId, client);
-            const posting = await postSettlementEntry(client, { ownerId, actorId: request.user.sub, settlement: created[0], document, settings });
-            const totalDue = calculateDocumentTotals(document.lines, document.financialData).netPayable;
-            const paidTotal = Number(settled.rows[0].total) + settlement.amount;
-            await client.query("UPDATE depannhome_einvoice_transmissions SET payment_status=CASE WHEN $3>=($4-0.01) THEN 'paid' ELSE 'partial' END,updated_at=NOW() WHERE owner_id=$1 AND document_id=$2", [ownerId, document.id, paidTotal, totalDue]);
-            await client.query("INSERT INTO depannhome_einvoice_events(owner_id,connection_id,transmission_id,actor_id,event_type,status,message,details) SELECT owner_id,connection_id,id,$3,'payment_reconciled',CASE WHEN $4>=($5-0.01) THEN 'paid' ELSE 'partial' END,$6,$7::jsonb FROM depannhome_einvoice_transmissions WHERE owner_id=$1 AND document_id=$2", [ownerId, document.id, request.user.sub, paidTotal, totalDue, paidTotal >= totalDue - 0.01 ? "Facture réglée dans Depann’Home Pro." : "Règlement partiel enregistré dans Depann’Home Pro.", JSON.stringify({ settlementId: created[0].id, paidTotal })]);
-            await client.query("COMMIT");
-            response.status(201).json({ id: created[0].id, posting });
-        } catch (error) {
-            await client.query("ROLLBACK");
-            throw error;
-        } finally { client.release(); }
+        const result = await recordInvoiceSettlement({ ownerId: getAccountOwnerId(request), actorId: request.user.sub, input: request.body });
+        response.status(201).json(result);
     }));
 
     app.get("/api/accounting/settings", asyncHandler(async (request, response) => response.json({ settings: publicSettings(await loadSettings(getAccountOwnerId(request))) })));
@@ -468,6 +447,36 @@ function requireAccountingAdministration(request, response, next) {
     return response.status(403).json({ message: "L’accès à l’espace Comptabilité n’est pas autorisé pour ce poste PC ou n’est pas inclus dans l’offre active." });
 }
 
+export async function recordInvoiceSettlement({ ownerId, actorId, input, databasePool = getPool() }) {
+    const settlement = sanitizeSettlement(input);
+    if (!settlement.ok) throw accountingError(400, settlement.message);
+    const client = await databasePool.connect();
+    try {
+        await client.query("BEGIN");
+        const { rows } = await client.query(`SELECT id,owner_id AS "ownerId",document_type AS "documentType",document_number AS "documentNumber",client_id AS "clientId",customer_name AS "customerName",TO_CHAR(issue_date,'YYYY-MM-DD') AS "issueDate",status,lines,financial_data AS "financialData",appointment_id AS "appointmentId" FROM depannhome_billing_documents WHERE id=$1 AND owner_id=$2 AND document_type='invoice' AND issued_at IS NOT NULL FOR UPDATE`, [settlement.documentId, ownerId]);
+        const document = rows[0];
+        if (!document) throw accountingError(404, "Facture émise introuvable.");
+        const settled = await client.query("SELECT COALESCE(SUM(amount),0)::float AS total FROM depannhome_accounting_settlements WHERE owner_id=$1 AND document_id=$2", [ownerId, document.id]);
+        const totalDue = calculateDocumentTotals(document.lines, document.financialData).netPayable;
+        const remainingAmount = roundMoney(totalDue - Number(settled.rows[0].total));
+        if (remainingAmount <= 0) throw accountingError(409, "Cette facture est déjà intégralement réglée.");
+        if (settlement.amount > remainingAmount + 0.01) throw accountingError(400, "Le règlement dépasse le solde restant de la facture.");
+        await postAccountingDocument({ ownerId, documentId: document.id, actorId, database: client });
+        const { rows: created } = await client.query(`INSERT INTO depannhome_accounting_settlements(owner_id,document_id,settlement_date,amount,method,reference,notes,created_by) VALUES($1,$2,$3::date,$4,$5,$6,$7,$8) RETURNING id,owner_id AS "ownerId",TO_CHAR(settlement_date,'YYYY-MM-DD') AS date,amount::float AS amount,method,reference`, [ownerId, document.id, settlement.date, settlement.amount, settlement.method, settlement.reference, settlement.notes, actorId]);
+        const settings = await loadSettings(ownerId, client);
+        const posting = await postSettlementEntry(client, { ownerId, actorId, settlement: created[0], document, settings });
+        const paidTotal = roundMoney(Number(settled.rows[0].total) + settlement.amount);
+        const paymentStatus = paidTotal >= totalDue - 0.01 ? "paid" : "partial";
+        await client.query("UPDATE depannhome_einvoice_transmissions SET payment_status=$3,updated_at=NOW() WHERE owner_id=$1 AND document_id=$2", [ownerId, document.id, paymentStatus]);
+        await client.query("INSERT INTO depannhome_einvoice_events(owner_id,connection_id,transmission_id,actor_id,event_type,status,message,details) SELECT owner_id,connection_id,id,$3,'payment_reconciled',$4,$5,$6::jsonb FROM depannhome_einvoice_transmissions WHERE owner_id=$1 AND document_id=$2", [ownerId, document.id, actorId, paymentStatus, paymentStatus === "paid" ? "Facture réglée dans Depann’Home Pro." : "Règlement partiel enregistré dans Depann’Home Pro.", JSON.stringify({ settlementId: created[0].id, paidTotal, method: settlement.method })]);
+        await client.query("COMMIT");
+        return { id: created[0].id, settlement: created[0], paidTotal, remainingAmount: roundMoney(Math.max(0, totalDue - paidTotal)), paymentStatus, posting };
+    } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+    } finally { client.release(); }
+}
+
 export async function postAccountingDocument({ ownerId, documentId, actorId, database = getPool() }) {
     const ownsTransaction = typeof database.release !== "function";
     const client = ownsTransaction ? await database.connect() : database;
@@ -508,8 +517,9 @@ export async function postAccountingDocument({ ownerId, documentId, actorId, dat
 
 async function postSettlementEntry(client, { ownerId, actorId, settlement, document, settings }) {
     const journals = await ensureAccountingJournals(client, ownerId, settings.journalConfig);
-    const sequence = await allocateJournalSequence(client, ownerId, "bank");
-    const entry = createSettlementAccountingEntry({ settlement, document, chartConfig: settings.chartConfig, journal: journals.bank, entryNumber: sequence.entryNumber, validDate: today() });
+    const journalType = settlement.method === "Espèces" ? "cash" : "bank";
+    const sequence = await allocateJournalSequence(client, ownerId, journalType);
+    const entry = createSettlementAccountingEntry({ settlement, document, chartConfig: settings.chartConfig, journal: journals[journalType], entryNumber: sequence.entryNumber, validDate: today() });
     const entryId = await persistAccountingEntry(client, ownerId, actorId, sequence.id, entry);
     await client.query(`INSERT INTO depannhome_accounting_allocations(owner_id,settlement_id,document_id,amount) VALUES($1,$2,$3,$4)`, [ownerId, settlement.id, document.id, settlement.amount]);
     await recordAccountingAudit(client, ownerId, actorId, "settlement_posted", "settlement", settlement.id, { entryId, entryNumber: entry.entryNumber, documentId: document.id, amount: settlement.amount });
@@ -519,7 +529,7 @@ async function postSettlementEntry(client, { ownerId, actorId, settlement, docum
 async function ensureAccountingJournals(database, ownerId, journalConfig = {}, updateConfiguration = false) {
     const normalized = normalizeAccountingConfig({}, journalConfig).journals;
     for (const [journalType, journal] of Object.entries(normalized)) {
-        if (journalType === "general" || journalType === "sales" || journalType === "bank") {
+        if (["general", "sales", "bank", "cash"].includes(journalType)) {
             await database.query(`
                 INSERT INTO depannhome_accounting_journals(owner_id,journal_type,code,label,description,is_active)
                 VALUES($1,$2,$3,$4,$5,$6)
@@ -598,7 +608,7 @@ async function recordAccountingAudit(database, ownerId, actorId, action, targetT
 
 async function loadDocuments(ownerId) {
     const { rows } = await getPool().query(`
-        SELECT document.id, document_type AS "documentType", document_number AS "documentNumber", client_id AS "clientId", customer_name AS "customerName",
+        SELECT document.id, document_type AS "documentType", document_number AS "documentNumber", client_id AS "clientId", customer_type AS "customerType", customer_name AS "customerName",
             customer_address AS "customerAddress", TO_CHAR(issue_date, 'YYYY-MM-DD') AS "issueDate", TO_CHAR(due_date, 'YYYY-MM-DD') AS "dueDate", status,
             issued_at AS "issuedAt", (structured_data IS NOT NULL) AS "hasStructuredData", lines, notes, financial_data AS "financialData", is_accounted AS "isAccounted", quote_reference AS "quoteReference",
             COALESCE((SELECT SUM(amount) FROM depannhome_accounting_settlements settlement WHERE settlement.owner_id=document.owner_id AND settlement.document_id=document.id), 0)::float AS "settledAmount"
@@ -712,8 +722,10 @@ function sanitizeSettlement(value) {
     const documentId = positiveId(value?.documentId);
     const amount = positiveMoney(value?.amount);
     const date = sanitizeDate(value?.date);
+    const method = cleanText(value?.method, 40);
     if (!documentId || amount === null || !date) return { ok: false, message: "Facture, date et montant du règlement sont obligatoires." };
-    return { ok: true, documentId, amount, date, method: cleanText(value?.method, 40) || "Virement", reference: cleanText(value?.reference, 160), notes: cleanText(value?.notes, 1000) };
+    if (!INVOICE_PAYMENT_METHODS.has(method)) return { ok: false, message: "Choisissez un mode de règlement valide : chèque, espèces, virement ou carte bancaire." };
+    return { ok: true, documentId, amount, date, method, reference: cleanText(value?.reference, 160), notes: cleanText(value?.notes, 1000) };
 }
 
 function sanitizeSettings(value) {

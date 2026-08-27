@@ -8,6 +8,7 @@ export const DEFAULT_CHART_CONFIG = Object.freeze({
     salesAccount: "706000",
     customerAccount: "411000",
     bankAccount: "512000",
+    cashAccount: "530000",
     vatCollectedAccount: "445710",
     purchaseAccount: "606000",
     supplierAccount: "401000"
@@ -16,6 +17,7 @@ export const DEFAULT_CHART_CONFIG = Object.freeze({
 export const DEFAULT_JOURNALS = Object.freeze({
     sales: { code: "VE", label: "Ventes", description: "Factures et avoirs clients", active: true },
     bank: { code: "BQ", label: "Banque", description: "Règlements clients", active: true },
+    cash: { code: "CA", label: "Caisse", description: "Règlements clients en espèces", active: true },
     general: { code: "OD", label: "Opérations diverses", description: "Écritures correctives et d’inventaire", active: false }
 });
 
@@ -85,7 +87,8 @@ export function createDocumentAccountingEntry({ document, chartConfig, journal, 
 
 export function createSettlementAccountingEntry({ settlement, document, chartConfig, journal, entryNumber, validDate }) {
     const config = normalizeAccountingConfig(chartConfig, { bank: journal }).accounts;
-    const journalConfig = normalizeJournal(journal, DEFAULT_JOURNALS.bank);
+    const cash = settlement?.method === "Espèces";
+    const journalConfig = normalizeJournal(journal, cash ? DEFAULT_JOURNALS.cash : DEFAULT_JOURNALS.bank);
     const amount = roundMoney(settlement?.amount);
     if (amount <= 0) throw new Error("Le montant du règlement doit être strictement positif.");
     const entryDate = cleanDate(settlement.date || settlement.settlementDate || settlement.settlement_date);
@@ -98,7 +101,7 @@ export function createSettlementAccountingEntry({ settlement, document, chartCon
     return finalizeEntry({
         ...entryBase({ ownerId: settlement.ownerId || settlement.owner_id || document?.ownerId || document?.owner_id, journal: journalConfig, entryNumber, entryDate, pieceRef, pieceDate: entryDate, description: `Règlement ${documentNumber}`, validDate, sourceType: "settlement", sourceId: settlement.id, clientId, appointmentId: document?.appointmentId || document?.appointment_id || null }),
         lines: [
-            accountingLine(config.bankAccount, "Banque", amount, 0, "", "", lettering, letteringDate),
+            accountingLine(cash ? config.cashAccount : config.bankAccount, cash ? "Caisse" : "Banque", amount, 0, "", "", lettering, letteringDate),
             accountingLine(config.customerAccount, "Clients", 0, amount, clientId, customerName, lettering, letteringDate)
         ],
         totals: { ht: 0, vat: 0, ttc: amount }

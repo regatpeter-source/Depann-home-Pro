@@ -30,6 +30,13 @@ test("règlement 1 200 : débit banque et crédit client", () => {
     assert.deepEqual(entry.lines.map(line => [line.accountNumber, line.debit, line.credit]), [["512000", 1200, 0], ["411000", 0, 1200]]);
 });
 
+test("règlement en espèces : débit caisse et crédit client", () => {
+    const entry = settle({ method: "Espèces" });
+    assert.equal(entry.journalCode, "CA");
+    assert.equal(entry.journalLabel, "Caisse");
+    assert.deepEqual(entry.lines.map(line => [line.accountNumber, line.debit, line.credit]), [["530000", 1200, 0], ["411000", 0, 1200]]);
+});
+
 // 3
 test("avoir 200 TTC : correction équilibrée sans supprimer la facture", () => {
     const entry = post(credit());

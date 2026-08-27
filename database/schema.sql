@@ -535,7 +535,7 @@ DROP TABLE IF EXISTS depannhome_accounting_sandbox_sessions;
 -- écritures validées en sont des instantanés numérotés, isolés par owner_id.
 CREATE TABLE IF NOT EXISTS depannhome_accounting_journals (
     id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
-    journal_type VARCHAR(30) NOT NULL CHECK(journal_type IN ('sales','bank','general','purchase')),
+    journal_type VARCHAR(30) NOT NULL CHECK(journal_type IN ('sales','bank','cash','general','purchase')),
     code VARCHAR(10) NOT NULL, label VARCHAR(100) NOT NULL, description VARCHAR(300) NOT NULL DEFAULT '',
     is_active BOOLEAN NOT NULL DEFAULT TRUE, next_sequence BIGINT NOT NULL DEFAULT 1 CHECK(next_sequence>0),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),

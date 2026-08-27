@@ -332,7 +332,9 @@ export function registerBillingRoutes(app, requireAuthentication) {
                 ORDER BY auto_apply DESC, LOWER(name)
             `, [accountOwnerId]),
             database.query(`
-                SELECT document_id AS "documentId", COALESCE(SUM(amount),0)::float AS amount
+                SELECT document_id AS "documentId", COALESCE(SUM(amount),0)::float AS amount,
+                    (ARRAY_AGG(method ORDER BY settlement_date DESC,id DESC))[1] AS "latestPaymentMethod",
+                    TO_CHAR((ARRAY_AGG(settlement_date ORDER BY settlement_date DESC,id DESC))[1], 'YYYY-MM-DD') AS "latestPaymentDate"
                 FROM depannhome_accounting_settlements
                 WHERE owner_id = $1
                 GROUP BY document_id
@@ -344,7 +346,9 @@ export function registerBillingRoutes(app, requireAuthentication) {
             `, [accountOwnerId])
         ]);
         const financialDashboard = buildBillingFinancialDashboard(documentsResult.rows, settlementsResult.rows, purchasesResult.rows[0]?.purchasesHt);
-        response.json({ profile: { ...emptyProfile(), ...(profileResult.rows[0] || {}) }, templates: templatesResult.rows, documents: documentsResult.rows, aids: aidsResult.rows, financialDashboard });
+        const settlementsByDocument = new Map(settlementsResult.rows.map(item => [String(item.documentId), item]));
+        const documents = documentsResult.rows.map(document => ({ ...document, settledAmount: Number(settlementsByDocument.get(String(document.id))?.amount) || 0, latestPaymentMethod: settlementsByDocument.get(String(document.id))?.latestPaymentMethod || "", latestPaymentDate: settlementsByDocument.get(String(document.id))?.latestPaymentDate || "" }));
+        response.json({ profile: { ...emptyProfile(), ...(profileResult.rows[0] || {}) }, templates: templatesResult.rows, documents, aids: aidsResult.rows, financialDashboard });
     }));
 
     app.put("/api/billing/profile", requireAuthentication, requireBillingAdministration, upload.single("logo"), asyncHandler(async (request, response) => {
@@ -627,11 +631,21 @@ export function registerBillingRoutes(app, requireAuthentication) {
         response.json({ message: `${type} envoyé(e) par e-mail.`, isEmailSent: billingExport.document.documentType === "invoice" });
     }));
 
-    app.post("/api/billing/documents/:documentId/issue", requireAuthentication, requireBillingAdministration, asyncHandler(async (request, response) => {
+    app.post("/api/billing/documents/:documentId/issue", requireAuthentication, requireBillingIssuanceAccess, asyncHandler(async (request, response) => {
         const documentId = positiveId(request.params.documentId);
         if (!documentId) return response.status(400).json({ message: "Document invalide." });
+        if (!await findAccessibleBillingDocument(getPool(), getAccountOwnerId(request), documentId, request)) return response.status(404).json({ message: "Facture introuvable ou intervention non attribuée à ce poste." });
         const result = await issueDocument({ ownerId: getAccountOwnerId(request), documentId, actorId: request.user.sub });
         response.status(result.alreadyIssued ? 200 : 201).json(result);
+    }));
+
+    app.post("/api/billing/documents/:documentId/settlements", requireAuthentication, requireBillingSettlementAccess, asyncHandler(async (request, response) => {
+        const documentId = positiveId(request.params.documentId);
+        if (!documentId) return response.status(400).json({ message: "Facture invalide." });
+        if (!await findAccessibleBillingDocument(getPool(), getAccountOwnerId(request), documentId, request)) return response.status(404).json({ message: "Facture introuvable ou intervention non attribuée à ce poste." });
+        const { recordInvoiceSettlement } = await import("./accounting.js");
+        const result = await recordInvoiceSettlement({ ownerId: getAccountOwnerId(request), actorId: request.user.sub, input: { ...request.body, documentId } });
+        response.status(201).json(result);
     }));
 
     app.put("/api/billing/default-quote", requireAuthentication, requireBillingAdministration, asyncHandler(async (request, response) => {
@@ -671,8 +685,8 @@ export function registerBillingRoutes(app, requireAuthentication) {
     app.post("/api/billing/documents", requireAuthentication, requireTechnicianBillingAccess, asyncHandler(async (request, response) => {
         const document = sanitizeDocument(request.body);
         if (!document.ok) return response.status(400).json({ message: document.message });
-        if (request.user?.role === "technician" && (document.documentType !== "quote" || !document.appointmentId)) {
-            return response.status(403).json({ message: "Les techniciens peuvent créer un devis uniquement depuis une intervention qui leur est attribuée." });
+        if (request.user?.role === "technician" && !document.appointmentId) {
+            return response.status(403).json({ message: "Les techniciens peuvent créer un devis ou une facture uniquement depuis une intervention qui leur est attribuée." });
         }
         try {
             if (document.clientId && !await hasClient(getPool(), getAccountOwnerId(request), document.clientId, true)) {
@@ -711,6 +725,7 @@ export function registerBillingRoutes(app, requireAuthentication) {
         const document = sanitizeDocument(request.body);
         if (!id) return response.status(400).json({ message: "Document invalide." });
         if (!document.ok) return response.status(400).json({ message: document.message });
+        if (request.user?.role === "technician" && !await findAccessibleBillingDocument(getPool(), getAccountOwnerId(request), id, request)) return response.status(404).json({ message: "Document introuvable ou intervention non attribuée à ce poste." });
         try {
             if (document.clientId && !await hasClient(getPool(), getAccountOwnerId(request), document.clientId)) {
                 return response.status(400).json({ message: "Le dossier client associé est introuvable." });
@@ -911,9 +926,25 @@ function requireBillingTemplateCreation(request, response, next) {
     return response.status(403).json({ message: "Le préenregistrement des lignes est réservé aux postes PC et aux Administrateurs Mobile." });
 }
 
-function requireBillingDocumentAdministration(request, response, next) {
+async function requireBillingDocumentAdministration(request, response, next) {
     if (["admin", "mobile_admin"].includes(request.user?.role)) return next();
+    if (request.user?.role === "technician") return requireTechnicianBillingAccess(request, response, next);
     return response.status(403).json({ message: request.user?.role === "accountant" ? "L’espace comptabilité est en consultation uniquement." : "Les techniciens peuvent créer des devis et factures, sans modifier les documents existants." });
+}
+
+async function requireBillingIssuanceAccess(request, response, next) {
+    if (["admin", "mobile_admin"].includes(request.user?.role)) return next();
+    if (request.user?.role !== "technician") return response.status(403).json({ message: "L’émission définitive d’une facture n’est pas autorisée pour ce poste." });
+    return requireTechnicianBillingAccess(request, response, next);
+}
+
+async function requireBillingSettlementAccess(request, response, next) {
+    if (["admin", "mobile_admin"].includes(request.user?.role) || request.user?.deviceType === "desktop") {
+        if (request.user?.role === "accountant") return response.status(403).json({ message: "Le poste comptable en consultation ne peut pas enregistrer un règlement ici." });
+        return next();
+    }
+    if (request.user?.role !== "technician") return response.status(403).json({ message: "L’enregistrement d’un règlement n’est pas autorisé pour ce poste." });
+    return requireTechnicianBillingAccess(request, response, next);
 }
 
 export function requireBillingWorkspaceAccess(request, response, next) {
@@ -1493,6 +1524,20 @@ async function findAccessibleAppointment(database, ownerId, appointmentId, reque
         WHERE id = $1 AND owner_id = $2 AND event_type = 'appointment'
           AND ($3 <> 'technician' OR EXISTS (SELECT 1 FROM depannhome_calendar_assignments assignment WHERE assignment.event_id = depannhome_calendar_events.id AND assignment.technician_id = $4::bigint))
     `, [appointmentId, ownerId, request.user?.role || "", request.user?.sub || 0]);
+    return rows[0] || null;
+}
+
+async function findAccessibleBillingDocument(database, ownerId, documentId, request) {
+    const { rows } = await database.query(`
+        SELECT document.id
+        FROM depannhome_billing_documents document
+        LEFT JOIN depannhome_calendar_events appointment ON appointment.id=document.appointment_id AND appointment.owner_id=document.owner_id
+        WHERE document.id=$1 AND document.owner_id=$2
+          AND ($3 <> 'technician' OR EXISTS (
+              SELECT 1 FROM depannhome_calendar_assignments assignment
+              WHERE assignment.event_id=appointment.id AND assignment.technician_id=$4::bigint
+          ))
+    `, [documentId, ownerId, request.user?.role || "", request.user?.sub || 0]);
     return rows[0] || null;
 }
 

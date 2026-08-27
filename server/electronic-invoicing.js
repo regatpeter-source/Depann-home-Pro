@@ -410,9 +410,11 @@ export function registerElectronicInvoicingRoutes(app, requireAuthentication) {
 export async function transmitElectronicDocument({ ownerId, documentId, actorId, database = getPool() }) {
     const id = positiveId(documentId);
     if (!id) throw httpError(400, "Document invalide.");
-    const { rows } = await database.query(`SELECT id,owner_id AS "ownerId",document_type AS "documentType",document_number AS "documentNumber",customer_name AS "customerName",structured_data AS "structuredData",structured_mime_type AS "structuredMimeType",structured_sha256 AS "structuredSha256" FROM depannhome_billing_documents WHERE id=$1 AND owner_id=$2 AND issued_at IS NOT NULL`, [id, ownerId]);
+    const { rows } = await database.query(`SELECT id,owner_id AS "ownerId",document_type AS "documentType",document_number AS "documentNumber",customer_type AS "customerType",customer_name AS "customerName",structured_data AS "structuredData",structured_mime_type AS "structuredMimeType",structured_sha256 AS "structuredSha256" FROM depannhome_billing_documents WHERE id=$1 AND owner_id=$2 AND issued_at IS NOT NULL`, [id, ownerId]);
     const document = rows[0];
     if (!document || !["invoice", "credit"].includes(document.documentType)) throw httpError(404, "Facture ou avoir introuvable.");
+    if (document.customerType === "Particulier") throw httpError(409, "Cette facture concerne un particulier : elle reste archivée et comptabilisée dans Depann’Home Pro, mais ne doit pas être transmise comme une facture électronique B2B. Les données B2C relèvent de l’e-reporting auprès de la plateforme choisie par l’entreprise.");
+    if (!["Professionnel", "Magasin"].includes(document.customerType)) throw httpError(409, "Précisez une catégorie professionnelle avant la transmission électronique B2B de ce document.");
     if (!document.structuredData) throw httpError(409, "L’archive UBL de cette facture ou de cet avoir est indisponible. La transmission est bloquée.");
     const { rows: connections } = await database.query("SELECT * FROM depannhome_einvoice_connections WHERE owner_id=$1 AND active=TRUE AND status='connected' ORDER BY updated_at DESC LIMIT 1", [ownerId]);
     const connection = connections[0];

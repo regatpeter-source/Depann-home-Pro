@@ -85,6 +85,17 @@ Un webhook public ne reçoit jamais de `owner_id` utilisable. Il résout la conn
 
 La production des factures/avoirs et de leurs archives UBL/PDF reste indépendante du transport. Le grand livre, les exports comptables et la préparation FEC ne dépendent d’aucune connexion de facturation électronique.
 
+## Factures B2B, particuliers et règlements sur place
+
+La catégorie du client pilote le canal, pas l’existence de la facture :
+
+- une facture destinée à un professionnel peut être transmise à la plateforme connectée dans le parcours de facturation électronique B2B ;
+- une facture destinée à un particulier est émise, numérotée, archivée en PDF/UBL et comptabilisée normalement, mais Depann’Home Pro bloque son envoi comme facture B2B ;
+- les opérations B2C relèvent de l’e-reporting. Depann’Home Pro l’indique explicitement mais ne prétend pas automatiser cet e-reporting tant que l’adaptateur de la plateforme choisie ne fournit pas ce contrat ;
+- un règlement immédiat ne dispense jamais d’émettre ou de conserver la facture.
+
+Un Administrateur PC/Mobile ou un poste PC autorisé peut enregistrer le règlement d’une facture émise. Un technicien disposant du droit « Créer des devis et factures » peut créer, émettre et encaisser une facture uniquement depuis une intervention qui lui est attribuée. Les modes normalisés sont **Chèque**, **Espèces**, **Virement** et **Carte bancaire**. Chaque règlement conserve son auteur, sa date, son montant et sa référence dans `depannhome_accounting_settlements`, génère les écritures comptables existantes et rapproche le statut de la transmission éventuelle sans modifier l’archive légale immuable.
+
 ## État des intégrations
 
 SUPER PDP est intégrée à partir de sa documentation officielle et de sa spécification OpenAPI `v1.beta`. Elle devient utilisable uniquement après configuration de l’application OAuth serveur et autorisation réussie de l’entreprise. Les autres fournisseurs restent non opérationnels tant qu’un adaptateur fondé sur leur propre API officielle n’a pas été développé et testé.

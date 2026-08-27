@@ -17,9 +17,10 @@ test("les brouillons de facture reçoivent une référence interne contrôlée p
     assert.match(client, /result\.data\?\.documentNumber/);
 });
 
-test("l’émission est administrateur, transactionnelle, idempotente et archive UBL/PDF", () => {
+test("l’émission est autorisée et contrôlée par intervention, transactionnelle, idempotente et archive UBL/PDF", () => {
     const route = billing.slice(billing.indexOf('app.post("/api/billing/documents/:documentId/issue"'), billing.indexOf('app.put("/api/billing/default-quote"'));
-    assert.match(route, /requireBillingAdministration/);
+    assert.match(route, /requireBillingIssuanceAccess/);
+    assert.match(route, /findAccessibleBillingDocument/);
     assert.match(billing, /export async function issueDocument/);
     assert.match(billing, /FOR UPDATE/);
     assert.match(billing, /if \(document\.issuedAt\)/);
@@ -31,6 +32,24 @@ test("l’émission est administrateur, transactionnelle, idempotente et archive
     assert.match(billing, /legal_snapshot=\$5::jsonb/);
     assert.match(billing, /pdf_data=\$8, pdf_sha256=\$9/);
     assert.match(billing, /structured_sha256=\$7/);
+});
+
+test("un technicien autorisé facture et encaisse uniquement son intervention attribuée", () => {
+    assert.match(billing, /Les techniciens peuvent créer un devis ou une facture uniquement depuis une intervention qui leur est attribuée/);
+    assert.match(billing, /assignment\.technician_id=\$4::bigint/);
+    assert.match(billing, /recordInvoiceSettlement/);
+    assert.match(accounting, /INVOICE_PAYMENT_METHODS = new Set\(\["Chèque", "Espèces", "Virement", "Carte bancaire"\]\)/);
+    assert.match(accounting, /payment_reconciled/);
+    assert.match(client, /data-invoice-settlement/);
+    assert.match(client, /Carte bancaire/);
+    assert.match(client, /Facture réglée/);
+});
+
+test("une facture de particulier reste locale et ne part pas comme facture électronique B2B", () => {
+    assert.match(electronicInvoicing, /document\.customerType === "Particulier"/);
+    assert.match(electronicInvoicing, /\["Professionnel", "Magasin"\]\.includes\(document\.customerType\)/);
+    assert.match(electronicInvoicing, /ne doit pas être transmise comme une facture électronique B2B/);
+    assert.match(electronicInvoicing, /e-reporting/);
 });
 
 test("les documents émis sont protégés par SQL et les PUT restent limités aux brouillons", () => {

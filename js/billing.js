@@ -8,6 +8,7 @@ import { clearSearch, createInfo, getContainer, setPage } from "./ui.js?v=44";
 import { openDocumentDeliveryChoice } from "./document-delivery.js?v=1";
 
 const CUSTOMER_TYPES = ["Particulier", "Professionnel", "Magasin", "Autre"];
+const PAYMENT_METHODS = ["Chèque", "Espèces", "Virement", "Carte bancaire"];
 const DOCUMENT_TYPES = { quote: "Devis", invoice: "Facture", credit: "Avoir" };
 const AID_TYPES = { cee: "CEE", maprimerenov: "MaPrimeRénov'", coup_de_pouce: "Prime Coup de Pouce", eco_ptz: "Éco-PTZ", regional: "Aide régionale", departmental: "Aide départementale", supplier: "Participation fournisseur", manufacturer: "Participation constructeur", custom: "Autre aide" };
 const VAT_FRANCHISE_MENTION = "TVA non applicable, art. 293 B du CGI";
@@ -102,8 +103,8 @@ export function createBillingDocumentForClient(type, client, appointmentId = "")
         alert("La création de devis et factures est désactivée par l’administrateur.");
         return;
     }
-    if (isTechnician() && (type !== "quote" || !appointmentId)) {
-        alert("Un technicien peut créer un devis uniquement depuis l’intervention qui lui est attribuée.");
+    if (isTechnician() && !appointmentId) {
+        alert("Un technicien peut créer un devis ou une facture uniquement depuis l’intervention qui lui est attribuée.");
         return;
     }
     renderBilling({ newDocument: { type, client, appointmentId } });
@@ -432,16 +433,16 @@ function renderDocumentEditor(panel) {
     const document = activeDocument;
     const isEditing = Boolean(document.id);
     const linkedInvoice = document.documentType === "quote" ? getInvoiceForQuote(document) : null;
-    if (isEditing && (isTechnician() || isAccountant() || document.documentType === "credit" || (document.documentType === "invoice" && document.issuedAt))) return renderReadOnlyDocument(panel, document);
+    if (isEditing && (isAccountant() || document.documentType === "credit" || (document.documentType === "invoice" && document.issuedAt) || (isTechnician() && document.documentType !== "invoice"))) return renderReadOnlyDocument(panel, document);
     const clients = getSearchableClients().sort((a, b) => a.name.localeCompare(b.name, "fr"));
     const livePreview = globalThis.document.body.classList.contains("desktop-device") && ["quote", "invoice"].includes(document.documentType);
     panel.classList.toggle("billing-editor-live-active", livePreview);
     panel.innerHTML = `
         <div class="${livePreview ? "billing-document-workspace" : ""}"><section class="${livePreview ? "billing-document-writing" : ""}">
         <form id="billingDocumentForm" class="client-form">
-            <div class="form-heading"><div><p class="eyebrow">${isEditing ? "Modification" : "Nouveau document"}</p><h2>${isEditing ? "Modifier le document" : `Créer un ${DOCUMENT_TYPES[document.documentType].toLowerCase()}`}</h2></div><div class="calendar-form-actions">${isEditing && document.documentType === "invoice" && !document.issuedAt && isFullAdministrator() ? '<button type="button" class="secondary-button" id="issueBillingDocument">Émettre définitivement</button>' : ""}${isEditing && document.documentType === "quote" ? linkedInvoice ? `<button type="button" class="secondary-button" data-view-linked-invoice="${escapeHtml(linkedInvoice.id)}">Voir la facture</button>` : '<button type="button" class="secondary-button" id="createInvoiceFromQuote">Créer la facture</button>' : ""}<button type="button" class="secondary-button" id="cancelBillingDocument">Annuler</button></div></div>
+            <div class="form-heading"><div><p class="eyebrow">${isEditing ? "Modification" : "Nouveau document"}</p><h2>${isEditing ? "Modifier le document" : `Créer un ${DOCUMENT_TYPES[document.documentType].toLowerCase()}`}</h2></div><div class="calendar-form-actions">${isEditing && document.documentType === "invoice" && !document.issuedAt && canIssueBillingInvoice(document) ? '<button type="button" class="secondary-button" id="issueBillingDocument">Émettre définitivement</button>' : ""}${isEditing && document.documentType === "quote" ? linkedInvoice ? `<button type="button" class="secondary-button" data-view-linked-invoice="${escapeHtml(linkedInvoice.id)}">Voir la facture</button>` : '<button type="button" class="secondary-button" id="createInvoiceFromQuote">Créer la facture</button>' : ""}<button type="button" class="secondary-button" id="cancelBillingDocument">Annuler</button></div></div>
             <div class="form-grid">
-                ${isTechnician() ? '<input name="documentType" type="hidden" value="quote"><p class="billing-quote-reference">Type : <strong>Devis</strong></p>' : `<label>Type *<select name="documentType">${Object.entries(DOCUMENT_TYPES).filter(([id]) => id !== "credit").map(([id, label]) => `<option value="${id}" ${document.documentType === id ? "selected" : ""}>${label}</option>`).join("")}</select></label>`}
+                ${isTechnician() ? `<input name="documentType" type="hidden" value="${escapeHtml(document.documentType)}"><p class="billing-quote-reference">Type : <strong>${escapeHtml(DOCUMENT_TYPES[document.documentType])}</strong></p>` : `<label>Type *<select name="documentType">${Object.entries(DOCUMENT_TYPES).filter(([id]) => id !== "credit").map(([id, label]) => `<option value="${id}" ${document.documentType === id ? "selected" : ""}>${label}</option>`).join("")}</select></label>`}
                 ${document.documentType === "invoice" ? '<label>Numéro de facture<input name="documentNumber" readonly value="" placeholder="Attribué automatiquement à l’émission"><small>Le numéro fiscal définitif sera attribué par le serveur.</small></label>' : `<label>Numéro *<input name="documentNumber" maxlength="80" required placeholder="Ex. DEV-2026-001" value="${escapeHtml(document.documentNumber)}"></label>`}
                 <input name="clientId" type="hidden" value="${escapeHtml(document.clientId || "")}">
                 <input name="appointmentId" type="hidden" value="${escapeHtml(document.appointmentId || "")}">
@@ -569,6 +570,10 @@ function bindBillingDocumentPreview(panel, form, billingDocument) {
 function renderReadOnlyDocument(panel, document) {
     const linkedInvoice = document.documentType === "quote" ? getInvoiceForQuote(document) : null;
     const canCorrect = document.documentType === "invoice" && document.issuedAt && document.status !== "cancelled" && !isAccountant() && !isTechnician();
+    const payable = document.documentType === "invoice" ? calculateNetPayable(document.lines, document.financialData) : 0;
+    const settled = Math.min(payable, Number(document.settledAmount) || 0);
+    const remaining = Math.max(0, payable - settled);
+    const paymentBlock = document.documentType === "invoice" && document.issuedAt ? `<section class="procedure-section billing-settlement-section"><h3>Règlement</h3><p><strong>${remaining <= 0.009 ? "Facture réglée" : settled > 0 ? "Facture partiellement réglée" : "Facture à encaisser"}</strong> · Réglé ${escapeHtml(formatMoney(settled))} · Solde ${escapeHtml(formatMoney(remaining))}${document.latestPaymentMethod ? ` · Dernier règlement : ${escapeHtml(document.latestPaymentMethod)} le ${escapeHtml(formatDate(document.latestPaymentDate))}` : ""}</p>${remaining > 0.009 && canRecordInvoiceSettlement(document) ? `<form class="form-grid" data-invoice-settlement><label>Montant reçu *<input name="amount" type="number" min="0.01" max="${remaining.toFixed(2)}" step="0.01" required value="${remaining.toFixed(2)}"></label><label>Mode de règlement *<select name="method" required>${PAYMENT_METHODS.map(method => `<option>${escapeHtml(method)}</option>`).join("")}</select></label><label>Date *<input name="date" type="date" required value="${today()}"></label><label>Référence<input name="reference" maxlength="160" placeholder="N° de chèque ou transaction"></label><label class="form-wide">Note<input name="notes" maxlength="1000" placeholder="Ex. Règlement reçu sur place"></label><div class="form-actions"><button class="primary-button">Enregistrer le règlement</button></div><p class="auth-message form-wide" data-settlement-message></p></form>` : ""}</section>` : "";
     panel.innerHTML = `
         <div class="billing-read-only-document">
             <div class="form-heading"><div><p class="eyebrow">Consultation uniquement</p><h2>${escapeHtml(DOCUMENT_TYPES[document.documentType])} ${escapeHtml(document.documentNumber)}</h2></div><div class="calendar-form-actions">${canCorrect ? '<button type="button" class="secondary-button" data-create-correction="replacement">Créer une facture rectificative</button><button type="button" class="secondary-button" data-create-correction="amendment">Créer un avenant</button>' : ""}${document.documentType === "quote" && (linkedInvoice || !isAccountant()) ? linkedInvoice ? `<button type="button" class="secondary-button" data-view-linked-invoice="${escapeHtml(linkedInvoice.id)}">Voir la facture</button>` : '<button type="button" class="secondary-button" id="createInvoiceFromQuote">Créer la facture</button>' : ""}<button type="button" class="secondary-button" id="closeBillingDocument">Fermer</button></div></div>
@@ -576,6 +581,7 @@ function renderReadOnlyDocument(panel, document) {
             <div class="procedure-meta"><span>${escapeHtml(document.customerName)}</span><span>${escapeHtml(formatDate(document.issueDate))}</span><span>${escapeHtml(documentStatusLabel(document.status))}</span>${document.documentType === "invoice" ? `<span>${document.quoteReference ? `Réf. devis ${escapeHtml(document.quoteReference)}` : "Sans devis associé"}</span><span>${document.isAccounted ? `Comptabilisée le ${escapeHtml(formatDate(document.accountedAt))}` : "Non comptabilisée"}</span>${document.sentAt ? `<span>Envoyée le ${escapeHtml(formatDate(document.sentAt))}</span>` : ""}${document.correctionSourceNumber ? `<span>${escapeHtml(correctionKindLabel(document.correctionKind))} de ${escapeHtml(document.correctionSourceNumber)}</span>` : ""}` : ""}</div>
             <div class="billing-read-only-lines">${document.lines.map(line => `<div><span>${escapeHtml(line.description)}</span><strong>${escapeHtml(String(line.quantity))} × ${escapeHtml(formatMoney(line.unitPrice))}</strong><b>${escapeHtml(formatMoney(lineTotal(line)))}</b></div>`).join("")}</div>
             <div class="billing-totals" id="billingReadOnlyTotals"></div>
+            ${paymentBlock}
             ${document.notes ? `<section class="procedure-section"><h3>Notes / conditions</h3><p>${escapeHtml(document.notes)}</p></section>` : ""}
         </div>`;
     renderTotals(panel.querySelector("#billingReadOnlyTotals"), document.lines, document.financialData);
@@ -583,6 +589,18 @@ function renderReadOnlyDocument(panel, document) {
     panel.querySelector("#createInvoiceFromQuote")?.addEventListener("click", () => createInvoiceFromQuote(document));
     panel.querySelector("[data-view-linked-invoice]")?.addEventListener("click", event => viewBillingDocument(event.currentTarget.dataset.viewLinkedInvoice));
     panel.querySelectorAll("[data-create-correction]").forEach(button => button.addEventListener("click", () => createInvoiceCorrection(document, button.dataset.createCorrection)));
+    panel.querySelector("[data-invoice-settlement]")?.addEventListener("submit", event => submitInvoiceSettlement(event, document));
+}
+
+async function submitInvoiceSettlement(event, document) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const button = form.querySelector("button");
+    const feedback = form.querySelector("[data-settlement-message]");
+    button.disabled = true;
+    const result = await apiRequest(`/api/billing/documents/${encodeURIComponent(document.id)}/settlements`, { method: "POST", body: JSON.stringify(Object.fromEntries(new FormData(form))) });
+    if (!result.ok) { button.disabled = false; feedback.textContent = result.message || "Règlement impossible."; feedback.classList.add("error"); return; }
+    await renderBilling({ documentId: document.id });
 }
 
 async function createInvoiceCorrection(document, kind) {
@@ -853,6 +871,7 @@ function normalizeQuoteTemplate(template) {
 function suggestNumber(type) { return `${type === "quote" ? "DEV" : "FAC"}-${new Date().getFullYear()}-${String((billingData.documents || []).filter(document => document.documentType === type).length + 1).padStart(3, "0")}`; }
 function lineTotal(line) { return (Number(line.quantity) || 0) * (Number(line.unitPrice) || 0); }
 function calculateTotals(lines) { const ht = lines.reduce((sum, line) => sum + lineTotal(line), 0); const vat = lines.reduce((sum, line) => sum + lineTotal(line) * (Number(line.vatRate) || 0) / 100, 0); return { ht, vat, ttc: ht + vat }; }
+function calculateNetPayable(lines, financialData = {}) { const totals = calculateTotals(lines || []); const discount = Math.min(totals.ht, financialData.discountMode === "percentage" ? totals.ht * Number(financialData.discountAmount || 0) / 100 : Number(financialData.discountAmount || 0)); const vat = totals.ht ? totals.vat * (totals.ht - discount) / totals.ht : 0; const ttc = totals.ht - discount + vat; const aids = (financialData.aids || []).reduce((sum, aid) => sum + (aid.calculationMode === "percentage" ? (totals.ht - discount) * Number(aid.amount || 0) / 100 : Number(aid.amount || 0)), 0); return Math.max(0, ttc - Math.min(ttc, aids)); }
 function formatMoney(value) { return new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" }).format(Number(value) || 0); }
 function formatNumber(value) { return new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 2 }).format(Number(value) || 0); }
 function documentStatusLabel(value) { return ({ draft: "Brouillon", sent: "Envoyé", validated: "Validé", paid: "Réglé", issued: "Émis", cancelled: "Annulé", accepted: "Accepté", rejected: "Refusé", pending: "En attente" })[String(value || "").toLowerCase()] || "Non renseigné"; }
@@ -875,6 +894,8 @@ function isTechnician() { return document.body.dataset.role === "technician"; }
 function isAccountant() { return document.body.dataset.role === "accountant"; }
 function isFullAdministrator() { return document.body.dataset.role === "admin"; }
 function isTechnicianBillingAllowed() { return !isTechnician() || document.body.dataset.technicianBillingEnabled !== "false"; }
+function canIssueBillingInvoice(document) { const role = globalThis.document.body.dataset.role; return ["admin", "mobile_admin"].includes(role) || (role === "technician" && isTechnicianBillingAllowed() && Boolean(document.appointmentId)); }
+function canRecordInvoiceSettlement(document) { return !isAccountant() && (!isTechnician() || (isTechnicianBillingAllowed() && Boolean(document.appointmentId))); }
 function canCreateSavedBillingLine() { const role = document.body.dataset.role; return role !== "accountant" && (document.body.dataset.deviceType === "desktop" || ["admin", "mobile_admin"].includes(role)); }
 function canAccessTechnicalReports() {
     try { return JSON.parse(document.body.dataset.organizationFeatures || "{}").technicalReports !== false; }
