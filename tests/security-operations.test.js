@@ -46,6 +46,14 @@ test("les migrations sont ordonnées, uniques et checksumées", async () => {
     assert.equal(migrations.every(item => /^[a-f0-9]{64}$/.test(item.checksum)), true);
 });
 
+test("la migration e-mail reste applicable avant la création optionnelle de sa table", async () => {
+    const migration = readFileSync(new URL("../database/migrations/0002_email_mission_document_detection.sql", import.meta.url), "utf8");
+    const runner = readFileSync(new URL("../server/database-migrations.js", import.meta.url), "utf8");
+    assert.match(migration, /to_regclass\('depannhome_partner_email_messages'\) IS NOT NULL/);
+    assert.match(runner, /LEGACY_MIGRATION_CHECKSUMS/);
+    assert.match(runner, /5f741958ac796af6863d52488751a08129a8c6992ad73efd43a6af75ff2413dc/);
+});
+
 test("le défi TOTP Créateur est limité, persisté et consommé une seule fois", () => {
     const authentication = readFileSync(new URL("../server/auth.js", import.meta.url), "utf8");
     const migration = readFileSync(new URL("../database/migrations/0001_security_operations.sql", import.meta.url), "utf8");

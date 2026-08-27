@@ -7,6 +7,9 @@ import { getPool } from "./database.js";
 const MIGRATION_PATTERN = /^(\d{4})_([a-z0-9_-]+)\.sql$/i;
 const MIGRATION_LOCK = 734_290_117;
 const defaultDirectory = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "database", "migrations");
+const LEGACY_MIGRATION_CHECKSUMS = new Map([
+    [2, new Set(["5f741958ac796af6863d52488751a08129a8c6992ad73efd43a6af75ff2413dc"])]
+]);
 
 export async function loadMigrations(directory = defaultDirectory) {
     const names = (await readdir(directory)).filter(name => MIGRATION_PATTERN.test(name)).sort();
@@ -55,7 +58,8 @@ export async function runMigrations({ database = getPool(), directory = defaultD
         for (const migration of migrations) {
             const previous = byVersion.get(migration.version);
             if (previous) {
-                if (previous.checksum !== migration.checksum || previous.name !== migration.name) throw new Error(`La migration ${migration.file} a été modifiée après application.`);
+                const checksumAccepted = previous.checksum === migration.checksum || LEGACY_MIGRATION_CHECKSUMS.get(migration.version)?.has(previous.checksum);
+                if (!checksumAccepted || previous.name !== migration.name) throw new Error(`La migration ${migration.file} a été modifiée après application.`);
                 continue;
             }
             const started = performance.now();
