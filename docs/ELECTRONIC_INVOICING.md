@@ -43,7 +43,15 @@ Les variables suivantes doivent être renseignées dans Render ou dans un `.env`
 
 Les archives UBL émises par Depann’Home Pro sont déposées telles quelles avec `POST /v1.beta/invoices` en `application/xml`. La référence `id` renvoyée est conservée dans la transmission. Le dépôt `200` ne signifie pas que la facture est acceptée : SUPER PDP la traite de façon asynchrone.
 
-L’état est relu avec `GET /v1.beta/invoices/{id}`. Les `events[]` sont cumulatifs et ne constituent pas une machine à états exclusive. Depann’Home Pro conserve le dernier code externe et traduit les événements officiels en états locaux `sent`, `accepted` ou `rejected`. SUPER PDP ne proposant pas actuellement de webhook sur cette API, l’interface utilise une interrogation explicite ; aucun webhook fournisseur n’est simulé.
+L’état est relu avec `GET /v1.beta/invoices/{id}`. Les `events[]` sont cumulatifs et ne constituent pas une machine à états exclusive. Depann’Home Pro conserve le dernier code externe, l’historique horodaté et une étape lisible : `prepared`, `deposited`, `delivered`, `accepted`, `rejected` ou `paid`. Le statut de règlement métier est rapproché séparément avec les règlements saisis dans Depann’Home Pro. SUPER PDP ne proposant pas actuellement de webhook sur cette API, l’interface utilise une interrogation explicite ; aucun webhook fournisseur n’est simulé.
+
+### Factures fournisseurs reçues
+
+L’onglet d’entreprise contient une boîte de réception isolée par `owner_id`. Tant que l’adaptateur SUPER PDP ne dispose pas d’un contrat entrant documenté, l’ajout est explicitement présenté comme un import manuel de la référence et des montants, jamais comme une réception automatique simulée.
+
+Le parcours est traçable dans `depannhome_einvoice_inbound_events` : réception, contrôle de cohérence HT/TVA/TTC et des dates, acceptation ou refus motivé, création d’un achat puis rapprochement partiel ou total du règlement. La référence distante est unique par entreprise et plateforme afin d’éviter les doublons. Une facture ne peut être acceptée avant un contrôle réussi et ne peut créer qu’un seul achat.
+
+La connexion d’entreprise, les transmissions sortantes et les factures entrantes restent trois objets distincts. Les événements ne contiennent ni jeton OAuth ni secret fournisseur.
 
 ## Catalogue Créateur
 
@@ -61,7 +69,7 @@ Ce banc de test ne remplace pas l’application Authorization Code multi-tenant 
 
 ### Utilisation depuis la Console Créateur
 
-La fiche d’une organisation dans la Console Créateur expose l’état de sa connexion et ses dernières transmissions avec le même adaptateur `super_pdp`. Cette vue est strictement en lecture seule : elle ne sélectionne jamais les colonnes de credentials chiffrés, de renouvellement ou de webhook, et ne permet ni connexion, ni déconnexion, ni transmission au nom d’une entreprise cliente.
+La fiche d’une organisation dans la Console Créateur expose l’état de sa connexion, ses dernières transmissions avec leur étape et leur règlement, ainsi que ses factures fournisseurs reçues. Cette vue est strictement en lecture seule : elle ne sélectionne jamais les colonnes de credentials chiffrés, de renouvellement ou de webhook, et ne permet ni connexion, ni déconnexion, ni transmission, décision ou rapprochement au nom d’une entreprise cliente.
 
 La Console Créateur dispose en plus d’un espace SUPER PDP propre à la plateforme Depann’Home Pro, stocké dans `depannhome_creator_super_pdp_connection`. Cette identité sert à la facturation des abonnements et reste totalement distincte du compte administrateur/Créateur qui peut aussi réaliser des interventions, devis et factures métier. Son état OAuth temporaire utilise également une table dédiée. Le callback public reste identique à celui déclaré chez SUPER PDP, mais l’état opaque consommé une seule fois détermine sans ambiguïté le coffre destinataire.
 

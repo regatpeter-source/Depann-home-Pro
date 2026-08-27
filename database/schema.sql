@@ -671,7 +671,11 @@ ALTER TABLE depannhome_einvoice_transmissions
     ADD COLUMN IF NOT EXISTS document_type VARCHAR(20) NOT NULL DEFAULT 'invoice',
     ADD COLUMN IF NOT EXISTS external_status VARCHAR(80) NOT NULL DEFAULT '',
     ADD COLUMN IF NOT EXISTS transmitted_at TIMESTAMPTZ,
-    ADD COLUMN IF NOT EXISTS status_checked_at TIMESTAMPTZ;
+    ADD COLUMN IF NOT EXISTS status_checked_at TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS lifecycle_status VARCHAR(30) NOT NULL DEFAULT 'prepared',
+    ADD COLUMN IF NOT EXISTS payment_status VARCHAR(20) NOT NULL DEFAULT 'unpaid';
+UPDATE depannhome_einvoice_transmissions SET lifecycle_status=CASE WHEN status IN ('rejected','failed','cancelled') THEN 'rejected' WHEN status='accepted' THEN 'accepted' WHEN status='sent' THEN 'deposited' ELSE 'prepared' END WHERE lifecycle_status='prepared' AND status<>'queued';
+UPDATE depannhome_einvoice_transmissions transmission SET payment_status=CASE WHEN document.status='paid' THEN 'paid' WHEN EXISTS(SELECT 1 FROM depannhome_accounting_settlements settlement WHERE settlement.owner_id=transmission.owner_id AND settlement.document_id=transmission.document_id) THEN 'partial' ELSE transmission.payment_status END FROM depannhome_billing_documents document WHERE document.id=transmission.document_id AND document.owner_id=transmission.owner_id AND transmission.payment_status='unpaid';
 CREATE INDEX IF NOT EXISTS depannhome_einvoice_transmissions_owner_document_idx ON depannhome_einvoice_transmissions(owner_id,document_id,updated_at DESC);
 CREATE INDEX IF NOT EXISTS depannhome_einvoice_transmissions_external_idx ON depannhome_einvoice_transmissions(platform_code,remote_id) WHERE remote_id<>'';
 CREATE TABLE IF NOT EXISTS depannhome_einvoice_events (
@@ -683,6 +687,37 @@ CREATE TABLE IF NOT EXISTS depannhome_einvoice_events (
     details JSONB NOT NULL DEFAULT '{}'::jsonb, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS depannhome_einvoice_events_owner_idx ON depannhome_einvoice_events(owner_id,created_at DESC);
+
+-- Boîte de réception fournisseur locale. Les imports manuels restent explicites
+-- tant que l'adaptateur de la plateforme ne documente pas de flux entrant.
+CREATE TABLE IF NOT EXISTS depannhome_einvoice_inbound_invoices (
+    id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    provider VARCHAR(160) NOT NULL DEFAULT 'Import manuel', external_id VARCHAR(160) NOT NULL DEFAULT '',
+    invoice_number VARCHAR(160) NOT NULL, supplier_name VARCHAR(160) NOT NULL, supplier_identifier VARCHAR(80) NOT NULL DEFAULT '',
+    issue_date DATE NOT NULL, due_date DATE, amount_ht NUMERIC(12,2) NOT NULL CHECK(amount_ht>=0),
+    vat_amount NUMERIC(12,2) NOT NULL CHECK(vat_amount>=0), amount_ttc NUMERIC(12,2) NOT NULL CHECK(amount_ttc>=0),
+    currency_code VARCHAR(3) NOT NULL DEFAULT 'EUR',
+    status VARCHAR(20) NOT NULL DEFAULT 'received' CHECK(status IN ('received','validated','accepted','rejected','archived')),
+    validation_status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK(validation_status IN ('pending','valid','invalid')),
+    validation_messages JSONB NOT NULL DEFAULT '[]'::jsonb,
+    payment_status VARCHAR(20) NOT NULL DEFAULT 'unpaid' CHECK(payment_status IN ('unpaid','partial','paid')),
+    paid_amount NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK(paid_amount>=0), payment_reference VARCHAR(160) NOT NULL DEFAULT '', paid_at DATE,
+    purchase_id BIGINT, source VARCHAR(20) NOT NULL DEFAULT 'manual' CHECK(source IN ('manual','provider')),
+    rejection_reason VARCHAR(1000) NOT NULL DEFAULT '', metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    received_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), validated_at TIMESTAMPTZ, decided_at TIMESTAMPTZ,
+    created_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS depannhome_einvoice_inbound_owner_idx ON depannhome_einvoice_inbound_invoices(owner_id,status,received_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS depannhome_einvoice_inbound_external_unique ON depannhome_einvoice_inbound_invoices(owner_id,provider,external_id) WHERE external_id<>'';
+CREATE TABLE IF NOT EXISTS depannhome_einvoice_inbound_events (
+    id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    invoice_id BIGINT NOT NULL REFERENCES depannhome_einvoice_inbound_invoices(id) ON DELETE CASCADE,
+    actor_id BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL, event_type VARCHAR(60) NOT NULL,
+    status VARCHAR(30) NOT NULL DEFAULT '', message VARCHAR(1000) NOT NULL DEFAULT '', details JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS depannhome_einvoice_inbound_events_owner_idx ON depannhome_einvoice_inbound_events(owner_id,invoice_id,created_at);
 
 -- L'ancien transport UBL universel n'est pas considéré comme une intégration.
 -- Ses données sont conservées une seule fois pour permettre une reconnexion.

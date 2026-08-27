@@ -260,9 +260,14 @@ export function mapInvoiceStatus(invoice) {
     const reasons = details.flatMap(detail => [detail?.reason, ...(Array.isArray(detail?.notes) ? detail.notes.flatMap(note => Array.isArray(note?.contents) ? note.contents.map(content => content?.content) : []) : [])]).filter(Boolean);
     const status = codes.some(code => FAILURE_STATUSES.has(code) || code.endsWith("-ack-error") || code.endsWith("-rejected")) ? "rejected"
         : codes.some(code => ACCEPTED_STATUSES.has(code)) ? "accepted" : "sent";
+    const lifecycleStatus = status === "rejected" ? "rejected"
+        : codes.some(code => code === "fr:212" || code.startsWith("ppf:payment-received-")) ? "paid"
+            : codes.includes("ppf:flow-1-response-ok") ? "delivered"
+                : codes.some(code => ["api:accepted", "fr:205", "fr:209"].includes(code)) ? "accepted"
+                    : "deposited";
     const message = [latest?.status_text, ...reasons].filter(Boolean).join(" · ").slice(0, 1000)
         || (status === "accepted" ? "Facture acceptée par SUPER PDP." : status === "rejected" ? "Facture rejetée pendant son traitement." : "Traitement asynchrone en cours chez SUPER PDP.");
-    return { status, externalStatus, message };
+    return { status, lifecycleStatus, externalStatus, message };
 }
 
 function connectionResult(credentials, account) {

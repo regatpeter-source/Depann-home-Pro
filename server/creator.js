@@ -108,9 +108,10 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
     }));
     app.get("/api/creator/e-invoicing-monitoring", requireCreator, asyncHandler(async (request, response) => {
         const database = getPool();
-        const [connections, transmissions, subscriptions, profile, creatorConnection] = await Promise.all([
+        const [connections, transmissions, inbound, subscriptions, profile, creatorConnection] = await Promise.all([
             database.query(`SELECT owner_id AS "ownerId",environment,status,active,platform_code AS "platformCode",platform_label AS "platformLabel",last_checked_at AS "lastCheckedAt" FROM depannhome_einvoice_connections ORDER BY active DESC,updated_at DESC`),
-            database.query(`SELECT status,COUNT(*)::integer AS count FROM depannhome_einvoice_transmissions GROUP BY status ORDER BY status`),
+            database.query(`SELECT status,lifecycle_status AS "lifecycleStatus",payment_status AS "paymentStatus",COUNT(*)::integer AS count FROM depannhome_einvoice_transmissions GROUP BY status,lifecycle_status,payment_status ORDER BY status`),
+            database.query(`SELECT status,payment_status AS "paymentStatus",COUNT(*)::integer AS count FROM depannhome_einvoice_inbound_invoices GROUP BY status,payment_status ORDER BY status`),
             database.query(`SELECT COUNT(*) FILTER (WHERE status='sent')::integer AS sent,COUNT(*) FILTER (WHERE status IN ('pending','sending'))::integer AS pending,COUNT(*) FILTER (WHERE status='failed')::integer AS failed,COUNT(*) FILTER (WHERE payment_status='unpaid' AND status='sent')::integer AS unpaid FROM depannhome_subscription_invoices WHERE status<>'cancelled'`),
             database.query(`SELECT company_name,address,postal_code,city,email,registration_number,tax_number,vat_regime FROM depannhome_subscription_billing_profile WHERE id=TRUE`),
             database.query(`SELECT platform_code AS "platformCode",platform_label AS "platformLabel",environment,status,last_checked_at AS "lastCheckedAt" FROM depannhome_creator_super_pdp_connection WHERE id=TRUE`)
@@ -131,6 +132,7 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
             subscriptions: subscriptions.rows[0] || { sent: 0, pending: 0, failed: 0, unpaid: 0 },
             connections: connections.rows,
             transmissionStatuses: transmissions.rows,
+            inboundStatuses: inbound.rows,
             senderConnection
         });
     }));
@@ -327,12 +329,14 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
         const owner = accountId && await findAccountOwner(getPool(), accountId);
         if (!canManageAccount(owner, request)) return response.status(404).json({ message: "Entreprise introuvable." });
         const database = getPool();
-        const [connections, transmissions, statuses] = await Promise.all([
+        const [connections, transmissions, statuses, inbound, inboundStatuses] = await Promise.all([
             database.query(`SELECT id,platform_code AS "platformCode",platform_label AS "platformLabel",environment,status,active,external_account_id AS "externalAccountId",external_account_label AS "externalAccountLabel",last_connected_at AS "lastConnectedAt",last_checked_at AS "lastCheckedAt",updated_at AS "updatedAt" FROM depannhome_einvoice_connections WHERE owner_id=$1 ORDER BY active DESC,updated_at DESC`, [accountId]),
-            database.query(`SELECT id,document_id AS "documentId",document_type AS "documentType",platform_code AS "platformCode",remote_id AS "remoteId",status,external_status AS "externalStatus",message,transmitted_at AS "transmittedAt",status_checked_at AS "statusCheckedAt",updated_at AS "updatedAt" FROM depannhome_einvoice_transmissions WHERE owner_id=$1 ORDER BY updated_at DESC LIMIT 100`, [accountId]),
-            database.query(`SELECT status,COUNT(*)::integer AS count FROM depannhome_einvoice_transmissions WHERE owner_id=$1 GROUP BY status ORDER BY status`, [accountId])
+            database.query(`SELECT id,document_id AS "documentId",document_type AS "documentType",platform_code AS "platformCode",remote_id AS "remoteId",status,lifecycle_status AS "lifecycleStatus",payment_status AS "paymentStatus",external_status AS "externalStatus",message,transmitted_at AS "transmittedAt",status_checked_at AS "statusCheckedAt",updated_at AS "updatedAt" FROM depannhome_einvoice_transmissions WHERE owner_id=$1 ORDER BY updated_at DESC LIMIT 100`, [accountId]),
+            database.query(`SELECT status,COUNT(*)::integer AS count FROM depannhome_einvoice_transmissions WHERE owner_id=$1 GROUP BY status ORDER BY status`, [accountId]),
+            database.query(`SELECT id,invoice_number AS "invoiceNumber",supplier_name AS "supplierName",provider,amount_ttc::float AS "amountTtc",status,validation_status AS "validationStatus",payment_status AS "paymentStatus",purchase_id AS "purchaseId",updated_at AS "updatedAt" FROM depannhome_einvoice_inbound_invoices WHERE owner_id=$1 ORDER BY received_at DESC LIMIT 100`, [accountId]),
+            database.query(`SELECT status,COUNT(*)::integer AS count FROM depannhome_einvoice_inbound_invoices WHERE owner_id=$1 GROUP BY status ORDER BY status`, [accountId])
         ]);
-        response.json({ connections: connections.rows, activeConnection: connections.rows.find(connection => connection.active) || null, transmissions: transmissions.rows, transmissionStatuses: statuses.rows });
+        response.json({ connections: connections.rows, activeConnection: connections.rows.find(connection => connection.active) || null, transmissions: transmissions.rows, transmissionStatuses: statuses.rows, inboundInvoices: inbound.rows, inboundStatuses: inboundStatuses.rows });
     }));
 
     app.post("/api/creator/accounts", requireCreator, asyncHandler(async (request, response) => {

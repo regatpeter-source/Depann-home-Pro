@@ -359,6 +359,10 @@ export function registerAccountingRoutes(app, requireAuthentication) {
             const { rows: created } = await client.query(`INSERT INTO depannhome_accounting_settlements(owner_id,document_id,settlement_date,amount,method,reference,notes,created_by) VALUES($1,$2,$3::date,$4,$5,$6,$7,$8) RETURNING id,owner_id AS "ownerId",TO_CHAR(settlement_date,'YYYY-MM-DD') AS date,amount::float AS amount,reference`, [ownerId, document.id, settlement.date, settlement.amount, settlement.method, settlement.reference, settlement.notes, request.user.sub]);
             const settings = await loadSettings(ownerId, client);
             const posting = await postSettlementEntry(client, { ownerId, actorId: request.user.sub, settlement: created[0], document, settings });
+            const totalDue = calculateDocumentTotals(document.lines, document.financialData).netPayable;
+            const paidTotal = Number(settled.rows[0].total) + settlement.amount;
+            await client.query("UPDATE depannhome_einvoice_transmissions SET payment_status=CASE WHEN $3>=($4-0.01) THEN 'paid' ELSE 'partial' END,updated_at=NOW() WHERE owner_id=$1 AND document_id=$2", [ownerId, document.id, paidTotal, totalDue]);
+            await client.query("INSERT INTO depannhome_einvoice_events(owner_id,connection_id,transmission_id,actor_id,event_type,status,message,details) SELECT owner_id,connection_id,id,$3,'payment_reconciled',CASE WHEN $4>=($5-0.01) THEN 'paid' ELSE 'partial' END,$6,$7::jsonb FROM depannhome_einvoice_transmissions WHERE owner_id=$1 AND document_id=$2", [ownerId, document.id, request.user.sub, paidTotal, totalDue, paidTotal >= totalDue - 0.01 ? "Facture réglée dans Depann’Home Pro." : "Règlement partiel enregistré dans Depann’Home Pro.", JSON.stringify({ settlementId: created[0].id, paidTotal })]);
             await client.query("COMMIT");
             response.status(201).json({ id: created[0].id, posting });
         } catch (error) {

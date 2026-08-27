@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { getPool } from "./database.js";
 import { getAccountOwnerId } from "./auth.js";
+import { initializeElectronicInvoiceLifecycle, loadElectronicInvoiceLifecycle, registerElectronicInvoiceLifecycleRoutes } from "./einvoice-lifecycle.js";
 
 const CONNECTION_STATUSES = new Set(["pending", "connected", "invalid", "expired", "disconnected", "action_required"]);
 const TRANSMISSION_STATUSES = new Set(["queued", "sent", "accepted", "rejected", "failed", "cancelled"]);
@@ -172,6 +173,7 @@ export async function initializeElectronicInvoicing(database = getPool()) {
         )
     `);
     await database.query("CREATE INDEX IF NOT EXISTS depannhome_einvoice_events_owner_idx ON depannhome_einvoice_events(owner_id,created_at DESC)");
+    await initializeElectronicInvoiceLifecycle(database);
     await migrateLegacyConnection(database);
 }
 
@@ -203,9 +205,10 @@ export function registerElectronicInvoicingRoutes(app, requireAuthentication) {
         const credentials = decryptCredentials(connection.encrypted_credentials);
         const event = await platform.verifyWebhook({ headers: request.headers, body: request.body, credentials, connection: connectionContext(connection) });
         if (!event?.externalId || !TRANSMISSION_STATUSES.has(event.status)) return response.status(400).json({ message: "Notification invalide." });
-        const updated = await getPool().query(`UPDATE depannhome_einvoice_transmissions SET status=$4,external_status=$5,message=$6,status_checked_at=NOW(),updated_at=NOW() WHERE owner_id=$1 AND platform_code=$2 AND remote_id=$3 RETURNING id`, [connection.owner_id, platform.code, clean(event.externalId, 160), event.status, clean(event.externalStatus, 80), clean(event.message, 1000)]);
+        const lifecycle = lifecycleStatus(event);
+        const updated = await getPool().query(`UPDATE depannhome_einvoice_transmissions SET status=$4,lifecycle_status=$5,payment_status=CASE WHEN $5='paid' THEN 'paid' ELSE payment_status END,external_status=$6,message=$7,status_checked_at=NOW(),updated_at=NOW() WHERE owner_id=$1 AND platform_code=$2 AND remote_id=$3 RETURNING id`, [connection.owner_id, platform.code, clean(event.externalId, 160), event.status, lifecycle, clean(event.externalStatus, 80), clean(event.message, 1000)]);
         if (!updated.rows[0]) return response.status(404).json({ message: "Transmission introuvable." });
-        await recordEvent(getPool(), connection.owner_id, connection.id, updated.rows[0].id, null, "status_received", event.status, event.message);
+        await recordEvent(getPool(), connection.owner_id, connection.id, updated.rows[0].id, null, "status_received", event.status, event.message, { lifecycleStatus: lifecycle, externalStatus: clean(event.externalStatus, 80) });
         response.status(204).end();
     }));
 
@@ -218,7 +221,7 @@ export function registerElectronicInvoicingRoutes(app, requireAuthentication) {
     });
     app.get("/api/accounting/e-invoicing", asyncHandler(async (request, response) => {
         const ownerId = getAccountOwnerId(request);
-        response.json({ providers: listElectronicInvoicingProviders(), connections: await loadPublicConnections(ownerId), activeConnection: await loadPublicActiveConnection(ownerId) });
+        response.json({ providers: listElectronicInvoicingProviders(), connections: await loadPublicConnections(ownerId), activeConnection: await loadPublicActiveConnection(ownerId), ...await loadElectronicInvoiceLifecycle(ownerId) });
     }));
     app.post("/api/accounting/e-invoicing/connections/:platformCode/authorize", asyncHandler(async (request, response) => {
         const ownerId = getAccountOwnerId(request);
@@ -396,10 +399,12 @@ export function registerElectronicInvoicingRoutes(app, requireAuthentication) {
         const credentials = await usableCredentials(ownerId, connection, platform);
         const result = await platform.getTransmissionStatus({ externalId: transmission.remote_id, credentials, connection: connectionContext(connection) });
         const status = TRANSMISSION_STATUSES.has(result?.status) ? result.status : transmission.status;
-        await getPool().query("UPDATE depannhome_einvoice_transmissions SET status=$3,external_status=$4,message=$5,status_checked_at=NOW(),updated_at=NOW() WHERE id=$1 AND owner_id=$2", [transmission.id, ownerId, status, clean(result?.externalStatus, 80), clean(result?.message, 1000)]);
-        await recordEvent(getPool(), ownerId, connection.id, transmission.id, request.user.sub, "status_checked", status, result?.message);
-        response.json({ status, message: clean(result?.message, 1000) });
+        const lifecycle = lifecycleStatus(result);
+        await getPool().query("UPDATE depannhome_einvoice_transmissions SET status=$3,lifecycle_status=$4,payment_status=CASE WHEN $4='paid' THEN 'paid' ELSE payment_status END,external_status=$5,message=$6,status_checked_at=NOW(),updated_at=NOW() WHERE id=$1 AND owner_id=$2", [transmission.id, ownerId, status, lifecycle, clean(result?.externalStatus, 80), clean(result?.message, 1000)]);
+        await recordEvent(getPool(), ownerId, connection.id, transmission.id, request.user.sub, "status_checked", status, result?.message, { lifecycleStatus: lifecycle, externalStatus: clean(result?.externalStatus, 80) });
+        response.json({ status, lifecycleStatus: lifecycle, message: clean(result?.message, 1000) });
     }));
+    registerElectronicInvoiceLifecycleRoutes(app);
 }
 
 export async function transmitElectronicDocument({ ownerId, documentId, actorId, database = getPool() }) {
@@ -424,8 +429,9 @@ export async function transmitElectronicDocument({ ownerId, documentId, actorId,
         const sender = document.documentType === "credit" ? platform.sendCreditNote.bind(platform) : platform.sendInvoice.bind(platform);
         const result = await sender({ document, credentials, connection: connectionContext(connection) });
         const status = TRANSMISSION_STATUSES.has(result?.status) ? result.status : "sent";
-        await database.query("UPDATE depannhome_einvoice_transmissions SET remote_id=$3,status=$4,external_status=$5,message=$6,transmitted_at=NOW(),updated_at=NOW() WHERE id=$1 AND owner_id=$2", [transmission.id, ownerId, clean(result?.externalId, 160), status, clean(result?.externalStatus, 80), clean(result?.message, 1000)]);
-        await recordEvent(database, ownerId, connection.id, transmission.id, actorId, "document_transmitted", status, result?.message);
+        const lifecycle = lifecycleStatus(result);
+        await database.query("UPDATE depannhome_einvoice_transmissions SET remote_id=$3,status=$4,lifecycle_status=$5,external_status=$6,message=$7,transmitted_at=NOW(),updated_at=NOW() WHERE id=$1 AND owner_id=$2", [transmission.id, ownerId, clean(result?.externalId, 160), status, lifecycle, clean(result?.externalStatus, 80), clean(result?.message, 1000)]);
+        await recordEvent(database, ownerId, connection.id, transmission.id, actorId, "document_transmitted", status, result?.message, { lifecycleStatus: lifecycle, externalStatus: clean(result?.externalStatus, 80) });
         return { message: clean(result?.message, 1000) || "Document transmis.", transmission: { id: transmission.id, status, externalId: clean(result?.externalId, 160) } };
     } catch (error) {
         const message = safeError(error);
@@ -448,6 +454,7 @@ function publicConnection(row) {
     return { id: row.id, platformCode: row.platform_code, platformLabel: row.platform_label, environment: row.environment, status: row.status, active: row.active, authenticationType: clean(safeObject(row.connection_metadata).authenticationType, 40), externalAccountId: row.external_account_id, externalAccountLabel: row.external_account_label, tokenExpiresAt: row.token_expires_at, lastConnectedAt: row.last_connected_at, lastCheckedAt: row.last_checked_at, disconnectedAt: row.disconnected_at, createdAt: row.created_at, updatedAt: row.updated_at, integrated: providers.has(row.platform_code), hasCredentials: Boolean(row.encrypted_credentials) };
 }
 function connectionContext(row) { return { id: row.id, ownerId: row.owner_id, platformCode: row.platform_code, environment: row.environment, metadata: safeObject(row.connection_metadata), externalAccountId: row.external_account_id }; }
+function lifecycleStatus(value) { return ["prepared", "deposited", "delivered", "accepted", "rejected", "paid"].includes(value?.lifecycleStatus) ? value.lifecycleStatus : value?.status === "rejected" ? "rejected" : value?.status === "accepted" ? "accepted" : value?.status === "sent" ? "deposited" : "prepared"; }
 async function requireOwnerConnection(ownerId, value) { const id = positiveId(value); const { rows } = await getPool().query("SELECT * FROM depannhome_einvoice_connections WHERE id=$1 AND owner_id=$2", [id, ownerId]); if (!rows[0]) throw httpError(404, "Connexion introuvable."); return rows[0]; }
 async function requireOwnerTransmission(ownerId, value) { const id = positiveId(value); const { rows } = await getPool().query("SELECT * FROM depannhome_einvoice_transmissions WHERE id=$1 AND owner_id=$2", [id, ownerId]); if (!rows[0]) throw httpError(404, "Transmission introuvable."); return rows[0]; }
 async function usableCredentials(ownerId, connection, platform) {

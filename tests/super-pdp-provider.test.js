@@ -62,9 +62,12 @@ test("les archives UBL sont envoyées brutes et la référence distante est cont
 });
 
 test("les événements cumulés SUPER PDP sont traduits avec priorité aux rejets", () => {
-    assert.deepEqual(mapInvoiceStatus({ events: [{ id: 1, status_code: "api:uploaded" }, { id: 2, status_code: "fr:205", status_text: "Acceptée" }] }), { status: "accepted", externalStatus: "fr:205", message: "Acceptée" });
+    assert.deepEqual(mapInvoiceStatus({ events: [{ id: 1, status_code: "api:uploaded" }, { id: 2, status_code: "fr:205", status_text: "Acceptée" }] }), { status: "accepted", lifecycleStatus: "accepted", externalStatus: "fr:205", message: "Acceptée" });
     const rejected = mapInvoiceStatus({ events: [{ id: 1, status_code: "fr:205" }, { id: 2, status_code: "fr:213", status_text: "Rejetée", details: [{ reason: "Donnée invalide" }] }] });
     assert.equal(rejected.status, "rejected");
+    assert.equal(rejected.lifecycleStatus, "rejected");
     assert.equal(rejected.externalStatus, "fr:213");
     assert.match(rejected.message, /Donnée invalide/);
+    assert.equal(mapInvoiceStatus({ events: [{ id: 1, status_code: "ppf:flow-1-response-ok" }] }).lifecycleStatus, "delivered");
+    assert.equal(mapInvoiceStatus({ events: [{ id: 1, status_code: "fr:212" }] }).lifecycleStatus, "paid");
 });
