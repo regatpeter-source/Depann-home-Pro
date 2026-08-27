@@ -48,6 +48,10 @@ export function getElectronicInvoicingProvider(code) {
     return providers.get(String(code || "")) || null;
 }
 
+export function isElectronicInvoicingOAuthCallback(request) {
+    return request.method === "GET" && String(request.originalUrl || "").split("?", 1)[0] === "/api/accounting/e-invoicing/oauth/callback";
+}
+
 export async function initializeElectronicInvoicing(database = getPool()) {
     await database.query(`
         CREATE TABLE IF NOT EXISTS depannhome_einvoice_platform_catalog (
@@ -206,10 +210,10 @@ export function registerElectronicInvoicingRoutes(app, requireAuthentication) {
     }));
 
     app.use("/api/accounting/e-invoicing", (request, response, next) => {
-        if (isOAuthCallback(request)) return next();
+        if (isElectronicInvoicingOAuthCallback(request)) return next();
         return requireAuthentication(request, response, next);
     }, (request, response, next) => {
-        if (isOAuthCallback(request)) return next();
+        if (isElectronicInvoicingOAuthCallback(request)) return next();
         return requireCompanyAdministrator(request, response, next);
     });
     app.get("/api/accounting/e-invoicing", asyncHandler(async (request, response) => {
@@ -470,7 +474,6 @@ async function rotateCredentials(ownerId, connectionId, platform, force = false)
 }
 async function recordEvent(database, ownerId, connectionId, transmissionId, actorId, eventType, status, message, details = {}) { await database.query("INSERT INTO depannhome_einvoice_events(owner_id,connection_id,transmission_id,actor_id,event_type,status,message,details) VALUES($1,$2,$3,$4,$5,$6,$7,$8::jsonb)", [ownerId, connectionId || null, transmissionId || null, actorId || null, eventType, clean(status, 30), clean(message, 1000), JSON.stringify(safeObject(details))]); }
 function requireCompanyAdministrator(request, response, next) { if (request.user?.role !== "admin") return response.status(403).json({ message: "La facturation électronique est réservée à l’administrateur de l’entreprise." }); return next(); }
-function isOAuthCallback(request) { return request.method === "GET" && String(request.originalUrl || "").split("?", 1)[0] === "/api/accounting/e-invoicing/oauth/callback"; }
 function encryptionKey() { const secret = String(process.env.SESSION_SECRET || ""); if (process.env.NODE_ENV === "production" && secret.length < 32) throw new Error("SESSION_SECRET doit protéger les connexions de facturation électronique."); return crypto.createHash("sha256").update(secret || "development-electronic-invoicing-key").digest(); }
 export function encryptElectronicInvoicingCredentials(value, secretOverride = "") { const iv = crypto.randomBytes(12); const cipher = crypto.createCipheriv("aes-256-gcm", secretOverride ? crypto.createHash("sha256").update(secretOverride).digest() : encryptionKey(), iv); const encrypted = Buffer.concat([cipher.update(JSON.stringify(safeObject(value)), "utf8"), cipher.final()]); return `${iv.toString("base64url")}.${cipher.getAuthTag().toString("base64url")}.${encrypted.toString("base64url")}`; }
 export function decryptElectronicInvoicingCredentials(value, secretOverride = "") { const [iv, tag, encrypted] = String(value || "").split(".").map(item => Buffer.from(item, "base64url")); if (!iv?.length || !tag?.length || !encrypted?.length) throw new Error("Credentials absents ou illisibles."); const decipher = crypto.createDecipheriv("aes-256-gcm", secretOverride ? crypto.createHash("sha256").update(secretOverride).digest() : encryptionKey(), iv); decipher.setAuthTag(tag); return safeObject(JSON.parse(Buffer.concat([decipher.update(encrypted), decipher.final()]).toString("utf8"))); }

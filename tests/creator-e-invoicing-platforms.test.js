@@ -1,10 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { isElectronicInvoicingOAuthCallback } from "../server/electronic-invoicing.js";
 
 const creatorServer = readFileSync(new URL("../server/creator.js", import.meta.url), "utf8");
 const creatorClient = readFileSync(new URL("../js/creator.js", import.meta.url), "utf8");
 const electronicServer = readFileSync(new URL("../server/electronic-invoicing.js", import.meta.url), "utf8");
+const accountingServer = readFileSync(new URL("../server/accounting.js", import.meta.url), "utf8");
 const schema = readFileSync(new URL("../database/schema.sql", import.meta.url), "utf8");
 const appServer = readFileSync(new URL("../app.js", import.meta.url), "utf8");
 
@@ -70,8 +72,12 @@ test("l’espace SUPER PDP Créateur possède un coffre et un OAuth distincts de
 
 test("le callback SUPER PDP survit au retour sans cookie grâce à l’état serveur", () => {
     assert.match(appServer, /if \(isElectronicInvoicingOAuthCallback\(request\)\) return next\(\)/);
-    assert.match(appServer, /request\.originalUrl[\s\S]*\/api\/accounting\/e-invoicing\/oauth\/callback/);
-    assert.match(electronicServer, /if \(isOAuthCallback\(request\)\) return next\(\)/);
+    assert.match(accountingServer, /if \(isElectronicInvoicingOAuthCallback\(request\)\) return next\(\)/);
+    assert.match(electronicServer, /request\.originalUrl[\s\S]*\/api\/accounting\/e-invoicing\/oauth\/callback/);
+    assert.match(electronicServer, /if \(isElectronicInvoicingOAuthCallback\(request\)\) return next\(\)/);
+    assert.equal(isElectronicInvoicingOAuthCallback({ method: "GET", originalUrl: "/api/accounting/e-invoicing/oauth/callback?code=secret&state=creator.token" }), true);
+    assert.equal(isElectronicInvoicingOAuthCallback({ method: "POST", originalUrl: "/api/accounting/e-invoicing/oauth/callback" }), false);
+    assert.equal(isElectronicInvoicingOAuthCallback({ method: "GET", originalUrl: "/api/accounting/e-invoicing/oauth/callback/extra" }), false);
     const callback = electronicServer.slice(electronicServer.indexOf('app.get("/api/accounting/e-invoicing/oauth/callback"'), electronicServer.indexOf('app.put("/api/accounting/e-invoicing/configuration"'));
     assert.match(callback, /DELETE FROM depannhome_creator_super_pdp_oauth_states WHERE state_hash=\$1 AND expires_at>NOW\(\) RETURNING/);
     assert.match(callback, /DELETE FROM depannhome_einvoice_oauth_states WHERE state_hash=\$1 AND expires_at>NOW\(\) RETURNING/);

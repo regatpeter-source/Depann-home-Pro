@@ -14,7 +14,7 @@ import {
 } from "./accounting-ledger.js";
 import { allocateBillingNumber } from "./billing-numbering.js";
 import { hasAccountingWorkspaceAccess } from "./workstation-permissions.js";
-import { transmitElectronicDocument } from "./electronic-invoicing.js";
+import { isElectronicInvoicingOAuthCallback, transmitElectronicDocument } from "./electronic-invoicing.js";
 
 const AID_TYPES = new Set(["cee", "maprimerenov", "coup_de_pouce", "eco_ptz", "regional", "departmental", "supplier", "manufacturer", "custom"]);
 const AID_MODES = new Set(["fixed", "percentage"]);
@@ -227,7 +227,13 @@ export async function initializeAccounting() {
 }
 
 export function registerAccountingRoutes(app, requireAuthentication) {
-    app.use("/api/accounting", requireAuthentication, requireAccountingAdministration);
+    app.use("/api/accounting", (request, response, next) => {
+        if (isElectronicInvoicingOAuthCallback(request)) return next();
+        return requireAuthentication(request, response, next);
+    }, (request, response, next) => {
+        if (isElectronicInvoicingOAuthCallback(request)) return next();
+        return requireAccountingAdministration(request, response, next);
+    });
 
     app.get("/api/accounting", asyncHandler(async (request, response) => {
         const ownerId = getAccountOwnerId(request);

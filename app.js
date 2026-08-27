@@ -23,7 +23,7 @@ import { billingUploadErrorHandler, initializeBilling, registerBillingRoutes } f
 import { documentTemplateUploadErrorHandler, initializeDocumentTemplates, registerDocumentTemplateRoutes } from "./server/document-templates.js";
 import { initializeSubscriptionInvoicing, registerSubscriptionInvoicingRoutes, startSubscriptionInvoicingScheduler } from "./server/invoicing.js";
 import { initializeAccounting, registerAccountingRoutes } from "./server/accounting.js";
-import { initializeElectronicInvoicing, registerElectronicInvoicingRoutes } from "./server/electronic-invoicing.js";
+import { initializeElectronicInvoicing, isElectronicInvoicingOAuthCallback, registerElectronicInvoicingRoutes } from "./server/electronic-invoicing.js";
 import "./server/einvoice-providers/super-pdp.js";
 import { initializeConnectors, registerConnectorRoutes } from "./server/connectors.js";
 import { initializePurchases, registerPurchaseRoutes } from "./server/purchases.js";
@@ -314,6 +314,3 @@ function isPartnerEmailOAuthCallback(request) {
 	return request.method === "GET" && /^\/oauth\/(?:google|microsoft)\/callback$/.test(request.path);
 }
 
-function isElectronicInvoicingOAuthCallback(request) {
-	return request.method === "GET" && String(request.originalUrl || "").split("?", 1)[0] === "/api/accounting/e-invoicing/oauth/callback";
-}
