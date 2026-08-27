@@ -63,7 +63,9 @@ Ce banc de test ne remplace pas l’application Authorization Code multi-tenant 
 
 La fiche d’une organisation dans la Console Créateur expose l’état de sa connexion et ses dernières transmissions avec le même adaptateur `super_pdp`. Cette vue est strictement en lecture seule : elle ne sélectionne jamais les colonnes de credentials chiffrés, de renouvellement ou de webhook, et ne permet ni connexion, ni déconnexion, ni transmission au nom d’une entreprise cliente.
 
-Le compte propre du Créateur reste aussi un compte entreprise isolé par son `owner_id`. Le bouton « Configurer et utiliser SUPER PDP » ouvre donc le module comptable normal pour ce seul compte. L’autorisation OAuth, les contrôles et les transmissions empruntent exactement les mêmes routes que pour toute autre entreprise ; aucune plateforme ni aucun coffre parallèle n’est créé.
+La Console Créateur dispose en plus d’un espace SUPER PDP propre à la plateforme Depann’Home Pro, stocké dans `depannhome_creator_super_pdp_connection`. Cette identité sert à la facturation des abonnements et reste totalement distincte du compte administrateur/Créateur qui peut aussi réaliser des interventions, devis et factures métier. Son état OAuth temporaire utilise également une table dédiée. Le callback public reste identique à celui déclaré chez SUPER PDP, mais l’état opaque consommé une seule fois détermine sans ambiguïté le coffre destinataire.
+
+Les factures d’abonnement sont visibles dans cet espace. Leur transmission structurée reste désactivée tant qu’une archive UBL conforme n’est pas produite et archivée avec ces documents ; le PDF envoyé par e-mail n’est jamais présenté comme une facture électronique transmise par SUPER PDP.
 
 ## Routes et webhooks
 

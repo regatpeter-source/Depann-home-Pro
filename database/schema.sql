@@ -638,6 +638,22 @@ CREATE TABLE IF NOT EXISTS depannhome_creator_super_pdp_sandbox (
     last_tested_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+-- Connexion SUPER PDP propre à la plateforme Depann'Home Pro. Elle ne dépend
+-- d'aucun compte entreprise, même lorsque l'utilisateur possède aussi un rôle administrateur.
+CREATE TABLE IF NOT EXISTS depannhome_creator_super_pdp_connection (
+    id BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK(id), platform_code VARCHAR(60) NOT NULL DEFAULT 'super_pdp', platform_label VARCHAR(160) NOT NULL DEFAULT 'SUPER PDP',
+    environment VARCHAR(20) NOT NULL DEFAULT 'production' CHECK(environment IN ('sandbox','production')),
+    status VARCHAR(30) NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','connected','invalid','expired','disconnected','action_required')),
+    encrypted_credentials TEXT NOT NULL DEFAULT '', connection_metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    external_account_id VARCHAR(200) NOT NULL DEFAULT '', external_account_label VARCHAR(200) NOT NULL DEFAULT '', token_expires_at TIMESTAMPTZ,
+    refresh_metadata JSONB NOT NULL DEFAULT '{}'::jsonb, last_connected_at TIMESTAMPTZ, last_checked_at TIMESTAMPTZ, disconnected_at TIMESTAMPTZ,
+    created_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE TABLE IF NOT EXISTS depannhome_creator_super_pdp_oauth_states (
+    id BIGSERIAL PRIMARY KEY, created_by BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    state_hash CHAR(64) NOT NULL UNIQUE, encrypted_context TEXT NOT NULL, expires_at TIMESTAMPTZ NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS depannhome_creator_super_pdp_oauth_states_creator_idx ON depannhome_creator_super_pdp_oauth_states(created_by,expires_at);
 -- Les états OAuth sont opaques, temporaires, liés à l'entreprise et à
 -- l'administrateur initiateur. DELETE ... RETURNING garantit leur usage unique.
 CREATE TABLE IF NOT EXISTS depannhome_einvoice_oauth_states (

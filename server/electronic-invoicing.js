@@ -105,6 +105,30 @@ export async function initializeElectronicInvoicing(database = getPool()) {
         )
     `);
     await database.query(`
+        CREATE TABLE IF NOT EXISTS depannhome_creator_super_pdp_connection (
+            id BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (id),
+            platform_code VARCHAR(60) NOT NULL DEFAULT 'super_pdp',
+            platform_label VARCHAR(160) NOT NULL DEFAULT 'SUPER PDP',
+            environment VARCHAR(20) NOT NULL DEFAULT 'production' CHECK (environment IN ('sandbox','production')),
+            status VARCHAR(30) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','connected','invalid','expired','disconnected','action_required')),
+            encrypted_credentials TEXT NOT NULL DEFAULT '', connection_metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+            external_account_id VARCHAR(200) NOT NULL DEFAULT '', external_account_label VARCHAR(200) NOT NULL DEFAULT '',
+            token_expires_at TIMESTAMPTZ, refresh_metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+            last_connected_at TIMESTAMPTZ, last_checked_at TIMESTAMPTZ, disconnected_at TIMESTAMPTZ,
+            created_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+    `);
+    await database.query(`
+        CREATE TABLE IF NOT EXISTS depannhome_creator_super_pdp_oauth_states (
+            id BIGSERIAL PRIMARY KEY, created_by BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+            state_hash CHAR(64) NOT NULL UNIQUE, encrypted_context TEXT NOT NULL,
+            expires_at TIMESTAMPTZ NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+    `);
+    await database.query("CREATE INDEX IF NOT EXISTS depannhome_creator_super_pdp_oauth_states_creator_idx ON depannhome_creator_super_pdp_oauth_states(created_by,expires_at)");
+    await database.query("DELETE FROM depannhome_creator_super_pdp_oauth_states WHERE expires_at<=NOW()");
+    await database.query(`
         CREATE TABLE IF NOT EXISTS depannhome_einvoice_oauth_states (
             id BIGSERIAL PRIMARY KEY,
             owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
@@ -191,7 +215,7 @@ export function registerElectronicInvoicingRoutes(app, requireAuthentication) {
         const platform = getElectronicInvoicingProvider(request.params.platformCode);
         if (!platform || typeof platform.authorizationUrl !== "function" || typeof platform.exchangeAuthorizationCode !== "function") return response.status(409).json({ message: "Cette plateforme ne propose pas de parcours d’autorisation intégré." });
         const redirectUri = String(process.env.SUPERPDP_REDIRECT_URI || "").trim();
-        const state = crypto.randomBytes(32).toString("base64url");
+        const state = `company.${crypto.randomBytes(32).toString("base64url")}`;
         const codeVerifier = crypto.randomBytes(64).toString("base64url");
         const codeChallenge = crypto.createHash("sha256").update(codeVerifier).digest("base64url");
         const { rows } = await getPool().query(`SELECT profile.email,REGEXP_REPLACE(COALESCE(profile.siren,''),'[^0-9]','','g') AS siren FROM depannhome_users owner LEFT JOIN depannhome_billing_profiles profile ON profile.owner_id=owner.id WHERE owner.id=$1`, [ownerId]);
@@ -210,6 +234,31 @@ export function registerElectronicInvoicingRoutes(app, requireAuthentication) {
     app.get("/api/accounting/e-invoicing/oauth/callback", asyncHandler(async (request, response) => {
         const ownerId = getAccountOwnerId(request);
         const state = secret(request.query?.state, 500);
+        const creatorFlow = state.startsWith("creator.");
+        const companyFlow = state.startsWith("company.");
+        if (!creatorFlow && !companyFlow) return response.status(400).send(oauthCallbackPage(false, "Parcours d’autorisation invalide."));
+        if (creatorFlow) {
+            if (!request.user?.isCreator) return response.status(403).send(oauthCallbackPage(false, "Accès Créateur requis."));
+            const creatorState = await getPool().query("DELETE FROM depannhome_creator_super_pdp_oauth_states WHERE state_hash=$1 AND created_by=$2 AND expires_at>NOW() RETURNING *", [sha256(state), request.user.sub]);
+            if (!creatorState.rows[0]) return response.status(400).send(oauthCallbackPage(false, "Autorisation Créateur expirée ou déjà utilisée."));
+            {
+                const pending = creatorState.rows[0];
+                if (request.query?.error) return response.status(400).send(oauthCallbackPage(false, clean(request.query.error_description || request.query.error, 400)));
+                const platform = getElectronicInvoicingProvider("super_pdp");
+                const code = secret(request.query?.code, 4000);
+                if (!platform || typeof platform.exchangeAuthorizationCode !== "function" || !code) return response.status(400).send(oauthCallbackPage(false, "Réponse d’autorisation incomplète."));
+                try {
+                    const context = decryptCredentials(pending.encrypted_context);
+                    const result = await platform.exchangeAuthorizationCode({ code, codeVerifier: context.codeVerifier, redirectUri: context.redirectUri });
+                    if (!result?.credentials || typeof result.credentials !== "object") throw new Error("Jetons OAuth absents.");
+                    const status = CONNECTION_STATUSES.has(result.status) ? result.status : "connected";
+                    await getPool().query(`INSERT INTO depannhome_creator_super_pdp_connection(id,platform_code,platform_label,environment,status,encrypted_credentials,connection_metadata,external_account_id,external_account_label,token_expires_at,refresh_metadata,last_connected_at,last_checked_at,disconnected_at,created_by) VALUES(TRUE,'super_pdp','SUPER PDP',$1,$2,$3,$4::jsonb,$5,$6,$7,$8::jsonb,NOW(),NOW(),NULL,$9) ON CONFLICT(id) DO UPDATE SET environment=EXCLUDED.environment,status=EXCLUDED.status,encrypted_credentials=EXCLUDED.encrypted_credentials,connection_metadata=EXCLUDED.connection_metadata,external_account_id=EXCLUDED.external_account_id,external_account_label=EXCLUDED.external_account_label,token_expires_at=EXCLUDED.token_expires_at,refresh_metadata=EXCLUDED.refresh_metadata,last_connected_at=NOW(),last_checked_at=NOW(),disconnected_at=NULL,created_by=EXCLUDED.created_by,updated_at=NOW()`, [safeObject(result.metadata).companyEnvironment === "production" ? "production" : "sandbox", status, encryptCredentials(result.credentials), JSON.stringify(safeObject(result.metadata)), clean(result.externalAccountId, 200), clean(result.externalAccountLabel, 200), result.tokenExpiresAt || null, JSON.stringify(safeObject(result.refreshMetadata)), request.user.sub]);
+                    return response.send(oauthCallbackPage(true, result.message || "L’espace SUPER PDP de la Console Créateur est connecté."));
+                } catch (error) {
+                    return response.status(502).send(oauthCallbackPage(false, safeError(error)));
+                }
+            }
+        }
         const { rows } = await getPool().query("DELETE FROM depannhome_einvoice_oauth_states WHERE state_hash=$1 AND owner_id=$2 AND created_by=$3 AND expires_at>NOW() RETURNING *", [sha256(state), ownerId, request.user.sub]);
         const pending = state && rows[0];
         if (!pending) return response.status(400).send(oauthCallbackPage(false, "Autorisation expirée ou déjà utilisée."));

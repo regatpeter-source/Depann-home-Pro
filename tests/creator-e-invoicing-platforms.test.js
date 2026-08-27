@@ -28,7 +28,7 @@ test("le catalogue persiste seulement des métadonnées d’intégration", () =>
 test("une fiche ne peut pas déclarer un adaptateur absent comme déployé", () => {
     assert.match(creatorServer, /lifecycleStatus === "deployed" && !getElectronicInvoicingProvider\(platformCode\)/);
     assert.match(creatorServer, /aucun adaptateur serveur correspondant n’est enregistré/);
-    const routes = creatorServer.slice(creatorServer.indexOf('app.get("/api/creator/e-invoicing-platforms"'), creatorServer.indexOf('app.get("/api/creator/super-pdp-sandbox"'));
+    const routes = creatorServer.slice(creatorServer.indexOf('app.get("/api/creator/e-invoicing-platforms"'), creatorServer.indexOf('app.get("/api/creator/e-invoicing-monitoring"'));
     assert.doesNotMatch(routes, /fetch\(|testConnection|encrypted_credentials/);
 });
 
@@ -40,10 +40,29 @@ test("le Créateur consulte la même intégration par entreprise sans recevoir l
     assert.match(route, /depannhome_einvoice_transmissions/);
     assert.doesNotMatch(route, /encrypted_credentials|refresh_metadata|webhook_token_hash/);
     assert.match(creatorClient, /Configurer et utiliser SUPER PDP/);
-    assert.match(creatorClient, /renderAccounting\("electronic"\)/);
+    assert.match(creatorClient, /data-open-own-super-pdp/);
+    assert.match(creatorClient, /data-open-own-super-pdp[^\n]*addEventListener\("click", renderCreatorPlatformSuperPdp\)/);
+    assert.doesNotMatch(creatorClient, /renderAccounting\("electronic"\)/);
 });
 
 test("SUPER PDP production est directement visible dans l’en-tête Créateur", () => {
-    assert.match(creatorClient, /id="creatorSuperPdpProduction"[^>]*>SUPER PDP<\/button>/);
-    assert.match(creatorClient, /#creatorSuperPdpProduction"\)\.addEventListener\("click", \(\) => renderAccounting\("electronic"\)\)/);
+    assert.match(creatorClient, /class="secondary-button auth-outline-button" id="creatorSuperPdpProduction">SUPER PDP<\/button>/);
+    assert.match(creatorClient, /#creatorSuperPdpProduction"\)\.addEventListener\("click", renderCreatorPlatformSuperPdp\)/);
+    assert.doesNotMatch(creatorClient, /import \{ renderAccounting \}/);
+});
+
+test("l’espace SUPER PDP Créateur possède un coffre et un OAuth distincts des entreprises", () => {
+    for (const source of [electronicServer, schema]) {
+        assert.match(source, /CREATE TABLE IF NOT EXISTS depannhome_creator_super_pdp_connection/);
+        assert.match(source, /CREATE TABLE IF NOT EXISTS depannhome_creator_super_pdp_oauth_states/);
+    }
+    for (const route of [/app\.get\("\/api\/creator\/super-pdp-platform", requireCreator/, /app\.post\("\/api\/creator\/super-pdp-platform\/authorize", requireCreator/, /app\.post\("\/api\/creator\/super-pdp-platform\/test", requireCreator/, /app\.delete\("\/api\/creator\/super-pdp-platform", requireCreator/]) assert.match(creatorServer, route);
+    const creatorPdpRoutes = creatorServer.slice(creatorServer.indexOf('app.get("/api/creator/super-pdp-platform"'), creatorServer.indexOf('app.post("/api/creator/e-invoicing-platforms"'));
+    assert.doesNotMatch(creatorPdpRoutes, /depannhome_einvoice_connections/);
+    assert.match(creatorServer, /const state = `creator\.\$\{crypto\.randomBytes/);
+    assert.match(electronicServer, /const state = `company\.\$\{crypto\.randomBytes/);
+    assert.match(electronicServer, /if \(!creatorFlow && !companyFlow\)/);
+    assert.match(electronicServer, /if \(creatorFlow\)[\s\S]*Accès Créateur requis/);
+    assert.match(creatorClient, /espace indépendant/);
+    assert.match(creatorClient, /totalement séparé du compte administrateur/);
 });

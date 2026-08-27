@@ -1,4 +1,5 @@
 import bcrypt from "bcrypt";
+import crypto from "node:crypto";
 import { getPool } from "./database.js";
 import { isCreatorUsername } from "./auth.js";
 import { creatorNetworkDirectory, creatorNetworkStatistics, updateCreatorNetworkDirectory } from "./partner-connections.js";
@@ -107,13 +108,14 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
     }));
     app.get("/api/creator/e-invoicing-monitoring", requireCreator, asyncHandler(async (request, response) => {
         const database = getPool();
-        const [connections, transmissions, subscriptions, profile] = await Promise.all([
+        const [connections, transmissions, subscriptions, profile, creatorConnection] = await Promise.all([
             database.query(`SELECT owner_id AS "ownerId",environment,status,active,platform_code AS "platformCode",platform_label AS "platformLabel",last_checked_at AS "lastCheckedAt" FROM depannhome_einvoice_connections ORDER BY active DESC,updated_at DESC`),
             database.query(`SELECT status,COUNT(*)::integer AS count FROM depannhome_einvoice_transmissions GROUP BY status ORDER BY status`),
             database.query(`SELECT COUNT(*) FILTER (WHERE status='sent')::integer AS sent,COUNT(*) FILTER (WHERE status IN ('pending','sending'))::integer AS pending,COUNT(*) FILTER (WHERE status='failed')::integer AS failed,COUNT(*) FILTER (WHERE payment_status='unpaid' AND status='sent')::integer AS unpaid FROM depannhome_subscription_invoices WHERE status<>'cancelled'`),
-            database.query(`SELECT company_name,address,postal_code,city,email,registration_number,tax_number,vat_regime FROM depannhome_subscription_billing_profile WHERE id=TRUE`)
+            database.query(`SELECT company_name,address,postal_code,city,email,registration_number,tax_number,vat_regime FROM depannhome_subscription_billing_profile WHERE id=TRUE`),
+            database.query(`SELECT platform_code AS "platformCode",platform_label AS "platformLabel",environment,status,last_checked_at AS "lastCheckedAt" FROM depannhome_creator_super_pdp_connection WHERE id=TRUE`)
         ]);
-        const senderConnection = connections.rows.find(connection => Number(connection.ownerId) === Number(request.user.sub) && connection.active && connection.environment === "production" && connection.status === "connected") || null;
+        const senderConnection = creatorConnection.rows[0] || null;
         const billingProfile = profile.rows[0] || {};
         const requiredProfileFields = ["company_name", "address", "postal_code", "city", "email", "registration_number"];
         const missingProfileFields = requiredProfileFields.filter(field => !String(billingProfile[field] || "").trim());
@@ -123,7 +125,7 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
                 subscriptionChannel: "email_pdf",
                 profileComplete: missingProfileFields.length === 0,
                 missingProfileFields,
-                productionSenderConnected: Boolean(senderConnection),
+                productionSenderConnected: senderConnection?.status === "connected" && senderConnection?.environment === "production",
                 message: "Les factures d’abonnement sont archivées et suivies, mais elles ne sont pas encore transmises par une plateforme agréée. L’envoi PDF par e-mail ne vaut pas facturation électronique structurée."
             },
             subscriptions: subscriptions.rows[0] || { sent: 0, pending: 0, failed: 0, unpaid: 0 },
@@ -131,6 +133,61 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
             transmissionStatuses: transmissions.rows,
             senderConnection
         });
+    }));
+    app.get("/api/creator/super-pdp-platform", requireCreator, asyncHandler(async (_request, response) => {
+        const [connection, invoices, statuses] = await Promise.all([
+            getPool().query(`SELECT platform_code AS "platformCode",platform_label AS "platformLabel",environment,status,external_account_id AS "externalAccountId",external_account_label AS "externalAccountLabel",token_expires_at AS "tokenExpiresAt",last_connected_at AS "lastConnectedAt",last_checked_at AS "lastCheckedAt",disconnected_at AS "disconnectedAt",updated_at AS "updatedAt",encrypted_credentials<>'' AS "hasCredentials" FROM depannhome_creator_super_pdp_connection WHERE id=TRUE`),
+            getPool().query(`SELECT id,invoice_number AS "invoiceNumber",recipient_name AS "recipientName",subscription_label AS "subscriptionLabel",net_amount_cents AS "amountCents",status,payment_status AS "paymentStatus",issue_date AS "issueDate",sent_at AS "sentAt" FROM depannhome_subscription_invoices WHERE status<>'cancelled' ORDER BY issue_date DESC,id DESC LIMIT 100`),
+            getPool().query(`SELECT status,COUNT(*)::integer AS count FROM depannhome_subscription_invoices WHERE status<>'cancelled' GROUP BY status ORDER BY status`)
+        ]);
+        response.json({ connection: connection.rows[0] || null, invoices: invoices.rows, invoiceStatuses: statuses.rows, structuredTransmissionAvailable: false });
+    }));
+    app.post("/api/creator/super-pdp-platform/authorize", requireCreator, asyncHandler(async (request, response) => {
+        const provider = getElectronicInvoicingProvider("super_pdp");
+        if (!provider || typeof provider.authorizationUrl !== "function") return response.status(503).json({ message: "L’adaptateur SUPER PDP est indisponible." });
+        const redirectUri = String(process.env.SUPERPDP_REDIRECT_URI || "").trim();
+        const state = `creator.${crypto.randomBytes(32).toString("base64url")}`;
+        const codeVerifier = crypto.randomBytes(64).toString("base64url");
+        const codeChallenge = crypto.createHash("sha256").update(codeVerifier).digest("base64url");
+        const { rows } = await getPool().query(`SELECT email,REGEXP_REPLACE(COALESCE(registration_number,''),'[^0-9]','','g') AS registration_number FROM depannhome_subscription_billing_profile WHERE id=TRUE`);
+        const profile = rows[0] || {};
+        let authorizationUrl;
+        try {
+            authorizationUrl = provider.authorizationUrl({ state, codeChallenge, redirectUri, loginHint: cleanText(profile.email, 160), companyNumber: cleanText(profile.registration_number, 14).slice(0, 9) });
+        } catch (error) {
+            return response.status(Number(error?.status) || 503).json({ message: safeSuperPdpPlatformError(error) });
+        }
+        await getPool().query("DELETE FROM depannhome_creator_super_pdp_oauth_states WHERE expires_at<=NOW() OR created_by=$1", [request.user.sub]);
+        await getPool().query("INSERT INTO depannhome_creator_super_pdp_oauth_states(created_by,state_hash,encrypted_context,expires_at) VALUES($1,$2,$3,NOW()+INTERVAL '10 minutes')", [request.user.sub, crypto.createHash("sha256").update(state).digest("hex"), encryptElectronicInvoicingCredentials({ codeVerifier, redirectUri })]);
+        response.json({ authorizationUrl });
+    }));
+    app.post("/api/creator/super-pdp-platform/test", requireCreator, asyncHandler(async (request, response) => {
+        const provider = getElectronicInvoicingProvider("super_pdp");
+        const { rows } = await getPool().query("SELECT * FROM depannhome_creator_super_pdp_connection WHERE id=TRUE");
+        const connection = rows[0];
+        if (!provider || !connection?.encrypted_credentials) return response.status(404).json({ message: "Connectez d’abord l’espace SUPER PDP de la Console Créateur." });
+        try {
+            let credentials = decryptElectronicInvoicingCredentials(connection.encrypted_credentials);
+            if (connection.token_expires_at && new Date(connection.token_expires_at).getTime() <= Date.now() + 60_000 && provider.supports.refresh) {
+                const refreshed = await provider.refreshAuthentication({ credentials });
+                credentials = refreshed.credentials;
+                await getPool().query("UPDATE depannhome_creator_super_pdp_connection SET encrypted_credentials=$1,token_expires_at=$2,refresh_metadata=refresh_metadata||$3::jsonb,updated_at=NOW() WHERE id=TRUE", [encryptElectronicInvoicingCredentials(credentials), refreshed.tokenExpiresAt || null, JSON.stringify({ rotatedAt: new Date().toISOString() })]);
+            }
+            const result = await provider.testConnection({ credentials });
+            const status = ["connected", "invalid", "expired", "action_required"].includes(result?.status) ? result.status : "connected";
+            await getPool().query("UPDATE depannhome_creator_super_pdp_connection SET status=$1,environment=CASE WHEN $2::text IN ('sandbox','production') THEN $2::text ELSE environment END,external_account_id=COALESCE(NULLIF($3,''),external_account_id),external_account_label=COALESCE(NULLIF($4,''),external_account_label),connection_metadata=connection_metadata||$5::jsonb,last_checked_at=NOW(),updated_at=NOW() WHERE id=TRUE", [status, result?.metadata?.companyEnvironment || "", cleanText(result?.externalAccountId, 200), cleanText(result?.externalAccountLabel, 200), JSON.stringify(result?.metadata || {})]);
+            response.json({ status, message: cleanText(result?.message || "Connexion vérifiée.", 500) });
+        } catch (error) {
+            await getPool().query("UPDATE depannhome_creator_super_pdp_connection SET status='invalid',last_checked_at=NOW(),updated_at=NOW() WHERE id=TRUE");
+            response.status(502).json({ message: safeSuperPdpPlatformError(error) });
+        }
+    }));
+    app.delete("/api/creator/super-pdp-platform", requireCreator, asyncHandler(async (request, response) => {
+        const provider = getElectronicInvoicingProvider("super_pdp");
+        const { rows } = await getPool().query("SELECT encrypted_credentials FROM depannhome_creator_super_pdp_connection WHERE id=TRUE");
+        if (provider && rows[0]?.encrypted_credentials) await provider.disconnect({ credentials: decryptElectronicInvoicingCredentials(rows[0].encrypted_credentials) }).catch(() => {});
+        await getPool().query("UPDATE depannhome_creator_super_pdp_connection SET status='disconnected',encrypted_credentials='',refresh_metadata='{}'::jsonb,token_expires_at=NULL,disconnected_at=NOW(),updated_at=NOW() WHERE id=TRUE");
+        response.status(204).end();
     }));
     app.post("/api/creator/e-invoicing-platforms", requireCreator, asyncHandler(async (request, response) => {
         const platform = sanitizeCreatorEInvoicingPlatform(request.body);
@@ -750,6 +807,13 @@ function safeSuperPdpSandboxError(error) {
     if (status === 408 || error?.name === "AbortError") return "SUPER PDP n’a pas répondu dans le délai prévu.";
     if (status >= 400 && /^SUPER PDP\s*:/i.test(String(error?.publicMessage || error?.message))) return `SUPER PDP a refusé une étape du test (HTTP ${status}).`;
     return cleanText(error?.publicMessage || error?.message || "Le test SUPER PDP a échoué.", 500).replace(/(?:bearer|token|secret|client_secret|password)\s*[:=]\s*\S+/gi, "Identifiant sensible [masqué]");
+}
+
+function safeSuperPdpPlatformError(error) {
+    const status = Number(error?.status);
+    if (status === 401 || status === 403) return "SUPER PDP a refusé l’autorisation de l’espace plateforme Créateur.";
+    if (status === 408 || error?.name === "AbortError") return "SUPER PDP n’a pas répondu dans le délai prévu.";
+    return cleanText(error?.publicMessage || error?.message || "La connexion SUPER PDP a échoué.", 500).replace(/(?:bearer|token|secret|client_secret|password)\s*[:=]\s*\S+/gi, "Identifiant sensible [masqué]");
 }
 
 function positiveId(value) {
