@@ -40,6 +40,9 @@ test("le parcours entrant exige contrôle, décision et rapprochement traçables
     assert.match(lifecycleServer, /payment_reconciled/);
     assert.match(companyClient, /Factures électroniques reçues/);
     assert.match(companyClient, /Importer la facture reçue/);
+    assert.match(companyClient, /Où effectuer chaque opération/);
+    assert.match(companyClient, /Dans SUPER PDP/);
+    assert.match(companyClient, /Cet enregistrement manuel ne télécharge pas le document original/);
 });
 
 test("le parcours sortant conserve étape réglementaire, paiement et chronologie", () => {
