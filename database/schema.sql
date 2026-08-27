@@ -1046,6 +1046,17 @@ CREATE TABLE IF NOT EXISTS depannhome_calendar_events (
     quitus_signed_at TIMESTAMPTZ,
     quitus_performed_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
     quitus_performed_by_name VARCHAR(160) NOT NULL DEFAULT '',
+    deductible_status VARCHAR(20) NOT NULL DEFAULT 'none',
+    deductible_amount_cents INTEGER NOT NULL DEFAULT 0,
+    deductible_payment_method VARCHAR(30) NOT NULL DEFAULT '',
+    deductible_photo_attachment_id VARCHAR(100) NOT NULL DEFAULT '',
+    deductible_collected_at TIMESTAMPTZ,
+    deductible_collected_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+    deductible_collected_by_name VARCHAR(160) NOT NULL DEFAULT '',
+    deductible_reviewed_at TIMESTAMPTZ,
+    deductible_reviewed_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+    deductible_reviewed_by_name VARCHAR(160) NOT NULL DEFAULT '',
+    deductible_review_note VARCHAR(1000) NOT NULL DEFAULT '',
     notes VARCHAR(2000) NOT NULL DEFAULT '',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -1107,6 +1118,30 @@ BEGIN
 END; $$ LANGUAGE plpgsql;
 DROP TRIGGER IF EXISTS depannhome_validated_quitus_immutable ON depannhome_calendar_events;
 CREATE TRIGGER depannhome_validated_quitus_immutable BEFORE UPDATE ON depannhome_calendar_events FOR EACH ROW EXECUTE FUNCTION depannhome_protect_validated_quitus();
+
+ALTER TABLE depannhome_calendar_events
+ADD COLUMN IF NOT EXISTS deductible_status VARCHAR(20) NOT NULL DEFAULT 'none',
+ADD COLUMN IF NOT EXISTS deductible_amount_cents INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN IF NOT EXISTS deductible_payment_method VARCHAR(30) NOT NULL DEFAULT '',
+ADD COLUMN IF NOT EXISTS deductible_photo_attachment_id VARCHAR(100) NOT NULL DEFAULT '',
+ADD COLUMN IF NOT EXISTS deductible_collected_at TIMESTAMPTZ,
+ADD COLUMN IF NOT EXISTS deductible_collected_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+ADD COLUMN IF NOT EXISTS deductible_collected_by_name VARCHAR(160) NOT NULL DEFAULT '',
+ADD COLUMN IF NOT EXISTS deductible_reviewed_at TIMESTAMPTZ,
+ADD COLUMN IF NOT EXISTS deductible_reviewed_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+ADD COLUMN IF NOT EXISTS deductible_reviewed_by_name VARCHAR(160) NOT NULL DEFAULT '',
+ADD COLUMN IF NOT EXISTS deductible_review_note VARCHAR(1000) NOT NULL DEFAULT '';
+UPDATE depannhome_calendar_events SET deductible_status='none' WHERE deductible_status IS NULL OR deductible_status NOT IN ('none','pending','validated','rejected');
+CREATE OR REPLACE FUNCTION depannhome_protect_validated_deductible() RETURNS trigger AS $$
+BEGIN
+    IF OLD.deductible_status = 'validated' AND ROW(NEW.deductible_status,NEW.deductible_amount_cents,NEW.deductible_payment_method,NEW.deductible_photo_attachment_id,NEW.deductible_collected_at,NEW.deductible_collected_by,NEW.deductible_collected_by_name,NEW.deductible_reviewed_at,NEW.deductible_reviewed_by,NEW.deductible_reviewed_by_name,NEW.deductible_review_note)
+        IS DISTINCT FROM ROW(OLD.deductible_status,OLD.deductible_amount_cents,OLD.deductible_payment_method,OLD.deductible_photo_attachment_id,OLD.deductible_collected_at,OLD.deductible_collected_by,OLD.deductible_collected_by_name,OLD.deductible_reviewed_at,OLD.deductible_reviewed_by,OLD.deductible_reviewed_by_name,OLD.deductible_review_note)
+    THEN RAISE EXCEPTION 'Une franchise validée est immuable.'; END IF;
+    RETURN NEW;
+END; $$ LANGUAGE plpgsql;
+DROP TRIGGER IF EXISTS depannhome_validated_deductible_immutable ON depannhome_calendar_events;
+CREATE TRIGGER depannhome_validated_deductible_immutable BEFORE UPDATE ON depannhome_calendar_events FOR EACH ROW EXECUTE FUNCTION depannhome_protect_validated_deductible();
+CREATE INDEX IF NOT EXISTS depannhome_calendar_events_deductible_status_idx ON depannhome_calendar_events(owner_id,deductible_status) WHERE deductible_status <> 'none';
 
 -- Un élément du planning peut réunir plusieurs membres. Les noms de colonnes
 -- historiques restent conservés pour compatibilité, mais acceptent tout utilisateur actif de l’entreprise.

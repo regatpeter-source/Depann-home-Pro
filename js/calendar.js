@@ -1,6 +1,6 @@
 import { ROUTES } from "./config.js?v=106";
 import { createBillingDocumentForClient, viewBillingDocument } from "./billing.js?v=182";
-import { getSearchableClients } from "./clients.js?v=149";
+import { getSearchableClients } from "./clients.js?v=150";
 import { addClientActivityByName, synchronizeClients } from "./client-sync.js?v=125";
 import { renderClientMessages } from "./messages.js?v=107";
 import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=29";
@@ -299,8 +299,10 @@ function renderEventForm(panel) {
                     <p class="muted">Cette intervention est conservée dans l’historique du client. Elle ne peut plus être modifiée ou supprimée. Consultez la fiche client ou créez un nouveau rendez-vous à partir de ses informations.</p>
                     <dl><dt>Intervention</dt><dd>N° ${escapeHtml(event.id)}</dd><dt>Client</dt><dd>${escapeHtml(event.clientName || "Non renseigné")}</dd><dt>Date</dt><dd>${escapeHtml(formatActivityDate(event.date, event.startTime))}${event.endTime ? ` — ${escapeHtml(event.endTime)}` : ""}</dd>${renderAssignedTechniciansDetail(event)}${event.location ? `<dt>Lieu</dt><dd>${escapeHtml(event.location)}</dd>` : ""}${event.notes ? `<dt>Notes</dt><dd>${escapeHtml(event.notes)}</dd>` : ""}</dl>
                 </section>
+                ${client ? renderInsuranceDeductibleHtml(event, client) : ""}
                 <div class="calendar-form-actions">${client ? `<button type="button" class="secondary-button" id="openCompletedAppointmentClient">Aller sur la fiche client</button><button type="button" class="secondary-button" id="scheduleCompletedAppointmentFollowUp">Planifier un nouveau rendez-vous</button>` : '<p class="auth-message">Aucune fiche client associée : l’intervention historique reste consultable.</p>'}<button type="button" class="secondary-button" id="closeCalendarDetail">Fermer</button></div>
             </div>`;
+        initializeInsuranceDeductibleControls(panel, event);
         panel.querySelector("#openCompletedAppointmentClient")?.addEventListener("click", () => {
             window.dispatchEvent(new CustomEvent("depannhome:open-client", { detail: { clientId: client.id } }));
         });
@@ -367,6 +369,7 @@ function renderEventForm(panel) {
                         <div><p class="eyebrow">Rapport technique</p><h3>Recherche de fuite</h3><p class="muted">Rédigez le rapport terrain, joignez les photos et transmettez-le à l’administration.</p></div>
                         <div><button type="button" class="secondary-button" id="openTechnicalReport">Ouvrir le rapport</button></div>
                     </section>` : ""}
+                    ${renderInsuranceDeductibleHtml(event, client)}
                     <section class="calendar-linked-documents" id="calendarLinkedDocuments"><p class="muted">Chargement des devis et factures de cette intervention…</p></section>
                     ${isTechnicianBillingAllowed() ? `<section class="calendar-billing-actions">
                         <div><p class="eyebrow">Fin d’intervention</p><h3>${isReadOnlyCalendar() ? "Devis" : "Devis et facture"}</h3><p class="muted">${isReadOnlyCalendar() ? "Créez le devis de cette intervention." : "Créez le document adapté après avoir renseigné l’intervention."}</p></div>
@@ -391,6 +394,7 @@ function renderEventForm(panel) {
         panel.querySelector("#openTechnicalReport")?.addEventListener("click", () => renderTechnicalReports(0, event.id));
         panel.querySelector("#calendarInterventionPhotos")?.addEventListener("submit", eventSubmit => uploadInterventionPhotos(eventSubmit, client, event));
         panel.querySelector("#calendarClientUpload")?.addEventListener("submit", eventSubmit => uploadClientAttachments(eventSubmit, client, event));
+        initializeInsuranceDeductibleControls(panel, event);
         panel.querySelector("#editCalendarEvent")?.addEventListener("click", () => {
             mobileAdminEditingEvents.add(String(event.id));
             refreshCalendarDetail();
@@ -463,6 +467,7 @@ function renderEventForm(panel) {
                 ${isEditing ? '<button type="button" class="secondary-button danger-button" id="deleteCalendarEvent">Supprimer</button>' : ""}
             </div>
         </form>
+        ${isEditing ? renderInsuranceDeductibleHtml(event, findClientForEvent(event)) : ""}
     `;
 
     panel.querySelector("#cancelCalendarEdit")?.addEventListener("click", () => {
@@ -471,6 +476,7 @@ function renderEventForm(panel) {
         refreshCalendarDetail();
     });
     const form = panel.querySelector("#calendarEventForm");
+    initializeInsuranceDeductibleControls(panel, event);
     const clientInput = form.querySelector("[name=clientName]");
     const clientField = clientInput.closest("label");
     const locationInput = form.querySelector("[name=location]");
@@ -956,6 +962,111 @@ function renderQuitusHtml(event) {
             <p class="auth-message" aria-live="polite"></p>
         </form>
     `;
+}
+
+function renderInsuranceDeductibleHtml(event, client) {
+    if (!event?.insuranceName || !client) return "";
+    const status = String(event.deductibleStatus || "none");
+    const amount = formatDeductibleAmount(event.deductibleAmountCents);
+    const photo = (client.attachments || []).find(attachment => String(attachment.id) === String(event.deductiblePhotoAttachmentId || ""));
+    const photoHtml = photo?.dataUrl ? `<img class="deductible-proof-photo" src="${escapeHtml(photo.dataUrl)}" alt="Photo de preuve de la franchise">` : "";
+    const summary = event.deductibleAmountCents ? `<dl><dt>Montant encaissé</dt><dd>${escapeHtml(amount)}</dd><dt>Moyen de paiement</dt><dd>${escapeHtml(event.deductiblePaymentMethod || "Non renseigné")}</dd><dt>Déclaré par</dt><dd>${escapeHtml(event.deductibleCollectedByName || "Technicien")}</dd></dl>${photoHtml}` : "";
+    if (status === "validated") return `
+        <section class="calendar-quitus insurance-deductible" aria-label="Franchise validée">
+            <div class="form-heading"><div><p class="eyebrow">Assurance · ${escapeHtml(event.insuranceName)}</p><h3>Franchise validée</h3></div><span class="quitus-status signed">Validée PC</span></div>
+            ${summary}<p class="muted">Contrôlée par ${escapeHtml(event.deductibleReviewedByName || "Administration")} le ${escapeHtml(formatQuitusValidationDate(event.deductibleReviewedAt))}. Cette preuve est verrouillée et figure dans l’historique de l’intervention.</p>
+        </section>`;
+    if (status === "pending") {
+        if (canReviewInsuranceDeductible()) return `
+            <form class="calendar-quitus insurance-deductible" data-deductible-review>
+                <div class="form-heading"><div><p class="eyebrow">Assurance · ${escapeHtml(event.insuranceName)}</p><h3>Franchise à contrôler</h3></div><span class="quitus-status">En attente PC</span></div>
+                ${summary}<label>Note de contrôle ou motif du refus<textarea name="reviewNote" maxlength="1000" rows="3" placeholder="Obligatoire en cas de refus"></textarea></label>
+                <div class="calendar-form-actions"><button type="button" class="secondary-button" data-deductible-decision="validated">Valider la franchise</button><button type="button" class="secondary-button danger-button" data-deductible-decision="rejected">Refuser et redemander une preuve</button></div><p class="auth-message" aria-live="polite"></p>
+            </form>`;
+        return `<section class="calendar-quitus insurance-deductible"><div class="form-heading"><div><p class="eyebrow">Assurance · ${escapeHtml(event.insuranceName)}</p><h3>Franchise transmise</h3></div><span class="quitus-status">Contrôle PC en attente</span></div>${summary}<p class="muted">Le poste PC doit contrôler le montant, le moyen de paiement et la photo.</p></section>`;
+    }
+    if (!canRecordInsuranceDeductible()) return status === "rejected" ? `<section class="calendar-quitus insurance-deductible"><div class="form-heading"><div><p class="eyebrow">Assurance · ${escapeHtml(event.insuranceName)}</p><h3>Franchise refusée</h3></div><span class="quitus-status">À reprendre</span></div>${summary}<p class="auth-message error">${escapeHtml(event.deductibleReviewNote || "Une nouvelle preuve doit être transmise par le technicien.")}</p></section>` : "";
+    return `
+        <form class="calendar-quitus insurance-deductible" data-deductible-capture>
+            <div class="form-heading"><div><p class="eyebrow">Assurance · ${escapeHtml(event.insuranceName)}</p><h3>${status === "rejected" ? "Corriger la franchise" : "Franchise encaissée auprès du client"}</h3></div><span class="quitus-status">${status === "rejected" ? "Refusée par le PC" : "À déclarer"}</span></div>
+            ${status === "rejected" ? `<p class="auth-message error">Motif : ${escapeHtml(event.deductibleReviewNote || "Preuve à reprendre")}</p>` : ""}
+            <p class="muted">Dossier ${escapeHtml(event.insuranceClaimNumber || "sans numéro de sinistre")} · saisissez uniquement le montant réellement reçu.</p>
+            <label>Montant de la franchise encaissée (€)<input name="amount" type="number" min="0.01" max="1000000" step="0.01" inputmode="decimal" required value="${event.deductibleAmountCents ? escapeHtml((Number(event.deductibleAmountCents) / 100).toFixed(2)) : ""}"></label>
+            <label>Moyen de paiement<select name="paymentMethod" required>${["Chèque", "Espèces", "Virement", "Carte bancaire"].map(method => `<option value="${method}" ${event.deductiblePaymentMethod === method ? "selected" : ""}>${method}</option>`).join("")}</select></label>
+            <label>Photo de preuve obligatoire<input name="photo" type="file" accept="image/jpeg,image/png,image/webp" capture="environment" required></label>
+            <div class="calendar-form-actions"><button type="submit" class="secondary-button">Transmettre au poste PC</button></div><p class="auth-message" aria-live="polite"></p>
+        </form>`;
+}
+
+function initializeInsuranceDeductibleControls(panel, appointment) {
+    const capture = panel.querySelector("[data-deductible-capture]");
+    capture?.addEventListener("submit", async eventSubmit => {
+        eventSubmit.preventDefault();
+        const button = capture.querySelector('button[type="submit"]');
+        const feedback = capture.querySelector(".auth-message:last-child");
+        const amountCents = Math.round(Number(capture.elements.amount.value) * 100);
+        const photo = capture.elements.photo.files?.[0];
+        if (!Number.isSafeInteger(amountCents) || amountCents <= 0 || !photo) {
+            feedback.textContent = "Renseignez le montant encaissé et prenez une photo de preuve.";
+            feedback.classList.add("error");
+            return;
+        }
+        const payload = new FormData();
+        payload.append("amountCents", String(amountCents));
+        payload.append("paymentMethod", capture.elements.paymentMethod.value);
+        payload.append("photo", photo);
+        button.disabled = true;
+        feedback.classList.remove("error");
+        feedback.textContent = "Transmission au poste PC…";
+        const result = await multipartRequest(`/api/calendar/events/${encodeURIComponent(appointment.id)}/deductible`, payload);
+        if (!result.ok) {
+            feedback.textContent = result.message || "Transmission impossible.";
+            feedback.classList.add("error");
+            button.disabled = false;
+            return;
+        }
+        Object.assign(appointment, result.data?.deductible || {});
+        await synchronizeClients();
+        invalidateCalendarEventsCache();
+        renderCalendar({ event: appointment });
+    });
+    const review = panel.querySelector("[data-deductible-review]");
+    review?.querySelectorAll("[data-deductible-decision]").forEach(button => button.addEventListener("click", async () => {
+        const decision = button.dataset.deductibleDecision;
+        const feedback = review.querySelector(".auth-message");
+        const reviewNote = review.elements.reviewNote.value.trim();
+        if (decision === "rejected" && !reviewNote) {
+            feedback.textContent = "Indiquez le motif du refus pour guider le technicien.";
+            feedback.classList.add("error");
+            return;
+        }
+        review.querySelectorAll("button").forEach(item => { item.disabled = true; });
+        feedback.classList.remove("error");
+        feedback.textContent = decision === "validated" ? "Validation de la franchise…" : "Enregistrement du refus…";
+        const result = await request(`/api/calendar/events/${encodeURIComponent(appointment.id)}/deductible/review`, { method: "PATCH", body: JSON.stringify({ decision, reviewNote }) });
+        if (!result.ok) {
+            feedback.textContent = result.message || "Contrôle impossible.";
+            feedback.classList.add("error");
+            review.querySelectorAll("button").forEach(item => { item.disabled = false; });
+            return;
+        }
+        Object.assign(appointment, result.data?.deductible || {});
+        await synchronizeClients();
+        invalidateCalendarEventsCache();
+        renderCalendar({ event: appointment });
+    }));
+}
+
+function canRecordInsuranceDeductible() {
+    return document.body.dataset.deviceType === "mobile" && ["technician", "team_lead", "mobile_admin"].includes(document.body.dataset.role);
+}
+
+function canReviewInsuranceDeductible() {
+    return document.body.dataset.deviceType === "desktop" && ["admin", "pc_standard"].includes(document.body.dataset.role);
+}
+
+function formatDeductibleAmount(value) {
+    return new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" }).format(Number(value || 0) / 100);
 }
 
 function initializeQuitusForm(panel, event) {
@@ -1467,6 +1578,16 @@ async function request(url, options = {}) {
             ...options
         });
         const data = response.status === 204 ? null : await response.json().catch(() => null);
+        return { ok: response.ok, data, message: data?.message };
+    } catch {
+        return { ok: false, data: null, message: "Serveur indisponible." };
+    }
+}
+
+async function multipartRequest(url, body) {
+    try {
+        const response = await fetch(url, { method: "POST", credentials: "same-origin", body });
+        const data = await response.json().catch(() => null);
         return { ok: response.ok, data, message: data?.message };
     } catch {
         return { ok: false, data: null, message: "Serveur indisponible." };

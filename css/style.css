@@ -2964,6 +2964,7 @@ body[data-role="mobile_admin"].mobile-device .store-match{min-height:72px;paddin
 }
 
 .calendar-quitus input:not([type="checkbox"]),
+.calendar-quitus select,
 .calendar-quitus textarea,
 .calendar-intervention-photos input{
     width:100%;
@@ -2971,6 +2972,16 @@ body[data-role="mobile_admin"].mobile-device .store-match{min-height:72px;paddin
     padding:10px 12px;
     border:1px solid var(--border);
     border-radius:10px;
+    background:#fff;
+}
+
+.deductible-proof-photo{
+    display:block;
+    width:min(100%, 420px);
+    max-height:320px;
+    object-fit:contain;
+    border:1px solid var(--border);
+    border-radius:12px;
     background:#fff;
 }
 
