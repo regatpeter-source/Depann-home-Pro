@@ -54,12 +54,14 @@ export async function initializePartnerEmail() {
         uid BIGINT NOT NULL, message_id VARCHAR(500) NOT NULL, in_reply_to VARCHAR(500) NOT NULL DEFAULT '', references_header TEXT NOT NULL DEFAULT '',
         sender_address VARCHAR(254) NOT NULL, sender_name VARCHAR(160) NOT NULL DEFAULT '', recipients JSONB NOT NULL DEFAULT '[]'::jsonb,
         subject VARCHAR(500) NOT NULL DEFAULT '', body_text TEXT NOT NULL DEFAULT '', received_at TIMESTAMPTZ NOT NULL,
+        document_text TEXT NOT NULL DEFAULT '',
         classification_score INTEGER NOT NULL DEFAULT 0, classification_reasons JSONB NOT NULL DEFAULT '[]'::jsonb,
         status VARCHAR(20) NOT NULL DEFAULT 'candidate' CHECK(status IN ('candidate','processing','imported','ignored','rejected')),
         mission_id BIGINT REFERENCES depannhome_partner_missions(id) ON DELETE SET NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), processed_at TIMESTAMPTZ,
         CONSTRAINT depannhome_partner_email_message_unique UNIQUE(owner_id,connection_id,message_id)
     )`);
     await db.query("ALTER TABLE depannhome_partner_email_messages DROP CONSTRAINT IF EXISTS depannhome_partner_email_messages_status_check");
+    await db.query("ALTER TABLE depannhome_partner_email_messages ADD COLUMN IF NOT EXISTS document_text TEXT NOT NULL DEFAULT ''");
     await db.query("ALTER TABLE depannhome_partner_email_messages ADD CONSTRAINT depannhome_partner_email_messages_status_check CHECK(status IN ('candidate','processing','imported','ignored','rejected'))");
     await db.query("CREATE INDEX IF NOT EXISTS depannhome_partner_email_messages_queue_idx ON depannhome_partner_email_messages(owner_id,status,received_at DESC)");
     await db.query(`CREATE TABLE IF NOT EXISTS depannhome_partner_email_attachments (
@@ -154,6 +156,12 @@ export function registerPartnerEmailRoutes(app, requireAuthentication) {
         const connection = await requiredConnection(getAccountOwnerId(req), positiveId(req.params.connectionId));
         const attachment = await liveMailboxOperation(connection, () => downloadLiveAttachment(connection, decodeMailboxReference(req.params.messageRef), decodeMailboxReference(req.params.attachmentRef)));
         setLiveMailboxHeaders(res).set({ "Content-Type": attachment.contentType, "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(attachment.filename)}`, "Content-Length": String(attachment.content.length), "X-Content-Type-Options": "nosniff" }).send(attachment.content);
+    }));
+    app.post("/api/partner-email/:connectionId/messages/:messageRef/import", asyncHandler(async (req, res) => {
+        const ownerId = getAccountOwnerId(req);
+        const connection = await requiredConnection(ownerId, positiveId(req.params.connectionId));
+        const result = await importLiveMailboxMessage(connection, decodeMailboxReference(req.params.messageRef), req.body?.attachmentIds, req.user.sub);
+        res.status(result.created ? 201 : 200).json({ ...result, message: result.created ? "Mission partenaire et fiche client créées depuis cet e-mail." : "Cet e-mail est déjà rattaché à une mission partenaire." });
     }));
     app.post("/api/partner-email/:connectionId/sync", asyncHandler(async (req, res) => res.json(await syncConnection(getAccountOwnerId(req), positiveId(req.params.connectionId), req.user.sub, parseMailboxSyncPeriod(req.body)))));
     app.patch("/api/partner-email/:connectionId/settings", requireEmailConfigurationAccess, asyncHandler(async (req, res) => {
@@ -445,16 +453,76 @@ async function requiredConnection(ownerId, connectionId) { const connection = aw
 async function liveMailboxOperation(connection, operation, { sending = false } = {}) { try { return await operation(); } catch (error) { if (error?.status) throw error; console.warn("[partner-email] live mailbox rejected", mailErrorLog(error, connection.provider)); const status = error?.statusCode === 400 ? 422 : error?.statusCode === 404 ? 404 : error?.statusCode === 429 ? 429 : error?.statusCode === 503 ? 503 : 502; throw httpError(status, publicMailError(error, { provider: connection.provider, sending }), { retryAfterSeconds: error?.retryAfterSeconds }); } }
 function setLiveMailboxHeaders(response) { return response.set({ "Cache-Control": "private, no-store", Pragma: "no-cache", Expires: "0" }); }
 
-async function saveParsedEmail(connection, uid, parsed) {
+async function saveParsedEmail(connection, uid, parsed, { forceCandidate = false, messageId: forcedMessageId = "" } = {}) {
     const from = parsed.from?.value?.[0] || {}; const messageId = clean(parsed.messageId || `uid-${uid}@${connection.email_address}`, 500);
     let totalAttachmentBytes = 0;
     const attachments = (parsed.attachments || []).filter(item => { const allowed = ALLOWED_MIME.has(item.contentType) && item.size > 0 && item.size <= MAX_ATTACHMENT_BYTES && totalAttachmentBytes + item.size <= 20 * 1024 * 1024; if (allowed) totalAttachmentBytes += item.size; return allowed; }).slice(0, MAX_ATTACHMENTS);
-    const classification = classifyPartnerEmail({ subject: parsed.subject, text: parsed.text, from: from.address, attachments, allowedSenders: connection.allowed_senders || [], requiredKeywords: connection.required_keywords || [], reply: Boolean(parsed.inReplyTo) || /^\s*(?:re|rép)\s*:/i.test(parsed.subject || ""), automatic: Boolean(parsed.headers?.get("auto-submitted")) || /^\s*(?:re|tr)?\s*:\s*(?:réponse automatique|automatic reply|out of office)/i.test(parsed.subject || ""), listMail: Boolean(parsed.headers?.get("list-unsubscribe") || parsed.headers?.get("list-id")) });
-    if (classification.score < CANDIDATE_THRESHOLD) return null;
-    const { rows } = await getPool().query(`INSERT INTO depannhome_partner_email_messages(owner_id,connection_id,uid,message_id,in_reply_to,references_header,sender_address,sender_name,recipients,subject,body_text,received_at,classification_score,classification_reasons) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12,$13,$14::jsonb) ON CONFLICT(owner_id,connection_id,message_id) DO NOTHING RETURNING id`, [connection.owner_id, connection.id, uid, messageId, clean(parsed.inReplyTo, 500), clean((parsed.references || []).join(" "), 4000), clean(from.address, 254), clean(from.name, 160), JSON.stringify(parsed.to?.value?.map(item => item.address).filter(Boolean) || []), clean(parsed.subject, 500), String(parsed.text || "").slice(0, 20000), parsed.date || new Date(), classification.score, JSON.stringify(classification.reasons)]);
+    const documentText = await extractPartnerDocumentText(attachments.map(item => ({ name: item.filename, mime: item.contentType, size: item.size, buffer: item.content })));
+    const classification = classifyPartnerEmail({ subject: parsed.subject, text: `${parsed.text || ""}\n${documentText}`, from: from.address, attachments, allowedSenders: forceCandidate ? [] : connection.allowed_senders || [], requiredKeywords: forceCandidate ? [] : connection.required_keywords || [], reply: forceCandidate ? false : Boolean(parsed.inReplyTo) || /^\s*(?:re|rép)\s*:/i.test(parsed.subject || ""), automatic: forceCandidate ? false : Boolean(parsed.headers?.get("auto-submitted")) || /^\s*(?:re|tr)?\s*:\s*(?:réponse automatique|automatic reply|out of office)/i.test(parsed.subject || ""), listMail: forceCandidate ? false : Boolean(parsed.headers?.get("list-unsubscribe") || parsed.headers?.get("list-id")) });
+    if (!forceCandidate && classification.score < CANDIDATE_THRESHOLD) return null;
+    const stableMessageId = clean(forcedMessageId || messageId, 500);
+    const { rows } = await getPool().query(`INSERT INTO depannhome_partner_email_messages(owner_id,connection_id,uid,message_id,in_reply_to,references_header,sender_address,sender_name,recipients,subject,body_text,document_text,received_at,classification_score,classification_reasons) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12,$13,$14,$15::jsonb) ON CONFLICT(owner_id,connection_id,message_id) DO NOTHING RETURNING id,status,mission_id AS "missionId"`, [connection.owner_id, connection.id, uid, stableMessageId, clean(parsed.inReplyTo, 500), clean((parsed.references || []).join(" "), 4000), clean(from.address, 254), clean(from.name, 160), JSON.stringify(parsed.to?.value?.map(item => item.address).filter(Boolean) || []), clean(parsed.subject, 500), String(parsed.text || "").slice(0, 20000), documentText.slice(0, 50000), parsed.date || new Date(), classification.score, JSON.stringify(classification.reasons)]);
+    if (!rows[0] && forceCandidate) {
+        const existing = await getPool().query("SELECT id,status,mission_id AS \"missionId\" FROM depannhome_partner_email_messages WHERE owner_id=$1 AND connection_id=$2 AND message_id=$3", [connection.owner_id, connection.id, stableMessageId]);
+        return existing.rows[0] ? { ...existing.rows[0], score: classification.score, trustedSender: classification.trustedSender } : null;
+    }
     if (!rows[0]) return null;
     for (const attachment of attachments) await getPool().query("INSERT INTO depannhome_partner_email_attachments(owner_id,email_message_id,filename,mime_type,file_size,content_id,file_data) VALUES($1,$2,$3,$4,$5,$6,$7)", [connection.owner_id, rows[0].id, safeFilename(attachment.filename), attachment.contentType, attachment.size, clean(attachment.contentId, 255), attachment.content]);
-    return { id: rows[0].id, score: classification.score, trustedSender: classification.trustedSender };
+    return { ...rows[0], score: classification.score, trustedSender: classification.trustedSender };
+}
+
+async function importLiveMailboxMessage(connection, messageId, requestedAttachmentIds, actorId) {
+    const message = await liveMailboxOperation(connection, () => readLiveMessage(connection, messageId));
+    const available = (message.attachments || []).filter(item => item.downloadable);
+    const requested = Array.isArray(requestedAttachmentIds) ? requestedAttachmentIds.map(String).slice(0, MAX_ATTACHMENTS) : available.map(item => item.id);
+    if (requested.some(id => !available.some(item => item.id === id))) throw httpError(400, "Une pièce jointe sélectionnée est invalide ou indisponible.");
+    const selected = available.filter(item => requested.includes(item.id));
+    const uid = connection.provider === "microsoft" ? graphMessageUid(messageId) : mailboxUid(messageId);
+    const existing = await getPool().query("SELECT id,status,mission_id AS \"missionId\" FROM depannhome_partner_email_messages WHERE owner_id=$1 AND connection_id=$2 AND uid=$3 ORDER BY id DESC LIMIT 1", [connection.owner_id, connection.id, uid]);
+    if (existing.rows[0]) {
+        const saved = existing.rows[0];
+        if (saved.status === "processing") throw httpError(409, "Cet e-mail est déjà en cours de traitement.");
+        if (saved.status === "imported" && saved.missionId) return existingEmailMission(connection.owner_id, saved.missionId);
+        const stored = await getPool().query("SELECT id,filename,mime_type,file_size FROM depannhome_partner_email_attachments WHERE email_message_id=$1 AND owner_id=$2 ORDER BY id", [saved.id, connection.owner_id]);
+        const selectedStoredIds = [];
+        for (const item of selected) {
+            const match = stored.rows.find(row => !selectedStoredIds.includes(row.id) && row.filename === safeFilename(item.filename) && row.mime_type === item.contentType && Number(row.file_size) === Number(item.size));
+            if (match) selectedStoredIds.push(match.id);
+        }
+        if (selectedStoredIds.length !== selected.length) throw httpError(409, "Les pièces jointes de cet e-mail ont changé. Relancez la recherche avant l’import.");
+        await getPool().query("UPDATE depannhome_partner_email_attachments SET selected=(id=ANY($2::bigint[])) WHERE email_message_id=$1 AND owner_id=$3", [saved.id, selectedStoredIds, connection.owner_id]);
+        if (["ignored", "rejected"].includes(saved.status)) await getPool().query("UPDATE depannhome_partner_email_messages SET status='candidate',processed_at=NULL WHERE id=$1 AND owner_id=$2", [saved.id, connection.owner_id]);
+        return importCandidate(connection.owner_id, saved.id, actorId);
+    }
+    const attachments = [];
+    for (const item of selected) {
+        const downloaded = await liveMailboxOperation(connection, () => downloadLiveAttachment(connection, messageId, decodeMailboxReference(item.id)));
+        attachments.push({ filename: downloaded.filename, contentType: downloaded.contentType, size: downloaded.content.length, content: downloaded.content });
+    }
+    const manualMessageId = `manual-${hash(`${connection.provider}:${messageId}`)}@depannhome.local`;
+    const saved = await saveParsedEmail(connection, uid, {
+        messageId: manualMessageId,
+        subject: message.subject,
+        text: message.bodyText,
+        date: message.receivedAt,
+        from: { value: [message.from || {}] },
+        to: { value: message.to || [] },
+        attachments,
+        headers: new Map()
+    }, { forceCandidate: true, messageId: manualMessageId });
+    if (!saved) throw httpError(500, "Cet e-mail n’a pas pu être préparé pour l’import.");
+    if (saved.status === "processing") throw httpError(409, "Cet e-mail est déjà en cours de traitement.");
+    if (saved.status === "imported" && saved.missionId) {
+        return existingEmailMission(connection.owner_id, saved.missionId);
+    }
+    if (["ignored", "rejected"].includes(saved.status)) await getPool().query("UPDATE depannhome_partner_email_messages SET status='candidate',processed_at=NULL WHERE id=$1 AND owner_id=$2", [saved.id, connection.owner_id]);
+    return importCandidate(connection.owner_id, saved.id, actorId);
+}
+
+async function existingEmailMission(ownerId, missionId) {
+    const { rows } = await getPool().query("SELECT id AS \"missionId\",client_id AS \"clientId\" FROM depannhome_partner_missions WHERE id=$1 AND owner_id=$2 AND deleted_at IS NULL", [missionId, ownerId]);
+    if (!rows[0]) throw httpError(409, "La mission liée à cet e-mail n’est plus disponible.");
+    return { ...rows[0], created: false };
 }
 
 async function importCandidate(ownerId, emailId, actorId) {
@@ -674,10 +742,10 @@ function normalizeKeywordText(value) { return String(value || "").normalize("NFD
 function keywordExpressionMatches(expression, value) { const content = ` ${normalizeKeywordText(value)} `; const tokens = normalizeKeywordText(expression).split(" ").filter(token => token.length >= 2); return tokens.length > 0 && tokens.every(token => content.includes(` ${token} `)); }
 
 async function reclassifyPendingCandidates(ownerId, connectionId, { allowedSenders, requiredKeywords }) {
-    const { rows } = await getPool().query(`SELECT message.id,message.subject,message.body_text,message.sender_address,message.in_reply_to,EXISTS(SELECT 1 FROM depannhome_partner_email_attachments attachment WHERE attachment.email_message_id=message.id) AS has_attachment FROM depannhome_partner_email_messages message WHERE message.owner_id=$1 AND message.connection_id=$2 AND message.status='candidate'`, [ownerId, connectionId]);
+    const { rows } = await getPool().query(`SELECT message.id,message.subject,message.body_text,message.document_text,message.sender_address,message.in_reply_to,EXISTS(SELECT 1 FROM depannhome_partner_email_attachments attachment WHERE attachment.email_message_id=message.id) AS has_attachment FROM depannhome_partner_email_messages message WHERE message.owner_id=$1 AND message.connection_id=$2 AND message.status='candidate'`, [ownerId, connectionId]);
     let removed = 0;
     for (const message of rows) {
-        const classification = classifyPartnerEmail({ subject: message.subject, text: message.body_text, from: message.sender_address, attachments: message.has_attachment ? [{ contentType: "application/pdf" }] : [], allowedSenders, requiredKeywords, reply: Boolean(message.in_reply_to) });
+        const classification = classifyPartnerEmail({ subject: message.subject, text: `${message.body_text || ""}\n${message.document_text || ""}`, from: message.sender_address, attachments: message.has_attachment ? [{ contentType: "application/pdf" }] : [], allowedSenders, requiredKeywords, reply: Boolean(message.in_reply_to) });
         if (classification.score < CANDIDATE_THRESHOLD) { await getPool().query("UPDATE depannhome_partner_email_messages SET status='ignored',classification_score=$3,classification_reasons=$4::jsonb,processed_at=NOW() WHERE id=$1 AND owner_id=$2 AND status='candidate'", [message.id, ownerId, classification.score, JSON.stringify(classification.reasons)]); removed += 1; }
         else await getPool().query("UPDATE depannhome_partner_email_messages SET classification_score=$3,classification_reasons=$4::jsonb WHERE id=$1 AND owner_id=$2 AND status='candidate'", [message.id, ownerId, classification.score, JSON.stringify(classification.reasons)]);
     }

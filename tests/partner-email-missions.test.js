@@ -320,6 +320,39 @@ test("la boîte complète se consulte à la demande sans stockage ni déplacemen
     assert.match(emailSettingsSource, /Microsoft n’a pas permis de charger ses pièces jointes/);
 });
 
+test("un e-mail ouvert peut créer directement une mission avec les seules pièces sélectionnées", () => {
+    const importRoute = serverSource.slice(serverSource.indexOf('app.post("/api/partner-email/:connectionId/messages/:messageRef/import"'), serverSource.indexOf('app.post("/api/partner-email/:connectionId/sync"'));
+    assert.match(importRoute, /requiredConnection\(ownerId/);
+    assert.match(importRoute, /importLiveMailboxMessage/);
+    assert.match(importRoute, /req\.body\?\.attachmentIds/);
+    assert.match(serverSource, /requestedAttachmentIds\.map\(String\)\.slice\(0, MAX_ATTACHMENTS\)/);
+    assert.match(serverSource, /selected=\(id=ANY\(\$2::bigint\[\]\)\)/);
+    assert.match(serverSource, /selectedStoredIds\.length !== selected\.length/);
+    assert.match(serverSource, /WHERE owner_id=\$1 AND connection_id=\$2 AND uid=\$3/);
+    assert.match(serverSource, /return existingEmailMission\(connection\.owner_id, saved\.missionId\)/);
+    assert.match(appSource, /messages\/:messageRef\/import[\s\S]*?limit: 30/);
+    assert.match(emailSettingsSource, /data-mailbox-mission-attachment/);
+    assert.match(emailSettingsSource, /data-mailbox-import-mission/);
+    assert.match(emailSettingsSource, /JSON\.stringify\(\{ attachmentIds \}\)/);
+    assert.match(emailSettingsSource, /Envoyer ce mail dans Missions partenaires/);
+});
+
+test("la détection automatique recherche les indices dans le corps et les documents", () => {
+    assert.match(schemaSource, /body_text TEXT NOT NULL DEFAULT '', document_text TEXT NOT NULL DEFAULT ''/);
+    assert.match(serverSource, /depannhome_partner_email_messages ADD COLUMN IF NOT EXISTS document_text TEXT NOT NULL DEFAULT ''/);
+    assert.match(serverSource, /const documentText = await extractPartnerDocumentText\(attachments\.map/);
+    assert.match(serverSource, /text: `\$\{parsed\.text \|\| ""\}\\n\$\{documentText\}`/);
+    assert.match(serverSource, /message\.body_text \|\| ""\}\\n\$\{message\.document_text \|\| ""/);
+    assert.match(serverSource, /forceCandidate \? \[\] : connection\.required_keywords/);
+});
+
+test("l’import manuel actualise la fiche client et les missions visibles", () => {
+    assert.match(emailSettingsSource, /synchronizeClients\(\{ forceFull: true \}\)/);
+    assert.match(emailSettingsSource, /depannhome:partner-client-provisioned/);
+    assert.match(emailSettingsSource, /dispatchMailboxChanged\("mailbox-import"/);
+    assert.match(emailSettingsSource, /Mission partenaire créée/);
+});
+
 test("l’entreprise répond directement depuis la boîte connectée dans le fil d’origine", () => {
     assert.equal(replySubject("Demande d’intervention"), "Re: Demande d’intervention");
     assert.equal(replySubject("RE: Demande d’intervention"), "RE: Demande d’intervention");

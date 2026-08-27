@@ -151,6 +151,13 @@ app.post("/api/partner-email/:connectionId/messages/:messageRef/reply", rateLimi
 	legacyHeaders: false,
 	message: { message: "Trop de réponses ont été envoyées. Réessayez dans quelques minutes." }
 }));
+app.post("/api/partner-email/:connectionId/messages/:messageRef/import", rateLimit({
+	windowMs: 15 * 60 * 1000,
+	limit: 30,
+	standardHeaders: "draft-7",
+	legacyHeaders: false,
+	message: { message: "Trop d’imports de missions ont été demandés. Réessayez dans quelques minutes." }
+}));
 app.use(["/api/partner-email/:connectionId/inbox", "/api/partner-email/:connectionId/messages"], rateLimit({
 	windowMs: 15 * 60 * 1000,
 	limit: 300,

@@ -335,14 +335,42 @@ async function loadMailboxMessage(browser, connectionId, messageRef, selectedBut
     const recipients = (message.to || []).map(mailboxAddressLabel).filter(Boolean).join(", ");
     const copies = (message.cc || []).map(mailboxAddressLabel).filter(Boolean).join(", ");
     const attachments = (message.attachments || []).map(attachment => attachment.downloadable
-        ? `<button type="button" class="secondary-button" data-mailbox-attachment="${escapeHtml(attachment.id)}" data-mailbox-attachment-name="${escapeHtml(attachment.filename)}">${escapeHtml(attachment.filename)} · ${escapeHtml(formatBytes(attachment.size))}</button>`
+        ? `<label class="partner-mailbox-mission-attachment"><input type="checkbox" data-mailbox-mission-attachment value="${escapeHtml(attachment.id)}" checked><span>${escapeHtml(attachment.filename)} · ${escapeHtml(formatBytes(attachment.size))}</span><button type="button" class="secondary-button" data-mailbox-attachment="${escapeHtml(attachment.id)}" data-mailbox-attachment-name="${escapeHtml(attachment.filename)}">Télécharger</button></label>`
         : `<span class="partner-mailbox-attachment-disabled">${escapeHtml(attachment.filename)} · ${escapeHtml(formatBytes(attachment.size))} — format ou taille non autorisé</span>`).join("");
     const replyRecipient = mailboxAddressLabel(message.from);
     panel.innerHTML = `<header><p class="eyebrow">Message reçu le ${escapeHtml(formatDate(message.receivedAt))}</p><h3>${escapeHtml(message.subject || "Sans objet")}</h3><dl><dt>De</dt><dd>${escapeHtml(replyRecipient || "Expéditeur inconnu")}</dd><dt>À</dt><dd>${escapeHtml(recipients || "Destinataire non indiqué")}</dd>${copies ? `<dt>Copie</dt><dd>${escapeHtml(copies)}</dd>` : ""}</dl></header><pre class="partner-mailbox-body">${escapeHtml(message.bodyText || "Ce message ne contient pas de texte consultable.")}</pre>${message.bodyTruncated ? '<p class="auth-message">Le corps de ce message très volumineux a été limité à 512 Ko.</p>' : ""}${message.attachmentsUnavailable ? '<p class="auth-message error">Le message est accessible, mais Microsoft n’a pas permis de charger ses pièces jointes. Réessayez ou reconnectez la boîte Microsoft si le problème persiste.</p>' : ""}${attachments ? `<div class="partner-mailbox-attachments"><strong>Pièces jointes</strong><div>${attachments}</div><small>Cliquez sur un document pour le télécharger avec son nom d’origine.</small></div>` : ""}${replyRecipient ? `<form class="partner-mailbox-reply" data-mailbox-reply><header><span class="partner-email-reply-icon" aria-hidden="true">↩</span><div><p class="eyebrow">Réponse sécurisée</p><h4>Répondre dans le fil d’origine</h4></div></header><p class="partner-email-reply-recipient"><strong>Destinataire</strong><span>${escapeHtml(replyRecipient)}</span></p><label>Votre message<textarea name="body" rows="6" maxlength="10000" required placeholder="Bonjour,&#10;&#10;Rédigez votre réponse…"></textarea><small data-mailbox-reply-count>0 / 10 000 caractères</small></label><div class="form-actions partner-email-reply-actions"><span>Envoyé depuis la boîte connectée</span><button type="submit" class="primary-button">Envoyer la réponse</button></div><p class="auth-message" data-mailbox-reply-feedback aria-live="polite"></p></form>` : '<p class="auth-message">Cet e-mail ne contient aucune adresse permettant d’y répondre.</p>'}`;
+    const missionImport = `<section class="partner-mailbox-mission-import"><h4>Créer une mission partenaire</h4><p>Le corps du mail et les documents cochés seront analysés pour créer ou rattacher automatiquement la fiche client.</p><button type="button" class="primary-button" data-mailbox-import-mission>Envoyer ce mail dans Missions partenaires</button><p class="auth-message" data-mailbox-import-feedback aria-live="polite"></p></section>`;
+    const replyElement = panel.querySelector("[data-mailbox-reply]");
+    if (replyElement) replyElement.insertAdjacentHTML("beforebegin", missionImport); else panel.insertAdjacentHTML("beforeend", missionImport);
     panel.querySelectorAll("[data-mailbox-attachment]").forEach(button => button.addEventListener("click", () => downloadMailboxAttachment(button, connectionId, message.id)));
+    panel.querySelector("[data-mailbox-import-mission]")?.addEventListener("click", event => importMailboxMission(event.currentTarget, connectionId, message));
     const replyForm = panel.querySelector("[data-mailbox-reply]");
     replyForm?.elements.body.addEventListener("input", () => { replyForm.querySelector("[data-mailbox-reply-count]").textContent = `${replyForm.elements.body.value.length.toLocaleString("fr-FR")} / 10 000 caractères`; });
     replyForm?.addEventListener("submit", event => submitMailboxReply(event, connectionId, message.id));
+}
+
+async function importMailboxMission(button, connectionId, message) {
+    const panel = button.closest(".partner-mailbox-message");
+    const feedback = panel.querySelector("[data-mailbox-import-feedback]");
+    const attachmentIds = [...panel.querySelectorAll("[data-mailbox-mission-attachment]:checked")].map(input => input.value);
+    button.disabled = true;
+    const label = button.textContent;
+    button.textContent = "Analyse du mail et des documents…";
+    feedback.textContent = "Création de la mission et de la fiche client…";
+    feedback.classList.remove("error");
+    const result = await api(`/api/partner-email/${connectionId}/messages/${encodeURIComponent(message.id)}/import`, { method: "POST", body: JSON.stringify({ attachmentIds }) });
+    if (!result.ok) {
+        button.disabled = false;
+        button.textContent = label;
+        feedback.textContent = result.message;
+        feedback.classList.add("error");
+        return;
+    }
+    await synchronizeClients({ forceFull: true }).catch(() => {});
+    if (result.data?.clientId) window.dispatchEvent(new CustomEvent("depannhome:partner-client-provisioned", { detail: { clientId: result.data.clientId } }));
+    dispatchMailboxChanged("mailbox-import", { connectionId, missionId: result.data?.missionId, clientId: result.data?.clientId });
+    button.textContent = "Mission partenaire créée";
+    feedback.textContent = result.data.message;
 }
 
 async function downloadMailboxAttachment(button, connectionId, messageRef) {
