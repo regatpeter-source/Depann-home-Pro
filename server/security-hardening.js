@@ -17,6 +17,7 @@ export function contentSecurityPolicy() {
         fontSrc: ["'self'", "data:"],
         formAction: ["'self'"],
         frameAncestors: ["'none'"],
+        frameSrc: ["'self'", "blob:"],
         imgSrc: ["'self'", "data:", "blob:"],
         objectSrc: ["'none'"],
         scriptSrc: ["'self'"],

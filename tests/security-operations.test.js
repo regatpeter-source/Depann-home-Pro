@@ -13,12 +13,13 @@ function response() {
     return { statusCode: 200, body: null, status(code) { this.statusCode = code; return this; }, json(body) { this.body = body; return this; } };
 }
 
-test("la CSP interdit scripts inline, objets et intégration en iframe", () => {
+test("la CSP autorise les aperçus PDF blob sans autoriser l’encapsulation de l’application", () => {
     const directives = contentSecurityPolicy().directives;
     assert.deepEqual(directives.scriptSrc, ["'self'"]);
     assert.deepEqual(directives.scriptSrcAttr, ["'none'"]);
     assert.deepEqual(directives.objectSrc, ["'none'"]);
     assert.deepEqual(directives.frameAncestors, ["'none'"]);
+    assert.deepEqual(directives.frameSrc, ["'self'", "blob:"]);
     assert.match(securityConfigurationFingerprint(), /^[a-f0-9]{64}$/);
 });
 
