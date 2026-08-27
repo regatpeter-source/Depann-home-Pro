@@ -79,4 +79,6 @@ test("les ordonnanceurs publient uniquement des observations techniques", () => 
     const email = readFileSync(new URL("../server/partner-email.js", import.meta.url), "utf8");
     assert.match(invoicing, /recordHealthSchedulerRun\("subscription_invoicing"/);
     assert.match(email, /recordHealthSchedulerRun\("partner_email"/);
+    assert.match(server, /\$1::varchar\(100\).*\$3::varchar\(20\).*\$4::integer.*\$6::timestamptz/);
+    assert.match(server, /CASE WHEN \$3::varchar\(20\)='started'/);
 });

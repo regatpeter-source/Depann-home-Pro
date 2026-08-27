@@ -134,7 +134,7 @@ export async function recordHealthError(error, request) {
 export async function recordHealthSchedulerRun(schedulerKey, source, status, summary = {}, startedAt = new Date()) {
     try {
         const durationMs = ["completed", "failed", "skipped"].includes(status) ? Math.max(0, Date.now() - new Date(startedAt).getTime()) : null;
-        await getPool().query(`INSERT INTO depannhome_health_scheduler_runs(scheduler_key,source,status,duration_ms,summary,started_at,completed_at) VALUES($1,$2,$3,$4,$5::jsonb,$6,CASE WHEN $3='started' THEN NULL ELSE NOW() END)`, [cleanText(schedulerKey,100),cleanText(source,30),status,durationMs,JSON.stringify(safeDetails(summary)),startedAt]);
+        await getPool().query(`INSERT INTO depannhome_health_scheduler_runs(scheduler_key,source,status,duration_ms,summary,started_at,completed_at) VALUES($1::varchar(100),$2::varchar(30),$3::varchar(20),$4::integer,$5::jsonb,$6::timestamptz,CASE WHEN $3::varchar(20)='started' THEN NULL ELSE NOW() END)`, [cleanText(schedulerKey,100),cleanText(source,30),status,durationMs,JSON.stringify(safeDetails(summary)),startedAt]);
         if (status === "failed") await upsertIncident({ module: schedulerKey, severity: "important", errorType: "SCHEDULER_FAILURE", route: "scheduler", technicalMessage: `${schedulerKey} a échoué.` });
         if (status === "completed") await resolveIncident(fingerprintFor(schedulerKey, "SCHEDULER_FAILURE", "scheduler"));
     } catch (error) {
