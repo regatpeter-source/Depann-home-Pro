@@ -61,6 +61,22 @@ test("plusieurs règlements apurent une même facture", () => {
     assert.equal(customerBalance, 0);
 });
 
+test("une franchise déduite est portée sur un compte tiers et le règlement apure le client", () => {
+    const source = invoice({ financialData: { aids: [{ name: "Franchise assurance", amount: 200, calculationMode: "fixed" }] } });
+    const entries = [post(source), settle({ amount: 1000 }, "BQ000001", source)];
+    assert.deepEqual(entries[0].lines.map(line => [line.accountNumber, line.debit, line.credit]), [["411000", 1000, 0], ["467000", 200, 0], ["706000", 0, 1000], ["445710", 0, 200]]);
+    const customerBalance = entries.flatMap(entry => entry.lines).filter(line => line.accountNumber === "411000").reduce((sum, line) => sum + line.debit - line.credit, 0);
+    assert.equal(customerBalance, 0);
+    assert.equal(validateLedger(entries).valid, true);
+});
+
+test("le compte des aides et franchises est configurable", () => {
+    const source = invoice({ financialData: { aids: [{ name: "Prime CEE", amount: 10, calculationMode: "percentage" }] } });
+    const entry = createDocumentAccountingEntry({ document: source, entryNumber: "VE000001", validDate: source.issueDate, chartConfig: { aidReceivableAccount: "467100" } });
+    assert.equal(entry.lines.find(line => line.accountLabel === "Aides et franchises à recevoir")?.accountNumber, "467100");
+    assert.equal(entry.lines.find(line => line.accountNumber === "467100")?.debit, 100);
+});
+
 // 6
 test("plusieurs factures d’un client conservent des pièces et numéros distincts", () => {
     const entries = [post(invoice(), "VE000001"), post(invoice({ id: 3, documentNumber: "FAC-2026-002" }), "VE000002")];

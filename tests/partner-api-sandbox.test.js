@@ -100,8 +100,8 @@ test("sandbox mission IDs cannot enter legacy production mission routes", () => 
     const source = readFileSync(new URL("../server/partner-missions.js", import.meta.url), "utf8");
     assert.match(source, /app\.use\("\/api\/partner-missions\/:missionId", asyncHandler\(requireProductionMission\)\)/);
     assert.match(source, /function requireProductionMission/);
-    assert.match(source, /mission\.owner_id=\$2 AND intake\.is_sandbox=FALSE/);
-    assert.match(source, /intake\.is_sandbox=FALSE FOR UPDATE/);
+    assert.match(source, /mission\.owner_id=\$2 AND mission\.deleted_at IS NULL AND intake\.is_sandbox=FALSE/);
+    assert.match(source, /mission\.deleted_at IS NULL AND intake\.is_sandbox=FALSE FOR UPDATE/);
 });
 
 test("static API intake listing is registered before the generic mission route", () => {

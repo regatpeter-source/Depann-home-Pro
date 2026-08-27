@@ -639,6 +639,7 @@ export function registerBillingRoutes(app, requireAuthentication) {
             if (!locked.rows[0]) { await database.query("ROLLBACK"); return response.status(404).json({ message: "Document introuvable." }); }
             await sendDocumentEmail({ recipient, recipientName: billingExport.document.customerName, documentLabel: `${type} ${billingExport.document.documentNumber}`, attachment: { filename: output.filename, content: output.buffer, contentType: output.mimeType } });
             if (locked.rows[0].documentType === "invoice") await database.query("UPDATE depannhome_billing_documents SET is_email_sent=TRUE, sent_at=COALESCE(sent_at,NOW()), status='sent', updated_at=NOW() WHERE id=$1", [billingExport.document.id]);
+            await database.query("COMMIT");
         } catch (error) {
             await database.query("ROLLBACK");
             throw error;

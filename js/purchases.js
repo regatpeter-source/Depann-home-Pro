@@ -10,7 +10,7 @@ let activePurchase = null;
 let presentation = {};
 
 export async function renderPurchases(options = {}) {
-    presentation = { ...options };
+    presentation = { ...options, readOnly: options.readOnly === true || document.body.dataset.role === "accountant" };
     clearSearch();
     resetSelection("all");
     if (!presentation.embedded) setPage("Achats", ROUTES.purchases, "detail");
@@ -48,7 +48,7 @@ function renderOverview(panel) {
     panel.innerHTML = `
         <div class="purchases-overview">
             <div><p class="eyebrow">Base de données fournisseurs</p><h2>Achats & dépenses</h2></div>
-            <button type="button" class="secondary-button" id="newPurchase">+ Nouvel achat</button>
+            ${presentation.readOnly ? '<span class="auth-message">Consultation uniquement</span>' : '<button type="button" class="secondary-button" id="newPurchase">+ Nouvel achat</button>'}
         </div>
         <div class="billing-metrics purchases-metrics"><span><strong>${purchases.length}</strong> achat(s)</span><span><strong>${formatMoney(totals.ttc)}</strong> achats TTC</span><span><strong>${formatMoney(totals.vat)}</strong> TVA déductible</span><span class="billing-accounted-metric"><strong>${formatMoney(accountedTotals.ttc)}</strong> comptabilisé TTC</span></div>
     `;
@@ -59,7 +59,7 @@ function renderOverview(panel) {
 }
 
 function renderPurchaseEditor(panel) {
-    if (!activePurchase) { panel.hidden = true; panel.innerHTML = ""; return; }
+    if (!activePurchase || presentation.readOnly) { activePurchase = null; panel.hidden = true; panel.innerHTML = ""; return; }
     panel.hidden = false;
     const purchase = activePurchase;
     const isEditing = Boolean(purchase.id);
@@ -144,8 +144,8 @@ function renderPurchaseList(panel) {
             item.className = "purchase-item";
             const totals = calculateTotals([purchase]);
             const accountingLabel = purchase.isAccounted ? `Comptabilisé le ${formatDate(purchase.accountedAt)}` : "À comptabiliser";
-            item.innerHTML = `<div><p class="eyebrow">${escapeHtml(purchase.category)}${purchase.clientName ? ` · Client : ${escapeHtml(purchase.clientName)}` : ""}</p><h3>${escapeHtml(purchase.description)}</h3><p>${escapeHtml(purchase.supplier || "Fournisseur non renseigné")}${purchase.reference ? ` · ${escapeHtml(purchase.reference)}` : ""}</p><small>${escapeHtml(formatDate(purchase.purchaseDate))} · <span class="billing-accounting-status ${purchase.isAccounted ? "is-accounted" : ""}">${escapeHtml(accountingLabel)}</span></small></div><div class="billing-document-amount"><strong>${formatMoney(totals.ttc)}</strong><small>${formatMoney(totals.ht)} HT · TVA ${formatMoney(totals.vat)}</small></div><div class="billing-document-actions"><button type="button" class="secondary-button" data-accounting="${purchase.isAccounted ? "false" : "true"}">${purchase.isAccounted ? "Décomptabiliser" : "Comptabiliser"}</button><button type="button" class="secondary-button" data-open-purchase>Ouvrir</button></div>`;
-            item.querySelector("[data-open-purchase]").addEventListener("click", () => { activePurchase = normalizePurchase(purchase); renderPurchases(presentation); });
+            item.innerHTML = `<div><p class="eyebrow">${escapeHtml(purchase.category)}${purchase.clientName ? ` · Client : ${escapeHtml(purchase.clientName)}` : ""}</p><h3>${escapeHtml(purchase.description)}</h3><p>${escapeHtml(purchase.supplier || "Fournisseur non renseigné")}${purchase.reference ? ` · ${escapeHtml(purchase.reference)}` : ""}</p><small>${escapeHtml(formatDate(purchase.purchaseDate))} · <span class="billing-accounting-status ${purchase.isAccounted ? "is-accounted" : ""}">${escapeHtml(accountingLabel)}</span></small></div><div class="billing-document-amount"><strong>${formatMoney(totals.ttc)}</strong><small>${formatMoney(totals.ht)} HT · TVA ${formatMoney(totals.vat)}</small></div><div class="billing-document-actions">${presentation.readOnly ? '<small>Consultation uniquement</small>' : `<button type="button" class="secondary-button" data-accounting="${purchase.isAccounted ? "false" : "true"}">${purchase.isAccounted ? "Décomptabiliser" : "Comptabiliser"}</button><button type="button" class="secondary-button" data-open-purchase>Ouvrir</button>`}</div>`;
+            item.querySelector("[data-open-purchase]")?.addEventListener("click", () => { activePurchase = normalizePurchase(purchase); renderPurchases(presentation); });
             item.querySelector("[data-accounting]")?.addEventListener("click", async event => {
                 const result = await apiRequest(`/api/purchases/${encodeURIComponent(purchase.id)}/accounting`, { method: "PATCH", body: JSON.stringify({ isAccounted: event.currentTarget.dataset.accounting === "true" }) });
                 if (!result.ok) { alert(result.message || "Impossible de mettre à jour la comptabilité."); return; }

@@ -114,12 +114,13 @@ export function registerPurchaseRoutes(app, requireAuthentication) {
 }
 
 function requirePurchaseAdministration(request, response, next) {
-    if (!["admin", "pc_standard", "accountant", "mobile_admin"].includes(request.user?.role)) return response.status(403).json({ message: "Les achats sont réservés aux postes PC et à l’Administrateur Mobile." });
+    if (!["admin", "pc_standard", "mobile_admin"].includes(request.user?.role)) return response.status(403).json({ message: request.user?.role === "accountant" ? "Le poste comptable est en consultation uniquement." : "Les achats sont réservés aux postes PC et à l’Administrateur Mobile." });
     return next();
 }
 
 function requirePurchaseReadAccess(request, response, next) {
-    return requirePurchaseAdministration(request, response, next);
+    if (["admin", "pc_standard", "accountant", "mobile_admin"].includes(request.user?.role)) return next();
+    return response.status(403).json({ message: "Les achats sont réservés aux postes PC et à l’Administrateur Mobile." });
 }
 
 function sanitizePurchase(value) {

@@ -254,7 +254,7 @@ export function registerAccountingRoutes(app, requireAuthentication) {
     }));
 
     app.get("/api/accounting/aids", asyncHandler(async (request, response) => response.json({ aids: await loadAids(getAccountOwnerId(request)) })));
-    app.post("/api/accounting/aids", asyncHandler(async (request, response) => {
+    app.post("/api/accounting/aids", requireAccountingWriteAccess, asyncHandler(async (request, response) => {
         const aid = sanitizeAid(request.body);
         if (!aid.ok) return response.status(400).json({ message: aid.message });
         const { rows } = await getPool().query(`
@@ -264,7 +264,7 @@ export function registerAccountingRoutes(app, requireAuthentication) {
         `, [getAccountOwnerId(request), aid.name, aid.description, aid.aidType, aid.calculationMode, aid.amount, aid.autoApply, JSON.stringify(aid.rules)]);
         response.status(201).json({ id: rows[0].id });
     }));
-    app.put("/api/accounting/aids/:aidId", asyncHandler(async (request, response) => {
+    app.put("/api/accounting/aids/:aidId", requireAccountingWriteAccess, asyncHandler(async (request, response) => {
         const id = positiveId(request.params.aidId);
         const aid = sanitizeAid(request.body);
         if (!id || !aid.ok) return response.status(400).json({ message: aid.message || "Aide invalide." });
@@ -275,13 +275,13 @@ export function registerAccountingRoutes(app, requireAuthentication) {
         if (!result.rowCount) return response.status(404).json({ message: "Aide introuvable." });
         response.status(204).end();
     }));
-    app.delete("/api/accounting/aids/:aidId", asyncHandler(async (request, response) => {
+    app.delete("/api/accounting/aids/:aidId", requireAccountingWriteAccess, asyncHandler(async (request, response) => {
         const result = await getPool().query("DELETE FROM depannhome_accounting_aids WHERE id=$1 AND owner_id=$2", [positiveId(request.params.aidId), getAccountOwnerId(request)]);
         if (!result.rowCount) return response.status(404).json({ message: "Aide introuvable." });
         response.status(204).end();
     }));
 
-    app.put("/api/accounting/documents/:documentId/financial-data", asyncHandler(async (request, response) => {
+    app.put("/api/accounting/documents/:documentId/financial-data", requireAccountingWriteAccess, asyncHandler(async (request, response) => {
         const id = positiveId(request.params.documentId);
         const financialData = sanitizeFinancialData(request.body);
         if (!id || !financialData.ok) return response.status(400).json({ message: financialData.message || "Données financières invalides." });
@@ -293,14 +293,14 @@ export function registerAccountingRoutes(app, requireAuthentication) {
         response.status(204).end();
     }));
 
-    app.post("/api/accounting/documents/:documentId/post", asyncHandler(async (request, response) => {
+    app.post("/api/accounting/documents/:documentId/post", requireAccountingWriteAccess, asyncHandler(async (request, response) => {
         const documentId = positiveId(request.params.documentId);
         if (!documentId) return response.status(400).json({ message: "Document invalide." });
         const result = await postAccountingDocument({ ownerId: getAccountOwnerId(request), documentId, actorId: request.user.sub });
         response.status(result.alreadyPosted ? 200 : 201).json(result);
     }));
 
-    app.post("/api/accounting/documents/:documentId/credits", asyncHandler(async (request, response) => {
+    app.post("/api/accounting/documents/:documentId/credits", requireAccountingWriteAccess, asyncHandler(async (request, response) => {
         const sourceId = positiveId(request.params.documentId);
         const ownerId = getAccountOwnerId(request);
         const client = await getPool().connect();
@@ -345,13 +345,13 @@ export function registerAccountingRoutes(app, requireAuthentication) {
         } finally { client.release(); }
     }));
 
-    app.post("/api/accounting/settlements", asyncHandler(async (request, response) => {
+    app.post("/api/accounting/settlements", requireAccountingWriteAccess, asyncHandler(async (request, response) => {
         const result = await recordInvoiceSettlement({ ownerId: getAccountOwnerId(request), actorId: request.user.sub, input: request.body });
         response.status(201).json(result);
     }));
 
     app.get("/api/accounting/settings", asyncHandler(async (request, response) => response.json({ settings: publicSettings(await loadSettings(getAccountOwnerId(request))) })));
-    app.put("/api/accounting/settings", asyncHandler(async (request, response) => {
+    app.put("/api/accounting/settings", requireAccountingWriteAccess, asyncHandler(async (request, response) => {
         const settings = sanitizeSettings(request.body);
         if (!settings.ok) return response.status(400).json({ message: settings.message });
         const ownerId = getAccountOwnerId(request);
@@ -419,7 +419,7 @@ export function registerAccountingRoutes(app, requireAuthentication) {
         return sendTextDownload(response, content, filename, "text/plain; charset=utf-8");
     }));
 
-    app.post("/api/accounting/e-invoices/:documentId/transmit", asyncHandler(async (request, response) => {
+    app.post("/api/accounting/e-invoices/:documentId/transmit", requireAccountingWriteAccess, asyncHandler(async (request, response) => {
         const result = await transmitElectronicDocument({ ownerId: getAccountOwnerId(request), documentId: request.params.documentId, actorId: request.user.sub });
         response.status(201).json(result);
     }));
@@ -445,6 +445,11 @@ export function registerAccountingRoutes(app, requireAuthentication) {
 function requireAccountingAdministration(request, response, next) {
     if (hasAccountingWorkspaceAccess(request.user)) return next();
     return response.status(403).json({ message: "L’accès à l’espace Comptabilité n’est pas autorisé pour ce poste PC ou n’est pas inclus dans l’offre active." });
+}
+
+function requireAccountingWriteAccess(request, response, next) {
+    if (request.user?.role !== "accountant") return next();
+    return response.status(403).json({ message: "Le poste comptable est en consultation uniquement." });
 }
 
 export async function recordInvoiceSettlement({ ownerId, actorId, input, databasePool = getPool() }) {

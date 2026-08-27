@@ -7,6 +7,7 @@ export const FEC_COLUMNS = Object.freeze([
 export const DEFAULT_CHART_CONFIG = Object.freeze({
     salesAccount: "706000",
     customerAccount: "411000",
+    aidReceivableAccount: "467000",
     bankAccount: "512000",
     cashAccount: "530000",
     vatCollectedAccount: "445710",
@@ -72,6 +73,8 @@ export function createDocumentAccountingEntry({ document, chartConfig, journal, 
     const totals = calculateDocumentAccountingTotals(sourceLines, document.financialData || document.financial_data);
     if (totals.ttc <= 0) throw new Error("Le total TTC de la pièce doit être strictement positif.");
     const isCredit = type === "credit";
+    const aidAmount = isCredit ? 0 : calculateAidAmount(document.financialData || document.financial_data, totals);
+    const customerAmount = roundMoney(totals.ttc - aidAmount);
     const pieceRef = cleanText(document.documentNumber || document.document_number, 80);
     const pieceDate = cleanDate(document.issueDate || document.issue_date);
     const clientId = cleanAuxiliary(document.clientId || document.client_id);
@@ -79,10 +82,19 @@ export function createDocumentAccountingEntry({ document, chartConfig, journal, 
     const description = `${isCredit ? "Avoir" : "Facture"} ${pieceRef}`;
     const base = entryBase({ ownerId: document.ownerId || document.owner_id, journal: journalConfig, entryNumber, entryDate: pieceDate, pieceRef, pieceDate, description, validDate, sourceType: type, sourceId: document.id, clientId, appointmentId: document.appointmentId || document.appointment_id || null });
     const lines = [];
-    lines.push(accountingLine(config.customerAccount, "Clients", isCredit ? 0 : totals.ttc, isCredit ? totals.ttc : 0, clientId, customerName));
+    if (customerAmount > 0) lines.push(accountingLine(config.customerAccount, "Clients", isCredit ? 0 : customerAmount, isCredit ? customerAmount : 0, clientId, customerName));
+    if (aidAmount > 0) lines.push(accountingLine(config.aidReceivableAccount, "Aides et franchises à recevoir", isCredit ? 0 : aidAmount, isCredit ? aidAmount : 0));
     lines.push(accountingLine(config.salesAccount, "Prestations de services", isCredit ? totals.ht : 0, isCredit ? 0 : totals.ht));
     totals.vatBreakdown.filter(item => item.amount).forEach(item => lines.push(accountingLine(config.vatCollectedAccount, `TVA collectée ${formatRate(item.rate)} %`, isCredit ? item.amount : 0, isCredit ? 0 : item.amount)));
     return finalizeEntry({ ...base, lines, totals });
+}
+
+function calculateAidAmount(financialData, totals) {
+    const aids = Array.isArray(financialData?.aids) ? financialData.aids : [];
+    const requested = aids.reduce((sum, aid) => sum + (aid?.calculationMode === "percentage"
+        ? totals.ht * Math.max(0, finite(aid?.amount)) / 100
+        : Math.max(0, finite(aid?.amount))), 0);
+    return roundMoney(Math.min(totals.ttc, requested));
 }
 
 export function createSettlementAccountingEntry({ settlement, document, chartConfig, journal, entryNumber, validDate }) {
