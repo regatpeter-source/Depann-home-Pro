@@ -59,6 +59,12 @@ Le scénario obtient deux jetons courts, vérifie les deux sociétés avec `/v1.
 
 Ce banc de test ne remplace pas l’application Authorization Code multi-tenant configurée par les variables `SUPERPDP_*`. Ses Client Credentials fictifs ne peuvent donc jamais connecter ni représenter une entreprise cliente de Depann’Home Pro.
 
+### Utilisation depuis la Console Créateur
+
+La fiche d’une organisation dans la Console Créateur expose l’état de sa connexion et ses dernières transmissions avec le même adaptateur `super_pdp`. Cette vue est strictement en lecture seule : elle ne sélectionne jamais les colonnes de credentials chiffrés, de renouvellement ou de webhook, et ne permet ni connexion, ni déconnexion, ni transmission au nom d’une entreprise cliente.
+
+Le compte propre du Créateur reste aussi un compte entreprise isolé par son `owner_id`. Le bouton « Configurer et utiliser SUPER PDP » ouvre donc le module comptable normal pour ce seul compte. L’autorisation OAuth, les contrôles et les transmissions empruntent exactement les mêmes routes que pour toute autre entreprise ; aucune plateforme ni aucun coffre parallèle n’est créé.
+
 ## Routes et webhooks
 
 Les routes administratives sont sous `/api/accounting/e-invoicing`. Le serveur déduit toujours l’entreprise avec `getAccountOwnerId(request)` et filtre chaque connexion, document et transmission avec cet identifiant.

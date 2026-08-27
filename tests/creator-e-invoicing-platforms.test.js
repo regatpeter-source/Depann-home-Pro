@@ -31,3 +31,14 @@ test("une fiche ne peut pas déclarer un adaptateur absent comme déployé", () 
     const routes = creatorServer.slice(creatorServer.indexOf('app.get("/api/creator/e-invoicing-platforms"'), creatorServer.indexOf('app.get("/api/creator/super-pdp-sandbox"'));
     assert.doesNotMatch(routes, /fetch\(|testConnection|encrypted_credentials/);
 });
+
+test("le Créateur consulte la même intégration par entreprise sans recevoir les secrets", () => {
+    const route = creatorServer.slice(creatorServer.indexOf('app.get("/api/creator/accounts/:accountId/e-invoicing"'), creatorServer.indexOf('app.post("/api/creator/accounts"'));
+    assert.match(route, /requireCreator/);
+    assert.match(route, /WHERE owner_id=\$1/);
+    assert.match(route, /depannhome_einvoice_connections/);
+    assert.match(route, /depannhome_einvoice_transmissions/);
+    assert.doesNotMatch(route, /encrypted_credentials|refresh_metadata|webhook_token_hash/);
+    assert.match(creatorClient, /Configurer et utiliser SUPER PDP/);
+    assert.match(creatorClient, /renderAccounting\("electronic"\)/);
+});

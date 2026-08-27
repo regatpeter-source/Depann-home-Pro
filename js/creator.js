@@ -3,6 +3,7 @@ import { clearSearch, getContainer, setPage } from "./ui.js?v=44";
 import { escapeHtml } from "./utils.js?v=44";
 import { renderCreatorConnectors } from "./connectors.js?v=1";
 import { renderHealthDashboard } from "./health-dashboard.js?v=1";
+import { renderAccounting } from "./accounting.js?v=15";
 
 let accounts = [];
 let selectedAccountId = "";
@@ -505,6 +506,7 @@ async function renderAccountDetail(accountId) {
             ${isOwnCreatorAccount ? '<p class="creator-account-status-note">Le compte Créateur reste actif en permanence.</p>' : account.isArchived ? `<section class="creator-account-status-panel archived"><div><strong>Entreprise archivée</strong><p>Tous les accès sont bloqués, mais les clients, interventions, rapports, documents, écritures et partenariats sont intégralement conservés.${account.archivedAt ? ` Archive créée le ${escapeHtml(formatDateTime(account.archivedAt))}.` : ""}</p></div><button type="button" class="secondary-button" id="creatorRestoreAccount">Réactiver l’entreprise</button></section>` : `<section class="creator-account-status-panel ${account.isActive ? "active" : "suspended"}"><div><strong>${account.isActive ? "Entreprise active" : "Entreprise suspendue"}</strong><p>${account.isActive ? "Les membres peuvent se connecter et utiliser leur espace." : "Les connexions et les sessions en cours sont bloquées. Les données restent conservées."}</p></div><button type="button" class="secondary-button ${account.isActive ? "danger-button" : ""}" id="creatorToggleAccountStatus">${account.isActive ? "Suspendre l’entreprise" : "Réactiver l’entreprise"}</button></section>`}
             <div class="creator-form-actions">${account.isArchived ? "" : '<button type="submit" class="secondary-button">Enregistrer l’entreprise</button>'}${isOwnCreatorAccount || account.isArchived ? "" : '<button type="button" class="secondary-button danger-button" id="creatorDeleteAccount">Archiver l’entreprise</button>'}</div>
         </form>
+        <section class="creator-members-section"><div class="form-heading"><div><p class="eyebrow">SUPER PDP · même intégration</p><h3>Facturation électronique</h3></div><button type="button" class="secondary-button" id="creatorOpenCompanyEInvoicing">Consulter</button></div><p class="muted">Le Créateur consulte l’état de la connexion de cette entreprise sans accéder à ses jetons ni agir à sa place.</p></section>
         <section class="creator-members-section"><div class="form-heading"><div><p class="eyebrow">Traçabilité</p><h3>Historique de l’organisation</h3></div></div><div id="creatorOrganizationHistory"><p class="muted">Chargement de l’historique…</p></div></section>
         <section class="creator-members-section"><div class="form-heading"><div><p class="eyebrow">Accès</p><h3>Postes PC et mobiles</h3></div>${account.isArchived ? "" : '<div class="creator-form-actions"><button type="button" class="secondary-button auth-outline-button" id="creatorNewPcMember">+ Poste PC</button><button type="button" class="secondary-button" id="creatorNewTechnician">+ Poste mobile</button></div>'}</div><div id="creatorMembers"><p class="muted">Chargement des accès…</p></div></section>
     `;
@@ -546,6 +548,7 @@ async function renderAccountDetail(accountId) {
     workspace.querySelector("#creatorRestoreAccount")?.addEventListener("click", async () => { if (!confirm(`Réactiver ${account.companyName} avec tous ses accès et ses données ?`)) return; const result = await api(`/api/creator/accounts/${encodeURIComponent(accountId)}/restore`, { method: "PATCH" }); if (!result.ok) return showFeedback(result.message || "Réactivation impossible.", true); accountListMode = "active"; showFeedback("Entreprise réactivée avec toutes ses données."); await loadAccounts(accountId); });
     workspace.querySelector("#creatorNewPcMember")?.addEventListener("click", () => renderMemberForm(account, null, "admin"));
     workspace.querySelector("#creatorNewTechnician")?.addEventListener("click", () => renderMemberForm(account, null, account.subscriptionTier === "basic" ? "mobile_admin" : "technician"));
+    workspace.querySelector("#creatorOpenCompanyEInvoicing").addEventListener("click", () => renderCreatorCompanyEInvoicing(account));
     if (!account.isArchived) {
         bindSubscriptionTier(workspace.querySelector("#creatorAccountForm"));
         bindOrganizationInterface(workspace.querySelector("#creatorAccountForm"));
@@ -553,6 +556,25 @@ async function renderAccountDetail(accountId) {
     await loadOrganizationHistory(accountId);
     await loadMembers(accountId);
 }
+
+async function renderCreatorCompanyEInvoicing(account) {
+    const workspace = document.querySelector("#creatorWorkspace");
+    workspace.innerHTML = '<p class="muted">Chargement de la connexion SUPER PDP…</p>';
+    const result = await api(`/api/creator/accounts/${encodeURIComponent(account.id)}/e-invoicing`);
+    if (!result.ok) return showFeedback(result.message || "Impossible de charger la facturation électronique.", true);
+    const { connections = [], activeConnection, transmissions = [], transmissionStatuses = [] } = result.data || {};
+    const isOwnCreatorAccount = String(account.id) === String(document.body.dataset.userId);
+    const total = transmissionStatuses.reduce((sum, item) => sum + Number(item.count || 0), 0);
+    const connectionRows = connections.length ? connections.map(connection => `<article class="creator-network-company"><div><strong>${escapeHtml(connection.platformLabel)}</strong><p>${escapeHtml(eInvoicingConnectionStatusLabel(connection.status))} · ${connection.environment === "production" ? "Production" : "Bac à sable"}</p><small>${connection.externalAccountLabel ? `${escapeHtml(connection.externalAccountLabel)} · ` : ""}${connection.lastCheckedAt ? `Vérifiée le ${escapeHtml(formatDateTime(connection.lastCheckedAt))}` : "Jamais vérifiée"}</small></div><span class="creator-state${connection.status === "connected" && connection.active ? "" : " suspended"}">${connection.active ? "Active" : "Historique"}</span></article>`).join("") : '<p class="muted">Aucune plateforme configurée pour cette entreprise.</p>';
+    const transmissionRows = transmissions.length ? transmissions.map(item => `<article class="creator-network-company"><div><strong>${item.documentType === "credit" ? "Avoir" : "Facture"} #${escapeHtml(item.documentId)}</strong><p>${escapeHtml(item.platformCode || "Plateforme inconnue")} · ${escapeHtml(eInvoicingTransmissionStatusLabel(item.status))}</p><small>${escapeHtml(item.message || item.externalStatus || "Aucun message fournisseur")} · ${escapeHtml(formatDateTime(item.updatedAt))}</small></div></article>`).join("") : '<p class="muted">Aucune transmission électronique enregistrée.</p>';
+    workspace.innerHTML = `<section class="creator-form"><div class="form-heading"><div><p class="eyebrow">Même plateforme que les entreprises</p><h3>SUPER PDP · ${escapeHtml(account.companyName || account.ownerFullName)}</h3></div><span class="creator-state${activeConnection?.status === "connected" ? "" : " suspended"}">${activeConnection?.status === "connected" ? "Connectée" : "Non connectée"}</span></div><aside class="accounting-pdp-notice"><strong>Accès Créateur sécurisé.</strong> Cette vue utilise les mêmes données SUPER PDP que l’entreprise, mais ne renvoie jamais les identifiants OAuth, les secrets ou les jetons. Seule l’entreprise concernée peut autoriser et utiliser sa connexion.</aside><div class="creator-subscription-summary creator-billing-summary"><article><span>Connexions</span><strong>${connections.length}</strong></article><article><span>Transmissions</span><strong>${total}</strong></article><article><span>Acceptées</span><strong>${eInvoicingStatusCount(transmissionStatuses, "accepted")}</strong></article><article class="${eInvoicingStatusCount(transmissionStatuses, "rejected") + eInvoicingStatusCount(transmissionStatuses, "failed") ? "attention" : ""}"><span>Rejetées / échecs</span><strong>${eInvoicingStatusCount(transmissionStatuses, "rejected") + eInvoicingStatusCount(transmissionStatuses, "failed")}</strong></article></div><h4>Connexion</h4><div class="creator-network-list">${connectionRows}</div><h4>100 dernières transmissions</h4><div class="creator-network-list">${transmissionRows}</div><div class="creator-form-actions">${isOwnCreatorAccount ? '<button type="button" class="primary-button" data-open-own-super-pdp>Configurer et utiliser SUPER PDP</button>' : ""}<button type="button" class="secondary-button" data-back-company-einvoicing>Retour à l’entreprise</button></div></section>`;
+    workspace.querySelector("[data-open-own-super-pdp]")?.addEventListener("click", () => renderAccounting("electronic"));
+    workspace.querySelector("[data-back-company-einvoicing]").addEventListener("click", () => renderAccountDetail(account.id));
+}
+
+function eInvoicingStatusCount(statuses, status) { return Number(statuses.find(item => item.status === status)?.count) || 0; }
+function eInvoicingConnectionStatusLabel(status) { return ({ connected: "Connectée", pending: "En attente", invalid: "Invalide", expired: "Expirée", disconnected: "Déconnectée", action_required: "Action requise" })[status] || "État inconnu"; }
+function eInvoicingTransmissionStatusLabel(status) { return ({ queued: "En attente", sent: "Envoyée", accepted: "Acceptée", rejected: "Rejetée", failed: "Échec", cancelled: "Annulée" })[status] || "État inconnu"; }
 
 function renderAccountForm() {
     selectedAccountId = "";

@@ -265,6 +265,18 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
         if (!canManageAccount(owner, request)) return response.status(404).json({ message: "Organisation introuvable." });
         response.json({ history: await getOrganizationHistory(accountId) });
     }));
+    app.get("/api/creator/accounts/:accountId/e-invoicing", requireCreator, asyncHandler(async (request, response) => {
+        const accountId = positiveId(request.params.accountId);
+        const owner = accountId && await findAccountOwner(getPool(), accountId);
+        if (!canManageAccount(owner, request)) return response.status(404).json({ message: "Entreprise introuvable." });
+        const database = getPool();
+        const [connections, transmissions, statuses] = await Promise.all([
+            database.query(`SELECT id,platform_code AS "platformCode",platform_label AS "platformLabel",environment,status,active,external_account_id AS "externalAccountId",external_account_label AS "externalAccountLabel",last_connected_at AS "lastConnectedAt",last_checked_at AS "lastCheckedAt",updated_at AS "updatedAt" FROM depannhome_einvoice_connections WHERE owner_id=$1 ORDER BY active DESC,updated_at DESC`, [accountId]),
+            database.query(`SELECT id,document_id AS "documentId",document_type AS "documentType",platform_code AS "platformCode",remote_id AS "remoteId",status,external_status AS "externalStatus",message,transmitted_at AS "transmittedAt",status_checked_at AS "statusCheckedAt",updated_at AS "updatedAt" FROM depannhome_einvoice_transmissions WHERE owner_id=$1 ORDER BY updated_at DESC LIMIT 100`, [accountId]),
+            database.query(`SELECT status,COUNT(*)::integer AS count FROM depannhome_einvoice_transmissions WHERE owner_id=$1 GROUP BY status ORDER BY status`, [accountId])
+        ]);
+        response.json({ connections: connections.rows, activeConnection: connections.rows.find(connection => connection.active) || null, transmissions: transmissions.rows, transmissionStatuses: statuses.rows });
+    }));
 
     app.post("/api/creator/accounts", requireCreator, asyncHandler(async (request, response) => {
         const account = sanitizeAccount(request.body, true);
