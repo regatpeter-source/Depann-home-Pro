@@ -178,6 +178,13 @@ test("les missions e-mail utilisent la même interface que les missions internes
     assert.doesNotMatch(missionClientSource, /partner-email-candidate(?:-heading|-select)?/);
 });
 
+test("un chargement de missions devenu obsolète n’écrit pas dans l’écran suivant", () => {
+    assert.match(missionClientSource, /partnerMissionRenderSequence/);
+    assert.match(missionClientSource, /renderSequence !== partnerMissionRenderSequence/);
+    assert.match(missionClientSource, /!shell\?\.isConnected \|\| !container\.contains\(shell\)/);
+    assert.match(missionClientSource, /!shell\.isConnected \|\| !container\.contains\(shell\)/);
+});
+
 test("la recherche manuelle accepte une période inclusive de 31 jours sans déplacer le curseur automatique", () => {
     const period = parseMailboxSyncPeriod({ from: "2026-08-01", to: "2026-08-31" });
     assert.equal(period.from, "2026-08-01");

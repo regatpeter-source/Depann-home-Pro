@@ -10,6 +10,7 @@ let dashboard = null;
 let activeMissionTab = "received";
 let activeMissionSpace = "network";
 let preferredConnectionId = "";
+let partnerMissionRenderSequence = 0;
 const initialEmailSyncDate = new Date();
 let emailSyncFrom = localDateValue(new Date(initialEmailSyncDate.getFullYear(), initialEmailSyncDate.getMonth(), 1));
 let emailSyncTo = localDateValue(initialEmailSyncDate);
@@ -26,6 +27,7 @@ window.addEventListener("depannhome:partner-email-changed", () => {
 });
 
 export async function renderPartnerMissions(options = {}) {
+    const renderSequence = ++partnerMissionRenderSequence;
     const externalConnectorsEnabled = organizationFeatureEnabled("connectors");
     const emailWorkspaceEnabled = document.body.dataset.canAccessCompanyEmail === "true" && organizationFeatureEnabled("companyEmail");
     const preserveEmailSpace = emailWorkspaceEnabled && activeMissionSpace === "email";
@@ -35,10 +37,11 @@ export async function renderPartnerMissions(options = {}) {
     setPage("Missions partenaires", ROUTES.partnerMissions, "detail");
     const container = getContainer();
     container.innerHTML = '<section class="partner-mission-shell"><p class="muted">Chargement des missions partenaires…</p></section>';
-    const [result, sentResult, connectionsResult, sandboxResult, emailResult, alerts] = await Promise.all([api("/api/partner-missions"), api("/api/partner-connections/missions-sent"), canManagePartnerMissions() ? api("/api/partner-connections") : Promise.resolve({ ok: true, data: { connections: [] } }), canManagePartnerMissions() && externalConnectorsEnabled ? api("/api/partner-api-sandbox/company") : Promise.resolve({ ok: true, data: { available: false } }), emailWorkspaceEnabled ? api("/api/partner-email") : Promise.resolve({ ok: true, data: { connections: [], candidates: [], oauth: {} } }), loadPartnerNotifications()]);
-    if (!result.ok) { container.innerHTML = `<section class="client-panel"><p class="auth-message error">${escapeHtml(result.message || "Impossible de charger les missions.")}</p></section>`; return; }
-    dashboard = { ...result.data, sentMissions: sentResult.ok ? sentResult.data?.missions || [] : [], connections: connectionsResult.ok ? connectionsResult.data?.connections || [] : [], apiSandbox: sandboxResult.ok ? sandboxResult.data : { available: false }, partnerEmail: emailResult.ok ? emailResult.data : { connections: [], candidates: [], oauth: {} } };
     const shell = container.querySelector(".partner-mission-shell");
+    const [result, sentResult, connectionsResult, sandboxResult, emailResult, alerts] = await Promise.all([api("/api/partner-missions"), api("/api/partner-connections/missions-sent"), canManagePartnerMissions() ? api("/api/partner-connections") : Promise.resolve({ ok: true, data: { connections: [] } }), canManagePartnerMissions() && externalConnectorsEnabled ? api("/api/partner-api-sandbox/company") : Promise.resolve({ ok: true, data: { available: false } }), emailWorkspaceEnabled ? api("/api/partner-email") : Promise.resolve({ ok: true, data: { connections: [], candidates: [], oauth: {} } }), loadPartnerNotifications()]);
+    if (renderSequence !== partnerMissionRenderSequence || !shell?.isConnected || !container.contains(shell)) return;
+    if (!result.ok) { shell.innerHTML = `<section class="client-panel"><p class="auth-message error">${escapeHtml(result.message || "Impossible de charger les missions.")}</p></section>`; return; }
+    dashboard = { ...result.data, sentMissions: sentResult.ok ? sentResult.data?.missions || [] : [], connections: connectionsResult.ok ? connectionsResult.data?.connections || [] : [], apiSandbox: sandboxResult.ok ? sandboxResult.data : { available: false }, partnerEmail: emailResult.ok ? emailResult.data : { connections: [], candidates: [], oauth: {} } };
     const networkMissions = dashboard.missions.filter(mission => mission.sourceType === "depannhome_network");
     const externalMissions = dashboard.missions.filter(mission => mission.sourceType === "external_connector");
     const pending = (activeMissionSpace === "network" ? networkMissions : externalMissions).filter(mission => ["received", "pending_validation"].includes(mission.status)).length;
@@ -75,6 +78,7 @@ export async function renderPartnerMissions(options = {}) {
         shell.querySelector(".partner-mission-actions")?.prepend(button);
     }
     await markPartnerNotificationsRead();
+    if (renderSequence !== partnerMissionRenderSequence || !shell.isConnected || !container.contains(shell)) return;
     enablePartnerNotificationDeletion(shell, alerts);
     shell.querySelector("#refreshPartnerMissions").addEventListener("click", renderPartnerMissions);
     shell.querySelector("#openPartnerEmailSettings")?.addEventListener("click", () => window.dispatchEvent(new CustomEvent("depannhome:open-partner-email-settings")));
