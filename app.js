@@ -122,7 +122,14 @@ app.use("/api/public/offer-requests", rateLimit({
 	legacyHeaders: false,
 	message: { message: "Trop de demandes ont été envoyées. Réessayez dans quelques minutes." }
 }));
-app.use("/api/accounting", requireAuthentication, requireOrganizationFeature("accounting"));
+const requireAccountingFeature = requireOrganizationFeature("accounting");
+app.use("/api/accounting", (request, response, next) => {
+	if (isElectronicInvoicingOAuthCallback(request)) return next();
+	return requireAuthentication(request, response, next);
+}, (request, response, next) => {
+	if (isElectronicInvoicingOAuthCallback(request)) return next();
+	return requireAccountingFeature(request, response, next);
+});
 app.use("/api/library", requireAuthentication, requireOrganizationFeature("library"));
 app.use("/api/technical-reports", requireAuthentication, requireOrganizationFeature("technicalReports"));
 app.use("/api/partner-missions", requireAuthentication, requireOrganizationFeature("partnerMissions"));
@@ -305,4 +312,8 @@ function requireTechnicalWorkspaceAccess(request, response, next) {
 
 function isPartnerEmailOAuthCallback(request) {
 	return request.method === "GET" && /^\/oauth\/(?:google|microsoft)\/callback$/.test(request.path);
+}
+
+function isElectronicInvoicingOAuthCallback(request) {
+	return request.method === "GET" && request.path === "/e-invoicing/oauth/callback";
 }

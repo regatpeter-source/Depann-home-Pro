@@ -62,7 +62,10 @@ test("les connexions et transmissions sont isolées par owner_id", () => {
 });
 
 test("le parcours OAuth est lié au tenant, à l’administrateur et consommé une fois", () => {
-    assert.match(electronicServer, /state_hash=\$1 AND owner_id=\$2 AND created_by=\$3 AND expires_at>NOW\(\) RETURNING/);
+    assert.match(electronicServer, /INSERT INTO depannhome_einvoice_oauth_states\(owner_id,created_by,platform_code,state_hash,encrypted_context,expires_at\)/);
+    assert.match(electronicServer, /DELETE FROM depannhome_einvoice_oauth_states WHERE state_hash=\$1 AND expires_at>NOW\(\) RETURNING/);
+    assert.match(electronicServer, /const ownerId = pending\.owner_id/);
+    assert.match(electronicServer, /const actorId = pending\.created_by/);
     assert.match(electronicServer, /codeChallenge/);
     assert.match(electronicServer, /encrypted_context/);
     assert.match(electronicServer, /FOR UPDATE/);

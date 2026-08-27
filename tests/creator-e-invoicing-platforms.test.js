@@ -6,6 +6,7 @@ const creatorServer = readFileSync(new URL("../server/creator.js", import.meta.u
 const creatorClient = readFileSync(new URL("../js/creator.js", import.meta.url), "utf8");
 const electronicServer = readFileSync(new URL("../server/electronic-invoicing.js", import.meta.url), "utf8");
 const schema = readFileSync(new URL("../database/schema.sql", import.meta.url), "utf8");
+const appServer = readFileSync(new URL("../app.js", import.meta.url), "utf8");
 
 test("la console Créateur gère un catalogue distinct des connexions d’entreprise", () => {
     assert.match(creatorClient, /id="creatorElectronicInvoicingPlatforms"/);
@@ -62,7 +63,18 @@ test("l’espace SUPER PDP Créateur possède un coffre et un OAuth distincts de
     assert.match(creatorServer, /const state = `creator\.\$\{crypto\.randomBytes/);
     assert.match(electronicServer, /const state = `company\.\$\{crypto\.randomBytes/);
     assert.match(electronicServer, /if \(!creatorFlow && !companyFlow\)/);
-    assert.match(electronicServer, /if \(creatorFlow\)[\s\S]*Accès Créateur requis/);
+    assert.match(electronicServer, /if \(creatorFlow\)[\s\S]*pending\.created_by/);
     assert.match(creatorClient, /espace indépendant/);
     assert.match(creatorClient, /totalement séparé du compte administrateur/);
+});
+
+test("le callback SUPER PDP survit au retour sans cookie grâce à l’état serveur", () => {
+    assert.match(appServer, /if \(isElectronicInvoicingOAuthCallback\(request\)\) return next\(\)/);
+    assert.match(electronicServer, /if \(isOAuthCallback\(request\)\) return next\(\)/);
+    const callback = electronicServer.slice(electronicServer.indexOf('app.get("/api/accounting/e-invoicing/oauth/callback"'), electronicServer.indexOf('app.put("/api/accounting/e-invoicing/configuration"'));
+    assert.match(callback, /DELETE FROM depannhome_creator_super_pdp_oauth_states WHERE state_hash=\$1 AND expires_at>NOW\(\) RETURNING/);
+    assert.match(callback, /DELETE FROM depannhome_einvoice_oauth_states WHERE state_hash=\$1 AND expires_at>NOW\(\) RETURNING/);
+    assert.match(callback, /const ownerId = pending\.owner_id/);
+    assert.match(callback, /const actorId = pending\.created_by/);
+    assert.doesNotMatch(callback, /request\.user/);
 });

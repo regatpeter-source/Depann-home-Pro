@@ -205,7 +205,13 @@ export function registerElectronicInvoicingRoutes(app, requireAuthentication) {
         response.status(204).end();
     }));
 
-    app.use("/api/accounting/e-invoicing", requireAuthentication, requireCompanyAdministrator);
+    app.use("/api/accounting/e-invoicing", (request, response, next) => {
+        if (isOAuthCallback(request)) return next();
+        return requireAuthentication(request, response, next);
+    }, (request, response, next) => {
+        if (isOAuthCallback(request)) return next();
+        return requireCompanyAdministrator(request, response, next);
+    });
     app.get("/api/accounting/e-invoicing", asyncHandler(async (request, response) => {
         const ownerId = getAccountOwnerId(request);
         response.json({ providers: listElectronicInvoicingProviders(), connections: await loadPublicConnections(ownerId), activeConnection: await loadPublicActiveConnection(ownerId) });
@@ -232,14 +238,12 @@ export function registerElectronicInvoicingRoutes(app, requireAuthentication) {
         response.json({ authorizationUrl });
     }));
     app.get("/api/accounting/e-invoicing/oauth/callback", asyncHandler(async (request, response) => {
-        const ownerId = getAccountOwnerId(request);
         const state = secret(request.query?.state, 500);
         const creatorFlow = state.startsWith("creator.");
         const companyFlow = state.startsWith("company.");
         if (!creatorFlow && !companyFlow) return response.status(400).send(oauthCallbackPage(false, "Parcours d’autorisation invalide."));
         if (creatorFlow) {
-            if (!request.user?.isCreator) return response.status(403).send(oauthCallbackPage(false, "Accès Créateur requis."));
-            const creatorState = await getPool().query("DELETE FROM depannhome_creator_super_pdp_oauth_states WHERE state_hash=$1 AND created_by=$2 AND expires_at>NOW() RETURNING *", [sha256(state), request.user.sub]);
+            const creatorState = await getPool().query("DELETE FROM depannhome_creator_super_pdp_oauth_states WHERE state_hash=$1 AND expires_at>NOW() RETURNING *", [sha256(state)]);
             if (!creatorState.rows[0]) return response.status(400).send(oauthCallbackPage(false, "Autorisation Créateur expirée ou déjà utilisée."));
             {
                 const pending = creatorState.rows[0];
@@ -252,16 +256,18 @@ export function registerElectronicInvoicingRoutes(app, requireAuthentication) {
                     const result = await platform.exchangeAuthorizationCode({ code, codeVerifier: context.codeVerifier, redirectUri: context.redirectUri });
                     if (!result?.credentials || typeof result.credentials !== "object") throw new Error("Jetons OAuth absents.");
                     const status = CONNECTION_STATUSES.has(result.status) ? result.status : "connected";
-                    await getPool().query(`INSERT INTO depannhome_creator_super_pdp_connection(id,platform_code,platform_label,environment,status,encrypted_credentials,connection_metadata,external_account_id,external_account_label,token_expires_at,refresh_metadata,last_connected_at,last_checked_at,disconnected_at,created_by) VALUES(TRUE,'super_pdp','SUPER PDP',$1,$2,$3,$4::jsonb,$5,$6,$7,$8::jsonb,NOW(),NOW(),NULL,$9) ON CONFLICT(id) DO UPDATE SET environment=EXCLUDED.environment,status=EXCLUDED.status,encrypted_credentials=EXCLUDED.encrypted_credentials,connection_metadata=EXCLUDED.connection_metadata,external_account_id=EXCLUDED.external_account_id,external_account_label=EXCLUDED.external_account_label,token_expires_at=EXCLUDED.token_expires_at,refresh_metadata=EXCLUDED.refresh_metadata,last_connected_at=NOW(),last_checked_at=NOW(),disconnected_at=NULL,created_by=EXCLUDED.created_by,updated_at=NOW()`, [safeObject(result.metadata).companyEnvironment === "production" ? "production" : "sandbox", status, encryptCredentials(result.credentials), JSON.stringify(safeObject(result.metadata)), clean(result.externalAccountId, 200), clean(result.externalAccountLabel, 200), result.tokenExpiresAt || null, JSON.stringify(safeObject(result.refreshMetadata)), request.user.sub]);
+                    await getPool().query(`INSERT INTO depannhome_creator_super_pdp_connection(id,platform_code,platform_label,environment,status,encrypted_credentials,connection_metadata,external_account_id,external_account_label,token_expires_at,refresh_metadata,last_connected_at,last_checked_at,disconnected_at,created_by) VALUES(TRUE,'super_pdp','SUPER PDP',$1,$2,$3,$4::jsonb,$5,$6,$7,$8::jsonb,NOW(),NOW(),NULL,$9) ON CONFLICT(id) DO UPDATE SET environment=EXCLUDED.environment,status=EXCLUDED.status,encrypted_credentials=EXCLUDED.encrypted_credentials,connection_metadata=EXCLUDED.connection_metadata,external_account_id=EXCLUDED.external_account_id,external_account_label=EXCLUDED.external_account_label,token_expires_at=EXCLUDED.token_expires_at,refresh_metadata=EXCLUDED.refresh_metadata,last_connected_at=NOW(),last_checked_at=NOW(),disconnected_at=NULL,created_by=EXCLUDED.created_by,updated_at=NOW()`, [safeObject(result.metadata).companyEnvironment === "production" ? "production" : "sandbox", status, encryptCredentials(result.credentials), JSON.stringify(safeObject(result.metadata)), clean(result.externalAccountId, 200), clean(result.externalAccountLabel, 200), result.tokenExpiresAt || null, JSON.stringify(safeObject(result.refreshMetadata)), pending.created_by]);
                     return response.send(oauthCallbackPage(true, result.message || "L’espace SUPER PDP de la Console Créateur est connecté."));
                 } catch (error) {
                     return response.status(502).send(oauthCallbackPage(false, safeError(error)));
                 }
             }
         }
-        const { rows } = await getPool().query("DELETE FROM depannhome_einvoice_oauth_states WHERE state_hash=$1 AND owner_id=$2 AND created_by=$3 AND expires_at>NOW() RETURNING *", [sha256(state), ownerId, request.user.sub]);
+        const { rows } = await getPool().query("DELETE FROM depannhome_einvoice_oauth_states WHERE state_hash=$1 AND expires_at>NOW() RETURNING *", [sha256(state)]);
         const pending = state && rows[0];
         if (!pending) return response.status(400).send(oauthCallbackPage(false, "Autorisation expirée ou déjà utilisée."));
+        const ownerId = pending.owner_id;
+        const actorId = pending.created_by;
         if (request.query?.error) return response.status(400).send(oauthCallbackPage(false, clean(request.query.error_description || request.query.error, 400)));
         const platform = getElectronicInvoicingProvider(pending.platform_code);
         const code = secret(request.query?.code, 4000);
@@ -275,8 +281,8 @@ export function registerElectronicInvoicingRoutes(app, requireAuthentication) {
             try {
                 await client.query("BEGIN");
                 await client.query("UPDATE depannhome_einvoice_connections SET active=FALSE,status=CASE WHEN status='connected' THEN 'disconnected' ELSE status END,disconnected_at=CASE WHEN active THEN NOW() ELSE disconnected_at END,updated_at=NOW() WHERE owner_id=$1 AND active=TRUE", [ownerId]);
-                const { rows: saved } = await client.query(`INSERT INTO depannhome_einvoice_connections(owner_id,platform_code,platform_label,environment,status,active,encrypted_credentials,connection_metadata,external_account_id,external_account_label,token_expires_at,refresh_metadata,last_connected_at,last_checked_at,created_by) VALUES($1,$2,$3,$4,$5,TRUE,$6,$7::jsonb,$8,$9,$10,$11::jsonb,NOW(),NOW(),$12) RETURNING *`, [ownerId, platform.code, platform.label, safeObject(result.metadata).companyEnvironment === "production" ? "production" : "sandbox", status, encryptCredentials(result.credentials), JSON.stringify(safeObject(result.metadata)), clean(result.externalAccountId, 200), clean(result.externalAccountLabel, 200), result.tokenExpiresAt || null, JSON.stringify(safeObject(result.refreshMetadata)), request.user.sub]);
-                await recordEvent(client, ownerId, saved[0].id, null, request.user.sub, "oauth_authorized", status, result.message || "Autorisation SUPER PDP enregistrée.");
+                const { rows: saved } = await client.query(`INSERT INTO depannhome_einvoice_connections(owner_id,platform_code,platform_label,environment,status,active,encrypted_credentials,connection_metadata,external_account_id,external_account_label,token_expires_at,refresh_metadata,last_connected_at,last_checked_at,created_by) VALUES($1,$2,$3,$4,$5,TRUE,$6,$7::jsonb,$8,$9,$10,$11::jsonb,NOW(),NOW(),$12) RETURNING *`, [ownerId, platform.code, platform.label, safeObject(result.metadata).companyEnvironment === "production" ? "production" : "sandbox", status, encryptCredentials(result.credentials), JSON.stringify(safeObject(result.metadata)), clean(result.externalAccountId, 200), clean(result.externalAccountLabel, 200), result.tokenExpiresAt || null, JSON.stringify(safeObject(result.refreshMetadata)), actorId]);
+                await recordEvent(client, ownerId, saved[0].id, null, actorId, "oauth_authorized", status, result.message || "Autorisation SUPER PDP enregistrée.");
                 await client.query("COMMIT");
             } catch (error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }
             response.send(oauthCallbackPage(true, result.message || "SUPER PDP est connecté."));
@@ -464,6 +470,7 @@ async function rotateCredentials(ownerId, connectionId, platform, force = false)
 }
 async function recordEvent(database, ownerId, connectionId, transmissionId, actorId, eventType, status, message, details = {}) { await database.query("INSERT INTO depannhome_einvoice_events(owner_id,connection_id,transmission_id,actor_id,event_type,status,message,details) VALUES($1,$2,$3,$4,$5,$6,$7,$8::jsonb)", [ownerId, connectionId || null, transmissionId || null, actorId || null, eventType, clean(status, 30), clean(message, 1000), JSON.stringify(safeObject(details))]); }
 function requireCompanyAdministrator(request, response, next) { if (request.user?.role !== "admin") return response.status(403).json({ message: "La facturation électronique est réservée à l’administrateur de l’entreprise." }); return next(); }
+function isOAuthCallback(request) { return request.method === "GET" && request.path === "/oauth/callback"; }
 function encryptionKey() { const secret = String(process.env.SESSION_SECRET || ""); if (process.env.NODE_ENV === "production" && secret.length < 32) throw new Error("SESSION_SECRET doit protéger les connexions de facturation électronique."); return crypto.createHash("sha256").update(secret || "development-electronic-invoicing-key").digest(); }
 export function encryptElectronicInvoicingCredentials(value, secretOverride = "") { const iv = crypto.randomBytes(12); const cipher = crypto.createCipheriv("aes-256-gcm", secretOverride ? crypto.createHash("sha256").update(secretOverride).digest() : encryptionKey(), iv); const encrypted = Buffer.concat([cipher.update(JSON.stringify(safeObject(value)), "utf8"), cipher.final()]); return `${iv.toString("base64url")}.${cipher.getAuthTag().toString("base64url")}.${encrypted.toString("base64url")}`; }
 export function decryptElectronicInvoicingCredentials(value, secretOverride = "") { const [iv, tag, encrypted] = String(value || "").split(".").map(item => Buffer.from(item, "base64url")); if (!iv?.length || !tag?.length || !encrypted?.length) throw new Error("Credentials absents ou illisibles."); const decipher = crypto.createDecipheriv("aes-256-gcm", secretOverride ? crypto.createHash("sha256").update(secretOverride).digest() : encryptionKey(), iv); decipher.setAuthTag(tag); return safeObject(JSON.parse(Buffer.concat([decipher.update(encrypted), decipher.final()]).toString("utf8"))); }
