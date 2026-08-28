@@ -391,6 +391,9 @@ async function repairImportedEmailMissionClients(connection, ownerId, request) {
                 OR ((COALESCE(client.client_data->>'insuranceDossier','')='' OR client.client_data->>'insuranceDossier'=mission.partner_reference)
                     AND COALESCE(email.document_text,'') ~* '(dossier.{0,20}assur(eur|ance)|r[ée]f[ée]rence.{0,20}assur(eur|ance))')
                 OR (COALESCE(client.client_data->>'mandateNumber','')='' AND COALESCE(email.document_text,'') ~* 'mandat')
+                OR (COALESCE(mission.mapped_data->>'claimNumber','')='' AND COALESCE(email.document_text,'') ~* '(r[ée]f[^\n]{0,10}sinistre|n[°o][^\n]{0,10}sinistre)')
+                OR (COALESCE(mission.mapped_data->>'principal','')='' AND COALESCE(email.document_text,'') ~* 'donneurs? d''ordres?')
+                OR (COALESCE(mission.mapped_data->>'expert','')='' AND COALESCE(email.document_text,'') ~* 'r[ée]f[ée]rence \[expert\]')
                 OR mission.partner_reference ~ '^<.*@.*>$'
                 OR LOWER(mission.external_mission_id) IN ('mission','intervention','dossier')
                 OR (COALESCE(email.document_text,'')<>'' AND (

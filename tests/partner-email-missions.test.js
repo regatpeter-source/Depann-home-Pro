@@ -651,6 +651,63 @@ Nos Référence : 2713642-REN1 Madame LEVANA CHETRIT THOUROT
     assert.equal(payload.client.name, "Madame LEVANA CHETRIT THOUROT");
 });
 
+test("une commande assistance Repartim complète la fiche client et ses références", () => {
+    const text = `Identification du dossier :
+COVEA
+Référence [expert]: 0002981195
+Réf. Sinistre : M2873751
+Bénéficiaire :
+COUDRAIS CHARLOTTE
+Adresse de l'intervention :
+54 RUE ANGE BLAIZE
+35000 RENNES
+Tél : 06 72 57 08 10
+Détail de l'intervention : RDV LE 27/07/APM RDF /APPART /MISSIONNER POUR RDF NN DESTRUCTIVE.
+COMMANDE ASSISTANCE
+N° 131B252728`;
+    const payload = extractMissionPayload({ id: 70, subject: "Mission Repartim", body_text: "" }, text);
+    assert.equal(payload.client.name, "COUDRAIS CHARLOTTE"); assert.equal(payload.client.address, "54 RUE ANGE BLAIZE, 35000");
+    assert.equal(payload.client.city, "RENNES"); assert.equal(payload.client.phone.replace(/\s/g, ""), "0672570810");
+    assert.equal(payload.missionNumber, "131B252728"); assert.equal(payload.claimNumber, "M2873751");
+    assert.equal(payload.insurance, "COVEA"); assert.equal(payload.expert, "0002981195");
+    assert.equal(payload.interventionType, "COMMANDE ASSISTANCE"); assert.match(payload.description, /RDF NN DESTRUCTIVE/);
+});
+
+test("une commande de travaux Repartim reconnaît l’assuré et le donneur d’ordre", () => {
+    const payload = extractMissionPayload({ id: 71, subject: "Commande Repartim", body_text: "" }, `Donneurs d'Ordres :
+COVEA
+Référence [expert]: 0002981195
+Réf. Sinistre : M2873751
+Assuré(e):
+COUDRAIS CHARLOTTE
+Adresse :
+54 RUE ANGE BLAIZE
+35000 RENNES
+PORTABLE : 06 72 57 08 10
+COMMANDE DE TRAVAUX
+N° 071000003962293 du 27/07/2026`);
+    assert.equal(payload.client.name, "COUDRAIS CHARLOTTE"); assert.equal(payload.client.city, "RENNES");
+    assert.equal(payload.principal, "COVEA"); assert.equal(payload.insurance, "COVEA");
+    assert.equal(payload.missionNumber, "071000003962293"); assert.equal(payload.claimNumber, "M2873751");
+    assert.equal(payload.interventionType, "COMMANDE DE TRAVAUX");
+});
+
+test("une attestation Repartim à ordre de lecture inversé retrouve le bénéficiaire", () => {
+    const payload = extractMissionPayload({ id: 72, subject: "Attestation Repartim", body_text: "" }, `ATTESTATION DE FIN DE TRAVAUX /
+DE FIN D'INTERVENTION
+COUDRAIS CHARLOTTE
+54 RUE ANGE BLAIZE
+35000 RENNES
+M2873751
+Donneur d'ordres : COVEA
+Référence du devis : Dates travaux :
+Adresse de l'intervention :
+Bénéficiaire de l'intervention : Ref sinistre :`);
+    assert.equal(payload.client.name, "COUDRAIS CHARLOTTE"); assert.equal(payload.client.address, "54 RUE ANGE BLAIZE, 35000");
+    assert.equal(payload.client.city, "RENNES"); assert.equal(payload.claimNumber, "M2873751");
+    assert.equal(payload.principal, "COVEA"); assert.equal(payload.interventionType, "ATTESTATION DE FIN DE TRAVAUX / DE FIN D'INTERVENTION");
+});
+
 test("un PDF en colonnes ignore un faux numéro assuré et retrouve la référence voisine", () => {
     const text = `Grand Compte : MACIF Nature du
 N° assuré / sociétaire : Le

@@ -33,7 +33,7 @@ const MICROSOFT_MAIL_SCOPES = "Mail.Read Mail.Send";
 const MICROSOFT_GRAPH_MAX_RETRIES = 2;
 const MICROSOFT_GRAPH_MAX_RETRY_DELAY_MS = 10_000;
 const PARTNER_EMAIL_SYNC_INTERVAL_MS = 10 * 60 * 1000;
-const DOCUMENT_EXTRACTION_VERSION = 5;
+const DOCUMENT_EXTRACTION_VERSION = 6;
 let scheduler = null;
 const activeMailboxSynchronizations = new Set();
 
@@ -724,29 +724,30 @@ function extractMissionFields(text) {
     const field = pattern => trimFollowingMissionField(clean(pattern.exec(source)?.[1], 255));
     const first = (...patterns) => patterns.map(field).find(Boolean) || "";
     const postalCity = /(?:^|\s)(?:code\s+postal\s*(?:\/|-|et)?\s*ville|cp\s*(?:\/|-|et)\s*ville)\s*[:\-]\s*(\d{5})\s+([^\n\r]+)/im.exec(source);
-    const addressBlock = /^(?:l['’])?(?:adresse\s+(?:du\s+|de\s+l['’])?(?:b[ée]n[ée]ficiaire|sinistre|assur[ée]e?|client)|lieu\s+d['’]intervention|adresse\s+d['’]intervention)\s*:?\s*([^\n\r]+)?(?:\r?\n\s*(\d{5})\s+([^\n\r]+))?/im.exec(source);
-    const claimNumber = field(/^(?:sinistre|n°\s+de\s+sinistre)\s*(?:n°|no|numéro)?\s*[:#\-]?\s*([A-Z0-9][A-Z0-9/_-]*)/im);
+    const addressBlock = /^(?:l['’])?(?:adresse\s+(?:du\s+|de\s+l['’])?(?:b[ée]n[ée]ficiaire|sinistre|assur[ée]e?|client|intervention)|lieu\s+d['’]intervention|adresse\s+d['’]intervention|adresse)\s*:?\s*([^\n\r]+)?(?:\r?\n\s*(\d{5})\s+([^\n\r]+))?/im.exec(source);
+    const repartimAttestation = /ATTESTATION\s+DE\s+FIN[\s\S]{0,100}?\r?\n\s*([\p{L}'’ -]{3,100})\r?\n\s*(\d{1,4}\s+[^\n\r]+)\r?\n\s*(\d{5})\s+([^\n\r]+)\r?\n\s*([A-Z]\d[A-Z0-9/_-]{3,})/imu.exec(source);
+    const claimNumber = first(/^(?:r[ée]f(?:[ée]rence)?\.?\s*)?sinistre\s*(?:n°|no|numéro)?\s*[:#\-]?\s*([A-Z0-9][A-Z0-9/_-]*)/im, /^(?:n°\s+de\s+sinistre)\s*(?:n°|no|numéro)?\s*[:#\-]?\s*([A-Z0-9][A-Z0-9/_-]*)/im) || clean(repartimAttestation?.[5], 160);
     return {
-        insuredName: first(/^(?:b[ée]n[ée]ficiaire|assur[ée]e?)\s*[:\-]\s*([^\n\r]+)/im, /^(?:nom(?:\s+et\s+pr[ée]nom)?\s+(?:de\s+l['’])?assur[ée]e?)\s*[:\-]\s*([^\n\r]+)/im, /\bdemande\s+de\s+((?:monsieur|madame|m\.|mme)\s+[\p{L}'’ -]+(?:\r?\n[\p{L}'’ -]+)?)(?=\s*,?\s*assur[ée]e?(?:\s|,|\.))/imu, /\bmission\s+chez\s+((?:monsieur|madame|m\.|mme)\s+[\p{L}'’ -]+(?:\r?\n[\p{L}'’ -]+)?)(?=\s*,?\s*assur[ée]e?(?:\s|,|\.))/imu, /^nom\s+pr[ée]nom\s*:?\s*(?:\r?\n\s*)?([^\n\r]+)/im, /^nos?\s+r[ée]f[ée]rences?\s*:\s*[A-Z0-9/_-]+(?:\s*\/\s*\d+)?[ \t]+((?:monsieur|madame|m\.|mme)\s+[^\n\r]+)/im),
+        insuredName: clean(repartimAttestation?.[1], 160) || first(/^(?:b[ée]n[ée]ficiaire(?:\s+de\s+l['’]intervention)?|assur[ée](?:\(e\)|e)?)\s*[:\-]\s*([^\n\r]+)/im, /^(?:nom(?:\s+et\s+pr[ée]nom)?\s+(?:de\s+l['’])?assur[ée]e?)\s*[:\-]\s*([^\n\r]+)/im, /\bdemande\s+de\s+((?:monsieur|madame|m\.|mme)\s+[\p{L}'’ -]+(?:\r?\n[\p{L}'’ -]+)?)(?=\s*,?\s*assur[ée]e?(?:\s|,|\.))/imu, /\bmission\s+chez\s+((?:monsieur|madame|m\.|mme)\s+[\p{L}'’ -]+(?:\r?\n[\p{L}'’ -]+)?)(?=\s*,?\s*assur[ée]e?(?:\s|,|\.))/imu, /^nom\s+pr[ée]nom\s*:?\s*(?:\r?\n\s*)?([^\n\r]+)/im, /^nos?\s+r[ée]f[ée]rences?\s*:\s*[A-Z0-9/_-]+(?:\s*\/\s*\d+)?[ \t]+((?:monsieur|madame|m\.|mme)\s+[^\n\r]+)/im),
         name: first(/^(?:client|b[ée]n[ée]ficiaire|occupant)\s*[:\-]\s*([^\n\r]+)/im, /^(?:nom(?:\s+(?:et\s+pr[ée]nom|du\s+client))?)\s*[:\-]\s*([^\n\r]+)/im),
         firstName: field(/(?:^|\s)pr[ée]nom(?:\s+(?:de\s+l['’])?assur[ée]e?)?\s*[:\-]\s*([^\n\r]+)/im),
         lastName: field(/(?:^|\s)nom(?:\s+de\s+famille)?(?:\s+(?:de\s+l['’])?assur[ée]e?)?\s*[:\-]\s*([^\n\r]+)/im),
         phone: first(/(?:^|\s)(?:t[ée]l(?:[ée]phone)?\s+)?portable\s*[:\-]\s*([+\d .()\/-]{8,})/im, /^(?:n[°o]\s*)?t[ée]l[ée]phone\s+b[ée]n[ée]ficiaire\s*[:\-]\s*(?:[+\d .()\/-]+\/\s*)?([+\d .()\/-]{8,})/im, /(?:^|\s)(?:t[ée]l(?:[ée]phone)?|portable|mobile)\s*[:\-]\s*([+\d .()\/-]{8,})/im),
         email: field(/(?:^|\s)(?:e-?mail|courriel)\s*[:\-]\s*([^\s<>]+@[^\s<>]+)/im).replace(/[.,;:)]+$/, ""),
-        address: trimFollowingMissionField(clean(addressBlock?.[1], 255)) || first(/(?:^|\s)(?:adresse|lieu)\s*[:\-]\s*([^\n\r]+)/im),
-        postalCode: addressBlock?.[2] || postalCity?.[1] || field(/(?:^|\s)(?:code\s+postal|cp)\s*[:\-]\s*(\d{5})/im),
-        city: trimFollowingMissionField(clean(addressBlock?.[3] || postalCity?.[2], 100)) || field(/^(?:ville|commune)\s*[:\-]\s*([^\n\r]+)/im),
-        missionNumber: first(/^(?:n[°o]\s*)?dossier\s+(?:imh\s*)?(?:[:#\-]\s*|\s+)([A-Z0-9][A-Z0-9/_-]{2,})/im, /^nos?\s+r[ée]f[ée]rences?\s*[:#\-]\s*([A-Z0-9][A-Z0-9/_-]{2,})/im, /^(?:r[ée]f(?:[ée]rence)?\s+imh|notre\s+r[ée]f[ée]rence)\s*[:#\-]\s*([A-Z0-9][A-Z0-9/_-]{2,})/im, /^(?:mission|dossier|référence|ref)\s*(?:(?:n°|no|numéro)\s*[:#\-]?|[:#\-]\s*)([A-Z0-9][A-Z0-9/_-]{2,})/im),
-        interventionType: first(/^ordre\s+de\s+mission(?:\s+urgente?)?\s+([^\n\r]+)/im, /^(?:intervention|objet|nature|type\s+d['’]intervention)\s*[:\-]\s*([^\n\r]+)/im),
-        workDescription: field(/votre\s+mission\s+est\s+d['’]effectuer\s+([^\n\r.]+)/im),
+        address: clean(repartimAttestation?.[2], 255) || trimFollowingMissionField(clean(addressBlock?.[1], 255)) || first(/(?:^|\s)(?:adresse|lieu)\s*[:\-]\s*([^\n\r]+)/im),
+        postalCode: repartimAttestation?.[3] || addressBlock?.[2] || postalCity?.[1] || field(/(?:^|\s)(?:code\s+postal|cp)\s*[:\-]\s*(\d{5})/im),
+        city: trimFollowingMissionField(clean(repartimAttestation?.[4] || addressBlock?.[3] || postalCity?.[2], 100)) || field(/^(?:ville|commune)\s*[:\-]\s*([^\n\r]+)/im),
+        missionNumber: first(/^commande(?:\s+de)?\s+(?:assistance|travaux)\s*\r?\n\s*n[°o]\s*([A-Z0-9][A-Z0-9/_-]{2,})/im, /^(?:n[°o]\s*)?dossier\s+(?:imh\s*)?(?:[:#\-]\s*|\s+)([A-Z0-9][A-Z0-9/_-]{2,})/im, /^nos?\s+r[ée]f[ée]rences?\s*[:#\-]\s*([A-Z0-9][A-Z0-9/_-]{2,})/im, /^(?:r[ée]f(?:[ée]rence)?\s+imh|notre\s+r[ée]f[ée]rence)\s*[:#\-]\s*([A-Z0-9][A-Z0-9/_-]{2,})/im, /^(?:mission|dossier|référence|ref)\s*(?:(?:n°|no|numéro)\s*[:#\-]?|[:#\-]\s*)([A-Z0-9][A-Z0-9/_-]{2,})/im),
+        interventionType: first(/^(commande(?:\s+de)?\s+(?:assistance|travaux)|attestation\s+de\s+fin\s+de\s+travaux\s*\/\s*de\s+fin\s+d['’]intervention)/im, /^ordre\s+de\s+mission(?:\s+urgente?)?\s+([^\n\r]+)/im, /^(?:intervention|objet|nature|type\s+d['’]intervention)\s*[:\-]\s*([^\n\r]+)/im),
+        workDescription: first(/^d[ée]tail\s+de\s+l['’]intervention\s*:\s*([^\n\r]+)/im, /votre\s+mission\s+est\s+d['’]effectuer\s+([^\n\r.]+)/im),
         insuranceDossier: first(/^(?:(?:n[°o]\s*)?dossier\s+(?:de\s+l['’])?assur(?:eur|ance)|r[ée]f(?:[ée]rence)?\.?\s+(?:(?:du\s+)?dossier\s+(?:de\s+l['’])?)?assur(?:eur|ance))\s*(?:n[°o]|no|num[ée]ro)?\s*[:#\-]\s*([A-Z0-9][A-Z0-9./_-]{2,})/im),
         claimNumber: /\d/.test(claimNumber) ? claimNumber : "",
         insuredNumber: extractInsuredNumber(source),
         mandateNumber: first(/^(?:n[°o]\s*)?mandat\s*(?:n[°o]|no|num[ée]ro)?\s*[:#\-]\s*([A-Z0-9][A-Z0-9./_-]{2,})/im, /^(?:r[ée]f(?:[ée]rence)?\s+(?:du\s+)?mandat)\s*[:#\-]\s*([A-Z0-9][A-Z0-9./_-]{2,})/im),
-        insurance: extractInsuranceName(source, field),
-        expert: field(/^expert\s*[:\-]\s*([^\n\r]+)/im),
+        insurance: extractInsuranceName(source, field) || first(/^identification\s+du\s+dossier\s*:\s*(?:\r?\n\s*)?([^\n\r]+)/im, /^donneurs?\s+d['’]ordres?\s*:\s*(?:\r?\n\s*)?([^\n\r]+)/im),
+        expert: first(/^r[ée]f[ée]rence\s*\[expert\]\s*:\s*([A-Z0-9./_-]+)/im, /^expert\s*[:\-]\s*([^\n\r]+)/im),
         manager: field(/^(?:gestionnaire|chargé(?:e)?\s+de\s+dossier)\s*[:\-]\s*([^\n\r]+)/im),
-        principal: field(/^(?:donneur\s+d['’]ordre|mandant)\s*[:\-]\s*([^\n\r]+)/im)
+        principal: first(/^donneurs?\s+d['’]ordres?\s*:\s*(?:\r?\n\s*)?([^\n\r]+)/im, /^(?:mandant)\s*[:\-]\s*([^\n\r]+)/im)
     };
 }
 
