@@ -69,5 +69,5 @@ test("une nouvelle version PWA active immédiatement les correctifs du planning"
     assert.match(application, /\.then\(registration => registration\.update\(\)\)/);
     assert.match(worker, /self\.skipWaiting\(\)/);
     assert.match(worker, /self\.clients\.claim\(\)/);
-    assert.match(worker, /\.\/js\/calendar\.js\?v=178/);
+    assert.match(worker, /\.\/js\/calendar\.js\?v=179/);
 });

@@ -27,6 +27,7 @@ let current = null;
 let corrections = [];
 let reportLock = null;
 let previewMode = false;
+let reportPreviewUrl = "";
 let saveTimer = null;
 let heartbeatTimer = null;
 let periodicTimer = null;
@@ -71,7 +72,7 @@ export function openLeakReportCreation() {
     dialog.innerHTML = `<div><header><div><p class="eyebrow">Nouveau rapport</p><h2>Rapport de recherche de fuite</h2></div><button type="button" class="text-button" data-close-report-creation>Fermer</button></header><p class="muted">Un rapport est toujours rattaché à une intervention et au dossier client correspondant.</p><div class="report-creation-options"><button type="button" data-report-from-appointment><strong>Choisir une intervention</strong><span>Ouvrez une intervention existante pour créer ou reprendre son rapport.</span></button><button type="button" data-create-client-first><strong>Créer d’abord un client</strong><span>Créez le dossier client, planifiez son intervention, puis ouvrez le rapport depuis le planning.</span></button></div></div>`;
     document.body.append(dialog);
     dialog.querySelector("[data-close-report-creation]").addEventListener("click", () => dialog.remove());
-    dialog.querySelector("[data-report-from-appointment]").addEventListener("click", async () => { dialog.remove(); const { renderCalendar } = await import("./calendar.js?v=177"); renderCalendar(); });
+    dialog.querySelector("[data-report-from-appointment]").addEventListener("click", async () => { dialog.remove(); const { renderCalendar } = await import("./calendar.js?v=179"); renderCalendar(); });
     dialog.querySelector("[data-create-client-first]").addEventListener("click", async () => { dialog.remove(); const { renderClients } = await import("./clients.js?v=152"); renderClients(); });
 }
 
@@ -236,7 +237,14 @@ function bindEditor(shell, moduleKey) {
     shell.querySelectorAll("[data-photo-pdf-size]").forEach(input => input.addEventListener("change", () => trackMediaSave(updatePhotoPdfSize(input, shell))));
     shell.querySelectorAll("[data-delete-photo]").forEach(button => button.addEventListener("click", () => trackMediaSave(deletePhoto(button.dataset.deletePhoto, shell))));
     shell.querySelectorAll("[data-move-photo]").forEach(button => button.addEventListener("click", () => trackMediaSave(movePhoto(button.dataset.photoId, button.dataset.movePhoto, shell))));
-    shell.querySelector("[data-preview]").addEventListener("click", async () => { await save(shell, true); previewMode = true; renderEditor(shell); });
+    shell.querySelector("[data-preview]").addEventListener("click", async () => {
+        if (editable() && !await save(shell, true)) {
+            alert("L’aperçu n’a pas été ouvert car le rapport n’a pas pu être enregistré. Vérifiez qu’un autre utilisateur ne le modifie pas.");
+            return;
+        }
+        previewMode = true;
+        renderEditor(shell);
+    });
     shell.querySelector("[data-proofread-report]")?.addEventListener("click", () => openReportProofreading(shell));
     shell.querySelector("[data-submit-report]")?.addEventListener("click", () => submitReport(shell));
     shell.querySelector("[data-validate-report]")?.addEventListener("click", () => validateReport(shell));
@@ -247,13 +255,47 @@ function bindEditor(shell, moduleKey) {
 }
 
 function renderPreview(shell) {
+    clearReportPreviewUrl();
     shell.className = "report-editor-shell report-preview-shell";
-    shell.innerHTML = `<header class="report-preview-header"><div><p class="eyebrow">Prévisualisation PDF intégrée</p><h2>${escapeHtml(current.title)}</h2><p class="muted">Cet aperçu reprend fidèlement le PDF qui sera archivé, sans téléchargement.</p></div><div class="report-preview-actions"><button class="secondary-button" data-modify-report>Modifier le rapport</button>${ownsLock() && current.status === "ready_to_send" && canFinalizeReport() ? '<button class="secondary-button report-primary-action" data-preview-validate>Valider définitivement et envoyer</button>' : ""}<button class="secondary-button" data-close-preview>Fermer la prévisualisation</button><button class="secondary-button" data-report-home>Accueil</button></div></header><iframe title="Prévisualisation intégrée du rapport PDF" src="/api/technical-reports/${encodeURIComponent(current.id)}/pdf?preview=${Date.now()}"></iframe>`;
-    const returnToEditor = () => { previewMode = false; renderEditor(shell); };
+    shell.innerHTML = `<header class="report-preview-header"><div><p class="eyebrow">Prévisualisation PDF intégrée</p><h2>${escapeHtml(current.title)}</h2><p class="muted">Cet aperçu reprend fidèlement le PDF qui sera archivé, sans téléchargement.</p><p class="auth-message" data-report-preview-state>Génération de l’aperçu…</p></div><div class="report-preview-actions"><button class="secondary-button" data-modify-report>Modifier le rapport</button>${ownsLock() && current.status === "ready_to_send" && canFinalizeReport() ? '<button class="secondary-button report-primary-action" data-preview-validate>Valider définitivement et envoyer</button>' : ""}<button class="secondary-button" data-close-preview>Fermer la prévisualisation</button><button class="secondary-button" data-report-home>Accueil</button></div></header><iframe title="Prévisualisation intégrée du rapport PDF" hidden></iframe>`;
+    const returnToEditor = () => { clearReportPreviewUrl(); previewMode = false; renderEditor(shell); };
     shell.querySelector("[data-modify-report]").addEventListener("click", returnToEditor);
     shell.querySelector("[data-close-preview]").addEventListener("click", returnToEditor);
     shell.querySelector("[data-preview-validate]")?.addEventListener("click", () => finalizePreview(shell));
     shell.querySelector("[data-report-home]")?.addEventListener("click", () => exitReportToHome(shell));
+    void loadReportPreview(shell);
+}
+
+async function loadReportPreview(shell) {
+    const frame = shell.querySelector("iframe");
+    const state = shell.querySelector("[data-report-preview-state]");
+    try {
+        const response = await fetch(`/api/technical-reports/${encodeURIComponent(current.id)}/pdf?preview=${Date.now()}`, { credentials: "same-origin", headers: { Accept: "application/pdf" } });
+        if (!response.ok) {
+            const error = await response.json().catch(() => null);
+            throw new Error(error?.message || `Aperçu indisponible (erreur ${response.status}).`);
+        }
+        const contentType = String(response.headers.get("Content-Type") || "").toLowerCase();
+        if (!contentType.startsWith("application/pdf")) throw new Error("Le serveur n’a pas retourné un document PDF. Reconnectez-vous puis réessayez.");
+        const blob = await response.blob();
+        if (!previewMode || !frame?.isConnected) return;
+        clearReportPreviewUrl();
+        reportPreviewUrl = URL.createObjectURL(blob);
+        frame.src = reportPreviewUrl;
+        frame.hidden = false;
+        state.textContent = "Aperçu PDF chargé.";
+        state.classList.remove("error");
+    } catch (error) {
+        if (!state?.isConnected) return;
+        state.textContent = error.message || "Aperçu PDF indisponible.";
+        state.classList.add("error");
+        frame.hidden = true;
+    }
+}
+
+function clearReportPreviewUrl() {
+    if (reportPreviewUrl) URL.revokeObjectURL(reportPreviewUrl);
+    reportPreviewUrl = "";
 }
 
 function lockBanner() {
@@ -693,7 +735,7 @@ function startTimers(shell) {
 }
 
 function stopTimers() { clearTimeout(saveTimer); clearInterval(heartbeatTimer); clearInterval(periodicTimer); saveTimer = heartbeatTimer = periodicTimer = null; }
-async function leaveReport() { stopTimers(); if (current && ownsLock()) await releaseReportLock(current.id); current = null; reportLock = null; previewMode = false; document.body.classList.remove("report-writing-active"); }
+async function leaveReport() { stopTimers(); clearReportPreviewUrl(); if (current && ownsLock()) await releaseReportLock(current.id); current = null; reportLock = null; previewMode = false; document.body.classList.remove("report-writing-active"); }
 async function forceTakeover() { if (!isAdministrator() || !confirm("Reprendre la main sur ce rapport ?")) return; const result = await forceReleaseReportLock(current.id, "Reprise de l’édition du rapport"); if (!result.ok) return alert(result.message || "Reprise impossible."); await acquireLock(); const shell = document.querySelector(".report-editor-shell"); if (shell) renderEditor(shell); }
 
 async function recoverReportLock() {

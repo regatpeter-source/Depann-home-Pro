@@ -99,6 +99,15 @@ test("PC proofreading uses a split editor with a live draft PDF preview", () => 
     assert.match(serverSource, /X-Report-Preview-Mode/);
 });
 
+test("l’aperçu général ne cadre jamais une réponse HTML ou une erreur 409", () => {
+    assert.match(editorSource, /if \(editable\(\) && !await save\(shell, true\)\)/);
+    assert.match(editorSource, /response\.headers\.get\("Content-Type"\)/);
+    assert.match(editorSource, /contentType\.startsWith\("application\/pdf"\)/);
+    assert.match(editorSource, /reportPreviewUrl = URL\.createObjectURL\(blob\)/);
+    assert.match(editorSource, /frame\.src = reportPreviewUrl/);
+    assert.doesNotMatch(editorSource, /<iframe[^>]+src="\/api\/technical-reports/);
+});
+
 test("live PDF refresh waits for photo saves and does not persist proofreading", () => {
     assert.match(editorSource, /await Promise\.all\(\[\.\.\.mediaSavePromises\]\);/);
     assert.match(editorSource, /response\.blob\(\)/);
