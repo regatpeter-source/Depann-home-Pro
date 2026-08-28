@@ -1989,19 +1989,17 @@ async function renderTeamManagement(container) {
                 });
                 const permissionButtons = [];
                 if (advancedPcPermissions && ["pc_standard", "accountant"].includes(member.role)) {
-                    const addPermissionButton = (property, enabledLabel, disabledLabel) => {
-                        const button = createButton(member[property] ? enabledLabel : disabledLabel, "secondary-button", async () => {
-                            button.disabled = true;
-                            const response = await fetch(`/api/auth/members/${encodeURIComponent(member.id)}`, { method: "PATCH", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ isActive: member.isActive, [property]: !member[property] }) });
-                            if (!response.ok) feedback.textContent = (await response.json().catch(() => ({}))).message || "La mise à jour de l’autorisation a échoué.";
-                            await load();
-                        });
-                        permissionButtons.push(button);
-                    };
-                    addPermissionButton("canAccessBilling", "Retirer Devis et factures", "Autoriser Devis et factures");
-                    addPermissionButton("canAccessAccounting", "Retirer Comptabilité et e-facturation", "Autoriser Comptabilité et e-facturation");
-                    addPermissionButton("canAccessCompanyEmail", "Retirer Espace e-mail", "Autoriser Espace e-mail");
-                    if (groupCompanyPermissionAvailable) addPermissionButton("canSwitchGroupCompanies", "Retirer accès Groupe", "Autoriser accès Groupe");
+                    const managePermissions = createButton("Gérer les autorisations", "secondary-button", async () => {
+                        const permissions = await chooseMemberPermissions(member, groupCompanyPermissionAvailable);
+                        if (!permissions) return;
+                        managePermissions.disabled = true;
+                        const response = await fetch(`/api/auth/members/${encodeURIComponent(member.id)}`, { method: "PATCH", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ isActive: member.isActive, ...permissions }) });
+                        const result = await response.json().catch(() => ({}));
+                        if (!response.ok) feedback.textContent = result.message || "La mise à jour des autorisations a échoué.";
+                        else feedback.textContent = `Autorisations enregistrées pour ${member.fullName || member.username}.`;
+                        await load();
+                    });
+                    permissionButtons.push(managePermissions);
                 }
                 if (["technician", "team_lead"].includes(member.role)) {
                     const editDepartment = createButton("Modifier les sections", "secondary-button", async () => {
@@ -2146,6 +2144,31 @@ function chooseMemberRole(member, roles) {
         dialog.querySelector("form").addEventListener("submit", event => { event.preventDefault(); finish(event.currentTarget.elements.role.value); });
         dialog.addEventListener("cancel", event => { event.preventDefault(); finish(""); });
         dialog.addEventListener("close", () => { dialog.remove(); if (!settled) resolve(""); }, { once: true });
+        document.body.appendChild(dialog);
+        dialog.showModal();
+    });
+}
+
+function chooseMemberPermissions(member, groupCompanyPermissionAvailable) {
+    return new Promise(resolve => {
+        const dialog = document.createElement("dialog");
+        dialog.className = "device-management-dialog";
+        dialog.innerHTML = `<form method="dialog"><div class="device-management-heading"><div><p class="eyebrow">Gestion des accès</p><h2>Autorisations du poste</h2><p class="muted">${escapeHtml(member.fullName || member.username)} · Modifiables à tout moment par l’entreprise</p></div><button type="button" class="secondary-button" data-cancel-permissions>Fermer</button></div><fieldset class="team-permissions-fieldset"><legend>Espaces autorisés</legend><label class="settings-toggle"><span><strong>Devis et factures</strong><small>Créer et gérer les documents commerciaux</small></span><input type="checkbox" name="canAccessBilling" ${member.canAccessBilling ? "checked" : ""}></label><label class="settings-toggle"><span><strong>Comptabilité et e-facturation</strong><small>Accéder aux journaux, règlements, TVA, FEC et PDP</small></span><input type="checkbox" name="canAccessAccounting" ${member.canAccessAccounting ? "checked" : ""}></label><label class="settings-toggle"><span><strong>Espace e-mail de l’entreprise</strong><small>Consulter la boîte professionnelle et ses pièces jointes</small></span><input type="checkbox" name="canAccessCompanyEmail" ${member.canAccessCompanyEmail ? "checked" : ""}></label>${groupCompanyPermissionAvailable ? `<label class="settings-toggle"><span><strong>Entreprises du même groupe</strong><small>Changer de société active sans partager leurs données</small></span><input type="checkbox" name="canSwitchGroupCompanies" ${member.canSwitchGroupCompanies ? "checked" : ""}></label>` : ""}</fieldset><p class="muted">Les nouvelles autorisations seront prises en compte à la prochaine actualisation du poste.</p><div class="form-actions"><button type="submit" class="secondary-button">Enregistrer les autorisations</button></div></form>`;
+        let settled = false;
+        const finish = value => { if (settled) return; settled = true; resolve(value); dialog.close(); };
+        dialog.querySelector("[data-cancel-permissions]").addEventListener("click", () => finish(null));
+        dialog.querySelector("form").addEventListener("submit", event => {
+            event.preventDefault();
+            const form = event.currentTarget;
+            finish({
+                canAccessBilling: form.elements.canAccessBilling.checked,
+                canAccessAccounting: form.elements.canAccessAccounting.checked,
+                canAccessCompanyEmail: form.elements.canAccessCompanyEmail.checked,
+                canSwitchGroupCompanies: Boolean(form.elements.canSwitchGroupCompanies?.checked)
+            });
+        });
+        dialog.addEventListener("cancel", event => { event.preventDefault(); finish(null); });
+        dialog.addEventListener("close", () => { dialog.remove(); if (!settled) resolve(null); }, { once: true });
         document.body.appendChild(dialog);
         dialog.showModal();
     });

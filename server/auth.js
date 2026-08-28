@@ -457,7 +457,7 @@ export function registerAuthRoutes(app) {
         `, [memberId, getAccountOwnerId(request)]);
         const member = rows[0];
         if (!member) return response.status(404).json({ message: "Accès introuvable." });
-        const isActive = Boolean(request.body?.isActive);
+        const isActive = typeof request.body?.isActive === "boolean" ? request.body.isActive : member.isActive;
         const canCreateBilling = member.role === "technician" && typeof request.body?.canCreateBilling === "boolean"
             ? request.body.canCreateBilling
             : member.canCreateBilling;

@@ -49,7 +49,8 @@ export function createOriginProtection({ audit = recordSecurityEvent } = {}) {
         const allowed = allowedOrigins(request);
         const crossSite = fetchSite === "cross-site";
         const invalidOrigin = Boolean(origin) && !allowed.has(normalizeOrigin(origin));
-        if (!crossSite && !invalidOrigin) return next();
+        const untrustedCrossSite = crossSite && (!origin || invalidOrigin);
+        if (!invalidOrigin && !untrustedCrossSite) return next();
         void audit({ request, eventType: "csrf_origin_blocked", outcome: "blocked", details: { path: normalizedPath(request.path), fetchSite: fetchSite || "missing" } });
         return response.status(403).json({ message: "Origine de requête non autorisée." });
     };
@@ -77,10 +78,8 @@ function allowedOrigins(request) {
         const normalized = normalizeOrigin(value);
         if (normalized) origins.add(normalized);
     }
-    if (!origins.size) {
-        const host = request.get("host");
-        if (host) origins.add(`${request.protocol}://${host}`);
-    }
+    const host = request.get("host");
+    if (host) origins.add(`${request.protocol}://${host}`);
     return origins;
 }
 function normalizeOrigin(value) { try { return new URL(String(value)).origin; } catch { return ""; } }

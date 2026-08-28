@@ -100,3 +100,15 @@ test("l’interface distingue clairement devis et factures de la comptabilité",
     assert.match(navigation, /<strong>Comptabilité et e-facturation<\/strong>/);
     assert.match(navigation, /sans création de devis ni facture/);
 });
+
+test("l’entreprise peut modifier toutes les autorisations d’un poste déjà créé", () => {
+    const navigation = read("js/navigation.js");
+    const auth = read("server/auth.js");
+    assert.match(navigation, /Gérer les autorisations/);
+    assert.match(navigation, /function chooseMemberPermissions\(member, groupCompanyPermissionAvailable\)/);
+    assert.match(navigation, /body: JSON\.stringify\(\{ isActive: member\.isActive, \.\.\.permissions \}\)/);
+    for (const field of ["canAccessBilling", "canAccessAccounting", "canAccessCompanyEmail", "canSwitchGroupCompanies"]) {
+        assert.match(navigation, new RegExp(`${field}: (?:form\\.elements|Boolean\\(form\\.elements)`));
+    }
+    assert.match(auth, /typeof request\.body\?\.isActive === "boolean" \? request\.body\.isActive : member\.isActive/);
+});

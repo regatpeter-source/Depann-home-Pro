@@ -38,6 +38,22 @@ test("la protection CSRF accepte la même origine et exempte les API partenaires
     assert.equal(continued, 2);
 });
 
+test("la protection CSRF accepte l’origine exacte réellement servie à une PWA mobile", () => {
+    const previousPublicUrl = process.env.PUBLIC_BASE_URL;
+    process.env.PUBLIC_BASE_URL = "https://app.depannhome.fr";
+    try {
+        const middleware = createOriginProtection({ audit: async () => {} }); let continued = 0;
+        middleware(request({ path: "/api/auth/login", origin: "https://app.example", fetchSite: "cross-site" }), response(), () => { continued += 1; });
+        assert.equal(continued, 1);
+        const rejected = response();
+        middleware(request({ path: "/api/auth/login", origin: "https://evil.example", fetchSite: "cross-site" }), rejected, () => { continued += 1; });
+        assert.equal(rejected.statusCode, 403);
+    } finally {
+        if (previousPublicUrl === undefined) delete process.env.PUBLIC_BASE_URL;
+        else process.env.PUBLIC_BASE_URL = previousPublicUrl;
+    }
+});
+
 test("les migrations sont ordonnées, uniques et checksumées", async () => {
     const migrations = await loadMigrations();
     assert.ok(migrations.length >= 1);
