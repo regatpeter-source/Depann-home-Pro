@@ -145,6 +145,23 @@ test("report directory identifies correction work by client, insurer and claim",
     assert.match(editorSource, /report\.insurance/);
 });
 
+test("an old empty report snapshot is enriched from current insurer client references", () => {
+    assert.match(serverSource, /insuranceDossier: snapshot\.insuranceDossier \|\| client\.insuranceDossier \|\| ""/);
+    assert.match(serverSource, /mandateNumber: snapshot\.mandateNumber \|\| client\.mandateNumber \|\| client\.mandate \|\| ""/);
+});
+
+test("an administrative workstation can cancel only an unvalidated draft", () => {
+    assert.match(serverSource, /app\.delete\("\/api\/technical-reports\/:reportId", requireReportCancellationAccess/);
+    assert.match(serverSource, /report\.status !== "draft"/);
+    assert.match(serverSource, /DELETE FROM depannhome_partner_mission_items WHERE owner_id=\$1 AND source_type='report'/);
+    assert.match(serverSource, /UPDATE depannhome_partner_missions SET technical_report_id=NULL/);
+    assert.match(serverSource, /DELETE FROM depannhome_collaboration_locks/);
+    assert.match(serverSource, /request\.user\?\.deviceType === "desktop" && \["admin", "pc_standard"\]/);
+    assert.match(editorSource, /data-cancel-report/);
+    assert.match(editorSource, /Annuler la création du rapport/);
+    assert.match(editorSource, /method: "DELETE"/);
+});
+
 test("validated reports return their client archive and open the client delivery workflow", () => {
     assert.match(serverSource, /archivedAttachment = await archiveDocument/);
     assert.match(serverSource, /attachmentId: archivedAttachment\?\.id/);

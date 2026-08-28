@@ -243,7 +243,7 @@ async function sentMissions(ownerId) {
             mission.scheduled_start_time AS "scheduledStartTime", mission.scheduled_end_time AS "scheduledEndTime",
             COALESCE(NULLIF(profile.company_name,''),NULLIF(partner.company_name,''),partner.full_name,partner.username) AS "partnerName"
         FROM depannhome_partner_connection_sync_log log
-        JOIN depannhome_partner_connections connection ON connection.id=log.connection_id AND connection.status='connected'
+        JOIN depannhome_partner_connections connection ON connection.id=log.connection_id
         JOIN depannhome_partner_missions mission ON mission.id=log.target_mission_id AND mission.owner_id=log.target_owner_id
         JOIN depannhome_users partner ON partner.id=log.target_owner_id
         LEFT JOIN depannhome_billing_profiles profile ON profile.owner_id=partner.id

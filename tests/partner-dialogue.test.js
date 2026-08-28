@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 const serverSource = readFileSync(new URL("../server/partner-dialogue.js", import.meta.url), "utf8");
 const emailServerSource = readFileSync(new URL("../server/partner-email.js", import.meta.url), "utf8");
 const clientSource = readFileSync(new URL("../js/partner-dialogue.js", import.meta.url), "utf8");
+const connectionSource = readFileSync(new URL("../server/partner-connections.js", import.meta.url), "utf8");
 const styleSource = readFileSync(new URL("../css/partner-dialogue.css", import.meta.url), "utf8");
 const schemaSource = readFileSync(new URL("../database/schema.sql", import.meta.url), "utf8");
 
@@ -13,6 +14,16 @@ test("the journal scrolls inside its grid row without overlapping the composer",
     assert.match(styleSource, /\.partner-dialogue \.partner-dialogue-thread\{[\s\S]*?min-height:0;[\s\S]*?max-height:100%;[\s\S]*?overflow:auto;/);
     assert.match(styleSource, /\.partner-dialogue \.partner-dialogue-composer\{[\s\S]*?position:relative;[\s\S]*?z-index:2;/);
     assert.doesNotMatch(styleSource, /@media\(max-width:760px\)[\s\S]*?\.partner-dialogue \.partner-dialogue-composer\{\s*position:sticky/);
+});
+
+test("a planned mission keeps its source conversation if the connection is later disconnected", () => {
+    const sourceAccess = serverSource.slice(serverSource.indexOf("async function accessibleSourceMission"), serverSource.indexOf("async function findMissionById"));
+    const sentMissions = connectionSource.slice(connectionSource.indexOf("async function sentMissions"), connectionSource.indexOf("async function archiveSentMission"));
+    assert.match(sourceAccess, /JOIN depannhome_partner_connections connection ON connection\.id=log\.connection_id/);
+    assert.doesNotMatch(sourceAccess, /connection\.status='connected'/);
+    assert.match(sourceAccess, /log\.source_owner_id=\$2/);
+    assert.match(sourceAccess, /canUseMessaging/);
+    assert.doesNotMatch(sentMissions, /connection\.status='connected'/);
 });
 
 test("source and receiver visibility are stored independently", () => {

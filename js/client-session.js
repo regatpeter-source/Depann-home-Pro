@@ -1,4 +1,4 @@
-import { getDeviceIdentity } from "./auth.js?v=123";
+import { getDeviceIdentity } from "./auth.js?v=124";
 
 const STORAGE_KEY = "depannHomePro:clientWindowSession";
 const REPLACED_EVENT = "depannhome:session-replaced";
