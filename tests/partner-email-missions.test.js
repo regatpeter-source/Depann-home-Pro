@@ -5,7 +5,7 @@ import ExcelJS from "exceljs";
 import PizZip from "pizzip";
 import { PDFDocument, StandardFonts } from "pdf-lib";
 import { createCanvas } from "@napi-rs/canvas";
-import { classifyPartnerEmail, extractMissionPayload, extractNestedPartnerEmailContent, inspectMailboxStructure, mailboxReplyBody, normalizeMissionPostalAddress, oauthErrorMessage, parseMailboxPage, parseMailboxSyncPeriod, parseMicrosoftRetryAfter, publicMailError, replySubject, sanitizeRequiredKeywords, senderMatchesAllowed, stripQuotedEmailText } from "../server/partner-email.js";
+import { classifyPartnerEmail, extractMissionPayload, extractNestedPartnerEmailContent, inspectMailboxStructure, mailboxReplyBody, normalizeMissionPostalAddress, oauthErrorMessage, parseMailboxPage, parseMailboxSyncPeriod, parseMicrosoftRetryAfter, publicMailError, replySubject, sanitizeRequiredKeywords, senderMatchesAllowed, shouldRefreshStoredPartnerEmail, stripQuotedEmailText } from "../server/partner-email.js";
 import { simpleParser } from "mailparser";
 import { mapPayload, readableEmailMissionReference } from "../server/partner-missions.js";
 import { extractPartnerDocumentText, normalizePartnerDocumentMime } from "../server/partner-email-document-extractor.js";
@@ -482,6 +482,8 @@ test("les coordonnées client sont extraites des pièces TXT, PDF, DOCX et XLSX"
 
 test("les documents Outlook au type générique sont reconnus grâce à leur extension", async () => {
     assert.equal(normalizePartnerDocumentMime({ filename: "ordre-mission.pdf", contentType: "application/octet-stream" }), "application/pdf");
+    assert.equal(normalizePartnerDocumentMime({ filename: "ordre-mission", contentType: "application/x-pdf" }), "application/pdf");
+    assert.equal(normalizePartnerDocumentMime({ filename: "ordre-mission", contentType: "application/acrobat" }), "application/pdf");
     assert.equal(normalizePartnerDocumentMime({ name: "CLIENT.JPEG", mime: "binary/octet-stream" }), "image/jpeg");
     assert.equal(normalizePartnerDocumentMime({ filename: "mission.docx", contentType: "application/octet-stream; name=mission.docx" }), "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
     const text = await extractPartnerDocumentText([{ filename: "client.txt", mime: "application/octet-stream", buffer: Buffer.from("Client : Alice Outlook\nTéléphone : 0611223344") }]);
@@ -510,6 +512,15 @@ test("un e-mail transféré imbriqué fournit les coordonnées client et ses pi�
     assert.equal(payload.client.name, "Alice Martin");
     assert.equal(payload.client.phone, "0611223344");
     assert.equal(payload.client.city, "Nantes");
+});
+
+test("une nouvelle recherche enrichit les anciens candidats et répare les missions importées sans PDF", () => {
+    assert.equal(shouldRefreshStoredPartnerEmail({ attachmentCount: 0, documentText: "" }, { attachmentCount: 1, documentText: "Client : Alice" }), true);
+    assert.equal(shouldRefreshStoredPartnerEmail({ attachmentCount: 1, documentText: "Client : Alice" }, { attachmentCount: 1, documentText: "Client : Alice" }), false);
+    assert.equal(shouldRefreshStoredPartnerEmail({ attachmentCount: 0, documentText: "" }, { attachmentCount: 0, documentText: "Client : Alice" }), true);
+    assert.match(serverSource, /refreshPreviouslyParsedEmail/);
+    assert.match(serverSource, /saved\.reanalyzeImported \|\|/);
+    assert.match(serverSource, /status='candidate',processed_at=NULL/);
 });
 
 test("le mail garde la priorité et les documents complètent les champs manquants", () => {

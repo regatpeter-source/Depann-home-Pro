@@ -285,7 +285,7 @@ async function performConnectionSync(ownerId, connectionId, actorId, syncPeriod 
                 const parsed = await simpleParser(item.source, { skipHtmlToText: false, maxHtmlLengthToParse: 2 * 1024 * 1024 });
                 const saved = await saveParsedEmail(connection, item.uid, parsed); if (!saved) continue;
                 candidates += 1;
-                if (connection.selection_mode === "automatic" && saved.trustedSender && saved.score >= Number(connection.automatic_threshold || AUTO_THRESHOLD)) { await importCandidate(ownerId, saved.id, actorId); imported += 1; }
+                if (saved.reanalyzeImported || (connection.selection_mode === "automatic" && saved.trustedSender && saved.score >= Number(connection.automatic_threshold || AUTO_THRESHOLD))) { await importCandidate(ownerId, saved.id, actorId); imported += 1; }
             }
         } finally { lock.release(); await client.logout(); }
         return completeSync(connectionId, { fetched, candidates, imported, maxUid, limited, period: syncPeriod ? { from: syncPeriod.from, to: syncPeriod.to } : null }, { advanceCursor: !syncPeriod });
@@ -308,7 +308,7 @@ async function syncMicrosoftConnection(connection, actorId, syncPeriod) {
         fetched += 1;
         const saved = await saveParsedEmail(connection, graphMessageUid(message.id), parsed); if (!saved) continue;
         candidates += 1;
-        if (connection.selection_mode === "automatic" && saved.trustedSender && saved.score >= Number(connection.automatic_threshold || AUTO_THRESHOLD)) { await importCandidate(connection.owner_id, saved.id, actorId); imported += 1; }
+        if (saved.reanalyzeImported || (connection.selection_mode === "automatic" && saved.trustedSender && saved.score >= Number(connection.automatic_threshold || AUTO_THRESHOLD))) { await importCandidate(connection.owner_id, saved.id, actorId); imported += 1; }
     }
     return completeSync(connection.id, { fetched, candidates, imported, maxUid: Number(connection.last_uid || 0), limited: search.limited, period: syncPeriod ? { from: syncPeriod.from, to: syncPeriod.to } : null }, { advanceCursor: false });
 }
@@ -468,13 +468,37 @@ async function saveParsedEmail(connection, uid, parsed, { forceCandidate = false
     if (!forceCandidate && classification.score < CANDIDATE_THRESHOLD) return null;
     const stableMessageId = clean(forcedMessageId || messageId, 500);
     const { rows } = await getPool().query(`INSERT INTO depannhome_partner_email_messages(owner_id,connection_id,uid,message_id,in_reply_to,references_header,sender_address,sender_name,recipients,subject,body_text,document_text,received_at,classification_score,classification_reasons) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12,$13,$14,$15::jsonb) ON CONFLICT(owner_id,connection_id,message_id) DO NOTHING RETURNING id,status,mission_id AS "missionId"`, [connection.owner_id, connection.id, uid, stableMessageId, clean(parsed.inReplyTo, 500), clean((parsed.references || []).join(" "), 4000), clean(from.address, 254), clean(from.name, 160), JSON.stringify(parsed.to?.value?.map(item => item.address).filter(Boolean) || []), clean(parsed.subject, 500), String(parsed.text || "").slice(0, 20000), documentText.slice(0, 50000), parsed.date || new Date(), classification.score, JSON.stringify(classification.reasons)]);
-    if (!rows[0] && forceCandidate) {
-        const existing = await getPool().query("SELECT id,status,mission_id AS \"missionId\" FROM depannhome_partner_email_messages WHERE owner_id=$1 AND connection_id=$2 AND message_id=$3", [connection.owner_id, connection.id, stableMessageId]);
-        return existing.rows[0] ? { ...existing.rows[0], score: classification.score, trustedSender: classification.trustedSender } : null;
-    }
-    if (!rows[0]) return null;
+    if (!rows[0]) return refreshPreviouslyParsedEmail(connection, stableMessageId, parsed, documentText, attachments, classification, forceCandidate);
     for (const attachment of attachments) await getPool().query("INSERT INTO depannhome_partner_email_attachments(owner_id,email_message_id,filename,mime_type,file_size,content_id,file_data) VALUES($1,$2,$3,$4,$5,$6,$7)", [connection.owner_id, rows[0].id, safeFilename(attachment.filename), attachment.contentType, attachment.size, clean(attachment.contentId, 255), attachment.content]);
     return { ...rows[0], score: classification.score, trustedSender: classification.trustedSender };
+}
+
+async function refreshPreviouslyParsedEmail(connection, stableMessageId, parsed, documentText, attachments, classification, forceCandidate) {
+    const database = await getPool().connect();
+    try {
+        await database.query("BEGIN");
+        const { rows } = await database.query(`SELECT message.id,message.status,message.mission_id AS "missionId",message.document_text AS "documentText",(SELECT COUNT(*)::int FROM depannhome_partner_email_attachments attachment WHERE attachment.email_message_id=message.id) AS "attachmentCount" FROM depannhome_partner_email_messages message WHERE message.owner_id=$1 AND message.connection_id=$2 AND message.message_id=$3 FOR UPDATE`, [connection.owner_id, connection.id, stableMessageId]);
+        const existing = rows[0];
+        if (!existing || existing.status === "processing" || ["ignored", "rejected"].includes(existing.status) && !forceCandidate) { await database.query("ROLLBACK"); return null; }
+        const evidenceImproved = shouldRefreshStoredPartnerEmail({ attachmentCount: existing.attachmentCount, documentText: existing.documentText }, { attachmentCount: attachments.length, documentText });
+        if (!evidenceImproved && !forceCandidate) { await database.query("ROLLBACK"); return null; }
+        const reanalyzeImported = existing.status === "imported" && evidenceImproved;
+        await database.query("DELETE FROM depannhome_partner_email_attachments WHERE email_message_id=$1 AND owner_id=$2", [existing.id, connection.owner_id]);
+        for (const attachment of attachments) await database.query("INSERT INTO depannhome_partner_email_attachments(owner_id,email_message_id,filename,mime_type,file_size,content_id,file_data) VALUES($1,$2,$3,$4,$5,$6,$7)", [connection.owner_id, existing.id, safeFilename(attachment.filename), attachment.contentType, attachment.size, clean(attachment.contentId, 255), attachment.content]);
+        await database.query(`UPDATE depannhome_partner_email_messages SET body_text=$3,document_text=$4,classification_score=$5,classification_reasons=$6::jsonb,status='candidate',processed_at=NULL WHERE id=$1 AND owner_id=$2`, [existing.id, connection.owner_id, String(parsed.text || "").slice(0, 20000), documentText.slice(0, 50000), classification.score, JSON.stringify(classification.reasons)]);
+        await database.query("COMMIT");
+        console.info("[partner-email] contenu enrichi après nouvelle lecture", { emailId: existing.id, attachmentCount: attachments.length, reanalyzeImported });
+        return { id: existing.id, missionId: existing.missionId, status: "candidate", score: classification.score, trustedSender: classification.trustedSender, reanalyzeImported };
+    } catch (error) {
+        await database.query("ROLLBACK");
+        throw error;
+    } finally { database.release(); }
+}
+
+export function shouldRefreshStoredPartnerEmail(existing, incoming) {
+    const oldAttachments = Math.max(0, Number(existing?.attachmentCount) || 0), newAttachments = Math.max(0, Number(incoming?.attachmentCount) || 0);
+    const oldText = String(existing?.documentText || "").trim(), newText = String(incoming?.documentText || "").trim();
+    return newAttachments > oldAttachments || (!oldText && Boolean(newText));
 }
 
 async function importLiveMailboxMessage(connection, messageId, requestedAttachmentIds, actorId) {

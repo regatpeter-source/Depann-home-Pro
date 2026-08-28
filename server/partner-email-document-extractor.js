@@ -49,6 +49,7 @@ export function normalizePartnerDocumentMime(attachment) {
     const extension = /(?:\.[a-z0-9]+)$/i.exec(String(attachment?.name || attachment?.filename || "").trim())?.[0]?.toLowerCase() || "";
     const inferred = MIME_BY_EXTENSION.get(extension) || "";
     if (!supplied || supplied === "application/octet-stream" || supplied === "binary/octet-stream") return inferred || supplied;
+    if (["application/x-pdf", "application/acrobat", "applications/vnd.pdf"].includes(supplied)) return PDF_MIME;
     if (supplied === "image/jpg") return "image/jpeg";
     return supplied;
 }
