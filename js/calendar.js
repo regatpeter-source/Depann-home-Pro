@@ -1,6 +1,6 @@
 import { ROUTES } from "./config.js?v=106";
 import { createBillingDocumentForClient, viewBillingDocument } from "./billing.js?v=188";
-import { getSearchableClients } from "./clients.js?v=153";
+import { getSearchableClients } from "./clients.js?v=154";
 import { addClientActivityByName, synchronizeClients } from "./client-sync.js?v=125";
 import { renderClientMessages } from "./messages.js?v=107";
 import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=34";
@@ -59,6 +59,9 @@ export async function renderCalendar(options = {}) {
     if (options.showAllTechnicians) {
         showAllTechnicians = true;
         visibleTechnicianIds.clear();
+    } else if (Array.isArray(options.visibleTechnicianIds)) {
+        visibleTechnicianIds = new Set(options.visibleTechnicianIds.map(String).filter(Boolean));
+        showAllTechnicians = visibleTechnicianIds.size === 0;
     }
     if (options.date) displayedMonth = calendarView === "month" ? firstDayOfMonth(options.date) : atNoon(options.date);
     if (options.event) selectedEvent = options.event;
@@ -795,8 +798,10 @@ function renderCalendarAvailability(form, editedEventId) {
         preview.innerHTML = "<p class=\"muted\">Choisissez une date pour visualiser les créneaux du planning.</p>";
         return;
     }
+    const candidateTechnicians = new Set(getAssignedTechnicianIds(candidate));
     const sameDayEvents = events
         .filter(event => event.date === candidate.date && String(event.id || "") !== String(editedEventId || ""))
+        .filter(event => !candidateTechnicians.size || getAssignedTechnicianIds(event).some(id => candidateTechnicians.has(id)))
         .sort(compareEventTimes);
     const conflict = findLocalCalendarConflict(sameDayEvents, candidate);
     const candidateLabel = candidate.title || "Nouveau rendez-vous";

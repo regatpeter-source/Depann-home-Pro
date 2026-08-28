@@ -2,7 +2,7 @@ import { ROUTES } from "./config.js?v=118";
 import { clearSearch, getContainer, setPage } from "./ui.js?v=44";
 import { escapeHtml } from "./utils.js?v=44";
 import { openPartnerDialogue } from "./partner-dialogue.js?v=18";
-import { getSearchableClients } from "./clients.js?v=153";
+import { getSearchableClients } from "./clients.js?v=154";
 import { synchronizeClients } from "./client-sync.js?v=125";
 import { loadPartnerNotifications, markPartnerNotificationsRead } from "./collaboration.js?v=4";
 
@@ -171,8 +171,7 @@ function renderMissions(node, missions, options = {}) { node.innerHTML = mission
     node.querySelectorAll("[data-open-sent-dialogue]").forEach(button => button.addEventListener("click", () => openPartnerDialogue(button.dataset.openSentDialogue, { sourceDialogue: true })));
     node.querySelectorAll("[data-accept]").forEach(button => button.addEventListener("click", () => {
         const mission = dashboard.missions.find(item => Number(item.id) === Number(button.dataset.accept));
-        if (mission?.sourceType === "depannhome_network") openNetworkMissionPlanning(mission);
-        else showAccept(button.dataset.accept);
+        if (mission) openPartnerMissionPlanning(mission);
     }));
     node.querySelectorAll("[data-reject]").forEach(button => button.addEventListener("click", async () => { const reason = prompt("Motif du refus à transmettre au partenaire :"); if (reason === null) return; const result = await api(`/api/partner-missions/${button.dataset.reject}/reject`, { method: "POST", body: JSON.stringify({ reason }) }); if (!result.ok) return alert(result.message); renderPartnerMissions(); }));
     node.querySelectorAll("[data-delete-sent]").forEach(button => button.addEventListener("click", async () => { if (!confirm("Êtes-vous certain de vouloir supprimer cette mission ?\n\nCette action est irréversible.")) return; const result = await api(`/api/partner-connections/missions/${button.dataset.deleteSent}`, { method: "DELETE" }); if (!result.ok) return alert(result.message); renderPartnerMissions(); }));
@@ -414,8 +413,8 @@ function formatAttachmentSize(value) { const size = Number(value) || 0; return s
 function showWizardMessage(node, message) { const target = node.querySelector(".auth-message"); target.textContent = message; target.classList.add("error"); }
 
 async function showDetail(id) { const result = await api(`/api/partner-missions/${id}`); if (!result.ok) return alert(result.message); const { mission, history, emailAttachments = [] } = result.data; const details = Object.entries(mission.mappedData).filter(([key, value]) => value && !["attachments", "errors"].includes(key)).map(([key, value]) => `<dt>${escapeHtml(labelField(key))}</dt><dd>${escapeHtml(typeof value === "object" ? JSON.stringify(value) : value)}</dd>`).join(""); const emailDocuments = emailAttachments.length ? `<section class="procedure-section"><div class="form-heading"><div><p class="eyebrow">Documents d’origine</p><h3>Pièces jointes reçues par e-mail</h3></div><span class="file-count-badge">${emailAttachments.length} fichier(s)</span></div><div class="attachment-list">${emailAttachments.map(attachment => `<article class="attachment-card"><div><p class="eyebrow">${escapeHtml(attachment.mimeType || "Document")}</p><h4>${escapeHtml(attachment.name || "Pièce jointe")}</h4><p class="muted">${escapeHtml(formatAttachmentSize(attachment.fileSize))} · ${escapeHtml(formatMissionDate(attachment.createdAt))}</p></div><div class="attachment-actions"><a class="secondary-button" href="${escapeHtml(attachment.url)}" target="_blank" rel="noopener">Visualiser</a><a class="secondary-button" href="${escapeHtml(attachment.url)}" download="${escapeHtml(attachment.name || "document")}">Télécharger</a></div></article>`).join("")}</div></section>` : ""; const dialog = openDialog(`<h3>Mission ${escapeHtml(mission.missionNumber || "partenaire")}</h3><p class="muted">Reçue le ${escapeHtml(formatMissionDate(mission.createdAt))} · ${escapeHtml(mission.partnerName || "Partenaire")} · ${escapeHtml(labelStatus(mission.status))}</p><div class="partner-mission-card-actions"><button class="secondary-button" id="openPartnerDialogue">Ouvrir le dialogue</button></div><dl class="partner-mission-details">${details}</dl>${emailDocuments}<h4>Journal de mission</h4><ol class="partner-mission-history">${history.map(item => `<li><strong>${escapeHtml(labelStatus(item.status))}</strong> · ${escapeHtml(item.action)}<br><small>${escapeHtml(item.actorName)} · ${escapeHtml(formatMissionDate(item.createdAt))}</small></li>`).join("")}</ol>`); dialog.querySelector("#openPartnerDialogue").addEventListener("click", () => { dialog.remove(); openPartnerDialogue(mission.id); }); }
-async function openNetworkMissionPlanning(mission) {
-    const { renderCalendar } = await import("./calendar.js?v=182");
+async function openPartnerMissionPlanning(mission) {
+    const { renderCalendar } = await import("./calendar.js?v=183");
     const data = mission.mappedData || {};
     const draft = mission.planningDraft || {};
     const hasDraft = Boolean(draft.pausedAt);
@@ -457,12 +456,13 @@ async function openNetworkMissionPlanning(mission) {
                 alert("La mission est acceptée et visible dans le planning, mais certaines personnalisations du rendez-vous n’ont pas pu être appliquées.");
             }
         }
+        await openPartnerDialogue(mission.id);
         return accepted;
     };
     await renderCalendar({
         date: new Date(`${date}T12:00:00`),
-        view: "month",
-        showAllTechnicians: true,
+        view: "day",
+        visibleTechnicianIds: assignedTechnicianIds,
         event: {
             title: hasDraft ? draft.title : `${data.interventionType || "Intervention"}${data.clientName ? ` · ${data.clientName}` : ""}`,
             clientId: mission.clientId || "",

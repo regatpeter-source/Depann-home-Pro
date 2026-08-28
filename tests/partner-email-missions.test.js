@@ -198,9 +198,25 @@ test("les missions e-mail utilisent la même interface que les missions internes
     assert.doesNotMatch(missionClientSource, /partner-email-candidate(?:-heading|-select)?/);
 });
 
-test("la conversation s’ouvre après la planification d’une mission e-mail", () => {
-    const acceptance = missionClientSource.slice(missionClientSource.indexOf("function showAccept"), missionClientSource.indexOf("function openDialog"));
-    assert.match(acceptance, /dialog\.remove\(\); await renderPartnerMissions\(\); await openPartnerDialogue\(id\)/);
+test("toutes les missions utilisent le planning visuel puis ouvrent leur conversation", () => {
+    const rendering = missionClientSource.slice(missionClientSource.indexOf("node.querySelectorAll(\"[data-accept]\")"), missionClientSource.indexOf("node.querySelectorAll(\"[data-reject]\")"));
+    const planning = missionClientSource.slice(missionClientSource.indexOf("async function openPartnerMissionPlanning"), missionClientSource.indexOf("function showAccept"));
+    assert.match(rendering, /if \(mission\) openPartnerMissionPlanning\(mission\)/);
+    assert.doesNotMatch(rendering, /sourceType === "depannhome_network"/);
+    assert.match(planning, /view: "day"/);
+    assert.match(planning, /visibleTechnicianIds: assignedTechnicianIds/);
+    assert.match(planning, /assignedTechnicianIds: payload\.assignedTechnicianIds/);
+    assert.match(planning, /await openPartnerDialogue\(mission\.id\)/);
+});
+
+test("l’acceptation garantit le client et verrouille tous les techniciens sélectionnés", () => {
+    const acceptance = missionSource.slice(missionSource.indexOf("async function acceptMission"), missionSource.indexOf("async function updateStatus"));
+    assert.match(acceptance, /const clientId = await upsertClient/);
+    assert.match(acceptance, /assignedTechnicianIds = \[\.\.\.new Set/);
+    assert.match(acceptance, /for \(const assignedId of \[\.\.\.assignedTechnicianIds\]\.sort/);
+    assert.match(acceptance, /assertAvailableSchedule\(connection, ownerId, assignedId/);
+    assert.match(acceptance, /replacePartnerCalendarAssignments\(connection, eventId, assignedTechnicianIds, technicianId\)/);
+    assert.ok(acceptance.indexOf("await upsertClient") < acceptance.indexOf("await upsertCalendar"));
 });
 
 test("un chargement de missions devenu obsolète n’écrit pas dans l’écran suivant", () => {

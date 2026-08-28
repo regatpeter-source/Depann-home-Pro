@@ -53,7 +53,7 @@ test("le serveur revalide toutes les affectations et les protège aussi par déc
     assert.match(calendar, /validateAssignedCompanyMembers\(getPool\(\), accountOwnerId, memberIds\)/);
     assert.match(calendar, /depannhome_calendar_event_assignment_company/);
     assert.match(calendar, /depannhome_calendar_assignment_company/);
-    assert.match(missions, /validateAssignedCompanyMembers\(connection, ownerId, technicianId \? \[technicianId\] : \[\], PARTNER_MISSION_ASSIGNMENT_ROLES\)/);
+    assert.match(missions, /validateAssignedCompanyMembers\(connection, ownerId, assignedTechnicianIds, PARTNER_MISSION_ASSIGNMENT_ROLES\)/);
     assert.match(missions, /depannhome_partner_mission_assignment_company/);
     assert.match(auth, /WHERE account_owner_id = \$1 AND is_active = TRUE/);
     assert.equal(missions.match(/async function acceptMission\(/g)?.length, 1);
