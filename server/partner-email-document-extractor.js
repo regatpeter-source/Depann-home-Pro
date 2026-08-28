@@ -159,16 +159,31 @@ async function embeddedPdfImages(page, limit) {
         if (![OPS.paintImageXObject, OPS.paintInlineImageXObject].includes(operators.fnArray[index])) continue;
         const reference = operators.argsArray[index]?.[0];
         const image = typeof reference === "string" ? await new Promise(resolve => page.objs.get(reference, resolve)) : reference;
-        if (!image?.data || !image.width || !image.height || image.width * image.height > MAX_OCR_PIXELS) continue;
-        const canvas = createCanvas(image.width, image.height); const context = canvas.getContext("2d");
-        const pixels = context.createImageData(image.width, image.height); const source = image.data;
-        if (image.kind === 3 || source.length === pixels.data.length) pixels.data.set(source);
-        else if (image.kind === 2 || source.length === image.width * image.height * 3) for (let sourceIndex = 0, targetIndex = 0; sourceIndex < source.length; sourceIndex += 3, targetIndex += 4) { pixels.data[targetIndex] = source[sourceIndex]; pixels.data[targetIndex + 1] = source[sourceIndex + 1]; pixels.data[targetIndex + 2] = source[sourceIndex + 2]; pixels.data[targetIndex + 3] = 255; }
-        else if (image.kind === 1 || source.length === image.width * image.height) for (let sourceIndex = 0, targetIndex = 0; sourceIndex < source.length; sourceIndex += 1, targetIndex += 4) { pixels.data[targetIndex] = source[sourceIndex]; pixels.data[targetIndex + 1] = source[sourceIndex]; pixels.data[targetIndex + 2] = source[sourceIndex]; pixels.data[targetIndex + 3] = 255; }
-        else continue;
-        context.putImageData(pixels, 0, 0); images.push(canvas.toBuffer("image/png"));
+        const buffer = pdfImageOcrBuffer(image);
+        if (buffer) images.push(buffer);
     }
     return images;
+}
+
+function pdfImageOcrBuffer(image) {
+    if (!image?.data || !image.width || !image.height) return null;
+    const source = image.data; const sourcePixels = image.width * image.height;
+    const channels = image.kind === 3 || source.length === sourcePixels * 4 ? 4 : image.kind === 2 || source.length === sourcePixels * 3 ? 3 : image.kind === 1 || source.length === sourcePixels ? 1 : 0;
+    if (!channels) return null;
+    const scale = Math.min(1, Math.sqrt(MAX_OCR_PIXELS / sourcePixels));
+    const width = Math.max(1, Math.floor(image.width * scale)); const height = Math.max(1, Math.floor(image.height * scale));
+    const canvas = createCanvas(width, height); const context = canvas.getContext("2d"); const pixels = context.createImageData(width, height);
+    for (let y = 0; y < height; y += 1) {
+        const sourceY = Math.min(image.height - 1, Math.floor(y / scale));
+        for (let x = 0; x < width; x += 1) {
+            const sourceX = Math.min(image.width - 1, Math.floor(x / scale)); const sourceIndex = (sourceY * image.width + sourceX) * channels; const targetIndex = (y * width + x) * 4;
+            if (channels === 1) pixels.data[targetIndex] = pixels.data[targetIndex + 1] = pixels.data[targetIndex + 2] = source[sourceIndex];
+            else { pixels.data[targetIndex] = source[sourceIndex]; pixels.data[targetIndex + 1] = source[sourceIndex + 1]; pixels.data[targetIndex + 2] = source[sourceIndex + 2]; }
+            pixels.data[targetIndex + 3] = 255;
+        }
+    }
+    context.putImageData(pixels, 0, 0);
+    return canvas.toBuffer("image/png");
 }
 
 function extractDocxText(buffer) {
