@@ -264,7 +264,7 @@ export async function transitionPartnerMissionStatus({ ownerId, missionId, statu
     return mission;
 }
 
-export async function ingestEmailPartnerMission({ ownerId, connectionId, emailId, partnerName, payload, actorId = null }) {
+export async function ingestEmailPartnerMission({ ownerId, connectionId, emailId, missionId: linkedMissionId = 0, partnerName, payload, actorId = null }) {
     const mapped = mapPayload(payload);
     mapped.clientName ||= clientNameFromPayload(payload);
     mapped.externalMissionId ||= `email-${emailId}`;
@@ -273,8 +273,15 @@ export async function ingestEmailPartnerMission({ ownerId, connectionId, emailId
         await database.query("BEGIN");
         const key = `email-${connectionId}`;
         const intake = await database.query(`INSERT INTO depannhome_partner_intakes(owner_id,partner_key,partner_name,api_key_hash,assignment_mode,rules,created_by) VALUES($1,$2,$3,$4,'manual','{}'::jsonb,$5) ON CONFLICT(owner_id,partner_key) DO UPDATE SET partner_name=EXCLUDED.partner_name,enabled=TRUE,updated_at=NOW() RETURNING id`, [ownerId, key, clean(partnerName, 160) || "Boîte mail professionnelle", hash(`email-intake-${ownerId}-${connectionId}`), actorId]);
-        const { rows } = await database.query(`INSERT INTO depannhome_partner_missions(owner_id,intake_id,external_mission_id,partner_reference,status,priority,source_data,mapped_data,validation_errors,scheduled_date,scheduled_start_time,scheduled_end_time) VALUES($1,$2,$3,$4,'pending_validation',$5,$6::jsonb,$7::jsonb,$8::jsonb,$9::date,$10::time,$11::time) ON CONFLICT(owner_id,intake_id,external_mission_id) DO UPDATE SET source_data=EXCLUDED.source_data,mapped_data=EXCLUDED.mapped_data,updated_at=NOW() RETURNING id,client_id,(xmax=0) AS inserted`, [ownerId, intake.rows[0].id, mapped.externalMissionId, mapped.partnerReference, mapped.priority, JSON.stringify(payload), JSON.stringify(mapped), JSON.stringify(mapped.errors || []), mapped.date || null, mapped.startTime || null, mapped.endTime || null]);
-        const mission = rows[0];
+        let mission;
+        if (linkedMissionId) {
+            const { rows } = await database.query(`UPDATE depannhome_partner_missions SET partner_reference=$4,priority=$5,source_data=$6::jsonb,mapped_data=$7::jsonb,validation_errors=$8::jsonb,scheduled_date=COALESCE($9::date,scheduled_date),scheduled_start_time=COALESCE($10::time,scheduled_start_time),scheduled_end_time=COALESCE($11::time,scheduled_end_time),updated_at=NOW() WHERE id=$1 AND owner_id=$2 AND intake_id=$3 AND deleted_at IS NULL RETURNING id,client_id,FALSE AS inserted`, [linkedMissionId, ownerId, intake.rows[0].id, mapped.partnerReference, mapped.priority, JSON.stringify(payload), JSON.stringify(mapped), JSON.stringify(mapped.errors || []), mapped.date || null, mapped.startTime || null, mapped.endTime || null]);
+            mission = rows[0];
+        }
+        if (!mission) {
+            const { rows } = await database.query(`INSERT INTO depannhome_partner_missions(owner_id,intake_id,external_mission_id,partner_reference,status,priority,source_data,mapped_data,validation_errors,scheduled_date,scheduled_start_time,scheduled_end_time) VALUES($1,$2,$3,$4,'pending_validation',$5,$6::jsonb,$7::jsonb,$8::jsonb,$9::date,$10::time,$11::time) ON CONFLICT(owner_id,intake_id,external_mission_id) DO UPDATE SET partner_reference=EXCLUDED.partner_reference,source_data=EXCLUDED.source_data,mapped_data=EXCLUDED.mapped_data,updated_at=NOW() RETURNING id,client_id,(xmax=0) AS inserted`, [ownerId, intake.rows[0].id, mapped.externalMissionId, mapped.partnerReference, mapped.priority, JSON.stringify(payload), JSON.stringify(mapped), JSON.stringify(mapped.errors || []), mapped.date || null, mapped.startTime || null, mapped.endTime || null]);
+            mission = rows[0];
+        }
         await ensureBusinessMissionNumber(database, mission.id);
         mapped.attachments = (mapped.attachments || []).map(attachment => ({ ...attachment, source: "partner_email", missionId: String(mission.id) }));
         const matchedClientId = mission.client_id || await matchEmailMissionClient(database, ownerId, mapped);

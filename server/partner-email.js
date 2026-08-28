@@ -33,7 +33,7 @@ const MICROSOFT_MAIL_SCOPES = "Mail.Read Mail.Send";
 const MICROSOFT_GRAPH_MAX_RETRIES = 2;
 const MICROSOFT_GRAPH_MAX_RETRY_DELAY_MS = 10_000;
 const PARTNER_EMAIL_SYNC_INTERVAL_MS = 10 * 60 * 1000;
-const DOCUMENT_EXTRACTION_VERSION = 4;
+const DOCUMENT_EXTRACTION_VERSION = 5;
 let scheduler = null;
 const activeMailboxSynchronizations = new Set();
 
@@ -665,7 +665,7 @@ async function importCandidate(ownerId, emailId, actorId) {
     try {
         const documentText = richerDocumentText(email.document_text, await extractPartnerDocumentText(email.attachments));
         const payload = extractMissionPayload(email, documentText);
-        const result = await ingestEmailPartnerMission({ ownerId, connectionId: email.email_connection_id, emailId: email.id, partnerName: email.display_name || email.sender_address, actorId, payload });
+        const result = await ingestEmailPartnerMission({ ownerId, connectionId: email.email_connection_id, emailId: email.id, missionId: email.mission_id, partnerName: email.display_name || email.sender_address, actorId, payload });
         for (const attachment of email.attachments || []) {
             const match = partnerEmailDataUrl(attachment.dataUrl);
             if (!match) continue;
@@ -703,7 +703,7 @@ export function extractMissionPayload(email, documentText = "") {
         partnerReference: missionNumber,
         subject: email.subject,
         interventionType: value("interventionType") || clean(email.subject, 160),
-        description: clean(email.body_text, 2000),
+        description: clean(email.body_text, 2000) || value("workDescription"),
         client: { name, firstName, lastName, phone: value("phone"), email: value("email"), address: postalAddress.address, postalCode: postalAddress.postalCode, city: postalAddress.city },
         insuranceDossier: value("insuranceDossier"),
         claimNumber: value("claimNumber"),
@@ -724,20 +724,23 @@ function extractMissionFields(text) {
     const field = pattern => trimFollowingMissionField(clean(pattern.exec(source)?.[1], 255));
     const first = (...patterns) => patterns.map(field).find(Boolean) || "";
     const postalCity = /(?:^|\s)(?:code\s+postal\s*(?:\/|-|et)?\s*ville|cp\s*(?:\/|-|et)\s*ville)\s*[:\-]\s*(\d{5})\s+([^\n\r]+)/im.exec(source);
+    const addressBlock = /^(?:l['’])?(?:adresse\s+(?:du\s+|de\s+l['’])?(?:b[ée]n[ée]ficiaire|sinistre|assur[ée]e?|client)|lieu\s+d['’]intervention|adresse\s+d['’]intervention)\s*:?\s*([^\n\r]+)?(?:\r?\n\s*(\d{5})\s+([^\n\r]+))?/im.exec(source);
+    const claimNumber = field(/^(?:sinistre|n°\s+de\s+sinistre)\s*(?:n°|no|numéro)?\s*[:#\-]?\s*([A-Z0-9][A-Z0-9/_-]*)/im);
     return {
-        insuredName: first(/^(?:b[ée]n[ée]ficiaire|assur[ée]e?)\s*[:\-]\s*([^\n\r]+)/im, /^(?:nom(?:\s+et\s+pr[ée]nom)?\s+(?:de\s+l['’])?assur[ée]e?)\s*[:\-]\s*([^\n\r]+)/im, /\bmission\s+chez\s+((?:monsieur|madame|m\.|mme)\s+[^,\n\r]+?)(?=\s*,?\s*assur[ée]e?\b)/im),
+        insuredName: first(/^(?:b[ée]n[ée]ficiaire|assur[ée]e?)\s*[:\-]\s*([^\n\r]+)/im, /^(?:nom(?:\s+et\s+pr[ée]nom)?\s+(?:de\s+l['’])?assur[ée]e?)\s*[:\-]\s*([^\n\r]+)/im, /\bdemande\s+de\s+((?:monsieur|madame|m\.|mme)\s+[^,\n\r]+?)(?=\s*,?\s*assur[ée]e?(?:\s|,|\.))/im, /\bmission\s+chez\s+((?:monsieur|madame|m\.|mme)\s+[^,\n\r]+?)(?=\s*,?\s*assur[ée]e?(?:\s|,|\.))/im, /^nom\s+pr[ée]nom\s*:?[ \t]+([^\n\r]+)/im),
         name: first(/^(?:client|b[ée]n[ée]ficiaire|occupant)\s*[:\-]\s*([^\n\r]+)/im, /^(?:nom(?:\s+(?:et\s+pr[ée]nom|du\s+client))?)\s*[:\-]\s*([^\n\r]+)/im),
         firstName: field(/(?:^|\s)pr[ée]nom(?:\s+(?:de\s+l['’])?assur[ée]e?)?\s*[:\-]\s*([^\n\r]+)/im),
         lastName: field(/(?:^|\s)nom(?:\s+de\s+famille)?(?:\s+(?:de\s+l['’])?assur[ée]e?)?\s*[:\-]\s*([^\n\r]+)/im),
-        phone: field(/(?:^|\s)(?:t[ée]l(?:[ée]phone)?|portable|mobile)\s*[:\-]\s*([+\d .()\/-]{8,})/im),
+        phone: first(/(?:^|\s)(?:t[ée]l(?:[ée]phone)?\s+)?portable\s*[:\-]\s*([+\d .()\/-]{8,})/im, /^(?:n[°o]\s*)?t[ée]l[ée]phone\s+b[ée]n[ée]ficiaire\s*[:\-]\s*(?:[+\d .()\/-]+\/\s*)?([+\d .()\/-]{8,})/im, /(?:^|\s)(?:t[ée]l(?:[ée]phone)?|portable|mobile)\s*[:\-]\s*([+\d .()\/-]{8,})/im),
         email: field(/(?:^|\s)(?:e-?mail|courriel)\s*[:\-]\s*([^\s<>]+@[^\s<>]+)/im).replace(/[.,;:)]+$/, ""),
-        address: first(/^(?:adresse\s+(?:du\s+|de\s+l['’])?(?:b[ée]n[ée]ficiaire|sinistre|assur[ée]e?|client)|lieu\s+d['’]intervention|adresse\s+d['’]intervention)\s*[:\-]\s*([^\n\r]+)/im, /(?:^|\s)(?:adresse|lieu)\s*[:\-]\s*([^\n\r]+)/im),
-        postalCode: postalCity?.[1] || field(/(?:^|\s)(?:code\s+postal|cp)\s*[:\-]\s*(\d{5})/im),
-        city: trimFollowingMissionField(clean(postalCity?.[2], 100)) || field(/^(?:ville|commune)\s*[:\-]\s*([^\n\r]+)/im),
-        missionNumber: first(/^(?:n°\s*)?dossier\s+(?:imh\s*)?[:#\-]\s*([A-Z0-9][A-Z0-9/_-]{2,})/im, /^(?:r[ée]f(?:[ée]rence)?\s+imh|notre\s+r[ée]f[ée]rence)\s*[:#\-]\s*([A-Z0-9][A-Z0-9/_-]{2,})/im, /^(?:mission|dossier|référence|ref)\s*(?:(?:n°|no|numéro)\s*[:#\-]?|[:#\-]\s*)([A-Z0-9][A-Z0-9/_-]{2,})/im),
-        interventionType: field(/^(?:intervention|objet|nature|type\s+d['’]intervention)\s*[:\-]\s*([^\n\r]+)/im),
+        address: trimFollowingMissionField(clean(addressBlock?.[1], 255)) || first(/(?:^|\s)(?:adresse|lieu)\s*[:\-]\s*([^\n\r]+)/im),
+        postalCode: addressBlock?.[2] || postalCity?.[1] || field(/(?:^|\s)(?:code\s+postal|cp)\s*[:\-]\s*(\d{5})/im),
+        city: trimFollowingMissionField(clean(addressBlock?.[3] || postalCity?.[2], 100)) || field(/^(?:ville|commune)\s*[:\-]\s*([^\n\r]+)/im),
+        missionNumber: first(/^(?:n[°o]\s*)?dossier\s+(?:imh\s*)?(?:[:#\-]\s*|\s+)([A-Z0-9][A-Z0-9/_-]{2,})/im, /^nos?\s+r[ée]f[ée]rences?\s*[:#\-]\s*([A-Z0-9][A-Z0-9/_-]{2,})/im, /^(?:r[ée]f(?:[ée]rence)?\s+imh|notre\s+r[ée]f[ée]rence)\s*[:#\-]\s*([A-Z0-9][A-Z0-9/_-]{2,})/im, /^(?:mission|dossier|référence|ref)\s*(?:(?:n°|no|numéro)\s*[:#\-]?|[:#\-]\s*)([A-Z0-9][A-Z0-9/_-]{2,})/im),
+        interventionType: first(/^ordre\s+de\s+mission(?:\s+urgente?)?\s+([^\n\r]+)/im, /^(?:intervention|objet|nature|type\s+d['’]intervention)\s*[:\-]\s*([^\n\r]+)/im),
+        workDescription: field(/votre\s+mission\s+est\s+d['’]effectuer\s+([^\n\r.]+)/im),
         insuranceDossier: first(/^(?:(?:n[°o]\s*)?dossier\s+(?:de\s+l['’])?assur(?:eur|ance)|r[ée]f(?:[ée]rence)?\.?\s+(?:(?:du\s+)?dossier\s+(?:de\s+l['’])?)?assur(?:eur|ance))\s*(?:n[°o]|no|num[ée]ro)?\s*[:#\-]\s*([A-Z0-9][A-Z0-9./_-]{2,})/im),
-        claimNumber: field(/^(?:sinistre|n°\s+de\s+sinistre)\s*(?:n°|no|numéro)?\s*[:#\-]?\s*([A-Z0-9][A-Z0-9/_-]*)/im),
+        claimNumber: /\d/.test(claimNumber) ? claimNumber : "",
         insuredNumber: extractInsuredNumber(source),
         mandateNumber: first(/^(?:n[°o]\s*)?mandat\s*(?:n[°o]|no|num[ée]ro)?\s*[:#\-]\s*([A-Z0-9][A-Z0-9./_-]{2,})/im, /^(?:r[ée]f(?:[ée]rence)?\s+(?:du\s+)?mandat)\s*[:#\-]\s*([A-Z0-9][A-Z0-9./_-]{2,})/im),
         insurance: extractInsuranceName(source, field),

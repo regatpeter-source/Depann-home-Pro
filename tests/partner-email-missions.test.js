@@ -551,6 +551,9 @@ test("une nouvelle recherche enrichit les anciens candidats et répare les missi
     assert.equal(richerDocumentText("Texte technique", "Client : Alice\nAdresse : Nantes"), "Client : Alice\nAdresse : Nantes");
     assert.match(serverSource, /richerDocumentText\(email\.document_text, await extractPartnerDocumentText\(email\.attachments\)\)/);
     assert.match(serverSource, /richerDocumentText\(locked\.rows\[0\]\.document_text, documentText\)/);
+    assert.match(serverSource, /missionId: email\.mission_id/);
+    assert.match(missionSource, /missionId: linkedMissionId/);
+    assert.match(missionSource, /UPDATE depannhome_partner_missions SET partner_reference=\$4/);
     assert.match(missionSource, /client à identifier/);
 });
 
@@ -601,6 +604,41 @@ N° dossier IMH : 267057H26-RENU1`;
     assert.equal(mapped.insuredNumber, "4152292");
     assert.equal(mapped.insuranceDossier, "MACIF-DOS-88421");
     assert.equal(mapped.mandateNumber, "MDT-2026/7788");
+});
+
+test("un dossier IMH multi-pages extrait les données essentielles sans confondre le prestataire", () => {
+    const text = `Inter Mutuelles Habitat Gie - Tél : 05 17 18 62 60
+Objet : Confirmation de mission urgente
+ORDRE DE MISSION URGENTE RECHERCHE DE FUITE VISUELLE
+Suite à notre dernier entretien, et conformément à la demande de Madame LEVANA CHETRIT THOUROT, assuré auprès de la compagnie MATMUT, nous vous confirmons votre mission pour l’intervention relative au sinistre Dégât des eaux, Gel du 23/07/26.
+L’adresse du sinistre :
+24 RUE ARISTIDE BRIAND
+44510 LE POULIGUEN
+Téléphone fixe: 01 47 50 25 46
+Téléphone portable: 06 27 75 17 86
+Votre mission est d’effectuer une recherche de fuite visuelle, correspondant à 2h d’intervention.
+Nos Références :
+2713642-REN1 / 1
+Vos Références :
+552563
+Descriptif des travaux
+Nos Référence : 2713642-REN1 Madame LEVANA CHETRIT THOUROT
+N° Téléphone Bénéficiaire : 01 47 50 25 46 / 06 27 75 17 86
+Rapport de Recherche de Fuite N° Dossier IMH 2713642-REN1
+N° Prestataire 552563
+BENEFICIAIRE
+Nom Prénom LEVANA CHETRIT THOUROT
+Téléphone 01 47 50 25 46 / 06 27 75 17 86
+Adresse du sinistre 24 RUE ARISTIDE BRIAND
+44510 LE POULIGUEN`;
+    const payload = extractMissionPayload({ id: 59, subject: "Confirmation de mission urgente", body_text: "" }, text);
+    assert.equal(payload.client.name, "Madame LEVANA CHETRIT THOUROT");
+    assert.equal(payload.client.phone.replace(/\s/g, ""), "0627751786");
+    assert.equal(payload.client.address, "24 RUE ARISTIDE BRIAND, 44510"); assert.equal(payload.client.city, "LE POULIGUEN");
+    assert.equal(payload.missionNumber, "2713642-REN1"); assert.equal(payload.partnerReference, "2713642-REN1");
+    assert.equal(payload.interventionType, "RECHERCHE DE FUITE VISUELLE"); assert.equal(payload.insurance, "la compagnie MATMUT");
+    assert.match(payload.description, /recherche de fuite visuelle/i);
+    assert.equal(payload.insuredNumber, ""); assert.equal(payload.claimNumber, "");
 });
 
 test("un PDF en colonnes ignore un faux numéro assuré et retrouve la référence voisine", () => {
