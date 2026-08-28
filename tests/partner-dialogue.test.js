@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const serverSource = readFileSync(new URL("../server/partner-dialogue.js", import.meta.url), "utf8");
+const missionServerSource = readFileSync(new URL("../server/partner-missions.js", import.meta.url), "utf8");
 const emailServerSource = readFileSync(new URL("../server/partner-email.js", import.meta.url), "utf8");
 const clientSource = readFileSync(new URL("../js/partner-dialogue.js", import.meta.url), "utf8");
 const connectionSource = readFileSync(new URL("../server/partner-connections.js", import.meta.url), "utf8");
@@ -24,6 +25,12 @@ test("a planned mission keeps its source conversation if the connection is later
     assert.match(sourceAccess, /log\.source_owner_id=\$2/);
     assert.match(sourceAccess, /canUseMessaging/);
     assert.doesNotMatch(sentMissions, /connection\.status='connected'/);
+});
+
+test("a planning notification opens the sender-side conversation", () => {
+    const sourceNotification = missionServerSource.slice(missionServerSource.indexOf("async function notifyManagedMissionSource"), missionServerSource.indexOf("async function enqueue"));
+    assert.match(sourceNotification, /"partner_mission_status"/);
+    assert.match(sourceNotification, /sourceDialogue: true/);
 });
 
 test("source and receiver visibility are stored independently", () => {
