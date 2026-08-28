@@ -127,4 +127,10 @@ test("l’entreprise peut modifier toutes les autorisations d’un poste déjà 
         assert.match(navigation, new RegExp(`${field}: (?:form\\.elements|Boolean\\(form\\.elements)`));
     }
     assert.match(auth, /typeof request\.body\?\.isActive === "boolean" \? request\.body\.isActive : member\.isActive/);
+    assert.match(auth, /account\.can_create_billing AS "canCreateBilling"/);
+    assert.match(auth, /account\.can_access_billing AS "canAccessBilling"/);
+    assert.match(navigation, /class="device-permissions-form"/);
+    assert.match(navigation, /Les changements s’appliquent à tous ses appareils/);
+    assert.match(navigation, /device\.userRole === "admin" \? "Le Poste Admin dispose automatiquement de tous les accès, sans restriction\./);
+    assert.match(navigation, /fetch\(`\/api\/auth\/members\/\$\{encodeURIComponent\(device\.userId\)\}`/);
 });

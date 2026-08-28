@@ -949,13 +949,13 @@ function requireBillingTemplateCreation(request, response, next) {
 
 async function requireBillingDocumentAdministration(request, response, next) {
     if (["admin", "mobile_admin"].includes(request.user?.role)) return next();
-    if (request.user?.role === "technician") return requireTechnicianBillingAccess(request, response, next);
+    if (["technician", "team_lead"].includes(request.user?.role)) return requireTechnicianBillingAccess(request, response, next);
     return response.status(403).json({ message: request.user?.role === "accountant" ? "L’espace comptabilité est en consultation uniquement." : "Les techniciens peuvent créer des devis et factures, sans modifier les documents existants." });
 }
 
 async function requireBillingIssuanceAccess(request, response, next) {
     if (["admin", "mobile_admin"].includes(request.user?.role)) return next();
-    if (request.user?.role !== "technician") return response.status(403).json({ message: "L’émission définitive d’une facture n’est pas autorisée pour ce poste." });
+    if (!["technician", "team_lead"].includes(request.user?.role)) return response.status(403).json({ message: "L’émission définitive d’une facture n’est pas autorisée pour ce poste." });
     return requireTechnicianBillingAccess(request, response, next);
 }
 
@@ -964,7 +964,7 @@ async function requireBillingSettlementAccess(request, response, next) {
         if (request.user?.role === "accountant") return response.status(403).json({ message: "Ce poste administratif en consultation ne peut pas enregistrer un règlement ici." });
         return next();
     }
-    if (request.user?.role !== "technician") return response.status(403).json({ message: "L’enregistrement d’un règlement n’est pas autorisé pour ce poste." });
+    if (!["technician", "team_lead"].includes(request.user?.role)) return response.status(403).json({ message: "L’enregistrement d’un règlement n’est pas autorisé pour ce poste." });
     return requireTechnicianBillingAccess(request, response, next);
 }
 
@@ -977,7 +977,7 @@ async function requireTechnicianBillingAccess(request, response, next) {
     if (request.user?.role === "accountant") {
         return response.status(403).json({ message: "L’espace comptabilité est en consultation uniquement." });
     }
-    if (request.user?.role !== "technician") return next();
+    if (!["technician", "team_lead"].includes(request.user?.role)) return next();
     const { rows } = await getPool().query(
         "SELECT can_create_billing FROM depannhome_users WHERE id = $1",
         [request.user.sub]

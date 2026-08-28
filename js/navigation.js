@@ -1812,9 +1812,9 @@ async function renderTeamManagement(container) {
     const mobileBillingPermissionField = document.createElement("fieldset");
     mobileBillingPermissionField.className = "team-permissions-fieldset";
     mobileBillingPermissionField.innerHTML = `
-        <legend>Autorisation du technicien mobile</legend>
-        <p class="muted">Ce droit permet au technicien de créer des documents commerciaux depuis les interventions qui lui sont affectées.</p>
-        <label class="settings-toggle"><span><strong>Créer des devis et factures</strong><small>Autoriser ce technicien à créer des devis et factures pour ses interventions</small></span><input type="checkbox" name="canCreateBilling"></label>
+        <legend>Autorisation du poste mobile</legend>
+        <p class="muted">Ce droit permet au Technicien ou au Chef d’équipe de créer des documents commerciaux depuis ses interventions.</p>
+        <label class="settings-toggle"><span><strong>Créer des devis et factures</strong><small>Autoriser ce poste mobile à créer des devis et factures pour ses interventions</small></span><input type="checkbox" name="canCreateBilling"></label>
     `;
     mobileBillingPermissionField.hidden = true;
     formFields.appendChild(mobileBillingPermissionField);
@@ -1860,8 +1860,8 @@ async function renderTeamManagement(container) {
         permissionsField.querySelector("[data-pc-permission-help]").textContent = isAdministratorPc
             ? "Le Poste Admin dispose automatiquement de tous les accès, sans restriction."
             : "Choisissez uniquement les espaces nécessaires à ce poste. Ces droits sont contrôlés côté serveur.";
-        mobileBillingPermissionField.hidden = roleInput.value !== "technician";
-        form.elements.canCreateBilling.disabled = roleInput.value !== "technician";
+        mobileBillingPermissionField.hidden = !["technician", "team_lead"].includes(roleInput.value);
+        form.elements.canCreateBilling.disabled = !["technician", "team_lead"].includes(roleInput.value);
         feedback.textContent = isMobileAdmin ? "Ce poste s’active uniquement depuis un smartphone ou une tablette : l’appareil devra être autorisé, puis confirmé avec le code envoyé par e-mail." : "";
     };
     roleInput.addEventListener("change", updateRoleFields);
@@ -1870,16 +1870,50 @@ async function renderTeamManagement(container) {
         const isPc = ["admin", "pc_standard"].includes(device.userRole) && device.deviceType !== "mobile";
         const deviceName = isPc ? "ce poste administratif" : "cet appareil";
         const accountName = device.fullName || device.username || "ce compte";
+        const configurablePcPermissions = advancedPcPermissions && ["pc_standard", "accountant"].includes(device.userRole);
+        const configurableMobileBilling = ["technician", "team_lead"].includes(device.userRole);
+        const permissionForm = configurablePcPermissions ? `
+            <form class="device-permissions-form"><h3>Autorisations du poste</h3><p class="muted">Modifiez les espaces accessibles par ce compte. Les changements s’appliquent à tous ses appareils.</p><fieldset class="team-permissions-fieldset"><legend>Espaces autorisés</legend><label class="settings-toggle"><span><strong>Devis et factures</strong><small>Créer et gérer les documents commerciaux</small></span><input type="checkbox" name="canAccessBilling" ${device.canAccessBilling ? "checked" : ""}></label><label class="settings-toggle"><span><strong>Comptabilité et e-facturation</strong><small>Accéder aux journaux, règlements, TVA, FEC et PDP</small></span><input type="checkbox" name="canAccessAccounting" ${device.canAccessAccounting ? "checked" : ""}></label><label class="settings-toggle"><span><strong>Espace e-mail de l’entreprise</strong><small>Consulter la boîte professionnelle et ses pièces jointes</small></span><input type="checkbox" name="canAccessCompanyEmail" ${device.canAccessCompanyEmail ? "checked" : ""}></label>${groupCompanyPermissionAvailable ? `<label class="settings-toggle"><span><strong>Entreprises du même groupe</strong><small>Changer de société active sans partager leurs données</small></span><input type="checkbox" name="canSwitchGroupCompanies" ${device.canSwitchGroupCompanies ? "checked" : ""}></label>` : ""}</fieldset><p class="auth-message" aria-live="polite"></p><button type="submit" class="secondary-button">Enregistrer les autorisations</button></form>
+        ` : configurableMobileBilling ? `
+            <form class="device-permissions-form"><h3>Autorisations du poste</h3><p class="muted">Ce droit s’applique au compte mobile sur tous ses appareils.</p><fieldset class="team-permissions-fieldset"><legend>Documents commerciaux</legend><label class="settings-toggle"><span><strong>Créer des devis et factures</strong><small>Autoriser la création depuis les interventions affectées</small></span><input type="checkbox" name="canCreateBilling" ${device.canCreateBilling ? "checked" : ""}></label></fieldset><p class="auth-message" aria-live="polite"></p><button type="submit" class="secondary-button">Enregistrer les autorisations</button></form>
+        ` : `<section class="device-permissions-summary"><h3>Autorisations du poste</h3><p class="muted">${device.userRole === "admin" ? "Le Poste Admin dispose automatiquement de tous les accès, sans restriction." : device.userRole === "mobile_admin" ? "Les accès du Poste Admin Mobile sont appliqués automatiquement selon son rôle." : "Les autorisations de ce poste sont définies automatiquement par son rôle et l’offre active."}</p></section>`;
         const dialog = document.createElement("dialog");
         dialog.className = "device-management-dialog";
         dialog.innerHTML = `
             <div class="device-management-heading"><div><p class="eyebrow">Sécurité des connexions</p><h2>Gérer ${escapeHtml(deviceName)}</h2><p class="muted">${escapeHtml(device.label)} · Compte : ${escapeHtml(accountName)}</p></div><button type="button" class="secondary-button" data-close-device-management>Fermer</button></div>
+            ${permissionForm}
             <form class="device-password-form"><h3>Réinitialiser le mot de passe</h3><p class="muted">Le nouveau mot de passe sera demandé lors de la prochaine connexion du compte.</p><label>Nouveau mot de passe<input name="password" type="password" autocomplete="new-password" minlength="12" required placeholder="12 caractères minimum"></label><label>Confirmer le mot de passe<input name="passwordConfirmation" type="password" autocomplete="new-password" minlength="12" required></label><p class="auth-message" aria-live="polite"></p><button type="submit" class="secondary-button">Réinitialiser le mot de passe</button></form>
             <section class="device-management-danger"><h3>Supprimer ${escapeHtml(deviceName)}</h3><p>Cette action retire uniquement ${escapeHtml(deviceName)}. Le compte utilisateur reste disponible et pourra se reconnecter après une nouvelle validation.</p><button type="button" class="secondary-button danger-button" data-delete-device>Supprimer ${escapeHtml(deviceName)}</button></section>
         `;
         const close = () => dialog.close();
         dialog.querySelector("[data-close-device-management]").addEventListener("click", close);
         dialog.addEventListener("close", () => dialog.remove(), { once: true });
+        dialog.querySelector(".device-permissions-form")?.addEventListener("submit", async event => {
+            event.preventDefault();
+            const form = event.currentTarget;
+            const status = form.querySelector(".auth-message");
+            const submitButton = form.querySelector("button[type=submit]");
+            const permissionValues = configurablePcPermissions ? {
+                canAccessBilling: form.elements.canAccessBilling.checked,
+                canAccessAccounting: form.elements.canAccessAccounting.checked,
+                canAccessCompanyEmail: form.elements.canAccessCompanyEmail.checked,
+                canSwitchGroupCompanies: Boolean(form.elements.canSwitchGroupCompanies?.checked)
+            } : { canCreateBilling: form.elements.canCreateBilling.checked };
+            submitButton.disabled = true;
+            status.textContent = "Enregistrement en cours…";
+            status.classList.remove("error");
+            const response = await fetch(`/api/auth/members/${encodeURIComponent(device.userId)}`, { method: "PATCH", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify(permissionValues) });
+            const result = await response.json().catch(() => ({}));
+            if (!response.ok) {
+                status.textContent = result.message || "La mise à jour des autorisations a échoué.";
+                status.classList.add("error");
+                submitButton.disabled = false;
+                return;
+            }
+            feedback.textContent = `Autorisations enregistrées pour ${accountName}.`;
+            close();
+            await load();
+        });
         dialog.querySelector(".device-password-form").addEventListener("submit", async event => {
             event.preventDefault();
             const form = event.currentTarget;
@@ -2096,7 +2130,7 @@ async function renderTeamManagement(container) {
             const values = Object.fromEntries(new FormData(form));
             values.departments = [...departmentsField.querySelectorAll('input[name="departments"]:checked')].map(input => input.value);
             if (["technician", "team_lead"].includes(roleInput.value) && !values.departments.length) throw new Error("Choisissez au moins une section métier.");
-            values.canCreateBilling = roleInput.value === "technician" && Boolean(form.elements.canCreateBilling.checked);
+            values.canCreateBilling = ["technician", "team_lead"].includes(roleInput.value) && Boolean(form.elements.canCreateBilling.checked);
             values.canAccessBilling = Boolean(form.elements.canAccessBilling?.checked);
             values.canAccessAccounting = Boolean(form.elements.canAccessAccounting?.checked);
             values.canAccessCompanyEmail = Boolean(form.elements.canAccessCompanyEmail?.checked);

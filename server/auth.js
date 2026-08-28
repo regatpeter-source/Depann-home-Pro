@@ -433,7 +433,7 @@ export function registerAuthRoutes(app) {
             const canAccessBilling = configurablePermissions && request.body?.canAccessBilling === true;
             const canAccessAccounting = configurablePermissions && request.body?.canAccessAccounting === true;
             const canAccessCompanyEmail = configurablePermissions && request.body?.canAccessCompanyEmail === true;
-            const canCreateBilling = role === "technician" && request.body?.canCreateBilling === true;
+            const canCreateBilling = ["technician", TEAM_LEAD_ROLE].includes(role) && request.body?.canCreateBilling === true;
             const canSwitchGroupCompanies = configurablePermissions && organization.subscriptionTier === "pro"
                 && Boolean(request.user.groupId) && request.body?.canSwitchGroupCompanies === true;
             const memberDepartments = ["technician", TEAM_LEAD_ROLE].includes(role) ? departments : [];
@@ -458,7 +458,7 @@ export function registerAuthRoutes(app) {
         const member = rows[0];
         if (!member) return response.status(404).json({ message: "Accès introuvable." });
         const isActive = typeof request.body?.isActive === "boolean" ? request.body.isActive : member.isActive;
-        const canCreateBilling = member.role === "technician" && typeof request.body?.canCreateBilling === "boolean"
+        const canCreateBilling = ["technician", TEAM_LEAD_ROLE].includes(member.role) && typeof request.body?.canCreateBilling === "boolean"
             ? request.body.canCreateBilling
             : member.canCreateBilling;
         const organization = await getOrganization(getAccountOwnerId(request));
@@ -518,7 +518,7 @@ export function registerAuthRoutes(app) {
                 UPDATE depannhome_users
                 SET role = $3, department = CASE WHEN $3 IN ('technician', 'team_lead') THEN department ELSE '' END,
                     departments = CASE WHEN $3 IN ('technician', 'team_lead') THEN departments ELSE '[]'::jsonb END,
-                    can_create_billing = CASE WHEN $3 = 'technician' THEN FALSE ELSE can_create_billing END,
+                    can_create_billing = CASE WHEN $3 IN ('technician', 'team_lead') THEN FALSE ELSE can_create_billing END,
                     can_access_billing = CASE WHEN $3 IN ('pc_standard', 'accountant') THEN can_access_billing ELSE FALSE END,
                     can_access_accounting = CASE WHEN $3 IN ('pc_standard', 'accountant') THEN can_access_accounting ELSE FALSE END,
                     can_access_company_email = CASE WHEN $3 IN ('pc_standard', 'accountant') THEN can_access_company_email ELSE FALSE END,
@@ -665,7 +665,10 @@ export function registerAuthRoutes(app) {
         const [devicesResult, seatsResult] = await Promise.all([
             database.query(`
             SELECT device.id, device.label, device.device_type AS "deviceType", device.status, device.created_at AS "createdAt", device.last_seen_at AS "lastSeenAt",
-                account.id AS "userId", account.full_name AS "fullName", account.username, account.email, account.role AS "userRole"
+                account.id AS "userId", account.full_name AS "fullName", account.username, account.email, account.role AS "userRole",
+                account.can_create_billing AS "canCreateBilling", account.can_access_billing AS "canAccessBilling",
+                account.can_access_accounting AS "canAccessAccounting", account.can_access_company_email AS "canAccessCompanyEmail",
+                account.can_switch_group_companies AS "canSwitchGroupCompanies"
             FROM depannhome_auth_devices device JOIN depannhome_users account ON account.id = device.user_id
             WHERE account.account_owner_id = $1
             ORDER BY CASE device.status WHEN 'approval_pending' THEN 0 WHEN 'code_pending' THEN 1 ELSE 2 END, device.created_at DESC

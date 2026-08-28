@@ -4751,6 +4751,8 @@ body.desktop-device .billing-editor-panel.billing-editor-live-active{
 }
 
 .device-management-heading,
+.device-permissions-form,
+.device-permissions-summary,
 .device-password-form,
 .device-management-danger{
     padding:20px;
@@ -4766,6 +4768,8 @@ body.desktop-device .billing-editor-panel.billing-editor-live-active{
 }
 
 .device-management-heading h2,
+.device-permissions-form h3,
+.device-permissions-summary h3,
 .device-password-form h3,
 .device-management-danger h3{
     margin:2px 0 6px;
@@ -4773,14 +4777,31 @@ body.desktop-device .billing-editor-panel.billing-editor-live-active{
 }
 
 .device-management-heading .muted,
+.device-permissions-form .muted,
+.device-permissions-summary .muted,
 .device-password-form .muted,
 .device-management-danger p{
     margin:0;
 }
 
+.device-permissions-form,
 .device-password-form{
     display:grid;
     gap:12px;
+}
+
+.device-permissions-form,
+.device-permissions-summary{
+    border-bottom:1px solid var(--border);
+}
+
+.device-permissions-form .team-permissions-fieldset{
+    margin:0;
+}
+
+.device-permissions-form .auth-message{
+    min-height:20px;
+    margin:0;
 }
 
 .device-password-form label{
@@ -5183,6 +5204,7 @@ footer{
     }
 
     .device-management-heading .secondary-button,
+    .device-permissions-form .secondary-button,
     .device-password-form .secondary-button,
     .device-management-danger .secondary-button{
         width:100%;
