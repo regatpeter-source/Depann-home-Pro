@@ -39,7 +39,7 @@ const sections = [
     ]],
     ["Configuration souhaitée", [
         choice("Offre :", "Basic", "Basic+", "Pro"),
-        pair("Nombre de postes PC :", "Nombre d’accès mobiles :"),
+        pair("Nombre de postes administratifs :", "Nombre d’accès mobiles :"),
         choice("Type d’interface :", "Standard", "Groupe multi-entreprises", "Partenaire"),
         field("Date de début souhaitée :"),
         field("Référence de facturation / bon de commande (si applicable) :")

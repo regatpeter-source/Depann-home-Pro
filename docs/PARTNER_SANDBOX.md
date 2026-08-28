@@ -2,7 +2,7 @@
 
 ## Objet
 
-Le module **Sandbox partenaires** est un laboratoire local réservé à un Administrateur (PC). Il sert aux démonstrations, à la recette et aux développements de connecteurs, sans partenaire externe ni communication Internet.
+Le module **Sandbox partenaires** est un laboratoire local réservé à un Administrateur administratif. Il sert aux démonstrations, à la recette et aux développements de connecteurs, sans partenaire externe ni communication Internet.
 
 Il est **désactivé par défaut** et n’est jamais exposé en production. Pour une instance de développement ou de recette, définissez `PARTNER_SANDBOX_ENABLED=true` avec un `NODE_ENV` différent de `production`. En production, les routes Sandbox retournent `404` et aucune entrée de navigation ou d’annuaire n’est affichée.
 

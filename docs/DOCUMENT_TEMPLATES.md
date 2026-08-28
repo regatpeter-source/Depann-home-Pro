@@ -24,7 +24,7 @@ Les anciens PDF ou images stockés dans `depannhome_billing_profiles` sont copi�
 
 ## Éditeur
 
-L'éditeur est disponible sur poste PC pour l'administrateur dans **Paramètres → Modèles de documents**. Il permet l'import, le déplacement et le redimensionnement des zones, les textes fixes, couleurs, bordures, marges, l'aperçu, le test automatique et l'activation.
+L'éditeur est disponible sur poste administratif pour l'administrateur dans **Paramètres → Modèles de documents**. Il permet l'import, le déplacement et le redimensionnement des zones, les textes fixes, couleurs, bordures, marges, l'aperçu, le test automatique et l'activation.
 
 Les coordonnées sont exprimées en points PDF depuis le coin supérieur gauche. Les zones extensibles (`table`, `repeatText`, `photos`) créent automatiquement les pages nécessaires. Les zones marquées `all` sont répétées ; les zones `final` sont placées sur la dernière page.
 

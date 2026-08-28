@@ -1,6 +1,6 @@
 # Importation de données
 
-L’outil **Paramètres → Importation de données** est réservé aux administrateurs connectés depuis un poste PC. Il permet de reprendre une base existante sans ressaisie manuelle.
+L’outil **Paramètres → Importation de données** est réservé aux administrateurs connectés depuis un poste administratif. Il permet de reprendre une base existante sans ressaisie manuelle.
 
 ## Périmètre de la première version
 

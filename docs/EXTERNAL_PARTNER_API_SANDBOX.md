@@ -19,12 +19,12 @@ Le partenaire fictif ne fait pas partie du Réseau Depann’Home Pro interne. Il
 2. Choisir l’organisation destinataire puis **Provisionner automatiquement**.
 3. Ouvrir le banc de test. La console affiche l’endpoint, la clé de test et le webhook. Ces informations sont réservées au Créateur.
 4. Conserver **Succès normal**, puis cliquer sur **Envoyer une mission test**.
-5. Sur le poste de l’entreprise destinataire, se connecter avec un Administrateur, Poste PC standard ou Administrateur Mobile, ouvrir **Missions partenaires**, puis cliquer sur **🧪 API Sandbox**. Vérifier la mission `DHTS-*` dans cette boîte de réception séparée. Le même envoi répété avec le scénario `duplicate` conserve une seule mission.
+5. Sur le poste de l’entreprise destinataire, se connecter avec un Administrateur, Poste administratif standard ou Administrateur Mobile, ouvrir **Missions partenaires**, puis cliquer sur **🧪 API Sandbox**. Vérifier la mission `DHTS-*` dans cette boîte de réception séparée. Le même envoi répété avec le scénario `duplicate` conserve une seule mission.
 6. Cliquer successivement sur **Accepter**, **En cours** et **Terminer**. Chaque action écrit l’historique et déclenche un callback HTTP réel.
 7. Contrôler le journal API expurgé.
 8. Utiliser **Réinitialiser** pour supprimer uniquement les artefacts de cette Sandbox.
 
-Pour un essai depuis un second PC, ouvrir l’URL réseau habituelle de l’application, se connecter avec le compte Créateur, puis utiliser la même console. Aucun second serveur ni seconde base n’est requis.
+Pour un essai depuis un second poste administratif, ouvrir l’URL réseau habituelle de l’application, se connecter avec le compte Créateur, puis utiliser la même console. Aucun second serveur ni seconde base n’est requis.
 
 Si le journal indique `HTTP 404` et que l’ancienne configuration affiche `votre-service.onrender.com`, remplacer `PARTNER_SANDBOX_BASE_URL` par l’adresse HTTPS réelle du service Render, redéployer, puis cliquer sur **Régénérer le webhook** avant de renvoyer une mission.
 

@@ -2,61 +2,61 @@
 
 Les niveaux d’abonnement s’appliquent aux organisations utilisant l’interface Standard Depann’Home Pro. Les interfaces Partenaire et Groupe conservent leurs règles spécifiques.
 
-L’interface **Partenaire** utilise le niveau technique Pro, mais son portail est **gratuit** : tarif mensuel à 0 €, aucune échéance et aucune facture d’abonnement. Elle comprend exactement **un poste Administrateur PC et aucun poste mobile**. Son espace métier est limité à **Clients**, à l’**import de données clients depuis Excel ou CSV**, à **Missions partenaires**, au **Réseau Depann’Home Pro** pour rechercher une entreprise et établir une connexion interne, ainsi qu’au **Support** ; la messagerie contextuelle reste rattachée aux dossiers clients. Les connecteurs, accès API externes et environnements de recette, réservés aux donneurs d’ordre comme les assurances, ne sont pas disponibles. Lors d’une conversion, les accès supplémentaires sont désactivés sans suppression de leurs données. L’interface Groupe reste soumise à sa règle commerciale propre.
+L’interface **Partenaire** utilise le niveau technique Pro, mais son portail est **gratuit** : tarif mensuel à 0 €, aucune échéance et aucune facture d’abonnement. Elle comprend exactement **un poste Administrateur administratif et aucun poste mobile**. Son espace métier est limité à **Clients**, à l’**import de données clients depuis Excel ou CSV**, à **Missions partenaires**, au **Réseau Depann’Home Pro** pour rechercher une entreprise et établir une connexion interne, ainsi qu’au **Support** ; la messagerie contextuelle reste rattachée aux dossiers clients. Les connecteurs, accès API externes et environnements de recette, réservés aux donneurs d’ordre comme les assurances, ne sont pas disponibles. Lors d’une conversion, les accès supplémentaires sont désactivés sans suppression de leurs données. L’interface Groupe reste soumise à sa règle commerciale propre.
 
 ## Basic
 
-- 20 € TTC par poste PC et par mois.
+- 20 € TTC par poste administratif et par mois.
 - 5 € TTC par poste mobile et par mois.
 - Accès aux clients.
-- Accès Administrateur PC aux devis, factures, avoirs, au tableau de facturation et au module Comptabilité, facturation électronique et PDP.
-- Bibliothèque technique incluse sur les postes mobiles autorisés par l’offre (`mobile_admin`, `team_lead`, `technician`) ; aucun accès Bibliothèque sur poste PC.
-- Achats inclus sur tous les postes PC (`admin`, `pc_standard`, `accountant`) et sur l’Administrateur Mobile. Le registre reste également accessible depuis la section Facturation.
-- Postes autorisés : Administrateur PC, poste PC standard, Comptable et Administrateur Mobile.
+- Accès Administrateur administratif aux devis, factures, avoirs, au tableau de facturation et au module Comptabilité, facturation électronique et PDP.
+- Bibliothèque technique incluse sur les postes mobiles autorisés par l’offre (`mobile_admin`, `team_lead`, `technician`) ; aucun accès Bibliothèque sur poste administratif.
+- Achats inclus sur tous les postes administratifs (`admin`, `pc_standard`, `accountant`) et sur l’Administrateur Mobile. Le registre reste également accessible depuis la section Facturation.
+- Postes autorisés : Administrateur administratif, poste administratif standard, Comptable et Administrateur Mobile.
 - Les comptes Technicien et Chef d’équipe mobile nécessitent au minimum Basic+.
 - Pas d’accès au Quitus d’intervention, réservé à Pro.
 - Accès aux réglages nécessaires du compte et des documents.
-- Pas d’accès au planning, aux rapports techniques, à la bibliothèque sur poste PC, au Réseau ou aux API.
+- Pas d’accès au planning, aux rapports techniques, à la bibliothèque sur poste administratif, au Réseau ou aux API.
 
 ## Basic+
 
-- 35 € TTC par poste PC et par mois.
+- 35 € TTC par poste administratif et par mois.
 - 8 € TTC par poste mobile et par mois.
 - Toutes les fonctions Basic.
-- Autorisations individuelles **Facturation** et **Comptabilité** pour les Postes PC standard et Comptables.
+- Autorisations individuelles **Facturation** et **Comptabilité** pour les Postes administratifs standard et Comptables.
 - Planning et gestion des interventions.
 - Importation de données Excel et CSV.
 - Accès au Réseau Depann’Home Pro interne : annuaire, fiche réseau et connexions entre entreprises utilisatrices.
 - Envoi et réception de missions, messagerie contextuelle et dossiers partagés entre entreprises connectées du réseau.
-- Espace e-mail de l’entreprise dans le menu principal : consultation directe des boîtes connectées sans conservation des messages ordinaires. Accès automatique pour les Administrateurs PC et mobiles ; autorisation individuelle pour chaque Poste PC standard ou Comptable.
+- Espace e-mail de l’entreprise dans le menu principal : consultation directe des boîtes connectées sans conservation des messages ordinaires. Accès automatique pour les Administrateurs administratifs et mobiles ; autorisation individuelle pour chaque Poste administratif standard ou Comptable.
 - Accès à tous les postes mobiles : Administrateur Mobile, Chef d’équipe et Technicien.
-- Aucun mode Groupe, aucune bascule multi-entreprises et aucune autorisation inter-entreprises à la création d’un poste PC ; ces fonctions sont réservées à Pro.
+- Aucun mode Groupe, aucune bascule multi-entreprises et aucune autorisation inter-entreprises à la création d’un poste administratif ; ces fonctions sont réservées à Pro.
 - Pas d’accès au Quitus d’intervention, réservé à Pro.
-- Pas d’accès aux rapports techniques ni à la bibliothèque sur poste PC.
+- Pas d’accès aux rapports techniques ni à la bibliothèque sur poste administratif.
 - Aucun connecteur externe, aucune connexion API partenaire et aucun environnement de recette API.
 
 ## Pro
 
-- 70 € TTC par poste PC et par mois.
+- 70 € TTC par poste administratif et par mois.
 - 15 € TTC par poste mobile et par mois.
 - Accès complet aux modules disponibles selon le rôle : clients, planning, devis, factures, facturation, comptabilité, achats administrateurs, rapports de recherche de fuite, bibliothèque mobile, photos, imports, groupes, missions partenaires, Réseau Depann’Home Pro et connexions API.
-- Espace e-mail de l’entreprise dans le menu principal, avec accès automatique pour les Administrateurs PC et mobiles et autorisation individuelle pour chaque Poste PC standard ou Comptable.
+- Espace e-mail de l’entreprise dans le menu principal, avec accès automatique pour les Administrateurs administratifs et mobiles et autorisation individuelle pour chaque Poste administratif standard ou Comptable.
 - Accès au Quitus d’intervention : signature, validation, PDF et modèles personnalisés.
-- Accès complet à tous les types de postes PC et mobiles.
-- Autorisations individuelles **Facturation**, **Comptabilité** et, lorsqu’un groupe existe, **Entreprises du même groupe** pour les postes PC non administrateurs. Les Administrateurs PC conservent tous les accès.
+- Accès complet à tous les types de postes administratifs et mobiles.
+- Autorisations individuelles **Facturation**, **Comptabilité** et, lorsqu’un groupe existe, **Entreprises du même groupe** pour les postes administratifs non administrateurs. Les Administrateurs administratifs conservent tous les accès.
 - Licences Groupe d’entreprise / Multi-entreprises incluses, sans supplément de licence, pour activer le pilotage de plusieurs sociétés selon l’interface configurée.
 
 ### Licence Partenaire gratuite
 
-La licence Portail Partenaire est gratuite et distincte de l’abonnement Pro payant. Son niveau technique Pro garantit les échanges nécessaires, sans abonnement mensuel, échéance ni facture. Elle inclut un poste Administrateur PC, aucun poste mobile, les espaces Clients et Missions partenaires avec leur messagerie contextuelle, l’import de fiches clients depuis Excel ou CSV, la recherche d’entreprises dans le Réseau Depann’Home Pro et un formulaire Support relié à la Console Créateur. Les imports de devis, factures et rapports restent indisponibles. Elle n’inclut aucun connecteur ni accès API externe.
+La licence Portail Partenaire est gratuite et distincte de l’abonnement Pro payant. Son niveau technique Pro garantit les échanges nécessaires, sans abonnement mensuel, échéance ni facture. Elle inclut un poste Administrateur administratif, aucun poste mobile, les espaces Clients et Missions partenaires avec leur messagerie contextuelle, l’import de fiches clients depuis Excel ou CSV, la recherche d’entreprises dans le Réseau Depann’Home Pro et un formulaire Support relié à la Console Créateur. Les imports de devis, factures et rapports restent indisponibles. Elle n’inclut aucun connecteur ni accès API externe.
 
 ## Calcul et quotas
 
 Le tarif mensuel est calculé automatiquement :
 
-`nombre de postes PC × tarif PC + nombre de postes mobiles × tarif mobile`
+`nombre de postes administratifs × tarif administratif + nombre de postes mobiles × tarif mobile`
 
-Les rôles Administrateur, Poste PC standard et Comptable consomment un poste PC. Le rôle Administrateur Mobile, chaque appareil mobile approuvé d’un compte Administrateur, les Chefs d’équipe et les Techniciens consomment chacun un poste mobile.
+Les rôles Administrateur, Poste administratif standard et Comptable consomment un poste administratif. Le rôle Administrateur Mobile, chaque appareil mobile approuvé d’un compte Administrateur, les Chefs d’équipe et les Techniciens consomment chacun un poste mobile.
 
 Les remises commerciales existantes peuvent toujours être appliquées au total mensuel calculé.
 
@@ -68,4 +68,4 @@ Une évolution ou une rétrogradation d’offre ne supprime et ne réinitialise 
 
 L’offre active, les tarifs et les descriptions sont présentés uniquement dans **Paramètres > Offre & abonnement**. L’entreprise y transmet une demande d’évolution ou de rétrogradation au Support. Cette demande est enregistrée pour suivi mais ne modifie jamais automatiquement le forfait actif.
 
-Cette section rappelle aussi le nombre de postes PC et mobiles autorisés ainsi que le tarif total mensuel actuel. L’entreprise peut y demander des postes supplémentaires ; les nouvelles quantités sont adressées au Support dans la même demande suivie, sans modification automatique des quotas.
+Cette section rappelle aussi le nombre de postes administratifs et mobiles autorisés ainsi que le tarif total mensuel actuel. L’entreprise peut y demander des postes supplémentaires ; les nouvelles quantités sont adressées au Support dans la même demande suivie, sans modification automatique des quotas.

@@ -1,6 +1,6 @@
 # Mode Groupe / Multi-entreprises
 
-Le mode Groupe est **optionnel et réservé à l’offre Pro**. Une entreprise Basic ou Basic+ ne peut ni l’activer ni accorder une autorisation inter-entreprises à un poste PC. Une entreprise qui ne l’active pas continue d’utiliser exactement son périmètre historique : son `account_owner_id` reste son contexte métier, sans table de données partagée ni changement de droits.
+Le mode Groupe est **optionnel et réservé à l’offre Pro**. Une entreprise Basic ou Basic+ ne peut ni l’activer ni accorder une autorisation inter-entreprises à un poste administratif. Une entreprise qui ne l’active pas continue d’utiliser exactement son périmètre historique : son `account_owner_id` reste son contexte métier, sans table de données partagée ni changement de droits.
 
 ## Cloisonnement
 
@@ -8,13 +8,13 @@ Une société d’un groupe est un compte entreprise existant ou nouvellement cr
 
 Les tables `depannhome_group_companies` associent les propriétaires de compte indépendants à un groupe. Pour un Administrateur Groupe, le serveur valide à chaque requête la société active, son appartenance au groupe, l’activité du groupe et l’autorisation de l’administrateur. `getAccountOwnerId(request)` renvoie alors exclusivement cette société active. Les endpoints métier existants conservent ainsi leurs filtres `owner_id` usuels.
 
-Les Administrateurs (PC) rattachés à une société Pro du groupe peuvent sélectionner ses entreprises. Avec l’offre Pro, un Poste PC standard ou un Comptable peut également le faire si l’autorisation **Entreprises du même groupe** lui a été accordée. Cette case n’est jamais proposée en Basic ou Basic+. Les techniciens et les postes sans cette autorisation ne peuvent pas changer de société.
+Les Administrateurs administratifs rattachés à une société Pro du groupe peuvent sélectionner ses entreprises. Avec l’offre Pro, un Poste administratif standard ou un Comptable peut également le faire si l’autorisation **Entreprises du même groupe** lui a été accordée. Cette case n’est jamais proposée en Basic ou Basic+. Les techniciens et les postes sans cette autorisation ne peuvent pas changer de société.
 
 Cette autorisation donne uniquement accès au contexte et au sélecteur d’entreprise. Elle ne donne accès ni au tableau de bord consolidé, ni à l’audit, ni à la création ou à l’administration des sociétés du groupe, qui restent réservés à un Administrateur Groupe déclaré dans `depannhome_group_administrators`.
 
 ## Administrateur Groupe
 
-L’activation ajoute l’Administrateur (PC) qui active le groupe à `depannhome_group_administrators`. Son rôle applicatif reste `admin` : ce choix préserve les règles existantes de validation d’appareils, de postes PC et de gestion d’équipe. Le privilège de groupe est une capacité distincte, déterminée côté serveur par la table d’appartenance.
+L’activation ajoute l’Administrateur administratif qui active le groupe à `depannhome_group_administrators`. Son rôle applicatif reste `admin` : ce choix préserve les règles existantes de validation d’appareils, de postes administratifs et de gestion d’équipe. Le privilège de groupe est une capacité distincte, déterminée côté serveur par la table d’appartenance.
 
 Un Administrateur Groupe peut :
 
@@ -32,7 +32,7 @@ Le serveur conserve toujours le rôle réel du compte pendant cette bascule. Un 
 
 Un poste mobile reste toujours rattaché à son `account_owner_id` d’origine. Les rôles `mobile_admin`, `team_lead` et `technician` ne reçoivent jamais de contexte multi-entreprises. Cette règle s’applique aussi à un compte `admin` utilisé depuis un téléphone ou une tablette : sur mobile, il reste dans sa propre entreprise et ne peut pas utiliser le sélecteur Groupe.
 
-Lorsqu’un poste PC affecte un membre à une intervention, un planning ou une mission partenaire, l’API vérifie que ce membre est actif et appartient à l’entreprise actuellement sélectionnée. Les missions partenaires limitent en plus l’affectation aux rôles mobiles prévus. Des déclencheurs PostgreSQL répètent cette validation pour empêcher toute liaison inter-entreprises issue d’une requête contournée ou d’une future évolution. Les anciennes liaisons incohérentes sont retirées au démarrage sans déplacer le compte mobile ni ses données.
+Lorsqu’un poste administratif affecte un membre à une intervention, un planning ou une mission partenaire, l’API vérifie que ce membre est actif et appartient à l’entreprise actuellement sélectionnée. Les missions partenaires limitent en plus l’affectation aux rôles mobiles prévus. Des déclencheurs PostgreSQL répètent cette validation pour empêcher toute liaison inter-entreprises issue d’une requête contournée ou d’une future évolution. Les anciennes liaisons incohérentes sont retirées au démarrage sans déplacer le compte mobile ni ses données.
 
 ## Annuler le mode Groupe
 

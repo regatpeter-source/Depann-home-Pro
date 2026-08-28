@@ -28,7 +28,7 @@ Les rapports et leurs photos restent internes jusqu’à leur partage volontaire
 
 ## Accès selon le poste
 
-Le **Réseau Depann'Home Pro** (annuaire, recherche d’entreprise, demandes de partenariat, connexions, droits de synchronisation, partenaires officiels et accès API) est réservé aux postes PC `admin` et `pc_standard` (Secrétariat). Ces rôles peuvent consulter, créer, accepter, refuser et administrer les connexions entre entreprises.
+Le **Réseau Depann'Home Pro** (annuaire, recherche d’entreprise, demandes de partenariat, connexions, droits de synchronisation, partenaires officiels et accès API) est réservé aux postes administratifs `admin` et `pc_standard` (Secrétariat). Ces rôles peuvent consulter, créer, accepter, refuser et administrer les connexions entre entreprises.
 
 Les rôles `technician` et `team_lead` ne voient jamais l’annuaire, les recherches, les paramètres réseau ou les actions de gestion de partenaires. Ils accèdent uniquement à leurs missions partenaires affectées (`assigned_technician_id`), à leur dialogue, ainsi qu’aux rapports, photos et documents rattachés aux interventions auxquelles ils sont affectés. Les filtres sont appliqués par les API SQL ; masquer les entrées dans l’interface n’est donc pas le seul contrôle de sécurité.
 
@@ -47,6 +47,6 @@ Le corps d’un message peut contenir `authorName`, `body`, `kind` (`message` ou
 
 La réception, l’acceptation et les changements de statut de mission ajoutent automatiquement une entrée système : planification, affectation, arrivée sur site, rapport, devis, facture et clôture sont ainsi conservés dans le même historique.
 
-Un message, une pièce jointe, une difficulté ou une mise à jour notifie les administrateurs et le technicien affecté dans le centre de notifications persistant, disponible sur PC et mobile. Le partenaire reçoit un événement dans la boîte d’envoi déjà utilisée par la mission ; il est transmis au callback HTTPS configuré et reste relançable depuis l’interface.
+Un message, une pièce jointe, une difficulté ou une mise à jour notifie les administrateurs et le technicien affecté dans le centre de notifications persistant, disponible sur poste administratif et mobile. Le partenaire reçoit un événement dans la boîte d’envoi déjà utilisée par la mission ; il est transmis au callback HTTPS configuré et reste relançable depuis l’interface.
 
 À l’état `closed`, les APIs interne et partenaire refusent les nouveaux messages tout en conservant l’historique en lecture seule. Les pièces jointes sont stockées dans une table dédiée au fil et ne consomment pas les limites de documents du dossier client.

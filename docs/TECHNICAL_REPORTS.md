@@ -12,15 +12,15 @@ La première étape est un instantané **en lecture seule** généré lors de la
 
 - Un rapport est toujours créé depuis une intervention de planning rattachée à un dossier client. Il n’existe pas de création autonome ou de rapport sans client.
 - Un technicien ne peut consulter ou créer que les rapports d’une intervention qui lui est affectée. Il peut modifier son brouillon, puis le **terminer** depuis mobile sans étape de correction préalable.
-- La terminaison mobile place le rapport dans la section **Terminés à corriger** (`submitted`) et le verrouille pour le terrain. Seuls les rôles autorisés sur un poste PC peuvent le corriger.
-- La correction PC place ensuite le rapport dans la section **À envoyer** (`ready_to_send`). Un poste PC autorisé peut alors le valider définitivement et l’archiver comme document envoyé (`validated`).
+- La terminaison mobile place le rapport dans la section **Terminés à corriger** (`submitted`) et le verrouille pour le terrain. Seuls les rôles autorisés sur un poste administratif peuvent le corriger.
+- La correction sur poste administratif place ensuite le rapport dans la section **À envoyer** (`ready_to_send`). Un poste administratif autorisé peut alors le valider définitivement et l’archiver comme document envoyé (`validated`).
 - L’administration accède à l’ensemble des rapports de l’entreprise, peut demander une correction par section, valider ou remettre un document validé en brouillon.
 - Le cycle principal est `draft → submitted → ready_to_send → validated`. Le statut `in_correction` reste utilisé pour les demandes de correction par section et réouvre le rapport au technicien concerné.
 - La validation génère un PDF et verrouille le rapport. Le retour en brouillon enlève le PDF courant afin que toute nouvelle validation génère une version à jour.
 
-### Correction sur poste PC
+### Correction sur poste administratif
 
-La vue d’ensemble de correction est divisée en deux volets sur poste PC. À gauche, elle réunit toutes les observations et toutes les photos du rapport, y compris les photos générales, de présentation ou non rattachées à une observation. L’utilisateur autorisé peut y corriger l’orthographe et les textes, ajouter des lignes, modifier les légendes, remplacer une image, choisir sa taille dans le PDF, la déplacer ou la supprimer. À droite, un aperçu PDF se régénère automatiquement après chaque série de modifications.
+La vue d’ensemble de correction est divisée en deux volets sur poste administratif. À gauche, elle réunit toutes les observations et toutes les photos du rapport, y compris les photos générales, de présentation ou non rattachées à une observation. L’utilisateur autorisé peut y corriger l’orthographe et les textes, ajouter des lignes, modifier les légendes, remplacer une image, choisir sa taille dans le PDF, la déplacer ou la supprimer. À droite, un aperçu PDF se régénère automatiquement après chaque série de modifications.
 
 L’aperçu est produit en mémoire à partir des textes en cours et des médias enregistrés : il ne modifie ni le statut ni l’empreinte de correction. Toutes les opérations média en cours sont terminées avant son rafraîchissement et avant l’enregistrement de la correction. Le serveur calcule ensuite une empreinte privée du titre, de la date, du contenu et des médias. La validation définitive vérifie cette empreinte sans jamais l’exposer dans les réponses publiques : toute modification effectuée après la correction oblige donc à enregistrer une nouvelle correction, tandis qu’un rapport inchangé peut être validé normalement.
 
