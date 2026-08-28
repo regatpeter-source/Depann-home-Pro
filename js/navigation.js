@@ -9,7 +9,7 @@ import { renderPartnerMissions } from "./partner-missions.js?v=52";
 import { renderPartnerSandbox } from "./partner-sandbox.js?v=3";
 import { renderPartnerConnections } from "./partner-connections.js?v=25";
 import { renderCompanyEmailWorkspace, renderPartnerEmailSettings } from "./partner-email-settings.js?v=18";
-import { renderDataImportTool } from "./data-imports.js?v=3";
+import { renderDataImportTool } from "./data-imports.js?v=4";
 import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=29";
 import { getFirstUnreadClientId, refreshClientMessageAlert, refreshVisibleClientMessages } from "./messages.js?v=107";
 import { getSearchableClients, renderClients } from "./clients.js?v=151";
@@ -354,7 +354,7 @@ function isDesktopDevice() {
 
 function canAccessSettingsSection(section) {
     if (document.body.dataset.creator === "true") return true;
-    if (document.body.dataset.organizationInterface === "partner") return section === "support" || (section === "network" && organizationFeatureEnabled("partnerConnections")) || (section === "company" && organizationFeatureEnabled("partnerMissions"));
+    if (document.body.dataset.organizationInterface === "partner") return section === "support" || (section === "network" && organizationFeatureEnabled("partnerConnections")) || (section === "company" && organizationFeatureEnabled("partnerMissions")) || (section === "imports" && organizationFeatureEnabled("imports"));
     if (section === "company" && organizationFeatureEnabled("companyEmail")) return document.body.dataset.role === "admin";
     if (section === "network" && (organizationFeatureEnabled("partnerConnections") || organizationFeatureEnabled("partnerMissions"))) return true;
     const featureBySection = { documents: "billing", electronicInvoicing: "accounting", network: "partnerConnections", users: "settings", security: "settings", groups: "groups", personalization: "settings", imports: "imports" };
@@ -1350,7 +1350,7 @@ function renderSettings(options = {}) {
     }
     if (!options.personalizationOnly && document.body.dataset.role === "admin" && document.body.classList.contains("desktop-device")) {
         if (organizationFeatureEnabled("technicalReports")) renderReportTemplateSettings(container);
-        renderDataImportTool(container);
+        renderDataImportTool(container, { clientOnly: document.body.dataset.organizationInterface === "partner" });
         renderSupportContact(container);
         if (options.focusReportTemplate) window.requestAnimationFrame(() => document.getElementById("reportTemplateSettings")?.scrollIntoView({ behavior: "smooth", block: "start" }));
     }
@@ -1382,7 +1382,7 @@ function renderSettingsWorkspace(options = {}) {
             ...(internalNetworkOnly ? [["support", "Support", "Envoyez une demande à l’équipe Depann’Home Pro depuis votre compte partenaire.", "support"]] : []),
             ...(document.body.dataset.role === "admin" ? [["users", "Utilisateurs", "Accès, postes, techniciens et chefs d’équipe.", "users"], ["security", "Sécurité", "Double authentification et protection des accès.", "security"], ["groups", "Groupe / Multi-entreprises", "Sociétés, bascule de contexte et indicateurs consolidés.", "group"]] : []),
             ["personalization", "Personnalisation", "Langue, thème, police et préférences d’affichage.", "appearance"],
-            ...(document.body.dataset.role === "admin" && document.body.classList.contains("desktop-device") ? [["imports", "Importation de données", "Importez vos clients, devis, factures et rapports depuis Excel ou CSV.", "import"]] : []),
+            ...(document.body.dataset.role === "admin" && document.body.classList.contains("desktop-device") ? [["imports", document.body.dataset.organizationInterface === "partner" ? "Importation de clients" : "Importation de données", document.body.dataset.organizationInterface === "partner" ? "Importez vos fiches clients depuis Excel ou CSV." : "Importez vos clients, devis, factures et rapports depuis Excel ou CSV.", "import"]] : []),
             ...(document.body.dataset.role === "admin" && document.body.dataset.creator === "true" && document.body.dataset.deviceType === "desktop" ? [["creator", "Console Créateur", "Pilotage des entreprises, abonnements et services de la plateforme.", "creator"]] : [])
         ];
         cards.filter(([id]) => canAccessSettingsSection(id)).forEach(([id, title, description, icon]) => grid.appendChild(createSettingsNavigationCard(title, description, icon, () => renderSettings({ section: id }))));
@@ -1393,7 +1393,7 @@ function renderSettingsWorkspace(options = {}) {
 
     clearSearch();
     resetSelection("all");
-    const titles = { subscription: "Offre & abonnement", documents: "Modèles de documents", electronicInvoicing: "Facturation électronique", company: "Entreprise · Boîte mail", network: document.body.dataset.organizationInterface === "partner" || !organizationFeatureEnabled("connectors") ? "Réseau Depann’Home Pro" : "Réseau & connecteurs", support: "Support", users: "Utilisateurs", security: "Sécurité", groups: "Groupe / Multi-entreprises", personalization: "Personnalisation", imports: "Importation de données", creator: "Console Créateur" };
+    const titles = { subscription: "Offre & abonnement", documents: "Modèles de documents", electronicInvoicing: "Facturation électronique", company: "Entreprise · Boîte mail", network: document.body.dataset.organizationInterface === "partner" || !organizationFeatureEnabled("connectors") ? "Réseau Depann’Home Pro" : "Réseau & connecteurs", support: "Support", users: "Utilisateurs", security: "Sécurité", groups: "Groupe / Multi-entreprises", personalization: "Personnalisation", imports: document.body.dataset.organizationInterface === "partner" ? "Importation de clients" : "Importation de données", creator: "Console Créateur" };
     setPage(`Paramètres · ${titles[section] || "Configuration"}`, ROUTES.settings, "detail");
     const container = getContainer();
     container.appendChild(createBackCard("Retour aux Paramètres", () => renderSettings()));
@@ -1438,8 +1438,9 @@ function renderSettingsWorkspace(options = {}) {
     }
     if (section === "imports") {
         if (!document.body.classList.contains("desktop-device")) return renderSettings();
-        container.appendChild(createSettingsIntro("Importation de données", "Importez en toute sécurité vos clients, devis, factures et rapports à partir de fichiers Excel ou CSV."));
-        renderDataImportTool(container);
+        const partnerClientImport = document.body.dataset.organizationInterface === "partner";
+        container.appendChild(createSettingsIntro(partnerClientImport ? "Importation de clients" : "Importation de données", partnerClientImport ? "Importez en toute sécurité vos fiches clients à partir de fichiers Excel ou CSV." : "Importez en toute sécurité vos clients, devis, factures et rapports à partir de fichiers Excel ou CSV."));
+        renderDataImportTool(container, { clientOnly: partnerClientImport });
         return;
     }
     if (section === "creator") {

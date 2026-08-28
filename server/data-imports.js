@@ -4,6 +4,7 @@ import ExcelJS from "exceljs";
 import multer from "multer";
 import { getPool } from "./database.js";
 import { getAccountOwnerId } from "./auth.js";
+import { getOrganization } from "./organizations.js";
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 const MAX_ROWS = 10000;
@@ -42,6 +43,7 @@ export function registerDataImportRoutes(app, requireAuthentication) {
     app.use("/api/data-imports", requireAuthentication, requireDesktopAdministrator);
     app.get("/api/data-imports/template", asyncHandler(async (request, response) => {
         const dataType = TYPES.has(request.query?.dataType) ? request.query.dataType : "clients";
+        await assertDataImportTypeAccess(request, dataType);
         const workbook = createImportTemplate(dataType);
         const filename = `modele-import-${dataType}.xlsx`;
         response.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
@@ -52,6 +54,7 @@ export function registerDataImportRoutes(app, requireAuthentication) {
     app.post("/api/data-imports/analyze", upload.single("file"), asyncHandler(async (request, response) => {
         const dataType = TYPES.has(request.body?.dataType) ? request.body.dataType : "";
         if (!dataType || !request.file) return response.status(400).json({ message: "Choisissez un type de données et un fichier Excel (.xlsx) ou CSV (.csv)." });
+        await assertDataImportTypeAccess(request, dataType);
         const parsed = await parseFile(request.file);
         if (!parsed.rows.length) return response.status(400).json({ message: "Le fichier ne contient aucune ligne de données exploitable." });
         const id = crypto.randomUUID(); const ownerId = getAccountOwnerId(request);
@@ -59,14 +62,14 @@ export function registerDataImportRoutes(app, requireAuthentication) {
         response.status(201).json({ sessionId: id, dataType, filename: safeFilename(request.file.originalname), rowCount: parsed.rows.length, columns: parsed.columns, suggestedMapping: suggestMapping(parsed.columns, dataType), readErrors: parsed.errors, fields: TYPE_FIELDS[dataType] });
     }));
     app.post("/api/data-imports/preview", asyncHandler(async (request, response) => {
-        const session = await loadSession(request, request.body?.sessionId); const mapping = sanitizeMapping(request.body?.mapping, session.data_type, session.columns); const duplicateStrategy = strategy(request.body?.duplicateStrategy);
+        const session = await loadSession(request, request.body?.sessionId); await assertDataImportTypeAccess(request, session.data_type); const mapping = sanitizeMapping(request.body?.mapping, session.data_type, session.columns); const duplicateStrategy = strategy(request.body?.duplicateStrategy);
         if (!mapping.ok) return response.status(400).json({ message: mapping.message });
         const analysis = await analyzeImport(getAccountOwnerId(request), session, mapping.value, duplicateStrategy);
         const { records, ...preview } = analysis;
         response.json(preview);
     }));
     app.post("/api/data-imports/confirm", asyncHandler(async (request, response) => {
-        const session = await loadSession(request, request.body?.sessionId); const mapping = sanitizeMapping(request.body?.mapping, session.data_type, session.columns); const duplicateStrategy = strategy(request.body?.duplicateStrategy);
+        const session = await loadSession(request, request.body?.sessionId); await assertDataImportTypeAccess(request, session.data_type); const mapping = sanitizeMapping(request.body?.mapping, session.data_type, session.columns); const duplicateStrategy = strategy(request.body?.duplicateStrategy);
         if (!mapping.ok) return response.status(400).json({ message: mapping.message });
         const analysis = await analyzeImport(getAccountOwnerId(request), session, mapping.value, duplicateStrategy);
         const result = await performImport(request, session, analysis.records, duplicateStrategy, analysis.errors);
@@ -168,6 +171,8 @@ function clean(value, maximum) { return String(value || "").replace(/\s+/g, " ")
 function normalize(value) { return clean(value, 300).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase(); }
 function isClientIdentifierColumn(value) { return /^(client[ _-]?)?id(entifiant)?$/.test(normalize(value)); }
 function safeFilename(value) { return path.basename(String(value || "import")).replace(/[\r\n]/g, " ").slice(0, 255) || "import"; }
+export function isDataImportTypeAllowed(interfaceType, dataType) { return TYPES.has(dataType) && (interfaceType !== "partner" || dataType === "clients"); }
+async function assertDataImportTypeAccess(request, dataType) { const organization = await getOrganization(getAccountOwnerId(request)); if (!isDataImportTypeAllowed(organization.interfaceType, dataType)) throw clientError(403, "La licence Partenaire autorise uniquement l’import de données clients."); }
 function requireDesktopAdministrator(request, response, next) { if (request.user?.role === "admin" && request.user?.deviceType === "desktop") return next(); return response.status(403).json({ message: "L’importation de données est réservée aux administrateurs sur poste PC." }); }
 function clientError(status, message) { const error = new Error(message); error.status = status; return error; }
 function asyncHandler(handler) { return (request, response, next) => Promise.resolve(handler(request, response, next)).catch(error => error.status ? response.status(error.status).json({ message: error.message }) : next(error)); }

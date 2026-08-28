@@ -88,7 +88,7 @@ L’offre Pro est destinée aux entreprises qui veulent piloter l’ensemble de 
 
 ### Licence Partenaire gratuite
 
-La licence Portail Partenaire est gratuite : elle ne comporte ni abonnement mensuel, ni échéance, ni facture. Elle utilise le niveau technique Pro pour sécuriser les échanges, mais reste un accès dédié comprenant un poste Administrateur PC, aucun poste mobile, les espaces Clients et Missions partenaires avec leur messagerie contextuelle, la recherche d’entreprises dans le Réseau Depann’Home Pro et un accès Support. Elle ne donne accès à aucun connecteur ni accès API externe, ces outils étant réservés aux donneurs d’ordre tels que les assurances. Elle permet ainsi à un partenaire de recevoir et suivre les missions qui lui sont confiées sans souscrire une offre Pro payante.
+La licence Portail Partenaire est gratuite : elle ne comporte ni abonnement mensuel, ni échéance, ni facture. Elle utilise le niveau technique Pro pour sécuriser les échanges, mais reste un accès dédié comprenant un poste Administrateur PC, aucun poste mobile, les espaces Clients et Missions partenaires avec leur messagerie contextuelle, l’import de fiches clients depuis Excel ou CSV, la recherche d’entreprises dans le Réseau Depann’Home Pro et un accès Support. Les imports de devis, factures et rapports ne sont pas inclus. Elle ne donne accès à aucun connecteur ni accès API externe, ces outils étant réservés aux donneurs d’ordre tels que les assurances. Elle permet ainsi à un partenaire de recevoir et suivre les missions qui lui sont confiées sans souscrire une offre Pro payante.
 
 ## Exemple de calcul mensuel
 
@@ -424,6 +424,8 @@ Les équipes terrain peuvent organiser leurs ressources métier.
 # 16. Importation de données
 
 L’assistant d’import facilite la reprise d’un historique existant.
+
+La licence Partenaire gratuite dispose de cette section uniquement pour l’import de fiches clients. Les offres compatibles de l’interface Standard conservent l’ensemble des types ci-dessous.
 
 - Fichiers CSV et Excel.
 - Import de clients, devis, factures et rapports historiques.

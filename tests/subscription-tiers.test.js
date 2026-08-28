@@ -6,6 +6,7 @@ import { isFeatureEnabled, isFeatureEnabledForRole, organizationInterfaceAccessM
 import { MENU_ACCESS, ROUTES } from "../js/config.js";
 import { buildSubscriptionInvoiceSnapshot } from "../server/invoicing.js";
 import { memberRoleAccessError, memberSeatError, memberSeatFamily, mobileAdministratorSeatError } from "../server/auth.js";
+import { isDataImportTypeAllowed } from "../server/data-imports.js";
 
 const schema = readFileSync(new URL("../database/schema.sql", import.meta.url), "utf8");
 const database = readFileSync(new URL("../server/database.js", import.meta.url), "utf8");
@@ -30,6 +31,8 @@ const partnerConnectionsClient = readFileSync(new URL("../js/partner-connections
 const partnerMissionsServer = readFileSync(new URL("../server/partner-missions.js", import.meta.url), "utf8");
 const partnerMissionsClient = readFileSync(new URL("../js/partner-missions.js", import.meta.url), "utf8");
 const partnerEmailServer = readFileSync(new URL("../server/partner-email.js", import.meta.url), "utf8");
+const dataImportsServer = readFileSync(new URL("../server/data-imports.js", import.meta.url), "utf8");
+const dataImportsClient = readFileSync(new URL("../js/data-imports.js", import.meta.url), "utf8");
 
 test("Basic, Basic+ and Pro prices are calculated per PC and mobile seat", () => {
     assert.equal(calculateSubscriptionPriceCents("basic", 1, 1), 2500);
@@ -188,8 +191,8 @@ test("organization interfaces remain compatible with subscription tiers", () => 
 
 test("the free Partner interface exposes the internal network without external connectors", () => {
     const partner = publicOrganization({ interfaceType: "partner", licenseType: "partner_portal", subscriptionTier: "pro" });
-    for (const feature of ["clients", "partnerMissions", "partnerConnections", "messages"]) assert.equal(isFeatureEnabled(partner, feature), true, feature);
-    for (const feature of ["calendar", "library", "billing", "accounting", "technicalReports", "settings", "imports", "groups", "purchases", "connectors"]) {
+    for (const feature of ["clients", "partnerMissions", "partnerConnections", "messages", "imports"]) assert.equal(isFeatureEnabled(partner, feature), true, feature);
+    for (const feature of ["calendar", "library", "billing", "accounting", "technicalReports", "settings", "groups", "purchases", "connectors"]) {
         assert.equal(isFeatureEnabled(partner, feature), false, feature);
     }
     assert.equal(isFeatureEnabled(partner, "companyEmail"), false);
@@ -200,6 +203,8 @@ test("the free Partner interface exposes the internal network without external c
     assert.match(navigation, /refreshOrganizationAccess\(\)/);
     assert.match(navigation, /organizationInterface === "partner"/);
     assert.match(navigation, /section === "support" \|\| \(section === "network" && organizationFeatureEnabled\("partnerConnections"\)\)/);
+    assert.match(navigation, /section === "imports" && organizationFeatureEnabled\("imports"\)/);
+    assert.match(navigation, /Importation de clients/);
     assert.match(navigation, /internalNetworkOnly \? "Réseau Depann’Home Pro" : "Réseau & connecteurs"/);
     assert.match(navigation, /\["support", "Support", "Envoyez une demande à l’équipe Depann’Home Pro depuis votre compte partenaire\./);
     assert.match(navigation, /if \(section === "support"\) return renderSupportContact\(container\)/);
@@ -213,7 +218,13 @@ test("the free Partner interface exposes the internal network without external c
     assert.match(partnerMissionsServer, /COALESCE\(organization\.interface_type,'standard'\)<>'partner'/);
     const overriddenPartner = publicOrganization({ interfaceType: "partner", subscriptionTier: "pro", licenseFeatures: { partnerConnections: false, connectors: true } });
     assert.equal(isFeatureEnabled(overriddenPartner, "partnerConnections"), true);
+    assert.equal(isFeatureEnabled(publicOrganization({ interfaceType: "partner", subscriptionTier: "pro", licenseFeatures: { imports: false } }), "imports"), true);
     assert.equal(isFeatureEnabled(overriddenPartner, "connectors"), false);
+    assert.equal(isDataImportTypeAllowed("partner", "clients"), true);
+    for (const type of ["quotes", "invoices", "reports"]) assert.equal(isDataImportTypeAllowed("partner", type), false, type);
+    for (const type of ["clients", "quotes", "invoices", "reports"]) assert.equal(isDataImportTypeAllowed("standard", type), true, type);
+    assert.match(dataImportsServer, /La licence Partenaire autorise uniquement l’import de données clients/);
+    assert.match(dataImportsClient, /TYPES\.filter\(\(\[key\]\) => key === "clients"\)/);
 });
 
 test("subscription invoices detail charged PC and mobile seats", () => {

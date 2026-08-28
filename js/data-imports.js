@@ -8,21 +8,28 @@ const TYPES = [
     ["reports", "Rapports d’intervention", "Rapports historiques importés en brouillon"]
 ];
 
-export function renderDataImportTool(container) {
+function availableTypes(clientOnly) {
+    return clientOnly ? TYPES.filter(([key]) => key === "clients") : TYPES;
+}
+
+export function renderDataImportTool(container, { clientOnly = false } = {}) {
+    const partnerClientImport = clientOnly;
     const card = document.createElement("article");
     card.className = "brand-card full-card procedure-card data-import-card";
-    card.innerHTML = `<p class="eyebrow">Outils</p><h2>Importation de données</h2><p>Reprenez vos données Excel ou CSV sans ressaisie. L’analyse, la correspondance des colonnes et les doublons sont vérifiés avant toute écriture.</p><div class="data-import-actions"><button type="button" class="secondary-button">Importer des données</button><button type="button" class="secondary-button data-import-history-button">Journal des imports</button></div>`;
-    card.querySelector("button").addEventListener("click", () => openWizard(card));
+    card.innerHTML = `<p class="eyebrow">Outils</p><h2>${partnerClientImport ? "Importation de clients" : "Importation de données"}</h2><p>${partnerClientImport ? "Ajoutez vos fiches clients depuis un fichier Excel ou CSV sans ressaisie." : "Reprenez vos données Excel ou CSV sans ressaisie."} L’analyse, la correspondance des colonnes et les doublons sont vérifiés avant toute écriture.</p><div class="data-import-actions"><button type="button" class="secondary-button">${partnerClientImport ? "Importer des clients" : "Importer des données"}</button><button type="button" class="secondary-button data-import-history-button">Journal des imports</button></div>`;
+    card.querySelector("button").addEventListener("click", () => openWizard(card, clientOnly));
     card.querySelector(".data-import-history-button").addEventListener("click", () => showHistory(card));
     container.appendChild(card);
 }
 
-function openWizard(card) {
+function openWizard(card, clientOnly) {
+    const partnerClientImport = clientOnly;
     const modal = document.createElement("section");
     modal.className = "data-import-modal";
     modal.setAttribute("role", "dialog");
     modal.setAttribute("aria-modal", "true");
-    modal.innerHTML = `<div class="data-import-dialog"><div class="data-import-dialog-header"><div><p class="eyebrow">Outils · Importation de données</p><h2>Assistant d’importation</h2></div><button type="button" class="secondary-button" data-close>Fermer</button></div><ol class="data-import-steps"><li class="active">1. Fichier</li><li>2. Correspondance</li><li>3. Vérification</li><li>4. Import</li></ol><div class="data-import-content"></div></div>`;
+    modal.dataset.clientOnly = String(clientOnly);
+    modal.innerHTML = `<div class="data-import-dialog"><div class="data-import-dialog-header"><div><p class="eyebrow">Outils · ${partnerClientImport ? "Importation de clients" : "Importation de données"}</p><h2>Assistant d’importation</h2></div><button type="button" class="secondary-button" data-close>Fermer</button></div><ol class="data-import-steps"><li class="active">1. Fichier</li><li>2. Correspondance</li><li>3. Vérification</li><li>4. Import</li></ol><div class="data-import-content"></div></div>`;
     document.body.appendChild(modal);
     modal.querySelector("[data-close]").addEventListener("click", () => modal.remove());
     modal.addEventListener("click", event => { if (event.target === modal) modal.remove(); });
@@ -32,7 +39,7 @@ function openWizard(card) {
 function renderFileStep(modal) {
     setStep(modal, 0);
     const content = modal.querySelector(".data-import-content");
-    content.innerHTML = `<form class="data-import-form"><label>Type de données<select name="dataType">${TYPES.map(([key, label, description]) => `<option value="${key}">${escapeHtml(label)} — ${escapeHtml(description)}</option>`).join("")}</select></label><section class="data-import-template"><strong>Besoin d’un fichier prêt à remplir&nbsp;?</strong><p class="muted">Téléchargez un modèle Excel avec les bonnes colonnes et une feuille d’instructions. Il sera reconnu automatiquement lors de l’import.</p><button type="button" class="secondary-button" data-template>Télécharger le modèle Excel</button></section><label>Fichier Excel ou CSV<input name="file" type="file" accept=".xlsx,.csv" required></label><p class="muted">Formats acceptés : .xlsx et .csv · taille maximale 10 Mo · 10 000 lignes analysées au maximum.</p><div class="form-actions"><button class="secondary-button" type="submit">Analyser le fichier</button></div><p class="auth-message" aria-live="polite"></p></form>`;
+    content.innerHTML = `<form class="data-import-form"><label>Type de données<select name="dataType">${availableTypes(modal.dataset.clientOnly === "true").map(([key, label, description]) => `<option value="${key}">${escapeHtml(label)} — ${escapeHtml(description)}</option>`).join("")}</select></label><section class="data-import-template"><strong>Besoin d’un fichier prêt à remplir&nbsp;?</strong><p class="muted">Téléchargez un modèle Excel avec les bonnes colonnes et une feuille d’instructions. Il sera reconnu automatiquement lors de l’import.</p><button type="button" class="secondary-button" data-template>Télécharger le modèle Excel</button></section><label>Fichier Excel ou CSV<input name="file" type="file" accept=".xlsx,.csv" required></label><p class="muted">Formats acceptés : .xlsx et .csv · taille maximale 10 Mo · 10 000 lignes analysées au maximum.</p><div class="form-actions"><button class="secondary-button" type="submit">Analyser le fichier</button></div><p class="auth-message" aria-live="polite"></p></form>`;
     content.querySelector("[data-template]").addEventListener("click", () => { const dataType = content.querySelector('[name="dataType"]').value; window.location.assign(`/api/data-imports/template?dataType=${encodeURIComponent(dataType)}`); });
     content.querySelector("form").addEventListener("submit", async event => {
         event.preventDefault(); const form = event.currentTarget; const feedback = form.querySelector(".auth-message"); const button = form.querySelector("button");
