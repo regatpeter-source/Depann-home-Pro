@@ -33,7 +33,7 @@ const MICROSOFT_MAIL_SCOPES = "Mail.Read Mail.Send";
 const MICROSOFT_GRAPH_MAX_RETRIES = 2;
 const MICROSOFT_GRAPH_MAX_RETRY_DELAY_MS = 10_000;
 const PARTNER_EMAIL_SYNC_INTERVAL_MS = 10 * 60 * 1000;
-const DOCUMENT_EXTRACTION_VERSION = 2;
+const DOCUMENT_EXTRACTION_VERSION = 3;
 let scheduler = null;
 const activeMailboxSynchronizations = new Set();
 

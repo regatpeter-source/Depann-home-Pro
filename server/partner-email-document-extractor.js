@@ -92,7 +92,7 @@ async function extractPdfText(buffer) {
             page.cleanup();
             output += "\n";
         }
-        if (pdfTextNeedsOcr(output)) output = [output, await extractScannedPdfText(document)].filter(Boolean).join("\n");
+        if (pdfTextNeedsOcr(output)) output = [await extractScannedPdfText(document), output].filter(Boolean).join("\n");
     } finally {
         await document.destroy();
     }
@@ -154,7 +154,9 @@ async function createFrenchOcrWorker() {
 function pdfTextNeedsOcr(value) {
     const text = normalizeText(value);
     if (text.replace(/[^\p{L}\p{N}]/gu, "").length < MIN_USEFUL_PDF_TEXT) return true;
-    return !/(?:client|assur[ée]|b[ée]n[ée]ficiaire|occupant|adresse|t[ée]l[ée]phone|portable|mobile)/i.test(text);
+    const hasClientIdentity = /(?:^|\s)(?:client|assur[ée]e?|b[ée]n[ée]ficiaire|occupant)\s*[:\-]/im.test(text);
+    const hasClientAddress = /(?:^|\s)(?:adresse(?:\s+(?:du|de\s+l['’]))?\s*(?:client|assur[ée]e?|b[ée]n[ée]ficiaire|sinistre)?|lieu\s+d['’]intervention)\s*[:\-]/im.test(text);
+    return !hasClientIdentity || !hasClientAddress;
 }
 
 async function embeddedPdfImages(page, limit) {

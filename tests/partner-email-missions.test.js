@@ -724,6 +724,19 @@ test("un scan PDF A4 haute résolution est réduit puis lu par OCR", async () =>
     assert.match(readFileSync(new URL("../server/partner-email-document-extractor.js", import.meta.url), "utf8"), /pdfTextNeedsOcr\(output\)/);
 });
 
+test("les coordonnées de l’assureur dans l’en-tête ne masquent pas le client scanné", async () => {
+    const canvas = createCanvas(2400, 1200); const context = canvas.getContext("2d");
+    context.fillStyle = "white"; context.fillRect(0, 0, 2400, 1200); context.fillStyle = "black"; context.font = "bold 60px Arial";
+    context.fillText("Assure : Paul Martin", 80, 220); context.fillText("Adresse du beneficiaire : 12 rue des Lilas 35000 Rennes", 80, 400); context.fillText("Telephone : 06 11 22 33 44", 80, 580);
+    const document = await PDFDocument.create(); const image = await document.embedPng(canvas.toBuffer("image/png")); const font = await document.embedFont(StandardFonts.Helvetica); const page = document.addPage([1000, 500]);
+    page.drawImage(image, { x: 0, y: 0, width: 1000, height: 500 });
+    page.drawText("Assureur : la compagnie MATMUT - Telephone : 05 17 18 62 60 - Mission urgente", { x: 20, y: 20, font, size: 9 });
+    const text = await extractPartnerDocumentText([{ filename: "mission-matmut.pdf", mime: "application/pdf", buffer: Buffer.from(await document.save()) }]);
+    const payload = extractMissionPayload({ id: 59, subject: "Confirmation de mission urgente", body_text: "" }, text);
+    assert.equal(payload.client.name, "Paul Martin"); assert.equal(payload.client.phone.replace(/\s/g, ""), "0611223344");
+    assert.equal(payload.client.address, "12 rue des Lilas, 35000"); assert.equal(payload.client.city, "Rennes");
+});
+
 test("une photo jointe contenant la fiche d’intervention est lue par OCR", async () => {
     const canvas = createCanvas(1400, 600); const context = canvas.getContext("2d");
     context.fillStyle = "white"; context.fillRect(0, 0, 1400, 600); context.fillStyle = "black"; context.font = "bold 48px Arial";
