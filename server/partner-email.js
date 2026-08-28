@@ -688,6 +688,7 @@ export function extractMissionPayload(email, documentText = "") {
         description: clean(email.body_text, 2000),
         client: { name, firstName, lastName, phone: value("phone"), email: value("email"), address: postalAddress.address, postalCode: postalAddress.postalCode, city: postalAddress.city },
         claimNumber: value("claimNumber"),
+        insuredNumber: value("insuredNumber"),
         insurance: value("insurance"),
         expert: value("expert"),
         manager: value("manager"),
@@ -699,21 +700,25 @@ export function extractMissionPayload(email, documentText = "") {
 }
 
 function extractMissionFields(text) {
-    const field = pattern => trimFollowingMissionField(clean(pattern.exec(String(text || ""))?.[1], 255));
+    const source = String(text || "");
+    const field = pattern => trimFollowingMissionField(clean(pattern.exec(source)?.[1], 255));
+    const first = (...patterns) => patterns.map(field).find(Boolean) || "";
+    const postalCity = /(?:^|\s)(?:code\s+postal\s*(?:\/|-|et)?\s*ville|cp\s*(?:\/|-|et)\s*ville)\s*[:\-]\s*(\d{5})\s+([^\n\r]+)/im.exec(source);
     return {
-        insuredName: field(/(?:^|\s)(?:assur[ée]e?|nom(?:\s+et\s+pr[ée]nom)?\s+(?:de\s+l['’])?assur[ée]e?)\s*[:\-]\s*([^\n\r]+)/im),
-        name: field(/(?:^|\s)(?:client|bénéficiaire|occupant|nom(?:\s+(?:et\s+pr[ée]nom|du\s+client))?)\s*[:\-]\s*([^\n\r]+)/im),
+        insuredName: first(/^(?:b[ée]n[ée]ficiaire|assur[ée]e?)\s*[:\-]\s*([^\n\r]+)/im, /^(?:nom(?:\s+et\s+pr[ée]nom)?\s+(?:de\s+l['’])?assur[ée]e?)\s*[:\-]\s*([^\n\r]+)/im, /\bmission\s+chez\s+((?:monsieur|madame|m\.|mme)\s+[^,\n\r]+?)(?=\s*,?\s*assur[ée]e?\b)/im),
+        name: first(/^(?:client|b[ée]n[ée]ficiaire|occupant)\s*[:\-]\s*([^\n\r]+)/im, /^(?:nom(?:\s+(?:et\s+pr[ée]nom|du\s+client))?)\s*[:\-]\s*([^\n\r]+)/im),
         firstName: field(/(?:^|\s)pr[ée]nom(?:\s+(?:de\s+l['’])?assur[ée]e?)?\s*[:\-]\s*([^\n\r]+)/im),
         lastName: field(/(?:^|\s)nom(?:\s+de\s+famille)?(?:\s+(?:de\s+l['’])?assur[ée]e?)?\s*[:\-]\s*([^\n\r]+)/im),
         phone: field(/(?:^|\s)(?:t[ée]l(?:[ée]phone)?|portable|mobile)\s*[:\-]\s*([+\d .()\/-]{8,})/im),
         email: field(/(?:^|\s)(?:e-?mail|courriel)\s*[:\-]\s*([^\s<>]+@[^\s<>]+)/im).replace(/[.,;:)]+$/, ""),
-        address: field(/(?:^|\s)(?:adresse(?:\s+(?:client|du\s+client))?|lieu\s+d['’]intervention|adresse\s+d['’]intervention)\s*[:\-]\s*([^\n\r]+)/im),
-        postalCode: field(/(?:^|\s)(?:code\s+postal|cp)\s*[:\-]\s*(\d{5})/im),
-        city: field(/(?:^|\s)(?:ville|commune)\s*[:\-]\s*([^\n\r]+)/im),
-        missionNumber: field(/^(?:mission|dossier|référence|ref)\s*(?:(?:n°|no|numéro)\s*[:#\-]?|[:#\-]\s*)([A-Z0-9][A-Z0-9/_-]{2,})/im),
+        address: first(/^(?:adresse\s+(?:du\s+|de\s+l['’])?(?:b[ée]n[ée]ficiaire|sinistre|assur[ée]e?|client)|lieu\s+d['’]intervention|adresse\s+d['’]intervention)\s*[:\-]\s*([^\n\r]+)/im, /(?:^|\s)(?:adresse|lieu)\s*[:\-]\s*([^\n\r]+)/im),
+        postalCode: postalCity?.[1] || field(/(?:^|\s)(?:code\s+postal|cp)\s*[:\-]\s*(\d{5})/im),
+        city: trimFollowingMissionField(clean(postalCity?.[2], 100)) || field(/^(?:ville|commune)\s*[:\-]\s*([^\n\r]+)/im),
+        missionNumber: first(/^(?:n°\s*)?dossier\s+(?:imh\s*)?[:#\-]\s*([A-Z0-9][A-Z0-9/_-]{2,})/im, /^(?:r[ée]f(?:[ée]rence)?\s+imh|notre\s+r[ée]f[ée]rence)\s*[:#\-]\s*([A-Z0-9][A-Z0-9/_-]{2,})/im, /^(?:mission|dossier|référence|ref)\s*(?:(?:n°|no|numéro)\s*[:#\-]?|[:#\-]\s*)([A-Z0-9][A-Z0-9/_-]{2,})/im),
         interventionType: field(/^(?:intervention|objet|nature|type\s+d['’]intervention)\s*[:\-]\s*([^\n\r]+)/im),
         claimNumber: field(/^(?:sinistre|n°\s+de\s+sinistre)\s*(?:n°|no|numéro)?\s*[:#\-]?\s*([A-Z0-9][A-Z0-9/_-]*)/im),
-        insurance: field(/^(?:assurance|assureur|compagnie)\s*[:\-]\s*([^\n\r]+)/im),
+        insuredNumber: first(/^(?:n°\s*)?(?:soci[ée]taire|assur[ée])\s*[:#\-]\s*([A-Z0-9][A-Z0-9/_-]*)/im, /^(?:num[ée]ro|n°)\s+(?:de\s+l['’])?assur[ée]\s*[:#\-]\s*([A-Z0-9][A-Z0-9/_-]*)/im),
+        insurance: field(/^(?:assurance|assureur|compagnie|grand\s+compte)\s*[:\-]\s*([^\n\r]+)/im),
         expert: field(/^expert\s*[:\-]\s*([^\n\r]+)/im),
         manager: field(/^(?:gestionnaire|chargé(?:e)?\s+de\s+dossier)\s*[:\-]\s*([^\n\r]+)/im),
         principal: field(/^(?:donneur\s+d['’]ordre|mandant)\s*[:\-]\s*([^\n\r]+)/im)

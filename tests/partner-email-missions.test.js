@@ -535,6 +535,37 @@ test("les PDF base64 multiligne produits par PostgreSQL sont lus et joints", asy
     assert.match(missionSource, /compactDataUrl = String\(item\?\.dataUrl/);
 });
 
+test("un ordre de mission IMH sépare l’assuré, l’adresse, le dossier et le numéro sociétaire", () => {
+    const text = `Notre référence : 267057H26-RENU1-1
+ORDRE DE MISSION URGENT
+Suite à notre dernier entretien, nous vous confirmons votre mission chez Monsieur DOMINIQUE RIGALLEAU, assuré auprès de MACIF.
+Adresse du bénéficiaire : 22 RUE ROBERT CHEVRIER 35200 RENNES
+Tél fixe : 0665916004 Tél portable : 0665916004
+Email : rigalandais@sfr.fr
+Bénéficiaire : Monsieur DOMINIQUE RIGALLEAU
+Adresse du sinistre : 22 RUE ROBERT CHEVRIER
+Code postal Ville : 35200 RENNES
+Grand Compte : MACIF
+N° Sociétaire : 4152292
+Réf IMH : 267057H26-RENU1
+N° dossier IMH : 267057H26-RENU1`;
+    const payload = extractMissionPayload({ id: 50, subject: "Mission imh", body_text: "" }, text);
+    assert.equal(payload.client.name, "Monsieur DOMINIQUE RIGALLEAU");
+    assert.equal(payload.client.address, "22 RUE ROBERT CHEVRIER, 35200");
+    assert.equal(payload.client.postalCode, "35200");
+    assert.equal(payload.client.city, "RENNES");
+    assert.equal(payload.client.phone, "0665916004");
+    assert.equal(payload.client.email, "rigalandais@sfr.fr");
+    assert.equal(payload.missionNumber, "267057H26-RENU1");
+    assert.equal(payload.partnerReference, "267057H26-RENU1");
+    assert.equal(payload.insuredNumber, "4152292");
+    assert.equal(payload.insurance, "MACIF");
+    const mapped = mapPayload(payload);
+    assert.equal(mapped.clientName, "Monsieur DOMINIQUE RIGALLEAU");
+    assert.equal(mapped.address, "22 RUE ROBERT CHEVRIER, 35200");
+    assert.equal(mapped.insuredNumber, "4152292");
+});
+
 test("le mail garde la priorité et les documents complètent les champs manquants", () => {
     const payload = extractMissionPayload({ id: 42, subject: "Mission", body_text: "Client : Camille Mail\nTéléphone : 0600000000", sender_name: "Assureur", message_id: "mail-42" }, "Client : Alice Document\nTéléphone : 0711111111\nE-mail : alice@example.test\nAdresse : 12 rue des Lilas\nCode postal : 44000\nVille : Nantes\nSinistre : SIN-42\nAssureur : Exemple Assurance");
     assert.equal(payload.client.name, "Camille Mail");
