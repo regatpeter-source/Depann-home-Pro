@@ -153,7 +153,7 @@ export async function registerMissionSourceItem({ ownerId, appointmentId, source
     const mission = missions[0];
     if (!mission) return null;
     const autoShare = ["quote", "invoice"].includes(sourceType) && mission.billing_mode === "principal";
-    const { rows } = await getPool().query(`INSERT INTO depannhome_partner_mission_items(owner_id,mission_id,source_type,source_id,label,details,partner_visible)
+    const { rows } = await getPool().query(`INSERT INTO depannhome_partner_mission_items(owner_id,mission_id,source_type,source_id,source_item_id,label,details,partner_visible)
         VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,$8)
         ON CONFLICT(mission_id,source_type,source_id,source_item_id) DO UPDATE SET label=EXCLUDED.label,details=EXCLUDED.details,partner_visible=CASE WHEN EXCLUDED.partner_visible THEN TRUE ELSE depannhome_partner_mission_items.partner_visible END,updated_at=NOW()
         RETURNING *`, [ownerId, mission.id, sourceType, String(sourceId), String(sourceItemId || ""), clean(label, 255), JSON.stringify(details), autoShare]);

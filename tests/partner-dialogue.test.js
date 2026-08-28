@@ -61,6 +61,12 @@ test("source-side shared files use authenticated sent-mission download routes", 
     assert.match(serverSource, /const sourceBase = `\/api\/partner-dialogue\/sent-missions\/\$\{mission\.id\}`/);
 });
 
+test("les photos de rapport enregistrent tous les champs de leur élément de mission", () => {
+    const registration = serverSource.slice(serverSource.indexOf("export async function registerMissionSourceItem"), serverSource.indexOf("export async function sharePrincipalBillingDocuments"));
+    assert.match(registration, /INSERT INTO depannhome_partner_mission_items\(owner_id,mission_id,source_type,source_id,source_item_id,label,details,partner_visible\)/);
+    assert.match(registration, /VALUES\(\$1,\$2,\$3,\$4,\$5,\$6,\$7::jsonb,\$8\)/);
+});
+
 test("the compact attachment area aligns attach, share and send controls", () => {
     assert.match(clientSource, /partner-composer-actions/);
     assert.match(clientSource, /<strong>Joindre des documents ou photos<\/strong><span>Glissez-déposez vos fichiers ici<\/span>/);

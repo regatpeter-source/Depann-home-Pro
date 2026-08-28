@@ -45,6 +45,7 @@ test("les diagnostics détaillés et la résolution sont réservés au Créateur
     assert.match(server, /app\.get\("\/healthz"/);
     assert.match(server, /version: deploymentVersion\(\)/);
     assert.doesNotMatch(server, /app\.get\("\/healthz"[\s\S]{0,300}(?:incidents|technicalMessage|details)/);
+    assert.match(server, /status=\$2::varchar\(20\)[\s\S]*CASE WHEN \$2::varchar\(20\)='resolved'/);
 });
 
 test("la collecte HTTP est agrégée et ne conserve aucun corps ni secret", () => {

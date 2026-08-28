@@ -99,7 +99,7 @@ export function registerHealthDashboardRoutes(app, requireCreator) {
         const status = ["open", "monitoring", "resolved"].includes(request.body?.status) ? request.body.status : "";
         const resolutionNote = cleanText(request.body?.resolutionNote, 1000);
         if (!incidentId || !status) return response.status(400).json({ message: "Suivi d’incident invalide." });
-        const { rows } = await getPool().query(`UPDATE depannhome_health_incidents SET status=$2,resolution_note=$3,resolved_at=CASE WHEN $2='resolved' THEN NOW() ELSE NULL END,updated_by=$4 WHERE id=$1 RETURNING id,status,resolved_at AS "resolvedAt"`, [incidentId,status,resolutionNote,request.user.sub]);
+        const { rows } = await getPool().query(`UPDATE depannhome_health_incidents SET status=$2::varchar(20),resolution_note=$3,resolved_at=CASE WHEN $2::varchar(20)='resolved' THEN NOW() ELSE NULL END,updated_by=$4 WHERE id=$1 RETURNING id,status,resolved_at AS "resolvedAt"`, [incidentId,status,resolutionNote,request.user.sub]);
         if (!rows[0]) return response.status(404).json({ message: "Incident introuvable." });
         response.json({ incident: rows[0], message: "Suivi de l’incident enregistré." });
     }));
