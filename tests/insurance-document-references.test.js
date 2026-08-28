@@ -6,7 +6,7 @@ const read = path => readFileSync(new URL(`../${path}`, import.meta.url), "utf8"
 
 test("la fiche client conserve et affiche toutes les formalités assurance", () => {
     const clients = read("js/clients.js");
-    for (const field of ["insurance", "insuranceDossier", "mandateNumber", "claimNumber", "insuredNumber", "principal", "manager", "expert"]) {
+    for (const field of ["interventionReference", "insurance", "insuranceDossier", "mandateNumber", "claimNumber", "insuredNumber", "principal", "manager", "expert"]) {
         assert.match(clients, new RegExp(`name="${field}"`));
         assert.match(clients, new RegExp(`${field}: String\\(formData\\.get\\("${field}"\\)`));
     }
@@ -33,7 +33,7 @@ test("la RDF reprend dossier, mandat et intervenants dans ses informations gén�
     assert.match(pdf, /\["Mandat", snapshot\.mandateNumber/);
 });
 
-test("les documents commerciaux et le quitus impriment dossier et mandat", () => {
+test("les documents commerciaux et le quitus impriment toutes les références disponibles", () => {
     const billingClient = read("js/billing.js");
     const billingServer = read("server/billing.js");
     const calendar = read("server/calendar.js");
@@ -42,6 +42,8 @@ test("les documents commerciaux et le quitus impriment dossier et mandat", () =>
     assert.match(billingClient, /mandateNumber: client\.mandateNumber \|\| client\.mandate/);
     assert.match(billingServer, /`Réf\. dossier assureur : \$\{legalData\.insuranceDossier\}`/);
     assert.match(billingServer, /`Mandat : \$\{legalData\.mandateNumber\}`/);
+    for (const field of ["interventionReference", "claimNumber", "insuredNumber", "principal", "manager", "expert"]) assert.match(billingServer, new RegExp(`legalData\\.${field}`));
     assert.match(calendar, /`Réf\. dossier assureur : \$\{client\.insuranceDossier\}`/);
     assert.match(calendar, /`Mandat : \$\{client\.mandateNumber \|\| client\.mandate\}`/);
+    for (const field of ["interventionReference", "claimNumber", "insuredNumber", "principal", "manager", "expert"]) assert.match(calendar, new RegExp(`client\\.${field}`));
 });

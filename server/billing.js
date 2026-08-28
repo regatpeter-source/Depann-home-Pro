@@ -1149,8 +1149,14 @@ function sanitizeLegalData(value, customerAddress = "") {
         deliveryAddress: cleanText(input.deliveryAddress, 500),
         serviceDate,
         purchaseOrderReference: cleanText(input.purchaseOrderReference, 80),
+        interventionReference: cleanText(input.interventionReference, 160),
         insuranceDossier: cleanText(input.insuranceDossier, 160),
         mandateNumber: cleanText(input.mandateNumber, 160),
+        claimNumber: cleanText(input.claimNumber, 160),
+        insuredNumber: cleanText(input.insuredNumber, 160),
+        principal: cleanText(input.principal, 160),
+        manager: cleanText(input.manager, 160),
+        expert: cleanText(input.expert, 160),
         operationCategory: OPERATION_CATEGORIES.has(input.operationCategory) ? input.operationCategory : "services"
     };
 }
@@ -1330,7 +1336,7 @@ function ublFileName(document) {
 
 export async function createBillingDocumentOutput(document, profile) {
     const client = document.clientData && typeof document.clientData === "object" ? document.clientData : {};
-    document = { ...document, legalData: { ...(document.legalData || {}), insuranceDossier: document.legalData?.insuranceDossier || client.insuranceDossier || "", mandateNumber: document.legalData?.mandateNumber || client.mandateNumber || client.mandate || "" } };
+    document = { ...document, legalData: { ...(document.legalData || {}), interventionReference: document.legalData?.interventionReference || client.interventionReference || "", insuranceDossier: document.legalData?.insuranceDossier || client.insuranceDossier || "", mandateNumber: document.legalData?.mandateNumber || client.mandateNumber || client.mandate || "", claimNumber: document.legalData?.claimNumber || client.claimNumber || client.claim || "", insuredNumber: document.legalData?.insuredNumber || client.insuredNumber || "", principal: document.legalData?.principal || client.principal || "", manager: document.legalData?.manager || client.manager || client.caseManager || "", expert: document.legalData?.expert || client.expert || "" } };
     const custom = await renderActiveCustomTemplate(profile.ownerId, document.documentType, buildBillingCustomModel(document, profile));
     if (custom) return custom;
     return { buffer: await createBillingPdf(document, profile), filename: billingPdfFileName(document), mimeType: PDF_MIME };
@@ -1417,7 +1423,7 @@ export function createBillingPdf(document, profile) {
         pdf.y = partyY + partyHeight + 18;
         text("OBJET / PRESTATION", margin, pdf.y, contentWidth, { size: 8, bold: true });
         const operationLabel = ({ goods: "Livraison de biens", services: "Prestation de services", mixed: "Livraison de biens et prestation de services" })[legalData.operationCategory] || "Prestation de services";
-        const objectDetails = [isCredit ? `Avoir relatif à la facture ${document.sourceInvoiceNumber || "d’origine"}${document.sourceInvoiceDate ? ` du ${formatDate(document.sourceInvoiceDate)}` : ""}${document.reason ? ` · ${document.reason}` : ""}` : operationLabel, legalData.insuranceDossier ? `Réf. dossier assureur : ${legalData.insuranceDossier}` : "", legalData.mandateNumber ? `Mandat : ${legalData.mandateNumber}` : "", legalData.serviceDate ? `Date de livraison / prestation : ${formatDate(legalData.serviceDate)}` : "", legalData.purchaseOrderReference ? `Bon de commande : ${legalData.purchaseOrderReference}` : "", legalData.deliveryAddress && normalizeAddress(legalData.deliveryAddress) !== normalizeAddress(legalData.billingAddress || document.customerAddress) ? `Adresse de livraison : ${legalData.deliveryAddress}` : ""].filter(Boolean).join("\n");
+        const objectDetails = [isCredit ? `Avoir relatif à la facture ${document.sourceInvoiceNumber || "d’origine"}${document.sourceInvoiceDate ? ` du ${formatDate(document.sourceInvoiceDate)}` : ""}${document.reason ? ` · ${document.reason}` : ""}` : operationLabel, legalData.interventionReference ? `Réf. intervention partenaire : ${legalData.interventionReference}` : "", legalData.insuranceDossier ? `Réf. dossier assureur : ${legalData.insuranceDossier}` : "", legalData.mandateNumber ? `Mandat : ${legalData.mandateNumber}` : "", legalData.claimNumber ? `Sinistre : ${legalData.claimNumber}` : "", legalData.insuredNumber ? `N° sociétaire / assuré : ${legalData.insuredNumber}` : "", legalData.principal ? `Mandant / donneur d’ordre : ${legalData.principal}` : "", legalData.manager ? `Gestionnaire : ${legalData.manager}` : "", legalData.expert ? `Expert : ${legalData.expert}` : "", legalData.serviceDate ? `Date de livraison / prestation : ${formatDate(legalData.serviceDate)}` : "", legalData.purchaseOrderReference ? `Bon de commande : ${legalData.purchaseOrderReference}` : "", legalData.deliveryAddress && normalizeAddress(legalData.deliveryAddress) !== normalizeAddress(legalData.billingAddress || document.customerAddress) ? `Adresse de livraison : ${legalData.deliveryAddress}` : ""].filter(Boolean).join("\n");
         text(objectDetails, margin, pdf.y + 12, contentWidth, { size: 9, lineGap: 2 });
         pdf.y += Math.max(32, pdf.heightOfString(objectDetails, { width: contentWidth, fontSize: 9, lineGap: 2 }) + 22);
 

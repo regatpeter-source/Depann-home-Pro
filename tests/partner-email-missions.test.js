@@ -594,6 +594,7 @@ N° dossier IMH : 267057H26-RENU1`;
     assert.equal(payload.client.email, "rigalandais@sfr.fr");
     assert.equal(payload.missionNumber, "267057H26-RENU1");
     assert.equal(payload.partnerReference, "267057H26-RENU1");
+    assert.equal(payload.interventionReference, "267057H26-RENU1");
     assert.equal(payload.insuredNumber, "4152292");
     assert.equal(payload.mandateNumber, "MDT-2026/7788");
     assert.equal(payload.insuranceDossier, "MACIF-DOS-88421");
@@ -638,6 +639,7 @@ Adresse du sinistre 24 RUE ARISTIDE BRIAND
     assert.equal(payload.client.phone.replace(/\s/g, ""), "0627751786");
     assert.equal(payload.client.address, "24 RUE ARISTIDE BRIAND, 44510"); assert.equal(payload.client.city, "LE POULIGUEN");
     assert.equal(payload.missionNumber, "2713642-REN1"); assert.equal(payload.partnerReference, "2713642-REN1");
+    assert.equal(payload.interventionReference, "2713642-REN1"); assert.equal(payload.insuranceDossier, "2713642-REN1");
     assert.equal(payload.interventionType, "RECHERCHE DE FUITE VISUELLE"); assert.equal(payload.insurance, "la compagnie MATMUT");
     assert.match(payload.description, /recherche de fuite visuelle/i);
     assert.equal(payload.insuredNumber, ""); assert.equal(payload.claimNumber, "");

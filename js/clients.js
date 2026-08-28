@@ -19,6 +19,7 @@ const EMPTY_CLIENT = {
     email: "",
     address: "",
     city: "",
+    interventionReference: "",
     insurance: "",
     insuranceDossier: "",
     mandateNumber: "",
@@ -311,6 +312,7 @@ function renderClientForm(client, options = {}) {
                     <legend>Assurance / mission partenaire</legend>
                     <p class="muted">Ces références sont reprises automatiquement sur les rapports, devis, factures et autres documents liés.</p>
                     <div class="form-grid">
+                        <label>Réf. intervention partenaire<input name="interventionReference" maxlength="160" value="${escapeHtml(client.interventionReference || "")}"></label>
                         <label>Assurance<input name="insurance" maxlength="160" value="${escapeHtml(client.insurance || "")}"></label>
                         <label>Réf. dossier assureur<input name="insuranceDossier" maxlength="160" value="${escapeHtml(client.insuranceDossier || "")}"></label>
                         <label>N° mandat<input name="mandateNumber" maxlength="160" value="${escapeHtml(client.mandateNumber || client.mandate || "")}"></label>
@@ -531,7 +533,7 @@ function renderClientDetail(client, options = {}) {
             <span> ${escapeHtml(client.email || "Non renseigné")}</span>
             <span> ${escapeHtml(formatClientLocation(client))}</span>
         </div>
-        ${(client.insurance || client.insuranceDossier || client.mandateNumber || client.claimNumber || client.insuredNumber || client.principal || client.manager || client.expert) ? `<section class="procedure-section"><h3>Assurance / mission partenaire</h3><div class="procedure-meta">${[["Assurance", client.insurance], ["Réf. dossier assureur", client.insuranceDossier], ["Mandat", client.mandateNumber || client.mandate], ["Sinistre", client.claimNumber || client.claim], ["N° sociétaire / assuré", client.insuredNumber], ["Mandant / donneur d’ordre", client.principal], ["Gestionnaire", client.manager || client.caseManager], ["Expert", client.expert]].filter(([, value]) => value).map(([label, value]) => `<span><strong>${label} :</strong> ${escapeHtml(value)}</span>`).join("")}</div></section>` : ""}
+        ${(client.interventionReference || client.insurance || client.insuranceDossier || client.mandateNumber || client.claimNumber || client.insuredNumber || client.principal || client.manager || client.expert) ? `<section class="procedure-section"><h3>Assurance / mission partenaire</h3><div class="procedure-meta">${[["Réf. intervention partenaire", client.interventionReference], ["Assurance", client.insurance], ["Réf. dossier assureur", client.insuranceDossier], ["Mandat", client.mandateNumber || client.mandate], ["Sinistre", client.claimNumber || client.claim], ["N° sociétaire / assuré", client.insuredNumber], ["Mandant / donneur d’ordre", client.principal], ["Gestionnaire", client.manager || client.caseManager], ["Expert", client.expert]].filter(([, value]) => value).map(([label, value]) => `<span><strong>${label} :</strong> ${escapeHtml(value)}</span>`).join("")}</div></section>` : ""}
         <section class="procedure-section">
             <h3> Équipements</h3>
             <p>${escapeHtml(client.equipment || "Aucun équipement renseigné.")}</p>
@@ -781,6 +783,7 @@ async function readClientForm(form, previousClient = EMPTY_CLIENT) {
         email: String(formData.get("email") || "").trim(),
         address: String(formData.get("address") || "").trim(),
         city: String(formData.get("city") || "").trim(),
+        interventionReference: String(formData.get("interventionReference") || "").trim(),
         insurance: String(formData.get("insurance") || "").trim(),
         insuranceDossier: String(formData.get("insuranceDossier") || "").trim(),
         mandateNumber: String(formData.get("mandateNumber") || "").trim(),
@@ -879,6 +882,15 @@ export function getSearchableClients() {
         email: client.email,
         address: client.address,
         city: client.city,
+        interventionReference: client.interventionReference,
+        insurance: client.insurance,
+        insuranceDossier: client.insuranceDossier,
+        mandateNumber: client.mandateNumber || client.mandate || "",
+        claimNumber: client.claimNumber || client.claim || "",
+        insuredNumber: client.insuredNumber,
+        principal: client.principal,
+        manager: client.manager || client.caseManager || "",
+        expert: client.expert,
         equipment: client.equipment,
         notes: client.notes,
         attachments: client.attachments.map(attachment => ({

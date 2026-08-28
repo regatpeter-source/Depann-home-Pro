@@ -33,7 +33,7 @@ const MICROSOFT_MAIL_SCOPES = "Mail.Read Mail.Send";
 const MICROSOFT_GRAPH_MAX_RETRIES = 2;
 const MICROSOFT_GRAPH_MAX_RETRY_DELAY_MS = 10_000;
 const PARTNER_EMAIL_SYNC_INTERVAL_MS = 10 * 60 * 1000;
-const DOCUMENT_EXTRACTION_VERSION = 6;
+const DOCUMENT_EXTRACTION_VERSION = 7;
 let scheduler = null;
 const activeMailboxSynchronizations = new Set();
 
@@ -701,6 +701,7 @@ export function extractMissionPayload(email, documentText = "") {
         id: `email-${email.id}`,
         missionNumber,
         partnerReference: missionNumber,
+        interventionReference: missionNumber,
         subject: email.subject,
         interventionType: value("interventionType") || clean(email.subject, 160),
         description: clean(email.body_text, 2000) || value("workDescription"),
@@ -740,7 +741,7 @@ function extractMissionFields(text) {
         missionNumber: first(/^commande(?:\s+de)?\s+(?:assistance|travaux)\s*\r?\n\s*n[°o]\s*([A-Z0-9][A-Z0-9/_-]{2,})/im, /^(?:n[°o]\s*)?dossier\s+(?:imh\s*)?(?:[:#\-]\s*|\s+)([A-Z0-9][A-Z0-9/_-]{2,})/im, /^nos?\s+r[ée]f[ée]rences?\s*[:#\-]\s*([A-Z0-9][A-Z0-9/_-]{2,})/im, /^(?:r[ée]f(?:[ée]rence)?\s+imh|notre\s+r[ée]f[ée]rence)\s*[:#\-]\s*([A-Z0-9][A-Z0-9/_-]{2,})/im, /^(?:mission|dossier|référence|ref)\s*(?:(?:n°|no|numéro)\s*[:#\-]?|[:#\-]\s*)([A-Z0-9][A-Z0-9/_-]{2,})/im),
         interventionType: first(/^(commande(?:\s+de)?\s+(?:assistance|travaux)|attestation\s+de\s+fin\s+de\s+travaux\s*\/\s*de\s+fin\s+d['’]intervention)/im, /^ordre\s+de\s+mission(?:\s+urgente?)?\s+([^\n\r]+)/im, /^(?:intervention|objet|nature|type\s+d['’]intervention)\s*[:\-]\s*([^\n\r]+)/im),
         workDescription: first(/^d[ée]tail\s+de\s+l['’]intervention\s*:\s*([^\n\r]+)/im, /votre\s+mission\s+est\s+d['’]effectuer\s+([^\n\r.]+)/im),
-        insuranceDossier: first(/^(?:(?:n[°o]\s*)?dossier\s+(?:de\s+l['’])?assur(?:eur|ance)|r[ée]f(?:[ée]rence)?\.?\s+(?:(?:du\s+)?dossier\s+(?:de\s+l['’])?)?assur(?:eur|ance))\s*(?:n[°o]|no|num[ée]ro)?\s*[:#\-]\s*([A-Z0-9][A-Z0-9./_-]{2,})/im),
+        insuranceDossier: first(/^(?:(?:n[°o]\s*)?dossier\s+(?:de\s+l['’])?assur(?:eur|ance)|r[ée]f(?:[ée]rence)?\.?\s+(?:(?:du\s+)?dossier\s+(?:de\s+l['’])?)?assur(?:eur|ance))\s*(?:n[°o]|no|num[ée]ro)?\s*[:#\-]\s*([A-Z0-9][A-Z0-9./_-]{2,})/im, /^(?:n[°o]\s*)?dossier\s+imh\s*(?:n[°o]|no|num[ée]ro)?\s*[:#\-]?\s*([A-Z0-9][A-Z0-9./_-]{2,})/im, /^nos?\s+r[ée]f[ée]rences?\s*[:#\-]\s*([A-Z0-9][A-Z0-9./_-]{2,})/im),
         claimNumber: /\d/.test(claimNumber) ? claimNumber : "",
         insuredNumber: extractInsuredNumber(source),
         mandateNumber: first(/^(?:n[°o]\s*)?mandat\s*(?:n[°o]|no|num[ée]ro)?\s*[:#\-]\s*([A-Z0-9][A-Z0-9./_-]{2,})/im, /^(?:r[ée]f(?:[ée]rence)?\s+(?:du\s+)?mandat)\s*[:#\-]\s*([A-Z0-9][A-Z0-9./_-]{2,})/im),

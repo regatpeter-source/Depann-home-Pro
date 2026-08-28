@@ -63,17 +63,20 @@ test("regeneration rebuilds numbers, dates and current client data without mutat
     assert.equal(source.documentNumber, "DEV-42");
 });
 
-test("les modèles personnalisés conservent le dossier assurance et le mandat", () => {
-    const billingModel = buildBillingCustomModel({ ...quote, legalData: { insuranceDossier: "DOS-42", mandateNumber: "MDT-9" } }, profile);
+test("les modèles personnalisés conservent toutes les références assurance", () => {
+    const references = { interventionReference: "INT-P-1", insuranceDossier: "DOS-42", mandateNumber: "MDT-9", claimNumber: "SIN-8", insuredNumber: "SOC-7", principal: "Assureur", manager: "Gestionnaire", expert: "Expert" };
+    const billingModel = buildBillingCustomModel({ ...quote, legalData: references }, profile);
     assert.equal(billingModel.document.insuranceDossier, "DOS-42");
     assert.equal(billingModel.document.mandateNumber, "MDT-9");
+    for (const [field, value] of Object.entries(references)) assert.equal(billingModel.document[field], value);
     const reportModel = buildReportCustomModel({ id: 8, content: { snapshot: { insuranceDossier: "DOS-42", mandateNumber: "MDT-9", insuredNumber: "SOC-7", principal: "Assureur", manager: "Gestionnaire", expert: "Expert" } } }, profile);
     assert.equal(reportModel.document.insuranceDossier, "DOS-42");
     assert.equal(reportModel.document.mandateNumber, "MDT-9");
     assert.equal(reportModel.document.insuredNumber, "SOC-7");
-    const quitusModel = buildQuitusCustomModel({ id: 4, clientData: { insuranceDossier: "DOS-42", mandateNumber: "MDT-9" }, date: "2026-08-17" }, {}, profile);
+    const quitusModel = buildQuitusCustomModel({ id: 4, clientData: references, date: "2026-08-17" }, {}, profile);
     assert.equal(quitusModel.document.insuranceDossier, "DOS-42");
     assert.equal(quitusModel.document.mandateNumber, "MDT-9");
+    for (const [field, value] of Object.entries(references)) assert.equal(quitusModel.document[field], value);
 });
 
 test("invoice data never inherits the quote number", () => {
