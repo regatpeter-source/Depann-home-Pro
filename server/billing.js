@@ -944,7 +944,7 @@ export function canCreateBillingTemplates(user) {
 
 function requireBillingTemplateCreation(request, response, next) {
     if (canCreateBillingTemplates(request.user)) return next();
-    return response.status(403).json({ message: "Le préenregistrement des lignes est réservé aux postes PC et aux Administrateurs Mobile." });
+    return response.status(403).json({ message: "Le préenregistrement des lignes est réservé aux postes administratifs et aux Administrateurs Mobile." });
 }
 
 async function requireBillingDocumentAdministration(request, response, next) {
@@ -970,7 +970,7 @@ async function requireBillingSettlementAccess(request, response, next) {
 
 export function requireBillingWorkspaceAccess(request, response, next) {
     if (hasBillingWorkspaceAccess(request.user)) return next();
-    return response.status(403).json({ message: "L’accès à l’espace Facturation n’est pas autorisé pour ce poste PC ou n’est pas inclus dans l’offre active." });
+    return response.status(403).json({ message: "L’accès à l’espace Facturation n’est pas autorisé pour ce poste administratif ou n’est pas inclus dans l’offre active." });
 }
 
 async function requireTechnicianBillingAccess(request, response, next) {
@@ -990,7 +990,7 @@ async function requireTechnicianBillingAccess(request, response, next) {
 
 function requireDesktopBillingPreview(request, response, next) {
     if (request.user?.deviceType === "desktop") return next();
-    return response.status(403).json({ message: "L’aperçu PDF en direct des devis et factures est réservé à un poste PC." });
+    return response.status(403).json({ message: "L’aperçu PDF en direct des devis et factures est réservé à un poste administratif." });
 }
 
 export function billingUploadErrorHandler(error, request, response, next) {

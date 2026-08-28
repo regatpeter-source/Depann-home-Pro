@@ -973,28 +973,28 @@ function renderInsuranceDeductibleHtml(event, client) {
     const summary = event.deductibleAmountCents ? `<dl><dt>Montant encaissé</dt><dd>${escapeHtml(amount)}</dd><dt>Moyen de paiement</dt><dd>${escapeHtml(event.deductiblePaymentMethod || "Non renseigné")}</dd><dt>Déclaré par</dt><dd>${escapeHtml(event.deductibleCollectedByName || "Technicien")}</dd></dl>${photoHtml}` : "";
     if (status === "validated") return `
         <section class="calendar-quitus insurance-deductible" aria-label="Franchise validée">
-            <div class="form-heading"><div><p class="eyebrow">Assurance · ${escapeHtml(event.insuranceName)}</p><h3>Franchise validée</h3></div><span class="quitus-status signed">Validée PC</span></div>
+            <div class="form-heading"><div><p class="eyebrow">Assurance · ${escapeHtml(event.insuranceName)}</p><h3>Franchise validée</h3></div><span class="quitus-status signed">Validée administrativement</span></div>
             ${summary}<p class="muted">Contrôlée par ${escapeHtml(event.deductibleReviewedByName || "Administration")} le ${escapeHtml(formatQuitusValidationDate(event.deductibleReviewedAt))}. Cette preuve est verrouillée et figure dans l’historique de l’intervention.</p>
         </section>`;
     if (status === "pending") {
         if (canReviewInsuranceDeductible()) return `
             <form class="calendar-quitus insurance-deductible" data-deductible-review>
-                <div class="form-heading"><div><p class="eyebrow">Assurance · ${escapeHtml(event.insuranceName)}</p><h3>Franchise à contrôler</h3></div><span class="quitus-status">En attente PC</span></div>
+                <div class="form-heading"><div><p class="eyebrow">Assurance · ${escapeHtml(event.insuranceName)}</p><h3>Franchise à contrôler</h3></div><span class="quitus-status">En attente administrative</span></div>
                 ${summary}<label>Note de contrôle ou motif du refus<textarea name="reviewNote" maxlength="1000" rows="3" placeholder="Obligatoire en cas de refus"></textarea></label>
                 <div class="calendar-form-actions"><button type="button" class="secondary-button" data-deductible-decision="validated">Valider la franchise</button><button type="button" class="secondary-button danger-button" data-deductible-decision="rejected">Refuser et redemander une preuve</button></div><p class="auth-message" aria-live="polite"></p>
             </form>`;
-        return `<section class="calendar-quitus insurance-deductible"><div class="form-heading"><div><p class="eyebrow">Assurance · ${escapeHtml(event.insuranceName)}</p><h3>Franchise transmise</h3></div><span class="quitus-status">Contrôle PC en attente</span></div>${summary}<p class="muted">Le poste PC doit contrôler le montant, le moyen de paiement et la photo.</p></section>`;
+        return `<section class="calendar-quitus insurance-deductible"><div class="form-heading"><div><p class="eyebrow">Assurance · ${escapeHtml(event.insuranceName)}</p><h3>Franchise transmise</h3></div><span class="quitus-status">Contrôle administratif en attente</span></div>${summary}<p class="muted">Le poste administratif doit contrôler le montant, le moyen de paiement et la photo.</p></section>`;
     }
     if (!canRecordInsuranceDeductible()) return status === "rejected" ? `<section class="calendar-quitus insurance-deductible"><div class="form-heading"><div><p class="eyebrow">Assurance · ${escapeHtml(event.insuranceName)}</p><h3>Franchise refusée</h3></div><span class="quitus-status">À reprendre</span></div>${summary}<p class="auth-message error">${escapeHtml(event.deductibleReviewNote || "Une nouvelle preuve doit être transmise par le technicien.")}</p></section>` : "";
     return `
         <form class="calendar-quitus insurance-deductible" data-deductible-capture>
-            <div class="form-heading"><div><p class="eyebrow">Assurance · ${escapeHtml(event.insuranceName)}</p><h3>${status === "rejected" ? "Corriger la franchise" : "Franchise encaissée auprès du client"}</h3></div><span class="quitus-status">${status === "rejected" ? "Refusée par le PC" : "À déclarer"}</span></div>
+            <div class="form-heading"><div><p class="eyebrow">Assurance · ${escapeHtml(event.insuranceName)}</p><h3>${status === "rejected" ? "Corriger la franchise" : "Franchise encaissée auprès du client"}</h3></div><span class="quitus-status">${status === "rejected" ? "Refusée par le poste administratif" : "À déclarer"}</span></div>
             ${status === "rejected" ? `<p class="auth-message error">Motif : ${escapeHtml(event.deductibleReviewNote || "Preuve à reprendre")}</p>` : ""}
             <p class="muted">Dossier ${escapeHtml(event.insuranceClaimNumber || "sans numéro de sinistre")} · saisissez uniquement le montant réellement reçu.</p>
             <label>Montant de la franchise encaissée (€)<input name="amount" type="number" min="0.01" max="1000000" step="0.01" inputmode="decimal" required value="${event.deductibleAmountCents ? escapeHtml((Number(event.deductibleAmountCents) / 100).toFixed(2)) : ""}"></label>
             <label>Moyen de paiement<select name="paymentMethod" required>${["Chèque", "Espèces", "Virement", "Carte bancaire"].map(method => `<option value="${method}" ${event.deductiblePaymentMethod === method ? "selected" : ""}>${method}</option>`).join("")}</select></label>
             <label>Photo de preuve obligatoire<input name="photo" type="file" accept="image/jpeg,image/png,image/webp" capture="environment" required></label>
-            <div class="calendar-form-actions"><button type="submit" class="secondary-button">Transmettre au poste PC</button></div><p class="auth-message" aria-live="polite"></p>
+            <div class="calendar-form-actions"><button type="submit" class="secondary-button">Transmettre au poste administratif</button></div><p class="auth-message" aria-live="polite"></p>
         </form>`;
 }
 
@@ -1017,7 +1017,7 @@ function initializeInsuranceDeductibleControls(panel, appointment) {
         payload.append("photo", photo);
         button.disabled = true;
         feedback.classList.remove("error");
-        feedback.textContent = "Transmission au poste PC…";
+        feedback.textContent = "Transmission au poste administratif…";
         const result = await multipartRequest(`/api/calendar/events/${encodeURIComponent(appointment.id)}/deductible`, payload);
         if (!result.ok) {
             feedback.textContent = result.message || "Transmission impossible.";
@@ -1435,7 +1435,7 @@ function usesTerrainInterventionView(event) {
 }
 
 function roleLabel(role) {
-    return ({ admin: "Administrateur", pc_standard: "Poste PC", mobile_admin: "Admin mobile", team_lead: "Responsable", technician: "Technicien", accountant: "Comptabilité" })[String(role || "")] || "Membre";
+    return ({ admin: "Administrateur", pc_standard: "Poste administratif", mobile_admin: "Admin mobile", team_lead: "Responsable", technician: "Technicien", accountant: "Comptabilité" })[String(role || "")] || "Membre";
 }
 
 function documentStatusLabel(value) { return ({ draft: "Brouillon", sent: "Envoyé", validated: "Validé", paid: "Réglé", issued: "Émis", cancelled: "Annulé", accepted: "Accepté", rejected: "Refusé", pending: "En attente" })[String(value || "").toLowerCase()] || "Non renseigné"; }

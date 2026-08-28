@@ -314,7 +314,7 @@ async function updateItemVisibility(req, res) {
     const item = mission && await findMissionItem(ownerId, mission.id, positiveId(req.params.itemId));
     if (!item) return res.status(404).json({ message: "Document introuvable ou non accessible." });
     if (typeof req.body?.partnerVisible !== "boolean") return res.status(400).json({ message: "Visibilité partenaire invalide." });
-    if (["quote", "invoice"].includes(item.sourceType) && !PARTNER_MANAGEMENT_ROLES.has(req.user.role)) return res.status(403).json({ message: "Le partage des devis et factures est réservé aux postes PC autorisés." });
+    if (["quote", "invoice"].includes(item.sourceType) && !PARTNER_MANAGEMENT_ROLES.has(req.user.role)) return res.status(403).json({ message: "Le partage des devis et factures est réservé aux postes administratifs autorisés." });
     if (req.body.partnerVisible && ["quote", "invoice"].includes(item.sourceType) && mission.billing_mode !== "principal") return res.status(409).json({ message: "Les devis et factures d’une mission facturée au client final restent strictement internes." });
     const { rows } = await getPool().query("UPDATE depannhome_partner_mission_items SET partner_visible=$4,updated_at=NOW() WHERE id=$1 AND owner_id=$2 AND mission_id=$3 RETURNING *", [item.id, ownerId, mission.id, req.body.partnerVisible]);
     const updated = rows[0];

@@ -140,7 +140,7 @@ async function renderSubscriptionChangeRequests() {
     const result = await api("/api/creator/subscription-change-requests");
     if (!result.ok) return showFeedback(result.message || "Impossible de charger les demandes d’offres.", true);
     const requests = result.data.requests || [];
-    workspace.innerHTML = `<section class="creator-form"><div class="form-heading"><div><p class="eyebrow">Évolutions, rétrogradations et postes</p><h3>Demandes d’offres</h3></div><span class="creator-state">${requests.length} demande${requests.length > 1 ? "s" : ""}</span></div><div class="creator-network-list">${requests.length ? requests.map(item => `<form class="creator-network-company" data-subscription-request="${escapeHtml(item.id)}"><div><strong>${escapeHtml(item.companyName)}</strong><p>${escapeHtml(subscriptionTierLabel(item.currentTier))} → ${escapeHtml(subscriptionTierLabel(item.requestedTier))}</p><p>${Number(item.requestedPcSeats) || 0} poste(s) PC · ${Number(item.requestedMobileSeats) || 0} poste(s) mobile(s)</p><small>${escapeHtml(formatDateTime(item.createdAt))}${item.companyMessage ? ` · ${escapeHtml(item.companyMessage)}` : ""}</small></div><div class="creator-form-actions"><select name="status">${["new", "under_review", "accepted", "refused", "cancelled"].map(status => `<option value="${status}" ${item.status === status ? "selected" : ""}>${subscriptionChangeStatusLabel(status)}</option>`).join("")}</select><input name="creatorNote" maxlength="2000" value="${escapeHtml(item.creatorNote || "")}" placeholder="Note interne"><button class="secondary-button">Enregistrer</button></div></form>`).join("") : '<p class="muted">Aucune demande d’offre.</p>'}</div></section>`;
+    workspace.innerHTML = `<section class="creator-form"><div class="form-heading"><div><p class="eyebrow">Évolutions, rétrogradations et postes</p><h3>Demandes d’offres</h3></div><span class="creator-state">${requests.length} demande${requests.length > 1 ? "s" : ""}</span></div><div class="creator-network-list">${requests.length ? requests.map(item => `<form class="creator-network-company" data-subscription-request="${escapeHtml(item.id)}"><div><strong>${escapeHtml(item.companyName)}</strong><p>${escapeHtml(subscriptionTierLabel(item.currentTier))} → ${escapeHtml(subscriptionTierLabel(item.requestedTier))}</p><p>${Number(item.requestedPcSeats) || 0} poste(s) administratif(s) · ${Number(item.requestedMobileSeats) || 0} poste(s) mobile(s)</p><small>${escapeHtml(formatDateTime(item.createdAt))}${item.companyMessage ? ` · ${escapeHtml(item.companyMessage)}` : ""}</small></div><div class="creator-form-actions"><select name="status">${["new", "under_review", "accepted", "refused", "cancelled"].map(status => `<option value="${status}" ${item.status === status ? "selected" : ""}>${subscriptionChangeStatusLabel(status)}</option>`).join("")}</select><input name="creatorNote" maxlength="2000" value="${escapeHtml(item.creatorNote || "")}" placeholder="Note interne"><button class="secondary-button">Enregistrer</button></div></form>`).join("") : '<p class="muted">Aucune demande d’offre.</p>'}</div></section>`;
     workspace.querySelectorAll("[data-subscription-request]").forEach(form => form.addEventListener("submit", async event => {
         event.preventDefault();
         const values = Object.fromEntries(new FormData(form));
@@ -499,7 +499,7 @@ function renderAccountList() {
             <strong>${escapeHtml(account.companyName || account.ownerFullName || account.ownerUsername)}</strong>
             <span>${escapeHtml(account.ownerUsername)} · ${account.isArchived ? "Archivée" : account.isActive ? "Active" : "Suspendue"}</span>
             <em class="creator-subscription-badge ${escapeHtml(account.subscriptionStatus || "active")}">${escapeHtml(subscriptionPlanLabel(account))} · ${escapeHtml(subscriptionStatusLabel(account.subscriptionStatus))}</em>
-            <small>${account.activePcUsers}/${account.maxPcUsers} PC · ${account.activeTechnicians}/${account.maxTechnicians} mobiles</small>
+            <small>${account.activePcUsers}/${account.maxPcUsers} postes administratifs · ${account.activeTechnicians}/${account.maxTechnicians} mobiles</small>
         </button>
     `).join("") : `<p class="muted">Aucune entreprise ${accountListMode === "archived" ? "archivée" : "active"}.</p>`}`;
     list.querySelectorAll("[data-account-mode]").forEach(button => button.addEventListener("click", () => { accountListMode = button.dataset.accountMode; selectedAccountId = ""; renderAccountList(); document.querySelector("#creatorWorkspace").innerHTML = '<p class="muted">Sélectionnez une organisation.</p>'; }));
@@ -524,7 +524,7 @@ async function renderAccountDetail(accountId) {
                 <label>Responsable principal<input name="fullName" maxlength="100" required value="${escapeHtml(account.ownerFullName)}"></label>
                 <label>Téléphone responsable<input name="phone" maxlength="30" value="${escapeHtml(account.ownerPhone)}"></label>
                 <label>E-mail de facturation<input name="billingEmail" type="email" maxlength="160" value="${escapeHtml(account.billingEmail || "")}" placeholder="comptabilite@entreprise.fr"></label>
-                <label>Postes PC autorisés<input name="maxPcUsers" type="number" min="1" max="100" required value="${escapeHtml(account.maxPcUsers)}"></label>
+                <label>Postes administratifs autorisés<input name="maxPcUsers" type="number" min="1" max="100" required value="${escapeHtml(account.maxPcUsers)}"></label>
                 <label>Postes mobiles autorisés<input name="maxTechnicians" type="number" min="0" max="500" required value="${escapeHtml(account.maxTechnicians)}"></label>
             </div>
             ${renderCompanyProfileFields(account.companyProfile)}
@@ -536,7 +536,7 @@ async function renderAccountDetail(accountId) {
         </form>
         <section class="creator-members-section"><div class="form-heading"><div><p class="eyebrow">SUPER PDP · même intégration</p><h3>Facturation électronique</h3></div><button type="button" class="secondary-button" id="creatorOpenCompanyEInvoicing">Consulter</button></div><p class="muted">Le Créateur consulte l’état de la connexion de cette entreprise sans accéder à ses jetons ni agir à sa place.</p></section>
         <section class="creator-members-section"><div class="form-heading"><div><p class="eyebrow">Traçabilité</p><h3>Historique de l’organisation</h3></div></div><div id="creatorOrganizationHistory"><p class="muted">Chargement de l’historique…</p></div></section>
-        <section class="creator-members-section"><div class="form-heading"><div><p class="eyebrow">Accès</p><h3>Postes PC et mobiles</h3></div>${account.isArchived ? "" : '<div class="creator-form-actions"><button type="button" class="secondary-button auth-outline-button" id="creatorNewPcMember">+ Poste PC</button><button type="button" class="secondary-button" id="creatorNewTechnician">+ Poste mobile</button></div>'}</div><div id="creatorMembers"><p class="muted">Chargement des accès…</p></div></section>
+        <section class="creator-members-section"><div class="form-heading"><div><p class="eyebrow">Accès</p><h3>Postes administratifs et mobiles</h3></div>${account.isArchived ? "" : '<div class="creator-form-actions"><button type="button" class="secondary-button auth-outline-button" id="creatorNewPcMember">+ Poste administratif</button><button type="button" class="secondary-button" id="creatorNewTechnician">+ Poste mobile</button></div>'}</div><div id="creatorMembers"><p class="muted">Chargement des accès…</p></div></section>
     `;
     if (account.isArchived) workspace.querySelectorAll("#creatorAccountForm [name]").forEach(field => { field.disabled = true; });
     workspace.querySelector("#creatorAccountForm").addEventListener("submit", async event => {
@@ -623,7 +623,7 @@ function renderAccountForm() {
                 <label>E-mail de facturation<input name="billingEmail" type="email" maxlength="160" placeholder="comptabilite@entreprise.fr"></label>
                 <label>Identifiant administrateur<input name="username" minlength="3" maxlength="32" required placeholder="minuscules, chiffres, . _ -"></label>
                 <label>Mot de passe initial<input name="password" type="password" minlength="12" required autocomplete="new-password"></label>
-                <label>Postes PC autorisés<input name="maxPcUsers" type="number" min="1" max="100" required value="1"></label>
+                <label>Postes administratifs autorisés<input name="maxPcUsers" type="number" min="1" max="100" required value="1"></label>
                 <label>Postes mobiles autorisés<input name="maxTechnicians" type="number" min="0" max="500" required value="1"></label>
             </div>
             ${renderCompanyProfileFields()}
@@ -645,7 +645,7 @@ function renderAccountForm() {
         button.disabled = false;
         if (!result.ok) return showFeedback(result.message || "Création impossible.", true);
         selectedAccountId = result.data.id;
-        showFeedback("Organisation et Administrateur (PC) créés.");
+        showFeedback("Organisation et Administrateur administratif créés.");
         await loadAccounts(selectedAccountId);
     });
 }
@@ -704,7 +704,7 @@ function renderSubscriptionFields(account) {
         <fieldset class="creator-subscription-fields"><legend>Abonnement et suivi commercial</legend>
             <div class="form-grid">
                 <input name="subscriptionPlan" type="hidden" value="paid">
-                <label>Offre Depann’Home Pro<select name="subscriptionTier"><option value="basic" ${tier === "basic" ? "selected" : ""}>Basic — 20 € / PC + 5 € / mobile</option><option value="basic_plus" ${tier === "basic_plus" ? "selected" : ""}>Basic+ — 35 € / PC + 8 € / mobile</option><option value="pro" ${tier === "pro" ? "selected" : ""}>Pro — 70 € / PC + 15 € / mobile</option></select></label>
+                <label>Offre Depann’Home Pro<select name="subscriptionTier"><option value="basic" ${tier === "basic" ? "selected" : ""}>Basic — 20 € / poste administratif + 5 € / mobile</option><option value="basic_plus" ${tier === "basic_plus" ? "selected" : ""}>Basic+ — 35 € / poste administratif + 8 € / mobile</option><option value="pro" ${tier === "pro" ? "selected" : ""}>Pro — 70 € / poste administratif + 15 € / mobile</option></select></label>
                 <label>Tarif mensuel calculé TTC<input name="monthlyPrice" type="text" value="${escapeHtml(centsToAmount(account.monthlyPriceCents))} €" readonly></label>
                 <article class="subscription-tier-summary form-wide" data-tier-summary></article>
                 <label>Libellé de la réduction<input name="subscriptionDiscountLabel" maxlength="160" value="${escapeHtml(account.subscriptionDiscountLabel || "")}" placeholder="Ex. Offre d’essai"></label>
@@ -800,9 +800,9 @@ function bindSubscriptionTier(form) {
     const mobileSeats = form.elements.maxTechnicians;
     const summary = form.querySelector("[data-tier-summary]");
     const tiers = {
-        basic: { label: "Basic", pc: 20, mobile: 5, access: "Postes PC et Administrateur Mobile · bibliothèque mobile · achats sur tous les PC et l’Administrateur Mobile." },
-        basic_plus: { label: "Basic+", pc: 35, mobile: 8, access: "Tous postes · planning · imports de données · missions, messagerie et dossiers du Réseau Depann’Home Pro interne · bibliothèque mobile · achats sur tous les PC et l’Administrateur Mobile · sans connexions API externes." },
-        pro: { label: "Pro", pc: 70, mobile: 15, access: "Tous postes · accès complet · bibliothèque mobile · achats sur tous les PC et l’Administrateur Mobile." }
+        basic: { label: "Basic", pc: 20, mobile: 5, access: "Postes administratifs et Administrateur Mobile · bibliothèque mobile · achats sur tous les postes administratifs et l’Administrateur Mobile." },
+        basic_plus: { label: "Basic+", pc: 35, mobile: 8, access: "Tous postes · planning · imports de données · missions, messagerie et dossiers du Réseau Depann’Home Pro interne · bibliothèque mobile · achats sur tous les postes administratifs et l’Administrateur Mobile · sans connexions API externes." },
+        pro: { label: "Pro", pc: 70, mobile: 15, access: "Tous postes · accès complet · bibliothèque mobile · achats sur tous les postes administratifs et l’Administrateur Mobile." }
     };
     const update = () => {
         const selected = tiers[tier.value] || tiers.basic;
@@ -815,7 +815,7 @@ function bindSubscriptionTier(form) {
         discountValue.max = discountMode.value === "percentage" ? "100" : "999999.99";
         summary.innerHTML = isFreePartner
             ? `<strong>Portail Partenaire · Gratuit</strong><span>Accès fonctionnel Pro sans abonnement mensuel.</span><small>Ce compte partenaire ne reçoit aucune facture d’abonnement.</small>`
-            : `<strong>${selected.label} · ${total.toFixed(2)} € TTC / mois</strong><span>${pc} poste(s) PC × ${selected.pc} € + ${mobile} poste(s) mobile × ${selected.mobile} €</span><small>${selected.access}</small>`;
+            : `<strong>${selected.label} · ${total.toFixed(2)} € TTC / mois</strong><span>${pc} poste(s) administratif(s) × ${selected.pc} € + ${mobile} poste(s) mobile × ${selected.mobile} €</span><small>${selected.access}</small>`;
     };
     tier.addEventListener("change", update);
     pcSeats.addEventListener("input", update);
@@ -1210,7 +1210,7 @@ function bindMemberRoleForm(form, editing, initialRole) {
         form.querySelector("[data-member-email]").firstChild.textContent = isMobile ? "E-mail professionnel du poste mobile *" : "E-mail professionnel";
         hint.textContent = isMobile
             ? "Le téléphone, l’e-mail professionnel, l’identifiant et le mot de passe sont nécessaires pour créer un poste mobile."
-            : "L’identifiant et le mot de passe permettent la connexion au poste PC.";
+            : "L’identifiant et le mot de passe permettent la connexion au poste administratif.";
     };
     roleInput?.addEventListener("change", update);
     update();
@@ -1224,7 +1224,7 @@ function creatorMemberRoleOptions(tier, selectedRole) {
 }
 
 function creatorMemberRoleLabel(role) {
-    return ({ admin: "Administrateur (PC)", pc_standard: "Poste PC standard", accountant: "Comptable", mobile_admin: "Administrateur Mobile", team_lead: "Chef d’équipe mobile", technician: "Technicien mobile" })[role] || "Accès";
+    return ({ admin: "Administrateur administratif", pc_standard: "Poste administratif standard", accountant: "Comptable administratif", mobile_admin: "Administrateur Mobile", team_lead: "Chef d’équipe mobile", technician: "Technicien mobile" })[role] || "Accès";
 }
 
 function showFeedback(message, isError = false) {

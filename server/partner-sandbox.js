@@ -298,7 +298,7 @@ function isPartnerPcUser(request) {
 
 function requireSandboxAdministration(request, response, next) {
     if (isPartnerPcUser(request)) return next();
-    return response.status(403).json({ message: "Le mode Sandbox est réservé aux postes PC autorisés du compte." });
+    return response.status(403).json({ message: "Le mode Sandbox est réservé aux postes administratifs autorisés du compte." });
 }
 
 function requireSandboxEnabled(_request, response, next) {

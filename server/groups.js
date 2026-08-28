@@ -28,7 +28,7 @@ export function registerGroupRoutes(app, requireAuthentication) {
         res.json({ entries: rows });
     }));
     app.post("/api/groups/activate", asyncHandler(async (req, res) => {
-        if (!isCompanyAdministrator(req) || req.user?.isGroupAdministrator) return res.status(403).json({ message: "Seul un Administrateur (PC) de l’entreprise peut activer le mode Groupe." });
+        if (!isCompanyAdministrator(req) || req.user?.isGroupAdministrator) return res.status(403).json({ message: "Seul un Administrateur administratif de l’entreprise peut activer le mode Groupe." });
         const name = clean(req.body?.name, 160);
         if (!name) return res.status(400).json({ message: "Le nom du groupe est obligatoire." });
         const db = getPool(); const companyId = getAccountOwnerId(req);
@@ -150,7 +150,7 @@ async function dashboard(companyIds, start, end) {
     return { total, companies };
 }
 async function audit(db, { groupId, companyId, actorId, action, details, ip }) { await db.query("INSERT INTO depannhome_group_audit(group_id,company_owner_id,actor_id,action,details,ip_address) VALUES($1,$2,$3,$4,$5::jsonb,$6)", [groupId, companyId || null, actorId, action, JSON.stringify(details || {}), String(ip || "").slice(0, 100)]); }
-function requireGroupAdministrator(req, res, next) { if (isCompanyAdministrator(req) && req.user?.isGroupAdministrator && req.user?.groupId) return next(); return res.status(403).json({ message: "Accès réservé à l’Administrateur (PC) du groupe." }); }
+function requireGroupAdministrator(req, res, next) { if (isCompanyAdministrator(req) && req.user?.isGroupAdministrator && req.user?.groupId) return next(); return res.status(403).json({ message: "Accès réservé à l’Administrateur administratif du groupe." }); }
 function requireGroupCompanySwitchAccess(req, res, next) { if (hasGroupCompanySwitchAccess(req.user)) return next(); return res.status(403).json({ message: "Vous n’êtes pas autorisé à changer d’entreprise dans ce groupe." }); }
 function companyInput(value) { const companyName = clean(value?.companyName, 160), fullName = clean(value?.fullName, 100), phone = clean(value?.phone, 30), email = clean(value?.email, 160).toLowerCase(), username = clean(value?.username, 32).toLowerCase(), password = String(value?.password || ""), maxPcUsers = limit(value?.maxPcUsers, 1, 100), maxTechnicians = limit(value?.maxTechnicians, 0, 500); if (!companyName || !fullName || !USERNAME_PATTERN.test(username) || password.length < MIN_PASSWORD_LENGTH || (email && !EMAIL_PATTERN.test(email)) || !maxPcUsers || maxTechnicians === null) return { ok: false, message: "Informations de la nouvelle entreprise invalides." }; return { ok: true, companyName, fullName, phone, email, username, password, maxPcUsers, maxTechnicians }; }
 function clean(value, maximum) { return String(value || "").replace(/\s+/g, " ").trim().slice(0, maximum); }

@@ -444,7 +444,7 @@ export function registerAccountingRoutes(app, requireAuthentication) {
 
 function requireAccountingAdministration(request, response, next) {
     if (hasAccountingWorkspaceAccess(request.user)) return next();
-    return response.status(403).json({ message: "L’accès à l’espace Comptabilité n’est pas autorisé pour ce poste PC ou n’est pas inclus dans l’offre active." });
+    return response.status(403).json({ message: "L’accès à l’espace Comptabilité n’est pas autorisé pour ce poste administratif ou n’est pas inclus dans l’offre active." });
 }
 
 function requireAccountingWriteAccess(request, response, next) {

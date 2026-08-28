@@ -653,7 +653,7 @@ async function ensureSeatAvailable(database, accountId, role) {
     const isPcRole = ["admin", "pc_standard", "accountant"].includes(role);
     const maximum = isPcRole ? owners[0].maxPcUsers : owners[0].maxTechnicians;
     const active = isPcRole ? counts.activePcUsers : counts.activeTechnicians;
-    if (active >= maximum) throw new Error(`LIMIT:La limite de ${isPcRole ? "postes PC" : "postes mobiles"} est atteinte.`);
+    if (active >= maximum) throw new Error(`LIMIT:La limite de ${isPcRole ? "postes administratifs" : "postes mobiles"} est atteinte.`);
 }
 
 function sanitizeAccount(value, requireCompleteProfile = false) {
@@ -685,7 +685,7 @@ function sanitizeAccount(value, requireCompleteProfile = false) {
     const isActive = value?.isActive !== false;
     if (!companyName) return { ok: false, message: "Le nom de l’entreprise est obligatoire." };
     if (!fullName) return { ok: false, message: "Le nom du responsable est obligatoire." };
-    if (!isFreePartner && !maxPcUsers) return { ok: false, message: "Indiquez au moins un poste PC." };
+    if (!isFreePartner && !maxPcUsers) return { ok: false, message: "Indiquez au moins un poste administratif." };
     if (!isFreePartner && maxTechnicians === null) return { ok: false, message: "Le nombre de techniciens est invalide." };
     if (subscriptionDiscountValue === null) return { ok: false, message: "La réduction commerciale est invalide." };
     if (subscriptionPlan === "paid" && monthlyPriceCents <= 0) return { ok: false, message: "Indiquez un tarif mensuel supérieur à zéro pour un abonnement payant." };

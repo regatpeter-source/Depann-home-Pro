@@ -34,7 +34,7 @@ async function loadCompanyEmailWorkspace(card) {
     panel.innerHTML = `<div class="form-heading"><div><p class="eyebrow">Messagerie professionnelle</p><h2>Espace e-mail de l’entreprise</h2></div></div><p class="muted">Consultez directement les boîtes connectées. Les messages ordinaires restent chez leur fournisseur et ne sont pas enregistrés dans Depann’Home Pro.</p><div class="partner-email-connections"></div>`;
     const list = panel.querySelector(".partner-email-connections");
     if (!connections.length) {
-        list.innerHTML = '<p class="auth-message">Aucune boîte n’est encore connectée. Un Administrateur PC peut la configurer dans Paramètres &gt; Entreprise · Boîte mail.</p>';
+        list.innerHTML = '<p class="auth-message">Aucune boîte n’est encore connectée. Un Administrateur administratif peut la configurer dans Paramètres &gt; Entreprise · Boîte mail.</p>';
         return;
     }
     const configuration = canConfigureMailbox();

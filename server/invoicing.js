@@ -433,7 +433,7 @@ export async function prepareSubscriptionProration(connection, { ownerBefore, ow
     const event = events[0];
     if (!event) return null;
     const seatChanges = [
-        calculation.pcSeatDelta ? `${calculation.pcSeatDelta > 0 ? "+" : ""}${calculation.pcSeatDelta} poste(s) PC (${calculation.previousPcSeats} → ${calculation.nextPcSeats})` : "",
+        calculation.pcSeatDelta ? `${calculation.pcSeatDelta > 0 ? "+" : ""}${calculation.pcSeatDelta} poste(s) administratif(s) (${calculation.previousPcSeats} → ${calculation.nextPcSeats})` : "",
         calculation.mobileSeatDelta ? `${calculation.mobileSeatDelta > 0 ? "+" : ""}${calculation.mobileSeatDelta} poste(s) mobile(s) (${calculation.previousMobileSeats} → ${calculation.nextMobileSeats})` : ""
     ].filter(Boolean);
     const reason = `Prorata du ${period.effectiveDate} au ${period.cycleEndDate} (${period.remainingDays}/${period.totalDays} jours) — passage de ${ownerBefore.subscriptionLabel || ownerBefore.subscriptionTier} à ${ownerAfter.subscriptionLabel || ownerAfter.subscriptionTier}${seatChanges.length ? ` · ${seatChanges.join(" · ")}` : ""}.`;
@@ -900,11 +900,11 @@ export function buildSubscriptionInvoiceSnapshot(subscription, vatRate) {
     const lines = [];
     const tierAmountCents = calculateSubscriptionPriceCents(subscription.subscriptionTier, subscription.maxPcUsers, subscription.maxTechnicians);
     if (subscription.subscriptionTier && amountCents === tierAmountCents) {
-        if (Number(subscription.maxPcUsers) > 0) lines.push({ description: `${tier.label} — poste PC`, quantity: Number(subscription.maxPcUsers), unit: "poste/mois", unitPrice: amountExcludingVat(tier.pcRateCents, vatRate), vatRate });
+        if (Number(subscription.maxPcUsers) > 0) lines.push({ description: `${tier.label} — poste administratif`, quantity: Number(subscription.maxPcUsers), unit: "poste/mois", unitPrice: amountExcludingVat(tier.pcRateCents, vatRate), vatRate });
         if (Number(subscription.maxTechnicians) > 0) lines.push({ description: `${tier.label} — poste mobile`, quantity: Number(subscription.maxTechnicians), unit: "poste/mois", unitPrice: amountExcludingVat(tier.mobileRateCents, vatRate), vatRate });
     } else {
         lines.push({ description: `${subscription.subscriptionLabel || "Abonnement Depann’Home Pro"} — abonnement mensuel`, quantity: 1, unit: "mois", unitPrice: amountExcludingVat(amountCents, vatRate), vatRate });
-        if (Number(subscription.maxPcUsers) > 0) lines.push({ description: "Postes PC inclus", quantity: Number(subscription.maxPcUsers), unit: "poste", unitPrice: 0, vatRate });
+        if (Number(subscription.maxPcUsers) > 0) lines.push({ description: "Postes administratifs inclus", quantity: Number(subscription.maxPcUsers), unit: "poste", unitPrice: 0, vatRate });
         if (Number(subscription.maxTechnicians) > 0) lines.push({ description: "Postes mobiles inclus", quantity: Number(subscription.maxTechnicians), unit: "poste", unitPrice: 0, vatRate });
     }
     return {

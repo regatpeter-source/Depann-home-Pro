@@ -50,7 +50,7 @@ export async function memberSeatError(ownerId, role, excludedMemberId = 0, datab
     `, [ownerId, excludedMemberId]);
     const seats = rows[0];
     if (!seats) return "Compte entreprise introuvable.";
-    if (family === "pc" && seats.activePcUsers >= seats.maxPcUsers) return "La limite de postes PC de votre entreprise est atteinte.";
+    if (family === "pc" && seats.activePcUsers >= seats.maxPcUsers) return "La limite de postes administratifs de votre entreprise est atteinte.";
     if (family === "mobile" && seats.activeMobileUsers >= seats.maxMobileUsers) return "La limite de postes mobiles de votre entreprise est atteinte.";
     return "";
 }
@@ -506,7 +506,7 @@ export function registerAuthRoutes(app) {
             if (member.role === nextRole) { await database.query("COMMIT"); return response.status(204).end(); }
             if (member.role === "admin" && member.isActive && nextRole !== "admin") {
                 const administrators = await database.query("SELECT COUNT(*)::int AS count FROM depannhome_users WHERE account_owner_id=$1 AND role='admin' AND is_active=TRUE AND id<>$2", [ownerId, memberId]);
-                if (!administrators.rows[0]?.count) { await database.query("ROLLBACK"); return response.status(409).json({ message: "Cette opération est refusée : chaque entreprise doit conserver au moins un Administrateur (PC) actif." }); }
+                if (!administrators.rows[0]?.count) { await database.query("ROLLBACK"); return response.status(409).json({ message: "Cette opération est refusée : chaque entreprise doit conserver au moins un Administrateur administratif actif." }); }
             }
             if (member.isActive && memberSeatFamily(member.role) !== memberSeatFamily(nextRole)) {
                 failedStep = "contrôle du quota de postes";
@@ -710,7 +710,7 @@ export function registerAuthRoutes(app) {
                 LEFT JOIN depannhome_auth_devices auth_device ON auth_device.user_id = account.id
                 WHERE owner.id = $1 GROUP BY owner.id
             `, [getAccountOwnerId(request)]);
-            if (seats.rows[0]?.approved_devices >= seats.rows[0]?.max_pc_users) return response.status(400).json({ message: "Aucun poste PC supplémentaire n’est inclus dans votre offre. Contactez Depann’Home Pro pour activer un poste PC." });
+            if (seats.rows[0]?.approved_devices >= seats.rows[0]?.max_pc_users) return response.status(400).json({ message: "Aucun poste administratif supplémentaire n’est inclus dans votre offre. Contactez Depann’Home Pro pour activer un poste administratif." });
             await getPool().query("UPDATE depannhome_auth_devices SET status = 'approved', approved_at = NOW(), approved_by = $2 WHERE id = $1", [deviceId, request.user.sub]);
             return response.status(204).end();
         }
@@ -825,7 +825,7 @@ export async function authenticateRequest(request, response, next) {
 export function requireAuthentication(request, response, next) {
     if (!request.user) {
         if (request.sessionWindowReplaced) response.set("X-DepannHome-Session-Replaced", "true");
-        return response.status(401).json({ message: request.sessionWindowReplaced ? "Cette session Administrateur PC a été remplacée par une connexion plus récente." : "Connexion requise.", sessionReplaced: Boolean(request.sessionWindowReplaced) });
+        return response.status(401).json({ message: request.sessionWindowReplaced ? "Cette session Administrateur administratif a été remplacée par une connexion plus récente." : "Connexion requise.", sessionReplaced: Boolean(request.sessionWindowReplaced) });
     }
 
     return next();
@@ -846,7 +846,7 @@ export async function refreshSessionForActiveCompany(response, user, deviceId, a
 
 export function requireCreator(request, response, next) {
     if (!request.user?.isCreator) return response.status(403).json({ message: "Accès réservé au Créateur de l’application." });
-    if (request.user.deviceType !== "desktop") return response.status(403).json({ message: "La console Créateur est accessible uniquement depuis un poste PC." });
+    if (request.user.deviceType !== "desktop") return response.status(403).json({ message: "La console Créateur est accessible uniquement depuis un poste administratif." });
     return next();
 }
 
@@ -868,7 +868,7 @@ async function ensureActiveAdministratorRemains(ownerId, targetId) {
         WHERE account_owner_id = $1
     `, [ownerId, targetId]);
     if (!rows[0]?.remainingAdministrators) {
-        throw clientError(409, "Cette opération est refusée : chaque entreprise doit conserver au moins un Administrateur (PC) actif.");
+        throw clientError(409, "Cette opération est refusée : chaque entreprise doit conserver au moins un Administrateur administratif actif.");
     }
 }
 
@@ -970,9 +970,9 @@ async function completeLogin(user, device, response, request) {
     const isAccountant = user.role === "accountant";
     const authDeviceDetails = { ...device };
     // Un nouveau navigateur privé possède un identifiant local distinct. Il ne
-    // doit donc jamais remplacer ni approuver automatiquement un poste PC déjà
+    // doit donc jamais remplacer ni approuver automatiquement un poste administratif déjà
     // comptabilisé d’un autre utilisateur. Pour un même administrateur, une
-    // nouvelle connexion PC remplace toutefois son ancienne session PC afin
+    // nouvelle connexion administrative remplace toutefois son ancienne session administrative afin
     // qu’il ne puisse jamais conserver deux sessions simultanées.
     const automaticallyApproved = isAccountant;
     let authDevice = await findAuthDevice(user.id, device.id);
@@ -1219,7 +1219,7 @@ async function issueAdministratorPcSession(userId, deviceId, clientSessionId = "
         WHERE id = $1 AND user_id = $2 AND device_type = 'desktop' AND status = 'approved'
         RETURNING session_id
     `, [deviceId, userId, sessionId]);
-    if (!rows[0]?.session_id) throw new Error("Session Administrateur PC introuvable.");
+    if (!rows[0]?.session_id) throw new Error("Session Administrateur administratif introuvable.");
     return rows[0].session_id;
 }
 

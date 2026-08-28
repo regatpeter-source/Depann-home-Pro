@@ -367,6 +367,6 @@ function cleanMultiline(value, max) { return String(value || "").replace(/\r/g, 
 function safeFilename(value) { return String(value || "document").replace(/[\\/:*?"<>|\u0000-\u001F]/g, "_").slice(0, 220) || "document"; }
 function money(value) { return new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" }).format(Number(value) || 0); }
 function label(type) { return ({ quote: "de devis", invoice: "de facture", quitus: "de quitus", report: "de rapport" })[type] || "de document"; }
-function requireTemplateAdministration(request, response, next) { if (request.user?.role !== "admin" || request.user?.deviceType !== "desktop") return response.status(403).json({ message: "L’éditeur de modèles est réservé à l’administrateur sur poste PC." }); return next(); }
+function requireTemplateAdministration(request, response, next) { if (request.user?.role !== "admin" || request.user?.deviceType !== "desktop") return response.status(403).json({ message: "L’éditeur de modèles est réservé à l’administrateur sur poste administratif." }); return next(); }
 function templateError(status, message) { const error = new Error(message); error.status = status; return error; }
 function asyncHandler(handler) { return (request, response, next) => Promise.resolve(handler(request, response, next)).catch(next); }

@@ -177,10 +177,10 @@ function activeWorkstationLabel(role, deviceType) {
         if (role === "technician") return "Technicien mobile";
         return "Poste mobile";
     }
-    if (role === "admin") return "Administrateur PC";
-    if (role === "pc_standard") return "Poste PC standard";
-    if (role === "accountant") return "Poste comptable (PC)";
-    return "Poste PC";
+    if (role === "admin") return "Administrateur administratif";
+    if (role === "pc_standard") return "Poste administratif standard";
+    if (role === "accountant") return "Poste comptable administratif";
+    return "Poste administratif";
 }
 
 async function initializeGroupCompanySelector(user) {

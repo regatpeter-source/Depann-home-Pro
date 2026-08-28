@@ -162,6 +162,7 @@ function renderEditor(shell) {
             ${ownsLock() && current.status === "ready_to_send" && canFinalizeReport() ? '<button type="button" class="secondary-button report-primary-action" data-validate-report>Valider définitivement et envoyer</button>' : ""}
             ${editable() && isAdministrator() && ["submitted", "in_correction"].includes(current.status) ? '<button type="button" class="secondary-button" data-request-correction>Demander une correction</button>' : ""}
             ${isAdministrator() && current.status === "validated" ? '<button type="button" class="secondary-button" data-reopen-report>Réouvrir le rapport</button>' : ""}
+            ${ownsLock() && current.status === "draft" && canCancelReport() ? '<button type="button" class="danger-button" data-cancel-report>Annuler la création du rapport</button>' : ""}
             <button type="button" class="secondary-button" data-next-module ${moduleIndex(activeKey) >= visibleSections().length - 1 ? "disabled" : ""}>Suivante</button>
         </footer>
     `;
@@ -250,6 +251,7 @@ function bindEditor(shell, moduleKey) {
     shell.querySelector("[data-validate-report]")?.addEventListener("click", () => validateReport(shell));
     shell.querySelector("[data-request-correction]")?.addEventListener("click", () => requestCorrection(shell));
     shell.querySelector("[data-reopen-report]")?.addEventListener("click", () => reopenReport(shell));
+    shell.querySelector("[data-cancel-report]")?.addEventListener("click", () => cancelReport(shell));
     shell.querySelector("[data-force-lock]")?.addEventListener("click", forceTakeover);
     shell.querySelector("[data-report-home]")?.addEventListener("click", () => exitReportToHome(shell));
 }
@@ -393,7 +395,7 @@ function openReportProofreading(shell) {
     const dialog = document.createElement("section");
     dialog.className = "report-proofreading-dialog";
     const originalTexts = entries.map(entry => entry.observation.text || "");
-    dialog.innerHTML = `<form><header><div><p class="eyebrow">Correction sur poste PC</p><h2>Correction du rapport et aperçu PDF en direct</h2></div><button type="button" class="text-button" data-close-proofreading>Fermer</button></header><p class="report-proofreading-help">À gauche, corrigez les textes, ajoutez des lignes avec la touche Entrée et ajustez les photos. À droite, le PDF se remet à jour automatiquement après vos modifications sans perdre la page consultée.</p><div class="report-proofreading-workspace"><section class="report-proofreading-editor" aria-label="Contenu du rapport à corriger"><div class="report-proofreading-panel-heading"><strong>Rapport à corriger</strong><span>Orthographe, textes et photos</span></div><div class="report-proofreading-list"></div></section><section class="report-proofreading-live-preview" aria-label="Aperçu PDF en direct"><div class="report-proofreading-panel-heading"><strong>Aperçu PDF en direct</strong><span data-proofreading-preview-state>Génération de l’aperçu…</span></div><div class="report-proofreading-pdf-pages" role="document" aria-label="Pages du rapport PDF"></div></section></div><p class="auth-message" aria-live="polite"></p><div class="report-proofreading-actions"><button type="button" class="secondary-button" data-close-proofreading>Annuler</button><button type="submit" class="secondary-button report-primary-action">Enregistrer la correction et préparer l’envoi</button></div></form>`;
+    dialog.innerHTML = `<form><header><div><p class="eyebrow">Correction sur poste administratif</p><h2>Correction du rapport et aperçu PDF en direct</h2></div><button type="button" class="text-button" data-close-proofreading>Fermer</button></header><p class="report-proofreading-help">À gauche, corrigez les textes, ajoutez des lignes avec la touche Entrée et ajustez les photos. À droite, le PDF se remet à jour automatiquement après vos modifications sans perdre la page consultée.</p><div class="report-proofreading-workspace"><section class="report-proofreading-editor" aria-label="Contenu du rapport à corriger"><div class="report-proofreading-panel-heading"><strong>Rapport à corriger</strong><span>Orthographe, textes et photos</span></div><div class="report-proofreading-list"></div></section><section class="report-proofreading-live-preview" aria-label="Aperçu PDF en direct"><div class="report-proofreading-panel-heading"><strong>Aperçu PDF en direct</strong><span data-proofreading-preview-state>Génération de l’aperçu…</span></div><div class="report-proofreading-pdf-pages" role="document" aria-label="Pages du rapport PDF"></div></section></div><p class="auth-message" aria-live="polite"></p><div class="report-proofreading-actions"><button type="button" class="secondary-button" data-close-proofreading>Annuler</button><button type="submit" class="secondary-button report-primary-action">Enregistrer la correction et préparer l’envoi</button></div></form>`;
     document.body.append(dialog);
     let previewTimer = null;
     let previewRequest = null;
@@ -623,7 +625,7 @@ async function save(shell, silent = false) {
 
 async function submitReport(shell) {
     if (!await save(shell)) return;
-    if (!confirm("Terminer ce rapport et le transmettre au poste PC pour correction ?")) return;
+    if (!confirm("Terminer ce rapport et le transmettre au poste administratif pour correction ?")) return;
     const result = await api(`/api/technical-reports/${encodeURIComponent(current.id)}/submit`, { method: "POST" });
     if (!result.ok) return alert(result.message || "Envoi impossible.");
     await loadReport(current.id);
@@ -631,7 +633,7 @@ async function submitReport(shell) {
 }
 
 async function validateReport(shell) {
-    if (current.status !== "ready_to_send" || !canFinalizeReport()) return alert("Ce rapport doit d’abord être corrigé sur un poste PC.");
+    if (current.status !== "ready_to_send" || !canFinalizeReport()) return alert("Ce rapport doit d’abord être corrigé sur un poste administratif.");
     if (!confirm("Valider définitivement le rapport, générer son PDF officiel et l’envoyer ?")) return;
     const result = await api(`/api/technical-reports/${encodeURIComponent(current.id)}/validate`, { method: "POST" });
     if (!result.ok) return alert(result.message || "Validation impossible.");
@@ -639,7 +641,7 @@ async function validateReport(shell) {
 }
 
 async function finalizePreview(shell) {
-    if (current.status !== "ready_to_send" || !canFinalizeReport()) return alert("Ce rapport doit d’abord être corrigé sur un poste PC.");
+    if (current.status !== "ready_to_send" || !canFinalizeReport()) return alert("Ce rapport doit d’abord être corrigé sur un poste administratif.");
     if (!confirm("Valider définitivement ce rapport et archiver son PDF dans le dossier client ?")) return;
     const result = await api(`/api/technical-reports/${encodeURIComponent(current.id)}/validate`, { method: "POST" });
     if (!result.ok) return alert(result.message || "Validation impossible.");
@@ -689,6 +691,15 @@ async function reopenReport(shell) {
     if (!result.ok) return alert(result.message || "Réouverture impossible.");
     await loadReport(current.id);
     renderEditor(shell);
+}
+
+async function cancelReport(shell) {
+    if (!canCancelReport() || current.status !== "draft") return;
+    if (!confirm("Annuler définitivement ce rapport créé par erreur ? Les photos et le contenu du brouillon seront supprimés. L’intervention et la fiche client seront conservées.")) return;
+    const result = await api(`/api/technical-reports/${encodeURIComponent(current.id)}`, { method: "DELETE" });
+    if (!result.ok) return alert(result.message || "Annulation du rapport impossible.");
+    await leaveReport();
+    await renderLeakReportWizard();
 }
 
 async function exitReportToHome(shell) {
@@ -803,6 +814,7 @@ function isAdministrator() { return document.body.dataset.role === "admin"; }
 function canAdjustPdfLayout() { return document.body.classList.contains("desktop-device"); }
 function canProofreadReport() { return canAdjustPdfLayout() && ["admin", "pc_standard"].includes(document.body.dataset.role); }
 function canFinalizeReport() { return canProofreadReport(); }
+function canCancelReport() { return canProofreadReport(); }
 function statusLabel(value) { return ({ draft: "Brouillon", submitted: "Rapport terminé à corriger", in_correction: "Correction demandée", ready_to_send: "À envoyer", validated: "Envoyé" })[value] || "En cours"; }
 function formatDate(value) { return value ? new Intl.DateTimeFormat("fr-FR").format(new Date(`${value}T12:00:00`)) : ""; }
 function showFailure(root, message) { root.innerHTML = `<section class="client-panel"><p class="auth-message error">${escapeHtml(message || "Impossible de charger les rapports.")}</p></section>`; }

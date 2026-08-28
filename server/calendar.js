@@ -491,7 +491,7 @@ export function registerCalendarRoutes(app, requireAuthentication) {
             }
             if (["pending", "validated"].includes(appointment.deductibleStatus)) {
                 await connection.query("ROLLBACK");
-                return response.status(409).json({ message: appointment.deductibleStatus === "validated" ? "Cette franchise est déjà validée et ne peut plus être modifiée." : "Une franchise est déjà en attente de contrôle par le poste PC." });
+                return response.status(409).json({ message: appointment.deductibleStatus === "validated" ? "Cette franchise est déjà validée et ne peut plus être modifiée." : "Une franchise est déjà en attente de contrôle par le poste administratif." });
             }
             const clientResult = await connection.query("SELECT client_data AS client FROM depannhome_clients WHERE owner_id=$1 AND client_id=$2 FOR UPDATE", [ownerId, appointment.clientId]);
             const client = clientResult.rows[0]?.client;
@@ -533,7 +533,7 @@ export function registerCalendarRoutes(app, requireAuthentication) {
                     deductible_collected_at AS "deductibleCollectedAt",deductible_collected_by_name AS "deductibleCollectedByName"
             `, [id, ownerId, amountCents, paymentMethod, attachment.id, createdAt, request.user.sub, collectorName]);
             await connection.query("COMMIT");
-            response.status(201).json({ deductible: updated.rows[0], message: "Franchise transmise au poste PC pour validation." });
+            response.status(201).json({ deductible: updated.rows[0], message: "Franchise transmise au poste administratif pour validation." });
         } catch (error) {
             await connection.query("ROLLBACK");
             throw error;
@@ -547,7 +547,7 @@ export function registerCalendarRoutes(app, requireAuthentication) {
         const decision = ["validated", "rejected"].includes(request.body?.decision) ? request.body.decision : "";
         const reviewNote = cleanMultilineText(request.body?.reviewNote, 1000);
         if (!id) return response.status(400).json({ message: "Intervention invalide." });
-        if (request.user?.deviceType !== "desktop" || !DEDUCTIBLE_PC_ROLES.has(request.user?.role)) return response.status(403).json({ message: "La validation est réservée à un poste PC autorisé." });
+        if (request.user?.deviceType !== "desktop" || !DEDUCTIBLE_PC_ROLES.has(request.user?.role)) return response.status(403).json({ message: "La validation est réservée à un poste administratif autorisé." });
         if (!["validated", "rejected"].includes(decision)) return response.status(400).json({ message: "Décision de contrôle invalide." });
         if (decision === "rejected" && !reviewNote) return response.status(400).json({ message: "Indiquez le motif du refus pour le technicien." });
 
