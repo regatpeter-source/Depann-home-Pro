@@ -18,7 +18,6 @@ const MAX_SOURCE_BYTES = 5 * 1024 * 1024;
 const MAX_EXTRACTED_CHARACTERS = 50_000;
 const MAX_PDF_PAGES = 50;
 const MAX_OCR_PAGES = 5;
-const MAX_OCR_IMAGES = 5;
 const MAX_OCR_PIXELS = 4_000_000;
 const MIN_USEFUL_PDF_TEXT = 30;
 const MAX_ZIP_ENTRIES = 2_000;
@@ -93,7 +92,7 @@ async function extractPdfText(buffer) {
             page.cleanup();
             output += "\n";
         }
-        if (normalizeText(output).replace(/[^\p{L}\p{N}]/gu, "").length < MIN_USEFUL_PDF_TEXT) output = await extractScannedPdfText(document);
+        if (pdfTextNeedsOcr(output)) output = [output, await extractScannedPdfText(document)].filter(Boolean).join("\n");
     } finally {
         await document.destroy();
     }
@@ -107,9 +106,9 @@ async function extractScannedPdfText(document) {
         let output = "";
         const pageCount = Math.min(document.numPages, MAX_OCR_PAGES);
         let imageCount = 0;
-        for (let pageNumber = 1; pageNumber <= pageCount && output.length < MAX_EXTRACTED_CHARACTERS && imageCount < MAX_OCR_IMAGES; pageNumber += 1) {
+        for (let pageNumber = 1; pageNumber <= pageCount && output.length < MAX_EXTRACTED_CHARACTERS && imageCount < MAX_OCR_PAGES; pageNumber += 1) {
             const page = await document.getPage(pageNumber);
-            const images = await embeddedPdfImages(page, MAX_OCR_IMAGES - imageCount); imageCount += images.length;
+            const images = await embeddedPdfImages(page, MAX_OCR_PAGES - imageCount); imageCount += images.length;
             for (const image of images) {
                 const result = await worker.recognize(image);
                 if (result.data?.text) output += `${output ? "\n" : ""}${result.data.text}`;
@@ -152,9 +151,14 @@ async function createFrenchOcrWorker() {
     return worker;
 }
 
+function pdfTextNeedsOcr(value) {
+    const text = normalizeText(value);
+    if (text.replace(/[^\p{L}\p{N}]/gu, "").length < MIN_USEFUL_PDF_TEXT) return true;
+    return !/(?:client|assur[ée]|b[ée]n[ée]ficiaire|occupant|adresse|t[ée]l[ée]phone|portable|mobile)/i.test(text);
+}
+
 async function embeddedPdfImages(page, limit) {
-    const operators = await page.getOperatorList();
-    const images = [];
+    const operators = await page.getOperatorList(); const images = [];
     for (let index = 0; index < operators.fnArray.length && images.length < limit; index += 1) {
         if (![OPS.paintImageXObject, OPS.paintInlineImageXObject].includes(operators.fnArray[index])) continue;
         const reference = operators.argsArray[index]?.[0];

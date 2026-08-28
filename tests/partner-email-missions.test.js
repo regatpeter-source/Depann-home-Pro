@@ -544,6 +544,8 @@ test("une nouvelle recherche enrichit les anciens candidats et répare les missi
     assert.match(serverSource, /refreshPreviouslyParsedEmail/);
     assert.match(serverSource, /saved\.reanalyzeImported \|\|/);
     assert.match(serverSource, /status='candidate',processed_at=NULL/);
+    assert.match(serverSource, /document_extraction_version INTEGER NOT NULL DEFAULT 0/);
+    assert.match(serverSource, /existing\.documentExtractionVersion < DOCUMENT_EXTRACTION_VERSION/);
 });
 
 test("les PDF base64 multiligne produits par PostgreSQL sont lus et joints", async () => {
@@ -708,11 +710,13 @@ test("un scan PDF A4 haute résolution est réduit puis lu par OCR", async () =>
     const canvas = createCanvas(1800, 2500); const context = canvas.getContext("2d");
     context.fillStyle = "white"; context.fillRect(0, 0, 1800, 2500); context.fillStyle = "black"; context.font = "bold 72px Arial";
     context.fillText("Client : Jeanne Durand", 100, 300); context.fillText("Adresse : 8 rue Victor Hugo 35000 Rennes", 100, 500); context.fillText("Telephone : 0677889900", 100, 700);
-    const document = await PDFDocument.create(); const image = await document.embedPng(canvas.toBuffer("image/png")); const page = document.addPage([595, 842]); page.drawImage(image, { x: 0, y: 0, width: 595, height: 842 });
+    const document = await PDFDocument.create(); const image = await document.embedPng(canvas.toBuffer("image/png")); const font = await document.embedFont(StandardFonts.Helvetica); const page = document.addPage([595, 842]); page.drawImage(image, { x: 0, y: 0, width: 595, height: 842 });
+    page.drawText("Mission IMH - document numerise automatiquement - reference technique 2026", { x: 20, y: 20, font, size: 8 });
     const text = await extractPartnerDocumentText([{ filename: "ordre-mission-a4.pdf", mime: "application/pdf", buffer: Buffer.from(await document.save()) }]);
     assert.match(text, /Jeanne Durand/i); assert.match(text.replace(/\s/g, ""), /0677889900/);
     const payload = extractMissionPayload({ id: 54, subject: "Mission partenaire", body_text: "" }, text);
     assert.equal(payload.client.name, "Jeanne Durand"); assert.equal(payload.client.phone, "0677889900"); assert.equal(payload.client.city, "Rennes");
+    assert.match(readFileSync(new URL("../server/partner-email-document-extractor.js", import.meta.url), "utf8"), /pdfTextNeedsOcr\(output\)/);
 });
 
 test("une photo jointe contenant la fiche d’intervention est lue par OCR", async () => {
