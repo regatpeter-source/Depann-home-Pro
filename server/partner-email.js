@@ -696,6 +696,7 @@ export function extractMissionPayload(email, documentText = "") {
         client: { name, firstName, lastName, phone: value("phone"), email: value("email"), address: postalAddress.address, postalCode: postalAddress.postalCode, city: postalAddress.city },
         claimNumber: value("claimNumber"),
         insuredNumber: value("insuredNumber"),
+        mandateNumber: value("mandateNumber"),
         insurance: value("insurance"),
         expert: value("expert"),
         manager: value("manager"),
@@ -725,6 +726,7 @@ function extractMissionFields(text) {
         interventionType: field(/^(?:intervention|objet|nature|type\s+d['’]intervention)\s*[:\-]\s*([^\n\r]+)/im),
         claimNumber: field(/^(?:sinistre|n°\s+de\s+sinistre)\s*(?:n°|no|numéro)?\s*[:#\-]?\s*([A-Z0-9][A-Z0-9/_-]*)/im),
         insuredNumber: extractInsuredNumber(source),
+        mandateNumber: first(/^(?:n[°o]\s*)?mandat\s*(?:n[°o]|no|num[ée]ro)?\s*[:#\-]\s*([A-Z0-9][A-Z0-9./_-]{2,})/im, /^(?:r[ée]f(?:[ée]rence)?\s+(?:du\s+)?mandat)\s*[:#\-]\s*([A-Z0-9][A-Z0-9./_-]{2,})/im),
         insurance: extractInsuranceName(source, field),
         expert: field(/^expert\s*[:\-]\s*([^\n\r]+)/im),
         manager: field(/^(?:gestionnaire|chargé(?:e)?\s+de\s+dossier)\s*[:\-]\s*([^\n\r]+)/im),
@@ -773,7 +775,7 @@ function normalizeInsuranceName(value) {
     return clean(String(value || "").replace(/\s+(?:nature(?:\s+du)?|type(?:\s+de)?|n(?:um[ée]ro|[°o])?\s*(?:de\s+)?(?:sinistre|dossier|contrat|police))\s*$/i, ""), 160);
 }
 
-function trimFollowingMissionField(value) { return clean(String(value || "").split(/\s+(?=(?:assur[ée]e?|client|bénéficiaire|occupant|nom|pr[ée]nom|adresse|lieu\s+d['’]intervention|t[ée]l(?:[ée]phone)?|portable|mobile|e-?mail|courriel|code\s+postal|cp|ville|commune|mission|dossier|référence|ref|intervention|objet|nature|sinistre|assurance|assureur|compagnie|expert|gestionnaire|donneur\s+d['’]ordre|mandant)\s*[:#\-])/i)[0], 255); }
+function trimFollowingMissionField(value) { return clean(String(value || "").split(/\s+(?=(?:assur[ée]e?|client|bénéficiaire|occupant|nom|pr[ée]nom|adresse|lieu\s+d['’]intervention|t[ée]l(?:[ée]phone)?|portable|mobile|e-?mail|courriel|code\s+postal|cp|ville|commune|mission|dossier|référence|ref|intervention|objet|nature|sinistre|mandat|assurance|assureur|compagnie|expert|gestionnaire|donneur\s+d['’]ordre|mandant)\s*[:#\-])/i)[0], 255); }
 export function normalizeMissionPostalAddress(addressValue, postalCodeValue = "", cityValue = "") {
     let address = clean(addressValue, 255); let postalCode = clean(postalCodeValue, 10); let city = clean(cityValue, 100);
     const inline = /^(.*?)[,\s]+(\d{5})\s+([^,;]+)$/i.exec(address);

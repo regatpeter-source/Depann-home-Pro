@@ -34,7 +34,7 @@ test("les listes et détails exposent les métadonnées structurées sans octets
 });
 
 test("l’éditeur envoie un legalData nettoyé et conserve les valeurs du client", () => {
-    for (const name of ["customerSiren", "customerVatNumber", "deliveryAddress", "serviceDate", "purchaseOrderReference", "operationCategory"]) assert.match(clientSource, new RegExp(`name="${name}"`));
+    for (const name of ["customerSiren", "customerVatNumber", "deliveryAddress", "serviceDate", "purchaseOrderReference", "insuranceDossier", "mandateNumber", "operationCategory"]) assert.match(clientSource, new RegExp(`name="${name}"`));
     assert.match(clientSource, /billingDocumentPayload\(form, document\)/);
     assert.match(clientSource, /billingDocumentPayload\(form, billingDocument\)/);
     assert.match(clientSource, /legalData: normalizeLegalData\(quote\.legalData/);
@@ -57,14 +57,14 @@ test("les insertions et mises à jour persistent l’instantané légal et l’�
 });
 
 test("la sortie PDF intégrée contient les mentions B2B et conserve la franchise 293 B", () => {
-    for (const mention of ["Date de livraison / prestation", "Bon de commande", "Adresse de livraison", "SIREN", "TVA intracom.", "Aucun escompte pour paiement anticipé", "trois fois le taux d’intérêt légal", "Indemnité forfaitaire pour frais de recouvrement", "TVA acquittée sur les débits"]) assert.match(serverSource, new RegExp(mention));
+    for (const mention of ["Date de livraison / prestation", "Bon de commande", "Dossier assurance", "Mandat", "Adresse de livraison", "SIREN", "TVA intracom.", "Aucun escompte pour paiement anticipé", "trois fois le taux d’intérêt légal", "Indemnité forfaitaire pour frais de recouvrement", "TVA acquittée sur les débits"]) assert.match(serverSource, new RegExp(mention));
     assert.match(serverSource, /TVA non applicable, art\. 293 B du CGI/);
     assert.match(serverSource, /normalizeAddress\(legalData\.deliveryAddress\) !== normalizeAddress/);
 });
 
 test("les profils et modèles personnalisés proposent les mentions légales", () => {
     for (const name of ["earlyPaymentDiscountTerms", "latePaymentPenaltyTerms", "recoveryIndemnityCents", "vatOnDebits"]) assert.match(clientSource, new RegExp(`name="${name}"`));
-    for (const field of ["client.siren", "client.vat", "client.deliveryAddress", "document.serviceDate", "document.purchaseOrderReference", "document.operationCategory"]) assert.match(templateSource, new RegExp(field.replaceAll(".", "\\.")));
+    for (const field of ["client.siren", "client.vat", "client.deliveryAddress", "document.serviceDate", "document.purchaseOrderReference", "document.insuranceDossier", "document.mandateNumber", "document.operationCategory"]) assert.match(templateSource, new RegExp(field.replaceAll(".", "\\.")));
 });
 
 test("la route UBL sert uniquement les factures et avoirs émis et réutilise l’archive", () => {

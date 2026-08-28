@@ -19,6 +19,14 @@ const EMPTY_CLIENT = {
     email: "",
     address: "",
     city: "",
+    insurance: "",
+    insuranceDossier: "",
+    mandateNumber: "",
+    claimNumber: "",
+    insuredNumber: "",
+    principal: "",
+    manager: "",
+    expert: "",
     equipment: "",
     notes: "",
     attachments: [],
@@ -299,6 +307,21 @@ function renderClientForm(client, options = {}) {
                     <input name="city" placeholder="Ville" value="${escapeHtml(client.city)}">
                 </label>
 
+                <fieldset class="form-wide team-permissions-fieldset">
+                    <legend>Assurance / mission partenaire</legend>
+                    <p class="muted">Ces références sont reprises automatiquement sur les rapports, devis, factures et autres documents liés.</p>
+                    <div class="form-grid">
+                        <label>Assurance<input name="insurance" maxlength="160" value="${escapeHtml(client.insurance || "")}"></label>
+                        <label>Dossier assurance / Réf. assurance<input name="insuranceDossier" maxlength="160" value="${escapeHtml(client.insuranceDossier || client.partnerReference || "")}"></label>
+                        <label>N° mandat<input name="mandateNumber" maxlength="160" value="${escapeHtml(client.mandateNumber || client.mandate || "")}"></label>
+                        <label>N° sinistre<input name="claimNumber" maxlength="160" value="${escapeHtml(client.claimNumber || client.claim || "")}"></label>
+                        <label>N° sociétaire / assuré<input name="insuredNumber" maxlength="160" value="${escapeHtml(client.insuredNumber || "")}"></label>
+                        <label>Mandant / donneur d’ordre<input name="principal" maxlength="160" value="${escapeHtml(client.principal || "")}"></label>
+                        <label>Gestionnaire<input name="manager" maxlength="160" value="${escapeHtml(client.manager || client.caseManager || "")}"></label>
+                        <label>Expert<input name="expert" maxlength="160" value="${escapeHtml(client.expert || "")}"></label>
+                    </div>
+                </fieldset>
+
                 <label class="form-wide">
                     Équipements sur place
                     <textarea name="equipment" rows="3" placeholder="Ex : 4 volets Somfy RTS, portail FAAC 740, clavier à code...">${escapeHtml(client.equipment)}</textarea>
@@ -508,6 +531,7 @@ function renderClientDetail(client, options = {}) {
             <span> ${escapeHtml(client.email || "Non renseigné")}</span>
             <span> ${escapeHtml(formatClientLocation(client))}</span>
         </div>
+        ${(client.insurance || client.insuranceDossier || client.mandateNumber || client.claimNumber || client.insuredNumber || client.principal || client.manager || client.expert) ? `<section class="procedure-section"><h3>Assurance / mission partenaire</h3><div class="procedure-meta">${[["Assurance", client.insurance], ["Dossier assurance", client.insuranceDossier || client.partnerReference], ["Mandat", client.mandateNumber || client.mandate], ["Sinistre", client.claimNumber || client.claim], ["N° sociétaire / assuré", client.insuredNumber], ["Mandant / donneur d’ordre", client.principal], ["Gestionnaire", client.manager || client.caseManager], ["Expert", client.expert]].filter(([, value]) => value).map(([label, value]) => `<span><strong>${label} :</strong> ${escapeHtml(value)}</span>`).join("")}</div></section>` : ""}
         <section class="procedure-section">
             <h3> Équipements</h3>
             <p>${escapeHtml(client.equipment || "Aucun équipement renseigné.")}</p>
@@ -757,6 +781,14 @@ async function readClientForm(form, previousClient = EMPTY_CLIENT) {
         email: String(formData.get("email") || "").trim(),
         address: String(formData.get("address") || "").trim(),
         city: String(formData.get("city") || "").trim(),
+        insurance: String(formData.get("insurance") || "").trim(),
+        insuranceDossier: String(formData.get("insuranceDossier") || "").trim(),
+        mandateNumber: String(formData.get("mandateNumber") || "").trim(),
+        claimNumber: String(formData.get("claimNumber") || "").trim(),
+        insuredNumber: String(formData.get("insuredNumber") || "").trim(),
+        principal: String(formData.get("principal") || "").trim(),
+        manager: String(formData.get("manager") || "").trim(),
+        expert: String(formData.get("expert") || "").trim(),
         equipment: String(formData.get("equipment") || "").trim(),
         notes: String(formData.get("notes") || "").trim(),
         activityHistory: normalizeActivityHistory(previousClient.activityHistory),

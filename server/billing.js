@@ -1149,6 +1149,8 @@ function sanitizeLegalData(value, customerAddress = "") {
         deliveryAddress: cleanText(input.deliveryAddress, 500),
         serviceDate,
         purchaseOrderReference: cleanText(input.purchaseOrderReference, 80),
+        insuranceDossier: cleanText(input.insuranceDossier, 160),
+        mandateNumber: cleanText(input.mandateNumber, 160),
         operationCategory: OPERATION_CATEGORIES.has(input.operationCategory) ? input.operationCategory : "services"
     };
 }
@@ -1327,6 +1329,8 @@ function ublFileName(document) {
 }
 
 export async function createBillingDocumentOutput(document, profile) {
+    const client = document.clientData && typeof document.clientData === "object" ? document.clientData : {};
+    document = { ...document, legalData: { ...(document.legalData || {}), insuranceDossier: document.legalData?.insuranceDossier || client.insuranceDossier || client.partnerReference || "", mandateNumber: document.legalData?.mandateNumber || client.mandateNumber || client.mandate || "" } };
     const custom = await renderActiveCustomTemplate(profile.ownerId, document.documentType, buildBillingCustomModel(document, profile));
     if (custom) return custom;
     return { buffer: await createBillingPdf(document, profile), filename: billingPdfFileName(document), mimeType: PDF_MIME };
@@ -1337,7 +1341,7 @@ function billingTemplateValues(document, profile) {
     const totalTva = (document.lines || []).reduce((sum, line) => sum + Number(line.quantity || 0) * Number(line.unitPrice || 0) * Number(line.vatRate || 0) / 100, 0);
     const money = value => new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" }).format(value || 0);
     const legal = document.legalData && typeof document.legalData === "object" ? document.legalData : {};
-    return { type_document: document.documentType === "invoice" ? "Facture" : "Devis", numero: document.documentNumber, date: document.issueDate, echeance: document.dueDate || "", etabli_par: document.creatorName || "", client_nom: document.customerName, client_adresse: legal.billingAddress || document.customerAddress, client_siren: legal.customerSiren || "", client_tva: legal.customerVatNumber || "", adresse_livraison: legal.deliveryAddress || "", date_prestation: legal.serviceDate || "", reference_commande: legal.purchaseOrderReference || "", categorie_operation: ({ goods: "Livraison de biens", services: "Prestation de services", mixed: "Livraison de biens et prestation de services" })[legal.operationCategory] || "Prestation de services", entreprise_nom: profile.companyName, entreprise_adresse: [profile.address, profile.postalCode, profile.city].filter(Boolean).join(" "), entreprise_telephone: profile.phone, entreprise_email: profile.email, siret: profile.registrationNumber, siren: profile.siren, numero_tva: document.issuerTaxNumber || profile.taxNumber, conditions: document.notes || profile.paymentTerms, lignes: (document.lines || []).map(line => `${line.description} | ${line.quantity} ${line.unit} | ${money(Number(line.unitPrice))} HT | TVA ${line.vatRate || 0} %`).join("\n"), total_ht: money(totalHt), total_tva: money(totalTva), total_ttc: money(totalHt + totalTva) };
+    return { type_document: document.documentType === "invoice" ? "Facture" : "Devis", numero: document.documentNumber, date: document.issueDate, echeance: document.dueDate || "", etabli_par: document.creatorName || "", client_nom: document.customerName, client_adresse: legal.billingAddress || document.customerAddress, client_siren: legal.customerSiren || "", client_tva: legal.customerVatNumber || "", adresse_livraison: legal.deliveryAddress || "", date_prestation: legal.serviceDate || "", reference_commande: legal.purchaseOrderReference || "", dossier_assurance: legal.insuranceDossier || "", numero_mandat: legal.mandateNumber || "", categorie_operation: ({ goods: "Livraison de biens", services: "Prestation de services", mixed: "Livraison de biens et prestation de services" })[legal.operationCategory] || "Prestation de services", entreprise_nom: profile.companyName, entreprise_adresse: [profile.address, profile.postalCode, profile.city].filter(Boolean).join(" "), entreprise_telephone: profile.phone, entreprise_email: profile.email, siret: profile.registrationNumber, siren: profile.siren, numero_tva: document.issuerTaxNumber || profile.taxNumber, conditions: document.notes || profile.paymentTerms, lignes: (document.lines || []).map(line => `${line.description} | ${line.quantity} ${line.unit} | ${money(Number(line.unitPrice))} HT | TVA ${line.vatRate || 0} %`).join("\n"), total_ht: money(totalHt), total_tva: money(totalTva), total_ttc: money(totalHt + totalTva) };
 }
 
 export function createBillingPdf(document, profile) {
@@ -1413,7 +1417,7 @@ export function createBillingPdf(document, profile) {
         pdf.y = partyY + partyHeight + 18;
         text("OBJET / PRESTATION", margin, pdf.y, contentWidth, { size: 8, bold: true });
         const operationLabel = ({ goods: "Livraison de biens", services: "Prestation de services", mixed: "Livraison de biens et prestation de services" })[legalData.operationCategory] || "Prestation de services";
-        const objectDetails = [isCredit ? `Avoir relatif à la facture ${document.sourceInvoiceNumber || "d’origine"}${document.sourceInvoiceDate ? ` du ${formatDate(document.sourceInvoiceDate)}` : ""}${document.reason ? ` · ${document.reason}` : ""}` : operationLabel, legalData.serviceDate ? `Date de livraison / prestation : ${formatDate(legalData.serviceDate)}` : "", legalData.purchaseOrderReference ? `Bon de commande : ${legalData.purchaseOrderReference}` : "", legalData.deliveryAddress && normalizeAddress(legalData.deliveryAddress) !== normalizeAddress(legalData.billingAddress || document.customerAddress) ? `Adresse de livraison : ${legalData.deliveryAddress}` : ""].filter(Boolean).join("\n");
+        const objectDetails = [isCredit ? `Avoir relatif à la facture ${document.sourceInvoiceNumber || "d’origine"}${document.sourceInvoiceDate ? ` du ${formatDate(document.sourceInvoiceDate)}` : ""}${document.reason ? ` · ${document.reason}` : ""}` : operationLabel, legalData.insuranceDossier ? `Dossier assurance : ${legalData.insuranceDossier}` : "", legalData.mandateNumber ? `Mandat : ${legalData.mandateNumber}` : "", legalData.serviceDate ? `Date de livraison / prestation : ${formatDate(legalData.serviceDate)}` : "", legalData.purchaseOrderReference ? `Bon de commande : ${legalData.purchaseOrderReference}` : "", legalData.deliveryAddress && normalizeAddress(legalData.deliveryAddress) !== normalizeAddress(legalData.billingAddress || document.customerAddress) ? `Adresse de livraison : ${legalData.deliveryAddress}` : ""].filter(Boolean).join("\n");
         text(objectDetails, margin, pdf.y + 12, contentWidth, { size: 9, lineGap: 2 });
         pdf.y += Math.max(32, pdf.heightOfString(objectDetails, { width: contentWidth, fontSize: 9, lineGap: 2 }) + 22);
 

@@ -565,6 +565,7 @@ Adresse du sinistre : 22 RUE ROBERT CHEVRIER
 Code postal Ville : 35200 RENNES
 Grand Compte : MACIF
 N° Sociétaire : 4152292
+N° mandat : MDT-2026/7788
 Réf IMH : 267057H26-RENU1
 N° dossier IMH : 267057H26-RENU1`;
     const payload = extractMissionPayload({ id: 50, subject: "Mission imh", body_text: "" }, text);
@@ -577,11 +578,14 @@ N° dossier IMH : 267057H26-RENU1`;
     assert.equal(payload.missionNumber, "267057H26-RENU1");
     assert.equal(payload.partnerReference, "267057H26-RENU1");
     assert.equal(payload.insuredNumber, "4152292");
+    assert.equal(payload.mandateNumber, "MDT-2026/7788");
     assert.equal(payload.insurance, "MACIF");
     const mapped = mapPayload(payload);
     assert.equal(mapped.clientName, "Monsieur DOMINIQUE RIGALLEAU");
     assert.equal(mapped.address, "22 RUE ROBERT CHEVRIER, 35200");
     assert.equal(mapped.insuredNumber, "4152292");
+    assert.equal(mapped.insuranceDossier, "267057H26-RENU1");
+    assert.equal(mapped.mandateNumber, "MDT-2026/7788");
 });
 
 test("un PDF en colonnes ignore un faux numéro assuré et retrouve la référence voisine", () => {

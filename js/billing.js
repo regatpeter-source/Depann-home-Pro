@@ -1,5 +1,5 @@
 import { ROUTES } from "./config.js?v=116";
-import { getSearchableClients } from "./clients.js?v=145";
+import { getSearchableClients } from "./clients.js?v=152";
 import { addClientActivityByName } from "./client-sync.js?v=125";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
@@ -168,11 +168,11 @@ function renderOverview(panel, profilePanel) {
     panel.querySelector("[data-billing-action=new-quote]")?.addEventListener("click", () => { if (!isAccountant()) openNewDocument("quote"); });
     panel.querySelector("[data-billing-action=new-invoice]").addEventListener("click", () => { if (!isAccountant()) openNewDocument("invoice"); });
     panel.querySelector("[data-billing-action=open-leak-reports]")?.addEventListener("click", async () => {
-        const { renderLeakReportWizard } = await import("./leak-report-wizard.js?v=29");
+        const { renderLeakReportWizard } = await import("./leak-report-wizard.js?v=30");
         renderLeakReportWizard();
     });
     panel.querySelector("[data-billing-action=new-leak-report]")?.addEventListener("click", async () => {
-        const { openLeakReportCreation } = await import("./leak-report-wizard.js?v=29");
+        const { openLeakReportCreation } = await import("./leak-report-wizard.js?v=30");
         openLeakReportCreation();
     });
     panel.querySelector("[data-billing-action=download-quote-template]")?.addEventListener("click", openQuoteTemplateDownload);
@@ -455,6 +455,8 @@ function renderDocumentEditor(panel) {
                 <label class="form-wide">Adresse de livraison<textarea name="deliveryAddress" rows="2" maxlength="500" placeholder="Uniquement si différente de l’adresse de facturation">${escapeHtml(document.legalData.deliveryAddress)}</textarea></label>
                 <label>Date de livraison / prestation<input name="serviceDate" type="date" value="${escapeHtml(document.legalData.serviceDate)}"></label>
                 <label>Référence du bon de commande<input name="purchaseOrderReference" maxlength="80" value="${escapeHtml(document.legalData.purchaseOrderReference)}"></label>
+                <label>Dossier assurance / Réf. assurance<input name="insuranceDossier" maxlength="160" value="${escapeHtml(document.legalData.insuranceDossier)}"></label>
+                <label>N° mandat<input name="mandateNumber" maxlength="160" value="${escapeHtml(document.legalData.mandateNumber)}"></label>
                 <label>Catégorie d’opération<select name="operationCategory"><option value="goods" ${document.legalData.operationCategory === "goods" ? "selected" : ""}>Livraison de biens</option><option value="services" ${document.legalData.operationCategory === "services" ? "selected" : ""}>Prestation de services</option><option value="mixed" ${document.legalData.operationCategory === "mixed" ? "selected" : ""}>Biens et services</option></select></label>
                 <label>Date *<input name="issueDate" type="date" required value="${escapeHtml(document.issueDate)}"></label>
                 <label>Échéance<input name="dueDate" type="date" value="${escapeHtml(document.dueDate || "")}"></label>
@@ -856,7 +858,7 @@ function fillCustomerAddress(input, form, clients) {
     if (!client) return;
     const values = legalDataFromClient(client);
     if (values.billingAddress) form.querySelector("[name=customerAddress]").value = values.billingAddress;
-    for (const field of ["customerSiren", "customerVatNumber", "deliveryAddress", "serviceDate", "purchaseOrderReference", "operationCategory"]) {
+    for (const field of ["customerSiren", "customerVatNumber", "deliveryAddress", "serviceDate", "purchaseOrderReference", "insuranceDossier", "mandateNumber", "operationCategory"]) {
         if (field === "operationCategory" && !client.operationCategory) continue;
         if (values[field] && form.elements[field]) form.elements[field].value = values[field];
     }
@@ -864,9 +866,9 @@ function fillCustomerAddress(input, form, clients) {
 
 function emptyLine() { return { description: "", quantity: 1, unit: "unité", unitPrice: 0, vatRate: isVatFranchise() ? 0 : 20 }; }
 function normalizeDocument(document) { const vatRegime = document.vatRegime || billingData?.profile?.vatRegime || "standard"; return { ...document, vatRegime, issuerTaxNumber: document.issuerTaxNumber || billingData?.profile?.taxNumber || "", clientId: document.clientId || "", appointmentId: document.appointmentId || "", sourceQuoteId: document.sourceQuoteId || "", correctionSourceId: document.correctionSourceId || "", correctionKind: document.correctionKind || "none", correctionSourceNumber: document.correctionSourceNumber || "", quoteReference: document.quoteReference || "", isEmailSent: Boolean(document.isEmailSent), isAccounted: Boolean(document.isAccounted), legalData: normalizeLegalData(document.legalData, document.customerAddress || ""), financialData: normalizeFinancialData(document.financialData), lines: Array.isArray(document.lines) && document.lines.length ? document.lines.map(line => ({ ...emptyLine(), ...line, vatRate: vatRegime === "franchise" ? 0 : Number(line.vatRate) || 0 })) : [emptyLine()] }; }
-function normalizeLegalData(value, billingAddress = "") { return { customerSiren: value?.customerSiren || "", customerVatNumber: value?.customerVatNumber || "", billingAddress: value?.billingAddress || billingAddress, deliveryAddress: value?.deliveryAddress || "", serviceDate: value?.serviceDate || "", purchaseOrderReference: value?.purchaseOrderReference || "", operationCategory: ["goods", "services", "mixed"].includes(value?.operationCategory) ? value.operationCategory : "services" }; }
-function legalDataFromClient(client) { if (!client) return normalizeLegalData(); const billingAddress = [client.billingAddress || client.address, client.postalCode, client.city].filter(Boolean).join(", "); return normalizeLegalData({ customerSiren: client.siren || client.companySiren || "", customerVatNumber: client.vatNumber || client.taxNumber || client.companyVatNumber || "", billingAddress, deliveryAddress: client.deliveryAddress || "", serviceDate: client.serviceDate || "", purchaseOrderReference: client.purchaseOrderReference || "", operationCategory: client.operationCategory || "services" }, billingAddress); }
-function billingDocumentPayload(form, billingDocument) { const values = formDataToObject(new FormData(form)); const legalData = normalizeLegalData({ customerSiren: values.customerSiren, customerVatNumber: values.customerVatNumber, billingAddress: values.customerAddress, deliveryAddress: values.deliveryAddress, serviceDate: values.serviceDate, purchaseOrderReference: values.purchaseOrderReference, operationCategory: values.operationCategory }, values.customerAddress); for (const key of ["customerSiren", "customerVatNumber", "deliveryAddress", "serviceDate", "purchaseOrderReference", "operationCategory"]) delete values[key]; return { ...values, legalData, lines: billingDocument.lines, financialData: billingDocument.financialData }; }
+function normalizeLegalData(value, billingAddress = "") { return { customerSiren: value?.customerSiren || "", customerVatNumber: value?.customerVatNumber || "", billingAddress: value?.billingAddress || billingAddress, deliveryAddress: value?.deliveryAddress || "", serviceDate: value?.serviceDate || "", purchaseOrderReference: value?.purchaseOrderReference || "", insuranceDossier: value?.insuranceDossier || "", mandateNumber: value?.mandateNumber || "", operationCategory: ["goods", "services", "mixed"].includes(value?.operationCategory) ? value.operationCategory : "services" }; }
+function legalDataFromClient(client) { if (!client) return normalizeLegalData(); const billingAddress = [client.billingAddress || client.address, client.postalCode, client.city].filter(Boolean).join(", "); return normalizeLegalData({ customerSiren: client.siren || client.companySiren || "", customerVatNumber: client.vatNumber || client.taxNumber || client.companyVatNumber || "", billingAddress, deliveryAddress: client.deliveryAddress || "", serviceDate: client.serviceDate || "", purchaseOrderReference: client.purchaseOrderReference || "", insuranceDossier: client.insuranceDossier || client.partnerReference || "", mandateNumber: client.mandateNumber || client.mandate || "", operationCategory: client.operationCategory || "services" }, billingAddress); }
+function billingDocumentPayload(form, billingDocument) { const values = formDataToObject(new FormData(form)); const legalData = normalizeLegalData({ customerSiren: values.customerSiren, customerVatNumber: values.customerVatNumber, billingAddress: values.customerAddress, deliveryAddress: values.deliveryAddress, serviceDate: values.serviceDate, purchaseOrderReference: values.purchaseOrderReference, insuranceDossier: values.insuranceDossier, mandateNumber: values.mandateNumber, operationCategory: values.operationCategory }, values.customerAddress); for (const key of ["customerSiren", "customerVatNumber", "deliveryAddress", "serviceDate", "purchaseOrderReference", "insuranceDossier", "mandateNumber", "operationCategory"]) delete values[key]; return { ...values, legalData, lines: billingDocument.lines, financialData: billingDocument.financialData }; }
 function emptyFinancialData() { return { discountMode: "fixed", discountAmount: 0, depositAmount: 0, conditions: "", comments: "", aids: [] }; }
 function normalizeFinancialData(value) { return { ...emptyFinancialData(), discountMode: value?.discountMode === "percentage" ? "percentage" : "fixed", discountAmount: Number(value?.discountAmount) || 0, depositAmount: Number(value?.depositAmount) || 0, conditions: value?.conditions || "", comments: value?.comments || "", aids: Array.isArray(value?.aids) ? value.aids.filter(aid => aid?.name).map(toAidSnapshot) : [] }; }
 function normalizeQuoteTemplate(template) {

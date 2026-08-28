@@ -72,7 +72,7 @@ export function openLeakReportCreation() {
     document.body.append(dialog);
     dialog.querySelector("[data-close-report-creation]").addEventListener("click", () => dialog.remove());
     dialog.querySelector("[data-report-from-appointment]").addEventListener("click", async () => { dialog.remove(); const { renderCalendar } = await import("./calendar.js?v=177"); renderCalendar(); });
-    dialog.querySelector("[data-create-client-first]").addEventListener("click", async () => { dialog.remove(); const { renderClients } = await import("./clients.js?v=145"); renderClients(); });
+    dialog.querySelector("[data-create-client-first]").addEventListener("click", async () => { dialog.remove(); const { renderClients } = await import("./clients.js?v=152"); renderClients(); });
 }
 
 async function openAppointmentReport(appointmentId) {
@@ -141,7 +141,7 @@ function renderEditor(shell) {
     shell.innerHTML = `
         <header class="report-editor-header">
             <div class="report-editor-identity"><strong>${escapeHtml(snapshot.clientName || current.clientName || "Client non renseigné")}</strong><span>${escapeHtml(snapshot.clientAddress || current.clientAddress || current.appointmentLocation || "Adresse non renseignée")}</span></div>
-            <div class="report-editor-meta"><span>${sourceLabel} n° ${escapeHtml(snapshot.interventionNumber || current.appointmentId || "—")}</span><span>${snapshot.claimNumber ? `Sinistre n° ${escapeHtml(snapshot.claimNumber)}` : "Sinistre non renseigné"}</span><span>${escapeHtml(snapshot.technicianName || current.technicianName || "Technicien")}</span></div>
+            <div class="report-editor-meta"><span>${sourceLabel} n° ${escapeHtml(snapshot.interventionNumber || current.appointmentId || "—")}</span><span>${snapshot.insuranceDossier ? `Dossier assurance ${escapeHtml(snapshot.insuranceDossier)}` : "Dossier assurance non renseigné"}</span><span>${snapshot.claimNumber ? `Sinistre n° ${escapeHtml(snapshot.claimNumber)}` : "Sinistre non renseigné"}</span><span>${escapeHtml(snapshot.technicianName || current.technicianName || "Technicien")}</span></div>
             <span class="report-editor-status ${escapeHtml(current.status)}">${escapeHtml(statusLabel(current.status))}</span>
             <button type="button" class="secondary-button report-editor-home-button" data-report-home>Accueil</button>
         </header>
@@ -171,7 +171,7 @@ function renderEditor(shell) {
 
 function generalModuleHtml(write) {
     const snapshot = current.content.snapshot || {};
-    const values = [["Entreprise", snapshot.companyName], ["Client", snapshot.clientName || current.clientName], ["Adresse", snapshot.clientAddress || current.clientAddress || current.appointmentLocation], ["Téléphone", snapshot.clientPhone], ["E-mail", snapshot.clientEmail], [current.appointmentId ? "N° intervention" : "N° dossier", snapshot.interventionNumber || current.appointmentId], ["N° sinistre", snapshot.claimNumber], ["Donneur d’ordre", snapshot.manager], ["Assurance", snapshot.insurance], ["Date / heure", [snapshot.date || current.reportDate, snapshot.time].filter(Boolean).join(" · ")], ["Technicien", snapshot.technicianName || current.technicianName], ["Type d’intervention", snapshot.interventionType]].filter(([, value]) => value);
+    const values = [["Entreprise", snapshot.companyName], ["Client", snapshot.clientName || current.clientName], ["Adresse", snapshot.clientAddress || current.clientAddress || current.appointmentLocation], ["Téléphone", snapshot.clientPhone], ["E-mail", snapshot.clientEmail], ["N° intervention", snapshot.interventionNumber || current.appointmentId], ["Dossier assurance / Réf. assurance", snapshot.insuranceDossier], ["N° mandat", snapshot.mandateNumber], ["N° sinistre", snapshot.claimNumber], ["N° sociétaire / assuré", snapshot.insuredNumber], ["Mandant / donneur d’ordre", snapshot.principal], ["Gestionnaire", snapshot.manager], ["Expert", snapshot.expert], ["Assurance", snapshot.insurance], ["Date / heure", [snapshot.date || current.reportDate, snapshot.time].filter(Boolean).join(" · ")], ["Technicien", snapshot.technicianName || current.technicianName], ["Type d’intervention", snapshot.interventionType]].filter(([, value]) => value);
     return `<section class="report-auto-summary"><p>Ces informations sont générées automatiquement à partir du dossier client et de l’intervention.</p><dl>${values.map(([label, value]) => `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd></div>`).join("")}</dl></section>${photosHtml("general", "", write, "Ajouter la photo extérieure du logement", true)}`;
 }
 

@@ -63,6 +63,19 @@ test("regeneration rebuilds numbers, dates and current client data without mutat
     assert.equal(source.documentNumber, "DEV-42");
 });
 
+test("les modèles personnalisés conservent le dossier assurance et le mandat", () => {
+    const billingModel = buildBillingCustomModel({ ...quote, legalData: { insuranceDossier: "DOS-42", mandateNumber: "MDT-9" } }, profile);
+    assert.equal(billingModel.document.insuranceDossier, "DOS-42");
+    assert.equal(billingModel.document.mandateNumber, "MDT-9");
+    const reportModel = buildReportCustomModel({ id: 8, content: { snapshot: { insuranceDossier: "DOS-42", mandateNumber: "MDT-9", insuredNumber: "SOC-7", principal: "Assureur", manager: "Gestionnaire", expert: "Expert" } } }, profile);
+    assert.equal(reportModel.document.insuranceDossier, "DOS-42");
+    assert.equal(reportModel.document.mandateNumber, "MDT-9");
+    assert.equal(reportModel.document.insuredNumber, "SOC-7");
+    const quitusModel = buildQuitusCustomModel({ id: 4, clientData: { insuranceDossier: "DOS-42", mandateNumber: "MDT-9" }, date: "2026-08-17" }, {}, profile);
+    assert.equal(quitusModel.document.insuranceDossier, "DOS-42");
+    assert.equal(quitusModel.document.mandateNumber, "MDT-9");
+});
+
 test("invoice data never inherits the quote number", () => {
     const invoice = buildBillingCustomModel({ ...quote, documentType: "invoice", documentNumber: "F-2026-001", dueDate: "2026-09-17" }, profile);
     assert.equal(invoice.INVOICE_NUMBER, "F-2026-001");
