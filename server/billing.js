@@ -935,7 +935,7 @@ function buildLegalSnapshot(document, profile) {
 
 function requireBillingAdministration(request, response, next) {
     if (request.user?.role === "admin") return next();
-    return response.status(403).json({ message: request.user?.role === "accountant" ? "L’espace Facturation du comptable est en consultation uniquement." : "La modification des documents et paramètres de facturation n’est pas autorisée pour ce poste." });
+    return response.status(403).json({ message: request.user?.role === "accountant" ? "L’espace Facturation de ce poste administratif est en consultation uniquement." : "La modification des documents et paramètres de facturation n’est pas autorisée pour ce poste." });
 }
 
 export function canCreateBillingTemplates(user) {
@@ -944,7 +944,7 @@ export function canCreateBillingTemplates(user) {
 
 function requireBillingTemplateCreation(request, response, next) {
     if (canCreateBillingTemplates(request.user)) return next();
-    return response.status(403).json({ message: "Le préenregistrement des lignes est réservé aux postes administratifs et aux Administrateurs Mobile." });
+    return response.status(403).json({ message: "Le préenregistrement des lignes est réservé aux postes administratifs et aux Postes Admin Mobile." });
 }
 
 async function requireBillingDocumentAdministration(request, response, next) {
@@ -961,7 +961,7 @@ async function requireBillingIssuanceAccess(request, response, next) {
 
 async function requireBillingSettlementAccess(request, response, next) {
     if (["admin", "mobile_admin"].includes(request.user?.role) || request.user?.deviceType === "desktop") {
-        if (request.user?.role === "accountant") return response.status(403).json({ message: "Le poste comptable en consultation ne peut pas enregistrer un règlement ici." });
+        if (request.user?.role === "accountant") return response.status(403).json({ message: "Ce poste administratif en consultation ne peut pas enregistrer un règlement ici." });
         return next();
     }
     if (request.user?.role !== "technician") return response.status(403).json({ message: "L’enregistrement d’un règlement n’est pas autorisé pour ce poste." });

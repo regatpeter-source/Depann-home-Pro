@@ -103,7 +103,7 @@ Page d’accueil de Dépann’Home Pro.
 
 > L’écran d’accueil donne accès aux fonctions quotidiennes sans multiplier les menus techniques. Chaque utilisateur retrouve uniquement les outils correspondant à sa mission.
 >
-> L’administrateur organise l’entreprise, le planning, les clients et les accès. Le poste administratif standard peut gérer l’activité opérationnelle. Le technicien et le chef d’équipe disposent des fonctions nécessaires sur le terrain. Un profil comptable peut accéder aux éléments financiers correspondant à son travail.
+> Le Poste Admin organise l’entreprise, le planning, les clients et les accès. Le Poste administratif peut gérer l’activité opérationnelle selon ses autorisations. Le Technicien et le Chef d’équipe disposent des fonctions nécessaires sur le terrain.
 >
 > Cette séparation évite de donner à chaque collaborateur un accès inutile à l’ensemble des données. Elle améliore à la fois la lisibilité et la sécurité.
 >

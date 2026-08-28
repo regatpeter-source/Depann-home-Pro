@@ -94,7 +94,7 @@ La catégorie du client pilote le canal, pas l’existence de la facture :
 - les opérations B2C relèvent de l’e-reporting. Depann’Home Pro l’indique explicitement mais ne prétend pas automatiser cet e-reporting tant que l’adaptateur de la plateforme choisie ne fournit pas ce contrat ;
 - un règlement immédiat ne dispense jamais d’émettre ou de conserver la facture.
 
-Un Administrateur administratif ou Mobile, ou un poste administratif autorisé, peut enregistrer le règlement d’une facture émise. Un technicien disposant du droit « Créer des devis et factures » peut créer, émettre et encaisser une facture uniquement depuis une intervention qui lui est attribuée. Les modes normalisés sont **Chèque**, **Espèces**, **Virement** et **Carte bancaire**. Chaque règlement conserve son auteur, sa date, son montant et sa référence dans `depannhome_accounting_settlements`, génère les écritures comptables existantes et rapproche le statut de la transmission éventuelle sans modifier l’archive légale immuable.
+Un Poste Admin, un Poste Admin Mobile ou un Poste administratif autorisé peut enregistrer le règlement d’une facture émise. Un technicien disposant du droit « Créer des devis et factures » peut créer, émettre et encaisser une facture uniquement depuis une intervention qui lui est attribuée. Les modes normalisés sont **Chèque**, **Espèces**, **Virement** et **Carte bancaire**. Chaque règlement conserve son auteur, sa date, son montant et sa référence dans `depannhome_accounting_settlements`, génère les écritures comptables existantes et rapproche le statut de la transmission éventuelle sans modifier l’archive légale immuable.
 
 ## État des intégrations
 

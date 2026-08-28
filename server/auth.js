@@ -25,7 +25,7 @@ const COMPANY_TOTP_MAX_ATTEMPTS = 5;
 const MOBILE_ADMIN_ROLE = "mobile_admin";
 const STANDARD_PC_ROLE = "pc_standard";
 const TEAM_LEAD_ROLE = "team_lead";
-const MEMBER_ROLES = new Set(["admin", STANDARD_PC_ROLE, MOBILE_ADMIN_ROLE, TEAM_LEAD_ROLE, "technician", "accountant"]);
+const CREATABLE_MEMBER_ROLES = new Set(["admin", STANDARD_PC_ROLE, MOBILE_ADMIN_ROLE, TEAM_LEAD_ROLE, "technician"]);
 
 export function memberSeatFamily(role) {
     if (["admin", STANDARD_PC_ROLE, "accountant"].includes(role)) return "pc";
@@ -408,7 +408,7 @@ export function registerAuthRoutes(app) {
     }));
 
     app.post("/api/auth/members", requireAccountAdministrator, asyncHandler(async (request, response) => {
-        const role = MEMBER_ROLES.has(request.body?.role) ? request.body.role : "";
+        const role = CREATABLE_MEMBER_ROLES.has(request.body?.role) ? request.body.role : "";
         const username = normalizeUsername(request.body?.username);
         const password = String(request.body?.password || "");
         const fullName = cleanText(request.body?.fullName, 100);
@@ -421,7 +421,7 @@ export function registerAuthRoutes(app) {
             || (!fullName ? "Le nom de l’utilisateur est obligatoire." : "")
             || (["technician", TEAM_LEAD_ROLE].includes(role) && !phone ? "Le téléphone du technicien est obligatoire." : "")
             || (["technician", TEAM_LEAD_ROLE].includes(role) && !departments.length ? "Choisissez au moins une section métier." : "")
-            || (role === MOBILE_ADMIN_ROLE && !phone ? "Le téléphone de l’Administrateur Mobile est obligatoire." : "")
+            || (role === MOBILE_ADMIN_ROLE && !phone ? "Le téléphone du Poste Admin Mobile est obligatoire." : "")
             || (["technician", TEAM_LEAD_ROLE, MOBILE_ADMIN_ROLE].includes(role) && !EMAIL_PATTERN.test(email) ? "L’e-mail professionnel est obligatoire pour l’activation." : "");
         if (validationError) return response.status(400).json({ message: validationError });
 
@@ -486,7 +486,7 @@ export function registerAuthRoutes(app) {
 
     app.patch("/api/auth/members/:memberId/role", requireAccountAdministrator, asyncHandler(async (request, response) => {
         const memberId = positiveId(request.params.memberId);
-        const nextRole = MEMBER_ROLES.has(request.body?.role) ? request.body.role : "";
+        const nextRole = CREATABLE_MEMBER_ROLES.has(request.body?.role) ? request.body.role : "";
         if (!memberId || !nextRole) return response.status(400).json({ message: "Rôle invalide." });
         const ownerId = getAccountOwnerId(request);
         const roleAccessError = await memberRoleAccessError(ownerId, nextRole);
@@ -506,7 +506,7 @@ export function registerAuthRoutes(app) {
             if (member.role === nextRole) { await database.query("COMMIT"); return response.status(204).end(); }
             if (member.role === "admin" && member.isActive && nextRole !== "admin") {
                 const administrators = await database.query("SELECT COUNT(*)::int AS count FROM depannhome_users WHERE account_owner_id=$1 AND role='admin' AND is_active=TRUE AND id<>$2", [ownerId, memberId]);
-                if (!administrators.rows[0]?.count) { await database.query("ROLLBACK"); return response.status(409).json({ message: "Cette opération est refusée : chaque entreprise doit conserver au moins un Administrateur administratif actif." }); }
+                if (!administrators.rows[0]?.count) { await database.query("ROLLBACK"); return response.status(409).json({ message: "Cette opération est refusée : chaque entreprise doit conserver au moins un Poste Admin actif." }); }
             }
             if (member.isActive && memberSeatFamily(member.role) !== memberSeatFamily(nextRole)) {
                 failedStep = "contrôle du quota de postes";
@@ -825,7 +825,7 @@ export async function authenticateRequest(request, response, next) {
 export function requireAuthentication(request, response, next) {
     if (!request.user) {
         if (request.sessionWindowReplaced) response.set("X-DepannHome-Session-Replaced", "true");
-        return response.status(401).json({ message: request.sessionWindowReplaced ? "Cette session Administrateur administratif a été remplacée par une connexion plus récente." : "Connexion requise.", sessionReplaced: Boolean(request.sessionWindowReplaced) });
+        return response.status(401).json({ message: request.sessionWindowReplaced ? "Cette session Poste Admin a été remplacée par une connexion plus récente." : "Connexion requise.", sessionReplaced: Boolean(request.sessionWindowReplaced) });
     }
 
     return next();
@@ -868,7 +868,7 @@ async function ensureActiveAdministratorRemains(ownerId, targetId) {
         WHERE account_owner_id = $1
     `, [ownerId, targetId]);
     if (!rows[0]?.remainingAdministrators) {
-        throw clientError(409, "Cette opération est refusée : chaque entreprise doit conserver au moins un Administrateur administratif actif.");
+        throw clientError(409, "Cette opération est refusée : chaque entreprise doit conserver au moins un Poste Admin actif.");
     }
 }
 
@@ -993,7 +993,7 @@ async function completeLogin(user, device, response, request) {
             authDevice = await createAuthDevice(user.id, authDeviceDetails, "approval_pending");
         }
         if (!authDevice) {
-            return response.status(409).json({ message: isMobileAdministrator ? `Un téléphone ou une tablette est déjà associé à ce compte ${isDedicatedMobileAdministrator ? "Administrateur Mobile" : "administrateur"}. Supprimez d’abord l’ancien appareil dans Équipe.` : "Cet appareil est déjà associé à un autre compte. Utilisez un autre navigateur ou contactez l’administrateur." });
+            return response.status(409).json({ message: isMobileAdministrator ? `Un téléphone ou une tablette est déjà associé à ce ${isDedicatedMobileAdministrator ? "Poste Admin Mobile" : "compte administrateur"}. Supprimez d’abord l’ancien appareil dans Équipe.` : "Cet appareil est déjà associé à un autre compte. Utilisez un autre navigateur ou contactez l’administrateur." });
         }
     } else {
         if (isMobileAdministrator && authDevice.device_type !== "mobile" && await userHasActiveMobileDevice(user.id)) {
@@ -1219,7 +1219,7 @@ async function issueAdministratorPcSession(userId, deviceId, clientSessionId = "
         WHERE id = $1 AND user_id = $2 AND device_type = 'desktop' AND status = 'approved'
         RETURNING session_id
     `, [deviceId, userId, sessionId]);
-    if (!rows[0]?.session_id) throw new Error("Session Administrateur administratif introuvable.");
+    if (!rows[0]?.session_id) throw new Error("Session Poste Admin introuvable.");
     return rows[0].session_id;
 }
 

@@ -645,7 +645,7 @@ function renderAccountForm() {
         button.disabled = false;
         if (!result.ok) return showFeedback(result.message || "Création impossible.", true);
         selectedAccountId = result.data.id;
-        showFeedback("Organisation et Administrateur administratif créés.");
+        showFeedback("Organisation et Poste Admin créés.");
         await loadAccounts(selectedAccountId);
     });
 }
@@ -800,9 +800,9 @@ function bindSubscriptionTier(form) {
     const mobileSeats = form.elements.maxTechnicians;
     const summary = form.querySelector("[data-tier-summary]");
     const tiers = {
-        basic: { label: "Basic", pc: 20, mobile: 5, access: "Postes administratifs et Administrateur Mobile · bibliothèque mobile · achats sur tous les postes administratifs et l’Administrateur Mobile." },
-        basic_plus: { label: "Basic+", pc: 35, mobile: 8, access: "Tous postes · planning · imports de données · missions, messagerie et dossiers du Réseau Depann’Home Pro interne · bibliothèque mobile · achats sur tous les postes administratifs et l’Administrateur Mobile · sans connexions API externes." },
-        pro: { label: "Pro", pc: 70, mobile: 15, access: "Tous postes · accès complet · bibliothèque mobile · achats sur tous les postes administratifs et l’Administrateur Mobile." }
+        basic: { label: "Basic", pc: 20, mobile: 5, access: "Postes administratifs et Poste Admin Mobile · bibliothèque mobile · achats sur tous les postes administratifs et le Poste Admin Mobile." },
+        basic_plus: { label: "Basic+", pc: 35, mobile: 8, access: "Tous postes · planning · imports de données · missions, messagerie et dossiers du Réseau Depann’Home Pro interne · bibliothèque mobile · achats sur tous les postes administratifs et le Poste Admin Mobile · sans connexions API externes." },
+        pro: { label: "Pro", pc: 70, mobile: 15, access: "Tous postes · accès complet · bibliothèque mobile · achats sur tous les postes administratifs et le Poste Admin Mobile." }
     };
     const update = () => {
         const selected = tiers[tier.value] || tiers.basic;
@@ -1218,13 +1218,13 @@ function bindMemberRoleForm(form, editing, initialRole) {
 
 function creatorMemberRoleOptions(tier, selectedRole) {
     const roles = tier === "basic"
-        ? ["admin", "pc_standard", "accountant", "mobile_admin"]
-        : ["admin", "pc_standard", "accountant", "mobile_admin", "team_lead", "technician"];
+        ? ["admin", "pc_standard", "mobile_admin"]
+        : ["admin", "pc_standard", "mobile_admin", "team_lead", "technician"];
     return roles.map(role => `<option value="${role}" ${role === selectedRole ? "selected" : ""}>${escapeHtml(creatorMemberRoleLabel(role))}</option>`).join("");
 }
 
 function creatorMemberRoleLabel(role) {
-    return ({ admin: "Administrateur administratif", pc_standard: "Poste administratif standard", accountant: "Comptable administratif", mobile_admin: "Administrateur Mobile", team_lead: "Chef d’équipe mobile", technician: "Technicien mobile" })[role] || "Accès";
+    return ({ admin: "Poste Admin", pc_standard: "Poste administratif", accountant: "Poste administratif", mobile_admin: "Poste Admin Mobile", team_lead: "Chef d’équipe", technician: "Technicien" })[role] || "Accès";
 }
 
 function showFeedback(message, isError = false) {

@@ -1,9 +1,9 @@
 import { ROUTES } from "./config.js?v=106";
-import { createBillingDocumentForClient, viewBillingDocument } from "./billing.js?v=187";
+import { createBillingDocumentForClient, viewBillingDocument } from "./billing.js?v=188";
 import { getSearchableClients } from "./clients.js?v=153";
 import { addClientActivityByName, synchronizeClients } from "./client-sync.js?v=125";
 import { renderClientMessages } from "./messages.js?v=107";
-import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=33";
+import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=34";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { renderPlatformAnnouncement } from "./platform-announcement.js?v=1";
@@ -1435,7 +1435,7 @@ function usesTerrainInterventionView(event) {
 }
 
 function roleLabel(role) {
-    return ({ admin: "Administrateur", pc_standard: "Poste administratif", mobile_admin: "Admin mobile", team_lead: "Responsable", technician: "Technicien", accountant: "Comptabilité" })[String(role || "")] || "Membre";
+    return ({ admin: "Poste Admin", pc_standard: "Poste administratif", mobile_admin: "Poste Admin Mobile", team_lead: "Chef d’équipe", technician: "Technicien", accountant: "Poste administratif" })[String(role || "")] || "Membre";
 }
 
 function documentStatusLabel(value) { return ({ draft: "Brouillon", sent: "Envoyé", validated: "Validé", paid: "Réglé", issued: "Émis", cancelled: "Annulé", accepted: "Accepté", rejected: "Refusé", pending: "En attente" })[String(value || "").toLowerCase()] || "Non renseigné"; }

@@ -68,10 +68,10 @@ test("le chef d’équipe reste visible et dispose d’une vue globale du planni
     const client = read("js/calendar.js");
     assert.match(calendar, /\$4 NOT IN \('technician', 'accountant'\)/);
     assert.match(client, /groupTechniciansByDepartment\(members\)/);
-    assert.match(client, /team_lead: "Responsable"/);
+        assert.match(client, /team_lead: "Chef d’équipe"/);
 });
 
-test("même un Administrateur mobile ne reçoit jamais le contexte multi-entreprises", () => {
+test("même un Poste Admin Mobile ne reçoit jamais le contexte multi-entreprises", () => {
     const auth = read("server/auth.js");
     const permissions = read("server/workstation-permissions.js");
     assert.match(auth, /device\.device_type === "desktop" \? await resolveGroupCompany/);

@@ -1,16 +1,16 @@
 import { ROUTES, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=131";
-import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=181";
-import { openCreatorPartnerRequest, openCreatorRequestNotification, renderCreatorConsole } from "./creator.js?v=152";
-import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=187";
+import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=182";
+import { openCreatorPartnerRequest, openCreatorRequestNotification, renderCreatorConsole } from "./creator.js?v=153";
+import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=188";
 import { renderAccounting, renderElectronicInvoicingConfiguration } from "./accounting.js?v=18";
 import { renderPurchases } from "./purchases.js?v=119";
 import { renderGroupActivation, renderGroupWorkspace } from "./groups.js?v=4";
-import { renderPartnerMissions } from "./partner-missions.js?v=57";
+import { renderPartnerMissions } from "./partner-missions.js?v=58";
 import { renderPartnerSandbox } from "./partner-sandbox.js?v=3";
 import { renderPartnerConnections } from "./partner-connections.js?v=25";
-import { renderCompanyEmailWorkspace, renderPartnerEmailSettings } from "./partner-email-settings.js?v=19";
+import { renderCompanyEmailWorkspace, renderPartnerEmailSettings } from "./partner-email-settings.js?v=20";
 import { renderDataImportTool } from "./data-imports.js?v=4";
-import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=33";
+import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=34";
 import { getFirstUnreadClientId, refreshClientMessageAlert, refreshVisibleClientMessages } from "./messages.js?v=107";
 import { getSearchableClients, renderClients } from "./clients.js?v=153";
 import { synchronizeClients } from "./client-sync.js?v=125";
@@ -1453,9 +1453,9 @@ function renderSettingsWorkspace(options = {}) {
 
 async function renderSubscriptionSettings(container) {
     const tiers = [
-        { id: "basic", label: "Basic", pc: 20, mobile: 5, description: "Postes administratifs et Administrateur Mobile. Clients, facturation, comptabilité et PDP. Bibliothèque sur mobile ; Achats sur tous les postes administratifs et l’Administrateur Mobile." },
-        { id: "basic_plus", label: "Basic+", pc: 35, mobile: 8, description: "Tous postes administratifs et mobiles. Basic avec planning, imports de données, missions, messagerie et dossiers du Réseau Depann’Home Pro interne. Bibliothèque sur mobile ; Achats sur tous les postes administratifs et l’Administrateur Mobile. Sans connecteurs ni connexions API externes." },
-        { id: "pro", label: "Pro", pc: 70, mobile: 15, description: "Tous postes et accès complet. Bibliothèque sur mobile ; Achats sur tous les postes administratifs et l’Administrateur Mobile ; Quitus, rapports, Réseau, API et imports. Licences Groupe d’entreprise / Multi-entreprises incluses sans supplément de licence." }
+        { id: "basic", label: "Basic", pc: 20, mobile: 5, description: "Postes administratifs et Poste Admin Mobile. Clients, facturation, comptabilité et PDP. Bibliothèque sur mobile ; Achats sur tous les postes administratifs et le Poste Admin Mobile." },
+        { id: "basic_plus", label: "Basic+", pc: 35, mobile: 8, description: "Tous postes administratifs et mobiles. Basic avec planning, imports de données, missions, messagerie et dossiers du Réseau Depann’Home Pro interne. Bibliothèque sur mobile ; Achats sur tous les postes administratifs et le Poste Admin Mobile. Sans connecteurs ni connexions API externes." },
+        { id: "pro", label: "Pro", pc: 70, mobile: 15, description: "Tous postes et accès complet. Bibliothèque sur mobile ; Achats sur tous les postes administratifs et le Poste Admin Mobile ; Quitus, rapports, Réseau, API et imports. Licences Groupe d’entreprise / Multi-entreprises incluses sans supplément de licence." }
     ];
     const rank = { basic: 0, basic_plus: 1, pro: 2 };
     const result = await fetch("/api/subscription-change-requests", { credentials: "same-origin" });
@@ -1496,7 +1496,7 @@ async function renderSubscriptionSettings(container) {
     const section = document.createElement("section");
     section.className = "creator-form subscription-company-panel";
     section.innerHTML = `<div class="form-heading"><div><p class="eyebrow">Offre actuelle : ${escapeHtml(currentOffer.label)}</p><h2>Offres Depann’Home Pro</h2></div></div><div class="creator-subscription-summary"><article><span>Postes administratifs autorisés</span><strong>${currentPcSeats}</strong></article><article><span>Postes mobiles autorisés</span><strong>${currentMobileSeats}</strong></article><article><span>Tarif total actuel</span><strong>${(totalCents / 100).toLocaleString("fr-FR", { style: "currency", currency: "EUR" })} TTC / mois</strong></article></div><p class="muted">Les tarifs mensuels sont calculés par poste. Une demande n’altère aucune donnée et ne change pas automatiquement votre offre : elle est transmise au Support pour étude.</p><div class="subscription-offers-grid">${tiers.map(tier => `<article class="subscription-offer-card${tier.id === currentTier ? " active" : ""}"><header><strong>${tier.label}</strong>${tier.id === currentTier ? '<span class="creator-state">Offre actuelle</span>' : ""}</header><p class="subscription-offer-price"><b>${tier.pc} € TTC</b> / poste administratif / mois<br><b>${tier.mobile} € TTC</b> / poste mobile / mois</p><p>${tier.description}</p>${tier.id === currentTier ? "" : `<button type="button" class="secondary-button" data-request-tier="${tier.id}">Demander ${rank[tier.id] > rank[currentTier] ? "l’évolution" : "la rétrogradation"}</button>`}</article>`).join("")}</div><form data-seat-request class="creator-subscription-fields subscription-seat-request"><h3>Demander des postes supplémentaires</h3><div class="form-grid"><label>Postes administratifs souhaités<input name="requestedPcSeats" type="number" min="${currentPcSeats}" max="100" value="${currentPcSeats}" required></label><label>Postes mobiles souhaités<input name="requestedMobileSeats" type="number" min="${currentMobileSeats}" max="500" value="${currentMobileSeats}" required></label></div><button class="secondary-button">Transmettre la demande au Support</button></form><label class="form-wide subscription-support-message">Message facultatif au Support<textarea rows="4" maxlength="1000" data-subscription-request-message placeholder="Précisez votre besoin ou la date souhaitée."></textarea></label><p class="auth-message" data-subscription-request-feedback aria-live="polite"></p><section class="subscription-request-history"><h3>Demandes envoyées</h3><div class="creator-network-list">${requests.length ? requests.map(item => `<article class="creator-network-company"><div><strong>${escapeHtml(tiers.find(tier => tier.id === item.requestedTier)?.label || item.requestedTier)}</strong><p>${escapeHtml(subscriptionRequestStatusLabel(item.status))}${item.requestedPcSeats != null ? ` · ${item.requestedPcSeats} poste(s) administratif(s) / ${item.requestedMobileSeats} mobile(s)` : ""}</p><small>${escapeHtml(formatSubscriptionRequestDate(item.createdAt))}</small></div></article>`).join("") : '<p class="muted">Aucune demande envoyée.</p>'}</div></section>`;
-    section.querySelector(".subscription-offers-grid")?.insertAdjacentHTML("afterend", '<article class="settings-info-card"><h3>Licence Partenaire gratuite</h3><p>Le Portail Partenaire est distinct de l’abonnement Pro payant : aucun abonnement mensuel, aucune échéance et aucune facture. Son niveau technique Pro inclut un poste Administrateur administratif, aucun poste mobile, ainsi que les espaces Clients et Missions partenaires avec leur messagerie contextuelle.</p></article>');
+    section.querySelector(".subscription-offers-grid")?.insertAdjacentHTML("afterend", '<article class="settings-info-card"><h3>Licence Partenaire gratuite</h3><p>Le Portail Partenaire est distinct de l’abonnement Pro payant : aucun abonnement mensuel, aucune échéance et aucune facture. Son niveau technique Pro inclut un Poste Admin, aucun poste mobile, ainsi que les espaces Clients et Missions partenaires avec leur messagerie contextuelle.</p></article>');
     const billingPanel = document.createElement("section");
     billingPanel.className = "subscription-billing-panel";
     billingPanel.innerHTML = `
@@ -1640,12 +1640,12 @@ async function renderCompanyTwoFactorSecurity(container) {
         if (!response.ok) throw new Error(data.message || "Impossible de charger les paramètres de sécurité.");
         const administrators = data.administrators || [];
         const administratorRows = data.enabled
-            ? `<section class="team-section"><div class="team-section-heading"><div><p class="eyebrow">Comptes concernés</p><h3>Administrateurs administratifs</h3></div></div><p class="muted">Chaque administrateur configure sa propre application lors de sa prochaine connexion. Une réinitialisation entraîne la génération d’un nouveau QR code à la connexion suivante.</p><div class="team-list">${administrators.map(administrator => `<div class="team-member"><div class="team-member-summary"><div class="team-member-title"><strong>${escapeHtml(administrator.fullName || administrator.username)}</strong><span class="team-state-badge ${administrator.configured ? "is-active" : "is-pending"}">${administrator.configured ? "Application associée" : "Configuration requise"}</span></div><span class="team-member-meta">${escapeHtml(administrator.username)}</span></div><div class="team-member-actions">${administrator.configured ? `<button type="button" class="secondary-button" data-company-2fa-reset="${escapeHtml(administrator.id)}">Réinitialiser le 2FA</button>` : ""}</div></div>`).join("") || '<p class="muted">Aucun Administrateur administratif actif n’est disponible.</p>'}</div></section>`
+            ? `<section class="team-section"><div class="team-section-heading"><div><p class="eyebrow">Comptes concernés</p><h3>Postes Admin</h3></div></div><p class="muted">Chaque administrateur configure sa propre application lors de sa prochaine connexion. Une réinitialisation entraîne la génération d’un nouveau QR code à la connexion suivante.</p><div class="team-list">${administrators.map(administrator => `<div class="team-member"><div class="team-member-summary"><div class="team-member-title"><strong>${escapeHtml(administrator.fullName || administrator.username)}</strong><span class="team-state-badge ${administrator.configured ? "is-active" : "is-pending"}">${administrator.configured ? "Application associée" : "Configuration requise"}</span></div><span class="team-member-meta">${escapeHtml(administrator.username)}</span></div><div class="team-member-actions">${administrator.configured ? `<button type="button" class="secondary-button" data-company-2fa-reset="${escapeHtml(administrator.id)}">Réinitialiser le 2FA</button>` : ""}</div></div>`).join("") || '<p class="muted">Aucun Poste Admin actif n’est disponible.</p>'}</div></section>`
             : "";
         card.innerHTML = `
             <div class="settings-heading"><div><p class="eyebrow">Sécurité</p><h2>Double authentification (2FA)</h2><p class="muted">Activez une protection supplémentaire pour les comptes Administrateur de votre entreprise en demandant un code de validation lors de chaque connexion.</p></div><span class="team-state-badge ${data.enabled ? "is-active" : "is-inactive"}">${data.enabled ? "Activée" : "Désactivée"}</span></div>
             <form class="settings-form company-two-factor-form">
-                <label class="settings-toggle"><input name="enabled" type="checkbox" ${data.enabled ? "checked" : ""}>Activer la double authentification pour les comptes Administrateur.<span>Les Administrateurs Mobile, postes administratifs standard, techniciens et chefs d’équipe ne sont pas concernés.</span></label>
+                <label class="settings-toggle"><input name="enabled" type="checkbox" ${data.enabled ? "checked" : ""}>Activer la double authentification pour les Postes Admin.<span>Les Postes Admin Mobile, Postes administratifs, Techniciens et Chefs d’équipe ne sont pas concernés.</span></label>
                 <p class="muted">Compatible avec Google Authenticator, Microsoft Authenticator, Authy et toute application TOTP. Les codes ne sont jamais enregistrés.</p>
                 <div class="settings-actions"><button type="submit" class="secondary-button">Enregistrer la sécurité</button></div>
                 <p class="auth-message" aria-live="polite"></p>
@@ -1656,7 +1656,7 @@ async function renderCompanyTwoFactorSecurity(container) {
         form.addEventListener("submit", async event => {
             event.preventDefault();
             const enabled = form.elements.enabled.checked;
-            if (!enabled && data.enabled && !confirm("Désactiver la double authentification pour tous les Administrateurs administratifs ? Les associations actuelles seront supprimées.")) return;
+            if (!enabled && data.enabled && !confirm("Désactiver la double authentification pour tous les Postes Admin ? Les associations actuelles seront supprimées.")) return;
             const button = form.querySelector('button[type="submit"]');
             const feedback = form.querySelector(".auth-message");
             button.disabled = true;
@@ -1790,8 +1790,8 @@ async function renderTeamManagement(container) {
     roleInput.name = "role";
     const tier = document.body.dataset.subscriptionTier || "pro";
     const roleOptions = tier === "basic"
-        ? [["pc_standard", "Poste administratif standard"], ["admin", "Administrateur administratif"], ["mobile_admin", "Administrateur Mobile"]]
-        : [["technician", "Technicien"], ["team_lead", "Technicien référent / Chef d’équipe"], ["pc_standard", "Poste administratif standard"], ["accountant", "Comptable administratif"], ["admin", "Administrateur administratif"], ["mobile_admin", "Administrateur Mobile"]];
+        ? [["admin", "Poste Admin"], ["mobile_admin", "Poste Admin Mobile"], ["pc_standard", "Poste administratif"]]
+        : [["admin", "Poste Admin"], ["mobile_admin", "Poste Admin Mobile"], ["pc_standard", "Poste administratif"], ["technician", "Technicien"], ["team_lead", "Chef d’équipe"]];
     roleInput.innerHTML = roleOptions.map(([value, label]) => `<option value="${value}">${label}</option>`).join("");
     roleField.appendChild(roleInput);
     formFields.appendChild(roleField);
@@ -1846,19 +1846,19 @@ async function renderTeamManagement(container) {
     const updateRoleFields = () => {
         const isTechnician = ["technician", "team_lead"].includes(roleInput.value);
         const isMobileAdmin = roleInput.value === "mobile_admin";
-        const isConfigurablePc = ["pc_standard", "accountant"].includes(roleInput.value);
+        const isConfigurablePc = roleInput.value === "pc_standard";
         const isAdministratorPc = roleInput.value === "admin";
         form.elements.phone.required = isTechnician || isMobileAdmin;
         form.elements.email.required = isTechnician || isMobileAdmin;
         departmentsField.hidden = !isTechnician;
         departmentsField.querySelectorAll("input").forEach(input => { input.disabled = !isTechnician; });
-        submit.textContent = isTechnician ? (roleInput.value === "team_lead" ? "Créer le chef d’équipe" : "Créer le technicien") : isMobileAdmin ? "Créer l’Administrateur Mobile" : isAdministratorPc ? "Créer l’Administrateur administratif" : roleInput.value === "accountant" ? "Créer le Comptable administratif" : "Créer le poste administratif standard";
+        submit.textContent = isTechnician ? (roleInput.value === "team_lead" ? "Créer le chef d’équipe" : "Créer le technicien") : isMobileAdmin ? "Créer le Poste Admin Mobile" : isAdministratorPc ? "Créer le Poste Admin" : "Créer le poste administratif";
         roleField.dataset.role = roleInput.value;
         permissionsField.hidden = !advancedPcPermissions || (!isConfigurablePc && !isAdministratorPc);
         permissionsField.querySelectorAll("input").forEach(input => { input.disabled = !isConfigurablePc; });
         permissionsField.querySelectorAll(".settings-toggle").forEach(label => { label.hidden = isAdministratorPc; });
         permissionsField.querySelector("[data-pc-permission-help]").textContent = isAdministratorPc
-            ? "L’Administrateur administratif dispose automatiquement de tous les accès, sans restriction."
+            ? "Le Poste Admin dispose automatiquement de tous les accès, sans restriction."
             : "Choisissez uniquement les espaces nécessaires à ce poste. Ces droits sont contrôlés côté serveur.";
         mobileBillingPermissionField.hidden = roleInput.value !== "technician";
         form.elements.canCreateBilling.disabled = roleInput.value !== "technician";
@@ -1949,7 +1949,7 @@ async function renderTeamManagement(container) {
             (payload.members || []).forEach(member => {
                 const item = document.createElement("div");
                 item.className = "team-member";
-                const memberType = member.role === "admin" ? "Administrateur administratif" : member.role === "pc_standard" ? "Poste administratif standard" : member.role === "mobile_admin" ? "Administrateur Mobile" : member.role === "team_lead" ? "Technicien référent / Chef d’équipe" : member.role === "accountant" ? "Comptable administratif" : "Technicien";
+                const memberType = member.role === "admin" ? "Poste Admin" : ["pc_standard", "accountant"].includes(member.role) ? "Poste administratif" : member.role === "mobile_admin" ? "Poste Admin Mobile" : member.role === "team_lead" ? "Chef d’équipe" : "Technicien";
                 const permissionSummary = member.role === "admin"
                     ? " · Tous les accès"
                     : ["pc_standard", "accountant"].includes(member.role) && advancedPcPermissions
@@ -1974,8 +1974,8 @@ async function renderTeamManagement(container) {
                 });
                 const changeRole = createButton("Changer le rôle", "secondary-button", async () => {
                     const availableRoles = tier === "basic"
-                        ? [["admin", "Administrateur administratif"], ["pc_standard", "Poste administratif standard"], ["accountant", "Comptable administratif"], ["mobile_admin", "Administrateur Mobile"]]
-                        : [["admin", "Administrateur administratif"], ["pc_standard", "Poste administratif standard"], ["accountant", "Comptable administratif"], ["mobile_admin", "Administrateur Mobile"], ["team_lead", "Technicien référent / Chef d’équipe"], ["technician", "Technicien"]];
+                        ? [["admin", "Poste Admin"], ["mobile_admin", "Poste Admin Mobile"], ["pc_standard", "Poste administratif"]]
+                        : [["admin", "Poste Admin"], ["mobile_admin", "Poste Admin Mobile"], ["pc_standard", "Poste administratif"], ["technician", "Technicien"], ["team_lead", "Chef d’équipe"]];
                     const nextRole = await chooseMemberRole(member, availableRoles);
                     if (!nextRole || nextRole === member.role) return;
                     changeRole.disabled = true;
@@ -2025,7 +2025,7 @@ async function renderTeamManagement(container) {
             const devicePayload = await deviceResponse.json();
             if (!deviceResponse.ok) throw new Error(devicePayload.message || "Impossible de charger les appareils.");
             const pcSeats = devicePayload.pcSeats || { maxPcUsers: Number(document.body.dataset.maxPcUsers || 1), activePcUsers: 0, maxMobileUsers: Number(document.body.dataset.maxMobileUsers || 0), activeMobileUsers: 0 };
-            devices.innerHTML = `<div class="team-section-heading"><div><p class="eyebrow">Sécurité des connexions</p><h3>Appareils et postes</h3></div><div class="creator-form-actions"><span class="team-seat-badge">${escapeHtml(pcSeats.activePcUsers)} / ${escapeHtml(pcSeats.maxPcUsers)} postes administratifs</span><span class="team-seat-badge">${escapeHtml(pcSeats.activeMobileUsers)} / ${escapeHtml(pcSeats.maxMobileUsers)} postes mobiles</span></div></div><p class="muted team-section-description">Chaque téléphone ou tablette d’un Administrateur consomme un poste mobile, sans consommer de poste administratif. Les comptes Administrateur Mobile, Chef d’équipe et Technicien consomment également chacun un poste mobile.</p>`;
+            devices.innerHTML = `<div class="team-section-heading"><div><p class="eyebrow">Sécurité des connexions</p><h3>Appareils et postes</h3></div><div class="creator-form-actions"><span class="team-seat-badge">${escapeHtml(pcSeats.activePcUsers)} / ${escapeHtml(pcSeats.maxPcUsers)} postes administratifs</span><span class="team-seat-badge">${escapeHtml(pcSeats.activeMobileUsers)} / ${escapeHtml(pcSeats.maxMobileUsers)} postes mobiles</span></div></div><p class="muted team-section-description">Chaque téléphone ou tablette d’un Poste Admin consomme un poste mobile, sans consommer de poste administratif. Les Postes Admin Mobile, Chefs d’équipe et Techniciens consomment également chacun un poste mobile.</p>`;
             const managedDevices = devicePayload.devices || [];
             if (!managedDevices.length) devices.insertAdjacentHTML("beforeend", "<p class=\"muted\">Aucun appareil enregistré.</p>");
             managedDevices.forEach(device => {
@@ -2036,8 +2036,8 @@ async function renderTeamManagement(container) {
                 const item = document.createElement("div");
                 item.className = "team-member";
                 const deviceTypeLabel = isPc
-                    ? device.userRole === "admin" ? "Poste administrateur administratif" : device.userRole === "accountant" ? "Poste comptable administratif" : "Poste administratif standard"
-                    : isMobile && ["admin", "mobile_admin"].includes(device.userRole) ? "Administrateur Mobile"
+                    ? device.userRole === "admin" ? "Poste Admin" : "Poste administratif"
+                    : isMobile && ["admin", "mobile_admin"].includes(device.userRole) ? "Poste Admin Mobile"
                         : isMobile && device.userRole === "team_lead" ? "Chef d’équipe mobile"
                             : isMobile && device.userRole === "technician" ? "Technicien mobile"
                                 : isMobile ? "Appareil mobile" : "Appareil non conforme";
@@ -2106,7 +2106,7 @@ async function renderTeamManagement(container) {
             if (!response.ok) throw new Error(payload.message || "Création impossible.");
             form.reset();
             updateRoleFields();
-            feedback.textContent = values.role === "admin" ? "Poste administratif créé. Sa première connexion devra être activée dans la liste des appareils." : values.role === "mobile_admin" ? "Administrateur Mobile créé. À sa première connexion smartphone, autorisez l’appareil puis envoyez le code e-mail." : "Compte technicien créé.";
+            feedback.textContent = values.role === "admin" ? "Poste Admin créé. Sa première connexion devra être activée dans la liste des appareils." : values.role === "mobile_admin" ? "Poste Admin Mobile créé. À sa première connexion smartphone, autorisez l’appareil puis envoyez le code e-mail." : values.role === "pc_standard" ? "Poste administratif créé." : values.role === "team_lead" ? "Chef d’équipe créé." : "Technicien créé.";
             await load();
         } catch (error) { feedback.textContent = error.message; }
         finally { submit.disabled = false; }

@@ -28,10 +28,10 @@ test("les rôles dédiés restent dans leur famille de poste", () => {
 test("l’en-tête affiche le poste actif et jamais un Poste administratif codé en dur", () => {
     assert.match(index, /id="workstationLabel">Poste<\/span>/);
     assert.doesNotMatch(index, />Poste administratif ·/);
-    assert.match(appClient, /Administrateur Mobile/);
+    assert.match(appClient, /Poste Admin Mobile/);
     assert.match(appClient, /Chef d’équipe mobile/);
     assert.match(appClient, /Technicien mobile/);
-    assert.match(appClient, /Administrateur administratif/);
+    assert.match(appClient, /Poste Admin/);
 });
 
 test("les compteurs et la liste distinguent les utilisateurs administratifs des appareils mobiles", () => {

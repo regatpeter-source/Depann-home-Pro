@@ -19,7 +19,7 @@ Le partenaire fictif ne fait pas partie du Réseau Depann’Home Pro interne. Il
 2. Choisir l’organisation destinataire puis **Provisionner automatiquement**.
 3. Ouvrir le banc de test. La console affiche l’endpoint, la clé de test et le webhook. Ces informations sont réservées au Créateur.
 4. Conserver **Succès normal**, puis cliquer sur **Envoyer une mission test**.
-5. Sur le poste de l’entreprise destinataire, se connecter avec un Administrateur, Poste administratif standard ou Administrateur Mobile, ouvrir **Missions partenaires**, puis cliquer sur **🧪 API Sandbox**. Vérifier la mission `DHTS-*` dans cette boîte de réception séparée. Le même envoi répété avec le scénario `duplicate` conserve une seule mission.
+5. Sur le poste de l’entreprise destinataire, se connecter avec un Poste Admin, Poste administratif ou Poste Admin Mobile, ouvrir **Missions partenaires**, puis cliquer sur **🧪 API Sandbox**. Vérifier la mission `DHTS-*` dans cette boîte de réception séparée. Le même envoi répété avec le scénario `duplicate` conserve une seule mission.
 6. Cliquer successivement sur **Accepter**, **En cours** et **Terminer**. Chaque action écrit l’historique et déclenche un callback HTTP réel.
 7. Contrôler le journal API expurgé.
 8. Utiliser **Réinitialiser** pour supprimer uniquement les artefacts de cette Sandbox.

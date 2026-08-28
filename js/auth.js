@@ -13,7 +13,7 @@ export async function initializeAuthentication({ onAuthenticated }) {
         onAuthenticated,
         registrationEnabled: Boolean(session.data?.registrationEnabled),
         message: session.data?.sessionReplaced
-            ? "Cette session Administrateur administratif a été fermée car une connexion plus récente a été ouverte."
+            ? "Cette session Poste Admin a été fermée car une connexion plus récente a été ouverte."
             : session.data?.deviceIdentityChanged
                 ? "Le type de cet appareil a changé. Reconnectez-vous pour activer l’interface adaptée sans modifier silencieusement vos postes."
             : session.networkError ? "Impossible de joindre le serveur." : ""

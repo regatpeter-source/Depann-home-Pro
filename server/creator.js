@@ -12,7 +12,7 @@ import { decryptElectronicInvoicingCredentials, encryptElectronicInvoicingCreden
 const USERNAME_PATTERN = /^[a-z0-9._-]{3,32}$/;
 const MIN_PASSWORD_LENGTH = 12;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const MEMBER_ROLES = new Set(["admin", "pc_standard", "accountant", "mobile_admin", "team_lead", "technician"]);
+const CREATABLE_MEMBER_ROLES = new Set(["admin", "pc_standard", "mobile_admin", "team_lead", "technician"]);
 const SUBSCRIPTION_STATUSES = new Set(["active", "trial", "past_due", "suspended", "cancelled"]);
 const SUBSCRIPTION_REQUEST_STATUSES = new Set(["new", "under_review", "accepted", "refused", "cancelled"]);
 const QUOTE_TEMPLATE_POLICIES = new Set(["integrated_only", "company_choice", "external_only"]);
@@ -511,7 +511,7 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
 
     app.post("/api/creator/accounts/:accountId/members", requireCreator, asyncHandler(async (request, response) => {
         const accountId = positiveId(request.params.accountId);
-        const role = MEMBER_ROLES.has(request.body?.role) ? request.body.role : "";
+        const role = CREATABLE_MEMBER_ROLES.has(request.body?.role) ? request.body.role : "";
         const profile = sanitizeMemberProfile(request.body, role);
         const credentials = sanitizeCredentials(request.body);
         const database = getPool();

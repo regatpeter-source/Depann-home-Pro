@@ -22,7 +22,7 @@ test("le serveur limite et persiste ce droit au rôle technicien", () => {
     assert.match(database, /department = "", departments = \[\], canCreateBilling/);
 });
 
-test("la rétrogradation Administrateur Mobile vers Technicien conserve un appareil mobile cohérent", () => {
+test("la rétrogradation Poste Admin Mobile vers Technicien conserve un appareil mobile cohérent", () => {
     assert.match(database, /account\.role IN \('mobile_admin', 'team_lead', 'technician'\) AND device\.device_type <> 'mobile'/);
     assert.match(database, /account\.role IN \('pc_standard', 'accountant'\) AND device\.device_type <> 'desktop'/);
     assert.match(database, /account\.role IN \('mobile_admin', 'team_lead', 'technician'\)\)\s+AND device\.status <> 'rejected'/);

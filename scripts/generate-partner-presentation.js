@@ -73,7 +73,7 @@ function addHeading(value, level) {
 function addPricingPanel() {
     ensureSpace(245);
     const offers = [
-        { name: "BASIC", pc: "20 € / administratif", mobile: "5 € / mobile", detail: "Poste administratif + Admin Mobile · bibliothèque mobile · achats tous postes administratifs", color: "#2563EB", pale: "#EFF6FF" },
+        { name: "BASIC", pc: "20 € / administratif", mobile: "5 € / mobile", detail: "Poste administratif + Poste Admin Mobile · bibliothèque mobile · achats tous postes administratifs", color: "#2563EB", pale: "#EFF6FF" },
         { name: "BASIC+", pc: "35 € / administratif", mobile: "8 € / mobile", detail: "Planning · e-mail entreprise · missions et dossiers Réseau · sans API externe", color: colors.secondary, pale: colors.paleGreen },
         { name: "PRO", pc: "70 € / administratif", mobile: "15 € / mobile", detail: "Accès complet · licences Groupe d’entreprise incluses sans supplément", color: "#7C3AED", pale: "#F5F3FF" }
     ];

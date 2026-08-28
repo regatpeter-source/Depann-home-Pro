@@ -25,7 +25,7 @@ test("les autorisations configurables sont limitées aux postes administratifs B
     assert.equal(supportsConfigurablePcPermissions("technician"), false);
 });
 
-test("un Administrateur administratif conserve tous les accès sans dépendre des cases", () => {
+test("un Poste Admin conserve tous les accès sans dépendre des cases", () => {
     const basicAdministrator = user("admin", "basic", { deviceType: "desktop", canAccessBilling: false, canAccessAccounting: false, groupId: "7", canSwitchGroupCompanies: false });
     const proAdministrator = user("admin", "pro", { deviceType: "desktop", canAccessBilling: false, canAccessAccounting: false, groupId: "7", canSwitchGroupCompanies: false });
     assert.equal(hasBillingWorkspaceAccess(basicAdministrator), true);
@@ -90,7 +90,23 @@ test("le stockage et l’interface déclarent les trois permissions", () => {
     for (const field of ["canAccessBilling", "canAccessAccounting", "canAccessCompanyEmail", "canSwitchGroupCompanies"]) assert.match(navigation, new RegExp(field));
     assert.match(navigation, /groupCompanyPermissionAvailable = tier === "pro"/);
     assert.match(auth, /organization\.subscriptionTier === "pro"/);
-    assert.match(navigation, /L’Administrateur administratif dispose automatiquement de tous les accès/);
+    assert.match(navigation, /Le Poste Admin dispose automatiquement de tous les accès/);
+});
+
+test("les types de poste proposés excluent le rôle comptable historique", () => {
+    const navigation = read("js/navigation.js");
+    const creator = read("js/creator.js");
+    const auth = read("server/auth.js");
+    const creatorServer = read("server/creator.js");
+    assert.match(navigation, /\["admin", "Poste Admin"\]/);
+    assert.match(navigation, /\["mobile_admin", "Poste Admin Mobile"\]/);
+    assert.match(navigation, /\["pc_standard", "Poste administratif"\]/);
+    assert.match(navigation, /\["technician", "Technicien"\]/);
+    assert.match(navigation, /\["team_lead", "Chef d’équipe"\]/);
+    assert.doesNotMatch(navigation, /\["accountant", "Comptable/);
+    assert.doesNotMatch(creator.slice(creator.indexOf("function creatorMemberRoleOptions"), creator.indexOf("function creatorMemberRoleLabel")), /accountant/);
+    assert.match(auth, /CREATABLE_MEMBER_ROLES = new Set\(\["admin", STANDARD_PC_ROLE, MOBILE_ADMIN_ROLE, TEAM_LEAD_ROLE, "technician"\]\)/);
+    assert.match(creatorServer, /CREATABLE_MEMBER_ROLES = new Set\(\["admin", "pc_standard", "mobile_admin", "team_lead", "technician"\]\)/);
 });
 
 test("l’interface distingue clairement devis et factures de la comptabilité", () => {

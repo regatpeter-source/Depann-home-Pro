@@ -16,9 +16,9 @@ Les rôles de poste mobile (`mobile_admin`, `team_lead`, `technician`) conserven
 
 | Rôle | Navigation visible |
 | --- | --- |
-| `admin` — Administrateur administratif | Toutes les fonctions opérationnelles et administratives compatibles avec les capacités activées, dont les Achats, hors bibliothèque technique : paramètres, comptabilité, groupe, réseau, sandbox, postes et importation de données. |
-| `pc_standard` — Poste administratif standard | Clients, planning, devis/factures, achats, missions partenaires, recherche et historique. Aucun réglage, outil d’administration ou accès à la bibliothèque technique. |
-| `mobile_admin` — Administrateur Mobile | Fonctions opérationnelles mobiles : clients, planning, bibliothèque, achats, devis/factures, recherche et historique. Aucun paramètre ni sécurité d’entreprise. |
+| `admin` — Poste Admin | Toutes les fonctions opérationnelles et administratives compatibles avec les capacités activées, dont les Achats, hors bibliothèque technique : paramètres, comptabilité, groupe, réseau, sandbox, postes et importation de données. |
+| `mobile_admin` — Poste Admin Mobile | Fonctions opérationnelles mobiles : clients, planning, bibliothèque, achats, devis/factures, recherche et historique. Aucun paramètre ni sécurité d’entreprise. |
+| `pc_standard` — Poste administratif | Clients, planning, devis/factures, achats, missions partenaires, recherche et historique. Aucun réglage, outil d’administration ou accès à la bibliothèque technique. |
 | `team_lead` / `technician` | Barre inférieure mobile limitée à **Accueil**. Le planning, la bibliothèque et les rapports restent accessibles depuis les boutons et parcours métier de l’accueil. |
 | `accountant` | Devis/factures et gestion des Achats depuis Facturation ou l’entrée dédiée. |
 
@@ -31,7 +31,7 @@ Les règles d’interface ne remplacent pas les contrôles existants :
 - gestion des utilisateurs, rôles, appareils et audit : `requireAccountAdministrator` ;
 - comptabilité et facturation électronique & PDP : `requireAccountingAdministration` ;
 - partenaires et connecteurs : middlewares d’administration dédiés ;
-- groupe, changement d’entreprise et pilotage multi-entreprises : Administrateur administratif du groupe ;
+- groupe, changement d’entreprise et pilotage multi-entreprises : Poste Admin du groupe ;
 - autres données métier : contrôles de rôle existants et filtrage par `owner_id`.
 
 Un appel direct à une API administrative depuis un poste standard, mobile ou terrain reste donc refusé par le serveur.

@@ -7,7 +7,7 @@ export const SUBSCRIPTION_TIER_CONFIG = Object.freeze({
         label: "Basic",
         pcRateCents: 2000,
         mobileRateCents: 500,
-        description: "Postes administratifs et Administrateur Mobile, bibliothèque mobile et achats sur tous les postes administratifs",
+        description: "Postes administratifs et Poste Admin Mobile, bibliothèque mobile et achats sur tous les postes administratifs",
         allowedRoles: Object.freeze([...PC_ROLES, "mobile_admin"]),
         features: Object.freeze({ clients: true, calendar: false, library: false, billing: true, accounting: true, quitus: false, technicalReports: false, partnerMissions: false, companyEmail: false, partnerConnections: false, messages: true, settings: true, imports: false, groups: false, purchases: true, connectors: false })
     }),
@@ -44,7 +44,7 @@ export function isRoleAllowedForSubscription(tier, role) {
 export function subscriptionRoleAccessMessage(tier, role) {
     if (isRoleAllowedForSubscription(tier, role)) return "";
     return normalizeSubscriptionTier(tier) === "basic"
-        ? "L’offre Basic autorise les postes administratifs et le poste Administrateur Mobile uniquement. Passez à Basic+ pour activer les techniciens et chefs d’équipe mobiles."
+        ? "L’offre Basic autorise les postes administratifs et le Poste Admin Mobile uniquement. Passez à Basic+ pour activer les techniciens et chefs d’équipe mobiles."
         : "Ce type de poste n’est pas inclus dans l’offre de l’entreprise.";
 }
 

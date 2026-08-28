@@ -1,8 +1,8 @@
-import { initializeAuthentication, restoreApplicationShell, signOut } from "./auth.js?v=124";
+import { initializeAuthentication, restoreApplicationShell, signOut } from "./auth.js?v=125";
 import { initializeClientSynchronization } from "./client-sync.js?v=125";
 import { initializeCollaboration } from "./collaboration.js?v=5";
 import { loadDatabase } from "./data.js?v=59";
-import { initializeNavigation, refreshApplication } from "./navigation.js?v=397";
+import { initializeNavigation, refreshApplication } from "./navigation.js?v=398";
 import { renderError } from "./ui.js?v=44";
 import { getSettings } from "./storage.js?v=44";
 import { FONT_OPTIONS } from "./config.js?v=130";
@@ -172,14 +172,13 @@ function showAuthenticatedUser(user) {
 
 function activeWorkstationLabel(role, deviceType) {
     if (deviceType === "mobile") {
-        if (["admin", "mobile_admin"].includes(role)) return "Administrateur Mobile";
+        if (["admin", "mobile_admin"].includes(role)) return "Poste Admin Mobile";
         if (role === "team_lead") return "Chef d’équipe mobile";
         if (role === "technician") return "Technicien mobile";
         return "Poste mobile";
     }
-    if (role === "admin") return "Administrateur administratif";
-    if (role === "pc_standard") return "Poste administratif standard";
-    if (role === "accountant") return "Poste comptable administratif";
+    if (role === "admin") return "Poste Admin";
+    if (["pc_standard", "accountant"].includes(role)) return "Poste administratif";
     return "Poste administratif";
 }
 

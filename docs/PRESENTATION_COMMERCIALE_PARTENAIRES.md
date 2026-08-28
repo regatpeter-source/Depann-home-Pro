@@ -27,7 +27,7 @@ La plateforme s’adresse aux entreprises de dépannage, maintenance, plomberie,
 
 Chaque offre est calculée selon le nombre de postes réellement autorisés dans l’entreprise : postes informatiques pour l’administration et postes mobiles pour les équipes terrain.
 
-Chaque Administrateur Mobile — rôle dédié ou téléphone/tablette approuvé d’un compte Administrateur — consomme un poste mobile inclus dans l’offre, sans consommer de poste administratif supplémentaire.
+Chaque Poste Admin Mobile — rôle dédié ou téléphone/tablette approuvé d’un Poste Admin — consomme un poste mobile inclus dans l’offre, sans consommer de poste administratif supplémentaire.
 
 > **Inclus dans toutes les offres Basic, Basic+ et Pro :** une connexion directe à une plateforme de facturation électronique compatible permet de transmettre les factures depuis Depann’Home Pro, sans double saisie. Depann’Home Pro reste distinct de la plateforme agréée choisie par l’entreprise.
 
@@ -40,9 +40,9 @@ Chaque Administrateur Mobile — rôle dédié ou téléphone/tablette approuvé
 - Tableau de bord Facturation : chiffre d’affaires, encaissements, avoirs et reste à encaisser.
 - Comptabilité et connexion directe incluse à une plateforme de facturation électronique compatible choisie par l’entreprise.
 - Personnalisation des documents et informations de l’entreprise.
-- Accès par postes administratifs et par un poste Administrateur Mobile ; les comptes Technicien et Chef d’équipe nécessitent Basic+.
+- Accès par Poste Admin, Poste administratif et Poste Admin Mobile ; les comptes Technicien et Chef d’équipe nécessitent Basic+.
 - Bibliothèque technique sur les postes mobiles uniquement.
-- Achats sur tous les postes administratifs et sur l’Administrateur Mobile, également accessibles depuis Facturation.
+- Achats sur tous les postes administratifs et sur le Poste Admin Mobile, également accessibles depuis Facturation.
 
 L’offre Basic est adaptée aux petites structures qui souhaitent centraliser leur relation client et leur facturation sans module de planning.
 
@@ -59,10 +59,10 @@ L’offre Basic est adaptée aux petites structures qui souhaitent centraliser l
 - Imports de données Excel et CSV.
 - Réseau Depann’Home Pro interne : annuaire, fiche réseau et connexions entre entreprises utilisatrices.
 - Envoi et réception de missions, messagerie et dossiers partagés entre entreprises connectées du réseau.
-- Espace e-mail de l’entreprise dans le menu principal. Les Administrateurs administratifs et mobiles y accèdent automatiquement ; chaque Poste administratif standard ou Comptable peut être autorisé individuellement.
+- Espace e-mail de l’entreprise dans le menu principal. Les Postes Admin et Postes Admin Mobile y accèdent automatiquement ; chaque Poste administratif peut être autorisé individuellement.
 - Aucun connecteur externe ni connexion API partenaire.
-- Accès à tous les postes mobiles : Administrateur Mobile, Chef d’équipe et Technicien.
-- Bibliothèque technique pour ces postes mobiles ; Achats sur tous les postes administratifs et sur l’Administrateur Mobile.
+- Accès à tous les postes mobiles : Poste Admin Mobile, Chef d’équipe et Technicien.
+- Bibliothèque technique pour ces postes mobiles ; Achats sur tous les postes administratifs et sur le Poste Admin Mobile.
 
 L’offre Basic+ convient aux entreprises qui souhaitent coordonner le bureau, les équipes terrain et leurs partenaires du réseau autour d’un planning et de dossiers communs.
 
@@ -88,7 +88,7 @@ L’offre Pro est destinée aux entreprises qui veulent piloter l’ensemble de 
 
 ### Licence Partenaire gratuite
 
-La licence Portail Partenaire est gratuite : elle ne comporte ni abonnement mensuel, ni échéance, ni facture. Elle utilise le niveau technique Pro pour sécuriser les échanges, mais reste un accès dédié comprenant un poste Administrateur administratif, aucun poste mobile, les espaces Clients et Missions partenaires avec leur messagerie contextuelle, l’import de fiches clients depuis Excel ou CSV, la recherche d’entreprises dans le Réseau Depann’Home Pro et un accès Support. Les imports de devis, factures et rapports ne sont pas inclus. Elle ne donne accès à aucun connecteur ni accès API externe, ces outils étant réservés aux donneurs d’ordre tels que les assurances. Elle permet ainsi à un partenaire de recevoir et suivre les missions qui lui sont confiées sans souscrire une offre Pro payante.
+La licence Portail Partenaire est gratuite : elle ne comporte ni abonnement mensuel, ni échéance, ni facture. Elle utilise le niveau technique Pro pour sécuriser les échanges, mais reste un accès dédié comprenant un Poste Admin, aucun poste mobile, les espaces Clients et Missions partenaires avec leur messagerie contextuelle, l’import de fiches clients depuis Excel ou CSV, la recherche d’entreprises dans le Réseau Depann’Home Pro et un accès Support. Les imports de devis, factures et rapports ne sont pas inclus. Elle ne donne accès à aucun connecteur ni accès API externe, ces outils étant réservés aux donneurs d’ordre tels que les assurances. Elle permet ainsi à un partenaire de recevoir et suivre les missions qui lui sont confiées sans souscrire une offre Pro payante.
 
 ## Exemple de calcul mensuel
 
@@ -320,11 +320,11 @@ Depann’Home Pro n’est pas lui-même une plateforme agréée par l’État : 
 
 Inclus dans les offres Basic+ et Pro, cet espace permet de consulter la messagerie professionnelle directement depuis le menu principal, indépendamment des Paramètres.
 
-- Connexion Microsoft, Google ou IMAP/SMTP configurée par un Administrateur administratif.
+- Connexion Microsoft, Google ou IMAP/SMTP configurée par un Poste Admin.
 - Consultation à la demande des messages et pièces jointes.
 - Messages ordinaires conservés chez le fournisseur, sans copie permanente dans Depann’Home Pro.
-- Accès automatique pour les Administrateurs administratifs et les Administrateurs Mobiles.
-- Accès individuel autorisable par l’administrateur pour chaque Poste administratif standard ou Comptable.
+- Accès automatique pour les Postes Admin et les Postes Admin Mobile.
+- Accès individuel autorisable par le Poste Admin pour chaque Poste administratif.
 - Aucun accès pour les Techniciens et Chefs d’équipe.
 
 La configuration de la connexion reste centralisée dans les Paramètres, tandis que la consultation quotidienne dispose de son propre accès dans le logiciel.
@@ -466,12 +466,11 @@ Le mode Groupe permet de piloter plusieurs sociétés tout en conservant leur cl
 
 Les droits s’adaptent à l’organisation de l’entreprise.
 
-- Administrateur.
-- Poste administratif standard.
-- Administrateur mobile.
+- Poste Admin.
+- Poste Admin Mobile.
+- Poste administratif.
 - Chef d’équipe.
 - Technicien.
-- Comptable.
 
 Chaque rôle dispose d’un périmètre métier spécifique. Les autorisations sont vérifiées côté serveur et ne reposent pas uniquement sur l’affichage de l’interface.
 

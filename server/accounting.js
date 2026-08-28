@@ -449,7 +449,7 @@ function requireAccountingAdministration(request, response, next) {
 
 function requireAccountingWriteAccess(request, response, next) {
     if (request.user?.role !== "accountant") return next();
-    return response.status(403).json({ message: "Le poste comptable est en consultation uniquement." });
+    return response.status(403).json({ message: "Ce poste administratif est en consultation uniquement." });
 }
 
 export async function recordInvoiceSettlement({ ownerId, actorId, input, databasePool = getPool() }) {

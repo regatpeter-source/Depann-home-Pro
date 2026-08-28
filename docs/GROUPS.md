@@ -8,13 +8,13 @@ Une société d’un groupe est un compte entreprise existant ou nouvellement cr
 
 Les tables `depannhome_group_companies` associent les propriétaires de compte indépendants à un groupe. Pour un Administrateur Groupe, le serveur valide à chaque requête la société active, son appartenance au groupe, l’activité du groupe et l’autorisation de l’administrateur. `getAccountOwnerId(request)` renvoie alors exclusivement cette société active. Les endpoints métier existants conservent ainsi leurs filtres `owner_id` usuels.
 
-Les Administrateurs administratifs rattachés à une société Pro du groupe peuvent sélectionner ses entreprises. Avec l’offre Pro, un Poste administratif standard ou un Comptable peut également le faire si l’autorisation **Entreprises du même groupe** lui a été accordée. Cette case n’est jamais proposée en Basic ou Basic+. Les techniciens et les postes sans cette autorisation ne peuvent pas changer de société.
+Les Postes Admin rattachés à une société Pro du groupe peuvent sélectionner ses entreprises. Avec l’offre Pro, un Poste administratif peut également le faire si l’autorisation **Entreprises du même groupe** lui a été accordée. Cette case n’est jamais proposée en Basic ou Basic+. Les techniciens et les postes sans cette autorisation ne peuvent pas changer de société.
 
 Cette autorisation donne uniquement accès au contexte et au sélecteur d’entreprise. Elle ne donne accès ni au tableau de bord consolidé, ni à l’audit, ni à la création ou à l’administration des sociétés du groupe, qui restent réservés à un Administrateur Groupe déclaré dans `depannhome_group_administrators`.
 
 ## Administrateur Groupe
 
-L’activation ajoute l’Administrateur administratif qui active le groupe à `depannhome_group_administrators`. Son rôle applicatif reste `admin` : ce choix préserve les règles existantes de validation d’appareils, de postes administratifs et de gestion d’équipe. Le privilège de groupe est une capacité distincte, déterminée côté serveur par la table d’appartenance.
+L’activation ajoute le Poste Admin qui active le groupe à `depannhome_group_administrators`. Son rôle applicatif reste `admin` : ce choix préserve les règles existantes de validation d’appareils, de postes administratifs et de gestion d’équipe. Le privilège de groupe est une capacité distincte, déterminée côté serveur par la table d’appartenance.
 
 Un Administrateur Groupe peut :
 
