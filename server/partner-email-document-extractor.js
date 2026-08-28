@@ -65,8 +65,8 @@ async function extractText(buffer, mimeType) {
 
 function attachmentBuffer(attachment) {
     if (Buffer.isBuffer(attachment?.buffer)) return attachment.buffer;
-    const match = /^data:[^;]+;base64,([A-Za-z0-9+/=]+)$/.exec(String(attachment?.dataUrl || ""));
-    return match ? Buffer.from(match[1], "base64") : Buffer.alloc(0);
+    const match = /^data:[^;]+;base64,([A-Za-z0-9+/=\s]+)$/.exec(String(attachment?.dataUrl || ""));
+    return match ? Buffer.from(match[1].replace(/\s/g, ""), "base64") : Buffer.alloc(0);
 }
 
 function decodePlainText(buffer) {

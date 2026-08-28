@@ -5,7 +5,7 @@ import ExcelJS from "exceljs";
 import PizZip from "pizzip";
 import { PDFDocument, StandardFonts } from "pdf-lib";
 import { createCanvas } from "@napi-rs/canvas";
-import { classifyPartnerEmail, extractMissionPayload, extractNestedPartnerEmailContent, inspectMailboxStructure, mailboxReplyBody, normalizeMissionPostalAddress, oauthErrorMessage, parseMailboxPage, parseMailboxSyncPeriod, parseMicrosoftRetryAfter, publicMailError, replySubject, sanitizeRequiredKeywords, senderMatchesAllowed, shouldRefreshStoredPartnerEmail, stripQuotedEmailText } from "../server/partner-email.js";
+import { classifyPartnerEmail, extractMissionPayload, extractNestedPartnerEmailContent, inspectMailboxStructure, mailboxReplyBody, normalizeMissionPostalAddress, oauthErrorMessage, parseMailboxPage, parseMailboxSyncPeriod, parseMicrosoftRetryAfter, partnerEmailDataUrl, publicMailError, replySubject, sanitizeRequiredKeywords, senderMatchesAllowed, shouldRefreshStoredPartnerEmail, stripQuotedEmailText } from "../server/partner-email.js";
 import { simpleParser } from "mailparser";
 import { mapPayload, readableEmailMissionReference } from "../server/partner-missions.js";
 import { extractPartnerDocumentText, normalizePartnerDocumentMime } from "../server/partner-email-document-extractor.js";
@@ -521,6 +521,18 @@ test("une nouvelle recherche enrichit les anciens candidats et répare les missi
     assert.match(serverSource, /refreshPreviouslyParsedEmail/);
     assert.match(serverSource, /saved\.reanalyzeImported \|\|/);
     assert.match(serverSource, /status='candidate',processed_at=NULL/);
+});
+
+test("les PDF base64 multiligne produits par PostgreSQL sont lus et joints", async () => {
+    const source = Buffer.from("Client : Alice Martin\nAdresse : 12 rue des Lilas 44000 Nantes\n".repeat(4));
+    const wrapped = source.toString("base64").replace(/(.{76})/g, "$1\n");
+    const parsed = partnerEmailDataUrl(`data:application/pdf;base64,${wrapped}`);
+    assert.equal(parsed?.mime, "application/pdf");
+    assert.deepEqual(Buffer.from(parsed.base64, "base64"), source);
+    const text = await extractPartnerDocumentText([{ mime: "text/plain", dataUrl: `data:text/plain;base64,${wrapped}` }]);
+    assert.match(text, /Alice Martin/);
+    assert.match(serverSource, /REPLACE\(REPLACE\(encode\(attachment\.file_data,'base64'\)/);
+    assert.match(missionSource, /compactDataUrl = String\(item\?\.dataUrl/);
 });
 
 test("le mail garde la priorité et les documents complètent les champs manquants", () => {

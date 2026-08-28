@@ -640,7 +640,7 @@ async function existingEmailMission(ownerId, missionId) {
 }
 
 async function importCandidate(ownerId, emailId, actorId) {
-    const { rows } = await getPool().query(`SELECT message.*,connection.display_name,connection.email_address,connection.id AS email_connection_id,COALESCE(json_agg(json_build_object('sourceAttachmentId',attachment.id,'name',attachment.filename,'mime',attachment.mime_type,'size',attachment.file_size,'dataUrl','data:'||attachment.mime_type||';base64,'||encode(attachment.file_data,'base64')) ORDER BY attachment.id) FILTER(WHERE attachment.id IS NOT NULL AND attachment.selected=TRUE),'[]'::json) AS attachments FROM depannhome_partner_email_messages message JOIN depannhome_partner_email_connections connection ON connection.id=message.connection_id LEFT JOIN depannhome_partner_email_attachments attachment ON attachment.email_message_id=message.id WHERE message.id=$1 AND message.owner_id=$2 AND message.status='candidate' GROUP BY message.id,connection.id`, [emailId, ownerId]);
+    const { rows } = await getPool().query(`SELECT message.*,connection.display_name,connection.email_address,connection.id AS email_connection_id,COALESCE(json_agg(json_build_object('sourceAttachmentId',attachment.id,'name',attachment.filename,'mime',attachment.mime_type,'size',attachment.file_size,'dataUrl','data:'||attachment.mime_type||';base64,'||REPLACE(REPLACE(encode(attachment.file_data,'base64'),E'\n',''),E'\r','')) ORDER BY attachment.id) FILTER(WHERE attachment.id IS NOT NULL AND attachment.selected=TRUE),'[]'::json) AS attachments FROM depannhome_partner_email_messages message JOIN depannhome_partner_email_connections connection ON connection.id=message.connection_id LEFT JOIN depannhome_partner_email_attachments attachment ON attachment.email_message_id=message.id WHERE message.id=$1 AND message.owner_id=$2 AND message.status='candidate' GROUP BY message.id,connection.id`, [emailId, ownerId]);
     const email = rows[0]; if (!email) throw httpError(404, "E-mail déjà traité ou introuvable.");
     const claimed = await getPool().query("UPDATE depannhome_partner_email_messages SET status='processing' WHERE id=$1 AND owner_id=$2 AND status='candidate' RETURNING id", [email.id, ownerId]);
     if (!claimed.rowCount) throw httpError(409, "Cet e-mail est déjà en cours de traitement.");
@@ -649,16 +649,23 @@ async function importCandidate(ownerId, emailId, actorId) {
         const payload = extractMissionPayload(email, documentText);
         const result = await ingestEmailPartnerMission({ ownerId, connectionId: email.email_connection_id, emailId: email.id, partnerName: email.display_name || email.sender_address, actorId, payload });
         for (const attachment of email.attachments || []) {
-            const match = /^data:([^;]+);base64,([A-Za-z0-9+/=]+)$/.exec(String(attachment.dataUrl || ""));
+            const match = partnerEmailDataUrl(attachment.dataUrl);
             if (!match) continue;
-            const content = Buffer.from(match[2], "base64");
-            const duplicate = await getPool().query("SELECT 1 FROM depannhome_partner_dialogue_attachments WHERE owner_id=$1 AND mission_id=$2 AND filename=$3 AND mime_type=$4 AND file_size=$5 AND file_data=$6 LIMIT 1", [ownerId, result.missionId, attachment.name, match[1], content.length, content]);
+            const content = Buffer.from(match.base64, "base64");
+            const duplicate = await getPool().query("SELECT 1 FROM depannhome_partner_dialogue_attachments WHERE owner_id=$1 AND mission_id=$2 AND filename=$3 AND mime_type=$4 AND file_size=$5 AND file_data=$6 LIMIT 1", [ownerId, result.missionId, attachment.name, match.mime, content.length, content]);
             if (duplicate.rowCount) continue;
-            await recordMissionDialogueDocument({ ownerId, missionId: result.missionId, actorName: email.sender_name || email.sender_address, body: `Document reçu par e-mail : ${attachment.name}`, attachment: { filename: attachment.name, mimeType: match[1], buffer: content, type: match[1].startsWith("image/") ? "photo" : "document" }, partnerVisible: false, eventType: "email_attachment_received" });
+            await recordMissionDialogueDocument({ ownerId, missionId: result.missionId, actorName: email.sender_name || email.sender_address, body: `Document reçu par e-mail : ${attachment.name}`, attachment: { filename: attachment.name, mimeType: match.mime, buffer: content, type: match.mime.startsWith("image/") ? "photo" : "document" }, partnerVisible: false, eventType: "email_attachment_received" });
         }
         await getPool().query("UPDATE depannhome_partner_email_messages SET status='imported',mission_id=$3,processed_at=NOW() WHERE id=$1 AND owner_id=$2 AND status='processing'", [email.id, ownerId, result.missionId]);
         return result;
     } catch (error) { await getPool().query("UPDATE depannhome_partner_email_messages SET status='candidate' WHERE id=$1 AND owner_id=$2 AND status='processing'", [email.id, ownerId]); throw error; }
+}
+
+export function partnerEmailDataUrl(value) {
+    const match = /^data:([^;]+);base64,([A-Za-z0-9+/=\s]+)$/.exec(String(value || ""));
+    if (!match) return null;
+    const base64 = match[2].replace(/\s/g, "");
+    return base64 && base64.length % 4 === 0 ? { mime: match[1], base64 } : null;
 }
 
 export function extractMissionPayload(email, documentText = "") {
