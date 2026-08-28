@@ -17,6 +17,10 @@ const MODES = new Set(["manual", "automatic"]);
 const ALLOWED_MIME = new Set(["application/pdf", "image/jpeg", "image/png", "image/webp", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "text/plain"]);
 const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
 const MAX_ATTACHMENTS = 10;
+const MAX_NESTED_EMAIL_DEPTH = 3;
+const MAX_NESTED_EMAILS = 10;
+const MAX_TOTAL_ATTACHMENT_BYTES = 20 * 1024 * 1024;
+const MAX_NESTED_EMAIL_SOURCE_BYTES = 25 * 1024 * 1024;
 const AUTO_THRESHOLD = 80;
 const CANDIDATE_THRESHOLD = 35;
 const FETCH_LIMIT = 100;
@@ -456,9 +460,10 @@ function setLiveMailboxHeaders(response) { return response.set({ "Cache-Control"
 
 async function saveParsedEmail(connection, uid, parsed, { forceCandidate = false, messageId: forcedMessageId = "" } = {}) {
     const from = parsed.from?.value?.[0] || {}; const messageId = clean(parsed.messageId || `uid-${uid}@${connection.email_address}`, 500);
-    let totalAttachmentBytes = 0;
-    const attachments = (parsed.attachments || []).map(item => ({ ...item, contentType: normalizePartnerDocumentMime({ filename: item.filename, contentType: item.contentType }) })).filter(item => { const allowed = ALLOWED_MIME.has(item.contentType) && item.size > 0 && item.size <= MAX_ATTACHMENT_BYTES && totalAttachmentBytes + item.size <= 20 * 1024 * 1024; if (allowed) totalAttachmentBytes += item.size; return allowed; }).slice(0, MAX_ATTACHMENTS);
-    const documentText = await extractPartnerDocumentText(attachments.map(item => ({ name: item.filename, mime: item.contentType, size: item.size, buffer: item.content })));
+    const nested = await extractNestedPartnerEmailContent(parsed);
+    const attachments = preparePartnerEmailAttachments([...(parsed.attachments || []).filter(item => !isNestedEmailAttachment(item)), ...nested.attachments]);
+    const attachmentText = await extractPartnerDocumentText(attachments.map(item => ({ name: item.filename, mime: item.contentType, size: item.size, buffer: item.content })));
+    const documentText = [parsed.nestedText, nested.text, attachmentText].filter(Boolean).join("\n").slice(0, 50000);
     const classification = classifyPartnerEmail({ subject: parsed.subject, text: `${parsed.text || ""}\n${documentText}`, from: from.address, attachments, allowedSenders: forceCandidate ? [] : connection.allowed_senders || [], requiredKeywords: forceCandidate ? [] : connection.required_keywords || [], reply: forceCandidate ? false : Boolean(parsed.inReplyTo) || /^\s*(?:re|rép)\s*:/i.test(parsed.subject || ""), automatic: forceCandidate ? false : Boolean(parsed.headers?.get("auto-submitted")) || /^\s*(?:re|tr)?\s*:\s*(?:réponse automatique|automatic reply|out of office)/i.test(parsed.subject || ""), listMail: forceCandidate ? false : Boolean(parsed.headers?.get("list-unsubscribe") || parsed.headers?.get("list-id")) });
     if (!forceCandidate && classification.score < CANDIDATE_THRESHOLD) return null;
     const stableMessageId = clean(forcedMessageId || messageId, 500);
@@ -480,16 +485,26 @@ async function importLiveMailboxMessage(connection, messageId, requestedAttachme
     const selected = available.filter(item => requested.includes(item.id));
     const uid = connection.provider === "microsoft" ? graphMessageUid(messageId) : mailboxUid(messageId);
     const attachments = [];
+    let nestedMessageText = "";
     for (const item of selected) {
         const downloaded = await liveMailboxOperation(connection, () => downloadLiveAttachment(connection, messageId, decodeMailboxReference(item.id)));
         attachments.push({ filename: downloaded.filename, contentType: downloaded.contentType, size: downloaded.content.length, content: downloaded.content });
     }
+    try {
+        const parsedSource = await liveMailboxOperation(connection, () => parseLiveMailboxSource(connection, messageId));
+        const nested = await extractNestedPartnerEmailContent(parsedSource);
+        nestedMessageText = nested.text;
+        attachments.push(...nested.attachments);
+    } catch (error) {
+        console.warn("[partner-email] lecture des messages transférés imbriqués impossible", mailErrorLog(error, connection.provider));
+    }
+    const preparedAttachments = preparePartnerEmailAttachments(attachments);
     const existing = await getPool().query("SELECT id,status,mission_id AS \"missionId\" FROM depannhome_partner_email_messages WHERE owner_id=$1 AND connection_id=$2 AND uid=$3 ORDER BY id DESC LIMIT 1", [connection.owner_id, connection.id, uid]);
     if (existing.rows[0]) {
         const saved = existing.rows[0];
         if (saved.status === "processing") throw httpError(409, "Cet e-mail est déjà en cours de traitement.");
         const wasImported = saved.status === "imported" && Boolean(saved.missionId);
-        await refreshStoredLiveEmail(connection, saved.id, message, attachments);
+        await refreshStoredLiveEmail(connection, saved.id, message, preparedAttachments, nestedMessageText);
         const result = await importCandidate(connection.owner_id, saved.id, actorId);
         return { ...result, reanalyzed: wasImported };
     }
@@ -501,7 +516,8 @@ async function importLiveMailboxMessage(connection, messageId, requestedAttachme
         date: message.receivedAt,
         from: { value: [message.from || {}] },
         to: { value: message.to || [] },
-        attachments,
+        attachments: preparedAttachments,
+        nestedText: nestedMessageText,
         headers: new Map()
     }, { forceCandidate: true, messageId: manualMessageId });
     if (!saved) throw httpError(500, "Cet e-mail n’a pas pu être préparé pour l’import.");
@@ -513,8 +529,68 @@ async function importLiveMailboxMessage(connection, messageId, requestedAttachme
     return importCandidate(connection.owner_id, saved.id, actorId);
 }
 
-async function refreshStoredLiveEmail(connection, emailId, message, attachments) {
-    const documentText = await extractPartnerDocumentText(attachments.map(item => ({ name: item.filename, mime: item.contentType, size: item.size, buffer: item.content })));
+async function parseLiveMailboxSource(connection, messageId) {
+    if (connection.provider === "microsoft") {
+        const source = await withMicrosoftGraphAccess(connection, accessToken => graphMessageMime(accessToken, messageId));
+        return simpleParser(source, { skipHtmlToText: false, maxHtmlLengthToParse: 2 * 1024 * 1024 });
+    }
+    return withImapInbox(connection, async client => {
+        const message = await client.fetchOne(String(mailboxUid(messageId)), { source: true }, { uid: true });
+        if (!message?.source) throw httpError(404, "E-mail introuvable dans la boîte de réception.");
+        return simpleParser(message.source, { skipHtmlToText: false, maxHtmlLengthToParse: 2 * 1024 * 1024 });
+    });
+}
+
+export async function extractNestedPartnerEmailContent(parsed) {
+    const state = { attachments: [], texts: [], messages: 0, bytes: 0 };
+    await collectNestedPartnerEmailContent(parsed?.attachments, 0, state);
+    return { attachments: state.attachments, text: state.texts.join("\n").slice(0, 50000) };
+}
+
+async function collectNestedPartnerEmailContent(attachments, depth, state) {
+    if (depth >= MAX_NESTED_EMAIL_DEPTH || state.messages >= MAX_NESTED_EMAILS) return;
+    for (const attachment of Array.isArray(attachments) ? attachments : []) {
+        if (!isNestedEmailAttachment(attachment) || state.messages >= MAX_NESTED_EMAILS) continue;
+        const content = Buffer.isBuffer(attachment.content) ? attachment.content : Buffer.alloc(0);
+        if (!content.length || content.length > MAX_NESTED_EMAIL_SOURCE_BYTES || state.bytes + content.length > MAX_NESTED_EMAIL_SOURCE_BYTES) continue;
+        state.messages += 1; state.bytes += content.length;
+        try {
+            const nested = await simpleParser(content, { skipHtmlToText: false, maxHtmlLengthToParse: 2 * 1024 * 1024 });
+            const text = [nested.subject, nested.text].filter(Boolean).join("\n").trim();
+            if (text) state.texts.push(text);
+            state.attachments.push(...(nested.attachments || []).filter(item => !isNestedEmailAttachment(item)));
+            await collectNestedPartnerEmailContent(nested.attachments, depth + 1, state);
+        } catch (error) {
+            console.warn("[partner-email] e-mail transféré imbriqué illisible :", error?.message || "erreur MIME");
+        }
+    }
+}
+
+function isNestedEmailAttachment(attachment) {
+    const mime = String(attachment?.contentType || attachment?.mime || "").toLowerCase().split(";", 1)[0].trim();
+    return mime === "message/rfc822" || /\.eml$/i.test(String(attachment?.filename || attachment?.name || ""));
+}
+
+function preparePartnerEmailAttachments(values) {
+    const attachments = []; const signatures = new Set(); let totalBytes = 0;
+    for (const item of Array.isArray(values) ? values : []) {
+        const content = Buffer.isBuffer(item?.content) ? item.content : Buffer.isBuffer(item?.buffer) ? item.buffer : Buffer.alloc(0);
+        const filename = safeFilename(item?.filename || item?.name);
+        const contentType = normalizePartnerDocumentMime({ filename, contentType: item?.contentType || item?.mime });
+        const size = content.length;
+        if (!ALLOWED_MIME.has(contentType) || !size || size > MAX_ATTACHMENT_BYTES || totalBytes + size > MAX_TOTAL_ATTACHMENT_BYTES) continue;
+        const signature = `${filename}\u0000${contentType}\u0000${size}\u0000${hash(content)}`;
+        if (signatures.has(signature)) continue;
+        signatures.add(signature); totalBytes += size;
+        attachments.push({ ...item, filename, contentType, size, content });
+        if (attachments.length >= MAX_ATTACHMENTS) break;
+    }
+    return attachments;
+}
+
+async function refreshStoredLiveEmail(connection, emailId, message, attachments, nestedText = "") {
+    const attachmentText = await extractPartnerDocumentText(attachments.map(item => ({ name: item.filename, mime: item.contentType, size: item.size, buffer: item.content })));
+    const documentText = [nestedText, attachmentText].filter(Boolean).join("\n").slice(0, 50000);
     const database = await getPool().connect();
     try {
         await database.query("BEGIN");
@@ -823,7 +899,7 @@ function positiveId(value) { const id = Number(value); return Number.isSafeInteg
 function safeFilename(value) { return String(value || "document").replace(/^.*[\\/]/, "").replace(/[\r\n]/g, " ").slice(0, 255) || "document"; }
 function escapeRegExp(value) { return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
 function clean(value, max) { return String(value || "").replace(/\s+/g, " ").trim().slice(0, max); }
-function hash(value) { return crypto.createHash("sha256").update(String(value || "")).digest("hex"); }
+function hash(value) { return crypto.createHash("sha256").update(Buffer.isBuffer(value) ? value : String(value || "")).digest("hex"); }
 function escapeHtml(value) { return String(value || "").replace(/[&<>"']/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]); }
 function httpError(status, message, details = {}) { const error = new Error(message); error.status = status; Object.assign(error, details); return error; }
 function asyncHandler(handler) { return (req, res, next) => Promise.resolve(handler(req, res, next)).catch(error => { if (!error.status) return next(error); if (error.retryAfterSeconds) res.set("Retry-After", String(error.retryAfterSeconds)); return res.status(error.status).json({ message: error.message, ...(error.retryAfterSeconds ? { retryAfterSeconds: error.retryAfterSeconds } : {}) }); }); }

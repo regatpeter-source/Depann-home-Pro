@@ -5,7 +5,8 @@ import ExcelJS from "exceljs";
 import PizZip from "pizzip";
 import { PDFDocument, StandardFonts } from "pdf-lib";
 import { createCanvas } from "@napi-rs/canvas";
-import { classifyPartnerEmail, extractMissionPayload, inspectMailboxStructure, mailboxReplyBody, normalizeMissionPostalAddress, oauthErrorMessage, parseMailboxPage, parseMailboxSyncPeriod, parseMicrosoftRetryAfter, publicMailError, replySubject, sanitizeRequiredKeywords, senderMatchesAllowed, stripQuotedEmailText } from "../server/partner-email.js";
+import { classifyPartnerEmail, extractMissionPayload, extractNestedPartnerEmailContent, inspectMailboxStructure, mailboxReplyBody, normalizeMissionPostalAddress, oauthErrorMessage, parseMailboxPage, parseMailboxSyncPeriod, parseMicrosoftRetryAfter, publicMailError, replySubject, sanitizeRequiredKeywords, senderMatchesAllowed, stripQuotedEmailText } from "../server/partner-email.js";
+import { simpleParser } from "mailparser";
 import { mapPayload, readableEmailMissionReference } from "../server/partner-missions.js";
 import { extractPartnerDocumentText, normalizePartnerDocumentMime } from "../server/partner-email-document-extractor.js";
 
@@ -328,12 +329,14 @@ test("la boîte complète se consulte à la demande sans stockage ni déplacemen
     assert.match(emailSettingsSource, /Microsoft n’a pas permis de charger ses pièces jointes/);
 });
 
-test("un e-mail ouvert peut créer directement une mission avec les seules pièces sélectionnées", () => {
+test("un e-mail ouvert crée une mission avec les pièces sélectionnées et celles de ses messages imbriqués", () => {
     const importRoute = serverSource.slice(serverSource.indexOf('app.post("/api/partner-email/:connectionId/messages/:messageRef/import"'), serverSource.indexOf('app.post("/api/partner-email/:connectionId/sync"'));
     assert.match(importRoute, /requiredConnection\(ownerId/);
     assert.match(importRoute, /importLiveMailboxMessage/);
     assert.match(importRoute, /req\.body\?\.attachmentIds/);
     assert.match(serverSource, /requestedAttachmentIds\.map\(String\)\.slice\(0, MAX_ATTACHMENTS\)/);
+    assert.match(serverSource, /extractNestedPartnerEmailContent\(parsedSource\)/);
+    assert.match(serverSource, /preparePartnerEmailAttachments\(attachments\)/);
     assert.match(serverSource, /refreshStoredLiveEmail/);
     assert.match(serverSource, /DELETE FROM depannhome_partner_email_attachments WHERE email_message_id=\$1/);
     assert.match(serverSource, /WHERE owner_id=\$1 AND connection_id=\$2 AND uid=\$3/);
@@ -349,7 +352,8 @@ test("un e-mail ouvert peut créer directement une mission avec les seules pièc
 test("la détection automatique recherche les indices dans le corps et les documents", () => {
     assert.match(schemaSource, /body_text TEXT NOT NULL DEFAULT '', document_text TEXT NOT NULL DEFAULT ''/);
     assert.match(serverSource, /depannhome_partner_email_messages ADD COLUMN IF NOT EXISTS document_text TEXT NOT NULL DEFAULT ''/);
-    assert.match(serverSource, /const documentText = await extractPartnerDocumentText\(attachments\.map/);
+    assert.match(serverSource, /const attachmentText = await extractPartnerDocumentText\(attachments\.map/);
+    assert.match(serverSource, /\[parsed\.nestedText, nested\.text, attachmentText\]/);
     assert.match(serverSource, /text: `\$\{parsed\.text \|\| ""\}\\n\$\{documentText\}`/);
     assert.match(serverSource, /message\.body_text \|\| ""\}\\n\$\{message\.document_text \|\| ""/);
     assert.match(serverSource, /forceCandidate \? \[\] : connection\.required_keywords/);
@@ -481,6 +485,30 @@ test("les documents Outlook au type générique sont reconnus grâce à leur ext
     assert.equal(normalizePartnerDocumentMime({ filename: "mission.docx", contentType: "application/octet-stream; name=mission.docx" }), "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
     const text = await extractPartnerDocumentText([{ filename: "client.txt", mime: "application/octet-stream", buffer: Buffer.from("Client : Alice Outlook\nTéléphone : 0611223344") }]);
     assert.match(text, /Alice Outlook/);
+});
+
+test("un e-mail transféré imbriqué fournit les coordonnées client et ses pièces jointes", async () => {
+    const original = [
+        "From: missions@assureur.test", "To: partenaire@example.test", "Subject: Ordre de mission SIN-84", "MIME-Version: 1.0",
+        'Content-Type: multipart/mixed; boundary="original"', "", "--original", "Content-Type: text/plain; charset=utf-8", "",
+        "Client : Alice Martin\r\nAdresse : 12 rue des Lilas 44000 Nantes\r\nTéléphone : 0611223344",
+        "--original", 'Content-Type: application/pdf; name="mission.pdf"', 'Content-Disposition: attachment; filename="mission.pdf"', "Content-Transfer-Encoding: base64", "",
+        Buffer.from("document-pdf-test").toString("base64"), "--original--"
+    ].join("\r\n");
+    const forwarded = [
+        "From: transfert@example.test", "To: partenaire@example.test", "Subject: Fwd: mission", "MIME-Version: 1.0",
+        'Content-Type: multipart/mixed; boundary="forwarded"', "", "--forwarded", "Content-Type: text/plain; charset=utf-8", "", "Message transféré",
+        "--forwarded", 'Content-Type: message/rfc822; name="mission.eml"', 'Content-Disposition: attachment; filename="mission.eml"', "Content-Transfer-Encoding: base64", "",
+        Buffer.from(original).toString("base64"), "--forwarded--"
+    ].join("\r\n");
+    const nested = await extractNestedPartnerEmailContent(await simpleParser(forwarded));
+    assert.match(nested.text, /Alice Martin/);
+    assert.equal(nested.attachments.length, 1);
+    assert.equal(nested.attachments[0].filename, "mission.pdf");
+    const payload = extractMissionPayload({ id: 84, subject: "Fwd: mission", body_text: "Message transféré", attachments: nested.attachments }, nested.text);
+    assert.equal(payload.client.name, "Alice Martin");
+    assert.equal(payload.client.phone, "0611223344");
+    assert.equal(payload.client.city, "Nantes");
 });
 
 test("le mail garde la priorité et les documents complètent les champs manquants", () => {
