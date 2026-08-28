@@ -2,7 +2,7 @@ import ExcelJS from "exceljs";
 import PizZip from "pizzip";
 import { createRequire } from "node:module";
 import { createCanvas, loadImage } from "@napi-rs/canvas";
-import { getDocument, OPS } from "pdfjs-dist/legacy/build/pdf.mjs";
+import { getDocument, OPS, VerbosityLevel } from "pdfjs-dist/legacy/build/pdf.mjs";
 import { createWorker, OEM } from "tesseract.js";
 
 const PDF_MIME = "application/pdf";
@@ -75,7 +75,7 @@ function decodePlainText(buffer) {
 }
 
 async function extractPdfText(buffer) {
-    const loadingTask = getDocument({ data: new Uint8Array(buffer), disableFontFace: true, isEvalSupported: false, useSystemFonts: false });
+    const loadingTask = getDocument({ data: new Uint8Array(buffer), disableFontFace: true, isEvalSupported: false, useSystemFonts: false, verbosity: VerbosityLevel.ERRORS });
     const document = await loadingTask.promise;
     let output = "";
     try {

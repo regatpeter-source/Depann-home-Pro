@@ -449,6 +449,7 @@ test("la détection Sandbox ne provoque pas de 403 sans connecteurs", () => {
 });
 
 test("les coordonnées client sont extraites des pièces TXT, PDF, DOCX et XLSX", async () => {
+    assert.match(readFileSync(new URL("../server/partner-email-document-extractor.js", import.meta.url), "utf8"), /verbosity: VerbosityLevel\.ERRORS/);
     const pdfDocument = await PDFDocument.create();
     const page = pdfDocument.addPage();
     const font = await pdfDocument.embedFont(StandardFonts.Helvetica);
