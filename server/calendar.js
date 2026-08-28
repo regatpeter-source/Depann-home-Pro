@@ -473,7 +473,8 @@ export function registerCalendarRoutes(app, requireAuthentication) {
             const { rows } = await connection.query(`
                 SELECT event.id,event.client_id AS "clientId",event.deductible_status AS "deductibleStatus",
                     (event.event_date < (CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Paris')::date) AS "isCompleted",
-                    COALESCE(mission.mapped_data->>'insurance','') AS insurance
+                    COALESCE(mission.mapped_data->>'insurance','') AS insurance,
+                    COALESCE(mission.mapped_data->>'claimNumber','') AS "claimNumber"
                 FROM depannhome_calendar_events event
                 JOIN depannhome_partner_missions mission ON mission.id=event.partner_mission_id AND mission.owner_id=event.owner_id AND mission.deleted_at IS NULL
                 WHERE event.id=$1 AND event.owner_id=$2 AND event.event_type='appointment'
@@ -515,13 +516,14 @@ export function registerCalendarRoutes(app, requireAuthentication) {
                 appointmentId: id,
                 createdAt
             };
-            const updatedClient = { ...client, attachments: [...attachments, attachment], updatedAt: createdAt };
+            const collectorName = cleanText(request.user.fullName || request.user.username || "Technicien", 160);
+            const historyEntry = deductibleHistoryEntry({ id, amountCents, paymentMethod, insurance: appointment.insurance, claimNumber: appointment.claimNumber, attachmentId: attachment.id, actorName: collectorName, createdAt, status: "pending" });
+            const updatedClient = { ...client, attachments: [...attachments, attachment], activityHistory: replaceDeductibleHistory(client.activityHistory, id, historyEntry), updatedAt: createdAt };
             if (Buffer.byteLength(JSON.stringify(updatedClient), "utf8") > MAX_CLIENT_PAYLOAD_SIZE) {
                 await connection.query("ROLLBACK");
                 return response.status(400).json({ message: "Le dossier client est trop volumineux pour ajouter cette preuve." });
             }
             await connection.query("UPDATE depannhome_clients SET client_data=$3::jsonb,updated_at=$4 WHERE owner_id=$1 AND client_id=$2", [ownerId, appointment.clientId, JSON.stringify(updatedClient), createdAt]);
-            const collectorName = cleanText(request.user.fullName || request.user.username || "Technicien", 160);
             const updated = await connection.query(`
                 UPDATE depannhome_calendar_events SET deductible_status='pending',deductible_amount_cents=$3,
                     deductible_payment_method=$4,deductible_photo_attachment_id=$5,deductible_collected_at=$6,
@@ -576,31 +578,26 @@ export function registerCalendarRoutes(app, requireAuthentication) {
             }
             const reviewerName = cleanText(request.user.fullName || request.user.username || "Administration", 160);
             const reviewedAt = new Date().toISOString();
+            const clientResult = await connection.query("SELECT client_data AS client FROM depannhome_clients WHERE owner_id=$1 AND client_id=$2 FOR UPDATE", [ownerId, appointment.clientId]);
+            const client = clientResult.rows[0]?.client;
+            if (!client) {
+                await connection.query("ROLLBACK");
+                return response.status(400).json({ message: "Le dossier client associé est introuvable." });
+            }
+            const attachments = Array.isArray(client.attachments) ? client.attachments : [];
             if (decision === "validated") {
-                const clientResult = await connection.query("SELECT client_data AS client FROM depannhome_clients WHERE owner_id=$1 AND client_id=$2 FOR UPDATE", [ownerId, appointment.clientId]);
-                const client = clientResult.rows[0]?.client;
-                if (!client) {
-                    await connection.query("ROLLBACK");
-                    return response.status(400).json({ message: "Le dossier client associé est introuvable." });
-                }
-                const attachments = Array.isArray(client.attachments) ? client.attachments : [];
                 if (!attachments.some(item => String(item?.id) === String(appointment.attachmentId) && item?.type === "Photo franchise" && String(item?.appointmentId) === String(id))) {
                     await connection.query("ROLLBACK");
                     return response.status(409).json({ message: "La photo de preuve de cette franchise est introuvable." });
                 }
-                const history = Array.isArray(client.activityHistory) ? client.activityHistory : [];
-                const detail = `Intervention n°${id} · ${formatEuros(appointment.amountCents)} · ${appointment.paymentMethod} · ${appointment.insurance}${appointment.claimNumber ? ` · Sinistre ${appointment.claimNumber}` : ""}`.slice(0, 500);
-                const updatedClient = {
-                    ...client,
-                    activityHistory: [{ id: `activity-${randomUUID()}`, type: "insurance_deductible", label: "Franchise encaissée et validée", detail, attachmentId: appointment.attachmentId, appointmentId: id, actorName: reviewerName, createdAt: reviewedAt }, ...history].slice(0, MAX_ACTIVITY_HISTORY),
-                    updatedAt: reviewedAt
-                };
-                if (Buffer.byteLength(JSON.stringify(updatedClient), "utf8") > MAX_CLIENT_PAYLOAD_SIZE) {
-                    await connection.query("ROLLBACK");
-                    return response.status(400).json({ message: "Le dossier client est trop volumineux pour enregistrer la validation." });
-                }
-                await connection.query("UPDATE depannhome_clients SET client_data=$3::jsonb,updated_at=$4 WHERE owner_id=$1 AND client_id=$2", [ownerId, appointment.clientId, JSON.stringify(updatedClient), reviewedAt]);
             }
+            const historyEntry = deductibleHistoryEntry({ id, amountCents: appointment.amountCents, paymentMethod: appointment.paymentMethod, insurance: appointment.insurance, claimNumber: appointment.claimNumber, attachmentId: appointment.attachmentId, actorName: decision === "validated" ? appointment.collectorName : reviewerName, createdAt: reviewedAt, status: decision, reviewerName, reviewNote });
+            const updatedClient = { ...client, activityHistory: replaceDeductibleHistory(client.activityHistory, id, historyEntry), updatedAt: reviewedAt };
+            if (Buffer.byteLength(JSON.stringify(updatedClient), "utf8") > MAX_CLIENT_PAYLOAD_SIZE) {
+                await connection.query("ROLLBACK");
+                return response.status(400).json({ message: "Le dossier client est trop volumineux pour enregistrer le contrôle de la franchise." });
+            }
+            await connection.query("UPDATE depannhome_clients SET client_data=$3::jsonb,updated_at=$4 WHERE owner_id=$1 AND client_id=$2", [ownerId, appointment.clientId, JSON.stringify(updatedClient), reviewedAt]);
             const updated = await connection.query(`
                 UPDATE depannhome_calendar_events SET deductible_status=$3,deductible_reviewed_at=$4,
                     deductible_reviewed_by=$5,deductible_reviewed_by_name=$6,deductible_review_note=$7,updated_at=NOW()
@@ -1038,6 +1035,25 @@ function isValidImageFile(file) {
 
 function formatEuros(amountCents) {
     return new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" }).format(Number(amountCents || 0) / 100);
+}
+
+function deductibleHistoryEntry({ id, amountCents, paymentMethod, insurance, claimNumber, attachmentId, actorName, createdAt, status, reviewerName = "", reviewNote = "" }) {
+    const statusDetail = status === "validated" ? `Validée par ${reviewerName || "l’administration"}` : status === "rejected" ? `Refusée${reviewNote ? ` : ${reviewNote}` : ""}` : "Contrôle administratif en attente";
+    return {
+        id: `insurance-deductible-${id}`,
+        type: "insurance_deductible",
+        label: status === "validated" ? "Franchise encaissée et validée" : status === "rejected" ? "Franchise refusée" : "Franchise encaissée · contrôle en attente",
+        detail: [`Intervention n°${id}`, formatEuros(amountCents), paymentMethod, insurance, claimNumber ? `Sinistre ${claimNumber}` : "", statusDetail].filter(Boolean).join(" · ").slice(0, 500),
+        attachmentId,
+        appointmentId: id,
+        actorName,
+        createdAt
+    };
+}
+
+function replaceDeductibleHistory(history, appointmentId, entry) {
+    const entries = Array.isArray(history) ? history : [];
+    return [entry, ...entries.filter(item => item?.type !== "insurance_deductible" || String(item?.appointmentId || "") !== String(appointmentId))].slice(0, MAX_ACTIVITY_HISTORY);
 }
 
 function positiveId(value) {

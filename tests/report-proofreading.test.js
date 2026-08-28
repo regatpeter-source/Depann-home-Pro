@@ -189,6 +189,18 @@ test("validated report attachments reference the canonical PDF without duplicati
     assert.doesNotMatch(archiveSource, /dossier client est trop volumineux/);
 });
 
+test("a validated report can be reopened for a complete correction and validation cycle", () => {
+    assert.match(serverSource, /app\.post\("\/api\/technical-reports\/:reportId\/reopen", requireReportProofreadingAccess/);
+    assert.match(serverSource, /report\.status !== "validated"/);
+    assert.match(serverSource, /SET status='draft', submitted_at=NULL, proofread_at=NULL, proofread_by=NULL, proofread_fingerprint='', pdf_data=NULL, pdf_filename='', validated_at=NULL, validated_by=NULL/);
+    assert.match(serverSource, /removeReopenedReportFromClient\(connection, ownerId, report/);
+    assert.match(serverSource, /String\(item\?\.reportId \|\| ""\) === String\(report\.id\)/);
+    assert.match(serverSource, /type: "technical_report_reopened"/);
+    assert.match(serverSource, /partner_visible=FALSE/);
+    assert.match(editorSource, /canReopenReport\(\) && current\.status === "validated"/);
+    assert.match(editorSource, /Remettre en brouillon/);
+});
+
 test("client attachment delivery supports referenced reports and legacy embedded files", () => {
     assert.match(clientsServerSource, /const embedded = decodeAttachmentDataUrl\(attachment\?\.dataUrl\)/);
     assert.match(clientsServerSource, /client_id = \$3 AND status = 'validated'/);

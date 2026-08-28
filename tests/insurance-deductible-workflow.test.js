@@ -46,13 +46,25 @@ test("seul un poste administratif autorisé valide ou refuse avec un motif", () 
 	assert.match(calendar, /data-deductible-decision="rejected"/);
 });
 
-test("la validation écrit le montant, le paiement et la photo dans l’historique", () => {
+test("la collecte écrit immédiatement le montant, le paiement et la photo dans l’historique", () => {
 	assert.match(server, /type: "insurance_deductible"/);
-	assert.match(server, /label: "Franchise encaissée et validée"/);
+	assert.match(server, /status: "pending"/);
+	assert.match(server, /formatEuros\(amountCents\)/);
+	assert.match(server, /paymentMethod/);
 	assert.match(server, /Intervention n°\$\{id\}/);
-	assert.match(server, /attachmentId: appointment\.attachmentId/);
+	assert.match(server, /attachmentId: attachment\.id/);
 	assert.match(clients, /data-view-deductible/);
 	assert.match(clients, /Voir la photo de preuve/);
+});
+
+test("le contrôle remplace l’état de la franchise sans créer de doublon", () => {
+	assert.match(server, /id: `insurance-deductible-\$\{id\}`/);
+	assert.match(server, /replaceDeductibleHistory\(client\.activityHistory, id, historyEntry\)/);
+	assert.match(server, /status: decision/);
+	assert.match(server, /item\?\.type !== "insurance_deductible"/);
+	assert.match(server, /String\(item\?\.appointmentId \|\| ""\) !== String\(appointmentId\)/);
+	assert.match(server, /Franchise encaissée et validée/);
+	assert.match(server, /Franchise refusée/);
 });
 
 test("la franchise validée est proposée en soustraction sur la facture du donneur d’ordre", () => {

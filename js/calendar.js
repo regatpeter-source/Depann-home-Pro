@@ -3,7 +3,7 @@ import { createBillingDocumentForClient, viewBillingDocument } from "./billing.j
 import { getSearchableClients } from "./clients.js?v=154";
 import { addClientActivityByName, synchronizeClients } from "./client-sync.js?v=125";
 import { renderClientMessages } from "./messages.js?v=107";
-import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=34";
+import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=35";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { renderPlatformAnnouncement } from "./platform-announcement.js?v=1";

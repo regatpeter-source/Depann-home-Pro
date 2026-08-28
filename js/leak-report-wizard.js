@@ -72,7 +72,7 @@ export function openLeakReportCreation() {
     dialog.innerHTML = `<div><header><div><p class="eyebrow">Nouveau rapport</p><h2>Rapport de recherche de fuite</h2></div><button type="button" class="text-button" data-close-report-creation>Fermer</button></header><p class="muted">Un rapport est toujours rattaché à une intervention et au dossier client correspondant.</p><div class="report-creation-options"><button type="button" data-report-from-appointment><strong>Choisir une intervention</strong><span>Ouvrez une intervention existante pour créer ou reprendre son rapport.</span></button><button type="button" data-create-client-first><strong>Créer d’abord un client</strong><span>Créez le dossier client, planifiez son intervention, puis ouvrez le rapport depuis le planning.</span></button></div></div>`;
     document.body.append(dialog);
     dialog.querySelector("[data-close-report-creation]").addEventListener("click", () => dialog.remove());
-    dialog.querySelector("[data-report-from-appointment]").addEventListener("click", async () => { dialog.remove(); const { renderCalendar } = await import("./calendar.js?v=183"); renderCalendar(); });
+    dialog.querySelector("[data-report-from-appointment]").addEventListener("click", async () => { dialog.remove(); const { renderCalendar } = await import("./calendar.js?v=184"); renderCalendar(); });
     dialog.querySelector("[data-create-client-first]").addEventListener("click", async () => { dialog.remove(); const { renderClients } = await import("./clients.js?v=154"); renderClients(); });
 }
 
@@ -161,7 +161,7 @@ function renderEditor(shell) {
             ${write && current.status === "submitted" && canProofreadReport() ? '<button type="button" class="secondary-button report-primary-action" data-proofread-report>Corriger</button>' : ""}
             ${ownsLock() && current.status === "ready_to_send" && canFinalizeReport() ? '<button type="button" class="secondary-button report-primary-action" data-validate-report>Valider définitivement et envoyer</button>' : ""}
             ${editable() && isAdministrator() && ["submitted", "in_correction"].includes(current.status) ? '<button type="button" class="secondary-button" data-request-correction>Demander une correction</button>' : ""}
-            ${isAdministrator() && current.status === "validated" ? '<button type="button" class="secondary-button" data-reopen-report>Réouvrir le rapport</button>' : ""}
+            ${canReopenReport() && current.status === "validated" ? '<button type="button" class="secondary-button" data-reopen-report>Remettre en brouillon</button>' : ""}
             ${ownsLock() && current.status === "draft" && canCancelReport() ? '<button type="button" class="danger-button" data-cancel-report>Annuler la création du rapport</button>' : ""}
             <button type="button" class="secondary-button" data-next-module ${moduleIndex(activeKey) >= visibleSections().length - 1 ? "disabled" : ""}>Suivante</button>
         </footer>
@@ -814,6 +814,7 @@ function isAdministrator() { return document.body.dataset.role === "admin"; }
 function canAdjustPdfLayout() { return document.body.classList.contains("desktop-device"); }
 function canProofreadReport() { return canAdjustPdfLayout() && ["admin", "pc_standard"].includes(document.body.dataset.role); }
 function canFinalizeReport() { return canProofreadReport(); }
+function canReopenReport() { return canProofreadReport(); }
 function canCancelReport() { return canProofreadReport(); }
 function statusLabel(value) { return ({ draft: "Brouillon", submitted: "Rapport terminé à corriger", in_correction: "Correction demandée", ready_to_send: "À envoyer", validated: "Envoyé" })[value] || "En cours"; }
 function formatDate(value) { return value ? new Intl.DateTimeFormat("fr-FR").format(new Date(`${value}T12:00:00`)) : ""; }
