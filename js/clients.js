@@ -22,6 +22,7 @@ const EMPTY_CLIENT = {
     interventionReference: "",
     insurance: "",
     insuranceDossier: "",
+    insuranceDeductibleAmountCents: 0,
     mandateNumber: "",
     claimNumber: "",
     insuredNumber: "",
@@ -315,6 +316,7 @@ function renderClientForm(client, options = {}) {
                         <label>Réf. intervention partenaire<input name="interventionReference" maxlength="160" value="${escapeHtml(client.interventionReference || "")}"></label>
                         <label>Assurance<input name="insurance" maxlength="160" value="${escapeHtml(client.insurance || "")}"></label>
                         <label>Réf. dossier assureur<input name="insuranceDossier" maxlength="160" value="${escapeHtml(client.insuranceDossier || "")}"></label>
+                        <label>Montant de franchise prévu (€)<input name="insuranceDeductibleAmount" type="number" min="0" max="1000000" step="0.01" inputmode="decimal" value="${client.insuranceDeductibleAmountCents ? escapeHtml((Number(client.insuranceDeductibleAmountCents) / 100).toFixed(2)) : ""}" placeholder="Ex. 150,00"></label>
                         <label>N° mandat<input name="mandateNumber" maxlength="160" value="${escapeHtml(client.mandateNumber || client.mandate || "")}"></label>
                         <label>N° sinistre<input name="claimNumber" maxlength="160" value="${escapeHtml(client.claimNumber || client.claim || "")}"></label>
                         <label>N° sociétaire / assuré<input name="insuredNumber" maxlength="160" value="${escapeHtml(client.insuredNumber || "")}"></label>
@@ -533,7 +535,7 @@ function renderClientDetail(client, options = {}) {
             <span> ${escapeHtml(client.email || "Non renseigné")}</span>
             <span> ${escapeHtml(formatClientLocation(client))}</span>
         </div>
-        ${(client.interventionReference || client.insurance || client.insuranceDossier || client.mandateNumber || client.claimNumber || client.insuredNumber || client.principal || client.manager || client.expert) ? `<section class="procedure-section"><h3>Assurance / mission partenaire</h3><div class="procedure-meta">${[["Réf. intervention partenaire", client.interventionReference], ["Assurance", client.insurance], ["Réf. dossier assureur", client.insuranceDossier], ["Mandat", client.mandateNumber || client.mandate], ["Sinistre", client.claimNumber || client.claim], ["N° sociétaire / assuré", client.insuredNumber], ["Mandant / donneur d’ordre", client.principal], ["Gestionnaire", client.manager || client.caseManager], ["Expert", client.expert]].filter(([, value]) => value).map(([label, value]) => `<span><strong>${label} :</strong> ${escapeHtml(value)}</span>`).join("")}</div></section>` : ""}
+        ${(client.interventionReference || client.insurance || client.insuranceDossier || client.insuranceDeductibleAmountCents || client.mandateNumber || client.claimNumber || client.insuredNumber || client.principal || client.manager || client.expert) ? `<section class="procedure-section"><h3>Assurance / mission partenaire</h3>${client.insuranceDeductibleAmountCents ? `<p class="client-deductible-highlight"><strong>Franchise prévue :</strong> ${escapeHtml(formatClientMoney(client.insuranceDeductibleAmountCents))}<br><small>Montant indicatif à vérifier avec le client lors de l’encaissement.</small></p>` : ""}<div class="procedure-meta">${[["Réf. intervention partenaire", client.interventionReference], ["Assurance", client.insurance], ["Réf. dossier assureur", client.insuranceDossier], ["Mandat", client.mandateNumber || client.mandate], ["Sinistre", client.claimNumber || client.claim], ["N° sociétaire / assuré", client.insuredNumber], ["Mandant / donneur d’ordre", client.principal], ["Gestionnaire", client.manager || client.caseManager], ["Expert", client.expert]].filter(([, value]) => value).map(([label, value]) => `<span><strong>${label} :</strong> ${escapeHtml(value)}</span>`).join("")}</div></section>` : ""}
         <section class="procedure-section">
             <h3> Équipements</h3>
             <p>${escapeHtml(client.equipment || "Aucun équipement renseigné.")}</p>
@@ -764,6 +766,8 @@ function buildPrintableBillingHtml(document, profile) {
 
 function formatBillingDate(value) { return value ? new Intl.DateTimeFormat("fr-FR").format(new Date(`${value}T12:00:00`)) : "Date non renseignée"; }
 function formatBillingMoney(value) { return new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" }).format(Number(value) || 0); }
+function formatClientMoney(valueCents) { return new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" }).format(Number(valueCents || 0) / 100); }
+function parseClientMoneyToCents(value) { const amount = Number(String(value || "").replace(",", ".")); return Number.isFinite(amount) && amount > 0 ? Math.min(100000000, Math.round(amount * 100)) : 0; }
 
 async function readClientForm(form, previousClient = EMPTY_CLIENT) {
     const formData = new FormData(form);
@@ -786,6 +790,7 @@ async function readClientForm(form, previousClient = EMPTY_CLIENT) {
         interventionReference: String(formData.get("interventionReference") || "").trim(),
         insurance: String(formData.get("insurance") || "").trim(),
         insuranceDossier: String(formData.get("insuranceDossier") || "").trim(),
+        insuranceDeductibleAmountCents: parseClientMoneyToCents(formData.get("insuranceDeductibleAmount")),
         mandateNumber: String(formData.get("mandateNumber") || "").trim(),
         claimNumber: String(formData.get("claimNumber") || "").trim(),
         insuredNumber: String(formData.get("insuredNumber") || "").trim(),

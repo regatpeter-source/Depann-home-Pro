@@ -72,8 +72,8 @@ export function openLeakReportCreation() {
     dialog.innerHTML = `<div><header><div><p class="eyebrow">Nouveau rapport</p><h2>Rapport de recherche de fuite</h2></div><button type="button" class="text-button" data-close-report-creation>Fermer</button></header><p class="muted">Un rapport est toujours rattaché à une intervention et au dossier client correspondant.</p><div class="report-creation-options"><button type="button" data-report-from-appointment><strong>Choisir une intervention</strong><span>Ouvrez une intervention existante pour créer ou reprendre son rapport.</span></button><button type="button" data-create-client-first><strong>Créer d’abord un client</strong><span>Créez le dossier client, planifiez son intervention, puis ouvrez le rapport depuis le planning.</span></button></div></div>`;
     document.body.append(dialog);
     dialog.querySelector("[data-close-report-creation]").addEventListener("click", () => dialog.remove());
-    dialog.querySelector("[data-report-from-appointment]").addEventListener("click", async () => { dialog.remove(); const { renderCalendar } = await import("./calendar.js?v=184"); renderCalendar(); });
-    dialog.querySelector("[data-create-client-first]").addEventListener("click", async () => { dialog.remove(); const { renderClients } = await import("./clients.js?v=154"); renderClients(); });
+    dialog.querySelector("[data-report-from-appointment]").addEventListener("click", async () => { dialog.remove(); const { renderCalendar } = await import("./calendar.js?v=185"); renderCalendar(); });
+    dialog.querySelector("[data-create-client-first]").addEventListener("click", async () => { dialog.remove(); const { renderClients } = await import("./clients.js?v=155"); renderClients(); });
 }
 
 async function openAppointmentReport(appointmentId) {
@@ -259,7 +259,7 @@ function bindEditor(shell, moduleKey) {
 function renderPreview(shell) {
     clearReportPreviewUrl();
     shell.className = "report-editor-shell report-preview-shell";
-    shell.innerHTML = `<header class="report-preview-header"><div><p class="eyebrow">Prévisualisation PDF intégrée</p><h2>${escapeHtml(current.title)}</h2><p class="muted">Cet aperçu reprend fidèlement le PDF qui sera archivé, sans téléchargement.</p><p class="auth-message" data-report-preview-state>Génération de l’aperçu…</p></div><div class="report-preview-actions"><button class="secondary-button" data-modify-report>Modifier le rapport</button>${ownsLock() && current.status === "ready_to_send" && canFinalizeReport() ? '<button class="secondary-button report-primary-action" data-preview-validate>Valider définitivement et envoyer</button>' : ""}<button class="secondary-button" data-close-preview>Fermer la prévisualisation</button><button class="secondary-button" data-report-home>Accueil</button></div></header><iframe title="Prévisualisation intégrée du rapport PDF" hidden></iframe>`;
+    shell.innerHTML = `<header class="report-preview-header"><div><p class="eyebrow">Prévisualisation PDF intégrée</p><h2>${escapeHtml(current.title)}</h2><p class="muted">Cet aperçu reprend fidèlement le PDF qui sera archivé.</p><p class="auth-message" data-report-preview-state>Génération de l’aperçu…</p><a class="secondary-button" data-open-report-preview target="_blank" rel="noopener" hidden>Ouvrir ou télécharger le PDF</a></div><div class="report-preview-actions"><button class="secondary-button" data-modify-report>Modifier le rapport</button>${ownsLock() && current.status === "ready_to_send" && canFinalizeReport() ? '<button class="secondary-button report-primary-action" data-preview-validate>Valider définitivement et envoyer</button>' : ""}<button class="secondary-button" data-close-preview>Fermer la prévisualisation</button><button class="secondary-button" data-report-home>Accueil</button></div></header><div class="report-preview-pages" hidden></div><iframe title="Prévisualisation intégrée du rapport PDF" hidden></iframe>`;
     const returnToEditor = () => { clearReportPreviewUrl(); previewMode = false; renderEditor(shell); };
     shell.querySelector("[data-modify-report]").addEventListener("click", returnToEditor);
     shell.querySelector("[data-close-preview]").addEventListener("click", returnToEditor);
@@ -270,6 +270,8 @@ function renderPreview(shell) {
 
 async function loadReportPreview(shell) {
     const frame = shell.querySelector("iframe");
+    const pages = shell.querySelector(".report-preview-pages");
+    const openLink = shell.querySelector("[data-open-report-preview]");
     const state = shell.querySelector("[data-report-preview-state]");
     try {
         const response = await fetch(`/api/technical-reports/${encodeURIComponent(current.id)}/pdf?preview=${Date.now()}`, { credentials: "same-origin", headers: { Accept: "application/pdf" } });
@@ -280,11 +282,19 @@ async function loadReportPreview(shell) {
         const contentType = String(response.headers.get("Content-Type") || "").toLowerCase();
         if (!contentType.startsWith("application/pdf")) throw new Error("Le serveur n’a pas retourné un document PDF. Reconnectez-vous puis réessayez.");
         const blob = await response.blob();
-        if (!previewMode || !frame?.isConnected) return;
+        if (!previewMode || !frame?.isConnected || !pages?.isConnected) return;
         clearReportPreviewUrl();
         reportPreviewUrl = URL.createObjectURL(blob);
-        frame.src = reportPreviewUrl;
-        frame.hidden = false;
+        openLink.href = reportPreviewUrl;
+        openLink.download = `apercu-rapport-${current.id}.pdf`;
+        openLink.hidden = false;
+        if (document.body.classList.contains("mobile-device")) {
+            pages.hidden = false;
+            await renderLivePdfPreview(blob, pages);
+        } else {
+            frame.src = reportPreviewUrl;
+            frame.hidden = false;
+        }
         state.textContent = "Aperçu PDF chargé.";
         state.classList.remove("error");
     } catch (error) {
@@ -292,6 +302,7 @@ async function loadReportPreview(shell) {
         state.textContent = error.message || "Aperçu PDF indisponible.";
         state.classList.add("error");
         frame.hidden = true;
+        pages.hidden = true;
     }
 }
 

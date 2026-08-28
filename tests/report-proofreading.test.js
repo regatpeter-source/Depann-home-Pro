@@ -201,6 +201,13 @@ test("a validated report can be reopened for a complete correction and validatio
     assert.match(editorSource, /Remettre en brouillon/);
 });
 
+test("mobile report preview renders PDF pages without relying on iframe support", () => {
+    assert.match(editorSource, /class="report-preview-pages" hidden/);
+    assert.match(editorSource, /document\.body\.classList\.contains\("mobile-device"\)/);
+    assert.match(editorSource, /await renderLivePdfPreview\(blob, pages\)/);
+    assert.match(editorSource, /data-open-report-preview/);
+});
+
 test("client attachment delivery supports referenced reports and legacy embedded files", () => {
     assert.match(clientsServerSource, /const embedded = decodeAttachmentDataUrl\(attachment\?\.dataUrl\)/);
     assert.match(clientsServerSource, /client_id = \$3 AND status = 'validated'/);

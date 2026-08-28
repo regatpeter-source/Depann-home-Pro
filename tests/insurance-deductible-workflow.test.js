@@ -6,6 +6,7 @@ const schema = readFileSync(new URL("../database/schema.sql", import.meta.url), 
 const server = readFileSync(new URL("../server/calendar.js", import.meta.url), "utf8");
 const calendar = readFileSync(new URL("../js/calendar.js", import.meta.url), "utf8");
 const clients = readFileSync(new URL("../js/clients.js", import.meta.url), "utf8");
+const clientServer = readFileSync(new URL("../server/clients.js", import.meta.url), "utf8");
 const billingServer = readFileSync(new URL("../server/billing.js", import.meta.url), "utf8");
 const billingClient = readFileSync(new URL("../js/billing.js", import.meta.url), "utf8");
 
@@ -65,6 +66,15 @@ test("le contrôle remplace l’état de la franchise sans créer de doublon", (
 	assert.match(server, /String\(item\?\.appointmentId \|\| ""\) !== String\(appointmentId\)/);
 	assert.match(server, /Franchise encaissée et validée/);
 	assert.match(server, /Franchise refusée/);
+});
+
+test("la franchise prévue est renseignée sur la fiche client et visible par le technicien", () => {
+	assert.match(clients, /name="insuranceDeductibleAmount"/);
+	assert.match(clients, /Franchise prévue/);
+	assert.match(clients, /insuranceDeductibleAmountCents: parseClientMoneyToCents/);
+	assert.match(clientServer, /insuranceDeductibleAmountCents: sanitizeDeductibleAmount/);
+	assert.match(calendar, /Franchise prévue sur la fiche client/);
+	assert.match(calendar, /event\.deductibleAmountCents \|\| expectedAmountCents/);
 });
 
 test("la franchise validée est proposée en soustraction sur la facture du donneur d’ordre", () => {

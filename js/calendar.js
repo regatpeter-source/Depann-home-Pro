@@ -1,9 +1,9 @@
 import { ROUTES } from "./config.js?v=106";
 import { createBillingDocumentForClient, viewBillingDocument } from "./billing.js?v=188";
-import { getSearchableClients } from "./clients.js?v=154";
+import { getSearchableClients } from "./clients.js?v=155";
 import { addClientActivityByName, synchronizeClients } from "./client-sync.js?v=125";
 import { renderClientMessages } from "./messages.js?v=107";
-import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=35";
+import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=36";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { renderPlatformAnnouncement } from "./platform-announcement.js?v=1";
@@ -973,30 +973,32 @@ function renderInsuranceDeductibleHtml(event, client) {
     if (!event?.insuranceName || !client) return "";
     const status = String(event.deductibleStatus || "none");
     const amount = formatDeductibleAmount(event.deductibleAmountCents);
+    const expectedAmountCents = Number(client.insuranceDeductibleAmountCents || 0);
+    const expectedAmountHtml = expectedAmountCents ? `<p class="deductible-expected"><strong>Franchise prévue sur la fiche client : ${escapeHtml(formatDeductibleAmount(expectedAmountCents))}</strong><br><small>Vérifiez ce montant avec le client avant d’enregistrer la somme réellement encaissée.</small></p>` : "";
     const photo = (client.attachments || []).find(attachment => String(attachment.id) === String(event.deductiblePhotoAttachmentId || ""));
     const photoHtml = photo?.dataUrl ? `<img class="deductible-proof-photo" src="${escapeHtml(photo.dataUrl)}" alt="Photo de preuve de la franchise">` : "";
     const summary = event.deductibleAmountCents ? `<dl><dt>Montant encaissé</dt><dd>${escapeHtml(amount)}</dd><dt>Moyen de paiement</dt><dd>${escapeHtml(event.deductiblePaymentMethod || "Non renseigné")}</dd><dt>Déclaré par</dt><dd>${escapeHtml(event.deductibleCollectedByName || "Technicien")}</dd></dl>${photoHtml}` : "";
     if (status === "validated") return `
         <section class="calendar-quitus insurance-deductible" aria-label="Franchise validée">
             <div class="form-heading"><div><p class="eyebrow">Assurance · ${escapeHtml(event.insuranceName)}</p><h3>Franchise validée</h3></div><span class="quitus-status signed">Validée administrativement</span></div>
-            ${summary}<p class="muted">Contrôlée par ${escapeHtml(event.deductibleReviewedByName || "Administration")} le ${escapeHtml(formatQuitusValidationDate(event.deductibleReviewedAt))}. Cette preuve est verrouillée et figure dans l’historique de l’intervention.</p>
+            ${expectedAmountHtml}${summary}<p class="muted">Contrôlée par ${escapeHtml(event.deductibleReviewedByName || "Administration")} le ${escapeHtml(formatQuitusValidationDate(event.deductibleReviewedAt))}. Cette preuve est verrouillée et figure dans l’historique de l’intervention.</p>
         </section>`;
     if (status === "pending") {
         if (canReviewInsuranceDeductible()) return `
             <form class="calendar-quitus insurance-deductible" data-deductible-review>
                 <div class="form-heading"><div><p class="eyebrow">Assurance · ${escapeHtml(event.insuranceName)}</p><h3>Franchise à contrôler</h3></div><span class="quitus-status">En attente administrative</span></div>
-                ${summary}<label>Note de contrôle ou motif du refus<textarea name="reviewNote" maxlength="1000" rows="3" placeholder="Obligatoire en cas de refus"></textarea></label>
+                ${expectedAmountHtml}${summary}<label>Note de contrôle ou motif du refus<textarea name="reviewNote" maxlength="1000" rows="3" placeholder="Obligatoire en cas de refus"></textarea></label>
                 <div class="calendar-form-actions"><button type="button" class="secondary-button" data-deductible-decision="validated">Valider la franchise</button><button type="button" class="secondary-button danger-button" data-deductible-decision="rejected">Refuser et redemander une preuve</button></div><p class="auth-message" aria-live="polite"></p>
             </form>`;
-        return `<section class="calendar-quitus insurance-deductible"><div class="form-heading"><div><p class="eyebrow">Assurance · ${escapeHtml(event.insuranceName)}</p><h3>Franchise transmise</h3></div><span class="quitus-status">Contrôle administratif en attente</span></div>${summary}<p class="muted">Le poste administratif doit contrôler le montant, le moyen de paiement et la photo.</p></section>`;
+        return `<section class="calendar-quitus insurance-deductible"><div class="form-heading"><div><p class="eyebrow">Assurance · ${escapeHtml(event.insuranceName)}</p><h3>Franchise transmise</h3></div><span class="quitus-status">Contrôle administratif en attente</span></div>${expectedAmountHtml}${summary}<p class="muted">Le poste administratif doit contrôler le montant, le moyen de paiement et la photo.</p></section>`;
     }
     if (!canRecordInsuranceDeductible()) return status === "rejected" ? `<section class="calendar-quitus insurance-deductible"><div class="form-heading"><div><p class="eyebrow">Assurance · ${escapeHtml(event.insuranceName)}</p><h3>Franchise refusée</h3></div><span class="quitus-status">À reprendre</span></div>${summary}<p class="auth-message error">${escapeHtml(event.deductibleReviewNote || "Une nouvelle preuve doit être transmise par le technicien.")}</p></section>` : "";
     return `
         <form class="calendar-quitus insurance-deductible" data-deductible-capture>
             <div class="form-heading"><div><p class="eyebrow">Assurance · ${escapeHtml(event.insuranceName)}</p><h3>${status === "rejected" ? "Corriger la franchise" : "Franchise encaissée auprès du client"}</h3></div><span class="quitus-status">${status === "rejected" ? "Refusée par le poste administratif" : "À déclarer"}</span></div>
             ${status === "rejected" ? `<p class="auth-message error">Motif : ${escapeHtml(event.deductibleReviewNote || "Preuve à reprendre")}</p>` : ""}
-            <p class="muted">Dossier ${escapeHtml(event.insuranceClaimNumber || "sans numéro de sinistre")} · saisissez uniquement le montant réellement reçu.</p>
-            <label>Montant de la franchise encaissée (€)<input name="amount" type="number" min="0.01" max="1000000" step="0.01" inputmode="decimal" required value="${event.deductibleAmountCents ? escapeHtml((Number(event.deductibleAmountCents) / 100).toFixed(2)) : ""}"></label>
+            <p class="muted">Dossier ${escapeHtml(event.insuranceClaimNumber || "sans numéro de sinistre")} · saisissez uniquement le montant réellement reçu.</p>${expectedAmountHtml}
+            <label>Montant de la franchise encaissée (€)<input name="amount" type="number" min="0.01" max="1000000" step="0.01" inputmode="decimal" required value="${event.deductibleAmountCents || expectedAmountCents ? escapeHtml((Number(event.deductibleAmountCents || expectedAmountCents) / 100).toFixed(2)) : ""}"></label>
             <label>Moyen de paiement<select name="paymentMethod" required>${["Chèque", "Espèces", "Virement", "Carte bancaire"].map(method => `<option value="${method}" ${event.deductiblePaymentMethod === method ? "selected" : ""}>${method}</option>`).join("")}</select></label>
             <label>Photo de preuve obligatoire<input name="photo" type="file" accept="image/jpeg,image/png,image/webp" capture="environment" required></label>
             <div class="calendar-form-actions"><button type="submit" class="secondary-button">Transmettre au poste administratif</button></div><p class="auth-message" aria-live="polite"></p>

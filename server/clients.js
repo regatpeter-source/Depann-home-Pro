@@ -121,6 +121,7 @@ async function reconcilePartnerMissionClients(database, ownerId) {
                 interventionReference: String(data.interventionReference || data.partnerReference || "").slice(0, 160),
                 insurance: String(data.insurance || "").slice(0, 160),
                 insuranceDossier: String(data.insuranceDossier || "").slice(0, 160),
+                insuranceDeductibleAmountCents: sanitizeDeductibleAmount(data.insuranceDeductibleAmountCents || data.deductibleAmountCents),
                 mandateNumber: String(data.mandateNumber || "").slice(0, 160),
                 principal: String(data.principal || "").slice(0, 160),
                 claimNumber: String(data.claimNumber || "").slice(0, 160),
@@ -586,6 +587,7 @@ export function createGroupClientCopy(sourceClient, context, options = {}) {
         interventionReference: String(sourceClient?.interventionReference || "").slice(0, 160),
         insurance: String(sourceClient?.insurance || "").slice(0, 160),
         insuranceDossier: String(sourceClient?.insuranceDossier || "").slice(0, 160),
+        insuranceDeductibleAmountCents: sanitizeDeductibleAmount(sourceClient?.insuranceDeductibleAmountCents),
         mandateNumber: String(sourceClient?.mandateNumber || sourceClient?.mandate || "").slice(0, 160),
         principal: String(sourceClient?.principal || "").slice(0, 160),
         claimNumber: String(sourceClient?.claimNumber || "").slice(0, 160),
@@ -657,10 +659,16 @@ function sanitizeClient(value, expectedId) {
         id: expectedId,
         updatedAt: updatedAt.toISOString(),
         createdAt: validDate(value.createdAt) || updatedAt.toISOString(),
+        insuranceDeductibleAmountCents: sanitizeDeductibleAmount(value.insuranceDeductibleAmountCents),
         attachments: Array.isArray(value.attachments) ? value.attachments.slice(0, MAX_CLIENT_ATTACHMENTS) : [],
         deletedAttachmentIds: sanitizeDeletedAttachmentIds(value.deletedAttachmentIds),
         activityHistory: sanitizeActivityHistory(value.activityHistory)
     };
+}
+
+function sanitizeDeductibleAmount(value) {
+    const amount = Number(value || 0);
+    return Number.isSafeInteger(amount) && amount > 0 && amount <= 100000000 ? amount : 0;
 }
 
 function sanitizeActivityHistory(value) {
