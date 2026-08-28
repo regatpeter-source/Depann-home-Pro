@@ -610,7 +610,8 @@ test("un dossier IMH multi-pages extrait les données essentielles sans confondr
     const text = `Inter Mutuelles Habitat Gie - Tél : 05 17 18 62 60
 Objet : Confirmation de mission urgente
 ORDRE DE MISSION URGENTE RECHERCHE DE FUITE VISUELLE
-Suite à notre dernier entretien, et conformément à la demande de Madame LEVANA CHETRIT THOUROT, assuré auprès de la compagnie MATMUT, nous vous confirmons votre mission pour l’intervention relative au sinistre Dégât des eaux, Gel du 23/07/26.
+Suite à notre dernier entretien, et conformément à la demande de Madame LEVANA CHETRIT
+THOUROT, assuré auprès de la compagnie MATMUT, nous vous confirmons votre mission pour l’intervention relative au sinistre Dégât des eaux, Gel du 23/07/26.
 L’adresse du sinistre :
 24 RUE ARISTIDE BRIAND
 44510 LE POULIGUEN
@@ -627,7 +628,8 @@ N° Téléphone Bénéficiaire : 01 47 50 25 46 / 06 27 75 17 86
 Rapport de Recherche de Fuite N° Dossier IMH 2713642-REN1
 N° Prestataire 552563
 BENEFICIAIRE
-Nom Prénom LEVANA CHETRIT THOUROT
+Nom Prénom
+LEVANA CHETRIT THOUROT
 Téléphone 01 47 50 25 46 / 06 27 75 17 86
 Adresse du sinistre 24 RUE ARISTIDE BRIAND
 44510 LE POULIGUEN`;
@@ -639,6 +641,14 @@ Adresse du sinistre 24 RUE ARISTIDE BRIAND
     assert.equal(payload.interventionType, "RECHERCHE DE FUITE VISUELLE"); assert.equal(payload.insurance, "la compagnie MATMUT");
     assert.match(payload.description, /recherche de fuite visuelle/i);
     assert.equal(payload.insuredNumber, ""); assert.equal(payload.claimNumber, "");
+});
+
+test("le bénéficiaire IMH est retrouvé lorsque la référence et le nom partagent une ligne", () => {
+    const payload = extractMissionPayload({ id: 61, subject: "Mission imh", body_text: "" }, `Descriptif des travaux
+Nos Référence : 2713642-REN1 Madame LEVANA CHETRIT THOUROT
+24 RUE ARISTIDE BRIAND
+44510 LE POULIGUEN`);
+    assert.equal(payload.client.name, "Madame LEVANA CHETRIT THOUROT");
 });
 
 test("un PDF en colonnes ignore un faux numéro assuré et retrouve la référence voisine", () => {
