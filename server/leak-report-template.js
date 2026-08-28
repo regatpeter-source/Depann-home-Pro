@@ -103,7 +103,7 @@ function addCover(pdf, report, profile, template, snapshot, photos) {
         ["N° de service", snapshot.interventionNumber || report.appointmentId || "—"],
         ["Bénéficiaire", clientName],
         ["Lieu d’intervention", location],
-        ["Dossier assurance", snapshot.insuranceDossier || "Non renseigné"],
+        ["Réf. dossier assureur", snapshot.insuranceDossier || "Non renseignée"],
         ["Mandat", snapshot.mandateNumber || "Non renseigné"],
         ["Sinistre / assurance", [snapshot.claimNumber, snapshot.insurance].filter(Boolean).join(" · ") || "Non renseigné"],
         ["N° sociétaire / assuré", snapshot.insuredNumber || "Non renseigné"],

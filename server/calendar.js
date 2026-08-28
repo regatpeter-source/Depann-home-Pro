@@ -862,7 +862,7 @@ export function createQuitusPdf(event, quitus, profile = {}) {
         text([event.title, formatDate(event.date), [event.startTime, event.endTime].filter(Boolean).join(" – "), event.location].filter(Boolean).join("\n"), 48, 140, 220, { size: 10, lineGap: 4 });
         text("CLIENT", 315, 124, 232, { size: 9, bold: true });
         const client = event.clientData && typeof event.clientData === "object" ? event.clientData : {};
-        const insuranceReferences = [client.insuranceDossier || client.partnerReference ? `Dossier assurance : ${client.insuranceDossier || client.partnerReference}` : "", client.mandateNumber || client.mandate ? `Mandat : ${client.mandateNumber || client.mandate}` : ""].filter(Boolean);
+        const insuranceReferences = [client.insuranceDossier ? `Réf. dossier assureur : ${client.insuranceDossier}` : "", client.mandateNumber || client.mandate ? `Mandat : ${client.mandateNumber || client.mandate}` : ""].filter(Boolean);
         text([event.clientName, ...insuranceReferences].filter(Boolean).join("\n"), 315, 140, 232, { size: 10, lineGap: 4 });
         const clientAddress = event.location || [client.address, client.postalCode, client.city].filter(Boolean).join(", ") || "Adresse non renseignée";
         const city = client.city || "Ville non renseignée";

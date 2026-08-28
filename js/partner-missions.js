@@ -2,7 +2,7 @@ import { ROUTES } from "./config.js?v=118";
 import { clearSearch, getContainer, setPage } from "./ui.js?v=44";
 import { escapeHtml } from "./utils.js?v=44";
 import { openPartnerDialogue } from "./partner-dialogue.js?v=17";
-import { getSearchableClients } from "./clients.js?v=152";
+import { getSearchableClients } from "./clients.js?v=153";
 import { synchronizeClients } from "./client-sync.js?v=125";
 import { loadPartnerNotifications, markPartnerNotificationsRead } from "./collaboration.js?v=4";
 
@@ -415,7 +415,7 @@ function showWizardMessage(node, message) { const target = node.querySelector(".
 
 async function showDetail(id) { const result = await api(`/api/partner-missions/${id}`); if (!result.ok) return alert(result.message); const { mission, history, emailAttachments = [] } = result.data; const details = Object.entries(mission.mappedData).filter(([key, value]) => value && !["attachments", "errors"].includes(key)).map(([key, value]) => `<dt>${escapeHtml(labelField(key))}</dt><dd>${escapeHtml(typeof value === "object" ? JSON.stringify(value) : value)}</dd>`).join(""); const emailDocuments = emailAttachments.length ? `<section class="procedure-section"><div class="form-heading"><div><p class="eyebrow">Documents d’origine</p><h3>Pièces jointes reçues par e-mail</h3></div><span class="file-count-badge">${emailAttachments.length} fichier(s)</span></div><div class="attachment-list">${emailAttachments.map(attachment => `<article class="attachment-card"><div><p class="eyebrow">${escapeHtml(attachment.mimeType || "Document")}</p><h4>${escapeHtml(attachment.name || "Pièce jointe")}</h4><p class="muted">${escapeHtml(formatAttachmentSize(attachment.fileSize))} · ${escapeHtml(formatMissionDate(attachment.createdAt))}</p></div><div class="attachment-actions"><a class="secondary-button" href="${escapeHtml(attachment.url)}" target="_blank" rel="noopener">Visualiser</a><a class="secondary-button" href="${escapeHtml(attachment.url)}" download="${escapeHtml(attachment.name || "document")}">Télécharger</a></div></article>`).join("")}</div></section>` : ""; const dialog = openDialog(`<h3>Mission ${escapeHtml(mission.missionNumber || "partenaire")}</h3><p class="muted">Reçue le ${escapeHtml(formatMissionDate(mission.createdAt))} · ${escapeHtml(mission.partnerName || "Partenaire")} · ${escapeHtml(labelStatus(mission.status))}</p><div class="partner-mission-card-actions"><button class="secondary-button" id="openPartnerDialogue">Ouvrir le dialogue</button></div><dl class="partner-mission-details">${details}</dl>${emailDocuments}<h4>Journal de mission</h4><ol class="partner-mission-history">${history.map(item => `<li><strong>${escapeHtml(labelStatus(item.status))}</strong> · ${escapeHtml(item.action)}<br><small>${escapeHtml(item.actorName)} · ${escapeHtml(formatMissionDate(item.createdAt))}</small></li>`).join("")}</ol>`); dialog.querySelector("#openPartnerDialogue").addEventListener("click", () => { dialog.remove(); openPartnerDialogue(mission.id); }); }
 async function openNetworkMissionPlanning(mission) {
-    const { renderCalendar } = await import("./calendar.js?v=179");
+    const { renderCalendar } = await import("./calendar.js?v=180");
     const data = mission.mappedData || {};
     const draft = mission.planningDraft || {};
     const hasDraft = Boolean(draft.pausedAt);

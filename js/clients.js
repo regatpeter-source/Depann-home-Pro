@@ -312,7 +312,7 @@ function renderClientForm(client, options = {}) {
                     <p class="muted">Ces références sont reprises automatiquement sur les rapports, devis, factures et autres documents liés.</p>
                     <div class="form-grid">
                         <label>Assurance<input name="insurance" maxlength="160" value="${escapeHtml(client.insurance || "")}"></label>
-                        <label>Dossier assurance / Réf. assurance<input name="insuranceDossier" maxlength="160" value="${escapeHtml(client.insuranceDossier || client.partnerReference || "")}"></label>
+                        <label>Réf. dossier assureur<input name="insuranceDossier" maxlength="160" value="${escapeHtml(client.insuranceDossier || "")}"></label>
                         <label>N° mandat<input name="mandateNumber" maxlength="160" value="${escapeHtml(client.mandateNumber || client.mandate || "")}"></label>
                         <label>N° sinistre<input name="claimNumber" maxlength="160" value="${escapeHtml(client.claimNumber || client.claim || "")}"></label>
                         <label>N° sociétaire / assuré<input name="insuredNumber" maxlength="160" value="${escapeHtml(client.insuredNumber || "")}"></label>
@@ -531,7 +531,7 @@ function renderClientDetail(client, options = {}) {
             <span> ${escapeHtml(client.email || "Non renseigné")}</span>
             <span> ${escapeHtml(formatClientLocation(client))}</span>
         </div>
-        ${(client.insurance || client.insuranceDossier || client.mandateNumber || client.claimNumber || client.insuredNumber || client.principal || client.manager || client.expert) ? `<section class="procedure-section"><h3>Assurance / mission partenaire</h3><div class="procedure-meta">${[["Assurance", client.insurance], ["Dossier assurance", client.insuranceDossier || client.partnerReference], ["Mandat", client.mandateNumber || client.mandate], ["Sinistre", client.claimNumber || client.claim], ["N° sociétaire / assuré", client.insuredNumber], ["Mandant / donneur d’ordre", client.principal], ["Gestionnaire", client.manager || client.caseManager], ["Expert", client.expert]].filter(([, value]) => value).map(([label, value]) => `<span><strong>${label} :</strong> ${escapeHtml(value)}</span>`).join("")}</div></section>` : ""}
+        ${(client.insurance || client.insuranceDossier || client.mandateNumber || client.claimNumber || client.insuredNumber || client.principal || client.manager || client.expert) ? `<section class="procedure-section"><h3>Assurance / mission partenaire</h3><div class="procedure-meta">${[["Assurance", client.insurance], ["Réf. dossier assureur", client.insuranceDossier], ["Mandat", client.mandateNumber || client.mandate], ["Sinistre", client.claimNumber || client.claim], ["N° sociétaire / assuré", client.insuredNumber], ["Mandant / donneur d’ordre", client.principal], ["Gestionnaire", client.manager || client.caseManager], ["Expert", client.expert]].filter(([, value]) => value).map(([label, value]) => `<span><strong>${label} :</strong> ${escapeHtml(value)}</span>`).join("")}</div></section>` : ""}
         <section class="procedure-section">
             <h3> Équipements</h3>
             <p>${escapeHtml(client.equipment || "Aucun équipement renseigné.")}</p>

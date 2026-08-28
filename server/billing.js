@@ -1330,7 +1330,7 @@ function ublFileName(document) {
 
 export async function createBillingDocumentOutput(document, profile) {
     const client = document.clientData && typeof document.clientData === "object" ? document.clientData : {};
-    document = { ...document, legalData: { ...(document.legalData || {}), insuranceDossier: document.legalData?.insuranceDossier || client.insuranceDossier || client.partnerReference || "", mandateNumber: document.legalData?.mandateNumber || client.mandateNumber || client.mandate || "" } };
+    document = { ...document, legalData: { ...(document.legalData || {}), insuranceDossier: document.legalData?.insuranceDossier || client.insuranceDossier || "", mandateNumber: document.legalData?.mandateNumber || client.mandateNumber || client.mandate || "" } };
     const custom = await renderActiveCustomTemplate(profile.ownerId, document.documentType, buildBillingCustomModel(document, profile));
     if (custom) return custom;
     return { buffer: await createBillingPdf(document, profile), filename: billingPdfFileName(document), mimeType: PDF_MIME };
@@ -1417,7 +1417,7 @@ export function createBillingPdf(document, profile) {
         pdf.y = partyY + partyHeight + 18;
         text("OBJET / PRESTATION", margin, pdf.y, contentWidth, { size: 8, bold: true });
         const operationLabel = ({ goods: "Livraison de biens", services: "Prestation de services", mixed: "Livraison de biens et prestation de services" })[legalData.operationCategory] || "Prestation de services";
-        const objectDetails = [isCredit ? `Avoir relatif à la facture ${document.sourceInvoiceNumber || "d’origine"}${document.sourceInvoiceDate ? ` du ${formatDate(document.sourceInvoiceDate)}` : ""}${document.reason ? ` · ${document.reason}` : ""}` : operationLabel, legalData.insuranceDossier ? `Dossier assurance : ${legalData.insuranceDossier}` : "", legalData.mandateNumber ? `Mandat : ${legalData.mandateNumber}` : "", legalData.serviceDate ? `Date de livraison / prestation : ${formatDate(legalData.serviceDate)}` : "", legalData.purchaseOrderReference ? `Bon de commande : ${legalData.purchaseOrderReference}` : "", legalData.deliveryAddress && normalizeAddress(legalData.deliveryAddress) !== normalizeAddress(legalData.billingAddress || document.customerAddress) ? `Adresse de livraison : ${legalData.deliveryAddress}` : ""].filter(Boolean).join("\n");
+        const objectDetails = [isCredit ? `Avoir relatif à la facture ${document.sourceInvoiceNumber || "d’origine"}${document.sourceInvoiceDate ? ` du ${formatDate(document.sourceInvoiceDate)}` : ""}${document.reason ? ` · ${document.reason}` : ""}` : operationLabel, legalData.insuranceDossier ? `Réf. dossier assureur : ${legalData.insuranceDossier}` : "", legalData.mandateNumber ? `Mandat : ${legalData.mandateNumber}` : "", legalData.serviceDate ? `Date de livraison / prestation : ${formatDate(legalData.serviceDate)}` : "", legalData.purchaseOrderReference ? `Bon de commande : ${legalData.purchaseOrderReference}` : "", legalData.deliveryAddress && normalizeAddress(legalData.deliveryAddress) !== normalizeAddress(legalData.billingAddress || document.customerAddress) ? `Adresse de livraison : ${legalData.deliveryAddress}` : ""].filter(Boolean).join("\n");
         text(objectDetails, margin, pdf.y + 12, contentWidth, { size: 9, lineGap: 2 });
         pdf.y += Math.max(32, pdf.heightOfString(objectDetails, { width: contentWidth, fontSize: 9, lineGap: 2 }) + 22);
 

@@ -1,21 +1,21 @@
 import { ROUTES, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=131";
-import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=179";
+import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=180";
 import { openCreatorPartnerRequest, openCreatorRequestNotification, renderCreatorConsole } from "./creator.js?v=151";
-import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=185";
+import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=186";
 import { renderAccounting, renderElectronicInvoicingConfiguration } from "./accounting.js?v=18";
-import { renderPurchases } from "./purchases.js?v=118";
+import { renderPurchases } from "./purchases.js?v=119";
 import { renderGroupActivation, renderGroupWorkspace } from "./groups.js?v=3";
-import { renderPartnerMissions } from "./partner-missions.js?v=55";
+import { renderPartnerMissions } from "./partner-missions.js?v=56";
 import { renderPartnerSandbox } from "./partner-sandbox.js?v=3";
 import { renderPartnerConnections } from "./partner-connections.js?v=25";
 import { renderCompanyEmailWorkspace, renderPartnerEmailSettings } from "./partner-email-settings.js?v=18";
 import { renderDataImportTool } from "./data-imports.js?v=4";
-import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=31";
+import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=32";
 import { getFirstUnreadClientId, refreshClientMessageAlert, refreshVisibleClientMessages } from "./messages.js?v=107";
-import { getSearchableClients, renderClients } from "./clients.js?v=152";
+import { getSearchableClients, renderClients } from "./clients.js?v=153";
 import { synchronizeClients } from "./client-sync.js?v=125";
 import { configureLibrary, openLibrarySection, renderLibrary, searchPersonalLibrary } from "./library.js?v=122";
-import { getContextualSearchResults } from "./search.js?v=67";
+import { getContextualSearchResults } from "./search.js?v=68";
 import { state, resetSelection } from "./state.js?v=44";
 import {
     getSettings,

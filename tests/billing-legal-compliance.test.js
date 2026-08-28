@@ -57,7 +57,7 @@ test("les insertions et mises à jour persistent l’instantané légal et l’�
 });
 
 test("la sortie PDF intégrée contient les mentions B2B et conserve la franchise 293 B", () => {
-    for (const mention of ["Date de livraison / prestation", "Bon de commande", "Dossier assurance", "Mandat", "Adresse de livraison", "SIREN", "TVA intracom.", "Aucun escompte pour paiement anticipé", "trois fois le taux d’intérêt légal", "Indemnité forfaitaire pour frais de recouvrement", "TVA acquittée sur les débits"]) assert.match(serverSource, new RegExp(mention));
+    for (const mention of ["Date de livraison / prestation", "Bon de commande", "Réf. dossier assureur", "Mandat", "Adresse de livraison", "SIREN", "TVA intracom.", "Aucun escompte pour paiement anticipé", "trois fois le taux d’intérêt légal", "Indemnité forfaitaire pour frais de recouvrement", "TVA acquittée sur les débits"]) assert.match(serverSource, new RegExp(mention));
     assert.match(serverSource, /TVA non applicable, art\. 293 B du CGI/);
     assert.match(serverSource, /normalizeAddress\(legalData\.deliveryAddress\) !== normalizeAddress/);
 });

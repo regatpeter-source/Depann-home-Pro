@@ -11,12 +11,13 @@ test("la fiche client conserve et affiche toutes les formalités assurance", () 
         assert.match(clients, new RegExp(`${field}: String\\(formData\\.get\\("${field}"\\)`));
     }
     assert.match(clients, /Assurance \/ mission partenaire/);
-    assert.match(clients, /Dossier assurance \/ Réf\. assurance/);
+    assert.match(clients, /Réf\. dossier assureur/);
 });
 
 test("les missions partenaires alimentent la fiche et réparent les anciens dossiers", () => {
     const missions = read("server/partner-missions.js");
-    assert.match(missions, /insuranceDossier: data\.insuranceDossier \|\| data\.partnerReference/);
+    assert.match(missions, /insuranceDossier: data\.insuranceDossier \|\| old\.insuranceDossier/);
+    assert.doesNotMatch(missions, /insuranceDossier: data\.insuranceDossier \|\| data\.partnerReference/);
     assert.match(missions, /mandateNumber: data\.mandateNumber \|\| old\.mandateNumber/);
     assert.match(missions, /client\.client_data->>'insuranceDossier'/);
     assert.match(missions, /client\.client_data->>'mandateNumber'/);
@@ -26,9 +27,9 @@ test("la RDF reprend dossier, mandat et intervenants dans ses informations gén�
     const editor = read("js/leak-report-wizard.js");
     const server = read("server/technical-reports.js");
     const pdf = read("server/leak-report-template.js");
-    for (const label of ["Dossier assurance / Réf. assurance", "N° mandat", "N° sociétaire / assuré", "Mandant / donneur d’ordre", "Gestionnaire", "Expert"]) assert.match(editor, new RegExp(label.replace("/", "\\/")));
+    for (const label of ["Réf. dossier assureur", "N° mandat", "N° sociétaire / assuré", "Mandant / donneur d’ordre", "Gestionnaire", "Expert"]) assert.match(editor, new RegExp(label.replace("/", "\\/")));
     for (const field of ["insuranceDossier", "mandateNumber", "insuredNumber", "principal", "manager", "expert"]) assert.match(server, new RegExp(field));
-    assert.match(pdf, /\["Dossier assurance", snapshot\.insuranceDossier/);
+    assert.match(pdf, /\["Réf\. dossier assureur", snapshot\.insuranceDossier/);
     assert.match(pdf, /\["Mandat", snapshot\.mandateNumber/);
 });
 
@@ -36,10 +37,11 @@ test("les documents commerciaux et le quitus impriment dossier et mandat", () =>
     const billingClient = read("js/billing.js");
     const billingServer = read("server/billing.js");
     const calendar = read("server/calendar.js");
-    assert.match(billingClient, /insuranceDossier: client\.insuranceDossier \|\| client\.partnerReference/);
+    assert.match(billingClient, /insuranceDossier: client\.insuranceDossier \|\| ""/);
+    assert.doesNotMatch(billingClient, /insuranceDossier: client\.insuranceDossier \|\| client\.partnerReference/);
     assert.match(billingClient, /mandateNumber: client\.mandateNumber \|\| client\.mandate/);
-    assert.match(billingServer, /`Dossier assurance : \$\{legalData\.insuranceDossier\}`/);
+    assert.match(billingServer, /`Réf\. dossier assureur : \$\{legalData\.insuranceDossier\}`/);
     assert.match(billingServer, /`Mandat : \$\{legalData\.mandateNumber\}`/);
-    assert.match(calendar, /`Dossier assurance : \$\{client\.insuranceDossier \|\| client\.partnerReference\}`/);
+    assert.match(calendar, /`Réf\. dossier assureur : \$\{client\.insuranceDossier\}`/);
     assert.match(calendar, /`Mandat : \$\{client\.mandateNumber \|\| client\.mandate\}`/);
 });
