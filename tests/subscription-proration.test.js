@@ -19,7 +19,7 @@ test("le prorata utilise les jours calendaires et arrondit au centime", () => {
     assert.throws(() => calculateSubscriptionProration(2500, 4300, 30, 31), TypeError);
 });
 
-test("l’ajout ou le retrait de postes PC et mobiles réévalue le prorata de l’offre actuelle", () => {
+test("l’ajout ou le retrait de postes administratifs et mobiles réévalue le prorata de l’offre actuelle", () => {
     const base = { subscriptionPlan: "paid", subscriptionTier: "basic_plus", discountMode: "fixed", discountValue: 0 };
     const addedMobile = calculateSubscriptionChangeProration(
         { ...base, maxPcUsers: 1, maxTechnicians: 1, monthlyPriceCents: 1 },
@@ -83,7 +83,7 @@ test("la baisse crée un avoir et la hausse une facture complémentaire", () => 
     assert.match(invoicingSource, /'proration_debit'/);
     assert.match(invoicingSource, /subscription_proration_invoice_created/);
     assert.match(invoicingSource, /Prorata du/);
-    assert.match(invoicingSource, /poste\(s\) PC/);
+    assert.match(invoicingSource, /poste\(s\) administratif/);
     assert.match(invoicingSource, /poste\(s\) mobile\(s\)/);
     assert.match(creatorClientSource, /Complément prorata/);
 });

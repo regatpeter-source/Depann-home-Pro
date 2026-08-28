@@ -12,7 +12,7 @@ const validRequest = {
     phone: "02 00 00 00 00",
     teamSize: "2-5",
     offer: "basic-plus",
-    message: "Nous souhaitons équiper deux postes PC et trois mobiles.",
+    message: "Nous souhaitons équiper deux postes administratifs et trois mobiles.",
     privacyConsent: true
 };
 

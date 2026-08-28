@@ -15,7 +15,7 @@ test("chaque fenêtre Web ou PWA possède une session cliente distincte", () => 
     assert.doesNotMatch(clientSessionSource, /localStorage\.getItem\(STORAGE_KEY\)/);
 });
 
-test("la session Administrateur PC est liée à la fenêtre la plus récemment connectée", () => {
+test("la session Administrateur administratif est liée à la fenêtre la plus récemment connectée", () => {
     assert.match(authServer, /clientWindowSessionId\(request\)/);
     assert.match(authServer, /requiresClientWindowProof\(request\)/);
     assert.match(authServer, /session\.sessionId !== clientWindowSessionId\(request\)/);
@@ -49,7 +49,7 @@ test("l’ancienne fenêtre est avertie sans supprimer le cookie partagé de la 
     assert.match(authServer, /error\.message !== "Fenêtre PC remplacée"/);
     assert.match(clientSessionSource, /depannhome:session-replaced/);
     assert.match(appSource, /window\.location\.replace\("\/\?session=replaced"\)/);
-    assert.match(authClient, /Cette session Administrateur PC a été fermée car une connexion plus récente a été ouverte/);
+    assert.match(authClient, /Cette session Administrateur administratif a été fermée car une connexion plus récente a été ouverte/);
 });
 
 test("un contrôle périodique ferme rapidement une ancienne session inactive", () => {

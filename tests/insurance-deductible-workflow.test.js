@@ -9,7 +9,7 @@ const clients = readFileSync(new URL("../js/clients.js", import.meta.url), "utf8
 const billingServer = readFileSync(new URL("../server/billing.js", import.meta.url), "utf8");
 const billingClient = readFileSync(new URL("../js/billing.js", import.meta.url), "utf8");
 
-test("la franchise est conservée avec collecte, contrôle PC et verrouillage", () => {
+test("la franchise est conservée avec collecte, contrôle administratif et verrouillage", () => {
 	assert.match(schema, /deductible_status VARCHAR\(20\) NOT NULL DEFAULT 'none'/);
 	assert.match(schema, /deductible_amount_cents INTEGER NOT NULL DEFAULT 0/);
 	assert.match(schema, /deductible_photo_attachment_id VARCHAR\(100\) NOT NULL DEFAULT ''/);
@@ -34,11 +34,11 @@ test("les moyens de paiement sont limités et la preuve est liée à l’interve
 	["Chèque", "Espèces", "Virement", "Carte bancaire"].forEach(method => assert.ok(server.includes(method)));
 	assert.match(server, /type: "Photo franchise"/);
 	assert.match(server, /appointmentId: id/);
-	assert.match(server, /Franchise transmise au poste PC pour validation/);
+	assert.match(server, /Franchise transmise au poste administratif pour validation/);
 	assert.match(calendar, /capture="environment" required/);
 });
 
-test("seul un poste PC autorisé valide ou refuse avec un motif", () => {
+test("seul un poste administratif autorisé valide ou refuse avec un motif", () => {
 	assert.match(server, /request\.user\?\.deviceType !== "desktop"/);
 	assert.match(server, /DEDUCTIBLE_PC_ROLES/);
 	assert.match(server, /decision === "rejected" && !reviewNote/);

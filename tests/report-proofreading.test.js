@@ -26,7 +26,7 @@ function report() {
     };
 }
 
-test("only authorized PC roles can confirm report proofreading", () => {
+test("only authorized administrative roles can confirm report proofreading", () => {
     assert.equal(canConfirmReportProofreading("admin", "desktop"), true);
     assert.equal(canConfirmReportProofreading("pc_standard", "desktop"), true);
     assert.equal(canConfirmReportProofreading("technician", "desktop"), false);
@@ -70,7 +70,7 @@ test("final validation retains the private proofreading fingerprint for its serv
     assert.match(serverSource, /if \(!isReportProofreadingCurrent\(report\)\)/);
 });
 
-test("PC proofreading overview includes every photo and all editing controls", () => {
+test("administrative proofreading overview includes every photo and all editing controls", () => {
     assert.match(editorSource, /Correction du rapport et aperçu PDF en direct/);
     assert.match(editorSource, /proofreadingAdditionalPhotoGroups\(entries\)/);
     assert.match(editorSource, /photosHtml\(entry\.sectionId, entry\.observation\.id, true/);
@@ -88,7 +88,7 @@ test("proofreading waits for every photo mutation before saving its fingerprint"
     assert.match(editorSource, /await Promise\.all\(\[\.\.\.mediaSavePromises\]\)/);
 });
 
-test("PC proofreading uses a split editor with a live draft PDF preview", () => {
+test("administrative proofreading uses a split editor with a live draft PDF preview", () => {
     assert.match(editorSource, /report-proofreading-workspace/);
     assert.match(editorSource, /report-proofreading-live-preview/);
     assert.match(editorSource, /\/pdf-preview/);

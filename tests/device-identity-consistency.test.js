@@ -25,16 +25,16 @@ test("les rôles dédiés restent dans leur famille de poste", () => {
     assert.match(authServer, /const authDeviceDetails = \{ \.\.\.device \}/);
 });
 
-test("l’en-tête affiche le poste actif et jamais un Poste PC codé en dur", () => {
+test("l’en-tête affiche le poste actif et jamais un Poste administratif codé en dur", () => {
     assert.match(index, /id="workstationLabel">Poste<\/span>/);
-    assert.doesNotMatch(index, />Poste PC ·/);
+    assert.doesNotMatch(index, />Poste administratif ·/);
     assert.match(appClient, /Administrateur Mobile/);
     assert.match(appClient, /Chef d’équipe mobile/);
     assert.match(appClient, /Technicien mobile/);
-    assert.match(appClient, /Administrateur PC/);
+    assert.match(appClient, /Administrateur administratif/);
 });
 
-test("les compteurs et la liste distinguent les utilisateurs PC des appareils mobiles", () => {
+test("les compteurs et la liste distinguent les utilisateurs administratifs des appareils mobiles", () => {
     assert.match(authServer, /COUNT\(DISTINCT account\.id\).*account\.role IN \('admin','pc_standard','accountant'\)/);
     assert.doesNotMatch(authServer, /COUNT\(DISTINCT device\.id\) FILTER \(WHERE device\.status = 'approved' AND device\.device_type = 'desktop'\)/);
     assert.match(navigation, /\["admin", "pc_standard", "accountant"\]\.includes\(device\.userRole\)/);

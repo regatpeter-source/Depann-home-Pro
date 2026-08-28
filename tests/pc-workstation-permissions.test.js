@@ -16,7 +16,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const read = relativePath => fs.readFileSync(path.join(root, relativePath), "utf8");
 const user = (role, tier, permissions = {}) => ({ role, organization: { subscriptionTier: tier }, ...permissions });
 
-test("les autorisations configurables sont limitées aux postes PC Basic+ et Pro", () => {
+test("les autorisations configurables sont limitées aux postes administratifs Basic+ et Pro", () => {
     assert.equal(isAdvancedWorkstationTier("basic"), false);
     assert.equal(isAdvancedWorkstationTier("basic_plus"), true);
     assert.equal(isAdvancedWorkstationTier("pro"), true);
@@ -25,7 +25,7 @@ test("les autorisations configurables sont limitées aux postes PC Basic+ et Pro
     assert.equal(supportsConfigurablePcPermissions("technician"), false);
 });
 
-test("un Administrateur PC conserve tous les accès sans dépendre des cases", () => {
+test("un Administrateur administratif conserve tous les accès sans dépendre des cases", () => {
     const basicAdministrator = user("admin", "basic", { deviceType: "desktop", canAccessBilling: false, canAccessAccounting: false, groupId: "7", canSwitchGroupCompanies: false });
     const proAdministrator = user("admin", "pro", { deviceType: "desktop", canAccessBilling: false, canAccessAccounting: false, groupId: "7", canSwitchGroupCompanies: false });
     assert.equal(hasBillingWorkspaceAccess(basicAdministrator), true);
@@ -34,7 +34,7 @@ test("un Administrateur PC conserve tous les accès sans dépendre des cases", (
     assert.equal(hasGroupCompanySwitchAccess(proAdministrator), true);
 });
 
-test("un poste PC Basic ne peut pas activer les droits avancés", () => {
+test("un poste administratif Basic ne peut pas activer les droits avancés", () => {
     const basic = user("pc_standard", "basic", { canAccessBilling: true, canAccessAccounting: true, groupId: "7", canSwitchGroupCompanies: true });
     assert.equal(hasBillingWorkspaceAccess(basic), false);
     assert.equal(hasAccountingWorkspaceAccess(basic), false);
@@ -50,7 +50,7 @@ test("les cases contrôlent séparément Facturation et Comptabilité en Basic+ 
     assert.equal(hasAccountingWorkspaceAccess(accountingOnly), true);
 });
 
-test("l’espace e-mail est automatique pour les administrateurs et configurable sur les autres postes PC Basic+ et Pro", () => {
+test("l’espace e-mail est automatique pour les administrateurs et configurable sur les autres postes administratifs Basic+ et Pro", () => {
     assert.equal(hasCompanyEmailWorkspaceAccess(user("admin", "basic_plus", { deviceType: "desktop" })), true);
     assert.equal(hasCompanyEmailWorkspaceAccess(user("mobile_admin", "pro", { deviceType: "mobile" })), true);
     assert.equal(hasCompanyEmailWorkspaceAccess(user("admin", "basic", { deviceType: "desktop" })), false);
@@ -90,7 +90,7 @@ test("le stockage et l’interface déclarent les trois permissions", () => {
     for (const field of ["canAccessBilling", "canAccessAccounting", "canAccessCompanyEmail", "canSwitchGroupCompanies"]) assert.match(navigation, new RegExp(field));
     assert.match(navigation, /groupCompanyPermissionAvailable = tier === "pro"/);
     assert.match(auth, /organization\.subscriptionTier === "pro"/);
-    assert.match(navigation, /L’Administrateur \(PC\) dispose automatiquement de tous les accès/);
+    assert.match(navigation, /L’Administrateur administratif dispose automatiquement de tous les accès/);
 });
 
 test("l’interface distingue clairement devis et factures de la comptabilité", () => {

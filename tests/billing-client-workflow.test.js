@@ -23,7 +23,7 @@ test("administrators can open and close the saved billing line manager", () => {
     assert.doesNotMatch(accountingSource, /\["aids", "Aides financières"\]/);
 });
 
-test("only PC and Mobile Administrator workstations can save reusable billing lines", () => {
+test("only administrative and Mobile Administrator workstations can save reusable billing lines", () => {
     assert.match(billingSource, /data-save-billing-template>Préenregistrer/);
     assert.match(billingSource, /document\.body\.dataset\.deviceType === "desktop" \|\| \["admin", "mobile_admin"\]\.includes\(role\)/);
     assert.match(billingSource, /apiRequest\("\/api\/billing\/templates", \{ method: "POST"/);

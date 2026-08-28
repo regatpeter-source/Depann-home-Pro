@@ -266,7 +266,7 @@ test("une boîte rattachée s’actualise immédiatement et expose toutes les co
     assert.match(missionClientSource, /depannhome:partner-email-changed/);
 });
 
-test("les réglages d’une boîte existante sont enregistrés côté serveur par un Administrateur PC", () => {
+test("les réglages d’une boîte existante sont enregistrés côté serveur par un Administrateur administratif", () => {
     assert.match(serverSource, /:connectionId\/settings", requireEmailConfigurationAccess/);
     assert.match(serverSource, /SET selection_mode=\$3, allowed_senders=\$4::jsonb, required_keywords=\$5::jsonb, automatic_threshold=\$6/);
     assert.match(serverSource, /auto_search_enabled=\$8/);

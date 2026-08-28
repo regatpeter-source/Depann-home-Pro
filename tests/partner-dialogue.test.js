@@ -47,7 +47,7 @@ test("the compact attachment area aligns attach, share and send controls", () =>
     assert.match(clientSource, /partner-composer-actions/);
     assert.match(clientSource, /<strong>Joindre des documents ou photos<\/strong><span>Glissez-déposez vos fichiers ici<\/span>/);
     assert.match(clientSource, /Glissez-déposez vos fichiers ici/);
-    assert.match(clientSource, /Parcourir le PC/);
+    assert.match(clientSource, /Parcourir l’appareil/);
     assert.doesNotMatch(clientSource, /enregistrés dans la base sécurisée de la mission/);
     assert.match(clientSource, /setupAttachmentPicker\(form\)/);
     assert.match(clientSource, /event\.dataTransfer\?\.files/);

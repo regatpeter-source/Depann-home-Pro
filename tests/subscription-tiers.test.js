@@ -34,7 +34,7 @@ const partnerEmailServer = readFileSync(new URL("../server/partner-email.js", im
 const dataImportsServer = readFileSync(new URL("../server/data-imports.js", import.meta.url), "utf8");
 const dataImportsClient = readFileSync(new URL("../js/data-imports.js", import.meta.url), "utf8");
 
-test("Basic, Basic+ and Pro prices are calculated per PC and mobile seat", () => {
+test("Basic, Basic+ and Pro prices are calculated per administrative and mobile seat", () => {
     assert.equal(calculateSubscriptionPriceCents("basic", 1, 1), 2500);
     assert.equal(calculateSubscriptionPriceCents("basic_plus", 2, 3), 9400);
     assert.equal(calculateSubscriptionPriceCents("pro", 2, 4), 20000);
@@ -127,7 +127,7 @@ test("every mobile post keeps Home and Library access regardless of subscription
     assert.doesNotMatch(navigation, /data-basic-home=/);
 });
 
-test("Library is mobile-only and Purchases are available on every PC plus Mobile Administrator", () => {
+test("Library is mobile-only and Purchases are available on every administrative workstation plus Mobile Administrator", () => {
     for (const subscriptionTier of ["basic", "basic_plus", "pro"]) {
         const organization = publicOrganization({ interfaceType: "standard", licenseType: "depannhome_standard", subscriptionTier });
         for (const role of ["mobile_admin", "team_lead", "technician"]) assert.equal(isFeatureEnabledForRole(organization, "library", role), true, `${subscriptionTier}:${role}:library`);
@@ -227,10 +227,10 @@ test("the free Partner interface exposes the internal network without external c
     assert.match(dataImportsClient, /TYPES\.filter\(\(\[key\]\) => key === "clients"\)/);
 });
 
-test("subscription invoices detail charged PC and mobile seats", () => {
+test("subscription invoices detail charged administrative and mobile seats", () => {
     const snapshot = buildSubscriptionInvoiceSnapshot({ subscriptionTier: "basic_plus", monthlyPriceCents: 7800, maxPcUsers: 2, maxTechnicians: 1, discountMode: "fixed", discountValue: 0 }, 20);
     assert.equal(snapshot.lines.length, 2);
-    assert.match(snapshot.lines[0].description, /Basic\+ — poste PC/);
+    assert.match(snapshot.lines[0].description, /Basic\+ — poste administratif/);
     assert.equal(snapshot.lines[0].quantity, 2);
     assert.match(snapshot.lines[1].description, /Basic\+ — poste mobile/);
     assert.equal(snapshot.lines[1].quantity, 1);
@@ -254,7 +254,7 @@ test("companies request offer changes from Settings without changing the active 
     assert.doesNotMatch(navigation, /data-basic-home=/);
     assert.match(navigation, /\["subscription", "Offre & abonnement"/);
     assert.match(navigation, /\/api\/subscription-change-requests/);
-    assert.match(navigation, /Postes PC autorisés/);
+    assert.match(navigation, /Postes administratifs autorisés/);
     assert.match(navigation, /Postes mobiles autorisés/);
     assert.match(navigation, /Tarif total actuel/);
     assert.match(navigation, /account\.maxMobileUsers \?\? document\.body\.dataset\.maxMobileUsers/);

@@ -58,7 +58,7 @@ test("les traitements manuel et automatique refusent de créer des factures sans
     assert.match(creatorSource, /configurez les variables Brevo SMTP du serveur/);
 });
 
-test("la facture détaille la formule et les postes PC et mobiles inclus", () => {
+test("la facture détaille la formule et les postes administratifs et mobiles inclus", () => {
     const snapshot = buildSubscriptionInvoiceSnapshot({
         subscriptionLabel: "Pro Standard",
         monthlyPriceCents: 12000,
@@ -70,7 +70,7 @@ test("la facture détaille la formule et les postes PC et mobiles inclus", () =>
     }, 20);
     assert.deepEqual(snapshot.lines.map(line => [line.description, line.quantity, line.unitPrice]), [
         ["Pro Standard — abonnement mensuel", 1, 100],
-        ["Postes PC inclus", 3, 0],
+        ["Postes administratifs inclus", 3, 0],
         ["Postes mobiles inclus", 15, 0]
     ]);
     assert.deepEqual(snapshot.financialData, { discountLabel: "Offre d’essai", discountMode: "percentage", discountAmount: 25 });
