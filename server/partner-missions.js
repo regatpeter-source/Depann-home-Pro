@@ -366,26 +366,49 @@ async function reconcileMissionClients(ownerId, request, internalNetworkOnly = f
 
 async function repairImportedEmailMissionClients(connection, ownerId, request) {
     const { rows } = await connection.query(`
-        SELECT mission.id,mission.client_id,mission.external_mission_id,mission.partner_reference,mission.source_data,mission.mapped_data
+        SELECT mission.id,mission.client_id,mission.external_mission_id,mission.partner_reference,mission.source_data,mission.mapped_data,
+            email.id AS "emailId",email.subject AS "emailSubject",email.body_text AS "emailBodyText",email.document_text AS "emailDocumentText",
+            email.sender_address AS "emailSenderAddress",email.received_at AS "emailReceivedAt"
         FROM depannhome_partner_missions mission
         JOIN depannhome_partner_intakes intake ON intake.id=mission.intake_id
+        LEFT JOIN LATERAL (
+            SELECT message.id,message.subject,message.body_text,message.document_text,message.sender_address,message.received_at
+            FROM depannhome_partner_email_messages message
+            WHERE message.owner_id=mission.owner_id AND message.mission_id=mission.id AND message.status='imported'
+            ORDER BY message.processed_at DESC NULLS LAST,message.id DESC LIMIT 1
+        ) email ON TRUE
         WHERE mission.owner_id=$1 AND mission.deleted_at IS NULL AND intake.partner_key LIKE 'email-%'
             AND ((COALESCE(mission.mapped_data->>'address','')='' AND COALESCE(mission.source_data#>>'{client,address}','')<>'')
                 OR mission.partner_reference ~ '^<.*@.*>$'
-                OR LOWER(mission.external_mission_id) IN ('mission','intervention','dossier'))
+                OR LOWER(mission.external_mission_id) IN ('mission','intervention','dossier')
+                OR (COALESCE(email.document_text,'')<>'' AND (
+                    (email.document_text ~* '(soci[ée]taire|adh[ée]rent|n[°o].{0,20}assur[ée]|num[ée]ro.{0,20}(contrat|police))' AND COALESCE(mission.mapped_data->>'insuredNumber','') !~ '[0-9]')
+                    OR COALESCE(mission.mapped_data->>'insurance','') ~* ' (nature|type)( du| de)?$'
+                )))
         ORDER BY mission.id
         LIMIT 100
         FOR UPDATE OF mission
     `, [ownerId]);
     for (const mission of rows) {
-        const mapped = mapPayload(mission.source_data || {});
-        const reference = readableEmailMissionReference(mission.source_data, mission.id);
+        let sourceData = mission.source_data || {};
+        if (mission.emailId && mission.emailDocumentText) {
+            const { extractMissionPayload } = await import("./partner-email.js");
+            const reparsed = extractMissionPayload({ id: mission.emailId, subject: mission.emailSubject, body_text: mission.emailBodyText, sender_address: mission.emailSenderAddress, received_at: mission.emailReceivedAt, attachments: sourceData.attachments || [] }, mission.emailDocumentText);
+            sourceData = mergeReparsedEmailPayload(sourceData, reparsed);
+        }
+        const mapped = mapPayload(sourceData);
+        const reference = readableEmailMissionReference(sourceData, mission.id);
         mapped.externalMissionId = reference; mapped.partnerReference = reference;
         const matchedClientId = mission.client_id || await matchEmailMissionClient(connection, ownerId, mapped);
         const client = await provisionPartnerMissionClient(connection, ownerId, mapped, request, matchedClientId);
-        await connection.query("UPDATE depannhome_partner_missions SET external_mission_id=$3,partner_reference=$3,mapped_data=$4::jsonb,client_id=$5,updated_at=NOW() WHERE id=$1 AND owner_id=$2", [mission.id, ownerId, reference, JSON.stringify(mapped), client.id]);
+        await connection.query("UPDATE depannhome_partner_missions SET external_mission_id=$3,partner_reference=$3,source_data=$4::jsonb,mapped_data=$5::jsonb,client_id=$6,updated_at=NOW() WHERE id=$1 AND owner_id=$2", [mission.id, ownerId, reference, JSON.stringify(sourceData), JSON.stringify(mapped), client.id]);
         await connection.query("UPDATE depannhome_calendar_events SET client_id=$3,client_name=$4,location=$5,updated_at=NOW() WHERE owner_id=$1 AND partner_mission_id=$2", [ownerId, mission.id, client.id, mapped.clientName, mapped.interventionAddress || mapped.address]);
     }
+}
+
+function mergeReparsedEmailPayload(previous, reparsed) {
+    const meaningful = entries => Object.fromEntries(Object.entries(entries || {}).filter(([, value]) => value !== "" && value !== null && value !== undefined));
+    return { ...previous, ...meaningful(reparsed), client: { ...(previous.client || {}), ...meaningful(reparsed?.client) }, attachments: previous.attachments || reparsed?.attachments || [] };
 }
 async function intakes(ownerId) { const { rows } = await getPool().query("SELECT id,partner_key AS \"partnerKey\",partner_name AS \"partnerName\",callback_url AS \"callbackUrl\",assignment_mode AS \"assignmentMode\",rules,enabled,created_at AS \"createdAt\",updated_at AS \"updatedAt\" FROM depannhome_partner_intakes WHERE owner_id=$1 AND is_sandbox=FALSE AND partner_key NOT LIKE 'email-%' ORDER BY partner_name", [ownerId]); return rows; }
 async function findMission(ownerId, id, request = null) { if (!id) return null; const { rows } = await getPool().query("SELECT mission.*, intake.partner_name AS \"partnerName\", intake.partner_key AS \"partnerKey\", intake.assignment_mode AS \"assignmentMode\", intake.is_sandbox AS \"isSandbox\", technician.full_name AS \"technicianName\" FROM depannhome_partner_missions mission JOIN depannhome_partner_intakes intake ON intake.id=mission.intake_id LEFT JOIN depannhome_users technician ON technician.id=mission.assigned_technician_id WHERE mission.id=$1 AND mission.owner_id=$2 AND mission.deleted_at IS NULL AND intake.is_sandbox=FALSE", [id, ownerId]); return rows[0] ? publicMission(rows[0]) : null; }

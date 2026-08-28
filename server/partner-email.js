@@ -717,12 +717,53 @@ function extractMissionFields(text) {
         missionNumber: first(/^(?:n°\s*)?dossier\s+(?:imh\s*)?[:#\-]\s*([A-Z0-9][A-Z0-9/_-]{2,})/im, /^(?:r[ée]f(?:[ée]rence)?\s+imh|notre\s+r[ée]f[ée]rence)\s*[:#\-]\s*([A-Z0-9][A-Z0-9/_-]{2,})/im, /^(?:mission|dossier|référence|ref)\s*(?:(?:n°|no|numéro)\s*[:#\-]?|[:#\-]\s*)([A-Z0-9][A-Z0-9/_-]{2,})/im),
         interventionType: field(/^(?:intervention|objet|nature|type\s+d['’]intervention)\s*[:\-]\s*([^\n\r]+)/im),
         claimNumber: field(/^(?:sinistre|n°\s+de\s+sinistre)\s*(?:n°|no|numéro)?\s*[:#\-]?\s*([A-Z0-9][A-Z0-9/_-]*)/im),
-        insuredNumber: first(/^(?:n°\s*)?(?:soci[ée]taire|assur[ée])\s*[:#\-]\s*([A-Z0-9][A-Z0-9/_-]*)/im, /^(?:num[ée]ro|n°)\s+(?:de\s+l['’])?assur[ée]\s*[:#\-]\s*([A-Z0-9][A-Z0-9/_-]*)/im),
-        insurance: field(/^(?:assurance|assureur|compagnie|grand\s+compte)\s*[:\-]\s*([^\n\r]+)/im),
+        insuredNumber: extractInsuredNumber(source),
+        insurance: extractInsuranceName(source, field),
         expert: field(/^expert\s*[:\-]\s*([^\n\r]+)/im),
         manager: field(/^(?:gestionnaire|chargé(?:e)?\s+de\s+dossier)\s*[:\-]\s*([^\n\r]+)/im),
         principal: field(/^(?:donneur\s+d['’]ordre|mandant)\s*[:\-]\s*([^\n\r]+)/im)
     };
+}
+
+const INSURED_NUMBER_SUBJECT = String.raw`(?:assur[ée](?:e)?|soci[ée]taire|adh[ée]rent(?:e)?|contrat|police)`;
+const INSURED_NUMBER_LABEL = String.raw`(?:(?:n(?:um[ée]ro|[°o])\s*(?:de\s+l['’])?\s*)?${INSURED_NUMBER_SUBJECT}(?:\s*\/\s*${INSURED_NUMBER_SUBJECT})*(?:\s+n(?:um[ée]ro|[°o]))?|r[ée]f(?:[ée]rence)?\s+(?:contrat|police))`;
+
+function extractInsuredNumber(source) {
+    const direct = new RegExp(`(?:^|\\n)${INSURED_NUMBER_LABEL}\\s*[:#\\-]\\s*([A-Z0-9][A-Z0-9./_-]{2,39})`, "im").exec(source)?.[1] || "";
+    if (validInsuredNumber(direct)) return clean(direct, 40);
+    const reverse = new RegExp(`(?:^|\\n)\\s*([A-Z0-9][A-Z0-9./_-]{2,39})\\s+${INSURED_NUMBER_LABEL}\\s*[:#\\-]?`, "im").exec(source)?.[1] || "";
+    if (validInsuredNumber(reverse)) return clean(reverse, 40);
+    const label = new RegExp(`${INSURED_NUMBER_LABEL}\\s*[:#\\-]`, "ig");
+    const candidates = [];
+    for (const match of source.matchAll(label)) {
+        const nearby = source.slice(match.index + match[0].length, match.index + match[0].length + 500);
+        for (const candidate of nearby.matchAll(/\b[A-Z0-9][A-Z0-9./_-]{2,39}\b/gi)) {
+            if (!validInsuredNumber(candidate[0])) continue;
+            const prefix = nearby.slice(Math.max(0, candidate.index - 30), candidate.index);
+            if (/(?:t[ée]l(?:[ée]phone)?|portable|mobile|code\s+postal|\bcp|dossier|mission|r[ée]f(?:[ée]rence)?|sinistre)\s*[:#\-]?\s*$/i.test(prefix)) continue;
+            const value = candidate[0];
+            const score = /^\d{6,9}$/.test(value) ? 3 : /[A-Z]/i.test(value) && /\d/.test(value) ? 2 : 1;
+            candidates.push({ value, score, distance: candidate.index });
+        }
+    }
+    candidates.sort((left, right) => right.score - left.score || left.distance - right.distance);
+    return clean(candidates[0]?.value, 40);
+}
+
+function validInsuredNumber(value) {
+    const candidate = String(value || "").trim();
+    return candidate.length >= 3 && candidate.length <= 40 && /\d/.test(candidate) && /^[A-Z0-9][A-Z0-9./_-]*$/i.test(candidate);
+}
+
+function extractInsuranceName(source, field) {
+    const sentence = trimFollowingMissionField(clean(/\bassur[ée]e?\s+(?:aupr[èe]s\s+de|par)\s+([\p{L}\p{N}&'’.() -]{2,100}?)(?=[,;\n.]|$)/imu.exec(source)?.[1], 100));
+    if (sentence) return normalizeInsuranceName(sentence);
+    const labeled = field(/^(?:assurance|assureur|compagnie(?:\s+d['’]assurance)?|soci[ée]t[ée]\s+d['’]assurance|organisme\s+assureur|mutuelle|grand\s+compte)\s*[:\-]\s*([^\n\r]+)/im);
+    return normalizeInsuranceName(labeled);
+}
+
+function normalizeInsuranceName(value) {
+    return clean(String(value || "").replace(/\s+(?:nature(?:\s+du)?|type(?:\s+de)?|n(?:um[ée]ro|[°o])?\s*(?:de\s+)?(?:sinistre|dossier|contrat|police))\s*$/i, ""), 160);
 }
 
 function trimFollowingMissionField(value) { return clean(String(value || "").split(/\s+(?=(?:assur[ée]e?|client|bénéficiaire|occupant|nom|pr[ée]nom|adresse|lieu\s+d['’]intervention|t[ée]l(?:[ée]phone)?|portable|mobile|e-?mail|courriel|code\s+postal|cp|ville|commune|mission|dossier|référence|ref|intervention|objet|nature|sinistre|assurance|assureur|compagnie|expert|gestionnaire|donneur\s+d['’]ordre|mandant)\s*[:#\-])/i)[0], 255); }

@@ -566,6 +566,33 @@ N° dossier IMH : 267057H26-RENU1`;
     assert.equal(mapped.insuredNumber, "4152292");
 });
 
+test("un PDF en colonnes ignore un faux numéro assuré et retrouve la référence voisine", () => {
+    const text = `Grand Compte : MACIF Nature du
+N° assuré / sociétaire : Le
+sinistre : Dégât des eaux
+Référence interne : ABC
+4152292
+N° dossier IMH : 267057H26-RENU1`;
+    const payload = extractMissionPayload({ id: 53, subject: "Mission imh", body_text: "" }, text);
+    assert.equal(payload.insuredNumber, "4152292");
+    assert.equal(payload.insurance, "MACIF");
+});
+
+test("les références assuré, adhérent, contrat et police sont reconnues quel que soit l’assureur", () => {
+    const cases = [
+        ["Assureur : AXA\nN° contrat : AXA-2026.001", "AXA", "AXA-2026.001"],
+        ["Compagnie d’assurance : Allianz\nNuméro de police : POL/784512", "Allianz", "POL/784512"],
+        ["Société d’assurance : Generali\nContrat n° : GE-445566", "Generali", "GE-445566"],
+        ["Organisme assureur : SMABTP\nN° adhérent : 8899771", "SMABTP", "8899771"],
+        ["Mutuelle : MAIF\nRéférence contrat : M-2026-7788", "MAIF", "M-2026-7788"]
+    ];
+    for (const [text, insurance, insuredNumber] of cases) {
+        const payload = extractMissionPayload({ id: 60, subject: "Ordre de mission", body_text: "" }, text);
+        assert.equal(payload.insurance, insurance);
+        assert.equal(payload.insuredNumber, insuredNumber);
+    }
+});
+
 test("le mail garde la priorité et les documents complètent les champs manquants", () => {
     const payload = extractMissionPayload({ id: 42, subject: "Mission", body_text: "Client : Camille Mail\nTéléphone : 0600000000", sender_name: "Assureur", message_id: "mail-42" }, "Client : Alice Document\nTéléphone : 0711111111\nE-mail : alice@example.test\nAdresse : 12 rue des Lilas\nCode postal : 44000\nVille : Nantes\nSinistre : SIN-42\nAssureur : Exemple Assurance");
     assert.equal(payload.client.name, "Camille Mail");
@@ -607,7 +634,10 @@ test("les anciennes missions e-mail sont réparées avec leur fiche client liée
     assert.match(missionSource, /repairImportedEmailMissionClients/);
     assert.match(missionSource, /source_data#>>'\{client,address\}'/);
     assert.match(missionSource, /partner_reference ~ '\^<\.\*@\.\*>\$'/);
-    assert.match(missionSource, /mapped_data=\$4::jsonb,client_id=\$5/);
+    assert.match(missionSource, /source_data=\$4::jsonb,mapped_data=\$5::jsonb,client_id=\$6/);
+    assert.match(missionSource, /email\.document_text/);
+    assert.match(missionSource, /mergeReparsedEmailPayload/);
+    assert.match(missionSource, /mapped_data->>'insuredNumber'/);
     assert.match(missionSource, /client_created" : "client_matched/);
     assert.match(emailSettingsSource, /synchronizeClients\(\{ forceFull: true \}\)/);
     assert.match(emailSettingsSource, /depannhome:partner-client-provisioned/);
