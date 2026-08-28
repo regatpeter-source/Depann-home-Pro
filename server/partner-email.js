@@ -788,13 +788,14 @@ export async function notifyEmailMissionStatus(ownerId, missionId, status, detai
     await sendMissionEmail(ownerId, missionId, `Mise à jour de votre mission : ${statusLabel(status)}.${details?.note ? `\n${clean(details.note, 1000)}` : ""}`, { statusUpdate: true }); return true;
 }
 
-async function sendMissionEmail(ownerId, missionId, body, { statusUpdate, attachments = [] }) {
-    const { rows } = await getPool().query(`SELECT message.sender_address,message.subject,message.message_id,message.references_header,connection.* FROM depannhome_partner_email_messages message JOIN depannhome_partner_email_connections connection ON connection.id=message.connection_id WHERE message.owner_id=$1 AND message.mission_id=$2 AND message.status='imported' ORDER BY message.id LIMIT 1`, [ownerId, missionId]);
+export async function sendMissionEmail(ownerId, missionId, body, { statusUpdate = false, attachments = [] } = {}) {
+    const { rows } = await getPool().query(`SELECT message.mission_id,message.sender_address,message.subject,message.message_id,message.references_header,connection.* FROM depannhome_partner_email_messages message JOIN depannhome_partner_email_connections connection ON connection.id=message.connection_id WHERE message.owner_id=$1 AND message.mission_id=$2 AND message.status='imported' ORDER BY message.id LIMIT 1`, [ownerId, missionId]);
     const source = rows[0]; if (!source) throw httpError(404, "Aucun e-mail source n’est lié à cette mission.");
     const access = await mailboxAccess(source);
-    if (source.provider === "microsoft") return sendMicrosoftGraphMail(access.graphToken, { source, body, attachments, statusUpdate });
+    if (source.provider === "microsoft") { await sendMicrosoftGraphMail(access.graphToken, { source, body, attachments, statusUpdate }); return { recipient: source.sender_address, provider: source.provider }; }
     const transporter = nodemailer.createTransport({ host: access.smtp.host, port: access.smtp.port, secure: access.smtp.secure, requireTLS: !access.smtp.secure, auth: access.smtpAuth });
     await transporter.sendMail({ from: { name: source.display_name || source.email_address, address: source.email_address }, to: source.sender_address, subject: `${/^re:/i.test(source.subject) ? "" : "Re: "}${source.subject}`, text: body, attachments, inReplyTo: source.message_id, references: [source.references_header, source.message_id].filter(Boolean).join(" "), headers: { "X-DepannHome-Mission": String(missionId), "X-DepannHome-Status-Update": statusUpdate ? "true" : "false" } });
+    return { recipient: source.sender_address, provider: source.provider };
 }
 
 async function mailboxAccess(connection, { forceRefresh = false } = {}) {

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const serverSource = readFileSync(new URL("../server/partner-dialogue.js", import.meta.url), "utf8");
+const emailServerSource = readFileSync(new URL("../server/partner-email.js", import.meta.url), "utf8");
 const clientSource = readFileSync(new URL("../js/partner-dialogue.js", import.meta.url), "utf8");
 const styleSource = readFileSync(new URL("../css/partner-dialogue.css", import.meta.url), "utf8");
 const schemaSource = readFileSync(new URL("../database/schema.sql", import.meta.url), "utf8");
@@ -59,4 +60,28 @@ test("the compact attachment area aligns attach, share and send controls", () =>
     assert.match(styleSource, /\.partner-dialogue \.partner-composer-files\{[\s\S]*?height:44px;/);
     assert.match(styleSource, /\.partner-dialogue \.journal-share-control\{[\s\S]*?height:44px;/);
     assert.match(styleSource, /\.partner-dialogue \.partner-dialogue-composer button\[type="submit"\]\{[\s\S]*?height:44px;/);
+});
+
+test("un message partagé d’une mission e-mail répond à l’expéditeur original", () => {
+    const internalMessage = serverSource.slice(serverSource.indexOf("async function internalMessage"), serverSource.indexOf("async function sourceMessage"));
+    assert.match(internalMessage, /partnerVisible && String\(mission\.partner_key \|\| ""\)\.startsWith\("email-"\)/);
+    assert.match(internalMessage, /await import\("\.\/partner-email\.js"\)/);
+    assert.match(internalMessage, /sendMissionEmail\(ownerId, mission\.id, body/);
+    assert.match(internalMessage, /input\.attachments\.map/);
+    assert.ok(internalMessage.indexOf("sendMissionEmail") < internalMessage.indexOf("createMessageWithAttachments"));
+    assert.match(internalMessage, /res\.status\(502\).*aucun message n’a été ajouté au journal/);
+    assert.match(internalMessage, /emailDelivery: emailDelivery \? \{ sent: true, recipient: emailDelivery\.recipient \} : \{ sent: false \}/);
+    assert.match(serverSource, /intake\.partner_name, intake\.partner_key/);
+    assert.match(serverSource, /sourceType: partnerKey\.startsWith\("email-"\) \? "professional_email"/);
+    assert.match(clientSource, /Envoyer aussi par e-mail au partenaire/);
+});
+
+test("l’e-mail du Centre de mission conserve le fil et transmet les documents", () => {
+    assert.match(emailServerSource, /export async function sendMissionEmail/);
+    assert.match(emailServerSource, /WHERE message\.owner_id=\$1 AND message\.mission_id=\$2 AND message\.status='imported'/);
+    assert.match(emailServerSource, /to: source\.sender_address/);
+    assert.match(emailServerSource, /inReplyTo: source\.message_id/);
+    assert.match(emailServerSource, /references: \[source\.references_header, source\.message_id\]/);
+    assert.match(emailServerSource, /attachments\.map\(attachment => \(\{ "@odata\.type": "#microsoft\.graph\.fileAttachment"/);
+    assert.match(emailServerSource, /return \{ recipient: source\.sender_address, provider: source\.provider \}/);
 });
