@@ -51,7 +51,10 @@ test("un expéditeur inconnu reste en validation humaine même avec de forts ind
 
 test("une liste de partenaires filtre strictement les expéditeurs tandis qu’une liste vide reste ouverte", () => {
     assert.equal(senderMatchesAllowed("missions@partenaire.fr", ["partenaire.fr"]), true);
+    assert.equal(senderMatchesAllowed("missions@mail.partenaire.fr", ["partenaire.fr"]), true);
     assert.equal(senderMatchesAllowed("missions@partenaire.fr", ["missions@partenaire.fr"]), true);
+    assert.equal(senderMatchesAllowed("autre@partenaire.fr", ["missions@partenaire.fr"]), false);
+    assert.equal(senderMatchesAllowed("missions@fauxpartenaire.fr", ["partenaire.fr"]), false);
     assert.equal(senderMatchesAllowed("autre@example.test", ["partenaire.fr"]), false);
     assert.equal(senderMatchesAllowed("autre@example.test", []), true);
     const rejected = classifyPartnerEmail({ subject: "Mission urgente", text: "Client et adresse", from: "autre@example.test", allowedSenders: ["partenaire.fr"], attachments: pdf });
@@ -84,6 +87,21 @@ test("les mots-clés obligatoires écartent les faux positifs et les réponses c
     const reply = classifyPartnerEmail({ subject: "RE: Mission partenaire IMH", text: quoted, from: "admin@example.test", requiredKeywords: ["mission partenaire IMH"], reply: true });
     assert.equal(reply.score, 0);
     assert.match(reply.reasons[0], /fil existant/);
+});
+
+test("la recherche automatique s’exécute toutes les 10 minutes avec les critères enregistrés", () => {
+    assert.match(serverSource, /PARTNER_EMAIL_SYNC_INTERVAL_MS = 10 \* 60 \* 1000/);
+    assert.match(serverSource, /runPartnerEmailScheduler\("startup"\)\.finally\(scheduleNextPartnerEmailRun\)/);
+    assert.match(serverSource, /setTimeout\(\(\) =>[\s\S]*?runPartnerEmailScheduler\("scheduled"\)[\s\S]*?PARTNER_EMAIL_SYNC_INTERVAL_MS/);
+    assert.match(serverSource, /runPartnerEmailScheduler\("scheduled"\)\.finally\(scheduleNextPartnerEmailRun\)/);
+    assert.match(serverSource, /connection\.enabled=TRUE AND connection\.auto_search_enabled=TRUE/);
+    assert.match(serverSource, /connection\.last_sync_at IS NULL OR connection\.last_sync_at<NOW\(\)-INTERVAL '10 minutes'/);
+    const accepted = classifyPartnerEmail({ subject: "Ordre de mission – dégât des eaux", text: "Client assuré et adresse", from: "missions@mail.assureur.fr", allowedSenders: ["assureur.fr"], requiredKeywords: ["dégât des eaux"], attachments: pdf });
+    assert.equal(accepted.trustedSender, true);
+    assert.equal(accepted.keywordMatch, true);
+    assert.ok(accepted.score >= 80);
+    assert.equal(classifyPartnerEmail({ subject: "Ordre de mission", text: "Client assuré et adresse", from: "missions@mail.assureur.fr", allowedSenders: ["assureur.fr"], requiredKeywords: ["dégât des eaux"], attachments: pdf }).score, 0);
+    assert.equal(classifyPartnerEmail({ subject: "Ordre de mission – dégât des eaux", text: "Client assuré et adresse", from: "mission@autre.fr", allowedSenders: ["assureur.fr"], requiredKeywords: ["dégât des eaux"], attachments: pdf }).score, 0);
 });
 
 test("les secrets, dédoublonnages et pièces privées sont définis côté serveur", () => {

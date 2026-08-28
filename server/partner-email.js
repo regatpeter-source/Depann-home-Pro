@@ -32,6 +32,7 @@ const MICROSOFT_IDENTITY_SCOPES = "openid email profile offline_access User.Read
 const MICROSOFT_MAIL_SCOPES = "Mail.Read Mail.Send";
 const MICROSOFT_GRAPH_MAX_RETRIES = 2;
 const MICROSOFT_GRAPH_MAX_RETRY_DELAY_MS = 10_000;
+const PARTNER_EMAIL_SYNC_INTERVAL_MS = 10 * 60 * 1000;
 let scheduler = null;
 const activeMailboxSynchronizations = new Set();
 
@@ -211,19 +212,25 @@ export function registerPartnerEmailRoutes(app, requireAuthentication) {
 
 export function startPartnerEmailScheduler() {
     if (scheduler) return;
-    scheduler = setInterval(() => runPartnerEmailScheduler("scheduled"), 5 * 60 * 1000);
+    scheduler = { starting: true };
+    void runPartnerEmailScheduler("startup").finally(scheduleNextPartnerEmailRun);
+}
+
+function scheduleNextPartnerEmailRun() {
+    scheduler = setTimeout(() => {
+        void runPartnerEmailScheduler("scheduled").finally(scheduleNextPartnerEmailRun);
+    }, PARTNER_EMAIL_SYNC_INTERVAL_MS);
     scheduler.unref?.();
-    void runPartnerEmailScheduler("startup");
 }
 
 async function runPartnerEmailScheduler(source) {
     const startedAt = new Date();
-    await recordHealthSchedulerRun("partner_email", source, "started", {}, startedAt);
     try {
+        await recordHealthSchedulerRun("partner_email", source, "started", {}, startedAt);
         const result = await synchronizeDueConnections();
         await recordHealthSchedulerRun("partner_email", source, "completed", result, startedAt);
     } catch (error) {
-        await recordHealthSchedulerRun("partner_email", source, "failed", { errorCode: error.code || error.name || "ERROR" }, startedAt);
+        await recordHealthSchedulerRun("partner_email", source, "failed", { errorCode: error.code || error.name || "ERROR" }, startedAt).catch(() => {});
         console.error(`[partner-email] synchronisation ${source} :`, error.message);
     }
 }
@@ -905,7 +912,7 @@ export function parseMailboxSyncPeriod(value) {
 function sanitizeImapConfiguration(value) { const emailAddress = clean(value?.emailAddress, 254).toLowerCase(), username = clean(value?.username || emailAddress, 254), password = String(value?.password || "").trim().slice(0, 1000), selectionMode = MODES.has(value?.selectionMode) ? value.selectionMode : "manual"; const imapHost = host(value?.imapHost), smtpHost = host(value?.smtpHost), imapPort = port(value?.imapPort, 993), smtpPort = port(value?.smtpPort, 465); if (!/^\S+@\S+\.\S+$/.test(emailAddress) || !imapHost || !smtpHost || !username) return { ok: false, message: "Renseignez l’adresse, l’utilisateur et les serveurs IMAP/SMTP de la boîte professionnelle." }; return { ok: true, emailAddress, username, password, displayName: clean(value?.displayName, 160), selectionMode, allowedSenders: sanitizeSenders(value?.allowedSenders), requiredKeywords: sanitizeRequiredKeywords(value?.requiredKeywords), automaticThreshold: Math.max(70, Math.min(100, Number(value?.automaticThreshold) || AUTO_THRESHOLD)), sendStatusUpdates: Boolean(value?.sendStatusUpdates), server: { imap: { host: imapHost, port: imapPort, secure: value?.imapSecure !== false }, smtp: { host: smtpHost, port: smtpPort, secure: !(value?.smtpSecure === false || String(value?.smtpSecure) === "false") } } }; }
 function outgoingAttachments(value) { let total = 0; const result = []; for (const item of Array.isArray(value) ? value.slice(0, 5) : []) { const match = /^data:([^;]+);base64,([A-Za-z0-9+/=]+)$/.exec(String(item?.dataUrl || "")); if (!match || !ALLOWED_MIME.has(match[1])) throw httpError(400, "Un document à envoyer possède un format non autorisé."); const content = Buffer.from(match[2], "base64"); if (!content.length || content.length > MAX_ATTACHMENT_BYTES || total + content.length > 20 * 1024 * 1024) throw httpError(400, "Les documents à envoyer dépassent la limite autorisée."); total += content.length; result.push({ filename: safeFilename(item?.name), contentType: match[1], content }); } return result; }
 function sanitizeSenders(value) { return [...new Set((Array.isArray(value) ? value : String(value || "").split(/[,;\n]/)).map(item => clean(item, 254).toLowerCase().replace(/^@/, "")).filter(item => /^\S+@\S+\.\S+$/.test(item) || /^[a-z0-9.-]+\.[a-z]{2,}$/i.test(item)))].slice(0, 100); }
-export function senderMatchesAllowed(sender, allowedSenders = []) { const address = String(sender || "").trim().toLowerCase(); const filters = sanitizeSenders(allowedSenders); return !filters.length || filters.some(value => address === value || address.endsWith(`@${value}`)); }
+export function senderMatchesAllowed(sender, allowedSenders = []) { const address = String(sender || "").trim().toLowerCase(); const senderDomain = address.includes("@") ? address.split("@").pop() : ""; const filters = sanitizeSenders(allowedSenders); return !filters.length || filters.some(value => value.includes("@") ? address === value : senderDomain === value || senderDomain.endsWith(`.${value}`)); }
 export function sanitizeRequiredKeywords(value) { return [...new Set((Array.isArray(value) ? value : String(value || "").split(/[,;\n]/)).map(item => clean(item, 120)).filter(item => normalizeKeywordText(item).split(" ").some(token => token.length >= 2)))].slice(0, 20); }
 export function stripQuotedEmailText(value) { const lines = String(value || "").replace(/\r/g, "").split("\n"); const kept = []; for (const line of lines) { if (/^\s*(?:-{2,}\s*)?(?:message d['’]origine|original message|forwarded message)|^\s*(?:on .{0,200} wrote|le .{0,200} a écrit)\s*:|^\s*--\s*$/i.test(line)) break; if (!/^\s*>/.test(line)) kept.push(line); } return kept.join("\n").trim(); }
 function normalizeKeywordText(value) { return String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim().replace(/\s+/g, " "); }
