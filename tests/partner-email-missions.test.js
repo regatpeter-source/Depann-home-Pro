@@ -5,7 +5,7 @@ import ExcelJS from "exceljs";
 import PizZip from "pizzip";
 import { PDFDocument, StandardFonts } from "pdf-lib";
 import { createCanvas } from "@napi-rs/canvas";
-import { classifyPartnerEmail, extractMissionPayload, extractNestedPartnerEmailContent, inspectMailboxStructure, mailboxReplyBody, normalizeMissionPostalAddress, oauthErrorMessage, parseMailboxPage, parseMailboxSyncPeriod, parseMicrosoftRetryAfter, partnerEmailDataUrl, publicMailError, replySubject, sanitizeRequiredKeywords, senderMatchesAllowed, shouldRefreshStoredPartnerEmail, stripQuotedEmailText } from "../server/partner-email.js";
+import { classifyPartnerEmail, extractMissionPayload, extractNestedPartnerEmailContent, inspectMailboxStructure, mailboxReplyBody, normalizeMissionPostalAddress, oauthErrorMessage, parseMailboxPage, parseMailboxSyncPeriod, parseMicrosoftRetryAfter, partnerEmailDataUrl, publicMailError, replySubject, richerDocumentText, sanitizeRequiredKeywords, senderMatchesAllowed, shouldRefreshStoredPartnerEmail, stripQuotedEmailText } from "../server/partner-email.js";
 import { simpleParser } from "mailparser";
 import { mapPayload, readableEmailMissionReference } from "../server/partner-missions.js";
 import { extractPartnerDocumentText, normalizePartnerDocumentMime } from "../server/partner-email-document-extractor.js";
@@ -546,6 +546,11 @@ test("une nouvelle recherche enrichit les anciens candidats et répare les missi
     assert.match(serverSource, /status='candidate',processed_at=NULL/);
     assert.match(serverSource, /document_extraction_version INTEGER NOT NULL DEFAULT 0/);
     assert.match(serverSource, /existing\.documentExtractionVersion < DOCUMENT_EXTRACTION_VERSION/);
+    assert.equal(richerDocumentText("Client : Alice\nAdresse : Nantes", ""), "Client : Alice\nAdresse : Nantes");
+    assert.equal(richerDocumentText("Texte technique", "Client : Alice\nAdresse : Nantes"), "Client : Alice\nAdresse : Nantes");
+    assert.match(serverSource, /richerDocumentText\(email\.document_text, await extractPartnerDocumentText\(email\.attachments\)\)/);
+    assert.match(serverSource, /richerDocumentText\(locked\.rows\[0\]\.document_text, documentText\)/);
+    assert.match(missionSource, /client à identifier/);
 });
 
 test("les PDF base64 multiligne produits par PostgreSQL sont lus et joints", async () => {

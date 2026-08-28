@@ -379,7 +379,8 @@ async function repairImportedEmailMissionClients(connection, ownerId, request) {
             ORDER BY message.processed_at DESC NULLS LAST,message.id DESC LIMIT 1
         ) email ON TRUE
         WHERE mission.owner_id=$1 AND mission.deleted_at IS NULL AND intake.partner_key LIKE 'email-%'
-            AND ((COALESCE(mission.mapped_data->>'address','')='' AND COALESCE(mission.source_data#>>'{client,address}','')<>'')
+            AND ((COALESCE(email.document_text,'')<>'' AND (LOWER(COALESCE(mission.mapped_data->>'clientName','')) IN ('','client à identifier','client a identifier','client partenaire') OR COALESCE(mission.mapped_data->>'address','')=''))
+                OR (COALESCE(mission.mapped_data->>'address','')='' AND COALESCE(mission.source_data#>>'{client,address}','')<>'')
                 OR ((COALESCE(client.client_data->>'insuranceDossier','')='' OR client.client_data->>'insuranceDossier'=mission.partner_reference)
                     AND COALESCE(email.document_text,'') ~* '(dossier.{0,20}assur(eur|ance)|r[ée]f[ée]rence.{0,20}assur(eur|ance))')
                 OR (COALESCE(client.client_data->>'mandateNumber','')='' AND COALESCE(email.document_text,'') ~* 'mandat')

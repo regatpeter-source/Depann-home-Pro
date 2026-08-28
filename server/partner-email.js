@@ -33,7 +33,7 @@ const MICROSOFT_MAIL_SCOPES = "Mail.Read Mail.Send";
 const MICROSOFT_GRAPH_MAX_RETRIES = 2;
 const MICROSOFT_GRAPH_MAX_RETRY_DELAY_MS = 10_000;
 const PARTNER_EMAIL_SYNC_INTERVAL_MS = 10 * 60 * 1000;
-const DOCUMENT_EXTRACTION_VERSION = 1;
+const DOCUMENT_EXTRACTION_VERSION = 2;
 let scheduler = null;
 const activeMailboxSynchronizations = new Set();
 
@@ -492,9 +492,10 @@ async function refreshPreviouslyParsedEmail(connection, stableMessageId, parsed,
         const evidenceImproved = existing.documentExtractionVersion < DOCUMENT_EXTRACTION_VERSION || shouldRefreshStoredPartnerEmail({ attachmentCount: existing.attachmentCount, documentText: existing.documentText }, { attachmentCount: attachments.length, documentText });
         if (!evidenceImproved && !forceCandidate) { await database.query("ROLLBACK"); return null; }
         const reanalyzeImported = existing.status === "imported" && evidenceImproved;
+        const preservedDocumentText = richerDocumentText(existing.documentText, documentText);
         await database.query("DELETE FROM depannhome_partner_email_attachments WHERE email_message_id=$1 AND owner_id=$2", [existing.id, connection.owner_id]);
         for (const attachment of attachments) await database.query("INSERT INTO depannhome_partner_email_attachments(owner_id,email_message_id,filename,mime_type,file_size,content_id,file_data) VALUES($1,$2,$3,$4,$5,$6,$7)", [connection.owner_id, existing.id, safeFilename(attachment.filename), attachment.contentType, attachment.size, clean(attachment.contentId, 255), attachment.content]);
-        await database.query(`UPDATE depannhome_partner_email_messages SET body_text=$3,document_text=$4,document_extraction_version=$5,classification_score=$6,classification_reasons=$7::jsonb,status='candidate',processed_at=NULL WHERE id=$1 AND owner_id=$2`, [existing.id, connection.owner_id, String(parsed.text || "").slice(0, 20000), documentText.slice(0, 50000), DOCUMENT_EXTRACTION_VERSION, classification.score, JSON.stringify(classification.reasons)]);
+        await database.query(`UPDATE depannhome_partner_email_messages SET body_text=$3,document_text=$4,document_extraction_version=$5,classification_score=$6,classification_reasons=$7::jsonb,status='candidate',processed_at=NULL WHERE id=$1 AND owner_id=$2`, [existing.id, connection.owner_id, String(parsed.text || "").slice(0, 20000), preservedDocumentText, DOCUMENT_EXTRACTION_VERSION, classification.score, JSON.stringify(classification.reasons)]);
         await database.query("COMMIT");
         console.info("[partner-email] contenu enrichi après nouvelle lecture", { emailId: existing.id, attachmentCount: attachments.length, reanalyzeImported });
         return { id: existing.id, missionId: existing.missionId, status: "candidate", score: classification.score, trustedSender: classification.trustedSender, reanalyzeImported };
@@ -508,6 +509,14 @@ export function shouldRefreshStoredPartnerEmail(existing, incoming) {
     const oldAttachments = Math.max(0, Number(existing?.attachmentCount) || 0), newAttachments = Math.max(0, Number(incoming?.attachmentCount) || 0);
     const oldText = String(existing?.documentText || "").trim(), newText = String(incoming?.documentText || "").trim();
     return newAttachments > oldAttachments || (!oldText && Boolean(newText));
+}
+
+export function richerDocumentText(existing, incoming) {
+    const previous = String(existing || "").trim(); const extracted = String(incoming || "").trim();
+    if (!previous) return extracted.slice(0, 50000);
+    if (!extracted) return previous.slice(0, 50000);
+    const score = value => (value.match(/(?:client|assur[ée]|b[ée]n[ée]ficiaire|adresse|t[ée]l[ée]phone|portable|mobile|dossier|soci[ée]taire|adh[ée]rent|mandat|sinistre)/gi) || []).length * 1000 + value.length;
+    return (score(extracted) >= score(previous) ? extracted : previous).slice(0, 50000);
 }
 
 async function importLiveMailboxMessage(connection, messageId, requestedAttachmentIds, actorId) {
@@ -627,12 +636,12 @@ async function refreshStoredLiveEmail(connection, emailId, message, attachments,
     const database = await getPool().connect();
     try {
         await database.query("BEGIN");
-        const locked = await database.query("SELECT status FROM depannhome_partner_email_messages WHERE id=$1 AND owner_id=$2 FOR UPDATE", [emailId, connection.owner_id]);
+        const locked = await database.query("SELECT status,document_text FROM depannhome_partner_email_messages WHERE id=$1 AND owner_id=$2 FOR UPDATE", [emailId, connection.owner_id]);
         if (!locked.rows[0]) throw httpError(404, "E-mail introuvable.");
         if (locked.rows[0].status === "processing") throw httpError(409, "Cet e-mail est déjà en cours de traitement.");
         await database.query("DELETE FROM depannhome_partner_email_attachments WHERE email_message_id=$1 AND owner_id=$2", [emailId, connection.owner_id]);
         for (const attachment of attachments) await database.query("INSERT INTO depannhome_partner_email_attachments(owner_id,email_message_id,filename,mime_type,file_size,content_id,file_data) VALUES($1,$2,$3,$4,$5,'',$6)", [connection.owner_id, emailId, safeFilename(attachment.filename), attachment.contentType, attachment.size, attachment.content]);
-        await database.query("UPDATE depannhome_partner_email_messages SET sender_address=$3,sender_name=$4,recipients=$5::jsonb,subject=$6,body_text=$7,document_text=$8,document_extraction_version=$9,received_at=$10,status='candidate',processed_at=NULL WHERE id=$1 AND owner_id=$2", [emailId, connection.owner_id, clean(message.from?.address, 254), clean(message.from?.name, 160), JSON.stringify((message.to || []).map(item => item.address).filter(Boolean)), clean(message.subject, 500), String(message.bodyText || "").slice(0, 20000), documentText.slice(0, 50000), DOCUMENT_EXTRACTION_VERSION, message.receivedAt || new Date()]);
+        await database.query("UPDATE depannhome_partner_email_messages SET sender_address=$3,sender_name=$4,recipients=$5::jsonb,subject=$6,body_text=$7,document_text=$8,document_extraction_version=$9,received_at=$10,status='candidate',processed_at=NULL WHERE id=$1 AND owner_id=$2", [emailId, connection.owner_id, clean(message.from?.address, 254), clean(message.from?.name, 160), JSON.stringify((message.to || []).map(item => item.address).filter(Boolean)), clean(message.subject, 500), String(message.bodyText || "").slice(0, 20000), richerDocumentText(locked.rows[0].document_text, documentText), DOCUMENT_EXTRACTION_VERSION, message.receivedAt || new Date()]);
         await database.query("COMMIT");
     } catch (error) {
         await database.query("ROLLBACK");
@@ -654,7 +663,7 @@ async function importCandidate(ownerId, emailId, actorId) {
     const claimed = await getPool().query("UPDATE depannhome_partner_email_messages SET status='processing' WHERE id=$1 AND owner_id=$2 AND status='candidate' RETURNING id", [email.id, ownerId]);
     if (!claimed.rowCount) throw httpError(409, "Cet e-mail est déjà en cours de traitement.");
     try {
-        const documentText = await extractPartnerDocumentText(email.attachments);
+        const documentText = richerDocumentText(email.document_text, await extractPartnerDocumentText(email.attachments));
         const payload = extractMissionPayload(email, documentText);
         const result = await ingestEmailPartnerMission({ ownerId, connectionId: email.email_connection_id, emailId: email.id, partnerName: email.display_name || email.sender_address, actorId, payload });
         for (const attachment of email.attachments || []) {
