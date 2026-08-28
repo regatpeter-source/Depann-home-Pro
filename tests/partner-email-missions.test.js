@@ -197,6 +197,11 @@ test("les missions e-mail utilisent la même interface que les missions internes
     assert.doesNotMatch(missionClientSource, /partner-email-candidate(?:-heading|-select)?/);
 });
 
+test("la conversation s’ouvre après la planification d’une mission e-mail", () => {
+    const acceptance = missionClientSource.slice(missionClientSource.indexOf("function showAccept"), missionClientSource.indexOf("function openDialog"));
+    assert.match(acceptance, /dialog\.remove\(\); await renderPartnerMissions\(\); await openPartnerDialogue\(id\)/);
+});
+
 test("un chargement de missions devenu obsolète n’écrit pas dans l’écran suivant", () => {
     assert.match(missionClientSource, /partnerMissionRenderSequence/);
     assert.match(missionClientSource, /renderSequence !== partnerMissionRenderSequence/);

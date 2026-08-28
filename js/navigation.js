@@ -5,7 +5,7 @@ import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocume
 import { renderAccounting, renderElectronicInvoicingConfiguration } from "./accounting.js?v=18";
 import { renderPurchases } from "./purchases.js?v=119";
 import { renderGroupActivation, renderGroupWorkspace } from "./groups.js?v=4";
-import { renderPartnerMissions } from "./partner-missions.js?v=58";
+import { renderPartnerMissions } from "./partner-missions.js?v=59";
 import { renderPartnerSandbox } from "./partner-sandbox.js?v=3";
 import { renderPartnerConnections } from "./partner-connections.js?v=25";
 import { renderCompanyEmailWorkspace, renderPartnerEmailSettings } from "./partner-email-settings.js?v=20";
