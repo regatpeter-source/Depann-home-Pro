@@ -159,23 +159,34 @@ function pdfTextNeedsOcr(value) {
     return !hasClientIdentity || !hasClientAddress;
 }
 
-async function embeddedPdfImages(page, limit) {
-    const operators = await page.getOperatorList(); const images = [];
-    for (let index = 0; index < operators.fnArray.length && images.length < limit; index += 1) {
-        if (![OPS.paintImageXObject, OPS.paintInlineImageXObject].includes(operators.fnArray[index])) continue;
+export async function embeddedPdfImages(page, limit) {
+    const operators = await page.getOperatorList(); const candidates = []; const references = new Set(); const objects = new WeakSet();
+    const supported = new Set([OPS.paintImageXObject, OPS.paintInlineImageXObject, OPS.paintImageXObjectRepeat]);
+    for (let index = 0; index < operators.fnArray.length; index += 1) {
+        if (!supported.has(operators.fnArray[index])) continue;
         const reference = operators.argsArray[index]?.[0];
-        const image = typeof reference === "string" ? await new Promise(resolve => page.objs.get(reference, resolve)) : reference;
-        const buffer = pdfImageOcrBuffer(image);
-        if (buffer) images.push(buffer);
+        if (!reference || typeof reference === "string" && references.has(reference) || typeof reference === "object" && objects.has(reference)) continue;
+        if (typeof reference === "string") references.add(reference); else objects.add(reference);
+        try {
+            const store = typeof reference === "string" && reference.startsWith("g_") ? page.commonObjs : page.objs;
+            const image = typeof reference === "string" ? await new Promise(resolve => store.get(reference, resolve)) : reference;
+            if (image?.data && image.width && image.height) candidates.push(image);
+        } catch (error) {
+            console.warn("[partner-email-ocr] Image PDF non lisible :", error?.message || "erreur de décodage");
+        }
     }
-    return images;
+    return candidates
+        .sort((left, right) => right.width * right.height - left.width * left.height)
+        .slice(0, limit)
+        .map(pdfImageOcrBuffer)
+        .filter(Boolean);
 }
 
-function pdfImageOcrBuffer(image) {
+export function pdfImageOcrBuffer(image) {
     if (!image?.data || !image.width || !image.height) return null;
-    const source = image.data; const sourcePixels = image.width * image.height;
-    const channels = image.kind === 3 || source.length === sourcePixels * 4 ? 4 : image.kind === 2 || source.length === sourcePixels * 3 ? 3 : image.kind === 1 || source.length === sourcePixels ? 1 : 0;
-    if (!channels) return null;
+    const source = image.data; const sourcePixels = image.width * image.height; const packedMonochrome = image.kind === 1;
+    const channels = image.kind === 3 || source.length === sourcePixels * 4 ? 4 : image.kind === 2 || source.length === sourcePixels * 3 ? 3 : !packedMonochrome && source.length === sourcePixels ? 1 : 0;
+    if (!packedMonochrome && !channels) return null;
     const scale = Math.min(1, Math.sqrt(MAX_OCR_PIXELS / sourcePixels));
     const width = Math.max(1, Math.floor(image.width * scale)); const height = Math.max(1, Math.floor(image.height * scale));
     const canvas = createCanvas(width, height); const context = canvas.getContext("2d"); const pixels = context.createImageData(width, height);
@@ -183,7 +194,10 @@ function pdfImageOcrBuffer(image) {
         const sourceY = Math.min(image.height - 1, Math.floor(y / scale));
         for (let x = 0; x < width; x += 1) {
             const sourceX = Math.min(image.width - 1, Math.floor(x / scale)); const sourceIndex = (sourceY * image.width + sourceX) * channels; const targetIndex = (y * width + x) * 4;
-            if (channels === 1) pixels.data[targetIndex] = pixels.data[targetIndex + 1] = pixels.data[targetIndex + 2] = source[sourceIndex];
+            if (packedMonochrome) {
+                const rowBytes = (image.width + 7) >> 3; const value = source[sourceY * rowBytes + (sourceX >> 3)] & (128 >> (sourceX & 7)) ? 255 : 0;
+                pixels.data[targetIndex] = pixels.data[targetIndex + 1] = pixels.data[targetIndex + 2] = value;
+            } else if (channels === 1) pixels.data[targetIndex] = pixels.data[targetIndex + 1] = pixels.data[targetIndex + 2] = source[sourceIndex];
             else { pixels.data[targetIndex] = source[sourceIndex]; pixels.data[targetIndex + 1] = source[sourceIndex + 1]; pixels.data[targetIndex + 2] = source[sourceIndex + 2]; }
             pixels.data[targetIndex + 3] = 255;
         }

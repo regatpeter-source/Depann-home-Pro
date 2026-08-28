@@ -4,11 +4,12 @@ import { readFileSync } from "node:fs";
 import ExcelJS from "exceljs";
 import PizZip from "pizzip";
 import { PDFDocument, StandardFonts } from "pdf-lib";
-import { createCanvas } from "@napi-rs/canvas";
+import { createCanvas, loadImage } from "@napi-rs/canvas";
+import { OPS } from "pdfjs-dist/legacy/build/pdf.mjs";
 import { classifyPartnerEmail, extractMissionPayload, extractNestedPartnerEmailContent, inspectMailboxStructure, mailboxReplyBody, normalizeMissionPostalAddress, oauthErrorMessage, parseMailboxPage, parseMailboxSyncPeriod, parseMicrosoftRetryAfter, partnerEmailDataUrl, publicMailError, replySubject, richerDocumentText, sanitizeRequiredKeywords, senderMatchesAllowed, shouldRefreshStoredPartnerEmail, stripQuotedEmailText } from "../server/partner-email.js";
 import { simpleParser } from "mailparser";
 import { mapPayload, readableEmailMissionReference } from "../server/partner-missions.js";
-import { extractPartnerDocumentText, normalizePartnerDocumentMime } from "../server/partner-email-document-extractor.js";
+import { embeddedPdfImages, extractPartnerDocumentText, normalizePartnerDocumentMime, pdfImageOcrBuffer } from "../server/partner-email-document-extractor.js";
 
 const serverSource = readFileSync(new URL("../server/partner-email.js", import.meta.url), "utf8");
 const missionSource = readFileSync(new URL("../server/partner-missions.js", import.meta.url), "utf8");
@@ -735,6 +736,25 @@ test("les coordonnées de l’assureur dans l’en-tête ne masquent pas le clie
     const payload = extractMissionPayload({ id: 59, subject: "Confirmation de mission urgente", body_text: "" }, text);
     assert.equal(payload.client.name, "Paul Martin"); assert.equal(payload.client.phone.replace(/\s/g, ""), "0611223344");
     assert.equal(payload.client.address, "12 rue des Lilas, 35000"); assert.equal(payload.client.city, "Rennes");
+});
+
+test("un scan PDF monochrome compressé sur un bit reste lisible par l’OCR", async () => {
+    const buffer = pdfImageOcrBuffer({ width: 8, height: 1, kind: 1, data: Uint8Array.of(0b10101010) });
+    const image = await loadImage(buffer); const canvas = createCanvas(8, 1); const context = canvas.getContext("2d"); context.drawImage(image, 0, 0);
+    const pixels = context.getImageData(0, 0, 8, 1).data;
+    assert.deepEqual(Array.from({ length: 8 }, (_, index) => pixels[index * 4]), [255, 0, 255, 0, 255, 0, 255, 0]);
+});
+
+test("les images PDF partagées et répétées sont récupérées avant les petits logos", async () => {
+    const logo = { width: 2, height: 2, kind: 2, data: new Uint8Array(12).fill(255) };
+    const scan = { width: 20, height: 20, kind: 2, data: new Uint8Array(1200).fill(255) };
+    const page = {
+        getOperatorList: async () => ({ fnArray: [OPS.paintImageXObject, OPS.paintImageXObjectRepeat], argsArray: [["logo"], ["g_scan", 1, 1, [0, 0]]] }),
+        objs: { get: (reference, resolve) => resolve(reference === "logo" ? logo : null) },
+        commonObjs: { get: (reference, resolve) => resolve(reference === "g_scan" ? scan : null) }
+    };
+    const images = await embeddedPdfImages(page, 1); const selected = await loadImage(images[0]);
+    assert.equal(selected.width, 20); assert.equal(selected.height, 20);
 });
 
 test("une photo jointe contenant la fiche d’intervention est lue par OCR", async () => {
