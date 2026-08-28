@@ -15,7 +15,7 @@ Toutes les requêtes vérifient simultanément la clé, l’accès partenaire, l
 
 ## Confidentialité et partage sélectif
 
-Chaque contenu de mission est **interne par défaut**. Le registre `depannhome_partner_mission_items` référence les devis, factures, rapports et photos sans dupliquer leurs données métier ; seul un élément dont `partner_visible` est activé apparaît dans l’espace externe, son historique et son téléchargement protégé. Le retrait de cette visibilité masque immédiatement l’élément et l’entrée de journal correspondante pour le partenaire.
+Chaque contenu de mission est **interne par défaut**. Le registre `depannhome_partner_mission_items` référence les devis, factures, rapports, quitus, franchises et photos d’intervention explicitement sélectionnées, sans dupliquer leurs données métier. Les photos intégrées à un rapport restent internes à ce rapport et ne sont jamais publiées individuellement dans le journal partenaire. Seul un élément dont `partner_visible` est activé apparaît dans l’espace externe, son historique et son téléchargement protégé.
 
 Les messages conservent un contrôle de partage bilatéral : chaque entreprise peut rendre internes ou partager uniquement les échanges dont elle est l’auteur. Elle ne peut jamais modifier la visibilité d’un message écrit par l’autre entreprise. Les pièces jointes (PDF et photos) suivent la même règle et possèdent leur propre visibilité. Un fichier ne peut pas être partagé si son message parent est interne : il faut d’abord partager ce message ou créer un message dédié, pour ne jamais révéler de commentaire interne.
 
@@ -24,7 +24,7 @@ Chaque mission porte `billing_mode` :
 - `direct_client` : la prestation est facturée au client final ; les devis, factures, paiements et informations comptables restent privés et le serveur refuse leur partage partenaire.
 - `principal` : la facturation est destinée à l’entreprise donneuse d’ordre ; les devis et factures associés sont enregistrés comme contenus partagés et ajoutés automatiquement au journal. Revenir au mode `direct_client` révoque immédiatement ce partage.
 
-Les rapports et leurs photos restent internes jusqu’à leur partage volontaire. Un rapport partagé doit être validé afin que le partenaire reçoive uniquement son PDF final.
+Les photos utilisées pour composer un rapport restent internes à celui-ci. Un rapport partagé doit être validé afin que le partenaire reçoive uniquement son PDF final. Les photos terrain ajoutées depuis le dossier « Ajouter des photos » de l’intervention suivent un circuit distinct : elles sont archivées dans la fiche client puis sélectionnées explicitement dans le Centre de mission avant leur envoi au journal partenaire.
 
 ## Accès selon le poste
 

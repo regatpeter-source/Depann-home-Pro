@@ -171,7 +171,6 @@ export function registerTechnicalReportRoutes(app, requireAuthentication) {
         const additions = files.map((file, index) => ({ id: `media-${crypto.randomUUID()}`, section, observationId, materialId, sortOrder: lastSortOrder + index + 1, pdfSize: "large", name: safeName(file.originalname), mime: file.mimetype, size: file.size, caption: cleanText(request.body?.caption, 500), annotation: cleanText(request.body?.annotation, 1000), dataUrl: `data:${file.mimetype};base64,${file.buffer.toString("base64")}`, createdAt: new Date().toISOString() }));
         const next = [...media, ...additions]; if (Buffer.byteLength(JSON.stringify(next)) > MAX_REPORT_BYTES) return response.status(400).json({ message: "Le rapport est trop volumineux : compressez les photos." });
         await getPool().query("UPDATE depannhome_technical_reports SET media=$3::jsonb, updated_at=NOW() WHERE id=$1 AND owner_id=$2", [report.id, ownerId, JSON.stringify(next)]);
-        const { registerMissionSourceItem } = await import("./partner-dialogue.js"); await Promise.all(additions.map(photo => registerMissionSourceItem({ ownerId, appointmentId: report.appointmentId, sourceType: "photo", sourceId: report.id, sourceItemId: photo.id, label: photo.name, details: { section: photo.section, caption: photo.caption } })));
         await publishEvent(request, reportTarget(report.id), "report_media_added", { count: additions.length, section });
         response.status(201).json({ media: additions });
     }));

@@ -1198,10 +1198,10 @@ function renderInterventionPhotosHtml(client, appointment) {
         : '<p class="muted">Aucune photo pour le moment.</p>';
     return `
         <form id="calendarInterventionPhotos" class="calendar-intervention-photos">
-            <div><p class="eyebrow">Photos d’intervention</p><h3>Avant / après</h3></div>
-            <section><h4>Avant intervention</h4>${previews(before)}<label>Ajouter une photo avant<input name="beforePhoto" type="file" accept="image/*" capture="environment"></label></section>
-            <section><h4>Après intervention</h4>${previews(after)}<label>Ajouter une photo après<input name="afterPhoto" type="file" accept="image/*" capture="environment"></label></section>
-            ${general.length ? `<section><h4>Autres photos de l’intervention</h4>${previews(general)}</section>` : ""}
+            <div><p class="eyebrow">Dossier de l’intervention</p><h3>Ajouter des photos</h3><p class="muted">Ces photos sont enregistrées dans la fiche client. Elles ne sont envoyées au partenaire qu’après une sélection explicite dans le Centre de mission.</p></div>
+            <section><h4>Photos de l’intervention</h4>${previews(general)}<label>Ajouter des photos<input name="generalPhotos" type="file" accept="image/*" capture="environment" multiple></label></section>
+            <section><h4>Avant intervention</h4>${previews(before)}<label>Ajouter des photos avant<input name="beforePhoto" type="file" accept="image/*" capture="environment" multiple></label></section>
+            <section><h4>Après intervention</h4>${previews(after)}<label>Ajouter des photos après<input name="afterPhoto" type="file" accept="image/*" capture="environment" multiple></label></section>
             <div class="calendar-form-actions"><button type="submit" class="secondary-button">Ajouter les photos</button></div><p class="auth-message" aria-live="polite"></p>
         </form>
     `;
@@ -1213,11 +1213,12 @@ async function uploadInterventionPhotos(event, client, appointment) {
     const feedback = form.querySelector(".auth-message");
     const button = form.querySelector('button[type="submit"]');
     const uploads = [
+        { type: "Photo", files: Array.from(form.elements.generalPhotos.files || []) },
         { type: "Photo avant", files: Array.from(form.elements.beforePhoto.files || []) },
         { type: "Photo après", files: Array.from(form.elements.afterPhoto.files || []) }
     ].filter(upload => upload.files.length);
     if (!uploads.length) {
-        feedback.textContent = "Sélectionnez au moins une photo avant ou après.";
+        feedback.textContent = "Sélectionnez au moins une photo de l’intervention.";
         feedback.classList.add("error");
         return;
     }

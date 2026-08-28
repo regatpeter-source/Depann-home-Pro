@@ -28,7 +28,7 @@ export async function openPartnerDialogue(missionId, options = {}) {
 }
 
 function renderDialogue(dialog, data, close, dialogueUrl) {
-    const { mission, messages, linkedDocuments, readOnly } = data;
+    const { mission, messages, linkedDocuments, interventionPhotos = [], readOnly } = data;
     const section = dialog.querySelector("section");
     section.className = "partner-dialogue";
     const lastUpdate = messages.length ? messages[messages.length - 1].updatedAt || messages[messages.length - 1].createdAt : null;
@@ -46,7 +46,7 @@ function renderDialogue(dialog, data, close, dialogueUrl) {
         links.className = "partner-dialogue-links";
         section.insertBefore(links, section.querySelector(".partner-dialogue-thread"));
     }
-    if (links) links.innerHTML = `<strong>Documents liés au dossier</strong>${linkedDocuments.map(document => `<div class="partner-dialogue-document"><a href="${escapeHtml(document.url || internalDocumentUrl(mission.id, document))}" target="_blank" rel="noopener">${escapeHtml(documentLabel(document.sourceType))} · ${escapeHtml(document.label)}</a><span class="partner-visibility ${document.partnerVisible ? "shared" : "private"}">${document.partnerVisible ? "Visible au partenaire" : "Interne uniquement"}</span><label class="partner-visibility-toggle"><input type="checkbox" data-item-visibility="${document.id}" data-current-visible="${document.partnerVisible ? "true" : "false"}" ${document.partnerVisible ? "checked" : ""}> Visible au partenaire</label></div>`).join("")}`;
+    if (links) links.innerHTML = `${interventionPhotoSelector(mission, interventionPhotos, readOnly)}<strong>Documents liés au dossier</strong>${linkedDocuments.map(document => linkedDocumentHtml(mission, document)).join("")}`;
     if (!linkedDocuments.length) links.insertAdjacentHTML("beforeend", '<p class="partner-dialogue-document-empty">Aucun document lié à cette mission pour le moment.</p>');
     configureVisibilityControls(section, data);
     section.querySelectorAll("[data-partner-visibility]").forEach(control => control.addEventListener("change", () => updateVisibility(mission.id, control)));
@@ -54,6 +54,15 @@ function renderDialogue(dialog, data, close, dialogueUrl) {
     section.querySelectorAll("[data-item-visibility]").forEach(control => control.addEventListener("change", () => updateItemVisibility(mission.id, control)));
     section.querySelectorAll("[data-attachment-visibility]").forEach(control => control.addEventListener("change", () => updateAttachmentVisibility(mission.id, control)));
     section.querySelectorAll("[data-source-attachment-visibility]").forEach(control => control.addEventListener("change", () => updateSourceAttachmentVisibility(mission.id, control)));
+    section.querySelector("[data-share-intervention-photos]")?.addEventListener("click", async event => {
+        const selected = [...section.querySelectorAll("[data-intervention-photo]:checked")].map(input => input.value);
+        if (!selected.length) return alert("Sélectionnez au moins une photo d’intervention.");
+        event.currentTarget.disabled = true;
+        const response = await fetch(`/api/partner-dialogue/missions/${encodeURIComponent(mission.id)}/intervention-photos`, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ attachmentIds: selected }) });
+        const payload = await response.json().catch(() => null);
+        if (!response.ok) { event.currentTarget.disabled = false; return alert(payload?.message || "Envoi des photos impossible."); }
+        const latest = await api(dialogueUrl); if (latest.ok) renderDialogue(dialog, latest.data, close, dialogueUrl);
+    });
     const form = section.querySelector("form");
     const attachmentFiles = form ? setupAttachmentPicker(form) : () => [];
     form?.addEventListener("submit", async event => {
@@ -64,6 +73,17 @@ function renderDialogue(dialog, data, close, dialogueUrl) {
         if (!result.ok) return alert(payload?.message || "Message impossible à envoyer.");
         const latest = await api(dialogueUrl); if (latest.ok) renderDialogue(dialog, latest.data, close, dialogueUrl);
     });
+}
+
+function interventionPhotoSelector(mission, photos, readOnly) {
+    if (!photos.length) return `<section class="partner-intervention-photo-folder"><strong>Ajouter des photos</strong><p class="muted">Les photos ajoutées depuis la fiche d’intervention du technicien apparaîtront ici.</p></section>`;
+    return `<section class="partner-intervention-photo-folder"><strong>Ajouter des photos</strong><p class="muted">Sélectionnez les photos du technicien à envoyer dans le journal partenaire.</p><div class="partner-intervention-photo-selector">${photos.map(photo => `<label class="${photo.shared ? "shared" : ""}"><img src="${escapeHtml(photo.url)}" alt="${escapeHtml(photo.name)}"><span><input type="checkbox" data-intervention-photo value="${escapeHtml(photo.id)}" ${photo.shared || readOnly ? "disabled" : ""}> ${photo.shared ? "Déjà dans le journal" : escapeHtml(photo.type || "Photo d’intervention")}</span></label>`).join("")}</div>${readOnly || photos.every(photo => photo.shared) ? "" : '<button type="button" class="secondary-button" data-share-intervention-photos>Envoyer la sélection dans le journal</button>'}</section>`;
+}
+
+function linkedDocumentHtml(mission, document) {
+    const url = document.url || internalDocumentUrl(mission.id, document);
+    const preview = document.sourceType === "intervention_photo" ? `<a class="partner-linked-photo" href="${escapeHtml(url)}" target="_blank" rel="noopener"><img src="${escapeHtml(url)}" alt="${escapeHtml(document.label)}"><strong>${escapeHtml(document.label)}</strong></a>` : `<a href="${escapeHtml(url)}" target="_blank" rel="noopener">${escapeHtml(documentLabel(document.sourceType))} · ${escapeHtml(document.label)}</a>`;
+    return `<div class="partner-dialogue-document ${document.sourceType === "intervention_photo" ? "photo" : ""}">${preview}<span class="partner-visibility ${document.partnerVisible ? "shared" : "private"}">${document.partnerVisible ? "Visible au partenaire" : "Interne uniquement"}</span><label class="partner-visibility-toggle"><input type="checkbox" data-item-visibility="${document.id}" data-current-visible="${document.partnerVisible ? "true" : "false"}" ${document.partnerVisible ? "checked" : ""}> Visible au partenaire</label></div>`;
 }
 
 function messageCard(message) { const system = message.kind === "system"; const issue = message.kind === "issue"; const attachments = Array.isArray(message.attachments) ? message.attachments : []; return `<article class="partner-dialogue-message journal-entry ${system ? "system" : ""} ${issue ? "issue" : ""}" data-journal-category="messages"><header><strong>${escapeHtml(system ? "Événement système" : message.organizationName || "Entreprise partenaire")}</strong><span>${escapeHtml(system ? "Depann’Home Pro" : message.senderName || "Participant")}${issue ? ` · ${escapeHtml(ISSUE_LABELS[message.issueType] || "Difficulté")}` : ""}</span><time>${escapeHtml(formatDate(message.createdAt))}</time></header>${message.body ? `<p>${escapeHtml(message.body)}</p>` : ""}${attachments.length ? `<div class="partner-dialogue-attachments">${attachments.map(attachment => `<div class="partner-dialogue-attachment-row">${attachment.mimeType.startsWith("image/") ? `<a class="partner-journal-photo" href="${escapeHtml(attachment.url)}" target="_blank" rel="noopener"><span>Photo</span><strong>${escapeHtml(attachment.filename)}</strong></a>` : `<a href="${escapeHtml(attachment.url)}" target="_blank" rel="noopener">${escapeHtml(documentLabel(attachment.attachmentType))} · ${escapeHtml(attachment.filename)} <small>${formatSize(attachment.fileSize)}</small></a>`}<label class="partner-visibility-toggle"><input type="checkbox" data-attachment-visibility="${attachment.id}" data-current-visible="${attachment.partnerVisible ? "true" : "false"}" ${attachment.partnerVisible ? "checked" : ""}> Visible au partenaire</label></div>`).join("")}</div>` : ""}<div class="partner-message-visibility"><span class="partner-visibility ${message.partnerVisible ? "shared" : "private"}">${message.partnerVisible ? "Visible au partenaire" : "Interne uniquement"}</span><label class="partner-visibility-toggle"><input type="checkbox" data-partner-visibility="${message.id}" data-current-visible="${message.partnerVisible ? "true" : "false"}" ${message.partnerVisible ? "checked" : ""}> Visible au partenaire</label></div></article>`; }
@@ -139,7 +159,7 @@ async function updateItemVisibility(missionId, control) { const previous = contr
 async function updateAttachmentVisibility(missionId, control) { const previous = control.dataset.currentVisible === "true"; const partnerVisible = control.checked; control.disabled = true; const response = await fetch(`/api/partner-dialogue/missions/${missionId}/attachments/${control.dataset.attachmentVisibility}/visibility`, { method: "PATCH", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ partnerVisible }) }); const payload = await response.json().catch(() => null); control.disabled = false; if (!response.ok) { control.checked = previous; return alert(payload?.message || "Visibilité impossible à modifier."); } control.dataset.currentVisible = String(partnerVisible); }
 async function updateSourceAttachmentVisibility(missionId, control) { const previous = control.dataset.currentVisible === "true"; const partnerVisible = control.checked; control.disabled = true; const response = await fetch(`/api/partner-dialogue/sent-missions/${missionId}/attachments/${control.dataset.sourceAttachmentVisibility}/visibility`, { method: "PATCH", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ partnerVisible }) }); const payload = await response.json().catch(() => null); control.disabled = false; if (!response.ok) { control.checked = previous; return alert(payload?.message || "Visibilité impossible à modifier."); } control.dataset.currentVisible = String(partnerVisible); }
 function internalDocumentUrl(missionId, document) { return `/api/partner-dialogue/missions/${encodeURIComponent(missionId)}/items/${encodeURIComponent(document.id)}/download`; }
-function documentLabel(value) { return ({ quote: "Devis", report: "Rapport", invoice: "Facture", photo: "Photo" })[value] || "Document"; }
+function documentLabel(value) { return ({ quote: "Devis", report: "Rapport de recherche de fuite", invoice: "Facture", quitus: "Quitus", deductible: "Franchise", intervention_photo: "Photo d’intervention" })[value] || "Document"; }
 function statusLabel(value) { return ({ received: "Reçue", pending_validation: "À valider", accepted: "Acceptée", rejected: "Refusée", assigned: "Affectée", scheduled: "Planifiée", en_route: "En route", on_site: "Sur site", report_in_progress: "Rapport en cours", report_completed: "Rapport terminé", report_validated: "Rapport validé", quote_sent: "Devis envoyé", quote_accepted: "Devis accepté", work_completed: "Travaux terminés", invoice_sent: "Facture envoyée", closed: "Clôturée", cancelled: "Annulée" })[value] || "Statut non renseigné"; }
 function formatSchedule(mission) { return mission.scheduledDate ? `${new Intl.DateTimeFormat("fr-FR").format(new Date(`${mission.scheduledDate}T12:00:00`))}${mission.scheduledStartTime ? ` · ${mission.scheduledStartTime}` : ""}` : "Non défini"; }
 function formatDate(value) { return value ? new Intl.DateTimeFormat("fr-FR", { dateStyle: "short", timeStyle: "short" }).format(new Date(value)) : ""; }

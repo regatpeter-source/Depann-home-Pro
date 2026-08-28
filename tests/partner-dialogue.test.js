@@ -9,6 +9,8 @@ const clientSource = readFileSync(new URL("../js/partner-dialogue.js", import.me
 const connectionSource = readFileSync(new URL("../server/partner-connections.js", import.meta.url), "utf8");
 const styleSource = readFileSync(new URL("../css/partner-dialogue.css", import.meta.url), "utf8");
 const schemaSource = readFileSync(new URL("../database/schema.sql", import.meta.url), "utf8");
+const technicalReportSource = readFileSync(new URL("../server/technical-reports.js", import.meta.url), "utf8");
+const calendarSource = readFileSync(new URL("../js/calendar.js", import.meta.url), "utf8");
 
 test("the journal scrolls inside its grid row without overlapping the composer", () => {
     assert.match(styleSource, /grid-template-rows:auto auto auto minmax\(0,1fr\) auto/);
@@ -61,10 +63,38 @@ test("source-side shared files use authenticated sent-mission download routes", 
     assert.match(serverSource, /const sourceBase = `\/api\/partner-dialogue\/sent-missions\/\$\{mission\.id\}`/);
 });
 
-test("les photos de rapport enregistrent tous les champs de leur élément de mission", () => {
+test("les éléments documentaires de mission enregistrent une référence complète", () => {
     const registration = serverSource.slice(serverSource.indexOf("export async function registerMissionSourceItem"), serverSource.indexOf("export async function sharePrincipalBillingDocuments"));
     assert.match(registration, /INSERT INTO depannhome_partner_mission_items\(owner_id,mission_id,source_type,source_id,source_item_id,label,details,partner_visible\)/);
     assert.match(registration, /VALUES\(\$1,\$2,\$3,\$4,\$5,\$6,\$7::jsonb,\$8\)/);
+});
+
+test("les photos internes d’un rapport ne sont jamais exposées individuellement au partenaire", () => {
+    const mediaRoute = technicalReportSource.slice(technicalReportSource.indexOf('app.post("/api/technical-reports/:reportId/media"'), technicalReportSource.indexOf('app.patch("/api/technical-reports/:reportId/media/:mediaId"'));
+    assert.doesNotMatch(mediaRoute, /registerMissionSourceItem/);
+    assert.doesNotMatch(mediaRoute, /sourceType: "photo"/);
+    assert.match(serverSource, /sourceType === "photo"/);
+    assert.match(serverSource, /DELETE FROM depannhome_partner_mission_items WHERE source_type='photo'/);
+    assert.match(serverSource, /source_type<>'photo'/);
+});
+
+test("les photos terrain suivent fiche intervention, fiche client, sélection puis journal partenaire", () => {
+    assert.match(calendarSource, /<h3>Ajouter des photos<\/h3>/);
+    assert.match(calendarSource, /name="generalPhotos"/);
+    assert.match(calendarSource, /uploadClientFiles\(client, upload\.type, upload\.files, appointment\?\.id\)/);
+    assert.match(serverSource, /missions\/:missionId\/intervention-photos/);
+    assert.match(serverSource, /isInterventionPhoto\(attachment, mission\.calendar_event_id\)/);
+    assert.match(serverSource, /'intervention_photo'/);
+    assert.match(clientSource, /partner-intervention-photo-selector/);
+    assert.match(clientSource, /data-intervention-photo/);
+    assert.match(clientSource, /Envoyer la sélection dans le journal/);
+    assert.match(clientSource, /class="partner-linked-photo"/);
+});
+
+test("quitus et franchise restent des documents métier partageables", () => {
+    assert.match(serverSource, /\["quitus", "deductible"\]\.includes\(item\.sourceType\)/);
+    assert.match(clientSource, /quitus: "Quitus"/);
+    assert.match(clientSource, /deductible: "Franchise"/);
 });
 
 test("the compact attachment area aligns attach, share and send controls", () => {

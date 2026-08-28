@@ -75,6 +75,8 @@ export async function initializePartnerDialogue() {
         action VARCHAR(60) NOT NULL, actor_id BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
         old_value JSONB NOT NULL DEFAULT '{}'::jsonb, new_value JSONB NOT NULL DEFAULT '{}'::jsonb, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )`);
+    await db.query("DELETE FROM depannhome_partner_dialogue_messages WHERE id IN (SELECT dialogue_message_id FROM depannhome_partner_mission_items WHERE source_type='photo' AND dialogue_message_id IS NOT NULL)");
+    await db.query("DELETE FROM depannhome_partner_mission_items WHERE source_type='photo'");
     await db.query(`INSERT INTO depannhome_partner_mission_items(owner_id,mission_id,source_type,source_id,label,details)
         SELECT mission.owner_id,mission.id,document.document_type,document.id::text,document.document_number,jsonb_build_object('documentType',document.document_type,'status',document.status)
         FROM depannhome_partner_missions mission JOIN depannhome_billing_documents document ON document.owner_id=mission.owner_id AND document.appointment_id=mission.calendar_event_id
@@ -100,6 +102,7 @@ export function registerPartnerDialogueRoutes(app, requireAuthentication) {
     app.use("/api/partner-dialogue", requireAuthentication, requireDialogueAccess);
     app.get("/api/partner-dialogue/missions/:missionId", asyncHandler(internalDialogue));
     app.post("/api/partner-dialogue/missions/:missionId/messages", upload.array("files", MAX_ATTACHMENTS), asyncHandler(internalMessage));
+    app.post("/api/partner-dialogue/missions/:missionId/intervention-photos", asyncHandler(shareInterventionPhotos));
     app.get("/api/partner-dialogue/sent-missions/:missionId", asyncHandler(sourceDialogue));
     app.post("/api/partner-dialogue/sent-missions/:missionId/messages", upload.array("files", MAX_ATTACHMENTS), asyncHandler(sourceMessage));
     app.patch("/api/partner-dialogue/sent-missions/:missionId/entries/:messageId/visibility", asyncHandler(updateSourceEntryVisibility));
@@ -148,7 +151,7 @@ export async function recordMissionEventForSource({ ownerId, sourceType, sourceI
 
 export async function registerMissionSourceItem({ ownerId, appointmentId, sourceType, sourceId, sourceItemId = "", label = "", details = {} }) {
     if (!isFeatureEnabled(await getOrganization(ownerId), "partnerMissions")) return null;
-    if (!ownerId || !appointmentId || !sourceType || !sourceId) return null;
+    if (!ownerId || !appointmentId || !sourceType || !sourceId || sourceType === "photo") return null;
     const { rows: missions } = await getPool().query("SELECT id,billing_mode FROM depannhome_partner_missions WHERE owner_id=$1 AND calendar_event_id=$2 ORDER BY id DESC LIMIT 1", [ownerId, appointmentId]);
     const mission = missions[0];
     if (!mission) return null;
@@ -208,6 +211,30 @@ async function internalMessage(req, res) {
     if (message.partnerVisible) await notifyMissionSourceParticipants(ownerId, mission.id, input.kind === "issue" ? "Problème signalé par l’entreprise exécutante" : "Nouveau message de l’entreprise exécutante", input.body || "Une pièce jointe a été ajoutée.", message.id);
     await broadcastJournalUpdate(ownerId, mission.id, message.id, "created");
     res.status(201).json({ message, emailDelivery: emailDelivery ? { sent: true, recipient: emailDelivery.recipient } : { sent: false } });
+}
+
+async function shareInterventionPhotos(req, res) {
+    const ownerId = getAccountOwnerId(req); const mission = await accessibleInternalMission(ownerId, positiveId(req.params.missionId), req);
+    const requestedIds = [...new Set((Array.isArray(req.body?.attachmentIds) ? req.body.attachmentIds : []).map(value => clean(value, 100)).filter(Boolean))].slice(0, 20);
+    if (!mission) return res.status(404).json({ message: "Dossier introuvable ou non accessible." });
+    if (mission.status === "closed") return res.status(409).json({ message: "Ce dossier est clôturé : aucune photo ne peut être ajoutée." });
+    if (!mission.client_id || !mission.calendar_event_id || !requestedIds.length) return res.status(400).json({ message: "Sélectionnez au moins une photo de cette intervention." });
+    const { rows } = await getPool().query("SELECT client_data AS client FROM depannhome_clients WHERE owner_id=$1 AND client_id=$2", [ownerId, mission.client_id]);
+    const requested = new Set(requestedIds);
+    const photos = (Array.isArray(rows[0]?.client?.attachments) ? rows[0].client.attachments : []).filter(attachment => requested.has(String(attachment?.id || "")) && isInterventionPhoto(attachment, mission.calendar_event_id));
+    if (photos.length !== requested.size) return res.status(400).json({ message: "Une photo sélectionnée n’appartient pas à cette intervention." });
+    const shared = [];
+    for (const photo of photos) {
+        const { rows: items } = await getPool().query(`INSERT INTO depannhome_partner_mission_items(owner_id,mission_id,source_type,source_id,source_item_id,label,details,partner_visible)
+            VALUES($1,$2,'intervention_photo',$3,$4,$5,$6::jsonb,TRUE)
+            ON CONFLICT(mission_id,source_type,source_id,source_item_id) DO UPDATE SET label=EXCLUDED.label,details=EXCLUDED.details,partner_visible=TRUE,updated_at=NOW()
+            RETURNING *`, [ownerId, mission.id, mission.client_id, String(photo.id), clean(photo.name, 255), JSON.stringify({ attachmentType: photo.type, appointmentId: mission.calendar_event_id, mimeType: photo.mime, fileSize: photo.size })]);
+        await getPool().query("INSERT INTO depannhome_partner_mission_item_audit(owner_id,mission_id,item_id,action,actor_id,old_value,new_value) VALUES($1,$2,$3,'intervention_photo_shared',$4,'{}'::jsonb,$5::jsonb)", [ownerId, mission.id, items[0].id, req.user.sub, JSON.stringify({ attachmentId: photo.id, partnerVisible: true })]);
+        await synchronizeItemJournal(items[0], mission, true);
+        shared.push(publicMissionItem(items[0]));
+    }
+    await broadcastJournalUpdate(ownerId, mission.id, 0, "intervention_photos_shared");
+    res.status(201).json({ photos: shared, message: `${shared.length} photo(s) d’intervention ajoutée(s) au journal partenaire.` });
 }
 
 async function sourceMessage(req, res) {
@@ -351,21 +378,27 @@ async function updateSourceAttachmentVisibility(req, res) {
 }
 
 async function dialoguePayload(mission, external, sourceDialogue = false) {
-    const [messages, documents] = await Promise.all([loadMessages(mission, external), linkedDocuments(mission.owner_id, mission, external)]);
+    const [messages, documents, interventionPhotos] = await Promise.all([loadMessages(mission, external), linkedDocuments(mission.owner_id, mission, external), external || sourceDialogue ? [] : loadInterventionPhotos(mission)]);
     const sourceBase = `/api/partner-dialogue/sent-missions/${mission.id}`;
-    return { mission: publicMissionSummary(mission), messages: sourceDialogue ? messages.map(message => ({ ...message, attachments: message.attachments.map(attachment => ({ ...attachment, url: `${sourceBase}/attachments/${attachment.id}` })) })) : messages, linkedDocuments: sourceDialogue ? documents.map(item => ({ ...item, url: `${sourceBase}/items/${item.id}/download` })) : documents, readOnly: mission.status === "closed", filters: ["messages"] };
+    const sharedPhotoIds = new Set(documents.filter(item => item.sourceType === "intervention_photo").map(item => String(item.sourceItemId)));
+    return { mission: publicMissionSummary(mission), messages: sourceDialogue ? messages.map(message => ({ ...message, attachments: message.attachments.map(attachment => ({ ...attachment, url: `${sourceBase}/attachments/${attachment.id}` })) })) : messages, linkedDocuments: sourceDialogue ? documents.map(item => ({ ...item, url: `${sourceBase}/items/${item.id}/download` })) : documents, interventionPhotos: interventionPhotos.map(photo => ({ ...photo, shared: sharedPhotoIds.has(String(photo.id)) })), readOnly: mission.status === "closed", filters: ["messages"] };
 }
 async function loadMessages(mission, external) {
     const { rows } = await getPool().query(`SELECT message.id, message.sender_type AS "senderType", message.sender_name AS "senderName", message.organization_name AS "organizationName", message.kind, message.issue_type AS "issueType", message.body, message.reply_to_id AS "replyToId", message.partner_visible AS "partnerVisible", message.receiver_visible AS "receiverVisible", message.event_type AS "eventType", message.immutable, message.created_at AS "createdAt", message.updated_at AS "updatedAt", COALESCE((SELECT json_agg(json_build_object('id', attachment.id, 'filename', attachment.filename, 'mimeType', attachment.mime_type, 'fileSize', attachment.file_size, 'attachmentType', attachment.attachment_type, 'partnerVisible', attachment.partner_visible, 'receiverVisible', attachment.receiver_visible) ORDER BY attachment.id) FROM depannhome_partner_dialogue_attachments attachment WHERE attachment.message_id=message.id AND (($3=TRUE AND attachment.partner_visible=TRUE) OR ($3=FALSE AND (message.sender_type<>'partner' OR attachment.receiver_visible=TRUE)))), '[]'::json) AS attachments FROM depannhome_partner_dialogue_messages message WHERE message.owner_id=$1 AND message.mission_id=$2 AND (($3=TRUE AND message.partner_visible=TRUE) OR ($3=FALSE AND (message.sender_type<>'partner' OR message.receiver_visible=TRUE))) ORDER BY message.created_at ASC, message.id ASC LIMIT 1000`, [mission.owner_id, mission.id, external]);
     return rows.map(message => ({ ...message, attachments: (message.attachments || []).map(attachment => ({ ...attachment, url: external ? `/api/partner-dialogue/external/missions/${encodeURIComponent(mission.external_mission_id)}/attachments/${attachment.id}` : `/api/partner-dialogue/missions/${mission.id}/attachments/${attachment.id}` })) }));
 }
 async function linkedDocuments(ownerId, mission, external) {
-    const { rows } = await getPool().query(`SELECT id,source_type AS "sourceType",source_id AS "sourceId",label,details,partner_visible AS "partnerVisible",created_at AS "createdAt",updated_at AS "updatedAt" FROM depannhome_partner_mission_items WHERE owner_id=$1 AND mission_id=$2 AND ($3=FALSE OR partner_visible=TRUE) ORDER BY updated_at DESC,id DESC`, [ownerId, mission.id, external]);
+    const { rows } = await getPool().query(`SELECT id,source_type AS "sourceType",source_id AS "sourceId",source_item_id AS "sourceItemId",label,details,partner_visible AS "partnerVisible",created_at AS "createdAt",updated_at AS "updatedAt" FROM depannhome_partner_mission_items WHERE owner_id=$1 AND mission_id=$2 AND source_type<>'photo' AND ($3=FALSE OR partner_visible=TRUE) ORDER BY updated_at DESC,id DESC`, [ownerId, mission.id, external]);
     return rows.map(item => ({ ...publicMissionItem(item), url: external ? `/api/partner-dialogue/external/missions/${encodeURIComponent(mission.external_mission_id)}/items/${item.id}/download` : "" }));
+}
+async function loadInterventionPhotos(mission) {
+    if (!mission.client_id || !mission.calendar_event_id) return [];
+    const { rows } = await getPool().query("SELECT client_data AS client FROM depannhome_clients WHERE owner_id=$1 AND client_id=$2", [mission.owner_id, mission.client_id]);
+    return (Array.isArray(rows[0]?.client?.attachments) ? rows[0].client.attachments : []).filter(attachment => isInterventionPhoto(attachment, mission.calendar_event_id)).map(attachment => ({ id: String(attachment.id), type: attachment.type, name: attachment.name, mimeType: attachment.mime, createdAt: attachment.createdAt, url: `/api/clients/${encodeURIComponent(mission.client_id)}/attachments/${encodeURIComponent(attachment.id)}/open` }));
 }
 async function findMissionItem(ownerId, missionId, itemId, partnerOnly = false) {
     if (!itemId) return null;
-    const { rows } = await getPool().query("SELECT * FROM depannhome_partner_mission_items WHERE id=$1 AND owner_id=$2 AND mission_id=$3 AND ($4=FALSE OR partner_visible=TRUE)", [itemId, ownerId, missionId, partnerOnly]);
+    const { rows } = await getPool().query("SELECT * FROM depannhome_partner_mission_items WHERE id=$1 AND owner_id=$2 AND mission_id=$3 AND source_type<>'photo' AND ($4=FALSE OR partner_visible=TRUE)", [itemId, ownerId, missionId, partnerOnly]);
     return rows[0] ? publicMissionItem(rows[0]) : null;
 }
 async function synchronizeItemJournal(item, mission, visible) {
@@ -400,14 +433,23 @@ async function sendMissionItem(res, ownerId, item) {
         if (!rows[0]?.data) return res.status(409).json({ message: "Le rapport doit être validé avant son partage." });
         res.set({ "Content-Type": rows[0].mimeType || "application/pdf", "Content-Disposition": `${rows[0].mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ? "attachment" : "inline"}; filename*=UTF-8''${encodeURIComponent(rows[0].filename || `rapport-${item.sourceId}.pdf`)}`, "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" }); return res.send(rows[0].data);
     }
-    if (item.sourceType === "photo") {
-        const { rows } = await getPool().query("SELECT media FROM depannhome_technical_reports WHERE id=$1 AND owner_id=$2", [item.sourceId, ownerId]); const photo = (rows[0]?.media || []).find(entry => entry.id === item.sourceItemId);
-        const match = /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/.exec(String(photo?.dataUrl || "")); if (!match) return res.status(404).json({ message: "Photo introuvable." });
-        res.set({ "Content-Type": match[1], "Content-Disposition": `inline; filename*=UTF-8''${encodeURIComponent(photo.name || `photo-${item.sourceItemId}`)}`, "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" }); return res.send(Buffer.from(match[2], "base64"));
+    if (item.sourceType === "intervention_photo") {
+        const { rows } = await getPool().query("SELECT client_data AS client FROM depannhome_clients WHERE owner_id=$1 AND client_id=$2", [ownerId, item.sourceId]);
+        const photo = (Array.isArray(rows[0]?.client?.attachments) ? rows[0].client.attachments : []).find(attachment => String(attachment?.id || "") === String(item.sourceItemId) && isInterventionPhoto(attachment, item.details?.appointmentId));
+        const match = /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/.exec(String(photo?.dataUrl || "")); if (!match) return res.status(404).json({ message: "Photo d’intervention introuvable." });
+        res.set({ "Content-Type": match[1], "Content-Disposition": `inline; filename*=UTF-8''${encodeURIComponent(photo.name || `photo-intervention-${item.sourceItemId}`)}`, "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" }); return res.send(Buffer.from(match[2], "base64"));
+    }
+    if (["quitus", "deductible"].includes(item.sourceType)) {
+        const { rows } = await getPool().query("SELECT client_data AS client FROM depannhome_clients WHERE owner_id=$1 AND client_id=$2", [ownerId, item.sourceId]);
+        const attachment = (Array.isArray(rows[0]?.client?.attachments) ? rows[0].client.attachments : []).find(entry => String(entry?.id || "") === String(item.sourceItemId) && (item.sourceType === "quitus" ? entry.type === "Quitus" : entry.type === "Photo franchise"));
+        const match = /^data:([^;,]+);base64,([A-Za-z0-9+/=]+)$/.exec(String(attachment?.dataUrl || "")); if (!match) return res.status(404).json({ message: "Document de mission introuvable." });
+        const inline = match[1] === "application/pdf" || match[1].startsWith("image/");
+        res.set({ "Content-Type": match[1], "Content-Disposition": `${inline ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(attachment.name || item.label || "document-mission")}`, "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" }); return res.send(Buffer.from(match[2], "base64"));
     }
     return res.status(404).json({ message: "Document introuvable." });
 }
 function publicMissionItem(item) { return { id: Number(item.id), missionId: Number(item.missionId || item.mission_id), sourceType: item.sourceType || item.source_type, sourceId: String(item.sourceId || item.source_id || ""), sourceItemId: String(item.sourceItemId || item.source_item_id || ""), label: item.label || "Document", details: item.details || {}, partnerVisible: Boolean(item.partnerVisible ?? item.partner_visible), createdAt: item.createdAt || item.created_at, updatedAt: item.updatedAt || item.updated_at }; }
+function isInterventionPhoto(attachment, appointmentId) { return Boolean(attachment?.id && String(attachment.appointmentId || "") === String(appointmentId || "") && ["Photo", "Photo avant", "Photo après"].includes(attachment.type) && ["image/jpeg", "image/png", "image/webp"].includes(attachment.mime) && /^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(String(attachment.dataUrl || ""))); }
 async function createMessageWithAttachments({ ownerId, missionId, senderType, senderUserId = null, senderName, organizationName, kind, issueType = "", body, replyToId = 0, partnerVisible = false, receiverVisible = true, attachments = [] }) {
     const connection = await getPool().connect();
     try { await connection.query("BEGIN"); const message = await insertMessage({ ownerId, missionId, senderType, senderUserId, senderName, organizationName, kind, issueType, body, replyToId, partnerVisible, receiverVisible }, connection); const saved = []; for (const attachment of attachments) { const { rows } = await connection.query("INSERT INTO depannhome_partner_dialogue_attachments(owner_id,mission_id,message_id,attachment_type,filename,mime_type,file_size,file_data,partner_visible,receiver_visible) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id,filename,mime_type AS \"mimeType\",file_size AS \"fileSize\",attachment_type AS \"attachmentType\",partner_visible AS \"partnerVisible\",receiver_visible AS \"receiverVisible\"", [ownerId, missionId, message.id, attachment.type, attachment.filename, attachment.mimeType, attachment.buffer.length, attachment.buffer, Boolean(partnerVisible), Boolean(receiverVisible)]); saved.push(rows[0]); } await insertAudit(connection, { ownerId, missionId, messageId: message.id, action: "created", actorId: senderUserId, actorName: senderName, newValue: { partnerVisible, receiverVisible, kind, attachmentCount: saved.length } }); await connection.query("COMMIT"); return { ...message, attachments: saved }; } catch (error) { await connection.query("ROLLBACK"); throw error; } finally { connection.release(); }
