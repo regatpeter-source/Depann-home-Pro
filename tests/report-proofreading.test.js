@@ -81,6 +81,15 @@ test("administrative proofreading overview includes every photo and all editing 
     assert.match(editorSource, /data-delete-photo/);
 });
 
+test("la photo de présentation reste contenue et centrée dans son cadre PDF", () => {
+    const templateSource = readFileSync(new URL("../server/leak-report-template.js", import.meta.url), "utf8");
+    const presentation = templateSource.slice(templateSource.indexOf("function addPresentationPhoto"), templateSource.indexOf("function addPhotoWithPage"));
+    assert.match(templateSource, /addPresentationPhoto\(pdf, exterior/);
+    assert.match(presentation, /roundedRect\(x, y, width, height/);
+    assert.match(presentation, /fit: \[width - padding \* 2, height - padding \* 2\]/);
+    assert.match(presentation, /align: "center", valign: "center"/);
+});
+
 test("proofreading waits for every photo mutation before saving its fingerprint", () => {
     assert.match(editorSource, /trackMediaSave\(deletePhoto/);
     assert.match(editorSource, /trackMediaSave\(movePhoto/);
