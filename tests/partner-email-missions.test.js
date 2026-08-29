@@ -6,7 +6,7 @@ import PizZip from "pizzip";
 import { PDFDocument, StandardFonts } from "pdf-lib";
 import { createCanvas, loadImage } from "@napi-rs/canvas";
 import { OPS } from "pdfjs-dist/legacy/build/pdf.mjs";
-import { classifyPartnerEmail, extractMissionPayload, extractNestedPartnerEmailContent, inspectMailboxStructure, mailboxReplyBody, normalizeMissionPostalAddress, oauthErrorMessage, parseMailboxPage, parseMailboxSyncPeriod, parseMicrosoftRetryAfter, partnerEmailDataUrl, publicMailError, replySubject, richerDocumentText, sanitizeRequiredKeywords, senderMatchesAllowed, shouldRefreshStoredPartnerEmail, stripQuotedEmailText } from "../server/partner-email.js";
+import { classifyPartnerEmail, extractMissionPayload, extractNestedPartnerEmailContent, inspectMailboxStructure, mailboxReplyBody, mailTechnicalReason, normalizeMissionPostalAddress, oauthErrorMessage, oauthMailboxProviderIssue, parseMailboxPage, parseMailboxSyncPeriod, parseMicrosoftRetryAfter, partnerEmailDataUrl, publicMailError, replySubject, richerDocumentText, sanitizeRequiredKeywords, senderMatchesAllowed, shouldRefreshStoredPartnerEmail, stripQuotedEmailText } from "../server/partner-email.js";
 import { simpleParser } from "mailparser";
 import { mapPayload, readableEmailMissionReference } from "../server/partner-missions.js";
 import { embeddedPdfImages, extractPartnerDocumentText, normalizePartnerDocumentMime, pdfImageOcrBuffer } from "../server/partner-email-document-extractor.js";
@@ -131,6 +131,39 @@ test("les callbacks OAuth mail utilisent l’état temporaire sans exiger le coo
     assert.match(appSource, /function isPartnerEmailOAuthCallback\(request\)[\s\S]*?request\.method === "GET"[\s\S]*?google\|microsoft/);
 });
 
+test("une boîte OAuth n’est déclarée connectée qu’après un accès réel au fournisseur", () => {
+    const callback = serverSource.slice(serverSource.indexOf('app.get("/api/partner-email/oauth/:provider/callback"'), serverSource.indexOf('app.use("/api/partner-email"'));
+    assert.ok(callback.indexOf("verifyOAuthMailboxAccess") < callback.indexOf("INSERT INTO depannhome_partner_email_connections"));
+    assert.match(callback, /verified_at\) VALUES[\s\S]*NOW\(\)/);
+    assert.match(callback, /connectée et accès aux e-mails vérifié/);
+    assert.match(serverSource, /getMailboxLock\("INBOX"\)/);
+    assert.match(serverSource, /mailFolders\/inbox\/messages\?\$select=id&\$top=1/);
+    assert.match(schemaSource, /verified_at TIMESTAMPTZ/);
+    assert.match(emailSettingsSource, /Connexion non vérifiée/);
+});
+
+test("une adresse Hotmail engagée par erreur via Google est orientée vers Microsoft", () => {
+    assert.match(oauthMailboxProviderIssue("google", "regatpeter@hotmail.fr"), /Connecter Microsoft/);
+    assert.equal(oauthMailboxProviderIssue("microsoft", "regatpeter@hotmail.fr"), "");
+    assert.equal(oauthMailboxProviderIssue("google", "missions@entreprise.fr"), "");
+    assert.match(publicMailError({ publicMessage: oauthMailboxProviderIssue("google", "regatpeter@hotmail.fr") }, { provider: "google" }), /Outlook\/Hotmail/);
+});
+
+test("les refus réels IMAP exposent une cause technique nettoyée sans masquer l’action adaptée", () => {
+    const error = Object.assign(new Error("Authentication failed"), { authenticationFailed: true, responseCode: "AUTHENTICATIONFAILED", responseText: "Invalid credentials" });
+    assert.equal(mailTechnicalReason(error), "AUTHENTICATIONFAILED · Invalid credentials");
+    assert.equal(mailTechnicalReason(new Error("access_token=secret-value password=hunter2")), "access_token=[masqué] password=[masqué]");
+    const message = publicMailError(error, { provider: "google", mailbox: "boite@entreprise.fr" });
+    assert.match(message, /Gmail IMAP a refusé l’authentification réelle/);
+    assert.match(message, /Cause technique : AUTHENTICATIONFAILED/);
+    assert.match(message, /Connecter Google Workspace/);
+    assert.match(serverSource, /operation: "inbox_list"/);
+    assert.match(serverSource, /operation: "mailbox_sync"/);
+    assert.match(serverSource, /technicalReason: mailTechnicalReason\(error\)/);
+    assert.match(oauthErrorMessage({ oauthCode: "invalid_scope" }, "google"), /Google Cloud/);
+    assert.doesNotMatch(oauthErrorMessage({ oauthCode: "invalid_scope" }, "google"), /Microsoft|Mail\.Read/);
+});
+
 test("Microsoft utilise Graph pour les comptes personnels et explique les refus sans exposer les secrets", () => {
     assert.match(serverSource, /MICROSOFT_IDENTITY_SCOPES/);
     assert.match(serverSource, /MICROSOFT_MAIL_SCOPES = "Mail\.Read Mail\.Send"/);
@@ -138,7 +171,7 @@ test("Microsoft utilise Graph pour les comptes personnels et explique les refus 
     assert.match(serverSource, /graph\.microsoft\.com\/v1\.0\/me\/messages\/\$\{encodeURIComponent\(messageId\)\}\/\$value/);
     assert.match(serverSource, /graph\.microsoft\.com\/v1\.0\/me\/sendMail/);
     assert.doesNotMatch(serverSource, /outlook\.office365\.com|smtp\.office365\.com|IMAP\.AccessAsUser\.All|SMTP\.Send/);
-    assert.match(serverSource, /console\.warn\("\[partner-email-oauth\] authorization rejected", oauthErrorLog/);
+    assert.match(serverSource, /console\.warn\("\[partner-email-oauth\] authorization or mailbox validation rejected"/);
     assert.doesNotMatch(serverSource, /console\.(?:warn|error)\([^\n]*clientSecret/);
     assert.match(oauthErrorMessage({ oauthCode: "invalid_client", oauthErrorCodes: [7000215] }, "microsoft"), /valeur du secret client/);
     assert.match(oauthErrorMessage({ oauthCode: "invalid_grant" }, "microsoft"), /expiré/);
@@ -471,7 +504,7 @@ test("un timeout ImapFlow ne peut pas arrêter le processus Node", () => {
     assert.equal((serverSource.match(/new ImapFlow/g) || []).length, 1);
     assert.match(serverSource, /function createImapClient\(options\)/);
     assert.match(serverSource, /client\.on\("error", error => console\.warn/);
-    assert.equal((serverSource.match(/createImapClient\(/g) || []).length, 4);
+    assert.equal((serverSource.match(/createImapClient\(/g) || []).length, 5);
     assert.match(serverSource, /async function withImapInbox/);
 });
 

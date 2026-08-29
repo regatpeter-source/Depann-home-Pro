@@ -1411,11 +1411,12 @@ CREATE TABLE IF NOT EXISTS depannhome_partner_email_connections (
     allowed_senders JSONB NOT NULL DEFAULT '[]'::jsonb, required_keywords JSONB NOT NULL DEFAULT '[]'::jsonb,
     automatic_threshold INTEGER NOT NULL DEFAULT 80 CHECK(automatic_threshold BETWEEN 70 AND 100),
     send_status_updates BOOLEAN NOT NULL DEFAULT FALSE, auto_search_enabled BOOLEAN NOT NULL DEFAULT FALSE, enabled BOOLEAN NOT NULL DEFAULT TRUE,
-    last_uid BIGINT NOT NULL DEFAULT 0, last_sync_at TIMESTAMPTZ, last_error VARCHAR(500) NOT NULL DEFAULT '',
+    last_uid BIGINT NOT NULL DEFAULT 0, verified_at TIMESTAMPTZ, last_sync_at TIMESTAMPTZ, last_error VARCHAR(500) NOT NULL DEFAULT '',
     created_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT depannhome_partner_email_owner_address_unique UNIQUE(owner_id,email_address)
 );
 ALTER TABLE depannhome_partner_email_connections ADD COLUMN IF NOT EXISTS required_keywords JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE depannhome_partner_email_connections ADD COLUMN IF NOT EXISTS verified_at TIMESTAMPTZ;
 CREATE INDEX IF NOT EXISTS depannhome_partner_email_connections_auto_search_idx ON depannhome_partner_email_connections(auto_search_enabled,enabled,last_sync_at);
 CREATE TABLE IF NOT EXISTS depannhome_partner_email_messages (
     id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,

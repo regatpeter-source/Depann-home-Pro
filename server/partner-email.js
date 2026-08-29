@@ -53,6 +53,7 @@ export async function initializePartnerEmail() {
     )`);
     await db.query("ALTER TABLE depannhome_partner_email_connections ADD COLUMN IF NOT EXISTS auto_search_enabled BOOLEAN NOT NULL DEFAULT FALSE");
     await db.query("ALTER TABLE depannhome_partner_email_connections ADD COLUMN IF NOT EXISTS required_keywords JSONB NOT NULL DEFAULT '[]'::jsonb");
+    await db.query("ALTER TABLE depannhome_partner_email_connections ADD COLUMN IF NOT EXISTS verified_at TIMESTAMPTZ");
     await db.query("CREATE INDEX IF NOT EXISTS depannhome_partner_email_connections_auto_search_idx ON depannhome_partner_email_connections(auto_search_enabled,enabled,last_sync_at)");
     await db.query(`CREATE TABLE IF NOT EXISTS depannhome_partner_email_messages (
         id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
@@ -98,19 +99,22 @@ export function registerPartnerEmailRoutes(app, requireAuthentication) {
             const identityTokens = await exchangeOauthCode(provider, String(req.query.code), context.verifier);
             const identity = await oauthIdentity(provider, identityTokens.access_token);
             const mailboxTokens = identityTokens;
+            const providerIssue = oauthMailboxProviderIssue(provider, identity.email);
+            if (providerIssue) { const error = new Error(providerIssue); error.publicMessage = providerIssue; throw error; }
+            await verifyOAuthMailboxAccess(provider, identity.email, mailboxTokens.access_token);
             const encrypted = encryptElectronicInvoicingCredentials({ accessToken: mailboxTokens.access_token, refreshToken: mailboxTokens.refresh_token || identityTokens.refresh_token, expiresAt: new Date(Date.now() + Number(mailboxTokens.expires_in || 3600) * 1000).toISOString() });
-            await getPool().query(`INSERT INTO depannhome_partner_email_connections(owner_id,provider,email_address,display_name,encrypted_credentials,server_configuration,selection_mode,allowed_senders,required_keywords,send_status_updates,auto_search_enabled,created_by,last_error) VALUES($1,$2,$3,$4,$5,'{}'::jsonb,$6,$7::jsonb,$8::jsonb,$9,$10,$11,'') ON CONFLICT(owner_id,email_address) DO UPDATE SET provider=EXCLUDED.provider,display_name=EXCLUDED.display_name,encrypted_credentials=EXCLUDED.encrypted_credentials,selection_mode=EXCLUDED.selection_mode,allowed_senders=EXCLUDED.allowed_senders,required_keywords=EXCLUDED.required_keywords,send_status_updates=EXCLUDED.send_status_updates,auto_search_enabled=EXCLUDED.auto_search_enabled,enabled=TRUE,last_error='',updated_at=NOW()`, [pending.owner_id, provider, identity.email, identity.name, encrypted, context.selectionMode, JSON.stringify(context.allowedSenders || []), JSON.stringify(context.requiredKeywords || []), context.sendStatusUpdates, context.autoSearchEnabled, pending.actor_id]);
-            return oauthPopup(res, true, "Boîte professionnelle connectée.");
+            await getPool().query(`INSERT INTO depannhome_partner_email_connections(owner_id,provider,email_address,display_name,encrypted_credentials,server_configuration,selection_mode,allowed_senders,required_keywords,send_status_updates,auto_search_enabled,created_by,last_error,verified_at) VALUES($1,$2,$3,$4,$5,'{}'::jsonb,$6,$7::jsonb,$8::jsonb,$9,$10,$11,'',NOW()) ON CONFLICT(owner_id,email_address) DO UPDATE SET provider=EXCLUDED.provider,display_name=EXCLUDED.display_name,encrypted_credentials=EXCLUDED.encrypted_credentials,selection_mode=EXCLUDED.selection_mode,allowed_senders=EXCLUDED.allowed_senders,required_keywords=EXCLUDED.required_keywords,send_status_updates=EXCLUDED.send_status_updates,auto_search_enabled=EXCLUDED.auto_search_enabled,enabled=TRUE,last_error='',verified_at=NOW(),updated_at=NOW()`, [pending.owner_id, provider, identity.email, identity.name, encrypted, context.selectionMode, JSON.stringify(context.allowedSenders || []), JSON.stringify(context.requiredKeywords || []), context.sendStatusUpdates, context.autoSearchEnabled, pending.actor_id]);
+            return oauthPopup(res, true, "Boîte professionnelle connectée et accès aux e-mails vérifié.");
         } catch (error) {
-            console.warn("[partner-email-oauth] authorization rejected", oauthErrorLog(error, provider));
-            return oauthPopup(res, false, oauthErrorMessage(error, provider));
+            console.warn("[partner-email-oauth] authorization or mailbox validation rejected", { ...oauthErrorLog(error, provider), operation: "mailbox_validation", technicalReason: mailTechnicalReason(error) });
+            return oauthPopup(res, false, publicMailError(error, { provider, configuration: true }));
         }
     }));
     app.use("/api/partner-email", requireAuthentication, requireEmailAccess);
     app.get("/api/partner-email", asyncHandler(async (req, res) => {
         const ownerId = getAccountOwnerId(req);
         const [connections, messages] = await Promise.all([
-            getPool().query(`SELECT id,provider,email_address AS "emailAddress",display_name AS "displayName",selection_mode AS "selectionMode",allowed_senders AS "allowedSenders",required_keywords AS "requiredKeywords",automatic_threshold AS "automaticThreshold",send_status_updates AS "sendStatusUpdates",auto_search_enabled AS "autoSearchEnabled",enabled,last_sync_at AS "lastSyncAt",last_error AS "lastError",updated_at AS "updatedAt" FROM depannhome_partner_email_connections WHERE owner_id=$1 ORDER BY updated_at DESC`, [ownerId]),
+            getPool().query(`SELECT id,provider,email_address AS "emailAddress",display_name AS "displayName",selection_mode AS "selectionMode",allowed_senders AS "allowedSenders",required_keywords AS "requiredKeywords",automatic_threshold AS "automaticThreshold",send_status_updates AS "sendStatusUpdates",auto_search_enabled AS "autoSearchEnabled",enabled,verified_at AS "verifiedAt",last_sync_at AS "lastSyncAt",last_error AS "lastError",updated_at AS "updatedAt" FROM depannhome_partner_email_connections WHERE owner_id=$1 ORDER BY updated_at DESC`, [ownerId]),
             getPool().query(`SELECT message.id,message.connection_id AS "connectionId",message.sender_address AS "senderAddress",message.sender_name AS "senderName",message.subject,message.body_text AS "bodyText",message.received_at AS "receivedAt",message.classification_score AS "classificationScore",message.classification_reasons AS "classificationReasons",message.status,message.mission_id AS "missionId",COALESCE(json_agg(json_build_object('id',attachment.id,'filename',attachment.filename,'mimeType',attachment.mime_type,'fileSize',attachment.file_size,'selected',attachment.selected) ORDER BY attachment.id) FILTER(WHERE attachment.id IS NOT NULL),'[]'::json) AS attachments FROM depannhome_partner_email_messages message LEFT JOIN depannhome_partner_email_attachments attachment ON attachment.email_message_id=message.id WHERE message.owner_id=$1 AND message.status='candidate' GROUP BY message.id ORDER BY message.received_at DESC LIMIT 200`, [ownerId])
         ]);
         res.json({ connections: connections.rows, candidates: messages.rows, oauth: { google: oauthConfigured("google"), microsoft: oauthConfigured("microsoft") } });
@@ -131,7 +135,7 @@ export function registerPartnerEmailRoutes(app, requireAuthentication) {
         try { await testMailbox({ provider: "imap", emailAddress: input.emailAddress, credentials, server: input.server }); }
         catch (error) { throw httpError(422, publicMailError(error, { configuration: true })); }
         const encrypted = encryptElectronicInvoicingCredentials(credentials);
-        const { rows } = await getPool().query(`INSERT INTO depannhome_partner_email_connections(owner_id,provider,email_address,display_name,encrypted_credentials,server_configuration,selection_mode,allowed_senders,required_keywords,automatic_threshold,send_status_updates,auto_search_enabled,created_by,last_error) VALUES($1,'imap',$2,$3,$4,$5::jsonb,$6,$7::jsonb,$8::jsonb,$9,$10,$11,$12,'') ON CONFLICT(owner_id,email_address) DO UPDATE SET provider='imap',display_name=EXCLUDED.display_name,encrypted_credentials=EXCLUDED.encrypted_credentials,server_configuration=EXCLUDED.server_configuration,selection_mode=EXCLUDED.selection_mode,allowed_senders=EXCLUDED.allowed_senders,required_keywords=EXCLUDED.required_keywords,automatic_threshold=EXCLUDED.automatic_threshold,send_status_updates=EXCLUDED.send_status_updates,auto_search_enabled=EXCLUDED.auto_search_enabled,enabled=TRUE,last_error='',updated_at=NOW() RETURNING id`, [ownerId, input.emailAddress, input.displayName, encrypted, JSON.stringify(input.server), input.selectionMode, JSON.stringify(input.allowedSenders), JSON.stringify(input.requiredKeywords), input.automaticThreshold, input.sendStatusUpdates, Boolean(req.body?.autoSearchEnabled), req.user.sub]);
+        const { rows } = await getPool().query(`INSERT INTO depannhome_partner_email_connections(owner_id,provider,email_address,display_name,encrypted_credentials,server_configuration,selection_mode,allowed_senders,required_keywords,automatic_threshold,send_status_updates,auto_search_enabled,created_by,last_error,verified_at) VALUES($1,'imap',$2,$3,$4,$5::jsonb,$6,$7::jsonb,$8::jsonb,$9,$10,$11,$12,'',NOW()) ON CONFLICT(owner_id,email_address) DO UPDATE SET provider='imap',display_name=EXCLUDED.display_name,encrypted_credentials=EXCLUDED.encrypted_credentials,server_configuration=EXCLUDED.server_configuration,selection_mode=EXCLUDED.selection_mode,allowed_senders=EXCLUDED.allowed_senders,required_keywords=EXCLUDED.required_keywords,automatic_threshold=EXCLUDED.automatic_threshold,send_status_updates=EXCLUDED.send_status_updates,auto_search_enabled=EXCLUDED.auto_search_enabled,enabled=TRUE,last_error='',verified_at=NOW(),updated_at=NOW() RETURNING id`, [ownerId, input.emailAddress, input.displayName, encrypted, JSON.stringify(input.server), input.selectionMode, JSON.stringify(input.allowedSenders), JSON.stringify(input.requiredKeywords), input.automaticThreshold, input.sendStatusUpdates, Boolean(req.body?.autoSearchEnabled), req.user.sub]);
         res.json({ id: rows[0].id, message: "Boîte professionnelle connectée et vérifiée." });
     }));
     app.post("/api/partner-email/oauth/:provider/authorize", requireEmailConfigurationAccess, asyncHandler(async (req, res) => {
@@ -144,7 +148,8 @@ export function registerPartnerEmailRoutes(app, requireAuthentication) {
     }));
     app.get("/api/partner-email/:connectionId/inbox", asyncHandler(async (req, res) => {
         const connection = await requiredConnection(getAccountOwnerId(req), positiveId(req.params.connectionId));
-        const result = await liveMailboxOperation(connection, () => listLiveInbox(connection, parseMailboxPage(req.query)));
+        const result = await liveMailboxOperation(connection, () => listLiveInbox(connection, parseMailboxPage(req.query)), { operation: "inbox_list" });
+        await markConnectionVerified(connection.id);
         setLiveMailboxHeaders(res).json(result);
     }));
     app.get("/api/partner-email/:connectionId/messages/:messageRef", asyncHandler(async (req, res) => {
@@ -300,7 +305,7 @@ async function performConnectionSync(ownerId, connectionId, actorId, syncPeriod 
         return completeSync(connectionId, { fetched, candidates, imported, maxUid, limited, period: syncPeriod ? { from: syncPeriod.from, to: syncPeriod.to } : null }, { advanceCursor: !syncPeriod });
     } catch (error) {
         const publicError = publicMailError(error, { provider: connection.provider });
-        console.warn("[partner-email] mailbox synchronization rejected", mailErrorLog(error, connection.provider));
+        console.warn("[partner-email] mailbox synchronization rejected", { ...mailErrorLog(error, connection.provider), operation: "mailbox_sync", mailbox: clean(connection.email_address, 254), technicalReason: mailTechnicalReason(error) });
         await getPool().query("UPDATE depannhome_partner_email_connections SET last_error=$3,updated_at=NOW() WHERE id=$1 AND owner_id=$2", [connectionId, ownerId, clean(publicError, 500)]);
         const status = error?.statusCode === 429 ? 429 : error?.statusCode === 503 ? 503 : 502;
         throw httpError(status, publicError, { retryAfterSeconds: error?.retryAfterSeconds });
@@ -464,7 +469,7 @@ function encodeMailboxReference(value) { return Buffer.from(String(value || ""),
 function decodeMailboxReference(value) { const token = String(value || ""); if (!token || token.length > 2000 || !/^[A-Za-z0-9_-]+$/.test(token)) throw httpError(400, "Référence d’e-mail invalide."); const decoded = Buffer.from(token, "base64url").toString("utf8"); if (!decoded || decoded.length > 1000) throw httpError(400, "Référence d’e-mail invalide."); return decoded; }
 function mailboxUid(value) { const uid = positiveId(value); if (!uid) throw httpError(400, "Référence d’e-mail invalide."); return uid; }
 async function requiredConnection(ownerId, connectionId) { const connection = await findConnection(ownerId, connectionId); if (!connection) throw httpError(404, "Boîte professionnelle introuvable."); return connection; }
-async function liveMailboxOperation(connection, operation, { sending = false } = {}) { try { return await operation(); } catch (error) { if (error?.status) throw error; console.warn("[partner-email] live mailbox rejected", mailErrorLog(error, connection.provider)); const status = error?.statusCode === 400 ? 422 : error?.statusCode === 404 ? 404 : error?.statusCode === 429 ? 429 : error?.statusCode === 503 ? 503 : 502; throw httpError(status, publicMailError(error, { provider: connection.provider, sending }), { retryAfterSeconds: error?.retryAfterSeconds }); } }
+async function liveMailboxOperation(connection, operation, { sending = false, operation: operationName = "mailbox_operation" } = {}) { try { return await operation(); } catch (error) { if (error?.status) throw error; console.warn("[partner-email] live mailbox rejected", { ...mailErrorLog(error, connection.provider), operation: operationName, mailbox: clean(connection.email_address, 254), technicalReason: mailTechnicalReason(error) }); const status = error?.statusCode === 400 ? 422 : error?.statusCode === 404 ? 404 : error?.statusCode === 429 ? 429 : error?.statusCode === 503 ? 503 : 502; throw httpError(status, publicMailError(error, { provider: connection.provider, mailbox: connection.email_address, sending }), { retryAfterSeconds: error?.retryAfterSeconds }); } }
 function setLiveMailboxHeaders(response) { return response.set({ "Cache-Control": "private, no-store", Pragma: "no-cache", Expires: "0" }); }
 
 async function saveParsedEmail(connection, uid, parsed, { forceCandidate = false, messageId: forcedMessageId = "" } = {}) {
@@ -819,6 +824,8 @@ export async function sendMissionEmail(ownerId, missionId, body, { statusUpdate 
 }
 
 async function mailboxAccess(connection, { forceRefresh = false } = {}) {
+    const providerIssue = oauthMailboxProviderIssue(connection.provider, connection.email_address);
+    if (providerIssue) { const error = new Error(providerIssue); error.publicMessage = providerIssue; throw error; }
     let credentials = decryptElectronicInvoicingCredentials(connection.encrypted_credentials);
     if (["google", "microsoft"].includes(connection.provider) && (forceRefresh || !credentials.accessToken || new Date(credentials.expiresAt || 0).getTime() < Date.now() + 60000)) {
         const tokens = await refreshOauth(connection.provider, credentials.refreshToken); credentials = { ...credentials, accessToken: tokens.access_token, refreshToken: tokens.refresh_token || credentials.refreshToken, expiresAt: new Date(Date.now() + Number(tokens.expires_in || 3600) * 1000).toISOString() };
@@ -843,11 +850,22 @@ async function withMicrosoftGraphAccess(connection, operation) {
 }
 
 async function testMailbox(connection) { const access = await mailboxAccess({ ...connection, id: 0, encrypted_credentials: encryptElectronicInvoicingCredentials(connection.credentials), server_configuration: connection.server }); const client = createImapClient({ host: access.imap.host, port: access.imap.port, secure: access.imap.secure, auth: access.auth }); await client.connect(); await client.logout(); const smtp = nodemailer.createTransport({ host: access.smtp.host, port: access.smtp.port, secure: access.smtp.secure, requireTLS: !access.smtp.secure, auth: access.smtpAuth, connectionTimeout: 15000, greetingTimeout: 15000, socketTimeout: 20000 }); await smtp.verify(); }
+async function verifyOAuthMailboxAccess(provider, emailAddress, accessToken) {
+    if (provider === "microsoft") {
+        await graphJson(accessToken, "https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages?$select=id&$top=1");
+        return;
+    }
+    const client = createImapClient({ host: "imap.gmail.com", port: 993, secure: true, auth: { user: emailAddress, accessToken }, disableAutoIdle: true });
+    await client.connect();
+    try { const lock = await client.getMailboxLock("INBOX"); lock.release(); }
+    finally { await client.logout().catch(() => {}); }
+}
 function createImapClient(options) { const client = new ImapFlow({ ...options, logger: false, connectionTimeout: 15000, greetingTimeout: 15000, socketTimeout: 20000 }); client.on("error", error => console.warn("[partner-email] erreur IMAP contrôlée :", publicMailError(error))); return client; }
 async function findConnection(ownerId, id) { const { rows } = await getPool().query("SELECT * FROM depannhome_partner_email_connections WHERE id=$1 AND owner_id=$2 AND enabled=TRUE", [id, ownerId]); return rows[0] || null; }
 async function recentUids(client) { const ids = await client.search({ since: new Date(Date.now() - 14 * 86400000) }, { uid: true }); return ids.slice(-FETCH_LIMIT); }
 async function periodUids(client, period) { const ids = await client.search({ since: period.since, before: period.before }, { uid: true }); return { ids: ids.slice(-PERIOD_FETCH_LIMIT), limited: ids.length > PERIOD_FETCH_LIMIT }; }
-async function completeSync(connectionId, stats, { advanceCursor = true } = {}) { if (advanceCursor) await getPool().query("UPDATE depannhome_partner_email_connections SET last_uid=GREATEST(last_uid,$2),last_sync_at=NOW(),last_error='',updated_at=NOW() WHERE id=$1", [connectionId, stats.maxUid]); else await getPool().query("UPDATE depannhome_partner_email_connections SET last_sync_at=NOW(),last_error='',updated_at=NOW() WHERE id=$1", [connectionId]); return stats; }
+async function completeSync(connectionId, stats, { advanceCursor = true } = {}) { if (advanceCursor) await getPool().query("UPDATE depannhome_partner_email_connections SET last_uid=GREATEST(last_uid,$2),verified_at=NOW(),last_sync_at=NOW(),last_error='',updated_at=NOW() WHERE id=$1", [connectionId, stats.maxUid]); else await getPool().query("UPDATE depannhome_partner_email_connections SET verified_at=NOW(),last_sync_at=NOW(),last_error='',updated_at=NOW() WHERE id=$1", [connectionId]); return stats; }
+async function markConnectionVerified(connectionId) { await getPool().query("UPDATE depannhome_partner_email_connections SET verified_at=NOW(),last_error='',updated_at=NOW() WHERE id=$1", [connectionId]); }
 
 async function graphInboxMessages(accessToken, connection, syncPeriod) {
     const since = syncPeriod?.since || new Date(Math.max(new Date(connection.last_sync_at || 0).getTime() - 5 * 60000, Date.now() - 14 * 86400000));
@@ -950,6 +968,10 @@ async function reclassifyPendingCandidates(ownerId, connectionId, { allowedSende
     return removed;
 }
 function isMicrosoftMailbox(value) { const domain = String(value || "").toLowerCase().split("@").pop(); return /^(?:(?:outlook|hotmail|live)\.[a-z.]+|msn\.com)$/.test(domain); }
+export function oauthMailboxProviderIssue(provider, emailAddress) {
+    if (provider === "google" && isMicrosoftMailbox(emailAddress)) return `La boîte ${clean(emailAddress, 254)} est une adresse Outlook/Hotmail et ne peut pas être lue avec l’autorisation Google. Déconnectez cette entrée puis utilisez « Connecter Microsoft (Outlook, Hotmail, Microsoft 365) » pour accéder réellement à cette boîte.`;
+    return "";
+}
 function normalizeMailboxPassword(emailAddress, value) { const password = String(value || "").trim(); return String(emailAddress || "").toLowerCase().endsWith("@gmail.com") ? password.replace(/\s+/g, "") : password; }
 function oauthConfigured(provider) { const prefix = provider === "google" ? "GOOGLE_MAIL" : provider === "microsoft" ? "MICROSOFT_MAIL" : ""; return Boolean(prefix && process.env[`${prefix}_CLIENT_ID`] && process.env[`${prefix}_CLIENT_SECRET`] && process.env[`${prefix}_REDIRECT_URI`]); }
 function oauthSettings(provider) { const prefix = provider === "google" ? "GOOGLE_MAIL" : "MICROSOFT_MAIL"; return { clientId: process.env[`${prefix}_CLIENT_ID`], clientSecret: process.env[`${prefix}_CLIENT_SECRET`], redirectUri: process.env[`${prefix}_REDIRECT_URI`] }; }
@@ -968,6 +990,12 @@ function oauthProviderError(provider, payload, status) { const error = new Error
 export function oauthErrorMessage(error, provider = "") {
     const code = String(error?.oauthCode || ""); const errorCodes = new Set(error?.oauthErrorCodes || []);
     if (code === "invalid_client" || errorCodes.has(7000215)) return `La configuration ${provider === "microsoft" ? "Microsoft Entra" : "OAuth"} est refusée : vérifiez l’identifiant client et surtout la valeur du secret client (pas son identifiant).`;
+    if (provider === "google") {
+        if (code === "invalid_grant") return "Le code Google est invalide ou a expiré. Fermez cette fenêtre puis relancez immédiatement « Connecter Google Workspace ».";
+        if (["invalid_scope", "consent_required", "unauthorized_client"].includes(code)) return "L’application Google ne dispose pas de l’autorisation Gmail demandée, ou le consentement est manquant. Vérifiez la configuration OAuth Google Cloud puis reconnectez la boîte.";
+        if (code === "missing_refresh_token") return "Google n’a pas fourni l’autorisation hors ligne nécessaire. Relancez « Connecter Google Workspace » et acceptez toutes les autorisations demandées.";
+        return "Google a refusé l’autorisation. Vérifiez l’écran de consentement, le client OAuth Web, l’URI de redirection et les autorisations dans Google Cloud.";
+    }
     if (errorCodes.has(7000222)) return "Le secret client Microsoft a expiré. Créez un nouveau secret dans Microsoft Entra puis remplacez sa valeur sur Render.";
     if (errorCodes.has(700016)) return "L’application Microsoft est introuvable pour cet identifiant client ou ce type de compte.";
     if (errorCodes.has(50011)) return "L’adresse de redirection Microsoft ne correspond pas exactement à celle configurée dans Microsoft Entra.";
@@ -978,20 +1006,31 @@ export function oauthErrorMessage(error, provider = "") {
 }
 function oauthErrorLog(error, provider) { return { provider, code: clean(error?.oauthCode || "provider_error", 80), errorCodes: Array.isArray(error?.oauthErrorCodes) ? error.oauthErrorCodes : [], status: Number(error?.oauthStatus) || 0, correlationId: clean(error?.oauthCorrelationId, 80) }; }
 function mailErrorLog(error, provider) { return { provider, code: clean(error?.oauthCode || error?.code || error?.responseCode || "mailbox_error", 80), errorCodes: Array.isArray(error?.oauthErrorCodes) ? error.oauthErrorCodes : [], status: Number(error?.oauthStatus || error?.statusCode) || 0, authenticationFailed: Boolean(error?.authenticationFailed) }; }
+export function mailTechnicalReason(error) {
+    const code = clean(error?.responseCode || error?.code || error?.oauthCode, 80);
+    const detail = clean(error?.responseText || error?.serverResponse || error?.message, 240)
+        .replace(/Bearer\s+[A-Za-z0-9._~-]+/gi, "Bearer [masqué]")
+        .replace(/((?:access|refresh|client)[_-]?token)\s*[:=]\s*\S+/gi, "$1=[masqué]")
+        .replace(/password\s*[:=]\s*\S+/gi, "password=[masqué]");
+    return [code, detail && detail !== code ? detail : ""].filter(Boolean).join(" · ");
+}
 function oauthPopup(res, success, message) { res.type("html").send(`<!doctype html><meta charset="utf-8"><title>Connexion boîte mail</title><p>${escapeHtml(message)}</p><script>window.opener?.postMessage(${JSON.stringify({ type: "depannhome:partner-email-oauth", success, message })},window.location.origin);window.close();</script>`); }
 function requireEmailAccess(req, res, next) { if (!hasCompanyEmailWorkspaceAccess(req.user)) return res.status(403).json({ message: "L’espace e-mail de l’entreprise n’est pas autorisé sur ce poste." }); return next(); }
 function requireEmailConfigurationAccess(req, res, next) { if (req.user?.role !== "admin" || req.user?.deviceType !== "desktop") return res.status(403).json({ message: "Seul un Poste Admin peut modifier les réglages de la boîte professionnelle." }); return next(); }
 function selectedIds(value) { return [...new Set((Array.isArray(value) ? value : []).map(positiveId).filter(Boolean))].slice(0, 100); }
-export function publicMailError(error, { configuration = false, provider = "", sending = false } = {}) {
+export function publicMailError(error, { configuration = false, provider = "", mailbox = "", sending = false } = {}) {
+    if (error?.publicMessage) return clean(error.publicMessage, 500);
     if (error?.oauthCode || error?.oauthProvider) return oauthErrorMessage(error, provider || error.oauthProvider);
     const message = String(error?.message || "");
     const authenticationFailed = Boolean(error?.authenticationFailed) || /auth|credential|login|password|invalid credentials|authentication failed|authenticate failed/i.test(message);
+    const technicalReason = mailTechnicalReason(error); const technicalSuffix = technicalReason ? ` Cause technique : ${technicalReason}.` : "";
     if (provider === "microsoft" && error?.statusCode === 400) return "Microsoft n’a pas pu fournir cette pièce jointe. Actualisez la boîte de réception puis réessayez.";
     if (provider === "microsoft" && error?.statusCode === 404) return sending ? "L’e-mail d’origine n’est plus disponible dans la boîte Microsoft." : "Cet e-mail ou cette pièce jointe n’est plus disponible dans la boîte Microsoft. Actualisez la boîte de réception.";
     if (provider === "microsoft" && (error?.throttled || error?.statusCode === 429 || error?.code === "ApplicationThrottled")) return `Microsoft limite temporairement l’accès à cette boîte. ${error?.retryAfterSeconds ? `Réessayez dans environ ${error.retryAfterSeconds} seconde(s)` : "Patientez quelques instants"}${sending ? "." : ", puis relancez une période plus courte."}`;
     if (provider === "microsoft" && authenticationFailed) return "Microsoft refuse l’accès à cette boîte. Déconnectez-la puis utilisez de nouveau « Connecter Microsoft » afin de renouveler les autorisations Mail.Read et Mail.Send.";
     if (provider === "microsoft" && error?.statusCode === 503) return "Microsoft Graph est temporairement indisponible. Patientez quelques instants puis réessayez.";
-    if (authenticationFailed) return "La boîte a refusé l’authentification. Vérifiez son autorisation ou son mot de passe d’application.";
+    if (provider === "google" && authenticationFailed) return `Google a autorisé le compte${mailbox ? ` ${clean(mailbox, 254)}` : ""}, mais Gmail IMAP a refusé l’authentification réelle de la boîte. Reconnectez-la avec « Connecter Google Workspace » ; si l’adresse est Outlook/Hotmail, utilisez impérativement « Connecter Microsoft ».${technicalSuffix}`;
+    if (authenticationFailed) return `La boîte a refusé l’authentification. Vérifiez son autorisation ou son mot de passe d’application.${technicalSuffix}`;
     if (/certificate|tls|ssl|self[- ]signed/i.test(message)) return "La connexion sécurisée au serveur de messagerie a échoué.";
     if (/timeout|timed out|etimedout|econnrefused|enotfound|getaddrinfo/i.test(message)) return "Le serveur de messagerie ne répond pas. Vérifiez les adresses, les ports et la disponibilité d’IMAP/SMTP.";
     return configuration ? "La vérification IMAP/SMTP a échoué. Vérifiez les serveurs, les ports et le mode de sécurité." : sending ? "La réponse n’a pas pu être envoyée depuis la boîte professionnelle." : "La boîte professionnelle n’a pas pu être synchronisée.";
