@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { getPool } from "./database.js";
 import { getAccountOwnerId } from "./auth.js";
-import { executeConnectorRequest, isSafeExternalUrl } from "./connector-runtime.js";
+import { executeConnectorRequest, isSafeExternalUrl, requestClientCredentialsToken } from "./connector-runtime.js";
 
 const AUTH_TYPES = new Set(["apiKey", "oauth2", "jwt", "basic", "bearer", "custom"]);
 const HTTP_METHODS = new Set(["GET", "POST", "PUT", "PATCH", "DELETE"]);
@@ -148,6 +148,11 @@ async function loadConnectors(ownerId) {
     const { rows } = await getPool().query(`SELECT id, connector_key AS "connectorKey", manifest, configuration, encrypted_credentials AS "encryptedCredentials", enabled, created_at AS "createdAt", updated_at AS "updatedAt" FROM depannhome_api_connectors WHERE owner_id=$1 ORDER BY updated_at DESC`, [ownerId]);
     return rows.map(connector => publicConnector(connector));
 }
+export async function connectorCatalogOptions() {
+    const { rows } = await getPool().query(`SELECT id,connector_key AS "connectorKey",manifest->'general'->>'name' AS name,enabled
+        FROM depannhome_api_connectors ORDER BY LOWER(COALESCE(manifest->'general'->>'name',connector_key)),id`);
+    return rows.map(row => ({ id: String(row.id), connectorKey: row.connectorKey, name: row.name || row.connectorKey, enabled: Boolean(row.enabled) }));
+}
 async function findConnector(ownerId, id, includeSecret) {
     const { rows } = await getPool().query(`SELECT id, connector_key AS "connectorKey", manifest, configuration, encrypted_credentials AS "encryptedCredentials", enabled, created_at AS "createdAt", updated_at AS "updatedAt" FROM depannhome_api_connectors WHERE owner_id=$1 AND id=$2`, [ownerId, id]);
     return rows[0] ? (includeSecret ? rows[0] : publicConnector(rows[0])) : null;
@@ -200,6 +205,49 @@ async function executeTest(connector, endpoint, suppliedPayload) {
     } catch (error) { return { ok: false, message: error.name === "TimeoutError" ? "Délai de connexion dépassé." : cleanText(error.message, 300) || "Connexion au partenaire impossible.", request: { method: endpoint.method }, response: { error: cleanText(error.message, 300) } }; }
 }
 
+export async function testConnectorCredentials(connectorId, credentials, fetchImpl = fetch) {
+    const connector = await centralConnector(connectorId);
+    if (!connector || !connector.enabled) throw connectorClientError(409, "Le connecteur technique associé est introuvable ou désactivé.");
+    const sanitizedCredentials = sanitizeCredentials(credentials);
+    const endpoint = (connector.manifest?.endpoints || []).find(item => !item.eventType);
+    try {
+        if (!endpoint && connector.manifest?.connection?.authType === "oauth2" && sanitizedCredentials.clientId && sanitizedCredentials.clientSecret) {
+            await requestClientCredentialsToken(connector.manifest.connection, sanitizedCredentials, { cacheKey: `company-connection-test:${connector.id}:${crypto.createHash("sha256").update(sanitizedCredentials.clientId).digest("hex")}`, fetchImpl, force: true });
+            return { ok: true };
+        }
+        if (!endpoint) throw connectorClientError(409, "Ajoutez un endpoint de test sans événement à ce connecteur.");
+        const payload = parseJson(endpoint.body, {});
+        const variables = { ...payload, payload, missionId: "TEST-MISSION", mission_order_id: "TEST-MISSION", externalMissionId: "TEST-MISSION" };
+        const result = await executeConnectorRequest({ connector: { ...connector, credentials: sanitizedCredentials }, endpoint, payload, variables, fetchImpl });
+        if (!result.ok) throw connectorClientError(502, `Le partenaire a refusé la connexion (HTTP ${result.status}).`);
+        return { ok: true };
+    } catch (error) {
+        if (error.status) throw error;
+        throw connectorClientError(502, cleanText(error.message, 300) || "Le test de connexion au partenaire a échoué.");
+    }
+}
+
+export async function executeCentralConnectorEvent(connectorId, credentials, eventType, payload, variables = {}) {
+    const connector = await centralConnector(connectorId);
+    if (!connector || !connector.enabled) return { handled: false };
+    const endpoint = (connector.manifest?.endpoints || []).find(item => item.eventType === eventType);
+    if (!endpoint) return { handled: false };
+    try {
+        const result = await executeConnectorRequest({ connector: { ...connector, credentials: sanitizeCredentials(credentials) }, endpoint, payload, variables: { ...variables, payload } });
+        await writeLog(connector.ownerId, connector.id, eventType, result.ok ? "success" : "failed", endpoint.name, result.request, result, result.ok ? "Événement transmis avec la connexion de l’entreprise." : `Le partenaire a répondu HTTP ${result.status}.`);
+        return { handled: true, ...result };
+    } catch (error) {
+        await writeLog(connector.ownerId, connector.id, eventType, "failed", endpoint.name, { method: endpoint.method }, {}, cleanText(error.message, 1000));
+        throw error;
+    }
+}
+
+async function centralConnector(id) {
+    const { rows } = await getPool().query(`SELECT id,owner_id AS "ownerId",connector_key AS "connectorKey",manifest,enabled
+        FROM depannhome_api_connectors WHERE id=$1`, [positiveId(id)]);
+    return rows[0] || null;
+}
+
 export async function executeConnectorEvent(ownerId, connectorKey, eventType, payload, variables = {}) {
     const { rows } = await getPool().query(`SELECT id,connector_key AS "connectorKey",manifest,encrypted_credentials AS "encryptedCredentials" FROM depannhome_api_connectors WHERE owner_id=$1 AND connector_key=$2 AND enabled=TRUE`, [ownerId, connectorKey]);
     const connector = rows[0];
@@ -240,6 +288,7 @@ function cleanHeaderName(value) { const name = cleanText(value, 100); return /^[
 function cleanEventType(value) { const event = cleanText(value, 80); return /^[a-z][a-z0-9_:-]*$/.test(event) ? event : ""; }
 function positiveId(value) { const id = Number(value); return Number.isSafeInteger(id) && id > 0 ? id : 0; }
 function boundedInteger(value, min, max, fallback) { const number = Number(value); return Number.isSafeInteger(number) && number >= min && number <= max ? number : fallback; }
+function connectorClientError(status, message) { const error = new Error(message); error.status = status; return error; }
 function encryptionKey() { return crypto.createHash("sha256").update(String(process.env.SESSION_SECRET || "development-connector-key")).digest(); }
 function encryptSecret(value) { if (!Object.keys(value).length) return ""; const iv = crypto.randomBytes(12); const cipher = crypto.createCipheriv("aes-256-gcm", encryptionKey(), iv); const encrypted = Buffer.concat([cipher.update(JSON.stringify(value), "utf8"), cipher.final()]); return `${iv.toString("base64url")}.${cipher.getAuthTag().toString("base64url")}.${encrypted.toString("base64url")}`; }
 function decryptSecret(value) { try { if (!value) return {}; const [iv, tag, encrypted] = String(value).split(".").map(item => Buffer.from(item, "base64url")); const decipher = crypto.createDecipheriv("aes-256-gcm", encryptionKey(), iv); decipher.setAuthTag(tag); return JSON.parse(Buffer.concat([decipher.update(encrypted), decipher.final()]).toString("utf8")); } catch { return {}; } }

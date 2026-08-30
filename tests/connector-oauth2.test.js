@@ -95,3 +95,43 @@ test("mission outbox selects an insurer connector and preserves callback fallbac
     assert.match(source, /executeConnectorEvent\(ownerId, connectorKey, item\.event_type/);
     assert.match(source, /else \{ if \(!item\.callbackUrl\)/);
 });
+
+test("official partners reuse one central connector with isolated company credentials", () => {
+    const schema = readFileSync(new URL("../database/schema.sql", import.meta.url), "utf8");
+    const requests = readFileSync(new URL("../server/partner-requests.js", import.meta.url), "utf8");
+    assert.match(schema, /api_connector_id BIGINT REFERENCES depannhome_api_connectors/);
+    assert.match(schema, /UNIQUE\(owner_id, official_partner_id\)/);
+    assert.match(schema, /credentials_ciphertext TEXT NOT NULL/);
+    assert.match(requests, /testConnectorCredentials\(partner\.apiConnectorId, credentials\.values\)/);
+    assert.match(requests, /encryptSecret\(credentials\)/);
+    assert.doesNotMatch(requests, /response\.json\([^\n]*credentials_ciphertext/);
+});
+
+test("each official company connection owns one revocable incoming mission endpoint", () => {
+    const requests = readFileSync(new URL("../server/partner-requests.js", import.meta.url), "utf8");
+    assert.match(requests, /intake_id BIGINT UNIQUE REFERENCES depannhome_partner_intakes/);
+    assert.match(requests, /crypto\.randomBytes\(32\)\.toString\("base64url"\)/);
+    assert.match(requests, /secretHash\(apiKey\)/);
+    assert.match(requests, /UPDATE depannhome_partner_intakes SET enabled=FALSE/);
+    assert.match(requests, /WHERE connection\.owner_id=\$1 AND connection\.intake_id=\$2/);
+    const missions = readFileSync(new URL("../server/partner-missions.js", import.meta.url), "utf8");
+    assert.match(missions, /intake\.partner_key=\$1 AND intake\.api_key_hash=\$2/);
+});
+
+test("official mission events use company credentials while manual callbacks stay supported", () => {
+    const missions = readFileSync(new URL("../server/partner-missions.js", import.meta.url), "utf8");
+    assert.match(missions, /officialConnectorConnection\(ownerId, intakeId\)/);
+    assert.match(missions, /executeCentralConnectorEvent\(official\.connectorId, official\.credentials/);
+    assert.match(missions, /NOT EXISTS\(SELECT 1 FROM depannhome_official_partner_connections/);
+    assert.match(missions, /executeConnectorEvent\(ownerId, connectorKey/);
+    assert.match(missions, /fetch\(item\.callbackUrl/);
+});
+
+test("companies receive only the declarative credential form, never central connector setup", () => {
+    const requests = readFileSync(new URL("../server/partner-requests.js", import.meta.url), "utf8");
+    const client = readFileSync(new URL("../js/partner-connections.js", import.meta.url), "utf8");
+    assert.match(requests, /\.\.\.\(includeSetup \? \{ apiConnectorId:/);
+    assert.match(client, /partner\.connectorConfig\?\.credentialFields/);
+    assert.doesNotMatch(client, /partner\.apiConnectorId/);
+    assert.match(client, /Vérification de la connexion/);
+});

@@ -2,6 +2,7 @@ import { getPool } from "./database.js";
 import crypto from "node:crypto";
 import { getAccountOwnerId, isCreatorUsername } from "./auth.js";
 import { createNotification } from "./collaboration.js";
+import { connectorCatalogOptions, testConnectorCredentials } from "./connectors.js";
 
 const ORGANIZATION_TYPES = new Set([
     "insurance",
@@ -71,7 +72,8 @@ export async function initializePartnerRequests() {
         ADD COLUMN IF NOT EXISTS documentation_url VARCHAR(1000) NOT NULL DEFAULT '',
         ADD COLUMN IF NOT EXISTS sandbox_url VARCHAR(1000) NOT NULL DEFAULT '',
         ADD COLUMN IF NOT EXISTS connector_state VARCHAR(30) NOT NULL DEFAULT 'development',
-        ADD COLUMN IF NOT EXISTS connector_secret_ciphertext TEXT NOT NULL DEFAULT ''`);
+        ADD COLUMN IF NOT EXISTS connector_secret_ciphertext TEXT NOT NULL DEFAULT '',
+        ADD COLUMN IF NOT EXISTS api_connector_id BIGINT REFERENCES depannhome_api_connectors(id) ON DELETE SET NULL`);
     await database.query("ALTER TABLE depannhome_official_partners DROP CONSTRAINT IF EXISTS depannhome_official_partners_partner_type_check");
     await database.query("ALTER TABLE depannhome_official_partners ADD CONSTRAINT depannhome_official_partners_partner_type_check CHECK (partner_type IN ('depannhome_company','credentials','oauth'))");
     await database.query("ALTER TABLE depannhome_official_partners DROP CONSTRAINT IF EXISTS depannhome_official_partners_connector_state_check");
@@ -80,11 +82,15 @@ export async function initializePartnerRequests() {
         id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
         official_partner_id BIGINT NOT NULL REFERENCES depannhome_official_partners(id) ON DELETE CASCADE,
         status VARCHAR(30) NOT NULL DEFAULT 'connected', credentials_ciphertext TEXT NOT NULL DEFAULT '',
+        intake_id BIGINT UNIQUE REFERENCES depannhome_partner_intakes(id) ON DELETE SET NULL,
+        external_account_hash VARCHAR(64) NOT NULL DEFAULT '',
         connected_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
         connected_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         CONSTRAINT depannhome_official_partner_connections_unique UNIQUE(owner_id, official_partner_id),
         CONSTRAINT depannhome_official_partner_connections_status_check CHECK (status IN ('connected', 'disconnected'))
     )`);
+    await database.query("ALTER TABLE depannhome_official_partner_connections ADD COLUMN IF NOT EXISTS intake_id BIGINT UNIQUE REFERENCES depannhome_partner_intakes(id) ON DELETE SET NULL, ADD COLUMN IF NOT EXISTS external_account_hash VARCHAR(64) NOT NULL DEFAULT ''");
+    await database.query("CREATE INDEX IF NOT EXISTS depannhome_official_partner_connections_intake_idx ON depannhome_official_partner_connections(intake_id)");
     await database.query(`CREATE TABLE IF NOT EXISTS depannhome_official_partner_oauth_states (
         state VARCHAR(128) PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
         official_partner_id BIGINT NOT NULL REFERENCES depannhome_official_partners(id) ON DELETE CASCADE,
@@ -168,15 +174,15 @@ export function registerPartnerRequestRoutes(app, requireCreator, requireAuthent
     }));
 
     app.get("/api/creator/official-partners", requireCreator, asyncHandler(async (_request, response) => {
-        response.json({ partners: await officialPartners(true) });
+        response.json({ partners: await officialPartners(true), connectors: await connectorCatalogOptions() });
     }));
     app.post("/api/creator/official-partners", requireCreator, asyncHandler(async (request, response) => {
         const partner = sanitizeOfficialPartner(request.body);
         if (!partner.ok) return response.status(400).json({ message: partner.message });
         const { rows } = await getPool().query(`INSERT INTO depannhome_official_partners
-            (company_name,organization_type,website,partner_type,logo_url,description,activity_category,api_url,documentation_url,sandbox_url,connector_state,connector_config,connector_secret_ciphertext,status)
-            VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb,$13,'active') RETURNING id`,
-        [partner.name, partner.organizationType, partner.website, partner.type, partner.logoUrl, partner.description, partner.activityCategory, partner.apiUrl, partner.documentationUrl, partner.sandboxUrl, partner.connectorState, JSON.stringify(partner.config), encryptSecret(partner.secret)]);
+            (company_name,organization_type,website,partner_type,logo_url,description,activity_category,api_url,documentation_url,sandbox_url,connector_state,connector_config,connector_secret_ciphertext,api_connector_id,status)
+            VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb,$13,$14,'active') RETURNING id`,
+        [partner.name, partner.organizationType, partner.website, partner.type, partner.logoUrl, partner.description, partner.activityCategory, partner.apiUrl, partner.documentationUrl, partner.sandboxUrl, partner.connectorState, JSON.stringify(partner.config), encryptSecret(partner.secret), partner.apiConnectorId || null]);
         response.status(201).json({ id: String(rows[0].id) });
     }));
     app.patch("/api/creator/official-partners/:partnerId", requireCreator, asyncHandler(async (request, response) => {
@@ -184,14 +190,24 @@ export function registerPartnerRequestRoutes(app, requireCreator, requireAuthent
         if (!existing) return response.status(404).json({ message: "Partenaire officiel introuvable." });
         const partner = sanitizeOfficialPartner(request.body, existing);
         if (!partner.ok) return response.status(400).json({ message: partner.message });
-        await getPool().query(`UPDATE depannhome_official_partners SET company_name=$2,organization_type=$3,website=$4,partner_type=$5,logo_url=$6,description=$7,activity_category=$8,api_url=$9,documentation_url=$10,sandbox_url=$11,connector_state=$12,connector_config=$13::jsonb,connector_secret_ciphertext=$14,status=$15,updated_at=NOW() WHERE id=$1`,
-            [id, partner.name, partner.organizationType, partner.website, partner.type, partner.logoUrl, partner.description, partner.activityCategory, partner.apiUrl, partner.documentationUrl, partner.sandboxUrl, partner.connectorState, JSON.stringify(partner.config), partner.secret ? encryptSecret(partner.secret) : existing.connectorSecretCiphertext, partner.connectorState === "disabled" ? "inactive" : "active"]);
+        await getPool().query(`UPDATE depannhome_official_partners SET company_name=$2,organization_type=$3,website=$4,partner_type=$5,logo_url=$6,description=$7,activity_category=$8,api_url=$9,documentation_url=$10,sandbox_url=$11,connector_state=$12,connector_config=$13::jsonb,connector_secret_ciphertext=$14,api_connector_id=$15,status=$16,updated_at=NOW() WHERE id=$1`,
+            [id, partner.name, partner.organizationType, partner.website, partner.type, partner.logoUrl, partner.description, partner.activityCategory, partner.apiUrl, partner.documentationUrl, partner.sandboxUrl, partner.connectorState, JSON.stringify(partner.config), partner.secret ? encryptSecret(partner.secret) : existing.connectorSecretCiphertext, partner.apiConnectorId || null, partner.connectorState === "disabled" ? "inactive" : "active"]);
+        if (partner.connectorState === "disabled") await disableOfficialPartnerIntakes(id);
         response.status(204).end();
     }));
     app.delete("/api/creator/official-partners/:partnerId", requireCreator, asyncHandler(async (request, response) => {
-        const result = await getPool().query("DELETE FROM depannhome_official_partners WHERE id=$1 AND request_id IS NULL", [positiveId(request.params.partnerId)]);
-        if (!result.rowCount) return response.status(404).json({ message: "Partenaire officiel introuvable ou issu d’une demande à conserver." });
-        response.status(204).end();
+        const id = positiveId(request.params.partnerId);
+        const database = await getPool().connect();
+        try {
+            await database.query("BEGIN");
+            const deletable = await database.query("SELECT id FROM depannhome_official_partners WHERE id=$1 AND request_id IS NULL FOR UPDATE", [id]);
+            if (!deletable.rowCount) { await database.query("ROLLBACK"); return response.status(404).json({ message: "Partenaire officiel introuvable ou issu d’une demande à conserver." }); }
+            await database.query(`UPDATE depannhome_partner_intakes intake SET enabled=FALSE,updated_at=NOW()
+                WHERE intake.id IN (SELECT connection.intake_id FROM depannhome_official_partner_connections connection WHERE connection.official_partner_id=$1)`, [id]);
+            await database.query("DELETE FROM depannhome_official_partners WHERE id=$1", [id]);
+            await database.query("COMMIT");
+            response.status(204).end();
+        } catch (error) { await database.query("ROLLBACK"); throw error; } finally { database.release(); }
     }));
 
     app.use("/api/official-partners", requireAuthentication, requireAdministration);
@@ -204,8 +220,9 @@ export function registerPartnerRequestRoutes(app, requireCreator, requireAuthent
         if (partner.partnerType !== "credentials") return response.status(400).json({ message: "Utilisez l’autorisation sécurisée proposée pour ce partenaire." });
         const credentials = sanitizeCredentials(request.body?.credentials, partner.connectorConfig?.credentialFields || []);
         if (!credentials.ok) return response.status(400).json({ message: credentials.message });
-        await saveCompanyConnection(getAccountOwnerId(request), partner.id, credentials.values, request.user.sub);
-        response.json({ message: `Connexion avec ${partner.companyName} établie.` });
+        if (partner.apiConnectorId) await testConnectorCredentials(partner.apiConnectorId, credentials.values);
+        const connection = await saveCompanyConnection(getAccountOwnerId(request), partner, credentials.values, request.user.sub);
+        response.json({ message: `Connexion avec ${partner.companyName} établie.`, connection });
     }));
     app.post("/api/official-partners/:partnerId/oauth/start", asyncHandler(async (request, response) => {
         const partner = await officialPartner(positiveId(request.params.partnerId), true);
@@ -223,15 +240,32 @@ export function registerPartnerRequestRoutes(app, requireCreator, requireAuthent
         const { rows } = await getPool().query(`SELECT oauth.*,partner.company_name AS "companyName",partner.connector_config AS "connectorConfig",partner.connector_secret_ciphertext AS "connectorSecretCiphertext" FROM depannhome_official_partner_oauth_states oauth JOIN depannhome_official_partners partner ON partner.id=oauth.official_partner_id WHERE oauth.state=$1 AND oauth.expires_at>NOW()`, [state]);
         const pending = rows[0]; if (!pending || !code) return response.status(400).send("Autorisation partenaire invalide ou expirée. Vous pouvez fermer cette fenêtre.");
         const tokens = await exchangeAuthorizationCode(pending, code, `${request.protocol}://${request.get("host")}/api/official-partners/oauth/callback`);
-        await saveCompanyConnection(pending.owner_id, pending.official_partner_id, tokens, request.user?.sub || null);
+        const partner = await officialPartner(pending.official_partner_id, true);
+        if (!partner) return response.status(409).send("Le partenaire officiel n’est plus disponible.");
+        await saveCompanyConnection(pending.owner_id, partner, tokens, request.user?.sub || null);
         await getPool().query("DELETE FROM depannhome_official_partner_oauth_states WHERE state=$1", [state]);
         response.type("html").send("<!doctype html><title>Connexion établie</title><p>La connexion partenaire est établie. Vous pouvez fermer cette fenêtre et revenir à Depann’Home Pro.</p><script>window.close()</script>");
     }));
     app.post("/api/official-partners/:partnerId/disconnect", asyncHandler(async (request, response) => {
-        const result = await getPool().query("UPDATE depannhome_official_partner_connections SET status='disconnected',updated_at=NOW() WHERE owner_id=$1 AND official_partner_id=$2", [getAccountOwnerId(request), positiveId(request.params.partnerId)]);
+        const result = await getPool().query("UPDATE depannhome_official_partner_connections connection SET status='disconnected',updated_at=NOW() WHERE owner_id=$1 AND official_partner_id=$2 RETURNING intake_id", [getAccountOwnerId(request), positiveId(request.params.partnerId)]);
         if (!result.rowCount) return response.status(404).json({ message: "Connexion partenaire introuvable." });
+        if (result.rows[0].intake_id) await getPool().query("UPDATE depannhome_partner_intakes SET enabled=FALSE,updated_at=NOW() WHERE id=$1 AND owner_id=$2", [result.rows[0].intake_id, getAccountOwnerId(request)]);
         response.status(204).end();
     }));
+}
+
+export async function officialConnectorConnection(ownerId, intakeId) {
+    const { rows } = await getPool().query(`SELECT partner.api_connector_id AS "connectorId",connection.credentials_ciphertext AS credentials
+        FROM depannhome_official_partner_connections connection
+        JOIN depannhome_official_partners partner ON partner.id=connection.official_partner_id
+        WHERE connection.owner_id=$1 AND connection.intake_id=$2 AND connection.status='connected' AND partner.status='active'`, [ownerId, intakeId]);
+    return rows[0]?.connectorId ? { connectorId: rows[0].connectorId, credentials: decryptSecret(rows[0].credentials) || {} } : null;
+}
+
+async function disableOfficialPartnerIntakes(partnerId) {
+    await getPool().query(`UPDATE depannhome_partner_intakes intake SET enabled=FALSE,updated_at=NOW()
+        FROM depannhome_official_partner_connections connection
+        WHERE connection.intake_id=intake.id AND connection.official_partner_id=$1`, [partnerId]);
 }
 
 async function findRequest(id) {
@@ -272,7 +306,7 @@ async function officialPartners(includeSetup = false) {
     const { rows } = await getPool().query(`SELECT id,company_name AS "companyName",organization_type AS "organizationType",website,status,
         partner_type AS "partnerType",logo_url AS "logoUrl",description,activity_category AS "activityCategory",api_url AS "apiUrl",
         documentation_url AS "documentationUrl",sandbox_url AS "sandboxUrl",connector_state AS "connectorState",connector_config AS "connectorConfig",
-        connector_secret_ciphertext AS "connectorSecretCiphertext",created_at AS "createdAt",updated_at AS "updatedAt"
+        connector_secret_ciphertext AS "connectorSecretCiphertext",api_connector_id AS "apiConnectorId",created_at AS "createdAt",updated_at AS "updatedAt"
         FROM depannhome_official_partners ORDER BY CASE connector_state WHEN 'available' THEN 0 WHEN 'beta' THEN 1 ELSE 2 END,LOWER(company_name)`);
     return rows.map(row => publicOfficialPartner(row, includeSetup));
 }
@@ -282,21 +316,50 @@ async function officialPartner(id, includeSecret = false) {
     const { rows } = await getPool().query(`SELECT id,company_name AS "companyName",organization_type AS "organizationType",website,status,
         partner_type AS "partnerType",logo_url AS "logoUrl",description,activity_category AS "activityCategory",api_url AS "apiUrl",
         documentation_url AS "documentationUrl",sandbox_url AS "sandboxUrl",connector_state AS "connectorState",connector_config AS "connectorConfig",
-        connector_secret_ciphertext AS "connectorSecretCiphertext",created_at AS "createdAt",updated_at AS "updatedAt"
+        connector_secret_ciphertext AS "connectorSecretCiphertext",api_connector_id AS "apiConnectorId",created_at AS "createdAt",updated_at AS "updatedAt"
         FROM depannhome_official_partners WHERE id=$1`, [id]);
     return rows[0] ? (includeSecret ? rows[0] : publicOfficialPartner(rows[0])) : null;
 }
 
 async function companyConnections(ownerId) {
-    const { rows } = await getPool().query("SELECT official_partner_id AS \"partnerId\",status,connected_at AS \"connectedAt\",updated_at AS \"updatedAt\" FROM depannhome_official_partner_connections WHERE owner_id=$1", [ownerId]);
-    return rows;
+    const { rows } = await getPool().query(`SELECT connection.official_partner_id AS "partnerId",connection.status,
+        connection.external_account_hash<>'' AS "hasExternalAccountId",connection.intake_id IS NOT NULL AS "hasInboundApi",
+        intake.partner_key AS "partnerKey",connection.connected_at AS "connectedAt",connection.updated_at AS "updatedAt"
+        FROM depannhome_official_partner_connections connection
+        LEFT JOIN depannhome_partner_intakes intake ON intake.id=connection.intake_id AND intake.owner_id=connection.owner_id
+        WHERE connection.owner_id=$1`, [ownerId]);
+    return rows.map(row => ({ ...row, endpoint: row.partnerKey ? `/api/partner-intake/${row.partnerKey}` : "" }));
 }
 
-async function saveCompanyConnection(ownerId, partnerId, credentials, connectedBy) {
-    await getPool().query(`INSERT INTO depannhome_official_partner_connections(owner_id,official_partner_id,status,credentials_ciphertext,connected_by,connected_at,updated_at)
-        VALUES($1,$2,'connected',$3,$4,NOW(),NOW()) ON CONFLICT(owner_id,official_partner_id) DO UPDATE
-        SET status='connected',credentials_ciphertext=EXCLUDED.credentials_ciphertext,connected_by=EXCLUDED.connected_by,connected_at=NOW(),updated_at=NOW()`,
-    [ownerId, partnerId, encryptSecret(credentials), connectedBy || null]);
+async function saveCompanyConnection(ownerId, partner, credentials, connectedBy) {
+    const database = await getPool().connect();
+    const apiKey = crypto.randomBytes(32).toString("base64url");
+    const externalAccountHash = connectionIdentityHash(credentials, partner.connectorConfig);
+    try {
+        await database.query("BEGIN");
+        const current = await database.query("SELECT intake_id FROM depannhome_official_partner_connections WHERE owner_id=$1 AND official_partner_id=$2 FOR UPDATE", [ownerId, partner.id]);
+        let intakeId = current.rows[0]?.intake_id || null;
+        let partnerKey = "";
+        if (intakeId) {
+            const updated = await database.query("UPDATE depannhome_partner_intakes SET partner_name=$3,api_key_hash=$4,enabled=TRUE,rules=$5::jsonb,updated_at=NOW() WHERE id=$1 AND owner_id=$2 RETURNING partner_key", [intakeId, ownerId, partner.companyName, secretHash(apiKey), JSON.stringify({ officialPartnerId: String(partner.id) })]);
+            partnerKey = updated.rows[0]?.partner_key || "";
+        }
+        if (!intakeId || !partnerKey) {
+            partnerKey = `official-${partner.id}-${crypto.randomBytes(8).toString("hex")}`.slice(0, 64);
+            const intake = await database.query(`INSERT INTO depannhome_partner_intakes(owner_id,partner_key,partner_name,api_key_hash,assignment_mode,rules,enabled,created_by)
+                VALUES($1,$2,$3,$4,'manual',$5::jsonb,TRUE,$6) RETURNING id`, [ownerId, partnerKey, partner.companyName, secretHash(apiKey), JSON.stringify({ officialPartnerId: String(partner.id) }), connectedBy || null]);
+            intakeId = intake.rows[0].id;
+        }
+        await database.query(`INSERT INTO depannhome_official_partner_connections(owner_id,official_partner_id,status,credentials_ciphertext,intake_id,external_account_hash,connected_by,connected_at,updated_at)
+            VALUES($1,$2,'connected',$3,$4,$5,$6,NOW(),NOW()) ON CONFLICT(owner_id,official_partner_id) DO UPDATE
+            SET status='connected',credentials_ciphertext=EXCLUDED.credentials_ciphertext,intake_id=EXCLUDED.intake_id,external_account_hash=EXCLUDED.external_account_hash,connected_by=EXCLUDED.connected_by,connected_at=NOW(),updated_at=NOW()`,
+        [ownerId, partner.id, encryptSecret(credentials), intakeId, externalAccountHash, connectedBy || null]);
+        await database.query("COMMIT");
+        return { status: "connected", endpoint: `/api/partner-intake/${partnerKey}`, apiKey, hasExternalAccountId: Boolean(externalAccountHash) };
+    } catch (error) {
+        await database.query("ROLLBACK");
+        throw error;
+    } finally { database.release(); }
 }
 
 function publicOfficialPartner(partner, includeSetup = false) {
@@ -304,7 +367,7 @@ function publicOfficialPartner(partner, includeSetup = false) {
     return { id: String(partner.id), companyName: partner.companyName, organizationType: partner.organizationType, website: partner.website || "", status: partner.status,
         partnerType: PARTNER_TYPES.has(partner.partnerType) ? partner.partnerType : "credentials", logoUrl: partner.logoUrl || "", description: partner.description || "",
         activityCategory: partner.activityCategory || "", apiUrl: partner.apiUrl || "", documentationUrl: partner.documentationUrl || "", sandboxUrl: partner.sandboxUrl || "",
-        connectorState: CONNECTOR_STATUSES.has(partner.connectorState) ? partner.connectorState : "development", connectorConfig: { credentialFields: credentialFields(config.credentialFields), scope: cleanText(config.scope, 500), ...(includeSetup ? { authorizationUrl: safeUrl(config.authorizationUrl), tokenUrl: safeUrl(config.tokenUrl), clientId: cleanText(config.clientId, 500) } : {}) },
+        connectorState: CONNECTOR_STATUSES.has(partner.connectorState) ? partner.connectorState : "development", ...(includeSetup ? { apiConnectorId: partner.apiConnectorId ? String(partner.apiConnectorId) : "" } : {}), connectorConfig: { credentialFields: credentialFields(config.credentialFields), identityField: cleanCredentialKey(config.identityField), scope: cleanText(config.scope, 500), ...(includeSetup ? { authorizationUrl: safeUrl(config.authorizationUrl), tokenUrl: safeUrl(config.tokenUrl), clientId: cleanText(config.clientId, 500) } : {}) },
         hasConnectorSecret: Boolean(partner.connectorSecretCiphertext), createdAt: partner.createdAt, updatedAt: partner.updatedAt };
 }
 
@@ -314,23 +377,30 @@ function sanitizeOfficialPartner(value, existing = null) {
     const name = cleanText(value?.companyName, 160); const organizationType = ORGANIZATION_TYPES.has(value?.organizationType) ? value.organizationType : "other";
     const website = cleanWebsite(value?.website); const logoUrl = safeUrl(value?.logoUrl); const apiUrl = safeUrl(value?.apiUrl); const documentationUrl = safeUrl(value?.documentationUrl); const sandboxUrl = safeUrl(value?.sandboxUrl);
     const existingConfig = existing?.connectorConfig && typeof existing.connectorConfig === "object" ? existing.connectorConfig : {};
-    const config = { credentialFields: credentialFields(value?.credentialFields ?? existingConfig.credentialFields), authorizationUrl: safeUrl(value?.authorizationUrl ?? existingConfig.authorizationUrl), tokenUrl: safeUrl(value?.tokenUrl ?? existingConfig.tokenUrl), clientId: cleanText(value?.clientId ?? existingConfig.clientId, 500), scope: cleanText(value?.scope ?? existingConfig.scope, 500) };
+    const config = { credentialFields: credentialFields(value?.credentialFields ?? existingConfig.credentialFields), identityField: cleanCredentialKey(value?.identityField ?? existingConfig.identityField), authorizationUrl: safeUrl(value?.authorizationUrl ?? existingConfig.authorizationUrl), tokenUrl: safeUrl(value?.tokenUrl ?? existingConfig.tokenUrl), clientId: cleanText(value?.clientId ?? existingConfig.clientId, 500), scope: cleanText(value?.scope ?? existingConfig.scope, 500) };
+    const apiConnectorId = positiveId(value?.apiConnectorId ?? existing?.apiConnectorId);
     const secret = cleanText(value?.clientSecret, 2000);
     if (!name) return { ok: false, message: "Le nom du partenaire est obligatoire." };
     if ((value?.website && !website) || (value?.logoUrl && !logoUrl) || (value?.apiUrl && !apiUrl) || (value?.documentationUrl && !documentationUrl) || (value?.sandboxUrl && !sandboxUrl)) return { ok: false, message: "Les URL doivent commencer par http:// ou https://." };
     if (type === "credentials" && !config.credentialFields.length) return { ok: false, message: "Indiquez au moins une information de connexion à demander." };
+    if (type === "credentials" && connectorState === "available" && !apiConnectorId) return { ok: false, message: "Associez un connecteur technique central avant de rendre cette connexion disponible." };
     if (type === "oauth" && connectorState === "available" && (!config.authorizationUrl || !config.tokenUrl || !config.clientId || (!secret && !existing?.connectorSecretCiphertext))) return { ok: false, message: "Une autorisation OAuth disponible requiert les URL d’autorisation et de jeton, ainsi que l’identifiant et le secret client." };
-    return { ok: true, name, organizationType, website, type, logoUrl, description: cleanText(value?.description, 2000), activityCategory: cleanText(value?.activityCategory, 160), apiUrl, documentationUrl, sandboxUrl, connectorState, config, secret };
+    return { ok: true, name, organizationType, website, type, logoUrl, description: cleanText(value?.description, 2000), activityCategory: cleanText(value?.activityCategory, 160), apiUrl, documentationUrl, sandboxUrl, connectorState, config, secret, apiConnectorId };
 }
 
 function credentialFields(value) {
     const labels = Array.isArray(value) ? value : String(value || "").split(/\r?\n|,/);
     return labels.map((item, index) => {
-        const label = cleanText(typeof item === "object" ? item.label : item, 80);
-        const key = cleanText(typeof item === "object" ? item.key : "", 40).replace(/[^a-zA-Z0-9_-]/g, "") || `credential${index + 1}`;
+        const parts = typeof item === "string" ? item.split("|").map(part => part.trim()) : [];
+        const label = cleanText(typeof item === "object" ? item.label : parts[1] || parts[0], 80);
+        const key = cleanCredentialKey(typeof item === "object" ? item.key : parts.length > 1 ? parts[0] : "") || `credential${index + 1}`;
         return label ? { key, label, required: typeof item === "object" ? item.required !== false : true, secret: typeof item === "object" ? item.secret !== false : true } : null;
     }).filter(Boolean).slice(0, 8);
 }
+
+function connectionIdentityHash(credentials, config) { const key = cleanCredentialKey(config?.identityField); const value = key ? cleanText(credentials?.[key], 500) : ""; return value ? secretHash(value) : ""; }
+function cleanCredentialKey(value) { return cleanText(value, 40).replace(/[^a-zA-Z0-9_-]/g, ""); }
+function secretHash(value) { return crypto.createHash("sha256").update(String(value)).digest("hex"); }
 
 function sanitizeCredentials(value, fields) {
     const credentials = value && typeof value === "object" && !Array.isArray(value) ? value : {};

@@ -1637,7 +1637,8 @@ ALTER TABLE depannhome_official_partners
     ADD COLUMN IF NOT EXISTS documentation_url VARCHAR(1000) NOT NULL DEFAULT '',
     ADD COLUMN IF NOT EXISTS sandbox_url VARCHAR(1000) NOT NULL DEFAULT '',
     ADD COLUMN IF NOT EXISTS connector_state VARCHAR(30) NOT NULL DEFAULT 'development',
-    ADD COLUMN IF NOT EXISTS connector_secret_ciphertext TEXT NOT NULL DEFAULT '';
+    ADD COLUMN IF NOT EXISTS connector_secret_ciphertext TEXT NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS api_connector_id BIGINT REFERENCES depannhome_api_connectors(id) ON DELETE SET NULL;
 ALTER TABLE depannhome_official_partners DROP CONSTRAINT IF EXISTS depannhome_official_partners_partner_type_check;
 ALTER TABLE depannhome_official_partners ADD CONSTRAINT depannhome_official_partners_partner_type_check CHECK (partner_type IN ('depannhome_company','credentials','oauth'));
 ALTER TABLE depannhome_official_partners DROP CONSTRAINT IF EXISTS depannhome_official_partners_connector_state_check;
@@ -1646,11 +1647,17 @@ CREATE TABLE IF NOT EXISTS depannhome_official_partner_connections (
     id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
     official_partner_id BIGINT NOT NULL REFERENCES depannhome_official_partners(id) ON DELETE CASCADE,
     status VARCHAR(30) NOT NULL DEFAULT 'connected', credentials_ciphertext TEXT NOT NULL DEFAULT '',
+    intake_id BIGINT UNIQUE REFERENCES depannhome_partner_intakes(id) ON DELETE SET NULL,
+    external_account_hash VARCHAR(64) NOT NULL DEFAULT '',
     connected_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
     connected_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT depannhome_official_partner_connections_unique UNIQUE(owner_id, official_partner_id),
     CONSTRAINT depannhome_official_partner_connections_status_check CHECK (status IN ('connected', 'disconnected'))
 );
+ALTER TABLE depannhome_official_partner_connections
+    ADD COLUMN IF NOT EXISTS intake_id BIGINT UNIQUE REFERENCES depannhome_partner_intakes(id) ON DELETE SET NULL,
+    ADD COLUMN IF NOT EXISTS external_account_hash VARCHAR(64) NOT NULL DEFAULT '';
+CREATE INDEX IF NOT EXISTS depannhome_official_partner_connections_intake_idx ON depannhome_official_partner_connections(intake_id);
 CREATE TABLE IF NOT EXISTS depannhome_official_partner_oauth_states (
     state VARCHAR(128) PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
     official_partner_id BIGINT NOT NULL REFERENCES depannhome_official_partners(id) ON DELETE CASCADE,

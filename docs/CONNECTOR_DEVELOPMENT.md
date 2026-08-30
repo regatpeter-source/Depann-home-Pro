@@ -37,17 +37,24 @@ Le type `oauth2` utilise le flux serveur-à-serveur `client_credentials`. La con
 - `scope` et `audience` : facultatifs, selon le contrat du partenaire ;
 - `tenantHeaderName` : facultatif, par exemple `x-tenant-id`.
 
-Les secrets `clientId`, `clientSecret` et `tenantId` sont chiffrés côté serveur. Le jeton est conservé uniquement en mémoire jusqu’à son expiration, renouvelé avec une marge de sécurité et renouvelé une fois immédiatement si l’API répond `401`.
+Les noms `clientId`, `clientSecret`, `tenantId`, `apiKey` ou tout autre champ ne sont jamais codés en dur dans l’écran entreprise. Le Créateur déclare le schéma sous la forme `clé|libellé`, puis chaque entreprise renseigne ses propres valeurs. Elles sont chiffrées sous le couple `(owner_id, official_partner_id)`. Le jeton est conservé uniquement en mémoire jusqu’à son expiration, renouvelé avec une marge de sécurité et renouvelé une fois immédiatement si l’API répond `401`.
 
 Un endpoint peut être associé à `mission_accepted` ou `mission_status_changed`. Son chemin, ses paramètres, ses headers et son corps JSON acceptent des variables telles que `{mission_order_id}`, `{missionId}`, `{externalMissionId}`, `{event}` et `{status}`. Les valeurs insérées dans le chemin sont encodées.
 
-Pour relier automatiquement une source de missions à un connecteur sortant, utilisez le même identifiant normalisé pour `partnerKey` et `connectorKey`. Le champ facultatif `rules.outboundConnectorKey` de la source permet de cibler une autre clé. Lorsqu’aucun endpoint événementiel correspondant n’est actif, l’URL de callback historique reste utilisée.
+Le modèle recommandé sépare deux niveaux :
+
+1. le **connecteur technique central**, créé une seule fois par le Créateur pour un assureur ou donneur d’ordre ;
+2. la **connexion d’entreprise**, unique par `(owner_id, official_partner_id)`, qui contient seulement les credentials de cette entreprise et son identité externe déclarative.
+
+Une connexion réussie est testée avant enregistrement et crée une API entrante dédiée à l’entreprise. La clé est affichée une seule fois et seule son empreinte SHA-256 est conservée. L’intake résout toujours un `owner_id` unique ; une mission reçue pour une entreprise ne peut donc pas apparaître chez une autre. Les retours de statut réutilisent le manifeste central avec les credentials chiffrés de l’entreprise propriétaire de la mission.
+
+Les API entrantes manuelles restent compatibles : leur `partnerKey` ou `rules.outboundConnectorKey` peut encore cibler un connecteur historique, et leur URL de callback reste le repli lorsqu’aucun endpoint événementiel n’est actif.
 
 Les chemins d'endpoint commencent obligatoirement par `/`. Les URLs doivent être HTTP(S) externes : `localhost`, les boucles locales et les plages IPv4 privées usuelles sont refusés.
 
 ## Sécurité
 
-- Tous les connecteurs et journaux sont systématiquement isolés dans l’espace du compte Créateur (`owner_id`).
+- Les manifestes techniques et journaux sont isolés dans l’espace du compte Créateur ; les credentials opérationnels sont isolés séparément sous l’`owner_id` de chaque entreprise.
 - Les routes du registre exigent une session Créateur ; un administrateur d’entreprise ne peut ni consulter ni modifier un connecteur.
 - Les credentials sont chiffrés AES-256-GCM à partir de `SESSION_SECRET`.
 - Le client n'obtient que l'indication `hasCredentials`, jamais les valeurs secrètes.
@@ -61,9 +68,9 @@ Les chemins d'endpoint commencent obligatoirement par `/`. Les URLs doivent êtr
 
 1. Créer le connecteur avec l'assistant.
 2. Décrire les endpoints et mappings.
-3. Ajouter les secrets dans la configuration sécurisée de la plateforme. Pour OAuth 2.0, renseigner Client ID, Client Secret et, si nécessaire, l’identifiant tenant.
-4. Tester chaque endpoint et contrôler la réponse JSON ainsi que le journal.
-5. Associer les endpoints aux événements métier, utiliser la même clé que la source de missions, puis activer le connecteur lorsque les tests sont validés.
+3. Déclarer les champs demandés aux entreprises, avec une clé technique et un libellé, puis indiquer si l’un d’eux représente l’identité externe du compte.
+4. Associer le partenaire officiel au connecteur technique central et activer les endpoints validés.
+5. Chaque entreprise clique sur « Se connecter », renseigne ses propres valeurs et obtient après test son endpoint entrant et sa clé à transmettre au partenaire.
 6. Exporter un paquet pour le versionner ou le partager sans secret.
 
 ## Extension métier future

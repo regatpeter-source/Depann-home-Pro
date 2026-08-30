@@ -7,7 +7,8 @@ import { createNotification } from "./collaboration.js";
 import { recordMissionDialogueEvent } from "./partner-dialogue.js";
 import { getOrganization, isFeatureEnabled } from "./organizations.js";
 import { PARTNER_MISSION_ASSIGNMENT_ROLES, validateAssignedCompanyMembers } from "./member-assignment.js";
-import { executeConnectorEvent } from "./connectors.js";
+import { executeCentralConnectorEvent, executeConnectorEvent } from "./connectors.js";
+import { officialConnectorConnection } from "./partner-requests.js";
 
 const PRIORITIES = new Set(["low", "normal", "high", "urgent"]);
 const STATUSES = new Set(["received", "pending_validation", "accepted", "rejected", "assigned", "scheduled", "en_route", "on_site", "report_in_progress", "report_completed", "report_validated", "quote_sent", "quote_accepted", "work_completed", "invoice_sent", "closed", "cancelled"]);
@@ -146,7 +147,7 @@ export function registerPartnerMissionRoutes(app, requireAuthentication) {
     app.patch("/api/partner-missions/:missionId/billing-mode", requireAdministration, asyncHandler(async (req, res) => { const billingMode = BILLING_MODES.has(req.body?.billingMode) ? req.body.billingMode : ""; if (!billingMode) return res.status(400).json({ message: "Type de facturation invalide." }); const mission = await updateBillingMode(req, positiveId(req.params.missionId), billingMode); res.json({ mission }); }));
     app.post("/api/partner-missions/:missionId/status", requireMissionAccess, asyncHandler(async (req, res) => { const status = String(req.body?.status || ""); if (!STATUSES.has(status)) return res.status(400).json({ message: "Statut de mission invalide." }); const mission = await changeStatus(req, positiveId(req.params.missionId), status, { note: clean(req.body?.note, 1000) }); res.json({ mission }); }));
     app.post("/api/partner-missions/archive-terminal", requireAdministration, asyncHandler(async (req, res) => res.json(await archiveTerminalMissions(req))));
-    app.post("/api/partner-missions/outbox/retry", requireAdministration, asyncHandler(async (req, res) => { const ownerId = getAccountOwnerId(req); if (!isFeatureEnabled(await getOrganization(ownerId), "connectors")) return res.status(403).json({ message: "Les connexions API externes ne sont pas incluses dans cette offre." }); res.json(await deliverOutbox(ownerId)); }));
+    app.post("/api/partner-missions/outbox/retry", requireAdministration, asyncHandler(async (req, res) => { const ownerId = getAccountOwnerId(req); if (!isFeatureEnabled(await getOrganization(ownerId), "connectors")) return res.status(403).json({ message: "Les connexions API externes ne sont pas incluses dans cette offre." }); res.json(await deliverCompanyOutbox(ownerId)); }));
     app.post("/api/partner-missions/intakes", requireAdministration, asyncHandler(async (req, res) => { const intake = sanitizeIntake(req.body); if (!intake.ok) return res.status(400).json({ message: intake.message }); const key = crypto.randomBytes(32).toString("base64url"); const { rows } = await getPool().query("INSERT INTO depannhome_partner_intakes(owner_id,partner_key,partner_name,api_key_hash,callback_url,assignment_mode,rules,created_by) VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,$8) RETURNING id", [getAccountOwnerId(req), intake.key, intake.name, hash(key), intake.callbackUrl, intake.assignmentMode, JSON.stringify(intake.rules), req.user.sub]); res.status(201).json({ id: rows[0].id, partnerKey: intake.key, apiKey: key, endpoint: `/api/partner-intake/${intake.key}` }); }));
     app.patch("/api/partner-missions/intakes/:intakeId", requireAdministration, asyncHandler(async (req, res) => { const intake = sanitizeIntake(req.body); if (!intake.ok) return res.status(400).json({ message: intake.message }); const result = await getPool().query("UPDATE depannhome_partner_intakes SET partner_key=$3,partner_name=$4,callback_url=$5,assignment_mode=$6,rules=$7::jsonb,enabled=$8,updated_at=NOW() WHERE id=$1 AND owner_id=$2 AND partner_key NOT LIKE 'email-%'", [positiveId(req.params.intakeId), getAccountOwnerId(req), intake.key, intake.name, intake.callbackUrl, intake.assignmentMode, JSON.stringify(intake.rules), req.body?.enabled !== false]); if (!result.rowCount) return res.status(404).json({ message: "Partenaire introuvable." }); res.json({ message: "Connexion API enregistrée." }); }));
     app.delete("/api/partner-missions/intakes/:intakeId", requireAdministration, asyncHandler(async (req, res) => { const result = await getPool().query("DELETE FROM depannhome_partner_intakes intake WHERE intake.id=$1 AND intake.owner_id=$2 AND intake.partner_key NOT LIKE 'email-%' AND NOT EXISTS(SELECT 1 FROM depannhome_partner_missions mission WHERE mission.intake_id=intake.id)", [positiveId(req.params.intakeId), getAccountOwnerId(req)]); if (!result.rowCount) return res.status(409).json({ message: "Cette connexion est introuvable ou possède déjà des missions. Désactivez-la dans ce cas pour préserver l’historique." }); res.status(204).end(); }));
@@ -159,9 +160,10 @@ async function receiveMission(req, res) {
     if (!body || Buffer.byteLength(JSON.stringify(body)) > MAX_PAYLOAD_BYTES) return res.status(400).json({ message: "Mission invalide ou trop volumineuse." });
     const key = clean(req.headers["x-api-key"], 300); const partnerKey = clean(req.params.partnerKey, 64).toLowerCase();
     if (!key) return res.status(401).json({ message: "Clé API partenaire manquante." });
-    const { rows } = await getPool().query("SELECT intake.* FROM depannhome_partner_intakes intake JOIN depannhome_users owner ON owner.id=intake.owner_id LEFT JOIN depannhome_organizations organization ON organization.account_owner_id=owner.id WHERE intake.partner_key=$1 AND intake.enabled=TRUE AND owner.is_active=TRUE AND owner.is_archived=FALSE AND COALESCE(organization.interface_type,'standard')<>'partner'", [partnerKey]); const intake = rows[0];
+    const keyHash = hash(key);
+    const { rows } = await getPool().query("SELECT intake.* FROM depannhome_partner_intakes intake JOIN depannhome_users owner ON owner.id=intake.owner_id LEFT JOIN depannhome_organizations organization ON organization.account_owner_id=owner.id WHERE intake.partner_key=$1 AND intake.api_key_hash=$2 AND intake.enabled=TRUE AND owner.is_active=TRUE AND owner.is_archived=FALSE AND COALESCE(organization.interface_type,'standard')<>'partner'", [partnerKey, keyHash]); const intake = rows[0];
     if (intake && !isFeatureEnabled(await getOrganization(intake.owner_id), "connectors")) return res.status(403).json({ message: "Les connexions API externes ne sont pas incluses dans cette offre." });
-    if (!intake || !safeEqual(hash(key), intake.api_key_hash)) return res.status(401).json({ message: "Partenaire ou clé API invalide." });
+    if (!intake || !safeEqual(keyHash, intake.api_key_hash)) return res.status(401).json({ message: "Partenaire ou clé API invalide." });
     if (intake.is_sandbox) {
         const fault = clean(req.headers["x-partner-sandbox-fault"], 30);
         if (fault === "403") return res.status(403).json({ message: "Accès Sandbox refusé pour ce scénario." });
@@ -220,7 +222,7 @@ async function acceptMission(req, id) {
         await enqueue(connection, ownerId, id, "mission_accepted", { status, clientId, eventId, reportId });
         await connection.query("COMMIT");
         tracePartnerClient("transaction_committed", { flow: "mission_acceptance", ownerId, missionId: id, clientId });
-        await deliverOutbox(ownerId, false, id);
+        await deliverCompanyOutbox(ownerId, false, id);
         await traceCommittedPartnerClient(ownerId, clientId, { flow: "mission_acceptance", missionId: id });
         const actorName = req.user.fullName || req.user.username;
         await recordMissionDialogueEvent({ ownerId, missionId: id, status: "accepted", action: "accepted", details: { clientId, eventId, reportId }, actorName });
@@ -261,7 +263,7 @@ export async function transitionPartnerMissionStatus({ ownerId, missionId, statu
         await connection.query("COMMIT");
     } catch (error) { await connection.query("ROLLBACK"); throw error; } finally { connection.release(); }
     await recordMissionDialogueEvent({ ownerId, missionId, status, action: "status_changed", details, actorName });
-    await deliverOutbox(ownerId, false, missionId);
+    await deliverCompanyOutbox(ownerId, false, missionId);
     if (updated.assigned_technician_id) await notifyUsers(ownerId, updated, updated.mapped_data || {}, updated.assigned_technician_id, `Mission : ${statusLabel(status)}`);
     const mission = publicMission(updated);
     await notifyManagedMissionSource(ownerId, mission, `Mission : ${statusLabel(status)}`);
@@ -432,7 +434,7 @@ function mergeReparsedEmailPayload(previous, reparsed) {
     const meaningful = entries => Object.fromEntries(Object.entries(entries || {}).filter(([, value]) => value !== "" && value !== null && value !== undefined));
     return { ...previous, ...meaningful(reparsed), client: { ...(previous.client || {}), ...meaningful(reparsed?.client) }, attachments: previous.attachments || reparsed?.attachments || [] };
 }
-async function intakes(ownerId) { const { rows } = await getPool().query("SELECT id,partner_key AS \"partnerKey\",partner_name AS \"partnerName\",callback_url AS \"callbackUrl\",assignment_mode AS \"assignmentMode\",rules,enabled,created_at AS \"createdAt\",updated_at AS \"updatedAt\" FROM depannhome_partner_intakes WHERE owner_id=$1 AND is_sandbox=FALSE AND partner_key NOT LIKE 'email-%' ORDER BY partner_name", [ownerId]); return rows; }
+async function intakes(ownerId) { const { rows } = await getPool().query("SELECT id,partner_key AS \"partnerKey\",partner_name AS \"partnerName\",callback_url AS \"callbackUrl\",assignment_mode AS \"assignmentMode\",rules,enabled,created_at AS \"createdAt\",updated_at AS \"updatedAt\" FROM depannhome_partner_intakes intake WHERE owner_id=$1 AND is_sandbox=FALSE AND partner_key NOT LIKE 'email-%' AND NOT EXISTS(SELECT 1 FROM depannhome_official_partner_connections official WHERE official.intake_id=intake.id) ORDER BY partner_name", [ownerId]); return rows; }
 async function findMission(ownerId, id, request = null) { if (!id) return null; const { rows } = await getPool().query("SELECT mission.*, intake.partner_name AS \"partnerName\", intake.partner_key AS \"partnerKey\", intake.assignment_mode AS \"assignmentMode\", intake.is_sandbox AS \"isSandbox\", technician.full_name AS \"technicianName\" FROM depannhome_partner_missions mission JOIN depannhome_partner_intakes intake ON intake.id=mission.intake_id LEFT JOIN depannhome_users technician ON technician.id=mission.assigned_technician_id WHERE mission.id=$1 AND mission.owner_id=$2 AND mission.deleted_at IS NULL AND intake.is_sandbox=FALSE", [id, ownerId]); return rows[0] ? publicMission(rows[0]) : null; }
 async function lockMission(connection, ownerId, id) { const { rows } = await connection.query("SELECT mission.*, intake.assignment_mode AS \"assignmentMode\" FROM depannhome_partner_missions mission JOIN depannhome_partner_intakes intake ON intake.id=mission.intake_id WHERE mission.id=$1 AND mission.owner_id=$2 AND mission.deleted_at IS NULL AND intake.is_sandbox=FALSE FOR UPDATE", [id, ownerId]); return rows[0] ? { ...rows[0], mappedData: rows[0].mapped_data || {} } : null; }
 async function history(id) { const { rows } = await getPool().query("SELECT history.status,history.action,history.actor_role AS \"actorRole\",history.details,history.created_at AS \"createdAt\",COALESCE(user_account.full_name,user_account.username,'Partenaire') AS \"actorName\" FROM depannhome_partner_mission_history history LEFT JOIN depannhome_users user_account ON user_account.id=history.actor_id WHERE history.mission_id=$1 ORDER BY history.created_at DESC", [id]); return rows; }
@@ -498,7 +500,88 @@ async function notifyUsers(ownerId, mission, data, technicianId, title) { await 
 async function notifyManagedMissionSource(ownerId, mission, title) { const { rows } = await getPool().query(`SELECT connection.company_low_id AS "lowId",connection.company_high_id AS "highId" FROM depannhome_partner_missions mission JOIN depannhome_partner_intakes intake ON intake.id=mission.intake_id JOIN depannhome_partner_connections connection ON intake.partner_key=('connection-' || connection.id::text) AND connection.status='connected' WHERE mission.owner_id=$1 AND mission.id=$2`, [ownerId, mission.id]); const connection = rows[0]; if (!connection) return; const sourceOwnerId = Number(connection.lowId) === Number(ownerId) ? Number(connection.highId) : Number(connection.lowId); const recipients = await getPool().query("SELECT id FROM depannhome_users WHERE account_owner_id=$1 AND role IN ('admin','pc_standard','mobile_admin') AND is_active=TRUE", [sourceOwnerId]); await Promise.all(recipients.rows.map(row => createNotification(sourceOwnerId, row.id, "partner_mission_status", { entityType: "partner_mission", entityId: String(mission.id) }, title, `${mission.partnerName || "Partenaire"} · ${statusLabel(mission.status)}`, { missionId: mission.id, status: mission.status, calendarEventId: mission.calendarEventId, sourceDialogue: true }))); }
 async function enqueue(connection, ownerId, missionId, type, payload) { await connection.query("INSERT INTO depannhome_partner_mission_outbox(owner_id,mission_id,event_type,payload) SELECT $1,$2,$3,$4::jsonb WHERE EXISTS(SELECT 1 FROM depannhome_partner_missions mission JOIN depannhome_partner_intakes intake ON intake.id=mission.intake_id WHERE mission.id=$2 AND mission.owner_id=$1 AND intake.partner_key NOT LIKE 'connection-%' AND intake.partner_key NOT LIKE 'email-%')", [ownerId, missionId, type, JSON.stringify(payload)]); }
 async function deliverOutbox(ownerId, sandboxOnly = false, missionId = 0) { const { rows } = await getPool().query(`SELECT outbox.*, intake.callback_url AS "callbackUrl", intake.partner_key AS "partnerKey", intake.rules, mission.external_mission_id AS "externalMissionId" FROM depannhome_partner_mission_outbox outbox JOIN depannhome_partner_missions mission ON mission.id=outbox.mission_id JOIN depannhome_partner_intakes intake ON intake.id=mission.intake_id JOIN depannhome_users owner ON owner.id=outbox.owner_id WHERE outbox.owner_id=$1 AND owner.is_active=TRUE AND owner.is_archived=FALSE AND intake.is_sandbox=$2 AND ($3::bigint=0 OR mission.id=$3) AND outbox.status IN ('pending','failed') AND outbox.next_attempt_at<=NOW() ORDER BY outbox.created_at LIMIT 30`, [ownerId, sandboxOnly, missionId]); let delivered = 0; for (const item of rows) { try { const eventPayload = { event: item.event_type, missionId: item.externalMissionId, ...item.payload }; const connectorKey = clean(item.rules?.outboundConnectorKey, 64) || item.partnerKey; const connectorResult = !sandboxOnly ? await executeConnectorEvent(ownerId, connectorKey, item.event_type, eventPayload, { missionId: item.externalMissionId, mission_order_id: item.externalMissionId, externalMissionId: item.externalMissionId, event: item.event_type, status: item.payload?.status || "" }) : { handled: false }; if (connectorResult.handled) { if (!connectorResult.ok) throw new Error(`HTTP ${connectorResult.status}`); } else { if (!item.callbackUrl) { await getPool().query("UPDATE depannhome_partner_mission_outbox SET status='skipped',last_error='Aucun connecteur sortant ou URL de retour configuré.' WHERE id=$1", [item.id]); continue; } const response = await fetch(item.callbackUrl, { method: "POST", headers: { "Content-Type": "application/json", "X-DepannHome-Event": item.event_type }, body: JSON.stringify(eventPayload), redirect: "error", signal: AbortSignal.timeout(15000) }); if (!response.ok) throw new Error(`HTTP ${response.status}`); } await getPool().query("UPDATE depannhome_partner_mission_outbox SET status='delivered',attempts=attempts+1,delivered_at=NOW(),last_error='' WHERE id=$1", [item.id]); delivered += 1; } catch (error) { const attempts = item.attempts + 1, status = attempts >= MAX_RETRY_ATTEMPTS ? "failed" : "pending"; await getPool().query("UPDATE depannhome_partner_mission_outbox SET status=$2,attempts=$3,last_error=$4,next_attempt_at=NOW()+($5::text || ' minutes')::interval WHERE id=$1", [item.id, status, attempts, clean(error.message, 1000), String(Math.min(60, 2 ** attempts))]); } } return { processed: rows.length, delivered }; }
-export async function deliverPartnerMissionOutbox(ownerId, options = {}) { return deliverOutbox(ownerId, options.sandboxOnly === true); }
+export async function deliverPartnerMissionOutbox(ownerId, options = {}) { return deliverCompanyOutbox(ownerId, options.sandboxOnly === true); }
+
+async function deliverCompanyOutbox(ownerId, sandboxOnly = false, missionId = 0) {
+    if (sandboxOnly) return deliverOutbox(ownerId, true, missionId);
+    const { rows } = await getPool().query(`SELECT DISTINCT intake.id
+        FROM depannhome_partner_mission_outbox outbox
+        JOIN depannhome_partner_missions mission ON mission.id=outbox.mission_id
+        JOIN depannhome_partner_intakes intake ON intake.id=mission.intake_id
+        JOIN depannhome_official_partner_connections connection ON connection.owner_id=outbox.owner_id AND connection.intake_id=intake.id AND connection.status='connected'
+        WHERE outbox.owner_id=$1 AND ($2::bigint=0 OR mission.id=$2) AND outbox.status IN ('pending','failed') AND outbox.next_attempt_at<=NOW()`, [ownerId, missionId]);
+    let delivered = 0;
+    for (const intake of rows) delivered += (await deliverOfficialIntakeOutbox(ownerId, intake.id, missionId)).delivered;
+    const legacy = await deliverManualOutbox(ownerId, missionId);
+    return { delivered: delivered + legacy.delivered };
+}
+
+async function deliverManualOutbox(ownerId, missionId = 0) {
+    const { rows } = await getPool().query(`SELECT outbox.*,intake.callback_url AS "callbackUrl",intake.partner_key AS "partnerKey",intake.rules,mission.external_mission_id AS "externalMissionId"
+        FROM depannhome_partner_mission_outbox outbox
+        JOIN depannhome_partner_missions mission ON mission.id=outbox.mission_id
+        JOIN depannhome_partner_intakes intake ON intake.id=mission.intake_id
+        JOIN depannhome_users owner ON owner.id=outbox.owner_id
+        WHERE outbox.owner_id=$1 AND owner.is_active=TRUE AND owner.is_archived=FALSE AND intake.is_sandbox=FALSE
+            AND ($2::bigint=0 OR mission.id=$2) AND outbox.status IN ('pending','failed') AND outbox.next_attempt_at<=NOW()
+            AND NOT EXISTS(SELECT 1 FROM depannhome_official_partner_connections official WHERE official.owner_id=outbox.owner_id AND official.intake_id=intake.id)
+        ORDER BY outbox.created_at LIMIT 30`, [ownerId, missionId]);
+    let delivered = 0;
+    for (const item of rows) {
+        try {
+            const payload = { event: item.event_type, missionId: item.externalMissionId, ...item.payload };
+            const variables = { missionId: item.externalMissionId, mission_order_id: item.externalMissionId, externalMissionId: item.externalMissionId, event: item.event_type, status: item.payload?.status || "" };
+            const connectorKey = clean(item.rules?.outboundConnectorKey, 64) || item.partnerKey;
+            const result = await executeConnectorEvent(ownerId, connectorKey, item.event_type, payload, variables);
+            if (result.handled) {
+                if (!result.ok) throw new Error(`HTTP ${result.status}`);
+            } else {
+                if (!item.callbackUrl) {
+                    await getPool().query("UPDATE depannhome_partner_mission_outbox SET status='skipped',last_error='Aucun connecteur sortant ou URL de retour configuré.' WHERE id=$1", [item.id]);
+                    continue;
+                }
+                const response = await fetch(item.callbackUrl, { method: "POST", headers: { "Content-Type": "application/json", "X-DepannHome-Event": item.event_type }, body: JSON.stringify(payload), redirect: "error", signal: AbortSignal.timeout(15_000) });
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            }
+            await getPool().query("UPDATE depannhome_partner_mission_outbox SET status='delivered',attempts=attempts+1,last_error='',delivered_at=NOW() WHERE id=$1", [item.id]);
+            delivered += 1;
+        } catch (error) {
+            const delay = Math.min(3600, 2 ** Math.min(item.attempts + 1, 10) * 30);
+            await getPool().query("UPDATE depannhome_partner_mission_outbox SET status=CASE WHEN attempts+1>=$2 THEN 'failed' ELSE 'pending' END,attempts=attempts+1,last_error=$3,next_attempt_at=NOW()+($4 || ' seconds')::interval WHERE id=$1", [item.id, MAX_RETRY_ATTEMPTS, clean(error.message, 1000), delay]);
+        }
+    }
+    return { delivered };
+}
+
+async function deliverOfficialIntakeOutbox(ownerId, intakeId, missionId) {
+    const official = await officialConnectorConnection(ownerId, intakeId);
+    if (!official) return { delivered: 0 };
+    const { rows } = await getPool().query(`SELECT outbox.*,mission.external_mission_id AS "externalMissionId"
+        FROM depannhome_partner_mission_outbox outbox
+        JOIN depannhome_partner_missions mission ON mission.id=outbox.mission_id
+        WHERE outbox.owner_id=$1 AND mission.intake_id=$2 AND ($3::bigint=0 OR mission.id=$3)
+            AND outbox.status IN ('pending','failed') AND outbox.next_attempt_at<=NOW()
+        ORDER BY outbox.created_at LIMIT 30`, [ownerId, intakeId, missionId]);
+    let delivered = 0;
+    for (const item of rows) {
+        try {
+            const payload = { event: item.event_type, missionId: item.externalMissionId, ...item.payload };
+            const variables = { missionId: item.externalMissionId, mission_order_id: item.externalMissionId, externalMissionId: item.externalMissionId, event: item.event_type, status: item.payload?.status || "" };
+            const result = await executeCentralConnectorEvent(official.connectorId, official.credentials, item.event_type, payload, variables);
+            if (!result.handled) {
+                await getPool().query("UPDATE depannhome_partner_mission_outbox SET status='skipped',last_error='Aucun endpoint associé à cet événement.' WHERE id=$1", [item.id]);
+                continue;
+            }
+            if (!result.ok) throw new Error(`HTTP ${result.status}`);
+            await getPool().query("UPDATE depannhome_partner_mission_outbox SET status='delivered',attempts=attempts+1,last_error='',delivered_at=NOW() WHERE id=$1", [item.id]);
+            delivered += 1;
+        } catch (error) {
+            const delay = Math.min(3600, 2 ** Math.min(item.attempts + 1, 10) * 30);
+            await getPool().query("UPDATE depannhome_partner_mission_outbox SET status=CASE WHEN attempts+1>=$2 THEN 'failed' ELSE 'pending' END,attempts=attempts+1,last_error=$3,next_attempt_at=NOW()+($4 || ' seconds')::interval WHERE id=$1", [item.id, MAX_RETRY_ATTEMPTS, clean(error.message, 1000), delay]);
+        }
+    }
+    return { delivered };
+}
 async function writeHistory(connection, ownerId, missionId, status, action, actorId, actorRole, details, ip) { await connection.query("INSERT INTO depannhome_partner_mission_history(owner_id,mission_id,status,action,actor_id,actor_role,details,ip_address) VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,$8)", [ownerId, missionId, status, action, actorId || null, actorRole || "", JSON.stringify(details || {}), String(ip || "").slice(0, 100)]); }
 export function readableEmailMissionReference(value, fallbackId = "") {
     const source = value && typeof value === "object" ? value : {};
