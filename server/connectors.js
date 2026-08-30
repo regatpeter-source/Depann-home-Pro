@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { getPool } from "./database.js";
 import { getAccountOwnerId } from "./auth.js";
+import { executeConnectorRequest, isSafeExternalUrl } from "./connector-runtime.js";
 
 const AUTH_TYPES = new Set(["apiKey", "oauth2", "jwt", "basic", "bearer", "custom"]);
 const HTTP_METHODS = new Set(["GET", "POST", "PUT", "PATCH", "DELETE"]);
@@ -169,7 +170,7 @@ function sanitizeConnector(value) {
     const timeout = boundedInteger(value?.connection?.timeout, 1000, 60000, 15000);
     const retries = boundedInteger(value?.connection?.maxRetries, 0, 5, 2);
     const syncMinutes = boundedInteger(value?.connection?.syncMinutes, 5, 10080, 60);
-    const manifest = { schemaVersion: 1, general: { name, logoUrl: cleanUrl(value?.general?.logoUrl, true), description: cleanText(value?.general?.description, 2000), version: cleanText(value?.general?.version, 40) || "1.0.0", author: cleanText(value?.general?.author, 160), website: cleanUrl(value?.general?.website, true) }, connection: { authType, baseUrl, testUrl: cleanUrl(value?.connection?.testUrl, true), productionUrl: cleanUrl(value?.connection?.productionUrl, true), timeout, maxRetries: retries, syncMinutes }, endpoints, mappings: sanitizeMappings(value?.mappings) };
+    const manifest = { schemaVersion: 2, general: { name, logoUrl: cleanUrl(value?.general?.logoUrl, true), description: cleanText(value?.general?.description, 2000), version: cleanText(value?.general?.version, 40) || "1.0.0", author: cleanText(value?.general?.author, 160), website: cleanUrl(value?.general?.website, true) }, connection: { authType, baseUrl, testUrl: cleanUrl(value?.connection?.testUrl, true), productionUrl: cleanUrl(value?.connection?.productionUrl, true), tokenUrl: cleanUrl(value?.connection?.tokenUrl, true), tokenAuthMethod: value?.connection?.tokenAuthMethod === "basic" ? "basic" : "body", scope: cleanText(value?.connection?.scope, 1000), audience: cleanText(value?.connection?.audience, 1000), tenantHeaderName: cleanHeaderName(value?.connection?.tenantHeaderName), timeout, maxRetries: retries, syncMinutes }, endpoints, mappings: sanitizeMappings(value?.mappings) };
     return { ok: true, key, manifest, configuration: { lastTestAt: "", lastTestStatus: "not_tested", notes: cleanText(value?.configuration?.notes, 1000) }, credentials: sanitizeCredentials(value?.credentials), enabled: Boolean(value?.enabled) };
 }
 function sanitizeEndpoint(value, index) {
@@ -177,7 +178,7 @@ function sanitizeEndpoint(value, index) {
     const path = cleanPath(value?.path);
     const method = HTTP_METHODS.has(String(value?.method || "").toUpperCase()) ? String(value.method).toUpperCase() : "";
     if (!name || !path || !method) return null;
-    return { id: cleanText(value?.id, 80) || `endpoint-${index + 1}`, name, path, method, parameters: sanitizeObject(value?.parameters), headers: sanitizeObject(value?.headers), body: cleanJsonText(value?.body, 10000), expectedResponse: cleanJsonText(value?.expectedResponse, 10000), purpose: cleanText(value?.purpose, 300) };
+    return { id: cleanText(value?.id, 80) || `endpoint-${index + 1}`, name, path, method, eventType: cleanEventType(value?.eventType), parameters: sanitizeObject(value?.parameters), headers: sanitizeObject(value?.headers), body: cleanJsonText(value?.body, 10000), expectedResponse: cleanJsonText(value?.expectedResponse, 10000), purpose: cleanText(value?.purpose, 300) };
 }
 function sanitizeMappings(value) { return (Array.isArray(value) ? value : []).map(item => ({ apiField: cleanText(item?.apiField, 160), depannhomeField: cleanText(item?.depannhomeField, 160), transform: cleanText(item?.transform, 300) })).filter(item => item.apiField && item.depannhomeField).slice(0, 100); }
 function sanitizeCredentials(value) { const input = value && typeof value === "object" && !Array.isArray(value) ? value : {}; return Object.fromEntries(Object.entries(input).slice(0, 20).map(([key, item]) => [cleanText(key, 80), cleanText(item, 2000)]).filter(([key, item]) => key && item)); }
@@ -186,31 +187,38 @@ function sanitizeImportedBundle(value) { const candidate = value?.manifest ? { c
 
 function endpointForTest(endpoints, id) { return (endpoints || []).find(endpoint => String(endpoint.id) === String(id)) || (endpoints || [])[0]; }
 async function executeTest(connector, endpoint, suppliedPayload) {
-    const connection = connector.manifest.connection; const base = connection.testUrl || connection.productionUrl || connection.baseUrl;
-    const url = new URL(endpoint.path, base.endsWith("/") ? base : `${base}/`);
-    Object.entries(endpoint.parameters || {}).forEach(([key, value]) => url.searchParams.set(key, value));
-    if (!isSafeExternalUrl(url)) return { ok: false, message: "L’URL cible n’est pas autorisée.", request: {}, response: {} };
+    const connection = connector.manifest.connection;
     const credentials = decryptSecret(connector.encryptedCredentials);
-    const headers = { Accept: "application/json", ...endpoint.headers };
-    applyAuthentication(headers, connection.authType, credentials);
     const payload = suppliedPayload && typeof suppliedPayload === "object" && !Array.isArray(suppliedPayload) ? suppliedPayload : parseJson(endpoint.body, {});
-    const options = { method: endpoint.method, headers, signal: AbortSignal.timeout(connection.timeout) };
-    if (!["GET", "DELETE"].includes(endpoint.method)) { headers["Content-Type"] ||= "application/json"; options.body = JSON.stringify(payload); }
+    const variables = { ...payload, payload, missionId: payload.missionId || payload.mission_order_id || payload.id || "TEST-MISSION", mission_order_id: payload.mission_order_id || payload.missionId || payload.id || "TEST-MISSION" };
     try {
-        let response; let attempt = 0;
-        while (attempt <= connection.maxRetries) { try { response = await fetch(url, options); if (response.status < 500) break; } catch (error) { if (attempt >= connection.maxRetries) throw error; } attempt += 1; }
-        const text = await response.text(); const body = parseJson(text, text.slice(0, 10000));
-        const validation = validateResponse(body, endpoint.expectedResponse, connector.manifest.mappings);
-        const summary = { status: response.status, ok: response.ok, body: redact(body), validation };
-        return { ok: response.ok, message: response.ok ? (validation.valid ? "Test et mapping validés." : "La requête a réussi, mais le mapping ou la réponse attendue doit être ajusté.") : `Le partenaire a répondu HTTP ${response.status}.`, request: { url: url.toString(), method: endpoint.method, headers: redact(headers), payload: redact(payload) }, response: summary };
-    } catch (error) { return { ok: false, message: error.name === "TimeoutError" ? "Délai de connexion dépassé." : "Connexion au partenaire impossible.", request: { url: url.toString(), method: endpoint.method }, response: { error: cleanText(error.message, 300) } }; }
+        let result; let attempt = 0;
+        while (attempt <= connection.maxRetries) { try { result = await executeConnectorRequest({ connector: { ...connector, credentials }, endpoint: { ...endpoint, body: suppliedPayload ? "" : endpoint.body }, payload, variables }); if (result.status < 500) break; } catch (error) { if (attempt >= connection.maxRetries) throw error; } attempt += 1; }
+        const validation = validateResponse(result.body, endpoint.expectedResponse, connector.manifest.mappings);
+        const summary = { status: result.status, ok: result.ok, body: redact(result.body), validation };
+        return { ok: result.ok, message: result.ok ? (validation.valid ? "Test et mapping validés." : "La requête a réussi, mais le mapping ou la réponse attendue doit être ajusté.") : `Le partenaire a répondu HTTP ${result.status}.`, request: redact(result.request), response: summary };
+    } catch (error) { return { ok: false, message: error.name === "TimeoutError" ? "Délai de connexion dépassé." : cleanText(error.message, 300) || "Connexion au partenaire impossible.", request: { method: endpoint.method }, response: { error: cleanText(error.message, 300) } }; }
 }
-function applyAuthentication(headers, authType, credentials) { const token = credentials.apiKey || credentials.token || credentials.accessToken || ""; if (authType === "apiKey" && token) headers[credentials.headerName || "X-API-Key"] = token; if (["bearer", "oauth2", "jwt"].includes(authType) && token) headers.Authorization = `Bearer ${token}`; if (authType === "basic" && credentials.username) headers.Authorization = `Basic ${Buffer.from(`${credentials.username}:${credentials.password || ""}`).toString("base64")}`; if (authType === "custom") Object.assign(headers, sanitizeObject(parseJson(credentials.headers, {}))); }
+
+export async function executeConnectorEvent(ownerId, connectorKey, eventType, payload, variables = {}) {
+    const { rows } = await getPool().query(`SELECT id,connector_key AS "connectorKey",manifest,encrypted_credentials AS "encryptedCredentials" FROM depannhome_api_connectors WHERE owner_id=$1 AND connector_key=$2 AND enabled=TRUE`, [ownerId, connectorKey]);
+    const connector = rows[0];
+    if (!connector) return { handled: false };
+    const endpoint = (connector.manifest?.endpoints || []).find(item => item.eventType === eventType);
+    if (!endpoint) return { handled: false };
+    try {
+        const result = await executeConnectorRequest({ connector: { ...connector, credentials: decryptSecret(connector.encryptedCredentials) }, endpoint, payload, variables: { ...variables, payload } });
+        await writeLog(ownerId, connector.id, eventType, result.ok ? "success" : "failed", endpoint.name, result.request, result, result.ok ? "Événement transmis au partenaire." : `Le partenaire a répondu HTTP ${result.status}.`);
+        return { handled: true, ...result };
+    } catch (error) {
+        await writeLog(ownerId, connector.id, eventType, "failed", endpoint.name, { method: endpoint.method }, {}, cleanText(error.message, 1000));
+        throw error;
+    }
+}
 function generateBundle(connector) { const manifest = connector.manifest; const documentation = buildDocumentation(connector); return { format: "depannhome-api-connector", formatVersion: 1, connectorKey: connector.connectorKey, manifest, configuration: connector.configuration, files: { "manifest.json": JSON.stringify({ connectorKey: connector.connectorKey, manifest }, null, 2), "config.json": JSON.stringify({ ...connector.configuration, credentials: "Configurez les secrets après import." }, null, 2), "connector.js": generatedConnectorSource(connector), "sync.js": generatedSyncSource(connector), "README.md": documentation, "logs/README.md": "Les journaux d’exécution sont conservés dans Depann’Home Pro et ne sont pas exportés avec les secrets." } }; }
 function generatedConnectorSource(connector) { return `// Connecteur déclaratif généré par Depann’Home Pro\nexport const manifest = ${JSON.stringify(connector.manifest, null, 2)};\nexport default manifest;\n`; }
 function generatedSyncSource(connector) { return `// Modèle de synchronisation pour ${connector.manifest.general.name}\n// L’exécution est assurée par le runtime sécurisé Depann’Home Pro.\nexport const mappings = ${JSON.stringify(connector.manifest.mappings, null, 2)};\n`; }
 function buildDocumentation(connector) { const { general, connection, endpoints, mappings } = connector.manifest; return `# ${general.name}\n\n- **Version :** ${general.version}\n- **Auteur :** ${general.author || "Non renseigné"}\n- **Authentification :** ${connection.authType}\n- **Synchronisation :** toutes les ${connection.syncMinutes} minute(s)\n- **Limitation :** les secrets ne sont jamais inclus dans les exports. Les appels sont exécutés par le runtime Depann’Home Pro.\n\n## Endpoints\n\n${endpoints.map(endpoint => `- **${endpoint.name}** — \`${endpoint.method} ${endpoint.path}\`${endpoint.purpose ? ` : ${endpoint.purpose}` : ""}`).join("\n")}\n\n## Mapping des données\n\n${mappings.length ? "| Champ API | Champ Depann’Home Pro | Transformation |\n|---|---|---|\n" + mappings.map(item => `| ${item.apiField} | ${item.depannhomeField} | ${item.transform || "—"} |`).join("\n") : "Aucun mapping configuré."}\n\n## Historique\n\n- ${new Date().toISOString().slice(0, 10)} — Paquet généré depuis la configuration ${general.version}.\n`; }
-function isSafeExternalUrl(url) { if (url.protocol !== "https:" && url.protocol !== "http:") return false; const host = url.hostname.toLowerCase(); return !["localhost", "0.0.0.0", "::1"].includes(host) && !/^127\./.test(host) && !/^10\./.test(host) && !/^192\.168\./.test(host) && !/^169\.254\./.test(host) && !/^172\.(1[6-9]|2\d|3[01])\./.test(host); }
 function cleanUrl(value, optional = false) { const raw = cleanText(value, 1000); if (!raw && optional) return ""; try { const url = new URL(raw); return isSafeExternalUrl(url) ? url.toString().replace(/\/$/, "") : ""; } catch { return ""; } }
 function cleanPath(value) { const path = cleanText(value, 1000); return path && path.startsWith("/") && !path.startsWith("//") ? path : ""; }
 function cleanJsonText(value, max) { const text = String(value || "").trim().slice(0, max); if (!text) return ""; try { JSON.parse(text); return text; } catch { return ""; } }
@@ -224,10 +232,12 @@ function validateResponse(body, expectedResponse, mappings) {
     return { valid: expectedMissing.length === 0 && missingApiFields.length === 0, expectedMissing, missingApiFields, checkedMappings: (mappings || []).length };
 }
 function readJsonPath(value, path) { return String(path).replace(/^\$\.?/, "").split(".").filter(Boolean).reduce((current, key) => current && typeof current === "object" ? current[key] : undefined, value); }
-function redact(value) { if (Array.isArray(value)) return value.map(redact); if (!value || typeof value !== "object") return value; return Object.fromEntries(Object.entries(value).map(([key, item]) => /authorization|token|secret|password|api.?key/i.test(key) ? [key, "[masqué]"] : [key, redact(item)])); }
+function redact(value) { if (Array.isArray(value)) return value.map(redact); if (!value || typeof value !== "object") return value; return Object.fromEntries(Object.entries(value).map(([key, item]) => /authorization|token|secret|password|api.?key|tenant/i.test(key) ? [key, "[masqué]"] : [key, redact(item)])); }
 function slug(value) { const key = String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 64); return CONNECTOR_ID.test(key) ? key : ""; }
 function safeFileName(value) { return String(value || "connecteur").replace(/[^a-z0-9_-]/gi, "-"); }
 function cleanText(value, max) { return String(value || "").replace(/\s+/g, " ").trim().slice(0, max); }
+function cleanHeaderName(value) { const name = cleanText(value, 100); return /^[A-Za-z0-9-]+$/.test(name) ? name : ""; }
+function cleanEventType(value) { const event = cleanText(value, 80); return /^[a-z][a-z0-9_:-]*$/.test(event) ? event : ""; }
 function positiveId(value) { const id = Number(value); return Number.isSafeInteger(id) && id > 0 ? id : 0; }
 function boundedInteger(value, min, max, fallback) { const number = Number(value); return Number.isSafeInteger(number) && number >= min && number <= max ? number : fallback; }
 function encryptionKey() { return crypto.createHash("sha256").update(String(process.env.SESSION_SECRET || "development-connector-key")).digest(); }

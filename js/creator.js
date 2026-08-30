@@ -1,7 +1,7 @@
 import { ROUTES } from "./config.js?v=105";
 import { clearSearch, getContainer, setPage } from "./ui.js?v=44";
 import { escapeHtml } from "./utils.js?v=44";
-import { renderCreatorConnectors } from "./connectors.js?v=1";
+import { renderCreatorConnectors } from "./connectors.js?v=2";
 import { renderHealthDashboard } from "./health-dashboard.js?v=1";
 
 let accounts = [];
