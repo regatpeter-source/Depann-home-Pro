@@ -11,6 +11,7 @@ import { ingestEmailPartnerMission } from "./partner-missions.js";
 import { recordMissionDialogueDocument, recordMissionDialogueEvent } from "./partner-dialogue.js";
 import { extractPartnerDocumentText, normalizePartnerDocumentMime } from "./partner-email-document-extractor.js";
 import { hasCompanyEmailWorkspaceAccess } from "./workstation-permissions.js";
+import { gmailDownloadAttachment, gmailListMessages, gmailMessageDetails, gmailMessageRaw, gmailMessageUid, gmailProfile, gmailSearchQuery, gmailSendMessage } from "./gmail-api-client.js";
 
 const PROVIDERS = new Set(["google", "microsoft", "imap"]);
 const MODES = new Set(["manual", "automatic"]);
@@ -32,6 +33,7 @@ const MICROSOFT_IDENTITY_SCOPES = "openid email profile offline_access User.Read
 const MICROSOFT_MAIL_SCOPES = "Mail.Read Mail.Send";
 const MICROSOFT_GRAPH_MAX_RETRIES = 2;
 const MICROSOFT_GRAPH_MAX_RETRY_DELAY_MS = 10_000;
+export const GOOGLE_WORKSPACE_SCOPES = "openid email profile https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send";
 const PARTNER_EMAIL_SYNC_INTERVAL_MS = 10 * 60 * 1000;
 const DOCUMENT_EXTRACTION_VERSION = 7;
 let scheduler = null;
@@ -285,6 +287,7 @@ async function performConnectionSync(ownerId, connectionId, actorId, syncPeriod 
     const connection = await findConnection(ownerId, connectionId); if (!connection) throw httpError(404, "Boîte professionnelle introuvable.");
     try {
         if (connection.provider === "microsoft") return await syncMicrosoftConnection(connection, actorId, syncPeriod);
+        if (connection.provider === "google") return await syncGoogleConnection(connection, actorId, syncPeriod);
         const access = await mailboxAccess(connection); const client = createImapClient({ host: access.imap.host, port: access.imap.port, secure: access.imap.secure, auth: access.auth, disableAutoIdle: true });
         await client.connect(); const lock = await client.getMailboxLock("INBOX"); let fetched = 0, candidates = 0, imported = 0, maxUid = Number(connection.last_uid || 0), limited = false;
         try {
@@ -312,6 +315,22 @@ async function performConnectionSync(ownerId, connectionId, actorId, syncPeriod 
     }
 }
 
+async function syncGoogleConnection(connection, actorId, syncPeriod) {
+    const since = syncPeriod?.since || new Date(Math.max(new Date(connection.last_sync_at || 0).getTime() - 5 * 60000, Date.now() - 14 * 86400000));
+    const limit = syncPeriod ? PERIOD_FETCH_LIMIT : FETCH_LIMIT;
+    const search = await withGoogleApiAccess(connection, accessToken => gmailListMessages(accessToken, { query: gmailSearchQuery({ since, before: syncPeriod?.before }), limit }));
+    let fetched = 0, candidates = 0, imported = 0;
+    for (const message of [...search.messages].reverse()) {
+        const raw = await withGoogleApiAccess(connection, accessToken => gmailMessageRaw(accessToken, message.id));
+        const parsed = await simpleParser(raw.source, { skipHtmlToText: false, maxHtmlLengthToParse: 2 * 1024 * 1024 });
+        fetched += 1;
+        const saved = await saveParsedEmail(connection, gmailMessageUid(message.id), parsed); if (!saved) continue;
+        candidates += 1;
+        if (saved.reanalyzeImported || (connection.selection_mode === "automatic" && saved.trustedSender && saved.score >= Number(connection.automatic_threshold || AUTO_THRESHOLD))) { await importCandidate(connection.owner_id, saved.id, actorId); imported += 1; }
+    }
+    return completeSync(connection.id, { fetched, candidates, imported, maxUid: Number(connection.last_uid || 0), limited: search.hasMore, period: syncPeriod ? { from: syncPeriod.from, to: syncPeriod.to } : null }, { advanceCursor: false });
+}
+
 async function syncMicrosoftConnection(connection, actorId, syncPeriod) {
     const access = await mailboxAccess(connection);
     const search = await graphInboxMessages(access.graphToken, connection, syncPeriod);
@@ -334,6 +353,15 @@ async function listLiveInbox(connection, page) {
         const payload = await graphJson(access.graphToken, `https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages?${query}`);
         const values = Array.isArray(payload.value) ? payload.value.filter(message => message?.id) : [];
         return mailboxPageResult(page, values.slice(0, page.limit).map(message => ({ id: encodeMailboxReference(message.id), subject: clean(message.subject || "Sans objet", 500), from: graphAddress(message.from?.emailAddress), receivedAt: message.receivedDateTime || null, isRead: Boolean(message.isRead), hasAttachments: Boolean(message.hasAttachments), preview: clean(message.bodyPreview, 280) })), values.length > page.limit);
+    }
+    if (connection.provider === "google") {
+        const result = await withGoogleApiAccess(connection, accessToken => gmailListMessages(accessToken, { query: "in:inbox", limit: page.limit + 1, offset: page.offset }));
+        const messages = [];
+        for (const item of result.messages.slice(0, page.limit)) {
+            const message = await withGoogleApiAccess(connection, accessToken => gmailMessageDetails(accessToken, item.id));
+            messages.push({ id: encodeMailboxReference(message.id), subject: clean(message.subject || "Sans objet", 500), from: message.from, receivedAt: message.receivedAt, isRead: message.isRead, hasAttachments: message.attachments.length > 0, preview: clean(message.snippet, 280) });
+        }
+        return mailboxPageResult(page, messages, result.messages.length > page.limit || result.hasMore);
     }
     return withImapInbox(connection, async client => {
         const total = Number(client.mailbox?.exists || 0);
@@ -360,6 +388,11 @@ async function readLiveMessage(connection, messageId) {
         const body = limitMailboxBody(message.body?.content);
         return { id: encodeMailboxReference(messageId), subject: clean(message.subject || "Sans objet", 500), from: graphAddress(message.from?.emailAddress), to: (message.toRecipients || []).map(item => graphAddress(item.emailAddress)).filter(item => item.address), cc: (message.ccRecipients || []).map(item => graphAddress(item.emailAddress)).filter(item => item.address), receivedAt: message.receivedDateTime || null, isRead: Boolean(message.isRead), bodyText: body.text, bodyTruncated: body.truncated, attachmentsUnavailable, attachments: attachments.map(attachment => liveAttachmentMetadata(attachment, attachment.id)) };
     }
+    if (connection.provider === "google") {
+        const message = await withGoogleApiAccess(connection, accessToken => gmailMessageDetails(accessToken, messageId));
+        const body = limitMailboxBody(message.bodyText);
+        return { id: encodeMailboxReference(message.id), subject: clean(message.subject || "Sans objet", 500), from: message.from, to: message.to, cc: message.cc, receivedAt: message.receivedAt, isRead: message.isRead, bodyText: body.text, bodyTruncated: body.truncated, attachments: message.attachments.map(attachment => liveAttachmentMetadata(attachment, attachment.id)) };
+    }
     const uid = mailboxUid(messageId);
     return withImapInbox(connection, async client => {
         const message = await client.fetchOne(String(uid), { uid: true, envelope: true, flags: true, bodyStructure: true, internalDate: true }, { uid: true });
@@ -380,6 +413,14 @@ async function sendLiveMailboxReply(connection, messageId, body) {
     const access = await mailboxAccess(connection);
     if (connection.provider === "microsoft") {
         await graphJson(access.graphToken, `https://graph.microsoft.com/v1.0/me/messages/${encodeURIComponent(messageId)}/reply`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ comment: body }) }, { allowEmpty: true });
+        return;
+    }
+    if (connection.provider === "google") {
+        const source = await withGoogleApiAccess(connection, accessToken => gmailMessageDetails(accessToken, messageId));
+        const recipient = source.replyTo?.address ? source.replyTo : source.from;
+        if (!/^\S+@\S+\.\S+$/.test(recipient?.address || "")) throw httpError(422, "Cet e-mail ne contient aucune adresse de réponse valide.");
+        const raw = await buildRawEmail({ from: { name: connection.display_name || connection.email_address, address: connection.email_address }, to: recipient, subject: replySubject(source.subject), text: body, inReplyTo: source.messageId || undefined, references: [source.inReplyTo, source.references, source.messageId].filter(Boolean).join(" ") || undefined });
+        await withGoogleApiAccess(connection, accessToken => gmailSendMessage(accessToken, raw, source.threadId));
         return;
     }
     const source = await withImapInbox(connection, async client => {
@@ -403,6 +444,13 @@ async function downloadLiveAttachment(connection, messageId, attachmentId) {
         if (content.length > MAX_ATTACHMENT_BYTES) throw httpError(413, "Cette pièce jointe dépasse la limite de 5 Mo.");
         if (!content.length) throw httpError(404, "Pièce jointe vide ou introuvable.");
         return { ...safe, content };
+    }
+    if (connection.provider === "google") {
+        const file = await withGoogleApiAccess(connection, accessToken => gmailDownloadAttachment(accessToken, messageId, attachmentId));
+        const safe = validatedLiveAttachment(file);
+        if (!file.content.length) throw httpError(404, "Pièce jointe vide ou introuvable.");
+        if (file.content.length > MAX_ATTACHMENT_BYTES) throw httpError(413, "Cette pièce jointe dépasse la limite de 5 Mo.");
+        return { ...safe, content: file.content };
     }
     const uid = mailboxUid(messageId);
     return withImapInbox(connection, async client => {
@@ -530,7 +578,7 @@ async function importLiveMailboxMessage(connection, messageId, requestedAttachme
     const requested = Array.isArray(requestedAttachmentIds) ? requestedAttachmentIds.map(String).slice(0, MAX_ATTACHMENTS) : available.map(item => item.id);
     if (requested.some(id => !available.some(item => item.id === id))) throw httpError(400, "Une pièce jointe sélectionnée est invalide ou indisponible.");
     const selected = available.filter(item => requested.includes(item.id));
-    const uid = connection.provider === "microsoft" ? graphMessageUid(messageId) : mailboxUid(messageId);
+    const uid = connection.provider === "microsoft" ? graphMessageUid(messageId) : connection.provider === "google" ? gmailMessageUid(messageId) : mailboxUid(messageId);
     const attachments = [];
     let nestedMessageText = "";
     for (const item of selected) {
@@ -580,6 +628,10 @@ async function parseLiveMailboxSource(connection, messageId) {
     if (connection.provider === "microsoft") {
         const source = await withMicrosoftGraphAccess(connection, accessToken => graphMessageMime(accessToken, messageId));
         return simpleParser(source, { skipHtmlToText: false, maxHtmlLengthToParse: 2 * 1024 * 1024 });
+    }
+    if (connection.provider === "google") {
+        const raw = await withGoogleApiAccess(connection, accessToken => gmailMessageRaw(accessToken, messageId));
+        return simpleParser(raw.source, { skipHtmlToText: false, maxHtmlLengthToParse: 2 * 1024 * 1024 });
     }
     return withImapInbox(connection, async client => {
         const message = await client.fetchOne(String(mailboxUid(messageId)), { source: true }, { uid: true });
@@ -818,6 +870,15 @@ export async function sendMissionEmail(ownerId, missionId, body, { statusUpdate 
     const source = rows[0]; if (!source) throw httpError(404, "Aucun e-mail source n’est lié à cette mission.");
     const access = await mailboxAccess(source);
     if (source.provider === "microsoft") { await sendMicrosoftGraphMail(access.graphToken, { source, body, attachments, statusUpdate }); return { recipient: source.sender_address, provider: source.provider }; }
+    if (source.provider === "google") {
+        const raw = await buildRawEmail({ from: { name: source.display_name || source.email_address, address: source.email_address }, to: source.sender_address, subject: `${/^re:/i.test(source.subject) ? "" : "Re: "}${source.subject}`, text: body, attachments, inReplyTo: source.message_id, references: [source.references_header, source.message_id].filter(Boolean).join(" "), headers: { "X-DepannHome-Mission": String(missionId), "X-DepannHome-Status-Update": statusUpdate ? "true" : "false" } });
+        const thread = await withGoogleApiAccess(source, async accessToken => {
+            const found = await gmailListMessages(accessToken, { query: `rfc822msgid:${source.message_id}`, limit: 1 });
+            return found.messages[0]?.id ? gmailMessageDetails(accessToken, found.messages[0].id) : null;
+        });
+        await withGoogleApiAccess(source, accessToken => gmailSendMessage(accessToken, raw, thread?.threadId || ""));
+        return { recipient: source.sender_address, provider: source.provider };
+    }
     const transporter = nodemailer.createTransport({ host: access.smtp.host, port: access.smtp.port, secure: access.smtp.secure, requireTLS: !access.smtp.secure, auth: access.smtpAuth });
     await transporter.sendMail({ from: { name: source.display_name || source.email_address, address: source.email_address }, to: source.sender_address, subject: `${/^re:/i.test(source.subject) ? "" : "Re: "}${source.subject}`, text: body, attachments, inReplyTo: source.message_id, references: [source.references_header, source.message_id].filter(Boolean).join(" "), headers: { "X-DepannHome-Mission": String(missionId), "X-DepannHome-Status-Update": statusUpdate ? "true" : "false" } });
     return { recipient: source.sender_address, provider: source.provider };
@@ -834,7 +895,7 @@ async function mailboxAccess(connection, { forceRefresh = false } = {}) {
         connection.encrypted_credentials = encryptedCredentials;
     }
     const server = connection.server_configuration || {};
-    if (connection.provider === "google") return { imap: { host: "imap.gmail.com", port: 993, secure: true }, smtp: { host: "smtp.gmail.com", port: 465, secure: true }, auth: { user: connection.email_address, accessToken: credentials.accessToken }, smtpAuth: { type: "OAuth2", user: connection.email_address, accessToken: credentials.accessToken } };
+    if (connection.provider === "google") return { gmailToken: credentials.accessToken };
     if (connection.provider === "microsoft") return { graphToken: credentials.accessToken };
     return { imap: server.imap, smtp: server.smtp, auth: { user: credentials.username, pass: credentials.password }, smtpAuth: { user: credentials.username, pass: credentials.password } };
 }
@@ -849,16 +910,24 @@ async function withMicrosoftGraphAccess(connection, operation) {
     }
 }
 
+async function withGoogleApiAccess(connection, operation) {
+    let access = await mailboxAccess(connection);
+    try { return await operation(access.gmailToken); }
+    catch (error) {
+        if (!error?.authenticationFailed) throw error;
+        access = await mailboxAccess(connection, { forceRefresh: true });
+        return operation(access.gmailToken);
+    }
+}
+
 async function testMailbox(connection) { const access = await mailboxAccess({ ...connection, id: 0, encrypted_credentials: encryptElectronicInvoicingCredentials(connection.credentials), server_configuration: connection.server }); const client = createImapClient({ host: access.imap.host, port: access.imap.port, secure: access.imap.secure, auth: access.auth }); await client.connect(); await client.logout(); const smtp = nodemailer.createTransport({ host: access.smtp.host, port: access.smtp.port, secure: access.smtp.secure, requireTLS: !access.smtp.secure, auth: access.smtpAuth, connectionTimeout: 15000, greetingTimeout: 15000, socketTimeout: 20000 }); await smtp.verify(); }
 async function verifyOAuthMailboxAccess(provider, emailAddress, accessToken) {
     if (provider === "microsoft") {
         await graphJson(accessToken, "https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages?$select=id&$top=1");
         return;
     }
-    const client = createImapClient({ host: "imap.gmail.com", port: 993, secure: true, auth: { user: emailAddress, accessToken }, disableAutoIdle: true });
-    await client.connect();
-    try { const lock = await client.getMailboxLock("INBOX"); lock.release(); }
-    finally { await client.logout().catch(() => {}); }
+    const profile = await gmailProfile(accessToken);
+    if (clean(profile.emailAddress, 254).toLowerCase() !== clean(emailAddress, 254).toLowerCase()) throw httpError(422, "Le profil Gmail autorisé ne correspond pas à la boîte sélectionnée.");
 }
 function createImapClient(options) { const client = new ImapFlow({ ...options, logger: false, connectionTimeout: 15000, greetingTimeout: 15000, socketTimeout: 20000 }); client.on("error", error => console.warn("[partner-email] erreur IMAP contrôlée :", publicMailError(error))); return client; }
 async function findConnection(ownerId, id) { const { rows } = await getPool().query("SELECT * FROM depannhome_partner_email_connections WHERE id=$1 AND owner_id=$2 AND enabled=TRUE", [id, ownerId]); return rows[0] || null; }
@@ -894,6 +963,12 @@ async function sendMicrosoftGraphMail(accessToken, { source, body, attachments, 
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: { subject: `${/^re:/i.test(source.subject) ? "" : "Re: "}${source.subject}`, body: { contentType: "Text", content: body }, toRecipients: [{ emailAddress: { address: source.sender_address } }], internetMessageHeaders: [{ name: "X-DepannHome-Mission", value: String(source.mission_id || "") }, { name: "X-DepannHome-Status-Update", value: statusUpdate ? "true" : "false" }], attachments: attachments.map(attachment => ({ "@odata.type": "#microsoft.graph.fileAttachment", name: attachment.filename, contentType: attachment.contentType, contentBytes: Buffer.from(attachment.content).toString("base64") })) }, saveToSentItems: true })
     }, { allowEmpty: true });
+}
+
+async function buildRawEmail(message) {
+    const transporter = nodemailer.createTransport({ streamTransport: true, buffer: true, newline: "windows" });
+    const result = await transporter.sendMail(message);
+    return Buffer.isBuffer(result.message) ? result.message : Buffer.from(result.message || "");
 }
 
 async function graphJson(accessToken, url, options = {}, { allowEmpty = false } = {}) {
@@ -975,7 +1050,7 @@ export function oauthMailboxProviderIssue(provider, emailAddress) {
 function normalizeMailboxPassword(emailAddress, value) { const password = String(value || "").trim(); return String(emailAddress || "").toLowerCase().endsWith("@gmail.com") ? password.replace(/\s+/g, "") : password; }
 function oauthConfigured(provider) { const prefix = provider === "google" ? "GOOGLE_MAIL" : provider === "microsoft" ? "MICROSOFT_MAIL" : ""; return Boolean(prefix && process.env[`${prefix}_CLIENT_ID`] && process.env[`${prefix}_CLIENT_SECRET`] && process.env[`${prefix}_REDIRECT_URI`]); }
 function oauthSettings(provider) { const prefix = provider === "google" ? "GOOGLE_MAIL" : "MICROSOFT_MAIL"; return { clientId: process.env[`${prefix}_CLIENT_ID`], clientSecret: process.env[`${prefix}_CLIENT_SECRET`], redirectUri: process.env[`${prefix}_REDIRECT_URI`] }; }
-function oauthAuthorizationUrl(provider, state, verifier) { const settings = oauthSettings(provider), challenge = crypto.createHash("sha256").update(verifier).digest("base64url"); const url = new URL(provider === "google" ? "https://accounts.google.com/o/oauth2/v2/auth" : "https://login.microsoftonline.com/common/oauth2/v2.0/authorize"); url.search = new URLSearchParams({ client_id: settings.clientId, redirect_uri: settings.redirectUri, response_type: "code", state, code_challenge: challenge, code_challenge_method: "S256", access_type: "offline", prompt: "consent", scope: provider === "google" ? "openid email profile https://mail.google.com/" : `${MICROSOFT_IDENTITY_SCOPES} ${MICROSOFT_MAIL_SCOPES}` }).toString(); return url.toString(); }
+function oauthAuthorizationUrl(provider, state, verifier) { const settings = oauthSettings(provider), challenge = crypto.createHash("sha256").update(verifier).digest("base64url"); const url = new URL(provider === "google" ? "https://accounts.google.com/o/oauth2/v2/auth" : "https://login.microsoftonline.com/common/oauth2/v2.0/authorize"); url.search = new URLSearchParams({ client_id: settings.clientId, redirect_uri: settings.redirectUri, response_type: "code", state, code_challenge: challenge, code_challenge_method: "S256", access_type: "offline", prompt: "consent", scope: provider === "google" ? GOOGLE_WORKSPACE_SCOPES : `${MICROSOFT_IDENTITY_SCOPES} ${MICROSOFT_MAIL_SCOPES}` }).toString(); return url.toString(); }
 async function exchangeOauthCode(provider, code, verifier) { return oauthToken(provider, { grant_type: "authorization_code", code, redirect_uri: oauthSettings(provider).redirectUri, code_verifier: verifier, ...(provider === "microsoft" ? { scope: `${MICROSOFT_IDENTITY_SCOPES} ${MICROSOFT_MAIL_SCOPES}` } : {}) }); }
 async function refreshOauth(provider, refreshToken) { if (!refreshToken) throw oauthProviderError(provider, { error: "missing_refresh_token" }, 400); return oauthToken(provider, { grant_type: "refresh_token", refresh_token: refreshToken, ...(provider === "microsoft" ? { scope: `${MICROSOFT_IDENTITY_SCOPES} ${MICROSOFT_MAIL_SCOPES}` } : {}) }); }
 async function oauthToken(provider, values) {
@@ -1029,7 +1104,9 @@ export function publicMailError(error, { configuration = false, provider = "", m
     if (provider === "microsoft" && (error?.throttled || error?.statusCode === 429 || error?.code === "ApplicationThrottled")) return `Microsoft limite temporairement l’accès à cette boîte. ${error?.retryAfterSeconds ? `Réessayez dans environ ${error.retryAfterSeconds} seconde(s)` : "Patientez quelques instants"}${sending ? "." : ", puis relancez une période plus courte."}`;
     if (provider === "microsoft" && authenticationFailed) return "Microsoft refuse l’accès à cette boîte. Déconnectez-la puis utilisez de nouveau « Connecter Microsoft » afin de renouveler les autorisations Mail.Read et Mail.Send.";
     if (provider === "microsoft" && error?.statusCode === 503) return "Microsoft Graph est temporairement indisponible. Patientez quelques instants puis réessayez.";
-    if (provider === "google" && authenticationFailed) return `Google a autorisé le compte${mailbox ? ` ${clean(mailbox, 254)}` : ""}, mais Gmail IMAP a refusé l’authentification réelle de la boîte. Reconnectez-la avec « Connecter Google Workspace » ; si l’adresse est Outlook/Hotmail, utilisez impérativement « Connecter Microsoft ».${technicalSuffix}`;
+    if (provider === "google" && error?.statusCode === 404) return "Cet e-mail ou cette pièce jointe n’est plus disponible dans Gmail. Actualisez la boîte de réception.";
+    if (provider === "google" && (error?.throttled || error?.statusCode === 429)) return `Gmail limite temporairement l’accès à cette boîte. ${error?.retryAfterSeconds ? `Réessayez dans environ ${error.retryAfterSeconds} seconde(s).` : "Patientez quelques instants puis réessayez."}`;
+    if (provider === "google" && authenticationFailed) return `Google refuse l’accès Gmail API au compte${mailbox ? ` ${clean(mailbox, 254)}` : ""}. Reconnectez-le avec « Connecter Google Workspace » afin de renouveler les autorisations gmail.readonly et gmail.send.${technicalSuffix}`;
     if (authenticationFailed) return `La boîte a refusé l’authentification. Vérifiez son autorisation ou son mot de passe d’application.${technicalSuffix}`;
     if (/certificate|tls|ssl|self[- ]signed/i.test(message)) return "La connexion sécurisée au serveur de messagerie a échoué.";
     if (/timeout|timed out|etimedout|econnrefused|enotfound|getaddrinfo/i.test(message)) return "Le serveur de messagerie ne répond pas. Vérifiez les adresses, les ports et la disponibilité d’IMAP/SMTP.";

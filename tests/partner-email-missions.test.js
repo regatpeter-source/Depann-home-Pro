@@ -136,7 +136,7 @@ test("une boîte OAuth n’est déclarée connectée qu’après un accès réel
     assert.ok(callback.indexOf("verifyOAuthMailboxAccess") < callback.indexOf("INSERT INTO depannhome_partner_email_connections"));
     assert.match(callback, /verified_at\) VALUES[\s\S]*NOW\(\)/);
     assert.match(callback, /connectée et accès aux e-mails vérifié/);
-    assert.match(serverSource, /getMailboxLock\("INBOX"\)/);
+    assert.match(serverSource, /gmailProfile\(accessToken\)/);
     assert.match(serverSource, /mailFolders\/inbox\/messages\?\$select=id&\$top=1/);
     assert.match(schemaSource, /verified_at TIMESTAMPTZ/);
     assert.match(emailSettingsSource, /Connexion non vérifiée/);
@@ -149,12 +149,12 @@ test("une adresse Hotmail engagée par erreur via Google est orientée vers Micr
     assert.match(publicMailError({ publicMessage: oauthMailboxProviderIssue("google", "regatpeter@hotmail.fr") }, { provider: "google" }), /Outlook\/Hotmail/);
 });
 
-test("les refus réels IMAP exposent une cause technique nettoyée sans masquer l’action adaptée", () => {
+test("les refus réels de transport exposent une cause technique nettoyée sans masquer l’action adaptée", () => {
     const error = Object.assign(new Error("Authentication failed"), { authenticationFailed: true, responseCode: "AUTHENTICATIONFAILED", responseText: "Invalid credentials" });
     assert.equal(mailTechnicalReason(error), "AUTHENTICATIONFAILED · Invalid credentials");
     assert.equal(mailTechnicalReason(new Error("access_token=secret-value password=hunter2")), "access_token=[masqué] password=[masqué]");
     const message = publicMailError(error, { provider: "google", mailbox: "boite@entreprise.fr" });
-    assert.match(message, /Gmail IMAP a refusé l’authentification réelle/);
+    assert.match(message, /Gmail API/);
     assert.match(message, /Cause technique : AUTHENTICATIONFAILED/);
     assert.match(message, /Connecter Google Workspace/);
     assert.match(serverSource, /operation: "inbox_list"/);
@@ -182,7 +182,7 @@ test("la synchronisation distingue un refus OAuth d’un accès Microsoft Graph 
     const mailErrorLogSource = serverSource.slice(serverSource.indexOf("function mailErrorLog"), serverSource.indexOf("function oauthPopup"));
     assert.match(publicMailError({ oauthProvider: "microsoft", oauthCode: "consent_required" }, { provider: "microsoft" }), /Mail\.Read et Mail\.Send/);
     assert.match(publicMailError({ authenticationFailed: true }, { provider: "microsoft" }), /Connecter Microsoft/);
-    assert.match(publicMailError(new Error("Authentication failed"), { provider: "google" }), /refusé l’authentification/);
+    assert.match(publicMailError(new Error("Authentication failed"), { provider: "google" }), /Gmail API/);
     assert.match(serverSource, /mailbox synchronization rejected/);
     assert.doesNotMatch(mailErrorLogSource, /accessToken|refreshToken|clientSecret/);
     assert.match(publicMailError({ statusCode: 404 }, { provider: "microsoft" }), /n’est plus disponible/);
@@ -500,11 +500,22 @@ test("Gmail personnel dispose d’un parcours par mot de passe d’application s
     assert.match(serverSource, /password\.replace\(\/\\s\+\/g, ""\)/);
 });
 
+test("Google Workspace utilise uniquement Gmail API avec les scopes minimaux", () => {
+    const gmailSource = readFileSync(new URL("../server/gmail-api-client.js", import.meta.url), "utf8");
+    assert.match(serverSource, /GOOGLE_WORKSPACE_SCOPES = "openid email profile https:\/\/www\.googleapis\.com\/auth\/gmail\.readonly https:\/\/www\.googleapis\.com\/auth\/gmail\.send"/);
+    assert.doesNotMatch(serverSource, /https:\/\/mail\.google\.com\//);
+    assert.match(serverSource, /if \(connection\.provider === "google"\) return await syncGoogleConnection/);
+    assert.match(serverSource, /gmailMessageRaw/);
+    assert.match(serverSource, /gmailSendMessage/);
+    assert.doesNotMatch(gmailSource, /messages\/(?:batchModify|modify|trash|untrash)|\/labels|\/threads\/.+\/trash/);
+    assert.doesNotMatch(serverSource, /provider === "google"[^\n]+(?:imap|smtp)/i);
+});
+
 test("un timeout ImapFlow ne peut pas arrêter le processus Node", () => {
     assert.equal((serverSource.match(/new ImapFlow/g) || []).length, 1);
     assert.match(serverSource, /function createImapClient\(options\)/);
     assert.match(serverSource, /client\.on\("error", error => console\.warn/);
-    assert.equal((serverSource.match(/createImapClient\(/g) || []).length, 5);
+    assert.equal((serverSource.match(/createImapClient\(/g) || []).length, 4);
     assert.match(serverSource, /async function withImapInbox/);
 });
 

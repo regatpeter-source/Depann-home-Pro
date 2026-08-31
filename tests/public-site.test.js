@@ -22,7 +22,9 @@ test("la vitrine publique conserve un accès explicite au logiciel et aux pages 
 });
 
 test("la politique de confidentialité décrit explicitement l'usage limité des données Google", () => {
-    assert.match(privacy, /https:\/\/mail\.google\.com\//);
+    assert.match(privacy, /https:\/\/www\.googleapis\.com\/auth\/gmail\.readonly/);
+    assert.match(privacy, /https:\/\/www\.googleapis\.com\/auth\/gmail\.send/);
+    assert.doesNotMatch(privacy, /https:\/\/mail\.google\.com\//);
     assert.match(privacy, /Limited Use/);
     assert.match(privacy, /ne vend pas les données Google/);
     assert.match(privacy, /Connexions tierces du compte Google/);

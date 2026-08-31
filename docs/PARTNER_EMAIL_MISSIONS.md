@@ -5,11 +5,13 @@ La **Boîte mail professionnelle** transforme les demandes d’intervention reç
 ## Fournisseurs et authentification
 
 - **Microsoft 365, Outlook, Hotmail, Live et MSN**, y compris les comptes personnels : OAuth 2.0 avec PKCE et Microsoft Graph, sans IMAP/SMTP ;
-- **Google Workspace** : OAuth 2.0 avec PKCE ;
+- **Google Workspace** : OAuth 2.0 avec PKCE et Gmail API, sans IMAP/SMTP ;
 - **Gmail personnel** : parcours simplifié IMAP/SMTP avec mot de passe d’application Google, après activation de la validation en deux étapes ;
 - **OVH et autres hébergeurs** : IMAP/SMTP sécurisé avec un mot de passe d’application.
 
 Les jetons et mots de passe d’application sont chiffrés côté serveur en AES-256-GCM avec la clé dérivée de `SESSION_SECRET`. Ils ne sont jamais renvoyés au navigateur. Pour OAuth, déclarer les six variables `GOOGLE_MAIL_*` et `MICROSOFT_MAIL_*` documentées dans `.env.example`, avec des URI de retour strictement identiques chez les fournisseurs.
+
+Google Workspace demande uniquement `openid`, `email`, `profile`, `https://www.googleapis.com/auth/gmail.readonly` et `https://www.googleapis.com/auth/gmail.send`. Gmail API sert à lister et lire les messages et leurs pièces, puis à envoyer les seules réponses demandées. Depann’Home Pro n’appelle aucune opération Gmail de modification, déplacement ou suppression et ne marque jamais un message comme lu.
 
 Le « mot de passe d’application » n’est jamais le mot de passe habituel de la boîte : il s’agit d’un secret distinct généré dans les réglages de sécurité du fournisseur. Pour une adresse `@gmail.com`, l’interface préremplit `imap.gmail.com:993` et `smtp.gmail.com:465` puis normalise le code Google de 16 caractères. Outlook.com et Hotmail imposent OAuth2/Modern Auth et ne doivent donc pas être configurés dans le formulaire IMAP/SMTP manuel. Pour accepter les comptes Microsoft personnels, l’application Microsoft Entra doit autoriser « les comptes dans un annuaire d’organisation et les comptes Microsoft personnels ».
 
@@ -78,7 +80,7 @@ Un e-mail est dédupliqué avec son identifiant RFC `Message-ID` dans la boîte 
 
 ## Réponses et statuts
 
-Une mission importée conserve `Message-ID`, `In-Reply-To` et `References`. L’entreprise peut répondre depuis la carte de mission ; le message est envoyé avec sa propre boîte. Microsoft utilise Graph, tandis que Google, OVH et les autres hébergeurs utilisent SMTP. Si elle active les retours automatiques, les changements de statut sont envoyés de la même façon. Une panne d’envoi ne bloque jamais la mise à jour du statut dans Depann’Home Pro.
+Une mission importée conserve `Message-ID`, `In-Reply-To` et `References`. L’entreprise peut répondre depuis la carte de mission ; le message est envoyé avec sa propre boîte. Microsoft utilise Graph, Google Workspace utilise Gmail API, tandis que Gmail personnel, OVH et les autres hébergeurs utilisent SMTP. Si elle active les retours automatiques, les changements de statut sont envoyés de la même façon. Une panne d’envoi ne bloque jamais la mise à jour du statut dans Depann’Home Pro.
 
 ## Exploitation
 
