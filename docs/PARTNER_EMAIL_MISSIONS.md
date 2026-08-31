@@ -13,6 +13,16 @@ Les jetons et mots de passe d’application sont chiffrés côté serveur en AES
 
 Google Workspace demande uniquement `openid`, `email`, `profile`, `https://www.googleapis.com/auth/gmail.readonly` et `https://www.googleapis.com/auth/gmail.send`. Gmail API sert à lister et lire les messages et leurs pièces, puis à envoyer les seules réponses demandées. Depann’Home Pro n’appelle aucune opération Gmail de modification, déplacement ou suppression et ne marque jamais un message comme lu.
 
+### Configuration Google Cloud et Render
+
+- Sélectionner le projet Google Cloud qui possède le client indiqué par `GOOGLE_MAIL_CLIENT_ID`.
+- Dans **API et services → Bibliothèque**, rechercher puis **activer Gmail API**. L’écran de consentement seul ne suffit pas : sans cette activation, Google répond `accessNotConfigured`.
+- Dans **Écran de consentement OAuth → Accès aux données**, déclarer exactement les cinq scopes listés ci-dessus.
+- Utiliser un client OAuth de type **Application Web** avec l’URI exacte `https://depannhomepro.com/api/partner-email/oauth/google/callback`.
+- Configurer sur Render `GOOGLE_MAIL_CLIENT_ID`, `GOOGLE_MAIL_CLIENT_SECRET` et `GOOGLE_MAIL_REDIRECT_URI` avec les valeurs de ce même projet.
+
+Après l’activation de Gmail API, attendre quelques minutes pour sa propagation, redéployer uniquement si une variable Render a changé, puis relancer **Connecter Google Workspace**.
+
 Le « mot de passe d’application » n’est jamais le mot de passe habituel de la boîte : il s’agit d’un secret distinct généré dans les réglages de sécurité du fournisseur. Pour une adresse `@gmail.com`, l’interface préremplit `imap.gmail.com:993` et `smtp.gmail.com:465` puis normalise le code Google de 16 caractères. Outlook.com et Hotmail imposent OAuth2/Modern Auth et ne doivent donc pas être configurés dans le formulaire IMAP/SMTP manuel. Pour accepter les comptes Microsoft personnels, l’application Microsoft Entra doit autoriser « les comptes dans un annuaire d’organisation et les comptes Microsoft personnels ».
 
 ### Configuration Microsoft Entra et Render

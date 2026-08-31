@@ -164,6 +164,18 @@ test("les refus réels de transport exposent une cause technique nettoyée sans 
     assert.doesNotMatch(oauthErrorMessage({ oauthCode: "invalid_scope" }, "google"), /Microsoft|Mail\.Read/);
 });
 
+test("Gmail API désactivée produit une consigne Google Cloud exploitable", () => {
+    const error = Object.assign(new Error("Gmail API authentication failed."), { code: "accessNotConfigured", statusCode: 403, authenticationFailed: true });
+    const message = publicMailError(error, { provider: "google", configuration: true });
+    assert.match(message, /Gmail API n’est pas activée/);
+    assert.match(message, /GOOGLE_MAIL_CLIENT_ID/);
+    assert.match(message, /API et services → Bibliothèque/);
+    assert.match(message, /Connecter Google Workspace/);
+    assert.doesNotMatch(message, /renouveler les autorisations/);
+    assert.match(serverSource, /error\?\.oauthCode \|\| error\?\.code \|\| "provider_error"/);
+    assert.match(serverSource, /error\?\.oauthStatus \|\| error\?\.statusCode/);
+});
+
 test("Microsoft utilise Graph pour les comptes personnels et explique les refus sans exposer les secrets", () => {
     assert.match(serverSource, /MICROSOFT_IDENTITY_SCOPES/);
     assert.match(serverSource, /MICROSOFT_MAIL_SCOPES = "Mail\.Read Mail\.Send"/);
