@@ -508,9 +508,9 @@ function positiveId(value) { const id = Number(value); return Number.isSafeInteg
 function safeError(error) { const status = Number(error?.status); if (status === 401 || status === 403) return "Authentification refusée par la plateforme."; if (status === 408 || error?.name === "AbortError" || error?.name === "TimeoutError") return "La plateforme n’a pas répondu dans le délai prévu."; return clean(error?.publicMessage || error?.message || "Erreur de communication avec la plateforme.", 500).replace(/(?:bearer|token|secret|api[_ -]?key|password)\s*[:=]\s*\S+/gi, "Identifiant sensible [masqué]"); }
 function httpError(status, message) { const error = new Error(message); error.status = status; return error; }
 function oauthCallbackPage(success, message) {
-    const payload = JSON.stringify({ type: "depannhome:einvoice-oauth", success: Boolean(success), message: clean(message, 500) }).replace(/</g, "\\u003c");
+    const payload = Buffer.from(JSON.stringify({ type: "depannhome:einvoice-oauth", success: Boolean(success), message: clean(message, 500) })).toString("base64url");
     const title = success ? "Connexion enregistrée" : "Connexion impossible";
-    return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${title}</title></head><body><main><h1>${title}</h1><p>${escapeHtml(message)}</p><p>Vous pouvez fermer cette fenêtre.</p></main><script>if(window.opener){window.opener.postMessage(${payload},window.location.origin);window.close();}</script></body></html>`;
+    return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${title}</title></head><body data-oauth-payload="${payload}"><main><h1>${title}</h1><p>${escapeHtml(message)}</p><p>Vous pouvez fermer cette fenêtre.</p></main><script src="/site-assets/oauth-callback.js" defer></script></body></html>`;
 }
 function escapeHtml(value) { return String(value || "").replace(/[&<>"']/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]); }
 function asyncHandler(handler) { return (request, response, next) => Promise.resolve(handler(request, response, next)).catch(next); }

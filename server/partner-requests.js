@@ -244,7 +244,7 @@ export function registerPartnerRequestRoutes(app, requireCreator, requireAuthent
         if (!partner) return response.status(409).send("Le partenaire officiel n’est plus disponible.");
         await saveCompanyConnection(pending.owner_id, partner, tokens, request.user?.sub || null);
         await getPool().query("DELETE FROM depannhome_official_partner_oauth_states WHERE state=$1", [state]);
-        response.type("html").send("<!doctype html><title>Connexion établie</title><p>La connexion partenaire est établie. Vous pouvez fermer cette fenêtre et revenir à Depann’Home Pro.</p><script>window.close()</script>");
+        response.type("html").send('<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Connexion établie</title></head><body><main><p>La connexion partenaire est établie. Vous pouvez fermer cette fenêtre et revenir à Depann’Home Pro.</p></main><script src="/site-assets/oauth-callback.js" defer></script></body></html>');
     }));
     app.post("/api/official-partners/:partnerId/disconnect", asyncHandler(async (request, response) => {
         const result = await getPool().query("UPDATE depannhome_official_partner_connections connection SET status='disconnected',updated_at=NOW() WHERE owner_id=$1 AND official_partner_id=$2 RETURNING intake_id", [getAccountOwnerId(request), positiveId(request.params.partnerId)]);

@@ -13,6 +13,8 @@ test("la vitrine publique conserve un accès explicite au logiciel et aux pages 
     assert.match(appSource, /app\.get\(\["\/conditions-utilisation"[\s\S]*?terms\.html/);
     assert.match(appSource, /app\.get\(\["\/connexion", "\/app", "\/index\.html"\]/);
     assert.match(appSource, /request\.user \? "index\.html" : path\.join\("public", "landing\.html"\)/);
+    assert.match(appSource, /app\.get\("\/favicon\.ico"/);
+    assert.match(appSource, /response\.type\("image\/png"\)\.sendFile/);
     assert.match(landing, /href="\/connexion"/);
     assert.match(landing, /href="\/confidentialite"/);
     assert.match(landing, /href="\/conditions-utilisation"/);

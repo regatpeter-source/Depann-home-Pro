@@ -227,6 +227,9 @@ registerPublicOfferRoutes(app);
 app.get("/assets/logo.png.png", (request, response) => {
 	response.sendFile(path.join(rootDirectory, "assets", "logo.png.png"));
 });
+app.get("/favicon.ico", (request, response) => {
+	response.type("image/png").sendFile(path.join(rootDirectory, "assets", "logo.png.png"), { headers: { "Cache-Control": "public, max-age=86400" } });
+});
 app.use("/site-assets", express.static(path.join(rootDirectory, "public"), { index: false, maxAge: "1d" }));
 app.get(["/confidentialite", "/politique-de-confidentialite", "/privacy"], (request, response) => {
 	response.sendFile(path.join(rootDirectory, "public", "privacy.html"), { headers: { "Cache-Control": "public, max-age=3600" } });

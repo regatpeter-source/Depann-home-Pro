@@ -23,6 +23,19 @@ test("la CSP autorise les aperçus PDF blob sans autoriser l’encapsulation de 
     assert.match(securityConfigurationFingerprint(), /^[a-f0-9]{64}$/);
 });
 
+test("les pages de callback utilisent un script externe compatible avec la CSP", () => {
+    const sources = ["partner-email.js", "electronic-invoicing.js", "partner-requests.js"].map(filename => readFileSync(new URL(`../server/${filename}`, import.meta.url), "utf8"));
+    const callbackScript = readFileSync(new URL("../public/oauth-callback.js", import.meta.url), "utf8");
+    for (const source of sources) {
+        assert.doesNotMatch(source, /<script(?![^>]*\bsrc=)[^>]*>/i);
+        assert.match(source, /<script src=["']\/site-assets\/oauth-callback\.js["'] defer><\/script>/);
+    }
+    assert.match(sources[0], /data-oauth-payload=/);
+    assert.match(sources[1], /data-oauth-payload=/);
+    assert.match(callbackScript, /window\.opener\.postMessage\(payload, window\.location\.origin\)/);
+    assert.match(callbackScript, /window\.close\(\)/);
+});
+
 test("la protection CSRF bloque une écriture navigateur intersite", () => {
     const middleware = createOriginProtection({ audit: async () => {} });
     const result = response(); let continued = false;
