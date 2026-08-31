@@ -176,6 +176,18 @@ test("Gmail API désactivée produit une consigne Google Cloud exploitable", () 
     assert.match(serverSource, /error\?\.oauthStatus \|\| error\?\.statusCode/);
 });
 
+test("les refus Gmail Workspace indiquent leur remède au lieu d’un 502 générique", () => {
+    assert.match(publicMailError({ code: "failedPrecondition", statusCode: 400 }, { provider: "google" }), /Ouvrez Gmail une première fois/);
+    assert.match(publicMailError({ code: "insufficientPermissions", statusCode: 403 }, { provider: "google" }), /gmail\.readonly et gmail\.send/);
+    assert.match(publicMailError({ code: "domainPolicy", statusCode: 403 }, { provider: "google" }), /administrateur Google Workspace/);
+    assert.match(publicMailError({ code: "INVALID_ARGUMENT", statusCode: 400 }, { provider: "google" }), /Réduisez la période/);
+    assert.match(publicMailError({ code: "backendError", statusCode: 500 }, { provider: "google" }), /backendError/);
+    const googleSync = serverSource.slice(serverSource.indexOf("async function syncGoogleConnection"), serverSource.indexOf("async function syncMicrosoftConnection"));
+    assert.match(googleSync, /error\?\.statusCode !== 404/);
+    assert.match(googleSync, /unavailable \+= 1/);
+    assert.match(serverSource, /error\?\.statusCode === 400 \? 422/);
+});
+
 test("Microsoft utilise Graph pour les comptes personnels et explique les refus sans exposer les secrets", () => {
     assert.match(serverSource, /MICROSOFT_IDENTITY_SCOPES/);
     assert.match(serverSource, /MICROSOFT_MAIL_SCOPES = "Mail\.Read Mail\.Send"/);

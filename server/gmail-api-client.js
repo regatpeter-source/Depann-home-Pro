@@ -116,10 +116,10 @@ async function gmailFetch(accessToken, url, options, fetchImpl) {
             await new Promise(resolve => setTimeout(resolve, retryDelay));
             continue;
         }
-        const reason = payload?.error?.errors?.[0]?.reason || payload?.error?.status || "gmail_api_error";
+        const reason = gmailErrorReason(payload);
         const error = gmailError(response.status, response.status === 401 || response.status === 403 ? "Gmail API authentication failed." : response.status === 404 ? "Gmail resource unavailable." : "Gmail API request failed.");
         error.code = String(reason).slice(0, 80);
-        error.authenticationFailed = response.status === 401 || response.status === 403;
+        error.authenticationFailed = response.status === 401 || ["authError", "invalidCredentials", "UNAUTHENTICATED"].includes(reason);
         error.throttled = response.status === 429;
         error.retryAfterSeconds = retryAfterSeconds;
         throw error;
@@ -180,6 +180,12 @@ function parseRetryAfter(value) {
     if (/^\d+$/.test(text)) return Math.max(1, Math.min(3600, Number(text)));
     const date = Date.parse(text);
     return Number.isFinite(date) && date > Date.now() ? Math.max(1, Math.min(3600, Math.ceil((date - Date.now()) / 1000))) : 0;
+}
+
+function gmailErrorReason(payload) {
+    const details = Array.isArray(payload?.error?.details) ? payload.error.details : [];
+    const errorInfo = details.find(item => String(item?.["@type"] || "").endsWith("google.rpc.ErrorInfo"));
+    return String(errorInfo?.reason || payload?.error?.errors?.[0]?.reason || payload?.error?.status || "gmail_api_error");
 }
 
 function gmailError(statusCode, message) {

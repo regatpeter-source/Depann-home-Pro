@@ -310,7 +310,7 @@ async function performConnectionSync(ownerId, connectionId, actorId, syncPeriod 
         const publicError = publicMailError(error, { provider: connection.provider });
         console.warn("[partner-email] mailbox synchronization rejected", { ...mailErrorLog(error, connection.provider), operation: "mailbox_sync", mailbox: clean(connection.email_address, 254), technicalReason: mailTechnicalReason(error) });
         await getPool().query("UPDATE depannhome_partner_email_connections SET last_error=$3,updated_at=NOW() WHERE id=$1 AND owner_id=$2", [connectionId, ownerId, clean(publicError, 500)]);
-        const status = error?.statusCode === 429 ? 429 : error?.statusCode === 503 ? 503 : 502;
+        const status = error?.statusCode === 400 ? 422 : error?.statusCode === 401 || error?.statusCode === 403 ? 422 : error?.statusCode === 429 ? 429 : error?.statusCode === 503 ? 503 : 502;
         throw httpError(status, publicError, { retryAfterSeconds: error?.retryAfterSeconds });
     }
 }
@@ -319,16 +319,22 @@ async function syncGoogleConnection(connection, actorId, syncPeriod) {
     const since = syncPeriod?.since || new Date(Math.max(new Date(connection.last_sync_at || 0).getTime() - 5 * 60000, Date.now() - 14 * 86400000));
     const limit = syncPeriod ? PERIOD_FETCH_LIMIT : FETCH_LIMIT;
     const search = await withGoogleApiAccess(connection, accessToken => gmailListMessages(accessToken, { query: gmailSearchQuery({ since, before: syncPeriod?.before }), limit }));
-    let fetched = 0, candidates = 0, imported = 0;
+    let fetched = 0, candidates = 0, imported = 0, unavailable = 0;
     for (const message of [...search.messages].reverse()) {
-        const raw = await withGoogleApiAccess(connection, accessToken => gmailMessageRaw(accessToken, message.id));
+        let raw;
+        try { raw = await withGoogleApiAccess(connection, accessToken => gmailMessageRaw(accessToken, message.id)); }
+        catch (error) {
+            if (error?.statusCode !== 404) throw error;
+            unavailable += 1;
+            continue;
+        }
         const parsed = await simpleParser(raw.source, { skipHtmlToText: false, maxHtmlLengthToParse: 2 * 1024 * 1024 });
         fetched += 1;
         const saved = await saveParsedEmail(connection, gmailMessageUid(message.id), parsed); if (!saved) continue;
         candidates += 1;
         if (saved.reanalyzeImported || (connection.selection_mode === "automatic" && saved.trustedSender && saved.score >= Number(connection.automatic_threshold || AUTO_THRESHOLD))) { await importCandidate(connection.owner_id, saved.id, actorId); imported += 1; }
     }
-    return completeSync(connection.id, { fetched, candidates, imported, maxUid: Number(connection.last_uid || 0), limited: search.hasMore, period: syncPeriod ? { from: syncPeriod.from, to: syncPeriod.to } : null }, { advanceCursor: false });
+    return completeSync(connection.id, { fetched, candidates, imported, unavailable, maxUid: Number(connection.last_uid || 0), limited: search.hasMore, period: syncPeriod ? { from: syncPeriod.from, to: syncPeriod.to } : null }, { advanceCursor: false });
 }
 
 async function syncMicrosoftConnection(connection, actorId, syncPeriod) {
@@ -1107,10 +1113,16 @@ export function publicMailError(error, { configuration = false, provider = "", m
     if (provider === "microsoft" && (error?.throttled || error?.statusCode === 429 || error?.code === "ApplicationThrottled")) return `Microsoft limite temporairement l’accès à cette boîte. ${error?.retryAfterSeconds ? `Réessayez dans environ ${error.retryAfterSeconds} seconde(s)` : "Patientez quelques instants"}${sending ? "." : ", puis relancez une période plus courte."}`;
     if (provider === "microsoft" && authenticationFailed) return "Microsoft refuse l’accès à cette boîte. Déconnectez-la puis utilisez de nouveau « Connecter Microsoft » afin de renouveler les autorisations Mail.Read et Mail.Send.";
     if (provider === "microsoft" && error?.statusCode === 503) return "Microsoft Graph est temporairement indisponible. Patientez quelques instants puis réessayez.";
-    if (provider === "google" && /^(?:accessNotConfigured|serviceDisabled|SERVICE_DISABLED)$/i.test(String(error?.code || ""))) return "Gmail API n’est pas activée dans le projet Google Cloud associé à GOOGLE_MAIL_CLIENT_ID. Dans Google Cloud Console, ouvrez API et services → Bibliothèque, activez Gmail API dans ce même projet, attendez quelques minutes, puis relancez « Connecter Google Workspace ».";
+    const googleCode = String(error?.code || "");
+    if (provider === "google" && /^(?:accessNotConfigured|serviceDisabled|SERVICE_DISABLED)$/i.test(googleCode)) return "Gmail API n’est pas activée dans le projet Google Cloud associé à GOOGLE_MAIL_CLIENT_ID, ou son activation n’est pas encore propagée. Vérifiez API et services → API et services activés ; si Gmail API est absente, activez-la depuis API et services → Bibliothèque. Attendez ensuite quelques minutes puis relancez « Connecter Google Workspace ».";
+    if (provider === "google" && /^(?:failedPrecondition|FAILED_PRECONDITION)$/i.test(googleCode)) return "La boîte Gmail n’est pas disponible pour ce compte Google Workspace. Ouvrez Gmail une première fois avec ce compte et vérifiez dans la Console d’administration Google que le service Gmail est activé pour son unité organisationnelle, puis réessayez.";
+    if (provider === "google" && /^(?:insufficientPermissions|insufficient_scope|ACCESS_TOKEN_SCOPE_INSUFFICIENT)$/i.test(googleCode)) return "La connexion enregistrée ne possède pas les autorisations gmail.readonly et gmail.send. Déconnectez cette boîte puis relancez « Connecter Google Workspace » et acceptez les autorisations demandées.";
+    if (provider === "google" && /^(?:domainPolicy|DOMAIN_POLICY|ORG_RESTRICTION_VIOLATION)$/i.test(googleCode)) return "La politique de votre organisation Google Workspace bloque Gmail API pour cette application. Un administrateur Google Workspace doit autoriser l’application OAuth Depann’Home Pro, puis vous pourrez réessayer.";
+    if (provider === "google" && /^(?:invalidArgument|INVALID_ARGUMENT|badRequest)$/i.test(googleCode)) return "Gmail a refusé les critères de recherche. Réduisez la période sélectionnée puis réessayez.";
     if (provider === "google" && error?.statusCode === 404) return "Cet e-mail ou cette pièce jointe n’est plus disponible dans Gmail. Actualisez la boîte de réception.";
     if (provider === "google" && (error?.throttled || error?.statusCode === 429)) return `Gmail limite temporairement l’accès à cette boîte. ${error?.retryAfterSeconds ? `Réessayez dans environ ${error.retryAfterSeconds} seconde(s).` : "Patientez quelques instants puis réessayez."}`;
     if (provider === "google" && authenticationFailed) return `Google refuse l’accès Gmail API au compte${mailbox ? ` ${clean(mailbox, 254)}` : ""}. Reconnectez-le avec « Connecter Google Workspace » afin de renouveler les autorisations gmail.readonly et gmail.send.${technicalSuffix}`;
+    if (provider === "google" && error?.statusCode) return `Gmail API a refusé la synchronisation${googleCode ? ` (${clean(googleCode, 80)})` : ""}. Réessayez ; si le problème persiste, transmettez ce code au support.`;
     if (authenticationFailed) return `La boîte a refusé l’authentification. Vérifiez son autorisation ou son mot de passe d’application.${technicalSuffix}`;
     if (/certificate|tls|ssl|self[- ]signed/i.test(message)) return "La connexion sécurisée au serveur de messagerie a échoué.";
     if (/timeout|timed out|etimedout|econnrefused|enotfound|getaddrinfo/i.test(message)) return "Le serveur de messagerie ne répond pas. Vérifiez les adresses, les ports et la disponibilité d’IMAP/SMTP.";

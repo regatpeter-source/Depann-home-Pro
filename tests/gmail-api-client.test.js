@@ -82,3 +82,14 @@ test("les erreurs Gmail normalisent les refus OAuth sans exposer le jeton", asyn
         error => error.authenticationFailed === true && error.statusCode === 401 && !error.message.includes("secret-token")
     );
 });
+
+test("les erreurs Gmail modernes conservent le motif ErrorInfo", async () => {
+    await assert.rejects(
+        gmailListMessages("token", {}, async () => response(403, { error: { status: "PERMISSION_DENIED", details: [{ "@type": "type.googleapis.com/google.rpc.ErrorInfo", reason: "SERVICE_DISABLED", domain: "googleapis.com" }] } })),
+        error => error.code === "SERVICE_DISABLED" && error.statusCode === 403 && error.authenticationFailed === false
+    );
+    await assert.rejects(
+        gmailListMessages("token", {}, async () => response(403, { error: { errors: [{ reason: "insufficientPermissions" }] } })),
+        error => error.code === "insufficientPermissions" && error.authenticationFailed === false
+    );
+});
