@@ -125,7 +125,7 @@ function renderMissionTab(shell) {
         const query = content.querySelector("#partnerMissionSearch")?.value.trim().toLowerCase() || "";
         const missions = source.filter(mission => {
             const matchesSearch = `${mission.missionNumber} ${mission.externalMissionId} ${mission.partnerReference} ${mission.partnerName} ${mission.mappedData?.clientName} ${mission.mappedData?.address}`.toLowerCase().includes(query);
-            return (!status || mission.status === status) && (mission.status !== "closed" || Boolean(query) || status === "closed") && (!query || matchesSearch);
+            return (!status || mission.status === status) && (!query || matchesSearch);
         });
         renderMissions(content.querySelector("#partnerMissionList"), missions, { sent, messages });
     };

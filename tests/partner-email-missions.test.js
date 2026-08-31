@@ -255,6 +255,13 @@ test("les missions e-mail utilisent la même interface que les missions internes
     assert.doesNotMatch(missionClientSource, /partner-email-candidate(?:-heading|-select)?/);
 });
 
+test("toutes les origines affichent réellement toutes les missions sans filtre de statut", () => {
+    const filtering = missionClientSource.slice(missionClientSource.indexOf("function renderMissionTab"), missionClientSource.indexOf("function renderMissions"));
+    assert.match(filtering, /activeMissionSpace === "network"[\s\S]*?activeMissionSpace === "email"[\s\S]*?sourceType === "external_connector"/);
+    assert.match(filtering, /\(!status \|\| mission\.status === status\) && \(!query \|\| matchesSearch\)/);
+    assert.doesNotMatch(filtering, /mission\.status !== "closed"/);
+});
+
 test("toutes les missions utilisent le planning visuel puis ouvrent leur conversation", () => {
     const rendering = missionClientSource.slice(missionClientSource.indexOf("node.querySelectorAll(\"[data-accept]\")"), missionClientSource.indexOf("node.querySelectorAll(\"[data-reject]\")"));
     const planning = missionClientSource.slice(missionClientSource.indexOf("async function openPartnerMissionPlanning"), missionClientSource.indexOf("function showAccept"));
