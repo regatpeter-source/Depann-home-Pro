@@ -46,6 +46,14 @@ test("les métadonnées Gmail restent en lecture seule et exposent corps et piè
     assert.deepEqual(result.attachments, [{ id: "2", name: "mission.pdf", contentType: "application/pdf", size: 123 }]);
 });
 
+test("les métadonnées Gmail acceptent un expéditeur sans nom d’affichage", async () => {
+    const result = await gmailMessageDetails("token", "gmail-id", async () => response(200, {
+        id: "gmail-id", payload: { headers: [{ name: "From", value: "<vhrdashboard@gmail.com>" }] }
+    }));
+    assert.deepEqual(result.from, { name: "", address: "vhrdashboard@gmail.com" });
+    assert.deepEqual(result.replyTo, { name: "", address: "vhrdashboard@gmail.com" });
+});
+
 test("une pièce Gmail est téléchargée par son endpoint dédié", async () => {
     const calls = [];
     const fetchImpl = async url => {

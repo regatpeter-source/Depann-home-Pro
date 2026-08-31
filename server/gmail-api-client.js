@@ -165,7 +165,7 @@ function parseAddressList(value) {
 function parseAddressHeader(value) {
     const text = String(value || "").trim();
     const match = /^(?:"?([^"<]*)"?\s*)?<([^<>\s]+@[^<>\s]+)>$/.exec(text);
-    if (match) return { name: match[1].trim(), address: match[2].toLowerCase() };
+    if (match) return { name: String(match[1] || "").trim(), address: match[2].toLowerCase() };
     const address = /[^\s<>]+@[^\s<>]+/.exec(text)?.[0] || "";
     return { name: address ? text.replace(address, "").replace(/[<>\"]/g, "").trim() : "", address: address.toLowerCase() };
 }
