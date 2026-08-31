@@ -38,6 +38,12 @@ test("les tables Santé sont isolées et disposent de rétention", () => {
     assert.doesNotMatch(server, /DELETE FROM depannhome_(?:users|clients|billing_documents|subscription_invoices)/);
 });
 
+test("le contrôle de sauvegarde distingue la preuve applicative des sauvegardes de l’hébergeur", () => {
+    assert.match(server, /Aucune preuve de sauvegarde applicative vérifiée/);
+    assert.match(server, /les sauvegardes natives de l’hébergeur ne sont pas détectées ici/);
+    assert.match(server, /evidenceSource: "depannhome_backup_history"/);
+});
+
 test("les diagnostics détaillés et la résolution sont réservés au Créateur", () => {
     assert.match(server, /app\.get\("\/api\/creator\/health", requireCreator/);
     assert.match(server, /app\.post\("\/api\/creator\/health\/diagnostics", requireCreator/);

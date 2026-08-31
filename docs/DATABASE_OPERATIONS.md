@@ -29,6 +29,8 @@ Prérequis : `pg_dump` et `pg_restore` de version au moins égale à celle du se
 
 Planification recommandée : quotidienne, rétention quotidienne 7 jours, hebdomadaire 5 semaines, mensuelle 12 mois. Le stockage doit être chiffré, distinct de la base et à accès restreint.
 
+Le contrôle **Santé → Base de données → Sauvegarde** consulte exclusivement les exécutions vérifiées inscrites dans `depannhome_backup_history`. Il ne peut pas détecter les sauvegardes automatiques proposées directement par l’hébergeur PostgreSQL. Une alerte signifie donc « aucune preuve de sauvegarde applicative récente », pas nécessairement « aucune sauvegarde n’existe chez l’hébergeur ». Sur un hébergement à système de fichiers éphémère, ne laissez jamais `DATABASE_BACKUP_PATH` sur `./backups` : exécutez la routine depuis un service planifié disposant de `pg_dump` et `pg_restore`, vers un stockage durable chiffré distinct.
+
 ## Restauration
 
 Une restauration directe sur `DATABASE_URL` est refusée. Définissez `RESTORE_DATABASE_URL` vers une base cible vide et distincte, puis lancez :
