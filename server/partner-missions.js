@@ -73,6 +73,7 @@ export async function initializePartnerMissions() {
     await db.query("ALTER TABLE depannhome_partner_missions DROP CONSTRAINT IF EXISTS depannhome_partner_missions_billing_mode_check");
     await db.query("ALTER TABLE depannhome_partner_missions ADD CONSTRAINT depannhome_partner_missions_billing_mode_check CHECK (billing_mode IN ('direct_client','principal'))");
     await db.query("CREATE INDEX IF NOT EXISTS depannhome_partner_missions_owner_status_idx ON depannhome_partner_missions(owner_id, status, created_at DESC)");
+    await db.query("CREATE INDEX IF NOT EXISTS depannhome_partner_missions_owner_visible_updated_idx ON depannhome_partner_missions(owner_id, updated_at DESC) WHERE deleted_at IS NULL");
     await db.query(`
         UPDATE depannhome_partner_missions mission
         SET assigned_technician_id = NULL
@@ -345,7 +346,7 @@ async function missionDashboard(ownerId, request) {
     await reconcileMissionClients(ownerId, request, internalNetworkOnly);
     const sourceFilter = internalNetworkOnly ? " AND (intake.partner_key LIKE 'connection-%' OR intake.partner_key LIKE 'email-%')" : "";
     const [missionRows, intakeRows, techRows, outbox] = await Promise.all([
-        getPool().query(`SELECT mission.*, intake.partner_name AS "partnerName", intake.partner_key AS "partnerKey", intake.is_sandbox AS "isSandbox", technician.full_name AS "technicianName" FROM depannhome_partner_missions mission JOIN depannhome_partner_intakes intake ON intake.id=mission.intake_id LEFT JOIN depannhome_users technician ON technician.id=mission.assigned_technician_id WHERE mission.owner_id=$1 AND mission.deleted_at IS NULL AND intake.is_sandbox=FALSE${sourceFilter} ORDER BY mission.updated_at DESC LIMIT 200`, [ownerId]),
+        getPool().query(`SELECT mission.*, intake.partner_name AS "partnerName", intake.partner_key AS "partnerKey", intake.is_sandbox AS "isSandbox", technician.full_name AS "technicianName" FROM depannhome_partner_missions mission JOIN depannhome_partner_intakes intake ON intake.id=mission.intake_id LEFT JOIN depannhome_users technician ON technician.id=mission.assigned_technician_id WHERE mission.owner_id=$1 AND mission.deleted_at IS NULL AND intake.is_sandbox=FALSE${sourceFilter} ORDER BY mission.updated_at DESC`, [ownerId]),
         internalNetworkOnly ? Promise.resolve([]) : intakes(ownerId),
         canManagePartnerMissions(request) ? technicians(ownerId) : Promise.resolve([]),
         getPool().query(`SELECT count(*)::int AS count FROM depannhome_partner_mission_outbox outbox JOIN depannhome_partner_missions mission ON mission.id=outbox.mission_id JOIN depannhome_partner_intakes intake ON intake.id=mission.intake_id WHERE outbox.owner_id=$1 AND outbox.status='failed' AND intake.is_sandbox=FALSE${sourceFilter}`, [ownerId])

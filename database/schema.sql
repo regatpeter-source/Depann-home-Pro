@@ -1363,6 +1363,7 @@ CREATE TABLE IF NOT EXISTS depannhome_partner_missions (
     CONSTRAINT depannhome_partner_missions_unique UNIQUE(owner_id, intake_id, external_mission_id)
 );
 CREATE INDEX IF NOT EXISTS depannhome_partner_missions_owner_status_idx ON depannhome_partner_missions(owner_id, status, created_at DESC);
+CREATE INDEX IF NOT EXISTS depannhome_partner_missions_owner_visible_updated_idx ON depannhome_partner_missions(owner_id, updated_at DESC) WHERE deleted_at IS NULL;
 UPDATE depannhome_partner_missions mission
 SET assigned_technician_id = NULL
 FROM depannhome_users member

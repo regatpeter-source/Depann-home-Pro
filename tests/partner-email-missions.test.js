@@ -257,9 +257,19 @@ test("les missions e-mail utilisent la même interface que les missions internes
 
 test("toutes les origines affichent réellement toutes les missions sans filtre de statut", () => {
     const filtering = missionClientSource.slice(missionClientSource.indexOf("function renderMissionTab"), missionClientSource.indexOf("function renderMissions"));
+    const dashboardQuery = missionSource.slice(missionSource.indexOf("async function missionDashboard"), missionSource.indexOf("async function reconcileMissionClients"));
     assert.match(filtering, /activeMissionSpace === "network"[\s\S]*?activeMissionSpace === "email"[\s\S]*?sourceType === "external_connector"/);
     assert.match(filtering, /\(!status \|\| mission\.status === status\) && \(!query \|\| matchesSearch\)/);
     assert.doesNotMatch(filtering, /mission\.status !== "closed"/);
+    assert.doesNotMatch(dashboardQuery, /LIMIT 200/);
+    assert.match(missionSource, /depannhome_partner_missions_owner_visible_updated_idx/);
+});
+
+test("une lecture API interrompue est retentée sans rejouer les écritures", () => {
+    const apiClient = missionClientSource.slice(missionClientSource.indexOf("async function api(url"));
+    assert.match(apiClient, /String\(options\.method \|\| "GET"\)\.toUpperCase\(\) === "GET"/);
+    assert.match(apiClient, /response = await fetch\(url, \{ \.\.\.requestOptions, cache: "no-store" \}\)/);
+    assert.match(apiClient, /if \(!retryable\) throw error/);
 });
 
 test("toutes les missions utilisent le planning visuel puis ouvrent leur conversation", () => {

@@ -500,7 +500,16 @@ async function api(url, options = {}) {
             const payload = typeof options.body === "string" ? JSON.parse(options.body) : options.body || {};
             if (!htmlDateValue(payload.date)) return { ok: false, message: "Choisissez une date pour ajouter cette intervention au planning général." };
         }
-        const response = await fetch(url, { credentials: "same-origin", headers: { "Content-Type": "application/json", ...(options.headers || {}) }, ...options });
+        const requestOptions = { credentials: "same-origin", headers: { "Content-Type": "application/json", ...(options.headers || {}) }, ...options };
+        const retryable = String(options.method || "GET").toUpperCase() === "GET";
+        let response;
+        try {
+            response = await fetch(url, requestOptions);
+        } catch (error) {
+            if (!retryable) throw error;
+            console.warn(`[partner-missions] Lecture interrompue, nouvelle tentative : ${url}`);
+            response = await fetch(url, { ...requestOptions, cache: "no-store" });
+        }
         const data = response.status === 204 ? null : await response.json().catch(() => null);
         if (response.ok && /\/api\/partner-missions\/\d+\/accept$/.test(url)) {
             await synchronizeClients({ forceFull: true }).catch(() => {});
