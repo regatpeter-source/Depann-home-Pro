@@ -128,7 +128,8 @@ export function registerPartnerMissionRoutes(app, requireAuthentication) {
     app.post("/api/partner-missions/:missionId/accept", requireAdministration, asyncHandler(async (req, res) => { const mission = await acceptMission(req, positiveId(req.params.missionId)); await getPool().query("UPDATE depannhome_partner_missions SET planning_draft='{}'::jsonb WHERE id=$1 AND owner_id=$2", [mission.id, getAccountOwnerId(req)]); mission.planningDraft = {}; await notifyManagedMissionSource(getAccountOwnerId(req), mission, "Mission acceptée"); res.json({ mission }); }));
     app.post("/api/partner-missions/:missionId/reject", requireAdministration, asyncHandler(async (req, res) => { const mission = await changeStatus(req, positiveId(req.params.missionId), "rejected", { reason: clean(req.body?.reason, 500) }); res.json({ mission }); }));
     app.post("/api/partner-missions/:missionId/close", requireAdministration, asyncHandler(async (req, res) => { const mission = await changeStatus(req, positiveId(req.params.missionId), "closed", { reason: clean(req.body?.reason, 500) }); res.json({ mission }); }));
-    app.post("/api/partner-missions/:missionId/reopen", requireAdministration, asyncHandler(async (req, res) => res.json({ mission: await reopenClosedMission(req, positiveId(req.params.missionId)) })));
+    app.post("/api/partner-missions/:missionId/reopen", requireStrictAdministration, asyncHandler(async (req, res) => res.json({ mission: await reactivateTerminalMission(req, positiveId(req.params.missionId)) })));
+    app.post("/api/partner-missions/:missionId/reactivate", requireStrictAdministration, asyncHandler(async (req, res) => res.json({ mission: await reactivateTerminalMission(req, positiveId(req.params.missionId)) })));
     app.post("/api/partner-missions/:missionId/archive-closed", requireAdministration, (_req, res) => res.status(409).json({ message: "Une mission clôturée reste conservée pour garantir la traçabilité de son dossier." }));
     app.post("/api/partner-missions/:missionId/assign", requireAdministration, asyncHandler(async (req, res) => { const mission = await assignMission(req, positiveId(req.params.missionId)); res.json({ mission }); }));
     app.patch("/api/partner-missions/:missionId/planning-draft", requireAdministration, asyncHandler(async (req, res) => {
@@ -203,7 +204,7 @@ async function acceptMission(req, id) {
         tracePartnerClient("transaction_started", { flow: "mission_acceptance", ownerId, missionId: id, persistenceMode: "transaction" });
         const mission = await lockMission(connection, ownerId, id);
         if (!mission) throw clientError(404, "Mission introuvable.");
-        if (!["received", "pending_validation", "accepted"].includes(mission.status)) throw clientError(409, "Cette mission ne peut plus être acceptée.");
+        if (!["received", "pending_validation", "accepted", "assigned", "scheduled"].includes(mission.status)) throw clientError(409, "Cette mission ne peut plus être acceptée ou replanifiée.");
         const values = mission.mappedData;
         const requestedTechnicianIds = [...new Set((Array.isArray(req.body?.assignedTechnicianIds) ? req.body.assignedTechnicianIds : []).map(optionalId).filter(Boolean))];
         const technicianId = optionalId(req.body?.technicianId) || requestedTechnicianIds[0] || mission.assignedTechnicianId || (await selectTechnician(connection, ownerId, mission, mission.assignmentMode));
@@ -309,17 +310,37 @@ export async function ingestEmailPartnerMission({ ownerId, connectionId, emailId
     } finally { database.release(); }
 }
 
-async function reopenClosedMission(req, id) {
+async function reactivateTerminalMission(req, id) {
     const ownerId = getAccountOwnerId(req);
-    const { rows } = await getPool().query("UPDATE depannhome_partner_missions SET status=CASE WHEN calendar_event_id IS NULL THEN 'accepted' ELSE 'scheduled' END,updated_at=NOW() WHERE id=$1 AND owner_id=$2 AND deleted_at IS NULL AND status='closed' RETURNING *", [id, ownerId]);
-    if (!rows[0]) throw clientError(409, "Seule une mission clôturée encore visible peut être rouverte.");
-    const mission = publicMission(rows[0]); const details = { previousStatus: "closed", restoredStatus: mission.status, reason: clean(req.body?.reason, 500) };
-    await writeHistory(getPool(), ownerId, id, mission.status, "reopened", req.user.sub, req.user.role, details, req.ip);
-    await enqueue(getPool(), ownerId, id, "mission_status_changed", { status: mission.status, ...details });
-    await recordMissionDialogueEvent({ ownerId, missionId: id, status: mission.status, action: "reopened", details, actorName: req.user.fullName || req.user.username });
-    await notifyManagedMissionSource(ownerId, mission, "Mission rouverte");
+    const reason = clean(req.body?.reason, 500);
+    if (!reason) throw clientError(400, "Le motif de la réactivation est obligatoire.");
+    const connection = await getPool().connect();
+    let updated;
+    let details;
+    try {
+        await connection.query("BEGIN");
+        const current = await connection.query("SELECT status,calendar_event_id,scheduled_date FROM depannhome_partner_missions WHERE id=$1 AND owner_id=$2 AND deleted_at IS NULL FOR UPDATE", [id, ownerId]);
+        const mission = current.rows[0];
+        if (!mission || !["rejected", "cancelled", "closed"].includes(mission.status)) throw clientError(409, "Seule une mission refusée, annulée ou clôturée peut être réactivée.");
+        const restoredStatus = mission.status === "rejected" ? "pending_validation" : mission.calendar_event_id && mission.scheduled_date ? "scheduled" : "accepted";
+        const result = await connection.query("UPDATE depannhome_partner_missions SET status=$3,updated_at=NOW() WHERE id=$1 AND owner_id=$2 RETURNING *", [id, ownerId, restoredStatus]);
+        updated = result.rows[0];
+        details = { previousStatus: mission.status, restoredStatus, reason };
+        await writeHistory(connection, ownerId, id, restoredStatus, "reactivated_for_correction", req.user.sub, req.user.role, details, req.ip);
+        await enqueue(connection, ownerId, id, "mission_status_changed", { status: restoredStatus, ...details });
+        await connection.query("COMMIT");
+    } catch (error) {
+        await connection.query("ROLLBACK");
+        throw error;
+    } finally {
+        connection.release();
+    }
+    const mission = publicMission(updated);
+    const actorName = req.user.fullName || req.user.username;
+    await recordMissionDialogueEvent({ ownerId, missionId: id, status: mission.status, action: "reactivated_for_correction", details, actorName });
+    await notifyManagedMissionSource(ownerId, mission, "Mission réactivée pour correction");
     const { notifyEmailMissionStatus } = await import("./partner-email.js");
-    await notifyEmailMissionStatus(ownerId, mission.id, mission.status, details).catch(error => console.warn("[partner-email] réouverture non envoyée :", error.message));
+    await notifyEmailMissionStatus(ownerId, mission.id, mission.status, details).catch(error => console.warn("[partner-email] réactivation non envoyée :", error.message));
     return mission;
 }
 
@@ -621,6 +642,7 @@ function canManagePartnerMissions(req) { return PARTNER_MANAGEMENT_ROLES.has(req
 function requireMissionAccess(req, res, next) { if (canManagePartnerMissions(req)) return next(); return res.status(403).json({ message: "Les missions partenaires sont réservées à l’administration." }); }
 async function requireProductionMission(req, res, next) { const missionId = positiveId(req.params.missionId); if (!missionId) return next(); const ownerId = getAccountOwnerId(req); const internalNetworkOnly = !isFeatureEnabled(await getOrganization(ownerId), "connectors"); const result = await getPool().query("SELECT mission.id FROM depannhome_partner_missions mission JOIN depannhome_partner_intakes intake ON intake.id=mission.intake_id WHERE mission.id=$1 AND mission.owner_id=$2 AND mission.deleted_at IS NULL AND intake.is_sandbox=FALSE AND ($3::boolean=FALSE OR intake.partner_key LIKE 'connection-%' OR intake.partner_key LIKE 'email-%')", [missionId, ownerId, internalNetworkOnly]); return result.rowCount ? next() : res.status(404).json({ message: "Mission introuvable." }); }
 function requireAdministration(req, res, next) { if (canManagePartnerMissions(req)) return next(); return res.status(403).json({ message: "Cette action est réservée aux postes administratifs autorisés." }); }
+function requireStrictAdministration(req, res, next) { if (req?.user?.role === "admin") return next(); return res.status(403).json({ message: "La réactivation d’une mission est réservée au Poste Admin." }); }
 function mergeAttachments(existing, incoming) { const base = Array.isArray(existing) ? [...existing] : []; const positions = new Map(base.map((attachment, index) => [attachmentSignature(attachment), index])); for (const item of Array.isArray(incoming) ? incoming : []) { const compactDataUrl = String(item?.dataUrl || "").replace(/\s/g, ""); if (!/^data:(image\/(jpeg|png|webp)|application\/(pdf|msword|vnd\.openxmlformats-officedocument\.wordprocessingml\.document|vnd\.ms-excel|vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet)|text\/plain);base64,[A-Za-z0-9+/=]+$/.test(compactDataUrl)) continue; const fromEmail = item?.source === "partner_email"; const attachment = { id: `file-${crypto.randomUUID()}`, type: fromEmail ? "Mission partenaire · E-mail" : "Document partenaire", source: fromEmail ? "partner_email" : "", sourceAttachmentId: fromEmail ? clean(item.sourceAttachmentId, 100) : "", missionId: fromEmail ? clean(item.missionId, 100) : "", name: clean(item.name, 255) || "document-partenaire", mime: clean(item.mime, 150), size: Number(item.size) || 0, dataUrl: compactDataUrl, createdAt: new Date().toISOString() }; const signature = attachmentSignature(attachment); const existingIndex = positions.get(signature); if (existingIndex !== undefined) { if (fromEmail) base[existingIndex] = { ...base[existingIndex], type: attachment.type, source: attachment.source, sourceAttachmentId: attachment.sourceAttachmentId, missionId: attachment.missionId }; continue; } positions.set(signature, base.length); base.push(attachment); } return base.slice(-30); }
 function attachmentSignature(item) { return `${clean(item?.name, 255)}\u0000${clean(item?.mime, 150)}\u0000${Number(item?.size) || 0}\u0000${hash(item?.dataUrl || "")}`; }
 async function matchEmailMissionClient(connection, ownerId, data) { const email = clean(data.email, 160).toLowerCase(), phone = clean(data.phone, 50).replace(/\D/g, ""), name = clean(data.clientName, 160).toLowerCase(), address = clean(data.address, 255).toLowerCase(); if (!email && !phone && !(name && address)) return ""; const { rows } = await connection.query("SELECT client_id FROM depannhome_clients WHERE owner_id=$1 AND (($2<>'' AND LOWER(COALESCE(client_data->>'email',''))=$2) OR ($3<>'' AND REGEXP_REPLACE(COALESCE(client_data->>'phone',''),'\\D','','g')=$3) OR ($4<>'' AND $5<>'' AND LOWER(COALESCE(client_data->>'name',''))=$4 AND LOWER(COALESCE(client_data->>'address',''))=$5)) ORDER BY updated_at DESC LIMIT 1", [ownerId, email, phone, name, address]); return rows[0]?.client_id || ""; }

@@ -94,6 +94,8 @@ Une mission importée conserve `Message-ID`, `In-Reply-To` et `References`. L’
 
 Une fois créée, une mission partenaire n’est jamais supprimable depuis l’application, y compris lorsqu’elle est refusée, annulée ou clôturée. Elle reste consultable avec son statut, sa conversation et son journal afin de préserver la traçabilité du dossier. Une mission envoyée encore en attente peut être **annulée**, mais cette annulation ne la masque pas. Seules les propositions e-mail qui n’ont pas encore été confirmées et ne constituent donc pas encore une mission peuvent être supprimées de la file de détection.
 
+Pendant la validation, l’aperçu du planning peut afficher la journée ou toute la semaine des membres sélectionnés sans fermer le formulaire. Une mission refusée, annulée ou clôturée peut être **réactivée et corrigée** uniquement par le rôle `admin`, avec un motif obligatoire. La source reçue reste intacte ; le statut précédent, le motif, l’auteur et la date de réactivation sont conservés dans le journal avant la replanification.
+
 ## Exploitation
 
 Le planificateur contrôle au maximum 20 connexions dues toutes les cinq minutes, chaque connexion étant synchronisée au plus toutes les dix minutes. Une synchronisation manuelle est disponible dans l’interface. Les erreurs exposées à l’utilisateur sont volontairement génériques afin de ne révéler ni serveur interne ni identifiant secret.

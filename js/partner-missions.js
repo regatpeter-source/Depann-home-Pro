@@ -242,18 +242,22 @@ function localDateValue(value) { const offset = value.getTimezoneOffset() * 6000
 function formatShortDate(value) { return new Intl.DateTimeFormat("fr-FR").format(new Date(`${value}T12:00:00`)); }
 
 function enableClosedMissionCorrection(node, missions, options) {
-    if (!canManagePartnerMissions() || options.sent || options.messages) return;
+    if (!isPartnerMissionAdministrator() || options.sent || options.messages) return;
     missions.forEach((mission, index) => {
-        if (mission.status !== "closed") return;
+        if (!["rejected", "cancelled", "closed"].includes(mission.status)) return;
         const actions = node.children[index]?.querySelector(".partner-mission-card-actions");
         if (!actions) return;
-        actions.insertAdjacentHTML("beforeend", `<button class="secondary-button" data-reopen="${mission.id}">Rouvrir</button>`);
+        actions.insertAdjacentHTML("beforeend", `<button class="secondary-button" data-reactivate="${mission.id}">Réactiver et corriger</button>`);
     });
-    node.querySelectorAll("[data-reopen]").forEach(button => button.addEventListener("click", async () => {
-        if (!confirm("Rouvrir cette mission ? Le partenaire sera informé du retour au statut opérationnel.")) return;
-        const reason = prompt("Motif de la réouverture (facultatif) :"); if (reason === null) return;
-        const result = await api(`/api/partner-missions/${button.dataset.reopen}/reopen`, { method: "POST", body: JSON.stringify({ reason }) });
-        if (!result.ok) return alert(result.message); renderPartnerMissions();
+    node.querySelectorAll("[data-reactivate]").forEach(button => button.addEventListener("click", async () => {
+        if (!confirm("Réactiver cette mission pour la corriger ? Le partenaire sera informé et l’opération restera inscrite dans le journal.")) return;
+        const reason = prompt("Motif obligatoire de la réactivation :");
+        if (reason === null) return;
+        if (!reason.trim()) return alert("Indiquez le motif de la réactivation.");
+        const existing = missions.find(mission => String(mission.id) === button.dataset.reactivate);
+        const result = await api(`/api/partner-missions/${button.dataset.reactivate}/reactivate`, { method: "POST", body: JSON.stringify({ reason }) });
+        if (!result.ok) return alert(result.message);
+        await openPartnerMissionPlanning({ ...existing, ...result.data.mission, partnerName: existing?.partnerName, mappedData: result.data.mission?.mappedData || existing?.mappedData || {} });
     }));
 }
 
@@ -375,7 +379,7 @@ function showWizardMessage(node, message) { const target = node.querySelector(".
 
 async function showDetail(id) { const result = await api(`/api/partner-missions/${id}`); if (!result.ok) return alert(result.message); const { mission, history, emailAttachments = [] } = result.data; const details = Object.entries(mission.mappedData).filter(([key, value]) => value && !["attachments", "errors"].includes(key)).map(([key, value]) => `<dt>${escapeHtml(labelField(key))}</dt><dd>${escapeHtml(typeof value === "object" ? JSON.stringify(value) : value)}</dd>`).join(""); const emailDocuments = emailAttachments.length ? `<section class="procedure-section"><div class="form-heading"><div><p class="eyebrow">Documents d’origine</p><h3>Pièces jointes reçues par e-mail</h3></div><span class="file-count-badge">${emailAttachments.length} fichier(s)</span></div><div class="attachment-list">${emailAttachments.map(attachment => `<article class="attachment-card"><div><p class="eyebrow">${escapeHtml(attachment.mimeType || "Document")}</p><h4>${escapeHtml(attachment.name || "Pièce jointe")}</h4><p class="muted">${escapeHtml(formatAttachmentSize(attachment.fileSize))} · ${escapeHtml(formatMissionDate(attachment.createdAt))}</p></div><div class="attachment-actions"><a class="secondary-button" href="${escapeHtml(attachment.url)}" target="_blank" rel="noopener">Visualiser</a><a class="secondary-button" href="${escapeHtml(attachment.url)}" download="${escapeHtml(attachment.name || "document")}">Télécharger</a></div></article>`).join("")}</div></section>` : ""; const dialog = openDialog(`<h3>Mission ${escapeHtml(mission.missionNumber || "partenaire")}</h3><p class="muted">Reçue le ${escapeHtml(formatMissionDate(mission.createdAt))} · ${escapeHtml(mission.partnerName || "Partenaire")} · ${escapeHtml(labelStatus(mission.status))}</p><div class="partner-mission-card-actions"><button class="secondary-button" id="openPartnerDialogue">Ouvrir le dialogue</button></div><dl class="partner-mission-details">${details}</dl>${emailDocuments}<h4>Journal de mission</h4><ol class="partner-mission-history">${history.map(item => `<li><strong>${escapeHtml(labelStatus(item.status))}</strong> · ${escapeHtml(item.action)}<br><small>${escapeHtml(item.actorName)} · ${escapeHtml(formatMissionDate(item.createdAt))}</small></li>`).join("")}</ol>`); dialog.querySelector("#openPartnerDialogue").addEventListener("click", () => { dialog.remove(); openPartnerDialogue(mission.id); }); }
 async function openPartnerMissionPlanning(mission) {
-    const { renderCalendar } = await import("./calendar.js?v=186");
+    const { renderCalendar } = await import("./calendar.js?v=187");
     const data = mission.mappedData || {};
     const draft = mission.planningDraft || {};
     const hasDraft = Boolean(draft.pausedAt);
@@ -455,6 +459,7 @@ function formatDate(value) { return value ? new Intl.DateTimeFormat("fr-FR", { d
 function formatMissionDate(value) { return value ? new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(value)).replace(/:/g, " h ") : "Date inconnue"; }
 function htmlDateValue(value) { const match = /^(\d{4}-\d{2}-\d{2})/.exec(String(value || "")); return match ? match[1] : ""; }
 function canManagePartnerMissions() { return ["admin", "pc_standard", "mobile_admin"].includes(document.body.dataset.role); }
+function isPartnerMissionAdministrator() { return document.body.dataset.role === "admin"; }
 async function api(url, options = {}) {
     try {
         if (/\/api\/partner-missions\/\d+\/accept$/.test(url)) {

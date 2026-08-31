@@ -3512,9 +3512,26 @@ body.mobile-device[data-role="technician"] .calendar-list-day{
 
 .calendar-availability-heading{
     display:flex;
+    flex-wrap:wrap;
     justify-content:space-between;
     align-items:start;
     gap:16px;
+}
+
+.calendar-availability-actions{
+    display:flex;
+    gap:6px;
+}
+
+.calendar-availability-actions .secondary-button{
+    min-height:36px;
+    padding:6px 10px;
+}
+
+.calendar-availability-actions .secondary-button.active{
+    border-color:var(--secondary);
+    background:var(--secondary);
+    color:#fff;
 }
 
 .calendar-availability-heading h3{

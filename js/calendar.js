@@ -247,7 +247,7 @@ function bindCalendarViewSwitcher(panel) {
         if (nextView === calendarView) return;
         calendarView = nextView;
         displayedMonth = nextView === "month" ? firstDayOfMonth(displayedMonth) : atNoon(displayedMonth);
-        selectedEvent = null;
+        if (!selectedEvent?.partnerMissionId) selectedEvent = null;
         refreshCalendarPeriod();
     }));
 }
@@ -807,12 +807,19 @@ function renderCalendarAvailability(form, editedEventId) {
     const candidateLabel = candidate.title || "Nouveau rendez-vous";
     preview.classList.toggle("has-conflict", Boolean(conflict));
     preview.innerHTML = `
-        <div class="calendar-availability-heading"><div><p class="eyebrow">Aperçu planning</p><h3>${escapeHtml(formatPreviewDate(candidate.date))}</h3></div><p class="${conflict ? "auth-message error" : "muted"}">${conflict ? `Chevauchement avec « ${escapeHtml(conflict.title)} » (${escapeHtml(formatEventTime(conflict))}).` : "Créneau disponible."}</p></div>
+        <div class="calendar-availability-heading"><div><p class="eyebrow">Aperçu planning</p><h3>${escapeHtml(formatPreviewDate(candidate.date))}</h3></div><div class="calendar-availability-actions" role="group" aria-label="Période affichée sous le formulaire"><button type="button" class="secondary-button${calendarView === "day" ? " active" : ""}" data-calendar-availability-view="day">Jour</button><button type="button" class="secondary-button${calendarView === "week" ? " active" : ""}" data-calendar-availability-view="week">Semaine</button></div><p class="${conflict ? "auth-message error" : "muted"}">${conflict ? `Chevauchement avec « ${escapeHtml(conflict.title)} » (${escapeHtml(formatEventTime(conflict))}).` : "Créneau disponible."}</p></div>
         <div class="calendar-time-preview">
             ${sameDayEvents.map(event => `<article class="calendar-time-slot"><time>${escapeHtml(formatEventTime(event))}</time><strong>${escapeHtml(event.title)}</strong>${event.clientName ? `<small>${escapeHtml(event.clientName)}</small>` : ""}</article>`).join("") || '<p class="muted">Aucun autre rendez-vous ce jour.</p>'}
             <article class="calendar-time-slot calendar-time-slot-preview${conflict ? " conflict" : ""}"><time>${escapeHtml(formatEventTime(candidate))}</time><strong>${escapeHtml(candidateLabel)}</strong><small>Créneau en cours de saisie</small></article>
         </div>
     `;
+    preview.querySelectorAll("[data-calendar-availability-view]").forEach(button => button.addEventListener("click", () => {
+        const nextView = button.dataset.calendarAvailabilityView;
+        if (nextView === calendarView) return;
+        calendarView = nextView;
+        displayedMonth = atNoon(new Date(`${candidate.date}T12:00:00`));
+        refreshCalendarPeriod();
+    }));
 }
 
 function findLocalCalendarConflict(dayEvents, candidate) {

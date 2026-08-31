@@ -296,6 +296,32 @@ test("toutes les missions utilisent le planning visuel puis ouvrent leur convers
     assert.match(planning, /await openPartnerDialogue\(mission\.id\)/);
 });
 
+test("la planification partenaire bascule entre jour et semaine sans fermer le formulaire", () => {
+    const calendarSource = readFileSync(new URL("../js/calendar.js", import.meta.url), "utf8");
+    const switcher = calendarSource.slice(calendarSource.indexOf("function bindCalendarViewSwitcher"), calendarSource.indexOf("function bindCalendarNavigation"));
+    const availability = calendarSource.slice(calendarSource.indexOf("function renderCalendarAvailability"), calendarSource.indexOf("function findLocalCalendarConflict"));
+    assert.match(switcher, /if \(!selectedEvent\?\.partnerMissionId\) selectedEvent = null/);
+    assert.match(availability, /data-calendar-availability-view="day">Jour/);
+    assert.match(availability, /data-calendar-availability-view="week">Semaine/);
+    assert.match(availability, /refreshCalendarPeriod\(\)/);
+});
+
+test("seul le Poste Admin réactive une mission terminale avec un motif puis la corrige dans le planning", () => {
+    const routes = missionSource.slice(missionSource.indexOf('app.post("/api/partner-missions/:missionId/reopen"'), missionSource.indexOf('app.post("/api/partner-missions/:missionId/archive-closed"'));
+    const reactivation = missionSource.slice(missionSource.indexOf("async function reactivateTerminalMission"), missionSource.indexOf("async function updateBillingMode"));
+    const correctionUi = missionClientSource.slice(missionClientSource.indexOf("function enableClosedMissionCorrection"), missionClientSource.indexOf("function enablePartnerNotificationDeletion"));
+    assert.match(routes, /requireStrictAdministration/);
+    assert.match(routes, /reactivateTerminalMission/);
+    assert.match(reactivation, /if \(!reason\) throw clientError\(400/);
+    assert.match(reactivation, /\["rejected", "cancelled", "closed"\]/);
+    assert.match(reactivation, /mission\.status === "rejected" \? "pending_validation"/);
+    assert.match(reactivation, /"reactivated_for_correction"/);
+    assert.match(missionSource, /req\?\.user\?\.role === "admin"/);
+    assert.match(correctionUi, /Réactiver et corriger/);
+    assert.match(correctionUi, /if \(!reason\.trim\(\)\)/);
+    assert.match(correctionUi, /await openPartnerMissionPlanning/);
+});
+
 test("l’acceptation garantit le client et verrouille tous les techniciens sélectionnés", () => {
     const acceptance = missionSource.slice(missionSource.indexOf("async function acceptMission"), missionSource.indexOf("async function updateStatus"));
     assert.match(acceptance, /const clientId = await upsertClient/);
