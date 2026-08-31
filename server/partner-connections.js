@@ -110,9 +110,9 @@ export function registerPartnerConnectionRoutes(app, requireAuthentication) {
     app.patch("/api/partner-connections/:connectionId/permissions", asyncHandler(async (req, res) => res.json({ connection: await updatePermissions(req, positiveId(req.params.connectionId)) })));
     app.post("/api/partner-connections/:connectionId/disconnect", asyncHandler(async (req, res) => res.json({ connection: await disconnect(req, positiveId(req.params.connectionId)) })));
     app.get("/api/partner-connections/missions-sent", asyncHandler(async (req, res) => res.json({ missions: await sentMissions(getAccountOwnerId(req)) })));
-    app.delete("/api/partner-connections/missions/:missionId", asyncHandler(async (req, res) => res.json({ mission: await archiveSentMission(req, positiveId(req.params.missionId)) })));
+    app.delete("/api/partner-connections/missions/:missionId", (_req, res) => res.status(409).json({ message: "Une mission envoyée ne peut pas être supprimée. Annulez-la pour conserver son historique." }));
     app.post("/api/partner-connections/missions/:missionId/cancel", asyncHandler(async (req, res) => res.json({ mission: await cancelSentMission(req, positiveId(req.params.missionId)) })));
-    app.post("/api/partner-connections/missions/archive-terminal", asyncHandler(async (req, res) => res.json(await archiveSentTerminalMissions(req))));
+    app.post("/api/partner-connections/missions/archive-terminal", (_req, res) => res.status(409).json({ message: "Les missions refusées ou annulées restent conservées et consultables dans leur statut." }));
     app.post("/api/partner-connections/missions", asyncHandler(async (req, res) => {
         const mission = await createConnectedMission(req);
         res.status(201).json({ mission });
@@ -253,36 +253,13 @@ async function sentMissions(ownerId) {
     return rows;
 }
 
-async function archiveSentMission(req, missionId) {
-    const ownerId = getAccountOwnerId(req);
-    const { rows } = await getPool().query(`UPDATE depannhome_partner_missions mission SET status='cancelled',deleted_at=NOW(),updated_at=NOW()
-        WHERE mission.id=$1 AND mission.deleted_at IS NULL AND mission.status IN ('received','pending_validation')
-          AND EXISTS(SELECT 1 FROM depannhome_partner_connection_sync_log log WHERE log.target_mission_id=mission.id AND log.source_owner_id=$2)
-        RETURNING mission.*`, [missionId, ownerId]);
-    if (rows[0]) return publicSentMission(rows[0]);
-    const existing = await sentMissionForSource(ownerId, missionId);
-    if (!existing) throw clientError(404, "Mission envoyée introuvable.");
-    throw clientError(409, "Cette mission a déjà été acceptée. Utilisez « Clôturer / Annuler la mission » afin de conserver l’historique.");
-}
-
 async function cancelSentMission(req, missionId) {
     const ownerId = getAccountOwnerId(req); const existing = await sentMissionForSource(ownerId, missionId);
     if (!existing) throw clientError(404, "Mission envoyée introuvable.");
-    if (["received", "pending_validation"].includes(existing.status)) return archiveSentMission(req, missionId);
-    if (["closed", "cancelled"].includes(existing.status)) throw clientError(409, "Cette mission est déjà clôturée ou annulée.");
+    if (["closed", "cancelled", "rejected"].includes(existing.status)) throw clientError(409, "Cette mission est déjà clôturée, annulée ou refusée.");
     const { rows } = await getPool().query("UPDATE depannhome_partner_missions SET status='cancelled',updated_at=NOW() WHERE id=$1 RETURNING *", [missionId]);
     await recordMissionDialogueEvent({ ownerId: rows[0].owner_id, missionId, status: "cancelled", action: "cancelled", details: { reason: clean(req.body?.reason, 500), requestedBySource: true }, actorName: req.user.fullName || req.user.username });
     return publicSentMission(rows[0]);
-}
-
-async function archiveSentTerminalMissions(req) {
-    const ownerId = getAccountOwnerId(req);
-    const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(positiveId).filter(Boolean).slice(0, 100) : [];
-    if (!ids.length) throw clientError(400, "Sélectionnez au moins une mission à supprimer.");
-    const result = await getPool().query(`UPDATE depannhome_partner_missions mission SET deleted_at=NOW(),updated_at=NOW()
-        WHERE mission.id=ANY($1::bigint[]) AND mission.deleted_at IS NULL AND mission.status IN ('rejected','cancelled')
-          AND EXISTS(SELECT 1 FROM depannhome_partner_connection_sync_log log WHERE log.target_mission_id=mission.id AND log.source_owner_id=$2)`, [ids, ownerId]);
-    return { deletedCount: result.rowCount || 0 };
 }
 
 async function sentMissionForSource(ownerId, missionId) {

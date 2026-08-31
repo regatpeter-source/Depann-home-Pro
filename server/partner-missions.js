@@ -52,7 +52,7 @@ export async function initializePartnerMissions() {
     await db.query(`CREATE TABLE IF NOT EXISTS depannhome_partner_missions (
         id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
         intake_id BIGINT NOT NULL REFERENCES depannhome_partner_intakes(id) ON DELETE RESTRICT, external_mission_id VARCHAR(160) NOT NULL,
-        mission_number VARCHAR(32) NOT NULL DEFAULT '', source_mission_number VARCHAR(64) NOT NULL DEFAULT '', intervention_number VARCHAR(64) NOT NULL DEFAULT '', deleted_at TIMESTAMPTZ,
+        mission_number VARCHAR(32) NOT NULL DEFAULT '', source_mission_number VARCHAR(64) NOT NULL DEFAULT '', intervention_number VARCHAR(64) NOT NULL DEFAULT '', deleted_at TIMESTAMPTZ CONSTRAINT depannhome_partner_missions_retained_check CHECK(deleted_at IS NULL),
         partner_reference VARCHAR(160) NOT NULL DEFAULT '', status VARCHAR(30) NOT NULL DEFAULT 'received', priority VARCHAR(20) NOT NULL DEFAULT 'normal',
         billing_mode VARCHAR(30) NOT NULL DEFAULT 'direct_client' CHECK (billing_mode IN ('direct_client','principal')),
         planning_draft JSONB NOT NULL DEFAULT '{}'::jsonb,
@@ -129,7 +129,7 @@ export function registerPartnerMissionRoutes(app, requireAuthentication) {
     app.post("/api/partner-missions/:missionId/reject", requireAdministration, asyncHandler(async (req, res) => { const mission = await changeStatus(req, positiveId(req.params.missionId), "rejected", { reason: clean(req.body?.reason, 500) }); res.json({ mission }); }));
     app.post("/api/partner-missions/:missionId/close", requireAdministration, asyncHandler(async (req, res) => { const mission = await changeStatus(req, positiveId(req.params.missionId), "closed", { reason: clean(req.body?.reason, 500) }); res.json({ mission }); }));
     app.post("/api/partner-missions/:missionId/reopen", requireAdministration, asyncHandler(async (req, res) => res.json({ mission: await reopenClosedMission(req, positiveId(req.params.missionId)) })));
-    app.post("/api/partner-missions/:missionId/archive-closed", requireAdministration, asyncHandler(async (req, res) => res.json({ mission: await archiveClosedMission(req, positiveId(req.params.missionId)) })));
+    app.post("/api/partner-missions/:missionId/archive-closed", requireAdministration, (_req, res) => res.status(409).json({ message: "Une mission clôturée reste conservée pour garantir la traçabilité de son dossier." }));
     app.post("/api/partner-missions/:missionId/assign", requireAdministration, asyncHandler(async (req, res) => { const mission = await assignMission(req, positiveId(req.params.missionId)); res.json({ mission }); }));
     app.patch("/api/partner-missions/:missionId/planning-draft", requireAdministration, asyncHandler(async (req, res) => {
         const id = positiveId(req.params.missionId);
@@ -147,7 +147,7 @@ export function registerPartnerMissionRoutes(app, requireAuthentication) {
     }));
     app.patch("/api/partner-missions/:missionId/billing-mode", requireAdministration, asyncHandler(async (req, res) => { const billingMode = BILLING_MODES.has(req.body?.billingMode) ? req.body.billingMode : ""; if (!billingMode) return res.status(400).json({ message: "Type de facturation invalide." }); const mission = await updateBillingMode(req, positiveId(req.params.missionId), billingMode); res.json({ mission }); }));
     app.post("/api/partner-missions/:missionId/status", requireMissionAccess, asyncHandler(async (req, res) => { const status = String(req.body?.status || ""); if (!STATUSES.has(status)) return res.status(400).json({ message: "Statut de mission invalide." }); const mission = await changeStatus(req, positiveId(req.params.missionId), status, { note: clean(req.body?.note, 1000) }); res.json({ mission }); }));
-    app.post("/api/partner-missions/archive-terminal", requireAdministration, asyncHandler(async (req, res) => res.json(await archiveTerminalMissions(req))));
+    app.post("/api/partner-missions/archive-terminal", requireAdministration, (_req, res) => res.status(409).json({ message: "Les missions refusées ou annulées restent conservées et consultables dans leur statut." }));
     app.post("/api/partner-missions/outbox/retry", requireAdministration, asyncHandler(async (req, res) => { const ownerId = getAccountOwnerId(req); if (!isFeatureEnabled(await getOrganization(ownerId), "connectors")) return res.status(403).json({ message: "Les connexions API externes ne sont pas incluses dans cette offre." }); res.json(await deliverCompanyOutbox(ownerId)); }));
     app.post("/api/partner-missions/intakes", requireAdministration, asyncHandler(async (req, res) => { const intake = sanitizeIntake(req.body); if (!intake.ok) return res.status(400).json({ message: intake.message }); const key = crypto.randomBytes(32).toString("base64url"); const { rows } = await getPool().query("INSERT INTO depannhome_partner_intakes(owner_id,partner_key,partner_name,api_key_hash,callback_url,assignment_mode,rules,created_by) VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,$8) RETURNING id", [getAccountOwnerId(req), intake.key, intake.name, hash(key), intake.callbackUrl, intake.assignmentMode, JSON.stringify(intake.rules), req.user.sub]); res.status(201).json({ id: rows[0].id, partnerKey: intake.key, apiKey: key, endpoint: `/api/partner-intake/${intake.key}` }); }));
     app.patch("/api/partner-missions/intakes/:intakeId", requireAdministration, asyncHandler(async (req, res) => { const intake = sanitizeIntake(req.body); if (!intake.ok) return res.status(400).json({ message: intake.message }); const result = await getPool().query("UPDATE depannhome_partner_intakes SET partner_key=$3,partner_name=$4,callback_url=$5,assignment_mode=$6,rules=$7::jsonb,enabled=$8,updated_at=NOW() WHERE id=$1 AND owner_id=$2 AND partner_key NOT LIKE 'email-%'", [positiveId(req.params.intakeId), getAccountOwnerId(req), intake.key, intake.name, intake.callbackUrl, intake.assignmentMode, JSON.stringify(intake.rules), req.body?.enabled !== false]); if (!result.rowCount) return res.status(404).json({ message: "Partenaire introuvable." }); res.json({ message: "Connexion API enregistrée." }); }));
@@ -321,22 +321,6 @@ async function reopenClosedMission(req, id) {
     const { notifyEmailMissionStatus } = await import("./partner-email.js");
     await notifyEmailMissionStatus(ownerId, mission.id, mission.status, details).catch(error => console.warn("[partner-email] réouverture non envoyée :", error.message));
     return mission;
-}
-
-async function archiveClosedMission(req, id) {
-    const ownerId = getAccountOwnerId(req);
-    const { rows } = await getPool().query("UPDATE depannhome_partner_missions SET deleted_at=NOW(),updated_at=NOW() WHERE id=$1 AND owner_id=$2 AND deleted_at IS NULL AND status='closed' RETURNING *", [id, ownerId]);
-    if (!rows[0]) throw clientError(409, "Seule une mission clôturée encore visible peut être supprimée.");
-    await writeHistory(getPool(), ownerId, id, "closed", "archived", req.user.sub, req.user.role, { reason: clean(req.body?.reason, 500) }, req.ip);
-    return publicMission(rows[0]);
-}
-
-async function archiveTerminalMissions(req) {
-    const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(positiveId).filter(Boolean).slice(0, 100) : [];
-    if (!ids.length) throw clientError(400, "Sélectionnez au moins une mission à supprimer.");
-    const ownerId = getAccountOwnerId(req); const internalNetworkOnly = !isFeatureEnabled(await getOrganization(ownerId), "connectors");
-    const result = await getPool().query("UPDATE depannhome_partner_missions mission SET deleted_at=NOW(),updated_at=NOW() FROM depannhome_partner_intakes intake WHERE mission.intake_id=intake.id AND mission.owner_id=$1 AND mission.id=ANY($2::bigint[]) AND mission.deleted_at IS NULL AND mission.status IN ('rejected','cancelled') AND ($3::boolean=FALSE OR intake.partner_key LIKE 'connection-%' OR intake.partner_key LIKE 'email-%')", [ownerId, ids, internalNetworkOnly]);
-    return { deletedCount: result.rowCount || 0 };
 }
 
 async function updateBillingMode(req, id, billingMode) { const ownerId = getAccountOwnerId(req); if (!id) throw clientError(400, "Mission invalide."); const { rows } = await getPool().query("UPDATE depannhome_partner_missions SET billing_mode=$3,updated_at=NOW() WHERE id=$1 AND owner_id=$2 RETURNING *", [id, ownerId, billingMode]); if (!rows[0]) throw clientError(404, "Mission introuvable."); await writeHistory(getPool(), ownerId, id, rows[0].status, "billing_mode_changed", req.user.sub, req.user.role, { billingMode }, req.ip); if (billingMode === "principal") { const { sharePrincipalBillingDocuments } = await import("./partner-dialogue.js"); await sharePrincipalBillingDocuments(ownerId, id); } else { const { hideDirectClientBillingDocuments } = await import("./partner-dialogue.js"); await hideDirectClientBillingDocuments(ownerId, id); } return publicMission(rows[0]); }

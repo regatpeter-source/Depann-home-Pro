@@ -92,6 +92,8 @@ Un e-mail est dédupliqué avec son identifiant RFC `Message-ID` dans la boîte 
 
 Une mission importée conserve `Message-ID`, `In-Reply-To` et `References`. L’entreprise peut répondre depuis la carte de mission ; le message est envoyé avec sa propre boîte. Microsoft utilise Graph, Google Workspace utilise Gmail API, tandis que Gmail personnel, OVH et les autres hébergeurs utilisent SMTP. Si elle active les retours automatiques, les changements de statut sont envoyés de la même façon. Une panne d’envoi ne bloque jamais la mise à jour du statut dans Depann’Home Pro.
 
+Une fois créée, une mission partenaire n’est jamais supprimable depuis l’application, y compris lorsqu’elle est refusée, annulée ou clôturée. Elle reste consultable avec son statut, sa conversation et son journal afin de préserver la traçabilité du dossier. Une mission envoyée encore en attente peut être **annulée**, mais cette annulation ne la masque pas. Seules les propositions e-mail qui n’ont pas encore été confirmées et ne constituent donc pas encore une mission peuvent être supprimées de la file de détection.
+
 ## Exploitation
 
 Le planificateur contrôle au maximum 20 connexions dues toutes les cinq minutes, chaque connexion étant synchronisée au plus toutes les dix minutes. Une synchronisation manuelle est disponible dans l’interface. Les erreurs exposées à l’utilisateur sont volontairement génériques afin de ne révéler ni serveur interne ni identifiant secret.

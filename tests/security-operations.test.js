@@ -84,6 +84,13 @@ test("la migration e-mail reste applicable avant la création optionnelle de sa 
     assert.match(runner, /5f741958ac796af6863d52488751a08129a8c6992ad73efd43a6af75ff2413dc/);
 });
 
+test("la migration de conservation restaure les missions masquées et interdit une nouvelle suppression logique", () => {
+    const migration = readFileSync(new URL("../database/migrations/0003_retain_partner_missions.sql", import.meta.url), "utf8");
+    assert.match(migration, /UPDATE depannhome_partner_missions[\s\S]*SET deleted_at = NULL/);
+    assert.match(migration, /depannhome_partner_missions_retained_check/);
+    assert.match(migration, /CHECK \(deleted_at IS NULL\)/);
+});
+
 test("le défi TOTP Créateur est limité, persisté et consommé une seule fois", () => {
     const authentication = readFileSync(new URL("../server/auth.js", import.meta.url), "utf8");
     const migration = readFileSync(new URL("../database/migrations/0001_security_operations.sql", import.meta.url), "utf8");

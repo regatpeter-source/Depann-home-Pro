@@ -13,6 +13,7 @@ import { embeddedPdfImages, extractPartnerDocumentText, normalizePartnerDocument
 
 const serverSource = readFileSync(new URL("../server/partner-email.js", import.meta.url), "utf8");
 const missionSource = readFileSync(new URL("../server/partner-missions.js", import.meta.url), "utf8");
+const connectionServerSource = readFileSync(new URL("../server/partner-connections.js", import.meta.url), "utf8");
 const missionClientSource = readFileSync(new URL("../js/partner-missions.js", import.meta.url), "utf8");
 const clientsSource = readFileSync(new URL("../js/clients.js", import.meta.url), "utf8");
 const emailSettingsSource = readFileSync(new URL("../js/partner-email-settings.js", import.meta.url), "utf8");
@@ -263,6 +264,18 @@ test("toutes les origines affichent réellement toutes les missions sans filtre 
     assert.doesNotMatch(filtering, /mission\.status !== "closed"/);
     assert.doesNotMatch(dashboardQuery, /LIMIT 200/);
     assert.match(missionSource, /depannhome_partner_missions_owner_visible_updated_idx/);
+});
+
+test("les missions refusées, annulées ou clôturées ne peuvent jamais être supprimées", () => {
+    const receivedArchiveRoutes = missionSource.slice(missionSource.indexOf('app.post("/api/partner-missions/:missionId/archive-closed"'), missionSource.indexOf('app.post("/api/partner-missions/outbox/retry"'));
+    const connectionArchiveRoutes = connectionServerSource.slice(connectionServerSource.indexOf('app.delete("/api/partner-connections/missions/:missionId"'), connectionServerSource.indexOf('app.post("/api/partner-connections/missions"'));
+    const cancellation = connectionServerSource.slice(connectionServerSource.indexOf("async function cancelSentMission"), connectionServerSource.indexOf("async function sentMissionForSource"));
+    assert.doesNotMatch(receivedArchiveRoutes, /deleted_at=NOW\(\)/);
+    assert.doesNotMatch(connectionArchiveRoutes, /archiveSentMission|archiveSentTerminalMissions/);
+    assert.doesNotMatch(cancellation, /deleted_at=NOW\(\)/);
+    assert.match(cancellation, /SET status='cancelled',updated_at=NOW\(\)/);
+    assert.doesNotMatch(missionClientSource, /data-archive-selected-terminal|data-archive-closed/);
+    assert.match(missionClientSource, /button\.dataset\.cancelSent = button\.dataset\.deleteSent/);
 });
 
 test("une lecture API interrompue est retentée sans rejouer les écritures", () => {

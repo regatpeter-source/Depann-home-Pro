@@ -135,6 +135,11 @@ function renderMissionTab(shell) {
 }
 
 function renderMissions(node, missions, options = {}) { node.innerHTML = missions.length ? missions.map(mission => `<article class="partner-mission-card priority-${escapeHtml(mission.priority)}"><div class="partner-mission-card-title"><div><p class="eyebrow">${escapeHtml(mission.partnerName || "Partenaire")} · ${escapeHtml(mission.missionNumber || "Mission partenaire")}</p><h3>${escapeHtml(mission.mappedData?.clientName || "Client non renseigné")}</h3><p>${escapeHtml(mission.mappedData?.address || "Adresse non renseignée")}</p></div><span class="partner-mission-status ${escapeHtml(mission.status)}">${escapeHtml(labelStatus(mission.status))}</span></div><div class="partner-mission-meta"><span>${escapeHtml(mission.mappedData?.interventionType || "Intervention")}</span><span>${mission.scheduledDate ? escapeHtml(mission.scheduledDate) : "À planifier"}</span><span class="priority">${escapeHtml(labelPriority(mission.priority))}</span></div><p>${escapeHtml(mission.mappedData?.description || mission.mappedData?.comments || "Aucun descriptif transmis.")}</p><div class="partner-mission-card-actions">${options.sent || mission.conversationSide === "sent" ? `<span class="muted">Envoyée le ${escapeHtml(formatMissionDate(mission.sentAt))}</span><button class="secondary-button" data-open-sent-dialogue="${mission.id}">Ouvrir la conversation</button>${["received", "pending_validation"].includes(mission.status) ? `<button class="danger-button" data-delete-sent="${mission.id}">Supprimer</button>` : !["closed", "cancelled", "rejected"].includes(mission.status) ? `<button class="danger-button" data-cancel-sent="${mission.id}">Clôturer / Annuler</button>` : ""}` : `<span class="muted">Reçue le ${escapeHtml(formatMissionDate(mission.createdAt))}</span><button class="secondary-button" data-open="${mission.id}">Détail</button><button class="secondary-button" data-open-dialogue="${mission.id}">Ouvrir la conversation</button>${canManagePartnerMissions() && ["received", "pending_validation"].includes(mission.status) ? `<button class="secondary-button" data-accept="${mission.id}">Accepter et planifier</button><button class="danger-button" data-reject="${mission.id}">Refuser</button>` : canManagePartnerMissions() && !["closed", "cancelled", "rejected"].includes(mission.status) ? `<button class="secondary-button" data-close="${mission.id}">Clôturer la mission</button>` : ""}`}</div></article>`).join("") : '<p class="muted">Aucune mission ne correspond à ce filtre.</p>';
+    node.querySelectorAll("[data-delete-sent]").forEach(button => {
+        button.dataset.cancelSent = button.dataset.deleteSent;
+        delete button.dataset.deleteSent;
+        button.textContent = "Annuler";
+    });
     missions.forEach((mission, index) => {
         if (!mission.emailCandidate) return;
         const card = node.children[index];
@@ -154,7 +159,6 @@ function renderMissions(node, missions, options = {}) { node.innerHTML = mission
     });
     node.querySelectorAll("[data-email-reply]").forEach(button => button.addEventListener("click", () => openEmailReply(button.dataset.emailReply)));
     enableClosedMissionCorrection(node, missions, options);
-    enableTerminalMissionSelection(node, missions, options);
     node.querySelectorAll("[data-accept]").forEach(button => {
         const mission = missions.find(item => String(item.id) === button.dataset.accept);
         if (["received", "pending_validation"].includes(mission?.status) && mission?.planningDraft?.pausedAt) {
@@ -174,7 +178,6 @@ function renderMissions(node, missions, options = {}) { node.innerHTML = mission
         if (mission) openPartnerMissionPlanning(mission);
     }));
     node.querySelectorAll("[data-reject]").forEach(button => button.addEventListener("click", async () => { const reason = prompt("Motif du refus à transmettre au partenaire :"); if (reason === null) return; const result = await api(`/api/partner-missions/${button.dataset.reject}/reject`, { method: "POST", body: JSON.stringify({ reason }) }); if (!result.ok) return alert(result.message); renderPartnerMissions(); }));
-    node.querySelectorAll("[data-delete-sent]").forEach(button => button.addEventListener("click", async () => { if (!confirm("Êtes-vous certain de vouloir supprimer cette mission ?\n\nCette action est irréversible.")) return; const result = await api(`/api/partner-connections/missions/${button.dataset.deleteSent}`, { method: "DELETE" }); if (!result.ok) return alert(result.message); renderPartnerMissions(); }));
     node.querySelectorAll("[data-cancel-sent]").forEach(button => button.addEventListener("click", async () => { if (!confirm("Annuler cette mission acceptée ? L’historique sera conservé chez les deux entreprises.")) return; const reason = prompt("Motif de l’annulation (facultatif) :"); if (reason === null) return; const result = await api(`/api/partner-connections/missions/${button.dataset.cancelSent}/cancel`, { method: "POST", body: JSON.stringify({ reason }) }); if (!result.ok) return alert(result.message); renderPartnerMissions(); }));
     node.querySelectorAll("[data-close]").forEach(button => button.addEventListener("click", async () => { if (!confirm("Clôturer cette mission ? Le journal sera conservé et la conversation deviendra en lecture seule.")) return; const result = await api(`/api/partner-missions/${button.dataset.close}/close`, { method: "POST" }); if (!result.ok) return alert(result.message); renderPartnerMissions(); }));
     if (node.querySelector("[data-email-candidate]")) {
@@ -244,18 +247,12 @@ function enableClosedMissionCorrection(node, missions, options) {
         if (mission.status !== "closed") return;
         const actions = node.children[index]?.querySelector(".partner-mission-card-actions");
         if (!actions) return;
-        actions.insertAdjacentHTML("beforeend", `<button class="secondary-button" data-reopen="${mission.id}">Rouvrir</button><button class="danger-button" data-archive-closed="${mission.id}">Supprimer</button>`);
+        actions.insertAdjacentHTML("beforeend", `<button class="secondary-button" data-reopen="${mission.id}">Rouvrir</button>`);
     });
     node.querySelectorAll("[data-reopen]").forEach(button => button.addEventListener("click", async () => {
         if (!confirm("Rouvrir cette mission ? Le partenaire sera informé du retour au statut opérationnel.")) return;
         const reason = prompt("Motif de la réouverture (facultatif) :"); if (reason === null) return;
         const result = await api(`/api/partner-missions/${button.dataset.reopen}/reopen`, { method: "POST", body: JSON.stringify({ reason }) });
-        if (!result.ok) return alert(result.message); renderPartnerMissions();
-    }));
-    node.querySelectorAll("[data-archive-closed]").forEach(button => button.addEventListener("click", async () => {
-        if (!confirm("Supprimer cette mission clôturée de la liste ? Le journal restera conservé.")) return;
-        const reason = prompt("Motif de la suppression (facultatif) :"); if (reason === null) return;
-        const result = await api(`/api/partner-missions/${button.dataset.archiveClosed}/archive-closed`, { method: "POST", body: JSON.stringify({ reason }) });
         if (!result.ok) return alert(result.message); renderPartnerMissions();
     }));
 }
@@ -279,42 +276,6 @@ function enablePartnerNotificationDeletion(shell, alerts) {
         if (!ids.length || !confirm(`Supprimer définitivement ${ids.length} notification${ids.length > 1 ? "s" : ""} partenaire${ids.length > 1 ? "s" : ""} ?`)) return;
         const result = await api("/api/collaboration/partner-notifications", { method: "DELETE", body: JSON.stringify({ ids }) });
         if (!result.ok) return alert(result.message);
-        renderPartnerMissions();
-    });
-    updateButton();
-}
-
-function enableTerminalMissionSelection(node, missions, options) {
-    if (!canManagePartnerMissions()) return;
-    const selectable = missions.map((mission, index) => ({ mission, card: node.children[index] })).filter(({ mission, card }) => card && ["rejected", "cancelled"].includes(mission.status));
-    if (!selectable.length) return;
-    const toolbar = document.createElement("div");
-    toolbar.className = "form-actions";
-    toolbar.innerHTML = '<label><input type="checkbox" data-select-all-terminal-missions> Tout sélectionner</label><button type="button" class="danger-button" data-archive-selected-terminal disabled>Supprimer la sélection</button>';
-    node.prepend(toolbar);
-    selectable.forEach(({ mission, card }) => {
-        const sent = options.sent || mission.conversationSide === "sent";
-        const actions = card.querySelector(".partner-mission-card-actions") || card;
-        actions.insertAdjacentHTML("afterbegin", `<label><input type="checkbox" data-terminal-mission-id="${mission.id}" data-terminal-mission-source="${sent ? "sent" : "received"}"> Sélectionner</label>`);
-    });
-    const button = toolbar.querySelector("[data-archive-selected-terminal]");
-    const selectAll = toolbar.querySelector("[data-select-all-terminal-missions]");
-    const inputs = [...node.querySelectorAll("[data-terminal-mission-id]")];
-    const selected = () => inputs.filter(input => input.checked);
-    const updateButton = () => { const count = selected().length; button.disabled = count === 0; button.textContent = count ? `Supprimer la sélection (${count})` : "Supprimer la sélection"; selectAll.checked = count === inputs.length; selectAll.indeterminate = count > 0 && count < inputs.length; };
-    inputs.forEach(input => input.addEventListener("change", updateButton));
-    selectAll.addEventListener("change", () => { inputs.forEach(input => { input.checked = selectAll.checked; }); updateButton(); });
-    button.addEventListener("click", async () => {
-        const inputs = selected();
-        if (!inputs.length || !confirm(`Masquer ${inputs.length} mission${inputs.length > 1 ? "s" : ""} refusée${inputs.length > 1 ? "s" : ""} ou annulée${inputs.length > 1 ? "s" : ""} ? L’historique restera conservé.`)) return;
-        const sentIds = inputs.filter(input => input.dataset.terminalMissionSource === "sent").map(input => Number(input.dataset.terminalMissionId));
-        const receivedIds = inputs.filter(input => input.dataset.terminalMissionSource === "received").map(input => Number(input.dataset.terminalMissionId));
-        const results = await Promise.all([
-            sentIds.length ? api("/api/partner-connections/missions/archive-terminal", { method: "POST", body: JSON.stringify({ ids: sentIds }) }) : Promise.resolve({ ok: true }),
-            receivedIds.length ? api("/api/partner-missions/archive-terminal", { method: "POST", body: JSON.stringify({ ids: receivedIds }) }) : Promise.resolve({ ok: true })
-        ]);
-        const failed = results.find(result => !result.ok);
-        if (failed) return alert(failed.message);
         renderPartnerMissions();
     });
     updateButton();

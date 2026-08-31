@@ -1351,7 +1351,7 @@ CREATE INDEX IF NOT EXISTS depannhome_partner_intakes_owner_sandbox_idx ON depan
 CREATE TABLE IF NOT EXISTS depannhome_partner_missions (
     id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
     intake_id BIGINT NOT NULL REFERENCES depannhome_partner_intakes(id) ON DELETE RESTRICT, external_mission_id VARCHAR(160) NOT NULL,
-    mission_number VARCHAR(32) NOT NULL DEFAULT '', source_mission_number VARCHAR(64) NOT NULL DEFAULT '', intervention_number VARCHAR(64) NOT NULL DEFAULT '', deleted_at TIMESTAMPTZ,
+    mission_number VARCHAR(32) NOT NULL DEFAULT '', source_mission_number VARCHAR(64) NOT NULL DEFAULT '', intervention_number VARCHAR(64) NOT NULL DEFAULT '', deleted_at TIMESTAMPTZ CONSTRAINT depannhome_partner_missions_retained_check CHECK(deleted_at IS NULL),
     partner_reference VARCHAR(160) NOT NULL DEFAULT '', status VARCHAR(30) NOT NULL DEFAULT 'received', priority VARCHAR(20) NOT NULL DEFAULT 'normal',
     billing_mode VARCHAR(30) NOT NULL DEFAULT 'direct_client' CHECK (billing_mode IN ('direct_client','principal')),
     planning_draft JSONB NOT NULL DEFAULT '{}'::jsonb,

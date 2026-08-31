@@ -21,7 +21,7 @@ test("the journal scrolls inside its grid row without overlapping the composer",
 
 test("a planned mission keeps its source conversation if the connection is later disconnected", () => {
     const sourceAccess = serverSource.slice(serverSource.indexOf("async function accessibleSourceMission"), serverSource.indexOf("async function findMissionById"));
-    const sentMissions = connectionSource.slice(connectionSource.indexOf("async function sentMissions"), connectionSource.indexOf("async function archiveSentMission"));
+    const sentMissions = connectionSource.slice(connectionSource.indexOf("async function sentMissions"), connectionSource.indexOf("async function cancelSentMission"));
     assert.match(sourceAccess, /JOIN depannhome_partner_connections connection ON connection\.id=log\.connection_id/);
     assert.doesNotMatch(sourceAccess, /connection\.status='connected'/);
     assert.match(sourceAccess, /log\.source_owner_id=\$2/);
