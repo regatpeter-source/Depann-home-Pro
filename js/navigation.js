@@ -5,9 +5,9 @@ import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocume
 import { renderAccounting, renderElectronicInvoicingConfiguration } from "./accounting.js?v=18";
 import { renderPurchases } from "./purchases.js?v=119";
 import { renderGroupActivation, renderGroupWorkspace } from "./groups.js?v=4";
-import { renderPartnerMissions } from "./partner-missions.js?v=64";
+import { renderPartnerMissions } from "./partner-missions.js?v=65";
 import { renderPartnerSandbox } from "./partner-sandbox.js?v=3";
-import { renderPartnerConnections } from "./partner-connections.js?v=29";
+import { renderPartnerConnections } from "./partner-connections.js?v=30";
 import { renderCompanyEmailWorkspace, renderPartnerEmailSettings } from "./partner-email-settings.js?v=22";
 import { renderDataImportTool } from "./data-imports.js?v=4";
 import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=36";

@@ -266,6 +266,18 @@ test("toutes les origines affichent réellement toutes les missions sans filtre 
     assert.match(missionSource, /depannhome_partner_missions_owner_visible_updated_idx/);
 });
 
+test("les listes de missions proposent 10, 20, 30 ou 100 éléments et restent paginées au-delà", () => {
+    const pagination = missionClientSource.slice(missionClientSource.indexOf("function renderMissionTab"), missionClientSource.indexOf("function renderMissions"));
+    assert.match(pagination, /\[10, 20, 30, 100\]/);
+    assert.match(pagination, /\{ page: 1, pageSize: 20 \}/);
+    assert.match(pagination, /Math\.ceil\(missions\.length \/ pagination\.pageSize\)/);
+    assert.match(pagination, /missions\.slice\(start, start \+ pagination\.pageSize\)/);
+    assert.match(pagination, /data-mission-page/);
+    assert.match(pagination, /Précédente/);
+    assert.match(pagination, /Suivante/);
+    assert.match(pagination, /missionPaginationPages/);
+});
+
 test("les missions refusées, annulées ou clôturées ne peuvent jamais être supprimées", () => {
     const receivedArchiveRoutes = missionSource.slice(missionSource.indexOf('app.post("/api/partner-missions/:missionId/archive-closed"'), missionSource.indexOf('app.post("/api/partner-missions/outbox/retry"'));
     const connectionArchiveRoutes = connectionServerSource.slice(connectionServerSource.indexOf('app.delete("/api/partner-connections/missions/:missionId"'), connectionServerSource.indexOf('app.post("/api/partner-connections/missions"'));

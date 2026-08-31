@@ -11,6 +11,7 @@ let activeMissionTab = "received";
 let activeMissionSpace = "network";
 let preferredConnectionId = "";
 let partnerMissionRenderSequence = 0;
+const partnerMissionPagination = new Map();
 const initialEmailSyncDate = new Date();
 let emailSyncFrom = localDateValue(new Date(initialEmailSyncDate.getFullYear(), initialEmailSyncDate.getMonth(), 1));
 let emailSyncTo = localDateValue(initialEmailSyncDate);
@@ -119,7 +120,11 @@ function renderMissionTab(shell) {
     const source = messages && activeMissionSpace === "network" ? [...received.map(mission => ({ ...mission, conversationSide: "received" })), ...dashboard.sentMissions.map(mission => ({ ...mission, conversationSide: "sent" }))] : sent ? dashboard.sentMissions : [...emailCandidates, ...received];
     const externalIntro = activeMissionSpace === "external" ? '<p class="muted">Ces missions proviennent de connecteurs API. Leur Centre de mission utilise la même interface professionnelle, le même journal et les mêmes échanges de documents que les missions du réseau. Le partenaire externe consulte et alimente ces échanges depuis son propre logiciel via API.</p>' : "";
     const statuses = activeMissionSpace === "email" ? ["email_candidate", ...dashboard.statuses] : dashboard.statuses;
-    content.innerHTML = `${externalIntro}${messages ? '<p class="muted">Une conversation est disponible pour chaque mission. Ouvrez-la pour écrire directement à l’autre entreprise et consulter les informations partagées.</p>' : `<div class="partner-mission-filters"><label>Statut <select id="partnerMissionStatus"><option value="">Tous les statuts</option>${statuses.map(status => `<option value="${escapeHtml(status)}">${escapeHtml(labelStatus(status))}</option>`).join("")}</select></label><label>Recherche <input id="partnerMissionSearch" type="search" placeholder="Client, référence, adresse"></label></div>`}<section class="partner-mission-list" id="partnerMissionList"></section>`;
+    const paginationKey = `${activeMissionSpace}:${activeMissionTab}`;
+    const pagination = partnerMissionPagination.get(paginationKey) || { page: 1, pageSize: 20 };
+    partnerMissionPagination.set(paginationKey, pagination);
+    const pageSizeControl = `<label>Afficher<select id="partnerMissionPageSize" aria-label="Nombre de missions par page">${[10, 20, 30, 100].map(size => `<option value="${size}" ${pagination.pageSize === size ? "selected" : ""}>${size} missions</option>`).join("")}</select></label>`;
+    content.innerHTML = `${externalIntro}${messages ? `<p class="muted">Une conversation est disponible pour chaque mission. Ouvrez-la pour écrire directement à l’autre entreprise et consulter les informations partagées.</p><div class="partner-mission-filters partner-mission-filters-compact">${pageSizeControl}</div>` : `<div class="partner-mission-filters"><label>Statut <select id="partnerMissionStatus"><option value="">Tous les statuts</option>${statuses.map(status => `<option value="${escapeHtml(status)}">${escapeHtml(labelStatus(status))}</option>`).join("")}</select></label><label>Recherche <input id="partnerMissionSearch" type="search" placeholder="Client, référence, adresse"></label>${pageSizeControl}</div>`}<section class="partner-mission-list" id="partnerMissionList"></section><nav class="partner-mission-pagination" id="partnerMissionPagination" aria-label="Pages des missions"></nav>`;
     const renderList = () => {
         const status = content.querySelector("#partnerMissionStatus")?.value || "";
         const query = content.querySelector("#partnerMissionSearch")?.value.trim().toLowerCase() || "";
@@ -127,11 +132,38 @@ function renderMissionTab(shell) {
             const matchesSearch = `${mission.missionNumber} ${mission.externalMissionId} ${mission.partnerReference} ${mission.partnerName} ${mission.mappedData?.clientName} ${mission.mappedData?.address}`.toLowerCase().includes(query);
             return (!status || mission.status === status) && (!query || matchesSearch);
         });
-        renderMissions(content.querySelector("#partnerMissionList"), missions, { sent, messages });
+        const totalPages = Math.max(1, Math.ceil(missions.length / pagination.pageSize));
+        pagination.page = Math.min(Math.max(1, pagination.page), totalPages);
+        const start = (pagination.page - 1) * pagination.pageSize;
+        renderMissions(content.querySelector("#partnerMissionList"), missions.slice(start, start + pagination.pageSize), { sent, messages });
+        renderMissionPagination(content.querySelector("#partnerMissionPagination"), { ...pagination, total: missions.length, totalPages, start }, nextPage => {
+            pagination.page = nextPage;
+            renderList();
+            content.querySelector("#partnerMissionList")?.scrollIntoView({ behavior: "smooth", block: "start" });
+        });
     };
-    content.querySelector("#partnerMissionStatus")?.addEventListener("change", renderList);
-    content.querySelector("#partnerMissionSearch")?.addEventListener("input", renderList);
+    content.querySelector("#partnerMissionStatus")?.addEventListener("change", () => { pagination.page = 1; renderList(); });
+    content.querySelector("#partnerMissionSearch")?.addEventListener("input", () => { pagination.page = 1; renderList(); });
+    content.querySelector("#partnerMissionPageSize")?.addEventListener("change", event => {
+        pagination.pageSize = [10, 20, 30, 100].includes(Number(event.currentTarget.value)) ? Number(event.currentTarget.value) : 20;
+        pagination.page = 1;
+        renderList();
+    });
     renderList();
+}
+
+function renderMissionPagination(node, pagination, goToPage) {
+    const first = pagination.total ? pagination.start + 1 : 0;
+    const last = Math.min(pagination.start + pagination.pageSize, pagination.total);
+    const pageNumbers = missionPaginationPages(pagination.page, pagination.totalPages);
+    node.innerHTML = `<span>${first}–${last} sur ${pagination.total} mission${pagination.total > 1 ? "s" : ""}</span><div><button type="button" class="secondary-button" data-mission-page="${pagination.page - 1}" ${pagination.page <= 1 ? "disabled" : ""}>Précédente</button>${pageNumbers.map(page => page === "…" ? '<span class="partner-mission-page-gap" aria-hidden="true">…</span>' : `<button type="button" class="secondary-button${page === pagination.page ? " active" : ""}" data-mission-page="${page}" ${page === pagination.page ? 'aria-current="page"' : ""}>${page}</button>`).join("")}<button type="button" class="secondary-button" data-mission-page="${pagination.page + 1}" ${pagination.page >= pagination.totalPages ? "disabled" : ""}>Suivante</button></div>`;
+    node.querySelectorAll("[data-mission-page]:not([disabled])").forEach(button => button.addEventListener("click", () => goToPage(Number(button.dataset.missionPage))));
+}
+
+function missionPaginationPages(current, total) {
+    if (total <= 7) return Array.from({ length: total }, (_value, index) => index + 1);
+    const pages = [...new Set([1, 2, current - 1, current, current + 1, total - 1, total].filter(page => page >= 1 && page <= total))].sort((first, second) => first - second);
+    return pages.flatMap((page, index) => index && page - pages[index - 1] > 1 ? ["…", page] : [page]);
 }
 
 function renderMissions(node, missions, options = {}) { node.innerHTML = missions.length ? missions.map(mission => `<article class="partner-mission-card priority-${escapeHtml(mission.priority)}"><div class="partner-mission-card-title"><div><p class="eyebrow">${escapeHtml(mission.partnerName || "Partenaire")} · ${escapeHtml(mission.missionNumber || "Mission partenaire")}</p><h3>${escapeHtml(mission.mappedData?.clientName || "Client non renseigné")}</h3><p>${escapeHtml(mission.mappedData?.address || "Adresse non renseignée")}</p></div><span class="partner-mission-status ${escapeHtml(mission.status)}">${escapeHtml(labelStatus(mission.status))}</span></div><div class="partner-mission-meta"><span>${escapeHtml(mission.mappedData?.interventionType || "Intervention")}</span><span>${mission.scheduledDate ? escapeHtml(mission.scheduledDate) : "À planifier"}</span><span class="priority">${escapeHtml(labelPriority(mission.priority))}</span></div><p>${escapeHtml(mission.mappedData?.description || mission.mappedData?.comments || "Aucun descriptif transmis.")}</p><div class="partner-mission-card-actions">${options.sent || mission.conversationSide === "sent" ? `<span class="muted">Envoyée le ${escapeHtml(formatMissionDate(mission.sentAt))}</span><button class="secondary-button" data-open-sent-dialogue="${mission.id}">Ouvrir la conversation</button>${["received", "pending_validation"].includes(mission.status) ? `<button class="danger-button" data-delete-sent="${mission.id}">Supprimer</button>` : !["closed", "cancelled", "rejected"].includes(mission.status) ? `<button class="danger-button" data-cancel-sent="${mission.id}">Clôturer / Annuler</button>` : ""}` : `<span class="muted">Reçue le ${escapeHtml(formatMissionDate(mission.createdAt))}</span><button class="secondary-button" data-open="${mission.id}">Détail</button><button class="secondary-button" data-open-dialogue="${mission.id}">Ouvrir la conversation</button>${canManagePartnerMissions() && ["received", "pending_validation"].includes(mission.status) ? `<button class="secondary-button" data-accept="${mission.id}">Accepter et planifier</button><button class="danger-button" data-reject="${mission.id}">Refuser</button>` : canManagePartnerMissions() && !["closed", "cancelled", "rejected"].includes(mission.status) ? `<button class="secondary-button" data-close="${mission.id}">Clôturer la mission</button>` : ""}`}</div></article>`).join("") : '<p class="muted">Aucune mission ne correspond à ce filtre.</p>';
