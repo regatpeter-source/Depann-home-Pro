@@ -7,6 +7,7 @@ const landing = readFileSync(new URL("../public/landing.html", import.meta.url),
 const privacy = readFileSync(new URL("../public/privacy.html", import.meta.url), "utf8");
 const terms = readFileSync(new URL("../public/terms.html", import.meta.url), "utf8");
 const siteScript = readFileSync(new URL("../public/site.js", import.meta.url), "utf8");
+const googleVerification = readFileSync(new URL("../docs/GOOGLE_OAUTH_VERIFICATION.md", import.meta.url), "utf8");
 
 test("la vitrine publique conserve un accès explicite au logiciel et aux pages légales", () => {
     assert.match(appSource, /app\.get\(\["\/confidentialite"[\s\S]*?privacy\.html/);
@@ -34,6 +35,16 @@ test("la politique de confidentialité décrit explicitement l'usage limité des
     assert.match(privacy, /CNIL/);
     assert.match(privacy, /Demandes commerciales/);
     assert.match(privacy, /demande d’offre/);
+});
+
+test("le dossier de vérification Google aligne scopes, vidéo et accès reviewer", () => {
+    assert.match(googleVerification, /https:\/\/www\.googleapis\.com\/auth\/gmail\.readonly/);
+    assert.match(googleVerification, /https:\/\/www\.googleapis\.com\/auth\/gmail\.send/);
+    assert.match(googleVerification, /gmail\.metadata` cannot access message bodies or attachments/);
+    assert.match(googleVerification, /gmail\.compose` is not sufficient/);
+    assert.match(googleVerification, /language to \*\*English\*\*/);
+    assert.match(googleVerification, /Google Workspace source account/);
+    assert.match(googleVerification, /Test credentials and reviewer navigation/);
 });
 
 test("les conditions encadrent les comptes, les services connectés et les données métier", () => {

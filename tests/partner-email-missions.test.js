@@ -550,6 +550,10 @@ test("Google Workspace utilise uniquement Gmail API avec les scopes minimaux", (
     assert.match(serverSource, /gmailSendMessage/);
     assert.doesNotMatch(gmailSource, /messages\/(?:batchModify|modify|trash|untrash)|\/labels|\/threads\/.+\/trash/);
     assert.doesNotMatch(serverSource, /provider === "google"[^\n]+(?:imap|smtp)/i);
+    assert.match(emailSettingsSource, /data-google-oauth-disclosure/);
+    assert.match(emailSettingsSource, /lire les messages et pièces jointes/);
+    assert.match(emailSettingsSource, /ne modifie, ne déplace, ne supprime aucun message Gmail/);
+    assert.match(emailSettingsSource, /\/confidentialite#messagerie/);
 });
 
 test("un timeout ImapFlow ne peut pas arrêter le processus Node", () => {
