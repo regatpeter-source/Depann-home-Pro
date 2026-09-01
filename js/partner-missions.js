@@ -2,8 +2,8 @@ import { ROUTES } from "./config.js?v=118";
 import { clearSearch, getContainer, setPage } from "./ui.js?v=44";
 import { escapeHtml } from "./utils.js?v=44";
 import { openPartnerDialogue } from "./partner-dialogue.js?v=19";
-import { getSearchableClients } from "./clients.js?v=157";
-import { synchronizeClients } from "./client-sync.js?v=125";
+import { getSearchableClients } from "./clients.js?v=158";
+import { synchronizeClients } from "./client-sync.js?v=126";
 import { loadPartnerNotifications, markPartnerNotificationsRead } from "./collaboration.js?v=4";
 
 let dashboard = null;

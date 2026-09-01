@@ -1,5 +1,5 @@
 import { escapeHtml } from "./utils.js?v=44";
-import { synchronizeClients } from "./client-sync.js?v=125";
+import { synchronizeClients } from "./client-sync.js?v=126";
 
 let activeSettingsCard = null;
 const mailboxSearchDate = new Date();

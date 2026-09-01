@@ -157,16 +157,18 @@ async function synchronize({ forceFull = false } = {}) {
         removeQueuedOperation(operation.id);
     }
 
-    const refreshed = await request(getClientSynchronizationUrl(forceFull));
-    if (refreshed.ok) {
-        const refreshedClients = Array.isArray(refreshed.data?.clients) ? refreshed.data.clients.map(normalizeClient) : [];
-        const refreshedDeletedClientIds = Array.isArray(refreshed.data?.deletedClientIds) ? refreshed.data.deletedClientIds : [];
-        const finalClients = forceFull ? mergeRemoteWithQueuedClients(refreshedClients) : applyRemoteChanges(getLocalClients(), refreshedClients, refreshedDeletedClientIds);
-        if (!writeClients(finalClients)) {
-            return { ok: false, message: "Espace de stockage local saturé. Supprimez ou compressez des fichiers clients." };
+    if (operations.length) {
+        const refreshed = await request(getClientSynchronizationUrl(forceFull));
+        if (refreshed.ok) {
+            const refreshedClients = Array.isArray(refreshed.data?.clients) ? refreshed.data.clients.map(normalizeClient) : [];
+            const refreshedDeletedClientIds = Array.isArray(refreshed.data?.deletedClientIds) ? refreshed.data.deletedClientIds : [];
+            const finalClients = forceFull ? mergeRemoteWithQueuedClients(refreshedClients) : applyRemoteChanges(getLocalClients(), refreshedClients, refreshedDeletedClientIds);
+            if (!writeClients(finalClients)) {
+                return { ok: false, message: "Espace de stockage local saturé. Supprimez ou compressez des fichiers clients." };
+            }
+            const refreshedCursor = validDate(refreshed.data?.cursor);
+            if (refreshedCursor) writeSynchronizationCursor(refreshedCursor);
         }
-        const refreshedCursor = validDate(refreshed.data?.cursor);
-        if (refreshedCursor) writeSynchronizationCursor(refreshedCursor);
     }
     window.dispatchEvent(new CustomEvent("depannhome:clients-synchronized"));
     return { ok: true };

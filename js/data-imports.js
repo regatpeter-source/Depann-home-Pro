@@ -1,5 +1,5 @@
 import { escapeHtml } from "./utils.js?v=44";
-import { synchronizeClients } from "./client-sync.js?v=125";
+import { synchronizeClients } from "./client-sync.js?v=126";
 
 const TYPES = [
     ["clients", "Clients", "Fiches client, coordonnées et notes"],

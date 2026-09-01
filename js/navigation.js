@@ -12,8 +12,8 @@ import { renderCompanyEmailWorkspace, renderPartnerEmailSettings } from "./partn
 import { renderDataImportTool } from "./data-imports.js?v=4";
 import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=38";
 import { getFirstUnreadClientId, refreshClientMessageAlert, refreshVisibleClientMessages } from "./messages.js?v=107";
-import { getSearchableClients, renderClients } from "./clients.js?v=157";
-import { synchronizeClients } from "./client-sync.js?v=125";
+import { getSearchableClients, renderClients } from "./clients.js?v=158";
+import { synchronizeClients } from "./client-sync.js?v=126";
 import { configureLibrary, openLibrarySection, renderLibrary, searchPersonalLibrary } from "./library.js?v=122";
 import { getContextualSearchResults } from "./search.js?v=70";
 import { state, resetSelection } from "./state.js?v=44";
@@ -427,8 +427,14 @@ function renderCompanyEmail() {
 async function openClients(clientId = "") {
     if (isAccountant()) return;
     const provisionedClientId = clientId ? "" : pendingPartnerClientId;
-    const selectedId = clientId || provisionedClientId || await getFirstUnreadClientId();
-    await renderClients({ database, navigateToRef, createBillingDocument: createBillingDocumentForClient, viewBillingDocument, createCalendarEvent: createCalendarEventForClient, refreshFromServer: true, ...(selectedId ? { selectedId, focusMessages: true } : {}), ...(provisionedClientId ? { directoryClientId: provisionedClientId } : {}) });
+    const selectedClientPromise = clientId || provisionedClientId
+        ? Promise.resolve(clientId || provisionedClientId)
+        : getFirstUnreadClientId();
+    const [selectedId] = await Promise.all([
+        selectedClientPromise,
+        synchronizeClients({ forceFull: true }).catch(() => null)
+    ]);
+    await renderClients({ database, navigateToRef, createBillingDocument: createBillingDocumentForClient, viewBillingDocument, createCalendarEvent: createCalendarEventForClient, skipClientSynchronization: true, ...(selectedId ? { selectedId, focusMessages: true } : {}), ...(provisionedClientId ? { directoryClientId: provisionedClientId } : {}) });
     if (provisionedClientId === pendingPartnerClientId) pendingPartnerClientId = "";
 }
 

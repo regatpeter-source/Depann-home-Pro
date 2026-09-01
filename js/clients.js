@@ -1,5 +1,5 @@
 import { ROUTES } from "./config.js?v=116";
-import { addClientActivity, getLocalClients, removeLocalClient, saveLocalClient, scheduleClientSynchronization, synchronizeClients } from "./client-sync.js?v=125";
+import { addClientActivity, getLocalClients, removeLocalClient, saveLocalClient, scheduleClientSynchronization, synchronizeClients } from "./client-sync.js?v=126";
 import { renderClientMessages } from "./messages.js?v=107";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
@@ -44,12 +44,14 @@ const clientDirectoryPagination = { page: 1, pageSize: 20 };
 
 export async function renderClients(options = {}) {
     const refreshFromServer = options.refreshFromServer === true;
+    const skipClientSynchronization = options.skipClientSynchronization === true;
     const viewOptions = { ...options };
     delete viewOptions.refreshFromServer;
+    delete viewOptions.skipClientSynchronization;
     const directoryClientId = String(viewOptions.directoryClientId || "");
     delete viewOptions.directoryClientId;
     if (refreshFromServer) await synchronizeClients({ forceFull: true }).catch(() => {});
-    else scheduleClientSynchronization();
+    else if (!skipClientSynchronization) scheduleClientSynchronization();
     const persistentViewOptions = { ...viewOptions };
     ["clientWorkspace", "editId", "selectedId", "focusMessages"].forEach(key => delete persistentViewOptions[key]);
     clientScreenOptions = { ...clientScreenOptions, ...persistentViewOptions };
