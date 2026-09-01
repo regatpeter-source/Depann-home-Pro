@@ -839,7 +839,10 @@ function compareEventTimes(first, second) {
 }
 
 function formatEventTime(event) {
-    return event.startTime && event.endTime ? `${event.startTime} – ${event.endTime}` : "Toute la journée";
+    if (event.startTime && event.endTime) return `${event.startTime} – ${event.endTime}`;
+    if (event.startTime) return `Dès ${event.startTime}`;
+    if (event.endTime) return `Jusqu’à ${event.endTime}`;
+    return "Toute la journée";
 }
 
 function formatPreviewDate(value) {
@@ -1282,6 +1285,7 @@ function renderCalendarGrid(panel) {
         if (!eventsByDate.has(event.date)) eventsByDate.set(event.date, []);
         eventsByDate.get(event.date).push(event);
     });
+    eventsByDate.forEach(dayEvents => dayEvents.sort(compareEventTimes));
     const today = toDateString(new Date());
 
     panel.innerHTML = `
@@ -1308,7 +1312,7 @@ function renderCalendarGrid(panel) {
         };
         if (!readOnly) {
             cell.addEventListener("click", eventClick => {
-                if (eventClick.target.closest(".calendar-event")) return;
+                if (eventClick.target.closest(".calendar-event, .calendar-overflow-button")) return;
                 openNewEvent();
             });
             cell.addEventListener("keydown", eventKey => {
@@ -1319,12 +1323,15 @@ function renderCalendarGrid(panel) {
         }
 
         const eventList = cell.querySelector(".calendar-event-list");
-        (eventsByDate.get(date) || []).forEach(event => {
+        const dayEvents = eventsByDate.get(date) || [];
+        const visibleEvents = dayEvents.slice(0, getCalendarEventLimit("month"));
+        visibleEvents.forEach(event => {
             const clientDetails = getEventClientDetails(event);
             const button = document.createElement("button");
             button.type = "button";
             button.className = `calendar-event color-${event.color}`;
-            button.title = [event.title, getAssignedTechnicianNames(event).join(" · "), clientDetails.name, clientDetails.phone, clientDetails.address, event.startTime && `${event.startTime}${event.endTime ? ` – ${event.endTime}` : ""}`].filter(Boolean).join(" · ");
+            button.title = calendarEventAccessibleLabel(event, clientDetails);
+            button.setAttribute("aria-label", calendarEventAccessibleLabel(event, clientDetails, date));
             button.innerHTML = renderCalendarEventCard(event, clientDetails);
             button.addEventListener("click", () => {
                 selectedEvent = event;
@@ -1332,6 +1339,16 @@ function renderCalendarGrid(panel) {
             });
             eventList.appendChild(button);
         });
+        const hiddenCount = dayEvents.length - visibleEvents.length;
+        if (hiddenCount > 0) {
+            const more = document.createElement("button");
+            more.type = "button";
+            more.className = "calendar-overflow-button";
+            more.textContent = `+ ${hiddenCount} autre${hiddenCount > 1 ? "s" : ""}`;
+            more.setAttribute("aria-label", `Afficher ${hiddenCount} autre${hiddenCount > 1 ? "s" : ""} intervention${hiddenCount > 1 ? "s" : ""} du ${formatShortDate(day)}`);
+            more.addEventListener("click", () => openCalendarDay(date));
+            eventList.appendChild(more);
+        }
         grid.appendChild(cell);
     });
 }
@@ -1344,26 +1361,30 @@ function renderCalendarList(panel) {
         if (!eventDates.has(event.date)) eventDates.set(event.date, []);
         eventDates.get(event.date).push(event);
     });
+    eventDates.forEach(dayEvents => dayEvents.sort(compareEventTimes));
     const days = [];
     for (const day = new Date(start); day <= end; day.setDate(day.getDate() + 1)) days.push(new Date(day));
     const canCreate = !isReadOnlyCalendar();
-    panel.innerHTML = `<div class="calendar-list-view">${days.map(day => {
+    panel.innerHTML = `<div class="calendar-list-view calendar-list-${calendarView}">${days.map(day => {
         const date = toDateString(day);
         const dayEvents = eventDates.get(date) || [];
+        const visibleEvents = dayEvents.slice(0, getCalendarEventLimit(calendarView));
+        const hiddenCount = dayEvents.length - visibleEvents.length;
         const emptyMessage = canCreate ? "Aucun événement. Cliquez pour en ajouter un." : "Aucun rendez-vous prévu.";
-        return `<section class="calendar-list-day${canCreate ? " calendar-list-day-clickable" : ""}"${canCreate ? ` data-calendar-date="${date}" tabindex="0" role="button" aria-label="Ajouter un événement le ${escapeHtml(formatShortDate(day))}"` : ""}><h3>${escapeHtml(new Intl.DateTimeFormat("fr-FR", { weekday: "long", day: "numeric", month: "long" }).format(day))}</h3>${dayEvents.length ? `<div class="calendar-list-events">${dayEvents.map(event => `<button type="button" class="calendar-event color-${escapeHtml(event.color)}" data-calendar-event="${escapeHtml(event.id)}">${renderCalendarEventCard(event, getEventClientDetails(event))}</button>`).join("")}</div>` : `<p class="muted">${emptyMessage}</p>`}</section>`;
+        return `<section class="calendar-list-day${canCreate ? " calendar-list-day-clickable" : ""}"${canCreate ? ` data-calendar-date="${date}" tabindex="0" role="button" aria-label="Ajouter un événement le ${escapeHtml(formatShortDate(day))}"` : ""}><h3>${escapeHtml(new Intl.DateTimeFormat("fr-FR", { weekday: "long", day: "numeric", month: "long" }).format(day))}</h3>${dayEvents.length ? `<div class="calendar-list-events">${visibleEvents.map(event => { const client = getEventClientDetails(event); return `<button type="button" class="calendar-event color-${escapeHtml(event.color)}" data-calendar-event="${escapeHtml(event.id)}" aria-label="${escapeHtml(calendarEventAccessibleLabel(event, client, date))}" title="${escapeHtml(calendarEventAccessibleLabel(event, client))}">${renderCalendarEventCard(event, client)}</button>`; }).join("")}${hiddenCount > 0 ? `<button type="button" class="calendar-overflow-button" data-calendar-more-date="${date}">+ ${hiddenCount} autre${hiddenCount > 1 ? "s" : ""}</button>` : ""}</div>` : `<p class="muted">${emptyMessage}</p>`}</section>`;
     }).join("")}</div>`;
     panel.querySelectorAll("[data-calendar-event]").forEach(button => button.addEventListener("click", () => {
         selectedEvent = events.find(event => String(event.id) === button.dataset.calendarEvent) || null;
         refreshCalendarDetail();
     }));
+    panel.querySelectorAll("[data-calendar-more-date]").forEach(button => button.addEventListener("click", () => openCalendarDay(button.dataset.calendarMoreDate)));
     panel.querySelectorAll("[data-calendar-date]").forEach(day => {
         const openNewEvent = () => {
             selectedEvent = newEventForDate(day.dataset.calendarDate);
             refreshCalendarDetail();
         };
         day.addEventListener("click", event => {
-            if (!event.target.closest(".calendar-event")) openNewEvent();
+            if (!event.target.closest(".calendar-event, .calendar-overflow-button")) openNewEvent();
         });
         day.addEventListener("keydown", event => {
             if (event.target !== day || !["Enter", " "].includes(event.key)) return;
@@ -1380,7 +1401,25 @@ function getVisibleEvents() {
 
 function renderCalendarEventCard(event, client) {
     const technicianNames = getAssignedTechnicianNames(event);
-    return `<span>${escapeHtml(event.startTime || "Toute la journée")}</span><strong>${escapeHtml(event.title)}</strong>${technicianNames.length ? `<small>${escapeHtml(technicianNames.join(" · "))}</small>` : ""}${client.name ? `<small class="calendar-event-client">${escapeHtml(client.name)}</small>` : ""}${client.phone ? `<small class="calendar-event-contact">${escapeHtml(client.phone)}</small>` : ""}${client.address ? `<small class="calendar-event-contact">${escapeHtml(client.address)}</small>` : ""}`;
+    const primary = client.name || event.title || "Intervention";
+    return `<time class="calendar-event-time">${escapeHtml(formatEventTime(event))}</time><span class="calendar-event-identity"><strong class="calendar-event-client">${escapeHtml(primary)}</strong>${client.address ? `<small class="calendar-event-address">${escapeHtml(client.address)}</small>` : ""}</span><span class="calendar-event-context">${client.name && event.title ? `<small class="calendar-event-title">${escapeHtml(event.title)}</small>` : ""}${technicianNames.length ? `<small class="calendar-event-technicians">${escapeHtml(technicianNames.join(" · "))}</small>` : ""}${client.phone ? `<small class="calendar-event-phone">${escapeHtml(client.phone)}</small>` : ""}</span>`;
+}
+
+function getCalendarEventLimit(view) {
+    if (view === "day") return Number.POSITIVE_INFINITY;
+    const mobile = document.body.dataset.deviceType === "mobile" || document.body.classList.contains("mobile-device");
+    return view === "month" ? (mobile ? 2 : 3) : (mobile ? 3 : 4);
+}
+
+function openCalendarDay(date) {
+    calendarView = "day";
+    displayedMonth = atNoon(new Date(`${date}T12:00:00`));
+    selectedEvent = null;
+    refreshCalendarPeriod();
+}
+
+function calendarEventAccessibleLabel(event, client, date = "") {
+    return [date ? formatPreviewDate(date) : "", formatEventTime(event), client.name, client.address, event.title, getAssignedTechnicianNames(event).join(" · "), client.phone].filter(Boolean).join(" · ");
 }
 
 function getEventClientDetails(event) {
