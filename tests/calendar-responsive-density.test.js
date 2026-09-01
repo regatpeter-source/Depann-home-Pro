@@ -36,10 +36,14 @@ test("le mois et la semaine limitent les cartes selon le poste sans perdre les i
     assert.match(limits, /refreshCalendarPeriod\(\)/);
 });
 
-test("les cases mois et semaine ont une hauteur stable et un rendu mobile dédié", () => {
+test("le mois et la semaine partagent le même espace PC et gardent un rendu mobile dédié", () => {
     assert.match(styles, /grid-auto-rows:190px/);
     assert.match(styles, /\.calendar-day\{[\s\S]*?height:190px;[\s\S]*?overflow:hidden/);
     assert.match(styles, /\.calendar-list-week \.calendar-list-day\{[\s\S]*?height:290px;[\s\S]*?overflow:hidden/);
+    assert.match(styles, /body\.desktop-device \.calendar-grid-panel\{[\s\S]*?height:clamp\(430px,calc\(100dvh - 310px\),650px\)/);
+    assert.match(styles, /body\.desktop-device \.calendar-grid\{[\s\S]*?height:calc\(100% - 31px\)/);
+    assert.match(styles, /body\.desktop-device \.calendar-list-view\.calendar-list-week\{[\s\S]*?height:100%/);
+    assert.match(styles, /body\.desktop-device \.calendar-list-week \.calendar-list-day\{[\s\S]*?height:100%/);
     assert.match(styles, /\.calendar-list-week\{[\s\S]*?grid-template-columns:repeat\(7/);
     assert.match(styles, /min-width:700px/);
     assert.match(styles, /\.calendar-list-week\{\s*grid-template-columns:1fr/);

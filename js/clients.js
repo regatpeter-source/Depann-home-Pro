@@ -50,7 +50,9 @@ export async function renderClients(options = {}) {
     delete viewOptions.directoryClientId;
     if (refreshFromServer) await synchronizeClients({ forceFull: true }).catch(() => {});
     else scheduleClientSynchronization();
-    clientScreenOptions = { ...clientScreenOptions, ...viewOptions };
+    const persistentViewOptions = { ...viewOptions };
+    ["clientWorkspace", "editId", "selectedId", "focusMessages"].forEach(key => delete persistentViewOptions[key]);
+    clientScreenOptions = { ...clientScreenOptions, ...persistentViewOptions };
     clearSearch();
     resetSelection("all");
     setPage("Clients", ROUTES.clients, "detail");
@@ -62,6 +64,22 @@ export async function renderClients(options = {}) {
     const selectedClient = viewOptions.selectedId ? getClientById(viewOptions.selectedId) : null;
 
     const directory = renderClientDirectory(clients);
+    if (isDesktopClientWorkspace()) {
+        const activeWorkspace = selectedClient ? "detail" : editingClient || viewOptions.clientWorkspace === "create" ? "create" : "directory";
+        container.appendChild(renderClientWorkspaceTabs(activeWorkspace, readOnly, selectedClient || editingClient));
+        if (activeWorkspace === "directory") {
+            container.append(renderClientToolbar(clients, readOnly, directory), directory);
+            if (directoryClientId) renderProvisionedClientDirectory(directory, clients, directoryClientId);
+            return;
+        }
+        if (activeWorkspace === "create") {
+            container.appendChild(renderClientForm(editingClient || EMPTY_CLIENT, clientScreenOptions));
+            return;
+        }
+        container.appendChild(renderClientDetail(selectedClient, { focusMessages: Boolean(options.focusMessages) }));
+        return;
+    }
+
     container.appendChild(renderClientToolbar(clients, readOnly, directory));
     if (!readOnly) container.appendChild(renderClientForm(editingClient || EMPTY_CLIENT, clientScreenOptions));
 
@@ -71,6 +89,24 @@ export async function renderClients(options = {}) {
 
     container.appendChild(directory);
     if (directoryClientId) renderProvisionedClientDirectory(directory, clients, directoryClientId);
+}
+
+function isDesktopClientWorkspace() {
+    return document.body.classList.contains("desktop-device");
+}
+
+function renderClientWorkspaceTabs(activeWorkspace, readOnly, activeClient) {
+    const navigation = document.createElement("nav");
+    navigation.className = "client-workspace-tabs";
+    navigation.setAttribute("aria-label", "Espaces clients");
+    navigation.innerHTML = `
+        <button type="button" class="client-workspace-tab${activeWorkspace === "directory" ? " active" : ""}" data-client-workspace="directory" ${activeWorkspace === "directory" ? 'aria-current="page"' : ""}><span>01</span><strong>Répertoire clients</strong><small>Rechercher et consulter</small></button>
+        ${readOnly ? "" : `<button type="button" class="client-workspace-tab${activeWorkspace === "create" ? " active" : ""}" data-client-workspace="create" ${activeWorkspace === "create" ? 'aria-current="page"' : ""}><span>02</span><strong>${activeClient && activeWorkspace === "create" ? "Modification client" : "Nouveau client"}</strong><small>Créer ou mettre à jour</small></button>`}
+        ${activeWorkspace === "detail" && activeClient ? `<button type="button" class="client-workspace-tab active" aria-current="page"><span>03</span><strong>Dossier client</strong><small>${escapeHtml(activeClient.name)}</small></button>` : ""}
+    `;
+    navigation.querySelector('[data-client-workspace="directory"]')?.addEventListener("click", () => renderClients({ ...clientScreenOptions, clientWorkspace: "directory" }));
+    navigation.querySelector('[data-client-workspace="create"]')?.addEventListener("click", () => renderClients({ ...clientScreenOptions, clientWorkspace: "create" }));
+    return navigation;
 }
 
 function renderClientToolbar(clients, readOnly, directory) {
@@ -118,7 +154,7 @@ function renderClientToolbar(clients, readOnly, directory) {
         <p id="clientSyncMessage" class="auth-message" aria-live="polite"></p>
     `;
 
-    panel.querySelector("#newClientBtn")?.addEventListener("click", () => renderClients());
+    panel.querySelector("#newClientBtn")?.addEventListener("click", () => renderClients({ ...clientScreenOptions, clientWorkspace: "create" }));
     panel.querySelector("#importGroupClientBtn")?.addEventListener("click", openGroupClientImportDialog);
     panel.querySelector("#syncClientsBtn").addEventListener("click", async event => {
         const button = event.currentTarget;
@@ -401,7 +437,7 @@ function renderClientForm(client, options = {}) {
         }
     });
 
-    panel.querySelector("#cancelEditBtn")?.addEventListener("click", () => renderClients(clientScreenOptions));
+    panel.querySelector("#cancelEditBtn")?.addEventListener("click", () => renderClients({ ...clientScreenOptions, clientWorkspace: "directory" }));
 
     return panel;
 }
