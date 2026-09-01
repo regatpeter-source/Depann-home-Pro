@@ -4,7 +4,7 @@ La **Boîte mail professionnelle** transforme les demandes d’intervention reç
 
 ## Fournisseurs et authentification
 
-- **Adresse de réception Depann’Home Pro (recommandée)** : adresse opaque propre à l’entreprise, hébergée par Brevo Inbound Parsing et utilisable sans OAuth, DNS ni serveur à configurer par l’entreprise ;
+- **Adresse de réception Depann’Home Pro** : fonctionnalité conservée mais temporairement désactivée et annoncée comme bientôt disponible, l’offre Brevo Inbound Parsing nécessaire étant actuellement trop coûteuse ;
 - **Microsoft 365, Outlook, Hotmail, Live et MSN**, y compris les comptes personnels : OAuth 2.0 avec PKCE et Microsoft Graph, sans IMAP/SMTP ;
 - **Google Workspace** : connexion temporairement désactivée dans l’interface et annoncée comme bientôt disponible ; le code Gmail API est conservé pour une activation ultérieure après les validations de conformité requises ;
 - **Gmail personnel** : parcours simplifié IMAP/SMTP avec mot de passe d’application Google, après activation de la validation en deux étapes ;
@@ -15,6 +15,8 @@ Les jetons et mots de passe d’application sont chiffrés côté serveur en AES
 Le backend Google Workspace conservé demande uniquement `openid`, `email`, `profile`, `https://www.googleapis.com/auth/gmail.readonly` et `https://www.googleapis.com/auth/gmail.send`. Tant que le bouton reste désactivé, aucune nouvelle autorisation Google n’est lancée depuis l’interface.
 
 ### Adresse de réception Depann’Home Pro via Brevo
+
+Cette fonctionnalité est désactivée par défaut avec `BREVO_INBOUND_ENABLED=false`. Dans cet état, aucune adresse ne peut être créée, le webhook refuse les messages et l’interface affiche uniquement **bientôt disponible**. Les variables SMTP Brevo déjà utilisées pour l’envoi restent totalement indépendantes et continuent de fonctionner.
 
 Depann’Home Pro configure une seule fois un sous-domaine de réception distinct du domaine d’envoi, par exemple `reception.depannhomepro.com`, avec les MX Brevo `inbound1.sendinblue.com` et `inbound2.sendinblue.com`. Un webhook global de type `inbound`, événement `inboundEmailProcessed`, cible `/api/webhooks/brevo/inbound` avec une authentification Bearer configurée par `BREVO_INBOUND_WEBHOOK_SECRET`.
 

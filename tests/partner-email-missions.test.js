@@ -59,6 +59,16 @@ test("le canal Brevo est opaque, révocable, dédupliqué et protégé comme web
     assert.match(appSource, /Trop d’e-mails entrants ont été reçus/);
 });
 
+test("le canal Brevo entrant reste désactivé et annoncé comme bientôt disponible", () => {
+    assert.match(serverSource, /process\.env\.BREVO_INBOUND_ENABLED === "true"/);
+    assert.match(serverSource, /brevoInboundEnabled\(\) && brevoInboundDomain\(\)/);
+    assert.match(serverSource, /inboundAddress: inboundAvailable \? inboundAddress\.rows\[0\] \|\| null : null/);
+    assert.match(emailSettingsSource, /inboundAvailable !== true/);
+    assert.match(emailSettingsSource, /Adresse de réception Depann’Home Pro · bientôt disponible/);
+    assert.match(emailSettingsSource, /Aucune adresse dédiée n’est actuellement créée ni exposée/);
+    assert.match(missionClientSource, /dashboard\.partnerEmail\.inboundAvailable && dashboard\.partnerEmail\.inboundAddress\?\.enabled/);
+});
+
 test("Google Workspace est désactivé sans retirer Microsoft ni IMAP SMTP", () => {
     assert.match(emailSettingsSource, /googleButton\.disabled = true/);
     assert.match(emailSettingsSource, /Google Workspace · bientôt disponible/);

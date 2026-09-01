@@ -186,6 +186,7 @@ function renderSettings(card, mailbox) {
 }
 
 function inboundAddressSection(mailbox) {
+    if (mailbox?.inboundAvailable !== true) return '<article class="partner-email-inbound-card"><div><p class="eyebrow">Réception simplifiée</p><h3>Adresse de réception Depann’Home Pro · bientôt disponible</h3><p>Cette fonctionnalité est temporairement désactivée. Microsoft et les boîtes IMAP/SMTP (Gmail personnel, OVH, Zimbra, Namecheap…) restent disponibles.</p><small>Aucune adresse dédiée n’est actuellement créée ni exposée.</small></div><div class="partner-email-inbound-actions"><button type="button" class="primary-button" disabled>Créer mon adresse · bientôt disponible</button></div></article>';
     const address = mailbox?.inboundAddress;
     const configured = mailbox?.inboundConfigured === true;
     const status = address?.enabled ? "Active" : address ? "Suspendue" : configured ? "Prête à être créée" : "Configuration plateforme en attente";

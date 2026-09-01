@@ -43,7 +43,7 @@ export async function renderPartnerMissions(options = {}) {
     if (renderSequence !== partnerMissionRenderSequence || !shell?.isConnected || !container.contains(shell)) return;
     if (!result.ok) { shell.innerHTML = `<section class="client-panel"><p class="auth-message error">${escapeHtml(result.message || "Impossible de charger les missions.")}</p></section>`; return; }
     dashboard = { ...result.data, sentMissions: sentResult.ok ? sentResult.data?.missions || [] : [], connections: connectionsResult.ok ? connectionsResult.data?.connections || [] : [], apiSandbox: sandboxResult.ok ? sandboxResult.data : { available: false }, partnerEmail: emailResult.ok ? emailResult.data : { connections: [], candidates: [], oauth: {} } };
-    const partnerEmailChannelCount = dashboard.partnerEmail.connections.length + (dashboard.partnerEmail.inboundAddress?.enabled ? 1 : 0);
+    const partnerEmailChannelCount = dashboard.partnerEmail.connections.length + (dashboard.partnerEmail.inboundAvailable && dashboard.partnerEmail.inboundAddress?.enabled ? 1 : 0);
     const networkMissions = dashboard.missions.filter(mission => mission.sourceType === "depannhome_network");
     const externalMissions = dashboard.missions.filter(mission => mission.sourceType === "external_connector");
     const pending = (activeMissionSpace === "network" ? networkMissions : externalMissions).filter(mission => ["received", "pending_validation"].includes(mission.status)).length;

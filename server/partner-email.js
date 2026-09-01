@@ -134,7 +134,8 @@ export function registerPartnerEmailRoutes(app, requireAuthentication) {
             getPool().query(`SELECT message.id,message.connection_id AS "connectionId",message.sender_address AS "senderAddress",message.sender_name AS "senderName",message.subject,message.body_text AS "bodyText",message.received_at AS "receivedAt",message.classification_score AS "classificationScore",message.classification_reasons AS "classificationReasons",message.status,message.mission_id AS "missionId",COALESCE(json_agg(json_build_object('id',attachment.id,'filename',attachment.filename,'mimeType',attachment.mime_type,'fileSize',attachment.file_size,'selected',attachment.selected) ORDER BY attachment.id) FILTER(WHERE attachment.id IS NOT NULL),'[]'::json) AS attachments FROM depannhome_partner_email_messages message LEFT JOIN depannhome_partner_email_attachments attachment ON attachment.email_message_id=message.id WHERE message.owner_id=$1 AND message.status='candidate' GROUP BY message.id ORDER BY message.received_at DESC LIMIT 200`, [ownerId]),
             getPool().query(`SELECT address.id,address.connection_id AS "connectionId",connection.email_address AS "emailAddress",address.enabled,address.created_at AS "createdAt",address.updated_at AS "updatedAt" FROM depannhome_partner_email_inbound_addresses address JOIN depannhome_partner_email_connections connection ON connection.id=address.connection_id WHERE address.owner_id=$1`, [ownerId])
         ]);
-        res.json({ connections: connections.rows, candidates: messages.rows, inboundAddress: inboundAddress.rows[0] || null, inboundConfigured: brevoInboundConfigured(), oauth: { google: oauthConfigured("google"), microsoft: oauthConfigured("microsoft") } });
+        const inboundAvailable = brevoInboundEnabled();
+        res.json({ connections: connections.rows, candidates: messages.rows, inboundAddress: inboundAvailable ? inboundAddress.rows[0] || null : null, inboundAvailable, inboundConfigured: brevoInboundConfigured(), oauth: { google: oauthConfigured("google"), microsoft: oauthConfigured("microsoft") } });
     }));
     app.post("/api/partner-email/inbound-address", requireEmailConfigurationAccess, asyncHandler(async (req, res) => {
         if (!brevoInboundConfigured()) return res.status(503).json({ message: "La réception Brevo doit d’abord être configurée par Depann’Home Pro." });
@@ -379,7 +380,8 @@ function validBrevoWebhookAuthorization(authorization, customSecret) {
     return left.length === right.length && crypto.timingSafeEqual(left, right);
 }
 
-function brevoInboundConfigured() { return Boolean(brevoInboundDomain() && validEnvironmentSecret("BREVO_API_KEY") && validEnvironmentSecret("BREVO_INBOUND_WEBHOOK_SECRET")); }
+function brevoInboundEnabled() { return process.env.BREVO_INBOUND_ENABLED === "true"; }
+function brevoInboundConfigured() { return Boolean(brevoInboundEnabled() && brevoInboundDomain() && validEnvironmentSecret("BREVO_API_KEY") && validEnvironmentSecret("BREVO_INBOUND_WEBHOOK_SECRET")); }
 function brevoInboundDomain() { return host(process.env.BREVO_INBOUND_DOMAIN); }
 function validEnvironmentSecret(name) { const value = String(process.env[name] || "").trim(); return value.length >= 24 && !/votre|remplacez|choisissez|generez/i.test(value); }
 function stableEmailUid(value) { return Number.parseInt(hash(value).slice(0, 13), 16); }
