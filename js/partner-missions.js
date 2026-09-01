@@ -2,7 +2,7 @@ import { ROUTES } from "./config.js?v=118";
 import { clearSearch, getContainer, setPage } from "./ui.js?v=44";
 import { escapeHtml } from "./utils.js?v=44";
 import { openPartnerDialogue } from "./partner-dialogue.js?v=19";
-import { getSearchableClients } from "./clients.js?v=155";
+import { getSearchableClients } from "./clients.js?v=156";
 import { synchronizeClients } from "./client-sync.js?v=125";
 import { loadPartnerNotifications, markPartnerNotificationsRead } from "./collaboration.js?v=4";
 
@@ -409,9 +409,25 @@ function formatAttachmentSize(value) { const size = Number(value) || 0; return s
 
 function showWizardMessage(node, message) { const target = node.querySelector(".auth-message"); target.textContent = message; target.classList.add("error"); }
 
-async function showDetail(id) { const result = await api(`/api/partner-missions/${id}`); if (!result.ok) return alert(result.message); const { mission, history, emailAttachments = [] } = result.data; const details = Object.entries(mission.mappedData).filter(([key, value]) => value && !["attachments", "errors"].includes(key)).map(([key, value]) => `<dt>${escapeHtml(labelField(key))}</dt><dd>${escapeHtml(typeof value === "object" ? JSON.stringify(value) : value)}</dd>`).join(""); const emailDocuments = emailAttachments.length ? `<section class="procedure-section"><div class="form-heading"><div><p class="eyebrow">Documents d’origine</p><h3>Pièces jointes reçues par e-mail</h3></div><span class="file-count-badge">${emailAttachments.length} fichier(s)</span></div><div class="attachment-list">${emailAttachments.map(attachment => `<article class="attachment-card"><div><p class="eyebrow">${escapeHtml(attachment.mimeType || "Document")}</p><h4>${escapeHtml(attachment.name || "Pièce jointe")}</h4><p class="muted">${escapeHtml(formatAttachmentSize(attachment.fileSize))} · ${escapeHtml(formatMissionDate(attachment.createdAt))}</p></div><div class="attachment-actions"><a class="secondary-button" href="${escapeHtml(attachment.url)}" target="_blank" rel="noopener">Visualiser</a><a class="secondary-button" href="${escapeHtml(attachment.url)}" download="${escapeHtml(attachment.name || "document")}">Télécharger</a></div></article>`).join("")}</div></section>` : ""; const dialog = openDialog(`<h3>Mission ${escapeHtml(mission.missionNumber || "partenaire")}</h3><p class="muted">Reçue le ${escapeHtml(formatMissionDate(mission.createdAt))} · ${escapeHtml(mission.partnerName || "Partenaire")} · ${escapeHtml(labelStatus(mission.status))}</p><div class="partner-mission-card-actions"><button class="secondary-button" id="openPartnerDialogue">Ouvrir le dialogue</button></div><dl class="partner-mission-details">${details}</dl>${emailDocuments}<h4>Journal de mission</h4><ol class="partner-mission-history">${history.map(item => `<li><strong>${escapeHtml(labelStatus(item.status))}</strong> · ${escapeHtml(item.action)}<br><small>${escapeHtml(item.actorName)} · ${escapeHtml(formatMissionDate(item.createdAt))}</small></li>`).join("")}</ol>`); dialog.querySelector("#openPartnerDialogue").addEventListener("click", () => { dialog.remove(); openPartnerDialogue(mission.id); }); }
+async function showDetail(id) {
+    const renderSequence = partnerMissionRenderSequence;
+    const shell = document.querySelector(".partner-mission-shell");
+    const content = shell?.querySelector("#partnerMissionContent");
+    if (!content) return;
+    content.innerHTML = '<section class="partner-mission-full-detail"><p class="muted">Chargement de la mission complète…</p></section>';
+    const result = await api(`/api/partner-missions/${encodeURIComponent(id)}`);
+    if (renderSequence !== partnerMissionRenderSequence || !content.isConnected) return;
+    if (!result.ok) { content.innerHTML = `<section class="client-panel"><p class="auth-message error">${escapeHtml(result.message || "Impossible de charger la mission.")}</p><button type="button" class="secondary-button" data-back-to-missions>Retour aux missions</button></section>`; content.querySelector("[data-back-to-missions]").addEventListener("click", () => renderMissionTab(shell)); return; }
+    const { mission, history = [], emailAttachments = [] } = result.data;
+    const details = Object.entries(mission.mappedData || {}).filter(([key, value]) => value && !["attachments", "errors"].includes(key)).map(([key, value]) => `<dt>${escapeHtml(labelField(key))}</dt><dd>${escapeHtml(typeof value === "object" ? JSON.stringify(value) : value)}</dd>`).join("");
+    const emailDocuments = emailAttachments.length ? `<section class="procedure-section"><div class="form-heading"><div><p class="eyebrow">Documents d’origine</p><h3>Pièces jointes reçues par e-mail</h3></div><span class="file-count-badge">${emailAttachments.length} fichier(s)</span></div><div class="attachment-list">${emailAttachments.map(attachment => `<article class="attachment-card"><div><p class="eyebrow">${escapeHtml(attachment.mimeType || "Document")}</p><h4>${escapeHtml(attachment.name || "Pièce jointe")}</h4><p class="muted">${escapeHtml(formatAttachmentSize(attachment.fileSize))} · ${escapeHtml(formatMissionDate(attachment.createdAt))}</p></div><div class="attachment-actions"><a class="secondary-button" href="${escapeHtml(attachment.url)}" target="_blank" rel="noopener">Visualiser</a><a class="secondary-button" href="${escapeHtml(attachment.url)}" download="${escapeHtml(attachment.name || "document")}">Télécharger</a></div></article>`).join("")}</div></section>` : "";
+    content.innerHTML = `<article class="partner-mission-full-detail"><header><button type="button" class="secondary-button" data-back-to-missions>← Retour aux missions</button><div><p class="eyebrow">Mission partenaire intégrale</p><h2>Mission ${escapeHtml(mission.missionNumber || "partenaire")}</h2><p class="muted">Reçue le ${escapeHtml(formatMissionDate(mission.createdAt))} · ${escapeHtml(mission.partnerName || "Partenaire")} · ${escapeHtml(labelStatus(mission.status))}</p></div><button type="button" class="secondary-button" data-open-mission-dialogue>Ouvrir le dialogue</button></header><section class="procedure-section"><h3>Informations de la mission</h3><dl class="partner-mission-details">${details || "<dt>Informations</dt><dd>Aucune donnée complémentaire transmise.</dd>"}</dl></section>${emailDocuments}<section class="procedure-section"><h3>Journal complet de la mission</h3><ol class="partner-mission-history">${history.length ? history.map(item => `<li><strong>${escapeHtml(labelStatus(item.status))}</strong> · ${escapeHtml(item.action)}<br><small>${escapeHtml(item.actorName)} · ${escapeHtml(formatMissionDate(item.createdAt))}</small></li>`).join("") : "<li>Aucun événement enregistré.</li>"}</ol></section></article>`;
+    content.querySelector("[data-back-to-missions]").addEventListener("click", () => renderMissionTab(shell));
+    content.querySelector("[data-open-mission-dialogue]").addEventListener("click", () => openPartnerDialogue(mission.id));
+    content.scrollIntoView({ behavior: "smooth", block: "start" });
+}
 async function openPartnerMissionPlanning(mission) {
-    const { renderCalendar } = await import("./calendar.js?v=187");
+    const { renderCalendar } = await import("./calendar.js?v=188");
     const data = mission.mappedData || {};
     const draft = mission.planningDraft || {};
     const hasDraft = Boolean(draft.pausedAt);

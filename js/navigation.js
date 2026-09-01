@@ -1,21 +1,21 @@
 import { ROUTES, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=131";
-import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=187";
+import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=188";
 import { openCreatorPartnerRequest, openCreatorRequestNotification, renderCreatorConsole } from "./creator.js?v=154";
-import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=189";
-import { renderAccounting, renderElectronicInvoicingConfiguration } from "./accounting.js?v=18";
-import { renderPurchases } from "./purchases.js?v=119";
+import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=190";
+import { renderAccounting, renderElectronicInvoicingConfiguration } from "./accounting.js?v=19";
+import { renderPurchases } from "./purchases.js?v=120";
 import { renderGroupActivation, renderGroupWorkspace } from "./groups.js?v=4";
-import { renderPartnerMissions } from "./partner-missions.js?v=65";
+import { renderPartnerMissions } from "./partner-missions.js?v=66";
 import { renderPartnerSandbox } from "./partner-sandbox.js?v=3";
-import { renderPartnerConnections } from "./partner-connections.js?v=30";
+import { renderPartnerConnections } from "./partner-connections.js?v=31";
 import { renderCompanyEmailWorkspace, renderPartnerEmailSettings } from "./partner-email-settings.js?v=22";
 import { renderDataImportTool } from "./data-imports.js?v=4";
-import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=36";
+import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=37";
 import { getFirstUnreadClientId, refreshClientMessageAlert, refreshVisibleClientMessages } from "./messages.js?v=107";
-import { getSearchableClients, renderClients } from "./clients.js?v=155";
+import { getSearchableClients, renderClients } from "./clients.js?v=156";
 import { synchronizeClients } from "./client-sync.js?v=125";
 import { configureLibrary, openLibrarySection, renderLibrary, searchPersonalLibrary } from "./library.js?v=122";
-import { getContextualSearchResults } from "./search.js?v=68";
+import { getContextualSearchResults } from "./search.js?v=69";
 import { state, resetSelection } from "./state.js?v=44";
 import {
     getSettings,
@@ -770,6 +770,7 @@ async function renderHome() {
     }
     panel.innerHTML = `
         <div class="dashboard-heading"><div><p class="eyebrow">Depann’Home Pro</p><h2>Tableau de bord</h2>${renderMobileUserSections()}</div><button type="button" class="secondary-button" data-dashboard-action="calendar">Voir le planning complet</button></div>
+        ${document.body.dataset.canSwitchGroupCompanies === "true" ? '<section class="dashboard-company-switcher" data-dashboard-company-switcher><p class="muted">Chargement des entreprises autorisées…</p></section>' : ""}
         <div class="dashboard-grid">
             <section class="dashboard-card"><p class="eyebrow">Aujourd’hui</p><h3>${escapeHtml(formatDashboardDate(new Date()))}</h3><div class="dashboard-events" data-dashboard-events="today"><p class="muted">Chargement des rendez-vous…</p></div></section>
             <section class="dashboard-card"><p class="eyebrow">À venir</p><h3>Les 7 prochains jours</h3><div class="dashboard-events" data-dashboard-events="upcoming"><p class="muted">Chargement des rendez-vous…</p></div></section>
@@ -780,6 +781,7 @@ async function renderHome() {
     renderPlatformAnnouncement(container);
 
     panel.querySelector('[data-dashboard-action="calendar"]').addEventListener("click", renderCalendar);
+    void renderHomeGroupCompanySwitcher(panel);
     const result = await loadDashboardEvents();
     if (!panel.isConnected) return;
     if (!result.ok) {
@@ -795,6 +797,35 @@ async function renderHome() {
     const upcomingEvents = result.events.filter(event => event.date > today && event.date <= upcomingEnd);
     renderDashboardEvents(panel.querySelector('[data-dashboard-events="today"]'), todayEvents, "Aucun rendez-vous aujourd’hui.");
     renderDashboardEvents(panel.querySelector('[data-dashboard-events="upcoming"]'), upcomingEvents, "Aucun rendez-vous prévu dans les 7 prochains jours.");
+}
+
+async function renderHomeGroupCompanySwitcher(panel) {
+    const section = panel.querySelector("[data-dashboard-company-switcher]");
+    if (!section || document.body.dataset.canSwitchGroupCompanies !== "true") return;
+    try {
+        const response = await fetch("/api/groups/context", { credentials: "same-origin" });
+        const data = response.ok ? await response.json() : null;
+        if (!section.isConnected) return;
+        const companies = (data?.companies || []).filter(company => company.isActive);
+        if (!data?.enabled || !companies.length) { section.remove(); return; }
+        const activeCompanyId = String(data.activeCompanyId || document.body.dataset.activeCompanyId || "");
+        section.innerHTML = `<div><p class="eyebrow">${escapeHtml(data.group?.name || document.body.dataset.groupName || "Groupe / Multi-entreprises")}</p><h3>Entreprise active : ${escapeHtml(document.body.dataset.activeCompanyName || "Entreprise")}</h3><p class="muted">Sélectionnez une entreprise autorisée. Clients, documents, rapports et comptabilité restent strictement isolés dans l’entreprise choisie.</p></div><div class="dashboard-company-list">${companies.map(company => { const active = String(company.id) === activeCompanyId; return `<button type="button" class="secondary-button${active ? " active" : ""}" data-home-company-id="${escapeHtml(company.id)}" ${active ? 'disabled aria-current="true"' : ""}>${escapeHtml(company.companyName)}${active ? " · Active" : ""}</button>`; }).join("")}</div><p class="auth-message" data-home-company-message aria-live="polite"></p>`;
+        section.querySelectorAll("[data-home-company-id]:not([disabled])").forEach(button => button.addEventListener("click", async () => {
+            section.querySelectorAll("button").forEach(item => { item.disabled = true; });
+            section.querySelector("[data-home-company-message]").textContent = "Changement d’entreprise en cours…";
+            const result = await fetch("/api/groups/active-company", { method: "PUT", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ companyId: button.dataset.homeCompanyId }) });
+            if (!result.ok) {
+                section.querySelectorAll("button:not([aria-current])").forEach(item => { item.disabled = false; });
+                const error = await result.json().catch(() => ({}));
+                section.querySelector("[data-home-company-message]").textContent = error.message || "Changement d’entreprise impossible.";
+                section.querySelector("[data-home-company-message]").classList.add("error");
+                return;
+            }
+            window.location.reload();
+        }));
+    } catch {
+        if (section.isConnected) section.innerHTML = '<p class="auth-message error">Impossible de charger les entreprises autorisées.</p>';
+    }
 }
 
 async function loadDashboardEvents() {

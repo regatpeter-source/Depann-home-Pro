@@ -3,6 +3,7 @@ import { addClientActivity, getLocalClients, removeLocalClient, saveLocalClient,
 import { renderClientMessages } from "./messages.js?v=107";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
+import { pageSizeOptions, paginateItems, renderBusinessPagination } from "./pagination.js?v=1";
 import {
     clearSearch,
     createButton,
@@ -39,6 +40,7 @@ const ATTACHMENT_TYPES = ["Devis", "Facture", "Quitus", "Rapport fuite", "Photo"
 const MAX_ATTACHMENT_SIZE = 4 * 1024 * 1024;
 let clientScreenOptions = {};
 let clientDirectoryFilters = createEmptyDirectoryFilters();
+const clientDirectoryPagination = { page: 1, pageSize: 20 };
 
 export async function renderClients(options = {}) {
     const refreshFromServer = options.refreshFromServer === true;
@@ -139,11 +141,13 @@ function renderClientToolbar(clients, readOnly, directory) {
     panel.querySelector("#clientDirectoryForm").addEventListener("submit", async event => {
         event.preventDefault();
         clientDirectoryFilters = readDirectoryFilters(new FormData(event.currentTarget));
+        clientDirectoryPagination.page = 1;
         await applyClientDirectorySearch(directory, clients, clientDirectoryFilters);
         directory.scrollIntoView({ behavior: "smooth", block: "start" });
     });
     panel.querySelector("#clearClientDirectory").addEventListener("click", event => {
         clientDirectoryFilters = createEmptyDirectoryFilters();
+        clientDirectoryPagination.page = 1;
         event.currentTarget.form.reset();
         renderClientDirectoryPrompt(directory);
     });
@@ -440,13 +444,18 @@ function renderClientDirectoryResults(section, clients, appointmentDatesByClient
         section.appendChild(createInfo("Aucun dossier ne correspond à ces critères. Modifiez les critères puis relancez la recherche."));
         return;
     }
+    const orderedClients = [...clients].sort((first, second) => {
+        const dateDifference = (parseDirectoryDate(second.createdAt) || new Date(0)) - (parseDirectoryDate(first.createdAt) || new Date(0));
+        return dateDifference || first.name.localeCompare(second.name, "fr");
+    });
+    const pagination = paginateItems(orderedClients, clientDirectoryPagination);
     const summary = document.createElement("div");
     summary.className = "client-search-results-summary";
     summary.tabIndex = -1;
-    summary.innerHTML = `<strong>${clients.length} dossier${clients.length > 1 ? "s" : ""} trouvé${clients.length > 1 ? "s" : ""}</strong><span>Les résultats apparaissent ci-dessous.</span>`;
+    summary.innerHTML = `<div><strong>${clients.length} dossier${clients.length > 1 ? "s" : ""} trouvé${clients.length > 1 ? "s" : ""}</strong><span>Les résultats apparaissent ci-dessous.</span></div><label>Afficher<select data-client-page-size aria-label="Nombre de clients par page">${pageSizeOptions(pagination.pageSize, "clients")}</select></label>`;
     section.appendChild(summary);
     const groups = new Map();
-    clients.forEach(client => {
+    pagination.items.forEach(client => {
         const date = parseDirectoryDate(client.createdAt) || new Date(0);
         const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
         if (!groups.has(key)) groups.set(key, { date, clients: [] });
@@ -458,6 +467,20 @@ function renderClientDirectoryResults(section, clients, appointmentDatesByClient
         panel.innerHTML = `<div class="client-results-group-heading"><div><p class="eyebrow">Dossiers créés</p><h2>${escapeHtml(formatDirectoryMonth(group.date))}</h2></div><span>${group.clients.length} client(s)</span></div>`;
         panel.appendChild(renderClientTable(group.clients, appointmentDatesByClient));
         section.appendChild(panel);
+    });
+    const paginationNode = document.createElement("nav");
+    paginationNode.className = "business-pagination";
+    paginationNode.setAttribute("aria-label", "Pages des clients");
+    section.appendChild(paginationNode);
+    renderBusinessPagination(paginationNode, pagination, { singular: "client", plural: "clients", onPageChange: page => {
+        clientDirectoryPagination.page = page;
+        renderClientDirectoryResults(section, clients, appointmentDatesByClient);
+        section.scrollIntoView({ behavior: "smooth", block: "start" });
+    } });
+    summary.querySelector("[data-client-page-size]").addEventListener("change", event => {
+        clientDirectoryPagination.pageSize = Number(event.currentTarget.value);
+        clientDirectoryPagination.page = 1;
+        renderClientDirectoryResults(section, clients, appointmentDatesByClient);
     });
 }
 

@@ -1,13 +1,15 @@
 import { ROUTES } from "./config.js?v=111";
-import { getSearchableClients } from "./clients.js?v=153";
+import { getSearchableClients } from "./clients.js?v=156";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { clearSearch, getContainer, setPage } from "./ui.js?v=44";
+import { pageSizeOptions, paginateItems, renderBusinessPagination } from "./pagination.js?v=1";
 
 const PURCHASE_CATEGORIES = ["Matériel", "Consommables", "Loyer", "Véhicule", "Outillage", "Sous-traitance", "Services", "Assurances", "Autre"];
 let purchases = [];
 let activePurchase = null;
 let presentation = {};
+const purchasePagination = { page: 1, pageSize: 20 };
 
 export async function renderPurchases(options = {}) {
     presentation = { ...options, readOnly: options.readOnly === true || document.body.dataset.role === "accountant" };
@@ -122,13 +124,15 @@ function renderPurchaseList(panel) {
     panel.hidden = false;
     panel.innerHTML = `
         <div class="form-heading"><div><p class="eyebrow">Registre des dépenses</p><h2>Achats enregistrés</h2></div></div>
-        <div class="billing-register-filters"><input id="purchaseSearch" type="search" placeholder="Rechercher un fournisseur, une référence ou un achat" aria-label="Rechercher un achat"><select id="purchaseCategoryFilter" aria-label="Filtrer par catégorie"><option value="all">Toutes les catégories</option>${PURCHASE_CATEGORIES.map(category => `<option value="${escapeHtml(category)}">${escapeHtml(category)}</option>`).join("")}</select><select id="purchaseAccountingFilter" aria-label="Filtrer par comptabilisation"><option value="all">Tous les statuts comptables</option><option value="accounted">Comptabilisés</option><option value="unaccounted">À comptabiliser</option></select></div>
+        <div class="billing-register-filters"><input id="purchaseSearch" type="search" placeholder="Rechercher un fournisseur, une référence ou un achat" aria-label="Rechercher un achat"><select id="purchaseCategoryFilter" aria-label="Filtrer par catégorie"><option value="all">Toutes les catégories</option>${PURCHASE_CATEGORIES.map(category => `<option value="${escapeHtml(category)}">${escapeHtml(category)}</option>`).join("")}</select><select id="purchaseAccountingFilter" aria-label="Filtrer par comptabilisation"><option value="all">Tous les statuts comptables</option><option value="accounted">Comptabilisés</option><option value="unaccounted">À comptabiliser</option></select><label>Afficher<select id="purchasePageSize" aria-label="Nombre d’achats par page">${pageSizeOptions(purchasePagination.pageSize, "achats")}</select></label></div>
         <div class="purchase-list" id="purchaseList"></div>
+        <nav class="business-pagination" id="purchasePagination" aria-label="Pages des achats"></nav>
     `;
     const list = panel.querySelector("#purchaseList");
     const search = panel.querySelector("#purchaseSearch");
     const categoryFilter = panel.querySelector("#purchaseCategoryFilter");
     const accountingFilter = panel.querySelector("#purchaseAccountingFilter");
+    const pageSize = panel.querySelector("#purchasePageSize");
     const renderFilteredPurchases = () => {
         const query = normalizeText(search.value);
         const visiblePurchases = purchases.filter(purchase => {
@@ -137,9 +141,10 @@ function renderPurchaseList(panel) {
             const matchesAccounting = accountingFilter.value === "all" || (accountingFilter.value === "accounted" ? purchase.isAccounted : !purchase.isAccounted);
             return matchesQuery && matchesCategory && matchesAccounting;
         });
+        const pagination = paginateItems(visiblePurchases, purchasePagination);
         list.innerHTML = "";
-        if (!visiblePurchases.length) { list.innerHTML = `<p class="muted">${purchases.length ? "Aucun achat ne correspond aux filtres." : "Ajoutez votre premier achat."}</p>`; return; }
-        visiblePurchases.forEach(purchase => {
+        if (!visiblePurchases.length) { list.innerHTML = `<p class="muted">${purchases.length ? "Aucun achat ne correspond aux filtres." : "Ajoutez votre premier achat."}</p>`; panel.querySelector("#purchasePagination").innerHTML = ""; return; }
+        pagination.items.forEach(purchase => {
             const item = document.createElement("article");
             item.className = "purchase-item";
             const totals = calculateTotals([purchase]);
@@ -153,8 +158,14 @@ function renderPurchaseList(panel) {
             });
             list.appendChild(item);
         });
+        renderBusinessPagination(panel.querySelector("#purchasePagination"), pagination, { singular: "achat", plural: "achats", onPageChange: page => {
+            purchasePagination.page = page;
+            renderFilteredPurchases();
+            list.scrollIntoView({ behavior: "smooth", block: "start" });
+        } });
     };
-    [search, categoryFilter, accountingFilter].forEach(input => input.addEventListener(input === search ? "input" : "change", renderFilteredPurchases));
+    [search, categoryFilter, accountingFilter].forEach(input => input.addEventListener(input === search ? "input" : "change", () => { purchasePagination.page = 1; renderFilteredPurchases(); }));
+    pageSize.addEventListener("change", () => { purchasePagination.pageSize = Number(pageSize.value); purchasePagination.page = 1; renderFilteredPurchases(); });
     renderFilteredPurchases();
 }
 

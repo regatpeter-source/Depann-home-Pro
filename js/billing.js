@@ -1,11 +1,12 @@
 import { ROUTES } from "./config.js?v=116";
-import { getSearchableClients } from "./clients.js?v=153";
+import { getSearchableClients } from "./clients.js?v=156";
 import { addClientActivityByName } from "./client-sync.js?v=125";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { renderPlatformAnnouncement } from "./platform-announcement.js?v=1";
 import { clearSearch, createInfo, getContainer, setPage } from "./ui.js?v=44";
 import { openDocumentDeliveryChoice } from "./document-delivery.js?v=1";
+import { pageSizeOptions, paginateItems, renderBusinessPagination } from "./pagination.js?v=1";
 
 const CUSTOMER_TYPES = ["Particulier", "Professionnel", "Magasin", "Autre"];
 const PAYMENT_METHODS = ["Chèque", "Espèces", "Virement", "Carte bancaire"];
@@ -20,6 +21,7 @@ const BILLING_MONTHS = [
 let activeDocument = null;
 let billingData = null;
 let billingPreviewCleanup = () => {};
+const billingDocumentPagination = { page: 1, pageSize: 20 };
 
 export async function renderBilling(options = {}) {
     billingPreviewCleanup();
@@ -168,11 +170,11 @@ function renderOverview(panel, profilePanel) {
     panel.querySelector("[data-billing-action=new-quote]")?.addEventListener("click", () => { if (!isAccountant()) openNewDocument("quote"); });
     panel.querySelector("[data-billing-action=new-invoice]").addEventListener("click", () => { if (!isAccountant()) openNewDocument("invoice"); });
     panel.querySelector("[data-billing-action=open-leak-reports]")?.addEventListener("click", async () => {
-        const { renderLeakReportWizard } = await import("./leak-report-wizard.js?v=36");
+        const { renderLeakReportWizard } = await import("./leak-report-wizard.js?v=37");
         renderLeakReportWizard();
     });
     panel.querySelector("[data-billing-action=new-leak-report]")?.addEventListener("click", async () => {
-        const { openLeakReportCreation } = await import("./leak-report-wizard.js?v=36");
+        const { openLeakReportCreation } = await import("./leak-report-wizard.js?v=37");
         openLeakReportCreation();
     });
     panel.querySelector("[data-billing-action=download-quote-template]")?.addEventListener("click", openQuoteTemplateDownload);
@@ -181,7 +183,7 @@ function renderOverview(panel, profilePanel) {
     panel.querySelector("[data-billing-action=preview-blank-quote]")?.addEventListener("click", openBlankQuotePreview);
     panel.querySelector("[data-billing-action=manage-line-templates]")?.addEventListener("click", () => renderBilling({ templates: true }));
     panel.querySelector("[data-billing-action=open-purchases]")?.addEventListener("click", async () => {
-        const { renderPurchases } = await import("./purchases.js?v=118");
+        const { renderPurchases } = await import("./purchases.js?v=120");
         renderPurchases();
     });
 }
@@ -740,8 +742,9 @@ function renderDocumentList(panel) {
     panel.innerHTML = `
         <div class="form-heading"><div><p class="eyebrow">Base de données commerciale</p><h2>Registre des devis & factures</h2></div></div>
         <div class="billing-metrics billing-register-metrics"><span><strong>${quotes.length}</strong> devis générés</span><span><strong>${invoices.length}</strong> factures générées</span><span><strong>${formatMoney(invoicedTotal)}</strong> facturé TTC</span><span class="billing-accounted-metric"><strong>${formatMoney(accountedTotal)}</strong> comptabilisé TTC</span></div>
-        <div class="billing-register-filters"><input id="billingDocumentSearch" type="search" placeholder="Rechercher un numéro ou un client" aria-label="Rechercher un document"><select id="billingDocumentTypeFilter" aria-label="Filtrer par type"><option value="all">Tous les documents</option><option value="quote">Devis</option><option value="invoice">Factures</option></select><select id="billingDocumentYearFilter" aria-label="Filtrer par année"><option value="all">Toutes les années</option>${years.map(year => `<option value="${escapeHtml(year)}">${escapeHtml(year)}</option>`).join("")}</select><select id="billingDocumentMonthFilter" aria-label="Filtrer par mois"><option value="all">Tous les mois</option>${BILLING_MONTHS.map(({ value, label }) => `<option value="${value}">${label}</option>`).join("")}</select><select id="billingAccountingFilter" aria-label="Filtrer par comptabilisation"><option value="all">Tous les statuts comptables</option><option value="accounted">Comptabilisées</option><option value="unaccounted">À comptabiliser</option></select></div>
+        <div class="billing-register-filters"><input id="billingDocumentSearch" type="search" placeholder="Rechercher un numéro ou un client" aria-label="Rechercher un document"><select id="billingDocumentTypeFilter" aria-label="Filtrer par type"><option value="all">Tous les documents</option><option value="quote">Devis</option><option value="invoice">Factures</option><option value="credit">Avoirs</option></select><select id="billingDocumentYearFilter" aria-label="Filtrer par année"><option value="all">Toutes les années</option>${years.map(year => `<option value="${escapeHtml(year)}">${escapeHtml(year)}</option>`).join("")}</select><select id="billingDocumentMonthFilter" aria-label="Filtrer par mois"><option value="all">Tous les mois</option>${BILLING_MONTHS.map(({ value, label }) => `<option value="${value}">${label}</option>`).join("")}</select><select id="billingAccountingFilter" aria-label="Filtrer par comptabilisation"><option value="all">Tous les statuts comptables</option><option value="accounted">Comptabilisées</option><option value="unaccounted">À comptabiliser</option></select><label>Afficher<select id="billingDocumentPageSize" aria-label="Nombre de documents par page">${pageSizeOptions(billingDocumentPagination.pageSize, "documents")}</select></label></div>
         <div class="billing-document-list" id="billingDocumentList"></div>
+        <nav class="business-pagination" id="billingDocumentPagination" aria-label="Pages des documents"></nav>
     `;
     const list = panel.querySelector("#billingDocumentList");
     const search = panel.querySelector("#billingDocumentSearch");
@@ -749,6 +752,7 @@ function renderDocumentList(panel) {
     const yearFilter = panel.querySelector("#billingDocumentYearFilter");
     const monthFilter = panel.querySelector("#billingDocumentMonthFilter");
     const accountingFilter = panel.querySelector("#billingAccountingFilter");
+    const pageSize = panel.querySelector("#billingDocumentPageSize");
     const renderFilteredDocuments = () => {
         const query = normalizeText(search.value);
         const visibleDocuments = documents.filter(document => {
@@ -759,10 +763,11 @@ function renderDocumentList(panel) {
             const matchesAccounting = accountingFilter.value === "all" || (document.documentType === "invoice" && (accountingFilter.value === "accounted" ? document.isAccounted : !document.isAccounted));
             return matchesQuery && matchesType && matchesYear && matchesMonth && matchesAccounting;
         });
+        const pagination = paginateItems(visibleDocuments, billingDocumentPagination);
         list.innerHTML = "";
-        if (!visibleDocuments.length) { list.innerHTML = `<p class="muted">${documents.length ? "Aucun document ne correspond aux filtres." : "Créez votre premier devis ou votre première facture."}</p>`; return; }
+        if (!visibleDocuments.length) { list.innerHTML = `<p class="muted">${documents.length ? "Aucun document ne correspond aux filtres." : "Créez votre premier devis ou votre première facture."}</p>`; panel.querySelector("#billingDocumentPagination").innerHTML = ""; return; }
         let currentPeriod = "";
-        visibleDocuments.forEach(billingDocument => {
+        pagination.items.forEach(billingDocument => {
             const period = formatBillingPeriod(billingDocument.issueDate);
             if (period !== currentPeriod) {
                 const heading = document.createElement("h3");
@@ -791,8 +796,14 @@ function renderDocumentList(panel) {
             });
             list.appendChild(item);
         });
+        renderBusinessPagination(panel.querySelector("#billingDocumentPagination"), pagination, { singular: "document", plural: "documents", onPageChange: page => {
+            billingDocumentPagination.page = page;
+            renderFilteredDocuments();
+            list.scrollIntoView({ behavior: "smooth", block: "start" });
+        } });
     };
-    [search, typeFilter, yearFilter, monthFilter, accountingFilter].forEach(input => input.addEventListener(input === search ? "input" : "change", renderFilteredDocuments));
+    [search, typeFilter, yearFilter, monthFilter, accountingFilter].forEach(input => input.addEventListener(input === search ? "input" : "change", () => { billingDocumentPagination.page = 1; renderFilteredDocuments(); }));
+    pageSize.addEventListener("change", () => { billingDocumentPagination.pageSize = Number(pageSize.value); billingDocumentPagination.page = 1; renderFilteredDocuments(); });
     renderFilteredDocuments();
 }
 

@@ -2,7 +2,7 @@ import { initializeAuthentication, restoreApplicationShell, signOut } from "./au
 import { initializeClientSynchronization } from "./client-sync.js?v=125";
 import { initializeCollaboration } from "./collaboration.js?v=5";
 import { loadDatabase } from "./data.js?v=59";
-import { initializeNavigation, refreshApplication } from "./navigation.js?v=411";
+import { initializeNavigation, refreshApplication } from "./navigation.js?v=412";
 import { renderError } from "./ui.js?v=44";
 import { getSettings } from "./storage.js?v=44";
 import { FONT_OPTIONS } from "./config.js?v=130";
@@ -144,6 +144,7 @@ function showAuthenticatedUser(user) {
     document.body.dataset.monthlyPriceCents = String(user.monthlyPriceCents || 0);
     document.body.dataset.groupAdmin = user.isGroupAdministrator ? "true" : "false";
     document.body.dataset.groupId = user.groupId || "";
+    document.body.dataset.groupName = user.groupName || "";
     document.body.dataset.organizationInterface = user.organization?.interfaceType || "standard";
     document.body.dataset.organizationType = user.organization?.organizationType || "troubleshooting_company";
     document.body.dataset.organizationLicense = user.organization?.licenseType || "depannhome_standard";

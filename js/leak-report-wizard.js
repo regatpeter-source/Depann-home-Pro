@@ -1,9 +1,10 @@
 import { ROUTES } from "./config.js?v=118";
 import { clearSearch, getContainer, setPage } from "./ui.js?v=44";
-import { escapeHtml } from "./utils.js?v=44";
+import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { acquireReportLock, forceReleaseReportLock, heartbeatReportLock, releaseReportLock } from "./collaboration.js?v=4";
 import { openDocumentDeliveryChoice } from "./document-delivery.js?v=1";
 import { renderLivePdfPreview } from "./pdf-live-preview.js?v=1";
+import { pageSizeOptions, paginateItems, renderBusinessPagination } from "./pagination.js?v=1";
 
 const MODULES = [
     ["general", "Informations générales", "Données récupérées automatiquement"],
@@ -37,6 +38,7 @@ let lockRecoveryPromise = null;
 const mediaSavePromises = new Set();
 let eventsBound = false;
 let moduleNavScrollLeft = 0;
+const reportDirectoryPagination = { page: 1, pageSize: 20 };
 
 export async function renderLeakReportWizard(reportId = 0, appointmentId = 0) {
     if ((!reportId && !appointmentId) || (reportId && String(current?.id || "") !== String(reportId))) await leaveReport();
@@ -61,9 +63,22 @@ function renderDirectory(shell) {
     shell.classList.add("report-directory");
     const groups = [["À rédiger", ["draft", "in_correction"]], ["Terminés à corriger", ["submitted"]], ["À envoyer", ["ready_to_send"]], ["Envoyés", ["validated"]]];
     const reportCard = report => `<article><div><strong>${escapeHtml(report.title)}</strong><p class="report-directory-client"><b>${escapeHtml(report.clientName || "Client non renseigné")}</b>${report.claimNumber ? ` · Sinistre n° ${escapeHtml(report.claimNumber)}` : ""}${report.insurance ? ` · Assurance ${escapeHtml(report.insurance)}` : ""}</p><p>${escapeHtml(statusLabel(report.status))} · ${report.appointmentId ? `Intervention n° ${escapeHtml(report.appointmentId)}` : "Rapport historique"} · ${escapeHtml(formatDate(report.reportDate))}</p></div><button class="secondary-button" data-open-report="${escapeHtml(report.id)}">${report.status === "validated" ? "Consulter" : "Ouvrir"}</button></article>`;
-    shell.innerHTML = `<header class="report-directory-heading"><div><p class="eyebrow">Rapports terrain</p><h2>Rapports de recherche de fuite</h2><p class="muted">Chaque rapport est créé depuis une intervention rattachée à un dossier client.</p></div><button type="button" class="secondary-button" data-create-report>Nouveau rapport de recherche de fuite</button></header><section class="report-directory-list">${reports.length ? groups.map(([title, statuses]) => { const items = reports.filter(report => statuses.includes(report.status)); return `<section class="report-directory-group"><h3>${title}</h3>${items.length ? items.map(reportCard).join("") : '<p class="muted">Aucun rapport dans cette section.</p>'}</section>`; }).join("") : '<p class="muted">Aucun rapport accessible. Créez votre premier rapport depuis une intervention.</p>'}</section>`;
+    shell.innerHTML = `<header class="report-directory-heading"><div><p class="eyebrow">Rapports terrain</p><h2>Rapports de recherche de fuite</h2><p class="muted">Chaque rapport est créé depuis une intervention rattachée à un dossier client.</p></div><button type="button" class="secondary-button" data-create-report>Nouveau rapport de recherche de fuite</button></header><div class="report-directory-filters"><label>Recherche<input type="search" data-report-search placeholder="Client, titre, sinistre, assurance"></label><label>Afficher<select data-report-page-size aria-label="Nombre de rapports par page">${pageSizeOptions(reportDirectoryPagination.pageSize, "rapports")}</select></label></div><section class="report-directory-list"></section><nav class="business-pagination" data-report-pagination aria-label="Pages des rapports"></nav>`;
     shell.querySelector("[data-create-report]").addEventListener("click", openLeakReportCreation);
-    shell.querySelectorAll("[data-open-report]").forEach(button => button.addEventListener("click", () => renderLeakReportWizard(button.dataset.openReport)));
+    const list = shell.querySelector(".report-directory-list");
+    const search = shell.querySelector("[data-report-search]");
+    const renderReports = () => {
+        const query = normalizeText(search.value);
+        const filtered = reports.filter(report => !query || normalizeText(`${report.title} ${report.clientName} ${report.claimNumber} ${report.insurance} ${report.appointmentId}`).includes(query));
+        const ordered = [...filtered].sort((first, second) => new Date(second.updatedAt || second.reportDate || 0) - new Date(first.updatedAt || first.reportDate || 0));
+        const pagination = paginateItems(ordered, reportDirectoryPagination);
+        list.innerHTML = filtered.length ? groups.map(([title, statuses]) => { const items = pagination.items.filter(report => statuses.includes(report.status)); return items.length ? `<section class="report-directory-group"><h3>${title}</h3>${items.map(reportCard).join("")}</section>` : ""; }).join("") : `<p class="muted">${reports.length ? "Aucun rapport ne correspond à cette recherche." : "Aucun rapport accessible. Créez votre premier rapport depuis une intervention."}</p>`;
+        list.querySelectorAll("[data-open-report]").forEach(button => button.addEventListener("click", () => renderLeakReportWizard(button.dataset.openReport)));
+        renderBusinessPagination(shell.querySelector("[data-report-pagination]"), pagination, { singular: "rapport", plural: "rapports", onPageChange: page => { reportDirectoryPagination.page = page; renderReports(); list.scrollIntoView({ behavior: "smooth", block: "start" }); } });
+    };
+    search.addEventListener("input", () => { reportDirectoryPagination.page = 1; renderReports(); });
+    shell.querySelector("[data-report-page-size]").addEventListener("change", event => { reportDirectoryPagination.pageSize = Number(event.currentTarget.value); reportDirectoryPagination.page = 1; renderReports(); });
+    renderReports();
 }
 
 export function openLeakReportCreation() {
@@ -72,8 +87,8 @@ export function openLeakReportCreation() {
     dialog.innerHTML = `<div><header><div><p class="eyebrow">Nouveau rapport</p><h2>Rapport de recherche de fuite</h2></div><button type="button" class="text-button" data-close-report-creation>Fermer</button></header><p class="muted">Un rapport est toujours rattaché à une intervention et au dossier client correspondant.</p><div class="report-creation-options"><button type="button" data-report-from-appointment><strong>Choisir une intervention</strong><span>Ouvrez une intervention existante pour créer ou reprendre son rapport.</span></button><button type="button" data-create-client-first><strong>Créer d’abord un client</strong><span>Créez le dossier client, planifiez son intervention, puis ouvrez le rapport depuis le planning.</span></button></div></div>`;
     document.body.append(dialog);
     dialog.querySelector("[data-close-report-creation]").addEventListener("click", () => dialog.remove());
-    dialog.querySelector("[data-report-from-appointment]").addEventListener("click", async () => { dialog.remove(); const { renderCalendar } = await import("./calendar.js?v=187"); renderCalendar(); });
-    dialog.querySelector("[data-create-client-first]").addEventListener("click", async () => { dialog.remove(); const { renderClients } = await import("./clients.js?v=155"); renderClients(); });
+    dialog.querySelector("[data-report-from-appointment]").addEventListener("click", async () => { dialog.remove(); const { renderCalendar } = await import("./calendar.js?v=188"); renderCalendar(); });
+    dialog.querySelector("[data-create-client-first]").addEventListener("click", async () => { dialog.remove(); const { renderClients } = await import("./clients.js?v=156"); renderClients(); });
 }
 
 async function openAppointmentReport(appointmentId) {
