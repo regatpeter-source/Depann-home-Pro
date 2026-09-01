@@ -527,6 +527,7 @@ test("les moyens de connexion utilisent des cartes et des boutons homogènes", (
     assert.match(emailSettingsSource, /classList\.replace\("secondary-button", "primary-button"\)/);
     assert.match(emailSettingsSource, /classList\.add\("partner-email-channel-card", "partner-email-channel-form"\)/);
     assert.match(emailSettingsSource, /partner-email-inbound-card partner-email-channel-card/);
+    assert.match(readFileSync(new URL("../css/style.css", import.meta.url), "utf8"), /partner-email-inbound-actions button:disabled\{cursor:not-allowed;filter:grayscale\(1\);opacity:\.55\}/);
 });
 
 test("les propositions de mission peuvent être confirmées ou supprimées seules ou en sélection", () => {
