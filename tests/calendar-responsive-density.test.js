@@ -50,6 +50,25 @@ test("le mois et la semaine partagent le même espace PC et gardent un rendu mob
     assert.match(styles, /height:250px/);
 });
 
+test("les vues jour et semaine PC utilisent une grille horaire de 8 h à 19 h", () => {
+    assert.match(calendar, /PLANNING_DAY_START_HOUR = 8/);
+    assert.match(calendar, /PLANNING_DAY_END_HOUR = 19/);
+    assert.match(calendar, /PLANNING_SLOT_MINUTES = 15/);
+    assert.match(calendar, /document\.body\.classList\.contains\("desktop-device"\)\) return renderCalendarTimeline\(panel\)/);
+    assert.match(calendar, /function buildTimelineDayLayout/);
+    assert.match(calendar, /function finalizeOverlapGroup|const finalizeOverlapGroup/);
+    assert.match(calendar, /Sans horaire \/ hors plage/);
+    assert.match(calendar, /const canCreate = !isReadOnlyCalendar\(\)/);
+    assert.match(calendar, /canCreate \? ` tabindex="0" role="button"/);
+    assert.match(calendar, /if \(!canCreate\) return/);
+    assert.match(calendar, /--event-start:/);
+    assert.match(calendar, /--event-duration:/);
+    assert.match(calendar, /startTime: minutesToCalendarTime\(startMinutes\)/);
+    assert.match(styles, /body\.desktop-device \.calendar-timeline\{/);
+    assert.match(styles, /grid-template-columns:52px repeat\(var\(--calendar-day-count\)/);
+    assert.match(styles, /top:calc\(var\(--event-start\) \* 100%/);
+});
+
 test("les cartes compactes restent accessibles avec toutes les informations", () => {
     const rendering = calendar.slice(calendar.indexOf("function renderCalendarGrid"), calendar.indexOf("function getEventClientDetails"));
     assert.match(rendering, /calendarEventAccessibleLabel\(event, clientDetails, date\)/);

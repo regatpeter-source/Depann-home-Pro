@@ -42,6 +42,9 @@ let calendarEventsCache = new Map();
 let calendarUpdateVersion = 0;
 const MEMBERS_CACHE_DURATION = 15 * 60 * 1000;
 const EVENTS_CACHE_DURATION = 30 * 1000;
+const PLANNING_DAY_START_HOUR = 8;
+const PLANNING_DAY_END_HOUR = 19;
+const PLANNING_SLOT_MINUTES = 15;
 
 window.addEventListener("depannhome:billing-document-saved", event => {
     if (event.detail?.suppressNavigation) return;
@@ -1354,6 +1357,7 @@ function renderCalendarGrid(panel) {
 }
 
 function renderCalendarList(panel) {
+    if (document.body.classList.contains("desktop-device")) return renderCalendarTimeline(panel);
     panel.hidden = false;
     const { start, end } = getDisplayedRange();
     const eventDates = new Map();
@@ -1392,6 +1396,135 @@ function renderCalendarList(panel) {
             openNewEvent();
         });
     });
+}
+
+function renderCalendarTimeline(panel) {
+    panel.hidden = false;
+    const { start, end } = getDisplayedRange();
+    const eventDates = new Map();
+    getVisibleEvents().forEach(event => {
+        if (!eventDates.has(event.date)) eventDates.set(event.date, []);
+        eventDates.get(event.date).push(event);
+    });
+    eventDates.forEach(dayEvents => dayEvents.sort(compareEventTimes));
+    const days = [];
+    for (const day = new Date(start); day <= end; day.setDate(day.getDate() + 1)) days.push(new Date(day));
+    const dayLayouts = days.map(day => buildTimelineDayLayout(eventDates.get(toDateString(day)) || []));
+    const canCreate = !isReadOnlyCalendar();
+    const allDayLabel = "Sans horaire / hors plage";
+
+    panel.innerHTML = `
+        <div class="calendar-timeline calendar-timeline-${calendarView}" style="--calendar-day-count:${days.length};--calendar-hour-count:${PLANNING_DAY_END_HOUR - PLANNING_DAY_START_HOUR}">
+            <div class="calendar-timeline-header">
+                <span class="calendar-timeline-corner">Heure</span>
+                ${days.map(day => `<div><strong>${escapeHtml(new Intl.DateTimeFormat("fr-FR", { weekday: "short" }).format(day))}</strong><time datetime="${toDateString(day)}">${escapeHtml(new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "2-digit" }).format(day))}</time></div>`).join("")}
+            </div>
+            <div class="calendar-timeline-all-day">
+                <span>${allDayLabel}</span>
+                ${dayLayouts.map(({ untimedEvents }, index) => `<div data-calendar-untimed-date="${toDateString(days[index])}">${untimedEvents.map(event => `<button type="button" class="calendar-event calendar-timeline-untimed color-${escapeHtml(event.color)}" data-calendar-event="${escapeHtml(event.id)}" aria-label="${escapeHtml(calendarEventAccessibleLabel(event, getEventClientDetails(event), toDateString(days[index])))}"><strong>${escapeHtml(getEventClientDetails(event).name || event.title || "Événement")}</strong><small>${escapeHtml(formatEventTime(event))}</small></button>`).join("") || '<small class="calendar-timeline-empty">—</small>'}</div>`).join("")}
+            </div>
+            <div class="calendar-timeline-body">
+                <div class="calendar-time-axis" aria-hidden="true">
+                    ${Array.from({ length: PLANNING_DAY_END_HOUR - PLANNING_DAY_START_HOUR + 1 }, (_, index) => `<time style="--calendar-hour-index:${index}">${String(PLANNING_DAY_START_HOUR + index).padStart(2, "0")}:00</time>`).join("")}
+                </div>
+                ${dayLayouts.map(({ timedEvents }, index) => {
+                    const date = toDateString(days[index]);
+                    return `<div class="calendar-timeline-day" data-calendar-timeline-date="${date}"${canCreate ? ` tabindex="0" role="button" aria-label="Ajouter un rendez-vous le ${escapeHtml(formatShortDate(days[index]))}"` : ""}>${timedEvents.map(item => {
+                        const client = getEventClientDetails(item.event);
+                        return `<button type="button" class="calendar-event calendar-timeline-event color-${escapeHtml(item.event.color)}" data-calendar-event="${escapeHtml(item.event.id)}" style="--event-start:${item.startRatio};--event-duration:${item.durationRatio};--event-lane:${item.lane};--event-lanes:${item.lanes}" aria-label="${escapeHtml(calendarEventAccessibleLabel(item.event, client, date))}" title="${escapeHtml(calendarEventAccessibleLabel(item.event, client))}">${renderCalendarEventCard(item.event, client)}</button>`;
+                    }).join("")}</div>`;
+                }).join("")}
+            </div>
+        </div>`;
+
+    panel.querySelectorAll("[data-calendar-event]").forEach(button => button.addEventListener("click", eventClick => {
+        eventClick.stopPropagation();
+        selectedEvent = events.find(event => String(event.id) === button.dataset.calendarEvent) || null;
+        refreshCalendarDetail();
+    }));
+    if (!canCreate) return;
+    panel.querySelectorAll("[data-calendar-timeline-date]").forEach(day => {
+        const openAtPosition = clientY => {
+            const bounds = day.getBoundingClientRect();
+            const totalMinutes = (PLANNING_DAY_END_HOUR - PLANNING_DAY_START_HOUR) * 60;
+            const offset = Math.max(0, Math.min(bounds.height - 1, clientY - bounds.top));
+            const rawMinutes = PLANNING_DAY_START_HOUR * 60 + offset / bounds.height * totalMinutes;
+            const startMinutes = Math.min(PLANNING_DAY_END_HOUR * 60 - 60, Math.round(rawMinutes / PLANNING_SLOT_MINUTES) * PLANNING_SLOT_MINUTES);
+            selectedEvent = { ...newEventForDate(day.dataset.calendarTimelineDate), startTime: minutesToCalendarTime(startMinutes), endTime: minutesToCalendarTime(startMinutes + 60) };
+            refreshCalendarDetail();
+        };
+        day.addEventListener("click", eventClick => {
+            if (!eventClick.target.closest(".calendar-timeline-event")) openAtPosition(eventClick.clientY);
+        });
+        day.addEventListener("keydown", eventKey => {
+            if (eventKey.target !== day || !["Enter", " "].includes(eventKey.key)) return;
+            eventKey.preventDefault();
+            openAtPosition(day.getBoundingClientRect().top);
+        });
+    });
+}
+
+function buildTimelineDayLayout(dayEvents) {
+    const rangeStart = PLANNING_DAY_START_HOUR * 60;
+    const rangeEnd = PLANNING_DAY_END_HOUR * 60;
+    const rangeDuration = rangeEnd - rangeStart;
+    const untimedEvents = [];
+    const candidates = [];
+    dayEvents.forEach(event => {
+        const start = calendarTimeToMinutes(event.startTime);
+        const explicitEnd = calendarTimeToMinutes(event.endTime);
+        if (start === null) {
+            untimedEvents.push(event);
+            return;
+        }
+        const end = explicitEnd !== null && explicitEnd > start ? explicitEnd : start + 60;
+        if (end <= rangeStart || start >= rangeEnd) {
+            untimedEvents.push(event);
+            return;
+        }
+        candidates.push({ event, start: Math.max(start, rangeStart), end: Math.min(end, rangeEnd) });
+    });
+    let overlapGroup = [];
+    let overlapGroupEnd = -1;
+    const finalizeOverlapGroup = () => {
+        if (!overlapGroup.length) return;
+        const laneEnds = [];
+        overlapGroup.forEach(item => {
+            let lane = laneEnds.findIndex(end => end <= item.start);
+            if (lane < 0) lane = laneEnds.length;
+            laneEnds[lane] = item.end;
+            item.lane = lane;
+        });
+        overlapGroup.forEach(item => { item.lanes = Math.max(1, laneEnds.length); });
+        overlapGroup = [];
+    };
+    candidates.forEach(item => {
+        if (overlapGroup.length && item.start >= overlapGroupEnd) finalizeOverlapGroup();
+        overlapGroup.push(item);
+        overlapGroupEnd = Math.max(overlapGroupEnd, item.end);
+    });
+    finalizeOverlapGroup();
+    return {
+        untimedEvents,
+        timedEvents: candidates.map(item => ({
+            ...item,
+            startRatio: (item.start - rangeStart) / rangeDuration,
+            durationRatio: Math.max(PLANNING_SLOT_MINUTES / rangeDuration, (item.end - item.start) / rangeDuration)
+        }))
+    };
+}
+
+function calendarTimeToMinutes(value) {
+    const match = String(value || "").match(/^(\d{1,2}):(\d{2})/);
+    if (!match) return null;
+    const hours = Number(match[1]);
+    const minutes = Number(match[2]);
+    return hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59 ? hours * 60 + minutes : null;
+}
+
+function minutesToCalendarTime(value) {
+    const minutes = Math.max(0, Math.min(23 * 60 + 59, Number(value) || 0));
+    return `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
 }
 
 function getVisibleEvents() {
