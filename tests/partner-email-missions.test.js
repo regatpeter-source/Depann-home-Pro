@@ -472,6 +472,19 @@ test("une boîte rattachée s’actualise immédiatement et expose toutes les co
     assert.match(missionClientSource, /depannhome:partner-email-changed/);
 });
 
+test("la connexion d’une boîte affiche sa confirmation et actualise silencieusement la liste", () => {
+    const callbackSource = readFileSync(new URL("../public/oauth-callback.js", import.meta.url), "utf8");
+    assert.match(emailSettingsSource, /data-email-settings-feedback aria-live="polite"/);
+    assert.match(emailSettingsSource, /await loadPartnerEmailSettings\(card\);\s*showSettingsFeedback\(card, result\.data\.message\)/);
+    assert.match(emailSettingsSource, /await loadPartnerEmailSettings\(activeSettingsCard\);\s*showSettingsFeedback\(activeSettingsCard, payload\.message/);
+    assert.match(emailSettingsSource, /window\.addEventListener\("focus"/);
+    assert.match(emailSettingsSource, /void loadPartnerEmailSettings\(activeSettingsCard\)/);
+    assert.match(callbackSource, /window\.opener\?\.postMessage/);
+    assert.match(callbackSource, /localStorage\.setItem\("depannhome:partner-email-oauth-result"/);
+    assert.match(emailSettingsSource, /window\.addEventListener\("storage"/);
+    assert.doesNotMatch(emailSettingsSource, /alert\(event\.data\.message\)/);
+});
+
 test("les réglages d’une boîte existante sont enregistrés côté serveur par un Poste Admin", () => {
     assert.match(serverSource, /:connectionId\/settings", requireEmailConfigurationAccess/);
     assert.match(serverSource, /SET selection_mode=\$3, allowed_senders=\$4::jsonb, required_keywords=\$5::jsonb, automatic_threshold=\$6/);

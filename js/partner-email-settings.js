@@ -2,6 +2,9 @@ import { escapeHtml } from "./utils.js?v=44";
 import { synchronizeClients } from "./client-sync.js?v=126";
 
 let activeSettingsCard = null;
+let pendingMailboxOauth = false;
+let mailboxOauthRefreshTimer = null;
+const MAILBOX_OAUTH_STORAGE_KEY = "depannhome:partner-email-oauth-result";
 const mailboxSearchDate = new Date();
 let mailboxSearchFrom = localDateValue(new Date(mailboxSearchDate.getFullYear(), mailboxSearchDate.getMonth(), 1));
 let mailboxSearchTo = localDateValue(mailboxSearchDate);
@@ -64,13 +67,15 @@ async function loadPartnerEmailSettings(card) {
     const result = await api("/api/partner-email");
     if (!result.ok) {
         card.innerHTML = `<section class="partner-email-panel"><p class="auth-message error">${escapeHtml(result.message || "Impossible de charger la configuration de la boîte professionnelle.")}</p></section>`;
-        return;
+        return null;
     }
     renderSettings(card, result.data || { connections: [], oauth: {} });
+    return result.data || { connections: [], oauth: {} };
 }
 
 function renderSettings(card, mailbox) {
     card.innerHTML = `<section class="partner-email-panel"><div class="form-heading"><div><p class="eyebrow">Réception de missions par e-mail</p><h2>Boîte mail professionnelle</h2></div></div><p class="muted">Microsoft 365 et Google utilisent OAuth : Depann’Home Pro ne connaît jamais votre mot de passe. Pour OVH ou un autre hébergeur, créez un mot de passe d’application IMAP/SMTP.</p><div class="form-grid partner-email-oauth-options"><label>Détection après connexion<select id="partnerEmailOauthMode"><option value="manual">Sélection manuelle</option><option value="automatic">Automatique stricte</option></select></label><label class="form-wide">Expéditeurs ou domaines autorisés<textarea id="partnerEmailOauthSenders" rows="2" placeholder="missions@partenaire.fr, partenaire.fr"></textarea></label><label class="creator-switch form-wide"><input id="partnerEmailOauthStatuses" type="checkbox"><span>Envoyer les changements de statut dans le fil d’origine.</span></label></div><div class="partner-email-provider-actions"><button class="secondary-button" data-email-oauth="microsoft" ${mailbox.oauth?.microsoft ? "" : "disabled"}>Connecter Microsoft 365</button><button class="secondary-button" data-email-oauth="google" ${mailbox.oauth?.google ? "" : "disabled"}>Connecter Google Workspace</button></div>${!mailbox.oauth?.microsoft || !mailbox.oauth?.google ? '<p class="auth-message">Les boutons désactivés nécessitent la configuration OAuth correspondante sur le serveur.</p>' : ""}<form class="client-form" id="partnerEmailImapForm"><h3>OVH ou serveur IMAP/SMTP</h3><div class="form-grid"><label>Nom affiché<input name="displayName" maxlength="160" placeholder="Service missions"></label><label>Adresse e-mail *<input name="emailAddress" type="email" required></label><label>Utilisateur IMAP/SMTP *<input name="username" required></label><label>Mot de passe d’application *<input name="password" type="password" required autocomplete="new-password"></label><label>Serveur IMAP *<input name="imapHost" required placeholder="ssl0.ovh.net"></label><label>Port IMAP<input name="imapPort" type="number" min="1" max="65535" value="993"></label><label>Serveur SMTP *<input name="smtpHost" required placeholder="ssl0.ovh.net"></label><label>Port SMTP<input name="smtpPort" type="number" min="1" max="65535" value="465"></label><label>Sécurité SMTP<select name="smtpSecure"><option value="true">TLS direct (souvent port 465)</option><option value="false">STARTTLS obligatoire (souvent port 587)</option></select></label><label>Détection<select name="selectionMode"><option value="manual">Sélection manuelle</option><option value="automatic">Automatique stricte</option></select></label><label>Seuil automatique<input name="automaticThreshold" type="number" min="70" max="100" value="80"></label><label class="form-wide">Expéditeurs ou domaines autorisés<textarea name="allowedSenders" rows="3" placeholder="missions@partenaire.fr, partenaire.fr"></textarea><small>Un expéditeur autorisé renforce le score ; il ne suffit jamais à lui seul à créer une mission.</small></label><label class="creator-switch form-wide"><input name="sendStatusUpdates" type="checkbox"><span>Répondre automatiquement au fil d’origine lors des changements de statut.</span></label></div><div class="form-actions"><button class="secondary-button">Tester et connecter</button></div><p class="auth-message" aria-live="polite"></p></form><section class="partner-email-connections"><h3>Boîtes connectées</h3>${mailbox.connections?.length ? mailbox.connections.map(emailConnectionCard).join("") : '<p class="muted">Aucune boîte professionnelle connectée.</p>'}</section></section>`;
+    card.querySelector(".form-heading")?.insertAdjacentHTML("afterend", '<p class="auth-message" data-email-settings-feedback aria-live="polite" hidden></p>');
     card.querySelector(".partner-email-panel > .muted")?.insertAdjacentHTML("afterend", '<aside class="auth-message" data-google-oauth-disclosure><strong>Avant de connecter Google Workspace</strong><br>Avec votre autorisation, Depann’Home Pro pourra lire les messages et pièces jointes de la boîte Gmail sélectionnée afin de les afficher et de créer des missions, puis envoyer depuis cette boîte uniquement les réponses ou mises à jour demandées. Depann’Home Pro ne modifie, ne déplace, ne supprime aucun message Gmail et ne le marque jamais comme lu. Vous pourrez révoquer cet accès à tout moment. <a href="/confidentialite#messagerie" target="_blank" rel="noopener noreferrer">Consulter la politique de confidentialité</a>.</aside>');
     card.querySelector(".partner-email-oauth-options")?.insertAdjacentHTML("beforeend", '<label class="creator-switch form-wide"><input id="partnerEmailOauthAutoSearch" type="checkbox"><span>Activer la recherche automatique des missions sur cette boîte.</span></label>');
     card.querySelector("#partnerEmailOauthSenders")?.closest("label")?.insertAdjacentHTML("beforeend", "<small>Si la liste est renseignée, seuls ces expéditeurs seront recherchés, en mode manuel comme automatique. Laissez vide pour rechercher tous les expéditeurs.</small>");
@@ -179,6 +184,7 @@ function renderSettings(card, mailbox) {
         button.disabled = false;
         if (result.ok) {
             await loadPartnerEmailSettings(card);
+            showSettingsFeedback(card, result.data.message);
             dispatchMailboxChanged("connection");
         }
     });
@@ -282,6 +288,7 @@ function bindMailboxConnectionControls(card, mailbox, { configuration = false, c
 }
 
 function showMailboxFeedback(row, message, error = false) { const target = row?.querySelector("[data-email-feedback]"); if (!target) return; target.textContent = message; target.classList.toggle("error", error); }
+function showSettingsFeedback(card, message, error = false) { const target = card?.querySelector("[data-email-settings-feedback]"); if (!target) return; target.hidden = false; target.textContent = message; target.classList.toggle("error", error); }
 function mailboxSyncSummary(stats, from, to) { return `${Number(stats?.fetched) || 0} e-mail(s) lu(s) du ${formatShortDate(from)} au ${formatShortDate(to)} · ${Number(stats?.candidates) || 0} mission(s) à confirmer · ${Number(stats?.imported) || 0} créée(s) automatiquement.${stats?.limited ? " Plus de 500 e-mails ont été trouvés : réduisez la période." : ""}`; }
 function validateMailboxSearchPeriod(from, to) { if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) return "Sélectionnez une date de début et une date de fin."; const days = (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86400000; if (days < 0) return "La date de fin doit être postérieure ou égale à la date de début."; return days > 30 ? "Sélectionnez une période maximale de 31 jours." : ""; }
 function dispatchMailboxChanged(reason, detail = {}) { window.dispatchEvent(new CustomEvent("depannhome:partner-email-changed", { detail: { reason, ...detail } })); }
@@ -480,15 +487,45 @@ async function beginMailboxOauth(provider, settings) {
     const result = await api(`/api/partner-email/oauth/${provider}/authorize`, { method: "POST", body: JSON.stringify({ selectionMode: settings.selectionMode || "manual", sendStatusUpdates: Boolean(settings.sendStatusUpdates), autoSearchEnabled: Boolean(settings.autoSearchEnabled), allowedSenders: settings.allowedSenders || "", requiredKeywords: settings.requiredKeywords || "" }) });
     if (!result.ok) return alert(result.message);
     const popup = window.open(result.data.authorizationUrl, "depannhome-mail-oauth", "popup,width=620,height=760");
-    if (!popup) alert("Autorisez les fenêtres contextuelles pour connecter la boîte professionnelle.");
+    if (!popup) return alert("Autorisez les fenêtres contextuelles pour connecter la boîte professionnelle.");
+    pendingMailboxOauth = true;
+    showSettingsFeedback(activeSettingsCard, "Autorisation Microsoft en cours…");
 }
 
-window.addEventListener("message", async event => {
-    if (event.origin !== window.location.origin || event.data?.type !== "depannhome:partner-email-oauth") return;
-    alert(event.data.message);
-    if (!event.data.success) return;
-    if (activeSettingsCard?.isConnected) await loadPartnerEmailSettings(activeSettingsCard);
+async function handleMailboxOauthResult(payload) {
+    if (payload?.type !== "depannhome:partner-email-oauth") return;
+    if (!pendingMailboxOauth) return;
+    pendingMailboxOauth = false;
+    window.clearTimeout(mailboxOauthRefreshTimer);
+    if (!payload.success) {
+        if (activeSettingsCard?.isConnected) showSettingsFeedback(activeSettingsCard, payload.message || "Connexion de la boîte impossible.", true);
+        else alert(payload.message || "Connexion de la boîte impossible.");
+        return;
+    }
+    if (activeSettingsCard?.isConnected) {
+        await loadPartnerEmailSettings(activeSettingsCard);
+        showSettingsFeedback(activeSettingsCard, payload.message || "Boîte professionnelle connectée et vérifiée.");
+    }
     dispatchMailboxChanged("connection");
+}
+
+window.addEventListener("message", event => {
+    if (event.origin !== window.location.origin || event.data?.type !== "depannhome:partner-email-oauth") return;
+    void handleMailboxOauthResult(event.data);
+});
+
+window.addEventListener("storage", event => {
+    if (event.key !== MAILBOX_OAUTH_STORAGE_KEY || !event.newValue) return;
+    try { void handleMailboxOauthResult(JSON.parse(event.newValue)); }
+    catch { /* Un résultat OAuth invalide est ignoré. */ }
+});
+
+window.addEventListener("focus", () => {
+    if (!pendingMailboxOauth || !activeSettingsCard?.isConnected) return;
+    window.clearTimeout(mailboxOauthRefreshTimer);
+    mailboxOauthRefreshTimer = window.setTimeout(() => {
+        if (pendingMailboxOauth && activeSettingsCard?.isConnected) void loadPartnerEmailSettings(activeSettingsCard);
+    }, 500);
 });
 
 function formatDate(value) {

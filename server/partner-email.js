@@ -1269,7 +1269,7 @@ export function mailTechnicalReason(error) {
 }
 function oauthPopup(res, success, message) {
     const payload = Buffer.from(JSON.stringify({ type: "depannhome:partner-email-oauth", success: Boolean(success), message: clean(message, 500) })).toString("base64url");
-    res.type("html").send(`<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Connexion boîte mail</title></head><body data-oauth-payload="${payload}"><main><p>${escapeHtml(message)}</p><p>Vous pouvez fermer cette fenêtre.</p></main><script src="/site-assets/oauth-callback.js" defer></script></body></html>`);
+    res.type("html").send(`<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Connexion boîte mail</title></head><body data-oauth-payload="${payload}"><main><p>${escapeHtml(message)}</p><p>Vous pouvez fermer cette fenêtre.</p></main><script src="/site-assets/oauth-callback.js?v=2" defer></script></body></html>`);
 }
 function requireEmailAccess(req, res, next) { if (!hasCompanyEmailWorkspaceAccess(req.user)) return res.status(403).json({ message: "L’espace e-mail de l’entreprise n’est pas autorisé sur ce poste." }); return next(); }
 function requireEmailConfigurationAccess(req, res, next) { if (req.user?.role !== "admin" || req.user?.deviceType !== "desktop") return res.status(403).json({ message: "Seul un Poste Admin peut modifier les réglages de la boîte professionnelle." }); return next(); }

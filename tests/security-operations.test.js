@@ -28,11 +28,11 @@ test("les pages de callback utilisent un script externe compatible avec la CSP",
     const callbackScript = readFileSync(new URL("../public/oauth-callback.js", import.meta.url), "utf8");
     for (const source of sources) {
         assert.doesNotMatch(source, /<script(?![^>]*\bsrc=)[^>]*>/i);
-        assert.match(source, /<script src=["']\/site-assets\/oauth-callback\.js["'] defer><\/script>/);
+        assert.match(source, /<script src=["']\/site-assets\/oauth-callback\.js(?:\?v=\d+)?["'] defer><\/script>/);
     }
     assert.match(sources[0], /data-oauth-payload=/);
     assert.match(sources[1], /data-oauth-payload=/);
-    assert.match(callbackScript, /window\.opener\.postMessage\(payload, window\.location\.origin\)/);
+    assert.match(callbackScript, /window\.opener\?\.postMessage\(payload, window\.location\.origin\)/);
     assert.match(callbackScript, /window\.close\(\)/);
 });
 
