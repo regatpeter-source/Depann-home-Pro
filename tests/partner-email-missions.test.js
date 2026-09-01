@@ -72,6 +72,8 @@ test("le canal Brevo entrant reste désactivé et annoncé comme bientôt dispon
 test("Google Workspace est désactivé sans retirer Microsoft ni IMAP SMTP", () => {
     assert.match(emailSettingsSource, /googleButton\.disabled = true/);
     assert.match(emailSettingsSource, /Google Workspace · bientôt disponible/);
+    assert.doesNotMatch(emailSettingsSource, /data-google-oauth-disclosure/);
+    assert.match(emailSettingsSource, /decorateProviderButton\(googleButton/);
     assert.match(emailSettingsSource, /data-email-oauth="microsoft"/);
     assert.match(emailSettingsSource, /id="partnerEmailImapForm"/);
     assert.match(emailSettingsSource, /OVH, Zimbra, Namecheap/);
@@ -449,9 +451,8 @@ test("la recherche automatique des missions est une option explicite indépendan
     assert.match(serverSource, /connection\.enabled=TRUE AND connection\.auto_search_enabled=TRUE/);
     assert.match(serverSource, /auto_search_enabled AS "autoSearchEnabled"/);
     assert.match(serverSource, /:connectionId\/automatic-search/);
-    assert.match(emailSettingsSource, /partnerEmailOauthAutoSearch/);
     assert.match(emailSettingsSource, /data-email-auto-search/);
-    assert.match(emailSettingsSource, /Activer la recherche automatique des missions/);
+    assert.match(emailSettingsSource, /Rechercher automatiquement les nouvelles missions/);
     const manualSyncRoute = serverSource.slice(serverSource.indexOf('app.post("/api/partner-email/:connectionId/sync"'), serverSource.indexOf('app.patch("/api/partner-email/:connectionId/settings"'));
     assert.doesNotMatch(manualSyncRoute, /auto_search_enabled/);
 });
@@ -491,7 +492,6 @@ test("les réglages d’une boîte existante sont enregistrés côté serveur pa
     assert.match(serverSource, /auto_search_enabled=\$8/);
     assert.match(serverSource, /req\.user\?\.role !== "admin"/);
     assert.match(serverSource, /req\.user\?\.deviceType !== "desktop"/);
-    assert.match(emailSettingsSource, /function canConfigureMailbox\(\)/);
     assert.match(emailSettingsSource, /selectionMode: row\.querySelector\("\[data-email-selection-mode\]"\)\.value/);
     assert.match(emailSettingsSource, /automaticThreshold: Number/);
     assert.match(emailSettingsSource, /allowedSenders: row\.querySelector/);
@@ -506,10 +506,27 @@ test("les critères e-mail sont enregistrés et nettoient immédiatement les pro
     assert.match(emailSettingsSource, /Mots-clés obligatoires pour une mission/);
     assert.match(emailSettingsSource, /data-email-required-keywords/);
     assert.match(emailSettingsSource, /requiredKeywords: row\.querySelector/);
-    assert.match(emailSettingsSource, /Critères enregistrés pour cette boîte/);
-    assert.match(emailSettingsSource, /Expéditeurs \/ domaines/);
-    assert.match(emailSettingsSource, /Les critères enregistrés s’appliquent aux prochaines recherches manuelles et automatiques/);
+    assert.match(emailSettingsSource, /configuration: false, candidateReview: true/);
+    assert.match(emailSettingsSource, /querySelectorAll\("\.partner-email-mode-summary"\)/);
+    assert.match(emailSettingsSource, /configuration: true, reload: \(\) => loadPartnerEmailSettings\(card\)/);
     assert.match(emailSettingsSource, /reload: \(\) => loadCompanyEmailWorkspace\(card\)/);
+});
+
+test("la configuration des missions reste dans Paramètres et chaque boîte conserve ses propres critères", () => {
+    assert.match(emailSettingsSource, /\["selectionMode", "automaticThreshold", "allowedSenders", "sendStatusUpdates"\]/);
+    assert.match(emailSettingsSource, /\.partner-email-oauth-options"\)\?\.remove\(\)/);
+    assert.match(emailSettingsSource, /data-email-connection-card="\$\{connection\.id\}"/);
+    assert.match(emailSettingsSource, /data-email-automatic-threshold/);
+    assert.match(emailSettingsSource, /data-email-allowed-senders/);
+    assert.match(emailSettingsSource, /data-email-required-keywords/);
+    assert.match(emailSettingsSource, /data-email-save-settings="\$\{connection\.id\}"/);
+});
+
+test("les moyens de connexion utilisent des cartes et des boutons homogènes", () => {
+    assert.match(emailSettingsSource, /partner-email-channel-card partner-email-provider-card/);
+    assert.match(emailSettingsSource, /classList\.replace\("secondary-button", "primary-button"\)/);
+    assert.match(emailSettingsSource, /classList\.add\("partner-email-channel-card", "partner-email-channel-form"\)/);
+    assert.match(emailSettingsSource, /partner-email-inbound-card partner-email-channel-card/);
 });
 
 test("les propositions de mission peuvent être confirmées ou supprimées seules ou en sélection", () => {
@@ -673,10 +690,7 @@ test("Google Workspace utilise uniquement Gmail API avec les scopes minimaux", (
     assert.match(serverSource, /gmailSendMessage/);
     assert.doesNotMatch(gmailSource, /messages\/(?:batchModify|modify|trash|untrash)|\/labels|\/threads\/.+\/trash/);
     assert.doesNotMatch(serverSource, /provider === "google"[^\n]+(?:imap|smtp)/i);
-    assert.match(emailSettingsSource, /data-google-oauth-disclosure/);
-    assert.match(emailSettingsSource, /lire les messages et pièces jointes/);
-    assert.match(emailSettingsSource, /ne modifie, ne déplace, ne supprime aucun message Gmail/);
-    assert.match(emailSettingsSource, /\/confidentialite#messagerie/);
+    assert.match(emailSettingsSource, /Connexion Gmail professionnelle temporairement indisponible/);
 });
 
 test("un timeout ImapFlow ne peut pas arrêter le processus Node", () => {

@@ -40,27 +40,9 @@ async function loadCompanyEmailWorkspace(card) {
         list.innerHTML = '<p class="auth-message">Aucune boîte n’est encore connectée. Un Poste Admin peut la configurer dans Paramètres &gt; Entreprise · Boîte mail.</p>';
         return;
     }
-    const configuration = canConfigureMailbox();
-    list.innerHTML = connections.map(connection => emailConnectionCard(connection, { configuration, candidateReview: true })).join("");
-    connections.forEach(connection => {
-        const row = list.querySelector(`[data-email-connection-card="${connection.id}"]`);
-        const status = row?.querySelector("small");
-        const settings = row?.querySelector(".partner-email-connection-settings");
-        const criteria = document.createElement("section");
-        criteria.className = "partner-email-criteria-summary";
-        criteria.innerHTML = `<strong>Critères enregistrés pour cette boîte</strong><span><b>Expéditeurs / domaines :</b> ${escapeHtml((connection.allowedSenders || []).join(", ") || "Tous les expéditeurs")}</span><span><b>Mots-clés :</b> ${escapeHtml((connection.requiredKeywords || []).join(", ") || "Aucun")}</span>`;
-        status?.after(criteria);
-        if (settings) {
-            settings.open = true;
-            const summary = settings.querySelector("summary");
-            if (summary) summary.textContent = "Modifier les critères enregistrés, le mode et la recherche automatique";
-            const help = document.createElement("p");
-            help.className = "muted";
-            help.textContent = "Les critères enregistrés s’appliquent aux prochaines recherches manuelles et automatiques de cette boîte.";
-            settings.querySelector("summary")?.after(help);
-        }
-    });
-    bindMailboxConnectionControls(card, result.data, { configuration, candidateReview: true, reload: () => loadCompanyEmailWorkspace(card) });
+    list.innerHTML = connections.map(connection => emailConnectionCard(connection, { configuration: false, candidateReview: true })).join("");
+    list.querySelectorAll(".partner-email-mode-summary").forEach(summary => summary.remove());
+    bindMailboxConnectionControls(card, result.data, { configuration: false, candidateReview: true, reload: () => loadCompanyEmailWorkspace(card) });
 }
 
 async function loadPartnerEmailSettings(card) {
@@ -76,15 +58,10 @@ async function loadPartnerEmailSettings(card) {
 function renderSettings(card, mailbox) {
     card.innerHTML = `<section class="partner-email-panel"><div class="form-heading"><div><p class="eyebrow">Réception de missions par e-mail</p><h2>Boîte mail professionnelle</h2></div></div><p class="muted">Microsoft 365 et Google utilisent OAuth : Depann’Home Pro ne connaît jamais votre mot de passe. Pour OVH ou un autre hébergeur, créez un mot de passe d’application IMAP/SMTP.</p><div class="form-grid partner-email-oauth-options"><label>Détection après connexion<select id="partnerEmailOauthMode"><option value="manual">Sélection manuelle</option><option value="automatic">Automatique stricte</option></select></label><label class="form-wide">Expéditeurs ou domaines autorisés<textarea id="partnerEmailOauthSenders" rows="2" placeholder="missions@partenaire.fr, partenaire.fr"></textarea></label><label class="creator-switch form-wide"><input id="partnerEmailOauthStatuses" type="checkbox"><span>Envoyer les changements de statut dans le fil d’origine.</span></label></div><div class="partner-email-provider-actions"><button class="secondary-button" data-email-oauth="microsoft" ${mailbox.oauth?.microsoft ? "" : "disabled"}>Connecter Microsoft 365</button><button class="secondary-button" data-email-oauth="google" ${mailbox.oauth?.google ? "" : "disabled"}>Connecter Google Workspace</button></div>${!mailbox.oauth?.microsoft || !mailbox.oauth?.google ? '<p class="auth-message">Les boutons désactivés nécessitent la configuration OAuth correspondante sur le serveur.</p>' : ""}<form class="client-form" id="partnerEmailImapForm"><h3>OVH ou serveur IMAP/SMTP</h3><div class="form-grid"><label>Nom affiché<input name="displayName" maxlength="160" placeholder="Service missions"></label><label>Adresse e-mail *<input name="emailAddress" type="email" required></label><label>Utilisateur IMAP/SMTP *<input name="username" required></label><label>Mot de passe d’application *<input name="password" type="password" required autocomplete="new-password"></label><label>Serveur IMAP *<input name="imapHost" required placeholder="ssl0.ovh.net"></label><label>Port IMAP<input name="imapPort" type="number" min="1" max="65535" value="993"></label><label>Serveur SMTP *<input name="smtpHost" required placeholder="ssl0.ovh.net"></label><label>Port SMTP<input name="smtpPort" type="number" min="1" max="65535" value="465"></label><label>Sécurité SMTP<select name="smtpSecure"><option value="true">TLS direct (souvent port 465)</option><option value="false">STARTTLS obligatoire (souvent port 587)</option></select></label><label>Détection<select name="selectionMode"><option value="manual">Sélection manuelle</option><option value="automatic">Automatique stricte</option></select></label><label>Seuil automatique<input name="automaticThreshold" type="number" min="70" max="100" value="80"></label><label class="form-wide">Expéditeurs ou domaines autorisés<textarea name="allowedSenders" rows="3" placeholder="missions@partenaire.fr, partenaire.fr"></textarea><small>Un expéditeur autorisé renforce le score ; il ne suffit jamais à lui seul à créer une mission.</small></label><label class="creator-switch form-wide"><input name="sendStatusUpdates" type="checkbox"><span>Répondre automatiquement au fil d’origine lors des changements de statut.</span></label></div><div class="form-actions"><button class="secondary-button">Tester et connecter</button></div><p class="auth-message" aria-live="polite"></p></form><section class="partner-email-connections"><h3>Boîtes connectées</h3>${mailbox.connections?.length ? mailbox.connections.map(emailConnectionCard).join("") : '<p class="muted">Aucune boîte professionnelle connectée.</p>'}</section></section>`;
     card.querySelector(".form-heading")?.insertAdjacentHTML("afterend", '<p class="auth-message" data-email-settings-feedback aria-live="polite" hidden></p>');
-    card.querySelector(".partner-email-panel > .muted")?.insertAdjacentHTML("afterend", '<aside class="auth-message" data-google-oauth-disclosure><strong>Avant de connecter Google Workspace</strong><br>Avec votre autorisation, Depann’Home Pro pourra lire les messages et pièces jointes de la boîte Gmail sélectionnée afin de les afficher et de créer des missions, puis envoyer depuis cette boîte uniquement les réponses ou mises à jour demandées. Depann’Home Pro ne modifie, ne déplace, ne supprime aucun message Gmail et ne le marque jamais comme lu. Vous pourrez révoquer cet accès à tout moment. <a href="/confidentialite#messagerie" target="_blank" rel="noopener noreferrer">Consulter la politique de confidentialité</a>.</aside>');
-    card.querySelector(".partner-email-oauth-options")?.insertAdjacentHTML("beforeend", '<label class="creator-switch form-wide"><input id="partnerEmailOauthAutoSearch" type="checkbox"><span>Activer la recherche automatique des missions sur cette boîte.</span></label>');
-    card.querySelector("#partnerEmailOauthSenders")?.closest("label")?.insertAdjacentHTML("beforeend", "<small>Si la liste est renseignée, seuls ces expéditeurs seront recherchés, en mode manuel comme automatique. Laissez vide pour rechercher tous les expéditeurs.</small>");
-    card.querySelector("#partnerEmailOauthSenders")?.closest("label")?.insertAdjacentHTML("afterend", '<label class="form-wide">Mots-clés obligatoires pour une mission<textarea id="partnerEmailOauthKeywords" rows="2" placeholder="mission partenaire IMH"></textarea><small>Séparez les expressions alternatives par une virgule ou une ligne. Sans correspondance, l’e-mail ne sera pas proposé.</small></label>');
-    card.querySelector("#partnerEmailImapForm .form-grid")?.insertAdjacentHTML("beforeend", '<label class="creator-switch form-wide"><input name="autoSearchEnabled" type="checkbox"><span>Activer la recherche automatique des missions sur cette boîte.</span></label>');
-    card.querySelector('#partnerEmailImapForm [name="allowedSenders"]')?.closest("label")?.insertAdjacentHTML("beforeend", "<small>Liste facultative mais stricte dans les recherches manuelles et automatiques.</small>");
-    card.querySelector('#partnerEmailImapForm [name="allowedSenders"]')?.closest("label")?.insertAdjacentHTML("afterend", '<label class="form-wide">Mots-clés obligatoires pour une mission<textarea name="requiredKeywords" rows="2" placeholder="mission partenaire IMH"></textarea><small>Séparez les expressions alternatives par une virgule ou une ligne.</small></label>');
+    card.querySelector(".partner-email-oauth-options")?.remove();
+    ["selectionMode", "automaticThreshold", "allowedSenders", "sendStatusUpdates"].forEach(name => card.querySelector(`#partnerEmailImapForm [name="${name}"]`)?.closest("label")?.remove());
     const providerHelp = card.querySelector(".partner-email-panel > .muted");
-    if (providerHelp) providerHelp.textContent = "L’adresse Depann’Home Pro reçoit les missions sans configuration. Microsoft reste disponible par OAuth. Gmail personnel, OVH, Zimbra, Namecheap et les autres hébergeurs restent disponibles avec leurs paramètres IMAP/SMTP sécurisés.";
+    if (providerHelp) providerHelp.textContent = "Choisissez un seul moyen de connexion. Microsoft reste disponible par OAuth. Gmail personnel, OVH, Zimbra, Namecheap et les autres hébergeurs utilisent leurs paramètres IMAP/SMTP sécurisés. Les critères de détection se règlent ensuite séparément pour chaque boîte connectée.";
     const imapHeading = card.querySelector("#partnerEmailImapForm h3");
     if (imapHeading) imapHeading.textContent = "Hébergeur IMAP/SMTP (OVH, Zimbra, Namecheap…)";
 
@@ -94,15 +71,14 @@ function renderSettings(card, mailbox) {
     if (googleButton) {
         googleButton.disabled = true;
         googleButton.textContent = "Google Workspace · bientôt disponible";
-        googleButton.setAttribute("aria-describedby", "partnerEmailGoogleSoon");
-    }
-    const googleDisclosure = card.querySelector("[data-google-oauth-disclosure]");
-    if (googleDisclosure) {
-        googleDisclosure.id = "partnerEmailGoogleSoon";
-        googleDisclosure.innerHTML = "<strong>Connexion Google Workspace bientôt disponible</strong><br>Cette connexion est temporairement désactivée. Utilisez dès maintenant l’adresse de réception Depann’Home Pro ci-dessus, ou configurez une boîte Gmail personnelle avec un mot de passe d’application dans le formulaire IMAP/SMTP ci-dessous.";
     }
     const providerActions = card.querySelector(".partner-email-provider-actions");
     providerActions?.insertAdjacentHTML("beforebegin", inboundAddressSection(mailbox));
+    decorateProviderButton(microsoftButton, "Microsoft", "Outlook, Hotmail et Microsoft 365 avec une autorisation OAuth sécurisée.", "Connexion OAuth");
+    decorateProviderButton(googleButton, "Google Workspace", "Connexion Gmail professionnelle temporairement indisponible.", "Bientôt disponible");
+    const imapForm = card.querySelector("#partnerEmailImapForm");
+    imapForm?.classList.add("partner-email-channel-card", "partner-email-channel-form");
+    imapForm?.querySelector(".form-actions .secondary-button")?.classList.replace("secondary-button", "primary-button");
     bindInboundAddressControls(card);
     const emailInput = card.querySelector('#partnerEmailImapForm [name="emailAddress"]');
     if (emailInput) {
@@ -157,13 +133,7 @@ function renderSettings(card, mailbox) {
         });
     }
 
-    card.querySelectorAll('[data-email-oauth="microsoft"]').forEach(button => button.addEventListener("click", () => beginMailboxOauth(button.dataset.emailOauth, {
-        selectionMode: card.querySelector("#partnerEmailOauthMode")?.value,
-        allowedSenders: card.querySelector("#partnerEmailOauthSenders")?.value,
-        requiredKeywords: card.querySelector("#partnerEmailOauthKeywords")?.value,
-        sendStatusUpdates: card.querySelector("#partnerEmailOauthStatuses")?.checked,
-        autoSearchEnabled: card.querySelector("#partnerEmailOauthAutoSearch")?.checked
-    })));
+    card.querySelectorAll('[data-email-oauth="microsoft"]').forEach(button => button.addEventListener("click", () => beginMailboxOauth(button.dataset.emailOauth, {})));
     card.querySelector("#partnerEmailImapForm")?.addEventListener("submit", async event => {
         event.preventDefault();
         const form = event.currentTarget;
@@ -176,8 +146,8 @@ function renderSettings(card, mailbox) {
         const button = event.submitter;
         button.disabled = true;
         const values = Object.fromEntries(new FormData(form));
-        values.sendStatusUpdates = form.elements.sendStatusUpdates.checked;
-        values.autoSearchEnabled = form.elements.autoSearchEnabled.checked;
+        values.sendStatusUpdates = form.elements.sendStatusUpdates?.checked === true;
+        values.autoSearchEnabled = form.elements.autoSearchEnabled?.checked === true;
         const result = await api("/api/partner-email/configuration", { method: "PUT", body: JSON.stringify(values) });
         message.textContent = result.ok ? result.data.message : result.message;
         message.classList.toggle("error", !result.ok);
@@ -191,12 +161,22 @@ function renderSettings(card, mailbox) {
     bindMailboxConnectionControls(card, mailbox, { configuration: true, reload: () => loadPartnerEmailSettings(card) });
 }
 
+function decorateProviderButton(button, title, description, eyebrow) {
+    if (!button) return;
+    const wrapper = document.createElement("article");
+    wrapper.className = "partner-email-channel-card partner-email-provider-card";
+    button.before(wrapper);
+    wrapper.innerHTML = `<div><p class="eyebrow">${escapeHtml(eyebrow)}</p><h3>${escapeHtml(title)}</h3><p>${escapeHtml(description)}</p></div><div class="partner-email-inbound-actions"></div>`;
+    button.classList.replace("secondary-button", "primary-button");
+    wrapper.querySelector(".partner-email-inbound-actions").appendChild(button);
+}
+
 function inboundAddressSection(mailbox) {
-    if (mailbox?.inboundAvailable !== true) return '<article class="partner-email-inbound-card"><div><p class="eyebrow">Réception simplifiée</p><h3>Adresse de réception Depann’Home Pro · bientôt disponible</h3><p>Cette fonctionnalité est temporairement désactivée. Microsoft et les boîtes IMAP/SMTP (Gmail personnel, OVH, Zimbra, Namecheap…) restent disponibles.</p><small>Aucune adresse dédiée n’est actuellement créée ni exposée.</small></div><div class="partner-email-inbound-actions"><button type="button" class="primary-button" disabled>Créer mon adresse · bientôt disponible</button></div></article>';
+    if (mailbox?.inboundAvailable !== true) return '<article class="partner-email-inbound-card partner-email-channel-card"><div><p class="eyebrow">Réception simplifiée</p><h3>Adresse de réception Depann’Home Pro · bientôt disponible</h3><p>Cette fonctionnalité est temporairement désactivée. Microsoft et les boîtes IMAP/SMTP (Gmail personnel, OVH, Zimbra, Namecheap…) restent disponibles.</p><small>Aucune adresse dédiée n’est actuellement créée ni exposée.</small></div><div class="partner-email-inbound-actions"><button type="button" class="primary-button" disabled>Créer mon adresse · bientôt disponible</button></div></article>';
     const address = mailbox?.inboundAddress;
     const configured = mailbox?.inboundConfigured === true;
     const status = address?.enabled ? "Active" : address ? "Suspendue" : configured ? "Prête à être créée" : "Configuration plateforme en attente";
-    return `<article class="partner-email-inbound-card"><div><p class="eyebrow">Recommandé · sans configuration de boîte</p><h3>Adresse de réception Depann’Home Pro</h3><p>Communiquez cette adresse aux donneurs d’ordre. Chaque e-mail et ses pièces jointes suivent exactement l’analyse actuelle : extraction PDF/Word/Excel, OCR, proposition de mission et création ou rapprochement de la fiche client.</p>${address ? `<div class="partner-email-inbound-address"><code>${escapeHtml(address.emailAddress)}</code><button type="button" class="secondary-button" data-email-copy-inbound="${escapeHtml(address.emailAddress)}">Copier l’adresse</button></div>` : ""}<small>État : ${escapeHtml(status)}. Aucun DNS, OAuth ni serveur mail n’est à configurer par votre entreprise.</small></div><div class="partner-email-inbound-actions">${address ? `<button type="button" class="secondary-button" data-email-toggle-inbound="${address.enabled ? "false" : "true"}">${address.enabled ? "Suspendre" : "Réactiver"}</button><button type="button" class="danger-button" data-email-rotate-inbound>Renouveler l’adresse</button>` : `<button type="button" class="primary-button" data-email-create-inbound ${configured ? "" : "disabled"}>Créer mon adresse</button>`}</div><p class="auth-message" data-email-inbound-feedback aria-live="polite"></p></article>`;
+    return `<article class="partner-email-inbound-card partner-email-channel-card"><div><p class="eyebrow">Recommandé · sans configuration de boîte</p><h3>Adresse de réception Depann’Home Pro</h3><p>Communiquez cette adresse aux donneurs d’ordre. Chaque e-mail et ses pièces jointes suivent exactement l’analyse actuelle : extraction PDF/Word/Excel, OCR, proposition de mission et création ou rapprochement de la fiche client.</p>${address ? `<div class="partner-email-inbound-address"><code>${escapeHtml(address.emailAddress)}</code><button type="button" class="secondary-button" data-email-copy-inbound="${escapeHtml(address.emailAddress)}">Copier l’adresse</button></div>` : ""}<small>État : ${escapeHtml(status)}. Aucun DNS, OAuth ni serveur mail n’est à configurer par votre entreprise.</small></div><div class="partner-email-inbound-actions">${address ? `<button type="button" class="secondary-button" data-email-toggle-inbound="${address.enabled ? "false" : "true"}">${address.enabled ? "Suspendre" : "Réactiver"}</button><button type="button" class="danger-button" data-email-rotate-inbound>Renouveler l’adresse</button>` : `<button type="button" class="primary-button" data-email-create-inbound ${configured ? "" : "disabled"}>Créer mon adresse</button>`}</div><p class="auth-message" data-email-inbound-feedback aria-live="polite"></p></article>`;
 }
 
 function bindInboundAddressControls(card) {
@@ -542,7 +522,6 @@ function isGmailMailbox(value) {
 }
 
 function canOpenPartnerMissions() { return ["admin", "pc_standard", "mobile_admin"].includes(document.body.dataset.role); }
-function canConfigureMailbox() { return document.body.dataset.role === "admin" && document.body.dataset.deviceType === "desktop"; }
 function localDateValue(value) { const offset = value.getTimezoneOffset() * 60000; return new Date(value.getTime() - offset).toISOString().slice(0, 10); }
 function formatShortDate(value) { return new Intl.DateTimeFormat("fr-FR").format(new Date(`${value}T12:00:00`)); }
 
