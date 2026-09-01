@@ -6,7 +6,8 @@ const EXTERNAL_WRITE_PREFIXES = [
     "/api/partner-intake/",
     "/api/partner-dialogue/external/",
     "/api/partner-sandbox/external-callback/",
-    "/api/e-invoicing/webhooks/"
+    "/api/e-invoicing/webhooks/",
+    "/api/webhooks/brevo/inbound"
 ];
 
 export function contentSecurityPolicy() {

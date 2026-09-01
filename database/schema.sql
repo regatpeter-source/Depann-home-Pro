@@ -1406,7 +1406,7 @@ CREATE INDEX IF NOT EXISTS depannhome_partner_mission_outbox_pending_idx ON depa
 -- et mots de passe d'application sont chiffrés en AES-256-GCM côté serveur.
 CREATE TABLE IF NOT EXISTS depannhome_partner_email_connections (
     id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
-    provider VARCHAR(20) NOT NULL CHECK(provider IN ('google','microsoft','imap')), email_address VARCHAR(254) NOT NULL,
+    provider VARCHAR(20) NOT NULL CHECK(provider IN ('google','microsoft','imap','brevo')), email_address VARCHAR(254) NOT NULL,
     display_name VARCHAR(160) NOT NULL DEFAULT '', encrypted_credentials TEXT NOT NULL,
     server_configuration JSONB NOT NULL DEFAULT '{}'::jsonb, selection_mode VARCHAR(20) NOT NULL DEFAULT 'manual' CHECK(selection_mode IN ('manual','automatic')),
     allowed_senders JSONB NOT NULL DEFAULT '[]'::jsonb, required_keywords JSONB NOT NULL DEFAULT '[]'::jsonb,
@@ -1418,7 +1418,16 @@ CREATE TABLE IF NOT EXISTS depannhome_partner_email_connections (
 );
 ALTER TABLE depannhome_partner_email_connections ADD COLUMN IF NOT EXISTS required_keywords JSONB NOT NULL DEFAULT '[]'::jsonb;
 ALTER TABLE depannhome_partner_email_connections ADD COLUMN IF NOT EXISTS verified_at TIMESTAMPTZ;
+ALTER TABLE depannhome_partner_email_connections DROP CONSTRAINT IF EXISTS depannhome_partner_email_connections_provider_check;
+ALTER TABLE depannhome_partner_email_connections ADD CONSTRAINT depannhome_partner_email_connections_provider_check CHECK(provider IN ('google','microsoft','imap','brevo'));
 CREATE INDEX IF NOT EXISTS depannhome_partner_email_connections_auto_search_idx ON depannhome_partner_email_connections(auto_search_enabled,enabled,last_sync_at);
+CREATE TABLE IF NOT EXISTS depannhome_partner_email_inbound_addresses (
+    id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL UNIQUE REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    connection_id BIGINT NOT NULL UNIQUE REFERENCES depannhome_partner_email_connections(id) ON DELETE CASCADE,
+    token_hash CHAR(64) NOT NULL UNIQUE, encrypted_token TEXT NOT NULL, enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    created_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 CREATE TABLE IF NOT EXISTS depannhome_partner_email_messages (
     id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
     connection_id BIGINT NOT NULL REFERENCES depannhome_partner_email_connections(id) ON DELETE CASCADE,

@@ -111,6 +111,13 @@ app.use("/api/e-invoicing/webhooks", rateLimit({
 	legacyHeaders: false,
 	message: { message: "Trop de notifications de facturation électronique." }
 }));
+app.use("/api/webhooks/brevo/inbound", rateLimit({
+	windowMs: 15 * 60 * 1000,
+	limit: 300,
+	standardHeaders: "draft-7",
+	legacyHeaders: false,
+	message: { message: "Trop d’e-mails entrants ont été reçus." }
+}));
 app.use("/api/partner-requests", rateLimit({
 	windowMs: 15 * 60 * 1000,
 	limit: 8,

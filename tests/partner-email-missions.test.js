@@ -6,7 +6,7 @@ import PizZip from "pizzip";
 import { PDFDocument, StandardFonts } from "pdf-lib";
 import { createCanvas, loadImage } from "@napi-rs/canvas";
 import { OPS } from "pdfjs-dist/legacy/build/pdf.mjs";
-import { classifyPartnerEmail, extractMissionPayload, extractNestedPartnerEmailContent, inspectMailboxStructure, mailboxReplyBody, mailTechnicalReason, normalizeMissionPostalAddress, oauthErrorMessage, oauthMailboxProviderIssue, parseMailboxPage, parseMailboxSyncPeriod, parseMicrosoftRetryAfter, partnerEmailDataUrl, publicMailError, replySubject, richerDocumentText, sanitizeRequiredKeywords, senderMatchesAllowed, shouldRefreshStoredPartnerEmail, stripQuotedEmailText } from "../server/partner-email.js";
+import { brevoInboundRecipientToken, classifyPartnerEmail, extractMissionPayload, extractNestedPartnerEmailContent, inspectMailboxStructure, mailboxReplyBody, mailTechnicalReason, normalizeMissionPostalAddress, oauthErrorMessage, oauthMailboxProviderIssue, parseMailboxPage, parseMailboxSyncPeriod, parseMicrosoftRetryAfter, partnerEmailDataUrl, publicMailError, replySubject, richerDocumentText, sanitizeBrevoInboundItem, sanitizeRequiredKeywords, senderMatchesAllowed, shouldRefreshStoredPartnerEmail, stripQuotedEmailText } from "../server/partner-email.js";
 import { simpleParser } from "mailparser";
 import { mapPayload, readableEmailMissionReference } from "../server/partner-missions.js";
 import { embeddedPdfImages, extractPartnerDocumentText, normalizePartnerDocumentMime, pdfImageOcrBuffer } from "../server/partner-email-document-extractor.js";
@@ -21,6 +21,55 @@ const navigationSource = readFileSync(new URL("../js/navigation.js", import.meta
 const schemaSource = readFileSync(new URL("../database/schema.sql", import.meta.url), "utf8");
 const appSource = readFileSync(new URL("../app.js", import.meta.url), "utf8");
 const appClientSource = readFileSync(new URL("../js/app.js", import.meta.url), "utf8");
+const securitySource = readFileSync(new URL("../server/security-hardening.js", import.meta.url), "utf8");
+
+test("Brevo transforme un e-mail entrant en source compatible avec le pipeline documentaire existant", () => {
+    const token = "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789";
+    const item = sanitizeBrevoInboundItem({
+        Uuid: ["webhook-42"], MessageId: "<mission-42@example.test>", From: { Name: "Assureur", Address: "missions@assureur.test" },
+        To: [{ Address: `mission-${token}@reception.depannhomepro.com` }], Recipients: [`mission-${token}@reception.depannhomepro.com`],
+        SentAtDate: "Tue, 01 Sep 2026 09:00:00 +0200", Subject: "Ordre de mission", RawTextBody: "Client : Alice Martin",
+        Spam: { Score: 1.2 }, Attachments: [{ Name: "mission.pdf", ContentType: "application/pdf", ContentLength: 1200, DownloadToken: "download-token" }],
+        Headers: { References: "<previous@example.test>" }
+    });
+    assert.equal(item.uuid, "webhook-42");
+    assert.equal(item.from.address, "missions@assureur.test");
+    assert.equal(item.attachments.length, 1);
+    assert.deepEqual(item.references, ["<previous@example.test>"]);
+    assert.equal(brevoInboundRecipientToken(item.recipients[0], "reception.depannhomepro.com"), token);
+    assert.equal(brevoInboundRecipientToken("mission-invalid@other.test", "reception.depannhomepro.com"), "");
+    assert.equal(sanitizeBrevoInboundItem({ From: { Address: "invalide" } }), null);
+    assert.match(serverSource, /saveParsedEmail\(connection,[\s\S]*forceCandidate: true/);
+    assert.match(serverSource, /extractPartnerDocumentText\(attachments\.map/);
+    assert.match(serverSource, /importCandidate\(getAccountOwnerId\(req\)/);
+});
+
+test("le canal Brevo est opaque, révocable, dédupliqué et protégé comme webhook externe", () => {
+    assert.match(schemaSource, /depannhome_partner_email_inbound_addresses[\s\S]*token_hash CHAR\(64\) NOT NULL UNIQUE/);
+    assert.match(serverSource, /crypto\.randomBytes\(32\)\.toString\("hex"\)/);
+    assert.match(serverSource, /BREVO_INBOUND_WEBHOOK_SECRET/);
+    assert.match(serverSource, /crypto\.timingSafeEqual/);
+    assert.match(serverSource, /BREVO_INBOUND_MAX_ITEMS = 20/);
+    assert.match(serverSource, /BREVO_INBOUND_MAX_SPAM_SCORE = 8/);
+    assert.match(serverSource, /skipDuplicateRefresh: true/);
+    assert.match(serverSource, /normalized\.inReplyTo/);
+    assert.match(serverSource, /api\.brevo\.com\/v3\/inbound\/attachments/);
+    assert.match(serverSource, /"api-key": apiKey/);
+    assert.match(securitySource, /\/api\/webhooks\/brevo\/inbound/);
+    assert.match(appSource, /Trop d’e-mails entrants ont été reçus/);
+});
+
+test("Google Workspace est désactivé sans retirer Microsoft ni IMAP SMTP", () => {
+    assert.match(emailSettingsSource, /googleButton\.disabled = true/);
+    assert.match(emailSettingsSource, /Google Workspace · bientôt disponible/);
+    assert.match(emailSettingsSource, /data-email-oauth="microsoft"/);
+    assert.match(emailSettingsSource, /id="partnerEmailImapForm"/);
+    assert.match(emailSettingsSource, /OVH, Zimbra, Namecheap/);
+    assert.match(emailSettingsSource, /Adresse de réception Depann’Home Pro/);
+    assert.match(emailSettingsSource, /data-email-copy-inbound/);
+    assert.match(serverSource, /provider === "google"/);
+    assert.match(serverSource, /syncGoogleConnection/);
+});
 
 const pdf = [{ contentType: "application/pdf", size: 1200 }];
 
@@ -616,8 +665,9 @@ test("un timeout ImapFlow ne peut pas arrêter le processus Node", () => {
 });
 
 test("Missions partenaires rappelle la configuration uniquement sans boîte connectée", () => {
-    assert.match(missionClientSource, /!dashboard\.partnerEmail\.connections\.length/);
-    assert.match(missionClientSource, /Aucune boîte mail professionnelle n’est configurée/);
+    assert.match(missionClientSource, /partnerEmailChannelCount/);
+    assert.match(missionClientSource, /Aucun canal e-mail n’est configuré/);
+    assert.match(missionClientSource, /dashboard\.partnerEmail\.inboundAddress\?\.enabled/);
     assert.match(missionClientSource, /id="openPartnerEmailSettings"/);
     assert.match(missionClientSource, /new CustomEvent\("depannhome:open-partner-email-settings"\)/);
 });

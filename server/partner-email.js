@@ -12,8 +12,9 @@ import { recordMissionDialogueDocument, recordMissionDialogueEvent } from "./par
 import { extractPartnerDocumentText, normalizePartnerDocumentMime } from "./partner-email-document-extractor.js";
 import { hasCompanyEmailWorkspaceAccess } from "./workstation-permissions.js";
 import { gmailDownloadAttachment, gmailListMessages, gmailMessageDetails, gmailMessageRaw, gmailMessageUid, gmailProfile, gmailSearchQuery, gmailSendMessage } from "./gmail-api-client.js";
+import { sendEmail } from "./email.js";
 
-const PROVIDERS = new Set(["google", "microsoft", "imap"]);
+const PROVIDERS = new Set(["google", "microsoft", "imap", "brevo"]);
 const MODES = new Set(["manual", "automatic"]);
 const ALLOWED_MIME = new Set(["application/pdf", "image/jpeg", "image/png", "image/webp", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "text/plain"]);
 const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
@@ -33,6 +34,9 @@ const MICROSOFT_IDENTITY_SCOPES = "openid email profile offline_access User.Read
 const MICROSOFT_MAIL_SCOPES = "Mail.Read Mail.Send";
 const MICROSOFT_GRAPH_MAX_RETRIES = 2;
 const MICROSOFT_GRAPH_MAX_RETRY_DELAY_MS = 10_000;
+const BREVO_INBOUND_API_URL = "https://api.brevo.com/v3/inbound/attachments";
+const BREVO_INBOUND_MAX_ITEMS = 20;
+const BREVO_INBOUND_MAX_SPAM_SCORE = 8;
 export const GOOGLE_WORKSPACE_SCOPES = "openid email profile https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send";
 const PARTNER_EMAIL_SYNC_INTERVAL_MS = 10 * 60 * 1000;
 const DOCUMENT_EXTRACTION_VERSION = 7;
@@ -43,7 +47,7 @@ export async function initializePartnerEmail() {
     const db = getPool();
     await db.query(`CREATE TABLE IF NOT EXISTS depannhome_partner_email_connections (
         id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
-        provider VARCHAR(20) NOT NULL CHECK(provider IN ('google','microsoft','imap')), email_address VARCHAR(254) NOT NULL,
+        provider VARCHAR(20) NOT NULL CHECK(provider IN ('google','microsoft','imap','brevo')), email_address VARCHAR(254) NOT NULL,
         display_name VARCHAR(160) NOT NULL DEFAULT '', encrypted_credentials TEXT NOT NULL,
         server_configuration JSONB NOT NULL DEFAULT '{}'::jsonb, selection_mode VARCHAR(20) NOT NULL DEFAULT 'manual' CHECK(selection_mode IN ('manual','automatic')),
         allowed_senders JSONB NOT NULL DEFAULT '[]'::jsonb, required_keywords JSONB NOT NULL DEFAULT '[]'::jsonb,
@@ -56,7 +60,16 @@ export async function initializePartnerEmail() {
     await db.query("ALTER TABLE depannhome_partner_email_connections ADD COLUMN IF NOT EXISTS auto_search_enabled BOOLEAN NOT NULL DEFAULT FALSE");
     await db.query("ALTER TABLE depannhome_partner_email_connections ADD COLUMN IF NOT EXISTS required_keywords JSONB NOT NULL DEFAULT '[]'::jsonb");
     await db.query("ALTER TABLE depannhome_partner_email_connections ADD COLUMN IF NOT EXISTS verified_at TIMESTAMPTZ");
+    await db.query("ALTER TABLE depannhome_partner_email_connections DROP CONSTRAINT IF EXISTS depannhome_partner_email_connections_provider_check");
+    await db.query("ALTER TABLE depannhome_partner_email_connections ADD CONSTRAINT depannhome_partner_email_connections_provider_check CHECK(provider IN ('google','microsoft','imap','brevo'))");
     await db.query("CREATE INDEX IF NOT EXISTS depannhome_partner_email_connections_auto_search_idx ON depannhome_partner_email_connections(auto_search_enabled,enabled,last_sync_at)");
+    await db.query(`CREATE TABLE IF NOT EXISTS depannhome_partner_email_inbound_addresses (
+        id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL UNIQUE REFERENCES depannhome_users(id) ON DELETE CASCADE,
+        connection_id BIGINT NOT NULL UNIQUE REFERENCES depannhome_partner_email_connections(id) ON DELETE CASCADE,
+        token_hash CHAR(64) NOT NULL UNIQUE, encrypted_token TEXT NOT NULL, enabled BOOLEAN NOT NULL DEFAULT TRUE,
+        created_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`);
     await db.query(`CREATE TABLE IF NOT EXISTS depannhome_partner_email_messages (
         id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
         connection_id BIGINT NOT NULL REFERENCES depannhome_partner_email_connections(id) ON DELETE CASCADE,
@@ -89,6 +102,7 @@ export async function initializePartnerEmail() {
 }
 
 export function registerPartnerEmailRoutes(app, requireAuthentication) {
+    app.post("/api/webhooks/brevo/inbound", asyncHandler(receiveBrevoInboundWebhook));
     app.get("/api/partner-email/oauth/:provider/callback", asyncHandler(async (req, res) => {
         const provider = String(req.params.provider || "");
         const state = String(req.query?.state || "");
@@ -115,11 +129,23 @@ export function registerPartnerEmailRoutes(app, requireAuthentication) {
     app.use("/api/partner-email", requireAuthentication, requireEmailAccess);
     app.get("/api/partner-email", asyncHandler(async (req, res) => {
         const ownerId = getAccountOwnerId(req);
-        const [connections, messages] = await Promise.all([
-            getPool().query(`SELECT id,provider,email_address AS "emailAddress",display_name AS "displayName",selection_mode AS "selectionMode",allowed_senders AS "allowedSenders",required_keywords AS "requiredKeywords",automatic_threshold AS "automaticThreshold",send_status_updates AS "sendStatusUpdates",auto_search_enabled AS "autoSearchEnabled",enabled,verified_at AS "verifiedAt",last_sync_at AS "lastSyncAt",last_error AS "lastError",updated_at AS "updatedAt" FROM depannhome_partner_email_connections WHERE owner_id=$1 ORDER BY updated_at DESC`, [ownerId]),
-            getPool().query(`SELECT message.id,message.connection_id AS "connectionId",message.sender_address AS "senderAddress",message.sender_name AS "senderName",message.subject,message.body_text AS "bodyText",message.received_at AS "receivedAt",message.classification_score AS "classificationScore",message.classification_reasons AS "classificationReasons",message.status,message.mission_id AS "missionId",COALESCE(json_agg(json_build_object('id',attachment.id,'filename',attachment.filename,'mimeType',attachment.mime_type,'fileSize',attachment.file_size,'selected',attachment.selected) ORDER BY attachment.id) FILTER(WHERE attachment.id IS NOT NULL),'[]'::json) AS attachments FROM depannhome_partner_email_messages message LEFT JOIN depannhome_partner_email_attachments attachment ON attachment.email_message_id=message.id WHERE message.owner_id=$1 AND message.status='candidate' GROUP BY message.id ORDER BY message.received_at DESC LIMIT 200`, [ownerId])
+        const [connections, messages, inboundAddress] = await Promise.all([
+            getPool().query(`SELECT id,provider,email_address AS "emailAddress",display_name AS "displayName",selection_mode AS "selectionMode",allowed_senders AS "allowedSenders",required_keywords AS "requiredKeywords",automatic_threshold AS "automaticThreshold",send_status_updates AS "sendStatusUpdates",auto_search_enabled AS "autoSearchEnabled",enabled,verified_at AS "verifiedAt",last_sync_at AS "lastSyncAt",last_error AS "lastError",updated_at AS "updatedAt" FROM depannhome_partner_email_connections WHERE owner_id=$1 AND provider<>'brevo' ORDER BY updated_at DESC`, [ownerId]),
+            getPool().query(`SELECT message.id,message.connection_id AS "connectionId",message.sender_address AS "senderAddress",message.sender_name AS "senderName",message.subject,message.body_text AS "bodyText",message.received_at AS "receivedAt",message.classification_score AS "classificationScore",message.classification_reasons AS "classificationReasons",message.status,message.mission_id AS "missionId",COALESCE(json_agg(json_build_object('id',attachment.id,'filename',attachment.filename,'mimeType',attachment.mime_type,'fileSize',attachment.file_size,'selected',attachment.selected) ORDER BY attachment.id) FILTER(WHERE attachment.id IS NOT NULL),'[]'::json) AS attachments FROM depannhome_partner_email_messages message LEFT JOIN depannhome_partner_email_attachments attachment ON attachment.email_message_id=message.id WHERE message.owner_id=$1 AND message.status='candidate' GROUP BY message.id ORDER BY message.received_at DESC LIMIT 200`, [ownerId]),
+            getPool().query(`SELECT address.id,address.connection_id AS "connectionId",connection.email_address AS "emailAddress",address.enabled,address.created_at AS "createdAt",address.updated_at AS "updatedAt" FROM depannhome_partner_email_inbound_addresses address JOIN depannhome_partner_email_connections connection ON connection.id=address.connection_id WHERE address.owner_id=$1`, [ownerId])
         ]);
-        res.json({ connections: connections.rows, candidates: messages.rows, oauth: { google: oauthConfigured("google"), microsoft: oauthConfigured("microsoft") } });
+        res.json({ connections: connections.rows, candidates: messages.rows, inboundAddress: inboundAddress.rows[0] || null, inboundConfigured: brevoInboundConfigured(), oauth: { google: oauthConfigured("google"), microsoft: oauthConfigured("microsoft") } });
+    }));
+    app.post("/api/partner-email/inbound-address", requireEmailConfigurationAccess, asyncHandler(async (req, res) => {
+        if (!brevoInboundConfigured()) return res.status(503).json({ message: "La réception Brevo doit d’abord être configurée par Depann’Home Pro." });
+        const address = await provisionBrevoInboundAddress(getAccountOwnerId(req), req.user.sub, Boolean(req.body?.rotate));
+        res.status(address.created ? 201 : 200).json({ ...address, message: address.rotated ? "Une nouvelle adresse de réception a été créée. L’ancienne adresse ne reçoit plus les missions." : address.created ? "L’adresse de réception Depann’Home Pro est prête." : "L’adresse de réception est déjà prête." });
+    }));
+    app.patch("/api/partner-email/inbound-address", requireEmailConfigurationAccess, asyncHandler(async (req, res) => {
+        const enabled = req.body?.enabled !== false;
+        const { rows } = await getPool().query(`UPDATE depannhome_partner_email_inbound_addresses address SET enabled=$2,updated_at=NOW() FROM depannhome_partner_email_connections connection WHERE address.owner_id=$1 AND connection.id=address.connection_id RETURNING connection.email_address AS "emailAddress",address.enabled`, [getAccountOwnerId(req), enabled]);
+        if (!rows[0]) return res.status(404).json({ message: "Aucune adresse de réception n’est configurée." });
+        res.json({ ...rows[0], message: enabled ? "La réception des missions est activée." : "La réception des missions est suspendue." });
     }));
     app.put("/api/partner-email/configuration", requireEmailConfigurationAccess, asyncHandler(async (req, res) => {
         const input = sanitizeImapConfiguration(req.body);
@@ -219,6 +245,145 @@ export function registerPartnerEmailRoutes(app, requireAuthentication) {
     app.delete("/api/partner-email/:connectionId", requireEmailConfigurationAccess, asyncHandler(async (req, res) => { await getPool().query("DELETE FROM depannhome_partner_email_connections WHERE id=$1 AND owner_id=$2", [positiveId(req.params.connectionId), getAccountOwnerId(req)]); res.status(204).end(); }));
 }
 
+async function provisionBrevoInboundAddress(ownerId, actorId, rotate = false) {
+    const domain = brevoInboundDomain();
+    const database = await getPool().connect();
+    try {
+        await database.query("BEGIN");
+        await database.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", [`brevo-inbound:${ownerId}`]);
+        const current = await database.query(`SELECT address.id,address.connection_id AS "connectionId",connection.email_address AS "emailAddress",address.enabled FROM depannhome_partner_email_inbound_addresses address JOIN depannhome_partner_email_connections connection ON connection.id=address.connection_id WHERE address.owner_id=$1 FOR UPDATE OF address,connection`, [ownerId]);
+        if (current.rows[0] && !rotate) {
+            await database.query("COMMIT");
+            return { ...current.rows[0], created: false, rotated: false };
+        }
+        const token = crypto.randomBytes(32).toString("hex");
+        const emailAddress = `mission-${token}@${domain}`;
+        const encryptedToken = encryptElectronicInvoicingCredentials({ token });
+        if (current.rows[0]) {
+            await database.query("UPDATE depannhome_partner_email_connections SET email_address=$2,enabled=TRUE,last_error='',updated_at=NOW() WHERE id=$1", [current.rows[0].connectionId, emailAddress]);
+            await database.query("UPDATE depannhome_partner_email_inbound_addresses SET token_hash=$2,encrypted_token=$3,enabled=TRUE,updated_at=NOW() WHERE id=$1", [current.rows[0].id, hash(token), encryptedToken]);
+            await database.query("COMMIT");
+            return { id: current.rows[0].id, connectionId: current.rows[0].connectionId, emailAddress, enabled: true, created: false, rotated: true };
+        }
+        const connection = await database.query(`INSERT INTO depannhome_partner_email_connections(owner_id,provider,email_address,display_name,encrypted_credentials,server_configuration,selection_mode,send_status_updates,auto_search_enabled,enabled,created_by,last_error,verified_at) VALUES($1,'brevo',$2,'Réception Depann’Home Pro',$3,'{}'::jsonb,'manual',FALSE,FALSE,TRUE,$4,'',NOW()) RETURNING id`, [ownerId, emailAddress, encryptElectronicInvoicingCredentials({ channel: "brevo-inbound" }), actorId]);
+        const { rows } = await database.query(`INSERT INTO depannhome_partner_email_inbound_addresses(owner_id,connection_id,token_hash,encrypted_token,created_by) VALUES($1,$2,$3,$4,$5) RETURNING id,connection_id AS "connectionId",enabled`, [ownerId, connection.rows[0].id, hash(token), encryptedToken, actorId]);
+        await database.query("COMMIT");
+        return { ...rows[0], emailAddress, created: true, rotated: false };
+    } catch (error) {
+        await database.query("ROLLBACK");
+        throw error;
+    } finally { database.release(); }
+}
+
+async function receiveBrevoInboundWebhook(req, res) {
+    if (!brevoInboundConfigured()) return res.status(503).json({ message: "Réception e-mail indisponible." });
+    if (!validBrevoWebhookAuthorization(req.get("Authorization"), req.get("X-Brevo-Webhook-Secret"))) return res.status(401).json({ message: "Authentification du webhook invalide." });
+    const items = Array.isArray(req.body?.items) ? req.body.items.slice(0, BREVO_INBOUND_MAX_ITEMS) : [];
+    if (!items.length) return res.status(400).json({ message: "Aucun e-mail entrant valide." });
+    let accepted = 0, duplicates = 0, ignored = 0;
+    for (const item of items) {
+        const normalized = sanitizeBrevoInboundItem(item);
+        if (!normalized || normalized.inReplyTo || normalized.spamScore >= BREVO_INBOUND_MAX_SPAM_SCORE) { ignored += 1; continue; }
+        const tokens = [...new Set(normalized.recipients.map(value => brevoInboundRecipientToken(value)).filter(Boolean))];
+        if (!tokens.length) { ignored += 1; continue; }
+        const tokenHashes = tokens.map(hash);
+        const { rows } = await getPool().query(`SELECT address.token_hash,connection.*,owner.is_active,owner.is_archived FROM depannhome_partner_email_inbound_addresses address JOIN depannhome_partner_email_connections connection ON connection.id=address.connection_id JOIN depannhome_users owner ON owner.id=address.owner_id WHERE address.token_hash::text=ANY($1::text[]) AND address.enabled=TRUE AND connection.enabled=TRUE AND owner.is_active=TRUE AND owner.is_archived=FALSE LIMIT 2`, [tokenHashes]);
+        if (rows.length !== 1) { ignored += 1; continue; }
+        const connection = rows[0];
+        const organization = await getOrganization(connection.owner_id);
+        if (!isFeatureEnabled(organization, "companyEmail") || !isFeatureEnabled(organization, "partnerMissions")) { ignored += 1; continue; }
+        const stableMessageId = clean(`brevo-${normalized.uuid || hash(normalized.messageId)}@depannhome.local`, 500);
+        const duplicate = await getPool().query("SELECT 1 FROM depannhome_partner_email_messages WHERE owner_id=$1 AND connection_id=$2 AND message_id=$3", [connection.owner_id, connection.id, stableMessageId]);
+        if (duplicate.rowCount) { duplicates += 1; continue; }
+        const attachments = await downloadBrevoInboundAttachments(normalized.attachments);
+        const saved = await saveParsedEmail(connection, stableEmailUid(stableMessageId), {
+            messageId: normalized.messageId || stableMessageId,
+            inReplyTo: normalized.inReplyTo,
+            references: normalized.references,
+            subject: normalized.subject,
+            text: normalized.text,
+            html: normalized.html,
+            date: normalized.date,
+            from: { value: [normalized.from] },
+            to: { value: normalized.to },
+            attachments,
+            headers: normalized.headers
+        }, { forceCandidate: true, messageId: stableMessageId, skipDuplicateRefresh: true });
+        if (!saved) duplicates += 1;
+        else accepted += 1;
+        await getPool().query("UPDATE depannhome_partner_email_connections SET verified_at=NOW(),last_sync_at=NOW(),last_error='',updated_at=NOW() WHERE id=$1", [connection.id]);
+    }
+    return res.status(202).json({ accepted, duplicates, ignored });
+}
+
+export function sanitizeBrevoInboundItem(value) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+    const mailbox = item => ({ name: clean(item?.Name ?? item?.name, 160), address: clean(item?.Address ?? item?.address, 254).toLowerCase() });
+    const from = mailbox(value.From);
+    if (!/^\S+@\S+\.\S+$/.test(from.address)) return null;
+    const recipients = [...(Array.isArray(value.Recipients) ? value.Recipients : []), ...(Array.isArray(value.To) ? value.To : [])].map(item => typeof item === "string" ? clean(item, 254).toLowerCase() : mailbox(item).address).filter(Boolean).slice(0, 100);
+    const to = (Array.isArray(value.To) ? value.To : []).map(item => typeof item === "string" ? { name: "", address: clean(item, 254).toLowerCase() } : mailbox(item)).filter(item => item.address).slice(0, 100);
+    const headerValue = name => {
+        const entry = Object.entries(value.Headers || {}).find(([key]) => key.toLowerCase() === name.toLowerCase())?.[1];
+        return Array.isArray(entry) ? entry.join(" ") : String(entry || "");
+    };
+    const headers = new Map(Object.entries(value.Headers || {}).map(([key, entry]) => [key.toLowerCase(), Array.isArray(entry) ? entry.join(" ") : String(entry || "")]));
+    const rawDate = String(value.SentAtDate || ""); const timestamp = Date.parse(rawDate);
+    const spamScore = Number(value.SpamScore ?? value.Spam?.Score ?? 0);
+    const uuid = clean(Array.isArray(value.Uuid) ? value.Uuid[0] : value.Uuid, 160);
+    const messageId = clean(value.MessageId || headerValue("Message-ID"), 500);
+    if (!uuid && !messageId) return null;
+    return {
+        uuid, messageId, inReplyTo: clean(value.InReplyTo || headerValue("In-Reply-To"), 500),
+        references: clean(headerValue("References"), 4000).split(/\s+/).filter(Boolean), from, to, recipients,
+        subject: clean(value.Subject, 500), text: String(value.RawTextBody || value.ExtractedMarkdownMessage || "").slice(0, 20000), html: String(value.RawHtmlBody || "").slice(0, 2 * 1024 * 1024),
+        date: Number.isFinite(timestamp) ? new Date(timestamp) : new Date(), spamScore: Number.isFinite(spamScore) ? spamScore : 0,
+        attachments: Array.isArray(value.Attachments) ? value.Attachments.slice(0, MAX_ATTACHMENTS) : [], headers
+    };
+}
+
+export function brevoInboundRecipientToken(value, domain = brevoInboundDomain()) {
+    const address = String(value?.Address || value?.address || value || "").trim().toLowerCase().replace(/^.*<([^>]+)>.*$/, "$1");
+    const escapedDomain = escapeRegExp(String(domain || "").trim().toLowerCase());
+    if (!escapedDomain) return "";
+    return new RegExp(`^mission-([a-z0-9_-]{32,80})@${escapedDomain}$`, "i").exec(address)?.[1] || "";
+}
+
+async function downloadBrevoInboundAttachments(values) {
+    const apiKey = String(process.env.BREVO_API_KEY || "").trim();
+    const attachments = []; let expectedTotal = 0;
+    for (const item of Array.isArray(values) ? values : []) {
+        const filename = safeFilename(item?.Name || item?.name);
+        const contentType = normalizePartnerDocumentMime({ filename, contentType: item?.ContentType || item?.contentType });
+        const expectedSize = Math.max(0, Number(item?.ContentLength ?? item?.contentLength) || 0);
+        const nested = contentType === "message/rfc822" || /\.eml$/i.test(filename);
+        if ((!ALLOWED_MIME.has(contentType) && !nested) || !expectedSize || expectedSize > MAX_ATTACHMENT_BYTES || expectedTotal + expectedSize > MAX_TOTAL_ATTACHMENT_BYTES) continue;
+        const downloadToken = String(item?.DownloadToken || item?.downloadToken || "").trim();
+        if (!downloadToken || downloadToken.length > 2000 || !/^[A-Za-z0-9._~-]+$/.test(downloadToken)) continue;
+        const response = await fetch(`${BREVO_INBOUND_API_URL}/${encodeURIComponent(downloadToken)}`, { headers: { "api-key": apiKey, Accept: "application/octet-stream" }, signal: AbortSignal.timeout(20000) });
+        if (!response.ok) throw httpError(response.status === 429 ? 429 : 502, "Brevo n’a pas permis de récupérer une pièce jointe entrante.");
+        const content = await streamBuffer(response.body, MAX_ATTACHMENT_BYTES);
+        if (!content.length) continue;
+        expectedTotal += content.length;
+        if (expectedTotal > MAX_TOTAL_ATTACHMENT_BYTES) break;
+        attachments.push({ filename, contentType, contentId: clean(item?.ContentID || item?.contentId, 255), size: content.length, content });
+    }
+    return attachments;
+}
+
+function validBrevoWebhookAuthorization(authorization, customSecret) {
+    const expected = String(process.env.BREVO_INBOUND_WEBHOOK_SECRET || "").trim();
+    const supplied = String(customSecret || String(authorization || "").replace(/^Bearer\s+/i, "")).trim();
+    if (!expected || !supplied) return false;
+    const left = Buffer.from(expected), right = Buffer.from(supplied);
+    return left.length === right.length && crypto.timingSafeEqual(left, right);
+}
+
+function brevoInboundConfigured() { return Boolean(brevoInboundDomain() && validEnvironmentSecret("BREVO_API_KEY") && validEnvironmentSecret("BREVO_INBOUND_WEBHOOK_SECRET")); }
+function brevoInboundDomain() { return host(process.env.BREVO_INBOUND_DOMAIN); }
+function validEnvironmentSecret(name) { const value = String(process.env[name] || "").trim(); return value.length >= 24 && !/votre|remplacez|choisissez|generez/i.test(value); }
+function stableEmailUid(value) { return Number.parseInt(hash(value).slice(0, 13), 16); }
+
 export function startPartnerEmailScheduler() {
     if (scheduler) return;
     scheduler = { starting: true };
@@ -286,6 +451,7 @@ async function syncConnection(ownerId, connectionId, actorId, syncPeriod = null)
 async function performConnectionSync(ownerId, connectionId, actorId, syncPeriod = null) {
     const connection = await findConnection(ownerId, connectionId); if (!connection) throw httpError(404, "Boîte professionnelle introuvable.");
     try {
+        if (connection.provider === "brevo") throw httpError(409, "L’adresse de réception Depann’Home Pro reçoit les missions automatiquement et ne se synchronise pas comme une boîte mail.");
         if (connection.provider === "microsoft") return await syncMicrosoftConnection(connection, actorId, syncPeriod);
         if (connection.provider === "google") return await syncGoogleConnection(connection, actorId, syncPeriod);
         const access = await mailboxAccess(connection); const client = createImapClient({ host: access.imap.host, port: access.imap.port, secure: access.imap.secure, auth: access.auth, disableAutoIdle: true });
@@ -526,7 +692,7 @@ async function requiredConnection(ownerId, connectionId) { const connection = aw
 async function liveMailboxOperation(connection, operation, { sending = false, operation: operationName = "mailbox_operation" } = {}) { try { return await operation(); } catch (error) { if (error?.status) throw error; console.warn("[partner-email] live mailbox rejected", { ...mailErrorLog(error, connection.provider), operation: operationName, mailbox: clean(connection.email_address, 254), technicalReason: mailTechnicalReason(error) }); const status = error?.statusCode === 400 ? 422 : error?.statusCode === 404 ? 404 : error?.statusCode === 429 ? 429 : error?.statusCode === 503 ? 503 : 502; throw httpError(status, publicMailError(error, { provider: connection.provider, mailbox: connection.email_address, sending }), { retryAfterSeconds: error?.retryAfterSeconds }); } }
 function setLiveMailboxHeaders(response) { return response.set({ "Cache-Control": "private, no-store", Pragma: "no-cache", Expires: "0" }); }
 
-async function saveParsedEmail(connection, uid, parsed, { forceCandidate = false, messageId: forcedMessageId = "" } = {}) {
+async function saveParsedEmail(connection, uid, parsed, { forceCandidate = false, messageId: forcedMessageId = "", skipDuplicateRefresh = false } = {}) {
     const from = parsed.from?.value?.[0] || {}; const messageId = clean(parsed.messageId || `uid-${uid}@${connection.email_address}`, 500);
     const nested = await extractNestedPartnerEmailContent(parsed);
     const attachments = preparePartnerEmailAttachments([...(parsed.attachments || []).filter(item => !isNestedEmailAttachment(item)), ...nested.attachments]);
@@ -536,7 +702,7 @@ async function saveParsedEmail(connection, uid, parsed, { forceCandidate = false
     if (!forceCandidate && classification.score < CANDIDATE_THRESHOLD) return null;
     const stableMessageId = clean(forcedMessageId || messageId, 500);
     const { rows } = await getPool().query(`INSERT INTO depannhome_partner_email_messages(owner_id,connection_id,uid,message_id,in_reply_to,references_header,sender_address,sender_name,recipients,subject,body_text,document_text,document_extraction_version,received_at,classification_score,classification_reasons) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12,$13,$14,$15,$16::jsonb) ON CONFLICT(owner_id,connection_id,message_id) DO NOTHING RETURNING id,status,mission_id AS "missionId"`, [connection.owner_id, connection.id, uid, stableMessageId, clean(parsed.inReplyTo, 500), clean((parsed.references || []).join(" "), 4000), clean(from.address, 254), clean(from.name, 160), JSON.stringify(parsed.to?.value?.map(item => item.address).filter(Boolean) || []), clean(parsed.subject, 500), String(parsed.text || "").slice(0, 20000), documentText.slice(0, 50000), DOCUMENT_EXTRACTION_VERSION, parsed.date || new Date(), classification.score, JSON.stringify(classification.reasons)]);
-    if (!rows[0]) return refreshPreviouslyParsedEmail(connection, stableMessageId, parsed, documentText, attachments, classification, forceCandidate);
+    if (!rows[0]) return skipDuplicateRefresh ? null : refreshPreviouslyParsedEmail(connection, stableMessageId, parsed, documentText, attachments, classification, forceCandidate);
     for (const attachment of attachments) await getPool().query("INSERT INTO depannhome_partner_email_attachments(owner_id,email_message_id,filename,mime_type,file_size,content_id,file_data) VALUES($1,$2,$3,$4,$5,$6,$7)", [connection.owner_id, rows[0].id, safeFilename(attachment.filename), attachment.contentType, attachment.size, clean(attachment.contentId, 255), attachment.content]);
     return { ...rows[0], score: classification.score, trustedSender: classification.trustedSender };
 }
@@ -874,6 +1040,10 @@ export async function notifyEmailMissionStatus(ownerId, missionId, status, detai
 export async function sendMissionEmail(ownerId, missionId, body, { statusUpdate = false, attachments = [] } = {}) {
     const { rows } = await getPool().query(`SELECT message.mission_id,message.sender_address,message.subject,message.message_id,message.references_header,connection.* FROM depannhome_partner_email_messages message JOIN depannhome_partner_email_connections connection ON connection.id=message.connection_id WHERE message.owner_id=$1 AND message.mission_id=$2 AND message.status='imported' ORDER BY message.id LIMIT 1`, [ownerId, missionId]);
     const source = rows[0]; if (!source) throw httpError(404, "Aucun e-mail source n’est lié à cette mission.");
+    if (source.provider === "brevo") {
+        await sendEmail({ recipient: source.sender_address, replyTo: source.email_address, subject: `${/^re:/i.test(source.subject) ? "" : "Re: "}${source.subject}`, text: body, attachments, inReplyTo: source.message_id, references: [source.references_header, source.message_id].filter(Boolean).join(" "), headers: { "X-DepannHome-Mission": String(missionId), "X-DepannHome-Status-Update": statusUpdate ? "true" : "false" } });
+        return { recipient: source.sender_address, provider: source.provider };
+    }
     const access = await mailboxAccess(source);
     if (source.provider === "microsoft") { await sendMicrosoftGraphMail(access.graphToken, { source, body, attachments, statusUpdate }); return { recipient: source.sender_address, provider: source.provider }; }
     if (source.provider === "google") {

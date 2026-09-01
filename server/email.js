@@ -58,7 +58,7 @@ export async function sendCommercialOfferRequestEmail({ companyName, contactName
     });
 }
 
-async function sendEmail({ recipient, replyTo, subject, text, html, attachments = [] }) {
+export async function sendEmail({ recipient, replyTo, subject, text, html, attachments = [], inReplyTo, references, headers }) {
     if (!isEmailDeliveryConfigured()) {
         const error = new Error("L’envoi d’e-mails n’est pas configuré. Renseignez Brevo SMTP dans les variables d’environnement.");
         error.code = "SMTP_NOT_CONFIGURED";
@@ -81,7 +81,10 @@ async function sendEmail({ recipient, replyTo, subject, text, html, attachments 
         subject,
         text,
         html,
-        attachments
+        attachments,
+        ...(inReplyTo ? { inReplyTo } : {}),
+        ...(references ? { references } : {}),
+        ...(headers ? { headers } : {})
     });
 }
 
