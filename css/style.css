@@ -6021,15 +6021,15 @@ body.desktop-device #authRoot > footer::before{
 body.desktop-device #authRoot > footer .nav-button,
 body.desktop-device #authRoot > footer .nav-button:not([data-nav="home"]){
     display:grid;
-    grid-template-columns:30px minmax(0,1fr) auto;
+    grid-template-columns:minmax(0,1fr) auto;
     min-width:0;
     min-height:36px;
     flex:0 0 auto;
     align-items:center;
     justify-content:stretch;
-    gap:8px;
+    gap:6px;
     width:100%;
-    padding:5px 8px;
+    padding:5px 12px;
     border:1px solid transparent;
     border-radius:5px;
     color:#d7e2ec;
@@ -6037,34 +6037,6 @@ body.desktop-device #authRoot > footer .nav-button:not([data-nav="home"]){
     text-align:left;
     box-shadow:none;
 }
-
-body.desktop-device #authRoot > footer .nav-button::before{
-    content:"·";
-    display:grid;
-    width:28px;
-    height:24px;
-    place-items:center;
-    border:1px solid rgba(255,255,255,.14);
-    border-radius:4px;
-    background:rgba(255,255,255,.06);
-    color:#b9cad8;
-    font-size:9px;
-    font-weight:900;
-    letter-spacing:.02em;
-}
-
-body.desktop-device #authRoot > footer .nav-button[data-nav="home"]::before{content:"AC";}
-body.desktop-device #authRoot > footer .nav-button[data-nav="search"]::before{content:"RE";}
-body.desktop-device #authRoot > footer .nav-button[data-nav="store"]::before{content:"MA";}
-body.desktop-device #authRoot > footer .nav-button[data-nav="clients"]::before{content:"CL";}
-body.desktop-device #authRoot > footer .nav-button[data-nav="billing"]::before{content:"DF";}
-body.desktop-device #authRoot > footer .nav-button[data-nav="accounting"]::before{content:"CO";}
-body.desktop-device #authRoot > footer .nav-button[data-nav="purchases"]::before{content:"AH";}
-body.desktop-device #authRoot > footer .nav-button[data-nav="partner-missions"]::before{content:"MI";}
-body.desktop-device #authRoot > footer .nav-button[data-nav="company-email"]::before{content:"EM";}
-body.desktop-device #authRoot > footer .nav-button[data-nav="calendar"]::before{content:"PL";}
-body.desktop-device #authRoot > footer .nav-button[data-nav="library"]::before{content:"BI";}
-body.desktop-device #authRoot > footer .nav-button[data-nav="settings"]::before{content:"PA";}
 
 body.desktop-device #authRoot > footer .nav-button span{
     min-width:0;
@@ -6094,15 +6066,9 @@ body.desktop-device #authRoot > footer .nav-button.active{
     box-shadow:inset 3px 0 0 #72a894;
 }
 
-body.desktop-device #authRoot > footer .nav-button.active::before{
-    border-color:#75a796;
-    background:#4f806f;
-    color:#fff;
-}
-
 body.desktop-device #authRoot > footer .nav-button .message-alert{
     position:static;
-    grid-column:3;
+    grid-column:2;
     min-width:17px;
     height:17px;
 }

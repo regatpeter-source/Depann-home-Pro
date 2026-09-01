@@ -18,6 +18,8 @@ test("desktop density rules stay isolated from the mobile shell", () => {
     assert.match(style, /body\.desktop-device \.quick-actions\{\s*display:none/);
     assert.match(style, /body\.desktop-device \.group-shell,[\s\S]*body\.desktop-device \.connectors-shell\{[\s\S]*max-width:none/);
     assert.match(style, /body\.desktop-device #authRoot > footer \.nav-button\[data-nav="store"\]\{\s*display:none/);
+    assert.match(style, /body\.desktop-device #authRoot > footer \.nav-button,[\s\S]*grid-template-columns:minmax\(0,1fr\) auto/);
+    assert.doesNotMatch(style, /\.nav-button\[data-nav="home"\]::before\{content:"AC"/);
     assert.match(style, /body\.desktop-device \.client-workspace-tabs\{/);
     assert.match(style, /body\.desktop-device \.client-workspace-tab > span\{\s*display:none/);
     assert.match(style, /--primary:#2f607d/);
@@ -28,11 +30,11 @@ test("desktop density rules stay isolated from the mobile shell", () => {
 });
 
 test("desktop stylesheet cache versions remain synchronized", () => {
-    assert.match(index, /css\/style\.css\?v=234/);
+    assert.match(index, /css\/style\.css\?v=235/);
     assert.match(index, /js\/app\.js\?v=383/);
-    assert.match(serviceWorker, /css\/style\.css\?v=234/);
+    assert.match(serviceWorker, /css\/style\.css\?v=235/);
     assert.match(serviceWorker, /js\/app\.js\?v=383/);
     assert.match(serviceWorker, /js\/clients\.js\?v=157/);
     assert.match(serviceWorker, /js\/navigation\.js\?v=416/);
-    assert.match(serviceWorker, /depann-home-pro-v478/);
+    assert.match(serviceWorker, /depann-home-pro-v479/);
 });
