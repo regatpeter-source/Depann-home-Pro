@@ -119,7 +119,8 @@ test("every mobile post keeps Home and Library access regardless of subscription
     assert.match(navigation, /else if \(isMobileDeviceContext\(\)\) openHome\(\)/);
     assert.match(navigation, /if \(isMobileDeviceContext\(\)\) \{\s*renderHome\(\)/);
     assert.doesNotMatch(navigation, /activeSubscriptionTier\(\)/);
-    assert.match(navigation, /if \(!canAccessRoute\(ROUTES\.calendar\)\) \{\s*document\.body\.dataset\.pageMode = "basic-home"/);
+    assert.match(navigation, /if \(!calendarEnabled && !desktopDashboard\) \{\s*document\.body\.dataset\.pageMode = "basic-home"/);
+    assert.match(navigation, /Pilotage administratif/);
     assert.match(navigation, /data-dashboard-action="calendar"/);
     assert.doesNotMatch(navigation, /container\.removeChild\(panel\)/);
     assert.match(style, /body\[data-page-mode="basic-home"\] #pageTitle/);

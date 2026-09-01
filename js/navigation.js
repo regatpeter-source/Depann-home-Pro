@@ -763,28 +763,35 @@ async function renderHome() {
     const container = getContainer();
     const panel = document.createElement("section");
     panel.className = "client-panel home-panel dashboard-panel";
-    if (!canAccessRoute(ROUTES.calendar)) {
+    const calendarEnabled = canAccessRoute(ROUTES.calendar);
+    const desktopDashboard = isDesktopDevice();
+    if (!calendarEnabled && !desktopDashboard) {
         document.body.dataset.pageMode = "basic-home";
         renderPlatformAnnouncement(container);
         return;
     }
     panel.innerHTML = `
-        <div class="dashboard-heading"><div><p class="eyebrow">Depann’Home Pro</p><h2>Tableau de bord</h2>${renderMobileUserSections()}</div><button type="button" class="secondary-button" data-dashboard-action="calendar">Voir le planning complet</button></div>
+        <div class="dashboard-heading"><div><p class="eyebrow">Depann’Home Pro</p><h2>Tableau de bord</h2>${desktopDashboard ? '<p class="dashboard-heading-summary">Vue opérationnelle de l’entreprise active</p>' : ""}${renderMobileUserSections()}</div>${calendarEnabled ? '<button type="button" class="secondary-button" data-dashboard-action="calendar">Voir le planning complet</button>' : ""}</div>
         ${document.body.dataset.canSwitchGroupCompanies === "true" ? '<section class="dashboard-company-switcher" data-dashboard-company-switcher><p class="muted">Chargement des entreprises autorisées…</p></section>' : ""}
-        <div class="dashboard-grid">
+        ${desktopDashboard ? renderDashboardMetricCards(calendarEnabled) : ""}
+        ${calendarEnabled ? `<div class="dashboard-grid">
             <section class="dashboard-card"><p class="eyebrow">Aujourd’hui</p><h3>${escapeHtml(formatDashboardDate(new Date()))}</h3><div class="dashboard-events" data-dashboard-events="today"><p class="muted">Chargement des rendez-vous…</p></div></section>
             <section class="dashboard-card"><p class="eyebrow">À venir</p><h3>Les 7 prochains jours</h3><div class="dashboard-events" data-dashboard-events="upcoming"><p class="muted">Chargement des rendez-vous…</p></div></section>
-        </div>
+        </div>` : '<section class="dashboard-administrative-note"><strong>Pilotage administratif</strong><span>Retrouvez ci-dessus les dossiers qui nécessitent votre attention.</span></section>'}
         ${canAccessRoute(ROUTES.library) ? '<p class="dashboard-catalog-note">Les gammes techniques — volets roulants et portails — sont disponibles dans la <strong>Bibliothèque</strong>.</p>' : ""}
     `;
     container.appendChild(panel);
     renderPlatformAnnouncement(container);
 
-    panel.querySelector('[data-dashboard-action="calendar"]').addEventListener("click", renderCalendar);
+    panel.querySelector('[data-dashboard-action="calendar"]')?.addEventListener("click", renderCalendar);
+    bindDashboardMetricActions(panel);
     void renderHomeGroupCompanySwitcher(panel);
+    if (desktopDashboard) void loadDashboardOperationalMetrics(panel);
+    if (!calendarEnabled) return;
     const result = await loadDashboardEvents();
     if (!panel.isConnected) return;
     if (!result.ok) {
+        updateDashboardMetric(panel, "calendar", "—", "Planning momentanément indisponible");
         panel.querySelectorAll("[data-dashboard-events]").forEach(list => {
             list.innerHTML = `<p class="auth-message error">${escapeHtml(result.message || "Impossible de charger le planning.")}</p>`;
         });
@@ -795,8 +802,60 @@ async function renderHome() {
     const upcomingEnd = toDashboardDate(addDashboardDays(new Date(), 6));
     const todayEvents = result.events.filter(event => event.date === today);
     const upcomingEvents = result.events.filter(event => event.date > today && event.date <= upcomingEnd);
+    updateDashboardMetric(panel, "calendar", String(todayEvents.length), `${upcomingEvents.length} prévu${upcomingEvents.length > 1 ? "s" : ""} sur 7 jours`);
     renderDashboardEvents(panel.querySelector('[data-dashboard-events="today"]'), todayEvents, "Aucun rendez-vous aujourd’hui.");
     renderDashboardEvents(panel.querySelector('[data-dashboard-events="upcoming"]'), upcomingEvents, "Aucun rendez-vous prévu dans les 7 prochains jours.");
+}
+
+function renderDashboardMetricCards(calendarEnabled) {
+    const cards = [
+        ...(calendarEnabled ? [["calendar", "Planning", "—", "Chargement des interventions…"]] : []),
+        ...(canAccessRoute(ROUTES.clients) ? [["clients", "Clients actifs", String(getSearchableClients().length), "Dossiers disponibles"]] : []),
+        ...(canAccessRoute(ROUTES.billing) ? [["billing", "Documents à suivre", "—", "Chargement de la facturation…"]] : []),
+        ...(canAccessRoute(ROUTES.partnerMissions) ? [["missions", "Missions à valider", "—", "Chargement des missions…"]] : []),
+        ...(canAccessRoute(ROUTES.purchases) ? [["purchases", "Achats à comptabiliser", "—", "Chargement des achats…"]] : [])
+    ];
+    if (!cards.length) return "";
+    return `<section class="dashboard-kpi-grid" aria-label="Indicateurs opérationnels">${cards.map(([key, label, value, detail]) => `<button type="button" class="dashboard-kpi-card" data-dashboard-metric="${key}" data-dashboard-action="${key}"><span>${label}</span><strong>${value}</strong><small>${detail}</small><em>Ouvrir →</em></button>`).join("")}</section>`;
+}
+
+function bindDashboardMetricActions(panel) {
+    const actions = { calendar: renderCalendar, clients: () => openClients(), billing: renderBilling, missions: renderPartnerMissions, purchases: renderPurchases };
+    panel.querySelectorAll("[data-dashboard-metric]").forEach(button => button.addEventListener("click", () => actions[button.dataset.dashboardAction]?.()));
+}
+
+async function loadDashboardOperationalMetrics(panel) {
+    const requests = [];
+    if (canAccessRoute(ROUTES.billing)) requests.push(loadDashboardJson("/api/billing").then(data => {
+        const documents = Array.isArray(data?.documents) ? data.documents : [];
+        const followed = documents.filter(document => !["paid", "cancelled", "rejected"].includes(String(document.status || "").toLowerCase()));
+        const unpaidInvoices = documents.filter(document => document.documentType === "invoice" && !["paid", "cancelled"].includes(String(document.status || "").toLowerCase()));
+        updateDashboardMetric(panel, "billing", String(followed.length), `${unpaidInvoices.length} facture${unpaidInvoices.length > 1 ? "s" : ""} non réglée${unpaidInvoices.length > 1 ? "s" : ""}`);
+    }).catch(() => updateDashboardMetric(panel, "billing", "—", "Facturation momentanément indisponible")));
+    if (canAccessRoute(ROUTES.partnerMissions)) requests.push(loadDashboardJson("/api/partner-missions").then(data => {
+        const missions = Array.isArray(data?.missions) ? data.missions : [];
+        const pending = missions.filter(mission => ["received", "pending_validation"].includes(mission.status)).length;
+        updateDashboardMetric(panel, "missions", String(pending), `${missions.length} mission${missions.length > 1 ? "s" : ""} reçue${missions.length > 1 ? "s" : ""}`);
+    }).catch(() => updateDashboardMetric(panel, "missions", "—", "Missions momentanément indisponibles")));
+    if (canAccessRoute(ROUTES.purchases)) requests.push(loadDashboardJson("/api/purchases").then(data => {
+        const purchases = Array.isArray(data?.purchases) ? data.purchases : [];
+        const unaccounted = purchases.filter(purchase => !purchase.isAccounted).length;
+        updateDashboardMetric(panel, "purchases", String(unaccounted), `${purchases.length} achat${purchases.length > 1 ? "s" : ""} enregistré${purchases.length > 1 ? "s" : ""}`);
+    }).catch(() => updateDashboardMetric(panel, "purchases", "—", "Achats momentanément indisponibles")));
+    await Promise.allSettled(requests);
+}
+
+async function loadDashboardJson(url) {
+    const response = await fetch(url, { credentials: "same-origin" });
+    if (!response.ok) throw new Error("Indicateur indisponible");
+    return response.json();
+}
+
+function updateDashboardMetric(panel, key, value, detail) {
+    const card = panel.querySelector(`[data-dashboard-metric="${key}"]`);
+    if (!card?.isConnected) return;
+    card.querySelector("strong").textContent = value;
+    card.querySelector("small").textContent = detail;
 }
 
 async function renderHomeGroupCompanySwitcher(panel) {
