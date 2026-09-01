@@ -6073,6 +6073,7 @@ body.desktop-device #authRoot > footer .nav-button .message-alert{
     height:17px;
 }
 
+body.desktop-device #authRoot > footer .nav-button[data-nav="search"],
 body.desktop-device #authRoot > footer .nav-button[data-nav="store"]{
     display:none;
 }
