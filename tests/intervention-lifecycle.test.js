@@ -7,12 +7,12 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const read = relativePath => fs.readFileSync(path.join(root, relativePath), "utf8");
 
-test("une intervention est terminée seulement lorsque sa date est passée à Paris", () => {
+test("une intervention reste ouverte après sa date tant qu’un poste autorisé ne la termine pas", () => {
     const calendar = read("server/calendar.js");
-    const completionRules = calendar.match(/event_date < \(CURRENT_TIMESTAMP AT TIME ZONE 'Europe\/Paris'\)::date/g) || [];
-    assert.ok(completionRules.length >= 4);
+    assert.doesNotMatch(calendar, /event_date < \(CURRENT_TIMESTAMP AT TIME ZONE 'Europe\/Paris'\)::date/);
+    assert.match(calendar, /\(event\.event_status = 'completed'\) AS "isCompleted"/);
+    assert.match(calendar, /WHERE id = \$1 AND owner_id = \$2 AND event_status = 'completed'/);
     assert.doesNotMatch(calendar, /end_time\s*<\s*(?:CURRENT_TIME|LOCALTIME)/);
-    assert.match(calendar, /AS "isCompleted"/);
 });
 
 test("une intervention terminée reste dans l’historique et devient non modifiable", () => {
@@ -34,14 +34,15 @@ test("une intervention terminée reste dans l’historique et devient non modifi
     assert.match(calendarClient, /depannhome:open-client/);
 });
 
-test("le quitus devient inaccessible après la date de l’intervention", () => {
+test("le quitus devient inaccessible uniquement après une finalisation administrative", () => {
     const calendarServer = read("server/calendar.js");
     const clientsServer = read("server/clients.js");
     const calendarClient = read("js/calendar.js");
     const clientsClient = read("js/clients.js");
-    assert.match(calendarServer, /if \(event\.isCompleted\)[\s\S]*son quitus n’est plus accessible/);
-    assert.match(calendarServer, /event\.event_date >= \(CURRENT_TIMESTAMP AT TIME ZONE 'Europe\/Paris'\)::date/);
+    assert.doesNotMatch(calendarServer, /event\.event_date >= \(CURRENT_TIMESTAMP AT TIME ZONE 'Europe\/Paris'\)::date/);
+    assert.match(calendarServer, /event\.event_status NOT IN \('completed','cancelled'\)/);
     assert.match(clientsServer, /isCompletedInterventionQuitus/);
+    assert.match(clientsServer, /event_status IN \('completed','cancelled'\)/);
     assert.match(calendarClient, /event\.eventType === "appointment" && event\.isCompleted/);
     assert.match(calendarClient, /function renderQuitusHtml\(event\) \{\s*if \(event\.isCompleted\) return ""/);
     assert.match(clientsClient, /Quitus archivé et inaccessible/);
@@ -69,5 +70,5 @@ test("une nouvelle version PWA active immédiatement les correctifs du planning"
     assert.match(application, /\.then\(registration => registration\.update\(\)\)/);
     assert.match(worker, /self\.skipWaiting\(\)/);
     assert.match(worker, /self\.clients\.claim\(\)/);
-    assert.match(worker, /\.\/js\/calendar\.js\?v=194/);
+    assert.match(worker, /\.\/js\/calendar\.js\?v=195/);
 });

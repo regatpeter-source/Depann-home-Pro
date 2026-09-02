@@ -771,7 +771,7 @@ async function isCompletedInterventionQuitus(ownerId, clientId, attachment) {
         SELECT 1
         FROM depannhome_calendar_events
         WHERE id = $1 AND owner_id = $2 AND client_id = $3 AND event_type = 'appointment'
-            AND event_date < (CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Paris')::date
+            AND event_status IN ('completed','cancelled')
     `, [appointmentId, ownerId, clientId]);
     return Boolean(rowCount);
 }

@@ -1,9 +1,9 @@
 import { ROUTES } from "./config.js?v=106";
-import { createBillingDocumentForClient, viewBillingDocument } from "./billing.js?v=194";
+import { createBillingDocumentForClient, viewBillingDocument } from "./billing.js?v=195";
 import { getSearchableClients } from "./clients.js?v=159";
 import { addClientActivityByName, synchronizeClients } from "./client-sync.js?v=126";
 import { renderClientMessages } from "./messages.js?v=107";
-import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=41";
+import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=42";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { renderPlatformAnnouncement } from "./platform-announcement.js?v=1";
@@ -504,7 +504,7 @@ function renderEventForm(panel) {
             <div class="calendar-form-actions">
                 <button type="submit" class="secondary-button">${event.partnerMissionId ? "Valider la planification" : isEditing ? "Enregistrer les modifications" : "Ajouter au planning"}</button>
                 ${typeof event.pauseEvent === "function" ? '<button type="button" class="secondary-button" id="pauseCalendarEvent">Mettre en pause pour appeler le client</button>' : ""}
-                ${isEditing ? '<button type="button" class="secondary-button danger-button" id="deleteCalendarEvent">Supprimer</button>' : ""}
+                ${isEditing && canManageCalendarEventStatus() ? '<button type="button" class="secondary-button danger-button" id="deleteCalendarEvent">Supprimer</button>' : ""}
             </div>
         </form>
         ${isEditing ? renderInsuranceDeductibleHtml(event, findClientForEvent(event)) : ""}

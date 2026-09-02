@@ -25,7 +25,8 @@ test("seul le poste mobile affecté soumet une franchise de mission assurance", 
 	assert.match(server, /DEDUCTIBLE_FIELD_ROLES/);
 	assert.match(server, /mission\.mapped_data->>'insurance'/);
 	assert.match(server, /assignment\.technician_id=\$3::bigint/);
-	assert.match(server, /Cette intervention est terminée : sa franchise ne peut plus être enregistrée/);
+	assert.match(server, /event\.event_status NOT IN \('completed','cancelled'\)/);
+	assert.doesNotMatch(server, /event\.event_date < \(CURRENT_TIMESTAMP AT TIME ZONE 'Europe\/Paris'\)::date/);
 	assert.match(server, /\["pending", "validated"\]\.includes\(appointment\.deductibleStatus\)/);
 	assert.match(server, /Une photo JPEG, PNG ou WebP valide est obligatoire/);
 	assert.match(server, /isValidImageFile\(request\.file\)/);

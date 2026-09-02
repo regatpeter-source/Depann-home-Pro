@@ -36,7 +36,8 @@ test("une intervention terminée est rayée et une intervention annulée est gri
 
 test("les événements clos restent visibles mais ne bloquent plus un créneau", () => {
     assert.match(server, /event_status NOT IN \('completed', 'cancelled'\)/);
-    assert.match(server, /event_status = 'completed' OR \(event_status <> 'cancelled'/);
+    assert.match(server, /event_status = 'completed'/);
+    assert.doesNotMatch(server, /event_status <> 'cancelled' AND event_type = 'appointment' AND event_date/);
     assert.match(server, /isClosedCalendarStatus\(event\.status\) \? null : await findCalendarConflict/);
     assert.match(calendar, /!\["completed", "cancelled"\]\.includes\(calendarEventStatus\(event\)\)/);
     assert.match(calendar, /if \(\["completed", "cancelled"\]\.includes\(calendarEventStatus\(candidate\)\)\) return null/);
@@ -53,6 +54,8 @@ test("seuls les postes administratifs et le Poste Admin Mobile finalisent une in
     assert.match(server, /!canManageCalendarEventStatus\(request\.user\) && event\.status !== "planned"/);
     assert.match(server, /if \(event\.status !== currentStatus\) return response\.status\(403\)/);
     assert.match(server, /AND \(\$15::boolean OR event_status = \$13\)/);
+    assert.match(server, /if \(!canManageCalendarEventStatus\(request\.user\)\) \{\s*return response\.status\(403\)\.json\(\{ message: "La suppression d’une intervention est réservée/);
     assert.match(calendar, /function canManageCalendarEventStatus\(\) \{\s*return \["admin", "pc_standard", "mobile_admin"\]\.includes/);
     assert.match(calendar, /canManageCalendarEventStatus\(\) \? `<label>[\s\S]*?<select name="status">[\s\S]*?type="hidden" name="status"/);
+    assert.match(calendar, /isEditing && canManageCalendarEventStatus\(\) \? '<button type="button" class="secondary-button danger-button" id="deleteCalendarEvent">Supprimer/);
 });
