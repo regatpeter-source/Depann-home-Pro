@@ -1035,6 +1035,7 @@ CREATE TABLE IF NOT EXISTS depannhome_calendar_events (
     end_time TIME,
     color VARCHAR(20) NOT NULL DEFAULT 'blue',
     event_type VARCHAR(20) NOT NULL DEFAULT 'appointment',
+    event_status VARCHAR(20) NOT NULL DEFAULT 'planned',
     event_origin VARCHAR(30) NOT NULL DEFAULT 'standard',
     partner_connection_id BIGINT,
     partner_mission_id BIGINT,
@@ -1062,6 +1063,8 @@ CREATE TABLE IF NOT EXISTS depannhome_calendar_events (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT depannhome_calendar_events_color_check
         CHECK (color IN ('blue', 'green', 'orange', 'red', 'purple', 'gray')),
+    CONSTRAINT depannhome_calendar_events_status_check
+        CHECK (event_status IN ('planned', 'confirmed', 'in_progress', 'completed', 'cancelled')),
     CONSTRAINT depannhome_calendar_events_time_check
         CHECK (end_time IS NULL OR start_time IS NULL OR end_time >= start_time)
 );
@@ -1077,6 +1080,11 @@ ALTER TABLE depannhome_calendar_events
 
 ALTER TABLE depannhome_calendar_events
 ADD COLUMN IF NOT EXISTS event_type VARCHAR(20) NOT NULL DEFAULT 'appointment';
+
+ALTER TABLE depannhome_calendar_events
+ADD COLUMN IF NOT EXISTS event_status VARCHAR(20) NOT NULL DEFAULT 'planned';
+UPDATE depannhome_calendar_events SET event_status='planned' WHERE event_status IS NULL OR event_status NOT IN ('planned','confirmed','in_progress','completed','cancelled');
+DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='depannhome_calendar_events_status_check') THEN ALTER TABLE depannhome_calendar_events ADD CONSTRAINT depannhome_calendar_events_status_check CHECK (event_status IN ('planned','confirmed','in_progress','completed','cancelled')); END IF; END $$;
 
 ALTER TABLE depannhome_calendar_events
 ADD COLUMN IF NOT EXISTS event_origin VARCHAR(30) NOT NULL DEFAULT 'standard',

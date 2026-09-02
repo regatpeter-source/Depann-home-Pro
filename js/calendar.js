@@ -1,9 +1,9 @@
 import { ROUTES } from "./config.js?v=106";
-import { createBillingDocumentForClient, viewBillingDocument } from "./billing.js?v=192";
-import { getSearchableClients } from "./clients.js?v=158";
+import { createBillingDocumentForClient, viewBillingDocument } from "./billing.js?v=193";
+import { getSearchableClients } from "./clients.js?v=159";
 import { addClientActivityByName, synchronizeClients } from "./client-sync.js?v=126";
 import { renderClientMessages } from "./messages.js?v=107";
-import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=39";
+import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=40";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { renderPlatformAnnouncement } from "./platform-announcement.js?v=1";
@@ -24,6 +24,13 @@ const EVENT_TYPE_OPTIONS = [
     { id: "vacation", label: "Vacances", title: "Vacances", color: "purple" },
     { id: "sick_leave", label: "Arrêt", title: "Arrêt", color: "red" },
     { id: "unavailable", label: "Indisponibilité", title: "Indisponibilité", color: "gray" }
+];
+const EVENT_STATUS_OPTIONS = [
+    { id: "planned", label: "Planifiée" },
+    { id: "confirmed", label: "Confirmée" },
+    { id: "in_progress", label: "En cours" },
+    { id: "completed", label: "Terminée" },
+    { id: "cancelled", label: "Annulée" }
 ];
 
 let displayedMonth = firstDayOfMonth(new Date());
@@ -170,6 +177,9 @@ function renderHeader(panel) {
         ${readOnly ? "" : renderTechnicianFilter()}
         <div class="calendar-legend">
             ${COLOR_OPTIONS.map(color => `<span><i style="background:${color.value}"></i>${color.label}</span>`).join("")}
+        </div>
+        <div class="calendar-status-legend" aria-label="Statuts des interventions">
+            ${EVENT_STATUS_OPTIONS.map(status => `<span class="status-${status.id}"><i></i>${status.label}</span>`).join("")}
         </div>
     `;
 
@@ -336,6 +346,26 @@ function renderEventForm(panel) {
         });
         return;
     }
+    if (calendarEventStatus(event) === "cancelled" && usesTerrainInterventionView(event)) {
+        panel.innerHTML = `
+            <div class="calendar-event-detail">
+                <div class="form-heading"><div><p class="eyebrow">Intervention annulée</p><h2>${escapeHtml(event.title)}</h2></div><span class="quitus-status">Annulée</span></div>
+                <section class="calendar-appointment-information">
+                    <p class="muted">Cette intervention reste visible dans le planning et l’historique, mais elle ne réserve plus ce créneau.</p>
+                    <dl><dt>Intervention</dt><dd>N° ${escapeHtml(event.id)}</dd><dt>Client</dt><dd>${escapeHtml(event.clientName || "Non renseigné")}</dd><dt>Date initiale</dt><dd>${escapeHtml(formatActivityDate(event.date, event.startTime))}${event.endTime ? ` — ${escapeHtml(event.endTime)}` : ""}</dd>${renderAssignedTechniciansDetail(event)}${event.location ? `<dt>Lieu</dt><dd>${escapeHtml(event.location)}</dd>` : ""}${event.notes ? `<dt>Notes</dt><dd>${escapeHtml(event.notes)}</dd>` : ""}</dl>
+                </section>
+                <div class="calendar-form-actions">${isMobileAdministrator() ? '<button type="button" class="secondary-button" id="editCalendarEvent">Modifier ou réactiver</button>' : ""}<button type="button" class="secondary-button" id="closeCalendarDetail">Fermer</button></div>
+            </div>`;
+        panel.querySelector("#editCalendarEvent")?.addEventListener("click", () => {
+            mobileAdminEditingEvents.add(String(event.id));
+            refreshCalendarDetail();
+        });
+        panel.querySelector("#closeCalendarDetail").addEventListener("click", () => {
+            selectedEvent = null;
+            refreshCalendarDetail();
+        });
+        return;
+    }
     if (usesTerrainInterventionView(event)) {
         if (event.eventType !== "appointment") {
             panel.innerHTML = `
@@ -443,8 +473,12 @@ function renderEventForm(panel) {
                 </label>
                 ${isEditing || event.partnerMissionId ? "" : renderMultiDatePlanning(event)}
                 <label>
-                    Couleur / statut
+                    Couleur
                     <select name="color">${COLOR_OPTIONS.map(color => `<option value="${color.id}" ${event.color === color.id ? "selected" : ""}>${color.label}</option>`).join("")}</select>
+                </label>
+                <label>
+                    Statut
+                    <select name="status">${EVENT_STATUS_OPTIONS.map(status => `<option value="${status.id}" ${calendarEventStatus(event) === status.id ? "selected" : ""}>${status.label}</option>`).join("")}</select>
                 </label>
                 ${renderTechnicianAssignmentField(event)}
                 <label>
@@ -804,6 +838,7 @@ function renderCalendarAvailability(form, editedEventId) {
     const candidateTechnicians = new Set(getAssignedTechnicianIds(candidate));
     const sameDayEvents = events
         .filter(event => event.date === candidate.date && String(event.id || "") !== String(editedEventId || ""))
+        .filter(event => !["completed", "cancelled"].includes(calendarEventStatus(event)))
         .filter(event => !candidateTechnicians.size || getAssignedTechnicianIds(event).some(id => candidateTechnicians.has(id)))
         .sort(compareEventTimes);
     const conflict = findLocalCalendarConflict(sameDayEvents, candidate);
@@ -826,6 +861,7 @@ function renderCalendarAvailability(form, editedEventId) {
 }
 
 function findLocalCalendarConflict(dayEvents, candidate) {
+    if (["completed", "cancelled"].includes(calendarEventStatus(candidate))) return null;
     if (!candidate.startTime || !candidate.endTime) return dayEvents[0] || null;
     const candidateTechnicians = new Set(getAssignedTechnicianIds(candidate));
     return dayEvents.find(event => {
@@ -1332,7 +1368,8 @@ function renderCalendarGrid(panel) {
             const clientDetails = getEventClientDetails(event);
             const button = document.createElement("button");
             button.type = "button";
-            button.className = `calendar-event color-${event.color}`;
+            button.className = calendarEventClassName(event);
+            button.dataset.calendarStatus = calendarEventStatus(event);
             button.title = calendarEventAccessibleLabel(event, clientDetails);
             button.setAttribute("aria-label", calendarEventAccessibleLabel(event, clientDetails, date));
             button.innerHTML = renderCalendarEventCard(event, clientDetails);
@@ -1375,7 +1412,7 @@ function renderCalendarList(panel) {
         const visibleEvents = dayEvents.slice(0, getCalendarEventLimit(calendarView));
         const hiddenCount = dayEvents.length - visibleEvents.length;
         const emptyMessage = canCreate ? "Aucun événement. Cliquez pour en ajouter un." : "Aucun rendez-vous prévu.";
-        return `<section class="calendar-list-day${canCreate ? " calendar-list-day-clickable" : ""}"${canCreate ? ` data-calendar-date="${date}" tabindex="0" role="button" aria-label="Ajouter un événement le ${escapeHtml(formatShortDate(day))}"` : ""}><h3>${escapeHtml(new Intl.DateTimeFormat("fr-FR", { weekday: "long", day: "numeric", month: "long" }).format(day))}</h3>${dayEvents.length ? `<div class="calendar-list-events">${visibleEvents.map(event => { const client = getEventClientDetails(event); return `<button type="button" class="calendar-event color-${escapeHtml(event.color)}" data-calendar-event="${escapeHtml(event.id)}" aria-label="${escapeHtml(calendarEventAccessibleLabel(event, client, date))}" title="${escapeHtml(calendarEventAccessibleLabel(event, client))}">${renderCalendarEventCard(event, client)}</button>`; }).join("")}${hiddenCount > 0 ? `<button type="button" class="calendar-overflow-button" data-calendar-more-date="${date}">+ ${hiddenCount} autre${hiddenCount > 1 ? "s" : ""}</button>` : ""}</div>` : `<p class="muted">${emptyMessage}</p>`}</section>`;
+        return `<section class="calendar-list-day${canCreate ? " calendar-list-day-clickable" : ""}"${canCreate ? ` data-calendar-date="${date}" tabindex="0" role="button" aria-label="Ajouter un événement le ${escapeHtml(formatShortDate(day))}"` : ""}><h3>${escapeHtml(new Intl.DateTimeFormat("fr-FR", { weekday: "long", day: "numeric", month: "long" }).format(day))}</h3>${dayEvents.length ? `<div class="calendar-list-events">${visibleEvents.map(event => { const client = getEventClientDetails(event); return `<button type="button" class="${calendarEventClassName(event)}" data-calendar-event="${escapeHtml(event.id)}" data-calendar-status="${calendarEventStatus(event)}" aria-label="${escapeHtml(calendarEventAccessibleLabel(event, client, date))}" title="${escapeHtml(calendarEventAccessibleLabel(event, client))}">${renderCalendarEventCard(event, client)}</button>`; }).join("")}${hiddenCount > 0 ? `<button type="button" class="calendar-overflow-button" data-calendar-more-date="${date}">+ ${hiddenCount} autre${hiddenCount > 1 ? "s" : ""}</button>` : ""}</div>` : `<p class="muted">${emptyMessage}</p>`}</section>`;
     }).join("")}</div>`;
     panel.querySelectorAll("[data-calendar-event]").forEach(button => button.addEventListener("click", () => {
         selectedEvent = events.find(event => String(event.id) === button.dataset.calendarEvent) || null;
@@ -1421,7 +1458,7 @@ function renderCalendarTimeline(panel) {
             </div>
             <div class="calendar-timeline-all-day">
                 <span>${allDayLabel}</span>
-                ${dayLayouts.map(({ untimedEvents }, index) => `<div data-calendar-untimed-date="${toDateString(days[index])}">${untimedEvents.map(event => `<button type="button" class="calendar-event calendar-timeline-untimed color-${escapeHtml(event.color)}" data-calendar-event="${escapeHtml(event.id)}" aria-label="${escapeHtml(calendarEventAccessibleLabel(event, getEventClientDetails(event), toDateString(days[index])))}"><strong>${escapeHtml(getEventClientDetails(event).name || event.title || "Événement")}</strong><small>${escapeHtml(formatEventTime(event))}</small></button>`).join("") || '<small class="calendar-timeline-empty">—</small>'}</div>`).join("")}
+                ${dayLayouts.map(({ untimedEvents }, index) => `<div data-calendar-untimed-date="${toDateString(days[index])}">${untimedEvents.map(event => `<button type="button" class="${calendarEventClassName(event, "calendar-timeline-untimed")}" data-calendar-event="${escapeHtml(event.id)}" data-calendar-status="${calendarEventStatus(event)}" aria-label="${escapeHtml(calendarEventAccessibleLabel(event, getEventClientDetails(event), toDateString(days[index])))}"><strong>${escapeHtml(getEventClientDetails(event).name || event.title || "Événement")}</strong><small>${escapeHtml(formatEventTime(event))}</small>${renderCalendarStatusBadge(event)}</button>`).join("") || '<small class="calendar-timeline-empty">—</small>'}</div>`).join("")}
             </div>
             <div class="calendar-timeline-body">
                 <div class="calendar-time-axis" aria-hidden="true">
@@ -1431,7 +1468,7 @@ function renderCalendarTimeline(panel) {
                     const date = toDateString(days[index]);
                     return `<div class="calendar-timeline-day" data-calendar-timeline-date="${date}"${canCreate ? ` tabindex="0" role="button" aria-label="Ajouter un rendez-vous le ${escapeHtml(formatShortDate(days[index]))}"` : ""}>${timedEvents.map(item => {
                         const client = getEventClientDetails(item.event);
-                        return `<button type="button" class="calendar-event calendar-timeline-event color-${escapeHtml(item.event.color)}" data-calendar-event="${escapeHtml(item.event.id)}" style="--event-start:${item.startRatio};--event-duration:${item.durationRatio};--event-lane:${item.lane};--event-lanes:${item.lanes}" aria-label="${escapeHtml(calendarEventAccessibleLabel(item.event, client, date))}" title="${escapeHtml(calendarEventAccessibleLabel(item.event, client))}">${renderCalendarEventCard(item.event, client)}</button>`;
+                        return `<button type="button" class="${calendarEventClassName(item.event, "calendar-timeline-event")}" data-calendar-event="${escapeHtml(item.event.id)}" data-calendar-status="${calendarEventStatus(item.event)}" style="--event-start:${item.startRatio};--event-duration:${item.durationRatio};--event-lane:${item.lane};--event-lanes:${item.lanes}" aria-label="${escapeHtml(calendarEventAccessibleLabel(item.event, client, date))}" title="${escapeHtml(calendarEventAccessibleLabel(item.event, client))}">${renderCalendarEventCard(item.event, client)}</button>`;
                     }).join("")}</div>`;
                 }).join("")}
             </div>
@@ -1535,7 +1572,26 @@ function getVisibleEvents() {
 function renderCalendarEventCard(event, client) {
     const technicianNames = getAssignedTechnicianNames(event);
     const primary = client.name || event.title || "Intervention";
-    return `<time class="calendar-event-time">${escapeHtml(formatEventTime(event))}</time><span class="calendar-event-identity"><strong class="calendar-event-client">${escapeHtml(primary)}</strong>${client.address ? `<small class="calendar-event-address">${escapeHtml(client.address)}</small>` : ""}</span><span class="calendar-event-context">${client.name && event.title ? `<small class="calendar-event-title">${escapeHtml(event.title)}</small>` : ""}${technicianNames.length ? `<small class="calendar-event-technicians">${escapeHtml(technicianNames.join(" · "))}</small>` : ""}${client.phone ? `<small class="calendar-event-phone">${escapeHtml(client.phone)}</small>` : ""}</span>`;
+    return `<time class="calendar-event-time">${escapeHtml(formatEventTime(event))}</time><span class="calendar-event-identity"><strong class="calendar-event-client">${escapeHtml(primary)}</strong>${client.address ? `<small class="calendar-event-address">${escapeHtml(client.address)}</small>` : ""}</span><span class="calendar-event-context">${client.name && event.title ? `<small class="calendar-event-title">${escapeHtml(event.title)}</small>` : ""}${technicianNames.length ? `<small class="calendar-event-technicians">${escapeHtml(technicianNames.join(" · "))}</small>` : ""}${client.phone ? `<small class="calendar-event-phone">${escapeHtml(client.phone)}</small>` : ""}</span>${renderCalendarStatusBadge(event)}`;
+}
+
+function calendarEventStatus(event) {
+    if (event?.isCompleted) return "completed";
+    return EVENT_STATUS_OPTIONS.some(status => status.id === event?.status) ? event.status : "planned";
+}
+
+function calendarEventStatusLabel(event) {
+    const status = calendarEventStatus(event);
+    return EVENT_STATUS_OPTIONS.find(option => option.id === status)?.label || "Planifiée";
+}
+
+function calendarEventClassName(event, extraClass = "") {
+    return ["calendar-event", extraClass, `color-${event?.color || "blue"}`, `status-${calendarEventStatus(event)}`].filter(Boolean).join(" ");
+}
+
+function renderCalendarStatusBadge(event) {
+    const status = calendarEventStatus(event);
+    return status === "planned" ? "" : `<span class="calendar-event-status">${escapeHtml(calendarEventStatusLabel(event))}</span>`;
 }
 
 function getCalendarEventLimit(view) {
@@ -1552,7 +1608,7 @@ function openCalendarDay(date) {
 }
 
 function calendarEventAccessibleLabel(event, client, date = "") {
-    return [date ? formatPreviewDate(date) : "", formatEventTime(event), client.name, client.address, event.title, getAssignedTechnicianNames(event).join(" · "), client.phone].filter(Boolean).join(" · ");
+    return [date ? formatPreviewDate(date) : "", calendarEventStatusLabel(event), formatEventTime(event), client.name, client.address, event.title, getAssignedTechnicianNames(event).join(" · "), client.phone].filter(Boolean).join(" · ");
 }
 
 function getEventClientDetails(event) {
@@ -1666,7 +1722,7 @@ function startOfWeek(date) {
 function atNoon(date) { return new Date(date.getFullYear(), date.getMonth(), date.getDate(), 12); }
 
 function newEventForDate(date) {
-    return { title: "", clientName: "", location: "", date, startTime: "", endTime: "", color: "blue", eventType: "appointment", notes: "", assignedTechnicianId: "", assignedTechnicianName: "", assignedTechnicianIds: [] };
+    return { title: "", clientName: "", location: "", date, startTime: "", endTime: "", color: "blue", eventType: "appointment", status: "planned", notes: "", assignedTechnicianId: "", assignedTechnicianName: "", assignedTechnicianIds: [] };
 }
 
 function formToEvent(form) {
@@ -1679,6 +1735,7 @@ function formToEvent(form) {
         endTime: String(form.get("endTime") || ""),
         color: String(form.get("color") || "blue"),
         eventType: String(form.get("eventType") || "appointment"),
+        status: String(form.get("status") || "planned"),
         assignedTechnicianId: String(form.get("assignedTechnicianId") || ""),
         assignedTechnicianIds: form.getAll("assignedTechnicianIds").map(value => String(value || "")),
         billingMode: String(form.get("billingMode") || ""),

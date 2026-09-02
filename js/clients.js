@@ -1038,18 +1038,19 @@ function renderClientActivityHistory(client, billingDocuments = [], purchases = 
     });
     const appointmentEntries = appointments.map(appointment => {
         const interventionDate = new Intl.DateTimeFormat("fr-FR", { dateStyle: "short" }).format(new Date(`${appointment.date}T12:00:00`));
+        const appointmentStatus = appointment.isCompleted ? "Terminée" : ({ planned: "Planifiée", confirmed: "Confirmée", in_progress: "En cours", completed: "Terminée", cancelled: "Annulée" })[appointment.status] || "Planifiée";
         return {
             id: `appointment-${appointment.id}`,
             type: "appointment",
             label: appointment.eventType === "appointment" ? "Intervention créée" : "Événement client créé",
-            detail: [appointment.eventType === "appointment" ? `Intervention n°${appointment.id}` : `Événement n°${appointment.id}`, appointment.isCompleted ? "Terminée" : "Planifiée", `${interventionDate}${appointment.startTime ? ` à ${appointment.startTime}` : ""}`, appointment.title, appointment.location, appointment.quitusStatus === "validated" ? (appointment.isCompleted ? "Quitus archivé et inaccessible" : "Quitus validé") : ""].filter(Boolean).join(" · "),
+            detail: [appointment.eventType === "appointment" ? `Intervention n°${appointment.id}` : `Événement n°${appointment.id}`, appointmentStatus, `${interventionDate}${appointment.startTime ? ` à ${appointment.startTime}` : ""}`, appointment.title, appointment.location, appointment.quitusStatus === "validated" ? (appointment.isCompleted || appointment.status === "cancelled" ? "Quitus archivé et inaccessible" : "Quitus validé") : ""].filter(Boolean).join(" · "),
             documentId: "",
             attachmentId: "",
             actorName: String(appointment.assignedTechnicianName || ""),
             createdAt: appointment.createdAt || `${appointment.date}T${appointment.startTime || "12:00"}:00`
         };
     });
-    const completedAppointmentIds = new Set(appointments.filter(appointment => appointment.isCompleted).map(appointment => String(appointment.id)));
+    const completedAppointmentIds = new Set(appointments.filter(appointment => appointment.isCompleted || appointment.status === "cancelled").map(appointment => String(appointment.id)));
     const entries = [...activityEntries, ...billingEntries, ...purchaseEntries, ...appointmentEntries]
         .sort((first, second) => new Date(second.createdAt).getTime() - new Date(first.createdAt).getTime());
     if (!entries.length) return "<p class=\"muted\">Les rendez-vous, documents et actions de ce dossier apparaîtront ici.</p>";
