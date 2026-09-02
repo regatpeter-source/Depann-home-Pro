@@ -36,7 +36,7 @@ test("le mois et la semaine limitent les cartes selon le poste sans perdre les i
     assert.match(limits, /refreshCalendarPeriod\(\)/);
 });
 
-test("le mois et la semaine partagent le même espace PC et gardent un rendu mobile dédié", () => {
+test("le mois conserve sa grille et la semaine mobile reprend la frise PC", () => {
     assert.match(styles, /grid-auto-rows:190px/);
     assert.match(styles, /\.calendar-day\{[\s\S]*?height:190px;[\s\S]*?overflow:hidden/);
     assert.match(styles, /\.calendar-list-week \.calendar-list-day\{[\s\S]*?height:290px;[\s\S]*?overflow:hidden/);
@@ -46,15 +46,16 @@ test("le mois et la semaine partagent le même espace PC et gardent un rendu mob
     assert.match(styles, /body\.desktop-device \.calendar-list-week \.calendar-list-day\{[\s\S]*?height:100%/);
     assert.match(styles, /\.calendar-list-week\{[\s\S]*?grid-template-columns:repeat\(7/);
     assert.match(styles, /min-width:700px/);
-    assert.match(styles, /\.calendar-list-week\{\s*grid-template-columns:1fr/);
-    assert.match(styles, /height:250px/);
+    assert.match(calendar, /classList\.contains\("desktop-device"\) \|\| document\.body\.classList\.contains\("mobile-device"\)/);
+    assert.match(styles, /body\.mobile-device \.calendar-timeline\{[^}]*min-width:760px/);
+    assert.match(styles, /body\.mobile-device \.calendar-timeline\.calendar-timeline-day\{min-width:320px\}/);
 });
 
-test("les vues jour et semaine PC utilisent une grille horaire de 8 h à 19 h", () => {
+test("les vues jour et semaine PC et mobile utilisent une grille horaire de 8 h à 19 h", () => {
     assert.match(calendar, /PLANNING_DAY_START_HOUR = 8/);
     assert.match(calendar, /PLANNING_DAY_END_HOUR = 19/);
     assert.match(calendar, /PLANNING_SLOT_MINUTES = 15/);
-    assert.match(calendar, /document\.body\.classList\.contains\("desktop-device"\)\) return renderCalendarTimeline\(panel\)/);
+    assert.match(calendar, /document\.body\.classList\.contains\("desktop-device"\) \|\| document\.body\.classList\.contains\("mobile-device"\)\) return renderCalendarTimeline\(panel\)/);
     assert.match(calendar, /function buildTimelineDayLayout/);
     assert.match(calendar, /function finalizeOverlapGroup|const finalizeOverlapGroup/);
     assert.match(calendar, /Sans horaire \/ hors plage/);

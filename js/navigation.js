@@ -1,16 +1,16 @@
 import { ROUTES, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=131";
-import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=191";
+import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=192";
 import { openCreatorPartnerRequest, openCreatorRequestNotification, renderCreatorConsole } from "./creator.js?v=154";
-import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=191";
+import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=192";
 import { renderAccounting, renderElectronicInvoicingConfiguration } from "./accounting.js?v=19";
 import { renderPurchases } from "./purchases.js?v=121";
 import { renderGroupActivation, renderGroupWorkspace } from "./groups.js?v=4";
-import { renderPartnerMissions } from "./partner-missions.js?v=69";
+import { renderPartnerMissions } from "./partner-missions.js?v=70";
 import { renderPartnerSandbox } from "./partner-sandbox.js?v=3";
-import { renderPartnerConnections } from "./partner-connections.js?v=33";
+import { renderPartnerConnections } from "./partner-connections.js?v=34";
 import { renderCompanyEmailWorkspace, renderPartnerEmailSettings } from "./partner-email-settings.js?v=26";
 import { renderDataImportTool } from "./data-imports.js?v=4";
-import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=38";
+import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=39";
 import { getFirstUnreadClientId, refreshClientMessageAlert, refreshVisibleClientMessages } from "./messages.js?v=107";
 import { getSearchableClients, renderClients } from "./clients.js?v=158";
 import { synchronizeClients } from "./client-sync.js?v=126";
@@ -64,6 +64,7 @@ export function initializeNavigation(loadedDatabase) {
     bindEvents();
     bindSilentInteractionSynchronization();
     applyRoleBasedMenus();
+    initializeMobileWorkspaceMenu();
     updateSearchPlaceholder();
     window.addEventListener("depannhome:open-client", event => openClients(String(event.detail?.clientId || "")));
     window.addEventListener("depannhome:open-partner-email-settings", () => renderSettings({ section: "company", focusPartnerEmail: true }));
@@ -300,6 +301,7 @@ function applyRoleBasedMenus() {
     });
     document.querySelectorAll(".nav-button").forEach(button => {
         if (button.dataset.nav === ROUTES.home && isMobileDeviceContext()) return;
+        if (isMobileDeviceContext() && button.dataset.nav === ROUTES.calendar && canAccessRoute(ROUTES.calendar)) return;
         if (isMobileDeviceContext()) { button.remove(); return; }
         if (!canAccessRoute(button.dataset.nav)) button.remove();
     });
@@ -310,6 +312,69 @@ function applyRoleBasedMenus() {
         const navigationLabel = document.querySelector('.nav-button[data-nav="calendar"] span');
         if (navigationLabel) navigationLabel.textContent = "Interventions";
     }
+}
+
+function initializeMobileWorkspaceMenu() {
+    if (!isMobileDeviceContext()) return;
+    const footer = document.querySelector("#authRoot > footer");
+    const quickActions = document.querySelector(".quick-actions");
+    if (!footer || !quickActions) return;
+    const menuButton = document.createElement("button");
+    menuButton.type = "button";
+    menuButton.className = "nav-button mobile-workspace-menu-button";
+    menuButton.dataset.mobileMenuToggle = "";
+    menuButton.setAttribute("aria-expanded", "false");
+    menuButton.innerHTML = "<span>Menu</span>";
+    footer.appendChild(menuButton);
+
+    const drawer = document.createElement("section");
+    drawer.className = "mobile-workspace-menu";
+    drawer.hidden = true;
+    drawer.setAttribute("aria-label", "Menu du poste mobile");
+    drawer.innerHTML = '<button type="button" class="mobile-workspace-menu-backdrop" data-mobile-menu-close aria-label="Fermer le menu"></button><div class="mobile-workspace-menu-panel" role="dialog" aria-modal="true" aria-labelledby="mobileWorkspaceMenuTitle"><header><div><p class="eyebrow">Poste mobile</p><h2 id="mobileWorkspaceMenuTitle">Menu</h2></div><button type="button" class="secondary-button" data-mobile-menu-close>Fermer</button></header><div class="mobile-workspace-folders"></div></div>';
+    document.body.appendChild(drawer);
+    renderMobileWorkspaceFolders(drawer.querySelector(".mobile-workspace-folders"), quickActions);
+
+    const close = () => {
+        drawer.hidden = true;
+        document.body.classList.remove("mobile-workspace-menu-open");
+        menuButton.classList.remove("active");
+        menuButton.setAttribute("aria-expanded", "false");
+        menuButton.focus({ preventScroll: true });
+    };
+    const open = () => {
+        drawer.hidden = false;
+        document.body.classList.add("mobile-workspace-menu-open");
+        menuButton.classList.add("active");
+        menuButton.setAttribute("aria-expanded", "true");
+        drawer.querySelector(".mobile-workspace-folder summary")?.focus({ preventScroll: true });
+    };
+    menuButton.addEventListener("click", () => drawer.hidden ? open() : close());
+    drawer.querySelectorAll("[data-mobile-menu-close]").forEach(button => button.addEventListener("click", close));
+    drawer.addEventListener("click", event => {
+        const action = event.target.closest("[data-mobile-quick-action]");
+        if (!action) return;
+        const source = document.getElementById(action.dataset.mobileQuickAction);
+        close();
+        source?.click();
+    });
+    document.addEventListener("keydown", event => {
+        if (event.key === "Escape" && !drawer.hidden) close();
+    });
+}
+
+function renderMobileWorkspaceFolders(container, quickActions) {
+    const groups = [
+        ["Interventions", ["calendarBtn", "clientsBtn", "partnerMissionsBtn"]],
+        ["Gestion", ["billingBtn", "accountingBtn", "purchasesBtn"]],
+        ["Communication", ["companyEmailBtn"]],
+        ["Ressources et compte", ["libraryBtn", "settingsBtn"]]
+    ];
+    container.innerHTML = groups.map(([title, ids], index) => {
+        const actions = ids.map(id => quickActions.querySelector(`#${id}`)).filter(Boolean);
+        if (!actions.length) return "";
+        return `<details class="mobile-workspace-folder" ${index === 0 ? "open" : ""}><summary>${escapeHtml(title)}<span>${actions.length}</span></summary><div>${actions.map(button => `<button type="button" data-mobile-quick-action="${escapeHtml(button.id)}">${button.innerHTML}</button>`).join("")}</div></details>`;
+    }).join("");
 }
 
 function ensureMobileHomeNavigationButton() {

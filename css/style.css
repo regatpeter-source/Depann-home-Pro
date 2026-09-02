@@ -482,7 +482,7 @@ body[data-role="mobile_admin"].mobile-device .quick-actions{display:grid;grid-te
 body[data-role="mobile_admin"].mobile-device .quick-actions button{padding:13px 10px;font-size:.9rem;}
 body[data-role="mobile_admin"].mobile-device #app{padding-bottom:110px;}
 body[data-role="mobile_admin"].mobile-device footer{display:flex;justify-content:center;overflow:hidden;}
-body[data-role="mobile_admin"].mobile-device footer .nav-button:not([data-nav="home"]){display:none;}
+body[data-role="mobile_admin"].mobile-device footer .nav-button:not([data-nav="home"]):not([data-nav="calendar"]):not(.mobile-workspace-menu-button){display:none;}
 
 .partner-api-sandbox-console .sandbox-warning-banner code{display:inline-block;max-width:100%;padding:.15rem .4rem;border-radius:.35rem;background:rgba(15,23,42,.08);overflow-wrap:anywhere;user-select:all;}
 .partner-api-sandbox-console>.creator-form-actions{align-items:center;gap:.65rem;flex-wrap:wrap;}
@@ -5180,12 +5180,12 @@ body.desktop-device[data-role="technician"] .nav-button:not([data-nav="home"]):n
     display:none;
 }
 
-/* La barre inférieure d’un poste mobile reste volontairement limitée à Accueil. */
-body.mobile-device #authRoot > footer .nav-button:not([data-nav="home"]){
+/* Le poste mobile conserve trois accès permanents : Accueil, Planning et Menu. */
+body.mobile-device #authRoot > footer .nav-button:not([data-nav="home"]):not([data-nav="calendar"]):not(.mobile-workspace-menu-button){
     display:none;
 }
 
-body.mobile-device #authRoot > footer{ justify-content:center; }
+body.mobile-device #authRoot > footer{ justify-content:space-around; }
 
 body.mobile-device:not(.report-writing-active) #authRoot > footer{
     position:fixed!important;
@@ -5202,6 +5202,94 @@ body.mobile-device:not(.report-writing-active) #authRoot > footer .nav-button[da
     display:flex!important;
     visibility:visible!important;
     opacity:1!important;
+}
+
+body.mobile-device:not(.report-writing-active) #authRoot > footer .nav-button[data-nav="calendar"],
+body.mobile-device:not(.report-writing-active) #authRoot > footer .mobile-workspace-menu-button{
+    display:flex!important;
+    visibility:visible!important;
+    opacity:1!important;
+}
+
+body.mobile-device .quick-actions{display:none!important}
+body.mobile-device #app{padding:10px 12px calc(88px + env(safe-area-inset-bottom))}
+body.mobile-device #breadcrumb{padding:6px 12px;font-size:12px;line-height:18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+body.mobile-device .topbar{padding:7px 12px}
+body.mobile-device .header-content{display:grid;grid-template-columns:58px minmax(0,1fr);gap:8px;text-align:left}
+body.mobile-device .logo{grid-row:1;width:58px;height:48px}
+body.mobile-device .header-content>div:not(.user-session){min-width:0}
+body.mobile-device .topbar h1{font-size:18px;line-height:1.15}
+body.mobile-device .topbar .header-content>div:not(.user-session)>p{display:none}
+body.mobile-device .user-session{grid-column:1/-1;display:grid;grid-template-columns:minmax(0,1fr) repeat(3,auto);width:100%;gap:5px;margin:0;justify-content:stretch}
+body.mobile-device .active-work-context{min-width:0;padding:4px 7px;overflow:hidden}
+body.mobile-device .pc-workstation-name{display:block;min-width:0;overflow:hidden;font-size:11px;text-overflow:ellipsis;white-space:nowrap}
+body.mobile-device .mobile-user-sections,body.mobile-device .active-company-badge,body.mobile-device .group-company-selector{display:none!important}
+body.mobile-device .user-session .refresh-button,body.mobile-device .user-session .logout-button{min-height:34px;padding:5px 7px;font-size:10px}
+body.mobile-device .search-section{margin-bottom:8px}
+body.mobile-device #search{min-height:42px;padding:9px 12px;border-radius:11px;font-size:14px}
+body.mobile-device .dashboard-panel{gap:10px;padding:12px}
+body.mobile-device .dashboard-heading{align-items:center;gap:8px}
+body.mobile-device .dashboard-heading h2{font-size:18px}
+body.mobile-device .dashboard-heading .eyebrow{font-size:10px}
+body.mobile-device .dashboard-heading>[data-dashboard-action]{min-height:38px;padding:7px 9px;font-size:11px}
+body.mobile-device .mobile-dashboard-sections{display:none}
+body.mobile-device .dashboard-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+body.mobile-device .dashboard-card{padding:10px;border-radius:12px}
+body.mobile-device .dashboard-card h3{font-size:13px}
+body.mobile-device .dashboard-events{gap:6px;margin-top:7px}
+body.mobile-device .dashboard-event{padding:8px;border-radius:9px}
+body.mobile-device .dashboard-event:nth-child(n+4){display:none}
+body.mobile-device .dashboard-catalog-note{margin:0;font-size:11px}
+body.mobile-device #authRoot>footer{min-height:64px;padding:4px max(8px,env(safe-area-inset-right)) calc(4px + env(safe-area-inset-bottom)) max(8px,env(safe-area-inset-left))}
+body.mobile-device #authRoot>footer .nav-button{min-width:0;min-height:52px;flex:1;padding:5px 9px;font-size:18px}
+body.mobile-device #authRoot>footer .nav-button span{margin-top:1px;font-size:11px}
+body.mobile-workspace-menu-open{overflow:hidden}
+.mobile-workspace-menu[hidden]{display:none}
+.mobile-workspace-menu{position:fixed;z-index:1300;inset:0;display:grid;align-items:end}
+.mobile-workspace-menu-backdrop{position:absolute;inset:0;width:100%;height:100%;border:0;background:rgba(15,23,42,.56)}
+.mobile-workspace-menu-panel{position:relative;display:grid;gap:12px;width:100%;max-height:min(78dvh,680px);padding:16px 14px calc(18px + env(safe-area-inset-bottom));overflow:auto;border-radius:20px 20px 0 0;background:var(--surface);box-shadow:0 -12px 34px rgba(15,23,42,.24)}
+.mobile-workspace-menu-panel>header{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.mobile-workspace-menu-panel h2{margin:2px 0;color:var(--primary);font-size:21px}
+.mobile-workspace-folders{display:grid;gap:8px}
+.mobile-workspace-folder{border:1px solid var(--border);border-radius:13px;background:#f8fbff;overflow:hidden}
+.mobile-workspace-folder summary{display:flex;align-items:center;justify-content:space-between;min-height:46px;padding:10px 12px;color:var(--primary);font-weight:800;cursor:pointer;list-style:none}
+.mobile-workspace-folder summary::-webkit-details-marker{display:none}
+.mobile-workspace-folder summary span{display:grid;min-width:24px;height:24px;place-items:center;border-radius:999px;background:#e0ecfa;color:var(--primary);font-size:11px}
+.mobile-workspace-folder>div{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;padding:0 10px 10px}
+.mobile-workspace-folder button{position:relative;min-height:50px;padding:9px 10px;border:0;border-radius:12px;background:linear-gradient(180deg,var(--primary),#024a8a);color:#fff;font-size:12px;font-weight:700;text-align:center;cursor:pointer}
+.mobile-workspace-folder button:active{background:linear-gradient(180deg,var(--secondary),#084c2d)}
+.mobile-workspace-folder .message-alert{position:absolute;top:4px;right:4px}
+body.mobile-device .calendar-panel,body.mobile-device .calendar-form-panel,body.mobile-device .calendar-grid-panel{margin-top:8px}
+body.mobile-device .calendar-grid-panel{padding:8px;border-radius:12px;box-shadow:0 2px 8px rgba(15,23,42,.07)}
+body.mobile-device .technician-calendar-home{padding:7px 2px 3px}
+body.mobile-device .technician-calendar-home h2{margin:3px auto 7px;font-size:20px}
+body.mobile-device .technician-calendar-navigation{grid-template-columns:44px 1fr 44px;gap:5px}
+body.mobile-device .technician-calendar-navigation .secondary-button{min-height:40px;font-size:13px}
+body.mobile-device .technician-calendar-view-switcher{margin-top:5px}
+body.mobile-device .calendar-grid-panel:has(.calendar-timeline){height:clamp(430px,calc(100dvh - 250px),650px);overflow:auto}
+body.mobile-device .calendar-timeline{display:grid;grid-template-rows:auto auto minmax(0,1fr);min-width:760px;height:100%;overflow:hidden;border:1px solid #cfd6da;border-radius:5px;background:#fff}
+body.mobile-device .calendar-timeline.calendar-timeline-day{min-width:320px}
+body.mobile-device .calendar-timeline-header,body.mobile-device .calendar-timeline-all-day,body.mobile-device .calendar-timeline-body{display:grid;grid-template-columns:52px repeat(var(--calendar-day-count),minmax(0,1fr))}
+body.mobile-device .calendar-timeline-header{min-height:34px;border-bottom:1px solid #cfd6da;background:#e9edef}
+body.mobile-device .calendar-timeline-header>div{display:flex;align-items:center;justify-content:center;gap:6px;border-left:1px solid #d5dade;color:#465762;font-size:11px;text-transform:capitalize}
+body.mobile-device .calendar-timeline-header time{color:#7b878e;font:10px ui-monospace,SFMono-Regular,Consolas,monospace}
+body.mobile-device .calendar-timeline-corner,body.mobile-device .calendar-timeline-all-day>span{display:grid;place-items:center;color:#7b878e;font:700 9px ui-monospace,SFMono-Regular,Consolas,monospace;text-transform:uppercase}
+body.mobile-device .calendar-timeline-all-day{min-height:32px;max-height:70px;border-bottom:1px solid #d5dade;background:#f6f7f8}
+body.mobile-device .calendar-timeline-all-day>div{display:flex;min-width:0;align-items:center;gap:3px;padding:3px;overflow:auto;border-left:1px solid #e0e4e6}
+body.mobile-device .calendar-timeline-untimed{display:grid;min-width:0;flex:1;padding:3px 5px;overflow:hidden;border:0;border-left:3px solid currentColor;border-radius:3px;text-align:left;font-size:9px;line-height:1.1}
+body.mobile-device .calendar-timeline-body{position:relative;min-height:0}
+body.mobile-device .calendar-time-axis{position:relative;z-index:2;border-right:1px solid #cfd6da;background:#f7f8f8}
+body.mobile-device .calendar-time-axis time{position:absolute;top:calc(var(--calendar-hour-index)/var(--calendar-hour-count)*100%);right:6px;color:#66747c;font:9px ui-monospace,SFMono-Regular,Consolas,monospace;transform:translateY(-50%)}
+body.mobile-device .calendar-time-axis time:first-child{transform:none}body.mobile-device .calendar-time-axis time:last-child{transform:translateY(-100%)}
+body.mobile-device .calendar-timeline-day:not(.calendar-timeline){position:relative;min-width:0;min-height:0;border-left:1px solid #dbe0e3;background-color:#fff;background-image:linear-gradient(to bottom,#dbe0e3 1px,transparent 1px),linear-gradient(to bottom,transparent 49.7%,#eef0f2 50%,transparent 50.3%);background-size:100% calc(100%/var(--calendar-hour-count));cursor:crosshair}
+body.mobile-device .calendar-timeline-event{position:absolute;z-index:3;top:calc(var(--event-start)*100% + 1px);left:calc(var(--event-lane)/var(--event-lanes)*100% + 2px);width:calc(100%/var(--event-lanes) - 4px);height:max(22px,calc(var(--event-duration)*100% - 2px));max-height:calc(100% - var(--event-start)*100% - 2px);padding:3px 5px;overflow:hidden;border-left-width:3px;border-radius:3px;font-size:9px;line-height:1.1}
+body.mobile-device .calendar-timeline-day .calendar-event-context{display:none}body.mobile-device .calendar-timeline-day .calendar-event-address{display:block;font-size:9px;opacity:.75}body.mobile-device .calendar-timeline-day .calendar-event-client{font-size:9px}body.mobile-device .calendar-timeline-day .calendar-event-time{font-size:8px}
+body.mobile-device .calendar-timeline-day .calendar-event[style*="--event-lanes:1"]{right:2px;width:auto}
+
+@media(max-width:380px){
+    body.mobile-device .dashboard-grid{grid-template-columns:1fr}
+    body.mobile-device .dashboard-card:nth-child(2){display:none}
+    .mobile-workspace-folder>div{grid-template-columns:1fr}
 }
 
 @media(max-width:700px), (pointer:coarse){

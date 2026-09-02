@@ -1,9 +1,9 @@
 import { ROUTES } from "./config.js?v=106";
-import { createBillingDocumentForClient, viewBillingDocument } from "./billing.js?v=191";
+import { createBillingDocumentForClient, viewBillingDocument } from "./billing.js?v=192";
 import { getSearchableClients } from "./clients.js?v=158";
 import { addClientActivityByName, synchronizeClients } from "./client-sync.js?v=126";
 import { renderClientMessages } from "./messages.js?v=107";
-import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=38";
+import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=39";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { renderPlatformAnnouncement } from "./platform-announcement.js?v=1";
@@ -1357,7 +1357,7 @@ function renderCalendarGrid(panel) {
 }
 
 function renderCalendarList(panel) {
-    if (document.body.classList.contains("desktop-device")) return renderCalendarTimeline(panel);
+    if (document.body.classList.contains("desktop-device") || document.body.classList.contains("mobile-device")) return renderCalendarTimeline(panel);
     panel.hidden = false;
     const { start, end } = getDisplayedRange();
     const eventDates = new Map();
