@@ -125,6 +125,7 @@ function renderClientToolbar(clients, readOnly, directory) {
             <label>Mode de recherche
                 <select name="field" id="clientSearchField">
                     <option value="name" ${clientDirectoryFilters.field === "name" ? "selected" : ""}>Nom / société</option>
+                    <option value="insuranceDossier" ${clientDirectoryFilters.field === "insuranceDossier" ? "selected" : ""}>Numéro de dossier</option>
                     <option value="phone" ${clientDirectoryFilters.field === "phone" ? "selected" : ""}>Numéro de téléphone</option>
                     <option value="address" ${clientDirectoryFilters.field === "address" ? "selected" : ""}>Adresse ou ville</option>
                     <option value="email" ${clientDirectoryFilters.field === "email" ? "selected" : ""}>E-mail</option>
@@ -1155,7 +1156,7 @@ function createEmptyDirectoryFilters() {
 function readDirectoryFilters(formData) {
     return {
         status: ["active", "archived", "all"].includes(formData.get("status")) ? formData.get("status") : "active",
-        field: ["name", "phone", "address", "email"].includes(formData.get("field")) ? formData.get("field") : "name",
+        field: ["name", "insuranceDossier", "phone", "address", "email"].includes(formData.get("field")) ? formData.get("field") : "name",
         query: String(formData.get("query") || "").trim(),
         createdDate: String(formData.get("createdDate") || ""),
         appointmentDate: String(formData.get("appointmentDate") || ""),

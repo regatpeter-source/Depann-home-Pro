@@ -13,6 +13,12 @@ test("le poste PC sépare le répertoire, la création et le dossier client", ()
     assert.match(clients, /Dossier client/);
 });
 
+test("le répertoire permet la recherche par numéro de dossier", () => {
+    assert.match(clients, /<option value="insuranceDossier"[^>]*>Numéro de dossier<\/option>/);
+    assert.match(clients, /\["name", "insuranceDossier", "phone", "address", "email"\]\.includes/);
+    assert.match(clients, /client\[filters\.field\] \|\| ""/);
+});
+
 test("le parcours mobile historique reste rendu sans onglets", () => {
     const desktopBranchEnd = clients.indexOf("container.appendChild(renderClientToolbar", clients.indexOf("if (isDesktopClientWorkspace())"));
     assert.ok(desktopBranchEnd > 0);
