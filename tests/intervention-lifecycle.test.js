@@ -49,16 +49,24 @@ test("le quitus devient inaccessible uniquement après une finalisation administ
     assert.match(clientsClient, /!completedAppointmentIds\.has\(quitusAppointmentId\)/);
 });
 
-test("la sélection étendue du planning est déterminée par deux clics, sans sélection au survol", () => {
+test("la planification étendue utilise uniquement une date de début et une date de fin", () => {
     const calendarClient = read("js/calendar.js");
-    const rangeSelection = calendarClient.slice(calendarClient.indexOf("function initializeMultiDatePlanning"), calendarClient.indexOf("function renderRangeMonth"));
-    assert.match(rangeSelection, /let selectingRange = false/);
-    assert.match(rangeSelection, /if \(selectingRange\) return addDateRange\(rangeAnchor, button\.dataset\.rangeDate\)/);
-    assert.match(rangeSelection, /selectingRange = true;\s*render\(\)/);
-    assert.match(rangeSelection, /eventKey\.key !== "Escape"/);
-    assert.doesNotMatch(rangeSelection, /document\.addEventListener\("pointerup"/);
-    assert.doesNotMatch(rangeSelection, /addEventListener\("pointerdown"/);
-    assert.doesNotMatch(rangeSelection, /addEventListener\("pointerenter"/);
+    const rangeSelection = calendarClient.slice(calendarClient.indexOf("function renderMultiDatePlanning"), calendarClient.indexOf("function datesBetween"));
+    assert.match(rangeSelection, /Date de début \*<input name="date" type="date"/);
+    assert.match(rangeSelection, /Date de fin \*<input type="date" id="calendarRangeEnd"/);
+    assert.match(rangeSelection, /datesBetween\(start, end\)\.slice\(0, 31\)/);
+    assert.match(rangeSelection, /La période ne peut pas dépasser 30 jours/);
+    assert.match(rangeSelection, /\/api\/calendar\/availability/);
+    assert.doesNotMatch(rangeSelection, /calendarRangePicker|calendarAdditionalDate|data-range-date|data-planning-date/);
+});
+
+test("tous les jours de la période sont contrôlés contre le planning général", () => {
+    const calendarServer = read("server/calendar.js");
+    const creationRoute = calendarServer.slice(calendarServer.indexOf('app.post("/api/calendar/events"'), calendarServer.indexOf('app.put("/api/calendar/events/:eventId"'));
+    assert.match(creationRoute, /for \(const date of dates\) \{\s*const conflict = await findCalendarConflict/);
+    assert.match(calendarServer, /const conflicts = \[\]/);
+    assert.match(calendarServer, /conflicts\.push\(\{ date, title: conflict\.title, startTime: conflict\.startTime, endTime: conflict\.endTime \}\)/);
+    assert.match(calendarServer, /response\.json\(\{ availableDates, conflicts \}\)/);
 });
 
 test("une nouvelle version PWA active immédiatement les correctifs du planning", () => {
@@ -70,5 +78,5 @@ test("une nouvelle version PWA active immédiatement les correctifs du planning"
     assert.match(application, /\.then\(registration => registration\.update\(\)\)/);
     assert.match(worker, /self\.skipWaiting\(\)/);
     assert.match(worker, /self\.clients\.claim\(\)/);
-    assert.match(worker, /\.\/js\/calendar\.js\?v=195/);
+    assert.match(worker, /\.\/js\/calendar\.js\?v=196/);
 });

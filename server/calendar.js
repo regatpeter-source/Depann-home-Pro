@@ -363,7 +363,7 @@ export function registerCalendarRoutes(app, requireAuthentication) {
         if (assignmentError) return response.status(400).json({ message: assignmentError });
 
         const { rows } = await getPool().query(`
-            SELECT TO_CHAR(event_date, 'YYYY-MM-DD') AS date, TO_CHAR(start_time, 'HH24:MI') AS "startTime", TO_CHAR(end_time, 'HH24:MI') AS "endTime"
+            SELECT title, TO_CHAR(event_date, 'YYYY-MM-DD') AS date, TO_CHAR(start_time, 'HH24:MI') AS "startTime", TO_CHAR(end_time, 'HH24:MI') AS "endTime"
             FROM depannhome_calendar_events
             WHERE owner_id = $1 AND event_date BETWEEN $2::date AND $3::date
                 AND event_status NOT IN ('completed', 'cancelled')
@@ -381,12 +381,13 @@ export function registerCalendarRoutes(app, requireAuthentication) {
             eventsByDate.get(event.date).push(event);
         });
         const availableDates = [];
+        const conflicts = [];
         for (const date of datesInRange(start, end)) {
-            const conflict = eventsByDate.get(date)?.some(event => calendarTimesOverlap(event, { startTime, endTime }));
-            if (!conflict) availableDates.push(date);
-            if (availableDates.length >= count) break;
+            const conflict = eventsByDate.get(date)?.find(event => calendarTimesOverlap(event, { startTime, endTime }));
+            if (conflict) conflicts.push({ date, title: conflict.title, startTime: conflict.startTime, endTime: conflict.endTime });
+            else if (availableDates.length < count) availableDates.push(date);
         }
-        response.json({ availableDates });
+        response.json({ availableDates, conflicts });
     }));
 
     app.post("/api/calendar/events", requireAuthentication, requireCalendarWriteAccess, asyncHandler(async (request, response) => {

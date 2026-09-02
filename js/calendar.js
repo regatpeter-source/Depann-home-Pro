@@ -1,9 +1,9 @@
 import { ROUTES } from "./config.js?v=106";
-import { createBillingDocumentForClient, viewBillingDocument } from "./billing.js?v=195";
+import { createBillingDocumentForClient, viewBillingDocument } from "./billing.js?v=196";
 import { getSearchableClients } from "./clients.js?v=159";
 import { addClientActivityByName, synchronizeClients } from "./client-sync.js?v=126";
 import { renderClientMessages } from "./messages.js?v=107";
-import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=42";
+import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=43";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { renderPlatformAnnouncement } from "./platform-announcement.js?v=1";
@@ -467,11 +467,10 @@ function renderEventForm(panel) {
                     <datalist id="calendarClients">${clients.map(client => `<option value="${escapeHtml(client.name)}">${escapeHtml([client.city, client.phone].filter(Boolean).join(" · "))}</option>`).join("")}</datalist>
                 </label>
                 <section class="calendar-client-preview form-wide" id="calendarClientPreview" hidden></section>
-                <label>
+                ${isEditing || event.partnerMissionId ? `<label>
                     Date *
                     <input name="date" type="date" required value="${escapeHtml(event.date)}">
-                </label>
-                ${isEditing || event.partnerMissionId ? "" : renderMultiDatePlanning(event)}
+                </label>` : renderMultiDatePlanning(event)}
                 <label>
                     Couleur
                     <select name="color">${COLOR_OPTIONS.map(color => `<option value="${color.id}" ${event.color === color.id ? "selected" : ""}>${color.label}</option>`).join("")}</select>
@@ -590,7 +589,6 @@ function renderEventForm(panel) {
     clientField.hidden = eventTypeInput.value !== "appointment";
     ["date", "startTime", "endTime", "title", "assignedTechnicianId"].forEach(name => form.elements[name].addEventListener("input", () => {
         renderCalendarAvailability(form, event.id);
-        if (name === "date") multiDatePlanning?.setPrimaryDate();
         if (["date", "startTime", "endTime", "assignedTechnicianId"].includes(name)) multiDatePlanning?.refresh();
     }));
     renderCalendarAvailability(form, event.id);
@@ -617,6 +615,11 @@ function renderEventForm(panel) {
         const form = eventSubmit.currentTarget;
         const button = form.querySelector("button[type=submit]");
         const message = panel.querySelector("#calendarFormMessage");
+        if (multiDatePlanning?.hasConflict()) {
+            message.textContent = "Corrigez les conflits de la période avant de l’ajouter au planning.";
+            message.classList.add("error");
+            return;
+        }
         button.disabled = true;
         message.textContent = "Enregistrement…";
         message.classList.remove("error");
@@ -662,16 +665,13 @@ function renderEventForm(panel) {
 function renderMultiDatePlanning(event) {
     return `
         <section class="calendar-multi-date-planning form-wide" id="calendarMultiDatePlanning">
-            <div class="calendar-multi-date-heading"><div><p class="eyebrow">Planification étendue</p><h3>Proposer ou sélectionner plusieurs dates</h3></div><span class="calendar-multi-date-count" id="calendarMultiDateCount">1 date</span></div>
-            <p class="muted">Une occurrence du ${escapeHtml(event.eventType === "task" ? "travail" : "rendez-vous")} sera créée pour chaque date sélectionnée, avec les mêmes membres affectés et horaires.</p>
-            <section class="calendar-date-range" aria-label="Sélectionner une période">
-                <div><p class="eyebrow">Rendez-vous longue durée</p><h4>Sélectionner une période</h4><p class="muted">Cliquez sur le premier jour, puis sur le dernier jour pour valider la période. Le survol de la souris ne sélectionne aucune date. Recommencez pour ajouter une autre période au même rendez-vous.</p></div>
-                <div class="calendar-date-range-inputs"><label>Date de début<input type="date" id="calendarRangeStart" value="${escapeHtml(event.date)}"></label><label>Date de fin<input type="date" id="calendarRangeEnd" value="${escapeHtml(event.date)}"></label></div>
-                <div class="calendar-range-picker" id="calendarRangePicker" aria-label="Calendrier de sélection de période"></div>
-            </section>
-            <div class="calendar-multi-date-controls"><label>Ajouter une date depuis le calendrier<input type="date" id="calendarAdditionalDate" value="${escapeHtml(event.date)}"></label><button type="button" class="secondary-button" id="calendarAddDate">Ajouter</button></div>
-            <div class="calendar-selected-dates" id="calendarSelectedDates" aria-live="polite"></div>
-            <div class="calendar-date-proposals" id="calendarDateProposals" aria-live="polite"><p class="muted">Recherche des créneaux proposés…</p></div>
+            <div class="calendar-multi-date-heading"><div><p class="eyebrow">Planification étendue</p><h3>Période de planification</h3></div><span class="calendar-multi-date-count" id="calendarMultiDateCount">1 jour</span></div>
+            <div class="calendar-date-range-inputs">
+                <label>Date de début *<input name="date" type="date" required value="${escapeHtml(event.date)}"></label>
+                <label>Date de fin *<input type="date" id="calendarRangeEnd" required value="${escapeHtml(event.date)}"></label>
+            </div>
+            <p class="muted">Le même ${escapeHtml(event.eventType === "task" ? "travail" : "rendez-vous")} sera planifié chaque jour de la période, avec les mêmes membres et horaires (30 jours maximum).</p>
+            <p class="calendar-range-status muted" id="calendarRangeStatus" aria-live="polite">Choisissez les dates de début et de fin.</p>
             <div class="calendar-selected-date-inputs" id="calendarSelectedDateInputs"></div>
         </section>
     `;
@@ -680,133 +680,83 @@ function renderMultiDatePlanning(event) {
 function initializeMultiDatePlanning(form, event) {
     const section = form.querySelector("#calendarMultiDatePlanning");
     if (!section) return null;
-    const selectedDates = new Set([form.elements.date.value]);
-    let primaryDate = form.elements.date.value;
-    let availableDates = [];
+    const startInput = form.elements.date;
+    const endInput = section.querySelector("#calendarRangeEnd");
+    const status = section.querySelector("#calendarRangeStatus");
+    const submitButton = form.querySelector('button[type="submit"]');
     let requestVersion = 0;
-    let rangeMonth = firstDayOfMonth(new Date(`${primaryDate}T12:00:00`));
-    let selectingRange = false;
-    let rangeAnchor = primaryDate;
-    const displayedDates = () => [...selectedDates].filter(Boolean).sort();
-    const render = () => {
-        const dates = displayedDates();
-        section.querySelector("#calendarMultiDateCount").textContent = `${dates.length} date${dates.length > 1 ? "s" : ""}`;
-        section.querySelector("#calendarSelectedDateInputs").innerHTML = dates.map(date => `<input type="hidden" name="dates" value="${escapeHtml(date)}">`).join("");
-        section.querySelector("#calendarSelectedDates").innerHTML = dates.map(date => `<span class="calendar-selected-date"><time>${escapeHtml(formatPlanningDate(date))}</time>${date === primaryDate ? '<em>Date principale</em>' : `<button type="button" data-remove-planning-date="${escapeHtml(date)}" aria-label="Retirer le ${escapeHtml(formatPlanningDate(date))}">×</button>`}</span>`).join("");
-        section.querySelector("#calendarRangeStart").value = rangeAnchor || primaryDate;
-        section.querySelector("#calendarRangeEnd").value = rangeAnchor || primaryDate;
-        renderRangePicker();
-        section.querySelector("#calendarDateProposals").innerHTML = availableDates.length ? `
-            <div class="calendar-date-proposals-heading"><strong>Créneaux disponibles proposés</strong><span>Cliquez pour ${dates.length > 1 ? "ajouter ou retirer" : "sélectionner plusieurs dates"}.</span></div>
-            <div class="calendar-date-proposal-grid">${availableDates.map(date => `<button type="button" class="calendar-date-proposal${selectedDates.has(date) ? " selected" : ""}" data-planning-date="${escapeHtml(date)}" aria-pressed="${selectedDates.has(date)}">${escapeHtml(formatPlanningDate(date))}</button>`).join("")}</div>
-        ` : '<p class="muted">Sélectionnez un ou plusieurs membres et des horaires pour recevoir des propositions de créneaux libres, ou ajoutez des dates avec le calendrier ci-dessus.</p>';
-        section.querySelectorAll("[data-planning-date]").forEach(button => button.addEventListener("click", () => {
-            const date = button.dataset.planningDate;
-            if (selectedDates.has(date) && date !== primaryDate) selectedDates.delete(date);
-            else selectedDates.add(date);
-            render();
-        }));
-        section.querySelectorAll("[data-remove-planning-date]").forEach(button => button.addEventListener("click", () => {
-            selectedDates.delete(button.dataset.removePlanningDate);
-            render();
-        }));
-    };
-    const addDateRange = (first, last) => {
-        if (!first || !last) return;
-        datesBetween(first <= last ? first : last, first <= last ? last : first).slice(0, 30).forEach(date => selectedDates.add(date));
-        selectingRange = false;
-        section.querySelector("#calendarAdditionalDate").value = last;
-        render();
-    };
-    const cancelPendingRange = () => {
-        if (!selectingRange) return;
-        selectingRange = false;
-        render();
-    };
-    const renderRangePicker = () => {
-        const picker = section.querySelector("#calendarRangePicker");
-        const months = [rangeMonth, addMonths(rangeMonth, 1)];
-        picker.innerHTML = `
-            <div class="calendar-range-picker-toolbar"><button type="button" class="secondary-button" data-range-month="previous" aria-label="Mois précédent">←</button><strong>${escapeHtml(formatRangeMonth(rangeMonth))} — ${escapeHtml(formatRangeMonth(months[1]))}</strong><button type="button" class="secondary-button" data-range-month="next" aria-label="Mois suivant">→</button></div>
-            <div class="calendar-range-months">${months.map(month => renderRangeMonth(month, selectedDates, new Set(), rangeAnchor)).join("")}</div>
-        `;
-        picker.querySelector("[data-range-month=previous]").addEventListener("click", () => { rangeMonth = addMonths(rangeMonth, -1); renderRangePicker(); });
-        picker.querySelector("[data-range-month=next]").addEventListener("click", () => { rangeMonth = addMonths(rangeMonth, 1); renderRangePicker(); });
-        picker.querySelectorAll("[data-range-date]").forEach(button => {
-            button.addEventListener("click", eventClick => {
-                eventClick.preventDefault();
-                if (selectingRange) return addDateRange(rangeAnchor, button.dataset.rangeDate);
-                rangeAnchor = button.dataset.rangeDate;
-                selectingRange = true;
-                render();
-            });
-        });
-    };
-    const refresh = async () => {
-        const date = form.elements.date.value;
-        const technicianIds = [...form.querySelectorAll("[data-calendar-assignment]:checked")].map(input => input.value);
-        if (!date || !technicianIds.length) {
-            availableDates = [];
-            render();
+    let rangeHasConflict = false;
+    const updateEndBounds = () => {
+        endInput.min = startInput.value;
+        if (!startInput.value) {
+            endInput.removeAttribute("max");
             return;
         }
-        const end = new Date(`${date}T12:00:00`);
-        end.setDate(end.getDate() + 60);
+        const maximum = new Date(`${startInput.value}T12:00:00`);
+        maximum.setDate(maximum.getDate() + 29);
+        endInput.max = toDateString(maximum);
+    };
+    const selectedDates = () => {
+        const start = startInput.value;
+        const end = endInput.value;
+        if (!start || !end || end < start) return [];
+        return datesBetween(start, end).slice(0, 31);
+    };
+    const render = () => {
+        updateEndBounds();
+        const dates = selectedDates();
+        const valid = dates.length > 0 && dates.length <= 30;
+        endInput.setCustomValidity(!endInput.value ? "Indiquez la date de fin." : endInput.value < startInput.value ? "La date de fin doit être postérieure ou égale à la date de début." : dates.length > 30 ? "La période ne peut pas dépasser 30 jours." : "");
+        section.querySelector("#calendarMultiDateCount").textContent = valid ? `${dates.length} jour${dates.length > 1 ? "s" : ""}` : "Période invalide";
+        section.querySelector("#calendarSelectedDateInputs").innerHTML = dates.map(date => `<input type="hidden" name="dates" value="${escapeHtml(date)}">`).join("");
+        if (!valid) {
+            rangeHasConflict = false;
+            submitButton.disabled = false;
+            status.textContent = "Corrigez la période pour contrôler sa disponibilité.";
+        }
+        return valid ? dates : [];
+    };
+    const refresh = async () => {
         const version = ++requestVersion;
-        section.querySelector("#calendarDateProposals").innerHTML = '<p class="muted">Recherche des créneaux disponibles pour les membres sélectionnés…</p>';
-        const query = new URLSearchParams({ start: date, end: toDateString(end), technicianIds: technicianIds.join(","), startTime: form.elements.startTime.value, endTime: form.elements.endTime.value, count: "14" });
+        const dates = render();
+        const technicianIds = [...form.querySelectorAll("[data-calendar-assignment]:checked")].map(input => input.value);
+        if (!dates.length) return;
+        if (!technicianIds.length) {
+            rangeHasConflict = false;
+            submitButton.disabled = false;
+            status.textContent = "Sélectionnez au moins un membre pour vérifier les conflits dans le planning général.";
+            status.classList.remove("error", "success");
+            return;
+        }
+        status.textContent = "Vérification de toute la période dans le planning général…";
+        status.classList.remove("error", "success");
+        const query = new URLSearchParams({ start: dates[0], end: dates.at(-1), technicianIds: technicianIds.join(","), startTime: form.elements.startTime.value, endTime: form.elements.endTime.value, count: "31" });
         const result = await request(`/api/calendar/availability?${query}`);
         if (version !== requestVersion) return;
-        availableDates = result.ok ? result.data?.availableDates || [] : [];
-        render();
+        if (!result.ok) {
+            rangeHasConflict = false;
+            submitButton.disabled = false;
+            status.textContent = result.message || "Impossible de vérifier cette période.";
+            status.classList.add("error");
+            return;
+        }
+        const conflicts = result.data?.conflicts || [];
+        rangeHasConflict = conflicts.length > 0;
+        submitButton.disabled = rangeHasConflict;
+        status.classList.toggle("error", conflicts.length > 0);
+        status.classList.toggle("success", conflicts.length === 0);
+        status.innerHTML = conflicts.length
+            ? `<strong>${conflicts.length} jour${conflicts.length > 1 ? "s" : ""} en conflit :</strong> ${conflicts.map(conflict => `${escapeHtml(formatPreviewDate(conflict.date))} avec « ${escapeHtml(conflict.title)} » (${escapeHtml(formatEventTime(conflict))})`).join(" · ")}`
+            : `<strong>Période disponible :</strong> aucun conflit détecté sur les ${dates.length} jour${dates.length > 1 ? "s" : ""}.`;
     };
-    section.querySelector("#calendarAddDate").addEventListener("click", () => {
-        const date = section.querySelector("#calendarAdditionalDate").value;
-        if (!date) return;
-        selectedDates.add(date);
-        render();
+    startInput.addEventListener("change", () => {
+        if (!endInput.value || endInput.value < startInput.value) endInput.value = startInput.value;
+        refresh();
     });
-    section.querySelector("#calendarRangeStart").addEventListener("change", () => {
-        const end = section.querySelector("#calendarRangeEnd").value || section.querySelector("#calendarRangeStart").value;
-        addDateRange(section.querySelector("#calendarRangeStart").value, end);
-    });
-    section.querySelector("#calendarRangeEnd").addEventListener("change", () => {
-        const start = section.querySelector("#calendarRangeStart").value || section.querySelector("#calendarRangeEnd").value;
-        addDateRange(start, section.querySelector("#calendarRangeEnd").value);
-    });
-    section.addEventListener("keydown", eventKey => {
-        if (eventKey.key !== "Escape") return;
-        eventKey.preventDefault();
-        cancelPendingRange();
-    });
+    endInput.addEventListener("change", refresh);
     render();
     refresh();
-    return {
-        refresh,
-        setPrimaryDate: () => {
-            const nextDate = form.elements.date.value;
-            if (!nextDate || nextDate === primaryDate) return;
-            selectedDates.delete(primaryDate);
-            primaryDate = nextDate;
-            selectedDates.add(primaryDate);
-            rangeMonth = firstDayOfMonth(new Date(`${primaryDate}T12:00:00`));
-            section.querySelector("#calendarAdditionalDate").value = primaryDate;
-            render();
-        }
-    };
-}
-
-function renderRangeMonth(month, selectedDates, pendingRangeDates, rangeAnchor) {
-    const pendingDates = [...pendingRangeDates].sort();
-    const selectedStart = pendingDates[0] || rangeAnchor || "";
-    const selectedEnd = pendingDates.at(-1) || rangeAnchor || "";
-    const days = getCalendarDays(month);
-    return `<section class="calendar-range-month"><h5>${escapeHtml(formatRangeMonth(month))}</h5><div class="calendar-range-weekdays">${WEEK_DAYS.map(day => `<span>${day.slice(0, 1)}</span>`).join("")}</div><div class="calendar-range-days">${days.map(day => {
-        const date = toDateString(day);
-        const inMonth = day.getMonth() === month.getMonth();
-        const selected = selectedDates.has(date) || pendingRangeDates.has(date);
-        return `<button type="button" class="calendar-range-day${inMonth ? "" : " outside"}${selected ? " selected" : ""}${pendingRangeDates.has(date) ? " pending" : ""}${date === selectedStart ? " range-start" : ""}${date === selectedEnd ? " range-end" : ""}" data-range-date="${date}" aria-label="${escapeHtml(formatPlanningDate(date))}">${day.getDate()}</button>`;
-    }).join("")}</div></section>`;
+    return { refresh, hasConflict: () => rangeHasConflict };
 }
 
 function datesBetween(start, end) {
@@ -818,14 +768,6 @@ function datesBetween(start, end) {
         cursor.setDate(cursor.getDate() + 1);
     }
     return dates;
-}
-
-function formatRangeMonth(value) {
-    return capitalize(new Intl.DateTimeFormat("fr-FR", { month: "long", year: "numeric" }).format(value));
-}
-
-function formatPlanningDate(value) {
-    return new Intl.DateTimeFormat("fr-FR", { weekday: "short", day: "numeric", month: "short", year: "numeric" }).format(new Date(`${value}T12:00:00`));
 }
 
 function renderCalendarAvailability(form, editedEventId) {

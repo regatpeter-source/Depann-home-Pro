@@ -31,12 +31,12 @@ test("desktop density rules stay isolated from the mobile shell", () => {
 });
 
 test("desktop stylesheet cache versions remain synchronized", () => {
-    assert.match(index, /css\/style\.css\?v=242/);
-    assert.match(index, /js\/app\.js\?v=393/);
-    assert.match(serviceWorker, /css\/style\.css\?v=242/);
-    assert.match(serviceWorker, /js\/app\.js\?v=393/);
+    assert.match(index, /css\/style\.css\?v=243/);
+    assert.match(index, /js\/app\.js\?v=394/);
+    assert.match(serviceWorker, /css\/style\.css\?v=243/);
+    assert.match(serviceWorker, /js\/app\.js\?v=394/);
     assert.match(serviceWorker, /js\/clients\.js\?v=159/);
     assert.match(serviceWorker, /js\/client-sync\.js\?v=126/);
-    assert.match(serviceWorker, /js\/navigation\.js\?v=426/);
-    assert.match(serviceWorker, /depann-home-pro-v491/);
+    assert.match(serviceWorker, /js\/navigation\.js\?v=427/);
+    assert.match(serviceWorker, /depann-home-pro-v492/);
 });
