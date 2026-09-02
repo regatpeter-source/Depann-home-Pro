@@ -12,6 +12,7 @@ import { validateAssignedCompanyMembers } from "./member-assignment.js";
 const EVENT_COLORS = new Set(["blue", "green", "orange", "red", "purple", "gray"]);
 const EVENT_TYPES = new Set(["appointment", "task", "vacation", "sick_leave", "unavailable"]);
 const EVENT_STATUSES = new Set(["planned", "confirmed", "in_progress", "completed", "cancelled"]);
+const EVENT_STATUS_MANAGER_ROLES = new Set(["admin", "pc_standard", "mobile_admin"]);
 const QUITUS_STATUS = new Set(["pending", "validated"]);
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -391,6 +392,9 @@ export function registerCalendarRoutes(app, requireAuthentication) {
     app.post("/api/calendar/events", requireAuthentication, requireCalendarWriteAccess, asyncHandler(async (request, response) => {
         const event = sanitizeEvent(request.body);
         if (!event.ok) return response.status(400).json({ message: event.message });
+        if (!canManageCalendarEventStatus(request.user) && event.status !== "planned") {
+            return response.status(403).json({ message: "La finalisation d’une intervention est réservée à un poste administratif ou au Poste Admin Mobile." });
+        }
         const dates = sanitizeEventDates(request.body?.dates, event.date);
         if (!dates.length) return response.status(400).json({ message: "Une des dates sélectionnées est invalide." });
         const assignmentError = await validateAssignedMembers(getAccountOwnerId(request), event.assignedTechnicianIds);
@@ -432,6 +436,12 @@ export function registerCalendarRoutes(app, requireAuthentication) {
         if (!id) return response.status(400).json({ message: "Rendez-vous invalide." });
         if (!event.ok) return response.status(400).json({ message: event.message });
         if (await isCompletedIntervention(getAccountOwnerId(request), id)) return response.status(409).json({ message: "Cette intervention est terminée et conservée dans l’historique. Créez une nouvelle intervention pour ce client." });
+        const canManageStatus = canManageCalendarEventStatus(request.user);
+        if (!canManageStatus) {
+            const currentStatus = await getCalendarEventStatus(getAccountOwnerId(request), id);
+            if (!currentStatus) return response.status(404).json({ message: "Rendez-vous introuvable." });
+            if (event.status !== currentStatus) return response.status(403).json({ message: "La finalisation d’une intervention est réservée à un poste administratif ou au Poste Admin Mobile." });
+        }
         const assignmentError = await validateAssignedMembers(getAccountOwnerId(request), event.assignedTechnicianIds);
         if (assignmentError) return response.status(400).json({ message: assignmentError });
         const conflict = isClosedCalendarStatus(event.status) ? null : await findCalendarConflict(getAccountOwnerId(request), event, id);
@@ -446,7 +456,8 @@ export function registerCalendarRoutes(app, requireAuthentication) {
                     start_time = $9::time, end_time = $10::time, color = $11, event_type = $12, event_status = $13, notes = $14, updated_at = NOW()
                 WHERE id = $1 AND owner_id = $2
                     AND NOT (event_status = 'completed' OR (event_status <> 'cancelled' AND event_type = 'appointment' AND event_date < (CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Paris')::date))
-            `, [id, getAccountOwnerId(request), event.assignedTechnicianId || null, event.title, await resolveClientId(connection, getAccountOwnerId(request), event.clientName), event.clientName, event.location, event.date, optionalTime(event.startTime), optionalTime(event.endTime), event.color, event.eventType, event.status, event.notes]);
+                    AND ($15::boolean OR event_status = $13)
+            `, [id, getAccountOwnerId(request), event.assignedTechnicianId || null, event.title, await resolveClientId(connection, getAccountOwnerId(request), event.clientName), event.clientName, event.location, event.date, optionalTime(event.startTime), optionalTime(event.endTime), event.color, event.eventType, event.status, event.notes, canManageStatus]);
             if (!rowCount) {
                 await connection.query("ROLLBACK");
                 return response.status(404).json({ message: "Rendez-vous introuvable." });
@@ -824,6 +835,15 @@ function sanitizeEvent(value) {
 
 function isClosedCalendarStatus(status) {
     return ["completed", "cancelled"].includes(status);
+}
+
+function canManageCalendarEventStatus(user) {
+    return EVENT_STATUS_MANAGER_ROLES.has(user?.role);
+}
+
+async function getCalendarEventStatus(accountOwnerId, eventId) {
+    const { rows } = await getPool().query("SELECT event_status AS status FROM depannhome_calendar_events WHERE owner_id=$1 AND id=$2", [accountOwnerId, eventId]);
+    return rows[0]?.status || "";
 }
 
 async function resolveClientId(connection, ownerId, clientName, activeOnly = false) {

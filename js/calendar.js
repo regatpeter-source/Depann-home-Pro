@@ -1,9 +1,9 @@
 import { ROUTES } from "./config.js?v=106";
-import { createBillingDocumentForClient, viewBillingDocument } from "./billing.js?v=193";
+import { createBillingDocumentForClient, viewBillingDocument } from "./billing.js?v=194";
 import { getSearchableClients } from "./clients.js?v=159";
 import { addClientActivityByName, synchronizeClients } from "./client-sync.js?v=126";
 import { renderClientMessages } from "./messages.js?v=107";
-import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=40";
+import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=41";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { renderPlatformAnnouncement } from "./platform-announcement.js?v=1";
@@ -476,10 +476,10 @@ function renderEventForm(panel) {
                     Couleur
                     <select name="color">${COLOR_OPTIONS.map(color => `<option value="${color.id}" ${event.color === color.id ? "selected" : ""}>${color.label}</option>`).join("")}</select>
                 </label>
-                <label>
+                ${canManageCalendarEventStatus() ? `<label>
                     Statut
                     <select name="status">${EVENT_STATUS_OPTIONS.map(status => `<option value="${status.id}" ${calendarEventStatus(event) === status.id ? "selected" : ""}>${status.label}</option>`).join("")}</select>
-                </label>
+                </label>` : `<label>Statut actuel<input type="hidden" name="status" value="${escapeHtml(calendarEventStatus(event))}"><span class="quitus-status">${escapeHtml(calendarEventStatusLabel(event))}</span></label>`}
                 ${renderTechnicianAssignmentField(event)}
                 <label>
                     Début
@@ -1671,6 +1671,10 @@ function isReadOnlyCalendar() {
 
 function isMobileAdministrator() {
     return document.body.dataset.role === "mobile_admin";
+}
+
+function canManageCalendarEventStatus() {
+    return ["admin", "pc_standard", "mobile_admin"].includes(document.body.dataset.role);
 }
 
 function usesTerrainInterventionView(event) {

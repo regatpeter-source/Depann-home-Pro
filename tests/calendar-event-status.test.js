@@ -47,3 +47,12 @@ test("l’historique client reprend le statut exact et verrouille les interventi
     assert.match(clients, /confirmed: "Confirmée", in_progress: "En cours", completed: "Terminée", cancelled: "Annulée"/);
     assert.match(clients, /appointment\.isCompleted \|\| appointment\.status === "cancelled"/);
 });
+
+test("seuls les postes administratifs et le Poste Admin Mobile finalisent une intervention", () => {
+    assert.match(server, /EVENT_STATUS_MANAGER_ROLES = new Set\(\["admin", "pc_standard", "mobile_admin"\]\)/);
+    assert.match(server, /!canManageCalendarEventStatus\(request\.user\) && event\.status !== "planned"/);
+    assert.match(server, /if \(event\.status !== currentStatus\) return response\.status\(403\)/);
+    assert.match(server, /AND \(\$15::boolean OR event_status = \$13\)/);
+    assert.match(calendar, /function canManageCalendarEventStatus\(\) \{\s*return \["admin", "pc_standard", "mobile_admin"\]\.includes/);
+    assert.match(calendar, /canManageCalendarEventStatus\(\) \? `<label>[\s\S]*?<select name="status">[\s\S]*?type="hidden" name="status"/);
+});
