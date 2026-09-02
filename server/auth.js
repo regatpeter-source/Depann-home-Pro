@@ -16,7 +16,7 @@ const COOKIE_NAME = "depann_home_session";
 const USERNAME_PATTERN = /^[a-z0-9._-]{3,32}$/;
 const MIN_PASSWORD_LENGTH = 12;
 const ADMIN_SESSION_DURATION = 12 * 60 * 60 * 1000;
-const TECHNICIAN_SESSION_DURATION = 30 * 24 * 60 * 60 * 1000;
+const MOBILE_SESSION_DURATION = 90 * 24 * 60 * 60 * 1000;
 const DEVICE_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const CREATOR_TOTP_CHALLENGE_DURATION_SECONDS = 5 * 60;
@@ -92,6 +92,9 @@ export function registerAuthRoutes(app) {
         }
         const accountOwnerId = String(user.activeCompanyId || user.accountOwnerId || user.account_owner_id || user.id || user.sub);
         const organization = await getOrganization(accountOwnerId);
+        if (user.deviceType === "mobile") {
+            setSessionCookie(response, user, user.deviceId, user.deviceType, accountOwnerId);
+        }
 
         return response.json({
             authenticated: true,
@@ -248,7 +251,7 @@ export function registerAuthRoutes(app) {
         const sessionId = device.role === "admin" && device.device_type === "desktop"
             ? await issueAdministratorPcSession(device.user_id, deviceId, clientWindowSessionId(request))
             : "";
-        setSessionCookie(response, device, deviceId, "", sessionId);
+        setSessionCookie(response, device, deviceId, device.device_type, "", sessionId);
         return response.json({ user: publicUser(device) });
     }));
 
@@ -271,7 +274,7 @@ export function registerAuthRoutes(app) {
                 return response.status(409).json({ message: "Cet appareil est déjà associé à un autre compte. Utilisez un autre navigateur ou contactez l’administrateur." });
             }
             const sessionId = device.type === "desktop" ? await issueAdministratorPcSession(user.id, authDevice.id, clientWindowSessionId(request)) : "";
-            setSessionCookie(response, user, authDevice.id, "", sessionId);
+            setSessionCookie(response, user, authDevice.id, device.type, "", sessionId);
             return response.status(201).json({ user: publicUser({ ...user, deviceType: device.type }) });
         } catch (error) {
             if (error.code === "23505") {
@@ -844,7 +847,7 @@ export function isCompanyAdministrator(request) {
 
 export async function refreshSessionForActiveCompany(response, user, deviceId, activeCompanyId) {
     const device = await findAuthDevice(user.id, deviceId);
-    setSessionCookie(response, user, deviceId, activeCompanyId, device?.session_id || "");
+    setSessionCookie(response, user, deviceId, device?.device_type || "desktop", activeCompanyId, device?.session_id || "");
 }
 
 export function requireCreator(request, response, next) {
@@ -1020,7 +1023,7 @@ async function completeLogin(user, device, response, request) {
         const accountOwnerId = String(groupCompany?.companyId || user.account_owner_id || user.id);
         const organization = await getOrganization(accountOwnerId);
         const sessionId = isCompanyAdministratorPc ? await issueAdministratorPcSession(user.id, authDevice.id, clientWindowSessionId(request)) : "";
-        setSessionCookie(response, user, authDevice.id, groupCompany?.companyId, sessionId);
+        setSessionCookie(response, user, authDevice.id, authDevice.device_type, groupCompany?.companyId, sessionId);
         return response.json({ user: publicUser({ ...user, accountOwnerId, activeCompanyId: accountOwnerId, groupId: groupCompany?.groupId, groupName: groupCompany?.groupName, activeCompanyName: groupCompany?.companyName, isGroupAdministrator: Boolean(groupCompany?.isGroupAdministrator), role: user.role, principalRole: groupCompany?.isGroupAdministrator ? "group_admin" : user.role, deviceType: authDevice.device_type, organization }) });
     }
     if (authDevice.status === "code_pending") {
@@ -1243,10 +1246,15 @@ function requiresClientWindowProof(request) {
     return !destination || destination === "empty";
 }
 
-function setSessionCookie(response, user, deviceId, activeCompanyId = "", sessionId = "") {
-    const duration = user.role === "technician" ? TECHNICIAN_SESSION_DURATION : ADMIN_SESSION_DURATION;
+export function sessionDurationForDevice(deviceType) {
+    return deviceType === "mobile" ? MOBILE_SESSION_DURATION : ADMIN_SESSION_DURATION;
+}
+
+function setSessionCookie(response, user, deviceId, deviceType, activeCompanyId = "", sessionId = "") {
+    const duration = sessionDurationForDevice(deviceType);
+    const userId = user.id || user.user_id || user.sub;
     const token = jwt.sign(
-        { sub: String(user.id || user.user_id), username: user.username, role: user.role, accountOwnerId: String(user.account_owner_id || user.id || user.user_id), activeCompanyId: String(activeCompanyId || ""), fullName: user.full_name || "", phone: user.phone || "", deviceId, sessionId },
+        { sub: String(userId), username: user.username, role: user.role, accountOwnerId: String(user.account_owner_id || user.accountOwnerId || userId), activeCompanyId: String(activeCompanyId || ""), fullName: user.full_name || user.fullName || "", phone: user.phone || "", deviceId, sessionId },
         getSessionSecret(),
         { expiresIn: Math.floor(duration / 1000) }
     );
