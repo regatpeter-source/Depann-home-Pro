@@ -10,6 +10,8 @@ Il n’existe pas de rôle d’« administrateur principal » ni d’administrat
 
 Le compte Créateur est distinct : sa capacité provient uniquement de `CREATOR_USERNAMES` et reste protégée par `requireCreator`. Un administrateur d’entreprise ne peut pas accéder aux routes ni à la console Créateur.
 
+Le Centre d’assistance Créateur ne transforme pas le Créateur en Poste Admin de l’entreprise. Il fournit une vue technique temporaire en lecture seule et des réparations séparées, motivées et auditables. Les Postes Admin actifs sont notifiés de l’ouverture, de la fermeture et de chaque réparation. Voir [CREATOR_ASSISTANCE.md](CREATOR_ASSISTANCE.md).
+
 Le même compte peut également être utilisé sur un smartphone comme Poste Admin Mobile opérationnel. Chaque téléphone ou tablette approuvé consomme un **poste mobile** inclus dans l’offre, sans consommer de poste administratif. Le rôle dédié `mobile_admin` consomme lui aussi un poste mobile. L’appareil suit le circuit normal d’autorisation. La console Créateur et toutes ses routes restent toutefois strictement réservées à un appareil déclaré **poste administratif** : elles sont absentes de l’interface mobile et refusées côté serveur.
 
 Chaque Poste Admin, y compris le compte Créateur, peut se connecter depuis n’importe quel ordinateur, puis revenir sur son poste administratif initial. Une seule session de poste administratif est conservée par compte : après chaque authentification réussie, le serveur attribue une nouvelle session de poste administratif et révoque immédiatement toutes les précédentes, y compris celles qui utiliseraient le même identifiant d’appareil. Le Poste Admin Mobile reste indépendant de cette règle.

@@ -21,6 +21,7 @@ import { contentSecurityPolicy, createOriginProtection, validateSecurityConfigur
 import { createHealthRequestMonitor, initializeHealthDashboard, recordHealthError, registerHealthDashboardRoutes, startHealthMonitoring } from "./server/health-dashboard.js";
 import { initializeOrganizations, requireOrganizationFeature } from "./server/organizations.js";
 import { registerCreatorRoutes } from "./server/creator.js";
+import { initializeCreatorAssistance, registerCreatorAssistanceRoutes } from "./server/creator-assistance.js";
 import { billingUploadErrorHandler, initializeBilling, registerBillingRoutes } from "./server/billing.js";
 import { documentTemplateUploadErrorHandler, initializeDocumentTemplates, registerDocumentTemplateRoutes } from "./server/document-templates.js";
 import { initializeSubscriptionInvoicing, registerSubscriptionInvoicingRoutes, startSubscriptionInvoicingScheduler } from "./server/invoicing.js";
@@ -204,6 +205,7 @@ app.use("/api/groups", requireAuthentication, (request, response, next) => {
 registerAuthRoutes(app);
 registerHealthDashboardRoutes(app, requireCreator);
 registerCreatorRoutes(app, requireCreator, requireAuthentication);
+registerCreatorAssistanceRoutes(app, requireCreator);
 registerPartnerRequestRoutes(app, requireCreator, requireAuthentication);
 registerSubscriptionInvoicingRoutes(app, requireCreator);
 registerAccountingRoutes(app, requireAuthentication);
@@ -286,6 +288,7 @@ async function start() {
 	validateSecurityConfiguration();
 	await initializeDatabase();
 	await runMigrations();
+	await initializeCreatorAssistance();
 	await initializeOrganizations();
 	await initializeGroups();
 	await initializeBilling();

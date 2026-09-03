@@ -45,3 +45,7 @@ En cas d’incident :
 6. documenter cause, correction, validation et mesures préventives.
 
 Les journaux applicatifs ne doivent jamais contenir cookie, token, mot de passe, IBAN, adresse ou corps métier complet.
+
+## Assistance Créateur
+
+Le Centre d’assistance n’usurpe jamais l’identité d’un client et ne remplace pas `request.user`. Les diagnostics passent uniquement par des routes Créateur dédiées et expurgées des secrets. Une session normale expire après 30 minutes ; le mode d’urgence expire après 10 minutes. Chaque ouverture, clôture et réparation est motivée, auditée et notifiée aux administrateurs de l’entreprise. La procédure complète figure dans [CREATOR_ASSISTANCE.md](CREATOR_ASSISTANCE.md).

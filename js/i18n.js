@@ -444,6 +444,53 @@ const ENGLISH = new Map(Object.entries({
     "Console Créateur": "Creator console",
     "Administration plateforme": "Platform administration",
     "Sélectionnez une organisation ou créez-en une.": "Select an organization or create one."
+    ,"🛟 Assistance entreprises": "🛟 Company assistance"
+    ,"Support client sécurisé": "Secure customer support"
+    ,"Centre d’assistance entreprises": "Company assistance center"
+    ,"Principe de sécurité.": "Security principle."
+    ,"Le diagnostic est en lecture seule. Chaque réparation est une action séparée, justifiée, auditée et annoncée aux administrateurs de l’entreprise. Aucun mot de passe, secret 2FA, jeton OAuth ou contenu métier privé n’est affiché.": "Diagnostics are read-only. Each recovery action is separate, justified, audited, and reported to company administrators. No password, 2FA secret, OAuth token, or private business content is displayed."
+    ,"Entreprise *": "Company *"
+    ,"Référence demande Support": "Support request reference"
+    ,"Facultatif si accord confirmé": "Optional when consent is confirmed"
+    ,"Motif détaillé *": "Detailed reason *"
+    ,"Blocage rencontré, vérifications demandées et résultat attendu": "Issue encountered, requested checks, and expected outcome"
+    ,"Accord de l’entreprise confirmé": "Company consent confirmed"
+    ,"À cocher uniquement si un administrateur a demandé ou accepté l’intervention.": "Check only if an administrator requested or accepted the intervention."
+    ,"Urgence « break-glass »": "Break-glass emergency"
+    ,"10 minutes seulement. À utiliser si l’entreprise est totalement bloquée et qu’aucun accord traçable ne peut être enregistré immédiatement.": "10 minutes only. Use when the company is completely locked out and traceable consent cannot be recorded immediately."
+    ,"Ouvrir la session d’assistance": "Open assistance session"
+    ,"Sessions récentes": "Recent sessions"
+    ,"Aucune session d’assistance enregistrée.": "No assistance session recorded."
+    ,"Assistance d’urgence ouverte": "Emergency assistance opened"
+    ,"Session d’assistance ouverte": "Assistance session opened"
+    ,"Session d’assistance terminée": "Assistance session ended"
+    ,"🛟 Assistance en lecture seule": "🛟 Read-only assistance"
+    ,"⚠ Session d’urgence": "⚠ Emergency session"
+    ,"Double authentification": "Two-factor authentication"
+    ,"Verrous actifs": "Active locks"
+    ,"Vue sans usurpation.": "No-impersonation view."
+    ,"Vous observez l’état technique de l’entreprise, mais vous n’êtes pas connecté à sa place. Les actions ci-dessous demandent un motif complémentaire et une confirmation.": "You can inspect the company’s technical state, but you are not signed in as the company. The actions below require an additional reason and confirmation."
+    ,"Récupération": "Recovery"
+    ,"État de l’entreprise": "Company status"
+    ,"Entreprise opérationnelle": "Company operational"
+    ,"Révoquer toutes les sessions": "Revoke all sessions"
+    ,"Libérer tous les verrous": "Release all locks"
+    ,"Accès et 2FA": "Access and 2FA"
+    ,"Réinitialiser 2FA": "Reset 2FA"
+    ,"État des connexions": "Connection status"
+    ,"Révoquer": "Revoke"
+    ,"Révoqué": "Revoked"
+    ,"Diagnostic": "Diagnostics"
+    ,"Événements récents": "Recent events"
+    ,"Actualiser": "Refresh"
+    ,"Retour aux sessions": "Back to sessions"
+    ,"Intervention du Support": "Support intervention"
+    ,"Restaurer l’entreprise": "Restore company"
+    ,"Réactiver l’entreprise": "Reactivate company"
+    ,"Réactiver le Poste Admin": "Reactivate Admin Workstation"
+    ,"Réinitialiser la double authentification": "Reset two-factor authentication"
+    ,"Révoquer l’appareil": "Revoke device"
+    ,"Intervention Support": "Support intervention"
     ,"Aucun canal e-mail n’est configuré": "No email channel is configured"
     ,"Aucune boîte n'est encore connectée. Un Poste Admin peut la configurer dans Paramètres > Entreprise · Boîte mail.": "No mailbox is connected yet. An Admin Workstation can configure it under Settings > Company · Mailbox."
     ,"Connexion Gmail professionnelle temporairement indisponible.": "Professional Gmail connection is temporarily unavailable."
@@ -641,6 +688,12 @@ const DYNAMIC_PATTERNS = [
     [/^(\d+) notification(?:s)? non lue(?:s)?$/, (_, count) => `${count} unread notification${count === "1" ? "" : "s"}`],
     [/^(\d+) mission(?:s)?$/, (_, count) => `${count} mission${count === "1" ? "" : "s"}`],
     [/^(\d+) document(?:s)?$/, (_, count) => `${count} document${count === "1" ? "" : "s"}`],
+    [/^(\d+) session(?:s)? active(?:s)?$/, (_, count) => `${count} active session${count === "1" ? "" : "s"}`],
+    [/^Expire le (.+)$/, (_, date) => `Expires ${translateDateWords(date)}`],
+    [/^Dernière activité : (.+)$/, (_, date) => `Last activity: ${translateDateWords(date)}`],
+    [/^Une session d’assistance en lecture seule de (\d+) minutes a été ouverte\. Motif : (.+)$/, "A $1-minute read-only assistance session was opened. Reason: $2"],
+    [/^Une session d’urgence de (\d+) minutes a été ouverte par le Support\. Motif : (.+)$/, "A $1-minute emergency session was opened by Support. Reason: $2"],
+    [/^(.+)\. Motif : (.+)$/, (_, action, reason) => `${translateInterfaceText(action)}. Reason: ${reason}`],
     [/^(\d+) jour(?:s)?$/, (_, count) => `${count} day${count === "1" ? "" : "s"}`],
     [/^(\d+) intervention(?:s)? créée(?:s)?$/, (_, count) => `${count} job${count === "1" ? "" : "s"} created`],
     [/^(\d+) dossier(?:s)? trouvé(?:s)?$/, (_, count) => `${count} file${count === "1" ? "" : "s"} found`],

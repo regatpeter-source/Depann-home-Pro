@@ -1,7 +1,7 @@
 import { ROUTES } from "./config.js?v=105";
 import { clearSearch, getContainer, setPage } from "./ui.js?v=44";
 import { escapeHtml } from "./utils.js?v=44";
-import { renderCreatorConnectors } from "./connectors.js?v=2";
+import { renderCreatorConnectors } from "./connectors.js?v=3";
 import { renderHealthDashboard } from "./health-dashboard.js?v=1";
 
 let accounts = [];
@@ -10,6 +10,7 @@ let accountListMode = "active";
 let creatorNotificationsBound = false;
 let creatorPdpOAuthMessageHandler = null;
 let officialConnectorOptions = [];
+let activeAssistanceSessionId = "";
 
 export async function renderCreatorConsole() {
     clearSearch();
@@ -19,7 +20,7 @@ export async function renderCreatorConsole() {
         <section class="creator-console">
             <header class="creator-heading">
                 <div><p class="eyebrow">Administration plateforme</p><h2>Console Créateur</h2></div>
-                <div class="creator-form-actions"><button type="button" class="secondary-button auth-outline-button" id="creatorSuperPdpProduction">SUPER PDP</button><button type="button" class="secondary-button auth-outline-button" id="creatorHealthDashboard">🩺 Santé du système <b class="creator-request-alert" data-health-alert hidden>0</b></button><button type="button" class="secondary-button auth-outline-button" id="creatorSubscriptionRequests">Demandes d’offres</button><button type="button" class="secondary-button auth-outline-button" id="creatorPartnerApiSandbox">🧪 Sandbox API partenaire</button><button type="button" class="secondary-button auth-outline-button" id="creatorSuperPdpSandbox">🧪 Sandbox SUPER PDP</button><button type="button" class="secondary-button auth-outline-button" id="creatorElectronicInvoicingMonitoring">Suivi e-facturation</button><button type="button" class="secondary-button auth-outline-button" id="creatorElectronicInvoicingPlatforms">Plateformes e-facturation</button><button type="button" class="secondary-button auth-outline-button" id="creatorPlatformAnnouncement">Affichage général</button><button type="button" class="secondary-button auth-outline-button" id="creatorPartnerRequests">Demandes de partenariat</button><button type="button" class="secondary-button auth-outline-button" id="creatorOfficialPartners">Partenaires officiels</button><button type="button" class="secondary-button auth-outline-button" id="creatorSecurity">Sécurité du compte</button><button type="button" class="secondary-button auth-outline-button" id="creatorSubscriptionInvoices">Factures abonnements</button><button type="button" class="secondary-button auth-outline-button" id="creatorBillingProfile">Facturation plateforme</button><button type="button" class="secondary-button auth-outline-button" id="creatorExternalProviders">Prestataires externes</button><button type="button" class="secondary-button" id="creatorNewAccount">+ Nouvelle organisation</button></div>
+                <div class="creator-form-actions"><button type="button" class="secondary-button auth-outline-button" id="creatorAssistance">🛟 Assistance entreprises</button><button type="button" class="secondary-button auth-outline-button" id="creatorSuperPdpProduction">SUPER PDP</button><button type="button" class="secondary-button auth-outline-button" id="creatorHealthDashboard">🩺 Santé du système <b class="creator-request-alert" data-health-alert hidden>0</b></button><button type="button" class="secondary-button auth-outline-button" id="creatorSubscriptionRequests">Demandes d’offres</button><button type="button" class="secondary-button auth-outline-button" id="creatorPartnerApiSandbox">🧪 Sandbox API partenaire</button><button type="button" class="secondary-button auth-outline-button" id="creatorSuperPdpSandbox">🧪 Sandbox SUPER PDP</button><button type="button" class="secondary-button auth-outline-button" id="creatorElectronicInvoicingMonitoring">Suivi e-facturation</button><button type="button" class="secondary-button auth-outline-button" id="creatorElectronicInvoicingPlatforms">Plateformes e-facturation</button><button type="button" class="secondary-button auth-outline-button" id="creatorPlatformAnnouncement">Affichage général</button><button type="button" class="secondary-button auth-outline-button" id="creatorPartnerRequests">Demandes de partenariat</button><button type="button" class="secondary-button auth-outline-button" id="creatorOfficialPartners">Partenaires officiels</button><button type="button" class="secondary-button auth-outline-button" id="creatorSecurity">Sécurité du compte</button><button type="button" class="secondary-button auth-outline-button" id="creatorSubscriptionInvoices">Factures abonnements</button><button type="button" class="secondary-button auth-outline-button" id="creatorBillingProfile">Facturation plateforme</button><button type="button" class="secondary-button auth-outline-button" id="creatorExternalProviders">Prestataires externes</button><button type="button" class="secondary-button" id="creatorNewAccount">+ Nouvelle organisation</button></div>
             </header>
             <p id="creatorFeedback" class="auth-message" aria-live="polite"></p>
             <section class="creator-subscription-summary" id="creatorSubscriptionSummary" aria-label="Synthèse des abonnements"></section>
@@ -41,6 +42,7 @@ export async function renderCreatorConsole() {
     notificationsButton.innerHTML = 'Notifications <b class="creator-request-alert" hidden>0</b>';
     document.querySelector(".creator-heading .creator-form-actions").prepend(notificationsButton);
     container.querySelector("#creatorNewAccount").addEventListener("click", () => renderAccountForm());
+    container.querySelector("#creatorAssistance").addEventListener("click", renderCreatorAssistance);
     container.querySelector("#creatorSuperPdpProduction").addEventListener("click", renderCreatorPlatformSuperPdp);
     container.querySelector("#creatorHealthDashboard").addEventListener("click", () => renderHealthDashboard(container.querySelector("#creatorWorkspace")));
     container.querySelector("#creatorSubscriptionRequests").addEventListener("click", renderSubscriptionChangeRequests);
@@ -134,6 +136,109 @@ async function renderCreatorSupportRequests() {
 }
 
 function supportRequestStatusLabel(status) { return ({ new: "Nouvelle", under_review: "En cours d’étude", answered: "Répondue", closed: "Clôturée" })[status] || "Nouvelle"; }
+
+async function renderCreatorAssistance() {
+    const workspace = document.querySelector("#creatorWorkspace");
+    workspace.innerHTML = '<p class="muted">Chargement du Centre d’assistance…</p>';
+    const sessionsResult = await api("/api/creator/assistance/sessions");
+    if (!sessionsResult.ok) return showFeedback(sessionsResult.message || "Impossible de charger le Centre d’assistance.", true);
+    const sessions = sessionsResult.data?.sessions || [];
+    const activeSessions = sessions.filter(session => session.active);
+    workspace.innerHTML = `<section class="creator-form creator-assistance-center">
+        <div class="form-heading"><div><p class="eyebrow">Support client sécurisé</p><h3>Centre d’assistance entreprises</h3></div><span class="creator-state${activeSessions.length ? " suspended" : ""}">${activeSessions.length} session${activeSessions.length > 1 ? "s" : ""} active${activeSessions.length > 1 ? "s" : ""}</span></div>
+        <aside class="accounting-pdp-notice"><strong>Principe de sécurité.</strong> Le diagnostic est en lecture seule. Chaque réparation est une action séparée, justifiée, auditée et annoncée aux administrateurs de l’entreprise. Aucun mot de passe, secret 2FA, jeton OAuth ou contenu métier privé n’est affiché.</aside>
+        <form data-assistance-start>
+            <div class="form-grid">
+                <label>Entreprise *<select name="companyOwnerId" required><option value="">Sélectionner…</option>${accounts.filter(account => String(account.id) !== String(document.body.dataset.userId)).map(account => `<option value="${escapeHtml(account.id)}">${escapeHtml(account.companyName || account.ownerFullName || account.ownerUsername)}</option>`).join("")}</select></label>
+                <label>Référence demande Support<input name="supportRequestId" inputmode="numeric" placeholder="Facultatif si accord confirmé"></label>
+                <label class="form-wide">Motif détaillé *<textarea name="reason" minlength="10" maxlength="1000" rows="3" required placeholder="Blocage rencontré, vérifications demandées et résultat attendu"></textarea></label>
+                <label class="creator-switch form-wide">Accord de l’entreprise confirmé<input name="consentConfirmed" type="checkbox"><span>À cocher uniquement si un administrateur a demandé ou accepté l’intervention.</span></label>
+                <label class="creator-switch form-wide creator-assistance-emergency-option">Urgence « break-glass »<input name="emergency" type="checkbox"><span>10 minutes seulement. À utiliser si l’entreprise est totalement bloquée et qu’aucun accord traçable ne peut être enregistré immédiatement.</span></label>
+            </div>
+            <div class="creator-form-actions"><button type="submit" class="primary-button">Ouvrir la session d’assistance</button></div>
+        </form>
+        <h4>Sessions récentes</h4>
+        <div class="creator-network-list">${sessions.length ? sessions.map(session => `<article class="creator-network-company${session.active ? " creator-assistance-active-row" : ""}"><div><strong>${escapeHtml(session.companyName)}</strong><p>${session.mode === "emergency" ? "Urgence" : "Lecture seule"} · ${escapeHtml(session.reason)}</p><small>${escapeHtml(formatDateTime(session.createdAt))} · expire ${escapeHtml(formatDateTime(session.expiresAt))}${session.revokedAt ? ` · clôturée ${escapeHtml(formatDateTime(session.revokedAt))}` : ""}</small></div>${session.active ? `<button type="button" class="secondary-button" data-open-assistance="${escapeHtml(session.id)}">Ouvrir</button>` : '<span class="creator-state archived">Terminée</span>'}</article>`).join("") : '<p class="muted">Aucune session d’assistance enregistrée.</p>'}</div>
+    </section>`;
+    workspace.querySelector("[data-assistance-start]").addEventListener("submit", async event => {
+        event.preventDefault();
+        const form = event.currentTarget;
+        const values = Object.fromEntries(new FormData(form));
+        values.consentConfirmed = form.elements.consentConfirmed.checked;
+        values.emergency = form.elements.emergency.checked;
+        if (values.emergency && !confirm("Ouvrir une session d’urgence de 10 minutes ? L’entreprise sera immédiatement notifiée et la justification conservée.")) return;
+        const button = form.querySelector('button[type="submit"]'); button.disabled = true;
+        const created = await api("/api/creator/assistance/sessions", { method: "POST", body: JSON.stringify(values) });
+        button.disabled = false;
+        if (!created.ok) return showFeedback(created.message || "Impossible d’ouvrir la session.", true);
+        activeAssistanceSessionId = created.data.session.id;
+        showFeedback("Session d’assistance ouverte et administrateurs notifiés.");
+        await renderCreatorAssistanceSession(activeAssistanceSessionId);
+    });
+    workspace.querySelectorAll("[data-open-assistance]").forEach(button => button.addEventListener("click", () => renderCreatorAssistanceSession(button.dataset.openAssistance)));
+}
+
+async function renderCreatorAssistanceSession(sessionId) {
+    const workspace = document.querySelector("#creatorWorkspace");
+    activeAssistanceSessionId = sessionId;
+    workspace.innerHTML = '<p class="muted">Chargement du diagnostic sécurisé…</p>';
+    const result = await api(`/api/creator/assistance/sessions/${encodeURIComponent(sessionId)}/diagnostics`);
+    if (!result.ok) { activeAssistanceSessionId = ""; showFeedback(result.message || "Session d’assistance indisponible.", true); return renderCreatorAssistance(); }
+    const { session, diagnostics = {} } = result.data;
+    const company = diagnostics.company || {};
+    const admins = (diagnostics.members || []).filter(member => member.role === "admin");
+    const devices = diagnostics.devices || [];
+    const locks = diagnostics.locks || [];
+    workspace.innerHTML = `<section class="creator-form creator-assistance-center">
+        <div class="creator-assistance-banner" role="status"><div><strong>${session.mode === "emergency" ? "⚠ Session d’urgence" : "🛟 Assistance en lecture seule"} — ${escapeHtml(session.companyName)}</strong><span>Expire le ${escapeHtml(formatDateTime(session.expiresAt))} · ${escapeHtml(session.reason)}</span></div><button type="button" class="secondary-button danger-button" data-close-assistance>Terminer</button></div>
+        <div class="creator-assistance-summary"><article><span>Entreprise</span><strong>${company.isArchived ? "Archivée" : company.isActive ? "Active" : "Suspendue"}</strong></article><article><span>Abonnement</span><strong>${escapeHtml(company.subscriptionTier || "—")} · ${escapeHtml(company.subscriptionStatus || "—")}</strong></article><article><span>Double authentification</span><strong>${diagnostics.twoFactorPolicy?.enabled ? "Activée" : "Désactivée"}</strong></article><article><span>Verrous actifs</span><strong>${locks.length}</strong></article></div>
+        <aside class="accounting-pdp-notice"><strong>Vue sans usurpation.</strong> Vous observez l’état technique de l’entreprise, mais vous n’êtes pas connecté à sa place. Les actions ci-dessous demandent un motif complémentaire et une confirmation.</aside>
+        <section class="creator-assistance-section"><div class="form-heading"><div><p class="eyebrow">Récupération</p><h4>État de l’entreprise</h4></div></div><div class="creator-form-actions">${company.isArchived ? '<button type="button" class="secondary-button" data-assistance-action="restore_company">Restaurer l’entreprise</button>' : !company.isActive ? '<button type="button" class="secondary-button" data-assistance-action="reactivate_company">Réactiver l’entreprise</button>' : '<span class="creator-state">Entreprise opérationnelle</span>'}<button type="button" class="secondary-button danger-button" data-assistance-action="revoke_company_sessions">Révoquer toutes les sessions</button>${locks.length ? '<button type="button" class="secondary-button danger-button" data-assistance-action="release_company_locks">Libérer tous les verrous</button>' : ""}</div></section>
+        <section class="creator-assistance-section"><div class="form-heading"><div><p class="eyebrow">Administrateurs</p><h4>Accès et 2FA</h4></div></div><div class="creator-network-list">${admins.length ? admins.map(member => `<article class="creator-network-company"><div><strong>${escapeHtml(member.fullName || member.username)}</strong><p>${escapeHtml(member.username)} · ${member.activeAuthenticators} authentificateur(s)</p></div><div class="creator-form-actions"><span class="creator-state${member.isActive ? "" : " suspended"}">${member.isActive ? "Actif" : "Désactivé"}</span>${member.isActive || String(member.id) === String(company.id) ? "" : `<button type="button" class="secondary-button" data-assistance-action="reactivate_administrator" data-target-id="${escapeHtml(member.id)}">Réactiver</button>`}<button type="button" class="secondary-button danger-button" data-assistance-action="reset_administrator_2fa" data-target-id="${escapeHtml(member.id)}">Réinitialiser 2FA</button></div></article>`).join("") : '<p class="auth-message error">Aucun Poste Admin trouvé.</p>'}</div></section>
+        <section class="creator-assistance-section"><div class="form-heading"><div><p class="eyebrow">Appareils</p><h4>État des connexions</h4></div></div><div class="creator-network-list">${devices.length ? devices.map(device => `<article class="creator-network-company"><div><strong>${escapeHtml(device.userName || device.username)} · ${escapeHtml(device.label || "Appareil")}</strong><p>${escapeHtml(device.deviceType)} · ${escapeHtml(device.status)}${device.hasSession ? " · session active" : ""}</p><small>Dernière activité : ${escapeHtml(formatDateTime(device.lastSeenAt))}</small></div>${device.status !== "rejected" ? `<button type="button" class="secondary-button danger-button" data-assistance-action="reject_device" data-target-id="${escapeHtml(device.id)}">Révoquer</button>` : '<span class="creator-state archived">Révoqué</span>'}</article>`).join("") : '<p class="muted">Aucun appareil enregistré.</p>'}</div></section>
+        <section class="creator-assistance-section"><div class="form-heading"><div><p class="eyebrow">Diagnostic</p><h4>Événements récents</h4></div></div><div class="creator-assistance-audit">${renderAssistanceAudit(diagnostics)}</div></section>
+        <div class="creator-form-actions"><button type="button" class="secondary-button" data-refresh-assistance>Actualiser</button><button type="button" class="secondary-button" data-back-assistance>Retour aux sessions</button></div>
+    </section>`;
+    workspace.querySelector("[data-close-assistance]").addEventListener("click", closeCreatorAssistanceSession);
+    workspace.querySelector("[data-refresh-assistance]").addEventListener("click", () => renderCreatorAssistanceSession(sessionId));
+    workspace.querySelector("[data-back-assistance]").addEventListener("click", renderCreatorAssistance);
+    workspace.querySelectorAll("[data-assistance-action]").forEach(button => button.addEventListener("click", () => executeCreatorAssistanceAction(button.dataset.assistanceAction, button.dataset.targetId || "")));
+}
+
+function renderAssistanceAudit(diagnostics) {
+    const entries = [
+        ...(diagnostics.recoveryActions || []).map(item => ({ date: item.createdAt, title: assistanceActionLabel(item.actionType), detail: `${item.status === "failed" ? "Échec · " : ""}${item.reason}` })),
+        ...(diagnostics.securityEvents || []).map(item => ({ date: item.createdAt, title: item.eventType, detail: `${item.outcome}` })),
+        ...(diagnostics.memberAudit || []).map(item => ({ date: item.createdAt, title: item.action, detail: item.targetFullName || item.targetUsername || "Accès entreprise" })),
+        ...(diagnostics.lifecycle || []).map(item => ({ date: item.createdAt, title: `Entreprise ${item.action}`, detail: item.reason || item.actorName || item.actorUsername || "" }))
+    ].sort((first, second) => new Date(second.date) - new Date(first.date)).slice(0, 60);
+    return entries.length ? `<div class="creator-network-list">${entries.map(entry => `<article class="creator-network-company"><div><strong>${escapeHtml(entry.title)}</strong><p>${escapeHtml(entry.detail)}</p><small>${escapeHtml(formatDateTime(entry.date))}</small></div></article>`).join("")}</div>` : '<p class="muted">Aucun événement récent.</p>';
+}
+
+async function executeCreatorAssistanceAction(actionType, targetId) {
+    if (!activeAssistanceSessionId) return showFeedback("La session d’assistance n’est plus active.", true);
+    const reason = prompt(`Motif précis — ${assistanceActionLabel(actionType)} :`, "");
+    if (reason === null) return;
+    if (reason.trim().length < 10) return showFeedback("Le motif doit contenir au moins 10 caractères.", true);
+    if (!confirm(`${assistanceActionLabel(actionType)} ? Cette action sera auditée et l’entreprise sera notifiée.`)) return;
+    const result = await api(`/api/creator/assistance/sessions/${encodeURIComponent(activeAssistanceSessionId)}/actions`, { method: "POST", body: JSON.stringify({ actionType, targetId, reason }) });
+    if (!result.ok) return showFeedback(result.message || "La réparation a échoué.", true);
+    showFeedback(`${assistanceActionLabel(actionType)}. L’entreprise a été notifiée.`);
+    await renderCreatorAssistanceSession(activeAssistanceSessionId);
+}
+
+async function closeCreatorAssistanceSession() {
+    if (!activeAssistanceSessionId || !confirm("Terminer cette session d’assistance maintenant ?")) return;
+    const result = await api(`/api/creator/assistance/sessions/${encodeURIComponent(activeAssistanceSessionId)}`, { method: "DELETE", body: JSON.stringify({ reason: "Intervention terminée par le Créateur" }) });
+    if (!result.ok) return showFeedback(result.message || "Impossible de terminer la session.", true);
+    activeAssistanceSessionId = "";
+    showFeedback("Session terminée et entreprise notifiée.");
+    await renderCreatorAssistance();
+}
+
+function assistanceActionLabel(action) {
+    return ({ restore_company: "Restaurer l’entreprise", reactivate_company: "Réactiver l’entreprise", reactivate_administrator: "Réactiver le Poste Admin", reset_administrator_2fa: "Réinitialiser la double authentification", revoke_company_sessions: "Révoquer toutes les sessions", reject_device: "Révoquer l’appareil", release_company_locks: "Libérer tous les verrous" })[action] || "Intervention Support";
+}
 
 async function renderSubscriptionChangeRequests() {
     const workspace = document.querySelector("#creatorWorkspace");
