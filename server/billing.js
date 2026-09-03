@@ -138,6 +138,7 @@ export async function initializeBilling() {
         CREATE TABLE IF NOT EXISTS depannhome_billing_templates (
             id BIGSERIAL PRIMARY KEY,
             owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+            section VARCHAR(80) NOT NULL DEFAULT 'Autres',
             label VARCHAR(160) NOT NULL,
             description VARCHAR(500) NOT NULL DEFAULT '',
             unit VARCHAR(40) NOT NULL DEFAULT 'unité',
@@ -147,9 +148,14 @@ export async function initializeBilling() {
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
     `);
+    await database.query("ALTER TABLE depannhome_billing_templates ADD COLUMN IF NOT EXISTS section VARCHAR(80) NOT NULL DEFAULT 'Autres'");
     await database.query(`
         CREATE INDEX IF NOT EXISTS depannhome_billing_templates_owner_idx
         ON depannhome_billing_templates (owner_id, LOWER(label))
+    `);
+    await database.query(`
+        CREATE INDEX IF NOT EXISTS depannhome_billing_templates_owner_section_idx
+        ON depannhome_billing_templates (owner_id, LOWER(section), LOWER(label))
     `);
     await database.query(`
         CREATE TABLE IF NOT EXISTS depannhome_billing_documents (
@@ -294,8 +300,8 @@ export function registerBillingRoutes(app, requireAuthentication) {
                 WHERE owner.id = $1
             `, [accountOwnerId]),
             database.query(`
-                SELECT id, label, description, unit, unit_price::float AS "unitPrice", vat_rate::float AS "vatRate"
-                FROM depannhome_billing_templates WHERE owner_id = $1 ORDER BY LOWER(label)
+                SELECT id, section, label, description, unit, unit_price::float AS "unitPrice", vat_rate::float AS "vatRate"
+                FROM depannhome_billing_templates WHERE owner_id = $1 ORDER BY LOWER(section), LOWER(label)
             `, [accountOwnerId]),
             database.query(`
                 SELECT depannhome_billing_documents.id, document_type AS "documentType", document_number AS "documentNumber", client_id AS "clientId", customer_type AS "customerType",
@@ -685,10 +691,10 @@ export function registerBillingRoutes(app, requireAuthentication) {
         const taxIdentity = await billingTaxIdentity(getAccountOwnerId(request));
         if (taxIdentity.vatRegime === "franchise") template.vatRate = 0;
         const { rows } = await getPool().query(`
-            INSERT INTO depannhome_billing_templates (owner_id, label, description, unit, unit_price, vat_rate)
-            VALUES ($1,$2,$3,$4,$5,$6)
-            RETURNING id, label, description, unit, unit_price::float AS "unitPrice", vat_rate::float AS "vatRate"
-        `, [getAccountOwnerId(request), template.label, template.description, template.unit, template.unitPrice, template.vatRate]);
+            INSERT INTO depannhome_billing_templates (owner_id, section, label, description, unit, unit_price, vat_rate)
+            VALUES ($1,$2,$3,$4,$5,$6,$7)
+            RETURNING id, section, label, description, unit, unit_price::float AS "unitPrice", vat_rate::float AS "vatRate"
+        `, [getAccountOwnerId(request), template.section, template.label, template.description, template.unit, template.unitPrice, template.vatRate]);
         response.status(201).json({ template: rows[0] });
     }));
 
@@ -1105,6 +1111,7 @@ function sanitizeProfile(value) {
 }
 
 function sanitizeTemplate(value) {
+    const section = cleanText(value?.section, 80) || "Autres";
     const label = cleanText(value?.label, 160);
     const description = cleanText(value?.description, 500);
     const unit = cleanText(value?.unit, 40) || "unité";
@@ -1112,7 +1119,7 @@ function sanitizeTemplate(value) {
     const vatRate = nonNegativeNumber(value?.vatRate);
     if (!label) return { ok: false, message: "Le libellé de la ligne est obligatoire." };
     if (unitPrice === null || vatRate === null || vatRate > 100) return { ok: false, message: "Le prix et la TVA sont invalides." };
-    return { ok: true, label, description, unit, unitPrice, vatRate };
+    return { ok: true, section, label, description, unit, unitPrice, vatRate };
 }
 
 function sanitizeDocument(value) {

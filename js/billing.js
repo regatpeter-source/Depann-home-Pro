@@ -13,6 +13,8 @@ const PAYMENT_METHODS = ["Chèque", "Espèces", "Virement", "Carte bancaire"];
 const DOCUMENT_TYPES = { quote: "Devis", invoice: "Facture", credit: "Avoir" };
 const AID_TYPES = { cee: "CEE", maprimerenov: "MaPrimeRénov'", coup_de_pouce: "Prime Coup de Pouce", eco_ptz: "Éco-PTZ", regional: "Aide régionale", departmental: "Aide départementale", supplier: "Participation fournisseur", manufacturer: "Participation constructeur", custom: "Autre aide" };
 const VAT_FRANCHISE_MENTION = "TVA non applicable, art. 293 B du CGI";
+const BILLING_TEMPLATE_SECTIONS = ["Prestations", "Main-d’œuvre", "Déplacements", "Fournitures", "Matériel", "Primes et aides", "Autres"];
+const LOCAL_BILLING_TEMPLATES_PREFIX = "depannhome:billing-local-templates";
 const BILLING_MONTHS = [
     { value: "01", label: "Janvier" }, { value: "02", label: "Février" }, { value: "03", label: "Mars" }, { value: "04", label: "Avril" },
     { value: "05", label: "Mai" }, { value: "06", label: "Juin" }, { value: "07", label: "Juillet" }, { value: "08", label: "Août" },
@@ -54,6 +56,7 @@ export async function renderBilling(options = {}) {
         }
         billingData = result.data;
     }
+    billingData.templates = (billingData.templates || []).map(template => normalizeBillingTemplate(template, "company"));
     if (templateSection) {
         overviewPanel.hidden = true;
         editorPanel.hidden = true;
@@ -372,6 +375,7 @@ function renderTemplates(panel) {
         <div class="form-heading"><div><p class="eyebrow">Configuration commerciale</p><h2>Éléments réutilisables des devis et factures</h2><p class="muted">Gérez au même endroit vos prestations, fournitures, primes et aides financières.</p></div><button type="button" class="secondary-button" id="closeBillingTemplates">Fermer</button></div>
         <div class="form-heading"><div><p class="eyebrow">Lignes préenregistrées</p><h3>Vos prestations et fournitures</h3></div></div>
         <form id="billingTemplateForm" class="form-grid billing-template-form">
+            <label>Section *<input name="section" list="billingTemplateSections" maxlength="80" required value="Prestations" placeholder="Choisir ou saisir une section"><datalist id="billingTemplateSections">${billingTemplateSections().map(section => `<option value="${escapeHtml(section)}"></option>`).join("")}</datalist></label>
             <label>Libellé *<input name="label" maxlength="160" required placeholder="Ex. Déplacement et diagnostic"></label>
             <label>Prix unitaire HT *<input name="unitPrice" type="number" min="0" step="0.01" required placeholder="0,00"></label>
             <label>Description<textarea name="description" rows="2" maxlength="500" placeholder="Détail de la prestation"></textarea></label>
@@ -387,10 +391,18 @@ function renderTemplates(panel) {
     const list = panel.querySelector("#billingTemplateList");
     panel.querySelector("#closeBillingTemplates").addEventListener("click", () => renderBilling());
     if (!billingData.templates.length) list.innerHTML = "<p class=\"muted\">Aucune ligne préenregistrée pour le moment.</p>";
+    let currentSection = "";
     billingData.templates.forEach(template => {
+        if (template.section !== currentSection) {
+            currentSection = template.section;
+            const heading = document.createElement("h4");
+            heading.className = "billing-template-section-title";
+            heading.textContent = currentSection;
+            list.appendChild(heading);
+        }
         const item = document.createElement("article");
         item.className = "billing-template-item";
-        item.innerHTML = `<div><strong>${escapeHtml(template.label)}</strong><p>${escapeHtml(template.description || template.unit)}</p><small>${formatMoney(template.unitPrice)} HT · TVA ${formatNumber(isVatFranchise() ? 0 : template.vatRate)} %</small></div><button type="button" class="danger-button" aria-label="Supprimer ${escapeHtml(template.label)}">Supprimer</button>`;
+        item.innerHTML = `<div><strong>${escapeHtml(template.label)}</strong><p>${escapeHtml(template.description || template.unit)}</p><small>Section ${escapeHtml(template.section)} · ${formatMoney(template.unitPrice)} HT · TVA ${formatNumber(isVatFranchise() ? 0 : template.vatRate)} %</small></div><button type="button" class="danger-button" aria-label="Supprimer ${escapeHtml(template.label)}">Supprimer</button>`;
         item.querySelector("button").addEventListener("click", async () => {
             if (!confirm(`Supprimer la ligne « ${template.label} » ?`)) return;
             const result = await apiRequest(`/api/billing/templates/${encodeURIComponent(template.id)}`, { method: "DELETE" });
@@ -651,15 +663,16 @@ function correctionKindLabel(kind) { return kind === "amendment" ? "Avenant" : k
 function createLineEditor(line, index, billingDocument, rerender) {
     const item = document.createElement("article");
     item.className = "billing-line";
+    const templates = availableBillingTemplates();
     item.innerHTML = `
-        <select aria-label="Ligne préenregistrée"><option value="">Ligne libre</option>${billingData.templates.map(template => `<option value="${template.id}">${escapeHtml(template.label)}</option>`).join("")}</select>
+        <div class="billing-line-template-picker"><input type="search" data-billing-template-search aria-label="Rechercher une ligne préenregistrée" placeholder="Rechercher une ligne…"><select data-billing-template-select aria-label="Ligne préenregistrée">${renderBillingTemplateOptions(templates)}</select></div>
         <input data-field="description" aria-label="Description" maxlength="500" placeholder="Description" value="${escapeHtml(line.description)}">
         <input data-field="quantity" aria-label="Quantité" type="number" min="0.001" step="0.001" value="${escapeHtml(line.quantity)}">
         <input data-field="unit" aria-label="Unité" maxlength="40" value="${escapeHtml(line.unit)}">
         <input data-field="unitPrice" aria-label="Prix unitaire HT" type="number" min="0" step="0.01" value="${escapeHtml(line.unitPrice)}">
         <input data-field="vatRate" aria-label="TVA" type="number" min="0" max="100" step="0.01" value="${escapeHtml(billingDocument.vatRegime === "franchise" ? 0 : line.vatRate)}" ${billingDocument.vatRegime === "franchise" ? "readonly title=\"TVA neutralisée par le régime Franchise en base\"" : ""}>
         <strong class="billing-line-total">${formatMoney(lineTotal(line))}</strong>
-        ${canCreateSavedBillingLine() ? '<button type="button" class="secondary-button billing-line-save" data-save-billing-template>Préenregistrer</button>' : ""}
+        ${canCreateSavedBillingLine() ? `<button type="button" class="secondary-button billing-line-save" data-save-billing-template>${usesLocalBillingTemplates() ? "Enregistrer sur ce poste" : "Préenregistrer"}</button>` : ""}
         <button type="button" class="danger-button" data-remove-billing-line aria-label="Supprimer la ligne">×</button>
     `;
     const inputs = item.querySelectorAll("[data-field]");
@@ -669,8 +682,12 @@ function createLineEditor(line, index, billingDocument, rerender) {
         item.querySelector(".billing-line-total").textContent = formatMoney(lineTotal(line));
         renderTotals(item.closest("form").querySelector("#billingTotals"), billingDocument.lines, billingDocument.financialData);
     }));
-    item.querySelector("select").addEventListener("change", event => {
-        const template = billingData.templates.find(value => String(value.id) === event.target.value);
+    const templateSelect = item.querySelector("[data-billing-template-select]");
+    item.querySelector("[data-billing-template-search]").addEventListener("input", event => {
+        templateSelect.innerHTML = renderBillingTemplateOptions(filterBillingTemplates(templates, event.currentTarget.value));
+    });
+    templateSelect.addEventListener("change", event => {
+        const template = templates.find(value => billingTemplateKey(value) === event.target.value);
         if (!template) return;
         Object.assign(line, { description: template.description ? `${template.label} — ${template.description}` : template.label, unit: template.unit, unitPrice: Number(template.unitPrice), vatRate: billingDocument.vatRegime === "franchise" ? 0 : Number(template.vatRate) });
         rerender();
@@ -678,22 +695,28 @@ function createLineEditor(line, index, billingDocument, rerender) {
     item.querySelector("[data-save-billing-template]")?.addEventListener("click", async event => {
         const description = String(line.description || "").trim();
         if (!description) return alert("Renseignez la description de la ligne avant de la préenregistrer.");
-        const label = window.prompt("Nom de la ligne préenregistrée :", description.slice(0, 160));
-        if (label === null) return;
-        const normalizedLabel = label.trim();
-        if (!normalizedLabel) return alert("Le nom de la ligne préenregistrée est obligatoire.");
+        const details = await requestBillingTemplateDetails(description);
+        if (!details) return;
         const button = event.currentTarget;
         button.disabled = true;
-        const result = await apiRequest("/api/billing/templates", { method: "POST", body: JSON.stringify({
-            label: normalizedLabel,
-            description: normalizedLabel === description ? "" : description,
+        const template = {
+            section: details.section,
+            label: details.label,
+            description: details.label === description ? "" : description,
             unit: line.unit,
             unitPrice: line.unitPrice,
             vatRate: billingDocument.vatRegime === "franchise" ? 0 : line.vatRate
-        }) });
+        };
+        if (usesLocalBillingTemplates()) {
+            if (!saveLocalBillingTemplate(template)) { button.disabled = false; return alert("Impossible d’enregistrer cette ligne sur ce poste."); }
+            alert(`La ligne « ${details.label} » est enregistrée uniquement sur ce poste, dans la section « ${details.section} ».`);
+            rerender();
+            return;
+        }
+        const result = await apiRequest("/api/billing/templates", { method: "POST", body: JSON.stringify(template) });
         if (!result.ok) { button.disabled = false; return alert(result.message || "Impossible de préenregistrer cette ligne."); }
-        if (result.data?.template) billingData.templates = [...billingData.templates, result.data.template].sort((first, second) => first.label.localeCompare(second.label, "fr"));
-        alert(`La ligne « ${normalizedLabel} » est maintenant disponible dans les lignes préenregistrées.`);
+        if (result.data?.template) billingData.templates = sortBillingTemplates([...billingData.templates, normalizeBillingTemplate(result.data.template, "company")]);
+        alert(`La ligne « ${details.label} » est maintenant disponible pour toute l’entreprise dans la section « ${details.section} ».`);
         rerender();
     });
     item.querySelector("[data-remove-billing-line]").addEventListener("click", () => {
@@ -703,6 +726,90 @@ function createLineEditor(line, index, billingDocument, rerender) {
         rerender();
     });
     return item;
+}
+
+function normalizeBillingTemplate(template, scope = "company") {
+    return { ...template, id: String(template?.id || ""), section: String(template?.section || "Autres").trim().slice(0, 80) || "Autres", label: String(template?.label || "").trim().slice(0, 160), description: String(template?.description || "").trim().slice(0, 500), unit: String(template?.unit || "unité").trim().slice(0, 40) || "unité", unitPrice: Number(template?.unitPrice) || 0, vatRate: Number(template?.vatRate) || 0, scope };
+}
+
+function sortBillingTemplates(templates) {
+    return [...templates].sort((first, second) => first.section.localeCompare(second.section, "fr") || first.label.localeCompare(second.label, "fr"));
+}
+
+function billingTemplateKey(template) {
+    return `${template.scope === "local" ? "local" : "company"}:${template.id}`;
+}
+
+function availableBillingTemplates() {
+    const company = (billingData?.templates || []).map(template => normalizeBillingTemplate(template, "company"));
+    return sortBillingTemplates([...company, ...(usesLocalBillingTemplates() ? loadLocalBillingTemplates() : [])]);
+}
+
+export function filterBillingTemplates(templates, query) {
+    const normalizedQuery = normalizeText(query);
+    if (!normalizedQuery) return templates;
+    return templates.filter(template => normalizeText(`${template.section} ${template.label} ${template.description} ${template.unit}`).includes(normalizedQuery));
+}
+
+function renderBillingTemplateOptions(templates) {
+    if (!templates.length) return '<option value="">Aucune ligne trouvée</option>';
+    const sections = new Map();
+    templates.forEach(template => {
+        const values = sections.get(template.section) || [];
+        values.push(template);
+        sections.set(template.section, values);
+    });
+    return `<option value="">Ligne libre</option>${[...sections.entries()].map(([section, values]) => `<optgroup label="${escapeHtml(section)}">${values.map(template => `<option value="${escapeHtml(billingTemplateKey(template))}">${escapeHtml(template.label)}${template.scope === "local" ? " · Mon poste" : " · Entreprise"}</option>`).join("")}</optgroup>`).join("")}`;
+}
+
+function billingTemplateSections() {
+    return [...new Set([...BILLING_TEMPLATE_SECTIONS, ...availableBillingTemplates().map(template => template.section)])].sort((first, second) => first.localeCompare(second, "fr"));
+}
+
+function localBillingTemplatesKey() {
+    const clean = value => String(value || "anonymous").replace(/[^a-zA-Z0-9_-]/g, "");
+    return `${LOCAL_BILLING_TEMPLATES_PREFIX}:${clean(document.body.dataset.activeCompanyId || document.body.dataset.accountId)}:${clean(document.body.dataset.userId)}`;
+}
+
+function loadLocalBillingTemplates() {
+    try {
+        const value = JSON.parse(localStorage.getItem(localBillingTemplatesKey()) || "[]");
+        return (Array.isArray(value) ? value : []).slice(0, 200).map(template => normalizeBillingTemplate(template, "local")).filter(template => template.id && template.label);
+    } catch { return []; }
+}
+
+function saveLocalBillingTemplate(template) {
+    try {
+        const templates = loadLocalBillingTemplates();
+        const id = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+        localStorage.setItem(localBillingTemplatesKey(), JSON.stringify([...templates, normalizeBillingTemplate({ ...template, id }, "local")].slice(-200)));
+        return true;
+    } catch { return false; }
+}
+
+function requestBillingTemplateDetails(description) {
+    return new Promise(resolve => {
+        document.querySelector(".billing-template-save-dialog")?.remove();
+        const dialog = document.createElement("section");
+        dialog.className = "client-lifecycle-dialog billing-template-save-dialog";
+        dialog.setAttribute("role", "dialog");
+        dialog.setAttribute("aria-modal", "true");
+        dialog.setAttribute("aria-labelledby", "billingTemplateSaveTitle");
+        dialog.innerHTML = `<div><header><div><p class="eyebrow">${usesLocalBillingTemplates() ? "Catalogue personnel" : "Catalogue entreprise"}</p><h2 id="billingTemplateSaveTitle">Enregistrer une ligne préenregistrée</h2></div><button type="button" class="text-button" data-close-template-save>Fermer</button></header><p class="muted">${usesLocalBillingTemplates() ? "Cette ligne restera uniquement sur ce poste et ne sera pas partagée." : "Cette ligne sera accessible à tous les membres de l’entreprise."}</p><form class="form-grid"><label class="form-wide">Nom de la ligne *<input name="label" maxlength="160" required value="${escapeHtml(description.slice(0, 160))}"></label><label class="form-wide">Section *<input name="section" list="billingTemplateSaveSections" maxlength="80" required value="Prestations" placeholder="Choisir ou saisir une section"><datalist id="billingTemplateSaveSections">${billingTemplateSections().map(section => `<option value="${escapeHtml(section)}"></option>`).join("")}</datalist></label><div class="form-wide client-lifecycle-actions"><button type="button" class="secondary-button" data-close-template-save>Annuler</button><button type="submit" class="secondary-button">Enregistrer</button></div></form></div>`;
+        document.body.appendChild(dialog);
+        let settled = false;
+        const close = value => { if (settled) return; settled = true; dialog.remove(); resolve(value); };
+        dialog.querySelectorAll("[data-close-template-save]").forEach(button => button.addEventListener("click", () => close(null)));
+        dialog.addEventListener("click", event => { if (event.target === dialog) close(null); });
+        dialog.querySelector("form").addEventListener("submit", event => {
+            event.preventDefault();
+            const values = new FormData(event.currentTarget);
+            const label = String(values.get("label") || "").trim();
+            const section = String(values.get("section") || "").trim();
+            if (label && section) close({ label, section });
+        });
+        dialog.querySelector("[name=label]").focus();
+    });
 }
 
 function renderDocumentAids(panel, billingDocument, rerender) {
@@ -920,7 +1027,8 @@ function isFullAdministrator() { return document.body.dataset.role === "admin"; 
 function isTechnicianBillingAllowed() { return !isTechnician() || document.body.dataset.technicianBillingEnabled !== "false"; }
 function canIssueBillingInvoice(document) { const role = globalThis.document.body.dataset.role; return ["admin", "mobile_admin"].includes(role) || (role === "technician" && isTechnicianBillingAllowed() && Boolean(document.appointmentId)); }
 function canRecordInvoiceSettlement(document) { return !isAccountant() && (!isTechnician() || (isTechnicianBillingAllowed() && Boolean(document.appointmentId))); }
-function canCreateSavedBillingLine() { const role = document.body.dataset.role; return role !== "accountant" && (document.body.dataset.deviceType === "desktop" || ["admin", "mobile_admin"].includes(role)); }
+function usesLocalBillingTemplates() { return ["technician", "team_lead"].includes(document.body.dataset.role); }
+function canCreateSavedBillingLine() { const role = document.body.dataset.role; return usesLocalBillingTemplates() || role !== "accountant" && (document.body.dataset.deviceType === "desktop" || ["admin", "mobile_admin"].includes(role)); }
 function canAccessTechnicalReports() {
     try { return JSON.parse(document.body.dataset.organizationFeatures || "{}").technicalReports !== false; }
     catch { return false; }

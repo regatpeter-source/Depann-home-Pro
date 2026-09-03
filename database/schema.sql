@@ -347,6 +347,7 @@ ALTER TABLE depannhome_billing_profiles
 CREATE TABLE IF NOT EXISTS depannhome_billing_templates (
     id BIGSERIAL PRIMARY KEY,
     owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    section VARCHAR(80) NOT NULL DEFAULT 'Autres',
     label VARCHAR(160) NOT NULL,
     description VARCHAR(500) NOT NULL DEFAULT '',
     unit VARCHAR(40) NOT NULL DEFAULT 'unité',
@@ -355,6 +356,9 @@ CREATE TABLE IF NOT EXISTS depannhome_billing_templates (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE depannhome_billing_templates
+    ADD COLUMN IF NOT EXISTS section VARCHAR(80) NOT NULL DEFAULT 'Autres';
 
 -- Modèles personnalisés versionnés. Une seule version peut être active par
 -- entreprise et type de document ; les anciens fichiers restent conservés.
@@ -383,6 +387,8 @@ CREATE INDEX IF NOT EXISTS depannhome_document_templates_owner_idx
 
 CREATE INDEX IF NOT EXISTS depannhome_billing_templates_owner_idx
     ON depannhome_billing_templates (owner_id, LOWER(label));
+CREATE INDEX IF NOT EXISTS depannhome_billing_templates_owner_section_idx
+    ON depannhome_billing_templates (owner_id, LOWER(section), LOWER(label));
 
 CREATE TABLE IF NOT EXISTS depannhome_billing_documents (
     id BIGSERIAL PRIMARY KEY,

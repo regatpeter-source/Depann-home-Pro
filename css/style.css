@@ -4117,6 +4117,18 @@ body.mobile-device[data-role="technician"] .calendar-list-day{
     margin-top:16px;
 }
 
+.billing-template-section-title{
+    margin:14px 0 0;
+    padding:0 0 8px;
+    border-bottom:1px solid var(--border);
+    color:var(--primary);
+    font-size:16px;
+}
+
+.billing-template-section-title:first-child{
+    margin-top:0;
+}
+
 .billing-aids-management{
     margin-top:28px;
     padding-top:24px;
@@ -4199,6 +4211,17 @@ body.mobile-device[data-role="technician"] .calendar-list-day{
     border:1px solid var(--border);
     border-radius:9px;
     background:#fff;
+}
+
+.billing-line-template-picker{
+    display:grid;
+    gap:6px;
+    min-width:0;
+}
+
+.billing-line-template-picker input[type="search"]{
+    border-color:rgba(47,96,125,.45);
+    background:#f8fbff;
 }
 
 .billing-line-total{
@@ -5653,7 +5676,7 @@ footer{
         grid-template-columns:1fr 1fr;
     }
 
-    .billing-line select,
+    .billing-line-template-picker,
     .billing-line input[data-field="description"]{
         grid-column:1/-1;
     }

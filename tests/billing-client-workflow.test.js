@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { filterBillingTemplates } from "../js/billing.js";
 import { canCreateBillingTemplates } from "../server/billing.js";
 
 const billingSource = readFileSync(new URL("../js/billing.js", import.meta.url), "utf8");
@@ -23,11 +24,16 @@ test("administrators can open and close the saved billing line manager", () => {
     assert.doesNotMatch(accountingSource, /\["aids", "Aides financières"\]/);
 });
 
-test("only administrative and Mobile Administrator workstations can save reusable billing lines", () => {
-    assert.match(billingSource, /data-save-billing-template>Préenregistrer/);
-    assert.match(billingSource, /document\.body\.dataset\.deviceType === "desktop" \|\| \["admin", "mobile_admin"\]\.includes\(role\)/);
+test("company billing lines stay server-shared while technicians save personal lines locally", () => {
+    assert.match(billingSource, /data-save-billing-template/);
+    assert.match(billingSource, /usesLocalBillingTemplates\(\) \|\| role !== "accountant"/);
     assert.match(billingSource, /apiRequest\("\/api\/billing\/templates", \{ method: "POST"/);
-    assert.match(billingSource, /billingData\.templates = \[\.\.\.billingData\.templates, result\.data\.template\]/);
+    assert.match(billingSource, /LOCAL_BILLING_TEMPLATES_PREFIX = "depannhome:billing-local-templates"/);
+    assert.match(billingSource, /dataset\.activeCompanyId \|\| document\.body\.dataset\.accountId/);
+    assert.match(billingSource, /document\.body\.dataset\.userId/);
+    assert.match(billingSource, /saveLocalBillingTemplate\(template\)/);
+    assert.match(billingSource, /Mon poste/);
+    assert.match(billingSource, /Entreprise/);
     assert.match(billingServerSource, /app\.post\("\/api\/billing\/templates", requireAuthentication, requireBillingTemplateCreation/);
     assert.match(billingServerSource, /app\.delete\("\/api\/billing\/templates\/:templateId", requireAuthentication, requireBillingAdministration/);
     assert.equal(canCreateBillingTemplates({ role: "pc_standard", deviceType: "desktop" }), true);
@@ -36,8 +42,23 @@ test("only administrative and Mobile Administrator workstations can save reusabl
     assert.equal(canCreateBillingTemplates({ role: "technician", deviceType: "mobile" }), false);
     assert.equal(canCreateBillingTemplates({ role: "team_lead", deviceType: "mobile" }), false);
     assert.equal(canCreateBillingTemplates({ role: "accountant", deviceType: "desktop" }), false);
-    assert.match(billingSource, /<select aria-label="Ligne préenregistrée"/);
+    assert.match(billingSource, /data-billing-template-select aria-label="Ligne préenregistrée"/);
     assert.match(billingSource, /id="addBillingLine">\+ Ligne libre/);
+});
+
+test("saved billing lines are sectioned and searchable by keyword", () => {
+    const templates = [
+        { section: "Déplacements", label: "Forfait route", description: "Trajet client", unit: "forfait" },
+        { section: "Fournitures", label: "Pompe", description: "Circulateur chauffage", unit: "pièce" }
+    ];
+    assert.deepEqual(filterBillingTemplates(templates, "chauffage"), [templates[1]]);
+    assert.deepEqual(filterBillingTemplates(templates, "deplacement"), [templates[0]]);
+    assert.match(billingSource, /type="search" data-billing-template-search/);
+    assert.match(billingSource, /<optgroup label=/);
+    assert.match(billingSource, /name="section" list="billingTemplateSections"/);
+    assert.match(billingServerSource, /section VARCHAR\(80\) NOT NULL DEFAULT 'Autres'/);
+    assert.match(billingServerSource, /SELECT id, section, label, description/);
+    assert.match(billingServerSource, /INSERT INTO depannhome_billing_templates \(owner_id, section, label/);
 });
 
 test("saved quotes and invoices open the client before offering email or print", () => {
