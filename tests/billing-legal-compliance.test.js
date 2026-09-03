@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 const serverSource = readFileSync(new URL("../server/billing.js", import.meta.url), "utf8");
 const schemaSource = readFileSync(new URL("../database/schema.sql", import.meta.url), "utf8");
 const clientSource = readFileSync(new URL("../js/billing.js", import.meta.url), "utf8");
+const clientsSource = readFileSync(new URL("../js/clients.js", import.meta.url), "utf8");
 const accountingSource = readFileSync(new URL("../server/accounting.js", import.meta.url), "utf8");
 const templateSource = readFileSync(new URL("../server/document-templates.js", import.meta.url), "utf8");
 
@@ -39,6 +40,10 @@ test("l’éditeur envoie un legalData nettoyé et conserve les valeurs du clien
     assert.match(clientSource, /billingDocumentPayload\(form, billingDocument\)/);
     assert.match(clientSource, /legalData: normalizeLegalData\(quote\.legalData/);
     assert.match(clientSource, /client\.siren \|\| client\.companySiren/);
+    assert.match(clientsSource, /name="interventionAddress"/);
+    assert.match(clientsSource, /interventionAddress: client\.interventionAddress/);
+    assert.match(clientSource, /client\.interventionAddress \|\| client\.deliveryAddress/);
+    assert.match(clientSource, /normalizeComparableAddress\(interventionAddress\) !== normalizeComparableAddress\(billingAddress\)/);
     assert.match(serverSource, /function sanitizeLegalData/);
     assert.match(serverSource, /OPERATION_CATEGORIES\.has\(input\.operationCategory\)/);
     assert.match(serverSource, /cleanIdentifier\(input\.customerSiren, 20, true\)/);
@@ -57,14 +62,14 @@ test("les insertions et mises à jour persistent l’instantané légal et l’�
 });
 
 test("la sortie PDF intégrée contient les mentions B2B et conserve la franchise 293 B", () => {
-    for (const mention of ["Date de livraison / prestation", "Bon de commande", "Réf. dossier assureur", "Mandat", "Adresse de livraison", "SIREN", "TVA intracom.", "Aucun escompte pour paiement anticipé", "trois fois le taux d’intérêt légal", "Indemnité forfaitaire pour frais de recouvrement", "TVA acquittée sur les débits"]) assert.match(serverSource, new RegExp(mention));
+    for (const mention of ["Date de livraison / prestation", "Bon de commande", "Réf. dossier assureur", "Mandat", "Lieu ou adresse d’intervention", "SIREN", "TVA intracom.", "Aucun escompte pour paiement anticipé", "trois fois le taux d’intérêt légal", "Indemnité forfaitaire pour frais de recouvrement", "TVA acquittée sur les débits"]) assert.match(serverSource, new RegExp(mention));
     assert.match(serverSource, /TVA non applicable, art\. 293 B du CGI/);
     assert.match(serverSource, /normalizeAddress\(legalData\.deliveryAddress\) !== normalizeAddress/);
 });
 
 test("les profils et modèles personnalisés proposent les mentions légales", () => {
     for (const name of ["earlyPaymentDiscountTerms", "latePaymentPenaltyTerms", "recoveryIndemnityCents", "vatOnDebits"]) assert.match(clientSource, new RegExp(`name="${name}"`));
-    for (const field of ["client.siren", "client.vat", "client.deliveryAddress", "document.serviceDate", "document.purchaseOrderReference", "document.insuranceDossier", "document.mandateNumber", "document.operationCategory"]) assert.match(templateSource, new RegExp(field.replaceAll(".", "\\.")));
+    for (const field of ["client.siren", "client.vat", "client.interventionAddress", "client.deliveryAddress", "client.adresse_intervention", "document.serviceDate", "document.purchaseOrderReference", "document.insuranceDossier", "document.mandateNumber", "document.operationCategory"]) assert.match(templateSource, new RegExp(field.replaceAll(".", "\\.")));
 });
 
 test("la route UBL sert uniquement les factures et avoirs émis et réutilise l’archive", () => {

@@ -1,5 +1,5 @@
 import { ROUTES } from "./config.js?v=116";
-import { getSearchableClients } from "./clients.js?v=160";
+import { getSearchableClients } from "./clients.js?v=161";
 import { addClientActivityByName } from "./client-sync.js?v=126";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
@@ -173,11 +173,11 @@ function renderOverview(panel, profilePanel) {
     panel.querySelector("[data-billing-action=new-quote]")?.addEventListener("click", () => { if (!isAccountant()) openNewDocument("quote"); });
     panel.querySelector("[data-billing-action=new-invoice]").addEventListener("click", () => { if (!isAccountant()) openNewDocument("invoice"); });
     panel.querySelector("[data-billing-action=open-leak-reports]")?.addEventListener("click", async () => {
-        const { renderLeakReportWizard } = await import("./leak-report-wizard.js?v=43");
+        const { renderLeakReportWizard } = await import("./leak-report-wizard.js?v=44");
         renderLeakReportWizard();
     });
     panel.querySelector("[data-billing-action=new-leak-report]")?.addEventListener("click", async () => {
-        const { openLeakReportCreation } = await import("./leak-report-wizard.js?v=43");
+        const { openLeakReportCreation } = await import("./leak-report-wizard.js?v=44");
         openLeakReportCreation();
     });
     panel.querySelector("[data-billing-action=download-quote-template]")?.addEventListener("click", openQuoteTemplateDownload);
@@ -186,7 +186,7 @@ function renderOverview(panel, profilePanel) {
     panel.querySelector("[data-billing-action=preview-blank-quote]")?.addEventListener("click", openBlankQuotePreview);
     panel.querySelector("[data-billing-action=manage-line-templates]")?.addEventListener("click", () => renderBilling({ templates: true }));
     panel.querySelector("[data-billing-action=open-purchases]")?.addEventListener("click", async () => {
-        const { renderPurchases } = await import("./purchases.js?v=122");
+        const { renderPurchases } = await import("./purchases.js?v=123");
         renderPurchases();
     });
 }
@@ -466,7 +466,7 @@ function renderDocumentEditor(panel) {
                 <label class="form-wide">Adresse de facturation<textarea name="customerAddress" rows="2" maxlength="500" placeholder="Adresse de facturation">${escapeHtml(document.customerAddress)}</textarea></label>
                 <label>SIREN du client<input name="customerSiren" inputmode="numeric" maxlength="20" value="${escapeHtml(document.legalData.customerSiren)}"></label>
                 <label>N° TVA du client<input name="customerVatNumber" maxlength="40" value="${escapeHtml(document.legalData.customerVatNumber)}"></label>
-                <label class="form-wide">Adresse de livraison<textarea name="deliveryAddress" rows="2" maxlength="500" placeholder="Uniquement si différente de l’adresse de facturation">${escapeHtml(document.legalData.deliveryAddress)}</textarea></label>
+                <label class="form-wide">Lieu ou adresse d’intervention<textarea name="deliveryAddress" rows="2" maxlength="500" placeholder="Uniquement si différent de l’adresse de facturation">${escapeHtml(document.legalData.deliveryAddress)}</textarea></label>
                 <label>Date de livraison / prestation<input name="serviceDate" type="date" value="${escapeHtml(document.legalData.serviceDate)}"></label>
                 <label>Référence du bon de commande<input name="purchaseOrderReference" maxlength="80" value="${escapeHtml(document.legalData.purchaseOrderReference)}"></label>
                 <label>Réf. intervention partenaire<input name="interventionReference" maxlength="160" value="${escapeHtml(document.legalData.interventionReference)}"></label>
@@ -984,14 +984,14 @@ function fillCustomerAddress(input, form, clients) {
     if (values.billingAddress) form.querySelector("[name=customerAddress]").value = values.billingAddress;
     for (const field of ["customerSiren", "customerVatNumber", "deliveryAddress", "serviceDate", "purchaseOrderReference", "interventionReference", "insuranceDossier", "mandateNumber", "claimNumber", "insuredNumber", "principal", "manager", "expert", "operationCategory"]) {
         if (field === "operationCategory" && !client.operationCategory) continue;
-        if (values[field] && form.elements[field]) form.elements[field].value = values[field];
+        if (form.elements[field] && (field === "deliveryAddress" || values[field])) form.elements[field].value = values[field];
     }
 }
 
 function emptyLine() { return { description: "", quantity: 1, unit: "unité", unitPrice: 0, vatRate: isVatFranchise() ? 0 : 20 }; }
 function normalizeDocument(document) { const vatRegime = document.vatRegime || billingData?.profile?.vatRegime || "standard"; return { ...document, vatRegime, issuerTaxNumber: document.issuerTaxNumber || billingData?.profile?.taxNumber || "", clientId: document.clientId || "", appointmentId: document.appointmentId || "", sourceQuoteId: document.sourceQuoteId || "", correctionSourceId: document.correctionSourceId || "", correctionKind: document.correctionKind || "none", correctionSourceNumber: document.correctionSourceNumber || "", quoteReference: document.quoteReference || "", isEmailSent: Boolean(document.isEmailSent), isAccounted: Boolean(document.isAccounted), legalData: normalizeLegalData(document.legalData, document.customerAddress || ""), financialData: normalizeFinancialData(document.financialData), lines: Array.isArray(document.lines) && document.lines.length ? document.lines.map(line => ({ ...emptyLine(), ...line, vatRate: vatRegime === "franchise" ? 0 : Number(line.vatRate) || 0 })) : [emptyLine()] }; }
 function normalizeLegalData(value, billingAddress = "") { return { customerSiren: value?.customerSiren || "", customerVatNumber: value?.customerVatNumber || "", billingAddress: value?.billingAddress || billingAddress, deliveryAddress: value?.deliveryAddress || "", serviceDate: value?.serviceDate || "", purchaseOrderReference: value?.purchaseOrderReference || "", interventionReference: value?.interventionReference || "", insuranceDossier: value?.insuranceDossier || "", mandateNumber: value?.mandateNumber || "", claimNumber: value?.claimNumber || "", insuredNumber: value?.insuredNumber || "", principal: value?.principal || "", manager: value?.manager || "", expert: value?.expert || "", operationCategory: ["goods", "services", "mixed"].includes(value?.operationCategory) ? value.operationCategory : "services" }; }
-function legalDataFromClient(client) { if (!client) return normalizeLegalData(); const billingAddress = [client.billingAddress || client.address, client.postalCode, client.city].filter(Boolean).join(", "); return normalizeLegalData({ customerSiren: client.siren || client.companySiren || "", customerVatNumber: client.vatNumber || client.taxNumber || client.companyVatNumber || "", billingAddress, deliveryAddress: client.deliveryAddress || "", serviceDate: client.serviceDate || "", purchaseOrderReference: client.purchaseOrderReference || "", interventionReference: client.interventionReference || "", insuranceDossier: client.insuranceDossier || "", mandateNumber: client.mandateNumber || client.mandate || "", claimNumber: client.claimNumber || client.claim || "", insuredNumber: client.insuredNumber || "", principal: client.principal || "", manager: client.manager || client.caseManager || "", expert: client.expert || "", operationCategory: client.operationCategory || "services" }, billingAddress); }
+function legalDataFromClient(client) { if (!client) return normalizeLegalData(); const billingAddress = [client.billingAddress || client.address, client.postalCode, client.city].filter(Boolean).join(", "); const interventionAddress = client.interventionAddress || client.deliveryAddress || ""; const deliveryAddress = normalizeComparableAddress(interventionAddress) !== normalizeComparableAddress(billingAddress) ? interventionAddress : ""; return normalizeLegalData({ customerSiren: client.siren || client.companySiren || "", customerVatNumber: client.vatNumber || client.taxNumber || client.companyVatNumber || "", billingAddress, deliveryAddress, serviceDate: client.serviceDate || "", purchaseOrderReference: client.purchaseOrderReference || "", interventionReference: client.interventionReference || "", insuranceDossier: client.insuranceDossier || "", mandateNumber: client.mandateNumber || client.mandate || "", claimNumber: client.claimNumber || client.claim || "", insuredNumber: client.insuredNumber || "", principal: client.principal || "", manager: client.manager || client.caseManager || "", expert: client.expert || "", operationCategory: client.operationCategory || "services" }, billingAddress); }
 function billingDocumentPayload(form, billingDocument) { const values = formDataToObject(new FormData(form)); const referenceFields = ["interventionReference", "insuranceDossier", "mandateNumber", "claimNumber", "insuredNumber", "principal", "manager", "expert"]; const legalData = normalizeLegalData({ customerSiren: values.customerSiren, customerVatNumber: values.customerVatNumber, billingAddress: values.customerAddress, deliveryAddress: values.deliveryAddress, serviceDate: values.serviceDate, purchaseOrderReference: values.purchaseOrderReference, ...Object.fromEntries(referenceFields.map(field => [field, values[field]])), operationCategory: values.operationCategory }, values.customerAddress); for (const key of ["customerSiren", "customerVatNumber", "deliveryAddress", "serviceDate", "purchaseOrderReference", ...referenceFields, "operationCategory"]) delete values[key]; return { ...values, legalData, lines: billingDocument.lines, financialData: billingDocument.financialData }; }
 function emptyFinancialData() { return { discountMode: "fixed", discountAmount: 0, depositAmount: 0, conditions: "", comments: "", aids: [] }; }
 function normalizeFinancialData(value) { return { ...emptyFinancialData(), discountMode: value?.discountMode === "percentage" ? "percentage" : "fixed", discountAmount: Number(value?.discountAmount) || 0, depositAmount: Number(value?.depositAmount) || 0, conditions: value?.conditions || "", comments: value?.comments || "", aids: Array.isArray(value?.aids) ? value.aids.filter(aid => aid?.name).map(toAidSnapshot) : [] }; }
@@ -1005,6 +1005,7 @@ function calculateTotals(lines) { const ht = lines.reduce((sum, line) => sum + l
 function calculateNetPayable(lines, financialData = {}) { const totals = calculateTotals(lines || []); const discount = Math.min(totals.ht, financialData.discountMode === "percentage" ? totals.ht * Number(financialData.discountAmount || 0) / 100 : Number(financialData.discountAmount || 0)); const vat = totals.ht ? totals.vat * (totals.ht - discount) / totals.ht : 0; const ttc = totals.ht - discount + vat; const aids = (financialData.aids || []).reduce((sum, aid) => sum + (aid.calculationMode === "percentage" ? (totals.ht - discount) * Number(aid.amount || 0) / 100 : Number(aid.amount || 0)), 0); return Math.max(0, ttc - Math.min(ttc, aids)); }
 function formatMoney(value) { return new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" }).format(Number(value) || 0); }
 function formatNumber(value) { return new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 2 }).format(Number(value) || 0); }
+function normalizeComparableAddress(value) { return normalizeText(value).replace(/[^a-z0-9]/g, ""); }
 function documentStatusLabel(value) { return ({ draft: "Brouillon", sent: "Envoyé", validated: "Validé", paid: "Réglé", issued: "Émis", cancelled: "Annulé", accepted: "Accepté", rejected: "Refusé", pending: "En attente" })[String(value || "").toLowerCase()] || "Non renseigné"; }
 function formatDate(value) { return value ? new Intl.DateTimeFormat("fr-FR").format(new Date(`${value}T12:00:00`)) : "Date non renseignée"; }
 function formatBillingPeriod(value) {

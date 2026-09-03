@@ -20,6 +20,7 @@ const EMPTY_CLIENT = {
     email: "",
     address: "",
     city: "",
+    interventionAddress: "",
     interventionReference: "",
     insurance: "",
     insuranceDossier: "",
@@ -352,6 +353,12 @@ function renderClientForm(client, options = {}) {
                     <input name="city" placeholder="Ville" value="${escapeHtml(client.city)}">
                 </label>
 
+                <label class="form-wide">
+                    Lieu ou adresse d’intervention
+                    <input name="interventionAddress" maxlength="500" placeholder="À renseigner uniquement si différent de l’adresse de facturation" value="${escapeHtml(client.interventionAddress || "")}">
+                    <small>Cette adresse sera reprise automatiquement sur les devis et factures lorsqu’elle diffère de l’adresse de facturation.</small>
+                </label>
+
                 <fieldset class="form-wide team-permissions-fieldset">
                     <legend>Assurance / mission partenaire</legend>
                     <p class="muted">Ces références sont reprises automatiquement sur les rapports, devis, factures et autres documents liés.</p>
@@ -597,6 +604,7 @@ function renderClientDetail(client, options = {}) {
             <span> ${escapeHtml(client.email || "Non renseigné")}</span>
             <span> ${escapeHtml(formatClientLocation(client))}</span>
         </div>
+        ${hasDistinctInterventionAddress(client) ? `<section class="procedure-section"><h3>Lieu ou adresse d’intervention</h3><p>${escapeHtml(client.interventionAddress)}</p></section>` : ""}
         ${(client.interventionReference || client.insurance || client.insuranceDossier || client.insuranceDeductibleAmountCents || client.mandateNumber || client.claimNumber || client.insuredNumber || client.principal || client.manager || client.expert) ? `<section class="procedure-section"><h3>Assurance / mission partenaire</h3>${client.insuranceDeductibleAmountCents ? `<p class="client-deductible-highlight"><strong>Franchise prévue :</strong> ${escapeHtml(formatClientMoney(client.insuranceDeductibleAmountCents))}<br><small>Montant indicatif à vérifier avec le client lors de l’encaissement.</small></p>` : ""}<div class="procedure-meta">${[["Réf. intervention partenaire", client.interventionReference], ["Assurance", client.insurance], ["Réf. dossier assureur", client.insuranceDossier], ["Mandat", client.mandateNumber || client.mandate], ["Sinistre", client.claimNumber || client.claim], ["N° sociétaire / assuré", client.insuredNumber], ["Mandant / donneur d’ordre", client.principal], ["Gestionnaire", client.manager || client.caseManager], ["Expert", client.expert]].filter(([, value]) => value).map(([label, value]) => `<span><strong>${label} :</strong> ${escapeHtml(value)}</span>`).join("")}</div></section>` : ""}
         <section class="procedure-section">
             <h3> Équipements</h3>
@@ -849,6 +857,7 @@ async function readClientForm(form, previousClient = EMPTY_CLIENT) {
         email: String(formData.get("email") || "").trim(),
         address: String(formData.get("address") || "").trim(),
         city: String(formData.get("city") || "").trim(),
+        interventionAddress: String(formData.get("interventionAddress") || "").trim(),
         interventionReference: String(formData.get("interventionReference") || "").trim(),
         insurance: String(formData.get("insurance") || "").trim(),
         insuranceDossier: String(formData.get("insuranceDossier") || "").trim(),
@@ -949,6 +958,7 @@ export function getSearchableClients() {
         email: client.email,
         address: client.address,
         city: client.city,
+        interventionAddress: client.interventionAddress,
         interventionReference: client.interventionReference,
         insurance: client.insurance,
         insuranceDossier: client.insuranceDossier,
@@ -1144,8 +1154,16 @@ function formatClientLocation(client) {
     return [client.address, client.city].filter(Boolean).join(", ") || "Adresse non renseignée";
 }
 
+function hasDistinctInterventionAddress(client) {
+    return Boolean(client.interventionAddress) && normalizeComparableAddress(client.interventionAddress) !== normalizeComparableAddress(formatClientLocation(client));
+}
+
+function normalizeComparableAddress(value) {
+    return normalizeText(value).replace(/[^a-z0-9]/g, "");
+}
+
 function getClientNavigationHref(client) {
-    const address = [client.address, client.city].filter(Boolean).join(", ").trim();
+    const address = (hasDistinctInterventionAddress(client) ? client.interventionAddress : [client.address, client.city].filter(Boolean).join(", ")).trim();
     return address ? `geo:0,0?q=${encodeURIComponent(address)}` : "";
 }
 

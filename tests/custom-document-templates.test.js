@@ -79,6 +79,14 @@ test("les modèles personnalisés conservent toutes les références assurance",
     for (const [field, value] of Object.entries(references)) assert.equal(quitusModel.document[field], value);
 });
 
+test("les modèles personnalisés exposent le lieu d’intervention avec les alias historiques", () => {
+    const model = buildBillingCustomModel({ ...quote, legalData: { deliveryAddress: "8 rue du Chantier, Nantes" } }, profile);
+    assert.equal(model.client.interventionAddress, "8 rue du Chantier, Nantes");
+    assert.equal(model.client.deliveryAddress, model.client.interventionAddress);
+    assert.equal(model.client.adresse_intervention, model.client.interventionAddress);
+    assert.equal(model.client.adresse_livraison, model.client.interventionAddress);
+});
+
 test("invoice data never inherits the quote number", () => {
     const invoice = buildBillingCustomModel({ ...quote, documentType: "invoice", documentNumber: "F-2026-001", dueDate: "2026-09-17" }, profile);
     assert.equal(invoice.INVOICE_NUMBER, "F-2026-001");
