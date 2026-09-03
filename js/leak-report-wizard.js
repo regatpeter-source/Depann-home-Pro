@@ -26,6 +26,7 @@ let library = [];
 let materialCatalog = [];
 let current = null;
 let corrections = [];
+let originals = [];
 let reportLock = null;
 let previewMode = false;
 let reportPreviewUrl = "";
@@ -87,8 +88,8 @@ export function openLeakReportCreation() {
     dialog.innerHTML = `<div><header><div><p class="eyebrow">Nouveau rapport</p><h2>Rapport de recherche de fuite</h2></div><button type="button" class="text-button" data-close-report-creation>Fermer</button></header><p class="muted">Un rapport est toujours rattaché à une intervention et au dossier client correspondant.</p><div class="report-creation-options"><button type="button" data-report-from-appointment><strong>Choisir une intervention</strong><span>Ouvrez une intervention existante pour créer ou reprendre son rapport.</span></button><button type="button" data-create-client-first><strong>Créer d’abord un client</strong><span>Créez le dossier client, planifiez son intervention, puis ouvrez le rapport depuis le planning.</span></button></div></div>`;
     document.body.append(dialog);
     dialog.querySelector("[data-close-report-creation]").addEventListener("click", () => dialog.remove());
-    dialog.querySelector("[data-report-from-appointment]").addEventListener("click", async () => { dialog.remove(); const { renderCalendar } = await import("./calendar.js?v=197"); renderCalendar(); });
-    dialog.querySelector("[data-create-client-first]").addEventListener("click", async () => { dialog.remove(); const { renderClients } = await import("./clients.js?v=161"); renderClients(); });
+    dialog.querySelector("[data-report-from-appointment]").addEventListener("click", async () => { dialog.remove(); const { renderCalendar } = await import("./calendar.js?v=198"); renderCalendar(); });
+    dialog.querySelector("[data-create-client-first]").addEventListener("click", async () => { dialog.remove(); const { renderClients } = await import("./clients.js?v=162"); renderClients(); });
 }
 
 async function openAppointmentReport(appointmentId) {
@@ -105,6 +106,7 @@ async function loadReport(reportId) {
     if (!result.ok) return alert(result.message || "Rapport introuvable.");
     current = result.data.report;
     corrections = result.data.corrections || [];
+    originals = result.data.originals || [];
     reportLock = result.data.lock || null;
     previewMode = false;
     ensureModularContent();
@@ -162,6 +164,7 @@ function renderEditor(shell) {
             <button type="button" class="secondary-button report-editor-home-button" data-report-home>Accueil</button>
         </header>
         ${lockBanner()}
+        ${originals.length ? `<section class="report-editor-corrections"><strong>Copies originales conservées</strong><p>Chaque PDF ci-dessous correspond à une version validée avant sa remise en brouillon.</p>${originals.map(original => `<p><a class="secondary-button" href="/api/technical-reports/${encodeURIComponent(current.id)}/originals/${encodeURIComponent(original.id)}/pdf" target="_blank" rel="noopener">Ouvrir l’original v${escapeHtml(original.revision)}</a> <span>Validé le ${escapeHtml(formatDateTime(original.validatedAt))}${original.reopenedBy ? ` · remis en brouillon par ${escapeHtml(original.reopenedBy)}` : ""}</span></p>`).join("")}</section>` : ""}
         ${corrections.length ? `<section class="report-editor-corrections"><strong>Commentaires de l’administration</strong>${corrections.map(item => `<p><b>${escapeHtml(moduleDefinition(item.section)?.[1] || "Page")}</b> · ${escapeHtml(item.comment)}</p>`).join("")}</section>` : ""}
         <nav class="report-module-nav" aria-label="Pages du rapport">${visibleSections().map((section, index) => `<button type="button" draggable="${write && !["general", "presentation"].includes(section.id) ? "true" : "false"}" class="${section.id === activeKey ? "active" : ""}${moduleUsed(section.id) ? " used" : ""}" data-module="${escapeHtml(section.id)}"><span>${index + 1}</span><b>${escapeHtml(section.title)}</b></button>`).join("")}</nav>
         <main class="report-editor-main">
@@ -709,7 +712,7 @@ async function requestCorrection(shell) {
 }
 
 async function reopenReport(shell) {
-    if (!confirm("Réouvrir ce rapport supprimera son PDF officiel afin de permettre une nouvelle édition.")) return;
+    if (!confirm("Remettre ce rapport en brouillon ? Une copie immuable du PDF original sera conservée avant toute nouvelle modification.")) return;
     const lock = await acquireReportLock(current.id);
     if (!lock.ok) return alert(lock.message || "Réouverture impossible : le rapport est utilisé par un autre membre.");
     reportLock = lock.data?.lock || reportLock;
@@ -772,7 +775,7 @@ function startTimers(shell) {
 }
 
 function stopTimers() { clearTimeout(saveTimer); clearInterval(heartbeatTimer); clearInterval(periodicTimer); saveTimer = heartbeatTimer = periodicTimer = null; }
-async function leaveReport() { stopTimers(); clearReportPreviewUrl(); if (current && ownsLock()) await releaseReportLock(current.id); current = null; reportLock = null; previewMode = false; document.body.classList.remove("report-writing-active"); }
+async function leaveReport() { stopTimers(); clearReportPreviewUrl(); if (current && ownsLock()) await releaseReportLock(current.id); current = null; originals = []; reportLock = null; previewMode = false; document.body.classList.remove("report-writing-active"); }
 async function forceTakeover() { if (!isAdministrator() || !confirm("Reprendre la main sur ce rapport ?")) return; const result = await forceReleaseReportLock(current.id, "Reprise de l’édition du rapport"); if (!result.ok) return alert(result.message || "Reprise impossible."); await acquireLock(); const shell = document.querySelector(".report-editor-shell"); if (shell) renderEditor(shell); }
 
 async function recoverReportLock() {
@@ -810,7 +813,7 @@ function bindCollaborationEvents() {
         if (!["report_saved", "report_media_added", "report_media_updated", "report_media_deleted", "report_proofread", "report_submitted", "report_correction_requested", "report_validated", "report_reopened", "lock_force_released"].includes(detail.type)) return;
         const result = await api(`/api/technical-reports/${encodeURIComponent(current.id)}`);
         if (!result.ok) return;
-        current = result.data.report; corrections = result.data.corrections || []; reportLock = result.data.lock || null; ensureModularContent();
+        current = result.data.report; corrections = result.data.corrections || []; originals = result.data.originals || []; reportLock = result.data.lock || null; ensureModularContent();
         const shell = document.querySelector(".report-editor-shell");
         if (shell) renderEditor(shell);
     });
@@ -841,9 +844,10 @@ function canAdjustPdfLayout() { return document.body.classList.contains("desktop
 function canProofreadReport() { return canAdjustPdfLayout() && ["admin", "pc_standard"].includes(document.body.dataset.role); }
 function canFinalizeReport() { return canProofreadReport(); }
 function canReopenReport() { return canProofreadReport(); }
-function canCancelReport() { return canProofreadReport(); }
+function canCancelReport() { return canProofreadReport() && originals.length === 0; }
 function statusLabel(value) { return ({ draft: "Brouillon", submitted: "Rapport terminé à corriger", in_correction: "Correction demandée", ready_to_send: "À envoyer", validated: "Envoyé" })[value] || "En cours"; }
 function formatDate(value) { return value ? new Intl.DateTimeFormat("fr-FR").format(new Date(`${value}T12:00:00`)) : ""; }
+function formatDateTime(value) { return value ? new Intl.DateTimeFormat("fr-FR", { dateStyle: "short", timeStyle: "short" }).format(new Date(value)) : "date inconnue"; }
 function showFailure(root, message) { root.innerHTML = `<section class="client-panel"><p class="auth-message error">${escapeHtml(message || "Impossible de charger les rapports.")}</p></section>`; }
 async function api(url, options = {}) { try { const response = await fetch(url, { credentials: "same-origin", headers: { "Content-Type": "application/json", ...(options.headers || {}) }, ...options }); const data = response.status === 204 ? null : await response.json().catch(() => null); return { ok: response.ok, data, message: data?.message }; } catch { return { ok: false, message: "Serveur indisponible." }; } }
 async function upload(url, body) { try { const response = await fetch(url, { method: "POST", credentials: "same-origin", body }); const data = await response.json().catch(() => null); return { ok: response.ok, data, message: data?.message }; } catch { return { ok: false, message: "Serveur indisponible." }; } }

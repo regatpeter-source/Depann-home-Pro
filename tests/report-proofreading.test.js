@@ -5,6 +5,8 @@ import { canConfirmReportProofreading, isReportProofreadingCurrent, reportProofr
 import { normalizeLeakContent } from "../server/leak-report-template.js";
 
 const serverSource = readFileSync(new URL("../server/technical-reports.js", import.meta.url), "utf8");
+const schemaSource = readFileSync(new URL("../database/schema.sql", import.meta.url), "utf8");
+const originalsMigrationSource = readFileSync(new URL("../database/migrations/0005_technical_report_originals.sql", import.meta.url), "utf8");
 const editorSource = readFileSync(new URL("../js/leak-report-wizard.js", import.meta.url), "utf8");
 const deliverySource = readFileSync(new URL("../js/document-delivery.js", import.meta.url), "utf8");
 const clientsServerSource = readFileSync(new URL("../server/clients.js", import.meta.url), "utf8");
@@ -32,6 +34,11 @@ test("only authorized administrative roles can confirm report proofreading", () 
     assert.equal(canConfirmReportProofreading("technician", "desktop"), false);
     assert.equal(canConfirmReportProofreading("team_lead", "desktop"), false);
     assert.equal(canConfirmReportProofreading("admin", "mobile"), false);
+});
+
+test("an authorized PC can edit a reopened draft alongside its technician", () => {
+    assert.match(serverSource, /isOwnerOrAdministration = \["admin", "mobile_admin"\]\.includes\(request\.user\.role\) \|\| canConfirmReportProofreading\(request\.user\?\.role, request\.user\?\.deviceType\) \|\| Number\(report\.createdBy\) === Number\(request\.user\.sub\)/);
+    assert.match(serverSource, /\["draft", "in_correction"\]\.includes\(report\.status\)/);
 });
 
 test("proofreading remains current when only editor navigation changes", () => {
@@ -192,13 +199,44 @@ test("validated report attachments reference the canonical PDF without duplicati
 test("a validated report can be reopened for a complete correction and validation cycle", () => {
     assert.match(serverSource, /app\.post\("\/api\/technical-reports\/:reportId\/reopen", requireReportProofreadingAccess/);
     assert.match(serverSource, /report\.status !== "validated"/);
+    assert.match(serverSource, /findReport\(ownerId, positiveId\(request\.params\.reportId\), request, true\)/);
+    assert.match(serverSource, /INSERT INTO depannhome_technical_report_originals/);
+    assert.ok(serverSource.indexOf("INSERT INTO depannhome_technical_report_originals") < serverSource.indexOf("SET status='draft', submitted_at=NULL"));
+    assert.match(serverSource, /crypto\.createHash\("sha256"\)\.update\(report\.pdfData\)/);
     assert.match(serverSource, /SET status='draft', submitted_at=NULL, proofread_at=NULL, proofread_by=NULL, proofread_fingerprint='', pdf_data=NULL, pdf_filename='', validated_at=NULL, validated_by=NULL/);
-    assert.match(serverSource, /removeReopenedReportFromClient\(connection, ownerId, report/);
+    assert.match(serverSource, /preserveReopenedReportOriginalInClient\(connection, ownerId, report, original/);
     assert.match(serverSource, /String\(item\?\.reportId \|\| ""\) === String\(report\.id\)/);
+    assert.match(serverSource, /reportOriginalId: String\(original\.id\)/);
     assert.match(serverSource, /type: "technical_report_reopened"/);
     assert.match(serverSource, /partner_visible=FALSE/);
     assert.match(editorSource, /canReopenReport\(\) && current\.status === "validated"/);
     assert.match(editorSource, /Remettre en brouillon/);
+    assert.match(editorSource, /copie immuable du PDF original sera conservée/);
+});
+
+test("each reopened report keeps an immutable and accessible original copy", () => {
+    for (const source of [schemaSource, originalsMigrationSource]) {
+        assert.match(source, /CREATE TABLE IF NOT EXISTS depannhome_technical_report_originals/);
+        assert.match(source, /UNIQUE \(owner_id, report_id, revision\)/);
+        assert.match(source, /pdf_data BYTEA NOT NULL/);
+        assert.match(source, /pdf_sha256 CHAR\(64\) NOT NULL/);
+        assert.match(source, /CREATE TRIGGER depannhome_technical_report_original_immutable/);
+        assert.match(source, /BEFORE UPDATE OR DELETE/);
+    }
+    assert.match(serverSource, /originals: await loadReportOriginals/);
+    assert.match(serverSource, /\/originals\/:originalId\/pdf/);
+    assert.match(serverSource, /Ce rapport possède une copie originale immuable et ne peut pas être annulé/);
+    assert.match(editorSource, /Copies originales conservées/);
+    assert.match(editorSource, /Ouvrir l’original v/);
+    assert.match(editorSource, /originals\.length === 0/);
+});
+
+test("the client file keeps its original report attachment after reopening", () => {
+    assert.match(clientsServerSource, /const reportOriginalId = positiveId\(attachment\?\.reportOriginalId\)/);
+    assert.match(clientsServerSource, /FROM depannhome_technical_report_originals original/);
+    assert.match(clientsServerSource, /report\.client_id=\$3/);
+    assert.match(clientsEditorSource, /reportOriginalId: attachment\.reportOriginalId \|\| ""/);
+    assert.match(clientsEditorSource, /reportRevision: Number\(attachment\.reportRevision\) \|\| 0/);
 });
 
 test("mobile report preview renders PDF pages without relying on iframe support", () => {

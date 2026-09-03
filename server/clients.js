@@ -13,7 +13,7 @@ const MAX_CLIENT_ATTACHMENTS = 30;
 const MAX_ATTACHMENT_SIZE = 4 * 1024 * 1024;
 const MAX_ATTACHMENTS_PER_UPLOAD = 5;
 const MAX_DELETED_ATTACHMENT_IDS = 500;
-const ATTACHMENT_TYPES = new Set(["Devis", "Facture", "Quitus", "Rapport fuite", "Photo", "Photo avant", "Photo après", "Autre"]);
+const ATTACHMENT_TYPES = new Set(["Devis", "Facture", "Quitus", "Rapport fuite", "Rapport fuite · Original", "Photo", "Photo avant", "Photo après", "Autre"]);
 const ALLOWED_ATTACHMENT_EXTENSIONS = new Set([".pdf", ".doc", ".docx", ".xls", ".xlsx", ".txt", ".jpg", ".jpeg", ".png", ".webp"]);
 const attachmentUpload = multer({
     storage: multer.memoryStorage(),
@@ -809,6 +809,17 @@ function decodeAttachmentDataUrl(value) {
 async function loadClientAttachmentContent(database, ownerId, clientId, attachment) {
     const embedded = decodeAttachmentDataUrl(attachment?.dataUrl);
     if (embedded) return embedded;
+    const reportOriginalId = positiveId(attachment?.reportOriginalId);
+    if (reportOriginalId) {
+        const { rows } = await database.query(`
+            SELECT original.pdf_data AS "pdfData", original.document_mime_type AS "mimeType"
+            FROM depannhome_technical_report_originals original
+            JOIN depannhome_technical_reports report ON report.id=original.report_id AND report.owner_id=original.owner_id
+            WHERE original.id=$1 AND original.owner_id=$2 AND report.client_id=$3
+        `, [reportOriginalId, ownerId, clientId]);
+        const original = rows[0];
+        return original?.pdfData ? { buffer: original.pdfData, mime: original.mimeType || attachment.mime || attachmentMimeType(attachment.name) } : null;
+    }
     const reportId = positiveId(attachment?.reportId);
     if (!reportId) return null;
     const { rows } = await database.query(`

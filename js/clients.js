@@ -37,7 +37,7 @@ const EMPTY_CLIENT = {
     activityHistory: []
 };
 
-const ATTACHMENT_TYPES = ["Devis", "Facture", "Quitus", "Rapport fuite", "Photo", "Photo avant", "Photo après", "Mission partenaire · E-mail", "Autre"];
+const ATTACHMENT_TYPES = ["Devis", "Facture", "Quitus", "Rapport fuite", "Rapport fuite · Original", "Photo", "Photo avant", "Photo après", "Mission partenaire · E-mail", "Autre"];
 const MAX_ATTACHMENT_SIZE = 4 * 1024 * 1024;
 let clientScreenOptions = {};
 let clientDirectoryFilters = createEmptyDirectoryFilters();
@@ -976,6 +976,8 @@ export function getSearchableClients() {
             name: attachment.name,
             dataUrl: attachment.dataUrl,
             reportId: attachment.reportId || "",
+            reportOriginalId: attachment.reportOriginalId || "",
+            reportRevision: Number(attachment.reportRevision) || 0,
             appointmentId: attachment.appointmentId || "",
             createdAt: attachment.createdAt
         }))
@@ -1008,6 +1010,8 @@ function normalizeAttachments(attachments = []) {
             size: Number(attachment.size) || 0,
             dataUrl: attachment.dataUrl || "",
             reportId: String(attachment.reportId || "").replace(/[^0-9]/g, ""),
+            reportOriginalId: String(attachment.reportOriginalId || "").replace(/[^0-9]/g, ""),
+            reportRevision: Math.max(0, Number(attachment.reportRevision) || 0),
             source: attachment.source === "partner_email" ? "partner_email" : "",
             sourceAttachmentId: String(attachment.sourceAttachmentId || "").replace(/[^0-9]/g, ""),
             missionId: String(attachment.missionId || "").replace(/[^0-9]/g, ""),
