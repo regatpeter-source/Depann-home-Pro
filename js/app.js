@@ -2,12 +2,12 @@ import { initializeAuthentication, restoreApplicationShell, signOut } from "./au
 import { initializeClientSynchronization } from "./client-sync.js?v=127";
 import { initializeCollaboration } from "./collaboration.js?v=7";
 import { loadDatabase } from "./data.js?v=59";
-import { initializeNavigation, refreshApplication } from "./navigation.js?v=435";
+import { initializeNavigation, refreshApplication } from "./navigation.js?v=436";
 import { renderError } from "./ui.js?v=44";
 import { getSettings } from "./storage.js?v=45";
 import { FONT_OPTIONS } from "./config.js?v=132";
 import { installClientSessionGuard, onClientSessionReplaced } from "./client-session.js?v=3";
-import { initializeInterfaceLanguage } from "./i18n.js?v=4";
+import { initializeInterfaceLanguage } from "./i18n.js?v=5";
 
 let applicationStarted = false;
 let sessionReplacementHandled = false;
@@ -246,9 +246,10 @@ function applyFont() {
 
 function registerServiceWorker() {
     if ("serviceWorker" in navigator) {
+        let reloadingForServiceWorkerUpdate = false;
         navigator.serviceWorker.addEventListener("controllerchange", () => {
-            if (sessionStorage.getItem("depannhome:service-worker-reloaded")) return;
-            sessionStorage.setItem("depannhome:service-worker-reloaded", "true");
+            if (reloadingForServiceWorkerUpdate) return;
+            reloadingForServiceWorkerUpdate = true;
             window.location.reload();
         }, { once: true });
         navigator.serviceWorker.register("service-worker.js", { updateViaCache: "none" })

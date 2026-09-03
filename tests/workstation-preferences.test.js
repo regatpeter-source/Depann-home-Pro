@@ -35,9 +35,18 @@ test("la personnalisation propose thème, densité, animations et filtres de not
     assert.match(navigation, /Réduire les animations/);
     assert.match(navigation, /Notifications sur ce poste/);
     assert.match(navigation, /data-notification-preference/);
+    assert.match(navigation, /themeSelect\.addEventListener\("change"/);
+    assert.match(navigation, /saveSettings\(\{ \.\.\.getSettings\(\), theme:/);
+    assert.match(navigation, /classList\.toggle\("dark-theme", updatedSettings\.theme === "dark"\)/);
     assert.match(application, /classList\.toggle\("compact-interface"/);
     assert.match(application, /classList\.toggle\("reduce-motion"/);
     assert.match(style, /body\.dark-theme\{/);
     assert.match(style, /body\.compact-interface/);
     assert.match(style, /body\.reduce-motion \*/);
+});
+
+test("une mise à jour du service worker recharge chaque nouvelle version une seule fois", () => {
+    assert.match(application, /let reloadingForServiceWorkerUpdate = false/);
+    assert.match(application, /if \(reloadingForServiceWorkerUpdate\) return/);
+    assert.doesNotMatch(application, /sessionStorage\.getItem\("depannhome:service-worker-reloaded"\)/);
 });

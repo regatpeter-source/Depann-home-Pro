@@ -20,6 +20,8 @@ const ENGLISH = new Map(Object.entries({
     "Rechercher une marque, une gamme ou un produit...": "Search for a brand, range or product...",
     "Accueil": "Home",
     "Recherche": "Search",
+    "Rechercher": "Search",
+    "Chercher": "Search",
     "Magasin": "Store",
     "Clients": "Clients",
     "Messages": "Messages",

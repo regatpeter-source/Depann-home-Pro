@@ -75,7 +75,8 @@ test("une nouvelle version PWA active immédiatement les correctifs du planning"
     const worker = read("service-worker.js");
     assert.match(application, /updateViaCache: "none"/);
     assert.match(application, /addEventListener\("controllerchange"/);
-    assert.match(application, /depannhome:service-worker-reloaded/);
+    assert.match(application, /reloadingForServiceWorkerUpdate/);
+    assert.doesNotMatch(application, /depannhome:service-worker-reloaded/);
     assert.match(application, /\.then\(registration => registration\.update\(\)\)/);
     assert.match(worker, /self\.skipWaiting\(\)/);
     assert.match(worker, /self\.clients\.claim\(\)/);

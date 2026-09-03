@@ -33,6 +33,8 @@ test("le thème sombre couvre les écrans et les principaux espaces de travail",
 
 test("la langue anglaise traduit le shell, les paramètres et les écrans dynamiques", () => {
     assert.equal(translateInterfaceText("Enregistrer"), "Save changes");
+    assert.equal(translateInterfaceText("Rechercher"), "Search");
+    assert.equal(translateInterfaceText("Chercher"), "Search");
     assert.equal(translateInterfaceText("Contacter le support"), "Contact support");
     assert.equal(translateInterfaceText("Paramètres"), "Settings");
     assert.equal(translateInterfaceText("Missions partenaires"), "Partner missions");
@@ -63,4 +65,5 @@ test("la langue anglaise traduit le shell, les paramètres et les écrans dynami
     assert.match(i18n, /SKIPPED_TAGS = new Set\(\["SCRIPT", "STYLE", "CODE", "PRE", "TEXTAREA"\]\)/);
     const index = readFileSync(new URL("../index.html", import.meta.url), "utf8");
     assert.match(index, /<html lang="fr" translate="no" class="notranslate">/);
+    assert.doesNotMatch(i18n, /Économiser|Chercheur/);
 });

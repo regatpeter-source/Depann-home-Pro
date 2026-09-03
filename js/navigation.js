@@ -1393,6 +1393,11 @@ function renderSettings(options = {}) {
     themeSelect.appendChild(optLight);
     themeSelect.appendChild(optDark);
     themeSelect.value = settings.theme || DEFAULT_SETTINGS.theme;
+    themeSelect.addEventListener("change", () => {
+        const updatedSettings = saveSettings({ ...getSettings(), theme: themeSelect.value === "dark" ? "dark" : "light" });
+        document.body.classList.toggle("dark-theme", updatedSettings.theme === "dark");
+        window.dispatchEvent(new CustomEvent("depannhome:settings-changed", { detail: updatedSettings }));
+    });
     themeLabel.appendChild(themeSelect);
 
     const densityLabel = document.createElement("label");
