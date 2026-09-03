@@ -29,6 +29,52 @@ body{
     line-height:1.5;
 }
 
+body.dark-theme{
+    color-scheme:dark;
+    --primary:#93c5fd;
+    --secondary:#6ee7b7;
+    --danger:#fca5a5;
+    --bg:#0f172a;
+    --surface:#172033;
+    --surface-alt:#1e293b;
+    --text:#e5edf6;
+    --muted:#a8b5c5;
+    --border:#3b4a60;
+    --shadow:0 8px 18px rgba(0,0,0,.28);
+    --shadow-hover:0 14px 30px rgba(0,0,0,.38);
+    background:linear-gradient(180deg,#111827 0%,var(--bg) 45%,#0b1220 100%);
+}
+
+body.dark-theme :is(input:not([type="checkbox"]):not([type="radio"]),select,textarea),
+body.dark-theme :is(.notification-center,.notification-list article,.settings-toggle,.settings-notification-fields,.team-departments-field,.client-intervention-history,.client-activity-item,.client-billing-item,.document-delivery-dialog>div){
+    border-color:var(--border);
+    background:var(--surface);
+    color:var(--text);
+}
+
+body.dark-theme :is(.notification-list article.unread,.settings-heading,.team-heading,.settings-info){
+    background:var(--surface-alt);
+}
+
+body.dark-theme :is(h1,h2,h3,h4,strong,label,.notification-center h3,.settings-field,.settings-toggle){
+    color:var(--text);
+}
+
+body.hide-sync-indicator .collaboration-sync{display:none}
+
+body.compact-interface{font-size:14px}
+body.compact-interface :is(.brand-card,.procedure-section,.client-panel,.settings-section){padding:12px}
+body.compact-interface :is(.settings-form,.settings-fields,.client-activity-list,.client-intervention-history-list){gap:8px}
+
+body.reduce-motion *,
+body.reduce-motion *::before,
+body.reduce-motion *::after{
+    scroll-behavior:auto!important;
+    animation-duration:.01ms!important;
+    animation-iteration-count:1!important;
+    transition-duration:.01ms!important;
+}
+
 .auth-pending #authRoot{
     visibility:hidden;
 }
@@ -4518,6 +4564,36 @@ body.desktop-device .billing-editor-panel.billing-editor-live-active{
     width:19px;
     height:19px;
     accent-color:var(--secondary);
+}
+
+.settings-notification-fields{
+    display:grid;
+    gap:10px;
+    margin:0;
+    padding:16px;
+    border:1px solid var(--border);
+    border-radius:14px;
+    background:var(--surface);
+}
+
+.settings-notification-fields legend{
+    padding:0 7px;
+    color:var(--primary);
+    font-weight:900;
+}
+
+.settings-notification-fields > div{
+    display:grid;
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:9px;
+}
+
+.settings-notification-fields .settings-toggle{
+    grid-column:auto;
+}
+
+@media(max-width:700px){
+    .settings-notification-fields > div{grid-template-columns:1fr}
 }
 
 .settings-info{

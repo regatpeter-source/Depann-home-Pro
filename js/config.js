@@ -8,8 +8,20 @@ export const STORAGE_KEYS = {
 
 export const DEFAULT_SETTINGS = {
     theme: "light", // or 'dark'
+    interfaceDensity: "comfortable",
+    reduceMotion: false,
     maxHistory: 20,
-    showOfflineBadge: true
+    showOfflineBadge: true,
+    notifications: {
+        partnerNewMission: true,
+        partnerMissionUpdates: true,
+        appointments: true,
+        reports: true,
+        billing: true,
+        clientMessages: true,
+        partnerNetwork: true,
+        system: true
+    }
 };
 
 // font: one of 'system', 'arial', 'georgia', 'courier'

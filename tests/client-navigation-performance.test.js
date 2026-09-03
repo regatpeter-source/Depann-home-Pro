@@ -6,11 +6,15 @@ const navigation = readFileSync(new URL("../js/navigation.js", import.meta.url),
 const clients = readFileSync(new URL("../js/clients.js", import.meta.url), "utf8");
 const clientSync = readFileSync(new URL("../js/client-sync.js", import.meta.url), "utf8");
 
-test("l'ouverture Clients charge les messages et les dossiers en parallèle sans changer la vue finale", () => {
+test("l'ouverture Clients affiche immédiatement les dossiers locaux avant la synchronisation réseau", () => {
     const openClients = navigation.slice(navigation.indexOf("async function openClients"), navigation.indexOf("function openNotificationDestination"));
+    const firstRender = openClients.indexOf("await renderClients");
+    const synchronization = openClients.indexOf("await Promise.all");
+    assert.ok(firstRender >= 0 && firstRender < synchronization);
     assert.match(openClients, /Promise\.all\(\[\s*selectedClientPromise,\s*synchronizeClients\(\{ forceFull: true \}\)/);
     assert.match(openClients, /renderClients\(\{[^}]*skipClientSynchronization: true/);
     assert.match(openClients, /selectedId, focusMessages: true/);
+    assert.match(openClients, /nav-button\.active\[data-nav="clients"\]/);
     assert.match(clients, /else if \(!skipClientSynchronization\) scheduleClientSynchronization\(\)/);
 });
 

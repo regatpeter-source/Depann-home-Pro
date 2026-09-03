@@ -1,4 +1,4 @@
-import { STORAGE_KEYS, DEFAULT_SETTINGS, SETTINGS_KEY } from "./config.js?v=88";
+import { STORAGE_KEYS, DEFAULT_SETTINGS, SETTINGS_KEY } from "./config.js?v=132";
 
 export function getStoredRefs(key) {
     try {
@@ -32,14 +32,15 @@ export function getSettings() {
     try {
         const raw = localStorage.getItem(SETTINGS_KEY);
         if (!raw) return { ...DEFAULT_SETTINGS };
-        return Object.assign({}, DEFAULT_SETTINGS, JSON.parse(raw));
+        const saved = JSON.parse(raw) || {};
+        return { ...DEFAULT_SETTINGS, ...saved, notifications: { ...DEFAULT_SETTINGS.notifications, ...(saved.notifications || {}) } };
     } catch {
         return { ...DEFAULT_SETTINGS };
     }
 }
 
 export function saveSettings(settings) {
-    const toSave = Object.assign({}, DEFAULT_SETTINGS, settings || {});
+    const toSave = { ...DEFAULT_SETTINGS, ...(settings || {}), notifications: { ...DEFAULT_SETTINGS.notifications, ...(settings?.notifications || {}) } };
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(toSave));
     return toSave;
 }

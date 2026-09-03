@@ -1,16 +1,16 @@
-import { ROUTES, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=131";
-import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=200";
+import { ROUTES, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=132";
+import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=201";
 import { openCreatorPartnerRequest, openCreatorRequestNotification, renderCreatorConsole } from "./creator.js?v=154";
-import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=201";
+import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=202";
 import { renderAccounting, renderElectronicInvoicingConfiguration } from "./accounting.js?v=24";
 import { renderPurchases } from "./purchases.js?v=126";
 import { renderGroupActivation, renderGroupWorkspace } from "./groups.js?v=4";
-import { renderPartnerMissions } from "./partner-missions.js?v=78";
+import { renderPartnerMissions } from "./partner-missions.js?v=79";
 import { renderPartnerSandbox } from "./partner-sandbox.js?v=3";
-import { renderPartnerConnections } from "./partner-connections.js?v=42";
+import { renderPartnerConnections } from "./partner-connections.js?v=43";
 import { renderCompanyEmailWorkspace, renderPartnerEmailSettings } from "./partner-email-settings.js?v=27";
 import { renderDataImportTool } from "./data-imports.js?v=5";
-import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=47";
+import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=48";
 import { getFirstUnreadClientId, refreshClientMessageAlert, refreshVisibleClientMessages } from "./messages.js?v=107";
 import { getSearchableClients, renderClients } from "./clients.js?v=164";
 import { synchronizeClients } from "./client-sync.js?v=127";
@@ -20,7 +20,7 @@ import { state, resetSelection } from "./state.js?v=44";
 import {
     getSettings,
     saveSettings
-} from "./storage.js?v=44";
+} from "./storage.js?v=45";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { renderPlatformAnnouncement } from "./platform-announcement.js?v=1";
 import { renderDocumentTemplateEditor } from "./document-template-editor.js?v=3";
@@ -492,6 +492,8 @@ function renderCompanyEmail() {
 async function openClients(clientId = "") {
     if (isAccountant()) return;
     const provisionedClientId = clientId ? "" : pendingPartnerClientId;
+    const immediateSelectedId = clientId || provisionedClientId;
+    await renderClients({ database, navigateToRef, createBillingDocument: createBillingDocumentForClient, viewBillingDocument, createCalendarEvent: createCalendarEventForClient, skipClientSynchronization: true, ...(immediateSelectedId ? { selectedId: immediateSelectedId, focusMessages: true } : {}), ...(provisionedClientId ? { directoryClientId: provisionedClientId } : {}) });
     const selectedClientPromise = clientId || provisionedClientId
         ? Promise.resolve(clientId || provisionedClientId)
         : getFirstUnreadClientId();
@@ -499,6 +501,7 @@ async function openClients(clientId = "") {
         selectedClientPromise,
         synchronizeClients({ forceFull: true }).catch(() => null)
     ]);
+    if (!document.querySelector('.nav-button.active[data-nav="clients"]')) return;
     await renderClients({ database, navigateToRef, createBillingDocument: createBillingDocumentForClient, viewBillingDocument, createCalendarEvent: createCalendarEventForClient, skipClientSynchronization: true, ...(selectedId ? { selectedId, focusMessages: true } : {}), ...(provisionedClientId ? { directoryClientId: provisionedClientId } : {}) });
     if (provisionedClientId === pendingPartnerClientId) pendingPartnerClientId = "";
 }
@@ -1384,12 +1387,20 @@ function renderSettings(options = {}) {
     themeLabel.className = "settings-field";
     themeLabel.textContent = "Thème";
     const themeSelect = document.createElement("select");
-    const optLight = document.createElement("option"); optLight.value = "light"; optLight.text = "Clair";
+    const optLight = document.createElement("option"); optLight.value = "light"; optLight.text = "Standard (clair)";
     const optDark = document.createElement("option"); optDark.value = "dark"; optDark.text = "Sombre";
     themeSelect.appendChild(optLight);
     themeSelect.appendChild(optDark);
     themeSelect.value = settings.theme || DEFAULT_SETTINGS.theme;
     themeLabel.appendChild(themeSelect);
+
+    const densityLabel = document.createElement("label");
+    densityLabel.className = "settings-field";
+    densityLabel.textContent = "Densité de l’interface";
+    const densitySelect = document.createElement("select");
+    densitySelect.innerHTML = '<option value="comfortable">Confortable</option><option value="compact">Compacte</option>';
+    densitySelect.value = settings.interfaceDensity === "compact" ? "compact" : "comfortable";
+    densityLabel.appendChild(densitySelect);
 
     // font select
     const fontLabel = document.createElement("label");
@@ -1426,6 +1437,28 @@ function renderSettings(options = {}) {
     offlineCheckbox.checked = settings.showOfflineBadge !== false;
     offlineLabel.appendChild(offlineCheckbox);
 
+    const motionLabel = document.createElement("label");
+    motionLabel.className = "settings-toggle";
+    motionLabel.textContent = "Réduire les animations";
+    const motionCheckbox = document.createElement("input");
+    motionCheckbox.type = "checkbox";
+    motionCheckbox.checked = settings.reduceMotion === true;
+    motionLabel.appendChild(motionCheckbox);
+
+    const notificationChoices = [
+        ["partnerNewMission", "Nouvelle mission partenaire"],
+        ["partnerMissionUpdates", "Échanges et mises à jour des missions"],
+        ["appointments", "Création et mise à jour des rendez-vous"],
+        ["reports", "Rapports techniques"],
+        ["billing", "Devis, factures et règlements"],
+        ["clientMessages", "Notes et messages des dossiers clients"],
+        ["partnerNetwork", "Connexions et demandes partenaires"],
+        ["system", "Sécurité, support et informations système"]
+    ];
+    const notificationFields = document.createElement("fieldset");
+    notificationFields.className = "settings-notification-fields";
+    notificationFields.innerHTML = `<legend>Notifications sur ce poste</legend><p class="muted">Choisissez uniquement les alertes utiles à ce poste administratif. Les éléments désactivés restent conservés et peuvent être réaffichés plus tard.</p><div>${notificationChoices.map(([key, label]) => `<label class="settings-toggle"><span>${label}</span><input type="checkbox" data-notification-preference="${key}" ${(settings.notifications?.[key] ?? true) ? "checked" : ""}></label>`).join("")}</div>`;
+
     const pcSeatsHint = document.createElement("p");
     pcSeatsHint.className = "muted settings-info";
     pcSeatsHint.textContent = `Postes administratifs inclus dans votre offre : ${document.body.dataset.maxPcUsers || "1"}. Les postes supplémentaires sont activés par Depann’Home Pro, puis validés dans la section Équipe.`;
@@ -1438,13 +1471,19 @@ function renderSettings(options = {}) {
         const newSettings = {
             maxHistory: Math.max(1, parseInt(maxInput.value || DEFAULT_SETTINGS.maxHistory, 10)),
             theme: themeSelect.value === "dark" ? "dark" : "light",
+            interfaceDensity: densitySelect.value === "compact" ? "compact" : "comfortable",
+            reduceMotion: motionCheckbox.checked,
             showOfflineBadge: !!offlineCheckbox.checked,
             font: fontSelect.value,
-            lang: langSelect.value
+            lang: langSelect.value,
+            notifications: Object.fromEntries(notificationChoices.map(([key]) => [key, notificationFields.querySelector(`[data-notification-preference="${key}"]`).checked]))
         };
         saveSettings(newSettings);
         // apply theme immediately
         document.body.classList.toggle("dark-theme", newSettings.theme === "dark");
+        document.body.classList.toggle("compact-interface", newSettings.interfaceDensity === "compact");
+        document.body.classList.toggle("reduce-motion", newSettings.reduceMotion);
+        document.body.classList.toggle("hide-sync-indicator", !newSettings.showOfflineBadge);
         // apply font immediately
         const font = FONT_OPTIONS.find(f => f.id === newSettings.font) || FONT_OPTIONS[0];
         document.body.style.fontFamily = font && font.css ? font.css : "";
@@ -1463,6 +1502,7 @@ function renderSettings(options = {}) {
             const label = button.querySelector(".nav-label-clients") || button.querySelector("span");
             if (label) label.textContent = texts[button.dataset.nav] || label.textContent;
         });
+        window.dispatchEvent(new CustomEvent("depannhome:settings-changed", { detail: newSettings }));
         renderSettings({ section: "personalization" });
     });
 
@@ -1470,17 +1510,22 @@ function renderSettings(options = {}) {
         if (!confirm("Réinitialiser tous les paramètres de l’application ?")) return;
         saveSettings(DEFAULT_SETTINGS);
         document.body.classList.toggle("dark-theme", DEFAULT_SETTINGS.theme === "dark");
+        document.body.classList.toggle("compact-interface", DEFAULT_SETTINGS.interfaceDensity === "compact");
+        document.body.classList.toggle("reduce-motion", DEFAULT_SETTINGS.reduceMotion);
+        document.body.classList.toggle("hide-sync-indicator", !DEFAULT_SETTINGS.showOfflineBadge);
         const font = FONT_OPTIONS.find(f => f.id === DEFAULT_SETTINGS.font) || FONT_OPTIONS[0];
         document.body.style.fontFamily = font && font.css ? font.css : "";
         document.documentElement.lang = DEFAULT_SETTINGS.lang || 'fr';
+        window.dispatchEvent(new CustomEvent("depannhome:settings-changed", { detail: DEFAULT_SETTINGS }));
         renderSettings({ section: "personalization" });
     });
 
     actions.appendChild(saveBtn);
     actions.appendChild(resetBtn);
 
-    fields.append(maxLabel, themeLabel, fontLabel, langLabel, offlineLabel);
+    fields.append(maxLabel, themeLabel, densityLabel, fontLabel, langLabel, offlineLabel, motionLabel);
     form.appendChild(fields);
+    form.appendChild(notificationFields);
     if (document.body.dataset.role === "admin") {
         form.appendChild(pcSeatsHint);
     }
@@ -1542,7 +1587,7 @@ function renderSettingsWorkspace(options = {}) {
             ["network", internalNetworkOnly ? "Réseau Depann’Home Pro" : "Réseau & connecteurs", internalNetworkOnly ? "Recherchez des entreprises utilisatrices et gérez vos connexions internes." : "Deux espaces distincts : le réseau collaboratif Depann’Home Pro et les connecteurs API externes.", "network"],
             ...(internalNetworkOnly ? [["support", "Support", "Envoyez une demande à l’équipe Depann’Home Pro depuis votre compte partenaire.", "support"]] : []),
             ...(document.body.dataset.role === "admin" ? [["users", "Utilisateurs", "Accès, postes, techniciens et chefs d’équipe.", "users"], ["security", "Sécurité", "Double authentification et protection des accès.", "security"], ["groups", "Groupe / Multi-entreprises", "Sociétés, bascule de contexte et indicateurs consolidés.", "group"]] : []),
-            ["personalization", "Personnalisation", "Langue, thème, police et préférences d’affichage.", "appearance"],
+            ["personalization", "Interface & notifications", "Thème standard ou sombre, densité, animations et alertes choisies pour ce poste.", "appearance"],
             ...(document.body.dataset.role === "admin" && document.body.classList.contains("desktop-device") ? [["imports", document.body.dataset.organizationInterface === "partner" ? "Importation de clients" : "Importation de données", document.body.dataset.organizationInterface === "partner" ? "Importez vos fiches clients depuis Excel ou CSV." : "Importez vos clients, devis, factures et rapports depuis Excel ou CSV.", "import"]] : []),
             ...(document.body.dataset.role === "admin" && document.body.dataset.creator === "true" && document.body.dataset.deviceType === "desktop" ? [["creator", "Console Créateur", "Pilotage des entreprises, abonnements et services de la plateforme.", "creator"]] : [])
         ];
@@ -1554,7 +1599,7 @@ function renderSettingsWorkspace(options = {}) {
 
     clearSearch();
     resetSelection("all");
-    const titles = { subscription: "Offre & abonnement", documents: "Modèles de documents", electronicInvoicing: "Facturation électronique", company: "Entreprise · Boîte mail", network: document.body.dataset.organizationInterface === "partner" || !organizationFeatureEnabled("connectors") ? "Réseau Depann’Home Pro" : "Réseau & connecteurs", support: "Support", users: "Utilisateurs", security: "Sécurité", groups: "Groupe / Multi-entreprises", personalization: "Personnalisation", imports: document.body.dataset.organizationInterface === "partner" ? "Importation de clients" : "Importation de données", creator: "Console Créateur" };
+    const titles = { subscription: "Offre & abonnement", documents: "Modèles de documents", electronicInvoicing: "Facturation électronique", company: "Entreprise · Boîte mail", network: document.body.dataset.organizationInterface === "partner" || !organizationFeatureEnabled("connectors") ? "Réseau Depann’Home Pro" : "Réseau & connecteurs", support: "Support", users: "Utilisateurs", security: "Sécurité", groups: "Groupe / Multi-entreprises", personalization: "Interface & notifications", imports: document.body.dataset.organizationInterface === "partner" ? "Importation de clients" : "Importation de données", creator: "Console Créateur" };
     setPage(`Paramètres · ${titles[section] || "Configuration"}`, ROUTES.settings, "detail");
     const container = getContainer();
     container.appendChild(createBackCard("Retour aux Paramètres", () => renderSettings()));

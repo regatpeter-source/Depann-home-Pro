@@ -1,11 +1,11 @@
 import { initializeAuthentication, restoreApplicationShell, signOut } from "./auth.js?v=125";
 import { initializeClientSynchronization } from "./client-sync.js?v=127";
-import { initializeCollaboration } from "./collaboration.js?v=5";
+import { initializeCollaboration } from "./collaboration.js?v=6";
 import { loadDatabase } from "./data.js?v=59";
-import { initializeNavigation, refreshApplication } from "./navigation.js?v=431";
+import { initializeNavigation, refreshApplication } from "./navigation.js?v=432";
 import { renderError } from "./ui.js?v=44";
-import { getSettings } from "./storage.js?v=44";
-import { FONT_OPTIONS } from "./config.js?v=130";
+import { getSettings } from "./storage.js?v=45";
+import { FONT_OPTIONS } from "./config.js?v=132";
 import { installClientSessionGuard, onClientSessionReplaced } from "./client-session.js?v=3";
 
 let applicationStarted = false;
@@ -59,6 +59,7 @@ async function startApplication() {
 
     try {
         applyTheme();
+        applyInterfacePreferences();
         applyFont();
         applyLanguage();
         enforceOfficialProductName();
@@ -215,6 +216,17 @@ function applyTheme() {
     try {
         const settings = getSettings();
         document.body.classList.toggle("dark-theme", settings.theme === "dark");
+    } catch {
+        // ignore
+    }
+}
+
+function applyInterfacePreferences() {
+    try {
+        const settings = getSettings();
+        document.body.classList.toggle("compact-interface", settings.interfaceDensity === "compact");
+        document.body.classList.toggle("reduce-motion", settings.reduceMotion === true);
+        document.body.classList.toggle("hide-sync-indicator", settings.showOfflineBadge === false);
     } catch {
         // ignore
     }
