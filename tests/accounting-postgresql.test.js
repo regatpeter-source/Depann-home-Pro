@@ -86,6 +86,8 @@ test("PostgreSQL : aide et règlement soldent exactement la créance client", { 
 });
 
 test("PostgreSQL : les migrations sont checksumées et idempotentes", { skip: !enabled }, async () => {
+    await database.query("CREATE TABLE depannhome_technical_reports(id BIGINT PRIMARY KEY)");
+    await database.query("CREATE TABLE depannhome_support_requests(id BIGINT PRIMARY KEY)");
     const { migrationStatus, runMigrations } = await import("../server/database-migrations.js");
     const first = await runMigrations({ database, logger: { info() {} } });
     const second = await runMigrations({ database, logger: { info() {} } });

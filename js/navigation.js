@@ -419,7 +419,8 @@ function isDesktopDevice() {
 
 function canAccessSettingsSection(section) {
     if (document.body.dataset.creator === "true") return true;
-    if (document.body.dataset.organizationInterface === "partner") return section === "support" || (section === "network" && organizationFeatureEnabled("partnerConnections")) || (section === "company" && organizationFeatureEnabled("partnerMissions")) || (section === "imports" && organizationFeatureEnabled("imports"));
+    if (section === "support") return document.body.dataset.role === "admin" && isDesktopDevice();
+    if (document.body.dataset.organizationInterface === "partner") return (section === "network" && organizationFeatureEnabled("partnerConnections")) || (section === "company" && organizationFeatureEnabled("partnerMissions")) || (section === "imports" && organizationFeatureEnabled("imports"));
     if (section === "company" && organizationFeatureEnabled("companyEmail")) return document.body.dataset.role === "admin";
     if (section === "network" && (organizationFeatureEnabled("partnerConnections") || organizationFeatureEnabled("partnerMissions"))) return true;
     const featureBySection = { documents: "billing", electronicInvoicing: "accounting", network: "partnerConnections", users: "settings", security: "settings", groups: "groups", personalization: "settings", imports: "imports" };
@@ -1576,6 +1577,7 @@ function renderSettingsWorkspace(options = {}) {
         const hub = document.createElement("section");
         hub.className = "settings-hub";
         const internalNetworkOnly = document.body.dataset.organizationInterface === "partner" || !organizationFeatureEnabled("connectors");
+        const supportAvailable = document.body.dataset.role === "admin" && isDesktopDevice();
         hub.innerHTML = `<header class="settings-hub-heading"><div><p class="eyebrow">${internalNetworkOnly ? "Réseau et assistance" : "Configuration de l’entreprise"}</p><h2>Paramètres</h2><p class="muted">${internalNetworkOnly ? "Retrouvez le Réseau Depann’Home Pro et contactez directement le Support." : "Toutes les configurations sont regroupées ici. Le menu principal reste dédié aux opérations quotidiennes."}</p></div></header>`;
         const grid = document.createElement("div");
         grid.className = "settings-card-grid";
@@ -1585,7 +1587,7 @@ function renderSettingsWorkspace(options = {}) {
             ...(document.body.dataset.role === "admin" && organizationFeatureEnabled("accounting") ? [["electronicInvoicing", "Facturation électronique", "Choisissez et configurez la plateforme propre à votre entreprise.", "document"]] : []),
             ...(organizationFeatureEnabled("companyEmail") && document.body.dataset.role === "admin" ? [["company", "Entreprise · Boîte mail", "Connectez la boîte de l’entreprise et choisissez si elle recherche automatiquement les missions.", "company"]] : []),
             ["network", internalNetworkOnly ? "Réseau Depann’Home Pro" : "Réseau & connecteurs", internalNetworkOnly ? "Recherchez des entreprises utilisatrices et gérez vos connexions internes." : "Deux espaces distincts : le réseau collaboratif Depann’Home Pro et les connecteurs API externes.", "network"],
-            ...(internalNetworkOnly ? [["support", "Support", "Envoyez une demande à l’équipe Depann’Home Pro depuis votre compte partenaire.", "support"]] : []),
+            ...(supportAvailable ? [["support", "Support", "Contactez l’équipe Depann’Home Pro depuis les paramètres de votre entreprise.", "support"]] : []),
             ...(document.body.dataset.role === "admin" ? [["users", "Utilisateurs", "Accès, postes, techniciens et chefs d’équipe.", "users"], ["security", "Sécurité", "Double authentification et protection des accès.", "security"], ["groups", "Groupe / Multi-entreprises", "Sociétés, bascule de contexte et indicateurs consolidés.", "group"]] : []),
             ["personalization", "Interface & notifications", "Thème standard ou sombre, densité, animations et alertes choisies pour ce poste.", "appearance"],
             ...(document.body.dataset.role === "admin" && document.body.classList.contains("desktop-device") ? [["imports", document.body.dataset.organizationInterface === "partner" ? "Importation de clients" : "Importation de données", document.body.dataset.organizationInterface === "partner" ? "Importez vos fiches clients depuis Excel ou CSV." : "Importez vos clients, devis, factures et rapports depuis Excel ou CSV.", "import"]] : []),

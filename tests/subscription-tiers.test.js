@@ -203,11 +203,11 @@ test("the free Partner interface exposes the internal network without external c
     assert.match(navigation, /return features\[feature\] === true/);
     assert.match(navigation, /refreshOrganizationAccess\(\)/);
     assert.match(navigation, /organizationInterface === "partner"/);
-    assert.match(navigation, /section === "support" \|\| \(section === "network" && organizationFeatureEnabled\("partnerConnections"\)\)/);
+    assert.match(navigation, /section === "support"\) return document\.body\.dataset\.role === "admin" && isDesktopDevice\(\)/);
     assert.match(navigation, /section === "imports" && organizationFeatureEnabled\("imports"\)/);
     assert.match(navigation, /Importation de clients/);
     assert.match(navigation, /internalNetworkOnly \? "Réseau Depann’Home Pro" : "Réseau & connecteurs"/);
-    assert.match(navigation, /\["support", "Support", "Envoyez une demande à l’équipe Depann’Home Pro depuis votre compte partenaire\./);
+    assert.match(navigation, /supportAvailable \? \[\["support", "Support", "Contactez l’équipe Depann’Home Pro depuis les paramètres de votre entreprise\./);
     assert.match(navigation, /if \(section === "support"\) return renderSupportContact\(container\)/);
     assert.match(app, /app\.use\("\/api\/official-partners", requireAuthentication, requireOrganizationFeature\("connectors"\)\)/);
     assert.match(app, /app\.use\("\/api\/partner-missions\/intakes", requireAuthentication, requireOrganizationFeature\("connectors"\)\)/);
