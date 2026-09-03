@@ -40,7 +40,7 @@ test("linked history without a loaded appointment still keeps its own interventi
 });
 
 test("the latest intervention is expanded while previous histories can be reopened", () => {
-    assert.match(clientSource, /history\.interventions\.map\(\(group, index\) => renderClientInterventionHistory\(group, client, completedAppointmentIds, index === 0\)\)/);
+    assert.match(clientSource, /history\.interventions\.map\(\(group, index\) => renderClientInterventionHistory\(group, client, index === 0\)\)/);
     assert.match(clientSource, /<details class="client-intervention-history"/);
     assert.match(clientSource, /Historique général du client/);
     assert.match(clientSource, /client-intervention-history-toggle" aria-hidden="true"/);

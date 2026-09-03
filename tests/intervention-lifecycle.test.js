@@ -34,19 +34,20 @@ test("une intervention terminée reste dans l’historique et devient non modifi
     assert.match(calendarClient, /depannhome:open-client/);
 });
 
-test("le quitus devient inaccessible uniquement après une finalisation administrative", () => {
+test("le quitus archivé reste consultable mais non modifiable après une finalisation administrative", () => {
     const calendarServer = read("server/calendar.js");
     const clientsServer = read("server/clients.js");
     const calendarClient = read("js/calendar.js");
     const clientsClient = read("js/clients.js");
     assert.doesNotMatch(calendarServer, /event\.event_date >= \(CURRENT_TIMESTAMP AT TIME ZONE 'Europe\/Paris'\)::date/);
     assert.match(calendarServer, /event\.event_status NOT IN \('completed','cancelled'\)/);
-    assert.match(clientsServer, /isCompletedInterventionQuitus/);
-    assert.match(clientsServer, /event_status IN \('completed','cancelled'\)/);
+    assert.doesNotMatch(clientsServer, /isCompletedInterventionQuitus/);
+    assert.doesNotMatch(clientsServer, /son quitus n[’']est plus accessible|son quitus ne peut plus être envoyé/);
     assert.match(calendarClient, /event\.eventType === "appointment" && event\.isCompleted/);
     assert.match(calendarClient, /function renderQuitusHtml\(event\) \{\s*if \(event\.isCompleted\) return ""/);
-    assert.match(clientsClient, /Quitus archivé et inaccessible/);
-    assert.match(clientsClient, /!completedAppointmentIds\.has\(quitusAppointmentId\)/);
+    assert.match(clientsClient, /Quitus archivé/);
+    assert.doesNotMatch(clientsClient, /Quitus archivé et inaccessible/);
+    assert.match(clientsClient, /const quitusActions = quitusAttachment \?/);
 });
 
 test("la planification étendue utilise uniquement une date de début et une date de fin", () => {
@@ -78,5 +79,5 @@ test("une nouvelle version PWA active immédiatement les correctifs du planning"
     assert.match(application, /\.then\(registration => registration\.update\(\)\)/);
     assert.match(worker, /self\.skipWaiting\(\)/);
     assert.match(worker, /self\.clients\.claim\(\)/);
-    assert.match(worker, /\.\/js\/calendar\.js\?v=199/);
+    assert.match(worker, /\.\/js\/calendar\.js\?v=200/);
 });

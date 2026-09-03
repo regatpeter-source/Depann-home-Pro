@@ -1,21 +1,21 @@
 import { ROUTES, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=131";
-import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=199";
+import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=200";
 import { openCreatorPartnerRequest, openCreatorRequestNotification, renderCreatorConsole } from "./creator.js?v=154";
-import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=200";
-import { renderAccounting, renderElectronicInvoicingConfiguration } from "./accounting.js?v=23";
-import { renderPurchases } from "./purchases.js?v=125";
+import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=201";
+import { renderAccounting, renderElectronicInvoicingConfiguration } from "./accounting.js?v=24";
+import { renderPurchases } from "./purchases.js?v=126";
 import { renderGroupActivation, renderGroupWorkspace } from "./groups.js?v=4";
-import { renderPartnerMissions } from "./partner-missions.js?v=77";
+import { renderPartnerMissions } from "./partner-missions.js?v=78";
 import { renderPartnerSandbox } from "./partner-sandbox.js?v=3";
-import { renderPartnerConnections } from "./partner-connections.js?v=41";
+import { renderPartnerConnections } from "./partner-connections.js?v=42";
 import { renderCompanyEmailWorkspace, renderPartnerEmailSettings } from "./partner-email-settings.js?v=27";
 import { renderDataImportTool } from "./data-imports.js?v=5";
-import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=46";
+import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=47";
 import { getFirstUnreadClientId, refreshClientMessageAlert, refreshVisibleClientMessages } from "./messages.js?v=107";
-import { getSearchableClients, renderClients } from "./clients.js?v=163";
+import { getSearchableClients, renderClients } from "./clients.js?v=164";
 import { synchronizeClients } from "./client-sync.js?v=127";
 import { configureLibrary, openLibrarySection, renderLibrary, searchPersonalLibrary } from "./library.js?v=122";
-import { getContextualSearchResults } from "./search.js?v=74";
+import { getContextualSearchResults } from "./search.js?v=75";
 import { state, resetSelection } from "./state.js?v=44";
 import {
     getSettings,

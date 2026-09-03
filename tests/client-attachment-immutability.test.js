@@ -38,3 +38,17 @@ test("client synchronization unions attachments and ignores legacy deletion tomb
     assert.match(syncSource, /deletedAttachmentIds: \[\]/);
     assert.doesNotMatch(syncSource, /mergeDeletedAttachmentIds/);
 });
+
+test("archived quitus can be opened, downloaded and emailed like other retained documents", () => {
+    const openRoute = serverSource.slice(serverSource.indexOf('app.get("/api/clients/:clientId/attachments/:attachmentId/open"'), serverSource.indexOf('app.post("/api/clients/:clientId/attachments/:attachmentId/email"'));
+    const emailRoute = serverSource.slice(serverSource.indexOf('app.post("/api/clients/:clientId/attachments/:attachmentId/email"'), serverSource.indexOf("async function analyzeClientLifecycle"));
+    assert.match(openRoute, /loadClientAttachmentContent/);
+    assert.match(openRoute, /Content-Disposition/);
+    assert.match(emailRoute, /loadClientAttachmentContent/);
+    assert.match(emailRoute, /sendDocumentEmail/);
+    assert.doesNotMatch(`${openRoute}\n${emailRoute}`, /isCompletedInterventionQuitus|event_status IN \('completed','cancelled'\)/);
+    assert.match(clientsSource, /const quitusActions = quitusAttachment \?/);
+    assert.match(clientsSource, /data-view-quituses/);
+    assert.match(clientsSource, /data-print-quituses/);
+    assert.match(clientsSource, /data-email-quituses/);
+});

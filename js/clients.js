@@ -1060,7 +1060,7 @@ function renderClientActivityHistory(client, billingDocuments = [], purchases = 
             id: `appointment-${appointment.id}`,
             type: "appointment",
             label: appointment.eventType === "appointment" ? "Intervention créée" : "Événement client créé",
-            detail: [appointment.eventType === "appointment" ? `Intervention n°${appointment.id}` : `Événement n°${appointment.id}`, appointmentStatus, `${interventionDate}${appointment.startTime ? ` à ${appointment.startTime}` : ""}`, appointment.title, appointment.location, appointment.quitusStatus === "validated" ? (appointment.isCompleted || appointment.status === "cancelled" ? "Quitus archivé et inaccessible" : "Quitus validé") : ""].filter(Boolean).join(" · "),
+            detail: [appointment.eventType === "appointment" ? `Intervention n°${appointment.id}` : `Événement n°${appointment.id}`, appointmentStatus, `${interventionDate}${appointment.startTime ? ` à ${appointment.startTime}` : ""}`, appointment.title, appointment.location, appointment.quitusStatus === "validated" ? (appointment.isCompleted || appointment.status === "cancelled" ? "Quitus archivé" : "Quitus validé") : ""].filter(Boolean).join(" · "),
             documentId: "",
             attachmentId: "",
             appointmentId: String(appointment.id),
@@ -1068,13 +1068,12 @@ function renderClientActivityHistory(client, billingDocuments = [], purchases = 
             createdAt: appointment.createdAt || `${appointment.date}T${appointment.startTime || "12:00"}:00`
         };
     });
-    const completedAppointmentIds = new Set(appointments.filter(appointment => appointment.isCompleted || appointment.status === "cancelled").map(appointment => String(appointment.id)));
     const entries = [...activityEntries, ...billingEntries, ...purchaseEntries, ...appointmentEntries]
         .sort((first, second) => new Date(second.createdAt).getTime() - new Date(first.createdAt).getTime());
     if (!entries.length) return "<p class=\"muted\">Les rendez-vous, documents et actions de ce dossier apparaîtront ici.</p>";
     const history = groupClientActivityEntries(entries, appointments);
-    const groups = history.interventions.map((group, index) => renderClientInterventionHistory(group, client, completedAppointmentIds, index === 0));
-    if (history.general.length) groups.push(`<details class="client-intervention-history client-general-history" ${history.interventions.length ? "" : "open"}><summary><span><strong>Historique général du client</strong><small>Éléments non rattachés à une intervention</small></span><span class="client-intervention-history-meta"><span>${history.general.length} élément${history.general.length > 1 ? "s" : ""}</span>${renderInterventionHistoryToggle()}</span></summary><div class="client-activity-list">${history.general.map(entry => renderClientActivityEntry(entry, client, completedAppointmentIds)).join("")}</div></details>`);
+    const groups = history.interventions.map((group, index) => renderClientInterventionHistory(group, client, index === 0));
+    if (history.general.length) groups.push(`<details class="client-intervention-history client-general-history" ${history.interventions.length ? "" : "open"}><summary><span><strong>Historique général du client</strong><small>Éléments non rattachés à une intervention</small></span><span class="client-intervention-history-meta"><span>${history.general.length} élément${history.general.length > 1 ? "s" : ""}</span>${renderInterventionHistoryToggle()}</span></summary><div class="client-activity-list">${history.general.map(entry => renderClientActivityEntry(entry, client)).join("")}</div></details>`);
     return `<div class="client-intervention-history-list">${groups.join("")}</div>`;
 }
 
@@ -1094,23 +1093,22 @@ export function groupClientActivityEntries(entries, appointments = []) {
     return { interventions, general };
 }
 
-function renderClientInterventionHistory(group, client, completedAppointmentIds, expanded) {
+function renderClientInterventionHistory(group, client, expanded) {
     const appointment = group.appointment;
     const date = appointment?.date ? formatInterventionHistoryDate(appointment.date) : formatActivityDate(group.entries[0]?.createdAt);
     const title = appointment?.title || `Intervention n°${group.appointmentId}`;
     const details = [appointment?.startTime ? `à ${appointment.startTime}` : "", appointment?.location, appointment ? appointmentStatusLabel(appointment) : ""].filter(Boolean).join(" · ");
-    return `<details class="client-intervention-history" data-client-intervention="${escapeHtml(group.appointmentId)}" ${expanded ? "open" : ""}><summary><span><strong>Intervention du ${escapeHtml(date)}</strong><small>n°${escapeHtml(group.appointmentId)} · ${escapeHtml(title)}${details ? ` · ${escapeHtml(details)}` : ""}</small></span><span class="client-intervention-history-meta"><span>${group.entries.length} élément${group.entries.length > 1 ? "s" : ""}</span>${renderInterventionHistoryToggle()}</span></summary><div class="client-activity-list">${group.entries.map(entry => renderClientActivityEntry(entry, client, completedAppointmentIds)).join("")}</div></details>`;
+    return `<details class="client-intervention-history" data-client-intervention="${escapeHtml(group.appointmentId)}" ${expanded ? "open" : ""}><summary><span><strong>Intervention du ${escapeHtml(date)}</strong><small>n°${escapeHtml(group.appointmentId)} · ${escapeHtml(title)}${details ? ` · ${escapeHtml(details)}` : ""}</small></span><span class="client-intervention-history-meta"><span>${group.entries.length} élément${group.entries.length > 1 ? "s" : ""}</span>${renderInterventionHistoryToggle()}</span></summary><div class="client-activity-list">${group.entries.map(entry => renderClientActivityEntry(entry, client)).join("")}</div></details>`;
 }
 
 function renderInterventionHistoryToggle() { return `<span class="client-intervention-history-toggle" aria-hidden="true"><span class="client-intervention-history-open">Ouvrir</span><span class="client-intervention-history-close">Réduire</span></span>`; }
 
-function renderClientActivityEntry(entry, client, completedAppointmentIds) {
+function renderClientActivityEntry(entry, client) {
     const isBillingDocument = ["quote", "invoice", "credit"].includes(entry.type) && entry.detail;
     const quitusAttachment = entry.type === "quitus" ? client.attachments.find(attachment => String(attachment.id) === entry.attachmentId || attachment.type === "Quitus" && attachment.name === entry.detail) : null;
     const reportAttachment = entry.type === "technical_report" ? client.attachments.find(attachment => String(attachment.id) === entry.attachmentId || isLeakReportAttachment(attachment) && attachment.name === entry.detail) : null;
     const deductibleAttachment = entry.type === "insurance_deductible" ? client.attachments.find(attachment => String(attachment.id) === entry.attachmentId && attachment.type === "Photo franchise") : null;
-    const quitusAppointmentId = String(entry.appointmentId || quitusAttachment?.appointmentId || String(quitusAttachment?.name || "").match(/^quitus-intervention-(\d+)-/i)?.[1] || "");
-    const quitusActions = quitusAttachment && !completedAppointmentIds.has(quitusAppointmentId) ? `<div class="client-card-actions client-activity-actions"><button type="button" class="secondary-button" data-view-quituses="${escapeHtml(quitusAttachment.id)}">Visualiser</button><button type="button" class="secondary-button" data-print-quituses="${escapeHtml(quitusAttachment.id)}">Imprimer / PDF</button><button type="button" class="secondary-button" data-email-quituses="${escapeHtml(quitusAttachment.id)}" ${client.email ? "" : "disabled title=\"Ajoutez l’e-mail du client pour préparer un envoi.\""}>Envoyer par e-mail</button></div>` : "";
+    const quitusActions = quitusAttachment ? `<div class="client-card-actions client-activity-actions"><button type="button" class="secondary-button" data-view-quituses="${escapeHtml(quitusAttachment.id)}">Visualiser</button><button type="button" class="secondary-button" data-print-quituses="${escapeHtml(quitusAttachment.id)}">Imprimer / PDF</button><button type="button" class="secondary-button" data-email-quituses="${escapeHtml(quitusAttachment.id)}" ${client.email ? "" : "disabled title=\"Ajoutez l’e-mail du client pour préparer un envoi.\""}>Envoyer par e-mail</button></div>` : "";
     const reportActions = reportAttachment ? `<div class="client-card-actions client-activity-actions"><button type="button" class="secondary-button" data-view-report="${escapeHtml(reportAttachment.id)}">Visualiser</button><button type="button" class="secondary-button" data-print-report="${escapeHtml(reportAttachment.id)}">Imprimer / PDF</button><button type="button" class="secondary-button" data-email-report="${escapeHtml(reportAttachment.id)}" ${client.email ? "" : "disabled title=\"Ajoutez l’e-mail du client pour préparer un envoi.\""}>Envoyer par e-mail</button></div>` : "";
     const deductibleActions = deductibleAttachment ? `<div class="client-card-actions client-activity-actions"><button type="button" class="secondary-button" data-view-deductible="${escapeHtml(deductibleAttachment.id)}">Voir la photo de preuve</button></div>` : "";
     const actions = isBillingDocument ? `<div class="client-card-actions client-activity-actions"><button type="button" class="secondary-button" data-view-billing-document data-document-id="${escapeHtml(entry.documentId)}" data-document-number="${escapeHtml(entry.detail)}">Visualiser</button><button type="button" class="secondary-button" data-print-billing-document data-document-id="${escapeHtml(entry.documentId)}" data-document-number="${escapeHtml(entry.detail)}">Imprimer / PDF</button><button type="button" class="secondary-button" data-email-billing-document data-document-id="${escapeHtml(entry.documentId)}" data-document-number="${escapeHtml(entry.detail)}" ${client.email ? "" : "disabled title=\"Ajoutez l’e-mail du client pour préparer un envoi.\""}>Envoyer par e-mail</button></div>` : quitusActions || reportActions || deductibleActions;
