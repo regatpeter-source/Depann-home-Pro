@@ -30,6 +30,11 @@ export async function initializeCollaboration() {
     `);
     await database.query("CREATE INDEX IF NOT EXISTS depannhome_collaboration_notifications_recipient_idx ON depannhome_collaboration_notifications (recipient_id, read_at, created_at DESC)");
     await database.query("CREATE INDEX IF NOT EXISTS depannhome_collaboration_notifications_owner_recipient_idx ON depannhome_collaboration_notifications (owner_id, recipient_id, read_at, created_at DESC)");
+    await database.query(`DELETE FROM depannhome_collaboration_notifications previous USING depannhome_collaboration_notifications latest
+        WHERE previous.owner_id=latest.owner_id AND previous.recipient_id=latest.recipient_id
+            AND previous.entity_type='partner_mission' AND latest.entity_type='partner_mission'
+            AND previous.entity_id=latest.entity_id AND previous.read_at IS NULL AND latest.read_at IS NULL
+            AND previous.id<latest.id`);
     await database.query(`
         CREATE TABLE IF NOT EXISTS depannhome_collaboration_audit (
             id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
@@ -179,6 +184,23 @@ export async function createNotification(ownerId, recipientId, eventType, target
     if (isPartnerBusinessNotification(eventType, target)) {
         const { rows: recipients } = await getPool().query("SELECT role FROM depannhome_users WHERE id=$1 AND account_owner_id=$2", [recipientId, ownerId]);
         if (["technician", "team_lead"].includes(recipients[0]?.role)) return null;
+        if (target?.entityType === "partner_mission" && target?.entityId) {
+            const { rows: consolidated } = await getPool().query(`
+                UPDATE depannhome_collaboration_notifications
+                SET event_type=$3,title=$6,body=$7,payload=$8::jsonb,created_at=NOW()
+                WHERE id=(
+                    SELECT id FROM depannhome_collaboration_notifications
+                    WHERE owner_id=$1 AND recipient_id=$2 AND entity_type=$4 AND entity_id=$5 AND read_at IS NULL
+                    ORDER BY created_at DESC LIMIT 1
+                )
+                RETURNING id,created_at AS "createdAt"
+            `, [ownerId, recipientId, eventType, target.entityType, target.entityId, cleanText(title, 200), cleanText(body, 2000), JSON.stringify(payload)]);
+            if (consolidated[0]) {
+                await getPool().query("DELETE FROM depannhome_collaboration_notifications WHERE owner_id=$1 AND recipient_id=$2 AND entity_type=$3 AND entity_id=$4 AND read_at IS NULL AND id<>$5", [ownerId, recipientId, target.entityType, target.entityId, consolidated[0].id]);
+                await broadcast(ownerId, "notification", { recipientId: String(recipientId), notification: { id: consolidated[0].id, eventType, entityType: target.entityType, entityId: target.entityId, title, body, payload, createdAt: consolidated[0].createdAt } });
+                return consolidated[0];
+            }
+        }
         const duplicate = await getPool().query(`
             SELECT id, created_at AS "createdAt"
             FROM depannhome_collaboration_notifications

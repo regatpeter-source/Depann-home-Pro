@@ -4,7 +4,7 @@ import { escapeHtml } from "./utils.js?v=44";
 import { openPartnerDialogue } from "./partner-dialogue.js?v=19";
 import { getSearchableClients } from "./clients.js?v=164";
 import { synchronizeClients } from "./client-sync.js?v=127";
-import { loadPartnerNotifications, markPartnerNotificationsRead } from "./collaboration.js?v=6";
+import { loadPartnerNotifications, markPartnerNotificationsRead } from "./collaboration.js?v=7";
 
 let dashboard = null;
 let activeMissionTab = "received";
@@ -428,7 +428,7 @@ async function showDetail(id) {
     content.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 async function openPartnerMissionPlanning(mission) {
-    const { renderCalendar } = await import("./calendar.js?v=201");
+    const { renderCalendar } = await import("./calendar.js?v=202");
     const data = mission.mappedData || {};
     const draft = mission.planningDraft || {};
     const hasDraft = Boolean(draft.pausedAt);

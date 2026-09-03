@@ -43,6 +43,7 @@ body.dark-theme{
     --shadow:0 8px 18px rgba(0,0,0,.28);
     --shadow-hover:0 14px 30px rgba(0,0,0,.38);
     background:linear-gradient(180deg,#111827 0%,var(--bg) 45%,#0b1220 100%);
+    background-color:var(--bg);
 }
 
 body.dark-theme :is(input:not([type="checkbox"]):not([type="radio"]),select,textarea),
@@ -58,6 +59,27 @@ body.dark-theme :is(.notification-list article.unread,.settings-heading,.team-he
 
 body.dark-theme :is(h1,h2,h3,h4,strong,label,.notification-center h3,.settings-field,.settings-toggle){
     color:var(--text);
+}
+
+body.dark-theme #authRoot,
+body.dark-theme #app{
+    background:transparent;
+}
+
+body.dark-theme :is(.client-panel,.brand-card,.procedure-card,.procedure-section,.dashboard-panel,.dashboard-card,.calendar-panel,.calendar-grid-panel,.calendar-day,.calendar-timeline,.calendar-timeline-day,.calendar-timeline-all-day,.partner-mission-shell,.partner-mission-card,.partner-mission-alerts,.partner-mission-counters article,.partner-email-candidate,.partner-email-channel-card,.partner-email-inbound-card,.partner-email-connection-settings,.partner-mailbox-list,.partner-mailbox-message,.accounting-panel,.accounting-cards article,.connector-panel,.report-panel,.report-corrections,.library-document-card,.professional-directory-modal>section,.data-import-dialog,.client-lifecycle-dialog>div,.report-creation-dialog>div,.photo-draw-dialog>div){
+    border-color:var(--border);
+    background:var(--surface);
+    color:var(--text);
+}
+
+body.dark-theme :is(.calendar-toolbar-actions .secondary-button,.calendar-view-switcher .secondary-button.active,.calendar-technician-options label,.calendar-time-axis,.calendar-timeline-header,.calendar-timeline-all-day,.calendar-day.outside,.settings-heading,.team-heading,.partner-mission-filters,.partner-dialogue-links,.partner-dialogue-thread,.client-table tr){
+    border-color:var(--border);
+    background:var(--surface-alt);
+    color:var(--text);
+}
+
+body.dark-theme :is(.muted,.eyebrow,small,.calendar-time-axis time){
+    color:var(--muted);
 }
 
 body.hide-sync-indicator .collaboration-sync{display:none}

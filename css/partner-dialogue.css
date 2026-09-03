@@ -497,3 +497,30 @@
         width:100%;
     }
 }
+
+body.dark-theme .partner-dialogue-modal>.partner-dialogue,
+body.dark-theme .partner-dialogue .partner-journal-filters,
+body.dark-theme .partner-dialogue .partner-dialogue-composer,
+body.dark-theme .partner-dialogue .partner-dialogue-readonly,
+body.dark-theme .partner-dialogue .partner-dialogue-message,
+body.dark-theme .partner-dialogue .partner-dialogue-document-empty,
+body.dark-theme .partner-dialogue .partner-intervention-photo-selector label{
+    border-color:var(--border);
+    background:var(--surface);
+    color:var(--text);
+}
+
+body.dark-theme .partner-dialogue .partner-dialogue-heading,
+body.dark-theme .partner-dialogue .partner-dialogue-summary,
+body.dark-theme .partner-dialogue .partner-dialogue-links,
+body.dark-theme .partner-dialogue .partner-dialogue-thread,
+body.dark-theme .partner-dialogue .partner-dialogue-message.system,
+body.dark-theme .partner-dialogue .partner-dialog-close{
+    border-color:var(--border);
+    background:var(--surface-alt);
+    color:var(--text);
+}
+
+body.dark-theme .partner-dialogue :is(.partner-dialogue-summary strong,.partner-dialogue-links>strong,.partner-journal-filters::before,.partner-composer-files>span){
+    color:var(--text);
+}

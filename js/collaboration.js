@@ -63,7 +63,10 @@ function isPartnerNotification(notification) { const type = String(notification?
 function deduplicatePartnerNotifications(items) {
     const seen = new Set();
     return (Array.isArray(items) ? items : []).filter(item => {
-        const key = [item?.eventType, item?.entityType, item?.entityId, item?.title, item?.body].map(value => String(value || "")).join("\u0000");
+        const missionId = item?.entityType === "partner_mission" ? (item?.entityId || item?.payload?.missionId) : "";
+        const key = missionId
+            ? `partner_mission\u0000${String(missionId)}`
+            : [item?.eventType, item?.entityType, item?.entityId, item?.title, item?.body].map(value => String(value || "")).join("\u0000");
         if (seen.has(key)) return false;
         seen.add(key);
         return true;

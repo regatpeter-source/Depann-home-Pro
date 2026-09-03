@@ -1,12 +1,13 @@
 import { initializeAuthentication, restoreApplicationShell, signOut } from "./auth.js?v=125";
 import { initializeClientSynchronization } from "./client-sync.js?v=127";
-import { initializeCollaboration } from "./collaboration.js?v=6";
+import { initializeCollaboration } from "./collaboration.js?v=7";
 import { loadDatabase } from "./data.js?v=59";
-import { initializeNavigation, refreshApplication } from "./navigation.js?v=432";
+import { initializeNavigation, refreshApplication } from "./navigation.js?v=433";
 import { renderError } from "./ui.js?v=44";
 import { getSettings } from "./storage.js?v=45";
 import { FONT_OPTIONS } from "./config.js?v=132";
 import { installClientSessionGuard, onClientSessionReplaced } from "./client-session.js?v=3";
+import { initializeInterfaceLanguage } from "./i18n.js?v=1";
 
 let applicationStarted = false;
 let sessionReplacementHandled = false;
@@ -61,7 +62,7 @@ async function startApplication() {
         applyTheme();
         applyInterfacePreferences();
         applyFont();
-        applyLanguage();
+        initializeInterfaceLanguage();
         enforceOfficialProductName();
         await initializeSandboxCapabilities();
         await initializeClientSynchronization();
@@ -238,37 +239,6 @@ function applyFont() {
         const font = FONT_OPTIONS.find(f => f.id === settings.font) || FONT_OPTIONS[0];
         if (font && font.css) document.body.style.fontFamily = font.css;
         else document.body.style.fontFamily = "";
-    } catch {
-        // ignore
-    }
-}
-
-function applyLanguage() {
-    try {
-        const settings = getSettings();
-        const lang = settings.lang || 'fr';
-        document.documentElement.lang = lang;
-
-        // update a few static UI strings (header, placeholder, nav labels)
-        const title = lang === 'en' ? "Depann'Home Pro" : "Depann'Home Pro";
-        const subtitle = lang === 'en' ? "Professional troubleshooting assistant" : "Assistant de dépannage professionnel";
-        const searchPlaceholder = lang === "en" ? "Search a module, client, or appointment..." : "Rechercher un module, un client ou une intervention...";
-
-        const headerH1 = document.querySelector('header .header-content h1');
-        const headerP = document.querySelector('header .header-content p');
-        if (headerH1) headerH1.textContent = title;
-        if (headerP) headerP.textContent = subtitle;
-
-        const search = document.getElementById('search');
-        if (search) search.placeholder = searchPlaceholder;
-
-        const texts = lang === "en"
-            ? { home: "Home", search: "Search", store: "Store", clients: "Clients", billing: "Quotes", calendar: "Planning", library: "Library", settings: "Settings" }
-            : { home: "Accueil", search: "Recherche", store: "Magasin", clients: "Clients", billing: "Devis", calendar: "Planning", library: "Bibliothèque", settings: "Paramètres" };
-        document.querySelectorAll("footer .nav-button").forEach(button => {
-            const label = button.querySelector(".nav-label-clients") || button.querySelector("span");
-            if (label) label.textContent = texts[button.dataset.nav] || label.textContent;
-        });
     } catch {
         // ignore
     }

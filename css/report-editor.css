@@ -1,4 +1,25 @@
 .report-module-nav{touch-action:pan-x}
+body.dark-theme.report-writing-active .report-editor-fullscreen,
+body.dark-theme.report-writing-active .report-editor-header,
+body.dark-theme.report-writing-active .report-editor-footer,
+body.dark-theme.report-writing-active .report-module-nav,
+body.dark-theme .report-summary-dialog>div{
+	border-color:var(--border)!important;
+	background:var(--surface)!important;
+	color:var(--text)!important;
+}
+body.dark-theme.report-writing-active .report-observation-card textarea{
+	color:var(--text)!important;
+}
+body.dark-theme .report-module-nav button{
+	background:var(--surface-alt)!important;
+	color:var(--muted)!important;
+}
+body.dark-theme .report-module-nav button.active{
+	border-color:var(--primary)!important;
+	background:#23344d!important;
+	color:var(--primary)!important;
+}
 .report-writing-active .report-editor-header{grid-template-columns:minmax(0,1.4fr) minmax(220px,1fr) auto auto}.report-editor-home-button{justify-self:end;white-space:nowrap}
 @media(max-width:700px){.report-writing-active .report-editor-fullscreen{padding-bottom:180px!important}.report-writing-active .report-editor-header{display:flex!important;justify-content:flex-end!important;padding:8px 0!important}.report-writing-active .report-editor-header .report-editor-identity,.report-writing-active .report-editor-header .report-editor-meta,.report-writing-active .report-editor-header .report-editor-status{display:none!important}.report-writing-active .report-editor-footer{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:8px!important;padding:9px 10px!important}.report-writing-active .report-editor-footer [data-preview]{grid-column:1/-1!important;order:0!important}.report-writing-active .report-editor-footer [data-previous-module]{grid-column:1!important;order:1!important}.report-writing-active .report-editor-footer [data-next-module]{grid-column:2!important;order:1!important}.report-writing-active .report-editor-footer .report-primary-action{grid-column:1/-1!important;order:2!important}.report-writing-active .report-editor-footer .secondary-button{width:100%!important;min-width:0!important;min-height:44px!important;white-space:normal!important}.report-writing-active .report-observation-photos{scroll-margin-bottom:180px}}
 /* Éditeur de rapport immersif, pensé pour la rédaction terrain. */
