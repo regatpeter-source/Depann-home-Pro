@@ -5326,7 +5326,7 @@ body.mobile-device .calendar-technician-filter-heading strong{display:block;over
 body.mobile-device .calendar-technician-filter-heading .secondary-button{min-height:38px;padding:7px 9px;border-radius:10px;font-size:10px}
 body.mobile-device .calendar-technician-options{gap:6px;padding-top:4px}
 body.mobile-device .calendar-technician-options label{padding:6px 8px;border-radius:999px;background:#fff;font-size:11px}
-body.mobile-device .calendar-legend,body.mobile-device .calendar-status-legend{gap:5px;margin-top:8px}
+body.mobile-device .calendar-legend,body.mobile-device .calendar-status-legend{display:none}
 body.mobile-device .calendar-legend span,body.mobile-device .calendar-status-legend span{gap:4px;padding:4px 7px;border-radius:999px;background:rgba(255,255,255,.7);font-size:9px}
 body.mobile-device .calendar-legend i{width:8px;height:8px}
 body.mobile-device .calendar-status-legend i{width:13px;height:7px}

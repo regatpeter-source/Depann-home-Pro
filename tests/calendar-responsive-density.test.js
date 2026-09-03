@@ -63,6 +63,13 @@ test("le planning mobile utilise des contrôles tactiles et des cartes plutôt q
     assert.match(styles, /body\.mobile-device \.calendar-grid \.calendar-event-time\{[^}]*font-size:9px/);
 });
 
+test("les définitions de couleurs et de statuts restent masquées sur tous les postes mobiles", () => {
+    assert.match(calendar, /<div class="calendar-legend">/);
+    assert.match(calendar, /<div class="calendar-status-legend"/);
+    assert.match(styles, /body\.mobile-device \.calendar-legend,body\.mobile-device \.calendar-status-legend\{display:none\}/);
+    assert.doesNotMatch(styles, /body\[data-role="mobile_admin"\]\.mobile-device \.calendar-(?:legend|status-legend)\{display:(?:flex|grid|block)/);
+});
+
 test("les vues jour et semaine PC et mobile utilisent une grille horaire de 8 h à 19 h", () => {
     assert.match(calendar, /PLANNING_DAY_START_HOUR = 8/);
     assert.match(calendar, /PLANNING_DAY_END_HOUR = 19/);
