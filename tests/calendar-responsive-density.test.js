@@ -53,6 +53,16 @@ test("le mois et la semaine mobiles affichent sept jours en largeur sans défile
     assert.doesNotMatch(styles, /body\.mobile-device \.calendar-timeline\{[^}]*min-width:760px/);
 });
 
+test("le planning mobile utilise des contrôles tactiles et des cartes plutôt qu'un tableau PC réduit", () => {
+    assert.match(styles, /body\.mobile-device \.calendar-toolbar-actions\{display:grid;grid-template-columns:repeat\(6,minmax\(0,1fr\)\)/);
+    assert.match(styles, /body\.mobile-device \.calendar-toolbar-actions \[data-calendar-action="today"\]\{grid-column:span 4/);
+    assert.match(styles, /body\.mobile-device \.calendar-view-switcher\{display:grid;grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/);
+    assert.match(styles, /body\.mobile-device \.calendar-day\{[^}]*border:0;border-radius:9px[^}]*box-shadow/);
+    assert.match(styles, /body\.mobile-device \.calendar-timeline-header\{position:sticky;top:0/);
+    assert.match(styles, /body\.mobile-device \.calendar-timeline-event\{[^}]*height:max\(32px[^}]*border-radius:7px[^}]*box-shadow/);
+    assert.match(styles, /body\.mobile-device \.calendar-grid \.calendar-event-time\{[^}]*font-size:9px/);
+});
+
 test("les vues jour et semaine PC et mobile utilisent une grille horaire de 8 h à 19 h", () => {
     assert.match(calendar, /PLANNING_DAY_START_HOUR = 8/);
     assert.match(calendar, /PLANNING_DAY_END_HOUR = 19/);
