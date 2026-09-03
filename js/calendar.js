@@ -1,9 +1,9 @@
 import { ROUTES } from "./config.js?v=106";
-import { createBillingDocumentForClient, viewBillingDocument } from "./billing.js?v=199";
-import { getSearchableClients } from "./clients.js?v=162";
-import { addClientActivityByName, synchronizeClients } from "./client-sync.js?v=126";
+import { createBillingDocumentForClient, viewBillingDocument } from "./billing.js?v=200";
+import { getSearchableClients } from "./clients.js?v=163";
+import { addClientActivityByName, synchronizeClients } from "./client-sync.js?v=127";
 import { renderClientMessages } from "./messages.js?v=107";
-import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=45";
+import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=46";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { renderPlatformAnnouncement } from "./platform-announcement.js?v=1";
@@ -639,7 +639,8 @@ function renderEventForm(panel) {
         if (!isEditing && payload.clientName) addClientActivityByName(payload.clientName, {
             type: "appointment",
             label: (result.data?.count || payload.dates?.length || 1) > 1 ? `${result.data?.count || payload.dates.length} interventions créées` : "Intervention créée",
-            detail: [payload.title, formatActivityDate(payload.date, payload.startTime)].filter(Boolean).join(" · ")
+            detail: [payload.title, formatActivityDate(payload.date, payload.startTime)].filter(Boolean).join(" · "),
+            appointmentId: (result.data?.count || 1) === 1 ? result.data?.id : ""
         });
         mobileAdminEditingEvents.delete(String(event.id || ""));
         displayedMonth = firstDayOfMonth(new Date(`${payload.date}T12:00:00`));

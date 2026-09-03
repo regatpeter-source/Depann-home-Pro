@@ -1,6 +1,6 @@
 import { ROUTES } from "./config.js?v=116";
-import { getSearchableClients } from "./clients.js?v=162";
-import { addClientActivityByName } from "./client-sync.js?v=126";
+import { getSearchableClients } from "./clients.js?v=163";
+import { addClientActivityByName } from "./client-sync.js?v=127";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { renderPlatformAnnouncement } from "./platform-announcement.js?v=1";
@@ -173,11 +173,11 @@ function renderOverview(panel, profilePanel) {
     panel.querySelector("[data-billing-action=new-quote]")?.addEventListener("click", () => { if (!isAccountant()) openNewDocument("quote"); });
     panel.querySelector("[data-billing-action=new-invoice]").addEventListener("click", () => { if (!isAccountant()) openNewDocument("invoice"); });
     panel.querySelector("[data-billing-action=open-leak-reports]")?.addEventListener("click", async () => {
-        const { renderLeakReportWizard } = await import("./leak-report-wizard.js?v=45");
+        const { renderLeakReportWizard } = await import("./leak-report-wizard.js?v=46");
         renderLeakReportWizard();
     });
     panel.querySelector("[data-billing-action=new-leak-report]")?.addEventListener("click", async () => {
-        const { openLeakReportCreation } = await import("./leak-report-wizard.js?v=45");
+        const { openLeakReportCreation } = await import("./leak-report-wizard.js?v=46");
         openLeakReportCreation();
     });
     panel.querySelector("[data-billing-action=download-quote-template]")?.addEventListener("click", openQuoteTemplateDownload);
@@ -186,7 +186,7 @@ function renderOverview(panel, profilePanel) {
     panel.querySelector("[data-billing-action=preview-blank-quote]")?.addEventListener("click", openBlankQuotePreview);
     panel.querySelector("[data-billing-action=manage-line-templates]")?.addEventListener("click", () => renderBilling({ templates: true }));
     panel.querySelector("[data-billing-action=open-purchases]")?.addEventListener("click", async () => {
-        const { renderPurchases } = await import("./purchases.js?v=124");
+        const { renderPurchases } = await import("./purchases.js?v=125");
         renderPurchases();
     });
 }
@@ -526,7 +526,8 @@ function renderDocumentEditor(panel) {
             type: payload.documentType,
             label: `${DOCUMENT_TYPES[payload.documentType]} créé`,
             detail: savedDocumentNumber,
-            documentId: result.data?.id
+            documentId: result.data?.id,
+            appointmentId: payload.appointmentId
         });
         billingPreviewCleanup();
         const savedDocumentId = result.data?.id || document.id;
@@ -644,7 +645,7 @@ async function issueBillingInvoice(document, clients = [], form = null) {
     if (!result.ok) return alert(result.message || "Émission définitive impossible.");
     const documentNumber = result.data?.documentNumber || document.documentNumber;
     const client = clients.find(item => String(item.id) === String(document.clientId || "")) || clients.find(item => normalizeText(item.name) === normalizeText(document.customerName));
-    addClientActivityByName(document.customerName, { type: "invoice", label: "Facture émise", detail: documentNumber, documentId: document.id });
+    addClientActivityByName(document.customerName, { type: "invoice", label: "Facture émise", detail: documentNumber, documentId: document.id, appointmentId: document.appointmentId });
     await renderBilling({ documentId: document.id });
     openDocumentDeliveryChoice({
         label: `Facture ${documentNumber}`,

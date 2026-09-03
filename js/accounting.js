@@ -1,7 +1,7 @@
 import { clearSearch, getContainer, setPage } from "./ui.js?v=44";
 import { ROUTES } from "./config.js?v=128";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
-import { renderPurchases } from "./purchases.js?v=124";
+import { renderPurchases } from "./purchases.js?v=125";
 
 const SECTIONS = [
     ["dashboard", "Tableau de bord"], ["salesJournal", "Journal des ventes"], ["settlements", "Règlements"], ["credits", "Avoirs"], ["vat", "TVA"], ["purchases", "Achats"], ["export", "Export comptable"], ["fec", "Export FEC"], ["control", "Contrôle comptable"], ["electronic", "Facturation électronique & PDP"], ["settings", "Paramètres"]

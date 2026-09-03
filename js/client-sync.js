@@ -319,6 +319,7 @@ function normalizeActivity(activity) {
         detail: String(activity?.detail || "").slice(0, 500),
         documentId: String(activity?.documentId || "").slice(0, 30),
         attachmentId: String(activity?.attachmentId || "").slice(0, 100),
+        appointmentId: String(activity?.appointmentId || "").replace(/[^0-9]/g, "").slice(0, 30),
         actorName: String(activity?.actorName || "").slice(0, 100),
         createdAt
     };

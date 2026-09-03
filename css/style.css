@@ -4896,6 +4896,76 @@ body.desktop-device .billing-editor-panel.billing-editor-live-active{
     margin-top:12px;
 }
 
+.client-intervention-history-list{
+    display:grid;
+    gap:12px;
+    margin-top:12px;
+}
+
+.client-intervention-history{
+    overflow:hidden;
+    border:1px solid var(--border);
+    border-radius:14px;
+    background:#fff;
+}
+
+.client-intervention-history > summary{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:16px;
+    padding:14px 16px;
+    cursor:pointer;
+    list-style:none;
+    background:#f2f7fb;
+}
+
+.client-intervention-history > summary::-webkit-details-marker{
+    display:none;
+}
+
+.client-intervention-history-meta{
+    display:flex;
+    align-items:center;
+    gap:12px;
+    flex:0 0 auto;
+}
+
+.client-intervention-history-toggle{
+    color:var(--primary);
+    font-weight:700;
+}
+
+.client-intervention-history-close{
+    display:none;
+}
+
+.client-intervention-history[open] .client-intervention-history-open{
+    display:none;
+}
+
+.client-intervention-history[open] .client-intervention-history-close{
+    display:inline;
+}
+
+.client-intervention-history > summary span:first-child{
+    display:grid;
+    gap:3px;
+}
+
+.client-intervention-history > summary strong{
+    color:var(--primary);
+}
+
+.client-intervention-history > summary small{
+    color:var(--muted);
+}
+
+.client-intervention-history > .client-activity-list{
+    margin:0;
+    padding:12px;
+}
+
 .client-activity-item{
     display:flex;
     justify-content:space-between;
@@ -4920,6 +4990,20 @@ body.desktop-device .billing-editor-panel.billing-editor-live-active{
 .client-activity-item time{
     flex:0 0 auto;
     text-align:right;
+}
+
+@media(max-width:600px){
+    .client-intervention-history > summary,
+    .client-activity-item{
+        align-items:flex-start;
+        flex-direction:column;
+        gap:7px;
+    }
+
+    .client-intervention-history-meta,
+    .client-activity-item time{
+        text-align:left;
+    }
 }
 
 /* ==========================
