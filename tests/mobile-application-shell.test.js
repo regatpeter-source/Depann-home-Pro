@@ -39,5 +39,7 @@ test("la densité mobile reste isolée du poste PC", () => {
     assert.match(styles, /body\.mobile-device \.dashboard-grid\{grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
     assert.match(styles, /body\.mobile-device \.calendar-grid-panel\{padding:8px/);
     assert.match(styles, /body\.mobile-device \.calendar-grid-panel:has\(\.calendar-timeline\)/);
+    assert.match(styles, /body\.mobile-device \.calendar-weekdays,body\.mobile-device \.calendar-grid\{width:100%;min-width:0\}/);
+    assert.match(styles, /body\.mobile-device \.calendar-timeline\{[^}]*width:100%;min-width:0/);
     assert.doesNotMatch(styles, /body\.desktop-device[^\n{]*mobile-workspace-menu/);
 });

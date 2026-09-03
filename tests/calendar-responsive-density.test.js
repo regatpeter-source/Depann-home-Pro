@@ -36,7 +36,7 @@ test("le mois et la semaine limitent les cartes selon le poste sans perdre les i
     assert.match(limits, /refreshCalendarPeriod\(\)/);
 });
 
-test("le mois conserve sa grille et la semaine mobile reprend la frise PC", () => {
+test("le mois et la semaine mobiles affichent sept jours en largeur sans défilement horizontal", () => {
     assert.match(styles, /grid-auto-rows:190px/);
     assert.match(styles, /\.calendar-day\{[\s\S]*?height:190px;[\s\S]*?overflow:hidden/);
     assert.match(styles, /\.calendar-list-week \.calendar-list-day\{[\s\S]*?height:290px;[\s\S]*?overflow:hidden/);
@@ -45,10 +45,12 @@ test("le mois conserve sa grille et la semaine mobile reprend la frise PC", () =
     assert.match(styles, /body\.desktop-device \.calendar-list-view\.calendar-list-week\{[\s\S]*?height:100%/);
     assert.match(styles, /body\.desktop-device \.calendar-list-week \.calendar-list-day\{[\s\S]*?height:100%/);
     assert.match(styles, /\.calendar-list-week\{[\s\S]*?grid-template-columns:repeat\(7/);
-    assert.match(styles, /min-width:700px/);
     assert.match(calendar, /classList\.contains\("desktop-device"\) \|\| document\.body\.classList\.contains\("mobile-device"\)/);
-    assert.match(styles, /body\.mobile-device \.calendar-timeline\{[^}]*min-width:760px/);
-    assert.match(styles, /body\.mobile-device \.calendar-timeline\.calendar-timeline-day\{min-width:320px\}/);
+    assert.match(styles, /body\.mobile-device \.calendar-weekdays,body\.mobile-device \.calendar-grid\{width:100%;min-width:0\}/);
+    assert.match(styles, /body\.mobile-device \.calendar-timeline\{[^}]*grid-template-rows:auto auto 660px[^}]*width:100%;min-width:0/);
+    assert.match(styles, /grid-template-columns:40px repeat\(var\(--calendar-day-count\),minmax\(0,1fr\)\)/);
+    assert.match(styles, /body\.mobile-device \.calendar-grid-panel:has\(\.calendar-timeline\)\{[^}]*overflow-x:hidden;overflow-y:auto/);
+    assert.doesNotMatch(styles, /body\.mobile-device \.calendar-timeline\{[^}]*min-width:760px/);
 });
 
 test("les vues jour et semaine PC et mobile utilisent une grille horaire de 8 h à 19 h", () => {
@@ -68,6 +70,8 @@ test("les vues jour et semaine PC et mobile utilisent une grille horaire de 8 h 
     assert.match(styles, /body\.desktop-device \.calendar-timeline\{/);
     assert.match(styles, /grid-template-columns:52px repeat\(var\(--calendar-day-count\)/);
     assert.match(styles, /top:calc\(var\(--event-start\) \* 100%/);
+    assert.match(styles, /body\.mobile-device \.calendar-time-axis\{[^}]*position:sticky/);
+    assert.match(styles, /body\.mobile-device \.calendar-timeline-day \.calendar-event-time\{display:block/);
 });
 
 test("les cartes compactes restent accessibles avec toutes les informations", () => {
