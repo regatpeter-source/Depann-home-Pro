@@ -7,7 +7,7 @@ import { renderError } from "./ui.js?v=44";
 import { getSettings } from "./storage.js?v=45";
 import { FONT_OPTIONS } from "./config.js?v=132";
 import { installClientSessionGuard, onClientSessionReplaced } from "./client-session.js?v=3";
-import { initializeInterfaceLanguage } from "./i18n.js?v=1";
+import { initializeInterfaceLanguage } from "./i18n.js?v=2";
 
 let applicationStarted = false;
 let sessionReplacementHandled = false;
@@ -25,6 +25,7 @@ if (document.readyState === "loading") window.addEventListener("DOMContentLoaded
 else initializeApp();
 
 async function initializeApp() {
+    initializeInterfaceLanguage();
     try {
         await initializeAuthentication({
             onAuthenticated: user => {
@@ -62,7 +63,6 @@ async function startApplication() {
         applyTheme();
         applyInterfacePreferences();
         applyFont();
-        initializeInterfaceLanguage();
         enforceOfficialProductName();
         await initializeSandboxCapabilities();
         await initializeClientSynchronization();
