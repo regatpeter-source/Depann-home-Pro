@@ -7216,3 +7216,196 @@ body.desktop-device.dark-theme .calendar-timeline-day[role="button"]:active{
     background-color:#1d2a40;
     outline-color:#60718a;
 }
+
+/* Paramètres sombres homogènes — cette couche reste en fin de cascade pour
+   neutraliser les surfaces claires propres aux sous-sections de configuration. */
+body:is(.desktop-device,.mobile-device).dark-theme :is(
+    .settings-hub-heading,
+    .settings-navigation-card,
+    .settings-subsection-grid section,
+    .subscription-billing-panel,
+    .subscription-billing-grid article,
+    .subscription-offer-card,
+    .team-form,
+    .team-section,
+    .team-permissions-fieldset,
+    .team-member,
+    .group-cards article,
+    .group-company-list article,
+    .group-company-management article,
+    .partner-api-list article,
+    .partner-email-connection,
+    .partner-email-candidate,
+    .partner-email-inbound-card,
+    .partner-email-channel-card,
+    .partner-email-connection-settings,
+    .partner-email-search-results,
+    .partner-email-search-candidate,
+    .partner-mailbox-browser,
+    .partner-mailbox-list,
+    .partner-mailbox-message,
+    .partner-mailbox-reply,
+    .partner-email-reply-dialog,
+    .professional-directory-modal>section,
+    .professional-directory-filters,
+    .professional-directory-card,
+    .professional-company-profile,
+    .template-studio-heading,
+    .template-studio-import,
+    .template-version-list button,
+    .template-studio-toolbar,
+    .template-page-settings,
+    .creator-subscription-summary article,
+    .creator-subscription-invoice,
+    .creator-partner-request,
+    .creator-partner-request-summary,
+    .creator-partner-request-message
+){
+    border-color:var(--border);
+    background:var(--surface);
+    color:var(--text);
+}
+
+body:is(.desktop-device,.mobile-device).dark-theme :is(
+    .settings-heading,
+    .settings-toggle,
+    .settings-info,
+    .settings-note,
+    .settings-subsection-grid section,
+    .team-heading,
+    .team-departments-field,
+    .team-department-group,
+    .group-audit-list article,
+    .partner-email-sync-period,
+    .partner-email-criteria-summary,
+    .partner-mailbox-row,
+    .partner-mailbox-mission-attachment,
+    .partner-mailbox-mission-import,
+    .partner-email-reply-recipient,
+    .partner-email-reply-notice,
+    .partner-email-reply-files,
+    .directory-filter-toggle,
+    .professional-directory-filters fieldset,
+    .template-studio-actions,
+    .template-inheritance-note,
+    .integrated-template-choice,
+    .subscription-offer-card.active,
+    .creator-subscription-payment-form,
+    .creator-subscription-credit,
+    .creator-credit-create,
+    .creator-credit-refund-form
+){
+    border-color:var(--border);
+    background:var(--surface-alt);
+    color:var(--text);
+}
+
+body:is(.desktop-device,.mobile-device).dark-theme .settings-navigation-icon{
+    background:rgba(147,197,253,.12);
+    color:var(--primary);
+}
+
+body:is(.desktop-device,.mobile-device).dark-theme .settings-navigation-card:hover,
+body:is(.desktop-device,.mobile-device).dark-theme .settings-navigation-card:focus-visible{
+    border-color:var(--primary);
+    background:#24344a;
+}
+
+body:is(.desktop-device,.mobile-device).dark-theme :is(
+    .partner-network-tabs .secondary-button,
+    .partner-email-sync-period input,
+    .partner-email-inbound-address code,
+    .partner-mailbox-reply textarea,
+    .partner-email-reply-dialog textarea,
+    .partner-email-reply-files output,
+    .professional-directory-filters input[type="text"],
+    .professional-directory-filters input[type="number"],
+    .professional-directory-filters select,
+    .professional-directory-search input,
+    .professional-directory-toolbar select,
+    .professional-availability-dialog select,
+    .template-studio-import input,
+    .template-studio-toolbar select,
+    .template-page-settings input,
+    .template-page-settings select,
+    .template-page-settings textarea,
+    .creator-subscription-payment-form input,
+    .group-company-selector select
+){
+    border-color:var(--border);
+    background:var(--surface-alt);
+    color:var(--text);
+}
+
+body:is(.desktop-device,.mobile-device).dark-theme :is(
+    .settings-hub,
+    .settings-card,
+    .subscription-company-panel,
+    .team-management,
+    .partner-email-panel,
+    .partner-email-review,
+    .professional-directory-modal,
+    .template-studio
+) :is(h2,h3,h4,h5,strong,label,summary,legend,dt){
+    color:var(--text);
+}
+
+body:is(.desktop-device,.mobile-device).dark-theme :is(
+    .settings-hub,
+    .settings-card,
+    .subscription-company-panel,
+    .team-management,
+    .partner-email-panel,
+    .partner-email-review,
+    .professional-directory-modal,
+    .template-studio
+) :is(p,small,dd){
+    color:var(--muted);
+}
+
+body:is(.desktop-device,.mobile-device).dark-theme :is(.subscription-billing-status,.template-studio-status,.partner-email-score,.team-heading-badge,.team-seat-badge,.team-department-badge){
+    background:#334155;
+    color:var(--text);
+}
+
+body:is(.desktop-device,.mobile-device).dark-theme :is(.subscription-billing-status.is-current,.template-studio-status.active,.partner-email-score.high,.team-state-badge.is-active,.creator-subscription-badge.paid){
+    background:rgba(52,211,153,.16);
+    color:#86efac!important;
+}
+
+body:is(.desktop-device,.mobile-device).dark-theme :is(.subscription-billing-status.is-trial,.creator-subscription-badge.trial,.creator-subscription-badge.new,.team-role-badge.is-technician){
+    background:rgba(96,165,250,.16);
+    color:#93c5fd!important;
+}
+
+body:is(.desktop-device,.mobile-device).dark-theme :is(.subscription-billing-status.is-warning,.partner-email-score.medium,.creator-subscription-badge.credit,.creator-subscription-badge.under_review,.team-department-badge){
+    background:rgba(251,191,36,.16);
+    color:#fcd34d!important;
+}
+
+body:is(.desktop-device,.mobile-device).dark-theme :is(.subscription-billing-status.is-inactive,.partner-email-score.low,.team-state-badge.is-inactive,.creator-subscription-badge.cancelled,.creator-subscription-badge.suspended,.creator-subscription-badge.failed){
+    background:rgba(248,113,113,.16);
+    color:#fca5a5!important;
+}
+
+body:is(.desktop-device,.mobile-device).dark-theme :is(.team-role-badge.is-admin,.team-role-badge.is-accountant){
+    background:rgba(192,132,252,.16);
+    color:#d8b4fe;
+}
+
+body:is(.desktop-device,.mobile-device).dark-theme .partner-network-tabs .secondary-button.active{
+    border-color:var(--primary);
+    background:var(--primary);
+    color:#0f172a;
+}
+
+body:is(.desktop-device,.mobile-device).dark-theme .partner-mailbox-row:hover,
+body:is(.desktop-device,.mobile-device).dark-theme .partner-mailbox-row.selected{
+    border-color:var(--primary);
+    background:#24344a;
+}
+
+body:is(.desktop-device,.mobile-device).dark-theme .partner-mailbox-row.unread{
+    border-left-color:var(--secondary);
+    background:rgba(52,211,153,.1);
+}

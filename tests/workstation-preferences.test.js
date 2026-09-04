@@ -41,6 +41,9 @@ test("la personnalisation propose thème, densité, animations et filtres de not
     assert.match(application, /classList\.toggle\("compact-interface"/);
     assert.match(application, /classList\.toggle\("reduce-motion"/);
     assert.match(style, /body\.dark-theme\{/);
+    assert.match(style, /Paramètres sombres homogènes/);
+    assert.match(style, /\.settings-navigation-icon\{[\s\S]*background:rgba\(147,197,253,\.12\)/);
+    assert.match(style, /\.partner-mailbox-row\.unread\{[\s\S]*background:rgba\(52,211,153,\.1\)/);
     assert.match(style, /body\.compact-interface/);
     assert.match(style, /body\.reduce-motion \*/);
 });

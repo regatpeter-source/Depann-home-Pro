@@ -31,6 +31,13 @@ test("le thème sombre couvre les écrans et les principaux espaces de travail",
     assert.match(desktopDarkRules, /--bg:#0f172a/);
     assert.match(desktopDarkRules, /\.topbar,#breadcrumb,[^}]+background:var\(--surface\)/);
     assert.match(desktopDarkRules, /\.calendar-timeline-day\{[\s\S]*background-color:var\(--surface\)/);
+    const settingsDarkTheme = style.indexOf("/* Paramètres sombres homogènes");
+    assert.ok(settingsDarkTheme > desktopDarkTheme, "les paramètres sombres doivent rester après toutes les règles claires PC");
+    const settingsDarkRules = style.slice(settingsDarkTheme);
+    assert.match(settingsDarkRules, /\.settings-subsection-grid section,[\s\S]*\.subscription-billing-panel,[\s\S]*\.team-member,[\s\S]*\.group-cards article/);
+    assert.match(settingsDarkRules, /\.partner-email-connection,[\s\S]*\.partner-mailbox-browser,[\s\S]*\.professional-directory-modal>section,[\s\S]*\.template-studio-heading/);
+    assert.match(settingsDarkRules, /\.settings-navigation-card:hover,[\s\S]*background:#24344a/);
+    assert.match(settingsDarkRules, /\.subscription-billing-status\.is-current,[\s\S]*color:#86efac!important/);
     assert.match(partnerDialogueStyle, /body\.dark-theme \.partner-dialogue-modal>\.partner-dialogue/);
     assert.match(partnerDialogueStyle, /background:var\(--surface-alt\)/);
     assert.match(reportEditorStyle, /body\.dark-theme\.report-writing-active \.report-editor-fullscreen/);
