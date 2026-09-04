@@ -21,7 +21,15 @@ const MAX_MEDIA_SIZE = 4 * 1024 * 1024;
 const MAX_REPORT_BYTES = 45 * 1024 * 1024;
 const MAX_LIBRARY_ITEMS = 200;
 const IMAGE_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".webp"]);
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_MEDIA_SIZE, files: 5 }, fileFilter: (request, file, callback) => callback(null, IMAGE_EXTENSIONS.has(path.extname(file.originalname || "").toLowerCase())) });
+const IMAGE_MIME_EXTENSIONS = new Map([
+    ["image/jpeg", new Set([".jpg", ".jpeg"])],
+    ["image/png", new Set([".png"])],
+    ["image/webp", new Set([".webp"])]
+]);
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_MEDIA_SIZE, files: 5 }, fileFilter: (request, file, callback) => {
+    const extension = path.extname(file.originalname || "").toLowerCase();
+    callback(null, IMAGE_EXTENSIONS.has(extension) && IMAGE_MIME_EXTENSIONS.get(file.mimetype)?.has(extension) === true);
+} });
 const templateUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 2 * 1024 * 1024, files: 2 }, fileFilter: (request, file, callback) => callback(null, ["image/png", "image/jpeg", "image/webp"].includes(file.mimetype)) });
 
 const defaultContent = () => createEmptyLeakContent();
@@ -183,6 +191,7 @@ export function registerTechnicalReportRoutes(app, requireAuthentication) {
         if (!canEdit(report, request)) return response.status(409).json({ message: "Le rapport est verrouillé." });
         if (!await enforceReportLock(request, response, report.id)) return;
         if (!section || !files.length) return response.status(400).json({ message: "Section et photo(s) obligatoires." });
+        if (files.some(file => !isValidReportImageFile(file))) return response.status(400).json({ message: "Chaque photo doit être un fichier JPEG, PNG ou WebP valide." });
         const media = Array.isArray(report.media) ? report.media : [];
         if (media.length + files.length > MAX_MEDIA_PER_REPORT) return response.status(400).json({ message: `Le rapport est limité à ${MAX_MEDIA_PER_REPORT} photos.` });
         const observationId = cleanText(request.body?.observationId, 100); const materialId = cleanText(request.body?.materialId, 100); const lastSortOrder = Math.max(-1, ...media.map(item => Number(item.sortOrder) || 0));
@@ -194,7 +203,7 @@ export function registerTechnicalReportRoutes(app, requireAuthentication) {
     }));
     app.patch("/api/technical-reports/:reportId/media/:mediaId", asyncHandler(async (request, response) => {
         const ownerId = getAccountOwnerId(request); const report = await findReport(ownerId, positiveId(request.params.reportId), request); if (!report) return response.status(404).json({ message: "Rapport introuvable." }); if (!canEdit(report, request)) return response.status(409).json({ message: "Le rapport est verrouillé." }); if (!await enforceReportLock(request, response, report.id)) return;
-        const id = String(request.params.mediaId || ""); const annotatedImage = /^data:image\/(jpeg|png|webp);base64,[a-zA-Z0-9+/=]+$/.test(String(request.body?.dataUrl || "")) && Buffer.byteLength(String(request.body.dataUrl), "utf8") <= MAX_MEDIA_SIZE * 1.4 ? String(request.body.dataUrl) : ""; const requestedSortOrder = Number(request.body?.sortOrder); const requestedPdfSize = ["compact", "medium", "large"].includes(request.body?.pdfSize) ? request.body.pdfSize : ""; const media = (report.media || []).map(item => item.id === id ? { ...item, caption: cleanText(request.body?.caption, 500), annotation: cleanText(request.body?.annotation, 1000), observationId: cleanText(request.body?.observationId, 100) || item.observationId || "", materialId: cleanText(request.body?.materialId, 100) || item.materialId || "", ...(Number.isFinite(requestedSortOrder) && requestedSortOrder >= 0 ? { sortOrder: requestedSortOrder } : {}), ...(requestedPdfSize ? { pdfSize: requestedPdfSize } : {}), ...(annotatedImage ? { dataUrl: annotatedImage, name: safeName(request.body?.name || item.name), mime: ["image/jpeg", "image/png", "image/webp"].includes(request.body?.mime) ? request.body.mime : item.mime, size: Math.min(MAX_MEDIA_SIZE, Math.max(0, Number(request.body?.size) || item.size || 0)) } : {}) } : item); if (!media.some(item => item.id === id)) return response.status(404).json({ message: "Photo introuvable." });
+        const id = String(request.params.mediaId || ""); const annotatedImage = isValidReportImageDataUrl(request.body?.dataUrl) ? String(request.body.dataUrl) : ""; const requestedSortOrder = Number(request.body?.sortOrder); const requestedPdfSize = ["compact", "medium", "large"].includes(request.body?.pdfSize) ? request.body.pdfSize : ""; const media = (report.media || []).map(item => item.id === id ? { ...item, caption: cleanText(request.body?.caption, 500), annotation: cleanText(request.body?.annotation, 1000), observationId: cleanText(request.body?.observationId, 100) || item.observationId || "", materialId: cleanText(request.body?.materialId, 100) || item.materialId || "", ...(Number.isFinite(requestedSortOrder) && requestedSortOrder >= 0 ? { sortOrder: requestedSortOrder } : {}), ...(requestedPdfSize ? { pdfSize: requestedPdfSize } : {}), ...(annotatedImage ? { dataUrl: annotatedImage, name: safeName(request.body?.name || item.name), mime: annotatedImage.slice(5, annotatedImage.indexOf(";")), size: Math.min(MAX_MEDIA_SIZE, Math.max(0, Number(request.body?.size) || item.size || 0)) } : {}) } : item); if (!media.some(item => item.id === id)) return response.status(404).json({ message: "Photo introuvable." });
         await getPool().query("UPDATE depannhome_technical_reports SET media=$3::jsonb, updated_at=NOW() WHERE id=$1 AND owner_id=$2", [report.id, ownerId, JSON.stringify(media)]); await publishEvent(request, reportTarget(report.id), "report_media_updated", { mediaId: id }); response.status(204).end();
     }));
     app.post("/api/technical-reports/:reportId/sections/:sectionId/duplicate-media", asyncHandler(async (request, response) => {
@@ -336,5 +345,18 @@ function validDate(value) { const date = String(value || ""); return /^\d{4}-\d{
 function positiveId(value) { const id = Number(value); return Number.isSafeInteger(id) && id > 0 ? id : 0; }
 function cleanText(value, max) { return String(value || "").replace(/\s+/g, " ").trim().slice(0, max); }
 function safeName(value) { return path.basename(String(value || "photo")).replace(/[\r\n]/g, " ").slice(0, 255) || "photo"; }
+export function isValidReportImageFile(file) {
+    const bytes = file?.buffer;
+    if (!Buffer.isBuffer(bytes) || !bytes.length) return false;
+    if (file.mimetype === "image/jpeg") return bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+    if (file.mimetype === "image/png") return bytes.length >= 8 && bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+    if (file.mimetype === "image/webp") return bytes.length >= 12 && bytes.subarray(0, 4).toString("ascii") === "RIFF" && bytes.subarray(8, 12).toString("ascii") === "WEBP";
+    return false;
+}
+export function isValidReportImageDataUrl(value) {
+    const match = /^data:(image\/(?:jpeg|png|webp));base64,([a-zA-Z0-9+/=]+)$/.exec(String(value || ""));
+    if (!match || Buffer.byteLength(String(value), "utf8") > MAX_MEDIA_SIZE * 1.4) return false;
+    return isValidReportImageFile({ mimetype: match[1], buffer: Buffer.from(match[2], "base64") });
+}
 export function technicalReportUploadErrorHandler(error, request, response, next) { if (error instanceof multer.MulterError) return response.status(400).json({ message: error.code === "LIMIT_FILE_SIZE" ? "Chaque photo est limitée à 4 Mo." : "Ajout des photos impossible." }); return next(error); }
 function asyncHandler(handler) { return (request, response, next) => Promise.resolve(handler(request, response, next)).catch(next); }

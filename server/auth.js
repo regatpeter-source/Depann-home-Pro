@@ -113,13 +113,7 @@ export function registerAuthRoutes(app) {
         const passwordMatches = user?.is_active && user?.account_is_active && await bcrypt.compare(password, user.password_hash);
 
         if (!passwordMatches) {
-            console.warn("[auth-login] rejected", {
-                username,
-                userFound: Boolean(user),
-                userActive: Boolean(user?.is_active),
-                accountActive: Boolean(user?.account_is_active),
-                passwordVerified: user ? await bcrypt.compare(password, user.password_hash) : false
-            });
+            await recordSecurityEvent({ request, eventType: "login", outcome: "failure" });
             return response.status(401).json({ message: "Identifiant ou mot de passe incorrect." });
         }
 
