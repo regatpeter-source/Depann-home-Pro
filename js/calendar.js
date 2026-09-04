@@ -1337,7 +1337,8 @@ function renderCalendarGrid(panel) {
 }
 
 function renderCalendarList(panel) {
-    if (document.body.classList.contains("desktop-device") || document.body.classList.contains("mobile-device")) return renderCalendarTimeline(panel);
+    if (document.body.classList.contains("mobile-device")) return renderMobileCalendarAgenda(panel);
+    if (document.body.classList.contains("desktop-device")) return renderCalendarTimeline(panel);
     panel.hidden = false;
     const { start, end } = getDisplayedRange();
     const eventDates = new Map();
@@ -1376,6 +1377,57 @@ function renderCalendarList(panel) {
             openNewEvent();
         });
     });
+}
+
+function renderMobileCalendarAgenda(panel) {
+    panel.hidden = false;
+    const { start, end } = getDisplayedRange();
+    const eventDates = new Map();
+    getVisibleEvents().forEach(event => {
+        if (!eventDates.has(event.date)) eventDates.set(event.date, []);
+        eventDates.get(event.date).push(event);
+    });
+    eventDates.forEach(dayEvents => dayEvents.sort(compareEventTimes));
+    const days = [];
+    for (const day = new Date(start); day <= end; day.setDate(day.getDate() + 1)) days.push(new Date(day));
+    const canCreate = !isReadOnlyCalendar();
+    const today = toDateString(new Date());
+    const totalEvents = days.reduce((total, day) => total + (eventDates.get(toDateString(day)) || []).length, 0);
+    const summary = calendarView === "day"
+        ? totalEvents ? `${totalEvents} intervention${totalEvents > 1 ? "s" : ""} prévue${totalEvents > 1 ? "s" : ""}` : "Journée disponible"
+        : totalEvents ? `${totalEvents} intervention${totalEvents > 1 ? "s" : ""} cette semaine` : "Semaine disponible";
+
+    panel.innerHTML = `
+        <div class="calendar-mobile-agenda calendar-mobile-agenda-${calendarView}">
+            <div class="calendar-mobile-agenda-summary" role="status" aria-live="polite"><span aria-hidden="true">${calendarView === "day" ? "☀" : "◫"}</span><div><p>${calendarView === "day" ? "Votre journée" : "Votre semaine"}</p><strong>${escapeHtml(summary)}</strong></div></div>
+            ${days.map(day => {
+                const date = toDateString(day);
+                const dayEvents = eventDates.get(date) || [];
+                const isToday = date === today;
+                const weekday = capitalize(new Intl.DateTimeFormat("fr-FR", { weekday: "short" }).format(day).replace(".", ""));
+                const fullDate = capitalize(new Intl.DateTimeFormat("fr-FR", { weekday: "long", day: "numeric", month: "long" }).format(day));
+                return `<section class="calendar-mobile-agenda-day${isToday ? " today" : ""}${dayEvents.length ? " has-events" : " is-empty"}">
+                    <header class="calendar-mobile-day-heading">
+                        <time datetime="${date}" class="calendar-mobile-date"><span>${escapeHtml(weekday)}</span><strong>${day.getDate()}</strong></time>
+                        <div><p>${isToday ? "Aujourd’hui" : escapeHtml(fullDate)}</p><small>${dayEvents.length ? `${dayEvents.length} rendez-vous` : "Aucun rendez-vous"}</small></div>
+                        ${canCreate ? `<button type="button" class="calendar-mobile-add" data-calendar-mobile-add="${date}" aria-label="Planifier une intervention le ${escapeHtml(formatShortDate(day))}">+</button>` : ""}
+                    </header>
+                    ${dayEvents.length ? `<div class="calendar-mobile-agenda-events">${dayEvents.map(event => {
+                        const client = getEventClientDetails(event);
+                        return `<button type="button" class="${calendarEventClassName(event, "calendar-mobile-agenda-event")}" data-calendar-event="${escapeHtml(event.id)}" data-calendar-status="${calendarEventStatus(event)}" aria-label="${escapeHtml(calendarEventAccessibleLabel(event, client, date))}">${renderCalendarEventCard(event, client)}<span class="calendar-mobile-event-arrow" aria-hidden="true">›</span></button>`;
+                    }).join("")}</div>` : `<p class="calendar-mobile-empty">${canCreate ? "Créneau libre · touchez + pour planifier" : "Aucune intervention prévue"}</p>`}
+                </section>`;
+            }).join("")}
+        </div>`;
+
+    panel.querySelectorAll("[data-calendar-event]").forEach(button => button.addEventListener("click", () => {
+        selectedEvent = events.find(event => String(event.id) === button.dataset.calendarEvent) || null;
+        refreshCalendarDetail();
+    }));
+    panel.querySelectorAll("[data-calendar-mobile-add]").forEach(button => button.addEventListener("click", () => {
+        selectedEvent = newEventForDate(button.dataset.calendarMobileAdd);
+        refreshCalendarDetail();
+    }));
 }
 
 function renderCalendarTimeline(panel) {

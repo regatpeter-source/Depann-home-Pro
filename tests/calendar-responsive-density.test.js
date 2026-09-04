@@ -36,7 +36,7 @@ test("le mois et la semaine limitent les cartes selon le poste sans perdre les i
     assert.match(limits, /refreshCalendarPeriod\(\)/);
 });
 
-test("le mois et la semaine mobiles affichent sept jours en largeur sans défilement horizontal", () => {
+test("le mois reste compact et les vues mobiles jour et semaine utilisent un agenda vertical", () => {
     assert.match(styles, /grid-auto-rows:190px/);
     assert.match(styles, /\.calendar-day\{[\s\S]*?height:190px;[\s\S]*?overflow:hidden/);
     assert.match(styles, /\.calendar-list-week \.calendar-list-day\{[\s\S]*?height:290px;[\s\S]*?overflow:hidden/);
@@ -45,12 +45,19 @@ test("le mois et la semaine mobiles affichent sept jours en largeur sans défile
     assert.match(styles, /body\.desktop-device \.calendar-list-view\.calendar-list-week\{[\s\S]*?height:100%/);
     assert.match(styles, /body\.desktop-device \.calendar-list-week \.calendar-list-day\{[\s\S]*?height:100%/);
     assert.match(styles, /\.calendar-list-week\{[\s\S]*?grid-template-columns:repeat\(7/);
-    assert.match(calendar, /classList\.contains\("desktop-device"\) \|\| document\.body\.classList\.contains\("mobile-device"\)/);
+    assert.match(calendar, /classList\.contains\("mobile-device"\)\) return renderMobileCalendarAgenda\(panel\)/);
+    assert.match(calendar, /classList\.contains\("desktop-device"\)\) return renderCalendarTimeline\(panel\)/);
+    assert.match(calendar, /function renderMobileCalendarAgenda/);
+    assert.match(calendar, /calendar-mobile-agenda-day/);
+    assert.match(calendar, /calendar-mobile-agenda-event/);
+    assert.match(calendar, /data-calendar-mobile-add/);
+    assert.match(calendar, /role="status" aria-live="polite"/);
+    assert.match(calendar, /dayEvents\.map\(event =>/);
     assert.match(styles, /body\.mobile-device \.calendar-weekdays,body\.mobile-device \.calendar-grid\{width:100%;min-width:0\}/);
-    assert.match(styles, /body\.mobile-device \.calendar-timeline\{[^}]*grid-template-rows:auto auto 660px[^}]*width:100%;min-width:0/);
-    assert.match(styles, /grid-template-columns:40px repeat\(var\(--calendar-day-count\),minmax\(0,1fr\)\)/);
-    assert.match(styles, /body\.mobile-device \.calendar-grid-panel:has\(\.calendar-timeline\)\{[^}]*overflow-x:hidden;overflow-y:auto/);
-    assert.doesNotMatch(styles, /body\.mobile-device \.calendar-timeline\{[^}]*min-width:760px/);
+    assert.match(styles, /body\.mobile-device \.calendar-mobile-agenda\{display:grid;gap:12px\}/);
+    assert.match(styles, /body\.mobile-device \.calendar-mobile-agenda-day\{[^}]*border-radius:18px/);
+    assert.match(styles, /body\.mobile-device \.calendar-mobile-agenda-event\{[^}]*min-height:72px/);
+    assert.match(styles, /body\.mobile-device \.calendar-mobile-add\{[^}]*width:42px;height:42px/);
 });
 
 test("le planning mobile utilise des contrôles tactiles et des cartes plutôt qu'un tableau PC réduit", () => {
@@ -58,8 +65,9 @@ test("le planning mobile utilise des contrôles tactiles et des cartes plutôt q
     assert.match(styles, /body\.mobile-device \.calendar-toolbar-actions \[data-calendar-action="today"\]\{grid-column:span 4/);
     assert.match(styles, /body\.mobile-device \.calendar-view-switcher\{display:grid;grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/);
     assert.match(styles, /body\.mobile-device \.calendar-day\{[^}]*border:0;border-radius:9px[^}]*box-shadow/);
-    assert.match(styles, /body\.mobile-device \.calendar-timeline-header\{position:sticky;top:0/);
-    assert.match(styles, /body\.mobile-device \.calendar-timeline-event\{[^}]*height:max\(32px[^}]*border-radius:7px[^}]*box-shadow/);
+    assert.match(styles, /body\.mobile-device \.calendar-mobile-agenda-summary\{[^}]*linear-gradient/);
+    assert.match(styles, /body\.mobile-device \.calendar-mobile-agenda-event\{[^}]*grid-template-columns:70px minmax\(0,1fr\) 20px/);
+    assert.match(styles, /body\.mobile-device \.calendar-mobile-agenda-event \.calendar-event-address\{display:block/);
     assert.match(styles, /body\.mobile-device \.calendar-grid \.calendar-event-time\{[^}]*font-size:9px/);
 });
 
@@ -70,11 +78,11 @@ test("les définitions de couleurs et de statuts restent masquées sur tous les 
     assert.doesNotMatch(styles, /body\[data-role="mobile_admin"\]\.mobile-device \.calendar-(?:legend|status-legend)\{display:(?:flex|grid|block)/);
 });
 
-test("les vues jour et semaine PC et mobile utilisent une grille horaire de 8 h à 19 h", () => {
+test("les vues jour et semaine PC utilisent une grille horaire de 8 h à 19 h", () => {
     assert.match(calendar, /PLANNING_DAY_START_HOUR = 8/);
     assert.match(calendar, /PLANNING_DAY_END_HOUR = 19/);
     assert.match(calendar, /PLANNING_SLOT_MINUTES = 15/);
-    assert.match(calendar, /document\.body\.classList\.contains\("desktop-device"\) \|\| document\.body\.classList\.contains\("mobile-device"\)\) return renderCalendarTimeline\(panel\)/);
+    assert.match(calendar, /document\.body\.classList\.contains\("desktop-device"\)\) return renderCalendarTimeline\(panel\)/);
     assert.match(calendar, /function buildTimelineDayLayout/);
     assert.match(calendar, /function finalizeOverlapGroup|const finalizeOverlapGroup/);
     assert.match(calendar, /Sans horaire \/ hors plage/);
@@ -87,8 +95,6 @@ test("les vues jour et semaine PC et mobile utilisent une grille horaire de 8 h 
     assert.match(styles, /body\.desktop-device \.calendar-timeline\{/);
     assert.match(styles, /grid-template-columns:52px repeat\(var\(--calendar-day-count\)/);
     assert.match(styles, /top:calc\(var\(--event-start\) \* 100%/);
-    assert.match(styles, /body\.mobile-device \.calendar-time-axis\{[^}]*position:sticky/);
-    assert.match(styles, /body\.mobile-device \.calendar-timeline-day \.calendar-event-time\{display:block/);
 });
 
 test("les cartes compactes restent accessibles avec toutes les informations", () => {

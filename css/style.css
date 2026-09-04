@@ -82,6 +82,28 @@ body.dark-theme :is(.muted,.eyebrow,small,.calendar-time-axis time){
     color:var(--muted);
 }
 
+body.dark-theme .calendar-mobile-agenda-day{
+    border-color:var(--border);
+    background:var(--surface);
+}
+
+body.dark-theme .calendar-mobile-day-heading,
+body.dark-theme .calendar-mobile-agenda-week .calendar-mobile-agenda-day.is-empty .calendar-mobile-day-heading,
+body.dark-theme .calendar-mobile-add{
+    background:var(--surface-alt);
+    color:var(--text);
+}
+
+body.dark-theme .calendar-mobile-date{
+    background:#24344a;
+    color:var(--primary);
+}
+
+body.dark-theme .calendar-mobile-agenda-day.today .calendar-mobile-date{
+    background:#0f7650;
+    color:#fff;
+}
+
 body.hide-sync-indicator .collaboration-sync{display:none}
 
 body.compact-interface{font-size:14px}
@@ -5387,6 +5409,36 @@ body.mobile-device .calendar-grid .calendar-event{min-height:23px;padding:4px;bo
 body.mobile-device .calendar-grid .calendar-event-identity,body.mobile-device .calendar-grid .calendar-event-context,body.mobile-device .calendar-grid .calendar-event-status{display:none}
 body.mobile-device .calendar-grid .calendar-event-time{display:block;overflow:hidden;font-size:9px;line-height:1.1;text-align:center;text-overflow:ellipsis;white-space:nowrap}
 body.mobile-device .calendar-overflow-button{min-height:22px;padding:3px;border:0;border-radius:6px;background:#e8eef3;font-size:9px;text-align:center}
+body.mobile-device .calendar-grid-panel:has(.calendar-mobile-agenda){height:auto;max-height:none;padding:0;overflow:visible;background:transparent;box-shadow:none}
+body.mobile-device .calendar-mobile-agenda{display:grid;gap:12px}
+body.mobile-device .calendar-mobile-agenda-summary{display:flex;align-items:center;gap:11px;padding:13px 15px;border-radius:17px;background:linear-gradient(135deg,#063b70,#0a5c36);color:#fff;box-shadow:0 8px 20px rgba(0,59,115,.16)}
+body.mobile-device .calendar-mobile-agenda-summary>span{display:grid;width:38px;height:38px;flex:0 0 auto;place-items:center;border-radius:13px;background:rgba(255,255,255,.16);font-size:20px}
+body.mobile-device .calendar-mobile-agenda-summary p{margin:0 0 2px;color:rgba(255,255,255,.8);font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}
+body.mobile-device .calendar-mobile-agenda-summary strong{font-size:15px}
+body.mobile-device .calendar-mobile-agenda-day{overflow:hidden;border:1px solid rgba(148,163,184,.22);border-radius:18px;background:var(--surface);box-shadow:0 5px 16px rgba(15,23,42,.07)}
+body.mobile-device .calendar-mobile-agenda-day.today{border-color:rgba(10,92,54,.38);box-shadow:0 7px 20px rgba(10,92,54,.12)}
+body.mobile-device .calendar-mobile-day-heading{display:grid;grid-template-columns:48px minmax(0,1fr) 42px;align-items:center;gap:11px;padding:11px 12px;background:linear-gradient(135deg,#f8fbff,#f1f8f4)}
+body.mobile-device .calendar-mobile-date{display:grid;width:48px;height:52px;place-items:center;border-radius:14px;background:#e7f0f9;color:var(--primary);line-height:1}
+body.mobile-device .today .calendar-mobile-date{background:var(--secondary);color:#fff}
+body.mobile-device .calendar-mobile-date span{align-self:end;font-size:10px;font-weight:900;letter-spacing:.05em;text-transform:uppercase}
+body.mobile-device .calendar-mobile-date strong{align-self:start;margin-top:3px;font-size:22px}
+body.mobile-device .calendar-mobile-day-heading p{margin:0;color:var(--primary);font-size:14px;font-weight:900;text-transform:capitalize}
+body.mobile-device .calendar-mobile-day-heading small{display:block;margin-top:3px;color:var(--muted);font-size:11px}
+body.mobile-device .calendar-mobile-add{display:grid;width:42px;height:42px;place-items:center;border:0;border-radius:14px;background:#fff;color:var(--secondary);box-shadow:0 2px 8px rgba(15,23,42,.1);font-size:25px;font-weight:500;cursor:pointer}
+body.mobile-device .calendar-mobile-add:active{background:var(--secondary);color:#fff;transform:scale(.96)}
+body.mobile-device .calendar-mobile-agenda-events{display:grid;gap:8px;padding:10px}
+body.mobile-device .calendar-mobile-agenda-event{position:relative;grid-template-columns:70px minmax(0,1fr) 20px;align-items:center;gap:3px 10px;min-height:72px;padding:10px 11px;border-left-width:5px;border-radius:14px;box-shadow:none;font-size:12px}
+body.mobile-device .calendar-mobile-agenda-event .calendar-event-time{grid-column:1;grid-row:1/3;align-self:center;font-size:12px;line-height:1.35;white-space:normal}
+body.mobile-device .calendar-mobile-agenda-event .calendar-event-identity{grid-column:2;grid-row:1}
+body.mobile-device .calendar-mobile-agenda-event .calendar-event-client{font-size:14px;line-height:1.25}
+body.mobile-device .calendar-mobile-agenda-event .calendar-event-address{display:block;margin-top:3px;font-size:11px;font-weight:600;line-height:1.25;white-space:normal}
+body.mobile-device .calendar-mobile-agenda-event .calendar-event-context{display:flex;grid-column:2;grid-row:2;flex-wrap:wrap;gap:3px 8px;font-size:11px}
+body.mobile-device .calendar-mobile-agenda-event .calendar-event-context small{white-space:normal}
+body.mobile-device .calendar-mobile-agenda-event .calendar-event-status{grid-column:2;grid-row:3;margin-top:3px}
+body.mobile-device .calendar-mobile-event-arrow{grid-column:3;grid-row:1/4;align-self:center;font-size:25px;font-weight:300;opacity:.55}
+body.mobile-device .calendar-mobile-empty{margin:0;padding:14px;color:var(--muted);font-size:12px;text-align:center}
+body.mobile-device .calendar-mobile-agenda-week .calendar-mobile-agenda-day.is-empty .calendar-mobile-day-heading{background:rgba(248,250,252,.72)}
+body.mobile-device .calendar-mobile-agenda-week .calendar-mobile-agenda-day.is-empty{box-shadow:none}
 body.mobile-device .calendar-grid-panel:has(.calendar-timeline){height:clamp(430px,calc(100dvh - 250px),650px);overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain}
 body.mobile-device .calendar-timeline{display:grid;grid-template-rows:auto auto 660px;width:100%;min-width:0;height:auto;overflow:visible;border:0;border-radius:13px;background:#fff;box-shadow:0 2px 10px rgba(15,23,42,.08)}
 body.mobile-device .calendar-timeline.calendar-timeline-day{min-width:0}
