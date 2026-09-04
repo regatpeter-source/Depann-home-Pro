@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { restrictCommercialMobileAccess } from "../server/auth.js";
+import { applyCommercialMobileCreationPolicy } from "../server/calendar.js";
 import {
     hasAccountingWorkspaceAccess,
     hasBillingWorkspaceAccess,
@@ -65,37 +66,49 @@ test("les espaces administratifs restent interdits au Commercial mobile", () => 
     assert.equal(hasGroupCompanySwitchAccess(mobile), false);
 });
 
-test("l’API mobile Commercial autorise seulement session, déconnexion, annonce et lecture du planning", () => {
+test("l’API mobile Commercial autorise la lecture du planning et la création d’une intervention", () => {
     for (const [method, path] of [
         ["GET", "/api/auth/session"],
         ["GET", "/api/calendar/events"],
         ["GET", "/api/creator/platform-announcement/current"],
+        ["POST", "/api/calendar/events"],
         ["POST", "/api/auth/logout"]
     ]) assert.equal(invokeRestriction(method, path).nextCalled, true, `${method} ${path}`);
 
     for (const [method, path] of [
         ["GET", "/api/clients"],
         ["GET", "/api/accounting"],
-        ["POST", "/api/calendar/events"],
         ["PUT", "/api/calendar/events/1"]
     ]) {
         const result = invokeRestriction(method, path);
         assert.equal(result.nextCalled, false, `${method} ${path}`);
         assert.equal(result.status, 403, `${method} ${path}`);
-        assert.match(result.body.message, /uniquement à ses rendez-vous affectés/);
+        assert.match(result.body.message, /consulte ses rendez-vous affectés/);
     }
     assert.equal(invokeRestriction("GET", "/api/clients", { role: "commercial", deviceType: "desktop" }).nextCalled, true);
 });
 
-test("le planning mobile Commercial est filtré par affectation et reste en lecture seule", () => {
+test("le planning mobile Commercial est filtré par affectation et permet une création auto-affectée", () => {
     const server = read("server/calendar.js");
     const client = read("js/calendar.js");
     assert.match(server, /function hasAssignedOnlyCalendar\(user\)[\s\S]*user\?\.role === "commercial" && user\?\.deviceType === "mobile"/);
     assert.match(server, /assignment\.event_id = event\.id AND assignment\.technician_id = \$5::bigint/);
-    assert.match(server, /request\.user\?\.role === "commercial" && request\.user\?\.deviceType === "mobile"/);
+    assert.match(server, /applyCommercialMobileCreationPolicy\(event, request\.user\)/);
     assert.match(client, /function isCommercialMobileCalendar\(\)/);
     assert.match(client, /if \(isCommercialMobileCalendar\(\)\) return false/);
+    assert.match(client, /function canCreateCalendarEvents\(\)/);
+    assert.match(client, /Cette intervention vous sera automatiquement affectée/);
     assert.match(client, /\["admin", "pc_standard", "commercial", "mobile_admin"\]\.includes[^\n]+&& !isReadOnlyCalendar\(\)/);
+});
+
+test("la création mobile Commercial est toujours planifiée et auto-affectée côté serveur", () => {
+    const user = { sub: "42", role: "commercial", deviceType: "mobile" };
+    const appointment = applyCommercialMobileCreationPolicy({ eventType: "appointment", status: "completed", assignedTechnicianId: 99, assignedTechnicianIds: [99] }, user);
+    assert.equal(appointment.ok, true);
+    assert.equal(appointment.event.status, "planned");
+    assert.equal(appointment.event.assignedTechnicianId, 42);
+    assert.deepEqual(appointment.event.assignedTechnicianIds, [42]);
+    assert.equal(applyCommercialMobileCreationPolicy({ eventType: "task" }, user).ok, false);
 });
 
 test("un Commercial consomme un poste PC et seulement un appareil mobile approuvé en supplément", () => {

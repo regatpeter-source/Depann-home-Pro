@@ -149,6 +149,7 @@ function renderHeader(panel) {
                 <button type="button" class="secondary-button" data-calendar-action="previous" aria-label="Jour précédent">←</button>
                 <button type="button" class="secondary-button active" data-calendar-action="today">Aujourd’hui</button>
                 <button type="button" class="secondary-button" data-calendar-action="next" aria-label="Jour suivant">→</button>
+                ${canCreateCalendarEvents() ? '<button type="button" class="secondary-button" data-calendar-action="new">+ Intervention</button>' : ""}
             </div>
             <div class="technician-calendar-view-switcher" role="group" aria-label="Vue du planning">
                 ${[ ["day", "Jour"], ["week", "Semaine"], ["month", "Mois"] ].map(([view, label]) => `<button type="button" class="secondary-button${calendarView === view ? " active" : ""}" data-calendar-view="${view}">${label}</button>`).join("")}
@@ -156,6 +157,10 @@ function renderHeader(panel) {
         `;
         bindCalendarNavigation(panel);
         bindCalendarViewSwitcher(panel);
+        panel.querySelector("[data-calendar-action=new]")?.addEventListener("click", () => {
+            selectedEvent = newEventForDate(toDateString(new Date()));
+            refreshCalendarDetail();
+        });
         return;
     }
     panel.innerHTML = `
@@ -168,7 +173,7 @@ function renderHeader(panel) {
                 <button type="button" class="secondary-button" data-calendar-action="previous">← ${getPreviousLabel()}</button>
                 <button type="button" class="secondary-button auth-outline-button" data-calendar-action="today">Aujourd’hui</button>
                 <button type="button" class="secondary-button" data-calendar-action="next">${getNextLabel()} →</button>
-                ${readOnly ? "" : `<button type="button" class="secondary-button" data-calendar-action="new">${isMobileAdministrator() ? "+ Planifier une intervention" : "+ Nouveau rendez-vous"}</button><button type="button" class="secondary-button" data-calendar-action="new-task">+ Nouvelle tâche</button>`}
+                ${canCreateCalendarEvents() ? `<button type="button" class="secondary-button" data-calendar-action="new">${isMobileAdministrator() ? "+ Planifier une intervention" : "+ Nouveau rendez-vous"}</button>${isCommercialMobileCalendar() ? "" : '<button type="button" class="secondary-button" data-calendar-action="new-task">+ Nouvelle tâche</button>'}` : ""}
             </div>
         </div>
         <div class="calendar-view-switcher" role="group" aria-label="Vue du planning">
@@ -460,7 +465,7 @@ function renderEventForm(panel) {
             <div class="form-grid">
                 <label>
                     Type
-                    <select name="eventType" ${event.partnerMissionId ? "disabled" : ""}>${EVENT_TYPE_OPTIONS.map(type => `<option value="${type.id}" ${event.eventType === type.id ? "selected" : ""}>${type.label}</option>`).join("")}</select>
+                    <select name="eventType" ${event.partnerMissionId ? "disabled" : ""}>${EVENT_TYPE_OPTIONS.filter(type => !isCommercialMobileCalendar() || type.id === "appointment").map(type => `<option value="${type.id}" ${event.eventType === type.id ? "selected" : ""}>${type.label}</option>`).join("")}</select>
                 </label>
                 <label>
                     Titre *
@@ -532,6 +537,7 @@ function renderEventForm(panel) {
     const assignmentInputs = [...form.querySelectorAll("[data-calendar-assignment]")];
     const multiDatePlanning = initializeMultiDatePlanning(form, event);
     const syncPrimaryTechnician = () => {
+        if (!primaryTechnicianInput) return;
         const selected = assignmentInputs.filter(input => input.checked).map(input => String(input.value));
         const current = String(primaryTechnicianInput.value || event.assignedTechnicianId || "");
         primaryTechnicianInput.innerHTML = selected.length
@@ -544,6 +550,7 @@ function renderEventForm(panel) {
         primaryTechnicianInput.disabled = !selected.length;
     };
     const filterTechnicians = () => {
+        if (!technicianSearch) return;
         const search = normalizeText(technicianSearch.value);
         form.querySelectorAll("[data-calendar-assignment-option]").forEach(option => {
             option.hidden = Boolean(search) && !normalizeText(option.dataset.calendarAssignmentOption).includes(search);
@@ -572,7 +579,7 @@ function renderEventForm(panel) {
         renderCalendarAvailability(form, event.id);
         multiDatePlanning?.refresh();
     }));
-    technicianSearch.addEventListener("input", filterTechnicians);
+    technicianSearch?.addEventListener("input", filterTechnicians);
     syncPrimaryTechnician();
     eventTypeInput.addEventListener("change", () => {
         const type = getEventType(eventTypeInput.value);
@@ -592,7 +599,7 @@ function renderEventForm(panel) {
         renderCalendarAvailability(form, event.id);
     });
     clientField.hidden = eventTypeInput.value !== "appointment";
-    ["date", "startTime", "endTime", "title", "assignedTechnicianId"].forEach(name => form.elements[name].addEventListener("input", () => {
+    ["date", "startTime", "endTime", "title", "assignedTechnicianId"].forEach(name => form.elements[name]?.addEventListener("input", () => {
         renderCalendarAvailability(form, event.id);
         if (["date", "startTime", "endTime", "assignedTechnicianId"].includes(name)) multiDatePlanning?.refresh();
     }));
@@ -849,6 +856,7 @@ function renderCalendarClientPreview(client) {
 }
 
 function renderTechnicianAssignmentField(event) {
+    if (isCommercialMobileCalendar()) return `<section class="calendar-technician-assignment form-wide"><div class="calendar-technician-assignment-heading"><div><p class="eyebrow">Affectation</p><h3>Votre planning</h3><p class="muted">Cette intervention vous sera automatiquement affectée.</p></div></div></section>`;
     const selected = new Set(getAssignedTechnicianIds(event));
     const groups = groupTechniciansByDepartment(members);
     return `
@@ -1354,7 +1362,7 @@ function renderCalendarList(panel) {
     eventDates.forEach(dayEvents => dayEvents.sort(compareEventTimes));
     const days = [];
     for (const day = new Date(start); day <= end; day.setDate(day.getDate() + 1)) days.push(new Date(day));
-    const canCreate = !isReadOnlyCalendar();
+    const canCreate = canCreateCalendarEvents();
     panel.innerHTML = `<div class="calendar-list-view calendar-list-${calendarView}">${days.map(day => {
         const date = toDateString(day);
         const dayEvents = eventDates.get(date) || [];
@@ -1395,7 +1403,7 @@ function renderMobileCalendarAgenda(panel) {
     eventDates.forEach(dayEvents => dayEvents.sort(compareEventTimes));
     const days = [];
     for (const day = new Date(start); day <= end; day.setDate(day.getDate() + 1)) days.push(new Date(day));
-    const canCreate = !isReadOnlyCalendar();
+    const canCreate = canCreateCalendarEvents();
     const today = toDateString(new Date());
     const totalEvents = days.reduce((total, day) => total + (eventDates.get(toDateString(day)) || []).length, 0);
     const summary = calendarView === "day"
@@ -1447,7 +1455,7 @@ function renderCalendarTimeline(panel) {
     const days = [];
     for (const day = new Date(start); day <= end; day.setDate(day.getDate() + 1)) days.push(new Date(day));
     const dayLayouts = days.map(day => buildTimelineDayLayout(eventDates.get(toDateString(day)) || []));
-    const canCreate = !isReadOnlyCalendar();
+    const canCreate = canCreateCalendarEvents();
     const allDayLabel = "Sans horaire / hors plage";
 
     panel.innerHTML = `
@@ -1677,6 +1685,10 @@ function isCommercialMobileCalendar() {
     return document.body.dataset.role === "commercial" && document.body.dataset.deviceType === "mobile";
 }
 
+function canCreateCalendarEvents() {
+    return !isReadOnlyCalendar() || isCommercialMobileCalendar();
+}
+
 function isMobileAdministrator() {
     return document.body.dataset.role === "mobile_admin";
 }
@@ -1686,7 +1698,7 @@ function canManageCalendarEventStatus() {
 }
 
 function usesTerrainInterventionView(event) {
-    return isReadOnlyCalendar() || (isMobileAdministrator() && Boolean(event?.id) && event.eventType === "appointment" && !mobileAdminEditingEvents.has(String(event.id)));
+    return isReadOnlyCalendar() && Boolean(event?.id) || (isMobileAdministrator() && Boolean(event?.id) && event.eventType === "appointment" && !mobileAdminEditingEvents.has(String(event.id)));
 }
 
 function roleLabel(role) {

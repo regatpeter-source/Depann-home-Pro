@@ -390,9 +390,12 @@ export function registerCalendarRoutes(app, requireAuthentication) {
         response.json({ availableDates, conflicts });
     }));
 
-    app.post("/api/calendar/events", requireAuthentication, requireCalendarWriteAccess, asyncHandler(async (request, response) => {
-        const event = sanitizeEvent(request.body);
+    app.post("/api/calendar/events", requireAuthentication, requireCalendarCreateAccess, asyncHandler(async (request, response) => {
+        let event = sanitizeEvent(request.body);
         if (!event.ok) return response.status(400).json({ message: event.message });
+        const creationPolicy = applyCommercialMobileCreationPolicy(event, request.user);
+        if (!creationPolicy.ok) return response.status(403).json({ message: creationPolicy.message });
+        event = creationPolicy.event;
         if (!canManageCalendarEventStatus(request.user) && event.status !== "planned") {
             return response.status(403).json({ message: "La finalisation d’une intervention est réservée à un poste administratif ou au Poste Admin Mobile." });
         }
@@ -796,12 +799,31 @@ function requireCalendarWriteAccess(request, response, next) {
     return next();
 }
 
+function requireCalendarCreateAccess(request, response, next) {
+    if (["technician", "accountant"].includes(request.user?.role)) {
+        return response.status(403).json({ message: "Ce poste peut consulter son planning, sans le modifier." });
+    }
+    return next();
+}
+
 function requireCalendarReadAccess(request, response, next) {
     return next();
 }
 
 function hasAssignedOnlyCalendar(user) {
-    return ["technician", "accountant"].includes(user?.role) || user?.role === "commercial" && user?.deviceType === "mobile";
+    return ["technician", "accountant"].includes(user?.role) || isCommercialMobile(user);
+}
+
+function isCommercialMobile(user) {
+    return user?.role === "commercial" && user?.deviceType === "mobile";
+}
+
+export function applyCommercialMobileCreationPolicy(event, user) {
+    if (!isCommercialMobile(user)) return { ok: true, event };
+    if (event?.eventType !== "appointment") return { ok: false, message: "Sur mobile, le Commercial / Chargé d’affaires peut créer uniquement des rendez-vous et interventions." };
+    const userId = positiveId(user?.sub);
+    if (!userId) return { ok: false, message: "L’identité du Commercial / Chargé d’affaires est invalide." };
+    return { ok: true, event: { ...event, status: "planned", assignedTechnicianId: userId, assignedTechnicianIds: [userId] } };
 }
 
 function sanitizeEvent(value) {

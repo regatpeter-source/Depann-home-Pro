@@ -86,7 +86,7 @@ test("les vues jour et semaine PC utilisent une grille horaire de 8 h à 19 h", 
     assert.match(calendar, /function buildTimelineDayLayout/);
     assert.match(calendar, /function finalizeOverlapGroup|const finalizeOverlapGroup/);
     assert.match(calendar, /Sans horaire \/ hors plage/);
-    assert.match(calendar, /const canCreate = !isReadOnlyCalendar\(\)/);
+    assert.match(calendar, /const canCreate = canCreateCalendarEvents\(\)/);
     assert.match(calendar, /canCreate \? ` tabindex="0" role="button"/);
     assert.match(calendar, /if \(!canCreate\) return/);
     assert.match(calendar, /--event-start:/);
