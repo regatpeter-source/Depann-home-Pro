@@ -24,6 +24,13 @@ test("une mission partenaire conserve une seule notification non lue par destina
 test("le thème sombre couvre les écrans et les principaux espaces de travail", () => {
     assert.match(style, /body\.dark-theme #authRoot,[\s\S]*body\.dark-theme #app\{[\s\S]*background:transparent/);
     assert.match(style, /body\.dark-theme :is\(\.client-panel,[^}]+background:var\(--surface\)/);
+    const desktopLightTheme = style.indexOf("body.desktop-device{");
+    const desktopDarkTheme = style.indexOf("body.desktop-device.dark-theme{");
+    assert.ok(desktopLightTheme >= 0 && desktopDarkTheme > desktopLightTheme, "le thème sombre PC doit suivre les variables claires PC dans la cascade");
+    const desktopDarkRules = style.slice(desktopDarkTheme);
+    assert.match(desktopDarkRules, /--bg:#0f172a/);
+    assert.match(desktopDarkRules, /\.topbar,#breadcrumb,[^}]+background:var\(--surface\)/);
+    assert.match(desktopDarkRules, /\.calendar-timeline-day\{[\s\S]*background-color:var\(--surface\)/);
     assert.match(partnerDialogueStyle, /body\.dark-theme \.partner-dialogue-modal>\.partner-dialogue/);
     assert.match(partnerDialogueStyle, /background:var\(--surface-alt\)/);
     assert.match(reportEditorStyle, /body\.dark-theme\.report-writing-active \.report-editor-fullscreen/);

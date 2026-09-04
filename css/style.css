@@ -7160,3 +7160,59 @@ body.desktop-device .platform-announcement{
         grid-template-columns:repeat(4,minmax(0,1fr));
     }
 }
+
+/* Le thème PC doit être déclaré après l'interface PC claire : à spécificité
+   égale, les règles de densité ci-dessus ne doivent pas rétablir les couleurs
+   claires après l'activation du thème sombre. */
+body.desktop-device.dark-theme{
+    --primary:#93c5fd;
+    --secondary:#6ee7b7;
+    --danger:#fca5a5;
+    --bg:#0f172a;
+    --surface:#172033;
+    --surface-alt:#1e293b;
+    --text:#e5edf6;
+    --muted:#a8b5c5;
+    --border:#3b4a60;
+    background:var(--bg);
+    color:var(--text);
+}
+
+body.desktop-device.dark-theme :is(.topbar,#breadcrumb,.brand-card,.dashboard-panel,.dashboard-card,.dashboard-kpi-card,.dashboard-administrative-note,.client-panel,.client-files-zone,.client-workspace-tabs,.client-workspace-tab.active,.billing-panel,.accounting-panel,.report-panel,.group-panel,.connector-panel,.settings-hub-heading,.settings-navigation-card,.partner-mission-card,.partner-mailbox-browser,.creator-workspace,.creator-form,.calendar-panel,.calendar-form-panel,.calendar-grid-panel,.calendar-view-switcher,.calendar-technician-filter,.calendar-weekdays,.calendar-timeline,.calendar-timeline-header,.calendar-timeline-all-day,.calendar-time-axis){
+    border-color:var(--border);
+    background:var(--surface);
+    color:var(--text);
+}
+
+body.desktop-device.dark-theme :is(#breadcrumb,.client-files-zone,.client-workspace-tabs,.calendar-view-switcher,.calendar-technician-filter,.calendar-weekdays,.calendar-timeline-header,.calendar-timeline-all-day,.calendar-time-axis,.dashboard-card,.dashboard-administrative-note){
+    background:var(--surface-alt);
+}
+
+body.desktop-device.dark-theme :is(.brand-card:hover,.brand-card:focus,.dashboard-kpi-card:hover,.dashboard-kpi-card:focus-visible,.client-workspace-tab:hover,.client-workspace-tab:focus-visible,.calendar-view-switcher .secondary-button.active){
+    border-color:#60718a;
+    background:#24344a;
+    color:var(--text);
+}
+
+body.desktop-device.dark-theme :is(.secondary-button,input:not([type="checkbox"]):not([type="radio"]),select,textarea){
+    border-color:var(--border);
+    background:var(--surface-alt);
+    color:var(--text);
+}
+
+body.desktop-device.dark-theme :is(.client-workspace-tab,.calendar-weekdays span,.calendar-timeline-header>div,.calendar-timeline-corner,.calendar-timeline-all-day>span,.calendar-time-axis time,.dashboard-kpi-card span){
+    color:var(--muted);
+}
+
+body.desktop-device.dark-theme .calendar-timeline-day{
+    border-color:var(--border);
+    background-color:var(--surface);
+    background-image:linear-gradient(to bottom,var(--border) 1px,transparent 1px),linear-gradient(to bottom,transparent 49.7%,rgba(148,163,184,.13) 50%,transparent 50.3%);
+}
+
+body.desktop-device.dark-theme .calendar-timeline-day:hover,
+body.desktop-device.dark-theme .calendar-timeline-day:focus-visible,
+body.desktop-device.dark-theme .calendar-timeline-day[role="button"]:active{
+    background-color:#1d2a40;
+    outline-color:#60718a;
+}
