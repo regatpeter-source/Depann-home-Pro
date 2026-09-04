@@ -14,6 +14,7 @@ import crypto from "node:crypto";
 import { generateUblInvoice } from "./einvoice-ubl.js";
 import { allocateBillingNumber } from "./billing-numbering.js";
 import { hasBillingWorkspaceAccess } from "./workstation-permissions.js";
+import { PDFDocument as PdfArchiveDocument, StandardFonts, rgb } from "pdf-lib";
 
 const MAX_LOGO_SIZE = 2 * 1024 * 1024;
 const MAX_QUOTE_TEMPLATE_SIZE = 10 * 1024 * 1024;
@@ -368,9 +369,13 @@ export function registerBillingRoutes(app, requireAuthentication) {
                 ORDER BY event.deductible_reviewed_at DESC
             `, [accountOwnerId, request.user?.role || "", request.user?.sub || 0])
         ]);
+        const pendingResult = await database.query(`SELECT document_id AS "documentId",COALESCE(SUM(amount),0)::float AS amount FROM depannhome_delayed_payment_declarations WHERE owner_id=$1 AND status='pending' GROUP BY document_id`, [accountOwnerId]);
+        const acquittanceResult = await database.query(`SELECT document_id AS "documentId" FROM depannhome_billing_acquittances WHERE owner_id=$1`, [accountOwnerId]);
         const financialDashboard = buildBillingFinancialDashboard(documentsResult.rows, settlementsResult.rows, purchasesResult.rows[0]?.purchasesHt);
         const settlementsByDocument = new Map(settlementsResult.rows.map(item => [String(item.documentId), item]));
-        const documents = documentsResult.rows.map(document => ({ ...document, settledAmount: Number(settlementsByDocument.get(String(document.id))?.amount) || 0, latestPaymentMethod: settlementsByDocument.get(String(document.id))?.latestPaymentMethod || "", latestPaymentDate: settlementsByDocument.get(String(document.id))?.latestPaymentDate || "" }));
+        const pendingByDocument = new Map(pendingResult.rows.map(item => [String(item.documentId), Number(item.amount) || 0]));
+        const acquittanceDocuments = new Set(acquittanceResult.rows.map(item => String(item.documentId)));
+        const documents = documentsResult.rows.map(document => ({ ...document, settledAmount: Number(settlementsByDocument.get(String(document.id))?.amount) || 0, pendingPaymentAmount: pendingByDocument.get(String(document.id)) || 0, hasAcquittance: acquittanceDocuments.has(String(document.id)), latestPaymentMethod: settlementsByDocument.get(String(document.id))?.latestPaymentMethod || "", latestPaymentDate: settlementsByDocument.get(String(document.id))?.latestPaymentDate || "" }));
         response.json({ profile: { ...emptyProfile(), ...(profileResult.rows[0] || {}) }, templates: templatesResult.rows, documents, aids: aidsResult.rows, insuranceDeductibles: deductibleResult.rows, financialDashboard });
     }));
 
@@ -587,6 +592,29 @@ export function registerBillingRoutes(app, requireAuthentication) {
         response.send(output.buffer);
     }));
 
+    app.get("/api/billing/documents/:documentId/acquittance/pdf", requireAuthentication, asyncHandler(async (request, response) => {
+        const documentId = positiveId(request.params.documentId);
+        const ownerId = getAccountOwnerId(request);
+        if (!documentId || !await findAccessibleBillingDocument(getPool(), ownerId, documentId, request)) return response.status(404).json({ message: "Copie acquittée introuvable." });
+        const { rows } = await getPool().query(`SELECT pdf_data AS data,filename,pdf_sha256 AS "pdfSha256" FROM depannhome_billing_acquittances WHERE owner_id=$1 AND document_id=$2`, [ownerId, documentId]);
+        if (!rows[0]?.data) return response.status(404).json({ message: "Aucune copie acquittée n’est archivée pour cette facture." });
+        response.set({ "Content-Type": PDF_MIME, "Content-Disposition": `inline; filename="${contentDispositionFileName(rows[0].filename)}"`, "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff", "X-Acquittance-SHA256": rows[0].pdfSha256 });
+        response.send(rows[0].data);
+    }));
+
+    app.post("/api/billing/documents/:documentId/acquittance/email", requireAuthentication, requireBillingSettlementAccess, asyncHandler(async (request, response) => {
+        const documentId = positiveId(request.params.documentId);
+        const recipient = sanitizeEmailRecipient(request.body?.recipient);
+        const ownerId = getAccountOwnerId(request);
+        if (!documentId || !recipient) return response.status(400).json({ message: "Facture ou adresse e-mail invalide." });
+        if (!await findAccessibleBillingDocument(getPool(), ownerId, documentId, request)) return response.status(404).json({ message: "Copie acquittée introuvable." });
+        const { rows } = await getPool().query(`SELECT acquittance.pdf_data AS data,acquittance.filename,document.document_number AS "documentNumber",document.customer_name AS "customerName" FROM depannhome_billing_acquittances acquittance JOIN depannhome_billing_documents document ON document.id=acquittance.document_id AND document.owner_id=acquittance.owner_id WHERE acquittance.owner_id=$1 AND acquittance.document_id=$2`, [ownerId, documentId]);
+        const acquittance = rows[0];
+        if (!acquittance?.data) return response.status(404).json({ message: "Aucune copie acquittée n’est archivée pour cette facture." });
+        await sendDocumentEmail({ recipient, recipientName: acquittance.customerName, documentLabel: `Copie acquittée de la facture ${acquittance.documentNumber}`, attachment: { filename: acquittance.filename, content: acquittance.data, contentType: PDF_MIME } });
+        response.json({ message: "Copie acquittée envoyée par e-mail." });
+    }));
+
     app.get("/api/billing/documents/:documentId/ubl", requireAuthentication, asyncHandler(async (request, response) => {
         const billingExport = await getBillingExport(request);
         if (!billingExport) return response.status(404).json({ message: "Document introuvable." });
@@ -668,7 +696,7 @@ export function registerBillingRoutes(app, requireAuthentication) {
         if (!documentId) return response.status(400).json({ message: "Facture invalide." });
         if (!await findAccessibleBillingDocument(getPool(), getAccountOwnerId(request), documentId, request)) return response.status(404).json({ message: "Facture introuvable ou intervention non attribuée à ce poste." });
         const { recordInvoiceSettlement } = await import("./accounting.js");
-        const result = await recordInvoiceSettlement({ ownerId: getAccountOwnerId(request), actorId: request.user.sub, input: { ...request.body, documentId } });
+        const result = await recordInvoiceSettlement({ ownerId: getAccountOwnerId(request), actorId: request.user.sub, actorName: request.user.fullName || request.user.username, input: { ...request.body, documentId } });
         response.status(201).json(result);
     }));
 
@@ -904,6 +932,47 @@ export async function buildBillingLegalArchive(document, { ownerId, database, pr
         pdfSha256: sha256(pdfData)
     };
 }
+
+export async function archiveBillingAcquittance({ ownerId, documentId, finalSettlementId, actorId, database = getPool() }) {
+    const existing = await database.query(`SELECT id,pdf_sha256 AS "pdfSha256",filename FROM depannhome_billing_acquittances WHERE owner_id=$1 AND document_id=$2`, [ownerId, documentId]);
+    if (existing.rows[0]) return { ...existing.rows[0], alreadyArchived: true };
+    const { rows } = await database.query(`SELECT id,document_number AS "documentNumber",customer_name AS "customerName",pdf_data AS "pdfData",pdf_sha256 AS "pdfSha256" FROM depannhome_billing_documents WHERE id=$1 AND owner_id=$2 AND document_type='invoice' AND issued_at IS NOT NULL FOR UPDATE`, [documentId, ownerId]);
+    const document = rows[0];
+    if (!document?.pdfData) throw billingError(409, "L’archive PDF originale est indisponible : la copie acquittée ne peut pas être créée.");
+    if (sha256(document.pdfData) !== document.pdfSha256) throw billingError(409, "L’intégrité de l’archive PDF originale ne peut pas être vérifiée.");
+    const settlementResult = await database.query(`SELECT id,TO_CHAR(settlement_date,'YYYY-MM-DD') AS date,amount::float AS amount,method,reference FROM depannhome_accounting_settlements WHERE owner_id=$1 AND document_id=$2 ORDER BY settlement_date,id`, [ownerId, documentId]);
+    const settlements = settlementResult.rows;
+    const paidDate = settlements.at(-1)?.date;
+    if (!paidDate) throw billingError(409, "Aucun règlement confirmé ne permet de créer une copie acquittée.");
+    const pdf = await PdfArchiveDocument.load(document.pdfData);
+    const page = pdf.addPage([595.28, 841.89]);
+    const regular = await pdf.embedFont(StandardFonts.Helvetica);
+    const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
+    const drawText = (value, options) => page.drawText(pdfArchiveText(value), options);
+    drawText("COPIE ACQUITTEE", { x: 44, y: 770, size: 22, font: bold, color: rgb(0.04, 0.36, 0.21) });
+    drawText(`Facture : ${document.documentNumber}`, { x: 44, y: 730, size: 12, font: bold });
+    drawText(`Client : ${document.customerName}`, { x: 44, y: 708, size: 11, font: regular });
+    drawText(`Soldee le : ${formatArchiveDate(paidDate)}`, { x: 44, y: 686, size: 11, font: regular });
+    drawText("Reglements confirmes", { x: 44, y: 642, size: 13, font: bold });
+    let y = 614;
+    for (const settlement of settlements) {
+        const reference = settlement.reference ? ` - reference ${settlement.reference}` : "";
+        drawText(`${formatArchiveDate(settlement.date)} - ${settlement.method} - ${formatArchiveMoney(settlement.amount)}${reference}`, { x: 54, y, size: 10, font: regular, maxWidth: 485 });
+        y -= 21;
+    }
+    drawText(`Total regle : ${formatArchiveMoney(settlements.reduce((sum, item) => sum + Number(item.amount || 0), 0))}`, { x: 44, y: Math.max(100, y - 16), size: 12, font: bold });
+    drawText(`Empreinte SHA-256 de la facture originale : ${document.pdfSha256}`, { x: 44, y: 72, size: 7, font: regular, maxWidth: 500 });
+    drawText("Cette copie distincte atteste des reglements confirmes. Le PDF original emis reste inchange.", { x: 44, y: 52, size: 8, font: regular, maxWidth: 500 });
+    const pdfData = Buffer.from(await pdf.save());
+    const filename = `facture-${String(document.documentNumber).replace(/[^a-z0-9_-]+/gi, "-")}-acquittee.pdf`;
+    const paymentSnapshot = { paidDate, finalSettlementId, settlements };
+    const inserted = await database.query(`INSERT INTO depannhome_billing_acquittances(owner_id,document_id,final_settlement_id,paid_date,payment_snapshot,source_pdf_sha256,pdf_data,pdf_sha256,filename,created_by) VALUES($1,$2,$3,$4::date,$5::jsonb,$6,$7,$8,$9,$10) ON CONFLICT(document_id) DO NOTHING RETURNING id,pdf_sha256 AS "pdfSha256",filename`, [ownerId, documentId, finalSettlementId, paidDate, JSON.stringify(paymentSnapshot), document.pdfSha256, pdfData, sha256(pdfData), filename, actorId]);
+    return inserted.rows[0] ? { ...inserted.rows[0], alreadyArchived: false } : { ...(await database.query(`SELECT id,pdf_sha256 AS "pdfSha256",filename FROM depannhome_billing_acquittances WHERE owner_id=$1 AND document_id=$2`, [ownerId, documentId])).rows[0], alreadyArchived: true };
+}
+
+function formatArchiveDate(value) { return new Intl.DateTimeFormat("fr-FR").format(new Date(`${value}T12:00:00`)); }
+function formatArchiveMoney(value) { return `${(Number(value) || 0).toFixed(2).replace(".", ",")} EUR`; }
+function pdfArchiveText(value) { return String(value || "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[^\x20-\x7E\xA0-\xFF]/g, "?"); }
 
 function validateInvoiceForIssue(document, profile) {
     const missing = [];

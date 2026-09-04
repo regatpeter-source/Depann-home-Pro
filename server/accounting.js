@@ -15,6 +15,8 @@ import {
 import { allocateBillingNumber } from "./billing-numbering.js";
 import { hasAccountingWorkspaceAccess } from "./workstation-permissions.js";
 import { isElectronicInvoicingOAuthCallback, transmitElectronicDocument } from "./electronic-invoicing.js";
+import { DELAYED_PAYMENT_METHODS, declareDelayedPayment, loadDelayedPayments, reviewDelayedPayment } from "./delayed-payments.js";
+import { buildB2cReportCsv, loadB2cReport, loadB2cReports, prepareB2cReport } from "./b2c-transaction-export.js";
 
 const AID_TYPES = new Set(["cee", "maprimerenov", "coup_de_pouce", "eco_ptz", "regional", "departmental", "supplier", "manufacturer", "custom"]);
 const AID_MODES = new Set(["fixed", "percentage"]);
@@ -240,8 +242,8 @@ export function registerAccountingRoutes(app, requireAuthentication) {
 
     app.get("/api/accounting", asyncHandler(async (request, response) => {
         const ownerId = getAccountOwnerId(request);
-        const [documents, settlements, purchases, aids, settings, transmissions, entries, profile] = await Promise.all([
-            loadDocuments(ownerId), loadSettlements(ownerId), loadPurchases(ownerId), loadAids(ownerId), loadSettings(ownerId), loadTransmissions(ownerId), loadLedgerEntries(ownerId), loadAccountingProfile(ownerId)
+        const [documents, settlements, purchases, aids, settings, transmissions, entries, profile, delayedPayments, b2cReports] = await Promise.all([
+            loadDocuments(ownerId), loadSettlements(ownerId), loadPurchases(ownerId), loadAids(ownerId), loadSettings(ownerId), loadTransmissions(ownerId), loadLedgerEntries(ownerId), loadAccountingProfile(ownerId), loadDelayedPayments(ownerId), loadB2cReports(ownerId)
         ]);
         response.json({
             dashboard: buildDashboard(documents, settlements, purchases),
@@ -249,7 +251,9 @@ export function registerAccountingRoutes(app, requireAuthentication) {
             settings: publicSettings(settings),
             ledger: { entries, control: validateLedger(entries, { ownerId }) },
             accountingProfile: profile,
-            transmissions
+            transmissions,
+            delayedPayments,
+            b2cReports
         });
     }));
 
@@ -346,8 +350,34 @@ export function registerAccountingRoutes(app, requireAuthentication) {
     }));
 
     app.post("/api/accounting/settlements", requireAccountingWriteAccess, asyncHandler(async (request, response) => {
-        const result = await recordInvoiceSettlement({ ownerId: getAccountOwnerId(request), actorId: request.user.sub, input: request.body });
+        const result = await recordInvoiceSettlement({ ownerId: getAccountOwnerId(request), actorId: request.user.sub, actorName: request.user.fullName || request.user.username, input: request.body });
         response.status(201).json(result);
+    }));
+
+    app.patch("/api/accounting/delayed-payments/:declarationId/review", requireDesktopAdministrator, asyncHandler(async (request, response) => {
+        const declarationId = positiveId(request.params.declarationId);
+        if (!declarationId) return response.status(400).json({ message: "Déclaration de règlement invalide." });
+        const result = await reviewDelayedPayment({ ownerId: getAccountOwnerId(request), declarationId, actorId: request.user.sub, actorName: request.user.fullName || request.user.username, decision: request.body?.decision, bankEvidenceConfirmed: request.body?.bankEvidenceConfirmed === true, reviewNote: request.body?.reviewNote });
+        response.json(result);
+    }));
+
+    app.post("/api/accounting/b2c-reports", requireAccountingWriteAccess, requireDesktopAdministrator, asyncHandler(async (request, response) => {
+        const period = sanitizeLedgerPeriod(request.body, true);
+        if (!period.ok) return response.status(400).json({ message: period.message });
+        const result = await prepareB2cReport({ ownerId: getAccountOwnerId(request), actorId: request.user.sub, periodStart: period.start, periodEnd: period.end });
+        response.status(201).json(result);
+    }));
+
+    app.get("/api/accounting/b2c-reports/:batchId/csv", requireDesktopAdministrator, asyncHandler(async (request, response) => {
+        const batchId = positiveId(request.params.batchId);
+        if (!batchId) return response.status(400).json({ message: "Lot e-reporting invalide." });
+        const ownerId = getAccountOwnerId(request);
+        const report = await loadB2cReport(ownerId, batchId);
+        if (!report) return response.status(404).json({ message: "Lot e-reporting introuvable." });
+        const content = Buffer.from(buildB2cReportCsv(report), "utf8");
+        await getPool().query(`INSERT INTO depannhome_b2c_report_events(owner_id,batch_id,actor_id,event_type,details) VALUES($1,$2,$3,'downloaded_local',$4::jsonb)`, [ownerId, batchId, request.user.sub, JSON.stringify({ format: "csv", transmissionStatus: "not_transmitted" })]);
+        response.set({ "X-Ereporting-Status": "prepared-local-not-transmitted" });
+        return sendTextDownload(response, content, `e-reporting-b2c-${report.periodStart}-${report.periodEnd}.csv`, "text/csv; charset=utf-8");
     }));
 
     app.get("/api/accounting/settings", asyncHandler(async (request, response) => response.json({ settings: publicSettings(await loadSettings(getAccountOwnerId(request))) })));
@@ -452,18 +482,32 @@ function requireAccountingWriteAccess(request, response, next) {
     return response.status(403).json({ message: "Ce poste administratif est en consultation uniquement." });
 }
 
-export async function recordInvoiceSettlement({ ownerId, actorId, input, databasePool = getPool() }) {
+function requireDesktopAdministrator(request, response, next) {
+    if (request.user?.role === "admin" && request.user?.deviceType === "desktop") return next();
+    return response.status(403).json({ message: "Cette validation est réservée à l’administrateur depuis un poste PC approuvé." });
+}
+
+export async function recordInvoiceSettlement({ ownerId, actorId, actorName = "", input, databasePool = getPool() }) {
     const settlement = sanitizeSettlement(input);
     if (!settlement.ok) throw accountingError(400, settlement.message);
-    const client = await databasePool.connect();
+    if (DELAYED_PAYMENT_METHODS.has(settlement.method)) return declareDelayedPayment({ ownerId, actorId, actorName, input: settlement, database: databasePool });
+    return recordConfirmedInvoiceSettlement({ ownerId, actorId, input: settlement, databasePool });
+}
+
+export async function recordConfirmedInvoiceSettlement({ ownerId, actorId, input, database, databasePool = getPool() }) {
+    const settlement = input?.ok ? input : sanitizeSettlement(input);
+    if (!settlement.ok) throw accountingError(400, settlement.message);
+    const ownsTransaction = !database;
+    const client = database || await databasePool.connect();
     try {
-        await client.query("BEGIN");
+        if (ownsTransaction) await client.query("BEGIN");
         const { rows } = await client.query(`SELECT id,owner_id AS "ownerId",document_type AS "documentType",document_number AS "documentNumber",client_id AS "clientId",customer_name AS "customerName",TO_CHAR(issue_date,'YYYY-MM-DD') AS "issueDate",status,lines,financial_data AS "financialData",appointment_id AS "appointmentId" FROM depannhome_billing_documents WHERE id=$1 AND owner_id=$2 AND document_type='invoice' AND issued_at IS NOT NULL FOR UPDATE`, [settlement.documentId, ownerId]);
         const document = rows[0];
         if (!document) throw accountingError(404, "Facture émise introuvable.");
         const settled = await client.query("SELECT COALESCE(SUM(amount),0)::float AS total FROM depannhome_accounting_settlements WHERE owner_id=$1 AND document_id=$2", [ownerId, document.id]);
+        const pending = ownsTransaction ? await client.query("SELECT COALESCE(SUM(amount),0)::float AS total FROM depannhome_delayed_payment_declarations WHERE owner_id=$1 AND document_id=$2 AND status='pending'", [ownerId, document.id]) : { rows: [{ total: 0 }] };
         const totalDue = calculateDocumentTotals(document.lines, document.financialData).netPayable;
-        const remainingAmount = roundMoney(totalDue - Number(settled.rows[0].total));
+        const remainingAmount = roundMoney(totalDue - Number(settled.rows[0].total) - Number(pending.rows[0].total));
         if (remainingAmount <= 0) throw accountingError(409, "Cette facture est déjà intégralement réglée.");
         if (settlement.amount > remainingAmount + 0.01) throw accountingError(400, "Le règlement dépasse le solde restant de la facture.");
         await postAccountingDocument({ ownerId, documentId: document.id, actorId, database: client });
@@ -474,12 +518,16 @@ export async function recordInvoiceSettlement({ ownerId, actorId, input, databas
         const paymentStatus = paidTotal >= totalDue - 0.01 ? "paid" : "partial";
         await client.query("UPDATE depannhome_einvoice_transmissions SET payment_status=$3,updated_at=NOW() WHERE owner_id=$1 AND document_id=$2", [ownerId, document.id, paymentStatus]);
         await client.query("INSERT INTO depannhome_einvoice_events(owner_id,connection_id,transmission_id,actor_id,event_type,status,message,details) SELECT owner_id,connection_id,id,$3,'payment_reconciled',$4,$5,$6::jsonb FROM depannhome_einvoice_transmissions WHERE owner_id=$1 AND document_id=$2", [ownerId, document.id, actorId, paymentStatus, paymentStatus === "paid" ? "Facture réglée dans Depann’Home Pro." : "Règlement partiel enregistré dans Depann’Home Pro.", JSON.stringify({ settlementId: created[0].id, paidTotal, method: settlement.method })]);
-        await client.query("COMMIT");
-        return { id: created[0].id, settlement: created[0], paidTotal, remainingAmount: roundMoney(Math.max(0, totalDue - paidTotal)), paymentStatus, posting };
+        if (paymentStatus === "paid") {
+            const { archiveBillingAcquittance } = await import("./billing.js");
+            await archiveBillingAcquittance({ ownerId, documentId: document.id, finalSettlementId: created[0].id, actorId, database: client });
+        }
+        if (ownsTransaction) await client.query("COMMIT");
+        return { id: created[0].id, settlement: created[0], paidTotal, remainingAmount: roundMoney(Math.max(0, totalDue - paidTotal)), paymentStatus, posting, acquittanceAvailable: paymentStatus === "paid" };
     } catch (error) {
-        await client.query("ROLLBACK");
+        if (ownsTransaction) await client.query("ROLLBACK");
         throw error;
-    } finally { client.release(); }
+    } finally { if (ownsTransaction) client.release(); }
 }
 
 export async function postAccountingDocument({ ownerId, documentId, actorId, database = getPool() }) {
@@ -616,7 +664,9 @@ async function loadDocuments(ownerId) {
         SELECT document.id, document_type AS "documentType", document_number AS "documentNumber", client_id AS "clientId", customer_type AS "customerType", customer_name AS "customerName",
             customer_address AS "customerAddress", TO_CHAR(issue_date, 'YYYY-MM-DD') AS "issueDate", TO_CHAR(due_date, 'YYYY-MM-DD') AS "dueDate", status,
             issued_at AS "issuedAt", (structured_data IS NOT NULL) AS "hasStructuredData", lines, notes, financial_data AS "financialData", is_accounted AS "isAccounted", quote_reference AS "quoteReference",
-            COALESCE((SELECT SUM(amount) FROM depannhome_accounting_settlements settlement WHERE settlement.owner_id=document.owner_id AND settlement.document_id=document.id), 0)::float AS "settledAmount"
+            COALESCE((SELECT SUM(amount) FROM depannhome_accounting_settlements settlement WHERE settlement.owner_id=document.owner_id AND settlement.document_id=document.id), 0)::float AS "settledAmount",
+            COALESCE((SELECT SUM(amount) FROM depannhome_delayed_payment_declarations pending WHERE pending.owner_id=document.owner_id AND pending.document_id=document.id AND pending.status='pending'), 0)::float AS "pendingAmount",
+            EXISTS(SELECT 1 FROM depannhome_billing_acquittances acquittance WHERE acquittance.owner_id=document.owner_id AND acquittance.document_id=document.id) AS "hasAcquittance"
         FROM depannhome_billing_documents document
         WHERE owner_id=$1 AND (document_type <> 'invoice' OR issued_at IS NOT NULL)
         ORDER BY issue_date DESC, id DESC
@@ -624,7 +674,7 @@ async function loadDocuments(ownerId) {
     return rows.map(document => {
         const totals = calculateDocumentTotals(document.lines, document.financialData);
         const settledAmount = Number(document.settledAmount || 0);
-        return { ...document, financialData: normalizeFinancialData(document.financialData), totals, settledAmount, remainingAmount: Math.max(0, roundMoney(totals.netPayable - settledAmount)), paymentStatus: document.documentType === "invoice" ? paymentStatus(document, totals.netPayable, settledAmount) : "not_applicable" };
+        return { ...document, financialData: normalizeFinancialData(document.financialData), totals, settledAmount, pendingAmount: Number(document.pendingAmount || 0), remainingAmount: Math.max(0, roundMoney(totals.netPayable - settledAmount)), paymentStatus: document.documentType === "invoice" ? paymentStatus(document, totals.netPayable, settledAmount) : "not_applicable" };
     });
 }
 

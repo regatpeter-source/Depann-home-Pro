@@ -91,10 +91,14 @@ La catégorie du client pilote le canal, pas l’existence de la facture :
 
 - une facture destinée à un professionnel peut être transmise à la plateforme connectée dans le parcours de facturation électronique B2B ;
 - une facture destinée à un particulier est émise, numérotée, archivée en PDF/UBL et comptabilisée normalement, mais Depann’Home Pro bloque son envoi comme facture B2B ;
-- les opérations B2C relèvent de l’e-reporting. Depann’Home Pro l’indique explicitement mais ne prétend pas automatiser cet e-reporting tant que l’adaptateur de la plateforme choisie ne fournit pas ce contrat ;
+- les opérations B2C relèvent de l’e-reporting. Depann’Home Pro prépare localement un lot immuable agrégé par jour et taux de TVA, ainsi que les encaissements de prestations lorsque la TVA n’est pas acquittée sur les débits. Le lot et son export portent toujours le statut **préparé localement — non transmis** tant que l’adaptateur de la plateforme choisie ne fournit pas de contrat d’envoi documenté ;
 - un règlement immédiat ne dispense jamais d’émettre ou de conserver la facture.
 
-Un Poste Admin, un Poste Admin Mobile ou un Poste administratif autorisé peut enregistrer le règlement d’une facture émise. Un technicien disposant du droit « Créer des devis et factures » peut créer, émettre et encaisser une facture uniquement depuis une intervention qui lui est attribuée. Les modes normalisés sont **Chèque**, **Espèces**, **Virement** et **Carte bancaire**. Chaque règlement conserve son auteur, sa date, son montant et sa référence dans `depannhome_accounting_settlements`, génère les écritures comptables existantes et rapproche le statut de la transmission éventuelle sans modifier l’archive légale immuable.
+Un Poste Admin, un Poste Admin Mobile ou un Poste administratif autorisé peut enregistrer le règlement d’une facture émise. Un technicien disposant du droit « Créer des devis et factures » peut créer, émettre et encaisser une facture uniquement depuis une intervention qui lui est attribuée. Les modes normalisés sont **Chèque**, **Espèces**, **Virement** et **Carte bancaire**.
+
+Les paiements par espèces ou carte sont comptabilisés immédiatement. Un chèque ou un virement crée uniquement une déclaration en attente avec référence obligatoire. Seul l’administrateur connecté depuis un poste PC approuvé peut confirmer la preuve bancaire ou refuser la déclaration. La validation crée alors le règlement et son écriture comptable de manière transactionnelle ; une déclaration contrôlée devient immuable.
+
+Lorsque la facture est intégralement réglée, une copie PDF acquittée distincte est archivée avec la date, les modes, montants et références des règlements confirmés. Elle contient l’empreinte SHA-256 du PDF original, lequel n’est jamais modifié.
 
 ## État des intégrations
 

@@ -4,7 +4,7 @@ import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { renderPurchases } from "./purchases.js?v=126";
 
 const SECTIONS = [
-    ["dashboard", "Tableau de bord"], ["salesJournal", "Journal des ventes"], ["settlements", "Règlements"], ["credits", "Avoirs"], ["vat", "TVA"], ["purchases", "Achats"], ["export", "Export comptable"], ["fec", "Export FEC"], ["control", "Contrôle comptable"], ["electronic", "Facturation électronique & PDP"], ["settings", "Paramètres"]
+    ["dashboard", "Tableau de bord"], ["salesJournal", "Journal des ventes"], ["settlements", "Règlements"], ["paymentReviews", "Règlements à contrôler"], ["credits", "Avoirs"], ["vat", "TVA"], ["purchases", "Achats"], ["export", "Export comptable"], ["fec", "Export FEC"], ["control", "Contrôle comptable"], ["b2cReporting", "E-reporting B2C"], ["electronic", "Facturation électronique & PDP"], ["settings", "Paramètres"]
 ];
 let accounting = null;
 let activeSection = "dashboard";
@@ -24,7 +24,7 @@ export async function renderAccounting(section = activeSection) {
     shell.innerHTML = `<header class="accounting-heading"><div><p class="eyebrow">Données réelles de l’entreprise</p><h2>Comptabilité & facturation électronique</h2><p class="muted">Journal persistant isolé pour votre entreprise, contrôles et exports destinés à votre cabinet comptable.</p></div></header><aside class="accounting-pdp-notice">Depann’Home Pro prépare des écritures et fichiers à faire valider par un professionnel de la comptabilité. Ce module n’est pas un logiciel comptable certifié et ne garantit pas, à lui seul, la conformité d’un FEC.</aside>${isAccountingReadOnly() ? '<aside class="accounting-pdp-notice"><strong>Consultation comptable :</strong> ce poste peut consulter et exporter les données, sans modifier les pièces ni enregistrer d’opération.</aside>' : ""}<nav class="accounting-tabs" aria-label="Sections comptables">${sections.map(([id, label]) => `<button type="button" class="secondary-button${id === activeSection ? " active" : ""}" data-accounting-section="${id}">${label}</button>`).join("")}</nav><section id="accountingContent"></section>`;
     shell.querySelectorAll("[data-accounting-section]").forEach(button => button.addEventListener("click", () => renderAccounting(button.dataset.accountingSection)));
     const content = shell.querySelector("#accountingContent");
-    ({ dashboard: renderDashboard, salesJournal: renderSalesJournal, settlements: renderSettlements, credits: () => renderDocuments(content, "credit"), vat: renderVat, purchases: () => renderPurchases({ container: content, embedded: true, readOnly: isAccountingReadOnly() }), export: renderExports, fec: renderFecExport, control: renderAccountingControl, electronic: renderElectronic, settings: renderSettings })[activeSection](content);
+    ({ dashboard: renderDashboard, salesJournal: renderSalesJournal, settlements: renderSettlements, paymentReviews: renderPaymentReviews, credits: () => renderDocuments(content, "credit"), vat: renderVat, purchases: () => renderPurchases({ container: content, embedded: true, readOnly: isAccountingReadOnly() }), export: renderExports, fec: renderFecExport, control: renderAccountingControl, b2cReporting: renderB2cReporting, electronic: renderElectronic, settings: renderSettings })[activeSection](content);
 }
 
 function renderDashboard(node) {
@@ -68,7 +68,7 @@ function renderFinancialEditor(node, document) {
 function renderSettlementForm(node, document) {
     node.insertAdjacentHTML("beforeend", `<section class="accounting-panel accounting-inline-form"><div class="form-heading"><div><p class="eyebrow">${escapeHtml(document.documentNumber)}</p><h3>Enregistrer un règlement</h3><p class="muted">Solde restant : ${money(document.remainingAmount)}</p></div></div><form id="settlementForm"><div class="form-grid"><label>Date<input name="date" type="date" required value="${today()}"></label><label>Montant<input name="amount" type="number" min="0.01" max="${document.remainingAmount}" step="0.01" required value="${document.remainingAmount}"></label><label>Mode<select name="method"><option>Virement</option><option>Carte bancaire</option><option>Chèque</option><option>Espèces</option></select></label><label>Référence<input name="reference" maxlength="160"></label><label class="form-wide">Note<textarea name="notes" rows="2"></textarea></label></div><p class="auth-message"></p><div class="calendar-form-actions"><button class="secondary-button">Enregistrer le règlement</button><button type="button" class="secondary-button" data-close>Fermer</button></div></form></section>`);
     const panel = node.lastElementChild; panel.querySelector("[data-close]").addEventListener("click", () => panel.remove());
-    panel.querySelector("form").addEventListener("submit", async event => { event.preventDefault(); const values = Object.fromEntries(new FormData(event.currentTarget)); const result = await api("/api/accounting/settlements", { method: "POST", body: JSON.stringify({ ...values, documentId: document.id }) }); if (!result.ok) { const message = panel.querySelector(".auth-message"); message.textContent = result.message || "Règlement impossible."; message.classList.add("error"); return; } renderAccounting("salesJournal"); });
+    panel.querySelector("form").addEventListener("submit", async event => { event.preventDefault(); const values = Object.fromEntries(new FormData(event.currentTarget)); const result = await api("/api/accounting/settlements", { method: "POST", body: JSON.stringify({ ...values, documentId: document.id }) }); if (!result.ok) { const message = panel.querySelector(".auth-message"); message.textContent = result.message || "Règlement impossible."; message.classList.add("error"); return; } if (result.data?.pending) alert(result.data.message || "Règlement déclaré et en attente de contrôle bancaire."); renderAccounting(result.data?.pending ? "paymentReviews" : "salesJournal"); });
 }
 
 async function createCredit(documentId) {
@@ -87,6 +87,48 @@ function renderSalesJournal(node) {
 
 function renderSettlements(node) {
     node.innerHTML = `<section class="accounting-panel"><div class="form-heading"><div><p class="eyebrow">Journal de banque</p><h3>Règlements clients</h3><p class="muted">Les règlements restent distincts des factures et peuvent être partiels ou multiples.</p></div></div><div class="accounting-document-list">${accounting.settlements.length ? accounting.settlements.map(item => `<article class="accounting-document"><div><strong>${escapeHtml(item.documentNumber)}</strong><p>${escapeHtml(item.customerName)}</p><small>${escapeHtml(date(item.date))} · ${escapeHtml(item.method)}${item.reference ? ` · ${escapeHtml(item.reference)}` : ""}</small></div><div class="accounting-document-totals"><strong>${money(item.amount)}</strong><small>Écriture bancaire validée</small></div></article>`).join("") : '<p class="muted">Aucun règlement enregistré.</p>'}</div></section>`;
+}
+
+function renderPaymentReviews(node) {
+    const declarations = accounting.delayedPayments || [];
+    const pending = declarations.filter(item => item.status === "pending");
+    node.innerHTML = `<section class="accounting-panel"><div class="form-heading"><div><p class="eyebrow">Contrôle bancaire sur PC</p><h3>Chèques et virements déclarés</h3><p class="muted">Une déclaration n’est ni encaissée ni comptabilisée avant validation. Contrôlez le relevé bancaire ou la remise de chèque, puis validez ou refusez.</p></div></div><div class="accounting-document-list">${pending.length ? pending.map(item => `<article class="accounting-document"><div><strong>${escapeHtml(item.documentNumber)} · ${escapeHtml(item.customerName)}</strong><p>${escapeHtml(item.method)} · ${money(item.amount)} · déclaré le ${escapeHtml(date(item.date))}</p><small>Référence ${escapeHtml(item.reference)}${item.declaredByName ? ` · par ${escapeHtml(item.declaredByName)}` : ""}${item.notes ? ` · ${escapeHtml(item.notes)}` : ""}</small></div><div class="form-actions"><button type="button" class="secondary-button" data-approve-payment="${item.id}">Preuve vérifiée · valider</button><button type="button" class="danger-button" data-reject-payment="${item.id}">Refuser</button></div></article>`).join("") : '<p class="muted">Aucun chèque ou virement en attente de contrôle.</p>'}</div><h4>Historique récent</h4><div class="accounting-document-list">${declarations.filter(item => item.status !== "pending").slice(0, 30).map(item => `<article class="accounting-document"><div><strong>${escapeHtml(item.documentNumber)} · ${escapeHtml(item.method)} · ${money(item.amount)}</strong><p>${item.status === "approved" ? "Validé et comptabilisé" : "Refusé"}</p><small>${item.reviewedAt ? escapeHtml(dateTime(item.reviewedAt)) : ""}${item.reviewedByName ? ` · ${escapeHtml(item.reviewedByName)}` : ""}${item.reviewNote ? ` · ${escapeHtml(item.reviewNote)}` : ""}</small></div></article>`).join("") || '<p class="muted">Aucun contrôle antérieur.</p>'}</div></section>`;
+    node.querySelectorAll("[data-approve-payment]").forEach(button => button.addEventListener("click", async () => {
+        if (!window.confirm("Confirmez-vous avoir vérifié la preuve bancaire ou la remise du chèque ? La validation créera l’encaissement et l’écriture comptable.")) return;
+        button.disabled = true;
+        const reviewNote = window.prompt("Note de contrôle (facultative) :", "Preuve bancaire vérifiée") ?? "";
+        const result = await api(`/api/accounting/delayed-payments/${button.dataset.approvePayment}/review`, { method: "PATCH", body: JSON.stringify({ decision: "approved", bankEvidenceConfirmed: true, reviewNote }) });
+        if (!result.ok) alert(result.message || "Validation impossible.");
+        renderAccounting("paymentReviews");
+    }));
+    node.querySelectorAll("[data-reject-payment]").forEach(button => button.addEventListener("click", async () => {
+        const reviewNote = window.prompt("Motif obligatoire du refus :", "");
+        if (!reviewNote?.trim()) return;
+        button.disabled = true;
+        const result = await api(`/api/accounting/delayed-payments/${button.dataset.rejectPayment}/review`, { method: "PATCH", body: JSON.stringify({ decision: "rejected", bankEvidenceConfirmed: false, reviewNote }) });
+        if (!result.ok) alert(result.message || "Refus impossible.");
+        renderAccounting("paymentReviews");
+    }));
+}
+
+function renderB2cReporting(node) {
+    const reports = accounting.b2cReports || [];
+    const monthStart = `${today().slice(0, 7)}-01`;
+    node.innerHTML = `<section class="accounting-panel"><div class="form-heading"><div><p class="eyebrow">Préparation locale auditable</p><h3>E-reporting des opérations B2C</h3><p class="muted">Agrégation des transactions par jour et taux de TVA, avec les encaissements des prestations lorsque la TVA n’est pas acquittée sur les débits.</p></div></div><aside class="accounting-pdp-notice"><strong>Important :</strong> un lot préparé ici n’est pas transmis à l’administration ni à une plateforme. Téléchargez-le, contrôlez-le avec votre conseil, puis déposez-le auprès de la plateforme choisie par l’entreprise.</aside><form class="form-grid" id="b2cReportForm"><label>Début de période<input name="start" type="date" required value="${monthStart}"></label><label>Fin de période<input name="end" type="date" required value="${today()}"></label><div class="form-actions"><button class="secondary-button">Préparer le lot local</button></div><p class="auth-message form-wide"></p></form><div class="accounting-document-list">${reports.map(report => `<article class="accounting-document"><div><strong>${escapeHtml(date(report.periodStart))} → ${escapeHtml(date(report.periodEnd))}</strong><p>Préparé localement · non transmis</p><small>${report.transactionCount} agrégat(s) de transactions · ${report.collectionCount} agrégat(s) d’encaissements · SHA-256 ${escapeHtml(report.payloadSha256)}</small></div><button type="button" class="secondary-button" data-download-b2c="${report.id}">Télécharger CSV</button></article>`).join("") || '<p class="muted">Aucun lot B2C préparé.</p>'}</div></section>`;
+    node.querySelector("#b2cReportForm").addEventListener("submit", async event => {
+        event.preventDefault();
+        const form = event.currentTarget; const button = form.querySelector("button"); const message = form.querySelector(".auth-message");
+        button.disabled = true; message.textContent = "Préparation locale…"; message.classList.remove("error");
+        const result = await api("/api/accounting/b2c-reports", { method: "POST", body: JSON.stringify(Object.fromEntries(new FormData(form))) });
+        if (!result.ok) { message.textContent = result.message || "Préparation impossible."; message.classList.add("error"); button.disabled = false; return; }
+        renderAccounting("b2cReporting");
+    });
+    node.querySelectorAll("[data-download-b2c]").forEach(button => button.addEventListener("click", async () => {
+        button.disabled = true;
+        const result = await downloadAccountingFile(`/api/accounting/b2c-reports/${button.dataset.downloadB2c}/csv`);
+        if (!result.ok) alert(result.message || "Téléchargement impossible.");
+        button.disabled = false;
+    }));
 }
 
 function renderVat(node) {
@@ -315,6 +357,6 @@ function date(value) { return value ? new Intl.DateTimeFormat("fr-FR").format(ne
 function dateTime(value) { return value ? new Intl.DateTimeFormat("fr-FR", { dateStyle: "short", timeStyle: "short" }).format(new Date(value)) : "Non renseignée"; }
 function today() { return new Date().toISOString().slice(0, 10); }
 function isAccountingReadOnly() { return document.body.dataset.role === "accountant"; }
-function accountingSections() { return isAccountingReadOnly() ? SECTIONS.filter(([id]) => !["electronic", "settings"].includes(id)) : SECTIONS; }
+function accountingSections() { return isAccountingReadOnly() ? SECTIONS.filter(([id]) => !["paymentReviews", "b2cReporting", "electronic", "settings"].includes(id)) : SECTIONS; }
 async function api(url, options = {}) { try { const response = await fetch(url, { credentials: "same-origin", headers: { "Content-Type": "application/json", ...(options.headers || {}) }, ...options }); const data = response.status === 204 ? null : await response.json().catch(() => null); return { ok: response.ok, data, message: data?.message }; } catch { return { ok: false, message: "Serveur indisponible." }; } }
 async function downloadAccountingFile(url, options = {}) { try { const response = await fetch(url, { credentials: "same-origin", headers: { ...(options.body ? { "Content-Type": "application/json" } : {}), ...(options.headers || {}) }, ...options }); if (!response.ok) { const data = await response.json().catch(() => null); return { ok: false, message: data?.message || "Téléchargement impossible." }; } const blob = await response.blob(); const disposition = response.headers.get("Content-Disposition") || ""; const filename = disposition.match(/filename="?([^";]+)"?/i)?.[1] || "export-comptable"; const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = filename; document.body.append(link); link.click(); link.remove(); URL.revokeObjectURL(link.href); return { ok: true }; } catch { return { ok: false, message: "Serveur indisponible." }; } }

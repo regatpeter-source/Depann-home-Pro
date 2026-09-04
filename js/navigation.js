@@ -1,8 +1,8 @@
 import { ROUTES, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=132";
-import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=203";
+import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=204";
 import { openCreatorPartnerRequest, openCreatorRequestNotification, renderCreatorConsole } from "./creator.js?v=155";
-import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=203";
-import { renderAccounting, renderElectronicInvoicingConfiguration } from "./accounting.js?v=24";
+import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=204";
+import { renderAccounting, renderElectronicInvoicingConfiguration } from "./accounting.js?v=25";
 import { renderPurchases } from "./purchases.js?v=126";
 import { renderGroupActivation, renderGroupWorkspace } from "./groups.js?v=4";
 import { renderPartnerMissions } from "./partner-missions.js?v=80";

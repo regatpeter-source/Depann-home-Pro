@@ -596,7 +596,10 @@ function renderReadOnlyDocument(panel, document) {
     const payable = document.documentType === "invoice" ? calculateNetPayable(document.lines, document.financialData) : 0;
     const settled = Math.min(payable, Number(document.settledAmount) || 0);
     const remaining = Math.max(0, payable - settled);
-    const paymentBlock = document.documentType === "invoice" && document.issuedAt ? `<section class="procedure-section billing-settlement-section"><h3>Règlement</h3><p><strong>${remaining <= 0.009 ? "Facture réglée" : settled > 0 ? "Facture partiellement réglée" : "Facture à encaisser"}</strong> · Réglé ${escapeHtml(formatMoney(settled))} · Solde ${escapeHtml(formatMoney(remaining))}${document.latestPaymentMethod ? ` · Dernier règlement : ${escapeHtml(document.latestPaymentMethod)} le ${escapeHtml(formatDate(document.latestPaymentDate))}` : ""}</p>${remaining > 0.009 && canRecordInvoiceSettlement(document) ? `<form class="form-grid" data-invoice-settlement><label>Montant reçu *<input name="amount" type="number" min="0.01" max="${remaining.toFixed(2)}" step="0.01" required value="${remaining.toFixed(2)}"></label><label>Mode de règlement *<select name="method" required>${PAYMENT_METHODS.map(method => `<option>${escapeHtml(method)}</option>`).join("")}</select></label><label>Date *<input name="date" type="date" required value="${today()}"></label><label>Référence<input name="reference" maxlength="160" placeholder="N° de chèque ou transaction"></label><label class="form-wide">Note<input name="notes" maxlength="1000" placeholder="Ex. Règlement reçu sur place"></label><div class="form-actions"><button class="primary-button">Enregistrer le règlement</button></div><p class="auth-message form-wide" data-settlement-message></p></form>` : ""}</section>` : "";
+    const pending = Math.max(0, Number(document.pendingPaymentAmount) || 0);
+    const available = Math.max(0, remaining - pending);
+    const acquittanceActions = document.hasAcquittance ? '<div class="form-actions"><button type="button" class="secondary-button" data-open-acquittance>Voir la copie acquittée</button><button type="button" class="secondary-button" data-email-acquittance>Envoyer la copie acquittée</button></div>' : "";
+    const paymentBlock = document.documentType === "invoice" && document.issuedAt ? `<section class="procedure-section billing-settlement-section"><h3>Règlement</h3><p><strong>${remaining <= 0.009 ? "Facture réglée" : settled > 0 ? "Facture partiellement réglée" : "Facture à encaisser"}</strong> · Confirmé ${escapeHtml(formatMoney(settled))} · Solde ${escapeHtml(formatMoney(remaining))}${pending ? ` · En attente de contrôle ${escapeHtml(formatMoney(pending))}` : ""}${document.latestPaymentMethod ? ` · Dernier règlement confirmé : ${escapeHtml(document.latestPaymentMethod)} le ${escapeHtml(formatDate(document.latestPaymentDate))}` : ""}</p>${pending ? '<p class="auth-message">Les chèques et virements déclarés ne sont pas comptabilisés avant vérification bancaire par un administrateur sur PC.</p>' : ""}${acquittanceActions}${available > 0.009 && canRecordInvoiceSettlement(document) ? `<form class="form-grid" data-invoice-settlement><label>Montant reçu *<input name="amount" type="number" min="0.01" max="${available.toFixed(2)}" step="0.01" required value="${available.toFixed(2)}"></label><label>Mode de règlement *<select name="method" required>${PAYMENT_METHODS.map(method => `<option>${escapeHtml(method)}</option>`).join("")}</select><small>Chèque et virement : déclaration en attente. Espèces et carte : encaissement immédiat.</small></label><label>Date *<input name="date" type="date" required value="${today()}"></label><label>Référence<input name="reference" maxlength="160" placeholder="Obligatoire pour chèque ou virement"></label><label class="form-wide">Note<input name="notes" maxlength="1000" placeholder="Ex. Règlement reçu sur place"></label><div class="form-actions"><button class="primary-button">Enregistrer ou déclarer le règlement</button></div><p class="auth-message form-wide" data-settlement-message></p></form>` : ""}</section>` : "";
     panel.innerHTML = `
         <div class="billing-read-only-document">
             <div class="form-heading"><div><p class="eyebrow">Consultation uniquement</p><h2>${escapeHtml(DOCUMENT_TYPES[document.documentType])} ${escapeHtml(document.documentNumber)}</h2></div><div class="calendar-form-actions">${canCorrect ? '<button type="button" class="secondary-button" data-create-correction="replacement">Créer une facture rectificative</button><button type="button" class="secondary-button" data-create-correction="amendment">Créer un avenant</button>' : ""}${document.documentType === "quote" && (linkedInvoice || !isAccountant()) ? linkedInvoice ? `<button type="button" class="secondary-button" data-view-linked-invoice="${escapeHtml(linkedInvoice.id)}">Voir la facture</button>` : '<button type="button" class="secondary-button" id="createInvoiceFromQuote">Créer la facture</button>' : ""}<button type="button" class="secondary-button" id="closeBillingDocument">Fermer</button></div></div>
@@ -613,6 +616,8 @@ function renderReadOnlyDocument(panel, document) {
     panel.querySelector("[data-view-linked-invoice]")?.addEventListener("click", event => viewBillingDocument(event.currentTarget.dataset.viewLinkedInvoice));
     panel.querySelectorAll("[data-create-correction]").forEach(button => button.addEventListener("click", () => createInvoiceCorrection(document, button.dataset.createCorrection)));
     panel.querySelector("[data-invoice-settlement]")?.addEventListener("submit", event => submitInvoiceSettlement(event, document));
+    panel.querySelector("[data-open-acquittance]")?.addEventListener("click", () => openBillingAcquittance(document.id));
+    panel.querySelector("[data-email-acquittance]")?.addEventListener("click", () => emailBillingAcquittance(document));
 }
 
 async function submitInvoiceSettlement(event, document) {
@@ -623,6 +628,7 @@ async function submitInvoiceSettlement(event, document) {
     button.disabled = true;
     const result = await apiRequest(`/api/billing/documents/${encodeURIComponent(document.id)}/settlements`, { method: "POST", body: JSON.stringify(Object.fromEntries(new FormData(form))) });
     if (!result.ok) { button.disabled = false; feedback.textContent = result.message || "Règlement impossible."; feedback.classList.add("error"); return; }
+    if (result.data?.pending) alert(result.data.message || "Règlement déclaré et en attente de contrôle bancaire.");
     await renderBilling({ documentId: document.id });
 }
 
@@ -1053,6 +1059,19 @@ function openBillingPdf(documentId) {
     const popup = window.open("", "_blank");
     if (!popup) { alert("Autorisez les fenêtres pop-up pour afficher le PDF."); return; }
     popup.location.href = `/api/billing/documents/${encodeURIComponent(documentId)}/pdf`;
+}
+
+function openBillingAcquittance(documentId) {
+    const popup = window.open("", "_blank");
+    if (!popup) { alert("Autorisez les fenêtres pop-up pour afficher la copie acquittée."); return; }
+    popup.location.href = `/api/billing/documents/${encodeURIComponent(documentId)}/acquittance/pdf`;
+}
+
+async function emailBillingAcquittance(document) {
+    const recipient = window.prompt("Adresse e-mail du destinataire :", "");
+    if (recipient === null || !recipient.trim()) return;
+    const result = await apiRequest(`/api/billing/documents/${encodeURIComponent(document.id)}/acquittance/email`, { method: "POST", body: JSON.stringify({ recipient: recipient.trim() }) });
+    alert(result.ok ? result.message || "Copie acquittée envoyée." : result.message || "Envoi impossible.");
 }
 
 function openBlankQuotePreview() {
