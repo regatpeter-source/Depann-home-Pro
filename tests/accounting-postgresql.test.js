@@ -88,12 +88,26 @@ test("PostgreSQL : aide et règlement soldent exactement la créance client", { 
 test("PostgreSQL : les migrations sont checksumées et idempotentes", { skip: !enabled }, async () => {
     await database.query("CREATE TABLE depannhome_technical_reports(id BIGINT PRIMARY KEY)");
     await database.query("CREATE TABLE depannhome_support_requests(id BIGINT PRIMARY KEY)");
+    await database.query("CREATE TABLE depannhome_billing_documents(id BIGINT PRIMARY KEY)");
+    await database.query("CREATE TABLE depannhome_accounting_settlements(id BIGINT PRIMARY KEY)");
     const { migrationStatus, runMigrations } = await import("../server/database-migrations.js");
     const first = await runMigrations({ database, logger: { info() {} } });
     const second = await runMigrations({ database, logger: { info() {} } });
     assert.ok(first.applied.length >= 1);
     assert.equal(second.applied.length, 0);
     assert.equal((await migrationStatus(database)).every(item => item.status === "applied"), true);
+    const migratedTables = await database.query(`
+        SELECT table_name FROM information_schema.tables
+        WHERE table_schema = current_schema()
+            AND table_name IN ('depannhome_delayed_payment_declarations','depannhome_billing_acquittances','depannhome_b2c_report_batches','depannhome_b2c_report_events')
+        ORDER BY table_name
+    `);
+    assert.deepEqual(migratedTables.rows.map(row => row.table_name), [
+        "depannhome_b2c_report_batches",
+        "depannhome_b2c_report_events",
+        "depannhome_billing_acquittances",
+        "depannhome_delayed_payment_declarations"
+    ]);
 });
 
 test("PostgreSQL : la lecture du technicien affecté reste non ambiguë avec une mission jointe", { skip: !enabled }, async () => {
