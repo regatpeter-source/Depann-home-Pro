@@ -49,13 +49,14 @@ test("l’historique client reprend le statut exact et verrouille les interventi
     assert.match(clients, /appointment\.isCompleted \|\| appointment\.status === "cancelled"/);
 });
 
-test("seuls les postes administratifs et le Poste Admin Mobile finalisent une intervention", () => {
-    assert.match(server, /EVENT_STATUS_MANAGER_ROLES = new Set\(\["admin", "pc_standard", "mobile_admin"\]\)/);
+test("seuls les postes administratifs sur PC et le Poste Admin Mobile finalisent une intervention", () => {
+    assert.match(server, /EVENT_STATUS_MANAGER_ROLES = new Set\(\["admin", "pc_standard", "commercial", "mobile_admin"\]\)/);
     assert.match(server, /!canManageCalendarEventStatus\(request\.user\) && event\.status !== "planned"/);
     assert.match(server, /if \(event\.status !== currentStatus\) return response\.status\(403\)/);
     assert.match(server, /AND \(\$15::boolean OR event_status = \$13\)/);
     assert.match(server, /if \(!canManageCalendarEventStatus\(request\.user\)\) \{\s*return response\.status\(403\)\.json\(\{ message: "La suppression d’une intervention est réservée/);
-    assert.match(calendar, /function canManageCalendarEventStatus\(\) \{\s*return \["admin", "pc_standard", "mobile_admin"\]\.includes/);
+    assert.match(server, /!\(user\?\.role === "commercial" && user\?\.deviceType === "mobile"\)/);
+    assert.match(calendar, /return \["admin", "pc_standard", "commercial", "mobile_admin"\]\.includes[^\n]+&& !isReadOnlyCalendar\(\)/);
     assert.match(calendar, /canManageCalendarEventStatus\(\) \? `<label>[\s\S]*?<select name="status">[\s\S]*?type="hidden" name="status"/);
     assert.match(calendar, /isEditing && canManageCalendarEventStatus\(\) \? '<button type="button" class="secondary-button danger-button" id="deleteCalendarEvent">Supprimer/);
 });

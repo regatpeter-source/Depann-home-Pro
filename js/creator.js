@@ -1312,12 +1312,16 @@ function bindMemberRoleForm(form, editing, initialRole) {
     const email = form.elements.email;
     const hint = form.querySelector("#creatorMemberRoleHint");
     const update = () => {
-        const isMobile = ["mobile_admin", "team_lead", "technician"].includes(roleInput?.value || initialRole);
-        phone.required = isMobile;
-        email.required = isMobile;
-        form.querySelector("[data-member-phone]").firstChild.textContent = isMobile ? "Téléphone du poste mobile *" : "Téléphone";
-        form.querySelector("[data-member-email]").firstChild.textContent = isMobile ? "E-mail professionnel du poste mobile *" : "E-mail professionnel";
-        hint.textContent = isMobile
+        const role = roleInput?.value || initialRole;
+        const isMobile = ["mobile_admin", "team_lead", "technician"].includes(role);
+        const requiresMobileContact = isMobile || role === "commercial";
+        phone.required = requiresMobileContact;
+        email.required = requiresMobileContact;
+        form.querySelector("[data-member-phone]").firstChild.textContent = requiresMobileContact ? "Téléphone professionnel *" : "Téléphone";
+        form.querySelector("[data-member-email]").firstChild.textContent = requiresMobileContact ? "E-mail professionnel *" : "E-mail professionnel";
+        hint.textContent = role === "commercial"
+            ? "Ce compte unique fonctionne sur PC et mobile ; sur mobile, seuls les rendez-vous affectés sont visibles."
+            : isMobile
             ? "Le téléphone, l’e-mail professionnel, l’identifiant et le mot de passe sont nécessaires pour créer un poste mobile."
             : "L’identifiant et le mot de passe permettent la connexion au poste administratif.";
     };
@@ -1327,13 +1331,13 @@ function bindMemberRoleForm(form, editing, initialRole) {
 
 function creatorMemberRoleOptions(tier, selectedRole) {
     const roles = tier === "basic"
-        ? ["admin", "pc_standard", "mobile_admin"]
-        : ["admin", "pc_standard", "mobile_admin", "team_lead", "technician"];
+        ? ["admin", "pc_standard", "commercial", "mobile_admin"]
+        : ["admin", "pc_standard", "commercial", "mobile_admin", "team_lead", "technician"];
     return roles.map(role => `<option value="${role}" ${role === selectedRole ? "selected" : ""}>${escapeHtml(creatorMemberRoleLabel(role))}</option>`).join("");
 }
 
 function creatorMemberRoleLabel(role) {
-    return ({ admin: "Poste Admin", pc_standard: "Poste administratif", accountant: "Poste administratif", mobile_admin: "Poste Admin Mobile", team_lead: "Chef d’équipe", technician: "Technicien" })[role] || "Accès";
+    return ({ admin: "Poste Admin", pc_standard: "Poste administratif", commercial: "Commercial / Chargé d’affaires", accountant: "Poste administratif", mobile_admin: "Poste Admin Mobile", team_lead: "Chef d’équipe", technician: "Technicien" })[role] || "Accès";
 }
 
 function showFeedback(message, isError = false) {

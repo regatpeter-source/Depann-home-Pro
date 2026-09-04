@@ -1,16 +1,16 @@
-import { ROUTES, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=132";
-import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=204";
-import { openCreatorPartnerRequest, openCreatorRequestNotification, renderCreatorConsole } from "./creator.js?v=155";
+import { ROUTES, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=133";
+import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=205";
+import { openCreatorPartnerRequest, openCreatorRequestNotification, renderCreatorConsole } from "./creator.js?v=156";
 import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=204";
 import { renderAccounting, renderElectronicInvoicingConfiguration } from "./accounting.js?v=25";
 import { renderPurchases } from "./purchases.js?v=126";
 import { renderGroupActivation, renderGroupWorkspace } from "./groups.js?v=4";
-import { renderPartnerMissions } from "./partner-missions.js?v=80";
+import { renderPartnerMissions } from "./partner-missions.js?v=81";
 import { renderPartnerSandbox } from "./partner-sandbox.js?v=3";
 import { renderPartnerConnections } from "./partner-connections.js?v=44";
-import { renderCompanyEmailWorkspace, renderPartnerEmailSettings } from "./partner-email-settings.js?v=27";
+import { renderCompanyEmailWorkspace, renderPartnerEmailSettings } from "./partner-email-settings.js?v=28";
 import { renderDataImportTool } from "./data-imports.js?v=5";
-import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=49";
+import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=50";
 import { getFirstUnreadClientId, refreshClientMessageAlert, refreshVisibleClientMessages } from "./messages.js?v=107";
 import { getSearchableClients, renderClients } from "./clients.js?v=164";
 import { synchronizeClients } from "./client-sync.js?v=127";
@@ -99,7 +99,7 @@ export function initializeNavigation(loadedDatabase) {
     window.addEventListener("depannhome:technician-calendar-viewed", event => markTechnicianCalendarAlertsRead(event.detail?.events || []));
     window.addEventListener("depannhome:open-notification", event => openNotificationDestination(event.detail?.notification));
     window.addEventListener("depannhome:open-home", openHome);
-    refreshClientMessageAlert();
+    if (!isCommercialMobile()) refreshClientMessageAlert();
     refreshTechnicianCalendarAlert();
     document.addEventListener("visibilitychange", () => {
         if (document.visibilityState === "visible") refreshSharedData({ silent: true });
@@ -124,8 +124,8 @@ export async function refreshSharedData(options = {}) {
     }
     const requests = canAccessRoute(ROUTES.billing) ? [synchronizeBillingDocuments({ refreshView: !options.silent, force: Boolean(options.forceBilling) })] : [];
     if (isTechnician() && canAccessRoute(ROUTES.calendar)) requests.unshift(refreshTechnicianCalendarAlert());
-    if (!isAccountant()) requests.unshift(refreshVisibleClientMessages());
-    if (options.includeClients && !isAccountant()) requests.push(synchronizeClients());
+    if (!isAccountant() && !isCommercialMobile()) requests.unshift(refreshVisibleClientMessages());
+    if (options.includeClients && !isAccountant() && !isCommercialMobile()) requests.push(synchronizeClients());
     sharedSynchronizationPromise = Promise.all(requests).finally(() => {
         sharedSynchronizationPromise = null;
     });
@@ -177,7 +177,7 @@ export async function refreshApplication() {
         renderCompanyEmail();
     } else if (activeRoute === ROUTES.partnerSandbox && document.body.dataset.role === "admin") {
         renderPartnerSandbox();
-    } else if (activeRoute === ROUTES.purchases && ["admin", "pc_standard", "accountant", "mobile_admin"].includes(document.body.dataset.role)) {
+    } else if (activeRoute === ROUTES.purchases && ["admin", "pc_standard", "commercial", "accountant", "mobile_admin"].includes(document.body.dataset.role)) {
         renderPurchases();
     } else if (activeRoute === ROUTES.groups && document.body.dataset.groupAdmin === "true") {
         renderGroupWorkspace();
@@ -397,8 +397,9 @@ function isMobileDeviceContext() {
 
 function isMenuAllowed(roles, route = "") {
     if (!Array.isArray(roles) || !roles.includes(document.body.dataset.role)) return false;
-    if (route === ROUTES.billing && ["pc_standard", "accountant"].includes(document.body.dataset.role) && document.body.dataset.canAccessBilling !== "true") return false;
-    if (route === ROUTES.accounting && ["pc_standard", "accountant"].includes(document.body.dataset.role) && document.body.dataset.canAccessAccounting !== "true") return false;
+    if (isCommercialMobile() && ![ROUTES.home, ROUTES.calendar].includes(route)) return false;
+    if (route === ROUTES.billing && ["pc_standard", "commercial", "accountant"].includes(document.body.dataset.role) && document.body.dataset.canAccessBilling !== "true") return false;
+    if (route === ROUTES.accounting && ["pc_standard", "commercial", "accountant"].includes(document.body.dataset.role) && document.body.dataset.canAccessAccounting !== "true") return false;
     if (route === ROUTES.companyEmail && document.body.dataset.canAccessCompanyEmail !== "true") return false;
     if (route === ROUTES.groups) return document.body.dataset.groupAdmin === "true";
     if (route === ROUTES.partnerSandbox) return document.body.classList.contains("partner-sandbox-enabled");
@@ -449,7 +450,11 @@ function organizationFeatureEnabled(feature) {
 }
 
 function isMobilePostRole() {
-    return ["mobile_admin", "team_lead", "technician"].includes(document.body.dataset.role);
+    return ["mobile_admin", "team_lead", "technician"].includes(document.body.dataset.role) || isCommercialMobile();
+}
+
+function isCommercialMobile() {
+    return document.body.dataset.role === "commercial" && isMobileDeviceContext();
 }
 
 function menuRoute(menu) {
@@ -526,7 +531,7 @@ function isAccountant() {
 }
 
 function isTechnician() {
-    return document.body.dataset.role === "technician";
+    return document.body.dataset.role === "technician" || isCommercialMobile();
 }
 
 function isMobileAdministrator() {
@@ -2003,8 +2008,8 @@ async function renderTeamManagement(container) {
     roleInput.name = "role";
     const tier = document.body.dataset.subscriptionTier || "pro";
     const roleOptions = tier === "basic"
-        ? [["admin", "Poste Admin"], ["mobile_admin", "Poste Admin Mobile"], ["pc_standard", "Poste administratif"]]
-        : [["admin", "Poste Admin"], ["mobile_admin", "Poste Admin Mobile"], ["pc_standard", "Poste administratif"], ["technician", "Technicien"], ["team_lead", "Chef d’équipe"]];
+        ? [["admin", "Poste Admin"], ["mobile_admin", "Poste Admin Mobile"], ["pc_standard", "Poste administratif"], ["commercial", "Commercial / Chargé d’affaires"]]
+        : [["admin", "Poste Admin"], ["mobile_admin", "Poste Admin Mobile"], ["pc_standard", "Poste administratif"], ["commercial", "Commercial / Chargé d’affaires"], ["technician", "Technicien"], ["team_lead", "Chef d’équipe"]];
     roleInput.innerHTML = roleOptions.map(([value, label]) => `<option value="${value}">${label}</option>`).join("");
     roleField.appendChild(roleInput);
     formFields.appendChild(roleField);
@@ -2059,13 +2064,13 @@ async function renderTeamManagement(container) {
     const updateRoleFields = () => {
         const isTechnician = ["technician", "team_lead"].includes(roleInput.value);
         const isMobileAdmin = roleInput.value === "mobile_admin";
-        const isConfigurablePc = roleInput.value === "pc_standard";
+        const isConfigurablePc = ["pc_standard", "commercial"].includes(roleInput.value);
         const isAdministratorPc = roleInput.value === "admin";
-        form.elements.phone.required = isTechnician || isMobileAdmin;
-        form.elements.email.required = isTechnician || isMobileAdmin;
+        form.elements.phone.required = isTechnician || isMobileAdmin || roleInput.value === "commercial";
+        form.elements.email.required = isTechnician || isMobileAdmin || roleInput.value === "commercial";
         departmentsField.hidden = !isTechnician;
         departmentsField.querySelectorAll("input").forEach(input => { input.disabled = !isTechnician; });
-        submit.textContent = isTechnician ? (roleInput.value === "team_lead" ? "Créer le chef d’équipe" : "Créer le technicien") : isMobileAdmin ? "Créer le Poste Admin Mobile" : isAdministratorPc ? "Créer le Poste Admin" : "Créer le poste administratif";
+        submit.textContent = isTechnician ? (roleInput.value === "team_lead" ? "Créer le chef d’équipe" : "Créer le technicien") : isMobileAdmin ? "Créer le Poste Admin Mobile" : roleInput.value === "commercial" ? "Créer le Commercial / Chargé d’affaires" : isAdministratorPc ? "Créer le Poste Admin" : "Créer le poste administratif";
         roleField.dataset.role = roleInput.value;
         permissionsField.hidden = !advancedPcPermissions || (!isConfigurablePc && !isAdministratorPc);
         permissionsField.querySelectorAll("input").forEach(input => { input.disabled = !isConfigurablePc; });
@@ -2075,15 +2080,15 @@ async function renderTeamManagement(container) {
             : "Choisissez uniquement les espaces nécessaires à ce poste. Ces droits sont contrôlés côté serveur.";
         mobileBillingPermissionField.hidden = !["technician", "team_lead"].includes(roleInput.value);
         form.elements.canCreateBilling.disabled = !["technician", "team_lead"].includes(roleInput.value);
-        feedback.textContent = isMobileAdmin ? "Ce poste s’active uniquement depuis un smartphone ou une tablette : l’appareil devra être autorisé, puis confirmé avec le code envoyé par e-mail." : "";
+        feedback.textContent = isMobileAdmin ? "Ce poste s’active uniquement depuis un smartphone ou une tablette : l’appareil devra être autorisé, puis confirmé avec le code envoyé par e-mail." : roleInput.value === "commercial" ? "Un seul compte pour le PC et le mobile. Sur téléphone, seuls les rendez-vous affectés sont visibles en lecture seule." : "";
     };
     roleInput.addEventListener("change", updateRoleFields);
     updateRoleFields();
     const openDeviceManagement = device => {
-        const isPc = ["admin", "pc_standard"].includes(device.userRole) && device.deviceType !== "mobile";
+        const isPc = ["admin", "pc_standard", "commercial"].includes(device.userRole) && device.deviceType !== "mobile";
         const deviceName = isPc ? "ce poste administratif" : "cet appareil";
         const accountName = device.fullName || device.username || "ce compte";
-        const configurablePcPermissions = advancedPcPermissions && ["pc_standard", "accountant"].includes(device.userRole);
+        const configurablePcPermissions = advancedPcPermissions && ["pc_standard", "commercial", "accountant"].includes(device.userRole);
         const configurableMobileBilling = ["technician", "team_lead"].includes(device.userRole);
         const permissionForm = configurablePcPermissions ? `
             <form class="device-permissions-form"><h3>Autorisations du poste</h3><p class="muted">Modifiez les espaces accessibles par ce compte. Les changements s’appliquent à tous ses appareils.</p><fieldset class="team-permissions-fieldset"><legend>Espaces autorisés</legend><label class="settings-toggle"><span><strong>Devis et factures</strong><small>Créer et gérer les documents commerciaux</small></span><input type="checkbox" name="canAccessBilling" ${device.canAccessBilling ? "checked" : ""}></label><label class="settings-toggle"><span><strong>Comptabilité et e-facturation</strong><small>Accéder aux journaux, règlements, TVA, FEC et PDP</small></span><input type="checkbox" name="canAccessAccounting" ${device.canAccessAccounting ? "checked" : ""}></label><label class="settings-toggle"><span><strong>Espace e-mail de l’entreprise</strong><small>Consulter la boîte professionnelle et ses pièces jointes</small></span><input type="checkbox" name="canAccessCompanyEmail" ${device.canAccessCompanyEmail ? "checked" : ""}></label>${groupCompanyPermissionAvailable ? `<label class="settings-toggle"><span><strong>Entreprises du même groupe</strong><small>Changer de société active sans partager leurs données</small></span><input type="checkbox" name="canSwitchGroupCompanies" ${device.canSwitchGroupCompanies ? "checked" : ""}></label>` : ""}</fieldset><p class="auth-message" aria-live="polite"></p><button type="submit" class="secondary-button">Enregistrer les autorisations</button></form>
@@ -2196,10 +2201,10 @@ async function renderTeamManagement(container) {
             (payload.members || []).forEach(member => {
                 const item = document.createElement("div");
                 item.className = "team-member";
-                const memberType = member.role === "admin" ? "Poste Admin" : ["pc_standard", "accountant"].includes(member.role) ? "Poste administratif" : member.role === "mobile_admin" ? "Poste Admin Mobile" : member.role === "team_lead" ? "Chef d’équipe" : "Technicien";
+                const memberType = member.role === "admin" ? "Poste Admin" : member.role === "commercial" ? "Commercial / Chargé d’affaires" : ["pc_standard", "accountant"].includes(member.role) ? "Poste administratif" : member.role === "mobile_admin" ? "Poste Admin Mobile" : member.role === "team_lead" ? "Chef d’équipe" : "Technicien";
                 const permissionSummary = member.role === "admin"
                     ? " · Tous les accès"
-                    : ["pc_standard", "accountant"].includes(member.role) && advancedPcPermissions
+                    : ["pc_standard", "commercial", "accountant"].includes(member.role) && advancedPcPermissions
                         ? ` · Facturation : ${member.canAccessBilling ? "oui" : "non"} · Comptabilité : ${member.canAccessAccounting ? "oui" : "non"} · E-mail : ${member.canAccessCompanyEmail ? "oui" : "non"}${groupCompanyPermissionAvailable ? ` · Groupe : ${member.canSwitchGroupCompanies ? "oui" : "non"}` : ""}`
                         : "";
                 const sectionBadges = ["technician", "team_lead"].includes(member.role) ? memberDepartments(member).map(section => `<span class="team-department-badge">${escapeHtml(section)}</span>`).join("") : "";
@@ -2221,8 +2226,8 @@ async function renderTeamManagement(container) {
                 });
                 const changeRole = createButton("Changer le rôle", "secondary-button", async () => {
                     const availableRoles = tier === "basic"
-                        ? [["admin", "Poste Admin"], ["mobile_admin", "Poste Admin Mobile"], ["pc_standard", "Poste administratif"]]
-                        : [["admin", "Poste Admin"], ["mobile_admin", "Poste Admin Mobile"], ["pc_standard", "Poste administratif"], ["technician", "Technicien"], ["team_lead", "Chef d’équipe"]];
+                        ? [["admin", "Poste Admin"], ["mobile_admin", "Poste Admin Mobile"], ["pc_standard", "Poste administratif"], ["commercial", "Commercial / Chargé d’affaires"]]
+                        : [["admin", "Poste Admin"], ["mobile_admin", "Poste Admin Mobile"], ["pc_standard", "Poste administratif"], ["commercial", "Commercial / Chargé d’affaires"], ["technician", "Technicien"], ["team_lead", "Chef d’équipe"]];
                     const nextRole = await chooseMemberRole(member, availableRoles);
                     if (!nextRole || nextRole === member.role) return;
                     changeRole.disabled = true;
@@ -2235,7 +2240,7 @@ async function renderTeamManagement(container) {
                     await load();
                 });
                 const permissionButtons = [];
-                if (advancedPcPermissions && ["pc_standard", "accountant"].includes(member.role)) {
+                if (advancedPcPermissions && ["pc_standard", "commercial", "accountant"].includes(member.role)) {
                     const managePermissions = createButton("Gérer les autorisations", "secondary-button", async () => {
                         const permissions = await chooseMemberPermissions(member, groupCompanyPermissionAvailable);
                         if (!permissions) return;
@@ -2276,7 +2281,7 @@ async function renderTeamManagement(container) {
             const managedDevices = devicePayload.devices || [];
             if (!managedDevices.length) devices.insertAdjacentHTML("beforeend", "<p class=\"muted\">Aucun appareil enregistré.</p>");
             managedDevices.forEach(device => {
-                const isPc = ["admin", "pc_standard", "accountant"].includes(device.userRole) && device.deviceType !== "mobile";
+                const isPc = ["admin", "pc_standard", "commercial", "accountant"].includes(device.userRole) && device.deviceType !== "mobile";
                 const isMobile = device.deviceType === "mobile";
                 const pcSeatAvailable = Number(pcSeats.activePcUsers) < Number(pcSeats.maxPcUsers);
                 const mobileSeatAvailable = Number(pcSeats.activeMobileUsers) < Number(pcSeats.maxMobileUsers);
@@ -2284,7 +2289,8 @@ async function renderTeamManagement(container) {
                 item.className = "team-member";
                 const deviceTypeLabel = isPc
                     ? device.userRole === "admin" ? "Poste Admin" : "Poste administratif"
-                    : isMobile && ["admin", "mobile_admin"].includes(device.userRole) ? "Poste Admin Mobile"
+                        : isMobile && device.userRole === "commercial" ? "Commercial / Chargé d’affaires mobile"
+                            : isMobile && ["admin", "mobile_admin"].includes(device.userRole) ? "Poste Admin Mobile"
                         : isMobile && device.userRole === "team_lead" ? "Chef d’équipe mobile"
                             : isMobile && device.userRole === "technician" ? "Technicien mobile"
                                 : isMobile ? "Appareil mobile" : "Appareil non conforme";
@@ -2306,7 +2312,7 @@ async function renderTeamManagement(container) {
                         await load();
                     });
                     if (isPc && !pcSeatAvailable) approve.disabled = true;
-                    if (isMobile && device.userRole === "admin" && !mobileSeatAvailable) approve.disabled = true;
+                    if (isMobile && ["admin", "commercial"].includes(device.userRole) && !mobileSeatAvailable) approve.disabled = true;
                     actions.appendChild(approve);
                     if (device.status !== "rejected") {
                         const reject = createButton("Refuser", "secondary-button", async () => {
@@ -2353,7 +2359,7 @@ async function renderTeamManagement(container) {
             if (!response.ok) throw new Error(payload.message || "Création impossible.");
             form.reset();
             updateRoleFields();
-            feedback.textContent = values.role === "admin" ? "Poste Admin créé. Sa première connexion devra être activée dans la liste des appareils." : values.role === "mobile_admin" ? "Poste Admin Mobile créé. À sa première connexion smartphone, autorisez l’appareil puis envoyez le code e-mail." : values.role === "pc_standard" ? "Poste administratif créé." : values.role === "team_lead" ? "Chef d’équipe créé." : "Technicien créé.";
+            feedback.textContent = values.role === "admin" ? "Poste Admin créé. Sa première connexion devra être activée dans la liste des appareils." : values.role === "mobile_admin" ? "Poste Admin Mobile créé. À sa première connexion smartphone, autorisez l’appareil puis envoyez le code e-mail." : values.role === "commercial" ? "Commercial / Chargé d’affaires créé. Le même compte pourra être activé sur PC et mobile." : values.role === "pc_standard" ? "Poste administratif créé." : values.role === "team_lead" ? "Chef d’équipe créé." : "Technicien créé.";
             await load();
         } catch (error) { feedback.textContent = error.message; }
         finally { submit.disabled = false; }

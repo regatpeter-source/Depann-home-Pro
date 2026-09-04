@@ -25,8 +25,8 @@ test("le Comptable reste en consultation sur la comptabilité et les achats", ()
         assert.match(accounting, new RegExp(`api/accounting[^\\n]*${route}[^\\n]*requireAccountingWriteAccess`));
     }
     assert.match(accounting, /request\.user\?\.role !== "accountant"/);
-    assert.match(purchases, /\["admin", "pc_standard", "mobile_admin"\]/);
-    assert.match(purchases, /\["admin", "pc_standard", "accountant", "mobile_admin"\]/);
+    assert.match(purchases, /\["admin", "pc_standard", "commercial", "mobile_admin"\]/);
+    assert.match(purchases, /\["admin", "pc_standard", "commercial", "accountant", "mobile_admin"\]/);
 });
 
 test("les missions archivées sont exclues des accès internes et externes", () => {

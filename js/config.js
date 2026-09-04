@@ -67,15 +67,15 @@ export const ROUTES = {
 };
 
 const ADMINISTRATORS = ["admin"];
-const OPERATIONAL_PC = ["admin", "pc_standard"];
-const OPERATIONAL_MOBILE = ["admin", "pc_standard", "mobile_admin"];
-const TERRAIN = ["admin", "pc_standard", "mobile_admin", "team_lead", "technician"];
+const OPERATIONAL_PC = ["admin", "pc_standard", "commercial"];
+const OPERATIONAL_MOBILE = ["admin", "pc_standard", "commercial", "mobile_admin"];
+const TERRAIN = ["admin", "pc_standard", "commercial", "mobile_admin", "team_lead", "technician"];
 const CALENDAR_USERS = TERRAIN.concat("accountant");
 const PARTNER_MISSION_USERS = OPERATIONAL_MOBILE;
-const COMPANY_EMAIL_USERS = ["admin", "pc_standard", "accountant", "mobile_admin"];
+const COMPANY_EMAIL_USERS = ["admin", "pc_standard", "commercial", "accountant", "mobile_admin"];
 const LIBRARY_USERS = ["mobile_admin", "team_lead", "technician"];
 const MOBILE_POST_USERS = ["mobile_admin", "team_lead", "technician"];
-const PURCHASE_USERS = ["admin", "pc_standard", "accountant", "mobile_admin"];
+const PURCHASE_USERS = ["admin", "pc_standard", "commercial", "accountant", "mobile_admin"];
 
 // Toute nouvelle entrée de navigation doit être déclarée ici. Les éléments
 // hors rôle sont retirés du DOM avant l’affichage de l’application.
@@ -86,7 +86,7 @@ export const MENU_ACCESS = Object.freeze({
         library: LIBRARY_USERS,
         purchases: PURCHASE_USERS,
         billing: OPERATIONAL_MOBILE.concat("accountant"),
-        accounting: ADMINISTRATORS.concat("pc_standard", "accountant"),
+        accounting: ADMINISTRATORS.concat("pc_standard", "commercial", "accountant"),
         groups: ADMINISTRATORS,
         partnerMissions: PARTNER_MISSION_USERS,
         companyEmail: COMPANY_EMAIL_USERS,
@@ -100,7 +100,7 @@ export const MENU_ACCESS = Object.freeze({
         [ROUTES.clients]: OPERATIONAL_MOBILE,
         [ROUTES.billing]: OPERATIONAL_MOBILE.concat("accountant"),
         [ROUTES.purchases]: PURCHASE_USERS,
-        [ROUTES.accounting]: ADMINISTRATORS.concat("pc_standard", "accountant"),
+        [ROUTES.accounting]: ADMINISTRATORS.concat("pc_standard", "commercial", "accountant"),
         [ROUTES.groups]: ADMINISTRATORS,
         [ROUTES.partnerMissions]: PARTNER_MISSION_USERS,
         [ROUTES.companyEmail]: COMPANY_EMAIL_USERS,

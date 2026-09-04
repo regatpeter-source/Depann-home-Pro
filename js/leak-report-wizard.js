@@ -841,7 +841,7 @@ function ownsLock() { return String(reportLock?.lockedBy || "") === String(docum
 function editable() { return Boolean(current && ownsLock() && (["draft", "in_correction"].includes(current.status) || current.status === "submitted" && canProofreadReport())); }
 function isAdministrator() { return document.body.dataset.role === "admin"; }
 function canAdjustPdfLayout() { return document.body.classList.contains("desktop-device"); }
-function canProofreadReport() { return canAdjustPdfLayout() && ["admin", "pc_standard"].includes(document.body.dataset.role); }
+function canProofreadReport() { return canAdjustPdfLayout() && ["admin", "pc_standard", "commercial"].includes(document.body.dataset.role); }
 function canFinalizeReport() { return canProofreadReport(); }
 function canReopenReport() { return canProofreadReport(); }
 function canCancelReport() { return canProofreadReport() && originals.length === 0; }

@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 
 export function canConfirmReportProofreading(role, deviceType) {
-    return ["admin", "pc_standard"].includes(String(role || "")) && deviceType === "desktop";
+    return ["admin", "pc_standard", "commercial"].includes(String(role || "")) && deviceType === "desktop";
 }
 
 export function reportProofreadingFingerprint(report) {

@@ -20,7 +20,7 @@ export async function resolveGroupCompany(userId, activeCompanyId) {
             AND (
                 principal.role = 'admin'
                 OR (
-                    principal.role IN ('pc_standard', 'accountant')
+                    principal.role IN ('pc_standard', 'commercial', 'accountant')
                     AND principal.can_switch_group_companies = TRUE
                 )
             )

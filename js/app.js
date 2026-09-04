@@ -2,10 +2,10 @@ import { initializeAuthentication, restoreApplicationShell, signOut } from "./au
 import { initializeClientSynchronization } from "./client-sync.js?v=127";
 import { initializeCollaboration } from "./collaboration.js?v=7";
 import { loadDatabase } from "./data.js?v=59";
-import { initializeNavigation, refreshApplication } from "./navigation.js?v=438";
+import { initializeNavigation, refreshApplication } from "./navigation.js?v=439";
 import { renderError } from "./ui.js?v=44";
 import { getSettings } from "./storage.js?v=45";
-import { FONT_OPTIONS } from "./config.js?v=132";
+import { FONT_OPTIONS } from "./config.js?v=133";
 import { installClientSessionGuard, onClientSessionReplaced } from "./client-session.js?v=3";
 import { initializeInterfaceLanguage } from "./i18n.js?v=5";
 
@@ -64,6 +64,12 @@ async function startApplication() {
         applyInterfacePreferences();
         applyFont();
         enforceOfficialProductName();
+        if (isCommercialMobile()) {
+            initializeNavigation({ brands: [] });
+            document.body.classList.remove("auth-pending");
+            registerServiceWorker();
+            return;
+        }
         await initializeSandboxCapabilities();
         await initializeClientSynchronization();
         initializeCollaboration();
@@ -175,14 +181,20 @@ function showAuthenticatedUser(user) {
 
 function activeWorkstationLabel(role, deviceType) {
     if (deviceType === "mobile") {
+    if (role === "commercial") return "Commercial / Chargé d’affaires mobile";
         if (["admin", "mobile_admin"].includes(role)) return "Poste Admin Mobile";
         if (role === "team_lead") return "Chef d’équipe mobile";
         if (role === "technician") return "Technicien mobile";
         return "Poste mobile";
     }
     if (role === "admin") return "Poste Admin";
+    if (role === "commercial") return "Commercial / Chargé d’affaires";
     if (["pc_standard", "accountant"].includes(role)) return "Poste administratif";
     return "Poste administratif";
+}
+
+function isCommercialMobile() {
+    return document.body.dataset.role === "commercial" && document.body.dataset.deviceType === "mobile";
 }
 
 async function initializeGroupCompanySelector(user) {

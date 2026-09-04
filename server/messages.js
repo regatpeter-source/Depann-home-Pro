@@ -124,7 +124,7 @@ async function notifyInternalMessageRecipients(ownerId, senderId, clientId, mess
         WHERE (account.id = $1 OR account.account_owner_id = $1)
           AND account.id <> $2
           AND account.is_active = TRUE
-          AND account.role IN ('admin', 'pc_standard', 'mobile_admin', 'team_lead', 'technician')
+          AND account.role IN ('admin', 'pc_standard', 'commercial', 'mobile_admin', 'team_lead', 'technician')
     `, [ownerId, senderId, clientId]);
     await Promise.all(rows.map(recipient => createNotification(
         ownerId,

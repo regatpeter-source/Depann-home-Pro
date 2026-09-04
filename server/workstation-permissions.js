@@ -1,5 +1,5 @@
 const ADVANCED_TIERS = new Set(["basic_plus", "pro"]);
-const CONFIGURABLE_PC_ROLES = new Set(["pc_standard", "accountant"]);
+const CONFIGURABLE_PC_ROLES = new Set(["pc_standard", "commercial", "accountant"]);
 
 export function hasAdvancedWorkstationTier(user) {
     return ADVANCED_TIERS.has(user?.organization?.subscriptionTier || user?.subscriptionTier || "");
@@ -7,12 +7,14 @@ export function hasAdvancedWorkstationTier(user) {
 
 export function hasBillingWorkspaceAccess(user) {
     if (user?.role === "admin") return true;
+    if (user?.role === "commercial" && user?.deviceType === "mobile") return false;
     if (!CONFIGURABLE_PC_ROLES.has(user?.role)) return true;
     return hasAdvancedWorkstationTier(user) && user?.canAccessBilling === true;
 }
 
 export function hasAccountingWorkspaceAccess(user) {
     if (user?.role === "admin") return true;
+    if (user?.role === "commercial" && user?.deviceType === "mobile") return false;
     return CONFIGURABLE_PC_ROLES.has(user?.role)
         && hasAdvancedWorkstationTier(user)
         && user?.canAccessAccounting === true;

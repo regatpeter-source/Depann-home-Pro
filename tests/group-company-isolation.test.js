@@ -20,7 +20,7 @@ test("la session Groupe résout exclusivement une entreprise active autorisée",
     assert.match(auth, /activeCompanyName: groupCompany\?\.companyName \|\| ""/);
     assert.match(auth, /return String\(request\.user\?\.accountOwnerId \|\| request\.user\?\.sub \|\| ""\)/);
     assert.match(groupContext, /principal\.id = \$1/);
-    assert.match(groupContext, /principal\.role IN \('pc_standard', 'accountant'\)/);
+    assert.match(groupContext, /principal\.role IN \('pc_standard', 'commercial', 'accountant'\)/);
     assert.match(groupContext, /company\.is_active = TRUE/);
     assert.match(groupContext, /owner\.is_active = TRUE/);
 });

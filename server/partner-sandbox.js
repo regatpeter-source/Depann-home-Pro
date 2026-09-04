@@ -293,7 +293,7 @@ function connectionScenario(payload) {
 }
 
 function isPartnerPcUser(request) {
-    return ["admin", "pc_standard"].includes(request.user?.role);
+    return ["admin", "pc_standard", "commercial"].includes(request.user?.role);
 }
 
 function requireSandboxAdministration(request, response, next) {

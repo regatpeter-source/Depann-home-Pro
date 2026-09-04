@@ -574,6 +574,13 @@ body[data-role="mobile_admin"].mobile-device #app{padding-bottom:110px;}
 body[data-role="mobile_admin"].mobile-device footer{display:flex;justify-content:center;overflow:hidden;}
 body[data-role="mobile_admin"].mobile-device footer .nav-button:not([data-nav="home"]):not([data-nav="calendar"]):not(.mobile-workspace-menu-button){display:none;}
 
+/* Commercial : même compte sur PC et mobile, planning affecté uniquement sur mobile. */
+body[data-role="commercial"].mobile-device .quick-actions{display:grid;grid-template-columns:1fr;gap:10px;margin:16px 0;}
+body[data-role="commercial"].mobile-device .quick-actions button:not(#calendarBtn){display:none;}
+body[data-role="commercial"].mobile-device #app{padding-bottom:110px;}
+body[data-role="commercial"].mobile-device footer{display:flex;justify-content:center;overflow:hidden;}
+body[data-role="commercial"].mobile-device footer .nav-button:not([data-nav="home"]):not([data-nav="calendar"]):not(.mobile-workspace-menu-button){display:none;}
+
 .partner-api-sandbox-console .sandbox-warning-banner code{display:inline-block;max-width:100%;padding:.15rem .4rem;border-radius:.35rem;background:rgba(15,23,42,.08);overflow-wrap:anywhere;user-select:all;}
 .partner-api-sandbox-console>.creator-form-actions{align-items:center;gap:.65rem;flex-wrap:wrap;}
 .partner-api-sandbox-console>.creator-form-actions select{min-height:42px;max-width:220px;}

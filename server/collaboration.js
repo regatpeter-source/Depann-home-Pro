@@ -233,7 +233,7 @@ async function broadcast(ownerId, event, data) { for (const stream of streamsByO
 export async function broadcastOwnerEvent(ownerId, event, data) { await broadcast(ownerId, event, data); }
 function mapLock(lock) { return { entityType: lock.entity_type, entityId: lock.entity_id, lockedBy: String(lock.locked_by), userName: lock.full_name || lock.username || "Utilisateur", role: lock.role || "", openedAt: lock.locked_at, lastActivityAt: lock.last_activity_at, expiresAt: lock.expires_at, deviceType: lock.device_type || "desktop" }; }
 function lockMessage(lock) { return `Rapport actuellement modifié par ${lock.userName} (${roleLabel(lock.role)}) depuis ${new Intl.DateTimeFormat("fr-FR", { timeStyle: "short" }).format(new Date(lock.openedAt))}.`; }
-function roleLabel(role) { return ({ technician: "Technicien", team_lead: "Chef d’équipe", admin: "Poste Admin", mobile_admin: "Poste Admin Mobile", pc_standard: "Poste administratif", accountant: "Poste administratif" })[role] || "Utilisateur"; }
+function roleLabel(role) { return ({ technician: "Technicien", team_lead: "Chef d’équipe", commercial: "Commercial / Chargé d’affaires", admin: "Poste Admin", mobile_admin: "Poste Admin Mobile", pc_standard: "Poste administratif", accountant: "Poste administratif" })[role] || "Utilisateur"; }
 function actor(request) { return { id: String(request.user.sub), name: request.user.fullName || request.user.username || "Utilisateur", role: request.user.role || "", deviceType: deviceType(request) }; }
 function validTarget(entityType, entityId) { const type = String(entityType || ""); const id = String(entityId || "").slice(0, 120); return ENTITY_TYPES.has(type) && /^[a-zA-Z0-9_-]+$/.test(id) ? { entityType: type, entityId: id } : null; }
 function deviceType(request) { return request.user?.deviceType === "mobile" ? "mobile" : /mobile|android|iphone|ipad/i.test(request.get?.("user-agent") || "") ? "mobile" : "desktop"; }
@@ -241,5 +241,5 @@ function deviceLabel(request) { return String(request.get?.("user-agent") || "")
 function positiveId(value) { const id = Number(value); return Number.isSafeInteger(id) && id > 0 ? id : 0; }
 function cleanText(value, max) { return String(value || "").replace(/\s+/g, " ").trim().slice(0, max); }
 function requireAdministrator(request, response, next) { if (request.user?.role !== "admin") return response.status(403).json({ message: "La reprise de verrou est réservée à l’administration." }); return next(); }
-function requirePartnerNotificationAccess(request, response, next) { if (["admin", "pc_standard", "mobile_admin"].includes(request.user?.role)) return next(); return response.status(403).json({ message: "Les notifications partenaires sont réservées à l’administration." }); }
+function requirePartnerNotificationAccess(request, response, next) { if (["admin", "pc_standard", "commercial", "mobile_admin"].includes(request.user?.role)) return next(); return response.status(403).json({ message: "Les notifications partenaires sont réservées à l’administration." }); }
 function asyncHandler(handler) { return (request, response, next) => Promise.resolve(handler(request, response, next)).catch(next); }

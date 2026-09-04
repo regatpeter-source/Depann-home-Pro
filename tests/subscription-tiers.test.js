@@ -43,13 +43,14 @@ test("Basic, Basic+ and Pro prices are calculated per administrative and mobile 
 });
 
 test("subscription tiers restrict mobile post roles as specified", () => {
-    for (const role of ["admin", "pc_standard", "accountant", "mobile_admin"]) assert.equal(isRoleAllowedForSubscription("basic", role), true, `basic:${role}`);
+    for (const role of ["admin", "pc_standard", "commercial", "accountant", "mobile_admin"]) assert.equal(isRoleAllowedForSubscription("basic", role), true, `basic:${role}`);
     for (const role of ["team_lead", "technician"]) assert.equal(isRoleAllowedForSubscription("basic", role), false, `basic:${role}`);
     for (const tier of ["basic_plus", "pro"]) {
-        for (const role of ["admin", "pc_standard", "accountant", "mobile_admin", "team_lead", "technician"]) assert.equal(isRoleAllowedForSubscription(tier, role), true, `${tier}:${role}`);
+        for (const role of ["admin", "pc_standard", "commercial", "accountant", "mobile_admin", "team_lead", "technician"]) assert.equal(isRoleAllowedForSubscription(tier, role), true, `${tier}:${role}`);
     }
     assert.match(subscriptionRoleAccessMessage("basic", "technician"), /Basic\+/);
     assert.equal(memberSeatFamily("admin"), "pc");
+    assert.equal(memberSeatFamily("commercial"), "pc");
     assert.equal(memberSeatFamily("mobile_admin"), "mobile");
     assert.equal(typeof memberSeatError, "function");
     assert.equal(typeof memberRoleAccessError, "function");
@@ -132,13 +133,13 @@ test("Library is mobile-only and Purchases are available on every administrative
     for (const subscriptionTier of ["basic", "basic_plus", "pro"]) {
         const organization = publicOrganization({ interfaceType: "standard", licenseType: "depannhome_standard", subscriptionTier });
         for (const role of ["mobile_admin", "team_lead", "technician"]) assert.equal(isFeatureEnabledForRole(organization, "library", role), true, `${subscriptionTier}:${role}:library`);
-        for (const role of ["admin", "pc_standard", "accountant"]) assert.equal(isFeatureEnabledForRole(organization, "library", role), false, `${subscriptionTier}:${role}:library-pc`);
-        for (const role of ["admin", "pc_standard", "accountant", "mobile_admin"]) assert.equal(isFeatureEnabledForRole(organization, "purchases", role), true, `${subscriptionTier}:${role}:purchases`);
+        for (const role of ["admin", "pc_standard", "commercial", "accountant"]) assert.equal(isFeatureEnabledForRole(organization, "library", role), false, `${subscriptionTier}:${role}:library-pc`);
+        for (const role of ["admin", "pc_standard", "commercial", "accountant", "mobile_admin"]) assert.equal(isFeatureEnabledForRole(organization, "purchases", role), true, `${subscriptionTier}:${role}:purchases`);
         for (const role of ["team_lead", "technician"]) assert.equal(isFeatureEnabledForRole(organization, "purchases", role), false, `${subscriptionTier}:${role}:purchases`);
     }
-    assert.deepEqual(MENU_ACCESS.quick.purchases, ["admin", "pc_standard", "accountant", "mobile_admin"]);
-    assert.deepEqual(MENU_ACCESS.navigation[ROUTES.purchases], ["admin", "pc_standard", "accountant", "mobile_admin"]);
-    assert.match(purchasesServer, /\["admin", "pc_standard", "accountant", "mobile_admin"\]\.includes\(request\.user\?\.role\)/);
+    assert.deepEqual(MENU_ACCESS.quick.purchases, ["admin", "pc_standard", "commercial", "accountant", "mobile_admin"]);
+    assert.deepEqual(MENU_ACCESS.navigation[ROUTES.purchases], ["admin", "pc_standard", "commercial", "accountant", "mobile_admin"]);
+    assert.match(purchasesServer, /\["admin", "pc_standard", "commercial", "accountant", "mobile_admin"\]\.includes\(request\.user\?\.role\)/);
     assert.match(billing, /data-billing-action="open-purchases"/);
 });
 
@@ -342,9 +343,9 @@ test("tier features are protected on both API and navigation layers", () => {
     assert.match(navigation, /\["approval_pending", "code_pending", "rejected"\]\.includes\(device\.status\)/);
     assert.match(navigation, /Réactiver ce poste mobile/);
     assert.match(navigation, /\/api\/auth\/devices\/\$\{encodeURIComponent\(device\.id\)\}\/approve/);
-    assert.match(auth, /COUNT\(DISTINCT admin_mobile\.id\) FILTER \(WHERE admin_mobile\.status='approved'\)/);
+    assert.match(auth, /COUNT\(DISTINCT cross_device_mobile\.id\) FILTER \(WHERE cross_device_mobile\.status='approved'/);
     assert.match(navigation, /Consomme un poste mobile/);
-    assert.match(auth, /'admin','pc_standard','accountant'/);
+    assert.match(auth, /'admin','pc_standard','commercial','accountant'/);
     assert.match(auth, /'mobile_admin','team_lead','technician'/);
     assert.match(auth, /subscriptionRoleAccessMessage\(organization\.subscriptionTier, role\)/);
     assert.match(auth, /const targetUserId = action\.endsWith\("_deleted"\) \? null/);

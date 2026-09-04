@@ -24,11 +24,12 @@ const COMPANY_TOTP_CHALLENGE_DURATION_SECONDS = 5 * 60;
 const COMPANY_TOTP_MAX_ATTEMPTS = 5;
 const MOBILE_ADMIN_ROLE = "mobile_admin";
 const STANDARD_PC_ROLE = "pc_standard";
+const COMMERCIAL_ROLE = "commercial";
 const TEAM_LEAD_ROLE = "team_lead";
-const CREATABLE_MEMBER_ROLES = new Set(["admin", STANDARD_PC_ROLE, MOBILE_ADMIN_ROLE, TEAM_LEAD_ROLE, "technician"]);
+const CREATABLE_MEMBER_ROLES = new Set(["admin", STANDARD_PC_ROLE, COMMERCIAL_ROLE, MOBILE_ADMIN_ROLE, TEAM_LEAD_ROLE, "technician"]);
 
 export function memberSeatFamily(role) {
-    if (["admin", STANDARD_PC_ROLE, "accountant"].includes(role)) return "pc";
+    if (["admin", STANDARD_PC_ROLE, COMMERCIAL_ROLE, "accountant"].includes(role)) return "pc";
     if ([MOBILE_ADMIN_ROLE, TEAM_LEAD_ROLE, "technician"].includes(role)) return "mobile";
     return "";
 }
@@ -40,12 +41,12 @@ export async function memberSeatError(ownerId, role, excludedMemberId = 0, datab
     if (roleAccessError) return roleAccessError;
     const { rows } = await database.query(`
         SELECT owner.max_pc_users AS "maxPcUsers",owner.max_technicians AS "maxMobileUsers",
-            COUNT(DISTINCT member.id) FILTER (WHERE member.role IN ('admin','pc_standard','accountant') AND member.is_active AND member.id<>$2)::int AS "activePcUsers",
+            COUNT(DISTINCT member.id) FILTER (WHERE member.role IN ('admin','pc_standard','commercial','accountant') AND member.is_active AND member.id<>$2)::int AS "activePcUsers",
             COUNT(DISTINCT member.id) FILTER (WHERE member.role IN ('mobile_admin','team_lead','technician') AND member.is_active AND member.id<>$2)::int
-                + COUNT(DISTINCT admin_mobile.id) FILTER (WHERE admin_mobile.status='approved')::int AS "activeMobileUsers"
+                + COUNT(DISTINCT cross_device_mobile.id) FILTER (WHERE cross_device_mobile.status='approved')::int AS "activeMobileUsers"
         FROM depannhome_users owner LEFT JOIN depannhome_users member ON member.account_owner_id=owner.id
-        LEFT JOIN depannhome_users admin_account ON admin_account.account_owner_id=owner.id AND admin_account.role='admin' AND admin_account.is_active
-        LEFT JOIN depannhome_auth_devices admin_mobile ON admin_mobile.user_id=admin_account.id AND admin_mobile.device_type='mobile'
+        LEFT JOIN depannhome_users cross_device_account ON cross_device_account.account_owner_id=owner.id AND cross_device_account.role IN ('admin','commercial') AND cross_device_account.is_active
+        LEFT JOIN depannhome_auth_devices cross_device_mobile ON cross_device_mobile.user_id=cross_device_account.id AND cross_device_mobile.device_type='mobile'
         WHERE owner.id=$1 GROUP BY owner.id
     `, [ownerId, excludedMemberId]);
     const seats = rows[0];
@@ -64,11 +65,11 @@ export async function mobileAdministratorSeatError(ownerId, excludedDeviceId = "
     const { rows } = await getPool().query(`
         SELECT owner.max_technicians AS "maxMobileUsers",
             COUNT(DISTINCT mobile_member.id) FILTER (WHERE mobile_member.is_active)::int
-                + COUNT(DISTINCT admin_mobile.id) FILTER (WHERE admin_mobile.status='approved' AND admin_mobile.id<>$2)::int AS "activeMobileUsers"
+                + COUNT(DISTINCT cross_device_mobile.id) FILTER (WHERE cross_device_mobile.status='approved' AND cross_device_mobile.id<>$2)::int AS "activeMobileUsers"
         FROM depannhome_users owner
         LEFT JOIN depannhome_users mobile_member ON mobile_member.account_owner_id=owner.id AND mobile_member.role IN ('mobile_admin','team_lead','technician')
-        LEFT JOIN depannhome_users admin_account ON admin_account.account_owner_id=owner.id AND admin_account.role='admin' AND admin_account.is_active
-        LEFT JOIN depannhome_auth_devices admin_mobile ON admin_mobile.user_id=admin_account.id AND admin_mobile.device_type='mobile'
+        LEFT JOIN depannhome_users cross_device_account ON cross_device_account.account_owner_id=owner.id AND cross_device_account.role IN ('admin','commercial') AND cross_device_account.is_active
+        LEFT JOIN depannhome_auth_devices cross_device_mobile ON cross_device_mobile.user_id=cross_device_account.id AND cross_device_mobile.device_type='mobile'
         WHERE owner.id=$1 GROUP BY owner.id
     `, [ownerId, excludedDeviceId]);
     const seats = rows[0];
@@ -424,8 +425,8 @@ export function registerAuthRoutes(app) {
             || (!fullName ? "Le nom de l’utilisateur est obligatoire." : "")
             || (["technician", TEAM_LEAD_ROLE].includes(role) && !phone ? "Le téléphone du technicien est obligatoire." : "")
             || (["technician", TEAM_LEAD_ROLE].includes(role) && !departments.length ? "Choisissez au moins une section métier." : "")
-            || (role === MOBILE_ADMIN_ROLE && !phone ? "Le téléphone du Poste Admin Mobile est obligatoire." : "")
-            || (["technician", TEAM_LEAD_ROLE, MOBILE_ADMIN_ROLE].includes(role) && !EMAIL_PATTERN.test(email) ? "L’e-mail professionnel est obligatoire pour l’activation." : "");
+            || ([MOBILE_ADMIN_ROLE, COMMERCIAL_ROLE].includes(role) && !phone ? `Le téléphone du ${role === COMMERCIAL_ROLE ? "Commercial / Chargé d’affaires" : "Poste Admin Mobile"} est obligatoire.` : "")
+            || (["technician", TEAM_LEAD_ROLE, MOBILE_ADMIN_ROLE, COMMERCIAL_ROLE].includes(role) && !EMAIL_PATTERN.test(email) ? "L’e-mail professionnel est obligatoire pour l’activation mobile." : "");
         if (validationError) return response.status(400).json({ message: validationError });
 
         const seatError = await memberSeatError(getAccountOwnerId(request), role);
@@ -522,10 +523,10 @@ export function registerAuthRoutes(app) {
                 SET role = $3, department = CASE WHEN $3 IN ('technician', 'team_lead') THEN department ELSE '' END,
                     departments = CASE WHEN $3 IN ('technician', 'team_lead') THEN departments ELSE '[]'::jsonb END,
                     can_create_billing = CASE WHEN $3 IN ('technician', 'team_lead') THEN FALSE ELSE can_create_billing END,
-                    can_access_billing = CASE WHEN $3 IN ('pc_standard', 'accountant') THEN can_access_billing ELSE FALSE END,
-                    can_access_accounting = CASE WHEN $3 IN ('pc_standard', 'accountant') THEN can_access_accounting ELSE FALSE END,
-                    can_access_company_email = CASE WHEN $3 IN ('pc_standard', 'accountant') THEN can_access_company_email ELSE FALSE END,
-                    can_switch_group_companies = CASE WHEN $3 IN ('pc_standard', 'accountant') THEN can_switch_group_companies ELSE FALSE END,
+                    can_access_billing = CASE WHEN $3 IN ('pc_standard', 'commercial', 'accountant') THEN can_access_billing ELSE FALSE END,
+                    can_access_accounting = CASE WHEN $3 IN ('pc_standard', 'commercial', 'accountant') THEN can_access_accounting ELSE FALSE END,
+                    can_access_company_email = CASE WHEN $3 IN ('pc_standard', 'commercial', 'accountant') THEN can_access_company_email ELSE FALSE END,
+                    can_switch_group_companies = CASE WHEN $3 IN ('pc_standard', 'commercial', 'accountant') THEN can_switch_group_companies ELSE FALSE END,
                     updated_at = NOW()
                 WHERE id = $1 AND account_owner_id = $2
             `, [memberId, ownerId, nextRole]);
@@ -678,14 +679,14 @@ export function registerAuthRoutes(app) {
             `, [getAccountOwnerId(request)]),
             database.query(`
                 SELECT owner.max_pc_users AS "maxPcUsers",owner.max_technicians AS "maxMobileUsers",
-                    COUNT(DISTINCT account.id) FILTER (WHERE account.is_active AND account.role IN ('admin','pc_standard','accountant'))::int AS "activePcUsers",
+                    COUNT(DISTINCT account.id) FILTER (WHERE account.is_active AND account.role IN ('admin','pc_standard','commercial','accountant'))::int AS "activePcUsers",
                     COUNT(DISTINCT mobile_member.id) FILTER (WHERE mobile_member.is_active)::int
-                        + COUNT(DISTINCT admin_mobile.id) FILTER (WHERE admin_mobile.status='approved')::int AS "activeMobileUsers"
+                        + COUNT(DISTINCT cross_device_mobile.id) FILTER (WHERE cross_device_mobile.status='approved')::int AS "activeMobileUsers"
                 FROM depannhome_users owner
                 LEFT JOIN depannhome_users account ON account.account_owner_id = owner.id
                 LEFT JOIN depannhome_users mobile_member ON mobile_member.account_owner_id=owner.id AND mobile_member.role IN ('mobile_admin','team_lead','technician')
-                LEFT JOIN depannhome_users admin_account ON admin_account.account_owner_id=owner.id AND admin_account.role='admin' AND admin_account.is_active
-                LEFT JOIN depannhome_auth_devices admin_mobile ON admin_mobile.user_id=admin_account.id AND admin_mobile.device_type='mobile'
+                LEFT JOIN depannhome_users cross_device_account ON cross_device_account.account_owner_id=owner.id AND cross_device_account.role IN ('admin','commercial') AND cross_device_account.is_active
+                LEFT JOIN depannhome_auth_devices cross_device_mobile ON cross_device_mobile.user_id=cross_device_account.id AND cross_device_mobile.device_type='mobile'
                 WHERE owner.id = $1 GROUP BY owner.id
             `, [getAccountOwnerId(request)])
         ]);
@@ -702,23 +703,27 @@ export function registerAuthRoutes(app) {
         `, [deviceId, getAccountOwnerId(request)]);
         const device = rows[0];
         if (!device) return response.status(404).json({ message: "Appareil introuvable." });
-        if (["admin", STANDARD_PC_ROLE].includes(device.role)) {
+        if (["admin", STANDARD_PC_ROLE, COMMERCIAL_ROLE].includes(device.role)) {
             if (device.deviceType === "mobile") {
                 const seatError = await mobileAdministratorSeatError(getAccountOwnerId(request), deviceId);
                 if (seatError) return response.status(400).json({ message: seatError });
-                await getPool().query("UPDATE depannhome_auth_devices SET status = 'approved', approved_at = NOW(), approved_by = $2 WHERE id = $1", [deviceId, request.user.sub]);
-                return response.status(204).end();
+                if (device.role === "admin") {
+                    await getPool().query("UPDATE depannhome_auth_devices SET status = 'approved', approved_at = NOW(), approved_by = $2 WHERE id = $1", [deviceId, request.user.sub]);
+                    return response.status(204).end();
+                }
             }
-            const seats = await getPool().query(`
+            if (device.deviceType === "desktop") {
+                const seats = await getPool().query(`
                 SELECT owner.max_pc_users, COUNT(auth_device.id) FILTER (WHERE auth_device.status = 'approved' AND auth_device.device_type = 'desktop')::int AS approved_devices
                 FROM depannhome_users owner
-                LEFT JOIN depannhome_users account ON account.account_owner_id = owner.id AND account.role IN ('admin', 'pc_standard')
+                LEFT JOIN depannhome_users account ON account.account_owner_id = owner.id AND account.role IN ('admin', 'pc_standard', 'commercial')
                 LEFT JOIN depannhome_auth_devices auth_device ON auth_device.user_id = account.id
                 WHERE owner.id = $1 GROUP BY owner.id
             `, [getAccountOwnerId(request)]);
-            if (seats.rows[0]?.approved_devices >= seats.rows[0]?.max_pc_users) return response.status(400).json({ message: "Aucun poste administratif supplémentaire n’est inclus dans votre offre. Contactez Depann’Home Pro pour activer un poste administratif." });
-            await getPool().query("UPDATE depannhome_auth_devices SET status = 'approved', approved_at = NOW(), approved_by = $2 WHERE id = $1", [deviceId, request.user.sub]);
-            return response.status(204).end();
+                if (seats.rows[0]?.approved_devices >= seats.rows[0]?.max_pc_users) return response.status(400).json({ message: "Aucun poste administratif supplémentaire n’est inclus dans votre offre. Contactez Depann’Home Pro pour activer un poste administratif." });
+                await getPool().query("UPDATE depannhome_auth_devices SET status = 'approved', approved_at = NOW(), approved_by = $2 WHERE id = $1", [deviceId, request.user.sub]);
+                return response.status(204).end();
+            }
         }
         if (!EMAIL_PATTERN.test(device.email || "")) return response.status(400).json({ message: "L’e-mail professionnel de ce technicien est invalide." });
         const code = String(crypto.randomInt(100000, 1000000));
@@ -807,8 +812,8 @@ export async function authenticateRequest(request, response, next) {
             department: user.department || "",
             departments: cleanDepartments(user.departments, user.department),
             technicianBillingEnabled: user.can_create_billing !== false,
-            canAccessBilling: user.role === "admin" || user.can_access_billing === true,
-            canAccessAccounting: user.role === "admin" || user.can_access_accounting === true,
+            canAccessBilling: device.device_type !== "mobile" && (user.role === "admin" || user.can_access_billing === true),
+            canAccessAccounting: device.device_type !== "mobile" && (user.role === "admin" || user.can_access_accounting === true),
             canAccessCompanyEmail: hasCompanyEmailWorkspaceAccess({ ...user, organization, deviceType: device.device_type }),
             canSwitchGroupCompanies: Boolean(groupCompany) && (user.role === "admin" || user.can_switch_group_companies === true),
             maxPcUsers: Number(user.max_pc_users) || 1,
@@ -835,6 +840,13 @@ export function requireAuthentication(request, response, next) {
     }
 
     return next();
+}
+
+export function restrictCommercialMobileAccess(request, response, next) {
+    if (request.user?.role !== COMMERCIAL_ROLE || request.user?.deviceType !== "mobile" || !String(request.path || "").startsWith("/api/")) return next();
+    const allowed = (request.method === "GET" && ["/api/auth/session", "/api/calendar/events", "/api/creator/platform-announcement/current"].includes(request.path))
+        || (request.method === "POST" && request.path === "/api/auth/logout");
+    return allowed ? next() : response.status(403).json({ message: "Sur mobile, le Commercial / Chargé d’affaires accède uniquement à ses rendez-vous affectés." });
 }
 
 export function getAccountOwnerId(request) {
@@ -892,7 +904,7 @@ function requireTechnicianDirectoryAccess(request, response, next) {
 }
 
 function requireCalendarMemberDirectoryAccess(request, response, next) {
-    if (["admin", STANDARD_PC_ROLE, MOBILE_ADMIN_ROLE, TEAM_LEAD_ROLE].includes(request.user?.role)) return next();
+    if (["admin", STANDARD_PC_ROLE, COMMERCIAL_ROLE, MOBILE_ADMIN_ROLE, TEAM_LEAD_ROLE].includes(request.user?.role)) return next();
     return response.status(403).json({ message: "L’annuaire du planning n’est pas accessible." });
 }
 
@@ -971,7 +983,8 @@ async function completeLogin(user, device, response, request) {
     if ([STANDARD_PC_ROLE, "accountant"].includes(user.role) && device.type !== "desktop") {
         return response.status(403).json({ message: "Ce poste doit être activé depuis un ordinateur." });
     }
-    const isMobileAdministrator = (user.role === "admin" && device.type === "mobile") || isDedicatedMobileAdministrator;
+    const isCrossDeviceMobile = ["admin", COMMERCIAL_ROLE].includes(user.role) && device.type === "mobile";
+    const isMobileAdministrator = isCrossDeviceMobile || isDedicatedMobileAdministrator;
     const isCompanyAdministratorPc = user.role === "admin" && device.type === "desktop";
     const isAccountant = user.role === "accountant";
     const authDeviceDetails = { ...device };
@@ -982,7 +995,7 @@ async function completeLogin(user, device, response, request) {
     // qu’il ne puisse jamais conserver deux sessions simultanées.
     const automaticallyApproved = isAccountant;
     let authDevice = await findAuthDevice(user.id, device.id);
-    if (user.role === "admin" && device.type === "mobile" && authDevice?.status !== "approved") {
+    if (isCrossDeviceMobile && authDevice?.status !== "approved") {
         const seatError = await mobileAdministratorSeatError(user.account_owner_id || user.id, authDevice?.id || device.id);
         if (seatError) return response.status(400).json({ message: seatError });
     }
@@ -1293,8 +1306,8 @@ function publicUser(user) {
         department: user.department || "",
         departments: cleanDepartments(user.departments, user.department),
         technicianBillingEnabled: (user.can_create_billing ?? user.technicianBillingEnabled) !== false,
-        canAccessBilling: user.role === "admin" || (user.can_access_billing ?? user.canAccessBilling) === true,
-        canAccessAccounting: user.role === "admin" || (user.can_access_accounting ?? user.canAccessAccounting) === true,
+        canAccessBilling: (user.deviceType || user.device_type || "desktop") !== "mobile" && (user.role === "admin" || (user.can_access_billing ?? user.canAccessBilling) === true),
+        canAccessAccounting: (user.deviceType || user.device_type || "desktop") !== "mobile" && (user.role === "admin" || (user.can_access_accounting ?? user.canAccessAccounting) === true),
         canAccessCompanyEmail: (user.can_access_company_email ?? user.canAccessCompanyEmail) === true || ["admin", "mobile_admin"].includes(user.role) && ["basic_plus", "pro"].includes(user.organization?.subscriptionTier || user.subscription_tier),
         canSwitchGroupCompanies: Boolean(user.groupId) && (user.role === "admin" || (user.can_switch_group_companies ?? user.canSwitchGroupCompanies) === true),
         maxPcUsers: Number(user.max_pc_users ?? user.maxPcUsers) || 1,

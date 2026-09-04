@@ -92,7 +92,7 @@ test("recipient-company inbox remains owner-scoped and sandbox-only", () => {
     const source = readFileSync(new URL("../server/partner-api-sandbox.js", import.meta.url), "utf8");
     assert.match(source, /getAccountOwnerId\(req\)/);
     assert.match(source, /mission\.owner_id=\$2 AND intake\.is_sandbox=TRUE/);
-    assert.match(source, /\["admin", "pc_standard", "mobile_admin"\]/);
+    assert.match(source, /\["admin", "pc_standard", "commercial", "mobile_admin"\]/);
     assert.doesNotMatch(source, /company\/[^"'`]*:ownerId/);
 });
 

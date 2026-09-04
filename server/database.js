@@ -226,7 +226,7 @@ export async function initializeDatabase() {
                 ROW_NUMBER() OVER (PARTITION BY device.user_id ORDER BY device.last_seen_at DESC, device.created_at DESC) AS mobile_rank
             FROM depannhome_auth_devices device
             JOIN depannhome_users account ON account.id = device.user_id
-            WHERE ((account.role = 'admin' AND device.device_type = 'mobile') OR account.role IN ('mobile_admin', 'team_lead', 'technician'))
+            WHERE ((account.role IN ('admin', 'commercial') AND device.device_type = 'mobile') OR account.role IN ('mobile_admin', 'team_lead', 'technician'))
                 AND device.status <> 'rejected'
         )
         UPDATE depannhome_auth_devices device

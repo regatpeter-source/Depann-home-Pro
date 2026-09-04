@@ -521,7 +521,7 @@ function isGmailMailbox(value) {
     return String(value || "").trim().toLowerCase().endsWith("@gmail.com");
 }
 
-function canOpenPartnerMissions() { return ["admin", "pc_standard", "mobile_admin"].includes(document.body.dataset.role); }
+function canOpenPartnerMissions() { return ["admin", "pc_standard", "commercial", "mobile_admin"].includes(document.body.dataset.role); }
 function localDateValue(value) { const offset = value.getTimezoneOffset() * 60000; return new Date(value.getTime() - offset).toISOString().slice(0, 10); }
 function formatShortDate(value) { return new Intl.DateTimeFormat("fr-FR").format(new Date(`${value}T12:00:00`)); }
 

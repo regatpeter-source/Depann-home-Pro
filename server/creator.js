@@ -12,7 +12,7 @@ import { decryptElectronicInvoicingCredentials, encryptElectronicInvoicingCreden
 const USERNAME_PATTERN = /^[a-z0-9._-]{3,32}$/;
 const MIN_PASSWORD_LENGTH = 12;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const CREATABLE_MEMBER_ROLES = new Set(["admin", "pc_standard", "mobile_admin", "team_lead", "technician"]);
+const CREATABLE_MEMBER_ROLES = new Set(["admin", "pc_standard", "commercial", "mobile_admin", "team_lead", "technician"]);
 const SUBSCRIPTION_STATUSES = new Set(["active", "trial", "past_due", "suspended", "cancelled"]);
 const SUBSCRIPTION_REQUEST_STATUSES = new Set(["new", "under_review", "accepted", "refused", "cancelled"]);
 const QUOTE_TEMPLATE_POLICIES = new Set(["integrated_only", "company_choice", "external_only"]);
@@ -300,14 +300,14 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
                 owner.quitus_template_policy AS "quitusTemplatePolicy",
                 owner.report_template_policy AS "reportTemplatePolicy",
                 owner.created_at AS "createdAt",
-                COUNT(DISTINCT member.id) FILTER (WHERE member.role IN ('admin','pc_standard','accountant') AND member.is_active)::int AS "activePcUsers",
+                COUNT(DISTINCT member.id) FILTER (WHERE member.role IN ('admin','pc_standard','commercial','accountant') AND member.is_active)::int AS "activePcUsers",
                 COUNT(DISTINCT member.id) FILTER (WHERE member.role IN ('mobile_admin','team_lead','technician') AND member.is_active)::int
-                    + COUNT(DISTINCT admin_mobile.id) FILTER (WHERE admin_mobile.status='approved')::int AS "activeTechnicians",
+                    + COUNT(DISTINCT cross_device_mobile.id) FILTER (WHERE cross_device_mobile.status='approved')::int AS "activeTechnicians",
                 COUNT(DISTINCT member.id)::int AS "memberCount"
             FROM depannhome_users owner
             LEFT JOIN depannhome_users member ON member.account_owner_id = owner.id
-            LEFT JOIN depannhome_users admin_account ON admin_account.account_owner_id=owner.id AND admin_account.role='admin' AND admin_account.is_active
-            LEFT JOIN depannhome_auth_devices admin_mobile ON admin_mobile.user_id=admin_account.id AND admin_mobile.device_type='mobile'
+            LEFT JOIN depannhome_users cross_device_account ON cross_device_account.account_owner_id=owner.id AND cross_device_account.role IN ('admin','commercial') AND cross_device_account.is_active
+            LEFT JOIN depannhome_auth_devices cross_device_mobile ON cross_device_mobile.user_id=cross_device_account.id AND cross_device_mobile.device_type='mobile'
             WHERE owner.account_owner_id = owner.id
             GROUP BY owner.id
             ORDER BY LOWER(COALESCE(NULLIF(owner.company_name, ''), owner.full_name, owner.username))
@@ -630,12 +630,12 @@ async function findMember(database, accountId, memberId) {
 async function countActiveSeats(database, accountId) {
     const { rows } = await database.query(`
         SELECT
-            COUNT(DISTINCT member.id) FILTER (WHERE member.role IN ('admin','pc_standard','accountant') AND member.is_active)::int AS "activePcUsers",
+            COUNT(DISTINCT member.id) FILTER (WHERE member.role IN ('admin','pc_standard','commercial','accountant') AND member.is_active)::int AS "activePcUsers",
             COUNT(DISTINCT member.id) FILTER (WHERE member.role IN ('mobile_admin','team_lead','technician') AND member.is_active)::int
-                + COUNT(DISTINCT admin_mobile.id) FILTER (WHERE admin_mobile.status='approved')::int AS "activeTechnicians"
+                + COUNT(DISTINCT cross_device_mobile.id) FILTER (WHERE cross_device_mobile.status='approved')::int AS "activeTechnicians"
         FROM depannhome_users member
-        LEFT JOIN depannhome_users admin_account ON admin_account.account_owner_id=$1 AND admin_account.role='admin' AND admin_account.is_active
-        LEFT JOIN depannhome_auth_devices admin_mobile ON admin_mobile.user_id=admin_account.id AND admin_mobile.device_type='mobile'
+        LEFT JOIN depannhome_users cross_device_account ON cross_device_account.account_owner_id=$1 AND cross_device_account.role IN ('admin','commercial') AND cross_device_account.is_active
+        LEFT JOIN depannhome_auth_devices cross_device_mobile ON cross_device_mobile.user_id=cross_device_account.id AND cross_device_mobile.device_type='mobile'
         WHERE member.account_owner_id = $1
     `, [accountId]);
     return rows[0];
@@ -650,7 +650,7 @@ async function ensureSeatAvailable(database, accountId, role) {
     const roleAccessError = subscriptionRoleAccessMessage(owners[0].subscriptionTier, role);
     if (roleAccessError) throw new Error(`LIMIT:${roleAccessError}`);
     const counts = await countActiveSeats(database, accountId);
-    const isPcRole = ["admin", "pc_standard", "accountant"].includes(role);
+    const isPcRole = ["admin", "pc_standard", "commercial", "accountant"].includes(role);
     const maximum = isPcRole ? owners[0].maxPcUsers : owners[0].maxTechnicians;
     const active = isPcRole ? counts.activePcUsers : counts.activeTechnicians;
     if (active >= maximum) throw new Error(`LIMIT:La limite de ${isPcRole ? "postes administratifs" : "postes mobiles"} est atteinte.`);
@@ -741,8 +741,8 @@ function sanitizeMemberProfile(value, role) {
     const phone = cleanText(value?.phone, 30);
     const email = cleanText(value?.email, 160).toLowerCase();
     if (!fullName) return { ok: false, message: "Le nom est obligatoire." };
-    if (["mobile_admin", "team_lead", "technician"].includes(role) && !phone) return { ok: false, message: "Le téléphone du poste mobile est obligatoire." };
-    if (["mobile_admin", "team_lead", "technician"].includes(role) && !EMAIL_PATTERN.test(email)) return { ok: false, message: "L’e-mail professionnel du poste mobile est obligatoire." };
+    if (["commercial", "mobile_admin", "team_lead", "technician"].includes(role) && !phone) return { ok: false, message: "Le téléphone professionnel est obligatoire." };
+    if (["commercial", "mobile_admin", "team_lead", "technician"].includes(role) && !EMAIL_PATTERN.test(email)) return { ok: false, message: "L’e-mail professionnel est obligatoire." };
     return { ok: true, fullName, phone, email };
 }
 

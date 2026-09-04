@@ -21,6 +21,7 @@ test("les autorisations configurables sont limitées aux postes administratifs B
     assert.equal(isAdvancedWorkstationTier("basic_plus"), true);
     assert.equal(isAdvancedWorkstationTier("pro"), true);
     assert.equal(supportsConfigurablePcPermissions("pc_standard"), true);
+    assert.equal(supportsConfigurablePcPermissions("commercial"), true);
     assert.equal(supportsConfigurablePcPermissions("accountant"), true);
     assert.equal(supportsConfigurablePcPermissions("technician"), false);
 });
@@ -77,7 +78,7 @@ test("la bascule Groupe conserve le rôle réel et sépare administration et sé
     assert.match(auth, /isGroupAdministrator: Boolean\(groupCompany\?\.isGroupAdministrator\)/);
     assert.match(groups, /active-company", requireGroupCompanySwitchAccess/);
     assert.match(groups, /dashboard", requireGroupAdministrator/);
-    assert.match(context, /principal\.role IN \('pc_standard', 'accountant'\)/);
+    assert.match(context, /principal\.role IN \('pc_standard', 'commercial', 'accountant'\)/);
     assert.match(context, /home_owner\.subscription_tier = 'pro'/);
     assert.match(context, /owner\.subscription_tier = 'pro'/);
 });
@@ -101,12 +102,13 @@ test("les types de poste proposés excluent le rôle comptable historique", () =
     assert.match(navigation, /\["admin", "Poste Admin"\]/);
     assert.match(navigation, /\["mobile_admin", "Poste Admin Mobile"\]/);
     assert.match(navigation, /\["pc_standard", "Poste administratif"\]/);
+    assert.match(navigation, /\["commercial", "Commercial \/ Chargé d’affaires"\]/);
     assert.match(navigation, /\["technician", "Technicien"\]/);
     assert.match(navigation, /\["team_lead", "Chef d’équipe"\]/);
     assert.doesNotMatch(navigation, /\["accountant", "Comptable/);
     assert.doesNotMatch(creator.slice(creator.indexOf("function creatorMemberRoleOptions"), creator.indexOf("function creatorMemberRoleLabel")), /accountant/);
-    assert.match(auth, /CREATABLE_MEMBER_ROLES = new Set\(\["admin", STANDARD_PC_ROLE, MOBILE_ADMIN_ROLE, TEAM_LEAD_ROLE, "technician"\]\)/);
-    assert.match(creatorServer, /CREATABLE_MEMBER_ROLES = new Set\(\["admin", "pc_standard", "mobile_admin", "team_lead", "technician"\]\)/);
+    assert.match(auth, /CREATABLE_MEMBER_ROLES = new Set\(\["admin", STANDARD_PC_ROLE, COMMERCIAL_ROLE, MOBILE_ADMIN_ROLE, TEAM_LEAD_ROLE, "technician"\]\)/);
+    assert.match(creatorServer, /CREATABLE_MEMBER_ROLES = new Set\(\["admin", "pc_standard", "commercial", "mobile_admin", "team_lead", "technician"\]\)/);
 });
 
 test("l’interface distingue clairement devis et factures de la comptabilité", () => {

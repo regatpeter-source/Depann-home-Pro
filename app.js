@@ -13,6 +13,7 @@ import {
 	requireCreator,
 	registerAuthRoutes,
 	requireAuthentication,
+	restrictCommercialMobileAccess,
 	validateAuthenticationConfiguration
 } from "./server/auth.js";
 import { initializeDatabase } from "./server/database.js";
@@ -62,6 +63,7 @@ app.use(express.json({ limit: "25mb" }));
 app.use(cookieParser());
 app.use(createOriginProtection());
 app.use(authenticateRequest);
+app.use(restrictCommercialMobileAccess);
 app.use(createHealthRequestMonitor());
 
 const authenticationRateLimit = rateLimit({

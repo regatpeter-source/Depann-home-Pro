@@ -31,6 +31,8 @@ function report() {
 test("only authorized administrative roles can confirm report proofreading", () => {
     assert.equal(canConfirmReportProofreading("admin", "desktop"), true);
     assert.equal(canConfirmReportProofreading("pc_standard", "desktop"), true);
+    assert.equal(canConfirmReportProofreading("commercial", "desktop"), true);
+    assert.equal(canConfirmReportProofreading("commercial", "mobile"), false);
     assert.equal(canConfirmReportProofreading("technician", "desktop"), false);
     assert.equal(canConfirmReportProofreading("team_lead", "desktop"), false);
     assert.equal(canConfirmReportProofreading("admin", "mobile"), false);
@@ -172,7 +174,7 @@ test("an administrative workstation can cancel only an unvalidated draft", () =>
     assert.match(serverSource, /DELETE FROM depannhome_partner_mission_items WHERE owner_id=\$1 AND source_type='report'/);
     assert.match(serverSource, /UPDATE depannhome_partner_missions SET technical_report_id=NULL/);
     assert.match(serverSource, /DELETE FROM depannhome_collaboration_locks/);
-    assert.match(serverSource, /request\.user\?\.deviceType === "desktop" && \["admin", "pc_standard"\]/);
+    assert.match(serverSource, /request\.user\?\.deviceType === "desktop" && \["admin", "pc_standard", "commercial"\]/);
     assert.match(editorSource, /data-cancel-report/);
     assert.match(editorSource, /Annuler la création du rapport/);
     assert.match(editorSource, /method: "DELETE"/);

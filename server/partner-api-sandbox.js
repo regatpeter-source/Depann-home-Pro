@@ -180,7 +180,7 @@ async function resetSandbox(sandbox) {
 }
 function absoluteUrl(pathname) { const base = String(process.env.PARTNER_SANDBOX_BASE_URL || `http://127.0.0.1:${Number(process.env.PORT || 3000)}`).replace(/\/+$/, ""); const url = new URL(pathname, `${base}/`); if (!/^https?:$/.test(url.protocol)) throw clientError(503, "PARTNER_SANDBOX_BASE_URL doit utiliser HTTP ou HTTPS."); if (/votre-service\.onrender\.com|example\.(com|invalid)$/i.test(url.hostname)) throw clientError(503, "Configurez PARTNER_SANDBOX_BASE_URL avec l’adresse Render réelle de l’application, puis régénérez le webhook."); return url.toString(); }
 function masterSecret() { const secret = process.env.SESSION_SECRET; if (!secret || secret.length < 32) throw new Error("SESSION_SECRET est requis pour chiffrer les identifiants Sandbox."); return secret; }
-function requireCompanySandboxAccess(req, res, next) { return ["admin", "pc_standard", "mobile_admin"].includes(req.user?.role) ? next() : res.status(403).json({ message: "La réception Sandbox est réservée à l’administration de l’entreprise." }); }
+function requireCompanySandboxAccess(req, res, next) { return ["admin", "pc_standard", "commercial", "mobile_admin"].includes(req.user?.role) ? next() : res.status(403).json({ message: "La réception Sandbox est réservée à l’administration de l’entreprise." }); }
 function positiveId(value) { const id = Number(value); return Number.isSafeInteger(id) && id > 0 ? id : 0; }
 function clientError(status, message) { const error = new Error(message); error.status = status; return error; }
 function asyncHandler(handler) { return (req, res, next) => Promise.resolve(handler(req, res, next)).catch(error => error.status ? res.status(error.status).json({ message: error.message }) : next(error)); }

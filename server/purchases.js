@@ -114,12 +114,12 @@ export function registerPurchaseRoutes(app, requireAuthentication) {
 }
 
 function requirePurchaseAdministration(request, response, next) {
-    if (!["admin", "pc_standard", "mobile_admin"].includes(request.user?.role)) return response.status(403).json({ message: request.user?.role === "accountant" ? "Ce poste administratif est en consultation uniquement." : "Les achats sont réservés aux postes administratifs et au Poste Admin Mobile." });
+    if (!["admin", "pc_standard", "commercial", "mobile_admin"].includes(request.user?.role)) return response.status(403).json({ message: request.user?.role === "accountant" ? "Ce poste administratif est en consultation uniquement." : "Les achats sont réservés aux postes administratifs et au Poste Admin Mobile." });
     return next();
 }
 
 function requirePurchaseReadAccess(request, response, next) {
-    if (["admin", "pc_standard", "accountant", "mobile_admin"].includes(request.user?.role)) return next();
+    if (["admin", "pc_standard", "commercial", "accountant", "mobile_admin"].includes(request.user?.role)) return next();
     return response.status(403).json({ message: "Les achats sont réservés aux postes administratifs et au Poste Admin Mobile." });
 }
 

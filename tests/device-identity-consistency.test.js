@@ -22,6 +22,7 @@ test("les rôles dédiés restent dans leur famille de poste", () => {
     assert.match(authServer, /\[MOBILE_ADMIN_ROLE, TEAM_LEAD_ROLE, "technician"\]\.includes\(user\.role\)/);
     assert.match(authServer, /isDedicatedMobileRole && device\.type !== "mobile"/);
     assert.match(authServer, /\[STANDARD_PC_ROLE, "accountant"\]\.includes\(user\.role\) && device\.type !== "desktop"/);
+    assert.match(authServer, /\["admin", COMMERCIAL_ROLE\]\.includes\(user\.role\) && device\.type === "mobile"/);
     assert.match(authServer, /const authDeviceDetails = \{ \.\.\.device \}/);
 });
 
@@ -35,9 +36,9 @@ test("l’en-tête affiche le poste actif et jamais un Poste administratif codé
 });
 
 test("les compteurs et la liste distinguent les utilisateurs administratifs des appareils mobiles", () => {
-    assert.match(authServer, /COUNT\(DISTINCT account\.id\).*account\.role IN \('admin','pc_standard','accountant'\)/);
+    assert.match(authServer, /COUNT\(DISTINCT account\.id\).*account\.role IN \('admin','pc_standard','commercial','accountant'\)/);
     assert.doesNotMatch(authServer, /COUNT\(DISTINCT device\.id\) FILTER \(WHERE device\.status = 'approved' AND device\.device_type = 'desktop'\)/);
-    assert.match(navigation, /\["admin", "pc_standard", "accountant"\]\.includes\(device\.userRole\)/);
+    assert.match(navigation, /\["admin", "pc_standard", "commercial", "accountant"\]\.includes\(device\.userRole\)/);
     assert.match(navigation, /Chef d’équipe mobile/);
     assert.match(navigation, /Technicien mobile/);
 });

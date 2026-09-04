@@ -507,7 +507,7 @@ function labelField(value) { return ({ clientName: "Client", address: "Adresse",
 function formatDate(value) { return value ? new Intl.DateTimeFormat("fr-FR", { dateStyle: "short", timeStyle: "short" }).format(new Date(value)) : ""; }
 function formatMissionDate(value) { return value ? new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(value)).replace(/:/g, " h ") : "Date inconnue"; }
 function htmlDateValue(value) { const match = /^(\d{4}-\d{2}-\d{2})/.exec(String(value || "")); return match ? match[1] : ""; }
-function canManagePartnerMissions() { return ["admin", "pc_standard", "mobile_admin"].includes(document.body.dataset.role); }
+function canManagePartnerMissions() { return ["admin", "pc_standard", "commercial", "mobile_admin"].includes(document.body.dataset.role); }
 function isPartnerMissionAdministrator() { return document.body.dataset.role === "admin"; }
 async function api(url, options = {}) {
     try {

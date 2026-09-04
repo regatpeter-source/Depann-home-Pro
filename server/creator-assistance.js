@@ -280,7 +280,7 @@ async function findCompanyOwner(database, id, lock = false) {
 }
 
 async function ensurePcSeatAvailable(database, ownerId) {
-    const { rows } = await database.query(`SELECT owner.max_pc_users AS maximum,COUNT(member.id) FILTER(WHERE member.is_active AND member.role IN ('admin','pc_standard','accountant'))::int AS active FROM depannhome_users owner LEFT JOIN depannhome_users member ON member.account_owner_id=owner.id WHERE owner.id=$1 GROUP BY owner.id`, [ownerId]);
+    const { rows } = await database.query(`SELECT owner.max_pc_users AS maximum,COUNT(member.id) FILTER(WHERE member.is_active AND member.role IN ('admin','pc_standard','commercial','accountant'))::int AS active FROM depannhome_users owner LEFT JOIN depannhome_users member ON member.account_owner_id=owner.id WHERE owner.id=$1 GROUP BY owner.id`, [ownerId]);
     if (!rows[0] || Number(rows[0].active) >= Number(rows[0].maximum)) throw clientError(409, "La limite de postes administratifs est atteinte.");
 }
 

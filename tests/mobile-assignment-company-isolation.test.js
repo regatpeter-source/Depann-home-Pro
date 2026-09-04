@@ -66,7 +66,8 @@ test("le serveur revalide toutes les affectations et les protège aussi par déc
 test("le chef d’équipe reste visible et dispose d’une vue globale du planning", () => {
     const calendar = read("server/calendar.js");
     const client = read("js/calendar.js");
-    assert.match(calendar, /\$4 NOT IN \('technician', 'accountant'\)/);
+    assert.match(calendar, /function hasAssignedOnlyCalendar\(user\)/);
+    assert.match(calendar, /\["technician", "accountant"\]\.includes\(user\?\.role\)/);
     assert.match(client, /groupTechniciansByDepartment\(members\)/);
         assert.match(client, /team_lead: "Chef d’équipe"/);
 });

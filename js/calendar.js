@@ -3,7 +3,7 @@ import { createBillingDocumentForClient, viewBillingDocument } from "./billing.j
 import { getSearchableClients } from "./clients.js?v=164";
 import { addClientActivityByName, synchronizeClients } from "./client-sync.js?v=127";
 import { renderClientMessages } from "./messages.js?v=107";
-import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=49";
+import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=50";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { renderPlatformAnnouncement } from "./platform-announcement.js?v=1";
@@ -420,7 +420,12 @@ function renderEventForm(panel) {
                         <label>Photo depuis l’appareil<input name="cameraPhoto" type="file" accept="image/*" capture="environment"></label>
                         <div class="calendar-form-actions"><button type="submit" class="secondary-button">Déposer dans le dossier</button></div>
                         <p class="auth-message" aria-live="polite"></p>
-                    </form>` : `<p class="auth-message error">Aucun dossier client correspondant à ce rendez-vous. Demandez à l’administrateur d’associer le rendez-vous à un client existant.</p>`}
+                    </form>` : isCommercialMobileCalendar() ? `
+                    <section class="calendar-client-summary">
+                        <div><p class="eyebrow">Client</p><h3>${escapeHtml(event.clientName || "Non renseigné")}</h3></div>
+                        <div class="calendar-contact-list"><div class="calendar-contact-item calendar-client-full-width"><span>Adresse</span><strong>${escapeHtml(event.location || "Non renseignée")}</strong></div></div>
+                    </section>
+                    <section class="calendar-appointment-information"><p class="eyebrow">Informations du rendez-vous</p><dl><dt>Date</dt><dd>${escapeHtml(formatActivityDate(event.date, event.startTime))}${event.endTime ? ` — ${escapeHtml(event.endTime)}` : ""}</dd>${renderAssignedTechniciansDetail(event)}${event.notes ? `<dt>Notes</dt><dd>${escapeHtml(event.notes)}</dd>` : ""}</dl></section>` : `<p class="auth-message error">Aucun dossier client correspondant à ce rendez-vous. Demandez à l’administrateur d’associer le rendez-vous à un client existant.</p>`}
             </div>`;
         panel.querySelector(".calendar-client-messages-slot")?.append(renderClientMessages(client));
         if (event.eventType === "appointment" && client && canAccessQuitus()) initializeQuitusForm(panel, event);
@@ -1061,7 +1066,7 @@ function canRecordInsuranceDeductible() {
 }
 
 function canReviewInsuranceDeductible() {
-    return document.body.dataset.deviceType === "desktop" && ["admin", "pc_standard"].includes(document.body.dataset.role);
+    return document.body.dataset.deviceType === "desktop" && ["admin", "pc_standard", "commercial"].includes(document.body.dataset.role);
 }
 
 function formatDeductibleAmount(value) {
@@ -1647,21 +1652,29 @@ async function loadCalendarMembers() {
 }
 
 function isTechnicianBillingAllowed() {
+    if (isCommercialMobileCalendar()) return false;
     return document.body.dataset.role !== "technician" || document.body.dataset.technicianBillingEnabled !== "false";
 }
 
 function canAccessTechnicalReports() {
+    if (isCommercialMobileCalendar()) return false;
     try { return JSON.parse(document.body.dataset.organizationFeatures || "{}").technicalReports !== false; }
     catch { return false; }
 }
 
 function canAccessQuitus() {
+    if (isCommercialMobileCalendar()) return false;
     try { return JSON.parse(document.body.dataset.organizationFeatures || "{}").quitus === true; }
     catch { return false; }
 }
 
 function isReadOnlyCalendar() {
-    return ["technician", "accountant"].includes(document.body.dataset.role);
+    return ["technician", "accountant"].includes(document.body.dataset.role)
+        || isCommercialMobileCalendar();
+}
+
+function isCommercialMobileCalendar() {
+    return document.body.dataset.role === "commercial" && document.body.dataset.deviceType === "mobile";
 }
 
 function isMobileAdministrator() {
@@ -1669,7 +1682,7 @@ function isMobileAdministrator() {
 }
 
 function canManageCalendarEventStatus() {
-    return ["admin", "pc_standard", "mobile_admin"].includes(document.body.dataset.role);
+    return ["admin", "pc_standard", "commercial", "mobile_admin"].includes(document.body.dataset.role) && !isReadOnlyCalendar();
 }
 
 function usesTerrainInterventionView(event) {
@@ -1677,7 +1690,7 @@ function usesTerrainInterventionView(event) {
 }
 
 function roleLabel(role) {
-    return ({ admin: "Poste Admin", pc_standard: "Poste administratif", mobile_admin: "Poste Admin Mobile", team_lead: "Chef d’équipe", technician: "Technicien", accountant: "Poste administratif" })[String(role || "")] || "Membre";
+    return ({ admin: "Poste Admin", pc_standard: "Poste administratif", commercial: "Commercial / Chargé d’affaires", mobile_admin: "Poste Admin Mobile", team_lead: "Chef d’équipe", technician: "Technicien", accountant: "Poste administratif" })[String(role || "")] || "Membre";
 }
 
 function documentStatusLabel(value) { return ({ draft: "Brouillon", sent: "Envoyé", validated: "Validé", paid: "Réglé", issued: "Émis", cancelled: "Annulé", accepted: "Accepté", rejected: "Refusé", pending: "En attente" })[String(value || "").toLowerCase()] || "Non renseigné"; }

@@ -12,7 +12,7 @@ import { validateAssignedCompanyMembers } from "./member-assignment.js";
 const EVENT_COLORS = new Set(["blue", "green", "orange", "red", "purple", "gray"]);
 const EVENT_TYPES = new Set(["appointment", "task", "vacation", "sick_leave", "unavailable"]);
 const EVENT_STATUSES = new Set(["planned", "confirmed", "in_progress", "completed", "cancelled"]);
-const EVENT_STATUS_MANAGER_ROLES = new Set(["admin", "pc_standard", "mobile_admin"]);
+const EVENT_STATUS_MANAGER_ROLES = new Set(["admin", "pc_standard", "commercial", "mobile_admin"]);
 const QUITUS_STATUS = new Set(["pending", "validated"]);
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -21,7 +21,7 @@ const MAX_CLIENT_ATTACHMENTS = 30;
 const MAX_ACTIVITY_HISTORY = 150;
 const DEDUCTIBLE_PAYMENT_METHODS = new Set(["Chèque", "Espèces", "Virement", "Carte bancaire"]);
 const DEDUCTIBLE_FIELD_ROLES = new Set(["technician", "team_lead", "mobile_admin"]);
-const DEDUCTIBLE_PC_ROLES = new Set(["admin", "pc_standard"]);
+const DEDUCTIBLE_PC_ROLES = new Set(["admin", "pc_standard", "commercial"]);
 const MAX_DEDUCTIBLE_PHOTO_SIZE = 4 * 1024 * 1024;
 const deductiblePhotoUpload = multer({
     storage: multer.memoryStorage(),
@@ -261,12 +261,12 @@ export function registerCalendarRoutes(app, requireAuthentication) {
             LEFT JOIN depannhome_users technician ON technician.id = event.assigned_technician_id
             WHERE event.owner_id = $1
                             AND event.client_id = $2
-              AND ($3 NOT IN ('technician', 'accountant') OR EXISTS (
+              AND ($3::boolean = FALSE OR EXISTS (
                     SELECT 1 FROM depannhome_calendar_assignments assignment
                     WHERE assignment.event_id = event.id AND assignment.technician_id = $4::bigint
               ))
             ORDER BY event.event_date DESC, event.start_time DESC NULLS LAST, event.id DESC
-        `, [ownerId, clientId, request.user?.role || "", request.user?.sub || 0]);
+          `, [ownerId, clientId, hasAssignedOnlyCalendar(request.user), request.user?.sub || 0]);
         response.json({ events: rows });
     }));
     app.get("/api/calendar/events", requireAuthentication, asyncHandler(async (request, response) => {
@@ -337,12 +337,12 @@ export function registerCalendarRoutes(app, requireAuthentication) {
             LEFT JOIN depannhome_partner_missions mission ON mission.id = event.partner_mission_id AND mission.owner_id = event.owner_id
                         WHERE event.owner_id = $1
                             AND event_date BETWEEN $2::date AND $3::date
-                            AND ($4 NOT IN ('technician', 'accountant') OR EXISTS (
+                            AND ($4::boolean = FALSE OR EXISTS (
                                 SELECT 1 FROM depannhome_calendar_assignments assignment
                                 WHERE assignment.event_id = event.id AND assignment.technician_id = $5::bigint
                             ))
             ORDER BY event.event_date, event.start_time NULLS LAST, event.created_at
-                `, [getAccountOwnerId(request), start, end, request.user.role, request.user.sub]);
+                `, [getAccountOwnerId(request), start, end, hasAssignedOnlyCalendar(request.user), request.user.sub]);
         response.json({ events: rows });
     }));
 
@@ -790,7 +790,7 @@ export function registerCalendarRoutes(app, requireAuthentication) {
 }
 
 function requireCalendarWriteAccess(request, response, next) {
-    if (["technician", "accountant"].includes(request.user?.role)) {
+    if (["technician", "accountant"].includes(request.user?.role) || request.user?.role === "commercial" && request.user?.deviceType === "mobile") {
         return response.status(403).json({ message: "Ce poste peut consulter son planning, sans le modifier." });
     }
     return next();
@@ -798,6 +798,10 @@ function requireCalendarWriteAccess(request, response, next) {
 
 function requireCalendarReadAccess(request, response, next) {
     return next();
+}
+
+function hasAssignedOnlyCalendar(user) {
+    return ["technician", "accountant"].includes(user?.role) || user?.role === "commercial" && user?.deviceType === "mobile";
 }
 
 function sanitizeEvent(value) {
@@ -831,7 +835,7 @@ function isClosedCalendarStatus(status) {
 }
 
 function canManageCalendarEventStatus(user) {
-    return EVENT_STATUS_MANAGER_ROLES.has(user?.role);
+    return EVENT_STATUS_MANAGER_ROLES.has(user?.role) && !(user?.role === "commercial" && user?.deviceType === "mobile");
 }
 
 async function getCalendarEventStatus(accountOwnerId, eventId) {

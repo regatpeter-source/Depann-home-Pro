@@ -1,5 +1,5 @@
 export const SUBSCRIPTION_TIERS = Object.freeze(["basic", "basic_plus", "pro"]);
-const PC_ROLES = Object.freeze(["admin", "pc_standard", "accountant"]);
+const PC_ROLES = Object.freeze(["admin", "pc_standard", "commercial", "accountant"]);
 const ALL_MOBILE_ROLES = Object.freeze(["mobile_admin", "team_lead", "technician"]);
 
 export const SUBSCRIPTION_TIER_CONFIG = Object.freeze({
