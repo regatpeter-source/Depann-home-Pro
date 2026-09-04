@@ -132,7 +132,7 @@ function showAuthenticatedUser(user) {
         mobileUserSections.hidden = user.deviceType !== "mobile" || !["technician", "team_lead"].includes(user.role) || !sections.length;
     }
     if (activeCompanyName) activeCompanyName.textContent = user.activeCompanyName || "";
-    if (activeCompanyBadge) activeCompanyBadge.hidden = !user.canSwitchGroupCompanies || !user.activeCompanyName;
+    if (activeCompanyBadge) activeCompanyBadge.hidden = !user.activeCompanyName;
     document.body.dataset.userId = user.id || "";
     document.body.dataset.accountId = user.accountOwnerId || user.id || "";
     document.body.dataset.activeCompanyId = user.activeCompanyId || user.accountOwnerId || user.id || "";

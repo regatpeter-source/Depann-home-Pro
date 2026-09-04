@@ -3,7 +3,8 @@ import { getPool } from "./database.js";
 export async function resolveGroupCompany(userId, activeCompanyId) {
     const { rows } = await getPool().query(`
         SELECT group_data.id AS "groupId", group_data.name AS "groupName",
-            company.company_owner_id AS "companyId", owner.company_name AS "companyName",
+            company.company_owner_id AS "companyId",
+            COALESCE(NULLIF(profile.company_name, ''), NULLIF(owner.company_name, ''), NULLIF(owner.full_name, ''), owner.username) AS "companyName",
             EXISTS (
                 SELECT 1 FROM depannhome_group_administrators administrator
                 WHERE administrator.group_id = group_data.id AND administrator.user_id = principal.id
@@ -13,6 +14,7 @@ export async function resolveGroupCompany(userId, activeCompanyId) {
         JOIN depannhome_groups group_data ON group_data.id = home_company.group_id AND group_data.is_active = TRUE
         JOIN depannhome_group_companies company ON company.group_id = group_data.id AND company.is_active = TRUE
         JOIN depannhome_users owner ON owner.id = company.company_owner_id AND owner.is_active = TRUE
+        LEFT JOIN depannhome_billing_profiles profile ON profile.owner_id = owner.id
         JOIN depannhome_users home_owner ON home_owner.id = principal.account_owner_id AND home_owner.is_active = TRUE
         WHERE principal.id = $1
             AND home_owner.subscription_tier = 'pro'
@@ -28,6 +30,19 @@ export async function resolveGroupCompany(userId, activeCompanyId) {
         LIMIT 1
     `, [userId, positiveId(activeCompanyId) || null]);
     return rows[0] || null;
+}
+
+export async function resolveCompanyName(companyOwnerId) {
+    const id = positiveId(companyOwnerId);
+    if (!id) return "";
+    const { rows } = await getPool().query(`
+        SELECT COALESCE(NULLIF(profile.company_name, ''), NULLIF(owner.company_name, ''), NULLIF(owner.full_name, ''), owner.username) AS "companyName"
+        FROM depannhome_users owner
+        LEFT JOIN depannhome_billing_profiles profile ON profile.owner_id = owner.id
+        WHERE owner.id = $1 AND owner.is_active = TRUE
+        LIMIT 1
+    `, [id]);
+    return rows[0]?.companyName || "";
 }
 
 function positiveId(value) {

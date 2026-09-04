@@ -16,13 +16,16 @@ const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
 test("la session Groupe résout exclusivement une entreprise active autorisée", () => {
     assert.match(auth, /resolveGroupCompany\(user\.id, session\.activeCompanyId\)/);
     assert.match(auth, /accountOwnerId = String\(groupCompany\?\.companyId \|\| user\.account_owner_id \|\| user\.id\)/);
+    assert.match(auth, /activeCompanyName = groupCompany\?\.companyName \|\| await resolveCompanyName\(accountOwnerId\)/);
     assert.match(auth, /activeCompanyId: accountOwnerId/);
-    assert.match(auth, /activeCompanyName: groupCompany\?\.companyName \|\| ""/);
+    assert.match(auth, /activeCompanyName,/);
     assert.match(auth, /return String\(request\.user\?\.accountOwnerId \|\| request\.user\?\.sub \|\| ""\)/);
     assert.match(groupContext, /principal\.id = \$1/);
     assert.match(groupContext, /principal\.role IN \('pc_standard', 'commercial', 'accountant'\)/);
     assert.match(groupContext, /company\.is_active = TRUE/);
     assert.match(groupContext, /owner\.is_active = TRUE/);
+    assert.match(groupContext, /COALESCE\(NULLIF\(profile\.company_name, ''\), NULLIF\(owner\.company_name, ''\), NULLIF\(owner\.full_name, ''\), owner\.username\)/);
+    assert.match(groupContext, /export async function resolveCompanyName\(companyOwnerId\)/);
 });
 
 test("le changement d’entreprise valide l’appartenance puis renouvelle la session", () => {
@@ -42,12 +45,12 @@ test("les principales données métier sont filtrées par le owner_id actif", ()
     assert.match(clientSync, /`\$\{QUEUE_KEY_PREFIX\}\$\{accountId\}`/);
 });
 
-test("le poste actif affiche en permanence l’entreprise active du groupe", () => {
+test("le poste actif affiche en permanence l’entreprise standard ou active du groupe", () => {
     assert.match(html, /class="pc-workstation-name"><span id="workstationLabel">Poste<\/span> · <strong id="userEmail"><\/strong>/);
     assert.match(appClient, /workstationLabel\.textContent = activeWorkstationLabel\(user\.role, user\.deviceType\)/);
     assert.match(html, /id="activeCompanyBadge"[^>]*>Entreprise active · <strong id="activeCompanyName"><\/strong>/);
     assert.match(appClient, /activeCompanyName\.textContent = user\.activeCompanyName \|\| ""/);
-    assert.match(appClient, /activeCompanyBadge\.hidden = !user\.canSwitchGroupCompanies \|\| !user\.activeCompanyName/);
+    assert.match(appClient, /activeCompanyBadge\.hidden = !user\.activeCompanyName/);
     assert.match(appClient, /document\.body\.dataset\.activeCompanyId = user\.activeCompanyId/);
     assert.match(appClient, /document\.body\.dataset\.activeCompanyName = user\.activeCompanyName/);
 });

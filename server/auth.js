@@ -7,7 +7,7 @@ import { recordSecurityEvent } from "./security-hardening.js";
 import { createUser, findUserById, findUserByUsername, getPool } from "./database.js";
 import { sendDeviceVerificationCode } from "./email.js";
 import { releaseLocksForUser } from "./collaboration.js";
-import { resolveGroupCompany } from "./group-context.js";
+import { resolveCompanyName, resolveGroupCompany } from "./group-context.js";
 import { getOrganization } from "./organizations.js";
 import { isRoleAllowedForSubscription, subscriptionRoleAccessMessage } from "./subscription-tiers.js";
 import { hasCompanyEmailWorkspaceAccess, isAdvancedWorkstationTier, supportsConfigurablePcPermissions } from "./workstation-permissions.js";
@@ -793,6 +793,7 @@ export async function authenticateRequest(request, response, next) {
         }
         const groupCompany = device.device_type === "desktop" ? await resolveGroupCompany(user.id, session.activeCompanyId) : null;
         const accountOwnerId = String(groupCompany?.companyId || user.account_owner_id || user.id);
+        const activeCompanyName = groupCompany?.companyName || await resolveCompanyName(accountOwnerId);
         const organization = await getOrganization(accountOwnerId);
         if (!isCreatorUsername(user.username) && !isRoleAllowedForSubscription(organization.subscriptionTier, user.role)) throw new Error("Rôle exclu de l’offre");
         request.user = {
@@ -804,7 +805,7 @@ export async function authenticateRequest(request, response, next) {
             activeCompanyId: accountOwnerId,
             groupId: groupCompany ? String(groupCompany.groupId) : "",
             groupName: groupCompany?.groupName || "",
-            activeCompanyName: groupCompany?.companyName || "",
+            activeCompanyName,
             isGroupAdministrator: Boolean(groupCompany?.isGroupAdministrator),
             fullName: user.full_name || "",
             phone: user.phone || "",
