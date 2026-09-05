@@ -16,6 +16,7 @@ import { getSearchableClients, renderClients } from "./clients.js?v=164";
 import { synchronizeClients } from "./client-sync.js?v=127";
 import { configureLibrary, openLibrarySection, renderLibrary, searchPersonalLibrary } from "./library.js?v=122";
 import { getContextualSearchResults } from "./search.js?v=75";
+import { renderInterventionSearch } from "./intervention-search.js?v=1";
 import { state, resetSelection } from "./state.js?v=44";
 import {
     getSettings,
@@ -41,7 +42,6 @@ const TEAM_SECTION_OPTIONS = ["Dépannage", "Recherche de fuite", "Plomberie", "
 let database = { brands: [] };
 let searchRequestId = 0;
 let searchInputTimer = null;
-let searchScope = "all";
 let sharedSynchronizationTimer = null;
 let sharedSynchronizationPromise = null;
 let interactionSynchronizationTimer = null;
@@ -66,7 +66,6 @@ export function initializeNavigation(loadedDatabase) {
     bindSilentInteractionSynchronization();
     applyRoleBasedMenus();
     initializeMobileWorkspaceMenu();
-    updateSearchPlaceholder();
     window.addEventListener("depannhome:open-client", event => openClients(String(event.detail?.clientId || "")));
     window.addEventListener("depannhome:open-partner-email-settings", () => renderSettings({ section: "company", focusPartnerEmail: true }));
     window.addEventListener("depannhome:open-partner-email-missions", () => {
@@ -167,7 +166,8 @@ export async function refreshApplication() {
         const selectedId = document.querySelector(".client-messages-panel")?.dataset.clientId || "";
         renderClients({ database, navigateToRef, createBillingDocument: createBillingDocumentForClient, viewBillingDocument, createCalendarEvent: createCalendarEventForClient, ...(selectedId ? { selectedId } : {}) });
     } else if (activeRoute === ROUTES.calendar) {
-        renderCalendar();
+        if (document.getElementById("interventionSearchResults")) openInterventionSearch();
+        else renderCalendar();
     } else if (activeRoute === ROUTES.billing) {
         if (isTechnician() && organizationFeatureEnabled("technicalReports")) renderTechnicalReports();
         else renderBilling();
@@ -240,11 +240,6 @@ function bindEvents() {
     const libraryBtn = document.getElementById("libraryBtn");
     const settingsBtn = document.getElementById("settingsBtn");
 
-    search.addEventListener("focus", () => {
-        if (searchScope === "all") return;
-        searchScope = "all";
-        updateSearchPlaceholder();
-    });
     search.addEventListener("input", event => {
         const value = event.target.value.toLowerCase().trim();
         window.clearTimeout(searchInputTimer);
@@ -273,10 +268,7 @@ function bindEvents() {
     calendarBtn?.addEventListener("click", () => { if (canAccessQuick("calendar")) openCalendar(); });
     interventionSearchBtn?.addEventListener("click", () => {
         if (!canAccessQuick("interventionSearch")) return;
-        clearSearch();
-        focusSearch();
-        searchScope = "interventions";
-        updateSearchPlaceholder();
+        openInterventionSearch();
     });
     libraryBtn?.addEventListener("click", () => { if (canAccessQuick("library")) renderLibrary(); });
     settingsBtn?.addEventListener("click", () => { if (canAccessQuick("settings")) renderSettings(); });
@@ -513,6 +505,12 @@ function openCalendar() {
         return;
     }
     renderCalendar();
+}
+
+function openInterventionSearch() {
+    renderInterventionSearch({
+        openEvent: event => renderCalendar({ date: new Date(`${event.date}T12:00:00`), event })
+    });
 }
 
 function renderCompanyEmail() {
@@ -1228,12 +1226,11 @@ async function renderSearchResults(query) {
     setPage("Résultats de recherche", ROUTES.search);
 
     const container = getContainer();
-    const interventionSearch = searchScope === "interventions";
-    const canSearchLibrary = !interventionSearch && canAccessRoute(ROUTES.library);
-    const canSearchClients = !interventionSearch && canAccessRoute(ROUTES.clients);
+    const canSearchLibrary = canAccessRoute(ROUTES.library);
+    const canSearchClients = canAccessRoute(ROUTES.clients);
     const canSearchCalendar = canAccessRoute(ROUTES.calendar);
     const includeTechnical = canSearchLibrary;
-    container.appendChild(createInfo(interventionSearch ? "Recherche uniquement dans les interventions accessibles à votre poste…" : includeTechnical ? "Recherche dans vos modules, clients, interventions et bibliothèque technique…" : "Recherche dans les fonctions et données accessibles à votre poste…"));
+    container.appendChild(createInfo(includeTechnical ? "Recherche dans vos modules, clients, interventions et bibliothèque technique…" : "Recherche dans les fonctions et données accessibles à votre poste…"));
 
     const [privateLibrary, events] = await Promise.all([
         canSearchLibrary ? searchPersonalLibrary(query) : Promise.resolve({ sections: [], documents: [] }),
@@ -1258,7 +1255,7 @@ async function renderSearchResults(query) {
         }))
     ];
     const results = [...getContextualSearchResults(database, query, {
-        modules: interventionSearch ? [] : getSearchModules(),
+        modules: getSearchModules(),
         includeClients: canSearchClients,
         includeTechnical,
         events
@@ -1269,7 +1266,7 @@ async function renderSearchResults(query) {
     container.innerHTML = "";
 
     if (!results.length) {
-        container.appendChild(createInfo(interventionSearch ? "Aucune intervention accessible ne correspond à cette recherche." : "Aucun résultat accessible trouvé. Essayez un nom de module, un client, une intervention ou un mot-clé autorisé."));
+        container.appendChild(createInfo("Aucun résultat accessible trouvé. Essayez un nom de module, un client, une intervention ou un mot-clé autorisé."));
         return;
     }
 
@@ -1361,16 +1358,6 @@ async function loadSearchEvents() {
             return searchEventsCache.events;
         })();
         return searchEventsPromise;
-}
-
-function updateSearchPlaceholder() {
-    const search = document.getElementById("search");
-    if (!search) return;
-    search.placeholder = searchScope === "interventions"
-        ? "Retrouver une intervention…"
-        : canAccessRoute(ROUTES.library)
-        ? "Rechercher un module, client, intervention, notice…"
-        : "Rechercher un module, un client ou une intervention…";
 }
 
 function getRefPhoto(ref) {

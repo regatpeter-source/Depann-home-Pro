@@ -31,9 +31,9 @@ test("le menu mobile range les actions existantes dans des sous-dossiers", () =>
 
 test("Technicien et Chef d’équipe retrouvent leurs interventions sans accès aux Achats", () => {
     assert.match(config, /INTERVENTION_SEARCH_USERS = \["team_lead", "technician"\]/);
-    assert.match(navigation, /searchScope = "interventions"/);
-    assert.match(navigation, /Retrouver une intervention…/);
-    assert.match(navigation, /interventionSearch \? \[\] : getSearchModules\(\)/);
+    assert.match(navigation, /renderInterventionSearch/);
+    assert.match(navigation, /interventionSearchBtn\?\.addEventListener\("click"/);
+    assert.doesNotMatch(navigation, /searchScope = "interventions"/);
     assert.match(purchases, /\["admin", "pc_standard", "commercial", "accountant", "mobile_admin"\]\.includes\(request\.user\?\.role\)/);
     assert.doesNotMatch(config.match(/const PURCHASE_USERS = [^;]+/)?.[0] || "", /team_lead|technician/);
 });
