@@ -11,6 +11,7 @@ const calendarServer = readFileSync(new URL("../server/calendar.js", import.meta
 const accountingServer = readFileSync(new URL("../server/accounting.js", import.meta.url), "utf8");
 const clientSync = readFileSync(new URL("../js/client-sync.js", import.meta.url), "utf8");
 const appClient = readFileSync(new URL("../js/app.js", import.meta.url), "utf8");
+const navigationClient = readFileSync(new URL("../js/navigation.js", import.meta.url), "utf8");
 const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
 
 test("la session Groupe résout exclusivement une entreprise active autorisée", () => {
@@ -53,4 +54,10 @@ test("le poste actif affiche en permanence l’entreprise standard ou active du 
     assert.match(appClient, /activeCompanyBadge\.hidden = !user\.activeCompanyName/);
     assert.match(appClient, /document\.body\.dataset\.activeCompanyId = user\.activeCompanyId/);
     assert.match(appClient, /document\.body\.dataset\.activeCompanyName = user\.activeCompanyName/);
+    const completeLogin = auth.slice(auth.indexOf("async function completeLogin"), auth.indexOf("async function isCreatorTotpEnabled"));
+    assert.match(completeLogin, /activeCompanyName = groupCompany\?\.companyName \|\| await resolveCompanyName\(accountOwnerId\)/);
+    assert.match(completeLogin, /activeCompanyName,/);
+    assert.match(navigationClient, /synchronizeActiveCompanyIdentity\(session\.user\)/);
+    assert.match(navigationClient, /activeCompanyName\.textContent = companyName/);
+    assert.match(navigationClient, /activeCompanyBadge\.hidden = !companyName/);
 });

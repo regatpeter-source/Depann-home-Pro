@@ -1029,10 +1029,11 @@ async function completeLogin(user, device, response, request) {
     if (authDevice.status === "approved") {
         const groupCompany = authDevice.device_type === "desktop" ? await resolveGroupCompany(user.id, null) : null;
         const accountOwnerId = String(groupCompany?.companyId || user.account_owner_id || user.id);
+        const activeCompanyName = groupCompany?.companyName || await resolveCompanyName(accountOwnerId);
         const organization = await getOrganization(accountOwnerId);
         const sessionId = isCompanyAdministratorPc ? await issueAdministratorPcSession(user.id, authDevice.id, clientWindowSessionId(request)) : "";
         setSessionCookie(response, user, authDevice.id, authDevice.device_type, groupCompany?.companyId, sessionId);
-        return response.json({ user: publicUser({ ...user, accountOwnerId, activeCompanyId: accountOwnerId, groupId: groupCompany?.groupId, groupName: groupCompany?.groupName, activeCompanyName: groupCompany?.companyName, isGroupAdministrator: Boolean(groupCompany?.isGroupAdministrator), role: user.role, principalRole: groupCompany?.isGroupAdministrator ? "group_admin" : user.role, deviceType: authDevice.device_type, organization }) });
+        return response.json({ user: publicUser({ ...user, accountOwnerId, activeCompanyId: accountOwnerId, groupId: groupCompany?.groupId, groupName: groupCompany?.groupName, activeCompanyName, isGroupAdministrator: Boolean(groupCompany?.isGroupAdministrator), role: user.role, principalRole: groupCompany?.isGroupAdministrator ? "group_admin" : user.role, deviceType: authDevice.device_type, organization }) });
     }
     if (authDevice.status === "code_pending") {
         return response.status(403).json({ codeRequired: true, deviceId: authDevice.id, message: "Saisissez le code envoyé à votre e-mail professionnel." });

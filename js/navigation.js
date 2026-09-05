@@ -198,6 +198,7 @@ async function refreshOrganizationAccess() {
         const session = await response.json();
         const organization = session.user?.organization;
         if (!organization?.features) return false;
+        synchronizeActiveCompanyIdentity(session.user);
         const previous = `${document.body.dataset.organizationInterface || ""}:${document.body.dataset.subscriptionTier || ""}:${document.body.dataset.organizationFeatures || ""}:${document.body.dataset.canAccessBilling || "false"}:${document.body.dataset.canAccessAccounting || "false"}:${document.body.dataset.canAccessCompanyEmail || "false"}`;
         const nextFeatures = JSON.stringify(organization.features);
         const next = `${organization.interfaceType || "standard"}:${organization.subscriptionTier || "pro"}:${nextFeatures}:${session.user.canAccessBilling ? "true" : "false"}:${session.user.canAccessAccounting ? "true" : "false"}:${session.user.canAccessCompanyEmail ? "true" : "false"}`;
@@ -212,6 +213,16 @@ async function refreshOrganizationAccess() {
     } catch {
         return false;
     }
+}
+
+function synchronizeActiveCompanyIdentity(user) {
+    const companyName = String(user?.activeCompanyName || "").trim();
+    const activeCompanyName = document.getElementById("activeCompanyName");
+    const activeCompanyBadge = document.getElementById("activeCompanyBadge");
+    document.body.dataset.activeCompanyId = String(user?.activeCompanyId || user?.accountOwnerId || "");
+    document.body.dataset.activeCompanyName = companyName;
+    if (activeCompanyName) activeCompanyName.textContent = companyName;
+    if (activeCompanyBadge) activeCompanyBadge.hidden = !companyName;
 }
 
 function bindEvents() {
