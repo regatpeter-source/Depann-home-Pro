@@ -9,6 +9,7 @@ export async function initializeAuthentication({ onAuthenticated }) {
         return;
     }
 
+    const sessionReason = new URLSearchParams(window.location.search).get("session");
     renderAuthentication({
         onAuthenticated,
         registrationEnabled: Boolean(session.data?.registrationEnabled),
@@ -16,12 +17,16 @@ export async function initializeAuthentication({ onAuthenticated }) {
             ? "Cette session Poste Admin a été fermée car une connexion plus récente a été ouverte."
             : session.data?.deviceIdentityChanged
                 ? "Le type de cet appareil a changé. Reconnectez-vous pour activer l’interface adaptée sans modifier silencieusement vos postes."
+                : sessionReason === "expired"
+                    ? "Votre session a expiré. Reconnectez-vous pour continuer."
+                    : sessionReason === "logged-out"
+                        ? "Vous êtes maintenant déconnecté."
             : session.networkError ? "Impossible de joindre le serveur." : ""
     });
 }
 
 export async function signOut() {
-    await request("/api/auth/logout", { method: "POST" });
+    return request("/api/auth/logout", { method: "POST" });
 }
 
 export function restoreApplicationShell() {

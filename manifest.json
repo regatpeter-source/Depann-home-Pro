@@ -2,7 +2,7 @@
   "name": "Depann'Home Pro",
   "short_name": "DepannHome",
   "description": "Assistant professionnel de dépannage Somfy, FAAC, Nice, Bubendorff et CAME.",
-  "start_url": "./index.html",
+  "start_url": "/connexion",
   "display": "standalone",
   "background_color": "#edf2f7",
   "theme_color": "#0A5C36",

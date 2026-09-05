@@ -48,12 +48,20 @@ test("l’ancienne fenêtre est avertie sans supprimer le cookie partagé de la 
     assert.match(authServer, /X-DepannHome-Session-Replaced/);
     assert.match(authServer, /error\.message !== "Fenêtre PC remplacée"/);
     assert.match(clientSessionSource, /depannhome:session-replaced/);
-    assert.match(appSource, /window\.location\.replace\("\/\?session=replaced"\)/);
+    assert.match(appSource, /redirectToAuthentication\("replaced"\)/);
+    assert.match(appSource, /window\.location\.replace\(`\/connexion\$\{query\}`\)/);
     assert.match(authClient, /Cette session Poste Admin a été fermée car une connexion plus récente a été ouverte/);
 });
 
 test("un contrôle périodique ferme rapidement une ancienne session inactive", () => {
     assert.match(appSource, /fetch\("\/api\/auth\/session"/);
-    assert.match(appSource, /window\.setInterval\(check, 3_000\)/);
-    assert.match(appSource, /user\.role !== "admin" \|\| user\.deviceType === "mobile"/);
+    assert.match(appSource, /user\.role === "admin" && user\.deviceType !== "mobile" \? 3_000 : 30_000/);
+    assert.match(appSource, /if \(!session\?\.authenticated\) redirectToAuthentication/);
+});
+
+test("toute API protégée expirée renvoie PC et mobile vers la connexion", () => {
+    assert.match(clientSessionSource, /response\.status === 401/);
+    assert.match(clientSessionSource, /!url\.pathname\.startsWith\("\/api\/auth\/"\)/);
+    assert.match(clientSessionSource, /depannhome:authentication-required/);
+    assert.match(appSource, /onAuthenticationRequired\(\(\) => redirectToAuthentication\("expired"\)\)/);
 });

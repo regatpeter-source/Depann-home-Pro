@@ -1,4 +1,4 @@
-import { initializeAuthentication, restoreApplicationShell, signOut } from "./auth.js?v=125";
+import { initializeAuthentication, restoreApplicationShell, signOut } from "./auth.js?v=126";
 import { initializeClientSynchronization } from "./client-sync.js?v=127";
 import { initializeCollaboration } from "./collaboration.js?v=7";
 import { loadDatabase } from "./data.js?v=59";
@@ -6,20 +6,21 @@ import { initializeNavigation, refreshApplication } from "./navigation.js?v=441"
 import { renderError } from "./ui.js?v=44";
 import { getSettings } from "./storage.js?v=45";
 import { FONT_OPTIONS } from "./config.js?v=135";
-import { installClientSessionGuard, onClientSessionReplaced } from "./client-session.js?v=3";
+import { installClientSessionGuard, onAuthenticationRequired, onClientSessionReplaced } from "./client-session.js?v=5";
 import { initializeInterfaceLanguage } from "./i18n.js?v=5";
 
 let applicationStarted = false;
 let sessionReplacementHandled = false;
 let administratorSessionMonitor = null;
+let authenticationRedirectStarted = false;
 
 installClientSessionGuard();
 onClientSessionReplaced(() => {
     if (sessionReplacementHandled || document.body.classList.contains("auth-pending")) return;
     sessionReplacementHandled = true;
-    document.body.classList.add("auth-pending");
-    window.location.replace("/?session=replaced");
+    redirectToAuthentication("replaced");
 });
+onAuthenticationRequired(() => redirectToAuthentication("expired"));
 
 if (document.readyState === "loading") window.addEventListener("DOMContentLoaded", initializeApp, { once: true });
 else initializeApp();
@@ -48,11 +49,24 @@ async function initializeApp() {
 }
 
 function startAdministratorSessionMonitor(user) {
-    if (administratorSessionMonitor || user.role !== "admin" || user.deviceType === "mobile") return;
+    if (administratorSessionMonitor) return;
     const check = async () => {
-        if (document.visibilityState === "visible") await fetch("/api/auth/session", { credentials: "same-origin", cache: "no-store" }).catch(() => null);
+        if (document.visibilityState !== "visible") return;
+        const response = await fetch("/api/auth/session", { credentials: "same-origin", cache: "no-store" }).catch(() => null);
+        if (!response?.ok) return;
+        const session = await response.json().catch(() => null);
+        if (!session?.authenticated) redirectToAuthentication(session?.sessionReplaced ? "replaced" : "expired");
     };
-    administratorSessionMonitor = window.setInterval(check, 3_000);
+    const interval = user.role === "admin" && user.deviceType !== "mobile" ? 3_000 : 30_000;
+    administratorSessionMonitor = window.setInterval(check, interval);
+}
+
+function redirectToAuthentication(reason = "") {
+    if (authenticationRedirectStarted) return;
+    authenticationRedirectStarted = true;
+    document.body.classList.add("auth-pending");
+    const query = reason ? `?session=${encodeURIComponent(reason)}` : "";
+    window.location.replace(`/connexion${query}`);
 }
 
 async function startApplication() {
@@ -174,9 +188,14 @@ function showAuthenticatedUser(user) {
     });
     logoutButton?.addEventListener("click", async () => {
         logoutButton.disabled = true;
-        await signOut();
-        window.location.replace("/");
-    }, { once: true });
+        const result = await signOut();
+        if (!result.ok) {
+            logoutButton.disabled = false;
+            alert("Déconnexion impossible. Vérifiez votre connexion puis réessayez.");
+            return;
+        }
+        redirectToAuthentication("logged-out");
+    });
 }
 
 function activeWorkstationLabel(role, deviceType) {

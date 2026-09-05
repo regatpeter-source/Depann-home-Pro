@@ -7,6 +7,8 @@ const landing = readFileSync(new URL("../public/landing.html", import.meta.url),
 const privacy = readFileSync(new URL("../public/privacy.html", import.meta.url), "utf8");
 const terms = readFileSync(new URL("../public/terms.html", import.meta.url), "utf8");
 const siteScript = readFileSync(new URL("../public/site.js", import.meta.url), "utf8");
+const clientApp = readFileSync(new URL("../js/app.js", import.meta.url), "utf8");
+const manifest = JSON.parse(readFileSync(new URL("../manifest.json", import.meta.url), "utf8"));
 const googleVerification = readFileSync(new URL("../docs/GOOGLE_OAUTH_VERIFICATION.md", import.meta.url), "utf8");
 
 test("la vitrine publique conserve un accès explicite au logiciel et aux pages légales", () => {
@@ -78,4 +80,11 @@ test("la vitrine propose une demande d’offre transmise au support", () => {
     assert.match(appSource, /registerPublicOfferRoutes\(app\)/);
     assert.match(siteScript, /fetch\("\/api\/public\/offer-requests"/);
     assert.match(siteScript, /credentials: "omit"/);
+});
+
+test("la déconnexion et le lancement PWA ouvrent l’authentification plutôt que la vitrine", () => {
+    assert.match(clientApp, /redirectToAuthentication\("logged-out"\)/);
+    assert.match(clientApp, /window\.location\.replace\(`\/connexion\$\{query\}`\)/);
+    assert.doesNotMatch(clientApp, /window\.location\.replace\("\/"\)/);
+    assert.equal(manifest.start_url, "/connexion");
 });
