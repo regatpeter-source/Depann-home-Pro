@@ -570,9 +570,10 @@ body[data-role="mobile_admin"] .nav-button[data-nav="partner-missions"]{display:
 .team-role-badge.is-mobile-admin{background:#e0f2fe;color:#075985;}
 body[data-role="mobile_admin"].mobile-device .quick-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:16px 0;}
 body[data-role="mobile_admin"].mobile-device .quick-actions button{padding:13px 10px;font-size:.9rem;}
+body[data-role="mobile_admin"].mobile-device .search-section{display:none;}
 body[data-role="mobile_admin"].mobile-device #app{padding-bottom:110px;}
 body[data-role="mobile_admin"].mobile-device footer{display:flex;justify-content:center;overflow:hidden;}
-body[data-role="mobile_admin"].mobile-device footer .nav-button:not([data-nav="home"]):not([data-nav="calendar"]):not(.mobile-workspace-menu-button){display:none;}
+body[data-role="mobile_admin"].mobile-device footer .nav-button:not([data-nav="calendar"]):not(.mobile-workspace-menu-button){display:none;}
 
 /* Commercial : même compte sur PC et mobile, planning affecté uniquement sur mobile. */
 body[data-role="commercial"].mobile-device .quick-actions{display:grid;grid-template-columns:1fr;gap:10px;margin:16px 0;}

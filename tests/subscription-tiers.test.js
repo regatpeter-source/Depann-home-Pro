@@ -97,14 +97,17 @@ test("Basic exposes clients, billing and accounting while Basic+ adds planning, 
     assert.match(presentationGenerator, /missions et dossiers Réseau · sans API externe/);
 });
 
-test("every mobile post keeps Home and Library access regardless of subscription tier", () => {
+test("terrain posts keep Home while every mobile post keeps Library access", () => {
     const mobileRoles = ["mobile_admin", "team_lead", "technician"];
     for (const subscriptionTier of ["basic", "basic_plus", "pro"]) {
         const organization = publicOrganization({ interfaceType: "standard", licenseType: "depannhome_standard", subscriptionTier });
         for (const role of mobileRoles) assert.equal(isFeatureEnabledForRole(organization, "library", role), true, `${subscriptionTier}:${role}:library`);
     }
-    for (const role of mobileRoles) {
+    assert.equal(MENU_ACCESS.navigation[ROUTES.home].includes("mobile_admin"), false, "mobile_admin:home");
+    for (const role of ["team_lead", "technician"]) {
         assert.equal(MENU_ACCESS.navigation[ROUTES.home].includes(role), true, `${role}:home`);
+    }
+    for (const role of mobileRoles) {
         assert.equal(MENU_ACCESS.navigation[ROUTES.library].includes(role), true, `${role}:library-route`);
         assert.equal(MENU_ACCESS.quick.library.includes(role), true, `${role}:library-button`);
     }

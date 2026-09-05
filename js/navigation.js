@@ -1,4 +1,4 @@
-import { ROUTES, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=134";
+import { ROUTES, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=135";
 import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=207";
 import { openCreatorPartnerRequest, openCreatorRequestNotification, renderCreatorConsole } from "./creator.js?v=156";
 import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=204";
@@ -112,7 +112,7 @@ export function initializeNavigation(loadedDatabase) {
     }
     if (isAccountant() && canAccessRoute(ROUTES.billing)) renderBilling();
     else if (isAccountant() && canAccessRoute(ROUTES.accounting)) renderAccounting();
-    else if (isCommercialMobile()) openCalendar();
+    else if (isCommercialMobile() || isMobileAdministrator()) openCalendar();
     else if (isMobileDeviceContext()) openHome();
     else if (document.body.classList.contains("desktop-device")) renderHome();
     else renderBrands();
@@ -315,7 +315,7 @@ function applyRoleBasedMenus() {
         if (!isMenuAllowed(MENU_ACCESS.quick[menu], menuRoute(menu))) button?.remove();
     });
     document.querySelectorAll(".nav-button").forEach(button => {
-        if (button.dataset.nav === ROUTES.home && isMobileDeviceContext() && !isCommercialMobile()) return;
+        if (button.dataset.nav === ROUTES.home && isMobileDeviceContext() && canAccessRoute(ROUTES.home)) return;
         if (isMobileDeviceContext() && button.dataset.nav === ROUTES.calendar && canAccessRoute(ROUTES.calendar)) return;
         if (isMobileDeviceContext()) { button.remove(); return; }
         if (!canAccessRoute(button.dataset.nav)) button.remove();
@@ -324,8 +324,6 @@ function applyRoleBasedMenus() {
         const calendarButton = document.getElementById("calendarBtn");
         const calendarLabel = calendarButton?.firstChild;
         if (calendarLabel?.nodeType === Node.TEXT_NODE) calendarLabel.textContent = " Interventions ";
-        const navigationLabel = document.querySelector('.nav-button[data-nav="calendar"] span');
-        if (navigationLabel) navigationLabel.textContent = "Interventions";
     }
 }
 
@@ -393,7 +391,7 @@ function renderMobileWorkspaceFolders(container, quickActions) {
 }
 
 function ensureMobileHomeNavigationButton() {
-    if (!isMobileDeviceContext() || isCommercialMobile() || document.querySelector('.nav-button[data-nav="home"]')) return;
+    if (!isMobileDeviceContext() || isCommercialMobile() || isMobileAdministrator() || document.querySelector('.nav-button[data-nav="home"]')) return;
     const footer = document.querySelector("#authRoot > footer") || document.querySelector("footer");
     if (!footer) return;
     const button = document.createElement("button");
@@ -477,6 +475,10 @@ function menuRoute(menu) {
 }
 
 function openHome() {
+    if (isMobileAdministrator()) {
+        openCalendar();
+        return;
+    }
     if (isAccountant()) {
         if (canAccessRoute(ROUTES.billing)) renderBilling();
         else if (canAccessRoute(ROUTES.accounting)) renderAccounting();

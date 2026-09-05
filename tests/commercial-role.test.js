@@ -102,9 +102,9 @@ test("le planning mobile Commercial est filtré par affectation et reste en lect
 test("le Commercial mobile démarre directement sur son unique bouton Planning", () => {
     const navigation = read("js/navigation.js");
     const styles = read("css/style.css");
-    assert.match(navigation, /else if \(isCommercialMobile\(\)\) openCalendar\(\)/);
-    assert.match(navigation, /if \(!isMobileDeviceContext\(\) \|\| isCommercialMobile\(\)\) return/);
-    assert.match(navigation, /isMobileDeviceContext\(\) && !isCommercialMobile\(\)/);
+    assert.match(navigation, /else if \(isCommercialMobile\(\) \|\| isMobileAdministrator\(\)\) openCalendar\(\)/);
+    assert.match(navigation, /isCommercialMobile\(\) \|\| isMobileAdministrator\(\)/);
+    assert.match(navigation, /ROUTES\.home && isMobileDeviceContext\(\) && canAccessRoute\(ROUTES\.home\)/);
     assert.match(navigation, /isCommercialMobile\(\) && route !== ROUTES\.calendar/);
     assert.match(styles, /commercial"\]\.mobile-device footer \.nav-button:not\(\[data-nav="calendar"\]\)\{display:none;\}/);
 });

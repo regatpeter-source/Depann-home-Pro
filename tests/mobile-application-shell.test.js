@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { MENU_ACCESS, ROUTES } from "../js/config.js";
 
 const navigation = readFileSync(new URL("../js/navigation.js", import.meta.url), "utf8");
 const styles = readFileSync(new URL("../css/style.css", import.meta.url), "utf8");
@@ -35,6 +36,23 @@ test("Technicien et Chef d’équipe retrouvent leurs interventions sans accès 
     assert.match(navigation, /interventionSearch \? \[\] : getSearchModules\(\)/);
     assert.match(purchases, /\["admin", "pc_standard", "commercial", "accountant", "mobile_admin"\]\.includes\(request\.user\?\.role\)/);
     assert.doesNotMatch(config.match(/const PURCHASE_USERS = [^;]+/)?.[0] || "", /team_lead|technician/);
+});
+
+test("le Poste Admin Mobile affiche uniquement Planning, Interventions, Clients, Bibliothèque et Achats", () => {
+    const quickAccess = Object.entries(MENU_ACCESS.quick)
+        .filter(([, roles]) => roles.includes("mobile_admin"))
+        .map(([name]) => name)
+        .sort();
+    const routeAccess = Object.entries(MENU_ACCESS.navigation)
+        .filter(([, roles]) => roles.includes("mobile_admin"))
+        .map(([route]) => route)
+        .sort();
+    assert.deepEqual(quickAccess, ["calendar", "clients", "library", "purchases"]);
+    assert.deepEqual(routeAccess, [ROUTES.calendar, ROUTES.clients, ROUTES.library, ROUTES.purchases].sort());
+    assert.match(navigation, /else if \(isCommercialMobile\(\) \|\| isMobileAdministrator\(\)\) openCalendar\(\)/);
+    assert.match(navigation, /isCommercialMobile\(\) \|\| isMobileAdministrator\(\)/);
+    assert.match(styles, /mobile_admin"\]\.mobile-device \.search-section\{display:none;\}/);
+    assert.match(styles, /mobile_admin"\]\.mobile-device footer \.nav-button:not\(\[data-nav="calendar"\]\):not\(\.mobile-workspace-menu-button\)\{display:none;\}/);
 });
 
 test("le tiroir mobile est accessible et se ferme sans perdre les actions", () => {

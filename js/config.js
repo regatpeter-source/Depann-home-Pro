@@ -71,10 +71,9 @@ const OPERATIONAL_PC = ["admin", "pc_standard", "commercial"];
 const OPERATIONAL_MOBILE = ["admin", "pc_standard", "commercial", "mobile_admin"];
 const TERRAIN = ["admin", "pc_standard", "commercial", "mobile_admin", "team_lead", "technician"];
 const CALENDAR_USERS = TERRAIN.concat("accountant");
-const PARTNER_MISSION_USERS = OPERATIONAL_MOBILE;
-const COMPANY_EMAIL_USERS = ["admin", "pc_standard", "commercial", "accountant", "mobile_admin"];
+const PARTNER_MISSION_USERS = OPERATIONAL_PC;
+const COMPANY_EMAIL_USERS = ["admin", "pc_standard", "commercial", "accountant"];
 const LIBRARY_USERS = ["mobile_admin", "team_lead", "technician"];
-const MOBILE_POST_USERS = ["mobile_admin", "team_lead", "technician"];
 const PURCHASE_USERS = ["admin", "pc_standard", "commercial", "accountant", "mobile_admin"];
 const INTERVENTION_SEARCH_USERS = ["team_lead", "technician"];
 
@@ -87,7 +86,7 @@ export const MENU_ACCESS = Object.freeze({
         interventionSearch: INTERVENTION_SEARCH_USERS,
         library: LIBRARY_USERS,
         purchases: PURCHASE_USERS,
-        billing: OPERATIONAL_MOBILE.concat("accountant"),
+        billing: OPERATIONAL_PC.concat("accountant"),
         accounting: ADMINISTRATORS.concat("pc_standard", "commercial", "accountant"),
         groups: ADMINISTRATORS,
         partnerMissions: PARTNER_MISSION_USERS,
@@ -96,18 +95,18 @@ export const MENU_ACCESS = Object.freeze({
         settings: OPERATIONAL_PC
     }),
     navigation: Object.freeze({
-        [ROUTES.home]: Array.from(new Set(OPERATIONAL_MOBILE.concat(MOBILE_POST_USERS))),
-        [ROUTES.search]: OPERATIONAL_MOBILE,
-        [ROUTES.store]: OPERATIONAL_MOBILE,
+        [ROUTES.home]: OPERATIONAL_PC.concat("team_lead", "technician"),
+        [ROUTES.search]: OPERATIONAL_PC,
+        [ROUTES.store]: OPERATIONAL_PC,
         [ROUTES.clients]: OPERATIONAL_MOBILE,
-        [ROUTES.billing]: OPERATIONAL_MOBILE.concat("accountant"),
+        [ROUTES.billing]: OPERATIONAL_PC.concat("accountant"),
         [ROUTES.purchases]: PURCHASE_USERS,
         [ROUTES.accounting]: ADMINISTRATORS.concat("pc_standard", "commercial", "accountant"),
         [ROUTES.groups]: ADMINISTRATORS,
         [ROUTES.partnerMissions]: PARTNER_MISSION_USERS,
         [ROUTES.companyEmail]: COMPANY_EMAIL_USERS,
         [ROUTES.partnerSandbox]: ADMINISTRATORS,
-        [ROUTES.technicalReports]: TERRAIN,
+        [ROUTES.technicalReports]: OPERATIONAL_PC.concat("team_lead", "technician"),
         [ROUTES.calendar]: CALENDAR_USERS,
         [ROUTES.library]: LIBRARY_USERS,
         [ROUTES.settings]: OPERATIONAL_PC
