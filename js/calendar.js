@@ -1,4 +1,4 @@
-import { ROUTES } from "./config.js?v=106";
+import { ROUTES } from "./config.js?v=134";
 import { createBillingDocumentForClient, viewBillingDocument } from "./billing.js?v=204";
 import { getSearchableClients } from "./clients.js?v=164";
 import { addClientActivityByName, synchronizeClients } from "./client-sync.js?v=127";
@@ -79,7 +79,7 @@ export async function renderCalendar(options = {}) {
     clearSearch();
     resetSelection("all");
     const technicianHome = isReadOnlyCalendar();
-    setPage(technicianHome ? "Accueil" : isMobileAdministrator() ? "Interventions" : "Planning", ROUTES.calendar, "detail");
+    setPage(technicianHome ? (isCommercialMobileCalendar() ? "Planning" : "Accueil") : isMobileAdministrator() ? "Interventions" : "Planning", ROUTES.calendar, "detail");
 
     const container = getContainer();
     const header = document.createElement("section");
@@ -856,7 +856,6 @@ function renderCalendarClientPreview(client) {
 }
 
 function renderTechnicianAssignmentField(event) {
-    if (isCommercialMobileCalendar()) return `<section class="calendar-technician-assignment form-wide"><div class="calendar-technician-assignment-heading"><div><p class="eyebrow">Affectation</p><h3>Votre planning</h3><p class="muted">Cette intervention vous sera automatiquement affectée.</p></div></div></section>`;
     const selected = new Set(getAssignedTechnicianIds(event));
     const groups = groupTechniciansByDepartment(members);
     return `
@@ -1686,7 +1685,7 @@ function isCommercialMobileCalendar() {
 }
 
 function canCreateCalendarEvents() {
-    return !isReadOnlyCalendar() || isCommercialMobileCalendar();
+    return !isReadOnlyCalendar();
 }
 
 function isMobileAdministrator() {

@@ -4,6 +4,8 @@ import { readFileSync } from "node:fs";
 
 const navigation = readFileSync(new URL("../js/navigation.js", import.meta.url), "utf8");
 const styles = readFileSync(new URL("../css/style.css", import.meta.url), "utf8");
+const config = readFileSync(new URL("../js/config.js", import.meta.url), "utf8");
+const purchases = readFileSync(new URL("../server/purchases.js", import.meta.url), "utf8");
 
 const mobileMenuSource = navigation.slice(
     navigation.indexOf("function initializeMobileWorkspaceMenu"),
@@ -18,12 +20,21 @@ test("le poste mobile conserve Accueil, Planning et Menu dans sa barre inférieu
 });
 
 test("le menu mobile range les actions existantes dans des sous-dossiers", () => {
-    assert.match(mobileMenuSource, /\["Interventions", \["calendarBtn", "clientsBtn", "partnerMissionsBtn"\]\]/);
+    assert.match(mobileMenuSource, /\["Interventions", \["calendarBtn", "interventionSearchBtn", "clientsBtn", "partnerMissionsBtn"\]\]/);
     assert.match(mobileMenuSource, /\["Gestion", \["billingBtn", "accountingBtn", "purchasesBtn"\]\]/);
     assert.match(mobileMenuSource, /\["Communication", \["companyEmailBtn"\]\]/);
     assert.match(mobileMenuSource, /\["Ressources et compte", \["libraryBtn", "settingsBtn"\]\]/);
     assert.match(mobileMenuSource, /source\?\.click\(\)/);
     assert.match(mobileMenuSource, /quickActions\.querySelector\(`#\$\{id\}`\)/);
+});
+
+test("Technicien et Chef d’équipe retrouvent leurs interventions sans accès aux Achats", () => {
+    assert.match(config, /INTERVENTION_SEARCH_USERS = \["team_lead", "technician"\]/);
+    assert.match(navigation, /searchScope = "interventions"/);
+    assert.match(navigation, /Retrouver une intervention…/);
+    assert.match(navigation, /interventionSearch \? \[\] : getSearchModules\(\)/);
+    assert.match(purchases, /\["admin", "pc_standard", "commercial", "accountant", "mobile_admin"\]\.includes\(request\.user\?\.role\)/);
+    assert.doesNotMatch(config.match(/const PURCHASE_USERS = [^;]+/)?.[0] || "", /team_lead|technician/);
 });
 
 test("le tiroir mobile est accessible et se ferme sans perdre les actions", () => {

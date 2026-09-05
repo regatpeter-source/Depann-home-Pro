@@ -579,7 +579,8 @@ body[data-role="commercial"].mobile-device .quick-actions{display:grid;grid-temp
 body[data-role="commercial"].mobile-device .quick-actions button:not(#calendarBtn){display:none;}
 body[data-role="commercial"].mobile-device #app{padding-bottom:110px;}
 body[data-role="commercial"].mobile-device footer{display:flex;justify-content:center;overflow:hidden;}
-body[data-role="commercial"].mobile-device footer .nav-button:not([data-nav="home"]):not([data-nav="calendar"]):not(.mobile-workspace-menu-button){display:none;}
+body[data-role="commercial"].mobile-device footer .nav-button:not([data-nav="calendar"]){display:none;}
+body[data-role="commercial"].mobile-device footer .nav-button[data-nav="calendar"]{flex:1;}
 
 .partner-api-sandbox-console .sandbox-warning-banner code{display:inline-block;max-width:100%;padding:.15rem .4rem;border-radius:.35rem;background:rgba(15,23,42,.08);overflow-wrap:anywhere;user-select:all;}
 .partner-api-sandbox-console>.creator-form-actions{align-items:center;gap:.65rem;flex-wrap:wrap;}
@@ -5281,7 +5282,9 @@ body.desktop-device .billing-editor-panel.billing-editor-live-active{
 }
 
 body[data-role="technician"] #purchasesBtn,
-body[data-role="technician"] .nav-button[data-nav="purchases"]{
+body[data-role="technician"] .nav-button[data-nav="purchases"],
+body[data-role="team_lead"] #purchasesBtn,
+body[data-role="team_lead"] .nav-button[data-nav="purchases"]{
     display:none;
 }
 
@@ -5290,7 +5293,7 @@ body.desktop-device[data-role="technician"] .nav-button:not([data-nav="home"]):n
     display:none;
 }
 
-/* Le poste mobile conserve trois accès permanents : Accueil, Planning et Menu. */
+/* Les postes terrain conservent Accueil, Planning et Menu ; le Commercial mobile garde uniquement Planning. */
 body.mobile-device #authRoot > footer .nav-button:not([data-nav="home"]):not([data-nav="calendar"]):not(.mobile-workspace-menu-button){
     display:none;
 }

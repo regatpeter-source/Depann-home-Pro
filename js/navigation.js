@@ -1,5 +1,5 @@
-import { ROUTES, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=133";
-import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=206";
+import { ROUTES, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=134";
+import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=207";
 import { openCreatorPartnerRequest, openCreatorRequestNotification, renderCreatorConsole } from "./creator.js?v=156";
 import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=204";
 import { renderAccounting, renderElectronicInvoicingConfiguration } from "./accounting.js?v=25";
@@ -41,6 +41,7 @@ const TEAM_SECTION_OPTIONS = ["Dépannage", "Recherche de fuite", "Plomberie", "
 let database = { brands: [] };
 let searchRequestId = 0;
 let searchInputTimer = null;
+let searchScope = "all";
 let sharedSynchronizationTimer = null;
 let sharedSynchronizationPromise = null;
 let interactionSynchronizationTimer = null;
@@ -111,6 +112,7 @@ export function initializeNavigation(loadedDatabase) {
     }
     if (isAccountant() && canAccessRoute(ROUTES.billing)) renderBilling();
     else if (isAccountant() && canAccessRoute(ROUTES.accounting)) renderAccounting();
+    else if (isCommercialMobile()) openCalendar();
     else if (isMobileDeviceContext()) openHome();
     else if (document.body.classList.contains("desktop-device")) renderHome();
     else renderBrands();
@@ -223,9 +225,15 @@ function bindEvents() {
     const companyEmailBtn = document.getElementById("companyEmailBtn");
     const partnerSandboxBtn = document.getElementById("partnerSandboxBtn");
     const calendarBtn = document.getElementById("calendarBtn");
+    const interventionSearchBtn = document.getElementById("interventionSearchBtn");
     const libraryBtn = document.getElementById("libraryBtn");
     const settingsBtn = document.getElementById("settingsBtn");
 
+    search.addEventListener("focus", () => {
+        if (searchScope === "all") return;
+        searchScope = "all";
+        updateSearchPlaceholder();
+    });
     search.addEventListener("input", event => {
         const value = event.target.value.toLowerCase().trim();
         window.clearTimeout(searchInputTimer);
@@ -252,6 +260,13 @@ function bindEvents() {
     companyEmailBtn?.addEventListener("click", () => { if (canAccessQuick("companyEmail")) renderCompanyEmail(); });
     partnerSandboxBtn?.addEventListener("click", () => { if (canAccessQuick("partnerSandbox")) renderPartnerSandbox(); });
     calendarBtn?.addEventListener("click", () => { if (canAccessQuick("calendar")) openCalendar(); });
+    interventionSearchBtn?.addEventListener("click", () => {
+        if (!canAccessQuick("interventionSearch")) return;
+        clearSearch();
+        focusSearch();
+        searchScope = "interventions";
+        updateSearchPlaceholder();
+    });
     libraryBtn?.addEventListener("click", () => { if (canAccessQuick("library")) renderLibrary(); });
     settingsBtn?.addEventListener("click", () => { if (canAccessQuick("settings")) renderSettings(); });
 
@@ -291,7 +306,7 @@ function bindEvents() {
 
 function applyRoleBasedMenus() {
     const quickSelectors = {
-        clients: "#clientsBtn", calendar: "#calendarBtn", library: "#libraryBtn", billing: "#billingBtn", purchases: "#purchasesBtn",
+        clients: "#clientsBtn", calendar: "#calendarBtn", interventionSearch: "#interventionSearchBtn", library: "#libraryBtn", billing: "#billingBtn", purchases: "#purchasesBtn",
         accounting: "#accountingBtn", groups: "#groupsBtn", partnerMissions: "#partnerMissionsBtn", companyEmail: "#companyEmailBtn",
         partnerSandbox: "#partnerSandboxBtn", settings: "#settingsBtn"
     };
@@ -300,7 +315,7 @@ function applyRoleBasedMenus() {
         if (!isMenuAllowed(MENU_ACCESS.quick[menu], menuRoute(menu))) button?.remove();
     });
     document.querySelectorAll(".nav-button").forEach(button => {
-        if (button.dataset.nav === ROUTES.home && isMobileDeviceContext()) return;
+        if (button.dataset.nav === ROUTES.home && isMobileDeviceContext() && !isCommercialMobile()) return;
         if (isMobileDeviceContext() && button.dataset.nav === ROUTES.calendar && canAccessRoute(ROUTES.calendar)) return;
         if (isMobileDeviceContext()) { button.remove(); return; }
         if (!canAccessRoute(button.dataset.nav)) button.remove();
@@ -315,7 +330,7 @@ function applyRoleBasedMenus() {
 }
 
 function initializeMobileWorkspaceMenu() {
-    if (!isMobileDeviceContext()) return;
+    if (!isMobileDeviceContext() || isCommercialMobile()) return;
     const footer = document.querySelector("#authRoot > footer");
     const quickActions = document.querySelector(".quick-actions");
     if (!footer || !quickActions) return;
@@ -365,7 +380,7 @@ function initializeMobileWorkspaceMenu() {
 
 function renderMobileWorkspaceFolders(container, quickActions) {
     const groups = [
-        ["Interventions", ["calendarBtn", "clientsBtn", "partnerMissionsBtn"]],
+        ["Interventions", ["calendarBtn", "interventionSearchBtn", "clientsBtn", "partnerMissionsBtn"]],
         ["Gestion", ["billingBtn", "accountingBtn", "purchasesBtn"]],
         ["Communication", ["companyEmailBtn"]],
         ["Ressources et compte", ["libraryBtn", "settingsBtn"]]
@@ -378,7 +393,7 @@ function renderMobileWorkspaceFolders(container, quickActions) {
 }
 
 function ensureMobileHomeNavigationButton() {
-    if (!isMobileDeviceContext() || document.querySelector('.nav-button[data-nav="home"]')) return;
+    if (!isMobileDeviceContext() || isCommercialMobile() || document.querySelector('.nav-button[data-nav="home"]')) return;
     const footer = document.querySelector("#authRoot > footer") || document.querySelector("footer");
     if (!footer) return;
     const button = document.createElement("button");
@@ -397,7 +412,7 @@ function isMobileDeviceContext() {
 
 function isMenuAllowed(roles, route = "") {
     if (!Array.isArray(roles) || !roles.includes(document.body.dataset.role)) return false;
-    if (isCommercialMobile() && ![ROUTES.home, ROUTES.calendar].includes(route)) return false;
+    if (isCommercialMobile() && route !== ROUTES.calendar) return false;
     if (route === ROUTES.billing && ["pc_standard", "commercial", "accountant"].includes(document.body.dataset.role) && document.body.dataset.canAccessBilling !== "true") return false;
     if (route === ROUTES.accounting && ["pc_standard", "commercial", "accountant"].includes(document.body.dataset.role) && document.body.dataset.canAccessAccounting !== "true") return false;
     if (route === ROUTES.companyEmail && document.body.dataset.canAccessCompanyEmail !== "true") return false;
@@ -458,7 +473,7 @@ function isCommercialMobile() {
 }
 
 function menuRoute(menu) {
-    return ({ clients: ROUTES.clients, calendar: ROUTES.calendar, library: ROUTES.library, billing: ROUTES.billing, accounting: ROUTES.accounting, purchases: ROUTES.purchases, groups: ROUTES.groups, partnerMissions: ROUTES.partnerMissions, companyEmail: ROUTES.companyEmail, partnerSandbox: ROUTES.partnerSandbox, settings: ROUTES.settings })[menu] || "";
+    return ({ clients: ROUTES.clients, calendar: ROUTES.calendar, interventionSearch: ROUTES.calendar, library: ROUTES.library, billing: ROUTES.billing, accounting: ROUTES.accounting, purchases: ROUTES.purchases, groups: ROUTES.groups, partnerMissions: ROUTES.partnerMissions, companyEmail: ROUTES.companyEmail, partnerSandbox: ROUTES.partnerSandbox, settings: ROUTES.settings })[menu] || "";
 }
 
 function openHome() {
@@ -1200,11 +1215,12 @@ async function renderSearchResults(query) {
     setPage("Résultats de recherche", ROUTES.search);
 
     const container = getContainer();
-    const canSearchLibrary = canAccessRoute(ROUTES.library);
-    const canSearchClients = canAccessRoute(ROUTES.clients);
+    const interventionSearch = searchScope === "interventions";
+    const canSearchLibrary = !interventionSearch && canAccessRoute(ROUTES.library);
+    const canSearchClients = !interventionSearch && canAccessRoute(ROUTES.clients);
     const canSearchCalendar = canAccessRoute(ROUTES.calendar);
     const includeTechnical = canSearchLibrary;
-    container.appendChild(createInfo(includeTechnical ? "Recherche dans vos modules, clients, interventions et bibliothèque technique…" : "Recherche dans les fonctions et données accessibles à votre poste…"));
+    container.appendChild(createInfo(interventionSearch ? "Recherche uniquement dans les interventions accessibles à votre poste…" : includeTechnical ? "Recherche dans vos modules, clients, interventions et bibliothèque technique…" : "Recherche dans les fonctions et données accessibles à votre poste…"));
 
     const [privateLibrary, events] = await Promise.all([
         canSearchLibrary ? searchPersonalLibrary(query) : Promise.resolve({ sections: [], documents: [] }),
@@ -1229,7 +1245,7 @@ async function renderSearchResults(query) {
         }))
     ];
     const results = [...getContextualSearchResults(database, query, {
-        modules: getSearchModules(),
+        modules: interventionSearch ? [] : getSearchModules(),
         includeClients: canSearchClients,
         includeTechnical,
         events
@@ -1240,7 +1256,7 @@ async function renderSearchResults(query) {
     container.innerHTML = "";
 
     if (!results.length) {
-        container.appendChild(createInfo("Aucun résultat accessible trouvé. Essayez un nom de module, un client, une intervention ou un mot-clé autorisé."));
+        container.appendChild(createInfo(interventionSearch ? "Aucune intervention accessible ne correspond à cette recherche." : "Aucun résultat accessible trouvé. Essayez un nom de module, un client, une intervention ou un mot-clé autorisé."));
         return;
     }
 
@@ -1337,7 +1353,9 @@ async function loadSearchEvents() {
 function updateSearchPlaceholder() {
     const search = document.getElementById("search");
     if (!search) return;
-    search.placeholder = canAccessRoute(ROUTES.library)
+    search.placeholder = searchScope === "interventions"
+        ? "Retrouver une intervention…"
+        : canAccessRoute(ROUTES.library)
         ? "Rechercher un module, client, intervention, notice…"
         : "Rechercher un module, un client ou une intervention…";
 }

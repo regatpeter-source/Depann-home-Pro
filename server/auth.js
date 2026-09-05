@@ -840,8 +840,8 @@ export function requireAuthentication(request, response, next) {
 export function restrictCommercialMobileAccess(request, response, next) {
     if (request.user?.role !== COMMERCIAL_ROLE || request.user?.deviceType !== "mobile" || !String(request.path || "").startsWith("/api/")) return next();
     const allowed = (request.method === "GET" && ["/api/auth/session", "/api/calendar/events", "/api/creator/platform-announcement/current"].includes(request.path))
-        || (request.method === "POST" && ["/api/auth/logout", "/api/calendar/events"].includes(request.path));
-    return allowed ? next() : response.status(403).json({ message: "Sur mobile, le Commercial / Chargé d’affaires consulte ses rendez-vous affectés et peut créer une intervention pour lui-même." });
+        || (request.method === "POST" && request.path === "/api/auth/logout");
+    return allowed ? next() : response.status(403).json({ message: "Sur mobile, le Commercial / Chargé d’affaires consulte uniquement ses rendez-vous affectés dans le planning." });
 }
 
 export function getAccountOwnerId(request) {

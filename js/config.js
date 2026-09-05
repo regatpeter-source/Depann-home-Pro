@@ -76,6 +76,7 @@ const COMPANY_EMAIL_USERS = ["admin", "pc_standard", "commercial", "accountant",
 const LIBRARY_USERS = ["mobile_admin", "team_lead", "technician"];
 const MOBILE_POST_USERS = ["mobile_admin", "team_lead", "technician"];
 const PURCHASE_USERS = ["admin", "pc_standard", "commercial", "accountant", "mobile_admin"];
+const INTERVENTION_SEARCH_USERS = ["team_lead", "technician"];
 
 // Toute nouvelle entrée de navigation doit être déclarée ici. Les éléments
 // hors rôle sont retirés du DOM avant l’affichage de l’application.
@@ -83,6 +84,7 @@ export const MENU_ACCESS = Object.freeze({
     quick: Object.freeze({
         clients: OPERATIONAL_MOBILE,
         calendar: CALENDAR_USERS,
+        interventionSearch: INTERVENTION_SEARCH_USERS,
         library: LIBRARY_USERS,
         purchases: PURCHASE_USERS,
         billing: OPERATIONAL_MOBILE.concat("accountant"),
