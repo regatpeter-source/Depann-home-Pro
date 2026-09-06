@@ -51,6 +51,7 @@ export async function initializeCalendar() {
             event_origin VARCHAR(30) NOT NULL DEFAULT 'standard',
             partner_connection_id BIGINT,
             partner_mission_id BIGINT,
+            planning_batch_id UUID,
             quitus_status VARCHAR(20) NOT NULL DEFAULT 'pending',
             quitus_signed_by VARCHAR(160) NOT NULL DEFAULT '',
             quitus_signature TEXT NOT NULL DEFAULT '',
@@ -108,6 +109,8 @@ export async function initializeCalendar() {
     `);
     await database.query("UPDATE depannhome_calendar_events SET event_origin='standard' WHERE event_origin IS NULL OR event_origin NOT IN ('standard','partner_mission')");
     await database.query("CREATE INDEX IF NOT EXISTS depannhome_calendar_events_partner_origin_idx ON depannhome_calendar_events(owner_id,event_origin,partner_connection_id)");
+    await database.query("ALTER TABLE depannhome_calendar_events ADD COLUMN IF NOT EXISTS planning_batch_id UUID");
+    await database.query("CREATE INDEX IF NOT EXISTS depannhome_calendar_events_planning_batch_idx ON depannhome_calendar_events(owner_id,planning_batch_id) WHERE planning_batch_id IS NOT NULL");
     await database.query(`
         ALTER TABLE depannhome_calendar_events
         ADD COLUMN IF NOT EXISTS quitus_status VARCHAR(20) NOT NULL DEFAULT 'pending',
@@ -304,6 +307,19 @@ export function registerCalendarRoutes(app, requireAuthentication) {
                 event.event_origin AS "eventOrigin",
                 event.partner_connection_id AS "partnerConnectionId",
                 event.partner_mission_id AS "partnerMissionId",
+                event.planning_batch_id AS "planningBatchId",
+                CASE WHEN event.planning_batch_id IS NULL THEN 1 ELSE (
+                    SELECT COUNT(*)::integer FROM depannhome_calendar_events batch_event
+                    WHERE batch_event.owner_id = event.owner_id AND batch_event.planning_batch_id = event.planning_batch_id
+                ) END AS "planningBatchCount",
+                CASE WHEN event.planning_batch_id IS NULL THEN TO_CHAR(event.event_date, 'YYYY-MM-DD') ELSE (
+                    SELECT TO_CHAR(MIN(batch_event.event_date), 'YYYY-MM-DD') FROM depannhome_calendar_events batch_event
+                    WHERE batch_event.owner_id = event.owner_id AND batch_event.planning_batch_id = event.planning_batch_id
+                ) END AS "planningBatchStartDate",
+                CASE WHEN event.planning_batch_id IS NULL THEN TO_CHAR(event.event_date, 'YYYY-MM-DD') ELSE (
+                    SELECT TO_CHAR(MAX(batch_event.event_date), 'YYYY-MM-DD') FROM depannhome_calendar_events batch_event
+                    WHERE batch_event.owner_id = event.owner_id AND batch_event.planning_batch_id = event.planning_batch_id
+                ) END AS "planningBatchEndDate",
                 event.quitus_status AS "quitusStatus",
                 event.quitus_signed_by AS "quitusSignedBy",
                 event.quitus_signature AS "quitusSignature",
@@ -411,18 +427,19 @@ export function registerCalendarRoutes(app, requireAuthentication) {
         try {
             await connection.query("BEGIN");
             const ids = [];
+            const planningBatchId = dates.length > 1 ? randomUUID() : null;
             for (const date of dates) {
                 const { rows } = await connection.query(`
                     INSERT INTO depannhome_calendar_events
-                        (owner_id, assigned_technician_id, title, client_id, client_name, location, event_date, start_time, end_time, color, event_type, event_status, event_origin, notes)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7::date, $8::time, $9::time, $10, $11, $12, 'standard', $13)
+                        (owner_id, assigned_technician_id, title, client_id, client_name, location, event_date, start_time, end_time, color, event_type, event_status, event_origin, notes, planning_batch_id)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7::date, $8::time, $9::time, $10, $11, $12, 'standard', $13, $14::uuid)
                     RETURNING id
-                `, [getAccountOwnerId(request), event.assignedTechnicianId || null, event.title, await resolveClientId(connection, getAccountOwnerId(request), event.clientName, true), event.clientName, event.location, date, optionalTime(event.startTime), optionalTime(event.endTime), event.color, event.eventType, event.status, event.notes]);
+                `, [getAccountOwnerId(request), event.assignedTechnicianId || null, event.title, await resolveClientId(connection, getAccountOwnerId(request), event.clientName, true), event.clientName, event.location, date, optionalTime(event.startTime), optionalTime(event.endTime), event.color, event.eventType, event.status, event.notes, planningBatchId]);
                 await replaceEventAssignments(connection, rows[0].id, event.assignedTechnicianIds, event.assignedTechnicianId);
                 ids.push(rows[0].id);
             }
             await connection.query("COMMIT");
-            response.status(201).json({ id: ids[0], ids, count: ids.length });
+            response.status(201).json({ id: ids[0], ids, count: ids.length, planningBatchId });
         } catch (error) {
             await connection.query("ROLLBACK");
             throw error;
@@ -467,6 +484,49 @@ export function registerCalendarRoutes(app, requireAuthentication) {
             await connection.query("COMMIT");
             await synchronizeConnectedAppointment(getAccountOwnerId(request), id);
             response.status(204).end();
+        } catch (error) {
+            await connection.query("ROLLBACK");
+            throw error;
+        } finally {
+            connection.release();
+        }
+    }));
+
+    app.delete("/api/calendar/events/batch/:batchId", requireAuthentication, requireCalendarWriteAccess, asyncHandler(async (request, response) => {
+        const batchId = sanitizeUuid(request.params.batchId);
+        if (!batchId) return response.status(400).json({ message: "Planification étendue invalide." });
+        if (!canManageCalendarEventStatus(request.user)) {
+            return response.status(403).json({ message: "La suppression d’une planification est réservée à un poste administratif ou au Poste Admin Mobile." });
+        }
+
+        const ownerId = getAccountOwnerId(request);
+        const connection = await getPool().connect();
+        try {
+            await connection.query("BEGIN");
+            const { rows } = await connection.query(`
+                SELECT id, event_status AS status, quitus_status AS "quitusStatus",
+                    quitus_signed_at AS "quitusSignedAt", deductible_status AS "deductibleStatus"
+                FROM depannhome_calendar_events
+                WHERE owner_id = $1 AND planning_batch_id = $2::uuid
+                FOR UPDATE
+            `, [ownerId, batchId]);
+            if (!rows.length) {
+                await connection.query("ROLLBACK");
+                return response.status(404).json({ message: "Planification étendue introuvable." });
+            }
+            const protectedEvent = rows.find(event => event.status === "completed"
+                || event.quitusSignedAt || event.quitusStatus === "validated"
+                || event.deductibleStatus === "validated");
+            if (protectedEvent) {
+                await connection.query("ROLLBACK");
+                return response.status(409).json({ message: "Cette planification contient une intervention terminée ou un justificatif validé. Aucune journée n’a été supprimée." });
+            }
+            const deletion = await connection.query(
+                "DELETE FROM depannhome_calendar_events WHERE owner_id = $1 AND planning_batch_id = $2::uuid",
+                [ownerId, batchId]
+            );
+            await connection.query("COMMIT");
+            response.json({ deletedCount: deletion.rowCount });
         } catch (error) {
             await connection.query("ROLLBACK");
             throw error;
@@ -1043,6 +1103,11 @@ function sanitizeDate(value) {
 function sanitizeTime(value) {
     const time = String(value || "");
     return TIME_PATTERN.test(time) ? time : "";
+}
+
+function sanitizeUuid(value) {
+    const uuid = String(value || "").toLowerCase();
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(uuid) ? uuid : "";
 }
 
 function optionalTime(value) {

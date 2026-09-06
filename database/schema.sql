@@ -1085,6 +1085,7 @@ CREATE TABLE IF NOT EXISTS depannhome_calendar_events (
     event_origin VARCHAR(30) NOT NULL DEFAULT 'standard',
     partner_connection_id BIGINT,
     partner_mission_id BIGINT,
+    planning_batch_id UUID,
     quitus_status VARCHAR(20) NOT NULL DEFAULT 'pending',
     quitus_signed_by VARCHAR(160) NOT NULL DEFAULT '',
     quitus_signature TEXT NOT NULL DEFAULT '',
@@ -1143,6 +1144,13 @@ WHERE event_origin IS NULL OR event_origin NOT IN ('standard', 'partner_mission'
 
 CREATE INDEX IF NOT EXISTS depannhome_calendar_events_partner_origin_idx
 ON depannhome_calendar_events (owner_id, event_origin, partner_connection_id);
+
+ALTER TABLE depannhome_calendar_events
+ADD COLUMN IF NOT EXISTS planning_batch_id UUID;
+
+CREATE INDEX IF NOT EXISTS depannhome_calendar_events_planning_batch_idx
+ON depannhome_calendar_events (owner_id, planning_batch_id)
+WHERE planning_batch_id IS NOT NULL;
 
 -- Types gérés par l’application : appointment, task, vacation, sick_leave, unavailable.
 

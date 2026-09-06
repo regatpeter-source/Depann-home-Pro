@@ -513,7 +513,7 @@ function renderEventForm(panel) {
             <div class="calendar-form-actions">
                 <button type="submit" class="secondary-button">${event.partnerMissionId ? "Valider la planification" : isEditing ? "Enregistrer les modifications" : "Ajouter au planning"}</button>
                 ${typeof event.pauseEvent === "function" ? '<button type="button" class="secondary-button" id="pauseCalendarEvent">Mettre en pause pour appeler le client</button>' : ""}
-                ${isEditing && canManageCalendarEventStatus() ? '<button type="button" class="secondary-button danger-button" id="deleteCalendarEvent">Supprimer</button>' : ""}
+                ${isEditing && canManageCalendarEventStatus() ? `<button type="button" class="secondary-button danger-button" id="deleteCalendarEvent">${event.planningBatchId ? "Supprimer cette journée" : "Supprimer"}</button>${canDeleteWholePlanning(event) ? '<button type="button" class="secondary-button danger-button" id="deleteCalendarPlanningBatch">Supprimer toute cette planification</button>' : ""}` : ""}
             </div>
         </form>
         ${isEditing ? renderInsuranceDeductibleHtml(event, findClientForEvent(event)) : ""}
@@ -661,7 +661,7 @@ function renderEventForm(panel) {
         renderCalendar();
     });
     panel.querySelector("#deleteCalendarEvent")?.addEventListener("click", async () => {
-        if (!confirm("Supprimer cet élément du planning ?")) return;
+        if (!confirm(event.planningBatchId ? "Supprimer uniquement cette journée de la planification ?" : "Supprimer cet élément du planning ?")) return;
         const result = await request(`/api/calendar/events/${encodeURIComponent(event.id)}`, { method: "DELETE" });
         if (!result.ok) {
             panel.querySelector("#calendarFormMessage").textContent = result.message || "Suppression impossible.";
@@ -673,6 +673,27 @@ function renderEventForm(panel) {
         invalidateCalendarEventsCache();
         renderCalendar();
     });
+    panel.querySelector("#deleteCalendarPlanningBatch")?.addEventListener("click", async () => {
+        const count = Number(event.planningBatchCount || 0);
+        const period = event.planningBatchStartDate && event.planningBatchEndDate
+            ? ` du ${formatPreviewDate(event.planningBatchStartDate)} au ${formatPreviewDate(event.planningBatchEndDate)}`
+            : "";
+        if (!confirm(`Supprimer les ${count} journées de cette planification${period} ? Cette action est définitive.`)) return;
+        const result = await request(`/api/calendar/events/batch/${encodeURIComponent(event.planningBatchId)}`, { method: "DELETE" });
+        if (!result.ok) {
+            panel.querySelector("#calendarFormMessage").textContent = result.message || "Suppression de la planification impossible.";
+            panel.querySelector("#calendarFormMessage").classList.add("error");
+            return;
+        }
+        mobileAdminEditingEvents.delete(String(event.id || ""));
+        selectedEvent = null;
+        invalidateCalendarEventsCache();
+        renderCalendar();
+    });
+}
+
+function canDeleteWholePlanning(event) {
+    return Boolean(event?.planningBatchId) && Number(event?.planningBatchCount || 0) > 1;
 }
 
 function renderMultiDatePlanning(event) {

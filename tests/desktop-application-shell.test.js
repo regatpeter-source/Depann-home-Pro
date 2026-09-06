@@ -39,5 +39,5 @@ test("desktop stylesheet cache versions remain synchronized", () => {
     assert.match(serviceWorker, /js\/client-sync\.js\?v=127/);
     assert.match(serviceWorker, /js\/navigation\.js\?v=447/);
     assert.match(serviceWorker, /js\/i18n\.js\?v=5/);
-    assert.match(serviceWorker, /depann-home-pro-v524/);
+    assert.match(serviceWorker, /depann-home-pro-v525/);
 });

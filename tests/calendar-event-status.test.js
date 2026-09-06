@@ -58,5 +58,5 @@ test("seuls les postes administratifs sur PC et le Poste Admin Mobile finalisent
     assert.match(server, /!\(user\?\.role === "commercial" && user\?\.deviceType === "mobile"\)/);
     assert.match(calendar, /return \["admin", "pc_standard", "commercial", "mobile_admin"\]\.includes[^\n]+&& !isReadOnlyCalendar\(\)/);
     assert.match(calendar, /canManageCalendarEventStatus\(\) \? `<label>[\s\S]*?<select name="status">[\s\S]*?type="hidden" name="status"/);
-    assert.match(calendar, /isEditing && canManageCalendarEventStatus\(\) \? '<button type="button" class="secondary-button danger-button" id="deleteCalendarEvent">Supprimer/);
+    assert.match(calendar, /isEditing && canManageCalendarEventStatus\(\) \? `<button type="button" class="secondary-button danger-button" id="deleteCalendarEvent">/);
 });
