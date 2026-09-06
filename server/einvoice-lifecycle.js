@@ -80,36 +80,49 @@ export function registerElectronicInvoiceLifecycleRoutes(app) {
     }));
 
     app.post("/api/accounting/e-invoicing/inbound/:invoiceId/validate", asyncHandler(async (request, response) => {
-        const invoice = await requireInboundInvoice(getAccountOwnerId(request), request.params.invoiceId);
-        const messages = validateInboundInvoice(invoice);
-        const valid = messages.length === 0;
-        await getPool().query("UPDATE depannhome_einvoice_inbound_invoices SET validation_status=$3,validation_messages=$4::jsonb,status=CASE WHEN $3='valid' AND status='received' THEN 'validated' ELSE status END,validated_at=NOW(),updated_at=NOW() WHERE id=$1 AND owner_id=$2", [invoice.id, invoice.owner_id, valid ? "valid" : "invalid", JSON.stringify(messages)]);
-        await recordInboundEvent(invoice.owner_id, invoice.id, request.user.sub, "validated", valid ? "validated" : "invalid", valid ? "Contrôles de cohérence réussis." : "Anomalies détectées pendant la validation.", { messages });
-        response.status(valid ? 200 : 422).json({ valid, messages });
+        const ownerId = getAccountOwnerId(request);
+        const client = await getPool().connect();
+        try {
+            await client.query("BEGIN");
+            const invoice = await requireInboundInvoice(ownerId, request.params.invoiceId, client, true);
+            if (!["received", "validated"].includes(invoice.status)) throw httpError(409, "Une facture déjà décidée ou archivée ne peut plus être revalidée.");
+            const messages = validateInboundInvoice(invoice);
+            const valid = messages.length === 0;
+            await client.query("UPDATE depannhome_einvoice_inbound_invoices SET validation_status=$3,validation_messages=$4::jsonb,status=CASE WHEN $3='valid' THEN 'validated' ELSE 'received' END,validated_at=NOW(),updated_at=NOW() WHERE id=$1 AND owner_id=$2", [invoice.id, ownerId, valid ? "valid" : "invalid", JSON.stringify(messages)]);
+            await recordInboundEvent(ownerId, invoice.id, request.user.sub, "validated", valid ? "validated" : "invalid", valid ? "Contrôles de cohérence réussis." : "Anomalies détectées pendant la validation.", { messages }, client);
+            await client.query("COMMIT");
+            response.status(valid ? 200 : 422).json({ valid, messages });
+        } catch (error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }
     }));
 
     app.post("/api/accounting/e-invoicing/inbound/:invoiceId/decision", asyncHandler(async (request, response) => {
         const ownerId = getAccountOwnerId(request);
-        const invoice = await requireInboundInvoice(ownerId, request.params.invoiceId);
         const decision = request.body?.decision;
         if (!["accepted", "rejected"].includes(decision)) return response.status(400).json({ message: "Décision invalide." });
-        if (decision === "accepted" && invoice.validation_status !== "valid") return response.status(409).json({ message: "Validez la facture avant de l’accepter." });
         const reason = clean(request.body?.reason, 1000);
         if (decision === "rejected" && !reason) return response.status(400).json({ message: "Indiquez le motif du refus." });
-        await getPool().query("UPDATE depannhome_einvoice_inbound_invoices SET status=$3,rejection_reason=$4,decided_at=NOW(),updated_at=NOW() WHERE id=$1 AND owner_id=$2", [invoice.id, ownerId, decision, reason]);
-        await recordInboundEvent(ownerId, invoice.id, request.user.sub, decision, decision, decision === "accepted" ? "Facture fournisseur acceptée." : `Facture fournisseur refusée : ${reason}`);
-        response.json({ status: decision });
+        const client = await getPool().connect();
+        try {
+            await client.query("BEGIN");
+            const invoice = await requireInboundInvoice(ownerId, request.params.invoiceId, client, true);
+            if (invoice.status !== "validated") throw httpError(409, "Seule une facture contrôlée et sans décision peut être acceptée ou refusée.");
+            if (decision === "accepted" && invoice.validation_status !== "valid") throw httpError(409, "Validez la facture avant de l’accepter.");
+            await client.query("UPDATE depannhome_einvoice_inbound_invoices SET status=$3,rejection_reason=$4,decided_at=NOW(),updated_at=NOW() WHERE id=$1 AND owner_id=$2", [invoice.id, ownerId, decision, reason]);
+            await recordInboundEvent(ownerId, invoice.id, request.user.sub, decision, decision, decision === "accepted" ? "Facture fournisseur acceptée." : `Facture fournisseur refusée : ${reason}`, {}, client);
+            await client.query("COMMIT");
+            response.json({ status: decision });
+        } catch (error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }
     }));
 
     app.post("/api/accounting/e-invoicing/inbound/:invoiceId/purchase", asyncHandler(async (request, response) => {
         const ownerId = getAccountOwnerId(request);
-        const invoice = await requireInboundInvoice(ownerId, request.params.invoiceId);
-        if (invoice.status !== "accepted") return response.status(409).json({ message: "Acceptez la facture avant de créer l’achat." });
-        if (invoice.purchase_id) return response.status(409).json({ message: "Cette facture est déjà liée à un achat." });
-        const vatRate = invoice.amount_ht > 0 ? Math.round((invoice.vat_amount / invoice.amount_ht) * 10000) / 100 : 0;
         const client = await getPool().connect();
         try {
             await client.query("BEGIN");
+            const invoice = await requireInboundInvoice(ownerId, request.params.invoiceId, client, true);
+            if (invoice.status !== "accepted") throw httpError(409, "Acceptez la facture avant de créer l’achat.");
+            if (invoice.purchase_id) throw httpError(409, "Cette facture est déjà liée à un achat.");
+            const vatRate = invoice.amount_ht > 0 ? Math.round((invoice.vat_amount / invoice.amount_ht) * 10000) / 100 : 0;
             const { rows } = await client.query(`INSERT INTO depannhome_purchases(owner_id,created_by,purchase_date,category,supplier,description,reference,amount_ht,vat_rate,notes) VALUES($1,$2,$3,'Autre',$4,$5,$6,$7,$8,$9) RETURNING id`, [ownerId, request.user.sub, invoice.issue_date, invoice.supplier_name, `Facture électronique fournisseur ${invoice.invoice_number}`, invoice.invoice_number, invoice.amount_ht, Math.min(100, vatRate), "Créé depuis la boîte de réception de facturation électronique."]);
             await client.query("UPDATE depannhome_einvoice_inbound_invoices SET purchase_id=$3,updated_at=NOW() WHERE id=$1 AND owner_id=$2", [invoice.id, ownerId, rows[0].id]);
             await recordInboundEvent(ownerId, invoice.id, request.user.sub, "purchase_linked", invoice.status, `Achat #${rows[0].id} créé et rapproché.`, { purchaseId: rows[0].id }, client);
@@ -120,14 +133,20 @@ export function registerElectronicInvoiceLifecycleRoutes(app) {
 
     app.post("/api/accounting/e-invoicing/inbound/:invoiceId/payment", asyncHandler(async (request, response) => {
         const ownerId = getAccountOwnerId(request);
-        const invoice = await requireInboundInvoice(ownerId, request.params.invoiceId);
         const paidAmount = money(request.body?.paidAmount);
         const paidAt = date(request.body?.paidAt);
-        if (paidAmount === null || paidAmount > Number(invoice.amount_ttc) + 0.01 || !paidAt) return response.status(400).json({ message: "Montant ou date de règlement invalide." });
-        const paymentStatus = paidAmount >= Number(invoice.amount_ttc) - 0.01 ? "paid" : paidAmount > 0 ? "partial" : "unpaid";
-        await getPool().query("UPDATE depannhome_einvoice_inbound_invoices SET paid_amount=$3,payment_status=$4,payment_reference=$5,paid_at=$6::date,updated_at=NOW() WHERE id=$1 AND owner_id=$2", [invoice.id, ownerId, paidAmount, paymentStatus, clean(request.body?.reference, 160), paidAt]);
-        await recordInboundEvent(ownerId, invoice.id, request.user.sub, "payment_reconciled", paymentStatus, paymentStatus === "paid" ? "Facture fournisseur réglée." : paymentStatus === "partial" ? "Règlement partiel rapproché." : "Rapprochement de règlement retiré.", { paidAmount, paidAt });
-        response.json({ paymentStatus });
+        const client = await getPool().connect();
+        try {
+            await client.query("BEGIN");
+            const invoice = await requireInboundInvoice(ownerId, request.params.invoiceId, client, true);
+            if (invoice.status !== "accepted") throw httpError(409, "Seule une facture acceptée peut être rapprochée d’un règlement.");
+            if (paidAmount === null || paidAmount > Number(invoice.amount_ttc) + 0.01 || !paidAt) throw httpError(400, "Montant ou date de règlement invalide.");
+            const paymentStatus = paidAmount >= Number(invoice.amount_ttc) - 0.01 ? "paid" : paidAmount > 0 ? "partial" : "unpaid";
+            await client.query("UPDATE depannhome_einvoice_inbound_invoices SET paid_amount=$3,payment_status=$4,payment_reference=$5,paid_at=$6::date,updated_at=NOW() WHERE id=$1 AND owner_id=$2", [invoice.id, ownerId, paidAmount, paymentStatus, clean(request.body?.reference, 160), paidAt]);
+            await recordInboundEvent(ownerId, invoice.id, request.user.sub, "payment_reconciled", paymentStatus, paymentStatus === "paid" ? "Facture fournisseur réglée." : paymentStatus === "partial" ? "Règlement partiel rapproché." : "Rapprochement de règlement retiré.", { paidAmount, paidAt }, client);
+            await client.query("COMMIT");
+            response.json({ paymentStatus });
+        } catch (error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }
     }));
 
     app.get("/api/accounting/e-invoicing/inbound/:invoiceId/events", asyncHandler(async (request, response) => {
@@ -166,7 +185,7 @@ function validateInboundInvoice(invoice) {
     if (Math.abs(Number(invoice.amount_ht) + Number(invoice.vat_amount) - Number(invoice.amount_ttc)) > 0.02) messages.push("Le total TTC ne correspond pas au HT augmenté de la TVA.");
     return messages;
 }
-async function requireInboundInvoice(ownerId, value) { const id = positiveId(value); const { rows } = await getPool().query("SELECT * FROM depannhome_einvoice_inbound_invoices WHERE id=$1 AND owner_id=$2", [id, ownerId]); if (!rows[0]) throw httpError(404, "Facture fournisseur introuvable."); return rows[0]; }
+async function requireInboundInvoice(ownerId, value, database = getPool(), lock = false) { const id = positiveId(value); const { rows } = await database.query(`SELECT * FROM depannhome_einvoice_inbound_invoices WHERE id=$1 AND owner_id=$2${lock ? " FOR UPDATE" : ""}`, [id, ownerId]); if (!rows[0]) throw httpError(404, "Facture fournisseur introuvable."); return rows[0]; }
 async function recordInboundEvent(ownerId, invoiceId, actorId, eventType, status, message, details = {}, database = getPool()) { await database.query("INSERT INTO depannhome_einvoice_inbound_events(owner_id,invoice_id,actor_id,event_type,status,message,details) VALUES($1,$2,$3,$4,$5,$6,$7::jsonb)", [ownerId, invoiceId, actorId || null, eventType, INBOUND_STATUSES.has(status) || PAYMENT_STATUSES.has(status) || status === "invalid" ? status : "", clean(message, 1000), JSON.stringify(details)]); }
 function clean(value, max) { return String(value || "").replace(/\s+/g, " ").trim().slice(0, max); }
 function date(value) { const result = String(value || ""); return /^\d{4}-\d{2}-\d{2}$/.test(result) && !Number.isNaN(new Date(`${result}T12:00:00`).getTime()) ? result : ""; }

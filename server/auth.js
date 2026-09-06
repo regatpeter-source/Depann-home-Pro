@@ -442,7 +442,22 @@ export function registerAuthRoutes(app) {
             : cleanDepartments(member.departments, member.department);
         const department = departments[0] || "";
         if (member.role === "admin" && member.isActive && !isActive) {
-            await ensureActiveAdministratorRemains(getAccountOwnerId(request), memberId);
+            const database = await getPool().connect();
+            try {
+                await database.query("BEGIN");
+                await lockAccountOwner(database, getAccountOwnerId(request));
+                await ensureActiveAdministratorRemains(getAccountOwnerId(request), memberId, database);
+                const result = await database.query("UPDATE depannhome_users SET is_active = FALSE, can_create_billing = $3, can_access_billing = $4, can_access_accounting = $5, can_access_company_email = $6, can_switch_group_companies = $7, department = $8, departments = $9::jsonb, updated_at = NOW() WHERE id = $1 AND account_owner_id = $2 AND role = 'admin' AND is_active = TRUE", [memberId, getAccountOwnerId(request), canCreateBilling, canAccessBilling, canAccessAccounting, canAccessCompanyEmail, canSwitchGroupCompanies, department, JSON.stringify(departments)]);
+                if (!result.rowCount) { await database.query("ROLLBACK"); return response.status(409).json({ message: "Cet accès a été modifié simultanément. Rechargez la liste puis réessayez." }); }
+                await recordMemberAudit(getAccountOwnerId(request), request.user.sub, member, "administrator_deactivated", { isActive, canCreateBilling, canAccessBilling, canAccessAccounting, canAccessCompanyEmail, canSwitchGroupCompanies, departments }, database);
+                await database.query("COMMIT");
+                return response.status(204).end();
+            } catch (error) {
+                await database.query("ROLLBACK");
+                throw error;
+            } finally {
+                database.release();
+            }
         }
         if (isActive && !member.isActive) {
             const seatError = await memberSeatError(getAccountOwnerId(request), member.role, memberId);
@@ -465,6 +480,7 @@ export function registerAuthRoutes(app) {
         try {
             failedStep = "verrouillage du membre";
             await database.query("BEGIN");
+            await lockAccountOwner(database, ownerId);
             const { rows } = await database.query(`
                 SELECT id, username, full_name AS "fullName", role, is_active AS "isActive"
                 FROM depannhome_users WHERE id = $1 AND account_owner_id = $2 AND id <> $2
@@ -534,28 +550,50 @@ export function registerAuthRoutes(app) {
         const password = String(request.body?.password || "");
         if (!memberId) return response.status(400).json({ message: "Accès invalide." });
         if (password.length < MIN_PASSWORD_LENGTH) return response.status(400).json({ message: `Le mot de passe doit contenir au moins ${MIN_PASSWORD_LENGTH} caractères.` });
-        const result = await getPool().query(`
-            UPDATE depannhome_users
-            SET password_hash = $3, updated_at = NOW()
-            WHERE id = $1 AND account_owner_id = $2
-            RETURNING id, username, full_name AS "fullName", role
-        `, [memberId, getAccountOwnerId(request), await bcrypt.hash(password, 12)]);
-        if (!result.rowCount) return response.status(404).json({ message: "Accès introuvable." });
-        await recordMemberAudit(getAccountOwnerId(request), request.user.sub, result.rows[0], result.rows[0].role === "admin" ? "administrator_modified" : "member_password_reset", { field: "password" });
-        response.status(204).end();
+        const database = await getPool().connect();
+        try {
+            await database.query("BEGIN");
+            const result = await database.query(`
+                UPDATE depannhome_users
+                SET password_hash = $3, updated_at = NOW()
+                WHERE id = $1 AND account_owner_id = $2 AND id <> $2
+                RETURNING id, username, full_name AS "fullName", role
+            `, [memberId, getAccountOwnerId(request), await bcrypt.hash(password, 12)]);
+            if (!result.rowCount) { await database.query("ROLLBACK"); return response.status(404).json({ message: "Accès introuvable." }); }
+            await database.query("UPDATE depannhome_auth_devices SET status='rejected',session_id=NULL,verification_code_hash='',verification_code_expires_at=NULL,verification_attempts=0 WHERE user_id=$1", [memberId]);
+            await recordMemberAudit(getAccountOwnerId(request), request.user.sub, result.rows[0], result.rows[0].role === "admin" ? "administrator_modified" : "member_password_reset", { field: "password", sessionsRevoked: true }, database);
+            await database.query("COMMIT");
+            response.status(204).end();
+        } catch (error) {
+            await database.query("ROLLBACK");
+            throw error;
+        } finally {
+            database.release();
+        }
     }));
 
     app.delete("/api/auth/members/:memberId", requireAccountAdministrator, asyncHandler(async (request, response) => {
         const memberId = positiveId(request.params.memberId);
         if (!memberId) return response.status(400).json({ message: "Accès invalide." });
-        const { rows } = await getPool().query("SELECT id, username, full_name AS \"fullName\", role, is_active AS \"isActive\" FROM depannhome_users WHERE id = $1 AND account_owner_id = $2 AND id <> $2", [memberId, getAccountOwnerId(request)]);
-        const member = rows[0];
-        if (!member) return response.status(404).json({ message: "Accès introuvable." });
-        if (member.role === "admin" && member.isActive) await ensureActiveAdministratorRemains(getAccountOwnerId(request), memberId);
-        const result = await getPool().query("DELETE FROM depannhome_users WHERE id = $1 AND account_owner_id = $2 AND id <> $2", [memberId, getAccountOwnerId(request)]);
-        if (!result.rowCount) return response.status(404).json({ message: "Accès introuvable." });
-        await recordMemberAudit(getAccountOwnerId(request), request.user.sub, member, member.role === "admin" ? "administrator_deleted" : "member_deleted", { role: member.role });
-        response.status(204).end();
+        const ownerId = getAccountOwnerId(request);
+        const database = await getPool().connect();
+        try {
+            await database.query("BEGIN");
+            await lockAccountOwner(database, ownerId);
+            const { rows } = await database.query("SELECT id, username, full_name AS \"fullName\", role, is_active AS \"isActive\" FROM depannhome_users WHERE id = $1 AND account_owner_id = $2 AND id <> $2 FOR UPDATE", [memberId, ownerId]);
+            const member = rows[0];
+            if (!member) { await database.query("ROLLBACK"); return response.status(404).json({ message: "Accès introuvable." }); }
+            if (member.role === "admin" && member.isActive) await ensureActiveAdministratorRemains(ownerId, memberId, database);
+            await database.query("DELETE FROM depannhome_users WHERE id = $1 AND account_owner_id = $2 AND id <> $2", [memberId, ownerId]);
+            await recordMemberAudit(ownerId, request.user.sub, member, member.role === "admin" ? "administrator_deleted" : "member_deleted", { role: member.role }, database);
+            await database.query("COMMIT");
+            response.status(204).end();
+        } catch (error) {
+            await database.query("ROLLBACK");
+            throw error;
+        } finally {
+            database.release();
+        }
     }));
 
     app.get("/api/auth/technicians", requireTechnicianDirectoryAccess, asyncHandler(async (request, response) => {
@@ -850,8 +888,8 @@ function requireWorkstationSecurityAccess(request, response, next) {
     return response.status(403).json({ message: "La sécurité personnelle est accessible uniquement depuis votre poste PC administratif ou commercial." });
 }
 
-async function ensureActiveAdministratorRemains(ownerId, targetId) {
-    const { rows } = await getPool().query(`
+async function ensureActiveAdministratorRemains(ownerId, targetId, database = getPool()) {
+    const { rows } = await database.query(`
         SELECT COUNT(*) FILTER (WHERE role = 'admin' AND is_active AND id <> $2)::int AS "remainingAdministrators"
         FROM depannhome_users
         WHERE account_owner_id = $1
@@ -859,6 +897,10 @@ async function ensureActiveAdministratorRemains(ownerId, targetId) {
     if (!rows[0]?.remainingAdministrators) {
         throw clientError(409, "Cette opération est refusée : chaque entreprise doit conserver au moins un Poste Admin actif.");
     }
+}
+
+async function lockAccountOwner(database, ownerId) {
+    await database.query("SELECT id FROM depannhome_users WHERE id = $1 AND account_owner_id = id FOR UPDATE", [ownerId]);
 }
 
 async function recordMemberAudit(ownerId, actorId, member, action, details = {}, database = getPool()) {

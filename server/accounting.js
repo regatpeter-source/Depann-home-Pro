@@ -14,7 +14,7 @@ import {
 } from "./accounting-ledger.js";
 import { allocateBillingNumber } from "./billing-numbering.js";
 import { hasAccountingWorkspaceAccess } from "./workstation-permissions.js";
-import { isElectronicInvoicingOAuthCallback, transmitElectronicDocument } from "./electronic-invoicing.js";
+import { isElectronicInvoicingOAuthCallback } from "./electronic-invoicing.js";
 import { DELAYED_PAYMENT_METHODS, declareDelayedPayment, loadDelayedPayments, reviewDelayedPayment } from "./delayed-payments.js";
 import { buildB2cReportCsv, loadB2cReport, loadB2cReports, prepareB2cReport } from "./b2c-transaction-export.js";
 
@@ -447,11 +447,6 @@ export function registerAccountingRoutes(app, requireAuthentication) {
         await recordAccountingExport(ownerId, request.user.sub, "fec", period, control, content, filename);
         response.set({ "X-Accounting-Warning": encodeURIComponent(accountingExportWarning()) });
         return sendTextDownload(response, content, filename, "text/plain; charset=utf-8");
-    }));
-
-    app.post("/api/accounting/e-invoices/:documentId/transmit", requireAccountingWriteAccess, asyncHandler(async (request, response) => {
-        const result = await transmitElectronicDocument({ ownerId: getAccountOwnerId(request), documentId: request.params.documentId, actorId: request.user.sub });
-        response.status(201).json(result);
     }));
 
     app.get("/api/accounting/export", asyncHandler(async (request, response) => {

@@ -1484,6 +1484,7 @@ CREATE TABLE IF NOT EXISTS depannhome_partner_mission_outbox (
     last_error VARCHAR(1000) NOT NULL DEFAULT '', next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), delivered_at TIMESTAMPTZ, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS depannhome_partner_mission_outbox_pending_idx ON depannhome_partner_mission_outbox(status, next_attempt_at);
+CREATE INDEX IF NOT EXISTS depannhome_partner_mission_outbox_claim_idx ON depannhome_partner_mission_outbox(owner_id, next_attempt_at, created_at) WHERE status IN ('pending','failed','processing');
 
 -- Boîtes professionnelles rattachées à Missions partenaires. Les jetons OAuth
 -- et mots de passe d'application sont chiffrés en AES-256-GCM côté serveur.

@@ -12,6 +12,7 @@ import { officialConnectorConnection } from "./partner-requests.js";
 
 const PRIORITIES = new Set(["low", "normal", "high", "urgent"]);
 const STATUSES = new Set(["received", "pending_validation", "accepted", "rejected", "assigned", "scheduled", "en_route", "on_site", "report_in_progress", "report_completed", "report_validated", "quote_sent", "quote_accepted", "work_completed", "invoice_sent", "closed", "cancelled"]);
+const TERMINAL_STATUSES = new Set(["rejected", "closed", "cancelled"]);
 const STATUS_TRANSITIONS = Object.freeze({
     received: ["pending_validation", "accepted", "rejected", "cancelled"],
     pending_validation: ["accepted", "assigned", "scheduled", "rejected", "cancelled"],
@@ -112,6 +113,7 @@ export async function initializePartnerMissions() {
         last_error VARCHAR(1000) NOT NULL DEFAULT '', next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), delivered_at TIMESTAMPTZ, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )`);
     await db.query("CREATE INDEX IF NOT EXISTS depannhome_partner_mission_outbox_pending_idx ON depannhome_partner_mission_outbox(status, next_attempt_at)");
+    await db.query("CREATE INDEX IF NOT EXISTS depannhome_partner_mission_outbox_claim_idx ON depannhome_partner_mission_outbox(owner_id, next_attempt_at, created_at) WHERE status IN ('pending','failed','processing')");
 }
 
 export function registerPartnerMissionRoutes(app, requireAuthentication) {
@@ -179,8 +181,12 @@ async function receiveMission(req, res) {
     try {
         await connection.query("BEGIN");
         tracePartnerClient("transaction_started", { flow: "partner_intake", ownerId: intake.owner_id, persistenceMode: "transaction" });
-        const { rows: created } = await connection.query(`INSERT INTO depannhome_partner_missions(owner_id,intake_id,external_mission_id,partner_reference,status,priority,source_data,mapped_data,validation_errors,scheduled_date,scheduled_start_time,scheduled_end_time) VALUES($1,$2,$3,$4,'pending_validation',$5,$6::jsonb,$7::jsonb,$8::jsonb,$9::date,$10::time,$11::time) ON CONFLICT(owner_id,intake_id,external_mission_id) DO UPDATE SET source_data=EXCLUDED.source_data,mapped_data=EXCLUDED.mapped_data,priority=EXCLUDED.priority,updated_at=NOW() RETURNING id,client_id,(xmax=0) AS inserted`, [intake.owner_id, intake.id, mapped.externalMissionId, mapped.partnerReference, mapped.priority, JSON.stringify(body), JSON.stringify(mapped), JSON.stringify(mapped.errors), mapped.date || null, mapped.startTime || null, mapped.endTime || null]);
+        const { rows: created } = await connection.query(`INSERT INTO depannhome_partner_missions(owner_id,intake_id,external_mission_id,partner_reference,status,priority,source_data,mapped_data,validation_errors,scheduled_date,scheduled_start_time,scheduled_end_time) VALUES($1,$2,$3,$4,'pending_validation',$5,$6::jsonb,$7::jsonb,$8::jsonb,$9::date,$10::time,$11::time) ON CONFLICT(owner_id,intake_id,external_mission_id) DO UPDATE SET source_data=CASE WHEN depannhome_partner_missions.status IN ('rejected','closed','cancelled') THEN depannhome_partner_missions.source_data ELSE EXCLUDED.source_data END,mapped_data=CASE WHEN depannhome_partner_missions.status IN ('rejected','closed','cancelled') THEN depannhome_partner_missions.mapped_data ELSE EXCLUDED.mapped_data END,priority=CASE WHEN depannhome_partner_missions.status IN ('rejected','closed','cancelled') THEN depannhome_partner_missions.priority ELSE EXCLUDED.priority END,updated_at=CASE WHEN depannhome_partner_missions.status IN ('rejected','closed','cancelled') THEN depannhome_partner_missions.updated_at ELSE NOW() END RETURNING id,client_id,status,(xmax=0) AS inserted`, [intake.owner_id, intake.id, mapped.externalMissionId, mapped.partnerReference, mapped.priority, JSON.stringify(body), JSON.stringify(mapped), JSON.stringify(mapped.errors), mapped.date || null, mapped.startTime || null, mapped.endTime || null]);
         const mission = created[0];
+        if (!mission.inserted && TERMINAL_STATUSES.has(mission.status)) {
+            await connection.query("COMMIT");
+            return res.status(200).json({ accepted: true, replayed: true, missionId: mission.id, clientId: mission.client_id, clientCreated: false, status: mission.status });
+        }
         await ensureBusinessMissionNumber(connection, mission.id);
         const client = await provisionPartnerMissionClient(connection, intake.owner_id, mapped, req, mission.client_id);
         tracePartnerClient("provision_completed", { flow: "partner_intake", ownerId: intake.owner_id, missionId: mission.id, clientId: client.id, created: client.created });
@@ -285,12 +291,20 @@ export async function ingestEmailPartnerMission({ ownerId, connectionId, emailId
         const intake = await database.query(`INSERT INTO depannhome_partner_intakes(owner_id,partner_key,partner_name,api_key_hash,assignment_mode,rules,created_by) VALUES($1,$2,$3,$4,'manual','{}'::jsonb,$5) ON CONFLICT(owner_id,partner_key) DO UPDATE SET partner_name=EXCLUDED.partner_name,enabled=TRUE,updated_at=NOW() RETURNING id`, [ownerId, key, clean(partnerName, 160) || "Boîte mail professionnelle", hash(`email-intake-${ownerId}-${connectionId}`), actorId]);
         let mission;
         if (linkedMissionId) {
-            const { rows } = await database.query(`UPDATE depannhome_partner_missions SET partner_reference=$4,priority=$5,source_data=$6::jsonb,mapped_data=$7::jsonb,validation_errors=$8::jsonb,scheduled_date=COALESCE($9::date,scheduled_date),scheduled_start_time=COALESCE($10::time,scheduled_start_time),scheduled_end_time=COALESCE($11::time,scheduled_end_time),updated_at=NOW() WHERE id=$1 AND owner_id=$2 AND intake_id=$3 AND deleted_at IS NULL RETURNING id,client_id,FALSE AS inserted`, [linkedMissionId, ownerId, intake.rows[0].id, mapped.partnerReference, mapped.priority, JSON.stringify(payload), JSON.stringify(mapped), JSON.stringify(mapped.errors || []), mapped.date || null, mapped.startTime || null, mapped.endTime || null]);
-            mission = rows[0];
+            const locked = await database.query("SELECT id,client_id,status FROM depannhome_partner_missions WHERE id=$1 AND owner_id=$2 AND intake_id=$3 AND deleted_at IS NULL FOR UPDATE", [linkedMissionId, ownerId, intake.rows[0].id]);
+            if (locked.rows[0] && TERMINAL_STATUSES.has(locked.rows[0].status)) mission = { ...locked.rows[0], inserted: false, terminalReplay: true };
+            else if (locked.rows[0]) {
+                const { rows } = await database.query(`UPDATE depannhome_partner_missions SET partner_reference=$4,priority=$5,source_data=$6::jsonb,mapped_data=$7::jsonb,validation_errors=$8::jsonb,scheduled_date=COALESCE($9::date,scheduled_date),scheduled_start_time=COALESCE($10::time,scheduled_start_time),scheduled_end_time=COALESCE($11::time,scheduled_end_time),updated_at=NOW() WHERE id=$1 AND owner_id=$2 AND intake_id=$3 AND deleted_at IS NULL RETURNING id,client_id,status,FALSE AS inserted`, [linkedMissionId, ownerId, intake.rows[0].id, mapped.partnerReference, mapped.priority, JSON.stringify(payload), JSON.stringify(mapped), JSON.stringify(mapped.errors || []), mapped.date || null, mapped.startTime || null, mapped.endTime || null]);
+                mission = rows[0];
+            }
         }
         if (!mission) {
-            const { rows } = await database.query(`INSERT INTO depannhome_partner_missions(owner_id,intake_id,external_mission_id,partner_reference,status,priority,source_data,mapped_data,validation_errors,scheduled_date,scheduled_start_time,scheduled_end_time) VALUES($1,$2,$3,$4,'pending_validation',$5,$6::jsonb,$7::jsonb,$8::jsonb,$9::date,$10::time,$11::time) ON CONFLICT(owner_id,intake_id,external_mission_id) DO UPDATE SET partner_reference=EXCLUDED.partner_reference,source_data=EXCLUDED.source_data,mapped_data=EXCLUDED.mapped_data,updated_at=NOW() RETURNING id,client_id,(xmax=0) AS inserted`, [ownerId, intake.rows[0].id, mapped.externalMissionId, mapped.partnerReference, mapped.priority, JSON.stringify(payload), JSON.stringify(mapped), JSON.stringify(mapped.errors || []), mapped.date || null, mapped.startTime || null, mapped.endTime || null]);
+            const { rows } = await database.query(`INSERT INTO depannhome_partner_missions(owner_id,intake_id,external_mission_id,partner_reference,status,priority,source_data,mapped_data,validation_errors,scheduled_date,scheduled_start_time,scheduled_end_time) VALUES($1,$2,$3,$4,'pending_validation',$5,$6::jsonb,$7::jsonb,$8::jsonb,$9::date,$10::time,$11::time) ON CONFLICT(owner_id,intake_id,external_mission_id) DO UPDATE SET partner_reference=CASE WHEN depannhome_partner_missions.status IN ('rejected','closed','cancelled') THEN depannhome_partner_missions.partner_reference ELSE EXCLUDED.partner_reference END,source_data=CASE WHEN depannhome_partner_missions.status IN ('rejected','closed','cancelled') THEN depannhome_partner_missions.source_data ELSE EXCLUDED.source_data END,mapped_data=CASE WHEN depannhome_partner_missions.status IN ('rejected','closed','cancelled') THEN depannhome_partner_missions.mapped_data ELSE EXCLUDED.mapped_data END,updated_at=CASE WHEN depannhome_partner_missions.status IN ('rejected','closed','cancelled') THEN depannhome_partner_missions.updated_at ELSE NOW() END RETURNING id,client_id,status,(xmax=0) AS inserted`, [ownerId, intake.rows[0].id, mapped.externalMissionId, mapped.partnerReference, mapped.priority, JSON.stringify(payload), JSON.stringify(mapped), JSON.stringify(mapped.errors || []), mapped.date || null, mapped.startTime || null, mapped.endTime || null]);
             mission = rows[0];
+        }
+        if ((!mission.inserted && TERMINAL_STATUSES.has(mission.status)) || mission.terminalReplay) {
+            await database.query("COMMIT");
+            return { missionId: mission.id, clientId: mission.client_id, clientCreated: false, created: false, replayed: true, status: mission.status };
         }
         await ensureBusinessMissionNumber(database, mission.id);
         mapped.attachments = (mapped.attachments || []).map(attachment => ({ ...attachment, source: "partner_email", missionId: String(mission.id) }));
@@ -344,7 +358,7 @@ async function reactivateTerminalMission(req, id) {
     return mission;
 }
 
-async function updateBillingMode(req, id, billingMode) { const ownerId = getAccountOwnerId(req); if (!id) throw clientError(400, "Mission invalide."); const { rows } = await getPool().query("UPDATE depannhome_partner_missions SET billing_mode=$3,updated_at=NOW() WHERE id=$1 AND owner_id=$2 RETURNING *", [id, ownerId, billingMode]); if (!rows[0]) throw clientError(404, "Mission introuvable."); await writeHistory(getPool(), ownerId, id, rows[0].status, "billing_mode_changed", req.user.sub, req.user.role, { billingMode }, req.ip); if (billingMode === "principal") { const { sharePrincipalBillingDocuments } = await import("./partner-dialogue.js"); await sharePrincipalBillingDocuments(ownerId, id); } else { const { hideDirectClientBillingDocuments } = await import("./partner-dialogue.js"); await hideDirectClientBillingDocuments(ownerId, id); } return publicMission(rows[0]); }
+async function updateBillingMode(req, id, billingMode) { const ownerId = getAccountOwnerId(req); if (!id) throw clientError(400, "Mission invalide."); const { rows } = await getPool().query("UPDATE depannhome_partner_missions SET billing_mode=$3,updated_at=NOW() WHERE id=$1 AND owner_id=$2 AND status NOT IN ('rejected','closed','cancelled') RETURNING *", [id, ownerId, billingMode]); if (!rows[0]) throw clientError(409, "Une mission terminale ne peut plus changer de mode de facturation."); await writeHistory(getPool(), ownerId, id, rows[0].status, "billing_mode_changed", req.user.sub, req.user.role, { billingMode }, req.ip); if (billingMode === "principal") { const { sharePrincipalBillingDocuments } = await import("./partner-dialogue.js"); await sharePrincipalBillingDocuments(ownerId, id); } else { const { hideDirectClientBillingDocuments } = await import("./partner-dialogue.js"); await hideDirectClientBillingDocuments(ownerId, id); } return publicMission(rows[0]); }
 
 async function missionDashboard(ownerId, request) {
     const internalNetworkOnly = !isFeatureEnabled(await getOrganization(ownerId), "connectors");
@@ -481,7 +495,7 @@ export async function traceCommittedPartnerClient(ownerId, clientId, context = {
     }
 }
 
-function partnerClientTraceEnabled() { return process.env.PARTNER_CLIENT_TRACE !== "false"; }
+function partnerClientTraceEnabled() { return process.env.PARTNER_CLIENT_TRACE === "true"; }
 export function tracePartnerClient(step, details) { if (partnerClientTraceEnabled()) console.log("[partner-client-trace]", JSON.stringify({ at: new Date().toISOString(), step, ...details })); }
 
 async function upsertCalendar(connection, ownerId, mission, data, technicianId, schedule, clientId = "") { if (!schedule.date) return null; const notes = [`Mission partenaire : ${mission.partner_reference || data.interventionType || "Intervention"}`, data.description, data.comments, data.gps?.latitude ? `GPS : ${data.gps.latitude}, ${data.gps.longitude}` : ""].filter(Boolean).join("\n").slice(0, 2000); const title = `${data.interventionType || "Intervention"} · ${data.priority === "urgent" ? "URGENT · " : ""}${data.clientName}`.slice(0, 160); if (mission.calendar_event_id) { await connection.query("UPDATE depannhome_calendar_events SET assigned_technician_id=$3,title=$4,client_id=$5,client_name=$6,location=$7,event_date=$8::date,start_time=$9::time,end_time=$10::time,event_origin='partner_mission',partner_mission_id=$11,notes=$12,updated_at=NOW() WHERE id=$1 AND owner_id=$2", [mission.calendar_event_id, ownerId, technicianId || null, title, clientId, data.clientName, data.address, schedule.date, schedule.startTime || null, schedule.endTime || null, mission.id, notes]); await connection.query("DELETE FROM depannhome_calendar_assignments WHERE event_id=$1", [mission.calendar_event_id]); if (technicianId) await connection.query("INSERT INTO depannhome_calendar_assignments(event_id,technician_id,is_primary) VALUES($1,$2,TRUE)", [mission.calendar_event_id, technicianId]); return mission.calendar_event_id; } const { rows } = await connection.query("INSERT INTO depannhome_calendar_events(owner_id,assigned_technician_id,title,client_id,client_name,location,event_date,start_time,end_time,color,event_type,event_origin,partner_mission_id,notes) VALUES($1,$2,$3,$4,$5,$6,$7::date,$8::time,$9::time,$10,'appointment','partner_mission',$11,$12) RETURNING id", [ownerId, technicianId || null, title, clientId, data.clientName, data.address, schedule.date, schedule.startTime || null, schedule.endTime || null, data.priority === "urgent" ? "red" : data.priority === "high" ? "orange" : "blue", mission.id, notes]); if (technicianId) await connection.query("INSERT INTO depannhome_calendar_assignments(event_id,technician_id,is_primary) VALUES($1,$2,TRUE) ON CONFLICT DO NOTHING", [rows[0].id, technicianId]); return rows[0].id; }
@@ -505,7 +519,48 @@ async function notifyAdmins(ownerId, missionId, data, title) { const { rows } = 
 async function notifyUsers(ownerId, mission, data, technicianId, title) { await notifyAdmins(ownerId, mission.id, data, title); if (!technicianId) return; const { rows } = await getPool().query("SELECT id FROM depannhome_users WHERE id=$1 AND account_owner_id=$2 AND role IN ('technician','team_lead') AND is_active=TRUE", [technicianId, ownerId]); if (rows[0]) await createNotification(ownerId, rows[0].id, "partner_mission_assigned", { entityType: "partner_mission", entityId: String(mission.id) }, title, `${data.clientName || "Client"} · ${data.address || "Adresse non renseignée"}`, { missionId: mission.id, priority: data.priority }); }
 async function notifyManagedMissionSource(ownerId, mission, title) { const { rows } = await getPool().query(`SELECT connection.company_low_id AS "lowId",connection.company_high_id AS "highId" FROM depannhome_partner_missions mission JOIN depannhome_partner_intakes intake ON intake.id=mission.intake_id JOIN depannhome_partner_connections connection ON intake.partner_key=('connection-' || connection.id::text) AND connection.status='connected' WHERE mission.owner_id=$1 AND mission.id=$2`, [ownerId, mission.id]); const connection = rows[0]; if (!connection) return; const sourceOwnerId = Number(connection.lowId) === Number(ownerId) ? Number(connection.highId) : Number(connection.lowId); const recipients = await getPool().query("SELECT id FROM depannhome_users WHERE account_owner_id=$1 AND role IN ('admin','pc_standard','commercial','mobile_admin') AND is_active=TRUE", [sourceOwnerId]); await Promise.all(recipients.rows.map(row => createNotification(sourceOwnerId, row.id, "partner_mission_status", { entityType: "partner_mission", entityId: String(mission.id) }, title, `${mission.partnerName || "Partenaire"} · ${statusLabel(mission.status)}`, { missionId: mission.id, status: mission.status, calendarEventId: mission.calendarEventId, sourceDialogue: true }))); }
 async function enqueue(connection, ownerId, missionId, type, payload) { await connection.query("INSERT INTO depannhome_partner_mission_outbox(owner_id,mission_id,event_type,payload) SELECT $1,$2,$3,$4::jsonb WHERE EXISTS(SELECT 1 FROM depannhome_partner_missions mission JOIN depannhome_partner_intakes intake ON intake.id=mission.intake_id WHERE mission.id=$2 AND mission.owner_id=$1 AND intake.partner_key NOT LIKE 'connection-%' AND intake.partner_key NOT LIKE 'email-%')", [ownerId, missionId, type, JSON.stringify(payload)]); }
-async function deliverOutbox(ownerId, sandboxOnly = false, missionId = 0) { const { rows } = await getPool().query(`SELECT outbox.*, intake.callback_url AS "callbackUrl", intake.partner_key AS "partnerKey", intake.rules, mission.external_mission_id AS "externalMissionId" FROM depannhome_partner_mission_outbox outbox JOIN depannhome_partner_missions mission ON mission.id=outbox.mission_id JOIN depannhome_partner_intakes intake ON intake.id=mission.intake_id JOIN depannhome_users owner ON owner.id=outbox.owner_id WHERE outbox.owner_id=$1 AND owner.is_active=TRUE AND owner.is_archived=FALSE AND intake.is_sandbox=$2 AND ($3::bigint=0 OR mission.id=$3) AND outbox.status IN ('pending','failed') AND outbox.next_attempt_at<=NOW() ORDER BY outbox.created_at LIMIT 30`, [ownerId, sandboxOnly, missionId]); let delivered = 0; for (const item of rows) { try { const eventPayload = { event: item.event_type, missionId: item.externalMissionId, ...item.payload }; const connectorKey = clean(item.rules?.outboundConnectorKey, 64) || item.partnerKey; const connectorResult = !sandboxOnly ? await executeConnectorEvent(ownerId, connectorKey, item.event_type, eventPayload, { missionId: item.externalMissionId, mission_order_id: item.externalMissionId, externalMissionId: item.externalMissionId, event: item.event_type, status: item.payload?.status || "" }) : { handled: false }; if (connectorResult.handled) { if (!connectorResult.ok) throw new Error(`HTTP ${connectorResult.status}`); } else { if (!item.callbackUrl) { await getPool().query("UPDATE depannhome_partner_mission_outbox SET status='skipped',last_error='Aucun connecteur sortant ou URL de retour configuré.' WHERE id=$1", [item.id]); continue; } const response = await fetch(item.callbackUrl, { method: "POST", headers: { "Content-Type": "application/json", "X-DepannHome-Event": item.event_type }, body: JSON.stringify(eventPayload), redirect: "error", signal: AbortSignal.timeout(15000) }); if (!response.ok) throw new Error(`HTTP ${response.status}`); } await getPool().query("UPDATE depannhome_partner_mission_outbox SET status='delivered',attempts=attempts+1,delivered_at=NOW(),last_error='' WHERE id=$1", [item.id]); delivered += 1; } catch (error) { const attempts = item.attempts + 1, status = attempts >= MAX_RETRY_ATTEMPTS ? "failed" : "pending"; await getPool().query("UPDATE depannhome_partner_mission_outbox SET status=$2,attempts=$3,last_error=$4,next_attempt_at=NOW()+($5::text || ' minutes')::interval WHERE id=$1", [item.id, status, attempts, clean(error.message, 1000), String(Math.min(60, 2 ** attempts))]); } } return { processed: rows.length, delivered }; }
+async function deliverOutbox(ownerId, sandboxOnly = false, missionId = 0) {
+    const { rows } = await getPool().query(`WITH candidates AS (
+            SELECT outbox.id FROM depannhome_partner_mission_outbox outbox
+            JOIN depannhome_partner_missions mission ON mission.id=outbox.mission_id
+            JOIN depannhome_partner_intakes intake ON intake.id=mission.intake_id
+            JOIN depannhome_users owner ON owner.id=outbox.owner_id
+            WHERE outbox.owner_id=$1 AND owner.is_active=TRUE AND owner.is_archived=FALSE AND intake.is_sandbox=$2
+                AND ($3::bigint=0 OR mission.id=$3) AND outbox.status IN ('pending','failed','processing') AND outbox.next_attempt_at<=NOW()
+            ORDER BY outbox.created_at LIMIT 30 FOR UPDATE OF outbox SKIP LOCKED
+        ), claimed AS (
+            UPDATE depannhome_partner_mission_outbox outbox SET status='processing',next_attempt_at=NOW()+INTERVAL '5 minutes'
+            FROM candidates WHERE outbox.id=candidates.id RETURNING outbox.*
+        )
+        SELECT claimed.*,intake.callback_url AS "callbackUrl",intake.partner_key AS "partnerKey",intake.rules,mission.external_mission_id AS "externalMissionId"
+        FROM claimed JOIN depannhome_partner_missions mission ON mission.id=claimed.mission_id
+        JOIN depannhome_partner_intakes intake ON intake.id=mission.intake_id`, [ownerId, sandboxOnly, missionId]);
+    let delivered = 0;
+    for (const item of rows) {
+        try {
+            const eventPayload = { event: item.event_type, missionId: item.externalMissionId, ...item.payload };
+            const connectorKey = clean(item.rules?.outboundConnectorKey, 64) || item.partnerKey;
+            const connectorResult = !sandboxOnly ? await executeConnectorEvent(ownerId, connectorKey, item.event_type, eventPayload, { missionId: item.externalMissionId, mission_order_id: item.externalMissionId, externalMissionId: item.externalMissionId, event: item.event_type, status: item.payload?.status || "" }) : { handled: false };
+            if (connectorResult.handled) {
+                if (!connectorResult.ok) throw new Error(`HTTP ${connectorResult.status}`);
+            } else {
+                if (!item.callbackUrl) {
+                    await getPool().query("UPDATE depannhome_partner_mission_outbox SET status='skipped',last_error='Aucun connecteur sortant ou URL de retour configuré.' WHERE id=$1 AND status='processing'", [item.id]);
+                    continue;
+                }
+                const response = await fetch(item.callbackUrl, { method: "POST", headers: { "Content-Type": "application/json", "X-DepannHome-Event": item.event_type }, body: JSON.stringify(eventPayload), redirect: "error", signal: AbortSignal.timeout(15_000) });
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            }
+            await getPool().query("UPDATE depannhome_partner_mission_outbox SET status='delivered',attempts=attempts+1,delivered_at=NOW(),last_error='' WHERE id=$1 AND status='processing'", [item.id]);
+            delivered += 1;
+        } catch (error) {
+            const attempts = item.attempts + 1;
+            const status = attempts >= MAX_RETRY_ATTEMPTS ? "failed" : "pending";
+            await getPool().query("UPDATE depannhome_partner_mission_outbox SET status=$2,attempts=$3,last_error=$4,next_attempt_at=NOW()+($5::text || ' minutes')::interval WHERE id=$1 AND status='processing'", [item.id, status, attempts, clean(error.message, 1000), String(Math.min(60, 2 ** attempts))]);
+        }
+    }
+    return { processed: rows.length, delivered };
+}
 export async function deliverPartnerMissionOutbox(ownerId, options = {}) { return deliverCompanyOutbox(ownerId, options.sandboxOnly === true); }
 
 async function deliverCompanyOutbox(ownerId, sandboxOnly = false, missionId = 0) {
@@ -515,7 +570,7 @@ async function deliverCompanyOutbox(ownerId, sandboxOnly = false, missionId = 0)
         JOIN depannhome_partner_missions mission ON mission.id=outbox.mission_id
         JOIN depannhome_partner_intakes intake ON intake.id=mission.intake_id
         JOIN depannhome_official_partner_connections connection ON connection.owner_id=outbox.owner_id AND connection.intake_id=intake.id AND connection.status='connected'
-        WHERE outbox.owner_id=$1 AND ($2::bigint=0 OR mission.id=$2) AND outbox.status IN ('pending','failed') AND outbox.next_attempt_at<=NOW()`, [ownerId, missionId]);
+        WHERE outbox.owner_id=$1 AND ($2::bigint=0 OR mission.id=$2) AND outbox.status IN ('pending','failed','processing') AND outbox.next_attempt_at<=NOW()`, [ownerId, missionId]);
     let delivered = 0;
     for (const intake of rows) delivered += (await deliverOfficialIntakeOutbox(ownerId, intake.id, missionId)).delivered;
     const legacy = await deliverManualOutbox(ownerId, missionId);
@@ -523,15 +578,23 @@ async function deliverCompanyOutbox(ownerId, sandboxOnly = false, missionId = 0)
 }
 
 async function deliverManualOutbox(ownerId, missionId = 0) {
-    const { rows } = await getPool().query(`SELECT outbox.*,intake.callback_url AS "callbackUrl",intake.partner_key AS "partnerKey",intake.rules,mission.external_mission_id AS "externalMissionId"
-        FROM depannhome_partner_mission_outbox outbox
-        JOIN depannhome_partner_missions mission ON mission.id=outbox.mission_id
-        JOIN depannhome_partner_intakes intake ON intake.id=mission.intake_id
-        JOIN depannhome_users owner ON owner.id=outbox.owner_id
-        WHERE outbox.owner_id=$1 AND owner.is_active=TRUE AND owner.is_archived=FALSE AND intake.is_sandbox=FALSE
-            AND ($2::bigint=0 OR mission.id=$2) AND outbox.status IN ('pending','failed') AND outbox.next_attempt_at<=NOW()
-            AND NOT EXISTS(SELECT 1 FROM depannhome_official_partner_connections official WHERE official.owner_id=outbox.owner_id AND official.intake_id=intake.id)
-        ORDER BY outbox.created_at LIMIT 30`, [ownerId, missionId]);
+    const { rows } = await getPool().query(`WITH candidates AS (
+            SELECT outbox.id
+            FROM depannhome_partner_mission_outbox outbox
+            JOIN depannhome_partner_missions mission ON mission.id=outbox.mission_id
+            JOIN depannhome_partner_intakes intake ON intake.id=mission.intake_id
+            JOIN depannhome_users owner ON owner.id=outbox.owner_id
+            WHERE outbox.owner_id=$1 AND owner.is_active=TRUE AND owner.is_archived=FALSE AND intake.is_sandbox=FALSE
+                AND ($2::bigint=0 OR mission.id=$2) AND outbox.status IN ('pending','failed','processing') AND outbox.next_attempt_at<=NOW()
+                AND NOT EXISTS(SELECT 1 FROM depannhome_official_partner_connections official WHERE official.owner_id=outbox.owner_id AND official.intake_id=intake.id)
+            ORDER BY outbox.created_at LIMIT 30 FOR UPDATE OF outbox SKIP LOCKED
+        ), claimed AS (
+            UPDATE depannhome_partner_mission_outbox outbox SET status='processing',next_attempt_at=NOW()+INTERVAL '5 minutes'
+            FROM candidates WHERE outbox.id=candidates.id RETURNING outbox.*
+        )
+        SELECT claimed.*,intake.callback_url AS "callbackUrl",intake.partner_key AS "partnerKey",intake.rules,mission.external_mission_id AS "externalMissionId"
+        FROM claimed JOIN depannhome_partner_missions mission ON mission.id=claimed.mission_id
+        JOIN depannhome_partner_intakes intake ON intake.id=mission.intake_id`, [ownerId, missionId]);
     let delivered = 0;
     for (const item of rows) {
         try {
@@ -543,17 +606,17 @@ async function deliverManualOutbox(ownerId, missionId = 0) {
                 if (!result.ok) throw new Error(`HTTP ${result.status}`);
             } else {
                 if (!item.callbackUrl) {
-                    await getPool().query("UPDATE depannhome_partner_mission_outbox SET status='skipped',last_error='Aucun connecteur sortant ou URL de retour configuré.' WHERE id=$1", [item.id]);
+                    await getPool().query("UPDATE depannhome_partner_mission_outbox SET status='skipped',last_error='Aucun connecteur sortant ou URL de retour configuré.' WHERE id=$1 AND status='processing'", [item.id]);
                     continue;
                 }
                 const response = await fetch(item.callbackUrl, { method: "POST", headers: { "Content-Type": "application/json", "X-DepannHome-Event": item.event_type }, body: JSON.stringify(payload), redirect: "error", signal: AbortSignal.timeout(15_000) });
                 if (!response.ok) throw new Error(`HTTP ${response.status}`);
             }
-            await getPool().query("UPDATE depannhome_partner_mission_outbox SET status='delivered',attempts=attempts+1,last_error='',delivered_at=NOW() WHERE id=$1", [item.id]);
+            await getPool().query("UPDATE depannhome_partner_mission_outbox SET status='delivered',attempts=attempts+1,last_error='',delivered_at=NOW() WHERE id=$1 AND status='processing'", [item.id]);
             delivered += 1;
         } catch (error) {
             const delay = Math.min(3600, 2 ** Math.min(item.attempts + 1, 10) * 30);
-            await getPool().query("UPDATE depannhome_partner_mission_outbox SET status=CASE WHEN attempts+1>=$2 THEN 'failed' ELSE 'pending' END,attempts=attempts+1,last_error=$3,next_attempt_at=NOW()+($4 || ' seconds')::interval WHERE id=$1", [item.id, MAX_RETRY_ATTEMPTS, clean(error.message, 1000), delay]);
+            await getPool().query("UPDATE depannhome_partner_mission_outbox SET status=CASE WHEN attempts+1>=$2 THEN 'failed' ELSE 'pending' END,attempts=attempts+1,last_error=$3,next_attempt_at=NOW()+($4 || ' seconds')::interval WHERE id=$1 AND status='processing'", [item.id, MAX_RETRY_ATTEMPTS, clean(error.message, 1000), delay]);
         }
     }
     return { delivered };
@@ -562,12 +625,18 @@ async function deliverManualOutbox(ownerId, missionId = 0) {
 async function deliverOfficialIntakeOutbox(ownerId, intakeId, missionId) {
     const official = await officialConnectorConnection(ownerId, intakeId);
     if (!official) return { delivered: 0 };
-    const { rows } = await getPool().query(`SELECT outbox.*,mission.external_mission_id AS "externalMissionId"
-        FROM depannhome_partner_mission_outbox outbox
-        JOIN depannhome_partner_missions mission ON mission.id=outbox.mission_id
-        WHERE outbox.owner_id=$1 AND mission.intake_id=$2 AND ($3::bigint=0 OR mission.id=$3)
-            AND outbox.status IN ('pending','failed') AND outbox.next_attempt_at<=NOW()
-        ORDER BY outbox.created_at LIMIT 30`, [ownerId, intakeId, missionId]);
+    const { rows } = await getPool().query(`WITH candidates AS (
+            SELECT outbox.id FROM depannhome_partner_mission_outbox outbox
+            JOIN depannhome_partner_missions mission ON mission.id=outbox.mission_id
+            WHERE outbox.owner_id=$1 AND mission.intake_id=$2 AND ($3::bigint=0 OR mission.id=$3)
+                AND outbox.status IN ('pending','failed','processing') AND outbox.next_attempt_at<=NOW()
+            ORDER BY outbox.created_at LIMIT 30 FOR UPDATE OF outbox SKIP LOCKED
+        ), claimed AS (
+            UPDATE depannhome_partner_mission_outbox outbox SET status='processing',next_attempt_at=NOW()+INTERVAL '5 minutes'
+            FROM candidates WHERE outbox.id=candidates.id RETURNING outbox.*
+        )
+        SELECT claimed.*,mission.external_mission_id AS "externalMissionId"
+        FROM claimed JOIN depannhome_partner_missions mission ON mission.id=claimed.mission_id`, [ownerId, intakeId, missionId]);
     let delivered = 0;
     for (const item of rows) {
         try {
@@ -575,15 +644,15 @@ async function deliverOfficialIntakeOutbox(ownerId, intakeId, missionId) {
             const variables = { missionId: item.externalMissionId, mission_order_id: item.externalMissionId, externalMissionId: item.externalMissionId, event: item.event_type, status: item.payload?.status || "" };
             const result = await executeCentralConnectorEvent(official.connectorId, official.credentials, item.event_type, payload, variables);
             if (!result.handled) {
-                await getPool().query("UPDATE depannhome_partner_mission_outbox SET status='skipped',last_error='Aucun endpoint associé à cet événement.' WHERE id=$1", [item.id]);
+                await getPool().query("UPDATE depannhome_partner_mission_outbox SET status='skipped',last_error='Aucun endpoint associé à cet événement.' WHERE id=$1 AND status='processing'", [item.id]);
                 continue;
             }
             if (!result.ok) throw new Error(`HTTP ${result.status}`);
-            await getPool().query("UPDATE depannhome_partner_mission_outbox SET status='delivered',attempts=attempts+1,last_error='',delivered_at=NOW() WHERE id=$1", [item.id]);
+            await getPool().query("UPDATE depannhome_partner_mission_outbox SET status='delivered',attempts=attempts+1,last_error='',delivered_at=NOW() WHERE id=$1 AND status='processing'", [item.id]);
             delivered += 1;
         } catch (error) {
             const delay = Math.min(3600, 2 ** Math.min(item.attempts + 1, 10) * 30);
-            await getPool().query("UPDATE depannhome_partner_mission_outbox SET status=CASE WHEN attempts+1>=$2 THEN 'failed' ELSE 'pending' END,attempts=attempts+1,last_error=$3,next_attempt_at=NOW()+($4 || ' seconds')::interval WHERE id=$1", [item.id, MAX_RETRY_ATTEMPTS, clean(error.message, 1000), delay]);
+            await getPool().query("UPDATE depannhome_partner_mission_outbox SET status=CASE WHEN attempts+1>=$2 THEN 'failed' ELSE 'pending' END,attempts=attempts+1,last_error=$3,next_attempt_at=NOW()+($4 || ' seconds')::interval WHERE id=$1 AND status='processing'", [item.id, MAX_RETRY_ATTEMPTS, clean(error.message, 1000), delay]);
         }
     }
     return { delivered };

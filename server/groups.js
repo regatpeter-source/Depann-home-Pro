@@ -90,29 +90,39 @@ export function registerGroupRoutes(app, requireAuthentication) {
         const input = companyInput(req.body);
         if (!input.ok) return res.status(400).json({ message: input.message });
         const groupId = req.user.groupId;
-        const user = await createUser({ username: input.username, passwordHash: await bcrypt.hash(input.password, 12), role: "admin", fullName: input.fullName, phone: input.phone, email: input.email });
-        const db = getPool();
+        const client = await getPool().connect();
         try {
-            await db.query("UPDATE depannhome_users SET company_name=$2,max_pc_users=$3,max_technicians=$4 WHERE id=$1", [user.id, input.companyName, input.maxPcUsers, input.maxTechnicians]);
-            await db.query("INSERT INTO depannhome_group_companies(group_id,company_owner_id) VALUES($1,$2)", [groupId, user.id]);
-            await audit(db, { groupId, companyId: user.id, actorId: req.user.sub, action: "company_created", details: { companyName: input.companyName, administrator: input.username }, ip: req.ip });
+            await client.query("BEGIN");
+            const group = await client.query("SELECT id FROM depannhome_groups WHERE id=$1 AND is_active=TRUE FOR UPDATE", [groupId]);
+            if (!group.rowCount) { await client.query("ROLLBACK"); return res.status(404).json({ message: "Groupe introuvable ou désactivé." }); }
+            const user = await createUser({ username: input.username, passwordHash: await bcrypt.hash(input.password, 12), role: "admin", fullName: input.fullName, phone: input.phone, email: input.email }, client);
+            await client.query("UPDATE depannhome_users SET company_name=$2,max_pc_users=$3,max_technicians=$4 WHERE id=$1", [user.id, input.companyName, input.maxPcUsers, input.maxTechnicians]);
+            await client.query("INSERT INTO depannhome_group_companies(group_id,company_owner_id) VALUES($1,$2)", [groupId, user.id]);
+            await audit(client, { groupId, companyId: user.id, actorId: req.user.sub, action: "company_created", details: { companyName: input.companyName, administrator: input.username }, ip: req.ip });
+            await client.query("COMMIT");
             res.status(201).json({ companyId: String(user.id) });
-        } catch (error) { await db.query("DELETE FROM depannhome_users WHERE id=$1", [user.id]); throw error; }
+        } catch (error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }
     }));
     app.patch("/api/groups/companies/:companyId", requireGroupAdministrator, asyncHandler(async (req, res) => {
         const companyId = positiveId(req.params.companyId); const groupId = req.user.groupId;
-        const company = await groupCompany(groupId, companyId, true);
-        if (!company) return res.status(404).json({ message: "Entreprise introuvable dans ce groupe." });
-        const name = clean(req.body?.companyName, 160) || company.companyName;
-        const isActive = typeof req.body?.isActive === "boolean" ? req.body.isActive : company.isActive;
-        if (!isActive && String(companyId) === getAccountOwnerId(req)) return res.status(400).json({ message: "Changez d’entreprise active avant de désactiver celle-ci." });
-        await getPool().query("UPDATE depannhome_group_companies SET is_active=$3,updated_at=NOW() WHERE group_id=$1 AND company_owner_id=$2", [groupId, companyId, isActive]);
-        await getPool().query("UPDATE depannhome_users SET company_name=$2,is_active=$3,updated_at=NOW() WHERE id=$1 AND account_owner_id=id", [companyId, name, isActive]);
-        await audit(getPool(), { groupId, companyId, actorId: req.user.sub, action: name !== company.companyName ? "company_updated" : isActive ? "company_activated" : "company_deactivated", details: { companyName: name, previousCompanyName: company.companyName, isActive, previousIsActive: company.isActive }, ip: req.ip });
-        res.status(204).end();
+        if (!companyId) return res.status(400).json({ message: "Entreprise invalide." });
+        const client = await getPool().connect();
+        try {
+            await client.query("BEGIN");
+            const company = await groupCompany(groupId, companyId, true, client);
+            if (!company) { await client.query("ROLLBACK"); return res.status(404).json({ message: "Entreprise introuvable dans ce groupe." }); }
+            const name = clean(req.body?.companyName, 160) || company.companyName;
+            const isActive = typeof req.body?.isActive === "boolean" ? req.body.isActive : company.isActive;
+            if (!isActive && String(companyId) === getAccountOwnerId(req)) { await client.query("ROLLBACK"); return res.status(400).json({ message: "Changez d’entreprise active avant de désactiver celle-ci." }); }
+            await client.query("UPDATE depannhome_group_companies SET is_active=$3,updated_at=NOW() WHERE group_id=$1 AND company_owner_id=$2", [groupId, companyId, isActive]);
+            await client.query("UPDATE depannhome_users SET company_name=$2,is_active=$3,updated_at=NOW() WHERE id=$1 AND account_owner_id=id", [companyId, name, isActive]);
+            await audit(client, { groupId, companyId, actorId: req.user.sub, action: name !== company.companyName ? "company_updated" : isActive ? "company_activated" : "company_deactivated", details: { companyName: name, previousCompanyName: company.companyName, isActive, previousIsActive: company.isActive }, ip: req.ip });
+            await client.query("COMMIT");
+            res.status(204).end();
+        } catch (error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }
     }));
     app.put("/api/groups/active-company", requireGroupCompanySwitchAccess, asyncHandler(async (req, res) => {
-        const companyId = positiveId(req.body?.companyId); const company = await groupCompany(req.user.groupId, companyId, true);
+        const companyId = positiveId(req.body?.companyId); const company = await groupCompany(req.user.groupId, companyId);
         if (!company || !company.isActive) return res.status(404).json({ message: "Entreprise inactive ou non autorisée." });
         const user = await findUserById(req.user.sub);
         await refreshSessionForActiveCompany(res, user, req.user.deviceId, companyId);
@@ -136,7 +146,7 @@ async function groupContext(groupId, activeCompanyId) {
     return { group, companies: rows.map(row => ({ id: String(row.id), companyName: row.companyName || row.administratorName || "Entreprise", isActive: row.isActive })), activeCompanyId: String(activeCompanyId || "") };
 }
 
-async function groupCompany(groupId, companyId) { const { rows } = await getPool().query(`SELECT company.company_owner_id AS id,company.is_active AS "isActive",owner.company_name AS "companyName" FROM depannhome_group_companies company JOIN depannhome_users owner ON owner.id=company.company_owner_id WHERE company.group_id=$1 AND company.company_owner_id=$2`, [groupId, companyId]); return rows[0] || null; }
+async function groupCompany(groupId, companyId, lock = false, database = getPool()) { const { rows } = await database.query(`SELECT company.company_owner_id AS id,company.is_active AS "isActive",owner.company_name AS "companyName" FROM depannhome_group_companies company JOIN depannhome_users owner ON owner.id=company.company_owner_id WHERE company.group_id=$1 AND company.company_owner_id=$2${lock ? " FOR UPDATE OF company, owner" : ""}`, [groupId, companyId]); return rows[0] || null; }
 async function dashboard(companyIds, start, end) {
     const db = getPool(); const dates = [companyIds, start || null, end || null];
     const [billing, interventions, technicians] = await Promise.all([

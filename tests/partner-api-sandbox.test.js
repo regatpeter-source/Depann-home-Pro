@@ -81,6 +81,21 @@ test("production and sandbox callback retries are separated by the intake flag",
     assert.match(sandboxSource, /sandboxOnly: true/);
 });
 
+test("les callbacks sortants sont réclamés atomiquement avec un bail récupérable", () => {
+    const missionsSource = readFileSync(new URL("../server/partner-missions.js", import.meta.url), "utf8");
+    assert.match(missionsSource, /FOR UPDATE OF outbox SKIP LOCKED/g);
+    assert.match(missionsSource, /SET status='processing',next_attempt_at=NOW\(\)\+INTERVAL '5 minutes'/);
+    assert.match(missionsSource, /WHERE id=\$1 AND status='processing'/);
+});
+
+test("les rejeux ne modifient pas les missions terminales et les traces sont opt-in", () => {
+    const missionsSource = readFileSync(new URL("../server/partner-missions.js", import.meta.url), "utf8");
+    assert.match(missionsSource, /TERMINAL_STATUSES = new Set\(\["rejected", "closed", "cancelled"\]\)/);
+    assert.match(missionsSource, /depannhome_partner_missions\.status IN \('rejected','closed','cancelled'\)/);
+    assert.match(missionsSource, /PARTNER_CLIENT_TRACE === "true"/);
+    assert.match(missionsSource, /status NOT IN \('rejected','closed','cancelled'\)/);
+});
+
 test("sandbox reset protects clients referenced by production business records", () => {
     const source = readFileSync(new URL("../server/partner-api-sandbox.js", import.meta.url), "utf8");
     assert.match(source, /NOT EXISTS\(SELECT 1 FROM depannhome_calendar_events/);

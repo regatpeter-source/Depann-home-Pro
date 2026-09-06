@@ -31,7 +31,7 @@ test("la session Groupe résout exclusivement une entreprise active autorisée",
 
 test("le changement d’entreprise valide l’appartenance puis renouvelle la session", () => {
     const route = groups.slice(groups.indexOf('app.put("/api/groups/active-company"'), groups.indexOf('app.get("/api/groups/dashboard"'));
-    assert.match(route, /groupCompany\(req\.user\.groupId, companyId, true\)/);
+    assert.match(route, /groupCompany\(req\.user\.groupId, companyId\)/);
     assert.match(route, /!company \|\| !company\.isActive/);
     assert.match(route, /refreshSessionForActiveCompany\(res, user, req\.user\.deviceId, companyId\)/);
 });

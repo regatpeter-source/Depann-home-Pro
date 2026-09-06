@@ -20,10 +20,13 @@ test("l’envoi d’une facture valide sa transaction après la mise à jour", (
 
 test("le Comptable reste en consultation sur la comptabilité et les achats", () => {
     const accounting = source("server/accounting.js");
+    const electronicInvoicing = source("server/electronic-invoicing.js");
     const purchases = source("server/purchases.js");
-    for (const route of ["aids", "financial-data", "post", "credits", "settlements", "settings", "transmit"]) {
+    for (const route of ["aids", "financial-data", "post", "credits", "settlements", "settings"]) {
         assert.match(accounting, new RegExp(`api/accounting[^\\n]*${route}[^\\n]*requireAccountingWriteAccess`));
     }
+    assert.match(electronicInvoicing, /app\.use\("\/api\/accounting\/e-invoicing"[\s\S]*requireCompanyAdministrator/);
+    assert.match(electronicInvoicing, /documents\/:documentId\/transmit/);
     assert.match(accounting, /request\.user\?\.role !== "accountant"/);
     assert.match(purchases, /\["admin", "pc_standard", "commercial", "mobile_admin"\]/);
     assert.match(purchases, /\["admin", "pc_standard", "commercial", "accountant", "mobile_admin"\]/);
@@ -54,4 +57,15 @@ test("l’interface Comptable masque les commandes d’écriture", () => {
     assert.match(accounting, /isAccountingReadOnly\(\)/);
     assert.match(accounting, /aidReceivableAccount/);
     assert.match(purchases, /presentation\.readOnly/);
+});
+
+test("les groupes et administrateurs résistent aux mises à jour partielles ou concurrentes", () => {
+    const auth = source("server/auth.js");
+    const database = source("server/database.js");
+    const groups = source("server/groups.js");
+    assert.match(database, /createUser\([\s\S]*database = getPool\(\)/);
+    assert.match(groups, /app\.post\("\/api\/groups\/companies"[\s\S]*client\.query\("BEGIN"\)[\s\S]*createUser\([\s\S]*client\)[\s\S]*client\.query\("COMMIT"\)/);
+    assert.match(groups, /app\.patch\("\/api\/groups\/companies\/:companyId"[\s\S]*groupCompany\(groupId, companyId, true, client\)/);
+    assert.match(auth, /lockAccountOwner\(database, ownerId\)[\s\S]*ensureActiveAdministratorRemains\(ownerId, memberId, database\)/);
+    assert.match(auth, /reset-password[\s\S]*depannhome_auth_devices SET status='rejected',session_id=NULL/);
 });

@@ -134,3 +134,10 @@ test("la restauration ne lie jamais la plateforme à la numérotation", () => {
     assert.doesNotMatch(electronicServer, /billing_sequences|allocateBillingNumber|document_number\s*=/);
     assert.doesNotMatch(navigationClient, /billing_sequences|allocateBillingNumber/);
 });
+
+test("la transmission électronique utilise une route canonique réservée au Poste Admin", () => {
+    assert.doesNotMatch(accountingServer, /\/api\/accounting\/e-invoices\/:documentId\/transmit/);
+    assert.doesNotMatch(accountingClient, /\/api\/accounting\/e-invoices\//);
+    assert.match(accountingClient, /\/api\/accounting\/e-invoicing\/documents\/\$\{button\.dataset\.transmit\}\/transmit/);
+    assert.match(electronicServer, /app\.use\("\/api\/accounting\/e-invoicing"[\s\S]*requireCompanyAdministrator/);
+});

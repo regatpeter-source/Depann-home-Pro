@@ -45,6 +45,14 @@ test("le parcours entrant exige contrôle, décision et rapprochement traçables
     assert.match(companyClient, /Cet enregistrement manuel ne télécharge pas le document original/);
 });
 
+test("le cycle fournisseur verrouille les transitions et la création d’achat", () => {
+    assert.match(lifecycleServer, /requireInboundInvoice\(ownerId, request\.params\.invoiceId, client, true\)/);
+    assert.match(lifecycleServer, /status !== "validated"/);
+    assert.match(lifecycleServer, /status !== "accepted"/);
+    assert.match(lifecycleServer, /FOR UPDATE/);
+    assert.match(lifecycleServer, /Une facture déjà décidée ou archivée ne peut plus être revalidée/);
+});
+
 test("le parcours sortant conserve étape réglementaire, paiement et chronologie", () => {
     assert.match(electronicServer, /lifecycle_status/);
     assert.match(accountingServer, /payment_reconciled/);

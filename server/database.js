@@ -368,8 +368,8 @@ export async function findUserById(id) {
     return rows[0] || null;
 }
 
-export async function createUser({ username, passwordHash, role = "admin", accountOwnerId, fullName = "", phone = "", email = "", department = "", departments = [], canCreateBilling = false, canAccessBilling = false, canAccessAccounting = false, canAccessCompanyEmail = false, canSwitchGroupCompanies = false }) {
-    const { rows } = await getPool().query(
+export async function createUser({ username, passwordHash, role = "admin", accountOwnerId, fullName = "", phone = "", email = "", department = "", departments = [], canCreateBilling = false, canAccessBilling = false, canAccessAccounting = false, canAccessCompanyEmail = false, canSwitchGroupCompanies = false }, database = getPool()) {
+    const { rows } = await database.query(
         `INSERT INTO depannhome_users (username, password_hash, role, account_owner_id, full_name, phone, email, department, departments, can_create_billing, can_access_billing, can_access_accounting, can_access_company_email, can_switch_group_companies)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11, $12, $13, $14)
          RETURNING id, username, role, account_owner_id, full_name, phone, email, department, departments, can_create_billing, can_access_billing, can_access_accounting, can_access_company_email, can_switch_group_companies, is_active`,
@@ -377,7 +377,7 @@ export async function createUser({ username, passwordHash, role = "admin", accou
     );
     const user = rows[0];
     if (!user.account_owner_id) {
-        const { rows: updatedRows } = await getPool().query(
+        const { rows: updatedRows } = await database.query(
             "UPDATE depannhome_users SET account_owner_id = id WHERE id = $1 RETURNING id, username, role, account_owner_id, full_name, phone, email, department, departments, can_create_billing, can_access_billing, can_access_accounting, can_access_company_email, can_switch_group_companies, is_active",
             [user.id]
         );

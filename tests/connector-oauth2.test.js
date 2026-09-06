@@ -93,7 +93,7 @@ test("mission outbox selects an insurer connector and preserves callback fallbac
     const source = readFileSync(new URL("../server/partner-missions.js", import.meta.url), "utf8");
     assert.match(source, /rules\?\.outboundConnectorKey/);
     assert.match(source, /executeConnectorEvent\(ownerId, connectorKey, item\.event_type/);
-    assert.match(source, /else \{ if \(!item\.callbackUrl\)/);
+    assert.match(source, /else \{[\s\S]*if \(!item\.callbackUrl\)/);
 });
 
 test("official partners reuse one central connector with isolated company credentials", () => {
