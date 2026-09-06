@@ -84,6 +84,16 @@ test("la migration e-mail reste applicable avant la création optionnelle de sa 
     assert.match(runner, /5f741958ac796af6863d52488751a08129a8c6992ad73efd43a6af75ff2413dc/);
 });
 
+test("les migrations de modules restent applicables avant la création de leurs tables", () => {
+    const calendarMigration = readFileSync(new URL("../database/migrations/0008_calendar_planning_batches.sql", import.meta.url), "utf8");
+    const outboxMigration = readFileSync(new URL("../database/migrations/0009_partner_outbox_claiming.sql", import.meta.url), "utf8");
+    const runner = readFileSync(new URL("../server/database-migrations.js", import.meta.url), "utf8");
+    assert.match(calendarMigration, /to_regclass\('depannhome_calendar_events'\) IS NOT NULL/);
+    assert.match(outboxMigration, /to_regclass\('depannhome_partner_mission_outbox'\) IS NOT NULL/);
+    assert.match(runner, /fb7105c5ab03393502af36f1b8bc7d825273982330c56a81cf5a1c751348847f/);
+    assert.match(runner, /bf4dc579523467f3ae3ad47d09ac757448e4232900befe6ab586b76534148872/);
+});
+
 test("la migration de conservation restaure les missions masquées et interdit une nouvelle suppression logique", () => {
     const migration = readFileSync(new URL("../database/migrations/0003_retain_partner_missions.sql", import.meta.url), "utf8");
     assert.match(migration, /UPDATE depannhome_partner_missions[\s\S]*SET deleted_at = NULL/);
