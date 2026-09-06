@@ -78,7 +78,7 @@ export async function renderCalendar(options = {}) {
 
     clearSearch();
     resetSelection("all");
-    const technicianHome = isReadOnlyCalendar();
+    const technicianHome = usesPersonalCalendarView();
     setPage(technicianHome ? (isCommercialMobileCalendar() ? "Planning" : "Accueil") : isMobileAdministrator() ? "Interventions" : "Planning", ROUTES.calendar, "detail");
 
     const container = getContainer();
@@ -98,7 +98,7 @@ export async function renderCalendar(options = {}) {
 
     const [result, availableMembers] = await Promise.all([
         loadEvents(displayedMonth),
-        isReadOnlyCalendar() ? Promise.resolve([]) : loadCalendarMembers()
+        usesPersonalCalendarView() ? Promise.resolve([]) : loadCalendarMembers()
     ]);
     if (!result.ok) {
         header.innerHTML = `<p class="auth-message error">${escapeHtml(result.message || "Impossible de charger le planning.")}</p>`;
@@ -124,7 +124,7 @@ export function renderCalendarOverview() {
 
 export function createCalendarEventForClient(client) {
     if (!client) return;
-    if (isReadOnlyCalendar()) {
+    if (!canCreateCalendarEvents()) {
         selectedEvent = null;
         renderCalendar({ date: new Date() });
         return;
@@ -140,8 +140,7 @@ export function createCalendarEventForClient(client) {
 
 function renderHeader(panel) {
     const periodLabel = getPeriodLabel();
-    const readOnly = isReadOnlyCalendar();
-    if (readOnly) {
+    if (usesPersonalCalendarView()) {
         panel.innerHTML = `
             <p class="eyebrow">Mon planning</p>
             <h2>${escapeHtml(periodLabel)}</h2>
@@ -179,7 +178,7 @@ function renderHeader(panel) {
         <div class="calendar-view-switcher" role="group" aria-label="Vue du planning">
             ${[ ["month", "Mois"], ["week", "Semaine"], ["day", "Jour"] ].map(([view, label]) => `<button type="button" class="secondary-button${calendarView === view ? " active" : ""}" data-calendar-view="${view}">${label}</button>`).join("")}
         </div>
-        ${readOnly ? "" : renderTechnicianFilter()}
+        ${renderTechnicianFilter()}
         <div class="calendar-legend">
             ${COLOR_OPTIONS.map(color => `<span><i style="background:${color.value}"></i>${color.label}</span>`).join("")}
         </div>
@@ -1313,8 +1312,8 @@ function renderCalendarGrid(panel) {
         const isCurrentMonth = day.getMonth() === displayedMonth.getMonth();
         const cell = document.createElement("article");
         cell.className = `calendar-day${isCurrentMonth ? "" : " outside"}${date === today ? " today" : ""}`;
-        const readOnly = isReadOnlyCalendar();
-        if (!readOnly) {
+        const canCreate = canCreateCalendarEvents();
+        if (canCreate) {
             cell.tabIndex = 0;
             cell.setAttribute("role", "button");
             cell.setAttribute("aria-label", `Ajouter un rendez-vous le ${formatShortDate(day)}`);
@@ -1325,7 +1324,7 @@ function renderCalendarGrid(panel) {
             displayedMonth = calendarView === "month" ? firstDayOfMonth(day) : atNoon(day);
             refreshCalendarDetail();
         };
-        if (!readOnly) {
+        if (canCreate) {
             cell.addEventListener("click", eventClick => {
                 if (eventClick.target.closest(".calendar-event, .calendar-overflow-button")) return;
                 openNewEvent();
@@ -1593,7 +1592,7 @@ function minutesToCalendarTime(value) {
 }
 
 function getVisibleEvents() {
-    if (isReadOnlyCalendar() || showAllTechnicians) return events;
+    if (usesPersonalCalendarView() || showAllTechnicians) return events;
     return events.filter(event => getAssignedTechnicianIds(event).some(id => visibleTechnicianIds.has(id)));
 }
 
@@ -1700,6 +1699,10 @@ function isReadOnlyCalendar() {
     return ["technician", "accountant"].includes(document.body.dataset.role)
     || document.body.dataset.role === "team_lead" && document.body.dataset.canManageCalendar !== "true"
         || isCommercialMobileCalendar();
+}
+
+function usesPersonalCalendarView() {
+    return ["technician", "accountant"].includes(document.body.dataset.role) || isCommercialMobileCalendar();
 }
 
 function isCommercialMobileCalendar() {

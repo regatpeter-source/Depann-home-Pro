@@ -54,3 +54,13 @@ test("le Chef d’équipe sans droit conserve la réalisation des interventions"
     assert.match(server, /"team_lead"/);
     assert.doesNotMatch(server, /EVENT_STATUS_MANAGER_ROLES = new Set\([^)]*team_lead/);
 });
+
+test("le Chef d’équipe sans droit conserve la vue et les filtres de son équipe", () => {
+    const client = read("js/calendar.js");
+    assert.match(client, /const technicianHome = usesPersonalCalendarView\(\)/);
+    assert.match(client, /usesPersonalCalendarView\(\) \? Promise\.resolve\(\[\]\) : loadCalendarMembers\(\)/);
+    assert.match(client, /function usesPersonalCalendarView\(\) \{\s*return \["technician", "accountant"\]/);
+    assert.match(client, /\$\{renderTechnicianFilter\(\)\}/);
+    assert.match(client, /function getVisibleEvents\(\) \{\s*if \(usesPersonalCalendarView\(\) \|\| showAllTechnicians\)/);
+    assert.match(client, /const canCreate = canCreateCalendarEvents\(\);\s*if \(canCreate\)/);
+});
