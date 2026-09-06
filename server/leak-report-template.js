@@ -24,6 +24,7 @@ export function normalizeLeakContent(value, snapshot = {}) {
     const input = value && typeof value === "object" && !Array.isArray(value) ? value : {};
     if (!input.schemaVersion && (input.cover || input.leakSearch || input.measurements)) return normalizeLeakContent({ schemaVersion: 2, activeStep: "overview", snapshot: { insurance: input.cover?.insurance || "", claimNumber: input.cover?.claimNumber || "", interventionReference: input.cover?.interventionReference || "" }, overview: { disorders: input.overview?.generalDescription || "", location: input.location?.preciseLocation || "", observations: [input.overview?.customerHistory, input.overview?.context, input.overview?.interventionConditions].filter(Boolean).join("\n") }, visual: { observations: input.visual?.observations || "", defects: input.visual?.anomalies || "" }, humidity: { readings: input.measurements?.rows || [] }, pressure: { readings: input.finalControl?.rows || [], comments: input.finalControl?.tightness || "" }, methods: { items: input.leakSearch?.methods || [] }, conclusion: { diagnosis: input.location?.description || "", probableOrigin: input.location?.comments || "", summary: input.work?.repair || "", finalObservations: input.work?.tests || "" }, recommendations: { work: input.conclusion?.recommendations || "", repairs: input.work?.replacement || "", technicianSignature: input.signatures?.technician || "", clientSignature: input.signatures?.client || "", clientName: input.signatures?.clientName || "", signedAt: input.signatures?.signedAt || "" } }, snapshot);
     const content = createEmptyLeakContent(input.snapshot && typeof input.snapshot === "object" ? input.snapshot : snapshot);
+    content.snapshot = normalizeSnapshot(content.snapshot);
     for (const key of REPORT_STEP_KEYS) if (input[key] && typeof input[key] === "object" && !Array.isArray(input[key])) content[key] = { ...content[key], ...input[key] };
     content.schemaVersion = 8;
     content.customSections = normalizeCustomSections(input.customSections);
@@ -47,6 +48,15 @@ export function normalizeLeakContent(value, snapshot = {}) {
     ensureIntro(content.recommendations, "recommendations-intro", RECOMMENDATION_INTRO);
     for (const step of REPORT_STEP_KEYS) for (const [field, fieldValue] of Object.entries(content[step] || {})) if (typeof fieldValue === "string") content[step][field] = text(fieldValue, field.includes("Signature") ? 700000 : 5000);
     return JSON.parse(JSON.stringify(content));
+}
+
+function normalizeSnapshot(value) {
+    const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+    const limits = { companyName: 160, companyAddress: 500, companyPhone: 50, companyEmail: 160, interventionNumber: 100, interventionReference: 160, interventionType: 160, notes: 2000, clientName: 160, clientAddress: 500, clientPhone: 50, clientEmail: 160, technicianName: 160, technicianPhone: 50, insurance: 160, insuranceDossier: 160, mandateNumber: 160, claimNumber: 160, insuredNumber: 160, principal: 160, expert: 160, manager: 160 };
+    const normalized = Object.fromEntries(Object.entries(limits).map(([field, maximum]) => [field, text(source[field], maximum)]));
+    normalized.date = /^\d{4}-\d{2}-\d{2}$/.test(String(source.date || "")) ? String(source.date) : "";
+    normalized.time = /^([01]\d|2[0-3]):[0-5]\d$/.test(String(source.time || "")) ? String(source.time) : "";
+    return normalized;
 }
 
 export function reportSections(content, includeRemoved = false) {
@@ -103,6 +113,7 @@ function addCover(pdf, report, profile, template, snapshot, photos) {
         ["N° de service", snapshot.interventionNumber || report.appointmentId || "—"],
         ["Bénéficiaire", clientName],
         ["Lieu d’intervention", location],
+        ["Contact bénéficiaire", [snapshot.clientPhone, snapshot.clientEmail].filter(Boolean).join(" · ") || "Non renseigné"],
         ["Réf. dossier assureur", snapshot.insuranceDossier || "Non renseignée"],
         ["Mandat", snapshot.mandateNumber || "Non renseigné"],
         ["Sinistre / assurance", [snapshot.claimNumber, snapshot.insurance].filter(Boolean).join(" · ") || "Non renseigné"],

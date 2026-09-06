@@ -21,6 +21,26 @@ const MODULES = [
     ["conclusion", "Conclusion", "Diagnostic et synthèse"],
     ["recommendations", "Préconisations", "Travaux et conseils"],
 ];
+const GENERAL_INFORMATION_FIELDS = [
+    ["interventionReference", "Référence intervention", "text", 160],
+    ["interventionNumber", "N° de service", "text", 100],
+    ["interventionType", "Type d’intervention", "text", 160],
+    ["clientName", "Bénéficiaire / client", "text", 160],
+    ["clientAddress", "Lieu d’intervention", "text", 500],
+    ["clientPhone", "Téléphone du client", "tel", 50],
+    ["clientEmail", "E-mail du client", "email", 160],
+    ["insurance", "Assurance", "text", 160],
+    ["insuranceDossier", "Réf. dossier assureur", "text", 160],
+    ["mandateNumber", "N° mandat", "text", 160],
+    ["claimNumber", "N° sinistre", "text", 160],
+    ["insuredNumber", "N° sociétaire / assuré", "text", 160],
+    ["principal", "Mandant / donneur d’ordre", "text", 160],
+    ["manager", "Gestionnaire", "text", 160],
+    ["expert", "Expert", "text", 160],
+    ["date", "Date d’intervention", "date", 10],
+    ["time", "Heure d’intervention", "time", 5],
+    ["technicianName", "Technicien", "text", 160]
+];
 let reports = [];
 let library = [];
 let materialCatalog = [];
@@ -192,7 +212,21 @@ function renderEditor(shell) {
 function generalModuleHtml(write) {
     const snapshot = current.content.snapshot || {};
     const values = [["Entreprise", snapshot.companyName], ["Client", snapshot.clientName || current.clientName], ["Adresse", snapshot.clientAddress || current.clientAddress || current.appointmentLocation], ["Téléphone", snapshot.clientPhone], ["E-mail", snapshot.clientEmail], ["N° intervention", snapshot.interventionNumber || current.appointmentId], ["Réf. dossier assureur", snapshot.insuranceDossier], ["N° mandat", snapshot.mandateNumber], ["N° sinistre", snapshot.claimNumber], ["N° sociétaire / assuré", snapshot.insuredNumber], ["Mandant / donneur d’ordre", snapshot.principal], ["Gestionnaire", snapshot.manager], ["Expert", snapshot.expert], ["Assurance", snapshot.insurance], ["Date / heure", [snapshot.date || current.reportDate, snapshot.time].filter(Boolean).join(" · ")], ["Technicien", snapshot.technicianName || current.technicianName], ["Type d’intervention", snapshot.interventionType]].filter(([, value]) => value);
-    return `<section class="report-auto-summary"><p>Ces informations sont générées automatiquement à partir du dossier client et de l’intervention.</p><dl>${values.map(([label, value]) => `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd></div>`).join("")}</dl></section>${photosHtml("general", "", write, "Ajouter la photo extérieure du logement", true)}`;
+    const information = write && canProofreadReport()
+        ? `<section class="report-general-editor"><p>Corrigez ici les informations reprises sur la première page du PDF. La fiche client et l’intervention d’origine ne seront pas modifiées.</p>${generalInformationFormHtml("data-report-general-field")}</section>`
+        : `<section class="report-auto-summary"><p>Ces informations sont générées automatiquement à partir du dossier client et de l’intervention.</p><dl>${values.map(([label, value]) => `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd></div>`).join("")}</dl></section>`;
+    return `${information}${photosHtml("general", "", write, "Ajouter la photo extérieure du logement", true)}`;
+}
+
+function generalInformationFormHtml(attribute) {
+    const snapshot = current.content.snapshot || {};
+    return `<div class="report-general-fields">${GENERAL_INFORMATION_FIELDS.map(([field, label, type, maxlength]) => `<label>${escapeHtml(label)}<input type="${type}" maxlength="${maxlength}" value="${escapeHtml(snapshot[field] || "")}" ${attribute}="${field}"></label>`).join("")}</div>`;
+}
+
+function updateGeneralInformation(field, value) {
+    if (!GENERAL_INFORMATION_FIELDS.some(([key]) => key === field)) return;
+    current.content.snapshot = current.content.snapshot && typeof current.content.snapshot === "object" ? current.content.snapshot : {};
+    current.content.snapshot[field] = value;
 }
 
 function presentationModuleHtml(write) {
@@ -233,6 +267,7 @@ function bindEditor(shell, moduleKey) {
     shell.querySelector("[data-previous-module]")?.addEventListener("click", () => openModule(shell, visibleSections()[moduleIndex(moduleKey) - 1]?.id));
     shell.querySelector("[data-next-module]")?.addEventListener("click", () => openModule(shell, visibleSections()[moduleIndex(moduleKey) + 1]?.id));
     shell.querySelector("[data-section-title]")?.addEventListener("input", input => { renameSection(input.dataset.sectionTitle, input.value); queueSave(shell); });
+    shell.querySelectorAll("[data-report-general-field]").forEach(input => input.addEventListener("input", () => { updateGeneralInformation(input.dataset.reportGeneralField, input.value); queueSave(shell); }));
     ["[data-presentation-camera]", "[data-presentation-gallery]"].forEach(selector => shell.querySelector(selector)?.addEventListener("change", async event => replacePresentationPhoto([...event.target.files || []][0], shell)));
     shell.querySelector("[data-report-summary]")?.addEventListener("click", () => openReportSummary(shell));
     shell.querySelector("[data-duplicate-section]")?.addEventListener("click", () => duplicateSection(moduleKey, shell));
@@ -424,17 +459,20 @@ function openReportProofreading(shell) {
     const dialog = document.createElement("section");
     dialog.className = "report-proofreading-dialog";
     const originalTexts = entries.map(entry => entry.observation.text || "");
+    const originalSnapshot = JSON.parse(JSON.stringify(current.content.snapshot || {}));
     dialog.innerHTML = `<form><header><div><p class="eyebrow">Correction sur poste administratif</p><h2>Correction du rapport et aperçu PDF en direct</h2></div><button type="button" class="text-button" data-close-proofreading>Fermer</button></header><p class="report-proofreading-help">À gauche, corrigez les textes, ajoutez des lignes avec la touche Entrée et ajustez les photos. À droite, le PDF se remet à jour automatiquement après vos modifications sans perdre la page consultée.</p><div class="report-proofreading-workspace"><section class="report-proofreading-editor" aria-label="Contenu du rapport à corriger"><div class="report-proofreading-panel-heading"><strong>Rapport à corriger</strong><span>Orthographe, textes et photos</span></div><div class="report-proofreading-list"></div></section><section class="report-proofreading-live-preview" aria-label="Aperçu PDF en direct"><div class="report-proofreading-panel-heading"><strong>Aperçu PDF en direct</strong><span data-proofreading-preview-state>Génération de l’aperçu…</span></div><div class="report-proofreading-pdf-pages" role="document" aria-label="Pages du rapport PDF"></div></section></div><p class="auth-message" aria-live="polite"></p><div class="report-proofreading-actions"><button type="button" class="secondary-button" data-close-proofreading>Annuler</button><button type="submit" class="secondary-button report-primary-action">Enregistrer la correction et préparer l’envoi</button></div></form>`;
     document.body.append(dialog);
     let previewTimer = null;
     let previewRequest = null;
     let previewSequence = 0;
     const close = () => { clearTimeout(previewTimer); previewRequest?.abort(); dialog.remove(); };
-    const cancel = async () => { entries.forEach((entry, index) => { entry.observation.text = originalTexts[index]; }); clearTimeout(saveTimer); close(); await save(shell, true); };
+    const cancel = async () => { entries.forEach((entry, index) => { entry.observation.text = originalTexts[index]; }); current.content.snapshot = originalSnapshot; clearTimeout(saveTimer); close(); await save(shell, true); };
     const syncTexts = () => entries.forEach((entry, index) => { const input = dialog.querySelector(`[data-proofreading-entry="${index}"]`); if (input) entry.observation.text = input.value; });
+    const syncGeneralInformation = () => dialog.querySelectorAll("[data-proofreading-general-field]").forEach(input => updateGeneralInformation(input.dataset.proofreadingGeneralField, input.value));
     const refreshPdfPreview = async () => {
         if (!dialog.isConnected) return;
         syncTexts();
+        syncGeneralInformation();
         const state = dialog.querySelector("[data-proofreading-preview-state]");
         const preview = dialog.querySelector(".report-proofreading-pdf-pages");
         const sequence = ++previewSequence;
@@ -458,8 +496,9 @@ function openReportProofreading(shell) {
     const renderList = () => {
         const list = dialog.querySelector(".report-proofreading-list");
         const additionalGroups = proofreadingAdditionalPhotoGroups(entries);
-        list.innerHTML = `${entries.map((entry, index) => `<article class="report-proofreading-entry"><label><span>${escapeHtml(entry.sectionTitle)}</span><strong>${escapeHtml(entry.observationLabel)}</strong><textarea rows="5" lang="fr" spellcheck="true" autocapitalize="sentences" data-proofreading-entry="${index}">${escapeHtml(entry.observation.text || "")}</textarea></label>${photosHtml(entry.sectionId, entry.observation.id, true, "", false, entry.materialId, false, true)}</article>`).join("")}${additionalGroups.map(group => `<article class="report-proofreading-entry report-proofreading-photo-group"><span>${escapeHtml(group.sectionTitle)}</span><strong>${escapeHtml(group.label)}</strong>${photosHtml(group.sectionId, group.observationId, true, "", false, group.materialId, false, true)}</article>`).join("")}`;
+        list.innerHTML = `<article class="report-proofreading-entry report-proofreading-general"><span>Première page</span><strong>Informations assurance, client et intervention</strong><p>Ces corrections s’appliquent uniquement à ce rapport.</p>${generalInformationFormHtml("data-proofreading-general-field")}</article>${entries.map((entry, index) => `<article class="report-proofreading-entry"><label><span>${escapeHtml(entry.sectionTitle)}</span><strong>${escapeHtml(entry.observationLabel)}</strong><textarea rows="5" lang="fr" spellcheck="true" autocapitalize="sentences" data-proofreading-entry="${index}">${escapeHtml(entry.observation.text || "")}</textarea></label>${photosHtml(entry.sectionId, entry.observation.id, true, "", false, entry.materialId, false, true)}</article>`).join("")}${additionalGroups.map(group => `<article class="report-proofreading-entry report-proofreading-photo-group"><span>${escapeHtml(group.sectionTitle)}</span><strong>${escapeHtml(group.label)}</strong>${photosHtml(group.sectionId, group.observationId, true, "", false, group.materialId, false, true)}</article>`).join("")}`;
         list.querySelectorAll("[data-proofreading-entry]").forEach(input => input.addEventListener("input", () => { syncTexts(); markReportModified(shell); queuePdfPreview(); }));
+        list.querySelectorAll("[data-proofreading-general-field]").forEach(input => input.addEventListener("input", () => { syncGeneralInformation(); markReportModified(shell); queuePdfPreview(); }));
         list.querySelectorAll("[data-open-photo]").forEach(button => button.addEventListener("click", () => openPhotoPreview(button.dataset.openPhoto)));
         list.querySelectorAll("[data-photo-caption]").forEach(input => input.addEventListener("change", async () => { const operation = updatePhotoCaption(input, shell); trackMediaSave(operation); await operation; queuePdfPreview(0); }));
         list.querySelectorAll("[data-photo-pdf-size]").forEach(input => input.addEventListener("change", async () => { const operation = updatePhotoPdfSize(input, shell); trackMediaSave(operation); await operation; queuePdfPreview(0); }));
@@ -486,6 +525,7 @@ function openReportProofreading(shell) {
         feedback.classList.remove("error");
         feedback.textContent = "Enregistrement de la correction…";
         syncTexts();
+        syncGeneralInformation();
         clearTimeout(saveTimer);
         while (saving) await new Promise(resolve => window.setTimeout(resolve, 50));
         await Promise.all([...mediaSavePromises]);

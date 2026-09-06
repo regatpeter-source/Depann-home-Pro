@@ -90,6 +90,27 @@ test("administrative proofreading overview includes every photo and all editing 
     assert.match(editorSource, /data-delete-photo/);
 });
 
+test("administrative proofreading edits the first-page client and insurance details", () => {
+    assert.match(editorSource, /Informations assurance, client et intervention/);
+    assert.match(editorSource, /data-proofreading-general-field/);
+    assert.match(editorSource, /syncGeneralInformation\(\)/);
+    assert.match(editorSource, /current\.content\.snapshot = originalSnapshot/);
+    assert.match(editorSource, /data-report-general-field/);
+});
+
+test("first-page corrections are normalized and included in the PDF cover", () => {
+    const content = normalizeLeakContent({ snapshot: { clientName: "  Mme   Martin  ", insurance: "  AXA  ", clientEmail: " client@example.test ", date: "invalid", time: "29:80", unknown: "ignored" } });
+    assert.equal(content.snapshot.clientName, "Mme Martin");
+    assert.equal(content.snapshot.insurance, "AXA");
+    assert.equal(content.snapshot.clientEmail, "client@example.test");
+    assert.equal(content.snapshot.date, "");
+    assert.equal(content.snapshot.time, "");
+    assert.equal("unknown" in content.snapshot, false);
+    const templateSource = readFileSync(new URL("../server/leak-report-template.js", import.meta.url), "utf8");
+    assert.match(templateSource, /Contact bénéficiaire/);
+    assert.match(templateSource, /snapshot\.clientPhone, snapshot\.clientEmail/);
+});
+
 test("la photo de présentation reste contenue et centrée dans son cadre PDF", () => {
     const templateSource = readFileSync(new URL("../server/leak-report-template.js", import.meta.url), "utf8");
     const presentation = templateSource.slice(templateSource.indexOf("function addPresentationPhoto"), templateSource.indexOf("function addPhotoWithPage"));
@@ -145,7 +166,7 @@ test("live PDF updates preserve the visible page and relative scroll position", 
 });
 
 test("cancelling live proofreading restores the original report texts", () => {
-    assert.match(editorSource, /const cancel = async \(\) => \{ entries\.forEach\(\(entry, index\) => \{ entry\.observation\.text = originalTexts\[index\]; \}\); clearTimeout\(saveTimer\); close\(\); await save\(shell, true\); \}/);
+    assert.match(editorSource, /const cancel = async \(\) => \{ entries\.forEach\(\(entry, index\) => \{ entry\.observation\.text = originalTexts\[index\]; \}\); current\.content\.snapshot = originalSnapshot; clearTimeout\(saveTimer\); close\(\); await save\(shell, true\); \}/);
     assert.match(editorSource, /data-close-proofreading[^\n]+cancel\(\)/);
 });
 
