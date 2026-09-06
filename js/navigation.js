@@ -85,6 +85,7 @@ export function initializeNavigation(loadedDatabase) {
         openDocumentTemplateSettings("report");
     });
     window.addEventListener("depannhome:open-document-template", event => {
+        if (!canAccessSettingsSection("documents")) return;
         const type = String(event.detail?.type || "");
         if (type === "quote" || (type === "quitus" && organizationFeatureEnabled("quitus")) || (type === "report" && organizationFeatureEnabled("technicalReports"))) openDocumentTemplateSettings(type);
     });
@@ -444,8 +445,6 @@ function canAccessSettingsSection(section) {
     const feature = featureBySection[section];
     if (feature && !organizationFeatureEnabled(feature)) return false;
     if (document.body.dataset.role === "admin") return true;
-    if (section === "documents" && document.body.dataset.canAccessBilling === "true") return true;
-    if (section === "electronicInvoicing" && document.body.dataset.canAccessAccounting === "true") return true;
     return ["network", "company", "personalization"].includes(section);
 }
 
@@ -1330,13 +1329,13 @@ function getSearchModules() {
     add("Espace e-mail de l’entreprise", "email e-mail mail messagerie boîte professionnelle", ROUTES.companyEmail, renderCompanyEmail);
     add("Bibliothèque technique", "bibliothèque notice procédure moteur automatisme télécommande schéma diagnostic portail volet roulant porte garage serrure pièce détachée", ROUTES.library, renderLibrary);
     add("Comptabilité et facturation électronique & PDP", "comptabilité facturation électronique pdp export comptable facture", ROUTES.accounting, renderAccounting);
-    add("Réseau Depann'Home Pro", "réseau partenaire partenaires api connexion annuaire", ROUTES.settings, () => renderSettings({ section: "network" }));
-    if (organizationFeatureEnabled("partnerMissions")) add("Boîte mail de l’entreprise", "entreprise boîte mail email missions connexion imap smtp", ROUTES.settings, () => renderSettings({ section: "company" }));
-    add("Modèles de documents", "modèle devis rapport quitus document logo", ROUTES.settings, () => renderSettings({ section: "documents" }));
-    add("Utilisateurs", "utilisateur équipe technicien chef équipe poste administratif droit accès", ROUTES.settings, () => renderSettings({ section: "users" }));
-    add("Sécurité", "sécurité double authentification 2fa sms accès", ROUTES.settings, () => renderSettings({ section: "security" }));
+    if (canAccessSettingsSection("network")) add("Réseau Depann'Home Pro", "réseau partenaire partenaires api connexion annuaire", ROUTES.settings, () => renderSettings({ section: "network" }));
+    if (canAccessSettingsSection("company")) add("Boîte mail de l’entreprise", "entreprise boîte mail email missions connexion imap smtp", ROUTES.settings, () => renderSettings({ section: "company" }));
+    if (canAccessSettingsSection("documents")) add("Modèles de documents", "modèle devis rapport quitus document logo", ROUTES.settings, () => renderSettings({ section: "documents" }));
+    if (canAccessSettingsSection("users")) add("Utilisateurs", "utilisateur équipe technicien chef équipe poste administratif droit accès", ROUTES.settings, () => renderSettings({ section: "users" }));
+    if (canAccessSettingsSection("security")) add("Sécurité", "sécurité double authentification 2fa sms accès", ROUTES.settings, () => renderSettings({ section: "security" }));
     if (document.body.dataset.groupAdmin === "true") add("Groupe / Multi-entreprises", "groupe multi entreprises société", ROUTES.groups, renderGroupWorkspace);
-    add("Importation de données", "import importation excel csv clients devis factures rapports", ROUTES.settings, () => renderSettings({ section: "imports" }));
+    if (canAccessSettingsSection("imports")) add("Importation de données", "import importation excel csv clients devis factures rapports", ROUTES.settings, () => renderSettings({ section: "imports" }));
     return modules;
 }
 
@@ -1799,6 +1798,7 @@ function subscriptionInvoiceStatus(status) {
 }
 
 async function openDocumentTemplateSettings(type) {
+    if (!canAccessSettingsSection("documents")) return renderSettings();
     if (type === "report" && !organizationFeatureEnabled("technicalReports")) return renderSettings({ section: "documents" });
     await renderDocumentTemplateEditor(type, () => renderSettings({ section: "documents" }), () => openIntegratedDocumentSettings(type));
 }
