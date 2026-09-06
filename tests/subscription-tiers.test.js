@@ -207,7 +207,7 @@ test("the free Partner interface exposes the internal network without external c
     assert.match(navigation, /return features\[feature\] === true/);
     assert.match(navigation, /refreshOrganizationAccess\(\)/);
     assert.match(navigation, /organizationInterface === "partner"/);
-    assert.match(navigation, /section === "support"\) return document\.body\.dataset\.role === "admin" && isDesktopDevice\(\)/);
+    assert.match(navigation, /\["security", "support"\]\.includes\(section\)[\s\S]*isDesktopDevice\(\)[\s\S]*\["admin", "pc_standard", "commercial"\]/);
     assert.match(navigation, /section === "imports" && organizationFeatureEnabled\("imports"\)/);
     assert.match(navigation, /Importation de clients/);
     assert.match(navigation, /internalNetworkOnly \? "Réseau Depann’Home Pro" : "Réseau & connecteurs"/);

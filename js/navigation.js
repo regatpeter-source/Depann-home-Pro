@@ -437,7 +437,7 @@ function isDesktopDevice() {
 
 function canAccessSettingsSection(section) {
     if (document.body.dataset.creator === "true") return true;
-    if (section === "support") return document.body.dataset.role === "admin" && isDesktopDevice();
+    if (["security", "support"].includes(section)) return isDesktopDevice() && ["admin", "pc_standard", "commercial"].includes(document.body.dataset.role);
     if (document.body.dataset.organizationInterface === "partner") return (section === "network" && organizationFeatureEnabled("partnerConnections")) || (section === "company" && organizationFeatureEnabled("partnerMissions")) || (section === "imports" && organizationFeatureEnabled("imports"));
     if (section === "company" && organizationFeatureEnabled("companyEmail")) return document.body.dataset.role === "admin";
     if (section === "network" && (organizationFeatureEnabled("partnerConnections") || organizationFeatureEnabled("partnerMissions"))) return true;
@@ -1565,8 +1565,8 @@ function renderSettings(options = {}) {
     container.appendChild(card);
     if (!options.personalizationOnly && document.body.dataset.role === "admin") {
         renderTeamManagement(container);
-        renderCompanyTwoFactorSecurity(container);
     }
+    if (!options.personalizationOnly && canAccessSettingsSection("security")) renderCompanyTwoFactorSecurity(container);
     if (!options.personalizationOnly && document.body.dataset.role === "admin" && organizationFeatureEnabled("partnerConnections")) renderPartnerConnections(container);
     if (!options.personalizationOnly && document.body.dataset.groupAdmin === "true") {
         const groupCard = document.createElement("article");
@@ -1604,7 +1604,7 @@ function renderSettingsWorkspace(options = {}) {
         const hub = document.createElement("section");
         hub.className = "settings-hub";
         const internalNetworkOnly = document.body.dataset.organizationInterface === "partner" || !organizationFeatureEnabled("connectors");
-        const supportAvailable = document.body.dataset.role === "admin" && isDesktopDevice();
+        const supportAvailable = canAccessSettingsSection("support");
         hub.innerHTML = `<header class="settings-hub-heading"><div><p class="eyebrow">${internalNetworkOnly ? "Réseau et assistance" : "Configuration de l’entreprise"}</p><h2>Paramètres</h2><p class="muted">${internalNetworkOnly ? "Retrouvez le Réseau Depann’Home Pro et contactez directement le Support." : "Toutes les configurations sont regroupées ici. Le menu principal reste dédié aux opérations quotidiennes."}</p></div></header>`;
         const grid = document.createElement("div");
         grid.className = "settings-card-grid";
@@ -1615,7 +1615,8 @@ function renderSettingsWorkspace(options = {}) {
             ...(organizationFeatureEnabled("companyEmail") && document.body.dataset.role === "admin" ? [["company", "Entreprise · Boîte mail", "Connectez la boîte de l’entreprise et choisissez si elle recherche automatiquement les missions.", "company"]] : []),
             ["network", internalNetworkOnly ? "Réseau Depann’Home Pro" : "Réseau & connecteurs", internalNetworkOnly ? "Recherchez des entreprises utilisatrices et gérez vos connexions internes." : "Deux espaces distincts : le réseau collaboratif Depann’Home Pro et les connecteurs API externes.", "network"],
             ...(supportAvailable ? [["support", "Support", "Contactez l’équipe Depann’Home Pro depuis les paramètres de votre entreprise.", "support"]] : []),
-            ...(document.body.dataset.role === "admin" ? [["users", "Utilisateurs", "Accès, postes, techniciens et chefs d’équipe.", "users"], ["security", "Sécurité", "Double authentification et protection des accès.", "security"], ["groups", "Groupe / Multi-entreprises", "Sociétés, bascule de contexte et indicateurs consolidés.", "group"]] : []),
+            ...(document.body.dataset.role === "admin" ? [["users", "Utilisateurs", "Accès, postes, techniciens et chefs d’équipe.", "users"], ["groups", "Groupe / Multi-entreprises", "Sociétés, bascule de contexte et indicateurs consolidés.", "group"]] : []),
+            ...(canAccessSettingsSection("security") ? [["security", "Sécurité", "Configurez la double authentification propre à ce poste PC.", "security"]] : []),
             ["personalization", "Interface & notifications", "Thème standard ou sombre, densité, animations et alertes choisies pour ce poste.", "appearance"],
             ...(document.body.dataset.role === "admin" && document.body.classList.contains("desktop-device") ? [["imports", document.body.dataset.organizationInterface === "partner" ? "Importation de clients" : "Importation de données", document.body.dataset.organizationInterface === "partner" ? "Importez vos fiches clients depuis Excel ou CSV." : "Importez vos clients, devis, factures et rapports depuis Excel ou CSV.", "import"]] : []),
             ...(document.body.dataset.role === "admin" && document.body.dataset.creator === "true" && document.body.dataset.deviceType === "desktop" ? [["creator", "Console Créateur", "Pilotage des entreprises, abonnements et services de la plateforme.", "creator"]] : [])
@@ -1871,58 +1872,61 @@ async function renderCompanyTwoFactorSecurity(container) {
     card.innerHTML = '<p class="eyebrow">Sécurité</p><h2>Double authentification (2FA)</h2><p class="muted">Chargement des paramètres de sécurité…</p>';
     container.appendChild(card);
     try {
-        const response = await fetch("/api/auth/company-2fa", { credentials: "same-origin" });
+        const response = await fetch("/api/auth/workstation-2fa", { credentials: "same-origin" });
         const data = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(data.message || "Impossible de charger les paramètres de sécurité.");
-        const administrators = data.administrators || [];
-        const administratorRows = data.enabled
-            ? `<section class="team-section"><div class="team-section-heading"><div><p class="eyebrow">Comptes concernés</p><h3>Postes Admin</h3></div></div><p class="muted">Chaque administrateur configure sa propre application lors de sa prochaine connexion. Une réinitialisation entraîne la génération d’un nouveau QR code à la connexion suivante.</p><div class="team-list">${administrators.map(administrator => `<div class="team-member"><div class="team-member-summary"><div class="team-member-title"><strong>${escapeHtml(administrator.fullName || administrator.username)}</strong><span class="team-state-badge ${administrator.configured ? "is-active" : "is-pending"}">${administrator.configured ? "Application associée" : "Configuration requise"}</span></div><span class="team-member-meta">${escapeHtml(administrator.username)}</span></div><div class="team-member-actions">${administrator.configured ? `<button type="button" class="secondary-button" data-company-2fa-reset="${escapeHtml(administrator.id)}">Réinitialiser le 2FA</button>` : ""}</div></div>`).join("") || '<p class="muted">Aucun Poste Admin actif n’est disponible.</p>'}</div></section>`
-            : "";
         card.innerHTML = `
-            <div class="settings-heading"><div><p class="eyebrow">Sécurité</p><h2>Double authentification (2FA)</h2><p class="muted">Activez une protection supplémentaire pour les comptes Administrateur de votre entreprise en demandant un code de validation lors de chaque connexion.</p></div><span class="team-state-badge ${data.enabled ? "is-active" : "is-inactive"}">${data.enabled ? "Activée" : "Désactivée"}</span></div>
-            <form class="settings-form company-two-factor-form">
-                <label class="settings-toggle"><input name="enabled" type="checkbox" ${data.enabled ? "checked" : ""}>Activer la double authentification pour les Postes Admin.<span>Les Postes Admin Mobile, Postes administratifs, Techniciens et Chefs d’équipe ne sont pas concernés.</span></label>
-                <p class="muted">Compatible avec Google Authenticator, Microsoft Authenticator, Authy et toute application TOTP. Les codes ne sont jamais enregistrés.</p>
-                <div class="settings-actions"><button type="submit" class="secondary-button">Enregistrer la sécurité</button></div>
-                <p class="auth-message" aria-live="polite"></p>
-            </form>
-            ${administratorRows}
+            <div class="settings-heading"><div><p class="eyebrow">Sécurité personnelle</p><h2>Double authentification (2FA)</h2><p class="muted">Cette configuration appartient uniquement à votre compte PC. Elle est indépendante des autres postes et reste identique dans toutes les entreprises de votre groupe.</p></div><span class="team-state-badge ${data.enabled ? "is-active" : "is-inactive"}">${data.enabled ? "Activée" : "Désactivée"}</span></div>
+            <p class="muted">Compatible avec Google Authenticator, Microsoft Authenticator, Authy et toute application TOTP. Un code sera demandé à chaque connexion sur ordinateur.</p>
+            <div data-workstation-2fa-action></div>
+            <p class="auth-message" data-workstation-2fa-feedback aria-live="polite"></p>
         `;
-        const form = card.querySelector(".company-two-factor-form");
-        form.addEventListener("submit", async event => {
-            event.preventDefault();
-            const enabled = form.elements.enabled.checked;
-            if (!enabled && data.enabled && !confirm("Désactiver la double authentification pour tous les Postes Admin ? Les associations actuelles seront supprimées.")) return;
-            const button = form.querySelector('button[type="submit"]');
-            const feedback = form.querySelector(".auth-message");
-            button.disabled = true;
-            feedback.textContent = "Enregistrement…";
-            feedback.classList.remove("error");
-            const result = await fetch("/api/auth/company-2fa/policy", { method: "PUT", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ enabled }) });
-            const payload = await result.json().catch(() => ({}));
-            if (!result.ok) {
-                feedback.textContent = payload.message || "La mise à jour de la sécurité a échoué.";
-                feedback.classList.add("error");
-                button.disabled = false;
-                return;
-            }
-            renderSettings();
-        });
-        card.querySelectorAll("[data-company-2fa-reset]").forEach(button => button.addEventListener("click", async () => {
-            if (!confirm("Réinitialiser cette application d’authentification ? L’administrateur devra scanner un nouveau QR code à sa prochaine connexion.")) return;
-            button.disabled = true;
-            const result = await fetch(`/api/auth/company-2fa/administrators/${encodeURIComponent(button.dataset.company2faReset)}/reset`, { method: "POST", credentials: "same-origin" });
-            if (!result.ok) {
-                button.disabled = false;
-                alert((await result.json().catch(() => ({}))).message || "La réinitialisation a échoué.");
-                return;
-            }
-            renderSettings();
-        }));
+        const action = card.querySelector("[data-workstation-2fa-action]");
+        const feedback = card.querySelector("[data-workstation-2fa-feedback]");
+        if (data.enabled) renderWorkstationTwoFactorDisable(action, feedback);
+        else renderWorkstationTwoFactorSetup(action, feedback);
     } catch (error) {
         card.innerHTML = '<p class="eyebrow">Sécurité</p><h2>Double authentification (2FA)</h2>';
         card.appendChild(createInfo(error.message || "Impossible de charger les paramètres de sécurité."));
     }
+}
+
+function renderWorkstationTwoFactorSetup(action, feedback) {
+    action.innerHTML = '<button type="button" class="secondary-button" data-start-workstation-2fa>Configurer mon application d’authentification</button>';
+    action.querySelector("[data-start-workstation-2fa]").addEventListener("click", async event => {
+        event.currentTarget.disabled = true;
+        feedback.textContent = "Préparation du QR code…";
+        feedback.classList.remove("error");
+        const response = await fetch("/api/auth/workstation-2fa/setup", { method: "POST", credentials: "same-origin" });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) { feedback.textContent = data.message || "Configuration impossible."; feedback.classList.add("error"); event.currentTarget.disabled = false; return; }
+        feedback.textContent = "";
+        action.innerHTML = `<section class="company-two-factor-enrollment"><img src="${escapeHtml(data.qrCodeDataUrl)}" alt="QR code de double authentification"><div><p>Scannez ce QR code avec votre application, ou saisissez cette clé :</p><code>${escapeHtml(data.manualSecret)}</code><form data-confirm-workstation-2fa><label>Code à 6 chiffres<input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required></label><button type="submit" class="secondary-button">Confirmer l’activation</button></form></div></section>`;
+        action.querySelector("[data-confirm-workstation-2fa]").addEventListener("submit", async confirmEvent => {
+            confirmEvent.preventDefault();
+            const form = confirmEvent.currentTarget;
+            const button = form.querySelector("button");
+            button.disabled = true;
+            const result = await fetch("/api/auth/workstation-2fa/confirm", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code: form.elements.code.value }) });
+            const payload = await result.json().catch(() => ({}));
+            if (!result.ok) { feedback.textContent = payload.message || "Le code n’a pas pu être confirmé."; feedback.classList.add("error"); button.disabled = false; return; }
+            renderSettings({ section: "security" });
+        });
+    });
+}
+
+function renderWorkstationTwoFactorDisable(action, feedback) {
+    action.innerHTML = '<form class="settings-form" data-disable-workstation-2fa><label>Code actuel à 6 chiffres<input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required></label><div class="settings-actions"><button type="submit" class="secondary-button danger-button">Désactiver sur mon compte</button></div></form>';
+    action.querySelector("[data-disable-workstation-2fa]").addEventListener("submit", async event => {
+        event.preventDefault();
+        if (!confirm("Désactiver la double authentification uniquement pour votre compte PC ?")) return;
+        const button = event.currentTarget.querySelector("button");
+        button.disabled = true;
+        const response = await fetch("/api/auth/workstation-2fa", { method: "DELETE", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code: event.currentTarget.elements.code.value }) });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) { feedback.textContent = data.message || "Désactivation impossible."; feedback.classList.add("error"); button.disabled = false; return; }
+        renderSettings({ section: "security" });
+    });
 }
 
 function renderSupportContact(container) {

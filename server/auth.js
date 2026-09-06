@@ -26,6 +26,7 @@ const MOBILE_ADMIN_ROLE = "mobile_admin";
 const STANDARD_PC_ROLE = "pc_standard";
 const COMMERCIAL_ROLE = "commercial";
 const TEAM_LEAD_ROLE = "team_lead";
+const WORKSTATION_TOTP_ROLES = new Set(["admin", STANDARD_PC_ROLE, COMMERCIAL_ROLE]);
 const CREATABLE_MEMBER_ROLES = new Set(["admin", STANDARD_PC_ROLE, COMMERCIAL_ROLE, MOBILE_ADMIN_ROLE, TEAM_LEAD_ROLE, "technician"]);
 
 export function memberSeatFamily(role) {
@@ -124,15 +125,11 @@ export function registerAuthRoutes(app) {
                 message: "Saisissez le code affiché dans Google Authenticator."
             });
         }
-        if (user.role === "admin" && !isCreatorUsername(user.username) && await isCompanyTotpEnabled(user.account_owner_id)) {
-            const purpose = await hasCompanyTotpAuthenticator(user.id) ? "login" : "enrollment";
+        if (WORKSTATION_TOTP_ROLES.has(user.role) && device.type === "desktop" && !isCreatorUsername(user.username) && await hasCompanyTotpAuthenticator(user.id)) {
             return response.status(202).json({
-                companyTotpRequired: purpose === "login",
-                companyTotpEnrollmentRequired: purpose === "enrollment",
-                challenge: await createCompanyTotpChallenge(user, device, purpose),
-                message: purpose === "login"
-                    ? "Saisissez le code de votre application d’authentification."
-                    : "La double authentification de votre entreprise doit être configurée avant votre première connexion."
+                companyTotpRequired: true,
+                challenge: await createCompanyTotpChallenge(user, device, "login"),
+                message: "Saisissez le code de votre application d’authentification."
             });
         }
         return completeLogin(user, device, response, request);
@@ -160,34 +157,15 @@ export function registerAuthRoutes(app) {
         return completeLogin(user, device, response, request);
     }));
 
-    app.post("/api/auth/company-2fa/enrollment", asyncHandler(async (request, response) => {
-        const challenge = await getCompanyTotpChallenge(request.body?.challenge, "enrollment");
-        if (!challenge) return response.status(401).json({ message: "La demande de configuration est invalide ou a expiré. Recommencez la connexion." });
-        const user = await findUserById(challenge.user_id);
-        if (!user?.is_active || !user.account_is_active || user.role !== "admin" || !await isCompanyTotpEnabled(user.account_owner_id)) {
-            return response.status(401).json({ message: "Cette configuration n’est plus autorisée." });
-        }
-        await getPool().query("DELETE FROM depannhome_company_totp_authenticators WHERE user_id = $1 AND status = 'pending'", [user.id]);
-        const secret = new OTPAuth.Secret({ size: 20 }).base32;
-        const totp = createTotp(secret, user.username);
-        const authenticatorId = crypto.randomUUID();
-        await getPool().query(`
-            INSERT INTO depannhome_company_totp_authenticators (id, owner_id, user_id, secret_ciphertext, status, pending_expires_at)
-            VALUES ($1, $2, $3, $4, 'pending', NOW() + INTERVAL '10 minutes')
-        `, [authenticatorId, user.account_owner_id, user.id, encryptCompanyTotpSecret(secret)]);
-        const qrCodeDataUrl = await QRCode.toDataURL(totp.toString(), { width: 260, margin: 1, errorCorrectionLevel: "M" });
-        response.json({ qrCodeDataUrl, manualSecret: secret, expiresInSeconds: COMPANY_TOTP_CHALLENGE_DURATION_SECONDS });
-    }));
-
     app.post("/api/auth/verify-company-totp", asyncHandler(async (request, response) => {
-        const challenge = await getCompanyTotpChallenge(request.body?.challenge);
+        const challenge = await getCompanyTotpChallenge(request.body?.challenge, "login");
         const code = normalizeTotpCode(request.body?.code);
         if (!challenge || !code) return response.status(401).json({ message: "Le code de sécurité est invalide ou a expiré." });
         const user = await findUserById(challenge.user_id);
-        if (!user?.is_active || !user.account_is_active || user.role !== "admin" || !await isCompanyTotpEnabled(user.account_owner_id)) {
+        if (!user?.is_active || !user.account_is_active || !WORKSTATION_TOTP_ROLES.has(user.role) || challenge.device?.type !== "desktop") {
             return response.status(401).json({ message: "Cette connexion n’est plus autorisée." });
         }
-        const authenticator = await getCompanyTotpAuthenticator(user.id, challenge.purpose === "enrollment" ? "pending" : "active");
+        const authenticator = await getCompanyTotpAuthenticator(user.id, "active");
         const secret = authenticator?.secret_ciphertext ? decryptCompanyTotpSecret(authenticator.secret_ciphertext) : "";
         if (!secret || !isValidTotpCode(secret, code, user.username)) {
             const attempts = await recordCompanyTotpFailure(challenge, user);
@@ -196,15 +174,7 @@ export function registerAuthRoutes(app) {
         }
         const consumed = await getPool().query("UPDATE depannhome_company_totp_challenges SET consumed_at = NOW() WHERE id = $1 AND consumed_at IS NULL RETURNING id", [challenge.id]);
         if (!consumed.rowCount) return response.status(401).json({ message: "Cette demande a déjà été utilisée. Recommencez la connexion." });
-        if (challenge.purpose === "enrollment") {
-            await getPool().query(`
-                UPDATE depannhome_company_totp_authenticators
-                SET status = 'active', pending_expires_at = NULL, confirmed_at = NOW(), updated_at = NOW()
-                WHERE id = $1 AND user_id = $2 AND status = 'pending'
-            `, [authenticator.id, user.id]);
-            await recordMemberAudit(user.account_owner_id, user.id, user, "company_2fa_configured", { authenticator: "totp" });
-        }
-        await recordMemberAudit(user.account_owner_id, user.id, user, "company_2fa_login_succeeded", { purpose: challenge.purpose });
+        await recordMemberAudit(user.account_owner_id, user.id, user, "workstation_2fa_login_succeeded", { purpose: "login", deviceType: "desktop" });
         await recordSecurityEvent({ request, eventType: "company_totp_validation", outcome: "success", ownerId: user.account_owner_id, userId: user.id, details: { purpose: challenge.purpose } });
         const device = getDeviceDetails({ deviceId: challenge.device?.id, deviceLabel: challenge.device?.label, deviceType: challenge.device?.type });
         if (!device) return response.status(401).json({ message: "Cet appareil ne peut pas être identifié. Recommencez la connexion." });
@@ -336,49 +306,50 @@ export function registerAuthRoutes(app) {
         response.json({ message: "La double authentification a été désactivée." });
     }));
 
-    app.get("/api/auth/company-2fa", requireAccountAdministrator, asyncHandler(async (request, response) => {
-        const ownerId = getAccountOwnerId(request);
-        const [policy, administrators] = await Promise.all([
-            getCompanyTotpPolicy(ownerId),
-            getPool().query(`
-                SELECT account.id, account.username, account.full_name AS "fullName", account.is_active AS "isActive",
-                    EXISTS(SELECT 1 FROM depannhome_company_totp_authenticators authenticator WHERE authenticator.user_id = account.id AND authenticator.status = 'active') AS "configured"
-                FROM depannhome_users account
-                WHERE account.account_owner_id = $1 AND account.role = 'admin'
-                ORDER BY LOWER(account.full_name), account.username
-            `, [ownerId])
-        ]);
-        response.json({ enabled: policy.enabled, administrators: administrators.rows });
+    app.get("/api/auth/workstation-2fa", requireAuthentication, requireWorkstationSecurityAccess, asyncHandler(async (request, response) => {
+        response.json({ enabled: await hasCompanyTotpAuthenticator(request.user.sub) });
     }));
 
-    app.put("/api/auth/company-2fa/policy", requireAccountAdministrator, asyncHandler(async (request, response) => {
-        if (typeof request.body?.enabled !== "boolean") return response.status(400).json({ message: "Le statut de la double authentification est invalide." });
-        const ownerId = getAccountOwnerId(request);
-        const enabled = request.body.enabled;
+    app.post("/api/auth/workstation-2fa/setup", requireAuthentication, requireWorkstationSecurityAccess, asyncHandler(async (request, response) => {
+        if (await hasCompanyTotpAuthenticator(request.user.sub)) return response.status(409).json({ message: "La double authentification est déjà activée pour ce poste." });
+        const user = await findUserById(request.user.sub);
+        if (!user) return response.status(404).json({ message: "Compte introuvable." });
+        await getPool().query("DELETE FROM depannhome_company_totp_authenticators WHERE user_id = $1 AND status = 'pending'", [user.id]);
+        const secret = new OTPAuth.Secret({ size: 20 }).base32;
+        const authenticatorId = crypto.randomUUID();
         await getPool().query(`
-            INSERT INTO depannhome_company_totp_policies (owner_id, enabled, enabled_at, enabled_by, updated_at)
-            VALUES ($1, $2, CASE WHEN $2 THEN NOW() ELSE NULL END, CASE WHEN $2 THEN $3::bigint ELSE NULL END, NOW())
-            ON CONFLICT (owner_id) DO UPDATE SET enabled = EXCLUDED.enabled, enabled_at = EXCLUDED.enabled_at,
-                enabled_by = EXCLUDED.enabled_by, updated_at = NOW()
-        `, [ownerId, enabled, request.user.sub]);
-        if (!enabled) await getPool().query("DELETE FROM depannhome_company_totp_authenticators WHERE owner_id = $1", [ownerId]);
-        const actor = await findUserById(request.user.sub);
-        await recordMemberAudit(ownerId, request.user.sub, actor, enabled ? "company_2fa_enabled" : "company_2fa_disabled", { scope: "administrators" });
-        response.json({ enabled });
+            INSERT INTO depannhome_company_totp_authenticators (id, owner_id, user_id, secret_ciphertext, status, pending_expires_at)
+            VALUES ($1, $2, $3, $4, 'pending', NOW() + INTERVAL '10 minutes')
+        `, [authenticatorId, user.account_owner_id, user.id, encryptCompanyTotpSecret(secret)]);
+        const qrCodeDataUrl = await QRCode.toDataURL(createTotp(secret, user.username).toString(), { width: 260, margin: 1, errorCorrectionLevel: "M" });
+        response.json({ qrCodeDataUrl, manualSecret: secret, expiresInSeconds: 600 });
     }));
 
-    app.post("/api/auth/company-2fa/administrators/:memberId/reset", requireAccountAdministrator, asyncHandler(async (request, response) => {
-        const memberId = positiveId(request.params.memberId);
-        const ownerId = getAccountOwnerId(request);
-        const { rows } = await getPool().query(`
-            SELECT id, username, full_name AS "fullName", role FROM depannhome_users
-            WHERE id = $1 AND account_owner_id = $2 AND role = 'admin'
-        `, [memberId, ownerId]);
-        const member = rows[0];
-        if (!member) return response.status(404).json({ message: "Administrateur introuvable." });
-        await getPool().query("DELETE FROM depannhome_company_totp_authenticators WHERE user_id = $1", [memberId]);
-        await recordMemberAudit(ownerId, request.user.sub, member, "company_2fa_reset", { requestedBy: request.user.sub });
-        response.status(204).end();
+    app.post("/api/auth/workstation-2fa/confirm", requireAuthentication, requireWorkstationSecurityAccess, asyncHandler(async (request, response) => {
+        const code = normalizeTotpCode(request.body?.code);
+        const user = await findUserById(request.user.sub);
+        const authenticator = user && await getCompanyTotpAuthenticator(user.id, "pending");
+        const secret = authenticator?.secret_ciphertext ? decryptCompanyTotpSecret(authenticator.secret_ciphertext) : "";
+        if (!code || !secret || !isValidTotpCode(secret, code, user.username)) return response.status(400).json({ message: "Le code est incorrect ou la configuration a expiré." });
+        await getPool().query(`
+            UPDATE depannhome_company_totp_authenticators
+            SET status='active', pending_expires_at=NULL, confirmed_at=NOW(), updated_at=NOW()
+            WHERE id=$1 AND user_id=$2 AND status='pending'
+        `, [authenticator.id, user.id]);
+        await recordMemberAudit(user.account_owner_id, user.id, user, "workstation_2fa_enabled", { scope: "personal", deviceType: "desktop" });
+        response.json({ enabled: true, message: "La double authentification est activée pour votre poste PC." });
+    }));
+
+    app.delete("/api/auth/workstation-2fa", requireAuthentication, requireWorkstationSecurityAccess, asyncHandler(async (request, response) => {
+        const code = normalizeTotpCode(request.body?.code);
+        const user = await findUserById(request.user.sub);
+        const authenticator = user && await getCompanyTotpAuthenticator(user.id, "active");
+        const secret = authenticator?.secret_ciphertext ? decryptCompanyTotpSecret(authenticator.secret_ciphertext) : "";
+        if (!code || !secret || !isValidTotpCode(secret, code, user.username)) return response.status(400).json({ message: "Saisissez un code valide pour désactiver la double authentification." });
+        await getPool().query("DELETE FROM depannhome_company_totp_authenticators WHERE user_id=$1", [user.id]);
+        await getPool().query("DELETE FROM depannhome_company_totp_challenges WHERE user_id=$1", [user.id]);
+        await recordMemberAudit(user.account_owner_id, user.id, user, "workstation_2fa_disabled", { scope: "personal", deviceType: "desktop" });
+        response.json({ enabled: false, message: "La double authentification est désactivée pour votre poste PC." });
     }));
 
     app.get("/api/auth/members", requireAccountAdministrator, asyncHandler(async (request, response) => {
@@ -874,6 +845,11 @@ function requireAccountAdministrator(request, response, next) {
     return next();
 }
 
+function requireWorkstationSecurityAccess(request, response, next) {
+    if (request.user?.deviceType === "desktop" && WORKSTATION_TOTP_ROLES.has(request.user?.role)) return next();
+    return response.status(403).json({ message: "La sécurité personnelle est accessible uniquement depuis votre poste PC administratif ou commercial." });
+}
+
 async function ensureActiveAdministratorRemains(ownerId, targetId) {
     const { rows } = await getPool().query(`
         SELECT COUNT(*) FILTER (WHERE role = 'admin' AND is_active AND id <> $2)::int AS "remainingAdministrators"
@@ -1057,18 +1033,6 @@ async function getCreatorTotpSecret(userId) {
     return rows[0]?.secretCiphertext ? decryptCreatorTotpSecret(rows[0].secretCiphertext) : "";
 }
 
-async function getCompanyTotpPolicy(ownerId) {
-    const { rows } = await getPool().query(
-        "SELECT enabled FROM depannhome_company_totp_policies WHERE owner_id = $1",
-        [ownerId]
-    );
-    return { enabled: Boolean(rows[0]?.enabled) };
-}
-
-async function isCompanyTotpEnabled(ownerId) {
-    return (await getCompanyTotpPolicy(ownerId)).enabled;
-}
-
 async function getCompanyTotpAuthenticator(userId, status) {
     const { rows } = await getPool().query(`
         SELECT id, secret_ciphertext, status
@@ -1125,7 +1089,7 @@ async function recordCompanyTotpFailure(challenge, user) {
         RETURNING attempts
     `, [challenge.id]);
     const attempts = Number(rows[0]?.attempts || COMPANY_TOTP_MAX_ATTEMPTS);
-    await recordMemberAudit(user.account_owner_id, null, user, "company_2fa_validation_failed", { purpose: challenge.purpose, attempts });
+    await recordMemberAudit(user.account_owner_id, null, user, "workstation_2fa_validation_failed", { purpose: challenge.purpose, deviceType: "desktop", attempts });
     return attempts;
 }
 

@@ -13,12 +13,13 @@ test("le Poste PC administratif accède aux Paramètres sans administrer l’ent
     assert.match(navigation, /\["network", "company", "personalization"\]\.includes\(section\)/);
     assert.match(navigation, /document\.body\.dataset\.role === "admin" \? \[\["users"/);
     assert.match(navigation, /document\.body\.dataset\.role === "admin" \? \[\["documents"/);
+    assert.match(navigation, /\["security", "support"\]\.includes\(section\)[\s\S]*\["admin", "pc_standard", "commercial"\]/);
+    assert.match(navigation, /const supportAvailable = canAccessSettingsSection\("support"\)/);
 });
 
-test("Utilisateurs, appareils et sécurité restent réservés au Poste Admin", () => {
+test("Utilisateurs et appareils restent réservés au Poste Admin", () => {
     assert.match(auth, /app\.get\("\/api\/auth\/members", requireAccountAdministrator/);
     assert.match(auth, /app\.get\("\/api\/auth\/devices", requireAccountAdministrator/);
-    assert.match(auth, /app\.get\("\/api\/auth\/company-2fa", requireAccountAdministrator/);
     assert.match(auth, /if \(!isCompanyAdministrator\(request\)\)[\s\S]*Accès réservé à l’administrateur du compte/);
 });
 

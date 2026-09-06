@@ -233,9 +233,8 @@ CREATE TABLE IF NOT EXISTS depannhome_creator_totp (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Double authentification optionnelle des entreprises. La politique appartient
--- à l’entreprise ; les authentificateurs restent individuels pour permettre
--- ultérieurement plusieurs appareils et des méthodes de secours.
+-- Ancienne politique 2FA globale conservée pour compatibilité des bases existantes.
+-- Elle n’est plus consultée : chaque compte PC gère désormais sa propre activation.
 CREATE TABLE IF NOT EXISTS depannhome_company_totp_policies (
     owner_id BIGINT PRIMARY KEY REFERENCES depannhome_users(id) ON DELETE CASCADE,
     enabled BOOLEAN NOT NULL DEFAULT FALSE,
