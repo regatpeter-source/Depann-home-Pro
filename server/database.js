@@ -42,7 +42,7 @@ export async function initializeDatabase() {
             id BIGSERIAL PRIMARY KEY,
             username VARCHAR(32) NOT NULL,
             password_hash TEXT NOT NULL,
-            role VARCHAR(20) NOT NULL DEFAULT 'user',
+            role VARCHAR(20) NOT NULL DEFAULT 'admin',
             account_owner_id BIGINT REFERENCES depannhome_users(id) ON DELETE CASCADE,
             full_name VARCHAR(100) NOT NULL DEFAULT '',
             phone VARCHAR(30) NOT NULL DEFAULT '',
@@ -78,7 +78,8 @@ export async function initializeDatabase() {
             archived_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            CONSTRAINT depannhome_users_username_unique UNIQUE (username)
+            CONSTRAINT depannhome_users_username_unique UNIQUE (username),
+            CONSTRAINT depannhome_users_role_check CHECK (role IN ('admin','pc_standard','commercial','mobile_admin','team_lead','technician','accountant'))
         )
     `);
     await database.query(`

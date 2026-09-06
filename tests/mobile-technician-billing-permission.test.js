@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 const navigation = readFileSync(new URL("../js/navigation.js", import.meta.url), "utf8");
 const auth = readFileSync(new URL("../server/auth.js", import.meta.url), "utf8");
 const database = readFileSync(new URL("../server/database.js", import.meta.url), "utf8");
+const roleMigration = readFileSync(new URL("../database/migrations/0010_user_role_constraint.sql", import.meta.url), "utf8");
 
 test("la création d’un poste mobile propose explicitement le droit devis et factures", () => {
     assert.match(navigation, /<legend>Autorisation du poste mobile<\/legend>/);
@@ -43,6 +44,12 @@ test("le Chef d’équipe utilise le même contrôle serveur que le Technicien",
     const billing = readFileSync(new URL("../server/billing.js", import.meta.url), "utf8");
     assert.match(billing, /\["technician", "team_lead"\]\.includes\(request\.user\?\.role\).*requireTechnicianBillingAccess/);
     assert.match(billing, /if \(!\["technician", "team_lead"\]\.includes\(request\.user\?\.role\)\) return next\(\)/);
+});
+
+test("la contrainte PostgreSQL autorise le rôle Chef d’équipe sur les bases existantes", () => {
+    assert.match(roleMigration, /DROP CONSTRAINT %I/);
+    assert.match(roleMigration, /CHECK \(role IN \('admin','pc_standard','commercial','mobile_admin','team_lead','technician','accountant'\)\)/);
+    assert.match(database, /depannhome_users_role_check CHECK \(role IN \('admin','pc_standard','commercial','mobile_admin','team_lead','technician','accountant'\)\)/);
 });
 
 test("le changement de rôle filtre les choix par offre et ne recharge pas après un échec", () => {

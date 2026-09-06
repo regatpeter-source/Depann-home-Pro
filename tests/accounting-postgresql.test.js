@@ -22,7 +22,12 @@ before(async () => {
     process.env.DATABASE_URL = testDatabaseUrl;
     const databaseModule = await import("../server/database.js");
     database = databaseModule.getPool();
-    await database.query(`CREATE TABLE depannhome_users (id BIGINT PRIMARY KEY, account_owner_id BIGINT NOT NULL)`);
+    await database.query(`CREATE TABLE depannhome_users (
+        id BIGINT PRIMARY KEY,
+        account_owner_id BIGINT NOT NULL,
+        role VARCHAR(20) NOT NULL DEFAULT 'admin',
+        CONSTRAINT depannhome_users_role_check CHECK (role IN ('admin','pc_standard','commercial','mobile_admin','technician','accountant'))
+    )`);
     await database.query(`CREATE TABLE depannhome_accounting_aids (
         id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id), name VARCHAR(160) NOT NULL,
         description VARCHAR(1000) NOT NULL DEFAULT '', aid_type VARCHAR(40) NOT NULL DEFAULT 'custom',
@@ -108,6 +113,14 @@ test("PostgreSQL : les migrations sont checksumées et idempotentes", { skip: !e
         "depannhome_billing_acquittances",
         "depannhome_delayed_payment_declarations"
     ]);
+    await database.query("UPDATE depannhome_users SET role='team_lead' WHERE id=1");
+    const roleConstraint = await database.query(`
+        SELECT convalidated,pg_get_constraintdef(oid) AS definition
+        FROM pg_constraint
+        WHERE conrelid='depannhome_users'::regclass AND conname='depannhome_users_role_check'
+    `);
+    assert.equal(roleConstraint.rows[0]?.convalidated, true);
+    assert.match(roleConstraint.rows[0]?.definition || "", /team_lead/);
 });
 
 test("PostgreSQL : la lecture du technicien affecté reste non ambiguë avec une mission jointe", { skip: !enabled }, async () => {

@@ -2,7 +2,7 @@ CREATE TABLE IF NOT EXISTS depannhome_users (
     id BIGSERIAL PRIMARY KEY,
     username VARCHAR(32) NOT NULL UNIQUE,
     password_hash TEXT NOT NULL,
-    role VARCHAR(20) NOT NULL DEFAULT 'admin',
+    role VARCHAR(20) NOT NULL DEFAULT 'admin' CHECK (role IN ('admin','pc_standard','commercial','mobile_admin','team_lead','technician','accountant')),
     account_owner_id BIGINT REFERENCES depannhome_users(id) ON DELETE CASCADE,
     full_name VARCHAR(100) NOT NULL DEFAULT '',
     phone VARCHAR(30) NOT NULL DEFAULT '',
