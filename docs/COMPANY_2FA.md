@@ -34,7 +34,7 @@ Les codes TOTP ont une période de 30 secondes ; une fenêtre d’un intervalle 
 
 ## Perte de l’authentificateur
 
-Si le titulaire perd son application et ne possède plus de session ouverte, une intervention contrôlée du Support est nécessaire. Ce mécanisme de récupération est audité et reste distinct de l’administration courante de l’entreprise.
+Si le titulaire perd son application et ne possède plus de session ouverte, le Créateur peut intervenir dans une session Support contrôlée pour un Poste Admin, un Poste administratif ou un Commercial. Il réinitialise uniquement la 2FA du compte PC ciblé ; l’intervention exige un motif, est auditée et notifiée aux administrateurs de l’entreprise.
 
 ## Journalisation
 

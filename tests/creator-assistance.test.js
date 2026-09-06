@@ -39,6 +39,21 @@ test("recovery actions are constrained, audited and notify company administrator
     assert.doesNotMatch(server, /approve_device/);
 });
 
+test("Creator can reset personal 2FA for every eligible PC role only", () => {
+    assert.match(server, /WORKSTATION_2FA_RECOVERY_ROLES = new Set\(\["admin", "pc_standard", "commercial"\]\)/);
+    assert.match(server, /reset_administrator_2fa" && !WORKSTATION_2FA_RECOVERY_ROLES\.has\(member\.role\)/);
+    assert.match(server, /creator_workstation_2fa_reset/);
+    assert.match(server, /DELETE FROM depannhome_company_totp_authenticators WHERE owner_id=\$1 AND user_id=\$2/);
+    assert.match(client, /\["admin", "pc_standard", "commercial"\]\.includes\(member\.role\)/);
+    assert.match(client, /Postes PC/);
+    assert.match(client, /creatorMemberRoleLabel\(member\.role\)/);
+});
+
+test("account reactivation remains restricted to administrators", () => {
+    assert.match(server, /actionType === "reactivate_administrator" && member\.role !== "admin"/);
+    assert.match(client, /member\.role !== "admin" \|\| member\.isActive/);
+});
+
 test("session lifecycle and recovery notifications are committed atomically", () => {
     assert.match(server, /creator_support_session_started[\s\S]+COMMIT/);
     assert.match(server, /creator_support_session_closed[\s\S]+COMMIT/);
@@ -71,13 +86,13 @@ test("creator console exposes an explicit assistance workflow and warning banner
 });
 
 test("PWA versions are synchronized for creator assistance assets", () => {
-    assert.match(navigation, /creator\.js\?v=156/);
+    assert.match(navigation, /creator\.js\?v=157/);
     assert.match(index, /css\/style\.css\?v=259/);
-    assert.match(index, /js\/app\.js\?v=417/);
-    assert.match(serviceWorker, /depann-home-pro-v523/);
+    assert.match(index, /js\/app\.js\?v=418/);
+    assert.match(serviceWorker, /depann-home-pro-v524/);
     assert.match(serviceWorker, /css\/style\.css\?v=259/);
-    assert.match(serviceWorker, /js\/app\.js\?v=417/);
-    assert.match(serviceWorker, /js\/navigation\.js\?v=446/);
-    assert.match(serviceWorker, /js\/creator\.js\?v=156/);
-    assert.match(serviceWorker, /js\/connectors\.js\?v=3/);
+    assert.match(serviceWorker, /js\/app\.js\?v=418/);
+    assert.match(serviceWorker, /js\/navigation\.js\?v=447/);
+    assert.match(serviceWorker, /js\/creator\.js\?v=157/);
+    assert.match(serviceWorker, /js\/connectors\.js\?v=4/);
 });

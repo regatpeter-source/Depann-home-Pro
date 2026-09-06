@@ -5,6 +5,7 @@ import { broadcastOwnerEvent } from "./collaboration.js";
 
 const NORMAL_SESSION_MINUTES = 30;
 const EMERGENCY_SESSION_MINUTES = 10;
+const WORKSTATION_2FA_RECOVERY_ROLES = new Set(["admin", "pc_standard", "commercial"]);
 const ACTION_TYPES = new Set([
     "restore_company",
     "reactivate_company",
@@ -188,7 +189,9 @@ async function executeRecoveryAction(session, creatorId, actionType, targetId, r
         } else if (["reactivate_administrator", "reset_administrator_2fa"].includes(actionType)) {
             const memberId = positiveId(targetId);
             const member = memberId && (await connection.query(`SELECT id,username,full_name,role,is_active FROM depannhome_users WHERE id=$1 AND account_owner_id=$2 FOR UPDATE`, [memberId, ownerId])).rows[0];
-            if (!member || member.role !== "admin") throw clientError(404, "Poste Admin introuvable.");
+            if (!member) throw clientError(404, "Compte utilisateur introuvable.");
+            if (actionType === "reactivate_administrator" && member.role !== "admin") throw clientError(404, "Poste Admin introuvable.");
+            if (actionType === "reset_administrator_2fa" && !WORKSTATION_2FA_RECOVERY_ROLES.has(member.role)) throw clientError(404, "Poste PC compatible avec la double authentification introuvable.");
             resourceType = "user"; resourceId = String(member.id);
             if (actionType === "reactivate_administrator") {
                 if (Number(member.id) === ownerId) throw clientError(409, "Utilisez l’action de réactivation de l’entreprise pour son Poste Admin d’ancrage.");
@@ -205,7 +208,7 @@ async function executeRecoveryAction(session, creatorId, actionType, targetId, r
                 await connection.query("DELETE FROM depannhome_company_totp_authenticators WHERE owner_id=$1 AND user_id=$2", [ownerId, member.id]);
                 const resetDevices = await connection.query(`UPDATE depannhome_auth_devices device SET status=CASE WHEN device.device_type='desktop' THEN device.status ELSE 'rejected' END,session_id=NULL,verification_code_hash='',verification_code_expires_at=NULL,verification_attempts=0 FROM depannhome_users account WHERE device.user_id=account.id AND account.account_owner_id=$1 AND device.user_id=$2`, [ownerId, member.id]);
                 newState = { authenticators: [], invalidatedDevices: resetDevices.rowCount };
-                await recordMemberAudit(connection, ownerId, creatorId, member, "creator_company_2fa_reset", { reason, supportSessionId: session.id, invalidatedDevices: resetDevices.rowCount });
+                await recordMemberAudit(connection, ownerId, creatorId, member, "creator_workstation_2fa_reset", { reason, supportSessionId: session.id, role: member.role, invalidatedDevices: resetDevices.rowCount });
             }
         } else if (actionType === "revoke_company_sessions") {
             resourceType = "sessions"; resourceId = String(ownerId);
@@ -326,7 +329,7 @@ function publicSession(session) {
 function companyState(value) { return { isActive: Boolean(value?.is_active), isArchived: Boolean(value?.is_archived), updatedAt: value?.updated_at || null }; }
 function memberState(value) { return { id: String(value.id), username: value.username, fullName: value.full_name || value.fullName || "", role: value.role, isActive: Boolean(value.is_active ?? value.isActive), updatedAt: value.updated_at || null }; }
 function deviceState(value) { return { id: value.id, userId: String(value.user_id), label: value.label || "", deviceType: value.device_type, status: value.status }; }
-function actionLabel(value) { return ({ restore_company: "Entreprise restaurée", reactivate_company: "Entreprise réactivée", reactivate_administrator: "Poste Admin réactivé", reset_administrator_2fa: "Double authentification du Poste Admin réinitialisée", revoke_company_sessions: "Sessions de l’entreprise révoquées", reject_device: "Appareil révoqué", release_company_locks: "Verrous de l’entreprise libérés" })[value] || "Intervention réalisée"; }
+function actionLabel(value) { return ({ restore_company: "Entreprise restaurée", reactivate_company: "Entreprise réactivée", reactivate_administrator: "Poste Admin réactivé", reset_administrator_2fa: "Double authentification du poste PC réinitialisée", revoke_company_sessions: "Sessions de l’entreprise révoquées", reject_device: "Appareil révoqué", release_company_locks: "Verrous de l’entreprise libérés" })[value] || "Intervention réalisée"; }
 function validUuid(value) { const id = String(value || ""); return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id) ? id : ""; }
 function positiveId(value) { const id = Number(value); return Number.isSafeInteger(id) && id > 0 ? id : 0; }
 function cleanText(value, max) { return String(value || "").replace(/\s+/g, " ").trim().slice(0, max); }
