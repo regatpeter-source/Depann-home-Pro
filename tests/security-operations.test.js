@@ -90,7 +90,9 @@ test("les migrations de modules restent applicables avant la création de leurs 
     const runner = readFileSync(new URL("../server/database-migrations.js", import.meta.url), "utf8");
     assert.match(calendarMigration, /to_regclass\('depannhome_calendar_events'\) IS NOT NULL/);
     assert.match(outboxMigration, /to_regclass\('depannhome_partner_mission_outbox'\) IS NOT NULL/);
+    assert.match(runner, /5212e9b7728de6e2cf1dbce829092cdc26ece4a2c27e9d98ddb0ab60f9849ed1/);
     assert.match(runner, /fb7105c5ab03393502af36f1b8bc7d825273982330c56a81cf5a1c751348847f/);
+    assert.match(runner, /af7bb2089f5084f806597c7ca5d1c229c2476c66ec7533fa43617f6f1af2fcda/);
     assert.match(runner, /bf4dc579523467f3ae3ad47d09ac757448e4232900befe6ab586b76534148872/);
 });
 

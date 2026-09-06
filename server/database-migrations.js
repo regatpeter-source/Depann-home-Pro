@@ -12,8 +12,14 @@ const LEGACY_MIGRATION_CHECKSUMS = new Map([
         "478913d3dc6bca68eff852079ccc0d80b49cdf2ee6e701a492e03da1bd2dc514",
         "5f741958ac796af6863d52488751a08129a8c6992ad73efd43a6af75ff2413dc"
     ])],
-    [8, new Set(["fb7105c5ab03393502af36f1b8bc7d825273982330c56a81cf5a1c751348847f"])],
-    [9, new Set(["bf4dc579523467f3ae3ad47d09ac757448e4232900befe6ab586b76534148872"])]
+    [8, new Set([
+        "5212e9b7728de6e2cf1dbce829092cdc26ece4a2c27e9d98ddb0ab60f9849ed1",
+        "fb7105c5ab03393502af36f1b8bc7d825273982330c56a81cf5a1c751348847f"
+    ])],
+    [9, new Set([
+        "af7bb2089f5084f806597c7ca5d1c229c2476c66ec7533fa43617f6f1af2fcda",
+        "bf4dc579523467f3ae3ad47d09ac757448e4232900befe6ab586b76534148872"
+    ])]
 ]);
 
 export async function loadMigrations(directory = defaultDirectory) {
