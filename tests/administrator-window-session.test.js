@@ -56,7 +56,17 @@ test("l’ancienne fenêtre est avertie sans supprimer le cookie partagé de la 
 test("un contrôle périodique ferme rapidement une ancienne session inactive", () => {
     assert.match(appSource, /fetch\("\/api\/auth\/session"/);
     assert.match(appSource, /user\.role === "admin" && user\.deviceType !== "mobile" \? 3_000 : 30_000/);
-    assert.match(appSource, /if \(!session\?\.authenticated\) redirectToAuthentication/);
+    assert.match(appSource, /if \(!session\?\.authenticated\) \{[\s\S]*?redirectToAuthentication/);
+});
+
+test("un changement de rôle recharge automatiquement le poste déjà connecté", () => {
+    assert.match(appSource, /const initialAccessIdentity = sessionAccessIdentity\(user\)/);
+    assert.match(appSource, /sessionAccessIdentity\(session\.user\) !== initialAccessIdentity/);
+    assert.match(appSource, /window\.location\.reload\(\)/);
+    assert.match(appSource, /role: String\(user\?\.role \|\| ""\)/);
+    assert.match(appSource, /deviceType: String\(user\?\.deviceType \|\| ""\)/);
+    assert.match(appSource, /window\.addEventListener\("focus", check\)/);
+    assert.match(appSource, /document\.addEventListener\("visibilitychange", check\)/);
 });
 
 test("toute API protégée expirée renvoie PC et mobile vers la connexion", () => {

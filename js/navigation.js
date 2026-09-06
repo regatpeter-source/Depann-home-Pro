@@ -2254,7 +2254,7 @@ async function renderTeamManagement(container) {
                     if (!response.ok) { feedback.textContent = payload.message || "Le changement de rôle a échoué."; changeRole.disabled = false; return; }
                     feedback.textContent = payload.deviceActivationRequired
                         ? "Le rôle a été modifié. L’ancien appareil incompatible a été révoqué : activez ce compte sur le nouveau type de poste."
-                        : "Le rôle a été modifié. L’appareil actuel reste autorisé.";
+                        : "Le rôle a été modifié. L’appareil actuel reste autorisé et actualisera automatiquement son interface.";
                     await load();
                 });
                 const permissionButtons = [];

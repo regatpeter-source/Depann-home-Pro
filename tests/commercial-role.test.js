@@ -109,6 +109,17 @@ test("le Commercial mobile démarre directement sur son unique bouton Planning",
     assert.match(styles, /commercial"\]\.mobile-device footer \.nav-button:not\(\[data-nav="calendar"\]\)\{display:none;\}/);
 });
 
+test("un Technicien devenu Commercial mobile conserve son téléphone et reçoit la nouvelle interface", () => {
+    const auth = read("server/auth.js");
+    const application = read("js/app.js");
+    const navigation = read("js/navigation.js");
+    assert.match(auth, /const incompatibleDeviceType = \[MOBILE_ADMIN_ROLE, TEAM_LEAD_ROLE, "technician"\]\.includes\(nextRole\)[\s\S]*\[STANDARD_PC_ROLE, "accountant"\]\.includes\(nextRole\) \? "mobile" : ""/);
+    assert.match(auth, /request\.user = \{[\s\S]*role: user\.role/);
+    assert.match(application, /sessionAccessIdentity\(session\.user\) !== initialAccessIdentity/);
+    assert.match(application, /window\.location\.reload\(\)/);
+    assert.match(navigation, /L’appareil actuel reste autorisé et actualisera automatiquement son interface/);
+});
+
 test("un Commercial consomme un poste PC et seulement un appareil mobile approuvé en supplément", () => {
     const auth = read("server/auth.js");
     const creator = read("server/creator.js");

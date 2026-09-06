@@ -2,7 +2,7 @@ import { initializeAuthentication, restoreApplicationShell, signOut } from "./au
 import { initializeClientSynchronization } from "./client-sync.js?v=127";
 import { initializeCollaboration } from "./collaboration.js?v=7";
 import { loadDatabase } from "./data.js?v=59";
-import { initializeNavigation, refreshApplication } from "./navigation.js?v=443";
+import { initializeNavigation, refreshApplication } from "./navigation.js?v=444";
 import { renderError } from "./ui.js?v=44";
 import { getSettings } from "./storage.js?v=45";
 import { FONT_OPTIONS } from "./config.js?v=135";
@@ -50,15 +50,30 @@ async function initializeApp() {
 
 function startAdministratorSessionMonitor(user) {
     if (administratorSessionMonitor) return;
+    const initialAccessIdentity = sessionAccessIdentity(user);
     const check = async () => {
         if (document.visibilityState !== "visible") return;
         const response = await fetch("/api/auth/session", { credentials: "same-origin", cache: "no-store" }).catch(() => null);
         if (!response?.ok) return;
         const session = await response.json().catch(() => null);
-        if (!session?.authenticated) redirectToAuthentication(session?.sessionReplaced ? "replaced" : "expired");
+        if (!session?.authenticated) {
+            redirectToAuthentication(session?.sessionReplaced ? "replaced" : "expired");
+            return;
+        }
+        if (sessionAccessIdentity(session.user) !== initialAccessIdentity) window.location.reload();
     };
     const interval = user.role === "admin" && user.deviceType !== "mobile" ? 3_000 : 30_000;
     administratorSessionMonitor = window.setInterval(check, interval);
+    window.addEventListener("focus", check);
+    document.addEventListener("visibilitychange", check);
+}
+
+function sessionAccessIdentity(user) {
+    return JSON.stringify({
+        id: String(user?.id || ""),
+        role: String(user?.role || ""),
+        deviceType: String(user?.deviceType || "")
+    });
 }
 
 function redirectToAuthentication(reason = "") {
