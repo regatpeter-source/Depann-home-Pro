@@ -359,7 +359,7 @@ function renderEventForm(panel) {
                     <p class="muted">Cette intervention reste visible dans le planning et l’historique, mais elle ne réserve plus ce créneau.</p>
                     <dl><dt>Intervention</dt><dd>N° ${escapeHtml(event.id)}</dd><dt>Client</dt><dd>${escapeHtml(event.clientName || "Non renseigné")}</dd><dt>Date initiale</dt><dd>${escapeHtml(formatActivityDate(event.date, event.startTime))}${event.endTime ? ` — ${escapeHtml(event.endTime)}` : ""}</dd>${renderAssignedTechniciansDetail(event)}${event.location ? `<dt>Lieu</dt><dd>${escapeHtml(event.location)}</dd>` : ""}${event.notes ? `<dt>Notes</dt><dd>${escapeHtml(event.notes)}</dd>` : ""}</dl>
                 </section>
-                <div class="calendar-form-actions">${isMobileAdministrator() ? '<button type="button" class="secondary-button" id="editCalendarEvent">Modifier ou réactiver</button>' : ""}<button type="button" class="secondary-button" id="closeCalendarDetail">Fermer</button></div>
+                <div class="calendar-form-actions">${canCreateCalendarEvents() ? '<button type="button" class="secondary-button" id="editCalendarEvent">Modifier ou réactiver</button>' : ""}<button type="button" class="secondary-button" id="closeCalendarDetail">Fermer</button></div>
             </div>`;
         panel.querySelector("#editCalendarEvent")?.addEventListener("click", () => {
             mobileAdminEditingEvents.add(String(event.id));
@@ -389,7 +389,7 @@ function renderEventForm(panel) {
         const phoneHref = client ? getClientPhoneHref(client) : "";
         panel.innerHTML = `
             <div class="calendar-event-detail">
-                <div class="form-heading"><div><p class="eyebrow">${isMobileAdministrator() ? "Intervention à réaliser" : "Rendez-vous"}</p><h2>${escapeHtml(event.title)}</h2></div><div class="calendar-detail-actions">${isMobileAdministrator() ? '<button type="button" class="secondary-button" id="editCalendarEvent">Modifier le rendez-vous</button>' : ""}<button type="button" class="secondary-button" id="closeCalendarDetail">Fermer</button></div></div>
+                <div class="form-heading"><div><p class="eyebrow">${isMobileAdministrator() || isTeamLead() ? "Intervention à réaliser" : "Rendez-vous"}</p><h2>${escapeHtml(event.title)}</h2></div><div class="calendar-detail-actions">${canCreateCalendarEvents() ? '<button type="button" class="secondary-button" id="editCalendarEvent">Modifier le rendez-vous</button>' : ""}<button type="button" class="secondary-button" id="closeCalendarDetail">Fermer</button></div></div>
                 ${client ? `
                     <section class="calendar-client-summary">
                         <div><p class="eyebrow">Fiche client</p><h3>${escapeHtml(client.name)}</h3><p class="muted">${escapeHtml(client.type || "Client")}</p></div>
@@ -1698,6 +1698,7 @@ function canAccessQuitus() {
 
 function isReadOnlyCalendar() {
     return ["technician", "accountant"].includes(document.body.dataset.role)
+    || document.body.dataset.role === "team_lead" && document.body.dataset.canManageCalendar !== "true"
         || isCommercialMobileCalendar();
 }
 
@@ -1713,12 +1714,16 @@ function isMobileAdministrator() {
     return document.body.dataset.role === "mobile_admin";
 }
 
+function isTeamLead() {
+    return document.body.dataset.role === "team_lead";
+}
+
 function canManageCalendarEventStatus() {
     return ["admin", "pc_standard", "commercial", "mobile_admin"].includes(document.body.dataset.role) && !isReadOnlyCalendar();
 }
 
 function usesTerrainInterventionView(event) {
-    return isReadOnlyCalendar() && Boolean(event?.id) || (isMobileAdministrator() && Boolean(event?.id) && event.eventType === "appointment" && !mobileAdminEditingEvents.has(String(event.id)));
+    return isReadOnlyCalendar() && Boolean(event?.id) || ((isMobileAdministrator() || isTeamLead()) && Boolean(event?.id) && event.eventType === "appointment" && !mobileAdminEditingEvents.has(String(event.id)));
 }
 
 function roleLabel(role) {

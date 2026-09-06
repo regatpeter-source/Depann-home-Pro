@@ -92,7 +92,8 @@ test("le planning mobile Commercial est filtré par affectation et reste en lect
     const client = read("js/calendar.js");
     assert.match(server, /function hasAssignedOnlyCalendar\(user\)[\s\S]*user\?\.role === "commercial" && user\?\.deviceType === "mobile"/);
     assert.match(server, /assignment\.event_id = event\.id AND assignment\.technician_id = \$5::bigint/);
-    assert.match(server, /requireCalendarCreateAccess[\s\S]*isCommercialMobile\(request\.user\)/);
+    assert.match(server, /requireCalendarCreateAccess[\s\S]*canManageCalendarSchedule\(request\.user\)/);
+    assert.match(server, /function canManageCalendarSchedule\(user\)[\s\S]*isCommercialMobile\(user\)/);
     assert.match(client, /function isCommercialMobileCalendar\(\)/);
     assert.match(client, /function canCreateCalendarEvents\(\)/);
     assert.match(client, /function canCreateCalendarEvents\(\) \{\s*return !isReadOnlyCalendar\(\)/);

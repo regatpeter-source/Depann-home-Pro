@@ -850,17 +850,23 @@ export function registerCalendarRoutes(app, requireAuthentication) {
 }
 
 function requireCalendarWriteAccess(request, response, next) {
-    if (["technician", "accountant"].includes(request.user?.role) || request.user?.role === "commercial" && request.user?.deviceType === "mobile") {
+    if (!canManageCalendarSchedule(request.user)) {
         return response.status(403).json({ message: "Ce poste peut consulter son planning, sans le modifier." });
     }
     return next();
 }
 
 function requireCalendarCreateAccess(request, response, next) {
-    if (["technician", "accountant"].includes(request.user?.role) || isCommercialMobile(request.user)) {
+    if (!canManageCalendarSchedule(request.user)) {
         return response.status(403).json({ message: "Ce poste peut consulter son planning, sans le modifier." });
     }
     return next();
+}
+
+export function canManageCalendarSchedule(user) {
+    if (["technician", "accountant"].includes(user?.role) || isCommercialMobile(user)) return false;
+    if (user?.role === "team_lead") return user.canManageCalendar === true;
+    return ["admin", "pc_standard", "mobile_admin", "commercial"].includes(user?.role);
 }
 
 function requireCalendarReadAccess(request, response, next) {

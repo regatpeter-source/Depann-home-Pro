@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS depannhome_users (
     can_access_accounting BOOLEAN NOT NULL DEFAULT FALSE,
     can_access_company_email BOOLEAN NOT NULL DEFAULT FALSE,
     can_switch_group_companies BOOLEAN NOT NULL DEFAULT FALSE,
+    can_manage_calendar BOOLEAN NOT NULL DEFAULT FALSE,
     subscription_plan VARCHAR(20) NOT NULL DEFAULT 'free',
     subscription_tier VARCHAR(20) NOT NULL DEFAULT 'pro' CHECK (subscription_tier IN ('basic','basic_plus','pro')),
     subscription_label VARCHAR(80) NOT NULL DEFAULT '',

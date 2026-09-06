@@ -2,7 +2,7 @@ import { initializeAuthentication, restoreApplicationShell, signOut } from "./au
 import { initializeClientSynchronization } from "./client-sync.js?v=127";
 import { initializeCollaboration } from "./collaboration.js?v=7";
 import { loadDatabase } from "./data.js?v=59";
-import { initializeNavigation, refreshApplication } from "./navigation.js?v=447";
+import { initializeNavigation, refreshApplication } from "./navigation.js?v=448";
 import { renderError } from "./ui.js?v=44";
 import { getSettings } from "./storage.js?v=45";
 import { FONT_OPTIONS } from "./config.js?v=135";
@@ -72,7 +72,8 @@ function sessionAccessIdentity(user) {
     return JSON.stringify({
         id: String(user?.id || ""),
         role: String(user?.role || ""),
-        deviceType: String(user?.deviceType || "")
+        deviceType: String(user?.deviceType || ""),
+        canManageCalendar: user?.canManageCalendar === true
     });
 }
 
@@ -171,6 +172,7 @@ function showAuthenticatedUser(user) {
     document.body.dataset.creator = user.isCreator ? "true" : "false";
     document.body.dataset.deviceType = user.deviceType || "desktop";
     document.body.dataset.technicianBillingEnabled = user.technicianBillingEnabled === false ? "false" : "true";
+    document.body.dataset.canManageCalendar = user.canManageCalendar ? "true" : "false";
     document.body.dataset.userDepartments = JSON.stringify(sections);
     document.body.dataset.canAccessBilling = user.canAccessBilling ? "true" : "false";
     document.body.dataset.canAccessAccounting = user.canAccessAccounting ? "true" : "false";

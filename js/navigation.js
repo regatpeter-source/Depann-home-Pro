@@ -1,5 +1,5 @@
 import { ROUTES, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=135";
-import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=208";
+import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=209";
 import { openCreatorPartnerRequest, openCreatorRequestNotification, renderCreatorConsole } from "./creator.js?v=157";
 import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=204";
 import { renderAccounting, renderElectronicInvoicingConfiguration } from "./accounting.js?v=26";
@@ -2053,8 +2053,9 @@ async function renderTeamManagement(container) {
     mobileBillingPermissionField.className = "team-permissions-fieldset";
     mobileBillingPermissionField.innerHTML = `
         <legend>Autorisation du poste mobile</legend>
-        <p class="muted">Ce droit permet au Technicien ou au Chef d’équipe de créer des documents commerciaux depuis ses interventions.</p>
+        <p class="muted">Ces droits s’appliquent au compte mobile sur tous ses appareils.</p>
         <label class="settings-toggle"><span><strong>Créer des devis et factures</strong><small>Autoriser ce poste mobile à créer des devis et factures pour ses interventions</small></span><input type="checkbox" name="canCreateBilling"></label>
+        <label class="settings-toggle" data-team-lead-calendar-permission><span><strong>Gérer le planning</strong><small>Créer et modifier les rendez-vous, horaires, informations et affectations des membres</small></span><input type="checkbox" name="canManageCalendar"></label>
     `;
     mobileBillingPermissionField.hidden = true;
     formFields.appendChild(mobileBillingPermissionField);
@@ -2102,6 +2103,8 @@ async function renderTeamManagement(container) {
             : "Choisissez uniquement les espaces nécessaires à ce poste. Ces droits sont contrôlés côté serveur.";
         mobileBillingPermissionField.hidden = !["technician", "team_lead"].includes(roleInput.value);
         form.elements.canCreateBilling.disabled = !["technician", "team_lead"].includes(roleInput.value);
+        mobileBillingPermissionField.querySelector("[data-team-lead-calendar-permission]").hidden = roleInput.value !== "team_lead";
+        form.elements.canManageCalendar.disabled = roleInput.value !== "team_lead";
         feedback.textContent = isMobileAdmin ? "Ce poste s’active uniquement depuis un smartphone ou une tablette : l’appareil devra être autorisé, puis confirmé avec le code envoyé par e-mail." : roleInput.value === "commercial" ? "Un seul compte pour le PC et le mobile. Sur téléphone, seuls les rendez-vous affectés sont visibles en lecture seule." : "";
     };
     roleInput.addEventListener("change", updateRoleFields);
@@ -2115,7 +2118,7 @@ async function renderTeamManagement(container) {
         const permissionForm = configurablePcPermissions ? `
             <form class="device-permissions-form"><h3>Autorisations du poste</h3><p class="muted">Modifiez les espaces accessibles par ce compte. Les changements s’appliquent à tous ses appareils.</p><fieldset class="team-permissions-fieldset"><legend>Espaces autorisés</legend><label class="settings-toggle"><span><strong>Devis et factures</strong><small>Créer et gérer les documents commerciaux</small></span><input type="checkbox" name="canAccessBilling" ${device.canAccessBilling ? "checked" : ""}></label><label class="settings-toggle"><span><strong>Comptabilité et e-facturation</strong><small>Accéder aux journaux, règlements, TVA, FEC et PDP</small></span><input type="checkbox" name="canAccessAccounting" ${device.canAccessAccounting ? "checked" : ""}></label><label class="settings-toggle"><span><strong>Espace e-mail de l’entreprise</strong><small>Consulter la boîte professionnelle et ses pièces jointes</small></span><input type="checkbox" name="canAccessCompanyEmail" ${device.canAccessCompanyEmail ? "checked" : ""}></label>${groupCompanyPermissionAvailable ? `<label class="settings-toggle"><span><strong>Entreprises du même groupe</strong><small>Changer de société active sans partager leurs données</small></span><input type="checkbox" name="canSwitchGroupCompanies" ${device.canSwitchGroupCompanies ? "checked" : ""}></label>` : ""}</fieldset><p class="auth-message" aria-live="polite"></p><button type="submit" class="secondary-button">Enregistrer les autorisations</button></form>
         ` : configurableMobileBilling ? `
-            <form class="device-permissions-form"><h3>Autorisations du poste</h3><p class="muted">Ce droit s’applique au compte mobile sur tous ses appareils.</p><fieldset class="team-permissions-fieldset"><legend>Documents commerciaux</legend><label class="settings-toggle"><span><strong>Créer des devis et factures</strong><small>Autoriser la création depuis les interventions affectées</small></span><input type="checkbox" name="canCreateBilling" ${device.canCreateBilling ? "checked" : ""}></label></fieldset><p class="auth-message" aria-live="polite"></p><button type="submit" class="secondary-button">Enregistrer les autorisations</button></form>
+            <form class="device-permissions-form"><h3>Autorisations du poste</h3><p class="muted">Ces droits s’appliquent au compte mobile sur tous ses appareils.</p><fieldset class="team-permissions-fieldset"><legend>Autorisations mobiles</legend><label class="settings-toggle"><span><strong>Créer des devis et factures</strong><small>Autoriser la création depuis les interventions affectées</small></span><input type="checkbox" name="canCreateBilling" ${device.canCreateBilling ? "checked" : ""}></label>${device.userRole === "team_lead" ? `<label class="settings-toggle"><span><strong>Gérer le planning</strong><small>Créer et modifier les rendez-vous, horaires, informations et affectations</small></span><input type="checkbox" name="canManageCalendar" ${device.canManageCalendar ? "checked" : ""}></label>` : ""}</fieldset><p class="auth-message" aria-live="polite"></p><button type="submit" class="secondary-button">Enregistrer les autorisations</button></form>
         ` : `<section class="device-permissions-summary"><h3>Autorisations du poste</h3><p class="muted">${device.userRole === "admin" ? "Le Poste Admin dispose automatiquement de tous les accès, sans restriction." : device.userRole === "mobile_admin" ? "Les accès du Poste Admin Mobile sont appliqués automatiquement selon son rôle." : "Les autorisations de ce poste sont définies automatiquement par son rôle et l’offre active."}</p></section>`;
         const dialog = document.createElement("dialog");
         dialog.className = "device-management-dialog";
@@ -2138,7 +2141,10 @@ async function renderTeamManagement(container) {
                 canAccessAccounting: form.elements.canAccessAccounting.checked,
                 canAccessCompanyEmail: form.elements.canAccessCompanyEmail.checked,
                 canSwitchGroupCompanies: Boolean(form.elements.canSwitchGroupCompanies?.checked)
-            } : { canCreateBilling: form.elements.canCreateBilling.checked };
+            } : {
+                canCreateBilling: form.elements.canCreateBilling.checked,
+                canManageCalendar: device.userRole === "team_lead" && Boolean(form.elements.canManageCalendar?.checked)
+            };
             submitButton.disabled = true;
             status.textContent = "Enregistrement en cours…";
             status.classList.remove("error");
@@ -2228,7 +2234,9 @@ async function renderTeamManagement(container) {
                     ? " · Tous les accès"
                     : ["pc_standard", "commercial", "accountant"].includes(member.role) && advancedPcPermissions
                         ? ` · Facturation : ${member.canAccessBilling ? "oui" : "non"} · Comptabilité : ${member.canAccessAccounting ? "oui" : "non"} · E-mail : ${member.canAccessCompanyEmail ? "oui" : "non"}${groupCompanyPermissionAvailable ? ` · Groupe : ${member.canSwitchGroupCompanies ? "oui" : "non"}` : ""}`
-                        : "";
+                        : member.role === "team_lead"
+                            ? ` · Gestion du planning : ${member.canManageCalendar ? "oui" : "non"}`
+                            : "";
                 const sectionBadges = ["technician", "team_lead"].includes(member.role) ? memberDepartments(member).map(section => `<span class="team-department-badge">${escapeHtml(section)}</span>`).join("") : "";
                 item.innerHTML = `<div class="team-member-summary"><div class="team-member-title"><strong>${escapeHtml(member.fullName || member.username)}</strong><span class="team-role-badge ${member.role === "admin" ? "is-admin" : member.role === "mobile_admin" ? "is-mobile-admin" : member.role === "accountant" ? "is-accountant" : "is-technician"}">${memberType}</span>${sectionBadges}<span class="team-state-badge ${member.isActive ? "is-active" : "is-inactive"}">${member.isActive ? "Actif" : "Désactivé"}</span></div><span class="team-member-meta">${escapeHtml(member.phone || "Téléphone non renseigné")}<span aria-hidden="true">·</span>${escapeHtml(member.email || "E-mail non renseigné")}<span aria-hidden="true">·</span>${escapeHtml(member.username)}${member.role === "mobile_admin" ? " · Activation par code e-mail sur smartphone" : ""}${permissionSummary}</span></div>`;
                 const actions = document.createElement("div");
@@ -2290,7 +2298,14 @@ async function renderTeamManagement(container) {
                         if (!response.ok) feedback.textContent = (await response.json().catch(() => ({}))).message || "La mise à jour de l’autorisation a échoué.";
                         await load();
                     });
-                    actions.append(toggle, changeRole, editDepartment, billingPermission, remove);
+                    const calendarPermission = member.role === "team_lead" ? createButton(member.canManageCalendar ? "Retirer la gestion du planning" : "Autoriser la gestion du planning", "secondary-button", async () => {
+                        calendarPermission.disabled = true;
+                        const response = await fetch(`/api/auth/members/${encodeURIComponent(member.id)}`, { method: "PATCH", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ isActive: member.isActive, canCreateBilling: member.canCreateBilling, canManageCalendar: !member.canManageCalendar }) });
+                        if (!response.ok) feedback.textContent = (await response.json().catch(() => ({}))).message || "La mise à jour de l’autorisation planning a échoué.";
+                        else feedback.textContent = `Autorisation planning mise à jour pour ${member.fullName || member.username}.`;
+                        await load();
+                    }) : null;
+                    actions.append(toggle, changeRole, editDepartment, billingPermission, ...(calendarPermission ? [calendarPermission] : []), remove);
                 } else actions.append(toggle, changeRole, ...permissionButtons, remove);
                 item.appendChild(actions);
                 list.appendChild(item);
@@ -2372,6 +2387,7 @@ async function renderTeamManagement(container) {
             values.departments = [...departmentsField.querySelectorAll('input[name="departments"]:checked')].map(input => input.value);
             if (["technician", "team_lead"].includes(roleInput.value) && !values.departments.length) throw new Error("Choisissez au moins une section métier.");
             values.canCreateBilling = ["technician", "team_lead"].includes(roleInput.value) && Boolean(form.elements.canCreateBilling.checked);
+            values.canManageCalendar = roleInput.value === "team_lead" && Boolean(form.elements.canManageCalendar.checked);
             values.canAccessBilling = Boolean(form.elements.canAccessBilling?.checked);
             values.canAccessAccounting = Boolean(form.elements.canAccessAccounting?.checked);
             values.canAccessCompanyEmail = Boolean(form.elements.canAccessCompanyEmail?.checked);

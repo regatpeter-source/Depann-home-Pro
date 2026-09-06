@@ -198,7 +198,7 @@ export function registerAuthRoutes(app) {
         if (!deviceId || !/^\d{6}$/.test(code)) return response.status(400).json({ message: "Code de validation invalide." });
         const { rows } = await getPool().query(`
             SELECT device.*, account.id AS user_id, account.username, account.role, account.account_owner_id, account.full_name, account.phone, account.email, account.department, account.departments, account.is_active,
-                account.can_create_billing, account.can_access_billing, account.can_access_accounting, account.can_access_company_email, account.can_switch_group_companies,
+                account.can_create_billing, account.can_access_billing, account.can_access_accounting, account.can_access_company_email, account.can_switch_group_companies, account.can_manage_calendar,
                 owner.is_active AS account_is_active, owner.max_pc_users, owner.max_technicians, owner.monthly_price_cents, owner.subscription_tier
             FROM depannhome_auth_devices device JOIN depannhome_users account ON account.id = device.user_id JOIN depannhome_users owner ON owner.id = account.account_owner_id WHERE device.id = $1
         `, [deviceId]);
@@ -354,7 +354,7 @@ export function registerAuthRoutes(app) {
 
     app.get("/api/auth/members", requireAccountAdministrator, asyncHandler(async (request, response) => {
         const { rows } = await getPool().query(`
-            SELECT id, username, role, full_name AS "fullName", phone, email, department, departments, is_active AS "isActive", can_create_billing AS "canCreateBilling",
+            SELECT id, username, role, full_name AS "fullName", phone, email, department, departments, is_active AS "isActive", can_create_billing AS "canCreateBilling", can_manage_calendar AS "canManageCalendar",
                 can_access_billing AS "canAccessBilling", can_access_accounting AS "canAccessAccounting", can_access_company_email AS "canAccessCompanyEmail", can_switch_group_companies AS "canSwitchGroupCompanies", created_at AS "createdAt"
             FROM depannhome_users
             WHERE account_owner_id = $1 AND id <> $1
@@ -403,11 +403,12 @@ export function registerAuthRoutes(app) {
             const canAccessAccounting = configurablePermissions && request.body?.canAccessAccounting === true;
             const canAccessCompanyEmail = configurablePermissions && request.body?.canAccessCompanyEmail === true;
             const canCreateBilling = ["technician", TEAM_LEAD_ROLE].includes(role) && request.body?.canCreateBilling === true;
+            const canManageCalendar = role === TEAM_LEAD_ROLE && request.body?.canManageCalendar === true;
             const canSwitchGroupCompanies = configurablePermissions && organization.subscriptionTier === "pro"
                 && Boolean(request.user.groupId) && request.body?.canSwitchGroupCompanies === true;
             const memberDepartments = ["technician", TEAM_LEAD_ROLE].includes(role) ? departments : [];
-            const member = await createUser({ username, passwordHash: await bcrypt.hash(password, 12), role, accountOwnerId: getAccountOwnerId(request), fullName, phone, email, department: memberDepartments[0] || "", departments: memberDepartments, canCreateBilling, canAccessBilling, canAccessAccounting, canAccessCompanyEmail, canSwitchGroupCompanies });
-            await recordMemberAudit(getAccountOwnerId(request), request.user.sub, member, role === "admin" ? "administrator_created" : "member_created", { role, canCreateBilling, canAccessBilling, canAccessAccounting, canAccessCompanyEmail, canSwitchGroupCompanies });
+            const member = await createUser({ username, passwordHash: await bcrypt.hash(password, 12), role, accountOwnerId: getAccountOwnerId(request), fullName, phone, email, department: memberDepartments[0] || "", departments: memberDepartments, canCreateBilling, canAccessBilling, canAccessAccounting, canAccessCompanyEmail, canSwitchGroupCompanies, canManageCalendar });
+            await recordMemberAudit(getAccountOwnerId(request), request.user.sub, member, role === "admin" ? "administrator_created" : "member_created", { role, canCreateBilling, canAccessBilling, canAccessAccounting, canAccessCompanyEmail, canSwitchGroupCompanies, canManageCalendar });
             response.status(201).json({ member: publicUser(member) });
         } catch (error) {
             if (error.code === "23505") return response.status(409).json({ message: "Ce nom d’utilisateur est déjà utilisé." });
@@ -419,7 +420,7 @@ export function registerAuthRoutes(app) {
         const memberId = positiveId(request.params.memberId);
         if (!memberId) return response.status(400).json({ message: "Accès invalide." });
         const { rows } = await getPool().query(`
-            SELECT id, username, full_name AS "fullName", role, department, departments, is_active AS "isActive", can_create_billing AS "canCreateBilling",
+            SELECT id, username, full_name AS "fullName", role, department, departments, is_active AS "isActive", can_create_billing AS "canCreateBilling", can_manage_calendar AS "canManageCalendar",
                 can_access_billing AS "canAccessBilling", can_access_accounting AS "canAccessAccounting", can_access_company_email AS "canAccessCompanyEmail", can_switch_group_companies AS "canSwitchGroupCompanies"
             FROM depannhome_users
             WHERE id = $1 AND account_owner_id = $2 AND id <> $2
@@ -430,6 +431,9 @@ export function registerAuthRoutes(app) {
         const canCreateBilling = ["technician", TEAM_LEAD_ROLE].includes(member.role) && typeof request.body?.canCreateBilling === "boolean"
             ? request.body.canCreateBilling
             : member.canCreateBilling;
+        const canManageCalendar = member.role === TEAM_LEAD_ROLE && typeof request.body?.canManageCalendar === "boolean"
+            ? request.body.canManageCalendar
+            : member.role === TEAM_LEAD_ROLE && member.canManageCalendar;
         const organization = await getOrganization(getAccountOwnerId(request));
         const configurablePermissions = isAdvancedWorkstationTier(organization.subscriptionTier) && supportsConfigurablePcPermissions(member.role);
         const canAccessBilling = configurablePermissions && (typeof request.body?.canAccessBilling === "boolean" ? request.body.canAccessBilling : member.canAccessBilling);
@@ -463,8 +467,8 @@ export function registerAuthRoutes(app) {
             const seatError = await memberSeatError(getAccountOwnerId(request), member.role, memberId);
             if (seatError) return response.status(400).json({ message: seatError });
         }
-        await getPool().query("UPDATE depannhome_users SET is_active = $3, can_create_billing = $4, can_access_billing = $5, can_access_accounting = $6, can_access_company_email = $7, can_switch_group_companies = $8, department = $9, departments = $10::jsonb, updated_at = NOW() WHERE id = $1 AND account_owner_id = $2", [memberId, getAccountOwnerId(request), isActive, canCreateBilling, canAccessBilling, canAccessAccounting, canAccessCompanyEmail, canSwitchGroupCompanies, department, JSON.stringify(departments)]);
-        await recordMemberAudit(getAccountOwnerId(request), request.user.sub, member, member.role === "admin" ? (isActive ? "administrator_activated" : "administrator_deactivated") : "member_updated", { isActive, canCreateBilling, canAccessBilling, canAccessAccounting, canAccessCompanyEmail, canSwitchGroupCompanies, departments });
+        await getPool().query("UPDATE depannhome_users SET is_active = $3, can_create_billing = $4, can_access_billing = $5, can_access_accounting = $6, can_access_company_email = $7, can_switch_group_companies = $8, can_manage_calendar = $9, department = $10, departments = $11::jsonb, updated_at = NOW() WHERE id = $1 AND account_owner_id = $2", [memberId, getAccountOwnerId(request), isActive, canCreateBilling, canAccessBilling, canAccessAccounting, canAccessCompanyEmail, canSwitchGroupCompanies, canManageCalendar, department, JSON.stringify(departments)]);
+        await recordMemberAudit(getAccountOwnerId(request), request.user.sub, member, member.role === "admin" ? (isActive ? "administrator_activated" : "administrator_deactivated") : "member_updated", { isActive, canCreateBilling, canAccessBilling, canAccessAccounting, canAccessCompanyEmail, canSwitchGroupCompanies, canManageCalendar, departments });
         response.status(204).end();
     }));
 
@@ -508,6 +512,7 @@ export function registerAuthRoutes(app) {
                     can_access_accounting = CASE WHEN $3::varchar(20) IN ('pc_standard', 'commercial', 'accountant') THEN can_access_accounting ELSE FALSE END,
                     can_access_company_email = CASE WHEN $3::varchar(20) IN ('pc_standard', 'commercial', 'accountant') THEN can_access_company_email ELSE FALSE END,
                     can_switch_group_companies = CASE WHEN $3::varchar(20) IN ('pc_standard', 'commercial', 'accountant') THEN can_switch_group_companies ELSE FALSE END,
+                    can_manage_calendar = FALSE,
                     updated_at = NOW()
                 WHERE id = $1 AND account_owner_id = $2
             `, [memberId, ownerId, nextRole]);
@@ -673,7 +678,7 @@ export function registerAuthRoutes(app) {
             database.query(`
             SELECT device.id, device.label, device.device_type AS "deviceType", device.status, device.created_at AS "createdAt", device.last_seen_at AS "lastSeenAt",
                 account.id AS "userId", account.full_name AS "fullName", account.username, account.email, account.role AS "userRole",
-                account.can_create_billing AS "canCreateBilling", account.can_access_billing AS "canAccessBilling",
+                account.can_create_billing AS "canCreateBilling", account.can_manage_calendar AS "canManageCalendar", account.can_access_billing AS "canAccessBilling",
                 account.can_access_accounting AS "canAccessAccounting", account.can_access_company_email AS "canAccessCompanyEmail",
                 account.can_switch_group_companies AS "canSwitchGroupCompanies"
             FROM depannhome_auth_devices device JOIN depannhome_users account ON account.id = device.user_id
@@ -816,6 +821,7 @@ export async function authenticateRequest(request, response, next) {
             department: user.department || "",
             departments: cleanDepartments(user.departments, user.department),
             technicianBillingEnabled: user.can_create_billing !== false,
+            canManageCalendar: user.role === TEAM_LEAD_ROLE && user.can_manage_calendar === true,
             canAccessBilling: device.device_type !== "mobile" && (user.role === "admin" || user.can_access_billing === true),
             canAccessAccounting: device.device_type !== "mobile" && (user.role === "admin" || user.can_access_accounting === true),
             canAccessCompanyEmail: hasCompanyEmailWorkspaceAccess({ ...user, organization, deviceType: device.device_type }),
@@ -1308,6 +1314,7 @@ function publicUser(user) {
         department: user.department || "",
         departments: cleanDepartments(user.departments, user.department),
         technicianBillingEnabled: (user.can_create_billing ?? user.technicianBillingEnabled) !== false,
+        canManageCalendar: user.role === TEAM_LEAD_ROLE && (user.can_manage_calendar ?? user.canManageCalendar) === true,
         canAccessBilling: (user.deviceType || user.device_type || "desktop") !== "mobile" && (user.role === "admin" || (user.can_access_billing ?? user.canAccessBilling) === true),
         canAccessAccounting: (user.deviceType || user.device_type || "desktop") !== "mobile" && (user.role === "admin" || (user.can_access_accounting ?? user.canAccessAccounting) === true),
         canAccessCompanyEmail: (user.can_access_company_email ?? user.canAccessCompanyEmail) === true || ["admin", "mobile_admin"].includes(user.role) && ["basic_plus", "pro"].includes(user.organization?.subscriptionTier || user.subscription_tier),
