@@ -46,7 +46,7 @@ export async function memberSeatError(ownerId, role, excludedMemberId = 0, datab
             COUNT(DISTINCT member.id) FILTER (WHERE member.role IN ('mobile_admin','team_lead','technician') AND member.is_active AND member.id<>$2)::int
                 + COUNT(DISTINCT cross_device_mobile.id) FILTER (WHERE cross_device_mobile.status='approved')::int AS "activeMobileUsers"
         FROM depannhome_users owner LEFT JOIN depannhome_users member ON member.account_owner_id=owner.id
-        LEFT JOIN depannhome_users cross_device_account ON cross_device_account.account_owner_id=owner.id AND cross_device_account.role IN ('admin','commercial') AND cross_device_account.is_active
+        LEFT JOIN depannhome_users cross_device_account ON cross_device_account.account_owner_id=owner.id AND cross_device_account.role IN ('admin','commercial') AND cross_device_account.is_active AND cross_device_account.id<>$2
         LEFT JOIN depannhome_auth_devices cross_device_mobile ON cross_device_mobile.user_id=cross_device_account.id AND cross_device_mobile.device_type='mobile'
         WHERE owner.id=$1 GROUP BY owner.id
     `, [ownerId, excludedMemberId]);

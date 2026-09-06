@@ -130,6 +130,12 @@ test("un Commercial consomme un poste PC et seulement un appareil mobile approuv
     }
 });
 
+test("le changement vers un rôle mobile réutilise la place de l’appareil mobile du même compte", () => {
+    const auth = read("server/auth.js");
+    assert.match(auth, /cross_device_account\.is_active AND cross_device_account\.id<>\$2/);
+    assert.match(auth, /memberSeatError\(ownerId, nextRole, memberId, database, false\)/);
+});
+
 test("le middleware de restriction mobile est installé avant les routes métier", () => {
     const app = read("app.js");
     const authentication = app.indexOf("app.use(authenticateRequest)");
