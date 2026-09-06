@@ -113,7 +113,12 @@ test("PostgreSQL : les migrations sont checksumées et idempotentes", { skip: !e
         "depannhome_billing_acquittances",
         "depannhome_delayed_payment_declarations"
     ]);
-    await database.query("UPDATE depannhome_users SET role='team_lead' WHERE id=1");
+        await database.query(`
+                UPDATE depannhome_users
+                SET role=$3::varchar(20)
+                WHERE id=$1 AND account_owner_id=$2
+                    AND $3::varchar(20) IN ('technician','team_lead')
+        `, [1, 1, "team_lead"]);
     const roleConstraint = await database.query(`
         SELECT convalidated,pg_get_constraintdef(oid) AS definition
         FROM pg_constraint

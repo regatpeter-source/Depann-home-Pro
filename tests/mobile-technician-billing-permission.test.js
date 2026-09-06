@@ -29,7 +29,8 @@ test("la rétrogradation Poste Admin Mobile vers Technicien conserve un appareil
     assert.match(database, /account\.role IN \('mobile_admin', 'team_lead', 'technician'\)\)\s+AND device\.status <> 'rejected'/);
     assert.doesNotMatch(database, /SET device_type = '(?:mobile|desktop)'/);
     assert.match(auth, /SELECT id, username, full_name AS "fullName", role, is_active AS "isActive"[\s\S]*FOR UPDATE/);
-    assert.match(auth, /can_create_billing = CASE WHEN \$3 IN \('technician', 'team_lead'\) THEN FALSE ELSE can_create_billing END/);
+    assert.match(auth, /SET role = \$3::varchar\(20\)/);
+    assert.match(auth, /can_create_billing = CASE WHEN \$3::varchar\(20\) IN \('technician', 'team_lead'\) THEN FALSE ELSE can_create_billing END/);
     assert.match(auth, /const incompatibleDeviceType = \[MOBILE_ADMIN_ROLE, TEAM_LEAD_ROLE, "technician"\]\.includes\(nextRole\)/);
     assert.match(auth, /SET status='rejected', session_id=NULL/);
     assert.match(auth, /deviceActivationRequired, rejectedDeviceIds/);

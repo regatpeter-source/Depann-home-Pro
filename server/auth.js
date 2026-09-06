@@ -501,13 +501,13 @@ export function registerAuthRoutes(app) {
             failedStep = "mise à jour du rôle";
             await database.query(`
                 UPDATE depannhome_users
-                SET role = $3, department = CASE WHEN $3 IN ('technician', 'team_lead') THEN department ELSE '' END,
-                    departments = CASE WHEN $3 IN ('technician', 'team_lead') THEN departments ELSE '[]'::jsonb END,
-                    can_create_billing = CASE WHEN $3 IN ('technician', 'team_lead') THEN FALSE ELSE can_create_billing END,
-                    can_access_billing = CASE WHEN $3 IN ('pc_standard', 'commercial', 'accountant') THEN can_access_billing ELSE FALSE END,
-                    can_access_accounting = CASE WHEN $3 IN ('pc_standard', 'commercial', 'accountant') THEN can_access_accounting ELSE FALSE END,
-                    can_access_company_email = CASE WHEN $3 IN ('pc_standard', 'commercial', 'accountant') THEN can_access_company_email ELSE FALSE END,
-                    can_switch_group_companies = CASE WHEN $3 IN ('pc_standard', 'commercial', 'accountant') THEN can_switch_group_companies ELSE FALSE END,
+                SET role = $3::varchar(20), department = CASE WHEN $3::varchar(20) IN ('technician', 'team_lead') THEN department ELSE '' END,
+                    departments = CASE WHEN $3::varchar(20) IN ('technician', 'team_lead') THEN departments ELSE '[]'::jsonb END,
+                    can_create_billing = CASE WHEN $3::varchar(20) IN ('technician', 'team_lead') THEN FALSE ELSE can_create_billing END,
+                    can_access_billing = CASE WHEN $3::varchar(20) IN ('pc_standard', 'commercial', 'accountant') THEN can_access_billing ELSE FALSE END,
+                    can_access_accounting = CASE WHEN $3::varchar(20) IN ('pc_standard', 'commercial', 'accountant') THEN can_access_accounting ELSE FALSE END,
+                    can_access_company_email = CASE WHEN $3::varchar(20) IN ('pc_standard', 'commercial', 'accountant') THEN can_access_company_email ELSE FALSE END,
+                    can_switch_group_companies = CASE WHEN $3::varchar(20) IN ('pc_standard', 'commercial', 'accountant') THEN can_switch_group_companies ELSE FALSE END,
                     updated_at = NOW()
                 WHERE id = $1 AND account_owner_id = $2
             `, [memberId, ownerId, nextRole]);
