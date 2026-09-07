@@ -173,6 +173,12 @@ async function executeRecoveryAction(session, creatorId, actionType, targetId, r
     let notifications;
     try {
         await connection.query("BEGIN");
+        const { rows: sessions } = await connection.query(`${sessionSelect()}
+            WHERE session.id=$1 AND session.created_by=$2 AND session.target_company_owner_id=$3
+                AND session.revoked_at IS NULL AND session.expires_at>NOW()
+            FOR UPDATE OF session`, [session.id, creatorId, ownerId]);
+        const lockedSession = sessions[0];
+        if (!lockedSession) throw clientError(409, "Cette session d’assistance a été révoquée ou a expiré.");
         const owner = await findCompanyOwner(connection, ownerId, true);
         if (!owner || isCreatorUsername(owner.username)) throw clientError(404, "Entreprise cliente introuvable.");
         if (actionType === "restore_company") {
@@ -236,9 +242,9 @@ async function executeRecoveryAction(session, creatorId, actionType, targetId, r
             (id,support_session_id,created_by,target_company_owner_id,action_type,target_resource_type,target_resource_id,reason,previous_state,new_state,is_emergency,company_notified_at)
             VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb,$11,NOW())
             RETURNING id,action_type AS "actionType",target_resource_type AS "targetResourceType",target_resource_id AS "targetResourceId",reason,previous_state AS "previousState",new_state AS "newState",status,is_emergency AS "isEmergency",created_at AS "createdAt"`,
-        [actionId, session.id, creatorId, ownerId, actionType, resourceType, resourceId, reason, JSON.stringify(previousState), JSON.stringify(newState), session.mode === "emergency"]);
+        [actionId, lockedSession.id, creatorId, ownerId, actionType, resourceType, resourceId, reason, JSON.stringify(previousState), JSON.stringify(newState), lockedSession.mode === "emergency"]);
         action = rows[0];
-        notifications = await insertCompanyNotifications(connection, ownerId, "creator_recovery_action", actionId, "Intervention du Support", `${actionLabel(actionType)}. Motif : ${reason}`, { actionId, sessionId: session.id, actionType, emergency: session.mode === "emergency" });
+        notifications = await insertCompanyNotifications(connection, ownerId, "creator_recovery_action", actionId, "Intervention du Support", `${actionLabel(actionType)}. Motif : ${reason}`, { actionId, sessionId: lockedSession.id, actionType, emergency: lockedSession.mode === "emergency" });
         await connection.query("COMMIT");
     } catch (error) {
         await connection.query("ROLLBACK");

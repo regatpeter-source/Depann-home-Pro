@@ -10,6 +10,9 @@ const client = readFileSync(new URL("../js/creator.js", import.meta.url), "utf8"
 const navigation = readFileSync(new URL("../js/navigation.js", import.meta.url), "utf8");
 const index = readFileSync(new URL("../index.html", import.meta.url), "utf8");
 const serviceWorker = readFileSync(new URL("../service-worker.js", import.meta.url), "utf8");
+const creatorServer = readFileSync(new URL("../server/creator.js", import.meta.url), "utf8");
+const organizationServer = readFileSync(new URL("../server/organizations.js", import.meta.url), "utf8");
+const supportServer = readFileSync(new URL("../server/support.js", import.meta.url), "utf8");
 
 const tableDefinitions = [migration, schema, server];
 
@@ -59,6 +62,38 @@ test("session lifecycle and recovery notifications are committed atomically", ()
     assert.match(server, /creator_support_session_closed[\s\S]+COMMIT/);
     assert.match(server, /creator_recovery_action[\s\S]+COMMIT/);
     assert.match(server, /safelyBroadcastCompanyNotifications/);
+});
+
+test("une action de récupération reverrouille une session encore active dans sa transaction", () => {
+    const recovery = server.slice(server.indexOf("async function executeRecoveryAction"), server.indexOf("async function loadDiagnostics"));
+    assert.match(recovery, /session\.revoked_at IS NULL AND session\.expires_at>NOW\(\)/);
+    assert.match(recovery, /FOR UPDATE OF session/);
+    assert.ok(recovery.indexOf("FOR UPDATE OF session") < recovery.indexOf("findCompanyOwner(connection, ownerId, true)"));
+    assert.match(recovery, /Cette session d’assistance a été révoquée ou a expiré/);
+});
+
+test("création, organisation et profil entreprise partagent une transaction", () => {
+    const creation = creatorServer.slice(creatorServer.indexOf('app.post("/api/creator/accounts"'), creatorServer.indexOf('app.patch("/api/creator/accounts/:accountId"'));
+    assert.match(creation, /synchronizeCompanyProfile\(connection/);
+    assert.match(creation, /createOrganization\(id, request\.body\?\.organization, request\.user\.sub, connection\)/);
+    assert.ok(creation.indexOf("createOrganization") < creation.indexOf('connection.query("COMMIT")'));
+    assert.match(organizationServer, /createOrganization\(ownerId, values = \{\}, actorId = null, database = getPool\(\)\)/);
+    assert.match(organizationServer, /writeOrganizationAudit\([\s\S]*database\)/);
+});
+
+test("une réduction de sièges est revérifiée sous verrou avant modification", () => {
+    const update = creatorServer.slice(creatorServer.indexOf('app.patch("/api/creator/accounts/:accountId"'), creatorServer.indexOf('app.patch("/api/creator/accounts/:accountId/activation"'));
+    assert.match(update, /FROM depannhome_users WHERE id=\$1 AND account_owner_id=id FOR UPDATE/);
+    assert.match(update, /const lockedCounts = await countActiveSeats\(connection, accountId\)/);
+    assert.ok(update.indexOf("FOR UPDATE") < update.indexOf("const lockedCounts"));
+    assert.ok(update.indexOf("const lockedCounts") < update.indexOf("UPDATE depannhome_users"));
+    assert.match(update, /updateOrganization\(accountId, request\.body\?\.organization, request\.user\.sub, connection\)/);
+});
+
+test("le suivi Support Créateur applique aussi la restriction au poste desktop", () => {
+    assert.match(supportServer, /app\.get\("\/api\/creator\/support-requests", requireAuthentication, requireCreator/);
+    assert.match(supportServer, /app\.patch\("\/api\/creator\/support-requests\/:requestId", requireAuthentication, requireCreator/);
+    assert.match(application, /registerSupportRoutes\(app, requireAuthentication, requireCreator\)/);
 });
 
 test("session revocation preserves administrator desktop approval while invalidating current sessions", () => {

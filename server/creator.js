@@ -361,9 +361,9 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
                 const id = rows[0].id;
                 await connection.query("UPDATE depannhome_users SET account_owner_id = id WHERE id = $1", [id]);
                 await synchronizeCompanyProfile(connection, id, account.companyProfile, { initializeNetwork: account.subscriptionTier === "pro" });
+                await createOrganization(id, request.body?.organization, request.user.sub, connection);
                 await connection.query("COMMIT");
-            await createOrganization(id, request.body?.organization, request.user.sub);
-            response.status(201).json({ id: String(id) });
+                response.status(201).json({ id: String(id) });
             } catch (error) { await connection.query("ROLLBACK"); throw error; } finally { connection.release(); }
         } catch (error) {
             if (error.code === "23505") return response.status(409).json({ message: "Cet identifiant est déjà utilisé." });
@@ -400,6 +400,10 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
             `, [accountId]);
             const ownerBefore = lockedOwners[0];
             if (!ownerBefore) throw new Error("Compte entreprise introuvable.");
+            const lockedCounts = await countActiveSeats(connection, accountId);
+            if (!convertsToPartner && (account.maxPcUsers < lockedCounts.activePcUsers || account.maxTechnicians < lockedCounts.activeTechnicians)) {
+                throw clientError(409, "Les limites ne peuvent pas être inférieures aux accès actifs existants.");
+            }
             await connection.query(`
             UPDATE depannhome_users
             SET company_name = $2, full_name = $3, phone = $4, email = $5, max_pc_users = $6, max_technicians = $7, is_active = $8,
@@ -416,6 +420,7 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
                 await connection.query(`UPDATE depannhome_auth_devices device SET status='rejected',session_id=NULL FROM depannhome_users member WHERE device.user_id=member.id AND member.account_owner_id=$1 AND device.device_type='mobile' AND device.status<>'rejected'`, [accountId]);
             }
             await synchronizeCompanyProfile(connection, accountId, account.companyProfile, { initializeNetwork: account.subscriptionTier === "pro" });
+            await updateOrganization(accountId, request.body?.organization, request.user.sub, connection);
             proration = await prepareSubscriptionProration(connection, {
                 ownerBefore,
                 ownerAfter: {
@@ -429,7 +434,6 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
             });
             await connection.query("COMMIT");
         } catch (error) { await connection.query("ROLLBACK"); throw error; } finally { connection.release(); }
-        await updateOrganization(accountId, request.body?.organization, request.user.sub);
         if (proration) {
             const delivery = await deliverSubscriptionProration(proration, request.user.sub);
             if (!delivery.sent && !delivery.skipped) console.warn("[subscription-proration] document created but delivery failed", { accountId, proration, message: delivery.message || "Échec d’envoi" });
@@ -853,4 +857,10 @@ function passwordMessage() {
 
 function asyncHandler(handler) {
     return (request, response, next) => Promise.resolve(handler(request, response, next)).catch(next);
+}
+
+function clientError(status, message) {
+    const error = new Error(message);
+    error.status = status;
+    return error;
 }

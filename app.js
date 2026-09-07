@@ -230,7 +230,7 @@ registerTechnicalReportRoutes(app, requireAuthentication);
 registerClientRoutes(app, requireAuthentication);
 registerDataImportRoutes(app, requireAuthentication);
 registerLibraryRoutes(app, requireAuthentication);
-registerSupportRoutes(app, requireAuthentication);
+registerSupportRoutes(app, requireAuthentication, requireCreator);
 registerPublicOfferRoutes(app);
 
 // Seul le logo est nécessaire avant connexion. Le catalogue et les notices sont servis

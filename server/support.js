@@ -27,7 +27,7 @@ export async function initializeSupport() {
     await getPool().query("CREATE INDEX IF NOT EXISTS depannhome_support_requests_status_created_idx ON depannhome_support_requests(status,created_at DESC)");
 }
 
-export function registerSupportRoutes(app, requireAuthentication) {
+export function registerSupportRoutes(app, requireAuthentication, requireCreator) {
     app.post("/api/support/requests", requireAuthentication, asyncHandler(async (request, response) => {
         const message = cleanMessage(request.body?.message);
         if (message.length < 10) {
@@ -43,14 +43,12 @@ export function registerSupportRoutes(app, requireAuthentication) {
         response.status(202).json({ message: "Votre message est enregistré et transmis au Support." });
     }));
 
-    app.get("/api/creator/support-requests", requireAuthentication, asyncHandler(async (request, response) => {
-        if (!request.user?.isCreator) return response.status(403).json({ message: "Accès réservé au Créateur." });
+    app.get("/api/creator/support-requests", requireAuthentication, requireCreator, asyncHandler(async (request, response) => {
         const { rows } = await getPool().query(`SELECT support.id,support.owner_id AS "ownerId",COALESCE(NULLIF(profile.company_name,''),NULLIF(owner.company_name,''),owner.full_name,owner.username) AS "companyName",support.sender_name AS "senderName",support.sender_email AS "senderEmail",support.sender_username AS "senderUsername",support.message,support.status,support.creator_note AS "creatorNote",support.created_at AS "createdAt",support.updated_at AS "updatedAt" FROM depannhome_support_requests support JOIN depannhome_users owner ON owner.id=support.owner_id LEFT JOIN depannhome_billing_profiles profile ON profile.owner_id=owner.id ORDER BY CASE support.status WHEN 'new' THEN 0 WHEN 'under_review' THEN 1 ELSE 2 END,support.created_at DESC LIMIT 200`);
         response.json({ requests: rows });
     }));
 
-    app.patch("/api/creator/support-requests/:requestId", requireAuthentication, asyncHandler(async (request, response) => {
-        if (!request.user?.isCreator) return response.status(403).json({ message: "Accès réservé au Créateur." });
+    app.patch("/api/creator/support-requests/:requestId", requireAuthentication, requireCreator, asyncHandler(async (request, response) => {
         const requestId = positiveId(request.params.requestId);
         const status = SUPPORT_STATUSES.has(request.body?.status) ? request.body.status : "";
         const creatorNote = cleanText(request.body?.creatorNote, 2000);
