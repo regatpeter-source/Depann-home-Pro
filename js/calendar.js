@@ -818,12 +818,16 @@ function renderCalendarAvailability(form, editedEventId) {
         .sort(compareEventTimes);
     const conflict = findLocalCalendarConflict(sameDayEvents, candidate);
     const candidateLabel = candidate.title || "Nouveau rendez-vous";
+    const candidateTechnicianNames = getAssignedTechnicianNames(candidate);
+    const candidateTechnicianLabel = candidateTechnicianNames.length
+        ? candidateTechnicianNames.map(firstNameFromFullName).join(" · ")
+        : "Aucun membre sélectionné";
     preview.classList.toggle("has-conflict", Boolean(conflict));
     preview.innerHTML = `
-        <div class="calendar-availability-heading"><div><p class="eyebrow">Aperçu planning</p><h3>${escapeHtml(formatPreviewDate(candidate.date))}</h3></div><div class="calendar-availability-actions" role="group" aria-label="Période affichée sous le formulaire"><button type="button" class="secondary-button${calendarView === "day" ? " active" : ""}" data-calendar-availability-view="day">Jour</button><button type="button" class="secondary-button${calendarView === "week" ? " active" : ""}" data-calendar-availability-view="week">Semaine</button></div><p class="${conflict ? "auth-message error" : "muted"}">${conflict ? `Chevauchement avec « ${escapeHtml(conflict.title)} » (${escapeHtml(formatEventTime(conflict))}).` : "Créneau disponible."}</p></div>
+        <div class="calendar-availability-heading"><div><p class="eyebrow">Aperçu planning croisé</p><h3>${escapeHtml(formatPreviewDate(candidate.date))}</h3><p class="calendar-availability-members"><strong>Membres sélectionnés :</strong> ${escapeHtml(candidateTechnicianLabel)}</p></div><div class="calendar-availability-actions" role="group" aria-label="Période affichée sous le formulaire"><button type="button" class="secondary-button${calendarView === "day" ? " active" : ""}" data-calendar-availability-view="day">Jour</button><button type="button" class="secondary-button${calendarView === "week" ? " active" : ""}" data-calendar-availability-view="week">Semaine</button></div><p class="${conflict ? "auth-message error" : "muted"}">${conflict ? `Chevauchement avec « ${escapeHtml(conflict.title)} » (${escapeHtml(formatEventTime(conflict))}).` : "Créneau commun disponible."}</p></div>
         <div class="calendar-time-preview">
-            ${sameDayEvents.map(event => `<article class="calendar-time-slot"><time>${escapeHtml(formatEventTime(event))}</time><strong>${escapeHtml(event.title)}</strong>${event.clientName ? `<small>${escapeHtml(event.clientName)}</small>` : ""}</article>`).join("") || '<p class="muted">Aucun autre rendez-vous ce jour.</p>'}
-            <article class="calendar-time-slot calendar-time-slot-preview${conflict ? " conflict" : ""}"><time>${escapeHtml(formatEventTime(candidate))}</time><strong>${escapeHtml(candidateLabel)}</strong><small>Créneau en cours de saisie</small></article>
+            ${sameDayEvents.map(event => `<article class="calendar-time-slot"><time>${escapeHtml(formatEventTime(event))}</time><strong>${escapeHtml(event.title)}</strong>${event.clientName ? `<small>${escapeHtml(event.clientName)}</small>` : ""}${renderTechnicianBadges(event)}</article>`).join("") || '<p class="muted">Aucun autre rendez-vous pour les membres sélectionnés ce jour.</p>'}
+            <article class="calendar-time-slot calendar-time-slot-preview${conflict ? " conflict" : ""}"><time>${escapeHtml(formatEventTime(candidate))}</time><strong>${escapeHtml(candidateLabel)}</strong><small>Créneau en cours de saisie</small>${renderTechnicianBadges(candidate)}</article>
         </div>
     `;
     preview.querySelectorAll("[data-calendar-availability-view]").forEach(button => button.addEventListener("click", () => {
@@ -880,7 +884,7 @@ function renderTechnicianAssignmentField(event) {
     const groups = groupTechniciansByDepartment(members);
     return `
         <section class="calendar-technician-assignment form-wide">
-            <div class="calendar-technician-assignment-heading"><div><p class="eyebrow">Affectation</p><h3>Membres affectés</h3><p class="muted">Recherchez puis cochez les membres concernés. Le référent est conservé pour les anciens rendez-vous et les exports.</p></div></div>
+            <div class="calendar-technician-assignment-heading"><div><p class="eyebrow">Affectation multiple</p><h3>Membres affectés</h3><p class="muted">Cochez un ou plusieurs techniciens pour croiser leurs créneaux avant de valider. Le référent est conservé pour les anciens rendez-vous et les exports.</p></div></div>
             <label class="calendar-technician-search">Rechercher un membre, un rôle ou un pôle<input id="calendarTechnicianSearch" type="search" placeholder="Ex. admin, dépannage, Léa…" autocomplete="off"></label>
             <div class="calendar-technician-assignment-groups">
                 ${groups.map(([department, groupMembers]) => `<section data-calendar-assignment-group><h4>${escapeHtml(department)}</h4>${groupMembers.map(member => `<label data-calendar-assignment-option="${escapeHtml(`${department} ${member.role || ""} ${member.fullName || member.username}`)}"><input type="checkbox" name="assignedTechnicianIds" value="${escapeHtml(member.id)}" data-calendar-assignment ${selected.has(String(member.id)) ? "checked" : ""}><span>${escapeHtml(member.fullName || member.username)}</span><small>${escapeHtml([roleLabel(member.role), member.phone].filter(Boolean).join(" · "))}</small></label>`).join("")}</section>`).join("") || '<p class="muted">Aucun membre actif n’est disponible.</p>'}
@@ -915,7 +919,20 @@ function getAssignedTechnicianNames(event) {
     if (Array.isArray(event?.assignedTechnicians) && event.assignedTechnicians.length) {
         return event.assignedTechnicians.map(technician => technician.fullName || "Technicien").filter(Boolean);
     }
-    return event?.assignedTechnicianName ? [event.assignedTechnicianName] : [];
+    const assignedIds = getAssignedTechnicianIds(event);
+    const memberNames = assignedIds.map(id => members.find(member => String(member.id) === id)?.fullName || members.find(member => String(member.id) === id)?.username).filter(Boolean);
+    return memberNames.length ? memberNames : event?.assignedTechnicianName ? [event.assignedTechnicianName] : [];
+}
+
+function firstNameFromFullName(value) {
+    return String(value || "Technicien").trim().split(/\s+/)[0] || "Technicien";
+}
+
+function renderTechnicianBadges(event) {
+    const names = getAssignedTechnicianNames(event);
+    if (!names.length) return "";
+    const label = `${names.length > 1 ? "Techniciens" : "Technicien"} : ${names.join(", ")}`;
+    return `<span class="calendar-event-technicians" aria-label="${escapeHtml(label)}">${names.map(name => `<span class="calendar-technician-name" title="${escapeHtml(name)}">${escapeHtml(firstNameFromFullName(name))}</span>`).join("")}</span>`;
 }
 
 function renderAssignedTechniciansDetail(event) {
@@ -1597,9 +1614,8 @@ function getVisibleEvents() {
 }
 
 function renderCalendarEventCard(event, client) {
-    const technicianNames = getAssignedTechnicianNames(event);
     const primary = client.name || event.title || "Intervention";
-    return `<time class="calendar-event-time">${escapeHtml(formatEventTime(event))}</time><span class="calendar-event-identity"><strong class="calendar-event-client">${escapeHtml(primary)}</strong>${client.address ? `<small class="calendar-event-address">${escapeHtml(client.address)}</small>` : ""}</span><span class="calendar-event-context">${client.name && event.title ? `<small class="calendar-event-title">${escapeHtml(event.title)}</small>` : ""}${technicianNames.length ? `<small class="calendar-event-technicians">${escapeHtml(technicianNames.join(" · "))}</small>` : ""}${client.phone ? `<small class="calendar-event-phone">${escapeHtml(client.phone)}</small>` : ""}</span>${renderCalendarStatusBadge(event)}`;
+    return `<time class="calendar-event-time">${escapeHtml(formatEventTime(event))}</time><span class="calendar-event-identity"><strong class="calendar-event-client">${escapeHtml(primary)}</strong>${client.address ? `<small class="calendar-event-address">${escapeHtml(client.address)}</small>` : ""}</span>${renderTechnicianBadges(event)}<span class="calendar-event-context">${client.name && event.title ? `<small class="calendar-event-title">${escapeHtml(event.title)}</small>` : ""}${client.phone ? `<small class="calendar-event-phone">${escapeHtml(client.phone)}</small>` : ""}</span>${renderCalendarStatusBadge(event)}`;
 }
 
 function calendarEventStatus(event) {

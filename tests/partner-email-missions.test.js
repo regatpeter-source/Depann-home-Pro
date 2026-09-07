@@ -379,6 +379,18 @@ test("la planification partenaire bascule entre jour et semaine sans fermer le f
     assert.match(availability, /refreshCalendarPeriod\(\)/);
 });
 
+test("la planification d’une mission croise les créneaux de plusieurs techniciens avant validation", () => {
+    const calendarSource = readFileSync(new URL("../js/calendar.js", import.meta.url), "utf8");
+    const assignment = calendarSource.slice(calendarSource.indexOf("function renderTechnicianAssignmentField"), calendarSource.indexOf("function groupTechniciansByDepartment"));
+    const availability = calendarSource.slice(calendarSource.indexOf("function renderCalendarAvailability"), calendarSource.indexOf("function findLocalCalendarConflict"));
+    assert.match(assignment, /name="assignedTechnicianIds"/);
+    assert.match(assignment, /Cochez un ou plusieurs techniciens pour croiser leurs créneaux avant de valider/);
+    assert.match(availability, /Aperçu planning croisé/);
+    assert.match(availability, /Membres sélectionnés/);
+    assert.match(availability, /renderTechnicianBadges\(event\)/);
+    assert.match(availability, /Créneau commun disponible/);
+});
+
 test("seul le Poste Admin réactive une mission terminale avec un motif puis la corrige dans le planning", () => {
     const routes = missionSource.slice(missionSource.indexOf('app.post("/api/partner-missions/:missionId/reopen"'), missionSource.indexOf('app.post("/api/partner-missions/:missionId/archive-closed"'));
     const reactivation = missionSource.slice(missionSource.indexOf("async function reactivateTerminalMission"), missionSource.indexOf("async function updateBillingMode"));

@@ -15,6 +15,16 @@ test("les cartes du planning affichent la plage horaire puis le client et son ad
     assert.ok(card.indexOf("calendar-event-client") < card.indexOf("calendar-event-address"));
 });
 
+test("les interventions distinguent les techniciens par des badges de prénom sans détourner les couleurs de statut", () => {
+    const card = calendar.slice(calendar.indexOf("function renderCalendarEventCard"), calendar.indexOf("function getEventClientDetails"));
+    assert.match(calendar, /function firstNameFromFullName\(value\)/);
+    assert.match(calendar, /function renderTechnicianBadges\(event\)/);
+    assert.match(card, /renderTechnicianBadges\(event\)/);
+    assert.match(styles, /\.calendar-technician-name\{/);
+    assert.match(styles, /body\.mobile-device \.calendar-grid \.calendar-event-technicians\{display:flex/);
+    assert.doesNotMatch(styles, /calendar-technician-name[^}]*background:(?:red|green|orange)/);
+});
+
 test("les horaires incomplets restent explicites", () => {
     const formatter = calendar.slice(calendar.indexOf("function formatEventTime"), calendar.indexOf("function formatPreviewDate"));
     assert.match(formatter, /`\$\{event\.startTime\} – \$\{event\.endTime\}`/);

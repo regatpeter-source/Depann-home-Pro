@@ -3602,6 +3602,12 @@ body.mobile-device[data-role="technician"] .calendar-list-day{
     text-transform:capitalize;
 }
 
+.calendar-availability-members{
+    margin:7px 0 0;
+    color:var(--muted);
+    font-size:12px;
+}
+
 .calendar-time-preview{
     display:grid;
     gap:7px;
@@ -3616,6 +3622,10 @@ body.mobile-device[data-role="technician"] .calendar-list-day{
     border-left:4px solid #94a3b8;
     border-radius:8px;
     background:#fff;
+}
+
+.calendar-time-slot .calendar-event-technicians{
+    grid-column:2;
 }
 
 .calendar-time-slot time{
@@ -3972,6 +3982,30 @@ body.mobile-device[data-role="technician"] .calendar-list-day{
 .calendar-event-address{
     font-weight:600;
     opacity:.9;
+}
+
+.calendar-event-technicians{
+    display:flex;
+    min-width:0;
+    flex-wrap:wrap;
+    gap:3px;
+}
+
+.calendar-technician-name{
+    display:inline-flex;
+    max-width:100%;
+    align-items:center;
+    padding:2px 6px;
+    overflow:hidden;
+    border:1px solid rgba(0,59,115,.16);
+    border-radius:999px;
+    background:rgba(255,255,255,.78);
+    color:#003b73;
+    font-size:10px;
+    font-weight:900;
+    line-height:1.15;
+    text-overflow:ellipsis;
+    white-space:nowrap;
 }
 
 .calendar-grid .calendar-event-context{
@@ -5524,6 +5558,8 @@ body.mobile-device .calendar-day-number{min-width:22px;height:22px;font-size:11p
 body.mobile-device .calendar-event-list{gap:4px;margin-top:3px}
 body.mobile-device .calendar-grid .calendar-event{min-height:23px;padding:4px;border-left:0;border-radius:6px;box-shadow:inset 0 0 0 1px rgba(15,23,42,.07);font-size:9px;line-height:1.1}
 body.mobile-device .calendar-grid .calendar-event-identity,body.mobile-device .calendar-grid .calendar-event-context,body.mobile-device .calendar-grid .calendar-event-status{display:none}
+body.mobile-device .calendar-grid .calendar-event-technicians{display:flex;justify-content:center;overflow:hidden;flex-wrap:nowrap}
+body.mobile-device .calendar-grid .calendar-technician-name{max-width:44px;padding:1px 3px;border:0;background:rgba(255,255,255,.68);font-size:7px}
 body.mobile-device .calendar-grid .calendar-event-time{display:block;overflow:hidden;font-size:9px;line-height:1.1;text-align:center;text-overflow:ellipsis;white-space:nowrap}
 body.mobile-device .calendar-overflow-button{min-height:22px;padding:3px;border:0;border-radius:6px;background:#e8eef3;font-size:9px;text-align:center}
 body.mobile-device .calendar-grid-panel:has(.calendar-mobile-agenda){height:auto;max-height:none;padding:0;overflow:visible;background:transparent;box-shadow:none}
@@ -5551,6 +5587,7 @@ body.mobile-device .calendar-mobile-agenda-event .calendar-event-client{font-siz
 body.mobile-device .calendar-mobile-agenda-event .calendar-event-address{display:block;margin-top:3px;font-size:11px;font-weight:600;line-height:1.25;white-space:normal}
 body.mobile-device .calendar-mobile-agenda-event .calendar-event-context{display:flex;grid-column:2;grid-row:2;flex-wrap:wrap;gap:3px 8px;font-size:11px}
 body.mobile-device .calendar-mobile-agenda-event .calendar-event-context small{white-space:normal}
+body.mobile-device .calendar-mobile-agenda-event .calendar-event-technicians{grid-column:2;grid-row:2;align-self:start}
 body.mobile-device .calendar-mobile-agenda-event .calendar-event-status{grid-column:2;grid-row:3;margin-top:3px}
 body.mobile-device .calendar-mobile-event-arrow{grid-column:3;grid-row:1/4;align-self:center;font-size:25px;font-weight:300;opacity:.55}
 body.mobile-device .calendar-mobile-empty{margin:0;padding:14px;color:var(--muted);font-size:12px;text-align:center}
