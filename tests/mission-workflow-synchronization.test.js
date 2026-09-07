@@ -1,0 +1,45 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { shouldAdvancePartnerMissionStatus } from "../server/partner-missions.js";
+
+const read = relativePath => readFileSync(new URL(`../${relativePath}`, import.meta.url), "utf8");
+
+test("la progression métier avance sans régresser ni rouvrir une mission terminale", () => {
+    assert.equal(shouldAdvancePartnerMissionStatus("scheduled", "report_in_progress"), true);
+    assert.equal(shouldAdvancePartnerMissionStatus("scheduled", "report_validated"), true);
+    assert.equal(shouldAdvancePartnerMissionStatus("report_validated", "work_completed"), true);
+    assert.equal(shouldAdvancePartnerMissionStatus("work_completed", "invoice_sent"), true);
+    assert.equal(shouldAdvancePartnerMissionStatus("invoice_sent", "report_validated"), false);
+    assert.equal(shouldAdvancePartnerMissionStatus("closed", "invoice_sent"), false);
+    assert.equal(shouldAdvancePartnerMissionStatus("cancelled", "work_completed"), false);
+    assert.equal(shouldAdvancePartnerMissionStatus("scheduled", "invoice_created"), false);
+});
+
+test("les événements rapport, planning et facturation synchronisent le statut réel de mission", () => {
+    const dialogue = read("server/partner-dialogue.js");
+    const reports = read("server/technical-reports.js");
+    const calendar = read("server/calendar.js");
+    const billing = read("server/billing.js");
+    assert.match(dialogue, /synchronizePartnerMissionStatusForSource/);
+    assert.match(reports, /status: "report_in_progress"/);
+    assert.match(reports, /status: "report_validated"/);
+    assert.match(calendar, /event\.status === "completed" \? "work_completed" : "on_site"/);
+    assert.match(billing, /billing_document_emailed/);
+    assert.match(billing, /documentType === "invoice" \? "invoice_sent" : "quote_sent"/);
+});
+
+test("un devis modifié ne devient envoyé que lorsque son état le confirme", () => {
+    const billing = read("server/billing.js");
+    const updateRoute = billing.slice(billing.indexOf('app.put("/api/billing/documents/:documentId"'), billing.indexOf('app.post("/api/billing/documents/:documentId/corrections"'));
+    assert.match(updateRoute, /status === "accepted" \? "quote_accepted" : status === "sent" \? "quote_sent" : "quote_created"/);
+});
+
+test("tous les techniciens affectés reçoivent les notifications de mission", () => {
+    const missions = read("server/partner-missions.js");
+    const notifier = missions.slice(missions.indexOf("async function notifyAssignedUsers"), missions.indexOf("async function notifyManagedMissionSource"));
+    assert.match(notifier, /depannhome_calendar_assignments/);
+    assert.match(notifier, /assignment\.technician_id=member\.id/);
+    assert.match(notifier, /'technician','team_lead'/);
+    assert.doesNotMatch(missions, /async function notifyUsers/);
+});

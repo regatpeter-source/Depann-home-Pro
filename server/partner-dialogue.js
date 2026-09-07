@@ -145,6 +145,9 @@ export async function recordMissionEventForSource({ ownerId, sourceType, sourceI
     if (!isFeatureEnabled(await getOrganization(ownerId), "partnerMissions")) return null;
     const column = sourceType === "report" ? "technical_report_id" : sourceType === "appointment" ? "calendar_event_id" : "";
     if (!ownerId || !sourceId || !column) return null;
+    const { synchronizePartnerMissionStatusForSource } = await import("./partner-missions.js");
+    const synchronization = await synchronizePartnerMissionStatusForSource({ ownerId, sourceType, sourceId, status, action, details, actorName });
+    if (synchronization.changed) return synchronization.mission;
     const { rows } = await getPool().query(`SELECT id FROM depannhome_partner_missions WHERE owner_id=$1 AND ${column}=$2 ORDER BY id DESC LIMIT 1`, [ownerId, sourceId]);
     return rows[0] ? recordMissionDialogueEvent({ ownerId, missionId: rows[0].id, status, action, details, actorName }) : null;
 }

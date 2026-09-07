@@ -483,6 +483,17 @@ export function registerCalendarRoutes(app, requireAuthentication) {
             await replaceEventAssignments(connection, id, event.assignedTechnicianIds, event.assignedTechnicianId);
             await connection.query("COMMIT");
             await synchronizeConnectedAppointment(getAccountOwnerId(request), id);
+            if (["in_progress", "completed"].includes(event.status)) {
+                const { recordMissionEventForSource } = await import("./partner-dialogue.js");
+                await recordMissionEventForSource({
+                    ownerId: getAccountOwnerId(request),
+                    sourceType: "appointment",
+                    sourceId: id,
+                    status: event.status === "completed" ? "work_completed" : "on_site",
+                    action: event.status === "completed" ? "appointment_completed" : "appointment_started",
+                    actorName: request.user.fullName || request.user.username
+                });
+            }
             response.status(204).end();
         } catch (error) {
             await connection.query("ROLLBACK");

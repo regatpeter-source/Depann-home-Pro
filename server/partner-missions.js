@@ -30,6 +30,11 @@ const STATUS_TRANSITIONS = Object.freeze({
     invoice_sent: ["closed"],
     rejected: [], closed: [], cancelled: []
 });
+const WORKFLOW_STATUS_ORDER = Object.freeze([
+    "received", "pending_validation", "accepted", "assigned", "scheduled", "en_route", "on_site",
+    "report_in_progress", "report_completed", "report_validated", "quote_sent", "quote_accepted",
+    "work_completed", "invoice_sent", "closed"
+]);
 const ASSIGNMENT_MODES = new Set(["manual", "suggested", "automatic"]);
 const BILLING_MODES = new Set(["direct_client", "principal"]);
 const PARTNER_MANAGEMENT_ROLES = new Set(["admin", "pc_standard", "commercial", "mobile_admin"]);
@@ -236,7 +241,7 @@ async function acceptMission(req, id) {
         await recordMissionDialogueEvent({ ownerId, missionId: id, status: "accepted", action: "accepted", details: { clientId, eventId, reportId }, actorName });
         if (technicianId) await recordMissionDialogueEvent({ ownerId, missionId: id, status: "assigned", action: "assigned", details: { technicianId }, actorName });
         if (schedule.date) await recordMissionDialogueEvent({ ownerId, missionId: id, status: "scheduled", action: "scheduled", details: { clientId, eventId, startTime: schedule.startTime }, actorName });
-        await notifyUsers(ownerId, rows[0], values, technicianId, "Mission acceptée");
+        await notifyAssignedUsers(ownerId, rows[0], values, "Mission acceptée");
         const { notifyEmailMissionStatus } = await import("./partner-email.js");
         await notifyEmailMissionStatus(ownerId, id, status, { date: schedule.date, startTime: schedule.startTime }).catch(error => console.warn("[partner-email] acceptation non envoyée :", error.message));
         return publicMission(rows[0]);
@@ -256,28 +261,48 @@ async function acceptMission(req, id) {
 async function assignMission(req, id) { const mission = await findMission(getAccountOwnerId(req), id); if (!mission) throw clientError(404, "Mission introuvable."); return acceptMission({ ...req, body: { ...req.body, technicianId: req.body?.technicianId || mission.assignedTechnicianId } }, id); }
 async function changeStatus(req, id, status, details) { const ownerId = getAccountOwnerId(req); if (!id) throw clientError(400, "Mission invalide."); const allowedTechnicianStatuses = new Set(["en_route", "on_site", "report_in_progress", "report_completed", "work_completed"]); if (isFieldUser(req) && !allowedTechnicianStatuses.has(status)) throw clientError(403, "Ce statut est réservé à l’administration."); return transitionPartnerMissionStatus({ ownerId, missionId: id, status, actorId: req.user.sub, actorRole: req.user.role, actorName: req.user.fullName || req.user.username, details, ip: req.ip, assignedTechnicianId: isFieldUser(req) ? req.user.sub : null }); }
 
-export async function transitionPartnerMissionStatus({ ownerId, missionId, status, actorId = null, actorRole = "", actorName = "API partenaire", details = {}, ip = "", assignedTechnicianId = null }) {
+export async function transitionPartnerMissionStatus({ ownerId, missionId, status, actorId = null, actorRole = "", actorName = "API partenaire", details = {}, ip = "", assignedTechnicianId = null, allowWorkflowAdvance = false, action = "status_changed" }) {
     if (!ownerId || !missionId || !STATUSES.has(status)) throw clientError(400, "Mission ou statut invalide.");
     const connection = await getPool().connect(); let updated;
     try {
         await connection.query("BEGIN");
         const current = await connection.query("SELECT status FROM depannhome_partner_missions WHERE id=$1 AND owner_id=$2 AND deleted_at IS NULL AND ($3::bigint IS NULL OR assigned_technician_id=$3) FOR UPDATE", [missionId, ownerId, assignedTechnicianId]);
         if (!current.rows[0]) throw clientError(404, "Mission introuvable.");
-        if (details?.sandbox !== true && current.rows[0].status !== status && !(STATUS_TRANSITIONS[current.rows[0].status] || []).includes(status)) throw clientError(409, `Transition impossible de « ${statusLabel(current.rows[0].status)} » vers « ${statusLabel(status)} ».`);
+        const validTransition = current.rows[0].status === status
+            || (STATUS_TRANSITIONS[current.rows[0].status] || []).includes(status)
+            || (allowWorkflowAdvance && shouldAdvancePartnerMissionStatus(current.rows[0].status, status));
+        if (details?.sandbox !== true && !validTransition) throw clientError(409, `Transition impossible de « ${statusLabel(current.rows[0].status)} » vers « ${statusLabel(status)} ».`);
         const { rows } = await connection.query("UPDATE depannhome_partner_missions SET status=$3,updated_at=NOW() WHERE id=$1 AND owner_id=$2 RETURNING *", [missionId, ownerId, status]);
         updated = rows[0];
-        await writeHistory(connection, ownerId, missionId, status, "status_changed", actorId, actorRole, details, ip);
+        await writeHistory(connection, ownerId, missionId, status, action, actorId, actorRole, details, ip);
         await enqueue(connection, ownerId, missionId, "mission_status_changed", { status, ...details });
         await connection.query("COMMIT");
     } catch (error) { await connection.query("ROLLBACK"); throw error; } finally { connection.release(); }
-    await recordMissionDialogueEvent({ ownerId, missionId, status, action: "status_changed", details, actorName });
+    await recordMissionDialogueEvent({ ownerId, missionId, status, action, details, actorName });
     await deliverCompanyOutbox(ownerId, false, missionId);
-    if (updated.assigned_technician_id) await notifyUsers(ownerId, updated, updated.mapped_data || {}, updated.assigned_technician_id, `Mission : ${statusLabel(status)}`);
+    await notifyAssignedUsers(ownerId, updated, updated.mapped_data || {}, `Mission : ${statusLabel(status)}`);
     const mission = publicMission(updated);
     await notifyManagedMissionSource(ownerId, mission, `Mission : ${statusLabel(status)}`);
     const { notifyEmailMissionStatus } = await import("./partner-email.js");
     await notifyEmailMissionStatus(ownerId, mission.id, status, details).catch(error => console.warn("[partner-email] retour de statut non envoyé :", error.message));
     return mission;
+}
+
+export function shouldAdvancePartnerMissionStatus(currentStatus, nextStatus) {
+    if (TERMINAL_STATUSES.has(currentStatus) || !STATUSES.has(nextStatus)) return false;
+    const currentIndex = WORKFLOW_STATUS_ORDER.indexOf(currentStatus);
+    const nextIndex = WORKFLOW_STATUS_ORDER.indexOf(nextStatus);
+    return currentIndex >= 0 && nextIndex > currentIndex;
+}
+
+export async function synchronizePartnerMissionStatusForSource({ ownerId, sourceType, sourceId, status, action = "status_changed", details = {}, actorName = "Depann’Home Pro" }) {
+    const column = sourceType === "report" ? "technical_report_id" : sourceType === "appointment" ? "calendar_event_id" : "";
+    if (!ownerId || !sourceId || !column || !STATUSES.has(status)) return { changed: false };
+    const { rows } = await getPool().query(`SELECT id,status FROM depannhome_partner_missions WHERE owner_id=$1 AND ${column}=$2 AND deleted_at IS NULL ORDER BY id DESC LIMIT 1`, [ownerId, sourceId]);
+    const mission = rows[0];
+    if (!mission || !shouldAdvancePartnerMissionStatus(mission.status, status)) return { changed: false, missionId: mission?.id || null };
+    const updated = await transitionPartnerMissionStatus({ ownerId, missionId: mission.id, status, actorName, details: { ...details, synchronizedFrom: sourceType, sourceId }, allowWorkflowAdvance: true, action });
+    return { changed: true, missionId: mission.id, mission: updated };
 }
 
 export async function ingestEmailPartnerMission({ ownerId, connectionId, emailId, missionId: linkedMissionId = 0, partnerName, payload, actorId = null }) {
@@ -516,7 +541,13 @@ async function selectTechnician(connection, ownerId, mission, mode) { if (mode !
 function scheduleValues(body, mission) { return { date: validDate(body?.date || mission.scheduled_date || mission.mappedData?.date), startTime: validTime(body?.startTime || mission.scheduled_start_time || mission.mappedData?.startTime), endTime: validTime(body?.endTime || mission.scheduled_end_time || mission.mappedData?.endTime) }; }
 async function notifyReceptionAdmins(ownerId, missionId, data, clientCreated, inserted) { const title = inserted ? "Nouvelle mission reçue" : "Mission partenaire mise à jour"; const body = clientCreated ? "Le client a été créé automatiquement dans votre base de données. Vous pouvez commencer l’intervention immédiatement." : "Client existant détecté. La mission a été rattachée automatiquement à sa fiche."; const { rows } = await getPool().query("SELECT id FROM depannhome_users WHERE account_owner_id=$1 AND role IN ('admin','pc_standard','commercial','mobile_admin') AND is_active=TRUE", [ownerId]); await Promise.all(rows.map(row => createNotification(ownerId, row.id, "partner_mission_received", { entityType: "partner_mission", entityId: String(missionId) }, title, body, { missionId, priority: data.priority, clientCreated: Boolean(clientCreated) }))); }
 async function notifyAdmins(ownerId, missionId, data, title) { const { rows } = await getPool().query("SELECT id FROM depannhome_users WHERE account_owner_id=$1 AND role IN ('admin','pc_standard','commercial','mobile_admin') AND is_active=TRUE", [ownerId]); await Promise.all(rows.map(row => createNotification(ownerId, row.id, "partner_mission_received", { entityType: "partner_mission", entityId: String(missionId) }, title, `${data.clientName || "Client"} · ${data.address || "Adresse non renseignée"}`, { missionId, priority: data.priority }))); }
-async function notifyUsers(ownerId, mission, data, technicianId, title) { await notifyAdmins(ownerId, mission.id, data, title); if (!technicianId) return; const { rows } = await getPool().query("SELECT id FROM depannhome_users WHERE id=$1 AND account_owner_id=$2 AND role IN ('technician','team_lead') AND is_active=TRUE", [technicianId, ownerId]); if (rows[0]) await createNotification(ownerId, rows[0].id, "partner_mission_assigned", { entityType: "partner_mission", entityId: String(mission.id) }, title, `${data.clientName || "Client"} · ${data.address || "Adresse non renseignée"}`, { missionId: mission.id, priority: data.priority }); }
+async function notifyAssignedUsers(ownerId, mission, data, title) {
+    await notifyAdmins(ownerId, mission.id, data, title);
+    const { rows } = await getPool().query(`SELECT DISTINCT member.id FROM depannhome_users member
+        WHERE member.account_owner_id=$1 AND member.is_active=TRUE AND member.role IN ('technician','team_lead')
+            AND (member.id=$2 OR EXISTS(SELECT 1 FROM depannhome_calendar_assignments assignment WHERE assignment.event_id=$3 AND assignment.technician_id=member.id))`, [ownerId, mission.assigned_technician_id || null, mission.calendar_event_id || null]);
+    await Promise.all(rows.map(member => createNotification(ownerId, member.id, "partner_mission_assigned", { entityType: "partner_mission", entityId: String(mission.id) }, title, `${data.clientName || "Client"} · ${data.address || "Adresse non renseignée"}`, { missionId: mission.id, priority: data.priority })));
+}
 async function notifyManagedMissionSource(ownerId, mission, title) { const { rows } = await getPool().query(`SELECT connection.company_low_id AS "lowId",connection.company_high_id AS "highId" FROM depannhome_partner_missions mission JOIN depannhome_partner_intakes intake ON intake.id=mission.intake_id JOIN depannhome_partner_connections connection ON intake.partner_key=('connection-' || connection.id::text) AND connection.status='connected' WHERE mission.owner_id=$1 AND mission.id=$2`, [ownerId, mission.id]); const connection = rows[0]; if (!connection) return; const sourceOwnerId = Number(connection.lowId) === Number(ownerId) ? Number(connection.highId) : Number(connection.lowId); const recipients = await getPool().query("SELECT id FROM depannhome_users WHERE account_owner_id=$1 AND role IN ('admin','pc_standard','commercial','mobile_admin') AND is_active=TRUE", [sourceOwnerId]); await Promise.all(recipients.rows.map(row => createNotification(sourceOwnerId, row.id, "partner_mission_status", { entityType: "partner_mission", entityId: String(mission.id) }, title, `${mission.partnerName || "Partenaire"} · ${statusLabel(mission.status)}`, { missionId: mission.id, status: mission.status, calendarEventId: mission.calendarEventId, sourceDialogue: true }))); }
 async function enqueue(connection, ownerId, missionId, type, payload) { await connection.query("INSERT INTO depannhome_partner_mission_outbox(owner_id,mission_id,event_type,payload) SELECT $1,$2,$3,$4::jsonb WHERE EXISTS(SELECT 1 FROM depannhome_partner_missions mission JOIN depannhome_partner_intakes intake ON intake.id=mission.intake_id WHERE mission.id=$2 AND mission.owner_id=$1 AND intake.partner_key NOT LIKE 'connection-%' AND intake.partner_key NOT LIKE 'email-%')", [ownerId, missionId, type, JSON.stringify(payload)]); }
 async function deliverOutbox(ownerId, sandboxOnly = false, missionId = 0) {
