@@ -1,7 +1,7 @@
 import { sendCommercialOfferRequestEmail } from "./email.js";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const OFFER_TYPES = new Set(["basic", "basic-plus", "pro", "unsure"]);
+const OFFER_TYPES = new Set(["demo-15-days", "basic", "basic-plus", "pro", "unsure"]);
 const TEAM_SIZES = new Set(["1", "2-5", "6-10", "11-25", "26-plus"]);
 
 export function registerPublicOfferRoutes(app) {
@@ -10,7 +10,7 @@ export function registerPublicOfferRoutes(app) {
         if (!offerRequest.ok) return response.status(400).json({ message: offerRequest.message });
 
         // Le champ leurre est invisible pour un visiteur, mais généralement rempli par les robots.
-        if (offerRequest.website) return response.status(202).json(successPayload());
+        if (offerRequest.website) return response.status(202).json(successPayload(offerRequest.offer));
 
         try {
             await sendCommercialOfferRequestEmail(offerRequest);
@@ -18,7 +18,7 @@ export function registerPublicOfferRoutes(app) {
             console.warn("[public-offer-request] email unavailable", { code: error.code || "EMAIL_ERROR" });
             return response.status(503).json({ message: "Votre demande n’a pas pu être envoyée pour le moment. Réessayez dans quelques minutes ou écrivez à support@depannhomepro.com." });
         }
-        return response.status(202).json(successPayload());
+        return response.status(202).json(successPayload(offerRequest.offer));
     }));
 }
 
@@ -40,7 +40,8 @@ export function sanitizeOfferRequest(value) {
     return { ok: true, companyName, contactName, email, phone, teamSize, offer, message, website, privacyConsent };
 }
 
-function successPayload() {
+function successPayload(offer) {
+    if (offer === "demo-15-days") return { message: "Merci, votre demande de démo gratuite a bien été envoyée. Notre équipe vous recontactera prochainement." };
     return { message: "Merci, votre demande d’offre a bien été envoyée. Notre équipe vous recontactera prochainement." };
 }
 

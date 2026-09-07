@@ -7,6 +7,7 @@ const landing = readFileSync(new URL("../public/landing.html", import.meta.url),
 const privacy = readFileSync(new URL("../public/privacy.html", import.meta.url), "utf8");
 const terms = readFileSync(new URL("../public/terms.html", import.meta.url), "utf8");
 const siteScript = readFileSync(new URL("../public/site.js", import.meta.url), "utf8");
+const sitemap = readFileSync(new URL("../public/sitemap.xml", import.meta.url), "utf8");
 const clientApp = readFileSync(new URL("../js/app.js", import.meta.url), "utf8");
 const manifest = JSON.parse(readFileSync(new URL("../manifest.json", import.meta.url), "utf8"));
 const googleVerification = readFileSync(new URL("../docs/GOOGLE_OAUTH_VERIFICATION.md", import.meta.url), "utf8");
@@ -80,6 +81,27 @@ test("la vitrine propose une demande d’offre transmise au support", () => {
     assert.match(appSource, /registerPublicOfferRoutes\(app\)/);
     assert.match(siteScript, /fetch\("\/api\/public\/offer-requests"/);
     assert.match(siteScript, /credentials: "omit"/);
+});
+
+test("la vitrine présente une démo gratuite de 15 jours sans paiement ni engagement", () => {
+    assert.match(landing, /id="demo-gratuite"/);
+    assert.match(landing, /15 jours gratuits/);
+    assert.match(landing, /sans carte bancaire/i);
+    assert.match(landing, /sans engagement/i);
+    assert.match(landing, /sans abonnement automatique/i);
+    assert.match(landing, /value="demo-15-days"/);
+    assert.match(landing, /href="#demande-offre">Demander ma démo gratuite/);
+});
+
+test("la vitrine cible des recherches métier avec un contenu factuel et indexable", () => {
+    assert.match(landing, /<title>Logiciel de gestion pour dépannage \| Depann'Home Pro<\/title>/);
+    assert.match(landing, /name="robots" content="index, follow/);
+    assert.match(landing, /property="og:locale" content="fr_FR"/);
+    assert.match(landing, /logiciel de gestion conçu pour les entreprises de dépannage/i);
+    assert.match(landing, /id="questions-frequentes"/);
+    assert.match(landing, /planning d’interventions/);
+    assert.match(sitemap, /<loc>https:\/\/depannhomepro\.com\/<\/loc><lastmod>2026-09-07<\/lastmod>/);
+    assert.doesNotMatch(landing, /aggregateRating|ratingValue|ratingCount/);
 });
 
 test("la déconnexion et le lancement PWA ouvrent l’authentification plutôt que la vitrine", () => {

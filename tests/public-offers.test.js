@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { sanitizeOfferRequest } from "../server/public-offers.js";
 
 const emailSource = readFileSync(new URL("../server/email.js", import.meta.url), "utf8");
+const offerSource = readFileSync(new URL("../server/public-offers.js", import.meta.url), "utf8");
 
 const validRequest = {
     companyName: "Entreprise Exemple",
@@ -34,4 +35,12 @@ test("les demandes commerciales sont envoyées à l’adresse support officielle
     assert.match(emailSource, /sendCommercialOfferRequestEmail/);
     assert.match(emailSource, /recipient: "support@depannhomepro\.com"/);
     assert.match(emailSource, /replyTo: email/);
+});
+
+test("une demande de démo gratuite de 15 jours est acceptée", () => {
+    const result = sanitizeOfferRequest({ ...validRequest, offer: "demo-15-days" });
+    assert.equal(result.ok, true);
+    assert.equal(result.offer, "demo-15-days");
+    assert.match(emailSource, /"demo-15-days": "Démo gratuite 15 jours"/);
+    assert.match(offerSource, /demande de démo gratuite a bien été envoyée/);
 });

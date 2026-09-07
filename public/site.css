@@ -59,6 +59,8 @@ h1 { max-width: 760px; margin: 0; font-size: clamp(2.65rem, 5.4vw, 5.25rem); }
 h1 em { color: var(--green-dark); font-style: normal; }
 .hero-lead { max-width: 670px; margin: 27px 0 0; color: var(--ink-soft); font-size: clamp(1.06rem, 1.6vw, 1.27rem); }
 .hero-actions { display: flex; flex-wrap: wrap; gap: 13px; margin-top: 32px; }
+.trial-inline { margin: 18px 0 0; color: #355672; font-size: .9rem; }
+.trial-inline strong { color: var(--green-dark); }
 .trust-row { display: flex; flex-wrap: wrap; gap: 9px 20px; margin: 27px 0 0; padding: 0; color: #355672; list-style: none; font-size: .9rem; font-weight: 700; }
 .trust-row li::before { content: "✓"; margin-right: 7px; color: var(--green-dark); font-weight: 900; }
 
@@ -119,6 +121,17 @@ h1 em { color: var(--green-dark); font-style: normal; }
 .pill-list { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 24px; }
 .pill { padding: 8px 13px; border: 1px solid #cbdce7; border-radius: 999px; background: #fff; font-size: .82rem; font-weight: 800; }
 
+.trial-section { scroll-margin-top: 75px; color: #fff; background: radial-gradient(circle at 85% 15%, rgba(103,181,28,.24), transparent 31%), var(--ink); }
+.trial-layout { display: grid; grid-template-columns: .9fr 1.1fr; gap: 65px; align-items: center; }
+.trial-layout h2 { margin: 0; font-size: clamp(2rem, 4vw, 3.4rem); }
+.trial-layout > div:first-child > p:last-child { color: #bad0e1; font-size: 1.07rem; }
+.trial-panel { padding: 32px; border: 1px solid rgba(255,255,255,.15); border-radius: 27px; background: rgba(255,255,255,.07); }
+.trial-panel ul { display: grid; gap: 18px; margin: 0 0 27px; padding: 0; list-style: none; }
+.trial-panel li { display: grid; grid-template-columns: minmax(145px, .7fr) 1fr; gap: 15px; padding-bottom: 18px; border-bottom: 1px solid rgba(255,255,255,.12); }
+.trial-panel li:last-child { padding-bottom: 0; border-bottom: 0; }
+.trial-panel strong { color: #cafa9f; }
+.trial-panel span { color: #c1d3e2; font-size: .9rem; }
+
 .pricing-section { overflow: hidden; background: radial-gradient(circle at 50% 0, rgba(103,181,28,.09), transparent 31%), #fff; }
 .invoicing-included { display: grid; grid-template-columns: auto 1fr; gap: 18px; align-items: center; margin: -18px 0 35px; padding: 20px 24px; border: 1px solid #cfe5bd; border-radius: 18px; background: #f2f9ec; }
 .invoicing-included strong { color: var(--green-dark); white-space: nowrap; }
@@ -165,6 +178,12 @@ h1 em { color: var(--green-dark); font-style: normal; }
 .audience-card { padding: 24px; border-radius: 20px; background: #fff; border: 1px solid var(--line); }
 .audience-card strong { display: block; margin-bottom: 6px; }
 .audience-card span { color: var(--ink-soft); font-size: .9rem; }
+.faq-layout { display: grid; grid-template-columns: .8fr 1.2fr; gap: 65px; align-items: start; }
+.faq-list { display: grid; gap: 12px; }
+.faq-list details { padding: 21px 24px; border: 1px solid var(--line); border-radius: 17px; background: #fff; }
+.faq-list summary { cursor: pointer; font-weight: 850; }
+.faq-list details[open] summary { color: var(--green-dark); }
+.faq-list p { margin: 13px 0 0; color: var(--ink-soft); font-size: .94rem; }
 .offer-section { scroll-margin-top: 75px; background: radial-gradient(circle at 10% 10%, rgba(103,181,28,.13), transparent 28%), var(--mist); }
 .offer-layout { display: grid; grid-template-columns: .8fr 1.2fr; gap: 65px; align-items: start; }
 .offer-copy h2 { margin: 0; font-size: clamp(2rem, 4vw, 3.4rem); }
@@ -236,7 +255,7 @@ h1 em { color: var(--green-dark); font-style: normal; }
   .site-nav.open { display: grid; }
   .site-nav > a { padding: 8px; }
   .hero { padding-top: 65px; }
-  .hero-grid, .workflow, .security-grid, .offer-layout { grid-template-columns: 1fr; }
+  .hero-grid, .workflow, .trial-layout, .security-grid, .faq-layout, .offer-layout { grid-template-columns: 1fr; }
   .hero-grid { gap: 45px; }
   .product-window { max-width: 620px; margin-inline: auto; }
   .feature-grid { grid-template-columns: repeat(2, 1fr); }
@@ -275,6 +294,8 @@ h1 em { color: var(--green-dark); font-style: normal; }
   .pricing-examples li b { grid-column: 2; }
   .partner-offer { grid-template-columns: 1fr; padding: 28px 23px; }
   .partner-offer-icon { width: 76px; height: 76px; }
+  .trial-panel { padding: 27px 21px; }
+  .trial-panel li { grid-template-columns: 1fr; gap: 5px; }
   .offer-form { padding: 27px 21px; }
   .offer-form-grid { grid-template-columns: 1fr; }
   .offer-form-wide { grid-column: auto; }

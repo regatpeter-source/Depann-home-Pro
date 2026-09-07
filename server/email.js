@@ -47,7 +47,7 @@ export async function sendSupportRequestEmail({ senderName, senderEmail, senderU
 }
 
 export async function sendCommercialOfferRequestEmail({ companyName, contactName, email, phone, teamSize, offer, message }) {
-    const offerLabel = ({ basic: "Basic", "basic-plus": "Basic+", pro: "Pro", unsure: "À conseiller" })[offer] || "À conseiller";
+    const offerLabel = ({ "demo-15-days": "Démo gratuite 15 jours", basic: "Basic", "basic-plus": "Basic+", pro: "Pro", unsure: "À conseiller" })[offer] || "À conseiller";
     const teamSizeLabel = ({ "1": "1 personne", "2-5": "2 à 5 personnes", "6-10": "6 à 10 personnes", "11-25": "11 à 25 personnes", "26-plus": "26 personnes ou plus" })[teamSize] || "Non renseigné";
     await sendEmail({
         recipient: "support@depannhomepro.com",
