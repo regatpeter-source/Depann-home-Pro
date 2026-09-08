@@ -1772,6 +1772,7 @@ CREATE TABLE IF NOT EXISTS depannhome_organizations (
     organization_type VARCHAR(40) NOT NULL DEFAULT 'troubleshooting_company',
     license_type VARCHAR(30) NOT NULL DEFAULT 'depannhome_standard',
     license_features JSONB NOT NULL DEFAULT '{}'::jsonb,
+    storage_quota_bytes BIGINT NOT NULL DEFAULT 2147483648 CHECK(storage_quota_bytes BETWEEN 10485760 AND 10995116277760),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT depannhome_organizations_interface_check CHECK (interface_type IN ('partner','standard','group')),
     CONSTRAINT depannhome_organizations_type_check CHECK (organization_type IN ('troubleshooting_company','leak_detection_company','locksmith','plumber','property_manager','real_estate_agency','insurance','expert','principal','partner_platform','other')),
@@ -1780,6 +1781,18 @@ CREATE TABLE IF NOT EXISTS depannhome_organizations (
 INSERT INTO depannhome_organizations(account_owner_id,interface_type,organization_type,license_type)
 SELECT id,'standard','troubleshooting_company','depannhome_standard' FROM depannhome_users WHERE account_owner_id=id
 ON CONFLICT(account_owner_id) DO NOTHING;
+ALTER TABLE depannhome_organizations ADD COLUMN IF NOT EXISTS storage_quota_bytes BIGINT NOT NULL DEFAULT 2147483648;
+DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='depannhome_organizations_storage_quota_check') THEN ALTER TABLE depannhome_organizations ADD CONSTRAINT depannhome_organizations_storage_quota_check CHECK(storage_quota_bytes BETWEEN 10485760 AND 10995116277760); END IF; END $$;
+
+CREATE TABLE IF NOT EXISTS depannhome_storage_snapshots (
+    account_owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    captured_on DATE NOT NULL DEFAULT CURRENT_DATE,
+    usage_bytes BIGINT NOT NULL CHECK(usage_bytes >= 0),
+    breakdown JSONB NOT NULL DEFAULT '{}'::jsonb,
+    captured_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY(account_owner_id,captured_on)
+);
+CREATE INDEX IF NOT EXISTS depannhome_storage_snapshots_owner_date_idx ON depannhome_storage_snapshots(account_owner_id,captured_on DESC);
 
 CREATE TABLE IF NOT EXISTS depannhome_organization_audit (
     id BIGSERIAL PRIMARY KEY,

@@ -8,6 +8,7 @@ import { calculateSubscriptionPriceCents, normalizeSubscriptionTier, subscriptio
 import { createNotification } from "./collaboration.js";
 import { deliverSubscriptionProration, prepareSubscriptionProration } from "./invoicing.js";
 import { decryptElectronicInvoicingCredentials, encryptElectronicInvoicingCredentials, getElectronicInvoicingProvider } from "./electronic-invoicing.js";
+import { loadCreatorStorageUsage, normalizeStorageQuota, updateCompanyStorageQuota } from "./storage-monitoring.js";
 
 const USERNAME_PATTERN = /^[a-z0-9._-]{3,32}$/;
 const MIN_PASSWORD_LENGTH = 12;
@@ -21,6 +22,24 @@ const EINVOICE_AUTHENTICATION_TYPES = new Set(["api_key", "oauth_client", "acces
 const EINVOICE_LIFECYCLE_STATUSES = new Set(["documentation_required", "specification_review", "development", "validation", "deployed", "suspended"]);
 
 export function registerCreatorRoutes(app, requireCreator, requireAuthentication) {
+    app.get("/api/creator/storage-usage", requireCreator, asyncHandler(async (request, response) => {
+        const result = await loadCreatorStorageUsage();
+        result.accounts = result.accounts.filter(account => !isCreatorUsername(account.ownerUsername) || String(account.accountId) === String(request.user.sub));
+        result.summary.trackedUsageBytes = result.accounts.reduce((total, account) => total + account.usageBytes, 0);
+        result.summary.warningCount = result.accounts.filter(account => account.alertLevel === "warning").length;
+        result.summary.criticalCount = result.accounts.filter(account => account.alertLevel === "critical").length;
+        response.json(result);
+    }));
+    app.patch("/api/creator/accounts/:accountId/storage-quota", requireCreator, asyncHandler(async (request, response) => {
+        const accountId = positiveId(request.params.accountId);
+        const quotaBytes = normalizeStorageQuota(request.body?.quotaBytes);
+        const owner = accountId && await findAccountOwner(getPool(), accountId);
+        if (!canManageAccount(owner, request)) return response.status(404).json({ message: "Entreprise introuvable." });
+        if (!quotaBytes) return response.status(400).json({ message: "Le quota doit être compris entre 10 Mo et 10 To." });
+        const quota = await updateCompanyStorageQuota(accountId, quotaBytes);
+        if (!quota) return response.status(404).json({ message: "Organisation introuvable." });
+        response.json({ quota });
+    }));
     app.get("/api/creator/request-notifications", requireCreator, asyncHandler(async (_request, response) => {
         const [subscriptions, support, partners] = await Promise.all([
             getPool().query(`SELECT change.id,'subscription' AS source,COALESCE(NULLIF(profile.company_name,''),NULLIF(owner.company_name,''),owner.full_name,owner.username) AS "senderName",'Demande d’offre ou de postes' AS title,change.status,change.created_at AS "createdAt" FROM depannhome_subscription_change_requests change JOIN depannhome_users owner ON owner.id=change.owner_id LEFT JOIN depannhome_billing_profiles profile ON profile.owner_id=owner.id WHERE change.status IN ('new','under_review') ORDER BY change.created_at DESC LIMIT 50`),

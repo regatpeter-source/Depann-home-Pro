@@ -35,6 +35,11 @@ export async function renderCreatorConsole() {
     networkButton.className = "secondary-button auth-outline-button";
     networkButton.textContent = "Réseau Depann'Home Pro";
     document.querySelector(".creator-heading .creator-form-actions").prepend(networkButton);
+    const storageButton = document.createElement("button");
+    storageButton.type = "button";
+    storageButton.className = "secondary-button auth-outline-button";
+    storageButton.textContent = "💾 Stockage";
+    document.querySelector(".creator-heading .creator-form-actions").prepend(storageButton);
     const notificationsButton = document.createElement("button");
     notificationsButton.type = "button";
     notificationsButton.id = "creatorRequestNotifications";
@@ -51,6 +56,7 @@ export async function renderCreatorConsole() {
     container.querySelector("#creatorElectronicInvoicingMonitoring").addEventListener("click", renderCreatorEInvoicingMonitoring);
     container.querySelector("#creatorElectronicInvoicingPlatforms").addEventListener("click", renderCreatorEInvoicingPlatforms);
     networkButton.addEventListener("click", renderNetworkDirectory);
+    storageButton.addEventListener("click", renderCreatorStorageUsage);
     notificationsButton.addEventListener("click", renderCreatorRequestNotifications);
     container.querySelector("#creatorPlatformAnnouncement").addEventListener("click", renderPlatformAnnouncementSettings);
     container.querySelector("#creatorPartnerRequests").addEventListener("click", renderPartnerRequests);
@@ -66,6 +72,49 @@ export async function renderCreatorConsole() {
             if (document.querySelector("#creatorRequestNotifications")) refreshCreatorRequestNotifications();
         });
     }
+}
+
+async function renderCreatorStorageUsage() {
+    const workspace = document.querySelector("#creatorWorkspace");
+    workspace.innerHTML = '<p class="muted">Calcul du stockage attribuable à chaque entreprise…</p>';
+    const result = await api("/api/creator/storage-usage", { timeoutMs: 30_000 });
+    if (!result.ok) return showFeedback(result.message || "Impossible de calculer le stockage.", true);
+    const companies = result.data?.accounts || [];
+    const summary = result.data?.summary || {};
+    workspace.innerHTML = `<section class="creator-form creator-storage-panel">
+        <div class="form-heading"><div><p class="eyebrow">PostgreSQL · consommation logique</p><h3>Stockage des entreprises</h3></div><button type="button" class="secondary-button" data-refresh-storage>Actualiser</button></div>
+        <aside class="accounting-pdp-notice"><strong>Mesure attribuable.</strong> Le suivi additionne les fichiers, PDF, modèles, logos, pièces jointes et principaux contenus métier de chaque entreprise. La taille physique globale inclut aussi les index, WAL, tables système et l’espace libéré en attente de VACUUM.</aside>
+        <div class="creator-subscription-summary"><article><span>Données suivies</span><strong>${escapeHtml(formatBytes(summary.trackedUsageBytes))}</strong></article><article><span>Base PostgreSQL complète</span><strong>${escapeHtml(formatBytes(summary.databaseBytes))}</strong></article><article class="${Number(summary.warningCount) ? "attention" : ""}"><span>Alertes ≥ 80 %</span><strong>${Number(summary.warningCount) || 0}</strong></article><article class="${Number(summary.criticalCount) ? "attention" : ""}"><span>Critiques ≥ 95 %</span><strong>${Number(summary.criticalCount) || 0}</strong></article></div>
+        <div class="creator-network-list">${companies.length ? companies.map(storageCompanyRow).join("") : '<p class="muted">Aucune entreprise à mesurer.</p>'}</div>
+    </section>`;
+    workspace.querySelector("[data-refresh-storage]").addEventListener("click", renderCreatorStorageUsage);
+    workspace.querySelectorAll("[data-storage-quota-form]").forEach(form => form.addEventListener("submit", async event => {
+        event.preventDefault();
+        const quotaGiB = Number(form.elements.quotaGiB.value);
+        if (!Number.isFinite(quotaGiB) || quotaGiB < 0.01 || quotaGiB > 10240) return showFeedback("Le quota doit être compris entre 0,01 Gio et 10 240 Gio.", true);
+        const button = form.querySelector('button[type="submit"]');
+        button.disabled = true;
+        const saved = await api(`/api/creator/accounts/${encodeURIComponent(form.dataset.storageQuotaForm)}/storage-quota`, { method: "PATCH", body: JSON.stringify({ quotaBytes: Math.round(quotaGiB * 1024 ** 3) }) });
+        if (!saved.ok) { button.disabled = false; return showFeedback(saved.message || "Quota impossible à enregistrer.", true); }
+        showFeedback("Quota de stockage enregistré.");
+        renderCreatorStorageUsage();
+    }));
+}
+
+function storageCompanyRow(company) {
+    const labels = { normal: "Normal", warning: "À surveiller", critical: "Critique", unknown: "Sans quota" };
+    const alertClass = company.alertLevel === "normal" ? "" : " suspended";
+    const growth = company.growth30dBytes === null ? "Historique 30 jours en cours de constitution" : `${company.growth30dBytes >= 0 ? "+" : "−"}${formatBytes(Math.abs(company.growth30dBytes))} sur 30 jours`;
+    const quotaGiB = Math.round((Number(company.quotaBytes) / 1024 ** 3) * 100) / 100;
+    return `<article class="creator-network-company${company.isArchived ? " archived" : ""}"><div><strong>${escapeHtml(company.companyName || "Entreprise")}</strong><p>${escapeHtml(formatBytes(company.usageBytes))} utilisés sur ${escapeHtml(formatBytes(company.quotaBytes))} · ${Number(company.usagePercent).toLocaleString("fr-FR")} %</p><progress max="100" value="${Math.min(100, Number(company.usagePercent) || 0)}" aria-label="Quota utilisé"></progress><small>${escapeHtml(growth)} · ${Number(company.itemCount) || 0} élément(s) volumineux suivi(s)</small></div><div class="creator-form-actions"><span class="creator-state${alertClass}">${escapeHtml(labels[company.alertLevel] || "Inconnu")}</span><form data-storage-quota-form="${escapeHtml(company.accountId)}"><label>Quota (Gio)<input name="quotaGiB" type="number" min="0.01" max="10240" step="0.01" value="${escapeHtml(quotaGiB)}" required></label><button type="submit" class="secondary-button">Enregistrer</button></form></div></article>`;
+}
+
+function formatBytes(value) {
+    const bytes = Math.max(0, Number(value) || 0);
+    if (bytes < 1024) return `${bytes.toLocaleString("fr-FR")} o`;
+    const units = ["Kio", "Mio", "Gio", "Tio"];
+    const exponent = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length);
+    return `${(bytes / 1024 ** exponent).toLocaleString("fr-FR", { maximumFractionDigits: 2 })} ${units[exponent - 1]}`;
 }
 
 async function refreshCreatorHealthAlert() {
