@@ -193,7 +193,7 @@ async function receiveMission(req, res) {
             return res.status(200).json({ accepted: true, replayed: true, missionId: mission.id, clientId: mission.client_id, clientCreated: false, status: mission.status });
         }
         await ensureBusinessMissionNumber(connection, mission.id);
-        const client = await provisionPartnerMissionClient(connection, intake.owner_id, mapped, req, mission.client_id);
+        const client = await provisionPartnerMissionClient(connection, intake.owner_id, mapped, req, mission.client_id, { reactivateArchived: Boolean(mission.inserted), missionId: mission.id });
         tracePartnerClient("provision_completed", { flow: "partner_intake", ownerId: intake.owner_id, missionId: mission.id, clientId: client.id, created: client.created });
         await connection.query("UPDATE depannhome_partner_missions SET client_id=$3,updated_at=NOW() WHERE id=$1 AND owner_id=$2", [mission.id, intake.owner_id, client.id]);
         await writeHistory(connection, intake.owner_id, mission.id, mission.status, mission.inserted ? "received" : "updated", null, "partner", { partnerKey, externalMissionId: mapped.externalMissionId, clientId: client.id, clientCreated: client.created }, req.ip);
@@ -222,7 +222,7 @@ async function acceptMission(req, id) {
         const assignedTechnicianIds = [...new Set([technicianId, ...requestedTechnicianIds].filter(Boolean))];
         const assignmentError = await validateAssignedCompanyMembers(connection, ownerId, assignedTechnicianIds, PARTNER_MISSION_ASSIGNMENT_ROLES);
         if (assignmentError) throw clientError(400, assignmentError);
-        const clientId = await upsertClient(connection, ownerId, values, req, mission.client_id);
+        const clientId = await upsertClient(connection, ownerId, values, req, mission.client_id, { reactivateArchived: true, missionId: mission.id });
         tracePartnerClient("provision_completed", { flow: "mission_acceptance", ownerId, missionId: id, clientId, operation: mission.client_id ? "repaired_or_updated_linked_client" : "created_or_matched_client" });
         const schedule = scheduleValues(req.body, mission);
         for (const assignedId of [...assignedTechnicianIds].sort((first, second) => first - second)) await assertAvailableSchedule(connection, ownerId, assignedId, schedule, mission.calendar_event_id);
@@ -334,7 +334,7 @@ export async function ingestEmailPartnerMission({ ownerId, connectionId, emailId
         await ensureBusinessMissionNumber(database, mission.id);
         mapped.attachments = (mapped.attachments || []).map(attachment => ({ ...attachment, source: "partner_email", missionId: String(mission.id) }));
         const matchedClientId = mission.client_id || await matchEmailMissionClient(database, ownerId, mapped);
-        const client = await provisionPartnerMissionClient(database, ownerId, mapped, { user: { sub: actorId, fullName: "Import boîte mail" } }, matchedClientId);
+        const client = await provisionPartnerMissionClient(database, ownerId, mapped, { user: { sub: actorId, fullName: "Import boîte mail" } }, matchedClientId, { reactivateArchived: Boolean(mission.inserted), missionId: mission.id });
         await database.query("UPDATE depannhome_partner_missions SET client_id=$3,mapped_data=$4::jsonb,updated_at=NOW() WHERE id=$1 AND owner_id=$2", [mission.id, ownerId, client.id, JSON.stringify(mapped)]);
         await writeHistory(database, ownerId, mission.id, mission.status, mission.inserted ? "email_received" : "email_updated", actorId, "email", { emailId, connectionId, clientId: client.id, clientCreated: client.created }, "");
         await database.query("COMMIT");
@@ -492,11 +492,11 @@ async function history(id) { const { rows } = await getPool().query("SELECT hist
 async function missionEmailAttachments(ownerId, missionId) { const { rows } = await getPool().query(`SELECT item.id,item.label AS name,attachment.mime_type AS "mimeType",attachment.file_size AS "fileSize",item.created_at AS "createdAt" FROM depannhome_partner_mission_items item JOIN depannhome_partner_dialogue_attachments attachment ON attachment.id::text=item.source_id AND attachment.owner_id=item.owner_id AND attachment.mission_id=item.mission_id WHERE item.owner_id=$1 AND item.mission_id=$2 AND item.source_type='email_attachment' ORDER BY item.created_at,item.id`, [ownerId, missionId]); return rows.map(item => ({ ...item, url: `/api/partner-dialogue/missions/${missionId}/items/${item.id}/download` })); }
 async function technicians(ownerId) { const { rows } = await getPool().query("SELECT id,COALESCE(full_name,username) AS \"fullName\",department,departments,phone FROM depannhome_users WHERE account_owner_id=$1 AND role IN ('technician','team_lead','mobile_admin') AND is_active=TRUE ORDER BY full_name", [ownerId]); return rows; }
 
-async function upsertClient(connection, ownerId, data, req, linkedClientId = "") { return (await provisionPartnerMissionClient(connection, ownerId, data, req, linkedClientId)).id; }
+async function upsertClient(connection, ownerId, data, req, linkedClientId = "", options = {}) { return (await provisionPartnerMissionClient(connection, ownerId, data, req, linkedClientId, options)).id; }
 
-export async function provisionPartnerMissionClient(connection, ownerId, data, req = {}, linkedClientId = "") {
+export async function provisionPartnerMissionClient(connection, ownerId, data, req = {}, linkedClientId = "", options = {}) {
     tracePartnerClient("provision_called", { ownerId });
-    const { rows } = await connection.query("SELECT client_id,client_data FROM depannhome_clients WHERE owner_id=$1 FOR UPDATE", [ownerId]);
+    const { rows } = await connection.query("SELECT client_id,client_data,client_status FROM depannhome_clients WHERE owner_id=$1 FOR UPDATE", [ownerId]);
     const row = findPartnerMissionClientRow(rows, data, linkedClientId);
     const now = new Date().toISOString();
     const clientId = row?.client_id || (CLIENT_ID_PATTERN.test(String(linkedClientId || "")) ? String(linkedClientId) : `client-${crypto.randomUUID()}`);
@@ -506,6 +506,10 @@ export async function provisionPartnerMissionClient(connection, ownerId, data, r
     const client = { ...old, id: clientId, isSandbox: Boolean(data.isSandbox || old.isSandbox), name: data.clientName || old.name || "Client partenaire", firstName: data.firstName || old.firstName || "", lastName: data.lastName || old.lastName || "", address: data.address || old.address || "", interventionAddress: data.interventionAddress || old.interventionAddress || data.address || "", postalCode: data.postalCode || old.postalCode || "", city: data.city || old.city || "", phone: data.phone || old.phone || "", email: data.email || old.email || "", interventionReference: data.interventionReference || data.partnerReference || old.interventionReference || "", insurance: data.insurance || old.insurance || "", insuranceDossier: data.insuranceDossier || old.insuranceDossier || "", mandateNumber: data.mandateNumber || old.mandateNumber || "", principal: data.principal || old.principal || "", claimNumber: data.claimNumber || old.claimNumber || "", insuredNumber: data.insuredNumber || old.insuredNumber || "", expert: data.expert || old.expert || "", manager: data.manager || old.manager || "", gps: data.gps || old.gps || "", notes: mergeText(old.notes, data.description, data.comments), attachments, activityHistory: activity, createdAt: old.createdAt || now, updatedAt: now };
     const saved = await connection.query("INSERT INTO depannhome_clients(owner_id,client_id,client_data,updated_at) VALUES($1,$2,$3::jsonb,NOW()) ON CONFLICT(owner_id,client_id) DO UPDATE SET client_data=EXCLUDED.client_data,updated_at=NOW() RETURNING client_id", [ownerId, clientId, JSON.stringify(client)]);
     if (saved.rows[0]?.client_id !== clientId) throw new Error("La fiche client partenaire n’a pas pu être enregistrée.");
+    if (row?.client_status === "archived" && options.reactivateArchived === true) {
+        await connection.query("UPDATE depannhome_clients SET client_status='active',archived_at=NULL,archived_by=NULL,updated_at=NOW() WHERE owner_id=$1 AND client_id=$2", [ownerId, clientId]);
+        await connection.query("INSERT INTO depannhome_client_lifecycle_audit(owner_id,client_id,action,actor_id,actor_name,details) VALUES($1,$2,'partner_mission_reactivated',$3,$4,$5::jsonb)", [ownerId, clientId, req.user?.sub || null, String(req.user?.fullName || "Mission partenaire").slice(0, 160), JSON.stringify({ missionId: options.missionId || null })]);
+    }
     tracePartnerClient("upsert_succeeded", { ownerId, clientId, operation: row ? "update_existing_match" : "insert_new", rowCount: saved.rowCount });
     const verification = await connection.query("SELECT client_id FROM depannhome_clients WHERE owner_id=$1 AND client_id=$2", [ownerId, clientId]);
     if (!verification.rows[0]) throw new Error("La fiche client partenaire est absente de la base de données de l’entreprise destinataire.");

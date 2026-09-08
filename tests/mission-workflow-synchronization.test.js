@@ -32,6 +32,9 @@ test("une autre intervention ou un SAV crée une mission distincte sur la même 
     assert.equal(findPartnerMissionClientRow(clients, { clientName: "Mme Martin", phone: "+33 6 12 34 56 78", interventionType: "Nouvelle intervention" })?.client_id, "client-existing");
     assert.equal(findPartnerMissionClientRow(clients, { clientName: "Mme Martin", address: "1 rue de Paris", city: "Lyon" })?.client_id, "client-existing");
     assert.equal(findPartnerMissionClientRow(clients, { clientName: "Nouveau client", email: "nouveau@example.fr" }), null);
+    const missionServer = read("server/partner-missions.js");
+    assert.match(missionServer, /options\.reactivateArchived === true/);
+    assert.match(missionServer, /'partner_mission_reactivated'/);
 });
 
 test("les événements rapport, planning et facturation synchronisent le statut réel de mission", () => {
