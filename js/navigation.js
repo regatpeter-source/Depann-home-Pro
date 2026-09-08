@@ -2,7 +2,7 @@ import { ROUTES, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } fro
 import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=215";
 import { openCreatorPartnerRequest, openCreatorRequestNotification, renderCreatorConsole } from "./creator.js?v=158";
 import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=204";
-import { renderAccounting, renderElectronicInvoicingConfiguration } from "./accounting.js?v=26";
+import { renderAccounting } from "./accounting.js?v=27";
 import { renderPurchases } from "./purchases.js?v=126";
 import { renderGroupActivation, renderGroupWorkspace } from "./groups.js?v=4";
 import { renderPartnerMissions } from "./partner-missions.js?v=81";
@@ -442,7 +442,7 @@ function canAccessSettingsSection(section) {
     if (document.body.dataset.organizationInterface === "partner") return (section === "network" && organizationFeatureEnabled("partnerConnections")) || (section === "company" && organizationFeatureEnabled("partnerMissions")) || (section === "imports" && organizationFeatureEnabled("imports"));
     if (section === "company" && organizationFeatureEnabled("companyEmail")) return document.body.dataset.role === "admin";
     if (section === "network" && (organizationFeatureEnabled("partnerConnections") || organizationFeatureEnabled("partnerMissions"))) return true;
-    const featureBySection = { documents: "billing", electronicInvoicing: "accounting", network: "partnerConnections", users: "settings", security: "settings", groups: "groups", personalization: "settings", imports: "imports" };
+    const featureBySection = { documents: "billing", network: "partnerConnections", users: "settings", security: "settings", groups: "groups", personalization: "settings", imports: "imports" };
     const feature = featureBySection[section];
     if (feature && !organizationFeatureEnabled(feature)) return false;
     if (document.body.dataset.role === "admin") return true;
@@ -1614,7 +1614,6 @@ function renderSettingsWorkspace(options = {}) {
             ...(document.body.dataset.role === "admin" ? [["subscription", "Offre & abonnement", "Consultez les tarifs et demandez une évolution ou une rétrogradation au Support.", "subscription"]] : []),
             ...(document.body.dataset.role === "admin" ? [["storage", "Stockage", "Consultez l’espace utilisé, votre quota et l’évolution des données de l’entreprise.", "database"]] : []),
             ...(document.body.dataset.role === "admin" ? [["documents", "Modèles de documents", `Identité, présentation et modèles des devis${organizationFeatureEnabled("quitus") ? ", quitus" : ""} et rapports.`, "document"]] : []),
-            ...(document.body.dataset.role === "admin" && organizationFeatureEnabled("accounting") ? [["electronicInvoicing", "Facturation électronique", "Choisissez et configurez la plateforme propre à votre entreprise.", "document"]] : []),
             ...(organizationFeatureEnabled("companyEmail") && document.body.dataset.role === "admin" ? [["company", "Entreprise · Boîte mail", "Connectez la boîte de l’entreprise et choisissez si elle recherche automatiquement les missions.", "company"]] : []),
             ["network", internalNetworkOnly ? "Réseau Depann’Home Pro" : "Réseau & connecteurs", internalNetworkOnly ? "Recherchez des entreprises utilisatrices et gérez vos connexions internes." : "Deux espaces distincts : le réseau collaboratif Depann’Home Pro et les connecteurs API externes.", "network"],
             ...(supportAvailable ? [["support", "Support", "Contactez l’équipe Depann’Home Pro depuis les paramètres de votre entreprise.", "support"]] : []),
@@ -1632,14 +1631,13 @@ function renderSettingsWorkspace(options = {}) {
 
     clearSearch();
     resetSelection("all");
-    const titles = { subscription: "Offre & abonnement", storage: "Stockage", documents: "Modèles de documents", electronicInvoicing: "Facturation électronique", company: "Entreprise · Boîte mail", network: document.body.dataset.organizationInterface === "partner" || !organizationFeatureEnabled("connectors") ? "Réseau Depann’Home Pro" : "Réseau & connecteurs", support: "Support", users: "Utilisateurs", security: "Sécurité", groups: "Groupe / Multi-entreprises", personalization: "Interface & notifications", imports: document.body.dataset.organizationInterface === "partner" ? "Importation de clients" : "Importation de données", creator: "Console Créateur" };
+    const titles = { subscription: "Offre & abonnement", storage: "Stockage", documents: "Modèles de documents", company: "Entreprise · Boîte mail", network: document.body.dataset.organizationInterface === "partner" || !organizationFeatureEnabled("connectors") ? "Réseau Depann’Home Pro" : "Réseau & connecteurs", support: "Support", users: "Utilisateurs", security: "Sécurité", groups: "Groupe / Multi-entreprises", personalization: "Interface & notifications", imports: document.body.dataset.organizationInterface === "partner" ? "Importation de clients" : "Importation de données", creator: "Console Créateur" };
     setPage(`Paramètres · ${titles[section] || "Configuration"}`, ROUTES.settings, "detail");
     const container = getContainer();
     container.appendChild(createBackCard("Retour aux Paramètres", () => renderSettings()));
 
     if (section === "subscription") return renderSubscriptionSettings(container);
     if (section === "storage") return renderCompanyStorage(container);
-    if (section === "electronicInvoicing") return renderElectronicInvoicingConfiguration(container);
     if (section === "documents") {
         const intro = createSettingsIntro("Modèles de documents");
         const grid = document.createElement("div");

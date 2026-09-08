@@ -6,7 +6,7 @@ import { initializeElectronicInvoiceLifecycle, loadElectronicInvoiceLifecycle, r
 const CONNECTION_STATUSES = new Set(["pending", "connected", "invalid", "expired", "disconnected", "action_required"]);
 const TRANSMISSION_STATUSES = new Set(["queued", "sent", "accepted", "rejected", "failed", "cancelled"]);
 const ENVIRONMENTS = new Set(["sandbox", "production"]);
-const MANUAL_AUTHENTICATION_TYPES = new Set(["api_key", "oauth_client", "access_token", "identifier_secret", "custom_secret"]);
+const COMPANY_PLATFORM_CODE = "super_pdp";
 const providers = new Map();
 
 export class ElectronicInvoicingProvider {
@@ -221,10 +221,11 @@ export function registerElectronicInvoicingRoutes(app, requireAuthentication) {
     });
     app.get("/api/accounting/e-invoicing", asyncHandler(async (request, response) => {
         const ownerId = getAccountOwnerId(request);
-        response.json({ providers: listElectronicInvoicingProviders(), connections: await loadPublicConnections(ownerId), activeConnection: await loadPublicActiveConnection(ownerId), ...await loadElectronicInvoiceLifecycle(ownerId) });
+        response.json({ providers: listElectronicInvoicingProviders().filter(provider => provider.code === COMPANY_PLATFORM_CODE), connections: await loadPublicConnections(ownerId), activeConnection: await loadPublicActiveConnection(ownerId), ...await loadElectronicInvoiceLifecycle(ownerId) });
     }));
     app.post("/api/accounting/e-invoicing/connections/:platformCode/authorize", asyncHandler(async (request, response) => {
         const ownerId = getAccountOwnerId(request);
+        if (request.params.platformCode !== COMPANY_PLATFORM_CODE) return response.status(409).json({ message: "Seule la connexion SUPER PDP est autorisée." });
         const platform = getElectronicInvoicingProvider(request.params.platformCode);
         if (!platform || typeof platform.authorizationUrl !== "function" || typeof platform.exchangeAuthorizationCode !== "function") return response.status(409).json({ message: "Cette plateforme ne propose pas de parcours d’autorisation intégré." });
         const redirectUri = String(process.env.SUPERPDP_REDIRECT_URI || "").trim();
@@ -298,37 +299,11 @@ export function registerElectronicInvoicingRoutes(app, requireAuthentication) {
         }
     }));
     app.put("/api/accounting/e-invoicing/configuration", asyncHandler(async (request, response) => {
-        const ownerId = getAccountOwnerId(request);
-        const configuration = sanitizeManualConfiguration(request.body);
-        if (!configuration.ok) return response.status(400).json({ message: configuration.message });
-        const { rows: currentRows } = await getPool().query("SELECT * FROM depannhome_einvoice_connections WHERE owner_id=$1 AND active=TRUE ORDER BY updated_at DESC LIMIT 1", [ownerId]);
-        const current = currentRows[0];
-        const credentials = configuration.credentialsComplete
-            ? encryptCredentials(configuration.credentials)
-            : current?.platform_code === "manual_configuration" && current.encrypted_credentials && safeObject(current.connection_metadata).authenticationType === configuration.authenticationType
-                ? current.encrypted_credentials
-                : "";
-        if (!credentials) return response.status(400).json({ message: "Renseignez les informations sensibles requises par le mode d’authentification sélectionné." });
-        const metadata = { authenticationType: configuration.authenticationType };
-        const client = await getPool().connect();
-        try {
-            await client.query("BEGIN");
-            let saved;
-            if (current?.platform_code === "manual_configuration") {
-                const { rows } = await client.query(`UPDATE depannhome_einvoice_connections SET platform_label=$3,status='pending',active=TRUE,encrypted_credentials=$4,connection_metadata=$5::jsonb,external_account_id=$6,external_account_label=$6,disconnected_at=NULL,updated_at=NOW() WHERE id=$1 AND owner_id=$2 RETURNING *`, [current.id, ownerId, configuration.platformName, credentials, JSON.stringify(metadata), configuration.accountIdentifier]);
-                saved = rows[0];
-            } else {
-                await client.query("UPDATE depannhome_einvoice_connections SET active=FALSE,status=CASE WHEN status='connected' THEN 'disconnected' ELSE status END,disconnected_at=CASE WHEN active THEN NOW() ELSE disconnected_at END,updated_at=NOW() WHERE owner_id=$1 AND active=TRUE", [ownerId]);
-                const { rows } = await client.query(`INSERT INTO depannhome_einvoice_connections(owner_id,platform_code,platform_label,environment,status,active,encrypted_credentials,connection_metadata,external_account_id,external_account_label,created_by) VALUES($1,'manual_configuration',$2,'production','pending',TRUE,$3,$4::jsonb,$5,$5,$6) RETURNING *`, [ownerId, configuration.platformName, credentials, JSON.stringify(metadata), configuration.accountIdentifier, request.user.sub]);
-                saved = rows[0];
-            }
-            await recordEvent(client, ownerId, saved.id, null, request.user.sub, "configuration_saved", "pending", "Configuration de plateforme enregistrée.");
-            await client.query("COMMIT");
-            response.json({ message: "Configuration enregistrée.", connection: publicConnection(saved) });
-        } catch (error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }
+        response.status(410).json({ message: "La configuration manuelle a été supprimée. Connectez SUPER PDP depuis le module Comptabilité." });
     }));
     app.post("/api/accounting/e-invoicing/connections/:platformCode", asyncHandler(async (request, response) => {
         const ownerId = getAccountOwnerId(request);
+        if (request.params.platformCode !== COMPANY_PLATFORM_CODE) return response.status(409).json({ message: "Seule la connexion SUPER PDP est autorisée." });
         const platform = getElectronicInvoicingProvider(request.params.platformCode);
         if (!platform) return response.status(409).json({ message: "Cette plateforme n'est pas encore intégrée à Depan’Home Pro." });
         const environment = ENVIRONMENTS.has(request.body?.environment) && platform.environments.includes(request.body.environment) ? request.body.environment : platform.environments[0];
@@ -413,12 +388,12 @@ export async function transmitElectronicDocument({ ownerId, documentId, actorId,
     const { rows } = await database.query(`SELECT id,owner_id AS "ownerId",document_type AS "documentType",document_number AS "documentNumber",customer_type AS "customerType",customer_name AS "customerName",structured_data AS "structuredData",structured_mime_type AS "structuredMimeType",structured_sha256 AS "structuredSha256" FROM depannhome_billing_documents WHERE id=$1 AND owner_id=$2 AND issued_at IS NOT NULL`, [id, ownerId]);
     const document = rows[0];
     if (!document || !["invoice", "credit"].includes(document.documentType)) throw httpError(404, "Facture ou avoir introuvable.");
-    if (document.customerType === "Particulier") throw httpError(409, "Cette facture concerne un particulier : elle reste archivée et comptabilisée dans Depann’Home Pro, mais ne doit pas être transmise comme une facture électronique B2B. Les données B2C relèvent de l’e-reporting auprès de la plateforme choisie par l’entreprise.");
+    if (document.customerType === "Particulier") throw httpError(409, "Cette facture concerne un particulier : elle reste archivée et comptabilisée dans Depann’Home Pro, mais ne doit pas être transmise comme une facture électronique B2B. Les données B2C relèvent de l’e-reporting auprès de SUPER PDP.");
     if (!["Professionnel", "Magasin"].includes(document.customerType)) throw httpError(409, "Précisez une catégorie professionnelle avant la transmission électronique B2B de ce document.");
     if (!document.structuredData) throw httpError(409, "L’archive UBL de cette facture ou de cet avoir est indisponible. La transmission est bloquée.");
-    const { rows: connections } = await database.query("SELECT * FROM depannhome_einvoice_connections WHERE owner_id=$1 AND active=TRUE AND status='connected' ORDER BY updated_at DESC LIMIT 1", [ownerId]);
+    const { rows: connections } = await database.query("SELECT * FROM depannhome_einvoice_connections WHERE owner_id=$1 AND platform_code=$2 AND active=TRUE AND status='connected' ORDER BY updated_at DESC LIMIT 1", [ownerId, COMPANY_PLATFORM_CODE]);
     const connection = connections[0];
-    if (!connection) throw httpError(409, "Connectez d’abord la plateforme de facturation électronique de votre entreprise.");
+    if (!connection) throw httpError(409, "Connectez d’abord SUPER PDP pour votre entreprise.");
     const platform = getElectronicInvoicingProvider(connection.platform_code);
     if (!platform) throw httpError(409, "Cette plateforme n'est pas encore intégrée à Depan’Home Pro.");
     if (document.documentType === "invoice" && !platform.supports.invoices) throw httpError(409, "Cette plateforme ne permet pas l’envoi de factures avec l’intégration actuelle.");
@@ -444,7 +419,7 @@ export async function transmitElectronicDocument({ ownerId, documentId, actorId,
 }
 
 async function loadPublicConnections(ownerId) {
-    const { rows } = await getPool().query("SELECT * FROM depannhome_einvoice_connections WHERE owner_id=$1 ORDER BY active DESC,updated_at DESC", [ownerId]);
+    const { rows } = await getPool().query("SELECT * FROM depannhome_einvoice_connections WHERE owner_id=$1 AND platform_code=$2 ORDER BY active DESC,updated_at DESC", [ownerId, COMPANY_PLATFORM_CODE]);
     return rows.map(publicConnection);
 }
 async function loadPublicActiveConnection(ownerId) { const connections = await loadPublicConnections(ownerId); return connections.find(item => item.active) || null; }
@@ -490,18 +465,6 @@ const encryptCredentials = encryptElectronicInvoicingCredentials;
 const decryptCredentials = decryptElectronicInvoicingCredentials;
 function sha256(value) { return crypto.createHash("sha256").update(String(value || "")).digest("hex"); }
 function safeObject(value) { return value && typeof value === "object" && !Array.isArray(value) ? value : {}; }
-function sanitizeManualConfiguration(value) {
-    const platformName = clean(value?.platformName, 160);
-    const accountIdentifier = clean(value?.accountIdentifier, 200);
-    const authenticationType = MANUAL_AUTHENTICATION_TYPES.has(value?.authenticationType) ? value.authenticationType : "";
-    if (!platformName || !accountIdentifier || !authenticationType) return { ok: false, message: "La plateforme, le compte et le mode d’authentification sont obligatoires." };
-    const credentials = authenticationType === "api_key" ? { apiKey: secret(value?.apiKey, 4000) }
-        : authenticationType === "oauth_client" ? { clientId: clean(value?.clientId, 500), clientSecret: secret(value?.clientSecret, 4000) }
-            : authenticationType === "access_token" ? { accessToken: secret(value?.accessToken, 8000) }
-                : authenticationType === "identifier_secret" ? { identifier: clean(value?.identifier, 500), secret: secret(value?.secret, 4000) }
-                    : { credentialName: clean(value?.credentialName, 160), credentialValue: secret(value?.credentialValue, 8000) };
-    return { ok: true, platformName, accountIdentifier, authenticationType, credentials, credentialsComplete: Object.values(credentials).every(Boolean) };
-}
 function clean(value, max) { return String(value || "").replace(/\s+/g, " ").trim().slice(0, max); }
 function secret(value, max) { return String(value || "").trim().slice(0, max); }
 function positiveId(value) { const id = Number(value); return Number.isSafeInteger(id) && id > 0 ? id : 0; }

@@ -1,6 +1,6 @@
 # Architecture multi-plateformes de facturation électronique
 
-Depann’Home Pro n’est ni une plateforme agréée, ni une PDP, ni une plateforme certifiée de transmission. Chaque entreprise choisit son prestataire, souscrit directement auprès de lui et possède sa connexion.
+Depann’Home Pro n’est ni une plateforme agréée, ni une PDP, ni une plateforme certifiée de transmission. SUPER PDP est l’unique plateforme de facturation électronique utilisable par les entreprises dans l’application. Chaque entreprise souscrit directement auprès de SUPER PDP et possède sa propre connexion.
 
 ## Isolation et stockage
 
@@ -22,11 +22,11 @@ Chaque intégration étend `ElectronicInvoicingProvider` et implémente les opé
 - `getAccountInformation` ;
 - `verifyWebhook` lorsque le fournisseur propose des notifications signées.
 
-Le registre ne rend connectables que les adaptateurs effectivement enregistrés. Il n’existe plus de formulaire universel URL/clé API et aucun protocole fournisseur n’est deviné. En l’absence d’adaptateur documenté, l’interface indique : « Cette plateforme n'est pas encore intégrée à Depan’Home Pro. »
+Le registre technique ne rend connectable côté entreprise que l’adaptateur SUPER PDP. Il n’existe aucun formulaire universel URL/clé API et aucun protocole fournisseur n’est deviné. Le catalogue Créateur peut conserver des travaux préparatoires sur d’autres fournisseurs, sans jamais les exposer aux entreprises ni autoriser leur connexion.
 
 ## SUPER PDP
 
-SUPER PDP (`super_pdp`) est la première intégration enregistrée. Elle repose exclusivement sur les contrats officiels :
+SUPER PDP (`super_pdp`) est l’unique intégration entreprise enregistrée. Elle repose exclusivement sur les contrats officiels :
 
 - OAuth 2.1 Authorization Code pour la délégation multi-entreprises ;
 - `state` opaque lié à l’entreprise et à l’administrateur, valable dix minutes et consommé atomiquement une seule fois ;
@@ -83,7 +83,7 @@ Un webhook public ne reçoit jamais de `owner_id` utilisable. Il résout la conn
 
 ## Périmètres indépendants
 
-La production des factures/avoirs et de leurs archives UBL/PDF reste indépendante du transport. Le grand livre, les exports comptables et la préparation FEC ne dépendent d’aucune connexion de facturation électronique.
+La production des factures/avoirs et de leurs archives UBL/PDF reste indépendante du transport. Le grand livre, les exports comptables et la préparation FEC ne dépendent pas de la connexion SUPER PDP.
 
 ## Factures B2B, particuliers et règlements sur place
 
@@ -91,7 +91,7 @@ La catégorie du client pilote le canal, pas l’existence de la facture :
 
 - une facture destinée à un professionnel peut être transmise à la plateforme connectée dans le parcours de facturation électronique B2B ;
 - une facture destinée à un particulier est émise, numérotée, archivée en PDF/UBL et comptabilisée normalement, mais Depann’Home Pro bloque son envoi comme facture B2B ;
-- les opérations B2C relèvent de l’e-reporting. Depann’Home Pro prépare localement un lot immuable agrégé par jour et taux de TVA, ainsi que les encaissements de prestations lorsque la TVA n’est pas acquittée sur les débits. Le lot et son export portent toujours le statut **préparé localement — non transmis** tant que l’adaptateur de la plateforme choisie ne fournit pas de contrat d’envoi documenté ;
+- les opérations B2C relèvent de l’e-reporting. Depann’Home Pro prépare localement un lot immuable agrégé par jour et taux de TVA, ainsi que les encaissements de prestations lorsque la TVA n’est pas acquittée sur les débits. Le lot et son export portent toujours le statut **préparé localement — non transmis** tant que l’adaptateur SUPER PDP ne fournit pas de contrat d’envoi documenté ;
 - un règlement immédiat ne dispense jamais d’émettre ou de conserver la facture.
 
 Un Poste Admin, un Poste Admin Mobile ou un Poste administratif autorisé peut enregistrer le règlement d’une facture émise. Un technicien disposant du droit « Créer des devis et factures » peut créer, émettre et encaisser une facture uniquement depuis une intervention qui lui est attribuée. Les modes normalisés sont **Chèque**, **Espèces**, **Virement** et **Carte bancaire**.
@@ -102,4 +102,4 @@ Lorsque la facture est intégralement réglée, une copie PDF acquittée distinc
 
 ## État des intégrations
 
-SUPER PDP est intégrée à partir de sa documentation officielle et de sa spécification OpenAPI `v1.beta`. Elle devient utilisable uniquement après configuration de l’application OAuth serveur et autorisation réussie de l’entreprise. Les autres fournisseurs restent non opérationnels tant qu’un adaptateur fondé sur leur propre API officielle n’a pas été développé et testé.
+SUPER PDP est intégrée à partir de sa documentation officielle et de sa spécification OpenAPI `v1.beta`. Elle devient utilisable uniquement après configuration de l’application OAuth serveur et autorisation réussie de l’entreprise. Aucune autre plateforme ne peut être configurée, connectée ou utilisée par une entreprise dans Depann’Home Pro.

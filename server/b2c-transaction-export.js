@@ -33,7 +33,7 @@ export function buildB2cReportPayload({ documents = [], settlements = [], vatOnD
         schemaVersion: 1,
         status: "prepared_local",
         transmissionStatus: "not_transmitted",
-        notice: "Préparation locale à contrôler puis déposer auprès de la plateforme choisie par l’entreprise. Aucun envoi fiscal n’a été effectué.",
+        notice: "Préparation locale à contrôler puis déposer auprès de SUPER PDP. Aucun envoi fiscal n’a été effectué.",
         periodStart,
         periodEnd,
         generatedAt,

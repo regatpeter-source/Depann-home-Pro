@@ -32,7 +32,7 @@ test("seul l’adaptateur officiel SUPER PDP est déclaré", () => {
     assert.equal(getElectronicInvoicingProvider("ubl_api"), null);
     assert.doesNotMatch(electronicServer, /Authorization.*Bearer|Idempotency-Key|fetch\(/);
     assert.match(app, /einvoice-providers\/super-pdp\.js/);
-    assert.match(accountingClient, /Cette plateforme n\\'est pas encore intégrée à Depan’Home Pro/);
+    assert.match(accountingClient, /SUPER PDP est l’unique plateforme de transmission intégrée et autorisée/);
     assert.doesNotMatch(accountingClient.slice(accountingClient.indexOf("function renderSettings"), accountingClient.indexOf("function renderPaymentRows")), /apiUrl|apiKey|Bearer|endpoint/);
 });
 
@@ -55,7 +55,7 @@ test("les credentials sont chiffrés et ne figurent pas dans la vue publique", (
 
 test("les connexions et transmissions sont isolées par owner_id", () => {
     assert.match(electronicServer, /WHERE id=\$1 AND owner_id=\$2/);
-    assert.match(electronicServer, /WHERE owner_id=\$1 AND active=TRUE AND status='connected'/);
+    assert.match(electronicServer, /WHERE owner_id=\$1 AND platform_code=\$2 AND active=TRUE AND status='connected'/);
     assert.match(electronicServer, /document_id=\$2/);
     assert.doesNotMatch(electronicServer, /request\.body\?\.ownerId|request\.body\.owner_id/);
     assert.match(accountingServer, /document\.owner_id=transmission\.owner_id/);
@@ -101,33 +101,17 @@ test("la comptabilité et le FEC restent indépendants des connexions", () => {
     assert.match(app, /initializeAccounting\(\);[\s\S]*initializeElectronicInvoicing\(\)/);
 });
 
-test("Paramètres expose la configuration manuelle propre à l’entreprise", () => {
-    assert.match(navigationClient, /\["electronicInvoicing", "Facturation électronique"/);
-    assert.match(navigationClient, /section === "electronicInvoicing"\) return renderElectronicInvoicingConfiguration\(container\)/);
-    assert.match(accountingClient, /export async function renderElectronicInvoicingConfiguration/);
-    assert.match(accountingClient, /Choisir une plateforme/);
-    assert.match(accountingClient, /Enregistrer les identifiants/);
-    assert.match(accountingClient, /Plateforme non intégrée/);
-    assert.match(accountingClient, /aucun échange automatique/);
-    assert.match(accountingClient, /data-edit-configuration/);
-    assert.match(accountingClient, /data-disconnect-configuration/);
-});
-
-test("le bouton d’enregistrement de la plateforme est un submit explicite et protégé", () => {
-    const configuration = accountingClient.slice(accountingClient.indexOf("export async function renderElectronicInvoicingConfiguration"), accountingClient.indexOf("function renderLegacyElectronic"));
-    assert.match(configuration, /<button type="submit" class="secondary-button">Enregistrer les identifiants<\/button>/);
-    assert.match(configuration, /if \(submit\) submit\.disabled = true/);
-    assert.match(configuration, /if \(submit\) submit\.disabled = false/);
-});
-
-test("la configuration manuelle chiffre les secrets sans test de connexion", () => {
+test("SUPER PDP est l’unique plateforme proposée aux entreprises", () => {
+    assert.doesNotMatch(navigationClient, /electronicInvoicing|renderElectronicInvoicingConfiguration/);
+    assert.doesNotMatch(accountingClient, /Choisir une plateforme|Enregistrer les identifiants|Plateforme non intégrée|manual_configuration/);
+    assert.match(accountingClient, /SUPER PDP est l’unique plateforme de transmission intégrée et autorisée/);
+    assert.match(electronicServer, /const COMPANY_PLATFORM_CODE = "super_pdp"/);
+    assert.match(electronicServer, /platform_code=\$2/);
+    assert.match(electronicServer, /Seule la connexion SUPER PDP est autorisée/);
     const route = electronicServer.slice(electronicServer.indexOf('app.put("/api/accounting/e-invoicing/configuration"'), electronicServer.indexOf('app.post("/api/accounting/e-invoicing/connections/:platformCode"'));
-    assert.match(route, /const ownerId = getAccountOwnerId\(request\)/);
-    assert.match(route, /WHERE owner_id=\$1 AND active=TRUE/);
-    assert.match(route, /encryptCredentials\(configuration.credentials\)/);
-    assert.match(route, /'manual_configuration'/);
-    assert.doesNotMatch(route, /testConnection|fetch\(|request\.body.*ownerId/);
-    assert.doesNotMatch(accountingClient.slice(accountingClient.indexOf("export async function renderElectronicInvoicingConfiguration"), accountingClient.indexOf("function renderLegacyElectronic")), /\/test|Tester la connexion/);
+    assert.match(route, /status\(410\)/);
+    assert.match(route, /La configuration manuelle a été supprimée/);
+    assert.doesNotMatch(route, /encryptCredentials|INSERT INTO|UPDATE depannhome_einvoice_connections/);
 });
 
 test("la restauration ne lie jamais la plateforme à la numérotation", () => {
