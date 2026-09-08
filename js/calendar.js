@@ -52,6 +52,7 @@ const EVENTS_CACHE_DURATION = 30 * 1000;
 const PLANNING_DAY_START_HOUR = 8;
 const PLANNING_DAY_END_HOUR = 19;
 const PLANNING_SLOT_MINUTES = 15;
+const CALENDAR_VIEW_KEY_PREFIX = "depannHomePro:calendar:view:";
 
 const calendarContainer = document.getElementById("brands");
 new MutationObserver(() => {
@@ -73,6 +74,12 @@ window.addEventListener("depannhome:billing-document-saved", event => {
 
 export async function renderCalendar(options = {}) {
     if (["month", "week", "day"].includes(options.view)) calendarView = options.view;
+    else if (options.currentPeriod && isDesktopCalendarDevice()) calendarView = loadPreferredCalendarView();
+    if (options.currentPeriod) {
+        displayedMonth = calendarView === "month" ? firstDayOfMonth(new Date()) : atNoon(new Date());
+        selectedEvent = null;
+        invalidateCalendarEventsCache();
+    }
     if (options.showAllTechnicians) {
         showAllTechnicians = true;
         visibleTechnicianIds.clear();
@@ -215,6 +222,7 @@ function renderHeader(panel) {
         refreshCalendarFilterView();
     });
     panel.querySelectorAll("[data-calendar-technician]").forEach(input => input.addEventListener("change", event => {
+        if (showAllTechnicians) visibleTechnicianIds = new Set(members.map(member => String(member.id)).filter(Boolean));
         showAllTechnicians = false;
         const id = String(event.currentTarget.dataset.calendarTechnician);
         if (event.currentTarget.checked) visibleTechnicianIds.add(id);
@@ -271,6 +279,7 @@ function bindCalendarViewSwitcher(panel) {
         const nextView = button.dataset.calendarView;
         if (nextView === calendarView) return;
         calendarView = nextView;
+        if (isDesktopCalendarDevice()) savePreferredCalendarView(calendarView);
         displayedMonth = nextView === "month" ? firstDayOfMonth(displayedMonth) : atNoon(displayedMonth);
         if (!selectedEvent?.partnerMissionId) selectedEvent = null;
         refreshCalendarPeriod();
@@ -1351,7 +1360,7 @@ function renderCalendarGrid(panel) {
         };
         if (canCreate) {
             cell.addEventListener("click", eventClick => {
-                if (eventClick.target.closest(".calendar-event, .calendar-overflow-button")) return;
+                if (eventClick.target.closest(".calendar-event")) return;
                 openNewEvent();
             });
             cell.addEventListener("keydown", eventKey => {
@@ -1363,8 +1372,7 @@ function renderCalendarGrid(panel) {
 
         const eventList = cell.querySelector(".calendar-event-list");
         const dayEvents = eventsByDate.get(date) || [];
-        const visibleEvents = dayEvents.slice(0, getCalendarEventLimit("month"));
-        visibleEvents.forEach(event => {
+        dayEvents.forEach(event => {
             const clientDetails = getEventClientDetails(event);
             const button = document.createElement("button");
             button.type = "button";
@@ -1379,16 +1387,6 @@ function renderCalendarGrid(panel) {
             });
             eventList.appendChild(button);
         });
-        const hiddenCount = dayEvents.length - visibleEvents.length;
-        if (hiddenCount > 0) {
-            const more = document.createElement("button");
-            more.type = "button";
-            more.className = "calendar-overflow-button";
-            more.textContent = `+ ${hiddenCount} autre${hiddenCount > 1 ? "s" : ""}`;
-            more.setAttribute("aria-label", `Afficher ${hiddenCount} autre${hiddenCount > 1 ? "s" : ""} intervention${hiddenCount > 1 ? "s" : ""} du ${formatShortDate(day)}`);
-            more.addEventListener("click", () => openCalendarDay(date));
-            eventList.appendChild(more);
-        }
         grid.appendChild(cell);
     });
 }
@@ -1410,23 +1408,20 @@ function renderCalendarList(panel) {
     panel.innerHTML = `<div class="calendar-list-view calendar-list-${calendarView}">${days.map(day => {
         const date = toDateString(day);
         const dayEvents = eventDates.get(date) || [];
-        const visibleEvents = dayEvents.slice(0, getCalendarEventLimit(calendarView));
-        const hiddenCount = dayEvents.length - visibleEvents.length;
         const emptyMessage = canCreate ? "Aucun événement. Cliquez pour en ajouter un." : "Aucun rendez-vous prévu.";
-        return `<section class="calendar-list-day${canCreate ? " calendar-list-day-clickable" : ""}"${canCreate ? ` data-calendar-date="${date}" tabindex="0" role="button" aria-label="Ajouter un événement le ${escapeHtml(formatShortDate(day))}"` : ""}><h3>${escapeHtml(new Intl.DateTimeFormat("fr-FR", { weekday: "long", day: "numeric", month: "long" }).format(day))}</h3>${dayEvents.length ? `<div class="calendar-list-events">${visibleEvents.map(event => { const client = getEventClientDetails(event); return `<button type="button" class="${calendarEventClassName(event)}" data-calendar-event="${escapeHtml(event.id)}" data-calendar-status="${calendarEventStatus(event)}" aria-label="${escapeHtml(calendarEventAccessibleLabel(event, client, date))}" title="${escapeHtml(calendarEventAccessibleLabel(event, client))}">${renderCalendarEventCard(event, client)}</button>`; }).join("")}${hiddenCount > 0 ? `<button type="button" class="calendar-overflow-button" data-calendar-more-date="${date}">+ ${hiddenCount} autre${hiddenCount > 1 ? "s" : ""}</button>` : ""}</div>` : `<p class="muted">${emptyMessage}</p>`}</section>`;
+        return `<section class="calendar-list-day${canCreate ? " calendar-list-day-clickable" : ""}"${canCreate ? ` data-calendar-date="${date}" tabindex="0" role="button" aria-label="Ajouter un événement le ${escapeHtml(formatShortDate(day))}"` : ""}><h3>${escapeHtml(new Intl.DateTimeFormat("fr-FR", { weekday: "long", day: "numeric", month: "long" }).format(day))}</h3>${dayEvents.length ? `<div class="calendar-list-events">${dayEvents.map(event => { const client = getEventClientDetails(event); return `<button type="button" class="${calendarEventClassName(event)}" data-calendar-event="${escapeHtml(event.id)}" data-calendar-status="${calendarEventStatus(event)}" aria-label="${escapeHtml(calendarEventAccessibleLabel(event, client, date))}" title="${escapeHtml(calendarEventAccessibleLabel(event, client))}">${renderCalendarEventCard(event, client)}</button>`; }).join("")}</div>` : `<p class="muted">${emptyMessage}</p>`}</section>`;
     }).join("")}</div>`;
     panel.querySelectorAll("[data-calendar-event]").forEach(button => button.addEventListener("click", () => {
         selectedEvent = events.find(event => String(event.id) === button.dataset.calendarEvent) || null;
         refreshCalendarDetail();
     }));
-    panel.querySelectorAll("[data-calendar-more-date]").forEach(button => button.addEventListener("click", () => openCalendarDay(button.dataset.calendarMoreDate)));
     panel.querySelectorAll("[data-calendar-date]").forEach(day => {
         const openNewEvent = () => {
             selectedEvent = newEventForDate(day.dataset.calendarDate);
             refreshCalendarDetail();
         };
         day.addEventListener("click", event => {
-            if (!event.target.closest(".calendar-event, .calendar-overflow-button")) openNewEvent();
+            if (!event.target.closest(".calendar-event")) openNewEvent();
         });
         day.addEventListener("keydown", event => {
             if (event.target !== day || !["Enter", " "].includes(event.key)) return;
@@ -1645,19 +1640,6 @@ function renderCalendarStatusBadge(event) {
     return status === "planned" ? "" : `<span class="calendar-event-status">${escapeHtml(calendarEventStatusLabel(event))}</span>`;
 }
 
-function getCalendarEventLimit(view) {
-    if (view === "day") return Number.POSITIVE_INFINITY;
-    const mobile = document.body.dataset.deviceType === "mobile" || document.body.classList.contains("mobile-device");
-    return view === "month" ? (mobile ? 2 : 3) : (mobile ? 3 : 4);
-}
-
-function openCalendarDay(date) {
-    calendarView = "day";
-    displayedMonth = atNoon(new Date(`${date}T12:00:00`));
-    selectedEvent = null;
-    refreshCalendarPeriod();
-}
-
 function calendarEventAccessibleLabel(event, client, date = "") {
     return [date ? formatPreviewDate(date) : "", calendarEventStatusLabel(event), formatEventTime(event), client.name, client.address, event.title, getAssignedTechnicianNames(event).join(" · "), client.phone].filter(Boolean).join(" · ");
 }
@@ -1739,6 +1721,27 @@ function canCreateCalendarEvents() {
 
 function isMobileAdministrator() {
     return document.body.dataset.role === "mobile_admin";
+}
+
+function isDesktopCalendarDevice() {
+    return document.body.dataset.deviceType === "desktop" || document.body.classList.contains("desktop-device");
+}
+
+function calendarViewStorageKey() {
+    return `${CALENDAR_VIEW_KEY_PREFIX}${document.body.dataset.activeCompanyId || "company"}:${document.body.dataset.userId || "user"}`;
+}
+
+function loadPreferredCalendarView() {
+    try {
+        const view = localStorage.getItem(calendarViewStorageKey());
+        return ["month", "week", "day"].includes(view) ? view : "month";
+    } catch {
+        return "month";
+    }
+}
+
+function savePreferredCalendarView(view) {
+    try { localStorage.setItem(calendarViewStorageKey(), view); } catch {}
 }
 
 function isTeamLead() {

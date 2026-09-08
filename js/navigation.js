@@ -1,5 +1,5 @@
 import { ROUTES, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=135";
-import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=213";
+import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=214";
 import { openCreatorPartnerRequest, openCreatorRequestNotification, renderCreatorConsole } from "./creator.js?v=158";
 import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=204";
 import { renderAccounting, renderElectronicInvoicingConfiguration } from "./accounting.js?v=26";
@@ -168,7 +168,7 @@ export async function refreshApplication() {
         renderClients({ database, navigateToRef, createBillingDocument: createBillingDocumentForClient, viewBillingDocument, createCalendarEvent: createCalendarEventForClient, ...(selectedId ? { selectedId } : {}) });
     } else if (activeRoute === ROUTES.calendar) {
         if (document.getElementById("interventionSearchResults")) openInterventionSearch();
-        else renderCalendar();
+        else renderCalendar({ currentPeriod: true });
     } else if (activeRoute === ROUTES.billing) {
         if (isTechnician() && organizationFeatureEnabled("technicalReports")) renderTechnicalReports();
         else renderBilling();
@@ -504,7 +504,7 @@ function openCalendar() {
         renderCalendarOverview();
         return;
     }
-    renderCalendar();
+    renderCalendar({ currentPeriod: true });
 }
 
 function openInterventionSearch() {

@@ -33,17 +33,13 @@ test("les horaires incomplets restent explicites", () => {
     assert.match(formatter, /"Toute la journée"/);
 });
 
-test("le mois et la semaine limitent les cartes selon le poste sans perdre les interventions", () => {
+test("le mois et la semaine rendent toutes les interventions sélectionnées", () => {
     const rendering = calendar.slice(calendar.indexOf("function renderCalendarGrid"), calendar.indexOf("function getVisibleEvents"));
-    const limits = calendar.slice(calendar.indexOf("function getCalendarEventLimit"), calendar.indexOf("function getEventClientDetails"));
     assert.match(rendering, /dayEvents\.sort\(compareEventTimes\)/);
-    assert.match(rendering, /slice\(0, getCalendarEventLimit\("month"\)\)/);
-    assert.match(rendering, /slice\(0, getCalendarEventLimit\(calendarView\)\)/);
-    assert.match(rendering, /calendar-overflow-button/);
-    assert.match(rendering, /data-calendar-more-date/);
-    assert.match(limits, /view === "month" \? \(mobile \? 2 : 3\) : \(mobile \? 3 : 4\)/);
-    assert.match(limits, /calendarView = "day"/);
-    assert.match(limits, /refreshCalendarPeriod\(\)/);
+    assert.match(rendering, /dayEvents\.forEach\(event =>/);
+    assert.match(rendering, /dayEvents\.map\(event =>/);
+    assert.doesNotMatch(rendering, /getCalendarEventLimit|calendar-overflow-button|data-calendar-more-date/);
+    assert.match(styles, /\.calendar-event-list\{[\s\S]*?overflow:auto;[\s\S]*?scrollbar-width:thin/);
 });
 
 test("le mois reste compact et les vues mobiles jour et semaine utilisent un agenda vertical", () => {
@@ -127,6 +123,22 @@ test("les cartes compactes restent accessibles avec toutes les informations", ()
     const rendering = calendar.slice(calendar.indexOf("function renderCalendarGrid"), calendar.indexOf("function getEventClientDetails"));
     assert.match(rendering, /calendarEventAccessibleLabel\(event, clientDetails, date\)/);
     assert.match(rendering, /calendarEventAccessibleLabel\(event, client, date\)/);
-    assert.match(rendering, /Afficher \$\{hiddenCount\} autre/);
-    assert.match(rendering, /closest\("\.calendar-event, \.calendar-overflow-button"\)/);
+    assert.match(rendering, /closest\("\.calendar-event"\)/);
+});
+
+test("le filtre quitte Toute l’équipe sans perdre les autres techniciens cochés", () => {
+    const header = calendar.slice(calendar.indexOf("function renderHeader"), calendar.indexOf("function refreshCalendarFilterView"));
+    assert.match(header, /if \(showAllTechnicians\) visibleTechnicianIds = new Set\(members\.map/);
+    assert.ok(header.indexOf("if (showAllTechnicians) visibleTechnicianIds") < header.indexOf("showAllTechnicians = false"));
+});
+
+test("le PC mémorise la vue mais revient toujours à la période actuelle après actualisation", () => {
+    const rendering = calendar.slice(calendar.indexOf("export async function renderCalendar"), calendar.indexOf("export function renderCalendarOverview"));
+    assert.match(rendering, /options\.currentPeriod && isDesktopCalendarDevice\(\)/);
+    assert.match(rendering, /loadPreferredCalendarView\(\)/);
+    assert.match(rendering, /firstDayOfMonth\(new Date\(\)\)/);
+    assert.match(rendering, /invalidateCalendarEventsCache\(\)/);
+    assert.match(calendar, /savePreferredCalendarView\(calendarView\)/);
+    const navigation = readFileSync(new URL("../js/navigation.js", import.meta.url), "utf8");
+    assert.match(navigation, /renderCalendar\(\{ currentPeriod: true \}\)/);
 });
