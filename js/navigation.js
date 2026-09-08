@@ -438,6 +438,7 @@ function isDesktopDevice() {
 function canAccessSettingsSection(section) {
     if (document.body.dataset.creator === "true") return true;
     if (["security", "support"].includes(section)) return isDesktopDevice() && ["admin", "pc_standard", "commercial"].includes(document.body.dataset.role);
+    if (section === "storage") return document.body.dataset.role === "admin";
     if (document.body.dataset.organizationInterface === "partner") return (section === "network" && organizationFeatureEnabled("partnerConnections")) || (section === "company" && organizationFeatureEnabled("partnerMissions")) || (section === "imports" && organizationFeatureEnabled("imports"));
     if (section === "company" && organizationFeatureEnabled("companyEmail")) return document.body.dataset.role === "admin";
     if (section === "network" && (organizationFeatureEnabled("partnerConnections") || organizationFeatureEnabled("partnerMissions"))) return true;
@@ -1331,6 +1332,7 @@ function getSearchModules() {
     add("Comptabilité et facturation électronique & PDP", "comptabilité facturation électronique pdp export comptable facture", ROUTES.accounting, renderAccounting);
     if (canAccessSettingsSection("network")) add("Réseau Depann'Home Pro", "réseau partenaire partenaires api connexion annuaire", ROUTES.settings, () => renderSettings({ section: "network" }));
     if (canAccessSettingsSection("company")) add("Boîte mail de l’entreprise", "entreprise boîte mail email missions connexion imap smtp", ROUTES.settings, () => renderSettings({ section: "company" }));
+    if (canAccessSettingsSection("storage")) add("Stockage de l’entreprise", "stockage quota données espace utilisé", ROUTES.settings, () => renderSettings({ section: "storage" }));
     if (canAccessSettingsSection("documents")) add("Modèles de documents", "modèle devis rapport quitus document logo", ROUTES.settings, () => renderSettings({ section: "documents" }));
     if (canAccessSettingsSection("users")) add("Utilisateurs", "utilisateur équipe technicien chef équipe poste administratif droit accès", ROUTES.settings, () => renderSettings({ section: "users" }));
     if (canAccessSettingsSection("security")) add("Sécurité", "sécurité double authentification 2fa sms accès", ROUTES.settings, () => renderSettings({ section: "security" }));
@@ -1610,6 +1612,7 @@ function renderSettingsWorkspace(options = {}) {
         grid.className = "settings-card-grid";
         const cards = [
             ...(document.body.dataset.role === "admin" ? [["subscription", "Offre & abonnement", "Consultez les tarifs et demandez une évolution ou une rétrogradation au Support.", "subscription"]] : []),
+            ...(document.body.dataset.role === "admin" ? [["storage", "Stockage", "Consultez l’espace utilisé, votre quota et l’évolution des données de l’entreprise.", "database"]] : []),
             ...(document.body.dataset.role === "admin" ? [["documents", "Modèles de documents", `Identité, présentation et modèles des devis${organizationFeatureEnabled("quitus") ? ", quitus" : ""} et rapports.`, "document"]] : []),
             ...(document.body.dataset.role === "admin" && organizationFeatureEnabled("accounting") ? [["electronicInvoicing", "Facturation électronique", "Choisissez et configurez la plateforme propre à votre entreprise.", "document"]] : []),
             ...(organizationFeatureEnabled("companyEmail") && document.body.dataset.role === "admin" ? [["company", "Entreprise · Boîte mail", "Connectez la boîte de l’entreprise et choisissez si elle recherche automatiquement les missions.", "company"]] : []),
@@ -1629,12 +1632,13 @@ function renderSettingsWorkspace(options = {}) {
 
     clearSearch();
     resetSelection("all");
-    const titles = { subscription: "Offre & abonnement", documents: "Modèles de documents", electronicInvoicing: "Facturation électronique", company: "Entreprise · Boîte mail", network: document.body.dataset.organizationInterface === "partner" || !organizationFeatureEnabled("connectors") ? "Réseau Depann’Home Pro" : "Réseau & connecteurs", support: "Support", users: "Utilisateurs", security: "Sécurité", groups: "Groupe / Multi-entreprises", personalization: "Interface & notifications", imports: document.body.dataset.organizationInterface === "partner" ? "Importation de clients" : "Importation de données", creator: "Console Créateur" };
+    const titles = { subscription: "Offre & abonnement", storage: "Stockage", documents: "Modèles de documents", electronicInvoicing: "Facturation électronique", company: "Entreprise · Boîte mail", network: document.body.dataset.organizationInterface === "partner" || !organizationFeatureEnabled("connectors") ? "Réseau Depann’Home Pro" : "Réseau & connecteurs", support: "Support", users: "Utilisateurs", security: "Sécurité", groups: "Groupe / Multi-entreprises", personalization: "Interface & notifications", imports: document.body.dataset.organizationInterface === "partner" ? "Importation de clients" : "Importation de données", creator: "Console Créateur" };
     setPage(`Paramètres · ${titles[section] || "Configuration"}`, ROUTES.settings, "detail");
     const container = getContainer();
     container.appendChild(createBackCard("Retour aux Paramètres", () => renderSettings()));
 
     if (section === "subscription") return renderSubscriptionSettings(container);
+    if (section === "storage") return renderCompanyStorage(container);
     if (section === "electronicInvoicing") return renderElectronicInvoicingConfiguration(container);
     if (section === "documents") {
         const intro = createSettingsIntro("Modèles de documents");
@@ -1685,6 +1689,32 @@ function renderSettingsWorkspace(options = {}) {
         return;
     }
     renderSettings({ legacy: true, personalizationOnly: true });
+}
+
+async function renderCompanyStorage(container) {
+    container.appendChild(createSettingsIntro("Stockage de l’entreprise", "Consultez les données volumineuses conservées pour votre entreprise. Le quota est géré par Depann’Home Pro."));
+    const panel = document.createElement("article");
+    panel.className = "brand-card full-card procedure-card settings-card";
+    panel.innerHTML = '<p class="muted">Calcul du stockage en cours…</p>';
+    container.appendChild(panel);
+    const response = await fetch("/api/company/storage-usage", { credentials: "same-origin" });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.storage) {
+        panel.innerHTML = `<p class="auth-message error">${escapeHtml(data.message || "Le stockage est momentanément indisponible.")}</p>`;
+        return;
+    }
+    const storage = data.storage;
+    const labels = { normal: "Utilisation normale", warning: "Quota bientôt atteint", critical: "Quota presque atteint" };
+    const growth = storage.growth30dBytes === null ? "L’historique sur 30 jours est en cours de constitution." : `Évolution sur 30 jours : ${storage.growth30dBytes >= 0 ? "+" : "−"}${formatStorageBytes(Math.abs(storage.growth30dBytes))}.`;
+    panel.innerHTML = `<div class="settings-heading"><div><p class="eyebrow">Utilisation actuelle</p><h2>${escapeHtml(formatStorageBytes(storage.usageBytes))} sur ${escapeHtml(formatStorageBytes(storage.quotaBytes))}</h2><p class="muted">${Number(storage.usagePercent).toLocaleString("fr-FR")} % du quota utilisé · ${Number(storage.itemCount) || 0} élément(s) volumineux suivi(s)</p></div><span class="creator-state${storage.alertLevel === "normal" ? "" : " suspended"}">${escapeHtml(labels[storage.alertLevel] || "État inconnu")}</span></div><progress max="100" value="${Math.min(100, Number(storage.usagePercent) || 0)}" aria-label="Quota de stockage utilisé"></progress><p class="muted">${escapeHtml(growth)}</p><aside class="accounting-pdp-notice">Cette mesure comprend notamment les PDF, rapports, modèles, logos et pièces jointes. Les index et journaux techniques de PostgreSQL sont gérés globalement par la plateforme et ne sont pas imputés à votre quota.</aside>`;
+}
+
+function formatStorageBytes(value) {
+    const bytes = Math.max(0, Number(value) || 0);
+    if (bytes < 1024) return `${bytes.toLocaleString("fr-FR")} o`;
+    const units = ["Kio", "Mio", "Gio", "Tio"];
+    const exponent = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length);
+    return `${(bytes / 1024 ** exponent).toLocaleString("fr-FR", { maximumFractionDigits: 2 })} ${units[exponent - 1]}`;
 }
 
 async function renderSubscriptionSettings(container) {

@@ -8,7 +8,7 @@ import { calculateSubscriptionPriceCents, normalizeSubscriptionTier, subscriptio
 import { createNotification } from "./collaboration.js";
 import { deliverSubscriptionProration, prepareSubscriptionProration } from "./invoicing.js";
 import { decryptElectronicInvoicingCredentials, encryptElectronicInvoicingCredentials, getElectronicInvoicingProvider } from "./electronic-invoicing.js";
-import { loadCreatorStorageUsage, normalizeStorageQuota, updateCompanyStorageQuota } from "./storage-monitoring.js";
+import { loadCompanyStorageUsage, loadCreatorStorageUsage, normalizeStorageQuota, updateCompanyStorageQuota } from "./storage-monitoring.js";
 
 const USERNAME_PATTERN = /^[a-z0-9._-]{3,32}$/;
 const MIN_PASSWORD_LENGTH = 12;
@@ -22,6 +22,14 @@ const EINVOICE_AUTHENTICATION_TYPES = new Set(["api_key", "oauth_client", "acces
 const EINVOICE_LIFECYCLE_STATUSES = new Set(["documentation_required", "specification_review", "development", "validation", "deployed", "suspended"]);
 
 export function registerCreatorRoutes(app, requireCreator, requireAuthentication) {
+    app.get("/api/company/storage-usage", requireAuthentication, asyncHandler(async (request, response) => {
+        if (request.user?.role !== "admin") return response.status(403).json({ message: "La consultation du stockage est réservée au Poste Admin de l’entreprise." });
+        const accountOwnerId = positiveId(request.user.accountOwnerId);
+        if (!accountOwnerId) return response.status(403).json({ message: "Entreprise non identifiée." });
+        const storage = await loadCompanyStorageUsage(accountOwnerId);
+        if (!storage) return response.status(404).json({ message: "Stockage de l’entreprise introuvable." });
+        response.json({ storage });
+    }));
     app.get("/api/creator/storage-usage", requireCreator, asyncHandler(async (request, response) => {
         const result = await loadCreatorStorageUsage();
         result.accounts = result.accounts.filter(account => !isCreatorUsername(account.ownerUsername) || String(account.accountId) === String(request.user.sub));

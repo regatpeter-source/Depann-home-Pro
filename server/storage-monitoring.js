@@ -5,6 +5,17 @@ const MIN_STORAGE_QUOTA_BYTES = 10 * 1024 * 1024;
 const MAX_STORAGE_QUOTA_BYTES = 10 * 1024 * 1024 * 1024 * 1024;
 
 export async function loadCreatorStorageUsage(database = getPool()) {
+    return loadStorageUsage(null, true, database);
+}
+
+export async function loadCompanyStorageUsage(accountOwnerId, database = getPool()) {
+    const result = await loadStorageUsage(accountOwnerId, false, database);
+    if (!result.accounts[0]) return null;
+    const { ownerUsername: _ownerUsername, ...storage } = result.accounts[0];
+    return { ...storage, measuredAt: result.measuredAt };
+}
+
+async function loadStorageUsage(accountOwnerId, includeDatabaseSize, database) {
     const usageResult = await database.query(`
         WITH storage_items AS (
             SELECT owner_id, 'library' AS category, COALESCE(SUM(file_size),0)::bigint AS bytes, COUNT(*)::integer AS items FROM depannhome_library_documents GROUP BY owner_id
@@ -47,15 +58,17 @@ export async function loadCreatorStorageUsage(database = getPool()) {
         LEFT JOIN depannhome_billing_profiles profile ON profile.owner_id=owner.id
         LEFT JOIN depannhome_organizations organization ON organization.account_owner_id=owner.id
         LEFT JOIN owner_usage usage ON usage.owner_id=owner.id
-        WHERE owner.account_owner_id=owner.id
+        WHERE owner.account_owner_id=owner.id AND ($2::bigint IS NULL OR owner.id=$2)
         ORDER BY CASE WHEN COALESCE(organization.storage_quota_bytes,$1)>0 THEN COALESCE(usage.usage_bytes,0)::numeric/COALESCE(organization.storage_quota_bytes,$1) ELSE 0 END DESC,
             LOWER(COALESCE(NULLIF(profile.company_name,''),NULLIF(owner.company_name,''),NULLIF(owner.full_name,''),owner.username))
-    `, [DEFAULT_STORAGE_QUOTA_BYTES]);
+    `, [DEFAULT_STORAGE_QUOTA_BYTES, accountOwnerId]);
 
     const accounts = usageResult.rows.map(normalizeStorageAccount);
     await saveDailySnapshots(database, accounts);
     const baselines = await loadThirtyDayBaselines(database, accounts.map(account => account.accountId));
-    const databaseResult = await database.query("SELECT pg_database_size(current_database())::bigint AS bytes");
+    const databaseBytes = includeDatabaseSize
+        ? toSafeBytes((await database.query("SELECT pg_database_size(current_database())::bigint AS bytes")).rows[0]?.bytes)
+        : null;
 
     for (const account of accounts) {
         const baseline = baselines.get(String(account.accountId));
@@ -67,7 +80,7 @@ export async function loadCreatorStorageUsage(database = getPool()) {
         accounts,
         summary: {
             trackedUsageBytes: totalUsageBytes,
-            databaseBytes: toSafeBytes(databaseResult.rows[0]?.bytes),
+            databaseBytes,
             warningCount: accounts.filter(account => account.alertLevel === "warning").length,
             criticalCount: accounts.filter(account => account.alertLevel === "critical").length
         },

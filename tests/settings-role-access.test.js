@@ -27,6 +27,7 @@ test("la recherche et les événements ne contournent pas les droits des Paramè
     for (const section of ["network", "company", "documents", "users", "security", "imports"]) {
         assert.match(navigation, new RegExp(`if \\(canAccessSettingsSection\\("${section}"\\)\\)`));
     }
+    assert.match(navigation, /if \(canAccessSettingsSection\("storage"\)\).*renderSettings\(\{ section: "storage" \}\)/);
     assert.match(navigation, /depannhome:open-document-template[\s\S]*if \(!canAccessSettingsSection\("documents"\)\) return/);
     assert.match(navigation, /async function openDocumentTemplateSettings\(type\) \{\s*if \(!canAccessSettingsSection\("documents"\)\) return renderSettings\(\)/);
     assert.match(billing, /function requireBillingAdministration[\s\S]*request\.user\?\.role === "admin"/);
