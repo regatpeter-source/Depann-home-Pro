@@ -6,23 +6,29 @@ const serverSource = readFileSync(new URL("../server/clients.js", import.meta.ur
 const clientsSource = readFileSync(new URL("../js/clients.js", import.meta.url), "utf8");
 const syncSource = readFileSync(new URL("../js/client-sync.js", import.meta.url), "utf8");
 
-test("client attachment deletion is rejected by the server for every file type", () => {
+test("only intervention JPEG/PDF attachments can be deleted", () => {
     const route = serverSource.slice(serverSource.indexOf('app.delete("/api/clients/:clientId/attachments/:attachmentId"'), serverSource.indexOf('app.get("/api/clients/:clientId/attachments/:attachmentId/open"'));
     assert.match(route, /status\(409\)/);
-    assert.match(route, /ne peuvent pas être supprimés/);
-    assert.doesNotMatch(route, /UPDATE depannhome_clients/);
+    assert.match(route, /isDeletableInterventionAttachment/);
+    assert.match(route, /hasAccessibleAppointment/);
+    assert.match(route, /UPDATE depannhome_clients/);
+    assert.match(route, /deletedAttachmentIds: mergeDeletedAttachmentIds/);
+    assert.match(route, /documents réglementaires restent conservés/);
 });
 
-test("client screens expose no attachment deletion action", () => {
-    assert.doesNotMatch(clientsSource, /data-delete-attachment/);
-    assert.doesNotMatch(clientsSource, /deleteClientAttachment/);
+test("intervention history exposes JPEG/PDF actions including deletion", () => {
+    assert.match(clientsSource, /type: "intervention_attachment"/);
+    assert.match(clientsSource, /data-delete-intervention-attachment/);
+    assert.match(clientsSource, /data-email-intervention-attachment/);
+    assert.match(clientsSource, /\?download=1/);
+    assert.match(clientsSource, /deleteInterventionAttachment/);
 });
 
 test("reports and quitus stay in history while generic files stay in the files section", () => {
     assert.match(clientsSource, /attachment\.type !== "Quitus" && !isLeakReportAttachment\(attachment\)/);
     assert.match(clientsSource, /!\["quote", "invoice", "attachment"\]\.includes\(entry\.type\)/);
     assert.match(clientsSource, /entry\.type !== "appointment" \|\| !appointments\.length/);
-    assert.doesNotMatch(clientsSource, /const attachmentEntries =/);
+    assert.match(clientsSource, /const attachmentEntries = client\.attachments\.filter\(isInterventionPhoto\)/);
 });
 
 test("validated reports deleted in older versions are restored from their canonical PDF", () => {
@@ -32,11 +38,17 @@ test("validated reports deleted in older versions are restored from their canoni
     assert.match(serverSource, /deletedAttachmentIds.*filter\(id => id !== attachmentId\)/);
 });
 
-test("client synchronization unions attachments and ignores legacy deletion tombstones", () => {
+test("client synchronization keeps tombstones and cannot restore deleted intervention media", () => {
     assert.match(syncSource, /const attachments = new Map/);
     assert.match(syncSource, /attachments: \[\.\.\.attachments\.values\(\)\]/);
-    assert.match(syncSource, /deletedAttachmentIds: \[\]/);
-    assert.doesNotMatch(syncSource, /mergeDeletedAttachmentIds/);
+    assert.match(syncSource, /deletedAttachmentIds: mergeDeletedAttachmentIds/);
+    assert.match(syncSource, /!deleted\.has\(String\(attachment\.id\)\)/);
+    assert.match(syncSource, /function mergeDeletedAttachmentIds/);
+});
+
+test("the open route switches to attachment disposition for an explicit download", () => {
+    const openRoute = serverSource.slice(serverSource.indexOf('app.get("/api/clients/:clientId/attachments/:attachmentId/open"'), serverSource.indexOf('app.post("/api/clients/:clientId/attachments/:attachmentId/email"'));
+    assert.match(openRoute, /request\.query\?\.download === "1" \? "attachment" : "inline"/);
 });
 
 test("archived quitus can be opened, downloaded and emailed like other retained documents", () => {

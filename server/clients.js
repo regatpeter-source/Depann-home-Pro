@@ -89,7 +89,7 @@ export async function listClientsForOwner(ownerId, sinceParameter = "") {
 
 async function reconcilePartnerMissionClients(database, ownerId) {
     const { rows: missions } = await database.query(`
-        SELECT mission.id, mission.client_id AS "missionClientId", mission.mapped_data AS "mappedData",
+        SELECT mission.id, mission.client_id AS "missionClientId", mission.mapped_data AS "mappedData", intake.partner_key AS "partnerKey",
             mission.created_at AS "createdAt"
         FROM depannhome_partner_missions mission
         JOIN depannhome_partner_intakes intake ON intake.id=mission.intake_id
@@ -128,7 +128,7 @@ async function reconcilePartnerMissionClients(database, ownerId) {
                 insuredNumber: String(data.insuredNumber || "").slice(0, 160),
                 expert: String(data.expert || "").slice(0, 160),
                 manager: String(data.manager || "").slice(0, 160),
-                equipment: "", notes: String(data.description || data.comments || "").slice(0, 2000),
+                equipment: "", notes: String(data.description || data.comments || "").slice(0, 2000), notesSource: String(mission.partnerKey || "").startsWith("email-") ? "email_extractor" : "",
                 attachments: [], activityHistory: [{ id: `activity-partner-repair-${mission.id}`, type: "partner_mission", label: "Fiche client restaurée depuis une mission partenaire", detail: String(data.partnerReference || data.externalMissionId || "").slice(0, 500), actorName: "Depann’Home Pro", createdAt }],
                 createdAt, updatedAt: new Date().toISOString()
             };
@@ -246,11 +246,15 @@ export function registerClientRoutes(app, requireAuthentication) {
                 WHERE owner_id = $1 AND client_id = $2 FOR UPDATE
             `, [getAccountOwnerId(request), clientId]);
             const now = new Date().toISOString();
-            const client = mergeDeletedAttachments(existing.rows[0]?.client, {
+            const deletedAttachmentIds = mergeDeletedAttachmentIds(existing.rows[0]?.client?.deletedAttachmentIds, submittedClient.deletedAttachmentIds);
+            const notesSource = submittedClient.notesSource === "email_extractor" && submittedClient.notes === existing.rows[0]?.client?.notes ? "email_extractor" : "";
+            const client = {
                 ...submittedClient,
-                attachments: mergeClientAttachments(existing.rows[0]?.client?.attachments, submittedClient.attachments),
+                notesSource,
+                attachments: mergeClientAttachments(existing.rows[0]?.client?.attachments, submittedClient.attachments, deletedAttachmentIds),
+                deletedAttachmentIds,
                 updatedAt: now
-            });
+            };
             const { rows } = await connection.query(`
                 INSERT INTO depannhome_clients (owner_id, client_id, client_data, updated_at)
                 VALUES ($1, $2, $3::jsonb, NOW())
@@ -352,6 +356,9 @@ export function registerClientRoutes(app, requireAuthentication) {
         const appointmentId = positiveId(request.body?.appointmentId);
         if (!CLIENT_ID_PATTERN.test(clientId)) return response.status(400).json({ message: "Identifiant client invalide." });
         if (!files.length) return response.status(400).json({ message: "Ajoutez au moins un fichier accepté." });
+        if (appointmentId && isInterventionAttachmentType(attachmentType) && files.some(file => !isSupportedInterventionMedia(file.originalname))) {
+            return response.status(400).json({ message: "Les pièces d’intervention doivent être des images JPEG, PNG, WebP ou des PDF." });
+        }
         if (appointmentId && !await hasAccessibleAppointment(getAccountOwnerId(request), appointmentId, request)) {
             return response.status(400).json({ message: "Le rendez-vous associé est introuvable ou n’est pas accessible." });
         }
@@ -386,6 +393,8 @@ export function registerClientRoutes(app, requireAuthentication) {
                 size: file.size,
                 dataUrl: `data:${attachmentMimeType(file.originalname)};base64,${file.buffer.toString("base64")}`,
                 appointmentId: appointmentId || undefined,
+                uploadedById: String(request.user.sub || ""),
+                actorName: String(request.user.fullName || request.user.username || "Technicien").slice(0, 100),
                 createdAt
             }));
             const activityHistory = Array.isArray(client.activityHistory) ? client.activityHistory : [];
@@ -397,6 +406,7 @@ export function registerClientRoutes(app, requireAuthentication) {
                     type: "attachment",
                     label: `${attachments.length} fichier(s) ajouté(s)`,
                     detail: attachments.map(attachment => attachment.name).join(", ").slice(0, 500),
+                    appointmentId: appointmentId || undefined,
                     actorName: String(request.user.fullName || request.user.username || "Technicien").slice(0, 100),
                     createdAt
                 }, ...activityHistory].slice(0, MAX_ACTIVITY_HISTORY),
@@ -421,11 +431,41 @@ export function registerClientRoutes(app, requireAuthentication) {
         }
     }));
 
-    app.delete("/api/clients/:clientId/attachments/:attachmentId", requireAuthentication, requireClientWriteAccess, asyncHandler(async (request, response) => {
+    app.delete("/api/clients/:clientId/attachments/:attachmentId", requireAuthentication, asyncHandler(async (request, response) => {
         const clientId = String(request.params.clientId || "");
         const attachmentId = String(request.params.attachmentId || "").slice(0, 100);
         if (!CLIENT_ID_PATTERN.test(clientId) || !attachmentId) return response.status(400).json({ message: "Fichier invalide." });
-        response.status(409).json({ message: "Les fichiers du dossier client sont conservés et ne peuvent pas être supprimés." });
+        const ownerId = getAccountOwnerId(request);
+        const connection = await getPool().connect();
+        try {
+            await connection.query("BEGIN");
+            const result = await connection.query("SELECT client_data AS client FROM depannhome_clients WHERE owner_id=$1 AND client_id=$2 FOR UPDATE", [ownerId, clientId]);
+            const client = result.rows[0]?.client;
+            const attachments = Array.isArray(client?.attachments) ? client.attachments : [];
+            const attachment = attachments.find(item => String(item?.id) === attachmentId);
+            if (!attachment) { await connection.query("ROLLBACK"); return response.status(404).json({ message: "Fichier introuvable." }); }
+            if (!isDeletableInterventionAttachment(attachment)) { await connection.query("ROLLBACK"); return response.status(409).json({ message: "Seuls les JPEG/PDF ajoutés depuis une intervention peuvent être supprimés. Les documents réglementaires restent conservés." }); }
+            if (request.user?.role === "technician" && !await hasAccessibleAppointment(ownerId, positiveId(attachment.appointmentId), request)) {
+                await connection.query("ROLLBACK");
+                return response.status(403).json({ message: "Cette pièce appartient à une intervention qui ne vous est pas affectée." });
+            }
+            const now = new Date().toISOString();
+            const updatedClient = {
+                ...client,
+                attachments: attachments.filter(item => String(item?.id) !== attachmentId),
+                deletedAttachmentIds: mergeDeletedAttachmentIds(client.deletedAttachmentIds, [attachmentId]),
+                activityHistory: [{ id: `activity-${randomUUID()}`, type: "attachment_deleted", label: "Pièce d’intervention supprimée", detail: safeFilename(attachment.name), appointmentId: attachment.appointmentId, actorName: String(request.user.fullName || request.user.username || "Utilisateur").slice(0, 100), createdAt: now }, ...(Array.isArray(client.activityHistory) ? client.activityHistory : [])].slice(0, MAX_ACTIVITY_HISTORY),
+                updatedAt: now
+            };
+            await connection.query("UPDATE depannhome_clients SET client_data=$3::jsonb,updated_at=NOW() WHERE owner_id=$1 AND client_id=$2", [ownerId, clientId, JSON.stringify(updatedClient)]);
+            await connection.query("COMMIT");
+            response.json({ message: "Pièce supprimée de l’intervention." });
+        } catch (error) {
+            await connection.query("ROLLBACK");
+            throw error;
+        } finally {
+            connection.release();
+        }
     }));
 
     app.get("/api/clients/:clientId/attachments/:attachmentId/open", requireAuthentication, asyncHandler(async (request, response) => {
@@ -444,7 +484,7 @@ export function registerClientRoutes(app, requireAuthentication) {
         if (!attachment || !content) return response.status(404).json({ message: "Fichier introuvable." });
 
         response.type(content.mime || attachmentMimeType(attachment.name));
-        response.setHeader("Content-Disposition", `inline; filename*=UTF-8''${encodeURIComponent(safeFilename(attachment.name))}`);
+        response.setHeader("Content-Disposition", `${request.query?.download === "1" ? "attachment" : "inline"}; filename*=UTF-8''${encodeURIComponent(safeFilename(attachment.name))}`);
         response.send(content.buffer);
     }));
 
@@ -654,6 +694,7 @@ function sanitizeClient(value, expectedId) {
         updatedAt: updatedAt.toISOString(),
         createdAt: validDate(value.createdAt) || updatedAt.toISOString(),
         insuranceDeductibleAmountCents: sanitizeDeductibleAmount(value.insuranceDeductibleAmountCents),
+        notesSource: value.notesSource === "email_extractor" ? "email_extractor" : "",
         attachments: Array.isArray(value.attachments) ? value.attachments.slice(0, MAX_CLIENT_ATTACHMENTS) : [],
         deletedAttachmentIds: sanitizeDeletedAttachmentIds(value.deletedAttachmentIds),
         activityHistory: sanitizeActivityHistory(value.activityHistory)
@@ -676,6 +717,7 @@ function sanitizeActivityHistory(value) {
             detail: String(item.detail || "").slice(0, 500),
             documentId: String(item.documentId || "").slice(0, 30),
             attachmentId: String(item.attachmentId || "").slice(0, 100),
+            appointmentId: String(item.appointmentId || "").replace(/[^0-9]/g, "").slice(0, 30),
             actorName: String(item.actorName || "").slice(0, 100),
             createdAt: validDate(item.createdAt) || new Date().toISOString()
         }))
@@ -691,14 +733,6 @@ function sanitizeDeletedAttachmentIds(value) {
     return [...new Set((Array.isArray(value) ? value : [])
         .map(item => String(item || "").slice(0, 100))
         .filter(Boolean))].slice(-MAX_DELETED_ATTACHMENT_IDS);
-}
-
-function mergeDeletedAttachments(existingClient, nextClient) {
-    return {
-        ...nextClient,
-        attachments: Array.isArray(nextClient?.attachments) ? nextClient.attachments.filter(Boolean) : [],
-        deletedAttachmentIds: []
-    };
 }
 
 async function reconcileValidatedReportAttachments(database, ownerId) {
@@ -732,14 +766,19 @@ function isLegacyReportAttachment(attachment, filename) {
     return attachment?.type === "Rapport fuite" && String(attachment.name || "") === filename;
 }
 
-function mergeClientAttachments(existingAttachments, submittedAttachments) {
+function mergeClientAttachments(existingAttachments, submittedAttachments, deletedAttachmentIds = []) {
+    const deleted = new Set(sanitizeDeletedAttachmentIds(deletedAttachmentIds));
     const merged = new Map((Array.isArray(existingAttachments) ? existingAttachments : [])
-        .filter(attachment => attachment?.id)
+        .filter(attachment => attachment?.id && !deleted.has(String(attachment.id)))
         .map(attachment => [String(attachment.id), attachment]));
     (Array.isArray(submittedAttachments) ? submittedAttachments : [])
-        .filter(attachment => attachment?.id && attachment?.dataUrl)
+        .filter(attachment => attachment?.id && attachment?.dataUrl && !deleted.has(String(attachment.id)))
         .forEach(attachment => merged.set(String(attachment.id), attachment));
     return [...merged.values()].slice(0, MAX_CLIENT_ATTACHMENTS);
+}
+
+function mergeDeletedAttachmentIds(...values) {
+    return sanitizeDeletedAttachmentIds(values.flat());
 }
 
 function positiveId(value) {
@@ -774,6 +813,18 @@ function attachmentMimeType(filename) {
         ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         ".txt": "text/plain"
     }[extension] || "application/octet-stream";
+}
+
+function isInterventionAttachmentType(value) {
+    return ["Photo", "Photo avant", "Photo après"].includes(String(value || ""));
+}
+
+function isSupportedInterventionMedia(filename) {
+    return [".jpg", ".jpeg", ".png", ".webp", ".pdf"].includes(path.extname(filename || "").toLowerCase());
+}
+
+function isDeletableInterventionAttachment(attachment) {
+    return Boolean(positiveId(attachment?.appointmentId)) && isInterventionAttachmentType(attachment?.type) && isSupportedInterventionMedia(attachment?.name);
 }
 
 function decodeAttachmentDataUrl(value) {

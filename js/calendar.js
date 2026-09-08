@@ -1,7 +1,7 @@
 import { ROUTES } from "./config.js?v=134";
 import { createBillingDocumentForClient, viewBillingDocument } from "./billing.js?v=204";
-import { getSearchableClients } from "./clients.js?v=164";
-import { addClientActivityByName, synchronizeClients } from "./client-sync.js?v=127";
+import { getSearchableClients } from "./clients.js?v=165";
+import { addClientActivityByName, synchronizeClients } from "./client-sync.js?v=128";
 import { renderClientMessages } from "./messages.js?v=107";
 import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=51";
 import { resetSelection } from "./state.js?v=44";
@@ -414,7 +414,7 @@ function renderEventForm(panel) {
                             ${client.email ? `<div class="calendar-contact-item"><span>E-mail</span><strong>${escapeHtml(client.email)}</strong><a class="secondary-button client-navigation-button" href="mailto:${escapeHtml(client.email)}" aria-label="Écrire à ${escapeHtml(client.name)}">E-mail</a></div>` : ""}
                             <div class="calendar-contact-item"><span>Adresse</span><strong>${escapeHtml(formatClientAddress(client) || event.location || "Non renseignée")}</strong>${navigationHref ? `<a class="secondary-button client-navigation-button" href="${escapeHtml(navigationHref)}" aria-label="Y aller vers ${escapeHtml(formatClientAddress(client))}">Y aller</a>` : ""}</div>
                             ${client.equipment ? `<div class="calendar-contact-item calendar-client-full-width"><span>Équipements</span><strong>${escapeHtml(client.equipment)}</strong></div>` : ""}
-                            ${client.notes ? `<div class="calendar-contact-item calendar-client-full-width"><span>Consignes client</span><strong>${escapeHtml(client.notes)}</strong></div>` : ""}
+                            ${client.notes ? `<div class="calendar-contact-item calendar-client-full-width"><span>Consignes client</span><strong class="${automaticClientNotesClass(client)}">${escapeHtml(client.notes)}</strong></div>` : ""}
                         </div>
                     </section>
                     <section class="calendar-appointment-information">
@@ -892,7 +892,7 @@ function renderCalendarClientPreview(client) {
             <span><strong>E-mail</strong>${escapeHtml(client.email || "Non renseigné")}</span>
             <span class="calendar-client-preview-wide"><strong>Adresse</strong>${escapeHtml(formatClientAddress(client) || "Non renseignée")}</span>
             ${client.equipment ? `<span class="calendar-client-preview-wide"><strong>Équipements</strong>${escapeHtml(client.equipment)}</span>` : ""}
-            ${client.notes ? `<span class="calendar-client-preview-wide"><strong>Consignes client</strong>${escapeHtml(client.notes)}</span>` : ""}
+            ${client.notes ? `<span class="calendar-client-preview-wide"><strong>Consignes client</strong><span class="${automaticClientNotesClass(client)}">${escapeHtml(client.notes)}</span></span>` : ""}
         </div>`;
 }
 
@@ -1018,10 +1018,13 @@ function renderQuitusHtml(event) {
             <label>Nom du client signataire<input name="signedBy" maxlength="160" required value="${escapeHtml(event.quitusSignedBy || event.clientName || "")}" placeholder="Nom et prénom"></label>
             <section class="quitus-legal-declaration" aria-label="Déclaration du client" data-client-name="${escapeHtml(clientName)}" data-company-name="${escapeHtml(companyName)}" data-address="${escapeHtml(address)}" data-date="${escapeHtml(date)}" data-city="${escapeHtml(city)}"></section>
             <label>Observations ou réserves du client<textarea name="observations" maxlength="2000" rows="5" enterkeyhint="done" placeholder="Indiquez ici toute observation ou réserve. Laissez vide si aucune.">${escapeHtml(event.quitusObservations || "")}</textarea></label>
-            <p class="quitus-signature-mention"><strong>Signature du client précédée de la mention :</strong></p>
-            <label class="quitus-approval"><input name="approved" type="checkbox" required> <span>${escapeHtml(approval)}</span></label>
-            <label>Signature du client<canvas class="quitus-signature-canvas" width="640" height="220" aria-label="Zone de signature tactile"></canvas></label>
-            <div class="calendar-form-actions"><button type="button" class="secondary-button" data-quitus-action="clear">Effacer la signature</button><button type="submit" class="secondary-button">Valider le quitus</button></div>
+            <div class="calendar-form-actions"><button type="button" class="secondary-button" data-quitus-action="sign" aria-expanded="false">Signer</button></div>
+            <section class="quitus-signature-panel" data-quitus-signature-panel hidden>
+                <p class="quitus-signature-mention"><strong>Signature du client précédée de la mention :</strong></p>
+                <label class="quitus-approval"><input name="approved" type="checkbox" required> <span>${escapeHtml(approval)}</span></label>
+                <label>Signature du client<canvas class="quitus-signature-canvas" width="640" height="220" aria-label="Zone de signature tactile"></canvas></label>
+                <div class="calendar-form-actions"><button type="button" class="secondary-button" data-quitus-action="clear">Effacer la signature</button><button type="submit" class="secondary-button">Valider le quitus</button></div>
+            </section>
             <p class="auth-message" aria-live="polite"></p>
         </form>
     `;
@@ -1151,7 +1154,15 @@ function initializeQuitusForm(panel, event) {
     };
     signedByInput.addEventListener("input", renderDeclaration);
     renderDeclaration();
-    const signature = initializeSignatureCanvas(form.querySelector("canvas"), event.quitusSignature || "");
+    const signButton = form.querySelector('[data-quitus-action="sign"]');
+    const signaturePanel = form.querySelector("[data-quitus-signature-panel]");
+    let signature = null;
+    signButton.addEventListener("click", () => {
+        signaturePanel.hidden = false;
+        signButton.hidden = true;
+        signButton.setAttribute("aria-expanded", "true");
+        signature = initializeSignatureCanvas(form.querySelector("canvas"), event.quitusSignature || "");
+    });
     form.querySelector('[data-quitus-action="clear"]').addEventListener("click", () => {
         if (confirm("Effacer définitivement la signature en cours ?")) signature.clear();
     });
@@ -1159,7 +1170,7 @@ function initializeQuitusForm(panel, event) {
         eventSubmit.preventDefault();
         const button = form.querySelector('button[type="submit"]');
         const feedback = form.querySelector(".auth-message");
-        const signatureValue = signature.value();
+        const signatureValue = signature?.value() || "";
         const formData = new FormData(form);
         if (!form.elements.approved.checked) {
             feedback.textContent = "Le client doit cocher « Lu et approuvé » avant de signer.";
@@ -1252,15 +1263,15 @@ function renderInterventionPhotosHtml(client, appointment) {
     const after = appointmentPhotos.filter(attachment => attachment.type === "Photo après");
     const general = appointmentPhotos.filter(attachment => attachment.type === "Photo");
     const previews = photos => photos.length
-        ? `<div class="intervention-photo-previews">${photos.map(photo => `<img src="${escapeHtml(photo.dataUrl)}" alt="${escapeHtml(photo.name)}">`).join("")}</div>`
-        : '<p class="muted">Aucune photo pour le moment.</p>';
+        ? `<div class="intervention-photo-previews">${photos.map(photo => photo.mime === "application/pdf" ? `<a class="intervention-pdf-preview" href="/api/clients/${encodeURIComponent(client.id)}/attachments/${encodeURIComponent(photo.id)}/open" target="_blank" rel="noopener"><strong>PDF</strong><span>${escapeHtml(photo.name)}</span></a>` : `<img src="${escapeHtml(photo.dataUrl)}" alt="${escapeHtml(photo.name)}">`).join("")}</div>`
+        : '<p class="muted">Aucun JPEG ou PDF pour le moment.</p>';
     return `
         <form id="calendarInterventionPhotos" class="calendar-intervention-photos">
-            <div><p class="eyebrow">Dossier de l’intervention</p><h3>Ajouter des photos</h3><p class="muted">Ces photos sont enregistrées dans la fiche client. Elles ne sont envoyées au partenaire qu’après une sélection explicite dans le Centre de mission.</p></div>
-            <section><h4>Photos de l’intervention</h4>${previews(general)}<label>Ajouter des photos<input name="generalPhotos" type="file" accept="image/*" capture="environment" multiple></label></section>
-            <section><h4>Avant intervention</h4>${previews(before)}<label>Ajouter des photos avant<input name="beforePhoto" type="file" accept="image/*" capture="environment" multiple></label></section>
-            <section><h4>Après intervention</h4>${previews(after)}<label>Ajouter des photos après<input name="afterPhoto" type="file" accept="image/*" capture="environment" multiple></label></section>
-            <div class="calendar-form-actions"><button type="submit" class="secondary-button">Ajouter les photos</button></div><p class="auth-message" aria-live="polite"></p>
+            <div><p class="eyebrow">Dossier de l’intervention</p><h3>Ajouter des photos</h3><p class="muted">Les JPEG et PDF ajoutés ici sont enregistrés dans l’historique du client. Ils ne sont envoyés au partenaire qu’après une sélection explicite dans le Centre de mission.</p></div>
+            <section><h4>Documents de l’intervention</h4>${previews(general)}<label>Choisir des JPEG/PDF<input name="generalPhotos" type="file" accept="image/jpeg,image/png,image/webp,application/pdf,.pdf" multiple></label><label>Prendre une photo<input name="generalCamera" type="file" accept="image/jpeg" capture="environment" multiple></label></section>
+            <section><h4>Avant intervention</h4>${previews(before)}<label>Choisir des JPEG/PDF<input name="beforePhoto" type="file" accept="image/jpeg,image/png,image/webp,application/pdf,.pdf" multiple></label><label>Prendre une photo<input name="beforeCamera" type="file" accept="image/jpeg" capture="environment" multiple></label></section>
+            <section><h4>Après intervention</h4>${previews(after)}<label>Choisir des JPEG/PDF<input name="afterPhoto" type="file" accept="image/jpeg,image/png,image/webp,application/pdf,.pdf" multiple></label><label>Prendre une photo<input name="afterCamera" type="file" accept="image/jpeg" capture="environment" multiple></label></section>
+            <div class="calendar-form-actions"><button type="submit" class="secondary-button">Ajouter les JPEG/PDF</button></div><p class="auth-message" aria-live="polite"></p>
         </form>
     `;
 }
@@ -1271,12 +1282,12 @@ async function uploadInterventionPhotos(event, client, appointment) {
     const feedback = form.querySelector(".auth-message");
     const button = form.querySelector('button[type="submit"]');
     const uploads = [
-        { type: "Photo", files: Array.from(form.elements.generalPhotos.files || []) },
-        { type: "Photo avant", files: Array.from(form.elements.beforePhoto.files || []) },
-        { type: "Photo après", files: Array.from(form.elements.afterPhoto.files || []) }
+        { type: "Photo", files: ["generalPhotos", "generalCamera"].flatMap(name => Array.from(form.elements[name].files || [])) },
+        { type: "Photo avant", files: ["beforePhoto", "beforeCamera"].flatMap(name => Array.from(form.elements[name].files || [])) },
+        { type: "Photo après", files: ["afterPhoto", "afterCamera"].flatMap(name => Array.from(form.elements[name].files || [])) }
     ].filter(upload => upload.files.length);
     if (!uploads.length) {
-        feedback.textContent = "Sélectionnez au moins une photo de l’intervention.";
+        feedback.textContent = "Sélectionnez au moins un JPEG ou PDF de l’intervention.";
         feedback.classList.add("error");
         return;
     }
@@ -1651,6 +1662,10 @@ function getEventClientDetails(event) {
         phone: client?.phone || "",
         address: (client ? formatClientAddress(client) : "") || event.location || ""
     };
+}
+
+function automaticClientNotesClass(client) {
+    return client?.notesSource === "email_extractor" ? "client-notes-auto" : "";
 }
 
 function invalidateCalendarEventsCache() {

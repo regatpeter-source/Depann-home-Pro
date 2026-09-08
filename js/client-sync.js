@@ -196,11 +196,13 @@ function mergeClients(firstClients, secondClients) {
             return;
         }
         const newest = getTimestamp(client.updatedAt) > getTimestamp(existing.updatedAt) ? client : existing;
-        const attachments = new Map([...(Array.isArray(existing.attachments) ? existing.attachments : []), ...(Array.isArray(client.attachments) ? client.attachments : [])].filter(attachment => attachment?.id).map(attachment => [String(attachment.id), attachment]));
+        const deletedAttachmentIds = mergeDeletedAttachmentIds(existing.deletedAttachmentIds, client.deletedAttachmentIds);
+        const deleted = new Set(deletedAttachmentIds);
+        const attachments = new Map([...(Array.isArray(existing.attachments) ? existing.attachments : []), ...(Array.isArray(client.attachments) ? client.attachments : [])].filter(attachment => attachment?.id && !deleted.has(String(attachment.id))).map(attachment => [String(attachment.id), attachment]));
         merged.set(client.id, {
             ...newest,
             attachments: [...attachments.values()],
-            deletedAttachmentIds: [],
+            deletedAttachmentIds,
             activityHistory: mergeActivityHistory(existing.activityHistory, client.activityHistory)
         });
     });
@@ -295,11 +297,15 @@ function normalizeClient(client) {
         clientStatus: client?.clientStatus === "archived" ? "archived" : "active",
         archivedAt: client?.archivedAt || null,
         attachments: Array.isArray(client?.attachments) ? client.attachments.map(attachment => ({ ...attachment, cachedLocally: attachment?.cachedLocally !== false })) : [],
-        deletedAttachmentIds: [],
+        deletedAttachmentIds: mergeDeletedAttachmentIds(client?.deletedAttachmentIds),
         activityHistory: mergeActivityHistory(client?.activityHistory),
         createdAt: validDate(client?.createdAt) || now,
         updatedAt: validDate(client?.updatedAt) || now
     };
+}
+
+function mergeDeletedAttachmentIds(...values) {
+    return [...new Set(values.flat().map(value => String(value || "").slice(0, 100)).filter(Boolean))].slice(-500);
 }
 
 function mergeActivityHistory(...histories) {

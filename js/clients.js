@@ -1,5 +1,5 @@
 import { ROUTES } from "./config.js?v=116";
-import { addClientActivity, getLocalClients, removeLocalClient, saveLocalClient, scheduleClientSynchronization, synchronizeClients } from "./client-sync.js?v=127";
+import { addClientActivity, getLocalClients, removeLocalClient, saveLocalClient, scheduleClientSynchronization, synchronizeClients } from "./client-sync.js?v=128";
 import { renderClientMessages } from "./messages.js?v=107";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
@@ -580,7 +580,6 @@ function renderClientDetail(client, options = {}) {
     const readOnly = isClientReadOnly();
     const archived = client.clientStatus === "archived";
     const navigationHref = getClientNavigationHref(client);
-    const interventionPhotos = client.attachments.filter(isInterventionPhoto);
     const emailMissionFiles = client.attachments.filter(isPartnerEmailAttachment);
     const clientFiles = client.attachments.filter(attachment => !isInterventionPhoto(attachment) && !isPartnerEmailAttachment(attachment) && attachment.type !== "Quitus" && !isLeakReportAttachment(attachment));
     const panel = document.createElement("section");
@@ -612,18 +611,12 @@ function renderClientDetail(client, options = {}) {
         </section>
         <section class="procedure-section">
             <h3> Notes</h3>
-            <p>${escapeHtml(client.notes || "Aucune note renseignée.")}</p>
+            <p class="${automaticClientNotesClass(client)}">${escapeHtml(client.notes || "Aucune note renseignée.")}</p>
         </section>
         <section class="procedure-section">
             <h3> Historique du client</h3>
             <div id="clientHistory"><p class="muted">Chargement de l’historique du dossier…</p></div>
         </section>
-        ${interventionPhotos.length ? `
-            <section class="procedure-section client-intervention-photos">
-                <div class="form-heading"><div><p class="eyebrow">Interventions terrain</p><h3>Photos ajoutées par les techniciens</h3></div><span class="file-count-badge">${interventionPhotos.length} photo(s)</span></div>
-                <div class="client-intervention-photo-gallery">${interventionPhotos.map(attachment => renderInterventionPhotoHtml(client.id, attachment)).join("")}</div>
-            </section>
-        ` : ""}
         ${emailMissionFiles.length ? `
             <section class="procedure-section client-partner-email-files">
                 <div class="form-heading"><div><p class="eyebrow">Missions partenaires</p><h3>Pièces jointes reçues par e-mail</h3></div><span class="file-count-badge">${emailMissionFiles.length} fichier(s)</span></div>
@@ -870,6 +863,8 @@ async function readClientForm(form, previousClient = EMPTY_CLIENT) {
         expert: String(formData.get("expert") || "").trim(),
         equipment: String(formData.get("equipment") || "").trim(),
         notes: String(formData.get("notes") || "").trim(),
+        notesSource: "",
+        deletedAttachmentIds: Array.isArray(previousClient.deletedAttachmentIds) ? previousClient.deletedAttachmentIds : [],
         activityHistory: normalizeActivityHistory(previousClient.activityHistory),
         attachments: [
             ...normalizeAttachments(previousClient.attachments),
@@ -970,10 +965,13 @@ export function getSearchableClients() {
         expert: client.expert,
         equipment: client.equipment,
         notes: client.notes,
+        notesSource: client.notesSource === "email_extractor" ? "email_extractor" : "",
         attachments: client.attachments.map(attachment => ({
             id: attachment.id,
             type: attachment.type,
             name: attachment.name,
+            mime: attachment.mime,
+            size: attachment.size,
             dataUrl: attachment.dataUrl,
             reportId: attachment.reportId || "",
             reportOriginalId: attachment.reportOriginalId || "",
@@ -1015,6 +1013,8 @@ function normalizeAttachments(attachments = []) {
             source: attachment.source === "partner_email" ? "partner_email" : "",
             sourceAttachmentId: String(attachment.sourceAttachmentId || "").replace(/[^0-9]/g, ""),
             missionId: String(attachment.missionId || "").replace(/[^0-9]/g, ""),
+            uploadedById: String(attachment.uploadedById || "").replace(/[^0-9]/g, ""),
+            actorName: String(attachment.actorName || "").slice(0, 100),
             cachedLocally: attachment.cachedLocally !== false,
             appointmentId: String(attachment.appointmentId || "").replace(/[^0-9]/g, ""),
             createdAt: attachment.createdAt || new Date().toISOString()
@@ -1053,6 +1053,17 @@ function renderClientActivityHistory(client, billingDocuments = [], purchases = 
             createdAt: purchase.createdAt || purchase.updatedAt || `${purchase.purchaseDate}T12:00:00`
         };
     });
+    const attachmentEntries = client.attachments.filter(isInterventionPhoto).map(attachment => ({
+        id: `intervention-attachment-${attachment.id}`,
+        type: "intervention_attachment",
+        label: attachment.type === "Photo avant" ? "Pièce avant intervention" : attachment.type === "Photo après" ? "Pièce après intervention" : "Pièce de l’intervention",
+        detail: attachment.name,
+        documentId: "",
+        attachmentId: String(attachment.id),
+        appointmentId: String(attachment.appointmentId),
+        actorName: String(attachment.actorName || ""),
+        createdAt: attachment.createdAt
+    }));
     const appointmentEntries = appointments.map(appointment => {
         const interventionDate = new Intl.DateTimeFormat("fr-FR", { dateStyle: "short" }).format(new Date(`${appointment.date}T12:00:00`));
         const appointmentStatus = appointment.isCompleted ? "Terminée" : ({ planned: "Planifiée", confirmed: "Confirmée", in_progress: "En cours", completed: "Terminée", cancelled: "Annulée" })[appointment.status] || "Planifiée";
@@ -1068,7 +1079,7 @@ function renderClientActivityHistory(client, billingDocuments = [], purchases = 
             createdAt: appointment.createdAt || `${appointment.date}T${appointment.startTime || "12:00"}:00`
         };
     });
-    const entries = [...activityEntries, ...billingEntries, ...purchaseEntries, ...appointmentEntries]
+    const entries = [...activityEntries, ...billingEntries, ...purchaseEntries, ...appointmentEntries, ...attachmentEntries]
         .sort((first, second) => new Date(second.createdAt).getTime() - new Date(first.createdAt).getTime());
     if (!entries.length) return "<p class=\"muted\">Les rendez-vous, documents et actions de ce dossier apparaîtront ici.</p>";
     const history = groupClientActivityEntries(entries, appointments);
@@ -1108,10 +1119,12 @@ function renderClientActivityEntry(entry, client) {
     const quitusAttachment = entry.type === "quitus" ? client.attachments.find(attachment => String(attachment.id) === entry.attachmentId || attachment.type === "Quitus" && attachment.name === entry.detail) : null;
     const reportAttachment = entry.type === "technical_report" ? client.attachments.find(attachment => String(attachment.id) === entry.attachmentId || isLeakReportAttachment(attachment) && attachment.name === entry.detail) : null;
     const deductibleAttachment = entry.type === "insurance_deductible" ? client.attachments.find(attachment => String(attachment.id) === entry.attachmentId && attachment.type === "Photo franchise") : null;
+    const interventionAttachment = entry.type === "intervention_attachment" ? client.attachments.find(attachment => String(attachment.id) === entry.attachmentId && isInterventionPhoto(attachment)) : null;
     const quitusActions = quitusAttachment ? `<div class="client-card-actions client-activity-actions"><button type="button" class="secondary-button" data-view-quituses="${escapeHtml(quitusAttachment.id)}">Visualiser</button><button type="button" class="secondary-button" data-print-quituses="${escapeHtml(quitusAttachment.id)}">Imprimer / PDF</button><button type="button" class="secondary-button" data-email-quituses="${escapeHtml(quitusAttachment.id)}" ${client.email ? "" : "disabled title=\"Ajoutez l’e-mail du client pour préparer un envoi.\""}>Envoyer par e-mail</button></div>` : "";
     const reportActions = reportAttachment ? `<div class="client-card-actions client-activity-actions"><button type="button" class="secondary-button" data-view-report="${escapeHtml(reportAttachment.id)}">Visualiser</button><button type="button" class="secondary-button" data-print-report="${escapeHtml(reportAttachment.id)}">Imprimer / PDF</button><button type="button" class="secondary-button" data-email-report="${escapeHtml(reportAttachment.id)}" ${client.email ? "" : "disabled title=\"Ajoutez l’e-mail du client pour préparer un envoi.\""}>Envoyer par e-mail</button></div>` : "";
     const deductibleActions = deductibleAttachment ? `<div class="client-card-actions client-activity-actions"><button type="button" class="secondary-button" data-view-deductible="${escapeHtml(deductibleAttachment.id)}">Voir la photo de preuve</button></div>` : "";
-    const actions = isBillingDocument ? `<div class="client-card-actions client-activity-actions"><button type="button" class="secondary-button" data-view-billing-document data-document-id="${escapeHtml(entry.documentId)}" data-document-number="${escapeHtml(entry.detail)}">Visualiser</button><button type="button" class="secondary-button" data-print-billing-document data-document-id="${escapeHtml(entry.documentId)}" data-document-number="${escapeHtml(entry.detail)}">Imprimer / PDF</button><button type="button" class="secondary-button" data-email-billing-document data-document-id="${escapeHtml(entry.documentId)}" data-document-number="${escapeHtml(entry.detail)}" ${client.email ? "" : "disabled title=\"Ajoutez l’e-mail du client pour préparer un envoi.\""}>Envoyer par e-mail</button></div>` : quitusActions || reportActions || deductibleActions;
+    const interventionActions = interventionAttachment ? renderInterventionAttachmentActions(client, interventionAttachment) : "";
+    const actions = isBillingDocument ? `<div class="client-card-actions client-activity-actions"><button type="button" class="secondary-button" data-view-billing-document data-document-id="${escapeHtml(entry.documentId)}" data-document-number="${escapeHtml(entry.detail)}">Visualiser</button><button type="button" class="secondary-button" data-print-billing-document data-document-id="${escapeHtml(entry.documentId)}" data-document-number="${escapeHtml(entry.detail)}">Imprimer / PDF</button><button type="button" class="secondary-button" data-email-billing-document data-document-id="${escapeHtml(entry.documentId)}" data-document-number="${escapeHtml(entry.detail)}" ${client.email ? "" : "disabled title=\"Ajoutez l’e-mail du client pour préparer un envoi.\""}>Envoyer par e-mail</button></div>` : interventionActions || quitusActions || reportActions || deductibleActions;
     return `<article class="client-activity-item"><div><strong>${escapeHtml(entry.label)}</strong>${entry.detail ? `<p>${escapeHtml(entry.detail)}</p>` : ""}${entry.actorName ? `<p class="muted">Par ${escapeHtml(entry.actorName)}</p>` : ""}${actions}</div><time datetime="${escapeHtml(entry.createdAt)}">${escapeHtml(formatActivityDate(entry.createdAt))}</time></article>`;
 }
 
@@ -1162,6 +1175,12 @@ function bindClientHistoryActions(panel, client) {
     });
     panel.querySelectorAll("[data-view-deductible]").forEach(button => {
         button.addEventListener("click", () => openClientAttachment(client.id, button.dataset.viewDeductible));
+    });
+    panel.querySelectorAll("[data-email-intervention-attachment]").forEach(button => {
+        button.addEventListener("click", () => emailClientAttachment(client, button.dataset.emailInterventionAttachment));
+    });
+    panel.querySelectorAll("[data-delete-intervention-attachment]").forEach(button => {
+        button.addEventListener("click", () => deleteInterventionAttachment(client, button.dataset.deleteInterventionAttachment));
     });
 }
 
@@ -1354,17 +1373,34 @@ function renderAttachmentsHtml(clientId, attachments, recipient) {
 }
 
 function isInterventionPhoto(attachment) {
-    return Boolean(attachment?.appointmentId) && ["Photo", "Photo avant", "Photo après"].includes(attachment.type);
+    const mime = String(attachment?.mime || "").toLowerCase();
+    const name = String(attachment?.name || "").toLowerCase();
+    const supported = mime.startsWith("image/") || mime === "application/pdf" || /\.(?:jpe?g|png|webp|pdf)$/.test(name);
+    return Boolean(attachment?.appointmentId) && supported && ["Photo", "Photo avant", "Photo après"].includes(attachment.type);
 }
 
 function isPartnerEmailAttachment(attachment) {
     return attachment?.source === "partner_email" || attachment?.type === "Mission partenaire · E-mail";
 }
 
-function renderInterventionPhotoHtml(clientId, attachment) {
-    const type = attachment.type === "Photo avant" ? "Avant intervention" : attachment.type === "Photo après" ? "Après intervention" : "Photo d’intervention";
-    const url = `/api/clients/${encodeURIComponent(clientId)}/attachments/${encodeURIComponent(attachment.id)}/open`;
-    return `<article class="client-intervention-photo"><a href="${url}" target="_blank" rel="noopener"><img src="${escapeHtml(attachment.dataUrl || url)}" alt="${escapeHtml(attachment.name)}"></a><div><strong>${escapeHtml(type)}</strong><span>${escapeHtml(attachment.name)}</span><small>${escapeHtml(formatDate(attachment.createdAt))}</small></div></article>`;
+function renderInterventionAttachmentActions(client, attachment) {
+    const url = `/api/clients/${encodeURIComponent(client.id)}/attachments/${encodeURIComponent(attachment.id)}/open`;
+    const image = String(attachment.mime || "").startsWith("image/");
+    return `<div class="client-intervention-history-file">${image ? `<a href="${url}" target="_blank" rel="noopener"><img src="${escapeHtml(attachment.dataUrl || url)}" alt="Aperçu ${escapeHtml(attachment.name)}"></a>` : '<span class="client-intervention-pdf" aria-label="Document PDF">PDF</span>'}<div class="client-card-actions client-activity-actions"><a class="secondary-button" href="${url}" target="_blank" rel="noopener">Ouvrir</a><a class="secondary-button" href="${url}?download=1" download="${escapeHtml(attachment.name)}">Télécharger</a><button type="button" class="secondary-button" data-email-intervention-attachment="${escapeHtml(attachment.id)}" ${client.email ? "" : "disabled title=\"Ajoutez l’e-mail du client pour envoyer ce fichier.\""}>Envoyer par e-mail</button><button type="button" class="secondary-button danger-button" data-delete-intervention-attachment="${escapeHtml(attachment.id)}">Supprimer</button></div></div>`;
+}
+
+async function deleteInterventionAttachment(client, attachmentId) {
+    const attachment = client.attachments.find(item => String(item.id) === String(attachmentId));
+    if (!attachment || !confirm(`Supprimer définitivement « ${attachment.name} » de cette intervention ?`)) return;
+    const response = await fetch(`/api/clients/${encodeURIComponent(client.id)}/attachments/${encodeURIComponent(attachment.id)}`, { method: "DELETE", credentials: "same-origin" });
+    const data = await response.json().catch(() => null);
+    if (!response.ok) { alert(data?.message || "Suppression impossible."); return; }
+    await synchronizeClients({ forceFull: true });
+    renderClients({ ...clientScreenOptions, selectedId: client.id });
+}
+
+function automaticClientNotesClass(client) {
+    return client?.notesSource === "email_extractor" ? "client-notes-auto" : "";
 }
 
 

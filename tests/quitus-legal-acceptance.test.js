@@ -42,6 +42,14 @@ test("the smartphone form previews the legal declaration and submits observation
     assert.ok(client.includes(approval));
 });
 
+test("the signature area opens only after the technician clicks Signer", () => {
+    assert.match(client, /data-quitus-action="sign" aria-expanded="false">Signer/);
+    assert.match(client, /data-quitus-signature-panel hidden/);
+    assert.match(client, /signButton\.addEventListener\("click"/);
+    assert.match(client, /signaturePanel\.hidden = false/);
+    assert.match(client, /signature = initializeSignatureCanvas/);
+});
+
 test("custom quitus data keeps legal acceptance separate from internal notes", () => {
     const model = buildQuitusCustomModel(event, quitus, profile);
     assert.equal(model.document.observations, quitus.observations);
