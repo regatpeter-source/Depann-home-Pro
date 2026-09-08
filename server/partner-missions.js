@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { getPool } from "./database.js";
 import { getAccountOwnerId } from "./auth.js";
-import { listClientsForOwner } from "./clients.js";
+import { isSameGroupClientIdentity, listClientsForOwner } from "./clients.js";
 import { createEmptyLeakContent } from "./leak-report-template.js";
 import { createNotification } from "./collaboration.js";
 import { recordMissionDialogueEvent } from "./partner-dialogue.js";
@@ -497,7 +497,7 @@ async function upsertClient(connection, ownerId, data, req, linkedClientId = "")
 export async function provisionPartnerMissionClient(connection, ownerId, data, req = {}, linkedClientId = "") {
     tracePartnerClient("provision_called", { ownerId });
     const { rows } = await connection.query("SELECT client_id,client_data FROM depannhome_clients WHERE owner_id=$1 FOR UPDATE", [ownerId]);
-    const row = rows.find(item => String(item.client_id) === String(linkedClientId || ""));
+    const row = findPartnerMissionClientRow(rows, data, linkedClientId);
     const now = new Date().toISOString();
     const clientId = row?.client_id || (CLIENT_ID_PATTERN.test(String(linkedClientId || "")) ? String(linkedClientId) : `client-${crypto.randomUUID()}`);
     const old = row?.client_data || {};
@@ -511,6 +511,15 @@ export async function provisionPartnerMissionClient(connection, ownerId, data, r
     if (!verification.rows[0]) throw new Error("La fiche client partenaire est absente de la base de données de l’entreprise destinataire.");
     tracePartnerClient("sql_verification", { ownerId, clientId, exists: Boolean(verification.rows[0]) });
     return { id: clientId, created: !row };
+}
+
+export function findPartnerMissionClientRow(rows, data = {}, linkedClientId = "") {
+    const clients = Array.isArray(rows) ? rows : [];
+    const linkedId = String(linkedClientId || "");
+    const linked = linkedId ? clients.find(item => String(item?.client_id || "") === linkedId) : null;
+    if (linked || linkedId) return linked || null;
+    const identity = { ...data, name: data.clientName || data.name || "" };
+    return clients.find(item => isSameGroupClientIdentity(item?.client_data || {}, identity)) || null;
 }
 
 export async function traceCommittedPartnerClient(ownerId, clientId, context = {}) {
@@ -754,12 +763,13 @@ function attachmentSignature(item) { return `${clean(item?.name, 255)}\u0000${cl
 async function matchEmailMissionClient(connection, ownerId, data) { const email = clean(data.email, 160).toLowerCase(), phone = clean(data.phone, 50).replace(/\D/g, ""), name = clean(data.clientName, 160).toLowerCase(), address = clean(data.address, 255).toLowerCase(); if (!email && !phone && !(name && address)) return ""; const { rows } = await connection.query("SELECT client_id FROM depannhome_clients WHERE owner_id=$1 AND (($2<>'' AND LOWER(COALESCE(client_data->>'email',''))=$2) OR ($3<>'' AND REGEXP_REPLACE(COALESCE(client_data->>'phone',''),'\\D','','g')=$3) OR ($4<>'' AND $5<>'' AND LOWER(COALESCE(client_data->>'name',''))=$4 AND LOWER(COALESCE(client_data->>'address',''))=$5)) ORDER BY updated_at DESC LIMIT 1", [ownerId, email, phone, name, address]); return rows[0]?.client_id || ""; }
 function mergePartnerMissionActivityHistory(history, data, req, createdAt) {
     const detail = `${data.partnerReference || data.externalMissionId} · ${data.interventionType}`.slice(0, 500);
+    const sourceMissionId = clean(data.externalMissionId, 160);
     const activities = Array.isArray(history) ? history : [];
     const duplicate = activities.some(activity => activity?.type === "partner_mission"
         && activity?.label === "Mission partenaire reçue"
-        && String(activity?.detail || "") === detail);
+        && (sourceMissionId ? String(activity?.sourceMissionId || "") === sourceMissionId : String(activity?.detail || "") === detail));
     if (duplicate) return activities.slice(0, 150);
-    return [{ id: `activity-${crypto.randomUUID()}`, type: "partner_mission", label: "Mission partenaire reçue", detail, actorName: req.user?.fullName || "API partenaire", createdAt }, ...activities].slice(0, 150);
+    return [{ id: `activity-${crypto.randomUUID()}`, type: "partner_mission", label: "Mission partenaire reçue", detail, sourceMissionId, actorName: req.user?.fullName || "API partenaire", createdAt }, ...activities].slice(0, 150);
 }
 function mergeText(...values) { return values.filter(Boolean).map(value => String(value).trim()).filter(Boolean).join("\n").slice(0, 2000); }
 function isLeak(value) { return /fuite|infiltration|etancheite/i.test(String(value || "")); }

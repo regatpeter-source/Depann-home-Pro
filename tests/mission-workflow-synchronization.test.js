@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { restoredPartnerMissionStatus, shouldAdvancePartnerMissionStatus } from "../server/partner-missions.js";
+import { findPartnerMissionClientRow, restoredPartnerMissionStatus, shouldAdvancePartnerMissionStatus } from "../server/partner-missions.js";
 
 const read = relativePath => readFileSync(new URL(`../${relativePath}`, import.meta.url), "utf8");
 
@@ -21,6 +21,17 @@ test("la réactivation retrouve les actions durables déjà réalisées par l’
     assert.equal(restoredPartnerMissionStatus({ status: "cancelled", assigned_technician_id: 7 }), "assigned");
     assert.equal(restoredPartnerMissionStatus({ status: "rejected", scheduled_date: "2026-04-10" }), "pending_validation");
     assert.equal(restoredPartnerMissionStatus({ status: "closed" }), "accepted");
+});
+
+test("une autre intervention ou un SAV crée une mission distincte sur la même fiche client", () => {
+    const clients = [
+        { client_id: "client-existing", client_data: { name: "Mme Martin", email: "martin@example.fr", phone: "06 12 34 56 78", address: "1 rue de Paris", city: "Lyon" } },
+        { client_id: "client-other", client_data: { name: "M. Dupont", email: "dupont@example.fr", phone: "06 98 76 54 32", address: "2 rue des Lilas", city: "Lyon" } }
+    ];
+    assert.equal(findPartnerMissionClientRow(clients, { clientName: "Mme Martin", email: "MARTIN@example.fr", interventionType: "SAV" })?.client_id, "client-existing");
+    assert.equal(findPartnerMissionClientRow(clients, { clientName: "Mme Martin", phone: "+33 6 12 34 56 78", interventionType: "Nouvelle intervention" })?.client_id, "client-existing");
+    assert.equal(findPartnerMissionClientRow(clients, { clientName: "Mme Martin", address: "1 rue de Paris", city: "Lyon" })?.client_id, "client-existing");
+    assert.equal(findPartnerMissionClientRow(clients, { clientName: "Nouveau client", email: "nouveau@example.fr" }), null);
 });
 
 test("les événements rapport, planning et facturation synchronisent le statut réel de mission", () => {
