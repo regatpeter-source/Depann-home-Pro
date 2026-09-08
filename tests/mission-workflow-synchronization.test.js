@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { shouldAdvancePartnerMissionStatus } from "../server/partner-missions.js";
+import { restoredPartnerMissionStatus, shouldAdvancePartnerMissionStatus } from "../server/partner-missions.js";
 
 const read = relativePath => readFileSync(new URL(`../${relativePath}`, import.meta.url), "utf8");
 
@@ -14,6 +14,13 @@ test("la progression métier avance sans régresser ni rouvrir une mission termi
     assert.equal(shouldAdvancePartnerMissionStatus("closed", "invoice_sent"), false);
     assert.equal(shouldAdvancePartnerMissionStatus("cancelled", "work_completed"), false);
     assert.equal(shouldAdvancePartnerMissionStatus("scheduled", "invoice_created"), false);
+});
+
+test("la réactivation retrouve les actions durables déjà réalisées par l’entreprise", () => {
+    assert.equal(restoredPartnerMissionStatus({ status: "rejected", calendar_event_id: 42 }), "scheduled");
+    assert.equal(restoredPartnerMissionStatus({ status: "cancelled", assigned_technician_id: 7 }), "assigned");
+    assert.equal(restoredPartnerMissionStatus({ status: "rejected", scheduled_date: "2026-04-10" }), "pending_validation");
+    assert.equal(restoredPartnerMissionStatus({ status: "closed" }), "accepted");
 });
 
 test("les événements rapport, planning et facturation synchronisent le statut réel de mission", () => {

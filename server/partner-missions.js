@@ -196,14 +196,14 @@ async function receiveMission(req, res) {
         const client = await provisionPartnerMissionClient(connection, intake.owner_id, mapped, req, mission.client_id);
         tracePartnerClient("provision_completed", { flow: "partner_intake", ownerId: intake.owner_id, missionId: mission.id, clientId: client.id, created: client.created });
         await connection.query("UPDATE depannhome_partner_missions SET client_id=$3,updated_at=NOW() WHERE id=$1 AND owner_id=$2", [mission.id, intake.owner_id, client.id]);
-        await writeHistory(connection, intake.owner_id, mission.id, "pending_validation", mission.inserted ? "received" : "updated", null, "partner", { partnerKey, externalMissionId: mapped.externalMissionId, clientId: client.id, clientCreated: client.created }, req.ip);
+        await writeHistory(connection, intake.owner_id, mission.id, mission.status, mission.inserted ? "received" : "updated", null, "partner", { partnerKey, externalMissionId: mapped.externalMissionId, clientId: client.id, clientCreated: client.created }, req.ip);
         await connection.query("COMMIT");
         tracePartnerClient("transaction_committed", { flow: "partner_intake", ownerId: intake.owner_id, missionId: mission.id, clientId: client.id });
         await traceCommittedPartnerClient(intake.owner_id, client.id, { flow: "partner_intake", missionId: mission.id });
-        await recordMissionDialogueEvent({ ownerId: intake.owner_id, missionId: mission.id, status: mission.inserted ? "received" : "pending_validation", action: mission.inserted ? "received" : "updated", details: { clientId: client.id, clientCreated: client.created }, actorName: intake.partner_name });
+        await recordMissionDialogueEvent({ ownerId: intake.owner_id, missionId: mission.id, status: mission.inserted ? "received" : mission.status, action: mission.inserted ? "received" : "updated", details: { clientId: client.id, clientCreated: client.created }, actorName: intake.partner_name });
         if (mission.inserted) await recordMissionDialogueEvent({ ownerId: intake.owner_id, missionId: mission.id, status: "pending_validation", action: client.created ? "client_created" : "client_matched", details: { clientId: client.id }, actorName: intake.partner_name });
         if (!intake.is_sandbox) await notifyReceptionAdmins(intake.owner_id, mission.id, mapped, client.created, mission.inserted);
-        res.status(mission.inserted ? 202 : 200).json({ accepted: true, missionId: mission.id, clientId: client.id, clientCreated: client.created, status: "pending_validation" });
+        res.status(mission.inserted ? 202 : 200).json({ accepted: true, missionId: mission.id, clientId: client.id, clientCreated: client.created, status: mission.status });
     } catch (error) { tracePartnerClient("transaction_failed", { flow: "partner_intake", ownerId: intake?.owner_id || null, error: error.message }); try { await connection.query("ROLLBACK"); tracePartnerClient("transaction_rolled_back", { flow: "partner_intake", ownerId: intake?.owner_id || null }); } catch (rollbackError) { tracePartnerClient("transaction_rollback_failed", { flow: "partner_intake", ownerId: intake?.owner_id || null, error: rollbackError.message }); } throw error; } finally { connection.release(); }
 }
 
@@ -336,13 +336,13 @@ export async function ingestEmailPartnerMission({ ownerId, connectionId, emailId
         const matchedClientId = mission.client_id || await matchEmailMissionClient(database, ownerId, mapped);
         const client = await provisionPartnerMissionClient(database, ownerId, mapped, { user: { sub: actorId, fullName: "Import boîte mail" } }, matchedClientId);
         await database.query("UPDATE depannhome_partner_missions SET client_id=$3,mapped_data=$4::jsonb,updated_at=NOW() WHERE id=$1 AND owner_id=$2", [mission.id, ownerId, client.id, JSON.stringify(mapped)]);
-        await writeHistory(database, ownerId, mission.id, "pending_validation", mission.inserted ? "email_received" : "email_updated", actorId, "email", { emailId, connectionId, clientId: client.id, clientCreated: client.created }, "");
+        await writeHistory(database, ownerId, mission.id, mission.status, mission.inserted ? "email_received" : "email_updated", actorId, "email", { emailId, connectionId, clientId: client.id, clientCreated: client.created }, "");
         await database.query("COMMIT");
         await traceCommittedPartnerClient(ownerId, client.id, { flow: "email_import", missionId: mission.id });
-        await recordMissionDialogueEvent({ ownerId, missionId: mission.id, status: "received", action: "received", details: { summary: `Mission détectée dans la boîte professionnelle · ${clean(payload.subject, 300)}` }, actorName: clean(partnerName, 160) || "Boîte mail professionnelle" });
+        await recordMissionDialogueEvent({ ownerId, missionId: mission.id, status: mission.inserted ? "received" : mission.status, action: mission.inserted ? "received" : "updated", details: { summary: `Mission détectée dans la boîte professionnelle · ${clean(payload.subject, 300)}` }, actorName: clean(partnerName, 160) || "Boîte mail professionnelle" });
         if (mission.inserted) await recordMissionDialogueEvent({ ownerId, missionId: mission.id, status: "pending_validation", action: client.created ? "client_created" : "client_matched", details: { clientId: client.id }, actorName: "Import boîte mail" });
         if (mission.inserted) await notifyReceptionAdmins(ownerId, mission.id, mapped, client.created, true);
-        return { missionId: mission.id, clientId: client.id, clientCreated: client.created, created: Boolean(mission.inserted) };
+        return { missionId: mission.id, clientId: client.id, clientCreated: client.created, created: Boolean(mission.inserted), status: mission.status };
     } catch (error) {
         await database.query("ROLLBACK");
         throw error;
@@ -358,10 +358,10 @@ async function reactivateTerminalMission(req, id) {
     let details;
     try {
         await connection.query("BEGIN");
-        const current = await connection.query("SELECT status,calendar_event_id,scheduled_date FROM depannhome_partner_missions WHERE id=$1 AND owner_id=$2 AND deleted_at IS NULL FOR UPDATE", [id, ownerId]);
+        const current = await connection.query("SELECT status,calendar_event_id,scheduled_date,assigned_technician_id FROM depannhome_partner_missions WHERE id=$1 AND owner_id=$2 AND deleted_at IS NULL FOR UPDATE", [id, ownerId]);
         const mission = current.rows[0];
         if (!mission || !["rejected", "cancelled", "closed"].includes(mission.status)) throw clientError(409, "Seule une mission refusée, annulée ou clôturée peut être réactivée.");
-        const restoredStatus = mission.status === "rejected" ? "pending_validation" : mission.calendar_event_id && mission.scheduled_date ? "scheduled" : "accepted";
+        const restoredStatus = restoredPartnerMissionStatus(mission);
         const result = await connection.query("UPDATE depannhome_partner_missions SET status=$3,updated_at=NOW() WHERE id=$1 AND owner_id=$2 RETURNING *", [id, ownerId, restoredStatus]);
         updated = result.rows[0];
         details = { previousStatus: mission.status, restoredStatus, reason };
@@ -381,6 +381,12 @@ async function reactivateTerminalMission(req, id) {
     const { notifyEmailMissionStatus } = await import("./partner-email.js");
     await notifyEmailMissionStatus(ownerId, mission.id, mission.status, details).catch(error => console.warn("[partner-email] réactivation non envoyée :", error.message));
     return mission;
+}
+
+export function restoredPartnerMissionStatus(mission = {}) {
+    if (mission.calendar_event_id || mission.calendarEventId) return "scheduled";
+    if (mission.assigned_technician_id || mission.assignedTechnicianId) return "assigned";
+    return mission.status === "rejected" ? "pending_validation" : "accepted";
 }
 
 async function updateBillingMode(req, id, billingMode) { const ownerId = getAccountOwnerId(req); if (!id) throw clientError(400, "Mission invalide."); const { rows } = await getPool().query("UPDATE depannhome_partner_missions SET billing_mode=$3,updated_at=NOW() WHERE id=$1 AND owner_id=$2 AND status NOT IN ('rejected','closed','cancelled') RETURNING *", [id, ownerId, billingMode]); if (!rows[0]) throw clientError(409, "Une mission terminale ne peut plus changer de mode de facturation."); await writeHistory(getPool(), ownerId, id, rows[0].status, "billing_mode_changed", req.user.sub, req.user.role, { billingMode }, req.ip); if (billingMode === "principal") { const { sharePrincipalBillingDocuments } = await import("./partner-dialogue.js"); await sharePrincipalBillingDocuments(ownerId, id); } else { const { hideDirectClientBillingDocuments } = await import("./partner-dialogue.js"); await hideDirectClientBillingDocuments(ownerId, id); } return publicMission(rows[0]); }

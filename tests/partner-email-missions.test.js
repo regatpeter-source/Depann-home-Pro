@@ -399,7 +399,8 @@ test("seul le Poste Admin réactive une mission terminale avec un motif puis la 
     assert.match(routes, /reactivateTerminalMission/);
     assert.match(reactivation, /if \(!reason\) throw clientError\(400/);
     assert.match(reactivation, /\["rejected", "cancelled", "closed"\]/);
-    assert.match(reactivation, /mission\.status === "rejected" \? "pending_validation"/);
+    assert.match(reactivation, /restoredPartnerMissionStatus\(mission\)/);
+    assert.match(missionSource, /if \(mission\.calendar_event_id \|\| mission\.calendarEventId\) return "scheduled"/);
     assert.match(reactivation, /"reactivated_for_correction"/);
     assert.match(missionSource, /req\?\.user\?\.role === "admin"/);
     assert.match(correctionUi, /Réactiver et corriger/);
