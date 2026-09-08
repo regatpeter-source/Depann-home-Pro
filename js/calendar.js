@@ -53,6 +53,13 @@ const PLANNING_DAY_START_HOUR = 8;
 const PLANNING_DAY_END_HOUR = 19;
 const PLANNING_SLOT_MINUTES = 15;
 
+const calendarContainer = document.getElementById("brands");
+new MutationObserver(() => {
+    if (document.body.classList.contains("calendar-page-active") && !calendarPanels?.header?.isConnected) {
+        document.body.classList.remove("calendar-page-active");
+    }
+}).observe(calendarContainer, { childList: true });
+
 window.addEventListener("depannhome:billing-document-saved", event => {
     if (event.detail?.suppressNavigation) return;
     const appointmentId = String(event.detail?.appointmentId || "");
@@ -82,6 +89,7 @@ export async function renderCalendar(options = {}) {
     setPage(technicianHome ? (isCommercialMobileCalendar() ? "Planning" : "Accueil") : isMobileAdministrator() ? "Interventions" : "Planning", ROUTES.calendar, "detail");
 
     const container = getContainer();
+    document.body.classList.add("calendar-page-active");
     const header = document.createElement("section");
     header.className = technicianHome ? "technician-calendar-home" : "client-panel calendar-panel";
     const formPanel = document.createElement("section");

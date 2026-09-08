@@ -81,6 +81,22 @@ test("le planning mobile utilise des contrôles tactiles et des cartes plutôt q
     assert.match(styles, /body\.mobile-device \.calendar-grid \.calendar-event-time\{[^}]*font-size:9px/);
 });
 
+test("les vues mois, semaine et jour occupent tout le viewport mobile sans faire défiler la page", () => {
+    assert.match(calendar, /classList\.add\("calendar-page-active"\)/);
+    assert.match(calendar, /classList\.remove\("calendar-page-active"\)/);
+    assert.match(styles, /body\.mobile-device\.calendar-page-active\{[^}]*height:100dvh;overflow:hidden/);
+    assert.match(styles, /body\.mobile-device\.calendar-page-active #app\{[^}]*height:calc\(100dvh - 64px - env\(safe-area-inset-bottom\)\)[^}]*overflow:hidden/);
+    assert.match(styles, /body\.mobile-device\.calendar-page-active #brands\{[^}]*grid-template-rows:auto minmax\(0,1fr\)[^}]*height:100%/);
+    assert.match(styles, /body\.mobile-device\.calendar-page-active \.calendar-grid\{[^}]*grid-template-rows:repeat\(6,minmax\(0,1fr\)\)[^}]*height:calc\(100% - 24px\)/);
+    assert.match(styles, /body\.mobile-device\.calendar-page-active \.calendar-grid-panel,body\.mobile-device\.calendar-page-active \.calendar-grid-panel:has\(\.calendar-mobile-agenda\)\{[^}]*height:100%[^}]*overflow-y:auto/);
+    assert.match(styles, /body\.mobile-device\.calendar-page-active #brands>\.calendar-form-panel:not\(\[hidden\]\)\{[^}]*position:absolute[^}]*overflow:auto/);
+});
+
+test("les ressources PWA versionnées sont servies depuis le cache avant de solliciter le réseau", () => {
+    const worker = readFileSync(new URL("../service-worker.js", import.meta.url), "utf8");
+    assert.match(worker, /url\.searchParams\.has\("v"\) \? cachedFallback\(\) : fetchAndCache\(\)\.catch\(cachedFallback\)/);
+});
+
 test("les définitions de couleurs et de statuts restent masquées sur tous les postes mobiles", () => {
     assert.match(calendar, /<div class="calendar-legend">/);
     assert.match(calendar, /<div class="calendar-status-legend"/);

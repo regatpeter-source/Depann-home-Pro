@@ -1,13 +1,13 @@
-const CACHE_NAME = "depann-home-pro-v532";
+const CACHE_NAME = "depann-home-pro-v533";
 const ASSETS = [
     "./",
     "./connexion",
     "./index.html",
-    "./css/style.css?v=261",
+    "./css/style.css?v=262",
     "./css/partner-dialogue.css?v=7",
     "./css/report-editor.css?v=8",
     "./css/health-dashboard.css?v=2",
-    "./js/app.js?v=421",
+    "./js/app.js?v=422",
     "./js/client-session.js?v=5",
     "./js/accounting.js?v=26",
     "./js/groups.js?v=4",
@@ -25,7 +25,7 @@ const ASSETS = [
     "./js/pdf-live-preview.js?v=1",
     "./vendor/pdfjs/build/pdf.min.mjs?v=5.4.54",
     "./vendor/pdfjs/build/pdf.worker.min.mjs?v=5.4.54",
-    "./js/calendar.js?v=212",
+    "./js/calendar.js?v=213",
     "./js/intervention-search.js?v=1",
     "./js/clients.js?v=164",
     "./js/client-sync.js?v=127",
@@ -35,7 +35,7 @@ const ASSETS = [
     "./js/config.js?v=135",
     "./js/data.js",
     "./js/data-imports.js?v=5",
-    "./js/navigation.js?v=450",
+    "./js/navigation.js?v=451",
     "./js/creator.js?v=158",
     "./js/library.js",
     "./js/local-library.js",
@@ -86,13 +86,12 @@ self.addEventListener("fetch", event => {
 
     if (!isPublicAsset) return;
 
-    event.respondWith(
-        fetch(event.request)
+    const fetchAndCache = () => fetch(event.request)
             .then(response => {
                 const copy = response.clone();
                 caches.open(CACHE_NAME).then(cache => cache.put(event.request, copy));
                 return response;
-            })
-            .catch(() => caches.match(event.request))
-    );
+            });
+    const cachedFallback = () => caches.match(event.request).then(cached => cached || fetchAndCache());
+    event.respondWith(url.searchParams.has("v") ? cachedFallback() : fetchAndCache().catch(cachedFallback));
 });
