@@ -267,7 +267,7 @@ export function registerCalendarRoutes(app, requireAuthentication) {
               AND ($3::boolean = FALSE OR EXISTS (
                     SELECT 1 FROM depannhome_calendar_assignments assignment
                     WHERE assignment.event_id = event.id AND assignment.technician_id = $4::bigint
-              ))
+              ) OR ($3::boolean = TRUE AND event.assigned_technician_id = $4::bigint))
             ORDER BY event.event_date DESC, event.start_time DESC NULLS LAST, event.id DESC
           `, [ownerId, clientId, hasAssignedOnlyCalendar(request.user), request.user?.sub || 0]);
         response.json({ events: rows });
@@ -356,7 +356,7 @@ export function registerCalendarRoutes(app, requireAuthentication) {
                             AND ($4::boolean = FALSE OR EXISTS (
                                 SELECT 1 FROM depannhome_calendar_assignments assignment
                                 WHERE assignment.event_id = event.id AND assignment.technician_id = $5::bigint
-                            ))
+                            ) OR ($4::boolean = TRUE AND event.assigned_technician_id = $5::bigint))
             ORDER BY event.event_date, event.start_time NULLS LAST, event.created_at
                 `, [getAccountOwnerId(request), start, end, hasAssignedOnlyCalendar(request.user), request.user.sub]);
         response.json({ events: rows });
@@ -742,7 +742,7 @@ export function registerCalendarRoutes(app, requireAuthentication) {
                                     AND ($3 NOT IN ('technician', 'accountant') OR EXISTS (
                                         SELECT 1 FROM depannhome_calendar_assignments assignment
                                         WHERE assignment.event_id = depannhome_calendar_events.id AND assignment.technician_id = $4::bigint
-                                    ))
+                                    ) OR ($3 IN ('technician', 'accountant') AND assigned_technician_id = $4::bigint))
                 FOR UPDATE
                         `, [id, accountOwnerId, request.user.role, request.user.sub]);
             const event = eventResult.rows[0];

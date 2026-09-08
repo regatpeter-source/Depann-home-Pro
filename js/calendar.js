@@ -907,11 +907,11 @@ function groupTechniciansByDepartment(items) {
 }
 
 function getAssignedTechnicianIds(event) {
-    const assigned = Array.isArray(event?.assignedTechnicianIds)
-        ? event.assignedTechnicianIds
-        : Array.isArray(event?.assignedTechnicians)
-            ? event.assignedTechnicians.map(technician => technician?.id)
-            : [event?.assignedTechnicianId];
+    const assigned = [
+        ...(Array.isArray(event?.assignedTechnicianIds) ? event.assignedTechnicianIds : []),
+        ...(Array.isArray(event?.assignedTechnicians) ? event.assignedTechnicians.map(technician => technician?.id) : []),
+        event?.assignedTechnicianId
+    ];
     return [...new Set(assigned.map(id => String(id || "")).filter(Boolean))];
 }
 
