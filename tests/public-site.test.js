@@ -30,6 +30,14 @@ test("la vitrine publique conserve un accès explicite au logiciel et aux pages 
     assert.doesNotMatch(landing, /depann-home-pro\.onrender\.com/);
 });
 
+test("les pages publiques utilisent le logo officiel intact", () => {
+    [landing, privacy, terms, legal].forEach(page => {
+        assert.match(page, /class="brand-logo" src="\/assets\/logo\.png\.png"/);
+        assert.doesNotMatch(page, /brand-mark\.svg/);
+    });
+    assert.doesNotMatch(readFileSync(new URL("../public/site.css", import.meta.url), "utf8"), /footer-logo img[^}]*object-fit:\s*cover/);
+});
+
 test("les mentions légales identifient précisément l’éditeur et le responsable de publication", () => {
     [landing, privacy, terms, legal].forEach(page => {
         assert.match(page, /Peter Regat/);
