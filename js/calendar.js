@@ -1,9 +1,9 @@
 import { ROUTES } from "./config.js?v=134";
-import { createBillingDocumentForClient, viewBillingDocument } from "./billing.js?v=204";
+import { createBillingDocumentForClient, viewBillingDocument } from "./billing.js?v=205";
 import { getSearchableClients } from "./clients.js?v=165";
 import { addClientActivityByName, synchronizeClients } from "./client-sync.js?v=128";
 import { renderClientMessages } from "./messages.js?v=107";
-import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=51";
+import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=52";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { renderPlatformAnnouncement } from "./platform-announcement.js?v=1";
@@ -277,11 +277,12 @@ function refreshCalendarDetail() {
 function bindCalendarViewSwitcher(panel) {
     panel.querySelectorAll("[data-calendar-view]").forEach(button => button.addEventListener("click", () => {
         const nextView = button.dataset.calendarView;
-        if (nextView === calendarView) return;
+        const desktop = isDesktopCalendarDevice();
+        if (nextView === calendarView && desktop) return;
         calendarView = nextView;
-        if (isDesktopCalendarDevice()) savePreferredCalendarView(calendarView);
-        displayedMonth = nextView === "month" ? firstDayOfMonth(displayedMonth) : atNoon(displayedMonth);
-        if (!selectedEvent?.partnerMissionId) selectedEvent = null;
+        if (desktop) savePreferredCalendarView(calendarView);
+        const anchorDate = desktop ? displayedMonth : new Date();
+        displayedMonth = nextView === "month" ? firstDayOfMonth(anchorDate) : atNoon(anchorDate);
         refreshCalendarPeriod();
     }));
 }

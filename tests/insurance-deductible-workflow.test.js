@@ -78,6 +78,13 @@ test("la franchise prévue est renseignée sur la fiche client et visible par le
 	assert.match(calendar, /event\.deductibleAmountCents \|\| expectedAmountCents/);
 });
 
+test("le changement de vue mobile conserve l’intervention et sa franchise affichées", () => {
+	const switcher = calendar.slice(calendar.indexOf("function bindCalendarViewSwitcher"), calendar.indexOf("function bindCalendarNavigation"));
+	assert.doesNotMatch(switcher, /selectedEvent\s*=\s*null/);
+	assert.match(calendar, /\$\{renderInsuranceDeductibleHtml\(event, client\)\}/);
+	assert.match(calendar, /initializeInsuranceDeductibleControls\(panel, event\)/);
+});
+
 test("la franchise validée est proposée en soustraction sur la facture du donneur d’ordre", () => {
 	assert.match(billingServer, /mission\.billing_mode='principal'/);
 	assert.match(billingServer, /deductible_status='validated'/);

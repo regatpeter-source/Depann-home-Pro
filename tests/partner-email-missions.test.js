@@ -373,7 +373,7 @@ test("la planification partenaire bascule entre jour et semaine sans fermer le f
     const calendarSource = readFileSync(new URL("../js/calendar.js", import.meta.url), "utf8");
     const switcher = calendarSource.slice(calendarSource.indexOf("function bindCalendarViewSwitcher"), calendarSource.indexOf("function bindCalendarNavigation"));
     const availability = calendarSource.slice(calendarSource.indexOf("function renderCalendarAvailability"), calendarSource.indexOf("function findLocalCalendarConflict"));
-    assert.match(switcher, /if \(!selectedEvent\?\.partnerMissionId\) selectedEvent = null/);
+    assert.doesNotMatch(switcher, /selectedEvent\s*=\s*null/);
     assert.match(availability, /data-calendar-availability-view="day">Jour/);
     assert.match(availability, /data-calendar-availability-view="week">Semaine/);
     assert.match(availability, /refreshCalendarPeriod\(\)/);
