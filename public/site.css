@@ -333,8 +333,10 @@ p { text-wrap: pretty; }
 
 .site-header { border-bottom: 1px solid rgba(7,31,54,.1); background: rgba(251,250,246,.92); }
 .nav-shell { min-height: 82px; }
-.brand { width: 90px; height: 82px; overflow: visible; }
+.brand { gap: 12px; height: 82px; overflow: visible; }
 .brand-logo { width: 82px; height: 82px; margin: 0; object-fit: contain; }
+.brand-name { color: var(--ink); font-size: 1.02rem; font-weight: 800; letter-spacing: -.03em; }
+.brand-name b { color: var(--green-dark); }
 .site-nav { gap: 27px; }
 .site-nav > a { position: relative; padding-block: 8px; color: #2e485c; font-size: .86rem; letter-spacing: .01em; }
 .site-nav > a:not(.button)::after { content: ""; position: absolute; right: 0; bottom: 2px; left: 0; height: 1px; background: currentColor; transform: scaleX(0); transform-origin: right; transition: transform .25s ease; }
@@ -500,8 +502,9 @@ h1 em::after { content: ""; position: absolute; left: 4%; right: -2%; bottom: -.
 @media (max-width: 620px) {
   .nav-shell, .section-shell, .legal-shell { width: min(100% - 28px,1240px); }
   .nav-shell { min-height: 70px; }
-  .brand { width: 78px; height: 70px; }
+  .brand { gap: 8px; height: 70px; }
   .brand .brand-logo { width: 70px; height: 70px; margin: 0; }
+  .brand-name { font-size: .84rem; }
   .site-nav { top: 70px; }
   .hero { padding: 54px 0 30px; }
   h1 { font-size: clamp(3rem,15vw,4.25rem); }

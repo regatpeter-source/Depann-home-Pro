@@ -33,6 +33,7 @@ test("la vitrine publique conserve un accès explicite au logiciel et aux pages 
 test("les pages publiques utilisent le logo officiel intact", () => {
     [landing, privacy, terms, legal].forEach(page => {
         assert.match(page, /class="brand-logo" src="\/assets\/logo\.png\.png"/);
+        assert.match(page, /class="brand-name">Depann'Home <b>Pro<\/b>/);
         assert.doesNotMatch(page, /brand-mark\.svg/);
     });
     assert.doesNotMatch(readFileSync(new URL("../public/site.css", import.meta.url), "utf8"), /footer-logo img[^}]*object-fit:\s*cover/);
