@@ -248,6 +248,9 @@ app.get(["/confidentialite", "/politique-de-confidentialite", "/privacy"], (requ
 app.get(["/conditions-utilisation", "/conditions-d-utilisation", "/terms"], (request, response) => {
 	response.sendFile(path.join(rootDirectory, "public", "terms.html"), { headers: { "Cache-Control": "public, max-age=3600" } });
 });
+app.get(["/mentions-legales", "/mentions"], (request, response) => {
+	response.sendFile(path.join(rootDirectory, "public", "mentions.html"), { headers: { "Cache-Control": "public, max-age=3600" } });
+});
 app.get("/robots.txt", (request, response) => response.sendFile(path.join(rootDirectory, "public", "robots.txt")));
 app.get("/sitemap.xml", (request, response) => response.sendFile(path.join(rootDirectory, "public", "sitemap.xml")));
 app.use("/data", requireAuthentication, requireTechnicalWorkspaceAccess, express.static(path.join(rootDirectory, "data"), { index: false }));

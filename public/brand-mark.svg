@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 56" role="img" aria-labelledby="title">
+  <title id="title">Symbole Depann'Home Pro</title>
+  <path d="M5 29.5 32 7l27 22.5" fill="none" stroke="#071f36" stroke-width="6" stroke-linecap="square" stroke-linejoin="miter"/>
+  <path d="M15 30 32 16l17 14v19H15Z" fill="#fff" stroke="#77bd32" stroke-width="4" stroke-linejoin="miter"/>
+  <path d="M28 34h8v15h-8z" fill="#071f36"/>
+  <path d="M7 48c12-4 38-4 50 0" fill="none" stroke="#071f36" stroke-width="3" stroke-linecap="round"/>
+</svg>

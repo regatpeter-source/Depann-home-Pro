@@ -6,6 +6,19 @@ toggle?.addEventListener("click", () => {
   toggle.setAttribute("aria-expanded", String(open));
 });
 
+document.addEventListener("keydown", event => {
+  if (event.key !== "Escape" || !navigation?.classList.contains("open")) return;
+  navigation.classList.remove("open");
+  toggle?.setAttribute("aria-expanded", "false");
+  toggle?.focus();
+});
+
+document.addEventListener("click", event => {
+  if (!navigation?.classList.contains("open") || navigation.contains(event.target) || toggle?.contains(event.target)) return;
+  navigation.classList.remove("open");
+  toggle?.setAttribute("aria-expanded", "false");
+});
+
 navigation?.addEventListener("click", event => {
   if (!event.target.closest("a")) return;
   navigation.classList.remove("open");
@@ -29,6 +42,19 @@ if ("IntersectionObserver" in window && !window.matchMedia("(prefers-reduced-mot
 } else {
   revealItems.forEach(item => item.classList.add("revealed"));
 }
+
+const backToTop = document.querySelector("[data-back-to-top]");
+const updatePageChrome = () => {
+  backToTop?.classList.toggle("visible", window.scrollY > 650);
+  const sections = [...document.querySelectorAll("main section[id]")];
+  const current = [...sections].reverse().find(section => section.getBoundingClientRect().top <= 130)?.id || "";
+  navigation?.querySelectorAll('a[href^="#"]').forEach(link => {
+    if (current && link.getAttribute("href") === `#${current}`) link.setAttribute("aria-current", "true");
+    else link.removeAttribute("aria-current");
+  });
+};
+updatePageChrome();
+window.addEventListener("scroll", updatePageChrome, { passive: true });
 
 const offerForm = document.querySelector("[data-offer-form]");
 const offerStatus = document.querySelector("[data-offer-status]");

@@ -6,6 +6,7 @@ const appSource = readFileSync(new URL("../app.js", import.meta.url), "utf8");
 const landing = readFileSync(new URL("../public/landing.html", import.meta.url), "utf8");
 const privacy = readFileSync(new URL("../public/privacy.html", import.meta.url), "utf8");
 const terms = readFileSync(new URL("../public/terms.html", import.meta.url), "utf8");
+const legal = readFileSync(new URL("../public/mentions.html", import.meta.url), "utf8");
 const siteScript = readFileSync(new URL("../public/site.js", import.meta.url), "utf8");
 const sitemap = readFileSync(new URL("../public/sitemap.xml", import.meta.url), "utf8");
 const clientApp = readFileSync(new URL("../js/app.js", import.meta.url), "utf8");
@@ -15,6 +16,7 @@ const googleVerification = readFileSync(new URL("../docs/GOOGLE_OAUTH_VERIFICATI
 test("la vitrine publique conserve un accès explicite au logiciel et aux pages légales", () => {
     assert.match(appSource, /app\.get\(\["\/confidentialite"[\s\S]*?privacy\.html/);
     assert.match(appSource, /app\.get\(\["\/conditions-utilisation"[\s\S]*?terms\.html/);
+    assert.match(appSource, /app\.get\(\["\/mentions-legales"[\s\S]*?mentions\.html/);
     assert.match(appSource, /app\.get\(\["\/connexion", "\/app", "\/index\.html"\]/);
     assert.match(appSource, /request\.user \? "index\.html" : path\.join\("public", "landing\.html"\)/);
     assert.match(appSource, /app\.get\("\/favicon\.ico"/);
@@ -22,9 +24,23 @@ test("la vitrine publique conserve un accès explicite au logiciel et aux pages 
     assert.match(landing, /href="\/connexion"/);
     assert.match(landing, /href="\/confidentialite"/);
     assert.match(landing, /href="\/conditions-utilisation"/);
+    assert.match(landing, /href="\/mentions-legales"/);
     assert.match(landing, /assets\/logo\.png\.png/);
     assert.match(landing, /https:\/\/depannhomepro\.com\//);
     assert.doesNotMatch(landing, /depann-home-pro\.onrender\.com/);
+});
+
+test("les mentions légales identifient précisément l’éditeur et le responsable de publication", () => {
+    [landing, privacy, terms, legal].forEach(page => {
+        assert.match(page, /Peter Regat/);
+        assert.match(page, /15 allée Marcel Pagnol/);
+        assert.match(page, /44410 Herbignac/);
+        assert.match(page, /492 647 375/);
+        assert.match(page, /support@depannhomepro\.com/);
+    });
+    assert.match(legal, /Responsable de la publication/);
+    assert.match(legal, /Render Services, Inc\./);
+    assert.match(sitemap, /https:\/\/depannhomepro\.com\/mentions-legales/);
 });
 
 test("la politique de confidentialité décrit explicitement l'usage limité des données Google", () => {
@@ -65,8 +81,8 @@ test("la vitrine présente la grille tarifaire commerciale complète", () => {
     assert.match(landing, /Pro[\s\S]*?70 €[\s\S]*?15 €/);
     assert.match(landing, /Licence Portail Partenaire[\s\S]*?gratuitement/);
     assert.match(landing, /25 € TTC \/ mois[\s\S]*?94 € TTC \/ mois[\s\S]*?200 € TTC \/ mois/);
-    assert.match(landing, /Inclus dans toutes les offres[\s\S]*?connexion directe à une plateforme de facturation électronique compatible/);
-    assert.equal((landing.match(/Connexion directe à une plateforme de facturation électronique incluse/g) || []).length, 3);
+    assert.match(landing, /Inclus dans toutes les offres[\s\S]*?connexion directe à SUPER PDP/);
+    assert.equal((landing.match(/Connexion directe à SUPER PDP incluse/g) || []).length, 3);
     assert.equal((landing.match(/Espace e-mail de l’entreprise/g) || []).length, 2);
     assert.match(landing, /Postes Admin et Postes Admin Mobile/);
     const basicOffer = landing.slice(landing.indexOf('<p class="pricing-name">Basic</p>'), landing.indexOf('<p class="pricing-name">Basic+</p>'));
@@ -90,7 +106,7 @@ test("la vitrine présente une démo gratuite de 15 jours sans paiement ni engag
     assert.match(landing, /sans engagement/i);
     assert.match(landing, /sans abonnement automatique/i);
     assert.match(landing, /value="demo-15-days"/);
-    assert.match(landing, /href="#demande-offre">Demander ma démo gratuite/);
+    assert.match(landing, /href="#demande-offre">Démarrer ma démo/);
 });
 
 test("la vitrine cible des recherches métier avec un contenu factuel et indexable", () => {
@@ -100,7 +116,9 @@ test("la vitrine cible des recherches métier avec un contenu factuel et indexab
     assert.match(landing, /logiciel de gestion conçu pour les entreprises de dépannage/i);
     assert.match(landing, /id="questions-frequentes"/);
     assert.match(landing, /planning d’interventions/);
-    assert.match(sitemap, /<loc>https:\/\/depannhomepro\.com\/<\/loc><lastmod>2026-09-07<\/lastmod>/);
+    assert.match(sitemap, /<loc>https:\/\/depannhomepro\.com\/<\/loc><lastmod>2026-09-09<\/lastmod>/);
+    assert.match(landing, /application\/ld\+json/);
+    assert.match(landing, /"@type":"SoftwareApplication"/);
     assert.doesNotMatch(landing, /aggregateRating|ratingValue|ratingCount/);
 });
 
