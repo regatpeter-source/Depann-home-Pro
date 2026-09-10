@@ -107,6 +107,7 @@ test("les migrations de modules restent applicables avant la création de leurs 
     assert.match(runner, /af7bb2089f5084f806597c7ca5d1c229c2476c66ec7533fa43617f6f1af2fcda/);
     assert.match(runner, /bf4dc579523467f3ae3ad47d09ac757448e4232900befe6ab586b76534148872/);
     assert.match(runner, /acb532fda3d65523c928bd2161ffe96ba360abc56b2cf806e0e524a0163411a6/);
+    assert.match(runner, /83cc48afc5c221d621cc6cc20971d53998dbfa9e8f0924feea2eb807681174c2/);
 });
 
 test("la migration de conservation restaure les missions masquées et interdit une nouvelle suppression logique", () => {

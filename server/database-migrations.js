@@ -21,7 +21,8 @@ const LEGACY_MIGRATION_CHECKSUMS = new Map([
         "bf4dc579523467f3ae3ad47d09ac757448e4232900befe6ab586b76534148872"
     ])],
     [13, new Set([
-        "acb532fda3d65523c928bd2161ffe96ba360abc56b2cf806e0e524a0163411a6"
+        "acb532fda3d65523c928bd2161ffe96ba360abc56b2cf806e0e524a0163411a6",
+        "83cc48afc5c221d621cc6cc20971d53998dbfa9e8f0924feea2eb807681174c2"
     ])]
 ]);
 
