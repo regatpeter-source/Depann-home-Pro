@@ -9,6 +9,7 @@ import { createNotification } from "./collaboration.js";
 import { deliverSubscriptionProration, prepareSubscriptionProration } from "./invoicing.js";
 import { decryptElectronicInvoicingCredentials, encryptElectronicInvoicingCredentials, getElectronicInvoicingProvider } from "./electronic-invoicing.js";
 import { loadCompanyStorageUsage, loadCreatorStorageUsage, normalizeStorageQuota, updateCompanyStorageQuota } from "./storage-monitoring.js";
+import { strictDateOnly } from "./date-validation.js";
 
 const USERNAME_PATTERN = /^[a-z0-9._-]{3,32}$/;
 const MIN_PASSWORD_LENGTH = 12;
@@ -870,8 +871,7 @@ function decimalInRange(value, minimum, maximum) {
 }
 
 function sanitizeDate(value) {
-    const date = String(value || "");
-    return /^\d{4}-\d{2}-\d{2}$/.test(date) && !Number.isNaN(new Date(`${date}T12:00:00`).getTime()) ? date : "";
+    return strictDateOnly(value);
 }
 
 function usernameMessage() {

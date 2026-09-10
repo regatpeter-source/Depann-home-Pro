@@ -1,4 +1,5 @@
 import { getPool } from "./database.js";
+import { strictDateOnly } from "./date-validation.js";
 
 export const DELAYED_PAYMENT_METHODS = new Set(["Chèque", "Virement"]);
 
@@ -90,7 +91,7 @@ function invoiceNetPayable(lines, financialData = {}) {
     const aids = (Array.isArray(financialData?.aids) ? financialData.aids : []).reduce((sum, aid) => sum + (aid.calculationMode === "percentage" ? (ht - discount) * (Number(aid.amount) || 0) / 100 : Number(aid.amount) || 0), 0);
     return roundMoney(Math.max(0, ttc - Math.min(ttc, aids)));
 }
-function validDate(value) { const date = String(value || ""); return /^\d{4}-\d{2}-\d{2}$/.test(date) && !Number.isNaN(new Date(`${date}T12:00:00`).getTime()) ? date : ""; }
+function validDate(value) { return strictDateOnly(value); }
 function positiveId(value) { const id = Number(value); return Number.isSafeInteger(id) && id > 0 ? id : 0; }
 function positiveMoney(value) { const amount = Number(value); return Number.isFinite(amount) && amount > 0 && amount <= 100000000 ? roundMoney(amount) : null; }
 function cleanText(value, maximumLength) { return String(value || "").replace(/\s+/g, " ").trim().slice(0, maximumLength); }

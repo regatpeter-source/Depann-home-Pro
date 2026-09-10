@@ -1,5 +1,6 @@
 import { getPool } from "./database.js";
 import { getAccountOwnerId } from "./auth.js";
+import { strictDateOnly } from "./date-validation.js";
 
 const PURCHASE_CATEGORIES = new Set(["Matériel", "Consommables", "Loyer", "Véhicule", "Outillage", "Sous-traitance", "Services", "Assurances", "Autre"]);
 
@@ -150,8 +151,7 @@ async function resolveClientName(ownerId, clientId, activeOnly = false) {
 }
 
 function sanitizeDate(value) {
-    const date = String(value || "");
-    return /^\d{4}-\d{2}-\d{2}$/.test(date) && !Number.isNaN(new Date(`${date}T12:00:00`).getTime()) ? date : "";
+    return strictDateOnly(value);
 }
 
 function positiveId(value) {

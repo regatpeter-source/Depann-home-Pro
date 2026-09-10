@@ -725,6 +725,13 @@ UPDATE depannhome_einvoice_transmissions SET lifecycle_status=CASE WHEN status I
 UPDATE depannhome_einvoice_transmissions transmission SET payment_status=CASE WHEN document.status='paid' THEN 'paid' WHEN EXISTS(SELECT 1 FROM depannhome_accounting_settlements settlement WHERE settlement.owner_id=transmission.owner_id AND settlement.document_id=transmission.document_id) THEN 'partial' ELSE transmission.payment_status END FROM depannhome_billing_documents document WHERE document.id=transmission.document_id AND document.owner_id=transmission.owner_id AND transmission.payment_status='unpaid';
 CREATE INDEX IF NOT EXISTS depannhome_einvoice_transmissions_owner_document_idx ON depannhome_einvoice_transmissions(owner_id,document_id,updated_at DESC);
 CREATE INDEX IF NOT EXISTS depannhome_einvoice_transmissions_external_idx ON depannhome_einvoice_transmissions(platform_code,remote_id) WHERE remote_id<>'';
+WITH ranked AS (
+    SELECT id, ROW_NUMBER() OVER (PARTITION BY owner_id,document_id,platform_code ORDER BY updated_at DESC,id DESC) AS position
+    FROM depannhome_einvoice_transmissions WHERE status IN ('queued','sent','accepted')
+)
+UPDATE depannhome_einvoice_transmissions transmission SET status='cancelled',updated_at=NOW()
+FROM ranked WHERE transmission.id=ranked.id AND ranked.position>1;
+CREATE UNIQUE INDEX IF NOT EXISTS depannhome_einvoice_transmissions_active_document_unique ON depannhome_einvoice_transmissions(owner_id,document_id,platform_code) WHERE status IN ('queued','sent','accepted');
 CREATE TABLE IF NOT EXISTS depannhome_einvoice_events (
     id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
     connection_id BIGINT REFERENCES depannhome_einvoice_connections(id) ON DELETE SET NULL,

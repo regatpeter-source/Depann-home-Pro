@@ -17,6 +17,7 @@ import { hasAccountingWorkspaceAccess } from "./workstation-permissions.js";
 import { isElectronicInvoicingOAuthCallback } from "./electronic-invoicing.js";
 import { DELAYED_PAYMENT_METHODS, declareDelayedPayment, loadDelayedPayments, reviewDelayedPayment } from "./delayed-payments.js";
 import { buildB2cReportCsv, loadB2cReport, loadB2cReports, prepareB2cReport } from "./b2c-transaction-export.js";
+import { strictDateOnly } from "./date-validation.js";
 
 const AID_TYPES = new Set(["cee", "maprimerenov", "coup_de_pouce", "eco_ptz", "regional", "departmental", "supplier", "manufacturer", "custom"]);
 const AID_MODES = new Set(["fixed", "percentage"]);
@@ -932,5 +933,5 @@ function safeMoney(value) { const number = Number(value); return Number.isFinite
 function positiveMoney(value) { const number = safeMoney(value); return number !== null && number > 0 ? number : null; }
 function positiveId(value) { const id = Number(value); return Number.isSafeInteger(id) && id > 0 ? id : 0; }
 function cleanText(value, max) { return String(value || "").replace(/\s+/g, " ").trim().slice(0, max); }
-function sanitizeDate(value) { const date = String(value || ""); return /^\d{4}-\d{2}-\d{2}$/.test(date) && !Number.isNaN(new Date(`${date}T12:00:00`).getTime()) ? date : ""; }
+function sanitizeDate(value) { return strictDateOnly(value); }
 function asyncHandler(handler) { return (request, response, next) => Promise.resolve(handler(request, response, next)).catch(next); }

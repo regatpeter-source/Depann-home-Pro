@@ -2,6 +2,7 @@ import bcrypt from "bcrypt";
 import { createUser, findUserById, getPool } from "./database.js";
 import { getAccountOwnerId, isCompanyAdministrator, refreshSessionForActiveCompany } from "./auth.js";
 import { hasGroupCompanySwitchAccess } from "./workstation-permissions.js";
+import { strictDateOnly } from "./date-validation.js";
 
 const USERNAME_PATTERN = /^[a-z0-9._-]{3,32}$/;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -166,5 +167,5 @@ function companyInput(value) { const companyName = clean(value?.companyName, 160
 function clean(value, maximum) { return String(value || "").replace(/\s+/g, " ").trim().slice(0, maximum); }
 function positiveId(value) { const id = Number(value); return Number.isSafeInteger(id) && id > 0 ? id : 0; }
 function limit(value, minimum, maximum) { const valueNumber = Number(value); return Number.isSafeInteger(valueNumber) && valueNumber >= minimum && valueNumber <= maximum ? valueNumber : null; }
-function date(value) { const text = String(value || ""); return /^\d{4}-\d{2}-\d{2}$/.test(text) && !Number.isNaN(new Date(`${text}T12:00:00`).getTime()) ? text : ""; }
+function date(value) { return strictDateOnly(value); }
 function asyncHandler(handler) { return (req, res, next) => Promise.resolve(handler(req, res, next)).catch(next); }

@@ -5,6 +5,7 @@ import multer from "multer";
 import { getPool } from "./database.js";
 import { getAccountOwnerId } from "./auth.js";
 import { getOrganization } from "./organizations.js";
+import { strictDateOnly } from "./date-validation.js";
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 const MAX_ROWS = 10000;
@@ -166,7 +167,7 @@ function reportKey(data) { return `${normalize(data?.title)}|${normalize(data?.r
 function strategy(value) { return STRATEGIES.has(value) ? value : "skip"; }
 function positive(value, fallback) { const number = Number(String(value || "").replace(",", ".")); return Number.isFinite(number) && number > 0 ? Math.round(number * 1000) / 1000 : fallback; }
 function money(value) { const number = Number(String(value || "").replace(/\s/g, "").replace(",", ".")); return Number.isFinite(number) && number >= 0 ? Math.round(number * 100) / 100 : null; }
-function validDate(value) { const text = String(value || "").trim(); if (/^\d{4}-\d{2}-\d{2}$/.test(text) && !Number.isNaN(new Date(`${text}T12:00:00`).getTime())) return text; const match = /^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})$/.exec(text); if (!match) return ""; const date = `${match[3]}-${match[2].padStart(2, "0")}-${match[1].padStart(2, "0")}`; return Number.isNaN(new Date(`${date}T12:00:00`).getTime()) ? "" : date; }
+function validDate(value) { const text = String(value || "").trim(); const iso = strictDateOnly(text); if (iso) return iso; const match = /^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})$/.exec(text); if (!match) return ""; return strictDateOnly(`${match[3]}-${match[2].padStart(2, "0")}-${match[1].padStart(2, "0")}`); }
 function clean(value, maximum) { return String(value || "").replace(/\s+/g, " ").trim().slice(0, maximum); }
 function normalize(value) { return clean(value, 300).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase(); }
 function isClientIdentifierColumn(value) { return /^(client[ _-]?)?id(entifiant)?$/.test(normalize(value)); }

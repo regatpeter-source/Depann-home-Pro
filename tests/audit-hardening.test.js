@@ -69,3 +69,39 @@ test("les groupes et administrateurs résistent aux mises à jour partielles ou 
     assert.match(auth, /lockAccountOwner\(database, ownerId\)[\s\S]*ensureActiveAdministratorRemains\(ownerId, memberId, database\)/);
     assert.match(auth, /reset-password[\s\S]*depannhome_auth_devices SET status='rejected',session_id=NULL/);
 });
+
+test("le dialogue partenaire externe conserve son authentification par clé API", () => {
+    const app = source("app.js");
+    const dialogue = source("server/partner-dialogue.js");
+    assert.match(app, /app\.use\("\/api\/partner-dialogue"[\s\S]*request\.path\.startsWith\("\/external\/"\)[\s\S]*requireAuthentication/);
+    assert.match(app, /request\.path\.startsWith\("\/external\/"\)[\s\S]*requireOrganizationFeature\("partnerMissions"\)/);
+    assert.match(dialogue, /x-api-key/i);
+    assert.match(dialogue, /externalMission/);
+    assert.ok(dialogue.indexOf('app.get("/api/partner-dialogue/external/') < dialogue.indexOf('app.use("/api/partner-dialogue", requireAuthentication'));
+});
+
+test("la file de synchronisation client n’est jamais supprimée en cas de quota plein", () => {
+    const synchronization = source("js/client-sync.js");
+    const writer = synchronization.slice(synchronization.indexOf("function writeQueue"), synchronization.indexOf("function normalizeQueueOperation"));
+    assert.doesNotMatch(writer, /removeItem/);
+    assert.match(writer, /catch[\s\S]*return false/);
+    assert.match(synchronization, /if \(!enqueue\([\s\S]*writeClients\(clients\);[\s\S]*return null/);
+    assert.match(synchronization, /failures\.push[\s\S]*continue/);
+});
+
+test("la transmission électronique réserve un seul envoi actif par document", () => {
+    const electronic = source("server/electronic-invoicing.js");
+    const migration = source("database/migrations/0013_einvoice_transmission_idempotency.sql");
+    const accounting = source("js/accounting.js");
+    assert.match(electronic, /ON CONFLICT\(owner_id,document_id,platform_code\)[\s\S]*DO NOTHING RETURNING/);
+    assert.match(electronic, /alreadyTransmitted: true/);
+    assert.match(migration, /CREATE UNIQUE INDEX[\s\S]*WHERE status IN \('queued','sent','accepted'\)/);
+    assert.match(accounting, /activeTransmissionDocumentIds/);
+    assert.match(accounting, /Déjà transmis/);
+});
+
+test("l’émission refuse les incohérences calendaires d’une facture", () => {
+    const billing = source("server/billing.js");
+    assert.match(billing, /isFutureDateOnly\(document\.issueDate\)/);
+    assert.match(billing, /document\.dueDate < document\.issueDate/);
+});

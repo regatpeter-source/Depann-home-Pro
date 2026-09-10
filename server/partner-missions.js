@@ -9,6 +9,7 @@ import { getOrganization, isFeatureEnabled } from "./organizations.js";
 import { PARTNER_MISSION_ASSIGNMENT_ROLES, validateAssignedCompanyMembers } from "./member-assignment.js";
 import { executeCentralConnectorEvent, executeConnectorEvent } from "./connectors.js";
 import { officialConnectorConnection } from "./partner-requests.js";
+import { strictDateOnly } from "./date-validation.js";
 
 const PRIORITIES = new Set(["low", "normal", "high", "urgent"]);
 const STATUSES = new Set(["received", "pending_validation", "accepted", "rejected", "assigned", "scheduled", "en_route", "on_site", "report_in_progress", "report_completed", "report_validated", "quote_sent", "quote_accepted", "work_completed", "invoice_sent", "closed", "cancelled"]);
@@ -784,7 +785,7 @@ function priorityOf(value) { const raw = String(value || "").toLowerCase(); retu
 function statusLabel(value) {
     return ({ received: "reçue", pending_validation: "en attente de validation", accepted: "acceptée", rejected: "refusée", assigned: "technicien affecté", scheduled: "rendez-vous planifié", en_route: "technicien en route", on_site: "technicien sur site", report_in_progress: "rapport en cours", report_completed: "rapport terminé", report_validated: "rapport validé", quote_sent: "devis envoyé", quote_accepted: "devis accepté", work_completed: "travaux terminés", invoice_sent: "facture envoyée", closed: "clôturée", cancelled: "annulée" })[value] || "statut mis à jour";
 }
-function validDate(value) { const text = String(value || "").slice(0, 10); return /^\d{4}-\d{2}-\d{2}$/.test(text) && !Number.isNaN(new Date(`${text}T12:00:00`).getTime()) ? text : ""; }
+function validDate(value) { return strictDateOnly(value, { allowTimestamp: true }); }
 function validTime(value) { const text = String(value || "").slice(0, 5); return /^([01]\d|2[0-3]):[0-5]\d$/.test(text) ? text : ""; }
 function optionalId(value) { const id = Number(value); return Number.isSafeInteger(id) && id > 0 ? id : 0; }
 function positiveId(value) { return optionalId(value); }

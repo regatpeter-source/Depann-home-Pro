@@ -12,6 +12,7 @@ import { canConfirmReportProofreading, isReportProofreadingCurrent, reportProofr
 import { PDF_MIME } from "./company-document-template.js";
 import { buildReportCustomModel, renderActiveCustomTemplate } from "./document-templates.js";
 import { createClientMessage } from "./messages.js";
+import { strictDateOnly } from "./date-validation.js";
 
 const REPORT_TYPE = "leak_detection";
 const STATUSES = new Set(["draft", "submitted", "in_correction", "ready_to_send", "validated"]);
@@ -341,7 +342,7 @@ function dataUrlBuffer(value) { const match = /^data:[^;,]+;base64,([a-zA-Z0-9+/
 function sectionKey(name) { return ({ "État des lieux": "overview", "Description de l’installation": "installation", "Contrôle visuel": "visual", "Recherche de fuite": "leakSearch", "Localisation de la fuite": "location", "Travaux réalisés": "work", "Conclusion et préconisations": "conclusion" })[name] || ""; }
 function formatDate(value) { return value ? new Intl.DateTimeFormat("fr-FR").format(new Date(`${value}T12:00:00`)) : ""; }
 const CLIENT_ID = /^client-[a-zA-Z0-9-]+$/;
-function validDate(value) { const date = String(value || ""); return /^\d{4}-\d{2}-\d{2}$/.test(date) && !Number.isNaN(new Date(`${date}T12:00:00`).getTime()) ? date : ""; }
+function validDate(value) { return strictDateOnly(value); }
 function positiveId(value) { const id = Number(value); return Number.isSafeInteger(id) && id > 0 ? id : 0; }
 function cleanText(value, max) { return String(value || "").replace(/\s+/g, " ").trim().slice(0, max); }
 function safeName(value) { return path.basename(String(value || "photo")).replace(/[\r\n]/g, " ").slice(0, 255) || "photo"; }

@@ -15,6 +15,7 @@ import { generateUblInvoice } from "./einvoice-ubl.js";
 import { allocateBillingNumber } from "./billing-numbering.js";
 import { hasBillingWorkspaceAccess } from "./workstation-permissions.js";
 import { PDFDocument as PdfArchiveDocument, StandardFonts, rgb } from "pdf-lib";
+import { isFutureDateOnly, strictDateOnly } from "./date-validation.js";
 
 const MAX_LOGO_SIZE = 2 * 1024 * 1024;
 const MAX_QUOTE_TEMPLATE_SIZE = 10 * 1024 * 1024;
@@ -996,6 +997,8 @@ function validateInvoiceForIssue(document, profile) {
     if (!OPERATION_CATEGORIES.has(legal.operationCategory)) missing.push("catégorie d’opération");
     if (document.customerType === "Professionnel" && !cleanIdentifier(legal.customerSiren, 20, true)) missing.push("SIREN du client professionnel");
     if (missing.length) throw billingError(409, `Émission impossible : renseignez ${missing.join(", ")}.`);
+    if (isFutureDateOnly(document.issueDate)) throw billingError(409, "La date d’émission d’une facture ne peut pas être future.");
+    if (document.dueDate && document.dueDate < document.issueDate) throw billingError(409, "La date d’échéance ne peut pas précéder la date d’émission.");
 }
 
 function buildLegalSnapshot(document, profile) {
@@ -1330,8 +1333,7 @@ function sha256(value) { return crypto.createHash("sha256").update(value).digest
 function billingError(status, message) { const error = new Error(message); error.status = status; return error; }
 
 function sanitizeDate(value) {
-    const date = String(value || "");
-    return /^\d{4}-\d{2}-\d{2}$/.test(date) && !Number.isNaN(new Date(`${date}T12:00:00`).getTime()) ? date : "";
+    return strictDateOnly(value);
 }
 
 function positiveId(value) {

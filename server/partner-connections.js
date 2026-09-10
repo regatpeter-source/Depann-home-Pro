@@ -6,6 +6,7 @@ import { createNotification } from "./collaboration.js";
 import { recordMissionDialogueDocument, recordMissionDialogueEvent } from "./partner-dialogue.js";
 import { ensureBusinessMissionNumber, provisionPartnerMissionClient, traceCommittedPartnerClient, tracePartnerClient } from "./partner-missions.js";
 import { organizationBadge } from "./organizations.js";
+import { strictDateOnly } from "./date-validation.js";
 
 const STATES = new Set(["pending", "connected", "refused", "disconnected"]);
 const AVAILABILITY_STATUSES = new Set(["available", "unavailable", "temporarily_unavailable"]);
@@ -463,7 +464,7 @@ function clean(value, max) { return String(value || "").replace(/\s+/g, " ").tri
 function normalizedText(value) { return clean(value, 500).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim(); }
 function safeName(value) { return clean(value, 80).replace(/[^a-z0-9_-]+/gi, "-").replace(/^-+|-+$/g, "") || "document"; }
 function positiveId(value) { const id = Number(value); return Number.isSafeInteger(id) && id > 0 ? id : 0; }
-function validDate(value) { const date = String(value || "").slice(0, 10); return /^\d{4}-\d{2}-\d{2}$/.test(date) && !Number.isNaN(new Date(`${date}T12:00:00`).getTime()) ? date : ""; }
+function validDate(value) { return strictDateOnly(value, { allowTimestamp: true }); }
 function requireAdministration(req, res, next) { return ["admin", "pc_standard", "commercial", "mobile_admin"].includes(req.user?.role) ? next() : res.status(403).json({ message: "La gestion des partenaires est réservée à l’administration." }); }
 function clientError(status, message) { const error = new Error(message); error.status = status; return error; }
 function asyncHandler(handler) { return (req, res, next) => Promise.resolve(handler(req, res, next)).catch(error => error.status ? res.status(error.status).json({ message: error.message }) : next(error)); }

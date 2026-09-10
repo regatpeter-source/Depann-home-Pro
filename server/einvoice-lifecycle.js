@@ -1,5 +1,6 @@
 import { getPool } from "./database.js";
 import { getAccountOwnerId } from "./auth.js";
+import { strictDateOnly } from "./date-validation.js";
 
 const INBOUND_STATUSES = new Set(["received", "validated", "accepted", "rejected", "archived"]);
 const PAYMENT_STATUSES = new Set(["unpaid", "partial", "paid"]);
@@ -188,7 +189,7 @@ function validateInboundInvoice(invoice) {
 async function requireInboundInvoice(ownerId, value, database = getPool(), lock = false) { const id = positiveId(value); const { rows } = await database.query(`SELECT * FROM depannhome_einvoice_inbound_invoices WHERE id=$1 AND owner_id=$2${lock ? " FOR UPDATE" : ""}`, [id, ownerId]); if (!rows[0]) throw httpError(404, "Facture fournisseur introuvable."); return rows[0]; }
 async function recordInboundEvent(ownerId, invoiceId, actorId, eventType, status, message, details = {}, database = getPool()) { await database.query("INSERT INTO depannhome_einvoice_inbound_events(owner_id,invoice_id,actor_id,event_type,status,message,details) VALUES($1,$2,$3,$4,$5,$6,$7::jsonb)", [ownerId, invoiceId, actorId || null, eventType, INBOUND_STATUSES.has(status) || PAYMENT_STATUSES.has(status) || status === "invalid" ? status : "", clean(message, 1000), JSON.stringify(details)]); }
 function clean(value, max) { return String(value || "").replace(/\s+/g, " ").trim().slice(0, max); }
-function date(value) { const result = String(value || ""); return /^\d{4}-\d{2}-\d{2}$/.test(result) && !Number.isNaN(new Date(`${result}T12:00:00`).getTime()) ? result : ""; }
+function date(value) { return strictDateOnly(value); }
 function money(value) { const result = Number(value); return Number.isFinite(result) && result >= 0 && result <= 100000000 ? Math.round(result * 100) / 100 : null; }
 function positiveId(value) { const result = Number(value); return Number.isSafeInteger(result) && result > 0 ? result : 0; }
 function httpError(status, message) { const error = new Error(message); error.status = status; return error; }

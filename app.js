@@ -59,6 +59,13 @@ const port = Number(process.env.PORT || 3000);
 
 app.set("trust proxy", 1);
 app.use(helmet({ contentSecurityPolicy: contentSecurityPolicy(), crossOriginEmbedderPolicy: false }));
+app.use("/api", rateLimit({
+	windowMs: 15 * 60 * 1000,
+	limit: 1200,
+	standardHeaders: "draft-7",
+	legacyHeaders: false,
+	message: { message: "Trop de requêtes. Réessayez dans quelques minutes." }
+}));
 app.use(express.json({ limit: "25mb" }));
 app.use(cookieParser());
 app.use(createOriginProtection());
@@ -189,7 +196,13 @@ app.use("/api/document-templates", requireAuthentication, requireOrganizationFea
 app.use("/api/purchases", requireAuthentication, requireOrganizationFeature("purchases"));
 app.use("/api/messages", requireAuthentication, requireOrganizationFeature("messages"));
 app.use("/api/partner-connections", requireAuthentication, requireOrganizationFeature("partnerConnections"));
-app.use("/api/partner-dialogue", requireAuthentication, requireOrganizationFeature("partnerMissions"));
+app.use("/api/partner-dialogue", (request, response, next) => {
+	if (request.path.startsWith("/external/")) return next();
+	return requireAuthentication(request, response, next);
+}, (request, response, next) => {
+	if (request.path.startsWith("/external/")) return next();
+	return requireOrganizationFeature("partnerMissions")(request, response, next);
+});
 app.use("/api/official-partners", requireAuthentication, requireOrganizationFeature("connectors"));
 app.use("/api/partner-missions/intakes", requireAuthentication, requireOrganizationFeature("connectors"));
 const requirePartnerSandboxFeature = requireOrganizationFeature("connectors");

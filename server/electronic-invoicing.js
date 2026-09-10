@@ -158,6 +158,7 @@ export async function initializeElectronicInvoicing(database = getPool()) {
     `);
     await database.query("CREATE INDEX IF NOT EXISTS depannhome_einvoice_transmissions_owner_document_idx ON depannhome_einvoice_transmissions(owner_id,document_id,updated_at DESC)");
     await database.query("CREATE INDEX IF NOT EXISTS depannhome_einvoice_transmissions_external_idx ON depannhome_einvoice_transmissions(platform_code,remote_id) WHERE remote_id<>''");
+    await database.query("CREATE UNIQUE INDEX IF NOT EXISTS depannhome_einvoice_transmissions_active_document_unique ON depannhome_einvoice_transmissions(owner_id,document_id,platform_code) WHERE status IN ('queued','sent','accepted')");
     await database.query(`
         CREATE TABLE IF NOT EXISTS depannhome_einvoice_events (
             id BIGSERIAL PRIMARY KEY,
@@ -357,7 +358,7 @@ export function registerElectronicInvoicingRoutes(app, requireAuthentication) {
     }));
     app.post("/api/accounting/e-invoicing/documents/:documentId/transmit", asyncHandler(async (request, response) => {
         const result = await transmitElectronicDocument({ ownerId: getAccountOwnerId(request), documentId: request.params.documentId, actorId: request.user.sub });
-        response.status(201).json(result);
+        response.status(result.alreadyTransmitted ? 200 : 201).json(result);
     }));
     app.get("/api/accounting/e-invoicing/documents/:documentId/history", asyncHandler(async (request, response) => {
         const ownerId = getAccountOwnerId(request); const documentId = positiveId(request.params.documentId);
@@ -398,7 +399,13 @@ export async function transmitElectronicDocument({ ownerId, documentId, actorId,
     if (!platform) throw httpError(409, "Cette plateforme n'est pas encore intégrée à Depan’Home Pro.");
     if (document.documentType === "invoice" && !platform.supports.invoices) throw httpError(409, "Cette plateforme ne permet pas l’envoi de factures avec l’intégration actuelle.");
     if (document.documentType === "credit" && !platform.supports.creditNotes) throw httpError(409, "Cette plateforme ne permet pas l’envoi d’avoirs avec l’intégration actuelle.");
-    const { rows: created } = await database.query(`INSERT INTO depannhome_einvoice_transmissions(owner_id,document_id,connection_id,provider,platform_code,document_type,status,attempts,last_attempt_at) VALUES($1,$2,$3,$4,$5,$6,'queued',1,NOW()) RETURNING *`, [ownerId, document.id, connection.id, connection.platform_label, platform.code, document.documentType]);
+    const { rows: created } = await database.query(`INSERT INTO depannhome_einvoice_transmissions(owner_id,document_id,connection_id,provider,platform_code,document_type,status,attempts,last_attempt_at) VALUES($1,$2,$3,$4,$5,$6,'queued',1,NOW()) ON CONFLICT(owner_id,document_id,platform_code) WHERE status IN ('queued','sent','accepted') DO NOTHING RETURNING *`, [ownerId, document.id, connection.id, connection.platform_label, platform.code, document.documentType]);
+    if (!created[0]) {
+        const { rows: existing } = await database.query(`SELECT id,status,remote_id AS "externalId",message FROM depannhome_einvoice_transmissions WHERE owner_id=$1 AND document_id=$2 AND platform_code=$3 AND status IN ('queued','sent','accepted') ORDER BY updated_at DESC,id DESC LIMIT 1`, [ownerId, document.id, platform.code]);
+        const transmission = existing[0];
+        if (!transmission) throw httpError(409, "Une transmission concurrente est déjà en cours. Actualisez le registre.");
+        return { message: transmission.message || (transmission.status === "queued" ? "La transmission est déjà en cours." : "Ce document a déjà été transmis."), transmission, alreadyTransmitted: true };
+    }
     const transmission = created[0];
     await recordEvent(database, ownerId, connection.id, transmission.id, actorId, "transmission_queued", "queued", "Transmission préparée.");
     try {

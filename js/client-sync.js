@@ -54,7 +54,10 @@ export function saveLocalClient(client) {
         : [...clients, nextClient];
 
     if (!writeClients(nextClients)) return null;
-    enqueue({ type: "upsert", clientId: nextClient.id });
+    if (!enqueue({ type: "upsert", clientId: nextClient.id })) {
+        writeClients(clients);
+        return null;
+    }
     scheduleClientSynchronization();
     return nextClient;
 }
@@ -137,6 +140,7 @@ async function synchronize({ forceFull = false } = {}) {
     if (cursor) writeSynchronizationCursor(cursor);
 
     const operations = getQueue();
+    const failures = [];
     const clientsById = new Map(getLocalClients().map(client => [client.id, client]));
     for (const operation of operations) {
         const client = clientsById.get(operation.clientId);
@@ -153,7 +157,10 @@ async function synchronize({ forceFull = false } = {}) {
             removeQueuedOperation(operation.id);
             continue;
         }
-        if (!result.ok) return { ok: false, message: result.data?.message || "Synchronisation interrompue." };
+        if (!result.ok) {
+            failures.push({ clientId: operation.clientId, message: result.data?.message || "Synchronisation impossible." });
+            continue;
+        }
         removeQueuedOperation(operation.id);
     }
 
@@ -171,7 +178,9 @@ async function synchronize({ forceFull = false } = {}) {
         }
     }
     window.dispatchEvent(new CustomEvent("depannhome:clients-synchronized"));
-    return { ok: true };
+    return failures.length
+        ? { ok: false, partial: true, failures, message: `${failures.length} dossier(s) restent à synchroniser.` }
+        : { ok: true };
 }
 
 function applyRemoteChanges(localClients, remoteClients, deletedClientIds = []) {
@@ -267,13 +276,9 @@ function writeQueue(queue) {
         localStorage.setItem(getQueueKey(), JSON.stringify(queue.map(normalizeQueueOperation).filter(Boolean)));
         return true;
     } catch {
-        try {
-            localStorage.removeItem(getQueueKey());
-            localStorage.setItem(getQueueKey(), JSON.stringify(queue.slice(-1).map(normalizeQueueOperation).filter(Boolean)));
-            return true;
-        } catch {
-            return false;
-        }
+        // setItem est atomique : en cas de quota plein, conserver l'ancienne file
+        // est plus sûr que de la supprimer et de perdre les opérations en attente.
+        return false;
     }
 }
 

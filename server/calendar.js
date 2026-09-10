@@ -8,6 +8,7 @@ import { synchronizeConnectedAppointment } from "./partner-connections.js";
 import { PDF_MIME } from "./company-document-template.js";
 import { buildQuitusCustomModel, renderActiveCustomTemplate } from "./document-templates.js";
 import { validateAssignedCompanyMembers } from "./member-assignment.js";
+import { strictDateOnly } from "./date-validation.js";
 
 const EVENT_COLORS = new Set(["blue", "green", "orange", "red", "purple", "gray"]);
 const EVENT_TYPES = new Set(["appointment", "task", "vacation", "sick_leave", "unavailable"]);
@@ -1113,8 +1114,7 @@ function conflictMessage(event) {
 
 function sanitizeDate(value) {
     const date = String(value || "");
-    if (!DATE_PATTERN.test(date) || Number.isNaN(new Date(`${date}T12:00:00`).getTime())) return "";
-    return date;
+    return DATE_PATTERN.test(date) ? strictDateOnly(date) : "";
 }
 
 function sanitizeTime(value) {
