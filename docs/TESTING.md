@@ -10,6 +10,8 @@
 
 Définir `TEST_DATABASE_URL` vers une base **dédiée**, dont le nom contient `test`. Le test crée un schéma éphémère puis le détruit. Il ne doit jamais recevoir une URL de production.
 
+En local, copier `.env.test.example` vers `.env.test.local`, puis remplacer les identifiants factices. Ce fichier est ignoré par Git et chargé automatiquement par le test PostgreSQL : il n’est plus nécessaire de redéfinir la variable dans chaque terminal. Une variable `TEST_DATABASE_URL` déjà définie dans l’environnement reste prioritaire, notamment en CI.
+
 Le scénario `tests/accounting-postgresql.test.js` vérifie réellement :
 
 - lecture et refus d’écriture du rôle Comptable ;

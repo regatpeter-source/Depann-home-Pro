@@ -2,7 +2,11 @@ import test, { after, before } from "node:test";
 import assert from "node:assert/strict";
 import express from "express";
 import pg from "pg";
+import dotenv from "dotenv";
+import { fileURLToPath } from "node:url";
 import { createDocumentAccountingEntry, createSettlementAccountingEntry } from "../server/accounting-ledger.js";
+
+dotenv.config({ path: fileURLToPath(new URL("../.env.test.local", import.meta.url)) });
 
 const testDatabaseUrl = String(process.env.TEST_DATABASE_URL || "");
 const enabled = Boolean(testDatabaseUrl);

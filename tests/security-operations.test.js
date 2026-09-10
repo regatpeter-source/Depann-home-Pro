@@ -75,6 +75,16 @@ test("les migrations sont ordonnées, uniques et checksumées", async () => {
     assert.equal(migrations.every(item => /^[a-f0-9]{64}$/.test(item.checksum)), true);
 });
 
+test("la configuration PostgreSQL locale de test reste automatique et non versionnée", () => {
+    const integrationTest = readFileSync(new URL("./accounting-postgresql.test.js", import.meta.url), "utf8");
+    const ignore = readFileSync(new URL("../.gitignore", import.meta.url), "utf8");
+    const example = readFileSync(new URL("../.env.test.example", import.meta.url), "utf8");
+    assert.match(integrationTest, /dotenv\.config\([\s\S]*\.env\.test\.local/);
+    assert.match(ignore, /^\.env\.test\.local$/m);
+    assert.match(example, /^TEST_DATABASE_URL=postgresql:\/\//m);
+    assert.doesNotMatch(example, /petervivi|depannhome1524/);
+});
+
 test("la migration e-mail reste applicable avant la création optionnelle de sa table", async () => {
     const migration = readFileSync(new URL("../database/migrations/0002_email_mission_document_detection.sql", import.meta.url), "utf8");
     const runner = readFileSync(new URL("../server/database-migrations.js", import.meta.url), "utf8");
