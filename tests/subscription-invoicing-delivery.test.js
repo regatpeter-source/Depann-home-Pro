@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { buildSubscriptionInvoiceSnapshot, subscriptionInvoiceMatchesCurrentSubscription } from "../server/invoicing.js";
+import { buildSubscriptionInvoiceSnapshot, calculateSubscriptionDueDate, subscriptionInvoiceMatchesCurrentSubscription } from "../server/invoicing.js";
 
 const invoicingSource = readFileSync(new URL("../server/invoicing.js", import.meta.url), "utf8");
 const creatorServerSource = readFileSync(new URL("../server/creator.js", import.meta.url), "utf8");
@@ -10,6 +10,7 @@ const emailSource = readFileSync(new URL("../server/email.js", import.meta.url),
 const databaseSource = readFileSync(new URL("../server/database.js", import.meta.url), "utf8");
 const billingSource = readFileSync(new URL("../server/billing.js", import.meta.url), "utf8");
 const schemaSource = readFileSync(new URL("../database/schema.sql", import.meta.url), "utf8");
+const dueDaysMigration = readFileSync(new URL("../database/migrations/0017_subscription_invoice_due_days.sql", import.meta.url), "utf8");
 
 test("le verrou de facturation est détenu et libéré par la même connexion PostgreSQL", () => {
     assert.match(invoicingSource, /const lockConnection = await database\.connect\(\)/);
@@ -85,6 +86,20 @@ test("la facture détaille la formule et les postes administratifs et mobiles in
     ]);
     assert.deepEqual(snapshot.financialData, { discountLabel: "Offre d’essai", discountMode: "percentage", discountAmount: 25 });
     assert.equal(snapshot.netAmountCents, 9000);
+});
+
+test("le Créateur choisit le délai d’échéance appliqué aux nouvelles factures", () => {
+    assert.equal(calculateSubscriptionDueDate("2026-01-31", 0), "2026-01-31");
+    assert.equal(calculateSubscriptionDueDate("2026-01-31", 30), "2026-03-02");
+    assert.equal(calculateSubscriptionDueDate("2026-12-31", 60), "2027-03-01");
+    assert.equal(calculateSubscriptionDueDate("2026-01-31", -1), "2026-03-02");
+    assert.match(invoicingSource, /invoice_due_days AS "invoiceDueDays"/);
+    assert.match(invoicingSource, /invoiceDueDays: integerInRange\(value\?\.invoiceDueDays, 0, 365, null\)/);
+    assert.match(invoicingSource, /calculateSubscriptionDueDate\(issueDate, issuer\.invoiceDueDays\)/);
+    assert.match(invoicingSource, /calculateSubscriptionDueDate\(period\.effectiveDate, source\.issuerProfile\?\.invoiceDueDays\)/);
+    assert.match(creatorSource, /Délai d’échéance des factures \(jours\)/);
+    assert.match(creatorSource, /0 = payable à réception/);
+    for (const source of [schemaSource, dueDaysMigration]) assert.match(source, /invoice_due_days BETWEEN 0 AND 365/);
 });
 
 test("la facture Groupe détaille les postes par société et la réserve non attribuée", () => {

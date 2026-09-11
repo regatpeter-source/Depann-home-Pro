@@ -1,7 +1,7 @@
 import { ROUTES } from "./config.js?v=105";
 import { clearSearch, getContainer, setPage } from "./ui.js?v=44";
 import { escapeHtml } from "./utils.js?v=44";
-import { renderCreatorConnectors } from "./connectors.js?v=5";
+import { renderCreatorConnectors } from "./connectors.js?v=6";
 import { renderHealthDashboard } from "./health-dashboard.js?v=1";
 
 let accounts = [];
@@ -1021,6 +1021,7 @@ async function renderSubscriptionBillingProfile() {
                 <label>IBAN *<input name="bankIban" maxlength="34" required value="${escapeHtml(profile.bankIban || "")}" placeholder="FR76…"></label>
                 <label>BIC *<input name="bankBic" maxlength="11" required value="${escapeHtml(profile.bankBic || "")}" placeholder="ABCDEFGHXXX"></label>
                 <label>Taux de TVA (%)<input name="vatRate" type="number" min="0" max="100" step="0.01" value="${escapeHtml(profile.vatRate ?? 20)}"></label>
+                <label>Délai d’échéance des factures (jours)<input name="invoiceDueDays" type="number" min="0" max="365" step="1" required value="${escapeHtml(profile.invoiceDueDays ?? 30)}"><small>0 = payable à réception. Ce délai s’applique aux prochaines factures et aux compléments de prorata.</small></label>
                 <p class="muted form-wide" data-creator-vat-notice></p>
                 <label class="form-wide">Conditions de règlement<input name="paymentTerms" maxlength="500" value="${escapeHtml(profile.paymentTerms || "")}" placeholder="Paiement à réception de facture par virement bancaire."></label>
                 <label class="form-wide">Mention de bas de page<textarea name="footerNote" rows="3" maxlength="1000">${escapeHtml(profile.footerNote || "")}</textarea></label>
@@ -1046,7 +1047,7 @@ async function renderSubscriptionBillingProfile() {
         const save = await api("/api/creator/subscription-billing-profile", { method: "PUT", body: JSON.stringify(Object.fromEntries(new FormData(event.currentTarget))) });
         button.disabled = false;
         if (!save.ok) return showFeedback(save.message || "Enregistrement impossible.", true);
-        showFeedback("Coordonnées de facturation de la plateforme enregistrées.");
+        showFeedback("Paramètres de facturation de la plateforme enregistrés.");
     });
 }
 

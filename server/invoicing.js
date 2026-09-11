@@ -34,12 +34,16 @@ export async function initializeSubscriptionInvoicing() {
             bank_iban VARCHAR(34) NOT NULL DEFAULT '',
             bank_bic VARCHAR(11) NOT NULL DEFAULT '',
             vat_rate NUMERIC(5,2) NOT NULL DEFAULT 20 CHECK (vat_rate >= 0 AND vat_rate <= 100),
+            invoice_due_days INTEGER NOT NULL DEFAULT 30 CHECK (invoice_due_days BETWEEN 0 AND 365),
             payment_terms VARCHAR(500) NOT NULL DEFAULT '',
             footer_note VARCHAR(1000) NOT NULL DEFAULT '',
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
     `);
     await database.query("ALTER TABLE depannhome_subscription_billing_profile ADD COLUMN IF NOT EXISTS vat_regime VARCHAR(20) NOT NULL DEFAULT 'standard'");
+    await database.query("ALTER TABLE depannhome_subscription_billing_profile ADD COLUMN IF NOT EXISTS invoice_due_days INTEGER NOT NULL DEFAULT 30");
+    await database.query("ALTER TABLE depannhome_subscription_billing_profile DROP CONSTRAINT IF EXISTS depannhome_subscription_billing_profile_invoice_due_days_check");
+    await database.query("ALTER TABLE depannhome_subscription_billing_profile ADD CONSTRAINT depannhome_subscription_billing_profile_invoice_due_days_check CHECK (invoice_due_days BETWEEN 0 AND 365)");
     await database.query("ALTER TABLE depannhome_subscription_billing_profile DROP CONSTRAINT IF EXISTS depannhome_subscription_billing_profile_vat_regime_check");
     await database.query("ALTER TABLE depannhome_subscription_billing_profile ADD CONSTRAINT depannhome_subscription_billing_profile_vat_regime_check CHECK (vat_regime IN ('standard','franchise'))");
     await database.query(`
@@ -158,7 +162,7 @@ export function registerSubscriptionInvoicingRoutes(app, requireCreator) {
         const { rows } = await getPool().query(`
             SELECT company_name AS "companyName", legal_form AS "legalForm", address, postal_code AS "postalCode", city, phone, email,
                 registration_number AS "registrationNumber", tax_number AS "taxNumber", vat_regime AS "vatRegime", bank_iban AS "bankIban", bank_bic AS "bankBic",
-                vat_rate::float AS "vatRate", payment_terms AS "paymentTerms", footer_note AS "footerNote"
+                vat_rate::float AS "vatRate", invoice_due_days AS "invoiceDueDays", payment_terms AS "paymentTerms", footer_note AS "footerNote"
             FROM depannhome_subscription_billing_profile WHERE id = TRUE
         `);
         response.json({ profile: rows[0] || emptyProfile() });
@@ -169,14 +173,14 @@ export function registerSubscriptionInvoicingRoutes(app, requireCreator) {
         if (!profile.ok) return response.status(400).json({ message: profile.message });
         await getPool().query(`
             INSERT INTO depannhome_subscription_billing_profile
-                (id, company_name, legal_form, address, postal_code, city, phone, email, registration_number, tax_number, vat_regime, bank_iban, bank_bic, vat_rate, payment_terms, footer_note)
-            VALUES (TRUE,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+                (id, company_name, legal_form, address, postal_code, city, phone, email, registration_number, tax_number, vat_regime, bank_iban, bank_bic, vat_rate, invoice_due_days, payment_terms, footer_note)
+            VALUES (TRUE,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
             ON CONFLICT (id) DO UPDATE SET company_name=EXCLUDED.company_name, legal_form=EXCLUDED.legal_form, address=EXCLUDED.address,
                 postal_code=EXCLUDED.postal_code, city=EXCLUDED.city, phone=EXCLUDED.phone, email=EXCLUDED.email,
                 registration_number=EXCLUDED.registration_number, tax_number=EXCLUDED.tax_number, vat_regime=EXCLUDED.vat_regime, bank_iban=EXCLUDED.bank_iban,
-                bank_bic=EXCLUDED.bank_bic, vat_rate=EXCLUDED.vat_rate, payment_terms=EXCLUDED.payment_terms, footer_note=EXCLUDED.footer_note, updated_at=NOW()
+                bank_bic=EXCLUDED.bank_bic, vat_rate=EXCLUDED.vat_rate, invoice_due_days=EXCLUDED.invoice_due_days, payment_terms=EXCLUDED.payment_terms, footer_note=EXCLUDED.footer_note, updated_at=NOW()
         `, [profile.companyName, profile.legalForm, profile.address, profile.postalCode, profile.city, profile.phone, profile.email,
-            profile.registrationNumber, profile.taxNumber, profile.vatRegime, profile.bankIban, profile.bankBic, profile.vatRate, profile.paymentTerms, profile.footerNote]);
+            profile.registrationNumber, profile.taxNumber, profile.vatRegime, profile.bankIban, profile.bankBic, profile.vatRate, profile.invoiceDueDays, profile.paymentTerms, profile.footerNote]);
         response.status(204).end();
     }));
 
@@ -468,7 +472,7 @@ export async function prepareSubscriptionProration(connection, { ownerBefore, ow
     const sequence = await nextSubscriptionDocumentNumber(connection, "invoice", period.effectiveDate);
     const taxBaseCents = Math.round(amountCents * 100 / (100 + Number(source.vatRate || 0)));
     const lines = [{ description: reason, quantity: 1, unit: "prorata", unitPrice: taxBaseCents / 100, vatRate: Number(source.vatRate) || 0 }];
-    const dueDate = addDays(period.effectiveDate, 30);
+    const dueDate = calculateSubscriptionDueDate(period.effectiveDate, source.issuerProfile?.invoiceDueDays);
     const inserted = await connection.query(`INSERT INTO depannhome_subscription_invoices(account_owner_id,billing_period,invoice_number,recipient_name,recipient_email,recipient_address,subscription_label,amount_cents,net_amount_cents,vat_rate,issue_date,due_date,issuer_profile,lines,financial_data,subscription_snapshot,invoice_kind,proration_context) VALUES($1,$2::date,$3,$4,$5,$6,$7,$8,$8,$9,$10::date,$11::date,$12::jsonb,$13::jsonb,'{}'::jsonb,$14::jsonb,'proration_debit',$15::jsonb) RETURNING id`, [ownerBefore.id,period.effectiveDate,sequence.number,source.recipientName,source.recipientEmail,source.recipientAddress,`Complément prorata — ${ownerAfter.subscriptionLabel || ownerAfter.subscriptionTier}`,amountCents,source.vatRate,period.effectiveDate,dueDate,JSON.stringify(source.issuerProfile),JSON.stringify(lines),JSON.stringify(details.next),JSON.stringify(details.calculation)]);
     const invoiceId = inserted.rows[0].id;
     await connection.query(`INSERT INTO depannhome_subscription_invoice_audit(invoice_id,account_owner_id,actor_id,action,details) VALUES($1,$2,$3,'subscription_proration_invoice_created',$4::jsonb)`, [invoiceId,ownerBefore.id,actorId,JSON.stringify(details.calculation)]);
@@ -638,7 +642,7 @@ async function createInvoiceIfNeeded(subscription, issuer) {
             : invoiceSubscription.subscriptionLabel || "Abonnement Depann’Home Pro";
         const { rows: dates } = await connection.query(`SELECT TO_CHAR(CURRENT_DATE,'YYYY-MM-DD') AS "issueDate",EXTRACT(YEAR FROM CURRENT_DATE)::integer AS "seriesYear"`);
         const { issueDate, seriesYear } = dates[0];
-        const dueDate = addDays(issueDate, 30);
+        const dueDate = calculateSubscriptionDueDate(issueDate, issuer.invoiceDueDays);
         const { rows: sequences } = await connection.query(`
             INSERT INTO depannhome_subscription_invoice_sequences (series_year,last_number) VALUES ($1,1)
             ON CONFLICT (series_year) DO UPDATE SET last_number=depannhome_subscription_invoice_sequences.last_number+1,updated_at=NOW()
@@ -803,7 +807,7 @@ async function getIssuerProfile() {
     const { rows } = await getPool().query(`
         SELECT company_name AS "companyName", legal_form AS "legalForm", address, postal_code AS "postalCode", city, phone, email,
             registration_number AS "registrationNumber", tax_number AS "taxNumber", vat_regime AS "vatRegime", bank_iban AS "bankIban", bank_bic AS "bankBic",
-            vat_rate::float AS "vatRate", payment_terms AS "paymentTerms", footer_note AS "footerNote"
+            vat_rate::float AS "vatRate", invoice_due_days AS "invoiceDueDays", payment_terms AS "paymentTerms", footer_note AS "footerNote"
         FROM depannhome_subscription_billing_profile WHERE id = TRUE
     `);
     return rows[0] || emptyProfile();
@@ -829,11 +833,12 @@ function sanitizeProfile(value) {
         postalCode: cleanText(value?.postalCode, 20), city: cleanText(value?.city, 100), phone: cleanText(value?.phone, 50), email: cleanText(value?.email, 160).toLowerCase(),
         registrationNumber: cleanText(value?.registrationNumber, 100), taxNumber: cleanText(value?.taxNumber, 100),
         vatRegime: normalizeVatRegime(value?.vatRegime), bankIban: String(value?.bankIban || "").replace(/\s/g, "").toUpperCase().slice(0, 34), bankBic: String(value?.bankBic || "").replace(/\s/g, "").toUpperCase().slice(0, 11),
-        vatRate: numberInRange(value?.vatRate, 0, 100), paymentTerms: cleanText(value?.paymentTerms, 500), footerNote: cleanText(value?.footerNote, 1000)
+        vatRate: numberInRange(value?.vatRate, 0, 100), invoiceDueDays: integerInRange(value?.invoiceDueDays, 0, 365, null), paymentTerms: cleanText(value?.paymentTerms, 500), footerNote: cleanText(value?.footerNote, 1000)
     };
     if (!profile.companyName || !profile.address || !profile.postalCode || !profile.city || !profile.registrationNumber || !EMAIL_PATTERN.test(profile.email)) return { ok: false, message: "Renseignez les coordonnées légales et l’e-mail de facturation de la plateforme." };
     if (!IBAN_PATTERN.test(profile.bankIban) || !BIC_PATTERN.test(profile.bankBic)) return { ok: false, message: "L’IBAN ou le BIC est invalide." };
     if (profile.vatRate === null) return { ok: false, message: "Le taux de TVA est invalide." };
+    if (profile.invoiceDueDays === null) return { ok: false, message: "Le délai d’échéance doit être un nombre entier compris entre 0 et 365 jours." };
     if (profile.vatRegime === "franchise") profile.vatRate = 0;
     return { ok: true, ...profile };
 }
@@ -863,7 +868,7 @@ function processingMessage(result) {
 }
 
 function emptyProfile() {
-    return { companyName: "", legalForm: "", address: "", postalCode: "", city: "", phone: "", email: "", registrationNumber: "", taxNumber: "", vatRegime: "standard", bankIban: "", bankBic: "", vatRate: 20, paymentTerms: "", footerNote: "" };
+    return { companyName: "", legalForm: "", address: "", postalCode: "", city: "", phone: "", email: "", registrationNumber: "", taxNumber: "", vatRegime: "standard", bankIban: "", bankBic: "", vatRate: 20, invoiceDueDays: 30, paymentTerms: "", footerNote: "" };
 }
 
 function millisecondsUntilConfiguredRun() {
@@ -886,6 +891,10 @@ function addDays(date, days) {
     const result = new Date(`${date}T12:00:00`);
     result.setDate(result.getDate() + days);
     return dateString(result);
+}
+
+export function calculateSubscriptionDueDate(issueDate, invoiceDueDays = 30) {
+    return addDays(issueDate, integerInRange(invoiceDueDays, 0, 365, 30));
 }
 
 function amountExcludingVat(amountCents, vatRate) {

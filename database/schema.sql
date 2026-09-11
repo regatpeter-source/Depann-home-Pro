@@ -919,6 +919,7 @@ CREATE TABLE IF NOT EXISTS depannhome_subscription_billing_profile (
     bank_iban VARCHAR(34) NOT NULL DEFAULT '',
     bank_bic VARCHAR(11) NOT NULL DEFAULT '',
     vat_rate NUMERIC(5,2) NOT NULL DEFAULT 20 CHECK (vat_rate >= 0 AND vat_rate <= 100),
+    invoice_due_days INTEGER NOT NULL DEFAULT 30 CHECK (invoice_due_days BETWEEN 0 AND 365),
     payment_terms VARCHAR(500) NOT NULL DEFAULT '',
     footer_note VARCHAR(1000) NOT NULL DEFAULT '',
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -926,6 +927,12 @@ CREATE TABLE IF NOT EXISTS depannhome_subscription_billing_profile (
 
 ALTER TABLE depannhome_subscription_billing_profile
     ADD COLUMN IF NOT EXISTS vat_regime VARCHAR(20) NOT NULL DEFAULT 'standard';
+ALTER TABLE depannhome_subscription_billing_profile
+    ADD COLUMN IF NOT EXISTS invoice_due_days INTEGER NOT NULL DEFAULT 30;
+ALTER TABLE depannhome_subscription_billing_profile
+    DROP CONSTRAINT IF EXISTS depannhome_subscription_billing_profile_invoice_due_days_check;
+ALTER TABLE depannhome_subscription_billing_profile
+    ADD CONSTRAINT depannhome_subscription_billing_profile_invoice_due_days_check CHECK (invoice_due_days BETWEEN 0 AND 365);
 
 CREATE TABLE IF NOT EXISTS depannhome_subscription_invoices (
     id BIGSERIAL PRIMARY KEY,
