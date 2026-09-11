@@ -37,13 +37,26 @@ test("les contrôles de postes utilisent la limite effective de la société act
         async query(sql, values) {
             assert.match(sql, /COALESCE\(allocation\.allocated_pc_seats,owner\.max_pc_users\)/);
             assert.match(sql, /COALESCE\(allocation\.allocated_mobile_seats,owner\.max_technicians\)/);
-            assert.deepEqual(values, [42, 0, ""]);
+            assert.match(sql, /\$3::uuid IS NULL OR desktop_device\.id<>\$3::uuid/);
+            assert.match(sql, /\$3::uuid IS NULL OR mobile_device\.id<>\$3::uuid/);
+            assert.deepEqual(values, [42, 0, null]);
             return result([{ maxPcUsers: 3, maxMobileUsers: 7, activePcUsers: 2, approvedPcDevices: 2, activeMobileUsers: 4 }]);
         }
     };
     assert.deepEqual(await companySeatState(database, 42), { maxPcUsers: 3, maxMobileUsers: 7, activePcUsers: 2, approvedPcDevices: 2, activeMobileUsers: 4 });
     assert.match(auth, /companySeatState\(database, ownerId, excludedMemberId\)/);
     assert.match(auth, /companySeatState\(getPool\(\), getAccountOwnerId\(request\), 0, deviceId\)/);
+});
+
+test("un identifiant d’appareil vide ne peut jamais être converti en UUID par PostgreSQL", async () => {
+    const database = {
+        async query(_sql, values) {
+            assert.equal(values[2], null);
+            return result([]);
+        }
+    };
+    assert.equal(await companySeatState(database, 42, 0, ""), null);
+    assert.equal(await companySeatState(database, 42, 0, "identifiant-invalide"), null);
 });
 
 test("le statut de groupe calcule les quotas disponibles, entreprise principale incluse", async () => {

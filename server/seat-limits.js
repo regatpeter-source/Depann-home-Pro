@@ -1,12 +1,15 @@
-export async function companySeatState(database, ownerId, excludedMemberId = 0, excludedDeviceId = "") {
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+export async function companySeatState(database, ownerId, excludedMemberId = 0, excludedDeviceId = null) {
+    const normalizedExcludedDeviceId = UUID_PATTERN.test(String(excludedDeviceId || "")) ? String(excludedDeviceId) : null;
     const { rows } = await database.query(`
         SELECT
             COALESCE(allocation.allocated_pc_seats,owner.max_pc_users)::int AS "maxPcUsers",
             COALESCE(allocation.allocated_mobile_seats,owner.max_technicians)::int AS "maxMobileUsers",
             COUNT(DISTINCT member.id) FILTER(WHERE member.role IN ('admin','pc_standard','commercial','accountant') AND member.is_active AND member.id<>$2)::int AS "activePcUsers",
-            COUNT(DISTINCT desktop_device.id) FILTER(WHERE desktop_device.status='approved' AND desktop_device.id<>$3)::int AS "approvedPcDevices",
+            COUNT(DISTINCT desktop_device.id) FILTER(WHERE desktop_device.status='approved' AND ($3::uuid IS NULL OR desktop_device.id<>$3::uuid))::int AS "approvedPcDevices",
             COUNT(DISTINCT member.id) FILTER(WHERE member.role IN ('mobile_admin','team_lead','technician') AND member.is_active AND member.id<>$2)::int
-                + COUNT(DISTINCT mobile_device.id) FILTER(WHERE mobile_device.status='approved' AND mobile_device.id<>$3)::int AS "activeMobileUsers"
+                + COUNT(DISTINCT mobile_device.id) FILTER(WHERE mobile_device.status='approved' AND ($3::uuid IS NULL OR mobile_device.id<>$3::uuid))::int AS "activeMobileUsers"
         FROM depannhome_users owner
         LEFT JOIN depannhome_group_company_seat_allocations allocation ON allocation.company_owner_id=owner.id
         LEFT JOIN depannhome_users member ON member.account_owner_id=owner.id
@@ -17,7 +20,7 @@ export async function companySeatState(database, ownerId, excludedMemberId = 0, 
         LEFT JOIN depannhome_auth_devices mobile_device ON mobile_device.user_id=cross_device_account.id AND mobile_device.device_type='mobile'
         WHERE owner.id=$1 AND owner.account_owner_id=owner.id
         GROUP BY owner.id,allocation.allocated_pc_seats,allocation.allocated_mobile_seats
-    `, [ownerId, excludedMemberId, excludedDeviceId]);
+    `, [ownerId, excludedMemberId, normalizedExcludedDeviceId]);
     return rows[0] || null;
 }
 
