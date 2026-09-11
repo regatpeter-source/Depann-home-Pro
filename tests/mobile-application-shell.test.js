@@ -7,6 +7,7 @@ const navigation = readFileSync(new URL("../js/navigation.js", import.meta.url),
 const styles = readFileSync(new URL("../css/style.css", import.meta.url), "utf8");
 const config = readFileSync(new URL("../js/config.js", import.meta.url), "utf8");
 const purchases = readFileSync(new URL("../server/purchases.js", import.meta.url), "utf8");
+const applicationShell = readFileSync(new URL("../index.html", import.meta.url), "utf8");
 
 const mobileMenuSource = navigation.slice(
     navigation.indexOf("function initializeMobileWorkspaceMenu"),
@@ -65,10 +66,23 @@ test("le tiroir mobile est accessible et se ferme sans perdre les actions", () =
 
 test("la densité mobile reste isolée du poste PC", () => {
     assert.match(styles, /body\.mobile-device \.quick-actions\{display:none!important\}/);
+    assert.match(styles, /body\.mobile-device \.search-section\{display:none!important\}/);
     assert.match(styles, /body\.mobile-device \.dashboard-grid\{grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
     assert.match(styles, /body\.mobile-device \.calendar-grid-panel\{padding:6px;border:0;border-radius:16px/);
     assert.match(styles, /body\.mobile-device \.calendar-grid-panel:has\(\.calendar-timeline\)/);
     assert.match(styles, /body\.mobile-device \.calendar-weekdays,body\.mobile-device \.calendar-grid\{width:100%;min-width:0\}/);
     assert.match(styles, /body\.mobile-device \.calendar-timeline\{[^}]*width:100%;min-width:0/);
     assert.doesNotMatch(styles, /body\.desktop-device[^\n{]*mobile-workspace-menu/);
+});
+
+test("le retour applicatif fonctionne au clavier, à la souris et avec le bouton matériel", () => {
+    assert.match(applicationShell, /id="appBackButton"[^>]*aria-label="Revenir à l’écran précédent"/);
+    assert.match(navigation, /window\.history\.pushState/);
+    assert.match(navigation, /window\.addEventListener\("popstate"/);
+    assert.match(navigation, /backButton\.addEventListener\("click", \(\) => window\.history\.back\(\)\)/);
+    assert.match(navigation, /restoreApplicationRoute\(entry\.route\)/);
+});
+
+test("l’accueil ne répète plus la phrase promotionnelle des gammes techniques", () => {
+    assert.doesNotMatch(navigation, /Les gammes techniques — volets roulants et portails/);
 });

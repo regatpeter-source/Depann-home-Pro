@@ -52,9 +52,14 @@ const INTERACTION_SYNCHRONIZATION_DELAY = 1_500;
 const SEARCH_EVENTS_TTL = 30_000;
 let searchEventsCache = { expiresAt: 0, events: [] };
 let searchEventsPromise = null;
+const APPLICATION_HISTORY_MARKER = "depannhome-application";
+let applicationHistoryReady = false;
+let restoringApplicationHistory = false;
+let currentApplicationHistoryKey = "";
 
 export function initializeNavigation(loadedDatabase) {
     database = loadedDatabase;
+    initializeApplicationHistory();
     ensureMobileHomeNavigationButton();
     configureLibrary({
         openCatalog: renderBrands,
@@ -116,6 +121,99 @@ export function initializeNavigation(loadedDatabase) {
     else if (isMobileDeviceContext()) openHome();
     else if (document.body.classList.contains("desktop-device")) renderHome();
     else renderBrands();
+}
+
+function initializeApplicationHistory() {
+    const pageTitle = document.getElementById("pageTitle");
+    const backButton = document.getElementById("appBackButton");
+    if (!pageTitle || !backButton || pageTitle.dataset.historyBound === "true") return;
+    pageTitle.dataset.historyBound = "true";
+
+    const recordPage = () => recordApplicationHistory(pageTitle.textContent.trim());
+    new MutationObserver(recordPage).observe(pageTitle, { childList: true, characterData: true, subtree: true });
+    window.addEventListener("popstate", event => {
+        const entry = event.state;
+        if (entry?.application !== APPLICATION_HISTORY_MARKER) return;
+        restoringApplicationHistory = true;
+        currentApplicationHistoryKey = entry.key || "";
+        updateApplicationBackButton(entry.depth || 0);
+        restoreApplicationRoute(entry.route);
+    });
+    backButton.addEventListener("click", () => window.history.back());
+    window.queueMicrotask(recordPage);
+}
+
+function recordApplicationHistory(title) {
+    if (!title) return;
+    const route = inferApplicationRoute(title);
+    const key = `${route}:${title}`;
+    if (!applicationHistoryReady) {
+        applicationHistoryReady = true;
+        currentApplicationHistoryKey = key;
+        window.history.replaceState({ application: APPLICATION_HISTORY_MARKER, depth: 0, route, key }, "");
+        updateApplicationBackButton(0);
+        return;
+    }
+
+    if (restoringApplicationHistory) {
+        const depth = Number(window.history.state?.depth) || 0;
+        restoringApplicationHistory = false;
+        currentApplicationHistoryKey = key;
+        window.history.replaceState({ application: APPLICATION_HISTORY_MARKER, depth, route, key }, "");
+        updateApplicationBackButton(depth);
+        return;
+    }
+    if (key === currentApplicationHistoryKey) return;
+
+    const depth = (Number(window.history.state?.depth) || 0) + 1;
+    currentApplicationHistoryKey = key;
+    window.history.pushState({ application: APPLICATION_HISTORY_MARKER, depth, route, key }, "");
+    updateApplicationBackButton(depth);
+}
+
+function inferApplicationRoute(title) {
+    const activeRoute = document.querySelector(".nav-button.active")?.dataset.nav;
+    if (activeRoute) return activeRoute;
+    const normalizedTitle = normalizeText(title);
+    if (normalizedTitle.startsWith("client") || normalizedTitle.startsWith("notes d intervention")) return ROUTES.clients;
+    if (normalizedTitle.startsWith("devis") || normalizedTitle.startsWith("facture")) return ROUTES.billing;
+    if (normalizedTitle.startsWith("comptabilite")) return ROUTES.accounting;
+    if (normalizedTitle.startsWith("achat")) return ROUTES.purchases;
+    if (normalizedTitle.startsWith("groupe")) return ROUTES.groups;
+    if (normalizedTitle.startsWith("mission")) return ROUTES.partnerMissions;
+    if (/e.?mail/.test(normalizedTitle)) return ROUTES.companyEmail;
+    if (normalizedTitle.startsWith("sandbox")) return ROUTES.partnerSandbox;
+    if (normalizedTitle.startsWith("rapport")) return ROUTES.technicalReports;
+    if (/^(planning|intervention|retrouver une intervention)/.test(normalizedTitle)) return ROUTES.calendar;
+    if (normalizedTitle.startsWith("bibliotheque")) return ROUTES.library;
+    if (normalizedTitle.startsWith("parametre") || normalizedTitle.startsWith("modele de")) return ROUTES.settings;
+    if (normalizedTitle.startsWith("magasin")) return ROUTES.store;
+    if (normalizedTitle.startsWith("resultat de recherche")) return ROUTES.search;
+    if (normalizedTitle.startsWith("console createur")) return ROUTES.creator;
+    return ROUTES.home;
+}
+
+function restoreApplicationRoute(route) {
+    if (route === ROUTES.calendar) return openCalendar();
+    if (route === ROUTES.clients) return openClients();
+    if (route === ROUTES.billing) return isTechnician() && organizationFeatureEnabled("technicalReports") ? renderTechnicalReports() : renderBilling();
+    if (route === ROUTES.accounting) return renderAccounting();
+    if (route === ROUTES.purchases) return renderPurchases();
+    if (route === ROUTES.groups) return renderGroupWorkspace();
+    if (route === ROUTES.partnerMissions) return renderPartnerMissions();
+    if (route === ROUTES.companyEmail) return renderCompanyEmail();
+    if (route === ROUTES.partnerSandbox) return renderPartnerSandbox();
+    if (route === ROUTES.technicalReports) return renderTechnicalReports();
+    if (route === ROUTES.library) return renderLibrary();
+    if (route === ROUTES.settings) return renderSettings();
+    if (route === ROUTES.store) return renderStore();
+    if (route === ROUTES.creator) return renderCreatorConsole();
+    return openHome();
+}
+
+function updateApplicationBackButton(depth) {
+    const backButton = document.getElementById("appBackButton");
+    if (backButton) backButton.hidden = depth <= 0;
 }
 
 export async function refreshSharedData(options = {}) {
@@ -884,7 +982,6 @@ async function renderHome() {
             <section class="dashboard-card"><p class="eyebrow">Aujourd’hui</p><h3>${escapeHtml(formatDashboardDate(new Date()))}</h3><div class="dashboard-events" data-dashboard-events="today"><p class="muted">Chargement des rendez-vous…</p></div></section>
             <section class="dashboard-card"><p class="eyebrow">À venir</p><h3>Les 7 prochains jours</h3><div class="dashboard-events" data-dashboard-events="upcoming"><p class="muted">Chargement des rendez-vous…</p></div></section>
         </div>` : '<section class="dashboard-administrative-note"><strong>Pilotage administratif</strong><span>Retrouvez ci-dessus les dossiers qui nécessitent votre attention.</span></section>'}
-        ${canAccessRoute(ROUTES.library) ? '<p class="dashboard-catalog-note">Les gammes techniques — volets roulants et portails — sont disponibles dans la <strong>Bibliothèque</strong>.</p>' : ""}
     `;
     container.appendChild(panel);
     renderPlatformAnnouncement(container);

@@ -688,6 +688,27 @@ body.desktop-device .nav-label-messages{
     margin-bottom:20px;
 }
 
+.page-heading{
+    display:flex;
+    align-items:center;
+    gap:10px;
+}
+
+.app-back-button{
+    flex:0 0 auto;
+    min-height:38px;
+    padding:8px 12px;
+    border:1px solid #b8c8d8;
+    border-radius:10px;
+    background:var(--surface);
+    color:var(--primary);
+    cursor:pointer;
+    font-weight:700;
+}
+
+.app-back-button[hidden]{display:none}
+.app-back-button:focus-visible{outline:3px solid rgba(10,92,54,.22);outline-offset:2px}
+
 body[data-page-mode="basic-home"] #pageTitle{
     display:none;
 }
@@ -5536,8 +5557,11 @@ body.mobile-device .active-work-context{min-width:0;padding:4px 7px;overflow:hid
 body.mobile-device .pc-workstation-name{display:block;min-width:0;overflow:hidden;font-size:11px;text-overflow:ellipsis;white-space:nowrap}
 body.mobile-device .mobile-user-sections,body.mobile-device .active-company-badge,body.mobile-device .group-company-selector{display:none!important}
 body.mobile-device .user-session .refresh-button,body.mobile-device .user-session .logout-button{min-height:34px;padding:5px 7px;font-size:10px}
-body.mobile-device .search-section{margin-bottom:8px}
+body.mobile-device .search-section{display:none!important}
 body.mobile-device #search{min-height:42px;padding:9px 12px;border-radius:11px;font-size:14px}
+body.mobile-device .page-heading{gap:8px}
+body.mobile-device .app-back-button{min-height:36px;padding:7px 10px}
+body.mobile-device .section-title{margin-bottom:10px;font-size:18px}
 body.mobile-device .dashboard-panel{gap:10px;padding:12px}
 body.mobile-device .dashboard-heading{align-items:center;gap:8px}
 body.mobile-device .dashboard-heading h2{font-size:18px}
@@ -5674,7 +5698,8 @@ body.mobile-device .calendar-timeline-day .calendar-event[style*="--event-lanes:
 
 /* Le planning mobile occupe le viewport ; seules ses données défilent. */
 body.mobile-device.calendar-page-active{height:100vh;height:100dvh;overflow:hidden}
-body.mobile-device.calendar-page-active .topbar,body.mobile-device.calendar-page-active #breadcrumb,body.mobile-device.calendar-page-active #app>.search-section,body.mobile-device.calendar-page-active #app>section:has(#pageTitle){display:none!important}
+body.mobile-device.calendar-page-active .topbar,body.mobile-device.calendar-page-active #breadcrumb,body.mobile-device.calendar-page-active #app>.search-section,body.mobile-device.calendar-page-active #pageTitle{display:none!important}
+body.mobile-device.calendar-page-active .page-heading:has(.app-back-button[hidden]){display:none}
 body.mobile-device.calendar-page-active #app{width:100%;height:calc(100vh - 64px - env(safe-area-inset-bottom));height:calc(100dvh - 64px - env(safe-area-inset-bottom));max-width:none;margin:0;padding:6px 8px;overflow:hidden}
 body.mobile-device.calendar-page-active #brands{position:relative;display:grid;grid-template-rows:auto minmax(0,1fr);gap:6px;width:100%;height:100%;min-height:0}
 body.mobile-device.calendar-page-active #brands>.calendar-panel,body.mobile-device.calendar-page-active #brands>.technician-calendar-home,body.mobile-device.calendar-page-active #brands>.calendar-grid-panel{min-height:0;margin:0}
@@ -6628,6 +6653,13 @@ body.desktop-device .section-title{
     margin-bottom:10px;
     font-size:20px;
     line-height:1.2;
+}
+
+body.desktop-device .app-back-button{
+    min-height:34px;
+    padding:6px 10px;
+    border-radius:var(--desktop-radius);
+    font-size:12px;
 }
 
 body.desktop-device .cards-grid,

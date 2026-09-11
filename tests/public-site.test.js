@@ -136,4 +136,5 @@ test("la déconnexion et le lancement PWA ouvrent l’authentification plutôt q
     assert.match(clientApp, /window\.location\.replace\(`\/connexion\$\{query\}`\)/);
     assert.doesNotMatch(clientApp, /window\.location\.replace\("\/"\)/);
     assert.equal(manifest.start_url, "/connexion");
+    assert.equal(new URL(manifest.start_url, "https://depannhomepro.com").href, "https://depannhomepro.com/connexion");
 });
