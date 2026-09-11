@@ -352,15 +352,63 @@ export function registerAuthRoutes(app) {
         response.json({ enabled: false, message: "La double authentification est désactivée pour votre poste PC." });
     }));
 
+    app.get("/api/auth/teams", requireCalendarMemberDirectoryAccess, asyncHandler(async (request, response) => {
+        response.json({ teams: await listCompanyTeams(getAccountOwnerId(request)) });
+    }));
+
+    app.post("/api/auth/teams", requireAccountAdministrator, asyncHandler(async (request, response) => {
+        const ownerId = getAccountOwnerId(request);
+        const team = cleanTeam(request.body);
+        if (!team.name) return response.status(400).json({ message: "Le nom de l’équipe est obligatoire." });
+        try {
+            const { rows } = await getPool().query(`
+                INSERT INTO depannhome_teams(owner_id,name,site_label,section)
+                VALUES($1,$2,$3,$4)
+                RETURNING id,name,site_label AS "siteLabel",section,is_active AS "isActive"
+            `, [ownerId, team.name, team.siteLabel, team.section]);
+            response.status(201).json({ team: { ...rows[0], memberIds: [] } });
+        } catch (error) {
+            if (error.code === "23505") return response.status(409).json({ message: "Une équipe porte déjà ce nom dans cette entreprise." });
+            throw error;
+        }
+    }));
+
+    app.patch("/api/auth/teams/:teamId", requireAccountAdministrator, asyncHandler(async (request, response) => {
+        const ownerId = getAccountOwnerId(request);
+        const teamId = positiveId(request.params.teamId);
+        const team = cleanTeam(request.body);
+        if (!teamId || !team.name) return response.status(400).json({ message: "Équipe invalide." });
+        try {
+            const result = await getPool().query(`
+                UPDATE depannhome_teams SET name=$3,site_label=$4,section=$5,updated_at=NOW()
+                WHERE id=$1 AND owner_id=$2
+            `, [teamId, ownerId, team.name, team.siteLabel, team.section]);
+            if (!result.rowCount) return response.status(404).json({ message: "Équipe introuvable." });
+            response.status(204).end();
+        } catch (error) {
+            if (error.code === "23505") return response.status(409).json({ message: "Une équipe porte déjà ce nom dans cette entreprise." });
+            throw error;
+        }
+    }));
+
+    app.delete("/api/auth/teams/:teamId", requireAccountAdministrator, asyncHandler(async (request, response) => {
+        const teamId = positiveId(request.params.teamId);
+        if (!teamId) return response.status(400).json({ message: "Équipe invalide." });
+        const result = await getPool().query("DELETE FROM depannhome_teams WHERE id=$1 AND owner_id=$2", [teamId, getAccountOwnerId(request)]);
+        if (!result.rowCount) return response.status(404).json({ message: "Équipe introuvable." });
+        response.status(204).end();
+    }));
+
     app.get("/api/auth/members", requireAccountAdministrator, asyncHandler(async (request, response) => {
         const { rows } = await getPool().query(`
             SELECT id, username, role, full_name AS "fullName", phone, email, department, departments, is_active AS "isActive", can_create_billing AS "canCreateBilling", can_manage_calendar AS "canManageCalendar",
-                can_access_billing AS "canAccessBilling", can_access_accounting AS "canAccessAccounting", can_access_company_email AS "canAccessCompanyEmail", can_switch_group_companies AS "canSwitchGroupCompanies", created_at AS "createdAt"
+                can_access_billing AS "canAccessBilling", can_access_accounting AS "canAccessAccounting", can_access_company_email AS "canAccessCompanyEmail", can_switch_group_companies AS "canSwitchGroupCompanies", created_at AS "createdAt",
+                COALESCE((SELECT json_agg(membership.team_id ORDER BY membership.team_id) FROM depannhome_team_memberships membership WHERE membership.member_id=depannhome_users.id),'[]'::json) AS "teamIds"
             FROM depannhome_users
             WHERE account_owner_id = $1 AND id <> $1
             ORDER BY role, LOWER(full_name), username
         `, [getAccountOwnerId(request)]);
-        response.json({ members: rows });
+        response.json({ members: rows, teams: await listCompanyTeams(getAccountOwnerId(request)) });
     }));
 
     app.get("/api/auth/members/audit", requireAccountAdministrator, asyncHandler(async (request, response) => {
@@ -396,7 +444,10 @@ export function registerAuthRoutes(app) {
 
         const seatError = await memberSeatError(getAccountOwnerId(request), role);
         if (seatError) return response.status(400).json({ message: seatError });
+        const ownerId = getAccountOwnerId(request);
+        const connection = await getPool().connect();
         try {
+            await connection.query("BEGIN");
             const organization = await getOrganization(getAccountOwnerId(request));
             const configurablePermissions = isAdvancedWorkstationTier(organization.subscriptionTier) && supportsConfigurablePcPermissions(role);
             const canAccessBilling = configurablePermissions && request.body?.canAccessBilling === true;
@@ -407,12 +458,21 @@ export function registerAuthRoutes(app) {
             const canSwitchGroupCompanies = configurablePermissions && organization.subscriptionTier === "pro"
                 && Boolean(request.user.groupId) && request.body?.canSwitchGroupCompanies === true;
             const memberDepartments = ["technician", TEAM_LEAD_ROLE].includes(role) ? departments : [];
-            const member = await createUser({ username, passwordHash: await bcrypt.hash(password, 12), role, accountOwnerId: getAccountOwnerId(request), fullName, phone, email, department: memberDepartments[0] || "", departments: memberDepartments, canCreateBilling, canAccessBilling, canAccessAccounting, canAccessCompanyEmail, canSwitchGroupCompanies, canManageCalendar });
-            await recordMemberAudit(getAccountOwnerId(request), request.user.sub, member, role === "admin" ? "administrator_created" : "member_created", { role, canCreateBilling, canAccessBilling, canAccessAccounting, canAccessCompanyEmail, canSwitchGroupCompanies, canManageCalendar });
+            const teamIds = ["technician", TEAM_LEAD_ROLE].includes(role)
+                ? await prepareMemberTeamIds(connection, ownerId, request.body?.teamIds, request.body?.newTeam)
+                : [];
+            const member = await createUser({ username, passwordHash: await bcrypt.hash(password, 12), role, accountOwnerId: ownerId, fullName, phone, email, department: memberDepartments[0] || "", departments: memberDepartments, canCreateBilling, canAccessBilling, canAccessAccounting, canAccessCompanyEmail, canSwitchGroupCompanies, canManageCalendar }, connection);
+            await replaceMemberTeams(connection, ownerId, member.id, teamIds);
+            await recordMemberAudit(ownerId, request.user.sub, member, role === "admin" ? "administrator_created" : "member_created", { role, canCreateBilling, canAccessBilling, canAccessAccounting, canAccessCompanyEmail, canSwitchGroupCompanies, canManageCalendar, teamIds }, connection);
+            await connection.query("COMMIT");
             response.status(201).json({ member: publicUser(member) });
         } catch (error) {
+            await connection.query("ROLLBACK").catch(() => {});
             if (error.code === "23505") return response.status(409).json({ message: "Ce nom d’utilisateur est déjà utilisé." });
+            if (error.status) return response.status(error.status).json({ message: error.message });
             throw error;
+        } finally {
+            connection.release();
         }
     }));
 
@@ -445,6 +505,8 @@ export function registerAuthRoutes(app) {
             ? cleanDepartments(request.body.departments, request.body.department)
             : cleanDepartments(member.departments, member.department);
         const department = departments[0] || "";
+        const shouldUpdateTeams = ["technician", TEAM_LEAD_ROLE].includes(member.role) && Array.isArray(request.body?.teamIds);
+        const teamIds = shouldUpdateTeams ? await prepareMemberTeamIds(getPool(), getAccountOwnerId(request), request.body.teamIds) : [];
         if (member.role === "admin" && member.isActive && !isActive) {
             const database = await getPool().connect();
             try {
@@ -468,6 +530,7 @@ export function registerAuthRoutes(app) {
             if (seatError) return response.status(400).json({ message: seatError });
         }
         await getPool().query("UPDATE depannhome_users SET is_active = $3, can_create_billing = $4, can_access_billing = $5, can_access_accounting = $6, can_access_company_email = $7, can_switch_group_companies = $8, can_manage_calendar = $9, department = $10, departments = $11::jsonb, updated_at = NOW() WHERE id = $1 AND account_owner_id = $2", [memberId, getAccountOwnerId(request), isActive, canCreateBilling, canAccessBilling, canAccessAccounting, canAccessCompanyEmail, canSwitchGroupCompanies, canManageCalendar, department, JSON.stringify(departments)]);
+        if (shouldUpdateTeams) await replaceMemberTeams(getPool(), getAccountOwnerId(request), memberId, teamIds);
         await recordMemberAudit(getAccountOwnerId(request), request.user.sub, member, member.role === "admin" ? (isActive ? "administrator_activated" : "administrator_deactivated") : "member_updated", { isActive, canCreateBilling, canAccessBilling, canAccessAccounting, canAccessCompanyEmail, canSwitchGroupCompanies, canManageCalendar, departments });
         response.status(204).end();
     }));
@@ -516,6 +579,9 @@ export function registerAuthRoutes(app) {
                     updated_at = NOW()
                 WHERE id = $1 AND account_owner_id = $2
             `, [memberId, ownerId, nextRole]);
+            if (!["technician", TEAM_LEAD_ROLE].includes(nextRole)) {
+                await database.query("DELETE FROM depannhome_team_memberships WHERE member_id=$1", [memberId]);
+            }
             const incompatibleDeviceType = [MOBILE_ADMIN_ROLE, TEAM_LEAD_ROLE, "technician"].includes(nextRole)
                 ? "desktop"
                 : [STANDARD_PC_ROLE, "accountant"].includes(nextRole) ? "mobile" : "";
@@ -613,12 +679,13 @@ export function registerAuthRoutes(app) {
 
     app.get("/api/auth/calendar-members", requireCalendarMemberDirectoryAccess, asyncHandler(async (request, response) => {
         const { rows } = await getPool().query(`
-            SELECT id, username, full_name AS "fullName", phone, email, department, departments, role, is_active AS "isActive"
+            SELECT id, username, full_name AS "fullName", phone, email, department, departments, role, is_active AS "isActive",
+                COALESCE((SELECT json_agg(membership.team_id ORDER BY membership.team_id) FROM depannhome_team_memberships membership WHERE membership.member_id=depannhome_users.id),'[]'::json) AS "teamIds"
             FROM depannhome_users
             WHERE account_owner_id = $1 AND is_active = TRUE
             ORDER BY LOWER(COALESCE(NULLIF(full_name, ''), username)), username
         `, [getAccountOwnerId(request)]);
-        response.json({ members: rows });
+        response.json({ members: rows, teams: await listCompanyTeams(getAccountOwnerId(request)) });
     }));
 
     app.post("/api/auth/technicians", requireAccountAdministrator, asyncHandler(async (request, response) => {
@@ -1422,6 +1489,70 @@ function cleanText(value, maximumLength) {
 function cleanDepartments(value, legacyValue = "") {
     const source = Array.isArray(value) ? value : String(value || legacyValue || "").split(",");
     return [...new Set(source.map(item => cleanText(item, 80)).filter(Boolean))].slice(0, 12);
+}
+
+function cleanTeam(value) {
+    return {
+        name: cleanText(value?.name, 100),
+        siteLabel: cleanText(value?.siteLabel, 160),
+        section: cleanText(value?.section, 80)
+    };
+}
+
+function cleanPositiveIds(value, maximum = 50) {
+    if (!Array.isArray(value)) return [];
+    const ids = value.map(positiveId);
+    if (ids.some(id => !id)) throw clientError(400, "Une équipe sélectionnée est invalide.");
+    return [...new Set(ids)].slice(0, maximum);
+}
+
+async function prepareMemberTeamIds(database, ownerId, value, newTeamValue = null) {
+    const ids = cleanPositiveIds(value);
+    const newTeam = cleanTeam(newTeamValue);
+    if (newTeam.name) {
+        const existing = await database.query("SELECT id FROM depannhome_teams WHERE owner_id=$1 AND LOWER(name)=LOWER($2)", [ownerId, newTeam.name]);
+        if (existing.rows[0]) ids.push(Number(existing.rows[0].id));
+        else {
+            const created = await database.query(`
+                INSERT INTO depannhome_teams(owner_id,name,site_label,section)
+                VALUES($1,$2,$3,$4) RETURNING id
+            `, [ownerId, newTeam.name, newTeam.siteLabel, newTeam.section]);
+            ids.push(Number(created.rows[0].id));
+        }
+    }
+    const uniqueIds = [...new Set(ids)];
+    if (!uniqueIds.length) return [];
+    const result = await database.query("SELECT id FROM depannhome_teams WHERE owner_id=$1 AND is_active=TRUE AND id=ANY($2::bigint[])", [ownerId, uniqueIds]);
+    if (result.rowCount !== uniqueIds.length) throw clientError(400, "Une équipe sélectionnée est inactive ou appartient à une autre entreprise.");
+    return uniqueIds;
+}
+
+async function replaceMemberTeams(database, ownerId, memberId, teamIds) {
+    const member = await database.query("SELECT role FROM depannhome_users WHERE id=$1 AND account_owner_id=$2", [memberId, ownerId]);
+    if (!member.rows[0] || !["technician", TEAM_LEAD_ROLE].includes(member.rows[0].role)) {
+        if (teamIds.length) throw clientError(400, "Seuls les techniciens et chefs d’équipe peuvent rejoindre une équipe.");
+        return;
+    }
+    await database.query("DELETE FROM depannhome_team_memberships WHERE member_id=$1", [memberId]);
+    if (!teamIds.length) return;
+    await database.query(`
+        INSERT INTO depannhome_team_memberships(team_id,member_id,membership_role)
+        SELECT team_id,$2,CASE WHEN $3 THEN 'leader' ELSE 'member' END
+        FROM UNNEST($1::bigint[]) AS team_id
+    `, [teamIds, memberId, member.rows[0].role === TEAM_LEAD_ROLE]);
+}
+
+async function listCompanyTeams(ownerId) {
+    const { rows } = await getPool().query(`
+        SELECT team.id,team.name,team.site_label AS "siteLabel",team.section,team.is_active AS "isActive",
+            COALESCE(json_agg(membership.member_id ORDER BY membership.member_id) FILTER(WHERE membership.member_id IS NOT NULL),'[]'::json) AS "memberIds"
+        FROM depannhome_teams team
+        LEFT JOIN depannhome_team_memberships membership ON membership.team_id=team.id
+        WHERE team.owner_id=$1 AND team.is_active=TRUE
+        GROUP BY team.id
+        ORDER BY LOWER(team.name)
+    `, [ownerId]);
+    return rows;
 }
 
 function positiveId(value) {

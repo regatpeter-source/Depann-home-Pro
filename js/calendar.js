@@ -38,6 +38,7 @@ let events = [];
 let selectedEvent = null;
 let calendarView = "month";
 let members = [];
+let teams = [];
 let showAllTechnicians = true;
 let visibleTechnicianIds = new Set();
 const mobileAdminEditingEvents = new Set();
@@ -552,6 +553,7 @@ function renderEventForm(panel) {
     const technicianSearch = form.querySelector("#calendarTechnicianSearch");
     const primaryTechnicianInput = form.querySelector("[name=assignedTechnicianId]");
     const assignmentInputs = [...form.querySelectorAll("[data-calendar-assignment]")];
+    const teamAssignmentInputs = [...form.querySelectorAll("[data-calendar-team-assignment]")];
     const multiDatePlanning = initializeMultiDatePlanning(form, event);
     const syncPrimaryTechnician = () => {
         if (!primaryTechnicianInput) return;
@@ -592,6 +594,16 @@ function renderEventForm(panel) {
     clientInput.addEventListener("change", fillClientAddress);
     fillClientAddress();
     assignmentInputs.forEach(input => input.addEventListener("change", () => {
+        syncPrimaryTechnician();
+        renderCalendarAvailability(form, event.id);
+        multiDatePlanning?.refresh();
+    }));
+    teamAssignmentInputs.forEach(input => input.addEventListener("change", () => {
+        const team = teams.find(item => String(item.id) === String(input.value));
+        const memberIds = new Set((team?.memberIds || []).map(String));
+        assignmentInputs.forEach(memberInput => {
+            if (memberIds.has(String(memberInput.value))) memberInput.checked = input.checked;
+        });
         syncPrimaryTechnician();
         renderCalendarAvailability(form, event.id);
         multiDatePlanning?.refresh();
@@ -903,9 +915,10 @@ function renderTechnicianAssignmentField(event) {
     return `
         <section class="calendar-technician-assignment form-wide">
             <div class="calendar-technician-assignment-heading"><div><p class="eyebrow">Affectation multiple</p><h3>Membres affectés</h3><p class="muted">Cochez un ou plusieurs techniciens pour croiser leurs créneaux avant de valider. Le référent est conservé pour les anciens rendez-vous et les exports.</p></div></div>
-            <label class="calendar-technician-search">Rechercher un membre, un rôle ou un pôle<input id="calendarTechnicianSearch" type="search" placeholder="Ex. admin, dépannage, Léa…" autocomplete="off"></label>
+            ${teams.length ? `<div class="calendar-team-assignment"><h4>Choisir une équipe complète</h4><p class="muted">Cochez une équipe pour sélectionner tous ses membres actifs, puis ajoutez ou retirez des techniciens individuellement.</p><div>${teams.map(team => { const teamMemberIds = (team.memberIds || []).map(String); return `<label><input type="checkbox" value="${escapeHtml(team.id)}" data-calendar-team-assignment ${teamMemberIds.length && teamMemberIds.every(id => selected.has(id)) ? "checked" : ""}><span>${escapeHtml(team.name)}</span><small>${escapeHtml([team.siteLabel, team.section, `${teamMemberIds.length} membre${teamMemberIds.length > 1 ? "s" : ""}`].filter(Boolean).join(" · "))}</small></label>`; }).join("")}</div></div>` : ""}
+            <label class="calendar-technician-search">Rechercher un membre, un rôle, une équipe ou une section<input id="calendarTechnicianSearch" type="search" placeholder="Ex. Équipe Nantes, plomberie, Léa…" autocomplete="off"></label>
             <div class="calendar-technician-assignment-groups">
-                ${groups.map(([department, groupMembers]) => `<section data-calendar-assignment-group><h4>${escapeHtml(department)}</h4>${groupMembers.map(member => `<label data-calendar-assignment-option="${escapeHtml(`${department} ${member.role || ""} ${member.fullName || member.username}`)}"><input type="checkbox" name="assignedTechnicianIds" value="${escapeHtml(member.id)}" data-calendar-assignment ${selected.has(String(member.id)) ? "checked" : ""}><span>${escapeHtml(member.fullName || member.username)}</span><small>${escapeHtml([roleLabel(member.role), member.phone].filter(Boolean).join(" · "))}</small></label>`).join("")}</section>`).join("") || '<p class="muted">Aucun membre actif n’est disponible.</p>'}
+                ${groups.map(([department, groupMembers]) => `<section data-calendar-assignment-group><h4>${escapeHtml(department)}</h4>${groupMembers.map(member => { const teamNames = teams.filter(team => (member.teamIds || []).map(String).includes(String(team.id))).map(team => team.name); return `<label data-calendar-assignment-option="${escapeHtml(`${department} ${member.role || ""} ${teamNames.join(" ")} ${member.fullName || member.username}`)}"><input type="checkbox" name="assignedTechnicianIds" value="${escapeHtml(member.id)}" data-calendar-assignment ${selected.has(String(member.id)) ? "checked" : ""}><span>${escapeHtml(member.fullName || member.username)}</span><small>${escapeHtml([roleLabel(member.role), teamNames.join(" · "), member.phone].filter(Boolean).join(" · "))}</small></label>`; }).join("")}</section>`).join("") || '<p class="muted">Aucun membre actif n’est disponible.</p>'}
             </div>
             <label class="calendar-primary-technician">Membre référent<select name="assignedTechnicianId"></select></label>
         </section>`;
@@ -1694,6 +1707,7 @@ async function loadCalendarMembers() {
     const result = await request("/api/auth/calendar-members");
     const loadedMembers = result.ok ? (result.data?.members || []).filter(member => member.isActive) : [];
     if (result.ok) {
+        teams = (result.data?.teams || []).filter(team => team.isActive);
         cachedMembers = loadedMembers;
         cachedMembersAt = Date.now();
     }

@@ -3819,6 +3819,31 @@ body.mobile-device[data-role="technician"] .calendar-list-day{
     margin:0;
 }
 
+.calendar-team-assignment{
+    display:grid;
+    gap:7px;
+    padding:12px;
+    border:1px solid rgba(10,92,54,.22);
+    border-radius:12px;
+    background:#effaf3;
+}
+
+.calendar-team-assignment h4,
+.calendar-team-assignment p{ margin:0; }
+.calendar-team-assignment > div{ display:flex; flex-wrap:wrap; gap:8px; }
+.calendar-team-assignment label{
+    display:grid;
+    grid-template-columns:auto 1fr;
+    gap:2px 7px;
+    align-items:center;
+    padding:8px 10px;
+    border:1px solid rgba(10,92,54,.2);
+    border-radius:10px;
+    background:#fff;
+    cursor:pointer;
+}
+.calendar-team-assignment label small{ grid-column:2; color:var(--muted); }
+
 .calendar-technician-search,
 .calendar-primary-technician{
     display:grid;
@@ -4817,6 +4842,15 @@ body.desktop-device .billing-editor-panel.billing-editor-live-active{
 .team-departments-field input:checked + span{ border-color:var(--secondary); background:#dcfce7; color:#166534; }
 .team-departments-field input:focus-visible + span{ outline:3px solid rgba(10,92,54,.2); outline-offset:2px; }
 
+.team-inline-creation{
+    display:grid!important;
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:10px!important;
+    padding-top:4px;
+}
+.team-inline-creation label{ display:grid; gap:5px; color:var(--primary); font-size:13px; font-weight:800; }
+.team-inline-creation input{ position:static; opacity:1; pointer-events:auto; }
+
 .settings-field input,
 .settings-field select,
 .team-form-fields input,
@@ -5084,6 +5118,7 @@ body.desktop-device .billing-editor-panel.billing-editor-live-active{
 }
 
 .team-role-badge,
+.team-company-badge,
 .team-state-badge{
     padding:4px 8px;
 }
@@ -5098,6 +5133,19 @@ body.desktop-device .billing-editor-panel.billing-editor-live-active{
     color:#9a6700;
     background:#fff4d8;
 }
+
+.team-company-badge{
+    padding:4px 8px;
+    border-radius:999px;
+    color:#166534;
+    background:#dcfce7;
+    font-size:12px;
+    font-weight:800;
+}
+
+.team-company-group{ border-color:rgba(0,59,115,.22); background:#eef6ff; }
+.team-card-actions{ display:flex; flex-wrap:wrap; gap:6px; margin-top:4px; }
+.team-card-actions .secondary-button{ padding:6px 8px; font-size:12px; }
 
 .team-role-badge.is-technician{
     color:#075985;
