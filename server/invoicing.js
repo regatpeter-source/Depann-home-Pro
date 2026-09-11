@@ -623,7 +623,6 @@ async function createInvoiceIfNeeded(subscription, issuer) {
     const billingPeriod = dateString(subscription.renewalDate);
     const recipientName = String(subscription.companyName || subscription.fullName || "Entreprise").trim();
     const vatRate = issuer.vatRegime === "franchise" ? 0 : issuer.vatRate;
-    const snapshot = buildSubscriptionInvoiceSnapshot(subscription, vatRate);
     const connection = await database.connect();
     try {
         await connection.query("BEGIN");
@@ -632,6 +631,11 @@ async function createInvoiceIfNeeded(subscription, issuer) {
             await connection.query("COMMIT");
             return { created: false };
         }
+        const invoiceSubscription = { ...subscription, groupAllocations: await loadGroupInvoiceAllocations(connection, subscription.id) };
+        const snapshot = buildSubscriptionInvoiceSnapshot(invoiceSubscription, vatRate);
+        const invoiceLabel = invoiceSubscription.interfaceType === "group"
+            ? `${subscriptionTierConfig(invoiceSubscription.subscriptionTier).label} Groupe — abonnement global facturé à l’entreprise principale`
+            : invoiceSubscription.subscriptionLabel || "Abonnement Depann’Home Pro";
         const { rows: dates } = await connection.query(`SELECT TO_CHAR(CURRENT_DATE,'YYYY-MM-DD') AS "issueDate",EXTRACT(YEAR FROM CURRENT_DATE)::integer AS "seriesYear"`);
         const { issueDate, seriesYear } = dates[0];
         const dueDate = addDays(issueDate, 30);
@@ -647,8 +651,8 @@ async function createInvoiceIfNeeded(subscription, issuer) {
             VALUES ($1,$2::date,$3,$4,$5,$6,$7,$8,$9,$10,$11::date,$12::date,$13::jsonb,$14::jsonb,$15::jsonb,$16::jsonb)
             ON CONFLICT (account_owner_id, billing_period) WHERE status<>'cancelled' AND invoice_kind='cycle' DO NOTHING
             RETURNING id
-        `, [subscription.id, billingPeriod, invoiceNumber, recipientName, subscription.email, String(subscription.recipientAddress || "").slice(0, 500), subscription.subscriptionLabel || "Abonnement Depann’Home Pro",
-            subscription.monthlyPriceCents, snapshot.netAmountCents, vatRate, issueDate, dueDate, JSON.stringify(issuer), JSON.stringify(snapshot.lines), JSON.stringify(snapshot.financialData), JSON.stringify(subscriptionSnapshot(subscription, snapshot))]);
+        `, [subscription.id, billingPeriod, invoiceNumber, recipientName, subscription.email, String(subscription.recipientAddress || "").slice(0, 500), invoiceLabel,
+            subscription.monthlyPriceCents, snapshot.netAmountCents, vatRate, issueDate, dueDate, JSON.stringify(issuer), JSON.stringify(snapshot.lines), JSON.stringify(snapshot.financialData), JSON.stringify(subscriptionSnapshot({ ...invoiceSubscription, subscriptionLabel: invoiceLabel }, snapshot))]);
         if (!rows[0]) {
             await connection.query("ROLLBACK");
             return { created: false };
@@ -661,6 +665,20 @@ async function createInvoiceIfNeeded(subscription, issuer) {
     } finally {
         connection.release();
     }
+}
+
+async function loadGroupInvoiceAllocations(database, principalOwnerId) {
+    const entitlement = await database.query("SELECT group_id FROM depannhome_group_entitlements WHERE principal_company_owner_id=$1 FOR SHARE", [principalOwnerId]);
+    if (!entitlement.rows[0]) return [];
+    const { rows } = await database.query(`
+        SELECT allocation.company_owner_id AS "companyId",COALESCE(NULLIF(company_owner.company_name,''),company_owner.full_name,company_owner.username) AS "companyName",
+            allocation.allocated_pc_seats AS "allocatedPcSeats",allocation.allocated_mobile_seats AS "allocatedMobileSeats"
+        FROM depannhome_group_company_seat_allocations allocation
+        JOIN depannhome_users company_owner ON company_owner.id=allocation.company_owner_id
+        WHERE allocation.group_id=$1
+        ORDER BY LOWER(COALESCE(NULLIF(company_owner.company_name,''),company_owner.full_name,company_owner.username)),allocation.company_owner_id
+    `, [entitlement.rows[0].group_id]);
+    return rows;
 }
 
 async function deliverPendingInvoices(invoiceId = null) {
@@ -875,6 +893,7 @@ function amountExcludingVat(amountCents, vatRate) {
 }
 
 function subscriptionSnapshot(subscription, snapshot = buildSubscriptionInvoiceSnapshot(subscription, 0)) {
+    const groupAllocations = normalizeGroupAllocations(subscription.groupAllocations);
     return {
         subscriptionPlan: subscription.subscriptionPlan || "paid",
         interfaceType: subscription.interfaceType || "standard",
@@ -886,7 +905,8 @@ function subscriptionSnapshot(subscription, snapshot = buildSubscriptionInvoiceS
         netAmountCents: Math.max(0, Number(snapshot.netAmountCents) || 0),
         discountLabel: subscription.discountLabel || "",
         discountMode: subscription.discountMode === "percentage" ? "percentage" : "fixed",
-        discountValue: Math.max(0, Number(subscription.discountValue) || 0)
+        discountValue: Math.max(0, Number(subscription.discountValue) || 0),
+        ...(groupAllocations.length ? { groupAllocations } : {})
     };
 }
 
@@ -895,7 +915,7 @@ export function subscriptionInvoiceMatchesCurrentSubscription(invoice, subscript
     const expectedSnapshot = buildSubscriptionInvoiceSnapshot(subscription, Number(invoice.vatRate) || 0);
     const expected = subscriptionSnapshot(subscription, expectedSnapshot);
     const saved = invoice.subscriptionSnapshot && Object.keys(invoice.subscriptionSnapshot).length ? invoice.subscriptionSnapshot : null;
-    if (saved) return Object.keys(expected).every(key => String(saved[key] ?? "") === String(expected[key] ?? ""));
+    if (saved) return Object.keys(expected).filter(key => key !== "groupAllocations").every(key => String(saved[key] ?? "") === String(expected[key] ?? ""));
     return Number(invoice.baseAmountCents ?? invoice.amountCents) === expected.amountCents
         && Number(invoice.amountCents ?? invoice.netAmountCents) === expected.netAmountCents
         && String(invoice.subscriptionLabel || "") === expected.subscriptionLabel;
@@ -912,7 +932,8 @@ function currentSubscriptionFromInvoiceRow(row) {
         maxTechnicians: row.maxTechnicians,
         discountLabel: row.discountLabel,
         discountMode: row.discountMode,
-        discountValue: row.discountValue
+        discountValue: row.discountValue,
+        groupAllocations: row.groupAllocations
     };
 }
 
@@ -925,10 +946,12 @@ async function cancelSupersededSubscriptionInvoices() {
             owner.subscription_tier AS "subscriptionTier",owner.subscription_label AS "currentSubscriptionLabel",
             owner.monthly_price_cents AS "monthlyPriceCents",owner.max_pc_users AS "maxPcUsers",owner.max_technicians AS "maxTechnicians",
             owner.subscription_discount_label AS "discountLabel",owner.subscription_discount_mode AS "discountMode",
-            owner.subscription_discount_value::float AS "discountValue",COALESCE(organization.interface_type,'standard') AS "interfaceType"
+            owner.subscription_discount_value::float AS "discountValue",COALESCE(organization.interface_type,'standard') AS "interfaceType",
+            COALESCE((SELECT jsonb_agg(jsonb_build_object('companyId',allocation.company_owner_id,'companyName',COALESCE(NULLIF(company_owner.company_name,''),company_owner.full_name,company_owner.username),'allocatedPcSeats',allocation.allocated_pc_seats,'allocatedMobileSeats',allocation.allocated_mobile_seats) ORDER BY LOWER(COALESCE(NULLIF(company_owner.company_name,''),company_owner.full_name,company_owner.username)),allocation.company_owner_id) FROM depannhome_group_company_seat_allocations allocation JOIN depannhome_users company_owner ON company_owner.id=allocation.company_owner_id WHERE allocation.group_id=group_entitlement.group_id),'[]'::jsonb) AS "groupAllocations"
         FROM depannhome_subscription_invoices invoice
         JOIN depannhome_users owner ON owner.id=invoice.account_owner_id
         LEFT JOIN depannhome_organizations organization ON organization.account_owner_id=owner.id
+        LEFT JOIN depannhome_group_entitlements group_entitlement ON group_entitlement.principal_company_owner_id=owner.id
         WHERE invoice.status IN ('pending','failed') AND invoice.invoice_kind='cycle'
     `);
     let cancelled = 0;
@@ -952,14 +975,22 @@ export function buildSubscriptionInvoiceSnapshot(subscription, vatRate) {
         : Math.min(amountCents, Math.round(discountValue * 100));
     const tier = subscriptionTierConfig(subscription.subscriptionTier);
     const lines = [];
+    const groupAllocations = normalizeGroupAllocations(subscription.groupAllocations);
+    const isDetailedGroup = subscription.interfaceType === "group" && groupAllocations.length > 0;
     const tierAmountCents = calculateSubscriptionPriceCents(subscription.subscriptionTier, subscription.maxPcUsers, subscription.maxTechnicians);
     if (subscription.subscriptionTier && amountCents === tierAmountCents) {
-        if (Number(subscription.maxPcUsers) > 0) lines.push({ description: `${tier.label} — poste administratif`, quantity: Number(subscription.maxPcUsers), unit: "poste/mois", unitPrice: amountExcludingVat(tier.pcRateCents, vatRate), vatRate });
-        if (Number(subscription.maxTechnicians) > 0) lines.push({ description: `${tier.label} — poste mobile`, quantity: Number(subscription.maxTechnicians), unit: "poste/mois", unitPrice: amountExcludingVat(tier.mobileRateCents, vatRate), vatRate });
+        if (isDetailedGroup) appendDetailedGroupLines(lines, groupAllocations, subscription, tier, vatRate, false);
+        else {
+            if (Number(subscription.maxPcUsers) > 0) lines.push({ description: `${tier.label} — poste administratif`, quantity: Number(subscription.maxPcUsers), unit: "poste/mois", unitPrice: amountExcludingVat(tier.pcRateCents, vatRate), vatRate });
+            if (Number(subscription.maxTechnicians) > 0) lines.push({ description: `${tier.label} — poste mobile`, quantity: Number(subscription.maxTechnicians), unit: "poste/mois", unitPrice: amountExcludingVat(tier.mobileRateCents, vatRate), vatRate });
+        }
     } else {
         lines.push({ description: `${subscription.subscriptionLabel || "Abonnement Depann’Home Pro"} — abonnement mensuel`, quantity: 1, unit: "mois", unitPrice: amountExcludingVat(amountCents, vatRate), vatRate });
-        if (Number(subscription.maxPcUsers) > 0) lines.push({ description: "Postes administratifs inclus", quantity: Number(subscription.maxPcUsers), unit: "poste", unitPrice: 0, vatRate });
-        if (Number(subscription.maxTechnicians) > 0) lines.push({ description: "Postes mobiles inclus", quantity: Number(subscription.maxTechnicians), unit: "poste", unitPrice: 0, vatRate });
+        if (isDetailedGroup) appendDetailedGroupLines(lines, groupAllocations, subscription, tier, vatRate, true);
+        else {
+            if (Number(subscription.maxPcUsers) > 0) lines.push({ description: "Postes administratifs inclus", quantity: Number(subscription.maxPcUsers), unit: "poste", unitPrice: 0, vatRate });
+            if (Number(subscription.maxTechnicians) > 0) lines.push({ description: "Postes mobiles inclus", quantity: Number(subscription.maxTechnicians), unit: "poste", unitPrice: 0, vatRate });
+        }
     }
     return {
         lines,
@@ -970,6 +1001,31 @@ export function buildSubscriptionInvoiceSnapshot(subscription, vatRate) {
         },
         netAmountCents: amountCents - discountCents
     };
+}
+
+function normalizeGroupAllocations(value) {
+    if (!Array.isArray(value)) return [];
+    return value.map(allocation => ({
+        companyId: String(allocation?.companyId || ""),
+        companyName: cleanText(allocation?.companyName, 160) || "Entreprise du groupe",
+        allocatedPcSeats: Math.max(0, Number(allocation?.allocatedPcSeats) || 0),
+        allocatedMobileSeats: Math.max(0, Number(allocation?.allocatedMobileSeats) || 0)
+    })).filter(allocation => allocation.allocatedPcSeats || allocation.allocatedMobileSeats);
+}
+
+function appendDetailedGroupLines(lines, allocations, subscription, tier, vatRate, includedOnly) {
+    const pcUnitPrice = includedOnly ? 0 : amountExcludingVat(tier.pcRateCents, vatRate);
+    const mobileUnitPrice = includedOnly ? 0 : amountExcludingVat(tier.mobileRateCents, vatRate);
+    for (const allocation of allocations) {
+        if (allocation.allocatedPcSeats) lines.push({ description: `${tier.label} Groupe — ${allocation.companyName} — poste PC`, quantity: allocation.allocatedPcSeats, unit: includedOnly ? "poste" : "poste/mois", unitPrice: pcUnitPrice, vatRate });
+        if (allocation.allocatedMobileSeats) lines.push({ description: `${tier.label} Groupe — ${allocation.companyName} — poste mobile`, quantity: allocation.allocatedMobileSeats, unit: includedOnly ? "poste" : "poste/mois", unitPrice: mobileUnitPrice, vatRate });
+    }
+    const allocatedPcSeats = allocations.reduce((total, allocation) => total + allocation.allocatedPcSeats, 0);
+    const allocatedMobileSeats = allocations.reduce((total, allocation) => total + allocation.allocatedMobileSeats, 0);
+    const reservePcSeats = Math.max(0, Number(subscription.maxPcUsers) - allocatedPcSeats);
+    const reserveMobileSeats = Math.max(0, Number(subscription.maxTechnicians) - allocatedMobileSeats);
+    if (reservePcSeats) lines.push({ description: `${tier.label} Groupe — réserve non attribuée — poste PC`, quantity: reservePcSeats, unit: includedOnly ? "poste" : "poste/mois", unitPrice: pcUnitPrice, vatRate });
+    if (reserveMobileSeats) lines.push({ description: `${tier.label} Groupe — réserve non attribuée — poste mobile`, quantity: reserveMobileSeats, unit: includedOnly ? "poste" : "poste/mois", unitPrice: mobileUnitPrice, vatRate });
 }
 
 function subscriptionInvoiceDocument(invoice) {

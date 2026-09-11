@@ -5,6 +5,7 @@ import { companySeatState, groupSeatStatus } from "../server/seat-limits.js";
 
 const read = path => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 const migration = read("database/migrations/0015_group_seat_allocations.sql");
+const billingLabelMigration = read("database/migrations/0016_group_billing_labels.sql");
 const schema = read("database/schema.sql");
 const groups = read("server/groups.js");
 const auth = read("server/auth.js");
@@ -80,6 +81,9 @@ test("le Créateur attribue le nombre de sociétés et les totaux du groupe prin
     assert.match(creator, /grouped_entitlement\.principal_company_owner_id<>owner\.id/);
     assert.match(creatorClient, /Nombre maximum d’entreprises \(principale incluse\)/);
     assert.match(creatorClient, /Postes PC pour tout le groupe/);
+    assert.match(creator, /Groupe — abonnement global facturé à l’entreprise principale/);
+    assert.match(groups, /Groupe — abonnement global facturé à l’entreprise principale/);
+    assert.match(billingLabelMigration, /Groupe — abonnement global facturé à l’entreprise principale/);
     assert.match(groupsClient, /Enveloppe attribuée par le Créateur/);
     assert.match(groupsClient, /group_seats_rebalanced/);
 });

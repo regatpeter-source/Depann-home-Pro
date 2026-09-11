@@ -87,6 +87,41 @@ test("la facture détaille la formule et les postes administratifs et mobiles in
     assert.equal(snapshot.netAmountCents, 9000);
 });
 
+test("la facture Groupe détaille les postes par société et la réserve non attribuée", () => {
+    const snapshot = buildSubscriptionInvoiceSnapshot({
+        interfaceType: "group",
+        subscriptionTier: "pro",
+        subscriptionLabel: "Pro Groupe — abonnement global facturé à l’entreprise principale",
+        monthlyPriceCents: 41000,
+        maxPcUsers: 5,
+        maxTechnicians: 4,
+        discountMode: "fixed",
+        discountValue: 0,
+        groupAllocations: [
+            { companyId: "10", companyName: "Entreprise A", allocatedPcSeats: 2, allocatedMobileSeats: 1 },
+            { companyId: "11", companyName: "Entreprise B", allocatedPcSeats: 1, allocatedMobileSeats: 2 }
+        ]
+    }, 20);
+    assert.deepEqual(snapshot.lines.map(line => [line.description, line.quantity]), [
+        ["Pro Groupe — Entreprise A — poste PC", 2],
+        ["Pro Groupe — Entreprise A — poste mobile", 1],
+        ["Pro Groupe — Entreprise B — poste PC", 1],
+        ["Pro Groupe — Entreprise B — poste mobile", 2],
+        ["Pro Groupe — réserve non attribuée — poste PC", 2],
+        ["Pro Groupe — réserve non attribuée — poste mobile", 1]
+    ]);
+    assert.equal(snapshot.netAmountCents, 41000);
+});
+
+test("l’instantané de facture Groupe conserve la répartition utilisée pour son détail", () => {
+    assert.match(invoicingSource, /AS "groupAllocations"/);
+    assert.match(invoicingSource, /groupAllocations: row\.groupAllocations/);
+    assert.match(invoicingSource, /\.\.\.\(groupAllocations\.length \? \{ groupAllocations \} : \{\}\)/);
+    assert.match(invoicingSource, /principal_company_owner_id=\$1 FOR SHARE/);
+    assert.match(invoicingSource, /abonnement global facturé à l’entreprise principale/);
+    assert.match(invoicingSource, /réserve non attribuée/);
+});
+
 test("une remise fixe TTC est convertie en HT et soustraite du net à payer", () => {
     const snapshot = buildSubscriptionInvoiceSnapshot({ monthlyPriceCents: 10000, discountMode: "fixed", discountValue: 10 }, 20);
     assert.equal(snapshot.financialData.discountAmount, 8.33);

@@ -710,7 +710,7 @@ function sanitizeAccount(value, requireCompleteProfile = false) {
     const maxPcUsers = isFreePartner ? 1 : requestedMaxPcUsers;
     const maxTechnicians = isFreePartner ? 0 : requestedMaxTechnicians;
     const subscriptionPlan = isFreePartner ? "free" : "paid";
-    const subscriptionLabel = isFreePartner ? "Portail Partenaire gratuit" : tierConfig.label;
+    const subscriptionLabel = isFreePartner ? "Portail Partenaire gratuit" : isGroup ? `${tierConfig.label} Groupe — abonnement global facturé à l’entreprise principale` : tierConfig.label;
     const monthlyPriceCents = isFreePartner ? 0 : calculateSubscriptionPriceCents(subscriptionTier, maxPcUsers, maxTechnicians);
     const subscriptionDiscountLabel = isFreePartner ? "" : cleanText(value?.subscriptionDiscountLabel, 160);
     const subscriptionDiscountMode = isFreePartner ? "fixed" : value?.subscriptionDiscountMode === "percentage" ? "percentage" : "fixed";

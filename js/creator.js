@@ -1,7 +1,7 @@
 import { ROUTES } from "./config.js?v=105";
 import { clearSearch, getContainer, setPage } from "./ui.js?v=44";
 import { escapeHtml } from "./utils.js?v=44";
-import { renderCreatorConnectors } from "./connectors.js?v=4";
+import { renderCreatorConnectors } from "./connectors.js?v=5";
 import { renderHealthDashboard } from "./health-dashboard.js?v=1";
 
 let accounts = [];
@@ -657,7 +657,7 @@ function renderAccountList() {
             <strong>${escapeHtml(account.companyName || account.ownerFullName || account.ownerUsername)}</strong>
             <span>${escapeHtml(account.ownerUsername)} · ${account.isArchived ? "Archivée" : account.isActive ? "Active" : "Suspendue"}</span>
             <em class="creator-subscription-badge ${escapeHtml(account.subscriptionStatus || "active")}">${escapeHtml(subscriptionPlanLabel(account))} · ${escapeHtml(subscriptionStatusLabel(account.subscriptionStatus))}</em>
-            <small>${account.organization?.interfaceType === "group" ? `${account.groupCompanyCount}/${account.maxGroupCompanies} entreprises · ${account.allocatedGroupPcSeats}/${account.maxPcUsers} PC répartis · ${account.allocatedGroupMobileSeats}/${account.maxTechnicians} mobiles répartis` : `${account.activePcUsers}/${account.maxPcUsers} postes administratifs · ${account.activeTechnicians}/${account.maxTechnicians} mobiles`}</small>
+            <small>${account.organization?.interfaceType === "group" ? `Mode Groupe · facturation centralisée sur l’entreprise principale · ${account.groupCompanyCount}/${account.maxGroupCompanies} entreprises · ${account.allocatedGroupPcSeats}/${account.maxPcUsers} PC répartis · ${account.allocatedGroupMobileSeats}/${account.maxTechnicians} mobiles répartis` : `${account.activePcUsers}/${account.maxPcUsers} postes administratifs · ${account.activeTechnicians}/${account.maxTechnicians} mobiles`}</small>
         </button>
     `).join("") : `<p class="muted">Aucune entreprise ${accountListMode === "archived" ? "archivée" : "active"}.</p>`}`;
     list.querySelectorAll("[data-account-mode]").forEach(button => button.addEventListener("click", () => { accountListMode = button.dataset.accountMode; selectedAccountId = ""; renderAccountList(); document.querySelector("#creatorWorkspace").innerHTML = '<p class="muted">Sélectionnez une organisation.</p>'; }));
@@ -889,7 +889,7 @@ function renderOrganizationFields(organization = {}, maxGroupCompanies = 1) {
                 <label>Type d’organisation<select name="organizationType"><option value="troubleshooting_company" ${organizationType === "troubleshooting_company" ? "selected" : ""}>Entreprise de dépannage</option><option value="leak_detection_company" ${organizationType === "leak_detection_company" ? "selected" : ""}>Recherche de fuite</option><option value="locksmith" ${organizationType === "locksmith" ? "selected" : ""}>Serrurier</option><option value="plumber" ${organizationType === "plumber" ? "selected" : ""}>Plombier</option><option value="property_manager" ${organizationType === "property_manager" ? "selected" : ""}>Syndic</option><option value="real_estate_agency" ${organizationType === "real_estate_agency" ? "selected" : ""}>Agence immobilière</option><option value="insurance" ${organizationType === "insurance" ? "selected" : ""}>Assurance</option><option value="expert" ${organizationType === "expert" ? "selected" : ""}>Expert</option><option value="principal" ${organizationType === "principal" ? "selected" : ""}>Donneur d’ordre</option><option value="partner_platform" ${organizationType === "partner_platform" ? "selected" : ""}>Plateforme partenaire</option><option value="other" ${organizationType === "other" ? "selected" : ""}>Autre</option></select></label>
                 <label>Licence<select name="organizationLicenseType"><option value="partner_portal" ${licenseType === "partner_portal" ? "selected" : ""}>Portail Partenaire</option><option value="depannhome_standard" ${licenseType === "depannhome_standard" ? "selected" : ""}>Depann’Home Pro Standard</option><option value="depannhome_group" ${licenseType === "depannhome_group" ? "selected" : ""}>Depann’Home Pro Groupe</option></select></label>
                 <label data-group-company-limit ${interfaceType === "group" ? "" : "hidden"}>Nombre maximum d’entreprises (principale incluse)<input name="maxGroupCompanies" type="number" min="1" max="100" value="${escapeHtml(maxGroupCompanies || 1)}"><small>Exemple : 5 autorise l’entreprise principale et 4 sociétés supplémentaires.</small></label>
-                <p class="muted form-wide" data-group-envelope-note ${interfaceType === "group" ? "" : "hidden"}>Les postes PC et mobiles sont facturés une seule fois à l’entreprise principale. Son administrateur les répartit ensuite entre les sociétés du groupe.</p>
+                <p class="muted form-wide" data-group-envelope-note ${interfaceType === "group" ? "" : "hidden"}><strong>Mode Groupe — facturation centralisée sur l’entreprise principale.</strong> Les postes PC et mobiles sont détaillés par société sur sa facture unique. Son administrateur les répartit ensuite entre les sociétés du groupe.</p>
             </div>
         </fieldset>
     `;
