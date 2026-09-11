@@ -657,7 +657,7 @@ function renderAccountList() {
             <strong>${escapeHtml(account.companyName || account.ownerFullName || account.ownerUsername)}</strong>
             <span>${escapeHtml(account.ownerUsername)} · ${account.isArchived ? "Archivée" : account.isActive ? "Active" : "Suspendue"}</span>
             <em class="creator-subscription-badge ${escapeHtml(account.subscriptionStatus || "active")}">${escapeHtml(subscriptionPlanLabel(account))} · ${escapeHtml(subscriptionStatusLabel(account.subscriptionStatus))}</em>
-            <small>${account.activePcUsers}/${account.maxPcUsers} postes administratifs · ${account.activeTechnicians}/${account.maxTechnicians} mobiles</small>
+            <small>${account.organization?.interfaceType === "group" ? `${account.groupCompanyCount}/${account.maxGroupCompanies} entreprises · ${account.allocatedGroupPcSeats}/${account.maxPcUsers} PC répartis · ${account.allocatedGroupMobileSeats}/${account.maxTechnicians} mobiles répartis` : `${account.activePcUsers}/${account.maxPcUsers} postes administratifs · ${account.activeTechnicians}/${account.maxTechnicians} mobiles`}</small>
         </button>
     `).join("") : `<p class="muted">Aucune entreprise ${accountListMode === "archived" ? "archivée" : "active"}.</p>`}`;
     list.querySelectorAll("[data-account-mode]").forEach(button => button.addEventListener("click", () => { accountListMode = button.dataset.accountMode; selectedAccountId = ""; renderAccountList(); document.querySelector("#creatorWorkspace").innerHTML = '<p class="muted">Sélectionnez une organisation.</p>'; }));
@@ -682,12 +682,12 @@ async function renderAccountDetail(accountId) {
                 <label>Responsable principal<input name="fullName" maxlength="100" required value="${escapeHtml(account.ownerFullName)}"></label>
                 <label>Téléphone responsable<input name="phone" maxlength="30" value="${escapeHtml(account.ownerPhone)}"></label>
                 <label>E-mail de facturation<input name="billingEmail" type="email" maxlength="160" value="${escapeHtml(account.billingEmail || "")}" placeholder="comptabilite@entreprise.fr"></label>
-                <label>Postes administratifs autorisés<input name="maxPcUsers" type="number" min="1" max="100" required value="${escapeHtml(account.maxPcUsers)}"></label>
-                <label>Postes mobiles autorisés<input name="maxTechnicians" type="number" min="0" max="500" required value="${escapeHtml(account.maxTechnicians)}"></label>
+                <label data-pc-seat-label>Postes administratifs autorisés<input name="maxPcUsers" type="number" min="1" max="100" required value="${escapeHtml(account.maxPcUsers)}"></label>
+                <label data-mobile-seat-label>Postes mobiles autorisés<input name="maxTechnicians" type="number" min="0" max="500" required value="${escapeHtml(account.maxTechnicians)}"></label>
             </div>
             ${renderCompanyProfileFields(account.companyProfile)}
             ${renderSubscriptionFields(account)}
-            ${renderOrganizationFields(account.organization)}
+            ${renderOrganizationFields(account.organization, account.maxGroupCompanies)}
             ${renderDocumentTemplatePolicyFields(account)}
             ${isOwnCreatorAccount ? '<p class="creator-account-status-note">Le compte Créateur reste actif en permanence.</p>' : account.isArchived ? `<section class="creator-account-status-panel archived"><div><strong>Entreprise archivée</strong><p>Tous les accès sont bloqués, mais les clients, interventions, rapports, documents, écritures et partenariats sont intégralement conservés.${account.archivedAt ? ` Archive créée le ${escapeHtml(formatDateTime(account.archivedAt))}.` : ""}</p></div><button type="button" class="secondary-button" id="creatorRestoreAccount">Réactiver l’entreprise</button></section>` : `<section class="creator-account-status-panel ${account.isActive ? "active" : "suspended"}"><div><strong>${account.isActive ? "Entreprise active" : "Entreprise suspendue"}</strong><p>${account.isActive ? "Les membres peuvent se connecter et utiliser leur espace." : "Les connexions et les sessions en cours sont bloquées. Les données restent conservées."}</p></div><button type="button" class="secondary-button ${account.isActive ? "danger-button" : ""}" id="creatorToggleAccountStatus">${account.isActive ? "Suspendre l’entreprise" : "Réactiver l’entreprise"}</button></section>`}
             <div class="creator-form-actions">${account.isArchived ? "" : '<button type="submit" class="secondary-button">Enregistrer l’entreprise</button>'}${isOwnCreatorAccount || account.isArchived ? "" : '<button type="button" class="secondary-button danger-button" id="creatorDeleteAccount">Archiver l’entreprise</button>'}</div>
@@ -781,12 +781,12 @@ function renderAccountForm() {
                 <label>E-mail de facturation<input name="billingEmail" type="email" maxlength="160" placeholder="comptabilite@entreprise.fr"></label>
                 <label>Identifiant administrateur<input name="username" minlength="3" maxlength="32" required placeholder="minuscules, chiffres, . _ -"></label>
                 <label>Mot de passe initial<input name="password" type="password" minlength="12" required autocomplete="new-password"></label>
-                <label>Postes administratifs autorisés<input name="maxPcUsers" type="number" min="1" max="100" required value="1"></label>
-                <label>Postes mobiles autorisés<input name="maxTechnicians" type="number" min="0" max="500" required value="1"></label>
+                <label data-pc-seat-label>Postes administratifs autorisés<input name="maxPcUsers" type="number" min="1" max="100" required value="1"></label>
+                <label data-mobile-seat-label>Postes mobiles autorisés<input name="maxTechnicians" type="number" min="0" max="500" required value="1"></label>
             </div>
             ${renderCompanyProfileFields()}
             ${renderSubscriptionFields({ subscriptionTier: "basic", subscriptionPlan: "paid", subscriptionLabel: "Basic", monthlyPriceCents: 2500, subscriptionDiscountLabel: "", subscriptionDiscountMode: "fixed", subscriptionDiscountValue: 0, subscriptionStatus: "active", subscriptionRenewalDate: "", billingReference: "", creatorNote: "" })}
-            ${renderOrganizationFields()}
+            ${renderOrganizationFields({}, 2)}
             ${renderDocumentTemplatePolicyFields({ quoteTemplatePolicy: "company_choice", quitusTemplatePolicy: "company_choice", reportTemplatePolicy: "company_choice" })}
             <div class="creator-form-actions"><button type="submit" class="secondary-button">Créer l’entreprise</button></div>
         </form>
@@ -877,7 +877,7 @@ function renderSubscriptionFields(account) {
     `;
 }
 
-function renderOrganizationFields(organization = {}) {
+function renderOrganizationFields(organization = {}, maxGroupCompanies = 1) {
     const interfaceType = organization.interfaceType || "standard";
     const organizationType = organization.organizationType || "troubleshooting_company";
     const licenseType = organization.licenseType || "depannhome_standard";
@@ -888,6 +888,8 @@ function renderOrganizationFields(organization = {}) {
                 <label>Type d’interface<select name="organizationInterfaceType"><option value="partner" ${interfaceType === "partner" ? "selected" : ""}>Interface Partenaire — accès Pro gratuit</option><option value="standard" ${interfaceType === "standard" ? "selected" : ""}>Interface Standard — modules selon Basic / Basic+ / Pro</option><option value="group" ${interfaceType === "group" ? "selected" : ""}>Interface Groupe / Multi-entreprises — Pro requis</option></select></label>
                 <label>Type d’organisation<select name="organizationType"><option value="troubleshooting_company" ${organizationType === "troubleshooting_company" ? "selected" : ""}>Entreprise de dépannage</option><option value="leak_detection_company" ${organizationType === "leak_detection_company" ? "selected" : ""}>Recherche de fuite</option><option value="locksmith" ${organizationType === "locksmith" ? "selected" : ""}>Serrurier</option><option value="plumber" ${organizationType === "plumber" ? "selected" : ""}>Plombier</option><option value="property_manager" ${organizationType === "property_manager" ? "selected" : ""}>Syndic</option><option value="real_estate_agency" ${organizationType === "real_estate_agency" ? "selected" : ""}>Agence immobilière</option><option value="insurance" ${organizationType === "insurance" ? "selected" : ""}>Assurance</option><option value="expert" ${organizationType === "expert" ? "selected" : ""}>Expert</option><option value="principal" ${organizationType === "principal" ? "selected" : ""}>Donneur d’ordre</option><option value="partner_platform" ${organizationType === "partner_platform" ? "selected" : ""}>Plateforme partenaire</option><option value="other" ${organizationType === "other" ? "selected" : ""}>Autre</option></select></label>
                 <label>Licence<select name="organizationLicenseType"><option value="partner_portal" ${licenseType === "partner_portal" ? "selected" : ""}>Portail Partenaire</option><option value="depannhome_standard" ${licenseType === "depannhome_standard" ? "selected" : ""}>Depann’Home Pro Standard</option><option value="depannhome_group" ${licenseType === "depannhome_group" ? "selected" : ""}>Depann’Home Pro Groupe</option></select></label>
+                <label data-group-company-limit ${interfaceType === "group" ? "" : "hidden"}>Nombre maximum d’entreprises (principale incluse)<input name="maxGroupCompanies" type="number" min="1" max="100" value="${escapeHtml(maxGroupCompanies || 1)}"><small>Exemple : 5 autorise l’entreprise principale et 4 sociétés supplémentaires.</small></label>
+                <p class="muted form-wide" data-group-envelope-note ${interfaceType === "group" ? "" : "hidden"}>Les postes PC et mobiles sont facturés une seule fois à l’entreprise principale. Son administrateur les répartit ensuite entre les sociétés du groupe.</p>
             </div>
         </fieldset>
     `;
@@ -903,6 +905,10 @@ function bindOrganizationInterface(form) {
     const subscriptionTier = form.elements.subscriptionTier;
     const pcSeats = form.elements.maxPcUsers;
     const mobileSeats = form.elements.maxTechnicians;
+    const companyLimit = form.querySelector("[data-group-company-limit]");
+    const envelopeNote = form.querySelector("[data-group-envelope-note]");
+    const pcSeatLabel = form.querySelector("[data-pc-seat-label]");
+    const mobileSeatLabel = form.querySelector("[data-mobile-seat-label]");
     if (!interfaceType || !licenseType) return;
     const syncLicense = () => {
         const isPartner = interfaceType.value === "partner";
@@ -912,6 +918,14 @@ function bindOrganizationInterface(form) {
         if (!isPro && interfaceType.value === "group") interfaceType.value = "standard";
         const expected = interfaceType.value === "partner" ? "partner_portal" : interfaceType.value === "group" ? "depannhome_group" : "depannhome_standard";
         licenseType.value = expected;
+        const isGroup = interfaceType.value === "group";
+        if (pcSeats) pcSeats.max = isGroup ? "1000" : "100";
+        if (mobileSeats) mobileSeats.max = isGroup ? "5000" : "500";
+        if (companyLimit) companyLimit.hidden = !isGroup;
+        if (envelopeNote) envelopeNote.hidden = !isGroup;
+        if (form.elements.maxGroupCompanies) form.elements.maxGroupCompanies.required = isGroup;
+        if (pcSeatLabel) pcSeatLabel.childNodes[0].textContent = isGroup ? "Postes PC pour tout le groupe" : "Postes administratifs autorisés";
+        if (mobileSeatLabel) mobileSeatLabel.childNodes[0].textContent = isGroup ? "Postes mobiles pour tout le groupe" : "Postes mobiles autorisés";
         if (pcSeats) { if (isPartner) pcSeats.value = "1"; pcSeats.readOnly = isPartner; }
         if (mobileSeats) { if (isPartner) mobileSeats.value = "0"; mobileSeats.readOnly = isPartner; }
         form.dispatchEvent(new Event("subscription-context-change"));

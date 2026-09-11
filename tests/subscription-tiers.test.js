@@ -18,6 +18,7 @@ const navigation = readFileSync(new URL("../js/navigation.js", import.meta.url),
 const billing = readFileSync(new URL("../js/billing.js", import.meta.url), "utf8");
 const calendar = readFileSync(new URL("../js/calendar.js", import.meta.url), "utf8");
 const auth = readFileSync(new URL("../server/auth.js", import.meta.url), "utf8");
+const seatLimits = readFileSync(new URL("../server/seat-limits.js", import.meta.url), "utf8");
 const partnerConnectionsServer = readFileSync(new URL("../server/partner-connections.js", import.meta.url), "utf8");
 const partnerDialogue = readFileSync(new URL("../server/partner-dialogue.js", import.meta.url), "utf8");
 const purchasesServer = readFileSync(new URL("../server/purchases.js", import.meta.url), "utf8");
@@ -346,10 +347,10 @@ test("tier features are protected on both API and navigation layers", () => {
     assert.match(navigation, /\["approval_pending", "code_pending", "rejected"\]\.includes\(device\.status\)/);
     assert.match(navigation, /Réactiver ce poste mobile/);
     assert.match(navigation, /\/api\/auth\/devices\/\$\{encodeURIComponent\(device\.id\)\}\/approve/);
-    assert.match(auth, /COUNT\(DISTINCT cross_device_mobile\.id\) FILTER \(WHERE cross_device_mobile\.status='approved'/);
+    assert.match(seatLimits, /COUNT\(DISTINCT mobile_device\.id\) FILTER\(WHERE mobile_device\.status='approved'/);
     assert.match(navigation, /Consomme un poste mobile/);
-    assert.match(auth, /'admin','pc_standard','commercial','accountant'/);
-    assert.match(auth, /'mobile_admin','team_lead','technician'/);
+    assert.match(seatLimits, /'admin','pc_standard','commercial','accountant'/);
+    assert.match(seatLimits, /'mobile_admin','team_lead','technician'/);
     assert.match(auth, /subscriptionRoleAccessMessage\(organization\.subscriptionTier, role\)/);
     assert.match(auth, /const targetUserId = action\.endsWith\("_deleted"\) \? null/);
     assert.match(auth, /isRoleAllowedForSubscription\(organization\.subscriptionTier, user\.role\)/);

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const authServer = readFileSync(new URL("../server/auth.js", import.meta.url), "utf8");
+const seatLimits = readFileSync(new URL("../server/seat-limits.js", import.meta.url), "utf8");
 const authClient = readFileSync(new URL("../js/auth.js", import.meta.url), "utf8");
 const appClient = readFileSync(new URL("../js/app.js", import.meta.url), "utf8");
 const clientSession = readFileSync(new URL("../js/client-session.js", import.meta.url), "utf8");
@@ -36,7 +37,8 @@ test("l’en-tête affiche le poste actif et jamais un Poste administratif codé
 });
 
 test("les compteurs et la liste distinguent les utilisateurs administratifs des appareils mobiles", () => {
-    assert.match(authServer, /COUNT\(DISTINCT account\.id\).*account\.role IN \('admin','pc_standard','commercial','accountant'\)/);
+    assert.match(seatLimits, /COUNT\(DISTINCT member\.id\).*member\.role IN \('admin','pc_standard','commercial','accountant'\)/);
+    assert.match(seatLimits, /COUNT\(DISTINCT desktop_device\.id\).*desktop_device\.status='approved'/);
     assert.doesNotMatch(authServer, /COUNT\(DISTINCT device\.id\) FILTER \(WHERE device\.status = 'approved' AND device\.device_type = 'desktop'\)/);
     assert.match(navigation, /\["admin", "pc_standard", "commercial", "accountant"\]\.includes\(device\.userRole\)/);
     assert.match(navigation, /Chef d’équipe mobile/);

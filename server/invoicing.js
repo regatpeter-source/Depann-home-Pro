@@ -591,6 +591,7 @@ export async function processDueSubscriptionInvoices() {
             LEFT JOIN depannhome_organizations organization ON organization.account_owner_id = owner.id
             WHERE owner.account_owner_id = owner.id AND owner.is_active = TRUE AND owner.is_archived = FALSE AND owner.subscription_plan = 'paid'
                 AND COALESCE(organization.interface_type, 'standard') <> 'partner'
+                AND NOT EXISTS(SELECT 1 FROM depannhome_group_companies grouped_company JOIN depannhome_group_entitlements entitlement ON entitlement.group_id=grouped_company.group_id WHERE grouped_company.company_owner_id=owner.id AND entitlement.principal_company_owner_id<>owner.id)
                 AND owner.subscription_status = 'active' AND owner.monthly_price_cents > 0
                 AND owner.subscription_renewal_date IS NOT NULL AND owner.subscription_renewal_date <= CURRENT_DATE
             ORDER BY owner.subscription_renewal_date, owner.id
@@ -677,7 +678,8 @@ async function deliverPendingInvoices(invoiceId = null) {
         WHERE invoice.status IN ('pending', 'failed') AND owner.is_active = TRUE AND owner.is_archived = FALSE
             AND ($1::bigint IS NULL OR invoice.id=$1)
             AND (invoice.invoice_kind='proration_debit' OR (owner.subscription_plan='paid' AND owner.subscription_status='active'
-                AND COALESCE(organization.interface_type, 'standard') <> 'partner'))
+                AND COALESCE(organization.interface_type, 'standard') <> 'partner'
+                AND NOT EXISTS(SELECT 1 FROM depannhome_group_companies grouped_company JOIN depannhome_group_entitlements entitlement ON entitlement.group_id=grouped_company.group_id WHERE grouped_company.company_owner_id=owner.id AND entitlement.principal_company_owner_id<>owner.id)))
         ORDER BY invoice.created_at
     `, [invoiceId]);
     let sent = 0;

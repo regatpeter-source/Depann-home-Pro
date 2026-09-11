@@ -124,16 +124,17 @@ test("un Technicien devenu Commercial mobile conserve son téléphone et reçoit
 test("un Commercial consomme un poste PC et seulement un appareil mobile approuvé en supplément", () => {
     const auth = read("server/auth.js");
     const creator = read("server/creator.js");
-    for (const source of [auth, creator]) {
-        assert.match(source, /'admin','pc_standard','commercial','accountant'/);
-        assert.match(source, /cross_device_account[^\n]+role IN \('admin','commercial'\)/);
-        assert.match(source, /COUNT\(DISTINCT cross_device_mobile\.id\) FILTER \(WHERE cross_device_mobile\.status='approved'/);
-    }
+    const seatLimits = read("server/seat-limits.js");
+    assert.match(seatLimits, /'admin','pc_standard','commercial','accountant'/);
+    assert.match(seatLimits, /cross_device_account[^\n]+role IN \('admin','commercial'\)/);
+    assert.match(seatLimits, /COUNT\(DISTINCT mobile_device\.id\) FILTER\(WHERE mobile_device\.status='approved'/);
+    assert.match(auth, /companySeatState/);
+    assert.match(creator, /companySeatState/);
 });
 
 test("le changement vers un rôle mobile réutilise la place de l’appareil mobile du même compte", () => {
     const auth = read("server/auth.js");
-    assert.match(auth, /cross_device_account\.is_active AND cross_device_account\.id<>\$2/);
+    assert.match(read("server/seat-limits.js"), /cross_device_account\.is_active AND cross_device_account\.id<>\$2/);
     assert.match(auth, /memberSeatError\(ownerId, nextRole, memberId, database, false\)/);
 });
 

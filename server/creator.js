@@ -10,6 +10,8 @@ import { deliverSubscriptionProration, prepareSubscriptionProration } from "./in
 import { decryptElectronicInvoicingCredentials, encryptElectronicInvoicingCredentials, getElectronicInvoicingProvider } from "./electronic-invoicing.js";
 import { loadCompanyStorageUsage, loadCreatorStorageUsage, normalizeStorageQuota, updateCompanyStorageQuota } from "./storage-monitoring.js";
 import { strictDateOnly } from "./date-validation.js";
+import { companySeatState, subscriptionOwnerId } from "./seat-limits.js";
+import { configurePrincipalGroup } from "./groups.js";
 
 const USERNAME_PATTERN = /^[a-z0-9._-]{3,32}$/;
 const MIN_PASSWORD_LENGTH = 12;
@@ -60,10 +62,12 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
     }));
     app.get("/api/subscription-change-requests", requireAuthentication, asyncHandler(async (request, response) => {
         if (request.user?.role !== "admin") return response.status(403).json({ message: "La gestion de l’offre est réservée à l’Administrateur de l’entreprise." });
+        const billingOwnerId = await subscriptionOwnerId(getPool(), request.user.accountOwnerId);
+        if (billingOwnerId !== String(request.user.accountOwnerId) && !request.user.isGroupAdministrator) return response.status(403).json({ message: "L’abonnement du groupe est géré par son Administrateur principal." });
         const [requestsResult, accountResult, invoiceResult] = await Promise.all([
-            getPool().query(`SELECT id,current_tier AS "currentTier",requested_tier AS "requestedTier",requested_pc_seats AS "requestedPcSeats",requested_mobile_seats AS "requestedMobileSeats",status,company_message AS "companyMessage",created_at AS "createdAt",updated_at AS "updatedAt" FROM depannhome_subscription_change_requests WHERE owner_id=$1 ORDER BY created_at DESC LIMIT 20`, [request.user.accountOwnerId]),
-            getPool().query(`SELECT subscription_tier AS "subscriptionTier",subscription_label AS "subscriptionLabel",subscription_plan AS "subscriptionPlan",subscription_status AS "subscriptionStatus",TO_CHAR(subscription_renewal_date,'YYYY-MM-DD') AS "subscriptionRenewalDate",billing_reference AS "billingReference",subscription_discount_label AS "discountLabel",subscription_discount_mode AS "discountMode",subscription_discount_value::float AS "discountValue",max_pc_users AS "maxPcUsers",max_technicians AS "maxMobileUsers" FROM depannhome_users WHERE id=$1 AND account_owner_id=id`, [request.user.accountOwnerId]),
-            getPool().query(`SELECT invoice.invoice_number AS "invoiceNumber",TO_CHAR(invoice.billing_period,'YYYY-MM-DD') AS "billingPeriod",TO_CHAR(invoice.issue_date,'YYYY-MM-DD') AS "issueDate",TO_CHAR(invoice.due_date,'YYYY-MM-DD') AS "dueDate",invoice.amount_cents AS "amountCents",invoice.net_amount_cents AS "netAmountCents",invoice.status,invoice.sent_at AS "sentAt",invoice.payment_status AS "paymentStatus",invoice.paid_amount_cents AS "paidAmountCents",TO_CHAR(invoice.paid_date,'YYYY-MM-DD') AS "paidDate",invoice.receipt_delivery_status AS "receiptDeliveryStatus",COALESCE(credits.total,0)::integer AS "creditedAmountCents",COALESCE(credits.pending_refund,0)::integer AS "pendingRefundCents",GREATEST(invoice.net_amount_cents-COALESCE(credits.total,0)-invoice.paid_amount_cents,0)::integer AS "outstandingAmountCents" FROM depannhome_subscription_invoices invoice LEFT JOIN LATERAL (SELECT SUM(credit.amount_cents)::integer AS total,SUM(credit.amount_cents) FILTER (WHERE credit.refund_status='pending')::integer AS pending_refund FROM depannhome_subscription_credit_notes credit WHERE credit.source_invoice_id=invoice.id) credits ON TRUE WHERE invoice.account_owner_id=$1 AND invoice.status<>'cancelled' ORDER BY invoice.billing_period DESC,invoice.id DESC LIMIT 1`, [request.user.accountOwnerId])
+            getPool().query(`SELECT id,current_tier AS "currentTier",requested_tier AS "requestedTier",requested_pc_seats AS "requestedPcSeats",requested_mobile_seats AS "requestedMobileSeats",status,company_message AS "companyMessage",created_at AS "createdAt",updated_at AS "updatedAt" FROM depannhome_subscription_change_requests WHERE owner_id=$1 ORDER BY created_at DESC LIMIT 20`, [billingOwnerId]),
+            getPool().query(`SELECT subscription_tier AS "subscriptionTier",subscription_label AS "subscriptionLabel",subscription_plan AS "subscriptionPlan",subscription_status AS "subscriptionStatus",TO_CHAR(subscription_renewal_date,'YYYY-MM-DD') AS "subscriptionRenewalDate",billing_reference AS "billingReference",subscription_discount_label AS "discountLabel",subscription_discount_mode AS "discountMode",subscription_discount_value::float AS "discountValue",max_pc_users AS "maxPcUsers",max_technicians AS "maxMobileUsers" FROM depannhome_users WHERE id=$1 AND account_owner_id=id`, [billingOwnerId]),
+            getPool().query(`SELECT invoice.invoice_number AS "invoiceNumber",TO_CHAR(invoice.billing_period,'YYYY-MM-DD') AS "billingPeriod",TO_CHAR(invoice.issue_date,'YYYY-MM-DD') AS "issueDate",TO_CHAR(invoice.due_date,'YYYY-MM-DD') AS "dueDate",invoice.amount_cents AS "amountCents",invoice.net_amount_cents AS "netAmountCents",invoice.status,invoice.sent_at AS "sentAt",invoice.payment_status AS "paymentStatus",invoice.paid_amount_cents AS "paidAmountCents",TO_CHAR(invoice.paid_date,'YYYY-MM-DD') AS "paidDate",invoice.receipt_delivery_status AS "receiptDeliveryStatus",COALESCE(credits.total,0)::integer AS "creditedAmountCents",COALESCE(credits.pending_refund,0)::integer AS "pendingRefundCents",GREATEST(invoice.net_amount_cents-COALESCE(credits.total,0)-invoice.paid_amount_cents,0)::integer AS "outstandingAmountCents" FROM depannhome_subscription_invoices invoice LEFT JOIN LATERAL (SELECT SUM(credit.amount_cents)::integer AS total,SUM(credit.amount_cents) FILTER (WHERE credit.refund_status='pending')::integer AS pending_refund FROM depannhome_subscription_credit_notes credit WHERE credit.source_invoice_id=invoice.id) credits ON TRUE WHERE invoice.account_owner_id=$1 AND invoice.status<>'cancelled' ORDER BY invoice.billing_period DESC,invoice.id DESC LIMIT 1`, [billingOwnerId])
         ]);
         const account = accountResult.rows[0];
         if (!account) return response.status(404).json({ message: "Entreprise introuvable." });
@@ -71,11 +75,13 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
     }));
     app.post("/api/subscription-change-requests", requireAuthentication, asyncHandler(async (request, response) => {
         if (request.user?.role !== "admin") return response.status(403).json({ message: "La demande de changement d’offre est réservée à l’Administrateur de l’entreprise." });
+        const billingOwnerId = await subscriptionOwnerId(getPool(), request.user.accountOwnerId);
+        if (billingOwnerId !== String(request.user.accountOwnerId) && !request.user.isGroupAdministrator) return response.status(403).json({ message: "L’abonnement du groupe est géré par son Administrateur principal." });
         const requestedTier = normalizeSubscriptionTier(request.body?.requestedTier, "");
         const requestedPcSeats = positiveLimit(request.body?.requestedPcSeats, 1, 100);
         const requestedMobileSeats = positiveLimit(request.body?.requestedMobileSeats, 0, 500);
         const companyMessage = cleanMultilineText(request.body?.companyMessage, 1000);
-        const owner = await findAccountOwner(getPool(), positiveId(request.user.accountOwnerId));
+        const owner = await findAccountOwner(getPool(), positiveId(billingOwnerId));
         if (!owner) return response.status(404).json({ message: "Entreprise introuvable." });
         if (!requestedTier || requestedPcSeats === null || requestedMobileSeats === null) return response.status(400).json({ message: "Choisissez une offre et des nombres de postes valides." });
         const requestsTierChange = requestedTier !== owner.subscriptionTier;
@@ -313,6 +319,10 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
                 owner.archived_at AS "archivedAt",
                 owner.max_pc_users AS "maxPcUsers",
                 owner.max_technicians AS "maxTechnicians",
+                COALESCE(entitlement.max_companies,owner.max_group_companies) AS "maxGroupCompanies",
+                COALESCE((SELECT SUM(allocation.allocated_pc_seats)::int FROM depannhome_group_company_seat_allocations allocation WHERE allocation.group_id=entitlement.group_id),0) AS "allocatedGroupPcSeats",
+                COALESCE((SELECT SUM(allocation.allocated_mobile_seats)::int FROM depannhome_group_company_seat_allocations allocation WHERE allocation.group_id=entitlement.group_id),0) AS "allocatedGroupMobileSeats",
+                COALESCE((SELECT COUNT(*)::int FROM depannhome_group_companies grouped_company WHERE grouped_company.group_id=entitlement.group_id),0) AS "groupCompanyCount",
                 owner.subscription_plan AS "subscriptionPlan",
                 owner.subscription_tier AS "subscriptionTier",
                 owner.subscription_label AS "subscriptionLabel",
@@ -336,8 +346,10 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
             LEFT JOIN depannhome_users member ON member.account_owner_id = owner.id
             LEFT JOIN depannhome_users cross_device_account ON cross_device_account.account_owner_id=owner.id AND cross_device_account.role IN ('admin','commercial') AND cross_device_account.is_active
             LEFT JOIN depannhome_auth_devices cross_device_mobile ON cross_device_mobile.user_id=cross_device_account.id AND cross_device_mobile.device_type='mobile'
+            LEFT JOIN depannhome_group_entitlements entitlement ON entitlement.principal_company_owner_id=owner.id
             WHERE owner.account_owner_id = owner.id
-            GROUP BY owner.id
+                AND NOT EXISTS(SELECT 1 FROM depannhome_group_companies grouped_company JOIN depannhome_group_entitlements grouped_entitlement ON grouped_entitlement.group_id=grouped_company.group_id WHERE grouped_company.company_owner_id=owner.id AND grouped_entitlement.principal_company_owner_id<>owner.id)
+            GROUP BY owner.id,entitlement.group_id,entitlement.max_companies
             ORDER BY LOWER(COALESCE(NULLIF(owner.company_name, ''), owner.full_name, owner.username))
         `);
         const profiles = await loadCompanyProfiles(getPool(), rows.map(account => account.id));
@@ -378,18 +390,19 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
             try {
                 await connection.query("BEGIN");
                 const { rows } = await connection.query(`
-                INSERT INTO depannhome_users (username, password_hash, role, full_name, phone, email, company_name, max_pc_users, max_technicians,
+                INSERT INTO depannhome_users (username, password_hash, role, full_name, phone, email, company_name, max_pc_users, max_technicians, max_group_companies,
                     subscription_plan, subscription_tier, subscription_label, monthly_price_cents, subscription_discount_label, subscription_discount_mode, subscription_discount_value,
                     subscription_status, subscription_renewal_date, billing_reference, creator_note, quote_template_policy, quitus_template_policy, report_template_policy)
-                VALUES ($1, $2, 'admin', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17::date, $18, $19, $20, $21, $22)
+                VALUES ($1, $2, 'admin', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18::date, $19, $20, $21, $22, $23)
                 RETURNING id
-            `, [credentials.username, await bcrypt.hash(credentials.password, 12), account.fullName, account.phone, account.billingEmail, account.companyName, account.maxPcUsers, account.maxTechnicians,
+            `, [credentials.username, await bcrypt.hash(credentials.password, 12), account.fullName, account.phone, account.billingEmail, account.companyName, account.maxPcUsers, account.maxTechnicians, account.maxGroupCompanies,
                 account.subscriptionPlan, account.subscriptionTier, account.subscriptionLabel, account.monthlyPriceCents, account.subscriptionDiscountLabel, account.subscriptionDiscountMode, account.subscriptionDiscountValue,
                 account.subscriptionStatus, account.subscriptionRenewalDate || null, account.billingReference, account.creatorNote, account.quoteTemplatePolicy, account.quitusTemplatePolicy, account.reportTemplatePolicy]);
                 const id = rows[0].id;
                 await connection.query("UPDATE depannhome_users SET account_owner_id = id WHERE id = $1", [id]);
                 await synchronizeCompanyProfile(connection, id, account.companyProfile, { initializeNetwork: account.subscriptionTier === "pro" });
                 await createOrganization(id, request.body?.organization, request.user.sub, connection);
+                if (account.isGroup) await configurePrincipalGroup(connection, { ownerId: id, companyName: account.companyName, maxCompanies: account.maxGroupCompanies, totalPcSeats: account.maxPcUsers, totalMobileSeats: account.maxTechnicians, actorId: request.user.sub });
                 await connection.query("COMMIT");
                 response.status(201).json({ id: String(id) });
             } catch (error) { await connection.query("ROLLBACK"); throw error; } finally { connection.release(); }
@@ -434,13 +447,13 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
             }
             await connection.query(`
             UPDATE depannhome_users
-            SET company_name = $2, full_name = $3, phone = $4, email = $5, max_pc_users = $6, max_technicians = $7, is_active = $8,
-                subscription_plan = $9, subscription_tier = $10, subscription_label = $11, monthly_price_cents = $12, subscription_status = $13,
-                subscription_renewal_date = $14::date, billing_reference = $15, creator_note = $16, quote_template_policy = $17,
-                quitus_template_policy = $18, report_template_policy = $19, subscription_discount_label = $20,
-                subscription_discount_mode = $21, subscription_discount_value = $22, updated_at = NOW()
+            SET company_name = $2, full_name = $3, phone = $4, email = $5, max_pc_users = $6, max_technicians = $7, max_group_companies=$8, is_active = $9,
+                subscription_plan = $10, subscription_tier = $11, subscription_label = $12, monthly_price_cents = $13, subscription_status = $14,
+                subscription_renewal_date = $15::date, billing_reference = $16, creator_note = $17, quote_template_policy = $18,
+                quitus_template_policy = $19, report_template_policy = $20, subscription_discount_label = $21,
+                subscription_discount_mode = $22, subscription_discount_value = $23, updated_at = NOW()
             WHERE id = $1 AND account_owner_id = id
-            `, [accountId, account.companyName, account.fullName, account.phone, account.billingEmail, account.maxPcUsers, account.maxTechnicians, owner.is_active,
+            `, [accountId, account.companyName, account.fullName, account.phone, account.billingEmail, account.maxPcUsers, account.maxTechnicians, account.maxGroupCompanies, owner.is_active,
             account.subscriptionPlan, account.subscriptionTier, account.subscriptionLabel, account.monthlyPriceCents, account.subscriptionStatus, account.subscriptionRenewalDate || null, account.billingReference, account.creatorNote, account.quoteTemplatePolicy, account.quitusTemplatePolicy, account.reportTemplatePolicy,
             account.subscriptionDiscountLabel, account.subscriptionDiscountMode, account.subscriptionDiscountValue]);
             if (convertsToPartner) {
@@ -449,6 +462,7 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
             }
             await synchronizeCompanyProfile(connection, accountId, account.companyProfile, { initializeNetwork: account.subscriptionTier === "pro" });
             await updateOrganization(accountId, request.body?.organization, request.user.sub, connection);
+            if (account.isGroup) await configurePrincipalGroup(connection, { ownerId: accountId, companyName: account.companyName, maxCompanies: account.maxGroupCompanies, totalPcSeats: account.maxPcUsers, totalMobileSeats: account.maxTechnicians, actorId: request.user.sub });
             proration = await prepareSubscriptionProration(connection, {
                 ownerBefore,
                 ownerAfter: {
@@ -660,17 +674,8 @@ async function findMember(database, accountId, memberId) {
 }
 
 async function countActiveSeats(database, accountId) {
-    const { rows } = await database.query(`
-        SELECT
-            COUNT(DISTINCT member.id) FILTER (WHERE member.role IN ('admin','pc_standard','commercial','accountant') AND member.is_active)::int AS "activePcUsers",
-            COUNT(DISTINCT member.id) FILTER (WHERE member.role IN ('mobile_admin','team_lead','technician') AND member.is_active)::int
-                + COUNT(DISTINCT cross_device_mobile.id) FILTER (WHERE cross_device_mobile.status='approved')::int AS "activeTechnicians"
-        FROM depannhome_users member
-        LEFT JOIN depannhome_users cross_device_account ON cross_device_account.account_owner_id=$1 AND cross_device_account.role IN ('admin','commercial') AND cross_device_account.is_active
-        LEFT JOIN depannhome_auth_devices cross_device_mobile ON cross_device_mobile.user_id=cross_device_account.id AND cross_device_mobile.device_type='mobile'
-        WHERE member.account_owner_id = $1
-    `, [accountId]);
-    return rows[0];
+    const seats = await companySeatState(database, accountId);
+    return { activePcUsers: seats?.activePcUsers || 0, activeTechnicians: seats?.activeMobileUsers || 0 };
 }
 
 async function ensureSeatAvailable(database, accountId, role) {
@@ -683,7 +688,8 @@ async function ensureSeatAvailable(database, accountId, role) {
     if (roleAccessError) throw new Error(`LIMIT:${roleAccessError}`);
     const counts = await countActiveSeats(database, accountId);
     const isPcRole = ["admin", "pc_standard", "commercial", "accountant"].includes(role);
-    const maximum = isPcRole ? owners[0].maxPcUsers : owners[0].maxTechnicians;
+    const seats = await companySeatState(database, accountId);
+    const maximum = isPcRole ? seats?.maxPcUsers : seats?.maxMobileUsers;
     const active = isPcRole ? counts.activePcUsers : counts.activeTechnicians;
     if (active >= maximum) throw new Error(`LIMIT:La limite de ${isPcRole ? "postes administratifs" : "postes mobiles"} est atteinte.`);
 }
@@ -693,11 +699,13 @@ function sanitizeAccount(value, requireCompleteProfile = false) {
     const fullName = cleanText(value?.fullName, 100);
     const phone = cleanText(value?.phone, 30);
     const billingEmail = cleanText(value?.billingEmail, 160).toLowerCase();
-    const requestedMaxPcUsers = positiveLimit(value?.maxPcUsers, 1, 100);
-    const requestedMaxTechnicians = positiveLimit(value?.maxTechnicians, 0, 500);
+    const requestedInterface = value?.organization?.interfaceType || "standard";
+    const isGroup = requestedInterface === "group";
+    const requestedMaxPcUsers = positiveLimit(value?.maxPcUsers, 1, isGroup ? 1000 : 100);
+    const requestedMaxTechnicians = positiveLimit(value?.maxTechnicians, 0, isGroup ? 5000 : 500);
     const subscriptionTier = normalizeSubscriptionTier(value?.subscriptionTier, "basic");
     const tierConfig = subscriptionTierConfig(subscriptionTier);
-    const requestedInterface = value?.organization?.interfaceType || "standard";
+    const maxGroupCompanies = isGroup ? positiveLimit(value?.maxGroupCompanies, 1, 100) : 1;
     const isFreePartner = requestedInterface === "partner";
     const maxPcUsers = isFreePartner ? 1 : requestedMaxPcUsers;
     const maxTechnicians = isFreePartner ? 0 : requestedMaxTechnicians;
@@ -719,6 +727,7 @@ function sanitizeAccount(value, requireCompleteProfile = false) {
     if (!fullName) return { ok: false, message: "Le nom du responsable est obligatoire." };
     if (!isFreePartner && !maxPcUsers) return { ok: false, message: "Indiquez au moins un poste administratif." };
     if (!isFreePartner && maxTechnicians === null) return { ok: false, message: "Le nombre de techniciens est invalide." };
+    if (isGroup && maxGroupCompanies === null) return { ok: false, message: "Le nombre maximum d’entreprises du groupe est invalide." };
     if (subscriptionDiscountValue === null) return { ok: false, message: "La réduction commerciale est invalide." };
     if (subscriptionPlan === "paid" && monthlyPriceCents <= 0) return { ok: false, message: "Indiquez un tarif mensuel supérieur à zéro pour un abonnement payant." };
     if (subscriptionPlan === "paid" && subscriptionDiscountMode === "fixed" && Math.round(subscriptionDiscountValue * 100) > monthlyPriceCents) return { ok: false, message: "La réduction fixe ne peut pas dépasser le tarif mensuel." };
@@ -728,7 +737,7 @@ function sanitizeAccount(value, requireCompleteProfile = false) {
     if (interfaceAccessError) return { ok: false, message: interfaceAccessError };
     const companyProfile = sanitizeCompanyProfile(value, { companyName, billingEmail, phone, requireCompleteProfile });
     if (!companyProfile.ok) return companyProfile;
-    return { ok: true, companyName, fullName, phone, billingEmail, maxPcUsers, maxTechnicians, subscriptionPlan, subscriptionTier, subscriptionLabel,
+    return { ok: true, companyName, fullName, phone, billingEmail, maxPcUsers, maxTechnicians, maxGroupCompanies, isGroup, subscriptionPlan, subscriptionTier, subscriptionLabel,
         monthlyPriceCents, subscriptionStatus, subscriptionRenewalDate,
         subscriptionDiscountLabel, subscriptionDiscountMode, subscriptionDiscountValue,
         billingReference, creatorNote, quoteTemplatePolicy, quitusTemplatePolicy, reportTemplatePolicy, isActive, companyProfile };

@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { getPool } from "./database.js";
+import { companySeatState } from "./seat-limits.js";
 import { isCreatorUsername } from "./auth.js";
 import { broadcastOwnerEvent } from "./collaboration.js";
 
@@ -289,8 +290,8 @@ async function findCompanyOwner(database, id, lock = false) {
 }
 
 async function ensurePcSeatAvailable(database, ownerId) {
-    const { rows } = await database.query(`SELECT owner.max_pc_users AS maximum,COUNT(member.id) FILTER(WHERE member.is_active AND member.role IN ('admin','pc_standard','commercial','accountant'))::int AS active FROM depannhome_users owner LEFT JOIN depannhome_users member ON member.account_owner_id=owner.id WHERE owner.id=$1 GROUP BY owner.id`, [ownerId]);
-    if (!rows[0] || Number(rows[0].active) >= Number(rows[0].maximum)) throw clientError(409, "La limite de postes administratifs est atteinte.");
+    const seats = await companySeatState(database, ownerId);
+    if (!seats || Number(seats.activePcUsers) >= Number(seats.maxPcUsers)) throw clientError(409, "La limite de postes administratifs est atteinte.");
 }
 
 async function recordMemberAudit(database, ownerId, creatorId, member, action, details) {

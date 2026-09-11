@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS depannhome_users (
     company_name VARCHAR(160) NOT NULL DEFAULT '',
     max_pc_users INTEGER NOT NULL DEFAULT 1,
     max_technicians INTEGER NOT NULL DEFAULT 5,
+    max_group_companies INTEGER NOT NULL DEFAULT 1 CHECK(max_group_companies BETWEEN 1 AND 100),
     can_access_billing BOOLEAN NOT NULL DEFAULT FALSE,
     can_access_accounting BOOLEAN NOT NULL DEFAULT FALSE,
     can_access_company_email BOOLEAN NOT NULL DEFAULT FALSE,
@@ -212,6 +213,65 @@ CREATE TABLE IF NOT EXISTS depannhome_group_audit (
     action VARCHAR(80) NOT NULL, details JSONB NOT NULL DEFAULT '{}'::jsonb,
     ip_address VARCHAR(100) NOT NULL DEFAULT '', created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+CREATE TABLE IF NOT EXISTS depannhome_group_entitlements (
+    group_id BIGINT PRIMARY KEY REFERENCES depannhome_groups(id) ON DELETE CASCADE,
+    principal_company_owner_id BIGINT NOT NULL UNIQUE REFERENCES depannhome_users(id) ON DELETE RESTRICT,
+    max_companies INTEGER NOT NULL CHECK(max_companies BETWEEN 1 AND 100),
+    total_pc_seats INTEGER NOT NULL CHECK(total_pc_seats BETWEEN 1 AND 1000),
+    total_mobile_seats INTEGER NOT NULL CHECK(total_mobile_seats BETWEEN 0 AND 5000),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE TABLE IF NOT EXISTS depannhome_group_company_seat_allocations (
+    group_id BIGINT NOT NULL REFERENCES depannhome_groups(id) ON DELETE CASCADE,
+    company_owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    allocated_pc_seats INTEGER NOT NULL CHECK(allocated_pc_seats BETWEEN 1 AND 100),
+    allocated_mobile_seats INTEGER NOT NULL CHECK(allocated_mobile_seats BETWEEN 0 AND 500),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY(group_id,company_owner_id), UNIQUE(company_owner_id)
+);
+CREATE OR REPLACE FUNCTION depannhome_validate_group_seat_allocation() RETURNS trigger AS $$
+DECLARE entitlement depannhome_group_entitlements%ROWTYPE; allocated_pc INTEGER; allocated_mobile INTEGER; active_pc INTEGER; approved_pc INTEGER; active_mobile INTEGER; approved_mobile INTEGER;
+BEGIN
+    SELECT * INTO entitlement FROM depannhome_group_entitlements WHERE group_id=NEW.group_id FOR UPDATE;
+    IF entitlement.group_id IS NULL OR NOT EXISTS(SELECT 1 FROM depannhome_group_companies company WHERE company.group_id=NEW.group_id AND company.company_owner_id=NEW.company_owner_id) THEN
+        RAISE EXCEPTION 'L’entreprise et l’allocation doivent appartenir au même groupe.' USING ERRCODE='23514';
+    END IF;
+    SELECT COALESCE(SUM(allocated_pc_seats),0),COALESCE(SUM(allocated_mobile_seats),0) INTO allocated_pc,allocated_mobile
+    FROM depannhome_group_company_seat_allocations WHERE group_id=NEW.group_id AND company_owner_id<>NEW.company_owner_id;
+    IF allocated_pc+NEW.allocated_pc_seats>entitlement.total_pc_seats OR allocated_mobile+NEW.allocated_mobile_seats>entitlement.total_mobile_seats THEN
+        RAISE EXCEPTION 'La répartition dépasse l’enveloppe de postes du groupe.' USING ERRCODE='23514';
+    END IF;
+    SELECT COUNT(*) FILTER(WHERE is_active AND role IN ('admin','pc_standard','commercial','accountant'))::integer,
+        COUNT(*) FILTER(WHERE is_active AND role IN ('mobile_admin','team_lead','technician'))::integer
+    INTO active_pc,active_mobile FROM depannhome_users WHERE account_owner_id=NEW.company_owner_id;
+    SELECT COUNT(DISTINCT device.id) FILTER(WHERE device.status='approved' AND device.device_type='desktop' AND member.role IN ('admin','pc_standard','commercial','accountant'))::integer,
+        COUNT(DISTINCT device.id) FILTER(WHERE device.status='approved' AND device.device_type='mobile' AND member.role IN ('admin','commercial'))::integer
+    INTO approved_pc,approved_mobile FROM depannhome_users member LEFT JOIN depannhome_auth_devices device ON device.user_id=member.id
+    WHERE member.account_owner_id=NEW.company_owner_id AND member.is_active;
+    IF NEW.allocated_pc_seats<GREATEST(active_pc,approved_pc) OR NEW.allocated_mobile_seats<active_mobile+approved_mobile THEN
+        RAISE EXCEPTION 'L’allocation ne peut pas être inférieure aux postes actuellement utilisés.' USING ERRCODE='23514';
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+DROP TRIGGER IF EXISTS depannhome_group_seat_allocation_limit ON depannhome_group_company_seat_allocations;
+CREATE TRIGGER depannhome_group_seat_allocation_limit BEFORE INSERT OR UPDATE ON depannhome_group_company_seat_allocations
+FOR EACH ROW EXECUTE FUNCTION depannhome_validate_group_seat_allocation();
+CREATE OR REPLACE FUNCTION depannhome_validate_group_entitlement() RETURNS trigger AS $$
+DECLARE company_count INTEGER; allocated_pc INTEGER; allocated_mobile INTEGER;
+BEGIN
+    SELECT COUNT(*)::integer INTO company_count FROM depannhome_group_companies WHERE group_id=NEW.group_id;
+    SELECT COALESCE(SUM(allocated_pc_seats),0),COALESCE(SUM(allocated_mobile_seats),0) INTO allocated_pc,allocated_mobile
+    FROM depannhome_group_company_seat_allocations WHERE group_id=NEW.group_id;
+    IF NEW.max_companies<company_count OR NEW.total_pc_seats<allocated_pc OR NEW.total_mobile_seats<allocated_mobile THEN
+        RAISE EXCEPTION 'L’enveloppe du groupe ne peut pas être inférieure à sa répartition actuelle.' USING ERRCODE='23514';
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+DROP TRIGGER IF EXISTS depannhome_group_entitlement_limit ON depannhome_group_entitlements;
+CREATE TRIGGER depannhome_group_entitlement_limit BEFORE UPDATE ON depannhome_group_entitlements
+FOR EACH ROW EXECUTE FUNCTION depannhome_validate_group_entitlement();
 
 -- Rôle mobile dédié : compte rattaché à l’entreprise, jamais propriétaire du compte.
 -- Son appareil utilise le flux existant d’autorisation et de code e-mail.
@@ -223,6 +283,7 @@ ALTER TABLE depannhome_users
     ADD COLUMN IF NOT EXISTS departments JSONB NOT NULL DEFAULT '[]'::jsonb,
     ADD COLUMN IF NOT EXISTS max_pc_users INTEGER NOT NULL DEFAULT 1,
     ADD COLUMN IF NOT EXISTS max_technicians INTEGER NOT NULL DEFAULT 5,
+    ADD COLUMN IF NOT EXISTS max_group_companies INTEGER NOT NULL DEFAULT 1,
     ADD COLUMN IF NOT EXISTS can_access_billing BOOLEAN NOT NULL DEFAULT FALSE,
     ADD COLUMN IF NOT EXISTS can_access_accounting BOOLEAN NOT NULL DEFAULT FALSE,
     ADD COLUMN IF NOT EXISTS can_access_company_email BOOLEAN NOT NULL DEFAULT FALSE,
