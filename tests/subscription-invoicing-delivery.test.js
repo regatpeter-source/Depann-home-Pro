@@ -13,15 +13,25 @@ const schemaSource = readFileSync(new URL("../database/schema.sql", import.meta.
 
 test("le verrou de facturation est détenu et libéré par la même connexion PostgreSQL", () => {
     assert.match(invoicingSource, /const lockConnection = await database\.connect\(\)/);
-    assert.match(invoicingSource, /lockConnection\.query\("SELECT pg_try_advisory_lock\(842301\) AS acquired"\)/);
-    assert.match(invoicingSource, /lockConnection\.query\("SELECT pg_advisory_unlock\(842301\)"\)/);
+    assert.match(invoicingSource, /SUBSCRIPTION_PROCESSING_LOCK = 842301/);
+    assert.match(invoicingSource, /lockConnection\.query\(`SELECT pg_try_advisory_lock\(\$\{SUBSCRIPTION_PROCESSING_LOCK\}\) AS acquired`\)/);
+    assert.match(invoicingSource, /lockConnection\.query\(`SELECT pg_advisory_unlock\(\$\{SUBSCRIPTION_PROCESSING_LOCK\}\)`\)/);
     assert.match(invoicingSource, /lockConnection\.release\(\)/);
     assert.doesNotMatch(invoicingSource, /database\.query\("SELECT pg_(?:try_)?advisory_(?:un)?lock\(842301\)/);
 });
 
-test("Render contrôle les factures au démarrage puis reprogramme chaque passage civil", () => {
+test("un seul processus Render devient planificateur de la facturation", () => {
+    assert.match(invoicingSource, /SUBSCRIPTION_SCHEDULER_LEADER_LOCK = 842300/);
+    assert.match(invoicingSource, /leadershipConnection\.query\(`SELECT pg_try_advisory_lock\(\$\{SUBSCRIPTION_SCHEDULER_LEADER_LOCK\}\) AS acquired`\)/);
+    assert.match(invoicingSource, /if \(!lock\.rows\[0\]\?\.acquired\)[\s\S]*leadershipConnection\.release\(\);[\s\S]*scheduleSubscriptionSchedulerLeadershipRetry\(\)/);
+    assert.match(invoicingSource, /schedulerLeadershipConnection = leadershipConnection/);
+    assert.match(invoicingSource, /loseSubscriptionSchedulerLeadership/);
+});
+
+test("le processus élu contrôle les factures au démarrage puis reprogramme chaque passage civil", () => {
     assert.match(invoicingSource, /void check\("startup"\)/);
-    assert.match(invoicingSource, /await check\("scheduled"\); schedulerTimer = null; scheduleNext\(\)/);
+    assert.match(invoicingSource, /schedulerTimer = null;\s*await check\("scheduled"\);\s*scheduleNext\(\)/);
+    assert.match(invoicingSource, /if \(!schedulerLeadershipConnection\) return/);
     assert.doesNotMatch(invoicingSource, /setInterval\(check, 24 \* 60 \* 60 \* 1000\)/);
 });
 

@@ -8,7 +8,13 @@ import { recordHealthSchedulerRun } from "./health-dashboard.js";
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const IBAN_PATTERN = /^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$/;
 const BIC_PATTERN = /^[A-Z0-9]{8}(?:[A-Z0-9]{3})?$/;
+const SUBSCRIPTION_SCHEDULER_LEADER_LOCK = 842300;
+const SUBSCRIPTION_PROCESSING_LOCK = 842301;
+const SCHEDULER_LEADERSHIP_RETRY_MS = 60_000;
 let schedulerTimer = null;
+let schedulerLeadershipConnection = null;
+let schedulerLeadershipRetryTimer = null;
+let schedulerLeadershipPending = false;
 
 export async function initializeSubscriptionInvoicing() {
     const database = getPool();
@@ -485,8 +491,30 @@ async function nextSubscriptionDocumentNumber(connection, type, issueDate) {
     return { number: `${isCredit ? "AVO-DHP" : "DHP"}-${year}-${String(rows[0].lastNumber).padStart(6, "0")}` };
 }
 
-export function startSubscriptionInvoicingScheduler() {
-    if (schedulerTimer) return;
+export async function startSubscriptionInvoicingScheduler() {
+    if (schedulerTimer || schedulerLeadershipConnection || schedulerLeadershipRetryTimer || schedulerLeadershipPending) return;
+    schedulerLeadershipPending = true;
+    let leadershipConnection = null;
+    try {
+        leadershipConnection = await getPool().connect();
+        const lock = await leadershipConnection.query(`SELECT pg_try_advisory_lock(${SUBSCRIPTION_SCHEDULER_LEADER_LOCK}) AS acquired`);
+        if (!lock.rows[0]?.acquired) {
+            leadershipConnection.release();
+            leadershipConnection = null;
+            scheduleSubscriptionSchedulerLeadershipRetry();
+            return;
+        }
+        schedulerLeadershipConnection = leadershipConnection;
+        leadershipConnection.on("error", error => loseSubscriptionSchedulerLeadership(leadershipConnection, error));
+    } catch (error) {
+        leadershipConnection?.release(error);
+        console.warn("[subscription-invoicing] scheduler leadership unavailable", error.code || error.name || "ERROR");
+        scheduleSubscriptionSchedulerLeadershipRetry();
+        return;
+    } finally {
+        schedulerLeadershipPending = false;
+    }
+
     const check = async source => {
         const startedAt = new Date();
         await recordHealthSchedulerRun("subscription_invoicing", source, "started", {}, startedAt);
@@ -500,12 +528,36 @@ export function startSubscriptionInvoicingScheduler() {
         }
     };
     const scheduleNext = () => {
+        if (!schedulerLeadershipConnection) return;
         const delay = millisecondsUntilConfiguredRun();
-        schedulerTimer = setTimeout(async () => { await check("scheduled"); schedulerTimer = null; scheduleNext(); }, delay);
+        schedulerTimer = setTimeout(async () => {
+            schedulerTimer = null;
+            await check("scheduled");
+            scheduleNext();
+        }, delay);
         console.info(`[subscription-invoicing] scheduled daily run in ${Math.round(delay / 60000)} minute(s).`);
     };
     void check("startup");
     scheduleNext();
+}
+
+function scheduleSubscriptionSchedulerLeadershipRetry() {
+    if (schedulerLeadershipRetryTimer || schedulerLeadershipConnection) return;
+    schedulerLeadershipRetryTimer = setTimeout(() => {
+        schedulerLeadershipRetryTimer = null;
+        void startSubscriptionInvoicingScheduler();
+    }, SCHEDULER_LEADERSHIP_RETRY_MS);
+    schedulerLeadershipRetryTimer.unref?.();
+}
+
+function loseSubscriptionSchedulerLeadership(connection, error) {
+    if (schedulerLeadershipConnection !== connection) return;
+    schedulerLeadershipConnection = null;
+    if (schedulerTimer) clearTimeout(schedulerTimer);
+    schedulerTimer = null;
+    connection.release(error);
+    console.warn("[subscription-invoicing] scheduler leadership lost", error.code || error.name || "ERROR");
+    scheduleSubscriptionSchedulerLeadershipRetry();
 }
 
 export async function processDueSubscriptionInvoices() {
@@ -513,7 +565,7 @@ export async function processDueSubscriptionInvoices() {
     const lockConnection = await database.connect();
     let lockAcquired = false;
     try {
-        const lock = await lockConnection.query("SELECT pg_try_advisory_lock(842301) AS acquired");
+        const lock = await lockConnection.query(`SELECT pg_try_advisory_lock(${SUBSCRIPTION_PROCESSING_LOCK}) AS acquired`);
         lockAcquired = Boolean(lock.rows[0]?.acquired);
         if (!lockAcquired) return { skipped: true, skippedReason: "already_running", created: 0, sent: 0, failed: 0 };
         const issuer = await getIssuerProfile();
@@ -558,7 +610,7 @@ export async function processDueSubscriptionInvoices() {
         return { skipped: false, dueAccounts: subscriptions.length, skippedAccounts, created, ...delivery };
     } finally {
         try {
-            if (lockAcquired) await lockConnection.query("SELECT pg_advisory_unlock(842301)");
+            if (lockAcquired) await lockConnection.query(`SELECT pg_advisory_unlock(${SUBSCRIPTION_PROCESSING_LOCK})`);
         } finally {
             lockConnection.release();
         }

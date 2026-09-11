@@ -337,7 +337,7 @@ async function start() {
 	await recoverCreatorTotp();
 	app.listen(port, () => {
 		console.log(`Depann'Home Pro écoute sur le port ${port}.`);
-		startSubscriptionInvoicingScheduler();
+		void startSubscriptionInvoicingScheduler();
 		startPartnerEmailScheduler();
 		startHealthMonitoring();
 	});
