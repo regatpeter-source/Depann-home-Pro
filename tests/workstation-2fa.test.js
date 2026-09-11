@@ -6,6 +6,7 @@ const auth = readFileSync(new URL("../server/auth.js", import.meta.url), "utf8")
 const navigation = readFileSync(new URL("../js/navigation.js", import.meta.url), "utf8");
 const clientAuth = readFileSync(new URL("../js/auth.js", import.meta.url), "utf8");
 const documentation = readFileSync(new URL("../docs/COMPANY_2FA.md", import.meta.url), "utf8");
+const migration = readFileSync(new URL("../database/migrations/0018_workstation_totp.sql", import.meta.url), "utf8");
 
 test("la 2FA personnelle couvre exactement les rôles PC autorisés", () => {
     assert.match(auth, /const WORKSTATION_TOTP_ROLES = new Set\(\["admin", STANDARD_PC_ROLE, COMMERCIAL_ROLE\]\)/);
@@ -48,4 +49,18 @@ test("la documentation garantit l’indépendance par compte, offre et entrepris
     assert.match(documentation, /Commercial \/ Chargé d’affaires \(`commercial`\)/);
     assert.match(documentation, /indépendante des autres postes, de l’offre active et de l’entreprise sélectionnée/);
     assert.match(documentation, /téléphone ne reçoit le défi TOTP que lors de ses connexions sur ordinateur/);
+});
+
+test("les structures 2FA des postes sont couvertes par une migration versionnée", () => {
+    assert.match(migration, /CREATE TABLE IF NOT EXISTS depannhome_company_totp_policies/);
+    assert.match(migration, /CREATE TABLE IF NOT EXISTS depannhome_company_totp_authenticators/);
+    assert.match(migration, /CREATE TABLE IF NOT EXISTS depannhome_company_totp_challenges/);
+    assert.match(migration, /CREATE TABLE IF NOT EXISTS depannhome_member_audit/);
+    assert.match(migration, /CHECK \(attempts >= 0\)/);
+});
+
+test("une panne du journal secondaire ne bloque pas la vérification 2FA", () => {
+    assert.match(auth, /async function recordWorkstationTotpAudit[\s\S]*try \{[\s\S]*await recordMemberAudit[\s\S]*catch \(error\)/);
+    assert.match(auth, /recordWorkstationTotpAudit\(user\.account_owner_id, user\.id, user, "workstation_2fa_login_succeeded"/);
+    assert.match(auth, /recordWorkstationTotpAudit\(user\.account_owner_id, null, user, "workstation_2fa_validation_failed"/);
 });

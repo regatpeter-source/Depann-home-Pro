@@ -155,7 +155,7 @@ export function registerAuthRoutes(app) {
         }
         const consumed = await getPool().query("UPDATE depannhome_company_totp_challenges SET consumed_at = NOW() WHERE id = $1 AND consumed_at IS NULL RETURNING id", [challenge.id]);
         if (!consumed.rowCount) return response.status(401).json({ message: "Cette demande a déjà été utilisée. Recommencez la connexion." });
-        await recordMemberAudit(user.account_owner_id, user.id, user, "workstation_2fa_login_succeeded", { purpose: "login", deviceType: "desktop" });
+        await recordWorkstationTotpAudit(user.account_owner_id, user.id, user, "workstation_2fa_login_succeeded", { purpose: "login", deviceType: "desktop" });
         await recordSecurityEvent({ request, eventType: "company_totp_validation", outcome: "success", ownerId: user.account_owner_id, userId: user.id, details: { purpose: challenge.purpose } });
         const device = getDeviceDetails({ deviceId: challenge.device?.id, deviceLabel: challenge.device?.label, deviceType: challenge.device?.type });
         if (!device) return response.status(401).json({ message: "Cet appareil ne peut pas être identifié. Recommencez la connexion." });
@@ -317,7 +317,7 @@ export function registerAuthRoutes(app) {
             SET status='active', pending_expires_at=NULL, confirmed_at=NOW(), updated_at=NOW()
             WHERE id=$1 AND user_id=$2 AND status='pending'
         `, [authenticator.id, user.id]);
-        await recordMemberAudit(user.account_owner_id, user.id, user, "workstation_2fa_enabled", { scope: "personal", deviceType: "desktop" });
+        await recordWorkstationTotpAudit(user.account_owner_id, user.id, user, "workstation_2fa_enabled", { scope: "personal", deviceType: "desktop" });
         response.json({ enabled: true, message: "La double authentification est activée pour votre poste PC." });
     }));
 
@@ -329,7 +329,7 @@ export function registerAuthRoutes(app) {
         if (!code || !secret || !isValidTotpCode(secret, code, user.username)) return response.status(400).json({ message: "Saisissez un code valide pour désactiver la double authentification." });
         await getPool().query("DELETE FROM depannhome_company_totp_authenticators WHERE user_id=$1", [user.id]);
         await getPool().query("DELETE FROM depannhome_company_totp_challenges WHERE user_id=$1", [user.id]);
-        await recordMemberAudit(user.account_owner_id, user.id, user, "workstation_2fa_disabled", { scope: "personal", deviceType: "desktop" });
+        await recordWorkstationTotpAudit(user.account_owner_id, user.id, user, "workstation_2fa_disabled", { scope: "personal", deviceType: "desktop" });
         response.json({ enabled: false, message: "La double authentification est désactivée pour votre poste PC." });
     }));
 
@@ -949,6 +949,14 @@ async function recordMemberAudit(ownerId, actorId, member, action, details = {},
     `, [ownerId, actorId || null, targetUserId, cleanText(member?.username, 32), cleanText(member?.fullName || member?.full_name, 100), action, JSON.stringify(details)]);
 }
 
+async function recordWorkstationTotpAudit(ownerId, actorId, member, action, details = {}) {
+    try {
+        await recordMemberAudit(ownerId, actorId, member, action, details);
+    } catch (error) {
+        console.warn("[auth] workstation 2FA audit unavailable", { action, code: error?.code || error?.name || "ERROR" });
+    }
+}
+
 function requireTechnicianDirectoryAccess(request, response, next) {
     if (request.user?.role === MOBILE_ADMIN_ROLE) return next();
     return requireAccountAdministrator(request, response, next);
@@ -1170,7 +1178,7 @@ async function recordCompanyTotpFailure(challenge, user) {
         RETURNING attempts
     `, [challenge.id]);
     const attempts = Number(rows[0]?.attempts || COMPANY_TOTP_MAX_ATTEMPTS);
-    await recordMemberAudit(user.account_owner_id, null, user, "workstation_2fa_validation_failed", { purpose: challenge.purpose, deviceType: "desktop", attempts });
+    await recordWorkstationTotpAudit(user.account_owner_id, null, user, "workstation_2fa_validation_failed", { purpose: challenge.purpose, deviceType: "desktop", attempts });
     return attempts;
 }
 
