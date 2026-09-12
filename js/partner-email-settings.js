@@ -72,14 +72,11 @@ function renderSettings(card, mailbox) {
         googleButton.disabled = true;
         googleButton.textContent = "Google Workspace · bientôt disponible";
     }
-    const providerActions = card.querySelector(".partner-email-provider-actions");
-    providerActions?.insertAdjacentHTML("beforebegin", inboundAddressSection(mailbox));
     decorateProviderButton(microsoftButton, "Microsoft", "Outlook, Hotmail et Microsoft 365 avec une autorisation OAuth sécurisée.", "Connexion OAuth");
     decorateProviderButton(googleButton, "Google Workspace", "Connexion Gmail professionnelle temporairement indisponible.", "Bientôt disponible");
     const imapForm = card.querySelector("#partnerEmailImapForm");
     imapForm?.classList.add("partner-email-channel-card", "partner-email-channel-form");
     imapForm?.querySelector(".form-actions .secondary-button")?.classList.replace("secondary-button", "primary-button");
-    bindInboundAddressControls(card);
     const emailInput = card.querySelector('#partnerEmailImapForm [name="emailAddress"]');
     if (emailInput) {
         const form = emailInput.form;
@@ -169,44 +166,6 @@ function decorateProviderButton(button, title, description, eyebrow) {
     wrapper.innerHTML = `<div><p class="eyebrow">${escapeHtml(eyebrow)}</p><h3>${escapeHtml(title)}</h3><p>${escapeHtml(description)}</p></div><div class="partner-email-inbound-actions"></div>`;
     button.classList.replace("secondary-button", "primary-button");
     wrapper.querySelector(".partner-email-inbound-actions").appendChild(button);
-}
-
-function inboundAddressSection(mailbox) {
-    if (mailbox?.inboundAvailable !== true) return '<article class="partner-email-inbound-card partner-email-channel-card"><div><p class="eyebrow">Réception simplifiée</p><h3>Adresse de réception Depann’Home Pro · bientôt disponible</h3><p>Cette fonctionnalité est temporairement désactivée. Microsoft et les boîtes IMAP/SMTP (Gmail personnel, OVH, Zimbra, Namecheap…) restent disponibles.</p><small>Aucune adresse dédiée n’est actuellement créée ni exposée.</small></div><div class="partner-email-inbound-actions"><button type="button" class="primary-button" disabled>Créer mon adresse · bientôt disponible</button></div></article>';
-    const address = mailbox?.inboundAddress;
-    const configured = mailbox?.inboundConfigured === true;
-    const status = address?.enabled ? "Active" : address ? "Suspendue" : configured ? "Prête à être créée" : "Configuration plateforme en attente";
-    return `<article class="partner-email-inbound-card partner-email-channel-card"><div><p class="eyebrow">Recommandé · sans configuration de boîte</p><h3>Adresse de réception Depann’Home Pro</h3><p>Communiquez cette adresse aux donneurs d’ordre. Chaque e-mail et ses pièces jointes suivent exactement l’analyse actuelle : extraction PDF/Word/Excel, OCR, proposition de mission et création ou rapprochement de la fiche client.</p>${address ? `<div class="partner-email-inbound-address"><code>${escapeHtml(address.emailAddress)}</code><button type="button" class="secondary-button" data-email-copy-inbound="${escapeHtml(address.emailAddress)}">Copier l’adresse</button></div>` : ""}<small>État : ${escapeHtml(status)}. Aucun DNS, OAuth ni serveur mail n’est à configurer par votre entreprise.</small></div><div class="partner-email-inbound-actions">${address ? `<button type="button" class="secondary-button" data-email-toggle-inbound="${address.enabled ? "false" : "true"}">${address.enabled ? "Suspendre" : "Réactiver"}</button><button type="button" class="danger-button" data-email-rotate-inbound>Renouveler l’adresse</button>` : `<button type="button" class="primary-button" data-email-create-inbound ${configured ? "" : "disabled"}>Créer mon adresse</button>`}</div><p class="auth-message" data-email-inbound-feedback aria-live="polite"></p></article>`;
-}
-
-function bindInboundAddressControls(card) {
-    card.querySelector("[data-email-copy-inbound]")?.addEventListener("click", async event => {
-        const button = event.currentTarget;
-        try { await navigator.clipboard.writeText(button.dataset.emailCopyInbound); button.textContent = "Adresse copiée"; }
-        catch { showInboundFeedback(card, "Copie impossible. Sélectionnez l’adresse manuellement.", true); }
-    });
-    card.querySelector("[data-email-create-inbound]")?.addEventListener("click", event => changeInboundAddress(card, event.currentTarget, "/api/partner-email/inbound-address", { method: "POST", body: "{}" }));
-    card.querySelector("[data-email-toggle-inbound]")?.addEventListener("click", event => changeInboundAddress(card, event.currentTarget, "/api/partner-email/inbound-address", { method: "PATCH", body: JSON.stringify({ enabled: event.currentTarget.dataset.emailToggleInbound === "true" }) }));
-    card.querySelector("[data-email-rotate-inbound]")?.addEventListener("click", event => {
-        if (!confirm("Renouveler cette adresse ? L’ancienne cessera immédiatement de recevoir les missions.")) return;
-        changeInboundAddress(card, event.currentTarget, "/api/partner-email/inbound-address", { method: "POST", body: JSON.stringify({ rotate: true }) });
-    });
-}
-
-async function changeInboundAddress(card, button, url, options) {
-    button.disabled = true;
-    showInboundFeedback(card, "Mise à jour de l’adresse…");
-    const result = await api(url, options);
-    if (!result.ok) { button.disabled = false; return showInboundFeedback(card, result.message, true); }
-    dispatchMailboxChanged("inbound-address");
-    await loadPartnerEmailSettings(card);
-}
-
-function showInboundFeedback(card, message, error = false) {
-    const target = card.querySelector("[data-email-inbound-feedback]");
-    if (!target) return;
-    target.textContent = message;
-    target.classList.toggle("error", error);
 }
 
 function emailConnectionCard(connection, { configuration = true, candidateReview = false } = {}) {
