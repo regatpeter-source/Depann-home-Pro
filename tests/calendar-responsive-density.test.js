@@ -136,7 +136,9 @@ test("le PC mémorise la vue mais revient toujours à la période actuelle aprè
     const rendering = calendar.slice(calendar.indexOf("export async function renderCalendar"), calendar.indexOf("export function renderCalendarOverview"));
     assert.match(rendering, /options\.currentPeriod && isDesktopCalendarDevice\(\)/);
     assert.match(rendering, /loadPreferredCalendarView\(\)/);
-    assert.match(rendering, /firstDayOfMonth\(new Date\(\)\)/);
+    assert.match(calendar, /let displayedMonth = atNoon\(new Date\(\)\)/);
+    assert.match(rendering, /if \(options\.currentPeriod\) \{\s*displayedMonth = atNoon\(new Date\(\)\)/);
+    assert.match(rendering, /if \(options\.date\) displayedMonth = atNoon\(options\.date\)/);
     assert.match(rendering, /invalidateCalendarEventsCache\(\)/);
     assert.match(calendar, /savePreferredCalendarView\(calendarView\)/);
     const navigation = readFileSync(new URL("../js/navigation.js", import.meta.url), "utf8");
@@ -148,5 +150,14 @@ test("chaque vue du planning mobile repart de la date actuelle", () => {
     assert.match(switcher, /const desktop = isDesktopCalendarDevice\(\)/);
     assert.match(switcher, /if \(nextView === calendarView && desktop\) return/);
     assert.match(switcher, /const anchorDate = desktop \? displayedMonth : new Date\(\)/);
-    assert.match(switcher, /nextView === "month" \? firstDayOfMonth\(anchorDate\) : atNoon\(anchorDate\)/);
+    assert.match(switcher, /displayedMonth = atNoon\(anchorDate\)/);
+});
+
+test("les vues PC mois, semaine et jour conservent la date d’ancrage au lieu du premier du mois", () => {
+    const switcher = calendar.slice(calendar.indexOf("function bindCalendarViewSwitcher"), calendar.indexOf("function bindCalendarNavigation"));
+    const navigation = calendar.slice(calendar.indexOf("function bindCalendarNavigation"), calendar.indexOf("function renderTechnicianFilter"));
+    assert.doesNotMatch(switcher, /firstDayOfMonth/);
+    assert.match(navigation, /data-calendar-action=today[\s\S]*displayedMonth = atNoon\(new Date\(\)\)/);
+    assert.match(calendar, /function getCalendarDays\(month\)[\s\S]*startOfCalendar\(month\)/);
+    assert.match(calendar, /function addMonths\(date, amount\)[\s\S]*Math\.min\(date\.getDate\(\), lastDay\)/);
 });

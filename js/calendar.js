@@ -33,7 +33,7 @@ const EVENT_STATUS_OPTIONS = [
     { id: "cancelled", label: "Annulée" }
 ];
 
-let displayedMonth = firstDayOfMonth(new Date());
+let displayedMonth = atNoon(new Date());
 let events = [];
 let selectedEvent = null;
 let calendarView = "month";
@@ -77,7 +77,7 @@ export async function renderCalendar(options = {}) {
     if (["month", "week", "day"].includes(options.view)) calendarView = options.view;
     else if (options.currentPeriod && isDesktopCalendarDevice()) calendarView = loadPreferredCalendarView();
     if (options.currentPeriod) {
-        displayedMonth = calendarView === "month" ? firstDayOfMonth(new Date()) : atNoon(new Date());
+        displayedMonth = atNoon(new Date());
         selectedEvent = null;
         invalidateCalendarEventsCache();
     }
@@ -88,7 +88,7 @@ export async function renderCalendar(options = {}) {
         visibleTechnicianIds = new Set(options.visibleTechnicianIds.map(String).filter(Boolean));
         showAllTechnicians = visibleTechnicianIds.size === 0;
     }
-    if (options.date) displayedMonth = calendarView === "month" ? firstDayOfMonth(options.date) : atNoon(options.date);
+    if (options.date) displayedMonth = atNoon(options.date);
     if (options.event) selectedEvent = options.event;
 
     clearSearch();
@@ -283,7 +283,7 @@ function bindCalendarViewSwitcher(panel) {
         calendarView = nextView;
         if (desktop) savePreferredCalendarView(calendarView);
         const anchorDate = desktop ? displayedMonth : new Date();
-        displayedMonth = nextView === "month" ? firstDayOfMonth(anchorDate) : atNoon(anchorDate);
+        displayedMonth = atNoon(anchorDate);
         refreshCalendarPeriod();
     }));
 }
@@ -300,7 +300,7 @@ function bindCalendarNavigation(panel) {
         refreshCalendarPeriod();
     });
     panel.querySelector("[data-calendar-action=today]").addEventListener("click", () => {
-        displayedMonth = calendarView === "month" ? firstDayOfMonth(new Date()) : atNoon(new Date());
+        displayedMonth = atNoon(new Date());
         selectedEvent = null;
         refreshCalendarPeriod();
     });
@@ -360,7 +360,7 @@ function renderEventForm(panel) {
                 assignedTechnicianName: event.assignedTechnicianName || "",
                 assignedTechnicianIds: getAssignedTechnicianIds(event)
             };
-            displayedMonth = firstDayOfMonth(new Date(`${date}T12:00:00`));
+            displayedMonth = atNoon(new Date(`${date}T12:00:00`));
             refreshCalendarDetail();
         });
         panel.querySelector("#closeCalendarDetail").addEventListener("click", () => {
@@ -684,7 +684,7 @@ function renderEventForm(panel) {
             appointmentId: (result.data?.count || 1) === 1 ? result.data?.id : ""
         });
         mobileAdminEditingEvents.delete(String(event.id || ""));
-        displayedMonth = firstDayOfMonth(new Date(`${payload.date}T12:00:00`));
+        displayedMonth = atNoon(new Date(`${payload.date}T12:00:00`));
         selectedEvent = null;
         invalidateCalendarEventsCache();
         renderCalendar();
@@ -1380,7 +1380,7 @@ function renderCalendarGrid(panel) {
         cell.innerHTML = `<span class="calendar-day-number" aria-hidden="true">${day.getDate()}</span><div class="calendar-event-list"></div>`;
         const openNewEvent = () => {
             selectedEvent = newEventForDate(date);
-            displayedMonth = calendarView === "month" ? firstDayOfMonth(day) : atNoon(day);
+            displayedMonth = atNoon(day);
             refreshCalendarDetail();
         };
         if (canCreate) {
@@ -1876,7 +1876,10 @@ function firstDayOfMonth(date) {
 }
 
 function addMonths(date, amount) {
-    return new Date(date.getFullYear(), date.getMonth() + amount, 1, 12);
+    const target = new Date(date.getFullYear(), date.getMonth() + amount, 1, 12);
+    const lastDay = new Date(target.getFullYear(), target.getMonth() + 1, 0, 12).getDate();
+    target.setDate(Math.min(date.getDate(), lastDay));
+    return target;
 }
 
 function startOfCalendar(month) {
