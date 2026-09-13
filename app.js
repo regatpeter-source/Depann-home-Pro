@@ -264,6 +264,15 @@ app.get(["/conditions-utilisation", "/conditions-d-utilisation", "/terms"], (req
 app.get(["/mentions-legales", "/mentions"], (request, response) => {
 	response.sendFile(path.join(rootDirectory, "public", "mentions.html"), { headers: { "Cache-Control": "public, max-age=3600" } });
 });
+app.get("/logiciel-entreprise-depannage", (request, response) => {
+	response.sendFile(path.join(rootDirectory, "public", "logiciel-entreprise-depannage.html"), { headers: { "Cache-Control": "public, max-age=3600" } });
+});
+app.get("/logiciel-planning-interventions", (request, response) => {
+	response.sendFile(path.join(rootDirectory, "public", "logiciel-planning-interventions.html"), { headers: { "Cache-Control": "public, max-age=3600" } });
+});
+app.get("/logiciel-devis-factures-artisans", (request, response) => {
+	response.sendFile(path.join(rootDirectory, "public", "logiciel-devis-factures-artisans.html"), { headers: { "Cache-Control": "public, max-age=3600" } });
+});
 app.get("/robots.txt", (request, response) => response.sendFile(path.join(rootDirectory, "public", "robots.txt")));
 app.get("/sitemap.xml", (request, response) => response.sendFile(path.join(rootDirectory, "public", "sitemap.xml")));
 app.use("/data", requireAuthentication, requireTechnicalWorkspaceAccess, express.static(path.join(rootDirectory, "data"), { index: false }));

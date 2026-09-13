@@ -7,6 +7,9 @@ const landing = readFileSync(new URL("../public/landing.html", import.meta.url),
 const privacy = readFileSync(new URL("../public/privacy.html", import.meta.url), "utf8");
 const terms = readFileSync(new URL("../public/terms.html", import.meta.url), "utf8");
 const legal = readFileSync(new URL("../public/mentions.html", import.meta.url), "utf8");
+const businessSoftware = readFileSync(new URL("../public/logiciel-entreprise-depannage.html", import.meta.url), "utf8");
+const schedulingSoftware = readFileSync(new URL("../public/logiciel-planning-interventions.html", import.meta.url), "utf8");
+const invoicingSoftware = readFileSync(new URL("../public/logiciel-devis-factures-artisans.html", import.meta.url), "utf8");
 const siteScript = readFileSync(new URL("../public/site.js", import.meta.url), "utf8");
 const sitemap = readFileSync(new URL("../public/sitemap.xml", import.meta.url), "utf8");
 const clientApp = readFileSync(new URL("../js/app.js", import.meta.url), "utf8");
@@ -125,10 +128,46 @@ test("la vitrine cible des recherches métier avec un contenu factuel et indexab
     assert.match(landing, /logiciel de gestion conçu pour les entreprises de dépannage/i);
     assert.match(landing, /id="questions-frequentes"/);
     assert.match(landing, /planning d’interventions/);
-    assert.match(sitemap, /<loc>https:\/\/depannhomepro\.com\/<\/loc><lastmod>2026-09-09<\/lastmod>/);
+    assert.match(sitemap, /<loc>https:\/\/depannhomepro\.com\/<\/loc><lastmod>2026-09-13<\/lastmod>/);
     assert.match(landing, /application\/ld\+json/);
     assert.match(landing, /"@type":"SoftwareApplication"/);
     assert.doesNotMatch(landing, /aggregateRating|ratingValue|ratingCount/);
+});
+
+test("les pages solutions métier sont publiques, canoniques et reliées à la vitrine", () => {
+    const pages = [
+        ["logiciel-entreprise-depannage", businessSoftware],
+        ["logiciel-planning-interventions", schedulingSoftware],
+        ["logiciel-devis-factures-artisans", invoicingSoftware]
+    ];
+    pages.forEach(([slug, page]) => {
+        assert.match(appSource, new RegExp(`app\\.get\\("/${slug}"[\\s\\S]*?${slug}\\.html`));
+        assert.match(page, /name="robots" content="index, follow/);
+        assert.match(page, new RegExp(`<link rel="canonical" href="https://depannhomepro\\.com/${slug}">`));
+        assert.match(page, /"@type":"WebPage"/);
+        assert.match(page, /"@type":"SoftwareApplication"/);
+        assert.match(page, /"@type":"BreadcrumbList"/);
+        assert.match(sitemap, new RegExp(`<loc>https://depannhomepro\\.com/${slug}</loc>`));
+        assert.match(landing, new RegExp(`href="/${slug}"`));
+        assert.doesNotMatch(page, /aggregateRating|ratingValue|ratingCount/);
+    });
+});
+
+test("chaque page solution répond à une intention de recherche distincte et factuelle", () => {
+    assert.match(businessSoftware, /<title>Logiciel pour entreprise de dépannage/);
+    assert.match(businessSoftware, /Clients et historique[\s\S]*Planning et affectations[\s\S]*Suivi depuis le terrain/);
+    assert.match(schedulingSoftware, /<title>Logiciel de planning d'interventions/);
+    assert.match(schedulingSoftware, /vues mois, semaine et jour[\s\S]*conflits et indisponibilités/i);
+    assert.match(invoicingSoftware, /<title>Logiciel devis et factures pour artisans/);
+    assert.match(invoicingSoftware, /devis, factures et avoirs[\s\S]*SUPER PDP/i);
+});
+
+test("les données structurées des pages commerciales sont des JSON-LD valides", () => {
+    [landing, businessSoftware, schedulingSoftware, invoicingSoftware].forEach(page => {
+        const match = page.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/);
+        assert.ok(match, "un bloc JSON-LD doit être présent");
+        assert.doesNotThrow(() => JSON.parse(match[1]));
+    });
 });
 
 test("la déconnexion et le lancement PWA ouvrent l’authentification plutôt que la vitrine", () => {
