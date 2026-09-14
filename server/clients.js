@@ -432,7 +432,7 @@ export function registerClientRoutes(app, requireAuthentication) {
             `, [getAccountOwnerId(request), clientId, JSON.stringify(updatedClient), createdAt]);
             await connection.query("COMMIT");
             publishClientChange(getAccountOwnerId(request), clientId, "attachment-added");
-            response.status(201).json({ client: updatedClient, message: `${attachments.length} fichier(s) ajouté(s) au dossier.` });
+            response.status(201).json({ client: compactClientPayload(updatedClient), message: `${attachments.length} fichier(s) ajouté(s) au dossier.` });
         } catch (error) {
             await connection.query("ROLLBACK");
             throw error;
@@ -553,7 +553,19 @@ async function recordClientLifecycle(database, ownerId, clientId, action, reques
 }
 
 function publicClient(row) {
-    return { ...(row.client || {}), clientStatus: normalizeClientStatus(row.clientStatus), archivedAt: row.archivedAt || null, archivedBy: row.archivedBy || null, updatedAt: row.updatedAt ? new Date(row.updatedAt).toISOString() : row.client?.updatedAt };
+    return { ...compactClientPayload(row.client), clientStatus: normalizeClientStatus(row.clientStatus), archivedAt: row.archivedAt || null, archivedBy: row.archivedBy || null, updatedAt: row.updatedAt ? new Date(row.updatedAt).toISOString() : row.client?.updatedAt };
+}
+
+function compactClientPayload(client) {
+    const value = client || {};
+    return {
+        ...value,
+        attachments: (Array.isArray(value.attachments) ? value.attachments : []).map(attachment => {
+            const compactAttachment = { ...attachment, cachedLocally: false };
+            delete compactAttachment.dataUrl;
+            return compactAttachment;
+        })
+    };
 }
 
 export function clientUploadErrorHandler(error, request, response, next) {

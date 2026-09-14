@@ -63,6 +63,14 @@ test("le navigateur écoute les événements et conserve seulement un contrôle 
     assert.doesNotMatch(clientSync, /15_000/);
 });
 
+test("la synchronisation ne retransmet pas les fichiers encodés déjà stockés sur le serveur", () => {
+    assert.match(clientsServer, /function compactClientPayload\(client\)/);
+    assert.match(clientsServer, /delete compactAttachment\.dataUrl/);
+    assert.match(clientsServer, /cachedLocally: false/);
+    assert.match(clientsServer, /\.\.\.compactClientPayload\(row\.client\)/);
+    assert.match(clientsServer, /client: compactClientPayload\(updatedClient\)/);
+});
+
 function createStreamResponse() {
     const response = new EventEmitter();
     response.headers = {};
