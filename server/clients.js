@@ -444,7 +444,7 @@ export function registerClientRoutes(app, requireAuthentication) {
             const attachments = Array.isArray(client?.attachments) ? client.attachments : [];
             const attachment = attachments.find(item => String(item?.id) === attachmentId);
             if (!attachment) { await connection.query("ROLLBACK"); return response.status(404).json({ message: "Fichier introuvable." }); }
-            if (!isDeletableInterventionAttachment(attachment)) { await connection.query("ROLLBACK"); return response.status(409).json({ message: "Seuls les JPEG/PDF ajoutés depuis une intervention peuvent être supprimés. Les documents réglementaires restent conservés." }); }
+            if (!isDeletableInterventionAttachment(attachment)) { await connection.query("ROLLBACK"); return response.status(409).json({ message: "Seuls les photos et fichiers ordinaires ajoutés depuis une intervention peuvent être supprimés. Les rapports et documents réglementaires restent conservés." }); }
             if (request.user?.role === "technician" && !await hasAccessibleAppointment(ownerId, positiveId(attachment.appointmentId), request)) {
                 await connection.query("ROLLBACK");
                 return response.status(403).json({ message: "Cette pièce appartient à une intervention qui ne vous est pas affectée." });
@@ -824,7 +824,9 @@ function isSupportedInterventionMedia(filename) {
 }
 
 function isDeletableInterventionAttachment(attachment) {
-    return Boolean(positiveId(attachment?.appointmentId)) && isInterventionAttachmentType(attachment?.type) && isSupportedInterventionMedia(attachment?.name);
+    const type = String(attachment?.type || "");
+    const protectedDocument = type === "Quitus" || type === "Rapport fuite" || type === "Rapport fuite · Original" || type === "Photo franchise" || attachment?.source === "partner_email";
+    return Boolean(positiveId(attachment?.appointmentId)) && !protectedDocument && ALLOWED_ATTACHMENT_EXTENSIONS.has(path.extname(attachment?.name || "").toLowerCase());
 }
 
 function decodeAttachmentDataUrl(value) {

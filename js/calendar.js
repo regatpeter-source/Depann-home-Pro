@@ -1,6 +1,6 @@
 import { ROUTES } from "./config.js?v=134";
 import { createBillingDocumentForClient, viewBillingDocument } from "./billing.js?v=205";
-import { getSearchableClients } from "./clients.js?v=165";
+import { getSearchableClients } from "./clients.js?v=166";
 import { addClientActivityByName, synchronizeClients } from "./client-sync.js?v=128";
 import { renderClientMessages } from "./messages.js?v=107";
 import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=52";
@@ -435,15 +435,7 @@ function renderEventForm(panel) {
                         <div><button type="button" class="secondary-button" data-client-action="quote">Créer un devis</button>${isReadOnlyCalendar() ? "" : '<button type="button" class="secondary-button" data-client-action="invoice">Créer une facture</button>'}</div>
                     </section>` : ""}
                     ${event.eventType === "appointment" && canAccessQuitus() ? renderQuitusHtml(event) : ""}
-                    <div class="calendar-client-messages-slot"></div>
-                    <form id="calendarClientUpload" class="calendar-client-upload">
-                        <div><p class="eyebrow">Dossier d’intervention</p><h3>Ajouter une photo ou un fichier</h3></div>
-                        <label>Type de fichier<select name="type"><option value="Photo">Photo</option><option value="Autre">Document</option><option value="Devis">Devis</option><option value="Facture">Facture</option></select></label>
-                        <label>Fichiers<input name="files" type="file" multiple accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt"></label>
-                        <label>Photo depuis l’appareil<input name="cameraPhoto" type="file" accept="image/*" capture="environment"></label>
-                        <div class="calendar-form-actions"><button type="submit" class="secondary-button">Déposer dans le dossier</button></div>
-                        <p class="auth-message" aria-live="polite"></p>
-                    </form>` : isCommercialMobileCalendar() ? `
+                    <div class="calendar-client-messages-slot"></div>` : isCommercialMobileCalendar() ? `
                     <section class="calendar-client-summary">
                         <div><p class="eyebrow">Client</p><h3>${escapeHtml(event.clientName || "Non renseigné")}</h3></div>
                         <div class="calendar-contact-list"><div class="calendar-contact-item calendar-client-full-width"><span>Adresse</span><strong>${escapeHtml(event.location || "Non renseignée")}</strong></div></div>
@@ -457,7 +449,6 @@ function renderEventForm(panel) {
         panel.querySelector('[data-client-action="invoice"]')?.addEventListener("click", () => createBillingDocumentForClient("invoice", client, event.id));
         panel.querySelector("#openTechnicalReport")?.addEventListener("click", () => renderTechnicalReports(0, event.id));
         panel.querySelector("#calendarInterventionPhotos")?.addEventListener("submit", eventSubmit => uploadInterventionPhotos(eventSubmit, client, event));
-        panel.querySelector("#calendarClientUpload")?.addEventListener("submit", eventSubmit => uploadClientAttachments(eventSubmit, client, event));
         initializeInsuranceDeductibleControls(panel, event);
         panel.querySelector("#editCalendarEvent")?.addEventListener("click", () => {
             mobileAdminEditingEvents.add(String(event.id));
@@ -978,34 +969,6 @@ function findClientForEvent(event) {
     return clientName ? getSearchableClients().find(client => normalizeText(client.name) === clientName) || null : null;
 }
 
-async function uploadClientAttachments(event, client, appointment) {
-    event.preventDefault();
-    const form = event.currentTarget;
-    const feedback = form.querySelector(".auth-message");
-    const button = form.querySelector("button[type=submit]");
-    const files = ["files", "cameraPhoto"].flatMap(name => Array.from(form.elements[name].files || []));
-    if (!files.length) {
-        feedback.textContent = "Sélectionnez au moins une photo ou un fichier.";
-        feedback.classList.add("error");
-        return;
-    }
-    button.disabled = true;
-    feedback.textContent = "Dépôt en cours…";
-    feedback.classList.remove("error");
-    const result = await uploadClientFiles(client, new FormData(form).get("type") || "Autre", files, appointment?.id);
-    if (!result.ok) {
-        feedback.textContent = result.message || "Dépôt impossible.";
-        feedback.classList.add("error");
-        button.disabled = false;
-        return;
-    }
-    form.reset();
-    feedback.textContent = result.message || "Fichier ajouté au dossier.";
-    selectedEvent = appointment;
-    invalidateCalendarEventsCache();
-    renderCalendar({ event: appointment });
-}
-
 function renderQuitusHtml(event) {
     if (event.isCompleted) return "";
     const validated = event.quitusStatus === "validated" || event.quitusStatus === "signed";
@@ -1276,16 +1239,23 @@ function renderInterventionPhotosHtml(client, appointment) {
     const before = appointmentPhotos.filter(attachment => attachment.type === "Photo avant");
     const after = appointmentPhotos.filter(attachment => attachment.type === "Photo après");
     const general = appointmentPhotos.filter(attachment => attachment.type === "Photo");
-    const previews = photos => photos.length
-        ? `<div class="intervention-photo-previews">${photos.map(photo => photo.mime === "application/pdf" ? `<a class="intervention-pdf-preview" href="/api/clients/${encodeURIComponent(client.id)}/attachments/${encodeURIComponent(photo.id)}/open" target="_blank" rel="noopener"><strong>PDF</strong><span>${escapeHtml(photo.name)}</span></a>` : `<img src="${escapeHtml(photo.dataUrl)}" alt="${escapeHtml(photo.name)}">`).join("")}</div>`
-        : '<p class="muted">Aucun JPEG ou PDF pour le moment.</p>';
+    const files = appointmentPhotos.filter(attachment => attachment.type === "Autre");
+    const previews = attachments => attachments.length
+        ? `<div class="intervention-photo-previews">${attachments.map(attachment => {
+            const url = `/api/clients/${encodeURIComponent(client.id)}/attachments/${encodeURIComponent(attachment.id)}/open`;
+            return String(attachment.mime || "").startsWith("image/")
+                ? `<a href="${url}" target="_blank" rel="noopener"><img src="${url}" alt="${escapeHtml(attachment.name)}"></a>`
+                : `<a class="intervention-pdf-preview" href="${url}" target="_blank" rel="noopener"><strong>Fichier</strong><span>${escapeHtml(attachment.name)}</span></a>`;
+        }).join("")}</div>`
+        : '<p class="muted">Aucun élément ajouté pour le moment.</p>';
     return `
         <form id="calendarInterventionPhotos" class="calendar-intervention-photos">
-            <div><p class="eyebrow">Dossier de l’intervention</p><h3>Ajouter des photos</h3><p class="muted">Les JPEG et PDF ajoutés ici sont enregistrés dans l’historique du client. Ils ne sont envoyés au partenaire qu’après une sélection explicite dans le Centre de mission.</p></div>
-            <section><h4>Documents de l’intervention</h4>${previews(general)}<label>Choisir des JPEG/PDF<input name="generalPhotos" type="file" accept="image/jpeg,image/png,image/webp,application/pdf,.pdf" multiple></label><label>Prendre une photo<input name="generalCamera" type="file" accept="image/jpeg" capture="environment" multiple></label></section>
-            <section><h4>Avant intervention</h4>${previews(before)}<label>Choisir des JPEG/PDF<input name="beforePhoto" type="file" accept="image/jpeg,image/png,image/webp,application/pdf,.pdf" multiple></label><label>Prendre une photo<input name="beforeCamera" type="file" accept="image/jpeg" capture="environment" multiple></label></section>
-            <section><h4>Après intervention</h4>${previews(after)}<label>Choisir des JPEG/PDF<input name="afterPhoto" type="file" accept="image/jpeg,image/png,image/webp,application/pdf,.pdf" multiple></label><label>Prendre une photo<input name="afterCamera" type="file" accept="image/jpeg" capture="environment" multiple></label></section>
-            <div class="calendar-form-actions"><button type="submit" class="secondary-button">Ajouter les JPEG/PDF</button></div><p class="auth-message" aria-live="polite"></p>
+            <div><p class="eyebrow">Dossier de l’intervention</p><h3>Photos et fichiers de l’intervention</h3><p class="muted">Tous les éléments ajoutés ici apparaissent dans l’historique du client. Ils ne sont envoyés au partenaire qu’après une sélection explicite dans le Centre de mission.</p></div>
+            <section><h4>Photos de l’intervention</h4>${previews(general)}<label>Choisir une ou plusieurs photos<input name="generalPhotos" type="file" accept="image/jpeg,image/png,image/webp" multiple></label><label>Prendre une photo<input name="generalCamera" type="file" accept="image/*" capture="environment" multiple></label></section>
+            <section><h4>Avant intervention</h4>${previews(before)}<label>Choisir une ou plusieurs photos<input name="beforePhoto" type="file" accept="image/jpeg,image/png,image/webp" multiple></label><label>Prendre une photo<input name="beforeCamera" type="file" accept="image/*" capture="environment" multiple></label></section>
+            <section><h4>Après intervention</h4>${previews(after)}<label>Choisir une ou plusieurs photos<input name="afterPhoto" type="file" accept="image/jpeg,image/png,image/webp" multiple></label><label>Prendre une photo<input name="afterCamera" type="file" accept="image/*" capture="environment" multiple></label></section>
+            <section><h4>Autres fichiers</h4>${previews(files)}<label>Choisir un ou plusieurs fichiers<input name="otherFiles" type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.txt" multiple></label></section>
+            <div class="calendar-form-actions"><button type="submit" class="secondary-button">Ajouter à l’historique du client</button></div><p class="auth-message" aria-live="polite"></p>
         </form>
     `;
 }
@@ -1298,20 +1268,21 @@ async function uploadInterventionPhotos(event, client, appointment) {
     const uploads = [
         { type: "Photo", files: ["generalPhotos", "generalCamera"].flatMap(name => Array.from(form.elements[name].files || [])) },
         { type: "Photo avant", files: ["beforePhoto", "beforeCamera"].flatMap(name => Array.from(form.elements[name].files || [])) },
-        { type: "Photo après", files: ["afterPhoto", "afterCamera"].flatMap(name => Array.from(form.elements[name].files || [])) }
+        { type: "Photo après", files: ["afterPhoto", "afterCamera"].flatMap(name => Array.from(form.elements[name].files || [])) },
+        { type: "Autre", files: Array.from(form.elements.otherFiles.files || []) }
     ].filter(upload => upload.files.length);
     if (!uploads.length) {
-        feedback.textContent = "Sélectionnez au moins un JPEG ou PDF de l’intervention.";
+        feedback.textContent = "Sélectionnez au moins une photo ou un fichier de l’intervention.";
         feedback.classList.add("error");
         return;
     }
     button.disabled = true;
     feedback.classList.remove("error");
-    feedback.textContent = "Ajout des photos…";
+    feedback.textContent = "Ajout dans l’historique du client…";
     for (const upload of uploads) {
         const result = await uploadClientFiles(client, upload.type, upload.files, appointment?.id);
         if (!result.ok) {
-            feedback.textContent = result.message || "Ajout des photos impossible.";
+            feedback.textContent = result.message || "Ajout des éléments impossible.";
             feedback.classList.add("error");
             button.disabled = false;
             return;

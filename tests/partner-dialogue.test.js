@@ -79,8 +79,9 @@ test("les photos internes d’un rapport ne sont jamais exposées individuelleme
 });
 
 test("les photos terrain suivent fiche intervention, fiche client, sélection puis journal partenaire", () => {
-    assert.match(calendarSource, /<h3>Ajouter des photos<\/h3>/);
+    assert.match(calendarSource, /<h3>Photos et fichiers de l’intervention<\/h3>/);
     assert.match(calendarSource, /name="generalPhotos"/);
+    assert.match(calendarSource, /name="otherFiles"/);
     assert.match(calendarSource, /uploadClientFiles\(client, upload\.type, upload\.files, appointment\?\.id\)/);
     assert.match(serverSource, /missions\/:missionId\/intervention-photos/);
     assert.match(serverSource, /isInterventionPhoto\(attachment, mission\.calendar_event_id\)/);

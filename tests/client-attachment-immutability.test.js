@@ -6,7 +6,7 @@ const serverSource = readFileSync(new URL("../server/clients.js", import.meta.ur
 const clientsSource = readFileSync(new URL("../js/clients.js", import.meta.url), "utf8");
 const syncSource = readFileSync(new URL("../js/client-sync.js", import.meta.url), "utf8");
 
-test("only intervention JPEG/PDF attachments can be deleted", () => {
+test("ordinary intervention attachments can be deleted while reports and regulatory documents remain protected", () => {
     const route = serverSource.slice(serverSource.indexOf('app.delete("/api/clients/:clientId/attachments/:attachmentId"'), serverSource.indexOf('app.get("/api/clients/:clientId/attachments/:attachmentId/open"'));
     assert.match(route, /status\(409\)/);
     assert.match(route, /isDeletableInterventionAttachment/);
@@ -14,6 +14,8 @@ test("only intervention JPEG/PDF attachments can be deleted", () => {
     assert.match(route, /UPDATE depannhome_clients/);
     assert.match(route, /deletedAttachmentIds: mergeDeletedAttachmentIds/);
     assert.match(route, /documents réglementaires restent conservés/);
+    assert.match(serverSource, /type === "Quitus" \|\| type === "Rapport fuite" \|\| type === "Rapport fuite · Original" \|\| type === "Photo franchise"/);
+    assert.match(serverSource, /ALLOWED_ATTACHMENT_EXTENSIONS\.has/);
 });
 
 test("intervention history exposes JPEG/PDF actions including deletion", () => {
@@ -24,11 +26,11 @@ test("intervention history exposes JPEG/PDF actions including deletion", () => {
     assert.match(clientsSource, /deleteInterventionAttachment/);
 });
 
-test("reports and quitus stay in history while generic files stay in the files section", () => {
-    assert.match(clientsSource, /attachment\.type !== "Quitus" && !isLeakReportAttachment\(attachment\)/);
+test("reports and quitus stay protected while intervention files move into their intervention history", () => {
+    assert.match(clientsSource, /!isInterventionAttachment\(attachment\).*attachment\.type !== "Quitus" && !isLeakReportAttachment\(attachment\)/);
     assert.match(clientsSource, /!\["quote", "invoice", "attachment"\]\.includes\(entry\.type\)/);
     assert.match(clientsSource, /entry\.type !== "appointment" \|\| !appointments\.length/);
-    assert.match(clientsSource, /const attachmentEntries = client\.attachments\.filter\(isInterventionPhoto\)/);
+    assert.match(clientsSource, /const attachmentEntries = client\.attachments\.filter\(isInterventionAttachment\)/);
 });
 
 test("validated reports deleted in older versions are restored from their canonical PDF", () => {

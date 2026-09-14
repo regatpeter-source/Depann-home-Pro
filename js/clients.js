@@ -37,7 +37,7 @@ const EMPTY_CLIENT = {
     activityHistory: []
 };
 
-const ATTACHMENT_TYPES = ["Devis", "Facture", "Quitus", "Rapport fuite", "Rapport fuite · Original", "Photo", "Photo avant", "Photo après", "Mission partenaire · E-mail", "Autre"];
+const ATTACHMENT_TYPES = ["Devis", "Facture", "Quitus", "Rapport fuite", "Rapport fuite · Original", "Photo franchise", "Photo", "Photo avant", "Photo après", "Mission partenaire · E-mail", "Autre"];
 const MAX_ATTACHMENT_SIZE = 4 * 1024 * 1024;
 let clientScreenOptions = {};
 let clientDirectoryFilters = createEmptyDirectoryFilters();
@@ -581,7 +581,7 @@ function renderClientDetail(client, options = {}) {
     const archived = client.clientStatus === "archived";
     const navigationHref = getClientNavigationHref(client);
     const emailMissionFiles = client.attachments.filter(isPartnerEmailAttachment);
-    const clientFiles = client.attachments.filter(attachment => !isInterventionPhoto(attachment) && !isPartnerEmailAttachment(attachment) && attachment.type !== "Quitus" && !isLeakReportAttachment(attachment));
+    const clientFiles = client.attachments.filter(attachment => !isInterventionAttachment(attachment) && !isPartnerEmailAttachment(attachment) && attachment.type !== "Quitus" && !isLeakReportAttachment(attachment));
     const panel = document.createElement("section");
     panel.className = "client-panel";
 
@@ -1053,11 +1053,11 @@ function renderClientActivityHistory(client, billingDocuments = [], purchases = 
             createdAt: purchase.createdAt || purchase.updatedAt || `${purchase.purchaseDate}T12:00:00`
         };
     });
-    const attachmentEntries = client.attachments.filter(isInterventionPhoto).map(attachment => ({
+    const attachmentEntries = client.attachments.filter(isInterventionAttachment).map(attachment => ({
         id: `intervention-attachment-${attachment.id}`,
         type: "intervention_attachment",
-        label: attachment.type === "Photo avant" ? "Pièce avant intervention" : attachment.type === "Photo après" ? "Pièce après intervention" : "Pièce de l’intervention",
-        detail: attachment.name,
+        label: attachment.type === "Photo avant" ? "Photo avant intervention" : attachment.type === "Photo après" ? "Photo après intervention" : isImageAttachment(attachment) ? "Photo de l’intervention" : "Fichier de l’intervention",
+        detail: isImageAttachment(attachment) ? "" : attachment.name,
         documentId: "",
         attachmentId: String(attachment.id),
         appointmentId: String(attachment.appointmentId),
@@ -1119,7 +1119,7 @@ function renderClientActivityEntry(entry, client) {
     const quitusAttachment = entry.type === "quitus" ? client.attachments.find(attachment => String(attachment.id) === entry.attachmentId || attachment.type === "Quitus" && attachment.name === entry.detail) : null;
     const reportAttachment = entry.type === "technical_report" ? client.attachments.find(attachment => String(attachment.id) === entry.attachmentId || isLeakReportAttachment(attachment) && attachment.name === entry.detail) : null;
     const deductibleAttachment = entry.type === "insurance_deductible" ? client.attachments.find(attachment => String(attachment.id) === entry.attachmentId && attachment.type === "Photo franchise") : null;
-    const interventionAttachment = entry.type === "intervention_attachment" ? client.attachments.find(attachment => String(attachment.id) === entry.attachmentId && isInterventionPhoto(attachment)) : null;
+    const interventionAttachment = entry.type === "intervention_attachment" ? client.attachments.find(attachment => String(attachment.id) === entry.attachmentId && isInterventionAttachment(attachment)) : null;
     const quitusActions = quitusAttachment ? `<div class="client-card-actions client-activity-actions"><button type="button" class="secondary-button" data-view-quituses="${escapeHtml(quitusAttachment.id)}">Visualiser</button><button type="button" class="secondary-button" data-print-quituses="${escapeHtml(quitusAttachment.id)}">Imprimer / PDF</button><button type="button" class="secondary-button" data-email-quituses="${escapeHtml(quitusAttachment.id)}" ${client.email ? "" : "disabled title=\"Ajoutez l’e-mail du client pour préparer un envoi.\""}>Envoyer par e-mail</button></div>` : "";
     const reportActions = reportAttachment ? `<div class="client-card-actions client-activity-actions"><button type="button" class="secondary-button" data-view-report="${escapeHtml(reportAttachment.id)}">Visualiser</button><button type="button" class="secondary-button" data-print-report="${escapeHtml(reportAttachment.id)}">Imprimer / PDF</button><button type="button" class="secondary-button" data-email-report="${escapeHtml(reportAttachment.id)}" ${client.email ? "" : "disabled title=\"Ajoutez l’e-mail du client pour préparer un envoi.\""}>Envoyer par e-mail</button></div>` : "";
     const deductibleActions = deductibleAttachment ? `<div class="client-card-actions client-activity-actions"><button type="button" class="secondary-button" data-view-deductible="${escapeHtml(deductibleAttachment.id)}">Voir la photo de preuve</button></div>` : "";
@@ -1185,7 +1185,7 @@ function bindClientHistoryActions(panel, client) {
 }
 
 function isLeakReportAttachment(attachment) {
-    return attachment?.type === "Rapport fuite" || /^rapport-recherche-fuite-/i.test(String(attachment?.name || ""));
+    return ["Rapport fuite", "Rapport fuite · Original"].includes(attachment?.type) || /^rapport-recherche-fuite-/i.test(String(attachment?.name || ""));
 }
 
 function normalizeActivityHistory(history) {
@@ -1372,11 +1372,16 @@ function renderAttachmentsHtml(clientId, attachments, recipient) {
     `;
 }
 
-function isInterventionPhoto(attachment) {
+function isInterventionAttachment(attachment) {
     const mime = String(attachment?.mime || "").toLowerCase();
     const name = String(attachment?.name || "").toLowerCase();
-    const supported = mime.startsWith("image/") || mime === "application/pdf" || /\.(?:jpe?g|png|webp|pdf)$/.test(name);
-    return Boolean(attachment?.appointmentId) && supported && ["Photo", "Photo avant", "Photo après"].includes(attachment.type);
+    const supported = mime.startsWith("image/") || /^(?:application\/pdf|application\/msword|application\/vnd\.|text\/plain)/.test(mime) || /\.(?:jpe?g|png|webp|pdf|docx?|xlsx?|txt)$/.test(name);
+    const protectedDocument = ["Quitus", "Photo franchise"].includes(attachment?.type) || isLeakReportAttachment(attachment) || isPartnerEmailAttachment(attachment);
+    return Boolean(attachment?.appointmentId) && supported && !protectedDocument;
+}
+
+function isImageAttachment(attachment) {
+    return String(attachment?.mime || "").toLowerCase().startsWith("image/") || /\.(?:jpe?g|png|webp)$/i.test(String(attachment?.name || ""));
 }
 
 function isPartnerEmailAttachment(attachment) {
@@ -1385,8 +1390,9 @@ function isPartnerEmailAttachment(attachment) {
 
 function renderInterventionAttachmentActions(client, attachment) {
     const url = `/api/clients/${encodeURIComponent(client.id)}/attachments/${encodeURIComponent(attachment.id)}/open`;
-    const image = String(attachment.mime || "").startsWith("image/");
-    return `<div class="client-intervention-history-file">${image ? `<a href="${url}" target="_blank" rel="noopener"><img src="${escapeHtml(attachment.dataUrl || url)}" alt="Aperçu ${escapeHtml(attachment.name)}"></a>` : '<span class="client-intervention-pdf" aria-label="Document PDF">PDF</span>'}<div class="client-card-actions client-activity-actions"><a class="secondary-button" href="${url}" target="_blank" rel="noopener">Ouvrir</a><a class="secondary-button" href="${url}?download=1" download="${escapeHtml(attachment.name)}">Télécharger</a><button type="button" class="secondary-button" data-email-intervention-attachment="${escapeHtml(attachment.id)}" ${client.email ? "" : "disabled title=\"Ajoutez l’e-mail du client pour envoyer ce fichier.\""}>Envoyer par e-mail</button><button type="button" class="secondary-button danger-button" data-delete-intervention-attachment="${escapeHtml(attachment.id)}">Supprimer</button></div></div>`;
+    const image = isImageAttachment(attachment);
+    const fileLabel = String(attachment.mime || "").includes("pdf") ? "PDF" : "Fichier";
+    return `<div class="client-intervention-history-file">${image ? `<a href="${url}" target="_blank" rel="noopener"><img src="${url}" alt="Aperçu de la photo ${escapeHtml(attachment.name)}" loading="lazy"></a>` : `<a class="client-intervention-pdf" href="${url}" target="_blank" rel="noopener" aria-label="Ouvrir ${escapeHtml(attachment.name)}">${fileLabel}</a>`}<div class="client-card-actions client-activity-actions"><a class="secondary-button" href="${url}" target="_blank" rel="noopener">Ouvrir</a><a class="secondary-button" href="${url}?download=1" download="${escapeHtml(attachment.name)}">Télécharger</a><button type="button" class="secondary-button" data-email-intervention-attachment="${escapeHtml(attachment.id)}" ${client.email ? "" : "disabled title=\"Ajoutez l’e-mail du client pour envoyer ce fichier.\""}>Envoyer par e-mail</button><button type="button" class="secondary-button danger-button" data-delete-intervention-attachment="${escapeHtml(attachment.id)}">Supprimer</button></div></div>`;
 }
 
 async function deleteInterventionAttachment(client, attachmentId) {
