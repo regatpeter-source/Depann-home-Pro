@@ -22,3 +22,11 @@ test("la seconde lecture serveur est réservée aux modifications locales envoy�
     const synchronization = clientSync.slice(clientSync.indexOf("async function synchronize"), clientSync.indexOf("function applyRemoteChanges"));
     assert.match(synchronization, /if \(operations\.length\) \{\s*const refreshed = await request/);
 });
+
+test("une synchronisation reçue rafraîchit automatiquement la fiche client ouverte sur PC", () => {
+    assert.match(navigation, /depannhome:clients-synchronized/);
+    assert.match(navigation, /document\.querySelector\("\[data-client-detail-id\]"\)/);
+    assert.match(navigation, /skipClientSynchronization: true/);
+    assert.match(clients, /panel\.dataset\.clientDetailId = client\.id/);
+    assert.match(clientSync, /SILENT_SYNCHRONIZATION_INTERVAL = 15_000/);
+});

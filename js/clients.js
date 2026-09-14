@@ -1,5 +1,5 @@
 import { ROUTES } from "./config.js?v=116";
-import { addClientActivity, getLocalClients, removeLocalClient, saveLocalClient, scheduleClientSynchronization, synchronizeClients } from "./client-sync.js?v=128";
+import { addClientActivity, getLocalClients, removeLocalClient, saveLocalClient, scheduleClientSynchronization, synchronizeClients } from "./client-sync.js?v=129";
 import { renderClientMessages } from "./messages.js?v=107";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
@@ -585,6 +585,7 @@ function renderClientDetail(client, options = {}) {
     const clientFiles = client.attachments.filter(attachment => !isInterventionAttachment(attachment) && !isClientPhotoAttachment(attachment) && !isPartnerEmailAttachment(attachment) && attachment.type !== "Quitus" && !isLeakReportAttachment(attachment));
     const panel = document.createElement("section");
     panel.className = "client-panel";
+    panel.dataset.clientDetailId = client.id;
 
     panel.innerHTML = `
         <div class="procedure-header">

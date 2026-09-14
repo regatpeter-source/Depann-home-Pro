@@ -79,5 +79,8 @@ test("mobile camera selections display a visual preview before upload", () => {
     assert.match(calendarSource, /initializeInterventionPhotoPreviews/);
     assert.match(calendarSource, /URL\.createObjectURL\(file\)/);
     assert.match(calendarSource, /Photo prête à être ajoutée/);
+    assert.match(calendarSource, /La photo va être envoyée automatiquement/);
+    assert.match(calendarSource, /form\.requestSubmit\(\)/);
+    assert.match(calendarSource, /form\.dataset\.uploading/);
     assert.match(styleSource, /\.intervention-selected-photo-preview/);
 });

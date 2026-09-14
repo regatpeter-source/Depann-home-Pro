@@ -1,5 +1,5 @@
 import { ROUTES, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=135";
-import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=221";
+import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=222";
 import { openCreatorPartnerRequest, openCreatorRequestNotification, renderCreatorConsole } from "./creator.js?v=161";
 import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=205";
 import { renderAccounting } from "./accounting.js?v=27";
@@ -12,8 +12,8 @@ import { renderCompanyEmailWorkspace, renderPartnerEmailSettings } from "./partn
 import { renderDataImportTool } from "./data-imports.js?v=5";
 import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=52";
 import { getFirstUnreadClientId, refreshClientMessageAlert, refreshVisibleClientMessages } from "./messages.js?v=107";
-import { getSearchableClients, renderClients } from "./clients.js?v=167";
-import { synchronizeClients } from "./client-sync.js?v=128";
+import { getSearchableClients, renderClients } from "./clients.js?v=168";
+import { synchronizeClients } from "./client-sync.js?v=129";
 import { configureLibrary, openLibrarySection, renderLibrary, searchPersonalLibrary } from "./library.js?v=122";
 import { getContextualSearchResults } from "./search.js?v=75";
 import { renderInterventionSearch } from "./intervention-search.js?v=1";
@@ -94,7 +94,12 @@ export function initializeNavigation(loadedDatabase) {
         const type = String(event.detail?.type || "");
         if (type === "quote" || (type === "quitus" && organizationFeatureEnabled("quitus")) || (type === "report" && organizationFeatureEnabled("technicalReports"))) openDocumentTemplateSettings(type);
     });
-    window.addEventListener("depannhome:clients-synchronized", () => refreshClientMessageAlert());
+    window.addEventListener("depannhome:clients-synchronized", () => {
+        refreshClientMessageAlert();
+        if (document.querySelector(".nav-button.active")?.dataset.nav !== ROUTES.clients) return;
+        const selectedId = document.querySelector("[data-client-detail-id]")?.dataset.clientDetailId || "";
+        renderClients({ database, navigateToRef, createBillingDocument: createBillingDocumentForClient, viewBillingDocument, createCalendarEvent: createCalendarEventForClient, skipClientSynchronization: true, ...(selectedId ? { selectedId } : {}) });
+    });
     window.addEventListener("depannhome:partner-client-provisioned", event => {
         const clientId = String(event.detail?.clientId || "");
         if (!clientId) return;

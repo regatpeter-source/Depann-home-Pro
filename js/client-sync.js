@@ -2,7 +2,7 @@ const CLIENTS_KEY_PREFIX = "depannHomePro:clients:";
 const QUEUE_KEY_PREFIX = "depannHomePro:clients-sync-queue:";
 const CURSOR_KEY_PREFIX = "depannHomePro:clients-sync-cursor:";
 const MAX_ACTIVITY_HISTORY = 150;
-const SILENT_SYNCHRONIZATION_INTERVAL = 90_000;
+const SILENT_SYNCHRONIZATION_INTERVAL = 15_000;
 const DESKTOP_SYNCHRONIZATION_DELAY = 1_500;
 const FOCUS_SYNCHRONIZATION_DELAY = 3_000;
 

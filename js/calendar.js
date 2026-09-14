@@ -1,7 +1,7 @@
 import { ROUTES } from "./config.js?v=134";
 import { createBillingDocumentForClient, viewBillingDocument } from "./billing.js?v=205";
-import { getSearchableClients } from "./clients.js?v=167";
-import { addClientActivityByName, synchronizeClients } from "./client-sync.js?v=128";
+import { getSearchableClients } from "./clients.js?v=168";
+import { addClientActivityByName, synchronizeClients } from "./client-sync.js?v=129";
 import { renderClientMessages } from "./messages.js?v=107";
 import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=52";
 import { resetSelection } from "./state.js?v=44";
@@ -1265,7 +1265,13 @@ function renderInterventionPhotosHtml(client, appointment) {
 function initializeInterventionPhotoPreviews(form) {
     if (!form) return;
     form.querySelectorAll('input[type="file"][accept*="image"]').forEach(input => {
-        input.addEventListener("change", () => renderSelectedInterventionPhotoPreviews(input.closest("section")));
+        input.addEventListener("change", () => {
+            renderSelectedInterventionPhotoPreviews(input.closest("section"));
+            if (input.files?.length && form.dataset.uploading !== "true") {
+                setInterventionUploadStatus(form, "Envoi automatique de la photo…");
+                form.requestSubmit();
+            }
+        });
     });
 }
 
@@ -1291,12 +1297,25 @@ function renderSelectedInterventionPhotoPreviews(section) {
         image.addEventListener("error", () => URL.revokeObjectURL(source), { once: true });
         gallery.appendChild(image);
     });
-    preview.append(title, gallery);
+    const status = document.createElement("p");
+    status.className = "intervention-photo-upload-status";
+    status.dataset.photoUploadStatus = "";
+    status.setAttribute("aria-live", "polite");
+    status.textContent = "La photo va être envoyée automatiquement.";
+    preview.append(title, gallery, status);
+}
+
+function setInterventionUploadStatus(form, message, error = false) {
+    form.querySelectorAll("[data-photo-upload-status]").forEach(status => {
+        status.textContent = message;
+        status.classList.toggle("error", error);
+    });
 }
 
 async function uploadInterventionPhotos(event, client, appointment) {
     event.preventDefault();
     const form = event.currentTarget;
+    if (form.dataset.uploading === "true") return;
     const feedback = form.querySelector(".auth-message");
     const button = form.querySelector('button[type="submit"]');
     const uploads = [
@@ -1310,18 +1329,25 @@ async function uploadInterventionPhotos(event, client, appointment) {
         feedback.classList.add("error");
         return;
     }
+    form.dataset.uploading = "true";
     button.disabled = true;
+    form.querySelectorAll('input[type="file"]').forEach(input => { input.disabled = true; });
     feedback.classList.remove("error");
-    feedback.textContent = "Ajout dans l’historique du client…";
+    feedback.textContent = "Envoi en cours…";
+    setInterventionUploadStatus(form, "Envoi automatique en cours…");
     for (const upload of uploads) {
         const result = await uploadClientFiles(client, upload.type, upload.files, appointment?.id);
         if (!result.ok) {
             feedback.textContent = result.message || "Ajout des éléments impossible.";
             feedback.classList.add("error");
             button.disabled = false;
+            form.dataset.uploading = "false";
+            form.querySelectorAll('input[type="file"]').forEach(input => { input.disabled = false; });
+            setInterventionUploadStatus(form, `Échec de l’envoi : ${feedback.textContent}`, true);
             return;
         }
     }
+    setInterventionUploadStatus(form, "Photo envoyée. Actualisation de l’intervention…");
     selectedEvent = appointment;
     invalidateCalendarEventsCache();
     renderCalendar({ event: appointment });
