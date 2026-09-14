@@ -1,6 +1,6 @@
 import { ROUTES } from "./config.js?v=134";
 import { createBillingDocumentForClient, viewBillingDocument } from "./billing.js?v=205";
-import { getSearchableClients } from "./clients.js?v=166";
+import { getSearchableClients } from "./clients.js?v=167";
 import { addClientActivityByName, synchronizeClients } from "./client-sync.js?v=128";
 import { renderClientMessages } from "./messages.js?v=107";
 import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=52";
@@ -1243,8 +1243,9 @@ function renderInterventionPhotosHtml(client, appointment) {
     const previews = attachments => attachments.length
         ? `<div class="intervention-photo-previews">${attachments.map(attachment => {
             const url = `/api/clients/${encodeURIComponent(client.id)}/attachments/${encodeURIComponent(attachment.id)}/open`;
+            const imageSource = attachment.dataUrl || url;
             return String(attachment.mime || "").startsWith("image/")
-                ? `<a href="${url}" target="_blank" rel="noopener"><img src="${url}" alt="${escapeHtml(attachment.name)}"></a>`
+                ? `<a href="${url}" target="_blank" rel="noopener"><img src="${escapeHtml(imageSource)}" alt="Photo de l’intervention"></a>`
                 : `<a class="intervention-pdf-preview" href="${url}" target="_blank" rel="noopener"><strong>Fichier</strong><span>${escapeHtml(attachment.name)}</span></a>`;
         }).join("")}</div>`
         : '<p class="muted">Aucun élément ajouté pour le moment.</p>';
@@ -1296,12 +1297,13 @@ async function uploadInterventionPhotos(event, client, appointment) {
 async function uploadClientFiles(client, type, files, appointmentId = "") {
     const payload = new FormData();
     payload.append("type", type);
-    if (appointmentId) payload.append("appointmentId", String(appointmentId));
+    payload.append("appointmentId", String(appointmentId || ""));
     files.forEach(file => payload.append("files", file));
     const response = await fetch(`/api/clients/${encodeURIComponent(client.id)}/attachments`, { method: "POST", credentials: "same-origin", body: payload });
     const data = await response.json().catch(() => null);
     if (!response.ok) return { ok: false, message: data?.message };
-    await synchronizeClients();
+    const synchronization = await synchronizeClients({ forceFull: true });
+    if (!synchronization.ok) return { ok: false, message: synchronization.message || "La photo a été envoyée, mais son actualisation locale a échoué. Rechargez la fiche client." };
     return { ok: true, message: data?.message };
 }
 

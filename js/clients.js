@@ -581,7 +581,8 @@ function renderClientDetail(client, options = {}) {
     const archived = client.clientStatus === "archived";
     const navigationHref = getClientNavigationHref(client);
     const emailMissionFiles = client.attachments.filter(isPartnerEmailAttachment);
-    const clientFiles = client.attachments.filter(attachment => !isInterventionAttachment(attachment) && !isPartnerEmailAttachment(attachment) && attachment.type !== "Quitus" && !isLeakReportAttachment(attachment));
+    const interventionPhotos = client.attachments.filter(isClientPhotoAttachment).sort((first, second) => new Date(second.createdAt).getTime() - new Date(first.createdAt).getTime());
+    const clientFiles = client.attachments.filter(attachment => !isInterventionAttachment(attachment) && !isClientPhotoAttachment(attachment) && !isPartnerEmailAttachment(attachment) && attachment.type !== "Quitus" && !isLeakReportAttachment(attachment));
     const panel = document.createElement("section");
     panel.className = "client-panel";
 
@@ -613,8 +614,13 @@ function renderClientDetail(client, options = {}) {
             <h3> Notes</h3>
             <p class="${automaticClientNotesClass(client)}">${escapeHtml(client.notes || "Aucune note renseignée.")}</p>
         </section>
+        <section class="procedure-section client-intervention-photos-section">
+            <div class="form-heading"><div><p class="eyebrow">Suivi visuel</p><h3>Photos des interventions</h3></div><span class="file-count-badge">${interventionPhotos.length} photo${interventionPhotos.length > 1 ? "s" : ""}</span></div>
+            <p class="muted">Les photos prises depuis un poste mobile sont regroupées ici, séparément de l’historique des actions et des documents.</p>
+            ${interventionPhotos.length ? renderClientInterventionPhotoGallery(client, interventionPhotos) : '<p class="client-intervention-photo-empty">Aucune photo d’intervention enregistrée.</p>'}
+        </section>
         <section class="procedure-section">
-            <h3> Historique du client</h3>
+            <h3>Historique des interventions et du client</h3>
             <div id="clientHistory"><p class="muted">Chargement de l’historique du dossier…</p></div>
         </section>
         ${emailMissionFiles.length ? `
@@ -639,6 +645,7 @@ function renderClientDetail(client, options = {}) {
     panel.querySelectorAll("[data-email-attachment]").forEach(button => {
         button.addEventListener("click", () => emailClientAttachment(client, button.dataset.emailAttachment));
     });
+    bindInterventionAttachmentActions(panel, client);
     loadClientFinancialHistory(panel.querySelector("#clientHistory"), client);
 
     const detail = document.createDocumentFragment();
@@ -1053,7 +1060,7 @@ function renderClientActivityHistory(client, billingDocuments = [], purchases = 
             createdAt: purchase.createdAt || purchase.updatedAt || `${purchase.purchaseDate}T12:00:00`
         };
     });
-    const attachmentEntries = client.attachments.filter(isInterventionAttachment).map(attachment => ({
+    const attachmentEntries = client.attachments.filter(attachment => isInterventionAttachment(attachment) && !isImageAttachment(attachment)).map(attachment => ({
         id: `intervention-attachment-${attachment.id}`,
         type: "intervention_attachment",
         label: attachment.type === "Photo avant" ? "Photo avant intervention" : attachment.type === "Photo après" ? "Photo après intervention" : isImageAttachment(attachment) ? "Photo de l’intervention" : "Fichier de l’intervention",
@@ -1176,6 +1183,10 @@ function bindClientHistoryActions(panel, client) {
     panel.querySelectorAll("[data-view-deductible]").forEach(button => {
         button.addEventListener("click", () => openClientAttachment(client.id, button.dataset.viewDeductible));
     });
+    bindInterventionAttachmentActions(panel, client);
+}
+
+function bindInterventionAttachmentActions(panel, client) {
     panel.querySelectorAll("[data-email-intervention-attachment]").forEach(button => {
         button.addEventListener("click", () => emailClientAttachment(client, button.dataset.emailInterventionAttachment));
     });
@@ -1384,6 +1395,10 @@ function isImageAttachment(attachment) {
     return String(attachment?.mime || "").toLowerCase().startsWith("image/") || /\.(?:jpe?g|png|webp)$/i.test(String(attachment?.name || ""));
 }
 
+function isClientPhotoAttachment(attachment) {
+    return isImageAttachment(attachment) && !["Photo franchise", "Quitus"].includes(attachment?.type) && !isLeakReportAttachment(attachment) && !isPartnerEmailAttachment(attachment);
+}
+
 function isPartnerEmailAttachment(attachment) {
     return attachment?.source === "partner_email" || attachment?.type === "Mission partenaire · E-mail";
 }
@@ -1392,7 +1407,18 @@ function renderInterventionAttachmentActions(client, attachment) {
     const url = `/api/clients/${encodeURIComponent(client.id)}/attachments/${encodeURIComponent(attachment.id)}/open`;
     const image = isImageAttachment(attachment);
     const fileLabel = String(attachment.mime || "").includes("pdf") ? "PDF" : "Fichier";
-    return `<div class="client-intervention-history-file">${image ? `<a href="${url}" target="_blank" rel="noopener"><img src="${url}" alt="Aperçu de la photo ${escapeHtml(attachment.name)}" loading="lazy"></a>` : `<a class="client-intervention-pdf" href="${url}" target="_blank" rel="noopener" aria-label="Ouvrir ${escapeHtml(attachment.name)}">${fileLabel}</a>`}<div class="client-card-actions client-activity-actions"><a class="secondary-button" href="${url}" target="_blank" rel="noopener">Ouvrir</a><a class="secondary-button" href="${url}?download=1" download="${escapeHtml(attachment.name)}">Télécharger</a><button type="button" class="secondary-button" data-email-intervention-attachment="${escapeHtml(attachment.id)}" ${client.email ? "" : "disabled title=\"Ajoutez l’e-mail du client pour envoyer ce fichier.\""}>Envoyer par e-mail</button><button type="button" class="secondary-button danger-button" data-delete-intervention-attachment="${escapeHtml(attachment.id)}">Supprimer</button></div></div>`;
+    const imageSource = attachment.dataUrl || url;
+    return `<div class="client-intervention-history-file">${image ? `<a href="${url}" target="_blank" rel="noopener"><img src="${escapeHtml(imageSource)}" alt="Photo de l’intervention" loading="lazy"></a>` : `<a class="client-intervention-pdf" href="${url}" target="_blank" rel="noopener" aria-label="Ouvrir ${escapeHtml(attachment.name)}">${fileLabel}</a>`}<div class="client-card-actions client-activity-actions"><a class="secondary-button" href="${url}" target="_blank" rel="noopener">Ouvrir</a><a class="secondary-button" href="${url}?download=1" download="${escapeHtml(attachment.name)}">Télécharger</a><button type="button" class="secondary-button" data-email-intervention-attachment="${escapeHtml(attachment.id)}" ${client.email ? "" : "disabled title=\"Ajoutez l’e-mail du client pour envoyer ce fichier.\""}>Envoyer par e-mail</button><button type="button" class="secondary-button danger-button" data-delete-intervention-attachment="${escapeHtml(attachment.id)}">Supprimer</button></div></div>`;
+}
+
+function renderClientInterventionPhotoGallery(client, photos) {
+    return `<div class="client-intervention-photo-gallery">${photos.map(photo => {
+        const url = `/api/clients/${encodeURIComponent(client.id)}/attachments/${encodeURIComponent(photo.id)}/open`;
+        const imageSource = photo.dataUrl || url;
+        const category = photo.type === "Photo avant" ? "Avant intervention" : photo.type === "Photo après" ? "Après intervention" : "Photo de l’intervention";
+        const intervention = photo.appointmentId ? `Intervention n°${escapeHtml(photo.appointmentId)}` : "Dossier client";
+        return `<article class="client-intervention-photo"><a href="${url}" target="_blank" rel="noopener"><img src="${escapeHtml(imageSource)}" alt="${escapeHtml(category)}" loading="lazy"></a><div><strong>${escapeHtml(category)}</strong><span>${intervention}</span><small>${escapeHtml(formatActivityDate(photo.createdAt))}${photo.actorName ? ` · ${escapeHtml(photo.actorName)}` : ""}</small><div class="client-card-actions client-intervention-photo-actions"><a class="secondary-button" href="${url}" target="_blank" rel="noopener">Ouvrir</a><a class="secondary-button" href="${url}?download=1" download="${escapeHtml(photo.name)}">Télécharger</a><button type="button" class="secondary-button" data-email-intervention-attachment="${escapeHtml(photo.id)}" ${client.email ? "" : "disabled title=\"Ajoutez l’e-mail du client pour envoyer cette photo.\""}>E-mail</button>${photo.appointmentId ? `<button type="button" class="secondary-button danger-button" data-delete-intervention-attachment="${escapeHtml(photo.id)}">Supprimer</button>` : ""}</div></div></article>`;
+    }).join("")}</div>`;
 }
 
 async function deleteInterventionAttachment(client, attachmentId) {

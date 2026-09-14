@@ -2729,9 +2729,23 @@ body.dark-theme .creator-assistance-banner{border-color:#f87171;background:#451a
 
 .client-intervention-photo-gallery{
     display:grid;
-    grid-template-columns:repeat(auto-fill,minmax(190px,1fr));
+    grid-template-columns:repeat(auto-fill,minmax(230px,1fr));
     gap:14px;
     margin-top:16px;
+}
+
+.client-intervention-photos-section{
+    border:1px solid rgba(10,92,54,.22);
+    background:linear-gradient(180deg,#f7fffa,#fff);
+}
+
+.client-intervention-photo-empty{
+    margin-top:14px;
+    padding:18px;
+    border:1px dashed var(--border);
+    border-radius:12px;
+    color:var(--muted);
+    text-align:center;
 }
 
 .client-intervention-photo{
@@ -2757,6 +2771,21 @@ body.dark-theme .creator-assistance-banner{border-color:#f87171;background:#451a
     display:grid;
     gap:3px;
     padding:11px 12px;
+}
+
+.client-intervention-photo .client-intervention-photo-actions{
+    display:flex;
+    flex-wrap:wrap;
+    gap:7px;
+    padding:8px 0 0;
+}
+
+.client-intervention-photo-actions .secondary-button{
+    flex:1 1 auto;
+    justify-content:center;
+    min-width:88px;
+    padding:8px 10px;
+    text-decoration:none;
 }
 
 .client-intervention-photo strong{

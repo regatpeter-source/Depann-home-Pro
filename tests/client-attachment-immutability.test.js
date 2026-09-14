@@ -30,7 +30,8 @@ test("reports and quitus stay protected while intervention files move into their
     assert.match(clientsSource, /!isInterventionAttachment\(attachment\).*attachment\.type !== "Quitus" && !isLeakReportAttachment\(attachment\)/);
     assert.match(clientsSource, /!\["quote", "invoice", "attachment"\]\.includes\(entry\.type\)/);
     assert.match(clientsSource, /entry\.type !== "appointment" \|\| !appointments\.length/);
-    assert.match(clientsSource, /const attachmentEntries = client\.attachments\.filter\(isInterventionAttachment\)/);
+    assert.match(clientsSource, /const attachmentEntries = client\.attachments\.filter\(attachment => isInterventionAttachment\(attachment\) && !isImageAttachment\(attachment\)\)/);
+    assert.match(clientsSource, /const interventionPhotos = client\.attachments\.filter\(isClientPhotoAttachment\)/);
 });
 
 test("validated reports deleted in older versions are restored from their canonical PDF", () => {

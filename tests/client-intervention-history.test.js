@@ -53,12 +53,22 @@ test("the intervention identifier survives client synchronization and report his
     assert.match(reportSource, /technical_report_reopened[\s\S]*?appointmentId: report\.appointmentId \|\| undefined/);
 });
 
-test("all ordinary intervention photos and files are inserted into their intervention history", () => {
-    assert.match(clientSource, /const attachmentEntries = client\.attachments\.filter\(isInterventionAttachment\)/);
+test("ordinary files remain in history while intervention photos use a separate visual gallery", () => {
+    assert.match(clientSource, /const interventionPhotos = client\.attachments\.filter\(isClientPhotoAttachment\)/);
+    assert.match(clientSource, /<h3>Photos des interventions<\/h3>/);
+    assert.match(clientSource, /renderClientInterventionPhotoGallery\(client, interventionPhotos\)/);
+    assert.match(clientSource, /const attachmentEntries = client\.attachments\.filter\(attachment => isInterventionAttachment\(attachment\) && !isImageAttachment\(attachment\)\)/);
     assert.match(clientSource, /appointmentId: String\(attachment\.appointmentId\)/);
-    assert.match(clientSource, /isImageAttachment\(attachment\) \? "Photo de l’intervention" : "Fichier de l’intervention"/);
+    assert.match(clientSource, /client-intervention-photo-gallery/);
+    assert.match(clientSource, /Intervention n°\$\{escapeHtml\(photo\.appointmentId\)\}/);
     assert.match(clientSource, /client-intervention-history-file/);
     assert.match(clientSource, /client-intervention-pdf/);
-    assert.match(clientSource, /<img src="\$\{url\}"/);
+    assert.match(clientSource, /const imageSource = photo\.dataUrl \|\| url/);
     assert.match(clientSource, />Ouvrir<.*>Télécharger<.*>Envoyer par e-mail<.*>Supprimer</s);
+});
+
+test("mobile uploads force a full client refresh after transmission", () => {
+    const calendarSource = readFileSync(new URL("../js/calendar.js", import.meta.url), "utf8");
+    assert.match(calendarSource, /payload\.append\("appointmentId", String\(appointmentId \|\| ""\)\)/);
+    assert.match(calendarSource, /synchronizeClients\(\{ forceFull: true \}\)/);
 });
