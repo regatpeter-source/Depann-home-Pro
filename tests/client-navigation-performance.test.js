@@ -28,5 +28,8 @@ test("une synchronisation reçue rafraîchit automatiquement la fiche client ouv
     assert.match(navigation, /document\.querySelector\("\[data-client-detail-id\]"\)/);
     assert.match(navigation, /skipClientSynchronization: true/);
     assert.match(clients, /panel\.dataset\.clientDetailId = client\.id/);
-    assert.match(clientSync, /SILENT_SYNCHRONIZATION_INTERVAL = 15_000/);
+    assert.match(clientSync, /new EventSource\("\/api\/clients\/events", \{ withCredentials: true \}\)/);
+    assert.match(clientSync, /client-changed/);
+    assert.match(clientSync, /FALLBACK_SYNCHRONIZATION_INTERVAL = 5 \* 60_000/);
+    assert.doesNotMatch(clientSync, /SILENT_SYNCHRONIZATION_INTERVAL = 15_000/);
 });

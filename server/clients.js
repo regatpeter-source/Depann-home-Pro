@@ -5,6 +5,7 @@ import { getPool } from "./database.js";
 import { getAccountOwnerId } from "./auth.js";
 import { sendDocumentEmail } from "./email.js";
 import { clientLifecycleDecision, normalizeClientStatus } from "./client-lifecycle.js";
+import { openClientEventStream, publishClientChange } from "./client-events.js";
 
 const MAX_CLIENT_PAYLOAD_SIZE = 20 * 1024 * 1024;
 const CLIENT_ID_PATTERN = /^client-[a-zA-Z0-9-]+$/;
@@ -151,6 +152,9 @@ async function reconcilePartnerMissionClients(database, ownerId) {
 
 export function registerClientRoutes(app, requireAuthentication) {
     app.use("/api/clients", requireAuthentication, requireClientReadAccess);
+    app.get("/api/clients/events", requireAuthentication, (request, response) => {
+        openClientEventStream(request, response, getAccountOwnerId(request));
+    });
     app.get("/api/clients", requireAuthentication, asyncHandler(async (request, response) => {
         response.json(await listClientsForOwner(getAccountOwnerId(request), String(request.query?.since || "")));
     }));
@@ -215,6 +219,7 @@ export function registerClientRoutes(app, requireAuthentication) {
             await connection.query("INSERT INTO depannhome_client_lifecycle_audit(owner_id,client_id,action,actor_id,actor_name,details) VALUES($1,$2,'group_imported',$3,$4,$5::jsonb)", [targetCompanyId, client.id, request.user.sub, String(request.user.fullName || request.user.username || "").slice(0, 160), JSON.stringify({ sourceCompanyId: String(sourceCompanyId), sourceCompanyName: sourceCompany.companyName, sourceClientId })]);
             await connection.query("INSERT INTO depannhome_group_audit(group_id,company_owner_id,actor_id,action,details,ip_address) VALUES($1,$2,$3,'client_imported',$4::jsonb,$5)", [request.user.groupId, targetCompanyId, request.user.sub, JSON.stringify({ sourceCompanyId: String(sourceCompanyId), sourceCompanyName: sourceCompany.companyName, sourceClientId, targetClientId: client.id, clientName: client.name }), String(request.ip || "").slice(0, 100)]);
             await connection.query("COMMIT");
+            publishClientChange(targetCompanyId, client.id, "created");
             response.status(201).json({ client: { ...client, clientStatus: "active" }, message: `Client repris depuis ${sourceCompany.companyName}. Les documents de l’entreprise source n’ont pas été copiés.` });
         } catch (error) {
             await connection.query("ROLLBACK");
@@ -263,6 +268,7 @@ export function registerClientRoutes(app, requireAuthentication) {
                 RETURNING client_data AS client
             `, [getAccountOwnerId(request), clientId, JSON.stringify(client)]);
             await connection.query("COMMIT");
+            publishClientChange(getAccountOwnerId(request), clientId);
             response.json({ client: rows[0].client });
         } catch (error) {
             await connection.query("ROLLBACK");
@@ -291,6 +297,7 @@ export function registerClientRoutes(app, requireAuthentication) {
             if (!rowCount) { await connection.query("ROLLBACK"); return response.status(404).json({ message: "Dossier client introuvable ou déjà archivé." }); }
             await recordClientLifecycle(connection, ownerId, clientId, "archived", request);
             await connection.query("COMMIT");
+            publishClientChange(ownerId, clientId, "archived");
             response.json({ message: "Client archivé. Tous ses documents et son historique sont conservés." });
         } catch (error) { await connection.query("ROLLBACK"); throw error; } finally { connection.release(); }
     }));
@@ -306,6 +313,7 @@ export function registerClientRoutes(app, requireAuthentication) {
             if (!rowCount) { await connection.query("ROLLBACK"); return response.status(404).json({ message: "Dossier client introuvable ou déjà actif." }); }
             await recordClientLifecycle(connection, ownerId, clientId, "reactivated", request);
             await connection.query("COMMIT");
+            publishClientChange(ownerId, clientId, "reactivated");
             response.json({ message: "Client réactivé." });
         } catch (error) { await connection.query("ROLLBACK"); throw error; } finally { connection.release(); }
     }));
@@ -340,6 +348,7 @@ export function registerClientRoutes(app, requireAuthentication) {
                 ON CONFLICT (owner_id, client_id) DO UPDATE SET deleted_at = NOW()
             `, [ownerId, clientId]);
             await connection.query("COMMIT");
+            publishClientChange(ownerId, clientId, "deleted");
             response.json({ message: "Le client sans historique a été supprimé définitivement." });
         } catch (error) {
             await connection.query("ROLLBACK");
@@ -422,6 +431,7 @@ export function registerClientRoutes(app, requireAuthentication) {
                 WHERE owner_id = $1 AND client_id = $2
             `, [getAccountOwnerId(request), clientId, JSON.stringify(updatedClient), createdAt]);
             await connection.query("COMMIT");
+            publishClientChange(getAccountOwnerId(request), clientId, "attachment-added");
             response.status(201).json({ client: updatedClient, message: `${attachments.length} fichier(s) ajouté(s) au dossier.` });
         } catch (error) {
             await connection.query("ROLLBACK");
@@ -459,6 +469,7 @@ export function registerClientRoutes(app, requireAuthentication) {
             };
             await connection.query("UPDATE depannhome_clients SET client_data=$3::jsonb,updated_at=NOW() WHERE owner_id=$1 AND client_id=$2", [ownerId, clientId, JSON.stringify(updatedClient)]);
             await connection.query("COMMIT");
+            publishClientChange(ownerId, clientId, "attachment-deleted");
             response.json({ message: "Pièce supprimée de l’intervention." });
         } catch (error) {
             await connection.query("ROLLBACK");

@@ -13,6 +13,7 @@ import { PDF_MIME } from "./company-document-template.js";
 import { buildReportCustomModel, renderActiveCustomTemplate } from "./document-templates.js";
 import { createClientMessage } from "./messages.js";
 import { strictDateOnly } from "./date-validation.js";
+import { publishClientChange } from "./client-events.js";
 
 const REPORT_TYPE = "leak_detection";
 const STATUSES = new Set(["draft", "submitted", "in_correction", "ready_to_send", "validated"]);
@@ -245,6 +246,7 @@ export function registerTechnicalReportRoutes(app, requireAuthentication) {
         if (!isReportProofreadingCurrent(report)) return response.status(409).json({ message: "La correction administrative doit être enregistrée avant l’envoi définitif." });
         const profile = await loadProfile(ownerId); const output = await createTechnicalReportOutput(report, profile);
         let archivedAttachment = null; const connection = await getPool().connect(); try { await connection.query("BEGIN"); await connection.query("UPDATE depannhome_technical_reports SET status='validated', validated_at=NOW(), validated_by=$3, pdf_data=$4, pdf_filename=$5, document_mime_type=$6, updated_at=NOW() WHERE id=$1 AND owner_id=$2", [report.id, ownerId, request.user.sub, output.buffer, output.filename, output.mimeType]); archivedAttachment = await archiveDocument(connection, ownerId, report, output, request); await connection.query("COMMIT"); } catch (error) { await connection.query("ROLLBACK"); throw error; } finally { connection.release(); }
+        if (report.clientId) publishClientChange(ownerId, report.clientId, "attachment-added");
         await synchronizeConnectedReport(ownerId, report.id);
         const { registerMissionSourceItem } = await import("./partner-dialogue.js"); await registerMissionSourceItem({ ownerId, appointmentId: report.appointmentId, sourceType: "report", sourceId: report.id, label: report.title, details: { status: "validated", reportDate: report.reportDate } });
         await recordMissionEventForSource({ ownerId, sourceType: "report", sourceId: report.id, status: "report_validated", action: "report_validated", actorName: request.user.fullName || request.user.username });
@@ -273,6 +275,7 @@ export function registerTechnicalReportRoutes(app, requireAuthentication) {
             if (dialogueMessageIds.length) await connection.query("UPDATE depannhome_partner_dialogue_messages SET partner_visible=FALSE,updated_at=NOW() WHERE owner_id=$1 AND id=ANY($2::bigint[])", [ownerId, dialogueMessageIds]);
             await connection.query("COMMIT");
         } catch (error) { await connection.query("ROLLBACK"); throw error; } finally { connection.release(); }
+        if (report.clientId) publishClientChange(ownerId, report.clientId);
         await publishEvent(request, reportTarget(report.id), "report_reopened", {}, report.createdBy ? [{ recipientId: report.createdBy, title: "Rapport remis en brouillon", body: `Le rapport #${report.id} a été remis en brouillon. Il doit suivre à nouveau le cycle correction puis validation.`, eventType: "report_reopened" }] : []);
         response.status(204).end();
     }));

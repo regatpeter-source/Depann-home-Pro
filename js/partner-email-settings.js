@@ -1,5 +1,5 @@
 import { escapeHtml } from "./utils.js?v=44";
-import { synchronizeClients } from "./client-sync.js?v=129";
+import { synchronizeClients } from "./client-sync.js?v=130";
 
 let activeSettingsCard = null;
 let pendingMailboxOauth = false;

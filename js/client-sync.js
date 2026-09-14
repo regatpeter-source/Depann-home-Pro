@@ -2,7 +2,7 @@ const CLIENTS_KEY_PREFIX = "depannHomePro:clients:";
 const QUEUE_KEY_PREFIX = "depannHomePro:clients-sync-queue:";
 const CURSOR_KEY_PREFIX = "depannHomePro:clients-sync-cursor:";
 const MAX_ACTIVITY_HISTORY = 150;
-const SILENT_SYNCHRONIZATION_INTERVAL = 15_000;
+const FALLBACK_SYNCHRONIZATION_INTERVAL = 5 * 60_000;
 const DESKTOP_SYNCHRONIZATION_DELAY = 1_500;
 const FOCUS_SYNCHRONIZATION_DELAY = 3_000;
 
@@ -11,24 +11,51 @@ let synchronizationPromise = null;
 let synchronizationIsFull = false;
 let silentSynchronizationTimer = null;
 let scheduledSynchronizationTimer = null;
+let clientEventSource = null;
+let clientEventSourceAccountId = "";
 
 export async function initializeClientSynchronization() {
     if (isAccountant()) return { ok: true, skipped: true };
     if (!onlineListenerRegistered) {
-        window.addEventListener("online", () => scheduleClientSynchronization(0));
+        window.addEventListener("online", () => {
+            connectClientEventStream();
+            scheduleClientSynchronization(0);
+        });
+        window.addEventListener("offline", closeClientEventStream);
         window.addEventListener("focus", () => scheduleClientSynchronization(FOCUS_SYNCHRONIZATION_DELAY));
         document.addEventListener("visibilitychange", () => {
-            if (document.visibilityState === "visible") scheduleClientSynchronization(FOCUS_SYNCHRONIZATION_DELAY);
+            if (document.visibilityState === "visible") {
+                connectClientEventStream();
+                scheduleClientSynchronization(FOCUS_SYNCHRONIZATION_DELAY);
+            }
         });
+        window.addEventListener("pagehide", closeClientEventStream);
         onlineListenerRegistered = true;
     }
+    connectClientEventStream();
     if (!silentSynchronizationTimer) {
         silentSynchronizationTimer = window.setInterval(() => {
             if (document.visibilityState === "visible") scheduleClientSynchronization(0);
-        }, SILENT_SYNCHRONIZATION_INTERVAL);
+        }, FALLBACK_SYNCHRONIZATION_INTERVAL);
     }
 
     return synchronizeClients();
+}
+
+function connectClientEventStream() {
+    const accountId = getAccountId();
+    if (!navigator.onLine || !accountId || typeof EventSource === "undefined") return;
+    if (clientEventSource && clientEventSourceAccountId === accountId) return;
+    closeClientEventStream();
+    clientEventSourceAccountId = accountId;
+    clientEventSource = new EventSource("/api/clients/events", { withCredentials: true });
+    clientEventSource.addEventListener("client-changed", () => scheduleClientSynchronization(0));
+}
+
+function closeClientEventStream() {
+    clientEventSource?.close();
+    clientEventSource = null;
+    clientEventSourceAccountId = "";
 }
 
 export function getLocalClients() {

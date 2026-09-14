@@ -9,6 +9,7 @@ import { PDF_MIME } from "./company-document-template.js";
 import { buildQuitusCustomModel, renderActiveCustomTemplate } from "./document-templates.js";
 import { validateAssignedCompanyMembers } from "./member-assignment.js";
 import { strictDateOnly } from "./date-validation.js";
+import { publishClientChange } from "./client-events.js";
 
 const EVENT_COLORS = new Set(["blue", "green", "orange", "red", "purple", "gray"]);
 const EVENT_TYPES = new Set(["appointment", "task", "vacation", "sick_leave", "unavailable"]);
@@ -637,6 +638,7 @@ export function registerCalendarRoutes(app, requireAuthentication) {
                     deductible_collected_at AS "deductibleCollectedAt",deductible_collected_by_name AS "deductibleCollectedByName"
             `, [id, ownerId, amountCents, paymentMethod, attachment.id, createdAt, request.user.sub, collectorName]);
             await connection.query("COMMIT");
+            publishClientChange(ownerId, appointment.clientId, "attachment-added");
             const { registerMissionSourceItem } = await import("./partner-dialogue.js");
             await registerMissionSourceItem({ ownerId, appointmentId: id, sourceType: "deductible", sourceId: appointment.clientId, sourceItemId: attachment.id, label: `Franchise · intervention n°${id}`, details: { amountCents, paymentMethod, status: "pending", appointmentId: id } });
             response.status(201).json({ deductible: updated.rows[0], message: "Franchise transmise au poste administratif pour validation." });
@@ -710,6 +712,7 @@ export function registerCalendarRoutes(app, requireAuthentication) {
                     deductible_reviewed_by_name AS "deductibleReviewedByName",deductible_review_note AS "deductibleReviewNote"
             `, [id, ownerId, decision, reviewedAt, request.user.sub, reviewerName, reviewNote]);
             await connection.query("COMMIT");
+            publishClientChange(ownerId, appointment.clientId);
             const { registerMissionSourceItem } = await import("./partner-dialogue.js");
             await registerMissionSourceItem({ ownerId, appointmentId: id, sourceType: "deductible", sourceId: appointment.clientId, sourceItemId: appointment.attachmentId, label: `Franchise · intervention n°${id}`, details: { amountCents: appointment.amountCents, paymentMethod: appointment.paymentMethod, status: decision, appointmentId: id } });
             response.json({ deductible: updated.rows[0], message: decision === "validated" ? "Franchise validée et ajoutée à l’historique de l’intervention." : "Franchise refusée ; le technicien peut transmettre une nouvelle preuve." });
@@ -828,6 +831,7 @@ export function registerCalendarRoutes(app, requireAuthentication) {
                     quitus_performed_by AS "quitusPerformedBy", quitus_performed_by_name AS "quitusPerformedByName"
             `, [id, accountOwnerId, quitus.signedBy, quitus.signature, quitus.observations, quitus.approved, request.user.sub, performedByName]);
             await connection.query("COMMIT");
+            publishClientChange(accountOwnerId, clientRow.clientId, "attachment-added");
             const { registerMissionSourceItem } = await import("./partner-dialogue.js");
             await registerMissionSourceItem({ ownerId: accountOwnerId, appointmentId: id, sourceType: "quitus", sourceId: clientRow.clientId, sourceItemId: attachment.id, label: attachment.name, details: { status: "validated", appointmentId: id } });
             response.json({ quitus: rows[0], message: "Quitus validé et document officiel ajouté au dossier client." });
