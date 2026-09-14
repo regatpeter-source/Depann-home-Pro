@@ -3491,6 +3491,28 @@ body[data-role="mobile_admin"].mobile-device .store-match{min-height:72px;paddin
     margin-bottom:0;
 }
 
+.intervention-selected-photo-item{
+    display:grid;
+    gap:7px;
+}
+
+.intervention-remove-selected-photo{
+    width:100%;
+    min-height:40px;
+    padding:7px 8px;
+    border:0;
+    border-radius:9px;
+    cursor:pointer;
+    font-size:12px;
+    font-weight:800;
+}
+
+.intervention-send-selected-photos{
+    width:100%;
+    min-height:48px;
+    margin-top:10px;
+}
+
 .intervention-photo-upload-status{
     margin:9px 0 0;
     color:var(--secondary);

@@ -36,6 +36,7 @@ const EVENT_STATUS_OPTIONS = [
 let displayedMonth = atNoon(new Date());
 let events = [];
 let selectedEvent = null;
+const interventionPhotoSelections = new WeakMap();
 let calendarView = "month";
 let members = [];
 let teams = [];
@@ -1257,30 +1258,29 @@ function renderInterventionPhotosHtml(client, appointment) {
             <section><h4>Avant intervention</h4>${previews(before)}<label>Choisir une ou plusieurs photos<input name="beforePhoto" type="file" accept="image/jpeg,image/png,image/webp" multiple></label><label>Prendre une photo<input name="beforeCamera" type="file" accept="image/*" capture="environment" multiple></label><div class="intervention-selected-photo-preview" data-selected-photo-preview hidden></div></section>
             <section><h4>Après intervention</h4>${previews(after)}<label>Choisir une ou plusieurs photos<input name="afterPhoto" type="file" accept="image/jpeg,image/png,image/webp" multiple></label><label>Prendre une photo<input name="afterCamera" type="file" accept="image/*" capture="environment" multiple></label><div class="intervention-selected-photo-preview" data-selected-photo-preview hidden></div></section>
             <section><h4>Autres fichiers</h4>${previews(files)}<label>Choisir un ou plusieurs fichiers<input name="otherFiles" type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.txt" multiple></label></section>
-            <div class="calendar-form-actions"><button type="submit" class="secondary-button">Ajouter à l’historique du client</button></div><p class="auth-message" aria-live="polite"></p>
+            <div class="calendar-form-actions"><button type="submit" class="secondary-button">Envoyer les photos et fichiers sélectionnés</button></div><p class="auth-message" aria-live="polite"></p>
         </form>
     `;
 }
 
 function initializeInterventionPhotoPreviews(form) {
     if (!form) return;
+    const selections = new Map();
+    interventionPhotoSelections.set(form, selections);
     form.querySelectorAll('input[type="file"][accept*="image"]').forEach(input => {
         input.addEventListener("change", () => {
-            renderSelectedInterventionPhotoPreviews(input.closest("section"));
-            if (input.files?.length && form.dataset.uploading !== "true") {
-                setInterventionUploadStatus(form, "Envoi automatique de la photo…");
-                form.requestSubmit();
-            }
+            selections.set(input.name, Array.from(input.files || []));
+            renderSelectedInterventionPhotoPreviews(input.closest("section"), selections);
         });
     });
 }
 
-function renderSelectedInterventionPhotoPreviews(section) {
+function renderSelectedInterventionPhotoPreviews(section, selections) {
     const preview = section?.querySelector("[data-selected-photo-preview]");
     if (!preview) return;
-    const files = [...section.querySelectorAll('input[type="file"][accept*="image"]')]
-        .flatMap(input => Array.from(input.files || []))
-        .filter(file => String(file.type || "").startsWith("image/"));
+    const files = [...section.querySelectorAll('input[type="file"][accept*="image"]')].flatMap(input =>
+        (selections.get(input.name) || []).map((file, index) => ({ file, input, index }))
+    ).filter(item => String(item.file.type || "").startsWith("image/"));
     preview.replaceChildren();
     preview.hidden = !files.length;
     if (!files.length) return;
@@ -1288,21 +1288,39 @@ function renderSelectedInterventionPhotoPreviews(section) {
     title.textContent = files.length > 1 ? `Aperçu avant envoi · ${files.length} photos` : "Aperçu avant envoi";
     const gallery = document.createElement("div");
     gallery.className = "intervention-photo-previews";
-    files.forEach(file => {
+    files.forEach(({ file, input, index }) => {
+        const item = document.createElement("div");
+        item.className = "intervention-selected-photo-item";
         const image = document.createElement("img");
         const source = URL.createObjectURL(file);
         image.src = source;
         image.alt = "Photo prête à être ajoutée";
         image.addEventListener("load", () => URL.revokeObjectURL(source), { once: true });
         image.addEventListener("error", () => URL.revokeObjectURL(source), { once: true });
-        gallery.appendChild(image);
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.className = "danger-button intervention-remove-selected-photo";
+        remove.textContent = "Supprimer avant envoi";
+        remove.addEventListener("click", () => {
+            const remaining = [...(selections.get(input.name) || [])];
+            remaining.splice(index, 1);
+            selections.set(input.name, remaining);
+            input.value = "";
+            renderSelectedInterventionPhotoPreviews(section, selections);
+        });
+        item.append(image, remove);
+        gallery.appendChild(item);
     });
     const status = document.createElement("p");
     status.className = "intervention-photo-upload-status";
     status.dataset.photoUploadStatus = "";
     status.setAttribute("aria-live", "polite");
-    status.textContent = "La photo va être envoyée automatiquement.";
-    preview.append(title, gallery, status);
+    status.textContent = "Vérifiez les photos, supprimez celles qui ne conviennent pas, puis appuyez sur Envoyer.";
+    const send = document.createElement("button");
+    send.type = "submit";
+    send.className = "secondary-button intervention-send-selected-photos";
+    send.textContent = files.length > 1 ? `Envoyer ${files.length} photos` : "Envoyer cette photo";
+    preview.append(title, gallery, status, send);
 }
 
 function setInterventionUploadStatus(form, message, error = false) {
@@ -1318,10 +1336,12 @@ async function uploadInterventionPhotos(event, client, appointment) {
     if (form.dataset.uploading === "true") return;
     const feedback = form.querySelector(".auth-message");
     const button = form.querySelector('button[type="submit"]');
+    const selections = interventionPhotoSelections.get(form) || new Map();
+    const selectedFiles = name => selections.has(name) ? selections.get(name) : Array.from(form.elements[name].files || []);
     const uploads = [
-        { type: "Photo", files: ["generalPhotos", "generalCamera"].flatMap(name => Array.from(form.elements[name].files || [])) },
-        { type: "Photo avant", files: ["beforePhoto", "beforeCamera"].flatMap(name => Array.from(form.elements[name].files || [])) },
-        { type: "Photo après", files: ["afterPhoto", "afterCamera"].flatMap(name => Array.from(form.elements[name].files || [])) },
+        { type: "Photo", files: ["generalPhotos", "generalCamera"].flatMap(selectedFiles) },
+        { type: "Photo avant", files: ["beforePhoto", "beforeCamera"].flatMap(selectedFiles) },
+        { type: "Photo après", files: ["afterPhoto", "afterCamera"].flatMap(selectedFiles) },
         { type: "Autre", files: Array.from(form.elements.otherFiles.files || []) }
     ].filter(upload => upload.files.length);
     if (!uploads.length) {
@@ -1334,7 +1354,7 @@ async function uploadInterventionPhotos(event, client, appointment) {
     form.querySelectorAll('input[type="file"]').forEach(input => { input.disabled = true; });
     feedback.classList.remove("error");
     feedback.textContent = "Envoi en cours…";
-    setInterventionUploadStatus(form, "Envoi automatique en cours…");
+    setInterventionUploadStatus(form, "Envoi en cours…");
     for (const upload of uploads) {
         const result = await uploadClientFiles(client, upload.type, upload.files, appointment?.id);
         if (!result.ok) {

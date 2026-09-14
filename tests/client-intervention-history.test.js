@@ -73,14 +73,19 @@ test("mobile uploads force a full client refresh after transmission", () => {
     assert.match(calendarSource, /synchronizeClients\(\{ forceFull: true \}\)/);
 });
 
-test("mobile camera selections display a visual preview before upload", () => {
+test("mobile camera selections can be removed before an explicit upload", () => {
     const calendarSource = readFileSync(new URL("../js/calendar.js", import.meta.url), "utf8");
+    const storedPhotoMarkup = calendarSource.slice(calendarSource.indexOf("function renderInterventionPhotosHtml"), calendarSource.indexOf("function initializeInterventionPhotoPreviews"));
     assert.match(calendarSource, /data-selected-photo-preview/);
     assert.match(calendarSource, /initializeInterventionPhotoPreviews/);
     assert.match(calendarSource, /URL\.createObjectURL\(file\)/);
     assert.match(calendarSource, /Photo prête à être ajoutée/);
-    assert.match(calendarSource, /La photo va être envoyée automatiquement/);
-    assert.match(calendarSource, /form\.requestSubmit\(\)/);
+    assert.match(calendarSource, /interventionPhotoSelections/);
+    assert.match(calendarSource, /Supprimer avant envoi/);
+    assert.match(calendarSource, /Envoyer cette photo/);
+    assert.match(calendarSource, /remaining\.splice\(index, 1\)/);
+    assert.doesNotMatch(calendarSource, /form\.requestSubmit\(\)/);
     assert.match(calendarSource, /form\.dataset\.uploading/);
     assert.match(styleSource, /\.intervention-selected-photo-preview/);
+    assert.doesNotMatch(storedPhotoMarkup, /data-delete|Supprimer/);
 });
