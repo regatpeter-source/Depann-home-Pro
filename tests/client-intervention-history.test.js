@@ -72,3 +72,12 @@ test("mobile uploads force a full client refresh after transmission", () => {
     assert.match(calendarSource, /payload\.append\("appointmentId", String\(appointmentId \|\| ""\)\)/);
     assert.match(calendarSource, /synchronizeClients\(\{ forceFull: true \}\)/);
 });
+
+test("mobile camera selections display a visual preview before upload", () => {
+    const calendarSource = readFileSync(new URL("../js/calendar.js", import.meta.url), "utf8");
+    assert.match(calendarSource, /data-selected-photo-preview/);
+    assert.match(calendarSource, /initializeInterventionPhotoPreviews/);
+    assert.match(calendarSource, /URL\.createObjectURL\(file\)/);
+    assert.match(calendarSource, /Photo prête à être ajoutée/);
+    assert.match(styleSource, /\.intervention-selected-photo-preview/);
+});

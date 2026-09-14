@@ -449,6 +449,7 @@ function renderEventForm(panel) {
         panel.querySelector('[data-client-action="invoice"]')?.addEventListener("click", () => createBillingDocumentForClient("invoice", client, event.id));
         panel.querySelector("#openTechnicalReport")?.addEventListener("click", () => renderTechnicalReports(0, event.id));
         panel.querySelector("#calendarInterventionPhotos")?.addEventListener("submit", eventSubmit => uploadInterventionPhotos(eventSubmit, client, event));
+        initializeInterventionPhotoPreviews(panel.querySelector("#calendarInterventionPhotos"));
         initializeInsuranceDeductibleControls(panel, event);
         panel.querySelector("#editCalendarEvent")?.addEventListener("click", () => {
             mobileAdminEditingEvents.add(String(event.id));
@@ -1252,13 +1253,45 @@ function renderInterventionPhotosHtml(client, appointment) {
     return `
         <form id="calendarInterventionPhotos" class="calendar-intervention-photos">
             <div><p class="eyebrow">Dossier de l’intervention</p><h3>Photos et fichiers de l’intervention</h3><p class="muted">Tous les éléments ajoutés ici apparaissent dans l’historique du client. Ils ne sont envoyés au partenaire qu’après une sélection explicite dans le Centre de mission.</p></div>
-            <section><h4>Photos de l’intervention</h4>${previews(general)}<label>Choisir une ou plusieurs photos<input name="generalPhotos" type="file" accept="image/jpeg,image/png,image/webp" multiple></label><label>Prendre une photo<input name="generalCamera" type="file" accept="image/*" capture="environment" multiple></label></section>
-            <section><h4>Avant intervention</h4>${previews(before)}<label>Choisir une ou plusieurs photos<input name="beforePhoto" type="file" accept="image/jpeg,image/png,image/webp" multiple></label><label>Prendre une photo<input name="beforeCamera" type="file" accept="image/*" capture="environment" multiple></label></section>
-            <section><h4>Après intervention</h4>${previews(after)}<label>Choisir une ou plusieurs photos<input name="afterPhoto" type="file" accept="image/jpeg,image/png,image/webp" multiple></label><label>Prendre une photo<input name="afterCamera" type="file" accept="image/*" capture="environment" multiple></label></section>
+            <section><h4>Photos de l’intervention</h4>${previews(general)}<label>Choisir une ou plusieurs photos<input name="generalPhotos" type="file" accept="image/jpeg,image/png,image/webp" multiple></label><label>Prendre une photo<input name="generalCamera" type="file" accept="image/*" capture="environment" multiple></label><div class="intervention-selected-photo-preview" data-selected-photo-preview hidden></div></section>
+            <section><h4>Avant intervention</h4>${previews(before)}<label>Choisir une ou plusieurs photos<input name="beforePhoto" type="file" accept="image/jpeg,image/png,image/webp" multiple></label><label>Prendre une photo<input name="beforeCamera" type="file" accept="image/*" capture="environment" multiple></label><div class="intervention-selected-photo-preview" data-selected-photo-preview hidden></div></section>
+            <section><h4>Après intervention</h4>${previews(after)}<label>Choisir une ou plusieurs photos<input name="afterPhoto" type="file" accept="image/jpeg,image/png,image/webp" multiple></label><label>Prendre une photo<input name="afterCamera" type="file" accept="image/*" capture="environment" multiple></label><div class="intervention-selected-photo-preview" data-selected-photo-preview hidden></div></section>
             <section><h4>Autres fichiers</h4>${previews(files)}<label>Choisir un ou plusieurs fichiers<input name="otherFiles" type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.txt" multiple></label></section>
             <div class="calendar-form-actions"><button type="submit" class="secondary-button">Ajouter à l’historique du client</button></div><p class="auth-message" aria-live="polite"></p>
         </form>
     `;
+}
+
+function initializeInterventionPhotoPreviews(form) {
+    if (!form) return;
+    form.querySelectorAll('input[type="file"][accept*="image"]').forEach(input => {
+        input.addEventListener("change", () => renderSelectedInterventionPhotoPreviews(input.closest("section")));
+    });
+}
+
+function renderSelectedInterventionPhotoPreviews(section) {
+    const preview = section?.querySelector("[data-selected-photo-preview]");
+    if (!preview) return;
+    const files = [...section.querySelectorAll('input[type="file"][accept*="image"]')]
+        .flatMap(input => Array.from(input.files || []))
+        .filter(file => String(file.type || "").startsWith("image/"));
+    preview.replaceChildren();
+    preview.hidden = !files.length;
+    if (!files.length) return;
+    const title = document.createElement("strong");
+    title.textContent = files.length > 1 ? `Aperçu avant envoi · ${files.length} photos` : "Aperçu avant envoi";
+    const gallery = document.createElement("div");
+    gallery.className = "intervention-photo-previews";
+    files.forEach(file => {
+        const image = document.createElement("img");
+        const source = URL.createObjectURL(file);
+        image.src = source;
+        image.alt = "Photo prête à être ajoutée";
+        image.addEventListener("load", () => URL.revokeObjectURL(source), { once: true });
+        image.addEventListener("error", () => URL.revokeObjectURL(source), { once: true });
+        gallery.appendChild(image);
+    });
+    preview.append(title, gallery);
 }
 
 async function uploadInterventionPhotos(event, client, appointment) {

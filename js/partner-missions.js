@@ -428,7 +428,7 @@ async function showDetail(id) {
     content.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 async function openPartnerMissionPlanning(mission) {
-    const { renderCalendar } = await import("./calendar.js?v=220");
+    const { renderCalendar } = await import("./calendar.js?v=221");
     const data = mission.mappedData || {};
     const draft = mission.planningDraft || {};
     const hasDraft = Boolean(draft.pausedAt);
