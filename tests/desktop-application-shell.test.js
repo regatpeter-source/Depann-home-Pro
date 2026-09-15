@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 const style = readFileSync(new URL("../css/style.css", import.meta.url), "utf8");
 const index = readFileSync(new URL("../index.html", import.meta.url), "utf8");
 const serviceWorker = readFileSync(new URL("../service-worker.js", import.meta.url), "utf8");
+const app = readFileSync(new URL("../js/app.js", import.meta.url), "utf8");
 
 test("desktop uses a viewport application shell with internal content scrolling", () => {
     assert.match(style, /body\.desktop-device #authRoot\{[\s\S]*grid-template-columns:var\(--desktop-sidebar-width\) minmax\(0,1fr\)/);
@@ -30,14 +31,20 @@ test("desktop density rules stay isolated from the mobile shell", () => {
     assert.doesNotMatch(style, /body\.mobile-device[^{]*\{[^}]*--desktop-sidebar-width/);
 });
 
+test("authentication hides the restored shell until desktop menus are filtered", () => {
+    const authenticatedCallback = app.slice(app.indexOf("onAuthenticated: user =>"), app.indexOf("startAdministratorSessionMonitor(user)"));
+    assert.ok(authenticatedCallback.indexOf('classList.add("auth-pending")') < authenticatedCallback.indexOf("restoreApplicationShell()"));
+    assert.match(style, /\.auth-pending #authRoot\{\s*visibility:hidden/);
+});
+
 test("desktop stylesheet cache versions remain synchronized", () => {
     assert.match(index, /css\/style\.css\?v=271/);
-    assert.match(index, /js\/app\.js\?v=434/);
+    assert.match(index, /js\/app\.js\?v=435/);
     assert.match(serviceWorker, /css\/style\.css\?v=271/);
-    assert.match(serviceWorker, /js\/app\.js\?v=434/);
+    assert.match(serviceWorker, /js\/app\.js\?v=435/);
     assert.match(serviceWorker, /js\/clients\.js\?v=169/);
     assert.match(serviceWorker, /js\/client-sync\.js\?v=130/);
     assert.match(serviceWorker, /js\/navigation\.js\?v=465/);
     assert.match(serviceWorker, /js\/i18n\.js\?v=5/);
-    assert.match(serviceWorker, /depann-home-pro-v550/);
+    assert.match(serviceWorker, /depann-home-pro-v551/);
 });

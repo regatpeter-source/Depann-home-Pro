@@ -141,6 +141,10 @@ test("Library is mobile-only and Purchases are available on every administrative
         for (const role of ["admin", "pc_standard", "commercial", "accountant", "mobile_admin"]) assert.equal(isFeatureEnabledForRole(organization, "purchases", role), true, `${subscriptionTier}:${role}:purchases`);
         for (const role of ["team_lead", "technician"]) assert.equal(isFeatureEnabledForRole(organization, "purchases", role), false, `${subscriptionTier}:${role}:purchases`);
     }
+    for (const role of ["admin", "pc_standard", "commercial", "accountant"]) {
+        assert.equal(MENU_ACCESS.quick.library.includes(role), false, `${role}:library-button-pc`);
+        assert.equal(MENU_ACCESS.navigation[ROUTES.library].includes(role), false, `${role}:library-route-pc`);
+    }
     assert.deepEqual(MENU_ACCESS.quick.purchases, ["admin", "pc_standard", "commercial", "accountant", "mobile_admin"]);
     assert.deepEqual(MENU_ACCESS.navigation[ROUTES.purchases], ["admin", "pc_standard", "commercial", "accountant", "mobile_admin"]);
     assert.match(purchasesServer, /\["admin", "pc_standard", "commercial", "accountant", "mobile_admin"\]\.includes\(request\.user\?\.role\)/);

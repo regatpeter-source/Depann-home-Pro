@@ -30,7 +30,9 @@ async function initializeApp() {
     try {
         await initializeAuthentication({
             onAuthenticated: user => {
+                document.body.classList.add("auth-pending");
                 if (!document.getElementById("app") && !restoreApplicationShell()) {
+                    document.body.classList.remove("auth-pending");
                     console.error("Le conteneur principal de l’application est introuvable.");
                     return;
                 }
