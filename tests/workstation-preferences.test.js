@@ -48,8 +48,8 @@ test("la personnalisation propose thème, densité, animations et filtres de not
     assert.match(style, /body\.reduce-motion \*/);
 });
 
-test("une mise à jour du service worker recharge chaque nouvelle version une seule fois", () => {
-    assert.match(application, /let reloadingForServiceWorkerUpdate = false/);
-    assert.match(application, /if \(reloadingForServiceWorkerUpdate\) return/);
-    assert.doesNotMatch(application, /sessionStorage\.getItem\("depannhome:service-worker-reloaded"\)/);
+test("une mise à jour du service worker n’interrompt pas la session ouverte", () => {
+    const registration = application.slice(application.indexOf("function registerServiceWorker"));
+    assert.match(registration, /registration\.update\(\)/);
+    assert.doesNotMatch(registration, /controllerchange|location\.reload\(\)/);
 });

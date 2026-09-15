@@ -296,12 +296,6 @@ function applyFont() {
 
 function registerServiceWorker() {
     if ("serviceWorker" in navigator) {
-        let reloadingForServiceWorkerUpdate = false;
-        navigator.serviceWorker.addEventListener("controllerchange", () => {
-            if (reloadingForServiceWorkerUpdate) return;
-            reloadingForServiceWorkerUpdate = true;
-            window.location.reload();
-        }, { once: true });
         navigator.serviceWorker.register("service-worker.js", { updateViaCache: "none" })
             .then(registration => registration.update())
             .catch(() => {

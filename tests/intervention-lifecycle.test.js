@@ -70,13 +70,11 @@ test("tous les jours de la période sont contrôlés contre le planning généra
     assert.match(calendarServer, /response\.json\(\{ availableDates, conflicts \}\)/);
 });
 
-test("une nouvelle version PWA active immédiatement les correctifs du planning", () => {
+test("une nouvelle version PWA prépare les correctifs sans recharger la session ouverte", () => {
     const application = read("js/app.js");
     const worker = read("service-worker.js");
     assert.match(application, /updateViaCache: "none"/);
-    assert.match(application, /addEventListener\("controllerchange"/);
-    assert.match(application, /reloadingForServiceWorkerUpdate/);
-    assert.doesNotMatch(application, /depannhome:service-worker-reloaded/);
+    assert.doesNotMatch(application.slice(application.indexOf("function registerServiceWorker")), /controllerchange|location\.reload\(\)/);
     assert.match(application, /\.then\(registration => registration\.update\(\)\)/);
     assert.match(worker, /self\.skipWaiting\(\)/);
     assert.match(worker, /self\.clients\.claim\(\)/);
