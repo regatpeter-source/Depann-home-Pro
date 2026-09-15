@@ -22,7 +22,7 @@ test("message notifications open the matching client conversation", () => {
 	assert.match(messageServer, /\{ entityType: "client", entityId: clientId \}/);
 	assert.match(messageServer, /\{ clientId, messageId: String\(messageId\)/);
 	assert.match(navigation, /if \(entityType === "client"\) return openClients\(entityId \|\| String\(notification\?\.payload\?\.clientId \|\| ""\)\)/);
-	assert.match(navigation, /selectedId, focusMessages: true/);
+	assert.match(navigation, /activeSelectedId, focusMessages: true/);
 });
 
 test("report correction notes use the shared client conversation", () => {

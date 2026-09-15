@@ -97,8 +97,9 @@ export function initializeNavigation(loadedDatabase) {
     window.addEventListener("depannhome:clients-synchronized", () => {
         refreshClientMessageAlert();
         if (document.querySelector(".nav-button.active")?.dataset.nav !== ROUTES.clients) return;
-        const selectedId = document.querySelector("[data-client-detail-id]")?.dataset.clientDetailId || "";
-        renderClients({ database, navigateToRef, createBillingDocument: createBillingDocumentForClient, viewBillingDocument, createCalendarEvent: createCalendarEventForClient, skipClientSynchronization: true, ...(selectedId ? { selectedId } : {}) });
+        const currentView = getCurrentClientView();
+        if (isClientFormView(currentView)) return;
+        renderClients({ database, navigateToRef, createBillingDocument: createBillingDocumentForClient, viewBillingDocument, createCalendarEvent: createCalendarEventForClient, skipClientSynchronization: true, ...currentView });
     });
     window.addEventListener("depannhome:partner-client-provisioned", event => {
         const clientId = String(event.detail?.clientId || "");
@@ -344,8 +345,8 @@ export async function refreshApplication() {
         if (canAccessRoute(ROUTES.billing)) renderBilling();
         else if (canAccessRoute(ROUTES.accounting)) renderAccounting();
     } else if (activeRoute === ROUTES.clients) {
-        const selectedId = document.querySelector(".client-messages-panel")?.dataset.clientId || "";
-        renderClients({ database, navigateToRef, createBillingDocument: createBillingDocumentForClient, viewBillingDocument, createCalendarEvent: createCalendarEventForClient, ...(selectedId ? { selectedId } : {}) });
+        const currentView = getCurrentClientView();
+        if (!isClientFormView(currentView)) renderClients({ database, navigateToRef, createBillingDocument: createBillingDocumentForClient, viewBillingDocument, createCalendarEvent: createCalendarEventForClient, ...currentView });
     } else if (activeRoute === ROUTES.calendar) {
         if (document.getElementById("interventionSearchResults")) openInterventionSearch();
         else renderCalendar({ currentPeriod: true });
@@ -714,8 +715,24 @@ async function openClients(clientId = "") {
         synchronizeClients({ forceFull: true }).catch(() => null)
     ]);
     if (!document.querySelector('.nav-button.active[data-nav="clients"]')) return;
-    await renderClients({ database, navigateToRef, createBillingDocument: createBillingDocumentForClient, viewBillingDocument, createCalendarEvent: createCalendarEventForClient, skipClientSynchronization: true, ...(selectedId ? { selectedId, focusMessages: true } : {}), ...(provisionedClientId ? { directoryClientId: provisionedClientId } : {}) });
+    const currentView = getCurrentClientView();
+    if (isClientFormView(currentView)) return;
+    const activeSelectedId = currentView.selectedId || selectedId;
+    await renderClients({ database, navigateToRef, createBillingDocument: createBillingDocumentForClient, viewBillingDocument, createCalendarEvent: createCalendarEventForClient, skipClientSynchronization: true, ...(activeSelectedId ? { selectedId: activeSelectedId, focusMessages: true } : {}), ...(provisionedClientId ? { directoryClientId: provisionedClientId } : {}) });
     if (provisionedClientId === pendingPartnerClientId) pendingPartnerClientId = "";
+}
+
+function getCurrentClientView() {
+    const selectedId = document.querySelector("[data-client-detail-id]")?.dataset.clientDetailId || "";
+    if (selectedId) return { selectedId };
+    const editId = document.querySelector('#clientForm input[name="id"]')?.value || "";
+    if (editId) return { editId, clientWorkspace: "create" };
+    const clientWorkspace = document.querySelector('[data-client-workspace][aria-current="page"]')?.dataset.clientWorkspace || "";
+    return clientWorkspace ? { clientWorkspace } : {};
+}
+
+function isClientFormView(view) {
+    return Boolean(view?.editId || view?.clientWorkspace === "create");
 }
 
 function openNotificationDestination(notification) {
