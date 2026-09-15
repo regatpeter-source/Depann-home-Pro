@@ -80,7 +80,13 @@ test("le retour applicatif fonctionne au clavier, à la souris et avec le bouton
     assert.match(navigation, /window\.history\.pushState/);
     assert.match(navigation, /window\.addEventListener\("popstate"/);
     assert.match(navigation, /backButton\.addEventListener\("click", \(\) => window\.history\.back\(\)\)/);
-    assert.match(navigation, /restoreApplicationRoute\(entry\.route\)/);
+    assert.match(navigation, /restoreApplicationRoute\(entry\)/);
+    assert.match(navigation, /const view = captureApplicationView\(route, title\)/);
+    assert.match(navigation, /route === ROUTES\.clients\) return renderClientHistoryView\(view\)/);
+    assert.match(navigation, /if \(view\.selectedId\) options\.selectedId = view\.selectedId/);
+    assert.match(navigation, /route === ROUTES\.home && restoreCatalogView\(view\)/);
+    assert.match(navigation, /view\.level === "brands"\) \{ renderBrands\(\); return true; \}/);
+    assert.match(navigation, /renderSettings\(view\.settingsSection \? \{ section: view\.settingsSection \} : \{\}\)/);
 });
 
 test("l’accueil ne répète plus la phrase promotionnelle des gammes techniques", () => {

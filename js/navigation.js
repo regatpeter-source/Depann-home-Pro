@@ -142,7 +142,7 @@ function initializeApplicationHistory() {
         restoringApplicationHistory = true;
         currentApplicationHistoryKey = entry.key || "";
         updateApplicationBackButton(entry.depth || 0);
-        restoreApplicationRoute(entry.route);
+        restoreApplicationRoute(entry);
     });
     backButton.addEventListener("click", () => window.history.back());
     window.queueMicrotask(recordPage);
@@ -151,11 +151,12 @@ function initializeApplicationHistory() {
 function recordApplicationHistory(title) {
     if (!title) return;
     const route = inferApplicationRoute(title);
-    const key = `${route}:${title}`;
+    const view = captureApplicationView(route, title);
+    const key = `${route}:${title}:${JSON.stringify(view)}`;
     if (!applicationHistoryReady) {
         applicationHistoryReady = true;
         currentApplicationHistoryKey = key;
-        window.history.replaceState({ application: APPLICATION_HISTORY_MARKER, depth: 0, route, key }, "");
+        window.history.replaceState({ application: APPLICATION_HISTORY_MARKER, depth: 0, route, key, view }, "");
         updateApplicationBackButton(0);
         return;
     }
@@ -164,7 +165,7 @@ function recordApplicationHistory(title) {
         const depth = Number(window.history.state?.depth) || 0;
         restoringApplicationHistory = false;
         currentApplicationHistoryKey = key;
-        window.history.replaceState({ application: APPLICATION_HISTORY_MARKER, depth, route, key }, "");
+        window.history.replaceState({ application: APPLICATION_HISTORY_MARKER, depth, route, key, view }, "");
         updateApplicationBackButton(depth);
         return;
     }
@@ -172,8 +173,53 @@ function recordApplicationHistory(title) {
 
     const depth = (Number(window.history.state?.depth) || 0) + 1;
     currentApplicationHistoryKey = key;
-    window.history.pushState({ application: APPLICATION_HISTORY_MARKER, depth, route, key }, "");
+    window.history.pushState({ application: APPLICATION_HISTORY_MARKER, depth, route, key, view }, "");
     updateApplicationBackButton(depth);
+}
+
+function captureApplicationView(route, title) {
+    if (route === ROUTES.clients) {
+        const selectedId = document.querySelector("[data-client-detail-id]")?.dataset.clientDetailId || "";
+        const editId = document.querySelector('#clientForm input[name="id"]')?.value || "";
+        const clientWorkspace = document.querySelector('[data-client-workspace][aria-current="page"]')?.dataset.clientWorkspace || "";
+        return { selectedId, editId, clientWorkspace };
+    }
+    if (route === ROUTES.home && title !== "Accueil") {
+        const brandIndex = database.brands.indexOf(state.brand);
+        const categoryIndex = state.brand?.categories?.indexOf(state.category) ?? -1;
+        const productIndex = state.category?.products?.indexOf(state.product) ?? -1;
+        const level = document.querySelector(".motor-brand-grid") ? "brand"
+            : document.querySelector(".motor-product-grid") ? "category"
+                : productIndex >= 0 ? "product" : "brands";
+        return { level, brandIndex, categoryIndex, productIndex };
+    }
+    if (route === ROUTES.settings) {
+        const settingsSection = settingsSectionFromTitle(title);
+        const templateType = ({ "Modèle de devis": "quote", "Modèle de facture": "invoice", "Modèle de quitus": "quitus", "Modèle de rapport de recherche de fuite": "report" })[title] || "";
+        return { settingsSection, templateType };
+    }
+    if (route === ROUTES.search) return { query: document.getElementById("search")?.value || "" };
+    return {};
+}
+
+function settingsSectionFromTitle(title) {
+    const label = title.startsWith("Paramètres · ") ? title.slice("Paramètres · ".length) : "";
+    return ({
+        "Offre & abonnement": "subscription",
+        "Stockage": "storage",
+        "Modèles de documents": "documents",
+        "Entreprise · Boîte mail": "company",
+        "Réseau Depann’Home Pro": "network",
+        "Réseau & connecteurs": "network",
+        "Support": "support",
+        "Utilisateurs": "users",
+        "Sécurité": "security",
+        "Groupe / Multi-entreprises": "groups",
+        "Interface & notifications": "personalization",
+        "Importation de clients": "imports",
+        "Importation de données": "imports",
+        "Console Créateur": "creator"
+    })[label] || "";
 }
 
 function inferApplicationRoute(title) {
@@ -198,9 +244,11 @@ function inferApplicationRoute(title) {
     return ROUTES.home;
 }
 
-function restoreApplicationRoute(route) {
+function restoreApplicationRoute(entry) {
+    const route = typeof entry === "string" ? entry : entry?.route;
+    const view = typeof entry === "string" ? {} : entry?.view || {};
     if (route === ROUTES.calendar) return openCalendar();
-    if (route === ROUTES.clients) return openClients();
+    if (route === ROUTES.clients) return renderClientHistoryView(view);
     if (route === ROUTES.billing) return isTechnician() && organizationFeatureEnabled("technicalReports") ? renderTechnicalReports() : renderBilling();
     if (route === ROUTES.accounting) return renderAccounting();
     if (route === ROUTES.purchases) return renderPurchases();
@@ -210,10 +258,39 @@ function restoreApplicationRoute(route) {
     if (route === ROUTES.partnerSandbox) return renderPartnerSandbox();
     if (route === ROUTES.technicalReports) return renderTechnicalReports();
     if (route === ROUTES.library) return renderLibrary();
-    if (route === ROUTES.settings) return renderSettings();
+    if (route === ROUTES.settings && view.templateType) return openDocumentTemplateSettings(view.templateType);
+    if (route === ROUTES.settings) return renderSettings(view.settingsSection ? { section: view.settingsSection } : {});
     if (route === ROUTES.store) return renderStore();
     if (route === ROUTES.creator) return renderCreatorConsole();
+    if (route === ROUTES.search && view.query) return renderSearchResults(view.query);
+    if (route === ROUTES.home && restoreCatalogView(view)) return;
     return openHome();
+}
+
+function renderClientHistoryView(view = {}) {
+    const options = { database, navigateToRef, createBillingDocument: createBillingDocumentForClient, viewBillingDocument, createCalendarEvent: createCalendarEventForClient, skipClientSynchronization: true };
+    if (view.selectedId) options.selectedId = view.selectedId;
+    else if (view.editId) options.editId = view.editId;
+    else if (view.clientWorkspace) options.clientWorkspace = view.clientWorkspace;
+    return renderClients(options);
+}
+
+function restoreCatalogView(view = {}) {
+    if (!view.level) return false;
+    if (view.level === "brands") { renderBrands(); return true; }
+    const brand = database.brands[view.brandIndex];
+    const category = brand?.categories?.[view.categoryIndex];
+    const product = category?.products?.[view.productIndex];
+    if (!brand) return false;
+    state.brand = brand;
+    if (view.level === "brand") { renderBrandCategories(); return true; }
+    if (!category) return false;
+    state.category = category;
+    if (view.level === "category") { renderCategoryOverview(); return true; }
+    if (!product) return false;
+    state.product = product;
+    renderProductOverview();
+    return true;
 }
 
 function updateApplicationBackButton(depth) {
