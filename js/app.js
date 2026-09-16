@@ -1,12 +1,12 @@
-import { initializeAuthentication, restoreApplicationShell, signOut } from "./auth.js?v=127";
+import { initializeAuthentication, restoreApplicationShell, signOut } from "./auth.js?v=128";
 import { initializeClientSynchronization } from "./client-sync.js?v=130";
 import { initializeCollaboration } from "./collaboration.js?v=7";
 import { loadDatabase } from "./data.js?v=59";
-import { initializeNavigation, refreshApplication } from "./navigation.js?v=467";
+import { initializeNavigation, refreshApplication } from "./navigation.js?v=468";
 import { renderError } from "./ui.js?v=44";
 import { getSettings } from "./storage.js?v=45";
 import { FONT_OPTIONS } from "./config.js?v=135";
-import { installClientSessionGuard, onAuthenticationRequired, onClientSessionReplaced } from "./client-session.js?v=5";
+import { installClientSessionGuard, onAuthenticationRequired, onClientSessionReplaced } from "./client-session.js?v=6";
 import { initializeInterfaceLanguage } from "./i18n.js?v=5";
 
 let applicationStarted = false;

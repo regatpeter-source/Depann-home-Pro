@@ -93,12 +93,23 @@ export function registerAuthRoutes(app) {
         const device = getDeviceDetails(request.body);
         if (!device) return response.status(400).json({ message: "Cet appareil ne peut pas être identifié. Actualisez l’application puis réessayez." });
         const user = username ? await findUserByUsername(username) : null;
-        if (user?.account_owner_id && (await expireSubscriptionTrials(getPool(), user.account_owner_id)).length) user.account_is_active = false;
-        const passwordMatches = user?.is_active && user?.account_is_active && await bcrypt.compare(password, user.password_hash);
+        if (user?.account_owner_id && (await expireSubscriptionTrials(getPool(), user.account_owner_id)).length) {
+            user.account_is_active = false;
+            user.subscription_status = "suspended";
+        }
+        const passwordMatches = user && await bcrypt.compare(password, user.password_hash);
 
         if (!passwordMatches) {
             await recordSecurityEvent({ request, eventType: "login", outcome: "failure" });
             return response.status(401).json({ message: "Identifiant ou mot de passe incorrect." });
+        }
+        if (user.subscription_status === "suspended" && user.trial_ends_at && new Date(user.trial_ends_at) <= new Date()) {
+            await recordSecurityEvent({ request, eventType: "login", outcome: "failure", userId: user.id, ownerId: user.account_owner_id, details: { reason: "subscription_trial_expired" } });
+            return response.status(403).json({ message: "Votre période d’essai de 15 jours est terminée. L’accès de votre entreprise est suspendu sans démarrage automatique d’un abonnement payant. Contactez Depann’Home Pro pour renouveler l’essai ou activer votre abonnement." });
+        }
+        if (!user.is_active || !user.account_is_active) {
+            await recordSecurityEvent({ request, eventType: "login", outcome: "failure", userId: user.id, ownerId: user.account_owner_id, details: { reason: "inactive_account" } });
+            return response.status(403).json({ message: "L’accès à cette entreprise est actuellement suspendu. Contactez votre administrateur ou Depann’Home Pro." });
         }
 
         if (isCreatorUsername(user.username) && await isCreatorTotpEnabled(user.id)) {

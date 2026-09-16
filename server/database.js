@@ -385,7 +385,8 @@ export async function findUserByUsername(username) {
         `SELECT user_account.id, user_account.username, user_account.password_hash, user_account.role, user_account.account_owner_id,
             user_account.full_name, user_account.phone, user_account.email, user_account.department, user_account.departments, user_account.is_active, owner.is_active AS account_is_active,
             user_account.can_create_billing, user_account.can_access_billing, user_account.can_access_accounting, user_account.can_access_company_email, user_account.can_switch_group_companies, user_account.can_manage_calendar,
-            owner.max_pc_users AS max_pc_users, owner.max_technicians AS max_technicians, owner.monthly_price_cents AS monthly_price_cents
+            owner.max_pc_users AS max_pc_users, owner.max_technicians AS max_technicians, owner.monthly_price_cents AS monthly_price_cents,
+            owner.subscription_status, owner.trial_ends_at
          FROM depannhome_users user_account
          JOIN depannhome_users owner ON owner.id = user_account.account_owner_id
          WHERE user_account.username = $1`,
@@ -400,7 +401,8 @@ export async function findUserById(id) {
         `SELECT user_account.id, user_account.username, user_account.password_hash, user_account.role, user_account.account_owner_id,
             user_account.full_name, user_account.phone, user_account.email, user_account.department, user_account.departments, user_account.is_active, owner.is_active AS account_is_active,
             user_account.can_create_billing, user_account.can_access_billing, user_account.can_access_accounting, user_account.can_access_company_email, user_account.can_switch_group_companies, user_account.can_manage_calendar,
-            owner.max_pc_users AS max_pc_users, owner.max_technicians AS max_technicians, owner.monthly_price_cents AS monthly_price_cents
+            owner.max_pc_users AS max_pc_users, owner.max_technicians AS max_technicians, owner.monthly_price_cents AS monthly_price_cents,
+            owner.subscription_status, owner.trial_ends_at
          FROM depannhome_users user_account
          JOIN depannhome_users owner ON owner.id = user_account.account_owner_id
          WHERE user_account.id = $1`,

@@ -68,6 +68,9 @@ Les remises commerciales existantes peuvent toujours être appliquées au total 
 - La date de fin, le nombre de jours restants et le nombre de renouvellements apparaissent dans la Console Créateur et dans **Paramètres > Offre & abonnement** de l’entreprise.
 - À l’expiration, l’entreprise est suspendue et ses données sont conservées. Elle ne bascule jamais automatiquement vers une facturation payante.
 - Un renouvellement réactive l’entreprise. Les factures cycliques encore en attente ou en échec sont annulées au démarrage ou au renouvellement de l’essai.
+- Après saisie d’identifiants valides, l’écran de connexion indique explicitement que l’essai est terminé et que l’accès est suspendu sans abonnement payant automatique.
+- Le bouton **Démarrer l’abonnement payant** de la Console Créateur réactive l’entreprise, passe son abonnement à l’état actif et fixe sa première échéance au jour de la conversion. Aucun jour d’essai n’est facturé rétroactivement.
+- La facturation des abonnements est déjà automatique côté serveur : elle est contrôlée au démarrage puis quotidiennement (00 h 10 par défaut, heure configurable). Une facture PDF est créée et envoyée par Brevo pour chaque abonnement actif arrivé à échéance, puis l’échéance avance d’un mois. Aucun prélèvement bancaire automatique n’est effectué.
 - Chaque activation, renouvellement, expiration et sortie d’essai est historisé côté serveur.
 
 ## Migration

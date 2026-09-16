@@ -82,6 +82,41 @@ export async function expireSubscriptionTrials(database = getPool(), accountOwne
     return rows.map(row => String(row.accountOwnerId));
 }
 
+export async function convertTrialToPaidSubscription(accountOwnerId, actorId, database = getPool()) {
+    const connection = typeof database.connect === "function" ? await database.connect() : database;
+    const ownsConnection = connection !== database;
+    try {
+        await connection.query("BEGIN");
+        const { rows } = await connection.query(`
+            SELECT id,is_archived,subscription_plan,subscription_status,trial_started_at,trial_ends_at,trial_renewal_count
+            FROM depannhome_users WHERE id=$1 AND account_owner_id=id FOR UPDATE
+        `, [accountOwnerId]);
+        const owner = rows[0];
+        if (!owner) throw trialError(404, "Entreprise introuvable.");
+        if (owner.is_archived) throw trialError(409, "Réactivez l’entreprise avant de démarrer son abonnement payant.");
+        if (owner.subscription_plan !== "paid" || !owner.trial_started_at) throw trialError(409, "Cette entreprise ne possède aucun essai convertible en abonnement payant.");
+        if (!['trial', 'suspended'].includes(owner.subscription_status)) throw trialError(409, "L’abonnement de cette entreprise est déjà dans un autre état.");
+
+        const updated = await connection.query(`
+            UPDATE depannhome_users
+            SET subscription_status='active',is_active=TRUE,subscription_renewal_date=CURRENT_DATE,updated_at=NOW()
+            WHERE id=$1
+            RETURNING subscription_status AS "subscriptionStatus",is_active AS "isActive",TO_CHAR(subscription_renewal_date,'YYYY-MM-DD') AS "subscriptionRenewalDate"
+        `, [accountOwnerId]);
+        await connection.query(`
+            INSERT INTO depannhome_subscription_trial_audit(account_owner_id,actor_id,action,previous_ends_at,renewal_count,details)
+            VALUES($1,$2,'converted',$3,$4,$5::jsonb)
+        `, [accountOwnerId, actorId || null, owner.trial_ends_at || null, Number(owner.trial_renewal_count || 0), JSON.stringify({ previousSubscriptionStatus: owner.subscription_status, billingStartsOn: updated.rows[0].subscriptionRenewalDate })]);
+        await connection.query("COMMIT");
+        return updated.rows[0];
+    } catch (error) {
+        await connection.query("ROLLBACK").catch(() => {});
+        throw error;
+    } finally {
+        if (ownsConnection) connection.release();
+    }
+}
+
 function trialError(status, message) {
     const error = new Error(message);
     error.status = status;

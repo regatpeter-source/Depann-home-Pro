@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { nextTrialEnd, SUBSCRIPTION_TRIAL_DAYS, trialDaysRemaining } from "../server/subscription-trials.js";
+import { convertTrialToPaidSubscription, nextTrialEnd, SUBSCRIPTION_TRIAL_DAYS, trialDaysRemaining } from "../server/subscription-trials.js";
 
 const schema = readFileSync(new URL("../database/schema.sql", import.meta.url), "utf8");
 const migration = readFileSync(new URL("../database/migrations/0019_subscription_trials.sql", import.meta.url), "utf8");
@@ -50,13 +50,45 @@ test("Creator controls trials through a dedicated audited no-billing action", ()
 });
 
 test("expired trials suspend access without automatically starting paid billing", () => {
-    assert.match(trials, /subscription_status='suspended',is_active=FALSE/);
-    assert.match(trials, /subscription_status='trial'/);
-    assert.match(trials, /trial_ends_at<=NOW\(\)/);
+    const expirationImplementation = trials.slice(trials.indexOf("export async function expireSubscriptionTrials"), trials.indexOf("export async function convertTrialToPaidSubscription"));
+    assert.match(expirationImplementation, /subscription_status='suspended',is_active=FALSE/);
+    assert.match(expirationImplementation, /subscription_status='trial'/);
+    assert.match(expirationImplementation, /trial_ends_at<=NOW\(\)/);
     assert.match(invoicing, /const expiredTrialAccountIds = await expireSubscriptionTrials\(database\)/);
     assert.match(auth, /expireSubscriptionTrials\(getPool\(\), user\.account_owner_id\)/);
     assert.match(invoicing, /owner\.subscription_status = 'active'/);
-    assert.doesNotMatch(trials, /subscription_status='active'/);
+    assert.doesNotMatch(expirationImplementation, /subscription_status='active'/);
+});
+
+test("valid credentials receive an explicit expired-trial message", () => {
+    const passwordCheck = auth.indexOf("const passwordMatches = user && await bcrypt.compare");
+    const expiredMessage = auth.indexOf("Votre période d’essai de 15 jours est terminée");
+    assert.ok(passwordCheck >= 0 && expiredMessage > passwordCheck);
+    assert.match(auth, /subscription_trial_expired/);
+    assert.match(auth, /sans démarrage automatique d’un abonnement payant/);
+    assert.match(database, /owner\.subscription_status, owner\.trial_ends_at/);
+});
+
+test("Creator can convert a completed trial into paid billing starting today", async () => {
+    const queries = [];
+    const databaseMock = {
+        async query(sql, parameters = []) {
+            queries.push({ sql, parameters });
+            if (/SELECT id,is_archived/.test(sql)) return { rows: [{ id: 42, is_archived: false, subscription_plan: "paid", subscription_status: "suspended", trial_started_at: new Date("2026-01-01T00:00:00Z"), trial_ends_at: new Date("2026-01-16T00:00:00Z"), trial_renewal_count: 1 }] };
+            if (/UPDATE depannhome_users/.test(sql)) return { rows: [{ subscriptionStatus: "active", isActive: true, subscriptionRenewalDate: "2026-09-16" }] };
+            return { rows: [], rowCount: 0 };
+        }
+    };
+    const result = await convertTrialToPaidSubscription(42, 7, databaseMock);
+    assert.deepEqual(result, { subscriptionStatus: "active", isActive: true, subscriptionRenewalDate: "2026-09-16" });
+    assert.ok(queries.some(query => /subscription_status='active',is_active=TRUE,subscription_renewal_date=CURRENT_DATE/.test(query.sql)));
+    assert.ok(queries.some(query => /'converted'/.test(query.sql)));
+    assert.match(creatorServer, /app\.post\("\/api\/creator\/accounts\/:accountId\/paid-subscription"/);
+    assert.match(creatorClient, /id="creatorConvertTrialToPaid"/);
+    assert.match(creatorClient, /Démarrer l’abonnement payant/);
+    assert.match(creatorClient, /Aucun jour d’essai ne sera facturé rétroactivement/);
+    assert.match(invoicing, /void check\("startup"\)/);
+    assert.match(invoicing, /SUBSCRIPTION_INVOICING_HOUR/);
 });
 
 test("companies see the trial countdown and no-billing guarantee", () => {
@@ -67,4 +99,5 @@ test("companies see the trial countdown and no-billing guarantee", () => {
     assert.match(navigation, /Contactez le Support Depann’Home Pro/);
     assert.match(documentation, /Essai de 15 jours/);
     assert.match(documentation, /ne bascule jamais automatiquement vers une facturation payante/);
+    assert.match(documentation, /facturation des abonnements est déjà automatique côté serveur/);
 });

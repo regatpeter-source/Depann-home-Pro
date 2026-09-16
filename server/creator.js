@@ -12,7 +12,7 @@ import { loadCompanyStorageUsage, loadCreatorStorageUsage, normalizeStorageQuota
 import { strictDateOnly } from "./date-validation.js";
 import { companySeatState, subscriptionOwnerId } from "./seat-limits.js";
 import { configurePrincipalGroup } from "./groups.js";
-import { activateOrRenewSubscriptionTrial, expireSubscriptionTrials } from "./subscription-trials.js";
+import { activateOrRenewSubscriptionTrial, convertTrialToPaidSubscription, expireSubscriptionTrials } from "./subscription-trials.js";
 
 const USERNAME_PATTERN = /^[a-z0-9._-]{3,32}$/;
 const MIN_PASSWORD_LENGTH = 12;
@@ -501,6 +501,15 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
         if (isOwnCreatorAccount(owner, request)) return response.status(403).json({ message: "Le compte Créateur ne peut pas être placé en essai." });
         const trial = await activateOrRenewSubscriptionTrial(accountId, request.user.sub);
         response.json({ trial, message: trial.action === "activated" ? "Essai de 15 jours activé. Aucune facture ne sera émise pendant cette période." : "Essai renouvelé de 15 jours. Aucune facture ne sera émise pendant cette période." });
+    }));
+
+    app.post("/api/creator/accounts/:accountId/paid-subscription", requireCreator, asyncHandler(async (request, response) => {
+        const accountId = positiveId(request.params.accountId);
+        const owner = accountId && await findAccountOwner(getPool(), accountId);
+        if (!canManageAccount(owner, request)) return response.status(404).json({ message: "Entreprise introuvable." });
+        if (isOwnCreatorAccount(owner, request)) return response.status(403).json({ message: "Le compte Créateur ne peut pas être converti en abonnement client." });
+        const subscription = await convertTrialToPaidSubscription(accountId, request.user.sub);
+        response.json({ subscription, message: "Abonnement payant démarré. L’entreprise est réactivée et sa première facture est programmée aujourd’hui pour le prochain traitement automatique." });
     }));
 
     app.patch("/api/creator/accounts/:accountId/activation", requireCreator, asyncHandler(async (request, response) => {

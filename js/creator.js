@@ -731,6 +731,14 @@ async function renderAccountDetail(accountId) {
         showFeedback(result.message || "Période d’essai mise à jour.");
         await loadAccounts(accountId);
     });
+    workspace.querySelector("#creatorConvertTrialToPaid")?.addEventListener("click", async event => {
+        if (!confirm(`Démarrer l’abonnement payant de ${account.companyName} aujourd’hui ? L’entreprise sera réactivée et la première facture sera créée puis envoyée par le prochain traitement automatique ou manuel. Aucun jour d’essai ne sera facturé rétroactivement.`)) return;
+        event.currentTarget.disabled = true;
+        const result = await api(`/api/creator/accounts/${encodeURIComponent(accountId)}/paid-subscription`, { method: "POST", body: "{}" });
+        if (!result.ok) { event.currentTarget.disabled = false; return showFeedback(result.message || "Démarrage de l’abonnement impossible.", true); }
+        showFeedback(result.message || "Abonnement payant démarré.");
+        await loadAccounts(accountId);
+    });
     workspace.querySelector("#creatorDeleteAccount")?.addEventListener("click", async () => {
         if (!confirm(`Archiver ${account.companyName} ? Tous les accès seront bloqués, mais aucune donnée ne sera supprimée.`)) return;
         const reason = prompt("Motif de l’archivage (facultatif) :", "");
@@ -892,7 +900,7 @@ function renderTrialManagement(account, isOwnCreatorAccount = false) {
     if (account.subscriptionPlan !== "paid" || isOwnCreatorAccount) return "";
     const active = account.subscriptionStatus === "trial" && trialDaysRemaining(account.trialEndsAt) > 0;
     const hasTrialHistory = Boolean(account.trialStartedAt);
-    return `<section class="creator-account-status-panel ${active ? "active" : "suspended"}"><div><strong>${active ? `Essai actif · ${trialRemainingLabel(account.trialEndsAt)}` : hasTrialHistory ? "Essai terminé ou suspendu" : "Aucun essai démarré"}</strong><p>${active ? `Fin prévue le ${escapeHtml(formatDateTime(account.trialEndsAt))}. Aucune facture d’abonnement pendant cette période.` : "Le Créateur peut accorder une période de 15 jours sans facturation. Une entreprise expirée est réactivée lors du renouvellement."}${hasTrialHistory ? ` Renouvellements effectués : ${Number(account.trialRenewalCount) || 0}.` : ""}</p></div><button type="button" class="secondary-button" id="creatorStartOrRenewTrial" ${account.isArchived ? "disabled" : ""}>${hasTrialHistory ? "Renouveler de 15 jours" : "Activer 15 jours d’essai"}</button></section>`;
+    return `<section class="creator-account-status-panel ${active ? "active" : "suspended"}"><div><strong>${active ? `Essai actif · ${trialRemainingLabel(account.trialEndsAt)}` : hasTrialHistory ? "Essai terminé ou suspendu" : "Aucun essai démarré"}</strong><p>${active ? `Fin prévue le ${escapeHtml(formatDateTime(account.trialEndsAt))}. Aucune facture d’abonnement pendant cette période.` : "Le Créateur peut accorder une période de 15 jours sans facturation. Une entreprise expirée est réactivée lors du renouvellement."}${hasTrialHistory ? ` Renouvellements effectués : ${Number(account.trialRenewalCount) || 0}.` : ""}</p></div><div class="creator-form-actions"><button type="button" class="secondary-button" id="creatorStartOrRenewTrial" ${account.isArchived ? "disabled" : ""}>${hasTrialHistory ? "Renouveler de 15 jours" : "Activer 15 jours d’essai"}</button>${hasTrialHistory && ["trial", "suspended"].includes(account.subscriptionStatus) ? `<button type="button" class="primary-button" id="creatorConvertTrialToPaid" ${account.isArchived ? "disabled" : ""}>Démarrer l’abonnement payant</button>` : ""}</div></section>`;
 }
 
 function trialDaysRemaining(value) {
