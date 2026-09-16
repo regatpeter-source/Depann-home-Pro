@@ -121,14 +121,14 @@ test("creator console exposes an explicit assistance workflow and warning banner
 });
 
 test("PWA versions are synchronized for creator assistance assets", () => {
-    assert.match(navigation, /creator\.js\?v=163/);
+    assert.match(navigation, /creator\.js\?v=164/);
     assert.match(index, /css\/style\.css\?v=271/);
-    assert.match(index, /js\/app\.js\?v=439/);
-    assert.match(serviceWorker, /depann-home-pro-v555/);
+    assert.match(index, /js\/app\.js\?v=440/);
+    assert.match(serviceWorker, /depann-home-pro-v556/);
     assert.match(serviceWorker, /css\/style\.css\?v=271/);
-    assert.match(serviceWorker, /js\/app\.js\?v=439/);
-    assert.match(serviceWorker, /js\/navigation\.js\?v=468/);
-    assert.match(serviceWorker, /js\/creator\.js\?v=163/);
+    assert.match(serviceWorker, /js\/app\.js\?v=440/);
+    assert.match(serviceWorker, /js\/navigation\.js\?v=469/);
+    assert.match(serviceWorker, /js\/creator\.js\?v=164/);
     assert.match(serviceWorker, /js\/connectors\.js\?v=6/);
 });
 
@@ -137,4 +137,12 @@ test("Creator account detail remains available when managing its own PC members"
     assert.match(creatorServer, /const account = \(await loadCreatorAccounts\(request, accountId\)\)\[0\]/);
     assert.match(creatorServer, /!isCreatorUsername\(account\.ownerUsername\) \|\| String\(account\.id\) === String\(request\.user\.sub\)/);
     assert.match(creatorServer, /app\.post\("\/api\/creator\/accounts\/:accountId\/members", requireCreator/);
+    assert.match(creatorServer, /sanitizeAccount\(request\.body, false, \{ platformCreator: ownCreatorAccount \}\)/);
+    assert.match(creatorServer, /subscriptionPlan = platformCreator \|\| isFreePartner \? "free" : "paid"/);
+    assert.match(creatorServer, /subscriptionTier = platformCreator \? "pro"/);
+    assert.match(creatorServer, /proration = ownCreatorAccount \|\|/);
+    assert.match(client, /Compte plateforme Créateur/);
+    assert.match(client, /if \(!isOwnCreatorAccount\) bindSubscriptionTier/);
+    assert.match(client, /const isPlatformCreator = !subscriptionTier/);
+    assert.match(client, /const isPartner = !isPlatformCreator && interfaceType\.value === "partner"/);
 });

@@ -374,12 +374,12 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
     app.patch("/api/creator/accounts/:accountId", requireCreator, asyncHandler(async (request, response) => {
         const accountId = positiveId(request.params.accountId);
         if (!accountId) return response.status(400).json({ message: "Compte entreprise invalide." });
-        const account = sanitizeAccount(request.body);
-        if (!account.ok) return response.status(400).json({ message: account.message });
-
         const database = getPool();
         const owner = await findAccountOwner(database, accountId);
         if (!canManageAccount(owner, request)) return response.status(404).json({ message: "Compte entreprise introuvable." });
+        const ownCreatorAccount = isOwnCreatorAccount(owner, request);
+        const account = sanitizeAccount(request.body, false, { platformCreator: ownCreatorAccount });
+        if (!account.ok) return response.status(400).json({ message: account.message });
         if (owner.is_archived) return response.status(409).json({ message: "Réactivez cette entreprise avant de modifier ses informations." });
         if (account.subscriptionStatus === "trial" && owner.subscriptionStatus !== "trial") return response.status(400).json({ message: "Utilisez le bouton dédié pour démarrer un essai de 15 jours." });
         const counts = await countActiveSeats(database, accountId);
@@ -427,7 +427,7 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
             if (ownerBefore.subscriptionStatus === "trial" && account.subscriptionStatus !== "trial") {
                 await connection.query(`INSERT INTO depannhome_subscription_trial_audit(account_owner_id,actor_id,action,previous_ends_at,renewal_count,details) VALUES($1,$2,$3,$4,$5,$6::jsonb)`, [accountId, request.user.sub, account.subscriptionStatus === "active" ? "converted" : "ended", ownerBefore.trialEndsAt, ownerBefore.trialRenewalCount, JSON.stringify({ nextSubscriptionStatus: account.subscriptionStatus })]);
             }
-            proration = ownerBefore.subscriptionStatus === "trial" || account.subscriptionStatus === "trial" ? null : await prepareSubscriptionProration(connection, {
+            proration = ownCreatorAccount || ownerBefore.subscriptionStatus === "trial" || account.subscriptionStatus === "trial" ? null : await prepareSubscriptionProration(connection, {
                 ownerBefore,
                 ownerAfter: {
                     id: accountId, subscriptionPlan: account.subscriptionPlan, subscriptionTier: account.subscriptionTier,
@@ -738,7 +738,8 @@ async function ensureSeatAvailable(database, accountId, role) {
     if (active >= maximum) throw new Error(`LIMIT:La limite de ${isPcRole ? "postes administratifs" : "postes mobiles"} est atteinte.`);
 }
 
-function sanitizeAccount(value, requireCompleteProfile = false) {
+function sanitizeAccount(value, requireCompleteProfile = false, options = {}) {
+    const platformCreator = options.platformCreator === true;
     const companyName = cleanText(value?.companyName, 160);
     const fullName = cleanText(value?.fullName, 100);
     const phone = cleanText(value?.phone, 30);
@@ -747,20 +748,20 @@ function sanitizeAccount(value, requireCompleteProfile = false) {
     const isGroup = requestedInterface === "group";
     const requestedMaxPcUsers = positiveLimit(value?.maxPcUsers, 1, isGroup ? 1000 : 100);
     const requestedMaxTechnicians = positiveLimit(value?.maxTechnicians, 0, isGroup ? 5000 : 500);
-    const subscriptionTier = normalizeSubscriptionTier(value?.subscriptionTier, "basic");
+    const subscriptionTier = platformCreator ? "pro" : normalizeSubscriptionTier(value?.subscriptionTier, "basic");
     const tierConfig = subscriptionTierConfig(subscriptionTier);
     const maxGroupCompanies = isGroup ? positiveLimit(value?.maxGroupCompanies, 1, 100) : 1;
-    const isFreePartner = requestedInterface === "partner";
+    const isFreePartner = !platformCreator && requestedInterface === "partner";
     const maxPcUsers = isFreePartner ? 1 : requestedMaxPcUsers;
     const maxTechnicians = isFreePartner ? 0 : requestedMaxTechnicians;
-    const subscriptionPlan = isFreePartner ? "free" : "paid";
-    const subscriptionLabel = isFreePartner ? "Portail Partenaire gratuit" : isGroup ? `${tierConfig.label} Groupe — abonnement global facturé à l’entreprise principale` : tierConfig.label;
-    const monthlyPriceCents = isFreePartner ? 0 : calculateSubscriptionPriceCents(subscriptionTier, maxPcUsers, maxTechnicians);
-    const subscriptionDiscountLabel = isFreePartner ? "" : cleanText(value?.subscriptionDiscountLabel, 160);
-    const subscriptionDiscountMode = isFreePartner ? "fixed" : value?.subscriptionDiscountMode === "percentage" ? "percentage" : "fixed";
-    const subscriptionDiscountValue = isFreePartner ? 0 : decimalInRange(value?.subscriptionDiscountValue, 0, subscriptionDiscountMode === "percentage" ? 100 : 999999.99);
-    const subscriptionStatus = SUBSCRIPTION_STATUSES.has(value?.subscriptionStatus) ? value.subscriptionStatus : "active";
-    const subscriptionRenewalDate = isFreePartner ? "" : sanitizeDate(value?.subscriptionRenewalDate);
+    const subscriptionPlan = platformCreator || isFreePartner ? "free" : "paid";
+    const subscriptionLabel = platformCreator ? "Compte Créateur" : isFreePartner ? "Portail Partenaire gratuit" : isGroup ? `${tierConfig.label} Groupe — abonnement global facturé à l’entreprise principale` : tierConfig.label;
+    const monthlyPriceCents = platformCreator || isFreePartner ? 0 : calculateSubscriptionPriceCents(subscriptionTier, maxPcUsers, maxTechnicians);
+    const subscriptionDiscountLabel = platformCreator || isFreePartner ? "" : cleanText(value?.subscriptionDiscountLabel, 160);
+    const subscriptionDiscountMode = platformCreator || isFreePartner ? "fixed" : value?.subscriptionDiscountMode === "percentage" ? "percentage" : "fixed";
+    const subscriptionDiscountValue = platformCreator || isFreePartner ? 0 : decimalInRange(value?.subscriptionDiscountValue, 0, subscriptionDiscountMode === "percentage" ? 100 : 999999.99);
+    const subscriptionStatus = platformCreator ? "active" : SUBSCRIPTION_STATUSES.has(value?.subscriptionStatus) ? value.subscriptionStatus : "active";
+    const subscriptionRenewalDate = platformCreator || isFreePartner ? "" : sanitizeDate(value?.subscriptionRenewalDate);
     const billingReference = cleanText(value?.billingReference, 100);
     const creatorNote = cleanText(value?.creatorNote, 1000);
     const quoteTemplatePolicy = QUOTE_TEMPLATE_POLICIES.has(value?.quoteTemplatePolicy) ? value.quoteTemplatePolicy : "company_choice";

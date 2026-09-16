@@ -184,8 +184,8 @@ test("organization interfaces remain compatible with subscription tiers", () => 
         assert.equal(organizationInterfaceAccessMessage("pro", interfaceType), "", `pro:${interfaceType}`);
     }
     assert.match(creatorServer, /organizationInterfaceAccessMessage\(subscriptionTier, requestedInterface\)/);
-    assert.match(creatorServer, /isFreePartner \? "free" : "paid"/);
-    assert.match(creatorServer, /isFreePartner \? 0 : calculateSubscriptionPriceCents/);
+    assert.match(creatorServer, /platformCreator \|\| isFreePartner \? "free" : "paid"/);
+    assert.match(creatorServer, /platformCreator \|\| isFreePartner \? 0 : calculateSubscriptionPriceCents/);
     assert.match(creatorClient, /Portail Partenaire · Gratuit/);
     assert.match(organizationsServer, /SET subscription_plan='free',subscription_tier='pro',subscription_label='Portail Partenaire gratuit',monthly_price_cents=0/);
     assert.match(organizationsServer, /max_pc_users=1,max_technicians=0/);

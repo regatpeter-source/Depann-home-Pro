@@ -686,7 +686,7 @@ async function renderAccountDetail(accountId) {
                 <label data-mobile-seat-label>Postes mobiles autorisés<input name="maxTechnicians" type="number" min="0" max="500" required value="${escapeHtml(account.maxTechnicians)}"></label>
             </div>
             ${renderCompanyProfileFields(account.companyProfile)}
-            ${renderSubscriptionFields(account)}
+            ${isOwnCreatorAccount ? '<aside class="accounting-pdp-notice"><strong>Compte plateforme Créateur.</strong> Ce compte conserve l’accès Pro et ses capacités PC/mobile sans abonnement ni facture Depann’Home Pro.</aside>' : renderSubscriptionFields(account)}
             ${renderTrialManagement(account, isOwnCreatorAccount)}
             ${renderOrganizationFields(account.organization, account.maxGroupCompanies)}
             ${renderDocumentTemplatePolicyFields(account)}
@@ -754,7 +754,7 @@ async function renderAccountDetail(accountId) {
     workspace.querySelector("#creatorNewTechnician")?.addEventListener("click", () => renderMemberForm(account, null, account.subscriptionTier === "basic" ? "mobile_admin" : "technician"));
     workspace.querySelector("#creatorOpenCompanyEInvoicing").addEventListener("click", () => renderCreatorCompanyEInvoicing(account));
     if (!account.isArchived) {
-        bindSubscriptionTier(workspace.querySelector("#creatorAccountForm"));
+        if (!isOwnCreatorAccount) bindSubscriptionTier(workspace.querySelector("#creatorAccountForm"));
         bindOrganizationInterface(workspace.querySelector("#creatorAccountForm"));
     }
     await loadOrganizationHistory(accountId);
@@ -947,7 +947,8 @@ function bindOrganizationInterface(form) {
     const mobileSeatLabel = form.querySelector("[data-mobile-seat-label]");
     if (!interfaceType || !licenseType) return;
     const syncLicense = () => {
-        const isPartner = interfaceType.value === "partner";
+        const isPlatformCreator = !subscriptionTier;
+        const isPartner = !isPlatformCreator && interfaceType.value === "partner";
         if (isPartner && subscriptionTier) subscriptionTier.value = "pro";
         const isPro = !subscriptionTier || subscriptionTier.value === "pro";
         [...interfaceType.options].forEach(option => { if (option.value === "group") option.disabled = !isPro; });
