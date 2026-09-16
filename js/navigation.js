@@ -1,6 +1,6 @@
 import { ROUTES, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=135";
 import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=224";
-import { openCreatorPartnerRequest, openCreatorRequestNotification, renderCreatorConsole } from "./creator.js?v=161";
+import { openCreatorPartnerRequest, openCreatorRequestNotification, renderCreatorConsole } from "./creator.js?v=162";
 import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=205";
 import { renderAccounting } from "./accounting.js?v=27";
 import { renderPurchases } from "./purchases.js?v=126";
@@ -1930,6 +1930,8 @@ async function renderSubscriptionSettings(container) {
     const latestInvoice = account.latestInvoice || null;
     const subscriptionStatus = subscriptionBillingStatus(account.subscriptionStatus);
     const renewalDate = formatSubscriptionBillingDate(account.subscriptionRenewalDate);
+    const trialRemainingDays = subscriptionTrialDaysRemaining(account.trialEndsAt);
+    const trialActive = account.subscriptionStatus === "trial" && trialRemainingDays > 0;
     const invoiceAmountCents = Math.max(0, Number(latestInvoice?.netAmountCents ?? latestInvoice?.amountCents) || 0);
     const creditedAmountCents = Math.max(0, Number(latestInvoice?.creditedAmountCents) || 0);
     const paidAmountCents = Math.max(0, Number(latestInvoice?.paidAmountCents) || 0);
@@ -1961,13 +1963,14 @@ async function renderSubscriptionSettings(container) {
     billingPanel.className = "subscription-billing-panel";
     billingPanel.innerHTML = `
         <div class="form-heading"><div><p class="eyebrow">Facturation de l’abonnement</p><h3>Échéances et dernière facture</h3></div><span class="subscription-billing-status ${escapeHtml(subscriptionStatus.className)}">${escapeHtml(subscriptionStatus.label)}</span></div>
+        ${trialActive ? `<aside class="accounting-pdp-notice"><strong>Essai actif · ${trialRemainingDays} jour${trialRemainingDays > 1 ? "s" : ""} restant${trialRemainingDays > 1 ? "s" : ""}</strong><br>Votre essai se termine le ${escapeHtml(formatSubscriptionBillingDate(account.trialEndsAt))}. Aucune facture d’abonnement n’est créée ni envoyée pendant cette période.${Number(account.trialRenewalCount) ? ` Renouvellement${Number(account.trialRenewalCount) > 1 ? "s" : ""} accordé${Number(account.trialRenewalCount) > 1 ? "s" : ""} : ${Number(account.trialRenewalCount)}.` : ""}</aside>` : ""}
         <div class="subscription-billing-grid">
-            <article><span>Prochaine facturation</span><strong>${escapeHtml(renewalDate || "Date à confirmer")}</strong><small>${account.subscriptionPlan === "paid" ? "Échéance mensuelle programmée" : "Aucune facturation automatique programmée"}</small></article>
+            <article><span>${trialActive ? "Fin de l’essai" : "Prochaine facturation"}</span><strong>${escapeHtml(trialActive ? formatSubscriptionBillingDate(account.trialEndsAt) : renewalDate || "Date à confirmer")}</strong><small>${trialActive ? "Aucune facturation pendant l’essai" : account.subscriptionPlan === "paid" ? "Échéance mensuelle programmée" : "Aucune facturation automatique programmée"}</small></article>
             <article><span>Dernière facture</span><strong>${escapeHtml(latestInvoice?.invoiceNumber || "Aucune facture émise")}</strong><small>${latestInvoice ? `${escapeHtml(formatSubscriptionBillingDate(latestInvoice.issueDate))} · ${latestInvoice.paymentStatus === "paid" ? `Réglée le ${escapeHtml(formatSubscriptionBillingDate(latestInvoice.paidDate))}` : escapeHtml(subscriptionInvoiceStatus(latestInvoice.status))}` : "La première facture apparaîtra ici après son émission."}</small></article>
             <article><span>Échéance de paiement</span><strong>${escapeHtml(latestInvoice ? formatSubscriptionBillingDate(latestInvoice.dueDate) : "—")}</strong><small>${escapeHtml(invoiceBalanceLabel)}</small></article>
             <article><span>Référence de facturation</span><strong>${escapeHtml(account.billingReference || "Non renseignée")}</strong><small>${escapeHtml(account.subscriptionLabel || currentOffer.label)}${account.discountLabel ? ` · ${escapeHtml(account.discountLabel)}` : ""}</small></article>
         </div>
-        <p class="muted subscription-billing-note">Les informations sont synchronisées avec la facturation de l’entreprise. Après l’envoi d’une facture, la prochaine échéance est automatiquement reportée d’un mois.</p>
+        <p class="muted subscription-billing-note">${trialActive ? "À la fin de l’essai, l’accès est suspendu sans conversion automatique en abonnement payant. Contactez le Support Depann’Home Pro pour renouveler l’essai ou activer la facturation." : "Les informations sont synchronisées avec la facturation de l’entreprise. Après l’envoi d’une facture, la prochaine échéance est automatiquement reportée d’un mois."}</p>
     `;
     section.querySelector(".creator-subscription-summary")?.after(billingPanel);
     container.appendChild(section);
@@ -2006,6 +2009,11 @@ function formatSubscriptionBillingDate(value) {
     if (!match) return "";
     const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 12);
     return Number.isNaN(date.getTime()) ? "" : new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "long", year: "numeric" }).format(date);
+}
+
+function subscriptionTrialDaysRemaining(value) {
+    const end = new Date(value).getTime();
+    return Number.isFinite(end) ? Math.max(0, Math.ceil((end - Date.now()) / 86400000)) : 0;
 }
 
 function subscriptionBillingStatus(status) {

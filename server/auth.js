@@ -12,6 +12,7 @@ import { getOrganization } from "./organizations.js";
 import { isRoleAllowedForSubscription, subscriptionRoleAccessMessage } from "./subscription-tiers.js";
 import { hasCompanyEmailWorkspaceAccess, isAdvancedWorkstationTier, supportsConfigurablePcPermissions } from "./workstation-permissions.js";
 import { companySeatState } from "./seat-limits.js";
+import { expireSubscriptionTrials } from "./subscription-trials.js";
 
 const COOKIE_NAME = "depann_home_session";
 const USERNAME_PATTERN = /^[a-z0-9._-]{3,32}$/;
@@ -92,6 +93,7 @@ export function registerAuthRoutes(app) {
         const device = getDeviceDetails(request.body);
         if (!device) return response.status(400).json({ message: "Cet appareil ne peut pas être identifié. Actualisez l’application puis réessayez." });
         const user = username ? await findUserByUsername(username) : null;
+        if (user?.account_owner_id && (await expireSubscriptionTrials(getPool(), user.account_owner_id)).length) user.account_is_active = false;
         const passwordMatches = user?.is_active && user?.account_is_active && await bcrypt.compare(password, user.password_hash);
 
         if (!passwordMatches) {
@@ -817,6 +819,7 @@ export async function authenticateRequest(request, response, next) {
     try {
         const session = jwt.verify(token, getSessionSecret());
         const user = await findUserById(session.sub);
+        if (user?.account_owner_id && (await expireSubscriptionTrials(getPool(), user.account_owner_id)).length) user.account_is_active = false;
         const device = user && await findAuthDevice(user.id, session.deviceId);
         if (!user?.is_active || !user.account_is_active || device?.status !== "approved") throw new Error("Session inactive");
         const currentDevice = requestDeviceIdentity(request);

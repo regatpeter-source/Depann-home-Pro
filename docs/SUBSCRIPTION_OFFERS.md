@@ -60,6 +60,16 @@ Les Postes Admin et Postes administratifs consomment un poste administratif. Le 
 
 Les remises commerciales existantes peuvent toujours être appliquées au total mensuel calculé.
 
+## Essai de 15 jours
+
+- Le Créateur peut activer un essai de 15 jours sur une entreprise disposant d’une offre payante.
+- L’offre, les quotas et le tarif mensuel de référence restent visibles, mais aucune facture d’abonnement n’est créée ou envoyée tant que l’essai est actif.
+- Le Créateur peut renouveler l’essai sans limite prédéfinie. Si l’essai est encore actif, 15 jours sont ajoutés à sa date de fin ; s’il est terminé, une nouvelle période de 15 jours commence immédiatement.
+- La date de fin, le nombre de jours restants et le nombre de renouvellements apparaissent dans la Console Créateur et dans **Paramètres > Offre & abonnement** de l’entreprise.
+- À l’expiration, l’entreprise est suspendue et ses données sont conservées. Elle ne bascule jamais automatiquement vers une facturation payante.
+- Un renouvellement réactive l’entreprise. Les factures cycliques encore en attente ou en échec sont annulées au démarrage ou au renouvellement de l’essai.
+- Chaque activation, renouvellement, expiration et sortie d’essai est historisé côté serveur.
+
 ## Migration
 
 Les comptes existants sont migrés vers Pro afin de ne perdre aucun accès. Lorsqu’un compte est ensuite enregistré depuis la Console Créateur, son tarif est recalculé selon son offre et ses quotas de postes.

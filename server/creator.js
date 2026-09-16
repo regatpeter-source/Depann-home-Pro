@@ -12,6 +12,7 @@ import { loadCompanyStorageUsage, loadCreatorStorageUsage, normalizeStorageQuota
 import { strictDateOnly } from "./date-validation.js";
 import { companySeatState, subscriptionOwnerId } from "./seat-limits.js";
 import { configurePrincipalGroup } from "./groups.js";
+import { activateOrRenewSubscriptionTrial, expireSubscriptionTrials } from "./subscription-trials.js";
 
 const USERNAME_PATTERN = /^[a-z0-9._-]{3,32}$/;
 const MIN_PASSWORD_LENGTH = 12;
@@ -66,7 +67,7 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
         if (billingOwnerId !== String(request.user.accountOwnerId) && !request.user.isGroupAdministrator) return response.status(403).json({ message: "L’abonnement du groupe est géré par son Administrateur principal." });
         const [requestsResult, accountResult, invoiceResult] = await Promise.all([
             getPool().query(`SELECT id,current_tier AS "currentTier",requested_tier AS "requestedTier",requested_pc_seats AS "requestedPcSeats",requested_mobile_seats AS "requestedMobileSeats",status,company_message AS "companyMessage",created_at AS "createdAt",updated_at AS "updatedAt" FROM depannhome_subscription_change_requests WHERE owner_id=$1 ORDER BY created_at DESC LIMIT 20`, [billingOwnerId]),
-            getPool().query(`SELECT subscription_tier AS "subscriptionTier",subscription_label AS "subscriptionLabel",subscription_plan AS "subscriptionPlan",subscription_status AS "subscriptionStatus",TO_CHAR(subscription_renewal_date,'YYYY-MM-DD') AS "subscriptionRenewalDate",billing_reference AS "billingReference",subscription_discount_label AS "discountLabel",subscription_discount_mode AS "discountMode",subscription_discount_value::float AS "discountValue",max_pc_users AS "maxPcUsers",max_technicians AS "maxMobileUsers" FROM depannhome_users WHERE id=$1 AND account_owner_id=id`, [billingOwnerId]),
+            getPool().query(`SELECT subscription_tier AS "subscriptionTier",subscription_label AS "subscriptionLabel",subscription_plan AS "subscriptionPlan",subscription_status AS "subscriptionStatus",TO_CHAR(subscription_renewal_date,'YYYY-MM-DD') AS "subscriptionRenewalDate",trial_started_at AS "trialStartedAt",trial_ends_at AS "trialEndsAt",trial_renewal_count AS "trialRenewalCount",billing_reference AS "billingReference",subscription_discount_label AS "discountLabel",subscription_discount_mode AS "discountMode",subscription_discount_value::float AS "discountValue",max_pc_users AS "maxPcUsers",max_technicians AS "maxMobileUsers" FROM depannhome_users WHERE id=$1 AND account_owner_id=id`, [billingOwnerId]),
             getPool().query(`SELECT invoice.invoice_number AS "invoiceNumber",TO_CHAR(invoice.billing_period,'YYYY-MM-DD') AS "billingPeriod",TO_CHAR(invoice.issue_date,'YYYY-MM-DD') AS "issueDate",TO_CHAR(invoice.due_date,'YYYY-MM-DD') AS "dueDate",invoice.amount_cents AS "amountCents",invoice.net_amount_cents AS "netAmountCents",invoice.status,invoice.sent_at AS "sentAt",invoice.payment_status AS "paymentStatus",invoice.paid_amount_cents AS "paidAmountCents",TO_CHAR(invoice.paid_date,'YYYY-MM-DD') AS "paidDate",invoice.receipt_delivery_status AS "receiptDeliveryStatus",COALESCE(credits.total,0)::integer AS "creditedAmountCents",COALESCE(credits.pending_refund,0)::integer AS "pendingRefundCents",GREATEST(invoice.net_amount_cents-COALESCE(credits.total,0)-invoice.paid_amount_cents,0)::integer AS "outstandingAmountCents" FROM depannhome_subscription_invoices invoice LEFT JOIN LATERAL (SELECT SUM(credit.amount_cents)::integer AS total,SUM(credit.amount_cents) FILTER (WHERE credit.refund_status='pending')::integer AS pending_refund FROM depannhome_subscription_credit_notes credit WHERE credit.source_invoice_id=invoice.id) credits ON TRUE WHERE invoice.account_owner_id=$1 AND invoice.status<>'cancelled' ORDER BY invoice.billing_period DESC,invoice.id DESC LIMIT 1`, [billingOwnerId])
         ]);
         const account = accountResult.rows[0];
@@ -306,6 +307,7 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
         response.status(204).end();
     }));
     app.get("/api/creator/accounts", requireCreator, asyncHandler(async (request, response) => {
+        await expireSubscriptionTrials();
         const { rows } = await getPool().query(`
             SELECT
                 owner.id,
@@ -332,6 +334,9 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
                 owner.subscription_discount_value::float AS "subscriptionDiscountValue",
                 owner.subscription_status AS "subscriptionStatus",
                 TO_CHAR(owner.subscription_renewal_date, 'YYYY-MM-DD') AS "subscriptionRenewalDate",
+                owner.trial_started_at AS "trialStartedAt",
+                owner.trial_ends_at AS "trialEndsAt",
+                owner.trial_renewal_count AS "trialRenewalCount",
                 owner.billing_reference AS "billingReference",
                 owner.creator_note AS "creatorNote",
                 owner.quote_template_policy AS "quoteTemplatePolicy",
@@ -384,6 +389,7 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
         const credentials = sanitizeCredentials(request.body);
         if (!account.ok) return response.status(400).json({ message: account.message });
         if (!credentials.ok) return response.status(400).json({ message: credentials.message });
+        if (account.subscriptionStatus === "trial") return response.status(400).json({ message: "Créez d’abord l’entreprise, puis démarrez son essai de 15 jours depuis sa fiche." });
 
         try {
             const database = getPool(); const connection = await database.connect();
@@ -422,6 +428,7 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
         const owner = await findAccountOwner(database, accountId);
         if (!canManageAccount(owner, request)) return response.status(404).json({ message: "Compte entreprise introuvable." });
         if (owner.is_archived) return response.status(409).json({ message: "Réactivez cette entreprise avant de modifier ses informations." });
+        if (account.subscriptionStatus === "trial" && owner.subscriptionStatus !== "trial") return response.status(400).json({ message: "Utilisez le bouton dédié pour démarrer un essai de 15 jours." });
         const counts = await countActiveSeats(database, accountId);
         const convertsToPartner = request.body?.organization?.interfaceType === "partner";
         if (!convertsToPartner && (account.maxPcUsers < counts.activePcUsers || account.maxTechnicians < counts.activeTechnicians)) {
@@ -436,6 +443,7 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
                     monthly_price_cents AS "monthlyPriceCents",max_pc_users AS "maxPcUsers",max_technicians AS "maxTechnicians",
                     subscription_discount_label AS "discountLabel",subscription_discount_mode AS "discountMode",
                     subscription_discount_value::float AS "discountValue",TO_CHAR(subscription_renewal_date,'YYYY-MM-DD') AS "subscriptionRenewalDate",
+                    subscription_status AS "subscriptionStatus",trial_ends_at AS "trialEndsAt",trial_renewal_count AS "trialRenewalCount",
                     updated_at AS "changeVersion"
                 FROM depannhome_users WHERE id=$1 AND account_owner_id=id FOR UPDATE
             `, [accountId]);
@@ -463,7 +471,10 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
             await synchronizeCompanyProfile(connection, accountId, account.companyProfile, { initializeNetwork: account.subscriptionTier === "pro" });
             await updateOrganization(accountId, request.body?.organization, request.user.sub, connection);
             if (account.isGroup) await configurePrincipalGroup(connection, { ownerId: accountId, companyName: account.companyName, maxCompanies: account.maxGroupCompanies, totalPcSeats: account.maxPcUsers, totalMobileSeats: account.maxTechnicians, actorId: request.user.sub });
-            proration = await prepareSubscriptionProration(connection, {
+            if (ownerBefore.subscriptionStatus === "trial" && account.subscriptionStatus !== "trial") {
+                await connection.query(`INSERT INTO depannhome_subscription_trial_audit(account_owner_id,actor_id,action,previous_ends_at,renewal_count,details) VALUES($1,$2,$3,$4,$5,$6::jsonb)`, [accountId, request.user.sub, account.subscriptionStatus === "active" ? "converted" : "ended", ownerBefore.trialEndsAt, ownerBefore.trialRenewalCount, JSON.stringify({ nextSubscriptionStatus: account.subscriptionStatus })]);
+            }
+            proration = ownerBefore.subscriptionStatus === "trial" || account.subscriptionStatus === "trial" ? null : await prepareSubscriptionProration(connection, {
                 ownerBefore,
                 ownerAfter: {
                     id: accountId, subscriptionPlan: account.subscriptionPlan, subscriptionTier: account.subscriptionTier,
@@ -481,6 +492,15 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
             if (!delivery.sent && !delivery.skipped) console.warn("[subscription-proration] document created but delivery failed", { accountId, proration, message: delivery.message || "Échec d’envoi" });
         }
         response.status(204).end();
+    }));
+
+    app.post("/api/creator/accounts/:accountId/trial", requireCreator, asyncHandler(async (request, response) => {
+        const accountId = positiveId(request.params.accountId);
+        const owner = accountId && await findAccountOwner(getPool(), accountId);
+        if (!canManageAccount(owner, request)) return response.status(404).json({ message: "Entreprise introuvable." });
+        if (isOwnCreatorAccount(owner, request)) return response.status(403).json({ message: "Le compte Créateur ne peut pas être placé en essai." });
+        const trial = await activateOrRenewSubscriptionTrial(accountId, request.user.sub);
+        response.json({ trial, message: trial.action === "activated" ? "Essai de 15 jours activé. Aucune facture ne sera émise pendant cette période." : "Essai renouvelé de 15 jours. Aucune facture ne sera émise pendant cette période." });
     }));
 
     app.patch("/api/creator/accounts/:accountId/activation", requireCreator, asyncHandler(async (request, response) => {
@@ -651,7 +671,8 @@ async function notifyCreatorsOfSubscriptionRequest(changeRequest, owner) {
 async function findAccountOwner(database, id) {
     const { rows } = await database.query(`
         SELECT id, username, is_active, is_archived, max_pc_users AS "maxPcUsers", max_technicians AS "maxTechnicians",
-            subscription_plan AS "subscriptionPlan", subscription_tier AS "subscriptionTier", subscription_status AS "subscriptionStatus"
+            subscription_plan AS "subscriptionPlan", subscription_tier AS "subscriptionTier", subscription_status AS "subscriptionStatus",
+            trial_started_at AS "trialStartedAt",trial_ends_at AS "trialEndsAt",trial_renewal_count AS "trialRenewalCount"
         FROM depannhome_users WHERE id = $1 AND account_owner_id = id
     `, [id]);
     return rows[0] || null;

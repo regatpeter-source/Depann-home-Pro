@@ -69,6 +69,9 @@ export async function initializeDatabase() {
             subscription_discount_value NUMERIC(10,2) NOT NULL DEFAULT 0,
             subscription_status VARCHAR(20) NOT NULL DEFAULT 'active',
             subscription_renewal_date DATE,
+            trial_started_at TIMESTAMPTZ,
+            trial_ends_at TIMESTAMPTZ,
+            trial_renewal_count INTEGER NOT NULL DEFAULT 0 CHECK (trial_renewal_count >= 0),
             billing_reference VARCHAR(100) NOT NULL DEFAULT '',
             creator_note VARCHAR(1000) NOT NULL DEFAULT '',
             quote_template_policy VARCHAR(30) NOT NULL DEFAULT 'company_choice',
@@ -112,6 +115,9 @@ export async function initializeDatabase() {
         ADD COLUMN IF NOT EXISTS subscription_discount_value NUMERIC(10,2) NOT NULL DEFAULT 0,
         ADD COLUMN IF NOT EXISTS subscription_status VARCHAR(20) NOT NULL DEFAULT 'active',
         ADD COLUMN IF NOT EXISTS subscription_renewal_date DATE,
+        ADD COLUMN IF NOT EXISTS trial_started_at TIMESTAMPTZ,
+        ADD COLUMN IF NOT EXISTS trial_ends_at TIMESTAMPTZ,
+        ADD COLUMN IF NOT EXISTS trial_renewal_count INTEGER NOT NULL DEFAULT 0,
         ADD COLUMN IF NOT EXISTS billing_reference VARCHAR(100) NOT NULL DEFAULT '',
         ADD COLUMN IF NOT EXISTS creator_note VARCHAR(1000) NOT NULL DEFAULT '',
         ADD COLUMN IF NOT EXISTS quote_template_policy VARCHAR(30) NOT NULL DEFAULT 'company_choice',
@@ -126,6 +132,23 @@ export async function initializeDatabase() {
     if (tierMigration.rowCount) console.info(`[database] ${tierMigration.rowCount} compte(s) migré(s) vers l’offre Pro.`);
     await database.query("ALTER TABLE depannhome_users DROP CONSTRAINT IF EXISTS depannhome_users_subscription_tier_check");
     await database.query("ALTER TABLE depannhome_users ADD CONSTRAINT depannhome_users_subscription_tier_check CHECK(subscription_tier IN ('basic','basic_plus','pro'))");
+    await database.query("ALTER TABLE depannhome_users DROP CONSTRAINT IF EXISTS depannhome_users_trial_renewal_count_check");
+    await database.query("ALTER TABLE depannhome_users ADD CONSTRAINT depannhome_users_trial_renewal_count_check CHECK(trial_renewal_count >= 0)");
+    await database.query("CREATE INDEX IF NOT EXISTS depannhome_users_active_trial_end_idx ON depannhome_users(trial_ends_at) WHERE subscription_status='trial' AND is_archived=FALSE");
+    await database.query(`
+        CREATE TABLE IF NOT EXISTS depannhome_subscription_trial_audit (
+            id BIGSERIAL PRIMARY KEY,
+            account_owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+            actor_id BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+            action VARCHAR(20) NOT NULL CHECK (action IN ('activated','renewed','expired','ended','converted')),
+            previous_ends_at TIMESTAMPTZ,
+            next_ends_at TIMESTAMPTZ,
+            renewal_count INTEGER NOT NULL DEFAULT 0 CHECK (renewal_count >= 0),
+            details JSONB NOT NULL DEFAULT '{}'::jsonb,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+    `);
+    await database.query("CREATE INDEX IF NOT EXISTS depannhome_subscription_trial_audit_owner_idx ON depannhome_subscription_trial_audit(account_owner_id, created_at DESC)");
     if (!billingPermissionColumn.length) {
         await database.query(`
             UPDATE depannhome_users technician

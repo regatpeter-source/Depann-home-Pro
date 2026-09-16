@@ -636,7 +636,7 @@ function renderSubscriptionSummary() {
     if (!summary) return;
     const activeAccounts = accounts.filter(account => !account.isArchived);
     const paidAccounts = activeAccounts.filter(account => account.subscriptionPlan === "paid");
-    const activePaidAccounts = paidAccounts.filter(account => ["active", "trial", "past_due"].includes(account.subscriptionStatus));
+    const activePaidAccounts = paidAccounts.filter(account => ["active", "past_due"].includes(account.subscriptionStatus));
     const monthlyRevenue = activePaidAccounts.reduce((total, account) => total + subscriptionNetAmountCents(account), 0);
     const pastDue = activeAccounts.filter(account => account.subscriptionStatus === "past_due").length;
     summary.innerHTML = `
@@ -656,7 +656,7 @@ function renderAccountList() {
         <button type="button" class="creator-account${account.isArchived ? " archived" : ""}${String(account.id) === selectedAccountId ? " selected" : ""}" data-account-id="${escapeHtml(account.id)}">
             <strong>${escapeHtml(account.companyName || account.ownerFullName || account.ownerUsername)}</strong>
             <span>${escapeHtml(account.ownerUsername)} · ${account.isArchived ? "Archivée" : account.isActive ? "Active" : "Suspendue"}</span>
-            <em class="creator-subscription-badge ${escapeHtml(account.subscriptionStatus || "active")}">${escapeHtml(subscriptionPlanLabel(account))} · ${escapeHtml(subscriptionStatusLabel(account.subscriptionStatus))}</em>
+            <em class="creator-subscription-badge ${escapeHtml(account.subscriptionStatus || "active")}">${escapeHtml(subscriptionPlanLabel(account))} · ${escapeHtml(subscriptionStatusLabel(account.subscriptionStatus))}${account.subscriptionStatus === "trial" && account.trialEndsAt ? ` · ${trialRemainingLabel(account.trialEndsAt)}` : ""}</em>
             <small>${account.organization?.interfaceType === "group" ? `Mode Groupe · facturation centralisée sur l’entreprise principale · ${account.groupCompanyCount}/${account.maxGroupCompanies} entreprises · ${account.allocatedGroupPcSeats}/${account.maxPcUsers} PC répartis · ${account.allocatedGroupMobileSeats}/${account.maxTechnicians} mobiles répartis` : `${account.activePcUsers}/${account.maxPcUsers} postes administratifs · ${account.activeTechnicians}/${account.maxTechnicians} mobiles`}</small>
         </button>
     `).join("") : `<p class="muted">Aucune entreprise ${accountListMode === "archived" ? "archivée" : "active"}.</p>`}`;
@@ -687,6 +687,7 @@ async function renderAccountDetail(accountId) {
             </div>
             ${renderCompanyProfileFields(account.companyProfile)}
             ${renderSubscriptionFields(account)}
+            ${renderTrialManagement(account, isOwnCreatorAccount)}
             ${renderOrganizationFields(account.organization, account.maxGroupCompanies)}
             ${renderDocumentTemplatePolicyFields(account)}
             ${isOwnCreatorAccount ? '<p class="creator-account-status-note">Le compte Créateur reste actif en permanence.</p>' : account.isArchived ? `<section class="creator-account-status-panel archived"><div><strong>Entreprise archivée</strong><p>Tous les accès sont bloqués, mais les clients, interventions, rapports, documents, écritures et partenariats sont intégralement conservés.${account.archivedAt ? ` Archive créée le ${escapeHtml(formatDateTime(account.archivedAt))}.` : ""}</p></div><button type="button" class="secondary-button" id="creatorRestoreAccount">Réactiver l’entreprise</button></section>` : `<section class="creator-account-status-panel ${account.isActive ? "active" : "suspended"}"><div><strong>${account.isActive ? "Entreprise active" : "Entreprise suspendue"}</strong><p>${account.isActive ? "Les membres peuvent se connecter et utiliser leur espace." : "Les connexions et les sessions en cours sont bloquées. Les données restent conservées."}</p></div><button type="button" class="secondary-button ${account.isActive ? "danger-button" : ""}" id="creatorToggleAccountStatus">${account.isActive ? "Suspendre l’entreprise" : "Réactiver l’entreprise"}</button></section>`}
@@ -719,6 +720,15 @@ async function renderAccountDetail(accountId) {
         const result = await api(`/api/creator/accounts/${encodeURIComponent(accountId)}/activation`, { method: "PATCH", body: JSON.stringify({ isActive: isActivating }) });
         if (!result.ok) { event.currentTarget.disabled = false; return showFeedback(result.message || "Modification du statut impossible.", true); }
         showFeedback(isActivating ? "Entreprise réactivée. Les membres peuvent de nouveau se connecter." : "Entreprise suspendue. Les données sont conservées et les accès sont bloqués.");
+        await loadAccounts(accountId);
+    });
+    workspace.querySelector("#creatorStartOrRenewTrial")?.addEventListener("click", async event => {
+        const renewing = Boolean(account.trialStartedAt);
+        if (!confirm(`${renewing ? "Renouveler" : "Activer"} l’essai de ${account.companyName} pour 15 jours ? Aucune facture d’abonnement ne sera créée ou envoyée pendant l’essai.`)) return;
+        event.currentTarget.disabled = true;
+        const result = await api(`/api/creator/accounts/${encodeURIComponent(accountId)}/trial`, { method: "POST", body: "{}" });
+        if (!result.ok) { event.currentTarget.disabled = false; return showFeedback(result.message || "Activation de l’essai impossible.", true); }
+        showFeedback(result.message || "Période d’essai mise à jour.");
         await loadAccounts(accountId);
     });
     workspace.querySelector("#creatorDeleteAccount")?.addEventListener("click", async () => {
@@ -858,6 +868,7 @@ function fileAsDataUrl(file) {
 function renderSubscriptionFields(account) {
     const tier = ["basic", "basic_plus", "pro"].includes(account.subscriptionTier) ? account.subscriptionTier : "pro";
     const discountMode = account.subscriptionDiscountMode === "percentage" ? "percentage" : "fixed";
+    const statuses = account.subscriptionStatus === "trial" ? ["active", "trial", "past_due", "suspended", "cancelled"] : ["active", "past_due", "suspended", "cancelled"];
     return `
         <fieldset class="creator-subscription-fields"><legend>Abonnement et suivi commercial</legend>
             <div class="form-grid">
@@ -868,13 +879,30 @@ function renderSubscriptionFields(account) {
                 <label>Libellé de la réduction<input name="subscriptionDiscountLabel" maxlength="160" value="${escapeHtml(account.subscriptionDiscountLabel || "")}" placeholder="Ex. Offre d’essai"></label>
                 <label>Type de réduction<select name="subscriptionDiscountMode"><option value="fixed" ${discountMode === "fixed" ? "selected" : ""}>Montant TTC (€)</option><option value="percentage" ${discountMode === "percentage" ? "selected" : ""}>Pourcentage (%)</option></select></label>
                 <label>Valeur de la réduction<input name="subscriptionDiscountValue" type="number" min="0" step="0.01" value="${escapeHtml(account.subscriptionDiscountValue || 0)}"></label>
-                <label>Statut de l’abonnement<select name="subscriptionStatus">${["active", "trial", "past_due", "suspended", "cancelled"].map(status => `<option value="${status}" ${account.subscriptionStatus === status ? "selected" : ""}>${subscriptionStatusLabel(status)}</option>`).join("")}</select></label>
+                <label>Statut de l’abonnement<select name="subscriptionStatus">${statuses.map(status => `<option value="${status}" ${account.subscriptionStatus === status ? "selected" : ""}>${subscriptionStatusLabel(status)}</option>`).join("")}</select><small>L’essai se démarre et se renouvelle uniquement avec le bouton dédié.</small></label>
                 <label>Prochaine échéance<input name="subscriptionRenewalDate" type="date" value="${escapeHtml(account.subscriptionRenewalDate || "")}"></label>
                 <label>Référence de paiement / facture<input name="billingReference" maxlength="100" value="${escapeHtml(account.billingReference || "")}" placeholder="Ex. Virement juillet 2026"></label>
                 <label class="form-wide">Note interne Créateur<textarea name="creatorNote" rows="3" maxlength="1000" placeholder="Suivi commercial, demande client, action à prévoir…">${escapeHtml(account.creatorNote || "")}</textarea></label>
             </div>
         </fieldset>
     `;
+}
+
+function renderTrialManagement(account, isOwnCreatorAccount = false) {
+    if (account.subscriptionPlan !== "paid" || isOwnCreatorAccount) return "";
+    const active = account.subscriptionStatus === "trial" && trialDaysRemaining(account.trialEndsAt) > 0;
+    const hasTrialHistory = Boolean(account.trialStartedAt);
+    return `<section class="creator-account-status-panel ${active ? "active" : "suspended"}"><div><strong>${active ? `Essai actif · ${trialRemainingLabel(account.trialEndsAt)}` : hasTrialHistory ? "Essai terminé ou suspendu" : "Aucun essai démarré"}</strong><p>${active ? `Fin prévue le ${escapeHtml(formatDateTime(account.trialEndsAt))}. Aucune facture d’abonnement pendant cette période.` : "Le Créateur peut accorder une période de 15 jours sans facturation. Une entreprise expirée est réactivée lors du renouvellement."}${hasTrialHistory ? ` Renouvellements effectués : ${Number(account.trialRenewalCount) || 0}.` : ""}</p></div><button type="button" class="secondary-button" id="creatorStartOrRenewTrial" ${account.isArchived ? "disabled" : ""}>${hasTrialHistory ? "Renouveler de 15 jours" : "Activer 15 jours d’essai"}</button></section>`;
+}
+
+function trialDaysRemaining(value) {
+    const end = new Date(value).getTime();
+    return Number.isFinite(end) ? Math.max(0, Math.ceil((end - Date.now()) / 86400000)) : 0;
+}
+
+function trialRemainingLabel(value) {
+    const days = trialDaysRemaining(value);
+    return `${days} jour${days > 1 ? "s" : ""} restant${days > 1 ? "s" : ""}`;
 }
 
 function renderOrganizationFields(organization = {}, maxGroupCompanies = 1) {

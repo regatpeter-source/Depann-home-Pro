@@ -4,6 +4,7 @@ import { isEmailDeliveryConfigured, sendDocumentEmail } from "./email.js";
 import { calculateSubscriptionPriceCents, subscriptionTierConfig } from "./subscription-tiers.js";
 import { createHash } from "node:crypto";
 import { recordHealthSchedulerRun } from "./health-dashboard.js";
+import { expireSubscriptionTrials } from "./subscription-trials.js";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const IBAN_PATTERN = /^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$/;
@@ -572,15 +573,16 @@ export async function processDueSubscriptionInvoices() {
         const lock = await lockConnection.query(`SELECT pg_try_advisory_lock(${SUBSCRIPTION_PROCESSING_LOCK}) AS acquired`);
         lockAcquired = Boolean(lock.rows[0]?.acquired);
         if (!lockAcquired) return { skipped: true, skippedReason: "already_running", created: 0, sent: 0, failed: 0 };
+        const expiredTrialAccountIds = await expireSubscriptionTrials(database);
         const issuer = await getIssuerProfile();
         if (!isCompleteProfile(issuer)) {
             const missingProfileFields = incompleteProfileFields(issuer);
             console.warn("[subscription-invoicing] skipped: platform billing profile is incomplete", { missingProfileFields });
-            return { skipped: true, skippedReason: "incomplete_profile", missingProfileFields, created: 0, sent: 0, failed: 0 };
+            return { skipped: true, skippedReason: "incomplete_profile", missingProfileFields, expiredTrials: expiredTrialAccountIds.length, created: 0, sent: 0, failed: 0 };
         }
         if (!isEmailDeliveryConfigured()) {
             console.warn("[subscription-invoicing] skipped: Brevo SMTP is not configured");
-            return { skipped: true, skippedReason: "smtp_not_configured", created: 0, sent: 0, failed: 0 };
+            return { skipped: true, skippedReason: "smtp_not_configured", expiredTrials: expiredTrialAccountIds.length, created: 0, sent: 0, failed: 0 };
         }
         await cancelSupersededSubscriptionInvoices();
         const { rows: subscriptions } = await database.query(`
@@ -612,7 +614,7 @@ export async function processDueSubscriptionInvoices() {
             if (invoice.created) created += 1;
         }
         const delivery = await deliverPendingInvoices();
-        return { skipped: false, dueAccounts: subscriptions.length, skippedAccounts, created, ...delivery };
+        return { skipped: false, expiredTrials: expiredTrialAccountIds.length, dueAccounts: subscriptions.length, skippedAccounts, created, ...delivery };
     } finally {
         try {
             if (lockAcquired) await lockConnection.query(`SELECT pg_advisory_unlock(${SUBSCRIPTION_PROCESSING_LOCK})`);
