@@ -307,61 +307,14 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
         response.status(204).end();
     }));
     app.get("/api/creator/accounts", requireCreator, asyncHandler(async (request, response) => {
-        await expireSubscriptionTrials();
-        const { rows } = await getPool().query(`
-            SELECT
-                owner.id,
-                owner.company_name AS "companyName",
-                owner.username AS "ownerUsername",
-                owner.full_name AS "ownerFullName",
-                owner.phone AS "ownerPhone",
-                owner.email AS "billingEmail",
-                owner.is_active AS "isActive",
-                owner.is_archived AS "isArchived",
-                owner.archived_at AS "archivedAt",
-                owner.max_pc_users AS "maxPcUsers",
-                owner.max_technicians AS "maxTechnicians",
-                COALESCE(entitlement.max_companies,owner.max_group_companies) AS "maxGroupCompanies",
-                COALESCE((SELECT SUM(allocation.allocated_pc_seats)::int FROM depannhome_group_company_seat_allocations allocation WHERE allocation.group_id=entitlement.group_id),0) AS "allocatedGroupPcSeats",
-                COALESCE((SELECT SUM(allocation.allocated_mobile_seats)::int FROM depannhome_group_company_seat_allocations allocation WHERE allocation.group_id=entitlement.group_id),0) AS "allocatedGroupMobileSeats",
-                COALESCE((SELECT COUNT(*)::int FROM depannhome_group_companies grouped_company WHERE grouped_company.group_id=entitlement.group_id),0) AS "groupCompanyCount",
-                owner.subscription_plan AS "subscriptionPlan",
-                owner.subscription_tier AS "subscriptionTier",
-                owner.subscription_label AS "subscriptionLabel",
-                owner.monthly_price_cents AS "monthlyPriceCents",
-                owner.subscription_discount_label AS "subscriptionDiscountLabel",
-                owner.subscription_discount_mode AS "subscriptionDiscountMode",
-                owner.subscription_discount_value::float AS "subscriptionDiscountValue",
-                owner.subscription_status AS "subscriptionStatus",
-                TO_CHAR(owner.subscription_renewal_date, 'YYYY-MM-DD') AS "subscriptionRenewalDate",
-                owner.trial_started_at AS "trialStartedAt",
-                owner.trial_ends_at AS "trialEndsAt",
-                owner.trial_renewal_count AS "trialRenewalCount",
-                owner.billing_reference AS "billingReference",
-                owner.creator_note AS "creatorNote",
-                owner.quote_template_policy AS "quoteTemplatePolicy",
-                owner.quitus_template_policy AS "quitusTemplatePolicy",
-                owner.report_template_policy AS "reportTemplatePolicy",
-                owner.created_at AS "createdAt",
-                COUNT(DISTINCT member.id) FILTER (WHERE member.role IN ('admin','pc_standard','commercial','accountant') AND member.is_active)::int AS "activePcUsers",
-                COUNT(DISTINCT member.id) FILTER (WHERE member.role IN ('mobile_admin','team_lead','technician') AND member.is_active)::int
-                    + COUNT(DISTINCT cross_device_mobile.id) FILTER (WHERE cross_device_mobile.status='approved')::int AS "activeTechnicians",
-                COUNT(DISTINCT member.id)::int AS "memberCount"
-            FROM depannhome_users owner
-            LEFT JOIN depannhome_users member ON member.account_owner_id = owner.id
-            LEFT JOIN depannhome_users cross_device_account ON cross_device_account.account_owner_id=owner.id AND cross_device_account.role IN ('admin','commercial') AND cross_device_account.is_active
-            LEFT JOIN depannhome_auth_devices cross_device_mobile ON cross_device_mobile.user_id=cross_device_account.id AND cross_device_mobile.device_type='mobile'
-            LEFT JOIN depannhome_group_entitlements entitlement ON entitlement.principal_company_owner_id=owner.id
-            WHERE owner.account_owner_id = owner.id
-                AND NOT EXISTS(SELECT 1 FROM depannhome_group_companies grouped_company JOIN depannhome_group_entitlements grouped_entitlement ON grouped_entitlement.group_id=grouped_company.group_id WHERE grouped_company.company_owner_id=owner.id AND grouped_entitlement.principal_company_owner_id<>owner.id)
-            GROUP BY owner.id,entitlement.group_id,entitlement.max_companies
-            ORDER BY LOWER(COALESCE(NULLIF(owner.company_name, ''), owner.full_name, owner.username))
-        `);
-        const profiles = await loadCompanyProfiles(getPool(), rows.map(account => account.id));
-        const accounts = await Promise.all(rows
-            .filter(account => !isCreatorUsername(account.ownerUsername) || String(account.id) === String(request.user.sub))
-            .map(async account => ({ ...account, companyProfile: profiles.get(String(account.id)) || emptyCompanyProfile(), organization: await getOrganization(account.id) })));
-        response.json({ accounts });
+        response.json({ accounts: await loadCreatorAccounts(request) });
+    }));
+    app.get("/api/creator/accounts/:accountId", requireCreator, asyncHandler(async (request, response) => {
+        const accountId = positiveId(request.params.accountId);
+        if (!accountId) return response.status(400).json({ message: "Compte entreprise invalide." });
+        const account = (await loadCreatorAccounts(request, accountId))[0];
+        if (!account) return response.status(404).json({ message: "Compte entreprise introuvable." });
+        response.json({ account });
     }));
     app.get("/api/creator/accounts/:accountId/organization-history", requireCreator, asyncHandler(async (request, response) => {
         const accountId = positiveId(request.params.accountId);
@@ -669,6 +622,67 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
         if (!result.rowCount) return response.status(404).json({ message: "Accès introuvable." });
         response.status(204).end();
     }));
+}
+
+async function loadCreatorAccounts(request, accountId = null) {
+    await expireSubscriptionTrials(getPool(), accountId);
+    const { rows } = await getPool().query(`
+        SELECT
+            owner.id,
+            owner.company_name AS "companyName",
+            owner.username AS "ownerUsername",
+            owner.full_name AS "ownerFullName",
+            owner.phone AS "ownerPhone",
+            owner.email AS "billingEmail",
+            owner.is_active AS "isActive",
+            owner.is_archived AS "isArchived",
+            owner.archived_at AS "archivedAt",
+            owner.max_pc_users AS "maxPcUsers",
+            owner.max_technicians AS "maxTechnicians",
+            COALESCE(entitlement.max_companies,owner.max_group_companies) AS "maxGroupCompanies",
+            COALESCE((SELECT SUM(allocation.allocated_pc_seats)::int FROM depannhome_group_company_seat_allocations allocation WHERE allocation.group_id=entitlement.group_id),0) AS "allocatedGroupPcSeats",
+            COALESCE((SELECT SUM(allocation.allocated_mobile_seats)::int FROM depannhome_group_company_seat_allocations allocation WHERE allocation.group_id=entitlement.group_id),0) AS "allocatedGroupMobileSeats",
+            COALESCE((SELECT COUNT(*)::int FROM depannhome_group_companies grouped_company WHERE grouped_company.group_id=entitlement.group_id),0) AS "groupCompanyCount",
+            owner.subscription_plan AS "subscriptionPlan",
+            owner.subscription_tier AS "subscriptionTier",
+            owner.subscription_label AS "subscriptionLabel",
+            owner.monthly_price_cents AS "monthlyPriceCents",
+            owner.subscription_discount_label AS "subscriptionDiscountLabel",
+            owner.subscription_discount_mode AS "subscriptionDiscountMode",
+            owner.subscription_discount_value::float AS "subscriptionDiscountValue",
+            owner.subscription_status AS "subscriptionStatus",
+            TO_CHAR(owner.subscription_renewal_date, 'YYYY-MM-DD') AS "subscriptionRenewalDate",
+            owner.trial_started_at AS "trialStartedAt",
+            owner.trial_ends_at AS "trialEndsAt",
+            owner.trial_renewal_count AS "trialRenewalCount",
+            owner.billing_reference AS "billingReference",
+            owner.creator_note AS "creatorNote",
+            owner.quote_template_policy AS "quoteTemplatePolicy",
+            owner.quitus_template_policy AS "quitusTemplatePolicy",
+            owner.report_template_policy AS "reportTemplatePolicy",
+            owner.created_at AS "createdAt",
+            COUNT(DISTINCT member.id) FILTER (WHERE member.role IN ('admin','pc_standard','commercial','accountant') AND member.is_active)::int AS "activePcUsers",
+            COUNT(DISTINCT member.id) FILTER (WHERE member.role IN ('mobile_admin','team_lead','technician') AND member.is_active)::int
+                + COUNT(DISTINCT cross_device_mobile.id) FILTER (WHERE cross_device_mobile.status='approved')::int AS "activeTechnicians",
+            COUNT(DISTINCT member.id)::int AS "memberCount"
+        FROM depannhome_users owner
+        LEFT JOIN depannhome_users member ON member.account_owner_id = owner.id
+        LEFT JOIN depannhome_users cross_device_account ON cross_device_account.account_owner_id=owner.id AND cross_device_account.role IN ('admin','commercial') AND cross_device_account.is_active
+        LEFT JOIN depannhome_auth_devices cross_device_mobile ON cross_device_mobile.user_id=cross_device_account.id AND cross_device_mobile.device_type='mobile'
+        LEFT JOIN depannhome_group_entitlements entitlement ON entitlement.principal_company_owner_id=owner.id
+        WHERE owner.account_owner_id = owner.id
+            AND ($1::bigint IS NULL OR owner.id=$1)
+            AND NOT EXISTS(SELECT 1 FROM depannhome_group_companies grouped_company JOIN depannhome_group_entitlements grouped_entitlement ON grouped_entitlement.group_id=grouped_company.group_id WHERE grouped_company.company_owner_id=owner.id AND grouped_entitlement.principal_company_owner_id<>owner.id)
+        GROUP BY owner.id,entitlement.group_id,entitlement.max_companies
+        ORDER BY LOWER(COALESCE(NULLIF(owner.company_name, ''), owner.full_name, owner.username))
+    `, [accountId]);
+    const visibleAccounts = rows.filter(account => !isCreatorUsername(account.ownerUsername) || String(account.id) === String(request.user.sub));
+    const profiles = await loadCompanyProfiles(getPool(), visibleAccounts.map(account => account.id));
+    return Promise.all(visibleAccounts.map(async account => ({
+        ...account,
+        companyProfile: profiles.get(String(account.id)) || emptyCompanyProfile(),
+        organization: await getOrganization(account.id)
+    })));
 }
 
 async function notifyCreatorsOfSubscriptionRequest(changeRequest, owner) {

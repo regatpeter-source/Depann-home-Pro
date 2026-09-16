@@ -131,3 +131,10 @@ test("PWA versions are synchronized for creator assistance assets", () => {
     assert.match(serviceWorker, /js\/creator\.js\?v=163/);
     assert.match(serviceWorker, /js\/connectors\.js\?v=6/);
 });
+
+test("Creator account detail remains available when managing its own PC members", () => {
+    assert.match(creatorServer, /app\.get\("\/api\/creator\/accounts\/:accountId", requireCreator/);
+    assert.match(creatorServer, /const account = \(await loadCreatorAccounts\(request, accountId\)\)\[0\]/);
+    assert.match(creatorServer, /!isCreatorUsername\(account\.ownerUsername\) \|\| String\(account\.id\) === String\(request\.user\.sub\)/);
+    assert.match(creatorServer, /app\.post\("\/api\/creator\/accounts\/:accountId\/members", requireCreator/);
+});
