@@ -1,3 +1,5 @@
+import { clientSessionUrl } from "./client-session.js?v=6";
+
 const CLIENTS_KEY_PREFIX = "depannHomePro:clients:";
 const QUEUE_KEY_PREFIX = "depannHomePro:clients-sync-queue:";
 const CURSOR_KEY_PREFIX = "depannHomePro:clients-sync-cursor:";
@@ -48,7 +50,7 @@ function connectClientEventStream() {
     if (clientEventSource && clientEventSourceAccountId === accountId) return;
     closeClientEventStream();
     clientEventSourceAccountId = accountId;
-    clientEventSource = new EventSource("/api/clients/events", { withCredentials: true });
+    clientEventSource = new EventSource(clientSessionUrl("/api/clients/events"), { withCredentials: true });
     clientEventSource.addEventListener("client-changed", () => scheduleClientSynchronization(0));
 }
 

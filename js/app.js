@@ -1,5 +1,5 @@
 import { initializeAuthentication, restoreApplicationShell, signOut } from "./auth.js?v=128";
-import { initializeClientSynchronization } from "./client-sync.js?v=130";
+import { initializeClientSynchronization } from "./client-sync.js?v=131";
 import { initializeCollaboration } from "./collaboration.js?v=7";
 import { loadDatabase } from "./data.js?v=59";
 import { initializeNavigation, refreshApplication } from "./navigation.js?v=469";

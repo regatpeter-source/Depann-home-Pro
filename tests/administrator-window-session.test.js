@@ -7,6 +7,7 @@ const appSource = readFileSync(new URL("../js/app.js", import.meta.url), "utf8")
 const clientSessionSource = readFileSync(new URL("../js/client-session.js", import.meta.url), "utf8");
 const authClient = readFileSync(new URL("../js/auth.js", import.meta.url), "utf8");
 const collaborationClient = readFileSync(new URL("../js/collaboration.js", import.meta.url), "utf8");
+const clientSync = readFileSync(new URL("../js/client-sync.js", import.meta.url), "utf8");
 
 test("chaque fenêtre Web ou PWA possède une session cliente distincte", () => {
     assert.match(clientSessionSource, /sessionStorage\.getItem\(STORAGE_KEY\)/);
@@ -41,6 +42,7 @@ test("les ressources natives restent accessibles et les transports API prouvent 
     assert.match(authServer, /request\.query\?\.clientSession/);
     assert.match(clientSessionSource, /export function clientSessionUrl/);
     assert.match(collaborationClient, /new EventSource\(clientSessionUrl\("\/api\/collaboration\/stream"\)\)/);
+    assert.match(clientSync, /new EventSource\(clientSessionUrl\("\/api\/clients\/events"\)/);
     assert.match(collaborationClient, /sendBeacon\(clientSessionUrl\("\/api\/collaboration\/release-session-locks"\)/);
 });
 

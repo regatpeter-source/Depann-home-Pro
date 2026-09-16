@@ -383,6 +383,10 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
         if (owner.is_archived) return response.status(409).json({ message: "Réactivez cette entreprise avant de modifier ses informations." });
         if (account.subscriptionStatus === "trial" && owner.subscriptionStatus !== "trial") return response.status(400).json({ message: "Utilisez le bouton dédié pour démarrer un essai de 15 jours." });
         const counts = await countActiveSeats(database, accountId);
+        if (ownCreatorAccount) {
+            account.maxPcUsers = Math.max(account.maxPcUsers, counts.activePcUsers);
+            account.maxTechnicians = Math.max(account.maxTechnicians, counts.activeTechnicians);
+        }
         const convertsToPartner = request.body?.organization?.interfaceType === "partner";
         if (!convertsToPartner && (account.maxPcUsers < counts.activePcUsers || account.maxTechnicians < counts.activeTechnicians)) {
             return response.status(400).json({ message: "Les limites ne peuvent pas être inférieures aux accès actifs existants." });
@@ -403,6 +407,10 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
             const ownerBefore = lockedOwners[0];
             if (!ownerBefore) throw new Error("Compte entreprise introuvable.");
             const lockedCounts = await countActiveSeats(connection, accountId);
+            if (ownCreatorAccount) {
+                account.maxPcUsers = Math.max(account.maxPcUsers, lockedCounts.activePcUsers);
+                account.maxTechnicians = Math.max(account.maxTechnicians, lockedCounts.activeTechnicians);
+            }
             if (!convertsToPartner && (account.maxPcUsers < lockedCounts.activePcUsers || account.maxTechnicians < lockedCounts.activeTechnicians)) {
                 throw clientError(409, "Les limites ne peuvent pas être inférieures aux accès actifs existants.");
             }
@@ -554,7 +562,7 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
         const client = await database.connect();
         try {
             await client.query("BEGIN");
-            await ensureSeatAvailable(client, accountId, role);
+            await ensureSeatAvailable(client, accountId, role, { autoExpand: isOwnCreatorAccount(owner, request) });
             const { rows } = await client.query(`
                 INSERT INTO depannhome_users (username, password_hash, role, account_owner_id, full_name, phone, email)
                 VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id
@@ -722,7 +730,15 @@ async function countActiveSeats(database, accountId) {
     return { activePcUsers: seats?.activePcUsers || 0, activeTechnicians: seats?.activeMobileUsers || 0 };
 }
 
-async function ensureSeatAvailable(database, accountId, role) {
+export function creatorCapacityForNewMember(seats, role) {
+    const isPcRole = ["admin", "pc_standard", "commercial", "accountant"].includes(role);
+    const maximum = Number(isPcRole ? seats?.maxPcUsers : seats?.maxMobileUsers) || 0;
+    const active = Number(isPcRole ? seats?.activePcUsers : seats?.activeMobileUsers) || 0;
+    if (active < maximum) return null;
+    return isPcRole ? { maxPcUsers: active + 1 } : { maxMobileUsers: active + 1 };
+}
+
+export async function ensureSeatAvailable(database, accountId, role, options = {}) {
     const { rows: owners } = await database.query(`
         SELECT max_pc_users AS "maxPcUsers", max_technicians AS "maxTechnicians", subscription_tier AS "subscriptionTier"
         FROM depannhome_users WHERE id = $1 AND account_owner_id = id FOR UPDATE
@@ -735,6 +751,12 @@ async function ensureSeatAvailable(database, accountId, role) {
     const seats = await companySeatState(database, accountId);
     const maximum = isPcRole ? seats?.maxPcUsers : seats?.maxMobileUsers;
     const active = isPcRole ? counts.activePcUsers : counts.activeTechnicians;
+    if (active >= maximum && options.autoExpand) {
+        const capacity = creatorCapacityForNewMember(seats, role);
+        if (capacity?.maxPcUsers) await database.query("UPDATE depannhome_users SET max_pc_users=GREATEST(max_pc_users,$2),updated_at=NOW() WHERE id=$1 AND account_owner_id=id", [accountId, capacity.maxPcUsers]);
+        if (capacity?.maxMobileUsers) await database.query("UPDATE depannhome_users SET max_technicians=GREATEST(max_technicians,$2),updated_at=NOW() WHERE id=$1 AND account_owner_id=id", [accountId, capacity.maxMobileUsers]);
+        return;
+    }
     if (active >= maximum) throw new Error(`LIMIT:La limite de ${isPcRole ? "postes administratifs" : "postes mobiles"} est atteinte.`);
 }
 

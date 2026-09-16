@@ -723,7 +723,7 @@ async function completeValidatedReport(validation) {
     const attachmentId = validation.attachmentId || "";
     const recipient = current.content?.snapshot?.clientEmail || "";
     await leaveReport();
-    const { synchronizeClients } = await import("./client-sync.js?v=130");
+    const { synchronizeClients } = await import("./client-sync.js?v=131");
     await synchronizeClients();
     window.dispatchEvent(new CustomEvent("depannhome:technical-report-validated", { detail: { reportId, clientId, suppressNavigation: true } }));
     if (clientId) window.dispatchEvent(new CustomEvent("depannhome:open-client", { detail: { clientId } }));
