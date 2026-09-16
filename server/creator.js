@@ -316,6 +316,17 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
         if (!account) return response.status(404).json({ message: "Compte entreprise introuvable." });
         response.json({ account });
     }));
+    app.patch("/api/creator/accounts/:accountId/capacity", requireCreator, asyncHandler(async (request, response) => {
+        const accountId = positiveId(request.params.accountId);
+        const maxPcUsers = positiveLimit(request.body?.maxPcUsers, 1, 1000);
+        const maxTechnicians = positiveLimit(request.body?.maxTechnicians, 0, 5000);
+        if (!accountId || maxPcUsers === null || maxTechnicians === null) return response.status(400).json({ message: "Indiquez des capacités PC et mobiles valides." });
+        const database = getPool();
+        const owner = await findAccountOwner(database, accountId);
+        if (!isOwnCreatorAccount(owner, request)) return response.status(404).json({ message: "Compte Créateur introuvable." });
+        const capacity = await updateCreatorAccountCapacity(database, accountId, { maxPcUsers, maxTechnicians });
+        response.json({ capacity });
+    }));
     app.get("/api/creator/accounts/:accountId/organization-history", requireCreator, asyncHandler(async (request, response) => {
         const accountId = positiveId(request.params.accountId);
         const owner = accountId && await findAccountOwner(getPool(), accountId);
@@ -736,6 +747,26 @@ export function creatorCapacityForNewMember(seats, role) {
     const active = Number(isPcRole ? seats?.activePcUsers : seats?.activeMobileUsers) || 0;
     if (active < maximum) return null;
     return isPcRole ? { maxPcUsers: active + 1 } : { maxMobileUsers: active + 1 };
+}
+
+export async function updateCreatorAccountCapacity(database, accountId, requestedCapacity) {
+    const connection = await database.connect();
+    try {
+        await connection.query("BEGIN");
+        const { rows } = await connection.query("SELECT id FROM depannhome_users WHERE id=$1 AND account_owner_id=id FOR UPDATE", [accountId]);
+        if (!rows[0]) throw clientError(404, "Compte Créateur introuvable.");
+        const counts = await countActiveSeats(connection, accountId);
+        const maxPcUsers = Math.max(Number(requestedCapacity.maxPcUsers), counts.activePcUsers);
+        const maxTechnicians = Math.max(Number(requestedCapacity.maxTechnicians), counts.activeTechnicians);
+        const updated = await connection.query(`UPDATE depannhome_users SET max_pc_users=$2,max_technicians=$3,updated_at=NOW() WHERE id=$1 AND account_owner_id=id RETURNING max_pc_users AS "maxPcUsers",max_technicians AS "maxTechnicians"`, [accountId, maxPcUsers, maxTechnicians]);
+        await connection.query("COMMIT");
+        return updated.rows[0];
+    } catch (error) {
+        await connection.query("ROLLBACK");
+        throw error;
+    } finally {
+        connection.release();
+    }
 }
 
 export async function ensureSeatAvailable(database, accountId, role, options = {}) {

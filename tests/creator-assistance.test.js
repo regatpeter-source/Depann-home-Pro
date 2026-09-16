@@ -121,14 +121,14 @@ test("creator console exposes an explicit assistance workflow and warning banner
 });
 
 test("PWA versions are synchronized for creator assistance assets", () => {
-    assert.match(navigation, /creator\.js\?v=164/);
+    assert.match(navigation, /creator\.js\?v=165/);
     assert.match(index, /css\/style\.css\?v=271/);
-    assert.match(index, /js\/app\.js\?v=441/);
-    assert.match(serviceWorker, /depann-home-pro-v557/);
+    assert.match(index, /js\/app\.js\?v=442/);
+    assert.match(serviceWorker, /depann-home-pro-v558/);
     assert.match(serviceWorker, /css\/style\.css\?v=271/);
-    assert.match(serviceWorker, /js\/app\.js\?v=441/);
-    assert.match(serviceWorker, /js\/navigation\.js\?v=469/);
-    assert.match(serviceWorker, /js\/creator\.js\?v=164/);
+    assert.match(serviceWorker, /js\/app\.js\?v=442/);
+    assert.match(serviceWorker, /js\/navigation\.js\?v=470/);
+    assert.match(serviceWorker, /js\/creator\.js\?v=165/);
     assert.match(serviceWorker, /js\/connectors\.js\?v=6/);
 });
 
@@ -145,4 +145,10 @@ test("Creator account detail remains available when managing its own PC members"
     assert.match(client, /if \(!isOwnCreatorAccount\) bindSubscriptionTier/);
     assert.match(client, /const isPlatformCreator = !subscriptionTier/);
     assert.match(client, /const isPartner = !isPlatformCreator && interfaceType\.value === "partner"/);
+});
+
+test("Creator capacity uses a dedicated endpoint independent from the full company profile", () => {
+    assert.match(creatorServer, /app\.patch\("\/api\/creator\/accounts\/:accountId\/capacity", requireCreator/);
+    assert.match(client, /`\/api\/creator\/accounts\/\$\{encodeURIComponent\(accountId\)\}\/capacity`/);
+    assert.match(client, /isOwnCreatorAccount \? "Enregistrer les capacités" : "Enregistrer l’entreprise"/);
 });

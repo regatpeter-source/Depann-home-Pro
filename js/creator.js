@@ -675,7 +675,7 @@ async function renderAccountDetail(accountId) {
     const accountState = account.isArchived ? "Archivée" : account.isActive ? "Active" : "Suspendue";
     const workspace = document.querySelector("#creatorWorkspace");
     workspace.innerHTML = `
-        <form id="creatorAccountForm" class="creator-form">
+        <form id="creatorAccountForm" class="creator-form" ${isOwnCreatorAccount ? "novalidate" : ""}>
             <div class="form-heading"><div><p class="eyebrow">${escapeHtml(account.organization?.badge || "Entreprise Depann’Home Pro")}</p><h3>${escapeHtml(account.companyName)}</h3></div><span class="creator-state${account.isArchived ? " archived" : account.isActive ? "" : " suspended"}">${accountState}</span></div>
             <div class="form-grid">
                 <label>Raison sociale<input name="companyName" maxlength="160" required value="${escapeHtml(account.companyName)}"></label>
@@ -691,7 +691,7 @@ async function renderAccountDetail(accountId) {
             ${renderOrganizationFields(account.organization, account.maxGroupCompanies)}
             ${renderDocumentTemplatePolicyFields(account)}
             ${isOwnCreatorAccount ? '<p class="creator-account-status-note">Le compte Créateur reste actif en permanence.</p>' : account.isArchived ? `<section class="creator-account-status-panel archived"><div><strong>Entreprise archivée</strong><p>Tous les accès sont bloqués, mais les clients, interventions, rapports, documents, écritures et partenariats sont intégralement conservés.${account.archivedAt ? ` Archive créée le ${escapeHtml(formatDateTime(account.archivedAt))}.` : ""}</p></div><button type="button" class="secondary-button" id="creatorRestoreAccount">Réactiver l’entreprise</button></section>` : `<section class="creator-account-status-panel ${account.isActive ? "active" : "suspended"}"><div><strong>${account.isActive ? "Entreprise active" : "Entreprise suspendue"}</strong><p>${account.isActive ? "Les membres peuvent se connecter et utiliser leur espace." : "Les connexions et les sessions en cours sont bloquées. Les données restent conservées."}</p></div><button type="button" class="secondary-button ${account.isActive ? "danger-button" : ""}" id="creatorToggleAccountStatus">${account.isActive ? "Suspendre l’entreprise" : "Réactiver l’entreprise"}</button></section>`}
-            <div class="creator-form-actions">${account.isArchived ? "" : '<button type="submit" class="secondary-button">Enregistrer l’entreprise</button>'}${isOwnCreatorAccount || account.isArchived ? "" : '<button type="button" class="secondary-button danger-button" id="creatorDeleteAccount">Archiver l’entreprise</button>'}</div>
+            <div class="creator-form-actions">${account.isArchived ? "" : `<button type="submit" class="secondary-button">${isOwnCreatorAccount ? "Enregistrer les capacités" : "Enregistrer l’entreprise"}</button>`}${isOwnCreatorAccount || account.isArchived ? "" : '<button type="button" class="secondary-button danger-button" id="creatorDeleteAccount">Archiver l’entreprise</button>'}</div>
         </form>
         <section class="creator-members-section"><div class="form-heading"><div><p class="eyebrow">SUPER PDP · même intégration</p><h3>Facturation électronique</h3></div><button type="button" class="secondary-button" id="creatorOpenCompanyEInvoicing">Consulter</button></div><p class="muted">Le Créateur consulte l’état de la connexion de cette entreprise sans accéder à ses jetons ni agir à sa place.</p></section>
         <section class="creator-members-section"><div class="form-heading"><div><p class="eyebrow">Traçabilité</p><h3>Historique de l’organisation</h3></div></div><div id="creatorOrganizationHistory"><p class="muted">Chargement de l’historique…</p></div></section>
@@ -702,12 +702,17 @@ async function renderAccountDetail(accountId) {
         event.preventDefault();
         const button = event.currentTarget.querySelector('button[type="submit"]');
         button.disabled = true;
-        const values = await companyProfileFromForm(event.currentTarget);
-        values.organization = organizationFromForm(event.currentTarget);
-        const result = await api(`/api/creator/accounts/${encodeURIComponent(accountId)}`, { method: "PATCH", body: JSON.stringify(values) });
+        const values = isOwnCreatorAccount
+            ? { maxPcUsers: event.currentTarget.elements.maxPcUsers.value, maxTechnicians: event.currentTarget.elements.maxTechnicians.value }
+            : await companyProfileFromForm(event.currentTarget);
+        if (!isOwnCreatorAccount) values.organization = organizationFromForm(event.currentTarget);
+        const endpoint = isOwnCreatorAccount
+            ? `/api/creator/accounts/${encodeURIComponent(accountId)}/capacity`
+            : `/api/creator/accounts/${encodeURIComponent(accountId)}`;
+        const result = await api(endpoint, { method: "PATCH", body: JSON.stringify(values) });
         button.disabled = false;
         if (!result.ok) return showFeedback(result.message || "Mise à jour impossible.", true);
-        showFeedback("Entreprise mise à jour.");
+        showFeedback(isOwnCreatorAccount ? "Capacités du compte Créateur mises à jour." : "Entreprise mise à jour.");
         await loadAccounts(accountId);
     });
     workspace.querySelector("#creatorToggleAccountStatus")?.addEventListener("click", async event => {

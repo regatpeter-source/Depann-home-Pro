@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { creatorCapacityForNewMember, ensureSeatAvailable } from "../server/creator.js";
+import { creatorCapacityForNewMember, ensureSeatAvailable, updateCreatorAccountCapacity } from "../server/creator.js";
 
 test("le compte Créateur étend réellement sa capacité PC lorsque tous les postes sont occupés", () => {
     assert.deepEqual(creatorCapacityForNewMember({ maxPcUsers: 2, activePcUsers: 2 }, "admin"), { maxPcUsers: 3 });
@@ -45,4 +45,26 @@ test("une entreprise cliente pleine conserve son erreur de limite", async () => 
     };
 
     await assert.rejects(() => ensureSeatAvailable(database, 7, "admin"), /LIMIT:La limite de postes administratifs est atteinte/);
+});
+
+test("la route dédiée enregistre les capacités Créateur sans valider la fiche entreprise", async () => {
+    const calls = [];
+    const connection = {
+        async query(sql, parameters) {
+            calls.push({ sql, parameters });
+            if (sql === "BEGIN" || sql === "COMMIT") return { rows: [] };
+            if (sql.includes("SELECT id FROM depannhome_users")) return { rows: [{ id: 1 }] };
+            if (sql.includes("COUNT(DISTINCT member.id)")) return { rows: [{ maxPcUsers: 2, maxMobileUsers: 1, activePcUsers: 3, approvedPcDevices: 0, activeMobileUsers: 2 }] };
+            if (sql.startsWith("UPDATE depannhome_users SET max_pc_users")) return { rows: [{ maxPcUsers: 3, maxTechnicians: 2 }] };
+            throw new Error(`Requête inattendue: ${sql}`);
+        },
+        release() { calls.push({ sql: "RELEASE" }); }
+    };
+
+    const capacity = await updateCreatorAccountCapacity({ async connect() { return connection; } }, 1, { maxPcUsers: 1, maxTechnicians: 0 });
+
+    assert.deepEqual(capacity, { maxPcUsers: 3, maxTechnicians: 2 });
+    const update = calls.find(call => call.sql.startsWith("UPDATE depannhome_users SET max_pc_users"));
+    assert.deepEqual(update.parameters, [1, 3, 2]);
+    assert.deepEqual(calls.slice(-2).map(call => call.sql), ["COMMIT", "RELEASE"]);
 });
