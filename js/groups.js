@@ -19,7 +19,7 @@ export async function renderGroupWorkspace() {
 export function renderGroupActivation(container) {
     const card = document.createElement("article");
     card.className = "brand-card full-card procedure-card group-activation";
-    card.innerHTML = '<p class="eyebrow">Optionnel</p><h2>Mode Groupe / Multi-entreprises</h2><p>Créez un groupe pour piloter plusieurs sociétés strictement indépendantes. Cette activation conserve toutes les données de votre entreprise actuelle et ne partage aucune information automatiquement.</p><form><label>Nom du groupe<input name="name" maxlength="160" placeholder="Ex. Groupe Habitat France" required></label><p class="auth-message"></p><button class="secondary-button">Activer le mode Groupe</button></form>';
+    card.innerHTML = '<p class="eyebrow">Option Pro · activation facultative</p><h2>Mode Groupe / Multi-entreprises</h2><p>L’offre Pro vous permet d’activer explicitement ce mode pour créer et piloter plusieurs sociétés strictement indépendantes. Sans activation, votre interface reste Standard et limitée à une entreprise. Cette opération conserve toutes vos données et ne partage aucune information automatiquement.</p><form><label>Nom du groupe<input name="name" maxlength="160" placeholder="Ex. Groupe Habitat France" required></label><p class="auth-message"></p><button class="secondary-button">Activer le mode Groupe</button></form>';
     card.querySelector("form").addEventListener("submit", async event => {
         event.preventDefault();
         const result = await api("/api/groups/activate", { method: "POST", body: JSON.stringify(Object.fromEntries(new FormData(event.currentTarget))) });

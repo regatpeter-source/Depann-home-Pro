@@ -14,7 +14,7 @@ import {
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const read = relativePath => fs.readFileSync(path.join(root, relativePath), "utf8");
-const user = (role, tier, permissions = {}) => ({ role, organization: { subscriptionTier: tier }, ...permissions });
+const user = (role, tier, permissions = {}) => ({ role, organization: { subscriptionTier: tier, interfaceType: permissions.interfaceType || "standard" }, ...permissions });
 
 test("les autorisations configurables sont limitées aux postes administratifs Basic+ et Pro", () => {
     assert.equal(isAdvancedWorkstationTier("basic"), false);
@@ -28,7 +28,7 @@ test("les autorisations configurables sont limitées aux postes administratifs B
 
 test("un Poste Admin conserve tous les accès sans dépendre des cases", () => {
     const basicAdministrator = user("admin", "basic", { deviceType: "desktop", canAccessBilling: false, canAccessAccounting: false, groupId: "7", canSwitchGroupCompanies: false });
-    const proAdministrator = user("admin", "pro", { deviceType: "desktop", canAccessBilling: false, canAccessAccounting: false, groupId: "7", canSwitchGroupCompanies: false });
+    const proAdministrator = user("admin", "pro", { deviceType: "desktop", interfaceType: "group", canAccessBilling: false, canAccessAccounting: false, groupId: "7", canSwitchGroupCompanies: false });
     assert.equal(hasBillingWorkspaceAccess(basicAdministrator), true);
     assert.equal(hasAccountingWorkspaceAccess(basicAdministrator), true);
     assert.equal(hasGroupCompanySwitchAccess(basicAdministrator), false);
@@ -65,8 +65,9 @@ test("l’accès Groupe exige la case, un groupe actif et une offre compatible",
     assert.equal(hasGroupCompanySwitchAccess(user("pc_standard", "pro", { deviceType: "desktop", groupId: "", canSwitchGroupCompanies: true })), false);
     assert.equal(hasGroupCompanySwitchAccess(user("pc_standard", "pro", { deviceType: "desktop", groupId: "3", canSwitchGroupCompanies: false })), false);
     assert.equal(hasGroupCompanySwitchAccess(user("pc_standard", "basic_plus", { deviceType: "desktop", groupId: "3", canSwitchGroupCompanies: true })), false);
-    assert.equal(hasGroupCompanySwitchAccess(user("pc_standard", "pro", { deviceType: "desktop", groupId: "3", canSwitchGroupCompanies: true })), true);
-    assert.equal(hasGroupCompanySwitchAccess(user("admin", "pro", { deviceType: "mobile", groupId: "3", canSwitchGroupCompanies: true })), false);
+    assert.equal(hasGroupCompanySwitchAccess(user("pc_standard", "pro", { deviceType: "desktop", interfaceType: "standard", groupId: "3", canSwitchGroupCompanies: true })), false);
+    assert.equal(hasGroupCompanySwitchAccess(user("pc_standard", "pro", { deviceType: "desktop", interfaceType: "group", groupId: "3", canSwitchGroupCompanies: true })), true);
+    assert.equal(hasGroupCompanySwitchAccess(user("admin", "pro", { deviceType: "mobile", interfaceType: "group", groupId: "3", canSwitchGroupCompanies: true })), false);
 });
 
 test("la bascule Groupe conserve le rôle réel et sépare administration et sélection", () => {
@@ -89,8 +90,8 @@ test("le stockage et l’interface déclarent les trois permissions", () => {
     const navigation = read("js/navigation.js");
     for (const column of ["can_access_billing", "can_access_accounting", "can_access_company_email", "can_switch_group_companies"]) assert.match(database, new RegExp(column));
     for (const field of ["canAccessBilling", "canAccessAccounting", "canAccessCompanyEmail", "canSwitchGroupCompanies"]) assert.match(navigation, new RegExp(field));
-    assert.match(navigation, /groupCompanyPermissionAvailable = tier === "pro"/);
-    assert.match(auth, /organization\.subscriptionTier === "pro"/);
+    assert.match(navigation, /groupCompanyPermissionAvailable = tier === "pro" && document\.body\.dataset\.organizationInterface === "group"/);
+    assert.match(auth, /organization\.subscriptionTier === "pro" && organization\.interfaceType === "group"/);
     assert.match(navigation, /Le Poste Admin dispose automatiquement de tous les accès/);
 });
 

@@ -449,7 +449,7 @@ export function registerAuthRoutes(app) {
             const canAccessCompanyEmail = configurablePermissions && request.body?.canAccessCompanyEmail === true;
             const canCreateBilling = ["technician", TEAM_LEAD_ROLE].includes(role) && request.body?.canCreateBilling === true;
             const canManageCalendar = role === TEAM_LEAD_ROLE && request.body?.canManageCalendar === true;
-            const canSwitchGroupCompanies = configurablePermissions && organization.subscriptionTier === "pro"
+            const canSwitchGroupCompanies = configurablePermissions && organization.subscriptionTier === "pro" && organization.interfaceType === "group"
                 && Boolean(request.user.groupId) && request.body?.canSwitchGroupCompanies === true;
             const memberDepartments = ["technician", TEAM_LEAD_ROLE].includes(role) ? departments : [];
             const teamIds = ["technician", TEAM_LEAD_ROLE].includes(role)
@@ -493,7 +493,7 @@ export function registerAuthRoutes(app) {
         const canAccessBilling = configurablePermissions && (typeof request.body?.canAccessBilling === "boolean" ? request.body.canAccessBilling : member.canAccessBilling);
         const canAccessAccounting = configurablePermissions && (typeof request.body?.canAccessAccounting === "boolean" ? request.body.canAccessAccounting : member.canAccessAccounting);
         const canAccessCompanyEmail = configurablePermissions && (typeof request.body?.canAccessCompanyEmail === "boolean" ? request.body.canAccessCompanyEmail : member.canAccessCompanyEmail);
-        const canSwitchGroupCompanies = configurablePermissions && organization.subscriptionTier === "pro" && Boolean(request.user.groupId)
+        const canSwitchGroupCompanies = configurablePermissions && organization.subscriptionTier === "pro" && organization.interfaceType === "group" && Boolean(request.user.groupId)
             && (typeof request.body?.canSwitchGroupCompanies === "boolean" ? request.body.canSwitchGroupCompanies : member.canSwitchGroupCompanies);
         const departments = ["technician", TEAM_LEAD_ROLE].includes(member.role) && (Array.isArray(request.body?.departments) || typeof request.body?.department === "string")
             ? cleanDepartments(request.body.departments, request.body.department)

@@ -14,8 +14,10 @@ export async function resolveGroupCompany(userId, activeCompanyId) {
         JOIN depannhome_groups group_data ON group_data.id = home_company.group_id AND group_data.is_active = TRUE
         JOIN depannhome_group_companies company ON company.group_id = group_data.id AND company.is_active = TRUE
         JOIN depannhome_users owner ON owner.id = company.company_owner_id AND owner.is_active = TRUE
-        LEFT JOIN depannhome_billing_profiles profile ON profile.owner_id = owner.id
         JOIN depannhome_users home_owner ON home_owner.id = principal.account_owner_id AND home_owner.is_active = TRUE
+        JOIN depannhome_organizations home_organization ON home_organization.account_owner_id=home_owner.id AND home_organization.interface_type='group'
+        JOIN depannhome_organizations active_organization ON active_organization.account_owner_id=owner.id AND active_organization.interface_type='group'
+        LEFT JOIN depannhome_billing_profiles profile ON profile.owner_id = owner.id
         WHERE principal.id = $1
             AND home_owner.subscription_tier = 'pro'
             AND owner.subscription_tier = 'pro'

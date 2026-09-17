@@ -22,7 +22,8 @@ export function hasAccountingWorkspaceAccess(user) {
 
 export function hasGroupCompanySwitchAccess(user) {
     const tier = user?.organization?.subscriptionTier || user?.subscriptionTier || "";
-    if (!user?.groupId || user.deviceType !== "desktop" || tier !== "pro") return false;
+    const interfaceType = user?.organization?.interfaceType || user?.organizationInterface || "";
+    if (!user?.groupId || user.deviceType !== "desktop" || tier !== "pro" || interfaceType !== "group") return false;
     if (user.role === "admin") return true;
     return CONFIGURABLE_PC_ROLES.has(user.role)
         && user.canSwitchGroupCompanies === true;

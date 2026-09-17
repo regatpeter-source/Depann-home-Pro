@@ -2273,7 +2273,7 @@ async function renderTeamManagement(container) {
     roleField.appendChild(roleInput);
     formFields.appendChild(roleField);
     const advancedPcPermissions = ["basic_plus", "pro"].includes(tier);
-    const groupCompanyPermissionAvailable = tier === "pro" && Boolean(document.body.dataset.groupId);
+    const groupCompanyPermissionAvailable = tier === "pro" && document.body.dataset.organizationInterface === "group" && Boolean(document.body.dataset.groupId);
     const permissionsField = document.createElement("fieldset");
     permissionsField.className = "team-permissions-fieldset";
     permissionsField.innerHTML = `
