@@ -3,6 +3,7 @@ import { clearSearch, getContainer, setPage } from "./ui.js?v=44";
 import { escapeHtml } from "./utils.js?v=44";
 import { renderCreatorConnectors } from "./connectors.js?v=6";
 import { renderHealthDashboard } from "./health-dashboard.js?v=1";
+import { creatorHistoryPresentation } from "./creator-history.js?v=1";
 
 let accounts = [];
 let selectedAccountId = "";
@@ -694,7 +695,7 @@ async function renderAccountDetail(accountId) {
             <div class="creator-form-actions">${account.isArchived ? "" : `<button type="submit" class="secondary-button">${isOwnCreatorAccount ? "Enregistrer les capacités" : "Enregistrer l’entreprise"}</button>`}${isOwnCreatorAccount || account.isArchived ? "" : '<button type="button" class="secondary-button danger-button" id="creatorDeleteAccount">Archiver l’entreprise</button>'}</div>
         </form>
         <section class="creator-members-section"><div class="form-heading"><div><p class="eyebrow">SUPER PDP · même intégration</p><h3>Facturation électronique</h3></div><button type="button" class="secondary-button" id="creatorOpenCompanyEInvoicing">Consulter</button></div><p class="muted">Le Créateur consulte l’état de la connexion de cette entreprise sans accéder à ses jetons ni agir à sa place.</p></section>
-        <section class="creator-members-section"><div class="form-heading"><div><p class="eyebrow">Traçabilité</p><h3>Historique de l’organisation</h3></div></div><div id="creatorOrganizationHistory"><p class="muted">Chargement de l’historique…</p></div></section>
+        <section class="creator-members-section"><div class="form-heading"><div><p class="eyebrow">Traçabilité</p><h3>Historique de l’entreprise</h3><p class="muted">Offre, postes, statut, essai et interface.</p></div></div><div id="creatorOrganizationHistory"><p class="muted">Chargement de l’historique…</p></div></section>
         <section class="creator-members-section"><div class="form-heading"><div><p class="eyebrow">Accès</p><h3>Postes administratifs et mobiles</h3></div>${account.isArchived ? "" : '<div class="creator-form-actions"><button type="button" class="secondary-button auth-outline-button" id="creatorNewPcMember">+ Poste administratif</button><button type="button" class="secondary-button" id="creatorNewTechnician">+ Poste mobile</button></div>'}</div><div id="creatorMembers"><p class="muted">Chargement des accès…</p></div></section>
     `;
     if (account.isArchived) workspace.querySelectorAll("#creatorAccountForm [name]").forEach(field => { field.disabled = true; });
@@ -999,7 +1000,7 @@ async function loadOrganizationHistory(accountId) {
     const result = await api(`/api/creator/accounts/${encodeURIComponent(accountId)}/organization-history`);
     if (!result.ok) { container.innerHTML = '<p class="muted">Historique indisponible.</p>'; return; }
     const history = result.data?.history || [];
-    container.innerHTML = history.length ? `<div class="creator-network-list">${history.map(entry => `<article class="creator-network-company"><div><strong>${escapeHtml(entry.action === "created" ? "Organisation créée" : "Organisation mise à jour")}</strong><p>${escapeHtml(entry.nextValue?.interfaceType || "standard")} · ${escapeHtml(entry.nextValue?.licenseType || "depannhome_standard")}</p><small>${escapeHtml(entry.actorName || "Système")} · ${escapeHtml(formatDateTime(entry.createdAt))}</small></div></article>`).join("")}</div>` : '<p class="muted">Aucune modification de l’organisation enregistrée.</p>';
+    container.innerHTML = history.length ? `<div class="creator-network-list">${history.map(entry => { const presentation = creatorHistoryPresentation(entry); return `<article class="creator-network-company"><div><strong>${escapeHtml(presentation.title)}</strong>${presentation.details.length ? `<p>${presentation.details.map(escapeHtml).join("<br>")}</p>` : ""}<small>${escapeHtml(entry.actorName || "Système")} · ${escapeHtml(formatDateTime(entry.createdAt))}</small></div></article>`; }).join("")}</div>` : '<p class="muted">Aucune modification de l’entreprise enregistrée.</p>';
 }
 
 function renderDocumentTemplatePolicyFields(account) {

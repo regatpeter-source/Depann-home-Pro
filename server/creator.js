@@ -13,6 +13,7 @@ import { strictDateOnly } from "./date-validation.js";
 import { companySeatState, subscriptionOwnerId } from "./seat-limits.js";
 import { configurePrincipalGroup } from "./groups.js";
 import { activateOrRenewSubscriptionTrial, activateSubscriptionTrialInTransaction, convertTrialToPaidSubscription, expireSubscriptionTrials } from "./subscription-trials.js";
+import { recordAccountHistory } from "./account-history.js";
 
 const USERNAME_PATTERN = /^[a-z0-9._-]{3,32}$/;
 const MIN_PASSWORD_LENGTH = 12;
@@ -324,7 +325,7 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
         const database = getPool();
         const owner = await findAccountOwner(database, accountId);
         if (!isOwnCreatorAccount(owner, request)) return response.status(404).json({ message: "Compte Créateur introuvable." });
-        const capacity = await updateCreatorAccountCapacity(database, accountId, { maxPcUsers, maxTechnicians });
+        const capacity = await updateCreatorAccountCapacity(database, accountId, { maxPcUsers, maxTechnicians }, request.user.sub);
         response.json({ capacity });
     }));
     app.get("/api/creator/accounts/:accountId/organization-history", requireCreator, asyncHandler(async (request, response) => {
@@ -410,11 +411,14 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
         try {
             await connection.query("BEGIN");
             const { rows: lockedOwners } = await connection.query(`
-                SELECT id,subscription_plan AS "subscriptionPlan",subscription_tier AS "subscriptionTier",subscription_label AS "subscriptionLabel",
+                SELECT id,company_name AS "companyName",full_name AS "fullName",phone,email AS "billingEmail",max_group_companies AS "maxGroupCompanies",
+                    subscription_plan AS "subscriptionPlan",subscription_tier AS "subscriptionTier",subscription_label AS "subscriptionLabel",
                     monthly_price_cents AS "monthlyPriceCents",max_pc_users AS "maxPcUsers",max_technicians AS "maxTechnicians",
                     subscription_discount_label AS "discountLabel",subscription_discount_mode AS "discountMode",
                     subscription_discount_value::float AS "discountValue",TO_CHAR(subscription_renewal_date,'YYYY-MM-DD') AS "subscriptionRenewalDate",
                     subscription_status AS "subscriptionStatus",trial_ends_at AS "trialEndsAt",trial_renewal_count AS "trialRenewalCount",
+                    billing_reference AS "billingReference",creator_note AS "creatorNote",quote_template_policy AS "quoteTemplatePolicy",is_active AS "isActive",
+                    quitus_template_policy AS "quitusTemplatePolicy",report_template_policy AS "reportTemplatePolicy",
                     updated_at AS "changeVersion"
                 FROM depannhome_users WHERE id=$1 AND account_owner_id=id FOR UPDATE
             `, [accountId]);
@@ -446,6 +450,7 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
             await synchronizeCompanyProfile(connection, accountId, account.companyProfile, { initializeNetwork: account.subscriptionTier === "pro" });
             await updateOrganization(accountId, request.body?.organization, request.user.sub, connection);
             if (account.isGroup) await configurePrincipalGroup(connection, { ownerId: accountId, companyName: account.companyName, maxCompanies: account.maxGroupCompanies, totalPcSeats: account.maxPcUsers, totalMobileSeats: account.maxTechnicians, actorId: request.user.sub });
+            await recordAccountHistory(connection, { accountOwnerId: accountId, actorId: request.user.sub, previous: ownerBefore, next: { ...account, isActive: ownerBefore.isActive } });
             if (ownerBefore.subscriptionStatus === "trial" && account.subscriptionStatus !== "trial") {
                 await connection.query(`INSERT INTO depannhome_subscription_trial_audit(account_owner_id,actor_id,action,previous_ends_at,renewal_count,details) VALUES($1,$2,$3,$4,$5,$6::jsonb)`, [accountId, request.user.sub, account.subscriptionStatus === "active" ? "converted" : "ended", ownerBefore.trialEndsAt, ownerBefore.trialRenewalCount, JSON.stringify({ nextSubscriptionStatus: account.subscriptionStatus })]);
             }
@@ -495,13 +500,17 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
         if (!canManageAccount(owner, request)) return response.status(404).json({ message: "Compte entreprise introuvable." });
         if (isOwnCreatorAccount(owner, request)) return response.status(403).json({ message: "Le compte Créateur ne peut pas être suspendu." });
         if (owner.is_archived) return response.status(409).json({ message: "Utilisez la réactivation d’archive pour remettre cette entreprise en service." });
-        const { rows } = await database.query(`
-            UPDATE depannhome_users
-            SET is_active = $2, updated_at = NOW()
-            WHERE id = $1 AND account_owner_id = id
-            RETURNING is_active AS "isActive"
-        `, [accountId, request.body.isActive]);
-        response.json({ isActive: Boolean(rows[0]?.isActive) });
+        const connection = await database.connect();
+        try {
+            await connection.query("BEGIN");
+            const locked = await connection.query(`SELECT is_active AS "isActive" FROM depannhome_users WHERE id=$1 AND account_owner_id=id FOR UPDATE`, [accountId]);
+            if (!locked.rows[0]) { await connection.query("ROLLBACK"); return response.status(404).json({ message: "Compte entreprise introuvable." }); }
+            if (locked.rows[0].isActive === request.body.isActive) { await connection.query("ROLLBACK"); return response.json({ isActive: locked.rows[0].isActive }); }
+            const { rows } = await connection.query(`UPDATE depannhome_users SET is_active=$2,updated_at=NOW() WHERE id=$1 AND account_owner_id=id RETURNING is_active AS "isActive"`, [accountId, request.body.isActive]);
+            await recordAccountHistory(connection, { accountOwnerId: accountId, actorId: request.user.sub, action: "activation_changed", previous: locked.rows[0], next: { isActive: Boolean(rows[0]?.isActive) } });
+            await connection.query("COMMIT");
+            response.json({ isActive: Boolean(rows[0]?.isActive) });
+        } catch (error) { await connection.query("ROLLBACK"); throw error; } finally { connection.release(); }
     }));
 
     app.delete("/api/creator/accounts/:accountId", requireCreator, asyncHandler(async (request, response) => {
@@ -752,16 +761,17 @@ export function creatorCapacityForNewMember(seats, role) {
     return isPcRole ? { maxPcUsers: active + 1 } : { maxMobileUsers: active + 1 };
 }
 
-export async function updateCreatorAccountCapacity(database, accountId, requestedCapacity) {
+export async function updateCreatorAccountCapacity(database, accountId, requestedCapacity, actorId = null) {
     const connection = await database.connect();
     try {
         await connection.query("BEGIN");
-        const { rows } = await connection.query("SELECT id FROM depannhome_users WHERE id=$1 AND account_owner_id=id FOR UPDATE", [accountId]);
+        const { rows } = await connection.query(`SELECT id,max_pc_users AS "maxPcUsers",max_technicians AS "maxTechnicians" FROM depannhome_users WHERE id=$1 AND account_owner_id=id FOR UPDATE`, [accountId]);
         if (!rows[0]) throw clientError(404, "Compte Créateur introuvable.");
         const counts = await countActiveSeats(connection, accountId);
         const maxPcUsers = Math.max(Number(requestedCapacity.maxPcUsers), counts.activePcUsers);
         const maxTechnicians = Math.max(Number(requestedCapacity.maxTechnicians), counts.activeTechnicians);
         const updated = await connection.query(`UPDATE depannhome_users SET max_pc_users=$2,max_technicians=$3,updated_at=NOW() WHERE id=$1 AND account_owner_id=id RETURNING max_pc_users AS "maxPcUsers",max_technicians AS "maxTechnicians"`, [accountId, maxPcUsers, maxTechnicians]);
+        await recordAccountHistory(connection, { accountOwnerId: accountId, actorId, action: "capacity_changed", previous: rows[0], next: updated.rows[0] });
         await connection.query("COMMIT");
         return updated.rows[0];
     } catch (error) {

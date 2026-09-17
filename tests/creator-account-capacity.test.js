@@ -53,9 +53,10 @@ test("la route dédiée enregistre les capacités Créateur sans valider la fich
         async query(sql, parameters) {
             calls.push({ sql, parameters });
             if (sql === "BEGIN" || sql === "COMMIT") return { rows: [] };
-            if (sql.includes("SELECT id FROM depannhome_users")) return { rows: [{ id: 1 }] };
+            if (sql.includes("SELECT id,max_pc_users")) return { rows: [{ id: 1, maxPcUsers: 2, maxTechnicians: 1 }] };
             if (sql.includes("COUNT(DISTINCT member.id)")) return { rows: [{ maxPcUsers: 2, maxMobileUsers: 1, activePcUsers: 3, approvedPcDevices: 0, activeMobileUsers: 2 }] };
             if (sql.startsWith("UPDATE depannhome_users SET max_pc_users")) return { rows: [{ maxPcUsers: 3, maxTechnicians: 2 }] };
+            if (sql.startsWith("INSERT INTO depannhome_account_audit")) return { rows: [], rowCount: 1 };
             throw new Error(`Requête inattendue: ${sql}`);
         },
         release() { calls.push({ sql: "RELEASE" }); }
@@ -66,5 +67,9 @@ test("la route dédiée enregistre les capacités Créateur sans valider la fich
     assert.deepEqual(capacity, { maxPcUsers: 3, maxTechnicians: 2 });
     const update = calls.find(call => call.sql.startsWith("UPDATE depannhome_users SET max_pc_users"));
     assert.deepEqual(update.parameters, [1, 3, 2]);
+    const audit = calls.find(call => call.sql.startsWith("INSERT INTO depannhome_account_audit"));
+    assert.equal(audit.parameters[2], "capacity_changed");
+    assert.deepEqual(JSON.parse(audit.parameters[3]), { maxPcUsers: 2, maxTechnicians: 1 });
+    assert.deepEqual(JSON.parse(audit.parameters[4]), { maxPcUsers: 3, maxTechnicians: 2 });
     assert.deepEqual(calls.slice(-2).map(call => call.sql), ["COMMIT", "RELEASE"]);
 });

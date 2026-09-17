@@ -58,6 +58,17 @@ CREATE TABLE IF NOT EXISTS depannhome_subscription_trial_audit (
 );
 CREATE INDEX IF NOT EXISTS depannhome_subscription_trial_audit_owner_idx ON depannhome_subscription_trial_audit(account_owner_id, created_at DESC);
 
+CREATE TABLE IF NOT EXISTS depannhome_account_audit (
+    id BIGSERIAL PRIMARY KEY,
+    account_owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    actor_id BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+    action VARCHAR(40) NOT NULL,
+    previous_value JSONB NOT NULL DEFAULT '{}'::jsonb,
+    next_value JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS depannhome_account_audit_owner_created_idx ON depannhome_account_audit(account_owner_id, created_at DESC);
+
 -- Annonce unique administrée par le Créateur et diffusée à toutes les entreprises.
 CREATE TABLE IF NOT EXISTS depannhome_platform_announcements (
     id BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (id),

@@ -31,7 +31,7 @@ test("un upsert sur une organisation existante est audité comme mise à jour", 
     assert.equal(JSON.parse(audits[0][4]).interfaceType, "group");
 });
 
-test("un enregistrement explicite d'une fiche existante écrit Organisation mise à jour", async () => {
+test("un enregistrement sans changement d'organisation n'ajoute pas de faux événement", async () => {
     const audits = [];
     let reads = 0;
     const database = {
@@ -47,8 +47,7 @@ test("un enregistrement explicite d'une fiche existante écrit Organisation mise
     await updateOrganization(24, { interfaceType: "standard", organizationType: "troubleshooting_company", licenseType: "depannhome_standard" }, 1, database);
 
     assert.equal(reads, 1);
-    assert.equal(audits.length, 1);
-    assert.equal(audits[0][2], "updated");
+    assert.equal(audits.length, 0);
 });
 
 test("les anciens doublons created sont affichés comme updated sauf la création initiale", () => {

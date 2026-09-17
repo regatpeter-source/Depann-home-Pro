@@ -56,7 +56,7 @@ export async function createOrganization(ownerId, values = {}, actorId = null, d
         RETURNING id,account_owner_id AS "accountOwnerId",interface_type AS "interfaceType",organization_type AS "organizationType",license_type AS "licenseType",license_features AS "licenseFeatures",created_at AS "createdAt",updated_at AS "updatedAt"`, [ownerId, organization.interfaceType, organization.organizationType, organization.licenseType, JSON.stringify(organization.licenseFeatures)]);
     const tierResult = await database.query("SELECT subscription_tier AS \"subscriptionTier\" FROM depannhome_users WHERE id=$1", [ownerId]);
     const created = publicOrganization({ ...rows[0], subscriptionTier: tierResult.rows[0]?.subscriptionTier });
-    if (actorId) await writeOrganizationAudit(ownerId, actorId, previous ? "updated" : "created", previous ? auditSnapshot(previous) : {}, auditSnapshot(created), database);
+    if (actorId && (!previous || organizationAuditChanged(previous, created))) await writeOrganizationAudit(ownerId, actorId, previous ? "updated" : "created", previous ? auditSnapshot(previous) : {}, auditSnapshot(created), database);
     return created;
 }
 
@@ -69,7 +69,7 @@ export async function updateOrganization(ownerId, values, actorId = null, databa
         licenseType: values.licenseType ?? previous.licenseType,
         licenseFeatures: values.licenseFeatures ?? previous.licenseFeatures
     }, null, database);
-    if (actorId) {
+    if (actorId && organizationAuditChanged(previous, next)) {
         await writeOrganizationAudit(ownerId, actorId, "updated", auditSnapshot(previous), auditSnapshot(next), database);
     }
     return next;
@@ -77,20 +77,29 @@ export async function updateOrganization(ownerId, values, actorId = null, databa
 
 export async function getOrganizationHistory(ownerId, database = getPool()) {
     const { rows } = await database.query(`
-        SELECT audit.id, audit.action, audit.previous_value AS "previousValue", audit.next_value AS "nextValue", audit.created_at AS "createdAt",
-            COALESCE(NULLIF(actor.full_name,''), actor.username, 'Système') AS "actorName"
-        FROM depannhome_organization_audit audit
-        LEFT JOIN depannhome_users actor ON actor.id=audit.actor_id
-        WHERE audit.account_owner_id=$1
-        ORDER BY audit.created_at DESC, audit.id DESC
+        SELECT history.id,history.category,history.action,history."previousValue",history."nextValue",history.details,history."createdAt",history."actorName"
+        FROM (
+            SELECT audit.id,'organization' AS category,audit.action,audit.previous_value AS "previousValue",audit.next_value AS "nextValue",'{}'::jsonb AS details,audit.created_at AS "createdAt",COALESCE(NULLIF(actor.full_name,''),actor.username,'Système') AS "actorName"
+            FROM depannhome_organization_audit audit LEFT JOIN depannhome_users actor ON actor.id=audit.actor_id WHERE audit.account_owner_id=$1
+            UNION ALL
+            SELECT audit.id,'account',audit.action,audit.previous_value,audit.next_value,'{}'::jsonb,audit.created_at,COALESCE(NULLIF(actor.full_name,''),actor.username,'Système')
+            FROM depannhome_account_audit audit LEFT JOIN depannhome_users actor ON actor.id=audit.actor_id WHERE audit.account_owner_id=$1
+            UNION ALL
+            SELECT audit.id,'trial',audit.action,jsonb_build_object('trialEndsAt',audit.previous_ends_at),jsonb_build_object('trialEndsAt',audit.next_ends_at,'renewalCount',audit.renewal_count),audit.details,audit.created_at,COALESCE(NULLIF(actor.full_name,''),actor.username,'Système')
+            FROM depannhome_subscription_trial_audit audit LEFT JOIN depannhome_users actor ON actor.id=audit.actor_id WHERE audit.account_owner_id=$1
+            UNION ALL
+            SELECT audit.id,'lifecycle',audit.action,'{}'::jsonb,'{}'::jsonb,jsonb_build_object('reason',audit.reason),audit.created_at,COALESCE(NULLIF(actor.full_name,''),actor.username,'Système')
+            FROM depannhome_account_lifecycle_audit audit LEFT JOIN depannhome_users actor ON actor.id=audit.actor_id WHERE audit.account_owner_id=$1
+        ) history
+        ORDER BY history."createdAt" DESC,history.id DESC
         LIMIT 100
     `, [ownerId]);
     return normalizeOrganizationHistory(rows);
 }
 
 export function normalizeOrganizationHistory(rows) {
-    const oldestCreatedId = [...rows].reverse().find(entry => entry.action === "created")?.id;
-    return rows.map(entry => entry.action === "created" && entry.id !== oldestCreatedId ? { ...entry, action: "updated" } : entry);
+    const oldestCreatedId = [...rows].reverse().find(entry => (!entry.category || entry.category === "organization") && entry.action === "created")?.id;
+    return rows.map(entry => (!entry.category || entry.category === "organization") && entry.action === "created" && entry.id !== oldestCreatedId ? { ...entry, action: "updated" } : entry);
 }
 
 export function requireOrganizationFeature(feature) {
@@ -179,6 +188,10 @@ async function findStoredOrganization(ownerId, database) {
 
 function auditSnapshot(organization) {
     return { interfaceType: organization.interfaceType, organizationType: organization.organizationType, licenseType: organization.licenseType, licenseFeatures: organization.licenseFeatures };
+}
+
+function organizationAuditChanged(previous, next) {
+    return JSON.stringify(auditSnapshot(previous)) !== JSON.stringify(auditSnapshot(next));
 }
 
 async function writeOrganizationAudit(ownerId, actorId, action, previousValue, nextValue, database = getPool()) {
