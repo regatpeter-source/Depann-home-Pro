@@ -22,45 +22,50 @@ export async function activateOrRenewSubscriptionTrial(accountOwnerId, actorId, 
     const ownsConnection = connection !== database;
     try {
         await connection.query("BEGIN");
-        const { rows } = await connection.query(`
-            SELECT id,username,is_archived,subscription_plan,subscription_status,trial_started_at,trial_ends_at,trial_renewal_count
-            FROM depannhome_users WHERE id=$1 AND account_owner_id=id FOR UPDATE
-        `, [accountOwnerId]);
-        const owner = rows[0];
-        if (!owner) throw trialError(404, "Entreprise introuvable.");
-        if (owner.is_archived) throw trialError(409, "Réactivez l’entreprise avant de démarrer ou renouveler son essai.");
-        if (owner.subscription_plan !== "paid") throw trialError(409, "Un essai concerne uniquement une offre payante Depann’Home Pro.");
-
-        const now = new Date();
-        const firstActivation = !owner.trial_started_at;
-        const action = firstActivation ? "activated" : "renewed";
-        const nextEnd = nextTrialEnd(owner.trial_ends_at, now);
-        const renewalCount = firstActivation ? 0 : Number(owner.trial_renewal_count || 0) + 1;
-        const updated = await connection.query(`
-            UPDATE depannhome_users
-            SET subscription_status='trial',is_active=TRUE,
-                trial_started_at=COALESCE(trial_started_at,NOW()),trial_ends_at=$2,trial_renewal_count=$3,updated_at=NOW()
-            WHERE id=$1
-            RETURNING trial_started_at AS "trialStartedAt",trial_ends_at AS "trialEndsAt",trial_renewal_count AS "trialRenewalCount",subscription_status AS "subscriptionStatus",is_active AS "isActive"
-        `, [accountOwnerId, nextEnd.toISOString(), renewalCount]);
-        const cancelled = await connection.query(`
-            UPDATE depannhome_subscription_invoices
-            SET status='cancelled',last_error='Facture annulée : période d’essai sans facturation.',updated_at=NOW()
-            WHERE account_owner_id=$1 AND status IN ('pending','failed')
-            RETURNING id
-        `, [accountOwnerId]);
-        await connection.query(`
-            INSERT INTO depannhome_subscription_trial_audit(account_owner_id,actor_id,action,previous_ends_at,next_ends_at,renewal_count,details)
-            VALUES($1,$2,$3,$4,$5,$6,$7::jsonb)
-        `, [accountOwnerId, actorId || null, action, owner.trial_ends_at || null, nextEnd.toISOString(), renewalCount, JSON.stringify({ durationDays: SUBSCRIPTION_TRIAL_DAYS, cancelledInvoiceIds: cancelled.rows.map(invoice => String(invoice.id)) })]);
+        const trial = await activateSubscriptionTrialInTransaction(connection, accountOwnerId, actorId);
         await connection.query("COMMIT");
-        return { ...updated.rows[0], action, daysRemaining: trialDaysRemaining(nextEnd, now), cancelledInvoiceCount: cancelled.rowCount };
+        return trial;
     } catch (error) {
         await connection.query("ROLLBACK").catch(() => {});
         throw error;
     } finally {
         if (ownsConnection) connection.release();
     }
+}
+
+export async function activateSubscriptionTrialInTransaction(connection, accountOwnerId, actorId) {
+    const { rows } = await connection.query(`
+        SELECT id,username,is_archived,subscription_plan,subscription_status,trial_started_at,trial_ends_at,trial_renewal_count
+        FROM depannhome_users WHERE id=$1 AND account_owner_id=id FOR UPDATE
+    `, [accountOwnerId]);
+    const owner = rows[0];
+    if (!owner) throw trialError(404, "Entreprise introuvable.");
+    if (owner.is_archived) throw trialError(409, "Réactivez l’entreprise avant de démarrer ou renouveler son essai.");
+    if (owner.subscription_plan !== "paid") throw trialError(409, "Un essai concerne uniquement une offre payante Depann’Home Pro.");
+
+    const now = new Date();
+    const firstActivation = !owner.trial_started_at;
+    const action = firstActivation ? "activated" : "renewed";
+    const nextEnd = nextTrialEnd(owner.trial_ends_at, now);
+    const renewalCount = firstActivation ? 0 : Number(owner.trial_renewal_count || 0) + 1;
+    const updated = await connection.query(`
+        UPDATE depannhome_users
+        SET subscription_status='trial',is_active=TRUE,
+            trial_started_at=COALESCE(trial_started_at,NOW()),trial_ends_at=$2,trial_renewal_count=$3,updated_at=NOW()
+        WHERE id=$1
+        RETURNING trial_started_at AS "trialStartedAt",trial_ends_at AS "trialEndsAt",trial_renewal_count AS "trialRenewalCount",subscription_status AS "subscriptionStatus",is_active AS "isActive"
+    `, [accountOwnerId, nextEnd.toISOString(), renewalCount]);
+    const cancelled = await connection.query(`
+        UPDATE depannhome_subscription_invoices
+        SET status='cancelled',last_error='Facture annulée : période d’essai sans facturation.',updated_at=NOW()
+        WHERE account_owner_id=$1 AND status IN ('pending','failed')
+        RETURNING id
+    `, [accountOwnerId]);
+    await connection.query(`
+        INSERT INTO depannhome_subscription_trial_audit(account_owner_id,actor_id,action,previous_ends_at,next_ends_at,renewal_count,details)
+        VALUES($1,$2,$3,$4,$5,$6,$7::jsonb)
+    `, [accountOwnerId, actorId || null, action, owner.trial_ends_at || null, nextEnd.toISOString(), renewalCount, JSON.stringify({ durationDays: SUBSCRIPTION_TRIAL_DAYS, cancelledInvoiceIds: cancelled.rows.map(invoice => String(invoice.id)) })]);
+    return { ...updated.rows[0], action, daysRemaining: trialDaysRemaining(nextEnd, now), cancelledInvoiceCount: cancelled.rowCount };
 }
 
 export async function expireSubscriptionTrials(database = getPool(), accountOwnerId = null) {

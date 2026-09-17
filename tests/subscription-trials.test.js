@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { convertTrialToPaidSubscription, nextTrialEnd, SUBSCRIPTION_TRIAL_DAYS, trialDaysRemaining } from "../server/subscription-trials.js";
+import { activateSubscriptionTrialInTransaction, convertTrialToPaidSubscription, nextTrialEnd, SUBSCRIPTION_TRIAL_DAYS, trialDaysRemaining } from "../server/subscription-trials.js";
 
 const schema = readFileSync(new URL("../database/schema.sql", import.meta.url), "utf8");
 const migration = readFileSync(new URL("../database/migrations/0019_subscription_trials.sql", import.meta.url), "utf8");
@@ -47,6 +47,33 @@ test("Creator controls trials through a dedicated audited no-billing action", ()
     assert.match(creatorClient, /id="creatorStartOrRenewTrial"/);
     assert.match(creatorClient, /Renouveler de 15 jours/);
     assert.doesNotMatch(creatorClient, /\["active", "trial", "past_due"\]\.includes\(account\.subscriptionStatus\)/);
+});
+
+test("a company can be created directly in trial inside the existing transaction", async () => {
+    const queries = [];
+    const connection = {
+        async query(sql, parameters = []) {
+            queries.push({ sql, parameters });
+            if (/SELECT id,username,is_archived/.test(sql)) return { rows: [{ id: 84, is_archived: false, subscription_plan: "paid", subscription_status: "active", trial_started_at: null, trial_ends_at: null, trial_renewal_count: 0 }] };
+            if (/UPDATE depannhome_users/.test(sql)) return { rows: [{ trialStartedAt: "2026-09-17T00:00:00.000Z", trialEndsAt: "2026-10-02T00:00:00.000Z", trialRenewalCount: 0, subscriptionStatus: "trial", isActive: true }] };
+            if (/UPDATE depannhome_subscription_invoices/.test(sql)) return { rows: [], rowCount: 0 };
+            return { rows: [], rowCount: 0 };
+        }
+    };
+
+    const trial = await activateSubscriptionTrialInTransaction(connection, 84, 1);
+
+    assert.equal(trial.subscriptionStatus, "trial");
+    assert.equal(trial.action, "activated");
+    assert.ok(queries.some(query => /subscription_status='trial',is_active=TRUE/.test(query.sql)));
+    assert.ok(queries.some(query => /depannhome_subscription_trial_audit/.test(query.sql)));
+    assert.equal(queries.some(query => query.sql === "BEGIN" || query.sql === "COMMIT"), false);
+    const creation = creatorServer.slice(creatorServer.indexOf('app.post("/api/creator/accounts"'), creatorServer.indexOf('app.patch("/api/creator/accounts/:accountId"'));
+    assert.match(creation, /activateSubscriptionTrialInTransaction\(connection, id, request\.user\.sub\)/);
+    assert.ok(creation.indexOf("activateSubscriptionTrialInTransaction") < creation.indexOf('connection.query("COMMIT")'));
+    assert.match(creatorClient, /name="startWithTrial"/);
+    assert.match(creatorClient, /Aucune facture d’abonnement ne sera créée ou envoyée pendant ces 15 jours/);
+    assert.match(creatorClient, /L’essai de 15 jours est actif, sans facturation pendant cette période/);
 });
 
 test("expired trials suspend access without automatically starting paid billing", () => {

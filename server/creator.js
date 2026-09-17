@@ -12,7 +12,7 @@ import { loadCompanyStorageUsage, loadCreatorStorageUsage, normalizeStorageQuota
 import { strictDateOnly } from "./date-validation.js";
 import { companySeatState, subscriptionOwnerId } from "./seat-limits.js";
 import { configurePrincipalGroup } from "./groups.js";
-import { activateOrRenewSubscriptionTrial, convertTrialToPaidSubscription, expireSubscriptionTrials } from "./subscription-trials.js";
+import { activateOrRenewSubscriptionTrial, activateSubscriptionTrialInTransaction, convertTrialToPaidSubscription, expireSubscriptionTrials } from "./subscription-trials.js";
 
 const USERNAME_PATTERN = /^[a-z0-9._-]{3,32}$/;
 const MIN_PASSWORD_LENGTH = 12;
@@ -351,9 +351,11 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
     app.post("/api/creator/accounts", requireCreator, asyncHandler(async (request, response) => {
         const account = sanitizeAccount(request.body, true);
         const credentials = sanitizeCredentials(request.body);
+        const startWithTrial = request.body?.startWithTrial === true;
         if (!account.ok) return response.status(400).json({ message: account.message });
         if (!credentials.ok) return response.status(400).json({ message: credentials.message });
         if (account.subscriptionStatus === "trial") return response.status(400).json({ message: "Créez d’abord l’entreprise, puis démarrez son essai de 15 jours depuis sa fiche." });
+        if (startWithTrial && account.subscriptionPlan !== "paid") return response.status(400).json({ message: "La période d’essai concerne uniquement une offre payante Depann’Home Pro." });
 
         try {
             const database = getPool(); const connection = await database.connect();
@@ -373,8 +375,9 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
                 await synchronizeCompanyProfile(connection, id, account.companyProfile, { initializeNetwork: account.subscriptionTier === "pro" });
                 await createOrganization(id, request.body?.organization, request.user.sub, connection);
                 if (account.isGroup) await configurePrincipalGroup(connection, { ownerId: id, companyName: account.companyName, maxCompanies: account.maxGroupCompanies, totalPcSeats: account.maxPcUsers, totalMobileSeats: account.maxTechnicians, actorId: request.user.sub });
+                const trial = startWithTrial ? await activateSubscriptionTrialInTransaction(connection, id, request.user.sub) : null;
                 await connection.query("COMMIT");
-                response.status(201).json({ id: String(id) });
+                response.status(201).json({ id: String(id), trial });
             } catch (error) { await connection.query("ROLLBACK"); throw error; } finally { connection.release(); }
         } catch (error) {
             if (error.code === "23505") return response.status(409).json({ message: "Cet identifiant est déjà utilisé." });

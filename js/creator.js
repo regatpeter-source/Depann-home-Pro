@@ -809,6 +809,7 @@ function renderAccountForm() {
             </div>
             ${renderCompanyProfileFields()}
             ${renderSubscriptionFields({ subscriptionTier: "basic", subscriptionPlan: "paid", subscriptionLabel: "Basic", monthlyPriceCents: 2500, subscriptionDiscountLabel: "", subscriptionDiscountMode: "fixed", subscriptionDiscountValue: 0, subscriptionStatus: "active", subscriptionRenewalDate: "", billingReference: "", creatorNote: "" })}
+            <section class="creator-account-status-panel active" data-creation-trial-panel><div><strong>Essai gratuit de 15 jours</strong><p>Si cette option est activée, l’entreprise est créée directement en essai. Aucune facture d’abonnement ne sera créée ou envoyée pendant ces 15 jours.</p></div><label class="creator-switch">Démarrer avec 15 jours d’essai<input name="startWithTrial" type="checkbox" checked><span>À la fin, l’accès sera suspendu sans démarrage automatique de la facturation.</span></label></section>
             ${renderOrganizationFields({}, 2)}
             ${renderDocumentTemplatePolicyFields({ quoteTemplatePolicy: "company_choice", quitusTemplatePolicy: "company_choice", reportTemplatePolicy: "company_choice" })}
             <div class="creator-form-actions"><button type="submit" class="secondary-button">Créer l’entreprise</button></div>
@@ -816,19 +817,34 @@ function renderAccountForm() {
     `;
     bindSubscriptionTier(document.querySelector("#creatorNewAccountForm"));
     bindOrganizationInterface(document.querySelector("#creatorNewAccountForm"));
+    bindCreationTrial(document.querySelector("#creatorNewAccountForm"));
     document.querySelector("#creatorNewAccountForm").addEventListener("submit", async event => {
         event.preventDefault();
         const button = event.currentTarget.querySelector('button[type="submit"]');
         button.disabled = true;
         const values = await companyProfileFromForm(event.currentTarget);
+        values.startWithTrial = event.currentTarget.elements.startWithTrial.checked;
         values.organization = organizationFromForm(event.currentTarget);
         const result = await api("/api/creator/accounts", { method: "POST", body: JSON.stringify(values) });
         button.disabled = false;
         if (!result.ok) return showFeedback(result.message || "Création impossible.", true);
         selectedAccountId = result.data.id;
-        showFeedback("Organisation et Poste Admin créés.");
+        showFeedback(values.startWithTrial ? "Organisation et Poste Admin créés. L’essai de 15 jours est actif, sans facturation pendant cette période." : "Organisation et Poste Admin créés. L’abonnement payant est actif.");
         await loadAccounts(selectedAccountId);
     });
+}
+
+function bindCreationTrial(form) {
+    const trial = form.elements.startWithTrial;
+    const panel = form.querySelector("[data-creation-trial-panel]");
+    const update = () => {
+        const freePartner = form.elements.organizationInterfaceType?.value === "partner";
+        trial.disabled = freePartner;
+        if (freePartner) trial.checked = false;
+        panel.hidden = freePartner;
+    };
+    form.addEventListener("subscription-context-change", update);
+    update();
 }
 
 function renderCompanyProfileFields(profile = {}) {
