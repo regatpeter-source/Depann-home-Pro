@@ -50,12 +50,13 @@ export async function getOrganization(ownerId, database = getPool()) {
 export async function createOrganization(ownerId, values = {}, actorId = null, database = getPool()) {
     const organization = sanitizeOrganization(values);
     if (!organization.ok) throw organizationError(organization.message);
+    const previous = actorId ? await findStoredOrganization(ownerId, database) : null;
     const { rows } = await database.query(`INSERT INTO depannhome_organizations(account_owner_id,interface_type,organization_type,license_type,license_features)
         VALUES($1,$2,$3,$4,$5::jsonb) ON CONFLICT(account_owner_id) DO UPDATE SET interface_type=EXCLUDED.interface_type,organization_type=EXCLUDED.organization_type,license_type=EXCLUDED.license_type,license_features=EXCLUDED.license_features,updated_at=NOW()
         RETURNING id,account_owner_id AS "accountOwnerId",interface_type AS "interfaceType",organization_type AS "organizationType",license_type AS "licenseType",license_features AS "licenseFeatures",created_at AS "createdAt",updated_at AS "updatedAt"`, [ownerId, organization.interfaceType, organization.organizationType, organization.licenseType, JSON.stringify(organization.licenseFeatures)]);
     const tierResult = await database.query("SELECT subscription_tier AS \"subscriptionTier\" FROM depannhome_users WHERE id=$1", [ownerId]);
     const created = publicOrganization({ ...rows[0], subscriptionTier: tierResult.rows[0]?.subscriptionTier });
-    if (actorId) await writeOrganizationAudit(ownerId, actorId, "created", {}, auditSnapshot(created), database);
+    if (actorId) await writeOrganizationAudit(ownerId, actorId, previous ? "updated" : "created", previous ? auditSnapshot(previous) : {}, auditSnapshot(created), database);
     return created;
 }
 
@@ -68,14 +69,14 @@ export async function updateOrganization(ownerId, values, actorId = null, databa
         licenseType: values.licenseType ?? previous.licenseType,
         licenseFeatures: values.licenseFeatures ?? previous.licenseFeatures
     }, null, database);
-    if (actorId && JSON.stringify(auditSnapshot(previous)) !== JSON.stringify(auditSnapshot(next))) {
+    if (actorId) {
         await writeOrganizationAudit(ownerId, actorId, "updated", auditSnapshot(previous), auditSnapshot(next), database);
     }
     return next;
 }
 
-export async function getOrganizationHistory(ownerId) {
-    const { rows } = await getPool().query(`
+export async function getOrganizationHistory(ownerId, database = getPool()) {
+    const { rows } = await database.query(`
         SELECT audit.id, audit.action, audit.previous_value AS "previousValue", audit.next_value AS "nextValue", audit.created_at AS "createdAt",
             COALESCE(NULLIF(actor.full_name,''), actor.username, 'Système') AS "actorName"
         FROM depannhome_organization_audit audit
@@ -84,7 +85,12 @@ export async function getOrganizationHistory(ownerId) {
         ORDER BY audit.created_at DESC, audit.id DESC
         LIMIT 100
     `, [ownerId]);
-    return rows;
+    return normalizeOrganizationHistory(rows);
+}
+
+export function normalizeOrganizationHistory(rows) {
+    const oldestCreatedId = [...rows].reverse().find(entry => entry.action === "created")?.id;
+    return rows.map(entry => entry.action === "created" && entry.id !== oldestCreatedId ? { ...entry, action: "updated" } : entry);
 }
 
 export function requireOrganizationFeature(feature) {
@@ -164,6 +170,11 @@ function sanitizeOrganization(values) {
 
 function defaultOrganization(ownerId = "") {
     return publicOrganization({ accountOwnerId: ownerId, interfaceType: "standard", organizationType: "troubleshooting_company", licenseType: "depannhome_standard", subscriptionTier: "pro", licenseFeatures: {} });
+}
+
+async function findStoredOrganization(ownerId, database) {
+    const { rows } = await database.query(`SELECT organization.id,organization.account_owner_id AS "accountOwnerId",organization.interface_type AS "interfaceType",organization.organization_type AS "organizationType",organization.license_type AS "licenseType",organization.license_features AS "licenseFeatures",owner.subscription_tier AS "subscriptionTier",organization.created_at AS "createdAt",organization.updated_at AS "updatedAt" FROM depannhome_organizations organization JOIN depannhome_users owner ON owner.id=organization.account_owner_id WHERE organization.account_owner_id=$1`, [ownerId]);
+    return rows[0] ? publicOrganization(rows[0]) : null;
 }
 
 function auditSnapshot(organization) {

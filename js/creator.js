@@ -999,7 +999,7 @@ async function loadOrganizationHistory(accountId) {
     const result = await api(`/api/creator/accounts/${encodeURIComponent(accountId)}/organization-history`);
     if (!result.ok) { container.innerHTML = '<p class="muted">Historique indisponible.</p>'; return; }
     const history = result.data?.history || [];
-    container.innerHTML = history.length ? `<div class="creator-network-list">${history.map(entry => `<article class="creator-network-company"><div><strong>${escapeHtml(entry.action === "created" ? "Organisation créée" : "Interface ou licence modifiée")}</strong><p>${escapeHtml(entry.nextValue?.interfaceType || "standard")} · ${escapeHtml(entry.nextValue?.licenseType || "depannhome_standard")}</p><small>${escapeHtml(entry.actorName || "Système")} · ${escapeHtml(formatDateTime(entry.createdAt))}</small></div></article>`).join("")}</div>` : '<p class="muted">Aucune modification d’interface ou de licence enregistrée.</p>';
+    container.innerHTML = history.length ? `<div class="creator-network-list">${history.map(entry => `<article class="creator-network-company"><div><strong>${escapeHtml(entry.action === "created" ? "Organisation créée" : "Organisation mise à jour")}</strong><p>${escapeHtml(entry.nextValue?.interfaceType || "standard")} · ${escapeHtml(entry.nextValue?.licenseType || "depannhome_standard")}</p><small>${escapeHtml(entry.actorName || "Système")} · ${escapeHtml(formatDateTime(entry.createdAt))}</small></div></article>`).join("")}</div>` : '<p class="muted">Aucune modification de l’organisation enregistrée.</p>';
 }
 
 function renderDocumentTemplatePolicyFields(account) {
