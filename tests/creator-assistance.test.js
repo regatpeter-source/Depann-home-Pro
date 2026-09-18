@@ -85,15 +85,32 @@ test("la co-navigation est consentie, isolée et ne transmet aucun contenu méti
     assert.match(server, /POST \/api\/collaboration\/support-cobrowse/);
     assert.match(server, /request\.user\.isSupportControl/);
     assert.match(server, /broadcastOwnerEvent\(getAccountOwnerId\(request\), "support_cobrowse"/);
-    assert.match(server, /SUPPORT_COBROWSE_EVENTS = new Set\(\["route", "cursor", "click", "scroll", "follow"\]\)/);
+    assert.match(server, /SUPPORT_COBROWSE_EVENTS = new Set\(\["route", "cursor", "click", "scroll", "follow", "action", "field", "dialog"\]\)/);
     assert.match(server, /recent\.length >= 20/);
     assert.doesNotMatch(server.slice(server.indexOf("function sanitizeCobrowseEvent")), /innerHTML|\.value|request\.body\?\.(?:text|content|email|password)/);
-    assert.match(collaborationClient, /Suivre le Support/);
+    assert.match(collaborationClient, /Suivre automatiquement/);
     assert.match(collaborationClient, /event\.key === "Escape"/);
     assert.match(collaborationClient, /input, textarea, select, \[contenteditable=true\], \[data-sensitive\]/);
     assert.match(collaborationClient, /depannhome:support-follow-route/);
     assert.doesNotMatch(collaborationClient, /dispatchEvent\(new MouseEvent|\.click\(\)/);
     assert.match(navigation, /\["documents", "personalization"\]\.includes\(section\)/);
+});
+
+test("l’entreprise voit automatiquement toutes les actions non sensibles du Support", () => {
+    assert.match(collaborationClient, /nextSessionId !== activeAssistanceSessionId\) \{ followingSupport = true/);
+    assert.match(collaborationClient, /Actions du Support en direct/);
+    assert.match(collaborationClient, /aria-live="polite"/);
+    assert.match(collaborationClient, /Page « \$\{area\} » ouverte/);
+    assert.match(collaborationClient, /Fenêtre ouverte dans/);
+    assert.match(collaborationClient, /Champ utilisé dans .+contenu masqué/);
+    assert.match(collaborationClient, /supportActivities = supportActivities\.slice\(-50\)/);
+    assert.match(server, /broadcastSupportOperation\(request, method, path, response\.statusCode, outcome\)/);
+    assert.match(server, /type: "operation"/);
+    assert.match(server, /function supportOperationArea/);
+    const liveOperation = server.slice(server.indexOf("async function broadcastSupportOperation"), server.indexOf("function supportOperationArea"));
+    assert.doesNotMatch(liveOperation, /request\.body|request\.query|request\.params|password|payload/);
+    const broadcastPayload = liveOperation.slice(liveOperation.indexOf('type: "operation"'));
+    assert.doesNotMatch(broadcastPayload, /\bpath\b|\burl\b/);
 });
 
 test("l’entreprise ciblée accepte ou refuse depuis une notification Support ouvrable", () => {
@@ -216,12 +233,12 @@ test("creator console exposes an explicit assistance workflow and warning banner
 
 test("PWA versions are synchronized for creator assistance assets", () => {
     assert.match(navigation, /creator\.js\?v=170/);
-    assert.match(index, /css\/style\.css\?v=278/);
-    assert.match(index, /js\/app\.js\?v=458/);
-    assert.match(serviceWorker, /depann-home-pro-v575/);
-    assert.match(serviceWorker, /css\/style\.css\?v=278/);
-    assert.match(serviceWorker, /js\/app\.js\?v=458/);
-    assert.match(serviceWorker, /js\/collaboration\.js\?v=11/);
+    assert.match(index, /css\/style\.css\?v=279/);
+    assert.match(index, /js\/app\.js\?v=459/);
+    assert.match(serviceWorker, /depann-home-pro-v576/);
+    assert.match(serviceWorker, /css\/style\.css\?v=279/);
+    assert.match(serviceWorker, /js\/app\.js\?v=459/);
+    assert.match(serviceWorker, /js\/collaboration\.js\?v=12/);
     assert.match(serviceWorker, /js\/navigation\.js\?v=484/);
     assert.match(serviceWorker, /js\/creator\.js\?v=170/);
     assert.match(serviceWorker, /js\/connectors\.js\?v=6/);

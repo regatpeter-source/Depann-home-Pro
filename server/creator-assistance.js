@@ -22,8 +22,9 @@ const SUPPORT_CONTROL_READABLE_SENSITIVE_PREFIXES = ["/api/accounting", "/api/pa
 const SUPPORT_CONTROL_BLOCKED_READ_PREFIXES = ["/api/accounting/export", "/api/partner-email/oauth"];
 const SUPPORT_CONTROL_WRITABLE_PREFIXES = ["/api/clients", "/api/calendar", "/api/technical-reports", "/api/collaboration", "/api/accounting", "/api/partner-email", "/api/partner-missions", "/api/partner-dialogue", "/api/billing", "/api/document-templates"];
 const SUPPORT_CONTROL_ALLOWED_EXACT = new Set(["GET /api/auth/session", "POST /api/auth/logout", "POST /api/creator/assistance/control/exit", "POST /api/collaboration/support-cobrowse"]);
-const SUPPORT_COBROWSE_EVENTS = new Set(["route", "cursor", "click", "scroll", "follow"]);
+const SUPPORT_COBROWSE_EVENTS = new Set(["route", "cursor", "click", "scroll", "follow", "action", "field", "dialog"]);
 const SUPPORT_COBROWSE_ROUTES = new Set(["home", "clients", "billing", "accounting", "partner-missions", "company-email", "calendar", "technical-reports", "settings"]);
+const SUPPORT_COBROWSE_ACTIONS = new Set(["button", "link", "control"]);
 const supportCobrowseRate = new Map();
 
 export async function initializeCreatorAssistance() {
@@ -124,6 +125,7 @@ export async function enforceCreatorAssistanceControl(request, response, next) {
         const outcome = response.statusCode < 400 ? "success" : "failure";
         if (mandatoryActivityId) void completeSupportActivity(mandatoryActivityId, response.statusCode, outcome);
         else void recordSupportActivity(request.user.supportSessionId, request.user.sub, getAccountOwnerId(request), method, path, response.statusCode, outcome);
+        if (path !== "/api/collaboration/support-cobrowse") void broadcastSupportOperation(request, method, path, response.statusCode, outcome);
     });
     return next();
 }
@@ -596,7 +598,39 @@ function sanitizeCobrowseEvent(value) {
     if (type === "cursor" || type === "click") return { type, route, x: number(value.x), y: number(value.y) };
     if (type === "scroll") return { type, route, y: number(value.y) };
     if (type === "follow") return { type, following: value.following === true };
+    if (type === "action") return { type, route, action: SUPPORT_COBROWSE_ACTIONS.has(value.action) ? value.action : "control" };
+    if (type === "field" || type === "dialog") return { type, route };
     return { type, route };
+}
+
+async function broadcastSupportOperation(request, method, path, statusCode, outcome) {
+    const sessionId = validUuid(request.user?.supportSessionId);
+    if (!sessionId) return;
+    const area = supportOperationArea(path);
+    if (!area) return;
+    try {
+        await broadcastOwnerEvent(getAccountOwnerId(request), "support_cobrowse", {
+            sessionId,
+            supportName: request.user.fullName || "Support Depann’Home Pro",
+            type: "operation",
+            area,
+            operation: ["GET", "HEAD", "OPTIONS"].includes(method) ? "read" : "write",
+            outcome,
+            statusCode: Number(statusCode) || 0,
+            at: new Date().toISOString()
+        });
+    } catch (error) {
+        console.error("[creator-assistance] live support activity unavailable", { sessionId, code: error.code || error.name || "BROADCAST_ERROR" });
+    }
+}
+
+function supportOperationArea(path) {
+    const areas = [
+        ["/api/clients", "clients"], ["/api/calendar", "calendar"], ["/api/technical-reports", "technical-reports"],
+        ["/api/accounting", "accounting"], ["/api/billing", "billing"], ["/api/document-templates", "settings"],
+        ["/api/partner-email", "company-email"], ["/api/partner-missions", "partner-missions"], ["/api/partner-dialogue", "partner-missions"]
+    ];
+    return areas.find(([prefix]) => path === prefix || path.startsWith(`${prefix}/`))?.[1] || "";
 }
 
 function allowSupportCobrowseEvent(sessionId) {
