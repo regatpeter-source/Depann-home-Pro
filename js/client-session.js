@@ -1,4 +1,4 @@
-import { getDeviceIdentity } from "./auth.js?v=129";
+import { getDeviceIdentity } from "./auth.js?v=130";
 
 const STORAGE_KEY = "depannHomePro:clientWindowSession";
 const REPLACED_EVENT = "depannhome:session-replaced";
@@ -6,12 +6,12 @@ const AUTHENTICATION_REQUIRED_EVENT = "depannhome:authentication-required";
 
 export function installClientSessionGuard() {
     const clientSessionId = getClientSessionId();
-    const device = getDeviceIdentity();
     const originalFetch = window.fetch.bind(window);
     window.fetch = async (input, init = {}) => {
         const url = new URL(typeof input === "string" ? input : input.url, window.location.href);
         const headers = new Headers(init.headers || (typeof input !== "string" ? input.headers : undefined));
         if (url.origin === window.location.origin && url.pathname.startsWith("/api/")) {
+            const device = getDeviceIdentity();
             headers.set("X-DepannHome-Client-Session", clientSessionId);
             headers.set("X-DepannHome-Device-Id", device.deviceId);
             headers.set("X-DepannHome-Device-Type", device.deviceType);

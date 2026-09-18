@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { deviceStorageKey } from "../js/auth.js";
 
 const authServer = readFileSync(new URL("../server/auth.js", import.meta.url), "utf8");
 const seatLimits = readFileSync(new URL("../server/seat-limits.js", import.meta.url), "utf8");
@@ -11,12 +12,21 @@ const navigation = readFileSync(new URL("../js/navigation.js", import.meta.url),
 const index = readFileSync(new URL("../index.html", import.meta.url), "utf8");
 
 test("le navigateur transmet son identité locale sans autoriser une reclassification silencieuse", () => {
-    assert.match(authClient, /export function getDeviceIdentity\(\)/);
+    assert.match(authClient, /export function getDeviceIdentity\(username = ""\)/);
     assert.match(clientSession, /X-DepannHome-Device-Id/);
     assert.match(clientSession, /X-DepannHome-Device-Type/);
     assert.match(authServer, /currentDevice\.id !== device\.id \|\| currentDevice\.type !== device\.device_type/);
     assert.match(authServer, /throw new Error\("Identité appareil modifiée"\)/);
     assert.doesNotMatch(authServer, /UPDATE depannhome_auth_devices SET device_type[^\n]+X-DepannHome-Device-Type/);
+});
+
+test("un même navigateur utilise une identité desktop distincte pour chaque compte PC", () => {
+    assert.notEqual(deviceStorageKey("poste.nord", "desktop"), deviceStorageKey("poste.sud", "desktop"));
+    assert.equal(deviceStorageKey(" Poste.Nord ", "desktop"), deviceStorageKey("poste.nord", "desktop"));
+    assert.equal(deviceStorageKey("poste.nord", "mobile"), deviceStorageKey("poste.sud", "mobile"));
+    assert.match(authClient, /getDeviceIdentity\(username\)/);
+    assert.match(clientSession, /const device = getDeviceIdentity\(\)/);
+    assert.doesNotMatch(clientSession, /const device = getDeviceIdentity\(\);\s*const originalFetch/);
 });
 
 test("les rôles dédiés restent dans leur famille de poste", () => {

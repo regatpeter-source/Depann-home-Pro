@@ -1,5 +1,7 @@
 let applicationShell = "";
 let deviceValidationTimer = null;
+const DEVICE_STORAGE_KEY = "depannHomePro:deviceId";
+const ACTIVE_DESKTOP_ACCOUNT_KEY = "depannHomePro:activeDesktopDeviceAccount";
 
 export async function initializeAuthentication({ onAuthenticated }) {
     if (!applicationShell) applicationShell = getAppRoot().innerHTML;
@@ -95,10 +97,11 @@ function renderAuthentication({ onAuthenticated, registrationEnabled, message = 
     app.querySelector("#loginForm").addEventListener("submit", async event => {
         event.preventDefault();
         const form = new FormData(event.currentTarget);
+        const username = String(form.get("username") || "").trim().toLowerCase();
         setStatus("Connexion en cours...");
         const result = await request("/api/auth/login", {
             method: "POST",
-            body: JSON.stringify({ username: form.get("username"), password: form.get("password"), ...getDeviceIdentity() })
+            body: JSON.stringify({ username, password: form.get("password"), ...getDeviceIdentity(username) })
         });
         if (result.data?.companyTotpRequired) {
             renderCompanyTotpVerification({ onAuthenticated, registrationEnabled, challenge: result.data.challenge, message: result.data.message });
@@ -126,10 +129,11 @@ function renderAuthentication({ onAuthenticated, registrationEnabled, message = 
     app.querySelector("#signupForm")?.addEventListener("submit", async event => {
         event.preventDefault();
         const form = new FormData(event.currentTarget);
+        const username = String(form.get("username") || "").trim().toLowerCase();
         setStatus("Création du compte en cours...");
         const result = await request("/api/auth/register", {
             method: "POST",
-            body: JSON.stringify({ username: form.get("username"), password: form.get("password"), ...getDeviceIdentity() })
+            body: JSON.stringify({ username, password: form.get("password"), ...getDeviceIdentity(username) })
         });
         if (!result.ok) {
             setStatus(result.data?.message || "Impossible de créer le compte.", true);
@@ -318,16 +322,24 @@ function stopDeviceValidationPolling() {
     deviceValidationTimer = null;
 }
 
-export function getDeviceIdentity() {
-    const key = "depannHomePro:deviceId";
+export function deviceStorageKey(username = "", deviceType = "desktop") {
+    const account = String(username || "").trim().toLowerCase();
+    return deviceType === "desktop" && account ? `${DEVICE_STORAGE_KEY}:${encodeURIComponent(account)}` : DEVICE_STORAGE_KEY;
+}
+
+export function getDeviceIdentity(username = "") {
+    const deviceType = window.matchMedia("(pointer: coarse)").matches || /android|iphone|ipad|ipod|mobile/i.test(navigator.userAgent)
+        ? "mobile"
+        : "desktop";
+    const requestedAccount = String(username || "").trim().toLowerCase();
+    if (deviceType === "desktop" && requestedAccount) localStorage.setItem(ACTIVE_DESKTOP_ACCOUNT_KEY, requestedAccount);
+    const activeAccount = deviceType === "desktop" ? requestedAccount || localStorage.getItem(ACTIVE_DESKTOP_ACCOUNT_KEY) || "" : "";
+    const key = deviceStorageKey(activeAccount, deviceType);
     let deviceId = localStorage.getItem(key);
     if (!deviceId || !/^[0-9a-f-]{36}$/i.test(deviceId)) {
         deviceId = crypto.randomUUID();
         localStorage.setItem(key, deviceId);
     }
-    const deviceType = window.matchMedia("(pointer: coarse)").matches || /android|iphone|ipad|ipod|mobile/i.test(navigator.userAgent)
-        ? "mobile"
-        : "desktop";
     return { deviceId, deviceLabel: navigator.userAgent.slice(0, 100), deviceType };
 }
 
