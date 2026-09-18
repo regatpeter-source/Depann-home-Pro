@@ -2,7 +2,7 @@ import { initializeAuthentication, restoreApplicationShell, signOut } from "./au
 import { initializeClientSynchronization } from "./client-sync.js?v=131";
 import { initializeCollaboration } from "./collaboration.js?v=7";
 import { loadDatabase } from "./data.js?v=59";
-import { initializeNavigation, refreshApplication } from "./navigation.js?v=474";
+import { initializeNavigation, refreshApplication } from "./navigation.js?v=475";
 import { renderError } from "./ui.js?v=44";
 import { getSettings } from "./storage.js?v=45";
 import { FONT_OPTIONS } from "./config.js?v=135";
@@ -21,6 +21,7 @@ onClientSessionReplaced(() => {
     redirectToAuthentication("replaced");
 });
 onAuthenticationRequired(() => redirectToAuthentication("expired"));
+window.addEventListener("depannhome:group-companies-changed", () => refreshGroupCompanySelector());
 
 if (document.readyState === "loading") window.addEventListener("DOMContentLoaded", initializeApp, { once: true });
 else initializeApp();
@@ -39,7 +40,7 @@ async function initializeApp() {
 
                 showAuthenticatedUser(user);
                 startAdministratorSessionMonitor(user);
-                initializeGroupCompanySelector(user);
+                refreshGroupCompanySelector(user);
                 startApplication();
             }
         });
@@ -235,22 +236,23 @@ function isCommercialMobile() {
     return document.body.dataset.role === "commercial" && document.body.dataset.deviceType === "mobile";
 }
 
-async function initializeGroupCompanySelector(user) {
+export async function refreshGroupCompanySelector(user = null) {
     const field = document.getElementById("groupCompanySelector");
     const select = field?.querySelector("select");
-    if (!field || !select || !user.canSwitchGroupCompanies) { if (field) field.hidden = true; return; }
+    const canSwitchGroupCompanies = user?.canSwitchGroupCompanies === true || document.body.dataset.canSwitchGroupCompanies === "true";
+    if (!field || !select || !canSwitchGroupCompanies) { if (field) field.hidden = true; return; }
     try {
-        const response = await fetch("/api/groups/context", { credentials: "same-origin" });
+        const response = await fetch("/api/groups/context", { credentials: "same-origin", cache: "no-store" });
         const data = response.ok ? await response.json() : null;
-        if (!data?.enabled || !data.companies?.length) return;
+        if (!data?.enabled || !data.companies?.length) { field.hidden = true; return; }
         select.innerHTML = data.companies.filter(company => company.isActive).map(company => `<option value="${escapeAttribute(company.id)}" ${String(company.id) === String(data.activeCompanyId) ? "selected" : ""}>${escapeHtmlText(company.companyName)}</option>`).join("");
         field.hidden = false;
-        select.addEventListener("change", async () => {
+        select.onchange = async () => {
             select.disabled = true;
             const result = await fetch("/api/groups/active-company", { method: "PUT", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ companyId: select.value }) });
             if (!result.ok) { select.disabled = false; return alert((await result.json().catch(() => ({}))).message || "Changement d’entreprise impossible."); }
             window.location.reload();
-        });
+        };
     } catch { field.hidden = true; }
 }
 

@@ -8,6 +8,7 @@ const groups = readFileSync(new URL("../server/groups.js", import.meta.url), "ut
 const context = readFileSync(new URL("../server/group-context.js", import.meta.url), "utf8");
 const creator = readFileSync(new URL("../js/creator.js", import.meta.url), "utf8");
 const groupsClient = readFileSync(new URL("../js/groups.js", import.meta.url), "utf8");
+const appClient = readFileSync(new URL("../js/app.js", import.meta.url), "utf8");
 
 test("seule une entreprise Pro payante non partenaire peut activer le mode Groupe", () => {
     assert.equal(groupActivationAccessError({ subscription_plan: "paid", subscription_tier: "pro" }, { interfaceType: "standard" }), "");
@@ -62,4 +63,12 @@ test("le formulaire affiche les blocages de quota et les erreurs serveur dans la
     assert.match(groupsClient, /companyFeedback\.textContent = result\.message/);
     assert.doesNotMatch(groupsClient, /return alert\(result\.message \|\| "Création impossible\."\)/);
     assert.match(groups, /Cet identifiant administrateur est déjà utilisé/);
+});
+
+test("le sélecteur supérieur recharge les entreprises après une modification du Groupe", () => {
+    assert.match(groupsClient, /notifyGroupCompaniesChanged\(\);\s*renderGroupWorkspace\(\);/);
+    assert.match(groupsClient, /depannhome:group-companies-changed/);
+    assert.match(appClient, /addEventListener\("depannhome:group-companies-changed", \(\) => refreshGroupCompanySelector\(\)\)/);
+    assert.match(appClient, /fetch\("\/api\/groups\/context", \{ credentials: "same-origin", cache: "no-store" \}\)/);
+    assert.match(appClient, /select\.onchange = async/);
 });

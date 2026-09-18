@@ -93,6 +93,7 @@ function renderWorkspace(shell, context, dashboard = { total: {}, companies: [] 
             companyFeedback.textContent = result.message || "Création impossible.";
             return;
         }
+        notifyGroupCompaniesChanged();
         renderGroupWorkspace();
     });
     shell.querySelectorAll("[data-edit-company]").forEach(button => button.addEventListener("click", () => editCompany(button)));
@@ -153,6 +154,7 @@ async function editCompany(button) {
     button.disabled = true;
     const result = await api(`/api/groups/companies/${encodeURIComponent(button.dataset.editCompany)}`, { method: "PATCH", body: JSON.stringify({ companyName: companyName.trim(), allocatedPcSeats: Number(allocatedPcSeats), allocatedMobileSeats: Number(allocatedMobileSeats) }) });
     if (!result.ok) { button.disabled = false; return alert(result.message || "Mise à jour impossible."); }
+    notifyGroupCompaniesChanged();
     renderGroupWorkspace();
 }
 
@@ -162,7 +164,12 @@ async function toggleCompany(button) {
     button.disabled = true;
     const result = await api(`/api/groups/companies/${encodeURIComponent(button.dataset.toggleCompany)}`, { method: "PATCH", body: JSON.stringify({ isActive: !active }) });
     if (!result.ok) { button.disabled = false; return alert(result.message || "Mise à jour impossible."); }
+    notifyGroupCompaniesChanged();
     renderGroupWorkspace();
+}
+
+function notifyGroupCompaniesChanged() {
+    window.dispatchEvent(new CustomEvent("depannhome:group-companies-changed"));
 }
 
 function companyOption(item) { return `<option value="${escapeHtml(item.id)}">${escapeHtml(item.companyName)}</option>`; }
