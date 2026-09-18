@@ -50,6 +50,10 @@ L’ancre technique de l’entreprise ne peut pas être supprimée isolément ca
 
 ## Journal de sécurité
 
+Depuis **Paramètres > Historiques & journaux**, un Poste Admin peut supprimer définitivement des événements opérationnels individuellement ou purger ceux d’une période : importations, cycle de vie des clients, activité collaborative et missions partenaires. Un motif d’au moins 10 caractères et une confirmation sont exigés. La suppression est limitée à l’entreprise active et laisse un reçu minimal (auteur, motif, catégories, période et nombre), sans recopier le contenu supprimé.
+
+Les traces de compte et d’organisation, d’abonnement, de gestion des utilisateurs et accès, de comptabilité et de groupe restent protégées. Elles ne peuvent pas être supprimées depuis cette interface afin de préserver les preuves de sécurité, contractuelles et légales.
+
 `depannhome_member_audit` conserve les opérations de gestion des accès, y compris après suppression d’un membre :
 
 - création d’un administrateur ou d’un autre membre ;

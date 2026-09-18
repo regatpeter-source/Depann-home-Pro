@@ -60,12 +60,15 @@ test("l’écran unifié reste réservé à l’administrateur local", () => {
     assert.match(navigation, /if \(section === "history"\) return renderHistoryAndJournals\(container\)/);
 });
 
-test("l’interface classe, recherche et pagine sans proposer de purge", () => {
+test("l’interface classe, recherche, pagine et supprime uniquement les journaux opérationnels", () => {
     assert.match(client, /12 derniers mois/);
     assert.match(client, /Plus récents d’abord/);
     assert.match(client, /Plus anciens d’abord/);
     assert.match(client, /data-history-previous/);
     assert.match(client, /data-history-next/);
-    assert.doesNotMatch(server, /app\.(delete|patch|post)\("\/api\/history|purge/i);
-    assert.match(serviceWorker, /js\/history\.js\?v=1/);
+    assert.match(server, /app\.post\("\/api\/history\/delete"/);
+    assert.match(server, /DELETABLE_HISTORY_CATEGORIES = Object\.freeze\(\["imports", "clients", "operations", "partners"\]\)/);
+    assert.match(client, /Supprimer la sélection/);
+    assert.match(client, /traces légales ou de sécurité protégées/);
+    assert.match(serviceWorker, /js\/history\.js\?v=2/);
 });
