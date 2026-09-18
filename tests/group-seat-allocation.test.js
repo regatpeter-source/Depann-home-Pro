@@ -77,12 +77,18 @@ test("le statut de groupe calcule les quotas disponibles, entreprise principale 
     assert.equal(seats.availableCompanies, 1);
     assert.equal(seats.availablePcSeats, 3);
     assert.equal(seats.availableMobileSeats, 3);
+    assert.equal(seats.transferablePrincipalPcSeats, 2);
+    assert.equal(seats.transferablePrincipalMobileSeats, 3);
+    assert.equal(seats.assignablePcSeats, 5);
+    assert.equal(seats.assignableMobileSeats, 6);
     assert.equal(seats.companies[0].isPrincipal, true);
 });
 
 test("les routes refusent les dépassements et les réductions sous l’usage actif", () => {
     assert.match(groups, /seats\.companyCount >= seats\.maxCompanies/);
-    assert.match(groups, /input\.allocatedPcSeats > seats\.availablePcSeats/);
+    assert.match(groups, /input\.allocatedPcSeats > seats\.assignablePcSeats/);
+    assert.match(groups, /transferredPcSeats = Math\.max\(0, input\.allocatedPcSeats - seats\.availablePcSeats\)/);
+    assert.match(groups, /allocated_pc_seats=allocated_pc_seats-\$2/);
     assert.match(groups, /allocatedPcSeats < requiredPcSeats/);
     assert.match(groups, /allocatedMobileSeats < Number\(usage\?\.activeMobileUsers/);
     assert.match(groups, /app\.get\("\/api\/groups\/seat-status"/);
@@ -98,5 +104,6 @@ test("le Créateur attribue le nombre de sociétés et les totaux du groupe prin
     assert.match(groups, /Groupe — abonnement global facturé à l’entreprise principale/);
     assert.match(billingLabelMigration, /Groupe — abonnement global facturé à l’entreprise principale/);
     assert.match(groupsClient, /Enveloppe attribuée par le Créateur/);
+    assert.match(groupsClient, /postes attribués mais inutilisés par l’entreprise principale seront transférés automatiquement/);
     assert.match(groupsClient, /group_seats_rebalanced/);
 });

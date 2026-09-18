@@ -4,7 +4,7 @@ import { openCreatorPartnerRequest, openCreatorRequestNotification, renderCreato
 import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=205";
 import { renderAccounting } from "./accounting.js?v=27";
 import { renderPurchases } from "./purchases.js?v=126";
-import { renderGroupActivation, renderGroupWorkspace } from "./groups.js?v=6";
+import { renderGroupActivation, renderGroupWorkspace } from "./groups.js?v=7";
 import { renderPartnerMissions } from "./partner-missions.js?v=82";
 import { renderPartnerSandbox } from "./partner-sandbox.js?v=3";
 import { renderPartnerConnections } from "./partner-connections.js?v=45";

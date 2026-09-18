@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { groupActivationAccessError } from "../server/groups.js";
+import { groupActivationAccessError, validateGroupCompanyInput } from "../server/groups.js";
+import { groupCompanyFormError } from "../js/groups.js";
 
 const groups = readFileSync(new URL("../server/groups.js", import.meta.url), "utf8");
 const context = readFileSync(new URL("../server/group-context.js", import.meta.url), "utf8");
@@ -37,4 +38,28 @@ test("la création distingue clairement Partenaire gratuit et Groupe inclus dans
 test("la dissolution restaure l'interface Standard de chaque société", () => {
     assert.match(groups, /SET interface_type='standard',license_type='depannhome_standard'/);
     assert.match(groups, /SELECT company_owner_id FROM depannhome_group_companies WHERE group_id=\$1/);
+});
+
+test("un essai Groupe actif n'est pas exclu de la création d'entreprise", () => {
+    const administratorGuard = groups.slice(groups.indexOf("async function requireGroupAdministrator"), groups.indexOf("async function requireGroupCompanySwitchAccess"));
+    assert.match(administratorGuard, /organization\.interfaceType === "group"/);
+    assert.match(administratorGuard, /organization\.subscriptionTier === "pro"/);
+    assert.doesNotMatch(administratorGuard, /subscriptionStatus|subscription_status|trial/);
+});
+
+test("la création explique précisément les identifiants invalides", () => {
+    const base = { companyName: "Agence Nord", fullName: "Jean Dupont", username: "agence.nord", password: "mot-de-passe-solide", email: "admin@example.test", allocatedPcSeats: 1, allocatedMobileSeats: 0 };
+    assert.equal(validateGroupCompanyInput(base).ok, true);
+    assert.match(validateGroupCompanyInput({ ...base, password: "admin" }).message, /au moins 12 caractères/);
+    assert.match(validateGroupCompanyInput({ ...base, username: "a" }).message, /3 à 32 caractères/);
+    assert.match(groupCompanyFormError({ ...base, password: "admin" }), /au moins 12 caractères/);
+    assert.equal(groupCompanyFormError(base), "");
+});
+
+test("le formulaire affiche les blocages de quota et les erreurs serveur dans la page", () => {
+    assert.match(groupsClient, /form\.dataset\.blockedReason/);
+    assert.match(groupsClient, /Aucun poste PC n’est disponible/);
+    assert.match(groupsClient, /companyFeedback\.textContent = result\.message/);
+    assert.doesNotMatch(groupsClient, /return alert\(result\.message \|\| "Création impossible\."\)/);
+    assert.match(groups, /Cet identifiant administrateur est déjà utilisé/);
 });

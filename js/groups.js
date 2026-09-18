@@ -37,16 +37,32 @@ export function renderGroupActivation(container) {
 function renderWorkspace(shell, context, dashboard = { total: {}, companies: [] }, entries, seats) {
     const total = dashboard.total || {};
     shell.innerHTML = `<header class="group-heading"><div><p class="eyebrow">Pilotage multi-entreprises</p><h2>${escapeHtml(context.group?.name || "Groupe")}</h2><p class="muted">Chaque indicateur reste calculé par entreprise. Les données opérationnelles ne sont jamais fusionnées.</p></div></header><section class="group-cards"><article><span>CA consolidé</span><strong data-group-total="turnover">${money(total.turnover)}</strong></article><article><span>Interventions</span><strong data-group-total="interventions">${total.interventions || 0}</strong></article><article><span>Devis</span><strong data-group-total="quotes">${total.quotes || 0}</strong></article><article><span>Factures</span><strong data-group-total="invoices">${total.invoices || 0}</strong></article><article><span>Techniciens</span><strong data-group-total="technicians">${total.technicians || 0}</strong></article></section><section class="group-panel"><div class="form-heading"><div><p class="eyebrow">Consolidation</p><h3>Indicateurs par entreprise</h3></div><form id="groupFilter" class="group-filter"><select name="companyId"><option value="">Toutes les entreprises</option>${context.companies.map(companyOption).join("")}</select><input name="start" type="date" aria-label="Début"><input name="end" type="date" aria-label="Fin"><button class="secondary-button">Filtrer</button></form></div><div class="group-company-list">${companyRows(dashboard.companies, context.companies)}</div></section><section class="group-panel"><div class="form-heading"><div><p class="eyebrow">Administration Groupe</p><h3>Entreprises juridiquement distinctes</h3></div></div><form id="newGroupCompany" class="form-grid"><label>Nom de l’entreprise *<input name="companyName" maxlength="160" required></label><label>Administrateur principal *<input name="fullName" maxlength="100" required></label><label>Identifiant administrateur *<input name="username" maxlength="32" required></label><label>Mot de passe initial *<input name="password" type="password" minlength="12" required></label><label>Téléphone<input name="phone" maxlength="30"></label><label>E-mail<input name="email" type="email" maxlength="160"></label><label>Postes administratifs<input name="maxPcUsers" type="number" min="1" max="100" value="1" required></label><label>Techniciens<input name="maxTechnicians" type="number" min="0" max="500" value="5" required></label><div class="form-actions"><button class="secondary-button">Créer l’entreprise</button></div></form><div class="group-company-management">${context.companies.map(item => companyManagementRow(item, context.activeCompanyId)).join("")}</div></section><section class="group-panel"><div class="form-heading"><div><p class="eyebrow">Traçabilité</p><h3>Journal des actions Groupe</h3></div></div><div class="group-audit-list">${auditRows(entries)}</div></section>`;
+    const newCompanyForm = shell.querySelector("#newGroupCompany");
+    newCompanyForm.noValidate = true;
+    const companyFeedback = document.createElement("p");
+    companyFeedback.className = "auth-message form-wide";
+    companyFeedback.setAttribute("aria-live", "polite");
+    newCompanyForm.querySelector(".form-actions").before(companyFeedback);
+    newCompanyForm.elements.username.insertAdjacentHTML("afterend", "<small>3 à 32 caractères : minuscules, chiffres, point, tiret ou souligné. L’identifiant doit être unique.</small>");
+    newCompanyForm.elements.password.insertAdjacentHTML("afterend", "<small>12 caractères minimum. « admin » seul n’est pas accepté.</small>");
+    newCompanyForm.closest(".group-panel").querySelector("h3").insertAdjacentHTML("afterend", "<p class=\"muted\">Chaque entrée représente une société juridiquement distincte. Plusieurs agences d’une même société relèvent d’une gestion multi-établissements, pas de la création d’une nouvelle entreprise.</p>");
     if (seats) {
         shell.querySelector(".group-cards").insertAdjacentHTML("afterend", `<section class="group-panel group-seat-envelope"><div class="form-heading"><div><p class="eyebrow">Enveloppe attribuée par le Créateur · Mode Groupe</p><h3>Postes à répartir dans le groupe</h3></div></div><div class="group-cards"><article><span>Entreprises</span><strong>${seats.companyCount}/${seats.maxCompanies}</strong><small>${seats.availableCompanies} disponible(s), principale incluse</small></article><article><span>Postes PC</span><strong>${seats.allocatedPcSeats}/${seats.totalPcSeats}</strong><small>${seats.availablePcSeats} à répartir</small></article><article><span>Postes mobiles</span><strong>${seats.allocatedMobileSeats}/${seats.totalMobileSeats}</strong><small>${seats.availableMobileSeats} à répartir</small></article></div><p class="muted"><strong>Facturation centralisée : une facture unique est adressée à l’entreprise principale et détaille les postes de chaque société.</strong> Les allocations peuvent être rééquilibrées sans modifier le total facturé, mais jamais sous les postes déjà utilisés.</p></section>`);
         const form = shell.querySelector("#newGroupCompany");
         const pcInput = form.elements.maxPcUsers;
         const mobileInput = form.elements.maxTechnicians;
-        pcInput.name = "allocatedPcSeats"; pcInput.max = String(Math.max(1, seats.availablePcSeats)); pcInput.value = "1";
-        mobileInput.name = "allocatedMobileSeats"; mobileInput.max = String(seats.availableMobileSeats); mobileInput.value = "0";
+        pcInput.name = "allocatedPcSeats"; pcInput.max = String(Math.max(1, seats.assignablePcSeats)); pcInput.value = "1";
+        mobileInput.name = "allocatedMobileSeats"; mobileInput.max = String(seats.assignableMobileSeats); mobileInput.value = "0";
         pcInput.closest("label").childNodes[0].textContent = "Allocation PC initiale";
         mobileInput.closest("label").childNodes[0].textContent = "Allocation mobile initiale";
-        if (!seats.availableCompanies || !seats.availablePcSeats) form.querySelector("button").disabled = true;
+        if (!seats.availableCompanies) form.dataset.blockedReason = `Le quota de ${seats.maxCompanies} entreprise(s), principale incluse, est atteint. Le Créateur doit augmenter ce quota.`;
+        else if (!seats.assignablePcSeats) form.dataset.blockedReason = "Aucun poste PC n’est disponible pour l’administrateur de la nouvelle entreprise. Le Créateur doit ajouter un poste à l’enveloppe Groupe.";
+        if (form.dataset.blockedReason) {
+            companyFeedback.textContent = form.dataset.blockedReason;
+            companyFeedback.classList.add("error");
+        } else if (seats.transferablePrincipalPcSeats || seats.transferablePrincipalMobileSeats) {
+            companyFeedback.textContent = "Les postes attribués mais inutilisés par l’entreprise principale seront transférés automatiquement à la nouvelle société.";
+        }
         shell.querySelectorAll("[data-edit-company]").forEach(button => {
             const allocation = seats.companies.find(company => String(company.id) === String(button.dataset.editCompany));
             if (!allocation) return;
@@ -56,12 +72,27 @@ function renderWorkspace(shell, context, dashboard = { total: {}, companies: [] 
         });
     }
     shell.querySelector("#groupFilter").addEventListener("submit", event => { event.preventDefault(); loadDashboard(shell, new FormData(event.currentTarget)); });
-    shell.querySelector("#newGroupCompany").addEventListener("submit", async event => {
+    newCompanyForm.addEventListener("submit", async event => {
         event.preventDefault();
-        const button = event.currentTarget.querySelector("button");
+        const form = event.currentTarget;
+        const button = form.querySelector("button");
+        const values = Object.fromEntries(new FormData(form));
+        values.username = String(values.username || "").trim().toLowerCase();
+        const validationError = form.dataset.blockedReason || groupCompanyFormError(values);
+        companyFeedback.classList.toggle("error", Boolean(validationError));
+        companyFeedback.textContent = validationError;
+        if (validationError) return;
         button.disabled = true;
-        const result = await api("/api/groups/companies", { method: "POST", body: JSON.stringify(Object.fromEntries(new FormData(event.currentTarget))) });
-        if (!result.ok) { button.disabled = false; return alert(result.message || "Création impossible."); }
+        const previousLabel = button.textContent;
+        button.textContent = "Création en cours…";
+        const result = await api("/api/groups/companies", { method: "POST", body: JSON.stringify(values) });
+        if (!result.ok) {
+            button.disabled = false;
+            button.textContent = previousLabel;
+            companyFeedback.classList.add("error");
+            companyFeedback.textContent = result.message || "Création impossible.";
+            return;
+        }
         renderGroupWorkspace();
     });
     shell.querySelectorAll("[data-edit-company]").forEach(button => button.addEventListener("click", () => editCompany(button)));
@@ -139,6 +170,16 @@ function companyRows(rows = [], companies = []) { const names = new Map(companie
 function companyManagementRow(item, activeCompanyId) { const active = Boolean(item.isActive); return `<article><div><strong>${escapeHtml(item.companyName)}</strong><p>${active ? "Active" : "Désactivée"}${String(item.id) === String(activeCompanyId) ? " · Entreprise active" : ""}</p></div><div class="group-company-actions"><button type="button" class="secondary-button" data-edit-company="${escapeHtml(item.id)}" data-company-name="${escapeHtml(item.companyName)}">Modifier</button><button type="button" class="secondary-button${active ? " danger-button" : ""}" data-toggle-company="${escapeHtml(item.id)}" data-company-active="${active}">${active ? "Désactiver" : "Réactiver"}</button></div></article>`; }
 function auditRows(entries) { return entries.map(entry => `<article><strong>${escapeHtml(auditLabel(entry.action))}</strong><span>${escapeHtml(entry.companyName || "Groupe")}</span><span>${escapeHtml(entry.actorName || entry.actorUsername || "Administrateur")}</span><time datetime="${escapeHtml(entry.createdAt || "")}">${formatDate(entry.createdAt)}</time></article>`).join("") || '<p class="muted">Aucune action Groupe enregistrée.</p>'; }
 function auditLabel(action) { return ({ group_activated: "Groupe activé", company_created: "Entreprise créée", company_updated: "Entreprise modifiée", company_activated: "Entreprise activée", company_deactivated: "Entreprise désactivée", company_switched: "Entreprise sélectionnée", group_seats_rebalanced: "Postes réattribués", client_imported: "Client repris depuis une entreprise du groupe" })[action] || action || "Action Groupe"; }
+export function groupCompanyFormError(value = {}) {
+    if (!String(value.companyName || "").trim()) return "Le nom de l’entreprise est obligatoire.";
+    if (!String(value.fullName || "").trim()) return "Le nom de l’administrateur principal est obligatoire.";
+    if (!/^[a-z0-9._-]{3,32}$/.test(String(value.username || "").trim().toLowerCase())) return "L’identifiant administrateur doit contenir 3 à 32 caractères : lettres minuscules, chiffres, point, tiret ou souligné.";
+    if (String(value.password || "").length < 12) return "Le mot de passe initial doit contenir au moins 12 caractères.";
+    if (value.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value.email).trim())) return "L’adresse e-mail de l’administrateur est invalide.";
+    if (!Number.isInteger(Number(value.allocatedPcSeats)) || Number(value.allocatedPcSeats) < 1) return "Attribuez au moins un poste PC à la nouvelle entreprise.";
+    if (!Number.isInteger(Number(value.allocatedMobileSeats)) || Number(value.allocatedMobileSeats) < 0) return "Le nombre de postes mobiles est invalide.";
+    return "";
+}
 function formatDate(value) { return value ? new Intl.DateTimeFormat("fr-FR", { dateStyle: "short", timeStyle: "short" }).format(new Date(value)) : ""; }
 function money(value) { return new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" }).format(Number(value) || 0); }
 async function api(url, options = {}) { try { const response = await fetch(url, { credentials: "same-origin", headers: { "Content-Type": "application/json", ...(options.headers || {}) }, ...options }); const data = response.status === 204 ? null : await response.json().catch(() => null); return { ok: response.ok, data, message: data?.message }; } catch { return { ok: false, message: "Serveur indisponible." }; } }

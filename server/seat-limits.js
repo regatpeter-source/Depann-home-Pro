@@ -53,13 +53,22 @@ export async function groupSeatStatus(database, groupId) {
     }
     const allocatedPcSeats = companies.reduce((sum, company) => sum + company.allocatedPcSeats, 0);
     const allocatedMobileSeats = companies.reduce((sum, company) => sum + company.allocatedMobileSeats, 0);
+    const availablePcSeats = Math.max(0, Number(rows[0].totalPcSeats) - allocatedPcSeats);
+    const availableMobileSeats = Math.max(0, Number(rows[0].totalMobileSeats) - allocatedMobileSeats);
+    const principal = companies.find(company => company.isPrincipal);
+    const principalRequiredPcSeats = Math.max(principal?.activePcUsers || 0, principal?.approvedPcDevices || 0);
+    const principalRequiredMobileSeats = principal?.activeMobileUsers || 0;
+    const transferablePrincipalPcSeats = Math.max(0, (principal?.allocatedPcSeats || 0) - principalRequiredPcSeats);
+    const transferablePrincipalMobileSeats = Math.max(0, (principal?.allocatedMobileSeats || 0) - principalRequiredMobileSeats);
     return {
         principalCompanyId: String(rows[0].principalCompanyId), maxCompanies: Number(rows[0].maxCompanies),
         totalPcSeats: Number(rows[0].totalPcSeats), totalMobileSeats: Number(rows[0].totalMobileSeats),
         companyCount: companies.length, allocatedPcSeats, allocatedMobileSeats,
         availableCompanies: Math.max(0, Number(rows[0].maxCompanies) - companies.length),
-        availablePcSeats: Math.max(0, Number(rows[0].totalPcSeats) - allocatedPcSeats),
-        availableMobileSeats: Math.max(0, Number(rows[0].totalMobileSeats) - allocatedMobileSeats), companies
+        availablePcSeats, availableMobileSeats, transferablePrincipalPcSeats, transferablePrincipalMobileSeats,
+        assignablePcSeats: availablePcSeats + transferablePrincipalPcSeats,
+        assignableMobileSeats: availableMobileSeats + transferablePrincipalMobileSeats,
+        companies
     };
 }
 
