@@ -90,6 +90,7 @@ export async function openCompanyAssistanceRequest(sessionId) {
         close();
         alert(decision === "accept" ? "Assistance acceptée pour 30 minutes. Le Support peut maintenant ouvrir le diagnostic." : "Demande d’assistance refusée.");
         loadNotifications();
+        window.dispatchEvent(new CustomEvent("depannhome:company-assistance-decided", { detail: { sessionId, decision } }));
     }));
 }
 async function markNotificationRead(id) { if (!id) return; const result = await request("/api/collaboration/notifications/read", { method: "POST", body: JSON.stringify({ ids: [id] }) }); if (!result.ok) return; notifications = notifications.map(item => String(item.id) === String(id) ? { ...item, readAt: new Date().toISOString() } : item); renderNotificationBadge(); }

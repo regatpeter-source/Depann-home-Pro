@@ -97,7 +97,6 @@ export function registerCreatorAssistanceRoutes(app, requireCreator, requireAuth
         const database = getPool();
         const connection = await database.connect();
         let rows;
-        let notifications;
         try {
             await connection.query("BEGIN");
             ({ rows } = await connection.query(`INSERT INTO depannhome_creator_support_sessions
@@ -105,7 +104,6 @@ export function registerCreatorAssistanceRoutes(app, requireCreator, requireAuth
                 VALUES($1,$2,$3,$4,$5,$6,$7,NOW()+($8::text||' minutes')::interval,CASE WHEN $4='emergency' THEN NOW() ELSE NULL END)
                 RETURNING id,created_by AS "createdBy",target_company_owner_id AS "companyOwnerId",mode,reason,support_request_id AS "supportRequestId",consent_basis AS "consentBasis",expires_at AS "expiresAt",accepted_at AS "acceptedAt",revoked_at AS "revokedAt",created_at AS "createdAt"`,
             [id, request.user.sub, companyOwnerId, emergency ? "emergency" : "readonly", reason, supportRequestId, consentBasis, duration]));
-            notifications = await insertCompanyNotifications(connection, companyOwnerId, emergency ? "support_assistance_emergency_started" : "support_assistance_consent_requested", id, emergency ? "Assistance d’urgence du Support" : "Demande d’assistance du Support", emergency ? `Le Support Depann’Home Pro a ouvert une session d’urgence de ${EMERGENCY_SESSION_MINUTES} minutes. Motif : ${reason}` : `Le Support Depann’Home Pro demande un accès temporaire en lecture seule. Ouvrez cette notification pour accepter ou refuser. Motif : ${reason}`, { sessionId: id, emergency, expiresAt: rows[0].expiresAt, consentRequired: !emergency });
             await connection.query("COMMIT");
         } catch (error) {
             await connection.query("ROLLBACK");
@@ -113,8 +111,15 @@ export function registerCreatorAssistanceRoutes(app, requireCreator, requireAuth
         } finally {
             connection.release();
         }
+        const notifications = await safelyInsertCompanyNotifications(companyOwnerId, emergency ? "support_assistance_emergency_started" : "support_assistance_consent_requested", id, emergency ? "Assistance d’urgence du Support" : "Demande d’assistance du Support", emergency ? `Le Support Depann’Home Pro a ouvert une session d’urgence de ${EMERGENCY_SESSION_MINUTES} minutes. Motif : ${reason}` : `Le Support Depann’Home Pro demande un accès temporaire en lecture seule. Ouvrez cette notification pour accepter ou refuser. Motif : ${reason}`, { sessionId: id, emergency, expiresAt: rows[0].expiresAt, consentRequired: !emergency });
         await safelyBroadcastCompanyNotifications(companyOwnerId, notifications, id);
         response.status(201).json({ session: publicSession({ ...rows[0], companyName: owner.companyName }) });
+    }));
+
+    app.get("/api/assistance/sessions", requireAuthentication, asyncHandler(async (request, response) => {
+        if (!isCompanyAdministrator(request)) return response.status(403).json({ message: "Seul un Poste Admin autorisé peut consulter les demandes d’assistance." });
+        const { rows } = await getPool().query(`${sessionSelect()} WHERE session.target_company_owner_id=$1 ORDER BY session.created_at DESC LIMIT 30`, [getAccountOwnerId(request)]);
+        response.json({ sessions: rows.map(publicSession) });
     }));
 
     app.get("/api/assistance/sessions/:sessionId", requireAuthentication, asyncHandler(async (request, response) => {
@@ -366,20 +371,37 @@ async function recordFailedAction(session, creatorId, actionType, targetId, reas
 }
 
 async function insertCompanyNotifications(database, ownerId, eventType, entityId, title, body, payload) {
-    const { rows } = await database.query(`
-        SELECT id FROM depannhome_users WHERE account_owner_id=$1 AND role='admin' AND is_active=TRUE
-        UNION
-        SELECT administrator.user_id AS id
-        FROM depannhome_group_companies company
-        JOIN depannhome_group_administrators administrator ON administrator.group_id=company.group_id
-        JOIN depannhome_users principal ON principal.id=administrator.user_id AND principal.is_active=TRUE
-        WHERE company.company_owner_id=$1 AND company.is_active=TRUE
-    `, [ownerId]);
+    const { rows } = await database.query("SELECT id FROM depannhome_users WHERE account_owner_id=$1 AND role='admin' AND is_active=TRUE", [ownerId]);
     const recipientIds = rows.length ? rows.map(row => row.id) : [ownerId];
     const notifications = [];
     for (const recipientId of recipientIds) {
         const result = await database.query(`INSERT INTO depannhome_collaboration_notifications(owner_id,recipient_id,event_type,entity_type,entity_id,title,body,payload) VALUES($1,$2,$3,'creator_assistance',$4,$5,$6,$7::jsonb) RETURNING id,created_at AS "createdAt"`, [ownerId, recipientId, eventType, String(entityId), cleanText(title, 200), cleanText(body, 2000), JSON.stringify(payload)]);
         notifications.push({ recipientId: String(recipientId), notification: { id: result.rows[0].id, eventType, entityType: "creator_assistance", entityId: String(entityId), title, body, payload, createdAt: result.rows[0].createdAt } });
+    }
+    return notifications;
+}
+
+async function safelyInsertCompanyNotifications(ownerId, eventType, entityId, title, body, payload) {
+    const database = getPool();
+    let notifications = [];
+    try {
+        notifications = await insertCompanyNotifications(database, ownerId, eventType, entityId, title, body, payload);
+    } catch (error) {
+        console.error("[creator-assistance] local company notification unavailable", { sessionId: entityId, code: error.code || error.name || "NOTIFICATION_ERROR" });
+    }
+    try {
+        const { rows } = await database.query(`SELECT DISTINCT administrator.user_id AS id
+            FROM depannhome_group_companies company
+            JOIN depannhome_group_administrators administrator ON administrator.group_id=company.group_id
+            JOIN depannhome_users principal ON principal.id=administrator.user_id AND principal.is_active=TRUE
+            WHERE company.company_owner_id=$1 AND company.is_active=TRUE
+                AND administrator.user_id NOT IN (SELECT id FROM depannhome_users WHERE account_owner_id=$1 AND role='admin' AND is_active=TRUE)`, [ownerId]);
+        for (const recipient of rows) {
+            const result = await database.query(`INSERT INTO depannhome_collaboration_notifications(owner_id,recipient_id,event_type,entity_type,entity_id,title,body,payload) VALUES($1,$2,$3,'creator_assistance',$4,$5,$6,$7::jsonb) RETURNING id,created_at AS "createdAt"`, [ownerId, recipient.id, eventType, String(entityId), cleanText(title, 200), cleanText(body, 2000), JSON.stringify(payload)]);
+            notifications.push({ recipientId: String(recipient.id), notification: { id: result.rows[0].id, eventType, entityType: "creator_assistance", entityId: String(entityId), title, body, payload, createdAt: result.rows[0].createdAt } });
+        }
+    } catch (error) {
+        console.error("[creator-assistance] principal group notification unavailable", { sessionId: entityId, code: error.code || error.name || "NOTIFICATION_ERROR" });
     }
     return notifications;
 }

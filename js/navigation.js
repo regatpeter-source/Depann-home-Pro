@@ -26,6 +26,7 @@ import {
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { renderPlatformAnnouncement } from "./platform-announcement.js?v=1";
 import { renderDocumentTemplateEditor } from "./document-template-editor.js?v=3";
+import { openCompanyAssistanceRequest } from "./collaboration.js?v=9";
 import {
     clearSearch,
     createBackCard,
@@ -2182,6 +2183,26 @@ function renderWorkstationTwoFactorDisable(action, feedback) {
 }
 
 function renderSupportContact(container) {
+    const assistanceCard = document.createElement("article");
+    assistanceCard.className = "brand-card full-card procedure-card creator-entry-card";
+    assistanceCard.innerHTML = '<p class="eyebrow">Support Depann’Home Pro</p><h2>Demandes d’assistance</h2><div data-company-assistance-list><p class="muted">Chargement des demandes…</p></div>';
+    const assistanceList = assistanceCard.querySelector("[data-company-assistance-list]");
+    const loadAssistanceRequests = async () => {
+        const response = await fetch("/api/assistance/sessions", { credentials: "same-origin" });
+        const data = await response.json().catch(() => ({}));
+        if (response.status === 403) { assistanceCard.remove(); return; }
+        if (!response.ok) { assistanceList.innerHTML = `<p class="auth-message error">${escapeHtml(data.message || "Les demandes d’assistance sont momentanément indisponibles.")}</p>`; return; }
+        const sessions = Array.isArray(data.sessions) ? data.sessions : [];
+        assistanceList.innerHTML = sessions.length ? sessions.map(session => {
+            const status = session.awaitingConsent ? "Décision requise" : session.active ? "Autorisée" : session.declinedAt ? "Refusée" : "Terminée";
+            const date = session.createdAt ? new Intl.DateTimeFormat("fr-FR", { dateStyle: "short", timeStyle: "short" }).format(new Date(session.createdAt)) : "";
+            return `<article class="notification-list-item"><div><strong>${escapeHtml(status)}</strong><p>${escapeHtml(session.reason || "Assistance technique")}</p><small>${escapeHtml(date)}</small></div><button type="button" class="secondary-button" data-open-company-assistance="${escapeHtml(session.id)}">${session.awaitingConsent ? "Répondre" : "Consulter"}</button></article>`;
+        }).join("") : '<p class="muted">Aucune demande d’assistance du Support pour cette entreprise.</p>';
+        assistanceList.querySelectorAll("[data-open-company-assistance]").forEach(button => button.addEventListener("click", () => openCompanyAssistanceRequest(button.dataset.openCompanyAssistance)));
+    };
+    window.addEventListener("depannhome:company-assistance-decided", () => { if (assistanceCard.isConnected) loadAssistanceRequests(); }, { once: true });
+    container.appendChild(assistanceCard);
+    loadAssistanceRequests();
     const card = document.createElement("article");
     card.className = "brand-card full-card procedure-card creator-entry-card";
     card.innerHTML = `

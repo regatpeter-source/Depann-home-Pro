@@ -37,6 +37,7 @@ test("support sessions require consent context and have bounded lifetimes", () =
 });
 
 test("l’entreprise ciblée accepte ou refuse depuis une notification Support ouvrable", () => {
+    assert.match(server, /app\.get\("\/api\/assistance\/sessions", requireAuthentication/);
     assert.match(server, /app\.get\("\/api\/assistance\/sessions\/:sessionId", requireAuthentication/);
     assert.match(server, /app\.post\("\/api\/assistance\/sessions\/:sessionId\/decision", requireAuthentication/);
     assert.match(server, /session\.target_company_owner_id=\$2/);
@@ -51,6 +52,8 @@ test("l’entreprise ciblée accepte ou refuse depuis une notification Support o
     assert.match(server, /JOIN depannhome_group_administrators administrator/);
     assert.match(client, /renderCreatorAssistanceSession\(event\.detail\.sessionId\)/);
     assert.match(navigation, /depannhome:open-company-assistance/);
+    assert.match(navigation, /Demandes d’assistance/);
+    assert.match(navigation, /fetch\("\/api\/assistance\/sessions"/);
 });
 
 test("recovery actions are constrained, audited and notify company administrators", () => {
@@ -79,8 +82,12 @@ test("account reactivation remains restricted to administrators", () => {
     assert.match(client, /member\.role !== "admin" \|\| member\.isActive/);
 });
 
-test("session lifecycle and recovery notifications are committed atomically", () => {
-    assert.match(server, /support_assistance_consent_requested[\s\S]+COMMIT/);
+test("la création d’assistance reste durable si une notification échoue", () => {
+    const creation = server.slice(server.indexOf('app.post("/api/creator/assistance/sessions"'), server.indexOf('app.get("/api/assistance/sessions"'));
+    assert.ok(creation.indexOf('connection.query("COMMIT")') < creation.indexOf("safelyInsertCompanyNotifications"));
+    assert.match(server, /local company notification unavailable/);
+    assert.match(server, /principal group notification unavailable/);
+    assert.match(server, /SELECT id FROM depannhome_users WHERE account_owner_id=\$1 AND role='admin'/);
     assert.match(server, /support_assistance_closed[\s\S]+COMMIT/);
     assert.match(server, /creator_recovery_action[\s\S]+COMMIT/);
     assert.match(server, /safelyBroadcastCompanyNotifications/);
@@ -149,12 +156,12 @@ test("creator console exposes an explicit assistance workflow and warning banner
 test("PWA versions are synchronized for creator assistance assets", () => {
     assert.match(navigation, /creator\.js\?v=169/);
     assert.match(index, /css\/style\.css\?v=274/);
-    assert.match(index, /js\/app\.js\?v=454/);
-    assert.match(serviceWorker, /depann-home-pro-v570/);
+    assert.match(index, /js\/app\.js\?v=455/);
+    assert.match(serviceWorker, /depann-home-pro-v571/);
     assert.match(serviceWorker, /css\/style\.css\?v=274/);
-    assert.match(serviceWorker, /js\/app\.js\?v=454/);
-    assert.match(serviceWorker, /js\/collaboration\.js\?v=8/);
-    assert.match(serviceWorker, /js\/navigation\.js\?v=480/);
+    assert.match(serviceWorker, /js\/app\.js\?v=455/);
+    assert.match(serviceWorker, /js\/collaboration\.js\?v=9/);
+    assert.match(serviceWorker, /js\/navigation\.js\?v=481/);
     assert.match(serviceWorker, /js\/creator\.js\?v=169/);
     assert.match(serviceWorker, /js\/connectors\.js\?v=6/);
 });
