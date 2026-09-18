@@ -44,6 +44,7 @@ import { initializePartnerRequests, registerPartnerRequestRoutes } from "./serve
 import { initializePartnerSandbox, registerPartnerSandboxRoutes } from "./server/partner-sandbox.js";
 import { initializePartnerApiSandbox, registerPartnerApiSandboxRoutes } from "./server/partner-api-sandbox.js";
 import { initializeGroups, registerGroupRoutes } from "./server/groups.js";
+import { registerHistoryRoutes } from "./server/history.js";
 import { initializeSupport, registerSupportRoutes } from "./server/support.js";
 import { registerPublicOfferRoutes } from "./server/public-offers.js";
 import { dataImportUploadErrorHandler, initializeDataImports, registerDataImportRoutes } from "./server/data-imports.js";
@@ -233,6 +234,7 @@ registerPartnerConnectionRoutes(app, requireAuthentication);
 registerPartnerApiSandboxRoutes(app, requireCreator, requireAuthentication);
 registerPartnerSandboxRoutes(app, requireAuthentication);
 registerGroupRoutes(app, requireAuthentication);
+registerHistoryRoutes(app, requireAuthentication);
 registerBillingRoutes(app, requireAuthentication);
 registerDocumentTemplateRoutes(app, requireAuthentication);
 registerPurchaseRoutes(app, requireAuthentication);

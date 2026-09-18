@@ -5,6 +5,7 @@ import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocume
 import { renderAccounting } from "./accounting.js?v=27";
 import { renderPurchases } from "./purchases.js?v=126";
 import { renderGroupActivation, renderGroupWorkspace } from "./groups.js?v=9";
+import { renderHistoryAndJournals } from "./history.js?v=1";
 import { renderPartnerMissions } from "./partner-missions.js?v=82";
 import { renderPartnerSandbox } from "./partner-sandbox.js?v=3";
 import { renderPartnerConnections } from "./partner-connections.js?v=45";
@@ -623,6 +624,7 @@ function isLocalCompanyAdministrator() {
 function canAccessSettingsSection(section) {
     if (document.body.dataset.creator === "true") return true;
     if (["subscription", "storage", "documents", "company", "users", "groups", "imports"].includes(section) && !isLocalCompanyAdministrator()) return false;
+    if (section === "history" && !isLocalCompanyAdministrator()) return false;
     if (["security", "support"].includes(section)) return isDesktopDevice() && ["admin", "pc_standard", "commercial"].includes(document.body.dataset.role);
     if (section === "storage") return isLocalCompanyAdministrator();
     if (document.body.dataset.organizationInterface === "partner") return (section === "network" && organizationFeatureEnabled("partnerConnections")) || (section === "company" && organizationFeatureEnabled("partnerMissions")) || (section === "imports" && organizationFeatureEnabled("imports"));
@@ -1819,6 +1821,7 @@ function renderSettingsWorkspace(options = {}) {
             ["network", internalNetworkOnly ? "Réseau Depann’Home Pro" : "Réseau & connecteurs", internalNetworkOnly ? "Recherchez des entreprises utilisatrices et gérez vos connexions internes." : "Deux espaces distincts : le réseau collaboratif Depann’Home Pro et les connecteurs API externes.", "network"],
             ...(supportAvailable ? [["support", "Support", "Contactez l’équipe Depann’Home Pro depuis les paramètres de votre entreprise.", "support"]] : []),
             ...(isLocalCompanyAdministrator() ? [["users", "Utilisateurs", "Accès, postes, techniciens et chefs d’équipe.", "users"], ["groups", "Groupe / Multi-entreprises", "Sociétés, bascule de contexte et indicateurs consolidés.", "group"]] : []),
+            ...(isLocalCompanyAdministrator() ? [["history", "Historiques & journaux", "Filtrez et classez les événements du compte, des accès et des activités métier.", "history"]] : []),
             ...(canAccessSettingsSection("security") ? [["security", "Sécurité", "Configurez la double authentification propre à ce poste PC.", "security"]] : []),
             ["personalization", "Interface & notifications", "Thème standard ou sombre, densité, animations et alertes choisies pour ce poste.", "appearance"],
             ...(isLocalCompanyAdministrator() && document.body.classList.contains("desktop-device") ? [["imports", document.body.dataset.organizationInterface === "partner" ? "Importation de clients" : "Importation de données", document.body.dataset.organizationInterface === "partner" ? "Importez vos fiches clients depuis Excel ou CSV." : "Importez vos clients, devis, factures et rapports depuis Excel ou CSV.", "import"]] : []),
@@ -1832,7 +1835,7 @@ function renderSettingsWorkspace(options = {}) {
 
     clearSearch();
     resetSelection("all");
-    const titles = { subscription: "Offre & abonnement", storage: "Stockage", documents: "Modèles de documents", company: "Entreprise · Boîte mail", network: document.body.dataset.organizationInterface === "partner" || !organizationFeatureEnabled("connectors") ? "Réseau Depann’Home Pro" : "Réseau & connecteurs", support: "Support", users: "Utilisateurs", security: "Sécurité", groups: "Groupe / Multi-entreprises", personalization: "Interface & notifications", imports: document.body.dataset.organizationInterface === "partner" ? "Importation de clients" : "Importation de données", creator: "Console Créateur" };
+    const titles = { subscription: "Offre & abonnement", storage: "Stockage", documents: "Modèles de documents", company: "Entreprise · Boîte mail", network: document.body.dataset.organizationInterface === "partner" || !organizationFeatureEnabled("connectors") ? "Réseau Depann’Home Pro" : "Réseau & connecteurs", support: "Support", users: "Utilisateurs", security: "Sécurité", groups: "Groupe / Multi-entreprises", history: "Historiques & journaux", personalization: "Interface & notifications", imports: document.body.dataset.organizationInterface === "partner" ? "Importation de clients" : "Importation de données", creator: "Console Créateur" };
     setPage(`Paramètres · ${titles[section] || "Configuration"}`, ROUTES.settings, "detail");
     const container = getContainer();
     container.appendChild(createBackCard("Retour aux Paramètres", () => renderSettings()));
@@ -1876,6 +1879,7 @@ function renderSettingsWorkspace(options = {}) {
         else renderGroupActivation(container);
         return;
     }
+    if (section === "history") return renderHistoryAndJournals(container);
     if (section === "imports") {
         if (!document.body.classList.contains("desktop-device")) return renderSettings();
         const partnerClientImport = document.body.dataset.organizationInterface === "partner";
