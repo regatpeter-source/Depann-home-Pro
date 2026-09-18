@@ -34,6 +34,8 @@ test("support sessions require consent context and have bounded lifetimes", () =
     assert.match(server, /session\.accepted_at IS NOT NULL/);
     assert.match(server, /support_assistance_consent_requested/);
     assert.match(server, /expires_at=NOW\(\)\+\(\$3::text\|\|' minutes'\)::interval/);
+    assert.match(server, /CASE WHEN \$9::boolean THEN NOW\(\) ELSE NULL END/);
+    assert.doesNotMatch(server, /CASE WHEN \$4='emergency'/);
 });
 
 test("l’entreprise ciblée accepte ou refuse depuis une notification Support ouvrable", () => {

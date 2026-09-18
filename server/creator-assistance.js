@@ -101,9 +101,9 @@ export function registerCreatorAssistanceRoutes(app, requireCreator, requireAuth
             await connection.query("BEGIN");
             ({ rows } = await connection.query(`INSERT INTO depannhome_creator_support_sessions
                 (id,created_by,target_company_owner_id,mode,reason,support_request_id,consent_basis,expires_at,accepted_at)
-                VALUES($1,$2,$3,$4,$5,$6,$7,NOW()+($8::text||' minutes')::interval,CASE WHEN $4='emergency' THEN NOW() ELSE NULL END)
+                VALUES($1,$2,$3,$4,$5,$6,$7,NOW()+($8::text||' minutes')::interval,CASE WHEN $9::boolean THEN NOW() ELSE NULL END)
                 RETURNING id,created_by AS "createdBy",target_company_owner_id AS "companyOwnerId",mode,reason,support_request_id AS "supportRequestId",consent_basis AS "consentBasis",expires_at AS "expiresAt",accepted_at AS "acceptedAt",revoked_at AS "revokedAt",created_at AS "createdAt"`,
-            [id, request.user.sub, companyOwnerId, emergency ? "emergency" : "readonly", reason, supportRequestId, consentBasis, duration]));
+            [id, request.user.sub, companyOwnerId, emergency ? "emergency" : "readonly", reason, supportRequestId, consentBasis, duration, emergency]));
             await connection.query("COMMIT");
         } catch (error) {
             await connection.query("ROLLBACK");
