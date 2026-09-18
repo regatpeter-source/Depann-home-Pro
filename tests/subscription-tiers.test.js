@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { subscriptionManagementAccessError } from "../server/creator.js";
 import { calculateSubscriptionPriceCents, isRoleAllowedForSubscription, subscriptionRoleAccessMessage, subscriptionTierConfig } from "../server/subscription-tiers.js";
 import { isFeatureEnabled, isFeatureEnabledForRole, organizationInterfaceAccessMessage, publicOrganization } from "../server/organizations.js";
 import { MENU_ACCESS, ROUTES } from "../js/config.js";
@@ -305,6 +306,19 @@ test("companies request offer changes from Settings without changing the active 
     assert.match(creatorClient, /renderSubscriptionChangeRequests/);
     assert.match(creatorClient, /requestedPcSeats/);
     assert.match(creatorClient, /requestedMobileSeats/);
+});
+
+test("seule l’entreprise principale peut demander une évolution ou une rétrogradation Groupe", () => {
+    assert.equal(subscriptionManagementAccessError("10", "10"), "");
+    assert.match(subscriptionManagementAccessError("20", "10"), /Seule l’entreprise principale/);
+    const requestRoutes = creatorServer.slice(creatorServer.indexOf('app.get("/api/subscription-change-requests"'), creatorServer.indexOf('app.get("/api/creator/subscription-change-requests"'));
+    assert.match(requestRoutes, /subscriptionManagementAccessError\(request\.user\.accountOwnerId, billingOwnerId\)/);
+    assert.doesNotMatch(requestRoutes, /!request\.user\.isGroupAdministrator/);
+    assert.match(requestRoutes, /managedByPrincipal: true/);
+    const subscriptionSettings = navigation.slice(navigation.indexOf("async function renderSubscriptionSettings"), navigation.indexOf("function subscriptionRequestStatusLabel"));
+    assert.match(subscriptionSettings, /if \(!result\.ok\)/);
+    assert.match(subscriptionSettings, /Offre gérée par l’entreprise principale/);
+    assert.match(subscriptionSettings, /Aucune modification n’est possible depuis cette entreprise/);
 });
 
 test("Creator console notifies every internal and external request", () => {

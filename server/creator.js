@@ -26,6 +26,12 @@ const EINVOICE_PLATFORM_CODE_PATTERN = /^[a-z0-9][a-z0-9_-]{1,59}$/;
 const EINVOICE_AUTHENTICATION_TYPES = new Set(["api_key", "oauth_client", "access_token", "identifier_secret", "custom_secret", "provider_specific"]);
 const EINVOICE_LIFECYCLE_STATUSES = new Set(["documentation_required", "specification_review", "development", "validation", "deployed", "suspended"]);
 
+export function subscriptionManagementAccessError(activeOwnerId, billingOwnerId) {
+    return String(activeOwnerId || "") === String(billingOwnerId || "")
+        ? ""
+        : "Seule l’entreprise principale peut gérer l’offre, la facturation et les postes du groupe. Basculez sur l’entreprise principale pour effectuer cette demande.";
+}
+
 export function registerCreatorRoutes(app, requireCreator, requireAuthentication) {
     app.get("/api/company/storage-usage", requireAuthentication, asyncHandler(async (request, response) => {
         if (request.user?.role !== "admin") return response.status(403).json({ message: "La consultation du stockage est réservée au Poste Admin de l’entreprise." });
@@ -65,7 +71,8 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
     app.get("/api/subscription-change-requests", requireAuthentication, asyncHandler(async (request, response) => {
         if (request.user?.role !== "admin") return response.status(403).json({ message: "La gestion de l’offre est réservée à l’Administrateur de l’entreprise." });
         const billingOwnerId = await subscriptionOwnerId(getPool(), request.user.accountOwnerId);
-        if (billingOwnerId !== String(request.user.accountOwnerId) && !request.user.isGroupAdministrator) return response.status(403).json({ message: "L’abonnement du groupe est géré par son Administrateur principal." });
+        const accessError = subscriptionManagementAccessError(request.user.accountOwnerId, billingOwnerId);
+        if (accessError) return response.status(403).json({ message: accessError, managedByPrincipal: true });
         const [requestsResult, accountResult, invoiceResult] = await Promise.all([
             getPool().query(`SELECT id,current_tier AS "currentTier",requested_tier AS "requestedTier",requested_pc_seats AS "requestedPcSeats",requested_mobile_seats AS "requestedMobileSeats",status,company_message AS "companyMessage",created_at AS "createdAt",updated_at AS "updatedAt" FROM depannhome_subscription_change_requests WHERE owner_id=$1 ORDER BY created_at DESC LIMIT 20`, [billingOwnerId]),
             getPool().query(`SELECT subscription_tier AS "subscriptionTier",subscription_label AS "subscriptionLabel",subscription_plan AS "subscriptionPlan",subscription_status AS "subscriptionStatus",TO_CHAR(subscription_renewal_date,'YYYY-MM-DD') AS "subscriptionRenewalDate",trial_started_at AS "trialStartedAt",trial_ends_at AS "trialEndsAt",trial_renewal_count AS "trialRenewalCount",billing_reference AS "billingReference",subscription_discount_label AS "discountLabel",subscription_discount_mode AS "discountMode",subscription_discount_value::float AS "discountValue",max_pc_users AS "maxPcUsers",max_technicians AS "maxMobileUsers" FROM depannhome_users WHERE id=$1 AND account_owner_id=id`, [billingOwnerId]),
@@ -78,7 +85,8 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
     app.post("/api/subscription-change-requests", requireAuthentication, asyncHandler(async (request, response) => {
         if (request.user?.role !== "admin") return response.status(403).json({ message: "La demande de changement d’offre est réservée à l’Administrateur de l’entreprise." });
         const billingOwnerId = await subscriptionOwnerId(getPool(), request.user.accountOwnerId);
-        if (billingOwnerId !== String(request.user.accountOwnerId) && !request.user.isGroupAdministrator) return response.status(403).json({ message: "L’abonnement du groupe est géré par son Administrateur principal." });
+        const accessError = subscriptionManagementAccessError(request.user.accountOwnerId, billingOwnerId);
+        if (accessError) return response.status(403).json({ message: accessError, managedByPrincipal: true });
         const requestedTier = normalizeSubscriptionTier(request.body?.requestedTier, "");
         const requestedPcSeats = positiveLimit(request.body?.requestedPcSeats, 1, 100);
         const requestedMobileSeats = positiveLimit(request.body?.requestedMobileSeats, 0, 500);

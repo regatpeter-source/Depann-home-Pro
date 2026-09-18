@@ -1920,8 +1920,17 @@ async function renderSubscriptionSettings(container) {
     const rank = { basic: 0, basic_plus: 1, pro: 2 };
     const result = await fetch("/api/subscription-change-requests", { credentials: "same-origin" });
     const data = await result.json().catch(() => ({}));
-    const requests = result.ok ? data.requests || [] : [];
-    const account = result.ok && data.account ? data.account : {};
+    if (!result.ok) {
+        const panel = document.createElement("section");
+        panel.className = "creator-form subscription-company-panel";
+        panel.innerHTML = data.managedByPrincipal
+            ? `<div class="form-heading"><div><p class="eyebrow">Abonnement Groupe</p><h2>Offre gérée par l’entreprise principale</h2></div></div><aside class="accounting-pdp-notice"><strong>Aucune modification n’est possible depuis cette entreprise.</strong><br>${escapeHtml(data.message || "Basculez sur l’entreprise principale pour gérer l’offre et les postes du groupe.")}</aside>`
+            : `<p class="auth-message error">${escapeHtml(data.message || "Impossible de charger l’offre de l’entreprise.")}</p>`;
+        container.appendChild(panel);
+        return;
+    }
+    const requests = data.requests || [];
+    const account = data.account || {};
     const currentTier = ["basic", "basic_plus", "pro"].includes(account.subscriptionTier) ? account.subscriptionTier : document.body.dataset.subscriptionTier || "pro";
     const currentPcSeats = Math.max(1, Number(account.maxPcUsers ?? document.body.dataset.maxPcUsers) || 1);
     const currentMobileSeats = Math.max(0, Number(account.maxMobileUsers ?? document.body.dataset.maxMobileUsers) || 0);
