@@ -138,6 +138,7 @@ export function registerGroupRoutes(app, requireAuthentication) {
             }
             const user = await createUser({ username: input.username, passwordHash: await bcrypt.hash(input.password, 12), role: "admin", fullName: input.fullName, phone: input.phone, email: input.email }, client);
             await client.query("UPDATE depannhome_users SET company_name=$2,max_pc_users=1,max_technicians=0,subscription_plan='free',subscription_tier='pro',subscription_label='Rattachée au groupe',monthly_price_cents=0 WHERE id=$1", [user.id, input.companyName]);
+            await client.query("INSERT INTO depannhome_billing_profiles(owner_id,company_name,phone,email) VALUES($1,$2,$3,$4) ON CONFLICT(owner_id) DO UPDATE SET company_name=EXCLUDED.company_name,phone=EXCLUDED.phone,email=EXCLUDED.email,updated_at=NOW()", [user.id, input.companyName, input.phone, input.email]);
             await createOrganization(user.id, { interfaceType: "group", licenseType: "depannhome_group" }, req.user.sub, client);
             await client.query("INSERT INTO depannhome_group_companies(group_id,company_owner_id) VALUES($1,$2)", [groupId, user.id]);
             await client.query("INSERT INTO depannhome_group_company_seat_allocations(group_id,company_owner_id,allocated_pc_seats,allocated_mobile_seats) VALUES($1,$2,$3,$4)", [groupId, user.id, input.allocatedPcSeats, input.allocatedMobileSeats]);
@@ -149,6 +150,14 @@ export function registerGroupRoutes(app, requireAuthentication) {
             if (error.code === "23505") return res.status(409).json({ message: "Cet identifiant administrateur est déjà utilisé. Choisissez un identifiant unique." });
             throw error;
         } finally { client.release(); }
+    }));
+    app.get("/api/groups/companies/:companyId", requireGroupAdministrator, asyncHandler(async (req, res) => {
+        const companyId = positiveId(req.params.companyId);
+        if (!companyId) return res.status(400).json({ message: "Entreprise invalide." });
+        const company = await groupCompanyProfile(req.user.groupId, companyId);
+        if (!company) return res.status(404).json({ message: "Entreprise introuvable dans ce groupe." });
+        const usage = await companySeatState(getPool(), companyId);
+        res.json({ company: { ...company, activePcUsers: Number(usage?.activePcUsers) || 0, approvedPcDevices: Number(usage?.approvedPcDevices) || 0, activeMobileUsers: Number(usage?.activeMobileUsers) || 0 } });
     }));
     app.patch("/api/groups/companies/:companyId", requireGroupAdministrator, asyncHandler(async (req, res) => {
         const companyId = positiveId(req.params.companyId); const groupId = req.user.groupId;
@@ -163,7 +172,10 @@ export function registerGroupRoutes(app, requireAuthentication) {
             const seats = await groupSeatStatus(client, groupId);
             const currentAllocation = seats?.companies.find(item => String(item.id) === String(companyId));
             if (!currentAllocation) { await client.query("ROLLBACK"); return res.status(409).json({ message: "Allocation de postes introuvable." }); }
-            const name = clean(req.body?.companyName, 160) || company.companyName;
+            const currentProfile = await groupCompanyProfile(groupId, companyId, client);
+            const profile = validateGroupCompanyProfile(req.body, currentProfile);
+            if (!profile.ok) { await client.query("ROLLBACK"); return res.status(400).json({ message: profile.message }); }
+            const name = profile.companyName;
             const isActive = typeof req.body?.isActive === "boolean" ? req.body.isActive : company.isActive;
             const allocatedPcSeats = req.body?.allocatedPcSeats === undefined ? currentAllocation.allocatedPcSeats : limit(req.body.allocatedPcSeats, 1, 100);
             const allocatedMobileSeats = req.body?.allocatedMobileSeats === undefined ? currentAllocation.allocatedMobileSeats : limit(req.body.allocatedMobileSeats, 0, 500);
@@ -171,17 +183,49 @@ export function registerGroupRoutes(app, requireAuthentication) {
             const usage = await companySeatState(client, companyId);
             const requiredPcSeats = Math.max(Number(usage?.activePcUsers) || 0, Number(usage?.approvedPcDevices) || 0);
             if (allocatedPcSeats < requiredPcSeats || allocatedMobileSeats < Number(usage?.activeMobileUsers || 0)) { await client.query("ROLLBACK"); return res.status(409).json({ message: "L’allocation ne peut pas être inférieure aux postes actuellement utilisés par cette entreprise." }); }
-            const pcWithoutCompany = seats.allocatedPcSeats - currentAllocation.allocatedPcSeats;
-            const mobileWithoutCompany = seats.allocatedMobileSeats - currentAllocation.allocatedMobileSeats;
-            if (pcWithoutCompany + allocatedPcSeats > seats.totalPcSeats || mobileWithoutCompany + allocatedMobileSeats > seats.totalMobileSeats) { await client.query("ROLLBACK"); return res.status(409).json({ message: "Cette répartition dépasse l’enveloppe de postes du groupe." }); }
+            const addedPcSeats = Math.max(0, allocatedPcSeats - currentAllocation.allocatedPcSeats);
+            const addedMobileSeats = Math.max(0, allocatedMobileSeats - currentAllocation.allocatedMobileSeats);
+            const transferablePcSeats = currentAllocation.isPrincipal ? 0 : seats.transferablePrincipalPcSeats;
+            const transferableMobileSeats = currentAllocation.isPrincipal ? 0 : seats.transferablePrincipalMobileSeats;
+            if (addedPcSeats > seats.availablePcSeats + transferablePcSeats || addedMobileSeats > seats.availableMobileSeats + transferableMobileSeats) { await client.query("ROLLBACK"); return res.status(409).json({ message: "Cette répartition dépasse les postes disponibles ou inutilisés de l’entreprise principale." }); }
+            const transferredPcSeats = Math.max(0, addedPcSeats - seats.availablePcSeats);
+            const transferredMobileSeats = Math.max(0, addedMobileSeats - seats.availableMobileSeats);
             if (!isActive && String(companyId) === getAccountOwnerId(req)) { await client.query("ROLLBACK"); return res.status(400).json({ message: "Changez d’entreprise active avant de désactiver celle-ci." }); }
+            if (transferredPcSeats || transferredMobileSeats) await client.query("UPDATE depannhome_group_company_seat_allocations SET allocated_pc_seats=allocated_pc_seats-$2,allocated_mobile_seats=allocated_mobile_seats-$3,updated_at=NOW() WHERE group_id=$1 AND company_owner_id=$4", [groupId, transferredPcSeats, transferredMobileSeats, seats.principalCompanyId]);
             await client.query("UPDATE depannhome_group_company_seat_allocations SET allocated_pc_seats=$3,allocated_mobile_seats=$4,updated_at=NOW() WHERE group_id=$1 AND company_owner_id=$2", [groupId, companyId, allocatedPcSeats, allocatedMobileSeats]);
             await client.query("UPDATE depannhome_group_companies SET is_active=$3,updated_at=NOW() WHERE group_id=$1 AND company_owner_id=$2", [groupId, companyId, isActive]);
-            await client.query("UPDATE depannhome_users SET company_name=$2,is_active=$3,updated_at=NOW() WHERE id=$1 AND account_owner_id=id", [companyId, name, isActive]);
+            await client.query("UPDATE depannhome_users SET company_name=$2,full_name=$3,phone=$4,email=$5,is_active=$6,updated_at=NOW() WHERE id=$1 AND account_owner_id=id", [companyId, name, profile.fullName, profile.phone, profile.email, isActive]);
+            await client.query(`INSERT INTO depannhome_billing_profiles(owner_id,company_name,legal_form,address,postal_code,city,phone,email,country,registration_number,siren)
+                VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+                ON CONFLICT(owner_id) DO UPDATE SET company_name=EXCLUDED.company_name,legal_form=EXCLUDED.legal_form,address=EXCLUDED.address,postal_code=EXCLUDED.postal_code,city=EXCLUDED.city,phone=EXCLUDED.phone,email=EXCLUDED.email,country=EXCLUDED.country,registration_number=EXCLUDED.registration_number,siren=EXCLUDED.siren,updated_at=NOW()`,
+            [companyId, name, profile.legalForm, profile.address, profile.postalCode, profile.city, profile.phone, profile.email, profile.country, profile.registrationNumber, profile.siren]);
             const allocationChanged = allocatedPcSeats !== currentAllocation.allocatedPcSeats || allocatedMobileSeats !== currentAllocation.allocatedMobileSeats;
-            await audit(client, { groupId, companyId, actorId: req.user.sub, action: allocationChanged ? "group_seats_rebalanced" : name !== company.companyName ? "company_updated" : isActive ? "company_activated" : "company_deactivated", details: { companyName: name, previousCompanyName: company.companyName, isActive, previousIsActive: company.isActive, allocatedPcSeats, allocatedMobileSeats, previousAllocatedPcSeats: currentAllocation.allocatedPcSeats, previousAllocatedMobileSeats: currentAllocation.allocatedMobileSeats }, ip: req.ip });
+            const profileChanged = ["companyName", "fullName", "phone", "email", "legalForm", "address", "postalCode", "city", "country", "registrationNumber", "siren"].some(key => profile[key] !== currentProfile[key]);
+            await audit(client, { groupId, companyId, actorId: req.user.sub, action: allocationChanged ? "group_seats_rebalanced" : profileChanged ? "company_updated" : isActive ? "company_activated" : "company_deactivated", details: { companyName: name, previousCompanyName: company.companyName, isActive, previousIsActive: company.isActive, profileChanged, allocatedPcSeats, allocatedMobileSeats, previousAllocatedPcSeats: currentAllocation.allocatedPcSeats, previousAllocatedMobileSeats: currentAllocation.allocatedMobileSeats, transferredPcSeats, transferredMobileSeats }, ip: req.ip });
             await client.query("COMMIT");
             res.status(204).end();
+        } catch (error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }
+    }));
+    app.delete("/api/groups/companies/:companyId", requireGroupAdministrator, asyncHandler(async (req, res) => {
+        const companyId = positiveId(req.params.companyId); const groupId = req.user.groupId;
+        if (!companyId) return res.status(400).json({ message: "Entreprise invalide." });
+        const client = await getPool().connect();
+        try {
+            await client.query("BEGIN");
+            const company = await groupCompanyProfile(groupId, companyId, client, true);
+            if (!company) { await client.query("ROLLBACK"); return res.status(404).json({ message: "Entreprise introuvable dans ce groupe." }); }
+            if (company.isPrincipal) { await client.query("ROLLBACK"); return res.status(403).json({ message: "L’entreprise principale ne peut pas être supprimée du Groupe." }); }
+            await lockGroupSeatAllocation(client, groupId);
+            await audit(client, { groupId, companyId, actorId: req.user.sub, action: "company_removed", details: { companyName: company.companyName, archived: true }, ip: req.ip });
+            await client.query("DELETE FROM depannhome_group_company_seat_allocations WHERE group_id=$1 AND company_owner_id=$2", [groupId, companyId]);
+            await client.query("DELETE FROM depannhome_group_companies WHERE group_id=$1 AND company_owner_id=$2", [groupId, companyId]);
+            await client.query("UPDATE depannhome_organizations SET interface_type='standard',license_type='depannhome_standard',updated_at=NOW() WHERE account_owner_id=$1", [companyId]);
+            const archived = await client.query("UPDATE depannhome_users SET is_archived=TRUE,is_active=FALSE,archived_at=NOW(),archived_by=$2,updated_at=NOW() WHERE id=$1 AND account_owner_id=id AND is_archived=FALSE", [companyId, req.user.sub]);
+            if (!archived.rowCount) { await client.query("ROLLBACK"); return res.status(409).json({ message: "Cette entreprise est déjà archivée." }); }
+            await client.query("UPDATE depannhome_auth_devices SET status='rejected',session_id=NULL,verification_code_hash='',verification_code_expires_at=NULL,verification_attempts=0 WHERE user_id IN (SELECT id FROM depannhome_users WHERE account_owner_id=$1)", [companyId]);
+            await client.query("INSERT INTO depannhome_account_lifecycle_audit(account_owner_id,actor_id,action,reason) VALUES($1,$2,'archived',$3)", [companyId, req.user.sub, clean(req.body?.reason, 500) || "Entreprise supprimée du pilotage Groupe par l’administrateur principal."]);
+            await client.query("COMMIT");
+            res.json({ removed: true, archived: true, releasedPcSeats: company.allocatedPcSeats, releasedMobileSeats: company.allocatedMobileSeats });
         } catch (error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }
     }));
     app.put("/api/groups/active-company", requireGroupCompanySwitchAccess, asyncHandler(async (req, res) => {
@@ -245,12 +289,13 @@ async function lockGroupSeatAllocation(database, groupId) {
 }
 
 async function groupContext(groupId, activeCompanyId) {
-    const { rows } = await getPool().query(`SELECT group_data.id,group_data.name,group_data.shared_partner_directory_enabled AS "sharedPartnerDirectoryEnabled",company.company_owner_id AS id,company.is_active AS "isActive",owner.company_name AS "companyName",owner.full_name AS "administratorName" FROM depannhome_groups group_data JOIN depannhome_group_companies company ON company.group_id=group_data.id JOIN depannhome_users owner ON owner.id=company.company_owner_id WHERE group_data.id=$1 AND group_data.is_active=TRUE ORDER BY LOWER(owner.company_name),owner.id`, [groupId]);
+    const { rows } = await getPool().query(`SELECT group_data.id,group_data.name,group_data.shared_partner_directory_enabled AS "sharedPartnerDirectoryEnabled",company.company_owner_id AS id,company.is_active AS "isActive",owner.company_name AS "companyName",owner.full_name AS "administratorName",company.company_owner_id=entitlement.principal_company_owner_id AS "isPrincipal" FROM depannhome_groups group_data JOIN depannhome_group_companies company ON company.group_id=group_data.id JOIN depannhome_group_entitlements entitlement ON entitlement.group_id=group_data.id JOIN depannhome_users owner ON owner.id=company.company_owner_id WHERE group_data.id=$1 AND group_data.is_active=TRUE ORDER BY LOWER(owner.company_name),owner.id`, [groupId]);
     const group = rows[0] ? { id: String(rows[0].id), name: rows[0].name, sharedPartnerDirectoryEnabled: rows[0].sharedPartnerDirectoryEnabled } : null;
-    return { group, companies: rows.map(row => ({ id: String(row.id), companyName: row.companyName || row.administratorName || "Entreprise", isActive: row.isActive })), activeCompanyId: String(activeCompanyId || "") };
+    return { group, companies: rows.map(row => ({ id: String(row.id), companyName: row.companyName || row.administratorName || "Entreprise", administratorName: row.administratorName || "", isActive: row.isActive, isPrincipal: row.isPrincipal })), activeCompanyId: String(activeCompanyId || "") };
 }
 
 async function groupCompany(groupId, companyId, lock = false, database = getPool()) { const { rows } = await database.query(`SELECT company.company_owner_id AS id,company.is_active AS "isActive",owner.company_name AS "companyName" FROM depannhome_group_companies company JOIN depannhome_users owner ON owner.id=company.company_owner_id WHERE company.group_id=$1 AND company.company_owner_id=$2${lock ? " FOR UPDATE OF company, owner" : ""}`, [groupId, companyId]); return rows[0] || null; }
+async function groupCompanyProfile(groupId, companyId, database = getPool(), lock = false) { const { rows } = await database.query(`SELECT owner.id,owner.username,owner.full_name AS "fullName",COALESCE(NULLIF(profile.email,''),owner.email) AS email,COALESCE(NULLIF(profile.phone,''),owner.phone) AS phone,company.is_active AS "isActive",company.company_owner_id=entitlement.principal_company_owner_id AS "isPrincipal",allocation.allocated_pc_seats AS "allocatedPcSeats",allocation.allocated_mobile_seats AS "allocatedMobileSeats",COALESCE(NULLIF(profile.company_name,''),NULLIF(owner.company_name,''),owner.full_name,owner.username) AS "companyName",COALESCE(profile.legal_form,'') AS "legalForm",COALESCE(profile.address,'') AS address,COALESCE(profile.postal_code,'') AS "postalCode",COALESCE(profile.city,'') AS city,COALESCE(profile.country,'France') AS country,COALESCE(profile.registration_number,'') AS "registrationNumber",COALESCE(profile.siren,'') AS siren FROM depannhome_group_companies company JOIN depannhome_group_entitlements entitlement ON entitlement.group_id=company.group_id JOIN depannhome_group_company_seat_allocations allocation ON allocation.group_id=company.group_id AND allocation.company_owner_id=company.company_owner_id JOIN depannhome_users owner ON owner.id=company.company_owner_id LEFT JOIN depannhome_billing_profiles profile ON profile.owner_id=owner.id WHERE company.group_id=$1 AND company.company_owner_id=$2${lock ? " FOR UPDATE OF company, owner, allocation" : ""}`, [groupId, companyId]); return rows[0] || null; }
 async function dashboard(companyIds, start, end) {
     const db = getPool(); const dates = [companyIds, start || null, end || null];
     const [billing, interventions, technicians] = await Promise.all([
@@ -290,4 +335,5 @@ function limit(value, minimum, maximum) { const valueNumber = Number(value); ret
 function date(value) { return strictDateOnly(value); }
 function tierLabel(value) { return value === "basic" ? "Basic" : value === "basic_plus" ? "Basic+" : "Pro"; }
 export function groupActivationAccessError(owner, organization) { if (organization?.interfaceType === "partner") return "Un compte Partenaire gratuit ne peut pas activer le mode Groupe."; if (owner?.subscription_plan !== "paid" || owner?.subscription_tier !== "pro") return "Le mode Groupe est inclus uniquement dans l’offre Pro payante."; return ""; }
+export function validateGroupCompanyProfile(value = {}, current = {}) { const profile = { companyName: clean(value.companyName ?? current.companyName, 160), fullName: clean(value.fullName ?? current.fullName, 100), email: clean(value.email ?? current.email, 160).toLowerCase(), phone: clean(value.phone ?? current.phone, 30), legalForm: clean(value.legalForm ?? current.legalForm, 100), address: clean(value.address ?? current.address, 255), postalCode: clean(value.postalCode ?? current.postalCode, 20), city: clean(value.city ?? current.city, 100), country: clean(value.country ?? current.country, 100) || "France", registrationNumber: clean(value.registrationNumber ?? current.registrationNumber, 100), siren: clean(value.siren ?? current.siren, 20) }; if (!profile.companyName) return { ok: false, message: "Le nom de l’entreprise est obligatoire." }; if (!profile.fullName) return { ok: false, message: "Le nom de l’administrateur principal est obligatoire." }; if (profile.email && !EMAIL_PATTERN.test(profile.email)) return { ok: false, message: "L’adresse e-mail de l’administrateur est invalide." }; return { ok: true, ...profile }; }
 function asyncHandler(handler) { return (req, res, next) => Promise.resolve(handler(req, res, next)).catch(next); }

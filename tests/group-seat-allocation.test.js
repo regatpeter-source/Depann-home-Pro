@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { companySeatState, groupSeatStatus } from "../server/seat-limits.js";
+import { validateGroupCompanyProfile } from "../server/groups.js";
 
 const read = path => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 const migration = read("database/migrations/0015_group_seat_allocations.sql");
@@ -91,7 +92,32 @@ test("les routes refusent les dépassements et les réductions sous l’usage ac
     assert.match(groups, /allocated_pc_seats=allocated_pc_seats-\$2/);
     assert.match(groups, /allocatedPcSeats < requiredPcSeats/);
     assert.match(groups, /allocatedMobileSeats < Number\(usage\?\.activeMobileUsers/);
+    assert.match(groups, /addedPcSeats > seats\.availablePcSeats \+ transferablePcSeats/);
+    assert.match(groups, /allocated_pc_seats=allocated_pc_seats-\$2/);
     assert.match(groups, /app\.get\("\/api\/groups\/seat-status"/);
+});
+
+test("l’administrateur principal dispose d’une fiche complète et peut réattribuer les postes", () => {
+    assert.match(groups, /app\.get\("\/api\/groups\/companies\/:companyId", requireGroupAdministrator/);
+    assert.match(groups, /depannhome_billing_profiles profile/);
+    assert.match(groups, /allocated_pc_seats AS "allocatedPcSeats"/);
+    assert.match(groupsClient, /Fiche \/ gérer/);
+    assert.match(groupsClient, /Enregistrer la fiche et les postes/);
+    assert.match(groupsClient, /activePcUsers/);
+    assert.equal(validateGroupCompanyProfile({ companyName: "Agence Nord", fullName: "Jean Dupont", email: "admin@agence.test" }).ok, true);
+    assert.match(validateGroupCompanyProfile({ companyName: "Agence Nord", fullName: "Jean Dupont", email: "incorrect" }).message, /e-mail/);
+});
+
+test("la suppression d’une filiale archive ses données et restitue ses postes", () => {
+    const removal = groups.slice(groups.indexOf('app.delete("/api/groups/companies/:companyId"'), groups.indexOf('app.put("/api/groups/active-company"'));
+    assert.match(removal, /if \(company\.isPrincipal\)/);
+    assert.match(removal, /DELETE FROM depannhome_group_company_seat_allocations/);
+    assert.match(removal, /DELETE FROM depannhome_group_companies/);
+    assert.match(removal, /is_archived=TRUE,is_active=FALSE/);
+    assert.match(removal, /depannhome_auth_devices SET status='rejected'/);
+    assert.match(removal, /depannhome_account_lifecycle_audit/);
+    assert.match(groupsClient, /Supprimer l’entreprise du Groupe/);
+    assert.match(groupsClient, /Ses factures et données légales seront conservées/);
 });
 
 test("le Créateur attribue le nombre de sociétés et les totaux du groupe principal", () => {

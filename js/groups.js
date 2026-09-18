@@ -144,16 +144,57 @@ async function loadDashboard(shell, form) {
 }
 
 async function editCompany(button) {
-    const currentName = button.dataset.companyName || "";
-    const companyName = window.prompt("Nom de l’entreprise :", currentName);
-    if (companyName === null) return;
-    const allocatedPcSeats = window.prompt("Postes PC attribués à cette entreprise :", button.dataset.allocatedPcSeats || "1");
-    if (allocatedPcSeats === null) return;
-    const allocatedMobileSeats = window.prompt("Postes mobiles attribués à cette entreprise :", button.dataset.allocatedMobileSeats || "0");
-    if (allocatedMobileSeats === null) return;
     button.disabled = true;
-    const result = await api(`/api/groups/companies/${encodeURIComponent(button.dataset.editCompany)}`, { method: "PATCH", body: JSON.stringify({ companyName: companyName.trim(), allocatedPcSeats: Number(allocatedPcSeats), allocatedMobileSeats: Number(allocatedMobileSeats) }) });
-    if (!result.ok) { button.disabled = false; return alert(result.message || "Mise à jour impossible."); }
+    const result = await api(`/api/groups/companies/${encodeURIComponent(button.dataset.editCompany)}`);
+    button.disabled = false;
+    if (!result.ok || !result.data?.company) return alert(result.message || "Fiche entreprise indisponible.");
+    renderCompanyProfileDialog(result.data.company);
+}
+
+function renderCompanyProfileDialog(company) {
+    document.querySelector(".group-company-modal")?.remove();
+    const modal = document.createElement("div");
+    modal.className = "group-company-modal";
+    modal.innerHTML = `<section role="dialog" aria-modal="true" aria-labelledby="groupCompanyDialogTitle"><div class="form-heading"><div><p class="eyebrow">Entreprise du Groupe</p><h3 id="groupCompanyDialogTitle">Fiche de ${escapeHtml(company.companyName)}</h3><p class="muted">${company.isPrincipal ? "Entreprise principale du Groupe" : "Entreprise rattachée"} · ${company.isActive ? "Active" : "Désactivée"}</p></div><button type="button" class="icon-button" data-close-company aria-label="Fermer">×</button></div><form class="form-grid" data-company-profile><label>Nom de l’entreprise *<input name="companyName" maxlength="160" value="${escapeHtml(company.companyName)}" required></label><label>Forme juridique<input name="legalForm" maxlength="100" value="${escapeHtml(company.legalForm)}" placeholder="Ex. SAS, SARL"></label><label>SIRET<input name="registrationNumber" maxlength="100" value="${escapeHtml(company.registrationNumber)}"></label><label>SIREN<input name="siren" maxlength="20" value="${escapeHtml(company.siren)}"></label><label class="form-wide">Adresse<input name="address" maxlength="255" value="${escapeHtml(company.address)}"></label><label>Code postal<input name="postalCode" maxlength="20" value="${escapeHtml(company.postalCode)}"></label><label>Ville<input name="city" maxlength="100" value="${escapeHtml(company.city)}"></label><label>Pays<input name="country" maxlength="100" value="${escapeHtml(company.country || "France")}"></label><label>Téléphone<input name="phone" maxlength="30" value="${escapeHtml(company.phone)}"></label><label>E-mail<input name="email" type="email" maxlength="160" value="${escapeHtml(company.email)}"></label><label>Administrateur principal *<input name="fullName" maxlength="100" value="${escapeHtml(company.fullName)}" required></label><label>Identifiant administrateur<input value="${escapeHtml(company.username)}" readonly></label><label>Postes PC attribués<input name="allocatedPcSeats" type="number" min="1" max="100" value="${company.allocatedPcSeats}" required><small>${company.activePcUsers} compte(s) PC actif(s), ${company.approvedPcDevices} appareil(s) approuvé(s).</small></label><label>Postes mobiles attribués<input name="allocatedMobileSeats" type="number" min="0" max="500" value="${company.allocatedMobileSeats}" required><small>${company.activeMobileUsers} compte(s) mobile(s) actif(s).</small></label><p class="auth-message form-wide" aria-live="polite"></p><div class="form-actions form-wide"><button class="primary-button">Enregistrer la fiche et les postes</button><button type="button" class="secondary-button" data-close-company>Annuler</button>${company.isPrincipal ? "" : '<button type="button" class="secondary-button danger-button" data-delete-company>Supprimer l’entreprise du Groupe</button>'}</div></form></section>`;
+    const close = () => modal.remove();
+    modal.querySelectorAll("[data-close-company]").forEach(closeButton => closeButton.addEventListener("click", close));
+    modal.addEventListener("click", event => { if (event.target === modal) close(); });
+    modal.addEventListener("keydown", event => { if (event.key === "Escape") close(); });
+    const form = modal.querySelector("[data-company-profile]");
+    const feedback = form.querySelector(".auth-message");
+    form.addEventListener("submit", async event => {
+        event.preventDefault();
+        const values = Object.fromEntries(new FormData(form));
+        values.allocatedPcSeats = Number(values.allocatedPcSeats);
+        values.allocatedMobileSeats = Number(values.allocatedMobileSeats);
+        const saveButton = form.querySelector(".primary-button");
+        saveButton.disabled = true;
+        feedback.classList.remove("error");
+        feedback.textContent = "Enregistrement en cours…";
+        const saved = await api(`/api/groups/companies/${encodeURIComponent(company.id)}`, { method: "PATCH", body: JSON.stringify(values) });
+        if (!saved.ok) {
+            saveButton.disabled = false;
+            feedback.classList.add("error");
+            feedback.textContent = saved.message || "Mise à jour impossible.";
+            return;
+        }
+        close();
+        notifyGroupCompaniesChanged();
+        renderGroupWorkspace();
+    });
+    modal.querySelector("[data-delete-company]")?.addEventListener("click", () => removeCompany(company, modal));
+    document.body.appendChild(modal);
+    modal.querySelector("input[name='companyName']")?.focus();
+}
+
+async function removeCompany(company, modal) {
+    if (!confirm(`Supprimer ${company.companyName} du Groupe ? Ses postes seront immédiatement restitués à l’enveloppe.`)) return;
+    if (!confirm("La société sera archivée et toutes ses sessions seront révoquées. Ses factures et données légales seront conservées. Confirmer ?")) return;
+    const button = modal.querySelector("[data-delete-company]");
+    button.disabled = true;
+    const result = await api(`/api/groups/companies/${encodeURIComponent(company.id)}`, { method: "DELETE", body: JSON.stringify({ reason: "Suppression depuis le pilotage Groupe" }) });
+    if (!result.ok) { button.disabled = false; return alert(result.message || "Suppression impossible."); }
+    modal.remove();
     notifyGroupCompaniesChanged();
     renderGroupWorkspace();
 }
@@ -174,9 +215,9 @@ function notifyGroupCompaniesChanged() {
 
 function companyOption(item) { return `<option value="${escapeHtml(item.id)}">${escapeHtml(item.companyName)}</option>`; }
 function companyRows(rows = [], companies = []) { const names = new Map(companies.map(item => [String(item.id), item.companyName])); return rows.map(item => `<article><strong>${escapeHtml(names.get(String(item.companyId)) || "Entreprise")}</strong><span>CA ${money(item.turnover)}</span><span>${item.interventions} intervention(s)</span><span>${item.quotes} devis · ${item.invoices} facture(s)</span><span>${item.technicians} technicien(s)</span></article>`).join("") || '<p class="muted">Aucune donnée sur cette période.</p>'; }
-function companyManagementRow(item, activeCompanyId) { const active = Boolean(item.isActive); return `<article><div><strong>${escapeHtml(item.companyName)}</strong><p>${active ? "Active" : "Désactivée"}${String(item.id) === String(activeCompanyId) ? " · Entreprise active" : ""}</p></div><div class="group-company-actions"><button type="button" class="secondary-button" data-edit-company="${escapeHtml(item.id)}" data-company-name="${escapeHtml(item.companyName)}">Modifier</button><button type="button" class="secondary-button${active ? " danger-button" : ""}" data-toggle-company="${escapeHtml(item.id)}" data-company-active="${active}">${active ? "Désactiver" : "Réactiver"}</button></div></article>`; }
+function companyManagementRow(item, activeCompanyId) { const active = Boolean(item.isActive); return `<article><div><strong>${escapeHtml(item.companyName)}</strong><p>${item.isPrincipal ? "Entreprise principale · " : ""}${active ? "Active" : "Désactivée"}${String(item.id) === String(activeCompanyId) ? " · Entreprise active" : ""}</p>${item.administratorName ? `<small>Admin : ${escapeHtml(item.administratorName)}</small>` : ""}</div><div class="group-company-actions"><button type="button" class="secondary-button" data-edit-company="${escapeHtml(item.id)}">Fiche / gérer</button>${item.isPrincipal ? "" : `<button type="button" class="secondary-button${active ? " danger-button" : ""}" data-toggle-company="${escapeHtml(item.id)}" data-company-active="${active}">${active ? "Désactiver" : "Réactiver"}</button>`}</div></article>`; }
 function auditRows(entries) { return entries.map(entry => `<article><strong>${escapeHtml(auditLabel(entry.action))}</strong><span>${escapeHtml(entry.companyName || "Groupe")}</span><span>${escapeHtml(entry.actorName || entry.actorUsername || "Administrateur")}</span><time datetime="${escapeHtml(entry.createdAt || "")}">${formatDate(entry.createdAt)}</time></article>`).join("") || '<p class="muted">Aucune action Groupe enregistrée.</p>'; }
-function auditLabel(action) { return ({ group_activated: "Groupe activé", company_created: "Entreprise créée", company_updated: "Entreprise modifiée", company_activated: "Entreprise activée", company_deactivated: "Entreprise désactivée", company_switched: "Entreprise sélectionnée", group_seats_rebalanced: "Postes réattribués", client_imported: "Client repris depuis une entreprise du groupe" })[action] || action || "Action Groupe"; }
+function auditLabel(action) { return ({ group_activated: "Groupe activé", company_created: "Entreprise créée", company_updated: "Entreprise modifiée", company_removed: "Entreprise supprimée du Groupe", company_activated: "Entreprise activée", company_deactivated: "Entreprise désactivée", company_switched: "Entreprise sélectionnée", group_seats_rebalanced: "Postes réattribués", client_imported: "Client repris depuis une entreprise du groupe" })[action] || action || "Action Groupe"; }
 export function groupCompanyFormError(value = {}) {
     if (!String(value.companyName || "").trim()) return "Le nom de l’entreprise est obligatoire.";
     if (!String(value.fullName || "").trim()) return "Le nom de l’administrateur principal est obligatoire.";
