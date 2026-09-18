@@ -26,7 +26,7 @@ import {
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { renderPlatformAnnouncement } from "./platform-announcement.js?v=1";
 import { renderDocumentTemplateEditor } from "./document-template-editor.js?v=3";
-import { openCompanyAssistanceRequest } from "./collaboration.js?v=10";
+import { openCompanyAssistanceRequest } from "./collaboration.js?v=11";
 import {
     clearSearch,
     createBackCard,
@@ -113,6 +113,11 @@ export function initializeNavigation(loadedDatabase) {
     window.addEventListener("depannhome:technician-calendar-viewed", event => markTechnicianCalendarAlertsRead(event.detail?.events || []));
     window.addEventListener("depannhome:open-notification", event => openNotificationDestination(event.detail?.notification));
     window.addEventListener("depannhome:open-home", openHome);
+    window.addEventListener("depannhome:support-follow-route", event => {
+        if (document.body.dataset.supportControl === "true") return;
+        const route = String(event.detail?.route || "");
+        if (canAccessRoute(route)) restoreApplicationRoute(route);
+    });
     if (!isCommercialMobile()) refreshClientMessageAlert();
     refreshTechnicianCalendarAlert();
     document.addEventListener("visibilitychange", () => {
@@ -154,6 +159,7 @@ function initializeApplicationHistory() {
 function recordApplicationHistory(title) {
     if (!title) return;
     const route = inferApplicationRoute(title);
+    if (document.body.dataset.supportControl === "true") window.dispatchEvent(new CustomEvent("depannhome:route-changed", { detail: { route } }));
     const view = captureApplicationView(route, title);
     const key = `${route}:${title}:${JSON.stringify(view)}`;
     if (!applicationHistoryReady) {
@@ -611,7 +617,7 @@ function canAccessQuick(menu) {
 }
 
 function canAccessRoute(route) {
-    if (document.body.dataset.supportControl === "true" && ![ROUTES.home, ROUTES.clients, ROUTES.calendar, ROUTES.technicalReports, ROUTES.billing].includes(route)) return false;
+    if (document.body.dataset.supportControl === "true" && ![ROUTES.home, ROUTES.clients, ROUTES.calendar, ROUTES.technicalReports, ROUTES.billing, ROUTES.accounting, ROUTES.partnerMissions, ROUTES.companyEmail, ROUTES.settings].includes(route)) return false;
     return isMenuAllowed(MENU_ACCESS.navigation[route], route) && isOrganizationRouteEnabled(route);
 }
 
@@ -624,7 +630,7 @@ function isLocalCompanyAdministrator() {
 }
 
 function canAccessSettingsSection(section) {
-    if (document.body.dataset.supportControl === "true") return false;
+    if (document.body.dataset.supportControl === "true") return ["documents", "personalization"].includes(section);
     if (document.body.dataset.creator === "true") return true;
     if (["subscription", "storage", "documents", "company", "users", "groups", "imports"].includes(section) && !isLocalCompanyAdministrator()) return false;
     if (section === "history" && !isLocalCompanyAdministrator()) return false;

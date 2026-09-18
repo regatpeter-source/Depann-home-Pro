@@ -64,7 +64,12 @@ test("la prise en main distante exige un consentement distinct et reste révocab
 test("la prise en main bloque les zones sensibles et journalise chaque requête", () => {
     assert.match(application, /app\.use\(enforceCreatorAssistanceControl\)/);
     for (const path of ["/api/auth", "/api/accounting", "/api/connectors", "/api/partner-email", "/api/groups", "/api/data-imports", "/api/subscription"]) assert.match(server, new RegExp(path.replaceAll("/", "\\/")));
-    assert.match(server, /SUPPORT_CONTROL_WRITABLE_PREFIXES = \["\/api\/clients", "\/api\/calendar", "\/api\/technical-reports", "\/api\/collaboration"\]/);
+    assert.match(server, /SUPPORT_CONTROL_READABLE_SENSITIVE_PREFIXES = \["\/api\/accounting", "\/api\/partner-email", "\/api\/partner-missions", "\/api\/partner-dialogue"\]/);
+    assert.match(server, /SUPPORT_CONTROL_BLOCKED_READ_PREFIXES = \["\/api\/accounting\/export", "\/api\/partner-email\/oauth"\]/);
+    assert.match(server, /isAllowedSupportControlMutation/);
+    assert.match(server, /\(\?:assign\|planning-draft\)/);
+    const delegatedMutations = server.slice(server.indexOf("function isAllowedSupportControlMutation"), server.indexOf("export function registerCreatorAssistanceRoutes"));
+    assert.doesNotMatch(delegatedMutations, /accept|reject|close|settlements|export/);
     assert.match(server, /const destructive = method === "DELETE"/);
     assert.match(server, /validate\|validation\|submit\|send\|email\|deliver\|delivery\|reopen\|cancel/);
     assert.match(server, /depannhome_creator_support_activity/);
@@ -74,6 +79,21 @@ test("la prise en main bloque les zones sensibles et journalise chaque requête"
     assert.match(remoteControlMigration, /method VARCHAR\(10\)/);
     assert.doesNotMatch(remoteControlMigration, /request_body|payload|details JSONB/);
     assert.match(navigation, /dataset\.supportControl === "true"/);
+});
+
+test("la co-navigation est consentie, isolée et ne transmet aucun contenu métier", () => {
+    assert.match(server, /POST \/api\/collaboration\/support-cobrowse/);
+    assert.match(server, /request\.user\.isSupportControl/);
+    assert.match(server, /broadcastOwnerEvent\(getAccountOwnerId\(request\), "support_cobrowse"/);
+    assert.match(server, /SUPPORT_COBROWSE_EVENTS = new Set\(\["route", "cursor", "click", "scroll", "follow"\]\)/);
+    assert.match(server, /recent\.length >= 20/);
+    assert.doesNotMatch(server.slice(server.indexOf("function sanitizeCobrowseEvent")), /innerHTML|\.value|request\.body\?\.(?:text|content|email|password)/);
+    assert.match(collaborationClient, /Suivre le Support/);
+    assert.match(collaborationClient, /event\.key === "Escape"/);
+    assert.match(collaborationClient, /input, textarea, select, \[contenteditable=true\], \[data-sensitive\]/);
+    assert.match(collaborationClient, /depannhome:support-follow-route/);
+    assert.doesNotMatch(collaborationClient, /dispatchEvent\(new MouseEvent|\.click\(\)/);
+    assert.match(navigation, /\["documents", "personalization"\]\.includes\(section\)/);
 });
 
 test("l’entreprise ciblée accepte ou refuse depuis une notification Support ouvrable", () => {
@@ -196,13 +216,13 @@ test("creator console exposes an explicit assistance workflow and warning banner
 
 test("PWA versions are synchronized for creator assistance assets", () => {
     assert.match(navigation, /creator\.js\?v=170/);
-    assert.match(index, /css\/style\.css\?v=275/);
-    assert.match(index, /js\/app\.js\?v=456/);
-    assert.match(serviceWorker, /depann-home-pro-v572/);
-    assert.match(serviceWorker, /css\/style\.css\?v=275/);
-    assert.match(serviceWorker, /js\/app\.js\?v=456/);
-    assert.match(serviceWorker, /js\/collaboration\.js\?v=10/);
-    assert.match(serviceWorker, /js\/navigation\.js\?v=482/);
+    assert.match(index, /css\/style\.css\?v=276/);
+    assert.match(index, /js\/app\.js\?v=457/);
+    assert.match(serviceWorker, /depann-home-pro-v573/);
+    assert.match(serviceWorker, /css\/style\.css\?v=276/);
+    assert.match(serviceWorker, /js\/app\.js\?v=457/);
+    assert.match(serviceWorker, /js\/collaboration\.js\?v=11/);
+    assert.match(serviceWorker, /js\/navigation\.js\?v=483/);
     assert.match(serviceWorker, /js\/creator\.js\?v=170/);
     assert.match(serviceWorker, /js\/connectors\.js\?v=6/);
 });

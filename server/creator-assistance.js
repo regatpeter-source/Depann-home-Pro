@@ -18,8 +18,13 @@ const ACTION_TYPES = new Set([
     "release_company_locks"
 ]);
 const SUPPORT_CONTROL_SENSITIVE_PREFIXES = ["/api/auth", "/api/creator", "/api/assistance", "/api/accounting", "/api/e-invoicing", "/api/connectors", "/api/official-partners", "/api/partner-email", "/api/partner-missions", "/api/partner-dialogue", "/api/partner-connections", "/api/partner-sandbox", "/api/groups", "/api/data-imports", "/api/subscription", "/api/company", "/api/organizations", "/api/support", "/api/history", "/api/messages", "/api/purchases"];
-const SUPPORT_CONTROL_WRITABLE_PREFIXES = ["/api/clients", "/api/calendar", "/api/technical-reports", "/api/collaboration"];
-const SUPPORT_CONTROL_ALLOWED_EXACT = new Set(["GET /api/auth/session", "POST /api/auth/logout", "POST /api/creator/assistance/control/exit"]);
+const SUPPORT_CONTROL_READABLE_SENSITIVE_PREFIXES = ["/api/accounting", "/api/partner-email", "/api/partner-missions", "/api/partner-dialogue"];
+const SUPPORT_CONTROL_BLOCKED_READ_PREFIXES = ["/api/accounting/export", "/api/partner-email/oauth"];
+const SUPPORT_CONTROL_WRITABLE_PREFIXES = ["/api/clients", "/api/calendar", "/api/technical-reports", "/api/collaboration", "/api/accounting", "/api/partner-email", "/api/partner-missions", "/api/partner-dialogue", "/api/billing", "/api/document-templates"];
+const SUPPORT_CONTROL_ALLOWED_EXACT = new Set(["GET /api/auth/session", "POST /api/auth/logout", "POST /api/creator/assistance/control/exit", "POST /api/collaboration/support-cobrowse"]);
+const SUPPORT_COBROWSE_EVENTS = new Set(["route", "cursor", "click", "scroll", "follow"]);
+const SUPPORT_COBROWSE_ROUTES = new Set(["home", "clients", "billing", "accounting", "partner-missions", "company-email", "calendar", "technical-reports", "settings"]);
+const supportCobrowseRate = new Map();
 
 export async function initializeCreatorAssistance() {
     const database = getPool();
@@ -96,11 +101,13 @@ export async function enforceCreatorAssistanceControl(request, response, next) {
     const method = String(request.method || "GET").toUpperCase();
     const exact = `${method} ${path}`;
     const mutation = !["GET", "HEAD", "OPTIONS"].includes(method);
-    const sensitive = SUPPORT_CONTROL_SENSITIVE_PREFIXES.some(prefix => path === prefix || path.startsWith(`${prefix}/`));
+    const sensitivePrefix = SUPPORT_CONTROL_SENSITIVE_PREFIXES.find(prefix => path === prefix || path.startsWith(`${prefix}/`));
+    const blockedRead = method === "GET" && SUPPORT_CONTROL_BLOCKED_READ_PREFIXES.some(prefix => path === prefix || path.startsWith(`${prefix}/`));
+    const sensitive = Boolean(sensitivePrefix) && !(method === "GET" && !blockedRead && SUPPORT_CONTROL_READABLE_SENSITIVE_PREFIXES.includes(sensitivePrefix));
     const writable = SUPPORT_CONTROL_WRITABLE_PREFIXES.some(prefix => path === prefix || path.startsWith(`${prefix}/`)) && isAllowedSupportControlMutation(method, path);
     const destructive = method === "DELETE" && !path.startsWith("/api/collaboration/locks/");
-    const sensitiveAction = mutation && /\/(?:validate|validation|submit|send|email|deliver|delivery|reopen|cancel)(?:\/|$)/i.test(path);
-    if (!SUPPORT_CONTROL_ALLOWED_EXACT.has(exact) && (sensitive || destructive || sensitiveAction || (mutation && !writable))) {
+    const sensitiveAction = mutation && !writable && /\/(?:validate|validation|submit|send|email|deliver|delivery|reopen|cancel)(?:\/|$)/i.test(path);
+    if (!SUPPORT_CONTROL_ALLOWED_EXACT.has(exact) && ((sensitive && !writable) || destructive || sensitiveAction || (mutation && !writable))) {
         await recordSupportActivity(request.user.supportSessionId, request.user.sub, getAccountOwnerId(request), method, path, 403, "blocked");
         return response.status(403).json({ message: "Cette opération sensible est bloquée pendant la prise en main. Quittez le mode assistance ou utilisez une action de récupération encadrée." });
     }
@@ -131,7 +138,14 @@ function isAllowedSupportControlMutation(method, path) {
     if (method === "PUT" && /^\/api\/technical-reports\/(?!template$)[^/]+$/.test(path)) return true;
     if (method === "POST" && /^\/api\/technical-reports\/[^/]+\/(?:pdf-preview|media)$/.test(path)) return true;
     if (method === "POST" && /^\/api\/technical-reports\/[^/]+\/sections\/[^/]+\/duplicate-media$/.test(path)) return true;
-    return method === "PATCH" && /^\/api\/technical-reports\/[^/]+\/media\/[^/]+$/.test(path);
+    if (method === "PATCH" && /^\/api\/technical-reports\/[^/]+\/media\/[^/]+$/.test(path)) return true;
+    if (method === "POST" && /^\/api\/partner-email\/[^/]+\/sync$/.test(path)) return true;
+    if (method === "POST" && /^\/api\/partner-email\/(?:candidates\/(?:import|ignore)|[^/]+\/messages\/[^/]+\/import)$/.test(path)) return true;
+    if (["POST", "PATCH"].includes(method) && /^\/api\/partner-missions\/[^/]+\/(?:assign|planning-draft)$/.test(path)) return true;
+    if (method === "PUT" && /^\/api\/accounting\/(?:aids\/[^/]+|documents\/[^/]+\/financial-data)$/.test(path)) return true;
+    if (method === "POST" && path === "/api/accounting/aids") return true;
+    if (["POST", "PUT"].includes(method) && /^\/api\/(?:document-templates|billing\/document-templates)\//.test(path)) return true;
+    return method === "PUT" && /^\/api\/billing\/(?:quote-template|default-quote)$/.test(path);
 }
 
 export function registerCreatorAssistanceRoutes(app, requireCreator, requireAuthentication) {
@@ -220,6 +234,15 @@ export function registerCreatorAssistanceRoutes(app, requireCreator, requireAuth
         }
         await stopCreatorAssistanceControl(response, request.user);
         response.json({ active: false });
+    }));
+
+    app.post("/api/collaboration/support-cobrowse", requireCreator, asyncHandler(async (request, response) => {
+        if (!request.user.isSupportControl || !validUuid(request.user.supportSessionId)) return response.status(403).json({ message: "Co-navigation indisponible hors prise en main." });
+        if (!allowSupportCobrowseEvent(request.user.supportSessionId)) return response.status(429).json({ message: "Trop d’événements de co-navigation." });
+        const event = sanitizeCobrowseEvent(request.body);
+        if (!event) return response.status(400).json({ message: "Événement de co-navigation invalide." });
+        await broadcastOwnerEvent(getAccountOwnerId(request), "support_cobrowse", { sessionId: request.user.supportSessionId, supportName: request.user.fullName || "Support Depann’Home Pro", ...event, at: new Date().toISOString() });
+        response.status(204).end();
     }));
 
     app.post("/api/assistance/sessions/:sessionId/decision", requireAuthentication, asyncHandler(async (request, response) => {
@@ -562,6 +585,28 @@ async function completeSupportActivity(activityId, statusCode, outcome) {
     } catch (error) {
         console.error("[creator-assistance] support audit completion unavailable", { activityId, code: error.code || error.name || "AUDIT_ERROR" });
     }
+}
+
+function sanitizeCobrowseEvent(value) {
+    const type = SUPPORT_COBROWSE_EVENTS.has(value?.type) ? value.type : "";
+    if (!type) return null;
+    const route = SUPPORT_COBROWSE_ROUTES.has(value?.route) ? value.route : "";
+    if (type === "route" && !route) return null;
+    const number = input => Math.min(1, Math.max(0, Number(input) || 0));
+    if (type === "cursor" || type === "click") return { type, route, x: number(value.x), y: number(value.y) };
+    if (type === "scroll") return { type, route, y: number(value.y) };
+    if (type === "follow") return { type, following: value.following === true };
+    return { type, route };
+}
+
+function allowSupportCobrowseEvent(sessionId) {
+    const now = Date.now();
+    const recent = (supportCobrowseRate.get(sessionId) || []).filter(timestamp => now - timestamp < 1_000);
+    if (recent.length >= 20) return false;
+    recent.push(now);
+    supportCobrowseRate.set(sessionId, recent);
+    if (supportCobrowseRate.size > 500) for (const [key, timestamps] of supportCobrowseRate) if (!timestamps.some(timestamp => now - timestamp < 60_000)) supportCobrowseRate.delete(key);
+    return true;
 }
 
 function companyState(value) { return { isActive: Boolean(value?.is_active), isArchived: Boolean(value?.is_archived), updatedAt: value?.updated_at || null }; }
