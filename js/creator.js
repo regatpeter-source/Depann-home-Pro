@@ -69,8 +69,12 @@ export async function renderCreatorConsole() {
     await Promise.all([loadAccounts(), refreshCreatorRequestNotifications(), refreshCreatorHealthAlert()]);
     if (!creatorNotificationsBound) {
         creatorNotificationsBound = true;
-        window.addEventListener("depannhome:collaboration-event", () => {
+        window.addEventListener("depannhome:collaboration-event", event => {
             if (document.querySelector("#creatorRequestNotifications")) refreshCreatorRequestNotifications();
+            if (event.detail?.type === "creator_assistance_decision" && String(event.detail?.recipientId || "") === String(document.body.dataset.userId || "") && document.querySelector(".creator-assistance-center")) {
+                if (event.detail?.decision === "accept") renderCreatorAssistanceSession(event.detail.sessionId);
+                else renderCreatorAssistance();
+            }
         });
     }
 }
@@ -174,7 +178,7 @@ async function renderCreatorSupportRequests() {
     const result = await api("/api/creator/support-requests");
     if (!result.ok) return showFeedback(result.message || "Impossible de charger les demandes Support.", true);
     const requests = result.data.requests || [];
-    workspace.innerHTML = `<section class="creator-form"><div class="form-heading"><div><p class="eyebrow">Entreprises internes</p><h3>Demandes Support</h3></div><span class="creator-state">${requests.length} demande${requests.length > 1 ? "s" : ""}</span></div><div class="creator-network-list">${requests.length ? requests.map(item => `<form class="creator-network-company" data-support-request="${escapeHtml(item.id)}"><div><strong>${escapeHtml(item.companyName || item.senderName || item.senderUsername)}</strong><p>${escapeHtml(item.message)}</p><small>${escapeHtml(formatDateTime(item.createdAt))}${item.senderEmail ? ` · ${escapeHtml(item.senderEmail)}` : ""}</small></div><div class="creator-form-actions"><select name="status">${["new", "under_review", "answered", "closed"].map(status => `<option value="${status}" ${item.status === status ? "selected" : ""}>${supportRequestStatusLabel(status)}</option>`).join("")}</select><input name="creatorNote" maxlength="2000" value="${escapeHtml(item.creatorNote || "")}" placeholder="Note interne"><button class="secondary-button">Enregistrer</button></div></form>`).join("") : '<p class="muted">Aucune demande Support.</p>'}</div></section>`;
+    workspace.innerHTML = `<section class="creator-form"><div class="form-heading"><div><p class="eyebrow">Entreprises internes</p><h3>Demandes Support</h3></div><span class="creator-state">${requests.length} demande${requests.length > 1 ? "s" : ""}</span></div><div class="creator-network-list">${requests.length ? requests.map(item => `<form class="creator-network-company" data-support-request="${escapeHtml(item.id)}"><div><strong>${escapeHtml(item.companyName || item.senderName || item.senderUsername)}</strong><p>${escapeHtml(item.message)}</p><small>${escapeHtml(formatDateTime(item.createdAt))}${item.senderEmail ? ` · ${escapeHtml(item.senderEmail)}` : ""}</small></div><div class="creator-form-actions"><select name="status">${["new", "under_review", "answered", "closed"].map(status => `<option value="${status}" ${item.status === status ? "selected" : ""}>${supportRequestStatusLabel(status)}</option>`).join("")}</select><input name="creatorNote" maxlength="2000" value="${escapeHtml(item.creatorNote || "")}" placeholder="Note interne"><button class="secondary-button">Enregistrer</button><button type="button" class="primary-button" data-request-assistance="${escapeHtml(item.id)}">Demander une assistance</button></div></form>`).join("") : '<p class="muted">Aucune demande Support.</p>'}</div></section>`;
     workspace.querySelectorAll("[data-support-request]").forEach(form => form.addEventListener("submit", async event => {
         event.preventDefault();
         const update = await api(`/api/creator/support-requests/${encodeURIComponent(form.dataset.supportRequest)}`, { method: "PATCH", body: JSON.stringify(Object.fromEntries(new FormData(form))) });
@@ -183,11 +187,15 @@ async function renderCreatorSupportRequests() {
         await refreshCreatorRequestNotifications();
         renderCreatorSupportRequests();
     }));
+    workspace.querySelectorAll("[data-request-assistance]").forEach(button => button.addEventListener("click", () => {
+        const supportRequest = requests.find(item => String(item.id) === button.dataset.requestAssistance);
+        if (supportRequest) renderCreatorAssistance({ companyOwnerId: supportRequest.ownerId, supportRequestId: supportRequest.id, reason: supportRequest.message });
+    }));
 }
 
 function supportRequestStatusLabel(status) { return ({ new: "Nouvelle", under_review: "En cours d’étude", answered: "Répondue", closed: "Clôturée" })[status] || "Nouvelle"; }
 
-async function renderCreatorAssistance() {
+async function renderCreatorAssistance(prefill = {}) {
     const workspace = document.querySelector("#creatorWorkspace");
     workspace.innerHTML = '<p class="muted">Chargement du Centre d’assistance…</p>';
     const sessionsResult = await api("/api/creator/assistance/sessions");
@@ -202,14 +210,18 @@ async function renderCreatorAssistance() {
                 <label>Entreprise *<select name="companyOwnerId" required><option value="">Sélectionner…</option>${accounts.filter(account => String(account.id) !== String(document.body.dataset.userId)).map(account => `<option value="${escapeHtml(account.id)}">${escapeHtml(account.companyName || account.ownerFullName || account.ownerUsername)}</option>`).join("")}</select></label>
                 <label>Référence demande Support<input name="supportRequestId" inputmode="numeric" placeholder="Facultatif si accord confirmé"></label>
                 <label class="form-wide">Motif détaillé *<textarea name="reason" minlength="10" maxlength="1000" rows="3" required placeholder="Blocage rencontré, vérifications demandées et résultat attendu"></textarea></label>
-                <label class="creator-switch form-wide">Accord de l’entreprise confirmé<input name="consentConfirmed" type="checkbox"><span>À cocher uniquement si un administrateur a demandé ou accepté l’intervention.</span></label>
+                <label class="creator-switch form-wide">Demande préalable confirmée<input name="consentConfirmed" type="checkbox"><span>L’entreprise devra toujours accepter l’accès depuis sa notification avant l’ouverture du diagnostic.</span></label>
                 <label class="creator-switch form-wide creator-assistance-emergency-option">Urgence « break-glass »<input name="emergency" type="checkbox"><span>10 minutes seulement. À utiliser si l’entreprise est totalement bloquée et qu’aucun accord traçable ne peut être enregistré immédiatement.</span></label>
             </div>
             <div class="creator-form-actions"><button type="submit" class="primary-button">Ouvrir la session d’assistance</button></div>
         </form>
         <h4>Sessions récentes</h4>
-        <div class="creator-network-list">${sessions.length ? sessions.map(session => `<article class="creator-network-company${session.active ? " creator-assistance-active-row" : ""}"><div><strong>${escapeHtml(session.companyName)}</strong><p>${session.mode === "emergency" ? "Urgence" : "Lecture seule"} · ${escapeHtml(session.reason)}</p><small>${escapeHtml(formatDateTime(session.createdAt))} · expire ${escapeHtml(formatDateTime(session.expiresAt))}${session.revokedAt ? ` · clôturée ${escapeHtml(formatDateTime(session.revokedAt))}` : ""}</small></div>${session.active ? `<button type="button" class="secondary-button" data-open-assistance="${escapeHtml(session.id)}">Ouvrir</button>` : '<span class="creator-state archived">Terminée</span>'}</article>`).join("") : '<p class="muted">Aucune session d’assistance enregistrée.</p>'}</div>
+        <div class="creator-network-list">${sessions.length ? sessions.map(session => `<article class="creator-network-company${session.active ? " creator-assistance-active-row" : ""}"><div><strong>${escapeHtml(session.companyName)}</strong><p>${session.mode === "emergency" ? "Urgence" : "Lecture seule"} · ${escapeHtml(session.reason)}</p><small>${escapeHtml(formatDateTime(session.createdAt))}${session.active ? ` · expire ${escapeHtml(formatDateTime(session.expiresAt))}` : ""}${session.revokedAt ? ` · clôturée ${escapeHtml(formatDateTime(session.revokedAt))}` : ""}</small></div>${session.active ? `<button type="button" class="secondary-button" data-open-assistance="${escapeHtml(session.id)}">Ouvrir</button>` : session.awaitingConsent ? '<span class="creator-state suspended">En attente de l’entreprise</span>' : session.declinedAt ? '<span class="creator-state archived">Refusée</span>' : '<span class="creator-state archived">Terminée</span>'}</article>`).join("") : '<p class="muted">Aucune session d’assistance enregistrée.</p>'}</div>
     </section>`;
+    const startForm = workspace.querySelector("[data-assistance-start]");
+    if (prefill.companyOwnerId) startForm.elements.companyOwnerId.value = String(prefill.companyOwnerId);
+    if (prefill.supportRequestId) startForm.elements.supportRequestId.value = String(prefill.supportRequestId);
+    if (prefill.reason) startForm.elements.reason.value = String(prefill.reason).slice(0, 1000);
     workspace.querySelector("[data-assistance-start]").addEventListener("submit", async event => {
         event.preventDefault();
         const form = event.currentTarget;
@@ -222,8 +234,13 @@ async function renderCreatorAssistance() {
         button.disabled = false;
         if (!created.ok) return showFeedback(created.message || "Impossible d’ouvrir la session.", true);
         activeAssistanceSessionId = created.data.session.id;
-        showFeedback("Session d’assistance ouverte et administrateurs notifiés.");
-        await renderCreatorAssistanceSession(activeAssistanceSessionId);
+        if (created.data.session.active) {
+            showFeedback("Session d’urgence ouverte et administrateurs notifiés.");
+            await renderCreatorAssistanceSession(activeAssistanceSessionId);
+        } else {
+            showFeedback("Demande d’assistance envoyée. Le diagnostic s’ouvrira après acceptation par l’entreprise.");
+            await renderCreatorAssistance();
+        }
     });
     workspace.querySelectorAll("[data-open-assistance]").forEach(button => button.addEventListener("click", () => renderCreatorAssistanceSession(button.dataset.openAssistance)));
 }
@@ -279,7 +296,7 @@ async function executeCreatorAssistanceAction(actionType, targetId) {
 
 async function closeCreatorAssistanceSession() {
     if (!activeAssistanceSessionId || !confirm("Terminer cette session d’assistance maintenant ?")) return;
-    const result = await api(`/api/creator/assistance/sessions/${encodeURIComponent(activeAssistanceSessionId)}`, { method: "DELETE", body: JSON.stringify({ reason: "Intervention terminée par le Créateur" }) });
+    const result = await api(`/api/creator/assistance/sessions/${encodeURIComponent(activeAssistanceSessionId)}`, { method: "DELETE", body: JSON.stringify({ reason: "Intervention terminée par le Support Depann’Home Pro" }) });
     if (!result.ok) return showFeedback(result.message || "Impossible de terminer la session.", true);
     activeAssistanceSessionId = "";
     showFeedback("Session terminée et entreprise notifiée.");

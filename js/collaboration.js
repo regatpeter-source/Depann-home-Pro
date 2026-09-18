@@ -14,13 +14,14 @@ export function initializeCollaboration() {
     loadPartnerNotifications();
     stream = new EventSource(clientSessionUrl("/api/collaboration/stream"));
     stream.addEventListener("notification", event => handleEvent("notification", event));
-    ["lock_acquired", "lock_released", "lock_force_released", "report_started", "report_saved", "report_media_added", "report_media_updated", "report_media_deleted", "report_submitted", "report_correction_requested", "report_validated", "report_reopened", "mission_journal_updated"].forEach(type => stream.addEventListener(type, event => handleEvent(type, event)));
+    ["lock_acquired", "lock_released", "lock_force_released", "report_started", "report_saved", "report_media_added", "report_media_updated", "report_media_deleted", "report_submitted", "report_correction_requested", "report_validated", "report_reopened", "mission_journal_updated", "creator_assistance_decision"].forEach(type => stream.addEventListener(type, event => handleEvent(type, event)));
     stream.onerror = () => updateSyncIndicator("syncing", "Reconnexion en cours");
     stream.onopen = () => updateSyncIndicator("synced", "Synchronisé en temps réel");
     window.addEventListener("beforeunload", releaseSessionLocks, { capture: true });
     window.addEventListener("online", () => updateSyncIndicator("syncing", "Reconnexion en cours"));
     window.addEventListener("offline", () => updateSyncIndicator("offline", "Hors connexion"));
     window.addEventListener("depannhome:settings-changed", () => { document.getElementById("notificationCenter")?.remove(); renderNotificationBadge(); renderPartnerNotificationBadge(); });
+    window.addEventListener("depannhome:open-company-assistance", event => openCompanyAssistanceRequest(event.detail?.sessionId));
 }
 
 export async function acquireReportLock(reportId) { return request(`/api/collaboration/locks/technical_report/${encodeURIComponent(reportId)}/acquire`, { method: "POST" }); }
@@ -55,9 +56,42 @@ export function notificationPreferenceKey(notification) {
 
 function visibleNotifications(items) {
     const preferences = getSettings().notifications || {};
-    return items.filter(item => preferences[notificationPreferenceKey(item)] !== false);
+    return items.filter(item => item?.entityType === "creator_assistance" || preferences[notificationPreferenceKey(item)] !== false);
 }
-function canOpenNotification(notification) { return ["technical_report", "billing_document", "client", "calendar_event", "partner_mission", "partner_connection", "partner_request"].includes(notification?.entityType); }
+function canOpenNotification(notification) { return ["technical_report", "billing_document", "client", "calendar_event", "partner_mission", "partner_connection", "partner_request", "creator_assistance"].includes(notification?.entityType); }
+export async function openCompanyAssistanceRequest(sessionId) {
+    if (!sessionId) return;
+    document.getElementById("companyAssistanceDialog")?.remove();
+    const result = await request(`/api/assistance/sessions/${encodeURIComponent(sessionId)}`);
+    if (!result.ok) return alert(result.message || "Cette demande d’assistance n’est plus disponible.");
+    const dialog = document.createElement("div");
+    dialog.id = "companyAssistanceDialog";
+    dialog.className = "group-company-modal";
+    const session = result.data?.session || {};
+    const status = session.awaitingConsent ? "Votre décision est requise" : session.active ? "Assistance autorisée" : session.declinedAt ? "Assistance refusée" : "Demande terminée";
+    dialog.innerHTML = `<section class="company-assistance-dialog" role="dialog" aria-modal="true" aria-labelledby="companyAssistanceTitle"><div class="form-heading"><div><p class="eyebrow">Support Depann’Home Pro</p><h3 id="companyAssistanceTitle">Demande d’assistance temporaire</h3></div><button type="button" class="icon-button" data-close-assistance-dialog aria-label="Fermer">×</button></div><span class="creator-state${session.awaitingConsent ? " suspended" : ""}">${escapeHtml(status)}</span><p><strong>Motif communiqué par le Support :</strong><br>${escapeHtml(session.reason || "Assistance technique")}</p><aside class="accounting-pdp-notice"><strong>Accès limité et traçable.</strong> En acceptant, vous autorisez pendant 30 minutes un diagnostic technique en lecture seule. Toute réparation éventuelle reste séparée, justifiée, journalisée et vous est notifiée. Aucun mot de passe, code 2FA ou secret de connexion n’est affiché.</aside>${session.awaitingConsent ? '<div class="form-actions"><button type="button" class="primary-button" data-assistance-decision="accept">Accepter pendant 30 minutes</button><button type="button" class="secondary-button danger-button" data-assistance-decision="decline">Refuser</button></div>' : session.active ? `<p class="auth-message">Accès autorisé jusqu’au ${escapeHtml(formatDateTime(session.expiresAt))}.</p>` : '<p class="muted">Aucune action supplémentaire n’est nécessaire.</p>'}<p class="auth-message" data-assistance-decision-message aria-live="polite"></p></section>`;
+    document.body.appendChild(dialog);
+    const close = () => dialog.remove();
+    dialog.querySelector("[data-close-assistance-dialog]").addEventListener("click", close);
+    dialog.addEventListener("click", event => { if (event.target === dialog) close(); });
+    dialog.querySelectorAll("[data-assistance-decision]").forEach(button => button.addEventListener("click", async () => {
+        const decision = button.dataset.assistanceDecision;
+        if (decision === "accept" && !confirm("Autoriser le Support Depann’Home Pro à consulter le diagnostic technique pendant 30 minutes ?")) return;
+        if (decision === "decline" && !confirm("Refuser cette demande d’assistance ?")) return;
+        dialog.querySelectorAll("[data-assistance-decision]").forEach(action => { action.disabled = true; });
+        const decided = await request(`/api/assistance/sessions/${encodeURIComponent(sessionId)}/decision`, { method: "POST", body: JSON.stringify({ decision }) });
+        if (!decided.ok) {
+            const message = dialog.querySelector("[data-assistance-decision-message]");
+            message.textContent = decided.message || "La décision n’a pas pu être enregistrée.";
+            message.classList.add("error");
+            dialog.querySelectorAll("[data-assistance-decision]").forEach(action => { action.disabled = false; });
+            return;
+        }
+        close();
+        alert(decision === "accept" ? "Assistance acceptée pour 30 minutes. Le Support peut maintenant ouvrir le diagnostic." : "Demande d’assistance refusée.");
+        loadNotifications();
+    }));
+}
 async function markNotificationRead(id) { if (!id) return; const result = await request("/api/collaboration/notifications/read", { method: "POST", body: JSON.stringify({ ids: [id] }) }); if (!result.ok) return; notifications = notifications.map(item => String(item.id) === String(id) ? { ...item, readAt: new Date().toISOString() } : item); renderNotificationBadge(); }
 function isPartnerNotification(notification) { const type = String(notification?.eventType || ""); return ["partner_mission", "partner_connection", "partner_request"].includes(notification?.entityType) || type.startsWith("partner_mission_") || type.startsWith("partner_connection_") || type.startsWith("partner_request_") || type === "partner_dialogue_updated"; }
 function deduplicatePartnerNotifications(items) {

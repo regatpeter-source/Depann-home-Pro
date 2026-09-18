@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 const server = readFileSync(new URL("../server/creator-assistance.js", import.meta.url), "utf8");
 const application = readFileSync(new URL("../app.js", import.meta.url), "utf8");
 const migration = readFileSync(new URL("../database/migrations/0006_creator_assistance.sql", import.meta.url), "utf8");
+const consentMigration = readFileSync(new URL("../database/migrations/0021_creator_assistance_consent.sql", import.meta.url), "utf8");
 const schema = readFileSync(new URL("../database/schema.sql", import.meta.url), "utf8");
 const client = readFileSync(new URL("../js/creator.js", import.meta.url), "utf8");
 const navigation = readFileSync(new URL("../js/navigation.js", import.meta.url), "utf8");
@@ -13,6 +14,7 @@ const serviceWorker = readFileSync(new URL("../service-worker.js", import.meta.u
 const creatorServer = readFileSync(new URL("../server/creator.js", import.meta.url), "utf8");
 const organizationServer = readFileSync(new URL("../server/organizations.js", import.meta.url), "utf8");
 const supportServer = readFileSync(new URL("../server/support.js", import.meta.url), "utf8");
+const collaborationClient = readFileSync(new URL("../js/collaboration.js", import.meta.url), "utf8");
 
 const tableDefinitions = [migration, schema, server];
 
@@ -29,6 +31,26 @@ test("support sessions require consent context and have bounded lifetimes", () =
     assert.match(server, /supportRequestId/);
     assert.match(server, /session\.expires_at>NOW\(\)/);
     assert.match(server, /session\.revoked_at IS NULL/);
+    assert.match(server, /session\.accepted_at IS NOT NULL/);
+    assert.match(server, /support_assistance_consent_requested/);
+    assert.match(server, /expires_at=NOW\(\)\+\(\$3::text\|\|' minutes'\)::interval/);
+});
+
+test("l’entreprise ciblée accepte ou refuse depuis une notification Support ouvrable", () => {
+    assert.match(server, /app\.get\("\/api\/assistance\/sessions\/:sessionId", requireAuthentication/);
+    assert.match(server, /app\.post\("\/api\/assistance\/sessions\/:sessionId\/decision", requireAuthentication/);
+    assert.match(server, /session\.target_company_owner_id=\$2/);
+    assert.match(server, /if \(!isCompanyAdministrator\(request\)\)/);
+    assert.match(collaborationClient, /"creator_assistance"/);
+    assert.match(collaborationClient, /openCompanyAssistanceRequest/);
+    assert.match(collaborationClient, /Accepter pendant 30 minutes/);
+    assert.match(collaborationClient, /data-assistance-decision="decline"/);
+    assert.match(collaborationClient, /creator_assistance_decision/);
+    assert.match(collaborationClient, /item\?\.entityType === "creator_assistance" \|\| preferences/);
+    assert.match(server, /safelyBroadcastCreatorDecision\(session\.createdBy, sessionId, decision\)/);
+    assert.match(server, /JOIN depannhome_group_administrators administrator/);
+    assert.match(client, /renderCreatorAssistanceSession\(event\.detail\.sessionId\)/);
+    assert.match(navigation, /depannhome:open-company-assistance/);
 });
 
 test("recovery actions are constrained, audited and notify company administrators", () => {
@@ -58,8 +80,8 @@ test("account reactivation remains restricted to administrators", () => {
 });
 
 test("session lifecycle and recovery notifications are committed atomically", () => {
-    assert.match(server, /creator_support_session_started[\s\S]+COMMIT/);
-    assert.match(server, /creator_support_session_closed[\s\S]+COMMIT/);
+    assert.match(server, /support_assistance_consent_requested[\s\S]+COMMIT/);
+    assert.match(server, /support_assistance_closed[\s\S]+COMMIT/);
     assert.match(server, /creator_recovery_action[\s\S]+COMMIT/);
     assert.match(server, /safelyBroadcastCompanyNotifications/);
 });
@@ -108,7 +130,9 @@ test("assistance tables are durable and migration is idempotent", () => {
         assert.match(source, /CREATE TABLE IF NOT EXISTS depannhome_creator_support_sessions/);
         assert.match(source, /CREATE TABLE IF NOT EXISTS depannhome_creator_recovery_actions/);
     }
-    assert.match(application, /registerCreatorAssistanceRoutes\(app, requireCreator\)/);
+    assert.match(consentMigration, /accepted_at TIMESTAMPTZ/);
+    assert.match(consentMigration, /declined_at TIMESTAMPTZ/);
+    assert.match(application, /registerCreatorAssistanceRoutes\(app, requireCreator, requireAuthentication\)/);
     assert.match(application, /await initializeCreatorAssistance\(\)/);
 });
 
@@ -118,17 +142,20 @@ test("creator console exposes an explicit assistance workflow and warning banner
     assert.match(client, /creator-assistance-banner/);
     assert.match(client, /Vue sans usurpation/);
     assert.match(client, /l’entreprise sera notifiée/);
+    assert.match(client, /data-request-assistance/);
+    assert.match(client, /En attente de l’entreprise/);
 });
 
 test("PWA versions are synchronized for creator assistance assets", () => {
-    assert.match(navigation, /creator\.js\?v=168/);
-    assert.match(index, /css\/style\.css\?v=273/);
-    assert.match(index, /js\/app\.js\?v=453/);
-    assert.match(serviceWorker, /depann-home-pro-v569/);
-    assert.match(serviceWorker, /css\/style\.css\?v=273/);
-    assert.match(serviceWorker, /js\/app\.js\?v=453/);
-    assert.match(serviceWorker, /js\/navigation\.js\?v=479/);
-    assert.match(serviceWorker, /js\/creator\.js\?v=168/);
+    assert.match(navigation, /creator\.js\?v=169/);
+    assert.match(index, /css\/style\.css\?v=274/);
+    assert.match(index, /js\/app\.js\?v=454/);
+    assert.match(serviceWorker, /depann-home-pro-v570/);
+    assert.match(serviceWorker, /css\/style\.css\?v=274/);
+    assert.match(serviceWorker, /js\/app\.js\?v=454/);
+    assert.match(serviceWorker, /js\/collaboration\.js\?v=8/);
+    assert.match(serviceWorker, /js\/navigation\.js\?v=480/);
+    assert.match(serviceWorker, /js\/creator\.js\?v=169/);
     assert.match(serviceWorker, /js\/connectors\.js\?v=6/);
 });
 

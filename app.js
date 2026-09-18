@@ -221,7 +221,7 @@ app.use("/api/groups", requireAuthentication, (request, response, next) => {
 registerAuthRoutes(app);
 registerHealthDashboardRoutes(app, requireCreator);
 registerCreatorRoutes(app, requireCreator, requireAuthentication);
-registerCreatorAssistanceRoutes(app, requireCreator);
+registerCreatorAssistanceRoutes(app, requireCreator, requireAuthentication);
 registerPartnerRequestRoutes(app, requireCreator, requireAuthentication);
 registerSubscriptionInvoicingRoutes(app, requireCreator);
 registerAccountingRoutes(app, requireAuthentication);

@@ -24,14 +24,16 @@ test("Utilisateurs et appareils restent réservés au Poste Admin", () => {
     assert.match(auth, /if \(!isCompanyAdministrator\(request\)\)[\s\S]*Accès réservé à l’administrateur du compte/);
 });
 
-test("un Poste Admin ne peut administrer que son entreprise d’origine", () => {
+test("seul l’admin principal du Groupe peut aussi administrer l’entreprise active", () => {
     assert.match(auth, /homeAccountOwnerId: String\(user\.account_owner_id \|\| user\.id\)/);
-    assert.match(auth, /return user\?\.role === "admin" && Boolean\(activeOwnerId\) && homeOwnerId === activeOwnerId/);
+    assert.match(auth, /homeOwnerId === activeOwnerId \|\| user\?\.isGroupAdministrator === true/);
     assert.match(navigation, /dataset\.localCompanyAdmin === "true"/);
     assert.match(navigation, /\["subscription", "storage", "documents", "company", "users", "groups", "imports"\][\s\S]*!isLocalCompanyAdministrator\(\)/);
     assert.equal(isLocalCompanyAdministrator({ role: "admin", homeAccountOwnerId: "10", accountOwnerId: "10" }), true);
     assert.equal(isLocalCompanyAdministrator({ role: "admin", homeAccountOwnerId: "10", accountOwnerId: "20" }), false);
+    assert.equal(isLocalCompanyAdministrator({ role: "admin", homeAccountOwnerId: "10", accountOwnerId: "20", isGroupAdministrator: true }), true);
     assert.equal(isLocalCompanyAdministrator({ role: "pc_standard", homeAccountOwnerId: "10", accountOwnerId: "10" }), false);
+    assert.equal(isLocalCompanyAdministrator({ role: "pc_standard", homeAccountOwnerId: "10", accountOwnerId: "20", isGroupAdministrator: true }), false);
 });
 
 test("la recherche et les événements ne contournent pas les droits des Paramètres", () => {

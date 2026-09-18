@@ -1,7 +1,7 @@
 import { ROUTES } from "./config.js?v=118";
 import { clearSearch, getContainer, setPage } from "./ui.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
-import { acquireReportLock, forceReleaseReportLock, heartbeatReportLock, releaseReportLock } from "./collaboration.js?v=7";
+import { acquireReportLock, forceReleaseReportLock, heartbeatReportLock, releaseReportLock } from "./collaboration.js?v=8";
 import { openDocumentDeliveryChoice } from "./document-delivery.js?v=1";
 import { renderLivePdfPreview } from "./pdf-live-preview.js?v=1";
 import { pageSizeOptions, paginateItems, renderBusinessPagination } from "./pagination.js?v=1";

@@ -1,6 +1,6 @@
 import { ROUTES, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=135";
 import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=224";
-import { openCreatorPartnerRequest, openCreatorRequestNotification, renderCreatorConsole } from "./creator.js?v=168";
+import { openCreatorPartnerRequest, openCreatorRequestNotification, renderCreatorConsole } from "./creator.js?v=169";
 import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=205";
 import { renderAccounting } from "./accounting.js?v=27";
 import { renderPurchases } from "./purchases.js?v=126";
@@ -745,6 +745,7 @@ function isClientFormView(view) {
 function openNotificationDestination(notification) {
     const entityType = notification?.entityType || "";
     const entityId = String(notification?.entityId || notification?.payload?.partnerRequestId || "");
+    if (entityType === "creator_assistance") return window.dispatchEvent(new CustomEvent("depannhome:open-company-assistance", { detail: { sessionId: entityId } }));
     if (entityType === "partner_request" && document.body.dataset.creator === "true") return openCreatorPartnerRequest(entityId);
     if (entityType === "subscription_request" && document.body.dataset.creator === "true") return openCreatorRequestNotification("subscription");
     if (entityType === "support_request" && document.body.dataset.creator === "true") return openCreatorRequestNotification("support");

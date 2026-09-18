@@ -4,7 +4,7 @@ import { escapeHtml } from "./utils.js?v=44";
 import { openPartnerDialogue } from "./partner-dialogue.js?v=19";
 import { getSearchableClients } from "./clients.js?v=169";
 import { synchronizeClients } from "./client-sync.js?v=131";
-import { loadPartnerNotifications, markPartnerNotificationsRead } from "./collaboration.js?v=7";
+import { loadPartnerNotifications, markPartnerNotificationsRead } from "./collaboration.js?v=8";
 
 let dashboard = null;
 let activeMissionTab = "received";

@@ -922,7 +922,7 @@ export function isCompanyAdministrator(request) {
 export function isLocalCompanyAdministrator(user) {
     const activeOwnerId = String(user?.accountOwnerId || user?.account_owner_id || user?.id || user?.sub || "");
     const homeOwnerId = String(user?.homeAccountOwnerId || user?.home_account_owner_id || user?.account_owner_id || activeOwnerId);
-    return user?.role === "admin" && Boolean(activeOwnerId) && homeOwnerId === activeOwnerId;
+    return user?.role === "admin" && Boolean(activeOwnerId) && (homeOwnerId === activeOwnerId || user?.isGroupAdministrator === true);
 }
 
 export async function refreshSessionForActiveCompany(response, user, deviceId, activeCompanyId) {

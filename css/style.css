@@ -2043,6 +2043,7 @@ body[data-page-mode="basic-home"] #pageTitle{
 .creator-assistance-section{display:grid;gap:12px;padding-top:16px;border-top:1px solid var(--border)}
 .creator-assistance-emergency-option{padding:12px;border:1px solid #fecaca;border-radius:12px;background:#fff7f7}
 .creator-assistance-active-row{border-color:#fca5a5;box-shadow:0 0 0 2px rgba(220,38,38,.08)}
+.company-assistance-dialog{display:grid;gap:16px;width:min(680px,100%)}.company-assistance-dialog>.creator-state{justify-self:start}.company-assistance-dialog>p{margin:0;line-height:1.6}.company-assistance-dialog .form-actions{justify-content:flex-end}
 body.dark-theme :is(.creator-assistance-summary article,.creator-assistance-emergency-option){border-color:var(--border);background:var(--surface-alt);color:var(--text)}
 body.dark-theme .creator-assistance-banner{border-color:#f87171;background:#451a1a;color:#fecaca}
 

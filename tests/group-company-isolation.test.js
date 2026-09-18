@@ -63,8 +63,9 @@ test("le poste actif affiche en permanence l’entreprise standard ou active du 
     assert.match(navigationClient, /activeCompanyBadge\.hidden = !companyName/);
 });
 
-test("l’administration locale ne suit jamais la société consultée", () => {
+test("l’administration suit la société active uniquement pour l’admin principal du Groupe", () => {
     assert.match(auth, /homeOwnerId === activeOwnerId/);
+    assert.match(auth, /user\?\.isGroupAdministrator === true/);
     assert.match(appClient, /dataset\.localCompanyAdmin = user\.isLocalCompanyAdministrator/);
     assert.match(navigationClient, /function isLocalCompanyAdministrator\(\)/);
     assert.match(navigationClient, /!isLocalCompanyAdministrator\(\)/);
