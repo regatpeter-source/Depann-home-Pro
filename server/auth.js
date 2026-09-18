@@ -28,6 +28,7 @@ const MOBILE_ADMIN_ROLE = "mobile_admin";
 const STANDARD_PC_ROLE = "pc_standard";
 const COMMERCIAL_ROLE = "commercial";
 const TEAM_LEAD_ROLE = "team_lead";
+const PC_SESSION_ROLES = new Set(["admin", STANDARD_PC_ROLE, COMMERCIAL_ROLE, "accountant"]);
 const WORKSTATION_TOTP_ROLES = new Set(["admin", STANDARD_PC_ROLE, COMMERCIAL_ROLE]);
 const CREATABLE_MEMBER_ROLES = new Set(["admin", STANDARD_PC_ROLE, COMMERCIAL_ROLE, MOBILE_ADMIN_ROLE, TEAM_LEAD_ROLE, "technician"]);
 
@@ -35,6 +36,10 @@ export function memberSeatFamily(role) {
     if (["admin", STANDARD_PC_ROLE, COMMERCIAL_ROLE, "accountant"].includes(role)) return "pc";
     if ([MOBILE_ADMIN_ROLE, TEAM_LEAD_ROLE, "technician"].includes(role)) return "mobile";
     return "";
+}
+
+export function isPcSessionScope(role, deviceType) {
+    return deviceType === "desktop" && PC_SESSION_ROLES.has(role);
 }
 
 export async function memberSeatError(ownerId, role, excludedMemberId = 0, database = getPool(), checkRoleAccess = true) {
@@ -207,8 +212,8 @@ export function registerAuthRoutes(app) {
         const roleAccessError = subscriptionRoleAccessMessage(organization.subscriptionTier, device.role);
         if (!isCreatorUsername(device.username) && roleAccessError) return response.status(403).json({ message: roleAccessError });
         await getPool().query("UPDATE depannhome_auth_devices SET status = 'approved', verified_at = NOW(), verification_code_hash = '', verification_code_expires_at = NULL, verification_attempts = 0 WHERE id = $1", [deviceId]);
-        const sessionId = device.role === "admin" && device.device_type === "desktop"
-            ? await issueAdministratorPcSession(device.user_id, deviceId, clientWindowSessionId(request))
+        const sessionId = isPcSessionScope(device.role, device.device_type)
+            ? await issuePcSession(device.user_id, deviceId, clientWindowSessionId(request))
             : "";
         setSessionCookie(response, device, deviceId, device.device_type, "", sessionId);
         return response.json({ user: publicUser(device) });
@@ -232,7 +237,7 @@ export function registerAuthRoutes(app) {
             if (!authDevice) {
                 return response.status(409).json({ message: "Cet appareil est déjà associé à un autre compte. Utilisez un autre navigateur ou contactez l’administrateur." });
             }
-            const sessionId = device.type === "desktop" ? await issueAdministratorPcSession(user.id, authDevice.id, clientWindowSessionId(request)) : "";
+            const sessionId = device.type === "desktop" ? await issuePcSession(user.id, authDevice.id, clientWindowSessionId(request)) : "";
             setSessionCookie(response, user, authDevice.id, device.type, "", sessionId);
             return response.status(201).json({ user: publicUser({ ...user, deviceType: device.type }) });
         } catch (error) {
@@ -837,10 +842,10 @@ export async function authenticateRequest(request, response, next) {
         if (currentDevice && (currentDevice.id !== device.id || currentDevice.type !== device.device_type)) {
             throw new Error("Identité appareil modifiée");
         }
-        if (user.role === "admin" && device.device_type === "desktop" && (!session.sessionId || session.sessionId !== device.session_id)) {
+        if (isPcSessionScope(user.role, device.device_type) && (!session.sessionId || session.sessionId !== device.session_id)) {
             throw new Error("Session PC remplacée");
         }
-        if (user.role === "admin" && device.device_type === "desktop" && requiresClientWindowProof(request)
+        if (isPcSessionScope(user.role, device.device_type) && requiresClientWindowProof(request)
             && session.sessionId !== clientWindowSessionId(request)) {
             throw new Error("Fenêtre PC remplacée");
         }
@@ -892,7 +897,7 @@ export async function authenticateRequest(request, response, next) {
 export function requireAuthentication(request, response, next) {
     if (!request.user) {
         if (request.sessionWindowReplaced) response.set("X-DepannHome-Session-Replaced", "true");
-        return response.status(401).json({ message: request.sessionWindowReplaced ? "Cette session Poste Admin a été remplacée par une connexion plus récente." : "Connexion requise.", sessionReplaced: Boolean(request.sessionWindowReplaced) });
+        return response.status(401).json({ message: request.sessionWindowReplaced ? "Cette session de poste PC a été remplacée par une connexion plus récente." : "Connexion requise.", sessionReplaced: Boolean(request.sessionWindowReplaced) });
     }
 
     return next();
@@ -1058,22 +1063,22 @@ async function completeLogin(user, device, response, request) {
     }
     const isCrossDeviceMobile = ["admin", COMMERCIAL_ROLE].includes(user.role) && device.type === "mobile";
     const isMobileAdministrator = isCrossDeviceMobile || isDedicatedMobileAdministrator;
-    const isCompanyAdministratorPc = user.role === "admin" && device.type === "desktop";
+    const isPcSession = isPcSessionScope(user.role, device.type);
     const isAccountant = user.role === "accountant";
     const authDeviceDetails = { ...device };
     // Un nouveau navigateur privé possède un identifiant local distinct. Il ne
     // doit donc jamais remplacer ni approuver automatiquement un poste administratif déjà
-    // comptabilisé d’un autre utilisateur. Pour un même administrateur, une
-    // nouvelle connexion administrative remplace toutefois son ancienne session administrative afin
-    // qu’il ne puisse jamais conserver deux sessions simultanées.
+    // comptabilisé d’un autre utilisateur. Pour un même compte PC, une nouvelle
+    // connexion desktop remplace toutefois son ancienne session afin qu’il ne
+    // puisse jamais conserver deux connexions simultanées.
     const automaticallyApproved = isAccountant;
     let authDevice = await findAuthDevice(user.id, device.id);
     if (isCrossDeviceMobile && authDevice?.status !== "approved") {
         const seatError = await mobileAdministratorSeatError(user.account_owner_id || user.id, authDevice?.id || device.id);
         if (seatError) return response.status(400).json({ message: seatError });
     }
-    if (isCompanyAdministratorPc && authDevice?.status !== "approved" && await userHasApprovedDesktopDevice(user.id)) {
-        authDevice = await replaceAdministratorDesktopDevice(user.id, authDevice?.id || device.id, authDeviceDetails);
+    if (isPcSession && authDevice?.status !== "approved" && await userHasApprovedDesktopDevice(user.id)) {
+        authDevice = await replacePcDesktopDevice(user.id, authDevice?.id || device.id, authDeviceDetails);
     }
     if (!authDevice) {
         if (isMobileAdministrator && await userHasActiveMobileDevice(user.id)) {
@@ -1110,7 +1115,7 @@ async function completeLogin(user, device, response, request) {
         const activeCompanyName = groupCompany?.companyName || await resolveCompanyName(accountOwnerId);
         const organization = await getOrganization(accountOwnerId);
         const effectiveSeats = await companySeatState(getPool(), accountOwnerId);
-        const sessionId = isCompanyAdministratorPc ? await issueAdministratorPcSession(user.id, authDevice.id, clientWindowSessionId(request)) : "";
+        const sessionId = isPcSession ? await issuePcSession(user.id, authDevice.id, clientWindowSessionId(request)) : "";
         setSessionCookie(response, user, authDevice.id, authDevice.device_type, groupCompany?.companyId, sessionId);
         return response.json({ user: publicUser({ ...user, accountOwnerId, activeCompanyId: accountOwnerId, groupId: groupCompany?.groupId, groupName: groupCompany?.groupName, activeCompanyName, isGroupAdministrator: Boolean(groupCompany?.isGroupAdministrator), role: user.role, principalRole: groupCompany?.isGroupAdministrator ? "group_admin" : user.role, deviceType: authDevice.device_type, organization, maxPcUsers: effectiveSeats?.maxPcUsers, maxMobileUsers: effectiveSeats?.maxMobileUsers }) });
     }
@@ -1293,7 +1298,7 @@ function getCompanyTotpEncryptionKey() {
     return crypto.createHash("sha256").update(`${getSessionSecret()}:company-totp:v1`).digest();
 }
 
-async function issueAdministratorPcSession(userId, deviceId, clientSessionId = "") {
+async function issuePcSession(userId, deviceId, clientSessionId = "") {
     const sessionId = clientSessionId || crypto.randomUUID();
     const { rows } = await getPool().query(`
         UPDATE depannhome_auth_devices
@@ -1301,7 +1306,7 @@ async function issueAdministratorPcSession(userId, deviceId, clientSessionId = "
         WHERE id = $1 AND user_id = $2 AND device_type = 'desktop' AND status = 'approved'
         RETURNING session_id
     `, [deviceId, userId, sessionId]);
-    if (!rows[0]?.session_id) throw new Error("Session Poste Admin introuvable.");
+    if (!rows[0]?.session_id) throw new Error("Session de poste PC introuvable.");
     return rows[0].session_id;
 }
 
@@ -1411,7 +1416,7 @@ async function userHasApprovedDesktopDevice(userId) {
     return rows[0]?.has_device;
 }
 
-async function replaceAdministratorDesktopDevice(userId, deviceId, device) {
+async function replacePcDesktopDevice(userId, deviceId, device) {
     const database = getPool();
     const connection = await database.connect();
     try {

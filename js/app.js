@@ -1,4 +1,4 @@
-import { initializeAuthentication, restoreApplicationShell, signOut } from "./auth.js?v=128";
+import { initializeAuthentication, restoreApplicationShell, signOut } from "./auth.js?v=129";
 import { initializeClientSynchronization } from "./client-sync.js?v=131";
 import { initializeCollaboration } from "./collaboration.js?v=7";
 import { loadDatabase } from "./data.js?v=59";
@@ -65,7 +65,7 @@ function startAdministratorSessionMonitor(user) {
         }
         if (sessionAccessIdentity(session.user) !== initialAccessIdentity) window.location.reload();
     };
-    const interval = user.role === "admin" && user.deviceType !== "mobile" ? 3_000 : 30_000;
+    const interval = user.deviceType === "desktop" ? 3_000 : 30_000;
     administratorSessionMonitor = window.setInterval(check, interval);
     window.addEventListener("focus", check);
     document.addEventListener("visibilitychange", check);

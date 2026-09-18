@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { isPcSessionScope } from "../server/auth.js";
 
 const authServer = readFileSync(new URL("../server/auth.js", import.meta.url), "utf8");
 const appSource = readFileSync(new URL("../js/app.js", import.meta.url), "utf8");
@@ -16,7 +17,15 @@ test("chaque fenêtre Web ou PWA possède une session cliente distincte", () => 
     assert.doesNotMatch(clientSessionSource, /localStorage\.getItem\(STORAGE_KEY\)/);
 });
 
-test("la session Poste Admin est liée à la fenêtre la plus récemment connectée", () => {
+test("tous les postes PC relèvent d’une session desktop unique, jamais les mobiles", () => {
+    for (const role of ["admin", "pc_standard", "accountant", "commercial"]) {
+        assert.equal(isPcSessionScope(role, "desktop"), true, role);
+        assert.equal(isPcSessionScope(role, "mobile"), false, role);
+    }
+    for (const role of ["mobile_admin", "team_lead", "technician"]) assert.equal(isPcSessionScope(role, "desktop"), false, role);
+});
+
+test("la session de chaque poste PC est liée à la fenêtre la plus récemment connectée", () => {
     assert.match(authServer, /clientWindowSessionId\(request\)/);
     assert.match(authServer, /requiresClientWindowProof\(request\)/);
     assert.match(authServer, /session\.sessionId !== clientWindowSessionId\(request\)/);
@@ -52,12 +61,12 @@ test("l’ancienne fenêtre est avertie sans supprimer le cookie partagé de la 
     assert.match(clientSessionSource, /depannhome:session-replaced/);
     assert.match(appSource, /redirectToAuthentication\("replaced"\)/);
     assert.match(appSource, /window\.location\.replace\(`\/connexion\$\{query\}`\)/);
-    assert.match(authClient, /Cette session Poste Admin a été fermée car une connexion plus récente a été ouverte/);
+    assert.match(authClient, /Cette session de poste PC a été fermée car une connexion plus récente a été ouverte/);
 });
 
 test("un contrôle périodique ferme rapidement une ancienne session inactive", () => {
     assert.match(appSource, /fetch\("\/api\/auth\/session"/);
-    assert.match(appSource, /user\.role === "admin" && user\.deviceType !== "mobile" \? 3_000 : 30_000/);
+    assert.match(appSource, /user\.deviceType === "desktop" \? 3_000 : 30_000/);
     assert.match(appSource, /if \(!session\?\.authenticated\) \{[\s\S]*?redirectToAuthentication/);
 });
 
@@ -76,4 +85,11 @@ test("toute API protégée expirée renvoie PC et mobile vers la connexion", () 
     assert.match(clientSessionSource, /!url\.pathname\.startsWith\("\/api\/auth\/"\)/);
     assert.match(clientSessionSource, /depannhome:authentication-required/);
     assert.match(appSource, /onAuthenticationRequired\(\(\) => redirectToAuthentication\("expired"\)\)/);
+});
+
+test("un nouvel ordinateur remplace l’ancien pour chaque compte PC sans révoquer son mobile", () => {
+    assert.match(authServer, /if \(isPcSession && authDevice\?\.status !== "approved" && await userHasApprovedDesktopDevice\(user\.id\)\)/);
+    assert.match(authServer, /replacePcDesktopDevice\(user\.id, authDevice\?\.id \|\| device\.id, authDeviceDetails\)/);
+    assert.match(authServer, /WHERE user_id=\$1 AND device_type='desktop' AND status='approved' AND id<>\$2/);
+    assert.match(authServer, /const sessionId = isPcSession \? await issuePcSession/);
 });

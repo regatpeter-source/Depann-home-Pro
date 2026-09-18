@@ -14,7 +14,7 @@ export async function initializeAuthentication({ onAuthenticated }) {
         onAuthenticated,
         registrationEnabled: Boolean(session.data?.registrationEnabled),
         message: session.data?.sessionReplaced
-            ? "Cette session Poste Admin a été fermée car une connexion plus récente a été ouverte."
+            ? "Cette session de poste PC a été fermée car une connexion plus récente a été ouverte."
             : session.data?.deviceIdentityChanged
                 ? "Le type de cet appareil a changé. Reconnectez-vous pour activer l’interface adaptée sans modifier silencieusement vos postes."
                 : sessionReason === "expired"
