@@ -4,7 +4,7 @@ import { ImapFlow } from "imapflow";
 import { simpleParser } from "mailparser";
 import { getPool } from "./database.js";
 import { recordHealthSchedulerRun } from "./health-dashboard.js";
-import { getAccountOwnerId } from "./auth.js";
+import { getAccountOwnerId, isCompanyAdministrator } from "./auth.js";
 import { getOrganization, isFeatureEnabled } from "./organizations.js";
 import { decryptElectronicInvoicingCredentials, encryptElectronicInvoicingCredentials } from "./electronic-invoicing.js";
 import { ingestEmailPartnerMission } from "./partner-missions.js";
@@ -1272,7 +1272,7 @@ function oauthPopup(res, success, message) {
     res.type("html").send(`<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Connexion boîte mail</title></head><body data-oauth-payload="${payload}"><main><p>${escapeHtml(message)}</p><p>Vous pouvez fermer cette fenêtre.</p></main><script src="/site-assets/oauth-callback.js?v=2" defer></script></body></html>`);
 }
 function requireEmailAccess(req, res, next) { if (!hasCompanyEmailWorkspaceAccess(req.user)) return res.status(403).json({ message: "L’espace e-mail de l’entreprise n’est pas autorisé sur ce poste." }); return next(); }
-function requireEmailConfigurationAccess(req, res, next) { if (req.user?.role !== "admin" || req.user?.deviceType !== "desktop") return res.status(403).json({ message: "Seul un Poste Admin peut modifier les réglages de la boîte professionnelle." }); return next(); }
+function requireEmailConfigurationAccess(req, res, next) { if (!isCompanyAdministrator(req) || req.user?.deviceType !== "desktop") return res.status(403).json({ message: "Seul le Poste Admin de cette entreprise peut modifier les réglages de la boîte professionnelle." }); return next(); }
 function selectedIds(value) { return [...new Set((Array.isArray(value) ? value : []).map(positiveId).filter(Boolean))].slice(0, 100); }
 export function publicMailError(error, { configuration = false, provider = "", mailbox = "", sending = false } = {}) {
     if (error?.publicMessage) return clean(error.publicMessage, 500);

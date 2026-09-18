@@ -616,17 +616,22 @@ function isDesktopDevice() {
     return document.body.classList.contains("desktop-device") || document.body.dataset.deviceType === "desktop";
 }
 
+function isLocalCompanyAdministrator() {
+    return document.body.dataset.localCompanyAdmin === "true";
+}
+
 function canAccessSettingsSection(section) {
     if (document.body.dataset.creator === "true") return true;
+    if (["subscription", "storage", "documents", "company", "users", "groups", "imports"].includes(section) && !isLocalCompanyAdministrator()) return false;
     if (["security", "support"].includes(section)) return isDesktopDevice() && ["admin", "pc_standard", "commercial"].includes(document.body.dataset.role);
-    if (section === "storage") return document.body.dataset.role === "admin";
+    if (section === "storage") return isLocalCompanyAdministrator();
     if (document.body.dataset.organizationInterface === "partner") return (section === "network" && organizationFeatureEnabled("partnerConnections")) || (section === "company" && organizationFeatureEnabled("partnerMissions")) || (section === "imports" && organizationFeatureEnabled("imports"));
-    if (section === "company" && organizationFeatureEnabled("companyEmail")) return document.body.dataset.role === "admin";
+    if (section === "company" && organizationFeatureEnabled("companyEmail")) return isLocalCompanyAdministrator();
     if (section === "network" && (organizationFeatureEnabled("partnerConnections") || organizationFeatureEnabled("partnerMissions"))) return true;
     const featureBySection = { documents: "billing", network: "partnerConnections", users: "settings", security: "settings", groups: "groups", personalization: "settings", imports: "imports" };
     const feature = featureBySection[section];
     if (feature && !organizationFeatureEnabled(feature)) return false;
-    if (document.body.dataset.role === "admin") return true;
+    if (isLocalCompanyAdministrator()) return true;
     return ["network", "company", "personalization"].includes(section);
 }
 
@@ -1752,7 +1757,7 @@ function renderSettings(options = {}) {
     fields.append(maxLabel, themeLabel, densityLabel, fontLabel, langLabel, offlineLabel, motionLabel);
     form.appendChild(fields);
     form.appendChild(notificationFields);
-    if (document.body.dataset.role === "admin") {
+    if (isLocalCompanyAdministrator()) {
         form.appendChild(pcSeatsHint);
     }
     form.appendChild(actions);
@@ -1761,18 +1766,18 @@ function renderSettings(options = {}) {
     card.appendChild(section);
 
     container.appendChild(card);
-    if (!options.personalizationOnly && document.body.dataset.role === "admin") {
+    if (!options.personalizationOnly && isLocalCompanyAdministrator()) {
         renderTeamManagement(container);
     }
     if (!options.personalizationOnly && canAccessSettingsSection("security")) renderCompanyTwoFactorSecurity(container);
-    if (!options.personalizationOnly && document.body.dataset.role === "admin" && organizationFeatureEnabled("partnerConnections")) renderPartnerConnections(container);
+    if (!options.personalizationOnly && isLocalCompanyAdministrator() && organizationFeatureEnabled("partnerConnections")) renderPartnerConnections(container);
     if (!options.personalizationOnly && document.body.dataset.groupAdmin === "true") {
         const groupCard = document.createElement("article");
         groupCard.className = "brand-card full-card procedure-card creator-entry-card";
         groupCard.innerHTML = '<p class="eyebrow">Multi-entreprises</p><h2>Groupe & entreprises</h2><p>Changez d’entreprise, pilotez les sociétés du groupe et consultez les indicateurs consolidés.</p>';
         groupCard.appendChild(createButton("Ouvrir le pilotage Groupe", "secondary-button", renderGroupWorkspace));
         container.appendChild(groupCard);
-    } else if (!options.personalizationOnly && document.body.dataset.role === "admin") renderGroupActivation(container);
+    } else if (!options.personalizationOnly && isLocalCompanyAdministrator() && document.body.dataset.organizationInterface !== "group") renderGroupActivation(container);
     if (!options.personalizationOnly && document.body.dataset.creator === "true" && document.body.dataset.deviceType === "desktop") {
         const creatorCard = document.createElement("article");
         creatorCard.className = "brand-card full-card procedure-card creator-entry-card";
@@ -1780,7 +1785,7 @@ function renderSettings(options = {}) {
         creatorCard.appendChild(createButton("Ouvrir la console Créateur", "secondary-button", renderCreatorConsole));
         container.appendChild(creatorCard);
     }
-    if (!options.personalizationOnly && document.body.dataset.role === "admin" && document.body.classList.contains("desktop-device")) {
+    if (!options.personalizationOnly && isLocalCompanyAdministrator() && document.body.classList.contains("desktop-device")) {
         if (organizationFeatureEnabled("technicalReports")) renderReportTemplateSettings(container);
         renderDataImportTool(container, { clientOnly: document.body.dataset.organizationInterface === "partner" });
         renderSupportContact(container);
@@ -1807,16 +1812,16 @@ function renderSettingsWorkspace(options = {}) {
         const grid = document.createElement("div");
         grid.className = "settings-card-grid";
         const cards = [
-            ...(document.body.dataset.role === "admin" ? [["subscription", "Offre & abonnement", "Consultez les tarifs et demandez une évolution ou une rétrogradation au Support.", "subscription"]] : []),
-            ...(document.body.dataset.role === "admin" ? [["storage", "Stockage", "Consultez l’espace utilisé, votre quota et l’évolution des données de l’entreprise.", "database"]] : []),
-            ...(document.body.dataset.role === "admin" ? [["documents", "Modèles de documents", `Identité, présentation et modèles des devis${organizationFeatureEnabled("quitus") ? ", quitus" : ""} et rapports.`, "document"]] : []),
-            ...(organizationFeatureEnabled("companyEmail") && document.body.dataset.role === "admin" ? [["company", "Entreprise · Boîte mail", "Connectez la boîte de l’entreprise et choisissez si elle recherche automatiquement les missions.", "company"]] : []),
+            ...(isLocalCompanyAdministrator() ? [["subscription", "Offre & abonnement", "Consultez les tarifs et demandez une évolution ou une rétrogradation au Support.", "subscription"]] : []),
+            ...(isLocalCompanyAdministrator() ? [["storage", "Stockage", "Consultez l’espace utilisé, votre quota et l’évolution des données de l’entreprise.", "database"]] : []),
+            ...(isLocalCompanyAdministrator() ? [["documents", "Modèles de documents", `Identité, présentation et modèles des devis${organizationFeatureEnabled("quitus") ? ", quitus" : ""} et rapports.`, "document"]] : []),
+            ...(organizationFeatureEnabled("companyEmail") && isLocalCompanyAdministrator() ? [["company", "Entreprise · Boîte mail", "Connectez la boîte de l’entreprise et choisissez si elle recherche automatiquement les missions.", "company"]] : []),
             ["network", internalNetworkOnly ? "Réseau Depann’Home Pro" : "Réseau & connecteurs", internalNetworkOnly ? "Recherchez des entreprises utilisatrices et gérez vos connexions internes." : "Deux espaces distincts : le réseau collaboratif Depann’Home Pro et les connecteurs API externes.", "network"],
             ...(supportAvailable ? [["support", "Support", "Contactez l’équipe Depann’Home Pro depuis les paramètres de votre entreprise.", "support"]] : []),
-            ...(document.body.dataset.role === "admin" ? [["users", "Utilisateurs", "Accès, postes, techniciens et chefs d’équipe.", "users"], ["groups", "Groupe / Multi-entreprises", "Sociétés, bascule de contexte et indicateurs consolidés.", "group"]] : []),
+            ...(isLocalCompanyAdministrator() ? [["users", "Utilisateurs", "Accès, postes, techniciens et chefs d’équipe.", "users"], ["groups", "Groupe / Multi-entreprises", "Sociétés, bascule de contexte et indicateurs consolidés.", "group"]] : []),
             ...(canAccessSettingsSection("security") ? [["security", "Sécurité", "Configurez la double authentification propre à ce poste PC.", "security"]] : []),
             ["personalization", "Interface & notifications", "Thème standard ou sombre, densité, animations et alertes choisies pour ce poste.", "appearance"],
-            ...(document.body.dataset.role === "admin" && document.body.classList.contains("desktop-device") ? [["imports", document.body.dataset.organizationInterface === "partner" ? "Importation de clients" : "Importation de données", document.body.dataset.organizationInterface === "partner" ? "Importez vos fiches clients depuis Excel ou CSV." : "Importez vos clients, devis, factures et rapports depuis Excel ou CSV.", "import"]] : []),
+            ...(isLocalCompanyAdministrator() && document.body.classList.contains("desktop-device") ? [["imports", document.body.dataset.organizationInterface === "partner" ? "Importation de clients" : "Importation de données", document.body.dataset.organizationInterface === "partner" ? "Importez vos fiches clients depuis Excel ou CSV." : "Importez vos clients, devis, factures et rapports depuis Excel ou CSV.", "import"]] : []),
             ...(document.body.dataset.role === "admin" && document.body.dataset.creator === "true" && document.body.dataset.deviceType === "desktop" ? [["creator", "Console Créateur", "Pilotage des entreprises, abonnements et services de la plateforme.", "creator"]] : [])
         ];
         cards.filter(([id]) => canAccessSettingsSection(id)).forEach(([id, title, description, icon]) => grid.appendChild(createSettingsNavigationCard(title, description, icon, () => renderSettings({ section: id }))));
@@ -1867,6 +1872,7 @@ function renderSettingsWorkspace(options = {}) {
     }
     if (section === "groups") {
         if (document.body.dataset.groupAdmin === "true") renderGroupWorkspace();
+        else if (document.body.dataset.organizationInterface === "group") container.appendChild(createSettingsIntro("Entreprise rattachée à un Groupe", "Cette entreprise ne peut pas activer ni administrer un autre Groupe. Le mode Groupe, l’offre et les sociétés rattachées sont gérés exclusivement depuis l’entreprise principale."));
         else renderGroupActivation(container);
         return;
     }

@@ -3,7 +3,7 @@ import path from "node:path";
 import ExcelJS from "exceljs";
 import multer from "multer";
 import { getPool } from "./database.js";
-import { getAccountOwnerId } from "./auth.js";
+import { getAccountOwnerId, isCompanyAdministrator } from "./auth.js";
 import { getOrganization } from "./organizations.js";
 import { strictDateOnly } from "./date-validation.js";
 
@@ -174,6 +174,6 @@ function isClientIdentifierColumn(value) { return /^(client[ _-]?)?id(entifiant)
 function safeFilename(value) { return path.basename(String(value || "import")).replace(/[\r\n]/g, " ").slice(0, 255) || "import"; }
 export function isDataImportTypeAllowed(interfaceType, dataType) { return TYPES.has(dataType) && (interfaceType !== "partner" || dataType === "clients"); }
 async function assertDataImportTypeAccess(request, dataType) { const organization = await getOrganization(getAccountOwnerId(request)); if (!isDataImportTypeAllowed(organization.interfaceType, dataType)) throw clientError(403, "La licence Partenaire autorise uniquement l’import de données clients."); }
-function requireDesktopAdministrator(request, response, next) { if (request.user?.role === "admin" && request.user?.deviceType === "desktop") return next(); return response.status(403).json({ message: "L’importation de données est réservée aux administrateurs sur poste administratif." }); }
+function requireDesktopAdministrator(request, response, next) { if (isCompanyAdministrator(request) && request.user?.deviceType === "desktop") return next(); return response.status(403).json({ message: "L’importation de données est réservée au Poste Admin de cette entreprise." }); }
 function clientError(status, message) { const error = new Error(message); error.status = status; return error; }
 function asyncHandler(handler) { return (request, response, next) => Promise.resolve(handler(request, response, next)).catch(error => error.status ? response.status(error.status).json({ message: error.message }) : next(error)); }

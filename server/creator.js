@@ -1,7 +1,7 @@
 import bcrypt from "bcrypt";
 import crypto from "node:crypto";
 import { getPool } from "./database.js";
-import { isCreatorUsername } from "./auth.js";
+import { isCompanyAdministrator, isCreatorUsername } from "./auth.js";
 import { creatorNetworkDirectory, creatorNetworkStatistics, updateCreatorNetworkDirectory } from "./partner-connections.js";
 import { createOrganization, getOrganization, getOrganizationHistory, organizationInterfaceAccessMessage, updateOrganization } from "./organizations.js";
 import { calculateSubscriptionPriceCents, normalizeSubscriptionTier, subscriptionRoleAccessMessage, subscriptionTierConfig } from "./subscription-tiers.js";
@@ -34,7 +34,7 @@ export function subscriptionManagementAccessError(activeOwnerId, billingOwnerId)
 
 export function registerCreatorRoutes(app, requireCreator, requireAuthentication) {
     app.get("/api/company/storage-usage", requireAuthentication, asyncHandler(async (request, response) => {
-        if (request.user?.role !== "admin") return response.status(403).json({ message: "La consultation du stockage est réservée au Poste Admin de l’entreprise." });
+        if (!isCompanyAdministrator(request)) return response.status(403).json({ message: "La consultation du stockage est réservée au Poste Admin de cette entreprise." });
         const accountOwnerId = positiveId(request.user.accountOwnerId);
         if (!accountOwnerId) return response.status(403).json({ message: "Entreprise non identifiée." });
         const storage = await loadCompanyStorageUsage(accountOwnerId);
@@ -69,7 +69,7 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
         response.json({ total: items.length, counts: { subscriptions: subscriptions.rowCount, support: support.rowCount, partners: partners.rowCount }, items });
     }));
     app.get("/api/subscription-change-requests", requireAuthentication, asyncHandler(async (request, response) => {
-        if (request.user?.role !== "admin") return response.status(403).json({ message: "La gestion de l’offre est réservée à l’Administrateur de l’entreprise." });
+        if (!isCompanyAdministrator(request)) return response.status(403).json({ message: "La gestion de l’offre est réservée au Poste Admin de cette entreprise." });
         const billingOwnerId = await subscriptionOwnerId(getPool(), request.user.accountOwnerId);
         const accessError = subscriptionManagementAccessError(request.user.accountOwnerId, billingOwnerId);
         if (accessError) return response.status(403).json({ message: accessError, managedByPrincipal: true });
@@ -83,7 +83,7 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
         response.json({ requests: requestsResult.rows, account: { ...account, monthlyPriceCents: calculateSubscriptionPriceCents(account.subscriptionTier, account.maxPcUsers, account.maxMobileUsers), latestInvoice: invoiceResult.rows[0] || null } });
     }));
     app.post("/api/subscription-change-requests", requireAuthentication, asyncHandler(async (request, response) => {
-        if (request.user?.role !== "admin") return response.status(403).json({ message: "La demande de changement d’offre est réservée à l’Administrateur de l’entreprise." });
+        if (!isCompanyAdministrator(request)) return response.status(403).json({ message: "La demande de changement d’offre est réservée au Poste Admin de cette entreprise." });
         const billingOwnerId = await subscriptionOwnerId(getPool(), request.user.accountOwnerId);
         const accessError = subscriptionManagementAccessError(request.user.accountOwnerId, billingOwnerId);
         if (accessError) return response.status(403).json({ message: accessError, managedByPrincipal: true });

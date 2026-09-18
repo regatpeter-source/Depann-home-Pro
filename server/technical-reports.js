@@ -3,7 +3,7 @@ import multer from "multer";
 import path from "node:path";
 import PDFDocument from "pdfkit";
 import { getPool } from "./database.js";
-import { getAccountOwnerId } from "./auth.js";
+import { getAccountOwnerId, isCompanyAdministrator } from "./auth.js";
 import { assertLockOwner, getAudit, getLock, publishEvent, releaseLock } from "./collaboration.js";
 import { DEFAULT_MATERIALS, REPORT_STEP_KEYS, createEmptyLeakContent, createLeakReportPdf as createWizardLeakReportPdf, normalizeLeakContent, reportSections } from "./leak-report-template.js";
 import { synchronizeConnectedReport } from "./partner-connections.js";
@@ -294,7 +294,7 @@ export function registerTechnicalReportRoutes(app, requireAuthentication) {
 }
 
 function requireReportAccess(request, response, next) { if (request.user?.role === "accountant") return response.status(403).json({ message: "L’espace comptabilité n’accède pas aux rapports techniques." }); return next(); }
-function requireReportAdministration(request, response, next) { if (!["admin", "mobile_admin"].includes(request.user?.role)) return response.status(403).json({ message: "Cette action est réservée au personnel administratif." }); return next(); }
+function requireReportAdministration(request, response, next) { if (request.user?.role !== "mobile_admin" && !isCompanyAdministrator(request)) return response.status(403).json({ message: "Cette action est réservée au Poste Admin de cette entreprise." }); return next(); }
 function requireReportCancellationAccess(request, response, next) { if (request.user?.deviceType === "desktop" && ["admin", "pc_standard", "commercial"].includes(request.user?.role)) return next(); return response.status(403).json({ message: "L’annulation d’un brouillon est réservée à un poste administratif autorisé." }); }
 function requireReportProofreadingAccess(request, response, next) { if (!canConfirmReportProofreading(request.user?.role, request.user?.deviceType)) return response.status(403).json({ message: "La correction finale du rapport est réservée à un poste administratif autorisé." }); return next(); }
 function requireReportValidationAccess(request, response, next) { if (!canConfirmReportProofreading(request.user?.role, request.user?.deviceType)) return response.status(403).json({ message: "L’envoi définitif du rapport est réservé à un poste administratif autorisé." }); return next(); }

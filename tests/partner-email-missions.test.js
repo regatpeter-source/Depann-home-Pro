@@ -400,7 +400,7 @@ test("seul le Poste Admin réactive une mission terminale avec un motif puis la 
     assert.match(reactivation, /restoredPartnerMissionStatus\(mission\)/);
     assert.match(missionSource, /if \(mission\.calendar_event_id \|\| mission\.calendarEventId\) return "scheduled"/);
     assert.match(reactivation, /"reactivated_for_correction"/);
-    assert.match(missionSource, /req\?\.user\?\.role === "admin"/);
+    assert.match(missionSource, /isCompanyAdministrator\(req\)/);
     assert.match(correctionUi, /Réactiver et corriger/);
     assert.match(correctionUi, /if \(!reason\.trim\(\)\)/);
     assert.match(correctionUi, /await openPartnerMissionPlanning/);
@@ -501,7 +501,7 @@ test("les réglages d’une boîte existante sont enregistrés côté serveur pa
     assert.match(serverSource, /:connectionId\/settings", requireEmailConfigurationAccess/);
     assert.match(serverSource, /SET selection_mode=\$3, allowed_senders=\$4::jsonb, required_keywords=\$5::jsonb, automatic_threshold=\$6/);
     assert.match(serverSource, /auto_search_enabled=\$8/);
-    assert.match(serverSource, /req\.user\?\.role !== "admin"/);
+    assert.match(serverSource, /!isCompanyAdministrator\(req\)/);
     assert.match(serverSource, /req\.user\?\.deviceType !== "desktop"/);
     assert.match(emailSettingsSource, /selectionMode: row\.querySelector\("\[data-email-selection-mode\]"\)\.value/);
     assert.match(emailSettingsSource, /automaticThreshold: Number/);

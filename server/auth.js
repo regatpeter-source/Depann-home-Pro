@@ -860,6 +860,7 @@ export async function authenticateRequest(request, response, next) {
             username: user.username,
             role: user.role,
             principalRole: groupCompany?.isGroupAdministrator ? "group_admin" : user.role,
+            homeAccountOwnerId: String(user.account_owner_id || user.id),
             accountOwnerId,
             activeCompanyId: accountOwnerId,
             groupId: groupCompany ? String(groupCompany.groupId) : "",
@@ -915,7 +916,13 @@ export function getAccountOwnerId(request) {
 }
 
 export function isCompanyAdministrator(request) {
-    return request.user?.role === "admin";
+    return isLocalCompanyAdministrator(request.user);
+}
+
+export function isLocalCompanyAdministrator(user) {
+    const activeOwnerId = String(user?.accountOwnerId || user?.account_owner_id || user?.id || user?.sub || "");
+    const homeOwnerId = String(user?.homeAccountOwnerId || user?.home_account_owner_id || user?.account_owner_id || activeOwnerId);
+    return user?.role === "admin" && Boolean(activeOwnerId) && homeOwnerId === activeOwnerId;
 }
 
 export async function refreshSessionForActiveCompany(response, user, deviceId, activeCompanyId) {
@@ -1362,6 +1369,7 @@ function publicUser(user) {
         username: user.username,
         role: user.role,
         principalRole: user.principalRole || user.role,
+        homeAccountOwnerId: String(user.homeAccountOwnerId || user.home_account_owner_id || user.account_owner_id || id),
         accountOwnerId: String(user.accountOwnerId || user.account_owner_id || id),
         activeCompanyId: String(user.activeCompanyId || user.accountOwnerId || user.account_owner_id || id),
         groupId: user.groupId ? String(user.groupId) : "",
@@ -1385,6 +1393,7 @@ function publicUser(user) {
         organization: user.organization || null,
         isActive: user.is_active !== false,
         isCreator: Boolean(user.isCreator || isCreatorUsername(user.username)),
+        isLocalCompanyAdministrator: isLocalCompanyAdministrator(user),
         deviceType: user.deviceType || user.device_type || "desktop"
     };
 }

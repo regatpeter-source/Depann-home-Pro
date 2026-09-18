@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import ExcelJS from "exceljs";
 import PDFDocument from "pdfkit";
 import { getPool } from "./database.js";
-import { getAccountOwnerId } from "./auth.js";
+import { getAccountOwnerId, isCompanyAdministrator } from "./auth.js";
 import {
     DEFAULT_JOURNALS,
     buildFecFile,
@@ -479,7 +479,7 @@ function requireAccountingWriteAccess(request, response, next) {
 }
 
 function requireDesktopAdministrator(request, response, next) {
-    if (request.user?.role === "admin" && request.user?.deviceType === "desktop") return next();
+    if (isCompanyAdministrator(request) && request.user?.deviceType === "desktop") return next();
     return response.status(403).json({ message: "Cette validation est réservée à l’administrateur depuis un poste PC approuvé." });
 }
 

@@ -25,8 +25,15 @@ test("l'activation et les sociétés rattachées enregistrent réellement l'inte
 
 test("les routes multi-entreprises exigent une interface Groupe active", () => {
     assert.match(groups, /organization\.interfaceType === "group" && organization\.subscriptionTier === "pro"/);
+    assert.match(groups, /isCompanyAdministrator\(req\) && req\.user\?\.isGroupAdministrator/);
     assert.match(context, /home_organization\.interface_type='group'/);
     assert.match(context, /active_organization\.interface_type='group'/);
+});
+
+test("une entreprise déjà rattachée ne peut pas activer son propre Groupe", () => {
+    const activation = groups.slice(groups.indexOf('app.post("/api/groups/activate"'), groups.indexOf('app.delete("/api/groups/current"'));
+    assert.match(activation, /if \(req\.user\?\.groupId\) return res\.status\(403\)/);
+    assert.match(activation, /Seule l’entreprise principale gère le mode Groupe/);
 });
 
 test("la création distingue clairement Partenaire gratuit et Groupe inclus dans Pro", () => {

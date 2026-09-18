@@ -2,7 +2,7 @@ import { initializeAuthentication, restoreApplicationShell, signOut } from "./au
 import { initializeClientSynchronization } from "./client-sync.js?v=131";
 import { initializeCollaboration } from "./collaboration.js?v=7";
 import { loadDatabase } from "./data.js?v=59";
-import { initializeNavigation, refreshApplication } from "./navigation.js?v=476";
+import { initializeNavigation, refreshApplication } from "./navigation.js?v=477";
 import { renderError } from "./ui.js?v=44";
 import { getSettings } from "./storage.js?v=45";
 import { FONT_OPTIONS } from "./config.js?v=135";
@@ -185,6 +185,7 @@ function showAuthenticatedUser(user) {
     document.body.dataset.maxMobileUsers = String(user.maxMobileUsers || 0);
     document.body.dataset.monthlyPriceCents = String(user.monthlyPriceCents || 0);
     document.body.dataset.groupAdmin = user.isGroupAdministrator ? "true" : "false";
+    document.body.dataset.localCompanyAdmin = user.isLocalCompanyAdministrator ? "true" : "false";
     document.body.dataset.groupId = user.groupId || "";
     document.body.dataset.groupName = user.groupName || "";
     document.body.dataset.organizationInterface = user.organization?.interfaceType || "standard";

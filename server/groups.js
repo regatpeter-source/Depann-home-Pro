@@ -45,6 +45,7 @@ export function registerGroupRoutes(app, requireAuthentication) {
         res.json({ seats });
     }));
     app.post("/api/groups/activate", asyncHandler(async (req, res) => {
+        if (req.user?.groupId) return res.status(403).json({ message: "Cette entreprise appartient déjà à un groupe. Seule l’entreprise principale gère le mode Groupe." });
         if (!isCompanyAdministrator(req) || req.user?.isGroupAdministrator) return res.status(403).json({ message: "Seul un Poste Admin de l’entreprise peut activer le mode Groupe." });
         const name = clean(req.body?.name, 160);
         if (!name) return res.status(400).json({ message: "Le nom du groupe est obligatoire." });

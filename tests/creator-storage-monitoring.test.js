@@ -64,7 +64,7 @@ test("creator console displays usage, database size, trends and editable quotas"
 test("company administrators have a read-only storage section in settings", () => {
     const navigation = readFileSync(new URL("../js/navigation.js", import.meta.url), "utf8");
     assert.match(creatorServer, /app\.get\("\/api\/company\/storage-usage", requireAuthentication/);
-    assert.match(creatorServer, /request\.user\?\.role !== "admin"/);
+    assert.match(creatorServer, /!isCompanyAdministrator\(request\)/);
     assert.match(navigation, /\["storage", "Stockage"/);
     assert.match(navigation, /fetch\("\/api\/company\/storage-usage"/);
     assert.doesNotMatch(navigation.slice(navigation.indexOf("async function renderCompanyStorage"), navigation.indexOf("async function renderSubscriptionSettings")), /storage-quota|method:\s*"PATCH"/);

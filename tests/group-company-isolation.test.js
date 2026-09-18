@@ -19,6 +19,7 @@ test("la session Groupe résout exclusivement une entreprise active autorisée",
     assert.match(auth, /accountOwnerId = String\(groupCompany\?\.companyId \|\| user\.account_owner_id \|\| user\.id\)/);
     assert.match(auth, /activeCompanyName = groupCompany\?\.companyName \|\| await resolveCompanyName\(accountOwnerId\)/);
     assert.match(auth, /activeCompanyId: accountOwnerId/);
+    assert.match(auth, /homeAccountOwnerId: String\(user\.account_owner_id \|\| user\.id\)/);
     assert.match(auth, /activeCompanyName,/);
     assert.match(auth, /return String\(request\.user\?\.accountOwnerId \|\| request\.user\?\.sub \|\| ""\)/);
     assert.match(groupContext, /principal\.id = \$1/);
@@ -60,4 +61,11 @@ test("le poste actif affiche en permanence l’entreprise standard ou active du 
     assert.match(navigationClient, /synchronizeActiveCompanyIdentity\(session\.user\)/);
     assert.match(navigationClient, /activeCompanyName\.textContent = companyName/);
     assert.match(navigationClient, /activeCompanyBadge\.hidden = !companyName/);
+});
+
+test("l’administration locale ne suit jamais la société consultée", () => {
+    assert.match(auth, /homeOwnerId === activeOwnerId/);
+    assert.match(appClient, /dataset\.localCompanyAdmin = user\.isLocalCompanyAdministrator/);
+    assert.match(navigationClient, /function isLocalCompanyAdministrator\(\)/);
+    assert.match(navigationClient, /!isLocalCompanyAdministrator\(\)/);
 });

@@ -1,7 +1,7 @@
 import multer from "multer";
 import PDFDocument from "pdfkit";
 import { getPool } from "./database.js";
-import { getAccountOwnerId } from "./auth.js";
+import { getAccountOwnerId, isCompanyAdministrator } from "./auth.js";
 import { sendDocumentEmail } from "./email.js";
 import { createQuitusDocumentOutput } from "./calendar.js";
 import { createEmptyLeakContent } from "./leak-report-template.js";
@@ -1022,7 +1022,7 @@ function buildLegalSnapshot(document, profile) {
 }
 
 function requireBillingAdministration(request, response, next) {
-    if (request.user?.role === "admin") return next();
+    if (isCompanyAdministrator(request)) return next();
     return response.status(403).json({ message: request.user?.role === "accountant" ? "L’espace Facturation de ce poste administratif est en consultation uniquement." : "La modification des documents et paramètres de facturation n’est pas autorisée pour ce poste." });
 }
 
