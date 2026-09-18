@@ -211,12 +211,13 @@ async function renderCreatorAssistance(prefill = {}) {
                 <label>Référence demande Support<input name="supportRequestId" inputmode="numeric" placeholder="Facultatif si accord confirmé"></label>
                 <label class="form-wide">Motif détaillé *<textarea name="reason" minlength="10" maxlength="1000" rows="3" required placeholder="Blocage rencontré, vérifications demandées et résultat attendu"></textarea></label>
                 <label class="creator-switch form-wide">Demande préalable confirmée<input name="consentConfirmed" type="checkbox"><span>L’entreprise devra toujours accepter l’accès depuis sa notification avant l’ouverture du diagnostic.</span></label>
+                <label class="creator-switch form-wide creator-assistance-control-option">Prise en main sécurisée<input name="accessScope" type="checkbox" value="control"><span>Après acceptation explicite, le Support pourra naviguer dans l’entreprise et corriger les clients, le planning et les rapports. Les zones sensibles restent bloquées et chaque requête est tracée.</span></label>
                 <label class="creator-switch form-wide creator-assistance-emergency-option">Urgence « break-glass »<input name="emergency" type="checkbox"><span>10 minutes seulement. À utiliser si l’entreprise est totalement bloquée et qu’aucun accord traçable ne peut être enregistré immédiatement.</span></label>
             </div>
             <div class="creator-form-actions"><button type="submit" class="primary-button">Ouvrir la session d’assistance</button></div>
         </form>
         <h4>Sessions récentes</h4>
-        <div class="creator-network-list">${sessions.length ? sessions.map(session => `<article class="creator-network-company${session.active ? " creator-assistance-active-row" : ""}"><div><strong>${escapeHtml(session.companyName)}</strong><p>${session.mode === "emergency" ? "Urgence" : "Lecture seule"} · ${escapeHtml(session.reason)}</p><small>${escapeHtml(formatDateTime(session.createdAt))}${session.active ? ` · expire ${escapeHtml(formatDateTime(session.expiresAt))}` : ""}${session.revokedAt ? ` · clôturée ${escapeHtml(formatDateTime(session.revokedAt))}` : ""}</small></div>${session.active ? `<button type="button" class="secondary-button" data-open-assistance="${escapeHtml(session.id)}">Ouvrir</button>` : session.awaitingConsent ? '<span class="creator-state suspended">En attente de l’entreprise</span>' : session.declinedAt ? '<span class="creator-state archived">Refusée</span>' : '<span class="creator-state archived">Terminée</span>'}</article>`).join("") : '<p class="muted">Aucune session d’assistance enregistrée.</p>'}</div>
+        <div class="creator-network-list">${sessions.length ? sessions.map(session => `<article class="creator-network-company${session.active ? " creator-assistance-active-row" : ""}"><div><strong>${escapeHtml(session.companyName)}</strong><p>${session.mode === "emergency" ? "Urgence diagnostique" : session.accessScope === "control" ? "Prise en main sécurisée" : "Diagnostic en lecture seule"} · ${escapeHtml(session.reason)}</p><small>${escapeHtml(formatDateTime(session.createdAt))}${session.active ? ` · expire ${escapeHtml(formatDateTime(session.expiresAt))}` : ""}${session.revokedAt ? ` · clôturée ${escapeHtml(formatDateTime(session.revokedAt))}` : ""}</small></div>${session.active ? `<button type="button" class="secondary-button" data-open-assistance="${escapeHtml(session.id)}">Ouvrir</button>` : session.awaitingConsent ? '<span class="creator-state suspended">En attente de l’entreprise</span>' : session.declinedAt ? '<span class="creator-state archived">Refusée</span>' : '<span class="creator-state archived">Terminée</span>'}</article>`).join("") : '<p class="muted">Aucune session d’assistance enregistrée.</p>'}</div>
     </section>`;
     const startForm = workspace.querySelector("[data-assistance-start]");
     if (prefill.companyOwnerId) startForm.elements.companyOwnerId.value = String(prefill.companyOwnerId);
@@ -228,6 +229,7 @@ async function renderCreatorAssistance(prefill = {}) {
         const values = Object.fromEntries(new FormData(form));
         values.consentConfirmed = form.elements.consentConfirmed.checked;
         values.emergency = form.elements.emergency.checked;
+        values.accessScope = !values.emergency && form.elements.accessScope.checked ? "control" : "diagnostic";
         if (values.emergency && !confirm("Ouvrir une session d’urgence de 10 minutes ? L’entreprise sera immédiatement notifiée et la justification conservée.")) return;
         const button = form.querySelector('button[type="submit"]'); button.disabled = true;
         const created = await api("/api/creator/assistance/sessions", { method: "POST", body: JSON.stringify(values) });
@@ -257,7 +259,7 @@ async function renderCreatorAssistanceSession(sessionId) {
     const devices = diagnostics.devices || [];
     const locks = diagnostics.locks || [];
     workspace.innerHTML = `<section class="creator-form creator-assistance-center">
-        <div class="creator-assistance-banner" role="status"><div><strong>${session.mode === "emergency" ? "⚠ Session d’urgence" : "🛟 Assistance en lecture seule"} — ${escapeHtml(session.companyName)}</strong><span>Expire le ${escapeHtml(formatDateTime(session.expiresAt))} · ${escapeHtml(session.reason)}</span></div><button type="button" class="secondary-button danger-button" data-close-assistance>Terminer</button></div>
+        <div class="creator-assistance-banner" role="status"><div><strong>${session.mode === "emergency" ? "⚠ Session d’urgence diagnostique" : session.accessScope === "control" ? "🔒 Prise en main autorisée" : "🛟 Assistance en lecture seule"} — ${escapeHtml(session.companyName)}</strong><span>Expire le ${escapeHtml(formatDateTime(session.expiresAt))} · ${escapeHtml(session.reason)}</span></div><div class="creator-form-actions">${session.accessScope === "control" && session.mode !== "emergency" ? '<button type="button" class="primary-button" data-enter-assistance-control>Prendre la main</button>' : ""}<button type="button" class="secondary-button danger-button" data-close-assistance>Terminer</button></div></div>
         <div class="creator-assistance-summary"><article><span>Entreprise</span><strong>${company.isArchived ? "Archivée" : company.isActive ? "Active" : "Suspendue"}</strong></article><article><span>Abonnement</span><strong>${escapeHtml(company.subscriptionTier || "—")} · ${escapeHtml(company.subscriptionStatus || "—")}</strong></article><article><span>Double authentification</span><strong>${diagnostics.twoFactorPolicy?.enabled ? "Activée" : "Désactivée"}</strong></article><article><span>Verrous actifs</span><strong>${locks.length}</strong></article></div>
         <aside class="accounting-pdp-notice"><strong>Vue sans usurpation.</strong> Vous observez l’état technique de l’entreprise, mais vous n’êtes pas connecté à sa place. Les actions ci-dessous demandent un motif complémentaire et une confirmation.</aside>
         <section class="creator-assistance-section"><div class="form-heading"><div><p class="eyebrow">Récupération</p><h4>État de l’entreprise</h4></div></div><div class="creator-form-actions">${company.isArchived ? '<button type="button" class="secondary-button" data-assistance-action="restore_company">Restaurer l’entreprise</button>' : !company.isActive ? '<button type="button" class="secondary-button" data-assistance-action="reactivate_company">Réactiver l’entreprise</button>' : '<span class="creator-state">Entreprise opérationnelle</span>'}<button type="button" class="secondary-button danger-button" data-assistance-action="revoke_company_sessions">Révoquer toutes les sessions</button>${locks.length ? '<button type="button" class="secondary-button danger-button" data-assistance-action="release_company_locks">Libérer tous les verrous</button>' : ""}</div></section>
@@ -267,9 +269,17 @@ async function renderCreatorAssistanceSession(sessionId) {
         <div class="creator-form-actions"><button type="button" class="secondary-button" data-refresh-assistance>Actualiser</button><button type="button" class="secondary-button" data-back-assistance>Retour aux sessions</button></div>
     </section>`;
     workspace.querySelector("[data-close-assistance]").addEventListener("click", closeCreatorAssistanceSession);
+    workspace.querySelector("[data-enter-assistance-control]")?.addEventListener("click", () => enterCreatorAssistanceControl(sessionId));
     workspace.querySelector("[data-refresh-assistance]").addEventListener("click", () => renderCreatorAssistanceSession(sessionId));
     workspace.querySelector("[data-back-assistance]").addEventListener("click", renderCreatorAssistance);
     workspace.querySelectorAll("[data-assistance-action]").forEach(button => button.addEventListener("click", () => executeCreatorAssistanceAction(button.dataset.assistanceAction, button.dataset.targetId || "")));
+}
+
+async function enterCreatorAssistanceControl(sessionId) {
+    if (!confirm("Entrer dans l’interface de cette entreprise ? Votre identité Support restera visible et toutes les requêtes seront journalisées.")) return;
+    const result = await api(`/api/creator/assistance/sessions/${encodeURIComponent(sessionId)}/control`, { method: "POST", body: JSON.stringify({}) });
+    if (!result.ok) return showFeedback(result.message || "La prise en main n’a pas pu démarrer.", true);
+    window.location.assign("/");
 }
 
 function renderAssistanceAudit(diagnostics) {

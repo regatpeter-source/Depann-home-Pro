@@ -1,8 +1,8 @@
 import { initializeAuthentication, restoreApplicationShell, signOut } from "./auth.js?v=130";
 import { initializeClientSynchronization } from "./client-sync.js?v=131";
-import { initializeCollaboration } from "./collaboration.js?v=9";
+import { initializeCollaboration } from "./collaboration.js?v=10";
 import { loadDatabase } from "./data.js?v=59";
-import { initializeNavigation, refreshApplication } from "./navigation.js?v=481";
+import { initializeNavigation, refreshApplication } from "./navigation.js?v=482";
 import { renderError } from "./ui.js?v=44";
 import { getSettings } from "./storage.js?v=45";
 import { FONT_OPTIONS } from "./config.js?v=135";
@@ -76,7 +76,8 @@ function sessionAccessIdentity(user) {
         id: String(user?.id || ""),
         role: String(user?.role || ""),
         deviceType: String(user?.deviceType || ""),
-        canManageCalendar: user?.canManageCalendar === true
+        canManageCalendar: user?.canManageCalendar === true,
+        supportSessionId: String(user?.supportSessionId || "")
     });
 }
 
@@ -158,7 +159,7 @@ function showAuthenticatedUser(user) {
 
     if (session) session.hidden = false;
     if (email) email.textContent = user.fullName || user.username || "Utilisateur connecté";
-    if (workstationLabel) workstationLabel.textContent = activeWorkstationLabel(user.role, user.deviceType);
+    if (workstationLabel) workstationLabel.textContent = activeWorkstationLabel(user.role, user.deviceType, user.isSupportControl);
     const sections = Array.isArray(user.departments) ? user.departments.filter(Boolean) : user.department ? [user.department] : [];
     if (mobileUserSections) {
         mobileUserSections.replaceChildren(...sections.map(section => Object.assign(document.createElement("span"), { textContent: section })));
@@ -172,7 +173,10 @@ function showAuthenticatedUser(user) {
     document.body.dataset.activeCompanyName = user.activeCompanyName || "";
     document.body.dataset.role = user.role || "";
     document.body.dataset.userName = user.fullName || user.username || "";
-    document.body.dataset.creator = user.isCreator ? "true" : "false";
+    document.body.dataset.creator = user.isCreator && !user.isSupportControl ? "true" : "false";
+    document.body.dataset.platformCreator = user.isCreator ? "true" : "false";
+    document.body.dataset.supportControl = user.isSupportControl ? "true" : "false";
+    document.body.dataset.supportSessionId = user.supportSessionId || "";
     document.body.dataset.deviceType = user.deviceType || "desktop";
     document.body.dataset.technicianBillingEnabled = user.technicianBillingEnabled === false ? "false" : "true";
     document.body.dataset.canManageCalendar = user.canManageCalendar ? "true" : "false";
@@ -193,6 +197,7 @@ function showAuthenticatedUser(user) {
     document.body.dataset.organizationLicense = user.organization?.licenseType || "depannhome_standard";
     document.body.dataset.subscriptionTier = user.organization?.subscriptionTier || "pro";
     document.body.dataset.organizationFeatures = JSON.stringify(user.organization?.features || {});
+    renderSupportControlBanner(user);
     updateDeviceMode();
     window.addEventListener("resize", updateDeviceMode);
     refreshButton?.addEventListener("click", async () => {
@@ -219,7 +224,32 @@ function showAuthenticatedUser(user) {
     });
 }
 
-function activeWorkstationLabel(role, deviceType) {
+function renderSupportControlBanner(user) {
+    document.getElementById("supportControlBanner")?.remove();
+    if (!user?.isSupportControl) return;
+    const banner = document.createElement("aside");
+    banner.id = "supportControlBanner";
+    banner.className = "support-control-banner";
+    banner.innerHTML = `<div><strong>🔒 Prise en main Support — ${escapeHtmlText(user.activeCompanyName || "Entreprise")}</strong><span data-support-control-countdown></span><small>Identité Support conservée · actions tracées · zones sensibles bloquées</small></div><button type="button" class="secondary-button danger-button" data-exit-support-control>Quitter la prise en main</button>`;
+    document.body.prepend(banner);
+    const countdown = banner.querySelector("[data-support-control-countdown]");
+    const update = () => {
+        const remaining = Math.max(0, new Date(user.supportExpiresAt).getTime() - Date.now());
+        const minutes = Math.floor(remaining / 60_000);
+        const seconds = Math.floor((remaining % 60_000) / 1_000);
+        countdown.textContent = `Temps restant : ${minutes}:${String(seconds).padStart(2, "0")} · ${user.supportReason || "Assistance à distance"}`;
+    };
+    update();
+    window.setInterval(update, 1_000);
+    banner.querySelector("[data-exit-support-control]").addEventListener("click", async () => {
+        const response = await fetch("/api/creator/assistance/control/exit", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: "{}" });
+        if (!response.ok) return alert("Impossible de quitter la prise en main pour le moment.");
+        window.location.assign("/");
+    });
+}
+
+function activeWorkstationLabel(role, deviceType, isSupportControl = false) {
+    if (isSupportControl) return "Support à distance";
     if (deviceType === "mobile") {
     if (role === "commercial") return "Commercial / Chargé d’affaires mobile";
         if (["admin", "mobile_admin"].includes(role)) return "Poste Admin Mobile";

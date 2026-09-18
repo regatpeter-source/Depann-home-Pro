@@ -5,10 +5,11 @@
 Le Centre d’assistance permet au Créateur d’aider une entreprise bloquée sans connaître son mot de passe et sans se connecter à sa place. Il sépare strictement :
 
 - le diagnostic en lecture seule ;
+- la prise en main sécurisée après consentement explicite ;
 - les réparations explicites ;
 - l’accès d’urgence (« break-glass »).
 
-Aucun mot de passe, secret TOTP, code de vérification, jeton OAuth, clé API, IBAN ou contenu métier privé n’est renvoyé par ces API.
+Aucun mot de passe, secret TOTP, code de vérification, jeton OAuth, clé API ou IBAN n’est renvoyé par les API de diagnostic. Les données métier ne deviennent accessibles qu’après le consentement distinct de prise en main et restent limitées aux modules autorisés.
 
 ## Ouvrir une session
 
@@ -21,7 +22,15 @@ Depuis **Console Créateur > Assistance entreprises** :
 
 Une session normale dure 30 minutes. Une session d’urgence dure 10 minutes, demande une justification plus détaillée et doit être réservée au blocage total. Les administrateurs actifs de l’entreprise sont immédiatement notifiés de l’ouverture et de la fermeture.
 
-La session n’altère jamais `request.user` et ne donne pas accès aux routes métier de l’entreprise. Le Créateur reste identifié comme Créateur pendant toute l’intervention.
+La prise en main est une portée distincte que l’entreprise doit accepter explicitement. Le mode d’urgence ne donne jamais accès à la navigation déléguée. Le Créateur reste identifié comme Créateur pendant toute l’intervention.
+
+## Prise en main sécurisée
+
+Après acceptation, le Créateur peut entrer dans un contexte temporaire imposé par le serveur et naviguer dans l’entreprise sans connaître ni remplacer les identifiants d’un salarié. Un bandeau permanent indique l’entreprise, le motif, le temps restant et permet de quitter immédiatement.
+
+La première version autorise la consultation des espaces métier et les corrections sur les clients, le planning et les rapports techniques. Elle bloque côté serveur les comptes et appareils, la 2FA, les Paramètres, le Groupe, les imports, les connecteurs et secrets OAuth, la boîte e-mail, la comptabilité, les abonnements ainsi que les autres écritures non explicitement autorisées.
+
+Chaque requête API est enregistrée dans `depannhome_creator_support_activity` avec la session, le Créateur réel, l’entreprise, la méthode, le chemin, le résultat et l’heure, sans enregistrer le contenu métier ni les secrets. L’entreprise peut retirer l’accès depuis sa demande active ; la requête suivante replace automatiquement le Créateur dans son propre compte.
 
 ## Diagnostic disponible
 

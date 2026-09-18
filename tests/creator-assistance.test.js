@@ -6,6 +6,7 @@ const server = readFileSync(new URL("../server/creator-assistance.js", import.me
 const application = readFileSync(new URL("../app.js", import.meta.url), "utf8");
 const migration = readFileSync(new URL("../database/migrations/0006_creator_assistance.sql", import.meta.url), "utf8");
 const consentMigration = readFileSync(new URL("../database/migrations/0021_creator_assistance_consent.sql", import.meta.url), "utf8");
+const remoteControlMigration = readFileSync(new URL("../database/migrations/0022_secure_remote_assistance.sql", import.meta.url), "utf8");
 const schema = readFileSync(new URL("../database/schema.sql", import.meta.url), "utf8");
 const client = readFileSync(new URL("../js/creator.js", import.meta.url), "utf8");
 const navigation = readFileSync(new URL("../js/navigation.js", import.meta.url), "utf8");
@@ -15,6 +16,7 @@ const creatorServer = readFileSync(new URL("../server/creator.js", import.meta.u
 const organizationServer = readFileSync(new URL("../server/organizations.js", import.meta.url), "utf8");
 const supportServer = readFileSync(new URL("../server/support.js", import.meta.url), "utf8");
 const collaborationClient = readFileSync(new URL("../js/collaboration.js", import.meta.url), "utf8");
+const authenticationServer = readFileSync(new URL("../server/auth.js", import.meta.url), "utf8");
 
 const tableDefinitions = [migration, schema, server];
 
@@ -34,8 +36,44 @@ test("support sessions require consent context and have bounded lifetimes", () =
     assert.match(server, /session\.accepted_at IS NOT NULL/);
     assert.match(server, /support_assistance_consent_requested/);
     assert.match(server, /expires_at=NOW\(\)\+\(\$3::text\|\|' minutes'\)::interval/);
-    assert.match(server, /CASE WHEN \$9::boolean THEN NOW\(\) ELSE NULL END/);
+    assert.match(server, /CASE WHEN \$10::boolean THEN NOW\(\) ELSE NULL END/);
     assert.doesNotMatch(server, /CASE WHEN \$4='emergency'/);
+});
+
+test("la prise en main distante exige un consentement distinct et reste révocable", () => {
+    assert.match(remoteControlMigration, /access_scope IN \('diagnostic','control'\)/);
+    assert.match(server, /const accessScope = !emergency/);
+    assert.match(server, /\/api\/creator\/assistance\/sessions\/:sessionId\/control/);
+    assert.match(server, /\/api\/assistance\/sessions\/:sessionId\/revoke/);
+    assert.match(server, /app\.get\("\/api\/assistance\/active", requireAuthentication/);
+    assert.match(authenticationServer, /findActiveCreatorSupportControl/);
+    assert.match(authenticationServer, /access_scope='control'/);
+    assert.match(authenticationServer, /control_last_seen_at=NOW\(\)/);
+    assert.match(authenticationServer, /expires_at>NOW\(\)/);
+    assert.match(server, /control_last_seen_at>NOW\(\)-INTERVAL '30 seconds'/);
+    assert.match(remoteControlMigration, /control_started_at TIMESTAMPTZ/);
+    assert.match(remoteControlMigration, /control_last_seen_at TIMESTAMPTZ/);
+    assert.match(collaborationClient, /Prise en main limitée, visible et traçable/);
+    assert.match(collaborationClient, /Retirer l’accès maintenant/);
+    assert.match(collaborationClient, /Support Depann’Home Pro connecté à distance/);
+    assert.match(collaborationClient, /setInterval\(loadCompanyAssistancePresence, 15_000\)/);
+    assert.match(client, /Prise en main sécurisée/);
+    assert.match(client, /data-enter-assistance-control/);
+});
+
+test("la prise en main bloque les zones sensibles et journalise chaque requête", () => {
+    assert.match(application, /app\.use\(enforceCreatorAssistanceControl\)/);
+    for (const path of ["/api/auth", "/api/accounting", "/api/connectors", "/api/partner-email", "/api/groups", "/api/data-imports", "/api/subscription"]) assert.match(server, new RegExp(path.replaceAll("/", "\\/")));
+    assert.match(server, /SUPPORT_CONTROL_WRITABLE_PREFIXES = \["\/api\/clients", "\/api\/calendar", "\/api\/technical-reports", "\/api\/collaboration"\]/);
+    assert.match(server, /const destructive = method === "DELETE"/);
+    assert.match(server, /validate\|validation\|submit\|send\|email\|deliver\|delivery\|reopen\|cancel/);
+    assert.match(server, /depannhome_creator_support_activity/);
+    assert.match(server, /createPendingSupportActivity/);
+    assert.match(server, /L’action est bloquée car sa traçabilité ne peut pas être garantie/);
+    assert.ok(server.indexOf("mandatoryActivityId = await createPendingSupportActivity") < server.indexOf('return response.status(503)'));
+    assert.match(remoteControlMigration, /method VARCHAR\(10\)/);
+    assert.doesNotMatch(remoteControlMigration, /request_body|payload|details JSONB/);
+    assert.match(navigation, /dataset\.supportControl === "true"/);
 });
 
 test("l’entreprise ciblée accepte ou refuse depuis une notification Support ouvrable", () => {
@@ -141,6 +179,7 @@ test("assistance tables are durable and migration is idempotent", () => {
     }
     assert.match(consentMigration, /accepted_at TIMESTAMPTZ/);
     assert.match(consentMigration, /declined_at TIMESTAMPTZ/);
+    assert.match(remoteControlMigration, /CREATE TABLE IF NOT EXISTS depannhome_creator_support_activity/);
     assert.match(application, /registerCreatorAssistanceRoutes\(app, requireCreator, requireAuthentication\)/);
     assert.match(application, /await initializeCreatorAssistance\(\)/);
 });
@@ -156,15 +195,15 @@ test("creator console exposes an explicit assistance workflow and warning banner
 });
 
 test("PWA versions are synchronized for creator assistance assets", () => {
-    assert.match(navigation, /creator\.js\?v=169/);
-    assert.match(index, /css\/style\.css\?v=274/);
-    assert.match(index, /js\/app\.js\?v=455/);
-    assert.match(serviceWorker, /depann-home-pro-v571/);
-    assert.match(serviceWorker, /css\/style\.css\?v=274/);
-    assert.match(serviceWorker, /js\/app\.js\?v=455/);
-    assert.match(serviceWorker, /js\/collaboration\.js\?v=9/);
-    assert.match(serviceWorker, /js\/navigation\.js\?v=481/);
-    assert.match(serviceWorker, /js\/creator\.js\?v=169/);
+    assert.match(navigation, /creator\.js\?v=170/);
+    assert.match(index, /css\/style\.css\?v=275/);
+    assert.match(index, /js\/app\.js\?v=456/);
+    assert.match(serviceWorker, /depann-home-pro-v572/);
+    assert.match(serviceWorker, /css\/style\.css\?v=275/);
+    assert.match(serviceWorker, /js\/app\.js\?v=456/);
+    assert.match(serviceWorker, /js\/collaboration\.js\?v=10/);
+    assert.match(serviceWorker, /js\/navigation\.js\?v=482/);
+    assert.match(serviceWorker, /js\/creator\.js\?v=170/);
     assert.match(serviceWorker, /js\/connectors\.js\?v=6/);
 });
 

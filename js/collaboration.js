@@ -5,6 +5,7 @@ let stream = null;
 let notifications = [];
 let partnerNotifications = [];
 let notificationButton = null;
+let companyAssistancePresenceTimer = null;
 
 export function initializeCollaboration() {
     if (stream || !window.EventSource) return;
@@ -12,6 +13,8 @@ export function initializeCollaboration() {
     notificationButton?.addEventListener("click", openNotificationCenter);
     loadNotifications();
     loadPartnerNotifications();
+    loadCompanyAssistancePresence();
+    companyAssistancePresenceTimer ||= window.setInterval(loadCompanyAssistancePresence, 15_000);
     stream = new EventSource(clientSessionUrl("/api/collaboration/stream"));
     stream.addEventListener("notification", event => handleEvent("notification", event));
     ["lock_acquired", "lock_released", "lock_force_released", "report_started", "report_saved", "report_media_added", "report_media_updated", "report_media_deleted", "report_submitted", "report_correction_requested", "report_validated", "report_reopened", "mission_journal_updated", "creator_assistance_decision"].forEach(type => stream.addEventListener(type, event => handleEvent(type, event)));
@@ -22,6 +25,7 @@ export function initializeCollaboration() {
     window.addEventListener("offline", () => updateSyncIndicator("offline", "Hors connexion"));
     window.addEventListener("depannhome:settings-changed", () => { document.getElementById("notificationCenter")?.remove(); renderNotificationBadge(); renderPartnerNotificationBadge(); });
     window.addEventListener("depannhome:open-company-assistance", event => openCompanyAssistanceRequest(event.detail?.sessionId));
+    window.addEventListener("depannhome:company-assistance-decided", loadCompanyAssistancePresence);
 }
 
 export async function acquireReportLock(reportId) { return request(`/api/collaboration/locks/technical_report/${encodeURIComponent(reportId)}/acquire`, { method: "POST" }); }
@@ -33,6 +37,19 @@ export function getPartnerNotifications() { return visibleNotifications(partnerN
 
 async function loadNotifications() { const result = await request("/api/collaboration/notifications"); if (!result.ok) return; notifications = result.data.notifications || []; renderNotificationBadge(); }
 export async function loadPartnerNotifications() { const result = await request("/api/collaboration/partner-notifications"); if (!result.ok) return []; partnerNotifications = deduplicatePartnerNotifications(result.data.notifications || []); renderPartnerNotificationBadge(); return visibleNotifications(partnerNotifications); }
+async function loadCompanyAssistancePresence() {
+    const result = await request("/api/assistance/active");
+    if (!result.ok) return;
+    document.getElementById("companySupportPresenceBanner")?.remove();
+    const session = result.data?.session;
+    if (!session) return;
+    const banner = document.createElement("aside");
+    banner.id = "companySupportPresenceBanner";
+    banner.className = "support-control-banner company-support-presence-banner";
+    banner.innerHTML = `<div><strong>Support Depann’Home Pro connecté à distance</strong><span>Accès autorisé jusqu’au ${escapeHtml(formatDateTime(session.expiresAt))}</span><small>${escapeHtml(session.reason || "Assistance à distance")}</small></div>${result.data?.canRevoke ? `<button type="button" class="secondary-button danger-button" data-manage-company-assistance="${escapeHtml(session.id)}">Gérer ou retirer l’accès</button>` : '<strong>Accès supervisé par votre Poste Admin</strong>'}`;
+    document.body.prepend(banner);
+    banner.querySelector("[data-manage-company-assistance]")?.addEventListener("click", () => openCompanyAssistanceRequest(session.id));
+}
 export async function markPartnerNotificationsRead() { const unreadIds = visibleNotifications(partnerNotifications).filter(item => !item.readAt).map(item => item.id); if (!unreadIds.length) return; const result = await request("/api/collaboration/notifications/read", { method: "POST", body: JSON.stringify({ ids: unreadIds, scope: "partner" }) }); if (!result.ok) return; const readAt = new Date().toISOString(); partnerNotifications = partnerNotifications.map(item => unreadIds.some(id => String(id) === String(item.id)) ? { ...item, readAt } : item); renderPartnerNotificationBadge(); }
 function handleEvent(type, event) { let data = {}; try { data = JSON.parse(event.data); } catch { return; } if (type === "notification" && String(data.recipientId || "") === String(document.body.dataset.userId || "")) { if (isPartnerNotification(data.notification)) { partnerNotifications = deduplicatePartnerNotifications([data.notification, ...partnerNotifications]); renderPartnerNotificationBadge(); } else { notifications.unshift(data.notification); renderNotificationBadge(); } }
     window.dispatchEvent(new CustomEvent("depannhome:collaboration-event", { detail: { type, ...data } }));
@@ -68,12 +85,21 @@ export async function openCompanyAssistanceRequest(sessionId) {
     dialog.id = "companyAssistanceDialog";
     dialog.className = "group-company-modal";
     const session = result.data?.session || {};
+    const controlRequested = session.accessScope === "control";
     const status = session.awaitingConsent ? "Votre décision est requise" : session.active ? "Assistance autorisée" : session.declinedAt ? "Assistance refusée" : "Demande terminée";
-    dialog.innerHTML = `<section class="company-assistance-dialog" role="dialog" aria-modal="true" aria-labelledby="companyAssistanceTitle"><div class="form-heading"><div><p class="eyebrow">Support Depann’Home Pro</p><h3 id="companyAssistanceTitle">Demande d’assistance temporaire</h3></div><button type="button" class="icon-button" data-close-assistance-dialog aria-label="Fermer">×</button></div><span class="creator-state${session.awaitingConsent ? " suspended" : ""}">${escapeHtml(status)}</span><p><strong>Motif communiqué par le Support :</strong><br>${escapeHtml(session.reason || "Assistance technique")}</p><aside class="accounting-pdp-notice"><strong>Accès limité et traçable.</strong> En acceptant, vous autorisez pendant 30 minutes un diagnostic technique en lecture seule. Toute réparation éventuelle reste séparée, justifiée, journalisée et vous est notifiée. Aucun mot de passe, code 2FA ou secret de connexion n’est affiché.</aside>${session.awaitingConsent ? '<div class="form-actions"><button type="button" class="primary-button" data-assistance-decision="accept">Accepter pendant 30 minutes</button><button type="button" class="secondary-button danger-button" data-assistance-decision="decline">Refuser</button></div>' : session.active ? `<p class="auth-message">Accès autorisé jusqu’au ${escapeHtml(formatDateTime(session.expiresAt))}.</p>` : '<p class="muted">Aucune action supplémentaire n’est nécessaire.</p>'}<p class="auth-message" data-assistance-decision-message aria-live="polite"></p></section>`;
+    dialog.innerHTML = `<section class="company-assistance-dialog" role="dialog" aria-modal="true" aria-labelledby="companyAssistanceTitle"><div class="form-heading"><div><p class="eyebrow">Support Depann’Home Pro</p><h3 id="companyAssistanceTitle">${controlRequested ? "Demande de prise en main sécurisée" : "Demande d’assistance temporaire"}</h3></div><button type="button" class="icon-button" data-close-assistance-dialog aria-label="Fermer">×</button></div><span class="creator-state${session.awaitingConsent ? " suspended" : ""}">${escapeHtml(status)}</span><p><strong>Motif communiqué par le Support :</strong><br>${escapeHtml(session.reason || "Assistance technique")}</p><aside class="accounting-pdp-notice"><strong>${controlRequested ? "Prise en main limitée, visible et traçable." : "Accès limité et traçable."}</strong> ${controlRequested ? "En acceptant, vous autorisez pendant 30 minutes le Support à naviguer dans votre interface et à corriger les clients, le planning et les rapports. Les accès, secrets, connecteurs, e-mails, données comptables et opérations sensibles restent bloqués. Chaque requête est journalisée et vous pouvez retirer l’accès à tout moment." : "En acceptant, vous autorisez pendant 30 minutes un diagnostic technique en lecture seule. Toute réparation éventuelle reste séparée, justifiée, journalisée et vous est notifiée."} Aucun mot de passe, code 2FA ou secret de connexion n’est affiché.</aside>${session.awaitingConsent ? '<div class="form-actions"><button type="button" class="primary-button" data-assistance-decision="accept">Accepter pendant 30 minutes</button><button type="button" class="secondary-button danger-button" data-assistance-decision="decline">Refuser</button></div>' : session.active ? `<p class="auth-message">Accès autorisé jusqu’au ${escapeHtml(formatDateTime(session.expiresAt))}.</p><div class="form-actions"><button type="button" class="secondary-button danger-button" data-revoke-assistance>Retirer l’accès maintenant</button></div>` : '<p class="muted">Aucune action supplémentaire n’est nécessaire.</p>'}<p class="auth-message" data-assistance-decision-message aria-live="polite"></p></section>`;
     document.body.appendChild(dialog);
     const close = () => dialog.remove();
     dialog.querySelector("[data-close-assistance-dialog]").addEventListener("click", close);
     dialog.addEventListener("click", event => { if (event.target === dialog) close(); });
+    dialog.querySelector("[data-revoke-assistance]")?.addEventListener("click", async () => {
+        if (!confirm("Retirer immédiatement l’accès du Support à cette entreprise ?")) return;
+        const revoked = await request(`/api/assistance/sessions/${encodeURIComponent(sessionId)}/revoke`, { method: "POST", body: JSON.stringify({}) });
+        if (!revoked.ok) return alert(revoked.message || "L’accès n’a pas pu être retiré.");
+        close();
+        alert("L’accès du Support est retiré.");
+        window.dispatchEvent(new CustomEvent("depannhome:company-assistance-decided", { detail: { sessionId, decision: "revoke" } }));
+    });
     dialog.querySelectorAll("[data-assistance-decision]").forEach(button => button.addEventListener("click", async () => {
         const decision = button.dataset.assistanceDecision;
         if (decision === "accept" && !confirm("Autoriser le Support Depann’Home Pro à consulter le diagnostic technique pendant 30 minutes ?")) return;

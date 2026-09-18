@@ -1,6 +1,6 @@
 import { ROUTES, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=135";
 import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=224";
-import { openCreatorPartnerRequest, openCreatorRequestNotification, renderCreatorConsole } from "./creator.js?v=169";
+import { openCreatorPartnerRequest, openCreatorRequestNotification, renderCreatorConsole } from "./creator.js?v=170";
 import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=205";
 import { renderAccounting } from "./accounting.js?v=27";
 import { renderPurchases } from "./purchases.js?v=126";
@@ -26,7 +26,7 @@ import {
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { renderPlatformAnnouncement } from "./platform-announcement.js?v=1";
 import { renderDocumentTemplateEditor } from "./document-template-editor.js?v=3";
-import { openCompanyAssistanceRequest } from "./collaboration.js?v=9";
+import { openCompanyAssistanceRequest } from "./collaboration.js?v=10";
 import {
     clearSearch,
     createBackCard,
@@ -611,6 +611,7 @@ function canAccessQuick(menu) {
 }
 
 function canAccessRoute(route) {
+    if (document.body.dataset.supportControl === "true" && ![ROUTES.home, ROUTES.clients, ROUTES.calendar, ROUTES.technicalReports, ROUTES.billing].includes(route)) return false;
     return isMenuAllowed(MENU_ACCESS.navigation[route], route) && isOrganizationRouteEnabled(route);
 }
 
@@ -623,6 +624,7 @@ function isLocalCompanyAdministrator() {
 }
 
 function canAccessSettingsSection(section) {
+    if (document.body.dataset.supportControl === "true") return false;
     if (document.body.dataset.creator === "true") return true;
     if (["subscription", "storage", "documents", "company", "users", "groups", "imports"].includes(section) && !isLocalCompanyAdministrator()) return false;
     if (section === "history" && !isLocalCompanyAdministrator()) return false;

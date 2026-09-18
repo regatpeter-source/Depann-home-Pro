@@ -118,6 +118,9 @@ CREATE TABLE IF NOT EXISTS depannhome_creator_support_sessions (
     created_by BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE RESTRICT,
     target_company_owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
     mode VARCHAR(20) NOT NULL DEFAULT 'readonly' CHECK (mode IN ('readonly','emergency')),
+    access_scope VARCHAR(20) NOT NULL DEFAULT 'diagnostic' CHECK (access_scope IN ('diagnostic','control')),
+    control_started_at TIMESTAMPTZ,
+    control_last_seen_at TIMESTAMPTZ,
     reason VARCHAR(1000) NOT NULL,
     support_request_id BIGINT REFERENCES depannhome_support_requests(id) ON DELETE SET NULL,
     consent_basis VARCHAR(30) NOT NULL CHECK (consent_basis IN ('support_request','confirmed','emergency')),
@@ -135,6 +138,20 @@ CREATE TABLE IF NOT EXISTS depannhome_creator_support_sessions (
 CREATE INDEX IF NOT EXISTS depannhome_creator_support_sessions_creator_idx ON depannhome_creator_support_sessions(created_by,created_at DESC);
 CREATE INDEX IF NOT EXISTS depannhome_creator_support_sessions_company_idx ON depannhome_creator_support_sessions(target_company_owner_id,created_at DESC);
 CREATE INDEX IF NOT EXISTS depannhome_creator_support_sessions_active_idx ON depannhome_creator_support_sessions(expires_at) WHERE revoked_at IS NULL;
+
+CREATE TABLE IF NOT EXISTS depannhome_creator_support_activity (
+    id BIGSERIAL PRIMARY KEY,
+    support_session_id UUID NOT NULL REFERENCES depannhome_creator_support_sessions(id) ON DELETE CASCADE,
+    creator_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE RESTRICT,
+    target_company_owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    method VARCHAR(10) NOT NULL,
+    path VARCHAR(300) NOT NULL,
+    status_code INTEGER NOT NULL DEFAULT 0,
+    outcome VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (outcome IN ('pending','success','failure','blocked')),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS depannhome_creator_support_activity_session_created_idx ON depannhome_creator_support_activity(support_session_id,created_at DESC);
+CREATE INDEX IF NOT EXISTS depannhome_creator_support_activity_company_created_idx ON depannhome_creator_support_activity(target_company_owner_id,created_at DESC);
 
 CREATE TABLE IF NOT EXISTS depannhome_creator_recovery_actions (
     id UUID PRIMARY KEY,

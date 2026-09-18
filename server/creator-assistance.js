@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { getPool } from "./database.js";
 import { companySeatState } from "./seat-limits.js";
-import { getAccountOwnerId, isCompanyAdministrator, isCreatorUsername } from "./auth.js";
+import { getAccountOwnerId, isCompanyAdministrator, isCreatorUsername, startCreatorAssistanceControl, stopCreatorAssistanceControl } from "./auth.js";
 import { broadcastOwnerEvent } from "./collaboration.js";
 
 const NORMAL_SESSION_MINUTES = 30;
@@ -17,6 +17,9 @@ const ACTION_TYPES = new Set([
     "reject_device",
     "release_company_locks"
 ]);
+const SUPPORT_CONTROL_SENSITIVE_PREFIXES = ["/api/auth", "/api/creator", "/api/assistance", "/api/accounting", "/api/e-invoicing", "/api/connectors", "/api/official-partners", "/api/partner-email", "/api/partner-missions", "/api/partner-dialogue", "/api/partner-connections", "/api/partner-sandbox", "/api/groups", "/api/data-imports", "/api/subscription", "/api/company", "/api/organizations", "/api/support", "/api/history", "/api/messages", "/api/purchases"];
+const SUPPORT_CONTROL_WRITABLE_PREFIXES = ["/api/clients", "/api/calendar", "/api/technical-reports", "/api/collaboration"];
+const SUPPORT_CONTROL_ALLOWED_EXACT = new Set(["GET /api/auth/session", "POST /api/auth/logout", "POST /api/creator/assistance/control/exit"]);
 
 export async function initializeCreatorAssistance() {
     const database = getPool();
@@ -25,6 +28,9 @@ export async function initializeCreatorAssistance() {
         created_by BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE RESTRICT,
         target_company_owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
         mode VARCHAR(20) NOT NULL DEFAULT 'readonly' CHECK (mode IN ('readonly','emergency')),
+        access_scope VARCHAR(20) NOT NULL DEFAULT 'diagnostic' CHECK (access_scope IN ('diagnostic','control')),
+        control_started_at TIMESTAMPTZ,
+        control_last_seen_at TIMESTAMPTZ,
         reason VARCHAR(1000) NOT NULL,
         support_request_id BIGINT REFERENCES depannhome_support_requests(id) ON DELETE SET NULL,
         consent_basis VARCHAR(30) NOT NULL CHECK (consent_basis IN ('support_request','confirmed','emergency')),
@@ -40,6 +46,9 @@ export async function initializeCreatorAssistance() {
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )`);
     await database.query(`ALTER TABLE depannhome_creator_support_sessions
+        ADD COLUMN IF NOT EXISTS access_scope VARCHAR(20) NOT NULL DEFAULT 'diagnostic',
+        ADD COLUMN IF NOT EXISTS control_started_at TIMESTAMPTZ,
+        ADD COLUMN IF NOT EXISTS control_last_seen_at TIMESTAMPTZ,
         ADD COLUMN IF NOT EXISTS accepted_at TIMESTAMPTZ,
         ADD COLUMN IF NOT EXISTS accepted_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
         ADD COLUMN IF NOT EXISTS declined_at TIMESTAMPTZ,
@@ -47,6 +56,19 @@ export async function initializeCreatorAssistance() {
     await database.query("CREATE INDEX IF NOT EXISTS depannhome_creator_support_sessions_creator_idx ON depannhome_creator_support_sessions(created_by,created_at DESC)");
     await database.query("CREATE INDEX IF NOT EXISTS depannhome_creator_support_sessions_company_idx ON depannhome_creator_support_sessions(target_company_owner_id,created_at DESC)");
     await database.query("CREATE INDEX IF NOT EXISTS depannhome_creator_support_sessions_active_idx ON depannhome_creator_support_sessions(expires_at) WHERE revoked_at IS NULL");
+    await database.query(`CREATE TABLE IF NOT EXISTS depannhome_creator_support_activity (
+        id BIGSERIAL PRIMARY KEY,
+        support_session_id UUID NOT NULL REFERENCES depannhome_creator_support_sessions(id) ON DELETE CASCADE,
+        creator_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE RESTRICT,
+        target_company_owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+        method VARCHAR(10) NOT NULL,
+        path VARCHAR(300) NOT NULL,
+        status_code INTEGER NOT NULL DEFAULT 0,
+        outcome VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (outcome IN ('pending','success','failure','blocked')),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`);
+    await database.query("CREATE INDEX IF NOT EXISTS depannhome_creator_support_activity_session_created_idx ON depannhome_creator_support_activity(support_session_id,created_at DESC)");
+    await database.query("CREATE INDEX IF NOT EXISTS depannhome_creator_support_activity_company_created_idx ON depannhome_creator_support_activity(target_company_owner_id,created_at DESC)");
     await database.query(`CREATE TABLE IF NOT EXISTS depannhome_creator_recovery_actions (
         id UUID PRIMARY KEY,
         support_session_id UUID NOT NULL REFERENCES depannhome_creator_support_sessions(id) ON DELETE RESTRICT,
@@ -68,6 +90,50 @@ export async function initializeCreatorAssistance() {
     await database.query("CREATE INDEX IF NOT EXISTS depannhome_creator_recovery_actions_session_idx ON depannhome_creator_recovery_actions(support_session_id,created_at DESC)");
 }
 
+export async function enforceCreatorAssistanceControl(request, response, next) {
+    if (!request.user?.isSupportControl || !String(request.originalUrl || "").startsWith("/api/")) return next();
+    const path = String(request.originalUrl || request.path || "").split("?")[0].slice(0, 300);
+    const method = String(request.method || "GET").toUpperCase();
+    const exact = `${method} ${path}`;
+    const mutation = !["GET", "HEAD", "OPTIONS"].includes(method);
+    const sensitive = SUPPORT_CONTROL_SENSITIVE_PREFIXES.some(prefix => path === prefix || path.startsWith(`${prefix}/`));
+    const writable = SUPPORT_CONTROL_WRITABLE_PREFIXES.some(prefix => path === prefix || path.startsWith(`${prefix}/`)) && isAllowedSupportControlMutation(method, path);
+    const destructive = method === "DELETE" && !path.startsWith("/api/collaboration/locks/");
+    const sensitiveAction = mutation && /\/(?:validate|validation|submit|send|email|deliver|delivery|reopen|cancel)(?:\/|$)/i.test(path);
+    if (!SUPPORT_CONTROL_ALLOWED_EXACT.has(exact) && (sensitive || destructive || sensitiveAction || (mutation && !writable))) {
+        await recordSupportActivity(request.user.supportSessionId, request.user.sub, getAccountOwnerId(request), method, path, 403, "blocked");
+        return response.status(403).json({ message: "Cette opération sensible est bloquée pendant la prise en main. Quittez le mode assistance ou utilisez une action de récupération encadrée." });
+    }
+    let mandatoryActivityId = 0;
+    if (mutation && !SUPPORT_CONTROL_ALLOWED_EXACT.has(exact)) {
+        try {
+            mandatoryActivityId = await createPendingSupportActivity(request.user.supportSessionId, request.user.sub, getAccountOwnerId(request), method, path);
+        } catch (error) {
+            console.error("[creator-assistance] mandatory support audit unavailable", { sessionId: request.user.supportSessionId, code: error.code || error.name || "AUDIT_ERROR" });
+            return response.status(503).json({ message: "L’action est bloquée car sa traçabilité ne peut pas être garantie pour le moment." });
+        }
+    }
+    response.once("finish", () => {
+        const outcome = response.statusCode < 400 ? "success" : "failure";
+        if (mandatoryActivityId) void completeSupportActivity(mandatoryActivityId, response.statusCode, outcome);
+        else void recordSupportActivity(request.user.supportSessionId, request.user.sub, getAccountOwnerId(request), method, path, response.statusCode, outcome);
+    });
+    return next();
+}
+
+function isAllowedSupportControlMutation(method, path) {
+    if (path.startsWith("/api/collaboration/locks/")) return true;
+    if (method === "PUT" && /^\/api\/clients\/[^/]+$/.test(path)) return true;
+    if (method === "POST" && /^\/api\/clients\/[^/]+\/attachments$/.test(path)) return true;
+    if (method === "POST" && path === "/api/calendar/events") return true;
+    if (method === "PUT" && /^\/api\/calendar\/events\/[^/]+$/.test(path)) return true;
+    if (method === "POST" && path === "/api/technical-reports") return true;
+    if (method === "PUT" && /^\/api\/technical-reports\/(?!template$)[^/]+$/.test(path)) return true;
+    if (method === "POST" && /^\/api\/technical-reports\/[^/]+\/(?:pdf-preview|media)$/.test(path)) return true;
+    if (method === "POST" && /^\/api\/technical-reports\/[^/]+\/sections\/[^/]+\/duplicate-media$/.test(path)) return true;
+    return method === "PATCH" && /^\/api\/technical-reports\/[^/]+\/media\/[^/]+$/.test(path);
+}
+
 export function registerCreatorAssistanceRoutes(app, requireCreator, requireAuthentication) {
     app.get("/api/creator/assistance/sessions", requireCreator, asyncHandler(async (request, response) => {
         const { rows } = await getPool().query(`${sessionSelect()}
@@ -80,6 +146,7 @@ export function registerCreatorAssistanceRoutes(app, requireCreator, requireAuth
         const companyOwnerId = positiveId(request.body?.companyOwnerId);
         const supportRequestId = positiveId(request.body?.supportRequestId) || null;
         const emergency = request.body?.emergency === true;
+        const accessScope = !emergency && request.body?.accessScope === "control" ? "control" : "diagnostic";
         const reason = cleanMultilineText(request.body?.reason, 1000);
         if (!companyOwnerId) return response.status(400).json({ message: "Sélectionnez une entreprise." });
         if (reason.length < (emergency ? 20 : 10)) return response.status(400).json({ message: emergency ? "Décrivez précisément l’urgence en au moins 20 caractères." : "Décrivez la demande d’assistance en au moins 10 caractères." });
@@ -100,10 +167,10 @@ export function registerCreatorAssistanceRoutes(app, requireCreator, requireAuth
         try {
             await connection.query("BEGIN");
             ({ rows } = await connection.query(`INSERT INTO depannhome_creator_support_sessions
-                (id,created_by,target_company_owner_id,mode,reason,support_request_id,consent_basis,expires_at,accepted_at)
-                VALUES($1,$2,$3,$4,$5,$6,$7,NOW()+($8::text||' minutes')::interval,CASE WHEN $9::boolean THEN NOW() ELSE NULL END)
-                RETURNING id,created_by AS "createdBy",target_company_owner_id AS "companyOwnerId",mode,reason,support_request_id AS "supportRequestId",consent_basis AS "consentBasis",expires_at AS "expiresAt",accepted_at AS "acceptedAt",revoked_at AS "revokedAt",created_at AS "createdAt"`,
-            [id, request.user.sub, companyOwnerId, emergency ? "emergency" : "readonly", reason, supportRequestId, consentBasis, duration, emergency]));
+                (id,created_by,target_company_owner_id,mode,access_scope,reason,support_request_id,consent_basis,expires_at,accepted_at)
+                VALUES($1,$2,$3,$4,$5,$6,$7,$8,NOW()+($9::text||' minutes')::interval,CASE WHEN $10::boolean THEN NOW() ELSE NULL END)
+                RETURNING id,created_by AS "createdBy",target_company_owner_id AS "companyOwnerId",mode,access_scope AS "accessScope",reason,support_request_id AS "supportRequestId",consent_basis AS "consentBasis",expires_at AS "expiresAt",accepted_at AS "acceptedAt",revoked_at AS "revokedAt",created_at AS "createdAt"`,
+            [id, request.user.sub, companyOwnerId, emergency ? "emergency" : "readonly", accessScope, reason, supportRequestId, consentBasis, duration, emergency]));
             await connection.query("COMMIT");
         } catch (error) {
             await connection.query("ROLLBACK");
@@ -111,7 +178,8 @@ export function registerCreatorAssistanceRoutes(app, requireCreator, requireAuth
         } finally {
             connection.release();
         }
-        const notifications = await safelyInsertCompanyNotifications(companyOwnerId, emergency ? "support_assistance_emergency_started" : "support_assistance_consent_requested", id, emergency ? "Assistance d’urgence du Support" : "Demande d’assistance du Support", emergency ? `Le Support Depann’Home Pro a ouvert une session d’urgence de ${EMERGENCY_SESSION_MINUTES} minutes. Motif : ${reason}` : `Le Support Depann’Home Pro demande un accès temporaire en lecture seule. Ouvrez cette notification pour accepter ou refuser. Motif : ${reason}`, { sessionId: id, emergency, expiresAt: rows[0].expiresAt, consentRequired: !emergency });
+        const controlRequested = accessScope === "control";
+        const notifications = await safelyInsertCompanyNotifications(companyOwnerId, emergency ? "support_assistance_emergency_started" : "support_assistance_consent_requested", id, emergency ? "Assistance d’urgence du Support" : controlRequested ? "Demande de prise en main du Support" : "Demande d’assistance du Support", emergency ? `Le Support Depann’Home Pro a ouvert une session d’urgence de ${EMERGENCY_SESSION_MINUTES} minutes limitée au diagnostic. Motif : ${reason}` : controlRequested ? `Le Support Depann’Home Pro demande une prise en main temporaire et tracée de 30 minutes. Ouvrez cette notification pour accepter ou refuser. Motif : ${reason}` : `Le Support Depann’Home Pro demande un diagnostic temporaire en lecture seule. Ouvrez cette notification pour accepter ou refuser. Motif : ${reason}`, { sessionId: id, emergency, accessScope, expiresAt: rows[0].expiresAt, consentRequired: !emergency });
         await safelyBroadcastCompanyNotifications(companyOwnerId, notifications, id);
         response.status(201).json({ session: publicSession({ ...rows[0], companyName: owner.companyName }) });
     }));
@@ -122,6 +190,11 @@ export function registerCreatorAssistanceRoutes(app, requireCreator, requireAuth
         response.json({ sessions: rows.map(publicSession) });
     }));
 
+    app.get("/api/assistance/active", requireAuthentication, asyncHandler(async (request, response) => {
+        const { rows } = await getPool().query(`${sessionSelect()} WHERE session.target_company_owner_id=$1 AND session.access_scope='control' AND session.accepted_at IS NOT NULL AND session.control_last_seen_at>NOW()-INTERVAL '30 seconds' AND session.declined_at IS NULL AND session.revoked_at IS NULL AND session.expires_at>NOW() ORDER BY session.control_last_seen_at DESC LIMIT 1`, [getAccountOwnerId(request)]);
+        response.json({ session: rows[0] ? publicSession(rows[0]) : null, canRevoke: isCompanyAdministrator(request) });
+    }));
+
     app.get("/api/assistance/sessions/:sessionId", requireAuthentication, asyncHandler(async (request, response) => {
         if (!isCompanyAdministrator(request)) return response.status(403).json({ message: "Seul un Poste Admin autorisé peut répondre à cette demande d’assistance." });
         const sessionId = validUuid(request.params.sessionId);
@@ -129,6 +202,24 @@ export function registerCreatorAssistanceRoutes(app, requireCreator, requireAuth
         const { rows } = await getPool().query(`${sessionSelect()} WHERE session.id=$1 AND session.target_company_owner_id=$2`, [sessionId, getAccountOwnerId(request)]);
         if (!rows[0]) return response.status(404).json({ message: "Demande d’assistance introuvable pour cette entreprise." });
         response.json({ session: publicSession(rows[0]) });
+    }));
+
+    app.post("/api/creator/assistance/sessions/:sessionId/control", requireCreator, asyncHandler(async (request, response) => {
+        const session = await activeSession(request.params.sessionId, request.user.sub);
+        if (!session || session.accessScope !== "control" || session.mode === "emergency") return response.status(403).json({ message: "La prise en main n’a pas été autorisée par l’entreprise." });
+        await getPool().query("UPDATE depannhome_creator_support_sessions SET control_started_at=COALESCE(control_started_at,NOW()),control_last_seen_at=NOW(),updated_at=NOW() WHERE id=$1", [session.id]);
+        await startCreatorAssistanceControl(response, request.user, session.id);
+        await recordSupportActivity(session.id, request.user.sub, session.target_company_owner_id, "POST", "/api/creator/assistance/control/enter", 200, "success");
+        response.json({ active: true, session: publicSession(session) });
+    }));
+
+    app.post("/api/creator/assistance/control/exit", requireCreator, asyncHandler(async (request, response) => {
+        const sessionId = request.user.supportSessionId;
+        if (sessionId) {
+            await getPool().query("UPDATE depannhome_creator_support_sessions SET control_last_seen_at=NULL,updated_at=NOW() WHERE id=$1 AND created_by=$2", [sessionId, request.user.sub]);
+        }
+        await stopCreatorAssistanceControl(response, request.user);
+        response.json({ active: false });
     }));
 
     app.post("/api/assistance/sessions/:sessionId/decision", requireAuthentication, asyncHandler(async (request, response) => {
@@ -152,7 +243,7 @@ export function registerCreatorAssistanceRoutes(app, requireCreator, requireAuth
             if (decision === "accept") {
                 const updated = await connection.query("UPDATE depannhome_creator_support_sessions SET accepted_at=NOW(),accepted_by=$2,expires_at=NOW()+($3::text||' minutes')::interval,updated_at=NOW() WHERE id=$1 RETURNING accepted_at AS \"acceptedAt\",expires_at AS \"expiresAt\"", [sessionId, request.user.sub, NORMAL_SESSION_MINUTES]);
                 Object.assign(session, updated.rows[0]);
-                notifications = await insertCompanyNotifications(connection, ownerId, "support_assistance_accepted", sessionId, "Assistance acceptée", `L’accès temporaire en lecture seule du Support Depann’Home Pro est autorisé pendant ${NORMAL_SESSION_MINUTES} minutes.`, { sessionId, expiresAt: session.expiresAt });
+                notifications = await insertCompanyNotifications(connection, ownerId, "support_assistance_accepted", sessionId, "Assistance acceptée", session.accessScope === "control" ? `La prise en main temporaire et tracée du Support Depann’Home Pro est autorisée pendant ${NORMAL_SESSION_MINUTES} minutes.` : `Le diagnostic temporaire en lecture seule du Support Depann’Home Pro est autorisé pendant ${NORMAL_SESSION_MINUTES} minutes.`, { sessionId, accessScope: session.accessScope, expiresAt: session.expiresAt });
             } else {
                 const updated = await connection.query("UPDATE depannhome_creator_support_sessions SET declined_at=NOW(),declined_by=$2,revoked_at=NOW(),revoked_by=$2,revoke_reason='Assistance refusée par l’entreprise',updated_at=NOW() WHERE id=$1 RETURNING declined_at AS \"declinedAt\",revoked_at AS \"revokedAt\",revoke_reason AS \"revokeReason\"", [sessionId, request.user.sub]);
                 Object.assign(session, updated.rows[0]);
@@ -168,6 +259,19 @@ export function registerCreatorAssistanceRoutes(app, requireCreator, requireAuth
         await safelyBroadcastCompanyNotifications(ownerId, notifications, sessionId);
         await safelyBroadcastCreatorDecision(session.createdBy, sessionId, decision);
         response.json({ session: publicSession(session) });
+    }));
+
+    app.post("/api/assistance/sessions/:sessionId/revoke", requireAuthentication, asyncHandler(async (request, response) => {
+        if (!isCompanyAdministrator(request)) return response.status(403).json({ message: "Seul un Poste Admin autorisé peut retirer cet accès." });
+        const sessionId = validUuid(request.params.sessionId);
+        if (!sessionId) return response.status(400).json({ message: "Session d’assistance invalide." });
+        const ownerId = getAccountOwnerId(request);
+        const { rows } = await getPool().query(`UPDATE depannhome_creator_support_sessions SET revoked_at=NOW(),revoked_by=$3,revoke_reason='Accès retiré par l’entreprise',updated_at=NOW()
+            WHERE id=$1 AND target_company_owner_id=$2 AND accepted_at IS NOT NULL AND revoked_at IS NULL AND expires_at>NOW()
+            RETURNING created_by AS "createdBy"`, [sessionId, ownerId, request.user.sub]);
+        if (!rows[0]) return response.status(409).json({ message: "Cette session est déjà terminée ou expirée." });
+        await safelyBroadcastCreatorDecision(rows[0].createdBy, sessionId, "revoke");
+        response.json({ revoked: true });
     }));
 
     app.get("/api/creator/assistance/sessions/:sessionId/diagnostics", requireCreator, asyncHandler(async (request, response) => {
@@ -345,7 +449,7 @@ async function activeSession(id, creatorId) {
 }
 
 function sessionSelect() {
-    return `SELECT session.id,session.created_by AS "createdBy",session.target_company_owner_id AS "companyOwnerId",session.target_company_owner_id,session.mode,session.reason,session.support_request_id AS "supportRequestId",session.consent_basis AS "consentBasis",session.expires_at AS "expiresAt",session.accepted_at AS "acceptedAt",session.accepted_by AS "acceptedBy",session.declined_at AS "declinedAt",session.declined_by AS "declinedBy",session.revoked_at AS "revokedAt",session.revoke_reason AS "revokeReason",session.created_at AS "createdAt",COALESCE(NULLIF(owner.company_name,''),owner.full_name,owner.username) AS "companyName" FROM depannhome_creator_support_sessions session JOIN depannhome_users owner ON owner.id=session.target_company_owner_id`;
+    return `SELECT session.id,session.created_by AS "createdBy",session.target_company_owner_id AS "companyOwnerId",session.target_company_owner_id,session.mode,session.access_scope AS "accessScope",session.reason,session.support_request_id AS "supportRequestId",session.consent_basis AS "consentBasis",session.expires_at AS "expiresAt",session.accepted_at AS "acceptedAt",session.accepted_by AS "acceptedBy",session.declined_at AS "declinedAt",session.declined_by AS "declinedBy",session.revoked_at AS "revokedAt",session.revoke_reason AS "revokeReason",session.created_at AS "createdAt",COALESCE(NULLIF(owner.company_name,''),owner.full_name,owner.username) AS "companyName" FROM depannhome_creator_support_sessions session JOIN depannhome_users owner ON owner.id=session.target_company_owner_id`;
 }
 
 async function findCompanyOwner(database, id, lock = false) {
@@ -431,7 +535,33 @@ async function safelyBroadcastCreatorDecision(creatorId, sessionId, decision) {
 function publicSession(session) {
     const accepted = session.mode === "emergency" || Boolean(session.acceptedAt);
     const expired = new Date(session.expiresAt).getTime() <= Date.now();
-    return { id: session.id, companyOwnerId: String(session.companyOwnerId || session.target_company_owner_id), companyName: session.companyName || "Entreprise", mode: session.mode, reason: session.reason, supportRequestId: session.supportRequestId ? String(session.supportRequestId) : "", consentBasis: session.consentBasis, expiresAt: session.expiresAt, acceptedAt: session.acceptedAt || null, declinedAt: session.declinedAt || null, revokedAt: session.revokedAt || null, revokeReason: session.revokeReason || "", createdAt: session.createdAt, awaitingConsent: !accepted && !session.declinedAt && !session.revokedAt && !expired, active: accepted && !session.declinedAt && !session.revokedAt && !expired };
+    return { id: session.id, companyOwnerId: String(session.companyOwnerId || session.target_company_owner_id), companyName: session.companyName || "Entreprise", mode: session.mode, accessScope: session.accessScope || "diagnostic", reason: session.reason, supportRequestId: session.supportRequestId ? String(session.supportRequestId) : "", consentBasis: session.consentBasis, expiresAt: session.expiresAt, acceptedAt: session.acceptedAt || null, declinedAt: session.declinedAt || null, revokedAt: session.revokedAt || null, revokeReason: session.revokeReason || "", createdAt: session.createdAt, awaitingConsent: !accepted && !session.declinedAt && !session.revokedAt && !expired, active: accepted && !session.declinedAt && !session.revokedAt && !expired };
+}
+
+async function recordSupportActivity(sessionId, creatorId, ownerId, method, path, statusCode, outcome) {
+    if (!validUuid(sessionId)) return;
+    try {
+        await getPool().query(`INSERT INTO depannhome_creator_support_activity(support_session_id,creator_id,target_company_owner_id,method,path,status_code,outcome)
+            VALUES($1,$2,$3,$4,$5,$6,$7)`, [sessionId, creatorId, ownerId, cleanText(method, 10), cleanText(path, 300), Number(statusCode) || 0, outcome]);
+    } catch (error) {
+        console.error("[creator-assistance] support activity audit unavailable", { sessionId, code: error.code || error.name || "AUDIT_ERROR" });
+    }
+}
+
+async function createPendingSupportActivity(sessionId, creatorId, ownerId, method, path) {
+    const { rows } = await getPool().query(`INSERT INTO depannhome_creator_support_activity(support_session_id,creator_id,target_company_owner_id,method,path,status_code,outcome)
+        VALUES($1,$2,$3,$4,$5,0,'pending') RETURNING id`, [sessionId, creatorId, ownerId, cleanText(method, 10), cleanText(path, 300)]);
+    const activityId = Number(rows[0]?.id) || 0;
+    if (!activityId) throw new Error("Journal de prise en main introuvable");
+    return activityId;
+}
+
+async function completeSupportActivity(activityId, statusCode, outcome) {
+    try {
+        await getPool().query("UPDATE depannhome_creator_support_activity SET status_code=$2,outcome=$3 WHERE id=$1", [activityId, Number(statusCode) || 0, outcome]);
+    } catch (error) {
+        console.error("[creator-assistance] support audit completion unavailable", { activityId, code: error.code || error.name || "AUDIT_ERROR" });
+    }
 }
 
 function companyState(value) { return { isActive: Boolean(value?.is_active), isArchived: Boolean(value?.is_archived), updatedAt: value?.updated_at || null }; }

@@ -849,9 +849,13 @@ export async function authenticateRequest(request, response, next) {
             && session.sessionId !== clientWindowSessionId(request)) {
             throw new Error("Fenêtre PC remplacée");
         }
-        const groupCompany = device.device_type === "desktop" ? await resolveGroupCompany(user.id, session.activeCompanyId) : null;
-        const accountOwnerId = String(groupCompany?.companyId || user.account_owner_id || user.id);
-        const activeCompanyName = groupCompany?.companyName || await resolveCompanyName(accountOwnerId);
+        const supportControl = device.device_type === "desktop" && isCreatorUsername(user.username) && session.supportSessionId
+            ? await findActiveCreatorSupportControl(session.supportSessionId, user.id)
+            : null;
+        if (session.supportSessionId && !supportControl) setSessionCookie(response, user, device.id, device.device_type, "", device.session_id || "");
+        const groupCompany = supportControl ? null : device.device_type === "desktop" ? await resolveGroupCompany(user.id, session.activeCompanyId) : null;
+        const accountOwnerId = String(supportControl?.companyOwnerId || groupCompany?.companyId || user.account_owner_id || user.id);
+        const activeCompanyName = supportControl?.companyName || groupCompany?.companyName || await resolveCompanyName(accountOwnerId);
         const organization = await getOrganization(accountOwnerId);
         const effectiveSeats = await companySeatState(getPool(), accountOwnerId);
         if (!isCreatorUsername(user.username) && !isRoleAllowedForSubscription(organization.subscriptionTier, user.role)) throw new Error("Rôle exclu de l’offre");
@@ -859,7 +863,7 @@ export async function authenticateRequest(request, response, next) {
             sub: String(user.id),
             username: user.username,
             role: user.role,
-            principalRole: groupCompany?.isGroupAdministrator ? "group_admin" : user.role,
+            principalRole: supportControl ? "support_admin" : groupCompany?.isGroupAdministrator ? "group_admin" : user.role,
             homeAccountOwnerId: String(user.account_owner_id || user.id),
             accountOwnerId,
             activeCompanyId: accountOwnerId,
@@ -877,14 +881,18 @@ export async function authenticateRequest(request, response, next) {
             canAccessBilling: device.device_type !== "mobile" && (user.role === "admin" || user.can_access_billing === true),
             canAccessAccounting: device.device_type !== "mobile" && (user.role === "admin" || user.can_access_accounting === true),
             canAccessCompanyEmail: hasCompanyEmailWorkspaceAccess({ ...user, organization, deviceType: device.device_type }),
-            canSwitchGroupCompanies: Boolean(groupCompany) && (user.role === "admin" || user.can_switch_group_companies === true),
+            canSwitchGroupCompanies: !supportControl && Boolean(groupCompany) && (user.role === "admin" || user.can_switch_group_companies === true),
             maxPcUsers: Number(effectiveSeats?.maxPcUsers ?? user.max_pc_users) || 1,
             maxMobileUsers: Number(effectiveSeats?.maxMobileUsers ?? user.max_technicians) || 0,
             monthlyPriceCents: Number(user.monthly_price_cents) || 0,
             deviceId: device.id,
             deviceType: device.device_type || "desktop",
             organization,
-            isCreator: isCreatorUsername(user.username)
+            isCreator: isCreatorUsername(user.username),
+            isSupportControl: Boolean(supportControl),
+            supportSessionId: supportControl?.id || "",
+            supportExpiresAt: supportControl?.expiresAt || "",
+            supportReason: supportControl?.reason || ""
         };
     } catch (error) {
         if (["Session PC remplacée", "Fenêtre PC remplacée"].includes(error.message)) request.sessionWindowReplaced = true;
@@ -922,7 +930,17 @@ export function isCompanyAdministrator(request) {
 export function isLocalCompanyAdministrator(user) {
     const activeOwnerId = String(user?.accountOwnerId || user?.account_owner_id || user?.id || user?.sub || "");
     const homeOwnerId = String(user?.homeAccountOwnerId || user?.home_account_owner_id || user?.account_owner_id || activeOwnerId);
-    return user?.role === "admin" && Boolean(activeOwnerId) && (homeOwnerId === activeOwnerId || user?.isGroupAdministrator === true);
+    return user?.role === "admin" && Boolean(activeOwnerId) && (homeOwnerId === activeOwnerId || user?.isGroupAdministrator === true || user?.isSupportControl === true);
+}
+
+export async function startCreatorAssistanceControl(response, user, supportSessionId) {
+    const device = await findAuthDevice(user.sub, user.deviceId);
+    setSessionCookie(response, { ...user, accountOwnerId: user.homeAccountOwnerId }, user.deviceId, user.deviceType, "", device?.session_id || "", supportSessionId);
+}
+
+export async function stopCreatorAssistanceControl(response, user) {
+    const device = await findAuthDevice(user.sub, user.deviceId);
+    setSessionCookie(response, { ...user, accountOwnerId: user.homeAccountOwnerId }, user.deviceId, user.deviceType, "", device?.session_id || "");
 }
 
 export async function refreshSessionForActiveCompany(response, user, deviceId, activeCompanyId) {
@@ -1338,11 +1356,11 @@ export function sessionDurationForDevice(deviceType) {
     return deviceType === "mobile" ? MOBILE_SESSION_DURATION : ADMIN_SESSION_DURATION;
 }
 
-function setSessionCookie(response, user, deviceId, deviceType, activeCompanyId = "", sessionId = "") {
+function setSessionCookie(response, user, deviceId, deviceType, activeCompanyId = "", sessionId = "", supportSessionId = "") {
     const duration = sessionDurationForDevice(deviceType);
     const userId = user.id || user.user_id || user.sub;
     const token = jwt.sign(
-        { sub: String(userId), username: user.username, role: user.role, accountOwnerId: String(user.account_owner_id || user.accountOwnerId || userId), activeCompanyId: String(activeCompanyId || ""), fullName: user.full_name || user.fullName || "", phone: user.phone || "", deviceId, sessionId },
+        { sub: String(userId), username: user.username, role: user.role, accountOwnerId: String(user.account_owner_id || user.accountOwnerId || userId), activeCompanyId: String(activeCompanyId || ""), fullName: user.full_name || user.fullName || "", phone: user.phone || "", deviceId, sessionId, supportSessionId: String(supportSessionId || "") },
         getSessionSecret(),
         { expiresIn: Math.floor(duration / 1000) }
     );
@@ -1393,6 +1411,10 @@ function publicUser(user) {
         organization: user.organization || null,
         isActive: user.is_active !== false,
         isCreator: Boolean(user.isCreator || isCreatorUsername(user.username)),
+        isSupportControl: user.isSupportControl === true,
+        supportSessionId: user.supportSessionId || "",
+        supportExpiresAt: user.supportExpiresAt || "",
+        supportReason: user.supportReason || "",
         isLocalCompanyAdministrator: isLocalCompanyAdministrator(user),
         deviceType: user.deviceType || user.device_type || "desktop"
     };
@@ -1412,6 +1434,22 @@ function validDeviceId(value) {
 async function findAuthDevice(userId, deviceId) {
     if (!validDeviceId(deviceId)) return null;
     const { rows } = await getPool().query("SELECT * FROM depannhome_auth_devices WHERE user_id = $1 AND id = $2", [userId, deviceId]);
+    return rows[0] || null;
+}
+
+async function findActiveCreatorSupportControl(sessionId, creatorId) {
+    if (!DEVICE_ID_PATTERN.test(String(sessionId || ""))) return null;
+    const { rows } = await getPool().query(`WITH active_session AS (
+        UPDATE depannhome_creator_support_sessions SET control_last_seen_at=NOW(),updated_at=NOW()
+        WHERE id=$1 AND created_by=$2 AND access_scope='control' AND mode='readonly'
+            AND accepted_at IS NOT NULL AND declined_at IS NULL AND revoked_at IS NULL AND expires_at>NOW()
+        RETURNING *
+    )
+        SELECT session.id,session.target_company_owner_id AS "companyOwnerId",session.expires_at AS "expiresAt",session.reason,
+        COALESCE(NULLIF(owner.company_name,''),owner.full_name,owner.username) AS "companyName"
+        FROM active_session session
+        JOIN depannhome_users owner ON owner.id=session.target_company_owner_id
+    `, [sessionId, creatorId]);
     return rows[0] || null;
 }
 
