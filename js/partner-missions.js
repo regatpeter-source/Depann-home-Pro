@@ -4,7 +4,7 @@ import { escapeHtml } from "./utils.js?v=44";
 import { openPartnerDialogue } from "./partner-dialogue.js?v=19";
 import { getSearchableClients } from "./clients.js?v=169";
 import { synchronizeClients } from "./client-sync.js?v=131";
-import { loadPartnerNotifications, markPartnerNotificationsRead } from "./collaboration.js?v=8";
+import { loadPartnerNotifications, markPartnerNotificationRead } from "./collaboration.js?v=13";
 
 let dashboard = null;
 let activeMissionTab = "received";
@@ -82,7 +82,6 @@ export async function renderPartnerMissions(options = {}) {
         button.addEventListener("click", openCompanyApiSandboxInbox);
         shell.querySelector(".partner-mission-actions")?.prepend(button);
     }
-    await markPartnerNotificationsRead();
     if (renderSequence !== partnerMissionRenderSequence || !shell.isConnected || !container.contains(shell)) return;
     enablePartnerNotificationDeletion(shell, alerts);
     shell.querySelector("#refreshPartnerMissions").addEventListener("click", renderPartnerMissions);
@@ -306,13 +305,23 @@ function enablePartnerNotificationDeletion(shell, alerts) {
     const cards = [...section?.querySelectorAll("article") || []];
     if (!section || !shownAlerts.length || cards.length !== shownAlerts.length) return;
     section.querySelector("h3")?.insertAdjacentHTML("afterend", '<div class="form-actions"><label><input type="checkbox" data-select-all-partner-notifications> Tout sélectionner</label><button type="button" class="danger-button" data-delete-selected-partner-notifications disabled>Supprimer la sélection</button></div>');
-    cards.forEach((card, index) => card.insertAdjacentHTML("afterbegin", `<label><input type="checkbox" data-partner-notification-id="${escapeHtml(shownAlerts[index].id)}"> Sélectionner</label>`));
+    cards.forEach((card, index) => {
+        const notification = shownAlerts[index];
+        card.insertAdjacentHTML("afterbegin", `<label><input type="checkbox" data-partner-notification-id="${escapeHtml(notification.id)}"> Sélectionner</label>`);
+        card.insertAdjacentHTML("beforeend", `<button type="button" class="secondary-button" data-open-partner-notification="${escapeHtml(notification.id)}">Ouvrir</button>`);
+    });
     const button = section.querySelector("[data-delete-selected-partner-notifications]");
     const selectAll = section.querySelector("[data-select-all-partner-notifications]");
     const inputs = [...section.querySelectorAll("[data-partner-notification-id]")];
     const selectedIds = () => inputs.filter(input => input.checked).map(input => Number(input.dataset.partnerNotificationId)).filter(Number.isSafeInteger);
     const updateButton = () => { const count = selectedIds().length; button.disabled = count === 0; button.textContent = count ? `Supprimer la sélection (${count})` : "Supprimer la sélection"; selectAll.checked = count === inputs.length; selectAll.indeterminate = count > 0 && count < inputs.length; };
     inputs.forEach(input => input.addEventListener("change", updateButton));
+    section.querySelectorAll("[data-open-partner-notification]").forEach(openButton => openButton.addEventListener("click", async () => {
+        const notification = shownAlerts.find(item => String(item.id) === openButton.dataset.openPartnerNotification);
+        if (!notification) return;
+        await markPartnerNotificationRead(notification.id);
+        window.dispatchEvent(new CustomEvent("depannhome:open-notification", { detail: { notification } }));
+    }));
     selectAll.addEventListener("change", () => { inputs.forEach(input => { input.checked = selectAll.checked; }); updateButton(); });
     button.addEventListener("click", async () => {
         const ids = selectedIds();

@@ -7,6 +7,7 @@ const missionsServer = readFileSync(new URL("../server/partner-missions.js", imp
 const navigation = readFileSync(new URL("../js/navigation.js", import.meta.url), "utf8");
 const connectionsClient = readFileSync(new URL("../js/partner-connections.js", import.meta.url), "utf8");
 const missionsClient = readFileSync(new URL("../js/partner-missions.js", import.meta.url), "utf8");
+const collaborationClient = readFileSync(new URL("../js/collaboration.js", import.meta.url), "utf8");
 const serviceWorker = readFileSync(new URL("../service-worker.js", import.meta.url), "utf8");
 
 function section(source, start, end) {
@@ -40,6 +41,22 @@ test("une demande de connexion ouvre la demande exacte sans accepter côté serv
     assert.doesNotMatch(destination, /\/api\/partner-connections\/.*\/accept/);
 });
 
+test("le bouton Missions ouvre en priorité une demande de connexion non lue", () => {
+    assert.match(navigation, /function openPartnerMissionsEntryPoint\(\)/);
+    assert.match(navigation, /unread\.find\(item => item\.eventType === "partner_connection_requested"\) \|\| unread\[0\]/);
+    assert.match(navigation, /await markPartnerNotificationRead\(notification\.id\)/);
+    assert.match(navigation, /return openNotificationDestination\(notification\)/);
+    assert.match(navigation, /nav === ROUTES\.partnerMissions\) openPartnerMissionsEntryPoint\(\)/);
+});
+
+test("les notifications affichées dans Missions possèdent une action Ouvrir ciblée", () => {
+    assert.match(missionsClient, /data-open-partner-notification=/);
+    assert.match(missionsClient, /await markPartnerNotificationRead\(notification\.id\)/);
+    assert.match(missionsClient, /new CustomEvent\("depannhome:open-notification"/);
+    assert.doesNotMatch(missionsClient, /await markPartnerNotificationsRead\(\)/);
+    assert.match(collaborationClient, /export async function markPartnerNotificationRead\(id\)/);
+});
+
 test("une mission à accepter ouvre la planification mais ne déclenche pas directement l’API", () => {
     const rendering = section(missionsClient, "export async function renderPartnerMissions", "function openCompanyApiSandboxInbox");
     assert.match(rendering, /targetedMission\.sourceType === "depannhome_network" \? "network"/);
@@ -66,10 +83,10 @@ test("l’interface distingue confirmer un e-mail et accepter une mission", () =
 });
 
 test("les versions PWA chargent le nouveau routage partenaire", () => {
-    assert.match(navigation, /partner-missions\.js\?v=85/);
+    assert.match(navigation, /partner-missions\.js\?v=86/);
     assert.match(navigation, /partner-connections\.js\?v=46/);
-    assert.match(serviceWorker, /depann-home-pro-v578/);
-    assert.match(serviceWorker, /partner-missions\.js\?v=85/);
+    assert.match(serviceWorker, /depann-home-pro-v579/);
+    assert.match(serviceWorker, /partner-missions\.js\?v=86/);
     assert.match(serviceWorker, /partner-connections\.js\?v=46/);
-    assert.match(serviceWorker, /navigation\.js\?v=486/);
+    assert.match(serviceWorker, /navigation\.js\?v=487/);
 });

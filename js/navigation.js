@@ -6,7 +6,7 @@ import { renderAccounting } from "./accounting.js?v=27";
 import { renderPurchases } from "./purchases.js?v=126";
 import { renderGroupActivation, renderGroupWorkspace } from "./groups.js?v=9";
 import { renderHistoryAndJournals } from "./history.js?v=2";
-import { renderPartnerMissions } from "./partner-missions.js?v=85";
+import { renderPartnerMissions } from "./partner-missions.js?v=86";
 import { renderPartnerSandbox } from "./partner-sandbox.js?v=3";
 import { renderPartnerConnections } from "./partner-connections.js?v=46";
 import { renderCompanyEmailWorkspace, renderPartnerEmailSettings } from "./partner-email-settings.js?v=29";
@@ -26,7 +26,7 @@ import {
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { renderPlatformAnnouncement } from "./platform-announcement.js?v=1";
 import { renderDocumentTemplateEditor } from "./document-template-editor.js?v=3";
-import { openCompanyAssistanceRequest } from "./collaboration.js?v=11";
+import { getPartnerNotifications, loadPartnerNotifications, markPartnerNotificationRead, openCompanyAssistanceRequest } from "./collaboration.js?v=13";
 import {
     clearSearch,
     createBackCard,
@@ -452,7 +452,7 @@ function bindEvents() {
     accountingBtn?.addEventListener("click", () => { if (canAccessQuick("accounting")) renderAccounting(); });
     purchasesBtn?.addEventListener("click", () => { if (canAccessQuick("purchases")) renderPurchases(); });
     groupsBtn?.addEventListener("click", () => { if (canAccessQuick("groups")) renderGroupWorkspace(); });
-    partnerMissionsBtn?.addEventListener("click", () => { if (canAccessQuick("partnerMissions")) renderPartnerMissions(); });
+    partnerMissionsBtn?.addEventListener("click", () => { if (canAccessQuick("partnerMissions")) openPartnerMissionsEntryPoint(); });
     companyEmailBtn?.addEventListener("click", () => { if (canAccessQuick("companyEmail")) renderCompanyEmail(); });
     partnerSandboxBtn?.addEventListener("click", () => { if (canAccessQuick("partnerSandbox")) renderPartnerSandbox(); });
     calendarBtn?.addEventListener("click", () => { if (canAccessQuick("calendar")) openCalendar(); });
@@ -487,7 +487,7 @@ function bindEvents() {
             if (nav === ROUTES.accounting) renderAccounting();
             if (nav === ROUTES.purchases) renderPurchases();
             if (nav === ROUTES.groups && document.body.dataset.groupAdmin === "true") renderGroupWorkspace();
-            if (nav === ROUTES.partnerMissions) renderPartnerMissions();
+            if (nav === ROUTES.partnerMissions) openPartnerMissionsEntryPoint();
             if (nav === ROUTES.companyEmail) renderCompanyEmail();
             if (nav === ROUTES.partnerSandbox && document.body.dataset.role === "admin") renderPartnerSandbox();
             if (nav === ROUTES.calendar) openCalendar();
@@ -767,6 +767,16 @@ function openNotificationDestination(notification) {
     if (entityType === "billing_document") return renderBilling({ documentId: notificationEntityId(entityId) });
     if (entityType === "client") return openClients(entityId || String(notification?.payload?.clientId || ""));
     if (entityType === "calendar_event") return renderCalendar();
+}
+
+async function openPartnerMissionsEntryPoint() {
+    let notifications = getPartnerNotifications();
+    if (!notifications.length) notifications = await loadPartnerNotifications();
+    const unread = notifications.filter(notification => !notification.readAt);
+    const notification = unread.find(item => item.eventType === "partner_connection_requested") || unread[0];
+    if (!notification) return renderPartnerMissions();
+    await markPartnerNotificationRead(notification.id);
+    return openNotificationDestination(notification);
 }
 
 function notificationEntityId(value) {
