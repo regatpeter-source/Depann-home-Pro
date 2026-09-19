@@ -42,6 +42,9 @@ test("le thème sombre couvre les écrans et les principaux espaces de travail",
     assert.match(settingsDarkRules, /\.billing-financial-cards article\.profit[\s\S]*background:rgba\(20,83,45,\.28\)/);
     assert.match(settingsDarkRules, /\.billing-editor-panel\.billing-editor-live-active[\s\S]*background:var\(--bg\)/);
     assert.match(settingsDarkRules, /\.pdf-live-page,[\s\S]*background:#fff/);
+    assert.match(settingsDarkRules, /\.creator-subscription-fields,[\s\S]*\.document-template-fields[\s\S]*background:var\(--surface-alt\)/);
+    assert.match(settingsDarkRules, /\.dashboard-event\.color-blue[\s\S]*background:#172c46/);
+    assert.match(settingsDarkRules, /\.dashboard-event\.color-green[\s\S]*background:#16382f/);
     assert.match(partnerDialogueStyle, /body\.dark-theme \.partner-dialogue-modal>\.partner-dialogue/);
     assert.match(partnerDialogueStyle, /background:var\(--surface-alt\)/);
     assert.match(reportEditorStyle, /body\.dark-theme\.report-writing-active \.report-editor-fullscreen/);

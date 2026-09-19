@@ -38,14 +38,14 @@ test("authentication hides the restored shell until desktop menus are filtered",
 });
 
 test("desktop stylesheet cache versions remain synchronized", () => {
-    assert.match(index, /css\/style\.css\?v=286/);
+    assert.match(index, /css\/style\.css\?v=287/);
     assert.match(index, /js\/app\.js\?v=468/);
-    assert.match(serviceWorker, /css\/style\.css\?v=286/);
+    assert.match(serviceWorker, /css\/style\.css\?v=287/);
     assert.match(serviceWorker, /js\/app\.js\?v=468/);
     assert.match(serviceWorker, /js\/clients\.js\?v=170/);
     assert.match(serviceWorker, /js\/client-sync\.js\?v=131/);
     assert.match(serviceWorker, /js\/navigation\.js\?v=493/);
     assert.match(serviceWorker, /js\/creator\.js\?v=170/);
     assert.match(serviceWorker, /js\/i18n\.js\?v=6/);
-    assert.match(serviceWorker, /depann-home-pro-v586/);
+    assert.match(serviceWorker, /depann-home-pro-v587/);
 });
