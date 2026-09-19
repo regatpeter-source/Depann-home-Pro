@@ -22,6 +22,7 @@ const schemaSource = readFileSync(new URL("../database/schema.sql", import.meta.
 const appSource = readFileSync(new URL("../app.js", import.meta.url), "utf8");
 const appClientSource = readFileSync(new URL("../js/app.js", import.meta.url), "utf8");
 const securitySource = readFileSync(new URL("../server/security-hardening.js", import.meta.url), "utf8");
+const partnerEmailDocumentation = readFileSync(new URL("../docs/PARTNER_EMAIL_MISSIONS.md", import.meta.url), "utf8");
 
 test("Brevo transforme un e-mail entrant en source compatible avec le pipeline documentaire existant", () => {
     const token = "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789";
@@ -66,7 +67,9 @@ test("le canal Brevo entrant reste désactivé et absent des paramètres d’ent
     assert.doesNotMatch(emailSettingsSource, /Réception simplifiée/);
     assert.doesNotMatch(emailSettingsSource, /Adresse de réception Depann’Home Pro/);
     assert.doesNotMatch(emailSettingsSource, /\/api\/partner-email\/inbound-address/);
-    assert.match(missionClientSource, /dashboard\.partnerEmail\.inboundAvailable && dashboard\.partnerEmail\.inboundAddress\?\.enabled/);
+    assert.doesNotMatch(missionClientSource, /inboundAddress|adresse de réception Depann/i);
+    assert.doesNotMatch(navigationSource, /boîte dédiée|adresse de réception Depann/i);
+    assert.doesNotMatch(partnerEmailDocumentation, /adresse de réception Depann|adresse dédiée/i);
 });
 
 test("Google Workspace est désactivé sans retirer Microsoft ni IMAP SMTP", () => {
@@ -712,12 +715,11 @@ test("un timeout ImapFlow ne peut pas arrêter le processus Node", () => {
     assert.match(serverSource, /async function withImapInbox/);
 });
 
-test("Missions partenaires rappelle la configuration uniquement sans boîte connectée", () => {
+test("Missions partenaires ne suggère aucune adresse fournie par Depann’Home Pro", () => {
     assert.match(missionClientSource, /partnerEmailChannelCount/);
-    assert.match(missionClientSource, /Aucun canal e-mail n’est configuré/);
-    assert.match(missionClientSource, /dashboard\.partnerEmail\.inboundAddress\?\.enabled/);
-    assert.match(missionClientSource, /id="openPartnerEmailSettings"/);
-    assert.match(missionClientSource, /new CustomEvent\("depannhome:open-partner-email-settings"\)/);
+    assert.doesNotMatch(missionClientSource, /Aucun canal e-mail n’est configuré|adresse de réception Depann|openPartnerEmailSettings/i);
+    assert.match(missionClientSource, /votre boîte professionnelle connectée/);
+    assert.match(navigationSource, /Connectez votre boîte professionnelle/);
 });
 
 test("la détection Sandbox ne provoque pas de 403 sans connecteurs", () => {

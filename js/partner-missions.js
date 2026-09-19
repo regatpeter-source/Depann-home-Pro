@@ -48,7 +48,7 @@ export async function renderPartnerMissions(options = {}) {
         activeMissionSpace = targetedMission.sourceType === "depannhome_network" ? "network" : targetedMission.sourceType === "professional_email" ? "email" : "external";
         activeMissionTab = "received";
     }
-    const partnerEmailChannelCount = dashboard.partnerEmail.connections.length + (dashboard.partnerEmail.inboundAvailable && dashboard.partnerEmail.inboundAddress?.enabled ? 1 : 0);
+    const partnerEmailChannelCount = dashboard.partnerEmail.connections.length;
     const networkMissions = dashboard.missions.filter(mission => mission.sourceType === "depannhome_network");
     const externalMissions = dashboard.missions.filter(mission => mission.sourceType === "external_connector");
     const pending = (activeMissionSpace === "network" ? networkMissions : externalMissions).filter(mission => ["received", "pending_validation"].includes(mission.status)).length;
@@ -56,9 +56,6 @@ export async function renderPartnerMissions(options = {}) {
     const externalTabs = '<button type="button" class="secondary-button" data-mission-tab="received">Missions reçues</button><button type="button" class="secondary-button" data-mission-tab="messages">Messagerie</button>';
     shell.innerHTML = `<header class="partner-mission-heading"><div><p class="eyebrow">Suivi opérationnel</p><h2>${activeMissionSpace === "network" ? "Réseau Depann’Home Pro" : "Connecteurs externes"}</h2><p class="muted">${activeMissionSpace === "network" ? "Missions, messagerie et documents entre entreprises utilisant Depann’Home Pro." : "Missions transmises directement par vos assurances, donneurs d’ordre, plateformes ou logiciels métiers via API."}</p></div><div class="partner-mission-actions"><button class="secondary-button" id="refreshPartnerMissions">Actualiser</button>${activeMissionSpace === "external" && canManagePartnerMissions() ? '<button class="secondary-button" id="retryPartnerOutbox">Relancer les retours API</button>' : ""}</div></header>${alerts.length ? `<section class="partner-mission-alerts"><h3>Notifications partenaires</h3>${alerts.slice(0, 10).map(alert => `<article class="${alert.readAt ? "read" : "unread"}"><strong>${escapeHtml(alert.title)}</strong><p>${escapeHtml(alert.body)}</p><small>${escapeHtml(formatMissionDate(alert.createdAt))}</small></article>`).join("")}</section>` : ""}<nav class="partner-network-tabs partner-mission-tabs" aria-label="Origine des missions"><button type="button" class="secondary-button${activeMissionSpace === "network" ? " active" : ""}" data-mission-space="network">Réseau Depann’Home Pro</button><button type="button" class="secondary-button${activeMissionSpace === "external" ? " active" : ""}" data-mission-space="external">Connecteurs externes</button></nav><nav class="partner-network-tabs partner-mission-tabs" aria-label="Sections des missions">${activeMissionSpace === "network" ? networkTabs : externalTabs}</nav><section class="partner-mission-counters"><article class="attention"><span>À valider</span><strong>${pending}</strong></article><article><span>${activeMissionSpace === "network" ? "Envoyées" : "Connexions API"}</span><strong>${activeMissionSpace === "network" ? dashboard.sentMissions.length : dashboard.intakes.length}</strong></article><article><span>${activeMissionSpace === "network" ? "Retours en échec" : "Missions reçues"}</span><strong>${activeMissionSpace === "network" ? dashboard.failedDeliveries : externalMissions.length}</strong></article></section><div id="partnerMissionContent"></div>`;
     shell.querySelector(".partner-mission-counters .attention span").textContent = "À accepter";
-    if (emailWorkspaceEnabled && canManagePartnerMissions() && !partnerEmailChannelCount) {
-        shell.querySelector(".partner-mission-heading")?.insertAdjacentHTML("afterend", '<section class="client-panel partner-email-reminder"><p class="eyebrow">Réception par e-mail inactive</p><h3>Aucun canal e-mail n’est configuré</h3><p class="muted">Créez votre adresse de réception Depann’Home Pro ou ajoutez une boîte dans Paramètres → Entreprise · Boîte mail.</p><div class="form-actions"><button type="button" class="secondary-button" id="openPartnerEmailSettings">Configurer la réception e-mail</button></div></section>');
-    }
     if (!externalConnectorsEnabled) {
         shell.querySelector('[data-mission-space="external"]')?.remove();
         shell.querySelector("#retryPartnerOutbox")?.remove();
@@ -67,7 +64,7 @@ export async function renderPartnerMissions(options = {}) {
     if (emailWorkspaceEnabled) spaces?.insertAdjacentHTML("beforeend", `<button type="button" class="secondary-button${activeMissionSpace === "email" ? " active" : ""}" data-mission-space="email">Boîte mail professionnelle${dashboard.partnerEmail.candidates.length ? ` (${dashboard.partnerEmail.candidates.length})` : ""}</button>`);
     if (activeMissionSpace === "email") {
         shell.querySelector(".partner-mission-heading h2").textContent = "Missions partenaires par e-mail";
-        shell.querySelector(".partner-mission-heading .muted").textContent = "Même suivi, mêmes cartes et même Centre de mission, depuis une boîte connectée ou votre adresse de réception Depann’Home Pro.";
+        shell.querySelector(".partner-mission-heading .muted").textContent = "Même suivi, mêmes cartes et même Centre de mission depuis votre boîte professionnelle connectée.";
         shell.querySelectorAll('[data-mission-space]').forEach(button => button.classList.toggle("active", button.dataset.missionSpace === "email"));
         shell.querySelectorAll('.partner-mission-tabs')[1].innerHTML = externalTabs;
         if (dashboard.partnerEmail.connections.length) shell.querySelector(".partner-mission-actions")?.insertAdjacentHTML("afterbegin", `<div class="partner-email-sync-period"><label>Du<input type="date" id="partnerEmailSyncFrom" value="${escapeHtml(emailSyncFrom)}"></label><label>Au<input type="date" id="partnerEmailSyncTo" value="${escapeHtml(emailSyncTo)}"></label><button class="secondary-button" id="syncPartnerEmail">Rechercher les e-mails</button></div>`);
@@ -89,7 +86,6 @@ export async function renderPartnerMissions(options = {}) {
     if (renderSequence !== partnerMissionRenderSequence || !shell.isConnected || !container.contains(shell)) return;
     enablePartnerNotificationDeletion(shell, alerts);
     shell.querySelector("#refreshPartnerMissions").addEventListener("click", renderPartnerMissions);
-    shell.querySelector("#openPartnerEmailSettings")?.addEventListener("click", () => window.dispatchEvent(new CustomEvent("depannhome:open-partner-email-settings")));
     shell.querySelector("#syncPartnerEmail")?.addEventListener("click", () => synchronizePartnerMailboxes(shell));
     shell.querySelector("#partnerEmailSyncFrom")?.addEventListener("change", event => { emailSyncFrom = event.currentTarget.value; });
     shell.querySelector("#partnerEmailSyncTo")?.addEventListener("change", event => { emailSyncTo = event.currentTarget.value; });

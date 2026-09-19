@@ -140,12 +140,12 @@ export function registerPartnerEmailRoutes(app, requireAuthentication) {
     app.post("/api/partner-email/inbound-address", requireEmailConfigurationAccess, asyncHandler(async (req, res) => {
         if (!brevoInboundConfigured()) return res.status(503).json({ message: "La réception Brevo doit d’abord être configurée par Depann’Home Pro." });
         const address = await provisionBrevoInboundAddress(getAccountOwnerId(req), req.user.sub, Boolean(req.body?.rotate));
-        res.status(address.created ? 201 : 200).json({ ...address, message: address.rotated ? "Une nouvelle adresse de réception a été créée. L’ancienne adresse ne reçoit plus les missions." : address.created ? "L’adresse de réception Depann’Home Pro est prête." : "L’adresse de réception est déjà prête." });
+        res.status(address.created ? 201 : 200).json({ ...address, message: address.rotated ? "Le canal entrant a été renouvelé." : address.created ? "Le canal entrant est prêt." : "Le canal entrant est déjà prêt." });
     }));
     app.patch("/api/partner-email/inbound-address", requireEmailConfigurationAccess, asyncHandler(async (req, res) => {
         const enabled = req.body?.enabled !== false;
         const { rows } = await getPool().query(`UPDATE depannhome_partner_email_inbound_addresses address SET enabled=$2,updated_at=NOW() FROM depannhome_partner_email_connections connection WHERE address.owner_id=$1 AND connection.id=address.connection_id RETURNING connection.email_address AS "emailAddress",address.enabled`, [getAccountOwnerId(req), enabled]);
-        if (!rows[0]) return res.status(404).json({ message: "Aucune adresse de réception n’est configurée." });
+        if (!rows[0]) return res.status(404).json({ message: "Aucun canal entrant n’est configuré." });
         res.json({ ...rows[0], message: enabled ? "La réception des missions est activée." : "La réception des missions est suspendue." });
     }));
     app.put("/api/partner-email/configuration", requireEmailConfigurationAccess, asyncHandler(async (req, res) => {
@@ -453,7 +453,7 @@ async function syncConnection(ownerId, connectionId, actorId, syncPeriod = null)
 async function performConnectionSync(ownerId, connectionId, actorId, syncPeriod = null) {
     const connection = await findConnection(ownerId, connectionId); if (!connection) throw httpError(404, "Boîte professionnelle introuvable.");
     try {
-        if (connection.provider === "brevo") throw httpError(409, "L’adresse de réception Depann’Home Pro reçoit les missions automatiquement et ne se synchronise pas comme une boîte mail.");
+        if (connection.provider === "brevo") throw httpError(409, "Ce canal entrant reçoit les missions automatiquement et ne se synchronise pas comme une boîte mail.");
         if (connection.provider === "microsoft") return await syncMicrosoftConnection(connection, actorId, syncPeriod);
         if (connection.provider === "google") return await syncGoogleConnection(connection, actorId, syncPeriod);
         const access = await mailboxAccess(connection); const client = createImapClient({ host: access.imap.host, port: access.imap.port, secure: access.imap.secure, auth: access.auth, disableAutoIdle: true });

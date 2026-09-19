@@ -119,7 +119,6 @@ const ENGLISH = new Map(Object.entries({
     "Rechercher les e-mails": "Search emails",
     "Canaux e-mail": "Email channels",
     "Réception par e-mail inactive": "Email reception inactive",
-    "Aucun canal e-mail n’est configuré": "No email channel is configured",
     "Configurer la réception e-mail": "Configure email reception",
     "Répondre à l’e-mail": "Reply by email",
     "Répondre dans le fil d’origine": "Reply in the original thread",
@@ -501,7 +500,6 @@ const ENGLISH = new Map(Object.entries({
     ,"Réinitialiser la double authentification": "Reset two-factor authentication"
     ,"Révoquer l’appareil": "Revoke device"
     ,"Intervention Support": "Support intervention"
-    ,"Aucun canal e-mail n’est configuré": "No email channel is configured"
     ,"Aucune boîte n'est encore connectée. Un Poste Admin peut la configurer dans Paramètres > Entreprise · Boîte mail.": "No mailbox is connected yet. An Admin Workstation can configure it under Settings > Company · Mailbox."
     ,"Connexion Gmail professionnelle temporairement indisponible.": "Professional Gmail connection is temporarily unavailable."
     ,"Hébergeur IMAP/SMTP (OVH, Zimbra, Namecheap…)": "IMAP/SMTP provider (OVH, Zimbra, Namecheap…)"

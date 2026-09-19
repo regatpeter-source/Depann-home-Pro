@@ -6,7 +6,7 @@ import { renderAccounting } from "./accounting.js?v=27";
 import { renderPurchases } from "./purchases.js?v=126";
 import { renderGroupActivation, renderGroupWorkspace } from "./groups.js?v=9";
 import { renderHistoryAndJournals } from "./history.js?v=2";
-import { renderPartnerMissions } from "./partner-missions.js?v=84";
+import { renderPartnerMissions } from "./partner-missions.js?v=85";
 import { renderPartnerSandbox } from "./partner-sandbox.js?v=3";
 import { renderPartnerConnections } from "./partner-connections.js?v=46";
 import { renderCompanyEmailWorkspace, renderPartnerEmailSettings } from "./partner-email-settings.js?v=29";
@@ -1872,7 +1872,7 @@ function renderSettingsWorkspace(options = {}) {
         return;
     }
     if (section === "company") {
-        container.appendChild(createSettingsIntro("Boîte mail de l’entreprise", "Connectez une boîte dédiée aux demandes d’intervention. Seuls les e-mails détectés comme missions apparaissent dans Missions partenaires ; les autres messages restent privés."));
+        container.appendChild(createSettingsIntro("Boîte mail de l’entreprise", "Connectez votre boîte professionnelle. Seuls les e-mails détectés comme missions apparaissent dans Missions partenaires ; les autres messages restent privés."));
         renderPartnerEmailSettings(container);
         if (options.focusPartnerEmail) window.requestAnimationFrame(() => document.querySelector(".partner-email-settings-card")?.scrollIntoView({ behavior: "smooth", block: "start" }));
         return;

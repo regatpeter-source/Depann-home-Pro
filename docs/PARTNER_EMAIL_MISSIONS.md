@@ -4,7 +4,6 @@ La **Boîte mail professionnelle** transforme les demandes d’intervention reç
 
 ## Fournisseurs et authentification
 
-- **Adresse de réception Depann’Home Pro** : fonctionnalité conservée mais temporairement désactivée et annoncée comme bientôt disponible, l’offre Brevo Inbound Parsing nécessaire étant actuellement trop coûteuse ;
 - **Microsoft 365, Outlook, Hotmail, Live et MSN**, y compris les comptes personnels : OAuth 2.0 avec PKCE et Microsoft Graph, sans IMAP/SMTP ;
 - **Google Workspace** : connexion temporairement désactivée dans l’interface et annoncée comme bientôt disponible ; le code Gmail API est conservé pour une activation ultérieure après les validations de conformité requises ;
 - **Gmail personnel** : parcours simplifié IMAP/SMTP avec mot de passe d’application Google, après activation de la validation en deux étapes ;
@@ -13,16 +12,6 @@ La **Boîte mail professionnelle** transforme les demandes d’intervention reç
 Les jetons et mots de passe d’application sont chiffrés côté serveur en AES-256-GCM avec la clé dérivée de `SESSION_SECRET`. Ils ne sont jamais renvoyés au navigateur. Pour OAuth, déclarer les six variables `GOOGLE_MAIL_*` et `MICROSOFT_MAIL_*` documentées dans `.env.example`, avec des URI de retour strictement identiques chez les fournisseurs.
 
 Le backend Google Workspace conservé demande uniquement `openid`, `email`, `profile`, `https://www.googleapis.com/auth/gmail.readonly` et `https://www.googleapis.com/auth/gmail.send`. Tant que le bouton reste désactivé, aucune nouvelle autorisation Google n’est lancée depuis l’interface.
-
-### Adresse de réception Depann’Home Pro via Brevo
-
-Cette fonctionnalité est désactivée par défaut avec `BREVO_INBOUND_ENABLED=false`. Dans cet état, aucune adresse ne peut être créée, le webhook refuse les messages et l’interface affiche uniquement **bientôt disponible**. Les variables SMTP Brevo déjà utilisées pour l’envoi restent totalement indépendantes et continuent de fonctionner.
-
-Depann’Home Pro configure une seule fois un sous-domaine de réception distinct du domaine d’envoi, par exemple `reception.depannhomepro.com`, avec les MX Brevo `inbound1.sendinblue.com` et `inbound2.sendinblue.com`. Un webhook global de type `inbound`, événement `inboundEmailProcessed`, cible `/api/webhooks/brevo/inbound` avec une authentification Bearer configurée par `BREVO_INBOUND_WEBHOOK_SECRET`.
-
-Un Poste Admin crée ensuite l’adresse de son entreprise depuis **Paramètres → Entreprise · Boîte mail**. Son identifiant aléatoire de 256 bits peut être renouvelé ou suspendu. Brevo accepte les messages adressés au sous-domaine, puis Depann’Home Pro vérifie le destinataire, l’entreprise active, les capacités `companyEmail` et `partnerMissions`, le score antispam, le secret du webhook et l’idempotence de l’événement.
-
-Les pièces décrites par `DownloadToken` sont téléchargées par l’API Brevo avec `BREVO_API_KEY`, sous les limites habituelles de 5 Mo par fichier, 10 fichiers et 20 Mo cumulés. Elles passent ensuite sans duplication par la chaîne existante : extraction des e-mails imbriqués, lecture PDF/DOCX/XLSX/TXT, OCR local, classification, validation humaine, création de mission, rapprochement ou création de la fiche client et archivage des documents liés. Une réponse ou mise à jour de statut est envoyée par le SMTP Brevo existant, dans le fil d’origine, avec l’adresse dédiée en `Reply-To`.
 
 ### Configuration Google Cloud et Render conservée pour activation future
 
@@ -101,7 +90,7 @@ Un e-mail est dédupliqué avec son identifiant RFC `Message-ID` dans la boîte 
 
 ## Réponses et statuts
 
-Une mission importée conserve `Message-ID`, `In-Reply-To` et `References`. L’entreprise peut répondre depuis la carte de mission. Microsoft utilise Graph ; Gmail personnel, OVH et les autres hébergeurs utilisent leur SMTP ; le canal entrant utilise le SMTP transactionnel Brevo. Le backend Google Workspace conservé utilise Gmail API lorsqu’il sera réactivé. Si l’entreprise active les retours automatiques, les changements de statut sont envoyés de la même façon. Une panne d’envoi ne bloque jamais la mise à jour du statut dans Depann’Home Pro.
+Une mission importée conserve `Message-ID`, `In-Reply-To` et `References`. L’entreprise peut répondre depuis la carte de mission. Microsoft utilise Graph ; Gmail personnel, OVH et les autres hébergeurs utilisent leur SMTP. Le backend Google Workspace conservé utilise Gmail API lorsqu’il sera réactivé. Si l’entreprise active les retours automatiques, les changements de statut sont envoyés de la même façon. Une panne d’envoi ne bloque jamais la mise à jour du statut dans Depann’Home Pro.
 
 Une fois créée, une mission partenaire n’est jamais supprimable depuis l’application, y compris lorsqu’elle est refusée, annulée ou clôturée. Elle reste consultable avec son statut, sa conversation et son journal afin de préserver la traçabilité du dossier. Une mission envoyée encore en attente peut être **annulée**, mais cette annulation ne la masque pas. Seules les propositions e-mail qui n’ont pas encore été confirmées et ne constituent donc pas encore une mission peuvent être supprimées de la file de détection.
 
