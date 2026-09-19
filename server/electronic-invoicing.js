@@ -277,7 +277,11 @@ export function registerElectronicInvoicingRoutes(app, requireAuthentication) {
         if (!pending) return response.status(400).send(oauthCallbackPage(false, "Autorisation expirée ou déjà utilisée."));
         const ownerId = pending.owner_id;
         const actorId = pending.created_by;
-        if (request.query?.error) return response.status(400).send(oauthCallbackPage(false, clean(request.query.error_description || request.query.error, 400)));
+        if (request.query?.error) {
+            const message = clean(request.query.error_description || request.query.error, 400);
+            await recordOAuthFailure(ownerId, actorId, message, "authorization");
+            return response.status(400).send(oauthCallbackPage(false, message));
+        }
         const platform = getElectronicInvoicingProvider(pending.platform_code);
         const code = secret(request.query?.code, 4000);
         if (!platform || typeof platform.exchangeAuthorizationCode !== "function" || !code) return response.status(400).send(oauthCallbackPage(false, "Réponse d’autorisation incomplète."));
@@ -296,7 +300,9 @@ export function registerElectronicInvoicingRoutes(app, requireAuthentication) {
             } catch (error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }
             response.send(oauthCallbackPage(true, result.message || "SUPER PDP est connecté."));
         } catch (error) {
-            response.status(502).send(oauthCallbackPage(false, safeError(error)));
+            const message = safeError(error);
+            await recordOAuthFailure(ownerId, actorId, message, "token_exchange");
+            response.status(502).send(oauthCallbackPage(false, message));
         }
     }));
     app.put("/api/accounting/e-invoicing/configuration", asyncHandler(async (request, response) => {
@@ -464,6 +470,7 @@ async function rotateCredentials(ownerId, connectionId, platform, force = false)
     } catch (error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }
 }
 async function recordEvent(database, ownerId, connectionId, transmissionId, actorId, eventType, status, message, details = {}) { await database.query("INSERT INTO depannhome_einvoice_events(owner_id,connection_id,transmission_id,actor_id,event_type,status,message,details) VALUES($1,$2,$3,$4,$5,$6,$7,$8::jsonb)", [ownerId, connectionId || null, transmissionId || null, actorId || null, eventType, clean(status, 30), clean(message, 1000), JSON.stringify(safeObject(details))]); }
+async function recordOAuthFailure(ownerId, actorId, message, stage) { try { await recordEvent(getPool(), ownerId, null, null, actorId, "oauth_authorization_failed", "failed", message, { stage }); } catch (error) { console.warn("[electronic-invoicing] OAuth failure audit unavailable", { ownerId, actorId, stage, code: error?.code || error?.name || "ERROR" }); } }
 function requireCompanyAdministrator(request, response, next) { if (!isCompanyAdministrator(request)) return response.status(403).json({ message: "La facturation électronique est réservée au Poste Admin de cette entreprise." }); return next(); }
 function encryptionKey() { const secret = String(process.env.SESSION_SECRET || ""); if (process.env.NODE_ENV === "production" && secret.length < 32) throw new Error("SESSION_SECRET doit protéger les connexions de facturation électronique."); return crypto.createHash("sha256").update(secret || "development-electronic-invoicing-key").digest(); }
 export function encryptElectronicInvoicingCredentials(value, secretOverride = "") { const iv = crypto.randomBytes(12); const cipher = crypto.createCipheriv("aes-256-gcm", secretOverride ? crypto.createHash("sha256").update(secretOverride).digest() : encryptionKey(), iv); const encrypted = Buffer.concat([cipher.update(JSON.stringify(safeObject(value)), "utf8"), cipher.final()]); return `${iv.toString("base64url")}.${cipher.getAuthTag().toString("base64url")}.${encrypted.toString("base64url")}`; }
@@ -480,7 +487,7 @@ function httpError(status, message) { const error = new Error(message); error.st
 function oauthCallbackPage(success, message) {
     const payload = Buffer.from(JSON.stringify({ type: "depannhome:einvoice-oauth", success: Boolean(success), message: clean(message, 500) })).toString("base64url");
     const title = success ? "Connexion enregistrée" : "Connexion impossible";
-    return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${title}</title></head><body data-oauth-payload="${payload}"><main><h1>${title}</h1><p>${escapeHtml(message)}</p><p>Vous pouvez fermer cette fenêtre.</p></main><script src="/site-assets/oauth-callback.js" defer></script></body></html>`;
+    return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${title}</title></head><body data-oauth-payload="${payload}"><main><h1>${title}</h1><p>${escapeHtml(message)}</p><p>${success ? "Cette fenêtre va se fermer automatiquement." : "Cette fenêtre reste ouverte afin que vous puissiez lire ou transmettre ce message au support."}</p></main><script src="/site-assets/oauth-callback.js?v=2" defer></script></body></html>`;
 }
 function escapeHtml(value) { return String(value || "").replace(/[&<>"']/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]); }
 function asyncHandler(handler) { return (request, response, next) => Promise.resolve(handler(request, response, next)).catch(next); }

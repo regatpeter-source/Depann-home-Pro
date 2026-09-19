@@ -9,6 +9,14 @@ const SECTIONS = [
 let accounting = null;
 let activeSection = "dashboard";
 let electronicOAuthMessageHandler = null;
+let electronicOAuthFeedback = null;
+let lastElectronicOAuthResultAt = 0;
+const ELECTRONIC_OAUTH_RESULT_KEY = "depannhome:einvoice-oauth-result";
+
+window.addEventListener("storage", event => {
+    if (event.key === ELECTRONIC_OAUTH_RESULT_KEY && event.newValue) consumeElectronicOAuthResult(event.newValue);
+});
+window.addEventListener("focus", consumeStoredElectronicOAuthResult);
 
 export async function renderAccounting(section = activeSection) {
     const sections = accountingSections();
@@ -199,6 +207,7 @@ async function renderElectronic(node) {
         <aside class="accounting-pdp-notice">Depann’Home Pro n'est pas une plateforme agréée de facturation électronique. SUPER PDP est l’unique plateforme de transmission intégrée et autorisée dans l’application.</aside>
         <aside class="accounting-pdp-notice"><strong>B2B / B2C :</strong> les factures destinées aux professionnels peuvent être transmises à SUPER PDP lorsqu’elle est connectée. Une facture destinée à un particulier reste émise, archivée et comptabilisée normalement, y compris lorsqu’elle est réglée sur place, mais elle n’est pas envoyée comme facture B2B. Son e-reporting doit être assuré auprès de SUPER PDP.</aside>
         <aside class="accounting-pdp-notice"><strong>Où effectuer chaque opération ?</strong><ul><li><strong>Dans Depann’Home Pro :</strong> créer et transmettre vos factures et avoirs, puis suivre leur dépôt, leur acceptation ou leur refus et leur règlement.</li><li><strong>Dans SUPER PDP :</strong> terminer si nécessaire l’inscription ou la vérification légale de votre entreprise et consulter les factures fournisseurs réellement reçues sur la plateforme.</li><li><strong>Retour dans Depann’Home Pro :</strong> tant que la récupération automatique entrante n’est pas disponible, enregistrer manuellement la facture fournisseur pour la contrôler, l’accepter ou la refuser, créer l’achat et rapprocher son règlement.</li></ul><p><strong>Aucune ressaisie n’est nécessaire pour transmettre une facture ou un avoir déjà créé dans Depann’Home Pro après connexion de SUPER PDP.</strong></p></aside>
+        ${electronicOAuthFeedback ? `<p class="auth-message ${electronicOAuthFeedback.success ? "success" : "error"}" data-einvoice-oauth-feedback role="status">${escapeHtml(electronicOAuthFeedback.message)}</p>` : '<p class="auth-message" data-einvoice-oauth-feedback aria-live="polite"></p>'}
         <h4>Connexion de l’entreprise</h4><div class="accounting-transmission-list">${connectionRows || '<p class="muted">SUPER PDP n’est pas encore connectée.</p>'}</div>
         <h4>SUPER PDP</h4><div class="accounting-transmission-list">${electronic.providers.map(provider => `<article><div><strong>${escapeHtml(provider.label)}</strong><p>Autorisation OAuth sécurisée</p><p>Vous serez redirigé vers SUPER PDP pour vous connecter et autoriser Depann’Home Pro. Aucun identifiant technique n’est à saisir ici.</p><small>${provider.supports.webhooks ? "Notifications fournisseur" : "Suivi asynchrone par interrogation sécurisée"}</small></div><button type="button" class="secondary-button" data-connect="${escapeHtml(provider.code)}">${active?.platformCode === provider.code ? "Reconnecter" : "Connecter"}</button></article>`).join("") || '<p class="auth-message error">SUPER PDP est momentanément indisponible. Contactez le support Depann’Home Pro.</p>'}</div>
         <h4>Parcours des factures et avoirs transmis</h4><div class="accounting-transmission-list">${transmissions.length ? transmissions.map(item => `<article><div><strong>${escapeHtml(item.documentNumber)}</strong><p>${escapeHtml(item.provider)} · ${escapeHtml(lifecycleStatusLabel(item.lifecycleStatus))} · ${escapeHtml(paymentStatusLabel(item.paymentStatus))}</p><small>${escapeHtml(item.remoteId || "Sans référence externe")} · ${escapeHtml(item.message || "Aucun message")}</small>${renderTransmissionTimeline(item.events)}</div>${item.remoteId ? `<button type="button" class="secondary-button" data-refresh-transmission="${item.id}">Actualiser le statut</button>` : ""}</article>`).join("") : '<p class="muted">Aucune transmission enregistrée.</p>'}</div>
@@ -208,6 +217,8 @@ async function renderElectronic(node) {
         <div class="accounting-transmission-list">${inboundInvoices.length ? inboundInvoices.map(renderInboundInvoice).join("") : '<p class="muted">Aucune facture fournisseur reçue.</p>'}</div>
     </section>`;
     node.querySelectorAll("[data-connect]").forEach(button => button.addEventListener("click", async () => {
+        electronicOAuthFeedback = null;
+        localStorage.removeItem(ELECTRONIC_OAUTH_RESULT_KEY);
         const popup = window.open("", "depannhome-einvoice-oauth", "width=760,height=820");
         if (!popup) return alert("Autorisez l’ouverture de la fenêtre SUPER PDP dans votre navigateur.");
         popup.document.write("<p>Préparation de l’autorisation sécurisée…</p>");
@@ -220,8 +231,7 @@ async function renderElectronic(node) {
         if (event.origin !== window.location.origin || event.data?.type !== "depannhome:einvoice-oauth") return;
         window.removeEventListener("message", electronicOAuthMessageHandler);
         electronicOAuthMessageHandler = null;
-        if (!event.data.success) alert(event.data.message || "Connexion SUPER PDP impossible.");
-        renderAccounting("electronic");
+        handleElectronicOAuthResult(event.data);
     };
     window.addEventListener("message", electronicOAuthMessageHandler);
     node.querySelectorAll("[data-test-connection]").forEach(button => button.addEventListener("click", async () => { button.disabled = true; const answer = await api(`/api/accounting/e-invoicing/connections/${button.dataset.testConnection}/test`, { method: "POST", body: "{}" }); if (!answer.ok) alert(answer.message || "Vérification impossible."); renderAccounting("electronic"); }));
@@ -234,6 +244,23 @@ async function renderElectronic(node) {
     node.querySelectorAll("[data-inbound-reject]").forEach(button => button.addEventListener("click", () => inboundDecision(button, "rejected")));
     node.querySelectorAll("[data-inbound-purchase]").forEach(button => button.addEventListener("click", () => inboundAction(button, "purchase")));
     node.querySelectorAll("[data-inbound-payment]").forEach(button => button.addEventListener("click", async () => { const invoice = inboundInvoices.find(item => String(item.id) === button.dataset.inboundPayment); const paidAmount = window.prompt("Montant réglé :", String(invoice.amountTtc)); if (paidAmount === null) return; const reference = window.prompt("Référence du règlement :", invoice.paymentReference || "") ?? ""; const answer = await api(`/api/accounting/e-invoicing/inbound/${invoice.id}/payment`, { method: "POST", body: JSON.stringify({ paidAmount, paidAt: today(), reference }) }); if (!answer.ok) alert(answer.message || "Rapprochement impossible."); renderAccounting("electronic"); }));
+}
+
+function consumeStoredElectronicOAuthResult() {
+    const stored = localStorage.getItem(ELECTRONIC_OAUTH_RESULT_KEY);
+    if (stored) consumeElectronicOAuthResult(stored);
+}
+
+function consumeElectronicOAuthResult(value) {
+    let payload;
+    try { payload = typeof value === "string" ? JSON.parse(value) : value; } catch { return; }
+    if (payload?.type !== "depannhome:einvoice-oauth") return;
+    const deliveredAt = Number(payload.deliveredAt) || Date.now();
+    if (deliveredAt <= lastElectronicOAuthResultAt) return;
+    lastElectronicOAuthResultAt = deliveredAt;
+    electronicOAuthFeedback = { success: payload.success === true, message: payload.message || (payload.success ? "Connexion SUPER PDP enregistrée." : "Connexion SUPER PDP impossible.") };
+    localStorage.removeItem(ELECTRONIC_OAUTH_RESULT_KEY);
+    if (activeSection === "electronic") renderAccounting("electronic");
 }
 
 function renderTransmissionTimeline(events = []) { return events.length ? `<details><summary>Voir la chronologie (${events.length})</summary><ol>${events.map(event => `<li><strong>${escapeHtml(transmissionEventLabel(event.eventType))}</strong> · ${escapeHtml(dateTime(event.createdAt))}<br><small>${escapeHtml(event.message || event.status || "Étape enregistrée")}</small></li>`).join("")}</ol></details>` : ""; }
@@ -297,7 +324,7 @@ function paymentStatusLabel(value) { return ({ unpaid: "Non réglée", partial: 
 function inboundStatusLabel(value) { return ({ received: "Reçue", validated: "Contrôlée", accepted: "Acceptée", rejected: "Refusée", archived: "Archivée" })[String(value || "").toLowerCase()] || "État inconnu"; }
 function validationStatusLabel(value) { return ({ pending: "À contrôler", valid: "Contrôles réussis", invalid: "Anomalies détectées" })[String(value || "").toLowerCase()] || "Contrôle inconnu"; }
 function transmissionEventLabel(value) { return ({ transmission_queued: "Préparation", document_transmitted: "Dépôt", status_checked: "Actualisation plateforme", status_received: "Notification plateforme", transmission_failed: "Échec", received: "Réception", validated: "Contrôle", accepted: "Acceptation", rejected: "Refus", purchase_linked: "Rapprochement avec un achat", payment_reconciled: "Rapprochement du règlement" })[String(value || "")] || "Événement"; }
-function connectionStatusLabel(value) { return ({ pending: "Configuration enregistrée", connected: "Connectée", invalid: "Connexion invalide", expired: "Authentification expirée", disconnected: "Déconnectée", action_required: "Reconnexion requise" })[String(value || "").toLowerCase()] || "État inconnu"; }
+function connectionStatusLabel(value) { return ({ pending: "Configuration enregistrée", connected: "Connectée", invalid: "Connexion invalide", expired: "Authentification expirée", disconnected: "Déconnectée", action_required: "Vérification SUPER PDP en attente" })[String(value || "").toLowerCase()] || "État inconnu"; }
 function money(value) { return new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" }).format(Number(value) || 0); }
 function date(value) { return value ? new Intl.DateTimeFormat("fr-FR").format(new Date(`${value}T12:00:00`)) : "Non renseignée"; }
 function dateTime(value) { return value ? new Intl.DateTimeFormat("fr-FR", { dateStyle: "short", timeStyle: "short" }).format(new Date(value)) : "Non renseignée"; }

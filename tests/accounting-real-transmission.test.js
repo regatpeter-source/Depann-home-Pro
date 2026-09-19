@@ -125,3 +125,16 @@ test("la transmission électronique utilise une route canonique réservée au Po
     assert.match(accountingClient, /\/api\/accounting\/e-invoicing\/documents\/\$\{button\.dataset\.transmit\}\/transmit/);
     assert.match(electronicServer, /app\.use\("\/api\/accounting\/e-invoicing"[\s\S]*requireCompanyAdministrator/);
 });
+
+test("un refus OAuth SUPER PDP reste visible et est journalisé pour l’entreprise", () => {
+    const callbackClient = readFileSync(new URL("../public/oauth-callback.js", import.meta.url), "utf8");
+    assert.match(callbackClient, /depannhome:einvoice-oauth-result/);
+    assert.match(callbackClient, /closeWindow = payload\.success === true/);
+    assert.match(accountingClient, /data-einvoice-oauth-feedback/);
+    assert.match(accountingClient, /window\.addEventListener\("storage"/);
+    assert.match(accountingClient, /window\.addEventListener\("focus", consumeStoredElectronicOAuthResult\)/);
+    assert.doesNotMatch(accountingClient, /if \(!event\.data\.success\) alert/);
+    assert.match(electronicServer, /oauth_authorization_failed/);
+    assert.match(electronicServer, /recordOAuthFailure\(ownerId, actorId, message, "authorization"\)/);
+    assert.match(electronicServer, /recordOAuthFailure\(ownerId, actorId, message, "token_exchange"\)/);
+});
