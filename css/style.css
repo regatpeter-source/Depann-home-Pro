@@ -7818,3 +7818,8 @@ body:is(.desktop-device,.mobile-device).dark-theme .partner-mailbox-row.unread{
     border-left-color:var(--secondary);
     background:rgba(52,211,153,.1);
 }
+
+.partner-notification-target{
+    border-color:#f59e0b!important;
+    box-shadow:0 0 0 4px rgba(245,158,11,.2),var(--shadow);
+}

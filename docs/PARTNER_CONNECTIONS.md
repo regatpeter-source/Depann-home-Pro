@@ -14,7 +14,9 @@ Le compte Créateur dispose du registre complet, de statistiques globales, et pe
 
 ## Parcours utilisateur
 
-Dans **Paramètres → Réseau Depann'Home Pro**, l’onglet **Annuaire Depann'Home Pro** permet de rendre son entreprise trouvable, chercher une entreprise par nom, SIREN, SIRET ou ville, puis choisir **Demander la connexion**. L’entreprise destinataire reçoit une notification persistante et accepte ou refuse la demande avec les droits qu’elle accorde. Après acceptation, elle apparaît automatiquement dans l’onglet **Mes partenaires**.
+Dans **Paramètres → Réseau Depann'Home Pro**, l’onglet **Annuaire Depann'Home Pro** permet de rendre son entreprise trouvable, chercher une entreprise par nom, SIREN, SIRET ou ville, puis choisir **Demander la connexion**. L’entreprise destinataire reçoit une notification persistante qui ouvre directement la demande concernée et le formulaire **Accepter la connexion**, sans accepter automatiquement. Après acceptation, elle apparaît automatiquement dans l’onglet **Mes partenaires**.
+
+Une notification de nouvelle intervention ouvre au contraire la mission exacte dans **Missions partenaires**, directement sur le parcours **Accepter et planifier**. Cette étape est nommée **À accepter** dans toute l’interface ; le terme **À confirmer** reste réservé à la transformation préalable d’un e-mail détecté en mission. Les anciennes notifications d’intervention restent compatibles grâce à leur identifiant de mission.
 
 L’onglet **Mes partenaires** regroupe aussi les accès API externes : création, modification, activation, suppression lorsqu’aucune mission n’est attachée, renouvellement de clé et contrôle de préparation de l’endpoint. Les clés restent affichées uniquement lors de leur création ou renouvellement. Les partenaires Depann'Home Pro ne nécessitent aucun paramétrage technique.
 

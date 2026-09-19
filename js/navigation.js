@@ -6,9 +6,9 @@ import { renderAccounting } from "./accounting.js?v=27";
 import { renderPurchases } from "./purchases.js?v=126";
 import { renderGroupActivation, renderGroupWorkspace } from "./groups.js?v=9";
 import { renderHistoryAndJournals } from "./history.js?v=2";
-import { renderPartnerMissions } from "./partner-missions.js?v=82";
+import { renderPartnerMissions } from "./partner-missions.js?v=84";
 import { renderPartnerSandbox } from "./partner-sandbox.js?v=3";
-import { renderPartnerConnections } from "./partner-connections.js?v=45";
+import { renderPartnerConnections } from "./partner-connections.js?v=46";
 import { renderCompanyEmailWorkspace, renderPartnerEmailSettings } from "./partner-email-settings.js?v=29";
 import { renderDataImportTool } from "./data-imports.js?v=5";
 import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=52";
@@ -754,16 +754,24 @@ function isClientFormView(view) {
 function openNotificationDestination(notification) {
     const entityType = notification?.entityType || "";
     const entityId = String(notification?.entityId || notification?.payload?.partnerRequestId || "");
+    const eventType = String(notification?.eventType || "");
+    const missionId = notificationEntityId(notification?.payload?.missionId || (entityType === "partner_mission" ? entityId : ""));
+    const connectionId = notificationEntityId(notification?.payload?.connectionId || (entityType === "partner_connection" ? entityId : ""));
     if (entityType === "creator_assistance") return window.dispatchEvent(new CustomEvent("depannhome:open-company-assistance", { detail: { sessionId: entityId } }));
     if (entityType === "partner_request" && document.body.dataset.creator === "true") return openCreatorPartnerRequest(entityId);
     if (entityType === "subscription_request" && document.body.dataset.creator === "true") return openCreatorRequestNotification("subscription");
     if (entityType === "support_request" && document.body.dataset.creator === "true") return openCreatorRequestNotification("support");
-    if (entityType === "partner_mission") return renderPartnerMissions({ missionId: entityId, sourceDialogue: Boolean(notification?.payload?.sourceDialogue) });
-    if (entityType === "partner_connection") return renderSettings({ section: "network" });
+    if ((entityType === "partner_mission" || eventType === "partner_connection_intervention") && missionId) return renderPartnerMissions({ missionId, sourceDialogue: Boolean(notification?.payload?.sourceDialogue), action: notification?.payload?.action || (["partner_connection_intervention", "partner_mission_received"].includes(eventType) ? "accept" : "view") });
+    if (entityType === "partner_connection") return renderSettings({ section: "network", connectionId, action: notification?.payload?.action || (eventType === "partner_connection_requested" ? "accept" : "view") });
     if (entityType === "technical_report") return organizationFeatureEnabled("technicalReports") ? renderTechnicalReports(Number(entityId) || 0) : openHome();
-    if (entityType === "billing_document") return renderBilling();
+    if (entityType === "billing_document") return renderBilling({ documentId: notificationEntityId(entityId) });
     if (entityType === "client") return openClients(entityId || String(notification?.payload?.clientId || ""));
     if (entityType === "calendar_event") return renderCalendar();
+}
+
+function notificationEntityId(value) {
+    const id = String(value || "");
+    return /^[1-9]\d*$/.test(id) ? id : "";
 }
 
 function isAccountant() {
@@ -1872,7 +1880,7 @@ function renderSettingsWorkspace(options = {}) {
     if (section === "network") {
         const internalNetworkOnly = document.body.dataset.organizationInterface === "partner" || !organizationFeatureEnabled("connectors");
         container.appendChild(createSettingsIntro(internalNetworkOnly ? "Réseau Depann’Home Pro" : "Réseau & connecteurs", internalNetworkOnly ? "Recherchez une entreprise utilisatrice, consultez sa fiche et demandez une connexion. Les connecteurs externes sont réservés aux donneurs d’ordre et ne sont pas disponibles sur le portail Partenaire." : "Le Réseau Depann’Home Pro relie uniquement les entreprises utilisatrices. Les connecteurs externes sont configurés séparément pour les échanges API avec les organismes tiers."));
-        if (organizationFeatureEnabled("partnerConnections")) renderPartnerConnections(container);
+        if (organizationFeatureEnabled("partnerConnections")) renderPartnerConnections(container, { connectionId: options.connectionId, action: options.action });
         if (!internalNetworkOnly && document.body.classList.contains("partner-sandbox-enabled")) container.appendChild(createButton("Ouvrir l’environnement de recette partenaire", "secondary-button settings-inline-action", renderPartnerSandbox));
         return;
     }
