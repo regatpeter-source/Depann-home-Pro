@@ -25,6 +25,8 @@ let activeDocument = null;
 let billingData = null;
 let billingPreviewCleanup = () => {};
 const billingDocumentPagination = { page: 1, pageSize: 20 };
+const currentBillingDate = new Date();
+const billingFinancialPeriod = { view: "monthly", year: String(currentBillingDate.getFullYear()), month: String(currentBillingDate.getMonth() + 1).padStart(2, "0") };
 
 export async function renderBilling(options = {}) {
     billingPreviewCleanup();
@@ -50,7 +52,7 @@ export async function renderBilling(options = {}) {
     if (options.data) {
         billingData = options.data;
     } else {
-        const result = await apiRequest("/api/billing");
+        const result = await apiRequest(billingFinancialApiUrl());
         if (!result.ok) {
             overviewPanel.innerHTML = `<p class="auth-message error">${escapeHtml(result.message || "Impossible de charger les devis et factures.")}</p>`;
             return;
@@ -124,7 +126,7 @@ export function viewBillingDocument(documentId) {
 export async function synchronizeBillingDocuments(options = {}) {
     const isBillingScreen = Boolean(document.querySelector(".billing-list-panel:not([hidden])"));
     if (!isBillingScreen && !options.force) return { ok: true, skipped: true };
-    const result = await apiRequest("/api/billing");
+    const result = await apiRequest(billingFinancialApiUrl());
     if (!result.ok) return result;
     billingData = result.data;
     const canRefreshList = options.refreshView && isBillingScreen && !activeDocument && !document.querySelector("#billingProfileForm");
@@ -145,6 +147,9 @@ function renderOverview(panel, profilePanel) {
     const usesExternalTemplate = usesExternalQuoteTemplate();
     const usesExternalQuitusTemplate = canAccessQuitus() && usesExternalDocumentTemplate("quitus");
     const usesExternalReportTemplate = canAccessTechnicalReports() && usesExternalDocumentTemplate("report");
+    const financialYears = [...new Set([billingFinancialPeriod.year, ...documents.map(document => String(document.issueDate || "").slice(0, 4)).filter(year => /^20\d{2}$/.test(year))])].sort((first, second) => second.localeCompare(first));
+    const financialDashboards = billingData.financialDashboards || { monthly: billingData.financialDashboard, annual: billingData.financialDashboard };
+    const activeFinancialDashboard = billingFinancialPeriod.view === "annual" ? financialDashboards.annual : financialDashboards.monthly;
     panel.innerHTML = `
         <div class="billing-overview">
             <div class="billing-branding">
@@ -164,7 +169,8 @@ function renderOverview(panel, profilePanel) {
             </div>
         </div>
         <div class="billing-metrics"><span><strong>${quotes}</strong> devis</span><span><strong>${invoices}</strong> factures</span><span class="billing-base-template"><strong>✓</strong> ${usesExternalTemplate ? "gabarit PDF / DOCX externe" : "modèle Depann’Home intégré"}</span></div>
-        ${renderBillingFinancialOverview(billingData.financialDashboard)}
+        ${renderBillingFinancialPeriodControls(financialYears)}
+        ${renderBillingFinancialOverview(activeFinancialDashboard)}
         ${usesExternalTemplate && !profile.hasQuoteTemplate ? '<p class="auth-message error">Aucune base commune aux devis et factures n’est encore déposée. Un administrateur doit l’ajouter dans Paramètres → Modèles de documents.</p>' : ""}
         ${usesExternalQuitusTemplate && !profile.hasQuitusTemplate ? '<p class="auth-message error">Aucune base officielle de quitus n’est déposée.</p>' : ""}
         ${usesExternalReportTemplate && !profile.hasReportFileTemplate ? '<p class="auth-message error">Aucune base officielle de rapport n’est déposée.</p>' : ""}
@@ -174,11 +180,11 @@ function renderOverview(panel, profilePanel) {
     panel.querySelector("[data-billing-action=new-quote]")?.addEventListener("click", () => { if (!isAccountant()) openNewDocument("quote"); });
     panel.querySelector("[data-billing-action=new-invoice]").addEventListener("click", () => { if (!isAccountant()) openNewDocument("invoice"); });
     panel.querySelector("[data-billing-action=open-leak-reports]")?.addEventListener("click", async () => {
-        const { renderLeakReportWizard } = await import("./leak-report-wizard.js?v=54");
+        const { renderLeakReportWizard } = await import("./leak-report-wizard.js?v=55");
         renderLeakReportWizard();
     });
     panel.querySelector("[data-billing-action=new-leak-report]")?.addEventListener("click", async () => {
-        const { openLeakReportCreation } = await import("./leak-report-wizard.js?v=54");
+        const { openLeakReportCreation } = await import("./leak-report-wizard.js?v=55");
         openLeakReportCreation();
     });
     panel.querySelector("[data-billing-action=download-quote-template]")?.addEventListener("click", openQuoteTemplateDownload);
@@ -190,6 +196,20 @@ function renderOverview(panel, profilePanel) {
         const { renderPurchases } = await import("./purchases.js?v=126");
         renderPurchases();
     });
+    panel.querySelector("[data-financial-view]").addEventListener("change", event => { billingFinancialPeriod.view = event.currentTarget.value === "annual" ? "annual" : "monthly"; renderOverview(panel, profilePanel); });
+    panel.querySelector("[data-financial-year]").addEventListener("change", event => { billingFinancialPeriod.year = event.currentTarget.value; void renderBilling(); });
+    panel.querySelector("[data-financial-month]").addEventListener("change", event => { billingFinancialPeriod.month = event.currentTarget.value; void renderBilling(); });
+}
+
+function billingFinancialApiUrl() {
+    const query = new URLSearchParams({ financialYear: billingFinancialPeriod.year, financialMonth: billingFinancialPeriod.month });
+    return `/api/billing?${query}`;
+}
+
+function renderBillingFinancialPeriodControls(years) {
+    const monthLabel = BILLING_MONTHS.find(item => item.value === billingFinancialPeriod.month)?.label || "Mois";
+    const periodLabel = billingFinancialPeriod.view === "annual" ? `Année ${billingFinancialPeriod.year}` : `${monthLabel} ${billingFinancialPeriod.year}`;
+    return `<div class="billing-financial-period"><div><p class="eyebrow">Période analysée</p><strong>${escapeHtml(periodLabel)}</strong></div><label>Vue<select data-financial-view><option value="monthly" ${billingFinancialPeriod.view === "monthly" ? "selected" : ""}>Mensuelle</option><option value="annual" ${billingFinancialPeriod.view === "annual" ? "selected" : ""}>Annuelle</option></select></label><label>Année<select data-financial-year>${years.map(year => `<option value="${escapeHtml(year)}" ${year === billingFinancialPeriod.year ? "selected" : ""}>${escapeHtml(year)}</option>`).join("")}</select></label><label>Mois<select data-financial-month ${billingFinancialPeriod.view === "annual" ? "disabled" : ""}>${BILLING_MONTHS.map(({ value, label }) => `<option value="${value}" ${value === billingFinancialPeriod.month ? "selected" : ""}>${label}</option>`).join("")}</select></label></div>`;
 }
 
 function renderBillingFinancialOverview(value = {}) {

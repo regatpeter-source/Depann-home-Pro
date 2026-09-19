@@ -36,6 +36,24 @@ test("billing dashboard exposes a negative estimated margin without hiding it", 
     assert.equal(dashboard.grossProfitEstimateHt, -30);
 });
 
+test("billing dashboard separates monthly and annual document totals", () => {
+    const documents = [
+        { id: 1, issueDate: "2026-01-12", documentType: "invoice", status: "sent", lines: [{ quantity: 1, unitPrice: 100, vatRate: 20 }], financialData: {} },
+        { id: 2, issueDate: "2026-02-04", documentType: "invoice", status: "sent", lines: [{ quantity: 1, unitPrice: 200, vatRate: 20 }], financialData: {} },
+        { id: 3, issueDate: "2025-02-04", documentType: "invoice", status: "sent", lines: [{ quantity: 1, unitPrice: 900, vatRate: 20 }], financialData: {} }
+    ];
+    const settlements = [{ documentId: 1, amount: 120 }, { documentId: 2, amount: 60 }];
+    const annual = buildBillingFinancialDashboard(documents, settlements, 50, { year: 2026, collected: 180 });
+    const monthly = buildBillingFinancialDashboard(documents, settlements, 20, { year: 2026, month: "02", collected: 60 });
+    assert.equal(annual.turnoverHt, 300);
+    assert.equal(annual.purchasesHt, 50);
+    assert.equal(annual.collected, 180);
+    assert.equal(monthly.turnoverHt, 200);
+    assert.equal(monthly.purchasesHt, 20);
+    assert.equal(monthly.collected, 60);
+    assert.equal(monthly.outstanding, 180);
+});
+
 test("billing menu renders the financial pie chart from owner-scoped aggregates", () => {
     assert.match(clientSource, /billing-financial-dashboard/);
     assert.match(clientSource, /conic-gradient/);
@@ -44,4 +62,10 @@ test("billing menu renders the financial pie chart from owner-scoped aggregates"
     assert.match(serverSource, /depannhome_accounting_settlements/);
     assert.match(serverSource, /depannhome_purchases/);
     assert.match(serverSource, /WHERE owner_id = \$1/);
+    assert.match(clientSource, /Mensuelle/);
+    assert.match(clientSource, /Annuelle/);
+    assert.match(clientSource, /financialYear/);
+    assert.match(clientSource, /financialMonth/);
+    assert.match(serverSource, /EXTRACT\(YEAR FROM settlement_date\)/);
+    assert.match(serverSource, /EXTRACT\(YEAR FROM purchase_date\)/);
 });

@@ -286,7 +286,8 @@ export function registerBillingRoutes(app, requireAuthentication) {
     app.get("/api/billing", requireAuthentication, asyncHandler(async (request, response) => {
         const database = getPool();
         const accountOwnerId = getAccountOwnerId(request);
-        const [profileResult, templatesResult, documentsResult, aidsResult, settlementsResult, purchasesResult, deductibleResult] = await Promise.all([
+        const financialPeriod = sanitizeBillingFinancialPeriod(request.query);
+        const [profileResult, templatesResult, documentsResult, aidsResult, settlementsResult, financialSettlementsResult, financialPurchasesResult, deductibleResult] = await Promise.all([
             database.query(`
                 SELECT profile.company_name AS "companyName", profile.legal_form AS "legalForm", profile.address, profile.postal_code AS "postalCode", profile.city,
                     profile.phone, profile.secondary_phone AS "secondaryPhone", profile.email, profile.country, profile.registration_number AS "registrationNumber", profile.siren, profile.tax_number AS "taxNumber", profile.vat_regime AS "vatRegime", profile.bank_iban AS "bankIban", profile.bank_bic AS "bankBic",
@@ -348,10 +349,17 @@ export function registerBillingRoutes(app, requireAuthentication) {
                 GROUP BY document_id
             `, [accountOwnerId]),
             database.query(`
-                SELECT COALESCE(SUM(amount_ht),0)::float AS "purchasesHt"
+                SELECT TO_CHAR(settlement_date, 'MM') AS month, COALESCE(SUM(amount),0)::float AS amount
+                FROM depannhome_accounting_settlements
+                WHERE owner_id = $1 AND EXTRACT(YEAR FROM settlement_date) = $2
+                GROUP BY TO_CHAR(settlement_date, 'MM')
+            `, [accountOwnerId, financialPeriod.year]),
+            database.query(`
+                SELECT TO_CHAR(purchase_date, 'MM') AS month, COALESCE(SUM(amount_ht),0)::float AS "purchasesHt"
                 FROM depannhome_purchases
-                WHERE owner_id = $1
-            `, [accountOwnerId]),
+                WHERE owner_id = $1 AND EXTRACT(YEAR FROM purchase_date) = $2
+                GROUP BY TO_CHAR(purchase_date, 'MM')
+            `, [accountOwnerId, financialPeriod.year]),
             database.query(`
                 SELECT event.id AS "appointmentId",event.deductible_amount_cents AS "amountCents",
                     event.deductible_payment_method AS "paymentMethod",event.deductible_reviewed_at AS "validatedAt",
@@ -372,12 +380,17 @@ export function registerBillingRoutes(app, requireAuthentication) {
         ]);
         const pendingResult = await database.query(`SELECT document_id AS "documentId",COALESCE(SUM(amount),0)::float AS amount FROM depannhome_delayed_payment_declarations WHERE owner_id=$1 AND status='pending' GROUP BY document_id`, [accountOwnerId]);
         const acquittanceResult = await database.query(`SELECT document_id AS "documentId" FROM depannhome_billing_acquittances WHERE owner_id=$1`, [accountOwnerId]);
-        const financialDashboard = buildBillingFinancialDashboard(documentsResult.rows, settlementsResult.rows, purchasesResult.rows[0]?.purchasesHt);
+        const annualCollected = financialSettlementsResult.rows.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+        const monthlyCollected = financialSettlementsResult.rows.filter(item => item.month === financialPeriod.month).reduce((sum, item) => sum + Number(item.amount || 0), 0);
+        const annualPurchasesHt = financialPurchasesResult.rows.reduce((sum, item) => sum + Number(item.purchasesHt || 0), 0);
+        const monthlyPurchasesHt = financialPurchasesResult.rows.filter(item => item.month === financialPeriod.month).reduce((sum, item) => sum + Number(item.purchasesHt || 0), 0);
+        const annualFinancialDashboard = buildBillingFinancialDashboard(documentsResult.rows, settlementsResult.rows, annualPurchasesHt, { year: financialPeriod.year, collected: annualCollected });
+        const monthlyFinancialDashboard = buildBillingFinancialDashboard(documentsResult.rows, settlementsResult.rows, monthlyPurchasesHt, { year: financialPeriod.year, month: financialPeriod.month, collected: monthlyCollected });
         const settlementsByDocument = new Map(settlementsResult.rows.map(item => [String(item.documentId), item]));
         const pendingByDocument = new Map(pendingResult.rows.map(item => [String(item.documentId), Number(item.amount) || 0]));
         const acquittanceDocuments = new Set(acquittanceResult.rows.map(item => String(item.documentId)));
         const documents = documentsResult.rows.map(document => ({ ...document, settledAmount: Number(settlementsByDocument.get(String(document.id))?.amount) || 0, pendingPaymentAmount: pendingByDocument.get(String(document.id)) || 0, hasAcquittance: acquittanceDocuments.has(String(document.id)), latestPaymentMethod: settlementsByDocument.get(String(document.id))?.latestPaymentMethod || "", latestPaymentDate: settlementsByDocument.get(String(document.id))?.latestPaymentDate || "" }));
-        response.json({ profile: { ...emptyProfile(), ...(profileResult.rows[0] || {}) }, templates: templatesResult.rows, documents, aids: aidsResult.rows, insuranceDeductibles: deductibleResult.rows, financialDashboard });
+        response.json({ profile: { ...emptyProfile(), ...(profileResult.rows[0] || {}) }, templates: templatesResult.rows, documents, aids: aidsResult.rows, insuranceDeductibles: deductibleResult.rows, financialDashboard: annualFinancialDashboard, financialDashboards: { period: financialPeriod, monthly: monthlyFinancialDashboard, annual: annualFinancialDashboard } });
     }));
 
     app.put("/api/billing/profile", requireAuthentication, requireBillingAdministration, upload.single("logo"), asyncHandler(async (request, response) => {
@@ -1304,11 +1317,14 @@ function sanitizeLines(value) {
 
 export function normalizeVatRegime(value) { return VAT_REGIMES.has(value) ? value : "standard"; }
 export function applyVatRegime(lines, vatRegime) { return (Array.isArray(lines) ? lines : []).map(line => ({ ...line, vatRate: normalizeVatRegime(vatRegime) === "franchise" ? 0 : Number(line.vatRate) || 0 })); }
-export function buildBillingFinancialDashboard(documents, settlements = [], purchasesHtValue = 0) {
+export function buildBillingFinancialDashboard(documents, settlements = [], purchasesHtValue = 0, period = {}) {
     const excludedStatuses = new Set(["draft", "cancelled", "rejected"]);
     const settledByDocument = new Map((Array.isArray(settlements) ? settlements : []).map(item => [String(item.documentId), Number(item.amount) || 0]));
     let invoicesHt = 0; let invoicesTtc = 0; let creditsHt = 0; let creditsTtc = 0; let outstanding = 0; let invoicesCount = 0; let creditsCount = 0;
     for (const document of Array.isArray(documents) ? documents : []) {
+        const issueDate = String(document.issueDate || "");
+        if (period.year && issueDate.slice(0, 4) !== String(period.year)) continue;
+        if (period.month && issueDate.slice(5, 7) !== String(period.month)) continue;
         if (excludedStatuses.has(String(document.status || "").toLowerCase()) || !["invoice", "credit"].includes(document.documentType)) continue;
         const sourceLines = document.documentType === "credit" ? (document.lines || []).map(line => ({ ...line, quantity: Math.abs(Number(line.quantity) || 0), unitPrice: Math.abs(Number(line.unitPrice ?? line.unit_price) || 0) })) : document.lines;
         const totals = calculateDocumentAccountingTotals(sourceLines, document.financialData || {});
@@ -1321,8 +1337,14 @@ export function buildBillingFinancialDashboard(documents, settlements = [], purc
     const purchasesHt = Math.max(0, Number(purchasesHtValue) || 0);
     const turnoverHt = Math.max(0, invoicesHt - creditsHt);
     const grossProfitEstimateHt = turnoverHt - purchasesHt;
-    const collected = [...settledByDocument.values()].reduce((sum, amount) => sum + amount, 0);
+    const collected = Object.hasOwn(period, "collected") ? Number(period.collected) || 0 : [...settledByDocument.values()].reduce((sum, amount) => sum + amount, 0);
     return { invoicesHt: roundFinancial(invoicesHt), invoicesTtc: roundFinancial(invoicesTtc), turnoverHt: roundFinancial(turnoverHt), creditsHt: roundFinancial(creditsHt), creditsTtc: roundFinancial(creditsTtc), purchasesHt: roundFinancial(purchasesHt), grossProfitEstimateHt: roundFinancial(grossProfitEstimateHt), collected: roundFinancial(collected), outstanding: roundFinancial(outstanding), invoicesCount, creditsCount };
+}
+function sanitizeBillingFinancialPeriod(value) {
+    const now = new Date();
+    const year = /^20\d{2}$/.test(String(value?.financialYear || "")) ? Number(value.financialYear) : now.getFullYear();
+    const month = /^(0[1-9]|1[0-2])$/.test(String(value?.financialMonth || "")) ? String(value.financialMonth) : String(now.getMonth() + 1).padStart(2, "0");
+    return { year, month };
 }
 function roundFinancial(value) { return Math.round((Number(value) || 0) * 100) / 100; }
 async function billingTaxIdentity(ownerId) { const { rows } = await getPool().query("SELECT vat_regime AS \"vatRegime\",tax_number AS \"taxNumber\" FROM depannhome_billing_profiles WHERE owner_id=$1", [ownerId]); return { vatRegime: normalizeVatRegime(rows[0]?.vatRegime), taxNumber: cleanText(rows[0]?.taxNumber, 100) }; }
