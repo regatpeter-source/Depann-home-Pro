@@ -103,9 +103,11 @@ CREATE TABLE IF NOT EXISTS depannhome_support_requests (
     owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
     requested_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
     sender_name VARCHAR(100) NOT NULL DEFAULT '', sender_email VARCHAR(160) NOT NULL DEFAULT '', sender_username VARCHAR(32) NOT NULL DEFAULT '',
+
     message VARCHAR(4000) NOT NULL,
     status VARCHAR(20) NOT NULL DEFAULT 'new' CHECK (status IN ('new','under_review','answered','closed')),
     creator_note VARCHAR(2000) NOT NULL DEFAULT '',
+
     handled_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL, handled_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -599,6 +601,7 @@ CREATE TABLE IF NOT EXISTS depannhome_billing_documents (
     issue_date DATE NOT NULL,
     due_date DATE,
     status VARCHAR(30) NOT NULL DEFAULT 'draft',
+    follow_up_date DATE,
     is_email_sent BOOLEAN NOT NULL DEFAULT FALSE,
     sent_at TIMESTAMPTZ,
     is_accounted BOOLEAN NOT NULL DEFAULT FALSE,
@@ -630,6 +633,7 @@ CREATE INDEX IF NOT EXISTS depannhome_billing_documents_owner_date_idx
     ON depannhome_billing_documents (owner_id, issue_date DESC, created_at DESC);
 
 ALTER TABLE depannhome_billing_documents
+    ADD COLUMN IF NOT EXISTS follow_up_date DATE,
     ADD COLUMN IF NOT EXISTS is_accounted BOOLEAN NOT NULL DEFAULT FALSE,
     ADD COLUMN IF NOT EXISTS accounted_at DATE,
     ADD COLUMN IF NOT EXISTS created_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
@@ -657,6 +661,10 @@ ALTER TABLE depannhome_billing_documents
 
 CREATE INDEX IF NOT EXISTS depannhome_billing_documents_accounting_idx
     ON depannhome_billing_documents (owner_id, document_type, is_accounted, issue_date DESC);
+
+CREATE INDEX IF NOT EXISTS depannhome_billing_documents_follow_up_idx
+    ON depannhome_billing_documents (owner_id, follow_up_date)
+    WHERE document_type = 'quote' AND follow_up_date IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS depannhome_billing_documents_appointment_idx
     ON depannhome_billing_documents (owner_id, appointment_id);
@@ -1274,6 +1282,11 @@ CREATE TABLE IF NOT EXISTS depannhome_calendar_events (
     deductible_reviewed_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
     deductible_reviewed_by_name VARCHAR(160) NOT NULL DEFAULT '',
     deductible_review_note VARCHAR(1000) NOT NULL DEFAULT '',
+    paused_at TIMESTAMPTZ,
+    pause_reason VARCHAR(40) NOT NULL DEFAULT '',
+    pause_note VARCHAR(1000) NOT NULL DEFAULT '',
+    paused_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+    paused_by_name VARCHAR(160) NOT NULL DEFAULT '',
     notes VARCHAR(2000) NOT NULL DEFAULT '',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -1320,6 +1333,17 @@ ADD COLUMN IF NOT EXISTS planning_batch_id UUID;
 CREATE INDEX IF NOT EXISTS depannhome_calendar_events_planning_batch_idx
 ON depannhome_calendar_events (owner_id, planning_batch_id)
 WHERE planning_batch_id IS NOT NULL;
+
+ALTER TABLE depannhome_calendar_events
+ADD COLUMN IF NOT EXISTS paused_at TIMESTAMPTZ,
+ADD COLUMN IF NOT EXISTS pause_reason VARCHAR(40) NOT NULL DEFAULT '',
+ADD COLUMN IF NOT EXISTS pause_note VARCHAR(1000) NOT NULL DEFAULT '',
+ADD COLUMN IF NOT EXISTS paused_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+ADD COLUMN IF NOT EXISTS paused_by_name VARCHAR(160) NOT NULL DEFAULT '';
+
+CREATE INDEX IF NOT EXISTS depannhome_calendar_events_paused_idx
+ON depannhome_calendar_events (owner_id, paused_at DESC)
+WHERE paused_at IS NOT NULL;
 
 -- Types gérés par l’application : appointment, task, vacation, sick_leave, unavailable.
 

@@ -15,6 +15,7 @@ const EVENT_COLORS = new Set(["blue", "green", "orange", "red", "purple", "gray"
 const EVENT_TYPES = new Set(["appointment", "task", "vacation", "sick_leave", "unavailable"]);
 const EVENT_STATUSES = new Set(["planned", "confirmed", "in_progress", "completed", "cancelled"]);
 const EVENT_STATUS_MANAGER_ROLES = new Set(["admin", "pc_standard", "commercial", "mobile_admin"]);
+const PAUSE_REASONS = new Set(["technician_absent", "material_not_received", "waiting_client", "waiting_parts", "other"]);
 const QUITUS_STATUS = new Set(["pending", "validated"]);
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -73,6 +74,11 @@ export async function initializeCalendar() {
             deductible_reviewed_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
             deductible_reviewed_by_name VARCHAR(160) NOT NULL DEFAULT '',
             deductible_review_note VARCHAR(1000) NOT NULL DEFAULT '',
+            paused_at TIMESTAMPTZ,
+            pause_reason VARCHAR(40) NOT NULL DEFAULT '',
+            pause_note VARCHAR(1000) NOT NULL DEFAULT '',
+            paused_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+            paused_by_name VARCHAR(160) NOT NULL DEFAULT '',
             notes VARCHAR(2000) NOT NULL DEFAULT '',
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -113,6 +119,8 @@ export async function initializeCalendar() {
     await database.query("CREATE INDEX IF NOT EXISTS depannhome_calendar_events_partner_origin_idx ON depannhome_calendar_events(owner_id,event_origin,partner_connection_id)");
     await database.query("ALTER TABLE depannhome_calendar_events ADD COLUMN IF NOT EXISTS planning_batch_id UUID");
     await database.query("CREATE INDEX IF NOT EXISTS depannhome_calendar_events_planning_batch_idx ON depannhome_calendar_events(owner_id,planning_batch_id) WHERE planning_batch_id IS NOT NULL");
+    await database.query(`ALTER TABLE depannhome_calendar_events ADD COLUMN IF NOT EXISTS paused_at TIMESTAMPTZ, ADD COLUMN IF NOT EXISTS pause_reason VARCHAR(40) NOT NULL DEFAULT '', ADD COLUMN IF NOT EXISTS pause_note VARCHAR(1000) NOT NULL DEFAULT '', ADD COLUMN IF NOT EXISTS paused_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL, ADD COLUMN IF NOT EXISTS paused_by_name VARCHAR(160) NOT NULL DEFAULT ''`);
+    await database.query("CREATE INDEX IF NOT EXISTS depannhome_calendar_events_paused_idx ON depannhome_calendar_events(owner_id,paused_at DESC) WHERE paused_at IS NOT NULL");
     await database.query(`
         ALTER TABLE depannhome_calendar_events
         ADD COLUMN IF NOT EXISTS quitus_status VARCHAR(20) NOT NULL DEFAULT 'pending',
@@ -341,6 +349,7 @@ export function registerCalendarRoutes(app, requireAuthentication) {
                 event.deductible_reviewed_at AS "deductibleReviewedAt",
                 event.deductible_reviewed_by_name AS "deductibleReviewedByName",
                 event.deductible_review_note AS "deductibleReviewNote",
+                event.paused_at AS "pausedAt", event.pause_reason AS "pauseReason", event.pause_note AS "pauseNote", event.paused_by_name AS "pausedByName",
                 COALESCE(profile.company_name, owner.full_name, owner.username, '') AS "quitusCompanyName",
                 COALESCE(client.client_data->>'city', '') AS "quitusClientCity",
                 (event.event_status = 'completed') AS "isCompleted",
@@ -361,6 +370,21 @@ export function registerCalendarRoutes(app, requireAuthentication) {
                             ) OR ($4::boolean = TRUE AND event.assigned_technician_id = $5::bigint))
             ORDER BY event.event_date, event.start_time NULLS LAST, event.created_at
                 `, [getAccountOwnerId(request), start, end, hasAssignedOnlyCalendar(request.user), request.user.sub]);
+        response.json({ events: rows });
+    }));
+
+    app.get("/api/calendar/paused", requireAuthentication, asyncHandler(async (request, response) => {
+        const { rows } = await getPool().query(`
+            SELECT event.id,event.title,event.client_name AS "clientName",event.location,
+                TO_CHAR(event.event_date,'YYYY-MM-DD') AS date,TO_CHAR(event.start_time,'HH24:MI') AS "startTime",
+                TO_CHAR(event.end_time,'HH24:MI') AS "endTime",event.event_type AS "eventType",event.event_status AS status,
+                event.paused_at AS "pausedAt",event.pause_reason AS "pauseReason",event.pause_note AS "pauseNote",event.paused_by_name AS "pausedByName"
+            FROM depannhome_calendar_events event
+            WHERE event.owner_id=$1 AND event.paused_at IS NOT NULL AND event.event_type='appointment'
+                AND event.event_status NOT IN ('completed','cancelled')
+                AND ($2::boolean OR EXISTS (SELECT 1 FROM depannhome_calendar_assignments assignment WHERE assignment.event_id=event.id AND assignment.technician_id=$3::bigint))
+            ORDER BY event.paused_at ASC,event.event_date,event.start_time NULLS LAST
+        `, [getAccountOwnerId(request), canManageCalendarSchedule(request.user), request.user.sub]);
         response.json({ events: rows });
     }));
 
@@ -473,7 +497,12 @@ export function registerCalendarRoutes(app, requireAuthentication) {
             const { rowCount } = await connection.query(`
                 UPDATE depannhome_calendar_events
                 SET assigned_technician_id = $3, title = $4, client_id = $5, client_name = $6, location = $7, event_date = $8::date,
-                    start_time = $9::time, end_time = $10::time, color = $11, event_type = $12, event_status = $13, notes = $14, updated_at = NOW()
+                    start_time = $9::time, end_time = $10::time, color = $11, event_type = $12, event_status = $13, notes = $14,
+                    paused_at=CASE WHEN $13 IN ('completed','cancelled') THEN NULL ELSE paused_at END,
+                    pause_reason=CASE WHEN $13 IN ('completed','cancelled') THEN '' ELSE pause_reason END,
+                    pause_note=CASE WHEN $13 IN ('completed','cancelled') THEN '' ELSE pause_note END,
+                    paused_by=CASE WHEN $13 IN ('completed','cancelled') THEN NULL ELSE paused_by END,
+                    paused_by_name=CASE WHEN $13 IN ('completed','cancelled') THEN '' ELSE paused_by_name END,updated_at = NOW()
                 WHERE id = $1 AND owner_id = $2
                     AND event_status <> 'completed'
                     AND ($15::boolean OR event_status = $13)
@@ -503,6 +532,37 @@ export function registerCalendarRoutes(app, requireAuthentication) {
         } finally {
             connection.release();
         }
+    }));
+
+    app.post("/api/calendar/events/:eventId/pause", requireAuthentication, asyncHandler(async (request, response) => {
+        const id = positiveId(request.params.eventId);
+        const reason = PAUSE_REASONS.has(request.body?.reason) ? request.body.reason : "";
+        const note = cleanMultilineText(request.body?.note, 1000);
+        if (!id) return response.status(400).json({ message: "Intervention invalide." });
+        if (!canRequestInterventionPause(request.user)) return response.status(403).json({ message: "Ce poste ne peut pas mettre une intervention en pause." });
+        if (!reason) return response.status(400).json({ message: "Choisissez le motif de la pause." });
+        if (reason === "other" && !note) return response.status(400).json({ message: "Précisez le motif de la pause." });
+        const { rows } = await getPool().query(`
+            UPDATE depannhome_calendar_events event SET paused_at=NOW(),pause_reason=$3,pause_note=$4,paused_by=$5,paused_by_name=$6,updated_at=NOW()
+            WHERE event.id=$1 AND event.owner_id=$2 AND event.event_type='appointment' AND event.event_status NOT IN ('completed','cancelled')
+                AND ($7::boolean OR EXISTS (SELECT 1 FROM depannhome_calendar_assignments assignment WHERE assignment.event_id=event.id AND assignment.technician_id=$5))
+            RETURNING paused_at AS "pausedAt",pause_reason AS "pauseReason",pause_note AS "pauseNote",paused_by_name AS "pausedByName"
+        `, [id, getAccountOwnerId(request), reason, note, request.user.sub, cleanText(request.user.fullName || request.user.username || "Utilisateur", 160), canManageCalendarSchedule(request.user)]);
+        if (!rows[0]) return response.status(404).json({ message: "Intervention introuvable ou non autorisée." });
+        response.json({ pause: rows[0], message: "Intervention mise en pause et ajoutée aux documents à suivre." });
+    }));
+
+    app.post("/api/calendar/events/:eventId/resume", requireAuthentication, asyncHandler(async (request, response) => {
+        const id = positiveId(request.params.eventId);
+        if (!id) return response.status(400).json({ message: "Intervention invalide." });
+        if (!canRequestInterventionPause(request.user)) return response.status(403).json({ message: "Ce poste ne peut pas reprendre une intervention." });
+        const { rowCount } = await getPool().query(`
+            UPDATE depannhome_calendar_events event SET paused_at=NULL,pause_reason='',pause_note='',paused_by=NULL,paused_by_name='',updated_at=NOW()
+            WHERE event.id=$1 AND event.owner_id=$2 AND event.paused_at IS NOT NULL AND event.event_status NOT IN ('completed','cancelled')
+                AND ($4::boolean OR EXISTS (SELECT 1 FROM depannhome_calendar_assignments assignment WHERE assignment.event_id=event.id AND assignment.technician_id=$3))
+        `, [id, getAccountOwnerId(request), request.user.sub, canManageCalendarSchedule(request.user)]);
+        if (!rowCount) return response.status(404).json({ message: "Intervention en pause introuvable ou non autorisée." });
+        response.status(204).end();
     }));
 
     app.delete("/api/calendar/events/batch/:batchId", requireAuthentication, requireCalendarWriteAccess, asyncHandler(async (request, response) => {
@@ -883,6 +943,10 @@ export function canManageCalendarSchedule(user) {
     if (["technician", "accountant"].includes(user?.role) || isCommercialMobile(user)) return false;
     if (user?.role === "team_lead") return user.canManageCalendar === true;
     return ["admin", "pc_standard", "mobile_admin", "commercial"].includes(user?.role);
+}
+
+function canRequestInterventionPause(user) {
+    return canManageCalendarSchedule(user) || ["technician", "team_lead"].includes(user?.role);
 }
 
 function requireCalendarReadAccess(request, response, next) {

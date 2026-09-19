@@ -1,9 +1,9 @@
 import { ROUTES } from "./config.js?v=134";
-import { createBillingDocumentForClient, viewBillingDocument } from "./billing.js?v=208";
+import { createBillingDocumentForClient, viewBillingDocument } from "./billing.js?v=209";
 import { getSearchableClients } from "./clients.js?v=169";
 import { addClientActivityByName, synchronizeClients } from "./client-sync.js?v=131";
 import { renderClientMessages } from "./messages.js?v=107";
-import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=55";
+import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=56";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { renderPlatformAnnouncement } from "./platform-announcement.js?v=1";
@@ -424,6 +424,7 @@ function renderEventForm(panel) {
                         <p class="eyebrow">Informations du rendez-vous</p>
                         <dl><dt>Date</dt><dd>${escapeHtml(formatActivityDate(event.date, event.startTime))}${event.endTime ? ` — ${escapeHtml(event.endTime)}` : ""}</dd>${renderAssignedTechniciansDetail(event)}${event.notes ? `<dt>Notes</dt><dd>${escapeHtml(event.notes)}</dd>` : ""}</dl>
                     </section>
+                    ${renderInterventionPauseHtml(event)}
                     ${renderInterventionPhotosHtml(client, event)}
                     ${canAccessTechnicalReports() ? `<section class="calendar-billing-actions report-entry-point">
                         <div><p class="eyebrow">Rapport technique</p><h3>Recherche de fuite</h3><p class="muted">Rédigez le rapport terrain, joignez les photos et transmettez-le à l’administration.</p></div>
@@ -452,6 +453,7 @@ function renderEventForm(panel) {
         panel.querySelector("#calendarInterventionPhotos")?.addEventListener("submit", eventSubmit => uploadInterventionPhotos(eventSubmit, client, event));
         initializeInterventionPhotoPreviews(panel.querySelector("#calendarInterventionPhotos"));
         initializeInsuranceDeductibleControls(panel, event);
+        initializeInterventionPauseControls(panel, event);
         panel.querySelector("#editCalendarEvent")?.addEventListener("click", () => {
             mobileAdminEditingEvents.add(String(event.id));
             refreshCalendarDetail();
@@ -527,6 +529,7 @@ function renderEventForm(panel) {
                 ${isEditing && canManageCalendarEventStatus() ? `<button type="button" class="secondary-button danger-button" id="deleteCalendarEvent">${event.planningBatchId ? "Supprimer cette journée" : "Supprimer"}</button>${canDeleteWholePlanning(event) ? '<button type="button" class="secondary-button danger-button" id="deleteCalendarPlanningBatch">Supprimer toute cette planification</button>' : ""}` : ""}
             </div>
         </form>
+        ${isEditing && event.eventType === "appointment" ? renderInterventionPauseHtml(event) : ""}
         ${isEditing ? renderInsuranceDeductibleHtml(event, findClientForEvent(event)) : ""}
     `;
 
@@ -537,6 +540,7 @@ function renderEventForm(panel) {
     });
     const form = panel.querySelector("#calendarEventForm");
     initializeInsuranceDeductibleControls(panel, event);
+    initializeInterventionPauseControls(panel, event);
     const clientInput = form.querySelector("[name=clientName]");
     const clientField = clientInput.closest("label");
     const locationInput = form.querySelector("[name=location]");
@@ -712,6 +716,54 @@ function renderEventForm(panel) {
         invalidateCalendarEventsCache();
         renderCalendar();
     });
+}
+
+function renderInterventionPauseHtml(event) {
+    if (!event?.id || !canRequestInterventionPause() || event.eventType !== "appointment" || ["completed", "cancelled"].includes(calendarEventStatus(event))) return "";
+    if (event.pausedAt) return `<section class="calendar-intervention-pause is-paused"><div><p class="eyebrow">Intervention en pause</p><h3>${escapeHtml(interventionPauseReasonLabel(event.pauseReason))}</h3><p>${escapeHtml(event.pauseNote || "Aucune précision ajoutée.")}</p><small>Mise en pause ${escapeHtml(formatPauseDate(event.pausedAt))}${event.pausedByName ? ` par ${escapeHtml(event.pausedByName)}` : ""}</small></div><button type="button" class="secondary-button" data-resume-intervention>Reprendre l’intervention</button><p class="auth-message" data-intervention-pause-message aria-live="polite"></p></section>`;
+    return `<section class="calendar-intervention-pause"><div><p class="eyebrow">Suivi de l’intervention</p><h3>Mettre l’intervention en pause</h3><p class="muted">Elle apparaîtra dans « Documents à suivre » jusqu’à sa reprise.</p></div><div class="calendar-intervention-pause-fields"><label>Motif<select data-intervention-pause-reason><option value="material_not_received">Matériel non reçu</option><option value="waiting_parts">Pièce en attente</option><option value="technician_absent">Technicien absent</option><option value="waiting_client">Attente du client</option><option value="other">Autre motif</option></select></label><label>Précision<textarea data-intervention-pause-note rows="2" maxlength="1000" placeholder="Ex. livraison annoncée mardi prochain"></textarea></label></div><button type="button" class="secondary-button" data-pause-intervention>Mettre en pause</button><p class="auth-message" data-intervention-pause-message aria-live="polite"></p></section>`;
+}
+
+function initializeInterventionPauseControls(panel, event) {
+    const pause = panel.querySelector("[data-pause-intervention]");
+    const resume = panel.querySelector("[data-resume-intervention]");
+    const message = panel.querySelector("[data-intervention-pause-message]");
+    pause?.addEventListener("click", async () => {
+        pause.disabled = true;
+        message.textContent = "Mise en pause…";
+        message.classList.remove("error");
+        const result = await request(`/api/calendar/events/${encodeURIComponent(event.id)}/pause`, { method: "POST", body: JSON.stringify({ reason: panel.querySelector("[data-intervention-pause-reason]")?.value, note: panel.querySelector("[data-intervention-pause-note]")?.value }) });
+        if (!result.ok) { pause.disabled = false; message.textContent = result.message || "Mise en pause impossible."; message.classList.add("error"); return; }
+        Object.assign(event, result.data?.pause || {});
+        invalidateCalendarEventsCache();
+        refreshCalendarDetail();
+        renderCalendarGrid(calendarPanels.grid);
+    });
+    resume?.addEventListener("click", async () => {
+        resume.disabled = true;
+        message.textContent = "Reprise…";
+        message.classList.remove("error");
+        const result = await request(`/api/calendar/events/${encodeURIComponent(event.id)}/resume`, { method: "POST" });
+        if (!result.ok) { resume.disabled = false; message.textContent = result.message || "Reprise impossible."; message.classList.add("error"); return; }
+        Object.assign(event, { pausedAt: null, pauseReason: "", pauseNote: "", pausedByName: "" });
+        invalidateCalendarEventsCache();
+        refreshCalendarDetail();
+        renderCalendarGrid(calendarPanels.grid);
+    });
+}
+
+function interventionPauseReasonLabel(value) {
+    return ({ technician_absent: "Technicien absent", material_not_received: "Matériel non reçu", waiting_client: "Attente du client", waiting_parts: "Pièce en attente", other: "Autre motif" })[value] || "Motif non renseigné";
+}
+
+function canRequestInterventionPause() {
+    return ["admin", "pc_standard", "commercial", "mobile_admin", "technician", "team_lead"].includes(document.body.dataset.role)
+        && !(document.body.dataset.role === "commercial" && document.body.classList.contains("mobile-device"));
+}
+
+function formatPauseDate(value) {
+    if (!value) return "";
+    return new Intl.DateTimeFormat("fr-FR", { dateStyle: "short", timeStyle: "short" }).format(new Date(value));
 }
 
 function canDeleteWholePlanning(event) {
@@ -1709,16 +1761,17 @@ function calendarEventStatusLabel(event) {
 }
 
 function calendarEventClassName(event, extraClass = "") {
-    return ["calendar-event", extraClass, `color-${event?.color || "blue"}`, `status-${calendarEventStatus(event)}`].filter(Boolean).join(" ");
+    return ["calendar-event", extraClass, `color-${event?.color || "blue"}`, `status-${calendarEventStatus(event)}`, event?.pausedAt ? "is-paused" : ""].filter(Boolean).join(" ");
 }
 
 function renderCalendarStatusBadge(event) {
+    if (event?.pausedAt) return `<span class="calendar-event-status">En pause · ${escapeHtml(interventionPauseReasonLabel(event.pauseReason))}</span>`;
     const status = calendarEventStatus(event);
     return status === "planned" ? "" : `<span class="calendar-event-status">${escapeHtml(calendarEventStatusLabel(event))}</span>`;
 }
 
 function calendarEventAccessibleLabel(event, client, date = "") {
-    return [date ? formatPreviewDate(date) : "", calendarEventStatusLabel(event), formatEventTime(event), client.name, client.address, event.title, getAssignedTechnicianNames(event).join(" · "), client.phone].filter(Boolean).join(" · ");
+    return [date ? formatPreviewDate(date) : "", event?.pausedAt ? `En pause, ${interventionPauseReasonLabel(event.pauseReason)}` : calendarEventStatusLabel(event), formatEventTime(event), client.name, client.address, event.title, getAssignedTechnicianNames(event).join(" · "), client.phone].filter(Boolean).join(" · ");
 }
 
 function getEventClientDetails(event) {

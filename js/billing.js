@@ -180,11 +180,11 @@ function renderOverview(panel, profilePanel) {
     panel.querySelector("[data-billing-action=new-quote]")?.addEventListener("click", () => { if (!isAccountant()) openNewDocument("quote"); });
     panel.querySelector("[data-billing-action=new-invoice]").addEventListener("click", () => { if (!isAccountant()) openNewDocument("invoice"); });
     panel.querySelector("[data-billing-action=open-leak-reports]")?.addEventListener("click", async () => {
-        const { renderLeakReportWizard } = await import("./leak-report-wizard.js?v=55");
+        const { renderLeakReportWizard } = await import("./leak-report-wizard.js?v=56");
         renderLeakReportWizard();
     });
     panel.querySelector("[data-billing-action=new-leak-report]")?.addEventListener("click", async () => {
-        const { openLeakReportCreation } = await import("./leak-report-wizard.js?v=55");
+        const { openLeakReportCreation } = await import("./leak-report-wizard.js?v=56");
         openLeakReportCreation();
     });
     panel.querySelector("[data-billing-action=download-quote-template]")?.addEventListener("click", openQuoteTemplateDownload);
@@ -501,6 +501,7 @@ function renderDocumentEditor(panel) {
                 <label>Catégorie d’opération<select name="operationCategory"><option value="goods" ${document.legalData.operationCategory === "goods" ? "selected" : ""}>Livraison de biens</option><option value="services" ${document.legalData.operationCategory === "services" ? "selected" : ""}>Prestation de services</option><option value="mixed" ${document.legalData.operationCategory === "mixed" ? "selected" : ""}>Biens et services</option></select></label>
                 <label>Date *<input name="issueDate" type="date" required value="${escapeHtml(document.issueDate)}"></label>
                 <label>Échéance<input name="dueDate" type="date" value="${escapeHtml(document.dueDate || "")}"></label>
+                ${document.documentType === "quote" ? `<label>Date de relance<input name="followUpDate" type="date" value="${escapeHtml(document.followUpDate || "")}"><small>Le devis apparaîtra dans « Documents à suivre » à partir de cette date.</small></label>` : ""}
                 ${document.documentType === "invoice" ? '<input name="status" type="hidden" value="draft"><p class="billing-quote-reference">Statut : <strong>Brouillon</strong></p>' : `<label>Statut<input name="status" maxlength="30" value="${escapeHtml(document.status || "draft")}" placeholder="Brouillon, envoyé, réglé…"></label>`}
             </div>
             <section class="billing-lines-section"><div class="form-heading"><div><p class="eyebrow">Prestations</p><h3>Lignes du document</h3>${document.vatRegime === "franchise" ? `<p class="muted"><strong>${VAT_FRANCHISE_MENTION}</strong> — TVA automatiquement fixée à 0 %.</p>` : ""}</div><button type="button" class="secondary-button" id="addBillingLine">+ Ligne libre</button></div><div id="billingLines" class="billing-lines"></div><div class="billing-totals" id="billingTotals"></div></section>
@@ -964,6 +965,7 @@ function createInvoiceFromQuote(quote) {
         legalData: normalizeLegalData(quote.legalData, quote.customerAddress || ""),
         issueDate: today(),
         dueDate: "",
+        followUpDate: "",
         status: "draft",
         isAccounted: false,
         lines: (quote.lines || []).map(line => ({ ...emptyLine(), ...line, vatRate: (quote.vatRegime || billingData.profile.vatRegime) === "franchise" ? 0 : Number(line.vatRate) || 0 })),
@@ -989,6 +991,7 @@ function createNewDocument(type, client = null, appointmentId = "") {
         legalData: legalDataFromClient(client),
         issueDate: today(),
         dueDate: "",
+        followUpDate: "",
         status: baseQuote?.status || "draft",
         isAccounted: false,
         lines: (baseQuote?.lines || [emptyLine()]).map(line => ({ ...line, vatRate: billingData.profile.vatRegime === "franchise" ? 0 : Number(line.vatRate) || 0 })),
@@ -1014,7 +1017,7 @@ function fillCustomerAddress(input, form, clients) {
 }
 
 function emptyLine() { return { description: "", quantity: 1, unit: "unité", unitPrice: 0, vatRate: isVatFranchise() ? 0 : 20 }; }
-function normalizeDocument(document) { const vatRegime = document.vatRegime || billingData?.profile?.vatRegime || "standard"; return { ...document, vatRegime, issuerTaxNumber: document.issuerTaxNumber || billingData?.profile?.taxNumber || "", clientId: document.clientId || "", appointmentId: document.appointmentId || "", sourceQuoteId: document.sourceQuoteId || "", correctionSourceId: document.correctionSourceId || "", correctionKind: document.correctionKind || "none", correctionSourceNumber: document.correctionSourceNumber || "", quoteReference: document.quoteReference || "", isEmailSent: Boolean(document.isEmailSent), isAccounted: Boolean(document.isAccounted), legalData: normalizeLegalData(document.legalData, document.customerAddress || ""), financialData: normalizeFinancialData(document.financialData), lines: Array.isArray(document.lines) && document.lines.length ? document.lines.map(line => ({ ...emptyLine(), ...line, vatRate: vatRegime === "franchise" ? 0 : Number(line.vatRate) || 0 })) : [emptyLine()] }; }
+function normalizeDocument(document) { const vatRegime = document.vatRegime || billingData?.profile?.vatRegime || "standard"; return { ...document, vatRegime, issuerTaxNumber: document.issuerTaxNumber || billingData?.profile?.taxNumber || "", clientId: document.clientId || "", appointmentId: document.appointmentId || "", sourceQuoteId: document.sourceQuoteId || "", correctionSourceId: document.correctionSourceId || "", correctionKind: document.correctionKind || "none", correctionSourceNumber: document.correctionSourceNumber || "", quoteReference: document.quoteReference || "", followUpDate: document.followUpDate || "", isEmailSent: Boolean(document.isEmailSent), isAccounted: Boolean(document.isAccounted), legalData: normalizeLegalData(document.legalData, document.customerAddress || ""), financialData: normalizeFinancialData(document.financialData), lines: Array.isArray(document.lines) && document.lines.length ? document.lines.map(line => ({ ...emptyLine(), ...line, vatRate: vatRegime === "franchise" ? 0 : Number(line.vatRate) || 0 })) : [emptyLine()] }; }
 function normalizeLegalData(value, billingAddress = "") { return { customerSiren: value?.customerSiren || "", customerVatNumber: value?.customerVatNumber || "", billingAddress: value?.billingAddress || billingAddress, deliveryAddress: value?.deliveryAddress || "", serviceDate: value?.serviceDate || "", purchaseOrderReference: value?.purchaseOrderReference || "", interventionReference: value?.interventionReference || "", insuranceDossier: value?.insuranceDossier || "", mandateNumber: value?.mandateNumber || "", claimNumber: value?.claimNumber || "", insuredNumber: value?.insuredNumber || "", principal: value?.principal || "", manager: value?.manager || "", expert: value?.expert || "", operationCategory: ["goods", "services", "mixed"].includes(value?.operationCategory) ? value.operationCategory : "services" }; }
 function legalDataFromClient(client) { if (!client) return normalizeLegalData(); const billingAddress = [client.billingAddress || client.address, client.postalCode, client.city].filter(Boolean).join(", "); const interventionAddress = client.interventionAddress || client.deliveryAddress || ""; const deliveryAddress = normalizeComparableAddress(interventionAddress) !== normalizeComparableAddress(billingAddress) ? interventionAddress : ""; return normalizeLegalData({ customerSiren: client.siren || client.companySiren || "", customerVatNumber: client.vatNumber || client.taxNumber || client.companyVatNumber || "", billingAddress, deliveryAddress, serviceDate: client.serviceDate || "", purchaseOrderReference: client.purchaseOrderReference || "", interventionReference: client.interventionReference || "", insuranceDossier: client.insuranceDossier || "", mandateNumber: client.mandateNumber || client.mandate || "", claimNumber: client.claimNumber || client.claim || "", insuredNumber: client.insuredNumber || "", principal: client.principal || "", manager: client.manager || client.caseManager || "", expert: client.expert || "", operationCategory: client.operationCategory || "services" }, billingAddress); }
 function billingDocumentPayload(form, billingDocument) { const values = formDataToObject(new FormData(form)); const referenceFields = ["interventionReference", "insuranceDossier", "mandateNumber", "claimNumber", "insuredNumber", "principal", "manager", "expert"]; const legalData = normalizeLegalData({ customerSiren: values.customerSiren, customerVatNumber: values.customerVatNumber, billingAddress: values.customerAddress, deliveryAddress: values.deliveryAddress, serviceDate: values.serviceDate, purchaseOrderReference: values.purchaseOrderReference, ...Object.fromEntries(referenceFields.map(field => [field, values[field]])), operationCategory: values.operationCategory }, values.customerAddress); for (const key of ["customerSiren", "customerVatNumber", "deliveryAddress", "serviceDate", "purchaseOrderReference", ...referenceFields, "operationCategory"]) delete values[key]; return { ...values, legalData, lines: billingDocument.lines, financialData: billingDocument.financialData }; }

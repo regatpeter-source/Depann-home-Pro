@@ -174,6 +174,7 @@ export async function initializeBilling() {
             issue_date DATE NOT NULL,
             due_date DATE,
             status VARCHAR(30) NOT NULL DEFAULT 'draft',
+            follow_up_date DATE,
             is_email_sent BOOLEAN NOT NULL DEFAULT FALSE,
             sent_at TIMESTAMPTZ,
             is_accounted BOOLEAN NOT NULL DEFAULT FALSE,
@@ -207,6 +208,7 @@ export async function initializeBilling() {
     `);
     await database.query(`
         ALTER TABLE depannhome_billing_documents
+        ADD COLUMN IF NOT EXISTS follow_up_date DATE,
         ADD COLUMN IF NOT EXISTS is_accounted BOOLEAN NOT NULL DEFAULT FALSE,
         ADD COLUMN IF NOT EXISTS accounted_at DATE,
         ADD COLUMN IF NOT EXISTS created_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
@@ -245,6 +247,7 @@ export async function initializeBilling() {
         CREATE INDEX IF NOT EXISTS depannhome_billing_documents_accounting_idx
         ON depannhome_billing_documents (owner_id, document_type, is_accounted, issue_date DESC)
     `);
+    await database.query(`CREATE INDEX IF NOT EXISTS depannhome_billing_documents_follow_up_idx ON depannhome_billing_documents (owner_id, follow_up_date) WHERE document_type='quote' AND follow_up_date IS NOT NULL`);
     await database.query(`
         CREATE INDEX IF NOT EXISTS depannhome_billing_documents_appointment_idx
         ON depannhome_billing_documents (owner_id, appointment_id)
@@ -309,7 +312,7 @@ export function registerBillingRoutes(app, requireAuthentication) {
             database.query(`
                 SELECT depannhome_billing_documents.id, document_type AS "documentType", document_number AS "documentNumber", client_id AS "clientId", customer_type AS "customerType",
                     customer_name AS "customerName", customer_address AS "customerAddress", TO_CHAR(issue_date, 'YYYY-MM-DD') AS "issueDate",
-                    TO_CHAR(due_date, 'YYYY-MM-DD') AS "dueDate", status, is_email_sent AS "isEmailSent", sent_at AS "sentAt", is_accounted AS "isAccounted",
+                    TO_CHAR(due_date, 'YYYY-MM-DD') AS "dueDate", status, TO_CHAR(follow_up_date, 'YYYY-MM-DD') AS "followUpDate", is_email_sent AS "isEmailSent", sent_at AS "sentAt", is_accounted AS "isAccounted",
                     TO_CHAR(accounted_at, 'YYYY-MM-DD') AS "accountedAt", appointment_id AS "appointmentId", source_quote_id AS "sourceQuoteId", correction_source_id AS "correctionSourceId", correction_kind AS "correctionKind", (SELECT source.document_number FROM depannhome_billing_documents source WHERE source.id=depannhome_billing_documents.correction_source_id) AS "correctionSourceNumber", quote_reference AS "quoteReference", vat_regime AS "vatRegime", issuer_tax_number AS "issuerTaxNumber", legal_data AS "legalData", issued_at AS "issuedAt", (structured_data IS NOT NULL) AS "hasStructuredData", lines, notes, financial_data AS "financialData",
                     depannhome_billing_documents.created_at AS "createdAt", depannhome_billing_documents.updated_at AS "updatedAt",
                     COALESCE(NULLIF(depannhome_billing_documents.created_by_name, ''), NULLIF(creator.full_name, ''), creator.username, '') AS "creatorName"
@@ -556,7 +559,7 @@ export function registerBillingRoutes(app, requireAuthentication) {
             database.query(`
                 SELECT id, document_type AS "documentType", document_number AS "documentNumber", client_id AS "clientId", customer_type AS "customerType",
                     customer_name AS "customerName", customer_address AS "customerAddress", created_by_name AS "creatorName", TO_CHAR(issue_date, 'YYYY-MM-DD') AS "issueDate",
-                    TO_CHAR(due_date, 'YYYY-MM-DD') AS "dueDate", status, is_email_sent AS "isEmailSent", sent_at AS "sentAt", is_accounted AS "isAccounted",
+                    TO_CHAR(due_date, 'YYYY-MM-DD') AS "dueDate", status, TO_CHAR(follow_up_date, 'YYYY-MM-DD') AS "followUpDate", is_email_sent AS "isEmailSent", sent_at AS "sentAt", is_accounted AS "isAccounted",
                     TO_CHAR(accounted_at, 'YYYY-MM-DD') AS "accountedAt", appointment_id AS "appointmentId", source_quote_id AS "sourceQuoteId", correction_source_id AS "correctionSourceId", correction_kind AS "correctionKind", (SELECT source.document_number FROM depannhome_billing_documents source WHERE source.id=depannhome_billing_documents.correction_source_id) AS "correctionSourceNumber", quote_reference AS "quoteReference", vat_regime AS "vatRegime", issuer_tax_number AS "issuerTaxNumber", legal_data AS "legalData", issued_at AS "issuedAt", (structured_data IS NOT NULL) AS "hasStructuredData", lines, notes, financial_data AS "financialData"
                                 FROM depannhome_billing_documents
                                 WHERE id = $1 AND owner_id = $2
@@ -782,11 +785,11 @@ export function registerBillingRoutes(app, requireAuthentication) {
             document.lines = applyVatRegime(document.lines, taxIdentity.vatRegime);
             const { rows } = await getPool().query(`
                 INSERT INTO depannhome_billing_documents
-                    (owner_id, created_by, document_type, document_number, client_id, customer_type, customer_name, customer_address, issue_date, due_date, status, is_accounted, accounted_at, appointment_id, source_quote_id, quote_reference, vat_regime, issuer_tax_number, lines, legal_data, issued_at, notes, financial_data, created_by_name)
-                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::date,$10::date,$11,FALSE,NULL,$12,$13,$14,$15,$16,$17::jsonb,$18::jsonb,NULL,$19,$20::jsonb,$21)
+                    (owner_id, created_by, document_type, document_number, client_id, customer_type, customer_name, customer_address, issue_date, due_date, status, follow_up_date, is_accounted, accounted_at, appointment_id, source_quote_id, quote_reference, vat_regime, issuer_tax_number, lines, legal_data, issued_at, notes, financial_data, created_by_name)
+                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::date,$10::date,$11,$12::date,FALSE,NULL,$13,$14,$15,$16,$17,$18::jsonb,$19::jsonb,NULL,$20,$21::jsonb,$22)
                 RETURNING id, document_number AS "documentNumber"
             `, [getAccountOwnerId(request), request.user.sub, document.documentType, documentNumber, document.clientId || null, document.customerType, document.customerName,
-                document.customerAddress, document.issueDate, document.dueDate || null, status, appointment?.id || null, sourceQuote?.id || null, sourceQuote?.documentNumber || "", taxIdentity.vatRegime, taxIdentity.taxNumber, JSON.stringify(document.lines), JSON.stringify(document.legalData), document.notes, JSON.stringify(document.financialData), cleanText(request.user.fullName || request.user.username, 160)]);
+                document.customerAddress, document.issueDate, document.dueDate || null, status, document.followUpDate || null, appointment?.id || null, sourceQuote?.id || null, sourceQuote?.documentNumber || "", taxIdentity.vatRegime, taxIdentity.taxNumber, JSON.stringify(document.lines), JSON.stringify(document.legalData), document.notes, JSON.stringify(document.financialData), cleanText(request.user.fullName || request.user.username, 160)]);
             await (await import("./partner-connections.js")).synchronizeConnectedBillingDocument(getAccountOwnerId(request), rows[0].id);
             const { registerMissionSourceItem } = await import("./partner-dialogue.js"); await registerMissionSourceItem({ ownerId: getAccountOwnerId(request), appointmentId: appointment?.id, sourceType: document.documentType, sourceId: rows[0].id, label: rows[0].documentNumber, details: { status, issueDate: document.issueDate } });
             const { recordMissionEventForSource } = await import("./partner-dialogue.js"); await recordMissionEventForSource({ ownerId: getAccountOwnerId(request), sourceType: "appointment", sourceId: appointment?.id, status: document.documentType === "invoice" ? "invoice_created" : "quote_created", action: "billing_document_created", details: { documentId: rows[0].id, documentType: document.documentType, status }, actorName: request.user.fullName || request.user.username });
@@ -822,13 +825,13 @@ export function registerBillingRoutes(app, requireAuthentication) {
             const status = document.documentType === "invoice" ? "draft" : document.status;
             const result = await getPool().query(`
                 UPDATE depannhome_billing_documents SET document_type=$3, document_number=$4, client_id=$5, customer_type=$6, customer_name=$7,
-                    customer_address=$8, issue_date=$9::date, due_date=$10::date, status=$11, is_accounted=FALSE,
-                    accounted_at=NULL, appointment_id=$12, source_quote_id=$13, quote_reference=$14, legal_data=$15::jsonb,
-                    lines=$16::jsonb, notes=$17, financial_data=$18::jsonb, updated_at=NOW()
+                    customer_address=$8, issue_date=$9::date, due_date=$10::date, status=$11, follow_up_date=$12::date, is_accounted=FALSE,
+                    accounted_at=NULL, appointment_id=$13, source_quote_id=$14, quote_reference=$15, legal_data=$16::jsonb,
+                    lines=$17::jsonb, notes=$18, financial_data=$19::jsonb, updated_at=NOW()
                 WHERE id=$1 AND owner_id=$2 AND issued_at IS NULL AND is_accounted=FALSE
                     AND NOT EXISTS (SELECT 1 FROM depannhome_accounting_entries entry WHERE entry.owner_id=$2 AND entry.source_type IN ('invoice','credit') AND entry.source_id=id::text)
             `, [id, getAccountOwnerId(request), document.documentType, documentNumber, document.clientId || null, document.customerType, document.customerName,
-                document.customerAddress, document.issueDate, document.dueDate || null, status, appointment?.id || null, sourceQuote?.id || null, sourceQuote?.documentNumber || "", JSON.stringify(document.legalData), JSON.stringify(document.lines), document.notes, JSON.stringify(document.financialData)]);
+                document.customerAddress, document.issueDate, document.dueDate || null, status, document.followUpDate || null, appointment?.id || null, sourceQuote?.id || null, sourceQuote?.documentNumber || "", JSON.stringify(document.legalData), JSON.stringify(document.lines), document.notes, JSON.stringify(document.financialData)]);
             if (!result.rowCount) return response.status(409).json({ message: "Un document émis ou comptabilisé est immuable. Créez une facture rectificative, un avenant ou un avoir." });
             await (await import("./partner-connections.js")).synchronizeConnectedBillingDocument(getAccountOwnerId(request), id);
             const { registerMissionSourceItem } = await import("./partner-dialogue.js"); await registerMissionSourceItem({ ownerId: getAccountOwnerId(request), appointmentId: appointment?.id, sourceType: document.documentType, sourceId: id, label: documentNumber, details: { status, issueDate: document.issueDate } });
@@ -1227,6 +1230,7 @@ function sanitizeDocument(value) {
     const issueDate = sanitizeDate(value?.issueDate);
     const dueDate = value?.dueDate ? sanitizeDate(value.dueDate) : "";
     const status = documentType === "invoice" ? "draft" : cleanText(value?.status, 30) || "draft";
+    const followUpDate = documentType === "quote" ? sanitizeDate(value?.followUpDate) : "";
     const isAccounted = false;
     const appointmentId = positiveId(value?.appointmentId);
     const sourceQuoteId = documentType === "invoice" ? positiveId(value?.sourceQuoteId) : 0;
@@ -1238,7 +1242,7 @@ function sanitizeDocument(value) {
     if (!customerName) return { ok: false, message: "Le nom du client est obligatoire." };
     if (!lines.length) return { ok: false, message: "Ajoutez au moins une ligne." };
     if (value?.dueDate && !dueDate) return { ok: false, message: "La date d'échéance est invalide." };
-    return { ok: true, documentType, documentNumber, clientId, customerType, customerName, customerAddress, issueDate, dueDate, status, isAccounted, appointmentId, sourceQuoteId, lines, notes, financialData, legalData };
+    return { ok: true, documentType, documentNumber, clientId, customerType, customerName, customerAddress, issueDate, dueDate, status, followUpDate, isAccounted, appointmentId, sourceQuoteId, lines, notes, financialData, legalData };
 }
 
 function sanitizeLegalData(value, customerAddress = "") {

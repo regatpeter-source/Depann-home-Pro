@@ -1,17 +1,17 @@
 import { ROUTES, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=135";
-import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=226";
+import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=227";
 import { openCreatorPartnerRequest, openCreatorRequestNotification, renderCreatorConsole } from "./creator.js?v=170";
-import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=208";
+import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=209";
 import { renderAccounting } from "./accounting.js?v=28";
 import { renderPurchases } from "./purchases.js?v=126";
 import { renderGroupActivation, renderGroupWorkspace } from "./groups.js?v=9";
 import { renderHistoryAndJournals } from "./history.js?v=2";
-import { renderPartnerMissions } from "./partner-missions.js?v=88";
+import { renderPartnerMissions } from "./partner-missions.js?v=89";
 import { renderPartnerSandbox } from "./partner-sandbox.js?v=3";
-import { renderPartnerConnections } from "./partner-connections.js?v=48";
+import { renderPartnerConnections } from "./partner-connections.js?v=49";
 import { renderCompanyEmailWorkspace, renderPartnerEmailSettings } from "./partner-email-settings.js?v=29";
 import { renderDataImportTool } from "./data-imports.js?v=5";
-import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=55";
+import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=56";
 import { getFirstUnreadClientId, refreshClientMessageAlert, refreshVisibleClientMessages } from "./messages.js?v=107";
 import { getSearchableClients, renderClients } from "./clients.js?v=169";
 import { synchronizeClients } from "./client-sync.js?v=131";
@@ -1112,6 +1112,7 @@ async function renderHome() {
         <div class="dashboard-heading"><div><p class="eyebrow">Depann’Home Pro</p><h2>Tableau de bord</h2>${desktopDashboard ? '<p class="dashboard-heading-summary">Vue opérationnelle de l’entreprise active</p>' : ""}${renderMobileUserSections()}</div>${calendarEnabled ? '<button type="button" class="secondary-button" data-dashboard-action="calendar">Voir le planning complet</button>' : ""}</div>
         ${document.body.dataset.canSwitchGroupCompanies === "true" ? '<section class="dashboard-company-switcher" data-dashboard-company-switcher><p class="muted">Chargement des entreprises autorisées…</p></section>' : ""}
         ${desktopDashboard ? renderDashboardMetricCards(calendarEnabled) : ""}
+        ${desktopDashboard && (calendarEnabled || canAccessRoute(ROUTES.billing)) ? '<section class="dashboard-follow-up" data-dashboard-follow-up><div class="dashboard-follow-up-heading"><div><p class="eyebrow">Documents à suivre</p><h3>Actions à traiter</h3></div><span>Chargement…</span></div><div class="dashboard-follow-up-grid"><p class="muted">Analyse des devis, factures et interventions…</p></div></section>' : ""}
         ${calendarEnabled ? `<div class="dashboard-grid">
             <section class="dashboard-card"><p class="eyebrow">Aujourd’hui</p><h3>${escapeHtml(formatDashboardDate(new Date()))}</h3><div class="dashboard-events" data-dashboard-events="today"><p class="muted">Chargement des rendez-vous…</p></div></section>
             <section class="dashboard-card"><p class="eyebrow">À venir</p><h3>Les 7 prochains jours</h3><div class="dashboard-events" data-dashboard-events="upcoming"><p class="muted">Chargement des rendez-vous…</p></div></section>
@@ -1147,7 +1148,7 @@ async function renderHome() {
 function renderDashboardMetricCards(calendarEnabled) {
     const cards = [
         ...(calendarEnabled ? [["calendar", "Planning", "—", "Chargement des interventions…"]] : []),
-        ...(canAccessRoute(ROUTES.clients) ? [["clients", "Clients actifs", String(getSearchableClients().length), "Dossiers disponibles"]] : []),
+        ...(canAccessRoute(ROUTES.technicalReports) ? [["reports", "Rapports à corriger / envoyer", "—", "Chargement des rapports…"]] : canAccessRoute(ROUTES.clients) ? [["clients", "Clients actifs", String(getSearchableClients().length), "Dossiers disponibles"]] : []),
         ...(canAccessRoute(ROUTES.billing) ? [["billing", "Documents à suivre", "—", "Chargement de la facturation…"]] : []),
         ...(canAccessRoute(ROUTES.partnerMissions) ? [["missions", "Missions à valider", "—", "Chargement des missions…"]] : []),
         ...(canAccessRoute(ROUTES.purchases) ? [["purchases", "Achats à comptabiliser", "—", "Chargement des achats…"]] : [])
@@ -1157,18 +1158,35 @@ function renderDashboardMetricCards(calendarEnabled) {
 }
 
 function bindDashboardMetricActions(panel) {
-    const actions = { calendar: renderCalendar, clients: () => openClients(), billing: renderBilling, missions: renderPartnerMissions, purchases: renderPurchases };
+    const actions = { calendar: renderCalendar, clients: () => openClients(), reports: renderTechnicalReports, billing: renderBilling, missions: renderPartnerMissions, purchases: renderPurchases };
     panel.querySelectorAll("[data-dashboard-metric]").forEach(button => button.addEventListener("click", () => actions[button.dataset.dashboardAction]?.()));
 }
 
 async function loadDashboardOperationalMetrics(panel) {
     const requests = [];
+    const followUp = { invoicesToCreate: [], invoicesToSend: [], quotesToFollow: [], pausedInterventions: [] };
     if (canAccessRoute(ROUTES.billing)) requests.push(loadDashboardJson("/api/billing").then(data => {
         const documents = Array.isArray(data?.documents) ? data.documents : [];
-        const followed = documents.filter(document => !["paid", "cancelled", "rejected"].includes(String(document.status || "").toLowerCase()));
-        const unpaidInvoices = documents.filter(document => document.documentType === "invoice" && !["paid", "cancelled"].includes(String(document.status || "").toLowerCase()));
-        updateDashboardMetric(panel, "billing", String(followed.length), `${unpaidInvoices.length} facture${unpaidInvoices.length > 1 ? "s" : ""} non réglée${unpaidInvoices.length > 1 ? "s" : ""}`);
+        const invoicedQuoteIds = new Set(documents.filter(document => document.documentType === "invoice" && !["cancelled", "rejected"].includes(String(document.status || "").toLowerCase())).map(document => String(document.sourceQuoteId || "")).filter(Boolean));
+        const today = toDashboardDate(new Date());
+        followUp.invoicesToCreate = documents.filter(document => document.documentType === "quote" && String(document.status || "").toLowerCase() === "accepted" && !invoicedQuoteIds.has(String(document.id)));
+        followUp.invoicesToSend = documents.filter(document => document.documentType === "invoice" && document.issuedAt && !document.isEmailSent && String(document.status || "").toLowerCase() !== "cancelled");
+        followUp.quotesToFollow = documents.filter(document => document.documentType === "quote" && document.followUpDate && document.followUpDate <= today && !["accepted", "rejected", "cancelled"].includes(String(document.status || "").toLowerCase()) && !invoicedQuoteIds.has(String(document.id)));
+        refreshDashboardFollowUp(panel, followUp);
     }).catch(() => updateDashboardMetric(panel, "billing", "—", "Facturation momentanément indisponible")));
+    if (canAccessRoute(ROUTES.technicalReports)) requests.push(loadDashboardJson("/api/technical-reports").then(data => {
+        const reports = Array.isArray(data?.reports) ? data.reports : [];
+        const toCorrect = reports.filter(report => report.status === "submitted").length;
+        const toSend = reports.filter(report => report.status === "ready_to_send").length;
+        updateDashboardMetric(panel, "reports", String(toCorrect + toSend), `${toCorrect} à corriger · ${toSend} à envoyer`);
+    }).catch(() => updateDashboardMetric(panel, "reports", "—", "Rapports momentanément indisponibles")));
+    if (canAccessRoute(ROUTES.calendar)) requests.push(loadDashboardJson("/api/calendar/paused").then(data => {
+        followUp.pausedInterventions = Array.isArray(data?.events) ? data.events : [];
+        refreshDashboardFollowUp(panel, followUp);
+    }).catch(() => {
+        followUp.pausedInterventions = [];
+        refreshDashboardFollowUp(panel, followUp, "Interventions en pause momentanément indisponibles");
+    }));
     if (canAccessRoute(ROUTES.partnerMissions)) requests.push(loadDashboardJson("/api/partner-missions").then(data => {
         const missions = Array.isArray(data?.missions) ? data.missions : [];
         const pending = missions.filter(mission => ["received", "pending_validation"].includes(mission.status)).length;
@@ -1180,6 +1198,39 @@ async function loadDashboardOperationalMetrics(panel) {
         updateDashboardMetric(panel, "purchases", String(unaccounted), `${purchases.length} achat${purchases.length > 1 ? "s" : ""} enregistré${purchases.length > 1 ? "s" : ""}`);
     }).catch(() => updateDashboardMetric(panel, "purchases", "—", "Achats momentanément indisponibles")));
     await Promise.allSettled(requests);
+}
+
+function refreshDashboardFollowUp(panel, followUp, warning = "") {
+    const section = panel.querySelector("[data-dashboard-follow-up]");
+    if (!section?.isConnected) return;
+    const groups = [
+        ["invoice-create", "Factures à faire", followUp.invoicesToCreate, item => `${item.documentNumber} · ${item.customerName}`, "Créer depuis le devis"],
+        ["invoice-send", "Factures à envoyer", followUp.invoicesToSend, item => `${item.documentNumber} · ${item.customerName}`, "Ouvrir la facture"],
+        ["quote-follow", "Devis à relancer", followUp.quotesToFollow, item => `${item.documentNumber} · ${item.customerName} · rappel ${formatDashboardItemDate(item.followUpDate)}`, "Ouvrir le devis"],
+        ["intervention-resume", "Interventions à reprendre", followUp.pausedInterventions, item => `${item.clientName || item.title} · ${dashboardPauseReasonLabel(item.pauseReason)}`, "Ouvrir l’intervention"]
+    ];
+    const total = groups.reduce((sum, group) => sum + group[2].length, 0);
+    section.querySelector(".dashboard-follow-up-heading span").textContent = `${total} action${total > 1 ? "s" : ""}`;
+    section.querySelector(".dashboard-follow-up-grid").innerHTML = groups.map(([key, title, items, label, action]) => `<article><header><h4>${title}</h4><strong>${items.length}</strong></header>${items.length ? `<div class="dashboard-follow-up-items">${items.slice(0, 5).map(item => `<button type="button" data-follow-up-type="${key}" data-follow-up-id="${escapeHtml(item.id)}"><span>${escapeHtml(label(item))}</span><em>${action} →</em></button>`).join("")}${items.length > 5 ? `<small>+ ${items.length - 5} autre${items.length - 5 > 1 ? "s" : ""}</small>` : ""}</div>` : '<p class="muted">Rien à traiter.</p>'}</article>`).join("") + (warning ? `<p class="auth-message error">${escapeHtml(warning)}</p>` : "");
+    section.querySelectorAll("[data-follow-up-type]").forEach(button => button.addEventListener("click", () => {
+        const type = button.dataset.followUpType;
+        const id = button.dataset.followUpId;
+        if (type === "intervention-resume") {
+            const intervention = followUp.pausedInterventions.find(item => String(item.id) === String(id));
+            if (intervention) renderCalendar({ date: new Date(`${intervention.date}T12:00:00`), event: intervention });
+            return;
+        }
+        renderBilling({ documentId: id });
+    }));
+    updateDashboardMetric(panel, "billing", String(total), `${followUp.invoicesToCreate.length} facture${followUp.invoicesToCreate.length > 1 ? "s" : ""} à faire · ${followUp.pausedInterventions.length} intervention${followUp.pausedInterventions.length > 1 ? "s" : ""} à reprendre`);
+}
+
+function dashboardPauseReasonLabel(value) {
+    return ({ technician_absent: "technicien absent", material_not_received: "matériel non reçu", waiting_client: "attente client", waiting_parts: "pièce en attente", other: "autre motif" })[value] || "en pause";
+}
+
+function formatDashboardItemDate(value) {
+    return value ? new Intl.DateTimeFormat("fr-FR").format(new Date(`${value}T12:00:00`)) : "non daté";
 }
 
 async function loadDashboardJson(url) {

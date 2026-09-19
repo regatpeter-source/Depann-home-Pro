@@ -83,10 +83,10 @@ test("l’interface distingue confirmer un e-mail et accepter une mission", () =
 });
 
 test("les versions PWA chargent le nouveau routage partenaire", () => {
-    assert.match(navigation, /partner-missions\.js\?v=88/);
-    assert.match(navigation, /partner-connections\.js\?v=48/);
-    assert.match(serviceWorker, /depann-home-pro-v582/);
-    assert.match(serviceWorker, /partner-missions\.js\?v=88/);
-    assert.match(serviceWorker, /partner-connections\.js\?v=48/);
-    assert.match(serviceWorker, /navigation\.js\?v=490/);
+    assert.match(navigation, /partner-missions\.js\?v=89/);
+    assert.match(navigation, /partner-connections\.js\?v=49/);
+    assert.match(serviceWorker, /depann-home-pro-v583/);
+    assert.match(serviceWorker, /partner-missions\.js\?v=89/);
+    assert.match(serviceWorker, /partner-connections\.js\?v=49/);
+    assert.match(serviceWorker, /navigation\.js\?v=491/);
 });

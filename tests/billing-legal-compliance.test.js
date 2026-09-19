@@ -54,7 +54,7 @@ test("les insertions et mises à jour persistent l’instantané légal et l’�
     const updateRoute = serverSource.slice(serverSource.indexOf('app.put("/api/billing/documents/:documentId"'), serverSource.indexOf('app.post("/api/billing/documents/:documentId/corrections"'));
     assert.match(createRoute, /legal_data, issued_at/);
     assert.match(createRoute, /JSON\.stringify\(document\.legalData\)/);
-    assert.match(updateRoute, /legal_data=\$15::jsonb/);
+    assert.match(updateRoute, /legal_data=\$16::jsonb/);
     assert.match(updateRoute, /issued_at IS NULL/);
     assert.doesNotMatch(updateRoute, /issued_at\s*=/);
     assert.match(serverSource, /document_number=\$3, status='issued', issued_at=NOW\(\)/);
