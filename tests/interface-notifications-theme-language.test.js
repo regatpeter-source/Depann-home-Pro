@@ -38,6 +38,10 @@ test("le thème sombre couvre les écrans et les principaux espaces de travail",
     assert.match(settingsDarkRules, /\.partner-email-connection,[\s\S]*\.partner-mailbox-browser,[\s\S]*\.professional-directory-modal>section,[\s\S]*\.template-studio-heading/);
     assert.match(settingsDarkRules, /\.settings-navigation-card:hover,[\s\S]*background:#24344a/);
     assert.match(settingsDarkRules, /\.subscription-billing-status\.is-current,[\s\S]*color:#86efac!important/);
+    assert.match(settingsDarkRules, /Surfaces métier sombres[\s\S]*\.creator-network-company,[\s\S]*\.history-journals-entry,[\s\S]*\.billing-financial-dashboard,[\s\S]*\.report-directory-list article/);
+    assert.match(settingsDarkRules, /\.billing-financial-cards article\.profit[\s\S]*background:rgba\(20,83,45,\.28\)/);
+    assert.match(settingsDarkRules, /\.billing-editor-panel\.billing-editor-live-active[\s\S]*background:var\(--bg\)/);
+    assert.match(settingsDarkRules, /\.pdf-live-page,[\s\S]*background:#fff/);
     assert.match(partnerDialogueStyle, /body\.dark-theme \.partner-dialogue-modal>\.partner-dialogue/);
     assert.match(partnerDialogueStyle, /background:var\(--surface-alt\)/);
     assert.match(reportEditorStyle, /body\.dark-theme\.report-writing-active \.report-editor-fullscreen/);
