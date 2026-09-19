@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 import { getAccountOwnerId, isCreatorUsername } from "./auth.js";
 import { createNotification } from "./collaboration.js";
 import { connectorCatalogOptions, testConnectorCredentials } from "./connectors.js";
+import { sendPartnershipRequestEmail } from "./email.js";
 
 const ORGANIZATION_TYPES = new Set([
     "insurance",
@@ -111,6 +112,7 @@ export function registerPartnerRequestRoutes(app, requireCreator, requireAuthent
             RETURNING id
         `, [partnerRequest.companyName, partnerRequest.organizationType, partnerRequest.contactName, partnerRequest.contactRole, partnerRequest.email, partnerRequest.phone, partnerRequest.website, partnerRequest.message, clientIp(request)]);
         await notifyCreatorsOfPartnerRequest(rows[0].id, partnerRequest);
+        try { await sendPartnershipRequestEmail({ requestId: rows[0].id, ...partnerRequest }); } catch (error) { console.warn("[partner-request] email unavailable", { requestId: rows[0].id, code: error.code || "EMAIL_ERROR" }); }
         response.status(201).json({ id: String(rows[0].id), message: "Merci pour votre demande de partenariat. Notre équipe va étudier votre demande et vous recontactera dans les meilleurs délais." });
     }));
 

@@ -14,6 +14,7 @@ import { companySeatState, subscriptionOwnerId } from "./seat-limits.js";
 import { configurePrincipalGroup } from "./groups.js";
 import { activateOrRenewSubscriptionTrial, activateSubscriptionTrialInTransaction, convertTrialToPaidSubscription, expireSubscriptionTrials } from "./subscription-trials.js";
 import { recordAccountHistory } from "./account-history.js";
+import { sendSubscriptionChangeRequestEmail } from "./email.js";
 
 const USERNAME_PATTERN = /^[a-z0-9._-]{3,32}$/;
 const MIN_PASSWORD_LENGTH = 12;
@@ -101,6 +102,19 @@ export function registerCreatorRoutes(app, requireCreator, requireAuthentication
         if (duplicate.rowCount) return response.status(409).json({ message: "Une demande de changement d’offre est déjà en cours de traitement." });
         const { rows } = await getPool().query(`INSERT INTO depannhome_subscription_change_requests(owner_id,requested_by,current_tier,requested_tier,requested_pc_seats,requested_mobile_seats,company_message) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id,current_tier AS "currentTier",requested_tier AS "requestedTier",requested_pc_seats AS "requestedPcSeats",requested_mobile_seats AS "requestedMobileSeats",status,company_message AS "companyMessage",created_at AS "createdAt"`, [owner.id, request.user.sub, owner.subscriptionTier, requestedTier, requestedPcSeats, requestedMobileSeats, companyMessage]);
         await notifyCreatorsOfSubscriptionRequest(rows[0], owner);
+        try {
+            await sendSubscriptionChangeRequestEmail({
+                requestId: rows[0].id,
+                companyName: owner.companyName || owner.fullName || owner.username,
+                contactName: request.user.fullName || request.user.username,
+                email: request.user.email || owner.billingEmail,
+                currentTier: rows[0].currentTier,
+                requestedTier: rows[0].requestedTier,
+                requestedPcSeats: rows[0].requestedPcSeats,
+                requestedMobileSeats: rows[0].requestedMobileSeats,
+                message: rows[0].companyMessage
+            });
+        } catch (error) { console.warn("[subscription-request] email unavailable", { requestId: rows[0].id, code: error.code || "EMAIL_ERROR" }); }
         response.status(201).json({ request: rows[0], message: "Votre demande a été transmise au Support. Votre offre actuelle reste inchangée pendant son étude." });
     }));
     app.get("/api/creator/subscription-change-requests", requireCreator, asyncHandler(async (_request, response) => {
@@ -732,7 +746,8 @@ async function notifyCreatorsOfSubscriptionRequest(changeRequest, owner) {
 
 async function findAccountOwner(database, id) {
     const { rows } = await database.query(`
-        SELECT id, username, is_active, is_archived, max_pc_users AS "maxPcUsers", max_technicians AS "maxTechnicians",
+        SELECT id, username, company_name AS "companyName", full_name AS "fullName", email AS "billingEmail",
+            is_active, is_archived, max_pc_users AS "maxPcUsers", max_technicians AS "maxTechnicians",
             subscription_plan AS "subscriptionPlan", subscription_tier AS "subscriptionTier", subscription_status AS "subscriptionStatus",
             trial_started_at AS "trialStartedAt",trial_ends_at AS "trialEndsAt",trial_renewal_count AS "trialRenewalCount"
         FROM depannhome_users WHERE id = $1 AND account_owner_id = id

@@ -33,7 +33,7 @@ test("une demande d’offre exige des coordonnées, un besoin et le consentement
 
 test("les demandes commerciales sont envoyées à l’adresse support officielle", () => {
     assert.match(emailSource, /sendCommercialOfferRequestEmail/);
-    assert.match(emailSource, /recipient: "support@depannhomepro\.com"/);
+    assert.match(emailSource, /recipient: supportRecipient\(\)/);
     assert.match(emailSource, /replyTo: email/);
 });
 

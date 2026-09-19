@@ -28,17 +28,10 @@ export async function sendDocumentEmail({ recipient, recipientName, documentLabe
 }
 
 export async function sendSupportRequestEmail({ senderName, senderEmail, senderUsername, message }) {
-    const recipient = String(process.env.SUPPORT_EMAIL || "").trim();
-    if (!recipient || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient)) {
-        const error = new Error("L’adresse e-mail du support n’est pas configurée.");
-        error.code = "SUPPORT_EMAIL_NOT_CONFIGURED";
-        throw error;
-    }
-
     const sender = senderName || senderUsername || "Technicien";
     const contact = senderEmail || "E-mail non renseigné";
     await sendEmail({
-        recipient,
+        recipient: supportRecipient(),
         subject: `Demande support Depann'Home Pro — ${sender}`,
         text: `Nouvelle demande de support\n\nTechnicien : ${sender}\nIdentifiant : ${senderUsername || "Non renseigné"}\nE-mail : ${contact}\n\nMessage :\n${message}`,
         html: `<p><strong>Nouvelle demande de support</strong></p><p><strong>Technicien :</strong> ${escapeHtml(sender)}<br><strong>Identifiant :</strong> ${escapeHtml(senderUsername || "Non renseigné")}<br><strong>E-mail :</strong> ${escapeHtml(contact)}</p><p><strong>Message :</strong><br>${escapeHtml(message).replace(/\n/g, "<br>")}</p>`,
@@ -46,11 +39,35 @@ export async function sendSupportRequestEmail({ senderName, senderEmail, senderU
     });
 }
 
+export async function sendPartnershipRequestEmail({ requestId, companyName, organizationType, contactName, contactRole, email, phone, website, message }) {
+    const websiteLabel = website || "Non renseigné";
+    await sendEmail({
+        recipient: supportRecipient(),
+        replyTo: email,
+        subject: `Demande de partenariat Depann'Home Pro — ${companyName}`,
+        text: `Nouvelle demande de partenariat\n\nRéférence : #${requestId}\nOrganisation : ${companyName}\nType : ${organizationType}\nContact : ${contactName}\nFonction : ${contactRole}\nE-mail : ${email}\nTéléphone : ${phone}\nSite internet : ${websiteLabel}\n\nProjet ou besoin :\n${message}`,
+        html: `<p><strong>Nouvelle demande de partenariat</strong></p><p><strong>Référence :</strong> #${escapeHtml(requestId)}<br><strong>Organisation :</strong> ${escapeHtml(companyName)}<br><strong>Type :</strong> ${escapeHtml(organizationType)}<br><strong>Contact :</strong> ${escapeHtml(contactName)}<br><strong>Fonction :</strong> ${escapeHtml(contactRole)}<br><strong>E-mail :</strong> ${escapeHtml(email)}<br><strong>Téléphone :</strong> ${escapeHtml(phone)}<br><strong>Site internet :</strong> ${escapeHtml(websiteLabel)}</p><p><strong>Projet ou besoin :</strong><br>${escapeHtml(message).replace(/\n/g, "<br>")}</p>`
+    });
+}
+
+export async function sendSubscriptionChangeRequestEmail({ requestId, companyName, contactName, email, currentTier, requestedTier, requestedPcSeats, requestedMobileSeats, message }) {
+    const contact = contactName || "Non renseigné";
+    const contactEmail = email || "Non renseigné";
+    const companyMessage = message || "Aucun message complémentaire";
+    await sendEmail({
+        recipient: supportRecipient(),
+        ...(email ? { replyTo: email } : {}),
+        subject: `Demande d’offre ou de postes — ${companyName}`,
+        text: `Nouvelle demande d’offre ou de postes\n\nRéférence : #${requestId}\nEntreprise : ${companyName}\nContact : ${contact}\nE-mail : ${contactEmail}\nOffre actuelle : ${currentTier}\nOffre demandée : ${requestedTier}\nPostes administratifs demandés : ${requestedPcSeats}\nPostes mobiles demandés : ${requestedMobileSeats}\n\nMessage :\n${companyMessage}`,
+        html: `<p><strong>Nouvelle demande d’offre ou de postes</strong></p><p><strong>Référence :</strong> #${escapeHtml(requestId)}<br><strong>Entreprise :</strong> ${escapeHtml(companyName)}<br><strong>Contact :</strong> ${escapeHtml(contact)}<br><strong>E-mail :</strong> ${escapeHtml(contactEmail)}<br><strong>Offre actuelle :</strong> ${escapeHtml(currentTier)}<br><strong>Offre demandée :</strong> ${escapeHtml(requestedTier)}<br><strong>Postes administratifs demandés :</strong> ${escapeHtml(requestedPcSeats)}<br><strong>Postes mobiles demandés :</strong> ${escapeHtml(requestedMobileSeats)}</p><p><strong>Message :</strong><br>${escapeHtml(companyMessage).replace(/\n/g, "<br>")}</p>`
+    });
+}
+
 export async function sendCommercialOfferRequestEmail({ companyName, contactName, email, phone, teamSize, offer, message }) {
     const offerLabel = ({ "demo-15-days": "Démo gratuite 15 jours", basic: "Basic", "basic-plus": "Basic+", pro: "Pro", unsure: "À conseiller" })[offer] || "À conseiller";
     const teamSizeLabel = ({ "1": "1 personne", "2-5": "2 à 5 personnes", "6-10": "6 à 10 personnes", "11-25": "11 à 25 personnes", "26-plus": "26 personnes ou plus" })[teamSize] || "Non renseigné";
     await sendEmail({
-        recipient: "support@depannhomepro.com",
+        recipient: supportRecipient(),
         replyTo: email,
         subject: `Demande d’offre Depann'Home Pro — ${companyName}`,
         text: `Nouvelle demande d’offre depuis depannhomepro.com\n\nEntreprise : ${companyName}\nContact : ${contactName}\nE-mail : ${email}\nTéléphone : ${phone}\nTaille de l’équipe : ${teamSizeLabel}\nOffre envisagée : ${offerLabel}\n\nBesoin :\n${message}`,
@@ -86,6 +103,16 @@ export async function sendEmail({ recipient, replyTo, subject, text, html, attac
         ...(references ? { references } : {}),
         ...(headers ? { headers } : {})
     });
+}
+
+function supportRecipient() {
+    const recipient = String(process.env.SUPPORT_EMAIL || "").trim();
+    if (!recipient || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient)) {
+        const error = new Error("L’adresse e-mail du support n’est pas configurée.");
+        error.code = "SUPPORT_EMAIL_NOT_CONFIGURED";
+        throw error;
+    }
+    return recipient;
 }
 
 function escapeHtml(value) {
