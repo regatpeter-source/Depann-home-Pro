@@ -7908,6 +7908,11 @@ body:is(.desktop-device,.mobile-device).dark-theme :is(
     .attachment-card,
     .attachment-preview,
     .file-count-badge,
+    .calendar-client-preview,
+    .calendar-technician-assignment,
+    .calendar-team-assignment,
+    .calendar-team-assignment label,
+    .calendar-technician-assignment-groups section,
     .calendar-intervention-pause,
     .dashboard-kpi-breakdown button
 ){
@@ -8056,6 +8061,43 @@ body:is(.desktop-device,.mobile-device).dark-theme :is(.file-input-grid input,.f
 body:is(.desktop-device,.mobile-device).dark-theme :is(.file-count-badge,.attachment-preview){
     background:#24344a;
     color:var(--primary);
+}
+
+body:is(.desktop-device,.mobile-device).dark-theme :is(
+    .calendar-client-preview,
+    .calendar-team-assignment
+){
+    border-color:#166534;
+    background:rgba(20,83,45,.24);
+}
+
+body:is(.desktop-device,.mobile-device).dark-theme :is(
+    .calendar-client-preview,
+    .calendar-technician-assignment,
+    .calendar-team-assignment,
+    .calendar-technician-assignment-groups section
+) :is(h3,h4,strong,label){
+    color:var(--text);
+}
+
+body:is(.desktop-device,.mobile-device).dark-theme .calendar-client-preview-heading>span{
+    background:#24344a;
+    color:var(--primary);
+}
+
+body:is(.desktop-device,.mobile-device).dark-theme :is(
+    .calendar-technician-search input,
+    .calendar-primary-technician select
+){
+    border-color:var(--border);
+    background:var(--surface);
+    color:var(--text);
+}
+
+body:is(.desktop-device,.mobile-device).dark-theme .calendar-team-assignment label:has(input:checked),
+body:is(.desktop-device,.mobile-device).dark-theme .calendar-technician-assignment-groups label:has(input:checked){
+    border-color:var(--secondary);
+    background:rgba(52,211,153,.12);
 }
 
 body:is(.desktop-device,.mobile-device).dark-theme :is(.history-entry-protected,.history-category){

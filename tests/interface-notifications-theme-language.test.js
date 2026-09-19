@@ -49,6 +49,9 @@ test("le thème sombre couvre les écrans et les principaux espaces de travail",
     assert.match(settingsDarkRules, /\.creator-company-profile-fields\{[\s\S]*background:var\(--surface-alt\)!important/);
     assert.match(settingsDarkRules, /\.creator-assistance-control-option\{[\s\S]*background:rgba\(59,130,246,\.12\)/);
     assert.match(settingsDarkRules, /\.creator-invoice-history-notice\{[\s\S]*background:rgba\(120,53,15,\.24\)/);
+    assert.match(settingsDarkRules, /\.calendar-client-preview,[\s\S]*\.calendar-technician-assignment,[\s\S]*\.calendar-team-assignment label,[\s\S]*\.calendar-technician-assignment-groups section/);
+    assert.match(settingsDarkRules, /\.calendar-client-preview-heading>span\{[\s\S]*background:#24344a/);
+    assert.match(settingsDarkRules, /\.calendar-team-assignment label:has\(input:checked\),[\s\S]*background:rgba\(52,211,153,\.12\)/);
     assert.match(partnerDialogueStyle, /body\.dark-theme \.partner-dialogue-modal>\.partner-dialogue/);
     assert.match(partnerDialogueStyle, /background:var\(--surface-alt\)/);
     assert.match(reportEditorStyle, /body\.dark-theme\.report-writing-active \.report-editor-fullscreen/);
