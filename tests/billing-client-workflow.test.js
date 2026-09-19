@@ -7,10 +7,20 @@ import { canCreateBillingTemplates } from "../server/billing.js";
 const billingSource = readFileSync(new URL("../js/billing.js", import.meta.url), "utf8");
 const calendarSource = readFileSync(new URL("../js/calendar.js", import.meta.url), "utf8");
 const billingServerSource = readFileSync(new URL("../server/billing.js", import.meta.url), "utf8");
+const pdfPreviewSource = readFileSync(new URL("../js/pdf-live-preview.js", import.meta.url), "utf8");
 const accountingSource = readFileSync(new URL("../js/accounting.js", import.meta.url), "utf8");
 
 test("selecting a known billing customer stores its client id", () => {
     assert.match(billingSource, /form\.querySelector\("\[name=clientId\]"\)\.value = client\?\.id \|\| ""/);
+});
+
+test("l’aperçu devis et facture se remplace silencieusement en conservant la page consultée", () => {
+    assert.match(billingSource, /billing-document-preview-pages/);
+    assert.match(billingSource, /renderLivePdfPreview\(blob, preview, currentRequest\.signal\)/);
+    assert.match(billingSource, /request\?\.abort\(\)/);
+    assert.doesNotMatch(billingSource, /billing-document-live-preview iframe/);
+    assert.match(pdfPreviewSource, /capturePdfPosition\(container\)/);
+    assert.match(pdfPreviewSource, /restorePdfPosition\(container, position\)/);
 });
 
 test("administrators can open and close the saved billing line manager", () => {

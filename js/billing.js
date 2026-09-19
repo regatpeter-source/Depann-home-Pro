@@ -7,6 +7,7 @@ import { renderPlatformAnnouncement } from "./platform-announcement.js?v=1";
 import { clearSearch, createInfo, getContainer, setPage } from "./ui.js?v=44";
 import { openDocumentDeliveryChoice } from "./document-delivery.js?v=1";
 import { pageSizeOptions, paginateItems, renderBusinessPagination } from "./pagination.js?v=1";
+import { renderLivePdfPreview } from "./pdf-live-preview.js?v=2";
 
 const CUSTOMER_TYPES = ["Particulier", "Professionnel", "Magasin", "Autre"];
 const PAYMENT_METHODS = ["Chèque", "Espèces", "Virement", "Carte bancaire"];
@@ -173,11 +174,11 @@ function renderOverview(panel, profilePanel) {
     panel.querySelector("[data-billing-action=new-quote]")?.addEventListener("click", () => { if (!isAccountant()) openNewDocument("quote"); });
     panel.querySelector("[data-billing-action=new-invoice]").addEventListener("click", () => { if (!isAccountant()) openNewDocument("invoice"); });
     panel.querySelector("[data-billing-action=open-leak-reports]")?.addEventListener("click", async () => {
-        const { renderLeakReportWizard } = await import("./leak-report-wizard.js?v=52");
+        const { renderLeakReportWizard } = await import("./leak-report-wizard.js?v=54");
         renderLeakReportWizard();
     });
     panel.querySelector("[data-billing-action=new-leak-report]")?.addEventListener("click", async () => {
-        const { openLeakReportCreation } = await import("./leak-report-wizard.js?v=52");
+        const { openLeakReportCreation } = await import("./leak-report-wizard.js?v=54");
         openLeakReportCreation();
     });
     panel.querySelector("[data-billing-action=download-quote-template]")?.addEventListener("click", openQuoteTemplateDownload);
@@ -488,7 +489,7 @@ function renderDocumentEditor(panel) {
             <p id="billingDocumentMessage" class="auth-message" aria-live="polite"></p>
             <div class="calendar-form-actions"><button type="submit" class="secondary-button">${isEditing ? "Enregistrer les modifications" : "Enregistrer le document"}</button></div>
         </form>
-        </section>${livePreview ? '<section class="billing-document-live-preview" aria-label="Aperçu PDF en direct"><div class="billing-document-preview-heading"><strong>Aperçu PDF final en direct</strong><span data-billing-preview-state>Génération…</span></div><iframe title="Aperçu PDF en direct du devis ou de la facture"></iframe></section>' : ""}</div>
+        </section>${livePreview ? '<section class="billing-document-live-preview" aria-label="Aperçu PDF en direct"><div class="billing-document-preview-heading"><strong>Aperçu PDF final en direct</strong><span data-billing-preview-state aria-live="polite">Génération…</span></div><div class="billing-document-preview-pages" role="document" aria-label="Pages PDF du devis ou de la facture"></div></section>' : ""}</div>
     `;
     const form = panel.querySelector("form");
     const linesNode = panel.querySelector("#billingLines");
@@ -554,31 +555,28 @@ function renderDocumentEditor(panel) {
 }
 
 function bindBillingDocumentPreview(panel, form, billingDocument) {
-    const iframe = panel.querySelector(".billing-document-live-preview iframe");
+    const preview = panel.querySelector(".billing-document-preview-pages");
     const state = panel.querySelector("[data-billing-preview-state]");
-    if (!iframe || !state) return { queue: () => {}, dispose: () => {} };
+    if (!preview || !state) return { queue: () => {}, dispose: () => {} };
     let timer = null;
     let request = null;
-    let previewUrl = "";
     let sequence = 0;
     let disposed = false;
-    const dispose = () => { if (disposed) return; disposed = true; clearTimeout(timer); request?.abort(); observer.disconnect(); if (previewUrl) URL.revokeObjectURL(previewUrl); };
+    const dispose = () => { if (disposed) return; disposed = true; clearTimeout(timer); request?.abort(); observer.disconnect(); };
     const refresh = async currentSequence => {
-        if (disposed || !iframe.isConnected || currentSequence !== sequence) return;
+        if (disposed || !preview.isConnected || currentSequence !== sequence) return;
         state.textContent = "Mise à jour…";
         request?.abort();
-        request = new AbortController();
+        const currentRequest = new AbortController();
+        request = currentRequest;
         const payload = { ...billingDocumentPayload(form, billingDocument), vatRegime: billingDocument.vatRegime, issuerTaxNumber: billingDocument.issuerTaxNumber, quoteReference: billingDocument.quoteReference || "" };
         try {
-            const response = await fetch("/api/billing/documents/preview", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload), signal: request.signal });
+            const response = await fetch("/api/billing/documents/preview", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload), signal: currentRequest.signal });
             if (!response.ok) { const error = await response.json().catch(() => null); throw new Error(error?.message || "Aperçu PDF indisponible."); }
             const blob = await response.blob();
             if (disposed || currentSequence !== sequence) return;
-            const nextUrl = URL.createObjectURL(blob);
-            const previousUrl = previewUrl;
-            previewUrl = nextUrl;
-            iframe.src = nextUrl;
-            if (previousUrl) iframe.addEventListener("load", () => URL.revokeObjectURL(previousUrl), { once: true });
+            await renderLivePdfPreview(blob, preview, currentRequest.signal);
+            if (disposed || currentSequence !== sequence) return;
             state.textContent = response.headers.get("X-Billing-Preview-Mode") === "business-pages" ? "Gabarit DOCX : aperçu des pages métier" : `Actualisé à ${new Intl.DateTimeFormat("fr-FR", { timeStyle: "short" }).format(new Date())}`;
         } catch (error) {
             if (error.name !== "AbortError" && !disposed && currentSequence === sequence) state.textContent = error.message || "Aperçu PDF indisponible.";

@@ -202,8 +202,8 @@ test("billing live preview is desktop-only, accepts incomplete drafts and never 
     assert.match(previewRoute, /X-Billing-Preview-Mode": "final"/);
 });
 
-test("billing live preview revokes old PDF blobs and cancels stale generations", () => {
+test("billing live preview cancels stale generations and replaces rendered pages atomically", () => {
     assert.match(clientSource, /request\?\.abort\(\)/);
-    assert.match(clientSource, /URL\.revokeObjectURL\(previousUrl\)/);
+    assert.match(clientSource, /renderLivePdfPreview\(blob, preview, currentRequest\.signal\)/);
     assert.match(clientSource, /MutationObserver/);
 });

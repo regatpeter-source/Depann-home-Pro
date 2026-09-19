@@ -3,7 +3,7 @@ import { clearSearch, getContainer, setPage } from "./ui.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { acquireReportLock, forceReleaseReportLock, heartbeatReportLock, releaseReportLock } from "./collaboration.js?v=8";
 import { openDocumentDeliveryChoice } from "./document-delivery.js?v=1";
-import { renderLivePdfPreview } from "./pdf-live-preview.js?v=1";
+import { renderLivePdfPreview } from "./pdf-live-preview.js?v=2";
 import { pageSizeOptions, paginateItems, renderBusinessPagination } from "./pagination.js?v=1";
 
 const MODULES = [
@@ -50,6 +50,9 @@ let originals = [];
 let reportLock = null;
 let previewMode = false;
 let reportPreviewUrl = "";
+let reportPreviewTimer = null;
+let reportPreviewRequest = null;
+let reportPreviewSequence = 0;
 let saveTimer = null;
 let heartbeatTimer = null;
 let periodicTimer = null;
@@ -108,7 +111,7 @@ export function openLeakReportCreation() {
     dialog.innerHTML = `<div><header><div><p class="eyebrow">Nouveau rapport</p><h2>Rapport de recherche de fuite</h2></div><button type="button" class="text-button" data-close-report-creation>Fermer</button></header><p class="muted">Un rapport est toujours rattaché à une intervention et au dossier client correspondant.</p><div class="report-creation-options"><button type="button" data-report-from-appointment><strong>Choisir une intervention</strong><span>Ouvrez une intervention existante pour créer ou reprendre son rapport.</span></button><button type="button" data-create-client-first><strong>Créer d’abord un client</strong><span>Créez le dossier client, planifiez son intervention, puis ouvrez le rapport depuis le planning.</span></button></div></div>`;
     document.body.append(dialog);
     dialog.querySelector("[data-close-report-creation]").addEventListener("click", () => dialog.remove());
-    dialog.querySelector("[data-report-from-appointment]").addEventListener("click", async () => { dialog.remove(); const { renderCalendar } = await import("./calendar.js?v=224"); renderCalendar({ currentPeriod: true }); });
+    dialog.querySelector("[data-report-from-appointment]").addEventListener("click", async () => { dialog.remove(); const { renderCalendar } = await import("./calendar.js?v=225"); renderCalendar({ currentPeriod: true }); });
     dialog.querySelector("[data-create-client-first]").addEventListener("click", async () => { dialog.remove(); const { renderClients } = await import("./clients.js?v=169"); renderClients(); });
 }
 
@@ -312,22 +315,33 @@ function bindEditor(shell, moduleKey) {
 function renderPreview(shell) {
     clearReportPreviewUrl();
     shell.className = "report-editor-shell report-preview-shell";
-    shell.innerHTML = `<header class="report-preview-header"><div><p class="eyebrow">Prévisualisation PDF intégrée</p><h2>${escapeHtml(current.title)}</h2><p class="muted">Cet aperçu reprend fidèlement le PDF qui sera archivé.</p><p class="auth-message" data-report-preview-state>Génération de l’aperçu…</p><a class="secondary-button" data-open-report-preview target="_blank" rel="noopener" hidden>Ouvrir ou télécharger le PDF</a></div><div class="report-preview-actions"><button class="secondary-button" data-modify-report>Modifier le rapport</button>${ownsLock() && current.status === "ready_to_send" && canFinalizeReport() ? '<button class="secondary-button report-primary-action" data-preview-validate>Valider définitivement et envoyer</button>' : ""}<button class="secondary-button" data-close-preview>Fermer la prévisualisation</button><button class="secondary-button" data-report-home>Accueil</button></div></header><div class="report-preview-pages" hidden></div><iframe title="Prévisualisation intégrée du rapport PDF" hidden></iframe>`;
+    shell.innerHTML = `<header class="report-preview-header"><div><p class="eyebrow">Prévisualisation PDF intégrée</p><h2>${escapeHtml(current.title)}</h2><p class="muted">Cet aperçu reprend fidèlement le PDF qui sera archivé et s’actualise silencieusement sans perdre la page consultée.</p><p class="auth-message" data-report-preview-state aria-live="polite">Génération de l’aperçu…</p><a class="secondary-button" data-open-report-preview target="_blank" rel="noopener" hidden>Ouvrir ou télécharger le PDF</a></div><div class="report-preview-actions"><button class="secondary-button" data-modify-report>Modifier le rapport</button>${ownsLock() && current.status === "ready_to_send" && canFinalizeReport() ? '<button class="secondary-button report-primary-action" data-preview-validate>Valider définitivement et envoyer</button>' : ""}<button class="secondary-button" data-close-preview>Fermer la prévisualisation</button><button class="secondary-button" data-report-home>Accueil</button></div></header><div class="report-preview-pages" role="document" aria-label="Pages PDF du rapport"></div>`;
     const returnToEditor = () => { clearReportPreviewUrl(); previewMode = false; renderEditor(shell); };
     shell.querySelector("[data-modify-report]").addEventListener("click", returnToEditor);
     shell.querySelector("[data-close-preview]").addEventListener("click", returnToEditor);
     shell.querySelector("[data-preview-validate]")?.addEventListener("click", () => finalizePreview(shell));
     shell.querySelector("[data-report-home]")?.addEventListener("click", () => exitReportToHome(shell));
-    void loadReportPreview(shell);
+    queueReportPreview(shell, 0);
 }
 
-async function loadReportPreview(shell) {
-    const frame = shell.querySelector("iframe");
+function queueReportPreview(shell, delay = 350) {
+    if (!previewMode || !shell?.isConnected) return;
+    clearTimeout(reportPreviewTimer);
+    const sequence = ++reportPreviewSequence;
+    reportPreviewTimer = window.setTimeout(() => { if (sequence === reportPreviewSequence) void loadReportPreview(shell, sequence); }, delay);
+}
+
+async function loadReportPreview(shell, sequence) {
     const pages = shell.querySelector(".report-preview-pages");
     const openLink = shell.querySelector("[data-open-report-preview]");
     const state = shell.querySelector("[data-report-preview-state]");
+    if (!pages || !openLink || !state || sequence !== reportPreviewSequence) return;
+    state.textContent = pages.childElementCount ? "Mise à jour…" : "Génération de l’aperçu…";
+    reportPreviewRequest?.abort();
+    const currentRequest = new AbortController();
+    reportPreviewRequest = currentRequest;
     try {
-        const response = await fetch(`/api/technical-reports/${encodeURIComponent(current.id)}/pdf?preview=${Date.now()}`, { credentials: "same-origin", headers: { Accept: "application/pdf" } });
+        const response = await fetch(`/api/technical-reports/${encodeURIComponent(current.id)}/pdf?preview=${Date.now()}`, { credentials: "same-origin", headers: { Accept: "application/pdf" }, signal: currentRequest.signal });
         if (!response.ok) {
             const error = await response.json().catch(() => null);
             throw new Error(error?.message || `Aperçu indisponible (erreur ${response.status}).`);
@@ -335,31 +349,30 @@ async function loadReportPreview(shell) {
         const contentType = String(response.headers.get("Content-Type") || "").toLowerCase();
         if (!contentType.startsWith("application/pdf")) throw new Error("Le serveur n’a pas retourné un document PDF. Reconnectez-vous puis réessayez.");
         const blob = await response.blob();
-        if (!previewMode || !frame?.isConnected || !pages?.isConnected) return;
-        clearReportPreviewUrl();
+        if (!previewMode || !pages.isConnected || sequence !== reportPreviewSequence) return;
+        await renderLivePdfPreview(blob, pages, currentRequest.signal);
+        if (!previewMode || !pages.isConnected || sequence !== reportPreviewSequence) return;
+        const previousUrl = reportPreviewUrl;
         reportPreviewUrl = URL.createObjectURL(blob);
         openLink.href = reportPreviewUrl;
         openLink.download = `apercu-rapport-${current.id}.pdf`;
         openLink.hidden = false;
-        if (document.body.classList.contains("mobile-device")) {
-            pages.hidden = false;
-            await renderLivePdfPreview(blob, pages);
-        } else {
-            frame.src = reportPreviewUrl;
-            frame.hidden = false;
-        }
-        state.textContent = "Aperçu PDF chargé.";
+        if (previousUrl) URL.revokeObjectURL(previousUrl);
+        state.textContent = `Actualisé à ${new Intl.DateTimeFormat("fr-FR", { timeStyle: "short" }).format(new Date())}`;
         state.classList.remove("error");
     } catch (error) {
-        if (!state?.isConnected) return;
+        if (error.name === "AbortError" || !state.isConnected || sequence !== reportPreviewSequence) return;
         state.textContent = error.message || "Aperçu PDF indisponible.";
         state.classList.add("error");
-        frame.hidden = true;
-        pages.hidden = true;
     }
 }
 
 function clearReportPreviewUrl() {
+    clearTimeout(reportPreviewTimer);
+    reportPreviewRequest?.abort();
+    reportPreviewTimer = null;
+    reportPreviewRequest = null;
+    reportPreviewSequence += 1;
     if (reportPreviewUrl) URL.revokeObjectURL(reportPreviewUrl);
     reportPreviewUrl = "";
 }
@@ -500,7 +513,10 @@ function openReportProofreading(shell) {
         list.querySelectorAll("[data-proofreading-entry]").forEach(input => input.addEventListener("input", () => { syncTexts(); markReportModified(shell); queuePdfPreview(); }));
         list.querySelectorAll("[data-proofreading-general-field]").forEach(input => input.addEventListener("input", () => { syncGeneralInformation(); markReportModified(shell); queuePdfPreview(); }));
         list.querySelectorAll("[data-open-photo]").forEach(button => button.addEventListener("click", () => openPhotoPreview(button.dataset.openPhoto)));
-        list.querySelectorAll("[data-photo-caption]").forEach(input => input.addEventListener("change", async () => { const operation = updatePhotoCaption(input, shell); trackMediaSave(operation); await operation; queuePdfPreview(0); }));
+        list.querySelectorAll("[data-photo-caption]").forEach(input => {
+            input.addEventListener("input", () => { const photo = (current.media || []).find(item => item.id === input.dataset.photoCaption); if (!photo) return; photo.caption = input.value; markReportModified(shell); queuePdfPreview(); });
+            input.addEventListener("change", async () => { const operation = updatePhotoCaption(input, shell); trackMediaSave(operation); await operation; queuePdfPreview(0); });
+        });
         list.querySelectorAll("[data-photo-pdf-size]").forEach(input => input.addEventListener("change", async () => { const operation = updatePhotoPdfSize(input, shell); trackMediaSave(operation); await operation; queuePdfPreview(0); }));
         const refreshMedia = () => { renderList(); queuePdfPreview(0); };
         list.querySelectorAll("[data-photo-source]").forEach(button => button.addEventListener("click", () => { syncTexts(); openPhotoSource(shell, { moduleKey: button.dataset.moduleKey, observationId: button.dataset.observationId, materialId: button.dataset.materialId, replacePhotoId: button.dataset.replacePhoto || "" }, refreshMedia); }));
@@ -855,8 +871,9 @@ function bindCollaborationEvents() {
         if (!result.ok) return;
         current = result.data.report; corrections = result.data.corrections || []; originals = result.data.originals || []; reportLock = result.data.lock || null; ensureModularContent();
         const shell = document.querySelector(".report-editor-shell");
-        if (shell) renderEditor(shell);
+        if (shell) previewMode ? queueReportPreview(shell, 0) : renderEditor(shell);
     });
+    window.addEventListener("focus", () => { const shell = document.querySelector(".report-preview-shell"); if (shell && previewMode) queueReportPreview(shell, 0); });
 }
 
 function pinRequiredSections() { if (!current?.content) return; const order = current.content.sectionOrder || []; ["presentation", "general"].forEach(id => { const index = order.indexOf(id); if (index >= 0) order.splice(index, 1); }); current.content.sectionOrder = ["general", "presentation", ...order]; current.content.removedSections = (current.content.removedSections || []).filter(id => !["general", "presentation"].includes(id)); }

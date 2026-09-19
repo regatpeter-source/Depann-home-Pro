@@ -143,8 +143,8 @@ test("l’aperçu général ne cadre jamais une réponse HTML ou une erreur 409"
     assert.match(editorSource, /response\.headers\.get\("Content-Type"\)/);
     assert.match(editorSource, /contentType\.startsWith\("application\/pdf"\)/);
     assert.match(editorSource, /reportPreviewUrl = URL\.createObjectURL\(blob\)/);
-    assert.match(editorSource, /frame\.src = reportPreviewUrl/);
-    assert.doesNotMatch(editorSource, /<iframe[^>]+src="\/api\/technical-reports/);
+    assert.match(editorSource, /renderLivePdfPreview\(blob, pages, currentRequest\.signal\)/);
+    assert.doesNotMatch(editorSource, /<iframe/);
 });
 
 test("live PDF refresh waits for photo saves and does not persist proofreading", () => {
@@ -163,6 +163,19 @@ test("live PDF updates preserve the visible page and relative scroll position", 
     assert.match(pdfPreviewSource, /restorePdfPosition\(container, position\)/);
     assert.match(pdfPreviewSource, /pageProgress/);
     assert.match(pdfPreviewSource, /container\.scrollTop = page\.offsetTop/);
+});
+
+test("les aperçus généraux se régénèrent silencieusement sans iframe ni perte de position", () => {
+    assert.match(editorSource, /queueReportPreview\(shell, 0\)/);
+    assert.match(editorSource, /reportPreviewRequest\?\.abort\(\)/);
+    assert.match(editorSource, /renderLivePdfPreview\(blob, pages, currentRequest\.signal\)/);
+    assert.match(editorSource, /previewMode \? queueReportPreview\(shell, 0\) : renderEditor\(shell\)/);
+    assert.doesNotMatch(editorSource, /<iframe title="Prévisualisation intégrée du rapport PDF"/);
+});
+
+test("une légende de photo corrigée actualise le PDF dès la frappe", () => {
+    assert.match(editorSource, /input\.addEventListener\("input", \(\) => \{ const photo = \(current\.media \|\| \[\]\)\.find/);
+    assert.match(editorSource, /photo\.caption = input\.value; markReportModified\(shell\); queuePdfPreview\(\)/);
 });
 
 test("cancelling live proofreading restores the original report texts", () => {
@@ -262,10 +275,10 @@ test("the client file keeps its original report attachment after reopening", () 
     assert.match(clientsEditorSource, /reportRevision: Number\(attachment\.reportRevision\) \|\| 0/);
 });
 
-test("mobile report preview renders PDF pages without relying on iframe support", () => {
-    assert.match(editorSource, /class="report-preview-pages" hidden/);
-    assert.match(editorSource, /document\.body\.classList\.contains\("mobile-device"\)/);
-    assert.match(editorSource, /await renderLivePdfPreview\(blob, pages\)/);
+test("report preview renders PDF pages on desktop and mobile without relying on iframe support", () => {
+    assert.match(editorSource, /class="report-preview-pages" role="document"/);
+    assert.doesNotMatch(editorSource, /<iframe title="Prévisualisation intégrée du rapport PDF"/);
+    assert.match(editorSource, /await renderLivePdfPreview\(blob, pages, currentRequest\.signal\)/);
     assert.match(editorSource, /data-open-report-preview/);
 });
 
