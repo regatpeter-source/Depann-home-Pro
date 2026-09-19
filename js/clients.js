@@ -1075,11 +1075,13 @@ function renderClientActivityHistory(client, billingDocuments = [], purchases = 
     const appointmentEntries = appointments.map(appointment => {
         const interventionDate = new Intl.DateTimeFormat("fr-FR", { dateStyle: "short" }).format(new Date(`${appointment.date}T12:00:00`));
         const appointmentStatus = appointment.isCompleted ? "Terminée" : ({ planned: "Planifiée", confirmed: "Confirmée", in_progress: "En cours", completed: "Terminée", cancelled: "Annulée" })[appointment.status] || "Planifiée";
+        const pauseDetail = appointment.pausedAt ? [`Pause : ${interventionPauseHistoryLabel(appointment.pauseReason)}`, appointment.pauseNote].filter(Boolean).join(" · ") : "";
+        const reschedulingDetail = appointment.rescheduledEventId ? `Replanifiée sous l’intervention n°${appointment.rescheduledEventId}` : appointment.rescheduledFromEventId ? `Reprise de l’intervention n°${appointment.rescheduledFromEventId}` : "";
         return {
             id: `appointment-${appointment.id}`,
             type: "appointment",
-            label: appointment.eventType === "appointment" ? "Intervention créée" : "Événement client créé",
-            detail: [appointment.eventType === "appointment" ? `Intervention n°${appointment.id}` : `Événement n°${appointment.id}`, appointmentStatus, `${interventionDate}${appointment.startTime ? ` à ${appointment.startTime}` : ""}`, appointment.title, appointment.location, appointment.quitusStatus === "validated" ? (appointment.isCompleted || appointment.status === "cancelled" ? "Quitus archivé" : "Quitus validé") : ""].filter(Boolean).join(" · "),
+            label: appointment.pausedAt ? "Intervention annulée après mise en pause" : appointment.rescheduledFromEventId ? "Intervention replanifiée" : appointment.eventType === "appointment" ? "Intervention créée" : "Événement client créé",
+            detail: [appointment.eventType === "appointment" ? `Intervention n°${appointment.id}` : `Événement n°${appointment.id}`, appointmentStatus, `${interventionDate}${appointment.startTime ? ` à ${appointment.startTime}` : ""}`, appointment.title, appointment.location, pauseDetail, reschedulingDetail, appointment.quitusStatus === "validated" ? (appointment.isCompleted || appointment.status === "cancelled" ? "Quitus archivé" : "Quitus validé") : ""].filter(Boolean).join(" · "),
             documentId: "",
             attachmentId: "",
             appointmentId: String(appointment.id),
@@ -1152,6 +1154,7 @@ function interventionHistoryTimestamp(group) {
 
 function formatInterventionHistoryDate(value) { return new Intl.DateTimeFormat("fr-FR", { dateStyle: "long" }).format(new Date(`${value}T12:00:00`)); }
 function appointmentStatusLabel(appointment) { return appointment.isCompleted ? "Terminée" : ({ planned: "Planifiée", confirmed: "Confirmée", in_progress: "En cours", completed: "Terminée", cancelled: "Annulée" })[appointment.status] || "Planifiée"; }
+function interventionPauseHistoryLabel(value) { return ({ technician_absent: "technicien absent", material_not_received: "matériel non reçu", waiting_client: "attente du client", waiting_parts: "pièce en attente", other: "autre motif" })[value] || "motif non renseigné"; }
 
 function bindClientHistoryActions(panel, client) {
     panel.querySelectorAll("[data-view-billing-document]").forEach(button => {

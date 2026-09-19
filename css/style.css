@@ -7555,7 +7555,10 @@ body.desktop-device .dashboard-grid{
 .calendar-intervention-pause-fields{display:grid;grid-template-columns:minmax(180px,.7fr) minmax(240px,1.3fr);gap:10px}
 .calendar-intervention-pause-fields label{display:grid;gap:5px;font-weight:700}
 .calendar-intervention-pause-fields textarea{resize:vertical}
+.calendar-intervention-resume-fields{display:flex;align-items:end;gap:10px}
+.calendar-intervention-resume-fields label{display:grid;gap:5px;min-width:190px;font-weight:700}
 body.mobile-device .calendar-intervention-pause-fields{grid-template-columns:1fr}
+body.mobile-device .calendar-intervention-resume-fields{display:grid;grid-template-columns:1fr}
 
 body.desktop-device .dashboard-card{
     min-height:300px;

@@ -10,7 +10,9 @@ const calendarClient = read("js/calendar.js");
 const calendarServer = read("server/calendar.js");
 const schema = read("database/schema.sql");
 const migration = read("database/migrations/0024_operational_follow_up.sql");
+const reschedulingMigration = read("database/migrations/0025_intervention_rescheduling.sql");
 const styles = read("css/style.css");
+const clients = read("js/clients.js");
 
 test("le tableau de bord remplace les clients par les rapports à corriger ou envoyer", () => {
     assert.match(navigation, /Rapports à corriger \/ envoyer/);
@@ -28,6 +30,8 @@ test("les documents à suivre distinguent les quatre actions opérationnelles", 
     assert.match(navigation, /document\.issuedAt && !document\.isEmailSent/);
     assert.match(navigation, /document\.followUpDate <= today/);
     assert.match(navigation, /\/api\/calendar\/paused/);
+    assert.match(navigation, /followUp\.pausedInterventions\[0\]/);
+    assert.match(navigation, /renderCalendar\(\{ date: new Date/);
     assert.match(navigation, /dashboard-kpi-breakdown/);
     assert.doesNotMatch(navigation, /<section class="dashboard-follow-up"/);
     assert.match(styles, /\.dashboard-kpi-breakdown/);
@@ -42,23 +46,38 @@ test("la date de relance d’un devis est modifiable et persistée", () => {
     assert.match(billingServer, /documentType === "quote" \? sanitizeDate\(value\?\.followUpDate\)/);
 });
 
-test("une intervention peut être suspendue avec un motif puis reprise", () => {
+test("une intervention mise en pause est annulée puis replanifiée à une autre date", () => {
     assert.match(migration, /paused_at TIMESTAMPTZ/);
     assert.match(migration, /pause_reason VARCHAR\(40\)/);
     assert.match(calendarServer, /PAUSE_REASONS = new Set/);
     assert.match(calendarServer, /\/api\/calendar\/events\/:eventId\/pause/);
     assert.match(calendarServer, /\/api\/calendar\/events\/:eventId\/resume/);
+    assert.match(calendarServer, /SET event_status='cancelled',paused_at=\$3/);
+    assert.match(calendarServer, /if \(newDate === source\.date\)/);
+    assert.match(calendarServer, /INSERT INTO depannhome_calendar_events/);
+    assert.match(calendarServer, /rescheduled_from_event_id/);
+    assert.match(calendarServer, /event_status='cancelled' AND event\.paused_at IS NOT NULL/);
     assert.match(calendarServer, /canRequestInterventionPause\(request\.user\)/);
     assert.match(calendarServer, /EXISTS \(SELECT 1 FROM depannhome_calendar_assignments/);
     assert.match(calendarClient, /Matériel non reçu/);
     assert.match(calendarClient, /Technicien absent/);
     assert.match(calendarClient, /data-resume-intervention/);
+    assert.match(calendarClient, /data-resume-intervention-date/);
+    assert.match(calendarClient, /Replanifier l’intervention/);
     assert.match(calendarClient, /event\?\.pausedAt \? "is-paused"/);
     assert.match(styles, /\.calendar-intervention-pause/);
     assert.match(styles, /\.calendar-event\.is-paused/);
 });
 
-test("la clôture d’une intervention retire automatiquement son suivi de pause", () => {
-    assert.match(calendarServer, /paused_at=CASE WHEN \$13 IN \('completed','cancelled'\) THEN NULL/);
-    assert.match(calendarServer, /event\.event_status NOT IN \('completed','cancelled'\)/);
+test("le report complet est conservé dans l’historique client", () => {
+    assert.match(reschedulingMigration, /rescheduled_from_event_id BIGINT REFERENCES depannhome_calendar_events\(id\)/);
+    assert.match(calendarServer, /Intervention mise en pause et annulée/);
+    assert.match(calendarServer, /Intervention reprise après pause/);
+    assert.match(calendarServer, /Intervention replanifiée/);
+    assert.match(calendarServer, /appendClientInterventionHistory/);
+    assert.match(calendarServer, /mission\.calendar_event_id=event\.id/);
+    assert.match(clients, /Pause :/);
+    assert.match(clients, /Replanifiée sous l’intervention/);
+    assert.match(clients, /Reprise de l’intervention/);
+    assert.match(calendarServer, /Cette intervention mise en pause et annulée doit rester dans l’historique du client/);
 });

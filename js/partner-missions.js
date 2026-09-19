@@ -2,7 +2,7 @@ import { ROUTES } from "./config.js?v=118";
 import { clearSearch, getContainer, setPage } from "./ui.js?v=44";
 import { escapeHtml } from "./utils.js?v=44";
 import { openPartnerDialogue } from "./partner-dialogue.js?v=19";
-import { getSearchableClients } from "./clients.js?v=169";
+import { getSearchableClients } from "./clients.js?v=170";
 import { synchronizeClients } from "./client-sync.js?v=131";
 import { loadPartnerNotifications, markPartnerNotificationRead } from "./collaboration.js?v=13";
 
@@ -443,7 +443,7 @@ async function showDetail(id) {
     content.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 async function openPartnerMissionPlanning(mission) {
-    const { renderCalendar } = await import("./calendar.js?v=227");
+    const { renderCalendar } = await import("./calendar.js?v=228");
     const data = mission.mappedData || {};
     const draft = mission.planningDraft || {};
     const hasDraft = Boolean(draft.pausedAt);

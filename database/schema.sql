@@ -1287,6 +1287,7 @@ CREATE TABLE IF NOT EXISTS depannhome_calendar_events (
     pause_note VARCHAR(1000) NOT NULL DEFAULT '',
     paused_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
     paused_by_name VARCHAR(160) NOT NULL DEFAULT '',
+    rescheduled_from_event_id BIGINT REFERENCES depannhome_calendar_events(id) ON DELETE SET NULL,
     notes VARCHAR(2000) NOT NULL DEFAULT '',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -1344,6 +1345,13 @@ ADD COLUMN IF NOT EXISTS paused_by_name VARCHAR(160) NOT NULL DEFAULT '';
 CREATE INDEX IF NOT EXISTS depannhome_calendar_events_paused_idx
 ON depannhome_calendar_events (owner_id, paused_at DESC)
 WHERE paused_at IS NOT NULL;
+
+ALTER TABLE depannhome_calendar_events
+ADD COLUMN IF NOT EXISTS rescheduled_from_event_id BIGINT REFERENCES depannhome_calendar_events(id) ON DELETE SET NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS depannhome_calendar_events_rescheduled_from_idx
+ON depannhome_calendar_events (rescheduled_from_event_id)
+WHERE rescheduled_from_event_id IS NOT NULL;
 
 -- Types gérés par l’application : appointment, task, vacation, sick_leave, unavailable.
 

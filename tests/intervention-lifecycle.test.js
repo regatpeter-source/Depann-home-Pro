@@ -24,7 +24,8 @@ test("une intervention terminée reste dans l’historique et devient non modifi
     assert.doesNotMatch(historyRoute, /LIMIT\s+1/);
     assert.match(calendar, /Cette intervention est terminée et conservée dans l’historique/);
     assert.match(calendar, /Cette intervention terminée doit rester dans l’historique/);
-    assert.match(clients, /label: appointment\.eventType === "appointment" \? "Intervention créée"/);
+    assert.match(clients, /appointment\.pausedAt \? "Intervention annulée après mise en pause"/);
+    assert.match(clients, /appointment\.eventType === "appointment" \? "Intervention créée"/);
     assert.match(clients, /`Intervention n°\$\{appointment\.id\}`/);
     assert.match(clients, /appointment\.isCompleted \? "Terminée" : \(\{ planned: "Planifiée", confirmed: "Confirmée", in_progress: "En cours", completed: "Terminée", cancelled: "Annulée" \}\)\[appointment\.status\] \|\| "Planifiée"/);
     assert.doesNotMatch(clients, /"Intervention planifiée"/);
@@ -78,5 +79,5 @@ test("une nouvelle version PWA prépare les correctifs sans recharger la session
     assert.match(application, /\.then\(registration => registration\.update\(\)\)/);
     assert.match(worker, /self\.skipWaiting\(\)/);
     assert.match(worker, /self\.clients\.claim\(\)/);
-    assert.match(worker, /\.\/js\/calendar\.js\?v=227/);
+    assert.match(worker, /\.\/js\/calendar\.js\?v=228/);
 });

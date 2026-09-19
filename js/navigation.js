@@ -1,23 +1,23 @@
 import { ROUTES, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=135";
-import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=227";
+import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=228";
 import { openCreatorPartnerRequest, openCreatorRequestNotification, renderCreatorConsole } from "./creator.js?v=170";
-import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=209";
-import { renderAccounting } from "./accounting.js?v=28";
-import { renderPurchases } from "./purchases.js?v=126";
+import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=210";
+import { renderAccounting } from "./accounting.js?v=29";
+import { renderPurchases } from "./purchases.js?v=128";
 import { renderGroupActivation, renderGroupWorkspace } from "./groups.js?v=9";
 import { renderHistoryAndJournals } from "./history.js?v=2";
-import { renderPartnerMissions } from "./partner-missions.js?v=89";
+import { renderPartnerMissions } from "./partner-missions.js?v=90";
 import { renderPartnerSandbox } from "./partner-sandbox.js?v=3";
-import { renderPartnerConnections } from "./partner-connections.js?v=49";
+import { renderPartnerConnections } from "./partner-connections.js?v=50";
 import { renderCompanyEmailWorkspace, renderPartnerEmailSettings } from "./partner-email-settings.js?v=29";
 import { renderDataImportTool } from "./data-imports.js?v=5";
-import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=56";
+import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=57";
 import { getFirstUnreadClientId, refreshClientMessageAlert, refreshVisibleClientMessages } from "./messages.js?v=107";
-import { getSearchableClients, renderClients } from "./clients.js?v=169";
+import { getSearchableClients, renderClients } from "./clients.js?v=170";
 import { synchronizeClients } from "./client-sync.js?v=131";
 import { configureLibrary, openLibrarySection, renderLibrary, searchPersonalLibrary } from "./library.js?v=122";
-import { getContextualSearchResults } from "./search.js?v=75";
-import { renderInterventionSearch } from "./intervention-search.js?v=1";
+import { getContextualSearchResults } from "./search.js?v=77";
+import { renderInterventionSearch } from "./intervention-search.js?v=2";
 import { state, resetSelection } from "./state.js?v=44";
 import {
     getSettings,
@@ -1212,7 +1212,11 @@ function refreshDashboardFollowUp(panel, followUp, warning = "") {
     ];
     const total = groups.reduce((sum, group) => sum + group[2].length, 0);
     section.innerHTML = groups.map(([key, title, items]) => `<button type="button" data-follow-up-type="${key}" title="${escapeHtml(title)} : ${items.length}"><strong>${items.length}</strong><span>${title}</span></button>`).join("");
-    section.querySelectorAll("[data-follow-up-type]").forEach(button => button.addEventListener("click", () => button.dataset.followUpType === "intervention-resume" ? renderCalendar() : renderBilling()));
+    section.querySelectorAll("[data-follow-up-type]").forEach(button => button.addEventListener("click", () => {
+        if (button.dataset.followUpType !== "intervention-resume") return renderBilling();
+        const intervention = followUp.pausedInterventions[0];
+        return intervention ? renderCalendar({ date: new Date(`${intervention.date}T12:00:00`), event: intervention }) : renderCalendar();
+    }));
     if (warning) section.title = warning;
     updateDashboardMetric(panel, "billing", String(total), `${followUp.invoicesToCreate.length} facture${followUp.invoicesToCreate.length > 1 ? "s" : ""} à faire · ${followUp.pausedInterventions.length} intervention${followUp.pausedInterventions.length > 1 ? "s" : ""} à reprendre`);
 }
