@@ -1112,7 +1112,6 @@ async function renderHome() {
         <div class="dashboard-heading"><div><p class="eyebrow">Depann’Home Pro</p><h2>Tableau de bord</h2>${desktopDashboard ? '<p class="dashboard-heading-summary">Vue opérationnelle de l’entreprise active</p>' : ""}${renderMobileUserSections()}</div>${calendarEnabled ? '<button type="button" class="secondary-button" data-dashboard-action="calendar">Voir le planning complet</button>' : ""}</div>
         ${document.body.dataset.canSwitchGroupCompanies === "true" ? '<section class="dashboard-company-switcher" data-dashboard-company-switcher><p class="muted">Chargement des entreprises autorisées…</p></section>' : ""}
         ${desktopDashboard ? renderDashboardMetricCards(calendarEnabled) : ""}
-        ${desktopDashboard && (calendarEnabled || canAccessRoute(ROUTES.billing)) ? '<section class="dashboard-follow-up" data-dashboard-follow-up><div class="dashboard-follow-up-heading"><div><p class="eyebrow">Documents à suivre</p><h3>Actions à traiter</h3></div><span>Chargement…</span></div><div class="dashboard-follow-up-grid"><p class="muted">Analyse des devis, factures et interventions…</p></div></section>' : ""}
         ${calendarEnabled ? `<div class="dashboard-grid">
             <section class="dashboard-card"><p class="eyebrow">Aujourd’hui</p><h3>${escapeHtml(formatDashboardDate(new Date()))}</h3><div class="dashboard-events" data-dashboard-events="today"><p class="muted">Chargement des rendez-vous…</p></div></section>
             <section class="dashboard-card"><p class="eyebrow">À venir</p><h3>Les 7 prochains jours</h3><div class="dashboard-events" data-dashboard-events="upcoming"><p class="muted">Chargement des rendez-vous…</p></div></section>
@@ -1154,12 +1153,14 @@ function renderDashboardMetricCards(calendarEnabled) {
         ...(canAccessRoute(ROUTES.purchases) ? [["purchases", "Achats à comptabiliser", "—", "Chargement des achats…"]] : [])
     ];
     if (!cards.length) return "";
-    return `<section class="dashboard-kpi-grid" aria-label="Indicateurs opérationnels">${cards.map(([key, label, value, detail]) => `<button type="button" class="dashboard-kpi-card" data-dashboard-metric="${key}" data-dashboard-action="${key}"><span>${label}</span><strong>${value}</strong><small>${detail}</small><em>Ouvrir →</em></button>`).join("")}</section>`;
+    return `<section class="dashboard-kpi-grid" aria-label="Indicateurs opérationnels">${cards.map(([key, label, value, detail]) => key === "billing"
+        ? `<article class="dashboard-kpi-card dashboard-kpi-card-follow-up" data-dashboard-metric="${key}"><button type="button" class="dashboard-kpi-card-main" data-dashboard-action="${key}"><span>${label}</span><strong data-dashboard-value>${value}</strong><small data-dashboard-detail>${detail}</small><em>Ouvrir →</em></button><div class="dashboard-kpi-breakdown" data-dashboard-follow-up aria-label="Détail des documents à suivre"><span>Analyse en cours…</span></div></article>`
+        : `<button type="button" class="dashboard-kpi-card" data-dashboard-metric="${key}" data-dashboard-action="${key}"><span>${label}</span><strong data-dashboard-value>${value}</strong><small data-dashboard-detail>${detail}</small><em>Ouvrir →</em></button>`).join("")}</section>`;
 }
 
 function bindDashboardMetricActions(panel) {
     const actions = { calendar: renderCalendar, clients: () => openClients(), reports: renderTechnicalReports, billing: renderBilling, missions: renderPartnerMissions, purchases: renderPurchases };
-    panel.querySelectorAll("[data-dashboard-metric]").forEach(button => button.addEventListener("click", () => actions[button.dataset.dashboardAction]?.()));
+    panel.querySelectorAll(".dashboard-kpi-grid [data-dashboard-action]").forEach(button => button.addEventListener("click", () => actions[button.dataset.dashboardAction]?.()));
 }
 
 async function loadDashboardOperationalMetrics(panel) {
@@ -1204,33 +1205,16 @@ function refreshDashboardFollowUp(panel, followUp, warning = "") {
     const section = panel.querySelector("[data-dashboard-follow-up]");
     if (!section?.isConnected) return;
     const groups = [
-        ["invoice-create", "Factures à faire", followUp.invoicesToCreate, item => `${item.documentNumber} · ${item.customerName}`, "Créer depuis le devis"],
-        ["invoice-send", "Factures à envoyer", followUp.invoicesToSend, item => `${item.documentNumber} · ${item.customerName}`, "Ouvrir la facture"],
-        ["quote-follow", "Devis à relancer", followUp.quotesToFollow, item => `${item.documentNumber} · ${item.customerName} · rappel ${formatDashboardItemDate(item.followUpDate)}`, "Ouvrir le devis"],
-        ["intervention-resume", "Interventions à reprendre", followUp.pausedInterventions, item => `${item.clientName || item.title} · ${dashboardPauseReasonLabel(item.pauseReason)}`, "Ouvrir l’intervention"]
+        ["invoice-create", "Factures à faire", followUp.invoicesToCreate],
+        ["invoice-send", "Factures à envoyer", followUp.invoicesToSend],
+        ["quote-follow", "Devis à relancer", followUp.quotesToFollow],
+        ["intervention-resume", "Interventions à reprendre", followUp.pausedInterventions]
     ];
     const total = groups.reduce((sum, group) => sum + group[2].length, 0);
-    section.querySelector(".dashboard-follow-up-heading span").textContent = `${total} action${total > 1 ? "s" : ""}`;
-    section.querySelector(".dashboard-follow-up-grid").innerHTML = groups.map(([key, title, items, label, action]) => `<article><header><h4>${title}</h4><strong>${items.length}</strong></header>${items.length ? `<div class="dashboard-follow-up-items">${items.slice(0, 5).map(item => `<button type="button" data-follow-up-type="${key}" data-follow-up-id="${escapeHtml(item.id)}"><span>${escapeHtml(label(item))}</span><em>${action} →</em></button>`).join("")}${items.length > 5 ? `<small>+ ${items.length - 5} autre${items.length - 5 > 1 ? "s" : ""}</small>` : ""}</div>` : '<p class="muted">Rien à traiter.</p>'}</article>`).join("") + (warning ? `<p class="auth-message error">${escapeHtml(warning)}</p>` : "");
-    section.querySelectorAll("[data-follow-up-type]").forEach(button => button.addEventListener("click", () => {
-        const type = button.dataset.followUpType;
-        const id = button.dataset.followUpId;
-        if (type === "intervention-resume") {
-            const intervention = followUp.pausedInterventions.find(item => String(item.id) === String(id));
-            if (intervention) renderCalendar({ date: new Date(`${intervention.date}T12:00:00`), event: intervention });
-            return;
-        }
-        renderBilling({ documentId: id });
-    }));
+    section.innerHTML = groups.map(([key, title, items]) => `<button type="button" data-follow-up-type="${key}" title="${escapeHtml(title)} : ${items.length}"><strong>${items.length}</strong><span>${title}</span></button>`).join("");
+    section.querySelectorAll("[data-follow-up-type]").forEach(button => button.addEventListener("click", () => button.dataset.followUpType === "intervention-resume" ? renderCalendar() : renderBilling()));
+    if (warning) section.title = warning;
     updateDashboardMetric(panel, "billing", String(total), `${followUp.invoicesToCreate.length} facture${followUp.invoicesToCreate.length > 1 ? "s" : ""} à faire · ${followUp.pausedInterventions.length} intervention${followUp.pausedInterventions.length > 1 ? "s" : ""} à reprendre`);
-}
-
-function dashboardPauseReasonLabel(value) {
-    return ({ technician_absent: "technicien absent", material_not_received: "matériel non reçu", waiting_client: "attente client", waiting_parts: "pièce en attente", other: "autre motif" })[value] || "en pause";
-}
-
-function formatDashboardItemDate(value) {
-    return value ? new Intl.DateTimeFormat("fr-FR").format(new Date(`${value}T12:00:00`)) : "non daté";
 }
 
 async function loadDashboardJson(url) {
@@ -1242,8 +1226,8 @@ async function loadDashboardJson(url) {
 function updateDashboardMetric(panel, key, value, detail) {
     const card = panel.querySelector(`[data-dashboard-metric="${key}"]`);
     if (!card?.isConnected) return;
-    card.querySelector("strong").textContent = value;
-    card.querySelector("small").textContent = detail;
+    card.querySelector("[data-dashboard-value]").textContent = value;
+    card.querySelector("[data-dashboard-detail]").textContent = detail;
 }
 
 async function renderHomeGroupCompanySwitcher(panel) {

@@ -28,7 +28,9 @@ test("les documents à suivre distinguent les quatre actions opérationnelles", 
     assert.match(navigation, /document\.issuedAt && !document\.isEmailSent/);
     assert.match(navigation, /document\.followUpDate <= today/);
     assert.match(navigation, /\/api\/calendar\/paused/);
-    assert.match(styles, /\.dashboard-follow-up-grid/);
+    assert.match(navigation, /dashboard-kpi-breakdown/);
+    assert.doesNotMatch(navigation, /<section class="dashboard-follow-up"/);
+    assert.match(styles, /\.dashboard-kpi-breakdown/);
 });
 
 test("la date de relance d’un devis est modifiable et persistée", () => {
