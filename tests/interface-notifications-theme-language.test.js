@@ -45,6 +45,10 @@ test("le thème sombre couvre les écrans et les principaux espaces de travail",
     assert.match(settingsDarkRules, /\.creator-subscription-fields,[\s\S]*\.document-template-fields[\s\S]*background:var\(--surface-alt\)/);
     assert.match(settingsDarkRules, /\.dashboard-event\.color-blue[\s\S]*background:#172c46/);
     assert.match(settingsDarkRules, /\.dashboard-event\.color-green[\s\S]*background:#16382f/);
+    assert.match(settingsDarkRules, /\.creator-network-stats article,[\s\S]*\.creator-subscription-processing,[\s\S]*\.connector-endpoint-row,[\s\S]*\.accounting-transmission-list article,[\s\S]*\.photo-capture-label/);
+    assert.match(settingsDarkRules, /\.creator-company-profile-fields\{[\s\S]*background:var\(--surface-alt\)!important/);
+    assert.match(settingsDarkRules, /\.creator-assistance-control-option\{[\s\S]*background:rgba\(59,130,246,\.12\)/);
+    assert.match(settingsDarkRules, /\.creator-invoice-history-notice\{[\s\S]*background:rgba\(120,53,15,\.24\)/);
     assert.match(partnerDialogueStyle, /body\.dark-theme \.partner-dialogue-modal>\.partner-dialogue/);
     assert.match(partnerDialogueStyle, /background:var\(--surface-alt\)/);
     assert.match(reportEditorStyle, /body\.dark-theme\.report-writing-active \.report-editor-fullscreen/);

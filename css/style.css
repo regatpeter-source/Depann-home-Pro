@@ -7869,8 +7869,13 @@ body:is(.desktop-device,.mobile-device).dark-theme .partner-mailbox-row.unread{
 body:is(.desktop-device,.mobile-device).dark-theme :is(
     .creator-heading,
     .creator-account-filters,
+    .creator-network-stats article,
     .creator-network-company,
     .creator-subscription-fields,
+    .creator-company-profile-fields,
+    .creator-subscription-processing,
+    .creator-member,
+    .creator-assistance-control-option,
     .document-template-design,
     .document-template-fields,
     .creator-account.archived,
@@ -7880,6 +7885,14 @@ body:is(.desktop-device,.mobile-device).dark-theme :is(
     .history-journals-entry,
     .history-journals-entry pre,
     .partner-connection-row,
+    .connector-endpoint-row,
+    .connector-card,
+    .connector-tabs .secondary-button,
+    .connector-wizard-steps span,
+    .accounting-document,
+    .accounting-transmission-list article,
+    .accounting-aid-list article,
+    .accounting-inline-form,
     .billing-financial-dashboard,
     .billing-financial-period,
     .billing-financial-cards article,
@@ -7891,6 +7904,10 @@ body:is(.desktop-device,.mobile-device).dark-theme :is(
     .purchase-item,
     .report-directory-list article,
     .accounting-pdp-notice,
+    .photo-capture-label,
+    .attachment-card,
+    .attachment-preview,
+    .file-count-badge,
     .calendar-intervention-pause,
     .dashboard-kpi-breakdown button
 ){
@@ -7950,6 +7967,95 @@ body:is(.desktop-device,.mobile-device).dark-theme .history-deletion-tools{
 
 body:is(.desktop-device,.mobile-device).dark-theme .history-deletion-tools small{
     color:#fca5a5;
+}
+
+body:is(.desktop-device,.mobile-device).dark-theme :is(
+    .creator-network-stats article,
+    .creator-subscription-processing,
+    .creator-member,
+    .creator-company-profile-fields,
+    .connector-endpoint-row,
+    .connector-card,
+    .accounting-document,
+    .accounting-transmission-list article,
+    .accounting-aid-list article,
+    .photo-capture-label,
+    .attachment-card
+) :is(h3,h4,strong,label,legend){
+    color:var(--text);
+}
+
+body:is(.desktop-device,.mobile-device).dark-theme :is(
+    .creator-network-stats article,
+    .creator-subscription-processing,
+    .creator-member,
+    .connector-card,
+    .accounting-document,
+    .accounting-transmission-list article,
+    .accounting-aid-list article,
+    .attachment-card
+) :is(span,p,small){
+    color:var(--muted);
+}
+
+body:is(.desktop-device,.mobile-device).dark-theme .creator-company-profile-fields{
+    border-color:var(--border)!important;
+    background:var(--surface-alt)!important;
+    color:var(--text);
+}
+
+body:is(.desktop-device,.mobile-device).dark-theme .creator-assistance-control-option{
+    border-color:#3b82f6;
+    background:rgba(59,130,246,.12);
+}
+
+body:is(.desktop-device,.mobile-device).dark-theme .creator-invoice-history-notice{
+    border-color:#92400e;
+    background:rgba(120,53,15,.24);
+    color:#fde68a;
+}
+
+body:is(.desktop-device,.mobile-device).dark-theme .creator-subscription-payment-form :is(label,input),
+body:is(.desktop-device,.mobile-device).dark-theme :is(.creator-credit-create,.creator-credit-refund-form) :is(label,input,select,textarea){
+    border-color:var(--border);
+    color:var(--text);
+}
+
+body:is(.desktop-device,.mobile-device).dark-theme .creator-subscription-payment-form input,
+body:is(.desktop-device,.mobile-device).dark-theme :is(.creator-credit-create,.creator-credit-refund-form) :is(input,select,textarea){
+    background:var(--surface);
+}
+
+body:is(.desktop-device,.mobile-device).dark-theme .creator-credit-create{
+    border-color:#854d0e;
+    background:rgba(120,53,15,.24);
+}
+
+body:is(.desktop-device,.mobile-device).dark-theme .creator-credit-refund-form{
+    border-color:#7f1d1d;
+    background:rgba(127,29,29,.24);
+}
+
+body:is(.desktop-device,.mobile-device).dark-theme .connector-tabs .secondary-button.active{
+    border-color:var(--primary);
+    background:var(--primary);
+    color:#0f172a;
+}
+
+body:is(.desktop-device,.mobile-device).dark-theme .photo-capture-label{
+    border-color:#166534;
+    background:rgba(20,83,45,.28);
+}
+
+body:is(.desktop-device,.mobile-device).dark-theme :is(.file-input-grid input,.file-input-grid select){
+    border-color:var(--border);
+    background:var(--surface-alt);
+    color:var(--text);
+}
+
+body:is(.desktop-device,.mobile-device).dark-theme :is(.file-count-badge,.attachment-preview){
+    background:#24344a;
+    color:var(--primary);
 }
 
 body:is(.desktop-device,.mobile-device).dark-theme :is(.history-entry-protected,.history-category){
