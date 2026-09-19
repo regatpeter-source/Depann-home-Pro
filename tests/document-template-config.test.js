@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { createBillingDocumentOutput, createBillingPdf } from "../server/billing.js";
 import { createQuitusPdf } from "../server/calendar.js";
 import { PDFDocument } from "pdf-lib";
+import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
 import PizZip from "pizzip";
 import { DOCX_MIME, PDF_MIME, renderCompanyTemplate, validateCompanyTemplate } from "../server/company-document-template.js";
 
@@ -68,6 +69,23 @@ test("an integrated invoice automatically inherits the quote presentation", asyn
     assert.notDeepEqual(first, second);
 });
 
+test("a long integrated quote keeps Bon pour accord with its totals and creates no footer-only page", async () => {
+    const longQuote = { ...quote, lines: Array.from({ length: 21 }, (_, index) => ({ description: `Prestation ${index + 1}`, quantity: 1, unit: "forfait", unitPrice: 100, vatRate: 20 })) };
+    const buffer = await createBillingPdf(longQuote, { ...profile, quoteTemplateConfig: {} });
+    const pdf = await getDocument({ data: new Uint8Array(buffer), verbosity: 0 }).promise;
+    const pageTexts = [];
+    for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+        const page = await pdf.getPage(pageNumber);
+        pageTexts.push((await page.getTextContent()).items.map(item => item.str).join(" "));
+    }
+    const totalsPage = pageTexts.findIndex(text => text.includes("Total TTC"));
+    const acceptancePage = pageTexts.findIndex(text => text.includes("BON POUR ACCORD"));
+    assert.notEqual(acceptancePage, -1);
+    assert.equal(acceptancePage, totalsPage);
+    assert.equal(acceptancePage, pageTexts.length - 1);
+    assert.ok(pageTexts.every(text => !/^Entreprise test · APERÇU · Page \d+\/\d+$/.test(text.trim())));
+});
+
 test("a legacy shared DOCX is no longer applied without an active custom invoice template", async () => {
     const zip = new PizZip();
     zip.file("[Content_Types].xml", '<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>');
@@ -78,12 +96,12 @@ test("a legacy shared DOCX is no longer applied without an active custom invoice
     assert.equal(output.buffer.subarray(0, 4).toString(), "%PDF");
 });
 
-test("an invoice automatically preserves the external PDF base selected for quotes", async () => {
+test("a legacy shared PDF is no longer applied without an active custom invoice template", async () => {
     const base = await PDFDocument.create(); base.addPage();
     const output = await createBillingDocumentOutput(invoice, { ...profile, quoteTemplatePolicy: "company_choice", quoteTemplateMode: "external", quoteTemplateData: Buffer.from(await base.save()), quoteTemplateFilename: "base-commune.pdf", quoteTemplateMimeType: PDF_MIME });
     const merged = await PDFDocument.load(output.buffer);
     assert.equal(output.mimeType, PDF_MIME);
-    assert.ok(merged.getPageCount() >= 2);
+    assert.equal(merged.getPageCount(), 1);
 });
 
 test("integrated quitus PDF changes with its own template", async () => {

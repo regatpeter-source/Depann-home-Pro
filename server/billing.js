@@ -1539,7 +1539,11 @@ export function createBillingPdf(document, profile) {
             pdf.y += rowHeight;
         });
 
-        ensureSpace(150);
+        const closingSectionHeight = 150
+            + (isVatFranchise ? 30 : 0)
+            + (discountAmount || aidAmount ? 44 : 0)
+            + (document.documentType === "quote" ? 82 : 0);
+        ensureSpace(closingSectionHeight);
         pdf.y += 18;
         const summaryY = pdf.y;
         text("CONDITIONS DE RÈGLEMENT", margin, summaryY, 260, { size: 9, bold: true });
@@ -1592,7 +1596,10 @@ export function createBillingPdf(document, profile) {
         const pages = pdf.bufferedPageRange();
         for (let index = 0; index < pages.count; index += 1) {
             pdf.switchToPage(index);
-            text(`${profile.companyName || "Votre structure"} · ${document.documentNumber} · Page ${index + 1}/${pages.count}`, margin, pdf.page.height - 32, contentWidth, { size: 7, color: "#6b7280", align: "center" });
+            const bottomMargin = pdf.page.margins.bottom;
+            pdf.page.margins.bottom = 0;
+            text(`${profile.companyName || "Votre structure"} · ${document.documentNumber} · Page ${index + 1}/${pages.count}`, margin, pdf.page.height - 32, contentWidth, { size: 7, color: "#6b7280", align: "center", lineBreak: false });
+            pdf.page.margins.bottom = bottomMargin;
         }
         pdf.end();
     });
