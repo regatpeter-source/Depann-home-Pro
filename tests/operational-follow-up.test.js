@@ -11,6 +11,7 @@ const calendarServer = read("server/calendar.js");
 const schema = read("database/schema.sql");
 const migration = read("database/migrations/0024_operational_follow_up.sql");
 const reschedulingMigration = read("database/migrations/0025_intervention_rescheduling.sql");
+const pausedStatusBackfillMigration = read("database/migrations/0026_paused_intervention_status_backfill.sql");
 const styles = read("css/style.css");
 const clients = read("js/clients.js");
 
@@ -56,7 +57,9 @@ test("une intervention mise en pause est annulée puis replanifiée à une autre
     assert.match(calendarServer, /if \(newDate === source\.date\)/);
     assert.match(calendarServer, /INSERT INTO depannhome_calendar_events/);
     assert.match(calendarServer, /rescheduled_from_event_id/);
-    assert.match(calendarServer, /event_status='cancelled' AND event\.paused_at IS NOT NULL/);
+    assert.match(calendarServer, /event\.event_type='appointment' AND event\.paused_at IS NOT NULL/);
+    assert.match(calendarServer, /if \(source\.status !== "cancelled"\)/);
+    assert.match(calendarServer, /SET event_status='cancelled',updated_at=NOW\(\) WHERE id=\$1 AND owner_id=\$2/);
     assert.match(calendarServer, /canRequestInterventionPause\(request\.user\)/);
     assert.match(calendarServer, /EXISTS \(SELECT 1 FROM depannhome_calendar_assignments/);
     assert.match(calendarClient, /Matériel non reçu/);
@@ -80,4 +83,12 @@ test("le report complet est conservé dans l’historique client", () => {
     assert.match(clients, /Replanifiée sous l’intervention/);
     assert.match(clients, /Reprise de l’intervention/);
     assert.match(calendarServer, /Cette intervention mise en pause et annulée doit rester dans l’historique du client/);
+});
+
+test("les anciennes interventions en pause sont régularisées avant leur replanification", () => {
+    assert.match(pausedStatusBackfillMigration, /event\.paused_at IS NOT NULL/);
+    assert.match(pausedStatusBackfillMigration, /event\.event_status IN \('planned', 'confirmed', 'in_progress'\)/);
+    assert.match(pausedStatusBackfillMigration, /SET event_status = 'cancelled'/);
+    assert.match(pausedStatusBackfillMigration, /resumed\.rescheduled_from_event_id = event\.id/);
+    assert.match(calendarServer, /if \(source\.status === "completed"\)/);
 });

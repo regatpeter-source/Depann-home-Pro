@@ -125,6 +125,16 @@ export async function initializeCalendar() {
     await database.query("ALTER TABLE depannhome_calendar_events ADD COLUMN IF NOT EXISTS rescheduled_from_event_id BIGINT REFERENCES depannhome_calendar_events(id) ON DELETE SET NULL");
     await database.query("CREATE UNIQUE INDEX IF NOT EXISTS depannhome_calendar_events_rescheduled_from_idx ON depannhome_calendar_events(rescheduled_from_event_id) WHERE rescheduled_from_event_id IS NOT NULL");
     await database.query(`
+        UPDATE depannhome_calendar_events event
+        SET event_status='cancelled',updated_at=NOW()
+        WHERE event.event_type='appointment' AND event.paused_at IS NOT NULL
+            AND event.event_status IN ('planned','confirmed','in_progress')
+            AND NOT EXISTS (
+                SELECT 1 FROM depannhome_calendar_events resumed
+                WHERE resumed.owner_id=event.owner_id AND resumed.rescheduled_from_event_id=event.id
+            )
+    `);
+    await database.query(`
         ALTER TABLE depannhome_calendar_events
         ADD COLUMN IF NOT EXISTS quitus_status VARCHAR(20) NOT NULL DEFAULT 'pending',
         ADD COLUMN IF NOT EXISTS quitus_signed_by VARCHAR(160) NOT NULL DEFAULT '',
@@ -613,18 +623,23 @@ export function registerCalendarRoutes(app, requireAuthentication) {
                     event.location,TO_CHAR(event.event_date,'YYYY-MM-DD') AS date,TO_CHAR(event.start_time,'HH24:MI') AS "startTime",TO_CHAR(event.end_time,'HH24:MI') AS "endTime",
                     event.color,event.event_type AS "eventType",event.event_origin AS "eventOrigin",event.partner_connection_id AS "partnerConnectionId",
                     event.partner_mission_id AS "partnerMissionId",event.notes,event.pause_reason AS "pauseReason",event.pause_note AS "pauseNote",
+                    event.event_status AS status,
                     COALESCE((SELECT array_agg(assignment.technician_id ORDER BY assignment.is_primary DESC,assignment.technician_id) FROM depannhome_calendar_assignments assignment WHERE assignment.event_id=event.id),'{}'::bigint[]) AS "assignedTechnicianIds"
                 FROM depannhome_calendar_events event
-                WHERE event.id=$1 AND event.owner_id=$2 AND event.event_type='appointment' AND event.event_status='cancelled' AND event.paused_at IS NOT NULL
+                WHERE event.id=$1 AND event.owner_id=$2 AND event.event_type='appointment' AND event.paused_at IS NOT NULL
                     AND NOT EXISTS (SELECT 1 FROM depannhome_calendar_events resumed WHERE resumed.owner_id=event.owner_id AND resumed.rescheduled_from_event_id=event.id)
                     AND ($3::boolean OR EXISTS (SELECT 1 FROM depannhome_calendar_assignments assignment WHERE assignment.event_id=event.id AND assignment.technician_id=$4))
                 FOR UPDATE
             `, [id, ownerId, canManageCalendarSchedule(request.user), request.user.sub]);
             const source = rows[0];
             if (!source) { await connection.query("ROLLBACK"); return response.status(404).json({ message: "Intervention en pause introuvable, déjà replanifiée ou non autorisée." }); }
+            if (source.status === "completed") { await connection.query("ROLLBACK"); return response.status(409).json({ message: "Cette intervention est terminée et ne peut pas être replanifiée." }); }
             if (newDate === source.date) { await connection.query("ROLLBACK"); return response.status(400).json({ message: "Choisissez une date différente de la date annulée." }); }
             const conflict = await findCalendarConflict(ownerId, { ...source, date: newDate }, 0, connection);
             if (conflict) { await connection.query("ROLLBACK"); return response.status(409).json({ message: conflictMessage(conflict) }); }
+            if (source.status !== "cancelled") {
+                await connection.query("UPDATE depannhome_calendar_events SET event_status='cancelled',updated_at=NOW() WHERE id=$1 AND owner_id=$2", [id, ownerId]);
+            }
             const inserted = await connection.query(`
                 INSERT INTO depannhome_calendar_events
                     (owner_id,assigned_technician_id,title,client_id,client_name,location,event_date,start_time,end_time,color,event_type,event_status,event_origin,partner_connection_id,partner_mission_id,notes,rescheduled_from_event_id)
