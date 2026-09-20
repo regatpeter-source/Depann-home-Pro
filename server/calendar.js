@@ -10,6 +10,7 @@ import { buildQuitusCustomModel, renderActiveCustomTemplate } from "./document-t
 import { validateAssignedCompanyMembers } from "./member-assignment.js";
 import { strictDateOnly } from "./date-validation.js";
 import { publishClientChange } from "./client-events.js";
+import { hasAdministrativeClientAssignment, isDedicatedMobileSession } from "./mobile-client-access.js";
 
 const EVENT_COLORS = new Set(["blue", "green", "orange", "red", "purple", "gray"]);
 const EVENT_TYPES = new Set(["appointment", "task", "vacation", "sick_leave", "unavailable"]);
@@ -80,6 +81,8 @@ export async function initializeCalendar() {
             paused_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
             paused_by_name VARCHAR(160) NOT NULL DEFAULT '',
             rescheduled_from_event_id BIGINT REFERENCES depannhome_calendar_events(id) ON DELETE SET NULL,
+            created_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+            created_device_type VARCHAR(10) NOT NULL DEFAULT 'desktop',
             notes VARCHAR(2000) NOT NULL DEFAULT '',
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -124,6 +127,10 @@ export async function initializeCalendar() {
     await database.query("CREATE INDEX IF NOT EXISTS depannhome_calendar_events_paused_idx ON depannhome_calendar_events(owner_id,paused_at DESC) WHERE paused_at IS NOT NULL");
     await database.query("ALTER TABLE depannhome_calendar_events ADD COLUMN IF NOT EXISTS rescheduled_from_event_id BIGINT REFERENCES depannhome_calendar_events(id) ON DELETE SET NULL");
     await database.query("CREATE UNIQUE INDEX IF NOT EXISTS depannhome_calendar_events_rescheduled_from_idx ON depannhome_calendar_events(rescheduled_from_event_id) WHERE rescheduled_from_event_id IS NOT NULL");
+    await database.query("ALTER TABLE depannhome_calendar_events ADD COLUMN IF NOT EXISTS created_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL, ADD COLUMN IF NOT EXISTS created_device_type VARCHAR(10) NOT NULL DEFAULT 'desktop'");
+    await database.query("UPDATE depannhome_calendar_events SET created_device_type='desktop' WHERE created_device_type NOT IN ('desktop','mobile')");
+    await database.query(`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='depannhome_calendar_events_created_device_type_check') THEN ALTER TABLE depannhome_calendar_events ADD CONSTRAINT depannhome_calendar_events_created_device_type_check CHECK (created_device_type IN ('desktop','mobile')); END IF; END $$`);
+    await database.query("CREATE INDEX IF NOT EXISTS depannhome_calendar_events_admin_client_idx ON depannhome_calendar_events(owner_id,client_id) WHERE created_device_type='desktop' AND client_id<>''");
     await database.query(`
         UPDATE depannhome_calendar_events event
         SET event_status='cancelled',updated_at=NOW()
@@ -274,12 +281,16 @@ export function registerCalendarRoutes(app, requireAuthentication) {
         const clientId = String(request.params.clientId || "");
         if (!/^client-[a-zA-Z0-9-]+$/.test(clientId)) return response.status(400).json({ message: "Client invalide." });
         const ownerId = getAccountOwnerId(request);
+        if (isDedicatedMobileSession(request.user) && !await hasAdministrativeClientAssignment(getPool(), ownerId, clientId, request.user.sub)) {
+            return response.status(404).json({ message: "Dossier client introuvable ou non attribué à ce poste." });
+        }
         const clientResult = await getPool().query("SELECT 1 FROM depannhome_clients WHERE owner_id = $1 AND client_id = $2", [ownerId, clientId]);
         if (!clientResult.rows[0]) return response.status(404).json({ message: "Dossier client introuvable." });
         const { rows } = await getPool().query(`
             SELECT event.id, event.title, event.client_name AS "clientName", event.location, TO_CHAR(event.event_date, 'YYYY-MM-DD') AS date,
                 TO_CHAR(event.start_time, 'HH24:MI') AS "startTime", TO_CHAR(event.end_time, 'HH24:MI') AS "endTime", event.event_type AS "eventType",
                 event.event_status AS status,
+                event.created_by AS "createdBy", event.created_device_type AS "createdDeviceType",
                 event.paused_at AS "pausedAt", event.pause_reason AS "pauseReason", event.pause_note AS "pauseNote", event.paused_by_name AS "pausedByName",
                 event.rescheduled_from_event_id AS "rescheduledFromEventId",
                 (SELECT resumed.id FROM depannhome_calendar_events resumed WHERE resumed.owner_id=event.owner_id AND resumed.rescheduled_from_event_id=event.id) AS "rescheduledEventId",
@@ -331,6 +342,8 @@ export function registerCalendarRoutes(app, requireAuthentication) {
                 event.event_type AS "eventType",
                 event.event_status AS status,
                 event.event_origin AS "eventOrigin",
+                event.created_by AS "createdBy",
+                event.created_device_type AS "createdDeviceType",
                 event.partner_connection_id AS "partnerConnectionId",
                 event.partner_mission_id AS "partnerMissionId",
                 event.planning_batch_id AS "planningBatchId",
@@ -397,6 +410,7 @@ export function registerCalendarRoutes(app, requireAuthentication) {
                 TO_CHAR(event.event_date,'YYYY-MM-DD') AS date,TO_CHAR(event.start_time,'HH24:MI') AS "startTime",
                 TO_CHAR(event.end_time,'HH24:MI') AS "endTime",event.event_type AS "eventType",event.event_status AS status,
                 event.assigned_technician_id AS "assignedTechnicianId",
+                event.created_by AS "createdBy",event.created_device_type AS "createdDeviceType",
                 COALESCE((SELECT json_agg(json_build_object('id',assignment.technician_id,'fullName',COALESCE(member.full_name,member.username,''),'isPrimary',assignment.is_primary) ORDER BY assignment.is_primary DESC) FROM depannhome_calendar_assignments assignment JOIN depannhome_users member ON member.id=assignment.technician_id WHERE assignment.event_id=event.id),'[]'::json) AS "assignedTechnicians",
                 event.paused_at AS "pausedAt",event.pause_reason AS "pauseReason",event.pause_note AS "pauseNote",event.paused_by_name AS "pausedByName"
             FROM depannhome_calendar_events event
@@ -478,10 +492,10 @@ export function registerCalendarRoutes(app, requireAuthentication) {
             for (const date of dates) {
                 const { rows } = await connection.query(`
                     INSERT INTO depannhome_calendar_events
-                        (owner_id, assigned_technician_id, title, client_id, client_name, location, event_date, start_time, end_time, color, event_type, event_status, event_origin, notes, planning_batch_id)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7::date, $8::time, $9::time, $10, $11, $12, 'standard', $13, $14::uuid)
+                        (owner_id, assigned_technician_id, title, client_id, client_name, location, event_date, start_time, end_time, color, event_type, event_status, event_origin, notes, planning_batch_id, created_by, created_device_type)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7::date, $8::time, $9::time, $10, $11, $12, 'standard', $13, $14::uuid, $15, $16)
                     RETURNING id
-                `, [getAccountOwnerId(request), event.assignedTechnicianId || null, event.title, await resolveClientId(connection, getAccountOwnerId(request), event.clientName, true), event.clientName, event.location, date, optionalTime(event.startTime), optionalTime(event.endTime), event.color, event.eventType, event.status, event.notes, planningBatchId]);
+                `, [getAccountOwnerId(request), event.assignedTechnicianId || null, event.title, await resolveClientId(connection, getAccountOwnerId(request), event.clientName, true), event.clientName, event.location, date, optionalTime(event.startTime), optionalTime(event.endTime), event.color, event.eventType, event.status, event.notes, planningBatchId, request.user.sub, request.user.deviceType]);
                 await replaceEventAssignments(connection, rows[0].id, event.assignedTechnicianIds, event.assignedTechnicianId);
                 ids.push(rows[0].id);
             }
@@ -500,6 +514,7 @@ export function registerCalendarRoutes(app, requireAuthentication) {
         const event = sanitizeEvent(request.body);
         if (!id) return response.status(400).json({ message: "Rendez-vous invalide." });
         if (!event.ok) return response.status(400).json({ message: event.message });
+        if (!await canModifyStoredCalendarEvent(request.user, getAccountOwnerId(request), id)) return response.status(403).json({ message: "Ce rendez-vous a été créé par un poste administratif et ne peut pas être modifié depuis un poste mobile." });
         if (await isCompletedIntervention(getAccountOwnerId(request), id)) return response.status(409).json({ message: "Cette intervention est terminée et conservée dans l’historique. Créez une nouvelle intervention pour ce client." });
         if (await isPausedIntervention(getAccountOwnerId(request), id)) return response.status(409).json({ message: "Cette intervention mise en pause est annulée et conservée dans l’historique. Utilisez « Replanifier l’intervention » pour choisir une nouvelle date." });
         const canManageStatus = canManageCalendarEventStatus(request.user);
@@ -576,7 +591,7 @@ export function registerCalendarRoutes(app, requireAuthentication) {
                 WHERE event.id=$1 AND event.owner_id=$2 AND event.event_type='appointment'
                     AND ($3::boolean OR EXISTS (SELECT 1 FROM depannhome_calendar_assignments assignment WHERE assignment.event_id=event.id AND assignment.technician_id=$4))
                 FOR UPDATE
-            `, [id, ownerId, canManageCalendarSchedule(request.user), request.user.sub]);
+            `, [id, ownerId, canManageCalendarSchedule(request.user) && !isDedicatedMobileSession(request.user), request.user.sub]);
             const event = rows[0];
             if (!event) { await connection.query("ROLLBACK"); return response.status(404).json({ message: "Intervention introuvable ou non autorisée." }); }
             if (["completed", "cancelled"].includes(event.status)) { await connection.query("ROLLBACK"); return response.status(409).json({ message: "Cette intervention est déjà terminée ou annulée." }); }
@@ -623,6 +638,7 @@ export function registerCalendarRoutes(app, requireAuthentication) {
                     event.location,TO_CHAR(event.event_date,'YYYY-MM-DD') AS date,TO_CHAR(event.start_time,'HH24:MI') AS "startTime",TO_CHAR(event.end_time,'HH24:MI') AS "endTime",
                     event.color,event.event_type AS "eventType",event.event_origin AS "eventOrigin",event.partner_connection_id AS "partnerConnectionId",
                     event.partner_mission_id AS "partnerMissionId",event.notes,event.pause_reason AS "pauseReason",event.pause_note AS "pauseNote",
+                    event.created_by AS "createdBy",event.created_device_type AS "createdDeviceType",
                     event.event_status AS status,
                     COALESCE((SELECT array_agg(assignment.technician_id ORDER BY assignment.is_primary DESC,assignment.technician_id) FROM depannhome_calendar_assignments assignment WHERE assignment.event_id=event.id),'{}'::bigint[]) AS "assignedTechnicianIds"
                 FROM depannhome_calendar_events event
@@ -633,6 +649,7 @@ export function registerCalendarRoutes(app, requireAuthentication) {
             `, [id, ownerId, canManageCalendarSchedule(request.user), request.user.sub]);
             const source = rows[0];
             if (!source) { await connection.query("ROLLBACK"); return response.status(404).json({ message: "Intervention en pause introuvable, déjà replanifiée ou non autorisée." }); }
+            if (!canModifyCalendarEvent(request.user, source)) { await connection.query("ROLLBACK"); return response.status(403).json({ message: "Cette intervention a été créée par un poste administratif et ne peut pas être replanifiée depuis un poste mobile." }); }
             if (source.status === "completed") { await connection.query("ROLLBACK"); return response.status(409).json({ message: "Cette intervention est terminée et ne peut pas être replanifiée." }); }
             if (newDate === source.date) { await connection.query("ROLLBACK"); return response.status(400).json({ message: "Choisissez une date différente de la date annulée." }); }
             const conflict = await findCalendarConflict(ownerId, { ...source, date: newDate }, 0, connection);
@@ -642,10 +659,10 @@ export function registerCalendarRoutes(app, requireAuthentication) {
             }
             const inserted = await connection.query(`
                 INSERT INTO depannhome_calendar_events
-                    (owner_id,assigned_technician_id,title,client_id,client_name,location,event_date,start_time,end_time,color,event_type,event_status,event_origin,partner_connection_id,partner_mission_id,notes,rescheduled_from_event_id)
-                VALUES ($1,$2,$3,$4,$5,$6,$7::date,$8::time,$9::time,$10,$11,'planned',$12,$13,$14,$15,$16)
+                    (owner_id,assigned_technician_id,title,client_id,client_name,location,event_date,start_time,end_time,color,event_type,event_status,event_origin,partner_connection_id,partner_mission_id,notes,rescheduled_from_event_id,created_by,created_device_type)
+                VALUES ($1,$2,$3,$4,$5,$6,$7::date,$8::time,$9::time,$10,$11,'planned',$12,$13,$14,$15,$16,$17,$18)
                 RETURNING id,TO_CHAR(event_date,'YYYY-MM-DD') AS date,event_status AS status,rescheduled_from_event_id AS "rescheduledFromEventId"
-            `, [ownerId, source.assignedTechnicianId || null, source.title, source.clientId, source.clientName, source.location, newDate, optionalTime(source.startTime), optionalTime(source.endTime), source.color, source.eventType, source.eventOrigin, source.partnerConnectionId, source.partnerMissionId, source.notes, id]);
+            `, [ownerId, source.assignedTechnicianId || null, source.title, source.clientId, source.clientName, source.location, newDate, optionalTime(source.startTime), optionalTime(source.endTime), source.color, source.eventType, source.eventOrigin, source.partnerConnectionId, source.partnerMissionId, source.notes, id, request.user.sub, request.user.deviceType]);
             const resumed = inserted.rows[0];
             await replaceEventAssignments(connection, resumed.id, source.assignedTechnicianIds.map(Number), Number(source.assignedTechnicianId) || 0);
             await appendClientInterventionHistory(connection, ownerId, source.clientId, [{
@@ -691,7 +708,8 @@ export function registerCalendarRoutes(app, requireAuthentication) {
             await connection.query("BEGIN");
             const { rows } = await connection.query(`
                 SELECT id, event_status AS status, quitus_status AS "quitusStatus", paused_at AS "pausedAt",
-                    quitus_signed_at AS "quitusSignedAt", deductible_status AS "deductibleStatus"
+                    quitus_signed_at AS "quitusSignedAt", deductible_status AS "deductibleStatus",
+                    created_by AS "createdBy", created_device_type AS "createdDeviceType"
                 FROM depannhome_calendar_events
                 WHERE owner_id = $1 AND planning_batch_id = $2::uuid
                 FOR UPDATE
@@ -699,6 +717,10 @@ export function registerCalendarRoutes(app, requireAuthentication) {
             if (!rows.length) {
                 await connection.query("ROLLBACK");
                 return response.status(404).json({ message: "Planification étendue introuvable." });
+            }
+            if (rows.some(event => !canModifyCalendarEvent(request.user, event))) {
+                await connection.query("ROLLBACK");
+                return response.status(403).json({ message: "Cette planification contient un rendez-vous créé par un poste administratif et ne peut pas être supprimée depuis un poste mobile." });
             }
             const protectedEvent = rows.find(event => event.status === "completed"
                 || event.pausedAt
@@ -725,6 +747,7 @@ export function registerCalendarRoutes(app, requireAuthentication) {
     app.delete("/api/calendar/events/:eventId", requireAuthentication, requireCalendarWriteAccess, asyncHandler(async (request, response) => {
         const id = positiveId(request.params.eventId);
         if (!id) return response.status(400).json({ message: "Rendez-vous invalide." });
+        if (!await canModifyStoredCalendarEvent(request.user, getAccountOwnerId(request), id)) return response.status(403).json({ message: "Ce rendez-vous a été créé par un poste administratif et ne peut pas être supprimé depuis un poste mobile." });
         if (!canManageCalendarEventStatus(request.user)) {
             return response.status(403).json({ message: "La suppression d’une intervention est réservée à un poste administratif ou au Poste Admin Mobile. Demandez plutôt son annulation." });
         }
@@ -1058,6 +1081,17 @@ export function canManageCalendarSchedule(user) {
     if (user?.role === "accountant" || isCommercialMobile(user)) return false;
     if (["mobile_admin", "team_lead", "technician"].includes(user?.role)) return user.canManageCalendar === true;
     return ["admin", "pc_standard", "commercial"].includes(user?.role);
+}
+
+export function canModifyCalendarEvent(user, event) {
+    if (!isDedicatedMobileSession(user)) return true;
+    return event?.createdDeviceType === "mobile" && String(event?.createdBy || "") === String(user?.sub || "");
+}
+
+async function canModifyStoredCalendarEvent(user, ownerId, eventId) {
+    if (!isDedicatedMobileSession(user)) return true;
+    const { rows } = await getPool().query("SELECT created_by AS \"createdBy\",created_device_type AS \"createdDeviceType\" FROM depannhome_calendar_events WHERE owner_id=$1 AND id=$2", [ownerId, eventId]);
+    return canModifyCalendarEvent(user, rows[0]);
 }
 
 function canRequestInterventionPause(user) {

@@ -1,6 +1,7 @@
 import { getPool } from "./database.js";
 import { getAccountOwnerId } from "./auth.js";
 import { createNotification } from "./collaboration.js";
+import { hasAdministrativeClientAssignment, isDedicatedMobileSession } from "./mobile-client-access.js";
 
 const MAX_MESSAGE_LENGTH = 2000;
 const CLIENT_ID_PATTERN = /^client-[a-zA-Z0-9-]+$/;
@@ -53,9 +54,18 @@ export function registerMessageRoutes(app, requireAuthentication) {
             JOIN depannhome_clients client
                 ON client.owner_id = message.recipient_id AND client.client_id = message.client_id
             WHERE message.recipient_id = $1 AND message.client_id IS NOT NULL
+              AND ($2::boolean = FALSE OR EXISTS (
+                  SELECT 1 FROM depannhome_calendar_events event
+                  WHERE event.owner_id=message.recipient_id AND event.client_id=message.client_id
+                    AND event.created_device_type='desktop'
+                    AND (event.assigned_technician_id=$3::bigint OR EXISTS (
+                        SELECT 1 FROM depannhome_calendar_assignments assignment
+                        WHERE assignment.event_id=event.id AND assignment.technician_id=$3::bigint
+                    ))
+              ))
             ORDER BY message.created_at DESC
             LIMIT 1000
-        `, [getAccountOwnerId(request)]);
+        `, [getAccountOwnerId(request), isDedicatedMobileSession(request.user), request.user.sub]);
         response.json({ messages: rows });
     }));
 
@@ -63,6 +73,7 @@ export function registerMessageRoutes(app, requireAuthentication) {
         const clientId = optionalClientId(request.query?.clientId);
         if (request.query?.clientId && !clientId) return response.status(400).json({ message: "Dossier client invalide." });
         if (!clientId) return response.status(403).json({ message: "Les notes sont accessibles depuis une fiche client." });
+        if (isDedicatedMobileSession(request.user) && !await hasAdministrativeClientAssignment(getPool(), getAccountOwnerId(request), clientId, request.user.sub)) return response.status(404).json({ message: "Dossier client introuvable ou non attribué à ce poste." });
         if (clientId && !await clientExists(getAccountOwnerId(request), clientId)) return response.status(404).json({ message: "Dossier client introuvable." });
         const { rows } = await getPool().query(`
             SELECT message.id, message.body, message.client_id AS "clientId", message.sender_id AS "senderId",
@@ -85,6 +96,7 @@ export function registerMessageRoutes(app, requireAuthentication) {
         if (request.body?.clientId && !clientId) return response.status(400).json({ message: "Dossier client invalide." });
         if (!clientId) return response.status(403).json({ message: "Les notes doivent être ajoutées depuis une fiche client." });
         const ownerId = getAccountOwnerId(request);
+        if (isDedicatedMobileSession(request.user) && !await hasAdministrativeClientAssignment(getPool(), ownerId, clientId, request.user.sub)) return response.status(404).json({ message: "Dossier client introuvable ou non attribué à ce poste." });
         if (!await clientExists(ownerId, clientId, true)) return response.status(404).json({ message: "Dossier client introuvable ou archivé." });
         const note = await createClientMessage({ ownerId, senderId: request.user.sub, clientId, body });
         response.status(201).json({ note });
@@ -97,7 +109,16 @@ export function registerMessageRoutes(app, requireAuthentication) {
         const { rowCount } = await getPool().query(`
             UPDATE depannhome_messages SET body = $4, updated_at = NOW()
             WHERE id = $1 AND recipient_id = $2 AND sender_id = $3 AND client_id IS NOT NULL
-        `, [messageId, getAccountOwnerId(request), request.user.sub, body]);
+              AND ($5::boolean = FALSE OR EXISTS (
+                  SELECT 1 FROM depannhome_calendar_events event
+                  WHERE event.owner_id=depannhome_messages.recipient_id AND event.client_id=depannhome_messages.client_id
+                    AND event.created_device_type='desktop'
+                    AND (event.assigned_technician_id=$3::bigint OR EXISTS (
+                        SELECT 1 FROM depannhome_calendar_assignments assignment
+                        WHERE assignment.event_id=event.id AND assignment.technician_id=$3::bigint
+                    ))
+              ))
+        `, [messageId, getAccountOwnerId(request), request.user.sub, body, isDedicatedMobileSession(request.user)]);
         if (!rowCount) return response.status(403).json({ message: "Vous pouvez modifier uniquement vos propres notes." });
         response.status(204).end();
     }));
@@ -125,6 +146,14 @@ async function notifyInternalMessageRecipients(ownerId, senderId, clientId, mess
           AND account.id <> $2
           AND account.is_active = TRUE
           AND account.role IN ('admin', 'pc_standard', 'commercial', 'mobile_admin', 'team_lead', 'technician')
+          AND (account.role NOT IN ('mobile_admin','team_lead','technician') OR EXISTS (
+              SELECT 1 FROM depannhome_calendar_events event
+              WHERE event.owner_id=$1 AND event.client_id=$3 AND event.created_device_type='desktop'
+                AND (event.assigned_technician_id=account.id OR EXISTS (
+                    SELECT 1 FROM depannhome_calendar_assignments assignment
+                    WHERE assignment.event_id=event.id AND assignment.technician_id=account.id
+                ))
+          ))
     `, [ownerId, senderId, clientId]);
     await Promise.all(rows.map(recipient => createNotification(
         ownerId,

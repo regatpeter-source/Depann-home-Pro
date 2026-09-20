@@ -1,5 +1,5 @@
 import { ROUTES } from "./config.js?v=116";
-import { addClientActivity, getLocalClients, removeLocalClient, saveLocalClient, scheduleClientSynchronization, synchronizeClients } from "./client-sync.js?v=131";
+import { addClientActivity, getLocalClients, removeLocalClient, saveLocalClient, scheduleClientSynchronization, synchronizeClients } from "./client-sync.js?v=132";
 import { renderClientMessages } from "./messages.js?v=107";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
@@ -75,7 +75,7 @@ export async function renderClients(options = {}) {
             if (directoryClientId) renderProvisionedClientDirectory(directory, clients, directoryClientId);
             return;
         }
-        if (activeWorkspace === "create") {
+        if (activeWorkspace === "create" && (editingClient || canCreateClientRecords())) {
             container.appendChild(renderClientForm(editingClient || EMPTY_CLIENT, clientScreenOptions));
             return;
         }
@@ -84,7 +84,7 @@ export async function renderClients(options = {}) {
     }
 
     container.appendChild(renderClientToolbar(clients, readOnly, directory));
-    if (!readOnly) container.appendChild(renderClientForm(editingClient || EMPTY_CLIENT, clientScreenOptions));
+    if (editingClient || !readOnly && canCreateClientRecords()) container.appendChild(renderClientForm(editingClient || EMPTY_CLIENT, clientScreenOptions));
 
     if (selectedClient) {
         container.appendChild(renderClientDetail(selectedClient, { focusMessages: Boolean(options.focusMessages) }));
@@ -104,7 +104,7 @@ function renderClientWorkspaceTabs(activeWorkspace, readOnly, activeClient) {
     navigation.setAttribute("aria-label", "Espaces clients");
     navigation.innerHTML = `
         <button type="button" class="client-workspace-tab${activeWorkspace === "directory" ? " active" : ""}" data-client-workspace="directory" ${activeWorkspace === "directory" ? 'aria-current="page"' : ""}><span>01</span><strong>Répertoire clients</strong><small>Rechercher et consulter</small></button>
-        ${readOnly ? "" : `<button type="button" class="client-workspace-tab${activeWorkspace === "create" ? " active" : ""}" data-client-workspace="create" ${activeWorkspace === "create" ? 'aria-current="page"' : ""}><span>02</span><strong>${activeClient && activeWorkspace === "create" ? "Modification client" : "Nouveau client"}</strong><small>Créer ou mettre à jour</small></button>`}
+        ${!readOnly && (canCreateClientRecords() || activeWorkspace === "create" && activeClient) ? `<button type="button" class="client-workspace-tab${activeWorkspace === "create" ? " active" : ""}" data-client-workspace="create" ${activeWorkspace === "create" ? 'aria-current="page"' : ""}><span>02</span><strong>${activeClient && activeWorkspace === "create" ? "Modification client" : "Nouveau client"}</strong><small>${canCreateClientRecords() ? "Créer ou mettre à jour" : "Mettre à jour la fiche attribuée"}</small></button>` : ""}
         ${activeWorkspace === "detail" && activeClient ? `<button type="button" class="client-workspace-tab active" aria-current="page"><span>03</span><strong>Dossier client</strong><small>${escapeHtml(activeClient.name)}</small></button>` : ""}
     `;
     navigation.querySelector('[data-client-workspace="directory"]')?.addEventListener("click", () => renderClients({ ...clientScreenOptions, clientWorkspace: "directory" }));
@@ -152,7 +152,7 @@ function renderClientToolbar(clients, readOnly, directory) {
         <div class="client-toolbar-actions">
             <button type="button" class="secondary-button" id="syncClientsBtn">${readOnly ? "Actualiser" : "Synchroniser"}</button>
             ${!readOnly && canImportGroupClient() ? '<button type="button" class="secondary-button" id="importGroupClientBtn">Prendre un client du groupe</button>' : ""}
-            ${readOnly ? "" : '<button type="button" class="secondary-button" id="newClientBtn">+ Nouveau client</button>'}
+            ${canCreateClientRecords() ? '<button type="button" class="secondary-button" id="newClientBtn">+ Nouveau client</button>' : ""}
         </div>
         <p id="clientSearchHint" class="client-search-hint">Les dossiers ne sont affichés qu’après une recherche. Vous pouvez combiner le mode de recherche, les dates et la période année/mois.</p>
         <p id="clientSyncMessage" class="auth-message" aria-live="polite"></p>
@@ -387,7 +387,7 @@ function renderClientForm(client, options = {}) {
                 </label>
             </div>
 
-            <section class="client-files-zone">
+            <section class="client-files-zone" ${isDedicatedMobileClientSession() ? "hidden" : ""}>
                 <div class="form-heading">
                     <div>
                         <p class="eyebrow">Dossier client</p>
@@ -565,7 +565,7 @@ function renderClientTableRow(client, appointmentDates = []) {
         <td data-label="Création / rendez-vous"><strong>Créé le ${escapeHtml(formatDate(client.createdAt))}</strong><small>${appointmentDates.length ? `RDV : ${escapeHtml(appointmentDates.map(formatDirectoryShortDate).join(" · "))}` : `${client.attachments.length} fichier(s)`}</small></td>
         <td data-label="Actions"><div class="client-card-actions">
             <button type="button" class="secondary-button" data-action="view">Voir</button>
-            ${readOnly ? "" : archived ? '<button type="button" class="secondary-button" data-action="reactivate">Réactiver</button>' : '<button type="button" class="secondary-button" data-action="edit">Modifier</button>'}
+            ${readOnly ? "" : archived ? canManageClientLifecycle() ? '<button type="button" class="secondary-button" data-action="reactivate">Réactiver</button>' : "" : '<button type="button" class="secondary-button" data-action="edit">Modifier</button>'}
         </div></td>
     `;
 
@@ -596,7 +596,7 @@ function renderClientDetail(client, options = {}) {
             </div>
             <div class="client-card-actions">
                 ${navigationHref ? `<a class="secondary-button client-navigation-button" href="${escapeHtml(navigationHref)}" aria-label="Y aller vers ${escapeHtml(formatClientLocation(client))}">Y aller</a>` : '<button type="button" class="secondary-button client-navigation-button" disabled title="Ajoutez une adresse au client pour lancer la navigation.">Y aller</button>'}
-                ${readOnly ? "" : archived ? '<button type="button" class="secondary-button report-primary-action" id="reactivateSelectedClient">Réactiver le client</button>' : '<button type="button" class="secondary-button" id="createClientAppointment">+ Créer un rendez-vous</button><button type="button" class="secondary-button" id="createClientQuote">+ Créer un devis</button><button type="button" class="secondary-button" id="createClientInvoice">+ Créer une facture</button><button type="button" class="secondary-button" id="editSelectedClient">Modifier</button><button type="button" class="secondary-button danger-button" id="deleteSelectedClient">Supprimer le client</button>'}
+                ${renderClientDetailActions(client, readOnly)}
             </div>
         </div>
         <div class="procedure-meta">
@@ -941,7 +941,27 @@ async function permanentlyDeleteClient(clientId, dialog) {
 }
 
 function isClientReadOnly() {
+    if (isDedicatedMobileClientSession()) return document.body.dataset.canManageCalendar !== "true";
     return document.body.dataset.role === "technician";
+}
+
+function isDedicatedMobileClientSession() {
+    return document.body.dataset.deviceType === "mobile" && ["mobile_admin", "team_lead", "technician"].includes(document.body.dataset.role);
+}
+
+function canCreateClientRecords() {
+    return !isDedicatedMobileClientSession() && !isClientReadOnly();
+}
+
+function canManageClientLifecycle() {
+    return !isDedicatedMobileClientSession() && !isClientReadOnly();
+}
+
+function renderClientDetailActions(client, readOnly) {
+    if (readOnly) return "";
+    if (client.clientStatus === "archived") return canManageClientLifecycle() ? '<button type="button" class="secondary-button report-primary-action" id="reactivateSelectedClient">Réactiver le client</button>' : "";
+    if (isDedicatedMobileClientSession()) return '<button type="button" class="secondary-button" id="createClientAppointment">+ Créer un rendez-vous</button><button type="button" class="secondary-button" id="editSelectedClient">Modifier les coordonnées</button>';
+    return '<button type="button" class="secondary-button" id="createClientAppointment">+ Créer un rendez-vous</button><button type="button" class="secondary-button" id="createClientQuote">+ Créer un devis</button><button type="button" class="secondary-button" id="createClientInvoice">+ Créer une facture</button><button type="button" class="secondary-button" id="editSelectedClient">Modifier</button><button type="button" class="secondary-button danger-button" id="deleteSelectedClient">Supprimer le client</button>';
 }
 
 function getClientById(id) {

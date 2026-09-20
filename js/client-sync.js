@@ -73,6 +73,7 @@ export function saveLocalClient(client) {
     if (!canWriteClients()) return null;
     const clients = getLocalClients();
     const existing = clients.find(item => item.id === client.id);
+    if (isDedicatedMobileClientSession() && !existing) return null;
     const nextClient = normalizeClient({
         ...client,
         createdAt: existing?.createdAt || client.createdAt || new Date().toISOString(),
@@ -149,10 +150,17 @@ async function synchronize({ forceFull = false } = {}) {
 
     const remoteClients = Array.isArray(remoteResult.data?.clients) ? remoteResult.data.clients.map(normalizeClient) : [];
     const deletedClientIds = Array.isArray(remoteResult.data?.deletedClientIds) ? remoteResult.data.deletedClientIds : [];
+    const completeSnapshot = remoteResult.data?.completeSnapshot === true;
     const cursor = validDate(remoteResult.data?.cursor);
     const isInitialSynchronization = !getSynchronizationCursor() && !forceFull;
+    if (completeSnapshot) {
+        const accessibleClientIds = new Set(remoteClients.map(client => client.id));
+        writeQueue(canWriteClients() ? getQueue().filter(operation => accessibleClientIds.has(operation.clientId)) : []);
+    }
     if (!canWriteClients()) {
-        const synchronizedClients = isInitialSynchronization
+        const synchronizedClients = completeSnapshot
+            ? remoteClients
+            : isInitialSynchronization
             ? remoteClients
             : forceFull ? mergeRemoteWithQueuedClients(remoteClients) : applyRemoteChanges(getLocalClients(), remoteClients, deletedClientIds);
         if (!writeClients(synchronizedClients)) {
@@ -162,7 +170,7 @@ async function synchronize({ forceFull = false } = {}) {
         window.dispatchEvent(new CustomEvent("depannhome:clients-synchronized"));
         return { ok: true };
     }
-    const localClients = forceFull ? mergeRemoteWithQueuedClients(remoteClients) : applyRemoteChanges(getLocalClients(), remoteClients, deletedClientIds);
+    const localClients = forceFull || completeSnapshot ? mergeRemoteWithQueuedClients(remoteClients) : applyRemoteChanges(getLocalClients(), remoteClients, deletedClientIds);
     if (isInitialSynchronization) enqueueUnsyncedLocalClients(localClients, remoteClients);
     const merged = mergeClients(localClients, remoteClients);
     if (!writeClients(merged)) return { ok: false, message: "Espace de stockage local saturé. Supprimez ou compressez des fichiers clients." };
@@ -198,7 +206,12 @@ async function synchronize({ forceFull = false } = {}) {
         if (refreshed.ok) {
             const refreshedClients = Array.isArray(refreshed.data?.clients) ? refreshed.data.clients.map(normalizeClient) : [];
             const refreshedDeletedClientIds = Array.isArray(refreshed.data?.deletedClientIds) ? refreshed.data.deletedClientIds : [];
-            const finalClients = forceFull ? mergeRemoteWithQueuedClients(refreshedClients) : applyRemoteChanges(getLocalClients(), refreshedClients, refreshedDeletedClientIds);
+            const refreshedCompleteSnapshot = refreshed.data?.completeSnapshot === true;
+            if (refreshedCompleteSnapshot) {
+                const accessibleClientIds = new Set(refreshedClients.map(client => client.id));
+                writeQueue(getQueue().filter(operation => accessibleClientIds.has(operation.clientId)));
+            }
+            const finalClients = forceFull || refreshedCompleteSnapshot ? mergeRemoteWithQueuedClients(refreshedClients) : applyRemoteChanges(getLocalClients(), refreshedClients, refreshedDeletedClientIds);
             if (!writeClients(finalClients)) {
                 return { ok: false, message: "Espace de stockage local saturé. Supprimez ou compressez des fichiers clients." };
             }
@@ -379,11 +392,18 @@ function getTimestamp(value) {
 }
 
 function getAccountId() {
-    return String(document.body.dataset.accountId || document.body.dataset.userId || "").replace(/[^a-zA-Z0-9_-]/g, "");
+    const accountId = String(document.body.dataset.accountId || document.body.dataset.userId || "").replace(/[^a-zA-Z0-9_-]/g, "");
+    const userId = String(document.body.dataset.userId || "").replace(/[^a-zA-Z0-9_-]/g, "");
+    return isDedicatedMobileClientSession() && userId ? `${accountId}:mobile:${userId}` : accountId;
 }
 
 function canWriteClients() {
+    if (isDedicatedMobileClientSession()) return document.body.dataset.canManageCalendar === "true";
     return ["admin", "mobile_admin"].includes(document.body.dataset.role);
+}
+
+function isDedicatedMobileClientSession() {
+    return document.body.dataset.deviceType === "mobile" && ["mobile_admin", "team_lead", "technician"].includes(document.body.dataset.role);
 }
 
 function isAccountant() {

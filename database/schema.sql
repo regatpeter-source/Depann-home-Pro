@@ -1288,6 +1288,8 @@ CREATE TABLE IF NOT EXISTS depannhome_calendar_events (
     paused_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
     paused_by_name VARCHAR(160) NOT NULL DEFAULT '',
     rescheduled_from_event_id BIGINT REFERENCES depannhome_calendar_events(id) ON DELETE SET NULL,
+    created_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+    created_device_type VARCHAR(10) NOT NULL DEFAULT 'desktop',
     notes VARCHAR(2000) NOT NULL DEFAULT '',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -1352,6 +1354,13 @@ ADD COLUMN IF NOT EXISTS rescheduled_from_event_id BIGINT REFERENCES depannhome_
 CREATE UNIQUE INDEX IF NOT EXISTS depannhome_calendar_events_rescheduled_from_idx
 ON depannhome_calendar_events (rescheduled_from_event_id)
 WHERE rescheduled_from_event_id IS NOT NULL;
+
+ALTER TABLE depannhome_calendar_events
+ADD COLUMN IF NOT EXISTS created_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+ADD COLUMN IF NOT EXISTS created_device_type VARCHAR(10) NOT NULL DEFAULT 'desktop';
+UPDATE depannhome_calendar_events SET created_device_type='desktop' WHERE created_device_type NOT IN ('desktop','mobile');
+DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='depannhome_calendar_events_created_device_type_check') THEN ALTER TABLE depannhome_calendar_events ADD CONSTRAINT depannhome_calendar_events_created_device_type_check CHECK (created_device_type IN ('desktop','mobile')); END IF; END $$;
+CREATE INDEX IF NOT EXISTS depannhome_calendar_events_admin_client_idx ON depannhome_calendar_events(owner_id,client_id) WHERE created_device_type='desktop' AND client_id<>'';
 
 UPDATE depannhome_calendar_events event
 SET event_status = 'cancelled', updated_at = NOW()

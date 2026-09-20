@@ -1,7 +1,7 @@
 import { ROUTES } from "./config.js?v=134";
 import { createBillingDocumentForClient, viewBillingDocument } from "./billing.js?v=210";
-import { getSearchableClients } from "./clients.js?v=170";
-import { addClientActivityByName, synchronizeClients } from "./client-sync.js?v=131";
+import { getSearchableClients } from "./clients.js?v=171";
+import { addClientActivityByName, synchronizeClients } from "./client-sync.js?v=132";
 import { renderClientMessages } from "./messages.js?v=107";
 import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=57";
 import { resetSelection } from "./state.js?v=44";
@@ -340,7 +340,7 @@ function renderEventForm(panel) {
                     <dl><dt>Intervention</dt><dd>N° ${escapeHtml(event.id)}</dd><dt>Client</dt><dd>${escapeHtml(event.clientName || "Non renseigné")}</dd><dt>Date</dt><dd>${escapeHtml(formatActivityDate(event.date, event.startTime))}${event.endTime ? ` — ${escapeHtml(event.endTime)}` : ""}</dd>${renderAssignedTechniciansDetail(event)}${event.location ? `<dt>Lieu</dt><dd>${escapeHtml(event.location)}</dd>` : ""}${event.notes ? `<dt>Notes</dt><dd>${escapeHtml(event.notes)}</dd>` : ""}</dl>
                 </section>
                 ${client ? renderInsuranceDeductibleHtml(event, client) : ""}
-                <div class="calendar-form-actions">${client ? `<button type="button" class="secondary-button" id="openCompletedAppointmentClient">Aller sur la fiche client</button><button type="button" class="secondary-button" id="scheduleCompletedAppointmentFollowUp">Planifier un nouveau rendez-vous</button>` : '<p class="auth-message">Aucune fiche client associée : l’intervention historique reste consultable.</p>'}<button type="button" class="secondary-button" id="closeCalendarDetail">Fermer</button></div>
+                <div class="calendar-form-actions">${client ? `<button type="button" class="secondary-button" id="openCompletedAppointmentClient">Aller sur la fiche client</button>${canManageCalendarSchedule() ? '<button type="button" class="secondary-button" id="scheduleCompletedAppointmentFollowUp">Planifier un nouveau rendez-vous</button>' : ""}` : '<p class="auth-message">Aucune fiche client associée : l’intervention historique reste consultable.</p>'}<button type="button" class="secondary-button" id="closeCalendarDetail">Fermer</button></div>
             </div>`;
         initializeInsuranceDeductibleControls(panel, event);
         panel.querySelector("#openCompletedAppointmentClient")?.addEventListener("click", () => {
@@ -396,7 +396,7 @@ function renderEventForm(panel) {
                     <p class="muted">Cette intervention reste visible dans le planning et l’historique, mais elle ne réserve plus ce créneau.</p>
                     <dl><dt>Intervention</dt><dd>N° ${escapeHtml(event.id)}</dd><dt>Client</dt><dd>${escapeHtml(event.clientName || "Non renseigné")}</dd><dt>Date initiale</dt><dd>${escapeHtml(formatActivityDate(event.date, event.startTime))}${event.endTime ? ` — ${escapeHtml(event.endTime)}` : ""}</dd>${renderAssignedTechniciansDetail(event)}${event.location ? `<dt>Lieu</dt><dd>${escapeHtml(event.location)}</dd>` : ""}${event.notes ? `<dt>Notes</dt><dd>${escapeHtml(event.notes)}</dd>` : ""}</dl>
                 </section>
-                <div class="calendar-form-actions">${canCreateCalendarEvents() ? '<button type="button" class="secondary-button" id="editCalendarEvent">Modifier ou réactiver</button>' : ""}<button type="button" class="secondary-button" id="closeCalendarDetail">Fermer</button></div>
+                <div class="calendar-form-actions">${canEditCalendarEvent(event) ? '<button type="button" class="secondary-button" id="editCalendarEvent">Modifier ou réactiver</button>' : ""}<button type="button" class="secondary-button" id="closeCalendarDetail">Fermer</button></div>
             </div>`;
         panel.querySelector("#editCalendarEvent")?.addEventListener("click", () => {
             mobileAdminEditingEvents.add(String(event.id));
@@ -426,7 +426,8 @@ function renderEventForm(panel) {
         const phoneHref = client ? getClientPhoneHref(client) : "";
         panel.innerHTML = `
             <div class="calendar-event-detail">
-                <div class="form-heading"><div><p class="eyebrow">${isMobileAdministrator() || isTeamLead() ? "Intervention à réaliser" : "Rendez-vous"}</p><h2>${escapeHtml(event.title)}</h2></div><div class="calendar-detail-actions">${canCreateCalendarEvents() ? '<button type="button" class="secondary-button" id="editCalendarEvent">Modifier le rendez-vous</button>' : ""}<button type="button" class="secondary-button" id="closeCalendarDetail">Fermer</button></div></div>
+                <div class="form-heading"><div><p class="eyebrow">${isMobileAdministrator() || isTeamLead() ? "Intervention à réaliser" : "Rendez-vous"}</p><h2>${escapeHtml(event.title)}</h2></div><div class="calendar-detail-actions">${canEditCalendarEvent(event) ? '<button type="button" class="secondary-button" id="editCalendarEvent">Modifier le rendez-vous</button>' : ""}<button type="button" class="secondary-button" id="closeCalendarDetail">Fermer</button></div></div>
+                ${isDedicatedMobileCalendar() && !canEditCalendarEvent(event) ? '<p class="muted">Ce rendez-vous a été créé par un poste administratif : ses horaires, son client et ses affectations sont en lecture seule.</p>' : ""}
                 ${client ? `
                     <section class="calendar-client-summary">
                         <div><p class="eyebrow">Fiche client</p><h3>${escapeHtml(client.name)}</h3><p class="muted">${escapeHtml(client.type || "Client")}</p></div>
@@ -740,7 +741,7 @@ function renderInterventionPauseHtml(event) {
     if (!event?.id || event.eventType !== "appointment" || calendarEventStatus(event) === "completed") return "";
     if (event.pausedAt) {
         const rescheduled = Boolean(event.rescheduledEventId);
-        const action = !rescheduled && canManageCalendarSchedule() ? `<div class="calendar-intervention-resume-fields"><label>Nouvelle date *<input type="date" data-resume-intervention-date min="${escapeHtml(toDateString(new Date()))}" value="${escapeHtml(defaultResumeDate(event.date))}" required></label><button type="button" class="secondary-button" data-resume-intervention>Replanifier l’intervention</button></div>` : "";
+        const action = !rescheduled && canEditCalendarEvent(event) ? `<div class="calendar-intervention-resume-fields"><label>Nouvelle date *<input type="date" data-resume-intervention-date min="${escapeHtml(toDateString(new Date()))}" value="${escapeHtml(defaultResumeDate(event.date))}" required></label><button type="button" class="secondary-button" data-resume-intervention>Replanifier l’intervention</button></div>` : "";
         return `<section class="calendar-intervention-pause is-paused"><div><p class="eyebrow">${rescheduled ? "Intervention replanifiée" : "En attente de replanification"}</p><h3>${escapeHtml(interventionPauseReasonLabel(event.pauseReason))}</h3><p>${escapeHtml(event.pauseNote || "Aucune précision ajoutée.")}</p><small>Mise en pause ${escapeHtml(formatPauseDate(event.pausedAt))}${event.pausedByName ? ` par ${escapeHtml(event.pausedByName)}` : ""}${rescheduled ? ` · Nouvelle intervention n°${escapeHtml(event.rescheduledEventId)}` : ""}</small></div>${action}<p class="auth-message" data-intervention-pause-message aria-live="polite"></p></section>`;
     }
     if (!canRequestInterventionPause() || calendarEventStatus(event) === "cancelled") return "";
@@ -800,6 +801,16 @@ function canManageCalendarSchedule() {
     const role = document.body.dataset.role;
     if (["mobile_admin", "team_lead", "technician"].includes(role)) return document.body.dataset.canManageCalendar === "true";
     return ["admin", "pc_standard", "commercial"].includes(role) && !isCommercialMobileCalendar();
+}
+
+function canEditCalendarEvent(event) {
+    if (!canManageCalendarSchedule()) return false;
+    if (!event?.id || !isDedicatedMobileCalendar()) return true;
+    return event.createdDeviceType === "mobile" && String(event.createdBy || "") === String(document.body.dataset.userId || "");
+}
+
+function isDedicatedMobileCalendar() {
+    return document.body.dataset.deviceType === "mobile" && ["mobile_admin", "team_lead", "technician"].includes(document.body.dataset.role);
 }
 
 function formatPauseDate(value) {
@@ -1932,7 +1943,9 @@ function canManageCalendarEventStatus() {
 }
 
 function usesTerrainInterventionView(event) {
-    return isReadOnlyCalendar() && Boolean(event?.id) || ((isMobileAdministrator() || isTeamLead()) && Boolean(event?.id) && event.eventType === "appointment" && !mobileAdminEditingEvents.has(String(event.id)));
+    return isReadOnlyCalendar() && Boolean(event?.id)
+        || isDedicatedMobileCalendar() && Boolean(event?.id)
+            && (!canEditCalendarEvent(event) || event.eventType === "appointment" && !mobileAdminEditingEvents.has(String(event.id)));
 }
 
 function roleLabel(role) {

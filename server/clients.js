@@ -6,6 +6,7 @@ import { getAccountOwnerId } from "./auth.js";
 import { sendDocumentEmail } from "./email.js";
 import { clientLifecycleDecision, normalizeClientStatus } from "./client-lifecycle.js";
 import { openClientEventStream, publishClientChange } from "./client-events.js";
+import { canEditAssignedClients, hasAdministrativeClientAssignment, isDedicatedMobileSession } from "./mobile-client-access.js";
 
 const MAX_CLIENT_PAYLOAD_SIZE = 20 * 1024 * 1024;
 const CLIENT_ID_PATTERN = /^client-[a-zA-Z0-9-]+$/;
@@ -65,8 +66,10 @@ export async function initializeClients() {
     await database.query("CREATE INDEX IF NOT EXISTS depannhome_client_lifecycle_audit_client_idx ON depannhome_client_lifecycle_audit (owner_id, client_id, created_at DESC)");
 }
 
-export async function listClientsForOwner(ownerId, sinceParameter = "") {
-    const since = sinceParameter ? validDate(sinceParameter) : "";
+export async function listClientsForOwner(ownerId, sinceParameter = "", user = null) {
+    const restrictedMobile = isDedicatedMobileSession(user);
+    const effectiveSinceParameter = restrictedMobile ? "" : sinceParameter;
+    const since = effectiveSinceParameter ? validDate(effectiveSinceParameter) : "";
     if (sinceParameter && !since) throw clientError(400, "Curseur de synchronisation invalide.");
     const database = getPool();
     await reconcilePartnerMissionClients(database, ownerId);
@@ -77,15 +80,25 @@ export async function listClientsForOwner(ownerId, sinceParameter = "") {
         SELECT client_data AS client, client_status AS "clientStatus", archived_at AS "archivedAt", archived_by AS "archivedBy", updated_at AS "updatedAt"
         FROM depannhome_clients
         WHERE owner_id = $1 AND updated_at <= $2 AND COALESCE(client_data->>'isSandbox','false')<>'true'
-          AND ($3::timestamptz IS NULL OR updated_at > $3::timestamptz)
+                    AND ($3::timestamptz IS NULL OR updated_at > $3::timestamptz)
+                    AND ($4::boolean = FALSE OR EXISTS (
+                            SELECT 1 FROM depannhome_calendar_events event
+                            WHERE event.owner_id = depannhome_clients.owner_id
+                                AND event.client_id = depannhome_clients.client_id
+                                AND event.created_device_type = 'desktop'
+                                AND (event.assigned_technician_id = $5::bigint OR EXISTS (
+                                        SELECT 1 FROM depannhome_calendar_assignments assignment
+                                        WHERE assignment.event_id = event.id AND assignment.technician_id = $5::bigint
+                                ))
+                    ))
         ORDER BY updated_at DESC
-    `, [ownerId, cursor, since || null]);
+        `, [ownerId, cursor, since || null, restrictedMobile, user?.sub || 0]);
     const deletedClientIds = since ? (await database.query(`
         SELECT client_id AS "clientId"
         FROM depannhome_deleted_clients
         WHERE owner_id = $1 AND deleted_at <= $2 AND deleted_at > $3::timestamptz
     `, [ownerId, cursor, since])).rows.map(row => row.clientId) : [];
-    return { clients: rows.map(publicClient), deletedClientIds, cursor: cursor.toISOString() };
+    return { clients: rows.map(publicClient), deletedClientIds, cursor: cursor.toISOString(), completeSnapshot: restrictedMobile };
 }
 
 async function reconcilePartnerMissionClients(database, ownerId) {
@@ -156,7 +169,7 @@ export function registerClientRoutes(app, requireAuthentication) {
         openClientEventStream(request, response, getAccountOwnerId(request));
     });
     app.get("/api/clients", requireAuthentication, asyncHandler(async (request, response) => {
-        response.json(await listClientsForOwner(getAccountOwnerId(request), String(request.query?.since || "")));
+        response.json(await listClientsForOwner(getAccountOwnerId(request), String(request.query?.since || ""), request.user));
     }));
 
     app.get("/api/clients/group-import", requireAuthentication, requireGroupClientImportAccess, asyncHandler(async (request, response) => {
@@ -229,6 +242,8 @@ export function registerClientRoutes(app, requireAuthentication) {
         }
     }));
 
+    app.use("/api/clients/:clientId", asyncHandler(requireAssignedMobileClientAccess));
+
     app.put("/api/clients/:clientId", requireAuthentication, requireClientWriteAccess, asyncHandler(async (request, response) => {
         const clientId = String(request.params.clientId || "");
         const submittedClient = sanitizeClient(request.body?.client, clientId);
@@ -251,15 +266,18 @@ export function registerClientRoutes(app, requireAuthentication) {
                 WHERE owner_id = $1 AND client_id = $2 FOR UPDATE
             `, [getAccountOwnerId(request), clientId]);
             const now = new Date().toISOString();
-            const deletedAttachmentIds = mergeDeletedAttachmentIds(existing.rows[0]?.client?.deletedAttachmentIds, submittedClient.deletedAttachmentIds);
+            const existingClient = existing.rows[0]?.client;
+            const deletedAttachmentIds = mergeDeletedAttachmentIds(existingClient?.deletedAttachmentIds, submittedClient.deletedAttachmentIds);
             const notesSource = submittedClient.notesSource === "email_extractor" && submittedClient.notes === existing.rows[0]?.client?.notes ? "email_extractor" : "";
-            const client = {
-                ...submittedClient,
-                notesSource,
-                attachments: mergeClientAttachments(existing.rows[0]?.client?.attachments, submittedClient.attachments, deletedAttachmentIds),
-                deletedAttachmentIds,
-                updatedAt: now
-            };
+            const client = isDedicatedMobileSession(request.user)
+                ? mergeAssignedMobileClient(existingClient, submittedClient, request.user, now)
+                : {
+                    ...submittedClient,
+                    notesSource,
+                    attachments: mergeClientAttachments(existingClient?.attachments, submittedClient.attachments, deletedAttachmentIds),
+                    deletedAttachmentIds,
+                    updatedAt: now
+                };
             const { rows } = await connection.query(`
                 INSERT INTO depannhome_clients (owner_id, client_id, client_data, updated_at)
                 VALUES ($1, $2, $3::jsonb, NOW())
@@ -278,7 +296,7 @@ export function registerClientRoutes(app, requireAuthentication) {
         }
     }));
 
-    app.get("/api/clients/:clientId/deletion-analysis", requireAuthentication, requireClientWriteAccess, asyncHandler(async (request, response) => {
+    app.get("/api/clients/:clientId/deletion-analysis", requireAuthentication, requireClientWriteAccess, requireClientLifecycleAccess, asyncHandler(async (request, response) => {
         const clientId = String(request.params.clientId || "");
         if (!CLIENT_ID_PATTERN.test(clientId)) return response.status(400).json({ message: "Identifiant client invalide." });
         const analysis = await analyzeClientLifecycle(getPool(), getAccountOwnerId(request), clientId);
@@ -286,7 +304,7 @@ export function registerClientRoutes(app, requireAuthentication) {
         response.json({ analysis });
     }));
 
-    app.patch("/api/clients/:clientId/archive", requireAuthentication, requireClientWriteAccess, asyncHandler(async (request, response) => {
+    app.patch("/api/clients/:clientId/archive", requireAuthentication, requireClientWriteAccess, requireClientLifecycleAccess, asyncHandler(async (request, response) => {
         const clientId = String(request.params.clientId || "");
         if (!CLIENT_ID_PATTERN.test(clientId)) return response.status(400).json({ message: "Identifiant client invalide." });
         const ownerId = getAccountOwnerId(request);
@@ -302,7 +320,7 @@ export function registerClientRoutes(app, requireAuthentication) {
         } catch (error) { await connection.query("ROLLBACK"); throw error; } finally { connection.release(); }
     }));
 
-    app.patch("/api/clients/:clientId/reactivate", requireAuthentication, requireClientWriteAccess, asyncHandler(async (request, response) => {
+    app.patch("/api/clients/:clientId/reactivate", requireAuthentication, requireClientWriteAccess, requireClientLifecycleAccess, asyncHandler(async (request, response) => {
         const clientId = String(request.params.clientId || "");
         if (!CLIENT_ID_PATTERN.test(clientId)) return response.status(400).json({ message: "Identifiant client invalide." });
         const ownerId = getAccountOwnerId(request);
@@ -579,9 +597,28 @@ export function clientUploadErrorHandler(error, request, response, next) {
 }
 
 function requireClientWriteAccess(request, response, next) {
+    if (isDedicatedMobileSession(request.user)) {
+        if (canEditAssignedClients(request.user)) return next();
+        return response.status(403).json({ message: "Ce poste mobile peut consulter ses clients attribués, sans modifier leur fiche." });
+    }
     if (request.user?.role === "technician") {
         return response.status(403).json({ message: "Les techniciens peuvent consulter les dossiers clients, sans les modifier." });
     }
+    return next();
+}
+
+async function requireAssignedMobileClientAccess(request, response, next) {
+    if (!isDedicatedMobileSession(request.user)) return next();
+    const clientId = String(request.params.clientId || "");
+    if (!CLIENT_ID_PATTERN.test(clientId)) return response.status(400).json({ message: "Identifiant client invalide." });
+    if (!await hasAdministrativeClientAssignment(getPool(), getAccountOwnerId(request), clientId, request.user.sub)) {
+        return response.status(404).json({ message: "Dossier client introuvable ou non attribué à ce poste." });
+    }
+    return next();
+}
+
+function requireClientLifecycleAccess(request, response, next) {
+    if (isDedicatedMobileSession(request.user)) return response.status(403).json({ message: "L’archivage et la suppression d’un client sont réservés à un poste administratif." });
     return next();
 }
 
@@ -722,6 +759,27 @@ function sanitizeClient(value, expectedId) {
         deletedAttachmentIds: sanitizeDeletedAttachmentIds(value.deletedAttachmentIds),
         activityHistory: sanitizeActivityHistory(value.activityHistory)
     };
+}
+
+function mergeAssignedMobileClient(existingClient, submittedClient, user, updatedAt) {
+    const existing = existingClient || {};
+    const editableFields = ["type", "name", "firstName", "lastName", "phone", "email", "address", "city", "interventionAddress", "interventionReference", "insurance", "insuranceDossier", "insuranceDeductibleAmountCents", "mandateNumber", "claimNumber", "insuredNumber", "principal", "manager", "expert", "equipment", "notes"];
+    const client = { ...existing };
+    editableFields.forEach(field => { client[field] = submittedClient[field]; });
+    client.id = submittedClient.id;
+    client.notesSource = submittedClient.notes === existing.notes ? existing.notesSource || "" : "";
+    client.attachments = Array.isArray(existing.attachments) ? existing.attachments : [];
+    client.deletedAttachmentIds = sanitizeDeletedAttachmentIds(existing.deletedAttachmentIds);
+    client.activityHistory = sanitizeActivityHistory([{
+        id: `activity-${randomUUID()}`,
+        type: "profile",
+        label: "Fiche client mise à jour depuis un poste mobile",
+        actorName: String(user?.fullName || user?.username || "Poste mobile").slice(0, 100),
+        createdAt: updatedAt
+    }, ...(Array.isArray(existing.activityHistory) ? existing.activityHistory : [])]);
+    client.createdAt = validDate(existing.createdAt) || submittedClient.createdAt;
+    client.updatedAt = updatedAt;
+    return client;
 }
 
 function sanitizeDeductibleAmount(value) {

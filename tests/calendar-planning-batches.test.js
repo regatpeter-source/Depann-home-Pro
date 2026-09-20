@@ -10,7 +10,7 @@ const calendar = read("js/calendar.js");
 
 test("une planification étendue reçoit un identifiant de création explicite", () => {
     assert.match(server, /const planningBatchId = dates\.length > 1 \? randomUUID\(\) : null/);
-    assert.match(server, /planning_batch_id\)\s*VALUES[\s\S]*\$14::uuid/);
+    assert.match(server, /planning_batch_id, created_by, created_device_type\)\s*VALUES[\s\S]*\$14::uuid, \$15, \$16/);
     assert.match(server, /response\.status\(201\)\.json\(\{ id: ids\[0\], ids, count: ids\.length, planningBatchId \}\)/);
     assert.doesNotMatch(server, /planningBatchId[\s\S]{0,200}(?:title|client_name).*GROUP BY/);
 });
