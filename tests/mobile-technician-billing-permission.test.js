@@ -10,7 +10,8 @@ const roleMigration = readFileSync(new URL("../database/migrations/0010_user_rol
 test("la création d’un poste mobile propose explicitement le droit devis et factures", () => {
     assert.match(navigation, /<legend>Autorisation du poste mobile<\/legend>/);
     assert.match(navigation, /name="canCreateBilling"/);
-    assert.match(navigation, /mobileBillingPermissionField\.hidden = !\["technician", "team_lead"\]\.includes\(roleInput\.value\)/);
+    assert.match(navigation, /mobileBillingPermissionField\.hidden = !isDedicatedMobile/);
+    assert.match(navigation, /querySelector\("\[data-mobile-billing-permission\]"\)\.hidden = !isTechnician/);
     assert.match(navigation, /values\.canCreateBilling = \["technician", "team_lead"\]\.includes\(roleInput\.value\)/);
 });
 

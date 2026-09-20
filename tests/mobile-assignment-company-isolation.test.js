@@ -67,7 +67,8 @@ test("le chef d’équipe reste visible et dispose d’une vue globale du planni
     const calendar = read("server/calendar.js");
     const client = read("js/calendar.js");
     assert.match(calendar, /function hasAssignedOnlyCalendar\(user\)/);
-    assert.match(calendar, /\["technician", "accountant"\]\.includes\(user\?\.role\)/);
+    assert.match(calendar, /user\?\.role === "accountant"/);
+    assert.match(calendar, /user\?\.role === "technician" && user\?\.canManageCalendar !== true/);
     assert.match(client, /groupTechniciansByDepartment\(members\)/);
         assert.match(client, /team_lead: "Chef d’équipe"/);
 });

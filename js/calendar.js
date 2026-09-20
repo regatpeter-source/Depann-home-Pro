@@ -740,7 +740,7 @@ function renderInterventionPauseHtml(event) {
     if (!event?.id || event.eventType !== "appointment" || calendarEventStatus(event) === "completed") return "";
     if (event.pausedAt) {
         const rescheduled = Boolean(event.rescheduledEventId);
-        const action = !rescheduled && canRequestInterventionPause() ? `<div class="calendar-intervention-resume-fields"><label>Nouvelle date *<input type="date" data-resume-intervention-date min="${escapeHtml(toDateString(new Date()))}" value="${escapeHtml(defaultResumeDate(event.date))}" required></label><button type="button" class="secondary-button" data-resume-intervention>Replanifier l’intervention</button></div>` : "";
+        const action = !rescheduled && canManageCalendarSchedule() ? `<div class="calendar-intervention-resume-fields"><label>Nouvelle date *<input type="date" data-resume-intervention-date min="${escapeHtml(toDateString(new Date()))}" value="${escapeHtml(defaultResumeDate(event.date))}" required></label><button type="button" class="secondary-button" data-resume-intervention>Replanifier l’intervention</button></div>` : "";
         return `<section class="calendar-intervention-pause is-paused"><div><p class="eyebrow">${rescheduled ? "Intervention replanifiée" : "En attente de replanification"}</p><h3>${escapeHtml(interventionPauseReasonLabel(event.pauseReason))}</h3><p>${escapeHtml(event.pauseNote || "Aucune précision ajoutée.")}</p><small>Mise en pause ${escapeHtml(formatPauseDate(event.pausedAt))}${event.pausedByName ? ` par ${escapeHtml(event.pausedByName)}` : ""}${rescheduled ? ` · Nouvelle intervention n°${escapeHtml(event.rescheduledEventId)}` : ""}</small></div>${action}<p class="auth-message" data-intervention-pause-message aria-live="polite"></p></section>`;
     }
     if (!canRequestInterventionPause() || calendarEventStatus(event) === "cancelled") return "";
@@ -794,6 +794,12 @@ function interventionPauseReasonLabel(value) {
 function canRequestInterventionPause() {
     return ["admin", "pc_standard", "commercial", "mobile_admin", "technician", "team_lead"].includes(document.body.dataset.role)
         && !(document.body.dataset.role === "commercial" && document.body.classList.contains("mobile-device"));
+}
+
+function canManageCalendarSchedule() {
+    const role = document.body.dataset.role;
+    if (["mobile_admin", "team_lead", "technician"].includes(role)) return document.body.dataset.canManageCalendar === "true";
+    return ["admin", "pc_standard", "commercial"].includes(role) && !isCommercialMobileCalendar();
 }
 
 function formatPauseDate(value) {
@@ -1872,13 +1878,16 @@ function canAccessQuitus() {
 }
 
 function isReadOnlyCalendar() {
-    return ["technician", "accountant"].includes(document.body.dataset.role)
-    || document.body.dataset.role === "team_lead" && document.body.dataset.canManageCalendar !== "true"
+    const role = document.body.dataset.role;
+    return role === "accountant"
+        || ["mobile_admin", "team_lead", "technician"].includes(role) && document.body.dataset.canManageCalendar !== "true"
         || isCommercialMobileCalendar();
 }
 
 function usesPersonalCalendarView() {
-    return ["technician", "accountant"].includes(document.body.dataset.role) || isCommercialMobileCalendar();
+    return document.body.dataset.role === "accountant"
+        || document.body.dataset.role === "technician" && document.body.dataset.canManageCalendar !== "true"
+        || isCommercialMobileCalendar();
 }
 
 function isCommercialMobileCalendar() {

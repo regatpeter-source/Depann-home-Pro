@@ -609,7 +609,7 @@ export function registerCalendarRoutes(app, requireAuthentication) {
         const id = positiveId(request.params.eventId);
         const newDate = sanitizeDate(request.body?.date);
         if (!id) return response.status(400).json({ message: "Intervention invalide." });
-        if (!canRequestInterventionPause(request.user)) return response.status(403).json({ message: "Ce poste ne peut pas reprendre une intervention." });
+        if (!canManageCalendarSchedule(request.user)) return response.status(403).json({ message: "La replanification est réservée aux postes autorisés à gérer le planning." });
         if (!newDate) return response.status(400).json({ message: "Choisissez une nouvelle date valide." });
         if (newDate < dateString(new Date())) return response.status(400).json({ message: "La nouvelle date ne peut pas être antérieure à aujourd’hui." });
         const ownerId = getAccountOwnerId(request);
@@ -1055,9 +1055,9 @@ function requireCalendarCreateAccess(request, response, next) {
 }
 
 export function canManageCalendarSchedule(user) {
-    if (["technician", "accountant"].includes(user?.role) || isCommercialMobile(user)) return false;
-    if (user?.role === "team_lead") return user.canManageCalendar === true;
-    return ["admin", "pc_standard", "mobile_admin", "commercial"].includes(user?.role);
+    if (user?.role === "accountant" || isCommercialMobile(user)) return false;
+    if (["mobile_admin", "team_lead", "technician"].includes(user?.role)) return user.canManageCalendar === true;
+    return ["admin", "pc_standard", "commercial"].includes(user?.role);
 }
 
 function canRequestInterventionPause(user) {
@@ -1069,7 +1069,9 @@ function requireCalendarReadAccess(request, response, next) {
 }
 
 function hasAssignedOnlyCalendar(user) {
-    return ["technician", "accountant"].includes(user?.role) || isCommercialMobile(user);
+    return user?.role === "accountant"
+        || user?.role === "technician" && user?.canManageCalendar !== true
+        || isCommercialMobile(user);
 }
 
 function isCommercialMobile(user) {

@@ -28,6 +28,7 @@ const MOBILE_ADMIN_ROLE = "mobile_admin";
 const STANDARD_PC_ROLE = "pc_standard";
 const COMMERCIAL_ROLE = "commercial";
 const TEAM_LEAD_ROLE = "team_lead";
+const MOBILE_CALENDAR_ROLES = new Set([MOBILE_ADMIN_ROLE, TEAM_LEAD_ROLE, "technician"]);
 const PC_SESSION_ROLES = new Set(["admin", STANDARD_PC_ROLE, COMMERCIAL_ROLE, "accountant"]);
 const WORKSTATION_TOTP_ROLES = new Set(["admin", STANDARD_PC_ROLE, COMMERCIAL_ROLE]);
 const CREATABLE_MEMBER_ROLES = new Set(["admin", STANDARD_PC_ROLE, COMMERCIAL_ROLE, MOBILE_ADMIN_ROLE, TEAM_LEAD_ROLE, "technician"]);
@@ -453,7 +454,7 @@ export function registerAuthRoutes(app) {
             const canAccessAccounting = configurablePermissions && request.body?.canAccessAccounting === true;
             const canAccessCompanyEmail = configurablePermissions && request.body?.canAccessCompanyEmail === true;
             const canCreateBilling = ["technician", TEAM_LEAD_ROLE].includes(role) && request.body?.canCreateBilling === true;
-            const canManageCalendar = role === TEAM_LEAD_ROLE && request.body?.canManageCalendar === true;
+            const canManageCalendar = MOBILE_CALENDAR_ROLES.has(role) && request.body?.canManageCalendar === true;
             const canSwitchGroupCompanies = configurablePermissions && organization.subscriptionTier === "pro" && organization.interfaceType === "group"
                 && Boolean(request.user.groupId) && request.body?.canSwitchGroupCompanies === true;
             const memberDepartments = ["technician", TEAM_LEAD_ROLE].includes(role) ? departments : [];
@@ -490,9 +491,9 @@ export function registerAuthRoutes(app) {
         const canCreateBilling = ["technician", TEAM_LEAD_ROLE].includes(member.role) && typeof request.body?.canCreateBilling === "boolean"
             ? request.body.canCreateBilling
             : member.canCreateBilling;
-        const canManageCalendar = member.role === TEAM_LEAD_ROLE && typeof request.body?.canManageCalendar === "boolean"
+        const canManageCalendar = MOBILE_CALENDAR_ROLES.has(member.role) && typeof request.body?.canManageCalendar === "boolean"
             ? request.body.canManageCalendar
-            : member.role === TEAM_LEAD_ROLE && member.canManageCalendar;
+            : MOBILE_CALENDAR_ROLES.has(member.role) && member.canManageCalendar;
         const organization = await getOrganization(getAccountOwnerId(request));
         const configurablePermissions = isAdvancedWorkstationTier(organization.subscriptionTier) && supportsConfigurablePcPermissions(member.role);
         const canAccessBilling = configurablePermissions && (typeof request.body?.canAccessBilling === "boolean" ? request.body.canAccessBilling : member.canAccessBilling);
@@ -696,12 +697,13 @@ export function registerAuthRoutes(app) {
         const departments = cleanDepartments(request.body?.departments, request.body?.department);
         const department = departments[0] || "";
         const canCreateBilling = request.body?.canCreateBilling === true;
+        const canManageCalendar = request.body?.canManageCalendar === true;
         const validationError = validateCredentials(username, password) || (!fullName ? "Le nom du technicien est obligatoire." : "") || (!phone ? "Le téléphone du technicien est obligatoire." : "") || (!EMAIL_PATTERN.test(email) ? "L’e-mail professionnel du technicien est obligatoire." : "");
         if (validationError) return response.status(400).json({ message: validationError });
         const seatError = await memberSeatError(getAccountOwnerId(request), "technician");
         if (seatError) return response.status(400).json({ message: seatError });
         try {
-            const user = await createUser({ username, passwordHash: await bcrypt.hash(password, 12), role: "technician", accountOwnerId: getAccountOwnerId(request), fullName, phone, email, department, departments, canCreateBilling });
+            const user = await createUser({ username, passwordHash: await bcrypt.hash(password, 12), role: "technician", accountOwnerId: getAccountOwnerId(request), fullName, phone, email, department, departments, canCreateBilling, canManageCalendar });
             response.status(201).json({ technician: publicUser(user) });
         } catch (error) {
             if (error.code === "23505") return response.status(409).json({ message: "Ce nom d’utilisateur est déjà utilisé." });
@@ -877,7 +879,7 @@ export async function authenticateRequest(request, response, next) {
             department: user.department || "",
             departments: cleanDepartments(user.departments, user.department),
             technicianBillingEnabled: user.can_create_billing !== false,
-            canManageCalendar: user.role === TEAM_LEAD_ROLE && user.can_manage_calendar === true,
+            canManageCalendar: MOBILE_CALENDAR_ROLES.has(user.role) && user.can_manage_calendar === true,
             canAccessBilling: device.device_type !== "mobile" && (user.role === "admin" || user.can_access_billing === true),
             canAccessAccounting: device.device_type !== "mobile" && (user.role === "admin" || user.can_access_accounting === true),
             canAccessCompanyEmail: hasCompanyEmailWorkspaceAccess({ ...user, organization, deviceType: device.device_type }),
@@ -1007,7 +1009,8 @@ function requireTechnicianDirectoryAccess(request, response, next) {
 }
 
 function requireCalendarMemberDirectoryAccess(request, response, next) {
-    if (["admin", STANDARD_PC_ROLE, COMMERCIAL_ROLE, MOBILE_ADMIN_ROLE, TEAM_LEAD_ROLE].includes(request.user?.role)) return next();
+    if (["admin", STANDARD_PC_ROLE, COMMERCIAL_ROLE, MOBILE_ADMIN_ROLE, TEAM_LEAD_ROLE].includes(request.user?.role)
+        || request.user?.role === "technician" && request.user?.canManageCalendar === true) return next();
     return response.status(403).json({ message: "L’annuaire du planning n’est pas accessible." });
 }
 
@@ -1400,7 +1403,7 @@ function publicUser(user) {
         department: user.department || "",
         departments: cleanDepartments(user.departments, user.department),
         technicianBillingEnabled: (user.can_create_billing ?? user.technicianBillingEnabled) !== false,
-        canManageCalendar: user.role === TEAM_LEAD_ROLE && (user.can_manage_calendar ?? user.canManageCalendar) === true,
+        canManageCalendar: MOBILE_CALENDAR_ROLES.has(user.role) && (user.can_manage_calendar ?? user.canManageCalendar) === true,
         canAccessBilling: (user.deviceType || user.device_type || "desktop") !== "mobile" && (user.role === "admin" || (user.can_access_billing ?? user.canAccessBilling) === true),
         canAccessAccounting: (user.deviceType || user.device_type || "desktop") !== "mobile" && (user.role === "admin" || (user.can_access_accounting ?? user.canAccessAccounting) === true),
         canAccessCompanyEmail: (user.can_access_company_email ?? user.canAccessCompanyEmail) === true || ["admin", "mobile_admin"].includes(user.role) && ["basic_plus", "pro"].includes(user.organization?.subscriptionTier || user.subscription_tier),

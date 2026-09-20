@@ -61,6 +61,7 @@ test("une intervention mise en pause est annulée puis replanifiée à une autre
     assert.match(calendarServer, /if \(source\.status !== "cancelled"\)/);
     assert.match(calendarServer, /SET event_status='cancelled',updated_at=NOW\(\) WHERE id=\$1 AND owner_id=\$2/);
     assert.match(calendarServer, /canRequestInterventionPause\(request\.user\)/);
+    assert.match(calendarServer, /if \(!canManageCalendarSchedule\(request\.user\)\) return response\.status\(403\).*replanification/);
     assert.match(calendarServer, /EXISTS \(SELECT 1 FROM depannhome_calendar_assignments/);
     assert.match(calendarClient, /Matériel non reçu/);
     assert.match(calendarClient, /Technicien absent/);
