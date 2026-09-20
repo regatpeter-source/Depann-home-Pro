@@ -1362,6 +1362,21 @@ UPDATE depannhome_calendar_events SET created_device_type='desktop' WHERE create
 DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='depannhome_calendar_events_created_device_type_check') THEN ALTER TABLE depannhome_calendar_events ADD CONSTRAINT depannhome_calendar_events_created_device_type_check CHECK (created_device_type IN ('desktop','mobile')); END IF; END $$;
 CREATE INDEX IF NOT EXISTS depannhome_calendar_events_admin_client_idx ON depannhome_calendar_events(owner_id,client_id) WHERE created_device_type='desktop' AND client_id<>'';
 
+CREATE TABLE IF NOT EXISTS depannhome_offline_operations (
+    owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    user_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    operation_id UUID NOT NULL,
+    method VARCHAR(10) NOT NULL,
+    path TEXT NOT NULL,
+    response_status INTEGER,
+    response_type TEXT NOT NULL DEFAULT '',
+    response_body TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    completed_at TIMESTAMPTZ,
+    PRIMARY KEY (owner_id, user_id, operation_id)
+);
+CREATE INDEX IF NOT EXISTS depannhome_offline_operations_created_idx ON depannhome_offline_operations(created_at);
+
 UPDATE depannhome_calendar_events event
 SET event_status = 'cancelled', updated_at = NOW()
 WHERE event.event_type = 'appointment'

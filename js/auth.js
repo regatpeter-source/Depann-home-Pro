@@ -2,12 +2,20 @@ let applicationShell = "";
 let deviceValidationTimer = null;
 const DEVICE_STORAGE_KEY = "depannHomePro:deviceId";
 const ACTIVE_DESKTOP_ACCOUNT_KEY = "depannHomePro:activeDesktopDeviceAccount";
+const OFFLINE_MOBILE_SESSION_KEY = "depannHomePro:offlineMobileSession";
+const OFFLINE_MOBILE_SESSION_MAX_AGE = 7 * 24 * 60 * 60_000;
 
 export async function initializeAuthentication({ onAuthenticated }) {
     if (!applicationShell) applicationShell = getAppRoot().innerHTML;
     const session = await request("/api/auth/session");
     if (session.ok && session.data.authenticated) {
+        rememberOfflineMobileSession(session.data.user);
         onAuthenticated(session.data.user);
+        return;
+    }
+    const offlineUser = session.networkError && navigator.onLine === false ? readOfflineMobileSession() : null;
+    if (offlineUser) {
+        onAuthenticated({ ...offlineUser, offlineSession: true });
         return;
     }
 
@@ -28,7 +36,26 @@ export async function initializeAuthentication({ onAuthenticated }) {
 }
 
 export async function signOut() {
-    return request("/api/auth/logout", { method: "POST" });
+    const result = await request("/api/auth/logout", { method: "POST" });
+    if (result.ok) {
+        localStorage.removeItem(OFFLINE_MOBILE_SESSION_KEY);
+        window.dispatchEvent(new CustomEvent("depannhome:offline-session-ended"));
+    }
+    return result;
+}
+
+function rememberOfflineMobileSession(user) {
+    if (user?.deviceType !== "mobile" || !["mobile_admin", "team_lead", "technician"].includes(user?.role)) return;
+    try { localStorage.setItem(OFFLINE_MOBILE_SESSION_KEY, JSON.stringify({ user, savedAt: Date.now() })); } catch {}
+}
+
+function readOfflineMobileSession() {
+    try {
+        const snapshot = JSON.parse(localStorage.getItem(OFFLINE_MOBILE_SESSION_KEY) || "null");
+        if (!snapshot?.user || Date.now() - Number(snapshot.savedAt || 0) > OFFLINE_MOBILE_SESSION_MAX_AGE) return null;
+        if (snapshot.user.deviceType !== "mobile" || !["mobile_admin", "team_lead", "technician"].includes(snapshot.user.role)) return null;
+        return snapshot.user;
+    } catch { return null; }
 }
 
 export function restoreApplicationShell() {

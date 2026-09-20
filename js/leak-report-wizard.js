@@ -121,6 +121,15 @@ async function openAppointmentReport(appointmentId) {
     if (existing.data.report) return loadReport(existing.data.report.id);
     const created = await api("/api/technical-reports", { method: "POST", body: JSON.stringify({ appointmentId }) });
     if (!created.ok) return alert(created.message || "Création du rapport impossible.");
+    if (created.data?.queued && created.data?.report) {
+        current = created.data.report;
+        corrections = [];
+        originals = [];
+        reportLock = { lockedBy: document.body.dataset.userId || "", userName: document.body.dataset.userName || "Poste mobile" };
+        previewMode = false;
+        ensureModularContent();
+        return;
+    }
     await loadReport(created.data.id);
 }
 

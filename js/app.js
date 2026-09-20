@@ -1,12 +1,12 @@
 import { initializeAuthentication, restoreApplicationShell, signOut } from "./auth.js?v=130";
 import { initializeClientSynchronization } from "./client-sync.js?v=132";
-import { initializeCollaboration } from "./collaboration.js?v=13";
+import { initializeCollaboration } from "./collaboration.js?v=14";
 import { loadDatabase } from "./data.js?v=59";
 import { initializeNavigation, refreshApplication } from "./navigation.js?v=495";
 import { renderError } from "./ui.js?v=44";
 import { getSettings } from "./storage.js?v=45";
 import { FONT_OPTIONS } from "./config.js?v=135";
-import { installClientSessionGuard, onAuthenticationRequired, onClientSessionReplaced } from "./client-session.js?v=6";
+import { installClientSessionGuard, onAuthenticationRequired, onClientSessionReplaced } from "./client-session.js?v=7";
 import { initializeInterfaceLanguage } from "./i18n.js?v=6";
 
 let applicationStarted = false;
@@ -197,6 +197,7 @@ function showAuthenticatedUser(user) {
     document.body.dataset.organizationLicense = user.organization?.licenseType || "depannhome_standard";
     document.body.dataset.subscriptionTier = user.organization?.subscriptionTier || "pro";
     document.body.dataset.organizationFeatures = JSON.stringify(user.organization?.features || {});
+    window.dispatchEvent(new CustomEvent("depannhome:offline-session-ready"));
     renderSupportControlBanner(user);
     updateDeviceMode();
     window.addEventListener("resize", updateDeviceMode);

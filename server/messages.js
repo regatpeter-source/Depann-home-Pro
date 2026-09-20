@@ -2,6 +2,7 @@ import { getPool } from "./database.js";
 import { getAccountOwnerId } from "./auth.js";
 import { createNotification } from "./collaboration.js";
 import { hasAdministrativeClientAssignment, isDedicatedMobileSession } from "./mobile-client-access.js";
+import { offlineIdempotent } from "./offline-idempotency.js";
 
 const MAX_MESSAGE_LENGTH = 2000;
 const CLIENT_ID_PATTERN = /^client-[a-zA-Z0-9-]+$/;
@@ -193,6 +194,4 @@ function cleanMessage(value) {
     return String(value || "").replace(/\s+/g, " ").trim().slice(0, MAX_MESSAGE_LENGTH);
 }
 
-function asyncHandler(handler) {
-    return (request, response, next) => Promise.resolve(handler(request, response, next)).catch(next);
-}
+function asyncHandler(handler) { return offlineIdempotent(handler); }

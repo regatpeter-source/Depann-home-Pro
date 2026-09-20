@@ -1,4 +1,5 @@
 import { getDeviceIdentity } from "./auth.js?v=130";
+import { initializeOfflineSync, offlineAwareFetch } from "./offline-sync.js?v=1";
 
 const STORAGE_KEY = "depannHomePro:clientWindowSession";
 const REPLACED_EVENT = "depannhome:session-replaced";
@@ -7,6 +8,14 @@ const AUTHENTICATION_REQUIRED_EVENT = "depannhome:authentication-required";
 export function installClientSessionGuard() {
     const clientSessionId = getClientSessionId();
     const originalFetch = window.fetch.bind(window);
+    initializeOfflineSync(originalFetch, () => {
+        const device = getDeviceIdentity();
+        return {
+            "X-DepannHome-Client-Session": clientSessionId,
+            "X-DepannHome-Device-Id": device.deviceId,
+            "X-DepannHome-Device-Type": device.deviceType
+        };
+    });
     window.fetch = async (input, init = {}) => {
         const url = new URL(typeof input === "string" ? input : input.url, window.location.href);
         const headers = new Headers(init.headers || (typeof input !== "string" ? input.headers : undefined));
@@ -16,7 +25,7 @@ export function installClientSessionGuard() {
             headers.set("X-DepannHome-Device-Id", device.deviceId);
             headers.set("X-DepannHome-Device-Type", device.deviceType);
         }
-        const response = await originalFetch(input, { ...init, headers });
+        const response = await offlineAwareFetch(originalFetch, input, { ...init, headers });
         if (response.headers.get("X-DepannHome-Session-Replaced") === "true") window.dispatchEvent(new CustomEvent(REPLACED_EVENT));
         else if (response.status === 401 && url.origin === window.location.origin && url.pathname.startsWith("/api/") && !url.pathname.startsWith("/api/auth/")) {
             window.dispatchEvent(new CustomEvent(AUTHENTICATION_REQUIRED_EVENT));

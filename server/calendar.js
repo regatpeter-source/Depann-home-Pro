@@ -11,6 +11,7 @@ import { validateAssignedCompanyMembers } from "./member-assignment.js";
 import { strictDateOnly } from "./date-validation.js";
 import { publishClientChange } from "./client-events.js";
 import { hasAdministrativeClientAssignment, isDedicatedMobileSession } from "./mobile-client-access.js";
+import { offlineIdempotent } from "./offline-idempotency.js";
 
 const EVENT_COLORS = new Set(["blue", "green", "orange", "red", "purple", "gray"]);
 const EVENT_TYPES = new Set(["appointment", "task", "vacation", "sick_leave", "unavailable"]);
@@ -1464,6 +1465,4 @@ function sanitizePositiveIds(value) {
     return [...new Set(ids)].slice(0, 30);
 }
 
-function asyncHandler(handler) {
-    return (request, response, next) => Promise.resolve(handler(request, response, next)).catch(next);
-}
+function asyncHandler(handler) { return offlineIdempotent(handler); }

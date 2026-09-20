@@ -1,4 +1,4 @@
-import { clientSessionUrl } from "./client-session.js?v=2";
+import { clientSessionUrl } from "./client-session.js?v=7";
 import { getSettings } from "./storage.js?v=45";
 
 let stream = null;
@@ -31,6 +31,12 @@ export function initializeCollaboration() {
     window.addEventListener("beforeunload", releaseSessionLocks, { capture: true });
     window.addEventListener("online", () => updateSyncIndicator("syncing", "Reconnexion en cours"));
     window.addEventListener("offline", () => updateSyncIndicator("offline", "Hors connexion"));
+    window.addEventListener("depannhome:offline-queue-state", event => {
+        const pending = Number(event.detail?.pending || 0);
+        if (event.detail?.state === "synced" && !pending) updateSyncIndicator("synced", "Toutes les données hors ligne ont été envoyées");
+        else if (event.detail?.state === "conflict") updateSyncIndicator("offline", `${pending} envoi(s) en attente de contrôle`);
+        else if (pending) updateSyncIndicator("syncing", `${pending} envoi(s) hors ligne en attente`);
+    });
     window.addEventListener("depannhome:settings-changed", () => { document.getElementById("notificationCenter")?.remove(); renderNotificationBadge(); renderPartnerNotificationBadge(); });
     window.addEventListener("depannhome:open-company-assistance", event => openCompanyAssistanceRequest(event.detail?.sessionId));
     window.addEventListener("depannhome:company-assistance-decided", loadCompanyAssistancePresence);

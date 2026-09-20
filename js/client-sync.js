@@ -1,4 +1,4 @@
-import { clientSessionUrl } from "./client-session.js?v=6";
+import { clientSessionUrl } from "./client-session.js?v=7";
 
 const CLIENTS_KEY_PREFIX = "depannHomePro:clients:";
 const QUEUE_KEY_PREFIX = "depannHomePro:clients-sync-queue:";

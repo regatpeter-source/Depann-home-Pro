@@ -11,7 +11,7 @@ import { renderPartnerSandbox } from "./partner-sandbox.js?v=3";
 import { renderPartnerConnections } from "./partner-connections.js?v=50";
 import { renderCompanyEmailWorkspace, renderPartnerEmailSettings } from "./partner-email-settings.js?v=29";
 import { renderDataImportTool } from "./data-imports.js?v=5";
-import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=57";
+import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=58";
 import { getFirstUnreadClientId, refreshClientMessageAlert, refreshVisibleClientMessages } from "./messages.js?v=107";
 import { getSearchableClients, renderClients } from "./clients.js?v=171";
 import { synchronizeClients } from "./client-sync.js?v=132";
@@ -26,7 +26,7 @@ import {
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { renderPlatformAnnouncement } from "./platform-announcement.js?v=1";
 import { renderDocumentTemplateEditor } from "./document-template-editor.js?v=3";
-import { getPartnerNotifications, loadPartnerNotifications, markPartnerNotificationRead, openCompanyAssistanceRequest } from "./collaboration.js?v=13";
+import { getPartnerNotifications, loadPartnerNotifications, markPartnerNotificationRead, openCompanyAssistanceRequest } from "./collaboration.js?v=14";
 import {
     clearSearch,
     createBackCard,

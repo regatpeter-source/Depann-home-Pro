@@ -56,7 +56,7 @@ test("les routes publient les changements client après validation transactionne
 });
 
 test("le navigateur écoute les événements et conserve seulement un contrôle lent de secours", () => {
-    assert.match(clientSync, /import \{ clientSessionUrl \} from "\.\/client-session\.js\?v=6"/);
+    assert.match(clientSync, /import \{ clientSessionUrl \} from "\.\/client-session\.js\?v=7"/);
     assert.match(clientSync, /new EventSource\(clientSessionUrl\("\/api\/clients\/events"\), \{ withCredentials: true \}\)/);
     assert.match(clientSync, /addEventListener\("client-changed", \(\) => scheduleClientSynchronization\(0\)\)/);
     assert.match(clientSync, /FALLBACK_SYNCHRONIZATION_INTERVAL = 5 \* 60_000/);

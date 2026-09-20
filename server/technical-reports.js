@@ -4,7 +4,7 @@ import path from "node:path";
 import PDFDocument from "pdfkit";
 import { getPool } from "./database.js";
 import { getAccountOwnerId, isCompanyAdministrator } from "./auth.js";
-import { assertLockOwner, getAudit, getLock, publishEvent, releaseLock } from "./collaboration.js";
+import { acquireLock, assertLockOwner, getAudit, getLock, publishEvent, releaseLock } from "./collaboration.js";
 import { DEFAULT_MATERIALS, REPORT_STEP_KEYS, createEmptyLeakContent, createLeakReportPdf as createWizardLeakReportPdf, normalizeLeakContent, reportSections } from "./leak-report-template.js";
 import { synchronizeConnectedReport } from "./partner-connections.js";
 import { recordMissionEventForSource } from "./partner-dialogue.js";
@@ -14,6 +14,7 @@ import { buildReportCustomModel, renderActiveCustomTemplate } from "./document-t
 import { createClientMessage } from "./messages.js";
 import { strictDateOnly } from "./date-validation.js";
 import { publishClientChange } from "./client-events.js";
+import { offlineIdempotent } from "./offline-idempotency.js";
 
 const REPORT_TYPE = "leak_detection";
 const STATUSES = new Set(["draft", "submitted", "in_correction", "ready_to_send", "validated"]);
@@ -298,7 +299,7 @@ function requireReportAdministration(request, response, next) { if (request.user
 function requireReportCancellationAccess(request, response, next) { if (request.user?.deviceType === "desktop" && ["admin", "pc_standard", "commercial"].includes(request.user?.role)) return next(); return response.status(403).json({ message: "L’annulation d’un brouillon est réservée à un poste administratif autorisé." }); }
 function requireReportProofreadingAccess(request, response, next) { if (!canConfirmReportProofreading(request.user?.role, request.user?.deviceType)) return response.status(403).json({ message: "La correction finale du rapport est réservée à un poste administratif autorisé." }); return next(); }
 function requireReportValidationAccess(request, response, next) { if (!canConfirmReportProofreading(request.user?.role, request.user?.deviceType)) return response.status(403).json({ message: "L’envoi définitif du rapport est réservé à un poste administratif autorisé." }); return next(); }
-async function enforceReportLock(request, response, reportId) { const result = await assertLockOwner(request, "technical_report", String(reportId)); if (result.ok) return true; response.status(409).json({ message: result.message, lock: result.lock || null }); return false; }
+async function enforceReportLock(request, response, reportId) { let result = await assertLockOwner(request, "technical_report", String(reportId)); if (!result.ok && request.get("X-DepannHome-Offline-Operation") && !result.lock) { const recovery = await acquireLock(request, "technical_report", String(reportId)); if (recovery.acquired) result = { ok: true, lock: recovery.lock }; } if (result.ok) return true; response.status(409).json({ message: result.message, lock: result.lock || null }); return false; }
 function reportTarget(reportId) { return { entityType: "technical_report", entityId: String(reportId) }; }
 async function administrationNotifications(ownerId, senderId, title, body) { const { rows } = await getPool().query("SELECT id FROM depannhome_users WHERE account_owner_id=$1 AND role IN ('admin', 'mobile_admin') AND is_active=TRUE AND id<>$2", [ownerId, senderId]); return rows.map(row => ({ recipientId: row.id, title, body })); }
 async function loadReports(ownerId, request) { const { rows } = await getPool().query(`SELECT report.id, report.appointment_id AS "appointmentId", report.client_id AS "clientId", report.title, TO_CHAR(report.report_date,'YYYY-MM-DD') AS "reportDate", report.status, report.created_by AS "createdBy", report.created_by_name AS "createdByName", report.created_at AS "createdAt", report.updated_at AS "updatedAt", COALESCE(NULLIF(report.created_by_name,''),NULLIF(creator.full_name,''),creator.username,'') AS "technicianName", COALESCE(NULLIF(report.content->'snapshot'->>'clientName',''), event.client_name, client.client_data->>'name', '') AS "clientName", COALESCE(NULLIF(report.content->'snapshot'->>'claimNumber',''), client.client_data->>'claimNumber', client.client_data->>'claim', '') AS "claimNumber", COALESCE(NULLIF(report.content->'snapshot'->>'insurance',''), client.client_data->>'insurance', client.client_data->>'insurer', '') AS insurance FROM depannhome_technical_reports report LEFT JOIN depannhome_users creator ON creator.id=report.created_by LEFT JOIN depannhome_calendar_events event ON event.id=report.appointment_id AND event.owner_id=report.owner_id LEFT JOIN depannhome_clients client ON client.owner_id=report.owner_id AND client.client_id=report.client_id WHERE report.owner_id=$1 AND ($2 NOT IN ('technician','team_lead') OR report.created_by=$3 OR EXISTS (SELECT 1 FROM depannhome_calendar_assignments assignment WHERE assignment.event_id=report.appointment_id AND assignment.technician_id=$3)) ORDER BY report.updated_at DESC`, [ownerId, request.user.role, request.user.sub]); return rows; }
@@ -363,4 +364,4 @@ export function isValidReportImageDataUrl(value) {
     return isValidReportImageFile({ mimetype: match[1], buffer: Buffer.from(match[2], "base64") });
 }
 export function technicalReportUploadErrorHandler(error, request, response, next) { if (error instanceof multer.MulterError) return response.status(400).json({ message: error.code === "LIMIT_FILE_SIZE" ? "Chaque photo est limitée à 4 Mo." : "Ajout des photos impossible." }); return next(error); }
-function asyncHandler(handler) { return (request, response, next) => Promise.resolve(handler(request, response, next)).catch(next); }
+function asyncHandler(handler) { return offlineIdempotent(handler); }
