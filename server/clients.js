@@ -810,6 +810,12 @@ function validDate(value) {
     return Number.isNaN(date.getTime()) ? "" : date.toISOString();
 }
 
+function clientError(status, message) {
+    const error = new Error(message);
+    error.status = status;
+    return error;
+}
+
 function sanitizeDeletedAttachmentIds(value) {
     return [...new Set((Array.isArray(value) ? value : [])
         .map(item => String(item || "").slice(0, 100))

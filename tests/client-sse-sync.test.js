@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { readFileSync } from "node:fs";
 import { openClientEventStream, publishClientChange } from "../server/client-events.js";
+import { listClientsForOwner } from "../server/clients.js";
 
 const clientsServer = readFileSync(new URL("../server/clients.js", import.meta.url), "utf8");
 const calendarServer = readFileSync(new URL("../server/calendar.js", import.meta.url), "utf8");
@@ -70,6 +71,13 @@ test("la synchronisation ne retransmet pas les fichiers encodés déjà stockés
     assert.match(clientsServer, /cachedLocally: false/);
     assert.match(clientsServer, /\.\.\.compactClientPayload\(row\.client\)/);
     assert.match(clientsServer, /client: compactClientPayload\(updatedClient\)/);
+});
+
+test("un curseur de synchronisation client invalide produit une erreur HTTP contrôlée", async () => {
+    await assert.rejects(
+        listClientsForOwner(42, "curseur-invalide"),
+        error => error instanceof Error && error.status === 400 && error.message === "Curseur de synchronisation invalide."
+    );
 });
 
 function createStreamResponse() {
