@@ -36,6 +36,20 @@ test("billing dashboard exposes a negative estimated margin without hiding it", 
     assert.equal(dashboard.grossProfitEstimateHt, -30);
 });
 
+test("un acompte déjà encaissé réduit le solde sans réduire le chiffre d’affaires", () => {
+    const dashboard = buildBillingFinancialDashboard([
+        { id: 1, issueDate: "2026-02-04", documentType: "invoice", status: "sent", lines: [{ quantity: 1, unitPrice: 100, vatRate: 20 }], financialData: { depositAmount: 30, depositDate: "2026-01-20" } }
+    ], [], 0, { year: 2026, month: "02", collected: 0 });
+    assert.equal(dashboard.invoicesTtc, 120);
+    assert.equal(dashboard.turnoverHt, 100);
+    assert.equal(dashboard.outstanding, 90);
+    assert.equal(dashboard.collected, 0);
+    const january = buildBillingFinancialDashboard([
+        { id: 1, issueDate: "2026-02-04", documentType: "invoice", status: "sent", lines: [{ quantity: 1, unitPrice: 100, vatRate: 20 }], financialData: { depositAmount: 30, depositDate: "2026-01-20" } }
+    ], [], 0, { year: 2026, month: "01", collected: 0 });
+    assert.equal(january.collected, 30);
+});
+
 test("billing dashboard separates monthly and annual document totals", () => {
     const documents = [
         { id: 1, issueDate: "2026-01-12", documentType: "invoice", status: "sent", lines: [{ quantity: 1, unitPrice: 100, vatRate: 20 }], financialData: {} },

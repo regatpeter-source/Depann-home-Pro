@@ -290,6 +290,10 @@ export function registerAccountingRoutes(app, requireAuthentication) {
         const id = positiveId(request.params.documentId);
         const financialData = sanitizeFinancialData(request.body);
         if (!id || !financialData.ok) return response.status(400).json({ message: financialData.message || "Données financières invalides." });
+        const current = await getPool().query("SELECT lines FROM depannhome_billing_documents WHERE id=$1 AND owner_id=$2 AND issued_at IS NULL AND is_accounted=FALSE", [id, getAccountOwnerId(request)]);
+        if (!current.rows[0]) return response.status(409).json({ message: "Un document comptabilisé est immuable. Créez un avoir ou une écriture corrective." });
+        const totals = calculateDocumentTotals(current.rows[0].lines, financialData.value);
+        if (financialData.value.depositAmount > totals.netPayable + 0.01) return response.status(400).json({ message: "L’acompte encaissé ne peut pas dépasser le montant restant après remises et aides." });
         const result = await getPool().query(`
             UPDATE depannhome_billing_documents SET financial_data=$3::jsonb, updated_at=NOW()
             WHERE id=$1 AND owner_id=$2 AND issued_at IS NULL AND is_accounted=FALSE
@@ -502,7 +506,7 @@ export async function recordConfirmedInvoiceSettlement({ ownerId, actorId, input
         if (!document) throw accountingError(404, "Facture émise introuvable.");
         const settled = await client.query("SELECT COALESCE(SUM(amount),0)::float AS total FROM depannhome_accounting_settlements WHERE owner_id=$1 AND document_id=$2", [ownerId, document.id]);
         const pending = ownsTransaction ? await client.query("SELECT COALESCE(SUM(amount),0)::float AS total FROM depannhome_delayed_payment_declarations WHERE owner_id=$1 AND document_id=$2 AND status='pending'", [ownerId, document.id]) : { rows: [{ total: 0 }] };
-        const totalDue = calculateDocumentTotals(document.lines, document.financialData).netPayable;
+        const totalDue = calculateDocumentTotals(document.lines, document.financialData).amountDue;
         const remainingAmount = roundMoney(totalDue - Number(settled.rows[0].total) - Number(pending.rows[0].total));
         if (remainingAmount <= 0) throw accountingError(409, "Cette facture est déjà intégralement réglée.");
         if (settlement.amount > remainingAmount + 0.01) throw accountingError(400, "Le règlement dépasse le solde restant de la facture.");
@@ -670,7 +674,7 @@ async function loadDocuments(ownerId) {
     return rows.map(document => {
         const totals = calculateDocumentTotals(document.lines, document.financialData);
         const settledAmount = Number(document.settledAmount || 0);
-        return { ...document, financialData: normalizeFinancialData(document.financialData), totals, settledAmount, pendingAmount: Number(document.pendingAmount || 0), remainingAmount: Math.max(0, roundMoney(totals.netPayable - settledAmount)), paymentStatus: document.documentType === "invoice" ? paymentStatus(document, totals.netPayable, settledAmount) : "not_applicable" };
+        return { ...document, financialData: normalizeFinancialData(document.financialData), totals, settledAmount, pendingAmount: Number(document.pendingAmount || 0), remainingAmount: Math.max(0, roundMoney(totals.amountDue - settledAmount)), paymentStatus: document.documentType === "invoice" ? paymentStatus(document, totals.netPayable, settledAmount + totals.deposit) : "not_applicable" };
     });
 }
 
@@ -718,7 +722,7 @@ function buildDashboard(documents, settlements, purchases) {
     const invoices = documents.filter(item => item.documentType === "invoice");
     const credits = documents.filter(item => item.documentType === "credit");
     const turnover = invoices.reduce((sum, item) => sum + item.totals.netPayable, 0) + credits.reduce((sum, item) => sum + item.totals.netPayable, 0);
-    const collected = settlements.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+    const collected = settlements.reduce((sum, item) => sum + Number(item.amount || 0), 0) + invoices.reduce((sum, item) => sum + item.totals.deposit, 0);
     const purchasesHt = purchases.reduce((sum, item) => sum + Number(item.amountHt || 0), 0);
     const overdue = invoices.filter(item => item.paymentStatus === "overdue");
     return { turnover: roundMoney(turnover), collected: roundMoney(collected), outstanding: roundMoney(invoices.reduce((sum, item) => sum + item.remainingAmount, 0)), overdueAmount: roundMoney(overdue.reduce((sum, item) => sum + item.remainingAmount, 0)), overdueCount: overdue.length, purchasesHt: roundMoney(purchasesHt), invoicesCount: invoices.length };
@@ -730,17 +734,19 @@ function calculateDocumentTotals(lines, financialData) {
     const getVatRate = line => Number(line.vatRate ?? line.vat_rate ?? 0);
     const ht = (Array.isArray(lines) ? lines : []).reduce((sum, line) => sum + Number(line.quantity || 0) * getPrice(line), 0);
     const grossVat = (Array.isArray(lines) ? lines : []).reduce((sum, line) => sum + Number(line.quantity || 0) * getPrice(line) * getVatRate(line) / 100, 0);
-    if (ht < 0) return { ht: roundMoney(ht), vat: roundMoney(grossVat), ttc: roundMoney(ht + grossVat), discount: 0, aids: 0, netPayable: roundMoney(ht + grossVat) };
+    if (ht < 0) { const netPayable = roundMoney(ht + grossVat); return { ht: roundMoney(ht), vat: roundMoney(grossVat), ttc: netPayable, discount: 0, aids: 0, deposit: 0, netPayable, amountDue: netPayable }; }
     const discount = Math.min(ht, data.discountMode === "percentage" ? ht * data.discountAmount / 100 : data.discountAmount);
     const vat = ht ? grossVat * (ht - discount) / ht : 0;
     const aids = data.aids.reduce((sum, aid) => sum + (aid.calculationMode === "percentage" ? (ht - discount) * Number(aid.amount || 0) / 100 : Number(aid.amount || 0)), 0);
     const ttc = ht - discount + vat;
-    return { ht: roundMoney(ht), vat: roundMoney(vat), ttc: roundMoney(ttc), discount: roundMoney(discount), aids: roundMoney(Math.min(ttc, aids)), netPayable: roundMoney(Math.max(0, ttc - aids)) };
+    const netPayable = roundMoney(Math.max(0, ttc - aids));
+    const deposit = roundMoney(Math.min(netPayable, data.depositAmount));
+    return { ht: roundMoney(ht), vat: roundMoney(vat), ttc: roundMoney(ttc), discount: roundMoney(discount), aids: roundMoney(Math.min(ttc, aids)), deposit, netPayable, amountDue: roundMoney(Math.max(0, netPayable - deposit)) };
 }
 
 function normalizeFinancialData(value) {
     const data = value && typeof value === "object" && !Array.isArray(value) ? value : {};
-    return { discountMode: AID_MODES.has(data.discountMode) ? data.discountMode : "fixed", discountAmount: safeMoney(data.discountAmount), depositAmount: safeMoney(data.depositAmount), conditions: cleanText(data.conditions, 2000), comments: cleanText(data.comments, 2000), photos: Array.isArray(data.photos) ? data.photos.map(item => cleanText(item, 500)).filter(Boolean).slice(0, 10) : [], options: Array.isArray(data.options) ? data.options.map(item => cleanText(item, 500)).filter(Boolean).slice(0, 20) : [], subtotals: Array.isArray(data.subtotals) ? data.subtotals.map(item => cleanText(item, 160)).filter(Boolean).slice(0, 30) : [], aids: Array.isArray(data.aids) ? data.aids.map(sanitizeAidSnapshot).filter(Boolean).slice(0, 30) : [] };
+    return { discountMode: AID_MODES.has(data.discountMode) ? data.discountMode : "fixed", discountAmount: safeMoney(data.discountAmount), depositAmount: safeMoney(data.depositAmount), depositDate: strictDateOnly(data.depositDate) || "", depositMethod: cleanText(data.depositMethod, 80), depositReference: cleanText(data.depositReference, 160), conditions: cleanText(data.conditions, 2000), comments: cleanText(data.comments, 2000), photos: Array.isArray(data.photos) ? data.photos.map(item => cleanText(item, 500)).filter(Boolean).slice(0, 10) : [], options: Array.isArray(data.options) ? data.options.map(item => cleanText(item, 500)).filter(Boolean).slice(0, 20) : [], subtotals: Array.isArray(data.subtotals) ? data.subtotals.map(item => cleanText(item, 160)).filter(Boolean).slice(0, 30) : [], aids: Array.isArray(data.aids) ? data.aids.map(sanitizeAidSnapshot).filter(Boolean).slice(0, 30) : [] };
 }
 
 function sanitizeFinancialData(value) {
@@ -869,7 +875,7 @@ function exportRows(data, scope) {
 }
 
 function documentExportRow(item) {
-    return { Type: item.documentType === "quote" ? "Devis" : item.documentType === "credit" ? "Avoir" : "Facture", Numéro: item.documentNumber, Date: item.issueDate, Échéance: item.dueDate, Client: item.customerName, Statut: documentStatusLabel(item.status), "Total HT": item.totals.ht, TVA: item.totals.vat, "Total TTC": item.totals.ttc, Aides: item.totals.aids, "Reste à charge": item.totals.netPayable, Réglé: item.settledAmount, Solde: item.remainingAmount, Paiement: paymentStatusLabel(item.paymentStatus) };
+    return { Type: item.documentType === "quote" ? "Devis" : item.documentType === "credit" ? "Avoir" : "Facture", Numéro: item.documentNumber, Date: item.issueDate, Échéance: item.dueDate, Client: item.customerName, Statut: documentStatusLabel(item.status), "Total HT": item.totals.ht, TVA: item.totals.vat, "Total TTC": item.totals.ttc, Aides: item.totals.aids, "Acompte encaissé": item.totals.deposit, "Reste à charge": item.totals.amountDue, Réglé: item.settledAmount, Solde: item.remainingAmount, Paiement: paymentStatusLabel(item.paymentStatus) };
 }
 
 function documentStatusLabel(value) {

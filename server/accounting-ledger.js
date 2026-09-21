@@ -7,6 +7,7 @@ export const FEC_COLUMNS = Object.freeze([
 export const DEFAULT_CHART_CONFIG = Object.freeze({
     salesAccount: "706000",
     customerAccount: "411000",
+    customerAdvanceAccount: "419100",
     aidReceivableAccount: "467000",
     bankAccount: "512000",
     cashAccount: "530000",
@@ -74,7 +75,8 @@ export function createDocumentAccountingEntry({ document, chartConfig, journal, 
     if (totals.ttc <= 0) throw new Error("Le total TTC de la pièce doit être strictement positif.");
     const isCredit = type === "credit";
     const aidAmount = isCredit ? 0 : calculateAidAmount(document.financialData || document.financial_data, totals);
-    const customerAmount = roundMoney(totals.ttc - aidAmount);
+    const depositAmount = isCredit ? 0 : roundMoney(Math.min(Math.max(0, totals.ttc - aidAmount), Math.max(0, finite((document.financialData || document.financial_data)?.depositAmount))));
+    const customerAmount = roundMoney(totals.ttc - aidAmount - depositAmount);
     const pieceRef = cleanText(document.documentNumber || document.document_number, 80);
     const pieceDate = cleanDate(document.issueDate || document.issue_date);
     const clientId = cleanAuxiliary(document.clientId || document.client_id);
@@ -84,6 +86,7 @@ export function createDocumentAccountingEntry({ document, chartConfig, journal, 
     const lines = [];
     if (customerAmount > 0) lines.push(accountingLine(config.customerAccount, "Clients", isCredit ? 0 : customerAmount, isCredit ? customerAmount : 0, clientId, customerName));
     if (aidAmount > 0) lines.push(accountingLine(config.aidReceivableAccount, "Aides et franchises à recevoir", isCredit ? 0 : aidAmount, isCredit ? aidAmount : 0));
+    if (depositAmount > 0) lines.push(accountingLine(config.customerAdvanceAccount, "Avances et acomptes reçus", depositAmount, 0, clientId, customerName));
     lines.push(accountingLine(config.salesAccount, "Prestations de services", isCredit ? totals.ht : 0, isCredit ? 0 : totals.ht));
     totals.vatBreakdown.filter(item => item.amount).forEach(item => lines.push(accountingLine(config.vatCollectedAccount, `TVA collectée ${formatRate(item.rate)} %`, isCredit ? item.amount : 0, isCredit ? 0 : item.amount)));
     return finalizeEntry({ ...base, lines, totals });

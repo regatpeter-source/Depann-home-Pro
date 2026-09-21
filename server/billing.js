@@ -406,7 +406,7 @@ export function registerBillingRoutes(app, requireAuthentication) {
         const documents = documentsResult.rows.map(document => {
             const settledAmount = Number(settlementsByDocument.get(String(document.id))?.amount) || 0;
             const outstandingAmount = billingDocumentOutstanding(document, settledAmount);
-            return { ...document, settledAmount, outstandingAmount, paymentStatus: outstandingAmount <= 0.009 ? "paid" : settledAmount > 0 ? "partial" : "unpaid", pendingPaymentAmount: pendingByDocument.get(String(document.id)) || 0, hasAcquittance: acquittanceDocuments.has(String(document.id)), latestPaymentMethod: settlementsByDocument.get(String(document.id))?.latestPaymentMethod || "", latestPaymentDate: settlementsByDocument.get(String(document.id))?.latestPaymentDate || "" };
+            return { ...document, settledAmount, outstandingAmount, paymentStatus: outstandingAmount <= 0.009 ? "paid" : settledAmount > 0 || Number(document.financialData?.depositAmount) > 0 ? "partial" : "unpaid", pendingPaymentAmount: pendingByDocument.get(String(document.id)) || 0, hasAcquittance: acquittanceDocuments.has(String(document.id)), latestPaymentMethod: settlementsByDocument.get(String(document.id))?.latestPaymentMethod || "", latestPaymentDate: settlementsByDocument.get(String(document.id))?.latestPaymentDate || "" };
         });
         response.json({ profile: { ...emptyProfile(), ...(profileResult.rows[0] || {}) }, templates: templatesResult.rows, documents, aids: aidsResult.rows, insuranceDeductibles: deductibleResult.rows, financialDashboard: annualFinancialDashboard, financialDashboards: { period: financialPeriod, monthly: monthlyFinancialDashboard, annual: annualFinancialDashboard } });
     }));
@@ -1044,6 +1044,7 @@ function validateInvoiceForIssue(document, profile) {
     if (!OPERATION_CATEGORIES.has(legal.operationCategory)) missing.push("catégorie d’opération");
     if (document.customerType === "Professionnel" && !cleanIdentifier(legal.customerSiren, 20, true)) missing.push("SIREN du client professionnel");
     if (missing.length) throw billingError(409, `Émission impossible : renseignez ${missing.join(", ")}.`);
+    if (Number(document.financialData?.depositAmount || 0) > billingAmountBeforeDeposit(document.lines, document.financialData) + 0.01) throw billingError(409, "Émission impossible : l’acompte encaissé dépasse le montant restant après remises et aides.");
     if (isFutureDateOnly(document.issueDate)) throw billingError(409, "La date d’émission d’une facture ne peut pas être future.");
     if (document.dueDate && document.dueDate < document.issueDate) throw billingError(409, "La date d’échéance ne peut pas précéder la date d’émission.");
 }
@@ -1273,6 +1274,7 @@ function sanitizeDocument(value) {
     if (!customerName) return { ok: false, message: "Le nom du client est obligatoire." };
     if (!lines.length) return { ok: false, message: "Ajoutez au moins une ligne." };
     if (value?.dueDate && !dueDate) return { ok: false, message: "La date d'échéance est invalide." };
+    if (financialData.depositAmount > billingAmountBeforeDeposit(lines, financialData) + 0.01) return { ok: false, message: "L’acompte encaissé ne peut pas dépasser le montant restant après remises et aides." };
     return { ok: true, documentType, documentNumber, clientId, customerType, customerName, customerAddress, issueDate, dueDate, status, followUpDate, isAccounted, appointmentId, sourceQuoteId, lines, notes, financialData, legalData };
 }
 
@@ -1321,6 +1323,9 @@ function sanitizeFinancialData(value) {
         discountAmount: nonNegativeNumber(data.discountAmount) || 0,
         discountLabel: cleanText(data.discountLabel, 160),
         depositAmount: nonNegativeNumber(data.depositAmount) || 0,
+        depositDate: data.depositDate ? sanitizeDate(data.depositDate) : "",
+        depositMethod: cleanText(data.depositMethod, 80),
+        depositReference: cleanText(data.depositReference, 160),
         conditions: cleanText(data.conditions, 2000),
         comments: cleanText(data.comments, 2000),
         aids
@@ -1367,12 +1372,20 @@ export function buildBillingFinancialDashboard(documents, settlements = [], purc
         invoicesHt += totals.ht; invoicesTtc += totals.ttc; invoicesCount += 1;
         const aids = Array.isArray(document.financialData?.aids) ? document.financialData.aids : [];
         const aidAmount = Math.min(totals.ttc, aids.reduce((sum, aid) => sum + (aid.calculationMode === "percentage" ? totals.ht * Number(aid.amount || 0) / 100 : Number(aid.amount || 0)), 0));
-        outstanding += Math.max(0, totals.ttc - aidAmount - (settledByDocument.get(String(document.id)) || 0));
+        const depositAmount = Math.min(Math.max(0, totals.ttc - aidAmount), Number(document.financialData?.depositAmount) || 0);
+        outstanding += Math.max(0, totals.ttc - aidAmount - depositAmount - (settledByDocument.get(String(document.id)) || 0));
     }
     const purchasesHt = Math.max(0, Number(purchasesHtValue) || 0);
     const turnoverHt = Math.max(0, invoicesHt - creditsHt);
     const grossProfitEstimateHt = turnoverHt - purchasesHt;
-    const collected = Object.hasOwn(period, "collected") ? Number(period.collected) || 0 : [...settledByDocument.values()].reduce((sum, amount) => sum + amount, 0);
+    const depositCollected = (Array.isArray(documents) ? documents : []).reduce((sum, document) => {
+        if (document.documentType !== "invoice" || ["draft", "cancelled", "rejected"].includes(String(document.status || "").toLowerCase())) return sum;
+        const depositDate = String(document.financialData?.depositDate || document.issueDate || "");
+        if (period.year && depositDate.slice(0, 4) !== String(period.year)) return sum;
+        if (period.month && depositDate.slice(5, 7) !== String(period.month)) return sum;
+        return sum + (Number(document.financialData?.depositAmount) || 0);
+    }, 0);
+    const collected = (Object.hasOwn(period, "collected") ? Number(period.collected) || 0 : [...settledByDocument.values()].reduce((sum, amount) => sum + amount, 0)) + depositCollected;
     return { invoicesHt: roundFinancial(invoicesHt), invoicesTtc: roundFinancial(invoicesTtc), turnoverHt: roundFinancial(turnoverHt), creditsHt: roundFinancial(creditsHt), creditsTtc: roundFinancial(creditsTtc), purchasesHt: roundFinancial(purchasesHt), grossProfitEstimateHt: roundFinancial(grossProfitEstimateHt), collected: roundFinancial(collected), outstanding: roundFinancial(outstanding), invoicesCount, creditsCount };
 }
 function billingDocumentOutstanding(document, settledAmount = 0) {
@@ -1380,7 +1393,14 @@ function billingDocumentOutstanding(document, settledAmount = 0) {
     const totals = calculateDocumentAccountingTotals(document.lines || [], document.financialData || {});
     const aids = Array.isArray(document.financialData?.aids) ? document.financialData.aids : [];
     const aidAmount = Math.min(totals.ttc, aids.reduce((sum, aid) => sum + (aid.calculationMode === "percentage" ? totals.ht * Number(aid.amount || 0) / 100 : Number(aid.amount || 0)), 0));
-    return roundFinancial(Math.max(0, totals.ttc - aidAmount - (Number(settledAmount) || 0)));
+    const depositAmount = Math.min(Math.max(0, totals.ttc - aidAmount), Number(document.financialData?.depositAmount) || 0);
+    return roundFinancial(Math.max(0, totals.ttc - aidAmount - depositAmount - (Number(settledAmount) || 0)));
+}
+function billingAmountBeforeDeposit(lines, financialData = {}) {
+    const totals = calculateDocumentAccountingTotals(lines || [], financialData);
+    const aids = Array.isArray(financialData.aids) ? financialData.aids : [];
+    const aidAmount = Math.min(totals.ttc, aids.reduce((sum, aid) => sum + (aid.calculationMode === "percentage" ? totals.ht * Number(aid.amount || 0) / 100 : Number(aid.amount || 0)), 0));
+    return roundFinancial(Math.max(0, totals.ttc - aidAmount));
 }
 function sanitizeBillingFinancialPeriod(value) {
     const now = new Date();
@@ -1540,7 +1560,8 @@ export function createBillingPdf(document, profile) {
         const totalVat = totalHt ? grossVat * (totalHt - discountAmount) / totalHt : 0;
         const totalTtc = exactTotals ? Number(exactTotals.amountCents || 0) / 100 : totalHt - discountAmount + totalVat;
         const aidAmount = Math.min(totalTtc, (Array.isArray(financialData.aids) ? financialData.aids : []).reduce((sum, aid) => sum + (aid.calculationMode === "percentage" ? (totalHt - discountAmount) * Number(aid.amount || 0) / 100 : Number(aid.amount || 0)), 0));
-        const remainingAmount = Math.max(0, totalTtc - aidAmount);
+        const depositAmount = Math.min(Math.max(0, totalTtc - aidAmount), Number(financialData.depositAmount || 0));
+        const remainingAmount = Math.max(0, totalTtc - aidAmount - depositAmount);
         const title = isCredit ? "AVOIR" : document.correctionKind === "replacement" ? "FACTURE RECTIFICATIVE" : document.correctionKind === "amendment" ? "AVENANT À FACTURE" : document.documentType === "invoice" ? "FACTURE" : "DEVIS";
 
         if (profile.logoData && ["image/png", "image/jpeg"].includes(profile.logoMimeType)) {
@@ -1605,7 +1626,7 @@ export function createBillingPdf(document, profile) {
 
         const closingSectionHeight = 150
             + (isVatFranchise ? 30 : 0)
-            + (discountAmount || aidAmount ? 44 : 0)
+            + (discountAmount || aidAmount || depositAmount ? 58 : 0)
             + (document.documentType === "quote" ? 82 : 0);
         ensureSpace(closingSectionHeight);
         pdf.y += 18;
@@ -1634,12 +1655,13 @@ export function createBillingPdf(document, profile) {
             text(VAT_FRANCHISE_MENTION, margin, pdf.y, contentWidth, { size: 9, bold: true, color: template.secondaryColor, align: "center" });
             pdf.y += 24;
         }
-        if (discountAmount || aidAmount) {
-            ensureSpace(44);
+        if (discountAmount || aidAmount || depositAmount) {
+            ensureSpace(58);
             const aidLines = (Array.isArray(financialData.aids) ? financialData.aids : []).map(aid => `${aid.name || "Aide"} : −${aid.calculationMode === "percentage" ? `${aid.amount || 0} %` : formatMoney(aid.amount)}${aid.description ? ` · ${aid.description}` : ""}`).join("\n");
             const discountRate = financialData.discountMode === "percentage" ? ` (${Number(financialData.discountAmount || 0)} %)` : "";
-            text([discountAmount ? `${financialData.discountLabel || "Remise"}${discountRate} : −${formatMoney(discountAmount)} HT` : "", aidLines, aidAmount ? `Total des primes, aides et franchises déduites : −${formatMoney(aidAmount)}` : ""].filter(Boolean).join("\n"), margin, pdf.y, contentWidth, { size: 8, color: "#475569", lineGap: 2 });
-            pdf.y += 38;
+            const depositDetails = [financialData.depositDate ? `encaissé le ${formatDate(financialData.depositDate)}` : "", financialData.depositMethod, financialData.depositReference ? `réf. ${financialData.depositReference}` : ""].filter(Boolean).join(" · ");
+            text([discountAmount ? `${financialData.discountLabel || "Remise"}${discountRate} : −${formatMoney(discountAmount)} HT` : "", aidLines, aidAmount ? `Total des primes, aides et franchises déduites : −${formatMoney(aidAmount)}` : "", depositAmount ? `Acompte déjà encaissé : −${formatMoney(depositAmount)}${depositDetails ? ` · ${depositDetails}` : ""}` : ""].filter(Boolean).join("\n"), margin, pdf.y, contentWidth, { size: 8, color: "#475569", lineGap: 2 });
+            pdf.y += 52;
         }
         if (document.documentType === "quote") {
             ensureSpace(82);

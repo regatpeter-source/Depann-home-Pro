@@ -70,6 +70,14 @@ test("une franchise déduite est portée sur un compte tiers et le règlement ap
     assert.equal(validateLedger(entries).valid, true);
 });
 
+test("un acompte encaissé est imputé sur le compte d’avances et réduit la créance client", () => {
+    const source = invoice({ financialData: { depositAmount: 300, depositDate: "2026-01-10", depositMethod: "Virement", depositReference: "VIR-AC-1" } });
+    const entry = post(source);
+    assert.deepEqual(entry.lines.map(line => [line.accountNumber, line.debit, line.credit]), [["411000", 900, 0], ["419100", 300, 0], ["706000", 0, 1000], ["445710", 0, 200]]);
+    assert.equal(entry.totalDebit, 1200);
+    assert.equal(entry.totalCredit, 1200);
+});
+
 test("le compte des aides et franchises est configurable", () => {
     const source = invoice({ financialData: { aids: [{ name: "Prime CEE", amount: 10, calculationMode: "percentage" }] } });
     const entry = createDocumentAccountingEntry({ document: source, entryNumber: "VE000001", validDate: source.issueDate, chartConfig: { aidReceivableAccount: "467100" } });

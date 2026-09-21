@@ -78,6 +78,17 @@ test("saved quotes and invoices open the client before offering email or print",
     assert.match(billingSource, /\/api\/billing\/documents\/\$\{encodeURIComponent\(savedDocumentId\)\}\/email/);
 });
 
+test("un acompte encaissé est saisi et justifié avant l’émission de la facture", () => {
+    assert.match(billingSource, /Acompte déjà encaissé/);
+    assert.match(billingSource, /data-deposit-amount/);
+    assert.match(billingSource, /data-deposit-date/);
+    assert.match(billingSource, /data-deposit-method/);
+    assert.match(billingSource, /data-deposit-reference/);
+    assert.match(billingSource, /Solde à payer/);
+    assert.match(billingServerSource, /L’acompte encaissé ne peut pas dépasser le montant restant après remises et aides/);
+    assert.match(billingServerSource, /totalTtc - aidAmount - depositAmount/);
+});
+
 test("appointment synchronization remains available without navigating back to calendar", () => {
     assert.match(billingSource, /suppressNavigation: true/);
     assert.match(calendarSource, /if \(event\.detail\?\.suppressNavigation\) return/);
