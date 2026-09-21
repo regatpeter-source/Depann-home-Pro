@@ -57,9 +57,10 @@ test("un poste mobile sans droit conserve la réalisation sans pouvoir replanifi
     const client = read("js/calendar.js");
     const server = read("server/calendar.js");
     assert.match(client, /\["mobile_admin", "team_lead", "technician"\]\.includes\(role\) && document\.body\.dataset\.canManageCalendar !== "true"/);
-    assert.match(client, /!rescheduled && canEditCalendarEvent\(event\)/);
+    assert.match(client, /canManageCalendarSchedule\(\) && canEditCalendarEvent\(event\)/);
     assert.match(client, /isDedicatedMobileCalendar\(\).*!canEditCalendarEvent\(event\)/s);
     assert.match(server, /if \(!canManageCalendarSchedule\(request\.user\)\) return response\.status\(403\).*replanification/);
+    assert.match(server, /function canRequestInterventionPause\(user\) \{\s*return canManageCalendarSchedule\(user\)/);
     assert.match(server, /EVENT_STATUS_MANAGER_ROLES/);
     assert.match(server, /"team_lead"/);
     assert.doesNotMatch(server, /EVENT_STATUS_MANAGER_ROLES = new Set\([^)]*team_lead/);

@@ -1,5 +1,5 @@
 import { getDeviceIdentity } from "./auth.js?v=130";
-import { initializeOfflineSync, offlineAwareFetch } from "./offline-sync.js?v=1";
+import { initializeOfflineSync, offlineAwareFetch } from "./offline-sync.js?v=2";
 
 const STORAGE_KEY = "depannHomePro:clientWindowSession";
 const REPLACED_EVENT = "depannhome:session-replaced";

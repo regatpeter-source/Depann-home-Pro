@@ -1296,7 +1296,7 @@ CREATE TABLE IF NOT EXISTS depannhome_calendar_events (
     CONSTRAINT depannhome_calendar_events_color_check
         CHECK (color IN ('blue', 'green', 'orange', 'red', 'purple', 'gray')),
     CONSTRAINT depannhome_calendar_events_status_check
-        CHECK (event_status IN ('planned', 'confirmed', 'in_progress', 'completed', 'cancelled')),
+        CHECK (event_status IN ('planned', 'confirmed', 'in_progress', 'completed', 'cancelled', 'paused')),
     CONSTRAINT depannhome_calendar_events_time_check
         CHECK (end_time IS NULL OR start_time IS NULL OR end_time >= start_time)
 );
@@ -1316,7 +1316,8 @@ ADD COLUMN IF NOT EXISTS event_type VARCHAR(20) NOT NULL DEFAULT 'appointment';
 ALTER TABLE depannhome_calendar_events
 ADD COLUMN IF NOT EXISTS event_status VARCHAR(20) NOT NULL DEFAULT 'planned';
 UPDATE depannhome_calendar_events SET event_status='planned' WHERE event_status IS NULL OR event_status NOT IN ('planned','confirmed','in_progress','completed','cancelled');
-DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='depannhome_calendar_events_status_check') THEN ALTER TABLE depannhome_calendar_events ADD CONSTRAINT depannhome_calendar_events_status_check CHECK (event_status IN ('planned','confirmed','in_progress','completed','cancelled')); END IF; END $$;
+ALTER TABLE depannhome_calendar_events DROP CONSTRAINT IF EXISTS depannhome_calendar_events_status_check;
+ALTER TABLE depannhome_calendar_events ADD CONSTRAINT depannhome_calendar_events_status_check CHECK (event_status IN ('planned','confirmed','in_progress','completed','cancelled','paused'));
 
 ALTER TABLE depannhome_calendar_events
 ADD COLUMN IF NOT EXISTS event_origin VARCHAR(30) NOT NULL DEFAULT 'standard',
@@ -1378,7 +1379,7 @@ CREATE TABLE IF NOT EXISTS depannhome_offline_operations (
 CREATE INDEX IF NOT EXISTS depannhome_offline_operations_created_idx ON depannhome_offline_operations(created_at);
 
 UPDATE depannhome_calendar_events event
-SET event_status = 'cancelled', updated_at = NOW()
+SET event_status = 'paused', updated_at = NOW()
 WHERE event.event_type = 'appointment'
     AND event.paused_at IS NOT NULL
     AND event.event_status IN ('planned', 'confirmed', 'in_progress')

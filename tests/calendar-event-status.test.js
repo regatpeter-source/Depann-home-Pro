@@ -9,12 +9,13 @@ const calendar = read("js/calendar.js");
 const clients = read("js/clients.js");
 const styles = read("css/style.css");
 
-test("le planning conserve cinq statuts métier distincts de la couleur", () => {
-    assert.match(server, /EVENT_STATUSES = new Set\(\["planned", "confirmed", "in_progress", "completed", "cancelled"\]\)/);
+test("le planning conserve six statuts métier distincts de la couleur", () => {
+    assert.match(server, /EVENT_STATUSES = new Set\(\["planned", "confirmed", "in_progress", "completed", "cancelled", "paused"\]\)/);
     assert.match(schema, /event_status VARCHAR\(20\) NOT NULL DEFAULT 'planned'/);
     assert.match(schema, /depannhome_calendar_events_status_check/);
     assert.match(calendar, /\{ id: "completed", label: "Terminée" \}/);
     assert.match(calendar, /\{ id: "cancelled", label: "Annulée" \}/);
+    assert.match(calendar, /\{ id: "paused", label: "En pause" \}/);
     assert.match(calendar, /<select name="status">/);
 });
 
@@ -35,17 +36,17 @@ test("une intervention terminée est rayée et une intervention annulée est gri
 });
 
 test("les événements clos restent visibles mais ne bloquent plus un créneau", () => {
-    assert.match(server, /event_status NOT IN \('completed', 'cancelled'\)/);
+    assert.match(server, /event_status NOT IN \('completed', 'cancelled', 'paused'\)/);
     assert.match(server, /event_status = 'completed'/);
     assert.doesNotMatch(server, /event_status <> 'cancelled' AND event_type = 'appointment' AND event_date/);
     assert.match(server, /isClosedCalendarStatus\(event\.status\) \? null : await findCalendarConflict/);
-    assert.match(calendar, /!\["completed", "cancelled"\]\.includes\(calendarEventStatus\(event\)\)/);
-    assert.match(calendar, /if \(\["completed", "cancelled"\]\.includes\(calendarEventStatus\(candidate\)\)\) return null/);
+    assert.match(calendar, /!\["completed", "cancelled", "paused"\]\.includes\(calendarEventStatus\(event\)\)/);
+    assert.match(calendar, /if \(\["completed", "cancelled", "paused"\]\.includes\(calendarEventStatus\(candidate\)\)\) return null/);
     assert.match(calendar, /Cette intervention reste visible dans le planning et l’historique/);
 });
 
 test("l’historique client reprend le statut exact et verrouille les interventions closes", () => {
-    assert.match(clients, /confirmed: "Confirmée", in_progress: "En cours", completed: "Terminée", cancelled: "Annulée"/);
+    assert.match(clients, /confirmed: "Confirmée", in_progress: "En cours", paused: "En pause", completed: "Terminée", cancelled: "Annulée"/);
     assert.match(clients, /appointment\.isCompleted \|\| appointment\.status === "cancelled"/);
 });
 

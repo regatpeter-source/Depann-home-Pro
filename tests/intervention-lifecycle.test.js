@@ -24,10 +24,10 @@ test("une intervention terminée reste dans l’historique et devient non modifi
     assert.doesNotMatch(historyRoute, /LIMIT\s+1/);
     assert.match(calendar, /Cette intervention est terminée et conservée dans l’historique/);
     assert.match(calendar, /Cette intervention terminée doit rester dans l’historique/);
-    assert.match(clients, /appointment\.pausedAt \? "Intervention annulée après mise en pause"/);
+    assert.match(clients, /appointment\.pausedAt \? "Intervention en pause"/);
     assert.match(clients, /appointment\.eventType === "appointment" \? "Intervention créée"/);
     assert.match(clients, /`Intervention n°\$\{appointment\.id\}`/);
-    assert.match(clients, /appointment\.isCompleted \? "Terminée" : \(\{ planned: "Planifiée", confirmed: "Confirmée", in_progress: "En cours", completed: "Terminée", cancelled: "Annulée" \}\)\[appointment\.status\] \|\| "Planifiée"/);
+    assert.match(clients, /in_progress: "En cours", paused: "En pause", completed: "Terminée"/);
     assert.doesNotMatch(clients, /"Intervention planifiée"/);
     assert.match(calendarClient, /id="openCompletedAppointmentClient">Aller sur la fiche client/);
     assert.match(calendarClient, /id="scheduleCompletedAppointmentFollowUp">Planifier un nouveau rendez-vous/);
@@ -41,7 +41,7 @@ test("le quitus archivé reste consultable mais non modifiable après une finali
     const calendarClient = read("js/calendar.js");
     const clientsClient = read("js/clients.js");
     assert.doesNotMatch(calendarServer, /event\.event_date >= \(CURRENT_TIMESTAMP AT TIME ZONE 'Europe\/Paris'\)::date/);
-    assert.match(calendarServer, /event\.event_status NOT IN \('completed','cancelled'\)/);
+    assert.match(calendarServer, /event\.event_status NOT IN \('completed','cancelled','paused'\)/);
     assert.doesNotMatch(clientsServer, /isCompletedInterventionQuitus/);
     assert.doesNotMatch(clientsServer, /son quitus n[’']est plus accessible|son quitus ne peut plus être envoyé/);
     assert.match(calendarClient, /event\.eventType === "appointment" && event\.isCompleted/);
@@ -79,5 +79,5 @@ test("une nouvelle version PWA prépare les correctifs sans recharger la session
     assert.match(application, /\.then\(registration => registration\.update\(\)\)/);
     assert.match(worker, /self\.skipWaiting\(\)/);
     assert.match(worker, /self\.clients\.claim\(\)/);
-    assert.match(worker, /\.\/js\/calendar\.js\?v=230/);
+    assert.match(worker, /\.\/js\/calendar\.js\?v=231/);
 });

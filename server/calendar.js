@@ -15,7 +15,7 @@ import { offlineIdempotent } from "./offline-idempotency.js";
 
 const EVENT_COLORS = new Set(["blue", "green", "orange", "red", "purple", "gray"]);
 const EVENT_TYPES = new Set(["appointment", "task", "vacation", "sick_leave", "unavailable"]);
-const EVENT_STATUSES = new Set(["planned", "confirmed", "in_progress", "completed", "cancelled"]);
+const EVENT_STATUSES = new Set(["planned", "confirmed", "in_progress", "completed", "cancelled", "paused"]);
 const EVENT_STATUS_MANAGER_ROLES = new Set(["admin", "pc_standard", "commercial", "mobile_admin"]);
 const PAUSE_REASONS = new Set(["technician_absent", "material_not_received", "waiting_client", "waiting_parts", "other"]);
 const QUITUS_STATUS = new Set(["pending", "validated"]);
@@ -90,7 +90,7 @@ export async function initializeCalendar() {
             CONSTRAINT depannhome_calendar_events_color_check
                 CHECK (color IN ('blue', 'green', 'orange', 'red', 'purple', 'gray')),
             CONSTRAINT depannhome_calendar_events_status_check
-                CHECK (event_status IN ('planned', 'confirmed', 'in_progress', 'completed', 'cancelled')),
+                CHECK (event_status IN ('planned', 'confirmed', 'in_progress', 'completed', 'cancelled', 'paused')),
             CONSTRAINT depannhome_calendar_events_time_check
                 CHECK (end_time IS NULL OR start_time IS NULL OR end_time >= start_time)
         )
@@ -105,15 +105,9 @@ export async function initializeCalendar() {
         ADD COLUMN IF NOT EXISTS event_type VARCHAR(20) NOT NULL DEFAULT 'appointment'
     `);
     await database.query("ALTER TABLE depannhome_calendar_events ADD COLUMN IF NOT EXISTS event_status VARCHAR(20) NOT NULL DEFAULT 'planned'");
-    await database.query("UPDATE depannhome_calendar_events SET event_status='planned' WHERE event_status IS NULL OR event_status NOT IN ('planned','confirmed','in_progress','completed','cancelled')");
-    await database.query(`
-        DO $$ BEGIN
-            IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='depannhome_calendar_events_status_check') THEN
-                ALTER TABLE depannhome_calendar_events ADD CONSTRAINT depannhome_calendar_events_status_check
-                    CHECK (event_status IN ('planned','confirmed','in_progress','completed','cancelled'));
-            END IF;
-        END $$
-    `);
+    await database.query("UPDATE depannhome_calendar_events SET event_status='planned' WHERE event_status IS NULL OR event_status NOT IN ('planned','confirmed','in_progress','completed','cancelled','paused')");
+    await database.query("ALTER TABLE depannhome_calendar_events DROP CONSTRAINT IF EXISTS depannhome_calendar_events_status_check");
+    await database.query("ALTER TABLE depannhome_calendar_events ADD CONSTRAINT depannhome_calendar_events_status_check CHECK (event_status IN ('planned','confirmed','in_progress','completed','cancelled','paused'))");
     await database.query(`
         ALTER TABLE depannhome_calendar_events
         ADD COLUMN IF NOT EXISTS event_origin VARCHAR(30) NOT NULL DEFAULT 'standard',
@@ -134,7 +128,7 @@ export async function initializeCalendar() {
     await database.query("CREATE INDEX IF NOT EXISTS depannhome_calendar_events_admin_client_idx ON depannhome_calendar_events(owner_id,client_id) WHERE created_device_type='desktop' AND client_id<>''");
     await database.query(`
         UPDATE depannhome_calendar_events event
-        SET event_status='cancelled',updated_at=NOW()
+        SET event_status='paused',updated_at=NOW()
         WHERE event.event_type='appointment' AND event.paused_at IS NOT NULL
             AND event.event_status IN ('planned','confirmed','in_progress')
             AND NOT EXISTS (
@@ -396,6 +390,7 @@ export function registerCalendarRoutes(app, requireAuthentication) {
             LEFT JOIN depannhome_partner_missions mission ON mission.id = event.partner_mission_id AND mission.owner_id = event.owner_id
                         WHERE event.owner_id = $1
                             AND event_date BETWEEN $2::date AND $3::date
+                            AND event.event_status <> 'paused'
                             AND ($4::boolean = FALSE OR EXISTS (
                                 SELECT 1 FROM depannhome_calendar_assignments assignment
                                 WHERE assignment.event_id = event.id AND assignment.technician_id = $5::bigint
@@ -416,11 +411,10 @@ export function registerCalendarRoutes(app, requireAuthentication) {
                 event.paused_at AS "pausedAt",event.pause_reason AS "pauseReason",event.pause_note AS "pauseNote",event.paused_by_name AS "pausedByName"
             FROM depannhome_calendar_events event
             WHERE event.owner_id=$1 AND event.paused_at IS NOT NULL AND event.event_type='appointment'
-                AND event.event_status='cancelled'
-                AND NOT EXISTS (SELECT 1 FROM depannhome_calendar_events resumed WHERE resumed.owner_id=event.owner_id AND resumed.rescheduled_from_event_id=event.id)
+                AND event.event_status='paused'
                 AND ($2::boolean OR EXISTS (SELECT 1 FROM depannhome_calendar_assignments assignment WHERE assignment.event_id=event.id AND assignment.technician_id=$3::bigint))
             ORDER BY event.paused_at ASC,event.event_date,event.start_time NULLS LAST
-        `, [getAccountOwnerId(request), canManageCalendarSchedule(request.user), request.user.sub]);
+        `, [getAccountOwnerId(request), canManageCalendarSchedule(request.user) && !isDedicatedMobileSession(request.user), request.user.sub]);
         response.json({ events: rows });
     }));
 
@@ -444,7 +438,7 @@ export function registerCalendarRoutes(app, requireAuthentication) {
             SELECT title, TO_CHAR(event_date, 'YYYY-MM-DD') AS date, TO_CHAR(start_time, 'HH24:MI') AS "startTime", TO_CHAR(end_time, 'HH24:MI') AS "endTime"
             FROM depannhome_calendar_events
             WHERE owner_id = $1 AND event_date BETWEEN $2::date AND $3::date
-                AND event_status NOT IN ('completed', 'cancelled')
+                AND event_status NOT IN ('completed', 'cancelled', 'paused')
                 AND (
                     (cardinality($4::bigint[]) > 0 AND EXISTS (
                         SELECT 1 FROM depannhome_calendar_assignments assignment
@@ -471,6 +465,7 @@ export function registerCalendarRoutes(app, requireAuthentication) {
     app.post("/api/calendar/events", requireAuthentication, requireCalendarCreateAccess, asyncHandler(async (request, response) => {
         const event = sanitizeEvent(request.body);
         if (!event.ok) return response.status(400).json({ message: event.message });
+        if (event.status === "paused") return response.status(400).json({ message: "Utilisez l’action de mise en pause pour suspendre une intervention." });
         if (!canManageCalendarEventStatus(request.user) && event.status !== "planned") {
             return response.status(403).json({ message: "La finalisation d’une intervention est réservée à un poste administratif ou au Poste Admin Mobile." });
         }
@@ -515,9 +510,10 @@ export function registerCalendarRoutes(app, requireAuthentication) {
         const event = sanitizeEvent(request.body);
         if (!id) return response.status(400).json({ message: "Rendez-vous invalide." });
         if (!event.ok) return response.status(400).json({ message: event.message });
+        if (event.status === "paused") return response.status(400).json({ message: "Utilisez l’action de mise en pause pour suspendre une intervention." });
         if (!await canModifyStoredCalendarEvent(request.user, getAccountOwnerId(request), id)) return response.status(403).json({ message: "Ce rendez-vous a été créé par un poste administratif et ne peut pas être modifié depuis un poste mobile." });
         if (await isCompletedIntervention(getAccountOwnerId(request), id)) return response.status(409).json({ message: "Cette intervention est terminée et conservée dans l’historique. Créez une nouvelle intervention pour ce client." });
-        if (await isPausedIntervention(getAccountOwnerId(request), id)) return response.status(409).json({ message: "Cette intervention mise en pause est annulée et conservée dans l’historique. Utilisez « Replanifier l’intervention » pour choisir une nouvelle date." });
+        if (await isPausedIntervention(getAccountOwnerId(request), id)) return response.status(409).json({ message: "Cette intervention est en pause. Utilisez « Replanifier l’intervention » pour choisir une nouvelle date." });
         const canManageStatus = canManageCalendarEventStatus(request.user);
         if (!canManageStatus) {
             const currentStatus = await getCalendarEventStatus(getAccountOwnerId(request), id);
@@ -577,9 +573,9 @@ export function registerCalendarRoutes(app, requireAuthentication) {
         const reason = PAUSE_REASONS.has(request.body?.reason) ? request.body.reason : "";
         const note = cleanMultilineText(request.body?.note, 1000);
         if (!id) return response.status(400).json({ message: "Intervention invalide." });
-        if (!canRequestInterventionPause(request.user)) return response.status(403).json({ message: "Ce poste ne peut pas mettre une intervention en pause." });
+        if (!canRequestInterventionPause(request.user)) return response.status(403).json({ message: "La mise en pause est réservée aux postes autorisés à gérer le planning." });
         if (!reason) return response.status(400).json({ message: "Choisissez le motif de la pause." });
-        if (reason === "other" && !note) return response.status(400).json({ message: "Précisez le motif de la pause." });
+        if (!note) return response.status(400).json({ message: "Justifiez la mise en pause." });
         const ownerId = getAccountOwnerId(request);
         const actorName = cleanText(request.user.fullName || request.user.username || "Utilisateur", 160);
         const pausedAt = new Date().toISOString();
@@ -587,7 +583,8 @@ export function registerCalendarRoutes(app, requireAuthentication) {
         try {
             await connection.query("BEGIN");
             const { rows } = await connection.query(`
-                SELECT event.id,COALESCE(NULLIF(event.client_id,''),(SELECT mission.client_id FROM depannhome_partner_missions mission WHERE mission.owner_id=event.owner_id AND mission.calendar_event_id=event.id AND mission.client_id<>'' ORDER BY mission.updated_at DESC LIMIT 1),'') AS "clientId",event.title,TO_CHAR(event.event_date,'YYYY-MM-DD') AS date,event.event_status AS status
+                SELECT event.id,COALESCE(NULLIF(event.client_id,''),(SELECT mission.client_id FROM depannhome_partner_missions mission WHERE mission.owner_id=event.owner_id AND mission.calendar_event_id=event.id AND mission.client_id<>'' ORDER BY mission.updated_at DESC LIMIT 1),'') AS "clientId",event.title,TO_CHAR(event.event_date,'YYYY-MM-DD') AS date,event.event_status AS status,
+                    event.created_by AS "createdBy",event.created_device_type AS "createdDeviceType"
                 FROM depannhome_calendar_events event
                 WHERE event.id=$1 AND event.owner_id=$2 AND event.event_type='appointment'
                     AND ($3::boolean OR EXISTS (SELECT 1 FROM depannhome_calendar_assignments assignment WHERE assignment.event_id=event.id AND assignment.technician_id=$4))
@@ -595,16 +592,18 @@ export function registerCalendarRoutes(app, requireAuthentication) {
             `, [id, ownerId, canManageCalendarSchedule(request.user) && !isDedicatedMobileSession(request.user), request.user.sub]);
             const event = rows[0];
             if (!event) { await connection.query("ROLLBACK"); return response.status(404).json({ message: "Intervention introuvable ou non autorisée." }); }
+            if (!canModifyCalendarEvent(request.user, event)) { await connection.query("ROLLBACK"); return response.status(403).json({ message: "Cette intervention a été créée par un poste administratif et ne peut pas être mise en pause depuis un poste mobile." }); }
             if (["completed", "cancelled"].includes(event.status)) { await connection.query("ROLLBACK"); return response.status(409).json({ message: "Cette intervention est déjà terminée ou annulée." }); }
+            if (event.status === "paused") { await connection.query("ROLLBACK"); return response.status(409).json({ message: "Cette intervention est déjà en pause." }); }
             const updated = await connection.query(`
-                UPDATE depannhome_calendar_events SET event_status='cancelled',paused_at=$3,pause_reason=$4,pause_note=$5,paused_by=$6,paused_by_name=$7,updated_at=NOW()
+                UPDATE depannhome_calendar_events SET event_status='paused',paused_at=$3,pause_reason=$4,pause_note=$5,paused_by=$6,paused_by_name=$7,updated_at=NOW()
                 WHERE id=$1 AND owner_id=$2
                 RETURNING paused_at AS "pausedAt",pause_reason AS "pauseReason",pause_note AS "pauseNote",paused_by_name AS "pausedByName",event_status AS status
             `, [id, ownerId, pausedAt, reason, note, request.user.sub, actorName]);
             await appendClientInterventionHistory(connection, ownerId, event.clientId, [{
                 id: `intervention-pause-${id}-${Date.now()}`,
                 type: "intervention_pause",
-                label: "Intervention mise en pause et annulée",
+                label: "Intervention mise en pause",
                 detail: [`Intervention n°${id}`, `Date initiale : ${formatHistoryDate(event.date)}`, `Motif : ${pauseReasonLabel(reason)}`, note].filter(Boolean).join(" · "),
                 appointmentId: id,
                 actorName,
@@ -612,7 +611,7 @@ export function registerCalendarRoutes(app, requireAuthentication) {
             }]);
             await connection.query("COMMIT");
             if (event.clientId) publishClientChange(ownerId, event.clientId);
-            response.json({ pause: updated.rows[0], message: "Intervention annulée à sa date initiale et conservée dans l’historique jusqu’à sa replanification." });
+            response.json({ pause: updated.rows[0], message: "Intervention mise en pause et conservée sous le même numéro jusqu’à sa replanification." });
         } catch (error) {
             await connection.query("ROLLBACK");
             throw error;
@@ -639,57 +638,43 @@ export function registerCalendarRoutes(app, requireAuthentication) {
                     event.location,TO_CHAR(event.event_date,'YYYY-MM-DD') AS date,TO_CHAR(event.start_time,'HH24:MI') AS "startTime",TO_CHAR(event.end_time,'HH24:MI') AS "endTime",
                     event.color,event.event_type AS "eventType",event.event_origin AS "eventOrigin",event.partner_connection_id AS "partnerConnectionId",
                     event.partner_mission_id AS "partnerMissionId",event.notes,event.pause_reason AS "pauseReason",event.pause_note AS "pauseNote",
-                    event.created_by AS "createdBy",event.created_device_type AS "createdDeviceType",
-                    event.event_status AS status,
+                    event.created_by AS "createdBy",event.created_device_type AS "createdDeviceType",event.event_status AS status,
                     COALESCE((SELECT array_agg(assignment.technician_id ORDER BY assignment.is_primary DESC,assignment.technician_id) FROM depannhome_calendar_assignments assignment WHERE assignment.event_id=event.id),'{}'::bigint[]) AS "assignedTechnicianIds"
                 FROM depannhome_calendar_events event
-                WHERE event.id=$1 AND event.owner_id=$2 AND event.event_type='appointment' AND event.paused_at IS NOT NULL
-                    AND NOT EXISTS (SELECT 1 FROM depannhome_calendar_events resumed WHERE resumed.owner_id=event.owner_id AND resumed.rescheduled_from_event_id=event.id)
+                WHERE event.id=$1 AND event.owner_id=$2 AND event.event_type='appointment' AND event.paused_at IS NOT NULL AND event.event_status='paused'
                     AND ($3::boolean OR EXISTS (SELECT 1 FROM depannhome_calendar_assignments assignment WHERE assignment.event_id=event.id AND assignment.technician_id=$4))
                 FOR UPDATE
-            `, [id, ownerId, canManageCalendarSchedule(request.user), request.user.sub]);
+            `, [id, ownerId, canManageCalendarSchedule(request.user) && !isDedicatedMobileSession(request.user), request.user.sub]);
             const source = rows[0];
-            if (!source) { await connection.query("ROLLBACK"); return response.status(404).json({ message: "Intervention en pause introuvable, déjà replanifiée ou non autorisée." }); }
+            if (!source) { await connection.query("ROLLBACK"); return response.status(404).json({ message: "Intervention en pause introuvable ou non autorisée." }); }
             if (!canModifyCalendarEvent(request.user, source)) { await connection.query("ROLLBACK"); return response.status(403).json({ message: "Cette intervention a été créée par un poste administratif et ne peut pas être replanifiée depuis un poste mobile." }); }
             if (source.status === "completed") { await connection.query("ROLLBACK"); return response.status(409).json({ message: "Cette intervention est terminée et ne peut pas être replanifiée." }); }
-            if (newDate === source.date) { await connection.query("ROLLBACK"); return response.status(400).json({ message: "Choisissez une date différente de la date annulée." }); }
-            const conflict = await findCalendarConflict(ownerId, { ...source, date: newDate }, 0, connection);
+            if (newDate === source.date) { await connection.query("ROLLBACK"); return response.status(400).json({ message: "Choisissez une date différente de la date initiale." }); }
+            const conflict = await findCalendarConflict(ownerId, { ...source, date: newDate }, id, connection);
             if (conflict) { await connection.query("ROLLBACK"); return response.status(409).json({ message: conflictMessage(conflict) }); }
-            if (source.status !== "cancelled") {
-                await connection.query("UPDATE depannhome_calendar_events SET event_status='cancelled',updated_at=NOW() WHERE id=$1 AND owner_id=$2", [id, ownerId]);
-            }
-            const inserted = await connection.query(`
-                INSERT INTO depannhome_calendar_events
-                    (owner_id,assigned_technician_id,title,client_id,client_name,location,event_date,start_time,end_time,color,event_type,event_status,event_origin,partner_connection_id,partner_mission_id,notes,rescheduled_from_event_id,created_by,created_device_type)
-                VALUES ($1,$2,$3,$4,$5,$6,$7::date,$8::time,$9::time,$10,$11,'planned',$12,$13,$14,$15,$16,$17,$18)
-                RETURNING id,TO_CHAR(event_date,'YYYY-MM-DD') AS date,event_status AS status,rescheduled_from_event_id AS "rescheduledFromEventId"
-            `, [ownerId, source.assignedTechnicianId || null, source.title, source.clientId, source.clientName, source.location, newDate, optionalTime(source.startTime), optionalTime(source.endTime), source.color, source.eventType, source.eventOrigin, source.partnerConnectionId, source.partnerMissionId, source.notes, id, request.user.sub, request.user.deviceType]);
-            const resumed = inserted.rows[0];
-            await replaceEventAssignments(connection, resumed.id, source.assignedTechnicianIds.map(Number), Number(source.assignedTechnicianId) || 0);
+            const { rows: resumedRows } = await connection.query(`
+                UPDATE depannhome_calendar_events
+                SET event_date=$3::date,event_status='planned',paused_at=NULL,pause_reason='',pause_note='',paused_by=NULL,paused_by_name='',updated_at=NOW()
+                WHERE id=$1 AND owner_id=$2 AND event_status='paused'
+                RETURNING id,TO_CHAR(event_date,'YYYY-MM-DD') AS date,event_status AS status
+            `, [id, ownerId, newDate]);
+            const resumed = resumedRows[0];
+            await connection.query("UPDATE depannhome_partner_missions SET scheduled_date=$3::date,scheduled_start_time=$4::time,scheduled_end_time=$5::time,updated_at=NOW() WHERE owner_id=$1 AND calendar_event_id=$2", [ownerId, id, newDate, optionalTime(source.startTime), optionalTime(source.endTime)]);
             await appendClientInterventionHistory(connection, ownerId, source.clientId, [{
-                id: `intervention-rescheduled-${id}-${resumed.id}`,
+                id: `intervention-rescheduled-${id}-${Date.now()}`,
                 type: "intervention_rescheduled",
                 label: "Intervention replanifiée",
-                detail: `Nouvelle intervention n°${resumed.id} · Nouvelle date : ${formatHistoryDate(newDate)}`,
+                detail: `Intervention n°${id} · Date initiale : ${formatHistoryDate(source.date)} · Nouvelle date : ${formatHistoryDate(newDate)}`,
                 appointmentId: id,
-                actorName,
-                createdAt: resumedAt
-            }, {
-                id: `intervention-resume-${resumed.id}`,
-                type: "intervention_resume",
-                label: "Intervention reprise après pause",
-                detail: [`Report de l’intervention n°${id}`, `Nouvelle date : ${formatHistoryDate(newDate)}`, `Motif initial : ${pauseReasonLabel(source.pauseReason)}`, source.pauseNote].filter(Boolean).join(" · "),
-                appointmentId: resumed.id,
                 actorName,
                 createdAt: resumedAt
             }]);
             await connection.query("COMMIT");
             if (source.clientId) publishClientChange(ownerId, source.clientId);
-            await synchronizeConnectedAppointment(ownerId, resumed.id);
-            response.status(201).json({ event: { ...source, ...resumed, assignedTechnicianIds: source.assignedTechnicianIds, pausedAt: null, pauseReason: "", pauseNote: "", pausedByName: "" }, message: "Intervention replanifiée ; l’ancien rendez-vous annulé reste dans l’historique." });
+            await synchronizeConnectedAppointment(ownerId, id);
+            response.json({ event: { ...source, ...resumed, pausedAt: null, pauseReason: "", pauseNote: "", pausedByName: "" }, message: "Intervention replanifiée sous le même numéro." });
         } catch (error) {
             await connection.query("ROLLBACK");
-            if (error.code === "23505") return response.status(409).json({ message: "Cette intervention a déjà été replanifiée." });
             throw error;
         } finally {
             connection.release();
@@ -783,7 +768,7 @@ export function registerCalendarRoutes(app, requireAuthentication) {
                 FROM depannhome_calendar_events event
                 JOIN depannhome_partner_missions mission ON mission.id=event.partner_mission_id AND mission.owner_id=event.owner_id AND mission.deleted_at IS NULL
                 WHERE event.id=$1 AND event.owner_id=$2 AND event.event_type='appointment'
-                    AND event.event_status NOT IN ('completed','cancelled')
+                    AND event.event_status NOT IN ('completed','cancelled','paused')
                     AND EXISTS (SELECT 1 FROM depannhome_calendar_assignments assignment WHERE assignment.event_id=event.id AND assignment.technician_id=$3::bigint)
                 FOR UPDATE OF event
             `, [id, ownerId, request.user.sub]);
@@ -941,7 +926,7 @@ export function registerCalendarRoutes(app, requireAuthentication) {
                     notes, quitus_status AS "quitusStatus", quitus_observations AS "quitusObservations", quitus_approved AS "quitusApproved"
                 FROM depannhome_calendar_events
                                 WHERE id = $1 AND owner_id = $2 AND event_type = 'appointment' AND client_name <> ''
-                                    AND event_status NOT IN ('completed','cancelled')
+                                    AND event_status NOT IN ('completed','cancelled','paused')
                                     AND ($3 NOT IN ('technician', 'accountant') OR EXISTS (
                                         SELECT 1 FROM depannhome_calendar_assignments assignment
                                         WHERE assignment.event_id = depannhome_calendar_events.id AND assignment.technician_id = $4::bigint
@@ -1053,7 +1038,7 @@ export function registerCalendarRoutes(app, requireAuthentication) {
             FROM depannhome_calendar_events event
             LEFT JOIN depannhome_clients client ON client.owner_id=event.owner_id AND client.client_id=event.client_id
             WHERE event.id=$1 AND event.owner_id=$2 AND event.event_type='appointment' AND event.quitus_status='validated'
-                            AND event.event_status NOT IN ('completed','cancelled')
+                            AND event.event_status NOT IN ('completed','cancelled','paused')
               AND ($3 NOT IN ('technician','accountant') OR EXISTS (SELECT 1 FROM depannhome_calendar_assignments assignment WHERE assignment.event_id=event.id AND assignment.technician_id=$4::bigint))
         `, [id, ownerId, request.user.role, request.user.sub]);
         const event = eventResult.rows[0]; if (!event) return response.status(404).json({ message: "Quitus introuvable ou intervention déjà terminée." });
@@ -1096,7 +1081,7 @@ async function canModifyStoredCalendarEvent(user, ownerId, eventId) {
 }
 
 function canRequestInterventionPause(user) {
-    return canManageCalendarSchedule(user) || ["technician", "team_lead"].includes(user?.role);
+    return canManageCalendarSchedule(user);
 }
 
 function requireCalendarReadAccess(request, response, next) {
@@ -1140,7 +1125,7 @@ function sanitizeEvent(value) {
 }
 
 function isClosedCalendarStatus(status) {
-    return ["completed", "cancelled"].includes(status);
+    return ["completed", "cancelled", "paused"].includes(status);
 }
 
 function canManageCalendarEventStatus(user) {
@@ -1306,7 +1291,7 @@ async function findCalendarConflict(accountOwnerId, event, excludedEventId = 0, 
         WHERE owner_id = $1
           AND event_date = $2::date
           AND id <> $3
-                    AND event_status NOT IN ('completed', 'cancelled')
+                    AND event_status NOT IN ('completed', 'cancelled', 'paused')
                     AND (
                         (cardinality($4::bigint[]) > 0 AND EXISTS (
                             SELECT 1 FROM depannhome_calendar_assignments assignment

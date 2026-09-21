@@ -218,7 +218,7 @@ function deserializeBody(body) {
 async function syntheticPayload(operation) {
     const queued = { queued: true, operationId: operation.id, message: "Enregistré hors ligne. Envoi automatique dès le retour du réseau." };
     const json = parseJsonBody(operation.body);
-    if (/\/pause$/.test(operation.url)) return { ...queued, pause: { pausedAt: new Date().toISOString(), pauseReason: json.reason || "other", pauseNote: json.note || "", eventStatus: "cancelled" } };
+    if (/\/pause$/.test(operation.url)) return { ...queued, pause: { pausedAt: new Date().toISOString(), pauseReason: json.reason || "other", pauseNote: json.note || "", status: "paused" } };
     if (/\/quitus$/.test(operation.url)) return { ...queued, quitus: { quitusStatus: "validated", quitusSignedBy: json.signedBy || "", quitusObservations: json.observations || "", quitusValidatedAt: new Date().toISOString(), quitusSignature: json.signature || "" } };
     if (/\/deductible$/.test(operation.url)) {
         const form = formValues(operation.body);
@@ -313,8 +313,8 @@ function applyOptimisticMutation(data, cachedUrl, operation, synthetic) {
         const event = data.events.find(item => String(item.id) === calendarMatch[1]);
         if (!event) return false;
         if (operation.method === "DELETE") data.events = data.events.filter(item => String(item.id) !== calendarMatch[1]);
-        else if (calendarMatch[2] === "pause") Object.assign(event, { pausedAt: new Date().toISOString(), pauseReason: payload.reason, pauseNote: payload.note, eventStatus: "cancelled", pending: true });
-        else if (calendarMatch[2] === "resume") { event.rescheduledEventId = `offline-resumed-${operation.id}`; data.events.push({ ...event, id: event.rescheduledEventId, date: payload.date, pausedAt: null, pauseReason: "", pauseNote: "", rescheduledFromEventId: event.id, eventStatus: "scheduled", pending: true }); }
+        else if (calendarMatch[2] === "pause") Object.assign(event, { pausedAt: new Date().toISOString(), pauseReason: payload.reason, pauseNote: payload.note, status: "paused", pending: true });
+        else if (calendarMatch[2] === "resume") Object.assign(event, { date: payload.date, status: "planned", pausedAt: null, pauseReason: "", pauseNote: "", pausedByName: "", pending: true });
         else if (calendarMatch[2] === "quitus") Object.assign(event, { quitusStatus: "validated", quitusSignedBy: payload.signedBy, quitusObservations: payload.observations, quitusSignature: payload.signature, quitusValidatedAt: new Date().toISOString(), pending: true });
         else if (calendarMatch[2] === "deductible") { const values = formValues(operation.body); Object.assign(event, { deductibleStatus: "pending", deductibleAmountCents: Number(values.amountCents || 0), deductiblePaymentMethod: values.paymentMethod || "", pending: true }); }
         else if (!calendarMatch[2] && operation.method === "PUT") Object.assign(event, payload, { pending: true });

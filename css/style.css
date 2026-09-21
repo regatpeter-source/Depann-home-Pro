@@ -4011,6 +4011,7 @@ body.mobile-device[data-role="technician"] .calendar-list-day{
 .calendar-status-legend .status-in_progress i{border-left-color:#d97706;background:#fff7ed;}
 .calendar-status-legend .status-completed i{background:linear-gradient(to bottom,transparent 42%,#64748b 42%,#64748b 58%,transparent 58%);}
 .calendar-status-legend .status-cancelled i{border-color:#94a3b8;background:#e5e7eb;opacity:.75;}
+.calendar-status-legend .status-paused i{border-color:#b45309;background:#fef3c7;}
 
 .calendar-weekdays,
 .calendar-grid{
@@ -4243,6 +4244,7 @@ body.mobile-device[data-role="technician"] .calendar-list-day{
 .calendar-event.status-completed .calendar-event-identity,
 .calendar-event.status-completed .calendar-event-context{text-decoration:line-through;text-decoration-thickness:1.5px;}
 .calendar-event.status-cancelled{border-left-color:#64748b!important;background:#e5e7eb!important;color:#64748b!important;filter:grayscale(1);opacity:.72;}
+.calendar-event.status-paused{border-left-color:#b45309!important;background:#fffbeb!important;color:#92400e!important;}
 
 .calendar-event.color-blue{background:#dbeafe;color:#1d4ed8;}
 .calendar-event.color-green{background:#dcfce7;color:#15803d;}

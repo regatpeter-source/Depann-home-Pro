@@ -1,6 +1,6 @@
 import { ROUTES } from "./config.js?v=134";
 import { createBillingDocumentForClient, viewBillingDocument } from "./billing.js?v=210";
-import { getSearchableClients } from "./clients.js?v=171";
+import { getSearchableClients } from "./clients.js?v=172";
 import { addClientActivityByName, synchronizeClients } from "./client-sync.js?v=132";
 import { renderClientMessages } from "./messages.js?v=107";
 import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=58";
@@ -29,6 +29,7 @@ const EVENT_STATUS_OPTIONS = [
     { id: "planned", label: "Planifiée" },
     { id: "confirmed", label: "Confirmée" },
     { id: "in_progress", label: "En cours" },
+    { id: "paused", label: "En pause" },
     { id: "completed", label: "Terminée" },
     { id: "cancelled", label: "Annulée" }
 ];
@@ -370,13 +371,13 @@ function renderEventForm(panel) {
         });
         return;
     }
-    if (calendarEventStatus(event) === "cancelled" && event.pausedAt) {
+    if (calendarEventStatus(event) === "paused") {
         panel.innerHTML = `
             <div class="calendar-event-detail">
-                <div class="form-heading"><div><p class="eyebrow">Intervention annulée après mise en pause</p><h2>${escapeHtml(event.title)}</h2></div><span class="quitus-status">Annulée</span></div>
+                <div class="form-heading"><div><p class="eyebrow">Intervention en pause</p><h2>${escapeHtml(event.title)}</h2></div><span class="quitus-status">En pause</span></div>
                 <section class="calendar-appointment-information">
-                    <p class="muted">Le rendez-vous initial reste visible à cette date et dans l’historique du client. Sa reprise crée obligatoirement une nouvelle intervention à une autre date.</p>
-                    <dl><dt>Intervention initiale</dt><dd>N° ${escapeHtml(event.id)}</dd><dt>Client</dt><dd>${escapeHtml(event.clientName || "Non renseigné")}</dd><dt>Date annulée</dt><dd>${escapeHtml(formatActivityDate(event.date, event.startTime))}${event.endTime ? ` — ${escapeHtml(event.endTime)}` : ""}</dd>${renderAssignedTechniciansDetail(event)}${event.location ? `<dt>Lieu</dt><dd>${escapeHtml(event.location)}</dd>` : ""}${event.notes ? `<dt>Notes</dt><dd>${escapeHtml(event.notes)}</dd>` : ""}</dl>
+                    <p class="muted">L’intervention conserve ce numéro et quittera la liste des interventions à reprendre lorsqu’une nouvelle date sera choisie.</p>
+                    <dl><dt>Intervention</dt><dd>N° ${escapeHtml(event.id)}</dd><dt>Client</dt><dd>${escapeHtml(event.clientName || "Non renseigné")}</dd><dt>Date initiale</dt><dd>${escapeHtml(formatActivityDate(event.date, event.startTime))}${event.endTime ? ` — ${escapeHtml(event.endTime)}` : ""}</dd>${renderAssignedTechniciansDetail(event)}${event.location ? `<dt>Lieu</dt><dd>${escapeHtml(event.location)}</dd>` : ""}${event.notes ? `<dt>Notes</dt><dd>${escapeHtml(event.notes)}</dd>` : ""}</dl>
                 </section>
                 ${renderInterventionPauseHtml(event)}
                 <div class="calendar-form-actions"><button type="button" class="secondary-button" id="closeCalendarDetail">Fermer</button></div>
@@ -519,7 +520,7 @@ function renderEventForm(panel) {
                 </label>
                 ${canManageCalendarEventStatus() ? `<label>
                     Statut
-                    <select name="status">${EVENT_STATUS_OPTIONS.map(status => `<option value="${status.id}" ${calendarEventStatus(event) === status.id ? "selected" : ""}>${status.label}</option>`).join("")}</select>
+                    <select name="status">${EVENT_STATUS_OPTIONS.filter(status => status.id !== "paused").map(status => `<option value="${status.id}" ${calendarEventStatus(event) === status.id ? "selected" : ""}>${status.label}</option>`).join("")}</select>
                 </label>` : `<label>Statut actuel<input type="hidden" name="status" value="${escapeHtml(calendarEventStatus(event))}"><span class="quitus-status">${escapeHtml(calendarEventStatusLabel(event))}</span></label>`}
                 ${renderTechnicianAssignmentField(event)}
                 <label>
@@ -740,12 +741,11 @@ function renderEventForm(panel) {
 function renderInterventionPauseHtml(event) {
     if (!event?.id || event.eventType !== "appointment" || calendarEventStatus(event) === "completed") return "";
     if (event.pausedAt) {
-        const rescheduled = Boolean(event.rescheduledEventId);
-        const action = !rescheduled && canEditCalendarEvent(event) ? `<div class="calendar-intervention-resume-fields"><label>Nouvelle date *<input type="date" data-resume-intervention-date min="${escapeHtml(toDateString(new Date()))}" value="${escapeHtml(defaultResumeDate(event.date))}" required></label><button type="button" class="secondary-button" data-resume-intervention>Replanifier l’intervention</button></div>` : "";
-        return `<section class="calendar-intervention-pause is-paused"><div><p class="eyebrow">${rescheduled ? "Intervention replanifiée" : "En attente de replanification"}</p><h3>${escapeHtml(interventionPauseReasonLabel(event.pauseReason))}</h3><p>${escapeHtml(event.pauseNote || "Aucune précision ajoutée.")}</p><small>Mise en pause ${escapeHtml(formatPauseDate(event.pausedAt))}${event.pausedByName ? ` par ${escapeHtml(event.pausedByName)}` : ""}${rescheduled ? ` · Nouvelle intervention n°${escapeHtml(event.rescheduledEventId)}` : ""}</small></div>${action}<p class="auth-message" data-intervention-pause-message aria-live="polite"></p></section>`;
+        const action = canEditCalendarEvent(event) ? `<div class="calendar-intervention-resume-fields"><label>Nouvelle date *<input type="date" data-resume-intervention-date min="${escapeHtml(toDateString(new Date()))}" value="${escapeHtml(defaultResumeDate(event.date))}" required></label><button type="button" class="secondary-button" data-resume-intervention>Replanifier l’intervention</button></div>` : "";
+        return `<section class="calendar-intervention-pause is-paused"><div><p class="eyebrow">Intervention en pause</p><h3>${escapeHtml(interventionPauseReasonLabel(event.pauseReason))}</h3><p>${escapeHtml(event.pauseNote)}</p><small>Intervention n°${escapeHtml(event.id)} mise en pause ${escapeHtml(formatPauseDate(event.pausedAt))}${event.pausedByName ? ` par ${escapeHtml(event.pausedByName)}` : ""}</small></div>${action}<p class="auth-message" data-intervention-pause-message aria-live="polite"></p></section>`;
     }
-    if (!canRequestInterventionPause() || calendarEventStatus(event) === "cancelled") return "";
-    return `<section class="calendar-intervention-pause"><div><p class="eyebrow">Suivi de l’intervention</p><h3>Mettre l’intervention en pause</h3><p class="muted">Le rendez-vous sera annulé à sa date actuelle et conservé dans l’historique. Il apparaîtra dans « Documents à suivre » jusqu’à sa replanification à une autre date.</p></div><div class="calendar-intervention-pause-fields"><label>Motif<select data-intervention-pause-reason><option value="material_not_received">Matériel non reçu</option><option value="waiting_parts">Pièce en attente</option><option value="technician_absent">Technicien absent</option><option value="waiting_client">Attente du client</option><option value="other">Autre motif</option></select></label><label>Précision<textarea data-intervention-pause-note rows="2" maxlength="1000" placeholder="Ex. livraison annoncée mardi prochain"></textarea></label></div><button type="button" class="secondary-button" data-pause-intervention>Mettre en pause et annuler ce rendez-vous</button><p class="auth-message" data-intervention-pause-message aria-live="polite"></p></section>`;
+    if (!canRequestInterventionPause(event) || calendarEventStatus(event) === "cancelled") return "";
+    return `<section class="calendar-intervention-pause"><div><p class="eyebrow">Suivi de l’intervention</p><h3>Mettre l’intervention en pause</h3><p class="muted">L’intervention conservera son numéro et pourra être déplacée à une nouvelle date après résolution du blocage.</p></div><div class="calendar-intervention-pause-fields"><label>Motif *<select data-intervention-pause-reason required><option value="">Choisir un motif</option><option value="material_not_received">Matériel non reçu</option><option value="waiting_parts">Pièce en attente</option><option value="technician_absent">Technicien absent</option><option value="waiting_client">Attente du client</option><option value="other">Autre motif</option></select></label><label>Justification *<textarea data-intervention-pause-note rows="2" maxlength="1000" required placeholder="Expliquez précisément pourquoi l’intervention est mise en pause"></textarea></label></div><button type="button" class="secondary-button" data-pause-intervention>Mettre l’intervention en pause</button><p class="auth-message" data-intervention-pause-message aria-live="polite"></p></section>`;
 }
 
 function initializeInterventionPauseControls(panel, event) {
@@ -753,10 +753,13 @@ function initializeInterventionPauseControls(panel, event) {
     const resume = panel.querySelector("[data-resume-intervention]");
     const message = panel.querySelector("[data-intervention-pause-message]");
     pause?.addEventListener("click", async () => {
+        const reason = panel.querySelector("[data-intervention-pause-reason]")?.value || "";
+        const note = panel.querySelector("[data-intervention-pause-note]")?.value.trim() || "";
+        if (!reason || !note) { message.textContent = "Choisissez un motif et saisissez une justification."; message.classList.add("error"); return; }
         pause.disabled = true;
         message.textContent = "Mise en pause…";
         message.classList.remove("error");
-        const result = await request(`/api/calendar/events/${encodeURIComponent(event.id)}/pause`, { method: "POST", body: JSON.stringify({ reason: panel.querySelector("[data-intervention-pause-reason]")?.value, note: panel.querySelector("[data-intervention-pause-note]")?.value }) });
+        const result = await request(`/api/calendar/events/${encodeURIComponent(event.id)}/pause`, { method: "POST", body: JSON.stringify({ reason, note }) });
         if (!result.ok) { pause.disabled = false; message.textContent = result.message || "Mise en pause impossible."; message.classList.add("error"); return; }
         Object.assign(event, result.data?.pause || {});
         invalidateCalendarEventsCache();
@@ -792,9 +795,8 @@ function interventionPauseReasonLabel(value) {
     return ({ technician_absent: "Technicien absent", material_not_received: "Matériel non reçu", waiting_client: "Attente du client", waiting_parts: "Pièce en attente", other: "Autre motif" })[value] || "Motif non renseigné";
 }
 
-function canRequestInterventionPause() {
-    return ["admin", "pc_standard", "commercial", "mobile_admin", "technician", "team_lead"].includes(document.body.dataset.role)
-        && !(document.body.dataset.role === "commercial" && document.body.classList.contains("mobile-device"));
+function canRequestInterventionPause(event) {
+    return canManageCalendarSchedule() && canEditCalendarEvent(event);
 }
 
 function canManageCalendarSchedule() {
@@ -940,7 +942,7 @@ function renderCalendarAvailability(form, editedEventId) {
     const candidateTechnicians = new Set(getAssignedTechnicianIds(candidate));
     const sameDayEvents = events
         .filter(event => event.date === candidate.date && String(event.id || "") !== String(editedEventId || ""))
-        .filter(event => !["completed", "cancelled"].includes(calendarEventStatus(event)))
+        .filter(event => !["completed", "cancelled", "paused"].includes(calendarEventStatus(event)))
         .filter(event => !candidateTechnicians.size || getAssignedTechnicianIds(event).some(id => candidateTechnicians.has(id)))
         .sort(compareEventTimes);
     const conflict = findLocalCalendarConflict(sameDayEvents, candidate);
@@ -967,7 +969,7 @@ function renderCalendarAvailability(form, editedEventId) {
 }
 
 function findLocalCalendarConflict(dayEvents, candidate) {
-    if (["completed", "cancelled"].includes(calendarEventStatus(candidate))) return null;
+    if (["completed", "cancelled", "paused"].includes(calendarEventStatus(candidate))) return null;
     if (!candidate.startTime || !candidate.endTime) return dayEvents[0] || null;
     const candidateTechnicians = new Set(getAssignedTechnicianIds(candidate));
     return dayEvents.find(event => {
@@ -1803,6 +1805,7 @@ function renderCalendarEventCard(event, client) {
 }
 
 function calendarEventStatus(event) {
+    if (event?.pausedAt || event?.status === "paused") return "paused";
     if (event?.isCompleted) return "completed";
     return EVENT_STATUS_OPTIONS.some(status => status.id === event?.status) ? event.status : "planned";
 }
@@ -1817,13 +1820,13 @@ function calendarEventClassName(event, extraClass = "") {
 }
 
 function renderCalendarStatusBadge(event) {
-    if (event?.pausedAt) return `<span class="calendar-event-status">${event.rescheduledEventId ? "Annulée · replanifiée" : "Annulée · en pause"}</span>`;
+    if (event?.pausedAt) return '<span class="calendar-event-status">En pause</span>';
     const status = calendarEventStatus(event);
     return status === "planned" ? "" : `<span class="calendar-event-status">${escapeHtml(calendarEventStatusLabel(event))}</span>`;
 }
 
 function calendarEventAccessibleLabel(event, client, date = "") {
-    return [date ? formatPreviewDate(date) : "", event?.pausedAt ? `${event.rescheduledEventId ? "Annulée et replanifiée" : "Annulée en attente de replanification"}, ${interventionPauseReasonLabel(event.pauseReason)}` : calendarEventStatusLabel(event), formatEventTime(event), client.name, client.address, event.title, getAssignedTechnicianNames(event).join(" · "), client.phone].filter(Boolean).join(" · ");
+    return [date ? formatPreviewDate(date) : "", event?.pausedAt ? `En pause, ${interventionPauseReasonLabel(event.pauseReason)}` : calendarEventStatusLabel(event), formatEventTime(event), client.name, client.address, event.title, getAssignedTechnicianNames(event).join(" · "), client.phone].filter(Boolean).join(" · ");
 }
 
 function getEventClientDetails(event) {

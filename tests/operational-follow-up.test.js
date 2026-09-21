@@ -12,6 +12,7 @@ const schema = read("database/schema.sql");
 const migration = read("database/migrations/0024_operational_follow_up.sql");
 const reschedulingMigration = read("database/migrations/0025_intervention_rescheduling.sql");
 const pausedStatusBackfillMigration = read("database/migrations/0026_paused_intervention_status_backfill.sql");
+const singleInterventionPauseMigration = read("database/migrations/0030_single_intervention_pause.sql");
 const styles = read("css/style.css");
 const clients = read("js/clients.js");
 
@@ -47,19 +48,19 @@ test("la date de relance d’un devis est modifiable et persistée", () => {
     assert.match(billingServer, /documentType === "quote" \? sanitizeDate\(value\?\.followUpDate\)/);
 });
 
-test("une intervention mise en pause est annulée puis replanifiée à une autre date", () => {
+test("une intervention mise en pause est replanifiée sous le même identifiant", () => {
     assert.match(migration, /paused_at TIMESTAMPTZ/);
     assert.match(migration, /pause_reason VARCHAR\(40\)/);
     assert.match(calendarServer, /PAUSE_REASONS = new Set/);
     assert.match(calendarServer, /\/api\/calendar\/events\/:eventId\/pause/);
     assert.match(calendarServer, /\/api\/calendar\/events\/:eventId\/resume/);
-    assert.match(calendarServer, /SET event_status='cancelled',paused_at=\$3/);
+    assert.match(calendarServer, /SET event_status='paused',paused_at=\$3/);
+    assert.match(calendarServer, /if \(!note\) return response\.status\(400\)/);
     assert.match(calendarServer, /if \(newDate === source\.date\)/);
-    assert.match(calendarServer, /INSERT INTO depannhome_calendar_events/);
-    assert.match(calendarServer, /rescheduled_from_event_id/);
-    assert.match(calendarServer, /event\.event_type='appointment' AND event\.paused_at IS NOT NULL/);
-    assert.match(calendarServer, /if \(source\.status !== "cancelled"\)/);
-    assert.match(calendarServer, /SET event_status='cancelled',updated_at=NOW\(\) WHERE id=\$1 AND owner_id=\$2/);
+    assert.match(calendarServer, /SET event_date=\$3::date,event_status='planned',paused_at=NULL/);
+    assert.match(calendarServer, /WHERE id=\$1 AND owner_id=\$2 AND event_status='paused'/);
+    assert.match(calendarServer, /synchronizeConnectedAppointment\(ownerId, id\)/);
+    assert.doesNotMatch(calendarServer.slice(calendarServer.indexOf('app.post("/api/calendar/events/:eventId/resume"'), calendarServer.indexOf('app.delete("/api/calendar/events/batch')), /INSERT INTO depannhome_calendar_events/);
     assert.match(calendarServer, /canRequestInterventionPause\(request\.user\)/);
     assert.match(calendarServer, /if \(!canManageCalendarSchedule\(request\.user\)\) return response\.status\(403\).*replanification/);
     assert.match(calendarServer, /EXISTS \(SELECT 1 FROM depannhome_calendar_assignments/);
@@ -69,21 +70,20 @@ test("une intervention mise en pause est annulée puis replanifiée à une autre
     assert.match(calendarClient, /data-resume-intervention-date/);
     assert.match(calendarClient, /Replanifier l’intervention/);
     assert.match(calendarClient, /event\?\.pausedAt \? "is-paused"/);
+    assert.match(calendarClient, /canManageCalendarSchedule\(\) && canEditCalendarEvent\(event\)/);
     assert.match(styles, /\.calendar-intervention-pause/);
     assert.match(styles, /\.calendar-event\.is-paused/);
 });
 
 test("le report complet est conservé dans l’historique client", () => {
     assert.match(reschedulingMigration, /rescheduled_from_event_id BIGINT REFERENCES depannhome_calendar_events\(id\)/);
-    assert.match(calendarServer, /Intervention mise en pause et annulée/);
-    assert.match(calendarServer, /Intervention reprise après pause/);
+    assert.match(calendarServer, /Intervention mise en pause/);
     assert.match(calendarServer, /Intervention replanifiée/);
     assert.match(calendarServer, /appendClientInterventionHistory/);
     assert.match(calendarServer, /mission\.calendar_event_id=event\.id/);
     assert.match(clients, /Pause :/);
-    assert.match(clients, /Replanifiée sous l’intervention/);
-    assert.match(clients, /Reprise de l’intervention/);
-    assert.match(calendarServer, /Cette intervention mise en pause et annulée doit rester dans l’historique du client/);
+    assert.match(clients, /Intervention en pause/);
+    assert.match(calendarServer, /Intervention n°\$\{id\} · Date initiale/);
 });
 
 test("les anciennes interventions en pause sont régularisées avant leur replanification", () => {
@@ -91,5 +91,6 @@ test("les anciennes interventions en pause sont régularisées avant leur replan
     assert.match(pausedStatusBackfillMigration, /event\.event_status IN \('planned', 'confirmed', 'in_progress'\)/);
     assert.match(pausedStatusBackfillMigration, /SET event_status = 'cancelled'/);
     assert.match(pausedStatusBackfillMigration, /resumed\.rescheduled_from_event_id = event\.id/);
-    assert.match(calendarServer, /if \(source\.status === "completed"\)/);
+    assert.match(singleInterventionPauseMigration, /SET event_status='paused'/);
+    assert.match(singleInterventionPauseMigration, /event_status IN \('planned','confirmed','in_progress','completed','cancelled','paused'\)/);
 });
