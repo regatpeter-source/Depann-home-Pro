@@ -50,12 +50,15 @@ export async function offlineAwareFetch(fetchImplementation, input, init = {}) {
     }
 
     if (!isQueueableMutation(method, requestUrl.pathname)) return fetcher(input, init);
+    const operationId = crypto.randomUUID();
+    const operationHeaders = new Headers(init.headers || (typeof input !== "string" ? input.headers : undefined));
+    operationHeaders.set("X-DepannHome-Offline-Operation", operationId);
     if (navigator.onLine !== false) {
-        try { return await fetcher(input, init); }
+        try { return await fetcher(input, { ...init, headers: operationHeaders }); }
         catch { /* La requête sera conservée ci-dessous. */ }
     }
 
-    const operation = await createOperation(requestUrl, method, init);
+    const operation = await createOperation(requestUrl, method, { ...init, headers: operationHeaders }, operationId);
     const stored = await enqueueOperation(operation);
     if (!stored) return jsonResponse({ message: "Le stockage hors ligne est saturé. Libérez de l’espace avant de continuer." }, 507);
     const synthetic = await syntheticPayload(operation);
@@ -128,8 +131,7 @@ async function flushOperations() {
     return { ok: true, sent, pending: 0 };
 }
 
-async function createOperation(url, method, init) {
-    const id = crypto.randomUUID();
+async function createOperation(url, method, init, id = crypto.randomUUID()) {
     const body = await serializeBody(init.body);
     const operation = {
         id,

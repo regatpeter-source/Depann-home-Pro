@@ -652,6 +652,10 @@ export function registerCalendarRoutes(app, requireAuthentication) {
             if (!canModifyCalendarEvent(request.user, source)) { await connection.query("ROLLBACK"); return response.status(403).json({ message: "Cette intervention a été créée par un poste administratif et ne peut pas être replanifiée depuis un poste mobile." }); }
             if (source.status === "completed") { await connection.query("ROLLBACK"); return response.status(409).json({ message: "Cette intervention est terminée et ne peut pas être replanifiée." }); }
             if (source.rescheduledEventId) { await connection.query("ROLLBACK"); return response.status(409).json({ message: `Cette ancienne intervention a déjà été replanifiée sous le numéro ${source.rescheduledEventId}.` }); }
+            if (!source.pausedAt && source.status === "planned" && source.date === newDate) {
+                await connection.query("COMMIT");
+                return response.json({ event: { ...source, pausedAt: null, pauseReason: "", pauseNote: "", pausedByName: "" }, message: "Intervention déjà replanifiée sous le même numéro.", idempotent: true });
+            }
             if (!source.pausedAt) { await connection.query("ROLLBACK"); return response.status(409).json({ message: "Cette intervention n’est plus en pause. Actualisez le planning." }); }
             if (newDate === source.date) { await connection.query("ROLLBACK"); return response.status(400).json({ message: "Choisissez une date différente de la date initiale." }); }
             const conflict = await findCalendarConflict(ownerId, { ...source, date: newDate }, id, connection);

@@ -10,6 +10,9 @@ test("le poste mobile conserve les mutations dans IndexedDB et les rejoue automa
     assert.match(source, /window\.addEventListener\("online", \(\) => scheduleFlush\(250\)\)/);
     assert.match(source, /sort\(\(a, b\) => a\.createdAt - b\.createdAt\)/);
     assert.match(source, /X-DepannHome-Offline-Operation/);
+    assert.match(source, /operationHeaders\.set\("X-DepannHome-Offline-Operation", operationId\)/);
+    assert.match(source, /fetcher\(input, \{ \.\.\.init, headers: operationHeaders \}\)/);
+    assert.match(source, /createOperation\(requestUrl, method, \{ \.\.\.init, headers: operationHeaders \}, operationId\)/);
     assert.match(source, /body instanceof FormData/);
     assert.match(source, /operation\.metadata\.localMediaIds/);
     assert.match(source, /operation\.metadata\.localReportId/);
@@ -29,7 +32,7 @@ test("la page web restaure le dernier contexte mobile et précharge ses ressourc
     const worker = read("service-worker.js");
     assert.match(auth, /OFFLINE_MOBILE_SESSION_KEY/);
     assert.match(auth, /session\.networkError && navigator\.onLine === false/);
-    assert.match(worker, /\.\/js\/offline-sync\.js\?v=2/);
+    assert.match(worker, /\.\/js\/offline-sync\.js\?v=3/);
     assert.match(worker, /\.\/data\/database\.json/);
     assert.match(worker, /depannhome-offline-sync/);
     assert.match(worker, /flushOfflineOperations\(\)/);
@@ -44,4 +47,14 @@ test("le serveur déduplique chaque rejeu et récupère seulement un verrou libr
     assert.match(middleware, /X-DepannHome-Offline-Replayed/);
     assert.match(reports, /request\.get\("X-DepannHome-Offline-Operation"\) && !result\.lock/);
     assert.match(migration, /PRIMARY KEY \(owner_id, user_id, operation_id\)/);
+});
+
+test("une reprise déjà appliquée est rejouable sans conflit ni seconde intervention", () => {
+    const calendar = read("server/calendar.js");
+    const recovery = read("database/migrations/0033_retry_offline_resume_conflicts.sql");
+    assert.match(calendar, /!source\.pausedAt && source\.status === "planned" && source\.date === newDate/);
+    assert.match(calendar, /Intervention déjà replanifiée sous le même numéro/);
+    assert.match(calendar, /idempotent: true/);
+    assert.match(recovery, /response_status=409/);
+    assert.match(recovery, /calendar\/events\/\[0-9\]\+\/resume/);
 });
