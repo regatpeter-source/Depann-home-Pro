@@ -7,6 +7,7 @@ import { normalizeLeakContent } from "../server/leak-report-template.js";
 const serverSource = readFileSync(new URL("../server/technical-reports.js", import.meta.url), "utf8");
 const schemaSource = readFileSync(new URL("../database/schema.sql", import.meta.url), "utf8");
 const originalsMigrationSource = readFileSync(new URL("../database/migrations/0005_technical_report_originals.sql", import.meta.url), "utf8");
+const deliveryMigrationSource = readFileSync(new URL("../database/migrations/0031_document_delivery_tracking.sql", import.meta.url), "utf8");
 const editorSource = readFileSync(new URL("../js/leak-report-wizard.js", import.meta.url), "utf8");
 const deliverySource = readFileSync(new URL("../js/document-delivery.js", import.meta.url), "utf8");
 const clientsServerSource = readFileSync(new URL("../server/clients.js", import.meta.url), "utf8");
@@ -214,14 +215,21 @@ test("an administrative workstation can cancel only an unvalidated draft", () =>
     assert.match(editorSource, /method: "DELETE"/);
 });
 
-test("validated reports return their client archive and open the client delivery workflow", () => {
+test("validated reports track email or hand delivery independently", () => {
     assert.match(serverSource, /archivedAttachment = await archiveDocument/);
     assert.match(serverSource, /attachmentId: archivedAttachment\?\.id/);
     assert.match(serverSource, /return attachment/);
     assert.match(editorSource, /depannhome:open-client/);
-    assert.match(editorSource, /attachments\/\$\{encodeURIComponent\(attachmentId\)\}\/email/);
+    assert.match(editorSource, /\/api\/technical-reports\/\$\{encodeURIComponent\(reportId\)\}\/email/);
+    assert.match(editorSource, /\/api\/technical-reports\/\$\{encodeURIComponent\(reportId\)\}\/hand-delivery/);
+    assert.match(editorSource, /Validé · à remettre/);
+    assert.match(serverSource, /delivery_method='email',delivered_at=NOW\(\)/);
+    assert.match(serverSource, /delivery_method='hand_delivered',delivered_at=NOW\(\)/);
+    assert.match(deliveryMigrationSource, /depannhome_technical_reports_delivery_method_check/);
     assert.match(deliverySource, /Envoyer par e-mail/);
     assert.match(deliverySource, /Imprimer \/ PDF/);
+    assert.match(deliverySource, /remis en main propre/);
+    assert.match(deliverySource, /ne vaut pas encaissement/);
     assert.match(deliverySource, /Plus tard/);
 });
 
@@ -239,7 +247,7 @@ test("a validated report can be reopened for a complete correction and validatio
     assert.match(serverSource, /INSERT INTO depannhome_technical_report_originals/);
     assert.ok(serverSource.indexOf("INSERT INTO depannhome_technical_report_originals") < serverSource.indexOf("SET status='draft', submitted_at=NULL"));
     assert.match(serverSource, /crypto\.createHash\("sha256"\)\.update\(report\.pdfData\)/);
-    assert.match(serverSource, /SET status='draft', submitted_at=NULL, proofread_at=NULL, proofread_by=NULL, proofread_fingerprint='', pdf_data=NULL, pdf_filename='', validated_at=NULL, validated_by=NULL/);
+    assert.match(serverSource, /SET status='draft', submitted_at=NULL, proofread_at=NULL, proofread_by=NULL, proofread_fingerprint='',delivery_method='',delivered_at=NULL,delivered_by=NULL,delivered_by_name='',pdf_data=NULL, pdf_filename='', validated_at=NULL, validated_by=NULL/);
     assert.match(serverSource, /preserveReopenedReportOriginalInClient\(connection, ownerId, report, original/);
     assert.match(serverSource, /String\(item\?\.reportId \|\| ""\) === String\(report\.id\)/);
     assert.match(serverSource, /reportOriginalId: String\(original\.id\)/);

@@ -44,7 +44,7 @@ test("les rapports se recherchent et se paginent globalement avant regroupement 
     const directory = reports.slice(reports.indexOf("function renderDirectory"), reports.indexOf("export function openLeakReportCreation"));
     assert.match(directory, /normalizeText\(`\$\{report\.title\}/);
     assert.match(directory, /paginateItems\(ordered, reportDirectoryPagination\)/);
-    assert.match(directory, /pagination\.items\.filter\(report => statuses\.includes/);
+    assert.match(directory, /pagination\.items\.filter\(matches\)/);
     assert.match(directory, /data-report-page-size/);
 });
 

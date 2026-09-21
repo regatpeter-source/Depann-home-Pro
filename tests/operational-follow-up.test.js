@@ -13,6 +13,7 @@ const migration = read("database/migrations/0024_operational_follow_up.sql");
 const reschedulingMigration = read("database/migrations/0025_intervention_rescheduling.sql");
 const pausedStatusBackfillMigration = read("database/migrations/0026_paused_intervention_status_backfill.sql");
 const singleInterventionPauseMigration = read("database/migrations/0030_single_intervention_pause.sql");
+const deliveryMigration = read("database/migrations/0031_document_delivery_tracking.sql");
 const styles = read("css/style.css");
 const clients = read("js/clients.js");
 
@@ -23,13 +24,15 @@ test("le tableau de bord remplace les clients par les rapports à corriger ou en
     assert.match(navigation, /reports: renderTechnicalReports/);
 });
 
-test("les documents à suivre distinguent les quatre actions opérationnelles", () => {
+test("les documents à suivre distinguent les actions de remise et d’encaissement", () => {
     assert.match(navigation, /Factures à faire/);
     assert.match(navigation, /Factures à envoyer/);
+    assert.match(navigation, /Factures non réglées/);
     assert.match(navigation, /Devis à relancer/);
     assert.match(navigation, /Interventions à reprendre/);
     assert.match(navigation, /document\.status \|\| ""\)\.toLowerCase\(\) === "accepted"/);
-    assert.match(navigation, /document\.issuedAt && !document\.isEmailSent/);
+    assert.match(navigation, /document\.issuedAt && !document\.deliveredAt/);
+    assert.match(navigation, /Number\(document\.outstandingAmount\) > 0\.009/);
     assert.match(navigation, /document\.followUpDate <= today/);
     assert.match(navigation, /\/api\/calendar\/paused/);
     assert.match(navigation, /followUp\.pausedInterventions\[0\]/);
@@ -37,6 +40,16 @@ test("les documents à suivre distinguent les quatre actions opérationnelles", 
     assert.match(navigation, /dashboard-kpi-breakdown/);
     assert.doesNotMatch(navigation, /<section class="dashboard-follow-up"/);
     assert.match(styles, /\.dashboard-kpi-breakdown/);
+});
+
+test("la remise en main propre supprime seulement le rappel d’envoi", () => {
+    assert.match(deliveryMigration, /delivery_method IN \('','email','hand_delivered'\)/);
+    assert.match(deliveryMigration, /delivered_by BIGINT REFERENCES depannhome_users/);
+    assert.match(billingServer, /\/api\/billing\/documents\/:documentId\/hand-delivery/);
+    assert.match(billingServer, /delivery_method='hand_delivered',delivered_at=NOW\(\),delivered_by=\$3,delivered_by_name=\$4/);
+    const handDeliveryRoute = billingServer.slice(billingServer.indexOf('app.post("/api/billing/documents/:documentId/hand-delivery"'), billingServer.indexOf('app.post("/api/billing/documents/:documentId/issue"'));
+    assert.doesNotMatch(handDeliveryRoute, /depannhome_accounting_settlements|INSERT INTO .*settlement/);
+    assert.match(billingClient, /Cette action ne vaut pas encaissement/);
 });
 
 test("la date de relance d’un devis est modifiable et persistée", () => {

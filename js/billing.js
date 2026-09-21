@@ -5,7 +5,7 @@ import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { renderPlatformAnnouncement } from "./platform-announcement.js?v=1";
 import { clearSearch, createInfo, getContainer, setPage } from "./ui.js?v=44";
-import { openDocumentDeliveryChoice } from "./document-delivery.js?v=1";
+import { openDocumentDeliveryChoice } from "./document-delivery.js?v=2";
 import { pageSizeOptions, paginateItems, renderBusinessPagination } from "./pagination.js?v=1";
 import { renderLivePdfPreview } from "./pdf-live-preview.js?v=2";
 
@@ -180,11 +180,11 @@ function renderOverview(panel, profilePanel) {
     panel.querySelector("[data-billing-action=new-quote]")?.addEventListener("click", () => { if (!isAccountant()) openNewDocument("quote"); });
     panel.querySelector("[data-billing-action=new-invoice]").addEventListener("click", () => { if (!isAccountant()) openNewDocument("invoice"); });
     panel.querySelector("[data-billing-action=open-leak-reports]")?.addEventListener("click", async () => {
-        const { renderLeakReportWizard } = await import("./leak-report-wizard.js?v=58");
+        const { renderLeakReportWizard } = await import("./leak-report-wizard.js?v=59");
         renderLeakReportWizard();
     });
     panel.querySelector("[data-billing-action=new-leak-report]")?.addEventListener("click", async () => {
-        const { openLeakReportCreation } = await import("./leak-report-wizard.js?v=58");
+        const { openLeakReportCreation } = await import("./leak-report-wizard.js?v=59");
         openLeakReportCreation();
     });
     panel.querySelector("[data-billing-action=download-quote-template]")?.addEventListener("click", openQuoteTemplateDownload);
@@ -619,6 +619,7 @@ function renderReadOnlyDocument(panel, document) {
     const available = Math.max(0, remaining - pending);
     const acquittanceActions = document.hasAcquittance ? '<div class="form-actions"><button type="button" class="secondary-button" data-open-acquittance>Voir la copie acquittée</button><button type="button" class="secondary-button" data-email-acquittance>Envoyer la copie acquittée</button></div>' : "";
     const paymentBlock = document.documentType === "invoice" && document.issuedAt ? `<section class="procedure-section billing-settlement-section"><h3>Règlement</h3><p><strong>${remaining <= 0.009 ? "Facture réglée" : settled > 0 ? "Facture partiellement réglée" : "Facture à encaisser"}</strong> · Confirmé ${escapeHtml(formatMoney(settled))} · Solde ${escapeHtml(formatMoney(remaining))}${pending ? ` · En attente de contrôle ${escapeHtml(formatMoney(pending))}` : ""}${document.latestPaymentMethod ? ` · Dernier règlement confirmé : ${escapeHtml(document.latestPaymentMethod)} le ${escapeHtml(formatDate(document.latestPaymentDate))}` : ""}</p>${pending ? '<p class="auth-message">Les chèques et virements déclarés ne sont pas comptabilisés avant vérification bancaire par un administrateur sur PC.</p>' : ""}${acquittanceActions}${available > 0.009 && canRecordInvoiceSettlement(document) ? `<form class="form-grid" data-invoice-settlement><label>Montant reçu *<input name="amount" type="number" min="0.01" max="${available.toFixed(2)}" step="0.01" required value="${available.toFixed(2)}"></label><label>Mode de règlement *<select name="method" required>${PAYMENT_METHODS.map(method => `<option>${escapeHtml(method)}</option>`).join("")}</select><small>Chèque et virement : déclaration en attente. Espèces et carte : encaissement immédiat.</small></label><label>Date *<input name="date" type="date" required value="${today()}"></label><label>Référence<input name="reference" maxlength="160" placeholder="Obligatoire pour chèque ou virement"></label><label class="form-wide">Note<input name="notes" maxlength="1000" placeholder="Ex. Règlement reçu sur place"></label><div class="form-actions"><button class="primary-button">Enregistrer ou déclarer le règlement</button></div><p class="auth-message form-wide" data-settlement-message></p></form>` : ""}</section>` : "";
+    const deliveryBlock = document.documentType === "invoice" && document.issuedAt ? `<section class="procedure-section"><h3>Remise du document</h3>${document.deliveredAt ? `<p><strong>${document.deliveryMethod === "hand_delivered" ? "Remise en main propre" : "Envoyée par e-mail"}</strong> le ${escapeHtml(formatDate(document.deliveredAt))}${document.deliveredByName ? ` par ${escapeHtml(document.deliveredByName)}` : ""}.</p>` : `<p class="auth-message">Cette facture n’a pas encore été marquée comme remise au client.</p>${!isAccountant() ? '<button type="button" class="secondary-button" data-hand-deliver-document>Marquer « remise en main propre »</button>' : ""}`}</section>` : "";
     panel.innerHTML = `
         <div class="billing-read-only-document">
             <div class="form-heading"><div><p class="eyebrow">Consultation uniquement</p><h2>${escapeHtml(DOCUMENT_TYPES[document.documentType])} ${escapeHtml(document.documentNumber)}</h2></div><div class="calendar-form-actions">${canCorrect ? '<button type="button" class="secondary-button" data-create-correction="replacement">Créer une facture rectificative</button><button type="button" class="secondary-button" data-create-correction="amendment">Créer un avenant</button>' : ""}${document.documentType === "quote" && (linkedInvoice || !isAccountant()) ? linkedInvoice ? `<button type="button" class="secondary-button" data-view-linked-invoice="${escapeHtml(linkedInvoice.id)}">Voir la facture</button>` : '<button type="button" class="secondary-button" id="createInvoiceFromQuote">Créer la facture</button>' : ""}<button type="button" class="secondary-button" id="closeBillingDocument">Fermer</button></div></div>
@@ -627,6 +628,7 @@ function renderReadOnlyDocument(panel, document) {
             <div class="billing-read-only-lines">${document.lines.map(line => `<div><span>${escapeHtml(line.description)}</span><strong>${escapeHtml(String(line.quantity))} × ${escapeHtml(formatMoney(line.unitPrice))}</strong><b>${escapeHtml(formatMoney(lineTotal(line)))}</b></div>`).join("")}</div>
             <div class="billing-totals" id="billingReadOnlyTotals"></div>
             ${paymentBlock}
+            ${deliveryBlock}
             ${document.notes ? `<section class="procedure-section"><h3>Notes / conditions</h3><p>${escapeHtml(document.notes)}</p></section>` : ""}
         </div>`;
     renderTotals(panel.querySelector("#billingReadOnlyTotals"), document.lines, document.financialData);
@@ -637,6 +639,7 @@ function renderReadOnlyDocument(panel, document) {
     panel.querySelector("[data-invoice-settlement]")?.addEventListener("submit", event => submitInvoiceSettlement(event, document));
     panel.querySelector("[data-open-acquittance]")?.addEventListener("click", () => openBillingAcquittance(document.id));
     panel.querySelector("[data-email-acquittance]")?.addEventListener("click", () => emailBillingAcquittance(document));
+    panel.querySelector("[data-hand-deliver-document]")?.addEventListener("click", () => markBillingDocumentHandDelivered(document));
 }
 
 async function submitInvoiceSettlement(event, document) {
@@ -680,8 +683,21 @@ async function issueBillingInvoice(document, clients = [], form = null) {
             const response = await fetch(`/api/billing/documents/${encodeURIComponent(document.id)}/email`, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ recipient: email }) });
             const data = await response.json().catch(() => null);
             if (!response.ok) throw new Error(data?.message || "Envoi de la facture impossible.");
+            await renderBilling({ documentId: document.id });
+        },
+        markHandDelivered: async () => {
+            const result = await apiRequest(`/api/billing/documents/${encodeURIComponent(document.id)}/hand-delivery`, { method: "POST", body: "{}" });
+            if (!result.ok) throw new Error(result.message || "Remise en main propre impossible.");
+            await renderBilling({ documentId: document.id });
         }
     });
+}
+
+async function markBillingDocumentHandDelivered(document) {
+    if (!confirm(`Confirmer la remise en main propre de la facture ${document.documentNumber} ? Cette action ne vaut pas encaissement.`)) return;
+    const result = await apiRequest(`/api/billing/documents/${encodeURIComponent(document.id)}/hand-delivery`, { method: "POST", body: "{}" });
+    if (!result.ok) return alert(result.message || "Remise en main propre impossible.");
+    await renderBilling({ documentId: document.id });
 }
 
 function correctionKindLabel(kind) { return kind === "amendment" ? "Avenant" : kind === "replacement" ? "Facture rectificative" : "Correction"; }
@@ -917,6 +933,12 @@ function renderDocumentList(panel) {
             const client = getSearchableClients().find(item => normalizeText(item.name) === normalizeText(billingDocument.customerName));
             const recipient = client?.email || "";
             item.innerHTML = `<div><p class="eyebrow">${billingDocument.correctionKind && billingDocument.correctionKind !== "none" ? escapeHtml(correctionKindLabel(billingDocument.correctionKind)) : DOCUMENT_TYPES[billingDocument.documentType]} · ${escapeHtml(billingDocument.customerType)}</p><h3>${escapeHtml(billingDocument.documentNumber)}</h3><p>${escapeHtml(billingDocument.customerName)}</p><small>${escapeHtml(formatDate(billingDocument.issueDate))} · ${escapeHtml(documentStatusLabel(billingDocument.status))}${billingDocument.isEmailSent ? " · Envoyée / immuable" : ""}${billingDocument.correctionSourceNumber ? ` · Corrige ${escapeHtml(billingDocument.correctionSourceNumber)}` : ""}${billingDocument.quoteReference ? ` · Réf. devis ${escapeHtml(billingDocument.quoteReference)}` : ""} · <span class="billing-accounting-status ${billingDocument.isAccounted ? "is-accounted" : ""}">${escapeHtml(accountingLabel)}</span></small></div><div class="billing-document-amount"><strong>${formatMoney(totals.ttc)}</strong><small>TTC</small></div><div class="billing-document-actions">${billingDocument.documentType === "invoice" && !isTechnician() && !isAccountant() ? `<button type="button" class="secondary-button" data-accounting="${billingDocument.isAccounted ? "false" : "true"}">${billingDocument.isAccounted ? "Décomptabiliser" : "Comptabiliser"}</button>` : ""}${billingDocument.documentType === "quote" && !isAccountant() ? linkedInvoice ? `<button type="button" class="secondary-button" data-view-linked-invoice="${escapeHtml(linkedInvoice.id)}">Voir la facture</button>` : '<button type="button" class="secondary-button" data-create-invoice>Créer la facture</button>' : ""}<button type="button" class="secondary-button" data-open-document>${isTechnician() || isAccountant() || billingDocument.isEmailSent ? "Consulter" : "Ouvrir"}</button><button type="button" class="secondary-button" data-pdf>PDF / Imprimer</button>${isAccountant() ? "" : `<button type="button" class="secondary-button" data-email ${recipient ? "" : "disabled title=\"Ajoutez l’e-mail du client dans sa fiche pour envoyer le document.\""}>Envoyer par e-mail</button>`}</div>`;
+            if (billingDocument.documentType === "invoice" && billingDocument.issuedAt) {
+                const deliveryState = document.createElement("small");
+                deliveryState.className = "billing-document-delivery";
+                deliveryState.textContent = billingDocument.deliveredAt ? billingDocument.deliveryMethod === "hand_delivered" ? "Remise en main propre" : "Envoyée par e-mail" : "À remettre au client";
+                item.firstElementChild.appendChild(deliveryState);
+            }
             item.querySelector("[data-open-document]").addEventListener("click", () => { activeDocument = normalizeDocument(billingDocument); renderBilling(); });
             item.querySelector("[data-create-invoice]")?.addEventListener("click", () => createInvoiceFromQuote(billingDocument));
             item.querySelector("[data-view-linked-invoice]")?.addEventListener("click", event => viewBillingDocument(event.currentTarget.dataset.viewLinkedInvoice));

@@ -1,7 +1,7 @@
 import { ROUTES, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=135";
 import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=231";
 import { openCreatorPartnerRequest, openCreatorRequestNotification, renderCreatorConsole } from "./creator.js?v=170";
-import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=210";
+import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=211";
 import { renderAccounting } from "./accounting.js?v=29";
 import { renderPurchases } from "./purchases.js?v=128";
 import { renderGroupActivation, renderGroupWorkspace } from "./groups.js?v=9";
@@ -11,7 +11,7 @@ import { renderPartnerSandbox } from "./partner-sandbox.js?v=3";
 import { renderPartnerConnections } from "./partner-connections.js?v=50";
 import { renderCompanyEmailWorkspace, renderPartnerEmailSettings } from "./partner-email-settings.js?v=29";
 import { renderDataImportTool } from "./data-imports.js?v=5";
-import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=58";
+import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=59";
 import { getFirstUnreadClientId, refreshClientMessageAlert, refreshVisibleClientMessages } from "./messages.js?v=107";
 import { getSearchableClients, renderClients } from "./clients.js?v=172";
 import { synchronizeClients } from "./client-sync.js?v=132";
@@ -1165,20 +1165,21 @@ function bindDashboardMetricActions(panel) {
 
 async function loadDashboardOperationalMetrics(panel) {
     const requests = [];
-    const followUp = { invoicesToCreate: [], invoicesToSend: [], quotesToFollow: [], pausedInterventions: [] };
+    const followUp = { invoicesToCreate: [], invoicesToSend: [], unpaidInvoices: [], quotesToFollow: [], pausedInterventions: [] };
     if (canAccessRoute(ROUTES.billing)) requests.push(loadDashboardJson("/api/billing").then(data => {
         const documents = Array.isArray(data?.documents) ? data.documents : [];
         const invoicedQuoteIds = new Set(documents.filter(document => document.documentType === "invoice" && !["cancelled", "rejected"].includes(String(document.status || "").toLowerCase())).map(document => String(document.sourceQuoteId || "")).filter(Boolean));
         const today = toDashboardDate(new Date());
         followUp.invoicesToCreate = documents.filter(document => document.documentType === "quote" && String(document.status || "").toLowerCase() === "accepted" && !invoicedQuoteIds.has(String(document.id)));
-        followUp.invoicesToSend = documents.filter(document => document.documentType === "invoice" && document.issuedAt && !document.isEmailSent && String(document.status || "").toLowerCase() !== "cancelled");
+        followUp.invoicesToSend = documents.filter(document => document.documentType === "invoice" && document.issuedAt && !document.deliveredAt && String(document.status || "").toLowerCase() !== "cancelled");
+        followUp.unpaidInvoices = documents.filter(document => document.documentType === "invoice" && document.issuedAt && Number(document.outstandingAmount) > 0.009 && String(document.status || "").toLowerCase() !== "cancelled");
         followUp.quotesToFollow = documents.filter(document => document.documentType === "quote" && document.followUpDate && document.followUpDate <= today && !["accepted", "rejected", "cancelled"].includes(String(document.status || "").toLowerCase()) && !invoicedQuoteIds.has(String(document.id)));
         refreshDashboardFollowUp(panel, followUp);
     }).catch(() => updateDashboardMetric(panel, "billing", "—", "Facturation momentanément indisponible")));
     if (canAccessRoute(ROUTES.technicalReports)) requests.push(loadDashboardJson("/api/technical-reports").then(data => {
         const reports = Array.isArray(data?.reports) ? data.reports : [];
         const toCorrect = reports.filter(report => report.status === "submitted").length;
-        const toSend = reports.filter(report => report.status === "ready_to_send").length;
+        const toSend = reports.filter(report => report.status === "ready_to_send" || report.status === "validated" && !report.deliveredAt).length;
         updateDashboardMetric(panel, "reports", String(toCorrect + toSend), `${toCorrect} à corriger · ${toSend} à envoyer`);
     }).catch(() => updateDashboardMetric(panel, "reports", "—", "Rapports momentanément indisponibles")));
     if (canAccessRoute(ROUTES.calendar)) requests.push(loadDashboardJson("/api/calendar/paused").then(data => {
@@ -1207,6 +1208,7 @@ function refreshDashboardFollowUp(panel, followUp, warning = "") {
     const groups = [
         ["invoice-create", "Factures à faire", followUp.invoicesToCreate],
         ["invoice-send", "Factures à envoyer", followUp.invoicesToSend],
+        ["invoice-unpaid", "Factures non réglées", followUp.unpaidInvoices],
         ["quote-follow", "Devis à relancer", followUp.quotesToFollow],
         ["intervention-resume", "Interventions à reprendre", followUp.pausedInterventions]
     ];
@@ -1218,7 +1220,7 @@ function refreshDashboardFollowUp(panel, followUp, warning = "") {
         return intervention ? renderCalendar({ date: new Date(`${intervention.date}T12:00:00`), event: intervention }) : renderCalendar();
     }));
     if (warning) section.title = warning;
-    updateDashboardMetric(panel, "billing", String(total), `${followUp.invoicesToCreate.length} facture${followUp.invoicesToCreate.length > 1 ? "s" : ""} à faire · ${followUp.pausedInterventions.length} intervention${followUp.pausedInterventions.length > 1 ? "s" : ""} à reprendre`);
+    updateDashboardMetric(panel, "billing", String(total), `${followUp.unpaidInvoices.length} facture${followUp.unpaidInvoices.length > 1 ? "s" : ""} non réglée${followUp.unpaidInvoices.length > 1 ? "s" : ""} · ${followUp.pausedInterventions.length} intervention${followUp.pausedInterventions.length > 1 ? "s" : ""} à reprendre`);
 }
 
 async function loadDashboardJson(url) {

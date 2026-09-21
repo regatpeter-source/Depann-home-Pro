@@ -93,7 +93,7 @@ test("quotes, invoices and credits cannot be deleted from the UI or API", () => 
 });
 
 test("issuing an invoice makes legal data immutable while email remains operational", () => {
-    assert.match(billingServerSource, /SET is_email_sent=TRUE, sent_at=COALESCE\(sent_at,NOW\(\)\)/);
+    assert.match(billingServerSource, /SET is_email_sent=TRUE,sent_at=COALESCE\(sent_at,NOW\(\)\),delivery_method='email'/);
     assert.match(billingServerSource, /issued_at IS NULL AND is_accounted=FALSE/);
     assert.match(billingServerSource, /depannhome_protect_issued_billing_document/);
     assert.match(billingSource, /document\.documentType === "invoice" && document\.issuedAt/);

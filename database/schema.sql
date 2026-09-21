@@ -604,6 +604,10 @@ CREATE TABLE IF NOT EXISTS depannhome_billing_documents (
     follow_up_date DATE,
     is_email_sent BOOLEAN NOT NULL DEFAULT FALSE,
     sent_at TIMESTAMPTZ,
+    delivery_method VARCHAR(20) NOT NULL DEFAULT '' CHECK (delivery_method IN ('','email','hand_delivered')),
+    delivered_at TIMESTAMPTZ,
+    delivered_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+    delivered_by_name VARCHAR(160) NOT NULL DEFAULT '',
     is_accounted BOOLEAN NOT NULL DEFAULT FALSE,
     accounted_at DATE,
     appointment_id BIGINT,
@@ -643,6 +647,10 @@ ALTER TABLE depannhome_billing_documents
     ADD COLUMN IF NOT EXISTS source_quote_id BIGINT,
     ADD COLUMN IF NOT EXISTS is_email_sent BOOLEAN NOT NULL DEFAULT FALSE,
     ADD COLUMN IF NOT EXISTS sent_at TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS delivery_method VARCHAR(20) NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS delivered_at TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS delivered_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+    ADD COLUMN IF NOT EXISTS delivered_by_name VARCHAR(160) NOT NULL DEFAULT '',
     ADD COLUMN IF NOT EXISTS correction_source_id BIGINT,
     ADD COLUMN IF NOT EXISTS correction_kind VARCHAR(20) NOT NULL DEFAULT 'none',
     ADD COLUMN IF NOT EXISTS quote_reference VARCHAR(80) NOT NULL DEFAULT '';
@@ -658,6 +666,9 @@ ALTER TABLE depannhome_billing_documents
     ADD COLUMN IF NOT EXISTS structured_sha256 CHAR(64),
     ADD COLUMN IF NOT EXISTS pdf_data BYTEA,
     ADD COLUMN IF NOT EXISTS pdf_sha256 VARCHAR(64);
+ALTER TABLE depannhome_billing_documents DROP CONSTRAINT IF EXISTS depannhome_billing_documents_delivery_method_check;
+ALTER TABLE depannhome_billing_documents ADD CONSTRAINT depannhome_billing_documents_delivery_method_check CHECK (delivery_method IN ('','email','hand_delivered'));
+UPDATE depannhome_billing_documents SET delivery_method='email',delivered_at=COALESCE(delivered_at,sent_at),delivered_by_name=CASE WHEN delivered_by_name='' THEN 'Envoi historique' ELSE delivered_by_name END WHERE is_email_sent=TRUE AND delivery_method='';
 
 CREATE INDEX IF NOT EXISTS depannhome_billing_documents_accounting_idx
     ON depannhome_billing_documents (owner_id, document_type, is_accounted, issue_date DESC);
@@ -1549,6 +1560,9 @@ CREATE TABLE IF NOT EXISTS depannhome_technical_reports (
     status VARCHAR(30) NOT NULL DEFAULT 'draft', -- draft, submitted (terminé à corriger), in_correction, ready_to_send, validated
     submitted_at TIMESTAMPTZ, validated_at TIMESTAMPTZ,
     validated_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+    delivery_method VARCHAR(20) NOT NULL DEFAULT '' CHECK (delivery_method IN ('','email','hand_delivered')),
+    delivered_at TIMESTAMPTZ, delivered_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+    delivered_by_name VARCHAR(160) NOT NULL DEFAULT '',
     proofread_at TIMESTAMPTZ, proofread_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
     proofread_fingerprint VARCHAR(64) NOT NULL DEFAULT '',
     pdf_data BYTEA, pdf_filename VARCHAR(255) NOT NULL DEFAULT '', document_mime_type VARCHAR(150) NOT NULL DEFAULT 'application/pdf', created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -1558,6 +1572,9 @@ ALTER TABLE depannhome_technical_reports ADD COLUMN IF NOT EXISTS proofread_at T
 ALTER TABLE depannhome_technical_reports ADD COLUMN IF NOT EXISTS proofread_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL;
 ALTER TABLE depannhome_technical_reports ADD COLUMN IF NOT EXISTS proofread_fingerprint VARCHAR(64) NOT NULL DEFAULT '';
 ALTER TABLE depannhome_technical_reports ADD COLUMN IF NOT EXISTS document_mime_type VARCHAR(150) NOT NULL DEFAULT 'application/pdf';
+ALTER TABLE depannhome_technical_reports ADD COLUMN IF NOT EXISTS delivery_method VARCHAR(20) NOT NULL DEFAULT '', ADD COLUMN IF NOT EXISTS delivered_at TIMESTAMPTZ, ADD COLUMN IF NOT EXISTS delivered_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL, ADD COLUMN IF NOT EXISTS delivered_by_name VARCHAR(160) NOT NULL DEFAULT '';
+ALTER TABLE depannhome_technical_reports DROP CONSTRAINT IF EXISTS depannhome_technical_reports_delivery_method_check;
+ALTER TABLE depannhome_technical_reports ADD CONSTRAINT depannhome_technical_reports_delivery_method_check CHECK (delivery_method IN ('','email','hand_delivered'));
 UPDATE depannhome_technical_reports report
 SET created_by_name=COALESCE(
     NULLIF(report.content->'snapshot'->>'technicianName',''),

@@ -177,6 +177,10 @@ export async function initializeBilling() {
             follow_up_date DATE,
             is_email_sent BOOLEAN NOT NULL DEFAULT FALSE,
             sent_at TIMESTAMPTZ,
+            delivery_method VARCHAR(20) NOT NULL DEFAULT '',
+            delivered_at TIMESTAMPTZ,
+            delivered_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+            delivered_by_name VARCHAR(160) NOT NULL DEFAULT '',
             is_accounted BOOLEAN NOT NULL DEFAULT FALSE,
             accounted_at DATE,
             appointment_id BIGINT,
@@ -218,6 +222,10 @@ export async function initializeBilling() {
         ADD COLUMN IF NOT EXISTS source_quote_id BIGINT,
         ADD COLUMN IF NOT EXISTS is_email_sent BOOLEAN NOT NULL DEFAULT FALSE,
         ADD COLUMN IF NOT EXISTS sent_at TIMESTAMPTZ,
+        ADD COLUMN IF NOT EXISTS delivery_method VARCHAR(20) NOT NULL DEFAULT '',
+        ADD COLUMN IF NOT EXISTS delivered_at TIMESTAMPTZ,
+        ADD COLUMN IF NOT EXISTS delivered_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+        ADD COLUMN IF NOT EXISTS delivered_by_name VARCHAR(160) NOT NULL DEFAULT '',
         ADD COLUMN IF NOT EXISTS correction_source_id BIGINT,
         ADD COLUMN IF NOT EXISTS correction_kind VARCHAR(20) NOT NULL DEFAULT 'none',
         ADD COLUMN IF NOT EXISTS quote_reference VARCHAR(80) NOT NULL DEFAULT ''
@@ -237,6 +245,9 @@ export async function initializeBilling() {
     await database.query("ALTER TABLE depannhome_billing_documents ADD CONSTRAINT depannhome_billing_documents_vat_regime_check CHECK (vat_regime IN ('standard','franchise'))");
     await database.query("ALTER TABLE depannhome_billing_documents DROP CONSTRAINT IF EXISTS depannhome_billing_documents_correction_kind_check");
     await database.query("ALTER TABLE depannhome_billing_documents ADD CONSTRAINT depannhome_billing_documents_correction_kind_check CHECK (correction_kind IN ('none','replacement','amendment'))");
+    await database.query("ALTER TABLE depannhome_billing_documents DROP CONSTRAINT IF EXISTS depannhome_billing_documents_delivery_method_check");
+    await database.query("ALTER TABLE depannhome_billing_documents ADD CONSTRAINT depannhome_billing_documents_delivery_method_check CHECK (delivery_method IN ('','email','hand_delivered'))");
+    await database.query("UPDATE depannhome_billing_documents SET delivery_method='email',delivered_at=COALESCE(delivered_at,sent_at),delivered_by_name=CASE WHEN delivered_by_name='' THEN 'Envoi historique' ELSE delivered_by_name END WHERE is_email_sent=TRUE AND delivery_method=''");
     await database.query(`
         UPDATE depannhome_billing_documents document
         SET created_by_name = COALESCE(NULLIF(creator.full_name, ''), creator.username, '')
@@ -312,7 +323,7 @@ export function registerBillingRoutes(app, requireAuthentication) {
             database.query(`
                 SELECT depannhome_billing_documents.id, document_type AS "documentType", document_number AS "documentNumber", client_id AS "clientId", customer_type AS "customerType",
                     customer_name AS "customerName", customer_address AS "customerAddress", TO_CHAR(issue_date, 'YYYY-MM-DD') AS "issueDate",
-                    TO_CHAR(due_date, 'YYYY-MM-DD') AS "dueDate", status, TO_CHAR(follow_up_date, 'YYYY-MM-DD') AS "followUpDate", is_email_sent AS "isEmailSent", sent_at AS "sentAt", is_accounted AS "isAccounted",
+                    TO_CHAR(due_date, 'YYYY-MM-DD') AS "dueDate", status, TO_CHAR(follow_up_date, 'YYYY-MM-DD') AS "followUpDate", is_email_sent AS "isEmailSent", sent_at AS "sentAt", delivery_method AS "deliveryMethod", delivered_at AS "deliveredAt", delivered_by_name AS "deliveredByName", is_accounted AS "isAccounted",
                     TO_CHAR(accounted_at, 'YYYY-MM-DD') AS "accountedAt", appointment_id AS "appointmentId", source_quote_id AS "sourceQuoteId", correction_source_id AS "correctionSourceId", correction_kind AS "correctionKind", (SELECT source.document_number FROM depannhome_billing_documents source WHERE source.id=depannhome_billing_documents.correction_source_id) AS "correctionSourceNumber", quote_reference AS "quoteReference", vat_regime AS "vatRegime", issuer_tax_number AS "issuerTaxNumber", legal_data AS "legalData", issued_at AS "issuedAt", (structured_data IS NOT NULL) AS "hasStructuredData", lines, notes, financial_data AS "financialData",
                     depannhome_billing_documents.created_at AS "createdAt", depannhome_billing_documents.updated_at AS "updatedAt",
                     COALESCE(NULLIF(depannhome_billing_documents.created_by_name, ''), NULLIF(creator.full_name, ''), creator.username, '') AS "creatorName"
@@ -392,7 +403,11 @@ export function registerBillingRoutes(app, requireAuthentication) {
         const settlementsByDocument = new Map(settlementsResult.rows.map(item => [String(item.documentId), item]));
         const pendingByDocument = new Map(pendingResult.rows.map(item => [String(item.documentId), Number(item.amount) || 0]));
         const acquittanceDocuments = new Set(acquittanceResult.rows.map(item => String(item.documentId)));
-        const documents = documentsResult.rows.map(document => ({ ...document, settledAmount: Number(settlementsByDocument.get(String(document.id))?.amount) || 0, pendingPaymentAmount: pendingByDocument.get(String(document.id)) || 0, hasAcquittance: acquittanceDocuments.has(String(document.id)), latestPaymentMethod: settlementsByDocument.get(String(document.id))?.latestPaymentMethod || "", latestPaymentDate: settlementsByDocument.get(String(document.id))?.latestPaymentDate || "" }));
+        const documents = documentsResult.rows.map(document => {
+            const settledAmount = Number(settlementsByDocument.get(String(document.id))?.amount) || 0;
+            const outstandingAmount = billingDocumentOutstanding(document, settledAmount);
+            return { ...document, settledAmount, outstandingAmount, paymentStatus: outstandingAmount <= 0.009 ? "paid" : settledAmount > 0 ? "partial" : "unpaid", pendingPaymentAmount: pendingByDocument.get(String(document.id)) || 0, hasAcquittance: acquittanceDocuments.has(String(document.id)), latestPaymentMethod: settlementsByDocument.get(String(document.id))?.latestPaymentMethod || "", latestPaymentDate: settlementsByDocument.get(String(document.id))?.latestPaymentDate || "" };
+        });
         response.json({ profile: { ...emptyProfile(), ...(profileResult.rows[0] || {}) }, templates: templatesResult.rows, documents, aids: aidsResult.rows, insuranceDeductibles: deductibleResult.rows, financialDashboard: annualFinancialDashboard, financialDashboards: { period: financialPeriod, monthly: monthlyFinancialDashboard, annual: annualFinancialDashboard } });
     }));
 
@@ -559,7 +574,7 @@ export function registerBillingRoutes(app, requireAuthentication) {
             database.query(`
                 SELECT id, document_type AS "documentType", document_number AS "documentNumber", client_id AS "clientId", customer_type AS "customerType",
                     customer_name AS "customerName", customer_address AS "customerAddress", created_by_name AS "creatorName", TO_CHAR(issue_date, 'YYYY-MM-DD') AS "issueDate",
-                    TO_CHAR(due_date, 'YYYY-MM-DD') AS "dueDate", status, TO_CHAR(follow_up_date, 'YYYY-MM-DD') AS "followUpDate", is_email_sent AS "isEmailSent", sent_at AS "sentAt", is_accounted AS "isAccounted",
+                    TO_CHAR(due_date, 'YYYY-MM-DD') AS "dueDate", status, TO_CHAR(follow_up_date, 'YYYY-MM-DD') AS "followUpDate", is_email_sent AS "isEmailSent", sent_at AS "sentAt", delivery_method AS "deliveryMethod", delivered_at AS "deliveredAt", delivered_by_name AS "deliveredByName", is_accounted AS "isAccounted",
                     TO_CHAR(accounted_at, 'YYYY-MM-DD') AS "accountedAt", appointment_id AS "appointmentId", source_quote_id AS "sourceQuoteId", correction_source_id AS "correctionSourceId", correction_kind AS "correctionKind", (SELECT source.document_number FROM depannhome_billing_documents source WHERE source.id=depannhome_billing_documents.correction_source_id) AS "correctionSourceNumber", quote_reference AS "quoteReference", vat_regime AS "vatRegime", issuer_tax_number AS "issuerTaxNumber", legal_data AS "legalData", issued_at AS "issuedAt", (structured_data IS NOT NULL) AS "hasStructuredData", lines, notes, financial_data AS "financialData"
                                 FROM depannhome_billing_documents
                                 WHERE id = $1 AND owner_id = $2
@@ -689,7 +704,7 @@ export function registerBillingRoutes(app, requireAuthentication) {
             const locked = await database.query("SELECT document_type AS \"documentType\" FROM depannhome_billing_documents WHERE id=$1 AND owner_id=$2 FOR UPDATE", [billingExport.document.id, getAccountOwnerId(request)]);
             if (!locked.rows[0]) { await database.query("ROLLBACK"); return response.status(404).json({ message: "Document introuvable." }); }
             await sendDocumentEmail({ recipient, recipientName: billingExport.document.customerName, documentLabel: `${type} ${billingExport.document.documentNumber}`, attachment: { filename: output.filename, content: output.buffer, contentType: output.mimeType } });
-            if (locked.rows[0].documentType === "invoice") await database.query("UPDATE depannhome_billing_documents SET is_email_sent=TRUE, sent_at=COALESCE(sent_at,NOW()), status='sent', updated_at=NOW() WHERE id=$1", [billingExport.document.id]);
+            if (locked.rows[0].documentType === "invoice") await database.query("UPDATE depannhome_billing_documents SET is_email_sent=TRUE,sent_at=COALESCE(sent_at,NOW()),delivery_method='email',delivered_at=NOW(),delivered_by=$2,delivered_by_name=$3,status='sent',updated_at=NOW() WHERE id=$1", [billingExport.document.id, request.user.sub, cleanText(request.user.fullName || request.user.username, 160)]);
             await database.query("COMMIT");
         } catch (error) {
             await database.query("ROLLBACK");
@@ -708,6 +723,22 @@ export function registerBillingRoutes(app, requireAuthentication) {
             actorName: request.user.fullName || request.user.username
         });
         response.json({ message: `${type} envoyé(e) par e-mail.`, isEmailSent: billingExport.document.documentType === "invoice" });
+    }));
+
+    app.post("/api/billing/documents/:documentId/hand-delivery", requireAuthentication, requireTechnicianBillingAccess, asyncHandler(async (request, response) => {
+        const documentId = positiveId(request.params.documentId);
+        const ownerId = getAccountOwnerId(request);
+        if (!documentId) return response.status(400).json({ message: "Facture invalide." });
+        if (!await findAccessibleBillingDocument(getPool(), ownerId, documentId, request)) return response.status(404).json({ message: "Facture introuvable ou non accessible." });
+        const actorName = cleanText(request.user.fullName || request.user.username || "Utilisateur", 160);
+        const { rows } = await getPool().query(`
+            UPDATE depannhome_billing_documents
+            SET delivery_method='hand_delivered',delivered_at=NOW(),delivered_by=$3,delivered_by_name=$4,status='sent',updated_at=NOW()
+            WHERE id=$1 AND owner_id=$2 AND document_type='invoice' AND issued_at IS NOT NULL AND status<>'cancelled'
+            RETURNING delivered_at AS "deliveredAt"
+        `, [documentId, ownerId, request.user.sub, actorName]);
+        if (!rows[0]) return response.status(409).json({ message: "Seule une facture émise et active peut être marquée comme remise." });
+        response.json({ message: "Facture marquée comme remise en main propre.", deliveryMethod: "hand_delivered", deliveredAt: rows[0].deliveredAt, deliveredByName: actorName });
     }));
 
     app.post("/api/billing/documents/:documentId/issue", requireAuthentication, requireBillingIssuanceAccess, asyncHandler(async (request, response) => {
@@ -1343,6 +1374,13 @@ export function buildBillingFinancialDashboard(documents, settlements = [], purc
     const grossProfitEstimateHt = turnoverHt - purchasesHt;
     const collected = Object.hasOwn(period, "collected") ? Number(period.collected) || 0 : [...settledByDocument.values()].reduce((sum, amount) => sum + amount, 0);
     return { invoicesHt: roundFinancial(invoicesHt), invoicesTtc: roundFinancial(invoicesTtc), turnoverHt: roundFinancial(turnoverHt), creditsHt: roundFinancial(creditsHt), creditsTtc: roundFinancial(creditsTtc), purchasesHt: roundFinancial(purchasesHt), grossProfitEstimateHt: roundFinancial(grossProfitEstimateHt), collected: roundFinancial(collected), outstanding: roundFinancial(outstanding), invoicesCount, creditsCount };
+}
+function billingDocumentOutstanding(document, settledAmount = 0) {
+    if (document?.documentType !== "invoice" || ["draft", "cancelled", "rejected"].includes(String(document?.status || "").toLowerCase())) return 0;
+    const totals = calculateDocumentAccountingTotals(document.lines || [], document.financialData || {});
+    const aids = Array.isArray(document.financialData?.aids) ? document.financialData.aids : [];
+    const aidAmount = Math.min(totals.ttc, aids.reduce((sum, aid) => sum + (aid.calculationMode === "percentage" ? totals.ht * Number(aid.amount || 0) / 100 : Number(aid.amount || 0)), 0));
+    return roundFinancial(Math.max(0, totals.ttc - aidAmount - (Number(settledAmount) || 0)));
 }
 function sanitizeBillingFinancialPeriod(value) {
     const now = new Date();

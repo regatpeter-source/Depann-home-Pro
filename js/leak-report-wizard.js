@@ -2,7 +2,7 @@ import { ROUTES } from "./config.js?v=118";
 import { clearSearch, getContainer, setPage } from "./ui.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { acquireReportLock, forceReleaseReportLock, heartbeatReportLock, releaseReportLock } from "./collaboration.js?v=8";
-import { openDocumentDeliveryChoice } from "./document-delivery.js?v=1";
+import { openDocumentDeliveryChoice } from "./document-delivery.js?v=2";
 import { renderLivePdfPreview } from "./pdf-live-preview.js?v=2";
 import { pageSizeOptions, paginateItems, renderBusinessPagination } from "./pagination.js?v=1";
 
@@ -85,8 +85,8 @@ export async function renderLeakReportWizard(reportId = 0, appointmentId = 0) {
 
 function renderDirectory(shell) {
     shell.classList.add("report-directory");
-    const groups = [["À rédiger", ["draft", "in_correction"]], ["Terminés à corriger", ["submitted"]], ["À envoyer", ["ready_to_send"]], ["Envoyés", ["validated"]]];
-    const reportCard = report => `<article><div><strong>${escapeHtml(report.title)}</strong><p class="report-directory-client"><b>${escapeHtml(report.clientName || "Client non renseigné")}</b>${report.claimNumber ? ` · Sinistre n° ${escapeHtml(report.claimNumber)}` : ""}${report.insurance ? ` · Assurance ${escapeHtml(report.insurance)}` : ""}</p><p>${escapeHtml(statusLabel(report.status))} · ${report.appointmentId ? `Intervention n° ${escapeHtml(report.appointmentId)}` : "Rapport historique"} · ${escapeHtml(formatDate(report.reportDate))}</p></div><button class="secondary-button" data-open-report="${escapeHtml(report.id)}">${report.status === "validated" ? "Consulter" : "Ouvrir"}</button></article>`;
+    const groups = [["À rédiger", report => ["draft", "in_correction"].includes(report.status)], ["Terminés à corriger", report => report.status === "submitted"], ["À envoyer", report => report.status === "ready_to_send" || report.status === "validated" && !report.deliveredAt], ["Remis", report => report.status === "validated" && Boolean(report.deliveredAt)]];
+    const reportCard = report => `<article><div><strong>${escapeHtml(report.title)}</strong><p class="report-directory-client"><b>${escapeHtml(report.clientName || "Client non renseigné")}</b>${report.claimNumber ? ` · Sinistre n° ${escapeHtml(report.claimNumber)}` : ""}${report.insurance ? ` · Assurance ${escapeHtml(report.insurance)}` : ""}</p><p>${escapeHtml(reportDeliveryStatusLabel(report))} · ${report.appointmentId ? `Intervention n° ${escapeHtml(report.appointmentId)}` : "Rapport historique"} · ${escapeHtml(formatDate(report.reportDate))}</p></div><button class="secondary-button" data-open-report="${escapeHtml(report.id)}">${report.status === "validated" ? "Consulter" : "Ouvrir"}</button></article>`;
     shell.innerHTML = `<header class="report-directory-heading"><div><p class="eyebrow">Rapports terrain</p><h2>Rapports de recherche de fuite</h2><p class="muted">Chaque rapport est créé depuis une intervention rattachée à un dossier client.</p></div><button type="button" class="secondary-button" data-create-report>Nouveau rapport de recherche de fuite</button></header><div class="report-directory-filters"><label>Recherche<input type="search" data-report-search placeholder="Client, titre, sinistre, assurance"></label><label>Afficher<select data-report-page-size aria-label="Nombre de rapports par page">${pageSizeOptions(reportDirectoryPagination.pageSize, "rapports")}</select></label></div><section class="report-directory-list"></section><nav class="business-pagination" data-report-pagination aria-label="Pages des rapports"></nav>`;
     shell.querySelector("[data-create-report]").addEventListener("click", openLeakReportCreation);
     const list = shell.querySelector(".report-directory-list");
@@ -96,7 +96,7 @@ function renderDirectory(shell) {
         const filtered = reports.filter(report => !query || normalizeText(`${report.title} ${report.clientName} ${report.claimNumber} ${report.insurance} ${report.appointmentId}`).includes(query));
         const ordered = [...filtered].sort((first, second) => new Date(second.updatedAt || second.reportDate || 0) - new Date(first.updatedAt || first.reportDate || 0));
         const pagination = paginateItems(ordered, reportDirectoryPagination);
-        list.innerHTML = filtered.length ? groups.map(([title, statuses]) => { const items = pagination.items.filter(report => statuses.includes(report.status)); return items.length ? `<section class="report-directory-group"><h3>${title}</h3>${items.map(reportCard).join("")}</section>` : ""; }).join("") : `<p class="muted">${reports.length ? "Aucun rapport ne correspond à cette recherche." : "Aucun rapport accessible. Créez votre premier rapport depuis une intervention."}</p>`;
+        list.innerHTML = filtered.length ? groups.map(([title, matches]) => { const items = pagination.items.filter(matches); return items.length ? `<section class="report-directory-group"><h3>${title}</h3>${items.map(reportCard).join("")}</section>` : ""; }).join("") : `<p class="muted">${reports.length ? "Aucun rapport ne correspond à cette recherche." : "Aucun rapport accessible. Créez votre premier rapport depuis une intervention."}</p>`;
         list.querySelectorAll("[data-open-report]").forEach(button => button.addEventListener("click", () => renderLeakReportWizard(button.dataset.openReport)));
         renderBusinessPagination(shell.querySelector("[data-report-pagination]"), pagination, { singular: "rapport", plural: "rapports", onPageChange: page => { reportDirectoryPagination.page = page; renderReports(); list.scrollIntoView({ behavior: "smooth", block: "start" }); } });
     };
@@ -192,7 +192,7 @@ function renderEditor(shell) {
         <header class="report-editor-header">
             <div class="report-editor-identity"><strong>${escapeHtml(snapshot.clientName || current.clientName || "Client non renseigné")}</strong><span>${escapeHtml(snapshot.clientAddress || current.clientAddress || current.appointmentLocation || "Adresse non renseignée")}</span></div>
             <div class="report-editor-meta"><span>${sourceLabel} n° ${escapeHtml(snapshot.interventionNumber || current.appointmentId || "—")}</span><span>${snapshot.insuranceDossier ? `Réf. dossier assureur ${escapeHtml(snapshot.insuranceDossier)}` : "Réf. dossier assureur non renseignée"}</span><span>${snapshot.claimNumber ? `Sinistre n° ${escapeHtml(snapshot.claimNumber)}` : "Sinistre non renseigné"}</span><span>${escapeHtml(snapshot.technicianName || current.technicianName || "Technicien")}</span></div>
-            <span class="report-editor-status ${escapeHtml(current.status)}">${escapeHtml(statusLabel(current.status))}</span>
+            <span class="report-editor-status ${escapeHtml(current.status)}">${escapeHtml(reportDeliveryStatusLabel(current))}</span>
             <button type="button" class="secondary-button report-editor-home-button" data-report-home>Accueil</button>
         </header>
         ${lockBanner()}
@@ -209,7 +209,8 @@ function renderEditor(shell) {
             ${write ? '<span class="report-autosave" data-save-state>Enregistré automatiquement</span>' : ""}
             ${write && ["draft", "in_correction"].includes(current.status) ? '<button type="button" class="secondary-button report-primary-action" data-submit-report>Terminer</button>' : ""}
             ${write && current.status === "submitted" && canProofreadReport() ? '<button type="button" class="secondary-button report-primary-action" data-proofread-report>Corriger</button>' : ""}
-            ${ownsLock() && current.status === "ready_to_send" && canFinalizeReport() ? '<button type="button" class="secondary-button report-primary-action" data-validate-report>Valider définitivement et envoyer</button>' : ""}
+            ${ownsLock() && current.status === "ready_to_send" && canFinalizeReport() ? '<button type="button" class="secondary-button report-primary-action" data-validate-report>Valider définitivement</button>' : ""}
+            ${current.status === "validated" && !current.deliveredAt && canFinalizeReport() ? '<button type="button" class="secondary-button report-primary-action" data-deliver-report>Remettre le rapport</button>' : ""}
             ${editable() && isAdministrator() && ["submitted", "in_correction"].includes(current.status) ? '<button type="button" class="secondary-button" data-request-correction>Demander une correction</button>' : ""}
             ${canReopenReport() && current.status === "validated" ? '<button type="button" class="secondary-button" data-reopen-report>Remettre en brouillon</button>' : ""}
             ${ownsLock() && current.status === "draft" && canCancelReport() ? '<button type="button" class="danger-button" data-cancel-report>Annuler la création du rapport</button>' : ""}
@@ -314,6 +315,7 @@ function bindEditor(shell, moduleKey) {
     shell.querySelector("[data-proofread-report]")?.addEventListener("click", () => openReportProofreading(shell));
     shell.querySelector("[data-submit-report]")?.addEventListener("click", () => submitReport(shell));
     shell.querySelector("[data-validate-report]")?.addEventListener("click", () => validateReport(shell));
+    shell.querySelector("[data-deliver-report]")?.addEventListener("click", () => openReportDeliveryChoice(current.id, current.content?.snapshot?.clientEmail || "", shell));
     shell.querySelector("[data-request-correction]")?.addEventListener("click", () => requestCorrection(shell));
     shell.querySelector("[data-reopen-report]")?.addEventListener("click", () => reopenReport(shell));
     shell.querySelector("[data-cancel-report]")?.addEventListener("click", () => cancelReport(shell));
@@ -728,7 +730,7 @@ async function submitReport(shell) {
 
 async function validateReport(shell) {
     if (current.status !== "ready_to_send" || !canFinalizeReport()) return alert("Ce rapport doit d’abord être corrigé sur un poste administratif.");
-    if (!confirm("Valider définitivement le rapport, générer son PDF officiel et l’envoyer ?")) return;
+    if (!confirm("Valider définitivement le rapport et générer son PDF officiel ? Vous choisirez ensuite son mode de remise.")) return;
     const result = await api(`/api/technical-reports/${encodeURIComponent(current.id)}/validate`, { method: "POST" });
     if (!result.ok) return alert(result.message || "Validation impossible.");
     await completeValidatedReport(result.data || {});
@@ -745,22 +747,30 @@ async function finalizePreview(shell) {
 async function completeValidatedReport(validation) {
     const reportId = validation.reportId || current.id;
     const clientId = validation.clientId || current.clientId || "";
-    const attachmentId = validation.attachmentId || "";
     const recipient = current.content?.snapshot?.clientEmail || "";
     await leaveReport();
     const { synchronizeClients } = await import("./client-sync.js?v=132");
     await synchronizeClients();
     window.dispatchEvent(new CustomEvent("depannhome:technical-report-validated", { detail: { reportId, clientId, suppressNavigation: true } }));
     if (clientId) window.dispatchEvent(new CustomEvent("depannhome:open-client", { detail: { clientId } }));
+    openReportDeliveryChoice(reportId, recipient);
+}
+
+function openReportDeliveryChoice(reportId, recipient = "", shell = null) {
     openDocumentDeliveryChoice({
         label: `Rapport de recherche de fuite n° ${reportId}`,
         recipient,
         printUrl: `/api/technical-reports/${encodeURIComponent(reportId)}/pdf`,
         sendEmail: async email => {
-            if (!clientId || !attachmentId) throw new Error("Le rapport n’est pas disponible dans la fiche client pour l’envoi.");
-            const response = await fetch(`/api/clients/${encodeURIComponent(clientId)}/attachments/${encodeURIComponent(attachmentId)}/email`, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ recipient: email }) });
+            const response = await fetch(`/api/technical-reports/${encodeURIComponent(reportId)}/email`, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ recipient: email }) });
             const data = await response.json().catch(() => null);
             if (!response.ok) throw new Error(data?.message || "Envoi du rapport impossible.");
+            if (shell && current && String(current.id) === String(reportId)) { Object.assign(current, data); renderEditor(shell); }
+        },
+        markHandDelivered: async () => {
+            const result = await api(`/api/technical-reports/${encodeURIComponent(reportId)}/hand-delivery`, { method: "POST", body: "{}" });
+            if (!result.ok) throw new Error(result.message || "Remise en main propre impossible.");
+            if (shell && current && String(current.id) === String(reportId)) { Object.assign(current, result.data); renderEditor(shell); }
         }
     });
 }
@@ -911,7 +921,8 @@ function canProofreadReport() { return canAdjustPdfLayout() && ["admin", "pc_sta
 function canFinalizeReport() { return canProofreadReport(); }
 function canReopenReport() { return canProofreadReport(); }
 function canCancelReport() { return canProofreadReport() && originals.length === 0; }
-function statusLabel(value) { return ({ draft: "Brouillon", submitted: "Rapport terminé à corriger", in_correction: "Correction demandée", ready_to_send: "À envoyer", validated: "Envoyé" })[value] || "En cours"; }
+function statusLabel(value) { return ({ draft: "Brouillon", submitted: "Rapport terminé à corriger", in_correction: "Correction demandée", ready_to_send: "À valider", validated: "Validé" })[value] || "En cours"; }
+function reportDeliveryStatusLabel(report) { if (report.status !== "validated") return statusLabel(report.status); return report.deliveredAt ? report.deliveryMethod === "hand_delivered" ? "Remis en main propre" : "Envoyé par e-mail" : "Validé · à remettre"; }
 function formatDate(value) { return value ? new Intl.DateTimeFormat("fr-FR").format(new Date(`${value}T12:00:00`)) : ""; }
 function formatDateTime(value) { return value ? new Intl.DateTimeFormat("fr-FR", { dateStyle: "short", timeStyle: "short" }).format(new Date(value)) : "date inconnue"; }
 function showFailure(root, message) { root.innerHTML = `<section class="client-panel"><p class="auth-message error">${escapeHtml(message || "Impossible de charger les rapports.")}</p></section>`; }
