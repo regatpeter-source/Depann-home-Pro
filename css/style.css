@@ -4615,7 +4615,7 @@ body.mobile-device[data-role="technician"] .calendar-list-day{
 
 .billing-line{
     display:grid;
-    grid-template-columns:1.2fr 2fr .65fr .8fr 1fr .75fr 1fr auto auto;
+    grid-template-columns:minmax(130px,1.2fr) minmax(64px,.65fr) minmax(72px,.8fr) minmax(82px,1fr) minmax(70px,.75fr) minmax(90px,1fr) auto auto;
     gap:8px;
     align-items:center;
     padding:10px;
@@ -4625,7 +4625,8 @@ body.mobile-device[data-role="technician"] .calendar-list-day{
 }
 
 .billing-line input,
-.billing-line select{
+.billing-line select,
+.billing-line textarea{
     width:100%;
     min-width:0;
     padding:9px 10px;
@@ -4634,10 +4635,22 @@ body.mobile-device[data-role="technician"] .calendar-list-day{
     background:#fff;
 }
 
+.billing-line textarea[data-field="description"]{
+    grid-column:2/-1;
+    grid-row:1;
+    min-height:76px;
+    line-height:1.4;
+    resize:vertical;
+    font:inherit;
+}
+
 .billing-line-template-picker{
     display:grid;
     gap:6px;
     min-width:0;
+    grid-column:1;
+    grid-row:1/span 2;
+    align-self:stretch;
 }
 
 .billing-line-template-picker input[type="search"]{
@@ -6381,8 +6394,9 @@ footer{
     }
 
     .billing-line-template-picker,
-    .billing-line input[data-field="description"]{
+    .billing-line textarea[data-field="description"]{
         grid-column:1/-1;
+        grid-row:auto;
     }
 
     .billing-line-total{

@@ -710,7 +710,7 @@ function createLineEditor(line, index, billingDocument, rerender) {
     const templates = availableBillingTemplates();
     item.innerHTML = `
         <div class="billing-line-template-picker"><input type="search" data-billing-template-search aria-label="Rechercher une ligne préenregistrée" placeholder="Rechercher une ligne…"><select data-billing-template-select aria-label="Ligne préenregistrée">${renderBillingTemplateOptions(templates)}</select></div>
-        <input data-field="description" aria-label="Description" maxlength="500" placeholder="Description" value="${escapeHtml(line.description)}">
+        <textarea data-field="description" aria-label="Description" maxlength="500" placeholder="Description détaillée de la prestation" rows="3">${escapeHtml(line.description)}</textarea>
         <input data-field="quantity" aria-label="Quantité" type="number" min="0.001" step="0.001" value="${escapeHtml(line.quantity)}">
         <input data-field="unit" aria-label="Unité" maxlength="40" value="${escapeHtml(line.unit)}">
         <input data-field="unitPrice" aria-label="Prix unitaire HT" type="number" min="0" step="0.01" value="${escapeHtml(line.unitPrice)}">

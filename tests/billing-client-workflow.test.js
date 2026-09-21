@@ -9,6 +9,7 @@ const calendarSource = readFileSync(new URL("../js/calendar.js", import.meta.url
 const billingServerSource = readFileSync(new URL("../server/billing.js", import.meta.url), "utf8");
 const pdfPreviewSource = readFileSync(new URL("../js/pdf-live-preview.js", import.meta.url), "utf8");
 const accountingSource = readFileSync(new URL("../js/accounting.js", import.meta.url), "utf8");
+const styles = readFileSync(new URL("../css/style.css", import.meta.url), "utf8");
 
 test("selecting a known billing customer stores its client id", () => {
     assert.match(billingSource, /form\.querySelector\("\[name=clientId\]"\)\.value = client\?\.id \|\| ""/);
@@ -69,6 +70,12 @@ test("saved billing lines are sectioned and searchable by keyword", () => {
     assert.match(billingServerSource, /section VARCHAR\(80\) NOT NULL DEFAULT 'Autres'/);
     assert.match(billingServerSource, /SELECT id, section, label, description/);
     assert.match(billingServerSource, /INSERT INTO depannhome_billing_templates \(owner_id, section, label/);
+});
+
+test("la désignation d’une ligne libre dispose d’un éditeur large et multiligne", () => {
+    assert.match(billingSource, /<textarea data-field="description"[^>]+rows="3">/);
+    assert.match(styles, /\.billing-line textarea\[data-field="description"\]\{[^}]*grid-column:2\/-1;[^}]*min-height:76px;/s);
+    assert.match(styles, /\.billing-line textarea\[data-field="description"\]\{\s*grid-column:1\/-1;\s*grid-row:auto;/s);
 });
 
 test("saved quotes and invoices open the client before offering email or print", () => {
