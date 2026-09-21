@@ -130,7 +130,7 @@ export async function initializeCalendar() {
         UPDATE depannhome_calendar_events event
         SET event_status='paused',updated_at=NOW()
         WHERE event.event_type='appointment' AND event.paused_at IS NOT NULL
-            AND event.event_status IN ('planned','confirmed','in_progress')
+            AND event.event_status IN ('planned','confirmed','in_progress','cancelled')
             AND NOT EXISTS (
                 SELECT 1 FROM depannhome_calendar_events resumed
                 WHERE resumed.owner_id=event.owner_id AND resumed.rescheduled_from_event_id=event.id
@@ -639,23 +639,27 @@ export function registerCalendarRoutes(app, requireAuthentication) {
                     event.color,event.event_type AS "eventType",event.event_origin AS "eventOrigin",event.partner_connection_id AS "partnerConnectionId",
                     event.partner_mission_id AS "partnerMissionId",event.notes,event.pause_reason AS "pauseReason",event.pause_note AS "pauseNote",
                     event.created_by AS "createdBy",event.created_device_type AS "createdDeviceType",event.event_status AS status,
+                    event.paused_at AS "pausedAt",
+                    (SELECT resumed.id FROM depannhome_calendar_events resumed WHERE resumed.owner_id=event.owner_id AND resumed.rescheduled_from_event_id=event.id) AS "rescheduledEventId",
                     COALESCE((SELECT array_agg(assignment.technician_id ORDER BY assignment.is_primary DESC,assignment.technician_id) FROM depannhome_calendar_assignments assignment WHERE assignment.event_id=event.id),'{}'::bigint[]) AS "assignedTechnicianIds"
                 FROM depannhome_calendar_events event
-                WHERE event.id=$1 AND event.owner_id=$2 AND event.event_type='appointment' AND event.paused_at IS NOT NULL AND event.event_status='paused'
+                WHERE event.id=$1 AND event.owner_id=$2 AND event.event_type='appointment'
                     AND ($3::boolean OR EXISTS (SELECT 1 FROM depannhome_calendar_assignments assignment WHERE assignment.event_id=event.id AND assignment.technician_id=$4))
                 FOR UPDATE
             `, [id, ownerId, canManageCalendarSchedule(request.user) && !isDedicatedMobileSession(request.user), request.user.sub]);
             const source = rows[0];
-            if (!source) { await connection.query("ROLLBACK"); return response.status(404).json({ message: "Intervention en pause introuvable ou non autorisée." }); }
+            if (!source) { await connection.query("ROLLBACK"); return response.status(404).json({ message: "Intervention introuvable ou non autorisée." }); }
             if (!canModifyCalendarEvent(request.user, source)) { await connection.query("ROLLBACK"); return response.status(403).json({ message: "Cette intervention a été créée par un poste administratif et ne peut pas être replanifiée depuis un poste mobile." }); }
             if (source.status === "completed") { await connection.query("ROLLBACK"); return response.status(409).json({ message: "Cette intervention est terminée et ne peut pas être replanifiée." }); }
+            if (source.rescheduledEventId) { await connection.query("ROLLBACK"); return response.status(409).json({ message: `Cette ancienne intervention a déjà été replanifiée sous le numéro ${source.rescheduledEventId}.` }); }
+            if (!source.pausedAt) { await connection.query("ROLLBACK"); return response.status(409).json({ message: "Cette intervention n’est plus en pause. Actualisez le planning." }); }
             if (newDate === source.date) { await connection.query("ROLLBACK"); return response.status(400).json({ message: "Choisissez une date différente de la date initiale." }); }
             const conflict = await findCalendarConflict(ownerId, { ...source, date: newDate }, id, connection);
             if (conflict) { await connection.query("ROLLBACK"); return response.status(409).json({ message: conflictMessage(conflict) }); }
             const { rows: resumedRows } = await connection.query(`
                 UPDATE depannhome_calendar_events
                 SET event_date=$3::date,event_status='planned',paused_at=NULL,pause_reason='',pause_note='',paused_by=NULL,paused_by_name='',updated_at=NOW()
-                WHERE id=$1 AND owner_id=$2 AND event_status='paused'
+                WHERE id=$1 AND owner_id=$2 AND paused_at IS NOT NULL AND event_status<>'completed'
                 RETURNING id,TO_CHAR(event_date,'YYYY-MM-DD') AS date,event_status AS status
             `, [id, ownerId, newDate]);
             const resumed = resumedRows[0];

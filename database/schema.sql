@@ -1393,7 +1393,7 @@ UPDATE depannhome_calendar_events event
 SET event_status = 'paused', updated_at = NOW()
 WHERE event.event_type = 'appointment'
     AND event.paused_at IS NOT NULL
-    AND event.event_status IN ('planned', 'confirmed', 'in_progress')
+    AND event.event_status IN ('planned', 'confirmed', 'in_progress', 'cancelled')
     AND NOT EXISTS (
         SELECT 1 FROM depannhome_calendar_events resumed
         WHERE resumed.owner_id = event.owner_id

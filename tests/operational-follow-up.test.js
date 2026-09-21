@@ -13,6 +13,7 @@ const migration = read("database/migrations/0024_operational_follow_up.sql");
 const reschedulingMigration = read("database/migrations/0025_intervention_rescheduling.sql");
 const pausedStatusBackfillMigration = read("database/migrations/0026_paused_intervention_status_backfill.sql");
 const singleInterventionPauseMigration = read("database/migrations/0030_single_intervention_pause.sql");
+const legacyCancelledPauseRecoveryMigration = read("database/migrations/0032_legacy_cancelled_pause_recovery.sql");
 const deliveryMigration = read("database/migrations/0031_document_delivery_tracking.sql");
 const styles = read("css/style.css");
 const clients = read("js/clients.js");
@@ -73,7 +74,7 @@ test("une intervention mise en pause est replanifiée sous le même identifiant"
     assert.match(calendarServer, /if \(!note\) return response\.status\(400\)/);
     assert.match(calendarServer, /if \(newDate === source\.date\)/);
     assert.match(calendarServer, /SET event_date=\$3::date,event_status='planned',paused_at=NULL/);
-    assert.match(calendarServer, /WHERE id=\$1 AND owner_id=\$2 AND event_status='paused'/);
+    assert.match(calendarServer, /WHERE id=\$1 AND owner_id=\$2 AND paused_at IS NOT NULL AND event_status<>'completed'/);
     assert.match(calendarServer, /synchronizeConnectedAppointment\(ownerId, id\)/);
     assert.doesNotMatch(calendarServer.slice(calendarServer.indexOf('app.post("/api/calendar/events/:eventId/resume"'), calendarServer.indexOf('app.delete("/api/calendar/events/batch')), /INSERT INTO depannhome_calendar_events/);
     assert.match(calendarServer, /canRequestInterventionPause\(request\.user\)/);
@@ -108,4 +109,9 @@ test("les anciennes interventions en pause sont régularisées avant leur replan
     assert.match(pausedStatusBackfillMigration, /resumed\.rescheduled_from_event_id = event\.id/);
     assert.match(singleInterventionPauseMigration, /SET event_status='paused'/);
     assert.match(singleInterventionPauseMigration, /event_status IN \('planned','confirmed','in_progress','completed','cancelled','paused'\)/);
+    assert.match(legacyCancelledPauseRecoveryMigration, /event\.event_status='cancelled'/);
+    assert.match(legacyCancelledPauseRecoveryMigration, /resumed\.rescheduled_from_event_id=event\.id/);
+    assert.match(calendarServer, /event\.paused_at AS "pausedAt"/);
+    assert.match(calendarServer, /if \(!source\.pausedAt\).*status\(409\)/);
+    assert.match(calendarServer, /if \(source\.rescheduledEventId\).*status\(409\)/);
 });
