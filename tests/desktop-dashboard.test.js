@@ -7,7 +7,7 @@ const style = readFileSync(new URL("../css/style.css", import.meta.url), "utf8")
 
 test("le tableau de bord PC affiche des indicateurs réels selon les droits", () => {
     assert.match(navigation, /renderDashboardMetricCards\(calendarEnabled\)/);
-    assert.match(navigation, /Rapports à corriger \/ envoyer/);
+    assert.match(navigation, /Rapports à rédiger \/ corriger \/ envoyer/);
     assert.match(navigation, /Documents à suivre/);
     assert.match(navigation, /Factures à faire/);
     assert.match(navigation, /Factures à envoyer/);

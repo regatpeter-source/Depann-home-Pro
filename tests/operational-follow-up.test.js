@@ -17,9 +17,10 @@ const deliveryMigration = read("database/migrations/0031_document_delivery_track
 const styles = read("css/style.css");
 const clients = read("js/clients.js");
 
-test("le tableau de bord remplace les clients par les rapports à corriger ou envoyer", () => {
-    assert.match(navigation, /Rapports à corriger \/ envoyer/);
-    assert.match(navigation, /report\.status === "submitted"/);
+test("le tableau de bord regroupe les rapports à rédiger, corriger ou envoyer", () => {
+    assert.match(navigation, /Rapports à rédiger \/ corriger \/ envoyer/);
+    assert.match(navigation, /report\.status === "draft"/);
+    assert.match(navigation, /"submitted", "in_correction"/);
     assert.match(navigation, /report\.status === "ready_to_send"/);
     assert.match(navigation, /reports: renderTechnicalReports/);
 });
@@ -38,6 +39,7 @@ test("les documents à suivre distinguent les actions de remise et d’encaissem
     assert.match(navigation, /followUp\.pausedInterventions\[0\]/);
     assert.match(navigation, /renderCalendar\(\{ date: new Date/);
     assert.match(navigation, /dashboard-kpi-breakdown/);
+    assert.doesNotMatch(navigation, /facture\$\{followUp\.unpaidInvoices\.length > 1/);
     assert.doesNotMatch(navigation, /<section class="dashboard-follow-up"/);
     assert.match(styles, /\.dashboard-kpi-breakdown/);
 });

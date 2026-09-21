@@ -1147,14 +1147,14 @@ async function renderHome() {
 function renderDashboardMetricCards(calendarEnabled) {
     const cards = [
         ...(calendarEnabled ? [["calendar", "Planning", "—", "Chargement des interventions…"]] : []),
-        ...(canAccessRoute(ROUTES.technicalReports) ? [["reports", "Rapports à corriger / envoyer", "—", "Chargement des rapports…"]] : canAccessRoute(ROUTES.clients) ? [["clients", "Clients actifs", String(getSearchableClients().length), "Dossiers disponibles"]] : []),
+        ...(canAccessRoute(ROUTES.technicalReports) ? [["reports", "Rapports à rédiger / corriger / envoyer", "—", "Chargement des rapports…"]] : canAccessRoute(ROUTES.clients) ? [["clients", "Clients actifs", String(getSearchableClients().length), "Dossiers disponibles"]] : []),
         ...(canAccessRoute(ROUTES.billing) ? [["billing", "Documents à suivre", "—", "Chargement de la facturation…"]] : []),
         ...(canAccessRoute(ROUTES.partnerMissions) ? [["missions", "Missions à valider", "—", "Chargement des missions…"]] : []),
         ...(canAccessRoute(ROUTES.purchases) ? [["purchases", "Achats à comptabiliser", "—", "Chargement des achats…"]] : [])
     ];
     if (!cards.length) return "";
     return `<section class="dashboard-kpi-grid" aria-label="Indicateurs opérationnels">${cards.map(([key, label, value, detail]) => key === "billing"
-        ? `<article class="dashboard-kpi-card dashboard-kpi-card-follow-up" data-dashboard-metric="${key}"><button type="button" class="dashboard-kpi-card-main" data-dashboard-action="${key}"><span>${label}</span><strong data-dashboard-value>${value}</strong><small data-dashboard-detail>${detail}</small><em>Ouvrir →</em></button><div class="dashboard-kpi-breakdown" data-dashboard-follow-up aria-label="Détail des documents à suivre"><span>Analyse en cours…</span></div></article>`
+        ? `<article class="dashboard-kpi-card dashboard-kpi-card-follow-up" data-dashboard-metric="${key}"><button type="button" class="dashboard-kpi-card-main" data-dashboard-action="${key}"><span>${label}</span><strong data-dashboard-value>${value}</strong><em>Ouvrir →</em></button><div class="dashboard-kpi-breakdown" data-dashboard-follow-up aria-label="Détail des documents à suivre"><span>Analyse en cours…</span></div></article>`
         : `<button type="button" class="dashboard-kpi-card" data-dashboard-metric="${key}" data-dashboard-action="${key}"><span>${label}</span><strong data-dashboard-value>${value}</strong><small data-dashboard-detail>${detail}</small><em>Ouvrir →</em></button>`).join("")}</section>`;
 }
 
@@ -1178,9 +1178,10 @@ async function loadDashboardOperationalMetrics(panel) {
     }).catch(() => updateDashboardMetric(panel, "billing", "—", "Facturation momentanément indisponible")));
     if (canAccessRoute(ROUTES.technicalReports)) requests.push(loadDashboardJson("/api/technical-reports").then(data => {
         const reports = Array.isArray(data?.reports) ? data.reports : [];
-        const toCorrect = reports.filter(report => report.status === "submitted").length;
+        const toWrite = reports.filter(report => report.status === "draft").length;
+        const toCorrect = reports.filter(report => ["submitted", "in_correction"].includes(report.status)).length;
         const toSend = reports.filter(report => report.status === "ready_to_send" || report.status === "validated" && !report.deliveredAt).length;
-        updateDashboardMetric(panel, "reports", String(toCorrect + toSend), `${toCorrect} à corriger · ${toSend} à envoyer`);
+        updateDashboardMetric(panel, "reports", String(toWrite + toCorrect + toSend), `${toWrite} à rédiger · ${toCorrect} à corriger · ${toSend} à envoyer`);
     }).catch(() => updateDashboardMetric(panel, "reports", "—", "Rapports momentanément indisponibles")));
     if (canAccessRoute(ROUTES.calendar)) requests.push(loadDashboardJson("/api/calendar/paused").then(data => {
         followUp.pausedInterventions = Array.isArray(data?.events) ? data.events : [];
@@ -1220,7 +1221,7 @@ function refreshDashboardFollowUp(panel, followUp, warning = "") {
         return intervention ? renderCalendar({ date: new Date(`${intervention.date}T12:00:00`), event: intervention }) : renderCalendar();
     }));
     if (warning) section.title = warning;
-    updateDashboardMetric(panel, "billing", String(total), `${followUp.unpaidInvoices.length} facture${followUp.unpaidInvoices.length > 1 ? "s" : ""} non réglée${followUp.unpaidInvoices.length > 1 ? "s" : ""} · ${followUp.pausedInterventions.length} intervention${followUp.pausedInterventions.length > 1 ? "s" : ""} à reprendre`);
+    updateDashboardMetric(panel, "billing", String(total));
 }
 
 async function loadDashboardJson(url) {
@@ -1233,7 +1234,7 @@ function updateDashboardMetric(panel, key, value, detail) {
     const card = panel.querySelector(`[data-dashboard-metric="${key}"]`);
     if (!card?.isConnected) return;
     card.querySelector("[data-dashboard-value]").textContent = value;
-    card.querySelector("[data-dashboard-detail]").textContent = detail;
+    if (card.querySelector("[data-dashboard-detail]")) card.querySelector("[data-dashboard-detail]").textContent = detail || "";
 }
 
 async function renderHomeGroupCompanySwitcher(panel) {
