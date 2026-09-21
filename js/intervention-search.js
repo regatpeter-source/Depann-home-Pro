@@ -1,6 +1,6 @@
 import { ROUTES } from "./config.js?v=135";
 import { pageSizeOptions, paginateItems, renderBusinessPagination } from "./pagination.js?v=1";
-import { matches } from "./search.js?v=77";
+import { matches } from "./search.js?v=78";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml } from "./utils.js?v=44";
 import { clearSearch, createInfo, getContainer, setPage } from "./ui.js?v=44";

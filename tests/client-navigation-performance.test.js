@@ -39,6 +39,16 @@ test("une synchronisation en arrière-plan conserve l’écran Nouveau client", 
     assert.match(openClients, /if \(isClientFormView\(currentView\)\) return/);
     assert.match(navigation, /if \(editId\) return \{ editId, clientWorkspace: "create" \}/);
     assert.match(navigation, /return clientWorkspace \? \{ clientWorkspace \} : \{\}/);
-    assert.match(navigation, /if \(isClientFormView\(currentView\)\) return;\s*renderClients\(/);
+    assert.match(navigation, /if \(isClientFormView\(currentView\)\) return;\s*if \(!currentView\.selectedId && refreshClientDirectoryAfterSynchronization\(\)\) return;\s*renderClients\(/);
     assert.match(navigation, /return Boolean\(view\?\.editId \|\| view\?\.clientWorkspace === "create"\)/);
+});
+
+test("une synchronisation silencieuse actualise les résultats sans reconstruire les filtres clients", () => {
+    assert.match(navigation, /refreshClientDirectoryAfterSynchronization/);
+    assert.match(navigation, /if \(!currentView\.selectedId && refreshClientDirectoryAfterSynchronization\(\)\) return/);
+    assert.match(clients, /export function refreshClientDirectoryAfterSynchronization\(\)/);
+    assert.match(clients, /if \(!form \|\| !directory\) return false/);
+    assert.match(clients, /if \(clientDirectorySearchActive\) void applyClientDirectorySearch\(directory, clients, clientDirectoryFilters\)/);
+    assert.match(clients, /clientDirectorySearchActive = true/);
+    assert.match(clients, /clientDirectorySearchActive = false/);
 });

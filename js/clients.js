@@ -41,6 +41,7 @@ const ATTACHMENT_TYPES = ["Devis", "Facture", "Quitus", "Rapport fuite", "Rappor
 const MAX_ATTACHMENT_SIZE = 4 * 1024 * 1024;
 let clientScreenOptions = {};
 let clientDirectoryFilters = createEmptyDirectoryFilters();
+let clientDirectorySearchActive = false;
 const clientDirectoryPagination = { page: 1, pageSize: 20 };
 
 export async function renderClients(options = {}) {
@@ -181,12 +182,14 @@ function renderClientToolbar(clients, readOnly, directory) {
     panel.querySelector("#clientDirectoryForm").addEventListener("submit", async event => {
         event.preventDefault();
         clientDirectoryFilters = readDirectoryFilters(new FormData(event.currentTarget));
+        clientDirectorySearchActive = true;
         clientDirectoryPagination.page = 1;
         await applyClientDirectorySearch(directory, clients, clientDirectoryFilters);
         directory.scrollIntoView({ behavior: "smooth", block: "start" });
     });
     panel.querySelector("#clearClientDirectory").addEventListener("click", event => {
         clientDirectoryFilters = createEmptyDirectoryFilters();
+        clientDirectorySearchActive = false;
         clientDirectoryPagination.page = 1;
         event.currentTarget.form.reset();
         renderClientDirectoryPrompt(directory);
@@ -456,8 +459,19 @@ function renderClientDirectory(clients) {
     const section = document.createElement("section");
     section.className = "client-directory-results";
     section.id = "clientDirectoryResults";
-    renderClientDirectoryPrompt(section, clients.length);
+    if (clientDirectorySearchActive) void applyClientDirectorySearch(section, clients, clientDirectoryFilters);
+    else renderClientDirectoryPrompt(section, clients.length);
     return section;
+}
+
+export function refreshClientDirectoryAfterSynchronization() {
+    const form = document.querySelector("#clientDirectoryForm");
+    const directory = document.querySelector("#clientDirectoryResults");
+    if (!form || !directory) return false;
+    const clients = getClients();
+    if (clientDirectorySearchActive) void applyClientDirectorySearch(directory, clients, clientDirectoryFilters);
+    else renderClientDirectoryPrompt(directory, clients.length);
+    return true;
 }
 
 function renderClientDirectoryPrompt(section, clientCount = getClients().length) {
