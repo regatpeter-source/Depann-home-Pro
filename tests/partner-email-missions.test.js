@@ -322,7 +322,7 @@ test("toutes les origines affichent réellement toutes les missions sans filtre 
     const filtering = missionClientSource.slice(missionClientSource.indexOf("function renderMissionTab"), missionClientSource.indexOf("function renderMissions"));
     const dashboardQuery = missionSource.slice(missionSource.indexOf("async function missionDashboard"), missionSource.indexOf("async function reconcileMissionClients"));
     assert.match(filtering, /activeMissionSpace === "network"[\s\S]*?activeMissionSpace === "email"[\s\S]*?sourceType === "external_connector"/);
-    assert.match(filtering, /\(!status \|\| mission\.status === status\) && \(!query \|\| matchesSearch\)/);
+    assert.match(filtering, /\(!status \|\| labelStatus\(mission\.status\) === labelStatus\(status\)\) && \(!query \|\| matchesSearch\)/);
     assert.doesNotMatch(filtering, /mission\.status !== "closed"/);
     assert.doesNotMatch(dashboardQuery, /LIMIT 200/);
     assert.match(missionSource, /depannhome_partner_missions_owner_visible_updated_idx/);

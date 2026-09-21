@@ -125,7 +125,8 @@ function renderMissionTab(shell) {
     const emailCandidates = activeMissionSpace === "email" && !messages ? (dashboard.partnerEmail.candidates || []).map(emailCandidateMission) : [];
     const source = messages && activeMissionSpace === "network" ? [...received.map(mission => ({ ...mission, conversationSide: "received" })), ...dashboard.sentMissions.map(mission => ({ ...mission, conversationSide: "sent" }))] : sent ? dashboard.sentMissions : [...emailCandidates, ...received];
     const externalIntro = activeMissionSpace === "external" ? '<p class="muted">Ces missions proviennent de connecteurs API. Leur Centre de mission utilise la même interface professionnelle, le même journal et les mêmes échanges de documents que les missions du réseau. Le partenaire externe consulte et alimente ces échanges depuis son propre logiciel via API.</p>' : "";
-    const statuses = activeMissionSpace === "email" ? ["email_candidate", ...dashboard.statuses] : dashboard.statuses;
+    const sourceStatuses = activeMissionSpace === "email" ? ["email_candidate", ...dashboard.statuses] : dashboard.statuses;
+    const statuses = sourceStatuses.filter((status, index) => sourceStatuses.findIndex(candidate => labelStatus(candidate) === labelStatus(status)) === index);
     const paginationKey = `${activeMissionSpace}:${activeMissionTab}`;
     const pagination = partnerMissionPagination.get(paginationKey) || { page: 1, pageSize: 20 };
     partnerMissionPagination.set(paginationKey, pagination);
@@ -136,7 +137,7 @@ function renderMissionTab(shell) {
         const query = content.querySelector("#partnerMissionSearch")?.value.trim().toLowerCase() || "";
         const missions = source.filter(mission => {
             const matchesSearch = `${mission.missionNumber} ${mission.externalMissionId} ${mission.partnerReference} ${mission.partnerName} ${mission.mappedData?.clientName} ${mission.mappedData?.address}`.toLowerCase().includes(query);
-            return (!status || mission.status === status) && (!query || matchesSearch);
+            return (!status || labelStatus(mission.status) === labelStatus(status)) && (!query || matchesSearch);
         });
         const totalPages = Math.max(1, Math.ceil(missions.length / pagination.pageSize));
         pagination.page = Math.min(Math.max(1, pagination.page), totalPages);

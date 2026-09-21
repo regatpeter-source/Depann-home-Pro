@@ -82,11 +82,16 @@ test("l’interface distingue confirmer un e-mail et accepter une mission", () =
     assert.match(missionsServer, /pending_validation: "en attente d’acceptation"/);
 });
 
+test("la liste des statuts n’affiche qu’une fois chaque libellé métier", () => {
+    assert.match(missionsClient, /sourceStatuses\.filter\(\(status, index\) => sourceStatuses\.findIndex\(candidate => labelStatus\(candidate\) === labelStatus\(status\)\) === index\)/);
+    assert.match(missionsClient, /labelStatus\(mission\.status\) === labelStatus\(status\)/);
+});
+
 test("les versions PWA chargent le nouveau routage partenaire", () => {
-    assert.match(navigation, /partner-missions\.js\?v=90/);
-    assert.match(navigation, /partner-connections\.js\?v=50/);
-    assert.match(serviceWorker, /depann-home-pro-v596/);
-    assert.match(serviceWorker, /partner-missions\.js\?v=90/);
-    assert.match(serviceWorker, /partner-connections\.js\?v=50/);
-    assert.match(serviceWorker, /navigation\.js\?v=498/);
+    assert.match(navigation, /partner-missions\.js\?v=91/);
+    assert.match(navigation, /partner-connections\.js\?v=51/);
+    assert.match(serviceWorker, /depann-home-pro-v597/);
+    assert.match(serviceWorker, /partner-missions\.js\?v=91/);
+    assert.match(serviceWorker, /partner-connections\.js\?v=51/);
+    assert.match(serviceWorker, /navigation\.js\?v=499/);
 });
