@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { readFileSync } from "node:fs";
 import { openClientEventStream, publishClientChange } from "../server/client-events.js";
-import { listClientsForOwner } from "../server/clients.js";
+import { listClientsForOwner, normalizeClientSynchronizationCursor } from "../server/clients.js";
 
 const clientsServer = readFileSync(new URL("../server/clients.js", import.meta.url), "utf8");
 const calendarServer = readFileSync(new URL("../server/calendar.js", import.meta.url), "utf8");
@@ -78,6 +78,12 @@ test("un curseur de synchronisation client invalide produit une erreur HTTP cont
         listClientsForOwner(42, "curseur-invalide"),
         error => error instanceof Error && error.status === 400 && error.message === "Curseur de synchronisation invalide."
     );
+});
+
+test("un poste mobile dédié ignore son ancien curseur sans générer de faux 400", () => {
+    assert.equal(normalizeClientSynchronizationCursor("2026-09-24T10:00:00.000Z", { role: "technician", deviceType: "mobile" }), "");
+    assert.equal(normalizeClientSynchronizationCursor("ancienne-valeur-invalide", { role: "mobile_admin", deviceType: "mobile" }), "");
+    assert.equal(normalizeClientSynchronizationCursor("2026-09-24T10:00:00.000Z", { role: "admin", deviceType: "desktop" }), "2026-09-24T10:00:00.000Z");
 });
 
 function createStreamResponse() {

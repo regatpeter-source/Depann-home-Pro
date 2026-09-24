@@ -68,9 +68,7 @@ export async function initializeClients() {
 
 export async function listClientsForOwner(ownerId, sinceParameter = "", user = null) {
     const restrictedMobile = isDedicatedMobileSession(user);
-    const effectiveSinceParameter = restrictedMobile ? "" : sinceParameter;
-    const since = effectiveSinceParameter ? validDate(effectiveSinceParameter) : "";
-    if (sinceParameter && !since) throw clientError(400, "Curseur de synchronisation invalide.");
+    const since = normalizeClientSynchronizationCursor(sinceParameter, user);
     const database = getPool();
     await reconcilePartnerMissionClients(database, ownerId);
     await reconcileValidatedReportAttachments(database, ownerId);
@@ -99,6 +97,13 @@ export async function listClientsForOwner(ownerId, sinceParameter = "", user = n
         WHERE owner_id = $1 AND deleted_at <= $2 AND deleted_at > $3::timestamptz
     `, [ownerId, cursor, since])).rows.map(row => row.clientId) : [];
     return { clients: rows.map(publicClient), deletedClientIds, cursor: cursor.toISOString(), completeSnapshot: restrictedMobile };
+}
+
+export function normalizeClientSynchronizationCursor(sinceParameter = "", user = null) {
+    const effectiveSinceParameter = isDedicatedMobileSession(user) ? "" : String(sinceParameter || "");
+    const since = effectiveSinceParameter ? validDate(effectiveSinceParameter) : "";
+    if (effectiveSinceParameter && !since) throw clientError(400, "Curseur de synchronisation invalide.");
+    return since;
 }
 
 async function reconcilePartnerMissionClients(database, ownerId) {
