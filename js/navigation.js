@@ -1,6 +1,6 @@
-import { ROUTES, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=135";
+import { APP_VERSION, ROUTES, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=136";
 import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=234";
-import { openCreatorPartnerRequest, openCreatorRequestNotification, renderCreatorConsole } from "./creator.js?v=170";
+import { openCreatorPartnerRequest, openCreatorRequestNotification, renderCreatorConsole } from "./creator.js?v=171";
 import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=214";
 import { renderAccounting } from "./accounting.js?v=31";
 import { renderPurchases } from "./purchases.js?v=129";
@@ -247,6 +247,7 @@ function inferApplicationRoute(title) {
     if (normalizedTitle.startsWith("rapport")) return ROUTES.technicalReports;
     if (/^(planning|intervention|retrouver une intervention)/.test(normalizedTitle)) return ROUTES.calendar;
     if (normalizedTitle.startsWith("bibliotheque")) return ROUTES.library;
+    if (normalizedTitle.startsWith("signaler un probleme")) return ROUTES.support;
     if (normalizedTitle.startsWith("parametre") || normalizedTitle.startsWith("modele de")) return ROUTES.settings;
     if (normalizedTitle.startsWith("magasin")) return ROUTES.store;
     if (normalizedTitle.startsWith("resultat de recherche")) return ROUTES.search;
@@ -268,6 +269,7 @@ function restoreApplicationRoute(entry) {
     if (route === ROUTES.partnerSandbox) return renderPartnerSandbox();
     if (route === ROUTES.technicalReports) return renderTechnicalReports();
     if (route === ROUTES.library) return renderLibrary();
+    if (route === ROUTES.support) return renderMobileSupportTicket();
     if (route === ROUTES.settings && view.templateType) return openDocumentTemplateSettings(view.templateType);
     if (route === ROUTES.settings) return renderSettings(view.settingsSection ? { section: view.settingsSection } : {});
     if (route === ROUTES.store) return renderStore();
@@ -376,6 +378,8 @@ export async function refreshApplication() {
         renderGroupWorkspace();
     } else if (activeRoute === ROUTES.settings && canAccessRoute(ROUTES.settings)) {
         renderSettings();
+    } else if (activeRoute === ROUTES.support && canAccessRoute(ROUTES.support)) {
+        renderMobileSupportTicket();
     } else if (activeRoute === ROUTES.home) {
         openHome();
     }
@@ -430,6 +434,7 @@ function bindEvents() {
     const interventionSearchBtn = document.getElementById("interventionSearchBtn");
     const libraryBtn = document.getElementById("libraryBtn");
     const settingsBtn = document.getElementById("settingsBtn");
+    const supportTicketBtn = document.getElementById("supportTicketBtn");
 
     search.addEventListener("input", event => {
         const value = event.target.value.toLowerCase().trim();
@@ -463,6 +468,7 @@ function bindEvents() {
     });
     libraryBtn?.addEventListener("click", () => { if (canAccessQuick("library")) renderLibrary(); });
     settingsBtn?.addEventListener("click", () => { if (canAccessQuick("settings")) renderSettings(); });
+    supportTicketBtn?.addEventListener("click", () => { if (canAccessQuick("support")) renderMobileSupportTicket(); });
 
     document.querySelectorAll(".nav-button").forEach(button => {
         button.addEventListener("click", async () => {
@@ -493,6 +499,7 @@ function bindEvents() {
             if (nav === ROUTES.partnerSandbox && document.body.dataset.role === "admin") renderPartnerSandbox();
             if (nav === ROUTES.calendar) openCalendar();
             if (nav === ROUTES.library) renderLibrary();
+            if (nav === ROUTES.support) renderMobileSupportTicket();
             if (nav === ROUTES.settings) renderSettings();
         });
     });
@@ -502,7 +509,7 @@ function applyRoleBasedMenus() {
     const quickSelectors = {
         clients: "#clientsBtn", calendar: "#calendarBtn", interventionSearch: "#interventionSearchBtn", library: "#libraryBtn", billing: "#billingBtn", purchases: "#purchasesBtn",
         accounting: "#accountingBtn", groups: "#groupsBtn", partnerMissions: "#partnerMissionsBtn", companyEmail: "#companyEmailBtn",
-        partnerSandbox: "#partnerSandboxBtn", settings: "#settingsBtn"
+        partnerSandbox: "#partnerSandboxBtn", support: "#supportTicketBtn", settings: "#settingsBtn"
     };
     Object.entries(quickSelectors).forEach(([menu, selector]) => {
         const button = document.querySelector(selector);
@@ -522,7 +529,7 @@ function applyRoleBasedMenus() {
 }
 
 function initializeMobileWorkspaceMenu() {
-    if (!isMobileDeviceContext() || isCommercialMobile()) return;
+    if (!isMobileDeviceContext()) return;
     const footer = document.querySelector("#authRoot > footer");
     const quickActions = document.querySelector(".quick-actions");
     if (!footer || !quickActions) return;
@@ -575,7 +582,8 @@ function renderMobileWorkspaceFolders(container, quickActions) {
         ["Interventions", ["calendarBtn", "interventionSearchBtn", "clientsBtn", "partnerMissionsBtn"]],
         ["Gestion", ["billingBtn", "accountingBtn", "purchasesBtn"]],
         ["Communication", ["companyEmailBtn"]],
-        ["Ressources et compte", ["libraryBtn", "settingsBtn"]]
+        ["Ressources et compte", ["libraryBtn", "settingsBtn"]],
+        ["Aide et support", ["supportTicketBtn"]]
     ];
     container.innerHTML = groups.map(([title, ids], index) => {
         const actions = ids.map(id => quickActions.querySelector(`#${id}`)).filter(Boolean);
@@ -604,7 +612,7 @@ function isMobileDeviceContext() {
 
 function isMenuAllowed(roles, route = "") {
     if (!Array.isArray(roles) || !roles.includes(document.body.dataset.role)) return false;
-    if (isCommercialMobile() && route !== ROUTES.calendar) return false;
+    if (isCommercialMobile() && ![ROUTES.calendar, ROUTES.support].includes(route)) return false;
     if (route === ROUTES.billing && ["pc_standard", "commercial", "accountant"].includes(document.body.dataset.role) && document.body.dataset.canAccessBilling !== "true") return false;
     if (route === ROUTES.accounting && ["pc_standard", "commercial", "accountant"].includes(document.body.dataset.role) && document.body.dataset.canAccessAccounting !== "true") return false;
     if (route === ROUTES.companyEmail && document.body.dataset.canAccessCompanyEmail !== "true") return false;
@@ -618,7 +626,7 @@ function canAccessQuick(menu) {
 }
 
 function canAccessRoute(route) {
-    if (document.body.dataset.supportControl === "true" && ![ROUTES.home, ROUTES.clients, ROUTES.calendar, ROUTES.technicalReports, ROUTES.billing, ROUTES.accounting, ROUTES.partnerMissions, ROUTES.companyEmail, ROUTES.settings].includes(route)) return false;
+    if (document.body.dataset.supportControl === "true" && ![ROUTES.home, ROUTES.clients, ROUTES.calendar, ROUTES.technicalReports, ROUTES.billing, ROUTES.accounting, ROUTES.partnerMissions, ROUTES.companyEmail, ROUTES.support, ROUTES.settings].includes(route)) return false;
     return isMenuAllowed(MENU_ACCESS.navigation[route], route) && isOrganizationRouteEnabled(route);
 }
 
@@ -672,7 +680,7 @@ function isCommercialMobile() {
 }
 
 function menuRoute(menu) {
-    return ({ clients: ROUTES.clients, calendar: ROUTES.calendar, interventionSearch: ROUTES.calendar, library: ROUTES.library, billing: ROUTES.billing, accounting: ROUTES.accounting, purchases: ROUTES.purchases, groups: ROUTES.groups, partnerMissions: ROUTES.partnerMissions, companyEmail: ROUTES.companyEmail, partnerSandbox: ROUTES.partnerSandbox, settings: ROUTES.settings })[menu] || "";
+    return ({ clients: ROUTES.clients, calendar: ROUTES.calendar, interventionSearch: ROUTES.calendar, library: ROUTES.library, billing: ROUTES.billing, accounting: ROUTES.accounting, purchases: ROUTES.purchases, groups: ROUTES.groups, partnerMissions: ROUTES.partnerMissions, companyEmail: ROUTES.companyEmail, partnerSandbox: ROUTES.partnerSandbox, support: ROUTES.support, settings: ROUTES.settings })[menu] || "";
 }
 
 function openHome() {
@@ -2321,6 +2329,77 @@ function renderSupportContact(container) {
         }
     });
     container.appendChild(card);
+}
+
+function renderMobileSupportTicket() {
+    if (!isMobileDeviceContext() || !canAccessRoute(ROUTES.support)) return openHome();
+    clearSearch();
+    resetSelection("all");
+    setPage("Signaler un problème", ROUTES.support, "detail");
+    const context = mobileSupportContext();
+    const container = getContainer();
+    const card = document.createElement("article");
+    card.className = "brand-card full-card procedure-card mobile-support-ticket";
+    card.innerHTML = `
+        <div class="procedure-header"><div><p class="eyebrow">Support Depann’Home Pro</p><h2>Créer un ticket</h2><p class="muted">Décrivez le problème rencontré sur ce poste mobile. Les informations techniques ci-dessous seront jointes automatiquement, sans mot de passe ni donnée métier.</p></div></div>
+        <form class="support-request-form mobile-support-ticket-form">
+            <div class="form-grid">
+                <label>Catégorie<select name="category" required><option value="">Sélectionner…</option><option>Dysfonctionnement</option><option>Synchronisation / hors ligne</option><option>Planning / intervention</option><option>Client</option><option>Devis / facture</option><option>Connexion / accès</option><option>Autre</option></select></label>
+                <label>Objet<input name="subject" maxlength="160" required placeholder="Ex. Impossible de reprendre une intervention"></label>
+                <label class="form-wide">Description<textarea name="message" rows="8" minlength="10" maxlength="3000" required aria-describedby="mobileSupportMessageHint mobileSupportFeedback" placeholder="Indiquez ce que vous faisiez, ce qui s’est passé et le résultat attendu…"></textarea></label>
+            </div>
+            <div class="support-request-meta"><span id="mobileSupportMessageHint">10 caractères minimum · n’indiquez aucun mot de passe</span><span data-support-character-count aria-live="polite">0 / 3 000</span></div>
+            <details class="mobile-support-context"><summary>Informations techniques jointes</summary><dl>${Object.entries(context).map(([label, value]) => `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd></div>`).join("")}</dl></details>
+            <div class="support-request-actions"><button type="submit" class="secondary-button">Envoyer le ticket</button></div>
+            <p id="mobileSupportFeedback" class="auth-message" aria-live="polite"></p>
+        </form>`;
+    container.appendChild(card);
+    const form = card.querySelector("form");
+    const textarea = form.elements.message;
+    const count = form.querySelector("[data-support-character-count]");
+    const feedback = form.querySelector(".auth-message");
+    const button = form.querySelector('button[type="submit"]');
+    const updateCount = () => { count.textContent = `${textarea.value.length.toLocaleString("fr-FR")} / 3 000`; };
+    textarea.addEventListener("input", updateCount);
+    form.addEventListener("submit", async event => {
+        event.preventDefault();
+        button.disabled = true;
+        button.textContent = "Envoi…";
+        feedback.textContent = "";
+        feedback.classList.remove("error");
+        try {
+            const response = await fetch("/api/support/requests", {
+                method: "POST",
+                credentials: "same-origin",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ category: form.elements.category.value, subject: form.elements.subject.value, message: textarea.value, technicalContext: context })
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(data.message || "Impossible d’envoyer le ticket.");
+            form.reset();
+            updateCount();
+            feedback.textContent = data.message || "Votre ticket a bien été transmis au Support.";
+        } catch (error) {
+            feedback.textContent = error.message || "Impossible d’envoyer le ticket.";
+            feedback.classList.add("error");
+        } finally {
+            button.disabled = false;
+            button.textContent = "Envoyer le ticket";
+        }
+    });
+}
+
+function mobileSupportContext() {
+    const standalone = window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
+    return {
+        "Version": APP_VERSION,
+        "Rôle": document.body.dataset.role || "non renseigné",
+        "Type de poste": document.body.dataset.deviceType || "mobile",
+        "Mode": standalone ? "Application installée" : "Navigateur",
+        "Connexion": navigator.onLine ? "En ligne" : "Hors ligne",
+        "Écran": `${window.screen?.width || "?"} × ${window.screen?.height || "?"}`,
+        "Date du signalement": new Intl.DateTimeFormat("fr-FR", { dateStyle: "short", timeStyle: "medium" }).format(new Date())
+    };
 }
 
 async function renderTeamManagement(container) {

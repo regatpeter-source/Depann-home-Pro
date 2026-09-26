@@ -5,6 +5,7 @@ import { createNotification } from "./collaboration.js";
 
 const MAX_SUPPORT_MESSAGE_LENGTH = 4000;
 const SUPPORT_STATUSES = new Set(["new", "under_review", "answered", "closed"]);
+const SUPPORT_CATEGORIES = new Set(["Dysfonctionnement", "Synchronisation / hors ligne", "Planning / intervention", "Client", "Devis / facture", "Connexion / accès", "Autre"]);
 
 export async function initializeSupport() {
     await getPool().query(`
@@ -15,6 +16,9 @@ export async function initializeSupport() {
             sender_name VARCHAR(100) NOT NULL DEFAULT '',
             sender_email VARCHAR(160) NOT NULL DEFAULT '',
             sender_username VARCHAR(32) NOT NULL DEFAULT '',
+            category VARCHAR(40) NOT NULL DEFAULT '',
+            subject VARCHAR(160) NOT NULL DEFAULT '',
+            technical_context JSONB NOT NULL DEFAULT '{}'::jsonb,
             message VARCHAR(4000) NOT NULL,
             status VARCHAR(20) NOT NULL DEFAULT 'new' CHECK (status IN ('new','under_review','answered','closed')),
             creator_note VARCHAR(2000) NOT NULL DEFAULT '',
@@ -24,12 +28,19 @@ export async function initializeSupport() {
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
     `);
+    await getPool().query("ALTER TABLE depannhome_support_requests ADD COLUMN IF NOT EXISTS category VARCHAR(40) NOT NULL DEFAULT '', ADD COLUMN IF NOT EXISTS subject VARCHAR(160) NOT NULL DEFAULT '', ADD COLUMN IF NOT EXISTS technical_context JSONB NOT NULL DEFAULT '{}'::jsonb");
     await getPool().query("CREATE INDEX IF NOT EXISTS depannhome_support_requests_status_created_idx ON depannhome_support_requests(status,created_at DESC)");
 }
 
 export function registerSupportRoutes(app, requireAuthentication, requireCreator) {
     app.post("/api/support/requests", requireAuthentication, asyncHandler(async (request, response) => {
         const message = cleanMessage(request.body?.message);
+        const category = cleanText(request.body?.category, 40);
+        const subject = cleanText(request.body?.subject, 160);
+        const technicalContext = cleanTechnicalContext(request.body?.technicalContext);
+        if ((category || subject || Object.keys(technicalContext).length) && (!SUPPORT_CATEGORIES.has(category) || subject.length < 3)) {
+            return response.status(400).json({ message: "Choisissez une catégorie et indiquez un objet d’au moins 3 caractères." });
+        }
         if (message.length < 10) {
             return response.status(400).json({ message: "Décrivez votre demande en au moins 10 caractères." });
         }
@@ -37,14 +48,15 @@ export function registerSupportRoutes(app, requireAuthentication, requireCreator
         const senderName = cleanText(request.user?.fullName, 100);
         const senderEmail = cleanText(request.user?.email, 160);
         const senderUsername = cleanText(request.user?.username, 32);
-        const { rows } = await getPool().query(`INSERT INTO depannhome_support_requests(owner_id,requested_by,sender_name,sender_email,sender_username,message) VALUES($1,$2,$3,$4,$5,$6) RETURNING id`, [request.user.accountOwnerId, request.user.sub, senderName, senderEmail, senderUsername, message]);
-        await notifyCreators(rows[0].id, request.user.accountOwnerId, senderName || senderUsername, message);
-        try { await sendSupportRequestEmail({ senderName, senderEmail, senderUsername, message }); } catch (error) { console.warn("[support-request] email unavailable", { requestId: rows[0].id, code: error.code || "EMAIL_ERROR" }); }
+        const { rows } = await getPool().query(`INSERT INTO depannhome_support_requests(owner_id,requested_by,sender_name,sender_email,sender_username,category,subject,technical_context,message) VALUES($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9) RETURNING id`, [request.user.accountOwnerId, request.user.sub, senderName, senderEmail, senderUsername, category, subject, JSON.stringify(technicalContext), message]);
+        await notifyCreators(rows[0].id, request.user.accountOwnerId, senderName || senderUsername, subject || message);
+        const emailMessage = [category && `Catégorie : ${category}`, subject && `Objet : ${subject}`, message, Object.keys(technicalContext).length && `Contexte technique :\n${Object.entries(technicalContext).map(([key, value]) => `${key} : ${value}`).join("\n")}`].filter(Boolean).join("\n\n");
+        try { await sendSupportRequestEmail({ senderName, senderEmail, senderUsername, message: emailMessage }); } catch (error) { console.warn("[support-request] email unavailable", { requestId: rows[0].id, code: error.code || "EMAIL_ERROR" }); }
         response.status(202).json({ message: "Votre message est enregistré et transmis au Support." });
     }));
 
     app.get("/api/creator/support-requests", requireAuthentication, requireCreator, asyncHandler(async (request, response) => {
-        const { rows } = await getPool().query(`SELECT support.id,support.owner_id AS "ownerId",COALESCE(NULLIF(profile.company_name,''),NULLIF(owner.company_name,''),owner.full_name,owner.username) AS "companyName",support.sender_name AS "senderName",support.sender_email AS "senderEmail",support.sender_username AS "senderUsername",support.message,support.status,support.creator_note AS "creatorNote",support.created_at AS "createdAt",support.updated_at AS "updatedAt" FROM depannhome_support_requests support JOIN depannhome_users owner ON owner.id=support.owner_id LEFT JOIN depannhome_billing_profiles profile ON profile.owner_id=owner.id ORDER BY CASE support.status WHEN 'new' THEN 0 WHEN 'under_review' THEN 1 ELSE 2 END,support.created_at DESC LIMIT 200`);
+        const { rows } = await getPool().query(`SELECT support.id,support.owner_id AS "ownerId",COALESCE(NULLIF(profile.company_name,''),NULLIF(owner.company_name,''),owner.full_name,owner.username) AS "companyName",support.sender_name AS "senderName",support.sender_email AS "senderEmail",support.sender_username AS "senderUsername",support.category,support.subject,support.technical_context AS "technicalContext",support.message,support.status,support.creator_note AS "creatorNote",support.created_at AS "createdAt",support.updated_at AS "updatedAt" FROM depannhome_support_requests support JOIN depannhome_users owner ON owner.id=support.owner_id LEFT JOIN depannhome_billing_profiles profile ON profile.owner_id=owner.id ORDER BY CASE support.status WHEN 'new' THEN 0 WHEN 'under_review' THEN 1 ELSE 2 END,support.created_at DESC LIMIT 200`);
         response.json({ requests: rows });
     }));
 
@@ -74,6 +86,11 @@ function cleanMessage(value) {
 
 function cleanText(value, maximumLength) {
     return String(value || "").replace(/\s+/g, " ").trim().slice(0, maximumLength);
+}
+
+function cleanTechnicalContext(value) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+    return Object.fromEntries(Object.entries(value).slice(0, 12).map(([key, item]) => [cleanText(key, 60), cleanText(item, 200)]).filter(([key]) => key));
 }
 
 function asyncHandler(handler) {

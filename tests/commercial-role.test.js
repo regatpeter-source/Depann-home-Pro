@@ -70,6 +70,7 @@ test("l’API mobile Commercial autorise uniquement la lecture du planning", () 
         ["GET", "/api/auth/session"],
         ["GET", "/api/calendar/events"],
         ["GET", "/api/creator/platform-announcement/current"],
+        ["POST", "/api/support/requests"],
         ["POST", "/api/auth/logout"]
     ]) assert.equal(invokeRestriction(method, path).nextCalled, true, `${method} ${path}`);
 
@@ -100,14 +101,14 @@ test("le planning mobile Commercial est filtré par affectation et reste en lect
     assert.doesNotMatch(client, /Cette intervention vous sera automatiquement affectée/);
 });
 
-test("le Commercial mobile démarre directement sur son unique bouton Planning", () => {
+test("le Commercial mobile démarre sur Planning et peut ouvrir le Support", () => {
     const navigation = read("js/navigation.js");
     const styles = read("css/style.css");
     assert.match(navigation, /else if \(isCommercialMobile\(\) \|\| isMobileAdministrator\(\)\) openCalendar\(\)/);
     assert.match(navigation, /isCommercialMobile\(\) \|\| isMobileAdministrator\(\)/);
     assert.match(navigation, /ROUTES\.home && isMobileDeviceContext\(\) && canAccessRoute\(ROUTES\.home\)/);
-    assert.match(navigation, /isCommercialMobile\(\) && route !== ROUTES\.calendar/);
-    assert.match(styles, /commercial"\]\.mobile-device footer \.nav-button:not\(\[data-nav="calendar"\]\)\{display:none;\}/);
+    assert.match(navigation, /isCommercialMobile\(\) && !\[ROUTES\.calendar, ROUTES\.support\]\.includes\(route\)/);
+    assert.match(styles, /commercial"\]\.mobile-device footer \.nav-button:not\(\[data-nav="calendar"\]\):not\(\.mobile-workspace-menu-button\)\{display:none;\}/);
 });
 
 test("un Technicien devenu Commercial mobile conserve son téléphone et reçoit la nouvelle interface", () => {

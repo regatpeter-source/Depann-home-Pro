@@ -26,6 +26,7 @@ test("le menu mobile range les actions existantes dans des sous-dossiers", () =>
     assert.match(mobileMenuSource, /\["Gestion", \["billingBtn", "accountingBtn", "purchasesBtn"\]\]/);
     assert.match(mobileMenuSource, /\["Communication", \["companyEmailBtn"\]\]/);
     assert.match(mobileMenuSource, /\["Ressources et compte", \["libraryBtn", "settingsBtn"\]\]/);
+    assert.match(mobileMenuSource, /\["Aide et support", \["supportTicketBtn"\]\]/);
     assert.match(mobileMenuSource, /source\?\.click\(\)/);
     assert.match(mobileMenuSource, /quickActions\.querySelector\(`#\$\{id\}`\)/);
 });
@@ -39,7 +40,7 @@ test("Technicien et Chef d’équipe retrouvent leurs interventions sans accès 
     assert.doesNotMatch(config.match(/const PURCHASE_USERS = [^;]+/)?.[0] || "", /team_lead|technician/);
 });
 
-test("le Poste Admin Mobile affiche uniquement Planning, Interventions, Clients, Bibliothèque et Achats", () => {
+test("le Poste Admin Mobile affiche ses fonctions opérationnelles et le ticket Support", () => {
     const quickAccess = Object.entries(MENU_ACCESS.quick)
         .filter(([, roles]) => roles.includes("mobile_admin"))
         .map(([name]) => name)
@@ -48,12 +49,24 @@ test("le Poste Admin Mobile affiche uniquement Planning, Interventions, Clients,
         .filter(([, roles]) => roles.includes("mobile_admin"))
         .map(([route]) => route)
         .sort();
-    assert.deepEqual(quickAccess, ["calendar", "clients", "library", "purchases"]);
-    assert.deepEqual(routeAccess, [ROUTES.calendar, ROUTES.clients, ROUTES.library, ROUTES.purchases].sort());
+    assert.deepEqual(quickAccess, ["calendar", "clients", "library", "purchases", "support"]);
+    assert.deepEqual(routeAccess, [ROUTES.calendar, ROUTES.clients, ROUTES.library, ROUTES.purchases, ROUTES.support].sort());
     assert.match(navigation, /else if \(isCommercialMobile\(\) \|\| isMobileAdministrator\(\)\) openCalendar\(\)/);
     assert.match(navigation, /isCommercialMobile\(\) \|\| isMobileAdministrator\(\)/);
     assert.match(styles, /mobile_admin"\]\.mobile-device \.search-section\{display:none;\}/);
     assert.match(styles, /mobile_admin"\]\.mobile-device footer \.nav-button:not\(\[data-nav="calendar"\]\):not\(\.mobile-workspace-menu-button\)\{display:none;\}/);
+});
+
+test("tous les postes mobiles disposent d’un formulaire de ticket structuré", () => {
+    for (const role of ["admin", "pc_standard", "commercial", "mobile_admin", "team_lead", "technician"]) {
+        assert.equal(MENU_ACCESS.quick.support.includes(role), true, role);
+        assert.equal(MENU_ACCESS.navigation[ROUTES.support].includes(role), true, role);
+    }
+    assert.match(applicationShell, /id="supportTicketBtn"[^>]*mobile-only-action/);
+    assert.match(navigation, /function renderMobileSupportTicket\(\)/);
+    assert.match(navigation, /category: form\.elements\.category\.value, subject: form\.elements\.subject\.value, message: textarea\.value, technicalContext: context/);
+    assert.match(navigation, /fetch\("\/api\/support\/requests"/);
+    assert.match(navigation, /sans mot de passe ni donnée métier/);
 });
 
 test("le tiroir mobile est accessible et se ferme sans perdre les actions", () => {

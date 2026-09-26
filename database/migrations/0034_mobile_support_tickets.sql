@@ -1,0 +1,4 @@
+ALTER TABLE depannhome_support_requests
+    ADD COLUMN IF NOT EXISTS category VARCHAR(40) NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS subject VARCHAR(160) NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS technical_context JSONB NOT NULL DEFAULT '{}'::jsonb;

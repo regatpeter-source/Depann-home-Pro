@@ -202,6 +202,14 @@ test("le suivi Support Créateur applique aussi la restriction au poste desktop"
     assert.match(application, /registerSupportRoutes\(app, requireAuthentication, requireCreator\)/);
 });
 
+test("les tickets mobiles conservent leur catégorie, objet et contexte technique", () => {
+    assert.match(supportServer, /SUPPORT_CATEGORIES/);
+    assert.match(supportServer, /category,subject,technical_context,message/);
+    assert.match(supportServer, /technical_context AS "technicalContext"/);
+    assert.match(supportServer, /function cleanTechnicalContext\(value\)/);
+    assert.match(client, /item\.technicalContext/);
+});
+
 test("session revocation preserves administrator desktop approval while invalidating current sessions", () => {
     assert.match(server, /member\.role='admin' AND device\.device_type='desktop'/);
     assert.match(server, /session_id=NULL/);
@@ -232,15 +240,15 @@ test("creator console exposes an explicit assistance workflow and warning banner
 });
 
 test("PWA versions are synchronized for creator assistance assets", () => {
-    assert.match(navigation, /creator\.js\?v=170/);
-    assert.match(index, /css\/style\.css\?v=291/);
-    assert.match(index, /js\/app\.js\?v=479/);
-    assert.match(serviceWorker, /depann-home-pro-v600/);
-    assert.match(serviceWorker, /css\/style\.css\?v=291/);
-    assert.match(serviceWorker, /js\/app\.js\?v=479/);
+    assert.match(navigation, /creator\.js\?v=171/);
+    assert.match(index, /css\/style\.css\?v=292/);
+    assert.match(index, /js\/app\.js\?v=480/);
+    assert.match(serviceWorker, /depann-home-pro-v601/);
+    assert.match(serviceWorker, /css\/style\.css\?v=292/);
+    assert.match(serviceWorker, /js\/app\.js\?v=480/);
     assert.match(serviceWorker, /js\/collaboration\.js\?v=14/);
-    assert.match(serviceWorker, /js\/navigation\.js\?v=501/);
-    assert.match(serviceWorker, /js\/creator\.js\?v=170/);
+    assert.match(serviceWorker, /js\/navigation\.js\?v=502/);
+    assert.match(serviceWorker, /js\/creator\.js\?v=171/);
     assert.match(serviceWorker, /js\/connectors\.js\?v=6/);
 });
 

@@ -103,6 +103,7 @@ CREATE TABLE IF NOT EXISTS depannhome_support_requests (
     owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
     requested_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
     sender_name VARCHAR(100) NOT NULL DEFAULT '', sender_email VARCHAR(160) NOT NULL DEFAULT '', sender_username VARCHAR(32) NOT NULL DEFAULT '',
+    category VARCHAR(40) NOT NULL DEFAULT '', subject VARCHAR(160) NOT NULL DEFAULT '', technical_context JSONB NOT NULL DEFAULT '{}'::jsonb,
 
     message VARCHAR(4000) NOT NULL,
     status VARCHAR(20) NOT NULL DEFAULT 'new' CHECK (status IN ('new','under_review','answered','closed')),
