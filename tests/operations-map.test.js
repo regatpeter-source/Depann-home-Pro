@@ -76,6 +76,11 @@ test("la planification affiche une carte limitée à l’adresse et aux membres 
     assert.match(client, /technicianIds: technicianIds\.join\(","\)/);
     assert.match(client, /seuls leurs rendez-vous et positions sont affichés/);
     assert.match(client, /Number\.POSITIVE_INFINITY/);
+    assert.match(server, /data\.geopf\.fr\/geocodage/);
+    assert.match(server, /provider: "geoplateforme"/);
+    assert.match(client, /Adresse d’intervention non localisée/);
+    assert.match(client, /Adresse non localisée/);
+    assert.match(client, /<em>Intervention<\/em>/);
 });
 
 test("une intervention urgente utilise la journée courante sur la carte", () => {
@@ -91,6 +96,9 @@ test("les surfaces client et planning visibles sont couvertes par le thème somb
     assert.match(styles, /\.calendar-availability/);
     assert.match(styles, /\.message-bubble\.outgoing/);
     assert.match(styles, /\.procedure-meta span/);
+    assert.match(styles, /dark-theme \.client-search-results-summary/);
+    assert.match(styles, /\.client-results-group-heading/);
+    assert.match(styles, /\.client-table th/);
 });
 
 test("le partage mobile est volontaire, visible et arrêtable", () => {
@@ -112,7 +120,7 @@ test("les limites PWA, la rétention et les fournisseurs cartographiques sont do
     assert.doesNotMatch(client, /tile\.openstreetmap\.org|basemaps\.cartocdn\.com|api[_-]?key/i);
     assert.match(architecture, /ne prétend pas assurer un suivi lorsque le navigateur suspend l’application/);
     assert.match(architecture, /service Android au premier plan/);
-    assert.match(worker, /operations-map\.js\?v=4/);
+    assert.match(worker, /operations-map\.js\?v=5/);
     assert.match(worker, /maplibre-gl\.mjs\?v=6\.11\.2/);
     assert.match(worker, /maplibre-gl-worker\.mjs/);
 });

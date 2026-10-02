@@ -95,8 +95,9 @@ export async function renderPlanningOperationsMap(container, options = {}) {
         const payload = await response.json().catch(() => null);
         if (!response.ok) throw new Error(payload?.message || "Impossible de charger la carte de proximité.");
         if (version !== state.requestVersion || !container.isConnected) return;
-        renderPlanningMapPayload(container, state, payload);
-        feedback.textContent = "";
+        const targetLocated = renderPlanningMapPayload(container, state, payload);
+        feedback.textContent = targetLocated ? "" : "Adresse d’intervention non localisée. Vérifiez la rue, le code postal et la ville.";
+        feedback.classList.toggle("error", !targetLocated);
     } catch (error) {
         if (version !== state.requestVersion) return;
         feedback.textContent = error.message;
@@ -141,10 +142,11 @@ function renderPlanningMapPayload(container, state, payload) {
     window.setTimeout(() => state.map?.resize(), 0);
     const summary = container.querySelector("[data-planning-map-summary]");
     summary.innerHTML = technicians.length ? technicians.map(technician => {
-        const distance = validPoint(target) && validPoint(technician) ? formatDistance(distanceMeters(target, technician)) : "Position non partagée";
+        const distance = !validPoint(technician) ? "Position non partagée" : validPoint(target) ? formatDistance(distanceMeters(target, technician)) : "Adresse non localisée";
         const freshness = validPoint(technician) ? technician.isLive ? "En direct" : `Actualisée ${relativeTime(technician.updatedAt)}` : "Activez le partage sur son poste mobile";
         return `<article><span class="technician-map-dot${technician.isLive ? " live" : ""}"></span><div><strong>${escapeHtml(technician.name)}</strong><small>${escapeHtml(freshness)}</small></div><b>${escapeHtml(distance)}</b></article>`;
     }).join("") : '<p class="muted">Aucun des membres sélectionnés n’est disponible sur cette carte.</p>';
+    return validPoint(target);
 }
 
 async function loadOperationsMap(panel, date, announce = false) {
@@ -274,7 +276,7 @@ function validPoint(item) { return item?.latitude !== null && item?.latitude !==
 function technicianNames(event) { return (event.assignedTechnicians || []).map(item => item.fullName).filter(Boolean).join(", ") || "Non affectée"; }
 function interventionMarker(number) { const element = document.createElement("div"); element.className = "operations-map-marker"; element.innerHTML = `<span>${Number(number) || "·"}</span>`; return element; }
 function planningEventMarker(number) { const element = interventionMarker(number); element.classList.add("planning-event-marker"); return element; }
-function planningTargetMarker() { const element = document.createElement("div"); element.className = "planning-target-marker"; element.innerHTML = "<span><b>⌂</b></span>"; return element; }
+function planningTargetMarker() { const element = document.createElement("div"); element.className = "planning-target-marker"; element.innerHTML = '<span><b>⌂</b></span><em>Intervention</em>'; return element; }
 function technicianMarker(technician) { const initials = String(technician.name || "T").split(/\s+/).slice(0, 2).map(part => part[0]).join("").toUpperCase(); const element = document.createElement("div"); element.className = `technician-map-marker${technician.isLive ? " live" : ""}`; element.innerHTML = `<span>${escapeHtml(initials)}</span><i></i>`; return element; }
 function openIntervention(event) { if (event) window.dispatchEvent(new CustomEvent("depannhome:open-map-intervention", { detail: { event } })); }
 function localDate() { const now = new Date(); return new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString().slice(0, 10); }

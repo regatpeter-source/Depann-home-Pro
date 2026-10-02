@@ -7,7 +7,7 @@ import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { renderPlatformAnnouncement } from "./platform-announcement.js?v=1";
-import { renderPlanningOperationsMap } from "./operations-map.js?v=4";
+import { renderPlanningOperationsMap } from "./operations-map.js?v=5";
 import { clearSearch, createInfo, getContainer, setPage } from "./ui.js?v=44";
 
 const COLOR_OPTIONS = [

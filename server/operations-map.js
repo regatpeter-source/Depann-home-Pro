@@ -142,8 +142,8 @@ async function attachEventCoordinates(database, ownerId, events) {
         const point = await queueGeocode(address);
         if (!point) continue;
         coordinates.set(addressHash(address), point);
-        await database.query(`INSERT INTO depannhome_map_geocodes(owner_id,address_hash,address,latitude,longitude,provider,updated_at) VALUES($1,$2,$3,$4,$5,'nominatim',NOW())
-            ON CONFLICT(owner_id,address_hash) DO UPDATE SET address=EXCLUDED.address,latitude=EXCLUDED.latitude,longitude=EXCLUDED.longitude,updated_at=NOW()`, [ownerId, addressHash(address), address, point.latitude, point.longitude]);
+        await database.query(`INSERT INTO depannhome_map_geocodes(owner_id,address_hash,address,latitude,longitude,provider,updated_at) VALUES($1,$2,$3,$4,$5,$6,NOW())
+            ON CONFLICT(owner_id,address_hash) DO UPDATE SET address=EXCLUDED.address,latitude=EXCLUDED.latitude,longitude=EXCLUDED.longitude,provider=EXCLUDED.provider,updated_at=NOW()`, [ownerId, addressHash(address), address, point.latitude, point.longitude, point.provider]);
     }
     for (const event of events) {
         const fromNotes = coordinatesFromNotes(event.notes);
@@ -169,14 +169,22 @@ async function geocodeAddress(address) {
     try {
         const url = `${base}/search?format=jsonv2&limit=1&countrycodes=fr&q=${encodeURIComponent(address)}`;
         const response = await fetch(url, { headers: { "User-Agent": "DepannHomePro/1.0 (support@depannhomepro.com)", Accept: "application/json" }, signal: AbortSignal.timeout(7000) });
+        if (response.ok) {
+            const result = (await response.json())[0];
+            const latitude = finiteCoordinate(result?.lat, -90, 90);
+            const longitude = finiteCoordinate(result?.lon, -180, 180);
+            if (latitude !== null && longitude !== null) return { latitude, longitude, provider: "nominatim" };
+        }
+    } catch {}
+    const frenchBase = String(process.env.FRENCH_GEOCODING_BASE_URL || "https://data.geopf.fr/geocodage").replace(/\/$/, "");
+    try {
+        const response = await fetch(`${frenchBase}/search?q=${encodeURIComponent(address)}&limit=1`, { headers: { "User-Agent": "DepannHomePro/1.0 (support@depannhomepro.com)", Accept: "application/json" }, signal: AbortSignal.timeout(7000) });
         if (!response.ok) return null;
-        const result = (await response.json())[0];
-        const latitude = finiteCoordinate(result?.lat, -90, 90);
-        const longitude = finiteCoordinate(result?.lon, -180, 180);
-        return latitude === null || longitude === null ? null : { latitude, longitude };
-    } catch {
-        return null;
-    }
+        const coordinates = (await response.json())?.features?.[0]?.geometry?.coordinates;
+        const longitude = finiteCoordinate(coordinates?.[0], -180, 180);
+        const latitude = finiteCoordinate(coordinates?.[1], -90, 90);
+        return latitude === null || longitude === null ? null : { latitude, longitude, provider: "geoplateforme" };
+    } catch { return null; }
 }
 
 function coordinatesFromNotes(notes) {

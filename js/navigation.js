@@ -1,5 +1,5 @@
 import { APP_VERSION, ROUTES, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=137";
-import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=236";
+import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=237";
 import { openCreatorPartnerRequest, openCreatorRequestNotification, renderCreatorConsole } from "./creator.js?v=171";
 import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=214";
 import { renderAccounting } from "./accounting.js?v=31";
@@ -18,7 +18,7 @@ import { synchronizeClients } from "./client-sync.js?v=132";
 import { configureLibrary, openLibrarySection, renderLibrary, searchPersonalLibrary } from "./library.js?v=122";
 import { getContextualSearchResults } from "./search.js?v=78";
 import { renderInterventionSearch } from "./intervention-search.js?v=3";
-import { initializeTerrainLocationSharing, renderOperationsMap } from "./operations-map.js?v=4";
+import { initializeTerrainLocationSharing, renderOperationsMap } from "./operations-map.js?v=5";
 import { state, resetSelection } from "./state.js?v=44";
 import {
     getSettings,
