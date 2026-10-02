@@ -73,6 +73,19 @@ test("mobile uploads force a full client refresh after transmission", () => {
     assert.match(calendarSource, /synchronizeClients\(\{ forceFull: true \}\)/);
 });
 
+test("the mobile intervention exposes shared client documents without duplicating its own files", () => {
+    const calendarSource = readFileSync(new URL("../js/calendar.js", import.meta.url), "utf8");
+    assert.match(calendarSource, /function renderClientDossierDocumentsHtml\(client, appointment\)/);
+    assert.match(calendarSource, /<h3>Documents de la fiche client<\/h3>/);
+    assert.match(calendarSource, /Devis déposés, missions d’assurance et autres pièces/);
+    assert.match(calendarSource, /String\(attachment\.appointmentId \|\| ""\) !== String\(appointment\?\.id \|\| ""\)/);
+    assert.match(calendarSource, /attachments\/\$\{encodeURIComponent\(attachment\.id\)\}\/open/);
+    assert.match(calendarSource, />Ouvrir<.*>Télécharger</s);
+    assert.match(calendarSource, /pausedClient \? renderClientDossierDocumentsHtml/);
+    assert.match(calendarSource, /cancelledClient \? renderClientDossierDocumentsHtml/);
+    assert.match(styleSource, /\.calendar-client-document-list/);
+});
+
 test("mobile camera selections can be removed before an explicit upload", () => {
     const calendarSource = readFileSync(new URL("../js/calendar.js", import.meta.url), "utf8");
     const storedPhotoMarkup = calendarSource.slice(calendarSource.indexOf("function renderInterventionPhotosHtml"), calendarSource.indexOf("function initializeInterventionPhotoPreviews"));

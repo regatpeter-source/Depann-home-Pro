@@ -3319,6 +3319,53 @@ body[data-role="mobile_admin"].mobile-device .store-match{min-height:72px;paddin
     margin-top:18px;
 }
 
+.calendar-client-documents{
+    display:grid;
+    gap:14px;
+    margin-top:18px;
+    padding:16px;
+    border:1px solid var(--border);
+    border-radius:14px;
+    background:var(--surface);
+}
+
+.calendar-client-document-list{
+    display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(260px,1fr));
+    gap:10px;
+}
+
+.calendar-client-document{
+    display:grid;
+    grid-template-columns:72px minmax(0,1fr);
+    gap:12px;
+    align-items:start;
+    padding:12px;
+    border:1px solid var(--border);
+    border-radius:12px;
+    background:var(--surface-alt,#f8fafc);
+}
+
+.calendar-client-document-preview{
+    display:grid;
+    place-items:center;
+    width:72px;
+    height:72px;
+    overflow:hidden;
+    border:1px solid var(--border);
+    border-radius:10px;
+    background:var(--surface);
+    color:var(--primary);
+    font-weight:900;
+    text-decoration:none;
+}
+
+.calendar-client-document-preview img{width:100%;height:100%;object-fit:cover;}
+.calendar-client-document strong,.calendar-client-document small{display:block;overflow-wrap:anywhere;}
+.calendar-client-document small{margin-top:4px;color:var(--muted);}
+.calendar-client-document-actions{display:flex;flex-wrap:wrap;gap:7px;margin-top:9px;}
+.calendar-client-document-actions .secondary-button{flex:1;min-width:94px;text-align:center;}
+
 .calendar-quitus,
 .calendar-intervention-photos{
     display:grid;
@@ -6257,6 +6304,9 @@ footer{
         grid-template-columns:1fr;
         padding:12px;
     }
+
+    .calendar-client-documents{padding:12px;}
+    .calendar-client-document-list{grid-template-columns:1fr;}
 
     .calendar-intervention-photos > div:first-child,
     .calendar-intervention-photos .calendar-form-actions,

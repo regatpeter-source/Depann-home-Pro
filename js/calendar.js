@@ -1,6 +1,6 @@
 import { ROUTES } from "./config.js?v=134";
 import { createBillingDocumentForClient, viewBillingDocument } from "./billing.js?v=214";
-import { getSearchableClients } from "./clients.js?v=173";
+import { getSearchableClients } from "./clients.js?v=174";
 import { addClientActivityByName, synchronizeClients } from "./client-sync.js?v=132";
 import { renderClientMessages } from "./messages.js?v=107";
 import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=60";
@@ -372,6 +372,7 @@ function renderEventForm(panel) {
         return;
     }
     if (calendarEventStatus(event) === "paused") {
+        const pausedClient = findClientForEvent(event);
         panel.innerHTML = `
             <div class="calendar-event-detail">
                 <div class="form-heading"><div><p class="eyebrow">Intervention en pause</p><h2>${escapeHtml(event.title)}</h2></div><span class="quitus-status">En pause</span></div>
@@ -379,6 +380,7 @@ function renderEventForm(panel) {
                     <p class="muted">L’intervention conserve ce numéro et quittera la liste des interventions à reprendre lorsqu’une nouvelle date sera choisie.</p>
                     <dl><dt>Intervention</dt><dd>N° ${escapeHtml(event.id)}</dd><dt>Client</dt><dd>${escapeHtml(event.clientName || "Non renseigné")}</dd><dt>Date initiale</dt><dd>${escapeHtml(formatActivityDate(event.date, event.startTime))}${event.endTime ? ` — ${escapeHtml(event.endTime)}` : ""}</dd>${renderAssignedTechniciansDetail(event)}${event.location ? `<dt>Lieu</dt><dd>${escapeHtml(event.location)}</dd>` : ""}${event.notes ? `<dt>Notes</dt><dd>${escapeHtml(event.notes)}</dd>` : ""}</dl>
                 </section>
+                ${pausedClient ? renderClientDossierDocumentsHtml(pausedClient, event) : ""}
                 ${renderInterventionPauseHtml(event)}
                 <div class="calendar-form-actions"><button type="button" class="secondary-button" id="closeCalendarDetail">Fermer</button></div>
             </div>`;
@@ -390,6 +392,7 @@ function renderEventForm(panel) {
         return;
     }
     if (calendarEventStatus(event) === "cancelled" && usesTerrainInterventionView(event)) {
+        const cancelledClient = findClientForEvent(event);
         panel.innerHTML = `
             <div class="calendar-event-detail">
                 <div class="form-heading"><div><p class="eyebrow">Intervention annulée</p><h2>${escapeHtml(event.title)}</h2></div><span class="quitus-status">Annulée</span></div>
@@ -397,6 +400,7 @@ function renderEventForm(panel) {
                     <p class="muted">Cette intervention reste visible dans le planning et l’historique, mais elle ne réserve plus ce créneau.</p>
                     <dl><dt>Intervention</dt><dd>N° ${escapeHtml(event.id)}</dd><dt>Client</dt><dd>${escapeHtml(event.clientName || "Non renseigné")}</dd><dt>Date initiale</dt><dd>${escapeHtml(formatActivityDate(event.date, event.startTime))}${event.endTime ? ` — ${escapeHtml(event.endTime)}` : ""}</dd>${renderAssignedTechniciansDetail(event)}${event.location ? `<dt>Lieu</dt><dd>${escapeHtml(event.location)}</dd>` : ""}${event.notes ? `<dt>Notes</dt><dd>${escapeHtml(event.notes)}</dd>` : ""}</dl>
                 </section>
+                ${cancelledClient ? renderClientDossierDocumentsHtml(cancelledClient, event) : ""}
                 <div class="calendar-form-actions">${canEditCalendarEvent(event) ? '<button type="button" class="secondary-button" id="editCalendarEvent">Modifier ou réactiver</button>' : ""}<button type="button" class="secondary-button" id="closeCalendarDetail">Fermer</button></div>
             </div>`;
         panel.querySelector("#editCalendarEvent")?.addEventListener("click", () => {
@@ -440,6 +444,7 @@ function renderEventForm(panel) {
                             ${client.notes ? `<div class="calendar-contact-item calendar-client-full-width"><span>Consignes client</span><strong class="${automaticClientNotesClass(client)}">${escapeHtml(client.notes)}</strong></div>` : ""}
                         </div>
                     </section>
+                    ${renderClientDossierDocumentsHtml(client, event)}
                     <section class="calendar-appointment-information">
                         <p class="eyebrow">Informations du rendez-vous</p>
                         <dl><dt>Date</dt><dd>${escapeHtml(formatActivityDate(event.date, event.startTime))}${event.endTime ? ` — ${escapeHtml(event.endTime)}` : ""}</dd>${renderAssignedTechniciansDetail(event)}${event.notes ? `<dt>Notes</dt><dd>${escapeHtml(event.notes)}</dd>` : ""}</dl>
@@ -1367,6 +1372,33 @@ function renderInterventionPhotosHtml(client, appointment) {
             <div class="calendar-form-actions"><button type="submit" class="secondary-button">Envoyer les photos et fichiers sélectionnés</button></div><p class="auth-message" aria-live="polite"></p>
         </form>
     `;
+}
+
+function renderClientDossierDocumentsHtml(client, appointment) {
+    const documents = (client.attachments || []).filter(attachment => String(attachment.appointmentId || "") !== String(appointment?.id || ""));
+    const documentCard = attachment => {
+        const url = `/api/clients/${encodeURIComponent(client.id)}/attachments/${encodeURIComponent(attachment.id)}/open`;
+        const category = attachment.source === "partner_email" || attachment.type === "Mission partenaire · E-mail"
+            ? "Mission assurance / partenaire"
+            : attachment.appointmentId ? `Autre intervention n°${attachment.appointmentId}` : attachment.type || "Document client";
+        const image = String(attachment.mime || "").startsWith("image/");
+        return `<article class="calendar-client-document"><a class="calendar-client-document-preview${image ? " image" : ""}" href="${url}" target="_blank" rel="noopener">${image ? `<img src="${url}" alt="Aperçu ${escapeHtml(attachment.name)}" loading="lazy">` : `<span>${escapeHtml(clientDocumentFormat(attachment))}</span>`}</a><div><p class="eyebrow">${escapeHtml(category)}</p><strong>${escapeHtml(attachment.name)}</strong><small>${escapeHtml(formatClientDocumentDate(attachment.createdAt))}</small><div class="calendar-client-document-actions"><a class="secondary-button" href="${url}" target="_blank" rel="noopener">Ouvrir</a><a class="secondary-button" href="${url}?download=1" download="${escapeHtml(attachment.name)}">Télécharger</a></div></div></article>`;
+    };
+    return `<section class="calendar-client-documents"><div class="form-heading"><div><p class="eyebrow">Dossier partagé</p><h3>Documents de la fiche client</h3><p class="muted">Devis déposés, missions d’assurance et autres pièces enregistrées dans la fiche client.</p></div><span class="quitus-status${documents.length ? " signed" : ""}">${documents.length || "Aucun"}</span></div>${documents.length ? `<div class="calendar-client-document-list">${documents.map(documentCard).join("")}</div>` : '<p class="muted">Aucun document général n’est enregistré dans la fiche client.</p>'}</section>`;
+}
+
+function clientDocumentFormat(attachment) {
+    const mime = String(attachment?.mime || "").toLowerCase();
+    const extension = String(attachment?.name || "").split(".").pop();
+    if (mime.includes("pdf")) return "PDF";
+    if (mime.includes("word") || /docx?$/i.test(extension)) return "DOC";
+    if (mime.includes("sheet") || mime.includes("excel") || /xlsx?$/i.test(extension)) return "XLS";
+    return String(extension || "Fichier").slice(0, 5).toUpperCase();
+}
+
+function formatClientDocumentDate(value) {
+    const date = new Date(value || "");
+    return Number.isNaN(date.getTime()) ? "Date non renseignée" : new Intl.DateTimeFormat("fr-FR", { dateStyle: "short" }).format(date);
 }
 
 function initializeInterventionPhotoPreviews(form) {

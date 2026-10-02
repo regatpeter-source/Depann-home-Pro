@@ -1019,6 +1019,9 @@ export function getSearchableClients() {
             reportOriginalId: attachment.reportOriginalId || "",
             reportRevision: Number(attachment.reportRevision) || 0,
             appointmentId: attachment.appointmentId || "",
+            source: attachment.source || "",
+            sourceAttachmentId: attachment.sourceAttachmentId || "",
+            missionId: attachment.missionId || "",
             createdAt: attachment.createdAt
         }))
     }));
