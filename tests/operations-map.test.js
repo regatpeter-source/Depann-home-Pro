@@ -81,6 +81,14 @@ test("la planification affiche une carte limitée à l’adresse et aux membres 
     assert.match(client, /Adresse d’intervention non localisée/);
     assert.match(client, /Adresse non localisée/);
     assert.match(client, /<em>Intervention<\/em>/);
+    assert.match(server, /data\.geopf\.fr\/navigation/);
+    assert.match(server, /profile: "car"/);
+    assert.match(server, /travelDurationSeconds/);
+    assert.match(server, /ROUTE_CACHE_TTL_MS = 10 \* 60 \* 1000/);
+    assert.match(server, /MAX_ROUTES_PER_REQUEST = 12/);
+    assert.match(client, /formatTravelDuration/);
+    assert.match(client, /en voiture/);
+    assert.match(client, /trajet indisponible/);
 });
 
 test("une intervention urgente utilise la journée courante sur la carte", () => {
@@ -120,7 +128,7 @@ test("les limites PWA, la rétention et les fournisseurs cartographiques sont do
     assert.doesNotMatch(client, /tile\.openstreetmap\.org|basemaps\.cartocdn\.com|api[_-]?key/i);
     assert.match(architecture, /ne prétend pas assurer un suivi lorsque le navigateur suspend l’application/);
     assert.match(architecture, /service Android au premier plan/);
-    assert.match(worker, /operations-map\.js\?v=5/);
+    assert.match(worker, /operations-map\.js\?v=6/);
     assert.match(worker, /maplibre-gl\.mjs\?v=6\.11\.2/);
     assert.match(worker, /maplibre-gl-worker\.mjs/);
 });

@@ -8,9 +8,12 @@ const TEAM_MAP_ROLES = new Set(["admin", "pc_standard", "commercial", "mobile_ad
 const POSITION_RETENTION_HOURS = 12;
 const LIVE_POSITION_MINUTES = 2;
 const MAX_GEOCODES_PER_REQUEST = 6;
+const MAX_ROUTES_PER_REQUEST = 12;
+const ROUTE_CACHE_TTL_MS = 10 * 60 * 1000;
 let geocodeQueue = Promise.resolve();
 let lastGeocodeAt = 0;
 let locationCleanupTimer = null;
+const routeCache = new Map();
 
 export async function initializeOperationsMap() {
     const database = getPool();
@@ -88,6 +91,7 @@ export function registerOperationsMapRoutes(app, requireAuthentication) {
         `, [ownerId, ownOnly, String(LIVE_POSITION_MINUTES), request.user.sub, String(POSITION_RETENTION_HOURS), technicianIds]);
         const target = targetAddress ? { address: targetAddress, location: targetAddress } : null;
         if (target) await attachEventCoordinates(database, ownerId, [target]);
+        if (target) await attachTravelTimes(target, locationsResult.rows);
         response.json({ date, teamView: !ownOnly, liveWindowMinutes: LIVE_POSITION_MINUTES, events, technicians: locationsResult.rows, target });
     }));
 
@@ -187,6 +191,39 @@ async function geocodeAddress(address) {
     } catch { return null; }
 }
 
+async function attachTravelTimes(target, technicians) {
+    if (!validCoordinates(target)) return;
+    const candidates = technicians.filter(validCoordinates).slice(0, MAX_ROUTES_PER_REQUEST);
+    await Promise.all(candidates.map(async technician => {
+        const route = await routeEstimate(technician, target);
+        if (!route) return;
+        technician.routeDistanceMeters = route.distanceMeters;
+        technician.travelDurationSeconds = route.durationSeconds;
+    }));
+}
+
+async function routeEstimate(start, end) {
+    const key = [start.longitude, start.latitude, end.longitude, end.latitude].map(value => Number(value).toFixed(4)).join(",");
+    const cached = routeCache.get(key);
+    if (cached?.expiresAt > Date.now()) return cached.value;
+    const base = String(process.env.ROUTING_BASE_URL || "https://data.geopf.fr/navigation").replace(/\/$/, "");
+    try {
+        const query = new URLSearchParams({ resource: "bdtopo-osrm", start: `${start.longitude},${start.latitude}`, end: `${end.longitude},${end.latitude}`, profile: "car", optimization: "fastest" });
+        const response = await fetch(`${base}/itineraire?${query}`, { headers: { "User-Agent": "DepannHomePro/1.0 (support@depannhomepro.com)", Accept: "application/json" }, signal: AbortSignal.timeout(7000) });
+        if (!response.ok) return cacheRoute(key, null, 60_000);
+        const result = await response.json();
+        const distanceMeters = finiteCoordinate(result?.distance, 0, 5_000_000);
+        const durationSeconds = finiteCoordinate(result?.duration, 0, 7 * 24 * 60 * 60);
+        return cacheRoute(key, distanceMeters === null || durationSeconds === null ? null : { distanceMeters, durationSeconds }, ROUTE_CACHE_TTL_MS);
+    } catch { return cacheRoute(key, null, 60_000); }
+}
+
+function cacheRoute(key, value, ttl) {
+    if (routeCache.size >= 500) routeCache.delete(routeCache.keys().next().value);
+    routeCache.set(key, { value, expiresAt: Date.now() + ttl });
+    return value;
+}
+
 function coordinatesFromNotes(notes) {
     const match = String(notes || "").match(/GPS\s*:\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)/i);
     if (!match) return null;
@@ -194,7 +231,8 @@ function coordinatesFromNotes(notes) {
     const longitude = finiteCoordinate(match[2], -180, 180);
     return latitude === null || longitude === null ? null : { latitude, longitude };
 }
-function finiteCoordinate(value, minimum, maximum) { const number = Number(value); return Number.isFinite(number) && number >= minimum && number <= maximum ? number : null; }
+function validCoordinates(value) { return finiteCoordinate(value?.latitude, -90, 90) !== null && finiteCoordinate(value?.longitude, -180, 180) !== null; }
+function finiteCoordinate(value, minimum, maximum) { if (value === null || value === undefined || value === "") return null; const number = Number(value); return Number.isFinite(number) && number >= minimum && number <= maximum ? number : null; }
 function validDate(value) { const date = String(value || ""); return DATE_PATTERN.test(date) ? date : ""; }
 function positiveId(value) { const id = Number(value); return Number.isSafeInteger(id) && id > 0 ? id : null; }
 function selectedTechnicianIds(value) { const values = String(value || "").split(",").filter(Boolean); const ids = values.map(positiveId); return ids.some(id => !id) ? [] : [...new Set(ids)].slice(0, 50); }

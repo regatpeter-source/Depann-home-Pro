@@ -8389,7 +8389,7 @@ body.dark-theme .operations-map-privacy{border-color:#166534;background:#143323;
 .calendar-planning-map-summary article{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:9px;padding:9px 11px;border:1px solid var(--border);border-radius:10px;background:var(--surface);}
 .calendar-planning-map-summary strong,.calendar-planning-map-summary small{display:block;overflow-wrap:anywhere;}
 .calendar-planning-map-summary small{margin-top:2px;color:var(--muted);}
-.calendar-planning-map-summary b{color:var(--primary);font-size:13px;text-align:right;}
+.calendar-planning-map-summary b{max-width:210px;color:var(--primary);font-size:13px;text-align:right;}
 .planning-target-marker,.planning-event-marker{background:transparent;border:0;}
 .planning-target-marker{position:relative;display:grid;justify-items:center;filter:drop-shadow(0 4px 8px rgba(15,23,42,.45));}
 .planning-target-marker span{position:relative;display:grid;place-items:center;width:44px;height:44px;border:4px solid #fff;border-radius:50% 50% 50% 8px;background:#dc2626;color:#fff;font-size:22px;font-weight:900;transform:rotate(-45deg);}
@@ -8449,5 +8449,7 @@ body:is(.desktop-device,.mobile-device).dark-theme .maplibregl-popup-close-butto
     .operations-map-canvas{min-height:52vh;}
     .calendar-planning-map-heading{flex-direction:column;}
     .calendar-planning-map-canvas{min-height:48vh;}
+    .calendar-planning-map-summary article{grid-template-columns:auto minmax(0,1fr);}
+    .calendar-planning-map-summary b{grid-column:2;max-width:none;text-align:left;}
     .terrain-location-control{bottom:76px;}
 }

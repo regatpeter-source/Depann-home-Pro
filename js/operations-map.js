@@ -127,14 +127,15 @@ function renderPlanningMapPayload(container, state, payload) {
         bounds.extend([event.longitude, event.latitude]);
     }
     const technicians = (Array.isArray(payload?.technicians) ? [...payload.technicians] : []).sort((first, second) => {
-        const firstDistance = validPoint(target) && validPoint(first) ? distanceMeters(target, first) : Number.POSITIVE_INFINITY;
-        const secondDistance = validPoint(target) && validPoint(second) ? distanceMeters(target, second) : Number.POSITIVE_INFINITY;
+        const firstDistance = validTravelTime(first) ? Number(first.travelDurationSeconds) : validPoint(target) && validPoint(first) ? distanceMeters(target, first) : Number.POSITIVE_INFINITY;
+        const secondDistance = validTravelTime(second) ? Number(second.travelDurationSeconds) : validPoint(target) && validPoint(second) ? distanceMeters(target, second) : Number.POSITIVE_INFINITY;
         return firstDistance - secondDistance || String(first.name || "").localeCompare(String(second.name || ""), "fr");
     });
     for (const technician of technicians) {
         if (!validPoint(technician)) continue;
         const distance = validPoint(target) ? distanceMeters(target, technician) : null;
-        const popup = new Popup({ offset: 24 }).setHTML(`<strong>${escapeHtml(technician.name)}</strong><br>${technician.isLive ? "Position en direct" : `Dernière position ${escapeHtml(relativeTime(technician.updatedAt))}`}${distance === null ? "" : `<br>Distance à vol d’oiseau : ${escapeHtml(formatDistance(distance))}`}`);
+        const travel = travelTimeLabel(technician, distance);
+        const popup = new Popup({ offset: 24 }).setHTML(`<strong>${escapeHtml(technician.name)}</strong><br>${technician.isLive ? "Position en direct" : `Dernière position ${escapeHtml(relativeTime(technician.updatedAt))}`}${travel ? `<br>Vers cette intervention : ${escapeHtml(travel)}` : ""}`);
         state.markers.push(new Marker({ element: technicianMarker(technician) }).setLngLat([technician.longitude, technician.latitude]).setPopup(popup).addTo(state.map));
         bounds.extend([technician.longitude, technician.latitude]);
     }
@@ -142,9 +143,10 @@ function renderPlanningMapPayload(container, state, payload) {
     window.setTimeout(() => state.map?.resize(), 0);
     const summary = container.querySelector("[data-planning-map-summary]");
     summary.innerHTML = technicians.length ? technicians.map(technician => {
-        const distance = !validPoint(technician) ? "Position non partagée" : validPoint(target) ? formatDistance(distanceMeters(target, technician)) : "Adresse non localisée";
+        const directDistance = validPoint(target) && validPoint(technician) ? distanceMeters(target, technician) : null;
+        const travel = !validPoint(technician) ? "Position non partagée" : !validPoint(target) ? "Adresse non localisée" : travelTimeLabel(technician, directDistance);
         const freshness = validPoint(technician) ? technician.isLive ? "En direct" : `Actualisée ${relativeTime(technician.updatedAt)}` : "Activez le partage sur son poste mobile";
-        return `<article><span class="technician-map-dot${technician.isLive ? " live" : ""}"></span><div><strong>${escapeHtml(technician.name)}</strong><small>${escapeHtml(freshness)}</small></div><b>${escapeHtml(distance)}</b></article>`;
+        return `<article><span class="technician-map-dot${technician.isLive ? " live" : ""}"></span><div><strong>${escapeHtml(technician.name)}</strong><small>${escapeHtml(freshness)}</small></div><b>${escapeHtml(travel)}</b></article>`;
     }).join("") : '<p class="muted">Aucun des membres sélectionnés n’est disponible sur cette carte.</p>';
     return validPoint(target);
 }
@@ -285,6 +287,9 @@ function relativeTime(value) { const elapsed = Math.max(0, Date.now() - new Date
 }
 function formatMapDate(value) { return new Intl.DateTimeFormat("fr-FR", { weekday: "short", day: "2-digit", month: "2-digit" }).format(new Date(`${value}T12:00:00`)); }
 function formatDistance(value) { return value < 1000 ? `${Math.round(value)} m` : `${(value / 1000).toFixed(value < 10_000 ? 1 : 0).replace(".", ",")} km`; }
+function formatTravelDuration(value) { const minutes = Math.max(1, Math.round(Number(value) / 60)); const hours = Math.floor(minutes / 60); const remaining = minutes % 60; return hours ? `${hours} h${remaining ? ` ${remaining} min` : ""}` : `${minutes} min`; }
+function validTravelTime(value) { return Number.isFinite(Number(value?.travelDurationSeconds)) && Number(value.travelDurationSeconds) >= 0 && Number.isFinite(Number(value?.routeDistanceMeters)) && Number(value.routeDistanceMeters) >= 0; }
+function travelTimeLabel(technician, directDistance) { return validTravelTime(technician) ? `${formatDistance(Number(technician.routeDistanceMeters))} · ${formatTravelDuration(technician.travelDurationSeconds)} en voiture` : directDistance === null ? "" : `${formatDistance(directDistance)} à vol d’oiseau · trajet indisponible`; }
 function mapStyleUrl() { return `https://tiles.openfreemap.org/styles/${document.body.classList.contains("dark-theme") ? "dark" : "liberty"}`; }
 function distanceMeters(first, second) { const radius = 6371e3; const toRadians = value => value * Math.PI / 180; const latitudeDelta = toRadians(second.latitude - first.latitude); const longitudeDelta = toRadians(second.longitude - first.longitude); const firstLatitude = toRadians(first.latitude); const secondLatitude = toRadians(second.latitude); const value = Math.sin(latitudeDelta / 2) ** 2 + Math.cos(firstLatitude) * Math.cos(secondLatitude) * Math.sin(longitudeDelta / 2) ** 2; return radius * 2 * Math.atan2(Math.sqrt(value), Math.sqrt(1 - value)); }
 function clearMapRefresh() { if (mapRefreshTimer) window.clearInterval(mapRefreshTimer); mapRefreshTimer = null; activeMarkers = []; activeMap?.remove(); activeMap = null; }
