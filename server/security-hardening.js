@@ -19,7 +19,7 @@ export function contentSecurityPolicy() {
         formAction: ["'self'"],
         frameAncestors: ["'none'"],
         frameSrc: ["'self'", "blob:"],
-        imgSrc: ["'self'", "data:", "blob:"],
+        imgSrc: ["'self'", "data:", "blob:", "https://tile.openstreetmap.org"],
         objectSrc: ["'none'"],
         scriptSrc: ["'self'"],
         scriptSrcAttr: ["'none'"],

@@ -1,4 +1,4 @@
-import { APP_VERSION, ROUTES, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=136";
+import { APP_VERSION, ROUTES, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=137";
 import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=235";
 import { openCreatorPartnerRequest, openCreatorRequestNotification, renderCreatorConsole } from "./creator.js?v=171";
 import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=214";
@@ -18,6 +18,7 @@ import { synchronizeClients } from "./client-sync.js?v=132";
 import { configureLibrary, openLibrarySection, renderLibrary, searchPersonalLibrary } from "./library.js?v=122";
 import { getContextualSearchResults } from "./search.js?v=78";
 import { renderInterventionSearch } from "./intervention-search.js?v=3";
+import { initializeTerrainLocationSharing, renderOperationsMap } from "./operations-map.js?v=1";
 import { state, resetSelection } from "./state.js?v=44";
 import {
     getSettings,
@@ -70,6 +71,7 @@ export function initializeNavigation(loadedDatabase) {
         openGates: () => renderMotorFamily("portails")
     });
     bindEvents();
+    initializeTerrainLocationSharing();
     bindSilentInteractionSynchronization();
     applyRoleBasedMenus();
     initializeMobileWorkspaceMenu();
@@ -112,6 +114,10 @@ export function initializeNavigation(loadedDatabase) {
         renderClients({ database, navigateToRef, createBillingDocument: createBillingDocumentForClient, viewBillingDocument, createCalendarEvent: createCalendarEventForClient, selectedId: clientId, directoryClientId: clientId });
     });
     window.addEventListener("depannhome:technician-calendar-viewed", event => markTechnicianCalendarAlertsRead(event.detail?.events || []));
+    window.addEventListener("depannhome:open-map-intervention", event => {
+        const appointment = event.detail?.event;
+        if (appointment) renderCalendar({ date: new Date(`${appointment.date || new Date().toISOString().slice(0, 10)}T12:00:00`), event: appointment });
+    });
     window.addEventListener("depannhome:open-notification", event => openNotificationDestination(event.detail?.notification));
     window.addEventListener("depannhome:open-home", openHome);
     window.addEventListener("depannhome:support-follow-route", event => {
@@ -245,6 +251,7 @@ function inferApplicationRoute(title) {
     if (/e.?mail/.test(normalizedTitle)) return ROUTES.companyEmail;
     if (normalizedTitle.startsWith("sandbox")) return ROUTES.partnerSandbox;
     if (normalizedTitle.startsWith("rapport")) return ROUTES.technicalReports;
+    if (normalizedTitle.startsWith("carte des interventions")) return ROUTES.operationsMap;
     if (/^(planning|intervention|retrouver une intervention)/.test(normalizedTitle)) return ROUTES.calendar;
     if (normalizedTitle.startsWith("bibliotheque")) return ROUTES.library;
     if (normalizedTitle.startsWith("signaler un probleme")) return ROUTES.support;
@@ -259,6 +266,7 @@ function restoreApplicationRoute(entry) {
     const route = typeof entry === "string" ? entry : entry?.route;
     const view = typeof entry === "string" ? {} : entry?.view || {};
     if (route === ROUTES.calendar) return openCalendar();
+    if (route === ROUTES.operationsMap) return renderOperationsMap();
     if (route === ROUTES.clients) return renderClientHistoryView(view);
     if (route === ROUTES.billing) return isTechnician() && organizationFeatureEnabled("technicalReports") ? renderTechnicalReports() : renderBilling();
     if (route === ROUTES.accounting) return renderAccounting();
@@ -361,6 +369,8 @@ export async function refreshApplication() {
     } else if (activeRoute === ROUTES.calendar) {
         if (document.getElementById("interventionSearchResults")) openInterventionSearch();
         else renderCalendar({ currentPeriod: true });
+    } else if (activeRoute === ROUTES.operationsMap) {
+        renderOperationsMap();
     } else if (activeRoute === ROUTES.billing) {
         if (isTechnician() && organizationFeatureEnabled("technicalReports")) renderTechnicalReports();
         else renderBilling();
@@ -431,6 +441,7 @@ function bindEvents() {
     const companyEmailBtn = document.getElementById("companyEmailBtn");
     const partnerSandboxBtn = document.getElementById("partnerSandboxBtn");
     const calendarBtn = document.getElementById("calendarBtn");
+    const operationsMapBtn = document.getElementById("operationsMapBtn");
     const interventionSearchBtn = document.getElementById("interventionSearchBtn");
     const libraryBtn = document.getElementById("libraryBtn");
     const settingsBtn = document.getElementById("settingsBtn");
@@ -462,6 +473,7 @@ function bindEvents() {
     companyEmailBtn?.addEventListener("click", () => { if (canAccessQuick("companyEmail")) renderCompanyEmail(); });
     partnerSandboxBtn?.addEventListener("click", () => { if (canAccessQuick("partnerSandbox")) renderPartnerSandbox(); });
     calendarBtn?.addEventListener("click", () => { if (canAccessQuick("calendar")) openCalendar(); });
+    operationsMapBtn?.addEventListener("click", () => { if (canAccessQuick("operationsMap")) renderOperationsMap(); });
     interventionSearchBtn?.addEventListener("click", () => {
         if (!canAccessQuick("interventionSearch")) return;
         openInterventionSearch();
@@ -498,6 +510,7 @@ function bindEvents() {
             if (nav === ROUTES.companyEmail) renderCompanyEmail();
             if (nav === ROUTES.partnerSandbox && document.body.dataset.role === "admin") renderPartnerSandbox();
             if (nav === ROUTES.calendar) openCalendar();
+            if (nav === ROUTES.operationsMap) renderOperationsMap();
             if (nav === ROUTES.library) renderLibrary();
             if (nav === ROUTES.support) renderMobileSupportTicket();
             if (nav === ROUTES.settings) renderSettings();
@@ -507,7 +520,7 @@ function bindEvents() {
 
 function applyRoleBasedMenus() {
     const quickSelectors = {
-        clients: "#clientsBtn", calendar: "#calendarBtn", interventionSearch: "#interventionSearchBtn", library: "#libraryBtn", billing: "#billingBtn", purchases: "#purchasesBtn",
+        clients: "#clientsBtn", calendar: "#calendarBtn", operationsMap: "#operationsMapBtn", interventionSearch: "#interventionSearchBtn", library: "#libraryBtn", billing: "#billingBtn", purchases: "#purchasesBtn",
         accounting: "#accountingBtn", groups: "#groupsBtn", partnerMissions: "#partnerMissionsBtn", companyEmail: "#companyEmailBtn",
         partnerSandbox: "#partnerSandboxBtn", support: "#supportTicketBtn", settings: "#settingsBtn"
     };
@@ -579,7 +592,7 @@ function initializeMobileWorkspaceMenu() {
 
 function renderMobileWorkspaceFolders(container, quickActions) {
     const groups = [
-        ["Interventions", ["calendarBtn", "interventionSearchBtn", "clientsBtn", "partnerMissionsBtn"]],
+        ["Interventions", ["calendarBtn", "operationsMapBtn", "interventionSearchBtn", "clientsBtn", "partnerMissionsBtn"]],
         ["Gestion", ["billingBtn", "accountingBtn", "purchasesBtn"]],
         ["Communication", ["companyEmailBtn"]],
         ["Ressources et compte", ["libraryBtn", "settingsBtn"]],
@@ -659,7 +672,7 @@ function isOrganizationRouteEnabled(route) {
     if (document.body.dataset.creator === "true") return true;
     if (route === ROUTES.settings && organizationFeatureEnabled("partnerConnections")) return true;
     if (route === ROUTES.settings && organizationFeatureEnabled("partnerMissions")) return true;
-    const featureByRoute = { [ROUTES.search]: "library", [ROUTES.store]: "library", [ROUTES.clients]: "clients", [ROUTES.calendar]: "calendar", [ROUTES.library]: "library", [ROUTES.billing]: "billing", [ROUTES.accounting]: "accounting", [ROUTES.purchases]: "purchases", [ROUTES.messages]: "messages", [ROUTES.technicalReports]: "technicalReports", [ROUTES.partnerMissions]: "partnerMissions", [ROUTES.companyEmail]: "companyEmail", [ROUTES.groups]: "groups", [ROUTES.settings]: "settings" };
+    const featureByRoute = { [ROUTES.search]: "library", [ROUTES.store]: "library", [ROUTES.clients]: "clients", [ROUTES.calendar]: "calendar", [ROUTES.operationsMap]: "calendar", [ROUTES.library]: "library", [ROUTES.billing]: "billing", [ROUTES.accounting]: "accounting", [ROUTES.purchases]: "purchases", [ROUTES.messages]: "messages", [ROUTES.technicalReports]: "technicalReports", [ROUTES.partnerMissions]: "partnerMissions", [ROUTES.companyEmail]: "companyEmail", [ROUTES.groups]: "groups", [ROUTES.settings]: "settings" };
     const feature = featureByRoute[route];
     return !feature || organizationFeatureEnabled(feature);
 }
@@ -680,7 +693,7 @@ function isCommercialMobile() {
 }
 
 function menuRoute(menu) {
-    return ({ clients: ROUTES.clients, calendar: ROUTES.calendar, interventionSearch: ROUTES.calendar, library: ROUTES.library, billing: ROUTES.billing, accounting: ROUTES.accounting, purchases: ROUTES.purchases, groups: ROUTES.groups, partnerMissions: ROUTES.partnerMissions, companyEmail: ROUTES.companyEmail, partnerSandbox: ROUTES.partnerSandbox, support: ROUTES.support, settings: ROUTES.settings })[menu] || "";
+    return ({ clients: ROUTES.clients, calendar: ROUTES.calendar, operationsMap: ROUTES.operationsMap, interventionSearch: ROUTES.calendar, library: ROUTES.library, billing: ROUTES.billing, accounting: ROUTES.accounting, purchases: ROUTES.purchases, groups: ROUTES.groups, partnerMissions: ROUTES.partnerMissions, companyEmail: ROUTES.companyEmail, partnerSandbox: ROUTES.partnerSandbox, support: ROUTES.support, settings: ROUTES.settings })[menu] || "";
 }
 
 function openHome() {

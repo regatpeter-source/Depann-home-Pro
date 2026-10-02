@@ -18,7 +18,8 @@
 
     <link rel="icon" href="assets/logo.png.png" type="image/png">
 
-    <link rel="stylesheet" href="css/style.css?v=293">
+    <link rel="stylesheet" href="css/style.css?v=294">
+    <link rel="stylesheet" href="vendor/leaflet/leaflet.css?v=1.9.4">
     <link rel="stylesheet" href="css/partner-dialogue.css?v=7">
     <link rel="stylesheet" href="css/report-editor.css?v=8">
     <link rel="stylesheet" href="css/health-dashboard.css?v=2">
@@ -86,6 +87,10 @@
 
               <button id="calendarBtn">
                   Planning <b class="message-alert" data-calendar-alert hidden aria-label="Nouveaux rendez-vous aujourd’hui"></b>
+              </button>
+
+              <button id="operationsMapBtn">
+                  Carte des interventions
               </button>
 
               <button id="interventionSearchBtn">
@@ -186,6 +191,10 @@
             <span>Planning</span><b class="message-alert" data-calendar-alert hidden aria-label="Nouveaux rendez-vous aujourd’hui"></b>
         </button>
 
+        <button class="nav-button" data-nav="operations-map">
+            <span>Carte terrain</span>
+        </button>
+
         <button class="nav-button" data-nav="library">
             <span>Bibliothèque</span>
         </button>
@@ -198,7 +207,7 @@
 
     </div>
 
-    <script type="module" src="js/app.js?v=480"></script>
+    <script type="module" src="js/app.js?v=481"></script>
 
 </body>
 

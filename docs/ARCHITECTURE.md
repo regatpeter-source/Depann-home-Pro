@@ -70,6 +70,14 @@ Les médias techniques restent dans les tables dédiées du rapport afin de ne p
 
 `server/collaboration.js` apporte un verrou exclusif persistant par ressource, une pulsation d’activité et une expiration après 15 minutes d’inactivité. Le détenteur peut modifier le rapport ; les autres utilisateurs le consultent en lecture seule, avec le nom, rôle et temps d’ouverture de l’éditeur actif. Les écritures sont contrôlées côté serveur, et l’administrateur peut reprendre un verrou avec un motif audité. Un flux SSE natif diffuse les événements métier importants (verrou, sauvegarde, photo, statut, correction, validation), sans coédition caractère par caractère. Les notifications et l’audit sont stockés en PostgreSQL. Voir `docs/COLLABORATION.md` pour l’extension à d’autres entités.
 
+## Carte opérationnelle et localisation terrain
+
+`server/operations-map.js` expose une vue cartographique journalière des interventions et la dernière position volontairement partagée par chaque poste mobile terrain. Les interventions sont triées et numérotées selon leur horaire. Les adresses sont géocodées via Nominatim puis mises en cache par entreprise ; les coordonnées GPS déjà présentes dans une mission partenaire sont prioritaires.
+
+Le partage mobile est explicitement activé et arrêté par l’utilisateur. Seule la dernière position est stockée : aucune table de trajet ou d’historique n’existe. L’arrêt supprime immédiatement la position ; une position est considérée en direct pendant deux minutes et supprimée après douze heures. Les techniciens ne voient que leur propre position et leurs interventions autorisées, tandis que les rôles de pilotage voient l’équipe de leur entreprise.
+
+La PWA utilise `navigator.geolocation.watchPosition()` et ne prétend pas assurer un suivi lorsque le navigateur suspend l’application. Un véritable suivi écran éteint ou application fermée nécessite une application native ou un conteneur natif doté d’un service Android au premier plan et des autorisations de localisation en arrière-plan iOS, avec consentement et information adaptés.
+
 ## Structure
 
 ```text

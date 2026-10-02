@@ -60,6 +60,7 @@ export const ROUTES = {
     technicalReports: "technical-reports",
         messages: "messages",
     calendar: "calendar",
+        operationsMap: "operations-map",
     library: "library",
     history: "history",
     support: "support",
@@ -78,6 +79,7 @@ const LIBRARY_USERS = ["mobile_admin", "team_lead", "technician"];
 const PURCHASE_USERS = ["admin", "pc_standard", "commercial", "accountant", "mobile_admin"];
 const INTERVENTION_SEARCH_USERS = ["team_lead", "technician"];
 const SUPPORT_USERS = TERRAIN;
+const OPERATIONS_MAP_USERS = TERRAIN;
 
 // Toute nouvelle entrée de navigation doit être déclarée ici. Les éléments
 // hors rôle sont retirés du DOM avant l’affichage de l’application.
@@ -85,6 +87,7 @@ export const MENU_ACCESS = Object.freeze({
     quick: Object.freeze({
         clients: OPERATIONAL_MOBILE,
         calendar: CALENDAR_USERS,
+        operationsMap: OPERATIONS_MAP_USERS,
         interventionSearch: INTERVENTION_SEARCH_USERS,
         library: LIBRARY_USERS,
         purchases: PURCHASE_USERS,
@@ -111,6 +114,7 @@ export const MENU_ACCESS = Object.freeze({
         [ROUTES.partnerSandbox]: ADMINISTRATORS,
         [ROUTES.technicalReports]: OPERATIONAL_PC.concat("team_lead", "technician"),
         [ROUTES.calendar]: CALENDAR_USERS,
+        [ROUTES.operationsMap]: OPERATIONS_MAP_USERS,
         [ROUTES.library]: LIBRARY_USERS,
         [ROUTES.support]: SUPPORT_USERS,
         [ROUTES.settings]: OPERATIONAL_PC

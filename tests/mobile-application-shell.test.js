@@ -22,7 +22,7 @@ test("le poste mobile conserve Accueil, Planning et Menu dans sa barre inférieu
 });
 
 test("le menu mobile range les actions existantes dans des sous-dossiers", () => {
-    assert.match(mobileMenuSource, /\["Interventions", \["calendarBtn", "interventionSearchBtn", "clientsBtn", "partnerMissionsBtn"\]\]/);
+    assert.match(mobileMenuSource, /\["Interventions", \["calendarBtn", "operationsMapBtn", "interventionSearchBtn", "clientsBtn", "partnerMissionsBtn"\]\]/);
     assert.match(mobileMenuSource, /\["Gestion", \["billingBtn", "accountingBtn", "purchasesBtn"\]\]/);
     assert.match(mobileMenuSource, /\["Communication", \["companyEmailBtn"\]\]/);
     assert.match(mobileMenuSource, /\["Ressources et compte", \["libraryBtn", "settingsBtn"\]\]/);
@@ -49,8 +49,8 @@ test("le Poste Admin Mobile affiche ses fonctions opérationnelles et le ticket 
         .filter(([, roles]) => roles.includes("mobile_admin"))
         .map(([route]) => route)
         .sort();
-    assert.deepEqual(quickAccess, ["calendar", "clients", "library", "purchases", "support"]);
-    assert.deepEqual(routeAccess, [ROUTES.calendar, ROUTES.clients, ROUTES.library, ROUTES.purchases, ROUTES.support].sort());
+    assert.deepEqual(quickAccess, ["calendar", "clients", "library", "operationsMap", "purchases", "support"]);
+    assert.deepEqual(routeAccess, [ROUTES.calendar, ROUTES.clients, ROUTES.library, ROUTES.operationsMap, ROUTES.purchases, ROUTES.support].sort());
     assert.match(navigation, /else if \(isCommercialMobile\(\) \|\| isMobileAdministrator\(\)\) openCalendar\(\)/);
     assert.match(navigation, /isCommercialMobile\(\) \|\| isMobileAdministrator\(\)/);
     assert.match(styles, /mobile_admin"\]\.mobile-device \.search-section\{display:none;\}/);

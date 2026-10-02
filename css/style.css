@@ -8331,3 +8331,58 @@ body:is(.desktop-device,.mobile-device).dark-theme :is(.pdf-live-page,.billing-l
     border-color:#f59e0b!important;
     box-shadow:0 0 0 4px rgba(245,158,11,.2),var(--shadow);
 }
+
+/* Carte opérationnelle et partage volontaire de la dernière position terrain. */
+.operations-map-panel{display:grid;gap:16px;}
+.operations-map-heading{display:flex;align-items:flex-end;justify-content:space-between;gap:18px;}
+.operations-map-heading h2,.operations-map-sidebar h3{margin:3px 0;color:var(--primary);}
+.operations-map-date{display:flex;align-items:flex-end;gap:8px;}
+.operations-map-date label{display:grid;gap:6px;color:var(--primary);font-weight:800;}
+.operations-map-date input{min-height:42px;padding:8px 10px;border:1px solid var(--border);border-radius:10px;background:var(--surface);color:var(--text);}
+.operations-map-privacy{display:flex;gap:10px;align-items:center;padding:11px 13px;border:1px solid #86efac;border-radius:12px;background:#f0fdf4;color:#14532d;}
+.operations-map-privacy strong{white-space:nowrap;}
+.operations-map-layout{display:grid;grid-template-columns:minmax(270px,340px) minmax(0,1fr);min-height:620px;border:1px solid var(--border);border-radius:16px;overflow:hidden;background:var(--surface);}
+.operations-map-sidebar{display:grid;align-content:start;gap:18px;max-height:620px;overflow:auto;padding:14px;border-right:1px solid var(--border);}
+.operations-map-sidebar>section{display:grid;gap:10px;}
+.operations-map-sidebar-title{display:flex;align-items:center;justify-content:space-between;gap:10px;}
+.operations-map-sidebar-title>span{display:grid;place-items:center;min-width:30px;height:30px;border-radius:999px;background:var(--primary);color:#fff;font-weight:900;}
+.operations-map-technicians{display:grid;gap:7px;}
+.operations-map-technicians label{display:grid;grid-template-columns:auto auto minmax(0,1fr);align-items:center;gap:9px;padding:9px;border:1px solid var(--border);border-radius:10px;cursor:pointer;background:var(--surface-alt,#f8fafc);}
+.operations-map-technicians input{width:20px;height:20px;accent-color:var(--secondary);}
+.operations-map-technicians strong,.operations-map-technicians small{display:block;overflow-wrap:anywhere;}
+.operations-map-technicians small{margin-top:2px;color:var(--muted);}
+.technician-map-dot{width:12px;height:12px;border-radius:50%;background:#94a3b8;box-shadow:0 0 0 3px rgba(148,163,184,.18);}
+.technician-map-dot.live{background:#16a34a;box-shadow:0 0 0 4px rgba(22,163,74,.18);}
+.operations-map-interventions{display:grid;gap:7px;margin:0;padding:0;list-style:none;}
+.operations-map-interventions button{display:grid;grid-template-columns:34px minmax(0,1fr);gap:9px;width:100%;padding:9px;border:1px solid var(--border);border-radius:10px;background:var(--surface-alt,#f8fafc);color:var(--text);text-align:left;cursor:pointer;}
+.operations-map-interventions button:hover{border-color:var(--secondary);}
+.operations-map-interventions b{display:grid;place-items:center;width:34px;height:34px;border-radius:50% 50% 50% 8px;background:#2563eb;color:#fff;}
+.operations-map-interventions strong,.operations-map-interventions small,.operations-map-interventions em{display:block;overflow-wrap:anywhere;}
+.operations-map-interventions small{margin-top:3px;color:var(--muted);}
+.operations-map-interventions em{margin-top:4px;color:var(--secondary);font-size:12px;font-style:normal;font-weight:800;}
+.operations-map-canvas{width:100%;min-height:620px;background:#dbeafe;z-index:0;}
+.operations-map-marker,.technician-map-marker{background:transparent;border:0;}
+.operations-map-marker span{display:grid;place-items:center;width:34px;height:34px;border:3px solid #fff;border-radius:50%;background:#2563eb;color:#fff;box-shadow:0 4px 12px rgba(15,23,42,.38);font-size:15px;font-weight:900;}
+.operations-map-marker span{line-height:1;}
+.operations-map-marker span{font-variant-numeric:tabular-nums;}
+.technician-map-marker span{display:grid;place-items:center;width:42px;height:42px;border:4px solid #fff;border-radius:50%;background:#64748b;color:#fff;box-shadow:0 4px 14px rgba(15,23,42,.4);font-size:13px;font-weight:900;}
+.technician-map-marker.live span{background:#16a34a;}
+.technician-map-marker i{position:absolute;right:0;bottom:0;width:12px;height:12px;border:2px solid #fff;border-radius:50%;background:#94a3b8;}
+.technician-map-marker.live i{background:#4ade80;box-shadow:0 0 0 4px rgba(74,222,128,.25);}
+.map-popup-action{margin-top:8px;padding:7px 9px;border:0;border-radius:8px;background:#0f5132;color:#fff;font-weight:800;cursor:pointer;}
+.terrain-location-control{position:fixed;right:14px;bottom:82px;z-index:1200;display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:9px;width:min(390px,calc(100vw - 28px));padding:10px;border:1px solid var(--border);border-radius:14px;background:var(--surface);box-shadow:0 12px 34px rgba(15,23,42,.24);}
+.terrain-location-control>div strong,.terrain-location-control>div small{display:block;}
+.terrain-location-control>div small{margin-top:2px;color:var(--muted);}
+.terrain-location-dot{width:13px;height:13px;border-radius:50%;background:#94a3b8;}
+.terrain-location-control.sharing .terrain-location-dot{background:#16a34a;box-shadow:0 0 0 5px rgba(22,163,74,.18);}
+.terrain-location-control.error .terrain-location-dot{background:#dc2626;}
+body.dark-theme .operations-map-privacy{border-color:#166534;background:#143323;color:#bbf7d0;}
+
+@media(max-width:800px){
+    .operations-map-heading,.operations-map-privacy{align-items:stretch;flex-direction:column;}
+    .operations-map-date{display:grid;grid-template-columns:1fr auto;}
+    .operations-map-layout{grid-template-columns:1fr;min-height:0;}
+    .operations-map-sidebar{max-height:none;border-right:0;border-bottom:1px solid var(--border);}
+    .operations-map-canvas{min-height:52vh;}
+    .terrain-location-control{bottom:76px;}
+}

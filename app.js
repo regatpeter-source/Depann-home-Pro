@@ -33,6 +33,7 @@ import { initializeConnectors, registerConnectorRoutes } from "./server/connecto
 import { initializePurchases, registerPurchaseRoutes } from "./server/purchases.js";
 import { initializeMessages, registerMessageRoutes } from "./server/messages.js";
 import { initializeCalendar, registerCalendarRoutes } from "./server/calendar.js";
+import { initializeOperationsMap, registerOperationsMapRoutes } from "./server/operations-map.js";
 import { clientUploadErrorHandler, initializeClients, registerClientRoutes } from "./server/clients.js";
 import { initializeTechnicalReports, registerTechnicalReportRoutes, technicalReportUploadErrorHandler } from "./server/technical-reports.js";
 import { initializeCollaboration, registerCollaborationRoutes } from "./server/collaboration.js";
@@ -189,6 +190,7 @@ const requireCalendarFeature = requireOrganizationFeature("calendar");
 const requireClientFeature = requireOrganizationFeature("clients");
 app.use("/api/calendar/events/:eventId/quitus", requireAuthentication, requireOrganizationFeature("quitus"));
 app.use("/api/calendar", requireAuthentication, (request, response, next) => (request.path.startsWith("/client-history/") ? requireClientFeature : requireCalendarFeature)(request, response, next));
+app.use("/api/operations-map", requireAuthentication, requireCalendarFeature);
 app.use("/api/billing/document-templates/quitus", requireAuthentication, requireOrganizationFeature("quitus"));
 app.use("/api/document-templates/quitus", requireAuthentication, requireOrganizationFeature("quitus"));
 app.use("/api/billing/document-templates/report", requireAuthentication, requireOrganizationFeature("technicalReports"));
@@ -241,6 +243,7 @@ registerDocumentTemplateRoutes(app, requireAuthentication);
 registerPurchaseRoutes(app, requireAuthentication);
 registerMessageRoutes(app, requireAuthentication);
 registerCalendarRoutes(app, requireAuthentication);
+registerOperationsMapRoutes(app, requireAuthentication);
 registerCollaborationRoutes(app, requireAuthentication);
 registerTechnicalReportRoutes(app, requireAuthentication);
 registerClientRoutes(app, requireAuthentication);
@@ -291,6 +294,7 @@ app.get("/", (request, response) => {
 app.use("/css", express.static(path.join(rootDirectory, "css"), { index: false }));
 app.use("/js", express.static(path.join(rootDirectory, "js"), { index: false }));
 app.use("/vendor/pdfjs", express.static(path.join(rootDirectory, "node_modules", "pdfjs-dist"), { index: false, immutable: true, maxAge: "1y" }));
+app.use("/vendor/leaflet", express.static(path.join(rootDirectory, "node_modules", "leaflet", "dist"), { index: false, immutable: true, maxAge: "1y" }));
 app.get("/manifest.json", (request, response) => {
 	response.sendFile(path.join(rootDirectory, "manifest.json"));
 });
@@ -330,6 +334,7 @@ async function start() {
 	await initializePurchases();
 	await initializeMessages();
 	await initializeCalendar();
+	await initializeOperationsMap();
 	await initializeCollaboration();
 	await initializeTechnicalReports();
 	await initializePartnerMissions();
