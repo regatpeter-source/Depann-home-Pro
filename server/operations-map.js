@@ -52,6 +52,10 @@ export function registerOperationsMapRoutes(app, requireAuthentication) {
         if (!date) return response.status(400).json({ message: "Date de carte invalide." });
         const ownerId = getAccountOwnerId(request);
         const ownOnly = !canViewTeamLocations(request.user);
+        const technicianIds = selectedTechnicianIds(request.query?.technicianIds);
+        const targetAddress = cleanAddress(request.query?.address);
+        const excludedEventId = positiveId(request.query?.excludeEventId);
+        if (request.query?.technicianIds && !technicianIds.length) return response.status(400).json({ message: "Sélection de techniciens invalide." });
         const database = getPool();
         const eventsResult = await database.query(`
             SELECT event.id,event.title,event.client_id AS "clientId",event.client_name AS "clientName",event.location,TO_CHAR(event.event_date,'YYYY-MM-DD') AS date,
@@ -62,23 +66,29 @@ export function registerOperationsMapRoutes(app, requireAuthentication) {
             WHERE event.owner_id=$1 AND event.event_date=$2::date AND event.event_type='appointment'
                 AND event.event_status NOT IN ('cancelled','paused')
                 AND ($3::boolean=FALSE OR event.assigned_technician_id=$4::bigint OR EXISTS(SELECT 1 FROM depannhome_calendar_assignments assignment WHERE assignment.event_id=event.id AND assignment.technician_id=$4::bigint))
+                AND (cardinality($5::bigint[])=0 OR event.assigned_technician_id=ANY($5::bigint[]) OR EXISTS(SELECT 1 FROM depannhome_calendar_assignments selected_assignment WHERE selected_assignment.event_id=event.id AND selected_assignment.technician_id=ANY($5::bigint[])))
+                AND ($6::bigint IS NULL OR event.id<>$6::bigint)
             ORDER BY event.start_time NULLS LAST,event.created_at,event.id
-        `, [ownerId, date, ownOnly, request.user.sub]);
+        `, [ownerId, date, ownOnly, request.user.sub, technicianIds, excludedEventId]);
         const events = eventsResult.rows.map((event, index) => ({ ...event, dayNumber: index + 1 }));
         await attachEventCoordinates(database, ownerId, events);
 
         const locationsResult = await database.query(`
             SELECT member.id,COALESCE(member.full_name,member.username,'Technicien') AS name,member.role,member.department,
                 location.latitude,location.longitude,location.accuracy_meters AS "accuracyMeters",location.recorded_at AS "recordedAt",location.updated_at AS "updatedAt",
-                location.updated_at >= NOW() - ($3::text || ' minutes')::interval AS "isLive"
+                COALESCE(location.updated_at >= NOW() - ($3::text || ' minutes')::interval,FALSE) AS "isLive"
             FROM depannhome_users member
-            JOIN depannhome_technician_locations location ON location.owner_id=$1 AND location.user_id=member.id
+            LEFT JOIN depannhome_technician_locations location ON location.owner_id=$1 AND location.user_id=member.id
+                AND location.updated_at >= NOW() - ($5::text || ' hours')::interval
             WHERE member.account_owner_id=$1 AND member.is_active=TRUE AND member.role IN ('mobile_admin','team_lead','technician')
                 AND ($2::boolean=FALSE OR member.id=$4::bigint)
-                AND location.updated_at >= NOW() - ($5::text || ' hours')::interval
+                AND (cardinality($6::bigint[])=0 OR member.id=ANY($6::bigint[]))
+                AND (cardinality($6::bigint[])>0 OR location.user_id IS NOT NULL)
             ORDER BY LOWER(COALESCE(member.full_name,member.username,''))
-        `, [ownerId, ownOnly, String(LIVE_POSITION_MINUTES), request.user.sub, String(POSITION_RETENTION_HOURS)]);
-        response.json({ date, teamView: !ownOnly, liveWindowMinutes: LIVE_POSITION_MINUTES, events, technicians: locationsResult.rows });
+        `, [ownerId, ownOnly, String(LIVE_POSITION_MINUTES), request.user.sub, String(POSITION_RETENTION_HOURS), technicianIds]);
+        const target = targetAddress ? { address: targetAddress, location: targetAddress } : null;
+        if (target) await attachEventCoordinates(database, ownerId, [target]);
+        response.json({ date, teamView: !ownOnly, liveWindowMinutes: LIVE_POSITION_MINUTES, events, technicians: locationsResult.rows, target });
     }));
 
     app.post("/api/operations-map/location", asyncHandler(async (request, response) => {
@@ -178,6 +188,8 @@ function coordinatesFromNotes(notes) {
 }
 function finiteCoordinate(value, minimum, maximum) { const number = Number(value); return Number.isFinite(number) && number >= minimum && number <= maximum ? number : null; }
 function validDate(value) { const date = String(value || ""); return DATE_PATTERN.test(date) ? date : ""; }
+function positiveId(value) { const id = Number(value); return Number.isSafeInteger(id) && id > 0 ? id : null; }
+function selectedTechnicianIds(value) { const values = String(value || "").split(",").filter(Boolean); const ids = values.map(positiveId); return ids.some(id => !id) ? [] : [...new Set(ids)].slice(0, 50); }
 function cleanAddress(value) { return String(value || "").replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 500); }
 function addressHash(value) { return createHash("sha256").update(String(value || "").toLowerCase()).digest("hex"); }
 function deleteExpiredLocations(database) { return database.query("DELETE FROM depannhome_technician_locations WHERE updated_at < NOW() - ($1::text || ' hours')::interval", [String(POSITION_RETENTION_HOURS)]); }

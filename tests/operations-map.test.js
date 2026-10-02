@@ -6,6 +6,8 @@ import { canOpenOperationsMap, canShareLocation, canViewTeamLocations } from "..
 const read = path => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 const server = read("server/operations-map.js");
 const client = read("js/operations-map.js");
+const calendar = read("js/calendar.js");
+const styles = read("css/style.css");
 const navigation = read("js/navigation.js");
 const application = read("js/app.js");
 const config = read("js/config.js");
@@ -39,6 +41,7 @@ test("le serveur ne conserve que la dernière position et permet son retrait imm
     assert.match(server, /DELETE FROM depannhome_technician_locations WHERE owner_id=\$1 AND user_id=\$2/);
     assert.match(server, /POSITION_RETENTION_HOURS = 12/);
     assert.match(server, /LIVE_POSITION_MINUTES = 2/);
+    assert.match(server, /LEFT JOIN depannhome_technician_locations[\s\S]*location\.updated_at >= NOW\(\) - \(\$5::text/);
     assert.doesNotMatch(`${schema}\n${migration}`, /location_history|technician_routes|location_tracks/);
 });
 
@@ -62,6 +65,34 @@ test("l’interface filtre les techniciens et distingue direct et dernière posi
     assert.match(client, /15_000/);
 });
 
+test("la planification affiche une carte limitée à l’adresse et aux membres affectés", () => {
+    assert.match(server, /cardinality\(\$5::bigint\[\]\)=0/);
+    assert.match(server, /selected_assignment\.technician_id=ANY\(\$5::bigint\[\]\)/);
+    assert.match(server, /targetAddress = cleanAddress\(request\.query\?\.address\)/);
+    assert.match(server, /member\.id=ANY\(\$6::bigint\[\]\)/);
+    assert.match(calendar, /id="calendarPlanningMap"/);
+    assert.match(calendar, /renderPlanningOperationsMap\(planningMap/);
+    assert.match(calendar, /technicianIds: candidate\.assignedTechnicianIds/);
+    assert.match(client, /technicianIds: technicianIds\.join\(","\)/);
+    assert.match(client, /seuls leurs rendez-vous et positions sont affichés/);
+    assert.match(client, /Number\.POSITIVE_INFINITY/);
+});
+
+test("une intervention urgente utilise la journée courante sur la carte", () => {
+    assert.match(calendar, /const urgent = candidate\.color === "red"/);
+    assert.match(calendar, /date: urgent \? toDateString\(new Date\(\)\) : candidate\.date/);
+    assert.match(client, /Urgence · aujourd’hui/);
+});
+
+test("les surfaces client et planning visibles sont couvertes par le thème sombre", () => {
+    assert.match(styles, /dark-theme :is\([\s\S]*\.client-intervention-photo/);
+    assert.match(styles, /\.client-intervention-history>summary/);
+    assert.match(styles, /\.calendar-multi-date-planning/);
+    assert.match(styles, /\.calendar-availability/);
+    assert.match(styles, /\.message-bubble\.outgoing/);
+    assert.match(styles, /\.procedure-meta span/);
+});
+
 test("le partage mobile est volontaire, visible et arrêtable", () => {
     assert.match(client, /navigator\.geolocation\.watchPosition/);
     assert.match(client, /window\.confirm\("Partager votre position pendant le service/);
@@ -76,11 +107,12 @@ test("les limites PWA, la rétention et les fournisseurs cartographiques sont do
     assert.match(privacy, /Seule sa dernière position est conservée/);
     assert.match(privacy, /au maximum douze heures/);
     assert.match(privacy, /OpenFreeMap à partir des données OpenStreetMap/);
-    assert.match(client, /tiles\.openfreemap\.org\/styles\/liberty/);
+    assert.match(client, /tiles\.openfreemap\.org\/styles\/\$\{/);
+    assert.match(client, /dark-theme[\s\S]*"dark" : "liberty"/);
     assert.doesNotMatch(client, /tile\.openstreetmap\.org|basemaps\.cartocdn\.com|api[_-]?key/i);
     assert.match(architecture, /ne prétend pas assurer un suivi lorsque le navigateur suspend l’application/);
     assert.match(architecture, /service Android au premier plan/);
-    assert.match(worker, /operations-map\.js\?v=3/);
+    assert.match(worker, /operations-map\.js\?v=4/);
     assert.match(worker, /maplibre-gl\.mjs\?v=6\.11\.2/);
     assert.match(worker, /maplibre-gl-worker\.mjs/);
 });

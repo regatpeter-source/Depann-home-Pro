@@ -8378,11 +8378,64 @@ body:is(.desktop-device,.mobile-device).dark-theme :is(.pdf-live-page,.billing-l
 .terrain-location-control.error .terrain-location-dot{background:#dc2626;}
 body.dark-theme .operations-map-privacy{border-color:#166534;background:#143323;color:#bbf7d0;}
 
+/* Carte contextuelle affichée pendant l'affectation d'une intervention. */
+.calendar-planning-map{display:grid;gap:11px;margin-top:16px;padding:15px;border:1px solid var(--border);border-radius:14px;background:var(--surface-alt,#f8fafc);}
+.calendar-planning-map[hidden]{display:none;}
+.calendar-planning-map-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;}
+.calendar-planning-map-heading h3{margin:3px 0;color:var(--primary);}
+.calendar-planning-map-heading>span{padding:6px 10px;border-radius:999px;background:#dbeafe;color:#1d4ed8;font-size:12px;font-weight:900;white-space:nowrap;}
+.calendar-planning-map-canvas{width:100%;min-height:360px;border:1px solid var(--border);border-radius:12px;overflow:hidden;background:#dbeafe;z-index:0;}
+.calendar-planning-map-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;}
+.calendar-planning-map-summary article{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:9px;padding:9px 11px;border:1px solid var(--border);border-radius:10px;background:var(--surface);}
+.calendar-planning-map-summary strong,.calendar-planning-map-summary small{display:block;overflow-wrap:anywhere;}
+.calendar-planning-map-summary small{margin-top:2px;color:var(--muted);}
+.calendar-planning-map-summary b{color:var(--primary);font-size:13px;text-align:right;}
+.planning-target-marker,.planning-event-marker{background:transparent;border:0;}
+.planning-target-marker span{display:grid;place-items:center;width:40px;height:40px;border:4px solid #fff;border-radius:50% 50% 50% 8px;background:#dc2626;color:#fff;box-shadow:0 4px 14px rgba(15,23,42,.4);font-size:20px;font-weight:900;transform:rotate(-45deg);}
+.planning-target-marker b{color:#fff;transform:rotate(45deg);}
+.planning-event-marker span{background:#d97706;}
+
+/* Couverture sombre des dernières surfaces métier restées claires. */
+body:is(.desktop-device,.mobile-device).dark-theme :is(
+    .procedure-meta span,
+    .client-intervention-photos-section,
+    .client-intervention-photo,
+    .client-intervention-photo>a,
+    .client-intervention-history>summary,
+    .client-activity-item,
+    .attachment-card,
+    .calendar-multi-date-planning,
+    .calendar-availability,
+    .calendar-time-slot,
+    .calendar-quitus,
+    .calendar-intervention-photos,
+    .calendar-intervention-photos section,
+    .calendar-planning-map,
+    .calendar-planning-map-summary article,
+    .message-bubble.outgoing,
+    .message-bubble.incoming,
+    .calendar-client-document,
+    .calendar-client-document-preview
+){border-color:var(--border);background:var(--surface-alt);color:var(--text);}
+body:is(.desktop-device,.mobile-device).dark-theme :is(.calendar-range-status,.calendar-date-range-inputs input,.calendar-quitus input:not([type="checkbox"]),.calendar-quitus select,.calendar-quitus textarea,.calendar-intervention-photos input){border-color:var(--border);background:var(--surface);color:var(--text);}
+body:is(.desktop-device,.mobile-device).dark-theme :is(.procedure-meta span,.calendar-planning-map-heading>span){background:#24344a;color:var(--primary);}
+body:is(.desktop-device,.mobile-device).dark-theme .calendar-multi-date-count{background:rgba(52,211,153,.15);color:#86efac;}
+body:is(.desktop-device,.mobile-device).dark-theme .calendar-range-status.success{background:rgba(22,101,52,.28);color:#86efac;}
+body:is(.desktop-device,.mobile-device).dark-theme .calendar-range-status.error,
+body:is(.desktop-device,.mobile-device).dark-theme .calendar-availability.has-conflict{border-color:#92400e;background:rgba(120,53,15,.26);color:#fde68a;}
+body:is(.desktop-device,.mobile-device).dark-theme :is(.client-intervention-photo strong,.client-intervention-history>summary strong,.client-activity-item strong,.message-bubble strong){color:var(--text);}
+body:is(.desktop-device,.mobile-device).dark-theme :is(.client-intervention-photo span,.client-intervention-photo small,.client-intervention-history>summary small,.client-activity-item p,.client-activity-item time,.message-bubble small){color:var(--muted);}
+body:is(.desktop-device,.mobile-device).dark-theme .maplibregl-popup-content{border:1px solid var(--border);background:var(--surface);color:var(--text);}
+body:is(.desktop-device,.mobile-device).dark-theme .maplibregl-popup-tip{border-top-color:var(--surface);border-bottom-color:var(--surface);}
+body:is(.desktop-device,.mobile-device).dark-theme .maplibregl-popup-close-button{color:var(--text);}
+
 @media(max-width:800px){
     .operations-map-heading,.operations-map-privacy{align-items:stretch;flex-direction:column;}
     .operations-map-date{display:grid;grid-template-columns:1fr auto;}
     .operations-map-layout{grid-template-columns:1fr;min-height:0;}
     .operations-map-sidebar{max-height:none;border-right:0;border-bottom:1px solid var(--border);}
     .operations-map-canvas{min-height:52vh;}
+    .calendar-planning-map-heading{flex-direction:column;}
+    .calendar-planning-map-canvas{min-height:48vh;}
     .terrain-location-control{bottom:76px;}
 }

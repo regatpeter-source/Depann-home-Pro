@@ -15,6 +15,7 @@ let lastSentAt = 0;
 let mapRefreshTimer = null;
 let activeMap = null;
 let activeMarkers = [];
+const planningMaps = new WeakMap();
 
 export function initializeTerrainLocationSharing() {
     if (!canShareLocation() || sharingButton) return;
@@ -51,6 +52,99 @@ export async function renderOperationsMap(options = {}) {
         if (!panel.isConnected) return clearMapRefresh();
         if (document.visibilityState === "visible") loadOperationsMap(panel, date);
     }, 15_000);
+}
+
+export async function renderPlanningOperationsMap(container, options = {}) {
+    if (!container) return;
+    const date = validDate(options.date) || localDate();
+    const technicianIds = [...new Set((options.technicianIds || []).map(String).filter(id => /^\d+$/.test(id)))];
+    const address = String(options.address || "").trim();
+    let state = planningMaps.get(container);
+    if (!state) {
+        container.innerHTML = `<div class="calendar-planning-map-heading"><div><p class="eyebrow">Carte terrain de planification</p><h3>Adresse et membres affectés</h3><p class="muted" data-planning-map-context></p></div><span data-planning-map-date></span></div><div class="calendar-planning-map-canvas" data-planning-map-canvas aria-label="Carte de proximité pour planifier l’intervention"></div><div class="calendar-planning-map-summary" data-planning-map-summary></div><p class="auth-message" data-planning-map-feedback aria-live="polite"></p>`;
+        state = { map: null, markers: [], requestVersion: 0 };
+        planningMaps.set(container, state);
+    }
+    const version = ++state.requestVersion;
+    container.querySelector("[data-planning-map-date]").textContent = options.urgent ? "Urgence · aujourd’hui" : formatMapDate(date);
+    container.querySelector("[data-planning-map-context]").textContent = technicianIds.length
+        ? `${technicianIds.length} membre${technicianIds.length > 1 ? "s" : ""} sélectionné${technicianIds.length > 1 ? "s" : ""} · seuls leurs rendez-vous et positions sont affichés.`
+        : "Sélectionnez un technicien ou une équipe pour afficher uniquement les membres concernés.";
+    const summary = container.querySelector("[data-planning-map-summary]");
+    const feedback = container.querySelector("[data-planning-map-feedback]");
+    if (!technicianIds.length) {
+        state.markers.forEach(marker => marker.remove());
+        state.markers = [];
+        summary.innerHTML = '<p class="muted">Aucun membre sélectionné.</p>';
+        feedback.textContent = "";
+        return;
+    }
+    if (!address) {
+        state.markers.forEach(marker => marker.remove());
+        state.markers = [];
+        summary.innerHTML = '<p class="muted">Renseignez l’adresse d’intervention pour calculer la proximité.</p>';
+        feedback.textContent = "";
+        return;
+    }
+    feedback.classList.remove("error");
+    feedback.textContent = "Actualisation de la carte de proximité…";
+    const query = new URLSearchParams({ date, address, technicianIds: technicianIds.join(",") });
+    if (options.excludeEventId) query.set("excludeEventId", String(options.excludeEventId));
+    try {
+        const response = await fetch(`/api/operations-map/day?${query}`, { credentials: "same-origin", cache: "no-store" });
+        const payload = await response.json().catch(() => null);
+        if (!response.ok) throw new Error(payload?.message || "Impossible de charger la carte de proximité.");
+        if (version !== state.requestVersion || !container.isConnected) return;
+        renderPlanningMapPayload(container, state, payload);
+        feedback.textContent = "";
+    } catch (error) {
+        if (version !== state.requestVersion) return;
+        feedback.textContent = error.message;
+        feedback.classList.add("error");
+    }
+}
+
+function renderPlanningMapPayload(container, state, payload) {
+    const element = container.querySelector("[data-planning-map-canvas]");
+    if (!state.map) {
+        state.map = new Map({ container: element, style: mapStyleUrl(), center: [2.4, 46.7], zoom: 5, attributionControl: true });
+        state.map.addControl(new NavigationControl({ showCompass: false }), "top-left");
+    }
+    state.markers.forEach(marker => marker.remove());
+    state.markers = [];
+    const bounds = new LngLatBounds();
+    const target = payload?.target;
+    if (validPoint(target)) {
+        const popup = new Popup({ offset: 28 }).setHTML(`<strong>Adresse de l’intervention</strong><br>${escapeHtml(target.address)}`);
+        state.markers.push(new Marker({ element: planningTargetMarker(), anchor: "bottom" }).setLngLat([target.longitude, target.latitude]).setPopup(popup).addTo(state.map));
+        bounds.extend([target.longitude, target.latitude]);
+    }
+    for (const event of payload?.events || []) {
+        if (!validPoint(event)) continue;
+        const popup = new Popup({ offset: 25 }).setHTML(`<strong>${escapeHtml(event.startTime || "Sans horaire")} · ${escapeHtml(event.clientName || event.title)}</strong><br>${escapeHtml(event.location)}<br>${escapeHtml(technicianNames(event))}`);
+        state.markers.push(new Marker({ element: planningEventMarker(event.dayNumber), anchor: "bottom" }).setLngLat([event.longitude, event.latitude]).setPopup(popup).addTo(state.map));
+        bounds.extend([event.longitude, event.latitude]);
+    }
+    const technicians = (Array.isArray(payload?.technicians) ? [...payload.technicians] : []).sort((first, second) => {
+        const firstDistance = validPoint(target) && validPoint(first) ? distanceMeters(target, first) : Number.POSITIVE_INFINITY;
+        const secondDistance = validPoint(target) && validPoint(second) ? distanceMeters(target, second) : Number.POSITIVE_INFINITY;
+        return firstDistance - secondDistance || String(first.name || "").localeCompare(String(second.name || ""), "fr");
+    });
+    for (const technician of technicians) {
+        if (!validPoint(technician)) continue;
+        const distance = validPoint(target) ? distanceMeters(target, technician) : null;
+        const popup = new Popup({ offset: 24 }).setHTML(`<strong>${escapeHtml(technician.name)}</strong><br>${technician.isLive ? "Position en direct" : `Dernière position ${escapeHtml(relativeTime(technician.updatedAt))}`}${distance === null ? "" : `<br>Distance à vol d’oiseau : ${escapeHtml(formatDistance(distance))}`}`);
+        state.markers.push(new Marker({ element: technicianMarker(technician) }).setLngLat([technician.longitude, technician.latitude]).setPopup(popup).addTo(state.map));
+        bounds.extend([technician.longitude, technician.latitude]);
+    }
+    if (!bounds.isEmpty()) state.map.fitBounds(bounds, { padding: 45, maxZoom: 14 });
+    window.setTimeout(() => state.map?.resize(), 0);
+    const summary = container.querySelector("[data-planning-map-summary]");
+    summary.innerHTML = technicians.length ? technicians.map(technician => {
+        const distance = validPoint(target) && validPoint(technician) ? formatDistance(distanceMeters(target, technician)) : "Position non partagée";
+        const freshness = validPoint(technician) ? technician.isLive ? "En direct" : `Actualisée ${relativeTime(technician.updatedAt)}` : "Activez le partage sur son poste mobile";
+        return `<article><span class="technician-map-dot${technician.isLive ? " live" : ""}"></span><div><strong>${escapeHtml(technician.name)}</strong><small>${escapeHtml(freshness)}</small></div><b>${escapeHtml(distance)}</b></article>`;
+    }).join("") : '<p class="muted">Aucun des membres sélectionnés n’est disponible sur cette carte.</p>';
 }
 
 async function loadOperationsMap(panel, date, announce = false) {
@@ -90,7 +184,7 @@ function renderMapMarkers(panel, events, technicians, selectedIds) {
     const element = panel.querySelector("[data-operations-map]");
     if (!activeMap || activeMap.getContainer() !== element) {
         activeMap?.remove();
-        activeMap = new Map({ container: element, style: "https://tiles.openfreemap.org/styles/liberty", center: [2.4, 46.7], zoom: 5, attributionControl: true });
+        activeMap = new Map({ container: element, style: mapStyleUrl(), center: [2.4, 46.7], zoom: 5, attributionControl: true });
         activeMap.addControl(new NavigationControl({ showCompass: false }), "top-left");
         activeMap.on("error", event => {
             const feedback = panel.querySelector("[data-map-feedback]");
@@ -176,14 +270,19 @@ function updateSharingState(message, error = false) {
 function isSharingEnabled() { return localStorage.getItem(SHARING_KEY) === "true"; }
 function canShareLocation() { return document.body.dataset.deviceType === "mobile" && ["mobile_admin", "team_lead", "technician"].includes(document.body.dataset.role); }
 function selectedTechnicianIds(container) { return new Set([...container.querySelectorAll('input[type="checkbox"]:checked')].map(input => input.value)); }
-function validPoint(item) { return Number.isFinite(Number(item?.latitude)) && Number.isFinite(Number(item?.longitude)); }
+function validPoint(item) { return item?.latitude !== null && item?.latitude !== "" && item?.longitude !== null && item?.longitude !== "" && Number.isFinite(Number(item?.latitude)) && Number.isFinite(Number(item?.longitude)); }
 function technicianNames(event) { return (event.assignedTechnicians || []).map(item => item.fullName).filter(Boolean).join(", ") || "Non affectée"; }
 function interventionMarker(number) { const element = document.createElement("div"); element.className = "operations-map-marker"; element.innerHTML = `<span>${Number(number) || "·"}</span>`; return element; }
+function planningEventMarker(number) { const element = interventionMarker(number); element.classList.add("planning-event-marker"); return element; }
+function planningTargetMarker() { const element = document.createElement("div"); element.className = "planning-target-marker"; element.innerHTML = "<span><b>⌂</b></span>"; return element; }
 function technicianMarker(technician) { const initials = String(technician.name || "T").split(/\s+/).slice(0, 2).map(part => part[0]).join("").toUpperCase(); const element = document.createElement("div"); element.className = `technician-map-marker${technician.isLive ? " live" : ""}`; element.innerHTML = `<span>${escapeHtml(initials)}</span><i></i>`; return element; }
 function openIntervention(event) { if (event) window.dispatchEvent(new CustomEvent("depannhome:open-map-intervention", { detail: { event } })); }
 function localDate() { const now = new Date(); return new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString().slice(0, 10); }
 function validDate(value) { const date = String(value || ""); return /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : ""; }
 function relativeTime(value) { const elapsed = Math.max(0, Date.now() - new Date(value).getTime()); const minutes = Math.floor(elapsed / 60_000); if (minutes < 1) return "à l’instant"; if (minutes < 60) return `il y a ${minutes} min`; const hours = Math.floor(minutes / 60); return `il y a ${hours} h`;
 }
+function formatMapDate(value) { return new Intl.DateTimeFormat("fr-FR", { weekday: "short", day: "2-digit", month: "2-digit" }).format(new Date(`${value}T12:00:00`)); }
+function formatDistance(value) { return value < 1000 ? `${Math.round(value)} m` : `${(value / 1000).toFixed(value < 10_000 ? 1 : 0).replace(".", ",")} km`; }
+function mapStyleUrl() { return `https://tiles.openfreemap.org/styles/${document.body.classList.contains("dark-theme") ? "dark" : "liberty"}`; }
 function distanceMeters(first, second) { const radius = 6371e3; const toRadians = value => value * Math.PI / 180; const latitudeDelta = toRadians(second.latitude - first.latitude); const longitudeDelta = toRadians(second.longitude - first.longitude); const firstLatitude = toRadians(first.latitude); const secondLatitude = toRadians(second.latitude); const value = Math.sin(latitudeDelta / 2) ** 2 + Math.cos(firstLatitude) * Math.cos(secondLatitude) * Math.sin(longitudeDelta / 2) ** 2; return radius * 2 * Math.atan2(Math.sqrt(value), Math.sqrt(1 - value)); }
 function clearMapRefresh() { if (mapRefreshTimer) window.clearInterval(mapRefreshTimer); mapRefreshTimer = null; activeMarkers = []; activeMap?.remove(); activeMap = null; }

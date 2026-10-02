@@ -7,6 +7,7 @@ import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { renderPlatformAnnouncement } from "./platform-announcement.js?v=1";
+import { renderPlanningOperationsMap } from "./operations-map.js?v=4";
 import { clearSearch, createInfo, getContainer, setPage } from "./ui.js?v=44";
 
 const COLOR_OPTIONS = [
@@ -548,6 +549,7 @@ function renderEventForm(panel) {
             </div>
             <p id="calendarFormMessage" class="auth-message" aria-live="polite"></p>
             <section class="calendar-availability" id="calendarAvailability" aria-live="polite"></section>
+            <section class="calendar-planning-map" id="calendarPlanningMap" aria-live="polite"></section>
             <div class="calendar-form-actions">
                 <button type="submit" class="secondary-button">${event.partnerMissionId ? "Valider la planification" : isEditing ? "Enregistrer les modifications" : "Ajouter au planning"}</button>
                 ${typeof event.pauseEvent === "function" ? '<button type="button" class="secondary-button" id="pauseCalendarEvent">Mettre en pause pour appeler le client</button>' : ""}
@@ -577,6 +579,27 @@ function renderEventForm(panel) {
     const assignmentInputs = [...form.querySelectorAll("[data-calendar-assignment]")];
     const teamAssignmentInputs = [...form.querySelectorAll("[data-calendar-team-assignment]")];
     const multiDatePlanning = initializeMultiDatePlanning(form, event);
+    const planningMap = form.querySelector("#calendarPlanningMap");
+    let planningMapTimer = null;
+    const refreshPlanningMap = (immediate = false) => {
+        window.clearTimeout(planningMapTimer);
+        const render = () => {
+            const candidate = formToEvent(new FormData(form));
+            const appointment = candidate.eventType === "appointment";
+            planningMap.hidden = !appointment;
+            if (!appointment) return;
+            const urgent = candidate.color === "red";
+            renderPlanningOperationsMap(planningMap, {
+                date: urgent ? toDateString(new Date()) : candidate.date,
+                urgent,
+                address: candidate.location,
+                technicianIds: candidate.assignedTechnicianIds,
+                excludeEventId: event.id || ""
+            });
+        };
+        if (immediate) render();
+        else planningMapTimer = window.setTimeout(render, 450);
+    };
     const syncPrimaryTechnician = () => {
         if (!primaryTechnicianInput) return;
         const selected = assignmentInputs.filter(input => input.checked).map(input => String(input.value));
@@ -611,6 +634,7 @@ function renderEventForm(panel) {
         openClientButton.onclick = () => {
             if (client) window.dispatchEvent(new CustomEvent("depannhome:open-client", { detail: { clientId: client.id } }));
         };
+        refreshPlanningMap();
     };
     clientInput.addEventListener("input", fillClientAddress);
     clientInput.addEventListener("change", fillClientAddress);
@@ -619,6 +643,7 @@ function renderEventForm(panel) {
         syncPrimaryTechnician();
         renderCalendarAvailability(form, event.id);
         multiDatePlanning?.refresh();
+        refreshPlanningMap();
     }));
     teamAssignmentInputs.forEach(input => input.addEventListener("change", () => {
         const team = teams.find(item => String(item.id) === String(input.value));
@@ -629,6 +654,7 @@ function renderEventForm(panel) {
         syncPrimaryTechnician();
         renderCalendarAvailability(form, event.id);
         multiDatePlanning?.refresh();
+        refreshPlanningMap();
     }));
     technicianSearch?.addEventListener("input", filterTechnicians);
     syncPrimaryTechnician();
@@ -648,13 +674,18 @@ function renderEventForm(panel) {
         clientField.hidden = type.id !== "appointment";
         clientPreview.hidden = type.id !== "appointment" || !clientInput.value;
         renderCalendarAvailability(form, event.id);
+        refreshPlanningMap(true);
     });
     clientField.hidden = eventTypeInput.value !== "appointment";
     ["date", "startTime", "endTime", "title", "assignedTechnicianId"].forEach(name => form.elements[name]?.addEventListener("input", () => {
         renderCalendarAvailability(form, event.id);
         if (["date", "startTime", "endTime", "assignedTechnicianId"].includes(name)) multiDatePlanning?.refresh();
+        if (name === "date") refreshPlanningMap();
     }));
+    locationInput.addEventListener("input", () => refreshPlanningMap());
+    form.elements.color.addEventListener("change", () => refreshPlanningMap(true));
     renderCalendarAvailability(form, event.id);
+    refreshPlanningMap(true);
 
     form.querySelector("#pauseCalendarEvent")?.addEventListener("click", async () => {
         const button = form.querySelector("#pauseCalendarEvent");
