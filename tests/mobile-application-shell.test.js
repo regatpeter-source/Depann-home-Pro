@@ -50,11 +50,11 @@ test("le Poste Admin Mobile affiche ses fonctions opérationnelles et le ticket 
         .map(([route]) => route)
         .sort();
     assert.deepEqual(quickAccess, ["calendar", "clients", "library", "operationsMap", "purchases", "support"]);
-    assert.deepEqual(routeAccess, [ROUTES.calendar, ROUTES.clients, ROUTES.library, ROUTES.operationsMap, ROUTES.purchases, ROUTES.support].sort());
-    assert.match(navigation, /else if \(isCommercialMobile\(\) \|\| isMobileAdministrator\(\)\) openCalendar\(\)/);
-    assert.match(navigation, /isCommercialMobile\(\) \|\| isMobileAdministrator\(\)/);
+    assert.deepEqual(routeAccess, [ROUTES.home, ROUTES.calendar, ROUTES.clients, ROUTES.library, ROUTES.operationsMap, ROUTES.purchases, ROUTES.support].sort());
+    assert.match(navigation, /else if \(isCommercialMobile\(\)\) openCalendar\(\)/);
+    assert.match(navigation, /else if \(isMobileDeviceContext\(\)\) openHome\(\)/);
     assert.match(styles, /mobile_admin"\]\.mobile-device \.search-section\{display:none;\}/);
-    assert.match(styles, /mobile_admin"\]\.mobile-device footer \.nav-button:not\(\[data-nav="calendar"\]\):not\(\.mobile-workspace-menu-button\)\{display:none;\}/);
+    assert.match(styles, /mobile_admin"\]\.mobile-device footer \.nav-button:not\(\[data-nav="home"\]\):not\(\[data-nav="calendar"\]\):not\(\.mobile-workspace-menu-button\)\{display:none;\}/);
 });
 
 test("tous les postes mobiles disposent d’un formulaire de ticket structuré", () => {

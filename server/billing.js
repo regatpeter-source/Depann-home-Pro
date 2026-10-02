@@ -21,6 +21,7 @@ const MAX_LOGO_SIZE = 2 * 1024 * 1024;
 const MAX_QUOTE_TEMPLATE_SIZE = 10 * 1024 * 1024;
 const DOCUMENT_TYPES = new Set(["quote", "invoice"]);
 const VAT_REGIMES = new Set(["standard", "franchise"]);
+const MOBILE_REVENUE_ROLES = new Set(["mobile_admin", "team_lead", "technician"]);
 export const VAT_FRANCHISE_MENTION = "TVA non applicable, art. 293 B du CGI";
 const CUSTOMER_TYPES = new Set(["Particulier", "Professionnel", "Magasin", "Autre"]);
 const CLIENT_ID_PATTERN = /^client-[a-zA-Z0-9-]+$/;
@@ -165,6 +166,8 @@ export async function initializeBilling() {
             owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
             created_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
             created_by_name VARCHAR(160) NOT NULL DEFAULT '',
+            revenue_assignee_id BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+            revenue_assignee_name VARCHAR(160) NOT NULL DEFAULT '',
             document_type VARCHAR(10) NOT NULL CHECK (document_type IN ('quote', 'invoice')),
             document_number VARCHAR(80) NOT NULL,
             client_id VARCHAR(100),
@@ -217,6 +220,8 @@ export async function initializeBilling() {
         ADD COLUMN IF NOT EXISTS accounted_at DATE,
         ADD COLUMN IF NOT EXISTS created_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
         ADD COLUMN IF NOT EXISTS created_by_name VARCHAR(160) NOT NULL DEFAULT '',
+        ADD COLUMN IF NOT EXISTS revenue_assignee_id BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+        ADD COLUMN IF NOT EXISTS revenue_assignee_name VARCHAR(160) NOT NULL DEFAULT '',
         ADD COLUMN IF NOT EXISTS client_id VARCHAR(100),
         ADD COLUMN IF NOT EXISTS appointment_id BIGINT,
         ADD COLUMN IF NOT EXISTS source_quote_id BIGINT,
@@ -258,6 +263,7 @@ export async function initializeBilling() {
         CREATE INDEX IF NOT EXISTS depannhome_billing_documents_accounting_idx
         ON depannhome_billing_documents (owner_id, document_type, is_accounted, issue_date DESC)
     `);
+    await database.query(`CREATE INDEX IF NOT EXISTS depannhome_billing_documents_revenue_assignee_idx ON depannhome_billing_documents(owner_id,revenue_assignee_id,issue_date DESC) WHERE issued_at IS NOT NULL`);
     await database.query(`CREATE INDEX IF NOT EXISTS depannhome_billing_documents_follow_up_idx ON depannhome_billing_documents (owner_id, follow_up_date) WHERE document_type='quote' AND follow_up_date IS NOT NULL`);
     await database.query(`
         CREATE INDEX IF NOT EXISTS depannhome_billing_documents_appointment_idx
@@ -285,8 +291,8 @@ export async function initializeBilling() {
         CREATE OR REPLACE FUNCTION depannhome_protect_issued_billing_document() RETURNS trigger AS $$
         BEGIN
             IF TG_OP='DELETE' AND OLD.issued_at IS NOT NULL THEN RAISE EXCEPTION 'Un document émis ne peut pas être supprimé.'; END IF;
-            IF TG_OP='UPDATE' AND OLD.issued_at IS NOT NULL AND ROW(NEW.owner_id,NEW.created_by,NEW.created_by_name,NEW.document_type,NEW.document_number,NEW.client_id,NEW.customer_type,NEW.customer_name,NEW.customer_address,NEW.issue_date,NEW.due_date,NEW.appointment_id,NEW.source_quote_id,NEW.correction_source_id,NEW.correction_kind,NEW.quote_reference,NEW.vat_regime,NEW.issuer_tax_number,NEW.legal_data,NEW.issued_at,NEW.finalized_by,NEW.legal_snapshot,NEW.structured_data,NEW.structured_mime_type,NEW.structured_sha256,NEW.pdf_data,NEW.pdf_sha256,NEW.lines,NEW.notes,NEW.financial_data,NEW.created_at)
-                IS DISTINCT FROM ROW(OLD.owner_id,OLD.created_by,OLD.created_by_name,OLD.document_type,OLD.document_number,OLD.client_id,OLD.customer_type,OLD.customer_name,OLD.customer_address,OLD.issue_date,OLD.due_date,OLD.appointment_id,OLD.source_quote_id,OLD.correction_source_id,OLD.correction_kind,OLD.quote_reference,OLD.vat_regime,OLD.issuer_tax_number,OLD.legal_data,OLD.issued_at,OLD.finalized_by,OLD.legal_snapshot,OLD.structured_data,OLD.structured_mime_type,OLD.structured_sha256,OLD.pdf_data,OLD.pdf_sha256,OLD.lines,OLD.notes,OLD.financial_data,OLD.created_at)
+            IF TG_OP='UPDATE' AND OLD.issued_at IS NOT NULL AND ROW(NEW.owner_id,NEW.created_by,NEW.created_by_name,NEW.revenue_assignee_id,NEW.revenue_assignee_name,NEW.document_type,NEW.document_number,NEW.client_id,NEW.customer_type,NEW.customer_name,NEW.customer_address,NEW.issue_date,NEW.due_date,NEW.appointment_id,NEW.source_quote_id,NEW.correction_source_id,NEW.correction_kind,NEW.quote_reference,NEW.vat_regime,NEW.issuer_tax_number,NEW.legal_data,NEW.issued_at,NEW.finalized_by,NEW.legal_snapshot,NEW.structured_data,NEW.structured_mime_type,NEW.structured_sha256,NEW.pdf_data,NEW.pdf_sha256,NEW.lines,NEW.notes,NEW.financial_data,NEW.created_at)
+                IS DISTINCT FROM ROW(OLD.owner_id,OLD.created_by,OLD.created_by_name,OLD.revenue_assignee_id,OLD.revenue_assignee_name,OLD.document_type,OLD.document_number,OLD.client_id,OLD.customer_type,OLD.customer_name,OLD.customer_address,OLD.issue_date,OLD.due_date,OLD.appointment_id,OLD.source_quote_id,OLD.correction_source_id,OLD.correction_kind,OLD.quote_reference,OLD.vat_regime,OLD.issuer_tax_number,OLD.legal_data,OLD.issued_at,OLD.finalized_by,OLD.legal_snapshot,OLD.structured_data,OLD.structured_mime_type,OLD.structured_sha256,OLD.pdf_data,OLD.pdf_sha256,OLD.lines,OLD.notes,OLD.financial_data,OLD.created_at)
             THEN RAISE EXCEPTION 'Les données légales d’un document émis sont immuables.'; END IF;
             RETURN CASE WHEN TG_OP='DELETE' THEN OLD ELSE NEW END;
         END; $$ LANGUAGE plpgsql
@@ -301,7 +307,7 @@ export function registerBillingRoutes(app, requireAuthentication) {
         const database = getPool();
         const accountOwnerId = getAccountOwnerId(request);
         const financialPeriod = sanitizeBillingFinancialPeriod(request.query);
-        const [profileResult, templatesResult, documentsResult, aidsResult, settlementsResult, financialSettlementsResult, financialPurchasesResult, deductibleResult] = await Promise.all([
+        const [profileResult, templatesResult, documentsResult, aidsResult, settlementsResult, financialSettlementsResult, financialPurchasesResult, deductibleResult, mobileAssigneesResult] = await Promise.all([
             database.query(`
                 SELECT profile.company_name AS "companyName", profile.legal_form AS "legalForm", profile.address, profile.postal_code AS "postalCode", profile.city,
                     profile.phone, profile.secondary_phone AS "secondaryPhone", profile.email, profile.country, profile.registration_number AS "registrationNumber", profile.siren, profile.tax_number AS "taxNumber", profile.vat_regime AS "vatRegime", profile.bank_iban AS "bankIban", profile.bank_bic AS "bankBic",
@@ -326,9 +332,12 @@ export function registerBillingRoutes(app, requireAuthentication) {
                     TO_CHAR(due_date, 'YYYY-MM-DD') AS "dueDate", status, TO_CHAR(follow_up_date, 'YYYY-MM-DD') AS "followUpDate", is_email_sent AS "isEmailSent", sent_at AS "sentAt", delivery_method AS "deliveryMethod", delivered_at AS "deliveredAt", delivered_by_name AS "deliveredByName", is_accounted AS "isAccounted",
                     TO_CHAR(accounted_at, 'YYYY-MM-DD') AS "accountedAt", appointment_id AS "appointmentId", source_quote_id AS "sourceQuoteId", correction_source_id AS "correctionSourceId", correction_kind AS "correctionKind", (SELECT source.document_number FROM depannhome_billing_documents source WHERE source.id=depannhome_billing_documents.correction_source_id) AS "correctionSourceNumber", quote_reference AS "quoteReference", vat_regime AS "vatRegime", issuer_tax_number AS "issuerTaxNumber", legal_data AS "legalData", issued_at AS "issuedAt", (structured_data IS NOT NULL) AS "hasStructuredData", lines, notes, financial_data AS "financialData",
                     depannhome_billing_documents.created_at AS "createdAt", depannhome_billing_documents.updated_at AS "updatedAt",
-                    COALESCE(NULLIF(depannhome_billing_documents.created_by_name, ''), NULLIF(creator.full_name, ''), creator.username, '') AS "creatorName"
+                    COALESCE(NULLIF(depannhome_billing_documents.created_by_name, ''), NULLIF(creator.full_name, ''), creator.username, '') AS "creatorName",
+                    depannhome_billing_documents.revenue_assignee_id AS "revenueAssigneeId",
+                    COALESCE(NULLIF(depannhome_billing_documents.revenue_assignee_name,''),NULLIF(revenue_assignee.full_name,''),revenue_assignee.username,'') AS "revenueAssigneeName"
                 FROM depannhome_billing_documents
                 LEFT JOIN depannhome_users creator ON creator.id = depannhome_billing_documents.created_by
+                LEFT JOIN depannhome_users revenue_assignee ON revenue_assignee.id=depannhome_billing_documents.revenue_assignee_id
                                 WHERE depannhome_billing_documents.owner_id = $1
                                     AND ($2 <> 'technician'
                                         OR depannhome_billing_documents.created_by = $3
@@ -390,7 +399,8 @@ export function registerBillingRoutes(app, requireAuthentication) {
                     AND mission.billing_mode='principal' AND COALESCE(BTRIM(mission.mapped_data->>'principal'),'')<>''
                     AND ($2<>'technician' OR EXISTS (SELECT 1 FROM depannhome_calendar_assignments assignment WHERE assignment.event_id=event.id AND assignment.technician_id=$3::bigint))
                 ORDER BY event.deductible_reviewed_at DESC
-            `, [accountOwnerId, request.user?.role || "", request.user?.sub || 0])
+            `, [accountOwnerId, request.user?.role || "", request.user?.sub || 0]),
+            loadMobileRevenueAssignees(database, accountOwnerId)
         ]);
         const pendingResult = await database.query(`SELECT document_id AS "documentId",COALESCE(SUM(amount),0)::float AS amount FROM depannhome_delayed_payment_declarations WHERE owner_id=$1 AND status='pending' GROUP BY document_id`, [accountOwnerId]);
         const acquittanceResult = await database.query(`SELECT document_id AS "documentId" FROM depannhome_billing_acquittances WHERE owner_id=$1`, [accountOwnerId]);
@@ -408,7 +418,19 @@ export function registerBillingRoutes(app, requireAuthentication) {
             const outstandingAmount = billingDocumentOutstanding(document, settledAmount);
             return { ...document, settledAmount, outstandingAmount, paymentStatus: outstandingAmount <= 0.009 ? "paid" : settledAmount > 0 || Number(document.financialData?.depositAmount) > 0 ? "partial" : "unpaid", pendingPaymentAmount: pendingByDocument.get(String(document.id)) || 0, hasAcquittance: acquittanceDocuments.has(String(document.id)), latestPaymentMethod: settlementsByDocument.get(String(document.id))?.latestPaymentMethod || "", latestPaymentDate: settlementsByDocument.get(String(document.id))?.latestPaymentDate || "" };
         });
-        response.json({ profile: { ...emptyProfile(), ...(profileResult.rows[0] || {}) }, templates: templatesResult.rows, documents, aids: aidsResult.rows, insuranceDeductibles: deductibleResult.rows, financialDashboard: annualFinancialDashboard, financialDashboards: { period: financialPeriod, monthly: monthlyFinancialDashboard, annual: annualFinancialDashboard } });
+        response.json({ profile: { ...emptyProfile(), ...(profileResult.rows[0] || {}) }, templates: templatesResult.rows, documents, mobileAssignees: mobileAssigneesResult.rows, aids: aidsResult.rows, insuranceDeductibles: deductibleResult.rows, financialDashboard: annualFinancialDashboard, financialDashboards: { period: financialPeriod, monthly: monthlyFinancialDashboard, annual: annualFinancialDashboard } });
+    }));
+
+    app.get("/api/billing/mobile-revenue", requireAuthentication, asyncHandler(async (request, response) => {
+        const ownerId = getAccountOwnerId(request);
+        const period = sanitizeBillingFinancialPeriod({ financialYear: request.query?.year, financialMonth: request.query?.month });
+        const ownOnly = MOBILE_REVENUE_ROLES.has(request.user?.role);
+        const database = getPool();
+        const [membersResult, documentsResult] = await Promise.all([
+            loadMobileRevenueAssignees(database, ownerId, ownOnly ? request.user.sub : 0),
+            database.query(`SELECT id,document_type AS "documentType",status,TO_CHAR(issue_date,'YYYY-MM-DD') AS "issueDate",issued_at AS "issuedAt",revenue_assignee_id AS "revenueAssigneeId",revenue_assignee_name AS "revenueAssigneeName",lines,financial_data AS "financialData" FROM depannhome_billing_documents WHERE owner_id=$1 AND issued_at IS NOT NULL AND document_type IN ('invoice','credit') AND issue_date>=$2::date AND issue_date<($2::date + INTERVAL '1 month') AND ($3::bigint=0 OR revenue_assignee_id=$3::bigint)`, [ownerId, `${period.year}-${period.month}-01`, ownOnly ? request.user.sub : 0])
+        ]);
+        response.json({ period, ownOnly, members: buildMobileRevenueDashboard(documentsResult.rows, membersResult.rows, period) });
     }));
 
     app.put("/api/billing/profile", requireAuthentication, requireBillingAdministration, upload.single("logo"), asyncHandler(async (request, response) => {
@@ -813,14 +835,15 @@ export function registerBillingRoutes(app, requireAuthentication) {
             const taxIdentity = sourceQuote?.vatRegime ? { vatRegime: normalizeVatRegime(sourceQuote.vatRegime), taxNumber: sourceQuote.issuerTaxNumber || "" } : await billingTaxIdentity(getAccountOwnerId(request));
             const documentNumber = document.documentType === "invoice" ? draftInvoiceReference() : document.documentNumber;
             const status = document.documentType === "invoice" ? "draft" : document.status;
+            const revenueAssignee = await resolveRevenueAssignee(getPool(), getAccountOwnerId(request), request, document, { appointment, sourceQuote });
             document.lines = applyVatRegime(document.lines, taxIdentity.vatRegime);
             const { rows } = await getPool().query(`
                 INSERT INTO depannhome_billing_documents
-                    (owner_id, created_by, document_type, document_number, client_id, customer_type, customer_name, customer_address, issue_date, due_date, status, follow_up_date, is_accounted, accounted_at, appointment_id, source_quote_id, quote_reference, vat_regime, issuer_tax_number, lines, legal_data, issued_at, notes, financial_data, created_by_name)
-                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::date,$10::date,$11,$12::date,FALSE,NULL,$13,$14,$15,$16,$17,$18::jsonb,$19::jsonb,NULL,$20,$21::jsonb,$22)
+                    (owner_id, created_by, document_type, document_number, client_id, customer_type, customer_name, customer_address, issue_date, due_date, status, follow_up_date, is_accounted, accounted_at, appointment_id, source_quote_id, quote_reference, vat_regime, issuer_tax_number, lines, legal_data, issued_at, notes, financial_data, created_by_name,revenue_assignee_id,revenue_assignee_name)
+                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::date,$10::date,$11,$12::date,FALSE,NULL,$13,$14,$15,$16,$17,$18::jsonb,$19::jsonb,NULL,$20,$21::jsonb,$22,$23,$24)
                 RETURNING id, document_number AS "documentNumber"
             `, [getAccountOwnerId(request), request.user.sub, document.documentType, documentNumber, document.clientId || null, document.customerType, document.customerName,
-                document.customerAddress, document.issueDate, document.dueDate || null, status, document.followUpDate || null, appointment?.id || null, sourceQuote?.id || null, sourceQuote?.documentNumber || "", taxIdentity.vatRegime, taxIdentity.taxNumber, JSON.stringify(document.lines), JSON.stringify(document.legalData), document.notes, JSON.stringify(document.financialData), cleanText(request.user.fullName || request.user.username, 160)]);
+                document.customerAddress, document.issueDate, document.dueDate || null, status, document.followUpDate || null, appointment?.id || null, sourceQuote?.id || null, sourceQuote?.documentNumber || "", taxIdentity.vatRegime, taxIdentity.taxNumber, JSON.stringify(document.lines), JSON.stringify(document.legalData), document.notes, JSON.stringify(document.financialData), cleanText(request.user.fullName || request.user.username, 160), revenueAssignee?.id || null, revenueAssignee?.name || ""]);
             await (await import("./partner-connections.js")).synchronizeConnectedBillingDocument(getAccountOwnerId(request), rows[0].id);
             const { registerMissionSourceItem } = await import("./partner-dialogue.js"); await registerMissionSourceItem({ ownerId: getAccountOwnerId(request), appointmentId: appointment?.id, sourceType: document.documentType, sourceId: rows[0].id, label: rows[0].documentNumber, details: { status, issueDate: document.issueDate } });
             const { recordMissionEventForSource } = await import("./partner-dialogue.js"); await recordMissionEventForSource({ ownerId: getAccountOwnerId(request), sourceType: "appointment", sourceId: appointment?.id, status: document.documentType === "invoice" ? "invoice_created" : "quote_created", action: "billing_document_created", details: { documentId: rows[0].id, documentType: document.documentType, status }, actorName: request.user.fullName || request.user.username });
@@ -854,15 +877,16 @@ export function registerBillingRoutes(app, requireAuthentication) {
             document.lines = applyVatRegime(document.lines, storedTaxIdentity.vatRegime);
             const documentNumber = document.documentType === "invoice" ? (storedTaxIdentity.documentType === "invoice" ? storedTaxIdentity.documentNumber : draftInvoiceReference()) : document.documentNumber;
             const status = document.documentType === "invoice" ? "draft" : document.status;
+            const revenueAssignee = await resolveRevenueAssignee(getPool(), getAccountOwnerId(request), request, document, { appointment, sourceQuote });
             const result = await getPool().query(`
                 UPDATE depannhome_billing_documents SET document_type=$3, document_number=$4, client_id=$5, customer_type=$6, customer_name=$7,
                     customer_address=$8, issue_date=$9::date, due_date=$10::date, status=$11, follow_up_date=$12::date, is_accounted=FALSE,
                     accounted_at=NULL, appointment_id=$13, source_quote_id=$14, quote_reference=$15, legal_data=$16::jsonb,
-                    lines=$17::jsonb, notes=$18, financial_data=$19::jsonb, updated_at=NOW()
+                    lines=$17::jsonb, notes=$18, financial_data=$19::jsonb, revenue_assignee_id=$20, revenue_assignee_name=$21, updated_at=NOW()
                 WHERE id=$1 AND owner_id=$2 AND issued_at IS NULL AND is_accounted=FALSE
                     AND NOT EXISTS (SELECT 1 FROM depannhome_accounting_entries entry WHERE entry.owner_id=$2 AND entry.source_type IN ('invoice','credit') AND entry.source_id=id::text)
             `, [id, getAccountOwnerId(request), document.documentType, documentNumber, document.clientId || null, document.customerType, document.customerName,
-                document.customerAddress, document.issueDate, document.dueDate || null, status, document.followUpDate || null, appointment?.id || null, sourceQuote?.id || null, sourceQuote?.documentNumber || "", JSON.stringify(document.legalData), JSON.stringify(document.lines), document.notes, JSON.stringify(document.financialData)]);
+                document.customerAddress, document.issueDate, document.dueDate || null, status, document.followUpDate || null, appointment?.id || null, sourceQuote?.id || null, sourceQuote?.documentNumber || "", JSON.stringify(document.legalData), JSON.stringify(document.lines), document.notes, JSON.stringify(document.financialData), revenueAssignee?.id || null, revenueAssignee?.name || ""]);
             if (!result.rowCount) return response.status(409).json({ message: "Un document émis ou comptabilisé est immuable. Créez une facture rectificative, un avenant ou un avoir." });
             await (await import("./partner-connections.js")).synchronizeConnectedBillingDocument(getAccountOwnerId(request), id);
             const { registerMissionSourceItem } = await import("./partner-dialogue.js"); await registerMissionSourceItem({ ownerId: getAccountOwnerId(request), appointmentId: appointment?.id, sourceType: document.documentType, sourceId: id, label: documentNumber, details: { status, issueDate: document.issueDate } });
@@ -894,10 +918,10 @@ export function registerBillingRoutes(app, requireAuthentication) {
             const documentNumber = draftInvoiceReference();
             const created = await database.query(`
                 INSERT INTO depannhome_billing_documents
-                    (owner_id,created_by,document_type,document_number,client_id,customer_type,customer_name,customer_address,issue_date,due_date,status,is_email_sent,sent_at,is_accounted,accounted_at,appointment_id,source_quote_id,correction_source_id,correction_kind,quote_reference,vat_regime,issuer_tax_number,lines,legal_data,notes,financial_data,created_by_name)
-                VALUES ($1,$2,'invoice',$3,$4,$5,$6,$7,CURRENT_DATE,$8,'draft',FALSE,NULL,FALSE,NULL,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+                    (owner_id,created_by,document_type,document_number,client_id,customer_type,customer_name,customer_address,issue_date,due_date,status,is_email_sent,sent_at,is_accounted,accounted_at,appointment_id,source_quote_id,correction_source_id,correction_kind,quote_reference,vat_regime,issuer_tax_number,lines,legal_data,notes,financial_data,created_by_name,revenue_assignee_id,revenue_assignee_name)
+                VALUES ($1,$2,'invoice',$3,$4,$5,$6,$7,CURRENT_DATE,$8,'draft',FALSE,NULL,FALSE,NULL,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
                 RETURNING id
-            `, [source.owner_id, request.user.sub, documentNumber, source.client_id, source.customer_type, source.customer_name, source.customer_address, source.due_date, source.appointment_id, source.source_quote_id, source.id, kind, source.quote_reference, source.vat_regime, source.issuer_tax_number, source.lines, source.legal_data, source.notes, source.financial_data, cleanText(request.user.fullName || request.user.username, 160)]);
+            `, [source.owner_id, request.user.sub, documentNumber, source.client_id, source.customer_type, source.customer_name, source.customer_address, source.due_date, source.appointment_id, source.source_quote_id, source.id, kind, source.quote_reference, source.vat_regime, source.issuer_tax_number, source.lines, source.legal_data, source.notes, source.financial_data, cleanText(request.user.fullName || request.user.username, 160), source.revenue_assignee_id, source.revenue_assignee_name]);
             await database.query("UPDATE depannhome_billing_documents SET status='cancelled', updated_at=NOW() WHERE id=$1", [source.id]);
             await database.query("COMMIT");
             response.status(201).json({ id: created.rows[0].id, documentNumber });
@@ -936,7 +960,7 @@ export async function issueDocument({ ownerId, documentId, actorId, pool = getPo
                 document.appointment_id AS "appointmentId", document.source_quote_id AS "sourceQuoteId", document.correction_source_id AS "correctionSourceId",
                 document.correction_kind AS "correctionKind", document.quote_reference AS "quoteReference", document.vat_regime AS "vatRegime",
                 document.issuer_tax_number AS "issuerTaxNumber", document.legal_data AS "legalData", document.issued_at AS "issuedAt",
-                document.created_by_name AS "creatorName",
+                document.created_by_name AS "creatorName",document.revenue_assignee_id AS "revenueAssigneeId",document.revenue_assignee_name AS "revenueAssigneeName",
                 document.lines, document.notes, document.financial_data AS "financialData",
                 (SELECT client.client_data FROM depannhome_clients client WHERE client.owner_id=document.owner_id AND client.client_id=document.client_id) AS "clientData"
             FROM depannhome_billing_documents document
@@ -1057,6 +1081,7 @@ function buildLegalSnapshot(document, profile) {
             issueDate: document.issueDate, dueDate: document.dueDate, quoteReference: document.quoteReference, vatRegime: document.vatRegime,
             issuerTaxNumber: document.issuerTaxNumber, legalData: document.legalData, lines: document.lines, notes: document.notes,
             creatorName: document.creatorName,
+            revenueAssigneeId: document.revenueAssigneeId, revenueAssigneeName: document.revenueAssigneeName,
             financialData: document.financialData, sourceInvoiceId: document.sourceInvoiceId, sourceInvoiceNumber: document.sourceInvoiceNumber,
             sourceInvoiceDate: document.sourceInvoiceDate, reason: document.reason
         },
@@ -1105,6 +1130,7 @@ async function requireBillingSettlementAccess(request, response, next) {
 }
 
 export function requireBillingWorkspaceAccess(request, response, next) {
+    if (request.originalUrl?.split("?")[0] === "/api/billing/mobile-revenue" && MOBILE_REVENUE_ROLES.has(request.user?.role)) return next();
     if (hasBillingWorkspaceAccess(request.user)) return next();
     return response.status(403).json({ message: "L’accès à l’espace Facturation n’est pas autorisé pour ce poste administratif ou n’est pas inclus dans l’offre active." });
 }
@@ -1266,6 +1292,7 @@ function sanitizeDocument(value) {
     const isAccounted = false;
     const appointmentId = positiveId(value?.appointmentId);
     const sourceQuoteId = documentType === "invoice" ? positiveId(value?.sourceQuoteId) : 0;
+    const revenueAssigneeId = documentType === "invoice" ? positiveId(value?.revenueAssigneeId) : 0;
     const notes = cleanText(value?.notes, 2000);
     const lines = sanitizeLines(value?.lines);
     const financialData = sanitizeFinancialData(value?.financialData);
@@ -1275,7 +1302,7 @@ function sanitizeDocument(value) {
     if (!lines.length) return { ok: false, message: "Ajoutez au moins une ligne." };
     if (value?.dueDate && !dueDate) return { ok: false, message: "La date d'échéance est invalide." };
     if (financialData.depositAmount > billingAmountBeforeDeposit(lines, financialData) + 0.01) return { ok: false, message: "L’acompte encaissé ne peut pas dépasser le montant restant après remises et aides." };
-    return { ok: true, documentType, documentNumber, clientId, customerType, customerName, customerAddress, issueDate, dueDate, status, followUpDate, isAccounted, appointmentId, sourceQuoteId, lines, notes, financialData, legalData };
+    return { ok: true, documentType, documentNumber, clientId, customerType, customerName, customerAddress, issueDate, dueDate, status, followUpDate, isAccounted, appointmentId, sourceQuoteId, revenueAssigneeId, lines, notes, financialData, legalData };
 }
 
 function sanitizeLegalData(value, customerAddress = "") {
@@ -1387,6 +1414,21 @@ export function buildBillingFinancialDashboard(documents, settlements = [], purc
     }, 0);
     const collected = (Object.hasOwn(period, "collected") ? Number(period.collected) || 0 : [...settledByDocument.values()].reduce((sum, amount) => sum + amount, 0)) + depositCollected;
     return { invoicesHt: roundFinancial(invoicesHt), invoicesTtc: roundFinancial(invoicesTtc), turnoverHt: roundFinancial(turnoverHt), creditsHt: roundFinancial(creditsHt), creditsTtc: roundFinancial(creditsTtc), purchasesHt: roundFinancial(purchasesHt), grossProfitEstimateHt: roundFinancial(grossProfitEstimateHt), collected: roundFinancial(collected), outstanding: roundFinancial(outstanding), invoicesCount, creditsCount };
+}
+export function buildMobileRevenueDashboard(documents, members, period = {}) {
+    const summaries = new Map((Array.isArray(members) ? members : []).map(member => [String(member.id), { id: member.id, name: member.name, role: member.role, invoicesCount: 0, creditsCount: 0, invoicesHt: 0, creditsHt: 0, turnoverHt: 0 }]));
+    for (const document of Array.isArray(documents) ? documents : []) {
+        const summary = summaries.get(String(document.revenueAssigneeId || ""));
+        const issueDate = String(document.issueDate || "");
+        if (!summary || !document.issuedAt || !["invoice", "credit"].includes(document.documentType) || ["draft", "cancelled", "rejected"].includes(String(document.status || "").toLowerCase())) continue;
+        if (period.year && issueDate.slice(0, 4) !== String(period.year)) continue;
+        if (period.month && issueDate.slice(5, 7) !== String(period.month)) continue;
+        const lines = document.documentType === "credit" ? (document.lines || []).map(line => ({ ...line, quantity: Math.abs(Number(line.quantity) || 0), unitPrice: Math.abs(Number(line.unitPrice ?? line.unit_price) || 0) })) : document.lines;
+        const amountHt = Math.abs(calculateDocumentAccountingTotals(lines || [], document.financialData || {}).ht);
+        if (document.documentType === "credit") { summary.creditsHt += amountHt; summary.creditsCount += 1; }
+        else { summary.invoicesHt += amountHt; summary.invoicesCount += 1; }
+    }
+    return [...summaries.values()].map(summary => ({ ...summary, invoicesHt: roundFinancial(summary.invoicesHt), creditsHt: roundFinancial(summary.creditsHt), turnoverHt: roundFinancial(summary.invoicesHt - summary.creditsHt) })).sort((first, second) => second.turnoverHt - first.turnoverHt || first.name.localeCompare(second.name, "fr"));
 }
 function billingDocumentOutstanding(document, settledAmount = 0) {
     if (document?.documentType !== "invoice" || ["draft", "cancelled", "rejected"].includes(String(document?.status || "").toLowerCase())) return 0;
@@ -1694,7 +1736,7 @@ export function createBillingPdf(document, profile) {
 async function findSourceQuote(database, ownerId, sourceQuoteId, request) {
     if (!sourceQuoteId) return null;
     const { rows } = await database.query(`
-        SELECT id, document_number AS "documentNumber", vat_regime AS "vatRegime", issuer_tax_number AS "issuerTaxNumber"
+        SELECT id, document_number AS "documentNumber", vat_regime AS "vatRegime", issuer_tax_number AS "issuerTaxNumber",created_by AS "createdBy",revenue_assignee_id AS "revenueAssigneeId"
         FROM depannhome_billing_documents
                 WHERE id = $1 AND owner_id = $2 AND document_type = 'quote'
                     AND ($3 <> 'technician'
@@ -1737,6 +1779,40 @@ async function findAccessibleAppointment(database, ownerId, appointmentId, reque
           AND ($3 <> 'technician' OR EXISTS (SELECT 1 FROM depannhome_calendar_assignments assignment WHERE assignment.event_id = depannhome_calendar_events.id AND assignment.technician_id = $4::bigint))
     `, [appointmentId, ownerId, request.user?.role || "", request.user?.sub || 0]);
     return rows[0] || null;
+}
+
+function loadMobileRevenueAssignees(database, ownerId, memberId = 0) {
+    return database.query(`SELECT id,COALESCE(NULLIF(full_name,''),username) AS name,role FROM depannhome_users WHERE account_owner_id=$1 AND is_active=TRUE AND role IN ('mobile_admin','team_lead','technician') AND ($2::bigint=0 OR id=$2::bigint) ORDER BY LOWER(COALESCE(NULLIF(full_name,''),username))`, [ownerId, memberId]);
+}
+
+async function resolveRevenueAssignee(database, ownerId, request, document, context = {}) {
+    if (document.documentType !== "invoice") return null;
+    if (MOBILE_REVENUE_ROLES.has(request.user?.role)) return findMobileRevenueAssignee(database, ownerId, request.user.sub, true);
+    if (document.revenueAssigneeId) {
+        const canAssign = request.user?.deviceType === "desktop" && !["accountant", "technician", "team_lead", "mobile_admin"].includes(request.user?.role);
+        if (!canAssign) throw billingError(403, "L’attribution du chiffre d’affaires est réservée à un poste administratif autorisé.");
+        return findMobileRevenueAssignee(database, ownerId, document.revenueAssigneeId, true);
+    }
+    const inheritedId = context.sourceQuote?.revenueAssigneeId || context.sourceQuote?.createdBy;
+    if (inheritedId) {
+        const inherited = await findMobileRevenueAssignee(database, ownerId, inheritedId, false);
+        if (inherited) return inherited;
+    }
+    if (!context.appointment?.id) return null;
+    const { rows } = await database.query(`SELECT member.id,COALESCE(NULLIF(member.full_name,''),member.username) AS name FROM depannhome_calendar_assignments assignment JOIN depannhome_users member ON member.id=assignment.technician_id AND member.account_owner_id=$1 AND member.is_active=TRUE AND member.role IN ('mobile_admin','team_lead','technician') WHERE assignment.event_id=$2 ORDER BY assignment.is_primary DESC,assignment.id LIMIT 1`, [ownerId, context.appointment.id]);
+    return rows[0] || null;
+}
+
+async function findMobileRevenueAssignee(database, ownerId, memberId, required) {
+    const id = positiveId(memberId);
+    if (!id) {
+        if (required) throw billingError(400, "Le poste mobile choisi est invalide.");
+        return null;
+    }
+    const result = await loadMobileRevenueAssignees(database, ownerId, id);
+    if (result.rows[0]) return result.rows[0];
+    if (required) throw billingError(400, "Le poste mobile choisi est introuvable, inactif ou n’appartient pas à cette entreprise.");
+    return null;
 }
 
 async function canonicalizeInsuranceDeductible(database, ownerId, document, options = {}) {

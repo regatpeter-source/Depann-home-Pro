@@ -104,8 +104,8 @@ test("le planning mobile Commercial est filtré par affectation et reste en lect
 test("le Commercial mobile démarre sur Planning et peut ouvrir le Support", () => {
     const navigation = read("js/navigation.js");
     const styles = read("css/style.css");
-    assert.match(navigation, /else if \(isCommercialMobile\(\) \|\| isMobileAdministrator\(\)\) openCalendar\(\)/);
-    assert.match(navigation, /isCommercialMobile\(\) \|\| isMobileAdministrator\(\)/);
+    assert.match(navigation, /else if \(isCommercialMobile\(\)\) openCalendar\(\)/);
+    assert.match(navigation, /else if \(isMobileDeviceContext\(\)\) openHome\(\)/);
     assert.match(navigation, /ROUTES\.home && isMobileDeviceContext\(\) && canAccessRoute\(ROUTES\.home\)/);
     assert.match(navigation, /isCommercialMobile\(\) && !\[ROUTES\.calendar, ROUTES\.support\]\.includes\(route\)/);
     assert.match(styles, /commercial"\]\.mobile-device footer \.nav-button:not\(\[data-nav="calendar"\]\):not\(\.mobile-workspace-menu-button\)\{display:none;\}/);

@@ -101,7 +101,7 @@ export const MENU_ACCESS = Object.freeze({
         settings: OPERATIONAL_PC
     }),
     navigation: Object.freeze({
-        [ROUTES.home]: OPERATIONAL_PC.concat("team_lead", "technician"),
+        [ROUTES.home]: OPERATIONAL_PC.concat("mobile_admin", "team_lead", "technician"),
         [ROUTES.search]: OPERATIONAL_PC,
         [ROUTES.store]: OPERATIONAL_PC,
         [ROUTES.clients]: OPERATIONAL_MOBILE,

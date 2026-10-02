@@ -575,7 +575,7 @@ body[data-role="mobile_admin"].mobile-device .quick-actions button{padding:13px 
 body[data-role="mobile_admin"].mobile-device .search-section{display:none;}
 body[data-role="mobile_admin"].mobile-device #app{padding-bottom:110px;}
 body[data-role="mobile_admin"].mobile-device footer{display:flex;justify-content:center;overflow:hidden;}
-body[data-role="mobile_admin"].mobile-device footer .nav-button:not([data-nav="calendar"]):not(.mobile-workspace-menu-button){display:none;}
+body[data-role="mobile_admin"].mobile-device footer .nav-button:not([data-nav="home"]):not([data-nav="calendar"]):not(.mobile-workspace-menu-button){display:none;}
 
 /* Commercial : même compte sur PC et mobile, planning affecté uniquement sur mobile. */
 body[data-role="commercial"].mobile-device .quick-actions{display:grid;grid-template-columns:1fr;gap:10px;margin:16px 0;}
@@ -8453,3 +8453,21 @@ body:is(.desktop-device,.mobile-device).dark-theme .maplibregl-popup-close-butto
     .calendar-planning-map-summary b{grid-column:2;max-width:none;text-align:left;}
     .terrain-location-control{bottom:76px;}
 }
+
+/* Chiffre d’affaires mensuel personnel des postes mobiles nominatifs. */
+.mobile-revenue-card{display:grid;gap:15px;margin-bottom:16px;padding:16px;border:1px solid #bbf7d0;border-radius:16px;background:linear-gradient(135deg,#f0fdf4,#f8fafc);box-shadow:var(--shadow);}
+.mobile-revenue-heading{display:flex;align-items:flex-end;justify-content:space-between;gap:14px;}
+.mobile-revenue-heading h3{margin:3px 0;color:var(--primary);}
+.mobile-revenue-heading label{display:grid;gap:5px;color:var(--primary);font-size:12px;font-weight:800;}
+.mobile-revenue-heading input{min-height:40px;padding:8px 10px;border:1px solid var(--border);border-radius:10px;background:var(--surface);color:var(--text);font:inherit;}
+.mobile-revenue-summary{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:12px;}
+.mobile-revenue-total,.mobile-revenue-breakdown p{padding:14px;border:1px solid rgba(10,92,54,.14);border-radius:13px;background:var(--surface);}
+.mobile-revenue-total{display:grid;gap:3px;}
+.mobile-revenue-total span,.mobile-revenue-total small,.mobile-revenue-breakdown span{color:var(--muted);}
+.mobile-revenue-total strong{color:var(--secondary);font-size:clamp(28px,8vw,42px);line-height:1.1;}
+.mobile-revenue-breakdown{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;}
+.mobile-revenue-breakdown p{display:grid;gap:4px;margin:0;}
+.mobile-revenue-breakdown strong{color:var(--primary);font-size:24px;}
+body:is(.desktop-device,.mobile-device).dark-theme .mobile-revenue-card{border-color:#166534;background:linear-gradient(135deg,rgba(20,83,45,.28),var(--surface));}
+body:is(.desktop-device,.mobile-device).dark-theme :is(.mobile-revenue-total,.mobile-revenue-breakdown p){border-color:var(--border);background:var(--surface-alt);}
+@media(max-width:700px){.mobile-revenue-heading{align-items:stretch;flex-direction:column;}.mobile-revenue-summary{grid-template-columns:1fr;}.mobile-revenue-breakdown{grid-template-columns:1fr 1fr;}}

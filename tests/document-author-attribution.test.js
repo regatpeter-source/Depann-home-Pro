@@ -17,7 +17,7 @@ const partnerConnections = source("../server/partner-connections.js");
 test("billing documents persist and freeze the individual author name", () => {
     assert.match(schema, /created_by_name VARCHAR\(160\) NOT NULL DEFAULT ''/);
     assert.match(billing, /created_by_name AS "creatorName"/);
-    assert.match(billing, /created_by_name\)\s*VALUES[\s\S]*cleanText\(request\.user\.fullName \|\| request\.user\.username, 160\)/);
+    assert.match(billing, /created_by_name,revenue_assignee_id,revenue_assignee_name\)\s*VALUES[\s\S]*cleanText\(request\.user\.fullName \|\| request\.user\.username, 160\)/);
     assert.match(billing, /OLD\.created_by_name/);
     assert.match(billing, /creatorName: document\.creatorName/);
     assert.match(billing, /Établi par : \$\{document\.creatorName\}/);
@@ -25,7 +25,7 @@ test("billing documents persist and freeze the individual author name", () => {
 
 test("quotes, invoices and credits carry the frozen author through every output path", () => {
     assert.match(accounting, /const creatorName = cleanText\(request\.user\.fullName \|\| request\.user\.username, 160\)/);
-    assert.match(accounting, /financial_data, created_by_name\)/);
+    assert.match(accounting, /financial_data, created_by_name,revenue_assignee_id,revenue_assignee_name\)/);
     assert.match(partnerDialogue, /created_by_name AS "creatorName"/);
     assert.match(partnerConnections, /creatorName: document\.created_by_name \|\| ""/);
     const model = buildBillingCustomModel({ documentType: "invoice", documentNumber: "FAC-1", creatorName: "Camille Durand", lines: [] });

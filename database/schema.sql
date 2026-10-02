@@ -593,6 +593,8 @@ CREATE TABLE IF NOT EXISTS depannhome_billing_documents (
     owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
     created_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
     created_by_name VARCHAR(160) NOT NULL DEFAULT '',
+    revenue_assignee_id BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+    revenue_assignee_name VARCHAR(160) NOT NULL DEFAULT '',
     document_type VARCHAR(10) NOT NULL CHECK (document_type IN ('quote', 'invoice')),
     document_number VARCHAR(80) NOT NULL,
     client_id VARCHAR(100),
@@ -643,6 +645,8 @@ ALTER TABLE depannhome_billing_documents
     ADD COLUMN IF NOT EXISTS accounted_at DATE,
     ADD COLUMN IF NOT EXISTS created_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
     ADD COLUMN IF NOT EXISTS created_by_name VARCHAR(160) NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS revenue_assignee_id BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+    ADD COLUMN IF NOT EXISTS revenue_assignee_name VARCHAR(160) NOT NULL DEFAULT '',
     ADD COLUMN IF NOT EXISTS client_id VARCHAR(100),
     ADD COLUMN IF NOT EXISTS appointment_id BIGINT,
     ADD COLUMN IF NOT EXISTS source_quote_id BIGINT,
@@ -673,6 +677,10 @@ UPDATE depannhome_billing_documents SET delivery_method='email',delivered_at=COA
 
 CREATE INDEX IF NOT EXISTS depannhome_billing_documents_accounting_idx
     ON depannhome_billing_documents (owner_id, document_type, is_accounted, issue_date DESC);
+
+CREATE INDEX IF NOT EXISTS depannhome_billing_documents_revenue_assignee_idx
+    ON depannhome_billing_documents (owner_id, revenue_assignee_id, issue_date DESC)
+    WHERE issued_at IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS depannhome_billing_documents_follow_up_idx
     ON depannhome_billing_documents (owner_id, follow_up_date)
@@ -709,8 +717,8 @@ CREATE TABLE IF NOT EXISTS depannhome_billing_sequences (
 CREATE OR REPLACE FUNCTION depannhome_protect_issued_billing_document() RETURNS trigger AS $$
 BEGIN
     IF TG_OP='DELETE' AND OLD.issued_at IS NOT NULL THEN RAISE EXCEPTION 'Un document émis ne peut pas être supprimé.'; END IF;
-    IF TG_OP='UPDATE' AND OLD.issued_at IS NOT NULL AND ROW(NEW.owner_id,NEW.created_by,NEW.created_by_name,NEW.document_type,NEW.document_number,NEW.client_id,NEW.customer_type,NEW.customer_name,NEW.customer_address,NEW.issue_date,NEW.due_date,NEW.appointment_id,NEW.source_quote_id,NEW.correction_source_id,NEW.correction_kind,NEW.quote_reference,NEW.vat_regime,NEW.issuer_tax_number,NEW.legal_data,NEW.issued_at,NEW.finalized_by,NEW.legal_snapshot,NEW.structured_data,NEW.structured_mime_type,NEW.structured_sha256,NEW.pdf_data,NEW.pdf_sha256,NEW.lines,NEW.notes,NEW.financial_data,NEW.created_at)
-        IS DISTINCT FROM ROW(OLD.owner_id,OLD.created_by,OLD.created_by_name,OLD.document_type,OLD.document_number,OLD.client_id,OLD.customer_type,OLD.customer_name,OLD.customer_address,OLD.issue_date,OLD.due_date,OLD.appointment_id,OLD.source_quote_id,OLD.correction_source_id,OLD.correction_kind,OLD.quote_reference,OLD.vat_regime,OLD.issuer_tax_number,OLD.legal_data,OLD.issued_at,OLD.finalized_by,OLD.legal_snapshot,OLD.structured_data,OLD.structured_mime_type,OLD.structured_sha256,OLD.pdf_data,OLD.pdf_sha256,OLD.lines,OLD.notes,OLD.financial_data,OLD.created_at)
+    IF TG_OP='UPDATE' AND OLD.issued_at IS NOT NULL AND ROW(NEW.owner_id,NEW.created_by,NEW.created_by_name,NEW.revenue_assignee_id,NEW.revenue_assignee_name,NEW.document_type,NEW.document_number,NEW.client_id,NEW.customer_type,NEW.customer_name,NEW.customer_address,NEW.issue_date,NEW.due_date,NEW.appointment_id,NEW.source_quote_id,NEW.correction_source_id,NEW.correction_kind,NEW.quote_reference,NEW.vat_regime,NEW.issuer_tax_number,NEW.legal_data,NEW.issued_at,NEW.finalized_by,NEW.legal_snapshot,NEW.structured_data,NEW.structured_mime_type,NEW.structured_sha256,NEW.pdf_data,NEW.pdf_sha256,NEW.lines,NEW.notes,NEW.financial_data,NEW.created_at)
+        IS DISTINCT FROM ROW(OLD.owner_id,OLD.created_by,OLD.created_by_name,OLD.revenue_assignee_id,OLD.revenue_assignee_name,OLD.document_type,OLD.document_number,OLD.client_id,OLD.customer_type,OLD.customer_name,OLD.customer_address,OLD.issue_date,OLD.due_date,OLD.appointment_id,OLD.source_quote_id,OLD.correction_source_id,OLD.correction_kind,OLD.quote_reference,OLD.vat_regime,OLD.issuer_tax_number,OLD.legal_data,OLD.issued_at,OLD.finalized_by,OLD.legal_snapshot,OLD.structured_data,OLD.structured_mime_type,OLD.structured_sha256,OLD.pdf_data,OLD.pdf_sha256,OLD.lines,OLD.notes,OLD.financial_data,OLD.created_at)
     THEN RAISE EXCEPTION 'Les données légales d’un document émis sont immuables.'; END IF;
     RETURN CASE WHEN TG_OP='DELETE' THEN OLD ELSE NEW END;
 END; $$ LANGUAGE plpgsql;

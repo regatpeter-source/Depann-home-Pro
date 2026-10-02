@@ -21,7 +21,7 @@ test("le tableau de bord PC affiche des indicateurs réels selon les droits", ()
 });
 
 test("le tableau de bord reste utile sur PC sans module planning", () => {
-    assert.match(navigation, /if \(!calendarEnabled && !desktopDashboard\)/);
+    assert.match(navigation, /if \(!calendarEnabled && !desktopDashboard && !mobileRevenueEnabled\)/);
     assert.match(navigation, /Pilotage administratif/);
     assert.match(navigation, /if \(!calendarEnabled\) return/);
 });

@@ -1,24 +1,24 @@
-import { APP_VERSION, ROUTES, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=137";
-import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=238";
+import { APP_VERSION, ROUTES, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=138";
+import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=239";
 import { openCreatorPartnerRequest, openCreatorRequestNotification, renderCreatorConsole } from "./creator.js?v=171";
-import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=214";
+import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=215";
 import { renderAccounting } from "./accounting.js?v=31";
 import { renderPurchases } from "./purchases.js?v=129";
 import { renderGroupActivation, renderGroupWorkspace } from "./groups.js?v=9";
 import { renderHistoryAndJournals } from "./history.js?v=2";
-import { renderPartnerMissions } from "./partner-missions.js?v=92";
+import { renderPartnerMissions } from "./partner-missions.js?v=93";
 import { renderPartnerSandbox } from "./partner-sandbox.js?v=3";
-import { renderPartnerConnections } from "./partner-connections.js?v=52";
+import { renderPartnerConnections } from "./partner-connections.js?v=53";
 import { renderCompanyEmailWorkspace, renderPartnerEmailSettings } from "./partner-email-settings.js?v=29";
 import { renderDataImportTool } from "./data-imports.js?v=5";
-import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=60";
+import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=61";
 import { getFirstUnreadClientId, refreshClientMessageAlert, refreshVisibleClientMessages } from "./messages.js?v=107";
 import { getSearchableClients, refreshClientDirectoryAfterSynchronization, renderClients } from "./clients.js?v=174";
 import { synchronizeClients } from "./client-sync.js?v=132";
 import { configureLibrary, openLibrarySection, renderLibrary, searchPersonalLibrary } from "./library.js?v=122";
 import { getContextualSearchResults } from "./search.js?v=78";
 import { renderInterventionSearch } from "./intervention-search.js?v=3";
-import { initializeTerrainLocationSharing, renderOperationsMap } from "./operations-map.js?v=6";
+import { initializeTerrainLocationSharing, renderOperationsMap } from "./operations-map.js?v=7";
 import { state, resetSelection } from "./state.js?v=44";
 import {
     getSettings,
@@ -137,7 +137,7 @@ export function initializeNavigation(loadedDatabase) {
     }
     if (isAccountant() && canAccessRoute(ROUTES.billing)) renderBilling();
     else if (isAccountant() && canAccessRoute(ROUTES.accounting)) renderAccounting();
-    else if (isCommercialMobile() || isMobileAdministrator()) openCalendar();
+    else if (isCommercialMobile()) openCalendar();
     else if (isMobileDeviceContext()) openHome();
     else if (document.body.classList.contains("desktop-device")) renderHome();
     else renderBrands();
@@ -606,7 +606,7 @@ function renderMobileWorkspaceFolders(container, quickActions) {
 }
 
 function ensureMobileHomeNavigationButton() {
-    if (!isMobileDeviceContext() || isCommercialMobile() || isMobileAdministrator() || document.querySelector('.nav-button[data-nav="home"]')) return;
+    if (!isMobileDeviceContext() || isCommercialMobile() || document.querySelector('.nav-button[data-nav="home"]')) return;
     const footer = document.querySelector("#authRoot > footer") || document.querySelector("footer");
     if (!footer) return;
     const button = document.createElement("button");
@@ -1126,7 +1126,8 @@ async function renderHome() {
     panel.className = "client-panel home-panel dashboard-panel";
     const calendarEnabled = canAccessRoute(ROUTES.calendar);
     const desktopDashboard = isDesktopDevice();
-    if (!calendarEnabled && !desktopDashboard) {
+    const mobileRevenueEnabled = isMobileDeviceContext() && ["mobile_admin", "team_lead", "technician"].includes(document.body.dataset.role);
+    if (!calendarEnabled && !desktopDashboard && !mobileRevenueEnabled) {
         document.body.dataset.pageMode = "basic-home";
         renderPlatformAnnouncement(container);
         return;
@@ -1134,11 +1135,12 @@ async function renderHome() {
     panel.innerHTML = `
         <div class="dashboard-heading"><div><p class="eyebrow">Depann’Home Pro</p><h2>Tableau de bord</h2>${desktopDashboard ? '<p class="dashboard-heading-summary">Vue opérationnelle de l’entreprise active</p>' : ""}${renderMobileUserSections()}</div>${calendarEnabled ? '<button type="button" class="secondary-button" data-dashboard-action="calendar">Voir le planning complet</button>' : ""}</div>
         ${document.body.dataset.canSwitchGroupCompanies === "true" ? '<section class="dashboard-company-switcher" data-dashboard-company-switcher><p class="muted">Chargement des entreprises autorisées…</p></section>' : ""}
+        ${mobileRevenueEnabled ? renderMobileRevenueCard() : ""}
         ${desktopDashboard ? renderDashboardMetricCards(calendarEnabled) : ""}
         ${calendarEnabled ? `<div class="dashboard-grid">
             <section class="dashboard-card"><p class="eyebrow">Aujourd’hui</p><h3>${escapeHtml(formatDashboardDate(new Date()))}</h3><div class="dashboard-events" data-dashboard-events="today"><p class="muted">Chargement des rendez-vous…</p></div></section>
             <section class="dashboard-card"><p class="eyebrow">À venir</p><h3>Les 7 prochains jours</h3><div class="dashboard-events" data-dashboard-events="upcoming"><p class="muted">Chargement des rendez-vous…</p></div></section>
-        </div>` : '<section class="dashboard-administrative-note"><strong>Pilotage administratif</strong><span>Retrouvez ci-dessus les dossiers qui nécessitent votre attention.</span></section>'}
+        </div>` : mobileRevenueEnabled ? "" : '<section class="dashboard-administrative-note"><strong>Pilotage administratif</strong><span>Retrouvez ci-dessus les dossiers qui nécessitent votre attention.</span></section>'}
     `;
     container.appendChild(panel);
     renderPlatformAnnouncement(container);
@@ -1146,6 +1148,7 @@ async function renderHome() {
     panel.querySelector('[data-dashboard-action="calendar"]')?.addEventListener("click", renderCalendar);
     bindDashboardMetricActions(panel);
     void renderHomeGroupCompanySwitcher(panel);
+    if (mobileRevenueEnabled) bindMobileRevenueCard(panel);
     if (desktopDashboard) void loadDashboardOperationalMetrics(panel);
     if (!calendarEnabled) return;
     const result = await loadDashboardEvents();
@@ -1165,6 +1168,37 @@ async function renderHome() {
     updateDashboardMetric(panel, "calendar", String(todayEvents.length), `${upcomingEvents.length} prévu${upcomingEvents.length > 1 ? "s" : ""} sur 7 jours`);
     renderDashboardEvents(panel.querySelector('[data-dashboard-events="today"]'), todayEvents, "Aucun rendez-vous aujourd’hui.");
     renderDashboardEvents(panel.querySelector('[data-dashboard-events="upcoming"]'), upcomingEvents, "Aucun rendez-vous prévu dans les 7 prochains jours.");
+}
+
+function renderMobileRevenueCard() {
+    const month = toDashboardDate(new Date()).slice(0, 7);
+    return `<section class="mobile-revenue-card" data-mobile-revenue><div class="mobile-revenue-heading"><div><p class="eyebrow">Activité personnelle</p><h3>Mon chiffre d’affaires mensuel</h3></div><label>Mois<input type="month" value="${month}" data-mobile-revenue-period></label></div><div class="mobile-revenue-summary" data-mobile-revenue-summary><p class="muted">Calcul du CA net HT émis…</p></div></section>`;
+}
+
+function bindMobileRevenueCard(panel) {
+    const card = panel.querySelector("[data-mobile-revenue]");
+    const period = card?.querySelector("[data-mobile-revenue-period]");
+    if (!card || !period) return;
+    const load = async () => {
+        const [year, month] = period.value.split("-");
+        const summary = card.querySelector("[data-mobile-revenue-summary]");
+        summary.innerHTML = '<p class="muted">Calcul du CA net HT émis…</p>';
+        try {
+            const data = await loadDashboardJson(`/api/billing/mobile-revenue?year=${encodeURIComponent(year)}&month=${encodeURIComponent(month)}`);
+            if (!card.isConnected) return;
+            const member = data?.members?.[0];
+            if (!member) { summary.innerHTML = '<p class="auth-message">Aucun poste mobile attribué à cette session.</p>'; return; }
+            summary.innerHTML = `<div class="mobile-revenue-total"><span>CA net HT</span><strong>${escapeHtml(formatDashboardMoney(member.turnoverHt))}</strong><small>Factures émises moins avoirs émis</small></div><div class="mobile-revenue-breakdown"><p><strong>${member.invoicesCount}</strong><span>facture${member.invoicesCount > 1 ? "s" : ""} · ${escapeHtml(formatDashboardMoney(member.invoicesHt))} HT</span></p><p><strong>${member.creditsCount}</strong><span>avoir${member.creditsCount > 1 ? "s" : ""} · − ${escapeHtml(formatDashboardMoney(member.creditsHt))} HT</span></p></div>`;
+        } catch {
+            if (card.isConnected) summary.innerHTML = '<p class="auth-message error">Chiffre d’affaires momentanément indisponible.</p>';
+        }
+    };
+    period.addEventListener("change", load);
+    void load();
+}
+
+function formatDashboardMoney(value) {
+    return new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" }).format(Number(value) || 0);
 }
 
 function renderDashboardMetricCards(calendarEnabled) {

@@ -40,6 +40,8 @@ Avec une offre **Basic+** ou **Pro**, la création d’un Poste administratif pr
 
 Ces autorisations sont stockées sur le compte, vérifiées par les API et modifiables depuis **Paramètres > Utilisateurs**. Sur l’offre Basic, elles ne sont ni proposées ni honorées pour un Poste administratif. Les Postes Admin disposent toujours de tous les accès disponibles dans l’offre active et, lorsqu’ils appartiennent à un groupe, de la sélection de ses entreprises sans case restrictive.
 
+Lorsqu’un poste administratif autorisé prépare une facture, le champ **CA attribué à** permet de choisir un Poste Admin Mobile, un Chef d’équipe ou un Technicien actif de l’entreprise. Sans choix explicite, l’affectation de l’intervention est utilisée. Une facture créée depuis un poste mobile est automatiquement attribuée à ce poste. L’attribution doit être contrôlée avant l’émission définitive : elle devient ensuite immuable, et les avoirs correspondants la reprennent automatiquement. Chaque mobile nominatif retrouve sur son accueil son CA net HT du mois, avec le nombre et le montant des factures et avoirs émis ; le mois peut être changé depuis la carte.
+
 Une sélection d’entreprise ne transforme jamais un Poste administratif en Poste Admin. Son rôle et ses autorisations restent identiques ; seul l’`account_owner_id` actif change après validation de l’appartenance au groupe.
 
 ## Continuité administrative

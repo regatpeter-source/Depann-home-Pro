@@ -105,8 +105,7 @@ test("terrain posts keep Home while every mobile post keeps Library access", () 
         const organization = publicOrganization({ interfaceType: "standard", licenseType: "depannhome_standard", subscriptionTier });
         for (const role of mobileRoles) assert.equal(isFeatureEnabledForRole(organization, "library", role), true, `${subscriptionTier}:${role}:library`);
     }
-    assert.equal(MENU_ACCESS.navigation[ROUTES.home].includes("mobile_admin"), false, "mobile_admin:home");
-    for (const role of ["team_lead", "technician"]) {
+    for (const role of ["mobile_admin", "team_lead", "technician"]) {
         assert.equal(MENU_ACCESS.navigation[ROUTES.home].includes(role), true, `${role}:home`);
     }
     for (const role of mobileRoles) {
@@ -125,7 +124,7 @@ test("terrain posts keep Home while every mobile post keeps Library access", () 
     assert.match(navigation, /else if \(isMobileDeviceContext\(\)\) openHome\(\)/);
     assert.match(navigation, /if \(isMobileDeviceContext\(\)\) \{\s*renderHome\(\)/);
     assert.doesNotMatch(navigation, /activeSubscriptionTier\(\)/);
-    assert.match(navigation, /if \(!calendarEnabled && !desktopDashboard\) \{\s*document\.body\.dataset\.pageMode = "basic-home"/);
+    assert.match(navigation, /if \(!calendarEnabled && !desktopDashboard && !mobileRevenueEnabled\) \{\s*document\.body\.dataset\.pageMode = "basic-home"/);
     assert.match(navigation, /Pilotage administratif/);
     assert.match(navigation, /data-dashboard-action="calendar"/);
     assert.doesNotMatch(navigation, /container\.removeChild\(panel\)/);

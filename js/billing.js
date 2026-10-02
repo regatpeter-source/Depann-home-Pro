@@ -180,11 +180,11 @@ function renderOverview(panel, profilePanel) {
     panel.querySelector("[data-billing-action=new-quote]")?.addEventListener("click", () => { if (!isAccountant()) openNewDocument("quote"); });
     panel.querySelector("[data-billing-action=new-invoice]").addEventListener("click", () => { if (!isAccountant()) openNewDocument("invoice"); });
     panel.querySelector("[data-billing-action=open-leak-reports]")?.addEventListener("click", async () => {
-        const { renderLeakReportWizard } = await import("./leak-report-wizard.js?v=60");
+        const { renderLeakReportWizard } = await import("./leak-report-wizard.js?v=61");
         renderLeakReportWizard();
     });
     panel.querySelector("[data-billing-action=new-leak-report]")?.addEventListener("click", async () => {
-        const { openLeakReportCreation } = await import("./leak-report-wizard.js?v=60");
+        const { openLeakReportCreation } = await import("./leak-report-wizard.js?v=61");
         openLeakReportCreation();
     });
     panel.querySelector("[data-billing-action=download-quote-template]")?.addEventListener("click", openQuoteTemplateDownload);
@@ -501,6 +501,7 @@ function renderDocumentEditor(panel) {
                 <label>Catégorie d’opération<select name="operationCategory"><option value="goods" ${document.legalData.operationCategory === "goods" ? "selected" : ""}>Livraison de biens</option><option value="services" ${document.legalData.operationCategory === "services" ? "selected" : ""}>Prestation de services</option><option value="mixed" ${document.legalData.operationCategory === "mixed" ? "selected" : ""}>Biens et services</option></select></label>
                 <label>Date *<input name="issueDate" type="date" required value="${escapeHtml(document.issueDate)}"></label>
                 <label>Échéance<input name="dueDate" type="date" value="${escapeHtml(document.dueDate || "")}"></label>
+                ${renderRevenueAssignmentField(document)}
                 ${document.documentType === "quote" ? `<label>Date de relance<input name="followUpDate" type="date" value="${escapeHtml(document.followUpDate || "")}"><small>Le devis apparaîtra dans « Documents à suivre » à partir de cette date.</small></label>` : ""}
                 ${document.documentType === "invoice" ? '<input name="status" type="hidden" value="draft"><p class="billing-quote-reference">Statut : <strong>Brouillon</strong></p>' : `<label>Statut<input name="status" maxlength="30" value="${escapeHtml(document.status || "draft")}" placeholder="Brouillon, envoyé, réglé…"></label>`}
             </div>
@@ -575,6 +576,24 @@ function renderDocumentEditor(panel) {
     });
 }
 
+function renderRevenueAssignmentField(document) {
+    if (document.documentType !== "invoice") return "";
+    const mobileRoles = new Set(["mobile_admin", "team_lead", "technician"]);
+    if (mobileRoles.has(currentUser?.role)) {
+        return `<label>Chiffre d’affaires<input type="text" value="Attribué automatiquement à ${escapeHtml(currentUser.fullName || currentUser.username || "ce poste mobile")}" disabled><small>L’attribution sera figée à l’émission.</small></label>`;
+    }
+    if (!document.body.classList.contains("desktop-device")) {
+        return '<p class="billing-quote-reference">CA attribué automatiquement depuis l’intervention associée.</p>';
+    }
+    const selectedId = String(document.revenueAssigneeId || "");
+    const options = (billingData.mobileAssignees || []).map(member => `<option value="${escapeHtml(member.id)}" ${String(member.id) === selectedId ? "selected" : ""}>${escapeHtml(member.name)} · ${escapeHtml(mobileRevenueRoleLabel(member.role))}</option>`).join("");
+    return `<label>CA attribué à<select name="revenueAssigneeId"><option value="">Attribution automatique via l’intervention</option>${options}</select><small>Choisissez le poste mobile bénéficiaire avant l’émission définitive.</small></label>`;
+}
+
+function mobileRevenueRoleLabel(role) {
+    return ({ mobile_admin: "Poste Admin Mobile", team_lead: "Chef d’équipe", technician: "Technicien" })[role] || "Poste mobile";
+}
+
 function bindBillingDocumentPreview(panel, form, billingDocument) {
     const preview = panel.querySelector(".billing-document-preview-pages");
     const state = panel.querySelector("[data-billing-preview-state]");
@@ -626,7 +645,7 @@ function renderReadOnlyDocument(panel, document) {
         <div class="billing-read-only-document">
             <div class="form-heading"><div><p class="eyebrow">Consultation uniquement</p><h2>${escapeHtml(DOCUMENT_TYPES[document.documentType])} ${escapeHtml(document.documentNumber)}</h2></div><div class="calendar-form-actions">${canCorrect ? '<button type="button" class="secondary-button" data-create-correction="replacement">Créer une facture rectificative</button><button type="button" class="secondary-button" data-create-correction="amendment">Créer un avenant</button>' : ""}${document.documentType === "quote" && (linkedInvoice || !isAccountant()) ? linkedInvoice ? `<button type="button" class="secondary-button" data-view-linked-invoice="${escapeHtml(linkedInvoice.id)}">Voir la facture</button>` : '<button type="button" class="secondary-button" id="createInvoiceFromQuote">Créer la facture</button>' : ""}<button type="button" class="secondary-button" id="closeBillingDocument">Fermer</button></div></div>
             ${document.issuedAt ? '<p class="auth-message">Cette facture a été émise définitivement et constitue désormais un enregistrement immuable. Toute modification doit passer par une facture rectificative, un avenant ou un avoir comptable.</p>' : ""}
-            <div class="procedure-meta"><span>${escapeHtml(document.customerName)}</span><span>${escapeHtml(formatDate(document.issueDate))}</span><span>${escapeHtml(documentStatusLabel(document.status))}</span>${document.documentType === "invoice" ? `<span>${document.quoteReference ? `Réf. devis ${escapeHtml(document.quoteReference)}` : "Sans devis associé"}</span><span>${document.isAccounted ? `Comptabilisée le ${escapeHtml(formatDate(document.accountedAt))}` : "Non comptabilisée"}</span>${document.sentAt ? `<span>Envoyée le ${escapeHtml(formatDate(document.sentAt))}</span>` : ""}${document.correctionSourceNumber ? `<span>${escapeHtml(correctionKindLabel(document.correctionKind))} de ${escapeHtml(document.correctionSourceNumber)}</span>` : ""}` : ""}</div>
+            <div class="procedure-meta"><span>${escapeHtml(document.customerName)}</span><span>${escapeHtml(formatDate(document.issueDate))}</span><span>${escapeHtml(documentStatusLabel(document.status))}</span>${document.documentType === "invoice" ? `<span>${document.quoteReference ? `Réf. devis ${escapeHtml(document.quoteReference)}` : "Sans devis associé"}</span><span>${document.isAccounted ? `Comptabilisée le ${escapeHtml(formatDate(document.accountedAt))}` : "Non comptabilisée"}</span>${document.revenueAssigneeName ? `<span>CA attribué à ${escapeHtml(document.revenueAssigneeName)}</span>` : ""}${document.sentAt ? `<span>Envoyée le ${escapeHtml(formatDate(document.sentAt))}</span>` : ""}${document.correctionSourceNumber ? `<span>${escapeHtml(correctionKindLabel(document.correctionKind))} de ${escapeHtml(document.correctionSourceNumber)}</span>` : ""}` : ""}</div>
             <div class="billing-read-only-lines">${document.lines.map(line => `<div><span>${escapeHtml(line.description)}</span><strong>${escapeHtml(String(line.quantity))} × ${escapeHtml(formatMoney(line.unitPrice))}</strong><b>${escapeHtml(formatMoney(lineTotal(line)))}</b></div>`).join("")}</div>
             <div class="billing-totals" id="billingReadOnlyTotals"></div>
             ${paymentBlock}
@@ -991,6 +1010,7 @@ function createInvoiceFromQuote(quote) {
         appointmentId: quote.appointmentId || "",
         sourceQuoteId: quote.id,
         quoteReference: quote.documentNumber,
+        revenueAssigneeId: quote.revenueAssigneeId || "",
         vatRegime: quote.vatRegime || billingData.profile.vatRegime || "standard",
         issuerTaxNumber: quote.issuerTaxNumber || billingData.profile.taxNumber || "",
         customerType: quote.customerType || "Particulier",
@@ -1017,6 +1037,7 @@ function createNewDocument(type, client = null, appointmentId = "") {
         documentNumber: type === "invoice" ? "" : suggestNumber(type),
         clientId: client?.id || "",
         appointmentId,
+        revenueAssigneeId: "",
         vatRegime: billingData.profile.vatRegime || "standard",
         issuerTaxNumber: billingData.profile.taxNumber || "",
         customerType: client ? getBillingCustomerType(client.type) : baseQuote?.customerType || "Particulier",
