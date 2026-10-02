@@ -17,13 +17,14 @@ let activeMap = null;
 let activeMarkers = [];
 const planningMaps = new WeakMap();
 
-export function initializeTerrainLocationSharing() {
-    if (!canShareLocation() || sharingButton) return;
+export function initializeTerrainLocationSharing(locationHost) {
+    if (!canShareLocation() || sharingButton || !locationHost) return;
     const container = document.createElement("aside");
     container.className = "terrain-location-control";
     container.setAttribute("aria-live", "polite");
     container.innerHTML = '<span class="terrain-location-dot" aria-hidden="true"></span><div><strong>Position terrain</strong><small data-location-status>Partage arrêté</small></div><button type="button" class="secondary-button" data-location-toggle>Démarrer</button>';
-    document.body.appendChild(container);
+    locationHost.hidden = false;
+    locationHost.appendChild(container);
     sharingButton = container.querySelector("[data-location-toggle]");
     sharingStatus = container.querySelector("[data-location-status]");
     sharingButton.addEventListener("click", () => isSharingEnabled() ? stopTerrainLocationSharing() : requestTerrainLocationSharing());

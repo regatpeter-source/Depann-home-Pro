@@ -1,24 +1,24 @@
 import { APP_VERSION, ROUTES, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=138";
-import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=239";
+import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=240";
 import { openCreatorPartnerRequest, openCreatorRequestNotification, renderCreatorConsole } from "./creator.js?v=173";
-import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=215";
+import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=216";
 import { renderAccounting } from "./accounting.js?v=31";
 import { renderPurchases } from "./purchases.js?v=129";
 import { renderGroupActivation, renderGroupWorkspace } from "./groups.js?v=9";
 import { renderHistoryAndJournals } from "./history.js?v=2";
-import { renderPartnerMissions } from "./partner-missions.js?v=93";
+import { renderPartnerMissions } from "./partner-missions.js?v=94";
 import { renderPartnerSandbox } from "./partner-sandbox.js?v=3";
-import { renderPartnerConnections } from "./partner-connections.js?v=53";
+import { renderPartnerConnections } from "./partner-connections.js?v=54";
 import { renderCompanyEmailWorkspace, renderPartnerEmailSettings } from "./partner-email-settings.js?v=29";
 import { renderDataImportTool } from "./data-imports.js?v=5";
-import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=61";
+import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=62";
 import { getFirstUnreadClientId, refreshClientMessageAlert, refreshVisibleClientMessages } from "./messages.js?v=107";
 import { getSearchableClients, refreshClientDirectoryAfterSynchronization, renderClients } from "./clients.js?v=174";
 import { synchronizeClients } from "./client-sync.js?v=132";
 import { configureLibrary, openLibrarySection, renderLibrary, searchPersonalLibrary } from "./library.js?v=122";
 import { getContextualSearchResults } from "./search.js?v=78";
 import { renderInterventionSearch } from "./intervention-search.js?v=3";
-import { initializeTerrainLocationSharing, renderOperationsMap } from "./operations-map.js?v=7";
+import { initializeTerrainLocationSharing, renderOperationsMap } from "./operations-map.js?v=8";
 import { state, resetSelection } from "./state.js?v=44";
 import {
     getSettings,
@@ -71,10 +71,10 @@ export function initializeNavigation(loadedDatabase) {
         openGates: () => renderMotorFamily("portails")
     });
     bindEvents();
-    initializeTerrainLocationSharing();
     bindSilentInteractionSynchronization();
     applyRoleBasedMenus();
     initializeMobileWorkspaceMenu();
+    initializeTerrainLocationSharing(document.querySelector("[data-terrain-location-host]"));
     window.addEventListener("depannhome:open-client", event => openClients(String(event.detail?.clientId || "")));
     window.addEventListener("depannhome:open-partner-email-settings", () => renderSettings({ section: "company", focusPartnerEmail: true }));
     window.addEventListener("depannhome:open-partner-email-missions", () => {
@@ -558,7 +558,7 @@ function initializeMobileWorkspaceMenu() {
     drawer.className = "mobile-workspace-menu";
     drawer.hidden = true;
     drawer.setAttribute("aria-label", "Menu du poste mobile");
-    drawer.innerHTML = '<button type="button" class="mobile-workspace-menu-backdrop" data-mobile-menu-close aria-label="Fermer le menu"></button><div class="mobile-workspace-menu-panel" role="dialog" aria-modal="true" aria-labelledby="mobileWorkspaceMenuTitle"><header><div><p class="eyebrow">Poste mobile</p><h2 id="mobileWorkspaceMenuTitle">Menu</h2></div><button type="button" class="secondary-button" data-mobile-menu-close>Fermer</button></header><div class="mobile-workspace-folders"></div></div>';
+    drawer.innerHTML = '<button type="button" class="mobile-workspace-menu-backdrop" data-mobile-menu-close aria-label="Fermer le menu"></button><div class="mobile-workspace-menu-panel" role="dialog" aria-modal="true" aria-labelledby="mobileWorkspaceMenuTitle"><header><div><p class="eyebrow">Poste mobile</p><h2 id="mobileWorkspaceMenuTitle">Menu</h2></div><button type="button" class="secondary-button" data-mobile-menu-close>Fermer</button></header><section class="mobile-workspace-location" data-terrain-location-host hidden></section><div class="mobile-workspace-folders"></div></div>';
     document.body.appendChild(drawer);
     renderMobileWorkspaceFolders(drawer.querySelector(".mobile-workspace-folders"), quickActions);
 

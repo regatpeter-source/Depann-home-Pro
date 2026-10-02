@@ -114,6 +114,11 @@ test("le partage mobile est volontaire, visible et arrêtable", () => {
     assert.match(client, /window\.confirm\("Partager votre position pendant le service/);
     assert.match(client, /consent: true/);
     assert.match(client, /data-location-toggle/);
+    assert.match(navigation, /data-terrain-location-host/);
+    assert.match(navigation, /initializeTerrainLocationSharing\(document\.querySelector\("\[data-terrain-location-host\]"\)\)/);
+    assert.match(client, /locationHost\.appendChild\(container\)/);
+    assert.doesNotMatch(client, /document\.body\.appendChild\(container\)/);
+    assert.doesNotMatch(styles, /\.terrain-location-control\{position:fixed/);
     assert.match(client, /method: "DELETE"/);
     assert.match(application, /await stopTerrainLocationSharing\(\);\s*const result = await signOut\(\)/);
     assert.match(client, /Le partage fonctionne lorsque l’application est ouverte/);
@@ -128,7 +133,7 @@ test("les limites PWA, la rétention et les fournisseurs cartographiques sont do
     assert.doesNotMatch(client, /tile\.openstreetmap\.org|basemaps\.cartocdn\.com|api[_-]?key/i);
     assert.match(architecture, /ne prétend pas assurer un suivi lorsque le navigateur suspend l’application/);
     assert.match(architecture, /service Android au premier plan/);
-    assert.match(worker, /operations-map\.js\?v=7/);
+    assert.match(worker, /operations-map\.js\?v=8/);
     assert.match(worker, /maplibre-gl\.mjs\?v=6\.11\.2/);
     assert.match(worker, /maplibre-gl-worker\.mjs/);
 });

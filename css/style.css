@@ -8370,7 +8370,8 @@ body:is(.desktop-device,.mobile-device).dark-theme :is(.pdf-live-page,.billing-l
 .technician-map-marker i{position:absolute;right:0;bottom:0;width:12px;height:12px;border:2px solid #fff;border-radius:50%;background:#94a3b8;}
 .technician-map-marker.live i{background:#4ade80;box-shadow:0 0 0 4px rgba(74,222,128,.25);}
 .map-popup-action{margin-top:8px;padding:7px 9px;border:0;border-radius:8px;background:#0f5132;color:#fff;font-weight:800;cursor:pointer;}
-.terrain-location-control{position:fixed;right:14px;bottom:82px;z-index:1200;display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:9px;width:min(390px,calc(100vw - 28px));padding:10px;border:1px solid var(--border);border-radius:14px;background:var(--surface);box-shadow:0 12px 34px rgba(15,23,42,.24);}
+.mobile-workspace-location[hidden]{display:none;}
+.terrain-location-control{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:9px;width:100%;padding:11px;border:1px solid var(--border);border-radius:14px;background:var(--surface-alt,#f8fafc);}
 .terrain-location-control>div strong,.terrain-location-control>div small{display:block;}
 .terrain-location-control>div small{margin-top:2px;color:var(--muted);}
 .terrain-location-dot{width:13px;height:13px;border-radius:50%;background:#94a3b8;}
@@ -8451,7 +8452,6 @@ body:is(.desktop-device,.mobile-device).dark-theme .maplibregl-popup-close-butto
     .calendar-planning-map-canvas{min-height:48vh;}
     .calendar-planning-map-summary article{grid-template-columns:auto minmax(0,1fr);}
     .calendar-planning-map-summary b{grid-column:2;max-width:none;text-align:left;}
-    .terrain-location-control{bottom:76px;}
 }
 
 /* Chiffre d’affaires mensuel personnel des postes mobiles nominatifs. */
