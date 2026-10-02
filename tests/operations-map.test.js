@@ -75,11 +75,12 @@ test("le partage mobile est volontaire, visible et arrêtable", () => {
 test("les limites PWA, la rétention et les fournisseurs cartographiques sont documentés et mis en cache", () => {
     assert.match(privacy, /Seule sa dernière position est conservée/);
     assert.match(privacy, /au maximum douze heures/);
-    assert.match(privacy, /CARTO à partir des données OpenStreetMap/);
-    assert.match(client, /basemaps\.cartocdn\.com\/rastertiles\/voyager/);
-    assert.doesNotMatch(client, /tile\.openstreetmap\.org/);
+    assert.match(privacy, /OpenFreeMap à partir des données OpenStreetMap/);
+    assert.match(client, /tiles\.openfreemap\.org\/styles\/liberty/);
+    assert.doesNotMatch(client, /tile\.openstreetmap\.org|basemaps\.cartocdn\.com|api[_-]?key/i);
     assert.match(architecture, /ne prétend pas assurer un suivi lorsque le navigateur suspend l’application/);
     assert.match(architecture, /service Android au premier plan/);
-    assert.match(worker, /operations-map\.js\?v=2/);
-    assert.match(worker, /leaflet-src\.esm\.js\?v=1\.9\.4/);
+    assert.match(worker, /operations-map\.js\?v=3/);
+    assert.match(worker, /maplibre-gl\.mjs\?v=6\.11\.2/);
+    assert.match(worker, /maplibre-gl-worker\.mjs/);
 });

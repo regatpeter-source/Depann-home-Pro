@@ -1,4 +1,4 @@
-import * as L from "/vendor/leaflet/leaflet-src.esm.js?v=1.9.4";
+import { LngLatBounds, Map, Marker, NavigationControl, Popup } from "/vendor/maplibre/maplibre-gl.mjs?v=6.11.2";
 import { ROUTES } from "./config.js?v=137";
 import { escapeHtml } from "./utils.js?v=44";
 import { clearSearch, getContainer, setPage } from "./ui.js?v=44";
@@ -14,6 +14,7 @@ let lastSentPosition = null;
 let lastSentAt = 0;
 let mapRefreshTimer = null;
 let activeMap = null;
+let activeMarkers = [];
 
 export function initializeTerrainLocationSharing() {
     if (!canShareLocation() || sharingButton) return;
@@ -89,29 +90,33 @@ function renderMapMarkers(panel, events, technicians, selectedIds) {
     const element = panel.querySelector("[data-operations-map]");
     if (!activeMap || activeMap.getContainer() !== element) {
         activeMap?.remove();
-        activeMap = L.map(element, { zoomControl: true }).setView([46.7, 2.4], 6);
-        L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", {
-            subdomains: "abcd",
-            maxZoom: 20,
-            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions" target="_blank" rel="noopener">CARTO</a>'
-        }).addTo(activeMap);
+        activeMap = new Map({ container: element, style: "https://tiles.openfreemap.org/styles/liberty", center: [2.4, 46.7], zoom: 5, attributionControl: true });
+        activeMap.addControl(new NavigationControl({ showCompass: false }), "top-left");
+        activeMap.on("error", event => {
+            const feedback = panel.querySelector("[data-map-feedback]");
+            if (!feedback || !event?.error) return;
+            feedback.textContent = "Le fond cartographique est momentanément indisponible. Les positions et interventions restent actualisées.";
+            feedback.classList.add("error");
+        });
     }
-    activeMap.eachLayer(layer => { if (!(layer instanceof L.TileLayer)) activeMap.removeLayer(layer); });
-    const bounds = [];
+    activeMarkers.forEach(marker => marker.remove());
+    activeMarkers = [];
+    const bounds = new LngLatBounds();
     for (const event of events) {
         if (!validPoint(event)) continue;
-        const marker = L.marker([event.latitude, event.longitude], { icon: interventionIcon(event.dayNumber) }).addTo(activeMap);
-        marker.bindPopup(`<strong>Intervention n°${event.dayNumber}</strong><br>${escapeHtml(event.startTime || "Sans horaire")} · ${escapeHtml(event.clientName || event.title)}<br>${escapeHtml(event.location)}<br><button type="button" class="map-popup-action" data-popup-event="${escapeHtml(event.id)}">Ouvrir l’intervention</button>`);
-        marker.on("popupopen", popup => popup.popup.getElement()?.querySelector("[data-popup-event]")?.addEventListener("click", () => openIntervention(event)));
-        bounds.push([event.latitude, event.longitude]);
+        const popup = new Popup({ offset: 30 }).setHTML(`<strong>Intervention n°${event.dayNumber}</strong><br>${escapeHtml(event.startTime || "Sans horaire")} · ${escapeHtml(event.clientName || event.title)}<br>${escapeHtml(event.location)}<br><button type="button" class="map-popup-action" data-popup-event="${escapeHtml(event.id)}">Ouvrir l’intervention</button>`);
+        popup.on("open", () => popup.getElement()?.querySelector("[data-popup-event]")?.addEventListener("click", () => openIntervention(event), { once: true }));
+        activeMarkers.push(new Marker({ element: interventionMarker(event.dayNumber), anchor: "bottom" }).setLngLat([event.longitude, event.latitude]).setPopup(popup).addTo(activeMap));
+        bounds.extend([event.longitude, event.latitude]);
     }
     for (const technician of technicians.filter(item => selectedIds.has(String(item.id)))) {
         if (!validPoint(technician)) continue;
-        L.marker([technician.latitude, technician.longitude], { icon: technicianIcon(technician) }).addTo(activeMap).bindPopup(`<strong>${escapeHtml(technician.name)}</strong><br>${technician.isLive ? "Position en direct" : `Dernière position ${escapeHtml(relativeTime(technician.updatedAt))}`}<br>Précision : ${Math.round(Number(technician.accuracyMeters) || 0)} m`);
-        bounds.push([technician.latitude, technician.longitude]);
+        const popup = new Popup({ offset: 24 }).setHTML(`<strong>${escapeHtml(technician.name)}</strong><br>${technician.isLive ? "Position en direct" : `Dernière position ${escapeHtml(relativeTime(technician.updatedAt))}`}<br>Précision : ${Math.round(Number(technician.accuracyMeters) || 0)} m`);
+        activeMarkers.push(new Marker({ element: technicianMarker(technician) }).setLngLat([technician.longitude, technician.latitude]).setPopup(popup).addTo(activeMap));
+        bounds.extend([technician.longitude, technician.latitude]);
     }
-    if (bounds.length) activeMap.fitBounds(bounds, { padding: [35, 35], maxZoom: 14 });
-    window.setTimeout(() => activeMap?.invalidateSize(), 0);
+    if (!bounds.isEmpty()) activeMap.fitBounds(bounds, { padding: 35, maxZoom: 14 });
+    window.setTimeout(() => activeMap?.resize(), 0);
 }
 
 function requestTerrainLocationSharing() {
@@ -173,12 +178,12 @@ function canShareLocation() { return document.body.dataset.deviceType === "mobil
 function selectedTechnicianIds(container) { return new Set([...container.querySelectorAll('input[type="checkbox"]:checked')].map(input => input.value)); }
 function validPoint(item) { return Number.isFinite(Number(item?.latitude)) && Number.isFinite(Number(item?.longitude)); }
 function technicianNames(event) { return (event.assignedTechnicians || []).map(item => item.fullName).filter(Boolean).join(", ") || "Non affectée"; }
-function interventionIcon(number) { return L.divIcon({ className: "operations-map-marker", html: `<span>${Number(number) || "·"}</span>`, iconSize: [34, 42], iconAnchor: [17, 42], popupAnchor: [0, -38] }); }
-function technicianIcon(technician) { const initials = String(technician.name || "T").split(/\s+/).slice(0, 2).map(part => part[0]).join("").toUpperCase(); return L.divIcon({ className: `technician-map-marker${technician.isLive ? " live" : ""}`, html: `<span>${escapeHtml(initials)}</span><i></i>`, iconSize: [42, 42], iconAnchor: [21, 21], popupAnchor: [0, -24] }); }
+function interventionMarker(number) { const element = document.createElement("div"); element.className = "operations-map-marker"; element.innerHTML = `<span>${Number(number) || "·"}</span>`; return element; }
+function technicianMarker(technician) { const initials = String(technician.name || "T").split(/\s+/).slice(0, 2).map(part => part[0]).join("").toUpperCase(); const element = document.createElement("div"); element.className = `technician-map-marker${technician.isLive ? " live" : ""}`; element.innerHTML = `<span>${escapeHtml(initials)}</span><i></i>`; return element; }
 function openIntervention(event) { if (event) window.dispatchEvent(new CustomEvent("depannhome:open-map-intervention", { detail: { event } })); }
 function localDate() { const now = new Date(); return new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString().slice(0, 10); }
 function validDate(value) { const date = String(value || ""); return /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : ""; }
 function relativeTime(value) { const elapsed = Math.max(0, Date.now() - new Date(value).getTime()); const minutes = Math.floor(elapsed / 60_000); if (minutes < 1) return "à l’instant"; if (minutes < 60) return `il y a ${minutes} min`; const hours = Math.floor(minutes / 60); return `il y a ${hours} h`;
 }
 function distanceMeters(first, second) { const radius = 6371e3; const toRadians = value => value * Math.PI / 180; const latitudeDelta = toRadians(second.latitude - first.latitude); const longitudeDelta = toRadians(second.longitude - first.longitude); const firstLatitude = toRadians(first.latitude); const secondLatitude = toRadians(second.latitude); const value = Math.sin(latitudeDelta / 2) ** 2 + Math.cos(firstLatitude) * Math.cos(secondLatitude) * Math.sin(longitudeDelta / 2) ** 2; return radius * 2 * Math.atan2(Math.sqrt(value), Math.sqrt(1 - value)); }
-function clearMapRefresh() { if (mapRefreshTimer) window.clearInterval(mapRefreshTimer); mapRefreshTimer = null; activeMap?.remove(); activeMap = null; }
+function clearMapRefresh() { if (mapRefreshTimer) window.clearInterval(mapRefreshTimer); mapRefreshTimer = null; activeMarkers = []; activeMap?.remove(); activeMap = null; }
