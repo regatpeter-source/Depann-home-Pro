@@ -9,12 +9,12 @@ export const ORGANIZATION_TYPES = Object.freeze([
 export const LICENSE_TYPES = Object.freeze(["partner_portal", "depannhome_standard", "depannhome_group"]);
 
 const ALL_FEATURES = Object.freeze({
-    clients: true, calendar: true, library: true, billing: true, accounting: true, quitus: true, technicalReports: true,
+    clients: true, calendar: true, operationsMap: true, library: true, billing: true, accounting: true, quitus: true, technicalReports: true,
     partnerMissions: true, companyEmail: true, partnerConnections: true, messages: true, settings: true, imports: true, groups: true,
     purchases: true, connectors: true
 });
 const PARTNER_FEATURES = Object.freeze({
-    clients: true, calendar: false, library: false, billing: false, accounting: false, quitus: false, technicalReports: false,
+    clients: true, calendar: false, operationsMap: false, library: false, billing: false, accounting: false, quitus: false, technicalReports: false,
     partnerMissions: true, companyEmail: false, partnerConnections: true, messages: true, settings: false, imports: true, groups: false,
     purchases: false, connectors: false
 });

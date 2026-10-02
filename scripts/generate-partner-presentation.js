@@ -12,9 +12,9 @@ const logoPath = path.join(root, "assets", "logo.png.png");
 const illustrations = new Map([
     ["1. Gestion complète des clients", "client.png"],
     ["2. Planning et organisation des interventions", "planning.png"],
-    ["4. Tableau de bord financier dans Facturation", "billing.png"],
-    ["7. Rapports de recherche de fuite", "report.png"],
-    ["11. Missions partenaires", "partner.png"]
+    ["5. Tableau de bord financier dans Facturation", "billing.png"],
+    ["8. Rapports de recherche de fuite", "report.png"],
+    ["13. Missions partenaires", "partner.png"]
 ]);
 const markdown = fs.readFileSync(sourcePath, "utf8");
 
@@ -43,7 +43,7 @@ function addCover() {
     document.roundedRect(94, 545, document.page.width - 188, 104, 14).fill(colors.paleGreen);
     document.fillColor(colors.secondary).font("Helvetica-Bold").fontSize(13).text("Un écosystème professionnel centralisé", 112, 566, { width: document.page.width - 224, align: "center" });
     document.fillColor(colors.text).font("Helvetica").fontSize(9.7).text("De la réception du besoin client jusqu’au rapport, au devis, à la facture et aux échanges partenaires.", 116, 598, { width: document.page.width - 232, align: "center", lineGap: 3 });
-    document.fillColor(colors.muted).fontSize(8.5).text("Août 2026", 52, 746, { width: document.page.width - 104, align: "center" });
+    document.fillColor(colors.muted).fontSize(8.5).text("Octobre 2026", 52, 746, { width: document.page.width - 104, align: "center" });
     document.addPage();
     firstPage = false;
 }
@@ -73,9 +73,9 @@ function addHeading(value, level) {
 function addPricingPanel() {
     ensureSpace(245);
     const offers = [
-        { name: "BASIC", pc: "20 € / administratif", mobile: "5 € / mobile", detail: "Poste administratif + Poste Admin Mobile · bibliothèque mobile · achats tous postes administratifs", color: "#2563EB", pale: "#EFF6FF" },
-        { name: "BASIC+", pc: "35 € / administratif", mobile: "8 € / mobile", detail: "Planning · e-mail entreprise · missions et dossiers Réseau · sans API externe", color: colors.secondary, pale: colors.paleGreen },
-        { name: "PRO", pc: "70 € / administratif", mobile: "15 € / mobile", detail: "Accès complet · licences Groupe d’entreprise incluses sans supplément", color: "#7C3AED", pale: "#F5F3FF" }
+        { name: "BASIC", pc: "20 € / administratif", mobile: "5 € / mobile", detail: "Facturation · CA mobile nominatif · bibliothèque mobile · achats administratifs", color: "#2563EB", pale: "#EFF6FF" },
+        { name: "BASIC+", pc: "35 € / administratif", mobile: "8 € / mobile", detail: "Planning · traceur GPS · carte terrain · temps de trajet · CA mobile · Réseau interne", color: colors.secondary, pale: colors.paleGreen },
+        { name: "PRO", pc: "70 € / administratif", mobile: "15 € / mobile", detail: "GPS et CA mobile inclus · accès complet · licences Groupe d’entreprise incluses sans supplément · API", color: "#7C3AED", pale: "#F5F3FF" }
     ];
     const gap = 10; const totalWidth = document.page.width - 104; const cardWidth = (totalWidth - gap * 2) / 3; const y = document.y;
     offers.forEach((offer, index) => {

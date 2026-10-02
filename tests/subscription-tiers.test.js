@@ -67,6 +67,7 @@ test("Basic exposes clients, billing and accounting while Basic+ adds planning, 
     assert.equal(isFeatureEnabled(basic, "purchases"), true);
     assert.equal(isFeatureEnabled(basic, "quitus"), false);
     assert.equal(isFeatureEnabled(basic, "calendar"), false);
+    assert.equal(isFeatureEnabled(basic, "operationsMap"), false);
     assert.equal(isFeatureEnabled(basic, "technicalReports"), false);
     assert.equal(isFeatureEnabled(basic, "partnerConnections"), false);
     assert.equal(isFeatureEnabled(basic, "companyEmail"), false);
@@ -76,6 +77,7 @@ test("Basic exposes clients, billing and accounting while Basic+ adds planning, 
     assert.equal(isFeatureEnabled(plus, "accounting"), true);
     assert.equal(isFeatureEnabled(plus, "purchases"), true);
     assert.equal(isFeatureEnabled(plus, "calendar"), true);
+    assert.equal(isFeatureEnabled(plus, "operationsMap"), true);
     assert.equal(isFeatureEnabled(plus, "imports"), true);
     assert.equal(isFeatureEnabled(plus, "partnerConnections"), true);
     assert.equal(isFeatureEnabled(plus, "connectors"), false);
@@ -96,7 +98,24 @@ test("Basic exposes clients, billing and accounting while Basic+ adds planning, 
     assert.match(subscriptionOffers, /missions, messagerie contextuelle et dossiers partagés/);
     assert.match(subscriptionOffers, /Aucun connecteur externe, aucune connexion API partenaire/);
     assert.match(commercialPresentation, /Réseau Depann’Home Pro interne/);
-    assert.match(presentationGenerator, /missions et dossiers Réseau · sans API externe/);
+    assert.match(presentationGenerator, /traceur GPS · carte terrain · temps de trajet · CA mobile/);
+});
+
+test("GPS tracking and the operations map are included only in Basic+ and Pro", () => {
+    const standardOrganization = subscriptionTier => publicOrganization({ interfaceType: "standard", licenseType: "depannhome_standard", subscriptionTier });
+    assert.equal(isFeatureEnabled(standardOrganization("basic"), "operationsMap"), false);
+    for (const tier of ["basic_plus", "pro"]) assert.equal(isFeatureEnabled(standardOrganization(tier), "operationsMap"), true, tier);
+    assert.equal(isFeatureEnabled(publicOrganization({ interfaceType: "partner", subscriptionTier: "pro" }), "operationsMap"), false);
+    assert.match(app, /app\.use\("\/api\/operations-map", requireAuthentication, requireOrganizationFeature\("operationsMap"\)\)/);
+    assert.match(navigation, /\[ROUTES\.operationsMap\]: "operationsMap"/);
+    for (const document of [subscriptionOffers, commercialPresentation]) {
+        assert.match(document, /traceur GPS volontaire/i);
+        assert.match(document, /dernières? positions?/i);
+        assert.match(document, /sans historique|aucun historique|aucun trajet n’est enregistré/i);
+        assert.match(document, /temps de trajet automobile/i);
+        assert.match(document, /chiffre d’affaires mensuel nominatif/i);
+    }
+    assert.match(presentationGenerator, /Octobre 2026/);
 });
 
 test("terrain posts keep Home while every mobile post keeps Library access", () => {
@@ -153,7 +172,7 @@ test("Library is mobile-only and Purchases are available on every administrative
 
 test("Pro enables every product feature", () => {
     const pro = publicOrganization({ interfaceType: "standard", licenseType: "depannhome_standard", subscriptionTier: "pro" });
-    for (const feature of ["clients", "calendar", "library", "billing", "accounting", "quitus", "technicalReports", "partnerMissions", "companyEmail", "partnerConnections", "messages", "settings", "imports", "groups", "purchases", "connectors"]) assert.equal(isFeatureEnabled(pro, feature), true, feature);
+    for (const feature of ["clients", "calendar", "operationsMap", "library", "billing", "accounting", "quitus", "technicalReports", "partnerMissions", "companyEmail", "partnerConnections", "messages", "settings", "imports", "groups", "purchases", "connectors"]) assert.equal(isFeatureEnabled(pro, feature), true, feature);
 });
 
 test("Pro materials include Group licenses and explain the free Partner license", () => {
@@ -202,7 +221,7 @@ test("organization interfaces remain compatible with subscription tiers", () => 
 test("the free Partner interface exposes the internal network without external connectors", () => {
     const partner = publicOrganization({ interfaceType: "partner", licenseType: "partner_portal", subscriptionTier: "pro" });
     for (const feature of ["clients", "partnerMissions", "partnerConnections", "messages", "imports"]) assert.equal(isFeatureEnabled(partner, feature), true, feature);
-    for (const feature of ["calendar", "library", "billing", "accounting", "technicalReports", "settings", "groups", "purchases", "connectors"]) {
+    for (const feature of ["calendar", "operationsMap", "library", "billing", "accounting", "technicalReports", "settings", "groups", "purchases", "connectors"]) {
         assert.equal(isFeatureEnabled(partner, feature), false, feature);
     }
     assert.equal(isFeatureEnabled(partner, "companyEmail"), false);
@@ -339,9 +358,10 @@ test("Creator console notifies every internal and external request", () => {
 });
 
 test("tier features are protected on both API and navigation layers", () => {
-    for (const feature of ["clients", "calendar", "billing", "accounting", "purchases", "messages", "partnerConnections", "companyEmail", "connectors", "imports", "groups"]) assert.match(app, new RegExp(`requireOrganizationFeature\\("${feature}"\\)`));
+    for (const feature of ["clients", "calendar", "operationsMap", "billing", "accounting", "purchases", "messages", "partnerConnections", "companyEmail", "connectors", "imports", "groups"]) assert.match(app, new RegExp(`requireOrganizationFeature\\("${feature}"\\)`));
     assert.match(navigation, /\[ROUTES\.clients\]: "clients"/);
     assert.match(navigation, /\[ROUTES\.calendar\]: "calendar"/);
+    assert.match(navigation, /\[ROUTES\.operationsMap\]: "operationsMap"/);
     assert.match(navigation, /\[ROUTES\.purchases\]: "purchases"/);
     assert.match(navigation, /\[ROUTES\.companyEmail\]: "companyEmail"/);
     assert.match(partnerEmailServer, /hasCompanyEmailWorkspaceAccess\(req\.user\)/);

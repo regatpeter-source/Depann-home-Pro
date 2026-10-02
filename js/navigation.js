@@ -1,6 +1,6 @@
 import { APP_VERSION, ROUTES, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=138";
 import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=239";
-import { openCreatorPartnerRequest, openCreatorRequestNotification, renderCreatorConsole } from "./creator.js?v=171";
+import { openCreatorPartnerRequest, openCreatorRequestNotification, renderCreatorConsole } from "./creator.js?v=172";
 import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=215";
 import { renderAccounting } from "./accounting.js?v=31";
 import { renderPurchases } from "./purchases.js?v=129";
@@ -672,7 +672,7 @@ function isOrganizationRouteEnabled(route) {
     if (document.body.dataset.creator === "true") return true;
     if (route === ROUTES.settings && organizationFeatureEnabled("partnerConnections")) return true;
     if (route === ROUTES.settings && organizationFeatureEnabled("partnerMissions")) return true;
-    const featureByRoute = { [ROUTES.search]: "library", [ROUTES.store]: "library", [ROUTES.clients]: "clients", [ROUTES.calendar]: "calendar", [ROUTES.operationsMap]: "calendar", [ROUTES.library]: "library", [ROUTES.billing]: "billing", [ROUTES.accounting]: "accounting", [ROUTES.purchases]: "purchases", [ROUTES.messages]: "messages", [ROUTES.technicalReports]: "technicalReports", [ROUTES.partnerMissions]: "partnerMissions", [ROUTES.companyEmail]: "companyEmail", [ROUTES.groups]: "groups", [ROUTES.settings]: "settings" };
+    const featureByRoute = { [ROUTES.search]: "library", [ROUTES.store]: "library", [ROUTES.clients]: "clients", [ROUTES.calendar]: "calendar", [ROUTES.operationsMap]: "operationsMap", [ROUTES.library]: "library", [ROUTES.billing]: "billing", [ROUTES.accounting]: "accounting", [ROUTES.purchases]: "purchases", [ROUTES.messages]: "messages", [ROUTES.technicalReports]: "technicalReports", [ROUTES.partnerMissions]: "partnerMissions", [ROUTES.companyEmail]: "companyEmail", [ROUTES.groups]: "groups", [ROUTES.settings]: "settings" };
     const feature = featureByRoute[route];
     return !feature || organizationFeatureEnabled(feature);
 }
@@ -2050,9 +2050,9 @@ function formatStorageBytes(value) {
 
 async function renderSubscriptionSettings(container) {
     const tiers = [
-        { id: "basic", label: "Basic", pc: 20, mobile: 5, description: "Postes administratifs et Poste Admin Mobile. Clients, facturation, comptabilité et PDP. Bibliothèque sur mobile ; Achats sur tous les postes administratifs et le Poste Admin Mobile." },
-        { id: "basic_plus", label: "Basic+", pc: 35, mobile: 8, description: "Tous postes administratifs et mobiles. Basic avec planning, imports de données, missions, messagerie et dossiers du Réseau Depann’Home Pro interne. Bibliothèque sur mobile ; Achats sur tous les postes administratifs et le Poste Admin Mobile. Sans connecteurs ni connexions API externes." },
-        { id: "pro", label: "Pro", pc: 70, mobile: 15, description: "Tous postes et accès complet. Bibliothèque sur mobile ; Achats sur tous les postes administratifs et le Poste Admin Mobile ; Quitus, rapports, Réseau, API et imports. Licences Groupe d’entreprise / Multi-entreprises incluses sans supplément de licence." }
+        { id: "basic", label: "Basic", pc: 20, mobile: 5, description: "Postes administratifs et Poste Admin Mobile. Clients, facturation, comptabilité et PDP, avec CA mensuel nominatif du poste mobile. Bibliothèque sur mobile ; Achats sur tous les postes administratifs et le Poste Admin Mobile." },
+        { id: "basic_plus", label: "Basic+", pc: 35, mobile: 8, description: "Tous postes administratifs et mobiles. Basic avec planning, traceur GPS volontaire, carte terrain, proximité et temps de trajet, imports de données, missions, messagerie et dossiers du Réseau Depann’Home Pro interne. CA mensuel nominatif pour chaque poste mobile. Sans connecteurs ni connexions API externes." },
+        { id: "pro", label: "Pro", pc: 70, mobile: 15, description: "Tous postes et accès complet, avec traceur GPS volontaire, carte terrain, proximité, temps de trajet et CA mensuel nominatif. Bibliothèque mobile, Achats, Quitus, rapports, Réseau, API et imports. Licences Groupe d’entreprise / Multi-entreprises incluses sans supplément de licence." }
     ];
     const rank = { basic: 0, basic_plus: 1, pro: 2 };
     const result = await fetch("/api/subscription-change-requests", { credentials: "same-origin" });

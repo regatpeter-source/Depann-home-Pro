@@ -99,6 +99,14 @@ test("la vitrine présente la grille tarifaire commerciale complète", () => {
     assert.match(landing, /Postes Admin et Postes Admin Mobile/);
     const basicOffer = landing.slice(landing.indexOf('<p class="pricing-name">Basic</p>'), landing.indexOf('<p class="pricing-name">Basic+</p>'));
     assert.doesNotMatch(basicOffer, /Espace e-mail de l’entreprise/);
+    assert.doesNotMatch(basicOffer, /Traceur GPS|carte terrain|temps de trajet/i);
+    const basicPlusOffer = landing.slice(landing.indexOf('<p class="pricing-name">Basic+</p>'), landing.indexOf('<p class="pricing-name">Pro</p>'));
+    const proOffer = landing.slice(landing.indexOf('<p class="pricing-name">Pro</p>'), landing.indexOf('<p class="pricing-name">Licence Portail Partenaire</p>'));
+    for (const offer of [basicPlusOffer, proOffer]) {
+        assert.match(offer, /Traceur GPS volontaire/);
+        assert.match(offer, /temps de trajet/);
+        assert.match(offer, /CA mensuel nominatif de chaque poste mobile/);
+    }
 });
 
 test("la vitrine propose une demande d’offre transmise au support", () => {

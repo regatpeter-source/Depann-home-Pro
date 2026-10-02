@@ -190,7 +190,7 @@ const requireCalendarFeature = requireOrganizationFeature("calendar");
 const requireClientFeature = requireOrganizationFeature("clients");
 app.use("/api/calendar/events/:eventId/quitus", requireAuthentication, requireOrganizationFeature("quitus"));
 app.use("/api/calendar", requireAuthentication, (request, response, next) => (request.path.startsWith("/client-history/") ? requireClientFeature : requireCalendarFeature)(request, response, next));
-app.use("/api/operations-map", requireAuthentication, requireCalendarFeature);
+app.use("/api/operations-map", requireAuthentication, requireOrganizationFeature("operationsMap"));
 app.use("/api/billing/document-templates/quitus", requireAuthentication, requireOrganizationFeature("quitus"));
 app.use("/api/document-templates/quitus", requireAuthentication, requireOrganizationFeature("quitus"));
 app.use("/api/billing/document-templates/report", requireAuthentication, requireOrganizationFeature("technicalReports"));

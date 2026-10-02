@@ -16,6 +16,8 @@ La plateforme s’adresse aux entreprises de dépannage, maintenance, plomberie,
 - Réduire les doubles saisies entre le bureau et les techniciens.
 - Produire des documents professionnels et cohérents.
 - Suivre le chiffre d’affaires, les avoirs, les achats et les encaissements.
+- Donner à chaque poste mobile nominatif son chiffre d’affaires mensuel net HT.
+- Visualiser volontairement les équipes terrain et estimer leur temps de trajet vers l’intervention.
 - Collaborer avec des entreprises partenaires sans mélanger les données internes.
 - Conserver un historique métier complet et traçable.
 - Adapter les accès selon le rôle et le type d’appareil.
@@ -38,6 +40,7 @@ Chaque Poste Admin Mobile — rôle dédié ou téléphone/tablette approuvé d�
 - Gestion des clients.
 - Création et suivi des devis, factures et avoirs.
 - Tableau de bord Facturation : chiffre d’affaires, encaissements, avoirs et reste à encaisser.
+- Chiffre d’affaires mensuel nominatif du Poste Admin Mobile, calculé sur les factures émises et net des avoirs.
 - Comptabilité et connexion directe incluse à une plateforme de facturation électronique compatible choisie par l’entreprise.
 - Personnalisation des documents et informations de l’entreprise.
 - Accès par Poste Admin, Poste administratif et Poste Admin Mobile ; les comptes Technicien et Chef d’équipe nécessitent Basic+.
@@ -55,6 +58,10 @@ L’offre Basic est adaptée aux petites structures qui souhaitent centraliser l
 - Planning partagé.
 - Gestion et affectation des interventions.
 - Consultation terrain des rendez-vous autorisés.
+- Traceur GPS volontaire des postes mobiles et carte journalière des interventions.
+- Dernière position partagée uniquement, sans historique des trajets.
+- Carte de proximité des membres sélectionnés et temps de trajet automobile estimé vers l’intervention.
+- Chiffre d’affaires mensuel nominatif de chaque Poste Admin Mobile, Chef d’équipe et Technicien.
 - Détection des conflits de planning et recherche de disponibilités.
 - Imports de données Excel et CSV.
 - Réseau Depann’Home Pro interne : annuaire, fiche réseau et connexions entre entreprises utilisatrices.
@@ -73,6 +80,8 @@ L’offre Basic+ convient aux entreprises qui souhaitent coordonner le bureau, l
 - Accès complet aux fonctions Depann’Home Pro.
 - Connexion directe à une plateforme de facturation électronique incluse.
 - Clients, planning, devis, factures, avoirs et facturation.
+- Traceur GPS volontaire, carte terrain, proximité et temps de trajet inclus.
+- Chiffre d’affaires mensuel nominatif de chaque poste mobile, avec attribution administrative des factures avant émission et déduction des avoirs.
 - Quitus d’intervention avec signature, validation et archivage PDF.
 - Rapports de recherche de fuite, photos, corrections et signatures.
 - Quitus d’intervention.
@@ -138,7 +147,32 @@ Les techniciens accèdent aux interventions qui leur sont attribuées, tandis qu
 
 ---
 
-# 3. Devis, factures, avoirs et règlements
+# 3. Traceur GPS responsable et carte terrain
+
+Inclus dans les offres **Basic+ et Pro**, le traceur GPS aide l’entreprise à coordonner les équipes sans enregistrer leurs déplacements.
+
+### Partage volontaire et maîtrisé
+
+- Activation et arrêt explicites depuis chaque poste mobile nominatif.
+- Conservation de la dernière position uniquement, pendant douze heures au maximum.
+- Aucun historique de trajet et aucune reconstitution des déplacements.
+- Indication claire d’une position « en direct » ou de sa dernière actualisation.
+- Partage actif uniquement lorsque l’application est ouverte, selon les capacités du navigateur mobile.
+
+### Pilotage et planification
+
+- Carte journalière des interventions numérotées dans l’ordre horaire.
+- Affichage des dernières positions partagées par les techniciens autorisés.
+- Sélection limitée aux membres affectés lors de la préparation d’une intervention.
+- Localisation de l’adresse cible avec solution de géocodage de secours.
+- Classement par proximité et estimation du temps de trajet automobile vers l’intervention.
+- Thème clair ou sombre adapté au poste utilisé.
+
+> Une aide opérationnelle pour affecter la bonne personne, sans transformer l’application en outil de surveillance des trajets.
+
+---
+
+# 4. Devis, factures, avoirs et règlements
 
 Depann’Home Pro accompagne l’entreprise depuis la proposition commerciale jusqu’au suivi du règlement.
 
@@ -168,7 +202,7 @@ Sur poste informatique, l’éditeur propose un espace de travail avec le formul
 
 ---
 
-# 4. Tableau de bord financier dans Facturation
+# 5. Tableau de bord financier dans Facturation
 
 Le menu Facturation affiche une synthèse visuelle de l’activité avec un graphique en camembert et des indicateurs calculés à partir des données de l’entreprise.
 
@@ -179,12 +213,14 @@ Le menu Facturation affiche une synthèse visuelle de l’activité avec un grap
 - Achats enregistrés HT.
 - Marge brute estimée HT.
 - Nombre de factures et d’avoirs.
+- Chiffre d’affaires mensuel net HT de chaque poste mobile nominatif, calculé uniquement sur les factures définitivement émises qui lui sont attribuées et diminué de ses avoirs.
+- Attribution automatique au créateur mobile ou choix administratif avant émission définitive.
 
 La marge affichée est une estimation basée sur le chiffre d’affaires, les avoirs et les achats saisis. Elle ne constitue pas un résultat comptable définitif : salaires, cotisations et autres charges doivent être pris en compte par l’entreprise et son cabinet comptable.
 
 ---
 
-# 5. Modèles de documents personnalisables
+# 6. Modèles de documents personnalisables
 
 Chaque entreprise peut choisir entre le modèle Depann’Home Pro intégré et sa propre identité graphique.
 
@@ -219,7 +255,7 @@ Le devis sert de référence graphique à la facture lorsqu’aucun modèle de f
 
 ---
 
-# 6. Quitus d’intervention
+# 7. Quitus d’intervention
 
 Le quitus permet de formaliser la fin d’une intervention et la validation du client.
 
@@ -237,7 +273,7 @@ Le quitus peut utiliser le modèle intégré personnalisé par l’entreprise ou
 
 ---
 
-# 7. Rapports de recherche de fuite
+# 8. Rapports de recherche de fuite
 
 Le module de rapport guide le technicien et sécurise la validation administrative.
 
@@ -276,7 +312,7 @@ L’entreprise peut personnaliser le modèle intégré du rapport ou importer sa
 
 ---
 
-# 8. Achats et dépenses
+# 9. Achats et dépenses
 
 Le registre des achats complète la vision de l’activité.
 
@@ -293,7 +329,7 @@ Les achats alimentent notamment l’estimation de marge du tableau de bord Factu
 
 ---
 
-# 9. Comptabilité et préparation des échanges réglementaires
+# 10. Comptabilité et préparation des échanges réglementaires
 
 Le module Comptabilité regroupe les données nécessaires au suivi et à la préparation des exports.
 
@@ -316,7 +352,7 @@ Depann’Home Pro n’est pas lui-même une plateforme agréée par l’État : 
 
 ---
 
-# 10. Espace e-mail de l’entreprise
+# 11. Espace e-mail de l’entreprise
 
 Inclus dans les offres Basic+ et Pro, cet espace permet de consulter la messagerie professionnelle directement depuis le menu principal, indépendamment des Paramètres.
 
@@ -331,7 +367,7 @@ La configuration de la connexion reste centralisée dans les Paramètres, tandis
 
 ---
 
-# 11. Réseau Depann’Home Pro
+# 12. Réseau Depann’Home Pro
 
 Le réseau permet aux entreprises inscrites de trouver des partenaires et de collaborer de manière encadrée.
 
@@ -357,7 +393,7 @@ La visibilité dans l’annuaire est volontaire. Les clients, documents, donnée
 
 ---
 
-# 12. Missions partenaires
+# 13. Missions partenaires
 
 Depann’Home Pro peut recevoir et traiter des missions provenant d’organismes ou d’entreprises partenaires.
 
@@ -376,7 +412,7 @@ Depann’Home Pro peut recevoir et traiter des missions provenant d’organismes
 
 ---
 
-# 13. Dialogue collaboratif par mission
+# 14. Dialogue collaboratif par mission
 
 Chaque mission partenaire peut disposer d’un fil d’échange dédié.
 
@@ -392,7 +428,7 @@ Ce fil partenaire reste séparé des notes internes du dossier client.
 
 ---
 
-# 14. API, connecteurs et environnement de recette
+# 15. API, connecteurs et environnement de recette
 
 La plateforme prévoit des échanges sécurisés avec des organismes tiers.
 
@@ -409,7 +445,7 @@ Aucun code JavaScript externe fourni par un partenaire n’est exécuté dans le
 
 ---
 
-# 15. Bibliothèque et ressources techniques
+# 16. Bibliothèque et ressources techniques
 
 Les équipes terrain peuvent organiser leurs ressources métier.
 
@@ -421,7 +457,7 @@ Les équipes terrain peuvent organiser leurs ressources métier.
 
 ---
 
-# 16. Importation de données
+# 17. Importation de données
 
 L’assistant d’import facilite la reprise d’un historique existant.
 
@@ -437,7 +473,7 @@ La licence Partenaire gratuite dispose de cette section uniquement pour l’impo
 
 ---
 
-# 17. Groupes et multi-entreprises
+# 18. Groupes et multi-entreprises
 
 Le mode Groupe permet de piloter plusieurs sociétés tout en conservant leur cloisonnement.
 
@@ -450,7 +486,7 @@ Le mode Groupe permet de piloter plusieurs sociétés tout en conservant leur cl
 
 ---
 
-# 18. Collaboration et notifications
+# 19. Collaboration et notifications
 
 - Notifications persistantes.
 - Indicateur d’état de synchronisation.
@@ -462,7 +498,7 @@ Le mode Groupe permet de piloter plusieurs sociétés tout en conservant leur cl
 
 ---
 
-# 19. Rôles et accès
+# 20. Rôles et accès
 
 Les droits s’adaptent à l’organisation de l’entreprise.
 
@@ -476,7 +512,7 @@ Chaque rôle dispose d’un périmètre métier spécifique. Les autorisations s
 
 ---
 
-# 20. Sécurité et isolation
+# 21. Sécurité et isolation
 
 - Données filtrées par identifiant d’entreprise (`owner_id`).
 - Cookies de session HTTP-only.
@@ -493,7 +529,7 @@ Une entreprise ne peut pas consulter les données d’une autre entreprise sans 
 
 ---
 
-# 21. Accès web et mobilité
+# 22. Accès web et mobilité
 
 Depann’Home Pro est une application web installable de type PWA.
 

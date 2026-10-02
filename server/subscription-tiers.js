@@ -9,23 +9,23 @@ export const SUBSCRIPTION_TIER_CONFIG = Object.freeze({
         mobileRateCents: 500,
         description: "Postes administratifs et Poste Admin Mobile, bibliothèque mobile et achats sur tous les postes administratifs",
         allowedRoles: Object.freeze([...PC_ROLES, "mobile_admin"]),
-        features: Object.freeze({ clients: true, calendar: false, library: false, billing: true, accounting: true, quitus: false, technicalReports: false, partnerMissions: false, companyEmail: false, partnerConnections: false, messages: true, settings: true, imports: false, groups: false, purchases: true, connectors: false })
+        features: Object.freeze({ clients: true, calendar: false, operationsMap: false, library: false, billing: true, accounting: true, quitus: false, technicalReports: false, partnerMissions: false, companyEmail: false, partnerConnections: false, messages: true, settings: true, imports: false, groups: false, purchases: true, connectors: false })
     }),
     basic_plus: Object.freeze({
         label: "Basic+",
         pcRateCents: 3500,
         mobileRateCents: 800,
-        description: "Tous postes, planning, imports de données, Réseau Depann’Home Pro, bibliothèque mobile et achats sur tous les postes administratifs",
+        description: "Tous postes, planning, traceur GPS et carte terrain, imports de données, Réseau Depann’Home Pro, bibliothèque mobile et achats sur tous les postes administratifs",
         allowedRoles: Object.freeze([...PC_ROLES, ...ALL_MOBILE_ROLES]),
-        features: Object.freeze({ clients: true, calendar: true, library: false, billing: true, accounting: true, quitus: false, technicalReports: false, partnerMissions: true, companyEmail: true, partnerConnections: true, messages: true, settings: true, imports: true, groups: false, purchases: true, connectors: false })
+        features: Object.freeze({ clients: true, calendar: true, operationsMap: true, library: false, billing: true, accounting: true, quitus: false, technicalReports: false, partnerMissions: true, companyEmail: true, partnerConnections: true, messages: true, settings: true, imports: true, groups: false, purchases: true, connectors: false })
     }),
     pro: Object.freeze({
         label: "Pro",
         pcRateCents: 7000,
         mobileRateCents: 1500,
-        description: "Tous postes avec accès complet et licences Groupe d’entreprise incluses",
+        description: "Tous postes avec accès complet, traceur GPS et carte terrain, et licences Groupe d’entreprise incluses",
         allowedRoles: Object.freeze([...PC_ROLES, ...ALL_MOBILE_ROLES]),
-        features: Object.freeze({ clients: true, calendar: true, library: true, billing: true, accounting: true, quitus: true, technicalReports: true, partnerMissions: true, companyEmail: true, partnerConnections: true, messages: true, settings: true, imports: true, groups: true, purchases: true, connectors: true })
+        features: Object.freeze({ clients: true, calendar: true, operationsMap: true, library: true, billing: true, accounting: true, quitus: true, technicalReports: true, partnerMissions: true, companyEmail: true, partnerConnections: true, messages: true, settings: true, imports: true, groups: true, purchases: true, connectors: true })
     })
 });
 
