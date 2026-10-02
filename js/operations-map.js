@@ -90,7 +90,11 @@ function renderMapMarkers(panel, events, technicians, selectedIds) {
     if (!activeMap || activeMap.getContainer() !== element) {
         activeMap?.remove();
         activeMap = L.map(element, { zoomControl: true }).setView([46.7, 2.4], 6);
-        L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>' }).addTo(activeMap);
+        L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", {
+            subdomains: "abcd",
+            maxZoom: 20,
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions" target="_blank" rel="noopener">CARTO</a>'
+        }).addTo(activeMap);
     }
     activeMap.eachLayer(layer => { if (!(layer instanceof L.TileLayer)) activeMap.removeLayer(layer); });
     const bounds = [];

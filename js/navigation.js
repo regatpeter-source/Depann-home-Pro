@@ -18,7 +18,7 @@ import { synchronizeClients } from "./client-sync.js?v=132";
 import { configureLibrary, openLibrarySection, renderLibrary, searchPersonalLibrary } from "./library.js?v=122";
 import { getContextualSearchResults } from "./search.js?v=78";
 import { renderInterventionSearch } from "./intervention-search.js?v=3";
-import { initializeTerrainLocationSharing, renderOperationsMap } from "./operations-map.js?v=1";
+import { initializeTerrainLocationSharing, renderOperationsMap } from "./operations-map.js?v=2";
 import { state, resetSelection } from "./state.js?v=44";
 import {
     getSettings,

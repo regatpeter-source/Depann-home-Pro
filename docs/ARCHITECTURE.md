@@ -72,7 +72,7 @@ Les médias techniques restent dans les tables dédiées du rapport afin de ne p
 
 ## Carte opérationnelle et localisation terrain
 
-`server/operations-map.js` expose une vue cartographique journalière des interventions et la dernière position volontairement partagée par chaque poste mobile terrain. Les interventions sont triées et numérotées selon leur horaire. Les adresses sont géocodées via Nominatim puis mises en cache par entreprise ; les coordonnées GPS déjà présentes dans une mission partenaire sont prioritaires.
+`server/operations-map.js` expose une vue cartographique journalière des interventions et la dernière position volontairement partagée par chaque poste mobile terrain. Les interventions sont triées et numérotées selon leur horaire. Le fond raster CARTO Voyager utilise les données OpenStreetMap avec leurs attributions visibles. Les adresses sont géocodées via Nominatim puis mises en cache par entreprise ; les coordonnées GPS déjà présentes dans une mission partenaire sont prioritaires.
 
 Le partage mobile est explicitement activé et arrêté par l’utilisateur. Seule la dernière position est stockée : aucune table de trajet ou d’historique n’existe. L’arrêt supprime immédiatement la position ; une position est considérée en direct pendant deux minutes et supprimée après douze heures. Les techniciens ne voient que leur propre position et leurs interventions autorisées, tandis que les rôles de pilotage voient l’équipe de leur entreprise.
 
