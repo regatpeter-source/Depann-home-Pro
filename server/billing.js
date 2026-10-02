@@ -1799,7 +1799,7 @@ async function resolveRevenueAssignee(database, ownerId, request, document, cont
         if (inherited) return inherited;
     }
     if (!context.appointment?.id) return null;
-    const { rows } = await database.query(`SELECT member.id,COALESCE(NULLIF(member.full_name,''),member.username) AS name FROM depannhome_calendar_assignments assignment JOIN depannhome_users member ON member.id=assignment.technician_id AND member.account_owner_id=$1 AND member.is_active=TRUE AND member.role IN ('mobile_admin','team_lead','technician') WHERE assignment.event_id=$2 ORDER BY assignment.is_primary DESC,assignment.id LIMIT 1`, [ownerId, context.appointment.id]);
+    const { rows } = await database.query(`SELECT member.id,COALESCE(NULLIF(member.full_name,''),member.username) AS name FROM depannhome_calendar_assignments assignment JOIN depannhome_users member ON member.id=assignment.technician_id AND member.account_owner_id=$1 AND member.is_active=TRUE AND member.role IN ('mobile_admin','team_lead','technician') WHERE assignment.event_id=$2 ORDER BY assignment.is_primary DESC,assignment.technician_id LIMIT 1`, [ownerId, context.appointment.id]);
     return rows[0] || null;
 }
 

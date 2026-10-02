@@ -10,6 +10,7 @@ const billingClientSource = read("../js/billing.js");
 const navigationSource = read("../js/navigation.js");
 const schemaSource = read("../database/schema.sql");
 const migrationSource = read("../database/migrations/0036_mobile_monthly_revenue.sql");
+const migrationRunnerSource = read("../server/database-migrations.js");
 
 const line = amount => [{ description: "Intervention", quantity: 1, unitPrice: amount, vatRate: 20 }];
 
@@ -50,6 +51,12 @@ test("mobile revenue is tenant-scoped, own-only on mobile and immutable after is
     assert.match(schemaSource, /revenue_assignee_id BIGINT REFERENCES depannhome_users/);
     assert.match(migrationSource, /depannhome_billing_documents_revenue_assignee_idx/);
     assert.match(migrationSource, /mobile_creator\.role IN \('mobile_admin','team_lead','technician'\)/);
+    assert.match(migrationSource, /ORDER BY assignment\.is_primary DESC,assignment\.technician_id/);
+    assert.match(serverSource, /ORDER BY assignment\.is_primary DESC,assignment\.technician_id LIMIT 1/);
+    assert.doesNotMatch(migrationSource, /assignment\.id/);
+    assert.doesNotMatch(serverSource, /assignment\.id/);
+    assert.match(migrationRunnerSource, /\[36, new Set\(\[/);
+    assert.match(migrationRunnerSource, /c9c2f8a1d08aa9c962e717c5ebdf301835040f2ce84a4621e24ab3e103cd8b0f/);
 });
 
 test("administrative assignment, credit inheritance and mobile dashboard are wired", () => {

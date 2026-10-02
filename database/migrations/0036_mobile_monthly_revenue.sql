@@ -19,7 +19,7 @@ WITH candidates AS (
              WHERE assignment.event_id=document.appointment_id
                AND member.account_owner_id=document.owner_id
                AND member.role IN ('mobile_admin','team_lead','technician')
-             ORDER BY assignment.is_primary DESC,assignment.id
+             ORDER BY assignment.is_primary DESC,assignment.technician_id
              LIMIT 1)
         ) AS assignee_id
     FROM depannhome_billing_documents document
