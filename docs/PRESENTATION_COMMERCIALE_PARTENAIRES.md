@@ -58,7 +58,7 @@ L’offre Basic est adaptée aux petites structures qui souhaitent centraliser l
 - Planning partagé.
 - Gestion et affectation des interventions.
 - Consultation terrain des rendez-vous autorisés.
-- Traceur GPS volontaire des postes mobiles et carte journalière des interventions.
+- Carte des techniciens en temps réel et carte journalière des interventions.
 - Dernière position partagée uniquement, sans historique des trajets.
 - Carte de proximité des membres sélectionnés et temps de trajet automobile estimé vers l’intervention.
 - Chiffre d’affaires mensuel nominatif de chaque Poste Admin Mobile, Chef d’équipe et Technicien.
@@ -80,7 +80,7 @@ L’offre Basic+ convient aux entreprises qui souhaitent coordonner le bureau, l
 - Accès complet aux fonctions Depann’Home Pro.
 - Connexion directe à une plateforme de facturation électronique incluse.
 - Clients, planning, devis, factures, avoirs et facturation.
-- Traceur GPS volontaire, carte terrain, proximité et temps de trajet inclus.
+- Carte des techniciens en temps réel, proximité et temps de trajet inclus.
 - Chiffre d’affaires mensuel nominatif de chaque poste mobile, avec attribution administrative des factures avant émission et déduction des avoirs.
 - Quitus d’intervention avec signature, validation et archivage PDF.
 - Rapports de recherche de fuite, photos, corrections et signatures.
@@ -147,9 +147,9 @@ Les techniciens accèdent aux interventions qui leur sont attribuées, tandis qu
 
 ---
 
-# 3. Traceur GPS responsable et carte terrain
+# 3. Carte des techniciens en temps réel
 
-Inclus dans les offres **Basic+ et Pro**, le traceur GPS aide l’entreprise à coordonner les équipes sans enregistrer leurs déplacements.
+Incluse dans les offres **Basic+ et Pro**, la carte des techniciens en temps réel aide l’entreprise à coordonner les équipes sans enregistrer leurs déplacements.
 
 ### Partage volontaire et maîtrisé
 

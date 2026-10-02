@@ -1059,8 +1059,8 @@ function bindSubscriptionTier(form) {
     const summary = form.querySelector("[data-tier-summary]");
     const tiers = {
         basic: { label: "Basic", pc: 20, mobile: 5, access: "Postes administratifs et Poste Admin Mobile · CA mensuel nominatif · bibliothèque mobile · achats sur tous les postes administratifs et le Poste Admin Mobile." },
-        basic_plus: { label: "Basic+", pc: 35, mobile: 8, access: "Tous postes · planning · traceur GPS et carte terrain · proximité et temps de trajet · CA mensuel nominatif · imports · Réseau interne · sans connexions API externes." },
-        pro: { label: "Pro", pc: 70, mobile: 15, access: "Tous postes · accès complet · traceur GPS et carte terrain · proximité et temps de trajet · CA mensuel nominatif · Groupe et API." }
+        basic_plus: { label: "Basic+", pc: 35, mobile: 8, access: "Tous postes · planning · carte des techniciens en temps réel · proximité et temps de trajet · CA mensuel nominatif · imports · Réseau interne · sans connexions API externes." },
+        pro: { label: "Pro", pc: 70, mobile: 15, access: "Tous postes · accès complet · carte des techniciens en temps réel · proximité et temps de trajet · CA mensuel nominatif · Groupe et API." }
     };
     const update = () => {
         const selected = tiers[tier.value] || tiers.basic;

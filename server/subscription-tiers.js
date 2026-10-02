@@ -15,7 +15,7 @@ export const SUBSCRIPTION_TIER_CONFIG = Object.freeze({
         label: "Basic+",
         pcRateCents: 3500,
         mobileRateCents: 800,
-        description: "Tous postes, planning, traceur GPS et carte terrain, imports de données, Réseau Depann’Home Pro, bibliothèque mobile et achats sur tous les postes administratifs",
+        description: "Tous postes, planning et carte des techniciens en temps réel, imports de données, Réseau Depann’Home Pro, bibliothèque mobile et achats sur tous les postes administratifs",
         allowedRoles: Object.freeze([...PC_ROLES, ...ALL_MOBILE_ROLES]),
         features: Object.freeze({ clients: true, calendar: true, operationsMap: true, library: false, billing: true, accounting: true, quitus: false, technicalReports: false, partnerMissions: true, companyEmail: true, partnerConnections: true, messages: true, settings: true, imports: true, groups: false, purchases: true, connectors: false })
     }),
@@ -23,7 +23,7 @@ export const SUBSCRIPTION_TIER_CONFIG = Object.freeze({
         label: "Pro",
         pcRateCents: 7000,
         mobileRateCents: 1500,
-        description: "Tous postes avec accès complet, traceur GPS et carte terrain, et licences Groupe d’entreprise incluses",
+        description: "Tous postes avec accès complet, carte des techniciens en temps réel et licences Groupe d’entreprise incluses",
         allowedRoles: Object.freeze([...PC_ROLES, ...ALL_MOBILE_ROLES]),
         features: Object.freeze({ clients: true, calendar: true, operationsMap: true, library: true, billing: true, accounting: true, quitus: true, technicalReports: true, partnerMissions: true, companyEmail: true, partnerConnections: true, messages: true, settings: true, imports: true, groups: true, purchases: true, connectors: true })
     })

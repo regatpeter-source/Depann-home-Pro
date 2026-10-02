@@ -98,10 +98,10 @@ test("Basic exposes clients, billing and accounting while Basic+ adds planning, 
     assert.match(subscriptionOffers, /missions, messagerie contextuelle et dossiers partagés/);
     assert.match(subscriptionOffers, /Aucun connecteur externe, aucune connexion API partenaire/);
     assert.match(commercialPresentation, /Réseau Depann’Home Pro interne/);
-    assert.match(presentationGenerator, /traceur GPS · carte terrain · temps de trajet · CA mobile/);
+    assert.match(presentationGenerator, /carte des techniciens en temps réel · temps de trajet · CA mobile/);
 });
 
-test("GPS tracking and the operations map are included only in Basic+ and Pro", () => {
+test("the real-time technician map is included only in Basic+ and Pro", () => {
     const standardOrganization = subscriptionTier => publicOrganization({ interfaceType: "standard", licenseType: "depannhome_standard", subscriptionTier });
     assert.equal(isFeatureEnabled(standardOrganization("basic"), "operationsMap"), false);
     for (const tier of ["basic_plus", "pro"]) assert.equal(isFeatureEnabled(standardOrganization(tier), "operationsMap"), true, tier);
@@ -109,7 +109,7 @@ test("GPS tracking and the operations map are included only in Basic+ and Pro", 
     assert.match(app, /app\.use\("\/api\/operations-map", requireAuthentication, requireOrganizationFeature\("operationsMap"\)\)/);
     assert.match(navigation, /\[ROUTES\.operationsMap\]: "operationsMap"/);
     for (const document of [subscriptionOffers, commercialPresentation]) {
-        assert.match(document, /traceur GPS volontaire/i);
+        assert.match(document, /carte des techniciens en temps réel/i);
         assert.match(document, /dernières? positions?/i);
         assert.match(document, /sans historique|aucun historique|aucun trajet n’est enregistré/i);
         assert.match(document, /temps de trajet automobile/i);

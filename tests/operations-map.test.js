@@ -19,7 +19,7 @@ const worker = read("service-worker.js");
 
 const user = (role, deviceType = "desktop") => ({ role, deviceType });
 
-test("la carte d’équipe et le partage GPS ont des droits distincts", () => {
+test("la carte d’équipe et le partage de position ont des droits distincts", () => {
     assert.equal(canViewTeamLocations(user("admin")), true);
     assert.equal(canViewTeamLocations(user("pc_standard")), true);
     assert.equal(canViewTeamLocations(user("commercial")), true);

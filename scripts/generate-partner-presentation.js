@@ -74,8 +74,8 @@ function addPricingPanel() {
     ensureSpace(245);
     const offers = [
         { name: "BASIC", pc: "20 € / administratif", mobile: "5 € / mobile", detail: "Facturation · CA mobile nominatif · bibliothèque mobile · achats administratifs", color: "#2563EB", pale: "#EFF6FF" },
-        { name: "BASIC+", pc: "35 € / administratif", mobile: "8 € / mobile", detail: "Planning · traceur GPS · carte terrain · temps de trajet · CA mobile · Réseau interne", color: colors.secondary, pale: colors.paleGreen },
-        { name: "PRO", pc: "70 € / administratif", mobile: "15 € / mobile", detail: "GPS et CA mobile inclus · accès complet · licences Groupe d’entreprise incluses sans supplément · API", color: "#7C3AED", pale: "#F5F3FF" }
+        { name: "BASIC+", pc: "35 € / administratif", mobile: "8 € / mobile", detail: "Planning · carte des techniciens en temps réel · temps de trajet · CA mobile · Réseau interne", color: colors.secondary, pale: colors.paleGreen },
+        { name: "PRO", pc: "70 € / administratif", mobile: "15 € / mobile", detail: "Carte temps réel et CA mobile inclus · accès complet · licences Groupe d’entreprise incluses sans supplément · API", color: "#7C3AED", pale: "#F5F3FF" }
     ];
     const gap = 10; const totalWidth = document.page.width - 104; const cardWidth = (totalWidth - gap * 2) / 3; const y = document.y;
     offers.forEach((offer, index) => {

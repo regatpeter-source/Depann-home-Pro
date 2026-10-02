@@ -17,7 +17,7 @@ L’interface **Partenaire** utilise le niveau technique Pro, mais son portail e
 - Les comptes Technicien et Chef d’équipe mobile nécessitent au minimum Basic+.
 - Pas d’accès au Quitus d’intervention, réservé à Pro.
 - Accès aux réglages nécessaires du compte et des documents.
-- Pas d’accès au planning, au traceur GPS et à la carte terrain, aux rapports techniques, à la bibliothèque sur poste administratif, au Réseau ou aux API.
+- Pas d’accès au planning ni à la carte des techniciens en temps réel, aux rapports techniques, à la bibliothèque sur poste administratif, au Réseau ou aux API.
 
 ## Basic+
 
@@ -26,7 +26,7 @@ L’interface **Partenaire** utilise le niveau technique Pro, mais son portail e
 - Toutes les fonctions Basic.
 - Autorisations individuelles **Facturation** et **Comptabilité** pour les Postes administratifs.
 - Planning et gestion des interventions.
-- Traceur GPS volontaire des postes mobiles, carte journalière des interventions et dernières positions partagées. Aucun trajet n’est enregistré.
+- Carte des techniciens en temps réel et carte journalière des interventions, alimentées par les dernières positions volontairement partagées. Aucun trajet n’est enregistré.
 - Carte de planification limitée aux membres sélectionnés, avec adresse cible, proximité et temps de trajet automobile estimé vers la prochaine intervention.
 - Chiffre d’affaires mensuel nominatif de chaque Poste Admin Mobile, Chef d’équipe et Technicien, calculé sur les factures émises qui lui sont attribuées, net des avoirs.
 - Importation de données Excel et CSV.
@@ -44,7 +44,7 @@ L’interface **Partenaire** utilise le niveau technique Pro, mais son portail e
 - 70 € TTC par poste administratif et par mois.
 - 15 € TTC par poste mobile et par mois.
 - Accès complet aux modules disponibles selon le rôle : clients, planning, devis, factures, facturation, comptabilité, achats administrateurs, rapports de recherche de fuite, bibliothèque mobile, photos, imports, groupes, missions partenaires, Réseau Depann’Home Pro et connexions API.
-- Traceur GPS volontaire, carte terrain, proximité et temps de trajet inclus comme dans Basic+, avec pilotage complet des équipes selon les droits du poste.
+- Carte des techniciens en temps réel, proximité et temps de trajet inclus comme dans Basic+, avec pilotage complet des équipes selon les droits du poste.
 - Chiffre d’affaires mensuel nominatif de chaque poste mobile, net des avoirs, avec attribution administrative avant émission.
 - Espace e-mail de l’entreprise dans le menu principal, avec accès automatique pour les Postes Admin et Postes Admin Mobile et autorisation individuelle pour chaque Poste administratif.
 - Accès au Quitus d’intervention : signature, validation, PDF et modèles personnalisés.
