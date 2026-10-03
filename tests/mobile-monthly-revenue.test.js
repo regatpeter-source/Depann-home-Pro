@@ -59,11 +59,16 @@ test("mobile revenue is tenant-scoped, own-only on mobile and immutable after is
     assert.match(migrationRunnerSource, /c9c2f8a1d08aa9c962e717c5ebdf301835040f2ce84a4621e24ab3e103cd8b0f/);
 });
 
-test("administrative assignment, credit inheritance and mobile dashboard are wired", () => {
+test("administrative assignment, credit inheritance and mobile and PC dashboards are wired", () => {
     assert.match(billingClientSource, /CA attribué à<select name="revenueAssigneeId"/);
     assert.match(billingClientSource, /Attribué automatiquement à/);
     assert.match(accountingSource, /invoice\.revenue_assignee_id, invoice\.revenue_assignee_name/);
     assert.match(navigationSource, /Mon chiffre d’affaires mensuel/);
     assert.match(navigationSource, /\/api\/billing\/mobile-revenue\?year=/);
     assert.match(navigationSource, /Factures émises moins avoirs émis/);
+    assert.match(billingClientSource, /CA mensuel par poste mobile/);
+    assert.match(billingClientSource, /data-billing-mobile-revenue/);
+    assert.match(billingClientSource, /\/api\/billing\/mobile-revenue\?year=/);
+    assert.match(billingClientSource, /document\.body\.classList\.contains\("desktop-device"\)/);
+    assert.match(billingClientSource, /members\.reduce\(\(sum, member\) => sum \+ \(Number\(member\.turnoverHt\)/);
 });

@@ -171,6 +171,7 @@ function renderOverview(panel, profilePanel) {
         <div class="billing-metrics"><span><strong>${quotes}</strong> devis</span><span><strong>${invoices}</strong> factures</span><span class="billing-base-template"><strong>✓</strong> ${usesExternalTemplate ? "gabarit PDF / DOCX externe" : "modèle Depann’Home intégré"}</span></div>
         ${renderBillingFinancialPeriodControls(financialYears)}
         ${renderBillingFinancialOverview(activeFinancialDashboard)}
+        ${renderDesktopMobileRevenueOverview()}
         ${usesExternalTemplate && !profile.hasQuoteTemplate ? '<p class="auth-message error">Aucune base commune aux devis et factures n’est encore déposée. Un administrateur doit l’ajouter dans Paramètres → Modèles de documents.</p>' : ""}
         ${usesExternalQuitusTemplate && !profile.hasQuitusTemplate ? '<p class="auth-message error">Aucune base officielle de quitus n’est déposée.</p>' : ""}
         ${usesExternalReportTemplate && !profile.hasReportFileTemplate ? '<p class="auth-message error">Aucune base officielle de rapport n’est déposée.</p>' : ""}
@@ -180,11 +181,11 @@ function renderOverview(panel, profilePanel) {
     panel.querySelector("[data-billing-action=new-quote]")?.addEventListener("click", () => { if (!isAccountant()) openNewDocument("quote"); });
     panel.querySelector("[data-billing-action=new-invoice]").addEventListener("click", () => { if (!isAccountant()) openNewDocument("invoice"); });
     panel.querySelector("[data-billing-action=open-leak-reports]")?.addEventListener("click", async () => {
-        const { renderLeakReportWizard } = await import("./leak-report-wizard.js?v=62");
+        const { renderLeakReportWizard } = await import("./leak-report-wizard.js?v=63");
         renderLeakReportWizard();
     });
     panel.querySelector("[data-billing-action=new-leak-report]")?.addEventListener("click", async () => {
-        const { openLeakReportCreation } = await import("./leak-report-wizard.js?v=62");
+        const { openLeakReportCreation } = await import("./leak-report-wizard.js?v=63");
         openLeakReportCreation();
     });
     panel.querySelector("[data-billing-action=download-quote-template]")?.addEventListener("click", openQuoteTemplateDownload);
@@ -199,6 +200,7 @@ function renderOverview(panel, profilePanel) {
     panel.querySelector("[data-financial-view]").addEventListener("change", event => { billingFinancialPeriod.view = event.currentTarget.value === "annual" ? "annual" : "monthly"; renderOverview(panel, profilePanel); });
     panel.querySelector("[data-financial-year]").addEventListener("change", event => { billingFinancialPeriod.year = event.currentTarget.value; void renderBilling(); });
     panel.querySelector("[data-financial-month]").addEventListener("change", event => { billingFinancialPeriod.month = event.currentTarget.value; void renderBilling(); });
+    void loadDesktopMobileRevenueOverview(panel);
 }
 
 function billingFinancialApiUrl() {
@@ -225,6 +227,30 @@ function renderBillingFinancialOverview(value = {}) {
     let cursor = 0;
     const gradient = total > 0 ? `conic-gradient(${segments.filter(item => item.value > 0).map(item => { const start = cursor; cursor += item.value / total * 100; return `${item.color} ${start.toFixed(2)}% ${cursor.toFixed(2)}%`; }).join(",")})` : "conic-gradient(#e2e8f0 0 100%)";
     return `<section class="billing-financial-dashboard"><div class="billing-financial-heading"><div><p class="eyebrow">Pilotage financier</p><h3>Chiffre d’affaires, avoirs et marge</h3><p class="muted">Vue comparative des factures émises. La marge brute estimée correspond au chiffre d’affaires HT, diminué des avoirs et des achats HT enregistrés.</p></div></div><div class="billing-financial-layout"><figure class="billing-financial-chart"><div class="billing-donut" style="--billing-chart:${gradient}" role="img" aria-label="Répartition comparative du chiffre d’affaires, des avoirs, des achats et de la marge"><span><strong>${formatMoney(data.turnoverHt)}</strong><small>CA net HT</small></span></div><figcaption>${segments.map(item => `<span><i style="--segment-color:${item.color}"></i><span>${escapeHtml(item.label)}</span><strong>${formatMoney(item.value)}</strong></span>`).join("")}</figcaption></figure><div class="billing-financial-cards"><article><span>Chiffre d’affaires net HT</span><strong>${formatMoney(data.turnoverHt)}</strong><small>${Number(data.invoicesCount) || 0} facture(s) émise(s)</small></article><article class="credits"><span>Avoirs HT</span><strong>${formatMoney(data.creditsHt)}</strong><small>${Number(data.creditsCount) || 0} avoir(s)</small></article><article><span>Encaissements TTC</span><strong>${formatMoney(data.collected)}</strong><small>Règlements enregistrés</small></article><article class="${Number(data.outstanding) > 0 ? "attention" : ""}"><span>Reste à encaisser TTC</span><strong>${formatMoney(data.outstanding)}</strong><small>Factures non soldées</small></article><article><span>Achats enregistrés HT</span><strong>${formatMoney(data.purchasesHt)}</strong><small>Charges saisies dans Achats</small></article><article class="${marginIsNegative ? "negative" : "profit"}"><span>Marge brute estimée HT</span><strong>${formatMoney(data.grossProfitEstimateHt)}</strong><small>Estimation avant salaires, cotisations et autres charges</small></article></div></div></section>`;
+}
+
+function renderDesktopMobileRevenueOverview() {
+    if (!document.body.classList.contains("desktop-device")) return "";
+    const monthLabel = BILLING_MONTHS.find(item => item.value === billingFinancialPeriod.month)?.label || "Mois";
+    return `<section class="billing-mobile-revenue-dashboard" data-billing-mobile-revenue><div class="billing-financial-heading"><div><p class="eyebrow">Équipe terrain</p><h3>CA mensuel par poste mobile</h3><p class="muted">${escapeHtml(monthLabel)} ${escapeHtml(billingFinancialPeriod.year)} · factures définitivement émises moins avoirs émis, en net HT.</p></div><strong data-billing-mobile-revenue-total>—</strong></div><div class="billing-mobile-revenue-list" data-billing-mobile-revenue-list><p class="muted">Calcul du chiffre d’affaires des postes mobiles…</p></div></section>`;
+}
+
+async function loadDesktopMobileRevenueOverview(panel) {
+    const section = panel.querySelector("[data-billing-mobile-revenue]");
+    if (!section) return;
+    const list = section.querySelector("[data-billing-mobile-revenue-list]");
+    const total = section.querySelector("[data-billing-mobile-revenue-total]");
+    const result = await apiRequest(`/api/billing/mobile-revenue?year=${encodeURIComponent(billingFinancialPeriod.year)}&month=${encodeURIComponent(billingFinancialPeriod.month)}`);
+    if (!section.isConnected) return;
+    if (!result.ok) {
+        total.textContent = "Indisponible";
+        list.innerHTML = `<p class="auth-message error">${escapeHtml(result.message || "Le chiffre d’affaires des postes mobiles est momentanément indisponible.")}</p>`;
+        return;
+    }
+    const members = Array.isArray(result.data?.members) ? result.data.members : [];
+    const turnover = members.reduce((sum, member) => sum + (Number(member.turnoverHt) || 0), 0);
+    total.textContent = `${formatMoney(turnover)} HT`;
+    list.innerHTML = members.length ? members.map(member => `<article><div><strong>${escapeHtml(member.name || "Poste mobile")}</strong><small>${escapeHtml(mobileRevenueRoleLabel(member.role))}</small></div><div class="billing-mobile-revenue-counts"><span>${Number(member.invoicesCount) || 0} facture(s) · ${formatMoney(member.invoicesHt)} HT</span><span>${Number(member.creditsCount) || 0} avoir(s) · − ${formatMoney(member.creditsHt)} HT</span></div><b class="${Number(member.turnoverHt) < 0 ? "negative" : ""}">${formatMoney(member.turnoverHt)} HT</b></article>`).join("") : '<p class="muted">Aucun poste mobile nominatif actif pour cette entreprise.</p>';
 }
 
 function renderProfile(panel, options = {}) {
