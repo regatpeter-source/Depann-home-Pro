@@ -204,7 +204,7 @@ export async function initializeCalendar() {
     `);
     await database.query(`
         CREATE TABLE IF NOT EXISTS depannhome_calendar_assignments (
-            event_id BIGINT NOT NULL REFERENCES depannhome_calendar_events(id) ON DELETE CASCADE,
+            event_id BIGINT NOT NULL,
             technician_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
             is_primary BOOLEAN NOT NULL DEFAULT FALSE,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -215,6 +215,33 @@ export async function initializeCalendar() {
         CREATE INDEX IF NOT EXISTS depannhome_calendar_assignments_technician_idx
         ON depannhome_calendar_assignments (technician_id, event_id)
     `);
+    await database.query(`
+        CREATE TABLE IF NOT EXISTS depannhome_intervention_work_sessions (
+            id BIGSERIAL PRIMARY KEY,
+            owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+            event_id BIGINT NOT NULL REFERENCES depannhome_calendar_events(id) ON DELETE CASCADE,
+            technician_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+            started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            ended_at TIMESTAMPTZ,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            CONSTRAINT depannhome_intervention_work_session_dates_check CHECK (ended_at IS NULL OR ended_at >= started_at)
+        )
+    `);
+    await database.query(`
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint
+                WHERE conname = 'depannhome_intervention_work_sessions_event_fk'
+            ) THEN
+                ALTER TABLE depannhome_intervention_work_sessions
+                    ADD CONSTRAINT depannhome_intervention_work_sessions_event_fk
+                    FOREIGN KEY (event_id) REFERENCES depannhome_calendar_events(id) ON DELETE CASCADE;
+            END IF;
+        END $$
+    `);
+    await database.query("CREATE INDEX IF NOT EXISTS depannhome_intervention_work_sessions_event_idx ON depannhome_intervention_work_sessions(owner_id,event_id,technician_id,started_at)");
+    await database.query("CREATE UNIQUE INDEX IF NOT EXISTS depannhome_intervention_work_sessions_open_technician_idx ON depannhome_intervention_work_sessions(owner_id,technician_id) WHERE ended_at IS NULL");
     await database.query(`
         UPDATE depannhome_calendar_events event
         SET assigned_technician_id = NULL
@@ -382,6 +409,8 @@ export function registerCalendarRoutes(app, requireAuthentication) {
                 event.notes,
                 event.created_at AS "createdAt",
                 event.updated_at AS "updatedAt"
+                ,(SELECT session.started_at FROM depannhome_intervention_work_sessions session WHERE session.owner_id=event.owner_id AND session.event_id=event.id AND session.technician_id=$5::bigint AND session.ended_at IS NULL ORDER BY session.started_at DESC LIMIT 1) AS "workSessionStartedAt"
+                ,COALESCE((SELECT SUM(EXTRACT(EPOCH FROM (COALESCE(session.ended_at,NOW())-session.started_at)))::integer FROM depannhome_intervention_work_sessions session WHERE session.owner_id=event.owner_id AND session.event_id=event.id AND session.technician_id=$5::bigint),0) AS "workDurationSeconds"
             FROM depannhome_calendar_events event
             LEFT JOIN depannhome_users technician ON technician.id = event.assigned_technician_id
             JOIN depannhome_users owner ON owner.id = event.owner_id
@@ -416,6 +445,41 @@ export function registerCalendarRoutes(app, requireAuthentication) {
             ORDER BY event.paused_at ASC,event.event_date,event.start_time NULLS LAST
         `, [getAccountOwnerId(request), canManageCalendarSchedule(request.user) && !isDedicatedMobileSession(request.user), request.user.sub]);
         response.json({ events: rows });
+    }));
+
+    app.post("/api/calendar/events/:eventId/work-session/start", requireAuthentication, asyncHandler(async (request, response) => {
+        const eventId = positiveId(request.params.eventId);
+        const ownerId = getAccountOwnerId(request);
+        if (!eventId) return response.status(400).json({ message: "Intervention invalide." });
+        if (request.user?.deviceType !== "mobile" || !["mobile_admin", "team_lead", "technician"].includes(request.user?.role)) return response.status(403).json({ message: "Le pointage d’intervention est réservé aux postes mobiles affectés." });
+        const connection = await getPool().connect();
+        try {
+            await connection.query("BEGIN");
+            const eventResult = await connection.query(`SELECT event.id FROM depannhome_calendar_events event WHERE event.id=$1 AND event.owner_id=$2 AND event.event_type='appointment' AND event.event_status NOT IN ('completed','cancelled','paused') AND EXISTS (SELECT 1 FROM depannhome_calendar_assignments assignment WHERE assignment.event_id=event.id AND assignment.technician_id=$3) FOR UPDATE`, [eventId, ownerId, request.user.sub]);
+            if (!eventResult.rows[0]) { await connection.query("ROLLBACK"); return response.status(404).json({ message: "Intervention affectée introuvable ou déjà clôturée." }); }
+            const open = await connection.query("SELECT event_id AS \"eventId\",started_at AS \"startedAt\" FROM depannhome_intervention_work_sessions WHERE owner_id=$1 AND technician_id=$2 AND ended_at IS NULL FOR UPDATE", [ownerId, request.user.sub]);
+            if (open.rows[0] && Number(open.rows[0].eventId) !== eventId) { await connection.query("ROLLBACK"); return response.status(409).json({ message: `Terminez d’abord votre pointage sur l’intervention n°${open.rows[0].eventId}.` }); }
+            let startedAt = open.rows[0]?.startedAt;
+            if (!startedAt) {
+                const created = await connection.query("INSERT INTO depannhome_intervention_work_sessions(owner_id,event_id,technician_id) VALUES($1,$2,$3) RETURNING started_at AS \"startedAt\"", [ownerId, eventId, request.user.sub]);
+                startedAt = created.rows[0].startedAt;
+                await connection.query("UPDATE depannhome_calendar_events SET event_status=CASE WHEN event_status IN ('planned','confirmed') THEN 'in_progress' ELSE event_status END,updated_at=NOW() WHERE id=$1 AND owner_id=$2", [eventId, ownerId]);
+            }
+            const total = await connection.query("SELECT COALESCE(SUM(EXTRACT(EPOCH FROM (COALESCE(ended_at,NOW())-started_at)))::integer,0) AS seconds FROM depannhome_intervention_work_sessions WHERE owner_id=$1 AND event_id=$2 AND technician_id=$3", [ownerId, eventId, request.user.sub]);
+            await connection.query("COMMIT");
+            response.json({ startedAt, durationSeconds: Number(total.rows[0]?.seconds) || 0, message: open.rows[0] ? "Pointage déjà en cours." : "Temps d’intervention démarré." });
+        } catch (error) { await connection.query("ROLLBACK"); throw error; } finally { connection.release(); }
+    }));
+
+    app.post("/api/calendar/events/:eventId/work-session/stop", requireAuthentication, asyncHandler(async (request, response) => {
+        const eventId = positiveId(request.params.eventId);
+        const ownerId = getAccountOwnerId(request);
+        if (!eventId) return response.status(400).json({ message: "Intervention invalide." });
+        if (request.user?.deviceType !== "mobile" || !["mobile_admin", "team_lead", "technician"].includes(request.user?.role)) return response.status(403).json({ message: "Le pointage d’intervention est réservé aux postes mobiles affectés." });
+        const { rows } = await getPool().query(`UPDATE depannhome_intervention_work_sessions session SET ended_at=NOW() FROM depannhome_calendar_events event WHERE session.owner_id=$1 AND session.event_id=$2 AND session.technician_id=$3 AND session.ended_at IS NULL AND event.id=session.event_id AND event.owner_id=session.owner_id RETURNING session.started_at AS "startedAt",session.ended_at AS "endedAt",EXTRACT(EPOCH FROM (session.ended_at-session.started_at))::integer AS "durationSeconds"`, [ownerId, eventId, request.user.sub]);
+        if (!rows[0]) return response.status(409).json({ message: "Aucun pointage en cours sur cette intervention." });
+        const total = await getPool().query("SELECT COALESCE(SUM(EXTRACT(EPOCH FROM (ended_at-started_at)))::integer,0) AS seconds FROM depannhome_intervention_work_sessions WHERE owner_id=$1 AND event_id=$2 AND technician_id=$3 AND ended_at IS NOT NULL", [ownerId, eventId, request.user.sub]);
+        response.json({ session: rows[0], durationSeconds: Number(total.rows[0]?.seconds) || 0, message: "Temps d’intervention arrêté." });
     }));
 
     app.get("/api/calendar/availability", requireAuthentication, asyncHandler(async (request, response) => {
@@ -545,6 +609,7 @@ export function registerCalendarRoutes(app, requireAuthentication) {
                 await connection.query("ROLLBACK");
                 return response.status(404).json({ message: "Rendez-vous introuvable." });
             }
+            if (["completed", "cancelled"].includes(event.status)) await connection.query("UPDATE depannhome_intervention_work_sessions SET ended_at=NOW() WHERE owner_id=$1 AND event_id=$2 AND ended_at IS NULL", [getAccountOwnerId(request), id]);
             await replaceEventAssignments(connection, id, event.assignedTechnicianIds, event.assignedTechnicianId);
             await connection.query("COMMIT");
             await synchronizeConnectedAppointment(getAccountOwnerId(request), id);
@@ -600,6 +665,7 @@ export function registerCalendarRoutes(app, requireAuthentication) {
                 WHERE id=$1 AND owner_id=$2
                 RETURNING paused_at AS "pausedAt",pause_reason AS "pauseReason",pause_note AS "pauseNote",paused_by_name AS "pausedByName",event_status AS status
             `, [id, ownerId, pausedAt, reason, note, request.user.sub, actorName]);
+            await connection.query("UPDATE depannhome_intervention_work_sessions SET ended_at=$3 WHERE owner_id=$1 AND event_id=$2 AND ended_at IS NULL", [ownerId, id, pausedAt]);
             await appendClientInterventionHistory(connection, ownerId, event.clientId, [{
                 id: `intervention-pause-${id}-${Date.now()}`,
                 type: "intervention_pause",

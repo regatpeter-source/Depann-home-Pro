@@ -1,9 +1,9 @@
 import { ROUTES } from "./config.js?v=134";
-import { createBillingDocumentForClient, viewBillingDocument } from "./billing.js?v=217";
+import { createBillingDocumentForClient, viewBillingDocument } from "./billing.js?v=218";
 import { getSearchableClients } from "./clients.js?v=174";
 import { addClientActivityByName, synchronizeClients } from "./client-sync.js?v=132";
 import { renderClientMessages } from "./messages.js?v=107";
-import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=63";
+import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=64";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { renderPlatformAnnouncement } from "./platform-announcement.js?v=1";
@@ -341,10 +341,12 @@ function renderEventForm(panel) {
                     <p class="muted">Cette intervention est conservée dans l’historique du client. Elle ne peut plus être modifiée ou supprimée. Consultez la fiche client ou créez un nouveau rendez-vous à partir de ses informations.</p>
                     <dl><dt>Intervention</dt><dd>N° ${escapeHtml(event.id)}</dd><dt>Client</dt><dd>${escapeHtml(event.clientName || "Non renseigné")}</dd><dt>Date</dt><dd>${escapeHtml(formatActivityDate(event.date, event.startTime))}${event.endTime ? ` — ${escapeHtml(event.endTime)}` : ""}</dd>${renderAssignedTechniciansDetail(event)}${event.location ? `<dt>Lieu</dt><dd>${escapeHtml(event.location)}</dd>` : ""}${event.notes ? `<dt>Notes</dt><dd>${escapeHtml(event.notes)}</dd>` : ""}</dl>
                 </section>
+                ${renderInterventionWorkSessionHtml(event)}
                 ${client ? renderInsuranceDeductibleHtml(event, client) : ""}
                 <div class="calendar-form-actions">${client ? `<button type="button" class="secondary-button" id="openCompletedAppointmentClient">Aller sur la fiche client</button>${canManageCalendarSchedule() ? '<button type="button" class="secondary-button" id="scheduleCompletedAppointmentFollowUp">Planifier un nouveau rendez-vous</button>' : ""}` : '<p class="auth-message">Aucune fiche client associée : l’intervention historique reste consultable.</p>'}<button type="button" class="secondary-button" id="closeCalendarDetail">Fermer</button></div>
             </div>`;
         initializeInsuranceDeductibleControls(panel, event);
+        initializeInterventionWorkSessionControls(panel, event);
         panel.querySelector("#openCompletedAppointmentClient")?.addEventListener("click", () => {
             window.dispatchEvent(new CustomEvent("depannhome:open-client", { detail: { clientId: client.id } }));
         });
@@ -450,6 +452,7 @@ function renderEventForm(panel) {
                         <p class="eyebrow">Informations du rendez-vous</p>
                         <dl><dt>Date</dt><dd>${escapeHtml(formatActivityDate(event.date, event.startTime))}${event.endTime ? ` — ${escapeHtml(event.endTime)}` : ""}</dd>${renderAssignedTechniciansDetail(event)}${event.notes ? `<dt>Notes</dt><dd>${escapeHtml(event.notes)}</dd>` : ""}</dl>
                     </section>
+                    ${renderInterventionWorkSessionHtml(event)}
                     ${renderInterventionPauseHtml(event)}
                     ${renderInterventionPhotosHtml(client, event)}
                     ${canAccessTechnicalReports() ? `<section class="calendar-billing-actions report-entry-point">
@@ -480,6 +483,7 @@ function renderEventForm(panel) {
         initializeInterventionPhotoPreviews(panel.querySelector("#calendarInterventionPhotos"));
         initializeInsuranceDeductibleControls(panel, event);
         initializeInterventionPauseControls(panel, event);
+        initializeInterventionWorkSessionControls(panel, event);
         panel.querySelector("#editCalendarEvent")?.addEventListener("click", () => {
             mobileAdminEditingEvents.add(String(event.id));
             refreshCalendarDetail();
@@ -782,6 +786,39 @@ function renderInterventionPauseHtml(event) {
     }
     if (!canRequestInterventionPause(event) || calendarEventStatus(event) === "cancelled") return "";
     return `<section class="calendar-intervention-pause"><div><p class="eyebrow">Suivi de l’intervention</p><h3>Mettre l’intervention en pause</h3><p class="muted">L’intervention conservera son numéro et pourra être déplacée à une nouvelle date après résolution du blocage.</p></div><div class="calendar-intervention-pause-fields"><label>Motif *<select data-intervention-pause-reason required><option value="">Choisir un motif</option><option value="material_not_received">Matériel non reçu</option><option value="waiting_parts">Pièce en attente</option><option value="technician_absent">Technicien absent</option><option value="waiting_client">Attente du client</option><option value="other">Autre motif</option></select></label><label>Justification *<textarea data-intervention-pause-note rows="2" maxlength="1000" required placeholder="Expliquez précisément pourquoi l’intervention est mise en pause"></textarea></label></div><button type="button" class="secondary-button" data-pause-intervention>Mettre l’intervention en pause</button><p class="auth-message" data-intervention-pause-message aria-live="polite"></p></section>`;
+}
+
+function renderInterventionWorkSessionHtml(event) {
+    if (!isDedicatedMobileCalendar() || event?.eventType !== "appointment") return "";
+    const seconds = Math.max(0, Number(event.workDurationSeconds) || 0);
+    const active = Boolean(event.workSessionStartedAt);
+    const closed = ["completed", "cancelled", "paused"].includes(calendarEventStatus(event));
+    return `<section class="calendar-billing-actions calendar-work-session"><div><p class="eyebrow">Temps individuel</p><h3>${active ? "Intervention en cours" : "Mon temps d’intervention"}</h3><p class="muted">Durée cumulée : <strong>${escapeHtml(formatWorkDuration(seconds))}</strong>. Cette durée servira au prorata du chiffre d’affaires.</p></div><div>${closed ? "" : `<button type="button" class="${active ? "danger-button" : "primary-button"}" data-work-session-action="${active ? "stop" : "start"}">${active ? "Arrêter mon temps" : "Démarrer mon temps"}</button>`}</div><p class="auth-message" data-work-session-message aria-live="polite"></p></section>`;
+}
+
+function initializeInterventionWorkSessionControls(panel, event) {
+    const button = panel.querySelector("[data-work-session-action]");
+    const message = panel.querySelector("[data-work-session-message]");
+    if (!button || !message) return;
+    button.addEventListener("click", async () => {
+        const action = button.dataset.workSessionAction;
+        button.disabled = true;
+        message.classList.remove("error");
+        message.textContent = action === "start" ? "Démarrage du temps…" : "Arrêt du temps…";
+        const result = await request(`/api/calendar/events/${encodeURIComponent(event.id)}/work-session/${action}`, { method: "POST" });
+        if (!result.ok) { button.disabled = false; message.classList.add("error"); message.textContent = result.message || "Pointage impossible."; return; }
+        event.workSessionStartedAt = action === "start" ? result.data?.startedAt || new Date().toISOString() : null;
+        event.workDurationSeconds = Number(result.data?.durationSeconds) || 0;
+        if (action === "start") { event.status = "in_progress"; event.eventStatus = "in_progress"; }
+        refreshCalendarDetail();
+    });
+}
+
+function formatWorkDuration(seconds) {
+    const minutes = Math.max(0, Math.round((Number(seconds) || 0) / 60));
+    const hours = Math.floor(minutes / 60);
+    const remaining = minutes % 60;
+    return hours ? `${hours} h ${String(remaining).padStart(2, "0")}` : `${remaining} min`;
 }
 
 function initializeInterventionPauseControls(panel, event) {

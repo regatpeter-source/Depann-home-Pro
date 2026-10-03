@@ -6,10 +6,13 @@ import { buildMobileRevenueDashboard } from "../server/billing.js";
 const read = path => readFileSync(new URL(path, import.meta.url), "utf8");
 const serverSource = read("../server/billing.js");
 const accountingSource = read("../server/accounting.js");
+const calendarSource = read("../server/calendar.js");
+const calendarClientSource = read("../js/calendar.js");
 const billingClientSource = read("../js/billing.js");
 const navigationSource = read("../js/navigation.js");
 const schemaSource = read("../database/schema.sql");
 const migrationSource = read("../database/migrations/0036_mobile_monthly_revenue.sql");
+const workSessionMigrationSource = read("../database/migrations/0037_technician_intervention_time.sql");
 const migrationRunnerSource = read("../server/database-migrations.js");
 
 const line = amount => [{ description: "Intervention", quantity: 1, unitPrice: amount, vatRate: 20 }];
@@ -41,13 +44,13 @@ test("credits can make an individual monthly turnover negative", () => {
     assert.equal(result[0].turnoverHt, -80);
 });
 
-test("an intervention invoice is split equally and exactly between all assigned mobile technicians", () => {
+test("an intervention invoice is split exactly between equally timed mobile technicians", () => {
     const members = [
         { id: 11, name: "Alice Mobile", role: "technician" },
         { id: 12, name: "Benoît Mobile", role: "technician" },
         { id: 13, name: "Chloé Mobile", role: "team_lead" }
     ];
-    const allocations = members.map(member => ({ memberId: member.id, memberName: member.name }));
+    const allocations = members.map(member => ({ memberId: member.id, memberName: member.name, durationMinutes: 480 }));
     const result = buildMobileRevenueDashboard([
         { revenueAssigneeId: 11, issueDate: "2026-05-02", issuedAt: "2026-05-02T10:00:00Z", documentType: "invoice", status: "issued", lines: line(100), financialData: { revenueAllocations: allocations } },
         { revenueAssigneeId: 11, issueDate: "2026-05-03", issuedAt: "2026-05-03T10:00:00Z", documentType: "credit", status: "issued", lines: line(10), financialData: { revenueAllocations: allocations } }
@@ -56,6 +59,24 @@ test("an intervention invoice is split equally and exactly between all assigned 
     assert.deepEqual(result.map(item => item.creditsHt), [3.34, 3.33, 3.33]);
     assert.equal(result.reduce((sum, item) => sum + item.invoicesHt, 0), 100);
     assert.equal(result.reduce((sum, item) => sum + item.creditsHt, 0), 10);
+});
+
+test("mobile revenue is prorated by each technician intervention time", () => {
+    const members = [
+        { id: 11, name: "Alice Mobile", role: "technician" },
+        { id: 12, name: "Benoît Mobile", role: "technician" },
+        { id: 13, name: "Chloé Mobile", role: "technician" }
+    ];
+    const allocations = [
+        { memberId: 11, durationMinutes: 960 },
+        { memberId: 12, durationMinutes: 960 },
+        { memberId: 13, durationMinutes: 240 }
+    ];
+    const result = buildMobileRevenueDashboard([
+        { issueDate: "2026-06-02", issuedAt: "2026-06-02T10:00:00Z", documentType: "invoice", status: "issued", lines: line(100), financialData: { revenueAllocations: allocations } }
+    ], members, { year: 2026, month: "06" });
+    assert.deepEqual(result.map(item => item.invoicesHt), [44.45, 44.44, 11.11]);
+    assert.equal(result.reduce((sum, item) => sum + item.invoicesHt, 0), 100);
 });
 
 test("mobile revenue is tenant-scoped, own-only on mobile and immutable after issue", () => {
@@ -102,9 +123,26 @@ test("an administrative invoice linked to a leak report credits its mobile creat
 
 test("invoice issuance freezes all assigned technicians and credits inherit the split", () => {
     assert.match(serverSource, /resolveIssuedRevenueAllocations\(database, ownerId, document\)/);
-    assert.match(serverSource, /rows\.length > 1.*rows\.map\(member => \(\{ memberId: member\.id, memberName: member\.name \}\)\)/s);
+    assert.match(serverSource, /SUM\(COALESCE\(worked\.minutes,CASE WHEN appointment\.start_time[\s\S]*AS "durationMinutes"/);
+    assert.match(serverSource, /planning_batch_id=source\.planning_batch_id/);
+    assert.match(serverSource, /durationMinutes: Number\(member\.durationMinutes\)/);
     assert.match(serverSource, /financialData = revenueAllocations\.length \? \{ \.\.\.financialData, revenueAllocations \}/);
     assert.match(serverSource, /jsonb_array_elements[\s\S]*financial_data->'revenueAllocations'/);
     assert.match(accountingSource, /invoice\.financial_data\?\.revenueAllocations/);
     assert.match(accountingSource, /sourceInvoiceId: invoice\.id, revenueAllocations/);
+});
+
+test("mobile technicians record individual intervention time used by the frozen prorata", () => {
+    assert.match(workSessionMigrationSource, /CREATE TABLE IF NOT EXISTS depannhome_intervention_work_sessions/);
+    assert.match(workSessionMigrationSource, /UNIQUE INDEX[\s\S]*WHERE ended_at IS NULL/);
+    assert.match(calendarSource, /work-session\/start/);
+    assert.match(calendarSource, /work-session\/stop/);
+    assert.match(calendarSource, /request\.user\?\.deviceType !== "mobile"/);
+    assert.match(calendarSource, /assignment\.technician_id=\$3/);
+    assert.match(calendarSource, /UPDATE depannhome_intervention_work_sessions SET ended_at=NOW\(\)/);
+    assert.match(calendarClientSource, /Démarrer mon temps/);
+    assert.match(calendarClientSource, /Arrêter mon temps/);
+    assert.match(calendarClientSource, /Cette durée servira au prorata du chiffre d’affaires/);
+    assert.match(serverSource, /COALESCE\(worked\.minutes,CASE WHEN appointment\.start_time/);
+    assert.match(serverSource, /durationSource: member\.hasRecordedTime \? "recorded" : "planned"/);
 });

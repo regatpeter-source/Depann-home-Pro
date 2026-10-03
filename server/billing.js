@@ -1428,19 +1428,42 @@ export function buildMobileRevenueDashboard(documents, members, period = {}) {
         const lines = document.documentType === "credit" ? (document.lines || []).map(line => ({ ...line, quantity: Math.abs(Number(line.quantity) || 0), unitPrice: Math.abs(Number(line.unitPrice ?? line.unit_price) || 0) })) : document.lines;
         const amountHt = Math.abs(calculateDocumentAccountingTotals(lines || [], document.financialData || {}).ht);
         const storedAllocations = Array.isArray(document.financialData?.revenueAllocations) ? document.financialData.revenueAllocations : [];
-        const memberIds = [...new Set((storedAllocations.length ? storedAllocations.map(item => item?.memberId) : [document.revenueAssigneeId]).map(String).filter(id => id && id !== "0"))];
+        const allocations = storedAllocations.length
+            ? storedAllocations.map(item => ({ memberId: String(item?.memberId || ""), weight: Math.max(0, Number(item?.durationMinutes) || 0) })).filter(item => item.memberId && item.memberId !== "0")
+            : document.revenueAssigneeId ? [{ memberId: String(document.revenueAssigneeId), weight: 1 }] : [];
         const amountCents = Math.round(amountHt * 100);
-        const baseCents = memberIds.length ? Math.floor(amountCents / memberIds.length) : 0;
-        const remainder = memberIds.length ? amountCents % memberIds.length : 0;
-        memberIds.forEach((memberId, index) => {
-            const summary = summaries.get(memberId);
+        allocateRevenueCents(amountCents, allocations).forEach(allocation => {
+            const summary = summaries.get(allocation.memberId);
             if (!summary) return;
-            const allocatedHt = (baseCents + (index < remainder ? 1 : 0)) / 100;
+            const allocatedHt = allocation.cents / 100;
             if (document.documentType === "credit") { summary.creditsHt += allocatedHt; summary.creditsCount += 1; }
             else { summary.invoicesHt += allocatedHt; summary.invoicesCount += 1; }
         });
     }
     return [...summaries.values()].map(summary => ({ ...summary, invoicesHt: roundFinancial(summary.invoicesHt), creditsHt: roundFinancial(summary.creditsHt), turnoverHt: roundFinancial(summary.invoicesHt - summary.creditsHt) })).sort((first, second) => second.turnoverHt - first.turnoverHt || first.name.localeCompare(second.name, "fr"));
+}
+function allocateRevenueCents(amountCents, allocations) {
+    const unique = new Map();
+    for (const allocation of Array.isArray(allocations) ? allocations : []) {
+        const memberId = String(allocation?.memberId || "");
+        if (!memberId || memberId === "0" || unique.has(memberId)) continue;
+        unique.set(memberId, { memberId, weight: Math.max(0, Number(allocation?.weight) || 0) });
+    }
+    const items = [...unique.values()];
+    if (!items.length) return [];
+    if (!items.some(item => item.weight > 0)) items.forEach(item => { item.weight = 1; });
+    const totalWeight = items.reduce((sum, item) => sum + item.weight, 0);
+    const weighted = items.map((item, index) => {
+        const exact = amountCents * item.weight / totalWeight;
+        return { ...item, index, cents: Math.floor(exact), fraction: exact - Math.floor(exact) };
+    });
+    let remainder = amountCents - weighted.reduce((sum, item) => sum + item.cents, 0);
+    for (const item of [...weighted].sort((first, second) => second.fraction - first.fraction || first.index - second.index)) {
+        if (remainder <= 0) break;
+        item.cents += 1;
+        remainder -= 1;
+    }
+    return weighted;
 }
 function billingDocumentOutstanding(document, settledAmount = 0) {
     if (document?.documentType !== "invoice" || ["draft", "cancelled", "rejected"].includes(String(document?.status || "").toLowerCase())) return 0;
@@ -1820,9 +1843,9 @@ async function resolveRevenueAssignee(database, ownerId, request, document, cont
 async function resolveIssuedRevenueAllocations(database, ownerId, document) {
     const appointmentId = positiveId(document.appointmentId);
     if (appointmentId) {
-        const { rows } = await database.query(`SELECT member.id,COALESCE(NULLIF(member.full_name,''),member.username) AS name FROM depannhome_calendar_assignments assignment JOIN depannhome_calendar_events appointment ON appointment.id=assignment.event_id AND appointment.owner_id=$1 JOIN depannhome_users member ON member.id=assignment.technician_id AND member.account_owner_id=$1 AND member.is_active=TRUE AND member.role IN ('mobile_admin','team_lead','technician') WHERE assignment.event_id=$2 ORDER BY assignment.is_primary DESC,assignment.technician_id`, [ownerId, appointmentId]);
-        if (rows.length > 1) return rows.map(member => ({ memberId: member.id, memberName: member.name }));
-        if (!document.revenueAssigneeId && rows.length === 1) return rows.map(member => ({ memberId: member.id, memberName: member.name }));
+        const { rows } = await database.query(`WITH source AS (SELECT id,planning_batch_id FROM depannhome_calendar_events WHERE id=$2 AND owner_id=$1 AND event_type='appointment'),related AS (SELECT appointment.* FROM source JOIN depannhome_calendar_events appointment ON appointment.owner_id=$1 AND appointment.event_type='appointment' AND appointment.event_status<>'cancelled' AND (appointment.id=source.id OR source.planning_batch_id IS NOT NULL AND appointment.planning_batch_id=source.planning_batch_id)),worked AS (SELECT session.event_id,session.technician_id,GREATEST(1,CEIL(SUM(EXTRACT(EPOCH FROM (COALESCE(session.ended_at,NOW())-session.started_at)))/60))::integer AS minutes FROM depannhome_intervention_work_sessions session JOIN related appointment ON appointment.id=session.event_id WHERE session.owner_id=$1 GROUP BY session.event_id,session.technician_id) SELECT member.id,COALESCE(NULLIF(member.full_name,''),member.username) AS name,SUM(COALESCE(worked.minutes,CASE WHEN appointment.start_time IS NOT NULL AND appointment.end_time IS NOT NULL THEN GREATEST(1,EXTRACT(EPOCH FROM (appointment.end_time-appointment.start_time))/60) ELSE 480 END))::integer AS "durationMinutes",BOOL_OR(assignment.is_primary) AS "isPrimary",BOOL_OR(worked.minutes IS NOT NULL) AS "hasRecordedTime" FROM related appointment JOIN depannhome_calendar_assignments assignment ON assignment.event_id=appointment.id JOIN depannhome_users member ON member.id=assignment.technician_id AND member.account_owner_id=$1 AND member.is_active=TRUE AND member.role IN ('mobile_admin','team_lead','technician') LEFT JOIN worked ON worked.event_id=appointment.id AND worked.technician_id=member.id GROUP BY member.id,member.full_name,member.username ORDER BY "isPrimary" DESC,member.id`, [ownerId, appointmentId]);
+        if (rows.length > 1) return rows.map(member => ({ memberId: member.id, memberName: member.name, durationMinutes: Number(member.durationMinutes) || 0, durationSource: member.hasRecordedTime ? "recorded" : "planned" }));
+        if (!document.revenueAssigneeId && rows.length === 1) return rows.map(member => ({ memberId: member.id, memberName: member.name, durationMinutes: Number(member.durationMinutes) || 0, durationSource: member.hasRecordedTime ? "recorded" : "planned" }));
     }
     return document.revenueAssigneeId ? [{ memberId: document.revenueAssigneeId, memberName: document.revenueAssigneeName || "" }] : [];
 }

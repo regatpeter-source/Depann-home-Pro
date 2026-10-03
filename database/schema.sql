@@ -1501,6 +1501,24 @@ CREATE TABLE IF NOT EXISTS depannhome_map_geocodes (
 CREATE INDEX IF NOT EXISTS depannhome_calendar_assignments_technician_idx
     ON depannhome_calendar_assignments (technician_id, event_id);
 
+CREATE TABLE IF NOT EXISTS depannhome_intervention_work_sessions (
+    id BIGSERIAL PRIMARY KEY,
+    owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    event_id BIGINT NOT NULL CONSTRAINT depannhome_intervention_work_sessions_event_fk REFERENCES depannhome_calendar_events(id) ON DELETE CASCADE,
+    technician_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    ended_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT depannhome_intervention_work_session_dates_check CHECK (ended_at IS NULL OR ended_at >= started_at)
+);
+
+CREATE INDEX IF NOT EXISTS depannhome_intervention_work_sessions_event_idx
+    ON depannhome_intervention_work_sessions(owner_id,event_id,technician_id,started_at);
+
+CREATE UNIQUE INDEX IF NOT EXISTS depannhome_intervention_work_sessions_open_technician_idx
+    ON depannhome_intervention_work_sessions(owner_id,technician_id)
+    WHERE ended_at IS NULL;
+
 UPDATE depannhome_calendar_events event
 SET assigned_technician_id = NULL
 FROM depannhome_users member
