@@ -17,6 +17,7 @@ La première étape est un instantané généré lors de la création depuis le 
 - L’administration accède à l’ensemble des rapports de l’entreprise, peut demander une correction par section, valider ou remettre un document validé en brouillon.
 - Le cycle principal est `draft → submitted → ready_to_send → validated`. Le statut `in_correction` reste utilisé pour les demandes de correction par section et réouvre le rapport au technicien concerné.
 - La validation génère un PDF et verrouille le rapport. Le retour en brouillon enlève le PDF courant afin que toute nouvelle validation génère une version à jour.
+- Lorsqu’un poste administratif crée une facture rattachée à l’intervention du rapport, le chiffre d’affaires est automatiquement attribué au poste mobile qui a créé le rapport de recherche de fuite. Cette attribution précède les replis issus du devis ou du technicien principal de l’intervention ; un administrateur autorisé peut toujours choisir explicitement un autre bénéficiaire avant l’émission définitive.
 
 ### Correction sur poste administratif
 

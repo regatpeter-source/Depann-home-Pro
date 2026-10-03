@@ -72,3 +72,13 @@ test("administrative assignment, credit inheritance and mobile and PC dashboards
     assert.match(billingClientSource, /document\.body\.classList\.contains\("desktop-device"\)/);
     assert.match(billingClientSource, /members\.reduce\(\(sum, member\) => sum \+ \(Number\(member\.turnoverHt\)/);
 });
+
+test("an administrative invoice linked to a leak report credits its mobile creator", () => {
+    const resolver = serverSource.slice(serverSource.indexOf("async function resolveRevenueAssignee"), serverSource.indexOf("async function findTechnicalReportRevenueAssignee"));
+    assert.match(serverSource, /findTechnicalReportRevenueAssignee\(database, ownerId, context\.appointment\?\.id\)/);
+    assert.match(serverSource, /FROM depannhome_technical_reports report JOIN depannhome_users member ON member\.id=report\.created_by/);
+    assert.match(serverSource, /report\.owner_id=\$1 AND report\.appointment_id=\$2 AND report\.report_type='leak_detection'/);
+    assert.match(serverSource, /member\.role IN \('mobile_admin','team_lead','technician'\)/);
+    assert.ok(resolver.indexOf("if (reportAssignee) return reportAssignee;") < resolver.indexOf("const inheritedId = context.sourceQuote"));
+    assert.ok(resolver.indexOf("const inheritedId = context.sourceQuote") < resolver.indexOf("FROM depannhome_calendar_assignments assignment"));
+});

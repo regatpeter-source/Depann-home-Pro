@@ -1793,6 +1793,8 @@ async function resolveRevenueAssignee(database, ownerId, request, document, cont
         if (!canAssign) throw billingError(403, "L’attribution du chiffre d’affaires est réservée à un poste administratif autorisé.");
         return findMobileRevenueAssignee(database, ownerId, document.revenueAssigneeId, true);
     }
+    const reportAssignee = await findTechnicalReportRevenueAssignee(database, ownerId, context.appointment?.id);
+    if (reportAssignee) return reportAssignee;
     const inheritedId = context.sourceQuote?.revenueAssigneeId || context.sourceQuote?.createdBy;
     if (inheritedId) {
         const inherited = await findMobileRevenueAssignee(database, ownerId, inheritedId, false);
@@ -1800,6 +1802,13 @@ async function resolveRevenueAssignee(database, ownerId, request, document, cont
     }
     if (!context.appointment?.id) return null;
     const { rows } = await database.query(`SELECT member.id,COALESCE(NULLIF(member.full_name,''),member.username) AS name FROM depannhome_calendar_assignments assignment JOIN depannhome_users member ON member.id=assignment.technician_id AND member.account_owner_id=$1 AND member.is_active=TRUE AND member.role IN ('mobile_admin','team_lead','technician') WHERE assignment.event_id=$2 ORDER BY assignment.is_primary DESC,assignment.technician_id LIMIT 1`, [ownerId, context.appointment.id]);
+    return rows[0] || null;
+}
+
+async function findTechnicalReportRevenueAssignee(database, ownerId, appointmentId) {
+    const id = positiveId(appointmentId);
+    if (!id) return null;
+    const { rows } = await database.query(`SELECT member.id,COALESCE(NULLIF(member.full_name,''),member.username) AS name FROM depannhome_technical_reports report JOIN depannhome_users member ON member.id=report.created_by AND member.account_owner_id=report.owner_id AND member.is_active=TRUE AND member.role IN ('mobile_admin','team_lead','technician') WHERE report.owner_id=$1 AND report.appointment_id=$2 AND report.report_type='leak_detection' ORDER BY report.created_at DESC,report.id DESC LIMIT 1`, [ownerId, id]);
     return rows[0] || null;
 }
 
