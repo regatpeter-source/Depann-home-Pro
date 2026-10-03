@@ -41,6 +41,23 @@ test("credits can make an individual monthly turnover negative", () => {
     assert.equal(result[0].turnoverHt, -80);
 });
 
+test("an intervention invoice is split equally and exactly between all assigned mobile technicians", () => {
+    const members = [
+        { id: 11, name: "Alice Mobile", role: "technician" },
+        { id: 12, name: "Benoît Mobile", role: "technician" },
+        { id: 13, name: "Chloé Mobile", role: "team_lead" }
+    ];
+    const allocations = members.map(member => ({ memberId: member.id, memberName: member.name }));
+    const result = buildMobileRevenueDashboard([
+        { revenueAssigneeId: 11, issueDate: "2026-05-02", issuedAt: "2026-05-02T10:00:00Z", documentType: "invoice", status: "issued", lines: line(100), financialData: { revenueAllocations: allocations } },
+        { revenueAssigneeId: 11, issueDate: "2026-05-03", issuedAt: "2026-05-03T10:00:00Z", documentType: "credit", status: "issued", lines: line(10), financialData: { revenueAllocations: allocations } }
+    ], members, { year: 2026, month: "05" });
+    assert.deepEqual(result.map(item => item.invoicesHt), [33.34, 33.33, 33.33]);
+    assert.deepEqual(result.map(item => item.creditsHt), [3.34, 3.33, 3.33]);
+    assert.equal(result.reduce((sum, item) => sum + item.invoicesHt, 0), 100);
+    assert.equal(result.reduce((sum, item) => sum + item.creditsHt, 0), 10);
+});
+
 test("mobile revenue is tenant-scoped, own-only on mobile and immutable after issue", () => {
     assert.match(serverSource, /GET \/api\/billing\/mobile-revenue|app\.get\("\/api\/billing\/mobile-revenue"/);
     assert.match(serverSource, /const ownOnly = MOBILE_REVENUE_ROLES\.has/);
@@ -81,4 +98,13 @@ test("an administrative invoice linked to a leak report credits its mobile creat
     assert.match(serverSource, /member\.role IN \('mobile_admin','team_lead','technician'\)/);
     assert.ok(resolver.indexOf("if (reportAssignee) return reportAssignee;") < resolver.indexOf("const inheritedId = context.sourceQuote"));
     assert.ok(resolver.indexOf("const inheritedId = context.sourceQuote") < resolver.indexOf("FROM depannhome_calendar_assignments assignment"));
+});
+
+test("invoice issuance freezes all assigned technicians and credits inherit the split", () => {
+    assert.match(serverSource, /resolveIssuedRevenueAllocations\(database, ownerId, document\)/);
+    assert.match(serverSource, /rows\.length > 1.*rows\.map\(member => \(\{ memberId: member\.id, memberName: member\.name \}\)\)/s);
+    assert.match(serverSource, /financialData = revenueAllocations\.length \? \{ \.\.\.financialData, revenueAllocations \}/);
+    assert.match(serverSource, /jsonb_array_elements[\s\S]*financial_data->'revenueAllocations'/);
+    assert.match(accountingSource, /invoice\.financial_data\?\.revenueAllocations/);
+    assert.match(accountingSource, /sourceInvoiceId: invoice\.id, revenueAllocations/);
 });

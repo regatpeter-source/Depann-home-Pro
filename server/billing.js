@@ -428,7 +428,7 @@ export function registerBillingRoutes(app, requireAuthentication) {
         const database = getPool();
         const [membersResult, documentsResult] = await Promise.all([
             loadMobileRevenueAssignees(database, ownerId, ownOnly ? request.user.sub : 0),
-            database.query(`SELECT id,document_type AS "documentType",status,TO_CHAR(issue_date,'YYYY-MM-DD') AS "issueDate",issued_at AS "issuedAt",revenue_assignee_id AS "revenueAssigneeId",revenue_assignee_name AS "revenueAssigneeName",lines,financial_data AS "financialData" FROM depannhome_billing_documents WHERE owner_id=$1 AND issued_at IS NOT NULL AND document_type IN ('invoice','credit') AND issue_date>=$2::date AND issue_date<($2::date + INTERVAL '1 month') AND ($3::bigint=0 OR revenue_assignee_id=$3::bigint)`, [ownerId, `${period.year}-${period.month}-01`, ownOnly ? request.user.sub : 0])
+            database.query(`SELECT id,document_type AS "documentType",status,TO_CHAR(issue_date,'YYYY-MM-DD') AS "issueDate",issued_at AS "issuedAt",revenue_assignee_id AS "revenueAssigneeId",revenue_assignee_name AS "revenueAssigneeName",lines,financial_data AS "financialData" FROM depannhome_billing_documents WHERE owner_id=$1 AND issued_at IS NOT NULL AND document_type IN ('invoice','credit') AND issue_date>=$2::date AND issue_date<($2::date + INTERVAL '1 month') AND ($3::bigint=0 OR revenue_assignee_id=$3::bigint OR EXISTS (SELECT 1 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(financial_data->'revenueAllocations')='array' THEN financial_data->'revenueAllocations' ELSE '[]'::jsonb END) allocation WHERE allocation->>'memberId'=$3::text))`, [ownerId, `${period.year}-${period.month}-01`, ownOnly ? request.user.sub : 0])
         ]);
         response.json({ period, ownOnly, members: buildMobileRevenueDashboard(documentsResult.rows, membersResult.rows, period) });
     }));
@@ -978,6 +978,9 @@ export async function issueDocument({ ownerId, documentId, actorId, pool = getPo
 
         const profile = await loadBillingPdfProfile(ownerId, database);
         document.financialData = await canonicalizeInsuranceDeductible(database, ownerId, document, { lockAppointment: true, excludedDocumentId: document.id, rejectPreviouslyIssued: true });
+        const revenueAllocations = await resolveIssuedRevenueAllocations(database, ownerId, document);
+        const { revenueAllocations: ignoredRevenueAllocations, ...financialData } = document.financialData || {};
+        document.financialData = revenueAllocations.length ? { ...financialData, revenueAllocations } : financialData;
         validateInvoiceForIssue(document, profile);
         const seriesYear = Number(String(document.issueDate).slice(0, 4));
         const documentNumber = await allocateBillingNumber(database, ownerId, "invoice", seriesYear);
@@ -1418,15 +1421,24 @@ export function buildBillingFinancialDashboard(documents, settlements = [], purc
 export function buildMobileRevenueDashboard(documents, members, period = {}) {
     const summaries = new Map((Array.isArray(members) ? members : []).map(member => [String(member.id), { id: member.id, name: member.name, role: member.role, invoicesCount: 0, creditsCount: 0, invoicesHt: 0, creditsHt: 0, turnoverHt: 0 }]));
     for (const document of Array.isArray(documents) ? documents : []) {
-        const summary = summaries.get(String(document.revenueAssigneeId || ""));
         const issueDate = String(document.issueDate || "");
-        if (!summary || !document.issuedAt || !["invoice", "credit"].includes(document.documentType) || ["draft", "cancelled", "rejected"].includes(String(document.status || "").toLowerCase())) continue;
+        if (!document.issuedAt || !["invoice", "credit"].includes(document.documentType) || ["draft", "cancelled", "rejected"].includes(String(document.status || "").toLowerCase())) continue;
         if (period.year && issueDate.slice(0, 4) !== String(period.year)) continue;
         if (period.month && issueDate.slice(5, 7) !== String(period.month)) continue;
         const lines = document.documentType === "credit" ? (document.lines || []).map(line => ({ ...line, quantity: Math.abs(Number(line.quantity) || 0), unitPrice: Math.abs(Number(line.unitPrice ?? line.unit_price) || 0) })) : document.lines;
         const amountHt = Math.abs(calculateDocumentAccountingTotals(lines || [], document.financialData || {}).ht);
-        if (document.documentType === "credit") { summary.creditsHt += amountHt; summary.creditsCount += 1; }
-        else { summary.invoicesHt += amountHt; summary.invoicesCount += 1; }
+        const storedAllocations = Array.isArray(document.financialData?.revenueAllocations) ? document.financialData.revenueAllocations : [];
+        const memberIds = [...new Set((storedAllocations.length ? storedAllocations.map(item => item?.memberId) : [document.revenueAssigneeId]).map(String).filter(id => id && id !== "0"))];
+        const amountCents = Math.round(amountHt * 100);
+        const baseCents = memberIds.length ? Math.floor(amountCents / memberIds.length) : 0;
+        const remainder = memberIds.length ? amountCents % memberIds.length : 0;
+        memberIds.forEach((memberId, index) => {
+            const summary = summaries.get(memberId);
+            if (!summary) return;
+            const allocatedHt = (baseCents + (index < remainder ? 1 : 0)) / 100;
+            if (document.documentType === "credit") { summary.creditsHt += allocatedHt; summary.creditsCount += 1; }
+            else { summary.invoicesHt += allocatedHt; summary.invoicesCount += 1; }
+        });
     }
     return [...summaries.values()].map(summary => ({ ...summary, invoicesHt: roundFinancial(summary.invoicesHt), creditsHt: roundFinancial(summary.creditsHt), turnoverHt: roundFinancial(summary.invoicesHt - summary.creditsHt) })).sort((first, second) => second.turnoverHt - first.turnoverHt || first.name.localeCompare(second.name, "fr"));
 }
@@ -1803,6 +1815,16 @@ async function resolveRevenueAssignee(database, ownerId, request, document, cont
     if (!context.appointment?.id) return null;
     const { rows } = await database.query(`SELECT member.id,COALESCE(NULLIF(member.full_name,''),member.username) AS name FROM depannhome_calendar_assignments assignment JOIN depannhome_users member ON member.id=assignment.technician_id AND member.account_owner_id=$1 AND member.is_active=TRUE AND member.role IN ('mobile_admin','team_lead','technician') WHERE assignment.event_id=$2 ORDER BY assignment.is_primary DESC,assignment.technician_id LIMIT 1`, [ownerId, context.appointment.id]);
     return rows[0] || null;
+}
+
+async function resolveIssuedRevenueAllocations(database, ownerId, document) {
+    const appointmentId = positiveId(document.appointmentId);
+    if (appointmentId) {
+        const { rows } = await database.query(`SELECT member.id,COALESCE(NULLIF(member.full_name,''),member.username) AS name FROM depannhome_calendar_assignments assignment JOIN depannhome_calendar_events appointment ON appointment.id=assignment.event_id AND appointment.owner_id=$1 JOIN depannhome_users member ON member.id=assignment.technician_id AND member.account_owner_id=$1 AND member.is_active=TRUE AND member.role IN ('mobile_admin','team_lead','technician') WHERE assignment.event_id=$2 ORDER BY assignment.is_primary DESC,assignment.technician_id`, [ownerId, appointmentId]);
+        if (rows.length > 1) return rows.map(member => ({ memberId: member.id, memberName: member.name }));
+        if (!document.revenueAssigneeId && rows.length === 1) return rows.map(member => ({ memberId: member.id, memberName: member.name }));
+    }
+    return document.revenueAssigneeId ? [{ memberId: document.revenueAssigneeId, memberName: document.revenueAssigneeName || "" }] : [];
 }
 
 async function findTechnicalReportRevenueAssignee(database, ownerId, appointmentId) {

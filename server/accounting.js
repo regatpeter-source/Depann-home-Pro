@@ -328,12 +328,13 @@ export function registerAccountingRoutes(app, requireAuthentication) {
             const lines = [{ description: `Avoir sur facture ${invoice.document_number}`, quantity: 1, unit: "forfait", unitPrice: roundMoney(-amount / (1 + vatRate / 100)), vatRate }];
             const notes = cleanText(request.body?.notes, 2000);
             const creatorName = cleanText(request.user.fullName || request.user.username, 160);
+            const revenueAllocations = Array.isArray(invoice.financial_data?.revenueAllocations) ? invoice.financial_data.revenueAllocations : [];
             const creditDocument = {
                 documentType: "credit", documentNumber: number, sourceInvoiceId: invoice.id, sourceInvoiceNumber: invoice.document_number,
                 sourceInvoiceDate: invoice.issue_date, clientId: invoice.client_id, customerType: invoice.customer_type, customerName: invoice.customer_name,
                 customerAddress: invoice.customer_address, issueDate, quoteReference: invoice.document_number, vatRegime: invoice.vat_regime,
                 issuerTaxNumber: invoice.issuer_tax_number, legalData: invoice.legal_data || {}, lines, notes,
-                creatorName, reason: notes || `Avoir sur facture ${invoice.document_number}`, financialData: { sourceInvoiceId: invoice.id }
+                creatorName, reason: notes || `Avoir sur facture ${invoice.document_number}`, financialData: { sourceInvoiceId: invoice.id, revenueAllocations }
             };
             const { buildBillingLegalArchive } = await import("./billing.js");
             const archive = await buildBillingLegalArchive(creditDocument, { ownerId, database: client });
@@ -344,7 +345,7 @@ export function registerAccountingRoutes(app, requireAuthentication) {
                 JSON.stringify({ ...archive.legalSnapshot, sourceInvoiceLegalSnapshot: invoice.legal_snapshot || {} }), archive.structuredData,
                 archive.structuredMimeType, archive.structuredSha256, archive.pdfData, archive.pdfSha256, invoice.source_quote_id,
                 invoice.document_number, invoice.vat_regime, invoice.issuer_tax_number, JSON.stringify(invoice.legal_data || {}), JSON.stringify(lines), notes,
-                JSON.stringify({ sourceInvoiceId: invoice.id }), creatorName, invoice.revenue_assignee_id, invoice.revenue_assignee_name]);
+                JSON.stringify({ sourceInvoiceId: invoice.id, revenueAllocations }), creatorName, invoice.revenue_assignee_id, invoice.revenue_assignee_name]);
             const posting = await postAccountingDocument({ ownerId, documentId: created[0].id, actorId: request.user.sub, database: client });
             await client.query("COMMIT");
             response.status(201).json({ id: created[0].id, documentNumber: number, posting });
