@@ -35,6 +35,7 @@ Le script de surveillance le met à jour automatiquement.
 
 ## Exploitation et qualité
 
+- `docs/PRODUCT_ROADMAP_ALL_IN_ONE.md` : audit fonctionnel et feuille de route vers un logiciel tout-en-un.
 - `docs/DATABASE_OPERATIONS.md` : migrations, sauvegarde, restauration et test de reprise.
 - `docs/SECURITY_OPERATIONS.md` : secrets, TOTP, CSRF, CSP, supervision et réponse aux incidents.
 - `docs/TESTING.md` : tests unitaires, API/PostgreSQL, CI et charge autorisée.
