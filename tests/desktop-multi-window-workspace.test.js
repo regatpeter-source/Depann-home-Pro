@@ -22,10 +22,17 @@ test("les clients et missions possèdent chacun leur onglet réouvrable", () => 
     assert.match(navigation, /item\.type === "mission"/);
 });
 
-test("un onglet peut être détaché en conservant la preuve de la session source", () => {
+test("un onglet se détache par glissement gauche hors de la fenêtre sans bouton dédié", () => {
+    assert.doesNotMatch(index, /data-workspace-detach|Détacher sur un autre écran/);
+    assert.match(workspace, /workspace\.addEventListener\("pointerdown", beginTabDrag\)/);
+    assert.match(workspace, /event\.button !== 0 \|\| event\.isPrimary === false/);
+    assert.match(workspace, /const TAB_DRAG_THRESHOLD = 10/);
+    assert.match(workspace, /drag\.dragging && isPointerOutsideWindow\(event\)/);
+    assert.match(workspace, /detachItem\(drag\.key, \{ screenX: event\.screenX, screenY: event\.screenY \}\)/);
     assert.match(workspace, /url\.searchParams\.set\("clientSession", getClientSessionId\(\)\)/);
     assert.match(workspace, /window\.open\(url\.href/);
-    assert.match(workspace, /popup=yes,width=1180,height=820/);
+    assert.match(workspace, /popup=yes,width=1180,height=820,resizable=yes,scrollbars=yes,left=\$\{left\},top=\$\{top\}/);
+    assert.match(workspace, /suppressedTabClick = drag\.key/);
 });
 
 test("les saisies courantes sont conservées en mémoire entre les onglets", () => {

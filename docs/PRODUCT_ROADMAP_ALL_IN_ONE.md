@@ -23,7 +23,7 @@ Cette feuille de route distingue les fonctions déjà opérationnelles des compl
 | Pilotage | Tableau opérationnel, CA mobile, marge brute estimée et consolidation Groupe | `js/navigation.js`, `server/billing.js`, `server/groups.js` |
 | SaaS et sécurité | Rôles, postes, 2FA, multi-entreprises, abonnements, essais et audit | `server/auth.js`, `server/creator.js`, `server/organizations.js` |
 | Exploitation | Sauvegarde vérifiée, restauration isolée, santé, incidents et tâches surveillées | `docs/DATABASE_OPERATIONS.md`, `server/health-dashboard.js` |
-| Poste de travail | Onglets persistants et détachement de tous les menus et sous-écrans sur un second écran | `js/desktop-workspace.js`, `js/navigation.js` |
+| Poste de travail | Onglets persistants et détachement par glissement gauche de tous les menus et sous-écrans vers un second écran | `js/desktop-workspace.js`, `js/navigation.js` |
 
 ## Écarts fonctionnels réels
 

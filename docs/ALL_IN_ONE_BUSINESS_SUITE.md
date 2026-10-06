@@ -4,7 +4,7 @@ La version 1.17 active six fonctions internes, sans compte auprès d’un presta
 
 ## Accès
 
-Sur un poste administratif, ouvrir **Gestion tout-en-un** puis choisir le sous-menu voulu. Chaque sous-menu peut rester ouvert dans l’espace de travail ou être détaché sur un second écran.
+Sur un poste administratif, ouvrir **Gestion tout-en-un** puis choisir le sous-menu voulu. Chaque sous-menu peut rester ouvert dans l’espace de travail ou être détaché en faisant glisser son onglet avec le clic gauche hors de la fenêtre, directement vers le second écran.
 
 ## Portail client et décisions de devis
 
