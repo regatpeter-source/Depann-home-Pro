@@ -5695,8 +5695,8 @@ body[data-role="team_lead"] .nav-button[data-nav="purchases"]{
     display:none;
 }
 
-body.desktop-device[data-role="technician"] .quick-actions > :not(#calendarBtn):not(#libraryBtn),
-body.desktop-device[data-role="technician"] .nav-button:not([data-nav="home"]):not([data-nav="calendar"]):not([data-nav="library"]){
+body.desktop-device[data-role="technician"] .quick-actions > :not(#calendarBtn),
+body.desktop-device[data-role="technician"] .nav-button:not([data-nav="home"]):not([data-nav="calendar"]){
     display:none;
 }
 

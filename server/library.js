@@ -277,7 +277,7 @@ function requireLibraryWriteAccess(request, response, next) {
 }
 
 function requireLibraryReadAccess(request, response, next) {
-    if (!["mobile_admin", "team_lead", "technician"].includes(request.user?.role)) {
+    if (request.user?.deviceType !== "mobile" || !["mobile_admin", "team_lead", "technician"].includes(request.user?.role)) {
         return response.status(403).json({ message: "La bibliothèque technique est réservée aux postes mobiles et terrain." });
     }
     return next();

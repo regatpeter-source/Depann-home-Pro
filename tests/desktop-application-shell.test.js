@@ -6,6 +6,9 @@ const style = readFileSync(new URL("../css/style.css", import.meta.url), "utf8")
 const index = readFileSync(new URL("../index.html", import.meta.url), "utf8");
 const serviceWorker = readFileSync(new URL("../service-worker.js", import.meta.url), "utf8");
 const app = readFileSync(new URL("../js/app.js", import.meta.url), "utf8");
+const navigation = readFileSync(new URL("../js/navigation.js", import.meta.url), "utf8");
+const library = readFileSync(new URL("../js/library.js", import.meta.url), "utf8");
+const libraryServer = readFileSync(new URL("../server/library.js", import.meta.url), "utf8");
 
 test("desktop uses a viewport application shell with internal content scrolling", () => {
     assert.match(style, /body\.desktop-device #authRoot\{[\s\S]*grid-template-columns:var\(--desktop-sidebar-width\) minmax\(0,1fr\)/);
@@ -37,15 +40,31 @@ test("authentication hides the restored shell until desktop menus are filtered",
     assert.match(style, /\.auth-pending #authRoot\{\s*visibility:hidden/);
 });
 
+test("Gammes and Library never appear in the PC software", () => {
+    assert.doesNotMatch(index, /id="libraryBtn"/);
+    assert.doesNotMatch(index, /<button class="nav-button" data-nav="library">/);
+    assert.match(index, /<h2 class="section-title" id="pageTitle">\s*Accueil\s*<\/h2>/);
+    assert.match(navigation, /function ensureMobileLibraryQuickAction\(\) \{\s*if \(!isMobileDeviceContext\(\) \|\| document\.getElementById\("libraryBtn"\)\) return/);
+    assert.match(navigation, /if \(isDesktopDevice\(\) && route === ROUTES\.library\) return false/);
+    assert.match(navigation, /function restoreCatalogView\(view = \{\}\) \{\s*if \(isDesktopDevice\(\)\) return false/);
+    assert.match(navigation, /export function renderBrands\(\) \{\s*if \(isDesktopDevice\(\)\) return renderHome\(\)/);
+    assert.match(navigation, /function navigateToRef\(ref\) \{\s*if \(isDesktopDevice\(\)\) return renderHome\(\)/);
+    assert.match(library, /export async function renderLibrary\(\) \{\s*if \(isPcSoftware\(\)\) return false/);
+    assert.match(libraryServer, /request\.user\?\.deviceType !== "mobile"/);
+    assert.match(style, /desktop-device\[data-role="technician"\] \.quick-actions > :not\(#calendarBtn\)/);
+    assert.doesNotMatch(style, /desktop-device\[data-role="technician"\][^\n]*library/);
+});
+
 test("desktop stylesheet cache versions remain synchronized", () => {
-    assert.match(index, /css\/style\.css\?v=304/);
-    assert.match(index, /js\/app\.js\?v=497/);
-    assert.match(serviceWorker, /css\/style\.css\?v=304/);
-    assert.match(serviceWorker, /js\/app\.js\?v=497/);
+    assert.match(index, /css\/style\.css\?v=305/);
+    assert.match(index, /js\/app\.js\?v=498/);
+    assert.match(serviceWorker, /css\/style\.css\?v=305/);
+    assert.match(serviceWorker, /js\/app\.js\?v=498/);
     assert.match(serviceWorker, /js\/clients\.js\?v=175/);
     assert.match(serviceWorker, /js\/client-sync\.js\?v=132/);
-    assert.match(serviceWorker, /js\/navigation\.js\?v=519/);
-    assert.match(serviceWorker, /js\/creator\.js\?v=174/);
+    assert.match(serviceWorker, /js\/navigation\.js\?v=520/);
+    assert.match(serviceWorker, /js\/library\.js\?v=124/);
+    assert.match(serviceWorker, /js\/creator\.js\?v=175/);
     assert.match(serviceWorker, /js\/i18n\.js\?v=6/);
-    assert.match(serviceWorker, /depann-home-pro-v621/);
+    assert.match(serviceWorker, /depann-home-pro-v622/);
 });

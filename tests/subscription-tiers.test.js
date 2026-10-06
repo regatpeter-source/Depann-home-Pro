@@ -132,7 +132,7 @@ test("terrain posts keep Home while every mobile post keeps Library access", () 
         assert.equal(MENU_ACCESS.quick.library.includes(role), true, `${role}:library-button`);
     }
     assert.match(style, /body\.mobile-device #authRoot > footer \.nav-button:not\(\[data-nav="home"\]\)/);
-    assert.match(style, /desktop-device\[data-role="technician"\] \.nav-button:not\(\[data-nav="home"\]\):not\(\[data-nav="calendar"\]\):not\(\[data-nav="library"\]\)/);
+    assert.match(style, /desktop-device\[data-role="technician"\] \.nav-button:not\(\[data-nav="home"\]\):not\(\[data-nav="calendar"\]\)/);
     assert.match(navigation, /ensureMobileHomeNavigationButton\(\)/);
     assert.match(navigation, /button\.dataset\.nav === ROUTES\.home && isMobileDeviceContext\(\)/);
     assert.match(navigation, /if \(isMobileDeviceContext\(\)\) \{ button\.remove\(\); return; \}/);
@@ -148,7 +148,9 @@ test("terrain posts keep Home while every mobile post keeps Library access", () 
     assert.match(navigation, /data-dashboard-action="calendar"/);
     assert.doesNotMatch(navigation, /container\.removeChild\(panel\)/);
     assert.match(style, /body\[data-page-mode="basic-home"\] #pageTitle/);
-    assert.match(navigation, /if \(document\.body\.classList\.contains\("desktop-device"\) \|\| isMobileAdministrator\(\)\)/);
+    const openHomeSource = navigation.slice(navigation.indexOf("function openHome()"), navigation.indexOf("function openCalendar()"));
+    assert.match(openHomeSource, /renderHome\(\)/);
+    assert.doesNotMatch(openHomeSource, /renderBrands\(\)/);
     assert.doesNotMatch(navigation, /data-basic-home=/);
 });
 

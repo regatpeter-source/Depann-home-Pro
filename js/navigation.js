@@ -1,6 +1,6 @@
 import { APP_VERSION, ROUTES, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=139";
 import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=243";
-import { openCreatorPartnerRequest, openCreatorRequestNotification, renderCreatorConsole } from "./creator.js?v=174";
+import { openCreatorPartnerRequest, openCreatorRequestNotification, renderCreatorConsole } from "./creator.js?v=175";
 import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=219";
 import { renderAccounting } from "./accounting.js?v=32";
 import { renderPurchases } from "./purchases.js?v=130";
@@ -17,7 +17,7 @@ import { getFirstUnreadClientId, refreshClientMessageAlert, refreshVisibleClient
 import { getSearchableClients, refreshClientDirectoryAfterSynchronization, renderClients } from "./clients.js?v=175";
 import { initializeDesktopWorkspace } from "./desktop-workspace.js?v=2";
 import { synchronizeClients } from "./client-sync.js?v=132";
-import { configureLibrary, openLibrarySection, renderLibrary, searchPersonalLibrary } from "./library.js?v=123";
+import { configureLibrary, openLibrarySection, renderLibrary, searchPersonalLibrary } from "./library.js?v=124";
 import { getContextualSearchResults } from "./search.js?v=78";
 import { renderInterventionSearch } from "./intervention-search.js?v=3";
 import { initializeTerrainLocationSharing, renderOperationsMap } from "./operations-map.js?v=8";
@@ -66,6 +66,7 @@ export function initializeNavigation(loadedDatabase) {
     database = loadedDatabase;
     initializeApplicationHistory();
     ensureMobileHomeNavigationButton();
+    ensureMobileLibraryQuickAction();
     configureLibrary({
         openCatalog: renderBrands,
         openStore: renderStore,
@@ -341,6 +342,7 @@ function renderClientHistoryView(view = {}) {
 }
 
 function restoreCatalogView(view = {}) {
+    if (isDesktopDevice()) return false;
     if (!view.level) return false;
     if (view.level === "brands") { renderBrands(); return true; }
     const brand = database.brands[view.brandIndex];
@@ -665,6 +667,19 @@ function ensureMobileHomeNavigationButton() {
     footer.prepend(button);
 }
 
+function ensureMobileLibraryQuickAction() {
+    if (!isMobileDeviceContext() || document.getElementById("libraryBtn")) return;
+    const quickActions = document.querySelector(".quick-actions");
+    if (!quickActions) return;
+    const button = document.createElement("button");
+    button.id = "libraryBtn";
+    button.type = "button";
+    button.textContent = "Bibliothèque";
+    const interventionSearch = document.getElementById("interventionSearchBtn");
+    if (interventionSearch) interventionSearch.after(button);
+    else quickActions.appendChild(button);
+}
+
 function isMobileDeviceContext() {
     return document.body.dataset.deviceType === "mobile"
         || document.body.classList.contains("mobile-device")
@@ -673,6 +688,7 @@ function isMobileDeviceContext() {
 
 function isMenuAllowed(roles, route = "") {
     if (!Array.isArray(roles) || !roles.includes(document.body.dataset.role)) return false;
+    if (isDesktopDevice() && route === ROUTES.library) return false;
     if (isCommercialMobile() && ![ROUTES.calendar, ROUTES.support].includes(route)) return false;
     if (route === ROUTES.billing && ["pc_standard", "commercial", "accountant"].includes(document.body.dataset.role) && document.body.dataset.canAccessBilling !== "true") return false;
     if (route === ROUTES.accounting && ["pc_standard", "commercial", "accountant"].includes(document.body.dataset.role) && document.body.dataset.canAccessAccounting !== "true") return false;
@@ -764,11 +780,7 @@ function openHome() {
         renderHome();
         return;
     }
-    if (document.body.classList.contains("desktop-device") || isMobileAdministrator()) {
-        renderHome();
-        return;
-    }
-    renderBrands();
+    renderHome();
 }
 
 function openCalendar() {
@@ -1133,6 +1145,7 @@ function createExternalLink(label, href, title) {
 }
 
 export function renderBrands() {
+    if (isDesktopDevice()) return renderHome();
     clearSearch();
     resetSelection("all");
     setPage("Gammes", ROUTES.home);
@@ -2103,9 +2116,9 @@ function formatStorageBytes(value) {
 
 async function renderSubscriptionSettings(container) {
     const tiers = [
-        { id: "basic", label: "Basic", pc: 20, mobile: 5, description: "Postes administratifs et Poste Admin Mobile. Clients, facturation, comptabilité et PDP, avec CA mensuel nominatif du poste mobile. Bibliothèque sur mobile ; Achats sur tous les postes administratifs et le Poste Admin Mobile." },
+        { id: "basic", label: "Basic", pc: 20, mobile: 5, description: "Postes administratifs et Poste Admin Mobile. Clients, facturation, comptabilité et PDP, avec CA mensuel nominatif du poste mobile. Ressources techniques mobiles ; Achats sur tous les postes administratifs et le Poste Admin Mobile." },
         { id: "basic_plus", label: "Basic+", pc: 35, mobile: 8, description: "Tous postes administratifs et mobiles. Basic avec planning, carte des techniciens en temps réel, proximité et temps de trajet, imports de données, missions, messagerie et dossiers du Réseau Depann’Home Pro interne. Position partagée volontairement, sans historique. CA mensuel nominatif pour chaque poste mobile. Sans connecteurs ni connexions API externes." },
-        { id: "pro", label: "Pro", pc: 70, mobile: 15, description: "Tous postes et accès complet, avec carte des techniciens en temps réel, proximité, temps de trajet et CA mensuel nominatif. Position partagée volontairement, sans historique. Bibliothèque mobile, Achats, Quitus, rapports, Réseau, API et imports. Licences Groupe d’entreprise / Multi-entreprises incluses sans supplément de licence." }
+        { id: "pro", label: "Pro", pc: 70, mobile: 15, description: "Tous postes et accès complet, avec carte des techniciens en temps réel, proximité, temps de trajet et CA mensuel nominatif. Position partagée volontairement, sans historique. Ressources techniques mobiles, Achats, Quitus, rapports, Réseau, API et imports. Licences Groupe d’entreprise / Multi-entreprises incluses sans supplément de licence." }
     ];
     const rank = { basic: 0, basic_plus: 1, pro: 2 };
     const result = await fetch("/api/subscription-change-requests", { credentials: "same-origin" });
@@ -3122,6 +3135,7 @@ function resolveRef(ref) {
 }
 
 function navigateToRef(ref) {
+    if (isDesktopDevice()) return renderHome();
     const target = resolveRef(ref);
 
     state.brand = target.brand || null;

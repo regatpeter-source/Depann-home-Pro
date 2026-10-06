@@ -19,13 +19,13 @@ export function configureLibrary(options = {}) {
 }
 
 export async function renderLibrary() {
+    if (isPcSoftware()) return false;
     clearSearch();
     resetSelection("all");
     setPage("Bibliothèque", ROUTES.library, "detail");
 
     const container = getContainer();
-    const showCatalogTools = (document.body.classList.contains("desktop-device") && (openCatalog || openStore))
-        || (isMobileLibraryUser() && openCatalog);
+    const showCatalogTools = isMobileLibraryUser() && openCatalog;
     if (showCatalogTools) {
         const toolsPanel = document.createElement("section");
         const mobileAdminTools = isMobileAdministrator() && openRollerShutters && openGates;
@@ -108,6 +108,7 @@ export async function renderLibrary() {
 }
 
 export async function openLibrarySection(sectionId) {
+    if (isPcSoftware()) return false;
     selectedSectionId = sectionId;
     await renderLibrary();
     const selected = document.querySelector(".library-section-button.selected strong")?.textContent?.trim() || `Section ${sectionId}`;
@@ -250,6 +251,10 @@ function renderUploadPanel(panel, sections, refresh) {
 
 function isTechnician() {
     return document.body.dataset.role === "technician";
+}
+
+function isPcSoftware() {
+    return document.body.dataset.deviceType === "desktop" || document.body.classList.contains("desktop-device");
 }
 
 function isMobileLibraryUser() {
