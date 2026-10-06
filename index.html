@@ -18,7 +18,7 @@
 
     <link rel="icon" href="assets/logo.png.png" type="image/png">
 
-    <link rel="stylesheet" href="css/style.css?v=300">
+    <link rel="stylesheet" href="css/style.css?v=301">
     <link rel="stylesheet" href="vendor/maplibre/maplibre-gl.css?v=6.11.2">
     <link rel="stylesheet" href="css/partner-dialogue.css?v=7">
     <link rel="stylesheet" href="css/report-editor.css?v=8">
@@ -67,6 +67,13 @@
     <nav id="breadcrumb">
            Accueil
     </nav>
+
+    <section id="desktopWorkspace" class="desktop-workspace" aria-label="Fenêtres ouvertes" hidden>
+        <strong class="desktop-workspace-label">Ouverts</strong>
+        <nav data-workspace-tabs aria-label="Clients et missions ouverts"></nav>
+        <span data-workspace-mode class="desktop-workspace-mode" hidden>Fenêtre détachée</span>
+        <button type="button" class="desktop-workspace-detach" data-workspace-detach disabled>Détacher sur un autre écran</button>
+    </section>
 
     <main id="app">
 
@@ -207,7 +214,7 @@
 
     </div>
 
-    <script type="module" src="js/app.js?v=492"></script>
+    <script type="module" src="js/app.js?v=493"></script>
 
 </body>
 

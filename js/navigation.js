@@ -6,14 +6,15 @@ import { renderAccounting } from "./accounting.js?v=31";
 import { renderPurchases } from "./purchases.js?v=129";
 import { renderGroupActivation, renderGroupWorkspace } from "./groups.js?v=9";
 import { renderHistoryAndJournals } from "./history.js?v=2";
-import { renderPartnerMissions } from "./partner-missions.js?v=96";
+import { renderPartnerMissions } from "./partner-missions.js?v=97";
 import { renderPartnerSandbox } from "./partner-sandbox.js?v=3";
 import { renderPartnerConnections } from "./partner-connections.js?v=56";
 import { renderCompanyEmailWorkspace, renderPartnerEmailSettings } from "./partner-email-settings.js?v=29";
 import { renderDataImportTool } from "./data-imports.js?v=5";
 import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=64";
 import { getFirstUnreadClientId, refreshClientMessageAlert, refreshVisibleClientMessages } from "./messages.js?v=107";
-import { getSearchableClients, refreshClientDirectoryAfterSynchronization, renderClients } from "./clients.js?v=174";
+import { getSearchableClients, refreshClientDirectoryAfterSynchronization, renderClients } from "./clients.js?v=175";
+import { initializeDesktopWorkspace } from "./desktop-workspace.js?v=1";
 import { synchronizeClients } from "./client-sync.js?v=132";
 import { configureLibrary, openLibrarySection, renderLibrary, searchPersonalLibrary } from "./library.js?v=122";
 import { getContextualSearchResults } from "./search.js?v=78";
@@ -135,12 +136,21 @@ export function initializeNavigation(loadedDatabase) {
             if (document.visibilityState === "visible") refreshSharedData({ silent: true });
         }, isTechnician() ? 30_000 : 90_000);
     }
+    const openedDetachedWorkspace = initializeDesktopWorkspace({ open: openDesktopWorkspaceItem });
+    if (openedDetachedWorkspace) return;
     if (isAccountant() && canAccessRoute(ROUTES.billing)) renderBilling();
     else if (isAccountant() && canAccessRoute(ROUTES.accounting)) renderAccounting();
     else if (isCommercialMobile()) openCalendar();
     else if (isMobileDeviceContext()) openHome();
     else if (document.body.classList.contains("desktop-device")) renderHome();
     else renderBrands();
+}
+
+function openDesktopWorkspaceItem(item) {
+    if (item.type === "client") return openClients(item.id);
+    if (item.type === "mission") return renderPartnerMissions({ missionId: item.id });
+    if (item.type === "route" && canAccessRoute(item.route)) return restoreApplicationRoute(item.route);
+    return openHome();
 }
 
 function initializeApplicationHistory() {

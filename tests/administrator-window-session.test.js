@@ -93,3 +93,9 @@ test("un nouvel ordinateur remplace l’ancien pour chaque compte PC sans révoq
     assert.match(authServer, /WHERE user_id=\$1 AND device_type='desktop' AND status='approved' AND id<>\$2/);
     assert.match(authServer, /const sessionId = isPcSession \? await issuePcSession/);
 });
+
+test("une fenêtre détachée par l’application peut hériter de la session du même poste", () => {
+    assert.match(clientSessionSource, /new URLSearchParams\(window\.location\.search\)\.get\("clientSession"\)/);
+    assert.match(clientSessionSource, /sessionStorage\.setItem\(STORAGE_KEY, value\)/);
+    assert.doesNotMatch(clientSessionSource, /localStorage\.setItem\(STORAGE_KEY/);
+});

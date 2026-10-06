@@ -50,6 +50,11 @@ export function clientSessionUrl(path) {
 
 export function getClientSessionId() {
     let value = sessionStorage.getItem(STORAGE_KEY);
+    const inheritedValue = new URLSearchParams(window.location.search).get("clientSession");
+    if (!value && /^[0-9a-f-]{36}$/i.test(inheritedValue || "")) {
+        value = inheritedValue;
+        sessionStorage.setItem(STORAGE_KEY, value);
+    }
     if (!value || !/^[0-9a-f-]{36}$/i.test(value)) {
         value = crypto.randomUUID();
         sessionStorage.setItem(STORAGE_KEY, value);

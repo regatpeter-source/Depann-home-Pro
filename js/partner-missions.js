@@ -2,7 +2,7 @@ import { ROUTES } from "./config.js?v=118";
 import { clearSearch, getContainer, setPage } from "./ui.js?v=44";
 import { escapeHtml } from "./utils.js?v=44";
 import { openPartnerDialogue } from "./partner-dialogue.js?v=19";
-import { getSearchableClients } from "./clients.js?v=174";
+import { getSearchableClients } from "./clients.js?v=175";
 import { synchronizeClients } from "./client-sync.js?v=132";
 import { loadPartnerNotifications, markPartnerNotificationRead } from "./collaboration.js?v=14";
 
@@ -441,6 +441,12 @@ async function showDetail(id) {
     content.innerHTML = `<article class="partner-mission-full-detail"><header><button type="button" class="secondary-button" data-back-to-missions>← Retour aux missions</button><div><p class="eyebrow">Mission partenaire intégrale</p><h2>Mission ${escapeHtml(mission.missionNumber || "partenaire")}</h2><p class="muted">Reçue le ${escapeHtml(formatMissionDate(mission.createdAt))} · ${escapeHtml(mission.partnerName || "Partenaire")} · ${escapeHtml(labelStatus(mission.status))}</p></div><button type="button" class="secondary-button" data-open-mission-dialogue>Ouvrir le dialogue</button></header><section class="procedure-section"><h3>Informations de la mission</h3><dl class="partner-mission-details">${details || "<dt>Informations</dt><dd>Aucune donnée complémentaire transmise.</dd>"}</dl></section>${emailDocuments}<section class="procedure-section"><h3>Journal complet de la mission</h3><ol class="partner-mission-history">${history.length ? history.map(item => `<li><strong>${escapeHtml(labelStatus(item.status))}</strong> · ${escapeHtml(item.action)}<br><small>${escapeHtml(item.actorName)} · ${escapeHtml(formatMissionDate(item.createdAt))}</small></li>`).join("") : "<li>Aucun événement enregistré.</li>"}</ol></section></article>`;
     content.querySelector("[data-back-to-missions]").addEventListener("click", () => renderMissionTab(shell));
     content.querySelector("[data-open-mission-dialogue]").addEventListener("click", () => openPartnerDialogue(mission.id));
+    if (document.body.dataset.deviceType === "desktop") {
+        const clientName = mission.mappedData?.clientName || "Client non renseigné";
+        window.dispatchEvent(new CustomEvent("depannhome:workspace-item", {
+            detail: { type: "mission", id: String(mission.id), title: `Mission ${mission.missionNumber || mission.id} · ${clientName}` }
+        }));
+    }
     content.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 async function openPartnerMissionPlanning(mission) {

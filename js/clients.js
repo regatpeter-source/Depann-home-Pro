@@ -81,6 +81,7 @@ export async function renderClients(options = {}) {
             return;
         }
         container.appendChild(renderClientDetail(selectedClient, { focusMessages: Boolean(options.focusMessages) }));
+        announceClientWorkspace(selectedClient);
         return;
     }
 
@@ -93,6 +94,13 @@ export async function renderClients(options = {}) {
 
     container.appendChild(directory);
     if (directoryClientId) renderProvisionedClientDirectory(directory, clients, directoryClientId);
+}
+
+function announceClientWorkspace(client) {
+    if (!client || document.body.dataset.deviceType !== "desktop") return;
+    window.dispatchEvent(new CustomEvent("depannhome:workspace-item", {
+        detail: { type: "client", id: String(client.id), title: `Client · ${client.name}` }
+    }));
 }
 
 function isDesktopClientWorkspace() {

@@ -6639,7 +6639,7 @@ body.desktop-device{
 body.desktop-device #authRoot{
     display:grid;
     grid-template-columns:var(--desktop-sidebar-width) minmax(0,1fr);
-    grid-template-rows:var(--desktop-header-height) 34px minmax(0,1fr);
+    grid-template-rows:var(--desktop-header-height) 34px 43px minmax(0,1fr);
     width:100%;
     height:100vh;
     overflow:hidden;
@@ -6728,7 +6728,7 @@ body.desktop-device #breadcrumb{
 
 body.desktop-device #app{
     grid-column:2;
-    grid-row:3;
+    grid-row:4;
     width:100%;
     max-width:none;
     min-width:0;
@@ -6742,7 +6742,7 @@ body.desktop-device #app{
 body.desktop-device #authRoot > footer{
     position:static;
     grid-column:1;
-    grid-row:2/4;
+    grid-row:2/5;
     display:flex;
     min-width:0;
     min-height:0;
@@ -6758,6 +6758,39 @@ body.desktop-device #authRoot > footer{
     background:#243642;
     box-shadow:3px 0 10px rgba(15,23,42,.12);
 }
+
+body.desktop-device .desktop-workspace{
+    grid-column:2;
+    grid-row:3;
+    display:grid;
+    grid-template-columns:auto minmax(0,1fr) auto auto;
+    align-items:center;
+    gap:8px;
+    min-width:0;
+    padding:5px 18px;
+    border-bottom:1px solid #cbd5e1;
+    background:#e8eef2;
+}
+
+body.desktop-device .desktop-workspace[hidden]{display:none}
+body.desktop-device .desktop-workspace-label{color:#536773;font-size:10px;letter-spacing:.08em;text-transform:uppercase}
+body.desktop-device .desktop-workspace>nav{display:flex;min-width:0;gap:5px;overflow-x:auto;scrollbar-width:thin}
+body.desktop-device .desktop-workspace-tab{display:flex;flex:0 0 auto;align-items:center;max-width:280px;border:1px solid #c7d1d8;border-radius:6px;background:#f6f8f9;color:#42545f}
+body.desktop-device .desktop-workspace-tab.active{border-color:#668798;background:#fff;color:#244b61;box-shadow:inset 0 -2px 0 #4f806f}
+body.desktop-device .desktop-workspace-tab>button{min-height:29px;border:0;background:transparent;color:inherit;cursor:pointer}
+body.desktop-device .desktop-workspace-tab>button:first-child{display:flex;align-items:center;gap:6px;min-width:0;max-width:245px;padding:5px 8px}
+body.desktop-device .desktop-workspace-tab span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;font-weight:700}
+body.desktop-device .desktop-workspace-tab b{color:#d97706;font-size:9px}
+body.desktop-device .desktop-workspace-close{width:26px;padding:4px;border-left:1px solid #d8e0e5!important;font-size:16px;line-height:1}
+body.desktop-device .desktop-workspace-tab button:hover,body.desktop-device .desktop-workspace-tab button:focus-visible{background:#e8f0f3;outline:none}
+body.desktop-device .desktop-workspace-empty{align-self:center;color:#71808a;font-size:11px;font-style:italic}
+body.desktop-device .desktop-workspace-detach{min-height:29px;padding:5px 9px;border:1px solid #7892a0;border-radius:5px;background:#f8fafc;color:#304f60;font-size:11px;font-weight:750;cursor:pointer}
+body.desktop-device .desktop-workspace-detach:disabled{cursor:default;opacity:.5}
+body.desktop-device .desktop-workspace-mode{padding:4px 7px;border-radius:999px;background:#dbeafe;color:#1e4f75;font-size:10px;font-weight:800;white-space:nowrap}
+body.desktop-device.dark-theme .desktop-workspace{border-color:#445661;background:#263945}
+body.desktop-device.dark-theme .desktop-workspace-tab{border-color:#526873;background:#314753;color:#dbe7ed}
+body.desktop-device.dark-theme .desktop-workspace-tab.active{background:#3b5360;color:#fff}
+body:not(.desktop-device) .desktop-workspace{display:none!important}
 
 body.desktop-device #authRoot > footer::before{
     content:"ESPACE DE TRAVAIL";
