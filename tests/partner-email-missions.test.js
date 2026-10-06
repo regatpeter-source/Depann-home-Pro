@@ -966,6 +966,67 @@ Bénéficiaire de l'intervention : Ref sinistre :`);
     assert.equal(payload.principal, "COVEA"); assert.equal(payload.interventionType, "ATTESTATION DE FIN DE TRAVAUX / DE FIN D'INTERVENTION");
 });
 
+test("une fiche ViaREN renseigne le client, l’adresse travaux et les références sans rendre la mission urgente", () => {
+    const payload = extractMissionPayload({ id: 73, subject: "Fiche d'intervention ViaREN", body_text: "" }, `VIAREN
+Responsable : DOGUET Florine
+Fiche d'intervention non urgente
+PACIFICAMH
+N° I2903671 du 29/09/2026 14:38
+Sinistre N° : 9003264866/S12/NGO
+RECHERCHE DE FUITE NON DESTRUCTIVE
+Observations : Recherche de fuite non destructive
+Adresse travaux :
+2 IMPASSE DU PERRAIS
+44530 Drefféac
+Contact pour les travaux :
+Client : Mlle AUDREY JEGO
+Tel portable : +33658713863
+Email : didijeg44@hotmail.fr`);
+    assert.equal(payload.client.name, "Mlle AUDREY JEGO");
+    assert.equal(payload.client.address, "2 IMPASSE DU PERRAIS, 44530");
+    assert.equal(payload.client.postalCode, "44530");
+    assert.equal(payload.client.city, "Drefféac");
+    assert.equal(payload.client.phone, "+33658713863");
+    assert.equal(payload.client.email, "didijeg44@hotmail.fr");
+    assert.equal(payload.missionNumber, "I2903671");
+    assert.equal(payload.claimNumber, "9003264866/S12/NGO");
+    assert.equal(payload.interventionType, "RECHERCHE DE FUITE NON DESTRUCTIVE");
+    assert.equal(payload.insurance, "PACIFICAMH");
+    assert.equal(payload.manager, "DOGUET Florine");
+    assert.equal(payload.priority, "normal");
+});
+
+test("un dossier FMB Mutuaide utilise l’assuré et l’adresse du sinistre", () => {
+    const payload = extractMissionPayload({ id: 74, subject: "Dossier FMB", body_text: "" }, `FMB un service de Mutuaide Assistance
+Détail dossier LBR-2026156945-1
+Métier : Réparation en nature
+Assuré :
+➢ Nom : HEQUET Brigitte
+➢ Adresse 1 :
+➢ CP/Ville : 44230 ST SEBASTIEN SUR LOIRE
+➢ Mobile/Horaire : 06 32 35 53 65
+Contrat :
+➢ N° contrat (CDO) : 04332136U/4001
+Sinistre :
+➢ N° dossier sinistre : LBR-2026156945-1
+➢ Adresse 1 : 7 RUE DES ECOBUTS
+➢ Adresse 2 :
+➢ CP/Ville : 44230 ST SEBASTIEN SUR LOIRE
+➢ Assureur responsable : GROUPAMA
+➢ Mission pour : recherche de fuite
+➢ Montant franchise : 177,12 €`);
+    assert.equal(payload.client.name, "HEQUET Brigitte");
+    assert.equal(payload.client.address, "7 RUE DES ECOBUTS, 44230");
+    assert.equal(payload.client.postalCode, "44230");
+    assert.equal(payload.client.city, "ST SEBASTIEN SUR LOIRE");
+    assert.equal(payload.client.phone.replace(/\s/g, ""), "0632355365");
+    assert.equal(payload.missionNumber, "LBR-2026156945-1");
+    assert.equal(payload.claimNumber, "LBR-2026156945-1");
+    assert.equal(payload.insuredNumber, "04332136U/4001");
+    assert.equal(payload.insurance, "GROUPAMA");
+    assert.equal(payload.interventionType, "recherche de fuite");
+});
+
 test("un PDF en colonnes ignore un faux numéro assuré et retrouve la référence voisine", () => {
     const text = `Grand Compte : MACIF Nature du
 N° assuré / sociétaire : Le

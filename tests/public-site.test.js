@@ -167,13 +167,15 @@ test("chaque page solution répond à une intention de recherche distincte et fa
     assert.match(businessSoftware, /sites, équipements, contrats[\s\S]*portail sécurisé[\s\S]*Stocks et véhicules[\s\S]*Rentabilité et automatismes/i);
     assert.match(schedulingSoftware, /<title>Logiciel de planning d'interventions/);
     assert.match(schedulingSoftware, /vues mois, semaine et jour[\s\S]*conflits et indisponibilités/i);
-    assert.match(schedulingSoftware, /Mode plein écran[\s\S]*palette flottante et rétractable[\s\S]*second moniteur/i);
+    assert.match(schedulingSoftware, /Mode plein écran[\s\S]*palette flottante et rétractable[\s\S]*Dossiers reliés/i);
+    assert.doesNotMatch(schedulingSoftware, /détach|second (?:écran|moniteur)|multi-écran/i);
     assert.match(invoicingSoftware, /<title>Logiciel devis et factures pour artisans/);
     assert.match(invoicingSoftware, /devis, factures et avoirs[\s\S]*SUPER PDP/i);
 });
 
 test("la vitrine présente les fonctions tout-en-un récemment disponibles", () => {
-    assert.match(landing, /Planning partagé[\s\S]*plein écran[\s\S]*second écran/i);
+    assert.match(landing, /Planning partagé[\s\S]*plein écran[\s\S]*équipes et techniciens/i);
+    assert.doesNotMatch(landing, /détach|second (?:écran|moniteur)|multi-écran/i);
     assert.match(landing, /Clients &amp; patrimoine[\s\S]*sites, équipements, contrats/i);
     assert.match(landing, /portail sécurisé[\s\S]*accepter ou refuser ses devis/i);
     assert.match(landing, /Comptabilité &amp; rentabilité[\s\S]*rentabilité de chaque intervention/i);
