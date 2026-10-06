@@ -30,6 +30,9 @@ function organizationPresentation(entry, previous, next) {
     pushChange(details, "Interface", previous.interfaceType, next.interfaceType, value => INTERFACE_LABELS[value] || readableValue(value));
     pushChange(details, "Licence", previous.licenseType, next.licenseType, value => LICENSE_LABELS[value] || readableValue(value));
     pushChange(details, "Type d’organisation", previous.organizationType, next.organizationType, readableValue);
+    for (const [feature, label] of [["technicalReports", "Option rapport de recherche de fuite"], ["quitus", "Option quitus"]]) {
+        pushChange(details, label, previous.licenseFeatures?.[feature] === true, next.licenseFeatures?.[feature] === true, value => value === true ? "Activée" : "Non accordée");
+    }
     return { title: entry.action === "created" ? "Organisation créée" : "Organisation mise à jour", details };
 }
 

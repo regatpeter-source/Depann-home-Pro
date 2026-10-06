@@ -1,9 +1,9 @@
 import { ROUTES } from "./config.js?v=105";
 import { clearSearch, getContainer, setPage } from "./ui.js?v=44";
 import { escapeHtml } from "./utils.js?v=44";
-import { renderCreatorConnectors } from "./connectors.js?v=6";
+import { renderCreatorConnectors } from "./connectors.js?v=7";
 import { renderHealthDashboard } from "./health-dashboard.js?v=1";
-import { creatorHistoryPresentation } from "./creator-history.js?v=1";
+import { creatorHistoryPresentation } from "./creator-history.js?v=2";
 
 let accounts = [];
 let selectedAccountId = "";
@@ -733,7 +733,7 @@ async function renderAccountDetail(accountId) {
         const values = isOwnCreatorAccount
             ? { maxPcUsers: event.currentTarget.elements.maxPcUsers.value, maxTechnicians: event.currentTarget.elements.maxTechnicians.value }
             : await companyProfileFromForm(event.currentTarget);
-        if (!isOwnCreatorAccount) values.organization = organizationFromForm(event.currentTarget);
+        if (!isOwnCreatorAccount) values.organization = organizationFromForm(event.currentTarget, account.organization);
         const endpoint = isOwnCreatorAccount
             ? `/api/creator/accounts/${encodeURIComponent(accountId)}/capacity`
             : `/api/creator/accounts/${encodeURIComponent(accountId)}`;
@@ -966,6 +966,7 @@ function renderOrganizationFields(organization = {}, maxGroupCompanies = 1) {
     const interfaceType = organization.interfaceType || "standard";
     const organizationType = organization.organizationType || "troubleshooting_company";
     const licenseType = organization.licenseType || "depannhome_standard";
+    const licenseFeatures = organization.licenseFeatures && typeof organization.licenseFeatures === "object" ? organization.licenseFeatures : {};
     return `
         <fieldset class="creator-subscription-fields"><legend>Organisation et interface</legend>
             <p class="muted">L’organisation conserve toujours le même compte, ses utilisateurs et toutes ses données. Modifier cette interface active simplement les modules correspondants.</p>
@@ -975,13 +976,28 @@ function renderOrganizationFields(organization = {}, maxGroupCompanies = 1) {
                 <label>Licence<select name="organizationLicenseType"><option value="partner_portal" ${licenseType === "partner_portal" ? "selected" : ""}>Portail Partenaire</option><option value="depannhome_standard" ${licenseType === "depannhome_standard" ? "selected" : ""}>Depann’Home Pro Standard</option><option value="depannhome_group" ${licenseType === "depannhome_group" ? "selected" : ""}>Depann’Home Pro Groupe</option></select></label>
                 <label data-group-company-limit ${interfaceType === "group" ? "" : "hidden"}>Nombre maximum d’entreprises (principale incluse)<input name="maxGroupCompanies" type="number" min="1" max="100" value="${escapeHtml(maxGroupCompanies || 1)}"><small>Exemple : 5 autorise l’entreprise principale et 4 sociétés supplémentaires.</small></label>
                 <p class="muted form-wide" data-group-envelope-note ${interfaceType === "group" ? "" : "hidden"}><strong>Mode Groupe — facturation centralisée sur l’entreprise principale.</strong> Les postes PC et mobiles sont détaillés par société sur sa facture unique. Son administrateur les répartit ensuite entre les sociétés du groupe.</p>
+                <fieldset class="team-permissions-fieldset form-wide" data-standard-add-ons><legend>Options accordées hors abonnement</legend><p class="muted">Pour une entreprise Standard en Basic ou Basic+, le Créateur peut ajouter ou retirer séparément ces options sans changer son offre.</p><label class="creator-switch">Rapport de recherche de fuite<input name="technicalReportsAddOn" type="checkbox" ${licenseFeatures.technicalReports === true ? "checked" : ""}><span>Active les rapports techniques, leur PDF et leur modèle.</span></label><label class="creator-switch">Quitus d’intervention<input name="quitusAddOn" type="checkbox" ${licenseFeatures.quitus === true ? "checked" : ""}><span>Active la signature, la validation, le PDF et le modèle de quitus.</span></label></fieldset>
             </div>
         </fieldset>
     `;
 }
 
-function organizationFromForm(form) {
-    return { interfaceType: form.elements.organizationInterfaceType.value, organizationType: form.elements.organizationType.value, licenseType: form.elements.organizationLicenseType.value };
+function organizationFromForm(form, existingOrganization = {}) {
+    const interfaceType = form.elements.organizationInterfaceType.value;
+    const addOnsApplicable = interfaceType === "standard" && form.elements.subscriptionTier?.value !== "pro";
+    const licenseFeatures = existingOrganization.licenseFeatures && typeof existingOrganization.licenseFeatures === "object" ? { ...existingOrganization.licenseFeatures } : {};
+    if (addOnsApplicable) {
+        for (const [feature, field] of [["technicalReports", "technicalReportsAddOn"], ["quitus", "quitusAddOn"]]) {
+            if (form.elements[field]?.checked === true) licenseFeatures[feature] = true;
+            else delete licenseFeatures[feature];
+        }
+    }
+    return {
+        interfaceType,
+        organizationType: form.elements.organizationType.value,
+        licenseType: form.elements.organizationLicenseType.value,
+        licenseFeatures
+    };
 }
 
 function bindOrganizationInterface(form) {
@@ -992,6 +1008,7 @@ function bindOrganizationInterface(form) {
     const mobileSeats = form.elements.maxTechnicians;
     const companyLimit = form.querySelector("[data-group-company-limit]");
     const envelopeNote = form.querySelector("[data-group-envelope-note]");
+    const standardAddOns = form.querySelector("[data-standard-add-ons]");
     const pcSeatLabel = form.querySelector("[data-pc-seat-label]");
     const mobileSeatLabel = form.querySelector("[data-mobile-seat-label]");
     if (!interfaceType || !licenseType) return;
@@ -1009,6 +1026,9 @@ function bindOrganizationInterface(form) {
         if (mobileSeats) mobileSeats.max = isGroup ? "5000" : "500";
         if (companyLimit) companyLimit.hidden = !isGroup;
         if (envelopeNote) envelopeNote.hidden = !isGroup;
+        const addOnsApplicable = interfaceType.value === "standard" && subscriptionTier?.value !== "pro";
+        if (standardAddOns) standardAddOns.hidden = !addOnsApplicable;
+        standardAddOns?.querySelectorAll("input").forEach(input => { input.disabled = !addOnsApplicable; });
         if (form.elements.maxGroupCompanies) form.elements.maxGroupCompanies.required = isGroup;
         if (pcSeatLabel) pcSeatLabel.childNodes[0].textContent = isGroup ? "Postes PC pour tout le groupe" : "Postes administratifs autorisés";
         if (mobileSeatLabel) mobileSeatLabel.childNodes[0].textContent = isGroup ? "Postes mobiles pour tout le groupe" : "Postes mobiles autorisés";

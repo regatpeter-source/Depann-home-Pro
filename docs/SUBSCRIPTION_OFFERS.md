@@ -15,9 +15,9 @@ L’interface **Partenaire** utilise le niveau technique Pro, mais son portail e
 - Chiffre d’affaires mensuel nominatif du Poste Admin Mobile, calculé sur ses factures définitivement émises et diminué de ses avoirs.
 - Postes autorisés : Poste Admin, Poste Admin Mobile et Poste administratif.
 - Les comptes Technicien et Chef d’équipe mobile nécessitent au minimum Basic+.
-- Pas d’accès au Quitus d’intervention, réservé à Pro.
+- Pas d’accès au Quitus d’intervention dans l’offre de base, sauf option accordée individuellement à l’entreprise par le Créateur.
 - Accès aux réglages nécessaires du compte et des documents.
-- Pas d’accès au planning ni à la carte des techniciens en temps réel, aux rapports techniques, à la bibliothèque sur poste administratif, au Réseau ou aux API.
+- Pas d’accès au planning ni à la carte des techniciens en temps réel, aux rapports techniques sauf option accordée individuellement à l’entreprise par le Créateur, à la bibliothèque sur poste administratif, au Réseau ou aux API.
 
 ## Basic+
 
@@ -35,8 +35,8 @@ L’interface **Partenaire** utilise le niveau technique Pro, mais son portail e
 - Espace e-mail de l’entreprise dans le menu principal : consultation directe des boîtes connectées sans conservation des messages ordinaires. Accès automatique pour les Postes Admin et Postes Admin Mobile ; autorisation individuelle pour chaque Poste administratif.
 - Accès à tous les postes mobiles : Poste Admin Mobile, Chef d’équipe et Technicien.
 - Aucun mode Groupe, aucune bascule multi-entreprises et aucune autorisation inter-entreprises à la création d’un poste administratif ; ces fonctions sont réservées à Pro.
-- Pas d’accès au Quitus d’intervention, réservé à Pro.
-- Pas d’accès aux rapports techniques ni à la bibliothèque sur poste administratif.
+- Pas d’accès au Quitus d’intervention dans l’offre de base, sauf option accordée individuellement à l’entreprise par le Créateur.
+- Pas d’accès aux rapports techniques sauf option accordée individuellement à l’entreprise par le Créateur, ni à la bibliothèque sur poste administratif.
 - Aucun connecteur externe, aucune connexion API partenaire et aucun environnement de recette API.
 
 ## Pro
@@ -57,6 +57,10 @@ L’interface **Partenaire** utilise le niveau technique Pro, mais son portail e
 La licence Portail Partenaire est gratuite et distincte de l’abonnement Pro payant. Son niveau technique Pro garantit les échanges nécessaires, sans abonnement mensuel, échéance ni facture. Elle inclut un Poste Admin, aucun poste mobile, les espaces Clients et Missions partenaires avec leur messagerie contextuelle, l’import de fiches clients depuis Excel ou CSV, la recherche d’entreprises dans le Réseau Depann’Home Pro et un formulaire Support relié à la Console Créateur. Les imports de devis, factures et rapports restent indisponibles. Elle n’inclut aucun connecteur ni accès API externe.
 
 ## Calcul et quotas
+
+### Options accordées par entreprise
+
+Depuis la Console Créateur, les options **Rapport de recherche de fuite** et **Quitus d’intervention** peuvent être ajoutées ou retirées indépendamment à une entreprise Standard en Basic ou Basic+, sans modifier son offre ni les droits des autres entreprises. Chaque changement est conservé dans l’historique de l’entreprise. Les autres limitations de l’offre restent inchangées.
 
 Le tarif mensuel est calculé automatiquement :
 

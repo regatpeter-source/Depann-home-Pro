@@ -187,9 +187,21 @@ test("Pro materials include Group licenses and explain the free Partner license"
     assert.match(presentationGenerator, /licences Groupe d’entreprise incluses sans supplément/);
 });
 
-test("a Standard license override cannot unlock a feature outside its tier", () => {
-    const basic = publicOrganization({ interfaceType: "standard", licenseType: "depannhome_standard", subscriptionTier: "basic", licenseFeatures: { technicalReports: true } });
-    assert.equal(isFeatureEnabled(basic, "technicalReports"), false);
+test("the Creator can grant only technical reports and Quitus as Standard company add-ons", () => {
+    for (const subscriptionTier of ["basic", "basic_plus"]) {
+        const organization = publicOrganization({ interfaceType: "standard", licenseType: "depannhome_standard", subscriptionTier, licenseFeatures: { technicalReports: true, quitus: true, groups: true, connectors: true } });
+        assert.equal(isFeatureEnabled(organization, "technicalReports"), true, `${subscriptionTier}:technicalReports`);
+        assert.equal(isFeatureEnabled(organization, "quitus"), true, `${subscriptionTier}:quitus`);
+        assert.equal(isFeatureEnabled(organization, "groups"), false, `${subscriptionTier}:groups`);
+        assert.equal(isFeatureEnabled(organization, "connectors"), false, `${subscriptionTier}:connectors`);
+    }
+    const restrictedPro = publicOrganization({ interfaceType: "standard", licenseType: "depannhome_standard", subscriptionTier: "pro", licenseFeatures: { technicalReports: false, quitus: false } });
+    assert.equal(isFeatureEnabled(restrictedPro, "technicalReports"), false);
+    assert.equal(isFeatureEnabled(restrictedPro, "quitus"), false);
+    assert.match(creatorClient, /name="technicalReportsAddOn"/);
+    assert.match(creatorClient, /name="quitusAddOn"/);
+    assert.match(creatorClient, /const addOnsApplicable = interfaceType === "standard" && form\.elements\.subscriptionTier\?\.value !== "pro"/);
+    assert.match(style, /\.team-permissions-fieldset\{[\s\S]*background:var\(--surface\)/);
 });
 
 test("organization interfaces remain compatible with subscription tiers", () => {

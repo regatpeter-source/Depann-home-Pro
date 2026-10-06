@@ -19,6 +19,7 @@ const PARTNER_FEATURES = Object.freeze({
     purchases: false, connectors: false
 });
 const MOBILE_ROLES = Object.freeze(["mobile_admin", "team_lead", "technician"]);
+const STANDARD_ADD_ON_FEATURES = new Set(["quitus", "technicalReports"]);
 
 export async function initializeOrganizations() {
     const db = getPool();
@@ -126,7 +127,10 @@ export function isFeatureEnabled(organization, feature) {
     if (organization?.features && typeof organization.features[feature] === "boolean") return organization.features[feature];
     const defaults = organizationDefaults(organization?.interfaceType, organization?.subscriptionTier);
     const overrides = organization?.licenseFeatures && typeof organization.licenseFeatures === "object" ? organization.licenseFeatures : {};
-    if (organization?.interfaceType === "standard") return Boolean(defaults[feature]) && overrides[feature] !== false;
+    if (organization?.interfaceType === "standard") {
+        if (STANDARD_ADD_ON_FEATURES.has(feature) && typeof overrides[feature] === "boolean") return overrides[feature];
+        return Boolean(defaults[feature]) && overrides[feature] !== false;
+    }
     return typeof overrides[feature] === "boolean" ? overrides[feature] : Boolean(defaults[feature]);
 }
 
@@ -155,7 +159,11 @@ function resolvedFeatures(interfaceType, subscriptionTier, overrides) {
     const defaults = organizationDefaults(interfaceType, subscriptionTier);
     if (interfaceType === "partner") return { ...defaults, ...overrides, partnerConnections: true, imports: true, connectors: false };
     if (interfaceType !== "standard") return { ...defaults, ...overrides };
-    return Object.fromEntries(Object.keys(ALL_FEATURES).map(feature => [feature, Boolean(defaults[feature]) && overrides[feature] !== false]));
+    return Object.fromEntries(Object.keys(ALL_FEATURES).map(feature => [feature,
+        STANDARD_ADD_ON_FEATURES.has(feature) && typeof overrides[feature] === "boolean"
+            ? overrides[feature]
+            : Boolean(defaults[feature]) && overrides[feature] !== false
+    ]));
 }
 
 function organizationDefaults(interfaceType, subscriptionTier) {

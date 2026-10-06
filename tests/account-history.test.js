@@ -49,6 +49,17 @@ test("l'historique qualifie rétrogradation, ajout de postes et suspension", () 
     assert.deepEqual(subscriptionSuspension.details, ["Statut de l’abonnement : Actif → Suspendu"]);
 });
 
+test("l'historique affiche l'ajout et le retrait des options propres à l'entreprise", () => {
+    const granted = creatorHistoryPresentation({ category: "organization", action: "updated", previousValue: { licenseFeatures: {} }, nextValue: { licenseFeatures: { technicalReports: true, quitus: true } } });
+    assert.deepEqual(granted.details, [
+        "Option rapport de recherche de fuite : Non accordée → Activée",
+        "Option quitus : Non accordée → Activée"
+    ]);
+
+    const removed = creatorHistoryPresentation({ category: "organization", action: "updated", previousValue: { licenseFeatures: { quitus: true } }, nextValue: { licenseFeatures: {} } });
+    assert.deepEqual(removed.details, ["Option quitus : Activée → Non accordée"]);
+});
+
 test("l'historique consolide organisation, compte, essai et cycle de vie", () => {
     const organizations = read("server/organizations.js");
     const migration = read("database/migrations/0020_account_history.sql");

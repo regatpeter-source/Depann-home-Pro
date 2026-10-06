@@ -5122,7 +5122,7 @@ body.desktop-device .billing-editor-panel.billing-editor-live-active{
     padding:14px;
     border:1px solid var(--border);
     border-radius:14px;
-    background:#fff;
+    background:var(--surface);
 }
 
 .team-permissions-fieldset[hidden]{
