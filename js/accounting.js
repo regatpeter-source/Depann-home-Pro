@@ -1,7 +1,7 @@
 import { clearSearch, getContainer, setPage } from "./ui.js?v=44";
 import { ROUTES } from "./config.js?v=128";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
-import { renderPurchases } from "./purchases.js?v=129";
+import { renderPurchases } from "./purchases.js?v=130";
 
 const SECTIONS = [
     ["dashboard", "Tableau de bord"], ["salesJournal", "Journal des ventes"], ["settlements", "Règlements"], ["paymentReviews", "Règlements à contrôler"], ["credits", "Avoirs"], ["vat", "TVA"], ["purchases", "Achats"], ["export", "Export comptable"], ["fec", "Export FEC"], ["control", "Contrôle comptable"], ["b2cReporting", "E-reporting B2C"], ["electronic", "Facturation électronique & PDP"], ["settings", "Paramètres"]
@@ -33,6 +33,18 @@ export async function renderAccounting(section = activeSection) {
     shell.querySelectorAll("[data-accounting-section]").forEach(button => button.addEventListener("click", () => renderAccounting(button.dataset.accountingSection)));
     const content = shell.querySelector("#accountingContent");
     ({ dashboard: renderDashboard, salesJournal: renderSalesJournal, settlements: renderSettlements, paymentReviews: renderPaymentReviews, credits: () => renderDocuments(content, "credit"), vat: renderVat, purchases: () => renderPurchases({ container: content, embedded: true, readOnly: isAccountingReadOnly() }), export: renderExports, fec: renderFecExport, control: renderAccountingControl, b2cReporting: renderB2cReporting, electronic: renderElectronic, settings: renderSettings })[activeSection](content);
+    if (activeSection !== "dashboard") announceAccountingWorkspace(sections);
+}
+
+function announceAccountingWorkspace(sections) {
+    const label = sections.find(([id]) => id === activeSection)?.[1] || "Comptabilité";
+    window.dispatchEvent(new CustomEvent("depannhome:workspace-item", { detail: {
+        key: `accounting:${activeSection}`,
+        type: "route",
+        route: ROUTES.accounting,
+        title: `Comptabilité · ${label}`,
+        view: { accountingSection: activeSection }
+    } }));
 }
 
 function renderDashboard(node) {

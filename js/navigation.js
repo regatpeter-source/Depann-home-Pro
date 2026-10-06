@@ -1,9 +1,9 @@
 import { APP_VERSION, ROUTES, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=138";
-import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=242";
+import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=243";
 import { openCreatorPartnerRequest, openCreatorRequestNotification, renderCreatorConsole } from "./creator.js?v=173";
-import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=218";
-import { renderAccounting } from "./accounting.js?v=31";
-import { renderPurchases } from "./purchases.js?v=129";
+import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=219";
+import { renderAccounting } from "./accounting.js?v=32";
+import { renderPurchases } from "./purchases.js?v=130";
 import { renderGroupActivation, renderGroupWorkspace } from "./groups.js?v=9";
 import { renderHistoryAndJournals } from "./history.js?v=2";
 import { renderPartnerMissions } from "./partner-missions.js?v=97";
@@ -11,12 +11,12 @@ import { renderPartnerSandbox } from "./partner-sandbox.js?v=3";
 import { renderPartnerConnections } from "./partner-connections.js?v=56";
 import { renderCompanyEmailWorkspace, renderPartnerEmailSettings } from "./partner-email-settings.js?v=29";
 import { renderDataImportTool } from "./data-imports.js?v=5";
-import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=64";
+import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=65";
 import { getFirstUnreadClientId, refreshClientMessageAlert, refreshVisibleClientMessages } from "./messages.js?v=107";
 import { getSearchableClients, refreshClientDirectoryAfterSynchronization, renderClients } from "./clients.js?v=175";
-import { initializeDesktopWorkspace } from "./desktop-workspace.js?v=1";
+import { initializeDesktopWorkspace } from "./desktop-workspace.js?v=2";
 import { synchronizeClients } from "./client-sync.js?v=132";
-import { configureLibrary, openLibrarySection, renderLibrary, searchPersonalLibrary } from "./library.js?v=122";
+import { configureLibrary, openLibrarySection, renderLibrary, searchPersonalLibrary } from "./library.js?v=123";
 import { getContextualSearchResults } from "./search.js?v=78";
 import { renderInterventionSearch } from "./intervention-search.js?v=3";
 import { initializeTerrainLocationSharing, renderOperationsMap } from "./operations-map.js?v=8";
@@ -149,7 +149,7 @@ export function initializeNavigation(loadedDatabase) {
 function openDesktopWorkspaceItem(item) {
     if (item.type === "client") return openClients(item.id);
     if (item.type === "mission") return renderPartnerMissions({ missionId: item.id });
-    if (item.type === "route" && canAccessRoute(item.route)) return restoreApplicationRoute(item.route);
+    if (item.type === "route" && canOpenWorkspaceRoute(item.route)) return restoreApplicationRoute({ route: item.route, view: item.view || {}, title: item.title });
     return openHome();
 }
 
@@ -182,8 +182,10 @@ function recordApplicationHistory(title) {
     if (!applicationHistoryReady) {
         applicationHistoryReady = true;
         currentApplicationHistoryKey = key;
-        window.history.replaceState({ application: APPLICATION_HISTORY_MARKER, depth: 0, route, key, view }, "");
+        const entry = { application: APPLICATION_HISTORY_MARKER, depth: 0, route, key, view };
+        window.history.replaceState(entry, "");
         updateApplicationBackButton(0);
+        announceApplicationView(entry, title);
         return;
     }
 
@@ -191,16 +193,41 @@ function recordApplicationHistory(title) {
         const depth = Number(window.history.state?.depth) || 0;
         restoringApplicationHistory = false;
         currentApplicationHistoryKey = key;
-        window.history.replaceState({ application: APPLICATION_HISTORY_MARKER, depth, route, key, view }, "");
+        const entry = { application: APPLICATION_HISTORY_MARKER, depth, route, key, view };
+        window.history.replaceState(entry, "");
         updateApplicationBackButton(depth);
+        announceApplicationView(entry, title);
         return;
     }
     if (key === currentApplicationHistoryKey) return;
 
     const depth = (Number(window.history.state?.depth) || 0) + 1;
     currentApplicationHistoryKey = key;
-    window.history.pushState({ application: APPLICATION_HISTORY_MARKER, depth, route, key, view }, "");
+    const entry = { application: APPLICATION_HISTORY_MARKER, depth, route, key, view };
+    window.history.pushState(entry, "");
     updateApplicationBackButton(depth);
+    announceApplicationView(entry, title);
+}
+
+function announceApplicationView(entry, title) {
+    const identity = workspaceViewIdentity(entry.route, title, entry.view);
+    window.dispatchEvent(new CustomEvent("depannhome:application-view", { detail: {
+        key: `view:${entry.route}:${identity}`,
+        type: "route",
+        route: entry.route,
+        title,
+        view: entry.view
+    } }));
+}
+
+function workspaceViewIdentity(route, title, view) {
+    const value = `${route}:${title}:${JSON.stringify(view || {})}`;
+    let hash = 2166136261;
+    for (let index = 0; index < value.length; index += 1) {
+        hash ^= value.charCodeAt(index);
+        hash = Math.imul(hash, 16777619);
+    }
+    return (hash >>> 0).toString(36);
 }
 
 function captureApplicationView(route, title) {
@@ -221,9 +248,11 @@ function captureApplicationView(route, title) {
     }
     if (route === ROUTES.settings) {
         const settingsSection = settingsSectionFromTitle(title);
-        const templateType = ({ "Modèle de devis": "quote", "Modèle de facture": "invoice", "Modèle de quitus": "quitus", "Modèle de rapport de recherche de fuite": "report" })[title] || "";
+        const templateTitle = title.startsWith("Paramètres · ") ? title.slice("Paramètres · ".length) : title;
+        const templateType = ({ "Modèle de devis": "quote", "Modèle de facture": "invoice", "Modèle de quitus": "quitus", "Modèle de rapport": "report", "Modèle de rapport de recherche de fuite": "report" })[templateTitle] || "";
         return { settingsSection, templateType };
     }
+    if (route === ROUTES.calendar && title === "Retrouver une intervention") return { workspace: "intervention-search" };
     if (route === ROUTES.search) return { query: document.getElementById("search")?.value || "" };
     return {};
 }
@@ -275,17 +304,20 @@ function inferApplicationRoute(title) {
 function restoreApplicationRoute(entry) {
     const route = typeof entry === "string" ? entry : entry?.route;
     const view = typeof entry === "string" ? {} : entry?.view || {};
+    if (route === ROUTES.calendar && view.workspace === "intervention-search") return openInterventionSearch();
+    if (route === ROUTES.calendar && view.calendarEventId) return renderCalendar({ date: view.calendarDate ? new Date(`${view.calendarDate}T12:00:00`) : new Date(), eventId: view.calendarEventId });
     if (route === ROUTES.calendar) return openCalendar();
     if (route === ROUTES.operationsMap) return renderOperationsMap();
     if (route === ROUTES.clients) return renderClientHistoryView(view);
-    if (route === ROUTES.billing) return isTechnician() && organizationFeatureEnabled("technicalReports") ? renderTechnicalReports() : renderBilling();
-    if (route === ROUTES.accounting) return renderAccounting();
-    if (route === ROUTES.purchases) return renderPurchases();
+    if (route === ROUTES.billing) return isTechnician() && organizationFeatureEnabled("technicalReports") ? renderTechnicalReports() : renderBilling(view.documentId ? { documentId: view.documentId } : {});
+    if (route === ROUTES.accounting) return renderAccounting(view.accountingSection || undefined);
+    if (route === ROUTES.purchases) return renderPurchases(view.purchaseId ? { purchaseId: view.purchaseId } : {});
     if (route === ROUTES.groups) return renderGroupWorkspace();
     if (route === ROUTES.partnerMissions) return renderPartnerMissions();
     if (route === ROUTES.companyEmail) return renderCompanyEmail();
     if (route === ROUTES.partnerSandbox) return renderPartnerSandbox();
-    if (route === ROUTES.technicalReports) return renderTechnicalReports();
+    if (route === ROUTES.technicalReports) return renderTechnicalReports(Number(view.reportId) || 0);
+    if (route === ROUTES.library && view.librarySectionId) return openLibrarySection(view.librarySectionId);
     if (route === ROUTES.library) return renderLibrary();
     if (route === ROUTES.support) return renderMobileSupportTicket();
     if (route === ROUTES.settings && view.templateType) return openDocumentTemplateSettings(view.templateType);
@@ -651,6 +683,11 @@ function canAccessQuick(menu) {
 function canAccessRoute(route) {
     if (document.body.dataset.supportControl === "true" && ![ROUTES.home, ROUTES.clients, ROUTES.calendar, ROUTES.technicalReports, ROUTES.billing, ROUTES.accounting, ROUTES.partnerMissions, ROUTES.companyEmail, ROUTES.support, ROUTES.settings].includes(route)) return false;
     return isMenuAllowed(MENU_ACCESS.navigation[route], route) && isOrganizationRouteEnabled(route);
+}
+
+function canOpenWorkspaceRoute(route) {
+    if (route === ROUTES.creator) return document.body.dataset.creator === "true" && document.body.dataset.role === "admin";
+    return canAccessRoute(route);
 }
 
 function isDesktopDevice() {

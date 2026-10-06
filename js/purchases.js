@@ -13,6 +13,7 @@ const purchasePagination = { page: 1, pageSize: 20 };
 
 export async function renderPurchases(options = {}) {
     presentation = { ...options, readOnly: options.readOnly === true || document.body.dataset.role === "accountant" };
+    delete presentation.purchaseId;
     clearSearch();
     resetSelection("all");
     if (!presentation.embedded) setPage("Achats", ROUTES.purchases, "detail");
@@ -32,9 +33,24 @@ export async function renderPurchases(options = {}) {
     }
 
     purchases = result.data.purchases || [];
+    if (options.purchaseId) {
+        const restoredPurchase = purchases.find(purchase => String(purchase.id) === String(options.purchaseId));
+        activePurchase = restoredPurchase ? normalizePurchase(restoredPurchase) : null;
+    }
     renderOverview(overviewPanel);
     renderPurchaseEditor(editorPanel);
     renderPurchaseList(listPanel);
+    if (activePurchase?.id) announcePurchaseWorkspace(activePurchase);
+}
+
+function announcePurchaseWorkspace(purchase) {
+    window.dispatchEvent(new CustomEvent("depannhome:workspace-item", { detail: {
+        key: `purchase:${purchase.id}`,
+        type: "route",
+        route: ROUTES.purchases,
+        title: `Achat · ${purchase.supplier || purchase.description || purchase.id}`,
+        view: { purchaseId: String(purchase.id) }
+    } }));
 }
 
 function createPanel(className) {

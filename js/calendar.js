@@ -1,9 +1,9 @@
 import { ROUTES } from "./config.js?v=134";
-import { createBillingDocumentForClient, viewBillingDocument } from "./billing.js?v=218";
+import { createBillingDocumentForClient, viewBillingDocument } from "./billing.js?v=219";
 import { getSearchableClients } from "./clients.js?v=175";
 import { addClientActivityByName, synchronizeClients } from "./client-sync.js?v=132";
 import { renderClientMessages } from "./messages.js?v=107";
-import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=64";
+import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=65";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { renderPlatformAnnouncement } from "./platform-announcement.js?v=1";
@@ -126,12 +126,24 @@ export async function renderCalendar(options = {}) {
 
     events = result.events;
     members = availableMembers;
+    if (options.eventId && !options.event) selectedEvent = events.find(event => String(event.id) === String(options.eventId)) || null;
     if (technicianHome) {
         window.dispatchEvent(new CustomEvent("depannhome:technician-calendar-viewed", { detail: { events } }));
     }
     renderHeader(header);
     renderEventForm(formPanel);
     renderCalendarGrid(gridPanel);
+    if (selectedEvent?.id) announceCalendarWorkspace(selectedEvent);
+}
+
+function announceCalendarWorkspace(event) {
+    window.dispatchEvent(new CustomEvent("depannhome:workspace-item", { detail: {
+        key: `calendar:${event.id}`,
+        type: "route",
+        route: ROUTES.calendar,
+        title: `Intervention · ${event.title || event.clientName || event.date}`,
+        view: { calendarEventId: String(event.id), calendarDate: event.date || "" }
+    } }));
 }
 
 export function renderCalendarOverview() {

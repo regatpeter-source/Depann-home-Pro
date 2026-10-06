@@ -1,6 +1,6 @@
 import { getClientSessionId } from "./client-session.js?v=10";
 
-const MAX_TABS = 12;
+const MAX_TABS = 30;
 const STORAGE_PREFIX = "depannHomePro:desktopWorkspace";
 const DETACHED_PARAMETER = "workspace";
 const drafts = new Map();
@@ -9,7 +9,6 @@ let tabs = [];
 let activeKey = "";
 let initialized = false;
 let detached = false;
-let titleObserver = null;
 
 export function initializeDesktopWorkspace(options = {}) {
     if (initialized || document.body.dataset.deviceType !== "desktop") return false;
@@ -21,7 +20,6 @@ export function initializeDesktopWorkspace(options = {}) {
     tabs = loadTabs();
     workspace.hidden = false;
     bindWorkspace(workspace);
-    observePageChanges();
 
     const initial = readDetachedWorkspaceItem();
     if (!initial) {
@@ -42,6 +40,7 @@ function bindWorkspace(workspace) {
         if (event.target.closest("[data-workspace-detach]")) detachActiveItem();
     });
     window.addEventListener("depannhome:workspace-item", event => registerItem(event.detail));
+    window.addEventListener("depannhome:application-view", event => registerItem(event.detail));
     window.addEventListener("storage", event => {
         if (event.key !== storageKey()) return;
         tabs = loadTabs();
@@ -54,19 +53,6 @@ function bindWorkspace(workspace) {
         event.preventDefault();
         event.returnValue = "";
     });
-}
-
-function observePageChanges() {
-    const title = document.getElementById("pageTitle");
-    if (!title || titleObserver) return;
-    const capture = () => {
-        const route = document.querySelector(".nav-button.active")?.dataset.nav || "";
-        const label = title.textContent.trim();
-        if (!route || !label) return;
-        registerItem({ key: `route:${route}`, type: "route", route, title: label });
-    };
-    titleObserver = new MutationObserver(() => window.queueMicrotask(capture));
-    titleObserver.observe(title, { childList: true, characterData: true, subtree: true });
 }
 
 function registerItem(value, options = {}) {
@@ -93,8 +79,14 @@ function normalizeItem(value) {
     const route = String(value.route || "").slice(0, 80);
     const key = String(value.key || (type === "route" ? `route:${route}` : `${type}:${id}`)).slice(0, 250);
     const title = String(value.title || (type === "client" ? "Client" : type === "mission" ? "Mission" : "Espace de travail")).trim().slice(0, 100);
+    const view = value.view && typeof value.view === "object" && !Array.isArray(value.view) ? sanitizeView(value.view) : {};
     if (!type || !key || type === "route" && !route || type !== "route" && !id) return null;
-    return { key, type, id, route, title };
+    return { key, type, id, route, title, view };
+}
+
+function sanitizeView(value) {
+    try { return JSON.parse(JSON.stringify(value)); }
+    catch { return {}; }
 }
 
 function activateItem(key) {
@@ -201,7 +193,7 @@ function renderWorkspace() {
         const active = item.key === activeKey;
         const dirty = drafts.get(item.key)?.dirty === true;
         return `<div class="desktop-workspace-tab${active ? " active" : ""}${dirty ? " dirty" : ""}"><button type="button" data-workspace-tab="${escapeAttribute(item.key)}" ${active ? 'aria-current="page"' : ""} title="${escapeAttribute(item.title)}"><span>${escapeHtml(item.title)}</span>${dirty ? '<b aria-label="Modifications non enregistrées">●</b>' : ""}</button><button type="button" class="desktop-workspace-close" data-workspace-close="${escapeAttribute(item.key)}" aria-label="Fermer ${escapeAttribute(item.title)}">×</button></div>`;
-    }).join("") : '<span class="desktop-workspace-empty">Les clients et missions ouverts apparaîtront ici.</span>';
+    }).join("") : '<span class="desktop-workspace-empty">Les menus, sous-menus, clients et missions ouverts apparaîtront ici.</span>';
     const detachButton = workspace.querySelector("[data-workspace-detach]");
     if (detachButton) detachButton.disabled = !activeKey;
     const mode = workspace.querySelector("[data-workspace-mode]");

@@ -110,6 +110,14 @@ export async function renderLibrary() {
 export async function openLibrarySection(sectionId) {
     selectedSectionId = sectionId;
     await renderLibrary();
+    const selected = document.querySelector(".library-section-button.selected strong")?.textContent?.trim() || `Section ${sectionId}`;
+    window.dispatchEvent(new CustomEvent("depannhome:workspace-item", { detail: {
+        key: `library-section:${sectionId}`,
+        type: "route",
+        route: ROUTES.library,
+        title: `Bibliothèque · ${selected}`,
+        view: { librarySectionId: String(sectionId) }
+    } }));
 }
 
 export async function searchPersonalLibrary(query) {
@@ -145,10 +153,7 @@ function renderSectionPanel(panel, sections, refresh) {
             button.type = "button";
             button.className = `library-section-button${String(section.id) === String(selectedSectionId) ? " selected" : ""}`;
             button.innerHTML = `<strong>${escapeHtml(section.name)}</strong><span>${Number(section.documentCount) || 0} document(s)</span>`;
-            button.addEventListener("click", () => {
-                selectedSectionId = section.id;
-                renderLibrary();
-            });
+            button.addEventListener("click", () => openLibrarySection(section.id));
             list.appendChild(button);
         });
     }

@@ -103,6 +103,19 @@ export async function renderBilling(options = {}) {
     if (options.profile) renderProfile(profilePanel);
     renderDocumentEditor(editorPanel);
     renderDocumentList(listPanel);
+    if (activeDocument) announceBillingWorkspace(activeDocument);
+}
+
+function announceBillingWorkspace(document) {
+    const identity = String(document.id || `${document.documentType || "document"}:${document.customerId || document.customerName || "nouveau"}`);
+    const label = document.documentNumber || `${DOCUMENT_TYPES[document.documentType] || "Document"} · ${document.customerName || "Nouveau"}`;
+    window.dispatchEvent(new CustomEvent("depannhome:workspace-item", { detail: {
+        key: `billing:${identity}`,
+        type: "route",
+        route: ROUTES.billing,
+        title: label,
+        view: document.id ? { documentId: String(document.id) } : {}
+    } }));
 }
 
 export function createBillingDocumentForClient(type, client, appointmentId = "") {
@@ -181,11 +194,11 @@ function renderOverview(panel, profilePanel) {
     panel.querySelector("[data-billing-action=new-quote]")?.addEventListener("click", () => { if (!isAccountant()) openNewDocument("quote"); });
     panel.querySelector("[data-billing-action=new-invoice]").addEventListener("click", () => { if (!isAccountant()) openNewDocument("invoice"); });
     panel.querySelector("[data-billing-action=open-leak-reports]")?.addEventListener("click", async () => {
-        const { renderLeakReportWizard } = await import("./leak-report-wizard.js?v=64");
+        const { renderLeakReportWizard } = await import("./leak-report-wizard.js?v=65");
         renderLeakReportWizard();
     });
     panel.querySelector("[data-billing-action=new-leak-report]")?.addEventListener("click", async () => {
-        const { openLeakReportCreation } = await import("./leak-report-wizard.js?v=64");
+        const { openLeakReportCreation } = await import("./leak-report-wizard.js?v=65");
         openLeakReportCreation();
     });
     panel.querySelector("[data-billing-action=download-quote-template]")?.addEventListener("click", openQuoteTemplateDownload);
@@ -194,7 +207,7 @@ function renderOverview(panel, profilePanel) {
     panel.querySelector("[data-billing-action=preview-blank-quote]")?.addEventListener("click", openBlankQuotePreview);
     panel.querySelector("[data-billing-action=manage-line-templates]")?.addEventListener("click", () => renderBilling({ templates: true }));
     panel.querySelector("[data-billing-action=open-purchases]")?.addEventListener("click", async () => {
-        const { renderPurchases } = await import("./purchases.js?v=129");
+        const { renderPurchases } = await import("./purchases.js?v=130");
         renderPurchases();
     });
     panel.querySelector("[data-financial-view]").addEventListener("change", event => { billingFinancialPeriod.view = event.currentTarget.value === "annual" ? "annual" : "monthly"; renderOverview(panel, profilePanel); });
