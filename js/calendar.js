@@ -1,9 +1,9 @@
 import { ROUTES } from "./config.js?v=134";
-import { createBillingDocumentForClient, viewBillingDocument } from "./billing.js?v=220";
+import { createBillingDocumentForClient, viewBillingDocument } from "./billing.js?v=221";
 import { getSearchableClients } from "./clients.js?v=175";
 import { addClientActivityByName, synchronizeClients } from "./client-sync.js?v=132";
 import { renderClientMessages } from "./messages.js?v=107";
-import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=66";
+import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=67";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { renderPlatformAnnouncement } from "./platform-announcement.js?v=1";
@@ -580,7 +580,7 @@ function renderEventForm(panel) {
                     <p class="eyebrow">${event.partnerMissionId ? `Mission partenaire · ${escapeHtml(event.partnerMissionNumber || event.partnerMissionId)}` : isEditing ? "Modification" : event.eventType === "task" ? "Nouvelle tâche" : "Nouveau rendez-vous"}</p>
                     <h2>${event.partnerMissionId ? "Planifier la mission dans le planning général" : isEditing ? "Modifier l’élément du planning" : event.eventType === "task" ? "Planifier une tâche interne" : "Planifier une intervention"}</h2>
                 </div>
-                ${isEditing ? '<button type="button" class="secondary-button" id="cancelCalendarEdit">Annuler</button>' : ""}
+                <button type="button" class="secondary-button" id="cancelCalendarEdit">Annuler</button>
             </div>
             <div class="form-grid">
                 <label>

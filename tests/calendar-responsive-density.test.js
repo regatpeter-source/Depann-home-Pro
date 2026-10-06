@@ -145,6 +145,13 @@ test("la palette du planning filtre les membres par équipe ou individuellement"
     assert.match(filter, /data-calendar-technician=/);
 });
 
+test("une nouvelle planification peut être annulée sans être enregistrée", () => {
+    const form = calendar.slice(calendar.indexOf("const isEditing = Boolean(event.id)"), calendar.indexOf("const form = panel.querySelector"));
+    assert.match(form, /<button type="button" class="secondary-button" id="cancelCalendarEdit">Annuler<\/button>/);
+    assert.doesNotMatch(form, /isEditing \? '<button type="button" class="secondary-button" id="cancelCalendarEdit"/);
+    assert.match(form, /querySelector\("#cancelCalendarEdit"\)[\s\S]*selectedEvent = null;[\s\S]*refreshCalendarDetail\(\)/);
+});
+
 test("les cartes compactes restent accessibles avec toutes les informations", () => {
     const rendering = calendar.slice(calendar.indexOf("function renderCalendarGrid"), calendar.indexOf("function getEventClientDetails"));
     assert.match(rendering, /calendarEventAccessibleLabel\(event, clientDetails, date\)/);
