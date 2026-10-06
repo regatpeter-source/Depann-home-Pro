@@ -90,8 +90,8 @@ test("la liste des statuts n’affiche qu’une fois chaque libellé métier", (
 test("les versions PWA chargent le nouveau routage partenaire", () => {
     assert.match(navigation, /partner-missions\.js\?v=100/);
     assert.match(navigation, /partner-connections\.js\?v=59/);
-    assert.match(serviceWorker, /depann-home-pro-v626/);
+    assert.match(serviceWorker, /depann-home-pro-v627/);
     assert.match(serviceWorker, /partner-missions\.js\?v=100/);
     assert.match(serviceWorker, /partner-connections\.js\?v=59/);
-    assert.match(serviceWorker, /navigation\.js\?v=524/);
+    assert.match(serviceWorker, /navigation\.js\?v=525/);
 });

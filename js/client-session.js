@@ -1,4 +1,4 @@
-import { getDeviceIdentity } from "./auth.js?v=130";
+import { getDeviceIdentity } from "./auth.js?v=131";
 import { initializeOfflineSync, offlineAwareFetch } from "./offline-sync.js?v=3";
 
 const STORAGE_KEY = "depannHomePro:clientWindowSession";

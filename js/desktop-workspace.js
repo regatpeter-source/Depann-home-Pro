@@ -1,4 +1,4 @@
-import { getClientSessionId } from "./client-session.js?v=10";
+import { getClientSessionId } from "./client-session.js?v=11";
 
 const MAX_TABS = 30;
 const TAB_DRAG_THRESHOLD = 10;

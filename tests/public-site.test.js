@@ -197,3 +197,8 @@ test("la déconnexion et le lancement PWA ouvrent l’authentification plutôt q
     assert.equal(manifest.start_url, "/connexion");
     assert.equal(new URL(manifest.start_url, "https://depannhomepro.com").href, "https://depannhomepro.com/connexion");
 });
+
+test("la demande de partenariat est proposée sur la vitrine publique", () => {
+    assert.match(landing, /class="button button-small partner-offer-action" href="#demande-offre">Devenir partenaire/);
+    assert.match(landing, /value="partnership">Devenir partenaire/);
+});

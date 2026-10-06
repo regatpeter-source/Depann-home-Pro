@@ -1,12 +1,12 @@
-import { initializeAuthentication, restoreApplicationShell, signOut } from "./auth.js?v=130";
+import { initializeAuthentication, restoreApplicationShell, signOut } from "./auth.js?v=131";
 import { initializeClientSynchronization } from "./client-sync.js?v=132";
 import { initializeCollaboration } from "./collaboration.js?v=14";
 import { loadDatabase } from "./data.js?v=59";
-import { initializeNavigation, refreshApplication } from "./navigation.js?v=524";
+import { initializeNavigation, refreshApplication } from "./navigation.js?v=525";
 import { renderError } from "./ui.js?v=44";
 import { getSettings } from "./storage.js?v=45";
 import { FONT_OPTIONS } from "./config.js?v=139";
-import { installClientSessionGuard, onAuthenticationRequired, onClientSessionReplaced } from "./client-session.js?v=10";
+import { installClientSessionGuard, onAuthenticationRequired, onClientSessionReplaced } from "./client-session.js?v=11";
 import { initializeInterfaceLanguage } from "./i18n.js?v=6";
 import { stopTerrainLocationSharing } from "./operations-map.js?v=8";
 

@@ -99,3 +99,8 @@ test("une fenêtre détachée par l’application peut hériter de la session du
     assert.match(clientSessionSource, /sessionStorage\.setItem\(STORAGE_KEY, value\)/);
     assert.doesNotMatch(clientSessionSource, /localStorage\.setItem\(STORAGE_KEY/);
 });
+
+test("l’authentification reste centrée et ne porte plus le formulaire de partenariat", () => {
+    assert.match(authClient, /<div class="auth-access-layout">[\s\S]*?<section class="auth-card">/);
+    assert.doesNotMatch(authClient, /auth-partner-card|openPartnerRequest|Vous représentez une organisation/);
+});

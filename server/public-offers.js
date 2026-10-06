@@ -1,7 +1,7 @@
 import { sendCommercialOfferRequestEmail } from "./email.js";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const OFFER_TYPES = new Set(["demo-15-days", "basic", "basic-plus", "pro", "unsure"]);
+const OFFER_TYPES = new Set(["demo-15-days", "basic", "basic-plus", "pro", "partnership", "unsure"]);
 const TEAM_SIZES = new Set(["1", "2-5", "6-10", "11-25", "26-plus"]);
 
 export function registerPublicOfferRoutes(app) {
@@ -42,6 +42,7 @@ export function sanitizeOfferRequest(value) {
 
 function successPayload(offer) {
     if (offer === "demo-15-days") return { message: "Merci, votre demande de démo gratuite a bien été envoyée. Notre équipe vous recontactera prochainement." };
+    if (offer === "partnership") return { message: "Merci, votre demande de partenariat a bien été envoyée. Notre équipe vous recontactera prochainement." };
     return { message: "Merci, votre demande d’offre a bien été envoyée. Notre équipe vous recontactera prochainement." };
 }
 

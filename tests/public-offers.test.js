@@ -44,3 +44,11 @@ test("une demande de démo gratuite de 15 jours est acceptée", () => {
     assert.match(emailSource, /"demo-15-days": "Démo gratuite 15 jours"/);
     assert.match(offerSource, /demande de démo gratuite a bien été envoyée/);
 });
+
+test("une demande de partenariat issue de la vitrine est acceptée et identifiée", () => {
+    const result = sanitizeOfferRequest({ ...validRequest, offer: "partnership" });
+    assert.equal(result.ok, true);
+    assert.equal(result.offer, "partnership");
+    assert.match(emailSource, /partnership: "Demande de partenariat"/);
+    assert.match(offerSource, /demande de partenariat a bien été envoyée/);
+});
