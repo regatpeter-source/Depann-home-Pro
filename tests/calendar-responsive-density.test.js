@@ -119,6 +119,32 @@ test("les vues jour et semaine PC utilisent une grille horaire de 8 h à 19 h", 
     assert.match(styles, /top:calc\(var\(--event-start\) \* 100%/);
 });
 
+test("le planning PC propose un plein écran avec une palette flottante et repliable", () => {
+    assert.match(calendar, /data-calendar-action="fullscreen"[^>]*>Plein écran</);
+    assert.match(calendar, /calendar-fullscreen-mini-controls/);
+    assert.match(calendar, /data-calendar-action="collapse-fullscreen-controls"/);
+    assert.match(calendar, /document\.documentElement\.requestFullscreen/);
+    assert.match(calendar, /Promise\.resolve\(request\.call\(document\.documentElement\)\)\.catch/);
+    assert.match(calendar, /document\.addEventListener\("fullscreenchange"/);
+    assert.match(calendar, /event\.key === "Escape" && calendarFullscreen/);
+    assert.match(calendar, /disableCalendarFullscreen\(\)/);
+    assert.match(styles, /body\.desktop-device\.calendar-fullscreen-mode #app\{[^}]*position:fixed;[^}]*height:100dvh;[^}]*overflow:hidden/);
+    assert.match(styles, /body\.desktop-device\.calendar-fullscreen-mode #brands>\.calendar-panel\{[^}]*position:fixed;[^}]*background:var\(--surface\)/);
+    assert.match(styles, /body\.desktop-device\.calendar-fullscreen-mode #brands>\.calendar-grid-panel\{[^}]*height:100%!important/);
+    assert.match(styles, /calendar-fullscreen-controls-collapsed #brands>\.calendar-panel>:not\(\.calendar-fullscreen-mini-controls\)\{display:none!important\}/);
+});
+
+test("la palette du planning filtre les membres par équipe ou individuellement", () => {
+    const header = calendar.slice(calendar.indexOf("function renderHeader"), calendar.indexOf("function refreshCalendarFilterView"));
+    const filter = calendar.slice(calendar.indexOf("function renderTechnicianFilter"), calendar.indexOf("function renderEventForm"));
+    assert.match(header, /querySelectorAll\("\[data-calendar-team\]"\)/);
+    assert.match(header, /const teamMemberIds = \(team\?\.memberIds \|\| \[\]\)/);
+    assert.match(filter, /calendar-team-filter/);
+    assert.match(filter, /data-calendar-team=/);
+    assert.match(filter, /Toute l’équipe/);
+    assert.match(filter, /data-calendar-technician=/);
+});
+
 test("les cartes compactes restent accessibles avec toutes les informations", () => {
     const rendering = calendar.slice(calendar.indexOf("function renderCalendarGrid"), calendar.indexOf("function getEventClientDetails"));
     assert.match(rendering, /calendarEventAccessibleLabel\(event, clientDetails, date\)/);

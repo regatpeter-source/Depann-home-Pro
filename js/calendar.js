@@ -1,9 +1,9 @@
 import { ROUTES } from "./config.js?v=134";
-import { createBillingDocumentForClient, viewBillingDocument } from "./billing.js?v=219";
+import { createBillingDocumentForClient, viewBillingDocument } from "./billing.js?v=220";
 import { getSearchableClients } from "./clients.js?v=175";
 import { addClientActivityByName, synchronizeClients } from "./client-sync.js?v=132";
 import { renderClientMessages } from "./messages.js?v=107";
-import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=65";
+import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=66";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { renderPlatformAnnouncement } from "./platform-announcement.js?v=1";
@@ -44,6 +44,8 @@ let members = [];
 let teams = [];
 let showAllTechnicians = true;
 let visibleTechnicianIds = new Set();
+let calendarFullscreen = false;
+let calendarFullscreenControlsCollapsed = false;
 const mobileAdminEditingEvents = new Set();
 let userFilterOpen = false;
 let calendarPanels = null;
@@ -62,8 +64,21 @@ const calendarContainer = document.getElementById("brands");
 new MutationObserver(() => {
     if (document.body.classList.contains("calendar-page-active") && !calendarPanels?.header?.isConnected) {
         document.body.classList.remove("calendar-page-active");
+        disableCalendarFullscreen();
     }
 }).observe(calendarContainer, { childList: true });
+
+document.addEventListener("fullscreenchange", () => {
+    if (!calendarFullscreen || document.fullscreenElement) return;
+    calendarFullscreen = false;
+    calendarFullscreenControlsCollapsed = false;
+    applyCalendarFullscreenClasses();
+    if (hasCalendarPanels()) renderHeader(calendarPanels.header);
+});
+
+document.addEventListener("keydown", event => {
+    if (event.key === "Escape" && calendarFullscreen && !document.fullscreenElement) disableCalendarFullscreen(false);
+});
 
 window.addEventListener("depannhome:billing-document-saved", event => {
     if (event.detail?.suppressNavigation) return;
@@ -204,6 +219,7 @@ function renderHeader(panel) {
                 <button type="button" class="secondary-button auth-outline-button" data-calendar-action="today">Aujourd’hui</button>
                 <button type="button" class="secondary-button" data-calendar-action="next">${getNextLabel()} →</button>
                 ${canCreateCalendarEvents() ? `<button type="button" class="secondary-button" data-calendar-action="new">${isMobileAdministrator() ? "+ Planifier une intervention" : "+ Nouveau rendez-vous"}</button>${isCommercialMobileCalendar() ? "" : '<button type="button" class="secondary-button" data-calendar-action="new-task">+ Nouvelle tâche</button>'}` : ""}
+                ${isDesktopCalendarDevice() ? `<button type="button" class="secondary-button calendar-fullscreen-button" data-calendar-action="fullscreen" aria-pressed="${calendarFullscreen}">Plein écran</button>` : ""}
             </div>
         </div>
         <div class="calendar-view-switcher" role="group" aria-label="Vue du planning">
@@ -216,9 +232,16 @@ function renderHeader(panel) {
         <div class="calendar-status-legend" aria-label="Statuts des interventions">
             ${EVENT_STATUS_OPTIONS.map(status => `<span class="status-${status.id}"><i></i>${status.label}</span>`).join("")}
         </div>
+        ${isDesktopCalendarDevice() ? `<div class="calendar-fullscreen-mini-controls" aria-label="Contrôles du planning plein écran"><button type="button" class="secondary-button" data-calendar-action="collapse-fullscreen-controls" aria-expanded="${!calendarFullscreenControlsCollapsed}">${calendarFullscreenControlsCollapsed ? "Afficher les sélections" : "Réduire les sélections"}</button><button type="button" class="secondary-button" data-calendar-action="fullscreen">Quitter le plein écran</button></div>` : ""}
     `;
 
     bindCalendarNavigation(panel);
+    panel.querySelectorAll("[data-calendar-action=fullscreen]").forEach(button => button.addEventListener("click", toggleCalendarFullscreen));
+    panel.querySelector("[data-calendar-action=collapse-fullscreen-controls]")?.addEventListener("click", () => {
+        calendarFullscreenControlsCollapsed = !calendarFullscreenControlsCollapsed;
+        applyCalendarFullscreenClasses();
+        renderHeader(panel);
+    });
     panel.querySelector("[data-calendar-action=new]")?.addEventListener("click", () => {
         selectedEvent = newEventForDate(toDateString(new Date()));
         renderCalendar();
@@ -237,6 +260,15 @@ function renderHeader(panel) {
         if (showAllTechnicians) visibleTechnicianIds.clear();
         refreshCalendarFilterView();
     });
+    panel.querySelectorAll("[data-calendar-team]").forEach(input => input.addEventListener("change", event => {
+        if (showAllTechnicians) visibleTechnicianIds = new Set(members.map(member => String(member.id)).filter(Boolean));
+        showAllTechnicians = false;
+        const team = teams.find(item => String(item.id) === String(event.currentTarget.dataset.calendarTeam));
+        const activeMemberIds = new Set(members.map(member => String(member.id)));
+        const teamMemberIds = (team?.memberIds || []).map(String).filter(id => activeMemberIds.has(id));
+        teamMemberIds.forEach(id => event.currentTarget.checked ? visibleTechnicianIds.add(id) : visibleTechnicianIds.delete(id));
+        refreshCalendarFilterView();
+    }));
     panel.querySelectorAll("[data-calendar-technician]").forEach(input => input.addEventListener("change", event => {
         if (showAllTechnicians) visibleTechnicianIds = new Set(members.map(member => String(member.id)).filter(Boolean));
         showAllTechnicians = false;
@@ -321,14 +353,47 @@ function bindCalendarNavigation(panel) {
     });
 }
 
+function toggleCalendarFullscreen() {
+    if (calendarFullscreen) {
+        disableCalendarFullscreen(true);
+        return;
+    }
+    calendarFullscreen = true;
+    calendarFullscreenControlsCollapsed = false;
+    userFilterOpen = false;
+    applyCalendarFullscreenClasses();
+    if (hasCalendarPanels()) renderHeader(calendarPanels.header);
+    const request = document.documentElement.requestFullscreen;
+    if (typeof request === "function") Promise.resolve(request.call(document.documentElement)).catch(() => {});
+}
+
+function disableCalendarFullscreen(exitBrowserFullscreen = true) {
+    if (!calendarFullscreen && !document.body.classList.contains("calendar-fullscreen-mode")) return;
+    calendarFullscreen = false;
+    calendarFullscreenControlsCollapsed = false;
+    applyCalendarFullscreenClasses();
+    if (exitBrowserFullscreen && document.fullscreenElement && typeof document.exitFullscreen === "function") {
+        Promise.resolve(document.exitFullscreen()).catch(() => {});
+    }
+    if (hasCalendarPanels()) renderHeader(calendarPanels.header);
+}
+
+function applyCalendarFullscreenClasses() {
+    document.body.classList.toggle("calendar-fullscreen-mode", calendarFullscreen);
+    document.body.classList.toggle("calendar-fullscreen-controls-collapsed", calendarFullscreen && calendarFullscreenControlsCollapsed);
+}
+
 function renderTechnicianFilter() {
     const count = showAllTechnicians ? members.length : visibleTechnicianIds.size;
     const groups = groupTechniciansByDepartment(members);
+    const activeMemberIds = new Set(members.map(member => String(member.id)));
+    const teamOptions = teams.map(team => ({ ...team, memberIds: (team.memberIds || []).map(String).filter(id => activeMemberIds.has(id)) })).filter(team => team.memberIds.length);
     return `
         <section class="calendar-technician-filter" aria-label="Filtrer le planning par membre">
             <div class="calendar-technician-filter-heading"><div><p class="eyebrow">Équipe affichée</p><strong>${count} membre${count === 1 ? "" : "s"} sélectionné${count === 1 ? "" : "s"}</strong></div><button type="button" class="secondary-button" data-calendar-filter-toggle aria-expanded="${userFilterOpen}">Filtrer les utilisateurs</button></div>
             <div class="calendar-technician-options" ${userFilterOpen ? "" : "hidden"}>
                 <label><input type="checkbox" data-calendar-filter="all" ${showAllTechnicians ? "checked" : ""}> Toute l’équipe</label>
+                ${teamOptions.length ? `<span class="calendar-team-filter"><em>Équipes</em>${teamOptions.map(team => `<label><input type="checkbox" data-calendar-team="${escapeHtml(team.id)}" ${showAllTechnicians || team.memberIds.every(id => visibleTechnicianIds.has(id)) ? "checked" : ""}> ${escapeHtml(team.name)}</label>`).join("")}</span>` : ""}
                 ${groups.map(([department, members]) => `<span class="calendar-technician-group"><em>${escapeHtml(department)}</em>${members.map(technician => `<label><input type="checkbox" data-calendar-technician="${escapeHtml(technician.id)}" ${showAllTechnicians || visibleTechnicianIds.has(String(technician.id)) ? "checked" : ""}> ${escapeHtml(technician.fullName || technician.username)}</label>`).join("")}</span>`).join("")}
             </div>
         </section>
