@@ -91,6 +91,20 @@ test("l’interface tout-en-un est accessible, restaurable et mise en cache", as
     assert.match(app, /startAutomationScheduler/);
 });
 
+test("les nouveaux écrans héritent du thème sombre et le portail suit le système", async () => {
+    const [style, portal] = await Promise.all([read("css/style.css"), read("server/customer-portal.js")]);
+    assert.match(style, /\.business-panel\{[^}]*background:var\(--surface\)/);
+    assert.match(style, /body\.dark-theme :is\(\.business-panel,\.business-metrics article,\.business-suite-tabs button\)/);
+    assert.match(style, /body\.dark-theme \.business-success/);
+    assert.match(style, /body\.dark-theme \.positive/);
+    assert.match(style, /body\.dark-theme \.negative/);
+    assert.doesNotMatch(style, /--card-bg|--border-color|--muted-color/);
+    assert.match(portal, /meta name=color-scheme content="light dark"/);
+    assert.match(portal, /@media\(prefers-color-scheme:dark\)/);
+    assert.match(portal, /--page:#0f172a/);
+    assert.match(portal, /--surface:#172033/);
+});
+
 test("PostgreSQL applique réellement la migration tout-en-un sur le schéma cœur", { skip: !process.env.TEST_DATABASE_URL }, async () => {
     const parsed = new URL(process.env.TEST_DATABASE_URL);
     assert.match(parsed.pathname, /test/i, "TEST_DATABASE_URL doit désigner une base de test");
