@@ -1004,7 +1004,7 @@ test("le mail garde la priorité et les documents complètent les champs manquan
     assert.equal(payload.insurance, "Exemple Assurance");
 });
 
-test("les coordonnées inline créent une fiche client complète avec une référence lisible", () => {
+test("les coordonnées inline produisent des données client complètes avec une référence lisible", () => {
     const payload = extractMissionPayload({
         id: 40,
         subject: "Mission intervention IMH",
@@ -1030,7 +1030,7 @@ test("les coordonnées inline créent une fiche client complète avec une réfé
     assert.deepEqual(normalizeMissionPostalAddress("17 allée des fleurs 44420 Herbignac"), { address: "17 allée des fleurs, 44420", postalCode: "44420", city: "Herbignac" });
 });
 
-test("les anciennes missions e-mail sont réparées avec leur fiche client liée", () => {
+test("les anciennes missions e-mail sont enrichies sans créer de fiche avant validation", () => {
     assert.match(missionSource, /repairImportedEmailMissionClients/);
     assert.match(missionSource, /source_data#>>'\{client,address\}'/);
     assert.match(missionSource, /partner_reference ~ '\^<\.\*@\.\*>\$'/);
@@ -1038,9 +1038,26 @@ test("les anciennes missions e-mail sont réparées avec leur fiche client liée
     assert.match(missionSource, /email\.document_text/);
     assert.match(missionSource, /mergeReparsedEmailPayload/);
     assert.match(missionSource, /mapped_data->>'insuredNumber'/);
-    assert.match(missionSource, /client_created" : "client_matched/);
+    assert.match(missionSource, /mayCreateForExistingWorkflow = !\["received", "pending_validation"\]\.includes\(mission\.status\)/);
+    assert.match(missionSource, /client\?\.id \|\| ""/);
     assert.match(emailSettingsSource, /synchronizeClients\(\{ forceFull: true \}\)/);
     assert.match(emailSettingsSource, /depannhome:partner-client-provisioned/);
+});
+
+test("une mission e-mail sans client exige une décision humaine avant toute création", () => {
+    assert.match(missionSource, /matchedClientId \? await provisionPartnerMissionClient/);
+    assert.match(missionSource, /client_creation_pending/);
+    assert.match(missionSource, /clientValidationRequired: !client/);
+    assert.match(missionSource, /intake\.partner_key NOT LIKE 'email-%' OR mission\.status NOT IN \('received','pending_validation'\)/);
+    assert.match(missionSource, /confirmClientCreation !== true/);
+    assert.match(missionSource, /Validez manuellement la création de la fiche client/);
+    assert.match(missionSource, /SELECT client_id FROM depannhome_clients WHERE owner_id=\$1 AND client_id=\$2/);
+    assert.match(missionSource, /preserveExistingIdentity: clientExplicitlySelected/);
+    assert.match(missionClientSource, /reviewEmailMissionClient\(mission\)/);
+    assert.match(missionClientSource, /Rattacher à un client existant/);
+    assert.match(missionClientSource, /Créer une fiche client après confirmation/);
+    assert.match(missionClientSource, /confirmClientCreation: true/);
+    assert.match(missionClientSource, /clientData:/);
 });
 
 test("l’assuré est toujours l’identité de la fiche client", () => {

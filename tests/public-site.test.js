@@ -136,7 +136,7 @@ test("la vitrine cible des recherches métier avec un contenu factuel et indexab
     assert.match(landing, /logiciel de gestion conçu pour les entreprises de dépannage/i);
     assert.match(landing, /id="questions-frequentes"/);
     assert.match(landing, /planning d’interventions/);
-    assert.match(sitemap, /<loc>https:\/\/depannhomepro\.com\/<\/loc><lastmod>2026-09-13<\/lastmod>/);
+    assert.match(sitemap, /<loc>https:\/\/depannhomepro\.com\/<\/loc><lastmod>2026-10-06<\/lastmod>/);
     assert.match(landing, /application\/ld\+json/);
     assert.match(landing, /"@type":"SoftwareApplication"/);
     assert.doesNotMatch(landing, /aggregateRating|ratingValue|ratingCount/);
@@ -163,11 +163,21 @@ test("les pages solutions métier sont publiques, canoniques et reliées à la v
 
 test("chaque page solution répond à une intention de recherche distincte et factuelle", () => {
     assert.match(businessSoftware, /<title>Logiciel pour entreprise de dépannage/);
-    assert.match(businessSoftware, /Clients et historique[\s\S]*Planning et affectations[\s\S]*Suivi depuis le terrain/);
+    assert.match(businessSoftware, /Clients et patrimoine[\s\S]*Planning et affectations[\s\S]*Suivi depuis le terrain/);
+    assert.match(businessSoftware, /sites, équipements, contrats[\s\S]*portail sécurisé[\s\S]*Stocks et véhicules[\s\S]*Rentabilité et automatismes/i);
     assert.match(schedulingSoftware, /<title>Logiciel de planning d'interventions/);
     assert.match(schedulingSoftware, /vues mois, semaine et jour[\s\S]*conflits et indisponibilités/i);
+    assert.match(schedulingSoftware, /Mode plein écran[\s\S]*palette flottante et rétractable[\s\S]*second moniteur/i);
     assert.match(invoicingSoftware, /<title>Logiciel devis et factures pour artisans/);
     assert.match(invoicingSoftware, /devis, factures et avoirs[\s\S]*SUPER PDP/i);
+});
+
+test("la vitrine présente les fonctions tout-en-un récemment disponibles", () => {
+    assert.match(landing, /Planning partagé[\s\S]*plein écran[\s\S]*second écran/i);
+    assert.match(landing, /Clients &amp; patrimoine[\s\S]*sites, équipements, contrats/i);
+    assert.match(landing, /portail sécurisé[\s\S]*accepter ou refuser ses devis/i);
+    assert.match(landing, /Comptabilité &amp; rentabilité[\s\S]*rentabilité de chaque intervention/i);
+    assert.match(landing, /Stocks &amp; automatismes[\s\S]*véhicules[\s\S]*tâches récurrentes/i);
 });
 
 test("les données structurées des pages commerciales sont des JSON-LD valides", () => {

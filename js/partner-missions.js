@@ -27,6 +27,42 @@ window.addEventListener("depannhome:partner-email-changed", () => {
     if (document.querySelector('.nav-button.active')?.dataset.nav === ROUTES.partnerMissions) renderPartnerMissions();
 });
 
+function reviewEmailMissionClient(mission) {
+    if (mission.sourceType !== "professional_email" || mission.clientId) return Promise.resolve({});
+    const data = mission.mappedData || {};
+    const clients = getSearchableClients().filter(client => client?.id).sort((first, second) => String(first.name || "").localeCompare(String(second.name || ""), "fr"));
+    const options = clients.map(client => `<option value="${escapeHtml(client.id)}">${escapeHtml([client.name, client.city, client.phone].filter(Boolean).join(" · "))}</option>`).join("");
+    const dialog = openDialog(`<form id="reviewEmailMissionClient" class="client-form"><p class="eyebrow">Mission reçue par e-mail</p><h3>Valider la fiche client</h3><p>Vérifiez les coordonnées extraites avant de créer une fiche. Vous pouvez aussi rattacher la mission à un client déjà présent.</p><label>Décision<select name="clientMode"><option value="create">Créer une fiche client après confirmation</option><option value="existing" ${clients.length ? "" : "disabled"}>Rattacher à un client existant</option></select></label><label data-existing-client hidden>Client existant<select name="clientId"><option value="">Choisir un client</option>${options}</select></label><div class="form-grid" data-new-client><label>Nom / société *<input name="clientName" required value="${escapeHtml(data.clientName || "")}"></label><label>Téléphone<input name="phone" value="${escapeHtml(data.phone || "")}"></label><label>E-mail<input name="email" type="email" value="${escapeHtml(data.email || "")}"></label><label class="form-wide">Adresse<input name="address" value="${escapeHtml(data.interventionAddress || data.address || "")}"></label><label>Code postal<input name="postalCode" value="${escapeHtml(data.postalCode || "")}"></label><label>Ville<input name="city" value="${escapeHtml(data.city || "")}"></label></div><p class="muted">Aucune fiche n’a été créée automatiquement lors de l’import. Cette validation concerne uniquement cette mission e-mail.</p><p class="auth-message" aria-live="polite"></p><div class="form-actions"><button type="button" class="secondary-button" data-cancel-client-review>Annuler</button><button class="secondary-button">Valider et ouvrir le planning</button></div></form>`);
+    const form = dialog.querySelector("form");
+    const mode = form.elements.clientMode;
+    const existing = form.querySelector("[data-existing-client]");
+    const created = form.querySelector("[data-new-client]");
+    const refresh = () => {
+        const useExisting = mode.value === "existing";
+        existing.hidden = !useExisting;
+        created.hidden = useExisting;
+        form.elements.clientName.required = !useExisting;
+        form.elements.clientId.required = useExisting;
+    };
+    mode.addEventListener("change", refresh);
+    refresh();
+    return new Promise(resolve => {
+        let settled = false;
+        const finish = value => { if (settled) return; settled = true; dialog.remove(); resolve(value); };
+        dialog.querySelector(".partner-dialog-close").addEventListener("click", () => finish(null));
+        form.querySelector("[data-cancel-client-review]").addEventListener("click", () => finish(null));
+        form.addEventListener("submit", event => {
+            event.preventDefault();
+            const values = Object.fromEntries(new FormData(form));
+            if (values.clientMode === "existing") {
+                if (!values.clientId) return showWizardMessage(dialog, "Choisissez le client auquel rattacher la mission.");
+                return finish({ clientId: values.clientId, confirmClientCreation: false });
+            }
+            if (!String(values.clientName || "").trim()) return showWizardMessage(dialog, "Le nom du client est obligatoire.");
+            finish({ confirmClientCreation: true, clientData: { clientName: values.clientName, phone: values.phone, email: values.email, address: values.address, interventionAddress: values.address, postalCode: values.postalCode, city: values.city } });
+        });
+    });
+}
 export async function renderPartnerMissions(options = {}) {
     const renderSequence = ++partnerMissionRenderSequence;
     const externalConnectorsEnabled = organizationFeatureEnabled("connectors");
@@ -450,7 +486,9 @@ async function showDetail(id) {
     content.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 async function openPartnerMissionPlanning(mission) {
-            const { renderCalendar } = await import("./calendar.js?v=245");
+    const clientDecision = await reviewEmailMissionClient(mission);
+    if (!clientDecision) return;
+    const { renderCalendar } = await import("./calendar.js?v=245");
     const data = mission.mappedData || {};
     const draft = mission.planningDraft || {};
     const hasDraft = Boolean(draft.pausedAt);
@@ -476,7 +514,8 @@ async function openPartnerMissionPlanning(mission) {
                 endTime: payload.endTime,
                 technicianId: payload.assignedTechnicianId,
                 assignedTechnicianIds: payload.assignedTechnicianIds,
-                assignmentMode: "manual"
+                assignmentMode: "manual",
+                ...clientDecision
             })
         });
         if (!accepted.ok) return accepted;

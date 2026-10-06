@@ -32,7 +32,7 @@ Toute réception est liée à l'entreprise définie par la clé partenaire. La c
 
 Une mission arrive à l'état `pending_validation`. Lorsqu'un administrateur l'accepte, une transaction :
 
-1. rapproche ou crée le client par e-mail, téléphone ou nom ;
+1. rapproche ou crée le client par e-mail, téléphone ou nom ; pour une mission issue d’une boîte professionnelle, une nouvelle fiche exige une validation manuelle explicite ;
 2. ajoute une trace d'activité au dossier ;
 3. crée ou actualise l'intervention calendrier ;
 4. affecte le technicien choisi ou, pour un accès explicitement configuré en automatique, le technicien ayant la charge planifiée la plus basse ;
@@ -49,4 +49,4 @@ Les tables `depannhome_partner_mission_history` et `depannhome_partner_mission_o
 
 ## Réception depuis une boîte professionnelle
 
-Les entreprises disposant de Missions partenaires peuvent également connecter Microsoft 365, Google Workspace, OVH ou un serveur IMAP/SMTP. Les e-mails sont classés avec un score et des raisons visibles, puis sélectionnés manuellement ou importés automatiquement sous conditions strictes. La configuration, les règles de sécurité et les retours dans le fil d’origine sont détaillés dans [PARTNER_EMAIL_MISSIONS.md](PARTNER_EMAIL_MISSIONS.md).
+Les entreprises disposant de Missions partenaires peuvent également connecter Microsoft 365, Google Workspace, OVH ou un serveur IMAP/SMTP. Les e-mails sont classés avec un score et des raisons visibles, puis sélectionnés manuellement ou importés automatiquement sous conditions strictes. L’import conserve la mission et ses documents sans créer de nouveau client ; un client existant peut être rapproché automatiquement, sinon sa création est vérifiée et confirmée avant la planification. La configuration, les règles de sécurité et les retours dans le fil d’origine sont détaillés dans [PARTNER_EMAIL_MISSIONS.md](PARTNER_EMAIL_MISSIONS.md).
