@@ -23,7 +23,7 @@ test("le poste mobile conserve Accueil, Planning et Menu dans sa barre inférieu
 
 test("le menu mobile range les actions existantes dans des sous-dossiers", () => {
     assert.match(mobileMenuSource, /\["Interventions", \["calendarBtn", "operationsMapBtn", "interventionSearchBtn", "clientsBtn", "partnerMissionsBtn"\]\]/);
-    assert.match(mobileMenuSource, /\["Gestion", \["billingBtn", "accountingBtn", "purchasesBtn"\]\]/);
+    assert.match(mobileMenuSource, /\["Gestion", \["billingBtn", "accountingBtn", "purchasesBtn", "businessSuiteBtn"\]\]/);
     assert.match(mobileMenuSource, /\["Communication", \["companyEmailBtn"\]\]/);
     assert.match(mobileMenuSource, /\["Ressources et compte", \["libraryBtn", "settingsBtn"\]\]/);
     assert.match(mobileMenuSource, /\["Aide et support", \["supportTicketBtn"\]\]/);

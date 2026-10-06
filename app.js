@@ -48,6 +48,9 @@ import { initializeGroups, registerGroupRoutes } from "./server/groups.js";
 import { registerHistoryRoutes } from "./server/history.js";
 import { initializeSupport, registerSupportRoutes } from "./server/support.js";
 import { registerPublicOfferRoutes } from "./server/public-offers.js";
+import { registerCustomerPortalRoutes } from "./server/customer-portal.js";
+import { registerBusinessSuiteRoutes } from "./server/business-suite.js";
+import { registerAutomationRoutes, startAutomationScheduler } from "./server/automation.js";
 import { dataImportUploadErrorHandler, initializeDataImports, registerDataImportRoutes } from "./server/data-imports.js";
 import {
 	libraryUploadErrorHandler,
@@ -69,6 +72,7 @@ app.use("/api", rateLimit({
 	message: { message: "Trop de requêtes. Réessayez dans quelques minutes." }
 }));
 app.use(express.json({ limit: "25mb" }));
+app.use(express.urlencoded({ extended: false, limit: "50kb" }));
 app.use(cookieParser());
 app.use(createOriginProtection());
 app.use(authenticateRequest);
@@ -144,6 +148,13 @@ app.use("/api/public/offer-requests", rateLimit({
 	standardHeaders: "draft-7",
 	legacyHeaders: false,
 	message: { message: "Trop de demandes ont été envoyées. Réessayez dans quelques minutes." }
+}));
+app.use("/portail", rateLimit({
+	windowMs: 15 * 60 * 1000,
+	limit: 120,
+	standardHeaders: "draft-7",
+	legacyHeaders: false,
+	message: "Trop de consultations. Réessayez dans quelques minutes."
 }));
 const requireAccountingFeature = requireOrganizationFeature("accounting");
 app.use("/api/accounting", (request, response, next) => {
@@ -251,6 +262,9 @@ registerDataImportRoutes(app, requireAuthentication);
 registerLibraryRoutes(app, requireAuthentication);
 registerSupportRoutes(app, requireAuthentication, requireCreator);
 registerPublicOfferRoutes(app);
+registerCustomerPortalRoutes(app, requireAuthentication);
+registerBusinessSuiteRoutes(app, requireAuthentication);
+registerAutomationRoutes(app, requireAuthentication);
 
 // Seul le logo est nécessaire avant connexion. Le catalogue et les notices sont servis
 // uniquement après validation du cookie de session HTTP-only.
@@ -356,6 +370,7 @@ async function start() {
 		console.log(`Depann'Home Pro écoute sur le port ${port}.`);
 		void startSubscriptionInvoicingScheduler();
 		startPartnerEmailScheduler();
+		startAutomationScheduler();
 		startHealthMonitoring();
 	});
 }

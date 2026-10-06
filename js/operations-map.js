@@ -1,5 +1,5 @@
 import { LngLatBounds, Map, Marker, NavigationControl, Popup } from "/vendor/maplibre/maplibre-gl.mjs?v=6.11.2";
-import { ROUTES } from "./config.js?v=138";
+import { ROUTES } from "./config.js?v=139";
 import { escapeHtml } from "./utils.js?v=44";
 import { clearSearch, getContainer, setPage } from "./ui.js?v=44";
 

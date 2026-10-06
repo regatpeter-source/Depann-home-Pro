@@ -1571,6 +1571,24 @@ async function getBillingExport(request) {
     return { document: documentResult.rows[0], profile: profileResult.rows[0] || emptyProfile() };
 }
 
+export async function getPortalBillingDocumentOutput(ownerId, documentId) {
+    const billingExport = await getBillingExport({
+        params: { documentId },
+        user: { accountOwnerId: ownerId, role: "admin", sub: 0 }
+    });
+    if (!billingExport) return null;
+    if (billingExport.document.issuedAt) {
+        const archived = await getPool().query(
+            "SELECT pdf_data AS data FROM depannhome_billing_documents WHERE id=$1 AND owner_id=$2",
+            [billingExport.document.id, ownerId]
+        );
+        if (!archived.rows[0]?.data) return null;
+        return { buffer: archived.rows[0].data, filename: billingPdfFileName(billingExport.document), mimeType: PDF_MIME, document: billingExport.document };
+    }
+    const output = await createBillingDocumentOutput(billingExport.document, billingExport.profile);
+    return { ...output, document: billingExport.document };
+}
+
 function billingPdfFileName(document) {
     const type = document.documentType === "credit" ? "avoir" : document.documentType === "invoice" ? "facture" : "devis";
     const number = String(document.documentNumber || "document").replace(/[^a-z0-9_-]+/gi, "-").replace(/^-+|-+$/g, "");

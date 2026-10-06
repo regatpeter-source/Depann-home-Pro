@@ -1,5 +1,5 @@
-export const APP_VERSION = "1.16.0 Facturation réelle";
-export const DATA_VERSION = "2026-07-20-35";
+export const APP_VERSION = "1.17.0 Gestion tout-en-un";
+export const DATA_VERSION = "2026-07-20-36";
 
 export const STORAGE_KEYS = {
     history: "depannHomePro:history",
@@ -57,6 +57,7 @@ export const ROUTES = {
     companyEmail: "company-email",
     partnerSandbox: "partner-sandbox",
     purchases: "purchases",
+    businessSuite: "business-suite",
     technicalReports: "technical-reports",
         messages: "messages",
     calendar: "calendar",
@@ -91,6 +92,7 @@ export const MENU_ACCESS = Object.freeze({
         interventionSearch: INTERVENTION_SEARCH_USERS,
         library: LIBRARY_USERS,
         purchases: PURCHASE_USERS,
+        businessSuite: OPERATIONAL_PC.concat("accountant"),
         billing: OPERATIONAL_PC.concat("accountant"),
         accounting: ADMINISTRATORS.concat("pc_standard", "commercial", "accountant"),
         groups: ADMINISTRATORS,
@@ -107,6 +109,7 @@ export const MENU_ACCESS = Object.freeze({
         [ROUTES.clients]: OPERATIONAL_MOBILE,
         [ROUTES.billing]: OPERATIONAL_PC.concat("accountant"),
         [ROUTES.purchases]: PURCHASE_USERS,
+        [ROUTES.businessSuite]: OPERATIONAL_PC.concat("accountant"),
         [ROUTES.accounting]: ADMINISTRATORS.concat("pc_standard", "commercial", "accountant"),
         [ROUTES.groups]: ADMINISTRATORS,
         [ROUTES.partnerMissions]: PARTNER_MISSION_USERS,

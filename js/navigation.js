@@ -1,9 +1,10 @@
-import { APP_VERSION, ROUTES, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=138";
+import { APP_VERSION, ROUTES, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=139";
 import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=243";
 import { openCreatorPartnerRequest, openCreatorRequestNotification, renderCreatorConsole } from "./creator.js?v=173";
 import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=219";
 import { renderAccounting } from "./accounting.js?v=32";
 import { renderPurchases } from "./purchases.js?v=130";
+import { renderBusinessSuite } from "./business-suite.js?v=1";
 import { renderGroupActivation, renderGroupWorkspace } from "./groups.js?v=9";
 import { renderHistoryAndJournals } from "./history.js?v=2";
 import { renderPartnerMissions } from "./partner-missions.js?v=97";
@@ -253,6 +254,7 @@ function captureApplicationView(route, title) {
         return { settingsSection, templateType };
     }
     if (route === ROUTES.calendar && title === "Retrouver une intervention") return { workspace: "intervention-search" };
+    if (route === ROUTES.businessSuite) return { businessSuiteTab: document.querySelector("[data-suite-tab].active")?.dataset.suiteTab || "overview" };
     if (route === ROUTES.search) return { query: document.getElementById("search")?.value || "" };
     return {};
 }
@@ -312,6 +314,7 @@ function restoreApplicationRoute(entry) {
     if (route === ROUTES.billing) return isTechnician() && organizationFeatureEnabled("technicalReports") ? renderTechnicalReports() : renderBilling(view.documentId ? { documentId: view.documentId } : {});
     if (route === ROUTES.accounting) return renderAccounting(view.accountingSection || undefined);
     if (route === ROUTES.purchases) return renderPurchases(view.purchaseId ? { purchaseId: view.purchaseId } : {});
+    if (route === ROUTES.businessSuite) return renderBusinessSuite({ tab: view.businessSuiteTab });
     if (route === ROUTES.groups) return renderGroupWorkspace();
     if (route === ROUTES.partnerMissions) return renderPartnerMissions();
     if (route === ROUTES.companyEmail) return renderCompanyEmail();
@@ -478,6 +481,7 @@ function bindEvents() {
     const billingBtn = document.getElementById("billingBtn");
     const accountingBtn = document.getElementById("accountingBtn");
     const purchasesBtn = document.getElementById("purchasesBtn");
+    const businessSuiteBtn = document.getElementById("businessSuiteBtn");
     const groupsBtn = document.getElementById("groupsBtn");
     const partnerMissionsBtn = document.getElementById("partnerMissionsBtn");
     const companyEmailBtn = document.getElementById("companyEmailBtn");
@@ -510,6 +514,7 @@ function bindEvents() {
     });
     accountingBtn?.addEventListener("click", () => { if (canAccessQuick("accounting")) renderAccounting(); });
     purchasesBtn?.addEventListener("click", () => { if (canAccessQuick("purchases")) renderPurchases(); });
+    businessSuiteBtn?.addEventListener("click", () => { if (canAccessQuick("businessSuite")) renderBusinessSuite(); });
     groupsBtn?.addEventListener("click", () => { if (canAccessQuick("groups")) renderGroupWorkspace(); });
     partnerMissionsBtn?.addEventListener("click", () => { if (canAccessQuick("partnerMissions")) openPartnerMissionsEntryPoint(); });
     companyEmailBtn?.addEventListener("click", () => { if (canAccessQuick("companyEmail")) renderCompanyEmail(); });
@@ -547,6 +552,7 @@ function bindEvents() {
             }
             if (nav === ROUTES.accounting) renderAccounting();
             if (nav === ROUTES.purchases) renderPurchases();
+            if (nav === ROUTES.businessSuite) renderBusinessSuite();
             if (nav === ROUTES.groups && document.body.dataset.groupAdmin === "true") renderGroupWorkspace();
             if (nav === ROUTES.partnerMissions) openPartnerMissionsEntryPoint();
             if (nav === ROUTES.companyEmail) renderCompanyEmail();
@@ -562,7 +568,7 @@ function bindEvents() {
 
 function applyRoleBasedMenus() {
     const quickSelectors = {
-        clients: "#clientsBtn", calendar: "#calendarBtn", operationsMap: "#operationsMapBtn", interventionSearch: "#interventionSearchBtn", library: "#libraryBtn", billing: "#billingBtn", purchases: "#purchasesBtn",
+        clients: "#clientsBtn", calendar: "#calendarBtn", operationsMap: "#operationsMapBtn", interventionSearch: "#interventionSearchBtn", library: "#libraryBtn", billing: "#billingBtn", purchases: "#purchasesBtn", businessSuite: "#businessSuiteBtn",
         accounting: "#accountingBtn", groups: "#groupsBtn", partnerMissions: "#partnerMissionsBtn", companyEmail: "#companyEmailBtn",
         partnerSandbox: "#partnerSandboxBtn", support: "#supportTicketBtn", settings: "#settingsBtn"
     };
@@ -635,7 +641,7 @@ function initializeMobileWorkspaceMenu() {
 function renderMobileWorkspaceFolders(container, quickActions) {
     const groups = [
         ["Interventions", ["calendarBtn", "operationsMapBtn", "interventionSearchBtn", "clientsBtn", "partnerMissionsBtn"]],
-        ["Gestion", ["billingBtn", "accountingBtn", "purchasesBtn"]],
+        ["Gestion", ["billingBtn", "accountingBtn", "purchasesBtn", "businessSuiteBtn"]],
         ["Communication", ["companyEmailBtn"]],
         ["Ressources et compte", ["libraryBtn", "settingsBtn"]],
         ["Aide et support", ["supportTicketBtn"]]
@@ -740,7 +746,7 @@ function isCommercialMobile() {
 }
 
 function menuRoute(menu) {
-    return ({ clients: ROUTES.clients, calendar: ROUTES.calendar, operationsMap: ROUTES.operationsMap, interventionSearch: ROUTES.calendar, library: ROUTES.library, billing: ROUTES.billing, accounting: ROUTES.accounting, purchases: ROUTES.purchases, groups: ROUTES.groups, partnerMissions: ROUTES.partnerMissions, companyEmail: ROUTES.companyEmail, partnerSandbox: ROUTES.partnerSandbox, support: ROUTES.support, settings: ROUTES.settings })[menu] || "";
+    return ({ clients: ROUTES.clients, calendar: ROUTES.calendar, operationsMap: ROUTES.operationsMap, interventionSearch: ROUTES.calendar, library: ROUTES.library, billing: ROUTES.billing, accounting: ROUTES.accounting, purchases: ROUTES.purchases, businessSuite: ROUTES.businessSuite, groups: ROUTES.groups, partnerMissions: ROUTES.partnerMissions, companyEmail: ROUTES.companyEmail, partnerSandbox: ROUTES.partnerSandbox, support: ROUTES.support, settings: ROUTES.settings })[menu] || "";
 }
 
 function openHome() {
