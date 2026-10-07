@@ -1,4 +1,4 @@
-export const APP_VERSION = "1.17.0 Gestion tout-en-un";
+export const APP_VERSION = "1.17.0 Ressources métier";
 export const DATA_VERSION = "2026-07-20-36";
 
 export const STORAGE_KEYS = {

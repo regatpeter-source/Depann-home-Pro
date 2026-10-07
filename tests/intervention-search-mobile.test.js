@@ -44,6 +44,6 @@ test("les résultats d’intervention restent lisibles sous forme de cartes sur 
 });
 
 test("le nouveau module est préchargé par la PWA", () => {
-    assert.match(serviceWorker, /js\/intervention-search\.js\?v=3/);
-    assert.match(serviceWorker, /depann-home-pro-v627/);
+    assert.match(serviceWorker, /js\/intervention-search\.js\?v=4/);
+    assert.match(serviceWorker, /depann-home-pro-v628/);
 });

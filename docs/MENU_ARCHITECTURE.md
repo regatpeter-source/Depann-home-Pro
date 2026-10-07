@@ -10,6 +10,8 @@ Au démarrage, `applyRoleBasedMenus()` dans `js/navigation.js` supprime du DOM l
 
 Toute nouvelle entrée de menu doit être ajoutée à `MENU_ACCESS` avant son utilisation dans l’interface. Une route client est également vérifiée par `canAccessRoute()` avant son rendu.
 
+Les fonctions d’exploitation sont réparties selon leur contexte : **Portail client** se trouve dans **Clients**, **Rentabilité** dans **Devis & rapports**, et **Ressources** regroupe **Sites & équipements**, **Stock** et **Véhicules**. Le menu distinct **Automatisations** n’est plus exposé ; les rappels utiles continuent d’être alimentés en arrière-plan dans le tableau de bord.
+
 Les rôles de poste mobile (`mobile_admin`, `team_lead`, `technician`) conservent toujours les boutons **Accueil** et **Bibliothèque**, indépendamment des fonctionnalités incluses dans l’offre de l’organisation. **Gammes** et **Bibliothèque** ne sont jamais affichées dans le logiciel PC : le filtrage tient compte du type d’appareil en plus du rôle, les anciennes vues restaurées sont refusées et l’API Bibliothèque exige une session mobile. Les **Achats** sont disponibles dans toutes les offres sur tous les postes administratifs (`admin`, `pc_standard`, `accountant`) et sur `mobile_admin`, avec le même contrôle côté serveur. Tous les postes opérationnels utilisés sur mobile disposent aussi de **Signaler un problème** dans le dossier **Aide et support** ; ce formulaire crée une demande Support avec catégorie, objet, description et contexte technique non sensible.
 
 ## Matrice actuelle
@@ -35,3 +37,5 @@ Les règles d’interface ne remplacent pas les contrôles existants :
 - autres données métier : contrôles de rôle existants et filtrage par `owner_id`.
 
 Un appel direct à une API administrative depuis un poste standard, mobile ou terrain reste donc refusé par le serveur.
+
+La carte terrain applique aussi les droits côté serveur : un technicien mobile reçoit uniquement sa propre position et ses interventions, tandis que le Poste Admin Mobile et le Chef d’équipe peuvent consulter l’équipe. Sur PC, les postes autorisés choisissent les techniciens ou les équipes à afficher.

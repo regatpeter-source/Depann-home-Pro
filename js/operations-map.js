@@ -171,13 +171,44 @@ async function loadOperationsMap(panel, date, announce = false) {
 function renderMapContents(panel, payload) {
     const events = Array.isArray(payload.events) ? payload.events : [];
     const technicians = Array.isArray(payload.technicians) ? payload.technicians : [];
+    const teams = Array.isArray(payload.teams) ? payload.teams : [];
     const filters = panel.querySelector("[data-map-filters]");
     const selected = selectedTechnicianIds(filters);
-    filters.innerHTML = `<div class="operations-map-sidebar-title"><div><p class="eyebrow">Équipe</p><h3>Techniciens visibles</h3></div><span>${technicians.length}</span></div>${technicians.length ? `<div class="operations-map-technicians">${technicians.map(technician => `<label><input type="checkbox" value="${escapeHtml(technician.id)}" ${!selected.size || selected.has(String(technician.id)) ? "checked" : ""}><span class="technician-map-dot${technician.isLive ? " live" : ""}"></span><span><strong>${escapeHtml(technician.name)}</strong><small>${technician.isLive ? "En direct" : `Dernière position ${escapeHtml(relativeTime(technician.updatedAt))}`}</small></span></label>`).join("")}</div>` : '<p class="muted">Aucun technicien ne partage actuellement sa position.</p>'}`;
-    const applySelection = () => renderMapMarkers(panel, events, technicians, selectedTechnicianIds(filters));
-    filters.querySelectorAll('input[type="checkbox"]').forEach(input => input.addEventListener("change", applySelection));
-    renderInterventionList(panel.querySelector("[data-map-list]"), events);
-    renderMapMarkers(panel, events, technicians, selectedTechnicianIds(filters));
+    const selectionInitialized = filters.dataset.selectionInitialized === "true";
+    const availableIds = new Set(technicians.map(technician => String(technician.id)));
+    const visibleTeams = teams.map(team => ({ ...team, memberIds: (team.memberIds || []).map(String).filter(id => availableIds.has(id)) })).filter(team => team.memberIds.length);
+    filters.innerHTML = `<div class="operations-map-sidebar-title"><div><p class="eyebrow">Équipe</p><h3>Techniciens visibles</h3></div><span>${technicians.length}</span></div>${payload.teamView && visibleTeams.length ? `<fieldset class="operations-map-teams"><legend>Afficher une équipe</legend>${visibleTeams.map(team => `<label><input type="checkbox" data-map-team="${escapeHtml(team.id)}" data-member-ids="${escapeHtml(team.memberIds.join(","))}"> ${escapeHtml(team.name)}${team.section ? ` · ${escapeHtml(team.section)}` : ""}</label>`).join("")}</fieldset>` : ""}${technicians.length ? `<div class="operations-map-technicians">${technicians.map(technician => `<label><input type="checkbox" data-map-technician value="${escapeHtml(technician.id)}" ${!selectionInitialized || selected.has(String(technician.id)) ? "checked" : ""}><span class="technician-map-dot${technician.isLive ? " live" : ""}"></span><span><strong>${escapeHtml(technician.name)}</strong><small>${technician.isLive ? "En direct" : `Dernière position ${escapeHtml(relativeTime(technician.updatedAt))}`}</small></span></label>`).join("")}</div>` : '<p class="muted">Aucun technicien ne partage actuellement sa position.</p>'}`;
+    filters.dataset.selectionInitialized = "true";
+    const synchronizeTeamChoices = () => filters.querySelectorAll("[data-map-team]").forEach(input => {
+        const memberIds = input.dataset.memberIds.split(",").filter(Boolean);
+        const selectedIds = selectedTechnicianIds(filters);
+        input.checked = memberIds.length > 0 && memberIds.every(id => selectedIds.has(id));
+        input.indeterminate = !input.checked && memberIds.some(id => selectedIds.has(id));
+    });
+    const applySelection = () => {
+        const selectedIds = selectedTechnicianIds(filters);
+        const visibleEvents = eventsForMapSelection(events, technicians, selectedIds);
+        renderInterventionList(panel.querySelector("[data-map-list]"), visibleEvents);
+        renderMapMarkers(panel, visibleEvents, technicians, selectedIds);
+        synchronizeTeamChoices();
+    };
+    filters.querySelectorAll("[data-map-technician]").forEach(input => input.addEventListener("change", applySelection));
+    filters.querySelectorAll("[data-map-team]").forEach(input => input.addEventListener("change", () => {
+        const memberIds = new Set(input.dataset.memberIds.split(",").filter(Boolean));
+        filters.querySelectorAll("[data-map-technician]").forEach(technician => {
+            if (memberIds.has(technician.value)) technician.checked = input.checked;
+        });
+        applySelection();
+    }));
+    applySelection();
+}
+
+function eventsForMapSelection(events, technicians, selectedIds) {
+    const allSelected = technicians.length > 0 && technicians.every(technician => selectedIds.has(String(technician.id)));
+    return events.filter(event => {
+        const assignedIds = (event.assignedTechnicians || []).map(item => String(item.id));
+        return assignedIds.length ? assignedIds.some(id => selectedIds.has(id)) : allSelected;
+    });
 }
 
 function renderInterventionList(container, events) {
@@ -274,7 +305,7 @@ function updateSharingState(message, error = false) {
 }
 function isSharingEnabled() { return localStorage.getItem(SHARING_KEY) === "true"; }
 function canShareLocation() { return document.body.dataset.deviceType === "mobile" && ["mobile_admin", "team_lead", "technician"].includes(document.body.dataset.role); }
-function selectedTechnicianIds(container) { return new Set([...container.querySelectorAll('input[type="checkbox"]:checked')].map(input => input.value)); }
+function selectedTechnicianIds(container) { return new Set([...container.querySelectorAll('[data-map-technician]:checked')].map(input => input.value)); }
 function validPoint(item) { return item?.latitude !== null && item?.latitude !== "" && item?.longitude !== null && item?.longitude !== "" && Number.isFinite(Number(item?.latitude)) && Number.isFinite(Number(item?.longitude)); }
 function technicianNames(event) { return (event.assignedTechnicians || []).map(item => item.fullName).filter(Boolean).join(", ") || "Non affectée"; }
 function interventionMarker(number) { const element = document.createElement("div"); element.className = "operations-map-marker"; element.innerHTML = `<span>${Number(number) || "·"}</span>`; return element; }

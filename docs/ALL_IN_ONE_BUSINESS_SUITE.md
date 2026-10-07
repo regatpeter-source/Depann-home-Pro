@@ -1,10 +1,14 @@
-# Gestion tout-en-un
+# Ressources, portail client et rentabilité
 
-La version 1.17 active six fonctions internes, sans compte auprès d’un prestataire tiers.
+La version 1.17 active les fonctions métier internes, sans compte auprès d’un prestataire tiers.
 
 ## Accès
 
-Sur un poste administratif, ouvrir **Gestion tout-en-un** puis choisir le sous-menu voulu. Chaque sous-menu peut rester ouvert dans l’espace de travail ou être détaché en faisant glisser son onglet avec le clic gauche hors de la fenêtre, directement vers le second écran.
+Sur un poste administratif :
+
+- **Clients → Portail client** gère les liens documentaires et les décisions de devis ;
+- **Devis & rapports → Rentabilité** calcule les marges d’intervention ;
+- **Ressources** regroupe **Sites & équipements**, **Stock** et **Véhicules**.
 
 ## Portail client et décisions de devis
 
@@ -41,16 +45,16 @@ Le calcul versionné agrège :
 
 Configurer les coûts horaires chargés, puis affecter si nécessaire les achats à l’intervention depuis l’écran **Rentabilité**.
 
-## Automatisations internes
+## Rappels internes du tableau de bord
 
-Les règles disponibles créent des rappels internes pour :
+Le moteur interne peut continuer à alimenter les rappels du tableau de bord pour :
 
 - les devis à relancer ;
 - les contrats à renouveler ;
 - les maintenances à planifier ;
 - le stock faible.
 
-Le moteur s’exécute toutes les quinze minutes et peut être déclenché manuellement. Un verrou PostgreSQL empêche les doubles exécutions et une clé de déduplication empêche les rappels en double.
+Il n’existe plus de menu **Automatisations** séparé. Le moteur s’exécute en arrière-plan toutes les quinze minutes ; un verrou PostgreSQL empêche les doubles exécutions et une clé de déduplication empêche les rappels en double.
 
 ## Sécurité et exploitation
 

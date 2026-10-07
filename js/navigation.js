@@ -1,26 +1,26 @@
 import { APP_VERSION, ROUTES, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=139";
-import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=245";
+import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=246";
 import { openCreatorPartnerRequest, openCreatorRequestNotification, renderCreatorConsole } from "./creator.js?v=175";
-import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=221";
-import { renderAccounting } from "./accounting.js?v=32";
-import { renderPurchases } from "./purchases.js?v=130";
-import { renderBusinessSuite } from "./business-suite.js?v=1";
+import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=222";
+import { renderAccounting } from "./accounting.js?v=33";
+import { renderPurchases } from "./purchases.js?v=131";
+import { renderBusinessSuite } from "./business-suite.js?v=2";
 import { renderGroupActivation, renderGroupWorkspace } from "./groups.js?v=9";
 import { renderHistoryAndJournals } from "./history.js?v=2";
-import { renderPartnerMissions } from "./partner-missions.js?v=100";
+import { renderPartnerMissions } from "./partner-missions.js?v=101";
 import { renderPartnerSandbox } from "./partner-sandbox.js?v=3";
-import { renderPartnerConnections } from "./partner-connections.js?v=59";
+import { renderPartnerConnections } from "./partner-connections.js?v=60";
 import { renderCompanyEmailWorkspace, renderPartnerEmailSettings } from "./partner-email-settings.js?v=29";
 import { renderDataImportTool } from "./data-imports.js?v=5";
-import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=67";
+import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=68";
 import { getFirstUnreadClientId, refreshClientMessageAlert, refreshVisibleClientMessages } from "./messages.js?v=107";
-import { getSearchableClients, refreshClientDirectoryAfterSynchronization, renderClients } from "./clients.js?v=175";
+import { getSearchableClients, refreshClientDirectoryAfterSynchronization, renderClients } from "./clients.js?v=176";
 import { initializeDesktopWorkspace } from "./desktop-workspace.js?v=4";
 import { synchronizeClients } from "./client-sync.js?v=132";
 import { configureLibrary, openLibrarySection, renderLibrary, searchPersonalLibrary } from "./library.js?v=124";
-import { getContextualSearchResults } from "./search.js?v=78";
-import { renderInterventionSearch } from "./intervention-search.js?v=3";
-import { initializeTerrainLocationSharing, renderOperationsMap } from "./operations-map.js?v=8";
+import { getContextualSearchResults } from "./search.js?v=79";
+import { renderInterventionSearch } from "./intervention-search.js?v=4";
+import { initializeTerrainLocationSharing, renderOperationsMap } from "./operations-map.js?v=9";
 import { state, resetSelection } from "./state.js?v=44";
 import {
     getSettings,
@@ -234,6 +234,7 @@ function workspaceViewIdentity(route, title, view) {
 
 function captureApplicationView(route, title) {
     if (route === ROUTES.clients) {
+    if (document.querySelector('[data-suite-view="portal"]')) return { clientWorkspace: "portal" };
         const selectedId = document.querySelector("[data-client-detail-id]")?.dataset.clientDetailId || "";
         const editId = document.querySelector('#clientForm input[name="id"]')?.value || "";
         const clientWorkspace = document.querySelector('[data-client-workspace][aria-current="page"]')?.dataset.clientWorkspace || "";
@@ -255,7 +256,8 @@ function captureApplicationView(route, title) {
         return { settingsSection, templateType };
     }
     if (route === ROUTES.calendar && title === "Retrouver une intervention") return { workspace: "intervention-search" };
-    if (route === ROUTES.businessSuite) return { businessSuiteTab: document.querySelector("[data-suite-tab].active")?.dataset.suiteTab || "overview" };
+    if (route === ROUTES.billing && document.querySelector('[data-suite-view="profitability"]')) return { billingWorkspace: "profitability" };
+    if (route === ROUTES.businessSuite) return { businessSuiteTab: document.querySelector("[data-suite-tab].active")?.dataset.suiteTab || "assets" };
     if (route === ROUTES.search) return { query: document.getElementById("search")?.value || "" };
     return {};
 }
@@ -311,7 +313,9 @@ function restoreApplicationRoute(entry) {
     if (route === ROUTES.calendar && view.calendarEventId) return renderCalendar({ date: view.calendarDate ? new Date(`${view.calendarDate}T12:00:00`) : new Date(), eventId: view.calendarEventId });
     if (route === ROUTES.calendar) return openCalendar();
     if (route === ROUTES.operationsMap) return renderOperationsMap();
+    if (route === ROUTES.clients && view.clientWorkspace === "portal") return renderBusinessSuite({ tab: "portal" });
     if (route === ROUTES.clients) return renderClientHistoryView(view);
+    if (route === ROUTES.billing && view.billingWorkspace === "profitability") return renderBusinessSuite({ tab: "profitability" });
     if (route === ROUTES.billing) return isTechnician() && organizationFeatureEnabled("technicalReports") ? renderTechnicalReports() : renderBilling(view.documentId ? { documentId: view.documentId } : {});
     if (route === ROUTES.accounting) return renderAccounting(view.accountingSection || undefined);
     if (route === ROUTES.purchases) return renderPurchases(view.purchaseId ? { purchaseId: view.purchaseId } : {});
@@ -516,7 +520,7 @@ function bindEvents() {
     });
     accountingBtn?.addEventListener("click", () => { if (canAccessQuick("accounting")) renderAccounting(); });
     purchasesBtn?.addEventListener("click", () => { if (canAccessQuick("purchases")) renderPurchases(); });
-    businessSuiteBtn?.addEventListener("click", () => { if (canAccessQuick("businessSuite")) renderBusinessSuite(); });
+    businessSuiteBtn?.addEventListener("click", () => { if (canAccessQuick("businessSuite")) renderBusinessSuite({ tab: "assets" }); });
     groupsBtn?.addEventListener("click", () => { if (canAccessQuick("groups")) renderGroupWorkspace(); });
     partnerMissionsBtn?.addEventListener("click", () => { if (canAccessQuick("partnerMissions")) openPartnerMissionsEntryPoint(); });
     companyEmailBtn?.addEventListener("click", () => { if (canAccessQuick("companyEmail")) renderCompanyEmail(); });
@@ -554,7 +558,7 @@ function bindEvents() {
             }
             if (nav === ROUTES.accounting) renderAccounting();
             if (nav === ROUTES.purchases) renderPurchases();
-            if (nav === ROUTES.businessSuite) renderBusinessSuite();
+            if (nav === ROUTES.businessSuite) renderBusinessSuite({ tab: "assets" });
             if (nav === ROUTES.groups && document.body.dataset.groupAdmin === "true") renderGroupWorkspace();
             if (nav === ROUTES.partnerMissions) openPartnerMissionsEntryPoint();
             if (nav === ROUTES.companyEmail) renderCompanyEmail();
@@ -643,7 +647,8 @@ function initializeMobileWorkspaceMenu() {
 function renderMobileWorkspaceFolders(container, quickActions) {
     const groups = [
         ["Interventions", ["calendarBtn", "operationsMapBtn", "interventionSearchBtn", "clientsBtn", "partnerMissionsBtn"]],
-        ["Gestion", ["billingBtn", "accountingBtn", "purchasesBtn", "businessSuiteBtn"]],
+        ["Gestion", ["billingBtn", "accountingBtn", "purchasesBtn"]],
+        ["Ressources", ["businessSuiteBtn"]],
         ["Communication", ["companyEmailBtn"]],
         ["Ressources et compte", ["libraryBtn", "settingsBtn"]],
         ["Aide et support", ["supportTicketBtn"]]

@@ -89,10 +89,19 @@ export function registerOperationsMapRoutes(app, requireAuthentication) {
                 AND (cardinality($6::bigint[])>0 OR location.user_id IS NOT NULL)
             ORDER BY LOWER(COALESCE(member.full_name,member.username,''))
         `, [ownerId, ownOnly, String(LIVE_POSITION_MINUTES), request.user.sub, String(POSITION_RETENTION_HOURS), technicianIds]);
+        const teamsResult = ownOnly ? { rows: [] } : await database.query(`
+            SELECT team.id,team.name,team.site_label AS "siteLabel",team.section,
+                COALESCE(json_agg(membership.member_id ORDER BY membership.member_id) FILTER(WHERE membership.member_id IS NOT NULL),'[]'::json) AS "memberIds"
+            FROM depannhome_teams team
+            LEFT JOIN depannhome_team_memberships membership ON membership.team_id=team.id
+            WHERE team.owner_id=$1 AND team.is_active=TRUE
+            GROUP BY team.id
+            ORDER BY LOWER(team.name)
+        `, [ownerId]);
         const target = targetAddress ? { address: targetAddress, location: targetAddress } : null;
         if (target) await attachEventCoordinates(database, ownerId, [target]);
         if (target) await attachTravelTimes(target, locationsResult.rows);
-        response.json({ date, teamView: !ownOnly, liveWindowMinutes: LIVE_POSITION_MINUTES, events, technicians: locationsResult.rows, target });
+        response.json({ date, teamView: !ownOnly, liveWindowMinutes: LIVE_POSITION_MINUTES, events, technicians: locationsResult.rows, teams: teamsResult.rows, target });
     }));
 
     app.post("/api/operations-map/location", asyncHandler(async (request, response) => {

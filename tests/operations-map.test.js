@@ -62,7 +62,19 @@ test("l’interface filtre les techniciens et distingue direct et dernière posi
     assert.match(client, /Techniciens visibles/);
     assert.match(client, /technician\.isLive \? "En direct"/);
     assert.match(client, /selectedTechnicianIds/);
+    assert.match(client, /data-map-team/);
+    assert.match(client, /eventsForMapSelection/);
+    assert.match(server, /FROM depannhome_teams team/);
+    assert.match(server, /teams: teamsResult\.rows/);
     assert.match(client, /15_000/);
+});
+
+test("un technicien mobile ne reçoit que sa propre position et ses interventions", () => {
+    assert.match(server, /const ownOnly = !canViewTeamLocations\(request\.user\)/);
+    assert.match(server, /event\.assigned_technician_id=\$4::bigint/);
+    assert.match(server, /assignment\.technician_id=\$4::bigint/);
+    assert.match(server, /member\.id=\$4::bigint/);
+    assert.match(server, /const teamsResult = ownOnly \? \{ rows: \[\] \}/);
 });
 
 test("la planification affiche une carte limitée à l’adresse et aux membres affectés", () => {
@@ -133,7 +145,7 @@ test("les limites PWA, la rétention et les fournisseurs cartographiques sont do
     assert.doesNotMatch(client, /tile\.openstreetmap\.org|basemaps\.cartocdn\.com|api[_-]?key/i);
     assert.match(architecture, /ne prétend pas assurer un suivi lorsque le navigateur suspend l’application/);
     assert.match(architecture, /service Android au premier plan/);
-    assert.match(worker, /operations-map\.js\?v=8/);
+    assert.match(worker, /operations-map\.js\?v=9/);
     assert.match(worker, /maplibre-gl\.mjs\?v=6\.11\.2/);
     assert.match(worker, /maplibre-gl-worker\.mjs/);
 });

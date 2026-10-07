@@ -6780,7 +6780,7 @@ body.desktop-device .desktop-workspace[hidden]{display:none}
 body.desktop-device .desktop-workspace-label{color:#536773;font-size:10px;letter-spacing:.08em;text-transform:uppercase}
 body.desktop-device .desktop-workspace>nav{display:flex;min-width:0;gap:5px;overflow-x:auto;scrollbar-width:thin}
 body.desktop-device .desktop-workspace-tab{display:flex;flex:0 0 auto;align-items:center;max-width:280px;border:1px solid #c7d1d8;border-radius:6px;background:#f6f8f9;color:#42545f}
-body.desktop-device .desktop-workspace-tab.active{border-color:#668798;background:#fff;color:#244b61;box-shadow:inset 0 -2px 0 #4f806f}
+body.desktop-device .desktop-workspace-tab.active{border-color:#173f55;background:#244b61;color:#fff;box-shadow:0 2px 8px rgba(15,23,42,.28),inset 0 -3px 0 #6ee7b7}
 body.desktop-device .desktop-workspace-tab>button{min-height:29px;border:0;background:transparent;color:inherit;cursor:pointer}
 body.desktop-device .desktop-workspace-tab>button:first-child{display:flex;align-items:center;gap:6px;min-width:0;max-width:245px;padding:5px 8px}
 body.desktop-device .desktop-workspace-tab>button:first-child{cursor:grab;touch-action:none;user-select:none}
@@ -6794,7 +6794,7 @@ body.desktop-device .desktop-workspace-empty{align-self:center;color:#71808a;fon
 body.desktop-device .desktop-workspace-mode{padding:4px 7px;border-radius:999px;background:#dbeafe;color:#1e4f75;font-size:10px;font-weight:800;white-space:nowrap}
 body.desktop-device.dark-theme .desktop-workspace{border-color:#445661;background:#263945}
 body.desktop-device.dark-theme .desktop-workspace-tab{border-color:#526873;background:#314753;color:#dbe7ed}
-body.desktop-device.dark-theme .desktop-workspace-tab.active{background:#3b5360;color:#fff}
+body.desktop-device.dark-theme .desktop-workspace-tab.active{border-color:#6ee7b7;background:#0f7650;color:#fff;box-shadow:0 0 0 2px rgba(110,231,183,.18),inset 0 -3px 0 #a7f3d0}
 body:not(.desktop-device) .desktop-workspace{display:none!important}
 
 body.desktop-device #authRoot > footer::before{
@@ -8467,6 +8467,10 @@ body:is(.desktop-device,.mobile-device).dark-theme :is(.pdf-live-page,.billing-l
 .operations-map-sidebar-title{display:flex;align-items:center;justify-content:space-between;gap:10px;}
 .operations-map-sidebar-title>span{display:grid;place-items:center;min-width:30px;height:30px;border-radius:999px;background:var(--primary);color:#fff;font-weight:900;}
 .operations-map-technicians{display:grid;gap:7px;}
+.operations-map-teams{display:grid;gap:6px;margin:0 0 10px;padding:10px;border:1px solid var(--border);border-radius:10px;background:var(--surface);}
+.operations-map-teams legend{padding:0 5px;color:var(--muted);font-size:.78rem;font-weight:800;}
+.operations-map-teams label{display:flex;align-items:center;gap:7px;font-size:.82rem;font-weight:700;cursor:pointer;}
+.operations-map-teams input{width:18px;height:18px;accent-color:var(--secondary);}
 .operations-map-technicians label{display:grid;grid-template-columns:auto auto minmax(0,1fr);align-items:center;gap:9px;padding:9px;border:1px solid var(--border);border-radius:10px;cursor:pointer;background:var(--surface-alt,#f8fafc);}
 .operations-map-technicians input{width:20px;height:20px;accent-color:var(--secondary);}
 .operations-map-technicians strong,.operations-map-technicians small{display:block;overflow-wrap:anywhere;}

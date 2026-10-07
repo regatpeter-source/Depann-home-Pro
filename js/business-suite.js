@@ -6,8 +6,8 @@ let context = { clients: [], documents: [], events: [], purchases: [] };
 let activeTab = "overview";
 
 export async function renderBusinessSuite(options = {}) {
-    activeTab = options.tab || activeTab;
-    setPage("Gestion tout-en-un", ROUTES.businessSuite, "business-suite");
+    activeTab = normalizedTab(options.tab || activeTab);
+    setPage(pageTitle(activeTab), pageRoute(activeTab), "business-suite");
     const container = getContainer();
     container.innerHTML = '<section class="business-suite-shell"><p class="muted">Chargement des données métier…</p></section>';
     try {
@@ -17,21 +17,22 @@ export async function renderBusinessSuite(options = {}) {
 }
 
 function renderShell(container) {
-    const activeLabel = tabs().find(([id]) => id === activeTab)?.[1] || "Vue d’ensemble";
-    setPage(`Gestion tout-en-un · ${activeLabel}`, ROUTES.businessSuite, "business-suite");
-    container.innerHTML = `<section class="business-suite-shell"><header class="business-suite-hero"><div><p class=eyebrow>Exploitation intégrée</p><h2>Portail, parc, stock, rentabilité et relances</h2><p>Ces fonctions utilisent uniquement la base Depann'Home Pro, sans création de compte auprès d’un tiers.</p></div></header><nav class="business-suite-tabs" aria-label="Modules de gestion">${tabs().map(([id, label]) => `<button type=button data-suite-tab=${id} class="${id === activeTab ? "active" : ""}">${label}</button>`).join("")}</nav><div data-suite-content></div></section>`;
+    const resourceView = resourceTabs().some(([id]) => id === activeTab);
+    setPage(pageTitle(activeTab), pageRoute(activeTab), "business-suite");
+    const hero = activeTab === "portal"
+        ? '<p class=eyebrow>Clients</p><h2>Portail client</h2><p>Partagez les documents et recueillez les décisions sur les devis depuis l’espace Clients.</p>'
+        : activeTab === "profitability"
+            ? '<p class=eyebrow>Devis & rapports</p><h2>Rentabilité des interventions</h2><p>Mesurez la marge réelle à partir de la facturation, du temps, des pièces et des achats.</p>'
+            : '<p class=eyebrow>Ressources</p><h2>Sites, équipements, stocks et véhicules</h2><p>Gérez les moyens nécessaires aux interventions dans un espace métier unique.</p>';
+    container.innerHTML = `<section class="business-suite-shell" data-suite-view="${activeTab}"><header class="business-suite-hero"><div>${hero}</div></header>${resourceView ? `<nav class="business-suite-tabs" aria-label="Ressources métier">${resourceTabs().map(([id, label]) => `<button type=button data-suite-tab=${id} class="${id === activeTab ? "active" : ""}">${label}</button>`).join("")}</nav>` : ""}<div data-suite-content></div></section>`;
     container.querySelectorAll("[data-suite-tab]").forEach(button => button.addEventListener("click", () => { activeTab = button.dataset.suiteTab; renderShell(container); }));
     const content = container.querySelector("[data-suite-content]");
     if (activeTab === "portal") return renderPortal(content);
     if (activeTab === "assets") return renderAssets(content);
     if (activeTab === "inventory") return renderInventory(content);
+    if (activeTab === "vehicles") return renderVehicles(content);
     if (activeTab === "profitability") return renderProfitability(content);
-    if (activeTab === "automation") return renderAutomation(content);
-    renderOverview(content);
-}
-
-function renderOverview(container) {
-    container.innerHTML = `<div class="business-metrics"><article><strong>${context.clients.length}</strong><span>clients actifs</span></article><article><strong>${context.documents.length}</strong><span>documents récents</span></article><article><strong>${context.events.length}</strong><span>interventions récentes</span></article></div><div class="business-grid"><article class=business-panel><h3>Un seul espace métier</h3><p>Créez des accès documentaires sécurisés, gérez les sites et équipements, tracez chaque pièce et mesurez la marge réelle par intervention.</p></article><article class=business-panel><h3>Relances internes</h3><p>Les règles automatiques génèrent des rappels dans le logiciel : devis à relancer, maintenance à planifier, contrats à renouveler et stock faible.</p></article></div>`;
+    return renderAssets(content);
 }
 
 async function renderPortal(container) {
@@ -91,10 +92,21 @@ async function renderInventory(container) {
     container.innerHTML = "<p class=muted>Chargement du stock…</p>";
     try {
         const data = await api("/api/business-suite/inventory");
-        container.innerHTML = `<div class=business-grid><article class=business-panel><h3>Dépôts et véhicules</h3><form data-location-form class=form-grid><label>Nom<input name=name required></label><label>Type<select name=locationType><option value=warehouse>Dépôt</option><option value=vehicle>Véhicule</option></select></label><label>Immatriculation<input name=vehicleRegistration></label><button type=submit>Ajouter</button></form>${data.locations.map(item => `<div class=business-row><strong>${escapeHtml(item.name)}</strong><small>${item.locationType === "vehicle" ? `Véhicule ${escapeHtml(item.vehicleRegistration)}` : "Dépôt"}</small></div>`).join("")}</article><article class=business-panel><h3>Articles</h3><form data-item-form class=form-grid><label>Référence<input name=sku required></label><label>Nom<input name=name required></label><label>Coût unitaire<input name=defaultUnitCost type=number min=0 step=.01></label><label>Seuil d’alerte<input name=reorderLevel type=number min=0 step=.001></label><button type=submit>Ajouter</button></form>${data.items.map(item => `<div class=business-row><div><strong>${escapeHtml(item.sku)} · ${escapeHtml(item.name)}</strong><small>Disponible : ${numberLabel(item.quantity)} ${escapeHtml(item.unit)} · seuil ${numberLabel(item.reorderLevel)}</small></div></div>`).join("")}</article><article class=business-panel><h3>Mouvement de stock</h3><form data-movement-form class=form-grid><label>Article<select name=itemId required>${optionList(data.items, "name")}</select></label><label>Emplacement<select name=locationId required>${optionList(data.locations)}</select></label><label>Type<select name=movementType><option value=in>Entrée</option><option value=out>Sortie</option><option value=consumption>Consommation intervention</option><option value=adjustment>Ajustement signé</option></select></label><label>Quantité<input name=quantity type=number step=.001 required></label><label>Coût unitaire<input name=unitCost type=number min=0 step=.01></label><label>Intervention<select name=eventId>${optionList(context.events, "title")}</select></label><label class=form-wide>Motif<input name=reason maxlength=500></label><button type=submit>Enregistrer</button></form></article><article class="business-panel business-wide"><h3>Derniers mouvements</h3>${data.movements.map(item => `<div class=business-row><div><strong>${escapeHtml(item.itemName)} · ${numberLabel(item.quantity)}</strong><small>${escapeHtml(item.locationName)} · ${escapeHtml(item.movementType)} · ${dateLabel(item.createdAt)}${item.eventId ? ` · intervention ${item.eventId}` : ""}</small></div></div>`).join("") || "<p class=muted>Aucun mouvement.</p>"}</article></div>`;
+        const warehouses = data.locations.filter(item => item.locationType === "warehouse");
+        container.innerHTML = `<div class=business-grid><article class=business-panel><h3>Dépôts</h3><form data-location-form class=form-grid><input type=hidden name=locationType value=warehouse><label>Nom du dépôt<input name=name required></label><button type=submit>Ajouter le dépôt</button></form>${warehouses.map(item => `<div class=business-row><strong>${escapeHtml(item.name)}</strong><small>Dépôt</small></div>`).join("") || "<p class=muted>Aucun dépôt.</p>"}</article><article class=business-panel><h3>Articles</h3><form data-item-form class=form-grid><label>Référence<input name=sku required></label><label>Nom<input name=name required></label><label>Coût unitaire<input name=defaultUnitCost type=number min=0 step=.01></label><label>Seuil d’alerte<input name=reorderLevel type=number min=0 step=.001></label><button type=submit>Ajouter</button></form>${data.items.map(item => `<div class=business-row><div><strong>${escapeHtml(item.sku)} · ${escapeHtml(item.name)}</strong><small>Disponible : ${numberLabel(item.quantity)} ${escapeHtml(item.unit)} · seuil ${numberLabel(item.reorderLevel)}</small></div></div>`).join("")}</article><article class=business-panel><h3>Mouvement de stock</h3><form data-movement-form class=form-grid><label>Article<select name=itemId required>${optionList(data.items, "name")}</select></label><label>Emplacement<select name=locationId required>${optionList(data.locations)}</select></label><label>Type<select name=movementType><option value=in>Entrée</option><option value=out>Sortie</option><option value=consumption>Consommation intervention</option><option value=adjustment>Ajustement signé</option></select></label><label>Quantité<input name=quantity type=number step=.001 required></label><label>Coût unitaire<input name=unitCost type=number min=0 step=.01></label><label>Intervention<select name=eventId>${optionList(context.events, "title")}</select></label><label class=form-wide>Motif<input name=reason maxlength=500></label><button type=submit>Enregistrer</button></form></article><article class="business-panel business-wide"><h3>Derniers mouvements</h3>${data.movements.map(item => `<div class=business-row><div><strong>${escapeHtml(item.itemName)} · ${numberLabel(item.quantity)}</strong><small>${escapeHtml(item.locationName)} · ${escapeHtml(item.movementType)} · ${dateLabel(item.createdAt)}${item.eventId ? ` · intervention ${item.eventId}` : ""}</small></div></div>`).join("") || "<p class=muted>Aucun mouvement.</p>"}</article></div>`;
         bindJsonForm(container.querySelector("[data-location-form]"), "/api/business-suite/inventory/locations", () => renderInventory(container));
         bindJsonForm(container.querySelector("[data-item-form]"), "/api/business-suite/inventory/items", () => renderInventory(container));
         bindJsonForm(container.querySelector("[data-movement-form]"), "/api/business-suite/inventory/movements", () => renderInventory(container));
+    } catch (error) { renderFailure(container, error); }
+}
+
+async function renderVehicles(container) {
+    container.innerHTML = "<p class=muted>Chargement des véhicules…</p>";
+    try {
+        const data = await api("/api/business-suite/inventory");
+        const vehicles = data.locations.filter(item => item.locationType === "vehicle");
+        container.innerHTML = `<article class=business-panel><h3>Véhicules et stocks embarqués</h3><p class=muted>Chaque véhicule constitue un emplacement de stock utilisable dans les mouvements et consommations d’intervention.</p><form data-vehicle-form class=form-grid><input type=hidden name=locationType value=vehicle><label>Nom du véhicule<input name=name required placeholder="Ex. Fourgon Nantes 1"></label><label>Immatriculation<input name=vehicleRegistration maxlength=40></label><button type=submit>Ajouter le véhicule</button></form>${vehicles.map(item => `<div class=business-row><div><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.vehicleRegistration || "Immatriculation non renseignée")}</small></div></div>`).join("") || "<p class=muted>Aucun véhicule enregistré.</p>"}</article>`;
+        bindJsonForm(container.querySelector("[data-vehicle-form]"), "/api/business-suite/inventory/locations", () => renderVehicles(container));
     } catch (error) { renderFailure(container, error); }
 }
 
@@ -111,18 +123,6 @@ function renderProfitability(container) {
     container.querySelector("[data-labor-cost]")?.addEventListener("submit", async event => { event.preventDefault(); const data=new FormData(event.currentTarget); await api(`/api/business-suite/labor-costs/${encodeURIComponent(data.get("role"))}`,{method:"PUT",body:{hourlyCost:Number(data.get("hourlyCost"))}}); if(select.value) await load(); });
 }
 
-async function renderAutomation(container) {
-    container.innerHTML = "<p class=muted>Chargement des relances…</p>";
-    try {
-        const data = await api("/api/automation/rules");
-        container.innerHTML = `<div class=business-grid><article class=business-panel><h3>Règles internes</h3><form data-rule-form class=form-grid><label>Nom<input name=name required></label><label>Type<select name=ruleType><option value=quote_follow_up>Devis à relancer</option><option value=contract_renewal>Contrat à renouveler</option><option value=maintenance_due>Maintenance à planifier</option><option value=low_stock>Stock faible</option></select></label><label>Anticipation (jours)<input name=leadDays type=number min=0 max=365 value=7></label><button type=submit>Créer la règle</button></form><button type=button data-run-automation>Exécuter maintenant</button>${data.rules.map(rule => `<div class=business-row><div><strong>${escapeHtml(rule.name)}</strong><small>${escapeHtml(rule.ruleType)} · ${rule.isActive ? "active" : "inactive"}</small></div><button type=button data-delete-rule=${rule.id}>Supprimer</button></div>`).join("") || "<p class=muted>Aucune règle.</p>"}</article><article class=business-panel><h3>Rappels</h3>${data.reminders.map(item => `<div class=business-row><div><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.details)} · échéance ${dateLabel(item.dueAt)} · ${item.status}</small></div>${item.status === "open" ? `<button type=button data-done-reminder=${item.id}>Terminer</button>` : ""}</div>`).join("") || "<p class=muted>Aucun rappel.</p>"}</article></div>`;
-        bindJsonForm(container.querySelector("[data-rule-form]"), "/api/automation/rules", () => renderAutomation(container));
-        container.querySelector("[data-run-automation]").addEventListener("click", async event => { event.currentTarget.disabled = true; await api("/api/automation/run", { method: "POST" }); await renderAutomation(container); });
-        container.querySelectorAll("[data-delete-rule]").forEach(button => button.addEventListener("click", async () => { await api(`/api/automation/rules/${button.dataset.deleteRule}`, { method: "DELETE" }); await renderAutomation(container); }));
-        container.querySelectorAll("[data-done-reminder]").forEach(button => button.addEventListener("click", async () => { await api(`/api/automation/reminders/${button.dataset.doneReminder}`, { method: "PATCH", body: { status: "done" } }); await renderAutomation(container); }));
-    } catch (error) { renderFailure(container, error); }
-}
-
 function bindJsonForm(form, url, complete) {
     form?.addEventListener("submit", async event => {
         event.preventDefault(); const button = form.querySelector("button[type=submit]"); button.disabled = true;
@@ -133,6 +133,9 @@ function bindJsonForm(form, url, complete) {
 function recordList(items, label, resource) { return items.map(item => `<div class=business-row><div><strong>${escapeHtml(label(item))}</strong></div><button type=button data-delete-resource=${resource} data-id=${item.id}>Supprimer</button></div>`).join("") || "<p class=muted>Aucun élément.</p>"; }
 function clientOptions() { return `<option value="">Choisir un client</option>${context.clients.map(client => `<option value="${escapeHtml(client.id)}">${escapeHtml(client.name || client.id)}</option>`).join("")}`; }
 function optionList(items, field="name") { return `<option value="">Aucun / choisir</option>${items.map(item => `<option value=${item.id}>${escapeHtml(item[field] || item.documentNumber || item.id)}${item.eventDate ? ` · ${escapeHtml(item.eventDate)}` : ""}</option>`).join("")}`; }
-function tabs() { return [["overview","Vue d’ensemble"],["portal","Portail client"],["assets","Sites & équipements"],["inventory","Stock & véhicules"],["profitability","Rentabilité"],["automation","Automatisations"]]; }
+function resourceTabs() { return [["assets","Sites & équipements"],["inventory","Stock"],["vehicles","Véhicules"]]; }
+function normalizedTab(value) { return ["portal", "profitability", ...resourceTabs().map(([id]) => id)].includes(value) ? value : "assets"; }
+function pageTitle(tab) { return tab === "portal" ? "Clients · Portail client" : tab === "profitability" ? "Devis & rapports · Rentabilité" : `Ressources · ${resourceTabs().find(([id]) => id === tab)?.[1] || "Sites & équipements"}`; }
+function pageRoute(tab) { return tab === "portal" ? ROUTES.clients : tab === "profitability" ? ROUTES.billing : ROUTES.businessSuite; }
 async function api(url, options={}) { const response=await fetch(url,{method:options.method||"GET",credentials:"same-origin",headers:options.body?{"Content-Type":"application/json"}:undefined,body:options.body?JSON.stringify(options.body):undefined}); if(response.status===204)return null; const payload=await response.json().catch(()=>({})); if(!response.ok)throw new Error(payload.message||"Opération impossible."); return payload; }
 function renderFailure(container,error){container.innerHTML=`<article class=business-panel><p class=error>${escapeHtml(error.message||"Chargement impossible.")}</p></article>`;} function dateLabel(value){return value?new Date(value).toLocaleDateString("fr-FR"):"—";} function numberLabel(value){return new Intl.NumberFormat("fr-FR",{maximumFractionDigits:3}).format(Number(value)||0);} function moneyLabel(value){return new Intl.NumberFormat("fr-FR",{style:"currency",currency:"EUR"}).format(Number(value)||0);}

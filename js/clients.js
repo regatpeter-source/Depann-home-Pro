@@ -4,6 +4,7 @@ import { renderClientMessages } from "./messages.js?v=107";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { pageSizeOptions, paginateItems, renderBusinessPagination } from "./pagination.js?v=1";
+import { renderBusinessSuite } from "./business-suite.js?v=2";
 import {
     clearSearch,
     createButton,
@@ -115,10 +116,16 @@ function renderClientWorkspaceTabs(activeWorkspace, readOnly, activeClient) {
         <button type="button" class="client-workspace-tab${activeWorkspace === "directory" ? " active" : ""}" data-client-workspace="directory" ${activeWorkspace === "directory" ? 'aria-current="page"' : ""}><span>01</span><strong>Répertoire clients</strong><small>Rechercher et consulter</small></button>
         ${!readOnly && (canCreateClientRecords() || activeWorkspace === "create" && activeClient) ? `<button type="button" class="client-workspace-tab${activeWorkspace === "create" ? " active" : ""}" data-client-workspace="create" ${activeWorkspace === "create" ? 'aria-current="page"' : ""}><span>02</span><strong>${activeClient && activeWorkspace === "create" ? "Modification client" : "Nouveau client"}</strong><small>${canCreateClientRecords() ? "Créer ou mettre à jour" : "Mettre à jour la fiche attribuée"}</small></button>` : ""}
         ${activeWorkspace === "detail" && activeClient ? `<button type="button" class="client-workspace-tab active" aria-current="page"><span>03</span><strong>Dossier client</strong><small>${escapeHtml(activeClient.name)}</small></button>` : ""}
+        ${canOpenCustomerPortal() ? '<button type="button" class="client-workspace-tab" data-client-workspace="portal"><span>04</span><strong>Portail client</strong><small>Documents et décisions</small></button>' : ""}
     `;
     navigation.querySelector('[data-client-workspace="directory"]')?.addEventListener("click", () => renderClients({ ...clientScreenOptions, clientWorkspace: "directory" }));
     navigation.querySelector('[data-client-workspace="create"]')?.addEventListener("click", () => renderClients({ ...clientScreenOptions, clientWorkspace: "create" }));
+    navigation.querySelector('[data-client-workspace="portal"]')?.addEventListener("click", () => renderBusinessSuite({ tab: "portal" }));
     return navigation;
+}
+
+function canOpenCustomerPortal() {
+    return document.body.dataset.deviceType === "desktop" && ["admin", "pc_standard", "commercial"].includes(document.body.dataset.role);
 }
 
 function renderClientToolbar(clients, readOnly, directory) {

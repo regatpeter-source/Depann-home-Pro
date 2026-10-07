@@ -1,5 +1,5 @@
 import { ROUTES } from "./config.js?v=116";
-import { getSearchableClients } from "./clients.js?v=175";
+import { getSearchableClients } from "./clients.js?v=176";
 import { addClientActivityByName } from "./client-sync.js?v=132";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
@@ -8,6 +8,7 @@ import { clearSearch, createInfo, getContainer, setPage } from "./ui.js?v=44";
 import { openDocumentDeliveryChoice } from "./document-delivery.js?v=2";
 import { pageSizeOptions, paginateItems, renderBusinessPagination } from "./pagination.js?v=1";
 import { renderLivePdfPreview } from "./pdf-live-preview.js?v=2";
+import { renderBusinessSuite } from "./business-suite.js?v=2";
 
 const CUSTOMER_TYPES = ["Particulier", "Professionnel", "Magasin", "Autre"];
 const PAYMENT_METHODS = ["Chèque", "Espèces", "Virement", "Carte bancaire"];
@@ -179,6 +180,7 @@ function renderOverview(panel, profilePanel) {
                 ${isFullAdministrator() ? '<button type="button" class="secondary-button" data-billing-action="preview-blank-quote">Aperçu du devis vierge</button>' : ""}
                 ${isFullAdministrator() ? '<button type="button" class="secondary-button" data-billing-action="manage-line-templates">Gérer les lignes et aides</button>' : ""}
                 <button type="button" class="secondary-button" data-billing-action="open-purchases">Achats</button>
+                ${isAccountant() ? "" : '<button type="button" class="secondary-button" data-billing-action="open-profitability">Rentabilité</button>'}
             </div>
         </div>
         <div class="billing-metrics"><span><strong>${quotes}</strong> devis</span><span><strong>${invoices}</strong> factures</span><span class="billing-base-template"><strong>✓</strong> ${usesExternalTemplate ? "gabarit PDF / DOCX externe" : "modèle Depann’Home intégré"}</span></div>
@@ -194,11 +196,11 @@ function renderOverview(panel, profilePanel) {
     panel.querySelector("[data-billing-action=new-quote]")?.addEventListener("click", () => { if (!isAccountant()) openNewDocument("quote"); });
     panel.querySelector("[data-billing-action=new-invoice]").addEventListener("click", () => { if (!isAccountant()) openNewDocument("invoice"); });
     panel.querySelector("[data-billing-action=open-leak-reports]")?.addEventListener("click", async () => {
-        const { renderLeakReportWizard } = await import("./leak-report-wizard.js?v=67");
+        const { renderLeakReportWizard } = await import("./leak-report-wizard.js?v=68");
         renderLeakReportWizard();
     });
     panel.querySelector("[data-billing-action=new-leak-report]")?.addEventListener("click", async () => {
-        const { openLeakReportCreation } = await import("./leak-report-wizard.js?v=67");
+        const { openLeakReportCreation } = await import("./leak-report-wizard.js?v=68");
         openLeakReportCreation();
     });
     panel.querySelector("[data-billing-action=download-quote-template]")?.addEventListener("click", openQuoteTemplateDownload);
@@ -207,9 +209,10 @@ function renderOverview(panel, profilePanel) {
     panel.querySelector("[data-billing-action=preview-blank-quote]")?.addEventListener("click", openBlankQuotePreview);
     panel.querySelector("[data-billing-action=manage-line-templates]")?.addEventListener("click", () => renderBilling({ templates: true }));
     panel.querySelector("[data-billing-action=open-purchases]")?.addEventListener("click", async () => {
-        const { renderPurchases } = await import("./purchases.js?v=130");
+        const { renderPurchases } = await import("./purchases.js?v=131");
         renderPurchases();
     });
+    panel.querySelector("[data-billing-action=open-profitability]")?.addEventListener("click", () => renderBusinessSuite({ tab: "profitability" }));
     panel.querySelector("[data-financial-view]").addEventListener("change", event => { billingFinancialPeriod.view = event.currentTarget.value === "annual" ? "annual" : "monthly"; renderOverview(panel, profilePanel); });
     panel.querySelector("[data-financial-year]").addEventListener("change", event => { billingFinancialPeriod.year = event.currentTarget.value; void renderBilling(); });
     panel.querySelector("[data-financial-month]").addEventListener("change", event => { billingFinancialPeriod.month = event.currentTarget.value; void renderBilling(); });

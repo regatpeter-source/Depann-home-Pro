@@ -74,21 +74,37 @@ test("les automatisations sont verrouillées, idempotentes et limitées à des r
     assert.doesNotMatch(automation, /twilio|stripe|docusign|sendgrid/i);
 });
 
-test("l’interface tout-en-un est accessible, restaurable et mise en cache", async () => {
-    const [index, config, navigation, module, worker, app] = await Promise.all([
-        read("index.html"), read("js/config.js"), read("js/navigation.js"), read("js/business-suite.js"), read("service-worker.js"), read("app.js")
+test("les fonctions métier sont rangées dans Ressources, Clients et Devis & rapports", async () => {
+    const [index, config, navigation, module, clients, billing, worker, app] = await Promise.all([
+        read("index.html"), read("js/config.js"), read("js/navigation.js"), read("js/business-suite.js"), read("js/clients.js"), read("js/billing.js"), read("service-worker.js"), read("app.js")
     ]);
     assert.match(index, /id="businessSuiteBtn"/);
     assert.match(index, /data-nav="business-suite"/);
+    assert.match(index, /Ressources · sites, stocks &amp; véhicules/);
     assert.match(config, /businessSuite: "business-suite"/);
     assert.match(navigation, /renderBusinessSuite/);
     assert.match(navigation, /businessSuiteTab/);
-    for (const tab of ["portal", "assets", "inventory", "profitability", "automation"]) assert.match(module, new RegExp(`activeTab === "${tab}"`));
-    assert.match(worker, /business-suite\.js\?v=1/);
+    for (const tab of ["portal", "assets", "inventory", "vehicles", "profitability"]) assert.match(module, new RegExp(`activeTab === "${tab}"`));
+    assert.match(module, /\["assets","Sites & équipements"\],\["inventory","Stock"\],\["vehicles","Véhicules"\]/);
+    assert.doesNotMatch(module, /data-run-automation|data-rule-form|Automatisations/);
+    assert.match(clients, /data-client-workspace="portal"/);
+    assert.match(clients, /renderBusinessSuite\(\{ tab: "portal" \}\)/);
+    assert.match(billing, /data-billing-action="open-profitability"/);
+    assert.match(billing, /renderBusinessSuite\(\{ tab: "profitability" \}\)/);
+    assert.match(module, /tab === "portal" \? ROUTES\.clients : tab === "profitability" \? ROUTES\.billing/);
+    assert.match(navigation, /clientWorkspace === "portal"/);
+    assert.match(navigation, /billingWorkspace === "profitability"/);
+    assert.match(worker, /business-suite\.js\?v=2/);
     assert.match(app, /registerCustomerPortalRoutes/);
     assert.match(app, /registerBusinessSuiteRoutes/);
     assert.match(app, /registerAutomationRoutes/);
     assert.match(app, /startAutomationScheduler/);
+});
+
+test("l’onglet de travail actif est nettement mis en évidence", async () => {
+    const style = await read("css/style.css");
+    assert.match(style, /desktop-workspace-tab\.active\{[^}]*background:#244b61[^}]*color:#fff/);
+    assert.match(style, /dark-theme \.desktop-workspace-tab\.active\{[^}]*background:#0f7650/);
 });
 
 test("les nouveaux écrans héritent du thème sombre et le portail suit le système", async () => {
