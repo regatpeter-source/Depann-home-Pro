@@ -8,6 +8,7 @@ const calendar = readFileSync(new URL("../js/calendar.js", import.meta.url), "ut
 const billing = readFileSync(new URL("../js/billing.js", import.meta.url), "utf8");
 const purchases = readFileSync(new URL("../js/purchases.js", import.meta.url), "utf8");
 const businessSuite = readFileSync(new URL("../js/business-suite.js", import.meta.url), "utf8");
+const creator = readFileSync(new URL("../js/creator.js", import.meta.url), "utf8");
 const missions = readFileSync(new URL("../js/partner-missions.js", import.meta.url), "utf8");
 const navigation = readFileSync(new URL("../js/navigation.js", import.meta.url), "utf8");
 const index = readFileSync(new URL("../index.html", import.meta.url), "utf8");
@@ -60,6 +61,8 @@ test("un enregistrement réussi nettoie uniquement le brouillon actif", () => {
     assert.match(businessSuite, /events\/\$\{values\.eventId\}\/assets[^\n]+markDesktopWorkspaceDraftSaved\(\)/);
     assert.match(businessSuite, /purchases\/\$\{data\.get\("purchaseId"\)\}\/event[^\n]+markDesktopWorkspaceDraftSaved\(\)/);
     assert.match(businessSuite, /labor-costs\/\$\{encodeURIComponent\(data\.get\("role"\)\)\}[^\n]+markDesktopWorkspaceDraftSaved\(\)/);
+    assert.match(creator, /import \{ markDesktopWorkspaceDraftSaved \} from "\.\/desktop-workspace\.js\?v=5"/);
+    assert.match(creator, /response\.ok && !\["GET", "HEAD"\]\.includes\(method\)\) markDesktopWorkspaceDraftSaved\(\)/);
 });
 
 test("tous les menus et sous-menus deviennent des onglets distincts et restaurables", () => {

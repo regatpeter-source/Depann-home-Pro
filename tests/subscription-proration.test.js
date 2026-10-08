@@ -111,6 +111,8 @@ test("une facture complémentaire ne déplace jamais l’échéance du cycle", (
 test("le cycle est déduit de la facture envoyée même sans date de renouvellement", () => {
     assert.match(invoicingSource, /TO_CHAR\(billing_period,'YYYY-MM-DD'\) AS "billingPeriod"/);
     assert.match(invoicingSource, /CURRENT_DATE<\(billing_period\+INTERVAL '1 month'\)::date/);
+    assert.match(invoicingSource, /TO_CHAR\(\$1::date,'YYYY-MM-DD'\) AS "cycleStartDate"/);
+    assert.doesNotMatch(invoicingSource, /,\$1 AS "cycleStartDate"/);
     assert.match(invoicingSource, /source\.billingPeriod/);
     assert.doesNotMatch(invoicingSource, /if \(!ownerBefore\?\.id \|\| !renewalValue\) return null/);
 });

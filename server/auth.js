@@ -951,6 +951,7 @@ export async function refreshSessionForActiveCompany(response, user, deviceId, a
 }
 
 export function requireCreator(request, response, next) {
+    if (!request.user) return requireAuthentication(request, response, next);
     if (!request.user?.isCreator) return response.status(403).json({ message: "Accès réservé au Créateur de l’application." });
     if (request.user.deviceType !== "desktop") return response.status(403).json({ message: "La console Créateur est accessible uniquement depuis un poste administratif." });
     return next();

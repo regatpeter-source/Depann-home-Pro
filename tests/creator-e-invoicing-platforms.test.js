@@ -17,6 +17,9 @@ test("la console Créateur gère un catalogue distinct des connexions d’entrep
     assert.match(creatorServer, /app\.get\("\/api\/creator\/e-invoicing-platforms", requireCreator/);
     assert.match(creatorServer, /app\.post\("\/api\/creator\/e-invoicing-platforms", requireCreator/);
     assert.match(creatorServer, /app\.patch\("\/api\/creator\/e-invoicing-platforms\/:platformId", requireCreator/);
+    assert.match(creatorClient, /pattern="\[a-z0-9\]\[a-z0-9_\\\\-\]\{1,59\}"/);
+    assert.doesNotMatch(creatorClient, /pattern="\[a-z0-9\]\[a-z0-9_-\]\{1,59\}"/);
+    assert.match(creatorClient, /data-cancel-einvoice-platform[^\n]+markDesktopWorkspaceDraftSaved\(\)/);
 });
 
 test("le catalogue persiste seulement des métadonnées d’intégration", () => {

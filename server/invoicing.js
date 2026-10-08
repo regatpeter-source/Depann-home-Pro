@@ -420,7 +420,7 @@ export async function prepareSubscriptionProration(connection, { ownerBefore, ow
     const source = sources[0];
     if (!source) return null;
     const { rows: periods } = await connection.query(`
-        SELECT TO_CHAR(CURRENT_DATE,'YYYY-MM-DD') AS "effectiveDate",$1 AS "cycleStartDate",
+        SELECT TO_CHAR(CURRENT_DATE,'YYYY-MM-DD') AS "effectiveDate",TO_CHAR($1::date,'YYYY-MM-DD') AS "cycleStartDate",
             TO_CHAR(($1::date+INTERVAL '1 month')::date,'YYYY-MM-DD') AS "cycleEndDate",
             (($1::date+INTERVAL '1 month')::date-$1::date)::integer AS "totalDays",
             GREATEST((($1::date+INTERVAL '1 month')::date-CURRENT_DATE),0)::integer AS "remainingDays"
